@@ -5,22 +5,27 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"strings" // Dodajemy brakujący import pakietu strings
+	"runtime"
+	"strings"
 	"sync"
 	"time"
+
+	"filees/pkg/talk"
 )
 
+// EventType enumerates filesystem changes detected by the scanner.
+type EventType int
+
 const (
-	FileAdded    EventType = iota
+	FileAdded EventType = iota
 	FileModified
 	FileDeleted
 )
-
-type EventType int
 
 func (et EventType) String() string {
 	switch et {
@@ -35,192 +40,254 @@ func (et EventType) String() string {
 	}
 }
 
-// FileMetadata przechowuje metadane pliku.
-type FileMetadata struct {
+// Event is sent on the event channel for each detected change.
+type Event struct {
+	Type   EventType   `json:"type"`
+	Path   string      `json:"path"`   // absolute path (for convenience)
+	Rel    string      `json:"rel"`    // path relative to WC root
+	MD5    string      `json:"md5"`    // checksum at the moment of the event (when available)
+	Size   int64       `json:"size"`
+	Mtime  time.Time   `json:"mtime"`
+}
+
+// fileMeta is kept in the on-disk manifest.
+type fileMeta struct {
 	MD5   string    `json:"md5"`
 	Size  int64     `json:"size"`
 	Mtime time.Time `json:"mtime"`
 }
 
-// Event reprezentuje zdarzenie wykryte przez watchera.
-type Event struct {
-	Type EventType
-	Path string // Pełna ścieżka do pliku
-	MD5  string // Suma kontrolna MD5 pliku w momencie zdarzenia
+type manifest struct {
+	Version int                 `json:"version"`
+	Root    string              `json:"root"`
+	Files   map[string]fileMeta `json:"files"` // key: rel path
 }
 
-// Watcher monitoruje zmiany w katalogu.
-type Watcher struct {
-	rootPath      string
-	interval      time.Duration
-	state         map[string]FileMetadata
-	stateFilePath string
-	mu            sync.Mutex
+// Options define scanner configuration expected by main.go.
+type Options struct {
+	WC         string        // working copy root (must exist)
+	StatePath  string        // path to manifest.json (optional, but recommended)
+	ScanPeriod time.Duration // how often to rescan
+	LogScope   string        // talk scope (e.g. "watch:<repoID>")
+	UseMD5     bool          // default true; when false, detect by mtime/size only
+	ChanSize   int           // size of output channel buffer (default 1024)
 }
 
-// NewWatcher tworzy nowego Watchera.
-func NewWatcher(rootPath string, interval time.Duration, stateFilePath string) (*Watcher, error) {
-	if _, err := os.Stat(rootPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("katalog główny watchera '%s' nie istnieje", rootPath)
+// Scanner performs periodic full scans (shell-first, no inotify).
+type Scanner struct {
+	wc         string
+	statePath  string
+	period     time.Duration
+	useMD5     bool
+	lg         talk.Logger
+
+	mu    sync.Mutex
+	files map[string]fileMeta // rel path -> meta
+}
+
+// NewScanner constructs a scanner and (best-effort) loads manifest if StatePath is provided.
+func NewScanner(opts Options) (Scanner, error) {
+	if opts.WC == "" {
+		return Scanner{}, errors.New("watcher: Options.WC is empty")
 	}
-	return &Watcher{
-		rootPath:      rootPath,
-		interval:      interval,
-		state:         make(map[string]FileMetadata),
-		stateFilePath: stateFilePath,
-	}, nil
+	info, err := os.Stat(opts.WC)
+	if err != nil || !info.IsDir() {
+		return Scanner{}, errors.New("watcher: working copy path does not exist or is not a directory")
+	}
+	if opts.ScanPeriod <= 0 {
+		opts.ScanPeriod = 15 * time.Second
+	}
+	if opts.ChanSize <= 0 {
+		opts.ChanSize = 1024
+	}
+	useMD5 := opts.UseMD5
+	if !opts.UseMD5 { /* explicit */ } else { useMD5 = true }
+
+	s := Scanner{
+		wc:        filepath.Clean(opts.WC),
+		statePath: opts.StatePath,
+		period:    opts.ScanPeriod,
+		useMD5:    useMD5,
+		lg:        talk.With(opts.LogScope),
+		files:     make(map[string]fileMeta),
+	}
+	// best-effort auto load
+	if opts.StatePath != "" {
+		_ = s.LoadState(opts.StatePath)
+	}
+	return s, nil
 }
 
-// StartWithStop rozpoczyna monitorowanie katalogu i nasłuchuje sygnału zatrzymania przez context.
-func (w *Watcher) StartWithStop(eventChan chan<- Event, ctx context.Context) {
-	ticker := time.NewTicker(w.interval)
-	defer ticker.Stop()
+// Start begins the periodic scan loop. It returns a receive-only channel of events.
+// The channel is closed when ctx is done.
+func (s *Scanner) Start(ctx context.Context) <-chan Event {
+	events := make(chan Event, 1024)
+	if s.period > 0 && s.period != 15*time.Second { /* keep */ }
 
-	fmt.Printf("🔍 Rozpoczynam monitorowanie katalogu '%s' co %v...\n", w.rootPath, w.interval)
+	go func() {
+		defer close(events)
+		t := time.NewTicker(s.period)
+		defer t.Stop()
 
-	// Wykonaj początkowe skanowanie zaraz po starcie
-	w.scanDirectory(eventChan)
+		// initial scan immediately
+		s.scanOnce(ctx, events)
 
-	for {
-		select {
-		case <-ticker.C:
-			w.scanDirectory(eventChan)
-		case <-ctx.Done():
-			fmt.Println("Wykryto sygnał zatrzymania Watchera. Zapisuję stan i kończę działanie.")
-			// Zapisanie stanu przed wyjściem jest obsługiwane w main.go po zamknięciu wszystkich goroutine
-			return
+		for {
+			select {
+			case <-ctx.Done():
+				// best-effort autosave
+				if s.statePath != "" { _ = s.SaveState(s.statePath) }
+				return
+			case <-t.C:
+				s.scanOnce(ctx, events)
+			}
 		}
-	}
+	}()
+	return events
 }
 
-// scanDirectory skanuje katalog i wykrywa zmiany.
-func (w *Watcher) scanDirectory(eventChan chan<- Event) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+// LoadState loads manifest from a given path.
+func (s *Scanner) LoadState(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	newState := make(map[string]FileMetadata)
-	deletedFiles := make(map[string]FileMetadata)
-	for path, metadata := range w.state {
-		deletedFiles[path] = metadata // Na początku zakładamy, że wszystkie stare pliki zostały usunięte
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
 	}
+	var m manifest
+	if err := json.Unmarshal(data, &m); err != nil { return err }
+	if m.Files == nil { m.Files = make(map[string]fileMeta) }
+	s.files = m.Files
+	return nil
+}
 
-	err := filepath.Walk(w.rootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			fmt.Printf("⚠️ Błąd dostępu do pliku/katalogu '%s': %v\n", path, err)
-			return nil // Kontynuuj chodzenie po drzewie, pomimo błędu
-		}
+// SaveState persists the current manifest to the given path.
+func (s *Scanner) SaveState(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := manifest{Version: 1, Root: s.wc, Files: s.files}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil { return err }
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	return os.WriteFile(path, data, 0o644)
+}
 
-		if info.IsDir() {
-			return nil // Pomijamy katalogi
-		}
+// scanOnce walks the tree and emits events by comparing current snapshot with stored manifest.
+func (s *Scanner) scanOnce(ctx context.Context, out chan<- Event) {
+	s.lg.Tracef("scan start: %s", s.wc)
 
-		// Ignoruj pliki w katalogu .svn
-		if strings.Contains(path, filepath.Join(w.rootPath, ".svn")) {
+	curr := make(map[string]fileMeta)
+	deleted := make(map[string]fileMeta)
+
+	s.mu.Lock()
+	for p, meta := range s.files { deleted[p] = meta }
+	s.mu.Unlock()
+
+	walkFn := func(path string, d fs.DirEntry, err error) error {
+		if err != nil { s.lg.Warnf("walk error: %s: %v", path, err); return nil }
+
+		name := d.Name()
+		// Skip meta dirs and VCS internals
+		if d.IsDir() {
+			if name == ".svn" || name == ".filees" { return fs.SkipDir }
 			return nil
 		}
+		// Skip symlinks (files)
+		if d.Type()&os.ModeSymlink != 0 { return nil }
 
-		// Oblicz MD5 tylko dla plików, które potencjalnie się zmieniły lub są nowe
-		oldMetadata, exists := w.state[path]
-		var currentMD5 string
-		if exists && info.ModTime().Equal(oldMetadata.Mtime) && info.Size() == oldMetadata.Size {
-			currentMD5 = oldMetadata.MD5 // Użyj starego MD5, jeśli czas modyfikacji i rozmiar się nie zmieniły
-		} else {
-			// Oblicz MD5 tylko jeśli plik jest nowy lub potencjalnie zmieniony
-			md5sum, md5Err := CalculateMD5(path)
-			if md5Err != nil {
-				fmt.Printf("❌ Błąd obliczania MD5 dla '%s': %v\n", path, md5Err)
-				return nil
+		// Validate path elements (simple sanity)
+		if !isValidRel(path, s.wc) { return nil }
+
+		// gather info
+		info, ierr := d.Info()
+		if ierr != nil { s.lg.Warnf("stat error: %s: %v", path, ierr); return nil }
+
+		rel, _ := filepath.Rel(s.wc, path)
+		old, had := s.files[rel]
+
+		meta := fileMeta{ Size: info.Size(), Mtime: info.ModTime() }
+		// checksum only when necessary
+		if s.useMD5 {
+			if !had || old.Size != meta.Size || !timeEqual(old.Mtime, meta.Mtime) {
+				sum, herr := md5File(path)
+				if herr != nil { s.lg.Warnf("md5 error: %s: %v", path, herr); return nil }
+				meta.MD5 = sum
+			} else {
+				meta.MD5 = old.MD5
 			}
-			currentMD5 = md5sum
 		}
 
-		newMetadata := FileMetadata{
-			MD5:   currentMD5,
-			Size:  info.Size(),
-			Mtime: info.ModTime(),
-		}
-		newState[path] = newMetadata
+		curr[rel] = meta
+		// Decide events
+		abs := path
+		if runtime.GOOS == "windows" { abs = filepath.Clean(path) }
 
-		if !exists {
-			eventChan <- Event{Type: FileAdded, Path: path, MD5: currentMD5}
+		if !had {
+			out <- Event{Type: FileAdded, Path: abs, Rel: rel, MD5: meta.MD5, Size: meta.Size, Mtime: meta.Mtime}
 		} else {
-			if oldMetadata.MD5 != newMetadata.MD5 {
-				eventChan <- Event{Type: FileModified, Path: path, MD5: currentMD5}
-			}
-			delete(deletedFiles, path) // Plik nadal istnieje, więc nie jest usunięty
+			changed := (meta.Size != old.Size) || !timeEqual(meta.Mtime, old.Mtime)
+			if s.useMD5 { changed = changed || (meta.MD5 != old.MD5) }
+			if changed { out <- Event{Type: FileModified, Path: abs, Rel: rel, MD5: meta.MD5, Size: meta.Size, Mtime: meta.Mtime} }
+			delete(deleted, rel)
 		}
 		return nil
-	})
-
-	if err != nil {
-		fmt.Printf("❌ Błąd podczas skanowania katalogu '%s': %v\n", w.rootPath, err)
 	}
 
-	// Wyślij zdarzenia dla usuniętych plików
-	for path, metadata := range deletedFiles {
-		eventChan <- Event{Type: FileDeleted, Path: path, MD5: metadata.MD5}
+	// WalkDir is more efficient than Walk
+	_ = filepath.WalkDir(s.wc, walkFn)
+
+	// emit deletions
+	for rel, meta := range deleted {
+		abs := filepath.Join(s.wc, rel)
+		out <- Event{Type: FileDeleted, Path: abs, Rel: rel, MD5: meta.MD5, Size: meta.Size, Mtime: meta.Mtime}
 	}
 
-	w.state = newState // Zaktualizuj stan Watchera
+	// swap manifest
+	s.mu.Lock()
+	s.files = curr
+	s.mu.Unlock()
+
+	s.lg.Tracef("scan end: %s", s.wc)
 }
 
-// SaveState zapisuje aktualny stan Watchera do pliku.
-func (w *Watcher) SaveState() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	data, err := json.Marshal(w.state)
-	if err != nil {
-		return fmt.Errorf("nie udało się zserializować stanu watchera: %w", err)
-	}
-
-	// Upewnij się, że katalog istnieje
-	dir := filepath.Dir(w.stateFilePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("nie udało się utworzyć katalogu dla pliku stanu watchera '%s': %w", dir, err)
-	}
-
-	err = os.WriteFile(w.stateFilePath, data, 0644)
-	if err != nil {
-		return fmt.Errorf("nie udało się zapisać stanu watchera do pliku '%s': %w", w.stateFilePath, err)
-	}
-	fmt.Printf("✅ Stan watchera zapisany do: %s\n", w.stateFilePath)
-	return nil
+func md5File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil { return "", err }
+	defer f.Close()
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil { return "", err }
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// LoadState wczytuje poprzedni stan Watchera z pliku.
-func (w *Watcher) LoadState() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func timeEqual(a, b time.Time) bool {
+	// Handle different FS timestamp resolutions by rounding to 1ms
+	const res = time.Millisecond
+	return a.Round(res).Equal(b.Round(res))
+}
 
-	data, err := os.ReadFile(w.stateFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("plik stanu watchera '%s' nie istnieje", w.stateFilePath)
+func isValidRel(absPath, root string) bool {
+	rel, err := filepath.Rel(root, absPath)
+	if err != nil { return false }
+	if strings.HasPrefix(rel, "..") { return false }
+	// guard against odd control chars in path parts
+	for _, part := range splitPath(rel) {
+		for _, r := range part {
+			if r < 0x20 { return false }
 		}
-		return fmt.Errorf("nie udało się odczytać pliku stanu watchera '%s': %w", w.stateFilePath, err)
+		if part == "." || part == ".." { return false }
 	}
-
-	var loadedState map[string]FileMetadata
-	if err := json.Unmarshal(data, &loadedState); err != nil {
-		return fmt.Errorf("błąd parsowania pliku stanu watchera '%s': %w", w.stateFilePath, err)
-	}
-
-	w.state = loadedState
-	return nil
+	return true
 }
 
-// CalculateMD5 oblicza sumę MD5 dla pliku.
-func CalculateMD5(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
+func splitPath(p string) []string {
+	parts := []string{}
+	for {
+		dir, file := filepath.Split(p)
+		if file != "" { parts = append([]string{file}, parts...) }
+		if dir == "" || dir == "/" || dir == "." { break }
+		p = strings.TrimSuffix(dir, string(os.PathSeparator))
 	}
-	defer file.Close()
-
-	hash := md5.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return parts
 }
+

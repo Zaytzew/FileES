@@ -43,16 +43,58 @@ func main() {
 		scope := "repo:" + r.ID
 		rlg := talk.With(scope)
 
-		// Ensure .filees/state dir exists
+		// Ensure FileES dirs exist
 		stateDir := filepath.Join(wc, ".filees", "state")
-		if err := os.MkdirAll(stateDir, 0o755); err != nil {
-			rlg.Errorf("state dir: %v", err)
-			continue
+		ticketsDir := filepath.Join(wc, ".filees", "tickets")
+		locksGlobal := filepath.Join(wc, ".filees", "locks", "global")
+		locksRepo := filepath.Join(wc, ".filees", "locks", "repo")
+		for _, d := range []string{stateDir, ticketsDir, locksGlobal, locksRepo} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				rlg.Errorf("init dir %s: %v", d, err)
+				continue
+			}
+		}
+
+		manifest := filepath.Join(stateDir, "manifest.json")
+		tmpManifest := filepath.Join(stateDir, "manifest.tmp")
+		baselineOK := filepath.Join(stateDir, "baseline.ok")
+		busyPath := filepath.Join(stateDir, "commit.busy")
+
+		// --- OnStart hygiene ---
+		// If WC exists and is an SVN working copy, do a gentle cleanup+update
+		if _, err := os.Stat(filepath.Join(wc, ".svn")); err == nil {
+			if out, err := cli.Cleanup(ctx, wc, r.Username, r.Password); err != nil {
+				rlg.Warnf("svn cleanup failed: %v
+%s", err, out)
+			} else {
+				rlg.Debugf("svn cleanup ok")
+			}
+			if out, err := cli.Update(ctx, wc, r.Username, r.Password); err != nil {
+				rlg.Warnf("svn update failed: %v
+%s", err, out)
+			} else {
+				rlg.Debugf("svn update ok")
+			}
+		}
+
+		// Promote baseline if signaled and tmp exists
+		if fileExists(baselineOK) && fileExists(tmpManifest) && !fileExists(manifest) {
+			if err := os.Rename(tmpManifest, manifest); err != nil {
+				rlg.Warnf("promote manifest failed: %v", err)
+			} else {
+				_ = os.Remove(baselineOK)
+				rlg.Infof("PROMOTE baseline → active (onstart)")
+			}
+		}
+
+		// Stale busy check (warn only; watcher also protects with TTL)
+		if fi, err := os.Stat(busyPath); err == nil {
+			if time.Since(fi.ModTime()) > 10*time.Minute {
+				rlg.Warnf("commit.busy appears stale (>10m) — will be ignored by watcher")
+			}
 		}
 
 		// Watcher options per canon
-		manifest := filepath.Join(stateDir, "manifest.json")
-		busyPath := filepath.Join(stateDir, "commit.busy")
 		win := r.CommitInterval
 		if win <= 0 { win = 30 * time.Second }
 		scanPeriod := win / 2
@@ -97,7 +139,7 @@ func main() {
 		go func(repo config.Repo) {
 			events := scn.Start(ctx)
 			svc.Run(ctx, repo.ID, repo.LocalPath, repo.Username, repo.Password, events)
-		} (r)
+		}(r)
 	}
 
 	// Block until signal
@@ -108,3 +150,6 @@ func main() {
 }
 
 func max(a, b int) int { if a > b { return a }; return b }
+
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+

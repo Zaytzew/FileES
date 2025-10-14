@@ -22,8 +22,8 @@ func main() {
 	cfgPath := "config.json"
 	repos, err := config.Load(cfgPath)
 	if err != nil {
-		lg.Fatalf("config: %v", err)
-		return
+		lg.Errorf("config: %v", err)
+		os.Exit(1)
 	}
 	if len(repos) == 0 {
 		lg.Warnf("no repositories configured in %s", cfgPath)
@@ -46,7 +46,7 @@ func main() {
 		// Ensure .filees/state dir exists
 		stateDir := filepath.Join(wc, ".filees", "state")
 		if err := os.MkdirAll(stateDir, 0o755); err != nil {
-			rlg.Fatalf("state dir: %v", err)
+			rlg.Errorf("state dir: %v", err)
 			continue
 		}
 

@@ -1,264 +1,189 @@
-package svnclient
+package client
 
 import (
 	"bytes"
-	"context" // Dodajemy import pakietu context
-	"crypto/md5"
-	"encoding/hex"
+	"context"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"filees/pkg/talk"
 )
 
-const (
-	defaultTimeout = 30 * time.Minute // Domyślny timeout dla komend SVN, teraz używany do tworzenia kontekstu
-)
+// Options configures the SVN exec wrapper.
+type Options struct {
+	SvnPath  string        // path to 'svn' binary; default "svn"
+	Timeout  time.Duration // per-command timeout; default 30m
+	LogScope string        // talk scope (e.g. "svn:repoID")
+}
 
-// SVNClientIface defines the interface for SVN operations.
-type SVNClientIface interface {
-	// Zmieniono: Dodano context.Context do wszystkich metod
+// Client exposes the subset of SVN commands we need.
+type Client interface {
 	GetInfo(ctx context.Context, repoURL, username, password string) (string, error)
 	Checkout(ctx context.Context, repoURL, localPath, username, password string) (string, error)
-	Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]SVNStatusEntry, error)
+	Cleanup(ctx context.Context, localPath, username, password string) (string, error)
+	Update(ctx context.Context, localPath, username, password string) (string, error)
+	Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]StatusEntry, error)
 	Add(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	Delete(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error)
-	Cleanup(ctx context.Context, localPath, username, password string) (string, error)
-	Update(ctx context.Context, localPath, username, password string) (string, error)
+	Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
+	PropGet(ctx context.Context, rootDirectory, propName string, paths []string, username, password string) (string, error)
 }
 
-// ExecSVNClient implements SVNClientIface by calling external 'svn' command.
-type ExecSVNClient struct {
+// execClient implements Client by calling the external 'svn' executable.
+type execClient struct {
 	svnPath string
-	timeout time.Duration // Nadal przechowujemy, ale używamy do tworzenia kontekstu z timeoutem
-	mu      sync.Mutex    // Mutex do serializacji wywołań SVN
+	timeout time.Duration
+	lg      talk.Logger
+	mu      sync.Mutex // serialize SVN calls within process
 }
 
-// SVNStatusEntry represents a single entry from 'svn status --xml'.
-type SVNStatusEntry struct {
+// New creates a new SVN CLI client.
+func New(opts Options) Client {
+	p := opts.SvnPath
+	if p == "" { p = "svn" }
+	t := opts.Timeout
+	if t <= 0 { t = 30 * time.Minute }
+	return &execClient{svnPath: p, timeout: t, lg: talk.With(opts.LogScope)}
+}
+
+// ---- Types ----
+
+type StatusEntry struct {
 	Path string `xml:"path,attr"`
 	Item string `xml:"wc-status>item,attr"`
 }
 
-// NewExecSVNClient creates a new ExecSVNClient.
-func NewExecSVNClient() (*ExecSVNClient, error) {
-	svnPath, err := exec.LookPath("svn")
-	if err != nil {
-		return nil, fmt.Errorf("nie znaleziono komendy 'svn' w PATH: %w", err)
-	}
-	return &ExecSVNClient{
-		svnPath: svnPath,
-		timeout: defaultTimeout, // Ustawiamy domyślny timeout
-	}, nil
+// ---- High-level helpers ----
+
+func (c *execClient) GetInfo(ctx context.Context, repoURL, username, password string) (string, error) {
+	return c.run(ctx, "", username, password, []string{"info", repoURL})
 }
 
-// GetInfo retrieves information about a repository.
-// Zmieniono: Dodano ctx context.Context
-func (c *ExecSVNClient) GetInfo(ctx context.Context, repoURL, username, password string) (string, error) {
-	return c.runCommand(ctx, "", username, password, []string{"info", repoURL})
-}
-
-// Checkout performs an SVN checkout.
-// Zmieniono: Dodano ctx context.Context
-func (c *ExecSVNClient) Checkout(ctx context.Context, repoURL, localPath, username, password string) (string, error) {
+func (c *execClient) Checkout(ctx context.Context, repoURL, localPath, username, password string) (string, error) {
 	if _, err := os.Stat(filepath.Join(localPath, ".svn")); err == nil {
-		fmt.Printf("🔄 Lokalna ścieżka '%s' zawiera kopię roboczą SVN. Próbuję oczyścić i zaktualizować...\n", localPath)
-		cleanupOutput, cleanupErr := c.Cleanup(ctx, localPath, username, password) // Przekazano ctx
-		if cleanupErr != nil {
-			fmt.Printf("❌ SVN cleanup dla '%s' zakończony błędem: %v\nOutput: %s\n", localPath, cleanupErr, cleanupOutput)
-			return cleanupOutput, cleanupErr
-		}
-		fmt.Printf("✅ SVN cleanup zakończone dla '%s'.\n", localPath)
-		return c.Update(ctx, localPath, username, password) // Przekazano ctx
+		c.lg.Debugf("WC exists at %s → cleanup+update", localPath)
+		if out, err := c.Cleanup(ctx, localPath, username, password); err != nil { return out, err }
+		return c.Update(ctx, localPath, username, password)
 	}
-
-	fmt.Printf("➡️ Wykonuję SVN checkout do '%s'...\n", localPath)
-	if err := os.MkdirAll(localPath, 0755); err != nil {
-		return "", fmt.Errorf("nie udało się utworzyć katalogu lokalnego '%s': %w", localPath, err)
-	}
-	return c.runCommand(ctx, "", username, password, []string{"checkout", repoURL, localPath})
+	if err := os.MkdirAll(localPath, 0o755); err != nil { return "", err }
+	return c.run(ctx, "", username, password, []string{"checkout", repoURL, localPath})
 }
 
-// Cleanup performs an SVN cleanup on the local working copy.
-// Zmieniono: Dodano ctx context.Context
-func (c *ExecSVNClient) Cleanup(ctx context.Context, localPath, username, password string) (string, error) {
-	return c.runCommand(ctx, localPath, username, password, []string{"cleanup"})
+func (c *execClient) Cleanup(ctx context.Context, localPath, username, password string) (string, error) {
+	return c.run(ctx, localPath, username, password, []string{"cleanup"})
 }
 
-// Update performs an SVN update on the local working copy.
-// Zmieniono: Dodano ctx context.Context
-func (c *ExecSVNClient) Update(ctx context.Context, localPath, username, password string) (string, error) {
-	return c.runCommand(ctx, localPath, username, password, []string{"update", "."})
+func (c *execClient) Update(ctx context.Context, localPath, username, password string) (string, error) {
+	return c.run(ctx, localPath, username, password, []string{"update", "."})
 }
 
-// Status retrieves the status of files.
-// Zmieniono: Dodano ctx context.Context
-func (c *ExecSVNClient) Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]SVNStatusEntry, error) {
-	args := append([]string{"status", "--xml", "--ignore-externals", "--depth", "empty"}, paths...)
-	output, err := c.runCommand(ctx, rootDirectory, username, password, args) // Przekazano ctx
-	if err != nil {
-		return nil, fmt.Errorf("błąd wykonania statusu SVN dla %s: %w\nOutput: %s", rootDirectory, err, output)
-	}
-
+func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]StatusEntry, error) {
+	args := append([]string{"status", "--xml", "--ignore-externals", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
+	output, err := c.run(ctx, rootDirectory, username, password, args)
+	if err != nil { return nil, fmt.Errorf("svn status failed: %w\n%s", err, output) }
 	var statusXML struct {
 		Targets []struct {
-			Entries []SVNStatusEntry `xml:"entry"`
+			Entries []StatusEntry `xml:"entry"`
 		} `xml:"target"`
 	}
-
 	if err := xml.Unmarshal([]byte(output), &statusXML); err != nil {
-		return nil, fmt.Errorf("błąd parsowania XML statusu SVN: %w\nOutput: %s", err, output)
+		return nil, fmt.Errorf("parse status xml: %w\n%s", err, output)
 	}
-
-	var normalizedEntries []SVNStatusEntry
-	for _, target := range statusXML.Targets {
-		for _, entry := range target.Entries {
-			relPath, relErr := filepath.Rel(rootDirectory, entry.Path)
-			if relErr == nil {
-				entry.Path = relPath
-			}
-			normalizedEntries = append(normalizedEntries, entry)
+	var out []StatusEntry
+	for _, t := range statusXML.Targets {
+		for _, e := range t.Entries {
+			if rel, err := filepath.Rel(rootDirectory, e.Path); err == nil { e.Path = rel }
+			out = append(out, e)
 		}
 	}
-	return normalizedEntries, nil
+	return out, nil
 }
 
-// Add adds files/directories to version control.
-// Zmieniono: Dodano ctx context.Context
-func (c *ExecSVNClient) Add(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
-	fmt.Printf("DEBUG CLIENT.GO (Add): rootDirectory='%s', paths='%v'\n", rootDirectory, paths)
-	args := append([]string{"add"}, paths...)
-	return c.runCommand(ctx, rootDirectory, username, password, args) // Przekazano ctx
+func (c *execClient) Add(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+	args := append([]string{"add"}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
 }
 
-// Delete schedules files/directories for deletion.
-// Zmieniono: Dodano ctx context.Context
-func (c *ExecSVNClient) Delete(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
-	fmt.Printf("DEBUG CLIENT.GO (Delete): rootDirectory='%s', paths='%v'\n", rootDirectory, paths)
-	args := append([]string{"delete"}, paths...)
-	return c.runCommand(ctx, rootDirectory, username, password, args) // Przekazano ctx
+func (c *execClient) Delete(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+	args := append([]string{"delete"}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
 }
 
-// Commit commits changes to the repository.
-// Zmieniono: Dodano ctx context.Context
-func (c *ExecSVNClient) Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error) {
-	fmt.Printf("DEBUG CLIENT.GO (Commit): rootDirectory='%s', paths='%v'\n", rootDirectory, paths)
-	args := append([]string{"commit", "-m", message}, paths...)
-	return c.runCommand(ctx, rootDirectory, username, password, args) // Przekazano ctx
+func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error) {
+	args := append([]string{"commit", "-m", message}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
 }
 
-// runCommand executes an SVN command.
-// workingDir is the directory in which the command will be run (cmd.Dir).
-// args is a slice of arguments passed to the 'svn' command.
-// Zmieniono: ctx context.Context jako pierwszy argument
-func (c *ExecSVNClient) runCommand(ctx context.Context, workingDir string, username, password string, args []string) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *execClient) Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+	args := append([]string{"lock"}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
+}
 
-	cmdArgs := make([]string, 0)
-	if username != "" {
-		cmdArgs = append(cmdArgs, "--username", username)
-	}
-	if password != "" {
-		cmdArgs = append(cmdArgs, "--password", password)
-	}
+func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string, paths []string, username, password string) (string, error) {
+	args := append([]string{"propget", propName}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
+}
+
+// ---- Core exec runner ----
+
+func (c *execClient) run(parentCtx context.Context, workingDir, username, password string, args []string) (string, error) {
+	c.mu.Lock(); defer c.mu.Unlock()
+
+	cmdArgs := make([]string, 0, 8+len(args))
+	if username != "" { cmdArgs = append(cmdArgs, "--username", username) }
+	if password != "" { cmdArgs = append(cmdArgs, "--password", password) }
 	cmdArgs = append(cmdArgs, "--non-interactive", "--no-auth-cache")
+	cmdArgs = append(cmdArgs, args...)
 
-	var processedCommandArgs []string
-	if len(args) > 0 {
-		processedCommandArgs = append(processedCommandArgs, args[0])
-		for _, arg := range args[1:] {
-			if workingDir != "" && filepath.IsAbs(arg) && strings.HasPrefix(arg, workingDir) {
-				relPath, err := filepath.Rel(workingDir, arg)
-				if err == nil {
-					processedCommandArgs = append(processedCommandArgs, relPath)
-				} else {
-					processedCommandArgs = append(processedCommandArgs, arg)
-				}
-			} else {
-				processedCommandArgs = append(processedCommandArgs, arg)
-			}
-		}
-	}
-	cmdArgs = append(cmdArgs, processedCommandArgs...)
+	ctx, cancel := context.WithTimeout(parentCtx, c.timeout)
+	defer cancel()
 
-	fmt.Printf("DEBUG CLIENT.GO (runCommand): cmd.Dir='%s', svn_cmd='%s %v'\n", workingDir, c.svnPath, cmdArgs)
-
-	// Zmieniono: Użycie contextu z timeoutem dla CommandContext
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel() // Upewnij się, że kontekst zostanie anulowany po zakończeniu funkcji
-
-	cmd := exec.CommandContext(ctxWithTimeout, c.svnPath, cmdArgs...) // Użycie CommandContext
+	cmd := exec.CommandContext(ctx, c.svnPath, cmdArgs...)
 	cmd.Dir = workingDir
 
-	var outputBuffer bytes.Buffer
-	cmd.Stdout = &outputBuffer
-	cmd.Stderr = &outputBuffer
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
 
-	err := cmd.Start()
-	if err != nil {
-		cmdName := "svn"
-		if len(processedCommandArgs) > 0 {
-			cmdName = processedCommandArgs[0]
-		}
-		return outputBuffer.String(), fmt.Errorf("nie udało się uruchomić komendy svn %q: %w", cmdName, err)
+	c.lg.Tracef("exec: %s %s (dir=%s)", c.svnPath, strings.Join(cmdArgs, " "), emptyIf(workingDir, "."))
+	if err := cmd.Start(); err != nil {
+		name := "svn"
+		if len(args) > 0 { name = args[0] }
+		return buf.String(), fmt.Errorf("uruchomienie '%s' nie powiodło się: %w", name, err)
 	}
-
-	// Zmieniono: Usunięcie ręcznej logiki timeoutu, CommandContext to obsługuje
-	cmdErr := cmd.Wait()
-	if cmdErr != nil {
-		cmdName := "svn"
-		if len(processedCommandArgs) > 0 {
-			cmdName = processedCommandArgs[0]
+	if err := cmd.Wait(); err != nil {
+		name := "svn"
+		if len(args) > 0 { name = args[0] }
+		if ctx.Err() != nil {
+			return buf.String(), fmt.Errorf("komenda '%s' anulowana/przekroczono czas: %v\n%s", name, ctx.Err(), buf.String())
 		}
-		// Sprawdź, czy błąd był spowodowany anulowaniem kontekstu
-		if ctxWithTimeout.Err() != nil {
-			return outputBuffer.String(), fmt.Errorf("komenda svn %q została anulowana lub przekroczyła czas: %v. Output: %s", cmdName, ctxWithTimeout.Err(), outputBuffer.String())
-		}
-		return outputBuffer.String(), fmt.Errorf("komenda svn %q zwróciła błąd: %v. Output: %s", cmdName, cmdErr, outputBuffer.String())
+		return buf.String(), fmt.Errorf("komenda '%s' zakończyła się błędem: %v\n%s", name, err, buf.String())
 	}
-
-	return outputBuffer.String(), nil
+	return buf.String(), nil
 }
 
-// CalculateMD5 oblicza sumę MD5 dla pliku.
-func CalculateMD5(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
+// relativize converts absolute paths under rootDirectory into relative ones for svn CLI.
+func (c *execClient) relativize(rootDirectory string, paths []string) []string {
+	if len(paths) == 0 { return paths }
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		q := p
+		if rootDirectory != "" && filepath.IsAbs(p) && strings.HasPrefix(filepath.Clean(p), filepath.Clean(rootDirectory)) {
+			if rel, err := filepath.Rel(rootDirectory, p); err == nil { q = rel }
+		}
+		out = append(out, q)
 	}
-	defer file.Close()
-
-	hash := md5.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return out
 }
 
-// parseStatusXML parses the XML output from 'svn status --xml' into a slice of SVNStatusEntry.
-func parseStatusXML(xmlData []byte) ([]SVNStatusEntry, error) {
-	var statusXML struct {
-		XMLName xml.Name `xml:"status"`
-		Targets []struct {
-			XMLName xml.Name       `xml:"target"`
-			Entries []SVNStatusEntry `xml:"entry"`
-		} `xml:"target"`
-	}
-
-	if err := xml.Unmarshal(xmlData, &statusXML); err != nil {
-		return nil, fmt.Errorf("błąd parsowania XML statusu SVN: %w", err)
-	}
-
-	var allEntries []SVNStatusEntry
-	for _, target := range statusXML.Targets {
-		allEntries = append(allEntries, target.Entries...)
-	}
-	return allEntries, nil
+func emptyIf(s, def string) string {
+	if s == "" { return def }
+	return s
 }

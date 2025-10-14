@@ -124,6 +124,49 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	if len(pending) > s.Rules.MaxBatchFiles { pending = pending[:s.Rules.MaxBatchFiles] }
 
 	// prepare lists
+	// przygotuj listy z pending (wstępnie)
+var addPaths, delPaths, commitPaths []string
+for _, it := range pending {
+	switch it.Op {
+	case watcher.Added:
+		addPaths = append(addPaths, it.Rel)
+		commitPaths = append(commitPaths, it.Rel)
+	case watcher.Modified:
+		commitPaths = append(commitPaths, it.Rel)
+	case watcher.Deleted:
+		delPaths = append(delPaths, it.Rel)
+	}
+}
+
+// --- FILTR STAGINGU PRZEZ `svn status` ---
+all := dedup(append(append([]string{}, addPaths...), delPaths...))
+st := s.statusMap(ctx, wc, username, password, all)
+
+	// 1) ADD: zostaw tylko unversioned; resztę potraktuj jak Modified (czyli nic nie robimy)
+	filteredAdd := make([]string, 0, len(addPaths))
+	for _, p := range addPaths {
+		item := st[p]
+		if item == "unversioned" || item == "" {
+			// "" bywa, gdy --depth=empty nie zwróci targetu; w takiej sytuacji pozwalamy na add
+			filteredAdd = append(filteredAdd, p)
+		} else {
+			s.Logger.Debugf("skip add %s (status=%s)", p, item)
+		}
+	}
+addPaths = filteredAdd
+
+// 2) DELETE: pomiń unversioned (bo nie ma czego usuwać z repo)
+	filteredDel := make([]string, 0, len(delPaths))
+	for _, p := range delPaths {
+		if st[p] != "unversioned" {
+			filteredDel = append(filteredDel, p)
+		} else {
+			s.Logger.Debugf("skip delete %s (status=unversioned)", p)
+		}
+	}
+	delPaths = filteredDel
+// --- KONIEC FILTRA ---
+	
 	var addPaths, delPaths, commitPaths []string
 	for _, it := range pending {
 		switch it.Op {
@@ -223,3 +266,37 @@ func atomicWriteString(path string, data string) error {
 	if err := os.WriteFile(tmp, []byte(data), 0o644); err != nil { return err }
 	return os.Rename(tmp, path)
 }
+
+// dedup usuwa duplikaty ścieżek (REL, POSIX).
+func dedup(in []string) []string {
+	m := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, p := range in {
+		if _, ok := m[p]; ok {
+			continue
+		}
+		m[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
+// statusMap pobiera mapę rel-path -> svn status item ("unversioned","normal","modified","missing",...).
+func (s *Service) statusMap(ctx context.Context, wc, username, password string, paths []string) map[string]string {
+	out := make(map[string]string, len(paths))
+	if len(paths) == 0 {
+		return out
+	}
+	st, err := s.Cli.Status(ctx, wc, paths, username, password)
+	if err != nil {
+		s.Logger.Warnf("svn status failed: %v", err)
+		return out
+	}
+	for _, e := range st {
+		// Upewnij się, że mamy POSIX (watcher emituje REL w POSIX)
+		p := strings.ReplaceAll(e.Path, "\\", "/")
+		out[p] = e.Item
+	}
+	return out
+}
+

@@ -64,14 +64,12 @@ func main() {
 		// If WC exists and is an SVN working copy, do a gentle cleanup+update
 		if _, err := os.Stat(filepath.Join(wc, ".svn")); err == nil {
 			if out, err := cli.Cleanup(ctx, wc, r.Username, r.Password); err != nil {
-				rlg.Warnf("svn cleanup failed: %v
-%s", err, out)
+				rlg.Warnf("svn cleanup failed: %v %s", err, out)
 			} else {
 				rlg.Debugf("svn cleanup ok")
 			}
 			if out, err := cli.Update(ctx, wc, r.Username, r.Password); err != nil {
-				rlg.Warnf("svn update failed: %v
-%s", err, out)
+				rlg.Warnf("svn update failed: %v %s", err, out)
 			} else {
 				rlg.Debugf("svn update ok")
 			}

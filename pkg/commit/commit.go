@@ -111,7 +111,9 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	pending := make([]*stageItem, 0, len(s.staging))
 	for _, it := range s.staging {
 		if it.Op == watcher.Added {
-			if now.Sub(it.FirstSeen) < s.Rules.NewLatency { continue }
+			if now.Sub(it.FirstSeen) < s.Rules.NewLatency {
+				continue
+			}
 		}
 		pending = append(pending, it)
 	}
@@ -119,54 +121,11 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 
 	if len(pending) == 0 { return nil }
 
-	// sort for stable order: dirs first for deletions, then files; by path
+	// sort for stable order; cut to MaxBatchFiles
 	sort.Slice(pending, func(i, j int) bool { return pending[i].Rel < pending[j].Rel })
 	if len(pending) > s.Rules.MaxBatchFiles { pending = pending[:s.Rules.MaxBatchFiles] }
 
-	// prepare lists
-	// przygotuj listy z pending (wstępnie)
-var addPaths, delPaths, commitPaths []string
-for _, it := range pending {
-	switch it.Op {
-	case watcher.Added:
-		addPaths = append(addPaths, it.Rel)
-		commitPaths = append(commitPaths, it.Rel)
-	case watcher.Modified:
-		commitPaths = append(commitPaths, it.Rel)
-	case watcher.Deleted:
-		delPaths = append(delPaths, it.Rel)
-	}
-}
-
-// --- FILTR STAGINGU PRZEZ `svn status` ---
-all := dedup(append(append([]string{}, addPaths...), delPaths...))
-st := s.statusMap(ctx, wc, username, password, all)
-
-	// 1) ADD: zostaw tylko unversioned; resztę potraktuj jak Modified (czyli nic nie robimy)
-	filteredAdd := make([]string, 0, len(addPaths))
-	for _, p := range addPaths {
-		item := st[p]
-		if item == "unversioned" || item == "" {
-			// "" bywa, gdy --depth=empty nie zwróci targetu; w takiej sytuacji pozwalamy na add
-			filteredAdd = append(filteredAdd, p)
-		} else {
-			s.Logger.Debugf("skip add %s (status=%s)", p, item)
-		}
-	}
-addPaths = filteredAdd
-
-// 2) DELETE: pomiń unversioned (bo nie ma czego usuwać z repo)
-	filteredDel := make([]string, 0, len(delPaths))
-	for _, p := range delPaths {
-		if st[p] != "unversioned" {
-			filteredDel = append(filteredDel, p)
-		} else {
-			s.Logger.Debugf("skip delete %s (status=unversioned)", p)
-		}
-	}
-	delPaths = filteredDel
-// --- KONIEC FILTRA ---
-	
+	// wstępne listy
 	var addPaths, delPaths, commitPaths []string
 	for _, it := range pending {
 		switch it.Op {
@@ -180,7 +139,35 @@ addPaths = filteredAdd
 		}
 	}
 
-	// shout ticket (rate-limited) if any path matches
+	// --- FILTR STAGINGU PRZEZ `svn status` ---
+	all := dedup(append(append([]string{}, addPaths...), delPaths...))
+	st := s.statusMap(ctx, wc, username, password, all)
+
+	// ADD: tylko unversioned
+	filteredAdd := make([]string, 0, len(addPaths))
+	for _, p := range addPaths {
+		item := st[p]
+		if item == "unversioned" || item == "" {
+			filteredAdd = append(filteredAdd, p)
+		} else {
+			s.Logger.Debugf("skip add %s (status=%s)", p, item)
+		}
+	}
+	addPaths = filteredAdd
+
+	// DELETE: pomiń unversioned
+	filteredDel := make([]string, 0, len(delPaths))
+	for _, p := range delPaths {
+		if st[p] != "unversioned" {
+			filteredDel = append(filteredDel, p)
+		} else {
+			s.Logger.Debugf("skip delete %s (status=unversioned)", p)
+		}
+	}
+	delPaths = filteredDel
+	// --- KONIEC FILTRA ---
+
+	// rate-limited shout
 	if s.Rules.ShoutPatterns != nil && time.Since(s.lastShout) >= s.Rules.RateLimitShout {
 		for _, p := range commitPaths {
 			if s.Rules.ShoutPatterns.MatchString(p) {
@@ -191,7 +178,7 @@ addPaths = filteredAdd
 		}
 	}
 
-	// Acquire gates
+	// gates
 	if s.HostGate != nil {
 		if err := s.HostGate.Acquire(ctx); err != nil { return err }
 		defer s.HostGate.Release()
@@ -201,21 +188,27 @@ addPaths = filteredAdd
 		defer s.RepoMtx.Unlock(s.RepoURL)
 	}
 
+	// busy flag
 	busy := filepath.Join(wc, ".filees", "state", "commit.busy")
 	if err := atomicWriteString(busy, fmt.Sprintf("ts_start=%d\npid=%d\nrepo=%s\n", time.Now().Unix(), os.Getpid(), s.RepoURL)); err == nil {
 		defer os.Remove(busy)
 	}
 
-	// staging ops
+	// staging
 	if len(addPaths) > 0 {
-		if out, err := s.Cli.Add(ctx, wc, addPaths, username, password); err != nil { s.Logger.Warnf("svn add failed: %v\n%s", err, out) }
+		if out, err := s.Cli.Add(ctx, wc, addPaths, username, password); err != nil {
+			s.Logger.Warnf("svn add failed: %v\n%s", err, out)
+		}
 	}
 	if len(delPaths) > 0 {
-		if out, err := s.Cli.Delete(ctx, wc, delPaths, username, password); err != nil { s.Logger.Warnf("svn delete failed: %v\n%s", err, out) }
+		if out, err := s.Cli.Delete(ctx, wc, delPaths, username, password); err != nil {
+			s.Logger.Warnf("svn delete failed: %v\n%s", err, out)
+		}
 	}
-	// optional lock-first
 	if s.Rules.LockFirst && len(commitPaths) > 0 {
-		if out, err := s.Cli.Lock(ctx, wc, commitPaths, username, password); err != nil { s.Logger.Warnf("svn lock failed: %v\n%s", err, out) }
+		if out, err := s.Cli.Lock(ctx, wc, commitPaths, username, password); err != nil {
+			s.Logger.Warnf("svn lock failed: %v\n%s", err, out)
+		}
 	}
 
 	// commit
@@ -223,18 +216,19 @@ addPaths = filteredAdd
 	out, err := s.Cli.Commit(ctx, wc, commitPaths, msg, username, password)
 	if err != nil { return fmt.Errorf("svn commit: %w\n%s", err, out) }
 
-	// parse revision and write head.rev
+	// head.rev
 	if rev := parseRevision(out); rev != "" {
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
 		_ = atomicWriteString(head, rev+"\n")
 	}
 
-	// clear committed entries from staging
+	// cleanup staging
 	s.mu.Lock()
 	for _, it := range pending { delete(s.staging, it.Rel) }
 	s.mu.Unlock()
 	return nil
 }
+
 
 func (s *Service) makeNotice(wc, title, body string) error {
 	if s.Tickets == nil { return nil }

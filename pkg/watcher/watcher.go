@@ -479,9 +479,7 @@ func (s *Scanner) isIgnored(rel string, isDir bool) bool {
     for _, g := range s.softGlobs { if g.match(rel, isDir) { return true } }
     return false
 }
-	for _, g := range s.softGlobs { if g.match(rel, isDir) { return true } }
-	return false
-}
+
 
 func (s *Scanner) reloadIgnores() error {
 	fi, err := os.Stat(s.ignorePath)

@@ -290,6 +290,7 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 				s.mode = modeActive
 				s.lg.Infof("PROMOTE baseline → active")
 			}
+			
 		}
 	} else { // ACTIVE
 		if busy {
@@ -472,12 +473,12 @@ func (g glob) match(rel string, isDir bool) bool {
 }
 
 func (s *Scanner) isIgnored(rel string, isDir bool) bool {
-	// global regex first (from config), if provided
-	if s.igRegex != nil && s.igRegex.MatchString(rel) { return true }
-	for _, g := range s.hardGlobs { if g.match(rel, isDir) { return true } }
-	for _, g := range s.softGlobs { if g.match(rel, isDir) { return true } }
-	return false
-} }
+    // global regex first (from config), if provided
+    if s.igRegex != nil && s.igRegex.MatchString(rel) { return true }
+    for _, g := range s.hardGlobs { if g.match(rel, isDir) { return true } }
+    for _, g := range s.softGlobs { if g.match(rel, isDir) { return true } }
+    return false
+}
 	for _, g := range s.softGlobs { if g.match(rel, isDir) { return true } }
 	return false
 }
@@ -588,16 +589,13 @@ func pathAbs(p string) string {
 }
 
 func normalizeForOpen(p string) string {
-	ap := pathAbs(p)
-	if runtime.GOOS == "windows" {
-		if !strings.HasPrefix(ap, `\?\`) && len(ap) >= 260 {
-			ap = `\?\` + ap
-		}
-	}
-	return ap
-}
-	}
-	return ap
+    ap := pathAbs(p)
+    if runtime.GOOS == "windows" {
+        if !strings.HasPrefix(ap, `\\?\`) && len(ap) >= 260 {
+            ap = `\\?\` + ap
+        }
+    }
+    return ap
 }
 
 func toDiskList(m index) []diskEntry {

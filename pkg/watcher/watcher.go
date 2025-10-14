@@ -273,22 +273,23 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		stateDir := filepath.Dir(s.statePath)
 		tmpPath := filepath.Join(stateDir, "manifest.tmp")
 		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, /*emit=*/false, out, busy)
+
 		// write tmp
 		_ = atomicWriteJSON(tmpPath, toDiskList(mp))
+
 		// promote?
-				if s.exists(filepath.Join(s.wc, ".filees", "state", "baseline.ok")) {
-					// require manifest.tmp
-					if s.exists(tmpPath) {
-						// mv tmp -> manifest.json
-						_ = os.MkdirAll(filepath.Dir(s.statePath), 0o755)
-						_ = os.Rename(tmpPath, s.statePath)
-						_ = os.Remove(filepath.Join(s.wc, ".filees", "state", "baseline.ok"))
-						// load into RAM and switch mode
-						_ = s.LoadState(s.statePath)
-						s.mode = modeActive
-						s.lg.Infof("PROMOTE baseline → active")
-					}
-				}
+		if s.exists(filepath.Join(s.wc, ".filees", "state", "baseline.ok")) {
+			// require manifest.tmp
+			if s.exists(tmpPath) {
+				// mv tmp -> manifest.json
+				_ = os.MkdirAll(filepath.Dir(s.statePath), 0o755)
+				_ = os.Rename(tmpPath, s.statePath)
+				_ = os.Remove(filepath.Join(s.wc, ".filees", "state", "baseline.ok"))
+				// load into RAM and switch mode
+				_ = s.LoadState(s.statePath)
+				s.mode = modeActive
+				s.lg.Infof("PROMOTE baseline → active")
+			}
 		}
 	} else { // ACTIVE
 		if busy {
@@ -306,12 +307,14 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		_ = s.loadBacklog()
 		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, /*emit=*/true, out, false)
 		// swap in-memory state
-		s.mu.Lock(); s.cur = mp; s.mu.Unlock()
+		s.mu.Lock()
+		s.cur = mp
+		s.mu.Unlock()
 		// persist backlog best-effort
 		_ = s.saveBacklog()
 	}
 
-	if (aCnt+mCnt+dCnt) > 0 {
+	if (aCnt + mCnt + dCnt) > 0 {
 		dur := time.Since(start)
 		s.lg.Infof("scan done in %s (A=%d M=%d D=%d) backlog=%d md5_done=%d md5_skipped=%d ignored=%d busy=%t",
 			dur, aCnt, mCnt, dCnt, len(s.backlog), md5Done, md5Skipped, igCnt, busy)
@@ -321,6 +324,7 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 			dur, aCnt, mCnt, dCnt, len(s.backlog), md5Done, md5Skipped, igCnt, busy)
 	}
 }
+
 
 // scanTree walks the WC and returns a fresh index. If emit==true, it emits events based on diff vs current state.
 func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done, md5Skipped *int, emit bool, out chan<- Event, ticketsOnly bool) index {

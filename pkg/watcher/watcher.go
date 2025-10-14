@@ -276,20 +276,19 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		// write tmp
 		_ = atomicWriteJSON(tmpPath, toDiskList(mp))
 		// promote?
-		if s.exists(filepath.Join(s.wc, ".filees", "state", "baseline.ok")) {
-			// require manifest.tmp
-			if s.exists(tmpPath) {
-				// mv tmp -> manifest.json
-				_ = os.MkdirAll(filepath.Dir(s.statePath), 0o755)
-				_ = os.Rename(tmpPath, s.statePath)
-				_ = os.Remove(filepath.Join(s.wc, ".filees", "state", "baseline.ok"))
-				// load into RAM and switch mode
-				_ = s.LoadState(s.statePath)
-				s.mode = modeActive
-				s.lg.Infof("PROMOTE baseline → active")
-			}
-		} baseline → active")
-			}
+				if s.exists(filepath.Join(s.wc, ".filees", "state", "baseline.ok")) {
+					// require manifest.tmp
+					if s.exists(tmpPath) {
+						// mv tmp -> manifest.json
+						_ = os.MkdirAll(filepath.Dir(s.statePath), 0o755)
+						_ = os.Rename(tmpPath, s.statePath)
+						_ = os.Remove(filepath.Join(s.wc, ".filees", "state", "baseline.ok"))
+						// load into RAM and switch mode
+						_ = s.LoadState(s.statePath)
+						s.mode = modeActive
+						s.lg.Infof("PROMOTE baseline → active")
+					}
+				}
 		}
 	} else { // ACTIVE
 		if busy {

@@ -34,15 +34,17 @@ const (
 	Added OpType = iota
 	Modified
 	Deleted
+	Renamed // OS-level rename detected via MD5; OldRel = source path
 )
 
 // Event sent to commit.Service
 // Path = ABS path (for stat/IO), Rel = POSIX path relative to WC (for SVN)
 type Event struct {
-	Path string    // absolute path
-	Rel  string    // posix relative path
-	Type EntryType // file | dir
-	Op   OpType    // Added | Modified | Deleted
+	Path   string    // absolute path (new location for Renamed)
+	Rel    string    // posix relative path (new location for Renamed)
+	OldRel string    // source path for Renamed; empty otherwise
+	Type   EntryType // file | dir
+	Op     OpType    // Added | Modified | Deleted | Renamed
 }
 
 // Options control scanner behaviour
@@ -340,6 +342,14 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 	timeBudget := time.Duration(float64(s.period) * s.md5BudgetFrac)
 	budgetDeadline := time.Now().Add(timeBudget)
 
+	type pendingAdd struct {
+		absPath string
+		rel     string
+		isDir   bool
+		m       meta
+	}
+	var newFiles []pendingAdd
+
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil { s.lg.Warnf("walk error: %s: %v", path, err); return nil }
 		// ignore any symlink (file or dir) early
@@ -382,8 +392,14 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 		// decide events
 		if emit {
 			if !had {
-				out <- Event{Path: pathAbs(path), Rel: rel, Type: pickType(isDir), Op: Added}
-				*aCnt++
+				// compute MD5 for rename detection (best-effort, within budget)
+				if s.useMD5 && !isDir && m.Size <= s.md5Cutoff && md5BytesBudget > 0 && time.Now().Before(budgetDeadline) {
+					if sum, readB, herr := md5FileBudgeted(path, md5BytesBudget); herr == nil {
+						m.MD5 = sum; md5BytesBudget -= readB; *md5Done++
+						curr[rel] = m
+					}
+				}
+				newFiles = append(newFiles, pendingAdd{pathAbs(path), rel, isDir, m})
 			} else {
 				changed := false
 				if isDir {
@@ -424,11 +440,36 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 
 	_ = filepath.WalkDir(s.wc, walkFn)
 
+	// rename detection + Added/Renamed event emission (active mode only)
+	if emit && len(newFiles) > 0 {
+		// index deleted files by MD5 (files only, with known hash)
+		oldByMD5 := make(map[string]string, len(deleted))
+		for oldRel := range deleted {
+			if om := s.cur[oldRel]; om.MD5 != "" && !om.IsDir {
+				oldByMD5[om.MD5] = oldRel
+			}
+		}
+		for _, nf := range newFiles {
+			if !nf.isDir && nf.m.MD5 != "" {
+				if oldRel, ok := oldByMD5[nf.m.MD5]; ok {
+					out <- Event{Path: nf.absPath, Rel: nf.rel, OldRel: oldRel, Type: EntryFile, Op: Renamed}
+					delete(deleted, oldRel)
+					delete(s.missingSince, oldRel)
+					*aCnt++
+					continue
+				}
+			}
+			out <- Event{Path: nf.absPath, Rel: nf.rel, Type: pickType(nf.isDir), Op: Added}
+			*aCnt++
+		}
+	} else if !emit {
+		// baselining emits nothing — newFiles collected but unused
+	}
+
 	// handle deletions (emit only if debounce exceeded; in baselining we emit nothing)
 	if emit {
 		now := time.Now()
 		for rel, old := range deleted {
-			// if directory missing -> rmdir (Deleted) immediately (no debounce?) — stosujemy T=10m jak dla plików, dla spójności
 			first, seen := s.missingSince[rel]
 			if !seen { s.missingSince[rel] = now; continue }
 			if now.Sub(first) >= s.debounceD {

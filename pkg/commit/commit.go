@@ -46,6 +46,7 @@ type Service struct {
 type stageItem struct {
 	Rel       string
 	Abs       string
+	OldRel    string         // source path for Renamed; empty otherwise
 	IsDir     bool
 	Op        watcher.OpType
 	FirstSeen time.Time // for Added latency
@@ -87,18 +88,23 @@ func (s *Service) addEvent(ev watcher.Event) {
 	key := ev.Rel
 	it, ok := s.staging[key]
 	if !ok {
-		it = &stageItem{Rel: ev.Rel, Abs: ev.Path, IsDir: ev.Type == watcher.EntryDir, Op: ev.Op, FirstSeen: time.Now()}
+		it = &stageItem{Rel: ev.Rel, Abs: ev.Path, OldRel: ev.OldRel, IsDir: ev.Type == watcher.EntryDir, Op: ev.Op, FirstSeen: time.Now()}
 		s.staging[key] = it
 		return
 	}
-	// merge ops: Added+Modified -> Added, Modified+Added -> Added, Delete overrides
+	// merge ops: Added+Modified -> Added, Modified+Added -> Added, Delete overrides, Renamed wins
 	switch ev.Op {
 	case watcher.Deleted:
 		it.Op = watcher.Deleted
+		it.OldRel = ""
 	case watcher.Added:
 		it.Op = watcher.Added
+		it.OldRel = ""
 	case watcher.Modified:
 		if it.Op != watcher.Added && it.Op != watcher.Deleted { it.Op = watcher.Modified }
+	case watcher.Renamed:
+		it.Op = watcher.Renamed
+		it.OldRel = ev.OldRel
 	}
 	// refresh Abs/IsDir if needed
 	it.Abs = ev.Path
@@ -131,6 +137,7 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 
 	// wstępne listy
 	var addPaths, delPaths, commitPaths []string
+	var renamedItems []*stageItem
 	for _, it := range pending {
 		switch it.Op {
 		case watcher.Added:
@@ -140,6 +147,9 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 			commitPaths = append(commitPaths, it.Rel)
 		case watcher.Deleted:
 			delPaths = append(delPaths, it.Rel)
+		case watcher.Renamed:
+			renamedItems = append(renamedItems, it)
+			commitPaths = append(commitPaths, it.OldRel, it.Rel)
 		}
 	}
 
@@ -159,16 +169,20 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	}
 	addPaths = filteredAdd
 
-	// DELETE: pomiń unversioned
-	filteredDel := make([]string, 0, len(delPaths))
+	// DELETE: rozróżnij systemowe usunięcia (missing) od już zestejdżowanych (deleted)
+	var toSvnDelete, alreadyStaged []string
 	for _, p := range delPaths {
-		if st[p] != "unversioned" {
-			filteredDel = append(filteredDel, p)
-		} else {
-			s.Logger.Debugf("skip delete %s (status=unversioned)", p)
+		switch st[p] {
+		case "missing", "normal", "modified":
+			toSvnDelete = append(toSvnDelete, p)
+		case "deleted":
+			alreadyStaged = append(alreadyStaged, p)
+			s.Logger.Debugf("skip svn delete %s (already staged)", p)
+		default:
+			s.Logger.Debugf("skip delete %s (status=%s)", p, st[p])
 		}
 	}
-	delPaths = filteredDel
+	delPaths = append(toSvnDelete, alreadyStaged...)
 	commitPaths = append(commitPaths, delPaths...)
 	// --- KONIEC FILTRA ---
 
@@ -207,9 +221,17 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 			s.Logger.Warnf("svn add failed: %v\n%s", err, out)
 		}
 	}
-	if len(delPaths) > 0 {
-		if out, err := s.Cli.Delete(ctx, wc, delPaths, username, password); err != nil {
+	if len(toSvnDelete) > 0 {
+		if out, err := s.Cli.Delete(ctx, wc, toSvnDelete, username, password); err != nil {
 			s.Logger.Warnf("svn delete failed: %v\n%s", err, out)
+		}
+	}
+	for _, it := range renamedItems {
+		if out, err := s.Cli.Delete(ctx, wc, []string{it.OldRel}, username, password); err != nil {
+			s.Logger.Warnf("svn delete (rename src) %s: %v\n%s", it.OldRel, err, out)
+		}
+		if out, err := s.Cli.Add(ctx, wc, []string{it.Rel}, username, password); err != nil {
+			s.Logger.Warnf("svn add (rename dst) %s: %v\n%s", it.Rel, err, out)
 		}
 	}
 	if s.Rules.LockFirst && len(commitPaths) > 0 {

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -22,6 +23,7 @@ const (
 
 var (
 	curLevel atomic.Int32
+	outMu    sync.Mutex
 	out      io.Writer = os.Stderr
 	prefix             = "" // globalny prefix, np. nazwa programu
 )
@@ -37,7 +39,7 @@ func init() {
 }
 
 func SetLevel(l Level)           { curLevel.Store(int32(l)) }
-func SetOutput(w io.Writer)      { out = w }
+func SetOutput(w io.Writer)      { outMu.Lock(); out = w; outMu.Unlock() }
 func SetLevelString(s string) {
 	switch strings.ToLower(s) {
 	case "silent", "off", "0":
@@ -85,8 +87,12 @@ func (l Logger) logf(lv Level, emoji, format string, args ...any) {
 	}
 	scope := ""
 	if l.scope != "" { scope = " " + l.scope }
-	if prefix != "" { prefix = prefix + " " }
-	fmt.Fprintf(out, "%s %s%s%s: %s\n", ts, prefix, emoji, scope, tagStr+" "+fmt.Sprintf(format, args...))
+	pfx := ""
+	if prefix != "" { pfx = prefix + " " }
+	line := fmt.Sprintf("%s %s%s%s: %s\n", ts, pfx, emoji, scope, tagStr+" "+fmt.Sprintf(format, args...))
+	outMu.Lock()
+	fmt.Fprint(out, line)
+	outMu.Unlock()
 }
 
 func (l Logger) Errorf(f string, a ...any) { l.logf(Error, "❌", f, a...) }

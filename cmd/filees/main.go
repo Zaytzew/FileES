@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -36,6 +37,8 @@ func main() {
 
 	// Create a client shared per process (stateless across repos)
 	cli := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn"})
+
+	var wg sync.WaitGroup
 
 	// Launch one pipeline per repo
 	for _, r := range repos {
@@ -134,7 +137,9 @@ func main() {
 		}
 
 		// Start pipeline per repo
+		wg.Add(1)
 		go func(repo config.Repo) {
+			defer wg.Done()
 			events := scn.Start(ctx)
 			svc.Run(ctx, repo.ID, repo.LocalPath, repo.Username, repo.Password, events)
 		}(r)
@@ -143,8 +148,7 @@ func main() {
 	// Block until signal
 	<-ctx.Done()
 	lg.Infof("shutdown")
-	// Give background goroutines a breath to flush best-effort
-	time.Sleep(500 * time.Millisecond)
+	wg.Wait()
 }
 
 func max(a, b int) int { if a > b { return a }; return b }

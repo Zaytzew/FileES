@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
-//	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -12,15 +11,16 @@ import (
 
 // -------- Host-wide Gate (K slotów równoległych commitów) --------
 
+// Gate serializes concurrent commits across the host. Acquire returns a release
+// function that must be called (via defer) when the commit completes.
+// Each Acquire/release pair is independent — safe for concurrent goroutines.
 type Gate interface {
-	Acquire(ctx context.Context) error
-	Release()
+	Acquire(ctx context.Context) (release func(), err error)
 }
 
 type hostGate struct {
 	baseDir string
 	k       int
-	slot    string // mój slot (po Acquire)
 }
 
 // NewHostGate tworzy bramkę na K slotów w ~/.filees/locks/global/slot.N
@@ -33,77 +33,57 @@ func NewHostGate(k int) Gate {
 	return &hostGate{baseDir: base, k: k}
 }
 
-func (g *hostGate) Acquire(ctx context.Context) error {
+func (g *hostGate) Acquire(ctx context.Context) (func(), error) {
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
 
 	for {
-		// spróbuj po kolei slot.1..slot.k
 		for i := 1; i <= g.k; i++ {
 			dir := filepath.Join(g.baseDir, "slot."+itoa(i))
 			if err := os.Mkdir(dir, 0o755); err == nil {
-				g.slot = dir
-				return nil
+				return func() { _ = os.Remove(dir) }, nil
 			}
 		}
-		// poczekaj lub przerwij
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-tick.C:
 		}
-	}
-}
-
-func (g *hostGate) Release() {
-	if g.slot != "" {
-		_ = os.Remove(g.slot)
-		g.slot = ""
 	}
 }
 
 // -------- RepoMutex: 1 commit naraz per repo (na hoście) --------
 
+// RepoMutex ensures at most one commit per repository at a time. Lock returns
+// an unlock function that must be called (via defer) when the commit completes.
 type RepoMutex interface {
-	Lock(ctx context.Context, repoURL string) error
-	Unlock(repoURL string)
+	Lock(ctx context.Context, repoURL string) (unlock func(), err error)
 }
 
 type repoMutex struct {
 	baseDir string
-	held    map[string]string // repoKey -> dir
 }
 
 func NewRepoMutex() RepoMutex {
 	base := filepath.Join(userHome(), ".filees", "locks", "repo")
 	_ = os.MkdirAll(base, 0o755)
-	return &repoMutex{baseDir: base, held: map[string]string{}}
+	return &repoMutex{baseDir: base}
 }
 
-func (m *repoMutex) Lock(ctx context.Context, repoURL string) error {
-	key := hash(repoURL)
-	dir := filepath.Join(m.baseDir, key)
+func (m *repoMutex) Lock(ctx context.Context, repoURL string) (func(), error) {
+	dir := filepath.Join(m.baseDir, hash(repoURL))
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
 
 	for {
 		if err := os.Mkdir(dir, 0o755); err == nil {
-			m.held[key] = dir
-			return nil
+			return func() { _ = os.Remove(dir) }, nil
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-tick.C:
 		}
-	}
-}
-
-func (m *repoMutex) Unlock(repoURL string) {
-	key := hash(repoURL)
-	if dir, ok := m.held[key]; ok {
-		_ = os.Remove(dir)
-		delete(m.held, key)
 	}
 }
 

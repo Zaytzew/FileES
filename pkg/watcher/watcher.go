@@ -393,12 +393,19 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 						if s.useMD5 {
 							if m.Size <= s.md5Cutoff && md5BytesBudget > 0 && time.Now().Before(budgetDeadline) {
 								sum, readB, herr := md5FileBudgeted(path, md5BytesBudget)
-								if herr == nil { m.MD5 = sum; md5BytesBudget -= readB; *md5Done++ } else { *md5Skipped++ }
+								if herr == nil {
+									m.MD5 = sum; md5BytesBudget -= readB; *md5Done++
+									// suppress event if content unchanged (same hash)
+									if old.MD5 == "" || m.MD5 != old.MD5 { changed = true }
+								} else {
+									*md5Skipped++; changed = true
+								}
 							} else {
-								s.enqueueBacklog(rel, m.Size, m.MtimeSec); *md5Skipped++
+								s.enqueueBacklog(rel, m.Size, m.MtimeSec); *md5Skipped++; changed = true
 							}
+						} else {
+							changed = true
 						}
-						changed = true
 					}
 				}
 				if changed { out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Modified}; *mCnt++ }
@@ -438,15 +445,20 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 	return curr
 }
 
-// tickets-only quick scan while busy; we emit events for changes under .filees/tickets/
+// tickets-only quick scan while busy; emits Added only for ticket files not yet in manifest
 func (s *Scanner) scanTicketsOnly(out chan<- Event) {
 	root := filepath.Join(s.wc, ".filees", "tickets")
+	s.mu.Lock()
+	cur := s.cur
+	s.mu.Unlock()
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil { return nil }
 		if d.IsDir() { return nil }
 		rel := s.toRelPOSIX(path)
 		if rel == "" { return nil }
-		out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Modified}
+		if _, seen := cur[rel]; !seen {
+			out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Added}
+		}
 		return nil
 	})
 }
@@ -457,17 +469,43 @@ type glob struct{ raw string }
 
 func (g glob) match(rel string, isDir bool) bool {
 	p := g.raw
-	// hard ignore indicated by leading '!'; we strip it here; semantics handled by caller
 	if len(p) > 0 && p[0] == '!' { p = p[1:] }
-	// very small glob implementation: '**' match any, '*' match segment, suffix/prefix
-	// For simplicity, use filepath.Match with POSIX slashes by converting back.
-	// We ensure patterns themselves are POSIX (loaded as-is from cfg).
-	ok, _ := filepath.Match(fromPOSIX(p), fromPOSIX(rel))
-	if ok { return true }
-	// handle '**' by naive contains check when pattern has "**/"
-	if strings.Contains(p, "**/") {
-		pp := strings.ReplaceAll(p, "**/", "")
-		return strings.Contains(rel, pp)
+	if !strings.Contains(p, "**") {
+		ok, _ := filepath.Match(fromPOSIX(p), fromPOSIX(rel))
+		return ok
+	}
+	return matchDoublestar(p, rel)
+}
+
+// matchDoublestar handles patterns containing "**".
+// "**" matches zero or more path components.
+// Examples: "**/*.blend" matches any .blend at any depth;
+// "src/**/*.blend" matches any .blend under src/.
+func matchDoublestar(pattern, rel string) bool {
+	if pattern == "**" { return true }
+
+	idx := strings.Index(pattern, "**/")
+	if idx < 0 {
+		// trailing "**" — e.g. "src/**"
+		prefix := strings.TrimSuffix(pattern, "**")
+		return strings.HasPrefix(rel, prefix)
+	}
+
+	prefix := pattern[:idx]      // e.g. "src/" or ""
+	suffix := pattern[idx+3:]    // e.g. "*.blend" or "file.txt"
+
+	if prefix != "" {
+		if !strings.HasPrefix(rel, prefix) { return false }
+		rel = rel[len(prefix):]
+	}
+
+	// match suffix against every trailing sub-path of rel
+	for {
+		ok, _ := filepath.Match(fromPOSIX(suffix), fromPOSIX(rel))
+		if ok { return true }
+		i := strings.Index(rel, "/")
+		if i < 0 { break }
+		rel = rel[i+1:]
 	}
 	return false
 }

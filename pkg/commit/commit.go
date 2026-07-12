@@ -49,6 +49,7 @@ type stageItem struct {
 	IsDir     bool
 	Op        watcher.OpType
 	FirstSeen time.Time // for Added latency
+	ver       uint64   // incremented on every in-place update
 }
 
 // Run consumes watcher events and periodically performs commits.
@@ -95,13 +96,14 @@ func (s *Service) addEvent(ev watcher.Event) {
 	case watcher.Deleted:
 		it.Op = watcher.Deleted
 	case watcher.Added:
-		if it.Op != watcher.Deleted { it.Op = watcher.Added }
+		it.Op = watcher.Added
 	case watcher.Modified:
 		if it.Op != watcher.Added && it.Op != watcher.Deleted { it.Op = watcher.Modified }
 	}
 	// refresh Abs/IsDir if needed
 	it.Abs = ev.Path
 	it.IsDir = (ev.Type == watcher.EntryDir)
+	it.ver++
 }
 
 func (s *Service) tryCommit(ctx context.Context, wc, username, password string) error {
@@ -109,6 +111,7 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	// snapshot and filter by latency & max batch
 	now := time.Now()
 	pending := make([]*stageItem, 0, len(s.staging))
+	pendingVer := make([]uint64, 0, len(s.staging))
 	for _, it := range s.staging {
 		if it.Op == watcher.Added {
 			if now.Sub(it.FirstSeen) < s.Rules.NewLatency {
@@ -116,6 +119,7 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 			}
 		}
 		pending = append(pending, it)
+		pendingVer = append(pendingVer, it.ver)
 	}
 	s.mu.Unlock()
 
@@ -165,6 +169,7 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 		}
 	}
 	delPaths = filteredDel
+	commitPaths = append(commitPaths, delPaths...)
 	// --- KONIEC FILTRA ---
 
 	// rate-limited shout
@@ -180,12 +185,14 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 
 	// gates
 	if s.HostGate != nil {
-		if err := s.HostGate.Acquire(ctx); err != nil { return err }
-		defer s.HostGate.Release()
+		release, err := s.HostGate.Acquire(ctx)
+		if err != nil { return err }
+		defer release()
 	}
 	if s.RepoMtx != nil {
-		if err := s.RepoMtx.Lock(ctx, s.RepoURL); err != nil { return err }
-		defer s.RepoMtx.Unlock(s.RepoURL)
+		unlock, err := s.RepoMtx.Lock(ctx, s.RepoURL)
+		if err != nil { return err }
+		defer unlock()
 	}
 
 	// busy flag
@@ -222,9 +229,13 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 		_ = atomicWriteString(head, rev+"\n")
 	}
 
-	// cleanup staging
+	// cleanup staging — only remove items unchanged since snapshot
 	s.mu.Lock()
-	for _, it := range pending { delete(s.staging, it.Rel) }
+	for i, it := range pending {
+		if cur, ok := s.staging[it.Rel]; ok && cur == it && cur.ver == pendingVer[i] {
+			delete(s.staging, it.Rel)
+		}
+	}
 	s.mu.Unlock()
 	return nil
 }

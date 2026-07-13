@@ -16,6 +16,7 @@ var forbiddenPkgs = []string{
 	"filees/pkg/client",
 	"filees/pkg/ipcserver",
 	"filees/pkg/errmap",
+	"filees/pkg/ipcclient",
 }
 
 func TestGUIDoesNotImportEnginePackages(t *testing.T) {

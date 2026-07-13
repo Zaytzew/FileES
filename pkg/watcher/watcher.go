@@ -721,8 +721,8 @@ func (s *Scanner) processOneBacklogItem() {
 	absPath := filepath.Join(s.wc, filepath.FromSlash(item.Rel))
 	fi, err := os.Stat(absPath)
 	if err != nil || fi.Size() != item.Size || fi.ModTime().Unix() != item.Mtime {
-		// File gone or changed since enqueue — drop stale entry
-		s.removeBacklogEntry(item.Rel)
+		// File gone or changed since enqueue — drop only the matching entry.
+		s.removeBacklogEntry(item)
 		return
 	}
 
@@ -731,6 +731,14 @@ func (s *Scanner) processOneBacklogItem() {
 	if err != nil {
 		s.lg.Warnf("backlog: MD5 failed for %s: %v", item.Rel, err)
 		return // keep in backlog; retry next tick
+	}
+
+	// Re-verify after hashing: the file may have been modified while we were reading it.
+	fi2, err := os.Stat(absPath)
+	if err != nil || fi2.Size() != item.Size || fi2.ModTime().Unix() != item.Mtime {
+		// File changed during hash — drop stale entry; next scan will re-enqueue with new state.
+		s.removeBacklogEntry(item)
+		return
 	}
 
 	// Deposit MD5 into pendingMD5; scanner applies it at next swap (no direct s.cur write).
@@ -749,11 +757,15 @@ func (s *Scanner) processOneBacklogItem() {
 	s.lg.Debugf("backlog: MD5 done %s (%.1f MiB)", item.Rel, float64(item.Size)/(1<<20))
 }
 
-// removeBacklogEntry drops the entry for rel from s.backlog and persists the change.
-func (s *Scanner) removeBacklogEntry(rel string) {
+// removeBacklogEntry drops the entry matching item.Rel+Mtime+Size from s.backlog.
+// Matching on all three fields ensures a newer entry (updated by the scanner) is never deleted.
+func (s *Scanner) removeBacklogEntry(item backlogItem) {
 	s.mu.Lock()
 	for i, b := range s.backlog {
-		if b.Rel == rel { s.backlog = append(s.backlog[:i], s.backlog[i+1:]...); break }
+		if b.Rel == item.Rel && b.Mtime == item.Mtime && b.Size == item.Size {
+			s.backlog = append(s.backlog[:i], s.backlog[i+1:]...)
+			break
+		}
 	}
 	s.mu.Unlock()
 	_ = s.saveBacklog()

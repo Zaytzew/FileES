@@ -1,153 +1,77 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"syscall"
 	"time"
 
-	"filees/pkg/config"
+	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcclient"
 )
 
 func cmdStatus(args []string) int {
-	cfgPath, _ := parseConfigFlag(args)
-	repos, err := config.Load(cfgPath)
+	_, _ = parseConfigFlag(args) // accepted but unused — status comes from daemon
+
+	cli := ipcclient.New(ipcclient.DefaultSocketPath(), "fileesctl")
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	list, err := cli.RepoList(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "hint: start the daemon with `filees daemon`\n")
 		return 1
 	}
-	if len(repos) == 0 {
+	if len(list.Repos) == 0 {
 		fmt.Println("no repositories configured")
 		return 0
 	}
-	for i := range repos {
-		printRepoStatus(&repos[i])
+
+	for _, summary := range list.Repos {
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+		status, err := cli.RepoStatus(ctx2, summary.ID)
+		cancel2()
+		if err != nil {
+			fmt.Printf("repo: %s — %v\n\n", summary.ID, err)
+			continue
+		}
+		printStatus(summary, status)
 	}
 	return 0
 }
 
-func printRepoStatus(r *config.Repo) {
-	wc := r.LocalPath
-	stateDir := filepath.Join(wc, ".filees", "state")
+func printStatus(s contract.RepoSummary, r *contract.RepoStatus) {
+	fmt.Printf("repo: %s\n", r.RepoID)
+	fmt.Printf("  url:      %s\n", s.URL)
+	fmt.Printf("  local:    %s\n", s.LocalPath)
+	fmt.Printf("  state:    %s  connectivity: %s\n", r.State, r.Connectivity)
 
-	fmt.Printf("repo: %s\n", r.ID)
-	fmt.Printf("  url:      %s\n", r.RepoURL)
-	fmt.Printf("  local:    %s\n", wc)
-
-	rev := strings.TrimSpace(readStr(filepath.Join(stateDir, "head.rev")))
-	if rev == "" {
-		fmt.Printf("  revision: —\n")
+	if r.LocalRevision == r.HeadRevision || r.HeadRevision == 0 {
+		fmt.Printf("  revision: %d\n", r.LocalRevision)
 	} else {
-		fmt.Printf("  revision: %s\n", rev)
+		fmt.Printf("  revision: %d (server: %d) — behind\n", r.LocalRevision, r.HeadRevision)
 	}
 
-	n := countCacheEntries(filepath.Join(wc, ".filees", "commit_cache", "cache.json"))
-	if n == 0 {
+	total := r.Pending.Added + r.Pending.Modified + r.Pending.Deleted
+	if total == 0 {
 		fmt.Printf("  staged:   clean\n")
 	} else {
-		fmt.Printf("  staged:   %d file(s) pending commit\n", n)
+		fmt.Printf("  staged:   %d (A:%d M:%d D:%d)\n",
+			total, r.Pending.Added, r.Pending.Modified, r.Pending.Deleted)
 	}
 
-	busyPath := filepath.Join(stateDir, "commit.busy")
-	if fi, err := os.Stat(busyPath); err == nil {
-		age := time.Since(fi.ModTime()).Round(time.Second)
-		fmt.Printf("  commit:   in progress (%s ago)\n", age)
+	if r.Conflicts > 0 {
+		fmt.Printf("  conflicts: %d unresolved\n", r.Conflicts)
 	}
 
-	pidPath := filepath.Join(stateDir, "daemon.pid")
-	if pid := readInt(pidPath); pid > 0 {
-		if processAlive(pid) {
-			fmt.Printf("  daemon:   running (pid %d)\n", pid)
-		} else {
-			fmt.Printf("  daemon:   stopped (stale pid %d)\n", pid)
-		}
-	} else {
-		fmt.Printf("  daemon:   not running\n")
+	if r.LastSyncAt != "" {
+		fmt.Printf("  last sync: %s\n", r.LastSyncAt)
 	}
 
-	if e := tailLastError(filepath.Join(wc, ".filees", "logs", "errors.jsonl")); e != "" {
-		fmt.Printf("  last err: %s\n", e)
+	if r.CurrentOperation != nil {
+		fmt.Printf("  current:  %s\n", *r.CurrentOperation)
 	}
 
 	fmt.Println()
-}
-
-// countCacheEntries returns the number of items in cache.json without loading structs.
-func countCacheEntries(cachePath string) int {
-	data, err := os.ReadFile(cachePath)
-	if err != nil {
-		return 0
-	}
-	var raw []json.RawMessage
-	if json.Unmarshal(data, &raw) != nil {
-		return 0
-	}
-	return len(raw)
-}
-
-type errLineShort struct {
-	TS       string `json:"ts"`
-	Code     string `json:"code"`
-	Severity string `json:"severity"`
-	Msg      string `json:"msg"`
-}
-
-// tailLastError returns a one-line summary of the last error log entry.
-func tailLastError(logPath string) string {
-	f, err := os.Open(logPath)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	var last string
-	for sc.Scan() {
-		if t := sc.Text(); t != "" {
-			last = t
-		}
-	}
-	if last == "" {
-		return ""
-	}
-	var e errLineShort
-	if json.Unmarshal([]byte(last), &e) != nil {
-		return last
-	}
-	ts := e.TS
-	if len(ts) > 19 { ts = ts[:19] }
-	return fmt.Sprintf("[%s] %s %s %s", ts, e.Severity, e.Code, e.Msg)
-}
-
-func readStr(path string) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-func readInt(path string) int {
-	s := strings.TrimSpace(readStr(path))
-	if s == "" {
-		return 0
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-func processAlive(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil || err == syscall.EPERM
 }

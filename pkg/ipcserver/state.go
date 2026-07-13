@@ -2,7 +2,9 @@ package ipcserver
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,6 +30,10 @@ type RepoState struct {
 	conflicts    int
 	lastSyncAt   time.Time
 	currentOp    *string
+
+	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
+	lockFn   func(ctx context.Context, paths []string) (string, error)
+	unlockFn func(ctx context.Context, paths []string) (string, error)
 }
 
 // SetState transitions the repo to a new state constant (contract.State*).
@@ -70,6 +76,40 @@ func (rs *RepoState) SetCurrentOp(op *string) {
 	rs.mu.Lock()
 	rs.currentOp = op
 	rs.mu.Unlock()
+}
+
+// SetLockFuncs wires the SVN lock and unlock operations into this RepoState.
+// Both funcs receive absolute file paths; they handle WC-relative conversion internally.
+func (rs *RepoState) SetLockFuncs(
+	lockFn func(ctx context.Context, paths []string) (string, error),
+	unlockFn func(ctx context.Context, paths []string) (string, error),
+) {
+	rs.mu.Lock()
+	rs.lockFn = lockFn
+	rs.unlockFn = unlockFn
+	rs.mu.Unlock()
+}
+
+// Lock calls svn lock for the given absolute paths via the wired lockFn.
+func (rs *RepoState) Lock(ctx context.Context, paths []string) (string, error) {
+	rs.mu.RLock()
+	fn := rs.lockFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return "", fmt.Errorf("lock not available for repo %s", rs.id)
+	}
+	return fn(ctx, paths)
+}
+
+// Unlock calls svn unlock for the given absolute paths via the wired unlockFn.
+func (rs *RepoState) Unlock(ctx context.Context, paths []string) (string, error) {
+	rs.mu.RLock()
+	fn := rs.unlockFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return "", fmt.Errorf("unlock not available for repo %s", rs.id)
+	}
+	return fn(ctx, paths)
 }
 
 // Snapshot builds a contract.RepoStatus from live state and on-disk files.

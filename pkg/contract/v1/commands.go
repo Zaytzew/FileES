@@ -15,6 +15,8 @@ const (
 	CmdRepoResume  = "repo.resume"   // resume after pause
 	CmdRepoSyncNow = "repo.sync_now" // request immediate poll/update
 	CmdRepoPublish = "repo.publish"  // request immediate commit of pending changes
+	CmdRepoLock    = "repo.lock"     // acquire SVN lock on one or more paths
+	CmdRepoUnlock  = "repo.unlock"   // release SVN lock on one or more paths
 
 	// Conflicts and user decisions
 	CmdConflictList   = "conflict.list"   // list pending conflicts / interactions
@@ -148,4 +150,15 @@ type ErrorListResult struct {
 // ErrorGetPayload is the payload for CmdErrorGet.
 type ErrorGetPayload struct {
 	ID string `json:"id"`
+}
+
+// RepoLockPayload is the payload for CmdRepoLock and CmdRepoUnlock.
+// Paths must be absolute filesystem paths; the daemon resolves them relative to the WC.
+type RepoLockPayload struct {
+	Paths []string `json:"paths"`
+}
+
+// LockResult is the result for CmdRepoLock and CmdRepoUnlock.
+type LockResult struct {
+	Output string `json:"output"` // raw SVN output for display
 }

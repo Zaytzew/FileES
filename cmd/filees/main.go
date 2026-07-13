@@ -113,6 +113,14 @@ func runDaemon() {
 
 		// Register repo in IPC server; rs is updated by daemon goroutines
 		rs := ipc.RegisterRepo(r.ID, r.RepoURL, wc)
+		rs.SetLockFuncs(
+			func(ctx context.Context, paths []string) (string, error) {
+				return cli.Lock(ctx, wc, paths, r.Username, r.Password)
+			},
+			func(ctx context.Context, paths []string) (string, error) {
+				return cli.Unlock(ctx, wc, paths, r.Username, r.Password)
+			},
+		)
 
 		if _, err := os.Stat(filepath.Join(wc, ".svn")); err == nil {
 			if out, err := cli.Cleanup(ctx, wc, r.Username, r.Password); err != nil {

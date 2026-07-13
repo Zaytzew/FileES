@@ -1,8 +1,10 @@
 package ipcserver
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
+	"time"
 
 	contract "filees/pkg/contract/v1"
 )
@@ -21,6 +23,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoStatus(req)
 	case contract.CmdErrorList:
 		return s.handleErrorList(req)
+	case contract.CmdRepoLock:
+		return s.handleRepoLockUnlock(req, true)
+	case contract.CmdRepoUnlock:
+		return s.handleRepoLockUnlock(req, false)
 	default:
 		return contract.ErrResponse(req.RequestID,
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
@@ -110,6 +116,40 @@ func (s *Server) handleErrorList(req contract.Request) contract.Response {
 	}
 
 	return contract.OKResponse(req.RequestID, contract.ErrorListResult{Errors: records})
+}
+
+// handleRepoLockUnlock implements repo.lock and repo.unlock.
+func (s *Server) handleRepoLockUnlock(req contract.Request, lock bool) contract.Response {
+	if req.RepoID == "" {
+		return protoErr(req.RequestID, "proto.missing_repo_id", nil)
+	}
+	rs := s.repoByID(req.RepoID)
+	if rs == nil {
+		return protoErr(req.RequestID, "proto.repo_not_found",
+			map[string]string{"repo_id": req.RepoID})
+	}
+	var pl contract.RepoLockPayload
+	if err := contract.DecodePayload(req.Payload, &pl); err != nil || len(pl.Paths) == 0 {
+		return protoErr(req.RequestID, "proto.invalid_payload",
+			map[string]string{"detail": "paths must be a non-empty array"})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var out string
+	var err error
+	if lock {
+		out, err = rs.Lock(ctx, pl.Paths)
+	} else {
+		out, err = rs.Unlock(ctx, pl.Paths)
+	}
+	if err != nil {
+		return contract.ErrResponse(req.RequestID,
+			"LOCK-2001", "ERROR", "REQUIRE_ACTION", "lock.operation_failed",
+			map[string]string{"detail": err.Error()})
+	}
+	return contract.OKResponse(req.RequestID, contract.LockResult{Output: out})
 }
 
 // jsonErrLine is the on-disk format written by errmap.Sink.

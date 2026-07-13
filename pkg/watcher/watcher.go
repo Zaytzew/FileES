@@ -457,6 +457,7 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 				}
 				if changed { out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Modified}; *mCnt++ }
 				delete(deleted, rel)
+				delete(s.missingSince, rel) // file is present — reset debounce timer
 			}
 		} else {
 			// baselining: pre-fill MD5 under budget

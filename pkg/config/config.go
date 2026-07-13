@@ -88,8 +88,11 @@ func Load(path string) ([]Repo, error) {
 			return nil, fmt.Errorf("config[%d]: brak pola 'local_path'", i)
 		}
 
-		watch, err := parseDurationNonEmpty(r.WatchInterval)
-		if err != nil { return nil, fmt.Errorf("config[%d].watch_interval: %w", i, err) }
+		var watch time.Duration
+		if s := strings.TrimSpace(r.WatchInterval); s != "" {
+			watch, err = time.ParseDuration(s)
+			if err != nil { return nil, fmt.Errorf("config[%d].watch_interval: %w", i, err) }
+		}
 		commit, err := parseDurationNonEmpty(r.CommitInterval)
 		if err != nil { return nil, fmt.Errorf("config[%d].commit_interval: %w", i, err) }
 

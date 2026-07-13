@@ -71,7 +71,7 @@ type HelloResult struct {
 
 // SystemStatusResult is the result for CmdSystemStatus.
 type SystemStatusResult struct {
-	State     string `json:"state"`      // "running" | "stopping"
+	State     string `json:"state"` // "running" | "stopping"
 	UptimeSec int64  `json:"uptime_sec"`
 	Repos     int    `json:"repos"`
 }
@@ -148,7 +148,8 @@ type ErrorRecord struct {
 	Details  string `json:"details,omitempty"`
 }
 
-// ErrorListResult is the result for CmdErrorList.
+// ErrorListResult is the result for CmdErrorList. Errors are ordered globally
+// by timestamp from oldest to newest, including when multiple repos are queried.
 type ErrorListResult struct {
 	Errors []ErrorRecord `json:"errors"`
 }

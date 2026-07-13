@@ -122,7 +122,11 @@ func TestRendererCancelsListenersFromPreviousGeneration(t *testing.T) {
 	renderer.Render(MenuModel{Items: []MenuItemModel{
 		actionItem("new", "New", "", Intent{Kind: IntentQuit}),
 	}})
-	old.clicks <- struct{}{}
+	// Make both the stale click and cancelled context ready. Cancellation via
+	// select alone is nondeterministic; the generation fence must always win.
+	for i := 0; i < cap(old.clicks); i++ {
+		old.clicks <- struct{}{}
+	}
 	select {
 	case intent := <-intents:
 		t.Fatalf("old menu emitted intent after rebuild: %#v", intent)

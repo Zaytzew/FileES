@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -112,11 +113,33 @@ func (s *Server) handleErrorList(req contract.Request) contract.Response {
 			}
 		}
 	}
-	if len(records) > limit {
-		records = records[len(records)-limit:]
-	}
+	records = sortAndLimitErrors(records, limit)
 
 	return contract.OKResponse(req.RequestID, contract.ErrorListResult{Errors: records})
+}
+
+// sortAndLimitErrors defines error.list ordering: oldest first across all
+// repositories. Ties are deterministic so map iteration order cannot leak into
+// the IPC response. Consumers that present newest-first may safely reverse it.
+func sortAndLimitErrors(records []contract.ErrorRecord, limit int) []contract.ErrorRecord {
+	sort.SliceStable(records, func(i, j int) bool {
+		left, leftErr := time.Parse(time.RFC3339Nano, records[i].TS)
+		right, rightErr := time.Parse(time.RFC3339Nano, records[j].TS)
+		if leftErr == nil && rightErr == nil && !left.Equal(right) {
+			return left.Before(right)
+		}
+		if records[i].TS != records[j].TS {
+			return records[i].TS < records[j].TS
+		}
+		if records[i].RepoID != records[j].RepoID {
+			return records[i].RepoID < records[j].RepoID
+		}
+		return records[i].ID < records[j].ID
+	})
+	if len(records) > limit {
+		return records[len(records)-limit:]
+	}
+	return records
 }
 
 // handleRepoLockUnlock implements repo.lock and repo.unlock.

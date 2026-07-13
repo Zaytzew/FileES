@@ -14,6 +14,7 @@ type Renderer struct {
 
 	mu           sync.Mutex
 	cancelRender context.CancelFunc
+	generation   uint64
 }
 
 func NewRenderer(backend Backend, icons IconSet, intents chan<- Intent) *Renderer {
@@ -26,6 +27,8 @@ func (r *Renderer) Render(model MenuModel) {
 	if r.cancelRender != nil {
 		r.cancelRender()
 	}
+	r.generation++
+	generation := r.generation
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancelRender = cancel
 
@@ -36,12 +39,14 @@ func (r *Renderer) Render(model MenuModel) {
 	r.backend.SetTooltip(model.Tooltip)
 	r.backend.ResetMenu()
 	for _, item := range model.Items {
-		r.addItem(ctx, nil, item)
+		r.addItem(ctx, generation, nil, item)
 	}
 }
 
 func (r *Renderer) Close() {
 	r.mu.Lock()
+	// Invalidate listeners even when a click races with cancellation.
+	r.generation++
 	if r.cancelRender != nil {
 		r.cancelRender()
 		r.cancelRender = nil
@@ -49,7 +54,7 @@ func (r *Renderer) Close() {
 	r.mu.Unlock()
 }
 
-func (r *Renderer) addItem(ctx context.Context, parent ItemHandle, model MenuItemModel) {
+func (r *Renderer) addItem(ctx context.Context, generation uint64, parent ItemHandle, model MenuItemModel) {
 	if model.Separator {
 		if parent == nil {
 			r.backend.AddSeparator()
@@ -69,26 +74,37 @@ func (r *Renderer) addItem(ctx context.Context, parent ItemHandle, model MenuIte
 		item.Disable()
 	}
 	for _, child := range model.Children {
-		r.addItem(ctx, item, child)
+		r.addItem(ctx, generation, item, child)
 	}
 	if model.Intent != nil && model.Enabled {
 		intent := *model.Intent
-		go r.forwardClicks(ctx, item.Clicked(), intent)
+		go r.forwardClicks(ctx, generation, item.Clicked(), intent)
 	}
 }
 
-func (r *Renderer) forwardClicks(ctx context.Context, clicks <-chan struct{}, intent Intent) {
+func (r *Renderer) forwardClicks(ctx context.Context, generation uint64, clicks <-chan struct{}, intent Intent) {
 	for {
 		select {
 		case _, ok := <-clicks:
 			if !ok {
 				return
 			}
-			select {
-			case r.intents <- intent:
-			case <-ctx.Done():
+			// Cancellation alone is insufficient when clicks and ctx.Done are
+			// ready together: select may choose either. The generation check is
+			// the authoritative stale-menu fence.
+			r.mu.Lock()
+			if ctx.Err() != nil || r.generation != generation {
+				r.mu.Unlock()
 				return
 			}
+			// Keep the generation check and enqueue atomic with respect to
+			// Render/Close. Delivery is deliberately non-blocking: a stalled
+			// consumer must not freeze menu rebuild or application shutdown.
+			select {
+			case r.intents <- intent:
+			default:
+			}
+			r.mu.Unlock()
 		case <-ctx.Done():
 			return
 		}

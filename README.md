@@ -213,6 +213,8 @@ Etap 3A jest ukończony: `internal/gui/platform` definiuje czyste interfejsy sys
 
 Etap 3B jest ukończony: adapter Linux zapewnia `xdg-open`, wielokrotny wybór przez Zenity/KDialog, grupowane i limitowane powiadomienia `notify-send` oraz atomowy autostart XDG z obsługą `Hidden=true`. Wywołania desktopowe są wstrzyknięte i testowane bez otwierania rzeczywistych okien.
 
+Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, picker PowerShell/WinForms, `ToastGeneric` i autostart HKCU. Procesy oraz rejestr są wstrzyknięte; quoting korzysta z reguł Windows, a powiadomienia wymagają własnego AUMID FileES zarejestrowanego przez pakiet Etapu 4. Natywny odbiór pozostaje częścią checklisty Windows.
+
 ### Zakres pierwszego wydania
 
 Pierwszy pionowy przekrój uznajemy za gotowy, gdy:

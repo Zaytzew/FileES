@@ -4,6 +4,7 @@ package platform
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -12,16 +13,13 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
 const (
 	autostartRegKey             = `Software\Microsoft\Windows\CurrentVersion\Run`
 	defaultWindowsNotifInterval = 2 * time.Second
-
-	// powershellAUMID is a built-in AUMID that is always registered on Windows.
-	// It allows showing toast notifications without a Start Menu entry for filees-gui.
-	powershellAUMID = `{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe`
 )
 
 // WindowsBackend implements the desktop boundary for Windows 10+. It delegates
@@ -29,7 +27,9 @@ const (
 // to avoid CGO and external tooling dependencies.
 type WindowsBackend struct {
 	runner        windowsCommandRunner
+	autostart     windowsAutostartStore
 	now           func() time.Time
+	aumid         string
 	notifInterval time.Duration
 	notifMu       sync.Mutex
 	notifGroups   map[string]windowsNotifGroup
@@ -40,11 +40,26 @@ type windowsNotifGroup struct {
 }
 
 type windowsCommandRunner interface {
+	LookPath(name string) (string, error)
+	Start(ctx context.Context, name string, args ...string) error
 	Run(ctx context.Context, name string, args ...string) error
 	Output(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
 type osWindowsCommandRunner struct{}
+
+func (osWindowsCommandRunner) LookPath(name string) (string, error) {
+	return exec.LookPath(name)
+}
+
+func (osWindowsCommandRunner) Start(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
+}
 
 func (osWindowsCommandRunner) Run(ctx context.Context, name string, args ...string) error {
 	return exec.CommandContext(ctx, name, args...).Run()
@@ -54,14 +69,24 @@ func (osWindowsCommandRunner) Output(ctx context.Context, name string, args ...s
 	return exec.CommandContext(ctx, name, args...).Output()
 }
 
-func NewWindowsBackend() *WindowsBackend {
-	return newWindowsBackend(osWindowsCommandRunner{}, time.Now)
+// WindowsOptions contains integration identity supplied by the composition
+// root. AUMID must match the FileES Start Menu shortcut installed by packaging.
+// Without it notifications report FailureUnavailable instead of impersonating
+// another application.
+type WindowsOptions struct {
+	AUMID string
 }
 
-func newWindowsBackend(runner windowsCommandRunner, now func() time.Time) *WindowsBackend {
+func NewWindowsBackend(options WindowsOptions) *WindowsBackend {
+	return newWindowsBackend(osWindowsCommandRunner{}, registryAutostartStore{}, time.Now, options.AUMID)
+}
+
+func newWindowsBackend(runner windowsCommandRunner, autostart windowsAutostartStore, now func() time.Time, aumid string) *WindowsBackend {
 	return &WindowsBackend{
 		runner:        runner,
+		autostart:     autostart,
 		now:           now,
+		aumid:         strings.TrimSpace(aumid),
 		notifInterval: defaultWindowsNotifInterval,
 		notifGroups:   make(map[string]windowsNotifGroup),
 	}
@@ -74,9 +99,16 @@ func (b *WindowsBackend) OpenFolder(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// explorer.exe opens the folder in an existing process and always exits with 1;
-	// the error is intentionally ignored.
-	_ = b.runner.Run(ctx, "explorer.exe", filepath.Clean(path))
+	command, err := b.runner.LookPath("explorer.exe")
+	if err != nil {
+		return NewUnavailable("open_folder", err)
+	}
+	if err := b.runner.Start(ctx, command, filepath.Clean(path)); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return NewOperationalFailure("open_folder", err)
+	}
 	return nil
 }
 
@@ -92,8 +124,12 @@ func (b *WindowsBackend) PickFiles(ctx context.Context, request PickFilesRequest
 		return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("initial directory: %w", err))
 	}
 
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return PickFilesResult{}, NewUnavailable("file_picker", err)
+	}
 	script := buildPickerScript(request, initialDir)
-	output, err := b.runner.Output(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return PickFilesResult{}, ctxErr
@@ -142,6 +178,16 @@ func (b *WindowsBackend) Notify(ctx context.Context, notification Notification) 
 	if strings.TrimSpace(notification.Title) == "" {
 		return NewOperationalFailure("notifications", errors.New("title is required"))
 	}
+	if b.aumid == "" {
+		return NewUnavailable("notifications", errors.New("FileES AUMID is not configured"))
+	}
+	if err := validateWindowsAUMID(b.aumid); err != nil {
+		return NewOperationalFailure("notifications", err)
+	}
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return NewUnavailable("notifications", err)
+	}
 	groupKey := notification.Group
 	if groupKey == "" {
 		groupKey = notification.ID
@@ -149,8 +195,8 @@ func (b *WindowsBackend) Notify(ctx context.Context, notification Notification) 
 	if !b.reserveNotification(groupKey) {
 		return nil
 	}
-	script := buildToastScript(notification, groupKey)
-	if err := b.runner.Run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script); err != nil {
+	script := buildToastScript(notification, windowsToastTag(groupKey), b.aumid)
+	if err := b.runner.Run(ctx, command, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script); err != nil {
 		b.releaseNotification(groupKey)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
@@ -161,6 +207,9 @@ func (b *WindowsBackend) Notify(ctx context.Context, notification Notification) 
 }
 
 func (b *WindowsBackend) reserveNotification(key string) bool {
+	if key == "" {
+		return true
+	}
 	b.notifMu.Lock()
 	defer b.notifMu.Unlock()
 	now := b.now()
@@ -174,6 +223,9 @@ func (b *WindowsBackend) reserveNotification(key string) bool {
 }
 
 func (b *WindowsBackend) releaseNotification(key string) {
+	if key == "" {
+		return
+	}
 	b.notifMu.Lock()
 	b.notifGroups[key] = windowsNotifGroup{}
 	b.notifMu.Unlock()
@@ -181,17 +233,38 @@ func (b *WindowsBackend) releaseNotification(key string) {
 
 // buildToastScript returns a PowerShell one-liner that shows a Windows.UI.Notifications
 // toast. The Tag field enables notification replacement for repeated events in the same group.
-func buildToastScript(n Notification, tag string) string {
+func buildToastScript(n Notification, tag, aumid string) string {
 	var sb strings.Builder
 	sb.WriteString("[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]|Out-Null;")
-	sb.WriteString("$x=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);")
+	sb.WriteString("$x=New-Object Windows.Data.Xml.Dom.XmlDocument;")
+	sb.WriteString("$x.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text></text><text></text></binding></visual></toast>');")
 	sb.WriteString("$t=$x.GetElementsByTagName('text');")
 	sb.WriteString("$t[0].InnerText=" + psString(n.Title) + ";")
 	sb.WriteString("$t[1].InnerText=" + psString(n.Body) + ";")
 	sb.WriteString("$toast=New-Object Windows.UI.Notifications.ToastNotification($x);")
-	sb.WriteString("$toast.Tag=" + psString(tag) + ";")
-	sb.WriteString("[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(" + psString(powershellAUMID) + ").Show($toast)")
+	if tag != "" {
+		sb.WriteString("$toast.Tag=" + psString(tag) + ";")
+	}
+	sb.WriteString("[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(" + psString(aumid) + ").Show($toast)")
 	return sb.String()
+}
+
+func windowsToastTag(group string) string {
+	if group == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(group))
+	return fmt.Sprintf("%x", sum[:8])
+}
+
+func validateWindowsAUMID(aumid string) error {
+	if len(aumid) > 128 {
+		return errors.New("AUMID exceeds 128 characters")
+	}
+	if strings.ContainsAny(aumid, " \t\r\n") {
+		return errors.New("AUMID contains whitespace")
+	}
+	return nil
 }
 
 // psString returns value as a PowerShell single-quoted string literal.
@@ -206,17 +279,12 @@ func (b *WindowsBackend) AutostartStatus(ctx context.Context, spec AutostartSpec
 	if err := validateAutostartID(spec.ID); err != nil {
 		return AutostartState{}, NewOperationalFailure("autostart", err)
 	}
-	k, err := registry.OpenKey(registry.CURRENT_USER, autostartRegKey, registry.QUERY_VALUE)
+	enabled, err := b.autostart.Status(spec.ID)
 	if err != nil {
 		return AutostartState{}, NewOperationalFailure("autostart", err)
 	}
-	defer k.Close()
-	_, _, err = k.GetStringValue(spec.ID)
-	if errors.Is(err, registry.ErrNotExist) {
+	if !enabled {
 		return AutostartState{Source: autostartRegKey}, nil
-	}
-	if err != nil {
-		return AutostartState{}, NewOperationalFailure("autostart", err)
 	}
 	return AutostartState{Enabled: true, Source: autostartRegKey}, nil
 }
@@ -228,13 +296,8 @@ func (b *WindowsBackend) SetAutostart(ctx context.Context, spec AutostartSpec, e
 	if err := validateAutostartID(spec.ID); err != nil {
 		return NewOperationalFailure("autostart", err)
 	}
-	k, err := registry.OpenKey(registry.CURRENT_USER, autostartRegKey, registry.SET_VALUE)
-	if err != nil {
-		return NewOperationalFailure("autostart", err)
-	}
-	defer k.Close()
 	if !enabled {
-		if err := k.DeleteValue(spec.ID); err != nil && !errors.Is(err, registry.ErrNotExist) {
+		if err := b.autostart.Delete(spec.ID); err != nil {
 			return NewOperationalFailure("autostart", err)
 		}
 		return nil
@@ -246,27 +309,64 @@ func (b *WindowsBackend) SetAutostart(ctx context.Context, spec AutostartSpec, e
 		return NewOperationalFailure("autostart", fmt.Errorf("executable: %w", err))
 	}
 	execLine := buildWindowsExecLine(spec)
-	if err := k.SetStringValue(spec.ID, execLine); err != nil {
+	if err := b.autostart.Set(spec.ID, execLine); err != nil {
 		return NewOperationalFailure("autostart", err)
 	}
 	return nil
 }
 
 func buildWindowsExecLine(spec AutostartSpec) string {
-	parts := make([]string, 0, 1+len(spec.Args))
-	parts = append(parts, windowsQuoteArg(filepath.Clean(spec.Executable)))
-	for _, arg := range spec.Args {
-		parts = append(parts, windowsQuoteArg(arg))
-	}
-	return strings.Join(parts, " ")
+	args := append([]string{filepath.Clean(spec.Executable)}, spec.Args...)
+	return windows.ComposeCommandLine(args)
 }
 
-// windowsQuoteArg quotes a command-line argument following CreateProcess conventions.
-func windowsQuoteArg(s string) string {
-	if !strings.ContainsAny(s, " \t\"") {
-		return s
+type windowsAutostartStore interface {
+	Status(name string) (bool, error)
+	Set(name, value string) error
+	Delete(name string) error
+}
+
+type registryAutostartStore struct{}
+
+func (registryAutostartStore) Status(name string) (bool, error) {
+	key, err := registry.OpenKey(registry.CURRENT_USER, autostartRegKey, registry.QUERY_VALUE)
+	if errors.Is(err, registry.ErrNotExist) {
+		return false, nil
 	}
-	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
+	if err != nil {
+		return false, err
+	}
+	defer key.Close()
+	_, _, err = key.GetStringValue(name)
+	if errors.Is(err, registry.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (registryAutostartStore) Set(name, value string) error {
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, autostartRegKey, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer key.Close()
+	return key.SetStringValue(name, value)
+}
+
+func (registryAutostartStore) Delete(name string) error {
+	key, err := registry.OpenKey(registry.CURRENT_USER, autostartRegKey, registry.SET_VALUE)
+	if errors.Is(err, registry.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer key.Close()
+	err = key.DeleteValue(name)
+	if errors.Is(err, registry.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 var _ Backend = (*WindowsBackend)(nil)

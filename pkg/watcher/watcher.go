@@ -311,20 +311,12 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		// write tmp
 		_ = atomicWriteJSON(tmpPath, toDiskList(mp))
 
-		// promote?
-		if s.exists(filepath.Join(s.wc, ".filees", "state", "baseline.ok")) {
-			// require manifest.tmp
-			if s.exists(tmpPath) {
-				// mv tmp -> manifest.json
-				_ = os.MkdirAll(filepath.Dir(s.statePath), 0o755)
-				_ = os.Rename(tmpPath, s.statePath)
-				_ = os.Remove(filepath.Join(s.wc, ".filees", "state", "baseline.ok"))
-				// load into RAM and switch mode
-				_ = s.LoadState(s.statePath)
-				s.mode = modeActive
-				s.lg.Infof("PROMOTE baseline → active")
-			}
-			
+		// auto-promote: baseline is complete after the first successful scan
+		_ = os.MkdirAll(filepath.Dir(s.statePath), 0o755)
+		if err := os.Rename(tmpPath, s.statePath); err == nil {
+			_ = s.LoadState(s.statePath)
+			s.mode = modeActive
+			s.lg.Infof("baseline complete — switching to active mode (%d entries)", len(mp))
 		}
 	} else { // ACTIVE
 		if busy {
@@ -440,9 +432,7 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 				newFiles = append(newFiles, pendingAdd{pathAbs(path), rel, isDir, m})
 			} else {
 				changed := false
-				if isDir {
-					changed = false // mtime-only dir changes ignored
-				} else {
+				if !isDir {
 					if m.Size != old.Size || m.MtimeSec != old.MtimeSec {
 						if s.useMD5 {
 							if m.Size <= s.md5Cutoff && md5BytesBudget > 0 && time.Now().Before(budgetDeadline) {
@@ -460,7 +450,10 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 						} else {
 							changed = true
 						}
+					} else {
+						m.MD5 = old.MD5 // unchanged — preserve hash from previous scan
 					}
+					curr[rel] = m // update curr with any newly computed or preserved MD5
 				}
 				if changed { out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Modified}; *mCnt++ }
 				delete(deleted, rel)
@@ -509,11 +502,18 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 		now := time.Now()
 		for rel, old := range deleted {
 			first, seen := s.missingSince[rel]
-			if !seen { s.missingSince[rel] = now; continue }
+			if !seen {
+				s.missingSince[rel] = now
+				curr[rel] = old // keep in manifest — debounce just started
+				continue
+			}
 			if now.Sub(first) >= s.debounceD {
 				out <- Event{Path: filepath.Join(s.wc, fromPOSIX(rel)), Rel: rel, Type: pickType(old.IsDir), Op: Deleted}
 				*dCnt++
 				delete(s.missingSince, rel)
+				// don't add to curr — file is confirmed gone
+			} else {
+				curr[rel] = old // still in debounce — keep in manifest so next scan checks again
 			}
 		}
 	} else {

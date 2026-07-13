@@ -171,6 +171,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 		case <-ticker.C:
 			if s.isOfflineBackoff() {
 				lg.Debugf("offline: skipping commit tick (backoff active)")
+				s.saveCache()
 				continue
 			}
 			if err := s.tryCommit(ctx, wc, username, password); err != nil {
@@ -275,20 +276,23 @@ func (s *Service) addEvent(ev watcher.Event) {
 	it.ver++
 }
 
+type pendingEntry struct {
+	item *stageItem
+	ver  uint64
+}
+
 func (s *Service) tryCommit(ctx context.Context, wc, username, password string) error {
 	s.mu.Lock()
 	// snapshot and filter by latency & max batch
 	now := time.Now()
-	pending := make([]*stageItem, 0, len(s.staging))
-	pendingVer := make([]uint64, 0, len(s.staging))
+	pending := make([]pendingEntry, 0, len(s.staging))
 	for _, it := range s.staging {
 		if it.Op == watcher.Added {
 			if now.Sub(it.FirstSeen) < s.Rules.NewLatency {
 				continue
 			}
 		}
-		pending = append(pending, it)
-		pendingVer = append(pendingVer, it.ver)
+		pending = append(pending, pendingEntry{it, it.ver})
 	}
 	s.mu.Unlock()
 
@@ -298,8 +302,8 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	if len(s.Rules.SizeTiers) > 0 {
 		var totalBytes int64
 		for _, it := range pending {
-			if it.Op != watcher.Deleted {
-				if fi, err := os.Stat(it.Abs); err == nil {
+			if it.item.Op != watcher.Deleted {
+				if fi, err := os.Stat(it.item.Abs); err == nil {
 					totalBytes += fi.Size()
 				}
 			}
@@ -314,24 +318,24 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	}
 
 	// sort for stable order; cut to MaxBatchFiles
-	sort.Slice(pending, func(i, j int) bool { return pending[i].Rel < pending[j].Rel })
+	sort.Slice(pending, func(i, j int) bool { return pending[i].item.Rel < pending[j].item.Rel })
 	if len(pending) > s.Rules.MaxBatchFiles { pending = pending[:s.Rules.MaxBatchFiles] }
 
 	// wstępne listy
 	var addPaths, delPaths, commitPaths []string
 	var renamedItems []*stageItem
 	for _, it := range pending {
-		switch it.Op {
+		switch it.item.Op {
 		case watcher.Added:
-			addPaths = append(addPaths, it.Rel)
-			commitPaths = append(commitPaths, it.Rel)
+			addPaths = append(addPaths, it.item.Rel)
+			commitPaths = append(commitPaths, it.item.Rel)
 		case watcher.Modified:
-			commitPaths = append(commitPaths, it.Rel)
+			commitPaths = append(commitPaths, it.item.Rel)
 		case watcher.Deleted:
-			delPaths = append(delPaths, it.Rel)
+			delPaths = append(delPaths, it.item.Rel)
 		case watcher.Renamed:
-			renamedItems = append(renamedItems, it)
-			commitPaths = append(commitPaths, it.OldRel, it.Rel)
+			renamedItems = append(renamedItems, it.item)
+			commitPaths = append(commitPaths, it.item.OldRel, it.item.Rel)
 		}
 	}
 
@@ -452,9 +456,9 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 
 	// cleanup staging — only remove items unchanged since snapshot
 	s.mu.Lock()
-	for i, it := range pending {
-		if cur, ok := s.staging[it.Rel]; ok && cur == it && cur.ver == pendingVer[i] {
-			delete(s.staging, it.Rel)
+	for _, pe := range pending {
+		if cur, ok := s.staging[pe.item.Rel]; ok && cur == pe.item && cur.ver == pe.ver {
+			delete(s.staging, pe.item.Rel)
 		}
 	}
 	s.mu.Unlock()

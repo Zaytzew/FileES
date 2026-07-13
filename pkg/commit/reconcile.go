@@ -71,12 +71,14 @@ func (s *Service) reconcile(ctx context.Context, wc, username, password string, 
 		}
 
 		if _, err := os.Stat(src); err != nil {
-			s.Logger.Warnf("reconcile: cannot find local copy for %s — resolving without save", rel)
-		} else {
-			if err := saveConflictCopy(src, rel, kolizjeBase, ts); err != nil {
-				s.Logger.Warnf("reconcile: save %s: %v", rel, err)
-				// non-fatal: still attempt to resolve
-			}
+			// Can't find local copy — leave conflict unresolved so the user can act.
+			s.Logger.Warnf("reconcile: cannot find local copy for %s — leaving conflict unresolved", rel)
+			continue
+		}
+		if err := saveConflictCopy(src, rel, kolizjeBase, ts); err != nil {
+			// Save failed — do NOT resolve; preserve local copy by leaving the conflict in WC.
+			s.Logger.Warnf("reconcile: save %s failed (%v) — leaving conflict unresolved", rel, err)
+			continue
 		}
 
 		out, err := s.Cli.Resolve(ctx, wc, []string{rel}, "theirs-full", username, password)

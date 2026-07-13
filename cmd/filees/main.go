@@ -103,7 +103,8 @@ func main() {
 		// Watcher options per canon
 		win := r.CommitInterval
 		if win <= 0 { win = 30 * time.Second }
-		scanPeriod := win / 2
+		scanPeriod := r.WatchInterval
+		if scanPeriod <= 0 { scanPeriod = win / 2 }
 		wopts := watcher.Options{
 			WC:              wc,
 			StatePath:       manifest,

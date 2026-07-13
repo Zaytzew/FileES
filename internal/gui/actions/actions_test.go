@@ -51,9 +51,9 @@ func repo(id, path string) app.RepoViewModel {
 
 // fakeLockUnlocker records calls and signals via channels.
 type fakeLockUnlocker struct {
-	lockCh   chan lockCall
-	unlockCh chan lockCall
-	lockErr  error
+	lockCh    chan lockCall
+	unlockCh  chan lockCall
+	lockErr   error
 	unlockErr error
 }
 
@@ -349,6 +349,34 @@ func TestControllerLockCapabilityGatingPreventsPickerAndDaemon(t *testing.T) {
 	assertNotReceived(t, locker.lockCh, "Lock must not be called without lock capability")
 }
 
+func TestControllerLockStaleStatePreventsPickerAndDaemon(t *testing.T) {
+	locker := newFakeLocker()
+	pickerCalled := make(chan struct{}, 1)
+	fake := &platformtest.Fake{
+		PickFilesFunc: func(_ context.Context, _ platform.PickFilesRequest) (platform.PickFilesResult, error) {
+			pickerCalled <- struct{}{}
+			return platform.PickFilesResult{Cancelled: true}, nil
+		},
+	}
+	vm := &vmStore{}
+	stale := vmWithLock(repo("repo1", "/wc/repo1"))
+	stale.Stale = true
+	vm.Store(stale)
+
+	intents, cancel := setup(actions.Config{
+		ViewModel: vm.Load,
+		Opener:    fake,
+		Picker:    fake,
+		Notifier:  fake,
+		Locker:    locker,
+	})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentLock, RepoID: "repo1"})
+	assertNotReceived(t, pickerCalled, "picker must not be called for stale state")
+	assertNotReceived(t, locker.lockCh, "Lock must not be called for stale state")
+}
+
 func TestControllerLockCapabilityRevokedWhilePickerOpen(t *testing.T) {
 	locker := newFakeLocker()
 	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/repo1/file.dwg"}})
@@ -380,6 +408,62 @@ func TestControllerLockCapabilityRevokedWhilePickerOpen(t *testing.T) {
 	assertNotReceived(t, locker.lockCh, "Lock must not be called after capability revoked")
 }
 
+func TestControllerLockRepoPathChangedWhilePickerOpen(t *testing.T) {
+	locker := newFakeLocker()
+	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/repo1/file.dwg"}})
+	fake := &platformtest.Fake{}
+	vm := &vmStore{}
+	vm.Store(vmWithLock(repo("repo1", "/wc/repo1")))
+
+	intents, cancel := setup(actions.Config{
+		ViewModel: vm.Load,
+		Opener:    fake,
+		Picker:    gated,
+		Notifier:  fake,
+		Locker:    locker,
+	})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentLock, RepoID: "repo1"})
+	awaitCh(t, gated.called, "picker called")
+	vm.Store(vmWithLock(repo("repo1", "/wc/repo1-moved")))
+	close(gated.allow)
+
+	assertNotReceived(t, locker.lockCh, "Lock must not use a picker result from the old repo root")
+}
+
+func TestControllerLockRejectsPathOutsideRepo(t *testing.T) {
+	locker := newFakeLocker()
+	notifCh := make(chan platform.Notification, 1)
+	fake := &platformtest.Fake{
+		PickFilesFunc: func(_ context.Context, _ platform.PickFilesRequest) (platform.PickFilesResult, error) {
+			return platform.PickFilesResult{Paths: []string{"/wc/repo-other/file.dwg"}}, nil
+		},
+		NotifyFunc: func(_ context.Context, n platform.Notification) error {
+			notifCh <- n
+			return nil
+		},
+	}
+	vm := &vmStore{}
+	vm.Store(vmWithLock(repo("repo1", "/wc/repo")))
+
+	intents, cancel := setup(actions.Config{
+		ViewModel: vm.Load,
+		Opener:    fake,
+		Picker:    fake,
+		Notifier:  fake,
+		Locker:    locker,
+	})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentLock, RepoID: "repo1"})
+	n := awaitCh(t, notifCh, "invalid path notification")
+	if n.Title != "Nieprawidłowy wybór plików" {
+		t.Fatalf("notification = %#v", n)
+	}
+	assertNotReceived(t, locker.lockCh, "Lock must not receive an outside-root path")
+}
+
 func TestControllerLockPlatformUnavailableIsNotified(t *testing.T) {
 	locker := newFakeLocker()
 	notifCh := make(chan platform.Notification, 1)
@@ -409,8 +493,11 @@ func TestControllerLockPlatformUnavailableIsNotified(t *testing.T) {
 
 	send(t, intents, tray.Intent{Kind: tray.IntentLock, RepoID: "repo1"})
 
-	// FailureUnavailable: no notification, no Lock call.
-	assertNotReceived(t, notifCh, "no notification for unavailable picker")
+	// A visible action must have visible feedback when the platform picker is absent.
+	n := awaitCh(t, notifCh, "unavailable picker notification")
+	if n.Title == "" {
+		t.Fatalf("notification title empty: %#v", n)
+	}
 	assertNotReceived(t, locker.lockCh, "Lock must not be called")
 }
 
@@ -600,18 +687,15 @@ func TestControllerConcurrentIntentsAreAllProcessed(t *testing.T) {
 	}
 	gated1 := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/r1/a.dwg"}})
 	gated2 := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/r2/b.dwg"}})
-	pickCount := 0
-	var pickMu sync.Mutex
 	fake := &platformtest.Fake{
 		PickFilesFunc: func(ctx context.Context, req platform.PickFilesRequest) (platform.PickFilesResult, error) {
-			pickMu.Lock()
-			pickCount++
-			n := pickCount
-			pickMu.Unlock()
-			if n == 1 {
+			if req.Root == "/wc/r1" {
 				return gated1.PickFiles(ctx, req)
 			}
-			return gated2.PickFiles(ctx, req)
+			if req.Root == "/wc/r2" {
+				return gated2.PickFiles(ctx, req)
+			}
+			return platform.PickFilesResult{}, errors.New("unexpected picker root: " + req.Root)
 		},
 	}
 	vm := &vmStore{}
@@ -638,6 +722,29 @@ func TestControllerConcurrentIntentsAreAllProcessed(t *testing.T) {
 
 	awaitCh(t, locker.lockCh, "Lock call 1")
 	awaitCh(t, locker.lockCh, "Lock call 2")
+}
+
+func TestControllerSerializesLockUnlockPerRepo(t *testing.T) {
+	locker := newFakeLocker()
+	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/r1/a.dwg"}})
+	vm := &vmStore{}
+	vm.Store(vmWithLock(repo("r1", "/wc/r1")))
+
+	intents, cancel := setup(actions.Config{
+		ViewModel: vm.Load,
+		Opener:    &platformtest.Fake{},
+		Picker:    gated,
+		Locker:    locker,
+	})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentLock, RepoID: "r1"})
+	awaitCh(t, gated.called, "first picker called")
+	send(t, intents, tray.Intent{Kind: tray.IntentUnlock, RepoID: "r1"})
+	assertNotReceived(t, gated.called, "second picker for busy repo")
+	close(gated.allow)
+	awaitCh(t, locker.lockCh, "Lock call")
+	assertNotReceived(t, locker.unlockCh, "concurrent Unlock for busy repo")
 }
 
 func TestControllerContextCancelledDuringPickerAbortsDaemonCall(t *testing.T) {

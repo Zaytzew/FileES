@@ -6,6 +6,8 @@ package actions
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"sync"
 
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
@@ -38,11 +40,14 @@ type Config struct {
 // a slow or blocked operation never stalls intent delivery.
 type Controller struct {
 	cfg Config
+
+	operationsMu sync.Mutex
+	operations   map[string]struct{}
 }
 
 // New creates a Controller with the given configuration.
 func New(cfg Config) *Controller {
-	return &Controller{cfg: cfg}
+	return &Controller{cfg: cfg, operations: make(map[string]struct{})}
 }
 
 // Run processes intents until ctx is cancelled or the intents channel closes.
@@ -65,9 +70,9 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	case tray.IntentOpenFolder:
 		go c.handleOpenFolder(ctx, intent.RepoID)
 	case tray.IntentLock:
-		go c.handleLockUnlock(ctx, intent.RepoID, true)
+		c.startLockUnlock(ctx, intent.RepoID, true)
 	case tray.IntentUnlock:
-		go c.handleLockUnlock(ctx, intent.RepoID, false)
+		c.startLockUnlock(ctx, intent.RepoID, false)
 	case tray.IntentReconnect:
 		if c.cfg.Reconnect != nil {
 			c.cfg.Reconnect()
@@ -77,6 +82,32 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 			c.cfg.Quit()
 		}
 	}
+}
+
+func (c *Controller) startLockUnlock(ctx context.Context, repoID string, lock bool) {
+	if repoID == "" || !c.beginRepoOperation(repoID) {
+		return
+	}
+	go func() {
+		defer c.endRepoOperation(repoID)
+		c.handleLockUnlock(ctx, repoID, lock)
+	}()
+}
+
+func (c *Controller) beginRepoOperation(repoID string) bool {
+	c.operationsMu.Lock()
+	defer c.operationsMu.Unlock()
+	if _, busy := c.operations[repoID]; busy {
+		return false
+	}
+	c.operations[repoID] = struct{}{}
+	return true
+}
+
+func (c *Controller) endRepoOperation(repoID string) {
+	c.operationsMu.Lock()
+	delete(c.operations, repoID)
+	c.operationsMu.Unlock()
 }
 
 func (c *Controller) handleOpenFolder(ctx context.Context, repoID string) {
@@ -101,10 +132,7 @@ func (c *Controller) handleOpenFolder(ctx context.Context, repoID string) {
 
 func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock bool) {
 	vm := c.cfg.ViewModel()
-	if lock && !vm.CanLock() {
-		return
-	}
-	if !lock && !vm.CanUnlock() {
+	if !canMutate(vm, lock) {
 		return
 	}
 	repo, ok := findRepo(vm, repoID)
@@ -129,38 +157,48 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		if ctx.Err() != nil {
 			return
 		}
-		// FailureUnavailable means the picker tool is absent; no actionable
-		// notification for the user since they cannot install it mid-session.
-		if !platform.IsFailure(err, platform.FailureUnavailable) {
-			c.notify(ctx, platform.Notification{
-				ID:      opName + "." + repoID,
-				Group:   opName + "." + repoID,
-				Title:   "Błąd wyboru plików",
-				Body:    err.Error(),
-				Urgency: platform.UrgencyNormal,
-			})
-		}
+		c.notify(ctx, platform.Notification{
+			ID:      opName + "." + repoID,
+			Group:   opName + "." + repoID,
+			Title:   "Błąd wyboru plików",
+			Body:    err.Error(),
+			Urgency: platform.UrgencyNormal,
+		})
 		return
 	}
 	if result.Cancelled || len(result.Paths) == 0 {
 		return
 	}
 
-	// Re-check capability: the daemon may have disconnected while the picker
-	// was open. Stale capability confirmation must not trigger a daemon call.
+	// Re-check the full mutable state: the daemon or repository configuration
+	// may have changed while the native picker was open.
 	vm = c.cfg.ViewModel()
-	if lock && !vm.CanLock() {
+	if !canMutate(vm, lock) {
 		return
 	}
-	if !lock && !vm.CanUnlock() {
+	currentRepo, ok := findRepo(vm, repoID)
+	if !ok || currentRepo.LocalPath == "" || filepath.Clean(currentRepo.LocalPath) != filepath.Clean(repo.LocalPath) {
+		return
+	}
+	paths, err := platform.ValidatePickedPaths(currentRepo.LocalPath, result.Paths)
+	if err != nil || len(paths) == 0 {
+		if err != nil {
+			c.notify(ctx, platform.Notification{
+				ID:      opName + "." + repoID,
+				Group:   opName + "." + repoID,
+				Title:   "Nieprawidłowy wybór plików",
+				Body:    err.Error(),
+				Urgency: platform.UrgencyNormal,
+			})
+		}
 		return
 	}
 
 	var opErr error
 	if lock {
-		_, opErr = c.cfg.Locker.Lock(ctx, repoID, result.Paths)
+		_, opErr = c.cfg.Locker.Lock(ctx, repoID, paths)
 	} else {
-		_, opErr = c.cfg.Locker.Unlock(ctx, repoID, result.Paths)
+		_, opErr = c.cfg.Locker.Unlock(ctx, repoID, paths)
 	}
 	if ctx.Err() != nil {
 		return
@@ -178,10 +216,20 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 	c.notify(ctx, platform.Notification{
 		ID:      opName + "." + repoID,
 		Group:   opName + "." + repoID,
-		Title:   fmt.Sprintf("%s %d plik(ów)", successNoun, len(result.Paths)),
+		Title:   fmt.Sprintf("%s %d plik(ów)", successNoun, len(paths)),
 		Body:    repoID,
 		Urgency: platform.UrgencyLow,
 	})
+}
+
+func canMutate(vm app.ViewModel, lock bool) bool {
+	if !vm.Connected || vm.Stale {
+		return false
+	}
+	if lock {
+		return vm.CanLock()
+	}
+	return vm.CanUnlock()
 }
 
 func (c *Controller) notify(ctx context.Context, n platform.Notification) {

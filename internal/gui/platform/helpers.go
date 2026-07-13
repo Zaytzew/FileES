@@ -15,6 +15,9 @@ func requireAbsolutePath(path string) error {
 }
 
 func requirePathInsideRoot(path, root string) error {
+	if err := requireAbsolutePath(root); err != nil {
+		return fmt.Errorf("invalid root: %w", err)
+	}
 	if err := requireAbsolutePath(path); err != nil {
 		return err
 	}
@@ -25,6 +28,31 @@ func requirePathInsideRoot(path, root string) error {
 		return fmt.Errorf("path %q is outside root %q", path, root)
 	}
 	return nil
+}
+
+// ValidatePickedPaths validates and normalizes paths returned by a platform
+// file picker before they cross the daemon boundary. Every path and root must
+// be absolute, and every path must remain lexically inside root after cleaning.
+// Duplicate paths are removed without changing the user's selection order.
+func ValidatePickedPaths(root string, paths []string) ([]string, error) {
+	if err := requireAbsolutePath(root); err != nil {
+		return nil, fmt.Errorf("invalid picker root: %w", err)
+	}
+
+	validated := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if err := requirePathInsideRoot(path, root); err != nil {
+			return nil, err
+		}
+		clean := filepath.Clean(path)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		validated = append(validated, clean)
+	}
+	return validated, nil
 }
 
 func validateAutostartID(id string) error {

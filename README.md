@@ -215,6 +215,8 @@ Etap 3B jest ukończony: adapter Linux zapewnia `xdg-open`, wielokrotny wybór p
 
 Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, picker PowerShell/WinForms, `ToastGeneric` i autostart HKCU. Procesy oraz rejestr są wstrzyknięte; quoting korzysta z reguł Windows, a powiadomienia wymagają własnego AUMID FileES zarejestrowanego przez pakiet Etapu 4. Natywny odbiór pozostaje częścią checklisty Windows.
 
+Etap 3D jest ukończony: `internal/gui/actions` nieblokująco obsługuje intencje traya, ponownie sprawdza świeżość modelu i repozytorium po interakcji z pickerem, waliduje ścieżki przed IPC oraz serializuje lock/unlock w obrębie jednego repozytorium. Granicę importów chroni test architektoniczny.
+
 ### Zakres pierwszego wydania
 
 Pierwszy pionowy przekrój uznajemy za gotowy, gdy:

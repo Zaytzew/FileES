@@ -92,6 +92,27 @@ func TestPlatformHasNoGUIOrDaemonDependencies(t *testing.T) {
 	}
 }
 
+func TestActionsImportsOnlyGUIBoundaries(t *testing.T) {
+	root := moduleRoot(t)
+	cmd := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "filees/internal/gui/actions")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list actions imports: %v", err)
+	}
+
+	forbidden := append([]string{
+		"filees/pkg/contract/v1",
+		"filees/pkg/ipcclient",
+	}, forbiddenPkgs...)
+	imports := "\n" + strings.TrimSpace(string(out)) + "\n"
+	for _, pkg := range forbidden {
+		if strings.Contains(imports, "\n"+pkg+"\n") {
+			t.Errorf("internal/gui/actions directly imports forbidden package: %s", pkg)
+		}
+	}
+}
+
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}").Output()

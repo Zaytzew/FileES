@@ -114,6 +114,107 @@ filees help
 
 ---
 
+## GUI Tray — koncepcja
+
+`filees-gui` będzie osobnym procesem i cienką warstwą UX nad publicznym kontraktem IPC. GUI nie jest częścią daemona, nie zna SVN i nie przejmuje odpowiedzialności za synchronizację. Zamknięcie GUI nie zatrzymuje daemona ani pracy repozytoriów.
+
+### Twarda granica GUI–daemon
+
+GUI może importować wyłącznie:
+
+- `pkg/ipcclient` — transport i typowane operacje IPC,
+- `pkg/contract/v1` — publiczne DTO, stany, zdarzenia i capabilities,
+- własne pakiety prezentacji oraz integracji z systemowym trayem.
+
+GUI nie może:
+
+- importować `watcher`, `commit`, `client`, `ipcserver`, `errmap` ani innych pakietów silnika,
+- uruchamiać `svn` lub modyfikować kopii roboczej w imieniu daemona,
+- czytać `config.json`, `.filees/`, cache, manifestów ani logów błędów bezpośrednio,
+- rekonstruować stanu na podstawie logów lub szczegółów tekstowych błędów,
+- wywoływać komendy, których daemon nie zgłosił w `capabilities`.
+
+Jedynym wyjątkiem poza IPC są lokalne działania należące do UX, np. otwarcie katalogu repozytorium w menedżerze plików. Nie mogą one zmieniać stanu synchronizacji.
+
+### Model uruchomienia
+
+- daemon działa niezależnie, najlepiej jako usługa użytkownika,
+- `filees-gui` może startować wraz z sesją graficzną i łączy się z istniejącym socketem,
+- brak daemona jest normalnym stanem UX, a nie awarią samego GUI,
+- GUI ponawia połączenie z ograniczonym backoffem, np. `1s → 2s → 5s → 10s → 30s`,
+- „Zamknij GUI” kończy tylko tray-app; zatrzymanie daemona będzie osobną akcją dopiero po pojawieniu się odpowiedniej capability.
+
+Po połączeniu GUI wykonuje:
+
+1. `system.hello` i zapisuje capabilities,
+2. `events.subscribe`, jeśli capability jest dostępna,
+3. `system.status`, `repo.list` oraz `repo.status` dla każdego repozytorium,
+4. okresowe odświeżenie snapshotów jako mechanizm naprawczy.
+
+Subskrypcja jest zestawiana przed pobraniem snapshotów, żeby zmiana zachodząca podczas inicjalizacji nie pozostała niezauważona; event odebrany w tym oknie może najwyżej spowodować dodatkowe odświeżenie. Snapshot z `repo.status` jest jedynym autorytatywnym źródłem stanu. Zdarzenia są sygnałem do szybkiego odświeżenia odpowiedniego snapshotu — GUI nie buduje trwałego stanu wyłącznie przez nakładanie eventów. Po reconnect, przerwie w `sequence` albo niepoprawnym evencie wykonywany jest pełny resync.
+
+### Model stanu tray
+
+Stan ikony jest agregatem wszystkich repozytoriów. Obowiązuje stały priorytet, dzięki czemu stan poważniejszy nie jest maskowany przez repozytorium zdrowe:
+
+| Priorytet | Stan ikony | Warunek |
+|-----------|------------|---------|
+| 1 | brak połączenia | daemon nieosiągalny lub niezgodny protokół |
+| 2 | wymagana uwaga | `interaction_required`, `degraded`, konflikt albo błąd wymagający działania |
+| 3 | offline | co najmniej jedno repozytorium jest offline |
+| 4 | praca w toku | istnieje `current_operation` lub stan przejściowy |
+| 5 | gotowe | wszystkie repozytoria są aktywne i online |
+
+Nieznany stan lub nieznana wartość enum jest prezentowana jako bezpieczne „stan nieznany” i powoduje odświeżenie, nigdy crash GUI.
+
+### Menu MVP
+
+Menu tray powinno zawierać:
+
+- zagregowany stan daemona i czas ostatniego poprawnego odświeżenia,
+- listę repozytoriów ze stanem, connectivity, rewizją i liczbą oczekujących zmian,
+- „Otwórz katalog” dla każdego repozytorium,
+- `Lock…` i `Unlock…` z wyborem plików wewnątrz danego repozytorium,
+- ostatnie błędy z `error.list`, mapowane przez `message_key`, `severity` i `hint`,
+- „Połącz ponownie” przy niedostępnym daemonie,
+- „Zamknij GUI”.
+
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities. W aktualnym kontrakcie r42 GUI może udostępniać `events.subscribe`, `repo.lock`, `repo.unlock` i `error.list`. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+
+### Powiadomienia
+
+Systemowe powiadomienia są wtórne wobec stanu w menu. MVP powinno pokazywać je tylko dla zdarzeń wymagających uwagi, utraty/odzyskania łączności oraz zakończenia operacji istotnej dla użytkownika. Powtarzające się zdarzenia muszą być grupowane i ograniczane czasowo. Kliknięcie powiadomienia otwiera szczegóły repozytorium, nie wykonuje automatycznie operacji mutującej.
+
+### Proponowany podział kodu
+
+```text
+cmd/filees-gui/          composition root, lifecycle procesu
+internal/gui/app/        stan prezentacji, reconnect, resync, capability gating
+internal/gui/tray/       niezależny interfejs tray i mapowanie menu/ikon
+internal/gui/platform/   autostart, powiadomienia, otwieranie katalogu
+pkg/ipcclient/           jedyna droga komunikacji z daemonem
+pkg/contract/v1/         publiczne typy graniczne
+```
+
+Biblioteka obsługująca systemowy tray pozostaje adapterem w `internal/gui/tray`. Jej wybór nie może przenikać do logiki aplikacji ani kontraktu, co pozwoli zmienić toolkit lub dodać kolejną platformę bez zmian w daemonie.
+
+### Zakres pierwszego wydania
+
+Pierwszy pionowy przekrój uznajemy za gotowy, gdy:
+
+- GUI startuje i kończy się niezależnie od daemona,
+- poprawnie pokazuje brak połączenia, reconnect i snapshot wielu repozytoriów,
+- reaguje na eventy, a po luce sekwencji wykonuje pełny resync,
+- pokazuje wyłącznie akcje dostępne w capabilities,
+- lock/unlock działa tylko przez `ipcclient` i prezentuje ustrukturyzowane błędy,
+- wolny lub zamknięty GUI nie blokuje daemona,
+- test architektoniczny chroni zakaz importowania pakietów silnika,
+- testy modelu prezentacji nie wymagają działającego SVN ani środowiska graficznego.
+
+Poza MVP pozostają: edycja konfiguracji, zarządzanie usługą daemona, `pause/resume`, ręczny sync/publish, interaktywne decyzje konfliktowe oraz pełne okno aplikacji.
+
+---
+
 ## Architektura
 
 ```
@@ -199,7 +300,7 @@ Zaimplementowane komendy: `system.hello`, `system.status`, `repo.list`, `repo.st
 
 ### IPC Client (`pkg/ipcclient`)
 
-Biblioteka używana przez CLI (i docelowo GUI). Każde wywołanie otwiera nowe połączenie do gniazda, wysyła żądanie i czeka na odpowiedź. Implementuje weryfikację odpowiedzi (protocol, request_id, status). Deadline połączenia dziedziczy z kontekstu wywołującego — lock/unlock z 30 s kontekstem dostaje 30 s zamiast domyślnych 10 s.
+Biblioteka używana przez CLI i GUI. Każde zwykłe wywołanie otwiera nowe połączenie do gniazda, wysyła żądanie i czeka na odpowiedź. `Subscribe` utrzymuje osobne, długotrwałe połączenie eventowe. Klient weryfikuje odpowiedzi (protocol, request_id, status), ACK subskrypcji oraz wymagane pola eventów. Deadline połączenia dziedziczy z kontekstu wywołującego — lock/unlock z 30 s kontekstem dostaje 30 s zamiast domyślnych 10 s; anulowanie kontekstu odblokowuje również handshake i oczekiwanie na kolejny event.
 
 ### SVN Client (`pkg/client`)
 

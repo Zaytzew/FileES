@@ -68,6 +68,29 @@ func TestTrayImportsOnlyPresentationBoundary(t *testing.T) {
 	}
 }
 
+func TestPlatformHasNoGUIOrDaemonDependencies(t *testing.T) {
+	root := moduleRoot(t)
+	cmd := exec.Command("go", "list", "-f", "{{range .Imports}}{{println .}}{{end}}", "filees/internal/gui/platform/...")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list platform imports: %v", err)
+	}
+
+	forbidden := append([]string{
+		"filees/internal/gui/app",
+		"filees/internal/gui/tray",
+		"filees/pkg/contract/v1",
+		"filees/pkg/ipcclient",
+	}, forbiddenPkgs...)
+	imports := "\n" + strings.TrimSpace(string(out)) + "\n"
+	for _, pkg := range forbidden {
+		if strings.Contains(imports, "\n"+pkg+"\n") {
+			t.Errorf("internal/gui/platform directly imports forbidden package: %s", pkg)
+		}
+	}
+}
+
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}").Output()

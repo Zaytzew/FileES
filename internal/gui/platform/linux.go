@@ -1,0 +1,433 @@
+//go:build linux
+
+package platform
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+const defaultNotificationInterval = 2 * time.Second
+
+// LinuxBackend implements the desktop boundary using tools commonly supplied
+// by freedesktop environments. Missing optional tools are reported per feature.
+type LinuxBackend struct {
+	runner     linuxCommandRunner
+	configHome func() (string, error)
+	now        func() time.Time
+
+	notificationInterval time.Duration
+	notificationMu       sync.Mutex
+	notificationSeq      uint64
+	notificationGroups   map[string]linuxNotificationGroup
+}
+
+type linuxNotificationGroup struct {
+	id       uint32
+	lastSent time.Time
+	seq      uint64
+}
+
+type linuxCommandRunner interface {
+	LookPath(name string) (string, error)
+	Output(ctx context.Context, name string, args ...string) ([]byte, error)
+}
+
+type osLinuxCommandRunner struct{}
+
+func (osLinuxCommandRunner) LookPath(name string) (string, error) {
+	return exec.LookPath(name)
+}
+
+func (osLinuxCommandRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+// NewLinuxBackend creates the production Linux desktop adapter.
+func NewLinuxBackend() *LinuxBackend {
+	return newLinuxBackend(osLinuxCommandRunner{}, os.UserConfigDir, time.Now)
+}
+
+func newLinuxBackend(runner linuxCommandRunner, configHome func() (string, error), now func() time.Time) *LinuxBackend {
+	return &LinuxBackend{
+		runner:               runner,
+		configHome:           configHome,
+		now:                  now,
+		notificationInterval: defaultNotificationInterval,
+		notificationGroups:   make(map[string]linuxNotificationGroup),
+	}
+}
+
+func (b *LinuxBackend) OpenFolder(ctx context.Context, path string) error {
+	if err := requireAbsolutePath(path); err != nil {
+		return NewOperationalFailure("open_folder", err)
+	}
+	command, err := b.runner.LookPath("xdg-open")
+	if err != nil {
+		return NewUnavailable("open_folder", err)
+	}
+	if _, err := b.runner.Output(ctx, command, filepath.Clean(path)); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return NewOperationalFailure("open_folder", err)
+	}
+	return nil
+}
+
+func (b *LinuxBackend) PickFiles(ctx context.Context, request PickFilesRequest) (PickFilesResult, error) {
+	if err := requireAbsolutePath(request.Root); err != nil {
+		return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("root: %w", err))
+	}
+	initialDir := request.InitialDir
+	if initialDir == "" {
+		initialDir = request.Root
+	}
+	if err := requirePathInsideRoot(initialDir, request.Root); err != nil {
+		return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("initial directory: %w", err))
+	}
+
+	command, args, err := b.pickerCommand(request, initialDir)
+	if err != nil {
+		return PickFilesResult{}, err
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return PickFilesResult{}, ctxErr
+		}
+		if commandCancelled(err) {
+			return PickFilesResult{Cancelled: true}, nil
+		}
+		return PickFilesResult{}, NewOperationalFailure("file_picker", err)
+	}
+
+	paths := splitPickerOutput(string(output))
+	if len(paths) == 0 {
+		return PickFilesResult{Cancelled: true}, nil
+	}
+	if !request.AllowMultiple && len(paths) > 1 {
+		paths = paths[:1]
+	}
+	for i, path := range paths {
+		if err := requirePathInsideRoot(path, request.Root); err != nil {
+			return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("selected path: %w", err))
+		}
+		paths[i] = filepath.Clean(path)
+	}
+	return PickFilesResult{Paths: paths}, nil
+}
+
+func (b *LinuxBackend) pickerCommand(request PickFilesRequest, initialDir string) (string, []string, error) {
+	if command, err := b.runner.LookPath("zenity"); err == nil {
+		args := []string{"--file-selection", "--separator=\n", "--filename=" + filepath.Clean(initialDir) + string(filepath.Separator)}
+		if request.AllowMultiple {
+			args = append(args, "--multiple")
+		}
+		if request.Title != "" {
+			args = append(args, "--title="+request.Title)
+		}
+		return command, args, nil
+	}
+	if command, err := b.runner.LookPath("kdialog"); err == nil {
+		args := []string{"--getopenfilename", filepath.Clean(initialDir), "*"}
+		if request.AllowMultiple {
+			args = append(args, "--multiple", "--separate-output")
+		}
+		if request.Title != "" {
+			args = append(args, "--title", request.Title)
+		}
+		return command, args, nil
+	}
+	return "", nil, NewUnavailable("file_picker", errors.New("neither zenity nor kdialog is installed"))
+}
+
+func (b *LinuxBackend) Notify(ctx context.Context, notification Notification) error {
+	command, err := b.runner.LookPath("notify-send")
+	if err != nil {
+		return NewUnavailable("notifications", err)
+	}
+	if strings.TrimSpace(notification.Title) == "" {
+		return NewOperationalFailure("notifications", errors.New("title is required"))
+	}
+
+	groupKey := notification.Group
+	if groupKey == "" {
+		groupKey = notification.ID
+	}
+	group, seq, send := b.reserveNotification(groupKey)
+	if !send {
+		return nil
+	}
+
+	args := []string{
+		"--app-name=FileES",
+		"--urgency=" + linuxUrgency(notification.Urgency),
+		"--print-id",
+	}
+	if group.id != 0 {
+		args = append(args, "--replace-id="+strconv.FormatUint(uint64(group.id), 10))
+	}
+	args = append(args, notification.Title)
+	if notification.Body != "" {
+		args = append(args, notification.Body)
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		b.releaseNotification(groupKey, seq)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return NewOperationalFailure("notifications", err)
+	}
+	id, _ := strconv.ParseUint(strings.TrimSpace(string(output)), 10, 32)
+	b.completeNotification(groupKey, seq, uint32(id))
+	return nil
+}
+
+func (b *LinuxBackend) reserveNotification(key string) (linuxNotificationGroup, uint64, bool) {
+	b.notificationMu.Lock()
+	defer b.notificationMu.Unlock()
+	now := b.now()
+	group := b.notificationGroups[key]
+	if key != "" && !group.lastSent.IsZero() && now.Sub(group.lastSent) < b.notificationInterval {
+		return group, 0, false
+	}
+	b.notificationSeq++
+	group.lastSent = now
+	group.seq = b.notificationSeq
+	if key != "" {
+		b.notificationGroups[key] = group
+	}
+	return group, group.seq, true
+}
+
+func (b *LinuxBackend) completeNotification(key string, seq uint64, id uint32) {
+	if key == "" {
+		return
+	}
+	b.notificationMu.Lock()
+	group := b.notificationGroups[key]
+	if group.seq == seq {
+		group.id = id
+		b.notificationGroups[key] = group
+	}
+	b.notificationMu.Unlock()
+}
+
+func (b *LinuxBackend) releaseNotification(key string, seq uint64) {
+	if key == "" {
+		return
+	}
+	b.notificationMu.Lock()
+	group := b.notificationGroups[key]
+	if group.seq == seq {
+		group.lastSent = time.Time{}
+		b.notificationGroups[key] = group
+	}
+	b.notificationMu.Unlock()
+}
+
+func (b *LinuxBackend) AutostartStatus(ctx context.Context, spec AutostartSpec) (AutostartState, error) {
+	if err := ctx.Err(); err != nil {
+		return AutostartState{}, err
+	}
+	path, err := b.autostartPath(spec)
+	if err != nil {
+		return AutostartState{}, NewOperationalFailure("autostart", err)
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return AutostartState{Source: path}, nil
+	}
+	if err != nil {
+		return AutostartState{}, NewOperationalFailure("autostart", err)
+	}
+	hidden := desktopBoolean(data, "Hidden")
+	return AutostartState{Enabled: !hidden, Source: path}, nil
+}
+
+func (b *LinuxBackend) SetAutostart(ctx context.Context, spec AutostartSpec, enabled bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path, err := b.autostartPath(spec)
+	if err != nil {
+		return NewOperationalFailure("autostart", err)
+	}
+	var data []byte
+	if enabled {
+		data, err = renderAutostartDesktop(spec)
+	} else {
+		data = []byte("[Desktop Entry]\nType=Application\nHidden=true\n")
+	}
+	if err != nil {
+		return NewOperationalFailure("autostart", err)
+	}
+	if err := atomicWriteFile(path, data, 0o600); err != nil {
+		return NewOperationalFailure("autostart", err)
+	}
+	return nil
+}
+
+func (b *LinuxBackend) autostartPath(spec AutostartSpec) (string, error) {
+	if err := validateAutostartID(spec.ID); err != nil {
+		return "", err
+	}
+	configHome, err := b.configHome()
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(configHome) {
+		return "", errors.New("user config directory is not absolute")
+	}
+	return filepath.Join(configHome, "autostart", spec.ID+".desktop"), nil
+}
+
+func renderAutostartDesktop(spec AutostartSpec) ([]byte, error) {
+	if strings.TrimSpace(spec.Name) == "" {
+		return nil, errors.New("autostart name is required")
+	}
+	if err := requireAbsolutePath(spec.Executable); err != nil {
+		return nil, fmt.Errorf("executable: %w", err)
+	}
+	execParts := make([]string, 0, 1+len(spec.Args))
+	execParts = append(execParts, desktopExecArg(filepath.Clean(spec.Executable)))
+	for _, arg := range spec.Args {
+		if strings.ContainsAny(arg, "\x00\r\n") {
+			return nil, errors.New("autostart argument contains a control character")
+		}
+		execParts = append(execParts, desktopExecArg(arg))
+	}
+	name := desktopString(spec.Name)
+	content := "[Desktop Entry]\n" +
+		"Type=Application\n" +
+		"Version=1.5\n" +
+		"Name=" + name + "\n" +
+		"Exec=" + strings.Join(execParts, " ") + "\n" +
+		"TryExec=" + desktopString(filepath.Clean(spec.Executable)) + "\n" +
+		"Terminal=false\n" +
+		"X-GNOME-Autostart-enabled=true\n"
+	return []byte(content), nil
+}
+
+func desktopExecArg(value string) string {
+	value = strings.ReplaceAll(value, "%", "%%")
+	value = strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\x60", "\\\x60", "$", "\\$").Replace(value)
+	return "\"" + value + "\""
+}
+
+func desktopString(value string) string {
+	return strings.NewReplacer("\\", "\\\\", "\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(value)
+}
+
+func validateAutostartID(id string) error {
+	if id == "" {
+		return errors.New("autostart ID is required")
+	}
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return fmt.Errorf("invalid autostart ID %q", id)
+	}
+	return nil
+}
+
+func desktopBoolean(data []byte, key string) bool {
+	prefix := strings.ToLower(key) + "="
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(line), prefix) {
+			value := strings.TrimSpace(line[len(prefix):])
+			return strings.EqualFold(value, "true")
+		}
+	}
+	return false
+}
+
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
+func requireAbsolutePath(path string) error {
+	if strings.TrimSpace(path) == "" || !filepath.IsAbs(path) {
+		return fmt.Errorf("path %q is not absolute", path)
+	}
+	return nil
+}
+
+func requirePathInsideRoot(path, root string) error {
+	if err := requireAbsolutePath(path); err != nil {
+		return err
+	}
+	cleanPath := filepath.Clean(path)
+	cleanRoot := filepath.Clean(root)
+	relative, err := filepath.Rel(cleanRoot, cleanPath)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path %q is outside root %q", path, root)
+	}
+	return nil
+}
+
+func splitPickerOutput(output string) []string {
+	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
+	paths := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if path := strings.TrimSpace(line); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+func commandCancelled(err error) bool {
+	var exitErr interface{ ExitCode() int }
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
+}
+
+func linuxUrgency(urgency Urgency) string {
+	switch urgency {
+	case UrgencyLow:
+		return "low"
+	case UrgencyCritical:
+		return "critical"
+	default:
+		return "normal"
+	}
+}
+
+var _ Backend = (*LinuxBackend)(nil)

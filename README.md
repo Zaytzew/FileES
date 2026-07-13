@@ -209,6 +209,10 @@ Wybraną biblioteką jest `fyne.io/systray`, izolowane jako adapter w `internal/
 
 Etapy 1 i 2 są ukończone. Adapter `fyne.io/systray` jest odseparowany od IPC i kontraktu przez `ViewModel`, ma pięć osadzonych ikon (PNG/ICO), deterministyczny model menu, intencje użytkownika oraz testy renderera i granicy importów. Szczegółowy zakres kolejnych etapów oraz checklista znajdują się w `gui-assumptions.md`.
 
+Etap 3A jest ukończony: `internal/gui/platform` definiuje czyste interfejsy systemowe, klasyfikację niedostępności i błędów operacyjnych oraz współbieżnie bezpieczny fake backend. Pakiet nie zależy od traya, aplikacji, kontraktu IPC ani silnika; granicę sprawdza test architektoniczny.
+
+Etap 3B jest ukończony: adapter Linux zapewnia `xdg-open`, wielokrotny wybór przez Zenity/KDialog, grupowane i limitowane powiadomienia `notify-send` oraz atomowy autostart XDG z obsługą `Hidden=true`. Wywołania desktopowe są wstrzyknięte i testowane bez otwierania rzeczywistych okien.
+
 ### Zakres pierwszego wydania
 
 Pierwszy pionowy przekrój uznajemy za gotowy, gdy:

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,12 @@ type Client interface {
 	Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error)
 	Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	PropGet(ctx context.Context, rootDirectory, propName string, paths []string, username, password string) (string, error)
+	// Revision returns the revision number for target (URL or local WC path).
+	// For a remote URL it returns HEAD; for a local WC path it returns the last-updated revision.
+	Revision(ctx context.Context, target, username, password string) (int64, error)
+	// Resolve marks conflicts as resolved using the given accept strategy
+	// (e.g. "theirs-full", "mine-full").
+	Resolve(ctx context.Context, wc string, paths []string, accept, username, password string) (string, error)
 }
 
 // execClient implements Client by calling the external 'svn' executable.
@@ -131,6 +138,19 @@ func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string
 	return c.run(ctx, rootDirectory, username, password, args)
 }
 
+func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, accept, username, password string) (string, error) {
+	args := append([]string{"resolve", "--accept", accept}, c.relativize(wc, paths)...)
+	return c.run(ctx, wc, username, password, args)
+}
+
+func (c *execClient) Revision(ctx context.Context, target, username, password string) (int64, error) {
+	out, err := c.run(ctx, "", username, password, []string{"info", "--show-item", "revision", target})
+	if err != nil { return 0, err }
+	n, perr := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if perr != nil { return 0, fmt.Errorf("parse revision %q: %w", strings.TrimSpace(out), perr) }
+	return n, nil
+}
+
 // ---- Core exec runner ----
 
 func (c *execClient) run(parentCtx context.Context, workingDir, username, password string, args []string) (string, error) {
@@ -186,4 +206,27 @@ func (c *execClient) relativize(rootDirectory string, paths []string) []string {
 func emptyIf(s, def string) string {
 	if s == "" { return def }
 	return s
+}
+
+// IsNetworkError returns true when err indicates a network/connectivity problem
+// (as opposed to an SVN logic error like "not under version control").
+func IsNetworkError(err error) bool {
+	if err == nil { return false }
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"unable to connect",
+		"connection refused",
+		"connection timed out",
+		"network is unreachable",
+		"no route to host",
+		"host not found",
+		"name or service not known",
+		"temporary failure in name resolution",
+		"e170013", // svn: can't connect to repository
+		"e730047", // svn: DNS lookup failed
+		"anulowana/przekroczono czas", // our timeout wrapper
+	} {
+		if strings.Contains(msg, needle) { return true }
+	}
+	return false
 }

@@ -2,6 +2,7 @@ package commit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,10 +13,19 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/errmap"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
 )
+
+// SizeTier mapuje górną granicę rozmiaru batcha na minimalny odstęp między commitami.
+// Tiery powinny być posortowane rosnąco według MaxBytes.
+// MaxBytes == 0 oznacza catch-all (pasuje do każdego rozmiaru).
+type SizeTier struct {
+	MaxBytes int64
+	Interval time.Duration
+}
 
 // Rules configure commit behaviour.
 type Rules struct {
@@ -25,6 +35,22 @@ type Rules struct {
 	LockFirst      bool            // if true, try svn lock before commit
 	RateLimitShout time.Duration   // min duration between shouts
 	NewLatency     time.Duration   // delay for new (Added) entries before commit (default 5m)
+	SizeTiers      []SizeTier      // size-adaptive intervals; empty = use Window only
+	PollInterval   time.Duration   // HEAD polling interval; 0 = disabled
+}
+
+// effectiveInterval zwraca minimalny wymagany odstęp między commitami dla batcha o rozmiarze totalBytes.
+// Zwraca 0 jeśli SizeTiers jest puste (brak ograniczeń).
+func (r *Rules) effectiveInterval(totalBytes int64) time.Duration {
+	for _, t := range r.SizeTiers {
+		if t.MaxBytes <= 0 || totalBytes <= t.MaxBytes {
+			return t.Interval
+		}
+	}
+	if len(r.SizeTiers) > 0 {
+		return r.SizeTiers[len(r.SizeTiers)-1].Interval
+	}
+	return 0
 }
 
 // Service wires events → staging → svn → tickets, respecting runtime gates.
@@ -36,11 +62,21 @@ type Service struct {
 	RepoMtx  runtime.RepoMutex
 	Logger   talk.Logger
 	RepoURL  string
+	UUID     string       // stable client UUID (persisted in .filees/state/client.uuid)
+	ErrSink  *errmap.Sink // optional; structured error log (JSON Lines)
 
 	// internal
-	mu       sync.Mutex
-	staging  map[string]*stageItem // rel path -> info
-	lastShout time.Time
+	mu         sync.Mutex
+	staging    map[string]*stageItem // rel path -> info
+	cachePath  string               // .filees/commit_cache/cache.json
+	lastShout  time.Time
+	lastCommit time.Time // last successful commit (for size-adaptive interval)
+
+	// offline state — guarded by offMu (accessed from multiple goroutines)
+	offMu     sync.Mutex
+	offline   bool
+	nextRetry time.Time
+	backoff   time.Duration
 }
 
 type stageItem struct {
@@ -53,6 +89,51 @@ type stageItem struct {
 	ver       uint64   // incremented on every in-place update
 }
 
+func (s *Service) goOffline() {
+	s.offMu.Lock()
+	wasOnline := !s.offline
+	s.offline = true
+	s.backoff = nextBackoff(s.backoff)
+	s.nextRetry = time.Now().Add(s.backoff)
+	s.offMu.Unlock()
+
+	if wasOnline {
+		s.Logger.Warnf("offline: network unreachable — queuing changes locally")
+		s.ErrSink.Emit(errmap.Entry{
+			Code:     errmap.CodeNetUnreachable,
+			Severity: errmap.SevWarn,
+			Hint:     errmap.HintRetryBackoff,
+			Msg:      "Network unreachable — queuing changes locally",
+		})
+	}
+}
+
+func (s *Service) goOnline() {
+	s.offMu.Lock()
+	wasOffline := s.offline
+	s.offline = false
+	s.backoff = 0
+	s.offMu.Unlock()
+
+	if wasOffline {
+		s.Logger.Infof("online: connection restored")
+	}
+}
+
+// isOfflineBackoff returns true when we're offline and still within the backoff window.
+func (s *Service) isOfflineBackoff() bool {
+	s.offMu.Lock()
+	defer s.offMu.Unlock()
+	return s.offline && time.Now().Before(s.nextRetry)
+}
+
+func nextBackoff(cur time.Duration) time.Duration {
+	const max = 5 * time.Minute
+	if cur <= 0 { return 5 * time.Second }
+	if next := cur * 2; next < max { return next }
+	return max
+}
+
 // Run consumes watcher events and periodically performs commits.
 func (s *Service) Run(ctx context.Context, repoID, wc, username, password string, events <-chan watcher.Event) {
 	lg := s.Logger
@@ -61,25 +142,107 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 	st := make(map[string]*stageItem)
 	s.staging = st
 
+	s.cachePath = filepath.Join(wc, ".filees", "commit_cache", "cache.json")
+	if err := os.MkdirAll(filepath.Dir(s.cachePath), 0o755); err != nil {
+		lg.Warnf("commit cache dir: %v — cache disabled", err)
+		s.cachePath = ""
+	} else {
+		s.loadCache()
+	}
+
 	window := s.Rules.Window
 	if window <= 0 { window = 30 * time.Second }
 	ticker := time.NewTicker(window)
 	defer ticker.Stop()
 
+	if s.Rules.PollInterval > 0 {
+		go s.runPoller(ctx, wc, username, password)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			lg.Infof("commit service stop")
+			s.saveCache()
 			return
 		case ev, ok := <-events:
 			if !ok { return }
 			s.addEvent(ev)
 		case <-ticker.C:
+			if s.isOfflineBackoff() {
+				lg.Debugf("offline: skipping commit tick (backoff active)")
+				continue
+			}
 			if err := s.tryCommit(ctx, wc, username, password); err != nil {
 				lg.Warnf("commit attempt failed: %v", err)
 			}
+			s.saveCache()
 		}
 	}
+}
+
+// runPoller periodically checks whether the server has new commits and triggers svn update.
+func (s *Service) runPoller(ctx context.Context, wc, username, password string) {
+	headRevPath := filepath.Join(wc, ".filees", "state", "head.rev")
+	ticker := time.NewTicker(s.Rules.PollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if s.isOfflineBackoff() {
+				s.Logger.Debugf("poll: offline — skipping")
+				continue
+			}
+			s.pollOnce(ctx, wc, username, password, headRevPath)
+		}
+	}
+}
+
+// pollOnce checks HEAD revision against local and runs svn update when behind.
+func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevPath string) {
+	headRev, err := s.Cli.Revision(ctx, s.RepoURL, username, password)
+	if err != nil {
+		if client.IsNetworkError(err) {
+			s.goOffline()
+		} else {
+			s.Logger.Warnf("poll: HEAD revision: %v", err)
+		}
+		return
+	}
+
+	localRev, err := s.Cli.Revision(ctx, wc, username, password)
+	if err != nil {
+		s.Logger.Warnf("poll: local revision: %v", err)
+		return
+	}
+
+	s.goOnline()
+
+	if headRev <= localRev {
+		return // already up to date
+	}
+
+	s.Logger.Infof("poll: HEAD r%d > local r%d — running svn update", headRev, localRev)
+	out, err := s.Cli.Update(ctx, wc, username, password)
+	if err != nil {
+		if client.IsNetworkError(err) {
+			s.goOffline()
+		} else {
+			s.Logger.Warnf("poll: svn update failed: %v\n%s", err, out)
+			s.ErrSink.Emit(errmap.Classify(err))
+		}
+		return
+	}
+
+	if conflicts := parseConflicts(out); len(conflicts) > 0 {
+		s.Logger.Warnf("poll: %d conflict(s) detected — reconciling", len(conflicts))
+		s.reconcile(ctx, wc, username, password, conflicts)
+	}
+
+	s.Logger.Infof("poll: updated to r%d", headRev)
+	_ = atomicWriteString(headRevPath, fmt.Sprintf("%d\n", headRev))
 }
 
 func (s *Service) addEvent(ev watcher.Event) {
@@ -130,6 +293,25 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	s.mu.Unlock()
 
 	if len(pending) == 0 { return nil }
+
+	// size-adaptive interval: jeśli tiery są skonfigurowane, sprawdź czy minął wymagany odstęp
+	if len(s.Rules.SizeTiers) > 0 {
+		var totalBytes int64
+		for _, it := range pending {
+			if it.Op != watcher.Deleted {
+				if fi, err := os.Stat(it.Abs); err == nil {
+					totalBytes += fi.Size()
+				}
+			}
+		}
+		required := s.Rules.effectiveInterval(totalBytes)
+		if required > 0 && !s.lastCommit.IsZero() && time.Since(s.lastCommit) < required {
+			remaining := time.Until(s.lastCommit.Add(required)).Round(time.Second)
+			s.Logger.Debugf("size-adaptive: %.1f MiB — czekam jeszcze %s (wymagany interwał %s)",
+				float64(totalBytes)/(1<<20), remaining, required)
+			return nil
+		}
+	}
 
 	// sort for stable order; cut to MaxBatchFiles
 	sort.Slice(pending, func(i, j int) bool { return pending[i].Rel < pending[j].Rel })
@@ -236,14 +418,31 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	}
 	if s.Rules.LockFirst && len(commitPaths) > 0 {
 		if out, err := s.Cli.Lock(ctx, wc, commitPaths, username, password); err != nil {
-			s.Logger.Warnf("svn lock failed: %v\n%s", err, out)
+			if client.IsNetworkError(err) {
+				s.goOffline()
+				return fmt.Errorf("svn lock: %w", err)
+			}
+			entry := errmap.Classify(err)
+			s.Logger.Warnf("svn lock failed [%s]: %v\n%s", entry.Code, err, out)
+			s.ErrSink.Emit(entry)
 		}
 	}
 
 	// commit
-	msg := fmt.Sprintf("FileES auto-commit: %d paths", len(commitPaths))
+	uid := s.UUID
+	if uid == "" { uid = "unknown" }
+	msg := fmt.Sprintf("Auto-commit by FileES client %s: %d paths", uid, len(commitPaths))
 	out, err := s.Cli.Commit(ctx, wc, commitPaths, msg, username, password)
-	if err != nil { return fmt.Errorf("svn commit: %w\n%s", err, out) }
+	if err != nil {
+		entry := errmap.Classify(err)
+		s.ErrSink.Emit(entry)
+		if client.IsNetworkError(err) {
+			s.goOffline()
+		}
+		return fmt.Errorf("svn commit: %w\n%s", err, out)
+	}
+	s.goOnline()
+	s.lastCommit = time.Now()
 
 	// head.rev
 	if rev := parseRevision(out); rev != "" {
@@ -265,8 +464,103 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 
 func (s *Service) makeNotice(wc, title, body string) error {
 	if s.Tickets == nil { return nil }
-	_, err := s.Tickets.CreateNotice(wc, clientUUID(), title, body)
+	uid := s.UUID
+	if uid == "" { uid = "unknown" }
+	_, err := s.Tickets.CreateNotice(wc, uid, title, body)
 	return err
+}
+
+// --- commit cache ---
+
+// cacheEntry is the JSON-serializable form of stageItem.
+type cacheEntry struct {
+	Rel       string    `json:"rel"`
+	Abs       string    `json:"abs"`
+	OldRel    string    `json:"old_rel,omitempty"`
+	IsDir     bool      `json:"is_dir,omitempty"`
+	Op        string    `json:"op"`
+	FirstSeen time.Time `json:"first_seen"`
+}
+
+func opName(op watcher.OpType) string {
+	switch op {
+	case watcher.Added:    return "added"
+	case watcher.Modified: return "modified"
+	case watcher.Deleted:  return "deleted"
+	case watcher.Renamed:  return "renamed"
+	default:               return "modified"
+	}
+}
+
+func opFromName(s string) watcher.OpType {
+	switch s {
+	case "added":   return watcher.Added
+	case "deleted": return watcher.Deleted
+	case "renamed": return watcher.Renamed
+	default:        return watcher.Modified
+	}
+}
+
+func (s *Service) loadCache() {
+	data, err := os.ReadFile(s.cachePath)
+	if err != nil { return } // no cache yet = normal on first run
+
+	var entries []cacheEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		s.Logger.Warnf("commit cache: parse error: %v — starting fresh", err)
+		return
+	}
+
+	s.mu.Lock()
+	for _, e := range entries {
+		s.staging[e.Rel] = &stageItem{
+			Rel:       e.Rel,
+			Abs:       e.Abs,
+			OldRel:    e.OldRel,
+			IsDir:     e.IsDir,
+			Op:        opFromName(e.Op),
+			FirstSeen: e.FirstSeen,
+		}
+	}
+	s.mu.Unlock()
+
+	if len(entries) > 0 {
+		s.Logger.Infof("commit cache: resumed %d pending entries", len(entries))
+	}
+}
+
+func (s *Service) saveCache() {
+	if s.cachePath == "" { return }
+
+	s.mu.Lock()
+	entries := make([]cacheEntry, 0, len(s.staging))
+	for _, it := range s.staging {
+		entries = append(entries, cacheEntry{
+			Rel:       it.Rel,
+			Abs:       it.Abs,
+			OldRel:    it.OldRel,
+			IsDir:     it.IsDir,
+			Op:        opName(it.Op),
+			FirstSeen: it.FirstSeen,
+		})
+	}
+	s.mu.Unlock()
+
+	if err := atomicWriteJSONSlice(s.cachePath, entries); err != nil {
+		s.Logger.Warnf("commit cache: save failed: %v", err)
+	}
+}
+
+func atomicWriteJSONSlice(path string, v any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { return err }
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil { return err }
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil { f.Close(); _ = os.Remove(tmp); return err }
+	if err := f.Close(); err != nil { return err }
+	return os.Rename(tmp, path)
 }
 
 // --- helpers ---
@@ -283,8 +577,6 @@ func parseRevision(out string) string {
 	}
 	return ""
 }
-
-func clientUUID() string { return "client-unknown" }
 
 func atomicWriteString(path string, data string) error {
 	d := filepath.Dir(path)

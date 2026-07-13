@@ -5,13 +5,17 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	"filees/pkg/config"
+	"filees/pkg/errmap"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
 )
@@ -51,7 +55,8 @@ func main() {
 		ticketsDir := filepath.Join(wc, ".filees", "tickets")
 		locksGlobal := filepath.Join(wc, ".filees", "locks", "global")
 		locksRepo := filepath.Join(wc, ".filees", "locks", "repo")
-		for _, d := range []string{stateDir, ticketsDir, locksGlobal, locksRepo} {
+		logsDir := filepath.Join(wc, ".filees", "logs")
+		for _, d := range []string{stateDir, ticketsDir, locksGlobal, locksRepo, logsDir} {
 			if err := os.MkdirAll(d, 0o755); err != nil {
 				rlg.Errorf("init dir %s: %v", d, err)
 				continue
@@ -117,6 +122,19 @@ func main() {
 			continue
 		}
 
+		// Przelicz tiery rozmiaru z config (MiB float → bajty int64)
+		sizeTiers := make([]commit.SizeTier, len(r.CommitTiers))
+		for i, t := range r.CommitTiers {
+			sizeTiers[i] = commit.SizeTier{
+				MaxBytes: int64(t.MaxMB * 1024 * 1024),
+				Interval: t.Interval,
+			}
+		}
+
+		// HEAD poll interval: use configured value or default 30s
+		pollInterval := r.PollInterval
+		if pollInterval <= 0 { pollInterval = 30 * time.Second }
+
 		// Commit service wiring
 		rules := commit.Rules{
 			Window:         win,
@@ -125,7 +143,22 @@ func main() {
 			LockFirst:      r.LockFirst,
 			RateLimitShout: r.RateLimitShout,
 			NewLatency:     5 * time.Minute,
+			SizeTiers:      sizeTiers,
+			PollInterval:   pollInterval,
 		}
+		// Stable client UUID (per working copy)
+		clientUUID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
+		rlg.Debugf("client UUID: %s", clientUUID)
+
+		// Error log sink — append to <wc>/.filees/logs/errors.jsonl
+		var sink *errmap.Sink
+		errLogPath := filepath.Join(logsDir, "errors.jsonl")
+		if f, ferr := os.OpenFile(errLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); ferr != nil {
+			rlg.Warnf("cannot open error log %s: %v — structured errors disabled", errLogPath, ferr)
+		} else {
+			sink = errmap.NewSink(f, "commit:"+r.ID)
+		}
+
 		svc := &commit.Service{
 			Cli:      cli,
 			Tickets:  nil, // TODO: wire real tickets client if/when available
@@ -134,6 +167,8 @@ func main() {
 			RepoMtx:  nil, // TODO: wire per-repo mutex if desired
 			Logger:   talk.With("commit:" + r.ID),
 			RepoURL:  r.RepoURL,
+			UUID:     clientUUID,
+			ErrSink:  sink,
 		}
 
 		// Start pipeline per repo
@@ -154,4 +189,16 @@ func main() {
 func max(a, b int) int { if a > b { return a }; return b }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// loadOrCreateUUID reads a stable UUID from path, generating and persisting one if absent.
+func loadOrCreateUUID(path string) string {
+	if data, err := os.ReadFile(path); err == nil {
+		if id := strings.TrimSpace(string(data)); id != "" {
+			return id
+		}
+	}
+	id := uuid.New().String()
+	_ = os.WriteFile(path, []byte(id+"\n"), 0o644)
+	return id
+}
 

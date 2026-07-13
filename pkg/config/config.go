@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+// TierSpec opisuje jeden przedział rozmiaru w size-adaptive commit interval.
+type TierSpec struct {
+	MaxMB    float64       // górna granica w MiB (0 = catch-all, pasuje do wszystkiego)
+	Interval time.Duration // minimalny odstęp między commitami dla batchy w tym przedziale
+}
+
 // Repo — końcowy typ używany przez main.go i serwisy.
 // Pola z czasami są już sparsowane do time.Duration.
 // Nazwy odpowiadają referencjom w main.go (CommitInterval, GlobalSlots, itd.).
@@ -29,6 +35,8 @@ type Repo struct {
 	LockFirst      bool          `json:"lock_first,omitempty"`
 	ShoutPatterns  []string      `json:"shout_patterns,omitempty"`
 	RateLimitShout time.Duration `json:"-"` // z pola JSON "rate_limit_shout"
+	CommitTiers    []TierSpec    `json:"-"` // z pola JSON "commit_tiers"
+	PollInterval   time.Duration `json:"-"` // z pola JSON "poll_interval"; 0 = użyj domyślnego (30s)
 }
 
 // jsonRepo — struktura pomocnicza do dekodowania JSON (czasy jako stringi).
@@ -46,6 +54,11 @@ type jsonRepo struct {
 	LockFirst      bool     `json:"lock_first,omitempty"`
 	ShoutPatterns  []string `json:"shout_patterns,omitempty"`
 	RateLimitShout string   `json:"rate_limit_shout,omitempty"`
+	PollInterval   string   `json:"poll_interval,omitempty"`
+	CommitTiers    []struct {
+		MaxMB    float64 `json:"max_mb"`
+		Interval string  `json:"interval"`
+	} `json:"commit_tiers,omitempty"`
 }
 
 // Load — wczytuje listę repozytoriów z JSON i dokonuje walidacji + konwersji pól.
@@ -88,6 +101,23 @@ func Load(path string) ([]Repo, error) {
 			}
 		}
 
+		var pollInterval time.Duration
+		if s := strings.TrimSpace(r.PollInterval); s != "" {
+			pollInterval, err = time.ParseDuration(s)
+			if err != nil {
+				return nil, fmt.Errorf("config[%d].poll_interval: %w", i, err)
+			}
+		}
+
+		var tiers []TierSpec
+		for j, t := range r.CommitTiers {
+			d, terr := time.ParseDuration(strings.TrimSpace(t.Interval))
+			if terr != nil {
+				return nil, fmt.Errorf("config[%d].commit_tiers[%d]: invalid interval %q: %w", i, j, t.Interval, terr)
+			}
+			tiers = append(tiers, TierSpec{MaxMB: t.MaxMB, Interval: d})
+		}
+
 		out = append(out, Repo{
 			ID:             r.ID,
 			RepoURL:        r.RepoURL,
@@ -101,6 +131,8 @@ func Load(path string) ([]Repo, error) {
 			LockFirst:      r.LockFirst,
 			ShoutPatterns:  dedupTrim(r.ShoutPatterns),
 			RateLimitShout: shoutRate,
+			PollInterval:   pollInterval,
+			CommitTiers:    tiers,
 		})
 	}
 	return out, nil

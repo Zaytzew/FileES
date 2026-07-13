@@ -97,9 +97,10 @@ type Scanner struct {
 	// ignores (hot-reload user cfg)
 	ignorePath   string    // .filees/user_ignore.cfg
 	ignoreMTime  time.Time
-	hardGlobs []glob
-	softGlobs []glob
-	igRegex   *regexp.Regexp
+	builtinGlobs []glob    // hardcoded defaults (office temps, OS noise, VCS dirs)
+	hardGlobs    []glob
+	softGlobs    []glob
+	igRegex      *regexp.Regexp
 
 	// md5 backlog persistence
 	backlogPath string // .filees/state/md5.backlog.json
@@ -143,12 +144,37 @@ type backlogItem struct {
 	QueuedAt int64  `json:"queued_at"`
 }
 
+// builtinIgnorePatterns — hardcoded ignores applied before user patterns.
+// All use "**/" prefix so they match at any depth.
+var builtinIgnorePatterns = []string{
+	// Office lock/temp files
+	"**/~$*",
+	"**/*.tmp",
+	"**/*.bak",
+	// OS metadata noise
+	"**/.DS_Store",
+	"**/Thumbs.db",
+	"**/desktop.ini",
+	// Editor state dirs
+	"**/.vscode",
+	"**/.idea",
+	"**/*.swp",
+	"**/*.swo",
+	// Build / language artifacts
+	"**/node_modules",
+	"**/__pycache__",
+	"**/*.o",
+	"**/*.pyc",
+	// Other VCS
+	"**/.git",
+}
+
 // --- construction ---
 
-func NewScanner(opts Options) (Scanner, error) {
-	if opts.WC == "" { return Scanner{}, errors.New("watcher: Options.WC is empty") }
+func NewScanner(opts Options) (*Scanner, error) {
+	if opts.WC == "" { return nil, errors.New("watcher: Options.WC is empty") }
 	fi, err := os.Stat(opts.WC)
-	if err != nil || !fi.IsDir() { return Scanner{}, errors.New("watcher: WC missing or not a directory") }
+	if err != nil || !fi.IsDir() { return nil, errors.New("watcher: WC missing or not a directory") }
 
 	if opts.ScanPeriod <= 0 { opts.ScanPeriod = 15 * time.Second }
 	if opts.BusyTTL <= 0 { opts.BusyTTL = 10 * time.Minute }
@@ -197,10 +223,16 @@ func NewScanner(opts Options) (Scanner, error) {
 			s.mode = modeActive
 		}
 	}
+	// initialize builtin ignore globs
+	s.builtinGlobs = make([]glob, len(builtinIgnorePatterns))
+	for i, p := range builtinIgnorePatterns {
+		s.builtinGlobs[i] = glob{raw: p}
+	}
+
 	// load ignores and backlog (best-effort)
 	_ = s.reloadIgnores()
 	_ = s.loadBacklog()
-	return s, nil
+	return &s, nil
 }
 
 // Start scanning; returns read-only event channel
@@ -352,12 +384,18 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil { s.lg.Warnf("walk error: %s: %v", path, err); return nil }
-		// ignore any symlink (file or dir) early
-		if d.Type()&os.ModeSymlink != 0 { *igCnt++; return nil }
+		// ignore any symlink (file or dir) — FS-0201: symlinks not supported
+		if d.Type()&os.ModeSymlink != 0 {
+			*igCnt++
+			s.lg.Debugf("FS-0201: symlink skipped: %s", path)
+			return nil
+		}
 
 		name := d.Name()
 		if d.IsDir() {
 			if name == ".svn" { return fs.SkipDir }
+			// reconciliation conflict saves — never commit
+			if strings.HasPrefix(name, "!kolizje") { *igCnt++; return fs.SkipDir }
 		}
 
 		rel := s.toRelPOSIX(path)
@@ -552,11 +590,11 @@ func matchDoublestar(pattern, rel string) bool {
 }
 
 func (s *Scanner) isIgnored(rel string, isDir bool) bool {
-    // global regex first (from config), if provided
-    if s.igRegex != nil && s.igRegex.MatchString(rel) { return true }
-    for _, g := range s.hardGlobs { if g.match(rel, isDir) { return true } }
-    for _, g := range s.softGlobs { if g.match(rel, isDir) { return true } }
-    return false
+	if s.igRegex != nil && s.igRegex.MatchString(rel) { return true }
+	for _, g := range s.builtinGlobs { if g.match(rel, isDir) { return true } }
+	for _, g := range s.hardGlobs    { if g.match(rel, isDir) { return true } }
+	for _, g := range s.softGlobs    { if g.match(rel, isDir) { return true } }
+	return false
 }
 
 

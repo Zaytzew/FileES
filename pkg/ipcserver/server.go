@@ -71,11 +71,11 @@ func (s *Server) RegisterRepo(id, url, localPath string) *RepoState {
 	return rs
 }
 
-// NewRepoEvent builds a fully-formed event envelope for the given repo.
-// The event ID is a zero-padded hex sequence number — unique within this daemon instance.
+// NewRepoEvent builds an event envelope for the given repo.
+// Sequence and EventID are intentionally zero/empty: Emit() assigns them
+// inside subsMu so sequence order == delivery order.
 func (s *Server) NewRepoEvent(repoID, evType string, payload any) contract.Event {
-	seq := atomic.AddInt64(&s.evSeq, 1)
-	return contract.NewEvent(fmt.Sprintf("%016x", seq), seq, evType, repoID, payload)
+	return contract.NewEvent("", 0, evType, repoID, payload)
 }
 
 // Start binds the socket and begins accepting connections. Blocks until ctx is
@@ -115,10 +115,16 @@ func (s *Server) acceptLoop(ln net.Listener) {
 	}
 }
 
-// Emit broadcasts ev to all current event subscribers. Slow subscribers receive
-// a dropped event (non-blocking send); they must resync via repo.status.
+// Emit assigns a monotone sequence number and broadcasts ev to all subscribers.
+// Sequence is assigned inside subsMu so delivery order == sequence order:
+// two concurrent callers cannot produce seq=N delivered after seq=N+1.
+// Slow subscribers receive a dropped event (non-blocking send); they must
+// resync via repo.status.
 func (s *Server) Emit(ev contract.Event) {
 	s.subsMu.Lock()
+	seq := atomic.AddInt64(&s.evSeq, 1)
+	ev.Sequence = seq
+	ev.EventID = fmt.Sprintf("%016x", seq)
 	for ch := range s.subs {
 		select {
 		case ch <- ev:

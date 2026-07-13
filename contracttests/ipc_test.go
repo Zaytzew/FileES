@@ -357,6 +357,203 @@ func TestIPCServerRejectsRelativeLockPath(t *testing.T) {
 	}
 }
 
+// --- helpers for event subscription tests ---
+
+func startEventServer(t *testing.T) (*ipcserver.Server, *ipcserver.RepoState, string) {
+	t.Helper()
+	sock := filepath.Join(t.TempDir(), "events.sock")
+	srv := ipcserver.New(sock)
+	rs := srv.RegisterRepo("testRepo", "svn://x/y", t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := srv.Start(ctx); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	t.Cleanup(cancel)
+	return srv, rs, sock
+}
+
+// TestEventsSubscribeStreamingResponse verifies the subscribe ACK carries streaming:true.
+func TestEventsSubscribeStreamingResponse(t *testing.T) {
+	_, _, sock := startEventServer(t)
+
+	conn, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+
+	req := contract.Request{
+		Protocol:  contract.Protocol,
+		RequestID: "sub-ack-1",
+		ClientID:  "test",
+		Command:   contract.CmdEventsSubscribe,
+		Payload:   json.RawMessage("{}"),
+	}
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		t.Fatal(err)
+	}
+	var resp contract.Response
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != contract.StatusOK {
+		t.Fatalf("status = %q, want ok", resp.Status)
+	}
+	if resp.RequestID != req.RequestID {
+		t.Fatalf("request_id mismatch")
+	}
+	var result struct {
+		Streaming bool `json:"streaming"`
+	}
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Streaming {
+		t.Fatal("streaming not true in subscribe ACK")
+	}
+}
+
+// TestEventsSubscribeDeliversStateChange verifies that SetState emits a correctly-shaped event.
+func TestEventsSubscribeDeliversStateChange(t *testing.T) {
+	_, rs, sock := startEventServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	evCh, err := ipcclient.New(sock, "test-events").Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond) // let subscription register server-side
+
+	rs.SetState(contract.StateActive) // initial state is Initializing → triggers event
+
+	select {
+	case ev := <-evCh:
+		if ev.Type != contract.EvRepoStateChanged {
+			t.Fatalf("type = %q, want %q", ev.Type, contract.EvRepoStateChanged)
+		}
+		if ev.RepoID != "testRepo" {
+			t.Fatalf("repo_id = %q", ev.RepoID)
+		}
+		if ev.Sequence <= 0 {
+			t.Fatalf("sequence = %d, want > 0", ev.Sequence)
+		}
+		if ev.EventID == "" {
+			t.Fatal("event_id empty")
+		}
+		var pl contract.RepoStateChangedPayload
+		if err := contract.DecodePayload(ev.Payload, &pl); err != nil {
+			t.Fatal(err)
+		}
+		if pl.NewState != contract.StateActive {
+			t.Fatalf("new_state = %q, want %q", pl.NewState, contract.StateActive)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for state-change event")
+	}
+}
+
+// TestEventsSubscribeMonotoneSequence emits events from two goroutines and checks
+// that the single subscriber always sees strictly increasing sequence numbers.
+func TestEventsSubscribeMonotoneSequence(t *testing.T) {
+	_, rs, sock := startEventServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	evCh, err := ipcclient.New(sock, "test-seq").Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	states := []string{contract.StateActive, contract.StateOffline}
+	const N = 30
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < N; i++ {
+			rs.SetState(states[i%2])
+		}
+		close(done)
+	}()
+	for i := 0; i < N; i++ {
+		rs.SetState(states[i%2])
+	}
+	<-done
+
+	cancel() // closes the subscriber's connection
+	var seqs []int64
+	for ev := range evCh {
+		seqs = append(seqs, ev.Sequence)
+	}
+
+	if len(seqs) < 2 {
+		t.Skipf("too few events received (%d)", len(seqs))
+	}
+	for i := 1; i < len(seqs); i++ {
+		if seqs[i] <= seqs[i-1] {
+			t.Fatalf("sequence not monotone at index %d: got %d after %d", i, seqs[i], seqs[i-1])
+		}
+	}
+}
+
+// TestEventsSubscribeSlowClientDropsEvents verifies that a non-reading subscriber
+// does not block the daemon's Emit path.
+func TestEventsSubscribeSlowClientDropsEvents(t *testing.T) {
+	_, rs, sock := startEventServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	evCh, err := ipcclient.New(sock, "slow-client").Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = evCh // intentionally not reading
+
+	time.Sleep(20 * time.Millisecond)
+
+	states := []string{contract.StateActive, contract.StateOffline}
+	emitDone := make(chan struct{})
+	go func() {
+		defer close(emitDone)
+		for i := 0; i < 200; i++ {
+			rs.SetState(states[i%2])
+		}
+	}()
+	select {
+	case <-emitDone:
+		// Emit did not block — pass
+	case <-time.After(5 * time.Second):
+		t.Fatal("Emit blocked on slow subscriber")
+	}
+}
+
+// TestEventsSubscribeChannelClosesOnCancel verifies the event channel is closed
+// promptly when the subscriber context is cancelled.
+func TestEventsSubscribeChannelClosesOnCancel(t *testing.T) {
+	_, _, sock := startEventServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	evCh, err := ipcclient.New(sock, "disconnect-test").Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case _, open := <-evCh:
+		if open {
+			t.Fatal("expected closed channel, got event")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("channel not closed after context cancellation")
+	}
+}
+
 func TestIPCServerSocketPermissionsAndCleanup(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "daemon.sock")
 	server := ipcserver.New(sock)

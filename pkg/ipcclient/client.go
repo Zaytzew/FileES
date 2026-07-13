@@ -174,6 +174,70 @@ func (c *Client) newReq(command, repoID string, payload any) contract.Request {
 	}
 }
 
+// Subscribe sends an events.subscribe request and returns a channel that receives
+// events from the daemon until ctx is cancelled or the server closes the stream.
+// The channel is closed when the stream ends; callers should range over it.
+func (c *Client) Subscribe(ctx context.Context) (<-chan contract.Event, error) {
+	dialer := net.Dialer{Timeout: c.timeout}
+	conn, err := dialer.DialContext(ctx, "unix", c.sockPath)
+	if err != nil {
+		return nil, fmt.Errorf("daemon unreachable (%s): %w", c.sockPath, err)
+	}
+
+	req := c.newReq(contract.CmdEventsSubscribe, "", nil)
+
+	// One decoder for both the subscribe ACK and all subsequent event frames.
+	dec := json.NewDecoder(bufio.NewReader(conn))
+
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("subscribe send: %w", err)
+	}
+
+	var resp contract.Response
+	if err := dec.Decode(&resp); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("subscribe recv: %w", err)
+	}
+	if resp.Protocol != contract.Protocol || resp.RequestID != req.RequestID {
+		conn.Close()
+		return nil, fmt.Errorf("subscribe: bad response envelope (protocol=%q request_id=%q)", resp.Protocol, resp.RequestID)
+	}
+	if resp.Status != contract.StatusOK {
+		conn.Close()
+		return nil, responseErr(resp)
+	}
+
+	ch := make(chan contract.Event, 64)
+	go func() {
+		defer conn.Close()
+		defer close(ch)
+
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = conn.SetDeadline(time.Now()) // unblock pending Decode
+			case <-done:
+			}
+		}()
+
+		for {
+			var ev contract.Event
+			if err := dec.Decode(&ev); err != nil {
+				return
+			}
+			select {
+			case ch <- ev:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch, nil
+}
+
 func responseErr(resp contract.Response) error {
 	if resp.Error != nil {
 		return fmt.Errorf("[%s] %s", resp.Error.Code, resp.Error.MessageKey)

@@ -12,6 +12,7 @@ import (
 // pkg/ipcclient.Client satisfies this interface directly.
 type DaemonClient interface {
 	Hello(ctx context.Context) (*contract.HelloResult, error)
+	SystemStatus(ctx context.Context) (*contract.SystemStatusResult, error)
 	RepoList(ctx context.Context) (*contract.RepoListResult, error)
 	RepoStatus(ctx context.Context, repoID string) (*contract.RepoStatus, error)
 	ErrorList(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error)

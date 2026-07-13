@@ -167,6 +167,8 @@ Stan ikony jest agregatem wszystkich repozytoriów. Obowiązuje stały priorytet
 
 Nieznany stan lub nieznana wartość enum jest prezentowana jako bezpieczne „stan nieznany” i powoduje odświeżenie, nigdy crash GUI.
 
+Priorytet agregacji to: `disconnected > error > offline > busy > active`. Przy braku połączenia ostatni snapshot może pozostać widoczny w menu wyłącznie jako oznaczony stan nieaktualny.
+
 ### Menu MVP
 
 Menu tray powinno zawierać:
@@ -190,13 +192,22 @@ Systemowe powiadomienia są wtórne wobec stanu w menu. MVP powinno pokazywać j
 ```text
 cmd/filees-gui/          composition root, lifecycle procesu
 internal/gui/app/        stan prezentacji, reconnect, resync, capability gating
-internal/gui/tray/       niezależny interfejs tray i mapowanie menu/ikon
+internal/gui/tray/       adapter fyne.io/systray, menu i mapowanie ikon
 internal/gui/platform/   autostart, powiadomienia, otwieranie katalogu
 pkg/ipcclient/           jedyna droga komunikacji z daemonem
 pkg/contract/v1/         publiczne typy graniczne
 ```
 
-Biblioteka obsługująca systemowy tray pozostaje adapterem w `internal/gui/tray`. Jej wybór nie może przenikać do logiki aplikacji ani kontraktu, co pozwoli zmienić toolkit lub dodać kolejną platformę bez zmian w daemonie.
+Wybraną biblioteką jest `fyne.io/systray`, izolowane jako adapter w `internal/gui/tray`. Jej API nie może przenikać do logiki aplikacji ani kontraktu. MVP obejmuje Linux (SNI; GNOME wymaga rozszerzenia AppIndicator/SNI) oraz Windows 10+. Szczegółowe decyzje platformowe znajdują się w `gui-assumptions.md`.
+
+### Etapowanie implementacji
+
+1. **Rdzeń bez tray** — `internal/gui/app`, interfejs `DaemonClient`, pojedyncza pętla stanu, init, reconnect, resync, debounce oraz test architektoniczny i jednostkowy bez GUI.
+2. **Adapter tray** — `internal/gui/tray` na `fyne.io/systray`, pięć ikon, menu renderowane z `ViewModel` oraz intencje użytkownika bez bezpośredniego dostępu do IPC.
+3. **Integracje platformowe** — Linux i Windows: autostart, powiadomienia, otwieranie katalogów i natywny wybór wielu plików dla lock/unlock.
+4. **Integracja i odbiór MVP** — `cmd/filees-gui`, osadzone zasoby, testy app ↔ fake IPC, testy manualne obu platform oraz weryfikacja restartu daemona, wolnego GUI i wielu repozytoriów.
+
+Etap 1 nie dodaje jeszcze `fyne.io/systray`: najpierw utrwala zachowanie aplikacji i granicę architektoniczną. Szczegółowy zakres każdego etapu oraz checklista znajdują się w `gui-assumptions.md`.
 
 ### Zakres pierwszego wydania
 
@@ -208,10 +219,11 @@ Pierwszy pionowy przekrój uznajemy za gotowy, gdy:
 - pokazuje wyłącznie akcje dostępne w capabilities,
 - lock/unlock działa tylko przez `ipcclient` i prezentuje ustrukturyzowane błędy,
 - wolny lub zamknięty GUI nie blokuje daemona,
+- autostart działa na Linuksie i Windowsie,
 - test architektoniczny chroni zakaz importowania pakietów silnika,
 - testy modelu prezentacji nie wymagają działającego SVN ani środowiska graficznego.
 
-Poza MVP pozostają: edycja konfiguracji, zarządzanie usługą daemona, `pause/resume`, ręczny sync/publish, interaktywne decyzje konfliktowe oraz pełne okno aplikacji.
+Poza MVP pozostają: edycja konfiguracji, zarządzanie usługą daemona, `pause/resume`, ręczny sync/publish, interaktywne decyzje konfliktowe, pełne okno aplikacji oraz macOS.
 
 ---
 

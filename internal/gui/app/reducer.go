@@ -13,6 +13,7 @@ type appState struct {
 	snapshots map[string]contract.RepoStatus  // from repo.status; carries live state
 	order     []string                        // repoID insertion order from repo.list
 	lastSeq   int64                           // last event sequence number received
+	system    contract.SystemStatusResult
 }
 
 func newAppState() appState {
@@ -26,12 +27,42 @@ func newAppState() appState {
 // applyConnected records a successful connection with its capability set.
 func (s appState) applyConnected(caps []string) appState {
 	s.connected = true
-	s.stale = false
+	// A successful handshake proves connectivity, but the previous snapshot is
+	// stale until the complete system/repository refresh succeeds.
+	s.stale = true
 	capMap := make(map[string]bool, len(caps))
 	for _, c := range caps {
 		capMap[c] = true
 	}
 	s.caps = capMap
+	return s
+}
+
+// applyFullSnapshot atomically replaces all authoritative daemon/repository
+// data and marks it fresh. Removed repositories and their old snapshots are
+// pruned as part of the replacement.
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus) appState {
+	s = s.applyRepoList(repos)
+	next := make(map[string]contract.RepoStatus, len(statuses))
+	for _, status := range statuses {
+		next[status.RepoID] = status
+	}
+	s.snapshots = next
+	s.system = system
+	s.stale = false
+	return s
+}
+
+// applySnapshots atomically applies a coalesced partial repository refresh.
+func (s appState) applySnapshots(statuses []contract.RepoStatus) appState {
+	next := make(map[string]contract.RepoStatus, len(s.snapshots)+len(statuses))
+	for k, v := range s.snapshots {
+		next[k] = v
+	}
+	for _, status := range statuses {
+		next[status.RepoID] = status
+	}
+	s.snapshots = next
 	return s
 }
 
@@ -42,6 +73,11 @@ func (s appState) applyDisconnected() appState {
 	s.stale = true
 	s.caps = make(map[string]bool)
 	s.lastSeq = 0
+	return s
+}
+
+func (s appState) applyStale() appState {
+	s.stale = true
 	return s
 }
 
@@ -112,9 +148,15 @@ func (s appState) viewModel() ViewModel {
 	vm := ViewModel{
 		Connected:    s.connected,
 		Stale:        s.stale,
+		DaemonState:  s.system.State,
+		UptimeSec:    s.system.UptimeSec,
 		Capabilities: caps,
 		Repos:        repos,
 	}
-	vm.Icon = aggregateIcon(s.connected, repos)
+	if s.connected && s.stale {
+		vm.Icon = IconBusy
+	} else {
+		vm.Icon = aggregateIcon(s.connected, repos)
+	}
 	return vm
 }

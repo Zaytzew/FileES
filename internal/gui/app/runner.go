@@ -8,7 +8,8 @@ import (
 	contract "filees/pkg/contract/v1"
 )
 
-// Clock abstracts time so tests can control timers without sleeping.
+// Clock abstracts timers so reconnect, debounce and periodic refresh are
+// deterministic in tests.
 type Clock interface {
 	AfterFunc(d time.Duration, f func()) clockTimer
 }
@@ -69,18 +70,18 @@ type Config struct {
 	Clock    Clock
 	Backoff  BackoffSequence
 	Debounce time.Duration // event coalescing window; default 150ms
-	Periodic time.Duration // periodic snapshot refresh; default 30s
+	Periodic time.Duration // full refresh interval; default 30s; negative disables it
 }
 
 // App is the GUI presentation model. Call Run to start the event loop.
-// All state mutations happen in the event loop goroutine.
+// All state mutations and session-generation comparisons happen in that loop.
 type App struct {
 	cfg   Config
 	msgCh chan appMsg
 	once  sync.Once
 }
 
-// New creates an App. cfg.Client and cfg.OnChange must be non-nil.
+// New creates an App. cfg.Client must be non-nil.
 func New(cfg Config) *App {
 	if cfg.Clock == nil {
 		cfg.Clock = realClock{}
@@ -106,50 +107,55 @@ func (a *App) Run(ctx context.Context) {
 
 type appMsg interface{ sealed() }
 
-// msgConnected signals a successful hello+subscribe. gen identifies the session.
 type msgConnected struct {
 	gen  int
 	caps []string
 }
-
-// msgDisconnected signals stream close or init failure. gen identifies the session.
 type msgDisconnected struct{ gen int }
+type msgReconnect struct{ gen int }
+type msgPeriodic struct{}
+type msgFullSnapshot struct {
+	gen       int
+	system    contract.SystemStatusResult
+	summaries []contract.RepoSummary
+	statuses  []contract.RepoStatus
+}
+type msgPartialSnapshots struct {
+	gen      int
+	statuses []contract.RepoStatus
+}
+type msgEvent struct {
+	gen int
+	ev  contract.Event
+}
+type msgFlushDirty struct{ gen int }
 
-// msgReconnect is sent by the AfterFunc callback so connect() runs in the event loop.
-type msgReconnect struct{}
-
-type msgRepoList struct{ summaries []contract.RepoSummary }
-type msgSnapshot struct{ status contract.RepoStatus }
-type msgEvent struct{ ev contract.Event }
-type msgFlushDirty struct{}
-
-func (msgConnected) sealed()    {}
-func (msgDisconnected) sealed() {}
-func (msgReconnect) sealed()    {}
-func (msgRepoList) sealed()     {}
-func (msgSnapshot) sealed()     {}
-func (msgEvent) sealed()        {}
-func (msgFlushDirty) sealed()   {}
+func (msgConnected) sealed()        {}
+func (msgDisconnected) sealed()     {}
+func (msgReconnect) sealed()        {}
+func (msgPeriodic) sealed()         {}
+func (msgFullSnapshot) sealed()     {}
+func (msgPartialSnapshots) sealed() {}
+func (msgEvent) sealed()            {}
+func (msgFlushDirty) sealed()       {}
 
 // --- event loop ---
 
 func (a *App) loop(ctx context.Context) {
 	state := newAppState()
 
-	// Session tracking — only touched in this goroutine.
 	var (
-		connectGen    int                  // incremented on each connect() call
-		currentCancel context.CancelFunc  // cancels the current session's context
-		currentSesCtx context.Context     // passed to snapshot goroutines; nil when disconnected
-	)
+		connectGen     int
+		currentCancel  context.CancelFunc
+		currentSesCtx  context.Context
+		reconnectTimer clockTimer
+		periodicTimer  clockTimer
+		debounceTimer  clockTimer
 
-	var (
-		dirtyRepos    = make(map[string]bool)
-		debounceTimer clockTimer
+		refreshInFlight bool
+		fullPending     bool
+		dirtyRepos      = make(map[string]bool)
 	)
-
-	periodic := time.NewTicker(a.cfg.Periodic)
-	defer periodic.Stop()
 
 	send := func(m appMsg) {
 		select {
@@ -164,212 +170,289 @@ func (a *App) loop(ctx context.Context) {
 		}
 	}
 
-	// fullResync fetches repo.list then all repo.status in the current session.
-	// Captures currentSesCtx/connectGen at call time — safe because called only from loop.
-	fullResync := func() {
-		sesCtx := currentSesCtx
-		gen := connectGen
-		if sesCtx == nil {
+	stopTimer := func(timer *clockTimer) {
+		if *timer != nil {
+			(*timer).Stop()
+			*timer = nil
+		}
+	}
+
+	var schedulePeriodic func()
+	schedulePeriodic = func() {
+		if a.cfg.Periodic < 0 || ctx.Err() != nil {
 			return
 		}
+		periodicTimer = a.cfg.Clock.AfterFunc(a.cfg.Periodic, func() {
+			send(msgPeriodic{})
+		})
+	}
+
+	var launchFullRefresh func()
+	var launchDirtyRefresh func()
+	var finishRefresh func()
+
+	launchFullRefresh = func() {
+		if currentSesCtx == nil {
+			return
+		}
+		if refreshInFlight {
+			fullPending = true
+			return
+		}
+
+		refreshInFlight = true
+		fullPending = false
+		dirtyRepos = make(map[string]bool)
+		stopTimer(&debounceTimer)
+		sesCtx := currentSesCtx
+		gen := connectGen
+
 		go func() {
-			list, err := a.cfg.Client.RepoList(sesCtx)
-			if err != nil || sesCtx.Err() != nil {
+			system, err := a.cfg.Client.SystemStatus(sesCtx)
+			if err != nil {
+				a.sendSessionFailure(sesCtx, gen, send)
 				return
 			}
-			send(msgRepoList{list.Repos})
-			for _, r := range list.Repos {
-				id := r.ID
-				go func() {
-					s, err := a.cfg.Client.RepoStatus(sesCtx, id)
-					if err != nil || sesCtx.Err() != nil {
-						return
-					}
-					// Discard if session changed while in flight.
-					if gen == connectGen {
-						send(msgSnapshot{*s})
-					}
-				}()
+			list, err := a.cfg.Client.RepoList(sesCtx)
+			if err != nil {
+				a.sendSessionFailure(sesCtx, gen, send)
+				return
+			}
+
+			statuses := make([]contract.RepoStatus, 0, len(list.Repos))
+			for _, repo := range list.Repos {
+				status, err := a.cfg.Client.RepoStatus(sesCtx, repo.ID)
+				if err != nil {
+					a.sendSessionFailure(sesCtx, gen, send)
+					return
+				}
+				statuses = append(statuses, *status)
+			}
+			if sesCtx.Err() == nil {
+				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos, statuses: statuses})
 			}
 		}()
 	}
 
-	// connect is called ONLY from the event loop goroutine.
-	// It creates a new session, cancels any previous one, and launches an init goroutine.
-	connect := func() {
-		connectGen++
+	launchDirtyRefresh = func() {
+		if currentSesCtx == nil || refreshInFlight || len(dirtyRepos) == 0 {
+			return
+		}
+		refreshInFlight = true
+		ids := make([]string, 0, len(dirtyRepos))
+		for id := range dirtyRepos {
+			ids = append(ids, id)
+		}
+		dirtyRepos = make(map[string]bool)
+		sesCtx := currentSesCtx
 		gen := connectGen
 
-		sesCtx, sesCancel := context.WithCancel(ctx)
+		go func() {
+			statuses := make([]contract.RepoStatus, 0, len(ids))
+			for _, id := range ids {
+				status, err := a.cfg.Client.RepoStatus(sesCtx, id)
+				if err != nil {
+					a.sendSessionFailure(sesCtx, gen, send)
+					return
+				}
+				statuses = append(statuses, *status)
+			}
+			if sesCtx.Err() == nil {
+				send(msgPartialSnapshots{gen: gen, statuses: statuses})
+			}
+		}()
+	}
+
+	finishRefresh = func() {
+		refreshInFlight = false
+		if fullPending {
+			launchFullRefresh()
+			return
+		}
+		if len(dirtyRepos) > 0 && debounceTimer == nil {
+			launchDirtyRefresh()
+		}
+	}
+
+	scheduleReconnect := func(gen int) {
+		stopTimer(&reconnectTimer)
+		delay := a.cfg.Backoff.Next()
+		reconnectTimer = a.cfg.Clock.AfterFunc(delay, func() {
+			send(msgReconnect{gen: gen})
+		})
+	}
+
+	connect := func() {
+		stopTimer(&reconnectTimer)
+		connectGen++
+		gen := connectGen
 		if currentCancel != nil {
 			currentCancel()
 		}
+		sesCtx, sesCancel := context.WithCancel(ctx)
 		currentCancel = sesCancel
 		currentSesCtx = sesCtx
 
 		go func() {
 			hello, err := a.cfg.Client.Hello(sesCtx)
 			if err != nil {
-				sesCancel()
-				send(msgDisconnected{gen})
+				a.sendSessionFailure(sesCtx, gen, send)
 				return
 			}
 
-			// Subscribe before snapshots: events during init are not missed.
-			var evCh <-chan contract.Event
+			var events <-chan contract.Event
 			if hasCap(hello.Capabilities, contract.CapEventsSubscribe) {
-				evCh, err = a.cfg.Client.Subscribe(sesCtx)
+				events, err = a.cfg.Client.Subscribe(sesCtx)
 				if err != nil {
-					sesCancel()
-					send(msgDisconnected{gen})
+					a.sendSessionFailure(sesCtx, gen, send)
 					return
 				}
 			}
 
-			send(msgConnected{gen, hello.Capabilities})
-
-			if evCh != nil {
-				go func() {
-					a.drainEvents(sesCtx, evCh, send)
-					// Stream closed naturally — sesCtx not yet cancelled by loop.
-					if sesCtx.Err() == nil {
-						send(msgDisconnected{gen})
-					}
-				}()
-			}
-
-			list, err := a.cfg.Client.RepoList(sesCtx)
-			if err != nil || sesCtx.Err() != nil {
-				return
-			}
-			send(msgRepoList{list.Repos})
-			for _, r := range list.Repos {
-				id := r.ID
-				go func() {
-					s, err := a.cfg.Client.RepoStatus(sesCtx, id)
-					if err != nil || sesCtx.Err() != nil {
-						return
-					}
-					send(msgSnapshot{*s})
-				}()
+			send(msgConnected{gen: gen, caps: hello.Capabilities})
+			if events != nil {
+				a.drainEvents(sesCtx, gen, events, send)
+				if sesCtx.Err() == nil {
+					send(msgDisconnected{gen: gen})
+				}
 			}
 		}()
 	}
 
-	// reconnect sends msgReconnect via AfterFunc so connect() runs in the event loop.
-	reconnect := func() {
-		d := a.cfg.Backoff.Next()
-		a.cfg.Clock.AfterFunc(d, func() {
-			send(msgReconnect{})
-		})
-	}
+	schedulePeriodic()
+	connect()
 
-	connect() // initial connection attempt
+	defer func() {
+		if currentCancel != nil {
+			currentCancel()
+		}
+		stopTimer(&reconnectTimer)
+		stopTimer(&periodicTimer)
+		stopTimer(&debounceTimer)
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
-			if currentCancel != nil {
-				currentCancel()
-			}
 			return
 
-		case m := <-a.msgCh:
-			switch msg := m.(type) {
-
+		case raw := <-a.msgCh:
+			switch msg := raw.(type) {
 			case msgReconnect:
-				connect()
+				if msg.gen == connectGen && currentSesCtx == nil {
+					connect()
+				}
 
 			case msgConnected:
-				if msg.gen != connectGen {
-					break // stale connect from a cancelled session
+				if msg.gen != connectGen || currentSesCtx == nil {
+					break
 				}
 				state = state.applyConnected(msg.caps)
-				a.cfg.Backoff.Reset()
 				notify()
+				launchFullRefresh()
 
 			case msgDisconnected:
-				if msg.gen != connectGen {
-					break // stale disconnect from a previous session
+				if msg.gen != connectGen || currentSesCtx == nil {
+					break
 				}
 				if currentCancel != nil {
 					currentCancel()
-					currentCancel = nil
 				}
+				currentCancel = nil
 				currentSesCtx = nil
-				if state.connected {
-					state = state.applyDisconnected()
-					notify()
+				refreshInFlight = false
+				fullPending = false
+				dirtyRepos = make(map[string]bool)
+				stopTimer(&debounceTimer)
+				// Register the timer before publishing disconnected, so observers
+				// using a fake clock cannot advance before it exists.
+				scheduleReconnect(msg.gen)
+				state = state.applyDisconnected()
+				notify()
+
+			case msgFullSnapshot:
+				if msg.gen != connectGen || currentSesCtx == nil {
+					break
 				}
-				reconnect()
-
-			case msgRepoList:
-				state = state.applyRepoList(msg.summaries)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses)
+				a.cfg.Backoff.Reset()
 				notify()
+				finishRefresh()
 
-			case msgSnapshot:
-				state = state.applySnapshot(msg.status)
+			case msgPartialSnapshots:
+				if msg.gen != connectGen || currentSesCtx == nil {
+					break
+				}
+				state = state.applySnapshots(msg.statuses)
 				notify()
+				finishRefresh()
 
 			case msgEvent:
-				newState, needsResync, dirtyID := state.applyEvent(msg.ev)
-				state = newState
+				if msg.gen != connectGen || currentSesCtx == nil {
+					break
+				}
+				var needsResync bool
+				var dirtyID string
+				state, needsResync, dirtyID = state.applyEvent(msg.ev)
 				if needsResync {
-					fullResync()
-				} else if dirtyID != "" {
-					dirtyRepos[dirtyID] = true
-					if debounceTimer == nil {
-						debounceTimer = a.cfg.Clock.AfterFunc(a.cfg.Debounce, func() {
-							send(msgFlushDirty{})
-						})
-					}
+					state = state.applyStale()
+					notify()
+					launchFullRefresh()
+					break
+				}
+				if dirtyID == "" {
+					launchFullRefresh()
+					break
+				}
+				dirtyRepos[dirtyID] = true
+				if debounceTimer == nil {
+					gen := connectGen
+					debounceTimer = a.cfg.Clock.AfterFunc(a.cfg.Debounce, func() {
+						send(msgFlushDirty{gen: gen})
+					})
 				}
 
 			case msgFlushDirty:
-				debounceTimer = nil
-				sesCtx := currentSesCtx // capture at dispatch time
-				if sesCtx != nil {
-					for id := range dirtyRepos {
-						repoID := id
-						go func() {
-							s, err := a.cfg.Client.RepoStatus(sesCtx, repoID)
-							if err != nil || sesCtx.Err() != nil {
-								return
-							}
-							send(msgSnapshot{*s})
-						}()
-					}
+				if msg.gen != connectGen || currentSesCtx == nil {
+					break
 				}
-				dirtyRepos = make(map[string]bool)
-			}
+				debounceTimer = nil
+				launchDirtyRefresh()
 
-		case <-periodic.C:
-			fullResync()
+			case msgPeriodic:
+				periodicTimer = nil
+				if currentSesCtx != nil {
+					launchFullRefresh()
+				}
+				schedulePeriodic()
+			}
 		}
 	}
 }
 
-func (a *App) drainEvents(sesCtx context.Context, evCh <-chan contract.Event, send func(appMsg)) {
+func (a *App) sendSessionFailure(sesCtx context.Context, gen int, send func(appMsg)) {
+	if sesCtx.Err() == nil {
+		send(msgDisconnected{gen: gen})
+	}
+}
+
+func (a *App) drainEvents(sesCtx context.Context, gen int, events <-chan contract.Event, send func(appMsg)) {
 	for {
 		select {
-		case ev, ok := <-evCh:
+		case ev, ok := <-events:
 			if !ok {
 				return
 			}
-			select {
-			case a.msgCh <- msgEvent{ev}:
-			case <-sesCtx.Done():
-				return
-			}
+			send(msgEvent{gen: gen, ev: ev})
 		case <-sesCtx.Done():
 			return
 		}
 	}
 }
 
-func hasCap(caps []string, cap string) bool {
-	for _, c := range caps {
-		if c == cap {
+func hasCap(caps []string, capability string) bool {
+	for _, candidate := range caps {
+		if candidate == capability {
 			return true
 		}
 	}

@@ -3,7 +3,9 @@
 package archtest
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -19,8 +21,14 @@ var forbiddenPkgs = []string{
 func TestGUIDoesNotImportEnginePackages(t *testing.T) {
 	root := moduleRoot(t)
 
-	// Collect the full transitive dependency set of all internal/gui packages.
-	cmd := exec.Command("go", "list", "-f", `{{join .Deps "\n"}}`, "filees/internal/gui/...")
+	// Collect the full transitive dependency set of all GUI packages. The
+	// composition root is included as soon as cmd/filees-gui exists.
+	patterns := []string{"filees/internal/gui/..."}
+	if _, err := os.Stat(filepath.Join(root, "cmd", "filees-gui")); err == nil {
+		patterns = append(patterns, "filees/cmd/filees-gui")
+	}
+	args := append([]string{"list", "-f", `{{join .Deps "\n"}}`}, patterns...)
+	cmd := exec.Command("go", args...)
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {

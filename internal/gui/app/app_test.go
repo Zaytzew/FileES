@@ -13,18 +13,21 @@ import (
 // --- fake implementations ---
 
 type fakeDaemon struct {
-	mu          sync.Mutex
-	hello       func(ctx context.Context) (*contract.HelloResult, error)
-	repoList    func(ctx context.Context) (*contract.RepoListResult, error)
-	repoStatus  func(ctx context.Context, id string) (*contract.RepoStatus, error)
-	errorList   func(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error)
-	lock        func(ctx context.Context, id string, paths []string) (string, error)
-	unlock      func(ctx context.Context, id string, paths []string) (string, error)
-	subscribe   func(ctx context.Context) (<-chan contract.Event, error)
+	mu           sync.Mutex
+	hello        func(ctx context.Context) (*contract.HelloResult, error)
+	systemStatus func(ctx context.Context) (*contract.SystemStatusResult, error)
+	repoList     func(ctx context.Context) (*contract.RepoListResult, error)
+	repoStatus   func(ctx context.Context, id string) (*contract.RepoStatus, error)
+	errorList    func(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error)
+	lock         func(ctx context.Context, id string, paths []string) (string, error)
+	unlock       func(ctx context.Context, id string, paths []string) (string, error)
+	subscribe    func(ctx context.Context) (<-chan contract.Event, error)
 }
 
 func (f *fakeDaemon) Hello(ctx context.Context) (*contract.HelloResult, error) {
-	f.mu.Lock(); fn := f.hello; f.mu.Unlock()
+	f.mu.Lock()
+	fn := f.hello
+	f.mu.Unlock()
 	if fn == nil {
 		return &contract.HelloResult{
 			DaemonVersion:    "test",
@@ -34,42 +37,75 @@ func (f *fakeDaemon) Hello(ctx context.Context) (*contract.HelloResult, error) {
 	}
 	return fn(ctx)
 }
+func (f *fakeDaemon) SystemStatus(ctx context.Context) (*contract.SystemStatusResult, error) {
+	f.mu.Lock()
+	fn := f.systemStatus
+	f.mu.Unlock()
+	if fn == nil {
+		return &contract.SystemStatusResult{State: "running", UptimeSec: 42}, nil
+	}
+	return fn(ctx)
+}
 func (f *fakeDaemon) RepoList(ctx context.Context) (*contract.RepoListResult, error) {
-	f.mu.Lock(); fn := f.repoList; f.mu.Unlock()
-	if fn == nil { return &contract.RepoListResult{}, nil }
+	f.mu.Lock()
+	fn := f.repoList
+	f.mu.Unlock()
+	if fn == nil {
+		return &contract.RepoListResult{}, nil
+	}
 	return fn(ctx)
 }
 func (f *fakeDaemon) RepoStatus(ctx context.Context, id string) (*contract.RepoStatus, error) {
-	f.mu.Lock(); fn := f.repoStatus; f.mu.Unlock()
+	f.mu.Lock()
+	fn := f.repoStatus
+	f.mu.Unlock()
 	if fn == nil {
 		return &contract.RepoStatus{RepoID: id, State: contract.StateActive, Connectivity: contract.ConnOnline}, nil
 	}
 	return fn(ctx, id)
 }
 func (f *fakeDaemon) ErrorList(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error) {
-	f.mu.Lock(); fn := f.errorList; f.mu.Unlock()
-	if fn == nil { return &contract.ErrorListResult{}, nil }
+	f.mu.Lock()
+	fn := f.errorList
+	f.mu.Unlock()
+	if fn == nil {
+		return &contract.ErrorListResult{}, nil
+	}
 	return fn(ctx, pl)
 }
 func (f *fakeDaemon) Lock(ctx context.Context, id string, paths []string) (string, error) {
-	f.mu.Lock(); fn := f.lock; f.mu.Unlock()
-	if fn == nil { return "", nil }
+	f.mu.Lock()
+	fn := f.lock
+	f.mu.Unlock()
+	if fn == nil {
+		return "", nil
+	}
 	return fn(ctx, id, paths)
 }
 func (f *fakeDaemon) Unlock(ctx context.Context, id string, paths []string) (string, error) {
-	f.mu.Lock(); fn := f.unlock; f.mu.Unlock()
-	if fn == nil { return "", nil }
+	f.mu.Lock()
+	fn := f.unlock
+	f.mu.Unlock()
+	if fn == nil {
+		return "", nil
+	}
 	return fn(ctx, id, paths)
 }
 func (f *fakeDaemon) Subscribe(ctx context.Context) (<-chan contract.Event, error) {
-	f.mu.Lock(); fn := f.subscribe; f.mu.Unlock()
-	if fn == nil { return make(chan contract.Event), nil }
+	f.mu.Lock()
+	fn := f.subscribe
+	f.mu.Unlock()
+	if fn == nil {
+		return make(chan contract.Event), nil
+	}
 	return fn(ctx)
 }
 
 // setRepoList replaces the repoList handler concurrently-safely.
 func (f *fakeDaemon) setRepoList(fn func(ctx context.Context) (*contract.RepoListResult, error)) {
-	f.mu.Lock(); f.repoList = fn; f.mu.Unlock()
+	f.mu.Lock()
+	f.repoList = fn
+	f.mu.Unlock()
 }
 
 // fakeClock implements Clock with manual Advance.
@@ -80,14 +116,18 @@ type fakeClock struct {
 }
 
 type fakeTimer struct {
+	clock   *fakeClock
 	at      time.Time
 	fn      func()
 	stopped bool
 }
 
 func (t *fakeTimer) Stop() bool {
+	t.clock.mu.Lock()
+	defer t.clock.mu.Unlock()
+	wasActive := !t.stopped
 	t.stopped = true
-	return true
+	return wasActive
 }
 
 func newFakeClock() *fakeClock {
@@ -97,7 +137,7 @@ func newFakeClock() *fakeClock {
 func (c *fakeClock) AfterFunc(d time.Duration, f func()) clockTimer {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	t := &fakeTimer{at: c.now.Add(d), fn: f}
+	t := &fakeTimer{clock: c, at: c.now.Add(d), fn: f}
 	c.timers = append(c.timers, t)
 	return t
 }
@@ -109,7 +149,10 @@ func (c *fakeClock) Advance(d time.Duration) {
 	var toFire []func()
 	var remaining []*fakeTimer
 	for _, t := range c.timers {
-		if !t.stopped && !c.now.Before(t.at) {
+		if t.stopped {
+			continue
+		}
+		if !c.now.Before(t.at) {
 			toFire = append(toFire, t.fn)
 		} else {
 			remaining = append(remaining, t)
@@ -166,17 +209,18 @@ func (c *vmCollector) waitFor(t *testing.T, timeout time.Duration, pred func(Vie
 	}
 }
 
-func startApp(ctx context.Context, d *fakeDaemon, vc *vmCollector, clock *fakeClock, backoff BackoffSequence) {
+func startApp(ctx context.Context, d *fakeDaemon, vc *vmCollector, clock *fakeClock, backoff BackoffSequence) *App {
 	cfg := Config{
 		Client:   d,
 		OnChange: vc.onChange,
 		Clock:    clock,
 		Backoff:  backoff,
 		Debounce: 10 * time.Millisecond,
-		Periodic: 24 * time.Hour, // effectively never in tests
+		Periodic: -1, // disabled in tests unless explicitly exercised
 	}
 	app := New(cfg)
 	go app.Run(ctx)
+	return app
 }
 
 // --- reducer unit tests ---
@@ -184,7 +228,7 @@ func startApp(ctx context.Context, d *fakeDaemon, vc *vmCollector, clock *fakeCl
 func TestReducerApplyConnected(t *testing.T) {
 	s := newAppState()
 	s = s.applyConnected([]string{contract.CapRepoLock, contract.CapEventsSubscribe})
-	if !s.connected || s.stale {
+	if !s.connected || !s.stale {
 		t.Fatalf("connected=%v stale=%v", s.connected, s.stale)
 	}
 	if !s.caps[contract.CapRepoLock] || !s.caps[contract.CapEventsSubscribe] {
@@ -298,7 +342,7 @@ func ptr(s string) *string { return &s }
 // --- runner integration tests ---
 
 func TestAppInitOrderAndConnected(t *testing.T) {
-	// Verifies: hello → subscribe → repoList → repoStatus; ViewModel becomes connected.
+	// Verifies: hello → subscribe → systemStatus → repoList → repoStatus.
 	evCh := make(chan contract.Event)
 	var callOrder []string
 	var mu sync.Mutex
@@ -316,6 +360,10 @@ func TestAppInitOrderAndConnected(t *testing.T) {
 		subscribe: func(ctx context.Context) (<-chan contract.Event, error) {
 			record("subscribe")
 			return evCh, nil
+		},
+		systemStatus: func(ctx context.Context) (*contract.SystemStatusResult, error) {
+			record("systemStatus")
+			return &contract.SystemStatusResult{State: "running", UptimeSec: 99}, nil
 		},
 		repoList: func(ctx context.Context) (*contract.RepoListResult, error) {
 			record("repoList")
@@ -336,17 +384,20 @@ func TestAppInitOrderAndConnected(t *testing.T) {
 
 	// Wait until connected and repo appears.
 	vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
-		return vm.Connected && len(vm.Repos) == 1 && vm.Repos[0].State == contract.StateActive
+		return vm.Connected && !vm.Stale && len(vm.Repos) == 1 && vm.Repos[0].State == contract.StateActive
 	})
 	if vm.Icon != IconActive {
 		t.Fatalf("icon = %q, want active", vm.Icon)
+	}
+	if vm.DaemonState != "running" || vm.UptimeSec != 99 {
+		t.Fatalf("system status = %q/%d", vm.DaemonState, vm.UptimeSec)
 	}
 
 	mu.Lock()
 	order := append([]string{}, callOrder...)
 	mu.Unlock()
-	if len(order) < 3 || order[0] != "hello" || order[1] != "subscribe" || order[2] != "repoList" {
-		t.Fatalf("call order = %v, want [hello subscribe repoList ...]", order)
+	if len(order) < 4 || order[0] != "hello" || order[1] != "subscribe" || order[2] != "systemStatus" || order[3] != "repoList" {
+		t.Fatalf("call order = %v, want [hello subscribe systemStatus repoList ...]", order)
 	}
 }
 
@@ -463,6 +514,7 @@ func TestAppReconnectOnStreamClose(t *testing.T) {
 
 func TestAppResyncOnSequenceGap(t *testing.T) {
 	evCh := make(chan contract.Event, 4)
+	releaseResync := make(chan struct{})
 	var resyncCount int
 	var mu sync.Mutex
 
@@ -471,7 +523,15 @@ func TestAppResyncOnSequenceGap(t *testing.T) {
 		repoList: func(ctx context.Context) (*contract.RepoListResult, error) {
 			mu.Lock()
 			resyncCount++
+			call := resyncCount
 			mu.Unlock()
+			if call > 1 {
+				select {
+				case <-releaseResync:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
 			return &contract.RepoListResult{Repos: []contract.RepoSummary{{ID: "x"}}}, nil
 		},
 	}
@@ -481,8 +541,8 @@ func TestAppResyncOnSequenceGap(t *testing.T) {
 	vc := newVMCollector()
 	startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
 
-	// Wait connected.
-	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected })
+	// Wait for the initial authoritative snapshot.
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && !vm.Stale })
 
 	mu.Lock()
 	before := resyncCount
@@ -494,18 +554,17 @@ func TestAppResyncOnSequenceGap(t *testing.T) {
 	evCh <- contract.Event{Protocol: contract.Protocol, EventID: "e3", Sequence: 3,
 		Timestamp: time.Now().UTC().Format(time.RFC3339), Type: contract.EvOnlineRestored, RepoID: "x"}
 
-	// Wait for repoList to be called again (resync).
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		after := resyncCount
-		mu.Unlock()
-		if after > before {
-			return // resync triggered ✓
-		}
-		time.Sleep(20 * time.Millisecond)
+	// The old snapshot becomes stale immediately and stays stale until the
+	// deliberately blocked full resync completes.
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && vm.Stale })
+	close(releaseResync)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && !vm.Stale })
+	mu.Lock()
+	after := resyncCount
+	mu.Unlock()
+	if after <= before {
+		t.Fatal("resync not triggered after sequence gap")
 	}
-	t.Fatal("resync not triggered after sequence gap")
 }
 
 func TestAppEventCoalescence(t *testing.T) {
@@ -622,8 +681,9 @@ func TestAppHelloFailureThenReconnect(t *testing.T) {
 	vc := newVMCollector()
 	startApp(ctx, d, vc, clock, &fakeBackoff{steps: []time.Duration{0}})
 
-	// First connect fails; fire reconnect timer.
-	time.Sleep(20 * time.Millisecond)
+	// First connect fails. Observing disconnected guarantees the reconnect
+	// timer has already been registered by the event loop.
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return !vm.Connected && vm.Stale })
 	clock.Advance(0)
 
 	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected })
@@ -632,5 +692,169 @@ func TestAppHelloFailureThenReconnect(t *testing.T) {
 	mu.Unlock()
 	if att < 2 {
 		t.Fatalf("expected 2 hello attempts, got %d", att)
+	}
+}
+
+func TestAppKeepsSnapshotStaleUntilFullRefreshCompletes(t *testing.T) {
+	release := make(chan struct{})
+	d := &fakeDaemon{
+		repoList: func(ctx context.Context) (*contract.RepoListResult, error) {
+			return &contract.RepoListResult{Repos: []contract.RepoSummary{{ID: "slow"}}}, nil
+		},
+		repoStatus: func(ctx context.Context, id string) (*contract.RepoStatus, error) {
+			select {
+			case <-release:
+				return &contract.RepoStatus{RepoID: id, State: contract.StateActive, Connectivity: contract.ConnOnline}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
+
+	vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected })
+	if !vm.Stale || vm.Icon != IconBusy {
+		t.Fatalf("during initial refresh: stale=%v icon=%q", vm.Stale, vm.Icon)
+	}
+	close(release)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return vm.Connected && !vm.Stale && len(vm.Repos) == 1
+	})
+}
+
+func TestAppRepoListFailureDisconnectsAndReconnects(t *testing.T) {
+	var calls int
+	var mu sync.Mutex
+	clock := newFakeClock()
+	d := &fakeDaemon{
+		repoList: func(ctx context.Context) (*contract.RepoListResult, error) {
+			mu.Lock()
+			calls++
+			call := calls
+			mu.Unlock()
+			if call == 1 {
+				return nil, errors.New("daemon disappeared")
+			}
+			return &contract.RepoListResult{}, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	startApp(ctx, d, vc, clock, &fakeBackoff{steps: []time.Duration{0}})
+
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return !vm.Connected && vm.Stale })
+	clock.Advance(0)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && !vm.Stale })
+}
+
+func TestAppPeriodicRefreshDetectsFailureWithoutEventCapability(t *testing.T) {
+	clock := newFakeClock()
+	var fail bool
+	var mu sync.Mutex
+	d := &fakeDaemon{
+		hello: func(ctx context.Context) (*contract.HelloResult, error) {
+			return &contract.HelloResult{ProtocolVersions: []string{contract.Protocol}}, nil
+		},
+		repoList: func(ctx context.Context) (*contract.RepoListResult, error) {
+			mu.Lock()
+			shouldFail := fail
+			mu.Unlock()
+			if shouldFail {
+				return nil, errors.New("daemon unavailable")
+			}
+			return &contract.RepoListResult{}, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	app := New(Config{
+		Client: d, OnChange: vc.onChange, Clock: clock,
+		Backoff:  &fakeBackoff{steps: []time.Duration{time.Hour}},
+		Debounce: 10 * time.Millisecond, Periodic: time.Second,
+	})
+	go app.Run(ctx)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && !vm.Stale })
+
+	mu.Lock()
+	fail = true
+	mu.Unlock()
+	clock.Advance(time.Second)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return !vm.Connected && vm.Stale })
+}
+
+func TestAppIgnoresLateSnapshotFromOldGeneration(t *testing.T) {
+	clock := newFakeClock()
+	events1 := make(chan contract.Event)
+	events2 := make(chan contract.Event)
+	var generation int
+	var mu sync.Mutex
+	d := &fakeDaemon{
+		subscribe: func(ctx context.Context) (<-chan contract.Event, error) {
+			mu.Lock()
+			generation++
+			gen := generation
+			mu.Unlock()
+			if gen == 1 {
+				return events1, nil
+			}
+			return events2, nil
+		},
+		repoList: func(ctx context.Context) (*contract.RepoListResult, error) {
+			return &contract.RepoListResult{Repos: []contract.RepoSummary{{ID: "repo"}}}, nil
+		},
+		repoStatus: func(ctx context.Context, id string) (*contract.RepoStatus, error) {
+			mu.Lock()
+			rev := int64(generation)
+			mu.Unlock()
+			return &contract.RepoStatus{RepoID: id, State: contract.StateActive,
+				Connectivity: contract.ConnOnline, LocalRevision: rev}, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	application := startApp(ctx, d, vc, clock, &fakeBackoff{steps: []time.Duration{0}})
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return vm.Connected && !vm.Stale && len(vm.Repos) == 1 && vm.Repos[0].LocalRev == 1
+	})
+
+	close(events1)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return !vm.Connected })
+	clock.Advance(0)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return vm.Connected && !vm.Stale && len(vm.Repos) == 1 && vm.Repos[0].LocalRev == 2
+	})
+
+	// No legitimate notifications remain queued at this point.
+	for {
+		select {
+		case <-vc.ch:
+			continue
+		default:
+			goto drained
+		}
+	}
+
+drained:
+	application.msgCh <- msgFullSnapshot{
+		gen:       1,
+		system:    contract.SystemStatusResult{State: "stale-session"},
+		summaries: []contract.RepoSummary{{ID: "repo"}},
+		statuses: []contract.RepoStatus{{RepoID: "repo", State: contract.StateActive,
+			Connectivity: contract.ConnOnline, LocalRevision: 999}},
+	}
+	select {
+	case vm := <-vc.ch:
+		t.Fatalf("old generation changed ViewModel: %#v", vm)
+	case <-time.After(100 * time.Millisecond):
 	}
 }

@@ -35,6 +35,8 @@ type RepoViewModel struct {
 type ViewModel struct {
 	Connected    bool
 	Stale        bool // true: data predates last disconnect; display but mark stale
+	DaemonState  string
+	UptimeSec    int64
 	Capabilities map[string]bool
 	Repos        []RepoViewModel
 	Icon         IconState

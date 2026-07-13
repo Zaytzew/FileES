@@ -204,8 +204,8 @@ Wybraną biblioteką jest `fyne.io/systray`, izolowane jako adapter w `internal/
 
 1. **Rdzeń bez tray** — `internal/gui/app`, interfejs `DaemonClient`, pojedyncza pętla stanu, init, reconnect, resync, debounce oraz test architektoniczny i jednostkowy bez GUI.
 2. **Adapter tray** — `internal/gui/tray` na `fyne.io/systray`, pięć ikon, menu renderowane z `ViewModel` oraz intencje użytkownika bez bezpośredniego dostępu do IPC.
-3. **Integracje platformowe** — Linux i Windows: autostart, powiadomienia, otwieranie katalogów i natywny wybór wielu plików dla lock/unlock.
-4. **Integracja i odbiór MVP** — `cmd/filees-gui`, osadzone zasoby, testy app ↔ fake IPC, testy manualne obu platform oraz weryfikacja restartu daemona, wolnego GUI i wielu repozytoriów.
+3. **Integracje platformowe** — 3A: czyste interfejsy i fake backend; 3B: Linux (otwieranie katalogów, picker, powiadomienia, autostart XDG); 3C: odpowiedniki Windows; 3D: nieblokujący kontroler `tray.Intent`, który koordynuje platformę i granicę `DaemonClient` bez importowania implementacji IPC.
+4. **Integracja i odbiór MVP** — `cmd/filees-gui`, metadane i pakietowanie istniejących zasobów, testy app ↔ fake IPC, testy manualne obu platform oraz weryfikacja restartu daemona, wolnego GUI i wielu repozytoriów.
 
 Etapy 1 i 2 są ukończone. Adapter `fyne.io/systray` jest odseparowany od IPC i kontraktu przez `ViewModel`, ma pięć osadzonych ikon (PNG/ICO), deterministyczny model menu, intencje użytkownika oraz testy renderera i granicy importów. Szczegółowy zakres kolejnych etapów oraz checklista znajdują się w `gui-assumptions.md`.
 

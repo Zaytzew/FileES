@@ -134,11 +134,6 @@ func (s *Server) Emit(ev contract.Event) {
 	s.subsMu.Unlock()
 }
 
-// NextSeq returns the next monotone event sequence number.
-func (s *Server) NextSeq() int64 {
-	return atomic.AddInt64(&s.evSeq, 1)
-}
-
 func (s *Server) addSub(ch chan contract.Event) {
 	s.subsMu.Lock()
 	s.subs[ch] = struct{}{}

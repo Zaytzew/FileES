@@ -53,7 +53,14 @@ func (c *Client) Do(ctx context.Context, req contract.Request) (contract.Respons
 		return contract.Response{}, fmt.Errorf("daemon unreachable (%s): %w", c.sockPath, err)
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(c.timeout))
+	// Honour the caller's context deadline if it is longer than c.timeout.
+	// This lets lock/unlock (30 s context) use a full 30 s instead of being
+	// capped at the 10 s client default.
+	dl := time.Now().Add(c.timeout)
+	if ctxDl, ok := ctx.Deadline(); ok && ctxDl.After(dl) {
+		dl = ctxDl
+	}
+	_ = conn.SetDeadline(dl)
 
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
 		return contract.Response{}, fmt.Errorf("send: %w", err)
@@ -62,6 +69,15 @@ func (c *Client) Do(ctx context.Context, req contract.Request) (contract.Respons
 	var resp contract.Response
 	if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&resp); err != nil {
 		return contract.Response{}, fmt.Errorf("receive: %w", err)
+	}
+	if resp.Protocol != contract.Protocol {
+		return contract.Response{}, fmt.Errorf("protocol mismatch: got %q want %q", resp.Protocol, contract.Protocol)
+	}
+	if resp.RequestID != req.RequestID {
+		return contract.Response{}, fmt.Errorf("request_id mismatch: sent %s got %s", req.RequestID, resp.RequestID)
+	}
+	if resp.Status != contract.StatusOK && resp.Status != contract.StatusError {
+		return contract.Response{}, fmt.Errorf("unknown status %q", resp.Status)
 	}
 	return resp, nil
 }

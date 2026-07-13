@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"time"
 
 	contract "filees/pkg/contract/v1"
@@ -132,6 +133,23 @@ func (s *Server) handleRepoLockUnlock(req contract.Request, lock bool) contract.
 	if err := contract.DecodePayload(req.Payload, &pl); err != nil || len(pl.Paths) == 0 {
 		return protoErr(req.RequestID, "proto.invalid_payload",
 			map[string]string{"detail": "paths must be a non-empty array"})
+	}
+
+	// Validate that every path is absolute and inside the repo's working copy.
+	sep := string(filepath.Separator)
+	for _, p := range pl.Paths {
+		if !filepath.IsAbs(p) {
+			return contract.ErrResponse(req.RequestID,
+				"LOCK-2002", "ERROR", "REQUIRE_ACTION", "lock.invalid_path",
+				map[string]string{"path": p, "detail": "path must be absolute"})
+		}
+		clean := filepath.Clean(p)
+		wc := filepath.Clean(rs.localPath)
+		if clean != wc && !strings.HasPrefix(clean, wc+sep) {
+			return contract.ErrResponse(req.RequestID,
+				"LOCK-2002", "ERROR", "REQUIRE_ACTION", "lock.invalid_path",
+				map[string]string{"path": p, "detail": "path is outside repository working copy"})
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

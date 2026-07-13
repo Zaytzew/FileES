@@ -239,6 +239,7 @@ func NewScanner(opts Options) (*Scanner, error) {
 func (s *Scanner) Start(ctx context.Context) <-chan Event {
 	events := make(chan Event, s.chanSize)
 	go s.loop(ctx, events)
+	go s.runBacklogWorker(ctx)
 	return events
 }
 
@@ -331,7 +332,6 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 			}
 		}
 		_ = s.reloadIgnores()
-		_ = s.loadBacklog()
 		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, /*emit=*/true, out, false)
 		// swap in-memory state
 		s.mu.Lock()
@@ -623,9 +623,19 @@ func (s *Scanner) reloadIgnores() error {
 // --- md5 helpers / backlog ---
 
 func (s *Scanner) enqueueBacklog(rel string, size int64, mtime int64) {
-	bi := backlogItem{Rel: rel, Size: size, Mtime: mtime, QueuedAt: time.Now().Unix()}
-	s.backlog = append(s.backlog, bi)
-	// limit backlog size
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.backlog {
+		if s.backlog[i].Rel == rel {
+			if s.backlog[i].Size != size || s.backlog[i].Mtime != mtime {
+				s.backlog[i].Size = size
+				s.backlog[i].Mtime = mtime
+				s.backlog[i].QueuedAt = time.Now().Unix()
+			}
+			return
+		}
+	}
+	s.backlog = append(s.backlog, backlogItem{Rel: rel, Size: size, Mtime: mtime, QueuedAt: time.Now().Unix()})
 	if len(s.backlog) > 1000 { s.backlog = s.backlog[len(s.backlog)-1000:] }
 }
 
@@ -646,7 +656,79 @@ func (s *Scanner) loadBacklog() error {
 }
 
 func (s *Scanner) saveBacklog() error {
-	return atomicWriteJSON(s.backlogPath, s.backlog)
+	s.mu.Lock()
+	snap := make([]backlogItem, len(s.backlog))
+	copy(snap, s.backlog)
+	s.mu.Unlock()
+	return atomicWriteJSON(s.backlogPath, snap)
+}
+
+// runBacklogWorker processes large-file MD5 entries in the background.
+// It computes one MD5 per 5 s so it never saturates I/O during normal use.
+func (s *Scanner) runBacklogWorker(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.processOneBacklogItem()
+		}
+	}
+}
+
+// processOneBacklogItem picks the smallest pending backlog entry, verifies the
+// file is still stable, computes its MD5, then updates s.cur and removes the entry.
+func (s *Scanner) processOneBacklogItem() {
+	s.mu.Lock()
+	if len(s.backlog) == 0 { s.mu.Unlock(); return }
+
+	// Pick smallest file — fastest to hash; also most likely a rename candidate
+	idx := 0
+	for i := 1; i < len(s.backlog); i++ {
+		if s.backlog[i].Size < s.backlog[idx].Size { idx = i }
+	}
+	item := s.backlog[idx]
+	s.mu.Unlock()
+
+	absPath := filepath.Join(s.wc, filepath.FromSlash(item.Rel))
+	fi, err := os.Stat(absPath)
+	if err != nil || fi.Size() != item.Size || fi.ModTime().Unix() != item.Mtime {
+		// File gone or changed since enqueue — drop stale entry
+		s.removeBacklogEntry(item.Rel)
+		return
+	}
+
+	// Use size+1 as budget so the whole file is read (budget==size would false-trigger the budget-exceeded path)
+	sum, _, err := md5FileBudgeted(absPath, item.Size+1)
+	if err != nil {
+		s.lg.Warnf("backlog: MD5 failed for %s: %v", item.Rel, err)
+		return // keep in backlog; retry next tick
+	}
+
+	s.mu.Lock()
+	if m, ok := s.cur[item.Rel]; ok && m.MtimeSec == item.Mtime && m.Size == item.Size {
+		m.MD5 = sum
+		s.cur[item.Rel] = m
+	}
+	for i, b := range s.backlog {
+		if b.Rel == item.Rel { s.backlog = append(s.backlog[:i], s.backlog[i+1:]...); break }
+	}
+	s.mu.Unlock()
+
+	_ = s.saveBacklog()
+	s.lg.Debugf("backlog: MD5 done %s (%.1f MiB)", item.Rel, float64(item.Size)/(1<<20))
+}
+
+// removeBacklogEntry drops the entry for rel from s.backlog and persists the change.
+func (s *Scanner) removeBacklogEntry(rel string) {
+	s.mu.Lock()
+	for i, b := range s.backlog {
+		if b.Rel == rel { s.backlog = append(s.backlog[:i], s.backlog[i+1:]...); break }
+	}
+	s.mu.Unlock()
+	_ = s.saveBacklog()
 }
 
 // md5 with byte budget; returns sum and bytes read

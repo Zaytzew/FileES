@@ -37,21 +37,27 @@ const (
 
 // Capability constants — the daemon advertises which commands are active (§12).
 // GUI shows only capabilities declared in HelloResult.Capabilities.
+// Only list commands that are actually implemented.
 const (
-	CapRepoPause       = "repo.pause"
-	CapRepoSyncNow     = "repo.sync_now"
-	CapConflictDecide  = "conflict.decide"
 	CapEventsSubscribe = "events.subscribe"
-	CapRepoPublish     = "repo.publish"
+	CapRepoLock        = "repo.lock"
+	CapRepoUnlock      = "repo.unlock"
+	CapErrorList       = "error.list"
+
+	// Not yet implemented — defined for future use but NOT in AllCapabilities.
+	CapRepoPause      = "repo.pause"
+	CapRepoSyncNow    = "repo.sync_now"
+	CapConflictDecide = "conflict.decide"
+	CapRepoPublish    = "repo.publish"
 )
 
-// AllCapabilities is the set of capabilities exposed in a full v1 daemon.
+// AllCapabilities is the set of capabilities the running daemon actually supports.
+// Clients must not call commands not listed here.
 var AllCapabilities = []string{
-	CapRepoPause,
-	CapRepoSyncNow,
-	CapConflictDecide,
 	CapEventsSubscribe,
-	CapRepoPublish,
+	CapRepoLock,
+	CapRepoUnlock,
+	CapErrorList,
 }
 
 // --- result and payload types ---

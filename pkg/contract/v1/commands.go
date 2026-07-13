@@ -28,6 +28,9 @@ const (
 	// Structured error log
 	CmdErrorList = "error.list" // recent error records
 	CmdErrorGet  = "error.get"  // single error by ID
+
+	// Event streaming
+	CmdEventsSubscribe = "events.subscribe" // switch connection to event push mode
 )
 
 // Capability constants — the daemon advertises which commands are active (§12).

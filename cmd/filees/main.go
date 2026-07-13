@@ -17,7 +17,9 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	"filees/pkg/config"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/errmap"
+	"filees/pkg/ipcserver"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
@@ -73,6 +75,12 @@ func runDaemon() {
 	gate := runtime.NewHostGate(3)
 	mtx := runtime.NewRepoMutex()
 
+	// IPC contract server
+	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
+	if err := ipc.Start(ctx); err != nil {
+		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
+	}
+
 	var wg sync.WaitGroup
 	var pidPaths []string
 
@@ -102,6 +110,9 @@ func runDaemon() {
 		// Write PID so `filees status` can detect running daemon
 		_ = os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
 		pidPaths = append(pidPaths, pidPath)
+
+		// Register repo in IPC server; rs is updated by daemon goroutines
+		rs := ipc.RegisterRepo(r.ID, r.RepoURL, wc)
 
 		if _, err := os.Stat(filepath.Join(wc, ".svn")); err == nil {
 			if out, err := cli.Cleanup(ctx, wc, r.Username, r.Password); err != nil {
@@ -192,14 +203,25 @@ func runDaemon() {
 			RepoURL:  r.RepoURL,
 			UUID:     clientUUID,
 			ErrSink:  sink,
+			OnConnectivity: func(state string) {
+				if state == "offline" {
+					rs.SetConnectivity(contract.ConnOffline)
+					rs.SetState(contract.StateOffline)
+				} else {
+					rs.SetConnectivity(contract.ConnOnline)
+					rs.SetState(contract.StateActive)
+				}
+			},
 		}
 
 		wg.Add(1)
-		go func(repo config.Repo) {
+		go func(repo config.Repo, repoState *ipcserver.RepoState) {
 			defer wg.Done()
+			repoState.SetState(contract.StateActive)
 			events := scn.Start(ctx)
 			svc.Run(ctx, repo.ID, repo.LocalPath, repo.Username, repo.Password, events)
-		}(r)
+			repoState.SetState(contract.StateStopping)
+		}(r, rs)
 	}
 
 	<-ctx.Done()

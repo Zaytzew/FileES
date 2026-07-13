@@ -1,0 +1,186 @@
+package ipcserver
+
+import (
+	"bufio"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	contract "filees/pkg/contract/v1"
+)
+
+// RepoState holds the live runtime state of one repo, updated by the daemon.
+// All fields are protected by mu; use the Set* methods from any goroutine.
+type RepoState struct {
+	mu sync.RWMutex
+
+	id        string
+	url       string
+	localPath string
+
+	state        string  // contract.State*
+	connectivity string  // contract.Conn*
+	headRev      int64   // last HEAD seen by poller; 0 = unknown
+	conflicts    int
+	lastSyncAt   time.Time
+	currentOp    *string
+}
+
+// SetState transitions the repo to a new state constant (contract.State*).
+func (rs *RepoState) SetState(state string) {
+	rs.mu.Lock()
+	rs.state = state
+	rs.mu.Unlock()
+}
+
+// SetConnectivity sets the connectivity label ("online" or "offline").
+func (rs *RepoState) SetConnectivity(c string) {
+	rs.mu.Lock()
+	rs.connectivity = c
+	rs.mu.Unlock()
+}
+
+// SetHeadRev records the latest HEAD revision seen by the poller.
+func (rs *RepoState) SetHeadRev(rev int64) {
+	rs.mu.Lock()
+	rs.headRev = rev
+	rs.mu.Unlock()
+}
+
+// SetConflicts records the number of unresolved conflicts.
+func (rs *RepoState) SetConflicts(n int) {
+	rs.mu.Lock()
+	rs.conflicts = n
+	rs.mu.Unlock()
+}
+
+// SetLastSyncAt records the time of the last successful sync.
+func (rs *RepoState) SetLastSyncAt(t time.Time) {
+	rs.mu.Lock()
+	rs.lastSyncAt = t
+	rs.mu.Unlock()
+}
+
+// SetCurrentOp sets a short description of the in-progress operation, or nil.
+func (rs *RepoState) SetCurrentOp(op *string) {
+	rs.mu.Lock()
+	rs.currentOp = op
+	rs.mu.Unlock()
+}
+
+// Snapshot builds a contract.RepoStatus from live state and on-disk files.
+// Reading head.rev and cache.json from disk keeps the IPC handler decoupled from
+// the engine's internal structs while still serving fresh data.
+func (rs *RepoState) Snapshot() contract.RepoStatus {
+	rs.mu.RLock()
+	state := rs.state
+	conn := rs.connectivity
+	headRev := rs.headRev
+	conflicts := rs.conflicts
+	lastSync := rs.lastSyncAt
+	currentOp := rs.currentOp
+	wc := rs.localPath
+	rs.mu.RUnlock()
+
+	localRev := readRevFile(filepath.Join(wc, ".filees", "state", "head.rev"))
+	if headRev == 0 {
+		headRev = localRev
+	}
+
+	pending := readPendingStats(filepath.Join(wc, ".filees", "commit_cache", "cache.json"))
+
+	snap := contract.RepoStatus{
+		RepoID:           rs.id,
+		State:            state,
+		Connectivity:     conn,
+		LocalRevision:    localRev,
+		HeadRevision:     headRev,
+		Pending:          pending,
+		Conflicts:        conflicts,
+		CurrentOperation: currentOp,
+	}
+	if !lastSync.IsZero() {
+		snap.LastSyncAt = lastSync.UTC().Format(time.RFC3339)
+	}
+	return snap
+}
+
+// Summary returns the minimal RepoSummary used in repo.list.
+func (rs *RepoState) Summary() contract.RepoSummary {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	return contract.RepoSummary{
+		ID:        rs.id,
+		URL:       rs.url,
+		LocalPath: rs.localPath,
+		State:     rs.state,
+	}
+}
+
+// --- file-reading helpers (daemon reads its own state files) ---
+
+// readRevFile reads the numeric revision from head.rev.
+func readRevFile(path string) int64 {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// cacheEntry mirrors the minimal shape of commit_cache/cache.json entries.
+type cacheEntry struct {
+	Op string `json:"op"`
+}
+
+// readPendingStats counts added/modified/deleted entries in cache.json.
+func readPendingStats(path string) contract.PendingStats {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return contract.PendingStats{}
+	}
+	var entries []cacheEntry
+	if json.Unmarshal(data, &entries) != nil {
+		return contract.PendingStats{}
+	}
+	var ps contract.PendingStats
+	for _, e := range entries {
+		switch e.Op {
+		case "added":
+			ps.Added++
+		case "modified":
+			ps.Modified++
+		case "deleted":
+			ps.Deleted++
+		}
+	}
+	return ps
+}
+
+// readLastErrors reads the last n non-empty lines from errors.jsonl.
+func readLastErrors(logPath string, n int) []string {
+	f, err := os.Open(logPath)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	var lines []string
+	for sc.Scan() {
+		if t := sc.Text(); t != "" {
+			lines = append(lines, t)
+		}
+	}
+	if len(lines) <= n {
+		return lines
+	}
+	return lines[len(lines)-n:]
+}

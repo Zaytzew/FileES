@@ -64,6 +64,9 @@ type Service struct {
 	RepoURL  string
 	UUID     string       // stable client UUID (persisted in .filees/state/client.uuid)
 	ErrSink  *errmap.Sink // optional; structured error log (JSON Lines)
+	// OnConnectivity is called (async) when online/offline state changes.
+	// Argument is "online" or "offline". May be nil.
+	OnConnectivity func(string)
 
 	// internal
 	mu         sync.Mutex
@@ -105,6 +108,9 @@ func (s *Service) goOffline() {
 			Hint:     errmap.HintRetryBackoff,
 			Msg:      "Network unreachable — queuing changes locally",
 		})
+		if s.OnConnectivity != nil {
+			go s.OnConnectivity("offline")
+		}
 	}
 }
 
@@ -117,6 +123,9 @@ func (s *Service) goOnline() {
 
 	if wasOffline {
 		s.Logger.Infof("online: connection restored")
+		if s.OnConnectivity != nil {
+			go s.OnConnectivity("online")
+		}
 	}
 }
 

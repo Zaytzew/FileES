@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"filees/pkg/client"
 	"filees/pkg/errmap"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
@@ -67,8 +69,12 @@ type Service struct {
 	// OnConnectivity is called (async) when online/offline state changes.
 	// Argument is "online" or "offline". May be nil.
 	OnConnectivity func(string)
+	// Emit, if non-nil, is called to publish IPC events (commit.completed, sync.completed, etc.).
+	// The closure supplied by main.go wraps ipcserver.Server.Emit with the repo ID.
+	Emit func(evType string, payload any)
 
 	// internal
+	repoID     string     // set from Run(); used by emit()
 	mu         sync.Mutex
 	staging    map[string]*stageItem // rel path -> info
 	cachePath  string               // .filees/commit_cache/cache.json
@@ -111,6 +117,7 @@ func (s *Service) goOffline() {
 		if s.OnConnectivity != nil {
 			go s.OnConnectivity("offline")
 		}
+		s.emit(contract.EvOfflineDetected, nil)
 	}
 }
 
@@ -126,6 +133,14 @@ func (s *Service) goOnline() {
 		if s.OnConnectivity != nil {
 			go s.OnConnectivity("online")
 		}
+		s.emit(contract.EvOnlineRestored, nil)
+	}
+}
+
+// emit publishes an IPC event if the Emit callback is wired.
+func (s *Service) emit(evType string, payload any) {
+	if s.Emit != nil {
+		s.Emit(evType, payload)
 	}
 }
 
@@ -145,6 +160,7 @@ func nextBackoff(cur time.Duration) time.Duration {
 
 // Run consumes watcher events and periodically performs commits.
 func (s *Service) Run(ctx context.Context, repoID, wc, username, password string, events <-chan watcher.Event) {
+	s.repoID = repoID
 	lg := s.Logger
 	if s.Rules.NewLatency <= 0 { s.Rules.NewLatency = 5 * time.Minute }
 	if s.Rules.MaxBatchFiles <= 0 { s.Rules.MaxBatchFiles = 1000 }
@@ -253,6 +269,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
 	_ = atomicWriteString(headRevPath, fmt.Sprintf("%d\n", headRev))
+	s.emit(contract.EvSyncCompleted, contract.SyncCompletedPayload{Revision: headRev})
 }
 
 func (s *Service) addEvent(ev watcher.Event) {
@@ -457,10 +474,15 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	s.goOnline()
 	s.lastCommit = time.Now()
 
-	// head.rev
+	// head.rev + commit event
 	if rev := parseRevision(out); rev != "" {
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
 		_ = atomicWriteString(head, rev+"\n")
+		if rev64, err := strconv.ParseInt(rev, 10, 64); err == nil {
+			s.emit(contract.EvCommitCompleted, contract.CommitCompletedPayload{
+				Revision: rev64, Paths: len(commitPaths),
+			})
+		}
 	}
 
 	// cleanup staging — only remove items unchanged since snapshot

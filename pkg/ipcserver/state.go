@@ -20,6 +20,7 @@ import (
 type RepoState struct {
 	mu sync.RWMutex
 
+	server    *Server // for auto-emitting state-change events
 	id        string
 	url       string
 	localPath string
@@ -37,10 +38,18 @@ type RepoState struct {
 }
 
 // SetState transitions the repo to a new state constant (contract.State*).
-func (rs *RepoState) SetState(state string) {
+// Emits EvRepoStateChanged if the state actually changed.
+func (rs *RepoState) SetState(newState string) {
 	rs.mu.Lock()
-	rs.state = state
+	old := rs.state
+	rs.state = newState
+	srv := rs.server
+	id := rs.id
 	rs.mu.Unlock()
+	if old != newState && srv != nil {
+		srv.Emit(srv.NewRepoEvent(id, contract.EvRepoStateChanged,
+			contract.RepoStateChangedPayload{OldState: old, NewState: newState}))
+	}
 }
 
 // SetConnectivity sets the connectivity label ("online" or "offline").

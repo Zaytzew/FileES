@@ -143,11 +143,11 @@ func TestEventJSONRoundTrip(t *testing.T) {
 }
 
 func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
-	// events.subscribe is excluded from AllCapabilities until Emit() is wired in the daemon.
 	want := map[string]bool{
-		contract.CapRepoLock:   true,
-		contract.CapRepoUnlock: true,
-		contract.CapErrorList:  true,
+		contract.CapEventsSubscribe: true,
+		contract.CapRepoLock:        true,
+		contract.CapRepoUnlock:      true,
+		contract.CapErrorList:       true,
 	}
 	if len(contract.AllCapabilities) != len(want) {
 		t.Fatalf("AllCapabilities = %#v", contract.AllCapabilities)

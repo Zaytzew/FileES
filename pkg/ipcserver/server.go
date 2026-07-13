@@ -5,6 +5,7 @@ package ipcserver
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -57,6 +58,7 @@ func DefaultSocketPath() string {
 // daemon should update as operations progress. Must be called before Start.
 func (s *Server) RegisterRepo(id, url, localPath string) *RepoState {
 	rs := &RepoState{
+		server:       s,
 		id:           id,
 		url:          url,
 		localPath:    localPath,
@@ -67,6 +69,13 @@ func (s *Server) RegisterRepo(id, url, localPath string) *RepoState {
 	s.repos[id] = rs
 	s.mu.Unlock()
 	return rs
+}
+
+// NewRepoEvent builds a fully-formed event envelope for the given repo.
+// The event ID is a zero-padded hex sequence number — unique within this daemon instance.
+func (s *Server) NewRepoEvent(repoID, evType string, payload any) contract.Event {
+	seq := atomic.AddInt64(&s.evSeq, 1)
+	return contract.NewEvent(fmt.Sprintf("%016x", seq), seq, evType, repoID, payload)
 }
 
 // Start binds the socket and begins accepting connections. Blocks until ctx is

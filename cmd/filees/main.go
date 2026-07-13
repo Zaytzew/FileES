@@ -220,6 +220,9 @@ func runDaemon() {
 					rs.SetState(contract.StateActive)
 				}
 			},
+			Emit: func(evType string, payload any) {
+				ipc.Emit(ipc.NewRepoEvent(r.ID, evType, payload))
+			},
 		}
 
 		wg.Add(1)

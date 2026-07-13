@@ -53,9 +53,8 @@ const (
 
 // AllCapabilities is the set of capabilities the running daemon actually supports.
 // Clients must not call commands not listed here.
-// events.subscribe is excluded: the handler is wired but Emit() is never called yet,
-// so subscribers would receive an empty stream.
 var AllCapabilities = []string{
+	CapEventsSubscribe,
 	CapRepoLock,
 	CapRepoUnlock,
 	CapErrorList,

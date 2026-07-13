@@ -1,0 +1,148 @@
+package contract
+
+// Command name constants — stable identifiers sent in Request.Command.
+// Names follow the <namespace>.<verb> pattern (§7).
+const (
+	// System
+	CmdSystemHello    = "system.hello"    // capability negotiation
+	CmdSystemStatus   = "system.status"   // daemon uptime and aggregate state
+	CmdSystemShutdown = "system.shutdown" // graceful stop (privileged)
+
+	// Repos
+	CmdRepoList    = "repo.list"     // list all configured repos
+	CmdRepoStatus  = "repo.status"   // snapshot of one repo
+	CmdRepoPause   = "repo.pause"    // suspend automatic operations
+	CmdRepoResume  = "repo.resume"   // resume after pause
+	CmdRepoSyncNow = "repo.sync_now" // request immediate poll/update
+	CmdRepoPublish = "repo.publish"  // request immediate commit of pending changes
+
+	// Conflicts and user decisions
+	CmdConflictList   = "conflict.list"   // list pending conflicts / interactions
+	CmdConflictGet    = "conflict.get"    // details of one conflict
+	CmdConflictDecide = "conflict.decide" // submit user decision
+
+	// Notices (outbound notifications)
+	CmdNoticeList = "notice.list" // list active notices
+	CmdNoticeAck  = "notice.ack"  // mark notice as acknowledged
+
+	// Structured error log
+	CmdErrorList = "error.list" // recent error records
+	CmdErrorGet  = "error.get"  // single error by ID
+)
+
+// Capability constants — the daemon advertises which commands are active (§12).
+// GUI shows only capabilities declared in HelloResult.Capabilities.
+const (
+	CapRepoPause       = "repo.pause"
+	CapRepoSyncNow     = "repo.sync_now"
+	CapConflictDecide  = "conflict.decide"
+	CapEventsSubscribe = "events.subscribe"
+	CapRepoPublish     = "repo.publish"
+)
+
+// AllCapabilities is the set of capabilities exposed in a full v1 daemon.
+var AllCapabilities = []string{
+	CapRepoPause,
+	CapRepoSyncNow,
+	CapConflictDecide,
+	CapEventsSubscribe,
+	CapRepoPublish,
+}
+
+// --- result and payload types ---
+
+// HelloResult is the result payload for CmdSystemHello.
+type HelloResult struct {
+	DaemonVersion    string   `json:"daemon_version"`
+	ProtocolVersions []string `json:"protocol_versions"`
+	Capabilities     []string `json:"capabilities"`
+}
+
+// SystemStatusResult is the result for CmdSystemStatus.
+type SystemStatusResult struct {
+	State     string `json:"state"`      // "running" | "stopping"
+	UptimeSec int64  `json:"uptime_sec"`
+	Repos     int    `json:"repos"`
+}
+
+// RepoListResult is the result for CmdRepoList.
+type RepoListResult struct {
+	Repos []RepoSummary `json:"repos"`
+}
+
+// RepoSummary is a minimal descriptor used in RepoListResult.
+type RepoSummary struct {
+	ID        string `json:"id"`
+	URL       string `json:"url"`
+	LocalPath string `json:"local_path"`
+	State     string `json:"state"`
+}
+
+// RepoIDPayload is used by commands that target a specific repo (CmdRepoPause, etc.).
+type RepoIDPayload struct {
+	// RepoID is carried in the Request envelope; this payload is empty for most repo commands.
+}
+
+// ConflictGetPayload is the payload for CmdConflictGet.
+type ConflictGetPayload struct {
+	DecisionID string `json:"decision_id"`
+}
+
+// ConflictListResult is the result for CmdConflictList.
+type ConflictListResult struct {
+	Conflicts []Decision `json:"conflicts"`
+}
+
+// ConflictDecidePayload is the payload for CmdConflictDecide (§10).
+type ConflictDecidePayload struct {
+	DecisionID string `json:"decision_id"`
+	Choice     string `json:"choice"`
+}
+
+// NoticeAckPayload is the payload for CmdNoticeAck.
+type NoticeAckPayload struct {
+	NoticeID string `json:"notice_id"`
+}
+
+// Notice is a single outbound notification record.
+type Notice struct {
+	ID        string `json:"id"`
+	RepoID    string `json:"repo_id,omitempty"`
+	CreatedAt string `json:"created_at"`
+	Title     string `json:"title"`
+	Body      string `json:"body,omitempty"`
+	Acked     bool   `json:"acked"`
+}
+
+// NoticeListResult is the result for CmdNoticeList.
+type NoticeListResult struct {
+	Notices []Notice `json:"notices"`
+}
+
+// ErrorListPayload optionally filters by repo.
+type ErrorListPayload struct {
+	RepoID string `json:"repo_id,omitempty"`
+	Limit  int    `json:"limit,omitempty"` // 0 = daemon default (20)
+}
+
+// ErrorRecord is one entry from the structured error log.
+type ErrorRecord struct {
+	ID       string `json:"id"`
+	TS       string `json:"ts"`
+	RepoID   string `json:"repo_id,omitempty"`
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Hint     string `json:"hint"`
+	Msg      string `json:"msg"`
+	Details  string `json:"details,omitempty"`
+}
+
+// ErrorListResult is the result for CmdErrorList.
+type ErrorListResult struct {
+	Errors []ErrorRecord `json:"errors"`
+}
+
+// ErrorGetPayload is the payload for CmdErrorGet.
+type ErrorGetPayload struct {
+	ID string `json:"id"`
+}

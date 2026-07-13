@@ -34,6 +34,7 @@ type Client interface {
 	Delete(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error)
 	Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
+	Unlock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	PropGet(ctx context.Context, rootDirectory, propName string, paths []string, username, password string) (string, error)
 	// Revision returns the revision number for target (URL or local WC path).
 	// For a remote URL it returns HEAD; for a local WC path it returns the last-updated revision.
@@ -130,6 +131,11 @@ func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []s
 
 func (c *execClient) Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
 	args := append([]string{"lock"}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
+}
+
+func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+	args := append([]string{"unlock"}, c.relativize(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, username, password, args)
 }
 

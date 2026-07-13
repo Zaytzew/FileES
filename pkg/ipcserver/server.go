@@ -27,6 +27,10 @@ type Server struct {
 	mu    sync.RWMutex
 	repos map[string]*RepoState // keyed by repo ID
 
+	connsMu  sync.Mutex
+	conns    map[net.Conn]struct{}
+	stopping bool
+
 	evSeq int64 // atomic monotone counter for Event.Sequence
 
 	subsMu sync.Mutex
@@ -41,6 +45,7 @@ func New(sockPath string) *Server {
 		lg:        talk.With("ipc"),
 		repos:     make(map[string]*RepoState),
 		subs:      make(map[chan contract.Event]struct{}),
+		conns:     make(map[net.Conn]struct{}),
 	}
 }
 
@@ -78,9 +83,9 @@ func (s *Server) NewRepoEvent(repoID, evType string, payload any) contract.Event
 	return contract.NewEvent("", 0, evType, repoID, payload)
 }
 
-// Start binds the socket and begins accepting connections. Blocks until ctx is
-// cancelled, then closes the listener and returns. Existing connections continue
-// until the client disconnects.
+// Start binds the socket and begins accepting connections, then returns.
+// Cancelling ctx closes the listener and every active request or event-stream
+// connection so clients can immediately enter their reconnect flow.
 func (s *Server) Start(ctx context.Context) error {
 	_ = os.Remove(s.sockPath)
 	if err := os.MkdirAll(filepath.Dir(s.sockPath), 0o700); err != nil {
@@ -98,6 +103,7 @@ func (s *Server) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
+		s.closeConnections()
 		_ = os.Remove(s.sockPath)
 	}()
 
@@ -111,7 +117,32 @@ func (s *Server) acceptLoop(ln net.Listener) {
 		if err != nil {
 			return // listener closed — normal on shutdown
 		}
-		go s.handleConn(c)
+		s.connsMu.Lock()
+		if s.stopping {
+			s.connsMu.Unlock()
+			_ = c.Close()
+			continue
+		}
+		s.conns[c] = struct{}{}
+		s.connsMu.Unlock()
+		go func() {
+			defer func() {
+				s.connsMu.Lock()
+				delete(s.conns, c)
+				s.connsMu.Unlock()
+			}()
+			s.handleConn(c)
+		}()
+	}
+}
+
+func (s *Server) closeConnections() {
+	s.connsMu.Lock()
+	defer s.connsMu.Unlock()
+	s.stopping = true
+	for conn := range s.conns {
+		_ = conn.Close()
+		delete(s.conns, conn)
 	}
 }
 

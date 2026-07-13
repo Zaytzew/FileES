@@ -103,11 +103,21 @@ type Scanner struct {
 	igRegex      *regexp.Regexp
 
 	// md5 backlog persistence
-	backlogPath string // .filees/state/md5.backlog.json
-	backlog     []backlogItem
+	backlogPath   string // .filees/state/md5.backlog.json
+	backlog       []backlogItem
+	backlogSaveMu sync.Mutex // serialises concurrent saveBacklog calls
+
+	// MD5s computed by backlog worker; applied to s.cur at next swap (avoids s.cur write race)
+	pendingMD5 map[string]pendingMD5Entry
 
 	// mode
 	mode mode
+}
+
+type pendingMD5Entry struct {
+	MD5   string
+	Mtime int64
+	Size  int64
 }
 
 type mode int
@@ -205,12 +215,13 @@ func NewScanner(opts Options) (*Scanner, error) {
 		md5BudgetBytes: opts.MD5BudgetBytes,
 		md5BudgetFrac:  opts.MD5BudgetFrac,
 		chanSize:      opts.ChanSize,
-		cur:           make(index),
-		missingSince:  make(map[string]time.Time),
-		ignorePath:    ignorePath,
-		backlogPath:   backlogPath,
-		igRegex:       opts.IgnoreRegex,
-		mode:          modeBaselining,
+		cur:          make(index),
+		missingSince: make(map[string]time.Time),
+		ignorePath:   ignorePath,
+		backlogPath:  backlogPath,
+		pendingMD5:   make(map[string]pendingMD5Entry),
+		igRegex:      opts.IgnoreRegex,
+		mode:         modeBaselining,
 	}
 
 	// try load state to determine mode
@@ -300,6 +311,7 @@ func (s *Scanner) loop(ctx context.Context, out chan<- Event) {
 func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 	start := time.Now()
 	var aCnt, mCnt, dCnt, igCnt, md5Done, md5Skipped int
+	var backlogLen int
 	busy := s.isBusy()
 
 	if s.mode == modeBaselining {
@@ -333,8 +345,17 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		}
 		_ = s.reloadIgnores()
 		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, /*emit=*/true, out, false)
-		// swap in-memory state
+		// Swap in-memory state; apply worker MD5s that arrived during the scan walk.
+		// backlogLen is snapped here so the log read doesn't race with the worker.
 		s.mu.Lock()
+		for rel, pe := range s.pendingMD5 {
+			if m, ok := mp[rel]; ok && m.MtimeSec == pe.Mtime && m.Size == pe.Size {
+				m.MD5 = pe.MD5
+				mp[rel] = m
+			}
+			delete(s.pendingMD5, rel)
+		}
+		backlogLen = len(s.backlog)
 		s.cur = mp
 		s.mu.Unlock()
 		// persist backlog best-effort
@@ -344,11 +365,11 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 	if (aCnt + mCnt + dCnt) > 0 {
 		dur := time.Since(start)
 		s.lg.Infof("scan done in %s (A=%d M=%d D=%d) backlog=%d md5_done=%d md5_skipped=%d ignored=%d busy=%t",
-			dur, aCnt, mCnt, dCnt, len(s.backlog), md5Done, md5Skipped, igCnt, busy)
+			dur, aCnt, mCnt, dCnt, backlogLen, md5Done, md5Skipped, igCnt, busy)
 	} else if isDebug() {
 		dur := time.Since(start)
 		s.lg.Debugf("scan done in %s (A=%d M=%d D=%d) backlog=%d md5_done=%d md5_skipped=%d ignored=%d busy=%t",
-			dur, aCnt, mCnt, dCnt, len(s.backlog), md5Done, md5Skipped, igCnt, busy)
+			dur, aCnt, mCnt, dCnt, backlogLen, md5Done, md5Skipped, igCnt, busy)
 	}
 }
 
@@ -417,7 +438,7 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 		if !isDir { m.Size = info.Size() }
 		curr[rel] = m
 
-		old, had := s.cur[rel]
+		old, had := deleted[rel] // use the locked snapshot; don't read s.cur without mu
 
 		// decide events
 		if emit {
@@ -656,6 +677,11 @@ func (s *Scanner) loadBacklog() error {
 }
 
 func (s *Scanner) saveBacklog() error {
+	// backlogSaveMu serialises concurrent calls (scanner + worker both call this).
+	// Snapshot is taken inside the write lock so the last caller always writes the
+	// freshest state — no older snapshot can overwrite a newer one.
+	s.backlogSaveMu.Lock()
+	defer s.backlogSaveMu.Unlock()
 	s.mu.Lock()
 	snap := make([]backlogItem, len(s.backlog))
 	copy(snap, s.backlog)
@@ -707,13 +733,15 @@ func (s *Scanner) processOneBacklogItem() {
 		return // keep in backlog; retry next tick
 	}
 
+	// Deposit MD5 into pendingMD5; scanner applies it at next swap (no direct s.cur write).
+	// Match on Rel+Mtime+Size so we don't remove a newer entry if the file changed during hash.
 	s.mu.Lock()
-	if m, ok := s.cur[item.Rel]; ok && m.MtimeSec == item.Mtime && m.Size == item.Size {
-		m.MD5 = sum
-		s.cur[item.Rel] = m
-	}
+	s.pendingMD5[item.Rel] = pendingMD5Entry{MD5: sum, Mtime: item.Mtime, Size: item.Size}
 	for i, b := range s.backlog {
-		if b.Rel == item.Rel { s.backlog = append(s.backlog[:i], s.backlog[i+1:]...); break }
+		if b.Rel == item.Rel && b.Mtime == item.Mtime && b.Size == item.Size {
+			s.backlog = append(s.backlog[:i], s.backlog[i+1:]...)
+			break
+		}
 	}
 	s.mu.Unlock()
 

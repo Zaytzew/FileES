@@ -53,14 +53,25 @@ func (c *Client) Do(ctx context.Context, req contract.Request) (contract.Respons
 		return contract.Response{}, fmt.Errorf("daemon unreachable (%s): %w", c.sockPath, err)
 	}
 	defer conn.Close()
-	// Honour the caller's context deadline if it is longer than c.timeout.
-	// This lets lock/unlock (30 s context) use a full 30 s instead of being
-	// capped at the 10 s client default.
-	dl := time.Now().Add(c.timeout)
-	if ctxDl, ok := ctx.Deadline(); ok && ctxDl.After(dl) {
-		dl = ctxDl
+
+	// Use exactly the caller's context deadline if present; otherwise fall back to c.timeout.
+	// This makes short-deadline callers fail fast and long-deadline callers (e.g. lock/unlock) wait longer.
+	dl, hasDL := ctx.Deadline()
+	if !hasDL {
+		dl = time.Now().Add(c.timeout)
 	}
 	_ = conn.SetDeadline(dl)
+
+	// Propagate context cancellation: close the connection so blocked I/O unblocks immediately.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now())
+		case <-done:
+		}
+	}()
 
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
 		return contract.Response{}, fmt.Errorf("send: %w", err)

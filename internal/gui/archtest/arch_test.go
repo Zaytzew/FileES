@@ -47,6 +47,27 @@ func TestGUIDoesNotImportEnginePackages(t *testing.T) {
 	}
 }
 
+func TestTrayImportsOnlyPresentationBoundary(t *testing.T) {
+	root := moduleRoot(t)
+	cmd := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "filees/internal/gui/tray")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list tray imports: %v", err)
+	}
+
+	forbidden := []string{
+		"filees/pkg/contract/v1",
+		"filees/pkg/ipcclient",
+	}
+	imports := "\n" + strings.TrimSpace(string(out)) + "\n"
+	for _, pkg := range forbidden {
+		if strings.Contains(imports, "\n"+pkg+"\n") {
+			t.Errorf("internal/gui/tray directly imports boundary implementation: %s", pkg)
+		}
+	}
+}
+
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}").Output()

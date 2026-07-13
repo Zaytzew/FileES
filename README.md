@@ -207,7 +207,7 @@ Wybraną biblioteką jest `fyne.io/systray`, izolowane jako adapter w `internal/
 3. **Integracje platformowe** — Linux i Windows: autostart, powiadomienia, otwieranie katalogów i natywny wybór wielu plików dla lock/unlock.
 4. **Integracja i odbiór MVP** — `cmd/filees-gui`, osadzone zasoby, testy app ↔ fake IPC, testy manualne obu platform oraz weryfikacja restartu daemona, wolnego GUI i wielu repozytoriów.
 
-Etap 1 nie dodaje jeszcze `fyne.io/systray`: najpierw utrwala zachowanie aplikacji i granicę architektoniczną. Szczegółowy zakres każdego etapu oraz checklista znajdują się w `gui-assumptions.md`.
+Etapy 1 i 2 są ukończone. Adapter `fyne.io/systray` jest odseparowany od IPC i kontraktu przez `ViewModel`, ma pięć osadzonych ikon (PNG/ICO), deterministyczny model menu, intencje użytkownika oraz testy renderera i granicy importów. Szczegółowy zakres kolejnych etapów oraz checklista znajdują się w `gui-assumptions.md`.
 
 ### Zakres pierwszego wydania
 

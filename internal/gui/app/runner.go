@@ -11,6 +11,7 @@ import (
 // Clock abstracts timers so reconnect, debounce and periodic refresh are
 // deterministic in tests.
 type Clock interface {
+	Now() time.Time
 	AfterFunc(d time.Duration, f func()) clockTimer
 }
 
@@ -20,6 +21,7 @@ type clockTimer interface {
 
 type realClock struct{}
 
+func (realClock) Now() time.Time                                 { return time.Now() }
 func (realClock) AfterFunc(d time.Duration, f func()) clockTimer { return time.AfterFunc(d, f) }
 
 // BackoffSequence returns successive wait durations for reconnect attempts.
@@ -119,6 +121,8 @@ type msgFullSnapshot struct {
 	system    contract.SystemStatusResult
 	summaries []contract.RepoSummary
 	statuses  []contract.RepoStatus
+	errors    []contract.ErrorRecord
+	refreshed time.Time
 }
 type msgPartialSnapshots struct {
 	gen      int
@@ -206,6 +210,7 @@ func (a *App) loop(ctx context.Context) {
 		stopTimer(&debounceTimer)
 		sesCtx := currentSesCtx
 		gen := connectGen
+		includeErrors := state.caps[contract.CapErrorList]
 
 		go func() {
 			system, err := a.cfg.Client.SystemStatus(sesCtx)
@@ -228,8 +233,18 @@ func (a *App) loop(ctx context.Context) {
 				}
 				statuses = append(statuses, *status)
 			}
+			var errors []contract.ErrorRecord
+			if includeErrors {
+				result, err := a.cfg.Client.ErrorList(sesCtx, contract.ErrorListPayload{Limit: 20})
+				if err != nil {
+					a.sendSessionFailure(sesCtx, gen, send)
+					return
+				}
+				errors = result.Errors
+			}
 			if sesCtx.Err() == nil {
-				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos, statuses: statuses})
+				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos,
+					statuses: statuses, errors: errors, refreshed: a.cfg.Clock.Now()})
 			}
 		}()
 	}
@@ -374,7 +389,7 @@ func (a *App) loop(ctx context.Context) {
 				if msg.gen != connectGen || currentSesCtx == nil {
 					break
 				}
-				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.refreshed)
 				a.cfg.Backoff.Reset()
 				notify()
 				finishRefresh()

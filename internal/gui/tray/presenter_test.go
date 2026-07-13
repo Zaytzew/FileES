@@ -1,0 +1,122 @@
+package tray
+
+import (
+	"testing"
+	"time"
+
+	app "filees/internal/gui/app"
+	contract "filees/pkg/contract/v1"
+)
+
+func TestBuildMenuDisconnectedMarksSnapshotStale(t *testing.T) {
+	vm := app.ViewModel{
+		Connected:   false,
+		Stale:       true,
+		Icon:        app.IconDisconnected,
+		LastRefresh: time.Date(2026, 7, 13, 20, 30, 0, 0, time.Local),
+		Repos:       []app.RepoViewModel{{ID: "projectA", State: contract.StateActive}},
+	}
+	menu := BuildMenu(vm)
+	if menu.Icon != app.IconDisconnected || menu.Title != "FileES — Brak połączenia" {
+		t.Fatalf("menu header = %#v", menu)
+	}
+	refresh := findItem(t, menu.Items, "system.refreshed")
+	if refresh.Enabled || refresh.Title != "Ostatnia aktualizacja: 20:30:00 (dane nieaktualne)" {
+		t.Fatalf("refresh item = %#v", refresh)
+	}
+}
+
+func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
+	operation := "commit"
+	vm := app.ViewModel{
+		Connected: true,
+		Icon:      app.IconBusy,
+		Capabilities: map[string]bool{
+			contract.CapRepoLock:  true,
+			contract.CapErrorList: true,
+		},
+		Repos: []app.RepoViewModel{{
+			ID: "projectA", LocalPath: "/wc/projectA", State: contract.StateActive,
+			Connectivity: contract.ConnOnline, LocalRev: 41, HeadRev: 42,
+			Pending: contract.PendingStats{Added: 1, Modified: 2, Deleted: 3}, CurrentOp: &operation,
+		}},
+	}
+
+	menu := BuildMenu(vm)
+	repo := findItem(t, menu.Items, "repo.projectA")
+	if repo.Title != "projectA — Praca w toku" {
+		t.Fatalf("repo title = %q", repo.Title)
+	}
+	if got := findItem(t, repo.Children, "repo.projectA.pending").Title; got != "Oczekujące zmiany: 6" {
+		t.Fatalf("pending title = %q", got)
+	}
+	lock := findItem(t, repo.Children, "repo.projectA.lock")
+	if lock.Intent == nil || lock.Intent.Kind != IntentLock || lock.Intent.RepoID != "projectA" {
+		t.Fatalf("lock item = %#v", lock)
+	}
+	if hasItem(repo.Children, "repo.projectA.unlock") {
+		t.Fatal("unlock must be hidden without repo.unlock capability")
+	}
+	if !hasItem(menu.Items, "errors") {
+		t.Fatal("errors menu missing despite error.list capability")
+	}
+}
+
+func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{
+		Connected: true,
+		Repos:     []app.RepoViewModel{{ID: "repo", LocalPath: "/wc", State: contract.StateActive}},
+	})
+	repo := findItem(t, menu.Items, "repo.repo")
+	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
+		t.Fatal("lock actions visible without capabilities")
+	}
+	if hasItem(menu.Items, "errors") {
+		t.Fatal("errors visible without error.list capability")
+	}
+}
+
+func TestBuildMenuStructuredErrorsNewestFirst(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapErrorList: true},
+		Errors: []app.ErrorViewModel{
+			{ID: "old", Severity: "WARN", Code: "NET-4007", Message: "Offline"},
+			{ID: "new", Severity: "ERROR", Code: "LOCK-2001", Message: "Locked"},
+		},
+	})
+	errors := findItem(t, menu.Items, "errors")
+	if len(errors.Children) != 2 || errors.Children[0].Title != "[ERROR] LOCK-2001 — Locked" {
+		t.Fatalf("errors = %#v", errors.Children)
+	}
+}
+
+func TestBuildMenuUnknownStateHasSafeFallback(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{
+		Connected: true,
+		Repos:     []app.RepoViewModel{{ID: "future", LocalPath: "/wc", State: "future-state"}},
+	})
+	if got := findItem(t, menu.Items, "repo.future").Title; got != "future — Stan nieznany" {
+		t.Fatalf("title = %q", got)
+	}
+}
+
+func findItem(t *testing.T, items []MenuItemModel, id string) MenuItemModel {
+	t.Helper()
+	for _, item := range items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("menu item %q not found", id)
+	return MenuItemModel{}
+}
+
+func hasItem(items []MenuItemModel, id string) bool {
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
+}

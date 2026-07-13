@@ -142,6 +142,12 @@ func (c *fakeClock) AfterFunc(d time.Duration, f func()) clockTimer {
 	return t
 }
 
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
 // Advance advances the clock and fires all elapsed timers synchronously.
 func (c *fakeClock) Advance(d time.Duration) {
 	c.mu.Lock()
@@ -337,6 +343,29 @@ func TestAggregateIconPriority(t *testing.T) {
 	}
 }
 
+func TestRepoDisplayStateHidesProtocolVocabulary(t *testing.T) {
+	operation := "commit"
+	cases := []struct {
+		repo RepoViewModel
+		want RepoDisplayState
+	}{
+		{RepoViewModel{State: contract.StateActive}, RepoDisplayActive},
+		{RepoViewModel{State: contract.StateActive, CurrentOp: &operation}, RepoDisplayBusy},
+		{RepoViewModel{State: contract.StateInitializing}, RepoDisplayInitializing},
+		{RepoViewModel{State: contract.StateBaselining}, RepoDisplayBaselining},
+		{RepoViewModel{State: contract.StatePaused}, RepoDisplayPaused},
+		{RepoViewModel{State: contract.StateStopping}, RepoDisplayStopping},
+		{RepoViewModel{State: contract.StateActive, Connectivity: contract.ConnOffline}, RepoDisplayOffline},
+		{RepoViewModel{State: contract.StateDegraded}, RepoDisplayAttention},
+		{RepoViewModel{State: "future-state"}, RepoDisplayUnknown},
+	}
+	for _, tc := range cases {
+		if got := tc.repo.DisplayState(); got != tc.want {
+			t.Errorf("repo=%#v: got %q, want %q", tc.repo, got, tc.want)
+		}
+	}
+}
+
 func ptr(s string) *string { return &s }
 
 // --- runner integration tests ---
@@ -401,6 +430,40 @@ func TestAppInitOrderAndConnected(t *testing.T) {
 	}
 }
 
+func TestAppFullRefreshIncludesStructuredErrorsAndTimestamp(t *testing.T) {
+	clock := newFakeClock()
+	wantRefresh := clock.Now()
+	d := &fakeDaemon{
+		errorList: func(ctx context.Context, payload contract.ErrorListPayload) (*contract.ErrorListResult, error) {
+			if payload.Limit != 20 {
+				t.Fatalf("error.list limit = %d, want 20", payload.Limit)
+			}
+			return &contract.ErrorListResult{Errors: []contract.ErrorRecord{{
+				ID: "err-1", TS: "2026-07-13T20:30:00Z", RepoID: "repo",
+				Code: "NET-4007", Severity: "WARN", Hint: "retry", Msg: "offline",
+				Details: "must not cross the presentation boundary",
+			}}}, nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	startApp(ctx, d, vc, clock, &fakeBackoff{steps: []time.Duration{time.Hour}})
+
+	vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return vm.Connected && !vm.Stale && len(vm.Errors) == 1
+	})
+	if !vm.LastRefresh.Equal(wantRefresh) {
+		t.Fatalf("last refresh = %v, want %v", vm.LastRefresh, wantRefresh)
+	}
+	want := ErrorViewModel{ID: "err-1", RepoID: "repo", Timestamp: "2026-07-13T20:30:00Z",
+		Code: "NET-4007", Severity: "WARN", Hint: "retry", Message: "offline"}
+	if vm.Errors[0] != want {
+		t.Fatalf("error view model = %#v, want %#v", vm.Errors[0], want)
+	}
+}
+
 func TestAppMultipleRepos(t *testing.T) {
 	d := &fakeDaemon{
 		repoList: func(ctx context.Context) (*contract.RepoListResult, error) {
@@ -444,6 +507,10 @@ func TestAppCapabilityGating(t *testing.T) {
 				ProtocolVersions: []string{contract.Protocol},
 				Capabilities:     []string{contract.CapRepoLock}, // no events.subscribe, no repo.unlock
 			}, nil
+		},
+		errorList: func(context.Context, contract.ErrorListPayload) (*contract.ErrorListResult, error) {
+			t.Fatal("error.list called without advertised capability")
+			return nil, nil
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())

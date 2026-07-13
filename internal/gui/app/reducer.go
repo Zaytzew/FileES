@@ -1,6 +1,10 @@
 package app
 
-import contract "filees/pkg/contract/v1"
+import (
+	"time"
+
+	contract "filees/pkg/contract/v1"
+)
 
 // appState is the internal state of the App event loop.
 // All methods are pure — they return a new appState and have no side effects.
@@ -14,6 +18,8 @@ type appState struct {
 	order     []string                        // repoID insertion order from repo.list
 	lastSeq   int64                           // last event sequence number received
 	system    contract.SystemStatusResult
+	errors    []ErrorViewModel
+	refreshed time.Time
 }
 
 func newAppState() appState {
@@ -41,7 +47,7 @@ func (s appState) applyConnected(caps []string) appState {
 // applyFullSnapshot atomically replaces all authoritative daemon/repository
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
-func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus) appState {
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, refreshed time.Time) appState {
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -49,6 +55,14 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	}
 	s.snapshots = next
 	s.system = system
+	s.errors = make([]ErrorViewModel, 0, len(records))
+	for _, record := range records {
+		s.errors = append(s.errors, ErrorViewModel{
+			ID: record.ID, RepoID: record.RepoID, Timestamp: record.TS,
+			Code: record.Code, Severity: record.Severity, Hint: record.Hint, Message: record.Msg,
+		})
+	}
+	s.refreshed = refreshed
 	s.stale = false
 	return s
 }
@@ -150,8 +164,10 @@ func (s appState) viewModel() ViewModel {
 		Stale:        s.stale,
 		DaemonState:  s.system.State,
 		UptimeSec:    s.system.UptimeSec,
+		LastRefresh:  s.refreshed,
 		Capabilities: caps,
 		Repos:        repos,
+		Errors:       append([]ErrorViewModel(nil), s.errors...),
 	}
 	if s.connected && s.stale {
 		vm.Icon = IconBusy

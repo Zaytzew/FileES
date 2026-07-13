@@ -41,13 +41,17 @@ type RepoState struct {
 // Emits EvRepoStateChanged if the state actually changed.
 func (rs *RepoState) SetState(newState string) {
 	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	old := rs.state
+	if old == newState {
+		return
+	}
 	rs.state = newState
-	srv := rs.server
-	id := rs.id
-	rs.mu.Unlock()
-	if old != newState && srv != nil {
-		srv.Emit(srv.NewRepoEvent(id, contract.EvRepoStateChanged,
+	if rs.server != nil {
+		// Publish before releasing mu so concurrent transitions are emitted in
+		// the same causal order in which they mutate rs.state.
+		rs.server.Emit(rs.server.NewRepoEvent(rs.id, contract.EvRepoStateChanged,
 			contract.RepoStateChangedPayload{OldState: old, NewState: newState}))
 	}
 }

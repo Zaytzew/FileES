@@ -70,12 +70,33 @@ type ErrorBody struct {
 // Clients must handle unknown event types gracefully (§13).
 type Event struct {
 	Protocol  string          `json:"protocol"`
-	EventID   string          `json:"event_id"`            // stable UUID for this event instance
-	Sequence  int64           `json:"sequence"`            // monotone within this daemon instance
-	Timestamp string          `json:"timestamp"`           // RFC3339 UTC
-	Type      string          `json:"type"`               // one of the Ev* constants
+	EventID   string          `json:"event_id"`  // stable opaque ID for this event instance
+	Sequence  int64           `json:"sequence"`  // monotone within this daemon instance
+	Timestamp string          `json:"timestamp"` // RFC3339 UTC
+	Type      string          `json:"type"`      // one of the Ev* constants
 	RepoID    string          `json:"repo_id,omitempty"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
+}
+
+// Validate checks the required event envelope fields. Event types are not
+// enumerated here so newer daemons remain forward-compatible with older clients.
+func (e Event) Validate() error {
+	if e.Protocol != Protocol {
+		return errors.New("unsupported protocol: " + e.Protocol)
+	}
+	if strings.TrimSpace(e.EventID) == "" {
+		return errors.New("missing event_id")
+	}
+	if e.Sequence <= 0 {
+		return errors.New("invalid sequence")
+	}
+	if _, err := time.Parse(time.RFC3339, e.Timestamp); err != nil {
+		return errors.New("invalid timestamp")
+	}
+	if strings.TrimSpace(e.Type) == "" {
+		return errors.New("missing event type")
+	}
+	return nil
 }
 
 // --- builder helpers ---
@@ -102,8 +123,8 @@ func ErrResponse(requestID, code, severity, hint, messageKey string, details map
 	}
 }
 
-// NewEvent builds an outbound event envelope. The caller supplies eventID (UUID)
-// and sequence — the daemon owns monotone counter and UUID generation.
+// NewEvent builds an outbound event envelope. The caller supplies an opaque,
+// unique eventID and sequence; the daemon owns generation of both values.
 func NewEvent(eventID string, seq int64, eventType, repoID string, payload any) Event {
 	var raw json.RawMessage
 	if payload != nil {

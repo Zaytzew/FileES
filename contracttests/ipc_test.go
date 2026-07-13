@@ -3,10 +3,13 @@ package contracttests
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -426,8 +429,6 @@ func TestEventsSubscribeDeliversStateChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond) // let subscription register server-side
-
 	rs.SetState(contract.StateActive) // initial state is Initializing → triggers event
 
 	select {
@@ -456,46 +457,181 @@ func TestEventsSubscribeDeliversStateChange(t *testing.T) {
 	}
 }
 
-// TestEventsSubscribeMonotoneSequence emits events from two goroutines and checks
-// that the single subscriber always sees strictly increasing sequence numbers.
+// TestEventsSubscribeMonotoneSequence requires every concurrently emitted event
+// to arrive with a strictly increasing sequence number.
 func TestEventsSubscribeMonotoneSequence(t *testing.T) {
-	_, rs, sock := startEventServer(t)
+	srv, _, sock := startEventServer(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	evCh, err := ipcclient.New(sock, "test-seq").Subscribe(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(20 * time.Millisecond)
+	const total = 60
+	var wg sync.WaitGroup
+	for worker := 0; worker < 2; worker++ {
+		worker := worker
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < total/2; i++ {
+				srv.Emit(srv.NewRepoEvent("testRepo", contract.EvNoticeCreated,
+					contract.NoticeCreatedPayload{NoticeID: fmt.Sprintf("%d-%d", worker, i)}))
+			}
+		}()
+	}
+	wg.Wait()
 
-	states := []string{contract.StateActive, contract.StateOffline}
-	const N = 30
-	done := make(chan struct{})
-	go func() {
-		for i := 0; i < N; i++ {
-			rs.SetState(states[i%2])
+	seqs := make([]int64, 0, total)
+	deadline := time.After(3 * time.Second)
+	for len(seqs) < total {
+		select {
+		case ev, open := <-evCh:
+			if !open {
+				t.Fatalf("event stream closed after %d/%d events", len(seqs), total)
+			}
+			seqs = append(seqs, ev.Sequence)
+		case <-deadline:
+			t.Fatalf("received %d/%d events", len(seqs), total)
 		}
-		close(done)
-	}()
-	for i := 0; i < N; i++ {
-		rs.SetState(states[i%2])
-	}
-	<-done
-
-	cancel() // closes the subscriber's connection
-	var seqs []int64
-	for ev := range evCh {
-		seqs = append(seqs, ev.Sequence)
-	}
-
-	if len(seqs) < 2 {
-		t.Skipf("too few events received (%d)", len(seqs))
 	}
 	for i := 1; i < len(seqs); i++ {
 		if seqs[i] <= seqs[i-1] {
 			t.Fatalf("sequence not monotone at index %d: got %d after %d", i, seqs[i], seqs[i-1])
 		}
+	}
+}
+
+// TestEventsSubscribeConcurrentStateTransitionsRemainCausal verifies that the
+// payload chain follows the actual serialized RepoState mutations.
+func TestEventsSubscribeConcurrentStateTransitionsRemainCausal(t *testing.T) {
+	_, rs, sock := startEventServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	evCh, err := ipcclient.New(sock, "test-state-order").Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	states := []string{contract.StateActive, contract.StateOffline}
+	var wg sync.WaitGroup
+	for worker := 0; worker < 2; worker++ {
+		wg.Add(1)
+		go func(offset int) {
+			defer wg.Done()
+			for i := 0; i < 25; i++ {
+				rs.SetState(states[(i+offset)%len(states)])
+			}
+		}(worker)
+	}
+	wg.Wait()
+	rs.SetState(contract.StateStopping)
+
+	previous := contract.StateInitializing
+	received := 0
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev, open := <-evCh:
+			if !open {
+				t.Fatal("event stream closed before terminal state")
+			}
+			var payload contract.RepoStateChangedPayload
+			if err := contract.DecodePayload(ev.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.OldState != previous {
+				t.Fatalf("non-causal transition at sequence %d: old_state=%q, previous new_state=%q",
+					ev.Sequence, payload.OldState, previous)
+			}
+			previous = payload.NewState
+			received++
+			if payload.NewState == contract.StateStopping {
+				if received < 3 {
+					t.Fatalf("too few state transitions received: %d", received)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for terminal state event")
+		}
+	}
+}
+
+func TestEventsSubscribeHandshakeHonorsContextCancellation(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "stalled-subscribe.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		var req contract.Request
+		_ = json.NewDecoder(conn).Decode(&req)
+		var oneByte [1]byte
+		_, _ = conn.Read(oneByte[:]) // wait for client cancellation/close; never ACK
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err = ipcclient.New(sock, "stalled-client").Subscribe(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Subscribe() error = %v, want context deadline exceeded", err)
+	}
+}
+
+func TestEventsSubscribeRejectsInvalidStreamingACK(t *testing.T) {
+	sock := startFakeDaemon(t, func(req contract.Request) contract.Response {
+		return contract.OKResponse(req.RequestID, map[string]bool{"streaming": false})
+	})
+
+	_, err := ipcclient.New(sock, "bad-ack-client").Subscribe(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "invalid streaming acknowledgement") {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+}
+
+func TestEventsSubscribeRejectsMalformedEventEnvelope(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "malformed-event.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		dec := json.NewDecoder(conn)
+		enc := json.NewEncoder(conn)
+		var req contract.Request
+		if dec.Decode(&req) != nil {
+			return
+		}
+		_ = enc.Encode(contract.OKResponse(req.RequestID, map[string]bool{"streaming": true}))
+		_ = enc.Encode(contract.Event{Protocol: "filees.contract/v2", EventID: "bad", Sequence: 1,
+			Timestamp: time.Now().UTC().Format(time.RFC3339), Type: contract.EvOnlineRestored})
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	evCh, err := ipcclient.New(sock, "malformed-client").Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev, open := <-evCh; open {
+		t.Fatalf("malformed event delivered to caller: %#v", ev)
 	}
 }
 

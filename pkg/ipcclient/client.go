@@ -188,44 +188,84 @@ func (c *Client) Subscribe(ctx context.Context) (<-chan contract.Event, error) {
 
 	// One decoder for both the subscribe ACK and all subsequent event frames.
 	dec := json.NewDecoder(bufio.NewReader(conn))
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now())
+		case <-done:
+		}
+	}()
+	fail := func(err error) (<-chan contract.Event, error) {
+		close(done)
+		_ = conn.Close()
+		return nil, err
+	}
+
+	// Bound the handshake by the caller's deadline, or by the client timeout
+	// when the context has no deadline.
+	dl, hasDL := ctx.Deadline()
+	if !hasDL {
+		dl = time.Now().Add(c.timeout)
+	}
+	_ = conn.SetDeadline(dl)
+	handshakeError := func(operation string, ioErr error) error {
+		cause := ctx.Err()
+		// The socket deadline and context timer share the same instant. The
+		// socket can wake a few microseconds before ctx.Err becomes observable.
+		if cause == nil && hasDL && !time.Now().Before(dl) {
+			cause = context.DeadlineExceeded
+		}
+		if cause != nil {
+			return fmt.Errorf("subscribe %s: %w", operation, cause)
+		}
+		return fmt.Errorf("subscribe %s: %w", operation, ioErr)
+	}
 
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("subscribe send: %w", err)
+		return fail(handshakeError("send", err))
 	}
 
 	var resp contract.Response
 	if err := dec.Decode(&resp); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("subscribe recv: %w", err)
+		return fail(handshakeError("recv", err))
 	}
 	if resp.Protocol != contract.Protocol || resp.RequestID != req.RequestID {
-		conn.Close()
-		return nil, fmt.Errorf("subscribe: bad response envelope (protocol=%q request_id=%q)", resp.Protocol, resp.RequestID)
+		return fail(fmt.Errorf("subscribe: bad response envelope (protocol=%q request_id=%q)", resp.Protocol, resp.RequestID))
 	}
 	if resp.Status != contract.StatusOK {
-		conn.Close()
-		return nil, responseErr(resp)
+		if resp.Status == contract.StatusError {
+			return fail(responseErr(resp))
+		}
+		return fail(fmt.Errorf("subscribe: unknown status %q", resp.Status))
+	}
+	var ack struct {
+		Streaming bool `json:"streaming"`
+	}
+	if err := contract.DecodeResult(resp.Result, &ack); err != nil || !ack.Streaming {
+		return fail(fmt.Errorf("subscribe: invalid streaming acknowledgement"))
+	}
+
+	// Clear the handshake deadline for the long-lived stream. Re-check the
+	// context afterwards so cancellation cannot be lost racing with this clear.
+	_ = conn.SetDeadline(time.Time{})
+	if ctx.Err() != nil {
+		_ = conn.SetDeadline(time.Now())
+		return fail(fmt.Errorf("subscribe: %w", ctx.Err()))
 	}
 
 	ch := make(chan contract.Event, 64)
 	go func() {
 		defer conn.Close()
 		defer close(ch)
-
-		done := make(chan struct{})
 		defer close(done)
-		go func() {
-			select {
-			case <-ctx.Done():
-				_ = conn.SetDeadline(time.Now()) // unblock pending Decode
-			case <-done:
-			}
-		}()
 
 		for {
 			var ev contract.Event
 			if err := dec.Decode(&ev); err != nil {
+				return
+			}
+			if err := ev.Validate(); err != nil {
 				return
 			}
 			select {

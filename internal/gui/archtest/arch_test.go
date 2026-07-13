@@ -16,7 +16,6 @@ var forbiddenPkgs = []string{
 	"filees/pkg/client",
 	"filees/pkg/ipcserver",
 	"filees/pkg/errmap",
-	"filees/pkg/ipcclient",
 }
 
 func TestGUIDoesNotImportEnginePackages(t *testing.T) {
@@ -28,7 +27,7 @@ func TestGUIDoesNotImportEnginePackages(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "cmd", "filees-gui")); err == nil {
 		patterns = append(patterns, "filees/cmd/filees-gui")
 	}
-	args := append([]string{"list", "-f", `{{join .Deps "\n"}}`}, patterns...)
+	args := append([]string{"list", "-buildvcs=false", "-f", `{{join .Deps "\n"}}`}, patterns...)
 	cmd := exec.Command("go", args...)
 	cmd.Dir = root
 	out, err := cmd.Output()
@@ -48,9 +47,23 @@ func TestGUIDoesNotImportEnginePackages(t *testing.T) {
 	}
 }
 
+func TestInternalGUIDoesNotImportIPCImplementation(t *testing.T) {
+	root := moduleRoot(t)
+	cmd := exec.Command("go", "list", "-buildvcs=false", "-f", `{{join .Deps "\n"}}`, "filees/internal/gui/...")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list internal GUI dependencies: %v", err)
+	}
+	deps := "\n" + strings.TrimSpace(string(out)) + "\n"
+	if strings.Contains(deps, "\nfilees/pkg/ipcclient\n") {
+		t.Error("internal/gui imports IPC implementation; only cmd/filees-gui may compose it")
+	}
+}
+
 func TestTrayImportsOnlyPresentationBoundary(t *testing.T) {
 	root := moduleRoot(t)
-	cmd := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "filees/internal/gui/tray")
+	cmd := exec.Command("go", "list", "-buildvcs=false", "-f", `{{join .Imports "\n"}}`, "filees/internal/gui/tray")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
@@ -71,7 +84,7 @@ func TestTrayImportsOnlyPresentationBoundary(t *testing.T) {
 
 func TestPlatformHasNoGUIOrDaemonDependencies(t *testing.T) {
 	root := moduleRoot(t)
-	cmd := exec.Command("go", "list", "-f", "{{range .Imports}}{{println .}}{{end}}", "filees/internal/gui/platform/...")
+	cmd := exec.Command("go", "list", "-buildvcs=false", "-f", "{{range .Imports}}{{println .}}{{end}}", "filees/internal/gui/platform/...")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
@@ -94,7 +107,7 @@ func TestPlatformHasNoGUIOrDaemonDependencies(t *testing.T) {
 
 func TestActionsImportsOnlyGUIBoundaries(t *testing.T) {
 	root := moduleRoot(t)
-	cmd := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "filees/internal/gui/actions")
+	cmd := exec.Command("go", "list", "-buildvcs=false", "-f", `{{join .Imports "\n"}}`, "filees/internal/gui/actions")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {

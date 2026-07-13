@@ -579,6 +579,44 @@ func TestAppReconnectOnStreamClose(t *testing.T) {
 	}
 }
 
+func TestAppManualReconnectStartsFreshSession(t *testing.T) {
+	events := []chan contract.Event{make(chan contract.Event), make(chan contract.Event)}
+	var attempts int
+	var mu sync.Mutex
+	d := &fakeDaemon{
+		subscribe: func(context.Context) (<-chan contract.Event, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			attempts++
+			return events[attempts-1], nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	a := New(Config{
+		Client:   d,
+		OnChange: vc.onChange,
+		Clock:    newFakeClock(),
+		Backoff:  &fakeBackoff{steps: []time.Duration{time.Hour}},
+		Periodic: -1,
+	})
+	go a.Run(ctx)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected })
+
+	a.Reconnect()
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return !vm.Connected && vm.Stale })
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected })
+
+	mu.Lock()
+	got := attempts
+	mu.Unlock()
+	if got != 2 {
+		t.Fatalf("subscribe attempts = %d, want 2", got)
+	}
+}
+
 func TestAppResyncOnSequenceGap(t *testing.T) {
 	evCh := make(chan contract.Event, 4)
 	releaseResync := make(chan struct{})

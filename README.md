@@ -217,6 +217,8 @@ Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, pic
 
 Etap 3D jest ukończony: `internal/gui/actions` nieblokująco obsługuje intencje traya, ponownie sprawdza świeżość modelu i repozytorium po interakcji z pickerem, waliduje ścieżki przed IPC oraz serializuje lock/unlock w obrębie jednego repozytorium. Granicę importów chroni test architektoniczny.
 
+Etap 4 jest w toku. `cmd/filees-gui` stanowi composition root dla `ipcclient`, modelu `app`, renderera `tray`, kontrolera `actions` i adaptera platformowego. Lifecycle ma wspólne anulowanie dla sygnałów systemowych, quit i zamknięcia traya, a ręczny reconnect przechodzi przez pętlę zdarzeń `app`. Pozostały pakietowanie, autostart executable, instalacyjny AUMID Windows i natywny odbiór obu platform.
+
 ### Zakres pierwszego wydania
 
 Pierwszy pionowy przekrój uznajemy za gotowy, gdy:

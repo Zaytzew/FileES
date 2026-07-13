@@ -83,6 +83,16 @@ type App struct {
 	once  sync.Once
 }
 
+// Reconnect requests an immediate fresh daemon session. It is safe to call
+// from UI goroutines; all cancellation and state changes happen in the event
+// loop. A duplicate request may be coalesced when the message queue is full.
+func (a *App) Reconnect() {
+	select {
+	case a.msgCh <- msgManualReconnect{}:
+	default:
+	}
+}
+
 // New creates an App. cfg.Client must be non-nil.
 func New(cfg Config) *App {
 	if cfg.Clock == nil {
@@ -115,6 +125,7 @@ type msgConnected struct {
 }
 type msgDisconnected struct{ gen int }
 type msgReconnect struct{ gen int }
+type msgManualReconnect struct{}
 type msgPeriodic struct{}
 type msgFullSnapshot struct {
 	gen       int
@@ -137,6 +148,7 @@ type msgFlushDirty struct{ gen int }
 func (msgConnected) sealed()        {}
 func (msgDisconnected) sealed()     {}
 func (msgReconnect) sealed()        {}
+func (msgManualReconnect) sealed()  {}
 func (msgPeriodic) sealed()         {}
 func (msgFullSnapshot) sealed()     {}
 func (msgPartialSnapshots) sealed() {}
@@ -353,6 +365,22 @@ func (a *App) loop(ctx context.Context) {
 
 		case raw := <-a.msgCh:
 			switch msg := raw.(type) {
+			case msgManualReconnect:
+				stopTimer(&reconnectTimer)
+				if currentCancel != nil {
+					currentCancel()
+				}
+				currentCancel = nil
+				currentSesCtx = nil
+				refreshInFlight = false
+				fullPending = false
+				dirtyRepos = make(map[string]bool)
+				stopTimer(&debounceTimer)
+				a.cfg.Backoff.Reset()
+				state = state.applyDisconnected()
+				notify()
+				connect()
+
 			case msgReconnect:
 				if msg.gen == connectGen && currentSesCtx == nil {
 					connect()

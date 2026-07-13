@@ -76,7 +76,9 @@ Czasy podawane w formacie Go: `30s`, `5m`, `1h`.
 ## Uruchamianie
 
 ```bash
-./filees
+./filees                        # uruchamia daemon (domyślnie)
+./filees daemon                 # jawne uruchomienie daemona
+./filees --config ścieżka/do/config.json
 ```
 
 Poziom logowania przez zmienną środowiskową:
@@ -96,7 +98,37 @@ FILEES_LOG_PREFIX=myhost ./filees
 
 ---
 
+## Polecenia CLI
+
+Daemon nasłuchuje na gnieździe Unix (`$XDG_RUNTIME_DIR/filees.sock` lub `~/.filees/daemon.sock`). Wszystkie subkomendy komunikują się z działającym daemonem przez to gniazdo — nie czytają bezpośrednio plików `.filees/` ani nie wywołują `svn`.
+
+```bash
+filees status               # stan wszystkich repozytoriów
+filees lock   <plik>...     # założenie blokady SVN
+filees unlock <plik>...     # zwolnienie blokady SVN
+filees log [N]              # ostatnie N wpisów z dziennika błędów (domyślnie 20)
+filees help
+```
+
+`lock` i `unlock` obsługują wiele plików naraz i automatycznie grupują je według repozytorium. Ścieżki mogą być relatywne — daemon konwertuje je do absolutnych i weryfikuje, że leżą wewnątrz kopii roboczej.
+
+---
+
 ## Architektura
+
+```
+                    ┌─────────────────────────────────────────────┐
+                    │                  daemon                      │
+                    │                                             │
+  SVN server ◄──svn─┤  Scanner ──events──► Commit Service        │
+                    │                            │                │
+                    │                     IPC Server              │
+                    └──────────────────────┬──────────────────────┘
+                                           │ Unix socket
+                                    ┌──────┴──────┐
+                                    │             │
+                                 filees CLI    filees-gui (TBD)
+```
 
 Dla każdego repozytorium uruchamiany jest niezależny potok:
 
@@ -110,7 +142,7 @@ Cyklicznie przechodzi drzewo kopii roboczej i wykrywa zmiany:
 
 - Sprawdza mtime i rozmiar pliku
 - Jeśli rozmiar ≤ 64 MiB i budżet MD5 pozwala — oblicza hash i porównuje z poprzednim; identyczna zawartość nie generuje eventu
-- Pliki większe trafiają do backlogu (`md5.backlog.json`) — hash obliczany przy kolejnej okazji
+- Pliki większe trafiają do backlogu (`md5.backlog.json`); **backlog worker** (osobna goroutine) oblicza MD5 w tle co 5 s, po jednym pliku, wybierając za każdym razem najmniejszy — wynik trafia z powrotem do `s.cur`, co umożliwia wykrywanie renomowań dużych plików
 - Usunięcia są debouncowane 10 minut (ochrona przed chwilowymi ruchami plików)
 - W czasie commitu (`commit.busy`) przełącza się w tryb lekki — obserwuje tylko `.filees/tickets/`
 - Symlinki są pomijane (FS-0201); widoczne w logach przy poziomie `debug`
@@ -122,7 +154,7 @@ Cyklicznie przechodzi drzewo kopii roboczej i wykrywa zmiany:
 | `Baselining` | Pierwsze uruchomienie — buduje manifest bez emitowania eventów |
 | `Active` | Normalny tryb — skanuje i emituje eventy do commit service |
 
-Przejście z Baselining do Active przez plik-flagę `baseline.ok`.
+Przejście z Baselining do Active jest automatyczne po pierwszym pomyślnym skanie — nie wymaga zewnętrznej flagi.
 
 ### Commit Service (`pkg/commit`)
 
@@ -155,9 +187,23 @@ Koalescja eventów w staging:
 - `Deleted + Added → Added` (plik wrócił — traktowany jako nowy)
 - `Modified + Deleted → Deleted`
 
+### IPC Server (`pkg/ipcserver`)
+
+Daemon wystawia gniazdo Unix i przyjmuje połączenia od CLI i GUI. Protokół: JSON Lines, format `filees.contract/v1`.
+
+- Każde połączenie obsługuje jedno żądanie i się zamyka (request/response), z wyjątkiem `events.subscribe` — które przełącza połączenie w tryb push (serwer wysyła eventy aż do rozłączenia klienta)
+- `RepoState` — live snapshot stanu repozytorium, aktualizowany przez daemon, serwowany klientom bez dostępu do silnika
+- Wszystkie ścieżki w `repo.lock`/`repo.unlock` są walidowane — muszą być absolutne i leżeć wewnątrz kopii roboczej (`LOCK-2002` przy naruszeniu)
+
+Zaimplementowane komendy: `system.hello`, `system.status`, `repo.list`, `repo.status`, `repo.lock`, `repo.unlock`, `error.list`, `events.subscribe`.
+
+### IPC Client (`pkg/ipcclient`)
+
+Biblioteka używana przez CLI (i docelowo GUI). Każde wywołanie otwiera nowe połączenie do gniazda, wysyła żądanie i czeka na odpowiedź. Implementuje weryfikację odpowiedzi (protocol, request_id, status). Deadline połączenia dziedziczy z kontekstu wywołującego — lock/unlock z 30 s kontekstem dostaje 30 s zamiast domyślnych 10 s.
+
 ### SVN Client (`pkg/client`)
 
-Wrapper na `svn` CLI. Wszystkie wywołania serializowane przez mutex wewnątrz procesu. Timeout per komenda: 30 minut.
+Wrapper na `svn` CLI. Wszystkie wywołania serializowane przez mutex wewnątrz procesu. Timeout per komenda: 30 minut. Wywoływany wyłącznie przez daemon — CLI nigdy nie woła SVN bezpośrednio.
 
 ### Runtime Gates (`pkg/runtime`)
 
@@ -224,11 +270,11 @@ Daemon tworzy katalog `.filees/` wewnątrz kopii roboczej:
     ├── state/
     │   ├── manifest.json       # aktywny manifest (mtime, size, MD5)
     │   ├── manifest.tmp        # manifest budowany w trybie Baselining
-    │   ├── baseline.ok         # flaga: promuj tmp → aktywny
     │   ├── commit.busy         # flaga: commit w toku (TTL 10 min)
     │   ├── head.rev            # ostatnia commitowana/zaktualizowana rewizja
     │   ├── client.uuid         # stabilny UUID klienta (generowany raz, trwały)
-    │   └── md5.backlog.json    # kolejka dużych plików oczekujących na hash
+    │   ├── daemon.pid          # PID daemona (usuwany przy shutdown)
+    │   └── md5.backlog.json    # kolejka dużych plików oczekujących na hash MD5
     ├── commit_cache/
     │   └── cache.json          # staging map (przeżywa restart daemona)
     ├── tickets/
@@ -238,6 +284,8 @@ Daemon tworzy katalog `.filees/` wewnątrz kopii roboczej:
     └── locks/
         ├── global/             # sloty HostGate
         └── repo/               # blokady RepoMutex
+
+$XDG_RUNTIME_DIR/filees.sock   # gniazdo IPC daemona (lub ~/.filees/daemon.sock)
 ```
 
 ---
@@ -286,4 +334,22 @@ Wzorce z `!` na początku są "twardymi" ignorami — przy katalogu powodują po
 
 | Pakiet | Wersja | Użycie |
 |--------|--------|--------|
-| `github.com/google/uuid` | v1.6.0 | Generowanie ID ticketów |
+| `github.com/google/uuid` | v1.6.0 | Generowanie ID ticketów i żądań IPC |
+
+---
+
+## Pakiety wewnętrzne
+
+| Pakiet | Rola |
+|--------|------|
+| `pkg/watcher` | Skaner systemu plików + backlog MD5 |
+| `pkg/commit` | Commit service, HEAD poller, reconciliation |
+| `pkg/client` | Wrapper SVN CLI |
+| `pkg/config` | Parsowanie `config.json` |
+| `pkg/contract/v1` | Typy protokołu IPC (`filees.contract/v1`) |
+| `pkg/ipcserver` | Serwer gniazda Unix dla CLI/GUI |
+| `pkg/ipcclient` | Klient IPC — używany przez CLI i docelowo GUI |
+| `pkg/errmap` | Klasyfikacja błędów + zapis do `errors.jsonl` |
+| `pkg/runtime` | HostGate, RepoMutex |
+| `pkg/talk` | Logger z poziomami i zmienną `FILEES_LOG` |
+| `pkg/tickets` | Zapis plików powiadomień `.filees/tickets/` |

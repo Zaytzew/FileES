@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/internal/gui/platform"
 	"filees/internal/gui/platform/platformtest"
 	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
@@ -158,6 +160,59 @@ func TestRunStartsAfterTrayReadyAndStopsWithContext(t *testing.T) {
 func TestRunRejectsIncompleteDependencies(t *testing.T) {
 	if err := run(context.Background(), dependencies{}); err == nil {
 		t.Fatal("expected incomplete dependencies error")
+	}
+}
+
+func TestManageAutostartUsesAbsoluteExecutableAndSocket(t *testing.T) {
+	backend := &platformtest.Fake{}
+	spec := newAutostartSpec(filepath.Join(t.TempDir(), "filees-gui"), "/run/user/1000/filees.sock")
+	if err := manageAutostart(context.Background(), backend, "enable", spec, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := backend.Snapshot()
+	if len(snapshot.AutostartSets) != 1 || !snapshot.AutostartSets[0].Enabled {
+		t.Fatalf("autostart calls = %#v", snapshot.AutostartSets)
+	}
+	got := snapshot.AutostartSets[0].Spec
+	if !filepath.IsAbs(got.Executable) || got.ID != "filees-gui" {
+		t.Fatalf("autostart spec = %#v", got)
+	}
+	if len(got.Args) != 2 || got.Args[0] != "--socket" || got.Args[1] != "/run/user/1000/filees.sock" {
+		t.Fatalf("autostart args = %#v", got.Args)
+	}
+}
+
+func TestManageAutostartStatusAndDisable(t *testing.T) {
+	backend := &platformtest.Fake{
+		AutostartStatusFunc: func(context.Context, platform.AutostartSpec) (platform.AutostartState, error) {
+			return platform.AutostartState{Enabled: true, Source: "test-source"}, nil
+		},
+	}
+	spec := newAutostartSpec(filepath.Join(t.TempDir(), "filees-gui"), "/tmp/filees.sock")
+	var output bytes.Buffer
+	if err := manageAutostart(context.Background(), backend, "status", spec, &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "autostart: enabled (test-source)\n" {
+		t.Fatalf("status output = %q", output.String())
+	}
+	if err := manageAutostart(context.Background(), backend, "disable", spec, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := backend.Snapshot()
+	if len(snapshot.AutostartSets) != 1 || snapshot.AutostartSets[0].Enabled {
+		t.Fatalf("autostart calls = %#v", snapshot.AutostartSets)
+	}
+}
+
+func TestManageAutostartRejectsUnknownMode(t *testing.T) {
+	backend := &platformtest.Fake{}
+	if err := manageAutostart(context.Background(), backend, "surprise", platform.AutostartSpec{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("expected unknown mode error")
+	}
+	if snapshot := backend.Snapshot(); len(snapshot.AutostartSets) != 0 || len(snapshot.StatusRequests) != 0 {
+		t.Fatalf("backend called for invalid mode: %#v", snapshot)
 	}
 }
 

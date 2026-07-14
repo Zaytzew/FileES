@@ -1,5 +1,7 @@
 # FileES
 
+Szczegółowy opis przepływu klienta, invariants, zachowania po awarii, zweryfikowanych edge cases i roadmapy testów znajduje się w [CLIENT_MECHANICS.md](CLIENT_MECHANICS.md).
+
 Daemon synchronizujący lokalne katalogi z repozytorium SVN. Przeznaczony dla zespołów pracujących na plikach binarnych (grafika, modele 3D, zasoby projektowe). SVN jest tu warstwą transportową i magazynem — semantyka kontroli wersji jest drugorzędna.
 
 Docelowy UX: automat w trayu, który niewidocznie utrzymuje pliki zsynchronizowane z serwerem. Użytkownik nie musi wiedzieć, że pod spodem działa SVN.

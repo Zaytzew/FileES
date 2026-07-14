@@ -57,6 +57,13 @@ type fakeLockUnlocker struct {
 	unlockErr error
 }
 
+type fakeStructuredError struct{}
+
+func (fakeStructuredError) Error() string { return "wire fallback" }
+func (fakeStructuredError) PresentationError() (string, string, string, string) {
+	return "LOCK-2001", "ERROR", "REQUIRE_ACTION", "lock.operation_failed"
+}
+
 type lockCall struct {
 	repoID string
 	paths  []string
@@ -562,6 +569,42 @@ func TestControllerLockDaemonErrorNotifies(t *testing.T) {
 	n := awaitCh(t, notifCh, "error notification")
 	if n.Title == "" {
 		t.Fatalf("notification title empty: %#v", n)
+	}
+}
+
+func TestControllerLockStructuredDaemonErrorNotifiesSafely(t *testing.T) {
+	locker := newFakeLocker()
+	locker.lockErr = fakeStructuredError{}
+	notifCh := make(chan platform.Notification, 1)
+	fake := &platformtest.Fake{
+		PickFilesFunc: func(_ context.Context, req platform.PickFilesRequest) (platform.PickFilesResult, error) {
+			return platform.PickFilesResult{Paths: []string{req.Root + "/file.dwg"}}, nil
+		},
+		NotifyFunc: func(_ context.Context, n platform.Notification) error {
+			notifCh <- n
+			return nil
+		},
+	}
+	vm := &vmStore{}
+	vm.Store(vmWithLock(repo("repo1", "/wc/repo1")))
+
+	intents, cancel := setup(actions.Config{
+		ViewModel: vm.Load,
+		Opener:    fake,
+		Picker:    fake,
+		Notifier:  fake,
+		Locker:    locker,
+	})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentLock, RepoID: "repo1"})
+	awaitCh(t, locker.lockCh, "Lock call")
+	n := awaitCh(t, notifCh, "structured error notification")
+	if n.Title != "Błąd operacji (lock) — LOCK-2001" || n.Body != "Daemon nie wykonał operacji na plikach — wymagane działanie użytkownika" {
+		t.Fatalf("notification = %#v", n)
+	}
+	if n.Urgency != platform.UrgencyCritical {
+		t.Fatalf("urgency = %q", n.Urgency)
 	}
 }
 

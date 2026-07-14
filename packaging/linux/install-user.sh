@@ -8,6 +8,13 @@ bin="$prefix/bin/filees-gui"
 desktop="$data_home/applications/filees-gui.desktop"
 icon="$data_home/icons/hicolor/scalable/apps/filees-gui.svg"
 
+case "$bin" in
+	*'|'*)
+		printf 'Unsupported | character in installation path: %s\n' "$bin" >&2
+		exit 2
+		;;
+esac
+
 mkdir -p "$(dirname -- "$bin")" "$(dirname -- "$desktop")" "$(dirname -- "$icon")"
 install -m 0755 "$bundle/bin/filees-gui" "$bin"
 install -m 0644 "$bundle/share/icons/hicolor/scalable/apps/filees-gui.svg" "$icon"

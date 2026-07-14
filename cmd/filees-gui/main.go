@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,16 +14,24 @@ import (
 
 	"filees/internal/gui/identity"
 	"filees/internal/gui/platform"
+	"filees/internal/gui/singleinstance"
 	"filees/internal/gui/tray"
 	"filees/pkg/ipcclient"
 )
+
+var version = "dev"
 
 func main() {
 	flags := flag.NewFlagSet("filees-gui", flag.ContinueOnError)
 	socket := flags.String("socket", ipcclient.DefaultSocketPath(), "ścieżka do gniazda IPC daemona")
 	autostart := flags.String("autostart", "", "zarządzaj autostartem: status, enable albo disable")
+	showVersion := flags.Bool("version", false, "pokaż wersję i zakończ")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		os.Exit(2)
+	}
+	if *showVersion {
+		fmt.Fprintln(os.Stdout, version)
+		return
 	}
 
 	platformBackend, err := newPlatformBackend()
@@ -45,6 +54,16 @@ func main() {
 		}
 		return
 	}
+
+	instance, err := singleinstance.Acquire(identity.ID)
+	if errors.Is(err, singleinstance.ErrAlreadyRunning) {
+		return
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "filees-gui: single instance: %v\n", err)
+		os.Exit(1)
+	}
+	defer instance.Close()
 
 	trayBackend, err := tray.NewSystrayBackend()
 	if err != nil {
@@ -84,6 +103,9 @@ func manageAutostart(ctx context.Context, backend platform.Autostart, mode strin
 		label := "disabled"
 		if state.Enabled {
 			label = "enabled"
+			if !state.Current {
+				label = "enabled-stale"
+			}
 		}
 		_, err = fmt.Fprintf(out, "autostart: %s (%s)\n", label, state.Source)
 		return err

@@ -279,14 +279,14 @@ func (b *WindowsBackend) AutostartStatus(ctx context.Context, spec AutostartSpec
 	if err := validateAutostartID(spec.ID); err != nil {
 		return AutostartState{}, NewOperationalFailure("autostart", err)
 	}
-	enabled, err := b.autostart.Status(spec.ID)
+	value, enabled, err := b.autostart.Value(spec.ID)
 	if err != nil {
 		return AutostartState{}, NewOperationalFailure("autostart", err)
 	}
 	if !enabled {
 		return AutostartState{Source: autostartRegKey}, nil
 	}
-	return AutostartState{Enabled: true, Source: autostartRegKey}, nil
+	return AutostartState{Enabled: true, Current: value == buildWindowsExecLine(spec), Source: autostartRegKey}, nil
 }
 
 func (b *WindowsBackend) SetAutostart(ctx context.Context, spec AutostartSpec, enabled bool) error {
@@ -321,27 +321,27 @@ func buildWindowsExecLine(spec AutostartSpec) string {
 }
 
 type windowsAutostartStore interface {
-	Status(name string) (bool, error)
+	Value(name string) (string, bool, error)
 	Set(name, value string) error
 	Delete(name string) error
 }
 
 type registryAutostartStore struct{}
 
-func (registryAutostartStore) Status(name string) (bool, error) {
+func (registryAutostartStore) Value(name string) (string, bool, error) {
 	key, err := registry.OpenKey(registry.CURRENT_USER, autostartRegKey, registry.QUERY_VALUE)
 	if errors.Is(err, registry.ErrNotExist) {
-		return false, nil
+		return "", false, nil
 	}
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
 	defer key.Close()
-	_, _, err = key.GetStringValue(name)
+	value, _, err := key.GetStringValue(name)
 	if errors.Is(err, registry.ErrNotExist) {
-		return false, nil
+		return "", false, nil
 	}
-	return err == nil, err
+	return value, err == nil, err
 }
 
 func (registryAutostartStore) Set(name, value string) error {

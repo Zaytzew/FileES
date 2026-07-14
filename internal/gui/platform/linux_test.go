@@ -217,7 +217,7 @@ func TestLinuxAutostartLifecycleAndEscaping(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, err = backend.AutostartStatus(ctx, spec)
-	if err != nil || !state.Enabled {
+	if err != nil || !state.Enabled || !state.Current {
 		t.Fatalf("enabled status = %#v, %v", state, err)
 	}
 	data, err := os.ReadFile(state.Source)
@@ -242,6 +242,16 @@ func TestLinuxAutostartLifecycleAndEscaping(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("desktop entry mode = %v", info.Mode().Perm())
+	}
+	if err := os.WriteFile(state.Source, []byte("[Desktop Entry]\nType=Application\nExec=/old/filees-gui\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err = backend.AutostartStatus(ctx, spec)
+	if err != nil || !state.Enabled || state.Current {
+		t.Fatalf("stale status = %#v, %v", state, err)
+	}
+	if err := backend.SetAutostart(ctx, spec, true); err != nil {
+		t.Fatal(err)
 	}
 
 	if err := backend.SetAutostart(ctx, spec, false); err != nil {

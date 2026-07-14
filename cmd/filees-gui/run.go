@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"sync"
 
 	"filees/internal/gui/actions"
 	"filees/internal/gui/app"
+	"filees/internal/gui/notifications"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 )
@@ -46,12 +48,23 @@ func run(parent context.Context, deps dependencies) error {
 	defer cancel()
 	intents := make(chan tray.Intent, 64)
 	views := &viewStore{vm: app.ViewModel{Icon: app.IconDisconnected}}
-	renderer := tray.NewRenderer(deps.tray, deps.icons, intents)
+	var notificationPolicy notifications.Policy
+	notificationQueue := make(chan platform.Notification, 64)
+	renderer := tray.NewRenderer(deps.tray, deps.icons, intents, func(intent tray.Intent) {
+		log.Printf("filees-gui: dropped tray intent kind=%s repo_id=%s", intent.Kind, intent.RepoID)
+	})
 	guiApp := app.New(app.Config{
 		Client: deps.client,
 		OnChange: func(vm app.ViewModel) {
 			views.store(vm)
 			renderer.Render(tray.BuildMenu(vm))
+			for _, notification := range notificationPolicy.Observe(vm) {
+				select {
+				case notificationQueue <- notification:
+				case <-ctx.Done():
+					return
+				}
+			}
 		},
 	})
 	controller := actions.New(actions.Config{
@@ -64,7 +77,6 @@ func run(parent context.Context, deps dependencies) error {
 		Reconnect: guiApp.Reconnect,
 		Quit: func() {
 			cancel()
-			deps.tray.Quit()
 		},
 	})
 
@@ -73,7 +85,7 @@ func run(parent context.Context, deps dependencies) error {
 	onReady := func() {
 		startOnce.Do(func() {
 			renderer.Render(tray.BuildMenu(views.load()))
-			wg.Add(2)
+			wg.Add(3)
 			go func() {
 				defer wg.Done()
 				guiApp.Run(ctx)
@@ -81,6 +93,17 @@ func run(parent context.Context, deps dependencies) error {
 			go func() {
 				defer wg.Done()
 				controller.Run(ctx)
+			}()
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case notification := <-notificationQueue:
+						_ = deps.platform.Notify(ctx, notification)
+					}
+				}
 			}()
 		})
 	}

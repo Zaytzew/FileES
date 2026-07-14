@@ -64,7 +64,7 @@ func (i *fakeItem) Clicked() <-chan struct{} { return i.clicks }
 func TestRendererAppliesCompleteModel(t *testing.T) {
 	backend := &fakeBackend{}
 	intents := make(chan Intent, 4)
-	renderer := NewRenderer(backend, IconSet{app.IconActive: []byte("active-icon")}, intents)
+	renderer := NewRenderer(backend, IconSet{app.IconActive: []byte("active-icon")}, intents, nil)
 	defer renderer.Close()
 
 	renderer.Render(MenuModel{
@@ -109,7 +109,7 @@ func TestRendererAppliesCompleteModel(t *testing.T) {
 func TestRendererCancelsListenersFromPreviousGeneration(t *testing.T) {
 	backend := &fakeBackend{}
 	intents := make(chan Intent, 4)
-	renderer := NewRenderer(backend, nil, intents)
+	renderer := NewRenderer(backend, nil, intents, nil)
 	defer renderer.Close()
 
 	renderer.Render(MenuModel{Items: []MenuItemModel{

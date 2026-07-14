@@ -5,6 +5,7 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -20,6 +21,11 @@ import (
 type LockUnlocker interface {
 	Lock(ctx context.Context, repoID string, paths []string) (string, error)
 	Unlock(ctx context.Context, repoID string, paths []string) (string, error)
+}
+
+type presentationError interface {
+	error
+	PresentationError() (code, severity, hint, message string)
 }
 
 // Config wires the controller to its dependencies.
@@ -43,6 +49,7 @@ type Controller struct {
 
 	operationsMu sync.Mutex
 	operations   map[string]struct{}
+	tasks        sync.WaitGroup
 }
 
 // New creates a Controller with the given configuration.
@@ -52,6 +59,7 @@ func New(cfg Config) *Controller {
 
 // Run processes intents until ctx is cancelled or the intents channel closes.
 func (c *Controller) Run(ctx context.Context) {
+	defer c.tasks.Wait()
 	for {
 		select {
 		case <-ctx.Done():
@@ -68,7 +76,7 @@ func (c *Controller) Run(ctx context.Context) {
 func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	switch intent.Kind {
 	case tray.IntentOpenFolder:
-		go c.handleOpenFolder(ctx, intent.RepoID)
+		c.startOpenFolder(ctx, intent.RepoID)
 	case tray.IntentLock:
 		c.startLockUnlock(ctx, intent.RepoID, true)
 	case tray.IntentUnlock:
@@ -84,29 +92,45 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	}
 }
 
-func (c *Controller) startLockUnlock(ctx context.Context, repoID string, lock bool) {
-	if repoID == "" || !c.beginRepoOperation(repoID) {
+func (c *Controller) startOpenFolder(ctx context.Context, repoID string) {
+	key := "open:" + repoID
+	if repoID == "" || !c.beginOperation(key) {
 		return
 	}
+	c.tasks.Add(1)
 	go func() {
-		defer c.endRepoOperation(repoID)
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		c.handleOpenFolder(ctx, repoID)
+	}()
+}
+
+func (c *Controller) startLockUnlock(ctx context.Context, repoID string, lock bool) {
+	key := "mutate:" + repoID
+	if repoID == "" || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
 		c.handleLockUnlock(ctx, repoID, lock)
 	}()
 }
 
-func (c *Controller) beginRepoOperation(repoID string) bool {
+func (c *Controller) beginOperation(key string) bool {
 	c.operationsMu.Lock()
 	defer c.operationsMu.Unlock()
-	if _, busy := c.operations[repoID]; busy {
+	if _, busy := c.operations[key]; busy {
 		return false
 	}
-	c.operations[repoID] = struct{}{}
+	c.operations[key] = struct{}{}
 	return true
 }
 
-func (c *Controller) endRepoOperation(repoID string) {
+func (c *Controller) endOperation(key string) {
 	c.operationsMu.Lock()
-	delete(c.operations, repoID)
+	delete(c.operations, key)
 	c.operationsMu.Unlock()
 }
 
@@ -204,12 +228,13 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		return
 	}
 	if opErr != nil {
+		title, body, urgency := operationErrorPresentation(opName, opErr)
 		c.notify(ctx, platform.Notification{
 			ID:      opName + "." + repoID,
 			Group:   opName + "." + repoID,
-			Title:   fmt.Sprintf("Błąd operacji (%s)", opName),
-			Body:    opErr.Error(),
-			Urgency: platform.UrgencyNormal,
+			Title:   title,
+			Body:    body,
+			Urgency: urgency,
 		})
 		return
 	}
@@ -223,13 +248,60 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 }
 
 func canMutate(vm app.ViewModel, lock bool) bool {
-	if !vm.Connected || vm.Stale {
-		return false
-	}
 	if lock {
-		return vm.CanLock()
+		return vm.CanMutateLock()
 	}
-	return vm.CanUnlock()
+	return vm.CanMutateUnlock()
+}
+
+func operationErrorPresentation(opName string, err error) (string, string, platform.Urgency) {
+	title := fmt.Sprintf("Błąd operacji (%s)", opName)
+	body := err.Error()
+	urgency := platform.UrgencyNormal
+	var structured presentationError
+	if !errors.As(err, &structured) {
+		return title, body, urgency
+	}
+	code, severity, hint, message := structured.PresentationError()
+	if code != "" {
+		title = fmt.Sprintf("Błąd operacji (%s) — %s", opName, code)
+	}
+	body = messageLabel(message)
+	if label := hintLabel(hint); label != "" {
+		body += " — " + label
+	}
+	if severity == "FATAL" || severity == "ERROR" {
+		urgency = platform.UrgencyCritical
+	}
+	return title, body, urgency
+}
+
+func messageLabel(messageKey string) string {
+	switch messageKey {
+	case "lock.invalid_path":
+		return "Wybrana ścieżka nie należy do repozytorium"
+	case "lock.operation_failed":
+		return "Daemon nie wykonał operacji na plikach"
+	case "proto.invalid_payload":
+		return "Daemon odrzucił nieprawidłowe dane operacji"
+	default:
+		return "Błąd zgłoszony przez daemon"
+	}
+}
+
+func hintLabel(hint string) string {
+	switch hint {
+	case "RETRY_LOCAL":
+		return "spróbuj ponownie"
+	case "RETRY_BACKOFF":
+		return "ponowienie nastąpi później"
+	case "REQUIRE_ACTION":
+		return "wymagane działanie użytkownika"
+	case "ADMIN_ONLY":
+		return "skontaktuj się z administratorem"
+	default:
+		return ""
+	}
 }
 
 func (c *Controller) notify(ctx context.Context, n platform.Notification) {

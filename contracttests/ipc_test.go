@@ -341,6 +341,13 @@ func TestIPCServerRejectsLockPathOutsideWorkingCopy(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "LOCK-2002") || !strings.Contains(err.Error(), "lock.invalid_path") {
 		t.Fatalf("Lock() error = %v", err)
 	}
+	var responseErr *ipcclient.ResponseError
+	if !errors.As(err, &responseErr) {
+		t.Fatalf("Lock() error type = %T, want *ipcclient.ResponseError", err)
+	}
+	if responseErr.Body.Code != "LOCK-2002" || responseErr.Body.Severity != "ERROR" || responseErr.Body.Hint != "REQUIRE_ACTION" {
+		t.Fatalf("structured error = %#v", responseErr.Body)
+	}
 }
 
 func TestIPCServerRejectsRelativeLockPath(t *testing.T) {

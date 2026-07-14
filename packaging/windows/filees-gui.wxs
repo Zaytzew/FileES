@@ -3,7 +3,7 @@
   <Package
       Name="FileES GUI"
       Manufacturer="ATM Projekt"
-      Version="0.1.0"
+      Version="$(var.ProductVersion)"
       UpgradeCode="6C983910-EB56-4B25-95F4-12E0173F47D8"
       Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of FileES GUI is already installed." />

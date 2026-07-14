@@ -76,17 +76,6 @@ func (b *fakeTrayBackend) hasItemContaining(fragment string) bool {
 	return false
 }
 
-func (b *fakeTrayBackend) click(title string) bool {
-	b.mu.Lock()
-	item := b.items[title]
-	b.mu.Unlock()
-	if item == nil {
-		return false
-	}
-	item.clicks <- struct{}{}
-	return true
-}
-
 type fakeTrayItem struct {
 	backend *fakeTrayBackend
 	clicks  chan struct{}
@@ -186,7 +175,7 @@ func TestManageAutostartUsesAbsoluteExecutableAndSocket(t *testing.T) {
 func TestManageAutostartStatusAndDisable(t *testing.T) {
 	backend := &platformtest.Fake{
 		AutostartStatusFunc: func(context.Context, platform.AutostartSpec) (platform.AutostartState, error) {
-			return platform.AutostartState{Enabled: true, Source: "test-source"}, nil
+			return platform.AutostartState{Enabled: true, Current: true, Source: "test-source"}, nil
 		},
 	}
 	spec := newAutostartSpec(filepath.Join(t.TempDir(), "filees-gui"), "/tmp/filees.sock")
@@ -263,14 +252,14 @@ func TestRunRealIPCReconnectsAfterDaemonRestart(t *testing.T) {
 		return backend.hasItemContaining("gamma") && !backend.hasItemContaining("alpha")
 	})
 
-	waitFor(t, "quit menu item", func() bool { return backend.click("Zamknij GUI") })
+	stopGUI()
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Fatalf("run: %v", err)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("GUI did not stop after quit intent")
+		t.Fatal("GUI did not stop after context cancellation")
 	}
 }
 

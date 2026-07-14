@@ -20,7 +20,7 @@ Automatyczne testy potwierdzają kontrakt, lifecycle, reconnect, bundle i metada
 - [ ] Sprawdzić Explorer, wielokrotny picker WinForms i anulowanie pickera.
 - [ ] Potwierdzić toast `ToastGeneric` podpisany jako FileES oraz grupowanie kolejnych powiadomień.
 - [ ] Wykonać `filees-gui --autostart enable`, ponownie zalogować użytkownika i potwierdzić pojedynczą instancję GUI.
-- [ ] Odinstalować MSI i potwierdzić usunięcie executable oraz skrótu; ustawienie autostartu wyłączyć przed odinstalowaniem.
+- [ ] Przed odinstalowaniem wykonać `filees-gui --autostart disable`; następnie odinstalować MSI i potwierdzić usunięcie executable oraz skrótu. Automatyczne usunięcie pojedynczej wartości z `HKCU\...\Run` pozostaje otwartą bramką instalatora.
 
 ## Obie platformy
 

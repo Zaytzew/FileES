@@ -185,7 +185,7 @@ Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie ca
 
 ### Powiadomienia
 
-Systemowe powiadomienia są wtórne wobec stanu w menu. MVP powinno pokazywać je tylko dla zdarzeń wymagających uwagi, utraty/odzyskania łączności oraz zakończenia operacji istotnej dla użytkownika. Powtarzające się zdarzenia muszą być grupowane i ograniczane czasowo. Kliknięcie powiadomienia otwiera szczegóły repozytorium, nie wykonuje automatycznie operacji mutującej.
+Systemowe powiadomienia są wtórne wobec stanu w menu. MVP pokazuje je dla nowych błędów, przejścia repozytorium w stan wymagający uwagi, utraty/odzyskania łączności oraz zakończenia operacji istotnej dla użytkownika. Powtarzające się zdarzenia są grupowane i ograniczane czasowo. Powiadomienia pozostają informacyjne; bezpieczna aktywacja po kliknięciu wymaga osobnego odbioru natywnego i nie może wykonywać operacji mutującej.
 
 ### Proponowany podział kodu
 
@@ -215,11 +215,11 @@ Etap 3B jest ukończony: adapter Linux zapewnia `xdg-open`, wielokrotny wybór p
 
 Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, picker PowerShell/WinForms, `ToastGeneric` i autostart HKCU. Procesy oraz rejestr są wstrzyknięte; quoting korzysta z reguł Windows, a powiadomienia wymagają własnego AUMID FileES zarejestrowanego przez pakiet Etapu 4. Natywny odbiór pozostaje częścią checklisty Windows.
 
-Etap 3D jest ukończony: `internal/gui/actions` nieblokująco obsługuje intencje traya, ponownie sprawdza świeżość modelu i repozytorium po interakcji z pickerem, waliduje ścieżki przed IPC oraz serializuje lock/unlock w obrębie jednego repozytorium. Granicę importów chroni test architektoniczny.
+Etap 3D jest ukończony: `internal/gui/actions` nieblokująco obsługuje intencje traya, ponownie sprawdza świeżość modelu i repozytorium po interakcji z pickerem, waliduje ścieżki przed IPC oraz serializuje lock/unlock w obrębie jednego repozytorium. Kontroler posiada lifecycle swoich zadań i single-flight dla otwierania katalogu. Granicę importów chroni test architektoniczny.
 
-Etap 4 jest ukończony implementacyjnie. `cmd/filees-gui` stanowi composition root dla `ipcclient`, modelu `app`, renderera `tray`, kontrolera `actions` i adaptera platformowego. Lifecycle ma wspólne anulowanie dla sygnałów systemowych, quit i zamknięcia traya, a ręczny reconnect przechodzi przez pętlę zdarzeń `app`. Test pionowy z rzeczywistym transportem IPC obejmuje wiele repozytoriów, zamknięcie i restart daemona oraz quit GUI; shutdown serwera zamyka aktywne streamy, więc reconnect nie zależy od śmierci procesu. Skrypt `packaging/build-gui.sh` tworzy pure-Go bundle Linux/Windows. Linux ma instalację per-user, a źródło MSI WiX tworzy na Windows skrót Start Menu z AUMID. Odbiór w prawdziwych sesjach obu systemów opisuje `packaging/ACCEPTANCE.md` i będzie częścią audytu wydania.
+Etap 4 jest ukończony implementacyjnie. `cmd/filees-gui` stanowi composition root dla `ipcclient`, modelu `app`, renderera `tray`, polityki `notifications`, kontrolera `actions` i adaptera platformowego. Lifecycle ma wspólne anulowanie dla sygnałów systemowych, quit i zamknięcia traya, czeka na zadania kontrolera oraz listenery renderera, a ręczny reconnect przechodzi przez pętlę zdarzeń `app`. Per-user lock blokuje drugą instancję przed inicjalizacją traya. Test pionowy z rzeczywistym transportem IPC obejmuje wiele repozytoriów oraz zamknięcie i restart daemona; shutdown serwera zamyka aktywne streamy, więc reconnect nie zależy od śmierci procesu. Skrypt `packaging/build-gui.sh` tworzy pure-Go bundle Linux/Windows w świeżych katalogach i przekazuje wersję z `VERSION` do GUI oraz WiX. Linux ma instalację per-user, a źródło MSI WiX tworzy na Windows skrót Start Menu z AUMID. Odbiór w prawdziwych sesjach obu systemów opisuje `packaging/ACCEPTANCE.md` i pozostaje bramką wydania.
 
-Autostart procesu GUI jest zarządzany bez uruchamiania traya przez `filees-gui --autostart status|enable|disable`. Wpis wskazuje absolutną ścieżkę aktualnego executable i zachowuje parametr `--socket`; `enable` należy zatem wykonać dopiero dla pliku umieszczonego w docelowej lokalizacji instalacyjnej. Operacja jest per-user: XDG na Linuksie i HKCU na Windowsie.
+Autostart procesu GUI jest zarządzany bez uruchamiania traya przez `filees-gui --autostart status|enable|disable`. Status rozróżnia poprawny wpis `enabled` od `enabled-stale`, który wskazuje inną komendę. Wpis zachowuje absolutną ścieżkę executable i parametr `--socket`; `enable` należy zatem wykonać dopiero dla pliku umieszczonego w docelowej lokalizacji instalacyjnej. Operacja jest per-user: XDG na Linuksie i HKCU na Windowsie.
 
 ### Zakres pierwszego wydania
 

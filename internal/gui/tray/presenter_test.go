@@ -76,18 +76,37 @@ func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
 	}
 }
 
+func TestBuildMenuHidesMutationsWhileSnapshotStale(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{
+		Connected: true,
+		Stale:     true,
+		Capabilities: map[string]bool{
+			contract.CapRepoLock:   true,
+			contract.CapRepoUnlock: true,
+		},
+		Repos: []app.RepoViewModel{{ID: "repo", LocalPath: "/wc", State: contract.StateActive}},
+	})
+	repo := findItem(t, menu.Items, "repo.repo")
+	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
+		t.Fatal("mutation actions visible while snapshot is stale")
+	}
+}
+
 func TestBuildMenuStructuredErrorsNewestFirst(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{
 		Connected:    true,
 		Capabilities: map[string]bool{contract.CapErrorList: true},
 		Errors: []app.ErrorViewModel{
 			{ID: "old", Severity: "WARN", Code: "NET-4007", Message: "Offline"},
-			{ID: "new", Severity: "ERROR", Code: "LOCK-2001", Message: "Locked"},
+			{ID: "new", Severity: "ERROR", Code: "LOCK-2001", Hint: "REQUIRE_ACTION", Message: "Locked"},
 		},
 	})
 	errors := findItem(t, menu.Items, "errors")
 	if len(errors.Children) != 2 || errors.Children[0].Title != "[ERROR] LOCK-2001 — Locked" {
 		t.Fatalf("errors = %#v", errors.Children)
+	}
+	if errors.Children[0].Tooltip != "Wymagane działanie użytkownika" {
+		t.Fatalf("error hint tooltip = %q", errors.Children[0].Tooltip)
 	}
 }
 

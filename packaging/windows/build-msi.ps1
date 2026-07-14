@@ -10,9 +10,15 @@ if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
 }
 
 $source = (Resolve-Path $SourceDir).Path
+$versionFile = Join-Path $source "VERSION"
+if (-not (Test-Path $versionFile)) {
+    throw "VERSION file is required in SourceDir"
+}
+$productVersion = (Get-Content $versionFile -Raw).Trim()
 & wix build (Join-Path $source "filees-gui.wxs") `
     -arch x64 `
     -d "SourceDir=$source" `
+    -d "ProductVersion=$productVersion" `
     -out $Output
 
 if ($LASTEXITCODE -ne 0) {

@@ -77,11 +77,11 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 		open.Intent = nil
 	}
 	children = append(children, open)
-	if vm.CanLock() {
+	if vm.CanMutateLock() {
 		children = append(children, actionItem("repo."+repo.ID+".lock", "Zablokuj pliki…", "Wybierz pliki do zablokowania",
 			Intent{Kind: IntentLock, RepoID: repo.ID}))
 	}
-	if vm.CanUnlock() {
+	if vm.CanMutateUnlock() {
 		children = append(children, actionItem("repo."+repo.ID+".unlock", "Odblokuj pliki…", "Wybierz pliki do odblokowania",
 			Intent{Kind: IntentUnlock, RepoID: repo.ID}))
 	}
@@ -116,10 +116,27 @@ func errorsMenu(errors []app.ErrorViewModel) MenuItemModel {
 	for i := len(errors) - 1; i >= 0; i-- {
 		record := errors[i]
 		title := fmt.Sprintf("[%s] %s — %s", record.Severity, record.Code, record.Message)
-		children = append(children, disabledItem(fmt.Sprintf("error.%d.%s", i, record.ID), title))
+		item := disabledItem(fmt.Sprintf("error.%d.%s", i, record.ID), title)
+		item.Tooltip = errorHintLabel(record.Hint)
+		children = append(children, item)
 	}
 	if len(children) == 0 {
 		children = append(children, disabledItem("errors.empty", "Brak błędów"))
 	}
 	return MenuItemModel{ID: "errors", Title: "Ostatnie błędy", Enabled: true, Children: children}
+}
+
+func errorHintLabel(hint string) string {
+	switch hint {
+	case "RETRY_LOCAL":
+		return "Spróbuj ponownie"
+	case "RETRY_BACKOFF":
+		return "Ponowienie nastąpi później"
+	case "REQUIRE_ACTION":
+		return "Wymagane działanie użytkownika"
+	case "ADMIN_ONLY":
+		return "Skontaktuj się z administratorem"
+	default:
+		return ""
+	}
 }

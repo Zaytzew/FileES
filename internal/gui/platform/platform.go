@@ -76,5 +76,6 @@ type AutostartSpec struct {
 
 type AutostartState struct {
 	Enabled bool
+	Current bool   // enabled entry launches the executable and arguments from the supplied spec
 	Source  string // adapter-specific diagnostic label, never interpreted by app
 }

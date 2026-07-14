@@ -102,6 +102,7 @@ func TestWindowsInstallerCreatesPerUserShortcutWithAUMID(t *testing.T) {
 	for _, required := range []string{
 		`Scope="perUser"`, `Id="LocalAppDataFolder"`, `Id="ProgramMenuFolder"`,
 		`Key="System.AppUserModel.ID"`, `Value="` + identity.AUMID + `"`,
+		`Version="$(var.ProductVersion)"`,
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("WiX source missing %q", required)
@@ -115,7 +116,7 @@ func TestWindowsMSIBuildScriptUsesWiX4(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, required := range []string{"WiX Toolset v4", "wix build", `SourceDir=$source`} {
+	for _, required := range []string{"WiX Toolset v4", "wix build", `SourceDir=$source`, `ProductVersion=$productVersion`, `VERSION`} {
 		if !strings.Contains(text, required) {
 			t.Errorf("MSI build script missing %q", required)
 		}

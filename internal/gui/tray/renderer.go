@@ -11,19 +11,25 @@ type Renderer struct {
 	backend Backend
 	icons   IconSet
 	intents chan<- Intent
+	onDrop  func(Intent)
 
 	mu           sync.Mutex
 	cancelRender context.CancelFunc
 	generation   uint64
+	listeners    sync.WaitGroup
+	closed       bool
 }
 
-func NewRenderer(backend Backend, icons IconSet, intents chan<- Intent) *Renderer {
-	return &Renderer{backend: backend, icons: icons, intents: intents}
+func NewRenderer(backend Backend, icons IconSet, intents chan<- Intent, onDrop func(Intent)) *Renderer {
+	return &Renderer{backend: backend, icons: icons, intents: intents, onDrop: onDrop}
 }
 
 func (r *Renderer) Render(model MenuModel) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
 	if r.cancelRender != nil {
 		r.cancelRender()
 	}
@@ -45,6 +51,11 @@ func (r *Renderer) Render(model MenuModel) {
 
 func (r *Renderer) Close() {
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return
+	}
+	r.closed = true
 	// Invalidate listeners even when a click races with cancellation.
 	r.generation++
 	if r.cancelRender != nil {
@@ -52,6 +63,7 @@ func (r *Renderer) Close() {
 		r.cancelRender = nil
 	}
 	r.mu.Unlock()
+	r.listeners.Wait()
 }
 
 func (r *Renderer) addItem(ctx context.Context, generation uint64, parent ItemHandle, model MenuItemModel) {
@@ -78,7 +90,11 @@ func (r *Renderer) addItem(ctx context.Context, generation uint64, parent ItemHa
 	}
 	if model.Intent != nil && model.Enabled {
 		intent := *model.Intent
-		go r.forwardClicks(ctx, generation, item.Clicked(), intent)
+		r.listeners.Add(1)
+		go func() {
+			defer r.listeners.Done()
+			r.forwardClicks(ctx, generation, item.Clicked(), intent)
+		}()
 	}
 }
 
@@ -103,6 +119,9 @@ func (r *Renderer) forwardClicks(ctx context.Context, generation uint64, clicks 
 			select {
 			case r.intents <- intent:
 			default:
+				if r.onDrop != nil {
+					r.onDrop(intent)
+				}
 			}
 			r.mu.Unlock()
 		case <-ctx.Done():

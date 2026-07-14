@@ -20,6 +20,23 @@ import (
 
 const defaultTimeout = 10 * time.Second
 
+// ResponseError preserves the structured error returned by the daemon.  It is
+// safe to inspect with errors.As; callers must treat Details as diagnostic data
+// and must not parse it to drive application behaviour.
+type ResponseError struct {
+	Body contract.ErrorBody
+}
+
+func (e *ResponseError) Error() string {
+	return fmt.Sprintf("[%s] %s", e.Body.Code, e.Body.MessageKey)
+}
+
+// PresentationError exposes the presentation-safe portion without requiring
+// GUI layers to import ipcclient or the wire-contract package.
+func (e *ResponseError) PresentationError() (code, severity, hint, message string) {
+	return e.Body.Code, e.Body.Severity, e.Body.Hint, e.Body.MessageKey
+}
+
 // Client sends contract requests to the FileES daemon over a Unix socket.
 // A new TCP-style connection is used for each request; safe for concurrent use.
 type Client struct {
@@ -97,49 +114,63 @@ func (c *Client) Do(ctx context.Context, req contract.Request) (contract.Respons
 
 func (c *Client) Hello(ctx context.Context) (*contract.HelloResult, error) {
 	resp, err := c.do(ctx, contract.CmdSystemHello, "", nil)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var r contract.HelloResult
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
 func (c *Client) SystemStatus(ctx context.Context) (*contract.SystemStatusResult, error) {
 	resp, err := c.do(ctx, contract.CmdSystemStatus, "", nil)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var r contract.SystemStatusResult
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
 func (c *Client) RepoList(ctx context.Context) (*contract.RepoListResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoList, "", nil)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var r contract.RepoListResult
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
 func (c *Client) RepoStatus(ctx context.Context, repoID string) (*contract.RepoStatus, error) {
 	resp, err := c.do(ctx, contract.CmdRepoStatus, repoID, nil)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var r contract.RepoStatus
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
 func (c *Client) ErrorList(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error) {
 	resp, err := c.do(ctx, contract.CmdErrorList, pl.RepoID, pl)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var r contract.ErrorListResult
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
 func (c *Client) Lock(ctx context.Context, repoID string, paths []string) (string, error) {
 	resp, err := c.do(ctx, contract.CmdRepoLock, repoID, contract.RepoLockPayload{Paths: paths})
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	var r contract.LockResult
 	return r.Output, contract.DecodeResult(resp.Result, &r)
 }
 
 func (c *Client) Unlock(ctx context.Context, repoID string, paths []string) (string, error) {
 	resp, err := c.do(ctx, contract.CmdRepoUnlock, repoID, contract.RepoLockPayload{Paths: paths})
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	var r contract.LockResult
 	return r.Output, contract.DecodeResult(resp.Result, &r)
 }
@@ -280,7 +311,14 @@ func (c *Client) Subscribe(ctx context.Context) (<-chan contract.Event, error) {
 
 func responseErr(resp contract.Response) error {
 	if resp.Error != nil {
-		return fmt.Errorf("[%s] %s", resp.Error.Code, resp.Error.MessageKey)
+		body := *resp.Error
+		if resp.Error.Details != nil {
+			body.Details = make(map[string]string, len(resp.Error.Details))
+			for key, value := range resp.Error.Details {
+				body.Details[key] = value
+			}
+		}
+		return &ResponseError{Body: body}
 	}
 	return fmt.Errorf("error response from daemon")
 }

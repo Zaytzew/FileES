@@ -79,11 +79,17 @@ type ViewModel struct {
 // HasCap reports whether the daemon advertised the given capability.
 func (vm ViewModel) HasCap(cap string) bool { return vm.Capabilities[cap] }
 
-// CanLock, CanUnlock and CanListErrors expose UI-relevant permissions without
-// leaking capability names into tray adapters.
+// CanLock, CanUnlock and CanListErrors expose advertised permissions without
+// leaking capability names into tray adapters. CanMutateLock and
+// CanMutateUnlock additionally apply the live-state gate shared by presenters
+// and action controllers.
 func (vm ViewModel) CanLock() bool       { return vm.HasCap(contract.CapRepoLock) }
 func (vm ViewModel) CanUnlock() bool     { return vm.HasCap(contract.CapRepoUnlock) }
 func (vm ViewModel) CanListErrors() bool { return vm.HasCap(contract.CapErrorList) }
+func (vm ViewModel) CanMutateLock() bool { return vm.Connected && !vm.Stale && vm.CanLock() }
+func (vm ViewModel) CanMutateUnlock() bool {
+	return vm.Connected && !vm.Stale && vm.CanUnlock()
+}
 
 // DisplayState maps protocol state to the stable vocabulary consumed by UI
 // adapters. Unknown future protocol states degrade to RepoDisplayUnknown.

@@ -103,14 +103,14 @@ func newFakeWindowsAutostartStore() *fakeWindowsAutostartStore {
 	return &fakeWindowsAutostartStore{values: make(map[string]string)}
 }
 
-func (s *fakeWindowsAutostartStore) Status(name string) (bool, error) {
+func (s *fakeWindowsAutostartStore) Value(name string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
-		return false, s.err
+		return "", false, s.err
 	}
-	_, ok := s.values[name]
-	return ok, nil
+	value, ok := s.values[name]
+	return value, ok, nil
 }
 
 func (s *fakeWindowsAutostartStore) Set(name, value string) error {
@@ -133,7 +133,7 @@ func (s *fakeWindowsAutostartStore) Delete(name string) error {
 	return nil
 }
 
-func (s *fakeWindowsAutostartStore) Value(name string) string {
+func (s *fakeWindowsAutostartStore) StoredValue(name string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.values[name]
@@ -382,12 +382,20 @@ func TestWindowsAutostartLifecycle(t *testing.T) {
 		t.Fatalf("enable autostart: %v", err)
 	}
 	state, err = backend.AutostartStatus(ctx, spec)
-	if err != nil || !state.Enabled {
+	if err != nil || !state.Enabled || !state.Current {
 		t.Fatalf("enabled status = %#v, %v", state, err)
 	}
-	execLine := store.Value(spec.ID)
+	execLine := store.StoredValue(spec.ID)
 	if !strings.Contains(execLine, "filees-gui.exe") || !strings.Contains(execLine, "filees") {
 		t.Fatalf("autostart command line = %q", execLine)
+	}
+	store.values[spec.ID] = `C:\old\filees-gui.exe`
+	state, err = backend.AutostartStatus(ctx, spec)
+	if err != nil || !state.Enabled || state.Current {
+		t.Fatalf("stale status = %#v, %v", state, err)
+	}
+	if err := backend.SetAutostart(ctx, spec, true); err != nil {
+		t.Fatalf("repair autostart: %v", err)
 	}
 
 	if err := backend.SetAutostart(ctx, spec, false); err != nil {

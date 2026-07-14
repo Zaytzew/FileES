@@ -252,7 +252,12 @@ func (b *LinuxBackend) AutostartStatus(ctx context.Context, spec AutostartSpec) 
 		return AutostartState{}, NewOperationalFailure("autostart", err)
 	}
 	hidden := desktopBoolean(data, "Hidden")
-	return AutostartState{Enabled: !hidden, Source: path}, nil
+	current := false
+	if !hidden {
+		expected, renderErr := renderAutostartDesktop(spec)
+		current = renderErr == nil && string(data) == string(expected)
+	}
+	return AutostartState{Enabled: !hidden, Current: current, Source: path}, nil
 }
 
 func (b *LinuxBackend) SetAutostart(ctx context.Context, spec AutostartSpec, enabled bool) error {

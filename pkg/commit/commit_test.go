@@ -2,6 +2,7 @@ package commit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -88,6 +89,43 @@ func TestAcceptedCommitWithLostReplyIsNotRetried(t *testing.T) {
 	}
 	if cli.commits != 1 || len(s.staging) != 0 {
 		t.Fatalf("after recovery: commits=%d staging=%d, want 1/0", cli.commits, len(s.staging))
+	}
+}
+
+func TestCacheResumeReconcilesAlreadyAcceptedAddedEntry(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "accepted-after-restart.txt")
+	if err := os.WriteFile(abs, []byte("already on server"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cachePath := filepath.Join(wc, ".filees", "commit_cache", "cache.json")
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal([]cacheEntry{{
+		Rel: "accepted-after-restart.txt", Abs: abs, Op: "added", FirstSeen: time.Now().Add(-time.Hour),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cli := &stagingClient{statuses: map[string]string{"accepted-after-restart.txt": "normal"}}
+	s := &Service{
+		Cli: cli, Rules: Rules{NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		staging: make(map[string]*stageItem), cachePath: cachePath,
+	}
+	s.loadCache()
+	if len(s.staging) != 1 {
+		t.Fatalf("resumed staging=%d, want 1", len(s.staging))
+	}
+	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err != nil {
+		t.Fatalf("reconciliation: %v", err)
+	}
+	if cli.commits != 0 || len(s.staging) != 0 {
+		t.Fatalf("commits=%d staging=%d, want 0/0", cli.commits, len(s.staging))
 	}
 }
 

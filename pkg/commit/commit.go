@@ -306,6 +306,16 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 		return // already up to date
 	}
 
+	status, err := s.Cli.Status(ctx, wc, nil, username, password)
+	if err != nil {
+		s.Logger.Warnf("poll: svn status before update failed: %v — update deferred", err)
+		return
+	}
+	if client.HasMissingPaths(status) {
+		s.Logger.Infof("poll: update deferred while working copy contains local removals")
+		return
+	}
+
 	s.Logger.Infof("poll: HEAD r%d > local r%d — running svn update", headRev, localRev)
 	out, err := s.Cli.Update(ctx, wc, username, password)
 	if err != nil {

@@ -235,10 +235,17 @@ func runDaemon() {
 			if out, err := cli.Cleanup(ctx, wc, r.Username, r.Password); err != nil {
 				rlg.Warnf("svn cleanup failed: %v %s", err, out)
 			}
-			out, updateErr := cli.Update(ctx, wc, r.Username, r.Password)
-			svc.ReconcileUpdateConflicts(ctx, wc, r.Username, r.Password, out)
-			if updateErr != nil {
-				rlg.Warnf("svn update failed: %v %s", updateErr, out)
+			status, statusErr := cli.Status(ctx, wc, nil, r.Username, r.Password)
+			if statusErr != nil {
+				rlg.Warnf("svn status before update failed: %v — update deferred", statusErr)
+			} else if client.HasMissingPaths(status) {
+				rlg.Infof("svn update deferred: working copy contains local removals")
+			} else {
+				out, updateErr := cli.Update(ctx, wc, r.Username, r.Password)
+				svc.ReconcileUpdateConflicts(ctx, wc, r.Username, r.Password, out)
+				if updateErr != nil {
+					rlg.Warnf("svn update failed: %v %s", updateErr, out)
+				}
 			}
 		}
 

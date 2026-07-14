@@ -44,3 +44,12 @@ func TestParseStatusXMLReadsNormalItemFromVerboseStatus(t *testing.T) {
 		t.Fatalf("parseStatusXML() = %#v, want %#v", got, want)
 	}
 }
+
+func TestHasMissingPaths(t *testing.T) {
+	if !HasMissingPaths([]StatusEntry{{Path: "old.txt", Item: "missing"}}) {
+		t.Fatal("missing path was not detected")
+	}
+	if HasMissingPaths([]StatusEntry{{Path: "new.txt", Item: "unversioned"}, {Path: "edit.txt", Item: "modified"}}) {
+		t.Fatal("non-destructive local changes must not block update")
+	}
+}

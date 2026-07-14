@@ -16,6 +16,7 @@ type revisionClient struct {
 	update   int
 	resolved []string
 	accept   string
+	status   []client.StatusEntry
 }
 
 func (c *revisionClient) Revision(_ context.Context, target, _, _ string) (int64, error) {
@@ -37,8 +38,8 @@ func (*revisionClient) Checkout(context.Context, string, string, string, string)
 func (*revisionClient) Cleanup(context.Context, string, string, string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Status(context.Context, string, []string, string, string) ([]client.StatusEntry, error) {
-	return nil, nil
+func (c *revisionClient) Status(context.Context, string, []string, string, string) ([]client.StatusEntry, error) {
+	return c.status, nil
 }
 func (*revisionClient) Add(context.Context, string, []string, string, string) (string, error) {
 	return "", nil
@@ -113,5 +114,21 @@ func TestPollOncePersistsRevisionWhenWorkingCopyAlreadyAtHead(t *testing.T) {
 	}
 	if cli.update != 0 {
 		t.Fatalf("Update calls = %d, want 0", cli.update)
+	}
+}
+
+func TestPollOnceDefersUpdateForLocallyMissingPath(t *testing.T) {
+	wc := t.TempDir()
+	cli := &revisionClient{
+		remote: 62,
+		local:  61,
+		status: []client.StatusEntry{{Path: "renamed/source.txt", Item: "missing"}},
+	}
+	service := &Service{Cli: cli, RepoURL: "svn://example/repo", Logger: talk.With("poll-test")}
+
+	service.pollOnce(context.Background(), wc, "", "", filepath.Join(wc, "head.rev"))
+
+	if cli.update != 0 {
+		t.Fatalf("Update calls = %d, want 0 while a path is locally missing", cli.update)
 	}
 }

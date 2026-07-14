@@ -304,7 +304,8 @@ Zbiera eventy ze skanera w mapie staging i co `commit_interval` wykonuje commit:
 Podczas `SIGINT`/`SIGTERM` serwis przestaje przyjmować nowe zmiany, odbiera końcówkę eventów watchera i opróżnia cały staging w ograniczonych batchach. Drain ma osobny `shutdown_commit_timeout`; niewysłana reszta jest atomowo zachowywana w commit cache i wznawiana przy następnym starcie. `SIGKILL`, OOM kill i utrata zasilania nie pozwalają wykonać kodu shutdownu, dlatego trwały cache pozostaje obowiązkową ścieżką recovery. Restart pomija ścieżki już przyjęte przez serwer i publikuje tylko pozostałą część cache.
 
 Przy starcie oraz równolegle w **pollerze HEAD** (co `poll_interval`, domyślnie 30s):
-- daemon wykonuje `svn cleanup` i `svn update`; konflikty startowe przechodzą przez tę samą bezstratną reconciliation co konflikty pollera
+- daemon wykonuje `svn cleanup` i, o ile working copy nie zawiera lokalnie brakujących ścieżek, `svn update`; wpis `missing` odracza update, aby nie odtworzyć lokalnego delete ani źródła rename
+- konflikty startowe przechodzą przez tę samą bezstratną reconciliation co konflikty pollera
 - `svn info --show-item revision <repo_url>` — pobiera HEAD rewizję serwera
 - Jeśli HEAD > lokalnej rewizji — wykonuje `svn update`
 - Obsługuje offline i backoff identycznie jak commit

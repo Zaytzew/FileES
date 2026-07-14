@@ -56,9 +56,13 @@ type execClient struct {
 // New creates a new SVN CLI client.
 func New(opts Options) Client {
 	p := opts.SvnPath
-	if p == "" { p = "svn" }
+	if p == "" {
+		p = "svn"
+	}
 	t := opts.Timeout
-	if t <= 0 { t = 30 * time.Minute }
+	if t <= 0 {
+		t = 30 * time.Minute
+	}
 	return &execClient{svnPath: p, timeout: t, lg: talk.With(opts.LogScope)}
 }
 
@@ -78,10 +82,14 @@ func (c *execClient) GetInfo(ctx context.Context, repoURL, username, password st
 func (c *execClient) Checkout(ctx context.Context, repoURL, localPath, username, password string) (string, error) {
 	if _, err := os.Stat(filepath.Join(localPath, ".svn")); err == nil {
 		c.lg.Debugf("WC exists at %s → cleanup+update", localPath)
-		if out, err := c.Cleanup(ctx, localPath, username, password); err != nil { return out, err }
+		if out, err := c.Cleanup(ctx, localPath, username, password); err != nil {
+			return out, err
+		}
 		return c.Update(ctx, localPath, username, password)
 	}
-	if err := os.MkdirAll(localPath, 0o755); err != nil { return "", err }
+	if err := os.MkdirAll(localPath, 0o755); err != nil {
+		return "", err
+	}
 	return c.run(ctx, "", username, password, []string{"checkout", repoURL, localPath})
 }
 
@@ -94,17 +102,35 @@ func (c *execClient) Update(ctx context.Context, localPath, username, password s
 }
 
 func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]StatusEntry, error) {
-	args := append([]string{"status", "--xml", "--verbose", "--ignore-externals", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
+	depth := "empty"
+	if len(paths) == 0 {
+		depth = "infinity"
+	}
+	args := append([]string{"status", "--xml", "--verbose", "--ignore-externals", "--depth", depth}, c.relativize(rootDirectory, paths)...)
 	output, err := c.run(ctx, rootDirectory, username, password, args)
-	if err != nil { return nil, fmt.Errorf("svn status failed: %w\n%s", err, output) }
+	if err != nil {
+		return nil, fmt.Errorf("svn status failed: %w\n%s", err, output)
+	}
 	return parseStatusXML(output, rootDirectory)
+}
+
+// HasMissingPaths reports local, unscheduled removals. Running svn update while
+// any such path exists restores it from the repository, destroying the user's
+// delete and degrading a rename into an add/copy pair.
+func HasMissingPaths(entries []StatusEntry) bool {
+	for _, entry := range entries {
+		if entry.Item == "missing" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 	var statusXML struct {
 		Targets []struct {
 			Entries []struct {
-				Path string `xml:"path,attr"`
+				Path     string `xml:"path,attr"`
 				WCStatus struct {
 					Item string `xml:"item,attr"`
 				} `xml:"wc-status"`
@@ -118,7 +144,9 @@ func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 	for _, t := range statusXML.Targets {
 		for _, e := range t.Entries {
 			path := e.Path
-			if rel, err := filepath.Rel(rootDirectory, path); err == nil { path = rel }
+			if rel, err := filepath.Rel(rootDirectory, path); err == nil {
+				path = rel
+			}
 			out = append(out, StatusEntry{Path: path, Item: e.WCStatus.Item})
 		}
 	}
@@ -139,7 +167,9 @@ func (c *execClient) Delete(ctx context.Context, rootDirectory string, paths []s
 }
 
 func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error) {
-	if len(paths) == 0 { return "", errors.New("svn commit refused: empty path list") }
+	if len(paths) == 0 {
+		return "", errors.New("svn commit refused: empty path list")
+	}
 	args := append([]string{"commit", "-m", message}, c.relativize(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, username, password, args)
 }
@@ -166,20 +196,29 @@ func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, acc
 
 func (c *execClient) Revision(ctx context.Context, target, username, password string) (int64, error) {
 	out, err := c.run(ctx, "", username, password, []string{"info", "--show-item", "revision", target})
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	n, perr := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
-	if perr != nil { return 0, fmt.Errorf("parse revision %q: %w", strings.TrimSpace(out), perr) }
+	if perr != nil {
+		return 0, fmt.Errorf("parse revision %q: %w", strings.TrimSpace(out), perr)
+	}
 	return n, nil
 }
 
 // ---- Core exec runner ----
 
 func (c *execClient) run(parentCtx context.Context, workingDir, username, password string, args []string) (string, error) {
-	c.mu.Lock(); defer c.mu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	cmdArgs := make([]string, 0, 8+len(args))
-	if username != "" { cmdArgs = append(cmdArgs, "--username", username) }
-	if password != "" { cmdArgs = append(cmdArgs, "--password", password) }
+	if username != "" {
+		cmdArgs = append(cmdArgs, "--username", username)
+	}
+	if password != "" {
+		cmdArgs = append(cmdArgs, "--password", password)
+	}
 	cmdArgs = append(cmdArgs, "--non-interactive", "--no-auth-cache")
 	cmdArgs = append(cmdArgs, args...)
 
@@ -196,12 +235,16 @@ func (c *execClient) run(parentCtx context.Context, workingDir, username, passwo
 	c.lg.Tracef("exec: %s %s (dir=%s)", c.svnPath, strings.Join(cmdArgs, " "), emptyIf(workingDir, "."))
 	if err := cmd.Start(); err != nil {
 		name := "svn"
-		if len(args) > 0 { name = args[0] }
+		if len(args) > 0 {
+			name = args[0]
+		}
 		return buf.String(), fmt.Errorf("uruchomienie '%s' nie powiodło się: %w", name, err)
 	}
 	if err := cmd.Wait(); err != nil {
 		name := "svn"
-		if len(args) > 0 { name = args[0] }
+		if len(args) > 0 {
+			name = args[0]
+		}
 		if ctx.Err() != nil {
 			return buf.String(), fmt.Errorf("komenda '%s' anulowana/przekroczono czas: %v\n%s", name, ctx.Err(), buf.String())
 		}
@@ -212,12 +255,16 @@ func (c *execClient) run(parentCtx context.Context, workingDir, username, passwo
 
 // relativize converts absolute paths under rootDirectory into relative ones for svn CLI.
 func (c *execClient) relativize(rootDirectory string, paths []string) []string {
-	if len(paths) == 0 { return paths }
+	if len(paths) == 0 {
+		return paths
+	}
 	out := make([]string, 0, len(paths))
 	for _, p := range paths {
 		q := p
 		if rootDirectory != "" && filepath.IsAbs(p) && strings.HasPrefix(filepath.Clean(p), filepath.Clean(rootDirectory)) {
-			if rel, err := filepath.Rel(rootDirectory, p); err == nil { q = rel }
+			if rel, err := filepath.Rel(rootDirectory, p); err == nil {
+				q = rel
+			}
 		}
 		out = append(out, q)
 	}
@@ -225,14 +272,18 @@ func (c *execClient) relativize(rootDirectory string, paths []string) []string {
 }
 
 func emptyIf(s, def string) string {
-	if s == "" { return def }
+	if s == "" {
+		return def
+	}
 	return s
 }
 
 // IsNetworkError returns true when err indicates a network/connectivity problem
 // (as opposed to an SVN logic error like "not under version control").
 func IsNetworkError(err error) bool {
-	if err == nil { return false }
+	if err == nil {
+		return false
+	}
 	msg := strings.ToLower(err.Error())
 	for _, needle := range []string{
 		"unable to connect",
@@ -243,11 +294,13 @@ func IsNetworkError(err error) bool {
 		"host not found",
 		"name or service not known",
 		"temporary failure in name resolution",
-		"e170013", // svn: can't connect to repository
-		"e730047", // svn: DNS lookup failed
+		"e170013",                     // svn: can't connect to repository
+		"e730047",                     // svn: DNS lookup failed
 		"anulowana/przekroczono czas", // our timeout wrapper
 	} {
-		if strings.Contains(msg, needle) { return true }
+		if strings.Contains(msg, needle) {
+			return true
+		}
 	}
 	return false
 }

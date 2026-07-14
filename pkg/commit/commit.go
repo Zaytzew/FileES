@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"filees/pkg/client"
@@ -92,6 +93,25 @@ type Service struct {
 	offline   bool
 	nextRetry time.Time
 	backoff   time.Duration
+
+	cacheResumed    atomic.Int64
+	alreadyAccepted atomic.Int64
+	commitBatches   atomic.Int64
+}
+
+// RecoveryStats is a point-in-time diagnostic snapshot; it is not an IPC type.
+type RecoveryStats struct {
+	CacheResumed    int64
+	AlreadyAccepted int64
+	CommitBatches   int64
+}
+
+func (s *Service) RecoveryStats() RecoveryStats {
+	return RecoveryStats{
+		CacheResumed:    s.cacheResumed.Load(),
+		AlreadyAccepted: s.alreadyAccepted.Load(),
+		CommitBatches:   s.commitBatches.Load(),
+	}
 }
 
 type stageItem struct {
@@ -489,6 +509,9 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 			s.Logger.Debugf("skip svn add %s (already staged)", p)
 		} else {
 			s.Logger.Debugf("skip add %s (status=%s)", p, item)
+			if item == "normal" {
+				s.alreadyAccepted.Add(1)
+			}
 			s.removePendingIfUnchanged(p, pending)
 		}
 	}
@@ -611,6 +634,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 	}
 	s.goOnline()
 	s.lastCommit = time.Now()
+	s.commitBatches.Add(1)
 
 	// head.rev + commit event
 	if rev := parseRevision(out); rev != "" {
@@ -808,6 +832,7 @@ func (s *Service) loadCache() {
 	s.mu.Unlock()
 
 	if len(entries) > 0 {
+		s.cacheResumed.Add(int64(len(entries)))
 		s.Logger.Infof("commit cache: resumed %d pending entries", len(entries))
 	}
 }

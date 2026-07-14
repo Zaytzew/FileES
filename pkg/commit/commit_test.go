@@ -127,6 +127,10 @@ func TestCacheResumeReconcilesAlreadyAcceptedAddedEntry(t *testing.T) {
 	if cli.commits != 0 || len(s.staging) != 0 {
 		t.Fatalf("commits=%d staging=%d, want 0/0", cli.commits, len(s.staging))
 	}
+	stats := s.RecoveryStats()
+	if stats.CacheResumed != 1 || stats.AlreadyAccepted != 1 || stats.CommitBatches != 0 {
+		t.Fatalf("recovery stats = %+v, want resumed=1 accepted=1 batches=0", stats)
+	}
 }
 
 func TestRunDrainsAllEventsWhenInputCloses(t *testing.T) {

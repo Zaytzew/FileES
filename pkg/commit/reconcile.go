@@ -17,8 +17,8 @@ const kolizjeDir = "!kolizje"
 
 // conflictMeta is written as <file>.meta alongside each saved local copy.
 type conflictMeta struct {
-	OrigRel   string `json:"orig_rel"`  // original relative path in WC
-	SavedAs   string `json:"saved_as"`  // path within !kolizje/ subtree
+	OrigRel   string `json:"orig_rel"` // original relative path in WC
+	SavedAs   string `json:"saved_as"` // path within !kolizje/ subtree
 	Timestamp string `json:"timestamp"`
 	Size      int64  `json:"size"`
 	Type      string `json:"type"` // "lokalne" | "usuniete" | "nazwy"
@@ -48,6 +48,18 @@ func parseConflicts(out string) []string {
 		conflicts = append(conflicts, path)
 	}
 	return conflicts
+}
+
+// ReconcileUpdateConflicts preserves local versions and resolves every conflict
+// reported by svn update in favour of the server. It is shared by startup and
+// periodic updates so crash recovery cannot bypass the reconciliation policy.
+func (s *Service) ReconcileUpdateConflicts(ctx context.Context, wc, username, password, updateOutput string) {
+	conflicts := parseConflicts(updateOutput)
+	if len(conflicts) == 0 {
+		return
+	}
+	s.Logger.Warnf("update: %d conflict(s) detected — reconciling", len(conflicts))
+	s.reconcile(ctx, wc, username, password, conflicts)
 }
 
 // reconcile saves local copies of conflicted files to !kolizje/ and resolves in favour of the

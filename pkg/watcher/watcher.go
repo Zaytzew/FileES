@@ -299,7 +299,10 @@ func (s *Scanner) loop(ctx context.Context, out chan<- Event) {
 	for {
 		select {
 		case <-ctx.Done():
-			// best-effort save
+			// Final synchronous scan closes the shutdown race: changes created
+			// after the last periodic scan must still reach commit service before
+			// the event channel is closed and drained.
+			s.scanCycle(context.Background(), out)
 			if s.statePath != "" { _ = s.SaveState(s.statePath) }
 			return
 		case <-ticker.C:
@@ -414,16 +417,18 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 		rel := s.toRelPOSIX(path)
 		if rel == "" { return nil }
 
-		// .filees selective filters
-		if strings.HasPrefix(rel, ".filees/") {
-			if strings.HasPrefix(rel, ".filees/state/") || strings.HasPrefix(rel, ".filees/locks/") {
-				if d.IsDir() { return fs.SkipDir }
-				*igCnt++; return nil
-			}
-			if ticketsOnly && !strings.HasPrefix(rel, ".filees/tickets/") {
-				if d.IsDir() { return fs.SkipDir }
-				*igCnt++; return nil
-			}
+		// .filees is private runtime state, except for outgoing tickets which
+		// intentionally participate in synchronization. Never let commit cache,
+		// manifests, locks, backlog or ignore configuration enter the watcher
+		// manifest and feed back into commit staging.
+		if rel == ".filees" {
+			*igCnt++
+			return nil // traverse so .filees/tickets remains visible
+		}
+		isTicket := rel == ".filees/tickets" || strings.HasPrefix(rel, ".filees/tickets/")
+		if strings.HasPrefix(rel, ".filees/") && !isTicket {
+			if d.IsDir() { return fs.SkipDir }
+			*igCnt++; return nil
 		}
 
 		// user ignores (hard first)
@@ -452,6 +457,18 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 				}
 				newFiles = append(newFiles, pendingAdd{pathAbs(path), rel, isDir, m})
 			} else {
+				if _, wasMissing := s.missingSince[rel]; wasMissing {
+					// A path returning during deletion debounce must be announced
+					// again. Its earlier Added event may already have been cancelled
+					// by the commit layer when the path disappeared.
+					if !isDir { m.MD5 = old.MD5 }
+					curr[rel] = m
+					out <- Event{Path: pathAbs(path), Rel: rel, Type: pickType(isDir), Op: Added}
+					*aCnt++
+					delete(deleted, rel)
+					delete(s.missingSince, rel)
+					return nil
+				}
 				changed := false
 				if !isDir {
 					if m.Size != old.Size || m.MtimeSec != old.MtimeSec {

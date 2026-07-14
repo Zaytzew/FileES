@@ -38,6 +38,9 @@ Daemon szuka pliku `config.json` w katalogu roboczym. Plik zawiera tablicę repo
     "watch_interval":  "30s",
     "poll_interval":   "30s",
     "max_batch_files": 100,
+    "max_batch_mib": 512,
+    "backlog_flush_mib": 1024,
+    "shutdown_commit_timeout": "10m",
     "lock_first":      false,
     "shout_patterns":  ["\\.psd$", "\\.blend$", "\\.obj$"],
     "rate_limit_shout":"5m",
@@ -62,6 +65,9 @@ Daemon szuka pliku `config.json` w katalogu roboczym. Plik zawiera tablicę repo
 | `watch_interval`   | Interwał skanowania systemu plików |
 | `poll_interval`    | Jak często sprawdzać HEAD serwera i pobierać zmiany (`svn update`); domyślnie `30s` |
 | `max_batch_files`  | Maks. liczba plików w jednym commicie |
+| `max_batch_mib`    | Docelowy maks. rozmiar jednego commita w MiB; większy pojedynczy plik tworzy własny batch |
+| `backlog_flush_mib` | Próg zaległości w MiB wymuszający commit bez czekania na zwykły interwał |
+| `shutdown_commit_timeout` | Maks. czas pełnego drainu stagingu podczas kontrolowanego zamknięcia |
 | `lock_first`       | Jeśli `true` — próbuje `svn lock` przed commitem |
 | `shout_patterns`   | Wzorce regex; pasujące pliki wyzwalają powiadomienie (ticket) |
 | `rate_limit_shout` | Minimalny odstęp między powiadomieniami |
@@ -268,7 +274,7 @@ Cyklicznie przechodzi drzewo kopii roboczej i wykrywa zmiany:
 - Sprawdza mtime i rozmiar pliku
 - Jeśli rozmiar ≤ 64 MiB i budżet MD5 pozwala — oblicza hash i porównuje z poprzednim; identyczna zawartość nie generuje eventu
 - Pliki większe trafiają do backlogu (`md5.backlog.json`); **backlog worker** (osobna goroutine) oblicza MD5 w tle co 5 s, po jednym pliku, wybierając za każdym razem najmniejszy — wynik trafia z powrotem do `s.cur`, co umożliwia wykrywanie renomowań dużych plików
-- Usunięcia są debouncowane 10 minut (ochrona przed chwilowymi ruchami plików)
+- Usunięcia są debouncowane nie dłużej niż opóźnienie publikacji nowych plików (obecnie 5 min)
 - W czasie commitu (`commit.busy`) przełącza się w tryb lekki — obserwuje tylko `.filees/tickets/`
 - Symlinki są pomijane (FS-0201); widoczne w logach przy poziomie `debug`
 
@@ -286,13 +292,17 @@ Przejście z Baselining do Active jest automatyczne po pierwszym pomyślnym skan
 Zbiera eventy ze skanera w mapie staging i co `commit_interval` wykonuje commit:
 
 1. Snapshot pending zmian (z uwzględnieniem minimalnego opóźnienia dla nowych plików — 5 min)
-2. Opcjonalnie: sprawdza rozmiar batcha i stosuje `commit_tiers` (size-adaptive interval)
-3. Filtruje przez `svn status` (nie dodaje plików już wersjonowanych, nie usuwa unversioned)
-4. `svn add` → `svn delete` → opcjonalnie `svn lock` → `svn commit`
-5. Zapisuje numer rewizji do `head.rev`
-6. Jeśli commitowane pliki pasują do `shout_patterns` — tworzy ticket powiadomień
+2. Planuje batch według rzeczywistej liczby plików i sumy bajtów; pojedynczy plik większy od limitu dostaje własny batch
+3. Po przekroczeniu `backlog_flush_mib` wymusza publikację bez czekania na zwykły interwał
+4. Filtruje przez jawny `svn status --verbose` (rozróżnia `unversioned`, `added` i `normal`)
+5. Wykonuje nierekurencyjny `svn add --parents --depth empty`, aby katalog nie omijał limitów, następnie delete/lock/commit
+6. Zapisuje numer rewizji do `head.rev`
+7. Jeśli commitowane pliki pasują do `shout_patterns` — tworzy ticket powiadomień
 
-Równolegle działa **poller HEAD** (co `poll_interval`, domyślnie 30s):
+Podczas `SIGINT`/`SIGTERM` serwis przestaje przyjmować nowe zmiany, odbiera końcówkę eventów watchera i opróżnia cały staging w ograniczonych batchach. Drain ma osobny `shutdown_commit_timeout`; niewysłana reszta jest atomowo zachowywana w commit cache i wznawiana przy następnym starcie. `SIGKILL`, OOM kill i utrata zasilania nie pozwalają wykonać kodu shutdownu, dlatego trwały cache pozostaje obowiązkową ścieżką recovery. Restart pomija ścieżki już przyjęte przez serwer i publikuje tylko pozostałą część cache.
+
+Przy starcie oraz równolegle w **pollerze HEAD** (co `poll_interval`, domyślnie 30s):
+- daemon wykonuje `svn cleanup` i `svn update`; konflikty startowe przechodzą przez tę samą bezstratną reconciliation co konflikty pollera
 - `svn info --show-item revision <repo_url>` — pobiera HEAD rewizję serwera
 - Jeśli HEAD > lokalnej rewizji — wykonuje `svn update`
 - Obsługuje offline i backoff identycznie jak commit
@@ -337,7 +347,7 @@ Opcjonalne mechanizmy ograniczające równoległość commitów:
 - **HostGate** — limit K równoległych commitów w skali hosta (blokada przez `mkdir`)
 - **RepoMutex** — maksymalnie 1 commit naraz per repozytorium
 
-Oba mechanizmy zwracają funkcję release, bezpieczną dla wielu goroutine.
+Katalog blokady zawiera PID i unikalny token właściciela. Po awarii następny proces atomowo przejmuje blokadę martwego PID; token zapobiega usunięciu nowszej blokady przez spóźnione `release`. Stare katalogi bez metadanych są przejmowane dopiero po okresie ochronnym. Oba mechanizmy zwracają funkcję release, bezpieczną dla wielu goroutine.
 
 ### Error Classifier (`pkg/errmap`)
 

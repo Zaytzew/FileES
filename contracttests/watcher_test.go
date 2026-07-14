@@ -127,6 +127,128 @@ func TestWatcherBacklogWorkerWithConcurrentScanning(t *testing.T) {
 	t.Fatal("large.bin missing from final manifest")
 }
 
+func TestWatcherExcludesPrivateFileESStateButKeepsTickets(t *testing.T) {
+	wc := t.TempDir()
+	stateDir := filepath.Join(wc, ".filees", "state")
+	cachePath := filepath.Join(wc, ".filees", "commit_cache", "cache.json")
+	ticketPath := filepath.Join(wc, ".filees", "tickets", "NOTICE-test.req")
+	for _, path := range []string{cachePath, ticketPath, filepath.Join(wc, "user.bin")} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("test"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	manifestPath := filepath.Join(stateDir, "manifest.json")
+	scanner, err := watcher.NewScanner(watcher.Options{
+		WC: wc, StatePath: manifestPath, ScanPeriod: 20 * time.Millisecond,
+		DeletedDebounce: 100 * time.Millisecond, ChanSize: 16,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	events := scanner.Start(ctx)
+	time.Sleep(80 * time.Millisecond)
+	cancel()
+	for range events {
+	}
+
+	var manifest []watcherManifestEntry
+	readJSONFile(t, manifestPath, &manifest)
+	seen := make(map[string]bool, len(manifest))
+	for _, entry := range manifest {
+		seen[entry.Path] = true
+	}
+	if seen[".filees/commit_cache/cache.json"] || seen[".filees/state/manifest.json"] {
+		t.Fatalf("private .filees state leaked into manifest: %#v", seen)
+	}
+	if !seen[".filees/tickets/NOTICE-test.req"] || !seen["user.bin"] {
+		t.Fatalf("expected ticket and user file in manifest: %#v", seen)
+	}
+}
+
+func TestWatcherReemitsAddedWhenPathReturnsDuringDeletionDebounce(t *testing.T) {
+	wc := t.TempDir()
+	path := filepath.Join(wc, "returning.txt")
+	if err := os.WriteFile(path, []byte("same"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(wc, ".filees", "state", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONFile(t, manifestPath, []watcherManifestEntry{{Path: "returning.txt", Mtime: info.ModTime().Unix(), Size: info.Size()}})
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	scanner, err := watcher.NewScanner(watcher.Options{WC: wc, StatePath: manifestPath, ScanPeriod: 20 * time.Millisecond, DeletedDebounce: 300 * time.Millisecond, ChanSize: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	events := scanner.Start(ctx)
+	time.Sleep(60 * time.Millisecond) // at least one scan records the absence
+	if err := os.WriteFile(path, []byte("same"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.After(500 * time.Millisecond)
+	for {
+		select {
+		case ev := <-events:
+			if ev.Rel == "returning.txt" && ev.Op == watcher.Added {
+				cancel()
+				for range events {
+				}
+				return
+			}
+		case <-deadline:
+			cancel()
+			for range events {
+			}
+			t.Fatal("returning path was not re-emitted as Added")
+		}
+	}
+}
+
+func TestWatcherFinalScanEmitsChangeOnShutdown(t *testing.T) {
+	wc := t.TempDir()
+	manifestPath := filepath.Join(wc, ".filees", "state", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONFile(t, manifestPath, []watcherManifestEntry{}) // active mode
+	scanner, err := watcher.NewScanner(watcher.Options{WC: wc, StatePath: manifestPath, ScanPeriod: time.Hour, DeletedDebounce: time.Minute, ChanSize: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	events := scanner.Start(ctx)
+	path := filepath.Join(wc, "last-second.txt")
+	if err := os.WriteFile(path, []byte("final"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	found := false
+	for ev := range events {
+		if ev.Rel == "last-second.txt" && ev.Op == watcher.Added {
+			found = true
+		}
+	}
+	if found {
+		return
+	}
+	t.Fatal("final scan did not emit the last-second change")
+}
+
 func writeJSONFile(t *testing.T, path string, value any) {
 	t.Helper()
 	b, err := json.Marshal(value)

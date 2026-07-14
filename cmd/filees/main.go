@@ -122,15 +122,6 @@ func runDaemon() {
 			},
 		)
 
-		if _, err := os.Stat(filepath.Join(wc, ".svn")); err == nil {
-			if out, err := cli.Cleanup(ctx, wc, r.Username, r.Password); err != nil {
-				rlg.Warnf("svn cleanup failed: %v %s", err, out)
-			}
-			if out, err := cli.Update(ctx, wc, r.Username, r.Password); err != nil {
-				rlg.Warnf("svn update failed: %v %s", err, out)
-			}
-		}
-
 		if fileExists(baselineOK) && fileExists(tmpManifest) && !fileExists(manifest) {
 			if err := os.Rename(tmpManifest, manifest); err != nil {
 				rlg.Warnf("promote manifest failed: %v", err)
@@ -147,9 +138,16 @@ func runDaemon() {
 		}
 
 		win := r.CommitInterval
-		if win <= 0 { win = 30 * time.Second }
+		if win <= 0 {
+			win = 30 * time.Second
+		}
+		// A disappearance must be observed no later than a new file becomes
+		// publishable. Otherwise an Added entry can outlive its file in staging.
+		publishLatency := 5 * time.Minute
 		scanPeriod := r.WatchInterval
-		if scanPeriod <= 0 { scanPeriod = win / 2 }
+		if scanPeriod <= 0 {
+			scanPeriod = win / 2
+		}
 		wopts := watcher.Options{
 			WC:              wc,
 			StatePath:       manifest,
@@ -157,7 +155,7 @@ func runDaemon() {
 			BusyPath:        busyPath,
 			BusyTTL:         10 * time.Minute,
 			TicketsPoll:     12 * time.Second,
-			DeletedDebounce: 10 * time.Minute,
+			DeletedDebounce: publishLatency,
 			LogScope:        "watch:" + r.ID,
 			UseMD5:          true,
 			ChanSize:        1024,
@@ -177,17 +175,22 @@ func runDaemon() {
 		}
 
 		pollInterval := r.PollInterval
-		if pollInterval <= 0 { pollInterval = 30 * time.Second }
+		if pollInterval <= 0 {
+			pollInterval = 30 * time.Second
+		}
 
 		rules := commit.Rules{
-			Window:         win,
-			MaxBatchFiles:  max(1, r.MaxBatchFiles),
-			ShoutPatterns:  config.MustCompileRegex(r.ShoutPatterns),
-			LockFirst:      r.LockFirst,
-			RateLimitShout: r.RateLimitShout,
-			NewLatency:     5 * time.Minute,
-			SizeTiers:      sizeTiers,
-			PollInterval:   pollInterval,
+			Window:            win,
+			MaxBatchFiles:     intOrDefault(r.MaxBatchFiles, 100),
+			MaxBatchBytes:     mibOrDefault(r.MaxBatchMiB, 512),
+			BacklogFlushBytes: mibOrDefault(r.BacklogFlushMiB, 1024),
+			ShutdownTimeout:   durationOrDefault(r.ShutdownCommitTimeout, 10*time.Minute),
+			ShoutPatterns:     config.MustCompileRegex(r.ShoutPatterns),
+			LockFirst:         r.LockFirst,
+			RateLimitShout:    r.RateLimitShout,
+			NewLatency:        publishLatency,
+			SizeTiers:         sizeTiers,
+			PollInterval:      pollInterval,
 		}
 
 		clientUUID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
@@ -223,6 +226,20 @@ func runDaemon() {
 			Emit: func(evType string, payload any) {
 				ipc.Emit(ipc.NewRepoEvent(r.ID, evType, payload))
 			},
+		}
+
+		// Reconcile startup-update conflicts through the same lossless path as
+		// periodic updates. In particular, this covers a SIGKILL after the server
+		// accepted a commit but before SVN updated the working-copy metadata.
+		if _, err := os.Stat(filepath.Join(wc, ".svn")); err == nil {
+			if out, err := cli.Cleanup(ctx, wc, r.Username, r.Password); err != nil {
+				rlg.Warnf("svn cleanup failed: %v %s", err, out)
+			}
+			out, updateErr := cli.Update(ctx, wc, r.Username, r.Password)
+			svc.ReconcileUpdateConflicts(ctx, wc, r.Username, r.Password, out)
+			if updateErr != nil {
+				rlg.Warnf("svn update failed: %v %s", updateErr, out)
+			}
 		}
 
 		wg.Add(1)
@@ -276,7 +293,26 @@ flags:
 
 // --- daemon-only helpers ---
 
-func max(a, b int) int { if a > b { return a }; return b }
+func intOrDefault(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func mibOrDefault(value, fallback float64) int64 {
+	if value <= 0 {
+		value = fallback
+	}
+	return int64(value * 1024 * 1024)
+}
+
+func durationOrDefault(value, fallback time.Duration) time.Duration {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 

@@ -3,6 +3,7 @@ package commit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,14 +32,17 @@ type SizeTier struct {
 
 // Rules configure commit behaviour.
 type Rules struct {
-	Window         time.Duration  // commit window (scanPeriod = window/2)
-	MaxBatchFiles  int            // max files/dirs per commit
-	ShoutPatterns  *regexp.Regexp // optional; if path matches => create ticket (rate limited)
-	LockFirst      bool           // if true, try svn lock before commit
-	RateLimitShout time.Duration  // min duration between shouts
-	NewLatency     time.Duration  // delay for new (Added) entries before commit (default 5m)
-	SizeTiers      []SizeTier     // size-adaptive intervals; empty = use Window only
-	PollInterval   time.Duration  // HEAD polling interval; 0 = disabled
+	Window            time.Duration  // commit window (scanPeriod = window/2)
+	MaxBatchFiles     int            // maximum physical files per commit; directories do not consume a slot
+	MaxBatchBytes     int64          // target maximum payload; one oversized file is allowed alone
+	BacklogFlushBytes int64          // force a batch when accumulated payload reaches this watermark
+	ShutdownTimeout   time.Duration  // graceful final drain deadline
+	ShoutPatterns     *regexp.Regexp // optional; if path matches => create ticket (rate limited)
+	LockFirst         bool           // if true, try svn lock before commit
+	RateLimitShout    time.Duration  // min duration between shouts
+	NewLatency        time.Duration  // delay for new (Added) entries before commit (default 5m)
+	SizeTiers         []SizeTier     // size-adaptive intervals; empty = use Window only
+	PollInterval      time.Duration  // HEAD polling interval; 0 = disabled
 }
 
 // effectiveInterval zwraca minimalny wymagany odstęp między commitami dla batcha o rozmiarze totalBytes.
@@ -174,6 +178,15 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 	if s.Rules.MaxBatchFiles <= 0 {
 		s.Rules.MaxBatchFiles = 1000
 	}
+	if s.Rules.MaxBatchBytes <= 0 {
+		s.Rules.MaxBatchBytes = 512 * 1024 * 1024
+	}
+	if s.Rules.BacklogFlushBytes <= 0 {
+		s.Rules.BacklogFlushBytes = 1024 * 1024 * 1024
+	}
+	if s.Rules.ShutdownTimeout <= 0 {
+		s.Rules.ShutdownTimeout = 10 * time.Minute
+	}
 	st := make(map[string]*stageItem)
 	s.staging = st
 
@@ -199,14 +212,28 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 	for {
 		select {
 		case <-ctx.Done():
+			// The watcher closes its channel after its final state save. Consume
+			// everything it emitted before beginning the bounded shutdown drain.
+			for ev := range events {
+				s.addEvent(ev)
+			}
+			s.shutdownDrain(wc, username, password)
 			lg.Infof("commit service stop")
-			s.saveCache()
 			return
 		case ev, ok := <-events:
 			if !ok {
+				s.shutdownDrain(wc, username, password)
+				lg.Infof("commit service stop")
 				return
 			}
 			s.addEvent(ev)
+			s.saveCache()
+			if s.stagingBytes() >= s.Rules.BacklogFlushBytes {
+				if err := s.tryCommitMode(ctx, wc, username, password, true); err != nil {
+					lg.Warnf("high-water commit failed: %v", err)
+				}
+				s.saveCache()
+			}
 		case <-ticker.C:
 			if s.isOfflineBackoff() {
 				lg.Debugf("offline: skipping commit tick (backoff active)")
@@ -219,6 +246,14 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 			s.saveCache()
 		}
 	}
+}
+
+func (s *Service) shutdownDrain(wc, username, password string) {
+	s.saveCache()
+	drainCtx, cancel := context.WithTimeout(context.Background(), s.Rules.ShutdownTimeout)
+	s.drain(drainCtx, wc, username, password)
+	cancel()
+	s.saveCache()
 }
 
 // runPoller periodically checks whether the server has new commits and triggers svn update.
@@ -283,10 +318,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 		return
 	}
 
-	if conflicts := parseConflicts(out); len(conflicts) > 0 {
-		s.Logger.Warnf("poll: %d conflict(s) detected — reconciling", len(conflicts))
-		s.reconcile(ctx, wc, username, password, conflicts)
-	}
+	s.ReconcileUpdateConflicts(ctx, wc, username, password, out)
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
 	_ = atomicWriteString(headRevPath, fmt.Sprintf("%d\n", headRev))
@@ -332,13 +364,23 @@ type pendingEntry struct {
 }
 
 func (s *Service) tryCommit(ctx context.Context, wc, username, password string) error {
+	return s.tryCommitMode(ctx, wc, username, password, false)
+}
+
+func (s *Service) tryCommitMode(ctx context.Context, wc, username, password string, force bool) error {
 	s.mu.Lock()
 	// snapshot and filter by latency & max batch
 	now := time.Now()
 	pending := make([]pendingEntry, 0, len(s.staging))
-	for _, it := range s.staging {
+	for key, it := range s.staging {
 		if it.Op == watcher.Added {
-			if now.Sub(it.FirstSeen) < s.Rules.NewLatency {
+			if _, err := os.Stat(it.Abs); errors.Is(err, os.ErrNotExist) {
+				// Added and removed before publication is a cancelled addition,
+				// not a deletion that should reach SVN.
+				delete(s.staging, key)
+				continue
+			}
+			if !force && now.Sub(it.FirstSeen) < s.Rules.NewLatency {
 				continue
 			}
 		}
@@ -351,7 +393,7 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	}
 
 	// size-adaptive interval: jeśli tiery są skonfigurowane, sprawdź czy minął wymagany odstęp
-	if len(s.Rules.SizeTiers) > 0 {
+	if !force && len(s.Rules.SizeTiers) > 0 {
 		var totalBytes int64
 		for _, it := range pending {
 			if it.item.Op != watcher.Deleted {
@@ -369,11 +411,10 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 		}
 	}
 
-	// sort for stable order; cut to MaxBatchFiles
+	// Stable, two-dimensional batch plan. Directories cost no payload and no
+	// file slot; svn add uses --depth empty, so they cannot expand behind us.
 	sort.Slice(pending, func(i, j int) bool { return pending[i].item.Rel < pending[j].item.Rel })
-	if len(pending) > s.Rules.MaxBatchFiles {
-		pending = pending[:s.Rules.MaxBatchFiles]
-	}
+	pending = selectBatch(pending, s.Rules.MaxBatchFiles, s.Rules.MaxBatchBytes)
 
 	// wstępne listy
 	var addPaths, delPaths, commitPaths []string
@@ -394,20 +435,55 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	}
 
 	// --- FILTR STAGINGU PRZEZ `svn status` ---
-	all := dedup(append(append([]string{}, addPaths...), delPaths...))
+	all := append(append([]string{}, addPaths...), delPaths...)
+	for _, it := range renamedItems {
+		all = append(all, it.OldRel, it.Rel)
+	}
+	all = dedup(all)
 	st := s.statusMap(ctx, wc, username, password, all)
 
-	// ADD: tylko unversioned
-	filteredAdd := make([]string, 0, len(addPaths))
-	for _, p := range addPaths {
-		item := st[p]
-		if item == "unversioned" || item == "" {
-			filteredAdd = append(filteredAdd, p)
-		} else {
-			s.Logger.Debugf("skip add %s (status=%s)", p, item)
+	// Rename detection is content-based and may refer to a source retained only
+	// in an old manifest. If that source is no longer versioned, degrade safely
+	// to Added instead of letting an impossible svn delete block the whole drain.
+	validRenamed := renamedItems[:0]
+	for _, it := range renamedItems {
+		switch st[it.OldRel] {
+		case "normal", "modified", "missing", "deleted":
+			validRenamed = append(validRenamed, it)
+		default:
+			s.Logger.Debugf("rename source %s is not versioned; treating %s as added", it.OldRel, it.Rel)
+			addPaths = append(addPaths, it.Rel)
 		}
 	}
-	addPaths = filteredAdd
+	renamedItems = validRenamed
+
+	// ADD: tylko istniejące i unversioned. The existence check is repeated
+	// immediately before staging to close the debounce/status race window.
+	toSvnAdd := make([]string, 0, len(addPaths))
+	alreadyAdded := make([]string, 0, len(addPaths))
+	for _, p := range addPaths {
+		if _, err := os.Stat(filepath.Join(wc, filepath.FromSlash(p))); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				s.Logger.Debugf("cancel add %s (removed before publish)", p)
+				s.removePendingIfUnchanged(p, pending)
+				continue
+			}
+			s.Logger.Warnf("skip add %s (stat: %v)", p, err)
+			continue
+		}
+		item := st[p]
+		if item == "unversioned" || (item == "" && hasUnversionedAncestor(p, st)) {
+			toSvnAdd = append(toSvnAdd, p)
+		} else if item == "added" {
+			alreadyAdded = append(alreadyAdded, p)
+			s.Logger.Debugf("skip svn add %s (already staged)", p)
+		} else {
+			s.Logger.Debugf("skip add %s (status=%s)", p, item)
+			s.removePendingIfUnchanged(p, pending)
+		}
+	}
+	toSvnAdd = dedup(toSvnAdd)
+	addPaths = dedup(append(toSvnAdd, alreadyAdded...))
 
 	// DELETE: rozróżnij systemowe usunięcia (missing) od już zestejdżowanych (deleted)
 	var toSvnDelete, alreadyStaged []string
@@ -420,11 +496,29 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 			s.Logger.Debugf("skip svn delete %s (already staged)", p)
 		default:
 			s.Logger.Debugf("skip delete %s (status=%s)", p, st[p])
+			s.removePendingIfUnchanged(p, pending)
 		}
 	}
 	delPaths = append(toSvnDelete, alreadyStaged...)
+
+	// Rebuild from the filtered operation lists. Never retain a path merely
+	// because it appeared in the pre-filter snapshot.
+	commitPaths = commitPaths[:0]
+	commitPaths = append(commitPaths, addPaths...)
+	for _, pe := range pending {
+		if pe.item.Op == watcher.Modified {
+			commitPaths = append(commitPaths, pe.item.Rel)
+		}
+	}
 	commitPaths = append(commitPaths, delPaths...)
+	for _, it := range renamedItems {
+		commitPaths = append(commitPaths, it.OldRel, it.Rel)
+	}
 	// --- KONIEC FILTRA ---
+
+	if len(commitPaths) == 0 {
+		return nil
+	}
 
 	// rate-limited shout
 	if s.Rules.ShoutPatterns != nil && time.Since(s.lastShout) >= s.Rules.RateLimitShout {
@@ -460,9 +554,9 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	}
 
 	// staging
-	if len(addPaths) > 0 {
-		if out, err := s.Cli.Add(ctx, wc, addPaths, username, password); err != nil {
-			s.Logger.Warnf("svn add failed: %v\n%s", err, out)
+	if len(toSvnAdd) > 0 {
+		if out, err := s.Cli.Add(ctx, wc, toSvnAdd, username, password); err != nil {
+			return fmt.Errorf("svn add failed: %w\n%s", err, out)
 		}
 	}
 	if len(toSvnDelete) > 0 {
@@ -528,6 +622,102 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	}
 	s.mu.Unlock()
 	return nil
+}
+
+func hasUnversionedAncestor(rel string, status map[string]string) bool {
+	rel = strings.Trim(rel, "/")
+	for {
+		i := strings.LastIndex(rel, "/")
+		if i < 0 {
+			return false
+		}
+		rel = rel[:i]
+		if status[rel] == "unversioned" {
+			return true
+		}
+	}
+}
+
+func selectBatch(entries []pendingEntry, maxFiles int, maxBytes int64) []pendingEntry {
+	out := make([]pendingEntry, 0, len(entries))
+	files := 0
+	var bytes int64
+	for _, pe := range entries {
+		count := 0
+		size := int64(0)
+		if !pe.item.IsDir {
+			count = 1
+			if pe.item.Op != watcher.Deleted {
+				if fi, err := os.Stat(pe.item.Abs); err == nil {
+					size = fi.Size()
+				}
+			}
+		}
+		if count > 0 && files >= maxFiles {
+			break
+		}
+		if size > 0 && bytes > 0 && bytes+size > maxBytes {
+			break
+		}
+		out = append(out, pe)
+		files += count
+		bytes += size
+	}
+	return out
+}
+
+func (s *Service) stagingBytes() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var total int64
+	for _, it := range s.staging {
+		if it.IsDir || it.Op == watcher.Deleted {
+			continue
+		}
+		if fi, err := os.Stat(it.Abs); err == nil {
+			total += fi.Size()
+		}
+	}
+	return total
+}
+
+func (s *Service) stagingLen() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.staging)
+}
+
+func (s *Service) drain(ctx context.Context, wc, username, password string) {
+	for s.stagingLen() > 0 {
+		before := s.stagingLen()
+		if err := s.tryCommitMode(ctx, wc, username, password, true); err != nil {
+			s.Logger.Warnf("shutdown drain stopped with %d pending entries: %v", before, err)
+			return
+		}
+		after := s.stagingLen()
+		if after >= before {
+			s.Logger.Warnf("shutdown drain made no progress; preserving %d pending entries", after)
+			return
+		}
+		if err := ctx.Err(); err != nil {
+			s.Logger.Warnf("shutdown drain timeout with %d pending entries: %v", after, err)
+			return
+		}
+	}
+}
+
+func (s *Service) removePendingIfUnchanged(rel string, pending []pendingEntry) {
+	for _, pe := range pending {
+		if pe.item.Rel != rel {
+			continue
+		}
+		s.mu.Lock()
+		if cur, ok := s.staging[rel]; ok && cur == pe.item && cur.ver == pe.ver {
+			delete(s.staging, rel)
+		}
+		s.mu.Unlock()
+		return
+	}
 }
 
 func (s *Service) makeNotice(wc, title, body string) error {

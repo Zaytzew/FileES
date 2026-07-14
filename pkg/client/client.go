@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -64,8 +65,8 @@ func New(opts Options) Client {
 // ---- Types ----
 
 type StatusEntry struct {
-	Path string `xml:"path,attr"`
-	Item string `xml:"wc-status>item,attr"`
+	Path string
+	Item string
 }
 
 // ---- High-level helpers ----
@@ -93,12 +94,21 @@ func (c *execClient) Update(ctx context.Context, localPath, username, password s
 }
 
 func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]StatusEntry, error) {
-	args := append([]string{"status", "--xml", "--ignore-externals", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"status", "--xml", "--verbose", "--ignore-externals", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
 	output, err := c.run(ctx, rootDirectory, username, password, args)
 	if err != nil { return nil, fmt.Errorf("svn status failed: %w\n%s", err, output) }
+	return parseStatusXML(output, rootDirectory)
+}
+
+func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 	var statusXML struct {
 		Targets []struct {
-			Entries []StatusEntry `xml:"entry"`
+			Entries []struct {
+				Path string `xml:"path,attr"`
+				WCStatus struct {
+					Item string `xml:"item,attr"`
+				} `xml:"wc-status"`
+			} `xml:"entry"`
 		} `xml:"target"`
 	}
 	if err := xml.Unmarshal([]byte(output), &statusXML); err != nil {
@@ -107,15 +117,19 @@ func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []s
 	var out []StatusEntry
 	for _, t := range statusXML.Targets {
 		for _, e := range t.Entries {
-			if rel, err := filepath.Rel(rootDirectory, e.Path); err == nil { e.Path = rel }
-			out = append(out, e)
+			path := e.Path
+			if rel, err := filepath.Rel(rootDirectory, path); err == nil { path = rel }
+			out = append(out, StatusEntry{Path: path, Item: e.WCStatus.Item})
 		}
 	}
 	return out, nil
 }
 
 func (c *execClient) Add(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
-	args := append([]string{"add"}, c.relativize(rootDirectory, paths)...)
+	// Keep directory expansion under the commit planner's control. --parents
+	// schedules required ancestors, while --depth empty prevents a directory
+	// from recursively bypassing file-count and byte limits.
+	args := append([]string{"add", "--parents", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, username, password, args)
 }
 
@@ -125,6 +139,7 @@ func (c *execClient) Delete(ctx context.Context, rootDirectory string, paths []s
 }
 
 func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error) {
+	if len(paths) == 0 { return "", errors.New("svn commit refused: empty path list") }
 	args := append([]string{"commit", "-m", message}, c.relativize(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, username, password, args)
 }

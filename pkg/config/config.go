@@ -30,13 +30,16 @@ type Repo struct {
 	Password       string        `json:"password,omitempty"`
 
 	// Opcjonalne rozszerzenia (mogą nie wystąpić w JSON; wtedy wartości domyślne/zero)
-	GlobalSlots    int           `json:"global_slots,omitempty"`
-	MaxBatchFiles  int           `json:"max_batch_files,omitempty"`
-	LockFirst      bool          `json:"lock_first,omitempty"`
-	ShoutPatterns  []string      `json:"shout_patterns,omitempty"`
-	RateLimitShout time.Duration `json:"-"` // z pola JSON "rate_limit_shout"
-	CommitTiers    []TierSpec    `json:"-"` // z pola JSON "commit_tiers"
-	PollInterval   time.Duration `json:"-"` // z pola JSON "poll_interval"; 0 = użyj domyślnego (30s)
+	GlobalSlots           int           `json:"global_slots,omitempty"`
+	MaxBatchFiles         int           `json:"max_batch_files,omitempty"`
+	MaxBatchMiB           float64       `json:"max_batch_mib,omitempty"`
+	BacklogFlushMiB       float64       `json:"backlog_flush_mib,omitempty"`
+	ShutdownCommitTimeout time.Duration `json:"-"`
+	LockFirst             bool          `json:"lock_first,omitempty"`
+	ShoutPatterns         []string      `json:"shout_patterns,omitempty"`
+	RateLimitShout        time.Duration `json:"-"` // z pola JSON "rate_limit_shout"
+	CommitTiers           []TierSpec    `json:"-"` // z pola JSON "commit_tiers"
+	PollInterval          time.Duration `json:"-"` // z pola JSON "poll_interval"; 0 = użyj domyślnego (30s)
 }
 
 // jsonRepo — struktura pomocnicza do dekodowania JSON (czasy jako stringi).
@@ -49,13 +52,16 @@ type jsonRepo struct {
 	Username       string `json:"username,omitempty"`
 	Password       string `json:"password,omitempty"`
 
-	GlobalSlots    int      `json:"global_slots,omitempty"`
-	MaxBatchFiles  int      `json:"max_batch_files,omitempty"`
-	LockFirst      bool     `json:"lock_first,omitempty"`
-	ShoutPatterns  []string `json:"shout_patterns,omitempty"`
-	RateLimitShout string   `json:"rate_limit_shout,omitempty"`
-	PollInterval   string   `json:"poll_interval,omitempty"`
-	CommitTiers    []struct {
+	GlobalSlots           int     `json:"global_slots,omitempty"`
+	MaxBatchFiles         int     `json:"max_batch_files,omitempty"`
+	MaxBatchMiB           float64 `json:"max_batch_mib,omitempty"`
+	BacklogFlushMiB       float64 `json:"backlog_flush_mib,omitempty"`
+	ShutdownCommitTimeout string `json:"shutdown_commit_timeout,omitempty"`
+	LockFirst             bool     `json:"lock_first,omitempty"`
+	ShoutPatterns         []string `json:"shout_patterns,omitempty"`
+	RateLimitShout        string   `json:"rate_limit_shout,omitempty"`
+	PollInterval          string   `json:"poll_interval,omitempty"`
+	CommitTiers           []struct {
 		MaxMB    float64 `json:"max_mb"`
 		Interval string  `json:"interval"`
 	} `json:"commit_tiers,omitempty"`
@@ -111,6 +117,19 @@ func Load(path string) ([]Repo, error) {
 				return nil, fmt.Errorf("config[%d].poll_interval: %w", i, err)
 			}
 		}
+		var shutdownTimeout time.Duration
+		if s := strings.TrimSpace(r.ShutdownCommitTimeout); s != "" {
+			shutdownTimeout, err = time.ParseDuration(s)
+			if err != nil || shutdownTimeout <= 0 {
+				return nil, fmt.Errorf("config[%d].shutdown_commit_timeout: wymagana dodatnia wartość duration", i)
+			}
+		}
+		if r.MaxBatchFiles < 0 || r.MaxBatchMiB < 0 || r.BacklogFlushMiB < 0 {
+			return nil, fmt.Errorf("config[%d]: limity batcha nie mogą być ujemne", i)
+		}
+		if r.MaxBatchMiB > 0 && r.BacklogFlushMiB > 0 && r.BacklogFlushMiB < r.MaxBatchMiB {
+			return nil, fmt.Errorf("config[%d]: backlog_flush_mib musi być >= max_batch_mib", i)
+		}
 
 		var tiers []TierSpec
 		for j, t := range r.CommitTiers {
@@ -130,7 +149,10 @@ func Load(path string) ([]Repo, error) {
 			Username:       r.Username,
 			Password:       r.Password,
 			GlobalSlots:    r.GlobalSlots,
-			MaxBatchFiles:  r.MaxBatchFiles,
+			MaxBatchFiles:         r.MaxBatchFiles,
+			MaxBatchMiB:           r.MaxBatchMiB,
+			BacklogFlushMiB:       r.BacklogFlushMiB,
+			ShutdownCommitTimeout: shutdownTimeout,
 			LockFirst:      r.LockFirst,
 			ShoutPatterns:  dedupTrim(r.ShoutPatterns),
 			RateLimitShout: shoutRate,

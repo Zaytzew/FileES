@@ -11,9 +11,11 @@ import (
 )
 
 type revisionClient struct {
-	remote int64
-	local  int64
-	update int
+	remote   int64
+	local    int64
+	update   int
+	resolved []string
+	accept   string
 }
 
 func (c *revisionClient) Revision(_ context.Context, target, _, _ string) (int64, error) {
@@ -56,8 +58,42 @@ func (*revisionClient) Unlock(context.Context, string, []string, string, string)
 func (*revisionClient) PropGet(context.Context, string, string, []string, string, string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Resolve(context.Context, string, []string, string, string, string) (string, error) {
+
+func (c *revisionClient) Resolve(_ context.Context, _ string, paths []string, accept, _, _ string) (string, error) {
+	c.resolved = append(c.resolved, paths...)
+	c.accept = accept
 	return "", nil
+}
+
+func TestReconcileUpdateConflictsPreservesLocalCopy(t *testing.T) {
+	wc := t.TempDir()
+	rel := "docs/report.txt"
+	abs := filepath.Join(wc, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(abs, []byte("local version"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := &revisionClient{}
+	service := &Service{Cli: cli, Logger: talk.With("startup-reconcile-test")}
+
+	service.ReconcileUpdateConflicts(context.Background(), wc, "", "", "   C docs/report.txt\n")
+
+	if len(cli.resolved) != 1 || cli.resolved[0] != rel || cli.accept != "theirs-full" {
+		t.Fatalf("Resolve = paths %v accept %q", cli.resolved, cli.accept)
+	}
+	matches, err := filepath.Glob(filepath.Join(wc, kolizjeDir, "*_lokalne", "docs", "report.txt"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("saved copies = %v, err = %v", matches, err)
+	}
+	b, err := os.ReadFile(matches[0])
+	if err != nil || string(b) != "local version" {
+		t.Fatalf("saved local copy = %q, err = %v", b, err)
+	}
+	if _, err := os.Stat(matches[0] + ".meta"); err != nil {
+		t.Fatalf("conflict metadata: %v", err)
+	}
 }
 
 func TestPollOncePersistsRevisionWhenWorkingCopyAlreadyAtHead(t *testing.T) {

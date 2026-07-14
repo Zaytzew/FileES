@@ -4,10 +4,19 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 )
+
+const legacyLockGrace = 30 * time.Second
+
+var lockSequence atomic.Uint64
 
 // -------- Host-wide Gate (K slotów równoległych commitów) --------
 
@@ -40,8 +49,10 @@ func (g *hostGate) Acquire(ctx context.Context) (func(), error) {
 	for {
 		for i := 1; i <= g.k; i++ {
 			dir := filepath.Join(g.baseDir, "slot."+itoa(i))
-			if err := os.Mkdir(dir, 0o755); err == nil {
-				return func() { _ = os.Remove(dir) }, nil
+			if release, acquired, err := tryLockDir(dir); err != nil {
+				return nil, err
+			} else if acquired {
+				return release, nil
 			}
 		}
 		select {
@@ -76,8 +87,10 @@ func (m *repoMutex) Lock(ctx context.Context, repoURL string) (func(), error) {
 	defer tick.Stop()
 
 	for {
-		if err := os.Mkdir(dir, 0o755); err == nil {
-			return func() { _ = os.Remove(dir) }, nil
+		if release, acquired, err := tryLockDir(dir); err != nil {
+			return nil, err
+		} else if acquired {
+			return release, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -85,6 +98,73 @@ func (m *repoMutex) Lock(ctx context.Context, repoURL string) (func(), error) {
 		case <-tick.C:
 		}
 	}
+}
+
+const ownerFile = "owner"
+
+func tryLockDir(dir string) (release func(), acquired bool, err error) {
+	if err := os.Mkdir(dir, 0o755); err == nil {
+		owner := fmt.Sprintf("%d %d %d\n", os.Getpid(), time.Now().UnixNano(), lockSequence.Add(1))
+		if err := os.WriteFile(filepath.Join(dir, ownerFile), []byte(owner), 0o600); err != nil {
+			_ = os.RemoveAll(dir)
+			return nil, false, err
+		}
+		return func() { releaseLockDir(dir, owner) }, true, nil
+	} else if !errors.Is(err, os.ErrExist) {
+		return nil, false, err
+	}
+
+	stale, err := staleLockDir(dir, time.Now())
+	if err != nil || !stale {
+		return nil, false, err
+	}
+	staleDir := fmt.Sprintf("%s.stale.%d.%d", dir, os.Getpid(), lockSequence.Add(1))
+	if err := os.Rename(dir, staleDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrExist) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	_ = os.RemoveAll(staleDir)
+	return nil, false, nil
+}
+
+func staleLockDir(dir string, now time.Time) (bool, error) {
+	b, err := os.ReadFile(filepath.Join(dir, ownerFile))
+	if err == nil {
+		fields := strings.Fields(string(b))
+		if len(fields) != 3 {
+			return oldLockDir(dir, now)
+		}
+		pid, parseErr := strconv.Atoi(fields[0])
+		if parseErr != nil || pid <= 0 {
+			return oldLockDir(dir, now)
+		}
+		return !processAlive(pid), nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	return oldLockDir(dir, now)
+}
+
+func oldLockDir(dir string, now time.Time) (bool, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return now.Sub(info.ModTime()) >= legacyLockGrace, nil
+}
+
+func releaseLockDir(dir, owner string) {
+	b, err := os.ReadFile(filepath.Join(dir, ownerFile))
+	if err != nil || string(b) != owner {
+		return
+	}
+	_ = os.RemoveAll(dir)
 }
 
 // -------- helpers --------

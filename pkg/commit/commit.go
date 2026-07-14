@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"filees/pkg/client"
-	"filees/pkg/errmap"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errmap"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
@@ -31,14 +31,14 @@ type SizeTier struct {
 
 // Rules configure commit behaviour.
 type Rules struct {
-	Window         time.Duration   // commit window (scanPeriod = window/2)
-	MaxBatchFiles  int             // max files/dirs per commit
-	ShoutPatterns  *regexp.Regexp  // optional; if path matches => create ticket (rate limited)
-	LockFirst      bool            // if true, try svn lock before commit
-	RateLimitShout time.Duration   // min duration between shouts
-	NewLatency     time.Duration   // delay for new (Added) entries before commit (default 5m)
-	SizeTiers      []SizeTier      // size-adaptive intervals; empty = use Window only
-	PollInterval   time.Duration   // HEAD polling interval; 0 = disabled
+	Window         time.Duration  // commit window (scanPeriod = window/2)
+	MaxBatchFiles  int            // max files/dirs per commit
+	ShoutPatterns  *regexp.Regexp // optional; if path matches => create ticket (rate limited)
+	LockFirst      bool           // if true, try svn lock before commit
+	RateLimitShout time.Duration  // min duration between shouts
+	NewLatency     time.Duration  // delay for new (Added) entries before commit (default 5m)
+	SizeTiers      []SizeTier     // size-adaptive intervals; empty = use Window only
+	PollInterval   time.Duration  // HEAD polling interval; 0 = disabled
 }
 
 // effectiveInterval zwraca minimalny wymagany odstęp między commitami dla batcha o rozmiarze totalBytes.
@@ -57,8 +57,10 @@ func (r *Rules) effectiveInterval(totalBytes int64) time.Duration {
 
 // Service wires events → staging → svn → tickets, respecting runtime gates.
 type Service struct {
-	Cli      client.Client
-	Tickets  interface{ CreateNotice(wc string, clientUUID, title, body string) (string, error) }
+	Cli     client.Client
+	Tickets interface {
+		CreateNotice(wc string, clientUUID, title, body string) (string, error)
+	}
 	Rules    Rules
 	HostGate runtime.Gate
 	RepoMtx  runtime.RepoMutex
@@ -74,10 +76,10 @@ type Service struct {
 	Emit func(evType string, payload any)
 
 	// internal
-	repoID     string     // set from Run(); used by emit()
+	repoID     string // set from Run(); used by emit()
 	mu         sync.Mutex
 	staging    map[string]*stageItem // rel path -> info
-	cachePath  string               // .filees/commit_cache/cache.json
+	cachePath  string                // .filees/commit_cache/cache.json
 	lastShout  time.Time
 	lastCommit time.Time // last successful commit (for size-adaptive interval)
 
@@ -91,11 +93,11 @@ type Service struct {
 type stageItem struct {
 	Rel       string
 	Abs       string
-	OldRel    string         // source path for Renamed; empty otherwise
+	OldRel    string // source path for Renamed; empty otherwise
 	IsDir     bool
 	Op        watcher.OpType
 	FirstSeen time.Time // for Added latency
-	ver       uint64   // incremented on every in-place update
+	ver       uint64    // incremented on every in-place update
 }
 
 func (s *Service) goOffline() {
@@ -153,8 +155,12 @@ func (s *Service) isOfflineBackoff() bool {
 
 func nextBackoff(cur time.Duration) time.Duration {
 	const max = 5 * time.Minute
-	if cur <= 0 { return 5 * time.Second }
-	if next := cur * 2; next < max { return next }
+	if cur <= 0 {
+		return 5 * time.Second
+	}
+	if next := cur * 2; next < max {
+		return next
+	}
 	return max
 }
 
@@ -162,8 +168,12 @@ func nextBackoff(cur time.Duration) time.Duration {
 func (s *Service) Run(ctx context.Context, repoID, wc, username, password string, events <-chan watcher.Event) {
 	s.repoID = repoID
 	lg := s.Logger
-	if s.Rules.NewLatency <= 0 { s.Rules.NewLatency = 5 * time.Minute }
-	if s.Rules.MaxBatchFiles <= 0 { s.Rules.MaxBatchFiles = 1000 }
+	if s.Rules.NewLatency <= 0 {
+		s.Rules.NewLatency = 5 * time.Minute
+	}
+	if s.Rules.MaxBatchFiles <= 0 {
+		s.Rules.MaxBatchFiles = 1000
+	}
 	st := make(map[string]*stageItem)
 	s.staging = st
 
@@ -176,7 +186,9 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 	}
 
 	window := s.Rules.Window
-	if window <= 0 { window = 30 * time.Second }
+	if window <= 0 {
+		window = 30 * time.Second
+	}
 	ticker := time.NewTicker(window)
 	defer ticker.Stop()
 
@@ -191,7 +203,9 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 			s.saveCache()
 			return
 		case ev, ok := <-events:
-			if !ok { return }
+			if !ok {
+				return
+			}
 			s.addEvent(ev)
 		case <-ticker.C:
 			if s.isOfflineBackoff() {
@@ -210,6 +224,10 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 // runPoller periodically checks whether the server has new commits and triggers svn update.
 func (s *Service) runPoller(ctx context.Context, wc, username, password string) {
 	headRevPath := filepath.Join(wc, ".filees", "state", "head.rev")
+	// Establish the revision baseline immediately. Without this, a fresh WC
+	// that is already at HEAD reports revision 0 through IPC until the first
+	// poll interval elapses (and historically never wrote head.rev at all).
+	s.pollOnce(ctx, wc, username, password, headRevPath)
 	ticker := time.NewTicker(s.Rules.PollInterval)
 	defer ticker.Stop()
 	for {
@@ -247,6 +265,9 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 	s.goOnline()
 
 	if headRev <= localRev {
+		if err := atomicWriteString(headRevPath, fmt.Sprintf("%d\n", localRev)); err != nil {
+			s.Logger.Warnf("poll: persist local revision: %v", err)
+		}
 		return // already up to date
 	}
 
@@ -273,7 +294,8 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 }
 
 func (s *Service) addEvent(ev watcher.Event) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	// normalize key = rel posix path
 	key := ev.Rel
 	it, ok := s.staging[key]
@@ -291,7 +313,9 @@ func (s *Service) addEvent(ev watcher.Event) {
 		it.Op = watcher.Added
 		it.OldRel = ""
 	case watcher.Modified:
-		if it.Op != watcher.Added && it.Op != watcher.Deleted { it.Op = watcher.Modified }
+		if it.Op != watcher.Added && it.Op != watcher.Deleted {
+			it.Op = watcher.Modified
+		}
 	case watcher.Renamed:
 		it.Op = watcher.Renamed
 		it.OldRel = ev.OldRel
@@ -322,7 +346,9 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	}
 	s.mu.Unlock()
 
-	if len(pending) == 0 { return nil }
+	if len(pending) == 0 {
+		return nil
+	}
 
 	// size-adaptive interval: jeśli tiery są skonfigurowane, sprawdź czy minął wymagany odstęp
 	if len(s.Rules.SizeTiers) > 0 {
@@ -345,7 +371,9 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 
 	// sort for stable order; cut to MaxBatchFiles
 	sort.Slice(pending, func(i, j int) bool { return pending[i].item.Rel < pending[j].item.Rel })
-	if len(pending) > s.Rules.MaxBatchFiles { pending = pending[:s.Rules.MaxBatchFiles] }
+	if len(pending) > s.Rules.MaxBatchFiles {
+		pending = pending[:s.Rules.MaxBatchFiles]
+	}
 
 	// wstępne listy
 	var addPaths, delPaths, commitPaths []string
@@ -412,12 +440,16 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	// gates
 	if s.HostGate != nil {
 		release, err := s.HostGate.Acquire(ctx)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		defer release()
 	}
 	if s.RepoMtx != nil {
 		unlock, err := s.RepoMtx.Lock(ctx, s.RepoURL)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		defer unlock()
 	}
 
@@ -460,7 +492,9 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 
 	// commit
 	uid := s.UUID
-	if uid == "" { uid = "unknown" }
+	if uid == "" {
+		uid = "unknown"
+	}
 	msg := fmt.Sprintf("Auto-commit by FileES client %s: %d paths", uid, len(commitPaths))
 	out, err := s.Cli.Commit(ctx, wc, commitPaths, msg, username, password)
 	if err != nil {
@@ -496,11 +530,14 @@ func (s *Service) tryCommit(ctx context.Context, wc, username, password string) 
 	return nil
 }
 
-
 func (s *Service) makeNotice(wc, title, body string) error {
-	if s.Tickets == nil { return nil }
+	if s.Tickets == nil {
+		return nil
+	}
 	uid := s.UUID
-	if uid == "" { uid = "unknown" }
+	if uid == "" {
+		uid = "unknown"
+	}
 	_, err := s.Tickets.CreateNotice(wc, uid, title, body)
 	return err
 }
@@ -519,26 +556,37 @@ type cacheEntry struct {
 
 func opName(op watcher.OpType) string {
 	switch op {
-	case watcher.Added:    return "added"
-	case watcher.Modified: return "modified"
-	case watcher.Deleted:  return "deleted"
-	case watcher.Renamed:  return "renamed"
-	default:               return "modified"
+	case watcher.Added:
+		return "added"
+	case watcher.Modified:
+		return "modified"
+	case watcher.Deleted:
+		return "deleted"
+	case watcher.Renamed:
+		return "renamed"
+	default:
+		return "modified"
 	}
 }
 
 func opFromName(s string) watcher.OpType {
 	switch s {
-	case "added":   return watcher.Added
-	case "deleted": return watcher.Deleted
-	case "renamed": return watcher.Renamed
-	default:        return watcher.Modified
+	case "added":
+		return watcher.Added
+	case "deleted":
+		return watcher.Deleted
+	case "renamed":
+		return watcher.Renamed
+	default:
+		return watcher.Modified
 	}
 }
 
 func (s *Service) loadCache() {
 	data, err := os.ReadFile(s.cachePath)
-	if err != nil { return } // no cache yet = normal on first run
+	if err != nil {
+		return
+	} // no cache yet = normal on first run
 
 	var entries []cacheEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
@@ -565,7 +613,9 @@ func (s *Service) loadCache() {
 }
 
 func (s *Service) saveCache() {
-	if s.cachePath == "" { return }
+	if s.cachePath == "" {
+		return
+	}
 
 	s.mu.Lock()
 	entries := make([]cacheEntry, 0, len(s.staging))
@@ -587,14 +637,24 @@ func (s *Service) saveCache() {
 }
 
 func atomicWriteJSONSlice(path string, v any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { return err }
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil { f.Close(); _ = os.Remove(tmp); return err }
-	if err := f.Close(); err != nil { return err }
+	if err := enc.Encode(v); err != nil {
+		f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
 	return os.Rename(tmp, path)
 }
 
@@ -615,9 +675,13 @@ func parseRevision(out string) string {
 
 func atomicWriteString(path string, data string) error {
 	d := filepath.Dir(path)
-	if err := os.MkdirAll(d, 0o755); err != nil { return err }
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		return err
+	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(data), 0o644); err != nil { return err }
+	if err := os.WriteFile(tmp, []byte(data), 0o644); err != nil {
+		return err
+	}
 	return os.Rename(tmp, path)
 }
 
@@ -653,4 +717,3 @@ func (s *Service) statusMap(ctx context.Context, wc, username, password string, 
 	}
 	return out
 }
-

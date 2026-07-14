@@ -30,6 +30,10 @@ func (c *revisionClient) Update(context.Context, string, string, string) (string
 	c.update++
 	return "", nil
 }
+
+func (*revisionClient) UpdateDepthEmpty(context.Context, string, []string, string, string) (string, error) {
+	return "", nil
+}
 func (*revisionClient) GetInfo(context.Context, string, string, string) (string, error) {
 	return "", nil
 }

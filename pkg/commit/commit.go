@@ -586,6 +586,14 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 	for _, it := range renamedItems {
 		commitPaths = append(commitPaths, it.OldRel, it.Rel)
 	}
+	// svn add --parents schedules missing ancestors, but svn commit does not
+	// automatically include those scheduled directories when only a child is
+	// named. Close every added destination over its parents so a file-limited
+	// batch is still a valid repository transaction.
+	for _, p := range append(append([]string{}, addPaths...), renameDestinations(renamedItems)...) {
+		commitPaths = append(commitPaths, parentPaths(p)...)
+	}
+	commitPaths = dedup(commitPaths)
 	// --- KONIEC FILTRA ---
 
 	if len(commitPaths) == 0 {
@@ -631,6 +639,20 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 	if len(toSvnAdd) > 0 {
 		if out, err := s.Cli.Add(ctx, wc, toSvnAdd, username, password); err != nil {
 			return fmt.Errorf("svn add failed: %w\n%s", err, out)
+		}
+	}
+	// A directory can become mixed-revision after earlier batches commit
+	// changes to its descendants. Refresh only the directory node before
+	// scheduling its removal. --depth empty cannot restore missing children.
+	var deleteDirs []string
+	for _, p := range toSvnDelete {
+		if pendingPathIsDir(p, pending) {
+			deleteDirs = append(deleteDirs, p)
+		}
+	}
+	if len(deleteDirs) > 0 {
+		if out, err := s.Cli.UpdateDepthEmpty(ctx, wc, deleteDirs, username, password); err != nil {
+			return fmt.Errorf("svn update deleted directories: %w\n%s", err, out)
 		}
 	}
 	if len(toSvnDelete) > 0 {
@@ -739,6 +761,37 @@ func hasUnversionedAncestor(rel string, status map[string]string) bool {
 			return true
 		}
 	}
+}
+
+func renameDestinations(items []*stageItem) []string {
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.Rel)
+	}
+	return out
+}
+
+func parentPaths(rel string) []string {
+	rel = strings.Trim(strings.TrimSpace(rel), "/")
+	var out []string
+	for {
+		i := strings.LastIndex(rel, "/")
+		if i < 0 {
+			break
+		}
+		rel = rel[:i]
+		out = append(out, rel)
+	}
+	return out
+}
+
+func pendingPathIsDir(rel string, entries []pendingEntry) bool {
+	for _, pe := range entries {
+		if pe.item.Rel == rel {
+			return pe.item.IsDir
+		}
+	}
+	return false
 }
 
 func selectBatch(entries []pendingEntry, maxFiles int, maxBytes int64) []pendingEntry {

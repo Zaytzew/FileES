@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -25,6 +26,12 @@ type stagingClient struct {
 	commitBatches  [][]string
 	commitCh       chan struct{}
 	commitErr      error
+	updatedEmpty   []string
+}
+
+func (c *stagingClient) UpdateDepthEmpty(_ context.Context, _ string, paths []string, _, _ string) (string, error) {
+	c.updatedEmpty = append(c.updatedEmpty, paths...)
+	return "", nil
 }
 
 func (c *stagingClient) Status(_ context.Context, _ string, paths []string, _, _ string) ([]client.StatusEntry, error) {
@@ -252,6 +259,14 @@ func TestSelectBatchAllowsOneOversizedFile(t *testing.T) {
 	entries := []pendingEntry{{item: &stageItem{Rel: "huge.bin", Abs: abs, Op: watcher.Added}}}
 	if got := selectBatch(entries, 10, 5); len(got) != 1 {
 		t.Fatalf("oversized batch len=%d, want 1", len(got))
+	}
+}
+
+func TestParentPathsCloseAddedChildOverAncestors(t *testing.T) {
+	got := parentPaths("root/branch/deep/file.bin")
+	want := []string{"root/branch/deep", "root/branch", "root"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parentPaths() = %#v, want %#v", got, want)
 	}
 }
 

@@ -30,6 +30,7 @@ type Client interface {
 	Checkout(ctx context.Context, repoURL, localPath, username, password string) (string, error)
 	Cleanup(ctx context.Context, localPath, username, password string) (string, error)
 	Update(ctx context.Context, localPath, username, password string) (string, error)
+	UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]StatusEntry, error)
 	Add(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	Delete(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
@@ -99,6 +100,11 @@ func (c *execClient) Cleanup(ctx context.Context, localPath, username, password 
 
 func (c *execClient) Update(ctx context.Context, localPath, username, password string) (string, error) {
 	return c.run(ctx, localPath, username, password, []string{"update", "."})
+}
+
+func (c *execClient) UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+	args := append([]string{"update", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
 }
 
 func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]StatusEntry, error) {

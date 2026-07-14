@@ -56,6 +56,9 @@ func parseConflicts(out string) []string {
 func (s *Service) ReconcileUpdateConflicts(ctx context.Context, wc, username, password, updateOutput string) {
 	conflicts := parseConflicts(updateOutput)
 	if len(conflicts) == 0 {
+		if s.OnConflicts != nil {
+			s.OnConflicts(0)
+		}
 		return
 	}
 	s.Logger.Warnf("update: %d conflict(s) detected — reconciling", len(conflicts))
@@ -112,6 +115,9 @@ func (s *Service) reconcile(ctx context.Context, wc, username, password string, 
 				"%d conflict(s) resolved (HEAD wins) — local copies in %s",
 				resolved, kolizjeDir),
 		})
+	}
+	if s.OnConflicts != nil {
+		s.OnConflicts(len(conflicted) - resolved)
 	}
 }
 

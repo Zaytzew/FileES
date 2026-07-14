@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -51,5 +52,31 @@ func TestHasMissingPaths(t *testing.T) {
 	}
 	if HasMissingPaths([]StatusEntry{{Path: "new.txt", Item: "unversioned"}, {Path: "edit.txt", Item: "modified"}}) {
 		t.Fatal("non-destructive local changes must not block update")
+	}
+}
+
+func TestRedactArgsHidesPasswordWithoutMutatingInput(t *testing.T) {
+	in := []string{"--username", "user", "--password", "secret", "status"}
+	got := redactArgs(in)
+	want := []string{"--username", "user", "--password", "<redacted>", "status"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("redactArgs() = %#v, want %#v", got, want)
+	}
+	if in[3] != "secret" {
+		t.Fatalf("redactArgs mutated input: %#v", in)
+	}
+}
+
+func TestRelativizeDoesNotAcceptPrefixSibling(t *testing.T) {
+	c := &execClient{}
+	root := filepath.Join(string(filepath.Separator), "data", "repo")
+	inside := filepath.Join(root, "dir", "file.bin")
+	sibling := filepath.Join(string(filepath.Separator), "data", "repo-other", "file.bin")
+	got := c.relativize(root, []string{inside, sibling})
+	if got[0] != filepath.Join("dir", "file.bin") {
+		t.Fatalf("inside path = %q", got[0])
+	}
+	if got[1] != sibling {
+		t.Fatalf("prefix sibling was relativized: %q", got[1])
 	}
 }

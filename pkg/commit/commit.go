@@ -76,6 +76,12 @@ type Service struct {
 	// OnConnectivity is called (async) when online/offline state changes.
 	// Argument is "online" or "offline". May be nil.
 	OnConnectivity func(string)
+	// Status callbacks keep the public daemon snapshot current without exposing
+	// commit internals to the IPC package.
+	OnHeadRevision     func(int64)
+	OnLastSync         func(time.Time)
+	OnConflicts        func(int)
+	OnCurrentOperation func(*string)
 	// Emit, if non-nil, is called to publish IPC events (commit.completed, sync.completed, etc.).
 	// The closure supplied by main.go wraps ipcserver.Server.Emit with the repo ID.
 	Emit func(evType string, payload any)
@@ -168,6 +174,14 @@ func (s *Service) emit(evType string, payload any) {
 	if s.Emit != nil {
 		s.Emit(evType, payload)
 	}
+}
+
+func (s *Service) setOperation(name string) func() {
+	if s.OnCurrentOperation == nil {
+		return func() {}
+	}
+	s.OnCurrentOperation(&name)
+	return func() { s.OnCurrentOperation(nil) }
 }
 
 // isOfflineBackoff returns true when we're offline and still within the backoff window.
@@ -323,6 +337,9 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 		if err := atomicWriteString(headRevPath, fmt.Sprintf("%d\n", localRev)); err != nil {
 			s.Logger.Warnf("poll: persist local revision: %v", err)
 		}
+		if s.OnHeadRevision != nil {
+			s.OnHeadRevision(localRev)
+		}
 		return // already up to date
 	}
 
@@ -337,6 +354,8 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 	}
 
 	s.Logger.Infof("poll: HEAD r%d > local r%d — running svn update", headRev, localRev)
+	done := s.setOperation("sync")
+	defer done()
 	out, err := s.Cli.Update(ctx, wc, username, password)
 	if err != nil {
 		if client.IsNetworkError(err) {
@@ -352,6 +371,12 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
 	_ = atomicWriteString(headRevPath, fmt.Sprintf("%d\n", headRev))
+	if s.OnHeadRevision != nil {
+		s.OnHeadRevision(headRev)
+	}
+	if s.OnLastSync != nil {
+		s.OnLastSync(time.Now())
+	}
 	s.emit(contract.EvSyncCompleted, contract.SyncCompletedPayload{Revision: headRev})
 }
 
@@ -581,6 +606,8 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 	}
 
 	// busy flag
+	doneOperation := s.setOperation("commit")
+	defer doneOperation()
 	busy := filepath.Join(wc, ".filees", "state", "commit.busy")
 	if err := atomicWriteString(busy, fmt.Sprintf("ts_start=%d\npid=%d\nrepo=%s\n", time.Now().Unix(), os.Getpid(), s.RepoURL)); err == nil {
 		defer os.Remove(busy)
@@ -641,6 +668,12 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
 		_ = atomicWriteString(head, rev+"\n")
 		if rev64, err := strconv.ParseInt(rev, 10, 64); err == nil {
+			if s.OnHeadRevision != nil {
+				s.OnHeadRevision(rev64)
+			}
+			if s.OnLastSync != nil {
+				s.OnLastSync(time.Now())
+			}
 			s.emit(contract.EvCommitCompleted, contract.CommitCompletedPayload{
 				Revision: rev64, Paths: len(commitPaths),
 			})

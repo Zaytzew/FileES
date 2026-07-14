@@ -232,7 +232,7 @@ func (c *execClient) run(parentCtx context.Context, workingDir, username, passwo
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 
-	c.lg.Tracef("exec: %s %s (dir=%s)", c.svnPath, strings.Join(cmdArgs, " "), emptyIf(workingDir, "."))
+	c.lg.Tracef("exec: %s %s (dir=%s)", c.svnPath, strings.Join(redactArgs(cmdArgs), " "), emptyIf(workingDir, "."))
 	if err := cmd.Start(); err != nil {
 		name := "svn"
 		if len(args) > 0 {
@@ -261,12 +261,27 @@ func (c *execClient) relativize(rootDirectory string, paths []string) []string {
 	out := make([]string, 0, len(paths))
 	for _, p := range paths {
 		q := p
-		if rootDirectory != "" && filepath.IsAbs(p) && strings.HasPrefix(filepath.Clean(p), filepath.Clean(rootDirectory)) {
-			if rel, err := filepath.Rel(rootDirectory, p); err == nil {
+		if rootDirectory != "" && filepath.IsAbs(p) {
+			if rel, err := filepath.Rel(filepath.Clean(rootDirectory), filepath.Clean(p)); err == nil && pathInsideRoot(rel) {
 				q = rel
 			}
 		}
 		out = append(out, q)
+	}
+	return out
+}
+
+func pathInsideRoot(rel string) bool {
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
+func redactArgs(args []string) []string {
+	out := append([]string(nil), args...)
+	for i := 0; i < len(out); i++ {
+		if out[i] == "--password" && i+1 < len(out) {
+			out[i+1] = "<redacted>"
+			i++
+		}
 	}
 	return out
 }

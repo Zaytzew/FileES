@@ -4,6 +4,8 @@ Szczegółowy opis przepływu klienta, invariants, zachowania po awarii, zweryfi
 
 Raport końcowy audytu i wnioski z testów chaosowych znajduje się w [CLIENT_AUDIT_REPORT.md](CLIENT_AUDIT_REPORT.md).
 
+Docelowy model dodawania katalogów, repozytorium technicznego, udostępnień oraz push-deployu tożsamości instalacji opisuje [PROVISIONING_AND_IDENTITY.md](PROVISIONING_AND_IDENTITY.md).
+
 Lokalny smoke test recovery można uruchomić przez `scripts/svn-recovery-smoke.sh`; tworzy tymczasowe repozytorium SVN i nie wymaga dostępu do sieci.
 
 Neutralny gate jakości dla CI to `make verify`. Obejmuje pełne testy Go, wybrane testy race, `go vet` oraz lokalny smoke test recovery SVN.
@@ -84,6 +86,10 @@ Daemon szuka pliku `config.json` w katalogu roboczym. Plik zawiera tablicę repo
 **`commit_tiers`** — każdy wpis to `{"max_mb": N, "interval": "Xm"}`. Daemon sprawdza sumaryczny rozmiar plików w bieżącym batchu i stosuje minimalny odstęp odpowiedniego tieru. `max_mb: 0` to catch-all (ostatni tier). Przykład: batche < 1 MiB co 2 min, 1–10 MiB co 5 min, 10–50 MiB co 15 min, > 50 MiB co 24h.
 
 Czasy podawane w formacie Go: `30s`, `5m`, `1h`.
+
+Każdy `local_path` musi być ścieżką bezwzględną. Identyfikatory repozytoriów muszą być unikalne, a lokalne korzenie nie mogą być identyczne ani zagnieżdżone w żadną stronę. Walidacja rozwiązuje symlinki istniejących katalogów i kończy start daemona twardym błędem przed utworzeniem stanu `.filees`.
+
+Hasło SVN podane w konfiguracji jest usuwane z logów `trace`. Klient SVN 1.14 nie udostępnia bezpiecznego wejścia hasła przez stdin, dlatego do czasu przejścia na docelowe klucze SSH hasło nadal jest przekazywane procesowi `svn` jako argument. Na współdzielonych hostach należy preferować transport oparty na kluczach albo konto systemowe z ograniczonym dostępem do listy procesów.
 
 ---
 

@@ -22,6 +22,7 @@ import (
 	"filees/pkg/ipcserver"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
+	"filees/pkg/tickets"
 	"filees/pkg/watcher"
 )
 
@@ -206,7 +207,6 @@ func runDaemon() {
 
 		svc := &commit.Service{
 			Cli:      cli,
-			Tickets:  nil,
 			Rules:    rules,
 			HostGate: gate,
 			RepoMtx:  mtx,
@@ -214,19 +214,11 @@ func runDaemon() {
 			RepoURL:  r.RepoURL,
 			UUID:     clientUUID,
 			ErrSink:  sink,
-			OnConnectivity: func(state string) {
-				if state == "offline" {
-					rs.SetConnectivity(contract.ConnOffline)
-					rs.SetState(contract.StateOffline)
-				} else {
-					rs.SetConnectivity(contract.ConnOnline)
-					rs.SetState(contract.StateActive)
-				}
-			},
 			Emit: func(evType string, payload any) {
 				ipc.Emit(ipc.NewRepoEvent(r.ID, evType, payload))
 			},
 		}
+		wireRepoStatus(svc, rs)
 
 		// Reconcile startup-update conflicts through the same lossless path as
 		// periodic updates. In particular, this covers a SIGKILL after the server
@@ -266,6 +258,23 @@ func runDaemon() {
 	for _, p := range pidPaths {
 		_ = os.Remove(p)
 	}
+}
+
+func wireRepoStatus(svc *commit.Service, rs *ipcserver.RepoState) {
+	svc.Tickets = tickets.New()
+	svc.OnConnectivity = func(state string) {
+		if state == "offline" {
+			rs.SetConnectivity(contract.ConnOffline)
+			rs.SetState(contract.StateOffline)
+		} else {
+			rs.SetConnectivity(contract.ConnOnline)
+			rs.SetState(contract.StateActive)
+		}
+	}
+	svc.OnHeadRevision = rs.SetHeadRev
+	svc.OnLastSync = rs.SetLastSyncAt
+	svc.OnConflicts = rs.SetConflicts
+	svc.OnCurrentOperation = rs.SetCurrentOp
 }
 
 // --- helpers shared by subcommands ---

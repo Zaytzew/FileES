@@ -25,9 +25,9 @@ type RepoState struct {
 	url       string
 	localPath string
 
-	state        string  // contract.State*
-	connectivity string  // contract.Conn*
-	headRev      int64   // last HEAD seen by poller; 0 = unknown
+	state        string // contract.State*
+	connectivity string // contract.Conn*
+	headRev      int64  // last HEAD seen by poller; 0 = unknown
 	conflicts    int
 	lastSyncAt   time.Time
 	currentOp    *string
@@ -87,7 +87,12 @@ func (rs *RepoState) SetLastSyncAt(t time.Time) {
 // SetCurrentOp sets a short description of the in-progress operation, or nil.
 func (rs *RepoState) SetCurrentOp(op *string) {
 	rs.mu.Lock()
-	rs.currentOp = op
+	if op == nil {
+		rs.currentOp = nil
+	} else {
+		value := *op
+		rs.currentOp = &value
+	}
 	rs.mu.Unlock()
 }
 
@@ -135,7 +140,11 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	headRev := rs.headRev
 	conflicts := rs.conflicts
 	lastSync := rs.lastSyncAt
-	currentOp := rs.currentOp
+	var currentOp *string
+	if rs.currentOp != nil {
+		value := *rs.currentOp
+		currentOp = &value
+	}
 	wc := rs.localPath
 	rs.mu.RUnlock()
 

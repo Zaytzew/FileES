@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"filees/pkg/client"
 	"filees/pkg/talk"
@@ -77,7 +78,8 @@ func TestReconcileUpdateConflictsPreservesLocalCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	cli := &revisionClient{}
-	service := &Service{Cli: cli, Logger: talk.With("startup-reconcile-test")}
+	unresolved := -1
+	service := &Service{Cli: cli, Logger: talk.With("startup-reconcile-test"), OnConflicts: func(n int) { unresolved = n }}
 
 	service.ReconcileUpdateConflicts(context.Background(), wc, "", "", "   C docs/report.txt\n")
 
@@ -94,6 +96,38 @@ func TestReconcileUpdateConflictsPreservesLocalCopy(t *testing.T) {
 	}
 	if _, err := os.Stat(matches[0] + ".meta"); err != nil {
 		t.Fatalf("conflict metadata: %v", err)
+	}
+	if unresolved != 0 {
+		t.Fatalf("unresolved conflicts = %d, want 0", unresolved)
+	}
+}
+
+func TestPollOnceUpdatesPublicStatus(t *testing.T) {
+	wc := t.TempDir()
+	cli := &revisionClient{remote: 62, local: 61}
+	var head int64
+	var synced time.Time
+	var operations []string
+	service := &Service{
+		Cli: cli, RepoURL: "svn://example/repo", Logger: talk.With("poll-status-test"),
+		OnHeadRevision: func(rev int64) { head = rev },
+		OnLastSync:     func(ts time.Time) { synced = ts },
+		OnCurrentOperation: func(op *string) {
+			if op == nil {
+				operations = append(operations, "")
+			} else {
+				operations = append(operations, *op)
+			}
+		},
+	}
+
+	service.pollOnce(context.Background(), wc, "", "", filepath.Join(wc, ".filees", "state", "head.rev"))
+
+	if head != 62 || synced.IsZero() {
+		t.Fatalf("status callbacks: head=%d synced=%v", head, synced)
+	}
+	if len(operations) != 2 || operations[0] != "sync" || operations[1] != "" {
+		t.Fatalf("operations = %#v, want [sync clear]", operations)
 	}
 }
 

@@ -17,6 +17,7 @@ type stagingClient struct {
 	client.Client
 	statusItem     string
 	statuses       map[string]string
+	statusErr      error
 	removeOnStatus string
 	adds, commits  int
 	addPaths       []string
@@ -27,6 +28,9 @@ type stagingClient struct {
 }
 
 func (c *stagingClient) Status(_ context.Context, _ string, paths []string, _, _ string) ([]client.StatusEntry, error) {
+	if c.statusErr != nil {
+		return nil, c.statusErr
+	}
 	if c.removeOnStatus != "" {
 		_ = os.Remove(c.removeOnStatus)
 		return []client.StatusEntry{{Path: filepath.Base(c.removeOnStatus), Item: c.statusItem}}, nil
@@ -150,19 +154,19 @@ func TestRunDrainsAllEventsWhenInputCloses(t *testing.T) {
 	}
 }
 
-func TestRunFlushesImmediatelyAtBacklogWatermark(t *testing.T) {
+func TestRunFlushesStableModificationAtBacklogWatermark(t *testing.T) {
 	wc := t.TempDir()
 	abs := filepath.Join(wc, "watermark.bin")
 	if err := os.WriteFile(abs, make([]byte, 10), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	committed := make(chan struct{}, 1)
-	cli := &stagingClient{statuses: map[string]string{"watermark.bin": "unversioned"}, commitCh: committed}
+	cli := &stagingClient{commitCh: committed}
 	events := make(chan watcher.Event, 1)
 	done := make(chan struct{})
 	s := &Service{Cli: cli, Rules: Rules{Window: time.Hour, NewLatency: time.Hour, MaxBatchFiles: 10, MaxBatchBytes: 1024, BacklogFlushBytes: 5, ShutdownTimeout: time.Second}}
 	go func() { s.Run(context.Background(), "repo", wc, "", "", events); close(done) }()
-	events <- watcher.Event{Path: abs, Rel: "watermark.bin", Type: watcher.EntryFile, Op: watcher.Added}
+	events <- watcher.Event{Path: abs, Rel: "watermark.bin", Type: watcher.EntryFile, Op: watcher.Modified}
 	select {
 	case <-committed:
 	case <-time.After(time.Second):
@@ -173,6 +177,43 @@ func TestRunFlushesImmediatelyAtBacklogWatermark(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("service did not stop after event channel closed")
+	}
+}
+
+func TestRunDoesNotFlushImmatureAddedFileAtBacklogWatermark(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "large-new.bin")
+	if err := os.WriteFile(abs, make([]byte, 10), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	committed := make(chan struct{}, 1)
+	cli := &stagingClient{statuses: map[string]string{"large-new.bin": "unversioned"}, commitCh: committed}
+	events := make(chan watcher.Event, 1)
+	done := make(chan struct{})
+	s := &Service{Cli: cli, Rules: Rules{Window: time.Hour, NewLatency: time.Hour, MaxBatchFiles: 10, MaxBatchBytes: 1024, BacklogFlushBytes: 5, ShutdownTimeout: time.Second}}
+	go func() { s.Run(context.Background(), "repo", wc, "", "", events); close(done) }()
+	events <- watcher.Event{Path: abs, Rel: "large-new.bin", Type: watcher.EntryFile, Op: watcher.Added}
+
+	select {
+	case <-committed:
+		t.Fatal("immature added file committed merely because it crossed the watermark")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if got := s.stagingLen(); got != 1 {
+		t.Fatalf("staging=%d, want 1 immature add", got)
+	}
+
+	// Shutdown drain is deliberately forceful and must still publish the file.
+	close(events)
+	select {
+	case <-committed:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown drain did not publish the stable final file")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("service did not stop after shutdown drain")
 	}
 }
 
@@ -320,6 +361,80 @@ func TestTryCommitDegradesRenameWithUnversionedSourceToAdd(t *testing.T) {
 	}
 	if len(cli.commitPaths) != 1 || cli.commitPaths[0] != "new.txt" {
 		t.Fatalf("commit paths = %#v", cli.commitPaths)
+	}
+}
+
+func TestTryCommitPreservesDeferredRenameWhenOtherPathsCommit(t *testing.T) {
+	wc := t.TempDir()
+	readyAbs := filepath.Join(wc, "ready.txt")
+	renameAbs := filepath.Join(wc, "renamed.txt")
+	for path, body := range map[string]string{readyAbs: "ready", renameAbs: "renamed"} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// This reproduces the real chaos sequence: another add is publishable,
+	// while a rename whose source was never versioned has no conclusive status
+	// for its destination in this status response.
+	cli := &stagingClient{statuses: map[string]string{"ready.txt": "unversioned"}}
+	s := &Service{
+		Cli:   cli,
+		Rules: Rules{NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		staging: map[string]*stageItem{
+			"ready.txt":   {Rel: "ready.txt", Abs: readyAbs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Minute)},
+			"renamed.txt": {Rel: "renamed.txt", Abs: renameAbs, OldRel: "original.txt", Op: watcher.Renamed, FirstSeen: time.Now().Add(-time.Minute)},
+		},
+	}
+
+	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if cli.commits != 1 || len(cli.commitPaths) != 1 || cli.commitPaths[0] != "ready.txt" {
+		t.Fatalf("commit paths=%#v commits=%d, want only ready.txt", cli.commitPaths, cli.commits)
+	}
+	if _, ok := s.staging["renamed.txt"]; !ok {
+		t.Fatal("inconclusive renamed destination was lost after another path committed")
+	}
+	if _, ok := s.staging["ready.txt"]; ok {
+		t.Fatal("successfully committed path remains staged")
+	}
+
+	cli.statuses["renamed.txt"] = "unversioned"
+	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.staging) != 0 {
+		t.Fatalf("staging after retry=%#v, want empty", s.staging)
+	}
+	if cli.commits != 2 || len(cli.commitPaths) != 1 || cli.commitPaths[0] != "renamed.txt" {
+		t.Fatalf("retry paths=%#v commits=%d", cli.commitPaths, cli.commits)
+	}
+}
+
+func TestTryCommitPreservesBatchWhenStatusFails(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "pending.txt")
+	if err := os.WriteFile(abs, []byte("pending"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := &stagingClient{statusErr: errors.New("transient status failure")}
+	s := &Service{
+		Cli:   cli,
+		Rules: Rules{NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		staging: map[string]*stageItem{
+			"pending.txt": {Rel: "pending.txt", Abs: abs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Minute)},
+		},
+	}
+
+	if err := s.tryCommit(context.Background(), wc, "", ""); err == nil {
+		t.Fatal("status failure was ignored")
+	}
+	if _, ok := s.staging["pending.txt"]; !ok {
+		t.Fatal("pending path was lost after status failure")
+	}
+	if cli.adds != 0 || cli.commits != 0 {
+		t.Fatalf("SVN mutation after status failure: adds=%d commits=%d", cli.adds, cli.commits)
 	}
 }
 

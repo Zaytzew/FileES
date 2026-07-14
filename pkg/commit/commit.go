@@ -263,7 +263,11 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 			s.addEvent(ev)
 			s.saveCache()
 			if s.stagingBytes() >= s.Rules.BacklogFlushBytes {
-				if err := s.tryCommitMode(ctx, wc, username, password, true); err != nil {
+				// A high watermark may accelerate stable modifications, but it must
+				// never bypass NewLatency for a newly-created file. Large files can
+				// cross the watermark while they are still being written or just
+				// before an application atomically renames its temporary path.
+				if err := s.tryCommitMode(ctx, wc, username, password, false); err != nil {
 					lg.Warnf("high-water commit failed: %v", err)
 				}
 				s.saveCache()
@@ -495,7 +499,13 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		all = append(all, it.OldRel, it.Rel)
 	}
 	all = dedup(all)
-	st := s.statusMap(ctx, wc, username, password, all)
+	st, err := s.statusMap(ctx, wc, username, password, all)
+	if err != nil {
+		// Status is the proof used to classify every pending operation. An empty
+		// map after a failed status call is not proof that any path is complete.
+		// Preserve the whole batch for retry instead of manufacturing a no-op.
+		return err
+	}
 
 	// Rename detection is content-based and may refer to a source retained only
 	// in an old manifest. If that source is no longer versioned, degrade safely
@@ -532,12 +542,16 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		} else if item == "added" {
 			alreadyAdded = append(alreadyAdded, p)
 			s.Logger.Debugf("skip svn add %s (already staged)", p)
-		} else {
+		} else if item == "normal" {
 			s.Logger.Debugf("skip add %s (status=%s)", p, item)
-			if item == "normal" {
-				s.alreadyAccepted.Add(1)
-			}
+			s.alreadyAccepted.Add(1)
 			s.removePendingIfUnchanged(p, pending)
+		} else {
+			// Empty and unknown statuses are inconclusive. In particular this can
+			// happen when a never-published file is renamed while its surrounding
+			// directory is being split across batches. Never acknowledge an add
+			// merely because SVN did not describe it in this status response.
+			s.Logger.Debugf("defer add %s (status=%s)", p, item)
 		}
 	}
 	toSvnAdd = dedup(toSvnAdd)
@@ -680,9 +694,31 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		}
 	}
 
-	// cleanup staging — only remove items unchanged since snapshot
+	// Cleanup staging only for operations represented in the successful commit.
+	// `pending` also contains paths filtered or deferred above; deleting the
+	// whole snapshot here would lose those paths whenever another member of the
+	// same batch commits successfully.
+	committed := make(map[string]struct{}, len(addPaths)+len(delPaths)+len(renamedItems))
+	for _, p := range addPaths {
+		committed[p] = struct{}{}
+	}
+	for _, p := range delPaths {
+		committed[p] = struct{}{}
+	}
+	for _, it := range renamedItems {
+		committed[it.Rel] = struct{}{}
+	}
+	for _, pe := range pending {
+		if pe.item.Op == watcher.Modified {
+			committed[pe.item.Rel] = struct{}{}
+		}
+	}
+
 	s.mu.Lock()
 	for _, pe := range pending {
+		if _, ok := committed[pe.item.Rel]; !ok {
+			continue
+		}
 		if cur, ok := s.staging[pe.item.Rel]; ok && cur == pe.item && cur.ver == pe.ver {
 			delete(s.staging, pe.item.Rel)
 		}
@@ -958,20 +994,20 @@ func dedup(in []string) []string {
 }
 
 // statusMap pobiera mapę rel-path -> svn status item ("unversioned","normal","modified","missing",...).
-func (s *Service) statusMap(ctx context.Context, wc, username, password string, paths []string) map[string]string {
+func (s *Service) statusMap(ctx context.Context, wc, username, password string, paths []string) (map[string]string, error) {
 	out := make(map[string]string, len(paths))
 	if len(paths) == 0 {
-		return out
+		return out, nil
 	}
 	st, err := s.Cli.Status(ctx, wc, paths, username, password)
 	if err != nil {
 		s.Logger.Warnf("svn status failed: %v", err)
-		return out
+		return nil, fmt.Errorf("svn status pending paths: %w", err)
 	}
 	for _, e := range st {
 		// Upewnij się, że mamy POSIX (watcher emituje REL w POSIX)
 		p := strings.ReplaceAll(e.Path, "\\", "/")
 		out[p] = e.Item
 	}
-	return out
+	return out, nil
 }

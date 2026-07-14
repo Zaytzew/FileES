@@ -497,6 +497,8 @@ Wzorce z `!` na początku są "twardymi" ignorami — przy katalogu powodują po
 | `pkg/client` | Wrapper SVN CLI |
 | `pkg/config` | Parsowanie `config.json` |
 | `pkg/contract/v1` | Typy protokołu IPC (`filees.contract/v1`) |
+| `pkg/control/v1` | Wersjonowane koperty ticket/result control plane (`filees.control/v1`) |
+| `pkg/provisioning` | Trwała maszyna stanów tworzenia repo i initial commit |
 | `pkg/ipcserver` | Serwer gniazda Unix dla CLI/GUI |
 | `pkg/ipcclient` | Klient IPC — używany przez CLI i docelowo GUI |
 | `pkg/errmap` | Klasyfikacja błędów + zapis do `errors.jsonl` |

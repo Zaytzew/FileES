@@ -2,6 +2,7 @@ package commit
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,6 +22,7 @@ type stagingClient struct {
 	commitPaths    []string
 	commitBatches  [][]string
 	commitCh       chan struct{}
+	commitErr      error
 }
 
 func (c *stagingClient) Status(_ context.Context, _ string, paths []string, _, _ string) ([]client.StatusEntry, error) {
@@ -50,7 +52,43 @@ func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, _, _
 	if c.commitCh != nil {
 		c.commitCh <- struct{}{}
 	}
-	return "", nil
+	return "", c.commitErr
+}
+
+func TestAcceptedCommitWithLostReplyIsNotRetried(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "accepted.txt")
+	if err := os.WriteFile(abs, []byte("accepted"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := &stagingClient{
+		statuses:  map[string]string{"accepted.txt": "unversioned"},
+		commitErr: errors.New("connection reset after server accepted commit"),
+	}
+	s := &Service{
+		Cli:   cli,
+		Rules: Rules{NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		staging: map[string]*stageItem{
+			"accepted.txt": {Rel: "accepted.txt", Abs: abs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Second)},
+		},
+	}
+	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err == nil {
+		t.Fatal("first commit unexpectedly succeeded")
+	}
+	if cli.commits != 1 || len(s.staging) != 1 {
+		t.Fatalf("after lost reply: commits=%d staging=%d, want 1/1", cli.commits, len(s.staging))
+	}
+
+	// A restarted client sees the path as already versioned/normal after the
+	// server accepted the commit; it must clear the cache entry without retrying.
+	cli.commitErr = nil
+	cli.statuses["accepted.txt"] = "normal"
+	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err != nil {
+		t.Fatalf("recovery attempt: %v", err)
+	}
+	if cli.commits != 1 || len(s.staging) != 0 {
+		t.Fatalf("after recovery: commits=%d staging=%d, want 1/0", cli.commits, len(s.staging))
+	}
 }
 
 func TestRunDrainsAllEventsWhenInputCloses(t *testing.T) {

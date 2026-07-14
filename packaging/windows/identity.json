@@ -1,0 +1,6 @@
+{
+  "name": "FileES",
+  "executable": "filees-gui.exe",
+  "start_menu_shortcut": "FileES.lnk",
+  "app_user_model_id": "ATMProjekt.FileES"
+}

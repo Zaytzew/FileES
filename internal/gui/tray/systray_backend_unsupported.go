@@ -1,4 +1,4 @@
-//go:build !cgo || (!linux && !windows)
+//go:build !linux && !windows
 
 package tray
 
@@ -7,8 +7,8 @@ import (
 	"runtime"
 )
 
-// NewSystrayBackend returns a descriptive error on unsupported build targets.
-// The pure model and renderer remain buildable and testable without CGO.
+// NewSystrayBackend returns a descriptive error on unsupported operating systems.
+// Linux and Windows implementations are pure Go and do not require CGO.
 func NewSystrayBackend() (Backend, error) {
-	return nil, errors.New("system tray unavailable on " + runtime.GOOS + ": requires CGO on Linux or Windows")
+	return nil, errors.New("system tray unavailable on unsupported operating system " + runtime.GOOS)
 }

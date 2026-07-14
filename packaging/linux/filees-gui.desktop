@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=FileES
+Comment=FileES synchronization status
+Exec=/usr/local/bin/filees-gui
+TryExec=/usr/local/bin/filees-gui
+Icon=filees-gui
+Terminal=false
+Categories=Utility;Network;
+StartupNotify=false
+X-GNOME-UsesNotifications=true

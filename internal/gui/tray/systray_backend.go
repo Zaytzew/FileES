@@ -1,4 +1,4 @@
-//go:build cgo && (linux || windows)
+//go:build linux || windows
 
 package tray
 

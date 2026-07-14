@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"filees/internal/gui/identity"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 	"filees/pkg/ipcclient"
@@ -66,8 +67,8 @@ func main() {
 
 func newAutostartSpec(executable, socket string) platform.AutostartSpec {
 	return platform.AutostartSpec{
-		ID:         "filees-gui",
-		Name:       "FileES",
+		ID:         identity.ID,
+		Name:       identity.Name,
 		Executable: filepath.Clean(executable),
 		Args:       []string{"--socket", socket},
 	}

@@ -26,6 +26,25 @@ func TestLinuxDesktopMetadata(t *testing.T) {
 	}
 }
 
+func TestLinuxUserInstallerIsExplicitAboutAutostart(t *testing.T) {
+	installScript, err := os.ReadFile("linux/install-user.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	uninstallScript, err := os.ReadFile("linux/uninstall-user.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(installScript), `ENABLE_AUTOSTART:-0`) {
+		t.Fatal("user installer must not enable autostart without explicit opt-in")
+	}
+	for _, required := range []string{"filees-gui.desktop", "filees-gui.svg", "autostart/filees-gui.desktop"} {
+		if !strings.Contains(string(uninstallScript), required) {
+			t.Errorf("uninstaller does not remove %q", required)
+		}
+	}
+}
+
 func TestWindowsManifestIsWellFormedAndUnelevated(t *testing.T) {
 	data, err := os.ReadFile("windows/filees-gui.exe.manifest")
 	if err != nil {
@@ -67,5 +86,38 @@ func TestWindowsBuildUsesGUISubsystem(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `-H=windowsgui`) {
 		t.Fatal("Windows GUI build would open a console window")
+	}
+}
+
+func TestWindowsInstallerCreatesPerUserShortcutWithAUMID(t *testing.T) {
+	data, err := os.ReadFile("windows/filees-gui.wxs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document any
+	if err := xml.Unmarshal(data, &document); err != nil {
+		t.Fatalf("invalid WiX source: %v", err)
+	}
+	text := string(data)
+	for _, required := range []string{
+		`Scope="perUser"`, `Id="LocalAppDataFolder"`, `Id="ProgramMenuFolder"`,
+		`Key="System.AppUserModel.ID"`, `Value="` + identity.AUMID + `"`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("WiX source missing %q", required)
+		}
+	}
+}
+
+func TestWindowsMSIBuildScriptUsesWiX4(t *testing.T) {
+	data, err := os.ReadFile("windows/build-msi.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, required := range []string{"WiX Toolset v4", "wix build", `SourceDir=$source`} {
+		if !strings.Contains(text, required) {
+			t.Errorf("MSI build script missing %q", required)
+		}
 	}
 }

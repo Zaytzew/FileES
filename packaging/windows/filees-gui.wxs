@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="FileES GUI"
+      Manufacturer="ATM Projekt"
+      Version="0.1.0"
+      UpgradeCode="6C983910-EB56-4B25-95F4-12E0173F47D8"
+      Scope="perUser">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of FileES GUI is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="FileES" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="FileES" />
+    </StandardDirectory>
+
+    <Icon Id="FileESIcon" SourceFile="$(var.SourceDir)\filees-gui.ico" />
+
+    <Component Id="FileESGUI" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESGUIExe" Source="$(var.SourceDir)\filees-gui.exe">
+        <Shortcut
+            Id="FileESStartMenuShortcut"
+            Directory="ApplicationProgramsFolder"
+            Name="FileES"
+            Description="FileES synchronization status"
+            Icon="FileESIcon"
+            WorkingDirectory="INSTALLFOLDER">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="ATMProjekt.FileES" />
+        </Shortcut>
+      </File>
+      <File Id="FileESGUIManifest" Source="$(var.SourceDir)\filees-gui.exe.manifest" />
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue
+          Root="HKCU"
+          Key="Software\ATMProjekt\FileES"
+          Name="GUIInstalled"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+    </Component>
+
+    <Feature Id="ProductFeature" Title="FileES GUI" Level="1">
+      <ComponentRef Id="FileESGUI" />
+    </Feature>
+  </Package>
+</Wix>

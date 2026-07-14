@@ -14,6 +14,10 @@ build_linux() {
 	)
 	cp "$root/packaging/linux/filees-gui.desktop" "$out/share/applications/"
 	cp "$root/internal/gui/tray/assets/svg/active.svg" "$out/share/icons/hicolor/scalable/apps/filees-gui.svg"
+	cp "$root/packaging/ACCEPTANCE.md" "$out/"
+	cp "$root/packaging/linux/install-user.sh" "$out/"
+	cp "$root/packaging/linux/uninstall-user.sh" "$out/"
+	chmod +x "$out/install-user.sh" "$out/uninstall-user.sh"
 }
 
 build_windows() {
@@ -25,6 +29,10 @@ build_windows() {
 	)
 	cp "$root/packaging/windows/filees-gui.exe.manifest" "$out/"
 	cp "$root/packaging/windows/identity.json" "$out/"
+	cp "$root/packaging/windows/filees-gui.wxs" "$out/"
+	cp "$root/packaging/windows/build-msi.ps1" "$out/"
+	cp "$root/internal/gui/tray/assets/windows/active.ico" "$out/filees-gui.ico"
+	cp "$root/packaging/ACCEPTANCE.md" "$out/"
 }
 
 case "$target" in

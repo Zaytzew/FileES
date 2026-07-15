@@ -42,8 +42,28 @@ type Options struct {
 	ReversePortLast  uint16
 }
 
+// Area is a filesystem capability within the service repository. Callers
+// declare the areas needed by one tool invocation before OpenExisting; the
+// declaration is enforced on every platform and becomes the source for the
+// tighter unveil profile on OpenBSD.
+type Area uint8
+
+const (
+	AreaTickets Area = 1 << iota
+	AreaOperations
+	AreaAudit
+	AreaAll = AreaTickets | AreaOperations | AreaAudit
+)
+
+type Access struct {
+	Areas   Area
+	NeedOTP bool
+}
+
 type Files struct {
 	root             string
+	areas            Area
+	needOTP          bool
 	clock            Clock
 	random           io.Reader
 	portAllocator    PortAllocator
@@ -54,12 +74,96 @@ type Files struct {
 	reversePortLast  uint16
 }
 
-// Open opens a directory protocol, not a database. Commands take a short
-// advisory lock only for a filesystem transition and retain no background
-// process or in-memory authority after they exit.
+// Open is the compatibility entry point used by embedded callers and tests.
+// Server-side tools use Initialize during deployment and OpenExisting after
+// installing their sandbox, so normal invocations never create or recover the
+// repository outside unveil.
 func Open(root string, opts Options) (*Files, error) {
+	if err := Initialize(root); err != nil {
+		return nil, err
+	}
+	s, err := OpenExisting(root, opts, Access{Areas: AreaAll, NeedOTP: true})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Recover(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Initialize creates the complete private service-repository layout. It is an
+// explicit deployment operation, not part of opening the repository.
+func Initialize(root string) error {
+	if !filepath.IsAbs(root) {
+		return errors.New("onboarding root must be absolute")
+	}
+	root = filepath.Clean(root)
+	for _, dir := range []string{root, filepath.Join(root, ticketsDir), filepath.Join(root, operationsDir), filepath.Join(root, auditDir)} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create onboarding directory: %w", err)
+		}
+		if err := requirePrivateDirectory(dir); err != nil {
+			return err
+		}
+	}
+	lockPath := filepath.Join(root, lockName)
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("create toolchain lock: %w", err)
+	}
+	if err := lock.Close(); err != nil {
+		return err
+	}
+	return requirePrivateFile(lockPath)
+}
+
+// OpenExisting validates and opens only the declared repository areas. It
+// does not create files and does not perform recovery.
+func OpenExisting(root string, opts Options, access Access) (*Files, error) {
+	if err := CheckExisting(root, access); err != nil {
+		return nil, err
+	}
+	return OpenPrepared(root, opts, access)
+}
+
+// CheckExisting performs the read-only metadata preflight while the process
+// still has its bootstrap rpath promise. Exact child unveils deliberately do
+// not expose the service root itself for a later lstat.
+func CheckExisting(root string, access Access) error {
+	if !filepath.IsAbs(root) {
+		return errors.New("onboarding root must be absolute")
+	}
+	if access.Areas == 0 || access.Areas&^AreaAll != 0 {
+		return errors.New("onboarding access must declare valid areas")
+	}
+	root = filepath.Clean(root)
+	if err := requirePrivateDirectory(root); err != nil {
+		return err
+	}
+	for area, dir := range map[Area]string{
+		AreaTickets:    filepath.Join(root, ticketsDir),
+		AreaOperations: filepath.Join(root, operationsDir),
+		AreaAudit:      filepath.Join(root, auditDir),
+	} {
+		if access.Areas&area == 0 {
+			continue
+		}
+		if err := requirePrivateDirectory(dir); err != nil {
+			return err
+		}
+	}
+	return requirePrivateFile(filepath.Join(root, lockName))
+}
+
+// OpenPrepared constructs a handle after a successful CheckExisting and after
+// the caller has installed unveil. It performs no filesystem access.
+func OpenPrepared(root string, opts Options, access Access) (*Files, error) {
 	if !filepath.IsAbs(root) {
 		return nil, errors.New("onboarding root must be absolute")
+	}
+	if access.Areas == 0 || access.Areas&^AreaAll != 0 {
+		return nil, errors.New("onboarding access must declare valid areas")
 	}
 	if opts.Clock == nil {
 		opts.Clock = ClockFunc(time.Now)
@@ -70,7 +174,7 @@ func Open(root string, opts Options) (*Files, error) {
 	if opts.PortAllocator == nil {
 		opts.PortAllocator = PortAllocatorFunc(firstFreePort)
 	}
-	if len(opts.OTPPepper) < 32 {
+	if access.NeedOTP && len(opts.OTPPepper) < 32 {
 		return nil, errors.New("OTP pepper must contain at least 32 bytes")
 	}
 	if opts.OperationTTL <= 0 {
@@ -83,35 +187,44 @@ func Open(root string, opts Options) (*Files, error) {
 		return nil, errors.New("invalid reverse port range")
 	}
 	root = filepath.Clean(root)
-	for _, dir := range []string{root, filepath.Join(root, ticketsDir), filepath.Join(root, operationsDir), filepath.Join(root, auditDir)} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return nil, fmt.Errorf("create onboarding directory: %w", err)
-		}
-		if err := requirePrivateDirectory(dir); err != nil {
-			return nil, err
-		}
-	}
-	lockPath := filepath.Join(root, lockName)
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("create toolchain lock: %w", err)
-	}
-	if err := lock.Close(); err != nil {
-		return nil, err
-	}
-	if err := requirePrivateFile(lockPath); err != nil {
-		return nil, err
-	}
-	s := &Files{root: root, clock: opts.Clock, random: opts.Random, portAllocator: opts.PortAllocator, pepper: append([]byte(nil), opts.OTPPepper...), operationTTL: opts.OperationTTL, otpAttempts: opts.OTPAttempts, reversePortFirst: opts.ReversePortFirst, reversePortLast: opts.ReversePortLast}
-	if err := s.withLock(s.recoverClaimsLocked); err != nil {
-		return nil, fmt.Errorf("recover onboarding claims: %w", err)
-	}
-	return s, nil
+	return &Files{root: root, areas: access.Areas, needOTP: access.NeedOTP, clock: opts.Clock, random: opts.Random, portAllocator: opts.PortAllocator, pepper: append([]byte(nil), opts.OTPPepper...), operationTTL: opts.OperationTTL, otpAttempts: opts.OTPAttempts, reversePortFirst: opts.ReversePortFirst, reversePortLast: opts.ReversePortLast}, nil
 }
 
 func (s *Files) Close() error { return nil }
 
+func (s *Files) requireAreas(areas Area) error {
+	if s.areas&areas != areas {
+		return fmt.Errorf("onboarding repository access does not include required areas %#x", areas)
+	}
+	return nil
+}
+
+func (s *Files) requireOTP() error {
+	if !s.needOTP || len(s.pepper) < 32 {
+		return errors.New("onboarding repository access does not include OTP secret")
+	}
+	return nil
+}
+
+// Recover completes interrupted atomic transitions. It is intentionally
+// explicit so only filees-operation recover and compatibility Open invoke it.
+func (s *Files) Recover() error {
+	if err := s.requireAreas(AreaAll); err != nil {
+		return err
+	}
+	if err := s.requireOTP(); err != nil {
+		return err
+	}
+	if err := s.withLock(s.recoverClaimsLocked); err != nil {
+		return fmt.Errorf("recover onboarding claims: %w", err)
+	}
+	return nil
+}
+
 func (s *Files) CreateTicket(email string, policy Policy, ttl time.Duration) (Ticket, error) {
+	if err := s.requireAreas(AreaTickets | AreaAudit); err != nil {
+		return Ticket{}, err
+	}
 	canonical, err := canonicalEmail(email)
 	if err != nil {
 		return Ticket{}, err
@@ -144,6 +257,9 @@ func (s *Files) CreateTicket(email string, policy Policy, ttl time.Duration) (Ti
 }
 
 func (s *Files) RevokeTicket(ticketID string) error {
+	if err := s.requireAreas(AreaTickets | AreaAudit); err != nil {
+		return err
+	}
 	if _, err := uuid.Parse(ticketID); err != nil {
 		return errors.New("ticket_id must be a UUID")
 	}
@@ -169,6 +285,9 @@ func (s *Files) RevokeTicket(ticketID string) error {
 }
 
 func (s *Files) ListTickets() ([]Ticket, error) {
+	if err := s.requireAreas(AreaTickets); err != nil {
+		return nil, err
+	}
 	var result []Ticket
 	err := s.withLock(func() error {
 		entries, err := s.readTicketsLocked()
@@ -185,6 +304,12 @@ func (s *Files) ListTickets() ([]Ticket, error) {
 }
 
 func (s *Files) Take(email, requestID string) (TakeReceipt, error) {
+	if err := s.requireAreas(AreaAll); err != nil {
+		return TakeReceipt{}, err
+	}
+	if err := s.requireOTP(); err != nil {
+		return TakeReceipt{}, err
+	}
 	canonical, err := canonicalEmail(email)
 	if err != nil {
 		return TakeReceipt{}, err
@@ -267,6 +392,12 @@ func (s *Files) Take(email, requestID string) (TakeReceipt, error) {
 }
 
 func (s *Files) AuthenticateOTP(otp string) (AuthGrant, error) {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return AuthGrant{}, err
+	}
+	if err := s.requireOTP(); err != nil {
+		return AuthGrant{}, err
+	}
 	normalized, locator, err := parseOTP(otp)
 	if err != nil {
 		return AuthGrant{}, ErrOTPInvalid
@@ -314,23 +445,122 @@ func (s *Files) AuthenticateOTP(otp string) (AuthGrant, error) {
 	return grant, err
 }
 
-func (s *Files) MarkOutboxDelivered(messageID string) error {
+func (s *Files) ClaimPendingMail(staleAfter time.Duration) (MailJob, error) {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return MailJob{}, err
+	}
+	if staleAfter <= 0 {
+		return MailJob{}, errors.New("mail claim stale timeout must be positive")
+	}
+	var job MailJob
+	err := s.withLock(func() error {
+		paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
+		if err != nil {
+			return err
+		}
+		now := s.clock.Now().UTC()
+		for _, path := range paths {
+			if strings.HasPrefix(filepath.Base(path), claimPrefix) {
+				continue
+			}
+			bundle, err := s.readBundlePathLocked(path)
+			if err != nil {
+				return err
+			}
+			entry := &bundle.Outbox
+			if entry.DeliveryState == DeliverySending && entry.AttemptedAt != nil && now.Sub(*entry.AttemptedAt) >= staleAfter {
+				entry.DeliveryState, entry.AttemptID, entry.AttemptedAt = DeliveryPending, "", nil
+				entry.LastError = "previous sender exited before recording a result"
+				bundle.addAudit("mail_attempt_recovered", "filees-mail", now)
+			}
+			if entry.DeliveryState != DeliveryPending {
+				continue
+			}
+			if !now.Before(bundle.Operation.ExpiresAt) {
+				entry.DeliveryState, entry.DeliveryAddress, entry.OTP = DeliveryFailed, "", ""
+				entry.LastError = "operation expired before mail submission"
+				bundle.addAudit("mail_expired", "filees-mail", now)
+				if err := atomicWriteJSON(path, bundle); err != nil {
+					return err
+				}
+				continue
+			}
+			attemptID, err := randomUUID(s.random)
+			if err != nil {
+				return err
+			}
+			entry.DeliveryState, entry.AttemptID, entry.AttemptedAt, entry.LastError = DeliverySending, attemptID, &now, ""
+			entry.RetryCount++
+			bundle.addAudit("mail_attempt_started", "filees-mail", now)
+			if err := atomicWriteJSON(path, bundle); err != nil {
+				return err
+			}
+			job = MailJob{Entry: *entry, ExpiresAt: bundle.Operation.ExpiresAt}
+			return nil
+		}
+		return ErrNotFound
+	})
+	return job, err
+}
+
+func (s *Files) MarkOutboxQueued(messageID, attemptID string) error {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return err
+	}
 	return s.withLock(func() error {
 		path, bundle, err := s.findBundleLocked(func(bundle Bundle) bool { return bundle.Outbox.MessageID == messageID })
 		if err != nil {
 			return err
 		}
-		if bundle.Outbox.DeliveryState == DeliveryDelivered {
+		if bundle.Outbox.DeliveryState == DeliveryQueued {
 			return nil
 		}
+		if bundle.Outbox.DeliveryState != DeliverySending || bundle.Outbox.AttemptID != attemptID {
+			return ErrMailAttempt
+		}
 		now := s.clock.Now().UTC()
-		bundle.Outbox.DeliveryState, bundle.Outbox.DeliveryAddress, bundle.Outbox.OTP, bundle.Outbox.DeliveredAt = DeliveryDelivered, "", "", &now
-		bundle.addAudit("mail_delivered", "filees-mail", now)
+		bundle.Outbox.DeliveryState, bundle.Outbox.DeliveryAddress, bundle.Outbox.OTP = DeliveryQueued, "", ""
+		bundle.Outbox.AttemptID, bundle.Outbox.AttemptedAt, bundle.Outbox.LastError, bundle.Outbox.QueuedAt = "", nil, "", &now
+		bundle.addAudit("mail_queued", "filees-mail", now)
+		return atomicWriteJSON(path, bundle)
+	})
+}
+
+func (s *Files) MarkOutboxFailed(messageID, attemptID, reason string, permanent bool) error {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return err
+	}
+	reason = strings.TrimSpace(reason)
+	if len(reason) > 512 {
+		reason = reason[:512]
+	}
+	if reason == "" {
+		reason = "mail submission failed"
+	}
+	return s.withLock(func() error {
+		path, bundle, err := s.findBundleLocked(func(bundle Bundle) bool { return bundle.Outbox.MessageID == messageID })
+		if err != nil {
+			return err
+		}
+		entry := &bundle.Outbox
+		if entry.DeliveryState != DeliverySending || entry.AttemptID != attemptID {
+			return ErrMailAttempt
+		}
+		entry.DeliveryState, entry.AttemptID, entry.AttemptedAt, entry.LastError = DeliveryPending, "", nil, reason
+		event := "mail_attempt_failed"
+		if permanent {
+			entry.DeliveryState, entry.DeliveryAddress, entry.OTP = DeliveryFailed, "", ""
+			event = "mail_failed"
+		}
+		bundle.addAudit(event, "filees-mail", s.clock.Now().UTC())
 		return atomicWriteJSON(path, bundle)
 	})
 }
 
 func (s *Files) GetOperation(operationID string) (Operation, error) {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return Operation{}, err
+	}
 	var operation Operation
 	err := s.withLock(func() error {
 		_, bundle, err := s.findBundleLocked(func(bundle Bundle) bool { return bundle.Operation.OperationID == operationID })
@@ -344,6 +574,9 @@ func (s *Files) GetOperation(operationID string) (Operation, error) {
 }
 
 func (s *Files) ListOutbox() ([]MailOutboxEntry, error) {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return nil, err
+	}
 	var entries []MailOutboxEntry
 	err := s.withLock(func() error {
 		bundles, err := s.readBundlesLocked()
@@ -359,6 +592,9 @@ func (s *Files) ListOutbox() ([]MailOutboxEntry, error) {
 }
 
 func (s *Files) ListAudit() ([]AuditEvent, error) {
+	if err := s.requireAreas(AreaOperations | AreaAudit); err != nil {
+		return nil, err
+	}
 	var events []AuditEvent
 	err := s.withLock(func() error {
 		bundles, err := s.readBundlesLocked()

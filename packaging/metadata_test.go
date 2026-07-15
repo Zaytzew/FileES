@@ -221,6 +221,48 @@ func TestLinuxBuildContainsFullClientServiceAndChecksums(t *testing.T) {
 	}
 }
 
+func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
+	raw, err := os.ReadFile("build-server.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, required := range []string{
+		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-operation filees-mail",
+		`"./cmd/$command"`, "SHA256SUMS", "sha256 -r",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("server build missing %q", required)
+		}
+	}
+	installer, err := os.ReadFile("server/install-server.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	installerText := string(installer)
+	for _, required := range []string{"700", "600", "openssl rand -base64 32", "No daemon or rc.d service"} {
+		if !strings.Contains(installerText, required) {
+			t.Errorf("server installer missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"systemctl", "rcctl", "sshd_config"} {
+		if strings.Contains(installerText, forbidden) {
+			t.Errorf("S1 installer unexpectedly configures %q", forbidden)
+		}
+	}
+	configRaw, err := os.ReadFile("server/server.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(configRaw, &config); err != nil {
+		t.Fatalf("invalid server example config: %v", err)
+	}
+	if config["schema"] != "filees.server-toolchain/v1" || config["root"] != "/var/filees/onboarding" {
+		t.Fatalf("unexpected server config identity: %#v", config)
+	}
+}
+
 func TestWindowsInstallerCreatesPerUserShortcutWithAUMID(t *testing.T) {
 	data, err := os.ReadFile("windows/filees-gui.wxs")
 	if err != nil {

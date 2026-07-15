@@ -66,11 +66,15 @@ func TestTakeIsAtomicIdempotentAndSeparatesEmail(t *testing.T) {
 		t.Fatalf("new request after take error=%v", err)
 	}
 
-	if err := store.MarkOutboxDelivered(entries[0].MessageID); err != nil {
+	job, err := store.ClaimPendingMail(time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkOutboxQueued(job.Entry.MessageID, job.Entry.AttemptID); err != nil {
 		t.Fatal(err)
 	}
 	entries, _ = store.ListOutbox()
-	if entries[0].DeliveryAddress != "" || entries[0].OTP != "" || entries[0].DeliveryState != DeliveryDelivered {
+	if entries[0].DeliveryAddress != "" || entries[0].OTP != "" || entries[0].DeliveryState != DeliveryQueued {
 		t.Fatalf("delivered outbox retained secret material: %+v", entries[0])
 	}
 
@@ -433,6 +437,42 @@ func TestOpenRejectsUnsafeRootAndCleansInterruptedWrite(t *testing.T) {
 	defer store.Close()
 	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("interrupted temporary write survived recovery: %v", err)
+	}
+}
+
+func TestOpenExistingIsScopedAndDoesNotInitializeOrRecover(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "service")
+	if _, err := OpenExisting(root, Options{}, Access{Areas: AreaTickets}); err == nil {
+		t.Fatal("OpenExisting created or accepted a missing repository")
+	}
+	if err := Initialize(root); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(root, operationsDir, ".write-interrupted")
+	if err := os.WriteFile(stale, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, auditDir)); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
+	opts := testOptions(&now, 3, 42800, 42810)
+	opts.OTPPepper = nil
+	store, err := OpenExisting(root, opts, Access{Areas: AreaTickets})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ListTickets(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetOperation(uuid.NewString()); err == nil {
+		t.Fatal("ticket-only handle accessed operations")
+	}
+	if err := store.Recover(); err == nil {
+		t.Fatal("ticket-only handle performed recovery")
+	}
+	if _, err := os.Stat(stale); err != nil {
+		t.Fatalf("OpenExisting unexpectedly recovered stale write: %v", err)
 	}
 }
 

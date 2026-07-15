@@ -8,9 +8,9 @@ import (
 const (
 	TicketSchema    = "filees.onboarding-ticket/v1"
 	OperationSchema = "filees.onboarding-operation/v1"
-	OutboxSchema    = "filees.mail-outbox/v1"
+	OutboxSchema    = "filees.mail-outbox/v2"
 	AuditSchema     = "filees.onboarding-audit/v1"
-	BundleSchema    = "filees.onboarding-bundle/v1"
+	BundleSchema    = "filees.onboarding-bundle/v2"
 )
 
 var (
@@ -21,6 +21,7 @@ var (
 	ErrNoReversePort     = errors.New("no reverse port available")
 	ErrOTPInvalid        = errors.New("invalid onboarding OTP")
 	ErrOTPExpired        = errors.New("onboarding OTP expired")
+	ErrMailAttempt       = errors.New("mail outbox attempt mismatch")
 )
 
 type Policy struct {
@@ -64,8 +65,10 @@ type Operation struct {
 type DeliveryState string
 
 const (
-	DeliveryPending   DeliveryState = "pending"
-	DeliveryDelivered DeliveryState = "delivered"
+	DeliveryPending DeliveryState = "pending"
+	DeliverySending DeliveryState = "sending"
+	DeliveryQueued  DeliveryState = "queued"
+	DeliveryFailed  DeliveryState = "failed"
 )
 
 type MailOutboxEntry struct {
@@ -78,7 +81,15 @@ type MailOutboxEntry struct {
 	DeliveryState   DeliveryState `json:"delivery_state"`
 	RetryCount      int           `json:"retry_count"`
 	CreatedAt       time.Time     `json:"created_at"`
-	DeliveredAt     *time.Time    `json:"delivered_at,omitempty"`
+	AttemptID       string        `json:"attempt_id,omitempty"`
+	AttemptedAt     *time.Time    `json:"attempted_at,omitempty"`
+	LastError       string        `json:"last_error,omitempty"`
+	QueuedAt        *time.Time    `json:"queued_at,omitempty"`
+}
+
+type MailJob struct {
+	Entry     MailOutboxEntry `json:"entry"`
+	ExpiresAt time.Time       `json:"expires_at"`
 }
 
 type AuditEvent struct {

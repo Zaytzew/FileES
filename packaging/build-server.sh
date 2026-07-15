@@ -1,0 +1,45 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+dist=${DIST:-"$root/dist"}
+target=${1:-openbsd-amd64}
+
+case "$target" in
+	openbsd-amd64) goos=openbsd; goarch=amd64 ;;
+	linux-amd64) goos=linux; goarch=amd64 ;;
+	*)
+		echo "usage: $0 [openbsd-amd64|linux-amd64]" >&2
+		exit 2
+		;;
+esac
+
+out="$dist/filees-server-$target"
+mkdir -p "$dist"
+tmp=$(mktemp -d "$dist/.filees-server-$target.tmp.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+mkdir -p "$tmp/bin" "$tmp/share/filees"
+
+for command in filees-admin filees-onboard filees-operation filees-mail; do
+	(
+		cd "$root"
+		CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false -o "$tmp/bin/$command" "./cmd/$command"
+	)
+done
+
+cp "$root/packaging/server/server.example.json" "$tmp/share/filees/"
+cp "$root/packaging/server/install-server.sh" "$tmp/"
+cp "$root/packaging/server/README.md" "$tmp/"
+cp "$root/VERSION" "$tmp/"
+chmod +x "$tmp/install-server.sh"
+(
+	cd "$tmp"
+	if command -v sha256sum >/dev/null 2>&1; then
+		find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | xargs sha256sum >SHA256SUMS
+	else
+		find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | xargs sha256 -r >SHA256SUMS
+	fi
+)
+rm -rf "$out"
+mv "$tmp" "$out"
+trap - EXIT HUP INT TERM

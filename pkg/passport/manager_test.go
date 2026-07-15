@@ -9,16 +9,22 @@ import (
 	"time"
 )
 
+var errPartitioned = errors.New("network partition")
+
 type fakeBackend struct {
 	locks                    map[string]*Lock
 	unlockErrors             map[string]error
 	seq, forceCalls, unlocks int
+	partitioned              bool
 }
 
 func newFakeBackend() *fakeBackend {
 	return &fakeBackend{locks: map[string]*Lock{}, unlockErrors: map[string]error{}}
 }
 func (b *fakeBackend) Inspect(_ context.Context, path string) (*Lock, error) {
+	if b.partitioned {
+		return nil, errPartitioned
+	}
 	if l := b.locks[path]; l != nil {
 		copy := *l
 		return &copy, nil
@@ -26,6 +32,9 @@ func (b *fakeBackend) Inspect(_ context.Context, path string) (*Lock, error) {
 	return nil, nil
 }
 func (b *fakeBackend) Lock(_ context.Context, path, comment string, force bool) (*Lock, string, error) {
+	if b.partitioned {
+		return nil, "", errPartitioned
+	}
 	if b.locks[path] != nil && !force {
 		return nil, "", ErrHeldByOther
 	}
@@ -272,5 +281,251 @@ func TestReleaseAllUnlocksOnlyOwnedTokens(t *testing.T) {
 	snap := m.Snapshot()
 	if len(snap) != 1 || snap[0].Path != "/wc/b" || snap[0].State != StateLost || b.unlocks != 1 {
 		t.Fatalf("snapshot=%#v unlocks=%d", snap, b.unlocks)
+	}
+}
+
+// ---- Klasa 1: SIGKILL w połowie Release ----
+
+// TestRestartAfterSIGKILLMidReleaseRecoversThroughHeartbeat models the
+// scenario where the process is killed after a successful SVN Unlock but
+// before saveLocked() persists the change. On restart the store contains a
+// passport that is no longer backed by a server lock. Heartbeat must detect
+// the mismatch and mark the entry as StateLost; a subsequent Acquire on the
+// same path must then succeed.
+func TestRestartAfterSIGKILLMidReleaseRecoversThroughHeartbeat(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	store := filepath.Join(t.TempDir(), "passports.json")
+	cfg := Config{Now: func() time.Time { return now }}
+	m, err := Open(store, "instance-a", b, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, _, err := m.Acquire(ctx, []string{"/wc/a", "/wc/b"}); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate SIGKILL: SVN unlocked /wc/a on the server but the process died
+	// before Manager could call saveLocked(). The store still shows both paths.
+	delete(b.locks, "/wc/a")
+
+	m2, err := Open(store, "instance-a", b, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m2.Snapshot()) != 2 {
+		t.Fatalf("expected 2 passports after restart, got %v", m2.Snapshot())
+	}
+
+	// Heartbeat detects /wc/a has been externally unlocked → StateLost.
+	if err := m2.Heartbeat(ctx); !errors.Is(err, ErrPassportLost) {
+		t.Fatalf("Heartbeat = %v, want ErrPassportLost", err)
+	}
+	var aState string
+	for _, p := range m2.Snapshot() {
+		if p.Path == "/wc/a" {
+			aState = p.State
+		}
+	}
+	if aState != StateLost {
+		t.Fatalf("/wc/a state = %q after heartbeat, want %q", aState, StateLost)
+	}
+
+	// Re-acquire must succeed: server no longer holds the lock for /wc/a.
+	if _, _, err := m2.Acquire(ctx, []string{"/wc/a"}); err != nil {
+		t.Fatalf("re-acquire after StateLost: %v", err)
+	}
+	snap := m2.Snapshot()
+	active := 0
+	for _, p := range snap {
+		if p.State == StateActive {
+			active++
+		}
+	}
+	if active != 2 {
+		t.Fatalf("expected 2 active passports after re-acquire, got %v", snap)
+	}
+}
+
+// TestPartialReleaseFailureSavesOnlyRemainingPathsOnDisk verifies the CR-02
+// fix: when Release([A, B, C]) succeeds for A then fails on B, the store must
+// reflect A's removal so that a restart does not see A as still active.
+func TestPartialReleaseFailureSavesOnlyRemainingPathsOnDisk(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	store := filepath.Join(t.TempDir(), "passports.json")
+	m, err := Open(store, "instance-a", b, Config{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, _, err := m.Acquire(ctx, []string{"/wc/a", "/wc/b", "/wc/c"}); err != nil {
+		t.Fatal(err)
+	}
+	// cleanPaths sorts alphabetically; /wc/b is second — Release(A) succeeds,
+	// Release(B) fails, Release(C) is never attempted.
+	b.unlockErrors["/wc/b"] = errors.New("transient unlock failure")
+	if _, err := m.Release(ctx, []string{"/wc/a", "/wc/b", "/wc/c"}); err == nil {
+		t.Fatal("partial release unexpectedly succeeded")
+	}
+
+	m2, err := Open(store, "instance-a", b, Config{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := make(map[string]bool)
+	for _, p := range m2.Snapshot() {
+		paths[p.Path] = true
+	}
+	if paths["/wc/a"] {
+		t.Error("successfully released /wc/a still present on disk")
+	}
+	if !paths["/wc/b"] {
+		t.Error("failed-to-release /wc/b missing from disk")
+	}
+	if !paths["/wc/c"] {
+		t.Error("unattempted /wc/c missing from disk")
+	}
+}
+
+// ---- Klasa 2: token wygasa podczas BeginPublish blokuje Heartbeat ----
+
+// TestTokenHardExpiryDuringBeginPublishBlockedHeartbeat verifies that when
+// the clock advances past HardExpiresAt while Heartbeat is blocked on opMu
+// (held by BeginPublish), the next Heartbeat after release transitions the
+// passport to StateExpired and unlocks the server lock.
+func TestTokenHardExpiryDuringBeginPublishBlockedHeartbeat(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute, MaxSession: 30 * time.Minute})
+	ctx := context.Background()
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	initialToken := m.Snapshot()[0].FencingToken
+
+	release, err := m.BeginPublish(ctx, []string{"/wc/doc.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// While opMu is held, Heartbeat would block. Time advances past HardExpiresAt.
+	now = now.Add(31 * time.Minute)
+	release()
+
+	// Heartbeat now runs with time well past HardExpiresAt. It must unlock the
+	// server lock and transition the passport to StateExpired.
+	if err := m.Heartbeat(ctx); err != nil {
+		t.Fatalf("heartbeat after hard expiry: %v", err)
+	}
+	snap := m.Snapshot()
+	if len(snap) != 1 || snap[0].State != StateExpired {
+		t.Fatalf("passport state = %#v, want StateExpired", snap)
+	}
+	if b.unlocks != 1 {
+		t.Fatalf("server unlocks = %d, want 1 (hard-expiry unlock)", b.unlocks)
+	}
+
+	// Re-acquire must succeed now that the server lock is free.
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+		t.Fatalf("re-acquire after hard expiry: %v", err)
+	}
+	snap = m.Snapshot()
+	if len(snap) != 1 || snap[0].State != StateActive || snap[0].FencingToken == initialToken {
+		t.Fatalf("re-acquired passport = %#v", snap)
+	}
+}
+
+// ---- Klasa 3: awaria sieci dłuższa niż TTL ----
+
+// TestNetworkPartitionLongerThanTTLAllowsRenewalAfterReconnect verifies that
+// when Heartbeat cannot reach the server for longer than TTL, the passport
+// is still renewed (via force lock) on the first successful Heartbeat after
+// reconnect — provided the server still holds the original token.
+func TestNetworkPartitionLongerThanTTLAllowsRenewalAfterReconnect(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute, MaxSession: 2 * time.Hour})
+	ctx := context.Background()
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	token0 := m.Snapshot()[0].FencingToken
+
+	// Network partition: Inspect and Lock both fail.
+	b.partitioned = true
+	now = now.Add(11 * time.Minute)
+	if err := m.Heartbeat(ctx); !errors.Is(err, errPartitioned) {
+		t.Fatalf("first partitioned heartbeat = %v, want errPartitioned", err)
+	}
+	now = now.Add(11 * time.Minute) // now T+22min — past ExpiresAt (T+15min)
+	if err := m.Heartbeat(ctx); !errors.Is(err, errPartitioned) {
+		t.Fatalf("second partitioned heartbeat = %v, want errPartitioned", err)
+	}
+	// Passport still StateActive locally but renewal has been failing.
+	if snap := m.Snapshot(); snap[0].State != StateActive {
+		t.Fatalf("partition must not drop local state: %v", snap)
+	}
+
+	// Reconnect: server still holds the original token (we never called Unlock).
+	b.partitioned = false
+	if err := m.Heartbeat(ctx); err != nil {
+		t.Fatalf("heartbeat after reconnect: %v", err)
+	}
+	snap := m.Snapshot()
+	if snap[0].FencingToken == token0 {
+		t.Fatal("token not rotated after reconnect renewal")
+	}
+	if snap[0].State != StateActive {
+		t.Fatalf("state = %q after renewal, want active", snap[0].State)
+	}
+	if b.forceCalls != 1 {
+		t.Fatalf("force renewals = %d, want 1", b.forceCalls)
+	}
+}
+
+// TestNetworkPartitionExceedingHardExpiryRequiresFreshAcquire verifies that
+// when the partition outlasts HardExpiresAt, the first Heartbeat after
+// reconnect unlocks the server lock, marks the passport StateExpired, and a
+// subsequent Acquire issues a new token without a force flag.
+func TestNetworkPartitionExceedingHardExpiryRequiresFreshAcquire(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute, MaxSession: 30 * time.Minute})
+	ctx := context.Background()
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Partition for the entire MaxSession window.
+	b.partitioned = true
+	now = now.Add(31 * time.Minute)
+	if err := m.Heartbeat(ctx); !errors.Is(err, errPartitioned) {
+		t.Fatalf("partitioned heartbeat = %v, want errPartitioned", err)
+	}
+
+	// Reconnect with time past HardExpiresAt. Server still holds old lock.
+	b.partitioned = false
+	if err := m.Heartbeat(ctx); err != nil {
+		t.Fatalf("heartbeat after reconnect: %v", err)
+	}
+	snap := m.Snapshot()
+	if len(snap) != 1 || snap[0].State != StateExpired {
+		t.Fatalf("passport state = %#v, want StateExpired", snap)
+	}
+	if b.unlocks != 1 {
+		t.Fatalf("server unlocks = %d, want 1", b.unlocks)
+	}
+
+	// Fresh Acquire must succeed without force (server lock was already released
+	// by Heartbeat's hard-expiry path).
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+		t.Fatalf("re-acquire after hard expiry: %v", err)
+	}
+	if b.forceCalls != 0 {
+		t.Fatalf("re-acquire used force=%d, want 0 (server lock was already free)", b.forceCalls)
+	}
+	snap = m.Snapshot()
+	if len(snap) != 1 || snap[0].State != StateActive {
+		t.Fatalf("state after re-acquire = %#v, want active", snap)
 	}
 }

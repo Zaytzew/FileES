@@ -127,19 +127,19 @@ func (m *Manager) Acquire(ctx context.Context, paths []string) ([]Passport, stri
 		return nil, "", errors.New("passport: no paths")
 	}
 	now := m.cfg.Now().UTC()
-	var acquired []Passport
+	var acquired, newlyAcquired []Passport
 	var outputs []string
 	for _, path := range paths {
 		info, err := m.backend.Inspect(ctx, path)
 		if err != nil {
-			m.rollback(ctx, acquired)
+			m.rollback(ctx, newlyAcquired)
 			return nil, strings.Join(outputs, "\n"), err
 		}
 		force := false
 		if info != nil {
 			meta, ok := ParseComment(info.Comment)
 			if !ok {
-				m.rollback(ctx, acquired)
+				m.rollback(ctx, newlyAcquired)
 				return nil, strings.Join(outputs, "\n"), fmt.Errorf("%w: %s", ErrHeldByOther, path)
 			}
 			if local, ok := m.passports[path]; ok && local.State == StateActive && local.PassportID == meta.PassportID && local.FencingToken == info.Token && now.Before(meta.ExpiresAt) && now.Before(meta.HardExpiresAt) {
@@ -147,7 +147,7 @@ func (m *Manager) Acquire(ctx context.Context, paths []string) ([]Passport, stri
 				continue
 			}
 			if now.Before(meta.ExpiresAt) {
-				m.rollback(ctx, acquired)
+				m.rollback(ctx, newlyAcquired)
 				return nil, strings.Join(outputs, "\n"), fmt.Errorf("%w: %s until %s", ErrHeldByOther, path, meta.ExpiresAt.Format(time.RFC3339))
 			}
 			force = true
@@ -160,19 +160,20 @@ func (m *Manager) Acquire(ctx context.Context, paths []string) ([]Passport, stri
 		lock, out, err := m.backend.Lock(ctx, path, FormatComment(meta), force)
 		outputs = append(outputs, out)
 		if err != nil {
-			m.rollback(ctx, acquired)
+			m.rollback(ctx, newlyAcquired)
 			return nil, strings.Join(outputs, "\n"), err
 		}
 		if lock == nil || lock.Token == "" {
-			m.rollback(ctx, acquired)
+			m.rollback(ctx, newlyAcquired)
 			return nil, strings.Join(outputs, "\n"), errors.New("passport: backend returned no fencing token")
 		}
 		p := Passport{Path: path, PassportID: meta.PassportID, InstanceUID: meta.InstanceUID, FencingToken: lock.Token, IssuedAt: now, LastHeartbeatAt: now, ExpiresAt: meta.ExpiresAt, HardExpiresAt: hard, State: StateActive}
 		m.passports[path] = p
 		acquired = append(acquired, p)
+		newlyAcquired = append(newlyAcquired, p)
 	}
 	if err := m.saveLocked(); err != nil {
-		m.rollback(ctx, acquired)
+		m.rollback(ctx, newlyAcquired)
 		return nil, strings.Join(outputs, "\n"), err
 	}
 	return acquired, strings.Join(outputs, "\n"), nil

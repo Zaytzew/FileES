@@ -145,6 +145,29 @@ func TestAcquireDoesNotReuseExpiredLocalPassport(t *testing.T) {
 	}
 }
 
+func TestAcquireRollbackDoesNotReleasePreexistingPassport(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	m := openTestManager(t, b, &now, Config{})
+	owned := "/wc/already-owned.bin"
+	foreign := "/wc/foreign.bin"
+	first, _, err := m.Acquire(context.Background(), []string{owned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.locks[foreign] = &Lock{Token: "foreign", Comment: "ordinary foreign lock"}
+	if _, _, err := m.Acquire(context.Background(), []string{owned, foreign}); !errors.Is(err, ErrHeldByOther) {
+		t.Fatalf("error=%v", err)
+	}
+	snap := m.Snapshot()
+	if len(snap) != 1 || snap[0].Path != owned || snap[0].FencingToken != first[0].FencingToken {
+		t.Fatalf("preexisting passport changed after rollback: %#v", snap)
+	}
+	if b.locks[owned] == nil || b.unlocks != 0 {
+		t.Fatalf("preexisting server lock was released: lock=%#v unlocks=%d", b.locks[owned], b.unlocks)
+	}
+}
+
 func TestOpenRejectsUnsafeTimingConfiguration(t *testing.T) {
 	b := newFakeBackend()
 	store := filepath.Join(t.TempDir(), "passports.json")

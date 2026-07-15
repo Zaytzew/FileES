@@ -2,7 +2,7 @@
 
 Szczegółowy opis przepływu klienta, invariants, zachowania po awarii, zweryfikowanych edge cases i roadmapy testów znajduje się w [CLIENT_MECHANICS.md](CLIENT_MECHANICS.md).
 
-Raport końcowy audytu i wnioski z testów chaosowych znajduje się w [CLIENT_AUDIT_REPORT.md](CLIENT_AUDIT_REPORT.md).
+Raport końcowy audytu i wnioski z testów chaosowych znajduje się w [CLIENT_AUDIT_REPORT.md](CLIENT_AUDIT_REPORT.md). Dokumentację edit-passport uzupełniają [raport implementacji](EDIT_PASSPORT_IMPLEMENTATION_REPORT.md) i [raport testów](EDIT_PASSPORT_TEST_REPORT.md).
 
 Docelowy model dodawania katalogów, repozytorium technicznego, udostępnień oraz push-deployu tożsamości instalacji opisuje [PROVISIONING_AND_IDENTITY.md](PROVISIONING_AND_IDENTITY.md).
 

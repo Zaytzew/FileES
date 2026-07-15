@@ -8,6 +8,8 @@ Docelowy model dodawania katalogów, repozytorium technicznego, udostępnień or
 
 Stan klientowej warstwy push deploy, granice obu połączeń SSH i blokery produkcyjne opisuje [PUSH_DEPLOY_CLIENT_READINESS.md](PUSH_DEPLOY_CLIENT_READINESS.md); wykonane testy są w [PUSH_DEPLOY_CLIENT_TEST_REPORT.md](PUSH_DEPLOY_CLIENT_TEST_REPORT.md).
 
+Natywny projekt narzędzi serwerowych OpenBSD, semantykę jednorazowego ticketu i OTP, podział procesów oraz plan etapów opisuje [SERVER_OPENBSD_WORKER_DESIGN.md](SERVER_OPENBSD_WORKER_DESIGN.md).
+
 Lokalny smoke test recovery można uruchomić przez `scripts/svn-recovery-smoke.sh`; tworzy tymczasowe repozytorium SVN i nie wymaga dostępu do sieci.
 
 Neutralny gate jakości dla CI to `make verify`. Obejmuje pełne testy Go, wybrane testy race, `go vet` oraz lokalny smoke test recovery SVN.

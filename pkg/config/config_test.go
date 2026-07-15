@@ -33,6 +33,31 @@ func TestLoadBatchSafetySettings(t *testing.T) {
 	}
 }
 
+func TestLoadEditPassportSettings(t *testing.T) {
+	path := writeConfig(t, `[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","edit_passports":true,"edit_passport_ttl":"15m","edit_passport_heartbeat":"5m","edit_passport_max_session":"24h","edit_passport_close_grace":"5m"}]`)
+	repos, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := repos[0]
+	if !r.EditPassports || r.EditPassportTTL != 15*time.Minute || r.EditPassportHeartbeat != 5*time.Minute || r.EditPassportMaxSession != 24*time.Hour || r.EditPassportCloseGrace != 5*time.Minute {
+		t.Fatalf("settings = %#v", r)
+	}
+}
+
+func TestLoadRejectsUnsafeEditPassportDurations(t *testing.T) {
+	for _, data := range []string{
+		`[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","edit_passport_ttl":"15m","edit_passport_heartbeat":"15m"}]`,
+		`[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","edit_passport_ttl":"15m","edit_passport_max_session":"10m"}]`,
+		`[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","edit_passport_heartbeat":"20m"}]`,
+		`[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","edit_passport_ttl":"25h"}]`,
+	} {
+		if _, err := Load(writeConfig(t, data)); err == nil {
+			t.Fatalf("accepted unsafe passport config: %s", data)
+		}
+	}
+}
+
 func TestLoadRejectsFlushWatermarkBelowBatchSize(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	data := `[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","max_batch_mib":512,"backlog_flush_mib":128}]`

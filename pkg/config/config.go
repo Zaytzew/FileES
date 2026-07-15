@@ -30,16 +30,21 @@ type Repo struct {
 	Password       string        `json:"password,omitempty"`
 
 	// Opcjonalne rozszerzenia (mogą nie wystąpić w JSON; wtedy wartości domyślne/zero)
-	GlobalSlots           int           `json:"global_slots,omitempty"`
-	MaxBatchFiles         int           `json:"max_batch_files,omitempty"`
-	MaxBatchMiB           float64       `json:"max_batch_mib,omitempty"`
-	BacklogFlushMiB       float64       `json:"backlog_flush_mib,omitempty"`
-	ShutdownCommitTimeout time.Duration `json:"-"`
-	LockFirst             bool          `json:"lock_first,omitempty"`
-	ShoutPatterns         []string      `json:"shout_patterns,omitempty"`
-	RateLimitShout        time.Duration `json:"-"` // z pola JSON "rate_limit_shout"
-	CommitTiers           []TierSpec    `json:"-"` // z pola JSON "commit_tiers"
-	PollInterval          time.Duration `json:"-"` // z pola JSON "poll_interval"; 0 = użyj domyślnego (30s)
+	GlobalSlots            int           `json:"global_slots,omitempty"`
+	MaxBatchFiles          int           `json:"max_batch_files,omitempty"`
+	MaxBatchMiB            float64       `json:"max_batch_mib,omitempty"`
+	BacklogFlushMiB        float64       `json:"backlog_flush_mib,omitempty"`
+	ShutdownCommitTimeout  time.Duration `json:"-"`
+	LockFirst              bool          `json:"lock_first,omitempty"`
+	EditPassports          bool          `json:"edit_passports,omitempty"`
+	EditPassportTTL        time.Duration `json:"-"`
+	EditPassportHeartbeat  time.Duration `json:"-"`
+	EditPassportMaxSession time.Duration `json:"-"`
+	EditPassportCloseGrace time.Duration `json:"-"`
+	ShoutPatterns          []string      `json:"shout_patterns,omitempty"`
+	RateLimitShout         time.Duration `json:"-"` // z pola JSON "rate_limit_shout"
+	CommitTiers            []TierSpec    `json:"-"` // z pola JSON "commit_tiers"
+	PollInterval           time.Duration `json:"-"` // z pola JSON "poll_interval"; 0 = użyj domyślnego (30s)
 }
 
 // jsonRepo — struktura pomocnicza do dekodowania JSON (czasy jako stringi).
@@ -52,16 +57,21 @@ type jsonRepo struct {
 	Username       string `json:"username,omitempty"`
 	Password       string `json:"password,omitempty"`
 
-	GlobalSlots           int      `json:"global_slots,omitempty"`
-	MaxBatchFiles         int      `json:"max_batch_files,omitempty"`
-	MaxBatchMiB           float64  `json:"max_batch_mib,omitempty"`
-	BacklogFlushMiB       float64  `json:"backlog_flush_mib,omitempty"`
-	ShutdownCommitTimeout string   `json:"shutdown_commit_timeout,omitempty"`
-	LockFirst             bool     `json:"lock_first,omitempty"`
-	ShoutPatterns         []string `json:"shout_patterns,omitempty"`
-	RateLimitShout        string   `json:"rate_limit_shout,omitempty"`
-	PollInterval          string   `json:"poll_interval,omitempty"`
-	CommitTiers           []struct {
+	GlobalSlots            int      `json:"global_slots,omitempty"`
+	MaxBatchFiles          int      `json:"max_batch_files,omitempty"`
+	MaxBatchMiB            float64  `json:"max_batch_mib,omitempty"`
+	BacklogFlushMiB        float64  `json:"backlog_flush_mib,omitempty"`
+	ShutdownCommitTimeout  string   `json:"shutdown_commit_timeout,omitempty"`
+	LockFirst              bool     `json:"lock_first,omitempty"`
+	EditPassports          bool     `json:"edit_passports,omitempty"`
+	EditPassportTTL        string   `json:"edit_passport_ttl,omitempty"`
+	EditPassportHeartbeat  string   `json:"edit_passport_heartbeat,omitempty"`
+	EditPassportMaxSession string   `json:"edit_passport_max_session,omitempty"`
+	EditPassportCloseGrace string   `json:"edit_passport_close_grace,omitempty"`
+	ShoutPatterns          []string `json:"shout_patterns,omitempty"`
+	RateLimitShout         string   `json:"rate_limit_shout,omitempty"`
+	PollInterval           string   `json:"poll_interval,omitempty"`
+	CommitTiers            []struct {
 		MaxMB    float64 `json:"max_mb"`
 		Interval string  `json:"interval"`
 	} `json:"commit_tiers,omitempty"`
@@ -143,6 +153,31 @@ func Load(path string) ([]Repo, error) {
 				return nil, fmt.Errorf("config[%d].shutdown_commit_timeout: wymagana dodatnia wartość duration", i)
 			}
 		}
+		passportTTL, err := parseOptionalPositiveDuration(r.EditPassportTTL)
+		if err != nil {
+			return nil, fmt.Errorf("config[%d].edit_passport_ttl: %w", i, err)
+		}
+		passportHeartbeat, err := parseOptionalPositiveDuration(r.EditPassportHeartbeat)
+		if err != nil {
+			return nil, fmt.Errorf("config[%d].edit_passport_heartbeat: %w", i, err)
+		}
+		passportMax, err := parseOptionalPositiveDuration(r.EditPassportMaxSession)
+		if err != nil {
+			return nil, fmt.Errorf("config[%d].edit_passport_max_session: %w", i, err)
+		}
+		passportGrace, err := parseOptionalPositiveDuration(r.EditPassportCloseGrace)
+		if err != nil {
+			return nil, fmt.Errorf("config[%d].edit_passport_close_grace: %w", i, err)
+		}
+		effectiveTTL := durationDefault(passportTTL, 15*time.Minute)
+		effectiveHeartbeat := durationDefault(passportHeartbeat, 5*time.Minute)
+		effectiveMax := durationDefault(passportMax, 24*time.Hour)
+		if effectiveHeartbeat >= effectiveTTL {
+			return nil, fmt.Errorf("config[%d]: edit_passport_heartbeat musi być krótszy niż edit_passport_ttl", i)
+		}
+		if effectiveMax < effectiveTTL {
+			return nil, fmt.Errorf("config[%d]: edit_passport_max_session musi być >= edit_passport_ttl", i)
+		}
 		if r.MaxBatchFiles < 0 || r.MaxBatchMiB < 0 || r.BacklogFlushMiB < 0 {
 			return nil, fmt.Errorf("config[%d]: limity batcha nie mogą być ujemne", i)
 		}
@@ -180,29 +215,52 @@ func Load(path string) ([]Repo, error) {
 		}
 
 		out = append(out, Repo{
-			ID:                    id,
-			RepoURL:               repoURL,
-			LocalPath:             localPath,
-			WatchInterval:         watch,
-			CommitInterval:        commit,
-			Username:              r.Username,
-			Password:              r.Password,
-			GlobalSlots:           r.GlobalSlots,
-			MaxBatchFiles:         r.MaxBatchFiles,
-			MaxBatchMiB:           r.MaxBatchMiB,
-			BacklogFlushMiB:       r.BacklogFlushMiB,
-			ShutdownCommitTimeout: shutdownTimeout,
-			LockFirst:             r.LockFirst,
-			ShoutPatterns:         dedupTrim(r.ShoutPatterns),
-			RateLimitShout:        shoutRate,
-			PollInterval:          pollInterval,
-			CommitTiers:           tiers,
+			ID:                     id,
+			RepoURL:                repoURL,
+			LocalPath:              localPath,
+			WatchInterval:          watch,
+			CommitInterval:         commit,
+			Username:               r.Username,
+			Password:               r.Password,
+			GlobalSlots:            r.GlobalSlots,
+			MaxBatchFiles:          r.MaxBatchFiles,
+			MaxBatchMiB:            r.MaxBatchMiB,
+			BacklogFlushMiB:        r.BacklogFlushMiB,
+			ShutdownCommitTimeout:  shutdownTimeout,
+			LockFirst:              r.LockFirst,
+			EditPassports:          r.EditPassports,
+			EditPassportTTL:        passportTTL,
+			EditPassportHeartbeat:  passportHeartbeat,
+			EditPassportMaxSession: passportMax,
+			EditPassportCloseGrace: passportGrace,
+			ShoutPatterns:          dedupTrim(r.ShoutPatterns),
+			RateLimitShout:         shoutRate,
+			PollInterval:           pollInterval,
+			CommitTiers:            tiers,
 		})
 	}
 	if err := validateDisjointRoots(out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func parseOptionalPositiveDuration(raw string) (time.Duration, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(strings.TrimSpace(raw))
+	if err != nil || d <= 0 {
+		return 0, errors.New("wymagana dodatnia wartość duration")
+	}
+	return d, nil
+}
+
+func durationDefault(value, fallback time.Duration) time.Duration {
+	if value > 0 {
+		return value
+	}
+	return fallback
 }
 
 func canonicalPath(path string) (string, error) {

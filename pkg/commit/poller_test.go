@@ -55,14 +55,29 @@ func (*revisionClient) Delete(context.Context, string, []string, string, string)
 func (*revisionClient) Commit(context.Context, string, []string, string, string, string) (string, error) {
 	return "", nil
 }
+func (*revisionClient) CommitKeepLocks(context.Context, string, []string, string, string, string) (string, error) {
+	return "", nil
+}
 func (*revisionClient) Lock(context.Context, string, []string, string, string) (string, error) {
+	return "", nil
+}
+func (*revisionClient) LockWithComment(context.Context, string, []string, string, bool, string, string) (string, error) {
 	return "", nil
 }
 func (*revisionClient) Unlock(context.Context, string, []string, string, string) (string, error) {
 	return "", nil
 }
+func (*revisionClient) LockInfo(context.Context, string, string, string, string) (*client.LockInfo, error) {
+	return nil, nil
+}
 func (*revisionClient) PropGet(context.Context, string, string, []string, string, string) (string, error) {
 	return "", nil
+}
+func (*revisionClient) PropSet(context.Context, string, string, string, []string, string, string) (string, error) {
+	return "", nil
+}
+func (*revisionClient) PropList(context.Context, string, string, string, string) (map[string]bool, error) {
+	return nil, nil
 }
 
 func (c *revisionClient) Resolve(_ context.Context, _ string, paths []string, accept, _, _ string) (string, error) {

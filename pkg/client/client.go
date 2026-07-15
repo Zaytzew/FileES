@@ -35,9 +35,14 @@ type Client interface {
 	Add(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	Delete(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
 	Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error)
+	CommitKeepLocks(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error)
 	Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
+	LockWithComment(ctx context.Context, rootDirectory string, paths []string, comment string, force bool, username, password string) (string, error)
 	Unlock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
+	LockInfo(ctx context.Context, rootDirectory, path, username, password string) (*LockInfo, error)
 	PropGet(ctx context.Context, rootDirectory, propName string, paths []string, username, password string) (string, error)
+	PropSet(ctx context.Context, rootDirectory, propName, value string, paths []string, username, password string) (string, error)
+	PropList(ctx context.Context, rootDirectory, propName, username, password string) (map[string]bool, error)
 	// Revision returns the revision number for target (URL or local WC path).
 	// For a remote URL it returns HEAD; for a local WC path it returns the last-updated revision.
 	Revision(ctx context.Context, target, username, password string) (int64, error)
@@ -70,8 +75,18 @@ func New(opts Options) Client {
 // ---- Types ----
 
 type StatusEntry struct {
-	Path string
-	Item string
+	Path  string
+	Item  string
+	Props string
+}
+
+// LockInfo is the repository lock attached to a working-copy path. Token is
+// the authoritative fencing token issued by Subversion.
+type LockInfo struct {
+	Token   string
+	Owner   string
+	Comment string
+	Created time.Time
 }
 
 // ---- High-level helpers ----
@@ -138,7 +153,8 @@ func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 			Entries []struct {
 				Path     string `xml:"path,attr"`
 				WCStatus struct {
-					Item string `xml:"item,attr"`
+					Item  string `xml:"item,attr"`
+					Props string `xml:"props,attr"`
 				} `xml:"wc-status"`
 			} `xml:"entry"`
 		} `xml:"target"`
@@ -153,7 +169,7 @@ func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 			if rel, err := filepath.Rel(rootDirectory, path); err == nil {
 				path = rel
 			}
-			out = append(out, StatusEntry{Path: path, Item: e.WCStatus.Item})
+			out = append(out, StatusEntry{Path: path, Item: e.WCStatus.Item, Props: e.WCStatus.Props})
 		}
 	}
 	return out, nil
@@ -180,8 +196,25 @@ func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []s
 	return c.run(ctx, rootDirectory, username, password, args)
 }
 
+func (c *execClient) CommitKeepLocks(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error) {
+	if len(paths) == 0 {
+		return "", errors.New("svn commit refused: empty path list")
+	}
+	args := append([]string{"commit", "--no-unlock", "-m", message}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
+}
+
 func (c *execClient) Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
 	args := append([]string{"lock"}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
+}
+
+func (c *execClient) LockWithComment(ctx context.Context, rootDirectory string, paths []string, comment string, force bool, username, password string) (string, error) {
+	args := []string{"lock", "--message", comment}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, c.relativize(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, username, password, args)
 }
 
@@ -190,9 +223,97 @@ func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []s
 	return c.run(ctx, rootDirectory, username, password, args)
 }
 
+func (c *execClient) LockInfo(ctx context.Context, rootDirectory, path, username, password string) (*LockInfo, error) {
+	targets := c.relativize(rootDirectory, []string{path})
+	if len(targets) != 1 {
+		return nil, errors.New("svn info lock requires exactly one path")
+	}
+	out, err := c.run(ctx, rootDirectory, username, password, []string{"info", "--xml", targets[0]})
+	if err != nil {
+		return nil, err
+	}
+	return parseLockInfoXML(out)
+}
+
+func parseLockInfoXML(output string) (*LockInfo, error) {
+	var infoXML struct {
+		Entry struct {
+			Lock *struct {
+				Token   string `xml:"token"`
+				Owner   string `xml:"owner"`
+				Comment string `xml:"comment"`
+				Created string `xml:"created"`
+			} `xml:"lock"`
+		} `xml:"entry"`
+	}
+	if err := xml.Unmarshal([]byte(output), &infoXML); err != nil {
+		return nil, fmt.Errorf("parse info xml: %w", err)
+	}
+	if infoXML.Entry.Lock == nil {
+		return nil, nil
+	}
+	created, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(infoXML.Entry.Lock.Created))
+	if err != nil {
+		return nil, fmt.Errorf("parse lock created time: %w", err)
+	}
+	return &LockInfo{
+		Token:   strings.TrimSpace(infoXML.Entry.Lock.Token),
+		Owner:   strings.TrimSpace(infoXML.Entry.Lock.Owner),
+		Comment: infoXML.Entry.Lock.Comment,
+		Created: created,
+	}, nil
+}
+
 func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string, paths []string, username, password string) (string, error) {
 	args := append([]string{"propget", propName}, c.relativize(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, username, password, args)
+}
+
+func (c *execClient) PropSet(ctx context.Context, rootDirectory, propName, value string, paths []string, username, password string) (string, error) {
+	if len(paths) == 0 {
+		return "", errors.New("svn propset refused: empty path list")
+	}
+	args := append([]string{"propset", propName, value}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, username, password, args)
+}
+
+func (c *execClient) PropList(ctx context.Context, rootDirectory, propName, username, password string) (map[string]bool, error) {
+	out, err := c.run(ctx, rootDirectory, username, password, []string{"propget", "--xml", "--recursive", propName, "."})
+	if err != nil {
+		return nil, err
+	}
+	return parsePropGetXML(out, rootDirectory)
+}
+
+func parsePropGetXML(output, rootDirectory string) (map[string]bool, error) {
+	var propsXML struct {
+		Targets []struct {
+			Path     string `xml:"path,attr"`
+			Property []struct {
+				Name string `xml:"name,attr"`
+			} `xml:"property"`
+		} `xml:"target"`
+	}
+	if err := xml.Unmarshal([]byte(output), &propsXML); err != nil {
+		return nil, fmt.Errorf("parse propget xml: %w", err)
+	}
+	out := make(map[string]bool)
+	for _, target := range propsXML.Targets {
+		if len(target.Property) == 0 {
+			continue
+		}
+		path := target.Path
+		if filepath.IsAbs(path) {
+			if rel, err := filepath.Rel(rootDirectory, path); err == nil {
+				path = rel
+			}
+		}
+		path = filepath.ToSlash(filepath.Clean(path))
+		if path != "." {
+			out[path] = true
+		}
+	}
+	return out, nil
 }
 
 func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, accept, username, password string) (string, error) {

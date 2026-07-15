@@ -52,6 +52,11 @@ Daemon szuka pliku `config.json` w katalogu roboczym. Plik zawiera tablicę repo
     "backlog_flush_mib": 1024,
     "shutdown_commit_timeout": "10m",
     "lock_first":      false,
+    "edit_passports":  false,
+    "edit_passport_ttl": "15m",
+    "edit_passport_heartbeat": "5m",
+    "edit_passport_max_session": "24h",
+    "edit_passport_close_grace": "5m",
     "shout_patterns":  ["\\.psd$", "\\.blend$", "\\.obj$"],
     "rate_limit_shout":"5m",
     "commit_tiers": [
@@ -79,6 +84,11 @@ Daemon szuka pliku `config.json` w katalogu roboczym. Plik zawiera tablicę repo
 | `backlog_flush_mib` | Próg zaległości w MiB wymuszający commit bez czekania na zwykły interwał |
 | `shutdown_commit_timeout` | Maks. czas pełnego drainu stagingu podczas kontrolowanego zamknięcia |
 | `lock_first`       | Jeśli `true` — próbuje `svn lock` przed commitem |
+| `edit_passports`   | Włącza jawne passporty edycji, migrację `svn:needs-lock`, fencing, heartbeat i kontrolowany autounlock |
+| `edit_passport_ttl` | Ważność pojedynczego odnowienia passportu; domyślnie `15m` |
+| `edit_passport_heartbeat` | Interwał odnowienia, krótszy od TTL; domyślnie `5m` |
+| `edit_passport_max_session` | Nieprzedłużalny limit sesji; domyślnie `24h` |
+| `edit_passport_close_grace` | Wymagany okres ciszy po potwierdzonym commicie; domyślnie `5m` |
 | `shout_patterns`   | Wzorce regex; pasujące pliki wyzwalają powiadomienie (ticket) |
 | `rate_limit_shout` | Minimalny odstęp między powiadomieniami |
 | `commit_tiers`     | Size-adaptive interwały (lista rosnąco wg `max_mb`); pominięte = tylko `commit_interval` |
@@ -86,6 +96,8 @@ Daemon szuka pliku `config.json` w katalogu roboczym. Plik zawiera tablicę repo
 **`commit_tiers`** — każdy wpis to `{"max_mb": N, "interval": "Xm"}`. Daemon sprawdza sumaryczny rozmiar plików w bieżącym batchu i stosuje minimalny odstęp odpowiedniego tieru. `max_mb: 0` to catch-all (ostatni tier). Przykład: batche < 1 MiB co 2 min, 1–10 MiB co 5 min, 10–50 MiB co 15 min, > 50 MiB co 24h.
 
 Czasy podawane w formacie Go: `30s`, `5m`, `1h`.
+
+Pełny lifecycle, inwarianty i granica gwarancji wieloklientowej są opisane w [EDIT_PASSPORTS.md](EDIT_PASSPORTS.md).
 
 Każdy `local_path` musi być ścieżką bezwzględną. Identyfikatory repozytoriów muszą być unikalne, a lokalne korzenie nie mogą być identyczne ani zagnieżdżone w żadną stronę. Walidacja rozwiązuje symlinki istniejących katalogów i kończy start daemona twardym błędem przed utworzeniem stanu `.filees`.
 

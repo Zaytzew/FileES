@@ -21,6 +21,8 @@ type stagingClient struct {
 	statusErr      error
 	removeOnStatus string
 	adds, commits  int
+	keepCommits    int
+	propSets       int
 	addPaths       []string
 	commitPaths    []string
 	commitBatches  [][]string
@@ -57,6 +59,10 @@ func (c *stagingClient) Add(_ context.Context, _ string, paths []string, _, _ st
 	return "", nil
 }
 
+func (c *stagingClient) Delete(_ context.Context, _ string, _ []string, _, _ string) (string, error) {
+	return "", nil
+}
+
 func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, _, _, _ string) (string, error) {
 	c.commits++
 	c.commitPaths = append([]string(nil), paths...)
@@ -65,6 +71,76 @@ func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, _, _
 		c.commitCh <- struct{}{}
 	}
 	return "", c.commitErr
+}
+
+func (c *stagingClient) CommitKeepLocks(ctx context.Context, wc string, paths []string, message, username, password string) (string, error) {
+	c.keepCommits++
+	return c.Commit(ctx, wc, paths, message, username, password)
+}
+
+func (c *stagingClient) PropSet(_ context.Context, _, _, _ string, _ []string, _, _ string) (string, error) {
+	c.propSets++
+	return "", nil
+}
+
+func TestEditPassportCommitKeepsLocksAndFreezesFencing(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "edited.txt")
+	if err := os.WriteFile(abs, []byte("edited"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := &stagingClient{statuses: map[string]string{"edited.txt": "modified"}}
+	var authorized []string
+	released := false
+	published := false
+	s := &Service{
+		Cli:   cli,
+		Rules: Rules{NeedsLock: true, NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		BeginPublish: func(_ context.Context, paths []string) (func(), error) {
+			authorized = append([]string(nil), paths...)
+			return func() { released = true }, nil
+		},
+		OnPathsPublished: func(paths []string) {
+			published = len(paths) == 1 && paths[0] == abs
+		},
+		staging: map[string]*stageItem{
+			"edited.txt": {Rel: "edited.txt", Abs: abs, Op: watcher.Modified},
+		},
+	}
+	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if cli.keepCommits != 1 || cli.commits != 1 {
+		t.Fatalf("keep commits=%d total commits=%d", cli.keepCommits, cli.commits)
+	}
+	if !reflect.DeepEqual(authorized, []string{abs}) || !released || !published {
+		t.Fatalf("authorized=%#v released=%v published=%v", authorized, released, published)
+	}
+}
+
+func TestEditPassportProtectsDeletedFileAndForgetsItAfterCommit(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "deleted.txt")
+	cli := &stagingClient{statuses: map[string]string{"deleted.txt": "missing"}}
+	var authorized, removed []string
+	s := &Service{
+		Cli:   cli,
+		Rules: Rules{NeedsLock: true, NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		BeginPublish: func(_ context.Context, paths []string) (func(), error) {
+			authorized = append([]string(nil), paths...)
+			return func() {}, nil
+		},
+		OnPathsRemoved: func(paths []string) { removed = append([]string(nil), paths...) },
+		staging: map[string]*stageItem{
+			"deleted.txt": {Rel: "deleted.txt", Abs: abs, Op: watcher.Deleted},
+		},
+	}
+	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(authorized, []string{abs}) || !reflect.DeepEqual(removed, []string{abs}) {
+		t.Fatalf("authorized=%#v removed=%#v", authorized, removed)
+	}
 }
 
 func TestAcceptedCommitWithLostReplyIsNotRetried(t *testing.T) {

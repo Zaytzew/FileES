@@ -40,6 +40,7 @@ type Rules struct {
 	ShutdownTimeout   time.Duration  // graceful final drain deadline
 	ShoutPatterns     *regexp.Regexp // optional; if path matches => create ticket (rate limited)
 	LockFirst         bool           // if true, try svn lock before commit
+	NeedsLock         bool           // attach svn:needs-lock to newly added regular files
 	RateLimitShout    time.Duration  // min duration between shouts
 	NewLatency        time.Duration  // delay for new (Added) entries before commit (default 5m)
 	SizeTiers         []SizeTier     // size-adaptive intervals; empty = use Window only
@@ -82,6 +83,16 @@ type Service struct {
 	OnLastSync         func(time.Time)
 	OnConflicts        func(int)
 	OnCurrentOperation func(*string)
+	// BeginPublish verifies edit-passport fencing and freezes lock mutation until
+	// the returned release function is called after the publication attempt.
+	BeginPublish func(context.Context, []string) (func(), error)
+	// OnPathActivity resets close-grace after any further watcher activity.
+	OnPathActivity func(string)
+	// OnPathsPublished starts close-grace after a confirmed central commit.
+	OnPathsPublished func([]string)
+	// OnPathsRemoved forgets passports whose repository paths were deleted by a
+	// confirmed commit (including rename sources).
+	OnPathsRemoved func([]string)
 	// Emit, if non-nil, is called to publish IPC events (commit.completed, sync.completed, etc.).
 	// The closure supplied by main.go wraps ipcserver.Server.Emit with the repo ID.
 	Emit func(evType string, payload any)
@@ -385,6 +396,9 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 }
 
 func (s *Service) addEvent(ev watcher.Event) {
+	if s.OnPathActivity != nil {
+		s.OnPathActivity(ev.Path)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// normalize key = rel posix path
@@ -627,6 +641,35 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		defer unlock()
 	}
 
+	var protected []string
+	for _, pe := range pending {
+		if pe.item.Op == watcher.Modified {
+			protected = append(protected, pe.item.Abs)
+		}
+	}
+	for _, rel := range delPaths {
+		for _, pe := range pending {
+			if pe.item.Rel == rel && !pe.item.IsDir {
+				protected = append(protected, pe.item.Abs)
+				break
+			}
+		}
+	}
+	for _, it := range renamedItems {
+		if !it.IsDir && it.OldRel != "" {
+			protected = append(protected, filepath.Join(wc, filepath.FromSlash(it.OldRel)))
+		}
+	}
+	endPublish := func() {}
+	if s.BeginPublish != nil && len(protected) > 0 {
+		var beginErr error
+		endPublish, beginErr = s.BeginPublish(ctx, dedup(protected))
+		if beginErr != nil {
+			return fmt.Errorf("edit passport authorization: %w", beginErr)
+		}
+		defer endPublish()
+	}
+
 	// busy flag
 	doneOperation := s.setOperation("commit")
 	defer doneOperation()
@@ -639,6 +682,13 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 	if len(toSvnAdd) > 0 {
 		if out, err := s.Cli.Add(ctx, wc, toSvnAdd, username, password); err != nil {
 			return fmt.Errorf("svn add failed: %w\n%s", err, out)
+		}
+	}
+	if s.Rules.NeedsLock {
+		if files := regularPaths(wc, toSvnAdd); len(files) > 0 {
+			if out, err := s.Cli.PropSet(ctx, wc, "svn:needs-lock", "*", files, username, password); err != nil {
+				return fmt.Errorf("svn propset needs-lock: %w\n%s", err, out)
+			}
 		}
 	}
 	// A directory can become mixed-revision after earlier batches commit
@@ -667,6 +717,11 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		if out, err := s.Cli.Add(ctx, wc, []string{it.Rel}, username, password); err != nil {
 			s.Logger.Warnf("svn add (rename dst) %s: %v\n%s", it.Rel, err, out)
 		}
+		if s.Rules.NeedsLock && !it.IsDir {
+			if out, err := s.Cli.PropSet(ctx, wc, "svn:needs-lock", "*", []string{it.Rel}, username, password); err != nil {
+				return fmt.Errorf("svn propset rename destination: %w\n%s", err, out)
+			}
+		}
 	}
 	if s.Rules.LockFirst && len(commitPaths) > 0 {
 		if out, err := s.Cli.Lock(ctx, wc, commitPaths, username, password); err != nil {
@@ -686,7 +741,12 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		uid = "unknown"
 	}
 	msg := fmt.Sprintf("Auto-commit by FileES client %s: %d paths", uid, len(commitPaths))
-	out, err := s.Cli.Commit(ctx, wc, commitPaths, msg, username, password)
+	var out string
+	if s.Rules.NeedsLock {
+		out, err = s.Cli.CommitKeepLocks(ctx, wc, commitPaths, msg, username, password)
+	} else {
+		out, err = s.Cli.Commit(ctx, wc, commitPaths, msg, username, password)
+	}
 	if err != nil {
 		entry := errmap.Classify(err)
 		s.ErrSink.Emit(entry)
@@ -746,7 +806,42 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		}
 	}
 	s.mu.Unlock()
+	if s.OnPathsPublished != nil {
+		var published []string
+		for _, pe := range pending {
+			if pe.item.Op == watcher.Modified {
+				published = append(published, pe.item.Abs)
+			}
+		}
+		s.OnPathsPublished(published)
+	}
+	if s.OnPathsRemoved != nil {
+		var removed []string
+		for _, pe := range pending {
+			switch pe.item.Op {
+			case watcher.Deleted:
+				if !pe.item.IsDir {
+					removed = append(removed, pe.item.Abs)
+				}
+			case watcher.Renamed:
+				if !pe.item.IsDir && pe.item.OldRel != "" {
+					removed = append(removed, filepath.Join(wc, filepath.FromSlash(pe.item.OldRel)))
+				}
+			}
+		}
+		s.OnPathsRemoved(removed)
+	}
 	return nil
+}
+
+func regularPaths(wc string, paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if info, err := os.Stat(filepath.Join(wc, filepath.FromSlash(p))); err == nil && info.Mode().IsRegular() {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func hasUnversionedAncestor(rel string, status map[string]string) bool {

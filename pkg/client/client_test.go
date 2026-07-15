@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestParseStatusXMLReadsWCStatusItemAttribute(t *testing.T) {
@@ -21,9 +22,31 @@ func TestParseStatusXMLReadsWCStatusItemAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseStatusXML() error = %v", err)
 	}
-	want := []StatusEntry{{Path: "fizyka.docx", Item: "unversioned"}}
+	want := []StatusEntry{{Path: "fizyka.docx", Item: "unversioned", Props: "none"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("parseStatusXML() = %#v, want %#v", got, want)
+	}
+}
+
+func TestParseLockInfoXML(t *testing.T) {
+	const output = `<info><entry><lock><token>opaquelocktoken:abc</token><owner>alice</owner><comment>passport</comment><created>2026-07-15T07:39:29.023983Z</created></lock></entry></info>`
+	got, err := parseLockInfoXML(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Token != "opaquelocktoken:abc" || got.Owner != "alice" || got.Comment != "passport" {
+		t.Fatalf("lock info = %#v", got)
+	}
+	want, _ := time.Parse(time.RFC3339Nano, "2026-07-15T07:39:29.023983Z")
+	if !got.Created.Equal(want) {
+		t.Fatalf("created = %s, want %s", got.Created, want)
+	}
+}
+
+func TestParseLockInfoXMLWithoutLock(t *testing.T) {
+	got, err := parseLockInfoXML(`<info><entry></entry></info>`)
+	if err != nil || got != nil {
+		t.Fatalf("lock info = %#v, error = %v", got, err)
 	}
 }
 
@@ -40,9 +63,21 @@ func TestParseStatusXMLReadsNormalItemFromVerboseStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []StatusEntry{{Path: "ready.txt", Item: "normal"}}
+	want := []StatusEntry{{Path: "ready.txt", Item: "normal", Props: "none"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("parseStatusXML() = %#v, want %#v", got, want)
+	}
+}
+
+func TestParsePropGetXMLReturnsRelativePropertyPaths(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "tmp", "wc")
+	input := `<properties><target path="/tmp/wc/a.bin"><property name="svn:needs-lock">*</property></target><target path="/tmp/wc/dir/b.bin"><property name="svn:needs-lock">*</property></target></properties>`
+	got, err := parsePropGetXML(input, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got["a.bin"] || !got["dir/b.bin"] || len(got) != 2 {
+		t.Fatalf("props=%#v", got)
 	}
 }
 

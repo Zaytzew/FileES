@@ -20,6 +20,7 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
+	"filees/pkg/passport"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
 	"filees/pkg/tickets"
@@ -84,6 +85,7 @@ func runDaemon() {
 
 	var wg sync.WaitGroup
 	var pidPaths []string
+	var passportManagers []*passport.Manager
 
 	for _, r := range repos {
 		wc := r.LocalPath
@@ -112,16 +114,47 @@ func runDaemon() {
 		_ = os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
 		pidPaths = append(pidPaths, pidPath)
 
+		clientUUID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
+		rlg.Debugf("client UUID: %s", clientUUID)
+
+		var editPassports *passport.Manager
+		if r.EditPassports {
+			backend := passport.SVNBackend{Client: cli, WC: wc, Username: r.Username, Password: r.Password}
+			editPassports, err = passport.Open(
+				filepath.Join(wc, ".filees", "passports", "passports.json"),
+				clientUUID,
+				backend,
+				passport.Config{TTL: r.EditPassportTTL, HeartbeatInterval: r.EditPassportHeartbeat, MaxSession: r.EditPassportMaxSession, CloseGrace: r.EditPassportCloseGrace},
+			)
+			if err != nil {
+				rlg.Errorf("edit passports: %v", err)
+				continue
+			}
+			passportManagers = append(passportManagers, editPassports)
+			wg.Add(1)
+			go func(manager *passport.Manager) { defer wg.Done(); manager.Run(ctx) }(editPassports)
+		}
+
 		// Register repo in IPC server; rs is updated by daemon goroutines
 		rs := ipc.RegisterRepo(r.ID, r.RepoURL, wc)
-		rs.SetLockFuncs(
-			func(ctx context.Context, paths []string) (string, error) {
-				return cli.Lock(ctx, wc, paths, r.Username, r.Password)
-			},
-			func(ctx context.Context, paths []string) (string, error) {
-				return cli.Unlock(ctx, wc, paths, r.Username, r.Password)
-			},
-		)
+		if editPassports != nil {
+			rs.SetLockFuncs(
+				func(ctx context.Context, paths []string) (string, error) {
+					_, out, err := editPassports.Acquire(ctx, paths)
+					return out, err
+				},
+				func(ctx context.Context, paths []string) (string, error) { return editPassports.Release(ctx, paths) },
+			)
+		} else {
+			rs.SetLockFuncs(
+				func(ctx context.Context, paths []string) (string, error) {
+					return cli.Lock(ctx, wc, paths, r.Username, r.Password)
+				},
+				func(ctx context.Context, paths []string) (string, error) {
+					return cli.Unlock(ctx, wc, paths, r.Username, r.Password)
+				},
+			)
+		}
 
 		if fileExists(baselineOK) && fileExists(tmpManifest) && !fileExists(manifest) {
 			if err := os.Rename(tmpManifest, manifest); err != nil {
@@ -187,15 +220,13 @@ func runDaemon() {
 			BacklogFlushBytes: mibOrDefault(r.BacklogFlushMiB, 1024),
 			ShutdownTimeout:   durationOrDefault(r.ShutdownCommitTimeout, 10*time.Minute),
 			ShoutPatterns:     config.MustCompileRegex(r.ShoutPatterns),
-			LockFirst:         r.LockFirst,
+			LockFirst:         r.LockFirst && !r.EditPassports,
+			NeedsLock:         r.EditPassports,
 			RateLimitShout:    r.RateLimitShout,
 			NewLatency:        publishLatency,
 			SizeTiers:         sizeTiers,
 			PollInterval:      pollInterval,
 		}
-
-		clientUUID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
-		rlg.Debugf("client UUID: %s", clientUUID)
 
 		var sink *errmap.Sink
 		errLogPath := filepath.Join(logsDir, "errors.jsonl")
@@ -219,6 +250,12 @@ func runDaemon() {
 			},
 		}
 		wireRepoStatus(svc, rs)
+		if editPassports != nil {
+			svc.BeginPublish = editPassports.BeginPublish
+			svc.OnPathActivity = editPassports.Touch
+			svc.OnPathsPublished = editPassports.MarkPublished
+			svc.OnPathsRemoved = editPassports.ForgetRemoved
+		}
 
 		// Reconcile startup-update conflicts through the same lossless path as
 		// periodic updates. In particular, this covers a SIGKILL after the server
@@ -241,6 +278,14 @@ func runDaemon() {
 			}
 		}
 
+		if editPassports != nil {
+			if err := passport.EnsureNeedsLock(ctx, cli, wc, r.Username, r.Password, clientUUID, intOrDefault(r.MaxBatchFiles, 100)); err != nil {
+				rlg.Errorf("edit-passport migration: %v", err)
+				rs.SetState(contract.StateDegraded)
+				continue
+			}
+		}
+
 		wg.Add(1)
 		go func(repo config.Repo, repoState *ipcserver.RepoState) {
 			defer wg.Done()
@@ -254,6 +299,13 @@ func runDaemon() {
 	<-ctx.Done()
 	lg.Infof("shutdown")
 	wg.Wait()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	for _, manager := range passportManagers {
+		if err := manager.ReleaseAll(shutdownCtx); err != nil {
+			lg.Warnf("edit passports shutdown release: %v", err)
+		}
+	}
+	shutdownCancel()
 
 	for _, p := range pidPaths {
 		_ = os.Remove(p)

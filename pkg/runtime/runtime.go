@@ -104,12 +104,20 @@ const ownerFile = "owner"
 
 func tryLockDir(dir string) (release func(), acquired bool, err error) {
 	if err := os.Mkdir(dir, 0o755); err == nil {
-		owner := fmt.Sprintf("%d %d %d\n", os.Getpid(), time.Now().UnixNano(), lockSequence.Add(1))
-		if err := os.WriteFile(filepath.Join(dir, ownerFile), []byte(owner), 0o600); err != nil {
+		seq := lockSequence.Add(1)
+		owner := fmt.Sprintf("%d %d %d\n", os.Getpid(), time.Now().UnixNano(), seq)
+		var ownerLock *os.File
+		if ownerFileLocksSupported() {
+			owner = fmt.Sprintf("v2 %d %d %d\n", os.Getpid(), time.Now().UnixNano(), seq)
+			ownerLock, err = createLockedOwnerFile(filepath.Join(dir, ownerFile), []byte(owner))
+		} else {
+			err = os.WriteFile(filepath.Join(dir, ownerFile), []byte(owner), 0o600)
+		}
+		if err != nil {
 			_ = os.RemoveAll(dir)
 			return nil, false, err
 		}
-		return func() { releaseLockDir(dir, owner) }, true, nil
+		return func() { releaseLockDir(dir, owner, ownerLock) }, true, nil
 	} else if !errors.Is(err, os.ErrExist) {
 		return nil, false, err
 	}
@@ -133,6 +141,13 @@ func staleLockDir(dir string, now time.Time) (bool, error) {
 	b, err := os.ReadFile(filepath.Join(dir, ownerFile))
 	if err == nil {
 		fields := strings.Fields(string(b))
+		if len(fields) == 4 && fields[0] == "v2" {
+			active, lockErr := ownerFileLockActive(filepath.Join(dir, ownerFile))
+			if lockErr != nil {
+				return false, lockErr
+			}
+			return !active, nil
+		}
 		if len(fields) != 3 {
 			return oldLockDir(dir, now)
 		}
@@ -159,7 +174,10 @@ func oldLockDir(dir string, now time.Time) (bool, error) {
 	return now.Sub(info.ModTime()) >= legacyLockGrace, nil
 }
 
-func releaseLockDir(dir, owner string) {
+func releaseLockDir(dir, owner string, ownerLock *os.File) {
+	if ownerLock != nil {
+		defer ownerLock.Close()
+	}
 	b, err := os.ReadFile(filepath.Join(dir, ownerFile))
 	if err != nil || string(b) != owner {
 		return

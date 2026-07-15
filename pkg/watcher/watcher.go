@@ -249,8 +249,16 @@ func NewScanner(opts Options) (*Scanner, error) {
 // Start scanning; returns read-only event channel
 func (s *Scanner) Start(ctx context.Context) <-chan Event {
 	events := make(chan Event, s.chanSize)
-	go s.loop(ctx, events)
-	go s.runBacklogWorker(ctx)
+	backlogDone := make(chan struct{})
+	go func() {
+		defer close(backlogDone)
+		s.runBacklogWorker(ctx)
+	}()
+	go func() {
+		s.loop(ctx, events)
+		<-backlogDone
+		close(events)
+	}()
 	return events
 }
 
@@ -289,7 +297,6 @@ func (s *Scanner) SaveState(path string) error {
 // --- main loop ---
 
 func (s *Scanner) loop(ctx context.Context, out chan<- Event) {
-	defer close(out)
 	ticker := time.NewTicker(s.period)
 	defer ticker.Stop()
 
@@ -716,14 +723,14 @@ func (s *Scanner) runBacklogWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.processOneBacklogItem()
+			s.processOneBacklogItem(ctx)
 		}
 	}
 }
 
 // processOneBacklogItem picks the smallest pending backlog entry, verifies the
 // file is still stable, computes its MD5, then updates s.cur and removes the entry.
-func (s *Scanner) processOneBacklogItem() {
+func (s *Scanner) processOneBacklogItem(ctx context.Context) {
 	s.mu.Lock()
 	if len(s.backlog) == 0 { s.mu.Unlock(); return }
 
@@ -744,8 +751,11 @@ func (s *Scanner) processOneBacklogItem() {
 	}
 
 	// Use size+1 as budget so the whole file is read (budget==size would false-trigger the budget-exceeded path)
-	sum, _, err := md5FileBudgeted(absPath, item.Size+1)
+	sum, _, err := md5FileBudgetedContext(ctx, absPath, item.Size+1)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		s.lg.Warnf("backlog: MD5 failed for %s: %v", item.Rel, err)
 		return // keep in backlog; retry next tick
 	}
@@ -790,6 +800,10 @@ func (s *Scanner) removeBacklogEntry(item backlogItem) {
 
 // md5 with byte budget; returns sum and bytes read
 func md5FileBudgeted(path string, budget int64) (string, int64, error) {
+	return md5FileBudgetedContext(context.Background(), path, budget)
+}
+
+func md5FileBudgetedContext(ctx context.Context, path string, budget int64) (string, int64, error) {
 	f, err := os.Open(normalizeForOpen(path))
 	if err != nil { return "", 0, err }
 	defer f.Close()
@@ -797,6 +811,9 @@ func md5FileBudgeted(path string, budget int64) (string, int64, error) {
 	var copied int64
 	buf := make([]byte, 128*1024)
 	for budget > 0 {
+		if err := ctx.Err(); err != nil {
+			return "", copied, err
+		}
 		n := int64(len(buf))
 		if n > budget { n = budget }
 		m, er := io.CopyN(h, f, n)

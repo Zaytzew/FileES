@@ -76,6 +76,34 @@ func TestRepoMutexDoesNotReclaimLiveOwner(t *testing.T) {
 	}
 }
 
+func TestV2OwnerLockRejectsPIDReuseFalsePositive(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "lock")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A live but unrelated process may have reused the dead owner's PID. With no
+	// advisory lock held on this v2 owner file, the directory is still stale.
+	owner := fmt.Sprintf("v2 %d 1 1\n", os.Getpid())
+	if err := os.WriteFile(filepath.Join(dir, ownerFile), []byte(owner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if stale, err := staleLockDir(dir, time.Now()); err != nil || !stale {
+		t.Fatalf("reused PID owner: stale=%v err=%v", stale, err)
+	}
+}
+
+func TestV2OwnerLockRemainsLiveWhileDescriptorIsHeld(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "lock")
+	release, acquired, err := tryLockDir(dir)
+	if err != nil || !acquired {
+		t.Fatalf("tryLockDir: acquired=%v err=%v", acquired, err)
+	}
+	if stale, err := staleLockDir(dir, time.Now()); err != nil || stale {
+		t.Fatalf("held owner lock: stale=%v err=%v", stale, err)
+	}
+	release()
+}
+
 func TestLegacyLockRequiresGracePeriod(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "lock")
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -101,7 +129,7 @@ func TestOldReleaseCannotRemoveNewOwner(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ownerFile), []byte("new\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	releaseLockDir(dir, "old\n")
+	releaseLockDir(dir, "old\n", nil)
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("new owner's lock was removed: %v", err)
 	}

@@ -3,6 +3,7 @@ package commit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -140,8 +141,8 @@ func saveConflictCopy(src, rel, kolizjeBase, ts string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
+	if err := copyConflictContents(out, in); err != nil {
+		_ = os.Remove(dst)
 		return err
 	}
 
@@ -165,4 +166,23 @@ func saveConflictCopy(src, rel, kolizjeBase, ts string) error {
 		return err
 	}
 	return os.WriteFile(dst+".meta", metaB, 0o644)
+}
+
+type conflictCopyWriter interface {
+	io.Writer
+	Sync() error
+	Close() error
+}
+
+// copyConflictContents does not report success until buffered data has reached
+// the filesystem and the destination descriptor has closed successfully. The
+// caller may safely resolve the SVN conflict only after this function returns.
+func copyConflictContents(dst conflictCopyWriter, src io.Reader) error {
+	if _, err := io.Copy(dst, src); err != nil {
+		return errors.Join(err, dst.Close())
+	}
+	if err := dst.Sync(); err != nil {
+		return errors.Join(err, dst.Close())
+	}
+	return dst.Close()
 }

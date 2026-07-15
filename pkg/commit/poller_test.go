@@ -1,7 +1,9 @@
 package commit
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +12,36 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/talk"
 )
+
+type failingConflictWriter struct {
+	bytes.Buffer
+	syncErr, closeErr error
+	synced, closed    bool
+}
+
+func (w *failingConflictWriter) Sync() error  { w.synced = true; return w.syncErr }
+func (w *failingConflictWriter) Close() error { w.closed = true; return w.closeErr }
+
+func TestConflictCopyRequiresSuccessfulSyncAndClose(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		syncErr  error
+		closeErr error
+	}{
+		{name: "sync", syncErr: errors.New("disk full")},
+		{name: "close", closeErr: errors.New("delayed allocation failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := &failingConflictWriter{syncErr: tc.syncErr, closeErr: tc.closeErr}
+			if err := copyConflictContents(out, bytes.NewBufferString("local data")); err == nil {
+				t.Fatal("copy accepted a destination durability failure")
+			}
+			if !out.closed || (tc.syncErr == nil && !out.synced) {
+				t.Fatalf("writer lifecycle: synced=%v closed=%v", out.synced, out.closed)
+			}
+		})
+	}
+}
 
 type revisionClient struct {
 	remote   int64

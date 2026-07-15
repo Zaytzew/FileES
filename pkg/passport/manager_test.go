@@ -11,10 +11,13 @@ import (
 
 type fakeBackend struct {
 	locks                    map[string]*Lock
+	unlockErrors             map[string]error
 	seq, forceCalls, unlocks int
 }
 
-func newFakeBackend() *fakeBackend { return &fakeBackend{locks: map[string]*Lock{}} }
+func newFakeBackend() *fakeBackend {
+	return &fakeBackend{locks: map[string]*Lock{}, unlockErrors: map[string]error{}}
+}
 func (b *fakeBackend) Inspect(_ context.Context, path string) (*Lock, error) {
 	if l := b.locks[path]; l != nil {
 		copy := *l
@@ -36,12 +39,41 @@ func (b *fakeBackend) Lock(_ context.Context, path, comment string, force bool) 
 	return &copy, "locked", nil
 }
 func (b *fakeBackend) Unlock(_ context.Context, path string) (string, error) {
+	if err := b.unlockErrors[path]; err != nil {
+		return "", err
+	}
 	if b.locks[path] == nil {
 		return "", errors.New("not locked")
 	}
 	delete(b.locks, path)
 	b.unlocks++
 	return "unlocked", nil
+}
+
+func TestReleasePersistsEarlierSuccessBeforeLaterFailure(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	store := filepath.Join(t.TempDir(), "passports.json")
+	cfg := Config{Now: func() time.Time { return now }}
+	m, err := Open(store, "instance-a", b, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Acquire(context.Background(), []string{"/wc/a", "/wc/b"}); err != nil {
+		t.Fatal(err)
+	}
+	b.unlockErrors["/wc/b"] = errors.New("unlock b failed")
+	if _, err := m.Release(context.Background(), []string{"/wc/a", "/wc/b"}); err == nil {
+		t.Fatal("partial release unexpectedly succeeded")
+	}
+	reopened, err := Open(store, "instance-a", b, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := reopened.Snapshot()
+	if len(snap) != 1 || snap[0].Path != "/wc/b" {
+		t.Fatalf("persisted passports after partial release: %#v", snap)
+	}
 }
 
 func openTestManager(t *testing.T, b *fakeBackend, now *time.Time, cfg Config) *Manager {
@@ -120,6 +152,9 @@ func TestBeginPublishFreezesHeartbeatTokenRotation(t *testing.T) {
 		t.Fatalf("heartbeat passed publication barrier: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
+	release()
+	// A cleanup path may be reached twice while unwinding an error. The guard is
+	// idempotent and must not unlock a future operation or panic.
 	release()
 	if err := <-done; err != nil {
 		t.Fatal(err)

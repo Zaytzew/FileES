@@ -273,7 +273,8 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 			}
 			s.addEvent(ev)
 			s.saveCache()
-			if s.stagingBytes() >= s.Rules.BacklogFlushBytes {
+			stagedBytes, watermarkEligible := s.watermarkState(time.Now())
+			if stagedBytes >= s.Rules.BacklogFlushBytes && watermarkEligible && !s.isOfflineBackoff() {
 				// A high watermark may accelerate stable modifications, but it must
 				// never bypass NewLatency for a newly-created file. Large files can
 				// cross the watermark while they are still being written or just
@@ -817,16 +818,17 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 	}
 	if s.OnPathsRemoved != nil {
 		var removed []string
-		for _, pe := range pending {
-			switch pe.item.Op {
-			case watcher.Deleted:
-				if !pe.item.IsDir {
+		for _, rel := range delPaths {
+			for _, pe := range pending {
+				if pe.item.Rel == rel && !pe.item.IsDir {
 					removed = append(removed, pe.item.Abs)
+					break
 				}
-			case watcher.Renamed:
-				if !pe.item.IsDir && pe.item.OldRel != "" {
-					removed = append(removed, filepath.Join(wc, filepath.FromSlash(pe.item.OldRel)))
-				}
+			}
+		}
+		for _, item := range renamedItems {
+			if !item.IsDir && item.OldRel != "" {
+				removed = append(removed, filepath.Join(wc, filepath.FromSlash(item.OldRel)))
 			}
 		}
 		s.OnPathsRemoved(removed)
@@ -917,11 +919,19 @@ func selectBatch(entries []pendingEntry, maxFiles int, maxBytes int64) []pending
 	return out
 }
 
-func (s *Service) stagingBytes() int64 {
+// watermarkState computes the payload and whether a non-forced attempt can
+// make progress. An immature Added entry may cross the byte watermark while it
+// is still being written, but it must not cause a status/commit attempt until
+// it matures or another immediately actionable operation is present.
+func (s *Service) watermarkState(now time.Time) (int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var total int64
+	eligible := false
 	for _, it := range s.staging {
+		if it.Op != watcher.Added || now.Sub(it.FirstSeen) >= s.Rules.NewLatency {
+			eligible = true
+		}
 		if it.IsDir || it.Op == watcher.Deleted {
 			continue
 		}
@@ -929,7 +939,7 @@ func (s *Service) stagingBytes() int64 {
 			total += fi.Size()
 		}
 	}
-	return total
+	return total, eligible
 }
 
 func (s *Service) stagingLen() int {

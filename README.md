@@ -4,6 +4,8 @@ Szczegółowy opis przepływu klienta, invariants, zachowania po awarii, zweryfi
 
 Raport końcowy audytu i wnioski z testów chaosowych znajduje się w [CLIENT_AUDIT_REPORT.md](CLIENT_AUDIT_REPORT.md). Dokumentację edit-passport uzupełniają [raport implementacji](EDIT_PASSPORT_IMPLEMENTATION_REPORT.md) i [raport testów](EDIT_PASSPORT_TEST_REPORT.md).
 
+Poprawki wynikające z przeglądu r61–r84 opisują [raport implementacji](CODE_REVIEW_FIX_IMPLEMENTATION_REPORT.md) i [raport testów](CODE_REVIEW_FIX_TEST_REPORT.md).
+
 Docelowy model dodawania katalogów, repozytorium technicznego, udostępnień oraz push-deployu tożsamości instalacji opisuje [PROVISIONING_AND_IDENTITY.md](PROVISIONING_AND_IDENTITY.md).
 
 Stan klientowej warstwy push deploy, granice obu połączeń SSH i blokery produkcyjne opisuje [PUSH_DEPLOY_CLIENT_READINESS.md](PUSH_DEPLOY_CLIENT_READINESS.md); wykonane testy są w [PUSH_DEPLOY_CLIENT_TEST_REPORT.md](PUSH_DEPLOY_CLIENT_TEST_REPORT.md).

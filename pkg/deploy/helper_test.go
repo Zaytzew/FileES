@@ -92,6 +92,9 @@ func TestHelperRejectsWrongWorkerKeyShellAndOtherCommand(t *testing.T) {
 
 func TestHelperIsLoopbackOnlyAndStopsWithContext(t *testing.T) {
 	worker := newTestSigner(t)
+	if _, err := StartHelper(context.Background(), HelperConfig{OperationID: uuid.NewString(), ClientID: "client-a", WorkerKey: worker.PublicKey()}); err == nil || !strings.Contains(err.Error(), "identity generator") {
+		t.Fatalf("missing identity generator error = %v", err)
+	}
 	if _, err := StartHelper(context.Background(), HelperConfig{ListenAddr: "0.0.0.0:0", WorkerKey: worker.PublicKey()}); err == nil {
 		t.Fatal("helper accepted non-loopback listen address")
 	}
@@ -115,6 +118,62 @@ func TestHelperIsLoopbackOnlyAndStopsWithContext(t *testing.T) {
 		session.Close()
 		t.Fatal("active helper connection survived deploy context")
 	}
+}
+
+type blockingIdentityGenerator struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (g blockingIdentityGenerator) GenerateInstallationIdentity(operationID, clientID string) (Identity, error) {
+	close(g.started)
+	<-g.release
+	return Identity{Schema: IdentitySchema, OperationID: operationID, ClientID: clientID, State: identityActive, PublicKey: "public", Fingerprint: "fingerprint"}, nil
+}
+
+func TestHelperDoneWaitsForActiveSessionWork(t *testing.T) {
+	worker := newTestSigner(t)
+	op, clientID := uuid.NewString(), "client-a"
+	blocking := blockingIdentityGenerator{started: make(chan struct{}), release: make(chan struct{})}
+	helper, err := StartHelper(context.Background(), HelperConfig{
+		OperationID: op, ClientID: clientID, WorkerKey: worker.PublicKey(), Identity: blocking,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := dialHelper(t, helper, worker)
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdin, _ := session.StdinPipe()
+	if err := session.Start(HelperCommand); err != nil {
+		t.Fatal(err)
+	}
+	request := HelperRequest{Schema: HelperSchema, OperationID: op, RequestID: uuid.NewString(), ClientID: clientID, Action: ActionGenerateIdentity}
+	if err := json.NewEncoder(stdin).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	_ = stdin.Close()
+	select {
+	case <-blocking.started:
+	case <-time.After(time.Second):
+		t.Fatal("session did not enter identity generation")
+	}
+	go helper.Close()
+	select {
+	case <-helper.Done():
+		t.Fatal("helper reported Done while session work was active")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(blocking.release)
+	select {
+	case <-helper.Done():
+	case <-time.After(time.Second):
+		t.Fatal("helper did not finish after active session returned")
+	}
+	_ = session.Close()
+	_ = client.Close()
 }
 
 func TestHelperRequestRejectsTrailingJSON(t *testing.T) {

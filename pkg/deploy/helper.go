@@ -25,7 +25,11 @@ type HelperConfig struct {
 	ListenAddr  string
 	WorkerKey   ssh.PublicKey
 	HostSigner  ssh.Signer
-	Identity    IdentityGenerator
+	Identity    InstallationIdentityGenerator
+}
+
+type InstallationIdentityGenerator interface {
+	GenerateInstallationIdentity(operationID, clientID string) (Identity, error)
 }
 
 type HelperEndpoint struct {
@@ -56,6 +60,9 @@ func StartHelper(ctx context.Context, cfg HelperConfig) (*Helper, error) {
 	}
 	if cfg.WorkerKey == nil {
 		return nil, errors.New("deploy helper requires pinned worker public key")
+	}
+	if cfg.Identity == nil {
+		return nil, errors.New("deploy helper requires identity generator")
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = "127.0.0.1:0"
@@ -155,7 +162,7 @@ func (h *Helper) serveConn(raw net.Conn) {
 	if err != nil {
 		return
 	}
-	go rejectGlobalRequests(requests)
+	h.startTracked(func() { rejectGlobalRequests(requests) })
 	for channel := range channels {
 		if channel.ChannelType() != "session" {
 			_ = channel.Reject(ssh.Prohibited, "only deploy protocol sessions are allowed")
@@ -165,7 +172,10 @@ func (h *Helper) serveConn(raw net.Conn) {
 		if err != nil {
 			continue
 		}
-		go h.serveSession(stream, reqs)
+		if !h.startTracked(func() { h.serveSession(stream, reqs) }) {
+			_ = stream.Close()
+			return
+		}
 	}
 }
 
@@ -231,6 +241,23 @@ func (h *Helper) untrackConnection(connection net.Conn) {
 	delete(h.connections, connection)
 	h.connectionsMu.Unlock()
 	h.connectionsWG.Done()
+}
+
+// startTracked closes the Add/Wait race by serializing admission with Close's
+// transition to closing. Done is not closed until every admitted SSH worker
+// goroutine has returned.
+func (h *Helper) startTracked(run func()) bool {
+	h.connectionsMu.Lock()
+	defer h.connectionsMu.Unlock()
+	if h.closing {
+		return false
+	}
+	h.connectionsWG.Add(1)
+	go func() {
+		defer h.connectionsWG.Done()
+		run()
+	}()
+	return true
 }
 
 func rejectGlobalRequests(requests <-chan *ssh.Request) {

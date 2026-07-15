@@ -19,6 +19,7 @@ type stagingClient struct {
 	statusItem     string
 	statuses       map[string]string
 	statusErr      error
+	statusCalls    int
 	removeOnStatus string
 	adds, commits  int
 	keepCommits    int
@@ -37,6 +38,7 @@ func (c *stagingClient) UpdateDepthEmpty(_ context.Context, _ string, paths []st
 }
 
 func (c *stagingClient) Status(_ context.Context, _ string, paths []string, _, _ string) ([]client.StatusEntry, error) {
+	c.statusCalls++
 	if c.statusErr != nil {
 		return nil, c.statusErr
 	}
@@ -285,6 +287,9 @@ func TestRunDoesNotFlushImmatureAddedFileAtBacklogWatermark(t *testing.T) {
 	if got := s.stagingLen(); got != 1 {
 		t.Fatalf("staging=%d, want 1 immature add", got)
 	}
+	if cli.statusCalls != 0 {
+		t.Fatalf("immature watermark caused %d svn status calls", cli.statusCalls)
+	}
 
 	// Shutdown drain is deliberately forceful and must still publish the file.
 	close(events)
@@ -441,9 +446,14 @@ func TestTryCommitDegradesRenameWithUnversionedSourceToAdd(t *testing.T) {
 		t.Fatal(err)
 	}
 	cli := &stagingClient{statuses: map[string]string{"new.txt": "unversioned"}}
-	s := &Service{Cli: cli, Rules: Rules{MaxBatchFiles: 10, MaxBatchBytes: 1024}, staging: map[string]*stageItem{
-		"new.txt": {Rel: "new.txt", Abs: abs, OldRel: "gone.txt", Op: watcher.Renamed},
-	}}
+	var removed []string
+	s := &Service{
+		Cli: cli, Rules: Rules{MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		OnPathsRemoved: func(paths []string) { removed = append(removed, paths...) },
+		staging: map[string]*stageItem{
+			"new.txt": {Rel: "new.txt", Abs: abs, OldRel: "gone.txt", Op: watcher.Renamed},
+		},
+	}
 	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -452,6 +462,9 @@ func TestTryCommitDegradesRenameWithUnversionedSourceToAdd(t *testing.T) {
 	}
 	if len(cli.commitPaths) != 1 || cli.commitPaths[0] != "new.txt" {
 		t.Fatalf("commit paths = %#v", cli.commitPaths)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("degraded rename reported an uncommitted removal: %#v", removed)
 	}
 }
 

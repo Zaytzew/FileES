@@ -57,6 +57,8 @@ type Lock struct{ Token, Owner, Comment string }
 
 // Backend is the authoritative lock boundary. force=true is allowed only
 // after Manager has verified that the current FileES passport expired.
+// Implementations must not call back into Manager methods: backend operations
+// run under Manager's serialized operation boundary by design.
 type Backend interface {
 	Inspect(context.Context, string) (*Lock, error)
 	Lock(context.Context, string, string, bool) (*Lock, string, error)
@@ -185,28 +187,36 @@ func (m *Manager) Release(ctx context.Context, paths []string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var outputs []string
+	changed := false
+	fail := func(cause error) (string, error) {
+		if changed {
+			cause = errors.Join(cause, m.saveLocked())
+		}
+		return strings.Join(outputs, "\n"), cause
+	}
 	for _, path := range cleanPaths(paths) {
 		p, ok := m.passports[path]
 		if !ok || p.State != StateActive {
-			return strings.Join(outputs, "\n"), fmt.Errorf("%w: %s", ErrNoPassport, path)
+			return fail(fmt.Errorf("%w: %s", ErrNoPassport, path))
 		}
 		info, err := m.backend.Inspect(ctx, path)
 		if err != nil {
-			return strings.Join(outputs, "\n"), err
+			return fail(err)
 		}
 		if !owns(p, info) {
 			p.State = StateLost
 			p.CloseAfter = time.Time{}
 			m.passports[path] = p
-			_ = m.saveLocked()
-			return strings.Join(outputs, "\n"), fmt.Errorf("%w: %s", ErrPassportLost, path)
+			changed = true
+			return fail(fmt.Errorf("%w: %s", ErrPassportLost, path))
 		}
 		out, err := m.backend.Unlock(ctx, path)
 		outputs = append(outputs, out)
 		if err != nil {
-			return strings.Join(outputs, "\n"), err
+			return fail(err)
 		}
 		delete(m.passports, path)
+		changed = true
 	}
 	return strings.Join(outputs, "\n"), m.saveLocked()
 }
@@ -357,7 +367,8 @@ func (m *Manager) BeginPublish(ctx context.Context, paths []string) (func(), err
 		m.opMu.Unlock()
 		return nil, err
 	}
-	return m.opMu.Unlock, nil
+	var once sync.Once
+	return func() { once.Do(m.opMu.Unlock) }, nil
 }
 
 func (m *Manager) authorize(ctx context.Context, paths []string) error {

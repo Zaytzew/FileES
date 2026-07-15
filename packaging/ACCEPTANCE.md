@@ -4,7 +4,13 @@ Automatyczne testy potwierdzają kontrakt, lifecycle, reconnect, bundle i metada
 
 ## Linux
 
-- [ ] Uruchomić `install-user.sh` z bundle i następnie `~/.local/bin/filees-gui` w sesji użytkownika.
+- [ ] Zweryfikować `sha256sum -c SHA256SUMS`, uruchomić `install-user.sh` z bundle i potwierdzić instalację `~/.local/bin/filees` oraz `~/.local/bin/filees-gui`.
+- [ ] Potwierdzić, że instalator tworzy nowy `~/.config/filees/config.json` jako `0600`, lecz nigdy nie nadpisuje istniejącego pliku przy upgrade.
+- [ ] Wykonać `filees config-check --config ~/.config/filees/config.json` przed uruchomieniem usługi.
+- [ ] Wykonać `systemctl --user enable --now filees.service`, sprawdzić status, kontrolowany restart i shutdown mieszczący się w `TimeoutStopSec=15min`.
+- [ ] Wykonać reinstall aktywnej wersji i potwierdzić kontrolowany restart tylko działającej usługi.
+- [ ] Odinstalować klienta z aktywną usługą; potwierdzić stop/disable, usunięcie binariów i unit oraz zachowanie konfiguracji, tożsamości i synchronizowanych danych.
+- [ ] Uruchomić `~/.local/bin/filees-gui` w sesji użytkownika.
 - [ ] Potwierdzić ikonę oraz menu na KDE/XFCE/MATE lub innym pulpicie z SNI.
 - [ ] Na GNOME potwierdzić działanie z rozszerzeniem AppIndicator/KStatusNotifierItem i udokumentowany brak ikony bez rozszerzenia.
 - [ ] Sprawdzić `xdg-open`, picker Zenity oraz fallback KDialog.

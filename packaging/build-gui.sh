@@ -20,21 +20,28 @@ publish_output() {
 }
 
 build_linux() {
-	out="$dist/filees-gui-linux-amd64"
-	tmp=$(prepare_output "filees-gui-linux-amd64")
+	out="$dist/filees-client-linux-amd64"
+	tmp=$(prepare_output "filees-client-linux-amd64")
 	trap 'rm -rf "$tmp"' EXIT HUP INT TERM
-	mkdir -p "$tmp/bin" "$tmp/share/applications" "$tmp/share/icons/hicolor/scalable/apps"
+	mkdir -p "$tmp/bin" "$tmp/share/applications" "$tmp/share/icons/hicolor/scalable/apps" "$tmp/share/systemd/user" "$tmp/share/filees"
 	(
 		cd "$root"
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$tmp/bin/filees" ./cmd/filees
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$tmp/bin/filees-gui" ./cmd/filees-gui
 	)
 	cp "$root/packaging/linux/filees-gui.desktop" "$tmp/share/applications/"
+	cp "$root/packaging/linux/filees.service" "$tmp/share/systemd/user/"
+	cp "$root/packaging/linux/config.example.json" "$tmp/share/filees/"
 	cp "$root/internal/gui/tray/assets/svg/active.svg" "$tmp/share/icons/hicolor/scalable/apps/filees-gui.svg"
 	cp "$root/packaging/ACCEPTANCE.md" "$tmp/"
 	cp "$root/packaging/linux/install-user.sh" "$tmp/"
 	cp "$root/packaging/linux/uninstall-user.sh" "$tmp/"
 	cp "$root/VERSION" "$tmp/"
 	chmod +x "$tmp/install-user.sh" "$tmp/uninstall-user.sh"
+	(
+		cd "$tmp"
+		find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | xargs sha256sum > SHA256SUMS
+	)
 	publish_output "$tmp" "$out"
 	trap - EXIT HUP INT TERM
 }

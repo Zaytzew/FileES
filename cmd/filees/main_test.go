@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -8,6 +10,22 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
 )
+
+func TestConfigCheckValidatesWithoutStartingDaemon(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := cmdConfigCheck([]string{"--config", path}); code != 0 {
+		t.Fatalf("valid config exit=%d", code)
+	}
+	if err := os.WriteFile(path, []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := cmdConfigCheck([]string{"--config", path}); code != 1 {
+		t.Fatalf("invalid config exit=%d", code)
+	}
+}
 
 func TestWireRepoStatusConnectsCommitServiceToPublicSnapshot(t *testing.T) {
 	wc := t.TempDir()

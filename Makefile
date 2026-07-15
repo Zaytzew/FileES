@@ -4,7 +4,7 @@ test:
 	go test ./...
 
 race:
-	go test -race ./pkg/client ./pkg/commit ./pkg/control/v1 ./pkg/passport ./pkg/provisioning ./pkg/runtime ./contracttests
+	go test -race ./pkg/client ./pkg/commit ./pkg/control/v1 ./pkg/deploy ./pkg/passport ./pkg/provisioning ./pkg/runtime ./contracttests
 
 vet:
 	go vet ./...

@@ -18,6 +18,7 @@ import (
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/deploy"
 	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
 	"filees/pkg/passport"
@@ -27,9 +28,23 @@ import (
 	"filees/pkg/watcher"
 )
 
+var version = "dev"
+
 func main() {
+	if os.Getenv("FILEES_ASKPASS_FIFO") != "" {
+		if err := deploy.RunAskpass(); err != nil {
+			fmt.Fprintln(os.Stderr, "filees askpass:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "version", "--version":
+			fmt.Fprintln(os.Stdout, version)
+			return
+		case "config-check":
+			os.Exit(cmdConfigCheck(os.Args[2:]))
 		case "status":
 			os.Exit(cmdStatus(os.Args[2:]))
 		case "lock":
@@ -350,6 +365,8 @@ func printUsage() {
 
 commands:
   daemon    start sync daemon (default when no command given)
+  config-check  validate configuration without starting the daemon
+  version   show client version
   status    show sync state for all configured repos
   lock      lock file(s) in SVN repository
   unlock    release SVN lock on file(s)

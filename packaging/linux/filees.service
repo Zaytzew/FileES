@@ -1,0 +1,16 @@
+[Unit]
+Description=FileES synchronization daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart="@FILEES_BIN@" daemon --config "@CONFIG_PATH@"
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15min
+UMask=0077
+Environment=FILEES_LOG=info
+
+[Install]
+WantedBy=default.target

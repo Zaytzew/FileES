@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -38,12 +40,126 @@ func TestLinuxUserInstallerIsExplicitAboutAutostart(t *testing.T) {
 	if !strings.Contains(string(installScript), `ENABLE_AUTOSTART:-0`) {
 		t.Fatal("user installer must not enable autostart without explicit opt-in")
 	}
-	for _, required := range []string{"filees-gui.desktop", "filees-gui.svg", "autostart/filees-gui.desktop"} {
+	for _, required := range []string{"bin/filees", "filees.service", "config-check", `ENABLE_DAEMON:-0`, `RESTART_DAEMON:-1`} {
+		if !strings.Contains(string(installScript), required) {
+			t.Errorf("installer missing %q", required)
+		}
+	}
+	for _, required := range []string{"bin/filees", "filees-gui.desktop", "filees-gui.svg", "autostart/filees-gui.desktop", "filees.service", "preserved"} {
 		if !strings.Contains(string(uninstallScript), required) {
 			t.Errorf("uninstaller does not remove %q", required)
 		}
 	}
 }
+
+func TestLinuxSystemdUnitHasBoundedGracefulLifecycle(t *testing.T) {
+	raw, err := os.ReadFile("linux/filees.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, required := range []string{
+		`ExecStart="@FILEES_BIN@" daemon --config "@CONFIG_PATH@"`,
+		"Restart=on-failure", "TimeoutStopSec=15min", "UMask=0077", "WantedBy=default.target",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("systemd unit missing %q", required)
+		}
+	}
+}
+
+func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "bundle")
+	home := filepath.Join(root, "home")
+	prefix := filepath.Join(home, ".local")
+	dataHome := filepath.Join(home, ".local", "share")
+	configHome := filepath.Join(home, ".config")
+	fakeBin := filepath.Join(root, "fake-bin")
+	for _, dir := range []string{
+		filepath.Join(bundle, "bin"), filepath.Join(bundle, "share", "applications"),
+		filepath.Join(bundle, "share", "icons", "hicolor", "scalable", "apps"),
+		filepath.Join(bundle, "share", "systemd", "user"), filepath.Join(bundle, "share", "filees"), fakeBin,
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	copyTestFile(t, "linux/install-user.sh", filepath.Join(bundle, "install-user.sh"), 0o755)
+	copyTestFile(t, "linux/uninstall-user.sh", filepath.Join(bundle, "uninstall-user.sh"), 0o755)
+	copyTestFile(t, "linux/filees-gui.desktop", filepath.Join(bundle, "share", "applications", "filees-gui.desktop"), 0o644)
+	copyTestFile(t, "linux/filees.service", filepath.Join(bundle, "share", "systemd", "user", "filees.service"), 0o644)
+	copyTestFile(t, "linux/config.example.json", filepath.Join(bundle, "share", "filees", "config.example.json"), 0o644)
+	if err := os.WriteFile(filepath.Join(bundle, "share", "icons", "hicolor", "scalable", "apps", "filees-gui.svg"), []byte("<svg/>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fileesStub := "#!/bin/sh\n[ \"$1\" = config-check ] || exit 2\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees"), []byte(fileesStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fakeBin, "systemctl"), []byte("#!/bin/sh\n[ \"$2\" = is-active ] && exit 1\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	checksum := exec.Command("sh", "-c", "find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | xargs sha256sum > SHA256SUMS")
+	checksum.Dir = bundle
+	if output, err := checksum.CombinedOutput(); err != nil {
+		t.Fatalf("create test checksum manifest: %v\n%s", err, output)
+	}
+	env := append(os.Environ(),
+		"HOME="+home, "PREFIX="+prefix, "XDG_DATA_HOME="+dataHome, "XDG_CONFIG_HOME="+configHome,
+		"PATH="+fakeBin+":/usr/bin:/bin", "ENABLE_DAEMON=0", "ENABLE_AUTOSTART=0",
+	)
+	runScript(t, filepath.Join(bundle, "install-user.sh"), env)
+	configPath := filepath.Join(configHome, "filees", "config.json")
+	custom := []byte("[{\"managed\":true}]\n")
+	if err := os.WriteFile(configPath, custom, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runScript(t, filepath.Join(bundle, "install-user.sh"), env)
+	if got, err := os.ReadFile(configPath); err != nil || !stringEqual(got, custom) {
+		t.Fatalf("upgrade overwrote config: %q err=%v", got, err)
+	}
+	for _, path := range []string{
+		filepath.Join(prefix, "bin", "filees"), filepath.Join(prefix, "bin", "filees-gui"),
+		filepath.Join(configHome, "systemd", "user", "filees.service"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("installed artifact %s: %v", path, err)
+		}
+	}
+	runScript(t, filepath.Join(bundle, "uninstall-user.sh"), env)
+	if _, err := os.Stat(filepath.Join(prefix, "bin", "filees")); !os.IsNotExist(err) {
+		t.Fatalf("daemon binary survived uninstall: %v", err)
+	}
+	if got, err := os.ReadFile(configPath); err != nil || !stringEqual(got, custom) {
+		t.Fatalf("uninstall removed config: %q err=%v", got, err)
+	}
+}
+
+func copyTestFile(t *testing.T, source, destination string, mode os.FileMode) {
+	t.Helper()
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, raw, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runScript(t *testing.T, path string, env []string) {
+	t.Helper()
+	cmd := exec.Command(path)
+	cmd.Env = env
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%s: %v\n%s", path, err, output)
+	}
+}
+
+func stringEqual(a, b []byte) bool { return string(a) == string(b) }
 
 func TestWindowsManifestIsWellFormedAndUnelevated(t *testing.T) {
 	data, err := os.ReadFile("windows/filees-gui.exe.manifest")
@@ -86,6 +202,22 @@ func TestWindowsBuildUsesGUISubsystem(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `-H=windowsgui`) {
 		t.Fatal("Windows GUI build would open a console window")
+	}
+}
+
+func TestLinuxBuildContainsFullClientServiceAndChecksums(t *testing.T) {
+	raw, err := os.ReadFile("build-gui.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, required := range []string{
+		"filees-client-linux-amd64", "./cmd/filees", "./cmd/filees-gui",
+		"filees.service", "config.example.json", "SHA256SUMS", "sha256sum",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("Linux client build missing %q", required)
+		}
 	}
 }
 

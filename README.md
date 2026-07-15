@@ -6,6 +6,8 @@ Raport końcowy audytu i wnioski z testów chaosowych znajduje się w [CLIENT_AU
 
 Docelowy model dodawania katalogów, repozytorium technicznego, udostępnień oraz push-deployu tożsamości instalacji opisuje [PROVISIONING_AND_IDENTITY.md](PROVISIONING_AND_IDENTITY.md).
 
+Stan klientowej warstwy push deploy, granice obu połączeń SSH i blokery produkcyjne opisuje [PUSH_DEPLOY_CLIENT_READINESS.md](PUSH_DEPLOY_CLIENT_READINESS.md); wykonane testy są w [PUSH_DEPLOY_CLIENT_TEST_REPORT.md](PUSH_DEPLOY_CLIENT_TEST_REPORT.md).
+
 Lokalny smoke test recovery można uruchomić przez `scripts/svn-recovery-smoke.sh`; tworzy tymczasowe repozytorium SVN i nie wymaga dostępu do sieci.
 
 Neutralny gate jakości dla CI to `make verify`. Obejmuje pełne testy Go, wybrane testy race, `go vet` oraz lokalny smoke test recovery SVN.

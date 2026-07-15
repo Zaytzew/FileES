@@ -9,13 +9,106 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
+
+func TestMalformedAndOversizedResponsesArePermanentWithoutPanic(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		response string
+	}{
+		{name: "missing separator", response: "250\r\n"},
+		{name: "oversized", response: strings.Repeat("x", 9000) + "\r\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clientConnection, serverConnection := net.Pipe()
+			defer clientConnection.Close()
+			defer serverConnection.Close()
+			go func() {
+				_, _ = serverConnection.Write([]byte(test.response))
+			}()
+			c := &client{connection: clientConnection, reader: bufio.NewReaderSize(clientConnection, 8192), timeout: time.Second}
+			err := c.expect("greeting", 220)
+			if err == nil || IsTemporary(err) {
+				t.Fatalf("error=%v temporary=%v", err, IsTemporary(err))
+			}
+			var submitErr *Error
+			if !errors.As(err, &submitErr) || submitErr.Stage != "greeting" {
+				t.Fatalf("unexpected error: %#v", err)
+			}
+		})
+	}
+}
+
+func TestRequestValidationHasOwnStageAndWriteMessageRejectsBareNewline(t *testing.T) {
+	err := Submit(context.Background(), Config{Address: "127.0.0.1:2525", ClientName: "filees.test", TLSMode: TLSNone}, Request{EnvelopeFrom: "filees@example.test", Recipient: "user@example.test", Message: []byte("bare\n")})
+	var submitErr *Error
+	if !errors.As(err, &submitErr) || submitErr.Stage != "request" || IsTemporary(err) {
+		t.Fatalf("request validation error=%#v", err)
+	}
+	c := &client{}
+	if err := c.writeMessage([]byte("bare\n")); err == nil {
+		t.Fatal("writeMessage accepted bare LF")
+	}
+}
+
+func TestTLSFailureClassificationPreservesTransientDeliveryMaterial(t *testing.T) {
+	for _, err := range []error{context.DeadlineExceeded, context.Canceled, io.EOF, io.ErrUnexpectedEOF, syscall.ECONNRESET, syscall.EPIPE, syscall.ETIMEDOUT} {
+		if !isTransientTLSError(err) {
+			t.Errorf("%T %v classified permanent", err, err)
+		}
+	}
+	certificate := &x509.Certificate{}
+	for _, err := range []error{
+		x509.UnknownAuthorityError{Cert: certificate},
+		x509.HostnameError{Certificate: certificate, Host: "wrong.example"},
+		x509.CertificateInvalidError{Cert: certificate, Reason: x509.Expired},
+		tls.RecordHeaderError{},
+	} {
+		if isTransientTLSError(err) {
+			t.Errorf("%T classified temporary", err)
+		}
+	}
+}
+
+func TestStartTLSClassifiesTransportAndCertificateFailures(t *testing.T) {
+	t.Run("transport EOF is temporary", func(t *testing.T) {
+		clientConnection, serverConnection := net.Pipe()
+		serverConnection.Close()
+		c := &client{connection: clientConnection, timeout: time.Second}
+		err := c.startTLS(context.Background(), Config{ServerName: "localhost", CommandTimeout: time.Second})
+		clientConnection.Close()
+		if err == nil || !IsTemporary(err) {
+			t.Fatalf("TLS EOF error=%v temporary=%v", err, IsTemporary(err))
+		}
+	})
+
+	t.Run("hostname mismatch is permanent", func(t *testing.T) {
+		certificate, roots := testCertificate(t)
+		clientConnection, serverConnection := net.Pipe()
+		serverDone := make(chan struct{})
+		go func() {
+			defer close(serverDone)
+			defer serverConnection.Close()
+			_ = tls.Server(serverConnection, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}).Handshake()
+		}()
+		c := &client{connection: clientConnection, timeout: time.Second}
+		err := c.startTLS(context.Background(), Config{ServerName: "wrong.example", RootCAs: roots, CommandTimeout: time.Second})
+		clientConnection.Close()
+		<-serverDone
+		if err == nil || IsTemporary(err) {
+			t.Fatalf("TLS hostname error=%v temporary=%v", err, IsTemporary(err))
+		}
+	})
+}
 
 func TestSubmitSTARTTLSAuthAndDotStuffing(t *testing.T) {
 	certificate, roots := testCertificate(t)

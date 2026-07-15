@@ -172,6 +172,51 @@ func TestTakeFailureRollsBackAndExpiredTicketIsRemoved(t *testing.T) {
 	}
 }
 
+func TestMailAttemptRecoveryAndFailureRedaction(t *testing.T) {
+	now := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 42220, 42230)
+	defer store.Close()
+	_, otp := createTakenOperation(t, store, "mail-failure@example.net")
+
+	first, err := store.ClaimPendingMail(5 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(6 * time.Minute)
+	second, err := store.ClaimPendingMail(5 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Entry.AttemptID == first.Entry.AttemptID || second.Entry.RetryCount != 2 {
+		t.Fatalf("stale attempt was not recovered: first=%+v second=%+v", first.Entry, second.Entry)
+	}
+	if err := store.MarkOutboxFailed(second.Entry.MessageID, second.Entry.AttemptID, "TLS connection reset", false); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.ListOutbox()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("temporary failure outbox=%+v err=%v", entries, err)
+	}
+	if entries[0].DeliveryState != DeliveryPending || entries[0].DeliveryAddress != "mail-failure@example.net" || entries[0].OTP != otp {
+		t.Fatalf("temporary failure lost delivery material: %+v", entries[0])
+	}
+
+	third, err := store.ClaimPendingMail(5 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkOutboxFailed(third.Entry.MessageID, "foreign-attempt", "bad certificate", true); !errors.Is(err, ErrMailAttempt) {
+		t.Fatalf("foreign attempt error=%v, want ErrMailAttempt", err)
+	}
+	if err := store.MarkOutboxFailed(third.Entry.MessageID, third.Entry.AttemptID, "bad certificate", true); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ = store.ListOutbox()
+	if entries[0].DeliveryState != DeliveryFailed || entries[0].DeliveryAddress != "" || entries[0].OTP != "" {
+		t.Fatalf("permanent failure retained delivery material: %+v", entries[0])
+	}
+}
+
 func TestCrashAfterClaimRollsForwardOnRestart(t *testing.T) {
 	if os.Getenv("FILEES_ONBOARDING_CRASH_HELPER") == "1" {
 		crashTransactionHelper()

@@ -2,15 +2,18 @@ package smtpsubmit
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -62,7 +65,7 @@ func Submit(ctx context.Context, config Config, request Request) error {
 		return &Error{Stage: "config", Err: err}
 	}
 	if err := validateRequest(request); err != nil {
-		return &Error{Stage: "config", Err: err}
+		return &Error{Stage: "request", Err: err}
 	}
 	dialer := net.Dialer{Timeout: config.ConnectTimeout}
 	connection, err := dialer.DialContext(ctx, "tcp", config.Address)
@@ -150,7 +153,7 @@ func (c *client) startTLS(ctx context.Context, config Config) error {
 		return &Error{Stage: "tls", Temporary: true, Err: err}
 	}
 	if err := tlsConnection.HandshakeContext(ctx); err != nil {
-		return &Error{Stage: "tls", Err: err}
+		return &Error{Stage: "tls", Temporary: isTransientTLSError(err), Err: err}
 	}
 	_ = tlsConnection.SetDeadline(time.Time{})
 	c.connection = tlsConnection
@@ -163,7 +166,7 @@ func (c *client) ehlo(name string) (map[string]string, error) {
 	}
 	code, lines, err := c.readResponse()
 	if err != nil {
-		return nil, &Error{Stage: "ehlo", Temporary: true, Err: err}
+		return nil, &Error{Stage: "ehlo", Temporary: isTransientResponseError(err), Err: err}
 	}
 	if code != 250 {
 		return nil, responseError("ehlo", code, lines)
@@ -187,7 +190,7 @@ func (c *client) command(stage string, expected []int, line string) error {
 	}
 	code, lines, err := c.readResponse()
 	if err != nil {
-		return &Error{Stage: stage, Temporary: true, Err: err}
+		return &Error{Stage: stage, Temporary: isTransientResponseError(err), Err: err}
 	}
 	for _, allowed := range expected {
 		if code == allowed {
@@ -200,7 +203,7 @@ func (c *client) command(stage string, expected []int, line string) error {
 func (c *client) expect(stage string, expected int) error {
 	code, lines, err := c.readResponse()
 	if err != nil {
-		return &Error{Stage: stage, Temporary: true, Err: err}
+		return &Error{Stage: stage, Temporary: isTransientResponseError(err), Err: err}
 	}
 	if code != expected {
 		return responseError(stage, code, lines)
@@ -225,48 +228,89 @@ func (c *client) readResponse() (int, []string, error) {
 	for count := 0; count < 64; count++ {
 		raw, err := c.reader.ReadSlice('\n')
 		if err != nil {
+			if errors.Is(err, bufio.ErrBufferFull) {
+				return 0, nil, &protocolError{message: "oversized SMTP response line"}
+			}
 			return 0, nil, err
 		}
-		if len(raw) > 8192 || len(raw) < 5 || raw[len(raw)-2] != '\r' {
-			return 0, nil, errors.New("malformed or oversized SMTP response")
+		if len(raw) > 8192 || len(raw) < 6 || raw[len(raw)-2] != '\r' {
+			return 0, nil, &protocolError{message: "malformed or oversized SMTP response"}
 		}
 		line := string(raw[:len(raw)-2])
 		parsed, err := strconv.Atoi(line[:3])
 		if err != nil || (line[3] != ' ' && line[3] != '-') {
-			return 0, nil, errors.New("malformed SMTP response code")
+			return 0, nil, &protocolError{message: "malformed SMTP response code"}
 		}
 		if count == 0 {
 			code = parsed
 		} else if parsed != code {
-			return 0, nil, errors.New("inconsistent multiline SMTP response")
+			return 0, nil, &protocolError{message: "inconsistent multiline SMTP response"}
 		}
 		lines = append(lines, line[4:])
 		if line[3] == ' ' {
 			return code, lines, nil
 		}
 	}
-	return 0, nil, errors.New("too many SMTP response lines")
+	return 0, nil, &protocolError{message: "too many SMTP response lines"}
 }
 
 func (c *client) writeMessage(message []byte) error {
 	if len(message) == 0 || len(message) > 256*1024 {
 		return errors.New("message size outside allowed range")
 	}
+	if bytesContainsBareNewline(message) {
+		return errors.New("message contains bare CR or LF")
+	}
 	if err := c.connection.SetWriteDeadline(time.Now().Add(c.timeout)); err != nil {
 		return err
 	}
-	normalized := strings.ReplaceAll(string(message), "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-	for _, line := range strings.Split(strings.TrimSuffix(normalized, "\n"), "\n") {
-		if strings.HasPrefix(line, ".") {
-			line = "." + line
+	message = bytes.TrimSuffix(message, []byte("\r\n"))
+	for _, line := range bytes.Split(message, []byte("\r\n")) {
+		if len(line) > 0 && line[0] == '.' {
+			if _, err := c.connection.Write([]byte{'.'}); err != nil {
+				return err
+			}
 		}
-		if _, err := c.connection.Write([]byte(line + "\r\n")); err != nil {
+		if _, err := c.connection.Write(line); err != nil {
+			return err
+		}
+		if _, err := c.connection.Write([]byte("\r\n")); err != nil {
 			return err
 		}
 	}
 	_, err := c.connection.Write([]byte(".\r\n"))
 	return err
+}
+
+type protocolError struct{ message string }
+
+func (e *protocolError) Error() string { return e.message }
+
+func isTransientResponseError(err error) bool {
+	var protocol *protocolError
+	return !errors.As(err, &protocol)
+}
+
+func isTransientTLSError(err error) bool {
+	var unknownAuthority x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	var invalidCertificate x509.CertificateInvalidError
+	var recordHeader tls.RecordHeaderError
+	if errors.As(err, &unknownAuthority) || errors.As(err, &hostname) || errors.As(err, &invalidCertificate) || errors.As(err, &recordHeader) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ETIMEDOUT) {
+		return true
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		return true
+	}
+	// Preserve the one-time delivery material for unknown handshake failures.
+	// Only recognized certificate/protocol configuration errors are permanent.
+	return true
 }
 
 func responseError(stage string, code int, lines []string) error {

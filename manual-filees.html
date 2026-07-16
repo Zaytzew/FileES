@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>FileES Manual — Architecture, Operations and Security</title>
+<style>
+:root {
+  --navy: #0B1D3A;
+  --navy-2: #162A4A;
+  --orange: #FF6A00;
+  --paper: #F7F8FA;
+  --white: #FFFFFF;
+  --line: #D9DEE7;
+  --line-strong: #B7C0CF;
+  --muted: #667085;
+  --ink: #172033;
+  --code-bg: #0B1D3A;
+  --code-fg: #EDF2F7;
+  --verified: #1E7A46;
+  --implemented: #245FA8;
+  --designed: #8A5A00;
+  --planned: #667085;
+  --danger: #A63A3A;
+  --mono: "Roboto Mono", "IBM Plex Mono", "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --sans: Inter, "Segoe UI", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); color: var(--ink); scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; font: 16px/1.68 var(--sans); }
+a { color: var(--navy); text-decoration-color: rgba(255,106,0,.65); text-underline-offset: .2em; }
+a:hover { color: var(--orange); }
+
+.sheet {
+  width: min(1460px, calc(100% - 48px));
+  margin: 24px auto;
+  background: var(--white);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 50px rgba(11,29,58,.08);
+}
+
+.masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--line);
+  font: 12px/1.5 var(--mono);
+  letter-spacing: .045em;
+}
+.brand-lockup { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.brand-mark {
+  display: flex; align-items: center; justify-content: center;
+  width: 54px; height: 46px;
+  border-radius: 8px;
+  background: var(--navy); color: var(--white);
+  font: 600 14px/1 var(--mono);
+  letter-spacing: -.04em;
+}
+.brand-mark .colon, .brand-name .colon { color: var(--orange); }
+.brand-copy { display: grid; gap: 2px; }
+.brand-name { color: var(--navy); font-weight: 600; font-size: 14px; }
+.brand-subtitle, .masthead-meta { color: var(--muted); }
+.masthead-meta { text-align: right; }
+
+.hero {
+  padding: 52px 54px 44px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(135deg, #fff 0%, #fff 68%, #F2F4F8 100%);
+}
+.eyebrow, .toc-kicker, .figure-kicker, .section-status, .decision-label, .legend-label {
+  font: 600 12px/1.45 var(--mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.eyebrow { color: var(--orange); margin: 0 0 18px; }
+.hero h1 {
+  margin: 0;
+  max-width: 900px;
+  color: var(--navy);
+  font: 600 clamp(34px, 5vw, 66px)/1.04 var(--mono);
+  letter-spacing: -.045em;
+}
+.hero-copy { max-width: 820px; margin: 24px 0 0; font-size: 18px; color: #344054; }
+.meta-strip { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 26px; color: var(--muted); font: 12px/1.5 var(--mono); }
+.meta-strip strong { color: var(--navy); font-weight: 600; }
+.canonical-note { margin-top: 22px; max-width: 880px; padding: 12px 16px; border-left: 4px solid var(--orange); background: #FFF8F1; font-size: 14px; }
+
+.maturity-legend {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  border-bottom: 1px solid var(--line);
+}
+.legend-item { padding: 18px 22px; border-right: 1px solid var(--line); min-height: 112px; }
+.legend-item:last-child { border-right: 0; }
+.legend-item p { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.status {
+  display: inline-block; padding: .28em .65em; border: 1px solid currentColor; border-radius: 999px;
+  font: 600 10px/1.3 var(--mono); letter-spacing: .055em; text-transform: uppercase; white-space: nowrap;
+}
+.status-verified { color: var(--verified); background: #EFF9F3; }
+.status-implemented { color: var(--implemented); background: #EEF5FD; }
+.status-designed { color: var(--designed); background: #FFF7E8; }
+.status-planned { color: var(--planned); background: #F4F5F7; }
+
+.manual-layout { display: grid; grid-template-columns: 310px minmax(0,1fr); align-items: start; }
+nav#toc {
+  position: sticky; top: 0; max-height: 100vh; overflow: auto;
+  padding: 30px 24px 40px; border-right: 1px solid var(--line); background: #FBFCFD;
+}
+nav#toc .toc-head { padding-bottom: 18px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
+nav#toc h2 { margin: 5px 0 0; color: var(--navy); font: 600 19px/1.3 var(--mono); border: 0; padding: 0; }
+nav#toc ol { margin: 0; padding-left: 1.1rem; }
+nav#toc > ol { padding-left: 0; list-style: none; }
+nav#toc li { margin: .38rem 0; color: var(--muted); }
+nav#toc > ol > li { margin: 1rem 0 1.25rem; }
+nav#toc a { font: 12px/1.55 var(--mono); text-decoration: none; color: var(--navy); }
+nav#toc ol ol a { color: var(--muted); }
+nav#toc a:hover { color: var(--orange); }
+
+.manual-content { min-width: 0; padding: 20px 54px 70px; }
+.chapter-content { max-width: 100%; }
+hr.chapter { border: 0; border-top: 1px solid var(--line); margin: 64px 0 0; }
+
+h1, h2, h3, h4 { color: var(--navy); scroll-margin-top: 18px; }
+.manual-content > h1 {
+  margin: 54px 0 28px; padding: 0 0 16px;
+  border-bottom: 3px solid var(--orange);
+  font: 600 clamp(27px, 3.6vw, 43px)/1.15 var(--mono); letter-spacing: -.035em;
+}
+h2 { margin: 54px 0 16px; padding-bottom: 9px; border-bottom: 1px solid var(--line); font: 600 25px/1.25 var(--mono); letter-spacing: -.025em; }
+h3 { margin: 38px 0 12px; font: 600 18px/1.35 var(--mono); }
+h4 { margin: 30px 0 10px; font: 600 15px/1.4 var(--mono); }
+p { margin: .8rem 0; max-width: 78ch; }
+ul, ol { max-width: 78ch; }
+li { margin: .35rem 0; }
+strong { color: var(--navy); }
+
+.section-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: -4px 0 20px; color: var(--muted); font: 12px/1.5 var(--mono); }
+
+code {
+  font: .88em/1.5 var(--mono); background: #EEF1F5; color: var(--navy);
+  padding: .08em .34em; border-radius: 3px;
+}
+pre {
+  margin: 18px 0 24px; padding: 0; overflow: auto;
+  border: 1px solid var(--navy); background: var(--code-bg); color: var(--code-fg);
+  border-radius: 0;
+  box-shadow: 0 8px 22px rgba(11,29,58,.08);
+}
+pre::before {
+  content: "filees:space / technical frame"; display: block; padding: 9px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.16); color: #AEBBD0;
+  font: 11px/1.4 var(--mono); letter-spacing: .045em;
+}
+pre code { display: block; padding: 18px 20px 21px; background: none; color: inherit; border-radius: 0; font-size: 13px; line-height: 1.65; }
+
+.table-wrap { overflow-x: auto; margin: 18px 0 26px; }
+table { width: 100%; border-collapse: collapse; display: table; margin: 18px 0 26px; font-size: 14px; }
+th { background: var(--navy); color: var(--white); font: 600 12px/1.45 var(--mono); letter-spacing: .025em; text-align: left; padding: 10px 12px; border: 1px solid var(--navy); }
+td { padding: 9px 12px; border: 1px solid var(--line); vertical-align: top; }
+tr:nth-child(even) td { background: #FAFBFC; }
+.field-table td:first-child code { white-space: nowrap; }
+
+.note, .warn {
+  margin: 22px 0; padding: 15px 18px; border-left: 4px solid var(--orange); background: #FFF8F1; border-radius: 0;
+}
+.warn { border-left-color: var(--danger); background: #FFF4F3; }
+.note strong, .warn strong { font-family: var(--mono); }
+
+.decision {
+  margin: 28px 0; border: 1px solid var(--line); border-left: 5px solid var(--orange); background: #FBFCFD;
+}
+.decision-head { padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--navy); font: 600 13px/1.5 var(--mono); }
+.decision-grid { display: grid; grid-template-columns: 130px 1fr; }
+.decision-label { padding: 12px 14px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); }
+.decision-value { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.decision-grid > :nth-last-child(-n+2) { border-bottom: 0; }
+
+.system-figure { margin: 34px 0 42px; border: 1px solid var(--line); background: #FBFCFD; }
+.system-figure figcaption { padding: 14px 18px; border-bottom: 1px solid var(--line); font: 600 13px/1.5 var(--mono); color: var(--navy); }
+.figure-kicker { display: block; color: var(--orange); margin-bottom: 4px; }
+.diagram-scroll { overflow-x: auto; padding: 16px; }
+.system-figure svg { display: block; width: 100%; min-width: 850px; height: auto; }
+.svg-zone { fill: #FFFFFF; stroke: #D9DEE7; stroke-width: 1.5; }
+.svg-node { fill: #FFFFFF; stroke: #0B1D3A; stroke-width: 1.6; rx: 8; }
+.svg-node-authority { fill: #FFF4EA; stroke: #FF6A00; stroke-width: 2; rx: 8; }
+.svg-node-derived { fill: #F1F5FA; stroke: #5C6F8D; stroke-width: 1.5; rx: 8; }
+.svg-node-transient { fill: #FAFAFA; stroke: #8A94A6; stroke-width: 1.5; stroke-dasharray: 7 5; rx: 8; }
+.svg-text { fill: #0B1D3A; font: 600 14px var(--mono); }
+.svg-small { fill: #667085; font: 12px var(--mono); }
+.svg-zone-label { fill: #667085; font: 600 12px var(--mono); letter-spacing: .08em; }
+.svg-arrow { stroke: #0B1D3A; stroke-width: 2; fill: none; }
+.svg-arrow-orange { stroke: #FF6A00; stroke-width: 2.2; fill: none; }
+.svg-arrow-dashed { stroke: #667085; stroke-width: 1.7; fill: none; stroke-dasharray: 7 5; }
+.diagram-a .svg-arrow { marker-end: url(#arrowA); } .diagram-a .svg-arrow-orange { marker-end: url(#arrowOrangeA); } .diagram-a .svg-arrow-dashed { marker-end: url(#arrowMutedA); }
+.diagram-b .svg-arrow { marker-end: url(#arrowB); } .diagram-b .svg-arrow-orange { marker-end: url(#arrowOrangeB); } .diagram-b .svg-arrow-dashed { marker-end: url(#arrowMutedB); }
+.diagram-c .svg-arrow { marker-end: url(#arrowC); } .diagram-c .svg-arrow-orange { marker-end: url(#arrowOrangeC); }
+.figure-legend { display: flex; flex-wrap: wrap; gap: 12px 22px; padding: 0 18px 18px; color: var(--muted); font: 11px/1.5 var(--mono); }
+.figure-legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 7px; vertical-align: -2px; border: 1px solid var(--navy); background: #fff; }
+.figure-legend .authority::before { border-color: var(--orange); background: #FFF4EA; }
+.figure-legend .derived::before { border-color: #5C6F8D; background: #F1F5FA; }
+.figure-legend .transient::before { border-style: dashed; border-color: #8A94A6; background: #FAFAFA; }
+
+.design-boundary { margin-top: 26px; padding: 16px 18px; border: 1px dashed var(--line-strong); background: #FAFBFC; color: #344054; }
+.design-boundary strong { font-family: var(--mono); }
+
+footer.manual-footer { display: flex; justify-content: space-between; gap: 24px; padding: 20px 28px; border-top: 1px solid var(--line); color: var(--muted); font: 11px/1.5 var(--mono); }
+
+@media (max-width: 1080px) {
+  .manual-layout { grid-template-columns: 250px minmax(0,1fr); }
+  .manual-content { padding-left: 36px; padding-right: 36px; }
+  .maturity-legend { grid-template-columns: 1fr 1fr; }
+  .legend-item:nth-child(2) { border-right: 0; }
+  .legend-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+}
+@media (max-width: 780px) {
+  .sheet { width: 100%; margin: 0; border-left: 0; border-right: 0; box-shadow: none; }
+  .masthead { align-items: flex-start; flex-direction: column; }
+  .masthead-meta { text-align: left; }
+  .hero { padding: 38px 24px 32px; }
+  .manual-layout { display: block; }
+  nav#toc { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
+  .manual-content { padding: 10px 24px 54px; }
+  .decision-grid { grid-template-columns: 1fr; }
+  .decision-label { border-right: 0; padding-bottom: 4px; }
+  .decision-value { padding-top: 5px; }
+  footer.manual-footer { flex-direction: column; }
+}
+@media (max-width: 520px) {
+  .maturity-legend { grid-template-columns: 1fr; }
+  .legend-item { border-right: 0; border-bottom: 1px solid var(--line); }
+  .legend-item:last-child { border-bottom: 0; }
+}
+@media print {
+  @page { margin: 14mm; }
+  html, body { background: white; }
+  .sheet { width: 100%; margin: 0; border: 0; box-shadow: none; }
+  .manual-layout { display: block; }
+  nav#toc { position: static; max-height: none; border: 1px solid var(--line); page-break-after: always; }
+  .manual-content { padding: 0; }
+  .masthead, .hero, .maturity-legend { break-inside: avoid; }
+  h1, h2, h3, h4 { break-after: avoid; }
+  pre, table, .decision, .system-figure { break-inside: avoid; }
+  .system-figure svg { min-width: 0; }
+  .diagram-scroll { overflow: visible; padding: 8px; }
+  a { color: inherit; text-decoration: none; }
+  footer.manual-footer { padding-left: 0; padding-right: 0; }
+}
+</style>
+</head>
+<body>
+<main class="sheet"><header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">single HTML · embedded CSS/SVG · no network dependencies</div>
+</header><section class="hero">
+<p class="eyebrow">FileES / canonical system manual</p>
+<h1>Architecture, operation and recovery</h1>
+<p class="hero-copy">A file-centric synchronization system built around explicit ownership, durable artifacts, bounded publication and recoverable failure.</p>
+<div class="meta-strip">
+<span><strong>Version</strong> 0.1.0</span>
+<span><strong>Date</strong> 2026-07-16</span>
+<span><strong>Server</strong> OpenBSD reference; Linux build</span>
+<span><strong>Client</strong> Linux; Windows GUI artifact</span>
+</div>
+<div class="canonical-note"><strong>Canonical language:</strong> English. The Polish edition is maintained as a separate, strict 1:1 translation with the same structure, anchors, diagrams and maturity markers.</div>
+</section><section aria-label="Maturity status legend" class="maturity-legend">
+<div class="legend-item"><span class="status status-verified">Verified</span><p>Behaviour is implemented and covered by relevant native, integration, regression or chaos tests.</p></div>
+<div class="legend-item"><span class="status status-implemented">Implemented</span><p>Code exists, but some target-platform acceptance or later integration remains incomplete.</p></div>
+<div class="legend-item"><span class="status status-designed">Designed</span><p>The contract and boundaries are approved; implementation is incomplete or intentionally deferred.</p></div>
+<div class="legend-item"><span class="status status-planned">Planned</span><p>Direction is recorded, but it is not part of the current operational contract.</p></div>
+</section>
+<!-- ===================== ENGLISH ===================== -->
+<!-- /lang-section EN -->
+<!-- ===================== POLSKI ===================== -->
+<!-- /lang-section PL -->
+<!-- ===================== ENGLISH ===================== -->
+<!-- /lang-section EN -->
+<!-- ===================== POLSKI ===================== -->
+<!-- /lang-section PL -->
+<!-- ===================== ENGLISH ===================== -->
+<!-- /lang-section EN -->
+<!-- ===================== POLSKI ===================== -->
+<!-- /lang-section PL -->
+<!-- ===================== ENGLISH ===================== -->
+<!-- /lang-section EN -->
+<!-- ===================== POLSKI ===================== -->
+<!-- /lang-section PL -->
+<!-- ===================== ENGLISH ===================== -->
+<!-- /lang-section EN -->
+<!-- ===================== POLSKI ===================== -->
+<!-- /lang-section PL -->
+<div class="manual-layout"><nav aria-label="Manual contents" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / index</span>
+<h2>Contents</h2>
+</div>
+<ol>
+<li><a href="#ch1">1. Mechanics and Architecture</a>
+<ol>
+<li><a href="#ch1-overview">Protocol overview</a></li>
+<li><a href="#system-topology">System topology</a></li>
+<li><a href="#truth-map">Truth and artifact map</a></li>
+<li><a href="#onboarding-lifecycle">Onboarding lifecycle</a></li>
+<li><a href="#ch1-client-arch">Client architecture</a></li>
+<li><a href="#ch1-states">Operation states</a></li>
+<li><a href="#ch1-bundle">Bundle and filesystem protocol</a></li>
+<li><a href="#ch1-otp">OTP mechanism</a></li>
+<li><a href="#ch1-ssh">SSH transport</a></li>
+<li><a href="#ch1-sandbox">pledge / unveil sandbox</a></li>
+<li><a href="#ch1-service-repo">Service repository</a></li>
+</ol>
+</li>
+<li><a href="#ch2">2. User Guide</a>
+<ol>
+<li><a href="#ch2-install">Client installation</a></li>
+<li><a href="#ch2-config">Configuration</a></li>
+<li><a href="#ch2-firstrun">First run and onboarding</a></li>
+<li><a href="#ch2-sync">Day-to-day sync</a></li>
+<li><a href="#ch2-passports">Edit passports</a></li>
+<li><a href="#ch2-gui">GUI tray</a></li>
+<li><a href="#ch2-cli">CLI commands</a></li>
+<li><a href="#ch2-trouble">Troubleshooting</a></li>
+</ol>
+</li>
+<li><a href="#ch3">3. Server Installation and Deploy</a>
+<ol>
+<li><a href="#ch3-prereq">Prerequisites</a></li>
+<li><a href="#ch3-install">install-server.sh</a></li>
+<li><a href="#ch3-sshd">OpenBSD sshd configuration</a></li>
+<li><a href="#ch3-serverjson">server.json reference</a></li>
+<li><a href="#ch3-keys">Key generation</a></li>
+</ol>
+</li>
+<li><a href="#ch4">4. Administration</a>
+<ol>
+<li><a href="#ch4-admin">filees-admin</a></li>
+<li><a href="#ch4-operation">filees-operation</a></li>
+<li><a href="#ch4-audit">Audit log</a></li>
+<li><a href="#ch4-mail">Mail outbox</a></li>
+<li><a href="#ch4-recovery">Recovery</a></li>
+<li><a href="#ch4-monitoring">Monitoring</a></li>
+</ol>
+</li>
+<li><a href="#ch5">5. Security Appendix</a>
+<ol>
+<li><a href="#ch5-invariants">Core deployment invariants</a></li>
+<li><a href="#ch5-transport">Transport hardening</a></li>
+<li><a href="#ch5-client">Client-side invariants</a></li>
+<li><a href="#ch5-gui">GUI boundary invariants</a></li>
+</ol>
+</li>
+</ol>
+</nav><div class="manual-content"><hr class="chapter"/><h1 id="ch1">Chapter 1: Mechanics and Architecture</h1><div class="chapter-content">
+<h2 id="ch1-overview">1.1 Protocol Overview</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Current architectural contract and tested client/server foundations.</span></div><div class="note"><strong>Manual rule:</strong> significant architectural choices are recorded with their rejected alternatives and cost. This is part of the specification, not historical commentary.</div>
+<p>FileES is a file-synchronisation daemon that keeps local working directories in sync with a remote SVN repository. SVN is used here purely as a transport and storage layer — revision-control semantics are secondary. The target user experience is a silent tray icon that keeps files synchronised without the user ever needing to know that SVN is involved.</p>
+<p>The system is designed around the following principles:</p>
+<ul>
+<li><strong>Convergence, not journalling.</strong> The periodic scanner captures end-state between ticks. Several filesystem operations between two scans may collapse into a single SVN commit.</li>
+<li><strong>No data loss.</strong> The commit staging map is written atomically to disk after every event. If the daemon dies between a commit being accepted by the server and the working-copy metadata being updated, the next restart reconciles by querying SVN status and skipping already-accepted entries.</li>
+<li><strong>HEAD wins.</strong> Conflicts are resolved by keeping the server version. The local conflicting version is preserved in a timestamped <code>!kolizje/</code> directory before <code>svn resolve --accept theirs-full</code> is called.</li>
+<li><strong>Push deploy.</strong> Client identity (an Ed25519 key pair) is provisioned by the server through a reverse SSH tunnel initiated by the client. The server never holds a private key.</li>
+</ul><div class="decision">
+<div class="decision-head">Design rationale / convergence instead of event journalling</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">The periodic scanner records the observable end-state at scan boundaries.</div>
+<div class="decision-label">Why</div><div class="decision-value">FileES synchronises content convergence; it does not need to reproduce every user gesture or filesystem syscall.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Using inotify/fsnotify as the source of truth; maintaining a durable operation journal.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Several operations between scans may collapse into one commit or a no-op.</div>
+</div>
+</div>
+<h3 id="system-topology">System topology</h3>
+<p>The diagram is organised by ownership boundary, not by Go package. Packages may move; the authority and communication rules must not.</p>
+<figure class="system-figure">
+<figcaption><span class="figure-kicker">Graph A</span>Actors, process boundaries and authoritative stores</figcaption>
+<div class="diagram-scroll">
+<svg aria-label="FileES system topology" class="diagram-a" role="img" viewbox="0 0 1180 610"><style>
+.svg-zone { fill:#FFFFFF; stroke:#D9DEE7; stroke-width:1.5; }
+.svg-node { fill:#FFFFFF; stroke:#0B1D3A; stroke-width:1.6; }
+.svg-node-authority { fill:#FFF4EA; stroke:#FF6A00; stroke-width:2; }
+.svg-node-derived { fill:#F1F5FA; stroke:#5C6F8D; stroke-width:1.5; }
+.svg-node-transient { fill:#FAFAFA; stroke:#8A94A6; stroke-width:1.5; stroke-dasharray:7 5; }
+.svg-text { fill:#0B1D3A; font-family:DejaVu Sans Mono,monospace; font-size:14px; font-weight:600; }
+.svg-small { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; }
+.svg-zone-label { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; font-weight:600; letter-spacing:1px; }
+.svg-arrow { stroke:#0B1D3A; stroke-width:2; fill:none; }
+.svg-arrow-orange { stroke:#FF6A00; stroke-width:2.2; fill:none; }
+.svg-arrow-dashed { stroke:#667085; stroke-width:1.7; fill:none; stroke-dasharray:7 5; }
+
+.svg-arrow { marker-end:url(#arrowA); }
+.svg-arrow-orange { marker-end:url(#arrowOrangeA); }
+.svg-arrow-dashed { marker-end:url(#arrowMutedA); }
+</style>
+<defs>
+<marker id="arrowA" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0B1D3A"></path></marker>
+<marker id="arrowOrangeA" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#FF6A00"></path></marker>
+<marker id="arrowMutedA" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"></path></marker>
+</defs>
+<rect class="svg-zone" height="525" rx="14" width="590" x="20" y="40"></rect><text class="svg-zone-label" x="42" y="70">CLIENT HOST</text>
+<rect class="svg-zone" height="525" rx="14" width="525" x="635" y="40"></rect><text class="svg-zone-label" x="657" y="70">OPENBSD SERVER</text>
+<rect class="svg-node" height="58" rx="8" width="145" x="65" y="115"></rect><text class="svg-text" text-anchor="middle" x="137" y="140">User</text><text class="svg-small" text-anchor="middle" x="137" y="158">intent only</text>
+<rect class="svg-node-derived" height="78" rx="8" width="160" x="255" y="105"></rect><text class="svg-text" text-anchor="middle" x="335" y="135">GUI / CLI</text><text class="svg-small" text-anchor="middle" x="335" y="155">thin local clients</text>
+<rect class="svg-node-authority" height="98" rx="8" width="125" x="455" y="95"></rect><text class="svg-text" text-anchor="middle" x="517" y="127">Client</text><text class="svg-text" text-anchor="middle" x="517" y="147">daemon</text><text class="svg-small" text-anchor="middle" x="517" y="170">runtime owner</text>
+<path class="svg-arrow" d="M210 144 H255"></path><path class="svg-arrow" d="M415 144 H455"></path>
+<rect class="svg-node-authority" height="78" rx="8" width="180" x="700" y="95"></rect><text class="svg-text" text-anchor="middle" x="790" y="125">Data repositories</text><text class="svg-small" text-anchor="middle" x="790" y="147">SVN content truth</text>
+<path class="svg-arrow" d="M580 127 H700"></path><path class="svg-arrow" d="M700 160 H580"></path>
+<rect class="svg-node-derived" height="78" rx="8" width="170" x="940" y="95"></rect><text class="svg-text" text-anchor="middle" x="1025" y="125">Client projection</text><text class="svg-small" text-anchor="middle" x="1025" y="147">read-only control view</text>
+<path class="svg-arrow-dashed" d="M940 145 H610 Q590 145 580 170"></path>
+<rect class="svg-node" height="68" rx="8" width="145" x="75" y="300"></rect><text class="svg-text" text-anchor="middle" x="147" y="328">Onboarding</text><text class="svg-small" text-anchor="middle" x="147" y="348">request + OTP</text>
+<rect class="svg-node" height="68" rx="8" width="150" x="290" y="300"></rect><text class="svg-text" text-anchor="middle" x="365" y="328">Reverse helper</text><text class="svg-small" text-anchor="middle" x="365" y="348">loopback only</text>
+<path class="svg-arrow" d="M220 334 H290"></path>
+<rect class="svg-node" height="68" rx="8" width="150" x="680" y="270"></rect><text class="svg-text" text-anchor="middle" x="755" y="298">System sshd</text><text class="svg-small" text-anchor="middle" x="755" y="318">only endpoint</text>
+<rect class="svg-node-transient" height="98" rx="8" width="190" x="870" y="255"></rect><text class="svg-text" text-anchor="middle" x="965" y="286">Short-lived tools</text><text class="svg-small" text-anchor="middle" x="965" y="308">entry · worker · mail</text><text class="svg-small" text-anchor="middle" x="965" y="328">one action, then exit</text>
+<path class="svg-arrow-orange" d="M440 334 H635 Q655 334 680 304"></path><path class="svg-arrow-orange" d="M830 304 H870"></path>
+<rect class="svg-node-transient" height="78" rx="8" width="190" x="680" y="430"></rect><text class="svg-text" text-anchor="middle" x="775" y="459">Operation bundle</text><text class="svg-small" text-anchor="middle" x="775" y="481">crash-visible workflow</text>
+<rect class="svg-node" height="78" rx="8" width="170" x="920" y="430"></rect><text class="svg-text" text-anchor="middle" x="1005" y="459">Service projector</text><text class="svg-small" text-anchor="middle" x="1005" y="481">exclusive writer</text>
+<path class="svg-arrow" d="M965 353 V400 Q965 420 870 455"></path><path class="svg-arrow" d="M870 469 H920"></path>
+<rect class="svg-node-authority" height="38" rx="8" width="170" x="920" y="515"></rect><text class="svg-text" text-anchor="middle" x="1005" y="540">Service repository</text>
+<path class="svg-arrow-orange" d="M1005 508 V515"></path><path class="svg-arrow-orange" d="M1088 515 V205 Q1088 185 1055 173"></path>
+</svg>
+</div>
+<div class="figure-legend"><span class="authority">authoritative durable state</span><span class="derived">derived/read-only state</span><span class="transient">crash-visible transient artifact</span></div>
+</figure>
+<h3 id="truth-map">Truth and artifact map</h3>
+<p>FileES has several explicit states, but each state has one owner. Derived views may be discarded and rebuilt; secrets never cross into SVN.</p>
+<figure class="system-figure">
+<figcaption><span class="figure-kicker">Graph B</span>Data plane and control plane sources of truth</figcaption>
+<div class="diagram-scroll">
+<svg aria-label="FileES truth and artifact map" class="diagram-b" role="img" viewbox="0 0 1180 470"><style>
+.svg-zone { fill:#FFFFFF; stroke:#D9DEE7; stroke-width:1.5; }
+.svg-node { fill:#FFFFFF; stroke:#0B1D3A; stroke-width:1.6; }
+.svg-node-authority { fill:#FFF4EA; stroke:#FF6A00; stroke-width:2; }
+.svg-node-derived { fill:#F1F5FA; stroke:#5C6F8D; stroke-width:1.5; }
+.svg-node-transient { fill:#FAFAFA; stroke:#8A94A6; stroke-width:1.5; stroke-dasharray:7 5; }
+.svg-text { fill:#0B1D3A; font-family:DejaVu Sans Mono,monospace; font-size:14px; font-weight:600; }
+.svg-small { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; }
+.svg-zone-label { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; font-weight:600; letter-spacing:1px; }
+.svg-arrow { stroke:#0B1D3A; stroke-width:2; fill:none; }
+.svg-arrow-orange { stroke:#FF6A00; stroke-width:2.2; fill:none; }
+.svg-arrow-dashed { stroke:#667085; stroke-width:1.7; fill:none; stroke-dasharray:7 5; }
+
+.svg-arrow { marker-end:url(#arrowB); }
+.svg-arrow-orange { marker-end:url(#arrowOrangeB); }
+.svg-arrow-dashed { marker-end:url(#arrowMutedB); }
+</style>
+<defs>
+<marker id="arrowB" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0B1D3A"></path></marker>
+<marker id="arrowOrangeB" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#FF6A00"></path></marker>
+<marker id="arrowMutedB" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"></path></marker>
+</defs>
+<text class="svg-zone-label" x="25" y="35">DATA PLANE</text>
+<rect class="svg-node-authority" height="70" rx="8" width="175" x="25" y="60"></rect><text class="svg-text" text-anchor="middle" x="112" y="89">Local filesystem</text><text class="svg-small" text-anchor="middle" x="112" y="110">current local content</text>
+<rect class="svg-node-derived" height="70" rx="8" width="170" x="245" y="60"></rect><text class="svg-text" text-anchor="middle" x="330" y="89">Watcher snapshot</text><text class="svg-small" text-anchor="middle" x="330" y="110">manifest + MD5 backlog</text>
+<rect class="svg-node-transient" height="70" rx="8" width="170" x="460" y="60"></rect><text class="svg-text" text-anchor="middle" x="545" y="89">Commit cache</text><text class="svg-small" text-anchor="middle" x="545" y="110">durable pending intent</text>
+<rect class="svg-node" height="70" rx="8" width="150" x="675" y="60"></rect><text class="svg-text" text-anchor="middle" x="750" y="89">Planner</text><text class="svg-small" text-anchor="middle" x="750" y="110">bounded batches</text>
+<rect class="svg-node" height="70" rx="8" width="150" x="870" y="60"></rect><text class="svg-text" text-anchor="middle" x="945" y="89">Committer</text><text class="svg-small" text-anchor="middle" x="945" y="110">publish + reconcile</text>
+<rect class="svg-node-authority" height="70" rx="8" width="100" x="1055" y="60"></rect><text class="svg-text" text-anchor="middle" x="1105" y="89">SVN</text><text class="svg-small" text-anchor="middle" x="1105" y="110">data truth</text>
+<path class="svg-arrow" d="M200 95 H245"></path><path class="svg-arrow" d="M415 95 H460"></path><path class="svg-arrow" d="M630 95 H675"></path><path class="svg-arrow" d="M825 95 H870"></path><path class="svg-arrow-orange" d="M1020 95 H1055"></path>
+<text class="svg-zone-label" x="25" y="230">CONTROL PLANE</text>
+<rect class="svg-node" height="70" rx="8" width="175" x="25" y="255"></rect><text class="svg-text" text-anchor="middle" x="112" y="284">Authenticated request</text><text class="svg-small" text-anchor="middle" x="112" y="305">actor derived from key</text>
+<rect class="svg-node-transient" height="70" rx="8" width="170" x="245" y="255"></rect><text class="svg-text" text-anchor="middle" x="330" y="284">Operation bundle</text><text class="svg-small" text-anchor="middle" x="330" y="305">idempotent saga state</text>
+<rect class="svg-node" height="70" rx="8" width="170" x="460" y="255"></rect><text class="svg-text" text-anchor="middle" x="545" y="284">Projector</text><text class="svg-small" text-anchor="middle" x="545" y="305">validates + commits</text>
+<rect class="svg-node-authority" height="70" rx="8" width="180" x="675" y="255"></rect><text class="svg-text" text-anchor="middle" x="765" y="284">admin/ canonical state</text><text class="svg-small" text-anchor="middle" x="765" y="305">service repository</text>
+<rect class="svg-node-derived" height="70" rx="8" width="180" x="900" y="255"></rect><text class="svg-text" text-anchor="middle" x="990" y="284">clients/&lt;id&gt; projection</text><text class="svg-small" text-anchor="middle" x="990" y="305">minimal read-only view</text>
+<path class="svg-arrow" d="M200 290 H245"></path><path class="svg-arrow" d="M415 290 H460"></path><path class="svg-arrow-orange" d="M630 290 H675"></path><path class="svg-arrow-dashed" d="M855 290 H900"></path>
+<rect class="svg-node-derived" height="58" rx="8" width="180" x="900" y="365"></rect><text class="svg-text" text-anchor="middle" x="990" y="389">Local attachment map</text><text class="svg-small" text-anchor="middle" x="990" y="408">repo_id → local_path</text>
+<path class="svg-arrow-dashed" d="M990 325 V365"></path>
+<text class="svg-small" x="25" y="458">Never in SVN: private client keys · OTP plaintext after delivery · e-mail addresses after redaction</text><text class="svg-small" x="25" y="478">server private keys · local absolute paths</text>
+</svg>
+</div>
+<div class="figure-legend"><span class="authority">authoritative durable state</span><span class="derived">derived or machine-local view</span><span class="transient">durable workflow artifact, not domain truth</span></div>
+</figure>
+<h3 id="onboarding-lifecycle">Onboarding lifecycle</h3>
+<p>The verified activation vertical reaches <code>active</code>. Each boundary is persisted before the next external effect, allowing expiry or fail-closed recovery without inferring hidden process state.</p>
+<figure class="system-figure">
+<figcaption><span class="figure-kicker">Graph C</span>Crash-visible onboarding states through active</figcaption>
+<div class="diagram-scroll">
+<svg aria-label="Onboarding lifecycle" class="diagram-c" role="img" viewbox="0 0 1320 260"><style>
+.svg-zone { fill:#FFFFFF; stroke:#D9DEE7; stroke-width:1.5; }
+.svg-node { fill:#FFFFFF; stroke:#0B1D3A; stroke-width:1.6; }
+.svg-node-authority { fill:#FFF4EA; stroke:#FF6A00; stroke-width:2; }
+.svg-node-derived { fill:#F1F5FA; stroke:#5C6F8D; stroke-width:1.5; }
+.svg-node-transient { fill:#FAFAFA; stroke:#8A94A6; stroke-width:1.5; stroke-dasharray:7 5; }
+.svg-text { fill:#0B1D3A; font-family:DejaVu Sans Mono,monospace; font-size:14px; font-weight:600; }
+.svg-small { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; }
+.svg-zone-label { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; font-weight:600; letter-spacing:1px; }
+.svg-arrow { stroke:#0B1D3A; stroke-width:2; fill:none; }
+.svg-arrow-orange { stroke:#FF6A00; stroke-width:2.2; fill:none; }
+.svg-arrow-dashed { stroke:#667085; stroke-width:1.7; fill:none; stroke-dasharray:7 5; }
+
+.svg-arrow { marker-end:url(#arrowC); }
+.svg-arrow-orange { marker-end:url(#arrowOrangeC); }
+</style>
+<defs>
+<marker id="arrowC" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0B1D3A"></path></marker>
+<marker id="arrowOrangeC" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#FF6A00"></path></marker>
+</defs>
+<rect class="svg-node" height="68" rx="8" width="120" x="20" y="80"></rect><text class="svg-text" text-anchor="middle" x="80" y="108">Admin ticket</text><text class="svg-small" text-anchor="middle" x="80" y="130">verified</text>
+<rect class="svg-node-transient" height="68" rx="8" width="120" x="175" y="80"></rect><text class="svg-text" text-anchor="middle" x="235" y="108">Claim</text><text class="svg-small" text-anchor="middle" x="235" y="130">verified</text>
+<rect class="svg-node-transient" height="68" rx="8" width="135" x="330" y="80"></rect><text class="svg-text" text-anchor="middle" x="397" y="108">Operation bundle</text><text class="svg-small" text-anchor="middle" x="397" y="130">verified</text>
+<rect class="svg-node" height="68" rx="8" width="125" x="500" y="80"></rect><text class="svg-text" text-anchor="middle" x="562" y="108">OTP + tunnel</text><text class="svg-small" text-anchor="middle" x="562" y="130">verified</text>
+<rect class="svg-node" height="68" rx="8" width="135" x="660" y="80"></rect><text class="svg-text" text-anchor="middle" x="727" y="108">Pinned helper</text><text class="svg-small" text-anchor="middle" x="727" y="130">verified</text>
+<rect class="svg-node-authority" height="88" rx="8" width="155" x="830" y="70"></rect><text class="svg-text" text-anchor="middle" x="907" y="103">identity_generated</text><text class="svg-small" text-anchor="middle" x="907" y="127">verified</text>
+<rect class="svg-node-authority" height="68" rx="8" width="135" x="1020" y="80"></rect><text class="svg-text" text-anchor="middle" x="1087" y="108">access_staged</text><text class="svg-small" text-anchor="middle" x="1087" y="130">verified</text>
+<rect class="svg-node-authority" height="68" rx="8" width="110" x="1190" y="80"></rect><text class="svg-text" text-anchor="middle" x="1245" y="105">possession</text><text class="svg-text" text-anchor="middle" x="1245" y="123">verified</text><text class="svg-small" text-anchor="middle" x="1245" y="141">verified</text>
+<path class="svg-arrow" d="M140 114 H175"></path><path class="svg-arrow" d="M295 114 H330"></path><path class="svg-arrow" d="M465 114 H500"></path><path class="svg-arrow" d="M625 114 H660"></path><path class="svg-arrow-orange" d="M795 114 H830"></path><path class="svg-arrow" d="M985 114 H1020"></path><path class="svg-arrow" d="M1155 114 H1190"></path>
+<path class="svg-arrow" d="M1245 148 V195 H1120"></path><rect class="svg-node-authority" height="58" rx="8" width="150" x="970" y="175"></rect><text class="svg-text" text-anchor="middle" x="1045" y="199">active + first view</text><text class="svg-small" text-anchor="middle" x="1045" y="218">verified</text>
+</svg>
+</div>
+</figure>
+<div class="design-boundary"><strong>Reading rule:</strong> a diagram node describes ownership or contract, not necessarily a process that remains resident. On the server, most nodes are short-lived commands over files and the system <code>sshd</code>.</div>
+<h2 id="ch1-client-arch">1.2 Client Architecture</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Client mechanics, recovery and IPC boundaries are covered by integration and chaos tests.</span></div>
+<p>For each configured repository the daemon runs an independent pipeline:</p>
+<pre><code>Scanner (watcher) --events--&gt; Commit Service --svn--&gt; SVN server
+                                     |
+                               HEAD Poller
+                                     |
+                              Reconciliation</code></pre>
+<h4>Scanner (<code>pkg/watcher</code>)</h4>
+<p>Periodically walks the working-copy tree and compares current state with the manifest stored in <code>.filees/state/manifest.json</code>. Change detection uses mtime, size, and MD5 hash. Files under 64 MiB are hashed inline within a per-scan budget; larger files are queued in a persistent MD5 backlog processed one-at-a-time by a background worker that always picks the smallest pending file. This enables rename detection even for large files.</p>
+<p>Deletion events are debounced for 5 minutes (equal to the new-file latency) so that a file that is deleted and immediately re-created does not produce a spurious delete commit. During an active commit (<code>commit.busy</code> flag) the scanner switches to lightweight mode, watching only <code>.filees/tickets/</code>.</p><div class="decision">
+<div class="decision-head">Design rationale / periodic scanner instead of OS event dependence</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">The manifest and persistent MD5 backlog are authoritative for change detection.</div>
+<div class="decision-label">Why</div><div class="decision-value">A missed kernel event, daemon downtime or platform-specific watcher behaviour cannot permanently hide a change.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Treating native filesystem notification streams as a complete and durable history.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Detection latency is bounded by <code>watch_interval</code>, and scanning consumes predictable I/O.</div>
+</div>
+</div>
+<h4>Commit Service (<code>pkg/commit</code>)</h4>
+<p>Coalesces scanner events per path and, on each commit tick, produces batches bounded by <code>max_batch_files</code> (default 100) and <code>max_batch_mib</code> (default 512 MiB). A single file larger than the MiB limit gets its own batch so it cannot starve the queue. If total staged bytes reach <code>backlog_flush_mib</code> (default 1024 MiB) and at least one entry is outside the new-file latency window, a flush is forced without waiting for the regular interval.</p>
+<p>Before any SVN operation, each path is re-classified by <code>svn status --xml --verbose</code> to confirm its actual state in the working copy. Empty commits are prohibited.</p>
+<p>Event coalescing rules:</p>
+<div class="table-wrap"><table>
+<tr><th>Sequence</th><th>Result</th></tr>
+<tr><td><code>Added + Modified</code></td><td><code>Added</code></td></tr>
+<tr><td><code>Modified + Deleted</code></td><td><code>Deleted</code></td></tr>
+<tr><td><code>Deleted + Added</code></td><td><code>Added</code> (file came back)</td></tr>
+<tr><td><code>Renamed</code> with unversioned source</td><td>Degraded to <code>Added</code></td></tr>
+</table></div><div class="decision">
+<div class="decision-head">Design rationale / planner plans; committer publishes</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">Batch selection and publication remain separate responsibilities even when both grow under chaos testing.</div>
+<div class="decision-label">Why</div><div class="decision-value">Planning owns ordering, size and starvation rules. Publication owns SVN effects, confirmation and reconciliation.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Splitting by line count; allowing the publisher to invent batching policy; extracting fragments without a finished contract.</div>
+<div class="decision-label">Cost</div><div class="decision-value">The planner and committer may remain large because failure handling deepens their responsibility without widening it.</div>
+</div>
+</div>
+<h4>HEAD Poller and Reconciliation</h4>
+<p>Every <code>poll_interval</code> (default 30 s) the daemon fetches the server HEAD revision. If HEAD exceeds the local revision, <code>svn update</code> is called. Before any update, a full recursive status is run; a <code>missing</code> entry defers the update so that local deletes and rename sources are not reconstructed from the server. Conflicts found after update are handled by copying the local version to <code>!kolizje/&lt;timestamp&gt;_lokalne/</code> with a <code>.meta</code> sidecar, then calling <code>svn resolve --accept theirs-full</code> and emitting a <code>RECON-3002</code> error.</p><div class="decision">
+<div class="decision-head">Design rationale / HEAD wins without silent local loss</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">The server version resolves the working-copy conflict, but the local version is copied to <code>!kolizje/</code> first.</div>
+<div class="decision-label">Why</div><div class="decision-value">The daemon must converge without interactive blocking, while preserving every conflicting local payload for later review.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Interactive merge dialogs in the daemon; silently discarding either side; leaving the working copy indefinitely conflicted.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Users may need to review conflict copies manually, and the archive can accumulate.</div>
+</div>
+</div>
+<h4>IPC Server (<code>pkg/ipcserver</code>) and Client (<code>pkg/ipcclient</code>)</h4>
+<p>The daemon exposes a Unix domain socket at <code>\$XDG_RUNTIME_DIR/filees.sock</code> (fallback: <code>~/.filees/daemon.sock</code>). The protocol is <code>filees.contract/v1</code> — versioned JSON Lines, one object per line. Normal requests are request/response; <code>events.subscribe</code> switches the connection to a server-push stream. Currently implemented commands: <code>system.hello</code>, <code>system.status</code>, <code>repo.list</code>, <code>repo.status</code>, <code>repo.lock</code>, <code>repo.unlock</code>, <code>error.list</code>, <code>events.subscribe</code>.</p><div class="decision">
+<div class="decision-head">Design rationale / events invalidate snapshots</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">GUI events are signals to refetch daemon-owned snapshots, not a second state machine.</div>
+<div class="decision-label">Why</div><div class="decision-value">A lost event, reconnect or version gap cannot make the GUI permanently diverge from daemon truth.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Building durable GUI state solely by replaying an event stream; letting the GUI inspect <code>.filees</code> or execute SVN.</div>
+<div class="decision-label">Cost</div><div class="decision-value">The GUI performs additional status reads after events and remains intentionally dependent on the daemon contract.</div>
+</div>
+</div>
+<h4>Runtime Gates (<code>pkg/runtime</code>)</h4>
+<p><strong>HostGate</strong> limits the number of concurrent commits across all daemon instances on the host (directory-based locking). <strong>RepoMutex</strong> enforces at most one commit at a time per repository. Both use atomic directory operations with PID, creation timestamp, and a unique owner token. On Linux/POSIX (S3 correction), the owner file carries an OS-managed <code>flock</code> so that PID recycling cannot produce a false “lock is still held” result.</p>
+<h2 id="ch1-states">1.3 Operation States</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Onboarding transitions through active, expiry and revocation paths are implemented and tested.</span></div>
+<p>Onboarding operations (from <code>pkg/onboarding/types.go</code>) progress through the following states:</p>
+<div class="table-wrap"><table>
+<tr><th>State constant</th><th>String value</th><th>Meaning</th></tr>
+<tr><td><code>OperationAwaitingTunnel</code></td><td><code>awaiting_tunnel</code></td><td>Ticket claimed; waiting for OTP and reverse tunnel</td></tr>
+<tr><td><code>OperationTunnelAuthorized</code></td><td><code>tunnel_authorized</code></td><td>BSD Auth validated OTP; forward not yet established</td></tr>
+<tr><td><code>OperationTunnelStarted</code></td><td><code>tunnel_started</code></td><td>filees-entry confirmed reverse port; worker about to start</td></tr>
+<tr><td><code>OperationHelperAnnounced</code></td><td><code>helper_announced</code></td><td>Worker pinned the client helper</td></tr>
+<tr><td><code>OperationIdentityGenerated</code></td><td><code>identity_generated</code></td><td>Ed25519 key pair generated on client; public key stored in bundle</td></tr>
+<tr><td><code>OperationAccessStaged</code></td><td><code>access_staged</code></td><td>Installation public key is present in the generated SSH/SVN runtime authorisation</td></tr>
+<tr><td><code>OperationPossessionProved</code></td><td><code>possession_verified</code></td><td>System sshd authenticated the installation key and the server forced command wrote a matching receipt</td></tr>
+<tr><td><code>OperationActive</code></td><td><code>active</code></td><td>Client record and first projection were committed to the service repository</td></tr>
+<tr><td><code>OperationOTPExhausted</code></td><td><code>otp_exhausted</code></td><td>Too many wrong OTP attempts</td></tr>
+<tr><td><code>OperationExpired</code></td><td><code>expired</code></td><td>Operation TTL elapsed</td></tr>
+</table></div>
+<p>Repository provisioning states (from <code>pkg/provisioning</code>):</p>
+<pre><code>local_validated
+  -&gt; provisioning_requested
+  -&gt; repository_request_failed -&gt; provisioning_requested
+  -&gt; repository_ready
+  -&gt; initial_commit_in_progress
+  -&gt; initial_commit_failed -&gt; initial_commit_in_progress
+  -&gt; initial_snapshot_published
+  -&gt; active</code></pre>
+<h2 id="ch1-bundle">1.4 Bundle Layout and Filesystem Protocol</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Atomic claim/commit and recovery paths tested natively on OpenBSD.</span></div>
+<p>The server side uses a filesystem-based protocol with no hidden database or background daemon. A single committed <code>filees.onboarding-bundle/v4</code> JSON file is the atomic record of an onboarding operation. It contains three sub-objects: <code>Operation</code>, <code>Outbox</code> (delivery state retained, OTP and address redacted after terminal delivery), and <code>Audit</code> (append-only history). One <code>rename(2)</code> publishes all three atomically.</p><div class="decision">
+<div class="decision-head">Design rationale / filesystem protocol instead of hidden transactional service</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">One versioned bundle and atomic rename publish operation, outbox and audit together.</div>
+<div class="decision-label">Why</div><div class="decision-value">The exact crash point remains visible and can be inspected or completed with ordinary system tools.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">A private database as the only source of workflow truth; resident FileES server daemons; opaque recovery journals.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Cross-resource effects still require idempotent steps and reconciliation; filesystem durability requires explicit <code>fsync</code>.</div>
+</div>
+</div>
+<p>Server-side directory layout (root is configurable, default <code>/var/filees/onboarding</code>):</p>
+<pre><code>/var/filees/onboarding/        mode 0700
+├── .toolchain.lock             mode 0600  (flock for command serialisation)
+├── tickets/
+│   └── &lt;sha256(email)&gt;.json   mode 0600  (ticket named by email hash)
+├── operations/
+│   ├── .claim-&lt;req_id&gt;.json   mode 0600  (transient claim; crash-visible)
+│   └── &lt;req_id&gt;.json          mode 0600  (committed bundle)
+└── audit/
+    └── &lt;time&gt;-&lt;obj&gt;-&lt;event&gt;.json</code></pre>
+<p>Client-side state directory (inside each working copy):</p>
+<pre><code>&lt;wc&gt;/
+├── !kolizje/                          (conflict copies; scanner-ignored)
+│   └── YYYY.MM.DD@HH.MM_lokalne/
+│       ├── &lt;relpath&gt;                  (local file before conflict)
+│       └── &lt;relpath&gt;.meta             (JSON: orig_rel, timestamp, size)
+└── .filees/
+    ├── state/
+    │   ├── manifest.json              (mtime, size, MD5 per file)
+    │   ├── commit.busy                (flag; TTL 10 min)
+    │   ├── head.rev                   (last committed/updated revision)
+    │   ├── client.uuid                (stable per-installation UUID)
+    │   ├── daemon.pid
+    │   └── md5.backlog.json           (large-file MD5 queue)
+    ├── commit_cache/
+    │   └── cache.json                 (staging map; survives restarts)
+    ├── tickets/                       (outgoing notification tickets)
+    ├── logs/
+    │   └── errors.jsonl               (structured error log, JSON Lines)
+    └── locks/                         (HostGate and RepoMutex dirs)</code></pre>
+<h2 id="ch1-otp">1.5 OTP Mechanism</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>OTP storage, attempt limits, redaction and BSD Auth handoff implemented.</span></div>
+<p>The one-time password for tunnel authorisation has 120 bits of entropy encoded as Base32 in the format <code>LLLLLLLL-SSSSSSSSSSSSSSSS</code>. The 40-bit prefix is a <em>locator</em> that identifies the operation bundle without exposing the operation ID. The full value is verified as HMAC-SHA-256 against a server-side private pepper (minimum 256 bits) stored at the path given by <code>otp_pepper_file</code> in <code>server.json</code>.</p>
+<p>Each wrong attempt atomically decrements a counter stored in the bundle. On expiry, OTP exhaustion, or successful use the hash and locator are erased from the bundle. The plaintext OTP exists only in the pending mail outbox entry until the mail is accepted by the smarthost (<code>250</code> after DATA), at which point the delivery address and OTP are atomically redacted.</p>
+<h2 id="ch1-ssh">1.6 SSH Transport: entry → worker → helper</h2><div class="section-meta"><span class="status status-implemented">Implemented to active</span><span>Components and native sandbox flow are verified; full external system-sshd plus network svn acceptance remains a release gate.</span></div>
+<p>FileES uses the system <code>sshd</code> as its only network endpoint. Three separate protocol accounts are created on the server:</p>
+<div class="table-wrap"><table>
+<tr><th>Account</th><th>Auth method</th><th>Forced command</th><th>Forwarding</th></tr>
+<tr><td><code>_filees-onboard</code></td><td>Public key (compiled bootstrap Ed25519)</td><td><code>filees-onboard take</code></td><td>None (<code>DisableForwarding yes</code>)</td></tr>
+<tr><td><code>_filees-tunnel</code></td><td><code>keyboard-interactive:bsdauth</code> via <code>login_-filees</code> style</td><td><code>filees-entry</code></td><td>Remote TCP on <code>127.0.0.1:42000</code> only</td></tr>
+<tr><td><code>_filees-client</code></td><td>Per-installation Ed25519 public key</td><td>Per-key <code>filees-client-entry &lt;operation_id&gt; &lt;client_id&gt;</code></td><td>None (<code>DisableForwarding yes</code>)</td></tr>
+</table></div><div class="decision">
+<div class="decision-head">Design rationale / system sshd as the only network endpoint</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">OpenSSH provides authentication, forced commands, forwarding policy, limits and mature platform integration.</div>
+<div class="decision-label">Why</div><div class="decision-value">FileES needs a narrow authenticated trigger, not a general-purpose application server.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">A custom TLS listener, REST/gRPC API, private SSH server, <code>inetd</code> service or long-running socket daemon.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Base OpenSSH cannot express every dynamic policy, so rare deploys use one fixed loopback port and serialization.</div>
+</div>
+</div>
+<p>The push deploy and activation flow:</p>
+<ol>
+<li><strong>Entry A — onboarding request.</strong> The client SSH-connects with a compiled bootstrap Ed25519 key to <code>_filees-onboard</code>. <code>filees-onboard take</code> reads a versioned <code>filees.onboard-request/v1</code> frame from stdin, atomically claims the administrator ticket by renaming it, builds a complete operation bundle, and emails the OTP. Connection then closes.</li>
+<li><strong>Entry B — OTP and reverse tunnel.</strong> After receiving the OTP by email, the client runs:<br/>
+<pre><code>ssh -F /dev/null -l _filees-tunnel -T \
+  -R 127.0.0.1:42000:127.0.0.1:&lt;local-helper-port&gt; \
+  &lt;server&gt; "filees tunnel-v1"</code></pre>
+    The OTP is supplied through a FIFO-based askpass (<code>SSH_ASKPASS_REQUIRE=force</code>). BSD Auth validates the OTP by reading the <code>login_-filees</code> style and atomically advances the bundle to <code>tunnel_authorized</code>. <code>filees-entry</code> confirms the <code>SSH_ORIGINAL_COMMAND</code> is exactly <code>filees tunnel-v1</code>, claims the tunnel grant (advancing to <code>tunnel_started</code>), then <code>exec</code>s <code>filees-worker deploy</code>.</li>
+<li><strong>Worker — identity generation.</strong> <code>filees-worker</code> connects through the reverse tunnel to the client-side helper using a pinned Ed25519 worker key. The helper accepts only <code>filees-deploy/v1</code>. For <code>generate_identity</code>, the client generates an Ed25519 key pair locally; only the public key and fingerprint cross back to the worker. The private key never leaves the client machine.</li>
+<li><strong>Access staging and possession proof.</strong> The worker stages a restricted line in <code>/var/filees/activation/authorized_keys</code> and read-only SVN authz. It then asks the same helper to perform <code>prove_service_access</code>. The client opens a new SSH connection as <code>_filees-client</code> with the installation private key and the fixed command <code>svnserve -t</code>. After system sshd authenticates the key, <code>filees-client-entry</code> writes a server-side receipt and execs the configured <code>svnserve</code>. A helper response alone is never accepted as proof.</li>
+<li><strong>Activation publication.</strong> After validating the receipt, the worker commits the service format, realm, client record, first client view and audit event in one SVN revision, then advances the operation to <code>active</code>. The active key retains read-only access only to its own client subtree.</li>
+</ol>
+<p>The client-side helper is a minimal SSH server listening only on loopback with an ephemeral host key. It refuses shell, PTY, subsystems, global requests, and any command other than <code>filees-deploy/v1</code>. Responses are size-limited to 64 KiB using <code>io.LimitReader</code> before decoding (S3 hardening).</p>
+<h2 id="ch1-sandbox">1.7 pledge / unveil Sandbox Model</h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>Per-command pledge/unveil profiles and dispatcher/worker exec boundary tested natively.</span></div>
+<p>On OpenBSD every server-side tool calls <code>pledge(2)</code> and <code>unveil(2)</code> with per-command minimal profiles. The process flow is:</p>
+<pre><code>parse argv / verb
+  -&gt; pledge("stdio rpath wpath unveil")   # bootstrap
+  -&gt; load and canonicalise config
+  -&gt; read-only preflight of private layout  (before unveil lock)
+  -&gt; unveil(exact paths, exact perms)
+  -&gt; unveil(NULL, NULL)                   # lock
+  -&gt; pledge(runtime promises)             # reduce
+  -&gt; open prepared repo handle and execute</code></pre><div class="decision">
+<div class="decision-head">Design rationale / one command, one sandbox profile</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">Each short-lived tool and verb receives only its exact paths and syscall promises.</div>
+<div class="decision-label">Why</div><div class="decision-value">A compromise or programming error should remain bounded by the function the process was launched to perform.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">A broad shared daemon profile; configurable promise strings; granting capabilities for hypothetical future work.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Profiles require native tests and may reveal runtime-specific minimums such as loader access or startup <code>setrlimit</code>.</div>
+</div>
+</div>
+<p>Per-tool promise and path matrix:</p>
+<div class="table-wrap"><table>
+<tr><th>Tool / verb</th><th>Runtime promises</th><th>Unveiled areas</th></tr>
+<tr><td><code>filees-admin ticket list</code></td><td><code>stdio rpath wpath flock</code></td><td>tickets (r), lock (rw)</td></tr>
+<tr><td><code>filees-admin ticket create/revoke</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>tickets+audit (rwc), lock (rw)</td></tr>
+<tr><td><code>filees-admin operation inspect</code></td><td><code>stdio rpath wpath flock</code></td><td>operations (r), lock (rw)</td></tr>
+<tr><td><code>filees-onboard take</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>tickets+operations+audit (rwc), lock (rw)</td></tr>
+<tr><td><code>filees-operation recover</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>all areas (rwc), lock (rw)</td></tr>
+<tr><td><code>filees-mail send</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>operations (rwc), lock (rw), /etc/resolv.conf, /etc/hosts (r)</td></tr>
+<tr><td><code>filees-entry</code></td><td><code>stdio proc exec</code></td><td>fixed worker image and runtime loader</td></tr>
+<tr><td><code>filees-worker deploy</code></td><td><code>stdio rpath wpath cpath fattr flock inet proc exec</code></td><td>operations, worker key, activation root, service WC/repository and fixed SVN binary</td></tr>
+<tr><td><code>filees-client-entry</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>activation receipt root, service repository, authz and fixed svnserve binary</td></tr>
+<tr><td><code>filees-admin client revoke</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>activation root, service WC/repository and fixed SVN binary</td></tr>
+<tr><td><code>login_-filees</code> (BSD Auth style)</td><td><code>stdio rpath wpath cpath flock</code></td><td>operation root, pepper file</td></tr>
+</table></div>
+<div class="note"><strong>Key invariant:</strong> pledge and unveil profiles are closed in code. Only the dispatcher, activation worker, client entry and administrative revoke retain the narrowly required <code>proc exec</code> boundary for a fixed executable; no promise or executable path is supplied by a network request.</div>
+<p>The <code>filees-entry</code> binary is setuid to <code>_filees-state</code>. <code>filees-worker</code> is mode <code>0555</code> and inherits the effective UID through <code>exec</code>. This split is required because OpenBSD refuses to execute a setuid/setgid image when <code>execpromises</code> are set.</p>
+<h2 id="ch1-service-repo">1.8 Service Repository</h2><div class="section-meta"><span class="status status-implemented">Activation vertical implemented</span><span>Client activation projection and read-only ACL exist; the broader repository/grant control plane remains designed.</span></div>
+<p>The service repository (also called the technical repository) is a private SVN repository that acts as the versioned control plane. It does <em>not</em> store synchronised user files. Each monitored directory has its own separate data repository.</p><div class="decision">
+<div class="decision-head">Design rationale / SVN service repository as versioned control plane</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">Canonical non-secret records and all affected client projections are committed in one SVN revision.</div>
+<div class="decision-label">Why</div><div class="decision-value">The system gains atomic publication, history, inspectable files and deterministic projection rebuilds without a separate database service.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">SQL/Redis as domain truth; client-writable inboxes; storing full control-plane state only in generated authz files.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Effects outside SVN form durable sagas and need a reconciler; clients receive projections rather than arbitrary queries.</div>
+</div>
+</div>
+<p>The implemented activation vertical stores the following non-secret persistent state:</p>
+<ul>
+<li>Realms and their immutable identifiers</li>
+<li>Client instances, <code>client_id</code>, public keys, fingerprints</li>
+<li>Per-client read-only views</li>
+<li>Activation and revocation audit events</li>
+<li>Service format version</li>
+</ul>
+<p>Implemented directory layout:</p>
+<pre><code>/
+├── format.json
+├── admin/
+│   ├── realms/&lt;realm_id&gt;.json
+│   ├── clients/&lt;client_id&gt;.json
+│   └── audit/&lt;operation_id&gt;.json or &lt;operation_id&gt;-revoke.json
+└── clients/
+    └── &lt;client_id&gt;/
+        └── view.json</code></pre>
+<p>The activation manager is the only writer in this vertical. Each active client has read-only SVN access to its own <code>/clients/&lt;client_id&gt;/</code> subtree and no visibility into <code>admin/</code> or other clients. One SVN commit publishes the client record, realm if new, projection and audit event atomically. The broader catalogue for data repositories, grants, roles, invitations and general domain operations remains designed but is not yet implemented.</p>
+</div><hr class="chapter"/><h1 id="ch2">Chapter 2: User Guide</h1><div class="chapter-content">
+<h2 id="ch2-install">2.1 Client Installation</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Linux daemon and GUI bundle accepted; the current Windows artifact packages the GUI only.</span></div>
+<h4>Linux (bundle from <code>build-gui.sh</code>)</h4>
+<pre><code># Unpack the filees-client-linux-amd64 bundle
+chmod +x install-user.sh
+./install-user.sh                     # installs to ~/.local/
+ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
+<p>The installer copies the daemon binary to <code>~/.local/bin/filees</code>, the GUI binary to <code>~/.local/bin/filees-gui</code>, an icon, and a <code>.desktop</code> file. It installs a <code>systemd --user</code> unit (<code>filees.service</code>) but does <em>not</em> start or enable it without explicit request. An existing <code>config.json</code> is never overwritten on upgrade.</p>
+<p>To start the daemon as a user service:</p>
+<pre><code>systemctl --user enable --now filees.service</code></pre>
+<h4>Windows GUI artifact (MSI)</h4>
+<p>Run <code>build-msi.ps1</code> on a machine with WiX Toolset v4 and <code>pwsh</code>, then install the generated <code>.msi</code>. Installation is per-user; no UAC prompt is required. The Start Menu shortcut has <code>System.AppUserModel.ID = ATMProjekt.FileES</code>, enabling toast notifications. This artifact does not constitute acceptance or packaging of the complete Windows sync daemon.</p>
+<div class="warn"><strong>Before uninstalling the MSI on Windows:</strong> run <code>filees-gui --autostart disable</code> first. The installer does not automatically remove the <code>HKCU\...\Run</code> registry value that the application creates.</div>
+<h4>Requirements</h4>
+<div class="table-wrap"><table>
+<tr><th>Platform</th><th>Requirements</th></tr>
+<tr><td>Linux daemon</td><td><code>svn</code> client in PATH and access to the SVN server; Go 1.24+ only when building from source</td></tr>
+<tr><td>Linux GUI</td><td>SNI-compatible desktop (KDE, XFCE, MATE); GNOME requires AppIndicator extension; <code>zenity</code> or <code>kdialog</code> for file picker; <code>xdg-open</code>; <code>notify-send</code> (optional)</td></tr>
+<tr><td>Windows GUI</td><td>Windows 10+; PowerShell; MSI install for toast notifications (AUMID registration)</td></tr>
+</table></div>
+<h2 id="ch2-config">2.2 Configuration</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Validation and non-overlapping working-copy roots are enforced before runtime state creation.</span></div>
+<p>The daemon reads <code>config.json</code> from the working directory (or the path given by <code>--config</code>). It contains an array of repository objects:</p>
+<pre><code>[
+  {
+    "id":              "projectA",
+    "repo_url":        "svn://server/repo/trunk",
+    "local_path":      "/home/user/projectA",
+    "username":        "",
+    "password":        "",
+    "commit_interval": "1m",
+    "watch_interval":  "30s",
+    "poll_interval":   "30s",
+    "max_batch_files": 100,
+    "max_batch_mib":   512,
+    "backlog_flush_mib": 1024,
+    "shutdown_commit_timeout": "10m",
+    "lock_first":      false,
+    "edit_passports":  false,
+    "edit_passport_ttl": "15m",
+    "edit_passport_heartbeat": "5m",
+    "edit_passport_max_session": "24h",
+    "edit_passport_close_grace": "5m",
+    "shout_patterns":  ["\\.psd\$", "\\.blend\$"],
+    "rate_limit_shout": "5m",
+    "commit_tiers": [
+      {"max_mb": 1,  "interval": "2m"},
+      {"max_mb": 10, "interval": "5m"},
+      {"max_mb": 50, "interval": "15m"},
+      {"max_mb": 0,  "interval": "24h"}
+    ]
+  }
+]</code></pre>
+<p class="field-table">Key configuration fields:</p>
+<div class="table-wrap"><table class="field-table">
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td><code>id</code></td><td>Unique repository identifier (used in logs and state paths)</td></tr>
+<tr><td><code>repo_url</code></td><td>SVN repository URL</td></tr>
+<tr><td><code>local_path</code></td><td>Absolute path to the working copy. Must not overlap with other configured roots.</td></tr>
+<tr><td><code>commit_interval</code></td><td>Base commit window, e.g. <code>1m</code>, <code>30s</code></td></tr>
+<tr><td><code>watch_interval</code></td><td>Filesystem scan interval</td></tr>
+<tr><td><code>poll_interval</code></td><td>How often to check server HEAD and pull updates (default <code>30s</code>)</td></tr>
+<tr><td><code>max_batch_files</code></td><td>Max files per commit (directories added as parents do not count)</td></tr>
+<tr><td><code>max_batch_mib</code></td><td>Target max size per commit; a single oversized file gets its own batch</td></tr>
+<tr><td><code>backlog_flush_mib</code></td><td>Force publish when staged total exceeds this (must be ≥ <code>max_batch_mib</code>)</td></tr>
+<tr><td><code>shutdown_commit_timeout</code></td><td>Max drain time on controlled shutdown (default <code>10m</code>)</td></tr>
+<tr><td><code>lock_first</code></td><td>Try <code>svn lock</code> before every commit (mutually exclusive with <code>edit_passports</code>)</td></tr>
+<tr><td><code>edit_passports</code></td><td>Enable edit-passport mode (opt-in; see section 2.5)</td></tr>
+<tr><td><code>commit_tiers</code></td><td>Size-adaptive intervals; last entry with <code>max_mb: 0</code> is the catch-all</td></tr>
+<tr><td><code>shout_patterns</code></td><td>Regex list; matching files produce a notification ticket</td></tr>
+</table></div>
+<p>All durations use Go format: <code>30s</code>, <code>5m</code>, <code>1h30m</code>.</p>
+<div class="note">Every <code>local_path</code> must be absolute. Paths must not be identical or nested in either direction. Validation resolves symlinks on existing directories and aborts daemon startup with a hard error before any state is created.</div>
+<p>To validate configuration without starting the daemon:</p>
+<pre><code>filees config-check --config /path/to/config.json</code></pre>
+<h2 id="ch2-firstrun">2.3 First Run and Onboarding</h2><div class="section-meta"><span class="status status-implemented">Activation vertical implemented</span><span class="status status-designed">End-user orchestration pending</span><span>The tested components reach active; no public <code>filees onboard</code> CLI is shipped yet.</span></div>
+<p>The onboarding flow provisions the client’s identity and activates its first service-repository projection. It requires an administrator to create a one-time ticket. The complete flow exists as integrated client/server components and tests, but it is not yet composed into a supported end-user command.</p>
+<ol>
+<li>Administrator creates a ticket with an email delivery signal and an approved realm: <code>filees-admin ticket create --email you@example.com --realm-id &lt;uuid&gt;</code>.</li>
+<li>The client component submits the email through the compiled bootstrap-key SSH entry. The server consumes the ticket and sends an OTP.</li>
+<li>The client component supplies the OTP through FIFO askpass and establishes the fixed reverse tunnel to its loopback helper.</li>
+<li>The helper generates an Ed25519 installation key locally. The worker stages access, asks the helper for service proof, and validates the receipt written after system-sshd authentication.</li>
+<li>The worker publishes the client record and first view in the service repository and marks the operation <code>active</code>.</li>
+</ol>
+<div class="warn"><strong>Production blockers:</strong> compose the existing components into the supported client lifecycle, ship production host/worker pins and signed payload installation, then run the full external system-sshd and network <code>svn info</code> acceptance path. Windows bootstrap remains unsupported. See <code>PUSH_DEPLOY_CLIENT_READINESS.md</code>.</div>
+<h4>Adding a local directory</h4>
+<p>The local provisioning state machine models the following two-step data-repository process, but the authenticated server-side repository worker is not connected yet:</p>
+<ol>
+<li><strong><code>CREATE_REPOSITORY</code></strong> — the client sends an authenticated ticket to the server worker, which creates the SVN data repository, sets the owner grant and ACL, and returns a canonical <code>repo_id</code> and <code>repo_url</code>.</li>
+<li><strong><code>INITIAL_COMMIT</code></strong> — the client checks out the empty repository root into the local directory, performs a controlled <code>svn add</code> respecting ignore patterns, publishes the initial snapshot in bounded batches, confirms <code>INITIAL_COMMIT</code>, and only then starts the normal sync pipeline.</li>
+</ol>
+<p>The local state machine preserves <code>operation_id</code> across retry. End-to-end <code>CREATE_REPOSITORY</code>, server ACL creation and controlled <code>INITIAL_COMMIT</code> remain the next integration vertical.</p>
+<h2 id="ch2-sync">2.4 Day-to-Day Sync</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Normal operation, outage accumulation, bounded shutdown and restart reconciliation tested.</span></div>
+<p>Once active, the daemon operates without user interaction:</p>
+<ul>
+<li>Local file changes are detected within one <code>watch_interval</code> tick. New files wait 5 minutes before their first commit.</li>
+<li>Commits are grouped by the tier matching the current staged size (<code>commit_tiers</code>).</li>
+<li>Server changes are pulled every <code>poll_interval</code>. If a conflict is detected the local copy is preserved in <code>!kolizje/</code> and the server version wins.</li>
+<li>The daemon recovers from network outages automatically with backoff. Staged changes accumulate in <code>cache.json</code> and are published when the connection is restored.</li>
+<li>On controlled shutdown (<code>SIGINT</code>/<code>SIGTERM</code>) the daemon drains the staging in bounded batches within <code>shutdown_commit_timeout</code>. Any remaining changes are written to <code>cache.json</code> and resumed on next start.</li>
+</ul>
+<h4>File ignore patterns</h4>
+<p>Built-in ignores (cannot be overridden): <code>~\$*</code>, <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code>.</p>
+<p>User-defined ignores: place patterns in <code>.filees/user_ignore.cfg</code> (hot-reloaded on every scan). Lines starting with <code>!</code> are hard ignores that skip entire subtrees. Glob syntax supports <code>**</code> for any depth.</p>
+<h2 id="ch2-passports">2.5 Edit Passports</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-designed">Distributed completion</span><span>Single-daemon passport lifecycle exists; authoritative cross-client CAS is not yet deployed.</span></div>
+<p>Edit passports are an opt-in feature (<code>"edit_passports": true</code>) that provides explicit per-file locking with heartbeat renewal. When enabled, <code>lock_first</code> is automatically disabled.</p><div class="decision">
+<div class="decision-head">Design rationale / edit passports remain opt-in</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">Explicit per-file locking is enabled only where the document type and workflow justify the friction.</div>
+<div class="decision-label">Why</div><div class="decision-value">Ordinary synchronization should remain silent; pessimistic locking is a policy, not a universal property of FileES.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Requiring locks for every repository; pretending the current single-daemon token model is already a distributed lease.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Passport repositories require migration, read-only enforcement, heartbeat and an eventual authoritative server CAS.</div>
+</div>
+</div>
+<p>Behaviour under passport mode:</p>
+<ul>
+<li>All existing regular files are migrated to carry <code>svn:needs-lock</code> on first start (the daemon refuses to start migration if the working copy has local content changes, deletes, or missing files).</li>
+<li>A file without an active passport is locally read-only. It becomes writable after a successful <code>repo.lock</code> / <code>filees lock</code> call.</li>
+<li>New files do not require a passport before their first publication; the daemon assigns <code>svn:needs-lock</code> before the commit.</li>
+<li>Commits use <code>svn commit --no-unlock</code> so that SVN does not bypass the close-grace period.</li>
+<li>After a confirmed commit, the daemon waits for the close-grace period (<code>edit_passport_close_grace</code>, default 5 m) before unlocking and returning the file to read-only.</li>
+</ul>
+<p>Passport timing parameters:</p>
+<div class="table-wrap"><table>
+<tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>edit_passport_heartbeat</code></td><td>5 m</td><td>How often the daemon renews the token</td></tr>
+<tr><td><code>edit_passport_ttl</code></td><td>15 m</td><td>Validity of a single renewal; heartbeat must be shorter</td></tr>
+<tr><td><code>edit_passport_max_session</code></td><td>24 h</td><td>Hard session limit; cannot be extended by heartbeats</td></tr>
+<tr><td><code>edit_passport_close_grace</code></td><td>5 m</td><td>Silence period after confirmed commit before unlock</td></tr>
+</table></div>
+<div class="note"><strong>Multi-client guarantee caveat:</strong> the current implementation enforces passports within one daemon instance. Full distributed compare-and-swap (preventing a race between two competing clients) requires a server-side <code>pre-lock</code> hook or authoritative worker, which is not yet deployed. The <code>previous_token</code> field in the lock comment is already transmitted so the server hook can be added without protocol changes.</div>
+<h2 id="ch2-gui">2.6 GUI Tray</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>GUI is a separate binary over contract/v1; Linux acceptance completed.</span></div>
+<p><code>filees-gui</code> is a separate process and a thin UX layer over the daemon IPC contract. It does not import any sync engine packages. Closing the GUI does not stop the daemon.</p><div class="decision">
+<div class="decision-head">Design rationale / integrated daemon, separate menu binary</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">The daemon owns the full operational pipeline required for reliable UX; the tray menu remains a replaceable client.</div>
+<div class="decision-label">Why</div><div class="decision-value">Commit, update, cache, recovery and policy must cooperate in one runtime owner, while presentation has a different lifecycle and trust boundary.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Embedding the sync engine in the GUI; stopping synchronization when the tray exits; splitting mature operations into services merely to reduce file size.</div>
+<div class="decision-label">Cost</div><div class="decision-value">The daemon is internally substantial, and later extraction must follow finished responsibilities rather than aesthetic pressure.</div>
+</div>
+</div>
+<h4>Icon states (priority order)</h4>
+<div class="table-wrap"><table>
+<tr><th>Icon</th><th>State</th><th>Condition</th></tr>
+<tr><td>dimmed / absent</td><td>Disconnected</td><td>Cannot reach daemon, or protocol mismatch</td></tr>
+<tr><td>red</td><td>Attention required</td><td><code>interaction_required</code>, <code>degraded</code>, conflict, or actionable error</td></tr>
+<tr><td>grey</td><td>Offline</td><td>At least one repository has no server connection</td></tr>
+<tr><td>orange</td><td>Busy</td><td>Commit, update, initialisation, or baselining in progress</td></tr>
+<tr><td>green</td><td>Active</td><td>All repositories synchronised and online</td></tr>
+</table></div>
+<h4>Reconnect behaviour</h4>
+<p>If the daemon is unreachable, the GUI retries with exponential backoff: 1 s → 2 s → 5 s → 10 s → 30 s. The last known snapshot remains visible but is marked stale. “Reconnect” in the menu forces an immediate retry.</p>
+<h4>Initialisation sequence</h4>
+<ol>
+<li>Send <code>system.hello</code>, store capabilities.</li>
+<li>Send <code>events.subscribe</code> (if capability present) <em>before</em> fetching snapshots.</li>
+<li>Fetch <code>system.status</code>, <code>repo.list</code>, and <code>repo.status</code> for each repository.</li>
+<li>On reconnect, sequence gap, or unknown event: perform full resync.</li>
+</ol>
+<p>Events are cache-invalidation signals. The GUI never builds state purely by applying events; each event triggers a fresh <code>repo.status</code> fetch. Mutation actions (lock/unlock) are shown only when the daemon reports them as capabilities and the connection state is <code>Connected</code> (not <code>Stale</code>).</p>
+<h4>Autostart</h4>
+<pre><code>filees-gui --autostart enable    # write autostart entry for current executable path
+filees-gui --autostart disable   # remove entry
+filees-gui --autostart status    # enabled / enabled-stale / disabled</code></pre>
+<p><code>enabled-stale</code> means the entry points to a different path or arguments than the current executable. Re-run <code>--autostart enable</code> from the installed location to fix it. On Linux this writes an XDG <code>.desktop</code> file to <code>~/.config/autostart/</code>; on Windows it writes to <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code>.</p>
+<h2 id="ch2-cli">2.7 CLI Commands</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Commands use daemon IPC and do not bypass the engine with direct SVN mutation.</span></div>
+<p>All CLI sub-commands communicate with the running daemon through the Unix socket and never invoke <code>svn</code> directly:</p>
+<pre><code>filees status               # state of all repositories
+filees lock   &lt;file&gt;...    # acquire SVN lock
+filees unlock &lt;file&gt;...    # release SVN lock
+filees log [N]              # last N error log entries (default 20)
+filees config-check         # validate config without starting daemon
+filees help</code></pre>
+<p><code>lock</code> and <code>unlock</code> accept multiple files and group them by repository automatically. Relative paths are resolved to absolute and validated as lying inside a working copy.</p>
+<p>Daemon log level (environment variable):</p>
+<pre><code>FILEES_LOG=debug ./filees
+FILEES_LOG=trace ./filees   # includes svn invocations
+# Available: silent error warn info (default) debug trace</code></pre>
+<h2 id="ch2-trouble">2.8 Troubleshooting</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Operational guidance for current client and GUI behaviour.</span></div>
+<div class="table-wrap"><table>
+<tr><th>Symptom</th><th>Action</th></tr>
+<tr><td>GUI icon does not appear (GNOME)</td><td>Install the <strong>AppIndicator and KStatusNotifierItem Support</strong> extension from extensions.gnome.org; log out and back in</td></tr>
+<tr><td>“Disconnected” but daemon is running</td><td>Check socket path: <code>filees status</code>; run <code>filees-gui --socket /path/to/daemon.sock</code>; check <code>filees-gui --autostart status</code> for <code>enabled-stale</code></td></tr>
+<tr><td>File picker does not open (Linux)</td><td>Install <code>zenity</code> or <code>kdialog</code>: <code>apt install zenity</code> / <code>dnf install zenity</code></td></tr>
+<tr><td>Toast notifications missing (Windows)</td><td>Ensure installation was via MSI (registers AUMID). Running <code>filees-gui.exe</code> without the installer will not register the AUMID.</td></tr>
+<tr><td>Multiple tray icons</td><td>A per-user lock prevents a second instance from initialising the tray. If two icons appear, one may be from an older version. Use “Close GUI” on each, then restart the current installation.</td></tr>
+<tr><td>Conflict files accumulating in <code>!kolizje/</code></td><td>These are preserved local versions of files where a server change won. Review them manually. The directory is scanner-ignored and will never be committed.</td></tr>
+</table></div>
+</div><hr class="chapter"/><h1 id="ch3">Chapter 3: Server Installation and Deploy</h1><div class="chapter-content">
+<h2 id="ch3-prereq">3.1 Prerequisites</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Current server toolchain requirements.</span></div>
+<p>The FileES server toolchain targets <strong>OpenBSD 7.9/amd64</strong> as the primary and security-reference platform. A Linux/amd64 server bundle is also buildable; distribution-specific hardening remains an administrator responsibility because Linux cannot provide the same <code>pledge</code>/<code>unveil</code> contract. FileES adds no network listener: the system <code>sshd</code> is its only endpoint.</p>
+<p>External dependencies:</p>
+<ul>
+<li><strong>SVN server</strong> (<code>svnserve</code> or Apache with mod_dav_svn) — must be independently installed and configured.</li>
+<li><strong>SMTP smarthost</strong> — for OTP delivery; FileES does not run an MTA. Only submission-style relay (<code>host:port</code>) is supported.</li>
+<li><strong>Go 1.24+</strong> — only needed to build from source. Pre-built bundles are provided.</li>
+</ul>
+<p>Required accounts to be created by the installer on OpenBSD:</p>
+<div class="table-wrap"><table>
+<tr><th>Account</th><th>Purpose</th></tr>
+<tr><td><code>_filees-state</code></td><td>Owns <code>/var/filees/</code> and <code>/etc/filees/</code>; all server tools run as this user</td></tr>
+<tr><td><code>_filees-onboard</code></td><td>Receives bootstrap SSH connections; ordinary shell exists only so sshd can run the forced command; no real home directory</td></tr>
+<tr><td><code>_filees-tunnel</code></td><td>Receives OTP SSH connections with one fixed reverse tunnel; forced command only</td></tr>
+<tr><td><code>_filees-client</code></td><td>Receives installation-key SSH connections; per-key forced command permits only tunnel-mode svnserve</td></tr>
+</table></div>
+<h2 id="ch3-install">3.2 Running <code>install-server.sh</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Generic and OpenBSD integration paths include the complete activation vertical; production acceptance remains separate.</span></div>
+<p>The generic installer script is <code>packaging/server/install-server.sh</code> (also included in the bundle at <code>dist/filees-server-openbsd-amd64/</code>).</p>
+<pre><code># As root or with doas:
+./install-server.sh</code></pre>
+<p>What the installer does:</p>
+<ul>
+<li>Installs <code>filees-admin</code> and <code>filees-operation</code> to <code>\$PREFIX/sbin/</code> (default <code>/usr/local/sbin</code>).</li>
+<li>Installs <code>filees-onboard</code>, <code>filees-mail</code>, <code>filees-entry</code>, <code>filees-worker</code>, and <code>filees-client-entry</code> to <code>\$PREFIX/libexec/filees/</code>.</li>
+<li>Creates <code>/etc/filees/</code> (mode 0700) and copies <code>server.example.json</code> to <code>/etc/filees/server.json</code> if not already present.</li>
+<li>Generates a 256-bit random OTP pepper: <code>/etc/filees/otp.pepper</code> (mode 0600).</li>
+<li>Generates an Ed25519 worker key pair: <code>/etc/filees/worker_ed25519</code> (mode 0600) and <code>/etc/filees/worker_ed25519.pub</code> (mode 0644).</li>
+<li>Creates the private state directory: <code>/var/filees/onboarding/{tickets,operations,audit}/</code> (mode 0700).</li>
+<li>Creates the private activation skeleton at <code>/var/filees/activation/</code>; the OpenBSD integration step assigns final ownership and initialises the service repository.</li>
+</ul>
+<div class="note">The generic installer deliberately does <em>not</em> create an <code>rc.d</code> or <code>systemd</code> service and does <em>not</em> touch <code>sshd_config</code>. The sshd integration is the separate OpenBSD step below.</div>
+<h4>OpenBSD sshd integration: <code>install-ssh.sh</code></h4>
+<pre><code># As root, after the generic install:
+./packaging/server/openbsd/install-ssh.sh</code></pre>
+<p>What <code>install-ssh.sh</code> does:</p>
+<ul>
+<li>Creates <code>_filees-state</code> and the three protocol accounts <code>_filees-onboard</code>, <code>_filees-tunnel</code>, and <code>_filees-client</code>. Protocol accounts use <code>/bin/sh</code> only to permit sshd forced commands; interactive shell, PTY and user RC remain disabled by sshd policy.</li>
+<li>Installs the <code>login_-filees</code> BSD Authentication style binary to <code>/usr/libexec/auth/</code>.</li>
+<li>Installs the <code>filees-tunnel</code> login class and rebuilds the database with <code>cap_mkdb</code>.</li>
+<li>Writes a validated <code>Match User</code> fragment to <code>/etc/ssh/sshd_config.d/filees.conf</code> (creating the <code>sshd_config.d/</code> directory and updating the main <code>sshd_config</code> Include if needed).</li>
+<li>Installs the bootstrap authorized key for <code>_filees-onboard</code> to <code>/etc/ssh/filees_bootstrap_authorized_keys</code>.</li>
+<li>Installs the set-id dispatchers, creates <code>/var/filees/activation</code>, initialises <code>/var/filees/service-repo</code> and its working copy, and connects svnserve to the generated authz file.</li>
+<li>Verifies the configuration with <code>sshd -t</code> and reloads the existing sshd.</li>
+</ul>
+<h2 id="ch3-sshd">3.3 OpenBSD sshd Configuration</h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>Three protocol accounts, forced commands and forwarding policy validated natively.</span></div>
+<p>The effective <code>Match User</code> blocks applied by <code>install-ssh.sh</code> are:</p>
+<pre><code>Match User _filees-onboard
+    AuthenticationMethods publickey
+    PubkeyAuthentication yes
+    AuthorizedKeysFile /etc/ssh/filees_bootstrap_authorized_keys
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    ForceCommand /usr/local/libexec/filees/filees-onboard take
+    DisableForwarding yes
+    PermitTTY no
+    MaxSessions 1
+    AllowStreamLocalForwarding no
+    PermitTunnel no
+    PermitUserRC no
+    X11Forwarding no
+    AllowAgentForwarding no
+
+Match User _filees-tunnel
+    AuthenticationMethods keyboard-interactive:bsdauth
+    PubkeyAuthentication no
+    AuthorizedKeysFile none
+    ForceCommand /usr/local/libexec/filees/filees-entry
+    PasswordAuthentication no
+    KbdInteractiveAuthentication yes
+    PermitTTY no
+    AllowTcpForwarding remote
+    PermitListen 127.0.0.1:42000
+    PermitOpen none
+    AllowStreamLocalForwarding no
+    GatewayPorts no
+    PermitTunnel no
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitUserRC no
+    MaxSessions 1
+    MaxAuthTries 2
+
+Match User _filees-client
+    AuthenticationMethods publickey
+    PubkeyAuthentication yes
+    AuthorizedKeysFile /var/filees/activation/authorized_keys
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    DisableForwarding yes
+    AllowStreamLocalForwarding no
+    PermitTTY no
+    PermitTunnel no
+    PermitUserRC no
+    X11Forwarding no
+    AllowAgentForwarding no
+    MaxAuthTries 1
+    MaxSessions 1
+
+Match all</code></pre>
+<p>The <code>Match all</code> sentinel is required before any <code>Include</code> directive in the main <code>sshd_config</code> to prevent match blocks from leaking into included files. The installer handles this automatically.</p>
+<div class="note"><strong>Fixed port:</strong> the reverse tunnel port is a single static value (<code>127.0.0.1:42000</code> by default; configurable as <code>reverse_port_first</code>/<code>reverse_port_last</code> in <code>server.json</code>). This serialises infrequent deploys. The base <code>sshd_config</code> cannot make <code>PermitListen</code> conditional on the BSD Auth result, so a dynamic per-operation port would require a custom listener that FileES deliberately avoids.</div>
+<h2 id="ch3-serverjson">3.4 <code>server.json</code> Reference</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Configuration contract used by the current server tools.</span></div>
+<p>After running the installer, edit <code>/etc/filees/server.json</code>:</p>
+<pre><code>{
+  "schema": "filees.server-toolchain/v1",
+  "root": "/var/filees/onboarding",
+  "otp_pepper_file": "/etc/filees/otp.pepper",
+  "worker_private_key_file": "/etc/filees/worker_ed25519",
+  "worker_public_key_file": "/etc/filees/worker_ed25519.pub",
+  "activation": {
+    "root": "/var/filees/activation",
+    "authorized_keys_file": "/var/filees/activation/authorized_keys",
+    "authz_file": "/var/filees/activation/service.authz",
+    "service_working_copy": "/var/filees/service-wc",
+    "service_repository": "/var/filees/service-repo",
+    "repository_name": "filees-service",
+    "client_entry_path": "/usr/local/libexec/filees/filees-client-entry",
+    "svn_binary": "/usr/local/bin/svn",
+    "svnserve_binary": "/usr/local/bin/svnserve"
+  },
+  "operation_ttl": "30m",
+  "otp_attempts": 5,
+  "reverse_port_first": 42000,
+  "reverse_port_last": 42000,
+  "smtp": {
+    "address": "smtp.example.net:587",
+    "server_name": "smtp.example.net",
+    "client_name": "filees.example.net",
+    "from": "filees@example.net",
+    "message_id_domain": "filees.example.net",
+    "username": "",
+    "tls": "starttls",
+    "connect_timeout": "10s",
+    "command_timeout": "30s"
+  }
+}</code></pre>
+<div class="table-wrap"><table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td><code>schema</code></td><td>Must be <code>filees.server-toolchain/v1</code></td></tr>
+<tr><td><code>root</code></td><td>Absolute path to the private state directory (tickets, operations, audit)</td></tr>
+<tr><td><code>otp_pepper_file</code></td><td>Absolute path to file containing at least 32 bytes of base64-encoded secret pepper</td></tr>
+<tr><td><code>worker_private_key_file</code></td><td>Absolute path to Ed25519 private key used by <code>filees-worker</code> (mode 0600)</td></tr>
+<tr><td><code>worker_public_key_file</code></td><td>Absolute path to the corresponding public key in authorized_keys format</td></tr>
+<tr><td><code>activation</code></td><td>Absolute private runtime paths, service repository/WC, repository name and fixed client-entry/SVN executable paths</td></tr>
+<tr><td><code>operation_ttl</code></td><td>Lifetime of each onboarding operation, e.g. <code>30m</code></td></tr>
+<tr><td><code>otp_attempts</code></td><td>Maximum wrong OTP attempts before exhaustion</td></tr>
+<tr><td><code>reverse_port_first</code></td><td>First (or only) permitted reverse tunnel port</td></tr>
+<tr><td><code>reverse_port_last</code></td><td>Last permitted port (use same value as first for a single static port)</td></tr>
+<tr><td><code>smtp.address</code></td><td>Smarthost address as <code>host:port</code></td></tr>
+<tr><td><code>smtp.tls</code></td><td><code>starttls</code>, <code>implicit</code>, or <code>none</code> (none only on loopback)</td></tr>
+<tr><td><code>smtp.username</code></td><td>SMTP AUTH username; leave empty for unauthenticated relay</td></tr>
+<tr><td><code>smtp.password_file</code></td><td>Absolute path to file with SMTP password (mode 0600); required when username is set</td></tr>
+</table></div>
+<p>Mode 0600 is recommended for the config file; the loader requires a regular file that is not writable by group or others. All path values must be absolute. After editing, validate the non-secret command path:</p>
+<pre><code>doas -u _filees-state filees-admin -config /etc/filees/server.json ticket list</code></pre>
+<h2 id="ch3-keys">3.5 Key Generation</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Worker-key generation and installation-key registration are implemented; production pin distribution remains a deploy concern.</span></div>
+<p>The installer generates all required keys automatically. If you need to regenerate:</p>
+<pre><code># Regenerate OTP pepper (invalidates all pending OTPs)
+umask 077
+openssl rand -base64 32 &gt; /etc/filees/otp.pepper
+
+# Regenerate worker key pair (distribute only the .pub to client policy)
+umask 077
+ssh-keygen -q -t ed25519 -N '' -C filees-worker-v1 \
+  -f /etc/filees/worker_ed25519</code></pre>
+<div class="warn">Regenerating the OTP pepper invalidates all outstanding OTPs. Any client in the middle of an onboarding will need a new ticket. Regenerating the worker key pair requires updating the pinned public key on all clients before the next deploy attempt.</div>
+<h4>Service repository setup</h4>
+<p>The OpenBSD integration script performs the implemented activation setup:</p>
+<ol>
+<li>Creates <code>/var/filees/service-repo</code> and the initial <code>/proof</code> path.</li>
+<li>Checks out <code>/var/filees/service-wc</code> for activation and revocation commits.</li>
+<li>Connects svnserve to <code>/var/filees/activation/service.authz</code>; the activation manager atomically regenerates authz and authorized keys.</li>
+<li>Commits <code>format.json</code>, realm, client, projection and audit on the first successful possession proof.</li>
+</ol>
+<p>This is the completed activation vertical. General data-repository creation, grants and <code>INITIAL_COMMIT</code> orchestration are not yet connected to a server-side control-plane worker.</p>
+<h4>Running administrative commands</h4>
+<p>Administrative and one-shot server commands that read or mutate private state are run as <code>_filees-state</code>:</p>
+<pre><code>doas -u _filees-state filees-admin ticket create --email user@example.com --realm-id &lt;realm_uuid&gt;
+doas -u _filees-state filees-admin ticket list
+doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
+doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
+doas -u _filees-state filees-mail send</code></pre>
+</div><hr class="chapter"/><h1 id="ch4">Chapter 4: Administration</h1><div class="chapter-content">
+<h2 id="ch4-admin">4.1 <code>filees-admin</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-planned">Broader commands planned</span><span>Ticket, operation inspection and fail-closed client revoke exist.</span></div>
+<p><code>filees-admin</code> is the administrative command-line tool. It must be run as <code>_filees-state</code> (e.g. via <code>doas -u _filees-state</code>) to satisfy its <code>pledge</code>/<code>unveil</code> profile. It writes structured JSON to stdout and diagnostics to stderr. Exit codes follow the <code>sysexits</code> range:</p>
+<div class="table-wrap"><table>
+<tr><th>Exit code</th><th>Constant</th><th>Meaning</th></tr>
+<tr><td>0</td><td><code>ExitOK</code></td><td>Success</td></tr>
+<tr><td>64</td><td><code>ExitUsage</code></td><td>Bad arguments</td></tr>
+<tr><td>65</td><td><code>ExitData</code></td><td>Input data error</td></tr>
+<tr><td>69</td><td><code>ExitUnavailable</code></td><td>Resource unavailable (ticket taken, port exhausted)</td></tr>
+<tr><td>70</td><td><code>ExitSoftware</code></td><td>Internal logic error</td></tr>
+<tr><td>75</td><td><code>ExitTempFail</code></td><td>Temporary failure (retry later; used by filees-mail for SMTP 4xx)</td></tr>
+<tr><td>78</td><td><code>ExitConfig</code></td><td>Configuration error</td></tr>
+</table></div>
+<h4>Ticket management</h4>
+<pre><code>filees-admin ticket create --email &lt;mailbox&gt; --realm-id &lt;realm_uuid&gt; [--ttl 24h]
+filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
+filees-admin ticket list</code></pre>
+<p>A ticket is a one-time administrator grant authorising the start of one onboarding operation for a given email signal. The ticket file is named by <code>sha256(canonical_email)</code> so the file name does not reveal the address. <code>create</code> writes the ticket with a TTL; <code>revoke</code> removes it. Once claimed by <code>filees-onboard take</code> the ticket physically disappears and is replaced by an operation bundle.</p>
+<h4>Operation inspection</h4>
+<pre><code>filees-admin operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
+<p>Displays the current state and audit trail of an onboarding operation. If an operation is in state <code>awaiting_tunnel</code> after the TTL has passed, the OTP is exhausted or expired, and the record can be cleaned up by <code>filees-operation recover</code>.</p>
+<h4>Client revocation</h4>
+<pre><code>filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "one-line reason"</code></pre>
+<p>Revocation first writes a durable <code>revoking</code> record and removes the client from generated SSH/SVN runtime access. Only then does it commit the revoked client record and audit event to the service repository. An identical retry is idempotent; a different reason is rejected.</p>
+<h4>Future service-repository administration (not yet implemented)</h4>
+<p>The following additional commands are specified but not yet implemented. They will send authenticated domain commands to the service worker rather than modifying SVN directly:</p>
+<pre><code>filees-admin realm create|inspect|list|disable
+filees-admin client inspect|list|disable
+filees-admin repo inspect|list|disable|reconcile
+filees-admin grant create|change|revoke
+filees-admin invitation create|revoke|inspect
+filees-admin operation inspect|abort|retry
+filees-admin audit list|verify
+filees-admin projection rebuild|verify</code></pre>
+<h2 id="ch4-operation">4.2 <code>filees-operation</code></h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Claim recovery, unfinished-operation expiry and activation cleanup are idempotent.</span></div>
+<pre><code>filees-operation recover
+filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
+<p><code>filees-operation recover</code> scans the operations directory for claim files (<code>.claim-*.json</code>) and finishes them. A claim may be in two forms:</p>
+<ul>
+<li><strong>Claim-as-ticket</strong> — the ticket was renamed to <code>.claim-&lt;req_id&gt;.json</code> but not yet replaced by a bundle. Recovery generates the bundle and completes the final rename.</li>
+<li><strong>Claim-as-bundle</strong> — the bundle was written into the claim file but the final rename to <code>&lt;req_id&gt;.json</code> was not completed. Recovery performs only the rename.</li>
+</ul>
+<p>Recovery also expires unfinished operations whose TTL elapsed, redacts their OTP and delivery address, and removes expired staged keys from generated SSH/SVN access. Active clients are not expired by the onboarding TTL. Recovery is idempotent and safe after an unexpected system crash.</p>
+<h2 id="ch4-audit">4.3 Audit Log</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Onboarding audit and client structured error logs exist.</span></div>
+<p>The server-side audit log is stored as individual JSON files in the <code>audit/</code> subdirectory of the state root (<code>/var/filees/onboarding/audit/</code>). Each event file is named <code>&lt;timestamp&gt;-&lt;object_type&gt;-&lt;event_type&gt;.json</code> and follows the <code>filees.onboarding-audit/v1</code> schema:</p>
+<pre><code>{
+  "schema":       "filees.onboarding-audit/v1",
+  "event":        "tunnel_session_started",
+  "actor":        "_filees-state",
+  "object_type":  "operation",
+  "object_id":    "&lt;operation_id&gt;",
+  "operation_id": "&lt;operation_id&gt;",
+  "at":           "2026-07-16T09:15:02Z"
+}</code></pre>
+<p>The operation bundle itself contains an inline audit array (<code>Audit []AuditEvent</code>) recording the complete history of that operation. SVN history of the service repository provides an additional independent evidence layer for service-repository audit events.</p>
+<p>Recorded onboarding audit event types include: <code>ticket_created</code>, <code>ticket_revoked</code>, <code>operation_claimed</code>, <code>otp_attempt_failed</code>, <code>otp_verified</code>, <code>otp_exhausted</code>, <code>tunnel_session_started</code>, <code>helper_announced</code>, <code>helper_verified</code>, <code>identity_generated</code>, <code>access_staged</code>, <code>possession_verified</code>, and <code>client_activated</code>. The service repository independently records <code>client_activated</code> and <code>client_revoked</code> events.</p>
+<p>The client-side error log is stored in <code>&lt;wc&gt;/.filees/logs/errors.jsonl</code> as JSON Lines:</p>
+<pre><code>{"ts":"2026-07-16T10:00:00Z","scope":"commit:projectA","code":"NET-4007",
+ "severity":"WARN","hint":"RETRY_BACKOFF","msg":"Network unreachable — retrying"}</code></pre>
+<p>The most recent entries can be viewed with:</p>
+<pre><code>filees log 50</code></pre>
+<h2 id="ch4-mail">4.4 Mail Outbox</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>One-shot SMTP outbox with redaction and retry semantics.</span></div>
+<p>The OTP email is sent by <code>filees-mail send</code> which reads the pending outbox entry from the operation bundle and submits it to the configured SMTP smarthost. FileES does not maintain a background mailer process; the command is a one-shot submission.</p>
+<p>The outbox delivery state machine:</p>
+<pre><code>pending  -&gt;  sending  -&gt;  queued    (250 after DATA; OTP and address redacted)
+                      -&gt;  pending   (4xx temporary failure; OTP preserved)
+                      -&gt;  failed    (5xx permanent failure; OTP redacted)</code></pre>
+<p>A stale <code>sending</code> entry (from a previous attempt that died without recording a result) is reclaimed with a new attempt ID before retrying. The stable <code>Message-ID</code> header (derived from <code>CreatedAt</code>, not <code>time.Now()</code>) makes retry safe if the smarthost accepted but the reply was lost.</p>
+<p>To retry after a temporary failure:</p>
+<pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
+<p>Exit code 75 (<code>ExitTempFail</code>) means the smarthost returned a 4xx; the OTP is preserved and the command can be retried. Exit code 0 means the message was accepted (<code>queued</code> state). A permanent failure (5xx) sets state to <code>failed</code> and redacts the OTP; manual intervention is required.</p>
+<h2 id="ch4-recovery">4.5 Recovery</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Server claim recovery and client restart reconciliation are covered by fault injection.</span></div>
+<h4>Interrupted onboarding claim</h4>
+<pre><code>doas -u _filees-state filees-operation recover</code></pre>
+<p>The command finishes any <code>.claim-*</code> file, expires unfinished operations past TTL, redacts their OTP material and removes expired activation staging. Active clients remain active. Safe to run repeatedly.</p>
+<h4>Client recovery after SIGKILL or power loss</h4>
+<p>The client daemon recovers automatically on the next start:</p>
+<ol>
+<li>Loads the full staging cache from <code>cache.json</code>.</li>
+<li>Runs <code>svn cleanup</code> and (if no <code>missing</code> entries) <code>svn update</code>.</li>
+<li>Re-classifies every cached entry by <code>svn status</code>; entries already marked <code>normal</code> (accepted by server) are dropped without re-committing.</li>
+<li>Publishes the remaining entries in bounded batches.</li>
+</ol>
+<p>This idempotent reconciliation was verified in fault-injection tests (r91–r92) where a server accepted a commit but the daemon process was killed before it could update the working-copy metadata and clear the cache. The restart correctly published only the missing remaining entry.</p>
+<h4>Conflict copies</h4>
+<p>Files in <code>!kolizje/</code> are preserved local versions from before a server-wins conflict resolution. Each subdirectory is timestamped (<code>YYYY.MM.DD@HH.MM_lokalne</code>) and contains the file contents plus a <code>.meta</code> JSON sidecar with original path, size, and timestamp. They can be inspected and manually merged. The directory is scanner-ignored and never committed.</p>
+<h4>Orphaned passport after network loss</h4>
+<p>If the daemon loses network connectivity while holding a passport, it does not publish changes after the local TTL expires. On reconnect, the passport manager checks the actual lock on the server: if the token still matches, the heartbeat resumes; if the token has been replaced (by a force-lock or server-side expiry), the passport is marked <code>lost</code>. The file is returned to read-only; no automatic force-lock or commit is attempted.</p>
+<h4>Service repository projection rebuild</h4>
+<p>The <code>clients/</code> subtree of the service repository is derived data. A future administrator command is intended to deterministically rebuild projections from canonical <code>admin/</code> records:</p>
+<pre><code>filees-admin projection rebuild   # not yet implemented</code></pre>
+<p>This command and the broader canonical grant model are not implemented yet; the current activation vertical writes the first client view directly in the same SVN revision as its canonical client record.</p>
+<h2 id="ch4-monitoring">4.6 Monitoring</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Current diagnostics and recovery counters; broader metrics remain non-contractual.</span></div>
+<p>FileES does not yet expose a metrics endpoint. The following sources are available for monitoring:</p>
+<div class="table-wrap"><table>
+<tr><th>Source</th><th>Contents</th></tr>
+<tr><td><code>.filees/logs/errors.jsonl</code></td><td>Structured error log; codes, severity, hints, timestamps. Query with standard JSON tools.</td></tr>
+<tr><td><code>filees status</code></td><td>Live snapshot of all repository states, connectivity, pending counts, and local/HEAD revisions</td></tr>
+<tr><td><code>filees log N</code></td><td>Last N error log entries, newest first</td></tr>
+<tr><td><code>/var/filees/onboarding/operations/</code></td><td>Operation bundle files; inspect state field with <code>jq</code></td></tr>
+<tr><td><code>/var/filees/onboarding/audit/</code></td><td>Timestamped audit events</td></tr>
+<tr><td><code>/var/filees/activation/records/</code></td><td>Staged, active, revoking, revoked and expired activation records</td></tr>
+<tr><td><code>/var/filees/activation/authorized_keys</code></td><td>Generated current installation-key access; never edit by hand</td></tr>
+<tr><td><code>commit.Service.RecoveryStats()</code></td><td>Internal Go API (not yet in IPC contract): resumed cache entries, entries skipped as already accepted, batches executed</td></tr>
+</table></div>
+<p>For CI or automated checks, <code>make verify</code> runs <code>go test ./...</code> (including race detector for key packages), <code>go vet ./...</code>, and a local SVN recovery smoke test (<code>scripts/svn-recovery-smoke.sh</code>) that creates a temporary <code>svnadmin</code> repository and does not require network access.</p>
+</div><hr class="chapter"/><h1 id="ch5">Chapter 5: Security Appendix</h1><div class="chapter-content">
+<p>This appendix summarises the design invariants that were established or hardened as a result of code reviews S1–S3, the client audit, the GUI audit, and the r61–r84 review. It is written for a security-aware deployer. It does not reproduce raw review findings; it captures <em>what was decided and why</em>.</p>
+<h2 id="ch5-invariants">5.1 Core Deployment Invariants</h2><div class="section-meta"><span class="status status-verified">Verified contract</span><span>Security and ownership invariants enforced by tests and package boundaries.</span></div>
+<p><strong>I-1. Private keys never leave their origin machine.</strong> The client generates its Ed25519 installation key locally using Go’s <code>crypto/rand</code>. Only the public key and SHA-256 fingerprint cross the wire back to the server worker. The worker records them in the operation bundle. The server never generates, stores, or transmits private keys.</p>
+<p><strong>I-2. OTP never appears in arguments, environment, logs, or SVN.</strong> The OTP is transmitted through a FIFO (<code>SSH_ASKPASS_REQUIRE=force</code>) that is created in a private directory (<code>0700</code> in <code>\$XDG_RUNTIME_DIR</code>), opened with <code>O_RDONLY|O_NOFOLLOW</code>, and zeroed after use. The OTP is stored only in the operation bundle’s pending outbox entry until the mail is accepted, at which point both the delivery address and the OTP are atomically redacted. BSD Auth receives the OTP through file descriptor 3, not through the environment.</p>
+<p><strong>I-3. The bootstrap Ed25519 key is a public capability, not a secret.</strong> It is compiled into the client binary and its corresponding authorized-key entry on the server can only invoke the enumeration-free <code>filees-onboard take</code> forced command. The account has <code>DisableForwarding yes</code>. A copy of this key does not grant any privilege beyond triggering the onboarding protocol, which still requires a valid administrator ticket.</p>
+<p><strong>I-4. The reverse tunnel is strictly limited.</strong> Remote TCP forwarding is allowed only to <code>127.0.0.1:42000</code>. All other forwarding types (local, dynamic, stream-local, X11, agent) are explicitly prohibited. The port is statically configured to serialise infrequent deploys rather than requiring a custom listener or dynamic per-operation allocation.</p>
+<p><strong>I-5. The client-side helper accepts exactly one command name.</strong> The loopback SSH helper rejects global requests, non-session channels, PTY, shell, subsystem, environment, and any exec other than <code>filees-deploy/v1</code>. The request decoder rejects unknown fields and trailing JSON. Response size is limited to 64 KiB by <code>io.LimitReader</code> before decoding — not as a post-hoc check — preventing OOM from a misbehaving server worker (S3 hardening, WORKER-001).</p>
+<p><strong>I-6. Pledge/unveil profiles are closed in code, not configuration.</strong> No server tool accepts pledge promises or unveil paths as configuration values. Profiles are hardcoded per verb in <code>internal/servertool/</code> and applied through the native sandbox wrapper. The activation worker and client entry retain only the fixed <code>proc exec</code> composition required for configured SVN executables; those executables must be regular and not group/other-writable. Profiles have been exercised natively on OpenBSD 7.9.</p>
+<p><strong>I-7. The filesystem is the transaction log.</strong> No hidden database, Unix socket, or background daemon manages state. The claim file pattern (<code>rename ticket → .claim → bundle → committed</code>) with <code>fsync</code> after each step makes crash state fully observable and recoverable with standard filesystem tools. An administrator can determine the exact recovery action by inspecting the file system.</p>
+<p><strong>I-8. Secret files are validated before use.</strong> <code>readPrivateSecret</code> rejects symlinks (<code>Lstat</code> + <code>!info.Mode().IsRegular()</code>), world- or group-writable files, empty files, files larger than 4 KiB, and files containing NUL bytes. Configuration files must be mode 0600 or 0644 (no group/other write). Paths must be absolute.</p>
+<p><strong>I-9. SMTP TLS errors are classified before acting on them.</strong> A transient network error during TLS handshake (TCP RST, timeout, EOF) is classified as temporary and preserves the OTP and delivery address for retry. Only certificate validation failures (unknown authority, hostname mismatch, invalid record header) are classified as permanent and trigger OTP redaction. This prevents an attacker-controlled network failure from permanently discarding the OTP (S1 hardening, SMTP-002).</p>
+<h2 id="ch5-transport">5.2 Transport Hardening</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>SSH command, channel, key pinning and response limits tested negatively.</span></div>
+<p><strong>T-1. Host key pinning is enforced on every client-originated SSH connection.</strong> Bootstrap and OTP tunnel connections verify the configured Ed25519 server host key before transmitting protocol data. The later possession-proof connection uses the generated installation key and the same pinned service host policy. Host-key algorithms are restricted to Ed25519.</p>
+<p><strong>T-2. The worker pinning is mutual and sequential.</strong> <code>filees-worker</code> connects to the loopback helper using the worker’s Ed25519 private key, which the helper expects. The helper’s ephemeral host key is carried in the <code>filees.tunnel-session/v1</code> frame over the OTP-authenticated outer SSH session and then pinned by the worker for the reverse-forward connection. The helper binds its first valid request to one operation and client ID; a later rebind is rejected.</p>
+<p><strong>T-3. Client-controlled dynamic data does not shape executable command strings.</strong> The tunnel remote command is the fixed literal <code>filees tunnel-v1</code>, and the possession command is exactly <code>svnserve -t</code>. <code>filees-entry</code> and <code>filees-client-entry</code> validate <code>SSH_ORIGINAL_COMMAND</code> exactly. The tunnel-session frame is passed through stdin. The operation and client UUID arguments in the per-key forced command are generated server-side, validated as UUIDs and never interpreted by a shell.</p>
+<p><strong>T-4. BSD Auth handoff is filesystem-based, not environment-based.</strong> OpenBSD sshd does not propagate <code>setenv</code> values returned by a BSD Auth style to the forced command. Rather than relying on this undocumented property, FileES uses an atomic operation bundle state transition: a successful OTP verification advances the bundle from <code>awaiting_tunnel</code> to <code>tunnel_authorized</code>, which <code>filees-entry</code> then claims atomically as it transitions to <code>tunnel_started</code>. This pattern was discovered during native OpenBSD testing and results in a more auditable and robust handoff than environment passing would provide.</p>
+<p><strong>T-5. The worker deadline covers the entire helper session.</strong> After the TCP connection to the helper is established, the context deadline is propagated to the <code>net.Conn</code> using <code>connection.SetDeadline(deadline)</code>. A <code>context.AfterFunc</code> callback closes the connection on cancellation even before the deadline. This prevents a misbehaving helper from keeping the worker alive indefinitely (S3 hardening, WORKER-002).</p>
+<h2 id="ch5-client">5.3 Client-Side Invariants</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Durable cache, bounded batches, lock fencing and conflict preservation.</span></div>
+<p><strong>C-1. Staging survives process death.</strong> The commit staging map is written atomically to <code>cache.json</code> after every received event, including during offline backoff. The daemon never loses a staged change to SIGKILL or OOM kill; recovery is idempotent.</p>
+<p><strong>C-2. No duplicate commits after partial success.</strong> After a crash, the restart queries SVN status for each cached entry. Entries whose paths are already in <code>normal</code> state (accepted by the server) are silently dropped. This was verified with fault injection at revision r91–r92 on a real SVN repository.</p>
+<p><strong>C-3. Local deletes are not reconstructed by update.</strong> Before each <code>svn update</code> (startup or poll), the daemon runs a recursive SVN status. Any <code>missing</code> entry defers the update to prevent SVN from reconstructing a file whose local deletion is staged but not yet committed. This defect was found during chaos testing and is now guarded by a regression test.</p>
+<p><strong>C-4. Conflict copies are fsynced before resolve.</strong> <code>saveConflictCopy</code> calls <code>Sync()</code> before <code>Close()</code>. If the fsync fails, the copy is deleted (<code>os.Remove(dst)</code>) and the error is propagated; <code>svn resolve</code> is never called with a missing or incomplete backup. This was corrected after CR-01 (high severity) in the r61–r84 review.</p>
+<p><strong>C-5. Passport state is always saved before early return.</strong> When <code>Release</code> processes multiple paths and one unlock fails, the in-memory passport map may already differ from the on-disk <code>passports.json</code>. A <code>changed</code> flag ensures that <code>saveLocked()</code> is called before every error return from <code>Release</code>. This was corrected after CR-02 (high severity).</p>
+<p><strong>C-6. Runtime lock recovery is PID-reuse-safe on POSIX.</strong> The lock owner file is held open with an exclusive <code>flock</code>. Another process trying to acquire the lock tests it with <code>LOCK_EX|LOCK_NB</code>: success means the original owner is dead and the OS released the flock (since flock is not inherited across exec, and the OS releases it on process death regardless of PID recycling). This replaces the earlier timestamp-based mechanism that parsed but never used the timestamp field (CR-03). On Windows the old PID-only mechanism remains; PID reuse is a known residual risk on that platform.</p>
+<p><strong>C-7. The GUI enforces strict import boundaries.</strong> No GUI package imports sync-engine packages (<code>watcher</code>, <code>commit</code>, <code>client</code>, <code>ipcserver</code>, <code>errmap</code>). The boundary is enforced by an architectural test that runs as part of <code>go test</code>. The daemon does not import GUI or display libraries. The sole communication channel between GUI and daemon is <code>filees.contract/v1</code> over the Unix socket.</p>
+<p><strong>C-8. Mutation actions are gated on fresh capabilities and connection state.</strong> Lock and unlock are offered only when the daemon reports them in the <code>capabilities</code> list and the GUI connection state is <code>Connected</code> (not <code>Stale</code>). The controller re-checks capability and connection state after the file picker closes, before sending the IPC command. The daemon independently validates all paths and operation parameters; the GUI is not the security boundary.</p>
+<h2 id="ch5-gui">5.4 GUI Boundary Invariants</h2><div class="section-meta"><span class="status status-verified">Verified boundary</span><span>GUI cannot own daemon state, import engine packages or execute SVN directly.</span></div>
+<p><strong>G-1. Structured error information is preserved across the IPC boundary.</strong> <code>ipcclient.ResponseError</code> retains the full <code>ErrorBody</code> (<code>code</code>, <code>severity</code>, <code>hint</code>, <code>message_key</code>, <code>details</code>). GUI code uses <code>errors.As</code> to extract it and maps <code>hint</code> to a safe, localised user message without parsing raw text (AUD-01 correction).</p>
+<p><strong>G-2. A per-user lock prevents multiple GUI instances.</strong> Before initialising the tray, the composition root acquires a per-user lock (POSIX <code>flock</code> on Linux; named session mutex on Windows). A second instance exits before any visible effect (AUD-02 correction).</p>
+<p><strong>G-3. Events are cache-invalidation signals, not the sole state source.</strong> A received event triggers a <code>repo.status</code> fetch. The GUI never constructs its authoritative state purely by applying events. After reconnect, a sequence gap, or an unknown event, a full resync is performed.</p>
+<p><strong>G-4. Autostart status distinguishes current from stale.</strong> <code>--autostart status</code> compares the stored command with the expected command for the current executable and arguments. It returns <code>enabled-stale</code> if they differ, prompting the user to re-run <code>--autostart enable</code> from the installed path (AUD-09 correction).</p>
+</div></div></div><footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Canonical English edition · translation maintained separately</span></footer></main>
+</body>
+</html>

@@ -120,6 +120,17 @@ func TestHelperIsLoopbackOnlyAndStopsWithContext(t *testing.T) {
 	}
 }
 
+func TestUnboundHelperBindsToFirstServerDeployment(t *testing.T) {
+	helper := &Helper{}
+	firstOperation, firstClient := uuid.NewString(), "client-first"
+	if !helper.bindRequest(firstOperation, firstClient) || !helper.bindRequest(firstOperation, firstClient) {
+		t.Fatal("helper did not accept an idempotent first binding")
+	}
+	if helper.bindRequest(uuid.NewString(), "client-second") {
+		t.Fatal("helper rebound to a different deployment")
+	}
+}
+
 type blockingIdentityGenerator struct {
 	started chan struct{}
 	release chan struct{}

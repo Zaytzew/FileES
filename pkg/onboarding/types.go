@@ -6,11 +6,13 @@ import (
 )
 
 const (
-	TicketSchema    = "filees.onboarding-ticket/v1"
-	OperationSchema = "filees.onboarding-operation/v1"
-	OutboxSchema    = "filees.mail-outbox/v2"
-	AuditSchema     = "filees.onboarding-audit/v1"
-	BundleSchema    = "filees.onboarding-bundle/v2"
+	legacyOperationSchema = "filees.onboarding-operation/v1"
+	legacyBundleSchema    = "filees.onboarding-bundle/v2"
+	TicketSchema          = "filees.onboarding-ticket/v1"
+	OperationSchema       = "filees.onboarding-operation/v2"
+	OutboxSchema          = "filees.mail-outbox/v2"
+	AuditSchema           = "filees.onboarding-audit/v1"
+	BundleSchema          = "filees.onboarding-bundle/v3"
 )
 
 var (
@@ -41,27 +43,34 @@ type Ticket struct {
 type OperationState string
 
 const (
-	OperationAwaitingTunnel   OperationState = "awaiting_tunnel"
-	OperationTunnelAuthorized OperationState = "tunnel_authorized"
-	OperationTunnelStarted    OperationState = "tunnel_started"
-	OperationOTPExhausted     OperationState = "otp_exhausted"
-	OperationExpired          OperationState = "expired"
+	OperationAwaitingTunnel    OperationState = "awaiting_tunnel"
+	OperationTunnelAuthorized  OperationState = "tunnel_authorized"
+	OperationTunnelStarted     OperationState = "tunnel_started"
+	OperationHelperAnnounced   OperationState = "helper_announced"
+	OperationIdentityGenerated OperationState = "identity_generated"
+	OperationOTPExhausted      OperationState = "otp_exhausted"
+	OperationExpired           OperationState = "expired"
 )
 
 // Operation deliberately has no e-mail field. The delivery address belongs
 // only to the short-lived ticket/outbox path and is not client identity.
 type Operation struct {
-	Schema              string         `json:"schema"`
-	OperationID         string         `json:"operation_id"`
-	OnboardingRequestID string         `json:"onboarding_request_id"`
-	OTPHash             string         `json:"otp_hash,omitempty"`
-	OTPLocator          string         `json:"otp_locator,omitempty"`
-	ApprovedPolicy      Policy         `json:"approved_policy"`
-	AssignedReversePort uint16         `json:"assigned_reverse_port"`
-	AttemptsLeft        int            `json:"attempts_left"`
-	State               OperationState `json:"state"`
-	CreatedAt           time.Time      `json:"created_at"`
-	ExpiresAt           time.Time      `json:"expires_at"`
+	Schema                  string         `json:"schema"`
+	OperationID             string         `json:"operation_id"`
+	ClientID                string         `json:"client_id"`
+	OnboardingRequestID     string         `json:"onboarding_request_id"`
+	OTPHash                 string         `json:"otp_hash,omitempty"`
+	OTPLocator              string         `json:"otp_locator,omitempty"`
+	ApprovedPolicy          Policy         `json:"approved_policy"`
+	AssignedReversePort     uint16         `json:"assigned_reverse_port"`
+	AttemptsLeft            int            `json:"attempts_left"`
+	State                   OperationState `json:"state"`
+	DeployRequestID         string         `json:"deploy_request_id,omitempty"`
+	HelperHostPublicKey     string         `json:"helper_host_public_key,omitempty"`
+	InstallationPublicKey   string         `json:"installation_public_key,omitempty"`
+	InstallationFingerprint string         `json:"installation_fingerprint,omitempty"`
+	CreatedAt               time.Time      `json:"created_at"`
+	ExpiresAt               time.Time      `json:"expires_at"`
 }
 
 type DeliveryState string
@@ -122,6 +131,7 @@ type TakeReceipt struct {
 
 type AuthGrant struct {
 	OperationID         string
+	ClientID            string
 	ApprovedPolicy      Policy
 	AssignedReversePort uint16
 	ExpiresAt           time.Time

@@ -1,53 +1,46 @@
 package servertool
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"os"
+	"syscall"
 
-	"filees/pkg/onboarding"
+	"filees/internal/obsandbox"
 )
 
-const TunnelCommand = "filees tunnel-v1"
+const (
+	TunnelCommand = "filees tunnel-v1"
+	workerPath    = "/usr/local/libexec/filees/filees-worker"
+	entryPromises = "stdio proc exec"
+)
 
-type TunnelAccepted struct {
-	Schema      string `json:"schema"`
-	Status      string `json:"status"`
-	OperationID string `json:"operation_id"`
-	ReversePort uint16 `json:"reverse_port"`
+func RunEntry(args []string, _ io.Reader, _ io.Writer, stderr io.Writer, getenv func(string) string) int {
+	return runEntry(args, stderr, getenv, execWorker)
 }
 
-func RunEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+func runEntry(args []string, stderr io.Writer, getenv func(string) string, execute func() error) int {
 	if len(args) != 0 || getenv("SSH_ORIGINAL_COMMAND") != TunnelCommand {
 		fmt.Fprintln(stderr, "filees-entry: rejected command")
 		return ExitUnavailable
 	}
-	files, config, err := openFiles("/etc/filees/server.json", toolAccess{name: "filees-entry/tunnel", areas: onboarding.AreaOperations, write: true})
-	if err != nil {
-		report(stderr, "filees-entry config", err)
-		return ExitConfig
-	}
-	// S2 deliberately selects the one policy enforceable by unmodified sshd:
-	// one fixed loopback listen port and serialized rare onboarding sessions.
-	port := config.Onboarding.ReversePortFirst
-	if port == 0 || port != config.Onboarding.ReversePortLast {
-		fmt.Fprintln(stderr, "filees-entry: configured reverse port is not the fixed SSH port")
-		return ExitConfig
-	}
-	grant, err := files.ClaimAuthorizedTunnel(port)
-	if err != nil {
-		fmt.Fprintln(stderr, "filees-entry: authentication context does not match an active operation")
-		return ExitUnavailable
-	}
-	if err := writeJSON(stdout, TunnelAccepted{Schema: "filees.ssh-tunnel/v1", Status: "authenticated", OperationID: grant.OperationID, ReversePort: grant.AssignedReversePort}); err != nil {
+	if err := execute(); err != nil {
+		report(stderr, "filees-entry exec", err)
 		return ExitSoftware
 	}
-	// This process belongs to the SSH session and is not a daemon. In S3 this
-	// wait is replaced by the helper probe and exec of the one-shot worker.
-	_, err = io.Copy(io.Discard, stdin)
-	if err != nil && !errors.Is(err, os.ErrClosed) {
-		return ExitTempFail
-	}
 	return ExitOK
+}
+
+func execWorker() error {
+	if err := obsandbox.Begin(entryPromises); err != nil {
+		return err
+	}
+	profile := obsandbox.Profile{Name: "filees-entry/exec-worker", Promises: entryPromises, Paths: []obsandbox.Path{
+		{Label: "worker", Name: workerPath, Perms: "rx"},
+		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
+		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
+	}}
+	if err := obsandbox.ApplyForExec(profile, workerPromises+" proc unveil"); err != nil {
+		return err
+	}
+	return syscall.Exec(workerPath, []string{"filees-worker", "deploy"}, []string{})
 }

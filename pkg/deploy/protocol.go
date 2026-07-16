@@ -43,10 +43,16 @@ func (r HelperRequest) validate(operationID, clientID string) error {
 	if r.Schema != HelperSchema {
 		return fmt.Errorf("unsupported helper schema %q", r.Schema)
 	}
-	if r.OperationID != operationID {
+	if _, err := uuid.Parse(r.OperationID); err != nil {
+		return fmt.Errorf("operation_id must be UUID: %w", err)
+	}
+	if operationID != "" && r.OperationID != operationID {
 		return errors.New("operation_id does not match active tunnel")
 	}
-	if r.ClientID != clientID {
+	if r.ClientID == "" {
+		return errors.New("client_id is required")
+	}
+	if clientID != "" && r.ClientID != clientID {
 		return errors.New("client_id does not match active tunnel")
 	}
 	if _, err := uuid.Parse(r.RequestID); err != nil {

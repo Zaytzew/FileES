@@ -439,7 +439,7 @@ func (s *Files) AuthenticateOTP(otp string) (AuthGrant, error) {
 		if err := atomicWriteJSON(path, bundle); err != nil {
 			return err
 		}
-		grant = AuthGrant{OperationID: op.OperationID, ApprovedPolicy: op.ApprovedPolicy, AssignedReversePort: op.AssignedReversePort, ExpiresAt: op.ExpiresAt}
+		grant = authGrantFor(*op)
 		return nil
 	})
 	return grant, err
@@ -492,10 +492,103 @@ func (s *Files) ClaimAuthorizedTunnel(expectedPort uint16) (AuthGrant, error) {
 			return err
 		}
 		op := selected.Operation
-		grant = AuthGrant{OperationID: op.OperationID, ApprovedPolicy: op.ApprovedPolicy, AssignedReversePort: op.AssignedReversePort, ExpiresAt: op.ExpiresAt}
+		grant = authGrantFor(op)
 		return nil
 	})
 	return grant, err
+}
+
+// ClaimAuthorizedHelper atomically binds the one active OTP grant to the
+// helper announced by the authenticated outer SSH session. The helper key is
+// public material; the worker private key remains server-only.
+func (s *Files) ClaimAuthorizedHelper(expectedPort uint16, deployRequestID, helperHostPublicKey string) (AuthGrant, error) {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return AuthGrant{}, err
+	}
+	if expectedPort == 0 || strings.TrimSpace(helperHostPublicKey) == "" {
+		return AuthGrant{}, ErrTunnelGrant
+	}
+	if _, err := uuid.Parse(deployRequestID); err != nil {
+		return AuthGrant{}, errors.New("deploy_request_id must be a UUID")
+	}
+	var grant AuthGrant
+	err := s.withLock(func() error {
+		paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
+		if err != nil {
+			return err
+		}
+		var selectedPath string
+		var selected Bundle
+		now := s.clock.Now().UTC()
+		for _, path := range paths {
+			if strings.HasPrefix(filepath.Base(path), claimPrefix) {
+				continue
+			}
+			bundle, err := s.readBundlePathLocked(path)
+			if err != nil {
+				return err
+			}
+			op := bundle.Operation
+			if op.State != OperationTunnelAuthorized || op.AssignedReversePort != expectedPort || !now.Before(op.ExpiresAt) {
+				continue
+			}
+			if selectedPath != "" {
+				return ErrTunnelGrant
+			}
+			selectedPath, selected = path, bundle
+		}
+		if selectedPath == "" {
+			return ErrTunnelGrant
+		}
+		selected.Operation.State = OperationHelperAnnounced
+		if selected.Operation.ClientID == "" {
+			selected.Operation.ClientID, err = randomUUID(s.random)
+			if err != nil {
+				return err
+			}
+		}
+		selected.Operation.DeployRequestID = deployRequestID
+		selected.Operation.HelperHostPublicKey = strings.TrimSpace(helperHostPublicKey)
+		selected.addAudit("tunnel_session_started", "filees-worker", now)
+		selected.addAudit("helper_announced", "filees-worker", now)
+		if err := atomicWriteJSON(selectedPath, selected); err != nil {
+			return err
+		}
+		grant = authGrantFor(selected.Operation)
+		return nil
+	})
+	return grant, err
+}
+
+// CompleteGeneratedIdentity publishes only the installation public key and
+// fingerprint. Client-private paths and key material never enter the bundle.
+func (s *Files) CompleteGeneratedIdentity(operationID, deployRequestID, publicKey, fingerprint string) error {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return err
+	}
+	return s.withLock(func() error {
+		path, bundle, err := s.findBundleLocked(func(bundle Bundle) bool { return bundle.Operation.OperationID == operationID })
+		if err != nil {
+			return err
+		}
+		op := &bundle.Operation
+		if op.State == OperationIdentityGenerated && op.DeployRequestID == deployRequestID && op.InstallationPublicKey == publicKey && op.InstallationFingerprint == fingerprint {
+			return nil
+		}
+		if op.State != OperationHelperAnnounced || op.DeployRequestID != deployRequestID || strings.TrimSpace(publicKey) == "" || strings.TrimSpace(fingerprint) == "" {
+			return ErrTunnelGrant
+		}
+		op.State = OperationIdentityGenerated
+		op.InstallationPublicKey = strings.TrimSpace(publicKey)
+		op.InstallationFingerprint = strings.TrimSpace(fingerprint)
+		bundle.addAudit("helper_verified", "filees-worker", s.clock.Now().UTC())
+		bundle.addAudit("identity_generated", "filees-worker", s.clock.Now().UTC())
+		return atomicWriteJSON(path, bundle)
+	})
+}
+
+func authGrantFor(op Operation) AuthGrant {
+	return AuthGrant{OperationID: op.OperationID, ClientID: op.ClientID, ApprovedPolicy: op.ApprovedPolicy, AssignedReversePort: op.AssignedReversePort, ExpiresAt: op.ExpiresAt}
 }
 
 func (s *Files) ClaimPendingMail(staleAfter time.Duration) (MailJob, error) {
@@ -724,9 +817,13 @@ func (s *Files) recoverClaimsLocked() error {
 			if err := atomicWriteJSON(path, bundle); err != nil {
 				return err
 			}
-		case BundleSchema:
-			if err := decodeStrict(raw, BundleSchema, &bundle); err != nil {
+		case BundleSchema, legacyBundleSchema:
+			if err := decodeStrict(raw, header.Schema, &bundle); err != nil {
 				return err
+			}
+			bundle.Schema = BundleSchema
+			if bundle.Operation.Schema == legacyOperationSchema {
+				bundle.Operation.Schema = OperationSchema
 			}
 		default:
 			return fmt.Errorf("unsupported claim schema %q", header.Schema)
@@ -750,6 +847,10 @@ func (s *Files) bundleFromTicketLocked(ticket Ticket, requestID string, now time
 	if err != nil {
 		return Bundle{}, err
 	}
+	clientID, err := randomUUID(s.random)
+	if err != nil {
+		return Bundle{}, err
+	}
 	otp, locator, err := generateOTP(s.random)
 	if err != nil {
 		return Bundle{}, err
@@ -758,7 +859,7 @@ func (s *Files) bundleFromTicketLocked(ticket Ticket, requestID string, now time
 	if err != nil {
 		return Bundle{}, err
 	}
-	op := Operation{Schema: OperationSchema, OperationID: operationID, OnboardingRequestID: requestID, OTPHash: s.hashOTP(otp), OTPLocator: locator, ApprovedPolicy: ticket.ApprovedPolicy, AssignedReversePort: port, AttemptsLeft: s.otpAttempts, State: OperationAwaitingTunnel, CreatedAt: now, ExpiresAt: now.Add(s.operationTTL)}
+	op := Operation{Schema: OperationSchema, OperationID: operationID, ClientID: clientID, OnboardingRequestID: requestID, OTPHash: s.hashOTP(otp), OTPLocator: locator, ApprovedPolicy: ticket.ApprovedPolicy, AssignedReversePort: port, AttemptsLeft: s.otpAttempts, State: OperationAwaitingTunnel, CreatedAt: now, ExpiresAt: now.Add(s.operationTTL)}
 	outbox := MailOutboxEntry{Schema: OutboxSchema, MessageID: messageID, OperationID: operationID, DeliveryAddress: ticket.EmailDeliveryAddress, OTP: otp, Template: "filees-onboarding-otp/v1", DeliveryState: DeliveryPending, CreatedAt: now}
 	bundle := Bundle{Schema: BundleSchema, Operation: op, Outbox: outbox}
 	bundle.addAudit("onboarding_started", "filees-onboard", now)
@@ -773,7 +874,7 @@ func (s *Files) allocatePortLocked(now time.Time) (uint16, error) {
 	}
 	for _, bundle := range bundles {
 		op := bundle.Operation
-		if now.Before(op.ExpiresAt) && (op.State == OperationAwaitingTunnel || op.State == OperationTunnelAuthorized || op.State == OperationTunnelStarted) {
+		if now.Before(op.ExpiresAt) && (op.State == OperationAwaitingTunnel || op.State == OperationTunnelAuthorized || op.State == OperationTunnelStarted || op.State == OperationHelperAnnounced || op.State == OperationIdentityGenerated) {
 			used[op.AssignedReversePort] = true
 		}
 	}
@@ -821,7 +922,13 @@ func (s *Files) readBundlePathLocked(path string) (Bundle, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return Bundle{}, ErrNotFound
 		}
-		return Bundle{}, err
+		if legacyErr := readStrictJSON(path, legacyBundleSchema, &bundle); legacyErr != nil {
+			return Bundle{}, err
+		}
+		bundle.Schema = BundleSchema
+		if bundle.Operation.Schema == legacyOperationSchema {
+			bundle.Operation.Schema = OperationSchema
+		}
 	}
 	return bundle, nil
 }

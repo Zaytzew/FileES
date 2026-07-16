@@ -12,6 +12,7 @@ install -m 755 "$bundle/bin/filees-operation" "$prefix/sbin/filees-operation"
 install -m 755 "$bundle/bin/filees-onboard" "$prefix/libexec/filees/filees-onboard"
 install -m 755 "$bundle/bin/filees-mail" "$prefix/libexec/filees/filees-mail"
 install -m 755 "$bundle/bin/filees-entry" "$prefix/libexec/filees/filees-entry"
+install -m 755 "$bundle/bin/filees-worker" "$prefix/libexec/filees/filees-worker"
 
 install -d -m 700 "$sysconfdir"
 if [ ! -e "$sysconfdir/server.json" ]; then
@@ -20,6 +21,10 @@ fi
 if [ ! -e "$sysconfdir/otp.pepper" ]; then
 	umask 077
 	openssl rand -base64 32 >"$sysconfdir/otp.pepper"
+fi
+if [ ! -e "$sysconfdir/worker_ed25519" ]; then
+	umask 077
+	ssh-keygen -q -t ed25519 -N '' -C filees-worker-v1 -f "$sysconfdir/worker_ed25519"
 fi
 
 install -d -m 700 "$statedir" "$statedir/tickets" "$statedir/operations" "$statedir/audit"

@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"filees/pkg/deploy"
 	"filees/pkg/onboarding"
 	"filees/pkg/serverconfig"
 	"filees/pkg/smtpsubmit"
@@ -28,10 +29,16 @@ func TestS1FilesystemWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(filepath.Dir(root), "server.json")
+	workerPublicPath := filepath.Join(filepath.Dir(root), "worker_ed25519.pub")
+	workerPublic, err := deploy.BootstrapAuthorizedKey()
+	if err != nil || os.WriteFile(workerPublicPath, []byte(workerPublic+"\n"), 0o644) != nil {
+		t.Fatal("write worker public key")
+	}
 	configJSON := `{
   "schema":"filees.server-toolchain/v1",
   "root":` + quote(root) + `,
   "otp_pepper_file":` + quote(pepperPath) + `,
+  "worker_public_key_file":` + quote(workerPublicPath) + `,
   "operation_ttl":"30m",
   "otp_attempts":3,
   "reverse_port_first":42000,

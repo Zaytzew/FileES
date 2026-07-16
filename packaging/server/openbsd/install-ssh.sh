@@ -30,7 +30,11 @@ usermod -p "$password_hash" _filees-tunnel
 unset password_hash
 install -o "$state_user" -g auth -m 4550 "$bundle/bin/filees-ssh-auth" /usr/libexec/auth/login_-filees
 install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-onboard" /usr/local/libexec/filees/filees-onboard
+# pledge(2) rejects exec of a set-id image after execpromises have been set.
+# Keep the privilege boundary on the tiny forced-command dispatcher; the
+# ordinary worker image inherits its effective state UID across exec.
 install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-entry" /usr/local/libexec/filees/filees-entry
+install -o root -g wheel -m 0555 "$bundle/bin/filees-worker" /usr/local/libexec/filees/filees-worker
 
 install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/bootstrap_authorized_keys" /etc/ssh/filees_bootstrap_authorized_keys
 install -d -o root -g wheel -m 755 /etc/ssh/sshd_config.d
@@ -48,8 +52,10 @@ chown -R "$state_user":wheel /var/filees/onboarding
 chmod 700 /var/filees/onboarding /var/filees/onboarding/tickets /var/filees/onboarding/operations /var/filees/onboarding/audit
 chown "$state_user":wheel /etc/filees
 chmod 700 /etc/filees
-chown "$state_user":wheel /etc/filees/server.json /etc/filees/otp.pepper
-chmod 600 /etc/filees/server.json /etc/filees/otp.pepper
+chown "$state_user":wheel /etc/filees/server.json /etc/filees/otp.pepper /etc/filees/worker_ed25519
+chmod 600 /etc/filees/server.json /etc/filees/otp.pepper /etc/filees/worker_ed25519
+chown root:wheel /etc/filees/worker_ed25519.pub
+chmod 644 /etc/filees/worker_ed25519.pub
 
 sshd -t
 rcctl reload sshd

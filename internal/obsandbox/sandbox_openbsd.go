@@ -21,6 +21,20 @@ func Begin(runtimePromises string) error {
 }
 
 func Apply(profile Profile) error {
+	return apply(profile, "")
+}
+
+// ApplyForExec installs a distinct post-exec pledge profile. It is used by a
+// tiny forced-command dispatcher which may exec exactly one unveiled binary;
+// the child then establishes its own narrower unveil profile.
+func ApplyForExec(profile Profile, execPromises string) error {
+	if execPromises == "" {
+		return fmt.Errorf("sandbox %s: empty exec promises", profile.Name)
+	}
+	return apply(profile, execPromises)
+}
+
+func apply(profile Profile, execPromises string) error {
 	if err := Validate(profile); err != nil {
 		return err
 	}
@@ -34,7 +48,13 @@ func Apply(profile Profile) error {
 	}
 	// PledgePromises is deliberate. Pledge(promises, "") would install an
 	// empty execpromises profile rather than leave it genuinely unspecified.
-	if err := unix.PledgePromises(profile.Promises); err != nil {
+	var err error
+	if execPromises == "" {
+		err = unix.PledgePromises(profile.Promises)
+	} else {
+		err = unix.Pledge(profile.Promises, execPromises)
+	}
+	if err != nil {
 		return fmt.Errorf("sandbox %s: runtime pledge %q: %w", profile.Name, profile.Promises, err)
 	}
 	return nil

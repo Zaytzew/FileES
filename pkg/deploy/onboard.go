@@ -93,7 +93,8 @@ func submitOnboarding(ctx context.Context, address, knownHostsPath, email, reque
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return onboarding.OnboardResponse{}, errors.New("bootstrap response contains trailing JSON")
 	}
-	if response.Schema != onboarding.OnboardResponseSchema || response.Status != "accepted" || response.OnboardingRequestID != requestID {
+	workerKey, _, options, rest, keyErr := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(response.WorkerPublicKey)))
+	if response.Schema != onboarding.OnboardResponseSchema || response.Status != "accepted" || response.OnboardingRequestID != requestID || keyErr != nil || workerKey.Type() != ssh.KeyAlgoED25519 || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
 		return onboarding.OnboardResponse{}, errors.New("bootstrap response does not match request")
 	}
 	return response, nil

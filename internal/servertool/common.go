@@ -23,22 +23,28 @@ const (
 )
 
 const (
-	readPromises  = "stdio rpath wpath flock"
-	writePromises = "stdio rpath wpath cpath fattr flock"
-	mailPromises  = writePromises + " inet dns"
+	readPromises   = "stdio rpath wpath flock"
+	writePromises  = "stdio rpath wpath cpath fattr flock"
+	mailPromises   = writePromises + " inet dns"
+	workerPromises = writePromises + " inet"
 )
 
 type toolAccess struct {
-	name     string
-	areas    onboarding.Area
-	write    bool
-	needOTP  bool
-	needSMTP bool
+	name             string
+	areas            onboarding.Area
+	write            bool
+	needOTP          bool
+	needSMTP         bool
+	needWorker       bool
+	needWorkerPublic bool
 }
 
 func (access toolAccess) promises() string {
 	if access.needSMTP {
 		return mailPromises
+	}
+	if access.needWorker {
+		return workerPromises
 	}
 	if access.write {
 		return writePromises
@@ -56,6 +62,12 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	}
 	if access.needSMTP {
 		secrets |= serverconfig.SecretSMTP
+	}
+	if access.needWorker {
+		secrets |= serverconfig.SecretWorker
+	}
+	if access.needWorkerPublic {
+		secrets |= serverconfig.SecretWorkerPublic
 	}
 	config, err := serverconfig.LoadFor(configPath, secrets)
 	if err != nil {

@@ -19,7 +19,7 @@ func RunOnboard(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		report(stderr, "filees-onboard request", err)
 		return ExitData
 	}
-	files, _, err := openFiles(path, toolAccess{name: "filees-onboard/take", areas: onboarding.AreaAll, write: true, needOTP: true})
+	files, config, err := openFiles(path, toolAccess{name: "filees-onboard/take", areas: onboarding.AreaAll, write: true, needOTP: true, needWorkerPublic: true})
 	if err != nil {
 		report(stderr, "filees-onboard config", err)
 		return ExitConfig
@@ -29,7 +29,7 @@ func RunOnboard(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		report(stderr, "filees-onboard", err)
 		return ExitTempFail
 	}
-	if _, err := stdout.Write(onboarding.EncodeOnboardResponse(request.OnboardingRequestID)); err != nil {
+	if _, err := stdout.Write(onboarding.EncodeOnboardResponse(request.OnboardingRequestID, config.WorkerPublicKey)); err != nil {
 		return ExitSoftware
 	}
 	return ExitOK

@@ -20,7 +20,7 @@ tmp=$(mktemp -d "$dist/.filees-server-$target.tmp.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 mkdir -p "$tmp/bin" "$tmp/share/filees/openbsd" "$tmp/openbsd"
 
-for command in filees-admin filees-onboard filees-operation filees-mail filees-ssh-auth filees-entry; do
+for command in filees-admin filees-onboard filees-operation filees-mail filees-ssh-auth filees-entry filees-worker; do
 	(
 		cd "$root"
 		CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false -o "$tmp/bin/$command" "./cmd/$command"

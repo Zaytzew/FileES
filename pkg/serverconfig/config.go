@@ -15,19 +15,22 @@ import (
 
 	"filees/pkg/onboarding"
 	"filees/pkg/smtpsubmit"
+	"golang.org/x/crypto/ssh"
 )
 
 const Schema = "filees.server-toolchain/v1"
 
 type File struct {
-	Schema           string   `json:"schema"`
-	Root             string   `json:"root"`
-	OTPPepperFile    string   `json:"otp_pepper_file"`
-	OperationTTL     string   `json:"operation_ttl"`
-	OTPAttempts      int      `json:"otp_attempts"`
-	ReversePortFirst uint16   `json:"reverse_port_first"`
-	ReversePortLast  uint16   `json:"reverse_port_last"`
-	SMTP             SMTPFile `json:"smtp"`
+	Schema               string   `json:"schema"`
+	Root                 string   `json:"root"`
+	OTPPepperFile        string   `json:"otp_pepper_file"`
+	OperationTTL         string   `json:"operation_ttl"`
+	OTPAttempts          int      `json:"otp_attempts"`
+	ReversePortFirst     uint16   `json:"reverse_port_first"`
+	ReversePortLast      uint16   `json:"reverse_port_last"`
+	WorkerPrivateKeyFile string   `json:"worker_private_key_file,omitempty"`
+	WorkerPublicKeyFile  string   `json:"worker_public_key_file,omitempty"`
+	SMTP                 SMTPFile `json:"smtp"`
 }
 
 type SMTPFile struct {
@@ -45,14 +48,18 @@ type SMTPFile struct {
 }
 
 type Config struct {
-	Path             string
-	Root             string
-	Onboarding       onboarding.Options
-	SMTP             smtpsubmit.Config
-	SMTPFrom         string
-	MessageIDDomain  string
-	SMTPPasswordFile string
-	SMTPCAFile       string
+	Path                 string
+	Root                 string
+	Onboarding           onboarding.Options
+	SMTP                 smtpsubmit.Config
+	SMTPFrom             string
+	MessageIDDomain      string
+	SMTPPasswordFile     string
+	SMTPCAFile           string
+	WorkerPrivateKeyFile string
+	WorkerPublicKeyFile  string
+	WorkerPublicKey      string
+	WorkerSigner         ssh.Signer
 }
 
 type Secrets uint8
@@ -60,6 +67,8 @@ type Secrets uint8
 const (
 	SecretOTP Secrets = 1 << iota
 	SecretSMTP
+	SecretWorker
+	SecretWorkerPublic
 )
 
 // Load retains the original full onboarding configuration contract.
@@ -101,6 +110,44 @@ func load(path string, secrets Secrets) (Config, error) {
 	for label, value := range map[string]string{"root": file.Root, "otp_pepper_file": file.OTPPepperFile} {
 		if !filepath.IsAbs(value) {
 			return Config{}, fmt.Errorf("%s must be absolute", label)
+		}
+	}
+	if file.WorkerPrivateKeyFile != "" && !filepath.IsAbs(file.WorkerPrivateKeyFile) {
+		return Config{}, errors.New("worker_private_key_file must be absolute")
+	}
+	if file.WorkerPublicKeyFile != "" && !filepath.IsAbs(file.WorkerPublicKeyFile) {
+		return Config{}, errors.New("worker_public_key_file must be absolute")
+	}
+	workerPublicKey := ""
+	if secrets&SecretWorkerPublic != 0 {
+		if file.WorkerPublicKeyFile == "" {
+			return Config{}, errors.New("worker_public_key_file is required for onboarding")
+		}
+		if err := requireRegularNotWritable(file.WorkerPublicKeyFile); err != nil {
+			return Config{}, fmt.Errorf("worker public key: %w", err)
+		}
+		raw, err := os.ReadFile(file.WorkerPublicKeyFile)
+		if err != nil || len(raw) > 16*1024 {
+			return Config{}, errors.New("worker public key cannot be read or is oversized")
+		}
+		key, _, options, rest, err := ssh.ParseAuthorizedKey(bytes.TrimSpace(raw))
+		if err != nil || key.Type() != ssh.KeyAlgoED25519 || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+			return Config{}, errors.New("worker public key must contain one Ed25519 authorized key")
+		}
+		workerPublicKey = strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+	}
+	var workerSigner ssh.Signer
+	if secrets&SecretWorker != 0 {
+		if file.WorkerPrivateKeyFile == "" {
+			return Config{}, errors.New("worker_private_key_file is required for deploy worker")
+		}
+		workerRaw, err := readPrivateSecret(file.WorkerPrivateKeyFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("worker private key: %w", err)
+		}
+		workerSigner, err = ssh.ParsePrivateKey(workerRaw)
+		if err != nil || workerSigner.PublicKey().Type() != ssh.KeyAlgoED25519 {
+			return Config{}, errors.New("worker private key must be an unencrypted Ed25519 OpenSSH key")
 		}
 	}
 	ttl, err := time.ParseDuration(file.OperationTTL)
@@ -171,6 +218,8 @@ func load(path string, secrets Secrets) (Config, error) {
 		Path: path, Root: filepath.Clean(file.Root), SMTPFrom: from,
 		MessageIDDomain:  strings.ToLower(strings.TrimSpace(file.SMTP.MessageIDDomain)),
 		SMTPPasswordFile: file.SMTP.PasswordFile, SMTPCAFile: file.SMTP.CAFile,
+		WorkerPrivateKeyFile: file.WorkerPrivateKeyFile, WorkerSigner: workerSigner,
+		WorkerPublicKeyFile: file.WorkerPublicKeyFile, WorkerPublicKey: workerPublicKey,
 		Onboarding: onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
 		SMTP:       smtpsubmit.Config{Address: file.SMTP.Address, ServerName: file.SMTP.ServerName, ClientName: file.SMTP.ClientName, Username: file.SMTP.Username, Password: password, TLSMode: smtpsubmit.TLSMode(file.SMTP.TLS), RootCAs: pool, ConnectTimeout: connectTimeout, CommandTimeout: commandTimeout},
 	}

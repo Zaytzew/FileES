@@ -432,6 +432,37 @@ func TestStartedTunnelRetainsFixedPortLease(t *testing.T) {
 	}
 }
 
+func TestLegacyS2BundleIsUpgradedWhenS3ClaimsHelper(t *testing.T) {
+	now := time.Date(2026, 7, 16, 14, 0, 0, 0, time.UTC)
+	store, root := openTestStore(t, &now, 3, 42660, 42660)
+	receipt, otp := createTakenOperation(t, store, "legacy-s2@example.net")
+	requestID := receipt.OnboardingRequestID
+	path := filepath.Join(root, operationsDir, requestID+jsonSuffix)
+	var bundle Bundle
+	raw, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(raw, &bundle) != nil {
+		t.Fatal("read current bundle")
+	}
+	bundle.Schema = legacyBundleSchema
+	bundle.Operation.Schema = legacyOperationSchema
+	bundle.Operation.ClientID = ""
+	raw, _ = json.MarshalIndent(bundle, "", "  ")
+	if err := os.WriteFile(path, append(raw, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AuthenticateOTP(otp); err != nil {
+		t.Fatal(err)
+	}
+	grant, err := store.ClaimAuthorizedHelper(42660, uuid.NewString(), "ssh-ed25519 test")
+	if err != nil || grant.ClientID == "" {
+		t.Fatalf("legacy claim grant=%+v err=%v", grant, err)
+	}
+	op, err := store.GetOperation(receipt.OperationID)
+	if err != nil || op.Schema != OperationSchema || op.State != OperationHelperAnnounced || op.ClientID == "" {
+		t.Fatalf("upgraded operation=%+v err=%v", op, err)
+	}
+}
+
 func TestTicketValidationRevocationAndPermissions(t *testing.T) {
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
 	store, path := openTestStore(t, &now, 3, 42700, 42710)

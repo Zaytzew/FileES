@@ -229,6 +229,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	text := string(raw)
 	for _, required := range []string{
 		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-operation filees-mail",
+		"filees-ssh-auth filees-entry filees-worker",
 		`"./cmd/$command"`, "SHA256SUMS", "sha256 -r",
 	} {
 		if !strings.Contains(text, required) {
@@ -240,7 +241,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	installerText := string(installer)
-	for _, required := range []string{"700", "600", "openssl rand -base64 32", "No daemon or rc.d service"} {
+	for _, required := range []string{"700", "600", "openssl rand -base64 32", "ssh-keygen -q -t ed25519", "No daemon or rc.d service"} {
 		if !strings.Contains(installerText, required) {
 			t.Errorf("server installer missing %q", required)
 		}
@@ -249,6 +250,22 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 		if strings.Contains(installerText, forbidden) {
 			t.Errorf("S1 installer unexpectedly configures %q", forbidden)
 		}
+	}
+	openBSDInstaller, err := os.ReadFile("server/openbsd/install-ssh.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	openBSDInstallerText := string(openBSDInstaller)
+	for _, required := range []string{
+		`-m 4511 "$bundle/bin/filees-entry"`,
+		`-m 0555 "$bundle/bin/filees-worker"`,
+	} {
+		if !strings.Contains(openBSDInstallerText, required) {
+			t.Errorf("OpenBSD installer missing privilege boundary %q", required)
+		}
+	}
+	if strings.Contains(openBSDInstallerText, `-m 4511 "$bundle/bin/filees-worker"`) {
+		t.Error("OpenBSD worker must not be set-id: pledge execpromises reject set-id images")
 	}
 	configRaw, err := os.ReadFile("server/server.example.json")
 	if err != nil {

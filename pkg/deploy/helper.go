@@ -39,24 +39,29 @@ type HelperEndpoint struct {
 }
 
 type Helper struct {
-	config        HelperConfig
-	listener      net.Listener
-	endpoint      HelperEndpoint
-	done          chan struct{}
-	once          sync.Once
-	hostPrivate   ed25519.PrivateKey
-	connections   map[net.Conn]struct{}
-	connectionsMu sync.Mutex
-	connectionsWG sync.WaitGroup
-	closing       bool
+	config           HelperConfig
+	listener         net.Listener
+	endpoint         HelperEndpoint
+	done             chan struct{}
+	once             sync.Once
+	hostPrivate      ed25519.PrivateKey
+	connections      map[net.Conn]struct{}
+	connectionsMu    sync.Mutex
+	connectionsWG    sync.WaitGroup
+	closing          bool
+	bindMu           sync.Mutex
+	boundOperationID string
+	boundClientID    string
 }
 
 func StartHelper(ctx context.Context, cfg HelperConfig) (*Helper, error) {
-	if _, err := uuid.Parse(cfg.OperationID); err != nil {
-		return nil, fmt.Errorf("operation_id must be UUID: %w", err)
+	if cfg.OperationID != "" {
+		if _, err := uuid.Parse(cfg.OperationID); err != nil {
+			return nil, fmt.Errorf("operation_id must be UUID: %w", err)
+		}
 	}
-	if strings.TrimSpace(cfg.ClientID) == "" {
-		return nil, errors.New("deploy helper requires client_id")
+	if (cfg.OperationID == "") != (strings.TrimSpace(cfg.ClientID) == "") {
+		return nil, errors.New("deploy helper operation_id and client_id must be both bound or both empty")
 	}
 	if cfg.WorkerKey == nil {
 		return nil, errors.New("deploy helper requires pinned worker public key")
@@ -94,7 +99,7 @@ func StartHelper(ctx context.Context, cfg HelperConfig) (*Helper, error) {
 	}
 	h := &Helper{
 		config: cfg, listener: listener, done: make(chan struct{}), hostPrivate: hostPrivate,
-		connections: make(map[net.Conn]struct{}),
+		connections: make(map[net.Conn]struct{}), boundOperationID: cfg.OperationID, boundClientID: cfg.ClientID,
 		endpoint: HelperEndpoint{
 			Address:         listener.Addr().String(),
 			HostPublicKey:   strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cfg.HostSigner.PublicKey()))),
@@ -211,6 +216,11 @@ func (h *Helper) execute(stream io.ReadWriter) error {
 		_ = json.NewEncoder(stream).Encode(response)
 		return err
 	}
+	if !h.bindRequest(request.OperationID, request.ClientID) {
+		err := errors.New("helper is already bound to another deployment")
+		_ = json.NewEncoder(stream).Encode(HelperResponse{Schema: HelperSchema, OperationID: request.OperationID, RequestID: request.RequestID, Status: "error", Error: err.Error()})
+		return err
+	}
 	identity, err := h.config.Identity.GenerateInstallationIdentity(request.OperationID, request.ClientID)
 	response := HelperResponse{Schema: HelperSchema, OperationID: request.OperationID, RequestID: request.RequestID}
 	if err != nil {
@@ -223,6 +233,15 @@ func (h *Helper) execute(stream io.ReadWriter) error {
 		return encodeErr
 	}
 	return err
+}
+
+func (h *Helper) bindRequest(operationID, clientID string) bool {
+	h.bindMu.Lock()
+	defer h.bindMu.Unlock()
+	if h.boundOperationID == "" && h.boundClientID == "" {
+		h.boundOperationID, h.boundClientID = operationID, clientID
+	}
+	return h.boundOperationID == operationID && h.boundClientID == clientID
 }
 
 func (h *Helper) trackConnection(connection net.Conn) bool {

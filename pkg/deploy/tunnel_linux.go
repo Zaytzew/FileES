@@ -30,6 +30,10 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	if err != nil {
 		return err
 	}
+	frame, err := EncodeTunnelSession(TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey})
+	if err != nil {
+		return err
+	}
 	runtimeDir := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR"))
 	if !filepath.IsAbs(runtimeDir) {
 		return errors.New("XDG_RUNTIME_DIR is required for bootstrap OTP handoff")
@@ -58,13 +62,7 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	go func() { writerDone <- writeOTPOnce(writerCtx, fifo, secret) }()
 
 	cmd := exec.CommandContext(ctx, "ssh", args...)
-	stdinReader, stdinWriter, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	defer stdinReader.Close()
-	defer stdinWriter.Close()
-	cmd.Stdin = stdinReader
+	cmd.Stdin = bytes.NewReader(frame)
 	cmd.Stderr = nil
 	cmd.Stdout = nil
 	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassFIFOEnv)

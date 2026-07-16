@@ -12,7 +12,7 @@ import (
 
 const (
 	OnboardRequestSchema  = "filees.onboard-request/v1"
-	OnboardResponseSchema = "filees.onboard-response/v1"
+	OnboardResponseSchema = "filees.onboard-response/v2"
 )
 
 type OnboardRequest struct {
@@ -48,10 +48,11 @@ type OnboardResponse struct {
 	Schema              string `json:"schema"`
 	Status              string `json:"status"`
 	OnboardingRequestID string `json:"onboarding_request_id"`
+	WorkerPublicKey     string `json:"worker_public_key"`
 }
 
-func EncodeOnboardResponse(requestID string) []byte {
-	response := OnboardResponse{Schema: OnboardResponseSchema, Status: "accepted", OnboardingRequestID: requestID}
+func EncodeOnboardResponse(requestID, workerPublicKey string) []byte {
+	response := OnboardResponse{Schema: OnboardResponseSchema, Status: "accepted", OnboardingRequestID: requestID, WorkerPublicKey: workerPublicKey}
 	raw, _ := json.Marshal(response)
 	return append(bytes.TrimSpace(raw), '\n')
 }

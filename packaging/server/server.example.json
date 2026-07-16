@@ -2,6 +2,8 @@
   "schema": "filees.server-toolchain/v1",
   "root": "/var/filees/onboarding",
   "otp_pepper_file": "/etc/filees/otp.pepper",
+  "worker_private_key_file": "/etc/filees/worker_ed25519",
+  "worker_public_key_file": "/etc/filees/worker_ed25519.pub",
   "operation_ttl": "30m",
   "otp_attempts": 5,
   "reverse_port_first": 42000,

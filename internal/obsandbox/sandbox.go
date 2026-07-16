@@ -29,7 +29,7 @@ func Validate(profile Profile) error {
 			return fmt.Errorf("sandbox profile %s contains an invalid path", profile.Name)
 		}
 		switch path.Perms {
-		case "r", "rw", "rwc":
+		case "r", "rw", "rwc", "x", "rx":
 		default:
 			return fmt.Errorf("sandbox profile %s path %s has invalid permissions %q", profile.Name, path.Label, path.Perms)
 		}

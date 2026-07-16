@@ -40,7 +40,7 @@ func RunEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 		fmt.Fprintln(stderr, "filees-entry: authentication context does not match an active operation")
 		return ExitUnavailable
 	}
-	if err := writeJSON(stdout, TunnelAccepted{Schema: "filees.ssh-tunnel/v1", Status: "authenticated", OperationID: grant.OperationID, ReversePort: port}); err != nil {
+	if err := writeJSON(stdout, TunnelAccepted{Schema: "filees.ssh-tunnel/v1", Status: "authenticated", OperationID: grant.OperationID, ReversePort: grant.AssignedReversePort}); err != nil {
 		return ExitSoftware
 	}
 	// This process belongs to the SSH session and is not a daemon. In S3 this

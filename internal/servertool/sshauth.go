@@ -28,7 +28,10 @@ func RunSSHAuth(args []string, auth io.ReadWriter, stderr io.Writer) int {
 	case "challenge":
 		// The fixed challenge discloses neither an operation locator nor any
 		// server state. An explicit challenge is used because sshd keeps the BSD
-		// Auth session only after "reject challenge".
+		// Auth session only after "reject challenge". BSD Auth decodes the
+		// protocol text "\\n" into byte 0x0A before echoing the challenge back
+		// in the response exchange; the comparison below therefore uses Go's
+		// actual newline escape "\n".
 		_, _ = io.WriteString(auth, "value challenge FileES OTP: \\n\nreject challenge\n")
 		return ExitOK
 	case "response":

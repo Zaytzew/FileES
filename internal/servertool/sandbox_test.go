@@ -53,6 +53,14 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 			},
 		},
 		{
+			access:   toolAccess{name: "filees-ssh-auth/response", areas: onboarding.AreaOperations, write: true, needOTP: true},
+			promises: writePromises,
+			paths: []obsandbox.Path{
+				{Label: "lock", Name: "/srv/filees/.toolchain.lock", Perms: "rw"},
+				{Label: "operations", Name: "/srv/filees/operations", Perms: "rwc"},
+			},
+		},
+		{
 			access:   toolAccess{name: "filees-entry/tunnel", areas: onboarding.AreaOperations, write: true},
 			promises: writePromises,
 			paths: []obsandbox.Path{

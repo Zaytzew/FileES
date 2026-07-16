@@ -53,6 +53,7 @@ func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
 		"-T",
 		"-o", "ExitOnForwardFailure=yes",
 		"-o", "StrictHostKeyChecking=yes",
+		"-o", "HostKeyAlgorithms=ssh-ed25519",
 		"-o", "UserKnownHostsFile=" + knownHosts,
 		"-o", "GlobalKnownHostsFile=/dev/null",
 		"-o", "ForwardAgent=no",

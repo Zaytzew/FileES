@@ -18,6 +18,7 @@ func TestOpenSSHArgsAreClosedAndPinned(t *testing.T) {
 	joined := strings.Join(args, " ")
 	for _, required := range []string{
 		"-l " + TunnelUser, "-T", "-F /dev/null", "StrictHostKeyChecking=yes",
+		"HostKeyAlgorithms=ssh-ed25519",
 		"UserKnownHostsFile=" + knownHosts, "ExitOnForwardFailure=yes",
 		"PubkeyAuthentication=no", "PreferredAuthentications=keyboard-interactive",
 		"NumberOfPasswordPrompts=1",

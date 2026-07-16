@@ -550,6 +550,7 @@ func (s *Files) ClaimAuthorizedHelper(expectedPort uint16, deployRequestID, help
 		}
 		var selectedPath string
 		var selected Bundle
+		resume := false
 		now := s.clock.Now().UTC()
 		for _, path := range paths {
 			if strings.HasPrefix(filepath.Base(path), claimPrefix) {
@@ -560,16 +561,29 @@ func (s *Files) ClaimAuthorizedHelper(expectedPort uint16, deployRequestID, help
 				return err
 			}
 			op := bundle.Operation
-			if op.State != OperationTunnelAuthorized || op.AssignedReversePort != expectedPort || !now.Before(op.ExpiresAt) {
+			if op.AssignedReversePort != expectedPort {
+				continue
+			}
+			candidateResume := helperDeploymentInProgress(op.State) && op.DeployRequestID == deployRequestID && op.HelperHostPublicKey == strings.TrimSpace(helperHostPublicKey)
+			candidateFresh := op.State == OperationTunnelAuthorized && now.Before(op.ExpiresAt)
+			if !candidateResume && !candidateFresh {
+				continue
+			}
+			if candidateResume && op.State != OperationActive && !now.Before(op.ExpiresAt) {
 				continue
 			}
 			if selectedPath != "" {
 				return ErrTunnelGrant
 			}
 			selectedPath, selected = path, bundle
+			resume = candidateResume
 		}
 		if selectedPath == "" {
 			return ErrTunnelGrant
+		}
+		if resume {
+			grant = authGrantFor(selected.Operation)
+			return nil
 		}
 		selected.Operation.State = OperationHelperAnnounced
 		if selected.Operation.ClientID == "" {
@@ -589,6 +603,15 @@ func (s *Files) ClaimAuthorizedHelper(expectedPort uint16, deployRequestID, help
 		return nil
 	})
 	return grant, err
+}
+
+func helperDeploymentInProgress(state OperationState) bool {
+	switch state {
+	case OperationHelperAnnounced, OperationIdentityGenerated, OperationAccessStaged, OperationPossessionProved, OperationActive:
+		return true
+	default:
+		return false
+	}
 }
 
 // CompleteGeneratedIdentity publishes only the installation public key and

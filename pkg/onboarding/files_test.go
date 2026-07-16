@@ -515,6 +515,38 @@ func TestActivationTransitionsAreDurableIdempotentAndCannotBeSkipped(t *testing.
 	}
 }
 
+func TestHelperClaimResumesOnlyTheSameDeploymentBinding(t *testing.T) {
+	now := time.Date(2026, 7, 16, 16, 30, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 42675, 42675)
+	defer store.Close()
+	_, otp := createTakenOperation(t, store, "resume-helper@example.net")
+	if _, err := store.AuthenticateOTP(otp); err != nil {
+		t.Fatal(err)
+	}
+	deployRequestID := uuid.NewString()
+	helperKey := "ssh-ed25519 helper-resume"
+	first, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey)
+	if err != nil || resumed.OperationID != first.OperationID || resumed.ClientID != first.ClientID {
+		t.Fatalf("resumed grant=%+v err=%v, first=%+v", resumed, err, first)
+	}
+	if _, err := store.ClaimAuthorizedHelper(42675, uuid.NewString(), helperKey); !errors.Is(err, ErrTunnelGrant) {
+		t.Fatalf("different deploy request resumed grant: %v", err)
+	}
+	if _, err := store.ClaimAuthorizedHelper(42675, deployRequestID, "ssh-ed25519 another-helper"); !errors.Is(err, ErrTunnelGrant) {
+		t.Fatalf("different helper key resumed grant: %v", err)
+	}
+	if err := store.CompleteGeneratedIdentity(first.OperationID, deployRequestID, "ssh-ed25519 installation filees:test", "SHA256:test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey); err != nil {
+		t.Fatalf("identity-generated deployment was not resumable: %v", err)
+	}
+}
+
 func TestRecoverExpiresUnfinishedActivationButNotActiveClient(t *testing.T) {
 	now := time.Date(2026, 7, 16, 17, 0, 0, 0, time.UTC)
 	store, _ := openTestStore(t, &now, 3, 42680, 42680)

@@ -17,6 +17,8 @@ import (
 
 const TunnelSessionSchema = "filees.tunnel-session/v1"
 
+const helperResponseLimit = 64 * 1024
+
 type TunnelSession struct {
 	Schema              string `json:"schema"`
 	DeployRequestID     string `json:"deploy_request_id"`
@@ -91,6 +93,13 @@ func GenerateIdentityThroughHelper(ctx context.Context, address, hostPublicKey s
 		return HelperResponse{}, err
 	}
 	defer connection.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := connection.SetDeadline(deadline); err != nil {
+			return HelperResponse{}, fmt.Errorf("set helper connection deadline: %w", err)
+		}
+	}
+	stopContextClose := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stopContextClose()
 	clientConnection, channels, requests, err := ssh.NewClientConn(connection, address, config)
 	if err != nil {
 		return HelperResponse{}, fmt.Errorf("helper SSH handshake: %w", err)
@@ -104,12 +113,26 @@ func GenerateIdentityThroughHelper(ctx context.Context, address, hostPublicKey s
 	defer session.Close()
 	raw, _ := json.Marshal(request)
 	session.Stdin = bytes.NewReader(append(raw, '\n'))
-	output, err := session.Output(HelperCommand)
+	stdout, err := session.StdoutPipe()
 	if err != nil {
-		return HelperResponse{}, fmt.Errorf("helper action: %w", err)
+		return HelperResponse{}, fmt.Errorf("helper stdout: %w", err)
 	}
-	if len(output) > 64*1024 {
+	if err := session.Start(HelperCommand); err != nil {
+		return HelperResponse{}, fmt.Errorf("start helper action: %w", err)
+	}
+	output, err := io.ReadAll(io.LimitReader(stdout, helperResponseLimit+1))
+	if err != nil {
+		return HelperResponse{}, fmt.Errorf("read helper response: %w", err)
+	}
+	if len(output) > helperResponseLimit {
+		// Do not Wait after stopping stdout consumption: a hostile helper could
+		// fill the SSH channel window and keep Wait blocked. Closing the session
+		// makes the over-limit path bounded independently of remote behaviour.
+		_ = session.Close()
 		return HelperResponse{}, errors.New("helper response exceeds 64 KiB")
+	}
+	if err := session.Wait(); err != nil {
+		return HelperResponse{}, fmt.Errorf("helper action: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(output))
 	decoder.DisallowUnknownFields()

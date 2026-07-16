@@ -445,6 +445,59 @@ func (s *Files) AuthenticateOTP(otp string) (AuthGrant, error) {
 	return grant, err
 }
 
+// ClaimAuthorizedTunnel is the filesystem handoff from BSD Authentication to
+// the forced command. OpenBSD sshd does not propagate BSD Auth setenv values
+// into the command environment, so the operation bundle is the explicit
+// one-time rendezvous. S2 uses one fixed PermitListen port; more than one
+// matching grant is therefore always a hard error.
+func (s *Files) ClaimAuthorizedTunnel(expectedPort uint16) (AuthGrant, error) {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return AuthGrant{}, err
+	}
+	if expectedPort == 0 {
+		return AuthGrant{}, ErrTunnelGrant
+	}
+	var grant AuthGrant
+	err := s.withLock(func() error {
+		paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
+		if err != nil {
+			return err
+		}
+		var selectedPath string
+		var selected Bundle
+		now := s.clock.Now().UTC()
+		for _, path := range paths {
+			if strings.HasPrefix(filepath.Base(path), claimPrefix) {
+				continue
+			}
+			bundle, err := s.readBundlePathLocked(path)
+			if err != nil {
+				return err
+			}
+			op := bundle.Operation
+			if op.State != OperationTunnelAuthorized || op.AssignedReversePort != expectedPort || !now.Before(op.ExpiresAt) {
+				continue
+			}
+			if selectedPath != "" {
+				return ErrTunnelGrant
+			}
+			selectedPath, selected = path, bundle
+		}
+		if selectedPath == "" {
+			return ErrTunnelGrant
+		}
+		selected.Operation.State = OperationTunnelStarted
+		selected.addAudit("tunnel_session_started", "filees-entry", now)
+		if err := atomicWriteJSON(selectedPath, selected); err != nil {
+			return err
+		}
+		op := selected.Operation
+		grant = AuthGrant{OperationID: op.OperationID, ApprovedPolicy: op.ApprovedPolicy, AssignedReversePort: op.AssignedReversePort, ExpiresAt: op.ExpiresAt}
+		return nil
+	})
+	return grant, err
+}
+
 func (s *Files) ClaimPendingMail(staleAfter time.Duration) (MailJob, error) {
 	if err := s.requireAreas(AreaOperations); err != nil {
 		return MailJob{}, err
@@ -720,7 +773,7 @@ func (s *Files) allocatePortLocked(now time.Time) (uint16, error) {
 	}
 	for _, bundle := range bundles {
 		op := bundle.Operation
-		if now.Before(op.ExpiresAt) && (op.State == OperationAwaitingTunnel || op.State == OperationTunnelAuthorized) {
+		if now.Before(op.ExpiresAt) && (op.State == OperationAwaitingTunnel || op.State == OperationTunnelAuthorized || op.State == OperationTunnelStarted) {
 			used[op.AssignedReversePort] = true
 		}
 	}

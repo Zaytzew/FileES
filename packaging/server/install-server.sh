@@ -11,6 +11,7 @@ install -m 755 "$bundle/bin/filees-admin" "$prefix/sbin/filees-admin"
 install -m 755 "$bundle/bin/filees-operation" "$prefix/sbin/filees-operation"
 install -m 755 "$bundle/bin/filees-onboard" "$prefix/libexec/filees/filees-onboard"
 install -m 755 "$bundle/bin/filees-mail" "$prefix/libexec/filees/filees-mail"
+install -m 755 "$bundle/bin/filees-entry" "$prefix/libexec/filees/filees-entry"
 
 install -d -m 700 "$sysconfdir"
 if [ ! -e "$sysconfdir/server.json" ]; then
@@ -27,4 +28,5 @@ if [ ! -e "$statedir/.toolchain.lock" ]; then
 fi
 
 echo "FileES server tools installed. Edit $sysconfdir/server.json before use."
-echo "No daemon or rc.d service was installed. sshd integration belongs to S2."
+echo "No daemon or rc.d service was installed."
+echo "On OpenBSD, review and run openbsd/install-ssh.sh to enable the system-sshd entries."

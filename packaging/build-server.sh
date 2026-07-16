@@ -18,9 +18,9 @@ out="$dist/filees-server-$target"
 mkdir -p "$dist"
 tmp=$(mktemp -d "$dist/.filees-server-$target.tmp.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
-mkdir -p "$tmp/bin" "$tmp/share/filees"
+mkdir -p "$tmp/bin" "$tmp/share/filees/openbsd" "$tmp/openbsd"
 
-for command in filees-admin filees-onboard filees-operation filees-mail; do
+for command in filees-admin filees-onboard filees-operation filees-mail filees-ssh-auth filees-entry; do
 	(
 		cd "$root"
 		CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false -o "$tmp/bin/$command" "./cmd/$command"
@@ -28,10 +28,15 @@ for command in filees-admin filees-onboard filees-operation filees-mail; do
 done
 
 cp "$root/packaging/server/server.example.json" "$tmp/share/filees/"
+cp "$root/packaging/server/openbsd/bootstrap_authorized_keys" "$tmp/share/filees/openbsd/"
+cp "$root/packaging/server/openbsd/filees-tunnel.login.conf" "$tmp/share/filees/openbsd/"
+cp "$root/packaging/server/openbsd/filees.conf" "$tmp/share/filees/openbsd/"
+cp "$root/packaging/server/openbsd/install-ssh.sh" "$tmp/openbsd/"
 cp "$root/packaging/server/install-server.sh" "$tmp/"
 cp "$root/packaging/server/README.md" "$tmp/"
 cp "$root/VERSION" "$tmp/"
 chmod +x "$tmp/install-server.sh"
+chmod +x "$tmp/openbsd/install-ssh.sh"
 (
 	cd "$tmp"
 	if command -v sha256sum >/dev/null 2>&1; then

@@ -354,6 +354,17 @@ func TestOTPOneTimeAttemptsAndExpiry(t *testing.T) {
 		if op.OTPHash != "" || op.State != OperationTunnelAuthorized {
 			t.Fatalf("authorized operation retains credential: %+v", op)
 		}
+		entryGrant, err := store.ClaimAuthorizedTunnel(42400)
+		if err != nil || entryGrant.OperationID != receipt.OperationID {
+			t.Fatalf("entry grant=%+v err=%v", entryGrant, err)
+		}
+		if _, err := store.ClaimAuthorizedTunnel(42400); !errors.Is(err, ErrTunnelGrant) {
+			t.Fatalf("tunnel grant reuse error=%v", err)
+		}
+		op, _ = store.GetOperation(receipt.OperationID)
+		if op.State != OperationTunnelStarted {
+			t.Fatalf("tunnel claim was not persisted: %+v", op)
+		}
 	})
 
 	t.Run("attempt limit persists", func(t *testing.T) {
@@ -400,6 +411,25 @@ func TestOTPOneTimeAttemptsAndExpiry(t *testing.T) {
 			t.Fatalf("expiry was not persisted: %+v", op)
 		}
 	})
+}
+
+func TestStartedTunnelRetainsFixedPortLease(t *testing.T) {
+	now := time.Date(2026, 7, 16, 7, 0, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 42650, 42650)
+	defer store.Close()
+	_, otp := createTakenOperation(t, store, "first-fixed@example.net")
+	if _, err := store.AuthenticateOTP(otp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimAuthorizedTunnel(42650); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateTicket("second-fixed@example.net", Policy{RealmID: testRealmID}, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Take("second-fixed@example.net", uuid.NewString()); !errors.Is(err, ErrNoReversePort) {
+		t.Fatalf("started tunnel released fixed port: %v", err)
+	}
 }
 
 func TestTicketValidationRevocationAndPermissions(t *testing.T) {

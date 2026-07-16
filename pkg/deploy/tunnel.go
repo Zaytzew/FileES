@@ -10,9 +10,11 @@ import (
 )
 
 const (
-	BootstrapUser = "filees-bootstrap"
+	OnboardUser = "_filees-onboard"
+	TunnelUser  = "_filees-tunnel"
 	// BootstrapHost is part of the shipped client policy, not deploy input.
-	BootstrapHost = "cloud.atmprojekt.pl"
+	BootstrapHost       = "cloud.atmprojekt.pl"
+	TunnelServerCommand = "filees tunnel-v1"
 )
 
 type TunnelSpec struct {
@@ -47,8 +49,8 @@ func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
 	forward := fmt.Sprintf("127.0.0.1:%d:127.0.0.1:%d", spec.RemotePort, localPort)
 	return []string{
 		"-F", "/dev/null",
-		"-l", BootstrapUser,
-		"-N", "-T",
+		"-l", TunnelUser,
+		"-T",
 		"-o", "ExitOnForwardFailure=yes",
 		"-o", "StrictHostKeyChecking=yes",
 		"-o", "UserKnownHostsFile=" + knownHosts,
@@ -58,7 +60,7 @@ func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
 		"-o", "PermitLocalCommand=no",
 		"-o", "EnableEscapeCommandline=no",
 		"-o", "PubkeyAuthentication=no",
-		"-o", "PreferredAuthentications=keyboard-interactive,password",
+		"-o", "PreferredAuthentications=keyboard-interactive",
 		"-o", "NumberOfPasswordPrompts=1",
 		"-o", "ServerAliveInterval=15",
 		"-o", "ServerAliveCountMax=2",
@@ -66,5 +68,6 @@ func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
 		"-o", "LogLevel=ERROR",
 		"-R", forward,
 		BootstrapHost,
+		TunnelServerCommand,
 	}, nil
 }

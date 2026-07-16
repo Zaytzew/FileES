@@ -52,6 +52,14 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 				{Label: "hosts", Name: "/etc/hosts", Perms: "r"},
 			},
 		},
+		{
+			access:   toolAccess{name: "filees-entry/tunnel", areas: onboarding.AreaOperations, write: true},
+			promises: writePromises,
+			paths: []obsandbox.Path{
+				{Label: "lock", Name: "/srv/filees/.toolchain.lock", Perms: "rw"},
+				{Label: "operations", Name: "/srv/filees/operations", Perms: "rwc"},
+			},
+		},
 	}
 	for _, test := range tests {
 		profile := repositoryProfile("/srv/filees", test.access)

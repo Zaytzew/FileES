@@ -21,6 +21,7 @@ var (
 	ErrNoReversePort     = errors.New("no reverse port available")
 	ErrOTPInvalid        = errors.New("invalid onboarding OTP")
 	ErrOTPExpired        = errors.New("onboarding OTP expired")
+	ErrTunnelGrant       = errors.New("authorized tunnel grant unavailable")
 	ErrMailAttempt       = errors.New("mail outbox attempt mismatch")
 )
 
@@ -42,6 +43,7 @@ type OperationState string
 const (
 	OperationAwaitingTunnel   OperationState = "awaiting_tunnel"
 	OperationTunnelAuthorized OperationState = "tunnel_authorized"
+	OperationTunnelStarted    OperationState = "tunnel_started"
 	OperationOTPExhausted     OperationState = "otp_exhausted"
 	OperationExpired          OperationState = "expired"
 )

@@ -58,7 +58,13 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	go func() { writerDone <- writeOTPOnce(writerCtx, fifo, secret) }()
 
 	cmd := exec.CommandContext(ctx, "ssh", args...)
-	cmd.Stdin = nil
+	stdinReader, stdinWriter, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer stdinReader.Close()
+	defer stdinWriter.Close()
+	cmd.Stdin = stdinReader
 	cmd.Stderr = nil
 	cmd.Stdout = nil
 	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassFIFOEnv)

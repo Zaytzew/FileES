@@ -5,7 +5,7 @@
   "operation_ttl": "30m",
   "otp_attempts": 5,
   "reverse_port_first": 42000,
-  "reverse_port_last": 42999,
+  "reverse_port_last": 42000,
   "smtp": {
     "address": "smtp.example.net:587",
     "server_name": "smtp.example.net",

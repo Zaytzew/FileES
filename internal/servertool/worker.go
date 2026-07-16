@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/activation"
 	"filees/pkg/deploy"
 	"filees/pkg/onboarding"
 
@@ -20,11 +21,12 @@ import (
 const WorkerResultSchema = "filees.worker-result/v1"
 
 type WorkerResult struct {
-	Schema      string                `json:"schema"`
-	Status      string                `json:"status"`
-	OperationID string                `json:"operation_id"`
-	ClientID    string                `json:"client_id"`
-	Identity    deploy.PublicIdentity `json:"identity"`
+	Schema          string                `json:"schema"`
+	Status          string                `json:"status"`
+	OperationID     string                `json:"operation_id"`
+	ClientID        string                `json:"client_id"`
+	Identity        deploy.PublicIdentity `json:"identity"`
+	ServiceRevision int64                 `json:"service_revision"`
 }
 
 func RunWorker(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -41,7 +43,7 @@ func runWorker(configPath string, args []string, stdin io.Reader, stdout, stderr
 		report(stderr, "filees-worker session", err)
 		return ExitData
 	}
-	files, config, err := openFiles(configPath, toolAccess{name: "filees-worker/deploy", areas: onboarding.AreaOperations, write: true, needWorker: true, needWorkerPublic: true})
+	files, config, err := openFiles(configPath, toolAccess{name: "filees-worker/deploy", areas: onboarding.AreaOperations, write: true, needWorker: true, needWorkerPublic: true, needActivation: true, needSVN: true})
 	if err != nil {
 		report(stderr, "filees-worker config", err)
 		return ExitConfig
@@ -81,7 +83,48 @@ func runWorker(configPath string, args []string, stdin io.Reader, stdout, stderr
 		report(stderr, "filees-worker publish", err)
 		return ExitTempFail
 	}
-	if err := writeJSON(stdout, WorkerResult{Schema: WorkerResultSchema, Status: "identity_generated", OperationID: grant.OperationID, ClientID: grant.ClientID, Identity: *response.Identity}); err != nil {
+	activationGrant, err := files.PendingActivation(onboarding.OperationIdentityGenerated)
+	if err != nil {
+		report(stderr, "filees-worker activation", err)
+		return ExitTempFail
+	}
+	manager, err := activation.New(config.Activation, nil)
+	if err != nil {
+		report(stderr, "filees-worker activation", err)
+		return ExitConfig
+	}
+	if err := manager.Stage(activationGrant); err != nil {
+		report(stderr, "filees-worker stage access", err)
+		return ExitTempFail
+	}
+	if err := files.CompleteAccessStaged(grant.OperationID, session.DeployRequestID); err != nil {
+		report(stderr, "filees-worker stage state", err)
+		return ExitTempFail
+	}
+	proofRequest := request
+	proofRequest.Action = deploy.ActionProveServiceAccess
+	if err := deploy.ProveServiceAccessThroughHelper(ctx, address, session.HelperHostPublicKey, config.WorkerSigner, proofRequest); err != nil {
+		report(stderr, "filees-worker proof", err)
+		return ExitTempFail
+	}
+	if err := manager.HasProof(activationGrant); err != nil {
+		report(stderr, "filees-worker proof receipt", err)
+		return ExitTempFail
+	}
+	if err := files.CompletePossessionProof(grant.OperationID, session.DeployRequestID); err != nil {
+		report(stderr, "filees-worker proof state", err)
+		return ExitTempFail
+	}
+	revision, err := manager.Publish(ctx, activationGrant)
+	if err != nil {
+		report(stderr, "filees-worker service publish", err)
+		return ExitTempFail
+	}
+	if err := files.CompleteActivation(grant.OperationID, session.DeployRequestID, revision); err != nil {
+		report(stderr, "filees-worker activate", err)
+		return ExitTempFail
+	}
+	if err := writeJSON(stdout, WorkerResult{Schema: WorkerResultSchema, Status: "active", OperationID: grant.OperationID, ClientID: grant.ClientID, Identity: *response.Identity, ServiceRevision: revision}); err != nil {
 		return ExitSoftware
 	}
 	return ExitOK

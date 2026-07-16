@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/activation"
 	"filees/pkg/onboarding"
 	"filees/pkg/smtpsubmit"
 	"golang.org/x/crypto/ssh"
@@ -21,16 +22,29 @@ import (
 const Schema = "filees.server-toolchain/v1"
 
 type File struct {
-	Schema               string   `json:"schema"`
-	Root                 string   `json:"root"`
-	OTPPepperFile        string   `json:"otp_pepper_file"`
-	OperationTTL         string   `json:"operation_ttl"`
-	OTPAttempts          int      `json:"otp_attempts"`
-	ReversePortFirst     uint16   `json:"reverse_port_first"`
-	ReversePortLast      uint16   `json:"reverse_port_last"`
-	WorkerPrivateKeyFile string   `json:"worker_private_key_file,omitempty"`
-	WorkerPublicKeyFile  string   `json:"worker_public_key_file,omitempty"`
-	SMTP                 SMTPFile `json:"smtp"`
+	Schema               string         `json:"schema"`
+	Root                 string         `json:"root"`
+	OTPPepperFile        string         `json:"otp_pepper_file"`
+	OperationTTL         string         `json:"operation_ttl"`
+	OTPAttempts          int            `json:"otp_attempts"`
+	ReversePortFirst     uint16         `json:"reverse_port_first"`
+	ReversePortLast      uint16         `json:"reverse_port_last"`
+	WorkerPrivateKeyFile string         `json:"worker_private_key_file,omitempty"`
+	WorkerPublicKeyFile  string         `json:"worker_public_key_file,omitempty"`
+	Activation           ActivationFile `json:"activation,omitempty"`
+	SMTP                 SMTPFile       `json:"smtp"`
+}
+
+type ActivationFile struct {
+	Root               string `json:"root"`
+	AuthorizedKeysFile string `json:"authorized_keys_file"`
+	AuthzFile          string `json:"authz_file"`
+	ServiceWorkingCopy string `json:"service_working_copy"`
+	ServiceRepository  string `json:"service_repository"`
+	RepositoryName     string `json:"repository_name"`
+	ClientEntryPath    string `json:"client_entry_path"`
+	SVNBinary          string `json:"svn_binary"`
+	SVNServeBinary     string `json:"svnserve_binary"`
 }
 
 type SMTPFile struct {
@@ -60,6 +74,7 @@ type Config struct {
 	WorkerPublicKeyFile  string
 	WorkerPublicKey      string
 	WorkerSigner         ssh.Signer
+	Activation           activation.Config
 }
 
 type Secrets uint8
@@ -69,6 +84,7 @@ const (
 	SecretSMTP
 	SecretWorker
 	SecretWorkerPublic
+	SecretActivation
 )
 
 // Load retains the original full onboarding configuration contract.
@@ -117,6 +133,24 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if file.WorkerPublicKeyFile != "" && !filepath.IsAbs(file.WorkerPublicKeyFile) {
 		return Config{}, errors.New("worker_public_key_file must be absolute")
+	}
+	activationConfig := activation.Config{
+		Root: file.Activation.Root, AuthorizedKeysFile: file.Activation.AuthorizedKeysFile,
+		AuthzFile: file.Activation.AuthzFile, ServiceWorkingCopy: file.Activation.ServiceWorkingCopy,
+		ServiceRepository: file.Activation.ServiceRepository,
+		RepositoryName:    file.Activation.RepositoryName, ClientEntryPath: file.Activation.ClientEntryPath,
+		SVNBinary: file.Activation.SVNBinary, SVNServeBinary: file.Activation.SVNServeBinary,
+	}
+	if secrets&SecretActivation != 0 {
+		if _, err := activation.New(activationConfig, nil); err != nil {
+			return Config{}, err
+		}
+		if err := requireRegularNotWritable(activationConfig.SVNBinary); err != nil {
+			return Config{}, fmt.Errorf("activation svn_binary: %w", err)
+		}
+		if err := requireRegularNotWritable(activationConfig.SVNServeBinary); err != nil {
+			return Config{}, fmt.Errorf("activation svnserve_binary: %w", err)
+		}
 	}
 	workerPublicKey := ""
 	if secrets&SecretWorkerPublic != 0 {
@@ -220,6 +254,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		SMTPPasswordFile: file.SMTP.PasswordFile, SMTPCAFile: file.SMTP.CAFile,
 		WorkerPrivateKeyFile: file.WorkerPrivateKeyFile, WorkerSigner: workerSigner,
 		WorkerPublicKeyFile: file.WorkerPublicKeyFile, WorkerPublicKey: workerPublicKey,
+		Activation: activationConfig,
 		Onboarding: onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
 		SMTP:       smtpsubmit.Config{Address: file.SMTP.Address, ServerName: file.SMTP.ServerName, ClientName: file.SMTP.ClientName, Username: file.SMTP.Username, Password: password, TLSMode: smtpsubmit.TLSMode(file.SMTP.TLS), RootCAs: pool, ConnectTimeout: connectTimeout, CommandTimeout: commandTimeout},
 	}

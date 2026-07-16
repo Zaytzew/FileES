@@ -218,6 +218,37 @@ func (s *Files) Recover() error {
 	if err := s.withLock(s.recoverClaimsLocked); err != nil {
 		return fmt.Errorf("recover onboarding claims: %w", err)
 	}
+	if err := s.withLock(s.expireOperationsLocked); err != nil {
+		return fmt.Errorf("expire onboarding operations: %w", err)
+	}
+	return nil
+}
+
+func (s *Files) expireOperationsLocked() error {
+	paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
+	if err != nil {
+		return err
+	}
+	now := s.clock.Now().UTC()
+	for _, path := range paths {
+		if strings.HasPrefix(filepath.Base(path), claimPrefix) {
+			continue
+		}
+		bundle, err := s.readBundlePathLocked(path)
+		if err != nil {
+			return err
+		}
+		op := &bundle.Operation
+		if now.Before(op.ExpiresAt) || op.State == OperationActive || op.State == OperationExpired || op.State == OperationOTPExhausted {
+			continue
+		}
+		op.State, op.OTPHash, op.OTPLocator, op.AttemptsLeft = OperationExpired, "", "", 0
+		bundle.Outbox.OTP, bundle.Outbox.DeliveryAddress = "", ""
+		bundle.addAudit("onboarding_expired", "filees-operation", now)
+		if err := atomicWriteJSON(path, bundle); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -587,8 +618,105 @@ func (s *Files) CompleteGeneratedIdentity(operationID, deployRequestID, publicKe
 	})
 }
 
+// PendingActivation returns the unique live operation at the requested
+// activation boundary. The fixed reverse-forward policy serializes deploys;
+// ambiguity is a hard failure rather than an arbitrary selection.
+func (s *Files) PendingActivation(state OperationState) (ActivationGrant, error) {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return ActivationGrant{}, err
+	}
+	var grant ActivationGrant
+	err := s.withLock(func() error {
+		bundles, err := s.readBundlesLocked()
+		if err != nil {
+			return err
+		}
+		now := s.clock.Now().UTC()
+		for _, bundle := range bundles {
+			op := bundle.Operation
+			if op.State != state || !now.Before(op.ExpiresAt) {
+				continue
+			}
+			if grant.OperationID != "" {
+				return ErrTunnelGrant
+			}
+			grant = activationGrantFor(op)
+		}
+		if grant.OperationID == "" {
+			return ErrTunnelGrant
+		}
+		return nil
+	})
+	return grant, err
+}
+
+func (s *Files) CompleteAccessStaged(operationID, deployRequestID string) error {
+	return s.advanceActivation(operationID, deployRequestID, OperationIdentityGenerated, OperationAccessStaged, "access_staged")
+}
+
+func (s *Files) CompletePossessionProof(operationID, deployRequestID string) error {
+	return s.advanceActivation(operationID, deployRequestID, OperationAccessStaged, OperationPossessionProved, "possession_verified")
+}
+
+func (s *Files) CompleteActivation(operationID, deployRequestID string, serviceRevision int64) error {
+	if serviceRevision <= 0 {
+		return errors.New("service revision must be positive")
+	}
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return err
+	}
+	return s.withLock(func() error {
+		path, bundle, err := s.findBundleLocked(func(bundle Bundle) bool { return bundle.Operation.OperationID == operationID })
+		if err != nil {
+			return err
+		}
+		op := &bundle.Operation
+		if op.State == OperationActive && op.DeployRequestID == deployRequestID && op.ServiceRevision == serviceRevision {
+			return nil
+		}
+		if op.State != OperationPossessionProved || op.DeployRequestID != deployRequestID {
+			return ErrTunnelGrant
+		}
+		now := s.clock.Now().UTC()
+		op.State, op.ServiceRevision, op.ActivatedAt = OperationActive, serviceRevision, &now
+		op.OTPHash, op.OTPLocator, op.AttemptsLeft = "", "", 0
+		bundle.addAudit("client_activated", "filees-activate", now)
+		return atomicWriteJSON(path, bundle)
+	})
+}
+
+func (s *Files) advanceActivation(operationID, deployRequestID string, from, to OperationState, event string) error {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return err
+	}
+	return s.withLock(func() error {
+		path, bundle, err := s.findBundleLocked(func(bundle Bundle) bool { return bundle.Operation.OperationID == operationID })
+		if err != nil {
+			return err
+		}
+		op := &bundle.Operation
+		if op.State == to && op.DeployRequestID == deployRequestID {
+			return nil
+		}
+		if op.State != from || op.DeployRequestID != deployRequestID {
+			return ErrTunnelGrant
+		}
+		op.State = to
+		bundle.addAudit(event, "filees-activate", s.clock.Now().UTC())
+		return atomicWriteJSON(path, bundle)
+	})
+}
+
 func authGrantFor(op Operation) AuthGrant {
 	return AuthGrant{OperationID: op.OperationID, ClientID: op.ClientID, ApprovedPolicy: op.ApprovedPolicy, AssignedReversePort: op.AssignedReversePort, ExpiresAt: op.ExpiresAt}
+}
+
+func activationGrantFor(op Operation) ActivationGrant {
+	return ActivationGrant{
+		OperationID: op.OperationID, ClientID: op.ClientID, RealmID: op.ApprovedPolicy.RealmID,
+		DeployRequestID: op.DeployRequestID, InstallationPublicKey: op.InstallationPublicKey,
+		InstallationFingerprint: op.InstallationFingerprint, ExpiresAt: op.ExpiresAt,
+	}
 }
 
 func (s *Files) ClaimPendingMail(staleAfter time.Duration) (MailJob, error) {
@@ -817,12 +945,12 @@ func (s *Files) recoverClaimsLocked() error {
 			if err := atomicWriteJSON(path, bundle); err != nil {
 				return err
 			}
-		case BundleSchema, legacyBundleSchema:
+		case BundleSchema, legacyBundleSchemaV3, legacyBundleSchema:
 			if err := decodeStrict(raw, header.Schema, &bundle); err != nil {
 				return err
 			}
 			bundle.Schema = BundleSchema
-			if bundle.Operation.Schema == legacyOperationSchema {
+			if bundle.Operation.Schema == legacyOperationSchema || bundle.Operation.Schema == legacyOperationSchemaV2 {
 				bundle.Operation.Schema = OperationSchema
 			}
 		default:
@@ -874,7 +1002,7 @@ func (s *Files) allocatePortLocked(now time.Time) (uint16, error) {
 	}
 	for _, bundle := range bundles {
 		op := bundle.Operation
-		if now.Before(op.ExpiresAt) && (op.State == OperationAwaitingTunnel || op.State == OperationTunnelAuthorized || op.State == OperationTunnelStarted || op.State == OperationHelperAnnounced || op.State == OperationIdentityGenerated) {
+		if now.Before(op.ExpiresAt) && (op.State == OperationAwaitingTunnel || op.State == OperationTunnelAuthorized || op.State == OperationTunnelStarted || op.State == OperationHelperAnnounced || op.State == OperationIdentityGenerated || op.State == OperationAccessStaged || op.State == OperationPossessionProved) {
 			used[op.AssignedReversePort] = true
 		}
 	}
@@ -922,11 +1050,13 @@ func (s *Files) readBundlePathLocked(path string) (Bundle, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return Bundle{}, ErrNotFound
 		}
-		if legacyErr := readStrictJSON(path, legacyBundleSchema, &bundle); legacyErr != nil {
-			return Bundle{}, err
+		if legacyErr := readStrictJSON(path, legacyBundleSchemaV3, &bundle); legacyErr != nil {
+			if olderErr := readStrictJSON(path, legacyBundleSchema, &bundle); olderErr != nil {
+				return Bundle{}, err
+			}
 		}
 		bundle.Schema = BundleSchema
-		if bundle.Operation.Schema == legacyOperationSchema {
+		if bundle.Operation.Schema == legacyOperationSchema || bundle.Operation.Schema == legacyOperationSchemaV2 {
 			bundle.Operation.Schema = OperationSchema
 		}
 	}

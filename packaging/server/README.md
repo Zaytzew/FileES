@@ -7,6 +7,7 @@ This bundle contains short-lived tools, not services:
 - `filees-ssh-auth` is the local BSD Authentication OTP style;
 - `filees-entry` is the tunnel-account forced command;
 - `filees-worker` is exec'd once per authenticated deploy and exits after its bounded action;
+- `filees-client-entry` is the per-key forced SVN entry used for possession proof and active read-only access;
 - `filees-mail` submits one pending outbox entry to a configured smarthost.
 
 Run `install-server.sh` as the target system administrator, edit

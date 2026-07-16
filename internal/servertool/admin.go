@@ -1,6 +1,7 @@
 package servertool
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"filees/pkg/activation"
 	"filees/pkg/onboarding"
 )
 
@@ -18,7 +20,7 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|revoke|list | operation inspect")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|revoke|list | operation inspect | client revoke")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
@@ -97,6 +99,35 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		}
 		response := onboarding.AdminResponse{Schema: onboarding.AdminProtocolSchema, RequestID: uuid.NewString(), Status: onboarding.AdminOK, Operation: &operation}
 		if err := writeJSON(stdout, response); err != nil {
+			return ExitSoftware
+		}
+		return ExitOK
+	case "client revoke":
+		flags := flag.NewFlagSet("client revoke", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		clientID := flags.String("client-id", "", "client UUID")
+		reason := flags.String("reason", "", "one-line revoke reason")
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
+			return ExitUsage
+		}
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/client-revoke", areas: onboarding.AreaOperations, write: true, needActivation: true, needSVN: true})
+		if err != nil {
+			report(stderr, "filees-admin config", err)
+			return ExitConfig
+		}
+		manager, err := activation.New(config.Activation, nil)
+		if err != nil {
+			report(stderr, "filees-admin activation", err)
+			return ExitConfig
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		revision, err := manager.Revoke(ctx, *clientID, *reason)
+		if err != nil {
+			report(stderr, "filees-admin client revoke", err)
+			return ExitTempFail
+		}
+		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-client-result/v1", "status": "revoked", "client_id": *clientID, "service_revision": revision}); err != nil {
 			return ExitSoftware
 		}
 		return ExitOK

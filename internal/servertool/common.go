@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"filees/internal/obsandbox"
+	"filees/pkg/activation"
 	"filees/pkg/onboarding"
 	"filees/pkg/serverconfig"
 )
@@ -26,7 +27,7 @@ const (
 	readPromises   = "stdio rpath wpath flock"
 	writePromises  = "stdio rpath wpath cpath fattr flock"
 	mailPromises   = writePromises + " inet dns"
-	workerPromises = writePromises + " inet"
+	workerPromises = writePromises + " inet proc exec"
 )
 
 type toolAccess struct {
@@ -37,6 +38,8 @@ type toolAccess struct {
 	needSMTP         bool
 	needWorker       bool
 	needWorkerPublic bool
+	needActivation   bool
+	needSVN          bool
 }
 
 func (access toolAccess) promises() string {
@@ -69,6 +72,9 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	if access.needWorkerPublic {
 		secrets |= serverconfig.SecretWorkerPublic
 	}
+	if access.needActivation || access.needSVN {
+		secrets |= serverconfig.SecretActivation
+	}
 	config, err := serverconfig.LoadFor(configPath, secrets)
 	if err != nil {
 		return nil, serverconfig.Config{}, err
@@ -77,9 +83,15 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	if err := onboarding.CheckExisting(config.Root, repositoryAccess); err != nil {
 		return nil, serverconfig.Config{}, err
 	}
-	profile := repositoryProfile(config.Root, access)
-	if err := sandboxApply(profile); err != nil {
-		return nil, serverconfig.Config{}, err
+	profile := repositoryProfile(config.Root, access, config.Activation)
+	var sandboxErr error
+	if access.needSVN {
+		sandboxErr = sandboxApplyForExec(profile, "stdio rpath wpath cpath fattr flock proc")
+	} else {
+		sandboxErr = sandboxApply(profile)
+	}
+	if sandboxErr != nil {
+		return nil, serverconfig.Config{}, sandboxErr
 	}
 	files, err := onboarding.OpenPrepared(config.Root, config.Onboarding, repositoryAccess)
 	if err != nil {
@@ -88,7 +100,7 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	return files, config, nil
 }
 
-func repositoryProfile(root string, access toolAccess) obsandbox.Profile {
+func repositoryProfile(root string, access toolAccess, activationConfig activation.Config) obsandbox.Profile {
 	areaPerms := "r"
 	if access.write {
 		areaPerms = "rwc"
@@ -112,12 +124,31 @@ func repositoryProfile(root string, access toolAccess) obsandbox.Profile {
 			obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"},
 		)
 	}
+	if access.needActivation {
+		paths = append(paths,
+			obsandbox.Path{Label: "activation", Name: activationConfig.Root, Perms: "rwc"},
+			obsandbox.Path{Label: "client-authorized-keys", Name: activationConfig.AuthorizedKeysFile, Perms: "rwc"},
+			obsandbox.Path{Label: "service-authz", Name: activationConfig.AuthzFile, Perms: "rwc"},
+		)
+	}
+	if access.needSVN {
+		paths = append(paths,
+			obsandbox.Path{Label: "service-working-copy", Name: activationConfig.ServiceWorkingCopy, Perms: "rwc"},
+			obsandbox.Path{Label: "service-repository", Name: activationConfig.ServiceRepository, Perms: "rwc"},
+			obsandbox.Path{Label: "svn", Name: activationConfig.SVNBinary, Perms: "rx"},
+			obsandbox.Path{Label: "null-device", Name: "/dev/null", Perms: "rw"},
+			obsandbox.Path{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
+			obsandbox.Path{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
+			obsandbox.Path{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
+		)
+	}
 	return obsandbox.Profile{Name: access.name, Promises: access.promises(), Paths: paths}
 }
 
 var (
-	sandboxBegin = obsandbox.Begin
-	sandboxApply = obsandbox.Apply
+	sandboxBegin        = obsandbox.Begin
+	sandboxApply        = obsandbox.Apply
+	sandboxApplyForExec = obsandbox.ApplyForExec
 )
 
 func writeJSON(writer io.Writer, value any) error {

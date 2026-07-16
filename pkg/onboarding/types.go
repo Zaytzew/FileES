@@ -6,13 +6,15 @@ import (
 )
 
 const (
-	legacyOperationSchema = "filees.onboarding-operation/v1"
-	legacyBundleSchema    = "filees.onboarding-bundle/v2"
-	TicketSchema          = "filees.onboarding-ticket/v1"
-	OperationSchema       = "filees.onboarding-operation/v2"
-	OutboxSchema          = "filees.mail-outbox/v2"
-	AuditSchema           = "filees.onboarding-audit/v1"
-	BundleSchema          = "filees.onboarding-bundle/v3"
+	legacyOperationSchema   = "filees.onboarding-operation/v1"
+	legacyOperationSchemaV2 = "filees.onboarding-operation/v2"
+	legacyBundleSchema      = "filees.onboarding-bundle/v2"
+	legacyBundleSchemaV3    = "filees.onboarding-bundle/v3"
+	TicketSchema            = "filees.onboarding-ticket/v1"
+	OperationSchema         = "filees.onboarding-operation/v3"
+	OutboxSchema            = "filees.mail-outbox/v2"
+	AuditSchema             = "filees.onboarding-audit/v1"
+	BundleSchema            = "filees.onboarding-bundle/v4"
 )
 
 var (
@@ -48,6 +50,9 @@ const (
 	OperationTunnelStarted     OperationState = "tunnel_started"
 	OperationHelperAnnounced   OperationState = "helper_announced"
 	OperationIdentityGenerated OperationState = "identity_generated"
+	OperationAccessStaged      OperationState = "access_staged"
+	OperationPossessionProved  OperationState = "possession_verified"
+	OperationActive            OperationState = "active"
 	OperationOTPExhausted      OperationState = "otp_exhausted"
 	OperationExpired           OperationState = "expired"
 )
@@ -69,6 +74,8 @@ type Operation struct {
 	HelperHostPublicKey     string         `json:"helper_host_public_key,omitempty"`
 	InstallationPublicKey   string         `json:"installation_public_key,omitempty"`
 	InstallationFingerprint string         `json:"installation_fingerprint,omitempty"`
+	ServiceRevision         int64          `json:"service_revision,omitempty"`
+	ActivatedAt             *time.Time     `json:"activated_at,omitempty"`
 	CreatedAt               time.Time      `json:"created_at"`
 	ExpiresAt               time.Time      `json:"expires_at"`
 }
@@ -135,4 +142,14 @@ type AuthGrant struct {
 	ApprovedPolicy      Policy
 	AssignedReversePort uint16
 	ExpiresAt           time.Time
+}
+
+type ActivationGrant struct {
+	OperationID             string
+	ClientID                string
+	RealmID                 string
+	DeployRequestID         string
+	InstallationPublicKey   string
+	InstallationFingerprint string
+	ExpiresAt               time.Time
 }

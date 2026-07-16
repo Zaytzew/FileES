@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"filees/internal/obsandbox"
+	"filees/pkg/activation"
 	"filees/pkg/onboarding"
 )
 
@@ -70,7 +71,7 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		profile := repositoryProfile("/srv/filees", test.access)
+		profile := repositoryProfile("/srv/filees", test.access, activation.Config{})
 		if profile.Name != test.access.name || profile.Promises != test.promises || !reflect.DeepEqual(profile.Paths, test.paths) {
 			t.Fatalf("profile %s = %+v", test.access.name, profile)
 		}

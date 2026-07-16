@@ -13,6 +13,7 @@ install -m 755 "$bundle/bin/filees-onboard" "$prefix/libexec/filees/filees-onboa
 install -m 755 "$bundle/bin/filees-mail" "$prefix/libexec/filees/filees-mail"
 install -m 755 "$bundle/bin/filees-entry" "$prefix/libexec/filees/filees-entry"
 install -m 755 "$bundle/bin/filees-worker" "$prefix/libexec/filees/filees-worker"
+install -m 755 "$bundle/bin/filees-client-entry" "$prefix/libexec/filees/filees-client-entry"
 
 install -d -m 700 "$sysconfdir"
 if [ ! -e "$sysconfdir/server.json" ]; then
@@ -31,6 +32,7 @@ install -d -m 700 "$statedir" "$statedir/tickets" "$statedir/operations" "$state
 if [ ! -e "$statedir/.toolchain.lock" ]; then
 	install -m 600 /dev/null "$statedir/.toolchain.lock"
 fi
+install -d -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs
 
 echo "FileES server tools installed. Edit $sysconfdir/server.json before use."
 echo "No daemon or rc.d service was installed."

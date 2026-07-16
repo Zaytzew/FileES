@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/activation"
 	"filees/pkg/deploy"
 	"filees/pkg/onboarding"
 
@@ -50,9 +51,49 @@ func TestS3WorkerGeneratesIdentityThroughPinnedHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	svnBinary, err := exec.LookPath("svn")
+	if err != nil {
+		t.Fatal("svn is required for S3 activation integration")
+	}
+	svnadminBinary, err := exec.LookPath("svnadmin")
+	if err != nil {
+		t.Fatal("svnadmin is required for S3 activation integration")
+	}
+	svnserveBinary, err := exec.LookPath("svnserve")
+	if err != nil {
+		t.Fatal("svnserve is required for S3 activation integration")
+	}
+	serviceRepository := filepath.Join(base, "service-repo")
+	serviceWC := filepath.Join(base, "service-wc")
+	runWorkerTestCommand(t, svnadminBinary, "create", serviceRepository)
+	runWorkerTestCommand(t, svnBinary, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "filees: initialize proof", "file://"+serviceRepository+"/proof")
+	runWorkerTestCommand(t, svnBinary, "checkout", "--non-interactive", "--no-auth-cache", "file://"+serviceRepository, serviceWC)
+	activationRoot := filepath.Join(base, "activation")
+	if err := os.MkdirAll(activationRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	authorizedKeysPath := filepath.Join(activationRoot, "authorized_keys")
+	authzPath := filepath.Join(activationRoot, "service.authz")
+	if err := os.WriteFile(authorizedKeysPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(authzPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	activationConfig := activation.Config{
+		Root: activationRoot, AuthorizedKeysFile: authorizedKeysPath,
+		AuthzFile: authzPath, ServiceWorkingCopy: serviceWC, ServiceRepository: serviceRepository,
+		RepositoryName: "filees-service", ClientEntryPath: "/usr/local/libexec/filees/filees-client-entry",
+		SVNBinary: svnBinary, SVNServeBinary: svnserveBinary,
+	}
+	activationManager, err := activation.New(activationConfig, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	helper, err := deploy.StartHelper(context.Background(), deploy.HelperConfig{
 		WorkerKey: workerSigner.PublicKey(),
 		Identity:  deploy.IdentityGenerator{Root: filepath.Join(root, "operations", "client-identity")},
+		Access:    activationReceiptProver{manager: activationManager},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -105,6 +146,12 @@ func TestS3WorkerGeneratesIdentityThroughPinnedHelper(t *testing.T) {
 		"schema": "filees.server-toolchain/v1", "root": root, "otp_pepper_file": pepperPath,
 		"worker_private_key_file": workerKeyPath, "worker_public_key_file": workerPublicPath, "operation_ttl": "1m", "otp_attempts": 3,
 		"reverse_port_first": port, "reverse_port_last": port,
+		"activation": map[string]any{
+			"root": activationConfig.Root, "authorized_keys_file": authorizedKeysPath, "authz_file": authzPath,
+			"service_working_copy": serviceWC, "service_repository": serviceRepository,
+			"repository_name": "filees-service", "client_entry_path": activationConfig.ClientEntryPath,
+			"svn_binary": svnBinary, "svnserve_binary": svnserveBinary,
+		},
 		"smtp": map[string]any{"address": "127.0.0.1:2525", "client_name": "filees.test", "from": "filees@example.test", "message_id_domain": "filees.test", "tls": "none"},
 	}
 	rawConfig, _ := json.Marshal(config)
@@ -120,7 +167,7 @@ func TestS3WorkerGeneratesIdentityThroughPinnedHelper(t *testing.T) {
 	if code := runWorker(configPath, []string{"deploy"}, bytes.NewReader(frame), &stdout, &stderr); code != ExitOK {
 		t.Fatalf("worker exit=%d stderr=%s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), `"status":"identity_generated"`) || !strings.Contains(stdout.String(), receipt.OperationID) {
+	if !strings.Contains(stdout.String(), `"status":"active"`) || !strings.Contains(stdout.String(), receipt.OperationID) {
 		t.Fatalf("worker result=%s", stdout.String())
 	}
 	rawOperation, err := os.ReadFile(filepath.Join(root, "operations", receipt.OnboardingRequestID+".json"))
@@ -132,8 +179,25 @@ func TestS3WorkerGeneratesIdentityThroughPinnedHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	op := completed.Operation
-	if op.State != onboarding.OperationIdentityGenerated || op.DeployRequestID != deployRequestID || op.InstallationPublicKey == "" || op.InstallationFingerprint == "" || op.ClientID == "" {
+	if op.State != onboarding.OperationActive || op.DeployRequestID != deployRequestID || op.InstallationPublicKey == "" || op.InstallationFingerprint == "" || op.ClientID == "" || op.ServiceRevision <= 0 || op.ActivatedAt == nil {
 		t.Fatalf("operation=%+v", op)
+	}
+	if _, err := os.Stat(filepath.Join(serviceWC, "admin", "clients", op.ClientID+".json")); err != nil {
+		t.Fatalf("active client projection missing: %v", err)
+	}
+}
+
+type activationReceiptProver struct{ manager *activation.Manager }
+
+func (p activationReceiptProver) ProveServiceAccess(operationID, clientID string) error {
+	return p.manager.RecordProof(operationID, clientID)
+}
+
+func runWorkerTestCommand(t *testing.T, command string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(command, args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%s %v: %v: %s", command, args, err, output)
 	}
 }
 

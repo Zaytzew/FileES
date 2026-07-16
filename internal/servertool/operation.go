@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"filees/pkg/activation"
 	"filees/pkg/onboarding"
 )
 
@@ -19,7 +20,7 @@ func RunOperation(args []string, stdout, stderr io.Writer) int {
 		if len(args) != 1 {
 			return ExitUsage
 		}
-		files, _, err := openFiles(path, toolAccess{name: "filees-operation/recover", areas: onboarding.AreaAll, write: true, needOTP: true})
+		files, config, err := openFiles(path, toolAccess{name: "filees-operation/recover", areas: onboarding.AreaAll, write: true, needOTP: true, needActivation: true})
 		if err != nil {
 			report(stderr, "filees-operation config", err)
 			return ExitConfig
@@ -28,7 +29,17 @@ func RunOperation(args []string, stdout, stderr io.Writer) int {
 			report(stderr, "filees-operation recover", err)
 			return ExitTempFail
 		}
-		if err := writeJSON(stdout, map[string]string{"schema": "filees.operation-result/v1", "status": "ok"}); err != nil {
+		manager, err := activation.New(config.Activation, nil)
+		if err != nil {
+			report(stderr, "filees-operation activation", err)
+			return ExitConfig
+		}
+		expired, err := manager.CleanupExpired()
+		if err != nil {
+			report(stderr, "filees-operation activation cleanup", err)
+			return ExitTempFail
+		}
+		if err := writeJSON(stdout, map[string]any{"schema": "filees.operation-result/v1", "status": "ok", "expired_activations": expired}); err != nil {
 			return ExitSoftware
 		}
 		return ExitOK

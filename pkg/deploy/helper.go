@@ -26,6 +26,11 @@ type HelperConfig struct {
 	WorkerKey   ssh.PublicKey
 	HostSigner  ssh.Signer
 	Identity    InstallationIdentityGenerator
+	Access      ServiceAccessProver
+}
+
+type ServiceAccessProver interface {
+	ProveServiceAccess(operationID, clientID string) error
 }
 
 type InstallationIdentityGenerator interface {
@@ -221,18 +226,31 @@ func (h *Helper) execute(stream io.ReadWriter) error {
 		_ = json.NewEncoder(stream).Encode(HelperResponse{Schema: HelperSchema, OperationID: request.OperationID, RequestID: request.RequestID, Status: "error", Error: err.Error()})
 		return err
 	}
-	identity, err := h.config.Identity.GenerateInstallationIdentity(request.OperationID, request.ClientID)
 	response := HelperResponse{Schema: HelperSchema, OperationID: request.OperationID, RequestID: request.RequestID}
-	if err != nil {
-		response.Status, response.Error = "error", err.Error()
+	var actionErr error
+	switch request.Action {
+	case ActionGenerateIdentity:
+		identity, err := h.config.Identity.GenerateInstallationIdentity(request.OperationID, request.ClientID)
+		actionErr = err
+		if err == nil {
+			response.Identity = &PublicIdentity{PublicKey: identity.PublicKey, Fingerprint: identity.Fingerprint}
+		}
+	case ActionProveServiceAccess:
+		if h.config.Access == nil {
+			actionErr = errors.New("service access prover is unavailable")
+		} else {
+			actionErr = h.config.Access.ProveServiceAccess(request.OperationID, request.ClientID)
+		}
+	}
+	if actionErr != nil {
+		response.Status, response.Error = "error", actionErr.Error()
 	} else {
 		response.Status = "ok"
-		response.Identity = &PublicIdentity{PublicKey: identity.PublicKey, Fingerprint: identity.Fingerprint}
 	}
 	if encodeErr := json.NewEncoder(stream).Encode(response); encodeErr != nil {
 		return encodeErr
 	}
-	return err
+	return actionErr
 }
 
 func (h *Helper) bindRequest(operationID, clientID string) bool {

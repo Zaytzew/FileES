@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	HelperSchema           = "filees.deploy-helper/v1"
-	HelperCommand          = "filees-deploy/v1"
-	ActionGenerateIdentity = "generate_identity"
+	HelperSchema             = "filees.deploy-helper/v1"
+	HelperCommand            = "filees-deploy/v1"
+	ActionGenerateIdentity   = "generate_identity"
+	ActionProveServiceAccess = "prove_service_access"
 )
 
 type HelperRequest struct {
@@ -58,7 +59,7 @@ func (r HelperRequest) validate(operationID, clientID string) error {
 	if _, err := uuid.Parse(r.RequestID); err != nil {
 		return fmt.Errorf("request_id must be UUID: %w", err)
 	}
-	if r.Action != ActionGenerateIdentity {
+	if r.Action != ActionGenerateIdentity && r.Action != ActionProveServiceAccess {
 		return fmt.Errorf("unsupported helper action %q", r.Action)
 	}
 	return nil

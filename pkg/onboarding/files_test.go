@@ -463,6 +463,87 @@ func TestLegacyS2BundleIsUpgradedWhenS3ClaimsHelper(t *testing.T) {
 	}
 }
 
+func TestActivationTransitionsAreDurableIdempotentAndCannotBeSkipped(t *testing.T) {
+	now := time.Date(2026, 7, 16, 16, 0, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 42670, 42670)
+	defer store.Close()
+	receipt, otp := createTakenOperation(t, store, "activate@example.net")
+	if _, err := store.AuthenticateOTP(otp); err != nil {
+		t.Fatal(err)
+	}
+	deployRequestID := uuid.NewString()
+	grant, err := store.ClaimAuthorizedHelper(42670, deployRequestID, "ssh-ed25519 helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteGeneratedIdentity(grant.OperationID, deployRequestID, "ssh-ed25519 installation filees:test", "SHA256:test"); err != nil {
+		t.Fatal(err)
+	}
+	activation, err := store.PendingActivation(OperationIdentityGenerated)
+	if err != nil || activation.OperationID != receipt.OperationID || activation.ClientID != grant.ClientID || activation.RealmID != testRealmID {
+		t.Fatalf("activation=%+v err=%v", activation, err)
+	}
+	if err := store.CompleteActivation(grant.OperationID, deployRequestID, 2); !errors.Is(err, ErrTunnelGrant) {
+		t.Fatalf("activation skipped proof: %v", err)
+	}
+	if err := store.CompleteAccessStaged(grant.OperationID, deployRequestID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteAccessStaged(grant.OperationID, deployRequestID); err != nil {
+		t.Fatalf("stage retry: %v", err)
+	}
+	if err := store.CompletePossessionProof(grant.OperationID, deployRequestID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteActivation(grant.OperationID, deployRequestID, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteActivation(grant.OperationID, deployRequestID, 2); err != nil {
+		t.Fatalf("activation retry: %v", err)
+	}
+	op, err := store.GetOperation(receipt.OperationID)
+	if err != nil || op.State != OperationActive || op.ServiceRevision != 2 || op.ActivatedAt == nil || op.OTPHash != "" || op.OTPLocator != "" || op.AttemptsLeft != 0 {
+		t.Fatalf("active operation=%+v err=%v", op, err)
+	}
+	now = now.Add(31 * time.Minute)
+	if err := store.Recover(); err != nil {
+		t.Fatal(err)
+	}
+	op, _ = store.GetOperation(receipt.OperationID)
+	if op.State != OperationActive {
+		t.Fatalf("active client expired with onboarding TTL: %+v", op)
+	}
+}
+
+func TestRecoverExpiresUnfinishedActivationButNotActiveClient(t *testing.T) {
+	now := time.Date(2026, 7, 16, 17, 0, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 42680, 42680)
+	defer store.Close()
+	receipt, otp := createTakenOperation(t, store, "expire-activation@example.net")
+	if _, err := store.AuthenticateOTP(otp); err != nil {
+		t.Fatal(err)
+	}
+	deployRequestID := uuid.NewString()
+	grant, err := store.ClaimAuthorizedHelper(42680, deployRequestID, "ssh-ed25519 helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteGeneratedIdentity(grant.OperationID, deployRequestID, "ssh-ed25519 installation filees:test", "SHA256:test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteAccessStaged(grant.OperationID, deployRequestID); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(31 * time.Minute)
+	if err := store.Recover(); err != nil {
+		t.Fatal(err)
+	}
+	op, err := store.GetOperation(receipt.OperationID)
+	if err != nil || op.State != OperationExpired || op.OTPHash != "" || op.OTPLocator != "" {
+		t.Fatalf("expired activation=%+v err=%v", op, err)
+	}
+}
+
 func TestTicketValidationRevocationAndPermissions(t *testing.T) {
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
 	store, path := openTestStore(t, &now, 3, 42700, 42710)

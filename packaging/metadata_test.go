@@ -229,7 +229,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	text := string(raw)
 	for _, required := range []string{
 		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-operation filees-mail",
-		"filees-ssh-auth filees-entry filees-worker",
+		"filees-ssh-auth filees-entry filees-worker filees-client-entry",
 		`"./cmd/$command"`, "SHA256SUMS", "sha256 -r",
 	} {
 		if !strings.Contains(text, required) {
@@ -259,6 +259,8 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	for _, required := range []string{
 		`-m 4511 "$bundle/bin/filees-entry"`,
 		`-m 0555 "$bundle/bin/filees-worker"`,
+		`-m 4550 "$bundle/bin/filees-client-entry"`,
+		`svnadmin create /var/filees/service-repo`,
 	} {
 		if !strings.Contains(openBSDInstallerText, required) {
 			t.Errorf("OpenBSD installer missing privilege boundary %q", required)
@@ -277,6 +279,10 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	}
 	if config["schema"] != "filees.server-toolchain/v1" || config["root"] != "/var/filees/onboarding" {
 		t.Fatalf("unexpected server config identity: %#v", config)
+	}
+	activationConfig, ok := config["activation"].(map[string]any)
+	if !ok || activationConfig["service_repository"] != "/var/filees/service-repo" || activationConfig["svnserve_binary"] != "/usr/local/bin/svnserve" || activationConfig["authorized_keys_file"] != "/var/filees/activation/authorized_keys" {
+		t.Fatalf("unexpected activation config: %#v", activationConfig)
 	}
 }
 

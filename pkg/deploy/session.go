@@ -67,6 +67,28 @@ func EncodeTunnelSession(session TunnelSession) ([]byte, error) {
 // GenerateIdentityThroughHelper performs the sole S3 helper action through
 // the already established loopback reverse forward.
 func GenerateIdentityThroughHelper(ctx context.Context, address, hostPublicKey string, signer ssh.Signer, request HelperRequest) (HelperResponse, error) {
+	response, err := callHelper(ctx, address, hostPublicKey, signer, request)
+	if err != nil {
+		return HelperResponse{}, err
+	}
+	if response.Identity == nil {
+		return HelperResponse{}, errors.New("helper identity response is missing")
+	}
+	return response, nil
+}
+
+func ProveServiceAccessThroughHelper(ctx context.Context, address, hostPublicKey string, signer ssh.Signer, request HelperRequest) error {
+	response, err := callHelper(ctx, address, hostPublicKey, signer, request)
+	if err != nil {
+		return err
+	}
+	if response.Identity != nil {
+		return errors.New("helper proof response contains identity material")
+	}
+	return nil
+}
+
+func callHelper(ctx context.Context, address, hostPublicKey string, signer ssh.Signer, request HelperRequest) (HelperResponse, error) {
 	if signer == nil {
 		return HelperResponse{}, errors.New("worker signer is required")
 	}
@@ -144,7 +166,7 @@ func GenerateIdentityThroughHelper(ctx context.Context, address, hostPublicKey s
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return HelperResponse{}, errors.New("helper response contains trailing JSON")
 	}
-	if response.Schema != HelperSchema || response.Status != "ok" || response.OperationID != request.OperationID || response.RequestID != request.RequestID || response.Identity == nil || response.Error != "" {
+	if response.Schema != HelperSchema || response.Status != "ok" || response.OperationID != request.OperationID || response.RequestID != request.RequestID || response.Error != "" {
 		return HelperResponse{}, errors.New("helper response does not match request")
 	}
 	return response, nil

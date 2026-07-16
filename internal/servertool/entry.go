@@ -39,7 +39,7 @@ func execWorker() error {
 		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
 		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
 	}}
-	if err := obsandbox.ApplyForExec(profile, workerPromises+" proc unveil"); err != nil {
+	if err := obsandbox.ApplyForExec(profile, workerPromises+" unveil"); err != nil {
 		return err
 	}
 	return syscall.Exec(workerPath, []string{"filees-worker", "deploy"}, []string{})

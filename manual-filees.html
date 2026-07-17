@@ -268,7 +268,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <p class="hero-copy">A file-centric synchronization system built around explicit ownership, durable artifacts, bounded publication and recoverable failure.</p>
 <div class="meta-strip">
 <span><strong>Version</strong> 0.1.0</span>
-<span><strong>Date</strong> 2026-07-17</span>
+<span><strong>Date</strong> 2026-07-18</span>
 <span><strong>Server</strong> OpenBSD reference; Linux build</span>
 <span><strong>Client</strong> Linux; Windows GUI artifact</span>
 </div>
@@ -359,6 +359,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <li><a href="#ch5-transport">Transport hardening</a></li>
 <li><a href="#ch5-client">Client-side invariants</a></li>
 <li><a href="#ch5-gui">GUI boundary invariants</a></li>
+<li><a href="#ch5-identity">Identity and grant model</a></li>
 </ol>
 </li>
 </ol>
@@ -1281,6 +1282,18 @@ filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
 <p><strong>G-2. A per-user lock prevents multiple GUI instances.</strong> Before initialising the tray, the composition root acquires a per-user lock (POSIX <code>flock</code> on Linux; named session mutex on Windows). A second instance exits before any visible effect (AUD-02 correction).</p>
 <p><strong>G-3. Events are cache-invalidation signals, not the sole state source.</strong> A received event triggers a <code>repo.status</code> fetch. The GUI never constructs its authoritative state purely by applying events. After reconnect, a sequence gap, or an unknown event, a full resync is performed.</p>
 <p><strong>G-4. Autostart status distinguishes current from stale.</strong> <code>--autostart status</code> compares the stored command with the expected command for the current executable and arguments. It returns <code>enabled-stale</code> if they differ, prompting the user to re-run <code>--autostart enable</code> from the installed path (AUD-09 correction).</p>
+<h2 id="ch5-identity">5.5 Identity and Grant Model</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-designed">Grant store designed</span><span>The realm↔client↔key map is live in the activation vertical; realm-level grants and data-repo authz are the designed extension (concepts/REALM_GRANT_MODEL.md).</span></div>
+<p>FileES separates three identity tiers, and access control binds to exactly one of them:</p>
+<div class="table-wrap"><table>
+<tr><th>Tier</th><th>Lifetime</th><th>Role</th></tr>
+<tr><td><strong>Realm</strong></td><td>durable</td><td>The subject: a person or organisational unit. The only thing grants, ownership and cross-realm shares ever bind to.</td></tr>
+<tr><td><strong>Client (installation)</strong></td><td>until revoked</td><td>One machine. Transport identity: svnserve runs as <code>--tunnel-user &lt;client_id&gt;</code> forced by the server-side key entry. Per-machine audit.</td></tr>
+<tr><td><strong>Installation key</strong></td><td>until rotated</td><td>Ed25519 material authenticating one machine's SSH sessions. Never appears in any ACL.</td></tr>
+</table></div>
+<p>The binding is created exactly once, at onboarding: the admin issues the ticket with <code>--realm-id</code>, so every activation record ties <code>client_id ↔ realm_id ↔ installation key</code>, canonically published under <code>admin/realms/</code> and <code>admin/clients/</code> in the service repository. A user with four machines has four client IDs and four key pairs under one realm — and the question "which keys belong to this user" always has a deterministic answer.</p>
+<p><strong>I-10. Grants bind to realms, never to keys or client IDs.</strong> The canonical record is <code>(realm → repository, permissions)</code>. The svnserve authz file is a generated <em>projection</em> of grants onto the realm's currently active installations — reproducible at any time, never a source of truth.</p>
+<p><strong>I-11. Installation lifecycle never touches grants.</strong> A new installation inherits its realm's grants automatically at activation (authz regeneration); revoking one machine removes one key without affecting the realm's rights; revoking a realm removes everything in one step; key rotation is a redeploy and leaves ACLs untouched.</p>
+<p><strong>I-12. Administrative actions take a realm as their subject.</strong> No administrative operation accepts a public key, fingerprint or client ID as an authorisation argument (the sole exception is per-machine revocation, which targets a machine, not the subject's rights). Moving an installation between realms is not an edit — it is revoke plus fresh onboarding.</p>
 </div></div></div><footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Canonical English edition · translation maintained separately</span></footer></main>
 </body>
 </html>

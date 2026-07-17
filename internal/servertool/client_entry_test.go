@@ -15,6 +15,7 @@ import (
 
 	"filees/internal/obsandbox"
 	"filees/pkg/activation"
+	"filees/pkg/deploy"
 	"filees/pkg/onboarding"
 	"filees/pkg/serverconfig"
 
@@ -22,9 +23,9 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func TestClientEntryRecordsProofOnlyForForcedSVNCommand(t *testing.T) {
+func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 	if runtime.GOOS == "openbsd" && os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
-		command := exec.Command(os.Args[0], "-test.run=^TestClientEntryRecordsProofOnlyForForcedSVNCommand$")
+		command := exec.Command(os.Args[0], "-test.run=^TestClientEntrySeparatesProofFromForcedSVNCommand$")
 		command.Env = append(os.Environ(), "FILEES_CLIENT_ENTRY_NATIVE=1", "FILEES_CLIENT_ENTRY_ROOT="+t.TempDir())
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("native client entry child: %v: %s", err, output)
@@ -100,6 +101,21 @@ func TestClientEntryRecordsProofOnlyForForcedSVNCommand(t *testing.T) {
 		return ""
 	}
 	var stderr bytes.Buffer
+	getenv = func(name string) string {
+		if name == "SSH_ORIGINAL_COMMAND" {
+			return deploy.ServiceProofCommand
+		}
+		return ""
+	}
+	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitOK || called {
+		t.Fatalf("proof entry code=%d called-svn=%v stderr=%s", code, called, stderr.String())
+	}
+	getenv = func(name string) string {
+		if name == "SSH_ORIGINAL_COMMAND" {
+			return ClientSVNCommand
+		}
+		return ""
+	}
 	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitOK || !called {
 		t.Fatalf("entry code=%d called=%v stderr=%s", code, called, stderr.String())
 	}

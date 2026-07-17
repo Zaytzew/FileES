@@ -80,3 +80,32 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerSVNProfileIncludesOnlyExactRuntimeAndTreeParents(t *testing.T) {
+	config := activation.Config{
+		Root: "/srv/activation", AuthorizedKeysFile: "/srv/activation/authorized_keys", AuthzFile: "/srv/activation/authz",
+		ServiceWorkingCopy: "/srv/svn/service-wc", ServiceRepository: "/srv/svn/service-repo",
+		SVNBinary: "/usr/local/bin/svn", SVNServeBinary: "/usr/local/bin/svnserve",
+	}
+	profile := repositoryProfile("/srv/filees", toolAccess{name: "worker", needSVN: true}, config)
+	wanted := map[string]obsandbox.Path{
+		"service-working-copy-parent": {Label: "service-working-copy-parent", Name: "/srv/svn", Perms: "r"},
+		"service-repository-parent":   {Label: "service-repository-parent", Name: "/srv/svn", Perms: "r"},
+		"service-working-copy":        {Label: "service-working-copy", Name: config.ServiceWorkingCopy, Perms: "rwc"},
+		"service-repository":          {Label: "service-repository", Name: config.ServiceRepository, Perms: "rwc"},
+		"loader-hints":                {Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
+		"svn-system-config":           {Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
+		"random":                      {Label: "random", Name: "/dev/urandom", Perms: "r"},
+	}
+	for _, path := range profile.Paths {
+		if expected, ok := wanted[path.Label]; ok {
+			if path != expected {
+				t.Fatalf("SVN sandbox path %s = %+v, want %+v", path.Label, path, expected)
+			}
+			delete(wanted, path.Label)
+		}
+	}
+	if len(wanted) != 0 {
+		t.Fatalf("SVN sandbox profile missing paths: %+v", wanted)
+	}
+}

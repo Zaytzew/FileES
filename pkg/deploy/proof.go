@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	ServiceClientUser = "_filees-client"
-	ServiceSVNCommand = "svnserve -t"
+	ServiceClientUser   = "_filees-client"
+	ServiceSVNCommand   = "svnserve -t"
+	ServiceProofCommand = "filees-proof/v1"
 )
 
 type SSHAccessProver struct {
@@ -102,8 +103,8 @@ func (p SSHAccessProver) ProveServiceAccess(operationID, clientID string) error 
 	}
 	defer session.Close()
 	session.Stdin = bytes.NewReader(nil)
-	if err := session.Run(ServiceSVNCommand); err != nil {
-		return fmt.Errorf("service svn proof: %w", err)
+	if err := session.Run(ServiceProofCommand); err != nil {
+		return fmt.Errorf("service access proof: %w", err)
 	}
 	return nil
 }

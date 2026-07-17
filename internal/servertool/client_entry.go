@@ -8,6 +8,7 @@ import (
 
 	"filees/internal/obsandbox"
 	"filees/pkg/activation"
+	"filees/pkg/deploy"
 	"filees/pkg/serverconfig"
 )
 
@@ -21,7 +22,8 @@ func RunClientEntry(args []string, _ io.Reader, _ io.Writer, stderr io.Writer, g
 }
 
 func runClientEntry(configPath string, args []string, stderr io.Writer, getenv func(string) string, execute func(serverconfig.Config, string) error) int {
-	if len(args) != 2 || getenv("SSH_ORIGINAL_COMMAND") != ClientSVNCommand {
+	originalCommand := getenv("SSH_ORIGINAL_COMMAND")
+	if len(args) != 2 || (originalCommand != ClientSVNCommand && originalCommand != deploy.ServiceProofCommand) {
 		fmt.Fprintln(stderr, "filees-client-entry: rejected command")
 		return ExitUnavailable
 	}
@@ -40,10 +42,13 @@ func runClientEntry(configPath string, args []string, stderr io.Writer, getenv f
 		{Label: "service-repository", Name: config.Activation.ServiceRepository, Perms: "r"},
 		{Label: "authz", Name: config.Activation.AuthzFile, Perms: "r"},
 		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
+		{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
 		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
 		{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
+		{Label: "sasl-config", Name: "/etc/sasl2", Perms: "r"},
+		{Label: "random", Name: "/dev/urandom", Perms: "r"},
 	}}
-	if err := sandboxApplyForExec(profile, "stdio rpath flock"); err != nil {
+	if err := sandboxApplyForExec(profile, "stdio rpath flock prot_exec"); err != nil {
 		report(stderr, "filees-client-entry sandbox", err)
 		return ExitSoftware
 	}
@@ -55,6 +60,9 @@ func runClientEntry(configPath string, args []string, stderr io.Writer, getenv f
 	if err := manager.RecordProof(args[0], args[1]); err != nil {
 		report(stderr, "filees-client-entry proof", err)
 		return ExitUnavailable
+	}
+	if originalCommand == deploy.ServiceProofCommand {
+		return ExitOK
 	}
 	if err := execute(config, args[1]); err != nil {
 		report(stderr, "filees-client-entry exec", err)

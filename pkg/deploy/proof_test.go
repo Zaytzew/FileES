@@ -32,7 +32,7 @@ func TestSSHAccessProverUsesGeneratedIdentityAndPinnedServiceHost(t *testing.T) 
 	}
 	select {
 	case command := <-observed:
-		if command != ServiceSVNCommand {
+		if command != ServiceProofCommand {
 			t.Fatalf("proof command=%q", command)
 		}
 	case <-time.After(time.Second):
@@ -104,7 +104,7 @@ func serveProofSSHConnection(ctx context.Context, raw net.Conn, host ssh.Signer,
 				defer stream.Close()
 				for request := range reqs {
 					command, ok := parseExecPayload(request.Payload)
-					if request.Type != "exec" || !ok || command != ServiceSVNCommand {
+					if request.Type != "exec" || !ok || command != ServiceProofCommand {
 						_ = request.Reply(false, nil)
 						continue
 					}

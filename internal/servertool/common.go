@@ -133,13 +133,21 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 	}
 	if access.needSVN {
 		paths = append(paths,
+			// The ports client canonicalizes and enumerates the parents before
+			// entering each configured tree. Reveal names at those two levels,
+			// while retaining write/create rights only on the exact WC and repo.
+			obsandbox.Path{Label: "service-working-copy-parent", Name: filepath.Dir(activationConfig.ServiceWorkingCopy), Perms: "r"},
+			obsandbox.Path{Label: "service-repository-parent", Name: filepath.Dir(activationConfig.ServiceRepository), Perms: "r"},
 			obsandbox.Path{Label: "service-working-copy", Name: activationConfig.ServiceWorkingCopy, Perms: "rwc"},
 			obsandbox.Path{Label: "service-repository", Name: activationConfig.ServiceRepository, Perms: "rwc"},
 			obsandbox.Path{Label: "svn", Name: activationConfig.SVNBinary, Perms: "rx"},
 			obsandbox.Path{Label: "null-device", Name: "/dev/null", Perms: "rw"},
+			obsandbox.Path{Label: "random", Name: "/dev/urandom", Perms: "r"},
 			obsandbox.Path{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
+			obsandbox.Path{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
 			obsandbox.Path{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
 			obsandbox.Path{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
+			obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
 		)
 	}
 	return obsandbox.Profile{Name: access.name, Promises: access.promises(), Paths: paths}

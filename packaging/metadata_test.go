@@ -269,6 +269,16 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	if strings.Contains(openBSDInstallerText, `-m 4511 "$bundle/bin/filees-worker"`) {
 		t.Error("OpenBSD worker must not be set-id: pledge execpromises reject set-id images")
 	}
+	sshPolicy, err := os.ReadFile("server/openbsd/filees.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPolicy := strings.SplitN(string(sshPolicy), "Match User _filees-client", 2)
+	for _, required := range []string{"AuthorizedKeysFile none", "AuthorizedKeysCommand /bin/cat /var/filees/activation/authorized_keys", "AuthorizedKeysCommandUser _filees-state"} {
+		if len(clientPolicy) != 2 || !strings.Contains(clientPolicy[1], required) {
+			t.Fatalf("OpenBSD client Match block missing state-owned key reader %q", required)
+		}
+	}
 	configRaw, err := os.ReadFile("server/server.example.json")
 	if err != nil {
 		t.Fatal(err)

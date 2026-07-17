@@ -931,7 +931,7 @@ FILEES_LOG=trace ./filees   # includes svn invocations
 <p>The FileES server toolchain targets <strong>OpenBSD 7.9/amd64</strong> as the primary and security-reference platform. A Linux/amd64 server bundle is also buildable; distribution-specific hardening remains an administrator responsibility because Linux cannot provide the same <code>pledge</code>/<code>unveil</code> contract. FileES adds no network listener: the system <code>sshd</code> is its only endpoint.</p>
 <p>External dependencies:</p>
 <ul>
-<li><strong>SVN server</strong> (<code>svnserve</code> or Apache with mod_dav_svn) — must be independently installed and configured.</li>
+<li><strong>SVN server</strong> — <code>svnserve</code>, independently installed and configured. This is the only supported access path: FileES reaches it as tunnel-mode <code>svnserve</code> over SSH. Apache/<code>mod_dav_svn</code> is not a FileES target and has never been tested.</li>
 <li><strong>SMTP smarthost</strong> — for OTP delivery; FileES does not run an MTA. Only submission-style relay (<code>host:port</code>) is supported.</li>
 <li><strong>Go 1.24+</strong> — only needed to build from source. Pre-built bundles are provided.</li>
 </ul>

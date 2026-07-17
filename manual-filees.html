@@ -268,7 +268,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <p class="hero-copy">A file-centric synchronization system built around explicit ownership, durable artifacts, bounded publication and recoverable failure.</p>
 <div class="meta-strip">
 <span><strong>Version</strong> 0.1.0</span>
-<span><strong>Date</strong> 2026-07-16</span>
+<span><strong>Date</strong> 2026-07-17</span>
 <span><strong>Server</strong> OpenBSD reference; Linux build</span>
 <span><strong>Client</strong> Linux; Windows GUI artifact</span>
 </div>
@@ -339,6 +339,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <li><a href="#ch3-sshd">OpenBSD sshd configuration</a></li>
 <li><a href="#ch3-serverjson">server.json reference</a></li>
 <li><a href="#ch3-keys">Key generation</a></li>
+<li><a href="#ch3-managed">Managed install: filees-install</a></li>
 </ol>
 </li>
 <li><a href="#ch4">4. Administration</a>
@@ -349,6 +350,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <li><a href="#ch4-mail">Mail outbox</a></li>
 <li><a href="#ch4-recovery">Recovery</a></li>
 <li><a href="#ch4-monitoring">Monitoring</a></li>
+<li><a href="#ch4-rotate">Repository rotation: filees-rotate</a></li>
 </ol>
 </li>
 <li><a href="#ch5">5. Security Appendix</a>
@@ -1107,6 +1109,29 @@ doas -u _filees-state filees-admin ticket list
 doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
 doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
 doas -u _filees-state filees-mail send</code></pre>
+<h2 id="ch3-managed">3.6 Managed Install and Upgrade: <code>filees-install</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Manifest-driven installer/updater; full-cycle validation on the OpenBSD reference machine is still pending, so the shell installers above remain the supported path until then.</span></div>
+<p><code>filees-install</code> is the manifest-driven replacement for the shell installers, modelled on the ksefUCK upgrade channel. Binaries are distributed through a dedicated SVN repository (<strong>FILESS-BIN</strong>) with a channel/release structure: <code>channels/&lt;name&gt;.json</code> points at <code>releases/&lt;id&gt;/&lt;platform&gt;/manifest.json</code>, and every file carries a SHA-256 hash. Channel and manifest files can additionally be verified against a <code>signify</code> release key embedded in the binary at build time (<code>policy.verify_signature</code>).</p>
+<pre><code># Plan against the configured channel (no changes):
+filees-install -check
+# Full plan including config-contract drift, no payload download:
+filees-install -dry-run
+# Install or upgrade to the channel head (or a named release):
+filees-install -apply [r7]
+# Stage-1 rollback: restore the previously installed files:
+filees-install -rollback
+# Stage-2 rollback: remove files, sshd fragment, login class and
+# the users this installer created; keeps /var/filees and /etc/filees:
+filees-install -purge
+# ... and wipe operational state too (irreversible):
+filees-install -purge -wipe-state</code></pre>
+<p>Configuration lives in <code>/etc/filees/install.conf</code> (INI: <code>[repo]</code>, <code>[local]</code>, <code>[install]</code>, <code>[policy]</code>, <code>[security]</code>). Key behaviours:</p>
+<ul>
+<li><strong>First install</strong> also performs the system tasks that <code>install-ssh.sh</code> covers today: creates the protocol accounts (recording which ones it actually created), state directories and secrets, installs the sshd fragment Include and login class, and reloads sshd. Upgrades never repeat system tasks.</li>
+<li><strong>Backup before overwrite</strong>: every replaced file is copied (full mode bits, including setuid) into a timestamped backup dir recorded in <code>state.json</code>; <code>-rollback</code> restores exactly the last install.</li>
+<li><strong>Sandbox profile by run class</strong>: file-only runs (check, dry-run, upgrade, rollback) execute under a full two-pass <code>unveil</code> with pledge reduced to file promises. System runs (first install, purge, upgrades touching the sshd fragment) skip <code>unveil</code> — its state is inherited by exec'd children, which would blind <code>useradd</code>/<code>rcctl</code>/<code>sshd&nbsp;-t</code> — and keep <code>proc exec</code> only until the system phase ends.</li>
+<li><strong>Purge honours ownership</strong>: only users recorded as created by this installer are removed; a rollback that restores an sshd fragment prints a warning to reload sshd manually instead of exec'ing under the reduced pledge.</li>
+</ul>
+<div class="note">Design and review history: <code>concepts/SERVER_INSTALL_CONCEPT.md</code>, <code>concepts/SERVER_INSTALL_CODE_REVIEW.md</code> and its corrections document.</div>
 </div><hr class="chapter"/><h1 id="ch4">Chapter 4: Administration</h1><div class="chapter-content">
 <h2 id="ch4-admin">4.1 <code>filees-admin</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-planned">Broader commands planned</span><span>Ticket, operation inspection and fail-closed client revoke exist.</span></div>
 <p><code>filees-admin</code> is the administrative command-line tool. It must be run as <code>_filees-state</code> (e.g. via <code>doas -u _filees-state</code>) to satisfy its <code>pledge</code>/<code>unveil</code> profile. It writes structured JSON to stdout and diagnostics to stderr. Exit codes follow the <code>sysexits</code> range:</p>
@@ -1213,6 +1238,17 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <tr><td><code>commit.Service.RecoveryStats()</code></td><td>Internal Go API (not yet in IPC contract): resumed cache entries, entries skipped as already accepted, batches executed</td></tr>
 </table></div>
 <p>For CI or automated checks, <code>make verify</code> runs <code>go test ./...</code> (including race detector for key packages), <code>go vet ./...</code>, and a local SVN recovery smoke test (<code>scripts/svn-recovery-smoke.sh</code>) that creates a temporary <code>svnadmin</code> repository and does not require network access.</p>
+<h2 id="ch4-rotate">4.7 Repository Rotation: <code>filees-rotate</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Explicit generation change, tested end-to-end on a real FSFS repository; deliberately not scheduled — running it is an operational decision.</span></div>
+<p><code>filees-rotate</code> performs an <strong>explicit generation change</strong> of a hot repository: the new generation gets a <em>new UUID</em> and starts at r1 = a complete dump of the old HEAD (versioned properties such as <code>svn:needs-lock</code> included), inherits <code>conf/</code> and <code>hooks/</code> explicitly, and is verified (<code>svnadmin verify</code> plus tree comparison) before an atomic swap. The old generation becomes a frozen, commit-blocked FSFS archive with a history manifest and a <code>meta.json</code> recording the UUID change — the signal for client reprovisioning, since existing working copies do not survive a generation change by design.</p>
+<pre><code># Evaluate triggers only (size after pack, or age of r1's svn:date):
+filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
+# Rotate when a trigger fires; thresholds are configurable and validated:
+filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
+# Bounded backup dump of the last N revisions before HEAD (never a
+# second full history copy; the frozen FSFS archive is canonical):
+filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
+<p>Safety contract: an flock excludes concurrent runs; repo and archive must share a filesystem (the swap is a rename); commits are blocked by a temporary <code>pre-commit</code> hook for the duration; rotation <em>refuses</em> to run while active locks (live edit passports) exist unless <code>-break-locks</code> is passed explicitly; every failure before the swap restores the repository as found.</p>
+<div class="warn"><strong>When to rotate at all:</strong> for the FileES append-only profile, repository depth does not degrade performance, and FSFS binary deltas plus rep-sharing keep growth tracking <em>unique</em> data, not revision count. Rotation pays off only as a retention/tiering tool (SVN has no <code>obliterate</code>) — see the verdict in <code>concepts/SVN_ROTATOR_CONCEPT_V2.md</code> §7 before scheduling anything.</div>
 </div><hr class="chapter"/><h1 id="ch5">Chapter 5: Security Appendix</h1><div class="chapter-content">
 <p>This appendix summarises the design invariants that were established or hardened as a result of code reviews S1–S3, the client audit, the GUI audit, and the r61–r84 review. It is written for a security-aware deployer. It does not reproduce raw review findings; it captures <em>what was decided and why</em>.</p>
 <h2 id="ch5-invariants">5.1 Core Deployment Invariants</h2><div class="section-meta"><span class="status status-verified">Verified contract</span><span>Security and ownership invariants enforced by tests and package boundaries.</span></div>

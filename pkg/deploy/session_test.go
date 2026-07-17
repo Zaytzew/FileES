@@ -14,7 +14,7 @@ func TestTunnelSessionIsStrictAndPinsOneEd25519Key(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wanted := TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: uuid.NewString(), HelperHostPublicKey: key}
+	wanted := TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: uuid.NewString(), HelperHostPublicKey: key, ReconnectPublicKey: key}
 	raw, err := EncodeTunnelSession(wanted)
 	if err != nil {
 		t.Fatal(err)
@@ -25,9 +25,9 @@ func TestTunnelSessionIsStrictAndPinsOneEd25519Key(t *testing.T) {
 	}
 	for _, raw := range []string{
 		`{}`,
-		`{"schema":"filees.tunnel-session/v1","deploy_request_id":"bad","helper_host_public_key":"` + key + `"}`,
+		`{"schema":"filees.tunnel-session/v2","deploy_request_id":"bad","helper_host_public_key":"` + key + `","reconnect_public_key":"` + key + `"}`,
 		string(raw) + `{}`,
-		`{"schema":"filees.tunnel-session/v1","deploy_request_id":"` + uuid.NewString() + `","helper_host_public_key":"ssh-rsa AAAA"}`,
+		`{"schema":"filees.tunnel-session/v2","deploy_request_id":"` + uuid.NewString() + `","helper_host_public_key":"ssh-rsa AAAA","reconnect_public_key":"` + key + `"}`,
 	} {
 		if _, err := DecodeTunnelSession(strings.NewReader(raw)); err == nil {
 			t.Fatalf("accepted invalid tunnel frame: %q", raw)

@@ -8,10 +8,11 @@ import (
 const (
 	legacyOperationSchema   = "filees.onboarding-operation/v1"
 	legacyOperationSchemaV2 = "filees.onboarding-operation/v2"
+	legacyOperationSchemaV3 = "filees.onboarding-operation/v3"
 	legacyBundleSchema      = "filees.onboarding-bundle/v2"
 	legacyBundleSchemaV3    = "filees.onboarding-bundle/v3"
 	TicketSchema            = "filees.onboarding-ticket/v1"
-	OperationSchema         = "filees.onboarding-operation/v3"
+	OperationSchema         = "filees.onboarding-operation/v4"
 	OutboxSchema            = "filees.mail-outbox/v2"
 	AuditSchema             = "filees.onboarding-audit/v1"
 	BundleSchema            = "filees.onboarding-bundle/v4"
@@ -72,6 +73,7 @@ type Operation struct {
 	State                   OperationState `json:"state"`
 	DeployRequestID         string         `json:"deploy_request_id,omitempty"`
 	HelperHostPublicKey     string         `json:"helper_host_public_key,omitempty"`
+	ReconnectPublicKey      string         `json:"reconnect_public_key,omitempty"`
 	InstallationPublicKey   string         `json:"installation_public_key,omitempty"`
 	InstallationFingerprint string         `json:"installation_fingerprint,omitempty"`
 	ServiceRevision         int64          `json:"service_revision,omitempty"`

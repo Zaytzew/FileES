@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"filees/pkg/onboarding"
 )
 
 type authBuffer struct{ bytes.Buffer }
@@ -13,7 +15,8 @@ func TestBSDAuthChallengeIsEnumerationFree(t *testing.T) {
 	if code := RunSSHAuth([]string{"-v", "auth_type=auth-ssh", "-s", "challenge", "--", "_filees-tunnel", "filees-tunnel"}, auth, &bytes.Buffer{}); code != ExitOK {
 		t.Fatalf("challenge exit=%d", code)
 	}
-	if got := auth.String(); got != "value challenge FileES OTP: \\n\nreject challenge\n" {
+	got := auth.String()
+	if !strings.HasPrefix(got, "value challenge "+onboarding.ReconnectChallengePrefix) || !strings.HasSuffix(got, ":\\n\nreject challenge\n") {
 		t.Fatalf("challenge protocol=%q", got)
 	}
 }
@@ -38,8 +41,12 @@ func TestBSDAuthRejectsWrongPrincipalAndMalformedResponse(t *testing.T) {
 }
 
 func TestBSDResponseParserIsBoundedAndExact(t *testing.T) {
-	challenge, response, err := readBSDResponse(strings.NewReader("FileES OTP: \n\x00AAAAAAAA-BBBBBBBBBBBBBBBB\x00"))
-	if err != nil || challenge != "FileES OTP: \n" || response != "AAAAAAAA-BBBBBBBBBBBBBBBB" {
+	challenge, err := onboarding.NewReconnectChallenge(strings.NewReader(strings.Repeat("n", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseChallenge, response, err := readBSDResponse(strings.NewReader(challenge + "\x00AAAAAAAA-BBBBBBBBBBBBBBBB\x00"))
+	if err != nil || responseChallenge != challenge || response != "AAAAAAAA-BBBBBBBBBBBBBBBB" {
 		t.Fatalf("challenge=%q response=%q err=%v", challenge, response, err)
 	}
 	for _, wire := range []string{"\x00otp", "\x00otp\x00junk", strings.Repeat("a", 1026) + "\x00x\x00"} {

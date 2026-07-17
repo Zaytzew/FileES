@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,10 +15,21 @@ import (
 	"syscall"
 	"time"
 
+	"filees/pkg/onboarding"
+
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/sys/unix"
 )
 
-const askpassFIFOEnv = "FILEES_ASKPASS_FIFO"
+const (
+	askpassFIFOEnv      = "FILEES_ASKPASS_FIFO"
+	connectKeyEnv       = "FILEES_RECONNECT_KEY"
+	connectRequestIDEnv = "FILEES_DEPLOY_REQUEST_ID"
+)
+
+func AskpassConfigured() bool {
+	return os.Getenv(askpassFIFOEnv) != "" || os.Getenv(connectKeyEnv) != ""
+}
 
 // RunOpenSSHTunnel starts the fixed OpenSSH reverse-forward command. OTP is
 // delivered once through an owner-only FIFO in XDG_RUNTIME_DIR; it is never an
@@ -30,7 +42,7 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	if err != nil {
 		return err
 	}
-	frame, err := EncodeTunnelSession(TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey})
+	frame, err := EncodeTunnelSession(TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey, ReconnectPublicKey: spec.ReconnectPublicKey})
 	if err != nil {
 		return err
 	}
@@ -65,7 +77,7 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	cmd.Stdin = bytes.NewReader(frame)
 	cmd.Stderr = nil
 	cmd.Stdout = nil
-	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassFIFOEnv)
+	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassFIFOEnv, connectKeyEnv, connectRequestIDEnv)
 	cmd.Env = append(cmd.Env,
 		"SSH_ASKPASS="+executable,
 		"SSH_ASKPASS_REQUIRE=force",
@@ -87,9 +99,64 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	return nil
 }
 
+// RunOpenSSHReconnectTunnel recreates the same fixed reverse forward after
+// transport loss. BSD Auth receives a signature over its fresh nonce; the
+// one-time mail OTP is neither retained nor reused.
+func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyPath string) error {
+	args, err := OpenSSHArgs(spec)
+	if err != nil {
+		return err
+	}
+	signer, err := loadReconnectSigner(privateKeyPath)
+	if err != nil {
+		return err
+	}
+	configured, _, _, _, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(spec.ReconnectPublicKey)))
+	if err != nil || !bytes.Equal(configured.Marshal(), signer.PublicKey().Marshal()) {
+		return errors.New("reconnect private key does not match tunnel binding")
+	}
+	frame, err := EncodeTunnelSession(TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey, ReconnectPublicKey: spec.ReconnectPublicKey})
+	if err != nil {
+		return err
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	cmd.Stdin = bytes.NewReader(frame)
+	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassFIFOEnv, connectKeyEnv, connectRequestIDEnv)
+	cmd.Env = append(cmd.Env,
+		"SSH_ASKPASS="+executable,
+		"SSH_ASKPASS_REQUIRE=force",
+		"DISPLAY=filees-reconnect",
+		connectKeyEnv+"="+filepath.Clean(privateKeyPath),
+		connectRequestIDEnv+"="+spec.DeployRequestID,
+	)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("reconnect SSH tunnel: %w", err)
+	}
+	return nil
+}
+
 // RunAskpass serves the internal OpenSSH askpass invocation. It accepts only
 // the FIFO created by RunOpenSSHTunnel in the current user's runtime directory.
 func RunAskpass() error {
+	if os.Getenv(connectKeyEnv) != "" {
+		if len(os.Args) < 2 {
+			return errors.New("reconnect askpass challenge is missing")
+		}
+		signer, err := loadReconnectSigner(os.Getenv(connectKeyEnv))
+		if err != nil {
+			return err
+		}
+		response, err := onboarding.EncodeReconnectResponse(os.Args[len(os.Args)-1], os.Getenv(connectRequestIDEnv), signer)
+		if err != nil {
+			return err
+		}
+		_, err = io.WriteString(os.Stdout, response+"\n")
+		return err
+	}
 	fifo := strings.TrimSpace(os.Getenv(askpassFIFOEnv))
 	runtimeDir := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR"))
 	if !filepath.IsAbs(fifo) || !filepath.IsAbs(runtimeDir) {
@@ -129,6 +196,31 @@ func RunAskpass() error {
 	_, writeErr := os.Stdout.Write(append(secret[:n], '\n'))
 	zero(secret)
 	return writeErr
+}
+
+func loadReconnectSigner(path string) (ssh.Signer, error) {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "." || !filepath.IsAbs(path) {
+		return nil, errors.New("reconnect private key path must be absolute")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || stat.Uid != uint32(os.Getuid()) {
+		return nil, errors.New("reconnect private key must be an owner-only regular file")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(raw)
+	signer, err := ssh.ParsePrivateKey(raw)
+	if err != nil || signer.PublicKey().Type() != ssh.KeyAlgoED25519 {
+		return nil, errors.New("reconnect private key must be unencrypted Ed25519")
+	}
+	return signer, nil
 }
 
 func writeOTPOnce(ctx context.Context, fifo string, otp []byte) error {

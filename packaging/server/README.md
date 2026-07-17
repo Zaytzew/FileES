@@ -12,6 +12,10 @@ This bundle contains short-lived tools, not services:
 
 Run `install-server.sh` as the target system administrator, edit
 `/etc/filees/server.json`, and keep both configuration and OTP pepper private.
+Run state-mutating administrative commands with effective user
+`_filees-state` (for example through a narrow `doas` rule); running
+`filees-admin ticket create` as root would create a root-owned `0600` ticket
+which the set-id onboarding command intentionally cannot read.
 The generic installer deliberately does not create an `rc.d`/systemd service
 and does not modify `sshd_config`. On OpenBSD, the separate
 `openbsd/install-ssh.sh` step creates the two protocol accounts, installs the

@@ -6,8 +6,12 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"filees/pkg/onboarding"
+
+	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 )
 
@@ -72,5 +76,45 @@ func TestScrubEnvironmentRemovesInheritedAskpassControls(t *testing.T) {
 	got := scrubEnvironment([]string{"PATH=/bin", "SSH_ASKPASS=/evil", askpassFIFOEnv + "=/evil", "DISPLAY=:1"}, "SSH_ASKPASS", askpassFIFOEnv, "DISPLAY")
 	if len(got) != 1 || got[0] != "PATH=/bin" {
 		t.Fatalf("environment=%#v", got)
+	}
+}
+
+func TestReconnectAskpassSignsServerNonceWithoutOTP(t *testing.T) {
+	requestID := uuid.NewString()
+	identity, err := PrepareReconnectIdentity(t.TempDir(), requestID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge, err := onboarding.NewReconnectChallenge(strings.NewReader(strings.Repeat("n", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(connectKeyEnv, identity.PrivateKeyPath)
+	t.Setenv(connectRequestIDEnv, requestID)
+	originalArgs, originalStdout := os.Args, os.Stdout
+	os.Args = []string{"filees", challenge}
+	readFD, writeFD, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writeFD
+	defer func() { os.Args, os.Stdout = originalArgs, originalStdout }()
+	if err := RunAskpass(); err != nil {
+		t.Fatal(err)
+	}
+	_ = writeFD.Close()
+	var output bytes.Buffer
+	_, _ = output.ReadFrom(readFD)
+	response := strings.TrimSpace(output.String())
+	if !strings.HasPrefix(response, "FILEES-R1."+requestID+".") {
+		t.Fatalf("response=%q", response)
+	}
+	private, err := loadReconnectSigner(identity.PrivateKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := onboarding.EncodeReconnectResponse(challenge, requestID, private)
+	if err != nil || response != expected {
+		t.Fatalf("response does not verify: got=%q expected=%q err=%v", response, expected, err)
 	}
 }

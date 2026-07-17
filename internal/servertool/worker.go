@@ -73,7 +73,7 @@ func runWorkerWithCheckpoint(configPath string, args []string, stdin io.Reader, 
 		fmt.Fprintln(stderr, "filees-worker: configured worker keypair does not match")
 		return ExitConfig
 	}
-	grant, err := files.ClaimAuthorizedHelper(port, session.DeployRequestID, session.HelperHostPublicKey)
+	grant, err := files.ClaimAuthorizedHelper(port, session.DeployRequestID, session.HelperHostPublicKey, session.ReconnectPublicKey)
 	if err != nil {
 		fmt.Fprintln(stderr, "filees-worker: no unique authorized tunnel grant")
 		return ExitUnavailable

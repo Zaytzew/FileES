@@ -430,7 +430,7 @@ func newS3WorkerFixture(t *testing.T, email string) s3WorkerFixture {
 		t.Fatal(err)
 	}
 	deployRequestID := uuid.NewString()
-	frame, err := deploy.EncodeTunnelSession(deploy.TunnelSession{Schema: deploy.TunnelSessionSchema, DeployRequestID: deployRequestID, HelperHostPublicKey: helper.Endpoint().HostPublicKey})
+	frame, err := deploy.EncodeTunnelSession(deploy.TunnelSession{Schema: deploy.TunnelSessionSchema, DeployRequestID: deployRequestID, HelperHostPublicKey: helper.Endpoint().HostPublicKey, ReconnectPublicKey: helper.Endpoint().HostPublicKey})
 	if err != nil {
 		t.Fatal(err)
 	}

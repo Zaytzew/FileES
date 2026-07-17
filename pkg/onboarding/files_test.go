@@ -17,6 +17,7 @@ import (
 )
 
 const testRealmID = "7b807185-aa75-4169-8a65-705c7cbab176"
+const testReconnectPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFZZUks/QxQg+QkoDHcY5mDZHBHpOd67MX6L3yjDH/UG"
 
 func TestTakeIsAtomicIdempotentAndSeparatesEmail(t *testing.T) {
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
@@ -453,7 +454,7 @@ func TestLegacyS2BundleIsUpgradedWhenS3ClaimsHelper(t *testing.T) {
 	if _, err := store.AuthenticateOTP(otp); err != nil {
 		t.Fatal(err)
 	}
-	grant, err := store.ClaimAuthorizedHelper(42660, uuid.NewString(), "ssh-ed25519 test")
+	grant, err := store.ClaimAuthorizedHelper(42660, uuid.NewString(), "ssh-ed25519 test", testReconnectPublicKey)
 	if err != nil || grant.ClientID == "" {
 		t.Fatalf("legacy claim grant=%+v err=%v", grant, err)
 	}
@@ -472,7 +473,7 @@ func TestActivationTransitionsAreDurableIdempotentAndCannotBeSkipped(t *testing.
 		t.Fatal(err)
 	}
 	deployRequestID := uuid.NewString()
-	grant, err := store.ClaimAuthorizedHelper(42670, deployRequestID, "ssh-ed25519 helper")
+	grant, err := store.ClaimAuthorizedHelper(42670, deployRequestID, "ssh-ed25519 helper", testReconnectPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,24 +526,24 @@ func TestHelperClaimResumesOnlyTheSameDeploymentBinding(t *testing.T) {
 	}
 	deployRequestID := uuid.NewString()
 	helperKey := "ssh-ed25519 helper-resume"
-	first, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey)
+	first, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey, testReconnectPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resumed, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey)
+	resumed, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey, testReconnectPublicKey)
 	if err != nil || resumed.OperationID != first.OperationID || resumed.ClientID != first.ClientID {
 		t.Fatalf("resumed grant=%+v err=%v, first=%+v", resumed, err, first)
 	}
-	if _, err := store.ClaimAuthorizedHelper(42675, uuid.NewString(), helperKey); !errors.Is(err, ErrTunnelGrant) {
+	if _, err := store.ClaimAuthorizedHelper(42675, uuid.NewString(), helperKey, testReconnectPublicKey); !errors.Is(err, ErrTunnelGrant) {
 		t.Fatalf("different deploy request resumed grant: %v", err)
 	}
-	if _, err := store.ClaimAuthorizedHelper(42675, deployRequestID, "ssh-ed25519 another-helper"); !errors.Is(err, ErrTunnelGrant) {
+	if _, err := store.ClaimAuthorizedHelper(42675, deployRequestID, "ssh-ed25519 another-helper", testReconnectPublicKey); !errors.Is(err, ErrTunnelGrant) {
 		t.Fatalf("different helper key resumed grant: %v", err)
 	}
 	if err := store.CompleteGeneratedIdentity(first.OperationID, deployRequestID, "ssh-ed25519 installation filees:test", "SHA256:test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey); err != nil {
+	if _, err := store.ClaimAuthorizedHelper(42675, deployRequestID, helperKey, testReconnectPublicKey); err != nil {
 		t.Fatalf("identity-generated deployment was not resumable: %v", err)
 	}
 }
@@ -556,7 +557,7 @@ func TestRecoverExpiresUnfinishedActivationButNotActiveClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	deployRequestID := uuid.NewString()
-	grant, err := store.ClaimAuthorizedHelper(42680, deployRequestID, "ssh-ed25519 helper")
+	grant, err := store.ClaimAuthorizedHelper(42680, deployRequestID, "ssh-ed25519 helper", testReconnectPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}

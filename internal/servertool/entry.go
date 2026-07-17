@@ -31,15 +31,11 @@ func runEntry(args []string, stderr io.Writer, getenv func(string) string, execu
 }
 
 func execWorker() error {
-	if err := obsandbox.Begin(entryPromises); err != nil {
-		return err
-	}
-	profile := obsandbox.Profile{Name: "filees-entry/exec-worker", Promises: entryPromises, Paths: []obsandbox.Path{
-		{Label: "worker", Name: workerPath, Perms: "rx"},
-		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
-		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
-	}}
-	if err := obsandbox.ApplyForExec(profile, workerPromises+" unveil"); err != nil {
+	// The command and argv are constants. A dispatcher unveil would survive
+	// exec and prevent the worker from installing its own configuration-derived
+	// exact profile, so this boundary uses pledge+execpromises only. The worker
+	// immediately begins and locks its own unveil before opening state.
+	if err := obsandbox.PledgeForExec(entryPromises, workerPromises+" unveil"); err != nil {
 		return err
 	}
 	return syscall.Exec(workerPath, []string{"filees-worker", "deploy"}, []string{})

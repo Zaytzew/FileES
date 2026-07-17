@@ -34,6 +34,20 @@ func ApplyForExec(profile Profile, execPromises string) error {
 	return apply(profile, execPromises)
 }
 
+// PledgeForExec installs a post-exec promise set without pre-unveiling the
+// child filesystem. unveil(2) state survives exec and cannot be replaced by a
+// narrower child profile, so a fixed-path dispatcher must let the child create
+// and lock its own unveil table after exec.
+func PledgeForExec(runtimePromises, execPromises string) error {
+	if runtimePromises == "" || execPromises == "" {
+		return fmt.Errorf("exec pledge: empty promises")
+	}
+	if err := unix.Pledge(runtimePromises, execPromises); err != nil {
+		return fmt.Errorf("exec pledge runtime=%q child=%q: %w", runtimePromises, execPromises, err)
+	}
+	return nil
+}
+
 func apply(profile Profile, execPromises string) error {
 	if err := Validate(profile); err != nil {
 		return err

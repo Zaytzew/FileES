@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const TunnelSessionSchema = "filees.tunnel-session/v1"
+const TunnelSessionSchema = "filees.tunnel-session/v2"
 
 const helperResponseLimit = 64 * 1024
 
@@ -23,6 +23,7 @@ type TunnelSession struct {
 	Schema              string `json:"schema"`
 	DeployRequestID     string `json:"deploy_request_id"`
 	HelperHostPublicKey string `json:"helper_host_public_key"`
+	ReconnectPublicKey  string `json:"reconnect_public_key"`
 }
 
 func (s TunnelSession) Validate() error {
@@ -35,6 +36,10 @@ func (s TunnelSession) Validate() error {
 	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(s.HelperHostPublicKey)))
 	if err != nil || key.Type() != ssh.KeyAlgoED25519 || comment != "" || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
 		return errors.New("helper_host_public_key must be one bare ssh-ed25519 key")
+	}
+	key, comment, options, rest, err = ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(s.ReconnectPublicKey)))
+	if err != nil || key.Type() != ssh.KeyAlgoED25519 || comment != "" || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+		return errors.New("reconnect_public_key must be one bare ssh-ed25519 key")
 	}
 	return nil
 }

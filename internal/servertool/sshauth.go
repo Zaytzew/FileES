@@ -26,27 +26,43 @@ func RunSSHAuth(args []string, auth io.ReadWriter, stderr io.Writer) int {
 	}
 	switch invocation.service {
 	case "challenge":
-		// The fixed challenge discloses neither an operation locator nor any
-		// server state. An explicit challenge is used because sshd keeps the BSD
-		// Auth session only after "reject challenge". BSD Auth decodes the
-		// protocol text "\\n" into byte 0x0A before echoing the challenge back
-		// in the response exchange; the comparison below therefore uses Go's
-		// actual newline escape "\n".
-		_, _ = io.WriteString(auth, "value challenge FileES OTP: \\n\nreject challenge\n")
+		if err := sandboxBegin("stdio"); err != nil {
+			bsdReject(auth)
+			return ExitTempFail
+		}
+		// A fresh stateless nonce serves both the initial OTP exchange and a
+		// signed reconnect. It contains no operation locator or server state.
+		challenge, err := onboarding.NewReconnectChallenge(nil)
+		if err != nil {
+			bsdReject(auth)
+			return ExitTempFail
+		}
+		// BSD Auth turns the protocol escape "\\n" back into byte 0x0A before
+		// echoing the challenge in the response exchange.
+		_, _ = fmt.Fprintf(auth, "value challenge %s\\n\nreject challenge\n", strings.TrimSuffix(challenge, "\n"))
 		return ExitOK
 	case "response":
-		challenge, otp, err := readBSDResponse(auth)
-		if err != nil || challenge != "FileES OTP: \n" {
+		challenge, credential, err := readBSDResponse(auth)
+		if err != nil {
 			bsdReject(auth)
 			return ExitOK
 		}
-		files, _, err := openFiles("/etc/filees/server.json", toolAccess{name: "filees-ssh-auth/response", areas: onboarding.AreaOperations, write: true, needOTP: true})
+		if _, err := onboarding.ParseReconnectChallenge(challenge); err != nil {
+			bsdReject(auth)
+			return ExitOK
+		}
+		reconnect := strings.HasPrefix(credential, "FILEES-R1.")
+		files, _, err := openFiles("/etc/filees/server.json", toolAccess{name: "filees-ssh-auth/response", areas: onboarding.AreaOperations, write: true, needOTP: !reconnect})
 		if err != nil {
 			fmt.Fprintln(stderr, "filees SSH authentication unavailable")
 			bsdReject(auth)
 			return ExitTempFail
 		}
-		_, err = files.AuthenticateOTP(otp)
+		if reconnect {
+			_, err = files.AuthenticateReconnect(challenge, credential)
+		} else {
+			_, err = files.AuthenticateOTP(credential)
+		}
 		if err != nil {
 			bsdReject(auth)
 			return ExitOK

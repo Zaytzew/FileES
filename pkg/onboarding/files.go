@@ -532,11 +532,14 @@ func (s *Files) ClaimAuthorizedTunnel(expectedPort uint16) (AuthGrant, error) {
 // ClaimAuthorizedHelper atomically binds the one active OTP grant to the
 // helper announced by the authenticated outer SSH session. The helper key is
 // public material; the worker private key remains server-only.
-func (s *Files) ClaimAuthorizedHelper(expectedPort uint16, deployRequestID, helperHostPublicKey string) (AuthGrant, error) {
+func (s *Files) ClaimAuthorizedHelper(expectedPort uint16, deployRequestID, helperHostPublicKey, reconnectPublicKey string) (AuthGrant, error) {
 	if err := s.requireAreas(AreaOperations); err != nil {
 		return AuthGrant{}, err
 	}
-	if expectedPort == 0 || strings.TrimSpace(helperHostPublicKey) == "" {
+	if err := validateBareEd25519PublicKey(reconnectPublicKey); err != nil {
+		return AuthGrant{}, err
+	}
+	if expectedPort == 0 || strings.TrimSpace(helperHostPublicKey) == "" || strings.TrimSpace(reconnectPublicKey) == "" {
 		return AuthGrant{}, ErrTunnelGrant
 	}
 	if _, err := uuid.Parse(deployRequestID); err != nil {
@@ -564,7 +567,7 @@ func (s *Files) ClaimAuthorizedHelper(expectedPort uint16, deployRequestID, help
 			if op.AssignedReversePort != expectedPort {
 				continue
 			}
-			candidateResume := helperDeploymentInProgress(op.State) && op.DeployRequestID == deployRequestID && op.HelperHostPublicKey == strings.TrimSpace(helperHostPublicKey)
+			candidateResume := helperDeploymentInProgress(op.State) && op.DeployRequestID == deployRequestID && op.HelperHostPublicKey == strings.TrimSpace(helperHostPublicKey) && op.ReconnectPublicKey == strings.TrimSpace(reconnectPublicKey)
 			candidateFresh := op.State == OperationTunnelAuthorized && now.Before(op.ExpiresAt)
 			if !candidateResume && !candidateFresh {
 				continue
@@ -594,6 +597,7 @@ func (s *Files) ClaimAuthorizedHelper(expectedPort uint16, deployRequestID, help
 		}
 		selected.Operation.DeployRequestID = deployRequestID
 		selected.Operation.HelperHostPublicKey = strings.TrimSpace(helperHostPublicKey)
+		selected.Operation.ReconnectPublicKey = strings.TrimSpace(reconnectPublicKey)
 		selected.addAudit("tunnel_session_started", "filees-worker", now)
 		selected.addAudit("helper_announced", "filees-worker", now)
 		if err := atomicWriteJSON(selectedPath, selected); err != nil {
@@ -973,7 +977,7 @@ func (s *Files) recoverClaimsLocked() error {
 				return err
 			}
 			bundle.Schema = BundleSchema
-			if bundle.Operation.Schema == legacyOperationSchema || bundle.Operation.Schema == legacyOperationSchemaV2 {
+			if bundle.Operation.Schema == legacyOperationSchema || bundle.Operation.Schema == legacyOperationSchemaV2 || bundle.Operation.Schema == legacyOperationSchemaV3 {
 				bundle.Operation.Schema = OperationSchema
 			}
 		default:
@@ -1079,7 +1083,7 @@ func (s *Files) readBundlePathLocked(path string) (Bundle, error) {
 			}
 		}
 		bundle.Schema = BundleSchema
-		if bundle.Operation.Schema == legacyOperationSchema || bundle.Operation.Schema == legacyOperationSchemaV2 {
+		if bundle.Operation.Schema == legacyOperationSchema || bundle.Operation.Schema == legacyOperationSchemaV2 || bundle.Operation.Schema == legacyOperationSchemaV3 {
 			bundle.Operation.Schema = OperationSchema
 		}
 	}

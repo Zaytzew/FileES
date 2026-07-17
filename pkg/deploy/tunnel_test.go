@@ -13,7 +13,7 @@ func TestOpenSSHArgsAreClosedAndPinned(t *testing.T) {
 	hostKey, _ := BootstrapAuthorizedKey()
 	args, err := OpenSSHArgs(TunnelSpec{
 		RemotePort: 42001, KnownHostsPath: knownHosts,
-		HelperEndpoint: HelperEndpoint{Address: "127.0.0.1:32123", HostPublicKey: hostKey}, DeployRequestID: uuid.NewString(),
+		HelperEndpoint: HelperEndpoint{Address: "127.0.0.1:32123", HostPublicKey: hostKey}, DeployRequestID: uuid.NewString(), ReconnectPublicKey: hostKey,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -47,10 +47,10 @@ func TestOpenSSHArgsRejectNonLoopbackAndInvalidPort(t *testing.T) {
 	hostKey, _ := BootstrapAuthorizedKey()
 	requestID := uuid.NewString()
 	for _, spec := range []TunnelSpec{
-		{RemotePort: 0, KnownHostsPath: knownHosts, DeployRequestID: requestID, HelperEndpoint: HelperEndpoint{Address: "127.0.0.1:1234", HostPublicKey: hostKey}},
-		{RemotePort: 1234, KnownHostsPath: knownHosts, DeployRequestID: requestID, HelperEndpoint: HelperEndpoint{Address: "0.0.0.0:1234", HostPublicKey: hostKey}},
-		{RemotePort: 1234, KnownHostsPath: "relative", DeployRequestID: requestID, HelperEndpoint: HelperEndpoint{Address: "127.0.0.1:1234", HostPublicKey: hostKey}},
-		{RemotePort: 1234, KnownHostsPath: knownHosts, DeployRequestID: "invalid", HelperEndpoint: HelperEndpoint{Address: "127.0.0.1:1234", HostPublicKey: hostKey}},
+		{RemotePort: 0, KnownHostsPath: knownHosts, DeployRequestID: requestID, ReconnectPublicKey: hostKey, HelperEndpoint: HelperEndpoint{Address: "127.0.0.1:1234", HostPublicKey: hostKey}},
+		{RemotePort: 1234, KnownHostsPath: knownHosts, DeployRequestID: requestID, ReconnectPublicKey: hostKey, HelperEndpoint: HelperEndpoint{Address: "0.0.0.0:1234", HostPublicKey: hostKey}},
+		{RemotePort: 1234, KnownHostsPath: "relative", DeployRequestID: requestID, ReconnectPublicKey: hostKey, HelperEndpoint: HelperEndpoint{Address: "127.0.0.1:1234", HostPublicKey: hostKey}},
+		{RemotePort: 1234, KnownHostsPath: knownHosts, DeployRequestID: "invalid", ReconnectPublicKey: hostKey, HelperEndpoint: HelperEndpoint{Address: "127.0.0.1:1234", HostPublicKey: hostKey}},
 	} {
 		if _, err := OpenSSHArgs(spec); err == nil {
 			t.Fatalf("accepted unsafe tunnel spec: %#v", spec)

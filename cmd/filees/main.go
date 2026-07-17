@@ -31,7 +31,7 @@ import (
 var version = "dev"
 
 func main() {
-	if os.Getenv("FILEES_ASKPASS_FIFO") != "" {
+	if deploy.AskpassConfigured() {
 		if err := deploy.RunAskpass(); err != nil {
 			fmt.Fprintln(os.Stderr, "filees askpass:", err)
 			os.Exit(1)

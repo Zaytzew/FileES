@@ -18,17 +18,18 @@ const (
 )
 
 type TunnelSpec struct {
-	RemotePort      int
-	HelperEndpoint  HelperEndpoint
-	KnownHostsPath  string
-	DeployRequestID string
+	RemotePort         int
+	HelperEndpoint     HelperEndpoint
+	KnownHostsPath     string
+	DeployRequestID    string
+	ReconnectPublicKey string
 }
 
 // OpenSSHArgs returns the only outer SSH command shape supported by FileES.
 // Host, login and forwarding policy are compiled into the client; an operation
 // supplies only its server-assigned loopback port and the local helper endpoint.
 func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
-	if err := (TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey}).Validate(); err != nil {
+	if err := (TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey, ReconnectPublicKey: spec.ReconnectPublicKey}).Validate(); err != nil {
 		return nil, err
 	}
 	if spec.RemotePort < 1 || spec.RemotePort > 65535 {

@@ -23,6 +23,11 @@ type LockUnlocker interface {
 	Unlock(ctx context.Context, repoID string, paths []string) (string, error)
 }
 
+type Activator interface {
+	Begin(ctx context.Context, email string) error
+	Finish(ctx context.Context, otp []byte) error
+}
+
 type presentationError interface {
 	error
 	PresentationError() (code, severity, hint, message string)
@@ -35,6 +40,8 @@ type Config struct {
 	ViewModel func() app.ViewModel
 	Opener    platform.FolderOpener
 	Picker    platform.FilePicker
+	Prompter  platform.Prompter
+	Activator Activator
 	Notifier  platform.Notifier // nil → notifications silently dropped
 	Locker    LockUnlocker
 	Reconnect func() // nil → reconnect intent is a no-op
@@ -85,11 +92,52 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		if c.cfg.Reconnect != nil {
 			c.cfg.Reconnect()
 		}
+	case tray.IntentActivate:
+		c.startActivation(ctx)
 	case tray.IntentQuit:
 		if c.cfg.Quit != nil {
 			c.cfg.Quit()
 		}
 	}
+}
+
+func (c *Controller) startActivation(ctx context.Context) {
+	if c.cfg.Prompter == nil || c.cfg.Activator == nil || !c.beginOperation("activate") {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation("activate")
+		email, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Adres e-mail, na który serwer wyśle jednorazowy kod OTP:"})
+		if err != nil || email.Cancelled || email.Value == "" {
+			c.activationFailure(ctx, err)
+			return
+		}
+		if err := c.cfg.Activator.Begin(ctx, email.Value); err != nil {
+			c.activationFailure(ctx, err)
+			return
+		}
+		otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wklej kod OTP otrzymany e-mailem:", Secret: true})
+		if err != nil || otp.Cancelled || otp.Value == "" {
+			c.activationFailure(ctx, err)
+			return
+		}
+		secret := []byte(otp.Value)
+		defer clear(secret)
+		if err := c.cfg.Activator.Finish(ctx, secret); err != nil {
+			c.activationFailure(ctx, err)
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany", Urgency: platform.UrgencyNormal})
+	}()
+}
+
+func (c *Controller) activationFailure(ctx context.Context, err error) {
+	if err == nil || ctx.Err() != nil {
+		return
+	}
+	c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Aktywacja FileES nie powiodła się", Body: err.Error(), Urgency: platform.UrgencyCritical})
 }
 
 func (c *Controller) startOpenFolder(ctx context.Context, repoID string) {
@@ -160,7 +208,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		return
 	}
 	repo, ok := findRepo(vm, repoID)
-	if !ok || repo.LocalPath == "" {
+	if !ok || repo.LocalPath == "" || !repo.CanWrite() {
 		return
 	}
 
@@ -201,7 +249,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		return
 	}
 	currentRepo, ok := findRepo(vm, repoID)
-	if !ok || currentRepo.LocalPath == "" || filepath.Clean(currentRepo.LocalPath) != filepath.Clean(repo.LocalPath) {
+	if !ok || !currentRepo.CanWrite() || currentRepo.LocalPath == "" || filepath.Clean(currentRepo.LocalPath) != filepath.Clean(repo.LocalPath) {
 		return
 	}
 	paths, err := platform.ValidatePickedPaths(currentRepo.LocalPath, result.Paths)
@@ -248,6 +296,8 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 }
 
 func canMutate(vm app.ViewModel, lock bool) bool {
+	// The caller checks the targeted repository separately; this global gate
+	// only represents daemon connectivity and command availability.
 	if lock {
 		return vm.CanMutateLock()
 	}

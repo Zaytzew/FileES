@@ -11,6 +11,7 @@ import (
 type Fake struct {
 	OpenFolderFunc      func(context.Context, string) error
 	PickFilesFunc       func(context.Context, platform.PickFilesRequest) (platform.PickFilesResult, error)
+	PromptTextFunc      func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
 	SetAutostartFunc    func(context.Context, platform.AutostartSpec, bool) error
@@ -18,9 +19,21 @@ type Fake struct {
 	mu             sync.Mutex
 	OpenedFolders  []string
 	PickRequests   []platform.PickFilesRequest
+	PromptRequests []platform.PromptTextRequest
 	Notifications  []platform.Notification
 	StatusRequests []platform.AutostartSpec
 	AutostartSets  []AutostartSet
+}
+
+func (f *Fake) PromptText(ctx context.Context, request platform.PromptTextRequest) (platform.PromptTextResult, error) {
+	f.mu.Lock()
+	f.PromptRequests = append(f.PromptRequests, request)
+	fn := f.PromptTextFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.PromptTextResult{Cancelled: true}, nil
 }
 
 type AutostartSet struct {
@@ -89,6 +102,7 @@ func (f *Fake) Snapshot() Snapshot {
 	return Snapshot{
 		OpenedFolders:  append([]string(nil), f.OpenedFolders...),
 		PickRequests:   append([]platform.PickFilesRequest(nil), f.PickRequests...),
+		PromptRequests: append([]platform.PromptTextRequest(nil), f.PromptRequests...),
 		Notifications:  append([]platform.Notification(nil), f.Notifications...),
 		StatusRequests: append([]platform.AutostartSpec(nil), f.StatusRequests...),
 		AutostartSets:  append([]AutostartSet(nil), f.AutostartSets...),
@@ -98,6 +112,7 @@ func (f *Fake) Snapshot() Snapshot {
 type Snapshot struct {
 	OpenedFolders  []string
 	PickRequests   []platform.PickFilesRequest
+	PromptRequests []platform.PromptTextRequest
 	Notifications  []platform.Notification
 	StatusRequests []platform.AutostartSpec
 	AutostartSets  []AutostartSet

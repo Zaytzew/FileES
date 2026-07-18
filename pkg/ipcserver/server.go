@@ -24,8 +24,9 @@ type Server struct {
 	startTime time.Time
 	lg        talk.Logger
 
-	mu    sync.RWMutex
-	repos map[string]*RepoState // keyed by repo ID
+	mu          sync.RWMutex
+	repos       map[string]*RepoState // keyed by repo ID
+	activations map[string]contract.ActivationStatus
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -40,13 +41,30 @@ type Server struct {
 // New creates a Server that will listen on sockPath.
 func New(sockPath string) *Server {
 	return &Server{
-		sockPath:  sockPath,
-		startTime: time.Now(),
-		lg:        talk.With("ipc"),
-		repos:     make(map[string]*RepoState),
-		subs:      make(map[chan contract.Event]struct{}),
-		conns:     make(map[net.Conn]struct{}),
+		sockPath:    sockPath,
+		startTime:   time.Now(),
+		lg:          talk.With("ipc"),
+		repos:       make(map[string]*RepoState),
+		activations: make(map[string]contract.ActivationStatus),
+		subs:        make(map[chan contract.Event]struct{}),
+		conns:       make(map[net.Conn]struct{}),
 	}
+}
+
+func (s *Server) RegisterActivation(status contract.ActivationStatus) {
+	s.mu.Lock()
+	s.activations[status.ServerID] = status
+	s.mu.Unlock()
+}
+
+func (s *Server) allActivations() []contract.ActivationStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]contract.ActivationStatus, 0, len(s.activations))
+	for _, status := range s.activations {
+		out = append(out, status)
+	}
+	return out
 }
 
 // DefaultSocketPath returns the canonical per-user socket path.
@@ -62,11 +80,17 @@ func DefaultSocketPath() string {
 // RegisterRepo adds a repo to the server's registry. Returns the RepoState the
 // daemon should update as operations progress. Must be called before Start.
 func (s *Server) RegisterRepo(id, url, localPath string) *RepoState {
+	return s.RegisterRepoAccess(id, url, localPath, "default", contract.AccessReadWrite)
+}
+
+func (s *Server) RegisterRepoAccess(id, url, localPath, serverID, access string) *RepoState {
 	rs := &RepoState{
 		server:       s,
 		id:           id,
 		url:          url,
 		localPath:    localPath,
+		serverID:     serverID,
+		access:       access,
 		state:        contract.StateInitializing,
 		connectivity: contract.ConnOnline,
 	}

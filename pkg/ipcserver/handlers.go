@@ -48,9 +48,10 @@ func (s *Server) handleHello(req contract.Request) contract.Response {
 // handleSystemStatus implements system.status.
 func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 	return contract.OKResponse(req.RequestID, contract.SystemStatusResult{
-		State:     "running",
-		UptimeSec: s.uptime(),
-		Repos:     len(s.allRepos()),
+		State:       "running",
+		UptimeSec:   s.uptime(),
+		Repos:       len(s.allRepos()),
+		Activations: s.allActivations(),
 	})
 }
 

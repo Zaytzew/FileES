@@ -38,6 +38,8 @@ const (
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
 	ID           string
+	ServerID     string
+	Access       string
 	URL          string
 	LocalPath    string
 	State        string
@@ -48,6 +50,13 @@ type RepoViewModel struct {
 	Conflicts    int
 	LastSyncAt   string
 	CurrentOp    *string
+}
+
+type ServerViewModel struct {
+	ID          string
+	DisplayName string
+	ClientRole  string
+	Repos       []RepoViewModel
 }
 
 // ErrorViewModel is a presentation-safe structured daemon error. Details are
@@ -72,6 +81,7 @@ type ViewModel struct {
 	LastRefresh  time.Time
 	Capabilities map[string]bool
 	Repos        []RepoViewModel
+	Servers      []ServerViewModel
 	Errors       []ErrorViewModel
 	Icon         IconState
 }
@@ -90,6 +100,8 @@ func (vm ViewModel) CanMutateLock() bool { return vm.Connected && !vm.Stale && v
 func (vm ViewModel) CanMutateUnlock() bool {
 	return vm.Connected && !vm.Stale && vm.CanUnlock()
 }
+
+func (r RepoViewModel) CanWrite() bool { return r.Access == contract.AccessReadWrite }
 
 // DisplayState maps protocol state to the stable vocabulary consumed by UI
 // adapters. Unknown future protocol states degrade to RepoDisplayUnknown.

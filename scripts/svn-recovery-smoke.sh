@@ -33,11 +33,19 @@ svn commit "$wc/smoke" -m "smoke: baseline" >/dev/null
 
 go build -buildvcs=false -o "$daemon" ./cmd/filees
 cat >"$config" <<EOF
-[
-  {
+{
+  "server_id": "local-recovery-smoke",
+  "server_display_name": "local recovery smoke",
+  "client_role": "normal",
+  "transport": {
+    "identity_file": "$root/test-id",
+    "known_hosts": "$root/test-known-hosts"
+  },
+  "repositories": [{
     "id": "local-smoke",
-    "repo_url": "$url",
+    "repo_url": "svn+ssh://_filees-client@smoke.invalid/project",
     "local_path": "$wc",
+	"access": "rw",
     "commit_interval": "1h",
     "watch_interval": "2s",
     "poll_interval": "1h",
@@ -45,8 +53,8 @@ cat >"$config" <<EOF
     "max_batch_mib": 1,
     "backlog_flush_mib": 100,
     "shutdown_commit_timeout": "30s"
-  }
-]
+  }]
+}
 EOF
 
 XDG_RUNTIME_DIR="$runtime" FILEES_LOG=error "$daemon" daemon --config "$config" >/dev/null 2>&1 &

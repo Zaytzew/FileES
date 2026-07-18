@@ -14,10 +14,11 @@ import (
 )
 
 type dependencies struct {
-	tray     tray.Backend
-	platform platform.Backend
-	client   app.DaemonClient
-	icons    tray.IconSet
+	tray      tray.Backend
+	platform  platform.Backend
+	client    app.DaemonClient
+	icons     tray.IconSet
+	activator actions.Activator
 }
 
 type viewStore struct {
@@ -72,6 +73,8 @@ func run(parent context.Context, deps dependencies) error {
 		ViewModel: views.load,
 		Opener:    deps.platform,
 		Picker:    deps.platform,
+		Prompter:  deps.platform,
+		Activator: deps.activator,
 		Notifier:  deps.platform,
 		Locker:    deps.client,
 		Reconnect: guiApp.Reconnect,

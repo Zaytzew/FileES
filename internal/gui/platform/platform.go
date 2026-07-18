@@ -10,8 +10,25 @@ import "context"
 type Backend interface {
 	FolderOpener
 	FilePicker
+	Prompter
 	Notifier
 	Autostart
+}
+
+type Prompter interface {
+	PromptText(ctx context.Context, request PromptTextRequest) (PromptTextResult, error)
+}
+
+type PromptTextRequest struct {
+	Title       string
+	Text        string
+	Placeholder string
+	Secret      bool
+}
+
+type PromptTextResult struct {
+	Value     string
+	Cancelled bool
 }
 
 type FolderOpener interface {

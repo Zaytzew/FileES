@@ -71,9 +71,16 @@ type HelloResult struct {
 
 // SystemStatusResult is the result for CmdSystemStatus.
 type SystemStatusResult struct {
-	State     string `json:"state"` // "running" | "stopping"
-	UptimeSec int64  `json:"uptime_sec"`
-	Repos     int    `json:"repos"`
+	State       string             `json:"state"` // "running" | "stopping"
+	UptimeSec   int64              `json:"uptime_sec"`
+	Repos       int                `json:"repos"`
+	Activations []ActivationStatus `json:"activations"`
+}
+
+type ActivationStatus struct {
+	ServerID    string `json:"server_id"`
+	DisplayName string `json:"display_name"`
+	ClientRole  string `json:"client_role"`
 }
 
 // RepoListResult is the result for CmdRepoList.
@@ -84,6 +91,8 @@ type RepoListResult struct {
 // RepoSummary is a minimal descriptor used in RepoListResult.
 type RepoSummary struct {
 	ID        string `json:"id"`
+	ServerID  string `json:"server_id"`
+	Access    string `json:"access"`
 	URL       string `json:"url"`
 	LocalPath string `json:"local_path"`
 	State     string `json:"state"`

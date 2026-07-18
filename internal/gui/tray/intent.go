@@ -9,6 +9,7 @@ const (
 	IntentLock       IntentKind = "lock"
 	IntentUnlock     IntentKind = "unlock"
 	IntentReconnect  IntentKind = "reconnect"
+	IntentActivate   IntentKind = "activate"
 	IntentQuit       IntentKind = "quit"
 )
 

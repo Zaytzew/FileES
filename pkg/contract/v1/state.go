@@ -19,6 +19,13 @@ const (
 	ConnOffline = "offline"
 )
 
+const (
+	AccessReadWrite    = "rw"
+	AccessReadOnly     = "r"
+	ClientRoleNormal   = "normal"
+	ClientRoleReadOnly = "ro"
+)
+
 // Decision state values.
 const (
 	DecisionPending  = "pending"
@@ -31,8 +38,10 @@ const (
 // any .filees private files directly.
 type RepoStatus struct {
 	RepoID           string       `json:"repo_id"`
-	State            string       `json:"state"`            // one of the State* constants
-	Connectivity     string       `json:"connectivity"`     // ConnOnline | ConnOffline
+	ServerID         string       `json:"server_id"`
+	Access           string       `json:"access"`
+	State            string       `json:"state"`        // one of the State* constants
+	Connectivity     string       `json:"connectivity"` // ConnOnline | ConnOffline
 	LocalRevision    int64        `json:"local_revision"`
 	HeadRevision     int64        `json:"head_revision"`
 	Pending          PendingStats `json:"pending"`
@@ -53,10 +62,10 @@ type PendingStats struct {
 // The daemon records it persistently so GUI reconnect sees it via CmdConflictList.
 type Decision struct {
 	DecisionID string   `json:"decision_id"`
-	Type       string   `json:"type"`             // e.g. "conflict_resolution"
+	Type       string   `json:"type"` // e.g. "conflict_resolution"
 	RepoID     string   `json:"repo_id"`
 	Path       string   `json:"path,omitempty"`
-	Options    []string `json:"options"`           // exact choices the GUI presents
-	Default    string   `json:"default"`           // safe choice if user dismisses
-	State      string   `json:"state"`             // DecisionPending | DecisionResolved | DecisionExpired
+	Options    []string `json:"options"` // exact choices the GUI presents
+	Default    string   `json:"default"` // safe choice if user dismisses
+	State      string   `json:"state"`   // DecisionPending | DecisionResolved | DecisionExpired
 }

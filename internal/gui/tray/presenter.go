@@ -9,6 +9,9 @@ import (
 
 // BuildMenu converts an app ViewModel into a deterministic tray menu.
 func BuildMenu(vm app.ViewModel) MenuModel {
+	if len(vm.Servers) == 0 && len(vm.Repos) > 0 {
+		vm.Servers = []app.ServerViewModel{{ID: "default", DisplayName: "Serwer", ClientRole: "normal", Repos: vm.Repos}}
+	}
 	status := connectionLabel(vm)
 	model := MenuModel{
 		Icon:    vm.Icon,
@@ -21,11 +24,11 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 		separator("sep.repositories"),
 	)
 
-	if len(vm.Repos) == 0 {
-		model.Items = append(model.Items, disabledItem("repositories.empty", "Brak repozytoriów"))
+	if len(vm.Servers) == 0 {
+		model.Items = append(model.Items, disabledItem("servers.empty", "Brak aktywnych serwerów"))
 	} else {
-		for _, repo := range vm.Repos {
-			model.Items = append(model.Items, repoMenu(vm, repo))
+		for _, server := range vm.Servers {
+			model.Items = append(model.Items, serverMenu(vm, server))
 		}
 	}
 
@@ -34,10 +37,33 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 	}
 	model.Items = append(model.Items,
 		separator("sep.actions"),
+		actionItem("action.activate", "Aktywuj klienta…", "Rozpocznij aktywację serwera kodem z e-maila", Intent{Kind: IntentActivate}),
 		actionItem("action.reconnect", "Połącz ponownie", "Odśwież połączenie z daemonem", Intent{Kind: IntentReconnect}),
 		actionItem("action.quit", "Zamknij GUI", "Zamknij tylko aplikację tray", Intent{Kind: IntentQuit}),
 	)
 	return model
+}
+
+func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
+	name := server.DisplayName
+	if strings.TrimSpace(name) == "" {
+		name = server.ID
+	}
+	children := []MenuItemModel{disabledItem("server."+server.ID+".role", "Tryb klienta: "+clientRoleLabel(server.ClientRole))}
+	if len(server.Repos) == 0 {
+		children = append(children, disabledItem("server."+server.ID+".empty", "Brak repozytoriów"))
+	}
+	for _, repo := range server.Repos {
+		children = append(children, repoMenu(vm, repo))
+	}
+	return MenuItemModel{ID: "server." + server.ID, Title: name, Enabled: true, Children: children}
+}
+
+func clientRoleLabel(role string) string {
+	if role == "ro" {
+		return "tylko odczyt"
+	}
+	return "pełny"
 }
 
 func connectionLabel(vm app.ViewModel) string {
@@ -77,15 +103,26 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 		open.Intent = nil
 	}
 	children = append(children, open)
-	if vm.CanMutateLock() {
+	children = append(children, disabledItem("repo."+repo.ID+".access", "Dostęp: "+accessLabel(repo.Access)))
+	if vm.CanMutateLock() && repo.CanWrite() {
 		children = append(children, actionItem("repo."+repo.ID+".lock", "Zablokuj pliki…", "Wybierz pliki do zablokowania",
 			Intent{Kind: IntentLock, RepoID: repo.ID}))
 	}
-	if vm.CanMutateUnlock() {
+	if vm.CanMutateUnlock() && repo.CanWrite() {
 		children = append(children, actionItem("repo."+repo.ID+".unlock", "Odblokuj pliki…", "Wybierz pliki do odblokowania",
 			Intent{Kind: IntentUnlock, RepoID: repo.ID}))
 	}
 	return MenuItemModel{ID: "repo." + repo.ID, Title: title, Enabled: true, Children: children}
+}
+
+func accessLabel(access string) string {
+	if access == "r" {
+		return "tylko odczyt"
+	}
+	if access == "rw" {
+		return "odczyt i zapis"
+	}
+	return "nieznany"
 }
 
 func repoStateLabel(repo app.RepoViewModel) string {

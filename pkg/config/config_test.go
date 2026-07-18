@@ -37,6 +37,24 @@ func TestLoadBatchSafetySettings(t *testing.T) {
 	}
 }
 
+func TestGlobalReadOnlyRoleDegradesRepositoryAccess(t *testing.T) {
+	path := writeRawConfig(t, `{"server_id":"office","server_display_name":"filees.example.net","client_role":"ro","transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"repositories":[{"id":"r","repo_url":"svn+ssh://_filees-client@example/r","local_path":"/tmp/role-ro","commit_interval":"1m","access":"rw"}]}`)
+	repos, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repos[0].Access != "r" || repos[0].ServerID != "office" || repos[0].ClientRole != "ro" {
+		t.Fatalf("repo=%+v", repos[0])
+	}
+	view, err := LoadClientView(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.DisplayName != "filees.example.net" || view.ClientRole != "ro" {
+		t.Fatalf("view=%+v", view)
+	}
+}
+
 func TestLoadEditPassportSettings(t *testing.T) {
 	path := writeConfig(t, `[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","edit_passports":true,"edit_passport_ttl":"15m","edit_passport_heartbeat":"5m","edit_passport_max_session":"24h","edit_passport_close_grace":"5m"}]`)
 	repos, err := Load(path)

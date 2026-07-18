@@ -174,6 +174,42 @@ func buildPickerScript(request PickFilesRequest, initialDir string) string {
 	return sb.String()
 }
 
+func (b *WindowsBackend) PromptText(ctx context.Context, request PromptTextRequest) (PromptTextResult, error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return PromptTextResult{}, NewUnavailable("text_prompt", err)
+	}
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", buildPromptScript(request))
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return PromptTextResult{}, ctxErr
+		}
+		if commandCancelled(err) {
+			return PromptTextResult{Cancelled: true}, nil
+		}
+		return PromptTextResult{}, NewOperationalFailure("text_prompt", err)
+	}
+	return PromptTextResult{Value: strings.TrimSpace(string(output))}, nil
+}
+
+func buildPromptScript(request PromptTextRequest) string {
+	var sb strings.Builder
+	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;")
+	sb.WriteString("$f=New-Object System.Windows.Forms.Form;$f.Width=520;$f.Height=190;$f.StartPosition='CenterScreen';")
+	sb.WriteString("$f.Text=" + psString(request.Title) + ";")
+	sb.WriteString("$l=New-Object System.Windows.Forms.Label;$l.Left=12;$l.Top=15;$l.Width=480;$l.Text=" + psString(request.Text) + ";$f.Controls.Add($l);")
+	sb.WriteString("$t=New-Object System.Windows.Forms.TextBox;$t.Left=12;$t.Top=45;$t.Width=480;")
+	if request.Placeholder != "" {
+		sb.WriteString("$t.Text=" + psString(request.Placeholder) + ";")
+	}
+	if request.Secret {
+		sb.WriteString("$t.UseSystemPasswordChar=$true;")
+	}
+	sb.WriteString("$f.Controls.Add($t);$b=New-Object System.Windows.Forms.Button;$b.Text='OK';$b.Left=412;$b.Top=82;$b.DialogResult='OK';$f.AcceptButton=$b;$f.Controls.Add($b);")
+	sb.WriteString("if($f.ShowDialog()-eq[System.Windows.Forms.DialogResult]::OK){$t.Text}else{exit 1}")
+	return sb.String()
+}
+
 func (b *WindowsBackend) Notify(ctx context.Context, notification Notification) error {
 	if strings.TrimSpace(notification.Title) == "" {
 		return NewOperationalFailure("notifications", errors.New("title is required"))

@@ -214,7 +214,7 @@ func nextBackoff(cur time.Duration) time.Duration {
 }
 
 // Run consumes watcher events and periodically performs commits.
-func (s *Service) Run(ctx context.Context, repoID, wc, username, password string, events <-chan watcher.Event) {
+func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watcher.Event) {
 	s.repoID = repoID
 	lg := s.Logger
 	if s.Rules.NewLatency <= 0 {
@@ -251,7 +251,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 	defer ticker.Stop()
 
 	if s.Rules.PollInterval > 0 {
-		go s.runPoller(ctx, wc, username, password)
+		go s.runPoller(ctx, wc)
 	}
 
 	for {
@@ -262,12 +262,12 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 			for ev := range events {
 				s.addEvent(ev)
 			}
-			s.shutdownDrain(wc, username, password)
+			s.shutdownDrain(wc)
 			lg.Infof("commit service stop")
 			return
 		case ev, ok := <-events:
 			if !ok {
-				s.shutdownDrain(wc, username, password)
+				s.shutdownDrain(wc)
 				lg.Infof("commit service stop")
 				return
 			}
@@ -279,7 +279,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 				// never bypass NewLatency for a newly-created file. Large files can
 				// cross the watermark while they are still being written or just
 				// before an application atomically renames its temporary path.
-				if err := s.tryCommitMode(ctx, wc, username, password, false); err != nil {
+				if err := s.tryCommitMode(ctx, wc, false); err != nil {
 					lg.Warnf("high-water commit failed: %v", err)
 				}
 				s.saveCache()
@@ -290,7 +290,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 				s.saveCache()
 				continue
 			}
-			if err := s.tryCommit(ctx, wc, username, password); err != nil {
+			if err := s.tryCommit(ctx, wc); err != nil {
 				lg.Warnf("commit attempt failed: %v", err)
 			}
 			s.saveCache()
@@ -298,21 +298,21 @@ func (s *Service) Run(ctx context.Context, repoID, wc, username, password string
 	}
 }
 
-func (s *Service) shutdownDrain(wc, username, password string) {
+func (s *Service) shutdownDrain(wc string) {
 	s.saveCache()
 	drainCtx, cancel := context.WithTimeout(context.Background(), s.Rules.ShutdownTimeout)
-	s.drain(drainCtx, wc, username, password)
+	s.drain(drainCtx, wc)
 	cancel()
 	s.saveCache()
 }
 
 // runPoller periodically checks whether the server has new commits and triggers svn update.
-func (s *Service) runPoller(ctx context.Context, wc, username, password string) {
+func (s *Service) runPoller(ctx context.Context, wc string) {
 	headRevPath := filepath.Join(wc, ".filees", "state", "head.rev")
 	// Establish the revision baseline immediately. Without this, a fresh WC
 	// that is already at HEAD reports revision 0 through IPC until the first
 	// poll interval elapses (and historically never wrote head.rev at all).
-	s.pollOnce(ctx, wc, username, password, headRevPath)
+	s.pollOnce(ctx, wc, headRevPath)
 	ticker := time.NewTicker(s.Rules.PollInterval)
 	defer ticker.Stop()
 	for {
@@ -324,14 +324,14 @@ func (s *Service) runPoller(ctx context.Context, wc, username, password string) 
 				s.Logger.Debugf("poll: offline — skipping")
 				continue
 			}
-			s.pollOnce(ctx, wc, username, password, headRevPath)
+			s.pollOnce(ctx, wc, headRevPath)
 		}
 	}
 }
 
 // pollOnce checks HEAD revision against local and runs svn update when behind.
-func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevPath string) {
-	headRev, err := s.Cli.Revision(ctx, s.RepoURL, username, password)
+func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
+	headRev, err := s.Cli.Revision(ctx, s.RepoURL)
 	if err != nil {
 		if client.IsNetworkError(err) {
 			s.goOffline()
@@ -341,7 +341,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 		return
 	}
 
-	localRev, err := s.Cli.Revision(ctx, wc, username, password)
+	localRev, err := s.Cli.Revision(ctx, wc)
 	if err != nil {
 		s.Logger.Warnf("poll: local revision: %v", err)
 		return
@@ -359,7 +359,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 		return // already up to date
 	}
 
-	status, err := s.Cli.Status(ctx, wc, nil, username, password)
+	status, err := s.Cli.Status(ctx, wc, nil)
 	if err != nil {
 		s.Logger.Warnf("poll: svn status before update failed: %v — update deferred", err)
 		return
@@ -372,7 +372,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 	s.Logger.Infof("poll: HEAD r%d > local r%d — running svn update", headRev, localRev)
 	done := s.setOperation("sync")
 	defer done()
-	out, err := s.Cli.Update(ctx, wc, username, password)
+	out, err := s.Cli.Update(ctx, wc)
 	if err != nil {
 		if client.IsNetworkError(err) {
 			s.goOffline()
@@ -383,7 +383,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, username, password, headRevP
 		return
 	}
 
-	s.ReconcileUpdateConflicts(ctx, wc, username, password, out)
+	s.ReconcileUpdateConflicts(ctx, wc, out)
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
 	_ = atomicWriteString(headRevPath, fmt.Sprintf("%d\n", headRev))
@@ -437,11 +437,11 @@ type pendingEntry struct {
 	ver  uint64
 }
 
-func (s *Service) tryCommit(ctx context.Context, wc, username, password string) error {
-	return s.tryCommitMode(ctx, wc, username, password, false)
+func (s *Service) tryCommit(ctx context.Context, wc string) error {
+	return s.tryCommitMode(ctx, wc, false)
 }
 
-func (s *Service) tryCommitMode(ctx context.Context, wc, username, password string, force bool) error {
+func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) error {
 	s.mu.Lock()
 	// snapshot and filter by latency & max batch
 	now := time.Now()
@@ -514,7 +514,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		all = append(all, it.OldRel, it.Rel)
 	}
 	all = dedup(all)
-	st, err := s.statusMap(ctx, wc, username, password, all)
+	st, err := s.statusMap(ctx, wc, all)
 	if err != nil {
 		// Status is the proof used to classify every pending operation. An empty
 		// map after a failed status call is not proof that any path is complete.
@@ -681,13 +681,13 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 
 	// staging
 	if len(toSvnAdd) > 0 {
-		if out, err := s.Cli.Add(ctx, wc, toSvnAdd, username, password); err != nil {
+		if out, err := s.Cli.Add(ctx, wc, toSvnAdd); err != nil {
 			return fmt.Errorf("svn add failed: %w\n%s", err, out)
 		}
 	}
 	if s.Rules.NeedsLock {
 		if files := regularPaths(wc, toSvnAdd); len(files) > 0 {
-			if out, err := s.Cli.PropSet(ctx, wc, "svn:needs-lock", "*", files, username, password); err != nil {
+			if out, err := s.Cli.PropSet(ctx, wc, "svn:needs-lock", "*", files); err != nil {
 				return fmt.Errorf("svn propset needs-lock: %w\n%s", err, out)
 			}
 		}
@@ -702,30 +702,30 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 		}
 	}
 	if len(deleteDirs) > 0 {
-		if out, err := s.Cli.UpdateDepthEmpty(ctx, wc, deleteDirs, username, password); err != nil {
+		if out, err := s.Cli.UpdateDepthEmpty(ctx, wc, deleteDirs); err != nil {
 			return fmt.Errorf("svn update deleted directories: %w\n%s", err, out)
 		}
 	}
 	if len(toSvnDelete) > 0 {
-		if out, err := s.Cli.Delete(ctx, wc, toSvnDelete, username, password); err != nil {
+		if out, err := s.Cli.Delete(ctx, wc, toSvnDelete); err != nil {
 			s.Logger.Warnf("svn delete failed: %v\n%s", err, out)
 		}
 	}
 	for _, it := range renamedItems {
-		if out, err := s.Cli.Delete(ctx, wc, []string{it.OldRel}, username, password); err != nil {
+		if out, err := s.Cli.Delete(ctx, wc, []string{it.OldRel}); err != nil {
 			s.Logger.Warnf("svn delete (rename src) %s: %v\n%s", it.OldRel, err, out)
 		}
-		if out, err := s.Cli.Add(ctx, wc, []string{it.Rel}, username, password); err != nil {
+		if out, err := s.Cli.Add(ctx, wc, []string{it.Rel}); err != nil {
 			s.Logger.Warnf("svn add (rename dst) %s: %v\n%s", it.Rel, err, out)
 		}
 		if s.Rules.NeedsLock && !it.IsDir {
-			if out, err := s.Cli.PropSet(ctx, wc, "svn:needs-lock", "*", []string{it.Rel}, username, password); err != nil {
+			if out, err := s.Cli.PropSet(ctx, wc, "svn:needs-lock", "*", []string{it.Rel}); err != nil {
 				return fmt.Errorf("svn propset rename destination: %w\n%s", err, out)
 			}
 		}
 	}
 	if s.Rules.LockFirst && len(commitPaths) > 0 {
-		if out, err := s.Cli.Lock(ctx, wc, commitPaths, username, password); err != nil {
+		if out, err := s.Cli.Lock(ctx, wc, commitPaths); err != nil {
 			if client.IsNetworkError(err) {
 				s.goOffline()
 				return fmt.Errorf("svn lock: %w", err)
@@ -744,9 +744,9 @@ func (s *Service) tryCommitMode(ctx context.Context, wc, username, password stri
 	msg := fmt.Sprintf("Auto-commit by FileES client %s: %d paths", uid, len(commitPaths))
 	var out string
 	if s.Rules.NeedsLock {
-		out, err = s.Cli.CommitKeepLocks(ctx, wc, commitPaths, msg, username, password)
+		out, err = s.Cli.CommitKeepLocks(ctx, wc, commitPaths, msg)
 	} else {
-		out, err = s.Cli.Commit(ctx, wc, commitPaths, msg, username, password)
+		out, err = s.Cli.Commit(ctx, wc, commitPaths, msg)
 	}
 	if err != nil {
 		entry := errmap.Classify(err)
@@ -948,10 +948,10 @@ func (s *Service) stagingLen() int {
 	return len(s.staging)
 }
 
-func (s *Service) drain(ctx context.Context, wc, username, password string) {
+func (s *Service) drain(ctx context.Context, wc string) {
 	for s.stagingLen() > 0 {
 		before := s.stagingLen()
-		if err := s.tryCommitMode(ctx, wc, username, password, true); err != nil {
+		if err := s.tryCommitMode(ctx, wc, true); err != nil {
 			s.Logger.Warnf("shutdown drain stopped with %d pending entries: %v", before, err)
 			return
 		}
@@ -1152,12 +1152,12 @@ func dedup(in []string) []string {
 }
 
 // statusMap pobiera mapę rel-path -> svn status item ("unversioned","normal","modified","missing",...).
-func (s *Service) statusMap(ctx context.Context, wc, username, password string, paths []string) (map[string]string, error) {
+func (s *Service) statusMap(ctx context.Context, wc string, paths []string) (map[string]string, error) {
 	out := make(map[string]string, len(paths))
 	if len(paths) == 0 {
 		return out, nil
 	}
-	st, err := s.Cli.Status(ctx, wc, paths, username, password)
+	st, err := s.Cli.Status(ctx, wc, paths)
 	if err != nil {
 		s.Logger.Warnf("svn status failed: %v", err)
 		return nil, fmt.Errorf("svn status pending paths: %w", err)

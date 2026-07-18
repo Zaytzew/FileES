@@ -52,67 +52,67 @@ type revisionClient struct {
 	status   []client.StatusEntry
 }
 
-func (c *revisionClient) Revision(_ context.Context, target, _, _ string) (int64, error) {
+func (c *revisionClient) Revision(_ context.Context, target string) (int64, error) {
 	if filepath.IsAbs(target) {
 		return c.local, nil
 	}
 	return c.remote, nil
 }
-func (c *revisionClient) Update(context.Context, string, string, string) (string, error) {
+func (c *revisionClient) Update(context.Context, string) (string, error) {
 	c.update++
 	return "", nil
 }
 
-func (*revisionClient) UpdateDepthEmpty(context.Context, string, []string, string, string) (string, error) {
+func (*revisionClient) UpdateDepthEmpty(context.Context, string, []string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) GetInfo(context.Context, string, string, string) (string, error) {
+func (*revisionClient) GetInfo(context.Context, string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Checkout(context.Context, string, string, string, string) (string, error) {
+func (*revisionClient) Checkout(context.Context, string, string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Cleanup(context.Context, string, string, string) (string, error) {
+func (*revisionClient) Cleanup(context.Context, string) (string, error) {
 	return "", nil
 }
-func (c *revisionClient) Status(context.Context, string, []string, string, string) ([]client.StatusEntry, error) {
+func (c *revisionClient) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
 	return c.status, nil
 }
-func (*revisionClient) Add(context.Context, string, []string, string, string) (string, error) {
+func (*revisionClient) Add(context.Context, string, []string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Delete(context.Context, string, []string, string, string) (string, error) {
+func (*revisionClient) Delete(context.Context, string, []string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Commit(context.Context, string, []string, string, string, string) (string, error) {
+func (*revisionClient) Commit(context.Context, string, []string, string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) CommitKeepLocks(context.Context, string, []string, string, string, string) (string, error) {
+func (*revisionClient) CommitKeepLocks(context.Context, string, []string, string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Lock(context.Context, string, []string, string, string) (string, error) {
+func (*revisionClient) Lock(context.Context, string, []string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) LockWithComment(context.Context, string, []string, string, bool, string, string) (string, error) {
+func (*revisionClient) LockWithComment(context.Context, string, []string, string, bool) (string, error) {
 	return "", nil
 }
-func (*revisionClient) Unlock(context.Context, string, []string, string, string) (string, error) {
+func (*revisionClient) Unlock(context.Context, string, []string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) LockInfo(context.Context, string, string, string, string) (*client.LockInfo, error) {
+func (*revisionClient) LockInfo(context.Context, string, string) (*client.LockInfo, error) {
 	return nil, nil
 }
-func (*revisionClient) PropGet(context.Context, string, string, []string, string, string) (string, error) {
+func (*revisionClient) PropGet(context.Context, string, string, []string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) PropSet(context.Context, string, string, string, []string, string, string) (string, error) {
+func (*revisionClient) PropSet(context.Context, string, string, string, []string) (string, error) {
 	return "", nil
 }
-func (*revisionClient) PropList(context.Context, string, string, string, string) (map[string]bool, error) {
+func (*revisionClient) PropList(context.Context, string, string) (map[string]bool, error) {
 	return nil, nil
 }
 
-func (c *revisionClient) Resolve(_ context.Context, _ string, paths []string, accept, _, _ string) (string, error) {
+func (c *revisionClient) Resolve(_ context.Context, _ string, paths []string, accept string) (string, error) {
 	c.resolved = append(c.resolved, paths...)
 	c.accept = accept
 	return "", nil
@@ -132,7 +132,7 @@ func TestReconcileUpdateConflictsPreservesLocalCopy(t *testing.T) {
 	unresolved := -1
 	service := &Service{Cli: cli, Logger: talk.With("startup-reconcile-test"), OnConflicts: func(n int) { unresolved = n }}
 
-	service.ReconcileUpdateConflicts(context.Background(), wc, "", "", "   C docs/report.txt\n")
+	service.ReconcileUpdateConflicts(context.Background(), wc, "   C docs/report.txt\n")
 
 	if len(cli.resolved) != 1 || cli.resolved[0] != rel || cli.accept != "theirs-full" {
 		t.Fatalf("Resolve = paths %v accept %q", cli.resolved, cli.accept)
@@ -172,7 +172,7 @@ func TestPollOnceUpdatesPublicStatus(t *testing.T) {
 		},
 	}
 
-	service.pollOnce(context.Background(), wc, "", "", filepath.Join(wc, ".filees", "state", "head.rev"))
+	service.pollOnce(context.Background(), wc, filepath.Join(wc, ".filees", "state", "head.rev"))
 
 	if head != 62 || synced.IsZero() {
 		t.Fatalf("status callbacks: head=%d synced=%v", head, synced)
@@ -188,7 +188,7 @@ func TestPollOncePersistsRevisionWhenWorkingCopyAlreadyAtHead(t *testing.T) {
 	cli := &revisionClient{remote: 61, local: 61}
 	service := &Service{Cli: cli, RepoURL: "svn://example/repo", Logger: talk.With("poll-test")}
 
-	service.pollOnce(context.Background(), wc, "", "", path)
+	service.pollOnce(context.Background(), wc, path)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -211,7 +211,7 @@ func TestPollOnceDefersUpdateForLocallyMissingPath(t *testing.T) {
 	}
 	service := &Service{Cli: cli, RepoURL: "svn://example/repo", Logger: talk.With("poll-test")}
 
-	service.pollOnce(context.Background(), wc, "", "", filepath.Join(wc, "head.rev"))
+	service.pollOnce(context.Background(), wc, filepath.Join(wc, "head.rev"))
 
 	if cli.update != 0 {
 		t.Fatalf("Update calls = %d, want 0 while a path is locally missing", cli.update)

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,13 +23,13 @@ type TierSpec struct {
 // Pola z czasami są już sparsowane do time.Duration.
 // Nazwy odpowiadają referencjom w main.go (CommitInterval, GlobalSlots, itd.).
 type Repo struct {
-	ID             string        `json:"id"`
-	RepoURL        string        `json:"repo_url"`
-	LocalPath      string        `json:"local_path"`
-	WatchInterval  time.Duration `json:"-"` // z pola JSON "watch_interval"
-	CommitInterval time.Duration `json:"-"` // z pola JSON "commit_interval"
-	Username       string        `json:"username,omitempty"`
-	Password       string        `json:"password,omitempty"`
+	ID              string        `json:"id"`
+	RepoURL         string        `json:"repo_url"`
+	LocalPath       string        `json:"local_path"`
+	SSHIdentityFile string        `json:"ssh_identity_file"`
+	SSHKnownHosts   string        `json:"ssh_known_hosts"`
+	WatchInterval   time.Duration `json:"-"` // z pola JSON "watch_interval"
+	CommitInterval  time.Duration `json:"-"` // z pola JSON "commit_interval"
 
 	// Opcjonalne rozszerzenia (mogą nie wystąpić w JSON; wtedy wartości domyślne/zero)
 	GlobalSlots            int           `json:"global_slots,omitempty"`
@@ -54,8 +56,6 @@ type jsonRepo struct {
 	LocalPath      string `json:"local_path"`
 	WatchInterval  string `json:"watch_interval"`
 	CommitInterval string `json:"commit_interval"`
-	Username       string `json:"username,omitempty"`
-	Password       string `json:"password,omitempty"`
 
 	GlobalSlots            int      `json:"global_slots,omitempty"`
 	MaxBatchFiles          int      `json:"max_batch_files,omitempty"`
@@ -77,6 +77,14 @@ type jsonRepo struct {
 	} `json:"commit_tiers,omitempty"`
 }
 
+type jsonConfig struct {
+	Transport struct {
+		IdentityFile string `json:"identity_file"`
+		KnownHosts   string `json:"known_hosts"`
+	} `json:"transport"`
+	Repositories []jsonRepo `json:"repositories"`
+}
+
 // Load — wczytuje listę repozytoriów z JSON i dokonuje walidacji + konwersji pól.
 func Load(path string) ([]Repo, error) {
 	data, err := os.ReadFile(path)
@@ -87,10 +95,25 @@ func Load(path string) ([]Repo, error) {
 		return nil, fmt.Errorf("nie udało się odczytać %q: %w", path, err)
 	}
 
-	var raw []jsonRepo
-	if err := json.Unmarshal(data, &raw); err != nil {
+	var file jsonConfig
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&file); err != nil {
 		return nil, fmt.Errorf("błąd parsowania JSON %q: %w", path, err)
 	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("błąd parsowania JSON %q: dodatkowe dane po dokumencie", path)
+	}
+	identityFile := strings.TrimSpace(file.Transport.IdentityFile)
+	knownHosts := strings.TrimSpace(file.Transport.KnownHosts)
+	if !filepath.IsAbs(identityFile) || !filepath.IsAbs(knownHosts) {
+		return nil, errors.New("config.transport: identity_file i known_hosts muszą być ścieżkami bezwzględnymi")
+	}
+	if strings.ContainsAny(identityFile+knownHosts, " \t\r\n") {
+		return nil, errors.New("config.transport: ścieżki nie mogą zawierać białych znaków")
+	}
+	identityFile, knownHosts = filepath.Clean(identityFile), filepath.Clean(knownHosts)
+	raw := file.Repositories
 
 	out := make([]Repo, 0, len(raw))
 	ids := make(map[string]int, len(raw))
@@ -106,6 +129,13 @@ func Load(path string) ([]Repo, error) {
 		repoURL := strings.TrimSpace(r.RepoURL)
 		if repoURL == "" {
 			return nil, fmt.Errorf("config[%d]: brak pola 'repo_url'", i)
+		}
+		parsedURL, parseErr := url.Parse(repoURL)
+		if parseErr != nil || parsedURL.Scheme != "svn+ssh" || parsedURL.Hostname() == "" || parsedURL.User == nil || parsedURL.User.Username() != "_filees-client" {
+			return nil, fmt.Errorf("config[%d].repo_url: wymagany transport svn+ssh://: %q", i, repoURL)
+		}
+		if _, hasPassword := parsedURL.User.Password(); hasPassword || parsedURL.Port() != "" || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
+			return nil, fmt.Errorf("config[%d].repo_url: URL svn+ssh nie może zawierać hasła, portu, query ani fragmentu", i)
 		}
 		localPath := strings.TrimSpace(r.LocalPath)
 		if localPath == "" {
@@ -218,10 +248,10 @@ func Load(path string) ([]Repo, error) {
 			ID:                     id,
 			RepoURL:                repoURL,
 			LocalPath:              localPath,
+			SSHIdentityFile:        filepath.Clean(identityFile),
+			SSHKnownHosts:          filepath.Clean(knownHosts),
 			WatchInterval:          watch,
 			CommitInterval:         commit,
-			Username:               r.Username,
-			Password:               r.Password,
 			GlobalSlots:            r.GlobalSlots,
 			MaxBatchFiles:          r.MaxBatchFiles,
 			MaxBatchMiB:            r.MaxBatchMiB,

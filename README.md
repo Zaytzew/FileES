@@ -28,7 +28,9 @@ Docelowy UX: automat w trayu, który niewidocznie utrzymuje pliki zsynchronizowa
 
 - Go 1.24+
 - Klient SVN (`svn`) dostępny w `PATH`
-- Dostęp do repozytorium svnserve
+- Klient OpenSSH (`ssh`) i aktywna tożsamość instalacji FileES
+- Dostęp przez systemowy `sshd` do tunelowego `svnserve -t`; nasłuchujący
+  `svnserve --daemon` nie jest obsługiwany
 
 ---
 
@@ -42,48 +44,53 @@ go build -o filees ./cmd/filees
 
 ## Konfiguracja
 
-Daemon szuka pliku `config.json` w katalogu roboczym. Plik zawiera tablicę repozytoriów:
+Daemon szuka pliku `config.json` w katalogu roboczym. Transport SSH należy do
+instalacji klienta, a nie do pojedynczego repozytorium:
 
 ```json
-[
-  {
-    "id":              "projectA",
-    "repo_url":        "svn://server/repo/trunk",
-    "local_path":      "/home/user/projectA",
-    "username":        "",
-    "password":        "",
-    "commit_interval": "1m",
-    "watch_interval":  "30s",
-    "poll_interval":   "30s",
-    "max_batch_files": 100,
-    "max_batch_mib": 512,
-    "backlog_flush_mib": 1024,
-    "shutdown_commit_timeout": "10m",
-    "lock_first":      false,
-    "edit_passports":  false,
-    "edit_passport_ttl": "15m",
-    "edit_passport_heartbeat": "5m",
-    "edit_passport_max_session": "24h",
-    "edit_passport_close_grace": "5m",
-    "shout_patterns":  ["\\.psd$", "\\.blend$", "\\.obj$"],
-    "rate_limit_shout":"5m",
-    "commit_tiers": [
-      {"max_mb": 1,  "interval": "2m"},
-      {"max_mb": 10, "interval": "5m"},
-      {"max_mb": 50, "interval": "15m"},
-      {"max_mb": 0,  "interval": "24h"}
-    ]
-  }
-]
+{
+  "transport": {
+    "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
+    "known_hosts": "/home/user/.local/share/filees/known_hosts"
+  },
+  "repositories": [
+    {
+      "id":              "projectA",
+      "repo_url":        "svn+ssh://_filees-client@server/repo/trunk",
+      "local_path":      "/home/user/projectA",
+      "commit_interval": "1m",
+      "watch_interval":  "30s",
+      "poll_interval":   "30s",
+      "max_batch_files": 100,
+      "max_batch_mib": 512,
+      "backlog_flush_mib": 1024,
+      "shutdown_commit_timeout": "10m",
+      "lock_first":      false,
+      "edit_passports":  false,
+      "edit_passport_ttl": "15m",
+      "edit_passport_heartbeat": "5m",
+      "edit_passport_max_session": "24h",
+      "edit_passport_close_grace": "5m",
+      "shout_patterns":  ["\\.psd$", "\\.blend$", "\\.obj$"],
+      "rate_limit_shout":"5m",
+      "commit_tiers": [
+        {"max_mb": 1,  "interval": "2m"},
+        {"max_mb": 10, "interval": "5m"},
+        {"max_mb": 50, "interval": "15m"},
+        {"max_mb": 0,  "interval": "24h"}
+      ]
+    }
+  ]
+}
 ```
 
 | Pole               | Opis |
 |--------------------|------|
 | `id`               | Unikalny identyfikator repo (używany w logach i ścieżkach stanu) |
-| `repo_url`         | URL repozytorium SVN |
+| `transport.identity_file` | Bezwzględna ścieżka do klucza Ed25519 utworzonego podczas aktywacji |
+| `transport.known_hosts` | Bezwzględna ścieżka do pinowanego klucza hosta usługi |
+| `repo_url`         | URL `svn+ssh://_filees-client@host/...`; inne transporty są odrzucane |
 | `local_path`       | Bezwzględna ścieżka do kopii roboczej |
-| `username`         | Login SVN (opcjonalny) |
-| `password`         | Hasło SVN (opcjonalny) |
 | `commit_interval`  | Okno commitów (np. `1m`, `30s`) |
 | `watch_interval`   | Interwał skanowania systemu plików |
 | `poll_interval`    | Jak często sprawdzać HEAD serwera i pobierać zmiany (`svn update`); domyślnie `30s` |

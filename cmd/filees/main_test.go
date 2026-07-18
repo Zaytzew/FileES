@@ -13,7 +13,8 @@ import (
 
 func TestConfigCheckValidatesWithoutStartingDaemon(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte("[]\n"), 0o600); err != nil {
+	valid := `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"repositories":[]}` + "\n"
+	if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if code := cmdConfigCheck([]string{"--config", path}); code != 0 {

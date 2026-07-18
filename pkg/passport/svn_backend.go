@@ -8,15 +8,15 @@ import (
 )
 
 type SVNBackend struct {
-	Client                 client.Client
-	WC, Username, Password string
+	Client client.Client
+	WC     string
 }
 
 func (b SVNBackend) Inspect(ctx context.Context, path string) (*Lock, error) {
 	if b.Client == nil {
 		return nil, errors.New("passport SVN backend: nil client")
 	}
-	info, err := b.Client.LockInfo(ctx, b.WC, path, b.Username, b.Password)
+	info, err := b.Client.LockInfo(ctx, b.WC, path)
 	if err != nil || info == nil {
 		return nil, err
 	}
@@ -26,7 +26,7 @@ func (b SVNBackend) Lock(ctx context.Context, path, comment string, force bool) 
 	if b.Client == nil {
 		return nil, "", errors.New("passport SVN backend: nil client")
 	}
-	out, err := b.Client.LockWithComment(ctx, b.WC, []string{path}, comment, force, b.Username, b.Password)
+	out, err := b.Client.LockWithComment(ctx, b.WC, []string{path}, comment, force)
 	if err != nil {
 		return nil, out, err
 	}
@@ -37,5 +37,5 @@ func (b SVNBackend) Unlock(ctx context.Context, path string) (string, error) {
 	if b.Client == nil {
 		return "", errors.New("passport SVN backend: nil client")
 	}
-	return b.Client.Unlock(ctx, b.WC, []string{path}, b.Username, b.Password)
+	return b.Client.Unlock(ctx, b.WC, []string{path})
 }

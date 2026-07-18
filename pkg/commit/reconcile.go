@@ -54,7 +54,7 @@ func parseConflicts(out string) []string {
 // ReconcileUpdateConflicts preserves local versions and resolves every conflict
 // reported by svn update in favour of the server. It is shared by startup and
 // periodic updates so crash recovery cannot bypass the reconciliation policy.
-func (s *Service) ReconcileUpdateConflicts(ctx context.Context, wc, username, password, updateOutput string) {
+func (s *Service) ReconcileUpdateConflicts(ctx context.Context, wc, updateOutput string) {
 	conflicts := parseConflicts(updateOutput)
 	if len(conflicts) == 0 {
 		if s.OnConflicts != nil {
@@ -63,12 +63,12 @@ func (s *Service) ReconcileUpdateConflicts(ctx context.Context, wc, username, pa
 		return
 	}
 	s.Logger.Warnf("update: %d conflict(s) detected — reconciling", len(conflicts))
-	s.reconcile(ctx, wc, username, password, conflicts)
+	s.reconcile(ctx, wc, conflicts)
 }
 
 // reconcile saves local copies of conflicted files to !kolizje/ and resolves in favour of the
 // server (HEAD rules). Each conflict gets a .meta JSON file describing the saved copy.
-func (s *Service) reconcile(ctx context.Context, wc, username, password string, conflicted []string) {
+func (s *Service) reconcile(ctx context.Context, wc string, conflicted []string) {
 	if len(conflicted) == 0 {
 		return
 	}
@@ -97,7 +97,7 @@ func (s *Service) reconcile(ctx context.Context, wc, username, password string, 
 			continue
 		}
 
-		out, err := s.Cli.Resolve(ctx, wc, []string{rel}, "theirs-full", username, password)
+		out, err := s.Cli.Resolve(ctx, wc, []string{rel}, "theirs-full")
 		if err != nil {
 			s.Logger.Warnf("reconcile: svn resolve %s: %v\n%s", rel, err, out)
 			continue

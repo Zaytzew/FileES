@@ -15,27 +15,27 @@ import (
 var ErrWorkingCopyDirty = errors.New("working copy must be clean before edit-passport migration")
 
 type NeedsLockClient interface {
-	Status(context.Context, string, []string, string, string) ([]client.StatusEntry, error)
-	PropList(context.Context, string, string, string, string) (map[string]bool, error)
-	PropSet(context.Context, string, string, string, []string, string, string) (string, error)
-	Commit(context.Context, string, []string, string, string, string) (string, error)
+	Status(context.Context, string, []string) ([]client.StatusEntry, error)
+	PropList(context.Context, string, string) (map[string]bool, error)
+	PropSet(context.Context, string, string, string, []string) (string, error)
+	Commit(context.Context, string, []string, string) (string, error)
 }
 
 // EnsureNeedsLock is an idempotent, restartable migration for existing files.
 // It refuses content changes so a property-only commit can never publish user
 // data that was edited before acquiring a passport.
-func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, username, password, instanceUID string, batchSize int) error {
+func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID string, batchSize int) error {
 	if cli == nil {
 		return errors.New("needs-lock migration: nil client")
 	}
 	if batchSize <= 0 {
 		batchSize = 100
 	}
-	status, err := cli.Status(ctx, wc, nil, username, password)
+	status, err := cli.Status(ctx, wc, nil)
 	if err != nil {
 		return err
 	}
-	existing, err := cli.PropList(ctx, wc, "svn:needs-lock", username, password)
+	existing, err := cli.PropList(ctx, wc, "svn:needs-lock")
 	if err != nil {
 		return err
 	}
@@ -89,12 +89,12 @@ func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, username, pas
 			}
 		}
 		if len(toSet) > 0 {
-			if out, err := cli.PropSet(ctx, wc, "svn:needs-lock", "*", toSet, username, password); err != nil {
+			if out, err := cli.PropSet(ctx, wc, "svn:needs-lock", "*", toSet); err != nil {
 				return fmt.Errorf("set svn:needs-lock: %w\n%s", err, out)
 			}
 		}
 		message := fmt.Sprintf("FileES edit-passport migration by client %s: %d paths", instanceUID, len(batch))
-		if out, err := cli.Commit(ctx, wc, batch, message, username, password); err != nil {
+		if out, err := cli.Commit(ctx, wc, batch, message); err != nil {
 			return fmt.Errorf("commit svn:needs-lock migration: %w\n%s", err, out)
 		}
 	}

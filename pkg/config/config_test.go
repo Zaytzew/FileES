@@ -11,6 +11,13 @@ import (
 
 func writeConfig(t *testing.T, data string) string {
 	t.Helper()
+	data = strings.ReplaceAll(data, `"repo_url":"svn://example/`, `"repo_url":"svn+ssh://_filees-client@example/`)
+	data = fmt.Sprintf(`{"transport":{"identity_file":"/tmp/filees-id","known_hosts":"/tmp/filees-known-hosts"},"repositories":%s}`, data)
+	return writeRawConfig(t, data)
+}
+
+func writeRawConfig(t *testing.T, data string) string {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
@@ -19,11 +26,8 @@ func writeConfig(t *testing.T, data string) string {
 }
 
 func TestLoadBatchSafetySettings(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
 	data := `[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","max_batch_mib":256,"backlog_flush_mib":768,"shutdown_commit_timeout":"7m"}]`
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	path := writeConfig(t, data)
 	repos, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -59,11 +63,8 @@ func TestLoadRejectsUnsafeEditPassportDurations(t *testing.T) {
 }
 
 func TestLoadRejectsFlushWatermarkBelowBatchSize(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
 	data := `[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","max_batch_mib":512,"backlog_flush_mib":128}]`
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	path := writeConfig(t, data)
 	if _, err := Load(path); err == nil {
 		t.Fatal("Load accepted backlog_flush_mib below max_batch_mib")
 	}
@@ -127,5 +128,35 @@ func TestLoadRejectsInvalidRegexAndTiers(t *testing.T) {
 		if _, err := Load(writeConfig(t, data)); err == nil {
 			t.Fatalf("Load accepted invalid config: %s", data)
 		}
+	}
+}
+
+func TestLoadRejectsLegacySVNCredentials(t *testing.T) {
+	data := `[{"id":"r","repo_url":"svn+ssh://_filees-client@example/r","local_path":"/tmp/r","commit_interval":"1m","username":"legacy","password":"secret"}]`
+	if _, err := Load(writeConfig(t, data)); err == nil {
+		t.Fatal("Load accepted legacy SVN credentials")
+	}
+}
+
+func TestLoadRejectsTrailingJSON(t *testing.T) {
+	valid := `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"repositories":[]}`
+	if _, err := Load(writeRawConfig(t, valid+` {}`)); err == nil {
+		t.Fatal("Load accepted a second JSON document")
+	}
+}
+
+func TestLoadRequiresRestrictedSVNSSHTransport(t *testing.T) {
+	for _, data := range []string{
+		`[{"id":"r","repo_url":"svn://legacy/r","local_path":"/tmp/r","commit_interval":"1m"}]`,
+		`[{"id":"r","repo_url":"svn+ssh://other@example/r","local_path":"/tmp/r","commit_interval":"1m"}]`,
+		`[{"id":"r","repo_url":"svn+ssh://_filees-client@example:2222/r","local_path":"/tmp/r","commit_interval":"1m"}]`,
+	} {
+		if _, err := Load(writeConfig(t, data)); err == nil {
+			t.Fatalf("Load accepted unsupported transport: %s", data)
+		}
+	}
+	missingTransport := `{"repositories":[{"id":"r","repo_url":"svn+ssh://_filees-client@example/r","local_path":"/tmp/r","commit_interval":"1m"}]}`
+	if _, err := Load(writeRawConfig(t, missingTransport)); err == nil {
+		t.Fatal("Load accepted config without installation transport")
 	}
 }

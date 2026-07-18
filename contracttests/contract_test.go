@@ -80,6 +80,21 @@ func TestDecodePayloadIgnoresUnknownFields(t *testing.T) {
 	}
 }
 
+func TestActivationPayloadRoundTrip(t *testing.T) {
+	want := contract.ActivationFinishPayload{ServerID: "office", ServerAddress: "filees.example.net:22", KnownHostsPath: "/state/known_hosts", StateRoot: "/state/activation", RemotePort: 42000, OTP: "OTP-CODE"}
+	raw, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got contract.ActivationFinishPayload
+	if err := contract.DecodePayload(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("payload=%+v", got)
+	}
+}
+
 func TestResponseBuilders(t *testing.T) {
 	ok := contract.OKResponse("request-1", contract.RepoListResult{
 		Repos: []contract.RepoSummary{{ID: "projectA"}},
@@ -144,10 +159,12 @@ func TestEventJSONRoundTrip(t *testing.T) {
 
 func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 	want := map[string]bool{
-		contract.CapEventsSubscribe: true,
-		contract.CapRepoLock:        true,
-		contract.CapRepoUnlock:      true,
-		contract.CapErrorList:       true,
+		contract.CapEventsSubscribe:  true,
+		contract.CapRepoLock:         true,
+		contract.CapRepoUnlock:       true,
+		contract.CapErrorList:        true,
+		contract.CapActivationBegin:  true,
+		contract.CapActivationFinish: true,
 	}
 	if len(contract.AllCapabilities) != len(want) {
 		t.Fatalf("AllCapabilities = %#v", contract.AllCapabilities)

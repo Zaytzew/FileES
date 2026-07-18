@@ -297,6 +297,10 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 	if s.daemonCtx == nil || s.newSVN == nil || runtime.state == nil {
 		return nil, errors.New("repository starter is incomplete")
 	}
+	// The local record is an attachment (path and runtime tuning). Effective
+	// authority and endpoint always come from the validated server projection.
+	runtime.config.Access = desired.Access
+	runtime.config.RepoURL = desired.URL
 	svn := s.newSVN(runtime.config)
 	if desired.Access == contract.AccessReadWrite {
 		if s.startReadWrite == nil {

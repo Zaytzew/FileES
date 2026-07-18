@@ -15,7 +15,9 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
+	"filees/pkg/passport"
 	"filees/pkg/reposupervisor"
+	"filees/pkg/runtime"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
 )
@@ -31,6 +33,21 @@ func openRepoErrorSink(path, scope string) (*errmap.Sink, *os.File, error) {
 		return nil, nil, err
 	}
 	return errmap.NewSink(file, scope), file, nil
+}
+
+func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules, gate runtime.Gate, mutex runtime.RepoMutex, clientUUID string, sink *errmap.Sink, ipc *ipcserver.Server, state *ipcserver.RepoState, passports *passport.Manager) *commit.Service {
+	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, UUID: clientUUID, ErrSink: sink}
+	if ipc != nil {
+		service.Emit = func(eventType string, payload any) { ipc.Emit(ipc.NewRepoEvent(repo.ID, eventType, payload)) }
+	}
+	wireRepoStatus(service, state)
+	if passports != nil {
+		service.BeginPublish = passports.BeginPublish
+		service.OnPathActivity = passports.Touch
+		service.OnPathsPublished = passports.MarkPublished
+		service.OnPathsRemoved = passports.ForgetRemoved
+	}
+	return service
 }
 
 type repoEventSource interface {

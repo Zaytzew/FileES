@@ -235,26 +235,7 @@ func runDaemon() {
 			errorFiles = append(errorFiles, file)
 		}
 
-		svc := &commit.Service{
-			Cli:      cli,
-			Rules:    rules,
-			HostGate: gate,
-			RepoMtx:  mtx,
-			Logger:   talk.With("commit:" + r.ID),
-			RepoURL:  r.RepoURL,
-			UUID:     clientUUID,
-			ErrSink:  sink,
-			Emit: func(evType string, payload any) {
-				ipc.Emit(ipc.NewRepoEvent(r.ID, evType, payload))
-			},
-		}
-		wireRepoStatus(svc, rs)
-		if editPassports != nil {
-			svc.BeginPublish = editPassports.BeginPublish
-			svc.OnPathActivity = editPassports.Touch
-			svc.OnPathsPublished = editPassports.MarkPublished
-			svc.OnPathsRemoved = editPassports.ForgetRemoved
-		}
+		svc := buildCommitService(r, cli, rules, gate, mtx, clientUUID, sink, ipc, rs, editPassports)
 
 		// Reconcile startup-update conflicts through the same lossless path as
 		// periodic updates. In particular, this covers a SIGKILL after the server

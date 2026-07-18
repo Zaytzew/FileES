@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"filees/pkg/client"
+	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
@@ -17,6 +20,30 @@ type repoRuntime struct {
 	config config.Repo
 	state  *ipcserver.RepoState
 }
+
+func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, logger talk.Logger) {
+	if _, err := os.Stat(filepath.Join(wc, ".svn")); err != nil {
+		return
+	}
+	if out, err := svn.Cleanup(ctx, wc); err != nil {
+		logger.Warnf("svn cleanup failed: %v %s", err, out)
+	}
+	status, err := svn.Status(ctx, wc, nil)
+	if err != nil {
+		logger.Warnf("svn status before update failed: %v — update deferred", err)
+		return
+	}
+	if client.HasMissingPaths(status) {
+		logger.Infof("svn update deferred: working copy contains local removals")
+		return
+	}
+	out, err := svn.Update(ctx, wc)
+	service.ReconcileUpdateConflicts(ctx, wc, out)
+	if err != nil {
+		logger.Warnf("svn update failed: %v %s", err, out)
+	}
+}
+
 type svnFactory func(config.Repo) client.Client
 type readWriteFactory func(context.Context, repoRuntime, client.Client, reposupervisor.Desired) (reposupervisor.Instance, error)
 

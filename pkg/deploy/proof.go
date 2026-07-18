@@ -28,7 +28,11 @@ type SSHAccessProver struct {
 	Timeout        time.Duration
 }
 
-func NewServiceAccessProver(identityRoot, knownHostsPath string) (SSHAccessProver, error) {
+func NewServiceAccessProver(profile ServerProfile, identityRoot string) (SSHAccessProver, error) {
+	if err := profile.validate(); err != nil {
+		return SSHAccessProver{}, err
+	}
+	knownHostsPath := profile.KnownHostsPath
 	if !filepath.IsAbs(identityRoot) || !filepath.IsAbs(knownHostsPath) {
 		return SSHAccessProver{}, errors.New("service proof identity and known_hosts paths must be absolute")
 	}
@@ -36,7 +40,7 @@ func NewServiceAccessProver(identityRoot, knownHostsPath string) (SSHAccessProve
 		return SSHAccessProver{}, fmt.Errorf("load service host pin: %w", err)
 	}
 	return SSHAccessProver{
-		Address: BootstrapHost + ":22", KnownHostsPath: filepath.Clean(knownHostsPath),
+		Address: profile.Address, KnownHostsPath: filepath.Clean(knownHostsPath),
 		IdentityRoot: filepath.Clean(identityRoot), Timeout: 10 * time.Second,
 	}, nil
 }

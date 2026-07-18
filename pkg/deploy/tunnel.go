@@ -10,25 +10,26 @@ import (
 )
 
 const (
-	OnboardUser = "_filees-onboard"
-	TunnelUser  = "_filees-tunnel"
-	// BootstrapHost is part of the shipped client policy, not deploy input.
-	BootstrapHost       = "cloud.atmprojekt.pl"
+	OnboardUser         = "_filees-onboard"
+	TunnelUser          = "_filees-tunnel"
 	TunnelServerCommand = "filees tunnel-v1"
 )
 
 type TunnelSpec struct {
 	RemotePort         int
 	HelperEndpoint     HelperEndpoint
-	KnownHostsPath     string
 	DeployRequestID    string
 	ReconnectPublicKey string
+	ServerProfile      ServerProfile
 }
 
 // OpenSSHArgs returns the only outer SSH command shape supported by FileES.
-// Host, login and forwarding policy are compiled into the client; an operation
-// supplies only its server-assigned loopback port and the local helper endpoint.
+// Login, command and forwarding policy are compiled into the client. The
+// installation profile supplies only the endpoint and its pinned host keys.
 func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
+	if err := spec.ServerProfile.validate(); err != nil {
+		return nil, err
+	}
 	if err := (TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey, ReconnectPublicKey: spec.ReconnectPublicKey}).Validate(); err != nil {
 		return nil, err
 	}
@@ -47,13 +48,15 @@ func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
 	if err != nil || localPort < 1 || localPort > 65535 {
 		return nil, errors.New("helper endpoint port is invalid")
 	}
-	knownHosts := filepath.Clean(strings.TrimSpace(spec.KnownHostsPath))
+	knownHosts := filepath.Clean(strings.TrimSpace(spec.ServerProfile.KnownHostsPath))
 	if knownHosts == "." || !filepath.IsAbs(knownHosts) {
 		return nil, errors.New("pinned known_hosts path must be absolute")
 	}
 	forward := fmt.Sprintf("127.0.0.1:%d:127.0.0.1:%d", spec.RemotePort, localPort)
-	return []string{
+	serverHost, serverPort := spec.ServerProfile.hostAndPort()
+	args := []string{
 		"-F", "/dev/null",
+		"-p", serverPort,
 		"-l", TunnelUser,
 		"-T",
 		"-o", "ExitOnForwardFailure=yes",
@@ -73,7 +76,8 @@ func OpenSSHArgs(spec TunnelSpec) ([]string, error) {
 		"-o", "TCPKeepAlive=no",
 		"-o", "LogLevel=ERROR",
 		"-R", forward,
-		BootstrapHost,
+		serverHost,
 		TunnelServerCommand,
-	}, nil
+	}
+	return args, nil
 }

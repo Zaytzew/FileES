@@ -75,7 +75,8 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stdin = bytes.NewReader(frame)
-	cmd.Stderr = nil
+	diagnostic := &boundedDiagnostic{limit: 16 * 1024}
+	cmd.Stderr = diagnostic
 	cmd.Stdout = nil
 	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassFIFOEnv, connectKeyEnv, connectRequestIDEnv)
 	cmd.Env = append(cmd.Env,
@@ -94,7 +95,7 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	case <-time.After(time.Second):
 	}
 	if runErr != nil {
-		return fmt.Errorf("bootstrap SSH tunnel: %w", runErr)
+		return tunnelCommandError("bootstrap SSH tunnel", runErr, diagnostic.String())
 	}
 	return nil
 }
@@ -125,6 +126,8 @@ func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyP
 	}
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stdin = bytes.NewReader(frame)
+	diagnostic := &boundedDiagnostic{limit: 16 * 1024}
+	cmd.Stderr = diagnostic
 	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassFIFOEnv, connectKeyEnv, connectRequestIDEnv)
 	cmd.Env = append(cmd.Env,
 		"SSH_ASKPASS="+executable,
@@ -134,9 +137,35 @@ func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyP
 		connectRequestIDEnv+"="+spec.DeployRequestID,
 	)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("reconnect SSH tunnel: %w", err)
+		return tunnelCommandError("reconnect SSH tunnel", err, diagnostic.String())
 	}
 	return nil
+}
+
+type boundedDiagnostic struct {
+	data  []byte
+	limit int
+}
+
+func (w *boundedDiagnostic) Write(p []byte) (int, error) {
+	wanted := len(p)
+	remaining := w.limit - len(w.data)
+	if remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		w.data = append(w.data, p...)
+	}
+	return wanted, nil
+}
+
+func (w *boundedDiagnostic) String() string { return strings.TrimSpace(string(w.data)) }
+
+func tunnelCommandError(label string, err error, diagnostic string) error {
+	if diagnostic == "" {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return fmt.Errorf("%s: %w: %s", label, err, diagnostic)
 }
 
 // RunAskpass serves the internal OpenSSH askpass invocation. It accepts only

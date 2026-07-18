@@ -53,6 +53,12 @@ func main() {
 			os.Exit(cmdUnlock(os.Args[2:]))
 		case "log":
 			os.Exit(cmdLog(os.Args[2:]))
+		case "activate-begin":
+			os.Exit(cmdActivateBegin(os.Args[2:]))
+		case "activate-finish":
+			os.Exit(cmdActivateFinish(os.Args[2:]))
+		case "activate-resume":
+			os.Exit(cmdActivateResume(os.Args[2:]))
 		case "daemon":
 			// fall through to daemon startup below
 		case "help", "--help", "-h":
@@ -374,6 +380,9 @@ commands:
   lock      lock file(s) in SVN repository
   unlock    release SVN lock on file(s)
   log [N]   show last N error log entries (default 20)
+  activate-begin   create/resume a server-scoped onboarding passport
+  activate-finish  read one OTP from stdin and run activation
+  activate-resume  resume an OTP-authorized activation with reconnect key
 
 flags:
   --config path   path to config.json (default: ./config.json)`)

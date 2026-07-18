@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -165,6 +166,116 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 
 type svnFactory func(config.Repo) client.Client
 type readWriteFactory func(context.Context, repoRuntime, client.Client, reposupervisor.Desired) (reposupervisor.Instance, error)
+
+type readWriteDependencies struct {
+	gate  runtime.Gate
+	mutex runtime.RepoMutex
+	ipc   *ipcserver.Server
+}
+
+func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired, deps readWriteDependencies) (reposupervisor.Instance, error) {
+	repo := runtimeRepo.config
+	wc := repo.LocalPath
+	logger := talk.With("repo:" + repo.ID)
+	stateDir := filepath.Join(wc, ".filees", "state")
+	logsDir := filepath.Join(wc, ".filees", "logs")
+	for _, dir := range []string{stateDir, filepath.Join(wc, ".filees", "tickets"), filepath.Join(wc, ".filees", "locks", "global"), filepath.Join(wc, ".filees", "locks", "repo"), logsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("init directory %s: %w", dir, err)
+		}
+	}
+	manifest := filepath.Join(stateDir, "manifest.json")
+	tmpManifest := filepath.Join(stateDir, "manifest.tmp")
+	baselineOK := filepath.Join(stateDir, "baseline.ok")
+	busyPath := filepath.Join(stateDir, "commit.busy")
+	pidPath := filepath.Join(stateDir, "daemon.pid")
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
+		return nil, err
+	}
+	cleanupPID := true
+	defer func() {
+		if cleanupPID {
+			_ = os.Remove(pidPath)
+		}
+	}()
+	clientUUID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
+	var manager *passport.Manager
+	var passports *passportSession
+	if repo.EditPassports {
+		var err error
+		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, passport.SVNBackend{Client: svn, WC: wc}, passport.Config{TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace})
+		if err != nil {
+			return nil, err
+		}
+		passports, err = startPassportSession(ctx, manager)
+		if err != nil {
+			return nil, err
+		}
+	}
+	rollbackPassport := true
+	defer func() {
+		if rollbackPassport && passports != nil {
+			_ = passports.Stop(context.Background())
+		}
+	}()
+	if fileExists(baselineOK) && fileExists(tmpManifest) && !fileExists(manifest) {
+		if err := os.Rename(tmpManifest, manifest); err != nil {
+			return nil, err
+		}
+		_ = os.Remove(baselineOK)
+	}
+	wopts, latency := buildWatcherOptions(repo, manifest, busyPath)
+	scanner, err := watcher.NewScanner(wopts)
+	if err != nil {
+		return nil, err
+	}
+	rules := buildCommitRules(repo, latency)
+	sink, errorFile, err := openRepoErrorSink(filepath.Join(logsDir, "errors.jsonl"), "commit:"+repo.ID)
+	if err != nil {
+		logger.Warnf("structured errors disabled: %v", err)
+		sink = nil
+		errorFile = nil
+	}
+	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager)
+	recoverReadWriteWorkingCopy(ctx, svn, wc, service, logger)
+	if manager != nil {
+		if err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, intOrDefault(repo.MaxBatchFiles, 100)); err != nil {
+			if errorFile != nil {
+				_ = errorFile.Close()
+			}
+			return nil, err
+		}
+	}
+	instance, err := reposupervisor.StartManaged(ctx, func(runCtx context.Context) error {
+		return runReadWritePipeline(runCtx, repo, runtimeRepo.state, scanner, service)
+	}, func(cleanupCtx context.Context) error {
+		var first error
+		if passports != nil {
+			if err := passports.Stop(cleanupCtx); err != nil {
+				first = err
+			}
+		}
+		if errorFile != nil {
+			if err := errorFile.Close(); err != nil && first == nil {
+				first = err
+			}
+		}
+		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) && first == nil {
+			first = err
+		}
+		return first
+	})
+	if err != nil {
+		if errorFile != nil {
+			_ = errorFile.Close()
+		}
+		return nil, err
+	}
+	cleanupPID = false
+	rollbackPassport = false
+	_ = desired
+	return instance, nil
+}
 
 // daemonRepoStarter binds generic supervisor lifecycle to concrete daemon
 // pipelines. daemonCtx, not the reconcile context, owns running instances.

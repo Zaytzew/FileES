@@ -13,6 +13,7 @@ import (
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/talk"
@@ -22,6 +23,14 @@ import (
 type repoRuntime struct {
 	config config.Repo
 	state  *ipcserver.RepoState
+}
+
+func openRepoErrorSink(path, scope string) (*errmap.Sink, *os.File, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, nil, err
+	}
+	return errmap.NewSink(file, scope), file, nil
 }
 
 type repoEventSource interface {

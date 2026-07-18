@@ -24,8 +24,8 @@ type LockUnlocker interface {
 }
 
 type Activator interface {
-	Begin(ctx context.Context, email string) error
-	Finish(ctx context.Context, otp []byte) error
+	Begin(ctx context.Context, serverID, serverAddress, email string) error
+	Finish(ctx context.Context, serverID, serverAddress string, otp []byte) error
 }
 
 type presentationError interface {
@@ -109,12 +109,22 @@ func (c *Controller) startActivation(ctx context.Context) {
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation("activate")
+		profile, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Lokalna nazwa profilu serwera (np. biuro):", Placeholder: "biuro"})
+		if err != nil || profile.Cancelled || profile.Value == "" {
+			c.activationFailure(ctx, err)
+			return
+		}
+		endpoint, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Adres serwera FileES (host:port):", Placeholder: "filees.example.net:22"})
+		if err != nil || endpoint.Cancelled || endpoint.Value == "" {
+			c.activationFailure(ctx, err)
+			return
+		}
 		email, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Adres e-mail, na który serwer wyśle jednorazowy kod OTP:"})
 		if err != nil || email.Cancelled || email.Value == "" {
 			c.activationFailure(ctx, err)
 			return
 		}
-		if err := c.cfg.Activator.Begin(ctx, email.Value); err != nil {
+		if err := c.cfg.Activator.Begin(ctx, profile.Value, endpoint.Value, email.Value); err != nil {
 			c.activationFailure(ctx, err)
 			return
 		}
@@ -125,7 +135,7 @@ func (c *Controller) startActivation(ctx context.Context) {
 		}
 		secret := []byte(otp.Value)
 		defer clear(secret)
-		if err := c.cfg.Activator.Finish(ctx, secret); err != nil {
+		if err := c.cfg.Activator.Finish(ctx, profile.Value, endpoint.Value, secret); err != nil {
 			c.activationFailure(ctx, err)
 			return
 		}

@@ -55,6 +55,34 @@ func TestGlobalReadOnlyRoleDegradesRepositoryAccess(t *testing.T) {
 	}
 }
 
+func TestLoadClientViewProjection(t *testing.T) {
+	path := writeRawConfig(t, `{"server_id":"office","transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"projection":{"working_copy":"/tmp/service-wc","relative_view_path":"clients/client/view.json","cache_path":"/tmp/cache/view.json","interval":"15s"},"repositories":[]}`)
+	view, err := LoadClientView(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Projection == nil || view.Projection.WorkingCopy != "/tmp/service-wc" || view.Projection.RelativeViewPath != "clients/client/view.json" || view.Projection.CachePath != "/tmp/cache/view.json" || view.Projection.Interval != 15*time.Second {
+		t.Fatalf("projection=%+v", view.Projection)
+	}
+	if view.IdentityFile != "/tmp/id" || view.KnownHosts != "/tmp/known" {
+		t.Fatalf("transport=%+v", view)
+	}
+}
+
+func TestLoadClientViewRejectsUnsafeProjection(t *testing.T) {
+	for _, projection := range []string{
+		`{"working_copy":"relative","relative_view_path":"view.json","cache_path":"/tmp/cache"}`,
+		`{"working_copy":"/tmp/wc","relative_view_path":"../view.json","cache_path":"/tmp/cache"}`,
+		`{"working_copy":"/tmp/wc","relative_view_path":"view.json","cache_path":"relative"}`,
+		`{"working_copy":"/tmp/wc","relative_view_path":"view.json","cache_path":"/tmp/cache","interval":"0s"}`,
+	} {
+		path := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"projection":`+projection+`,"repositories":[]}`)
+		if _, err := LoadClientView(path); err == nil {
+			t.Fatalf("unsafe projection accepted: %s", projection)
+		}
+	}
+}
+
 func TestLoadEditPassportSettings(t *testing.T) {
 	path := writeConfig(t, `[{"id":"r","repo_url":"svn://example/r","local_path":"/tmp/r","commit_interval":"1m","edit_passports":true,"edit_passport_ttl":"15m","edit_passport_heartbeat":"5m","edit_passport_max_session":"24h","edit_passport_close_grace":"5m"}]`)
 	repos, err := Load(path)

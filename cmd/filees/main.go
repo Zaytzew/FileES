@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
+	"sort"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -19,13 +17,11 @@ import (
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/deploy"
-	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
-	"filees/pkg/passport"
+	"filees/pkg/reposupervisor"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
 	"filees/pkg/tickets"
-	"filees/pkg/watcher"
 )
 
 var version = "dev"
@@ -107,177 +103,50 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-
-	var wg sync.WaitGroup
-	var pidPaths []string
-	var passportSessions []*passportSession
-	var errorFiles []*os.File
-
-	for _, r := range repos {
-		wc := r.LocalPath
-		scope := "repo:" + r.ID
-		rlg := talk.With(scope)
-		cli := client.New(client.Options{
-			SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:" + r.ID,
-			SSHIdentityFile: r.SSHIdentityFile, SSHKnownHosts: r.SSHKnownHosts,
-		})
-
-		stateDir := filepath.Join(wc, ".filees", "state")
-		ticketsDir := filepath.Join(wc, ".filees", "tickets")
-		locksGlobal := filepath.Join(wc, ".filees", "locks", "global")
-		locksRepo := filepath.Join(wc, ".filees", "locks", "repo")
-		logsDir := filepath.Join(wc, ".filees", "logs")
-		for _, d := range []string{stateDir, ticketsDir, locksGlobal, locksRepo, logsDir} {
-			if err := os.MkdirAll(d, 0o755); err != nil {
-				rlg.Errorf("init dir %s: %v", d, err)
-				continue
-			}
-		}
-
-		manifest := filepath.Join(stateDir, "manifest.json")
-		tmpManifest := filepath.Join(stateDir, "manifest.tmp")
-		baselineOK := filepath.Join(stateDir, "baseline.ok")
-		busyPath := filepath.Join(stateDir, "commit.busy")
-		pidPath := filepath.Join(stateDir, "daemon.pid")
-
-		// Write PID so `filees status` can detect running daemon
-		_ = os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
-		pidPaths = append(pidPaths, pidPath)
-
-		clientUUID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
-		rlg.Debugf("client UUID: %s", clientUUID)
-
-		// The access mode comes from the daemon's cached server projection. A
-		// read-only repo never receives watcher, commit or edit-passport wiring.
-		rs := ipc.RegisterRepoAccess(r.ID, r.RepoURL, wc, r.ServerID, r.Access)
-		if r.Access == contract.AccessReadOnly {
-			wg.Add(1)
-			go func(repo config.Repo, repoState *ipcserver.RepoState, svn client.Client) {
-				defer wg.Done()
-				runReadOnlyRepo(ctx, repo, repoState, svn, talk.With("readonly:"+repo.ID))
-			}(r, rs, cli)
-			continue
-		}
-
-		var editPassports *passport.Manager
-		if r.EditPassports {
-			backend := passport.SVNBackend{Client: cli, WC: wc}
-			editPassports, err = passport.Open(
-				filepath.Join(wc, ".filees", "passports", "passports.json"),
-				clientUUID,
-				backend,
-				passport.Config{TTL: r.EditPassportTTL, HeartbeatInterval: r.EditPassportHeartbeat, MaxSession: r.EditPassportMaxSession, CloseGrace: r.EditPassportCloseGrace},
-			)
-			if err != nil {
-				rlg.Errorf("edit passports: %v", err)
-				continue
-			}
-			passportSession, sessionErr := startPassportSession(ctx, editPassports)
-			if sessionErr != nil {
-				rlg.Errorf("edit passport lifecycle: %v", sessionErr)
-				continue
-			}
-			passportSessions = append(passportSessions, passportSession)
-		}
-
-		// Register repo in IPC server; rs is updated by daemon goroutines
-		if editPassports != nil {
-			rs.SetLockFuncs(
-				func(ctx context.Context, paths []string) (string, error) {
-					_, out, err := editPassports.Acquire(ctx, paths)
-					return out, err
-				},
-				func(ctx context.Context, paths []string) (string, error) { return editPassports.Release(ctx, paths) },
-			)
-		} else {
-			rs.SetLockFuncs(
-				func(ctx context.Context, paths []string) (string, error) {
-					return cli.Lock(ctx, wc, paths)
-				},
-				func(ctx context.Context, paths []string) (string, error) {
-					return cli.Unlock(ctx, wc, paths)
-				},
-			)
-		}
-
-		if fileExists(baselineOK) && fileExists(tmpManifest) && !fileExists(manifest) {
-			if err := os.Rename(tmpManifest, manifest); err != nil {
-				rlg.Warnf("promote manifest failed: %v", err)
-			} else {
-				_ = os.Remove(baselineOK)
-				rlg.Infof("PROMOTE baseline → active (onstart)")
-			}
-		}
-
-		if fi, err := os.Stat(busyPath); err == nil {
-			if time.Since(fi.ModTime()) > 10*time.Minute {
-				rlg.Warnf("commit.busy appears stale (>10m) — will be ignored by watcher")
-			}
-		}
-
-		// A disappearance must be observed no later than a new file becomes
-		// publishable. Otherwise an Added entry can outlive its file in staging.
-		wopts, publishLatency := buildWatcherOptions(r, manifest, busyPath)
-		scn, err := watcher.NewScanner(wopts)
-		if err != nil {
-			rlg.Errorf("watcher: %v", err)
-			continue
-		}
-
-		rules := buildCommitRules(r, publishLatency)
-
-		var sink *errmap.Sink
-		errLogPath := filepath.Join(logsDir, "errors.jsonl")
-		if createdSink, file, ferr := openRepoErrorSink(errLogPath, "commit:"+r.ID); ferr != nil {
-			rlg.Warnf("cannot open error log %s: %v — structured errors disabled", errLogPath, ferr)
-		} else {
-			sink = createdSink
-			errorFiles = append(errorFiles, file)
-		}
-
-		svc := buildCommitService(r, cli, rules, gate, mtx, clientUUID, sink, ipc, rs, editPassports)
-
-		// Reconcile startup-update conflicts through the same lossless path as
-		// periodic updates. In particular, this covers a SIGKILL after the server
-		// accepted a commit but before SVN updated the working-copy metadata.
-		recoverReadWriteWorkingCopy(ctx, cli, wc, svc, rlg)
-
-		if editPassports != nil {
-			if err := passport.EnsureNeedsLock(ctx, cli, wc, clientUUID, intOrDefault(r.MaxBatchFiles, 100)); err != nil {
-				rlg.Errorf("edit-passport migration: %v", err)
-				rs.SetState(contract.StateDegraded)
-				continue
-			}
-		}
-
-		wg.Add(1)
-		go func(repo config.Repo, repoState *ipcserver.RepoState) {
-			defer wg.Done()
-			if err := runReadWritePipeline(ctx, repo, repoState, scn, svc); err != nil {
-				talk.With("repo:"+repo.ID).Errorf("pipeline: %v", err)
-			}
-		}(r, rs)
+	if err := runSupervisedRepositories(ctx, repos, ipc, gate, mtx); err != nil {
+		lg.Errorf("repository supervisor: %v", err)
 	}
+	return
 
+}
+
+func runSupervisedRepositories(ctx context.Context, repos []config.Repo, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex) error {
+	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
+	byServer := make(map[string][]reposupervisor.Desired)
+	for _, repo := range repos {
+		key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
+		state := ipc.RegisterRepoAccess(repo.ID, repo.RepoURL, repo.LocalPath, repo.ServerID, repo.Access)
+		runtimes[key] = repoRuntime{config: repo, state: state}
+		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID})
+	}
+	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc}
+	starter := &daemonRepoStarter{daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
+		return client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts})
+	}}
+	starter.startReadWrite = func(lifecycle context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
+		return startReadWrite(lifecycle, runtimeRepo, svn, desired, deps)
+	}
+	supervisor, err := reposupervisor.New(starter, nil)
+	if err != nil {
+		return err
+	}
+	servers := make([]string, 0, len(byServer))
+	for serverID := range byServer {
+		servers = append(servers, serverID)
+	}
+	sort.Strings(servers)
+	for _, serverID := range servers {
+		if err := supervisor.Apply(ctx, serverID, 1, byServer[serverID]); err != nil {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+			defer cancel()
+			_ = supervisor.Stop(stopCtx)
+			return err
+		}
+	}
 	<-ctx.Done()
-	lg.Infof("shutdown")
-	wg.Wait()
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 35*time.Second)
-	for _, session := range passportSessions {
-		if err := session.Stop(shutdownCtx); err != nil {
-			lg.Warnf("edit passports shutdown release: %v", err)
-		}
-	}
-	shutdownCancel()
-	for _, file := range errorFiles {
-		if err := file.Close(); err != nil {
-			lg.Warnf("close structured error log: %v", err)
-		}
-	}
-
-	for _, p := range pidPaths {
-		_ = os.Remove(p)
-	}
+	stopCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+	return supervisor.Stop(stopCtx)
 }
 
 func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, lg talk.Logger) {

@@ -307,8 +307,21 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 	if desired.Access != contract.AccessReadOnly {
 		return nil, errors.New("repository access is invalid")
 	}
+	stateDir := filepath.Join(runtime.config.LocalPath, ".filees", "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return nil, err
+	}
+	pidPath := filepath.Join(stateDir, "daemon.pid")
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
+		return nil, err
+	}
 	return reposupervisor.StartManaged(s.daemonCtx, func(ctx context.Context) error {
 		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, talk.With("readonly:"+desired.Key.String()))
 		return nil
-	}, nil)
+	}, func(context.Context) error {
+		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	})
 }

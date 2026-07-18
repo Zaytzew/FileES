@@ -22,17 +22,14 @@ import (
 const OnboardServerCommand = "filees onboard-v1"
 
 // SubmitOnboarding performs the only SSH operation for which the compiled
-// bootstrap key is valid. The server address, account and command are client
-// policy; caller-controlled data exists only inside the versioned stdin frame.
-func SubmitOnboarding(ctx context.Context, knownHostsPath, email, requestID string) (onboarding.OnboardResponse, error) {
-	return submitOnboarding(ctx, BootstrapHost+":22", knownHostsPath, email, requestID)
-}
-
-func submitOnboarding(ctx context.Context, address, knownHostsPath, email, requestID string) (onboarding.OnboardResponse, error) {
-	knownHostsPath = filepath.Clean(strings.TrimSpace(knownHostsPath))
-	if knownHostsPath == "." || !filepath.IsAbs(knownHostsPath) {
-		return onboarding.OnboardResponse{}, errors.New("pinned known_hosts path must be absolute")
+// release bootstrap key is valid. The endpoint and its host-key pin are user
+// policy; account, command and protocol frame remain closed client policy.
+func SubmitOnboarding(ctx context.Context, profile ServerProfile, email, requestID string) (onboarding.OnboardResponse, error) {
+	if err := profile.validate(); err != nil {
+		return onboarding.OnboardResponse{}, err
 	}
+	address := profile.Address
+	knownHostsPath := filepath.Clean(profile.KnownHostsPath)
 	canonical, err := onboarding.CanonicalEmail(email)
 	if err != nil {
 		return onboarding.OnboardResponse{}, err

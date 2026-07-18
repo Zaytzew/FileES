@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"filees/pkg/client"
 	"filees/pkg/commit"
@@ -19,6 +21,49 @@ import (
 type repoRuntime struct {
 	config config.Repo
 	state  *ipcserver.RepoState
+}
+
+type passportRunner interface {
+	Run(context.Context)
+	ReleaseAll(context.Context) error
+}
+
+type passportSession struct {
+	cancel   context.CancelFunc
+	done     chan struct{}
+	manager  passportRunner
+	once     sync.Once
+	stopDone chan struct{}
+	err      error
+}
+
+func startPassportSession(parent context.Context, manager passportRunner) (*passportSession, error) {
+	if manager == nil {
+		return nil, errors.New("passport manager is required")
+	}
+	ctx, cancel := context.WithCancel(parent)
+	s := &passportSession{cancel: cancel, done: make(chan struct{}), manager: manager, stopDone: make(chan struct{})}
+	go func() { defer close(s.done); manager.Run(ctx) }()
+	return s, nil
+}
+
+func (s *passportSession) Stop(ctx context.Context) error {
+	s.once.Do(func() { go s.stop() })
+	select {
+	case <-s.stopDone:
+		return s.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *passportSession) stop() {
+	defer close(s.stopDone)
+	s.cancel()
+	<-s.done
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s.err = s.manager.ReleaseAll(ctx)
 }
 
 func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, logger talk.Logger) {

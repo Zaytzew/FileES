@@ -111,6 +111,7 @@ func runDaemon() {
 	var wg sync.WaitGroup
 	var pidPaths []string
 	var passportSessions []*passportSession
+	var errorFiles []*os.File
 
 	for _, r := range repos {
 		wc := r.LocalPath
@@ -227,10 +228,11 @@ func runDaemon() {
 
 		var sink *errmap.Sink
 		errLogPath := filepath.Join(logsDir, "errors.jsonl")
-		if f, ferr := os.OpenFile(errLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); ferr != nil {
+		if createdSink, file, ferr := openRepoErrorSink(errLogPath, "commit:"+r.ID); ferr != nil {
 			rlg.Warnf("cannot open error log %s: %v — structured errors disabled", errLogPath, ferr)
 		} else {
-			sink = errmap.NewSink(f, "commit:"+r.ID)
+			sink = createdSink
+			errorFiles = append(errorFiles, file)
 		}
 
 		svc := &commit.Service{
@@ -286,6 +288,11 @@ func runDaemon() {
 		}
 	}
 	shutdownCancel()
+	for _, file := range errorFiles {
+		if err := file.Close(); err != nil {
+			lg.Warnf("close structured error log: %v", err)
+		}
+	}
 
 	for _, p := range pidPaths {
 		_ = os.Remove(p)

@@ -122,6 +122,26 @@ func TestReadWriteBuildersPreserveDefaultsAndPassportLockPolicy(t *testing.T) {
 	}
 }
 
+func TestRepoErrorSinkReturnsOwnedClosableFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "logs", "errors.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sink, file, err := openRepoErrorSink(path, "commit:docs")
+	if err != nil || sink == nil || file == nil {
+		t.Fatalf("sink=%v file=%v err=%v", sink, file, err)
+	}
+	if _, err := file.Write([]byte("probe\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte("late\n")); err == nil {
+		t.Fatal("write succeeded after lifecycle close")
+	}
+}
+
 type fakePassportRunner struct {
 	runExited         chan struct{}
 	releaseCalls      atomic.Int32

@@ -42,6 +42,35 @@ func runReadWritePipeline(ctx context.Context, repo config.Repo, state *ipcserve
 	return nil
 }
 
+func buildWatcherOptions(repo config.Repo, manifest, busyPath string) (watcher.Options, time.Duration) {
+	window := repo.CommitInterval
+	if window <= 0 {
+		window = 30 * time.Second
+	}
+	publishLatency := 5 * time.Minute
+	scan := repo.WatchInterval
+	if scan <= 0 {
+		scan = window / 2
+	}
+	return watcher.Options{WC: repo.LocalPath, StatePath: manifest, ScanPeriod: scan, BusyPath: busyPath, BusyTTL: 10 * time.Minute, TicketsPoll: 12 * time.Second, DeletedDebounce: publishLatency, LogScope: "watch:" + repo.ID, UseMD5: true, ChanSize: 1024}, publishLatency
+}
+
+func buildCommitRules(repo config.Repo, publishLatency time.Duration) commit.Rules {
+	window := repo.CommitInterval
+	if window <= 0 {
+		window = 30 * time.Second
+	}
+	poll := repo.PollInterval
+	if poll <= 0 {
+		poll = 30 * time.Second
+	}
+	tiers := make([]commit.SizeTier, len(repo.CommitTiers))
+	for i, t := range repo.CommitTiers {
+		tiers[i] = commit.SizeTier{MaxBytes: int64(t.MaxMB * 1024 * 1024), Interval: t.Interval}
+	}
+	return commit.Rules{Window: window, MaxBatchFiles: intOrDefault(repo.MaxBatchFiles, 100), MaxBatchBytes: mibOrDefault(repo.MaxBatchMiB, 512), BacklogFlushBytes: mibOrDefault(repo.BacklogFlushMiB, 1024), ShutdownTimeout: durationOrDefault(repo.ShutdownCommitTimeout, 10*time.Minute), ShoutPatterns: config.MustCompileRegex(repo.ShoutPatterns), LockFirst: repo.LockFirst && !repo.EditPassports, NeedsLock: repo.EditPassports, RateLimitShout: repo.RateLimitShout, NewLatency: publishLatency, SizeTiers: tiers, PollInterval: poll}
+}
+
 type passportRunner interface {
 	Run(context.Context)
 	ReleaseAll(context.Context) error

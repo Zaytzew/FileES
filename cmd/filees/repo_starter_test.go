@@ -104,6 +104,24 @@ func TestReadWritePipelineOwnsWatcherCommitterAndStateOrder(t *testing.T) {
 	}
 }
 
+func TestReadWriteBuildersPreserveDefaultsAndPassportLockPolicy(t *testing.T) {
+	repo := config.Repo{ID: "docs", LocalPath: "/wc/docs", LockFirst: true, EditPassports: true, CommitTiers: []config.TierSpec{{MaxMB: 2, Interval: time.Minute}}}
+	wopts, latency := buildWatcherOptions(repo, "/wc/docs/.filees/state/manifest.json", "/wc/docs/.filees/state/commit.busy")
+	if wopts.ScanPeriod != 15*time.Second || wopts.DeletedDebounce != 5*time.Minute || !wopts.UseMD5 || wopts.ChanSize != 1024 {
+		t.Fatalf("watcher=%+v", wopts)
+	}
+	rules := buildCommitRules(repo, latency)
+	if rules.Window != 30*time.Second || rules.PollInterval != 30*time.Second || rules.MaxBatchFiles != 100 || rules.MaxBatchBytes != 512*1024*1024 || rules.BacklogFlushBytes != 1024*1024*1024 {
+		t.Fatalf("rules=%+v", rules)
+	}
+	if rules.LockFirst || !rules.NeedsLock {
+		t.Fatalf("passport lock policy=%+v", rules)
+	}
+	if len(rules.SizeTiers) != 1 || rules.SizeTiers[0].MaxBytes != 2*1024*1024 {
+		t.Fatalf("tiers=%+v", rules.SizeTiers)
+	}
+}
+
 type fakePassportRunner struct {
 	runExited         chan struct{}
 	releaseCalls      atomic.Int32

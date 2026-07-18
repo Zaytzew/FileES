@@ -214,62 +214,16 @@ func runDaemon() {
 			}
 		}
 
-		win := r.CommitInterval
-		if win <= 0 {
-			win = 30 * time.Second
-		}
 		// A disappearance must be observed no later than a new file becomes
 		// publishable. Otherwise an Added entry can outlive its file in staging.
-		publishLatency := 5 * time.Minute
-		scanPeriod := r.WatchInterval
-		if scanPeriod <= 0 {
-			scanPeriod = win / 2
-		}
-		wopts := watcher.Options{
-			WC:              wc,
-			StatePath:       manifest,
-			ScanPeriod:      scanPeriod,
-			BusyPath:        busyPath,
-			BusyTTL:         10 * time.Minute,
-			TicketsPoll:     12 * time.Second,
-			DeletedDebounce: publishLatency,
-			LogScope:        "watch:" + r.ID,
-			UseMD5:          true,
-			ChanSize:        1024,
-		}
+		wopts, publishLatency := buildWatcherOptions(r, manifest, busyPath)
 		scn, err := watcher.NewScanner(wopts)
 		if err != nil {
 			rlg.Errorf("watcher: %v", err)
 			continue
 		}
 
-		sizeTiers := make([]commit.SizeTier, len(r.CommitTiers))
-		for i, t := range r.CommitTiers {
-			sizeTiers[i] = commit.SizeTier{
-				MaxBytes: int64(t.MaxMB * 1024 * 1024),
-				Interval: t.Interval,
-			}
-		}
-
-		pollInterval := r.PollInterval
-		if pollInterval <= 0 {
-			pollInterval = 30 * time.Second
-		}
-
-		rules := commit.Rules{
-			Window:            win,
-			MaxBatchFiles:     intOrDefault(r.MaxBatchFiles, 100),
-			MaxBatchBytes:     mibOrDefault(r.MaxBatchMiB, 512),
-			BacklogFlushBytes: mibOrDefault(r.BacklogFlushMiB, 1024),
-			ShutdownTimeout:   durationOrDefault(r.ShutdownCommitTimeout, 10*time.Minute),
-			ShoutPatterns:     config.MustCompileRegex(r.ShoutPatterns),
-			LockFirst:         r.LockFirst && !r.EditPassports,
-			NeedsLock:         r.EditPassports,
-			RateLimitShout:    r.RateLimitShout,
-			NewLatency:        publishLatency,
-			SizeTiers:         sizeTiers,
-			PollInterval:      pollInterval,
-		}
+		rules := buildCommitRules(r, publishLatency)
 
 		var sink *errmap.Sink
 		errLogPath := filepath.Join(logsDir, "errors.jsonl")

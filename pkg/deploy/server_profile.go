@@ -41,12 +41,12 @@ func (p ServerProfile) validate() error {
 	if p.ID == "" || strings.ContainsAny(p.ID, "/\\\x00\r\n\t ") || p.ID == "." || p.ID == ".." {
 		return errors.New("server profile ID is invalid")
 	}
-	if strings.TrimSpace(p.Address) != p.Address || strings.ContainsAny(p.Address, "\x00\r\n\t ") {
+	if strings.TrimSpace(p.Address) != p.Address || strings.ContainsAny(p.Address, "\x00\r\n\t /@?#") || strings.Contains(p.Address, "://") {
 		return errors.New("server address is invalid")
 	}
-	host, port, err := net.SplitHostPort(p.Address)
-	if err != nil || strings.TrimSpace(host) == "" {
-		return errors.New("server address must be host:port")
+	_, port, err := splitServerAddress(p.Address)
+	if err != nil {
+		return err
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
@@ -60,6 +60,32 @@ func (p ServerProfile) validate() error {
 }
 
 func (p ServerProfile) hostAndPort() (string, string) {
-	host, port, _ := net.SplitHostPort(p.Address)
+	host, port, _ := splitServerAddress(p.Address)
 	return host, port
+}
+
+func splitServerAddress(address string) (string, string, error) {
+	if address == "" {
+		return "", "", errors.New("server address is required")
+	}
+	if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
+		host := strings.TrimSuffix(strings.TrimPrefix(address, "["), "]")
+		if net.ParseIP(host) == nil {
+			return "", "", errors.New("server address is invalid")
+		}
+		return host, "22", nil
+	}
+	if host, port, err := net.SplitHostPort(address); err == nil {
+		if host == "" {
+			return "", "", errors.New("server address is invalid")
+		}
+		return host, port, nil
+	}
+	if ip := net.ParseIP(address); ip != nil {
+		return address, "22", nil
+	}
+	if strings.Contains(address, ":") {
+		return "", "", errors.New("server address or port is invalid")
+	}
+	return address, "22", nil
 }

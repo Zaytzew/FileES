@@ -2,8 +2,10 @@ package client
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,6 +27,60 @@ func TestParseStatusXMLReadsWCStatusItemAttribute(t *testing.T) {
 	want := []StatusEntry{{Path: "fizyka.docx", Item: "unversioned", Props: "none"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("parseStatusXML() = %#v, want %#v", got, want)
+	}
+}
+
+func TestSVNSSHTransportIsInjectedIntoSVNProcess(t *testing.T) {
+	dir := t.TempDir()
+	fakeSVN := filepath.Join(dir, "svn")
+	if err := os.WriteFile(fakeSVN, []byte("#!/bin/sh\nprintf '%s' \"$SVN_SSH\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cli := New(Options{
+		SvnPath: fakeSVN, SSHIdentityFile: "/run/filees/id_ed25519",
+		SSHKnownHosts: "/run/filees/known_hosts",
+	})
+	out, err := cli.GetInfo(context.Background(), "svn+ssh://_filees-client@example/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "IdentityAgent=none") || !strings.Contains(out, "UserKnownHostsFile=/run/filees/known_hosts") {
+		t.Fatalf("SVN_SSH=%q", out)
+	}
+}
+
+func TestSVNSSHTransportWithoutIdentityFailsBeforeExec(t *testing.T) {
+	cli := New(Options{SvnPath: "/definitely/not/executed"})
+	if _, err := cli.GetInfo(context.Background(), "svn+ssh://_filees-client@example/repo"); err == nil || !strings.Contains(err.Error(), "requires") {
+		t.Fatalf("GetInfo error = %v, want missing transport rejection", err)
+	}
+}
+
+func TestBuildSSHCommandIsPinnedAndNonInteractive(t *testing.T) {
+	got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 0)
+	for _, required := range []string{
+		"-F /dev/null", "BatchMode=yes", "IdentitiesOnly=yes",
+		"IdentityAgent=none", "PasswordAuthentication=no",
+		"KbdInteractiveAuthentication=no", "StrictHostKeyChecking=yes",
+		"UserKnownHostsFile=/run/filees/known_hosts",
+		"HostKeyAlgorithms=ssh-ed25519", "-i /run/filees/id_ed25519",
+	} {
+		if !strings.Contains(got, required) {
+			t.Fatalf("SSH command %q does not contain %q", got, required)
+		}
+	}
+}
+
+func TestBuildSSHCommandUsesExplicitPort(t *testing.T) {
+	got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 2223)
+	if !strings.Contains(got, "-p 2223") {
+		t.Fatalf("SSH command %q does not contain explicit port", got)
+	}
+}
+
+func TestBuildSSHCommandRejectsInvalidPort(t *testing.T) {
+	if got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 65536); got != "" {
+		t.Fatalf("accepted invalid port: %q", got)
 	}
 }
 
@@ -52,7 +108,7 @@ func TestParseLockInfoXMLWithoutLock(t *testing.T) {
 
 func TestCommitRefusesEmptyPathList(t *testing.T) {
 	cli := New(Options{})
-	if _, err := cli.Commit(context.Background(), t.TempDir(), nil, "test", "", ""); err == nil {
+	if _, err := cli.Commit(context.Background(), t.TempDir(), nil, "test"); err == nil {
 		t.Fatal("Commit() accepted an empty path list")
 	}
 }
@@ -87,18 +143,6 @@ func TestHasMissingPaths(t *testing.T) {
 	}
 	if HasMissingPaths([]StatusEntry{{Path: "new.txt", Item: "unversioned"}, {Path: "edit.txt", Item: "modified"}}) {
 		t.Fatal("non-destructive local changes must not block update")
-	}
-}
-
-func TestRedactArgsHidesPasswordWithoutMutatingInput(t *testing.T) {
-	in := []string{"--username", "user", "--password", "secret", "status"}
-	got := redactArgs(in)
-	want := []string{"--username", "user", "--password", "<redacted>", "status"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("redactArgs() = %#v, want %#v", got, want)
-	}
-	if in[3] != "secret" {
-		t.Fatalf("redactArgs mutated input: %#v", in)
 	}
 }
 

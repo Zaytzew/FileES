@@ -88,7 +88,6 @@ func runDaemon() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	cli := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn"})
 	gate := runtime.NewHostGate(3)
 	mtx := runtime.NewRepoMutex()
 
@@ -106,6 +105,10 @@ func runDaemon() {
 		wc := r.LocalPath
 		scope := "repo:" + r.ID
 		rlg := talk.With(scope)
+		cli := client.New(client.Options{
+			SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:" + r.ID,
+			SSHIdentityFile: r.SSHIdentityFile, SSHKnownHosts: r.SSHKnownHosts,
+		})
 
 		stateDir := filepath.Join(wc, ".filees", "state")
 		ticketsDir := filepath.Join(wc, ".filees", "tickets")
@@ -134,7 +137,7 @@ func runDaemon() {
 
 		var editPassports *passport.Manager
 		if r.EditPassports {
-			backend := passport.SVNBackend{Client: cli, WC: wc, Username: r.Username, Password: r.Password}
+			backend := passport.SVNBackend{Client: cli, WC: wc}
 			editPassports, err = passport.Open(
 				filepath.Join(wc, ".filees", "passports", "passports.json"),
 				clientUUID,
@@ -163,10 +166,10 @@ func runDaemon() {
 		} else {
 			rs.SetLockFuncs(
 				func(ctx context.Context, paths []string) (string, error) {
-					return cli.Lock(ctx, wc, paths, r.Username, r.Password)
+					return cli.Lock(ctx, wc, paths)
 				},
 				func(ctx context.Context, paths []string) (string, error) {
-					return cli.Unlock(ctx, wc, paths, r.Username, r.Password)
+					return cli.Unlock(ctx, wc, paths)
 				},
 			)
 		}
@@ -276,17 +279,17 @@ func runDaemon() {
 		// periodic updates. In particular, this covers a SIGKILL after the server
 		// accepted a commit but before SVN updated the working-copy metadata.
 		if _, err := os.Stat(filepath.Join(wc, ".svn")); err == nil {
-			if out, err := cli.Cleanup(ctx, wc, r.Username, r.Password); err != nil {
+			if out, err := cli.Cleanup(ctx, wc); err != nil {
 				rlg.Warnf("svn cleanup failed: %v %s", err, out)
 			}
-			status, statusErr := cli.Status(ctx, wc, nil, r.Username, r.Password)
+			status, statusErr := cli.Status(ctx, wc, nil)
 			if statusErr != nil {
 				rlg.Warnf("svn status before update failed: %v — update deferred", statusErr)
 			} else if client.HasMissingPaths(status) {
 				rlg.Infof("svn update deferred: working copy contains local removals")
 			} else {
-				out, updateErr := cli.Update(ctx, wc, r.Username, r.Password)
-				svc.ReconcileUpdateConflicts(ctx, wc, r.Username, r.Password, out)
+				out, updateErr := cli.Update(ctx, wc)
+				svc.ReconcileUpdateConflicts(ctx, wc, out)
 				if updateErr != nil {
 					rlg.Warnf("svn update failed: %v %s", updateErr, out)
 				}
@@ -294,7 +297,7 @@ func runDaemon() {
 		}
 
 		if editPassports != nil {
-			if err := passport.EnsureNeedsLock(ctx, cli, wc, r.Username, r.Password, clientUUID, intOrDefault(r.MaxBatchFiles, 100)); err != nil {
+			if err := passport.EnsureNeedsLock(ctx, cli, wc, clientUUID, intOrDefault(r.MaxBatchFiles, 100)); err != nil {
 				rlg.Errorf("edit-passport migration: %v", err)
 				rs.SetState(contract.StateDegraded)
 				continue
@@ -306,7 +309,7 @@ func runDaemon() {
 			defer wg.Done()
 			repoState.SetState(contract.StateActive)
 			events := scn.Start(ctx)
-			svc.Run(ctx, repo.ID, repo.LocalPath, repo.Username, repo.Password, events)
+			svc.Run(ctx, repo.ID, repo.LocalPath, events)
 			repoState.SetState(contract.StateStopping)
 		}(r, rs)
 	}

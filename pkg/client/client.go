@@ -19,44 +19,48 @@ import (
 
 // Options configures the SVN exec wrapper.
 type Options struct {
-	SvnPath  string        // path to 'svn' binary; default "svn"
-	Timeout  time.Duration // per-command timeout; default 30m
-	LogScope string        // talk scope (e.g. "svn:repoID")
+	SvnPath         string        // path to 'svn' binary; default "svn"
+	Timeout         time.Duration // per-command timeout; default 30m
+	LogScope        string        // talk scope (e.g. "svn:repoID")
+	SSHIdentityFile string        // absolute installation Ed25519 private key
+	SSHKnownHosts   string        // absolute pinned known_hosts file
+	SSHPort         int           // OpenSSH port; zero means the default port 22
 }
 
 // Client exposes the subset of SVN commands we need.
 type Client interface {
-	GetInfo(ctx context.Context, repoURL, username, password string) (string, error)
-	Checkout(ctx context.Context, repoURL, localPath, username, password string) (string, error)
-	Cleanup(ctx context.Context, localPath, username, password string) (string, error)
-	Update(ctx context.Context, localPath, username, password string) (string, error)
-	UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
-	Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]StatusEntry, error)
-	Add(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
-	Delete(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
-	Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error)
-	CommitKeepLocks(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error)
-	Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
-	LockWithComment(ctx context.Context, rootDirectory string, paths []string, comment string, force bool, username, password string) (string, error)
-	Unlock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error)
-	LockInfo(ctx context.Context, rootDirectory, path, username, password string) (*LockInfo, error)
-	PropGet(ctx context.Context, rootDirectory, propName string, paths []string, username, password string) (string, error)
-	PropSet(ctx context.Context, rootDirectory, propName, value string, paths []string, username, password string) (string, error)
-	PropList(ctx context.Context, rootDirectory, propName, username, password string) (map[string]bool, error)
+	GetInfo(ctx context.Context, repoURL string) (string, error)
+	Checkout(ctx context.Context, repoURL, localPath string) (string, error)
+	Cleanup(ctx context.Context, localPath string) (string, error)
+	Update(ctx context.Context, localPath string) (string, error)
+	UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string) (string, error)
+	Status(ctx context.Context, rootDirectory string, paths []string) ([]StatusEntry, error)
+	Add(ctx context.Context, rootDirectory string, paths []string) (string, error)
+	Delete(ctx context.Context, rootDirectory string, paths []string) (string, error)
+	Commit(ctx context.Context, rootDirectory string, paths []string, message string) (string, error)
+	CommitKeepLocks(ctx context.Context, rootDirectory string, paths []string, message string) (string, error)
+	Lock(ctx context.Context, rootDirectory string, paths []string) (string, error)
+	LockWithComment(ctx context.Context, rootDirectory string, paths []string, comment string, force bool) (string, error)
+	Unlock(ctx context.Context, rootDirectory string, paths []string) (string, error)
+	LockInfo(ctx context.Context, rootDirectory, path string) (*LockInfo, error)
+	PropGet(ctx context.Context, rootDirectory, propName string, paths []string) (string, error)
+	PropSet(ctx context.Context, rootDirectory, propName, value string, paths []string) (string, error)
+	PropList(ctx context.Context, rootDirectory, propName string) (map[string]bool, error)
 	// Revision returns the revision number for target (URL or local WC path).
 	// For a remote URL it returns HEAD; for a local WC path it returns the last-updated revision.
-	Revision(ctx context.Context, target, username, password string) (int64, error)
+	Revision(ctx context.Context, target string) (int64, error)
 	// Resolve marks conflicts as resolved using the given accept strategy
 	// (e.g. "theirs-full", "mine-full").
-	Resolve(ctx context.Context, wc string, paths []string, accept, username, password string) (string, error)
+	Resolve(ctx context.Context, wc string, paths []string, accept string) (string, error)
 }
 
 // execClient implements Client by calling the external 'svn' executable.
 type execClient struct {
-	svnPath string
-	timeout time.Duration
-	lg      talk.Logger
-	mu      sync.Mutex // serialize SVN calls within process
+	svnPath    string
+	timeout    time.Duration
+	lg         talk.Logger
+	sshCommand string
+	mu         sync.Mutex // serialize SVN calls within process
 }
 
 // New creates a new SVN CLI client.
@@ -69,7 +73,35 @@ func New(opts Options) Client {
 	if t <= 0 {
 		t = 30 * time.Minute
 	}
-	return &execClient{svnPath: p, timeout: t, lg: talk.With(opts.LogScope)}
+	sshCommand := ""
+	if opts.SSHIdentityFile != "" || opts.SSHKnownHosts != "" {
+		sshCommand = buildSSHCommand(opts.SSHIdentityFile, opts.SSHKnownHosts, opts.SSHPort)
+	}
+	return &execClient{svnPath: p, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
+}
+
+func buildSSHCommand(identityFile, knownHosts string, port int) string {
+	// Config validates these as absolute deployment-owned paths. Rejecting
+	// whitespace here avoids relying on shell quoting in SVN's tunnel parser.
+	for _, path := range []string{identityFile, knownHosts} {
+		if !filepath.IsAbs(path) || strings.ContainsAny(path, " \t\r\n") {
+			return ""
+		}
+	}
+	if port < 0 || port > 65535 {
+		return ""
+	}
+	args := []string{
+		"ssh", "-F", "/dev/null", "-T", "-o", "BatchMode=yes",
+		"-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
+		"-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
+		"-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + knownHosts,
+		"-o", "HostKeyAlgorithms=ssh-ed25519", "-i", identityFile,
+	}
+	if port > 0 {
+		args = append(args, "-p", strconv.Itoa(port))
+	}
+	return strings.Join(args, " ")
 }
 
 // ---- Types ----
@@ -91,44 +123,44 @@ type LockInfo struct {
 
 // ---- High-level helpers ----
 
-func (c *execClient) GetInfo(ctx context.Context, repoURL, username, password string) (string, error) {
-	return c.run(ctx, "", username, password, []string{"info", repoURL})
+func (c *execClient) GetInfo(ctx context.Context, repoURL string) (string, error) {
+	return c.run(ctx, "", []string{"info", repoURL})
 }
 
-func (c *execClient) Checkout(ctx context.Context, repoURL, localPath, username, password string) (string, error) {
+func (c *execClient) Checkout(ctx context.Context, repoURL, localPath string) (string, error) {
 	if _, err := os.Stat(filepath.Join(localPath, ".svn")); err == nil {
 		c.lg.Debugf("WC exists at %s → cleanup+update", localPath)
-		if out, err := c.Cleanup(ctx, localPath, username, password); err != nil {
+		if out, err := c.Cleanup(ctx, localPath); err != nil {
 			return out, err
 		}
-		return c.Update(ctx, localPath, username, password)
+		return c.Update(ctx, localPath)
 	}
 	if err := os.MkdirAll(localPath, 0o755); err != nil {
 		return "", err
 	}
-	return c.run(ctx, "", username, password, []string{"checkout", repoURL, localPath})
+	return c.run(ctx, "", []string{"checkout", repoURL, localPath})
 }
 
-func (c *execClient) Cleanup(ctx context.Context, localPath, username, password string) (string, error) {
-	return c.run(ctx, localPath, username, password, []string{"cleanup"})
+func (c *execClient) Cleanup(ctx context.Context, localPath string) (string, error) {
+	return c.run(ctx, localPath, []string{"cleanup"})
 }
 
-func (c *execClient) Update(ctx context.Context, localPath, username, password string) (string, error) {
-	return c.run(ctx, localPath, username, password, []string{"update", "."})
+func (c *execClient) Update(ctx context.Context, localPath string) (string, error) {
+	return c.run(ctx, localPath, []string{"update", "."})
 }
 
-func (c *execClient) UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+func (c *execClient) UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string) (string, error) {
 	args := append([]string{"update", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []string, username, password string) ([]StatusEntry, error) {
+func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []string) ([]StatusEntry, error) {
 	depth := "empty"
 	if len(paths) == 0 {
 		depth = "infinity"
 	}
 	args := append([]string{"status", "--xml", "--verbose", "--ignore-externals", "--depth", depth}, c.relativize(rootDirectory, paths)...)
-	output, err := c.run(ctx, rootDirectory, username, password, args)
+	output, err := c.run(ctx, rootDirectory, args)
 	if err != nil {
 		return nil, fmt.Errorf("svn status failed: %w\n%s", err, output)
 	}
@@ -175,60 +207,60 @@ func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 	return out, nil
 }
 
-func (c *execClient) Add(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+func (c *execClient) Add(ctx context.Context, rootDirectory string, paths []string) (string, error) {
 	// Keep directory expansion under the commit planner's control. --parents
 	// schedules required ancestors, while --depth empty prevents a directory
 	// from recursively bypassing file-count and byte limits.
 	args := append([]string{"add", "--parents", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) Delete(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+func (c *execClient) Delete(ctx context.Context, rootDirectory string, paths []string) (string, error) {
 	args := append([]string{"delete"}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error) {
+func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []string, message string) (string, error) {
 	if len(paths) == 0 {
 		return "", errors.New("svn commit refused: empty path list")
 	}
 	args := append([]string{"commit", "-m", message}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) CommitKeepLocks(ctx context.Context, rootDirectory string, paths []string, message, username, password string) (string, error) {
+func (c *execClient) CommitKeepLocks(ctx context.Context, rootDirectory string, paths []string, message string) (string, error) {
 	if len(paths) == 0 {
 		return "", errors.New("svn commit refused: empty path list")
 	}
 	args := append([]string{"commit", "--no-unlock", "-m", message}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) Lock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+func (c *execClient) Lock(ctx context.Context, rootDirectory string, paths []string) (string, error) {
 	args := append([]string{"lock"}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) LockWithComment(ctx context.Context, rootDirectory string, paths []string, comment string, force bool, username, password string) (string, error) {
+func (c *execClient) LockWithComment(ctx context.Context, rootDirectory string, paths []string, comment string, force bool) (string, error) {
 	args := []string{"lock", "--message", comment}
 	if force {
 		args = append(args, "--force")
 	}
 	args = append(args, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []string, username, password string) (string, error) {
+func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []string) (string, error) {
 	args := append([]string{"unlock"}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) LockInfo(ctx context.Context, rootDirectory, path, username, password string) (*LockInfo, error) {
+func (c *execClient) LockInfo(ctx context.Context, rootDirectory, path string) (*LockInfo, error) {
 	targets := c.relativize(rootDirectory, []string{path})
 	if len(targets) != 1 {
 		return nil, errors.New("svn info lock requires exactly one path")
 	}
-	out, err := c.run(ctx, rootDirectory, username, password, []string{"info", "--xml", targets[0]})
+	out, err := c.run(ctx, rootDirectory, []string{"info", "--xml", targets[0]})
 	if err != nil {
 		return nil, err
 	}
@@ -264,21 +296,21 @@ func parseLockInfoXML(output string) (*LockInfo, error) {
 	}, nil
 }
 
-func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string, paths []string, username, password string) (string, error) {
+func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string, paths []string) (string, error) {
 	args := append([]string{"propget", propName}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) PropSet(ctx context.Context, rootDirectory, propName, value string, paths []string, username, password string) (string, error) {
+func (c *execClient) PropSet(ctx context.Context, rootDirectory, propName, value string, paths []string) (string, error) {
 	if len(paths) == 0 {
 		return "", errors.New("svn propset refused: empty path list")
 	}
 	args := append([]string{"propset", propName, value}, c.relativize(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, username, password, args)
+	return c.run(ctx, rootDirectory, args)
 }
 
-func (c *execClient) PropList(ctx context.Context, rootDirectory, propName, username, password string) (map[string]bool, error) {
-	out, err := c.run(ctx, rootDirectory, username, password, []string{"propget", "--xml", "--recursive", propName, "."})
+func (c *execClient) PropList(ctx context.Context, rootDirectory, propName string) (map[string]bool, error) {
+	out, err := c.run(ctx, rootDirectory, []string{"propget", "--xml", "--recursive", propName, "."})
 	if err != nil {
 		return nil, err
 	}
@@ -316,13 +348,13 @@ func parsePropGetXML(output, rootDirectory string) (map[string]bool, error) {
 	return out, nil
 }
 
-func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, accept, username, password string) (string, error) {
+func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, accept string) (string, error) {
 	args := append([]string{"resolve", "--accept", accept}, c.relativize(wc, paths)...)
-	return c.run(ctx, wc, username, password, args)
+	return c.run(ctx, wc, args)
 }
 
-func (c *execClient) Revision(ctx context.Context, target, username, password string) (int64, error) {
-	out, err := c.run(ctx, "", username, password, []string{"info", "--show-item", "revision", target})
+func (c *execClient) Revision(ctx context.Context, target string) (int64, error) {
+	out, err := c.run(ctx, "", []string{"info", "--show-item", "revision", target})
 	if err != nil {
 		return 0, err
 	}
@@ -335,17 +367,16 @@ func (c *execClient) Revision(ctx context.Context, target, username, password st
 
 // ---- Core exec runner ----
 
-func (c *execClient) run(parentCtx context.Context, workingDir, username, password string, args []string) (string, error) {
+func (c *execClient) run(parentCtx context.Context, workingDir string, args []string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "svn+ssh://") && c.sshCommand == "" {
+			return "", errors.New("svn+ssh transport requires an installation identity and pinned known_hosts")
+		}
+	}
 
 	cmdArgs := make([]string, 0, 8+len(args))
-	if username != "" {
-		cmdArgs = append(cmdArgs, "--username", username)
-	}
-	if password != "" {
-		cmdArgs = append(cmdArgs, "--password", password)
-	}
 	cmdArgs = append(cmdArgs, "--non-interactive", "--no-auth-cache")
 	cmdArgs = append(cmdArgs, args...)
 
@@ -354,12 +385,15 @@ func (c *execClient) run(parentCtx context.Context, workingDir, username, passwo
 
 	cmd := exec.CommandContext(ctx, c.svnPath, cmdArgs...)
 	cmd.Dir = workingDir
+	if c.sshCommand != "" {
+		cmd.Env = append(os.Environ(), "SVN_SSH="+c.sshCommand)
+	}
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 
-	c.lg.Tracef("exec: %s %s (dir=%s)", c.svnPath, strings.Join(redactArgs(cmdArgs), " "), emptyIf(workingDir, "."))
+	c.lg.Tracef("exec: %s %s (dir=%s)", c.svnPath, strings.Join(cmdArgs, " "), emptyIf(workingDir, "."))
 	if err := cmd.Start(); err != nil {
 		name := "svn"
 		if len(args) > 0 {
@@ -400,17 +434,6 @@ func (c *execClient) relativize(rootDirectory string, paths []string) []string {
 
 func pathInsideRoot(rel string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
-}
-
-func redactArgs(args []string) []string {
-	out := append([]string(nil), args...)
-	for i := 0; i < len(out); i++ {
-		if out[i] == "--password" && i+1 < len(out) {
-			out[i+1] = "<redacted>"
-			i++
-		}
-	}
-	return out
 }
 
 func emptyIf(s, def string) string {

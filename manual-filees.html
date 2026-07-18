@@ -647,7 +647,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <h2 id="ch1-otp">1.5 OTP Mechanism</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>OTP storage, attempt limits, redaction and BSD Auth handoff implemented.</span></div>
 <p>The one-time password for tunnel authorisation has 120 bits of entropy encoded as Base32 in the format <code>LLLLLLLL-SSSSSSSSSSSSSSSS</code>. The 40-bit prefix is a <em>locator</em> that identifies the operation bundle without exposing the operation ID. The full value is verified as HMAC-SHA-256 against a server-side private pepper (minimum 256 bits) stored at the path given by <code>otp_pepper_file</code> in <code>server.json</code>.</p>
 <p>Each wrong attempt atomically decrements a counter stored in the bundle. On expiry, OTP exhaustion, or successful use the hash and locator are erased from the bundle. The plaintext OTP exists only in the pending mail outbox entry until the mail is accepted by the smarthost (<code>250</code> after DATA), at which point the delivery address and OTP are atomically redacted.</p>
-<h2 id="ch1-ssh">1.6 SSH Transport: entry → worker → helper</h2><div class="section-meta"><span class="status status-implemented">Implemented to active</span><span>Components and native sandbox flow are verified; full external system-sshd plus network svn acceptance remains a release gate.</span></div>
+<h2 id="ch1-ssh">1.6 SSH Transport: entry → worker → helper</h2><div class="section-meta"><span class="status status-implemented">Implemented to active</span><span>System-sshd, forced-command and real network svn acceptance passed on Fedora; the S4 activation path and sandbox passed natively on OpenBSD.</span></div>
 <p>FileES uses the system <code>sshd</code> as its only network endpoint. Three separate protocol accounts are created on the server:</p>
 <div class="table-wrap"><table>
 <tr><th>Account</th><th>Auth method</th><th>Forced command</th><th>Forwarding</th></tr>
@@ -756,19 +756,22 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <h4>Requirements</h4>
 <div class="table-wrap"><table>
 <tr><th>Platform</th><th>Requirements</th></tr>
-<tr><td>Linux daemon</td><td><code>svn</code> client in PATH and access to the SVN server; Go 1.24+ only when building from source</td></tr>
+<tr><td>Linux daemon</td><td><code>svn</code> and OpenSSH <code>ssh</code> in PATH, an activated FileES installation identity and pinned service host key; Go 1.24+ only when building from source</td></tr>
 <tr><td>Linux GUI</td><td>SNI-compatible desktop (KDE, XFCE, MATE); GNOME requires AppIndicator extension; <code>zenity</code> or <code>kdialog</code> for file picker; <code>xdg-open</code>; <code>notify-send</code> (optional)</td></tr>
 <tr><td>Windows GUI</td><td>Windows 10+; PowerShell; MSI install for toast notifications (AUMID registration)</td></tr>
 </table></div>
 <h2 id="ch2-config">2.2 Configuration</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Validation and non-overlapping working-copy roots are enforced before runtime state creation.</span></div>
-<p>The daemon reads <code>config.json</code> from the working directory (or the path given by <code>--config</code>). It contains an array of repository objects:</p>
-<pre><code>[
-  {
-    "id":              "projectA",
-    "repo_url":        "svn://server/repo/trunk",
-    "local_path":      "/home/user/projectA",
-    "username":        "",
-    "password":        "",
+<p>The daemon reads <code>config.json</code> from the working directory (or the path given by <code>--config</code>). SSH transport identity belongs to the client installation and is shared by its repository projections:</p>
+<pre><code>{
+  "transport": {
+    "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
+    "known_hosts": "/home/user/.local/share/filees/known_hosts"
+  },
+  "repositories": [
+    {
+      "id":              "projectA",
+      "repo_url":        "svn+ssh://_filees-client@server/repo/trunk",
+      "local_path":      "/home/user/projectA",
     "commit_interval": "1m",
     "watch_interval":  "30s",
     "poll_interval":   "30s",
@@ -790,13 +793,16 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
       {"max_mb": 50, "interval": "15m"},
       {"max_mb": 0,  "interval": "24h"}
     ]
-  }
-]</code></pre>
+    }
+  ]
+}</code></pre>
 <p class="field-table">Key configuration fields:</p>
 <div class="table-wrap"><table class="field-table">
 <tr><th>Field</th><th>Description</th></tr>
 <tr><td><code>id</code></td><td>Unique repository identifier (used in logs and state paths)</td></tr>
-<tr><td><code>repo_url</code></td><td>SVN repository URL</td></tr>
+<tr><td><code>transport.identity_file</code></td><td>Absolute path to the Ed25519 installation key created during activation</td></tr>
+<tr><td><code>transport.known_hosts</code></td><td>Absolute path to the pinned service host key file</td></tr>
+<tr><td><code>repo_url</code></td><td>Restricted <code>svn+ssh://_filees-client@host/...</code> URL; other transports are rejected</td></tr>
 <tr><td><code>local_path</code></td><td>Absolute path to the working copy. Must not overlap with other configured roots.</td></tr>
 <tr><td><code>commit_interval</code></td><td>Base commit window, e.g. <code>1m</code>, <code>30s</code></td></tr>
 <tr><td><code>watch_interval</code></td><td>Filesystem scan interval</td></tr>
@@ -823,7 +829,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <li>The helper generates an Ed25519 installation key locally. The worker stages access, asks the helper for service proof, and validates the receipt written after system-sshd authentication.</li>
 <li>The worker publishes the client record and first view in the service repository and marks the operation <code>active</code>.</li>
 </ol>
-<div class="warn"><strong>Production blockers:</strong> compose the existing components into the supported client lifecycle, ship production host/worker pins and signed payload installation, then run the full external system-sshd and network <code>svn info</code> acceptance path. Windows bootstrap remains unsupported. See <code>PUSH_DEPLOY_CLIENT_READINESS.md</code>.</div>
+<div class="warn"><strong>Production blockers:</strong> compose the existing components into the supported end-user onboarding lifecycle, ship production host/worker pins and signed payload installation, and repeat the S5 daemon round-trip on OpenBSD through a fresh onboarding operation. Windows bootstrap remains unsupported. See <code>PUSH_DEPLOY_CLIENT_READINESS.md</code>.</div>
 <h4>Adding a local directory</h4>
 <p>The local provisioning state machine models the following two-step data-repository process, but the authenticated server-side repository worker is not connected yet:</p>
 <ol>

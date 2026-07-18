@@ -91,7 +91,7 @@ func TestSVNBackendAcquireReleaseRoundTrip(t *testing.T) {
 	// Verify SVN actually holds the locks.
 	cli := client.New(client.Options{Timeout: 10 * time.Second})
 	for _, abs := range []string{pathA, pathB} {
-		info, err := cli.LockInfo(ctx, wc, abs, "", "")
+		info, err := cli.LockInfo(ctx, wc, abs)
 		if err != nil || info == nil {
 			t.Fatalf("SVN lock not present for %s: info=%v err=%v", abs, info, err)
 		}
@@ -103,7 +103,7 @@ func TestSVNBackendAcquireReleaseRoundTrip(t *testing.T) {
 
 	// Verify SVN locks are gone.
 	for _, abs := range []string{pathA, pathB} {
-		info, err := cli.LockInfo(ctx, wc, abs, "", "")
+		info, err := cli.LockInfo(ctx, wc, abs)
 		if err != nil || info != nil {
 			t.Fatalf("SVN lock still present after Release for %s: info=%v err=%v", abs, info, err)
 		}
@@ -130,7 +130,7 @@ func TestSVNBackendStateLostWhenLockStolenExternally(t *testing.T) {
 
 	// External process steals the lock (force). Use the SVN CLI directly.
 	cli := client.New(client.Options{Timeout: 10 * time.Second})
-	if _, err := cli.LockWithComment(ctx, wc, []string{pathA}, "foreign lock", true, "", ""); err != nil {
+	if _, err := cli.LockWithComment(ctx, wc, []string{pathA}, "foreign lock", true); err != nil {
 		t.Fatalf("external force-lock: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func TestSVNBackendHeartbeatRenewsTokenBeforeExpiry(t *testing.T) {
 
 	// Verify the new token is the one SVN actually holds.
 	cli := client.New(client.Options{Timeout: 10 * time.Second})
-	info, err := cli.LockInfo(ctx, wc, pathA, "", "")
+	info, err := cli.LockInfo(ctx, wc, pathA)
 	if err != nil || info == nil {
 		t.Fatalf("SVN lock missing after renewal: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestSVNRestartAfterSIGKILLMidRelease(t *testing.T) {
 
 	// Simulate SIGKILL: directly unlock A on the SVN server without updating the store.
 	cli := client.New(client.Options{Timeout: 10 * time.Second})
-	if _, err := cli.Unlock(ctx, wc, []string{pathA}, "", ""); err != nil {
+	if _, err := cli.Unlock(ctx, wc, []string{pathA}); err != nil {
 		t.Fatalf("direct SVN unlock (SIGKILL simulation): %v", err)
 	}
 	// passports.json still records both A and B.

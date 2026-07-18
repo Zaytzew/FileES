@@ -32,12 +32,12 @@ type stagingClient struct {
 	updatedEmpty   []string
 }
 
-func (c *stagingClient) UpdateDepthEmpty(_ context.Context, _ string, paths []string, _, _ string) (string, error) {
+func (c *stagingClient) UpdateDepthEmpty(_ context.Context, _ string, paths []string) (string, error) {
 	c.updatedEmpty = append(c.updatedEmpty, paths...)
 	return "", nil
 }
 
-func (c *stagingClient) Status(_ context.Context, _ string, paths []string, _, _ string) ([]client.StatusEntry, error) {
+func (c *stagingClient) Status(_ context.Context, _ string, paths []string) ([]client.StatusEntry, error) {
 	c.statusCalls++
 	if c.statusErr != nil {
 		return nil, c.statusErr
@@ -55,17 +55,17 @@ func (c *stagingClient) Status(_ context.Context, _ string, paths []string, _, _
 	return out, nil
 }
 
-func (c *stagingClient) Add(_ context.Context, _ string, paths []string, _, _ string) (string, error) {
+func (c *stagingClient) Add(_ context.Context, _ string, paths []string) (string, error) {
 	c.adds++
 	c.addPaths = append([]string(nil), paths...)
 	return "", nil
 }
 
-func (c *stagingClient) Delete(_ context.Context, _ string, _ []string, _, _ string) (string, error) {
+func (c *stagingClient) Delete(_ context.Context, _ string, _ []string) (string, error) {
 	return "", nil
 }
 
-func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, _, _, _ string) (string, error) {
+func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, _ string) (string, error) {
 	c.commits++
 	c.commitPaths = append([]string(nil), paths...)
 	c.commitBatches = append(c.commitBatches, append([]string(nil), paths...))
@@ -75,12 +75,12 @@ func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, _, _
 	return "", c.commitErr
 }
 
-func (c *stagingClient) CommitKeepLocks(ctx context.Context, wc string, paths []string, message, username, password string) (string, error) {
+func (c *stagingClient) CommitKeepLocks(ctx context.Context, wc string, paths []string, message string) (string, error) {
 	c.keepCommits++
-	return c.Commit(ctx, wc, paths, message, username, password)
+	return c.Commit(ctx, wc, paths, message)
 }
 
-func (c *stagingClient) PropSet(_ context.Context, _, _, _ string, _ []string, _, _ string) (string, error) {
+func (c *stagingClient) PropSet(_ context.Context, _, _, _ string, _ []string) (string, error) {
 	c.propSets++
 	return "", nil
 }
@@ -109,7 +109,7 @@ func TestEditPassportCommitKeepsLocksAndFreezesFencing(t *testing.T) {
 			"edited.txt": {Rel: "edited.txt", Abs: abs, Op: watcher.Modified},
 		},
 	}
-	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err != nil {
+	if err := s.tryCommitMode(context.Background(), wc, true); err != nil {
 		t.Fatal(err)
 	}
 	if cli.keepCommits != 1 || cli.commits != 1 {
@@ -137,7 +137,7 @@ func TestEditPassportProtectsDeletedFileAndForgetsItAfterCommit(t *testing.T) {
 			"deleted.txt": {Rel: "deleted.txt", Abs: abs, Op: watcher.Deleted},
 		},
 	}
-	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err != nil {
+	if err := s.tryCommitMode(context.Background(), wc, true); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(authorized, []string{abs}) || !reflect.DeepEqual(removed, []string{abs}) {
@@ -162,7 +162,7 @@ func TestAcceptedCommitWithLostReplyIsNotRetried(t *testing.T) {
 			"accepted.txt": {Rel: "accepted.txt", Abs: abs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Second)},
 		},
 	}
-	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err == nil {
+	if err := s.tryCommitMode(context.Background(), wc, true); err == nil {
 		t.Fatal("first commit unexpectedly succeeded")
 	}
 	if cli.commits != 1 || len(s.staging) != 1 {
@@ -173,7 +173,7 @@ func TestAcceptedCommitWithLostReplyIsNotRetried(t *testing.T) {
 	// server accepted the commit; it must clear the cache entry without retrying.
 	cli.commitErr = nil
 	cli.statuses["accepted.txt"] = "normal"
-	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err != nil {
+	if err := s.tryCommitMode(context.Background(), wc, true); err != nil {
 		t.Fatalf("recovery attempt: %v", err)
 	}
 	if cli.commits != 1 || len(s.staging) != 0 {
@@ -210,7 +210,7 @@ func TestCacheResumeReconcilesAlreadyAcceptedAddedEntry(t *testing.T) {
 	if len(s.staging) != 1 {
 		t.Fatalf("resumed staging=%d, want 1", len(s.staging))
 	}
-	if err := s.tryCommitMode(context.Background(), wc, "", "", true); err != nil {
+	if err := s.tryCommitMode(context.Background(), wc, true); err != nil {
 		t.Fatalf("reconciliation: %v", err)
 	}
 	if cli.commits != 0 || len(s.staging) != 0 {
@@ -233,7 +233,7 @@ func TestRunDrainsAllEventsWhenInputCloses(t *testing.T) {
 	events <- watcher.Event{Path: abs, Rel: "on-close.txt", Type: watcher.EntryFile, Op: watcher.Added}
 	close(events)
 	s := &Service{Cli: cli, Rules: Rules{NewLatency: time.Hour, MaxBatchFiles: 10, MaxBatchBytes: 1024, ShutdownTimeout: time.Second}}
-	s.Run(context.Background(), "repo", wc, "", "", events)
+	s.Run(context.Background(), "repo", wc, events)
 	if cli.commits != 1 || len(s.staging) != 0 {
 		t.Fatalf("commits=%d staging=%d", cli.commits, len(s.staging))
 	}
@@ -250,7 +250,7 @@ func TestRunFlushesStableModificationAtBacklogWatermark(t *testing.T) {
 	events := make(chan watcher.Event, 1)
 	done := make(chan struct{})
 	s := &Service{Cli: cli, Rules: Rules{Window: time.Hour, NewLatency: time.Hour, MaxBatchFiles: 10, MaxBatchBytes: 1024, BacklogFlushBytes: 5, ShutdownTimeout: time.Second}}
-	go func() { s.Run(context.Background(), "repo", wc, "", "", events); close(done) }()
+	go func() { s.Run(context.Background(), "repo", wc, events); close(done) }()
 	events <- watcher.Event{Path: abs, Rel: "watermark.bin", Type: watcher.EntryFile, Op: watcher.Modified}
 	select {
 	case <-committed:
@@ -276,7 +276,7 @@ func TestRunDoesNotFlushImmatureAddedFileAtBacklogWatermark(t *testing.T) {
 	events := make(chan watcher.Event, 1)
 	done := make(chan struct{})
 	s := &Service{Cli: cli, Rules: Rules{Window: time.Hour, NewLatency: time.Hour, MaxBatchFiles: 10, MaxBatchBytes: 1024, BacklogFlushBytes: 5, ShutdownTimeout: time.Second}}
-	go func() { s.Run(context.Background(), "repo", wc, "", "", events); close(done) }()
+	go func() { s.Run(context.Background(), "repo", wc, events); close(done) }()
 	events <- watcher.Event{Path: abs, Rel: "large-new.bin", Type: watcher.EntryFile, Op: watcher.Added}
 
 	select {
@@ -364,7 +364,7 @@ func TestDrainCommitsAllPendingInBoundedBatches(t *testing.T) {
 		staging[rel] = &stageItem{Rel: rel, Abs: abs, Op: watcher.Added, FirstSeen: time.Now()}
 	}
 	s := &Service{Cli: cli, Rules: Rules{MaxBatchFiles: 2, MaxBatchBytes: 1024}, staging: staging}
-	s.drain(context.Background(), wc, "", "")
+	s.drain(context.Background(), wc)
 	if len(s.staging) != 0 {
 		t.Fatalf("drain left staging: %#v", s.staging)
 	}
@@ -383,7 +383,7 @@ func TestTryCommitCommitsPathsAlreadyStagedBySVN(t *testing.T) {
 	s := &Service{Cli: cli, Rules: Rules{NewLatency: time.Millisecond, MaxBatchFiles: 10}, staging: map[string]*stageItem{
 		"ready.txt": {Rel: "ready.txt", Abs: abs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Minute)},
 	}}
-	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+	if err := s.tryCommit(context.Background(), wc); err != nil {
 		t.Fatal(err)
 	}
 	if cli.adds != 0 || cli.commits != 1 {
@@ -412,7 +412,7 @@ func TestTryCommitAddsDirectoryAndFileNonRecursively(t *testing.T) {
 		"album":            {Rel: "album", Abs: dir, IsDir: true, Op: watcher.Added, FirstSeen: firstSeen},
 		"album/track.flac": {Rel: "album/track.flac", Abs: file, Op: watcher.Added, FirstSeen: firstSeen},
 	}}
-	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+	if err := s.tryCommit(context.Background(), wc); err != nil {
 		t.Fatal(err)
 	}
 	if len(cli.addPaths) != 2 || cli.addPaths[0] != "album" || cli.addPaths[1] != "album/track.flac" {
@@ -428,7 +428,7 @@ func TestTryCommitDropsNoopDeletedPath(t *testing.T) {
 	s := &Service{Cli: cli, Rules: Rules{MaxBatchFiles: 10}, staging: map[string]*stageItem{
 		"never-versioned.txt": {Rel: "never-versioned.txt", Op: watcher.Deleted},
 	}}
-	if err := s.tryCommit(context.Background(), t.TempDir(), "", ""); err != nil {
+	if err := s.tryCommit(context.Background(), t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.staging) != 0 {
@@ -454,7 +454,7 @@ func TestTryCommitDegradesRenameWithUnversionedSourceToAdd(t *testing.T) {
 			"new.txt": {Rel: "new.txt", Abs: abs, OldRel: "gone.txt", Op: watcher.Renamed},
 		},
 	}
-	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+	if err := s.tryCommit(context.Background(), wc); err != nil {
 		t.Fatal(err)
 	}
 	if len(cli.addPaths) != 1 || cli.addPaths[0] != "new.txt" {
@@ -491,7 +491,7 @@ func TestTryCommitPreservesDeferredRenameWhenOtherPathsCommit(t *testing.T) {
 		},
 	}
 
-	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+	if err := s.tryCommit(context.Background(), wc); err != nil {
 		t.Fatal(err)
 	}
 	if cli.commits != 1 || len(cli.commitPaths) != 1 || cli.commitPaths[0] != "ready.txt" {
@@ -505,7 +505,7 @@ func TestTryCommitPreservesDeferredRenameWhenOtherPathsCommit(t *testing.T) {
 	}
 
 	cli.statuses["renamed.txt"] = "unversioned"
-	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+	if err := s.tryCommit(context.Background(), wc); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.staging) != 0 {
@@ -531,7 +531,7 @@ func TestTryCommitPreservesBatchWhenStatusFails(t *testing.T) {
 		},
 	}
 
-	if err := s.tryCommit(context.Background(), wc, "", ""); err == nil {
+	if err := s.tryCommit(context.Background(), wc); err == nil {
 		t.Fatal("status failure was ignored")
 	}
 	if _, ok := s.staging["pending.txt"]; !ok {
@@ -552,7 +552,7 @@ func TestTryCommitCancelsAddedFileRemovedDuringDebounce(t *testing.T) {
 			"gone.txt": {Rel: "gone.txt", Abs: abs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Minute)},
 		},
 	}
-	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+	if err := s.tryCommit(context.Background(), wc); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.staging) != 0 {
@@ -578,7 +578,7 @@ func TestTryCommitRechecksAddedFileAfterStatus(t *testing.T) {
 			"racy.txt": {Rel: "racy.txt", Abs: abs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Minute)},
 		},
 	}
-	if err := s.tryCommit(context.Background(), wc, "", ""); err != nil {
+	if err := s.tryCommit(context.Background(), wc); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.staging) != 0 {

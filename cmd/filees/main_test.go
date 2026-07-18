@@ -1,15 +1,35 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"filees/pkg/client"
 	"filees/pkg/commit"
+	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
+	"filees/pkg/talk"
 )
+
+type updateOnlyClient struct {
+	client.Client
+	calls  atomic.Int32
+	called chan struct{}
+}
+
+func (c *updateOnlyClient) Update(context.Context, string) (string, error) {
+	c.calls.Add(1)
+	select {
+	case c.called <- struct{}{}:
+	default:
+	}
+	return "updated", nil
+}
 
 func TestConfigCheckValidatesWithoutStartingDaemon(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -63,5 +83,54 @@ func TestWireRepoStatusConnectsCommitServiceToPublicSnapshot(t *testing.T) {
 	snap = rs.Snapshot()
 	if snap.CurrentOperation != nil || snap.Connectivity != contract.ConnOnline || snap.State != contract.StateActive {
 		t.Fatalf("online state not wired: %#v", snap)
+	}
+}
+
+func TestReadOnlyRepoNeverCreatesWatcherOrCommitQueue(t *testing.T) {
+	wc := t.TempDir()
+	fileesDir := filepath.Join(wc, ".filees")
+	if err := os.MkdirAll(filepath.Join(fileesDir, "state"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	server := ipcserver.New(t.TempDir() + "/filees.sock")
+	rs := server.RegisterRepoAccess("archive", "svn+ssh://_filees-client@example/archive", wc, "office", contract.AccessReadOnly)
+	fake := &updateOnlyClient{called: make(chan struct{}, 4)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runReadOnlyRepo(ctx, config.Repo{ID: "archive", LocalPath: wc, PollInterval: 10 * time.Millisecond}, rs, fake, talk.With("test-readonly"))
+	}()
+
+	select {
+	case <-fake.called:
+	case <-time.After(time.Second):
+		t.Fatal("initial svn update not called")
+	}
+	if err := os.WriteFile(filepath.Join(wc, "local-new.txt"), []byte("local only"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wc, "local-modified.txt"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fake.called:
+	case <-time.After(time.Second):
+		t.Fatal("periodic svn update not called")
+	}
+
+	for _, forbidden := range []string{filepath.Join(fileesDir, "commit_cache"), filepath.Join(fileesDir, "state", "manifest.json")} {
+		if _, err := os.Stat(forbidden); !os.IsNotExist(err) {
+			t.Fatalf("read-only pipeline created %s: %v", forbidden, err)
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("read-only loop did not stop")
+	}
+	if snap := rs.Snapshot(); snap.Access != contract.AccessReadOnly || snap.State != contract.StateStopping {
+		t.Fatalf("snapshot=%+v", snap)
 	}
 }

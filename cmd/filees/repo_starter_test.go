@@ -142,6 +142,26 @@ func TestRepoErrorSinkReturnsOwnedClosableFile(t *testing.T) {
 	}
 }
 
+func TestCommitServiceBuilderWiresRuntimeAndIPCState(t *testing.T) {
+	repo := config.Repo{ID: "docs", RepoURL: "svn+ssh://_filees-client@example/docs"}
+	svn := &updateOnlyClient{called: make(chan struct{}, 1)}
+	state := ipcserver.New(t.TempDir()+"/sock").RegisterRepoAccess(repo.ID, repo.RepoURL, t.TempDir(), "office", contract.AccessReadWrite)
+	rules := commit.Rules{Window: time.Minute}
+	service := buildCommitService(repo, svn, rules, nil, nil, "client-uuid", nil, nil, state, nil)
+	if service.Cli != svn || service.RepoURL != repo.RepoURL || service.UUID != "client-uuid" || service.Rules.Window != time.Minute {
+		t.Fatalf("service=%+v", service)
+	}
+	if service.BeginPublish != nil || service.OnPathActivity != nil || service.OnPathsPublished != nil || service.OnPathsRemoved != nil {
+		t.Fatal("passport callbacks wired without manager")
+	}
+	service.OnHeadRevision(42)
+	service.OnConnectivity("offline")
+	snapshot := state.Snapshot()
+	if snapshot.HeadRevision != 42 || snapshot.Connectivity != contract.ConnOffline || snapshot.State != contract.StateOffline {
+		t.Fatalf("snapshot=%+v", snapshot)
+	}
+}
+
 type fakePassportRunner struct {
 	runExited         chan struct{}
 	releaseCalls      atomic.Int32

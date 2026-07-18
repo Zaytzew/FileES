@@ -19,6 +19,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleHello(req)
 	case contract.CmdSystemStatus:
 		return s.handleSystemStatus(req)
+	case contract.CmdActivationBegin:
+		return s.handleActivationBegin(req)
+	case contract.CmdActivationFinish:
+		return s.handleActivationFinish(req)
 	case contract.CmdRepoList:
 		return s.handleRepoList(req)
 	case contract.CmdRepoStatus:
@@ -34,6 +38,43 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleActivationBegin(req contract.Request) contract.Response {
+	service := s.activationService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-0001", "ERROR", "RETRY", "activation.unavailable", nil)
+	}
+	var payload contract.ActivationBeginPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, err := service.Begin(ctx, payload)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-1001", "ERROR", "RETRY", "activation.begin_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleActivationFinish(req contract.Request) contract.Response {
+	service := s.activationService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-0001", "ERROR", "RETRY", "activation.unavailable", nil)
+	}
+	var payload contract.ActivationFinishPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	result, err := service.Finish(ctx, payload)
+	payload.OTP = ""
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-1002", "ERROR", "RETRY", "activation.finish_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
 }
 
 // handleHello implements system.hello — capability negotiation (§12).

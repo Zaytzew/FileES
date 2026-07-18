@@ -8,6 +8,10 @@ const (
 	CmdSystemStatus   = "system.status"   // daemon uptime and aggregate state
 	CmdSystemShutdown = "system.shutdown" // graceful stop (privileged)
 
+	// Client activation (executed by daemon; GUI only supplies user intent).
+	CmdActivationBegin  = "activation.begin"
+	CmdActivationFinish = "activation.finish"
+
 	// Repos
 	CmdRepoList    = "repo.list"     // list all configured repos
 	CmdRepoStatus  = "repo.status"   // snapshot of one repo
@@ -39,10 +43,12 @@ const (
 // GUI shows only capabilities declared in HelloResult.Capabilities.
 // Only list commands that are actually implemented.
 const (
-	CapEventsSubscribe = "events.subscribe"
-	CapRepoLock        = "repo.lock"
-	CapRepoUnlock      = "repo.unlock"
-	CapErrorList       = "error.list"
+	CapEventsSubscribe  = "events.subscribe"
+	CapRepoLock         = "repo.lock"
+	CapRepoUnlock       = "repo.unlock"
+	CapErrorList        = "error.list"
+	CapActivationBegin  = "activation.begin"
+	CapActivationFinish = "activation.finish"
 
 	// Not yet implemented — defined for future use but NOT in AllCapabilities.
 	CapRepoPause      = "repo.pause"
@@ -58,6 +64,8 @@ var AllCapabilities = []string{
 	CapRepoLock,
 	CapRepoUnlock,
 	CapErrorList,
+	CapActivationBegin,
+	CapActivationFinish,
 }
 
 // --- result and payload types ---
@@ -81,6 +89,28 @@ type ActivationStatus struct {
 	ServerID    string `json:"server_id"`
 	DisplayName string `json:"display_name"`
 	ClientRole  string `json:"client_role"`
+}
+
+type ActivationBeginPayload struct {
+	ServerID       string `json:"server_id"`
+	ServerAddress  string `json:"server_address"`
+	KnownHostsPath string `json:"known_hosts_path"`
+	StateRoot      string `json:"state_root"`
+	Email          string `json:"email"`
+}
+
+type ActivationFinishPayload struct {
+	ServerID       string `json:"server_id"`
+	ServerAddress  string `json:"server_address"`
+	KnownHostsPath string `json:"known_hosts_path"`
+	StateRoot      string `json:"state_root"`
+	RemotePort     int    `json:"remote_port"`
+	OTP            string `json:"otp"`
+}
+
+type ActivationCommandResult struct {
+	ServerID string `json:"server_id"`
+	State    string `json:"state"`
 }
 
 // RepoListResult is the result for CmdRepoList.

@@ -27,6 +27,7 @@ type Server struct {
 	mu          sync.RWMutex
 	repos       map[string]*RepoState // keyed by repo ID
 	activations map[string]contract.ActivationStatus
+	activation  ActivationService
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -36,6 +37,23 @@ type Server struct {
 
 	subsMu sync.Mutex
 	subs   map[chan contract.Event]struct{}
+}
+
+type ActivationService interface {
+	Begin(context.Context, contract.ActivationBeginPayload) (contract.ActivationCommandResult, error)
+	Finish(context.Context, contract.ActivationFinishPayload) (contract.ActivationCommandResult, error)
+}
+
+func (s *Server) SetActivationService(service ActivationService) {
+	s.mu.Lock()
+	s.activation = service
+	s.mu.Unlock()
+}
+
+func (s *Server) activationService() ActivationService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.activation
 }
 
 // New creates a Server that will listen on sockPath.

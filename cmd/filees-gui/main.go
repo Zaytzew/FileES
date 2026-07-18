@@ -79,12 +79,13 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	daemonClient := ipcclient.New(*socket, "filees-gui")
 	if err := run(ctx, dependencies{
 		tray:     trayBackend,
 		platform: platformBackend,
-		client:   ipcclient.New(*socket, "filees-gui"),
+		client:   daemonClient,
 		icons:    tray.PlatformIcons(),
-		activator: clientActivator{root: *activationRoot, remotePort: *remotePort, profile: deploy.ServerProfile{
+		activator: clientActivator{client: daemonClient, root: *activationRoot, remotePort: *remotePort, profile: deploy.ServerProfile{
 			ID: *serverID, Address: *serverAddress, KnownHostsPath: *knownHosts,
 		}},
 	}); err != nil {

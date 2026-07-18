@@ -130,6 +130,24 @@ func (c *Client) SystemStatus(ctx context.Context) (*contract.SystemStatusResult
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
+func (c *Client) ActivationBegin(ctx context.Context, payload contract.ActivationBeginPayload) (*contract.ActivationCommandResult, error) {
+	resp, err := c.do(ctx, contract.CmdActivationBegin, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.ActivationCommandResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) ActivationFinish(ctx context.Context, payload contract.ActivationFinishPayload) (*contract.ActivationCommandResult, error) {
+	resp, err := c.do(ctx, contract.CmdActivationFinish, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.ActivationCommandResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoList(ctx context.Context) (*contract.RepoListResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoList, "", nil)
 	if err != nil {

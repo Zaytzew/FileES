@@ -143,6 +143,8 @@ func (s appState) viewModel() ViewModel {
 		snap := s.snapshots[id]
 		repos = append(repos, RepoViewModel{
 			ID:           id,
+			ServerID:     snap.ServerID,
+			Access:       snap.Access,
 			URL:          sum.URL,
 			LocalPath:    sum.LocalPath,
 			State:        snap.State,
@@ -154,6 +156,21 @@ func (s appState) viewModel() ViewModel {
 			LastSyncAt:   snap.LastSyncAt,
 			CurrentOp:    snap.CurrentOperation,
 		})
+	}
+	servers := make([]ServerViewModel, 0, len(s.system.Activations))
+	byServer := make(map[string]int, len(s.system.Activations))
+	for _, activation := range s.system.Activations {
+		byServer[activation.ServerID] = len(servers)
+		servers = append(servers, ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole})
+	}
+	for _, repo := range repos {
+		index, ok := byServer[repo.ServerID]
+		if !ok {
+			byServer[repo.ServerID] = len(servers)
+			servers = append(servers, ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID})
+			index = len(servers) - 1
+		}
+		servers[index].Repos = append(servers[index].Repos, repo)
 	}
 	caps := make(map[string]bool, len(s.caps))
 	for k, v := range s.caps {
@@ -167,6 +184,7 @@ func (s appState) viewModel() ViewModel {
 		LastRefresh:  s.refreshed,
 		Capabilities: caps,
 		Repos:        repos,
+		Servers:      servers,
 		Errors:       append([]ErrorViewModel(nil), s.errors...),
 	}
 	if s.connected && s.stale {

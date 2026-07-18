@@ -23,13 +23,17 @@ type TierSpec struct {
 // Pola z czasami są już sparsowane do time.Duration.
 // Nazwy odpowiadają referencjom w main.go (CommitInterval, GlobalSlots, itd.).
 type Repo struct {
-	ID              string        `json:"id"`
-	RepoURL         string        `json:"repo_url"`
-	LocalPath       string        `json:"local_path"`
-	SSHIdentityFile string        `json:"ssh_identity_file"`
-	SSHKnownHosts   string        `json:"ssh_known_hosts"`
-	WatchInterval   time.Duration `json:"-"` // z pola JSON "watch_interval"
-	CommitInterval  time.Duration `json:"-"` // z pola JSON "commit_interval"
+	ID                string        `json:"id"`
+	RepoURL           string        `json:"repo_url"`
+	LocalPath         string        `json:"local_path"`
+	SSHIdentityFile   string        `json:"ssh_identity_file"`
+	SSHKnownHosts     string        `json:"ssh_known_hosts"`
+	ServerID          string        `json:"-"`
+	ServerDisplayName string        `json:"-"`
+	ClientRole        string        `json:"-"`
+	Access            string        `json:"access"`
+	WatchInterval     time.Duration `json:"-"` // z pola JSON "watch_interval"
+	CommitInterval    time.Duration `json:"-"` // z pola JSON "commit_interval"
 
 	// Opcjonalne rozszerzenia (mogą nie wystąpić w JSON; wtedy wartości domyślne/zero)
 	GlobalSlots            int           `json:"global_slots,omitempty"`
@@ -56,6 +60,7 @@ type jsonRepo struct {
 	LocalPath      string `json:"local_path"`
 	WatchInterval  string `json:"watch_interval"`
 	CommitInterval string `json:"commit_interval"`
+	Access         string `json:"access,omitempty"`
 
 	GlobalSlots            int      `json:"global_slots,omitempty"`
 	MaxBatchFiles          int      `json:"max_batch_files,omitempty"`
@@ -78,11 +83,47 @@ type jsonRepo struct {
 }
 
 type jsonConfig struct {
-	Transport struct {
+	ServerID          string `json:"server_id,omitempty"`
+	ServerDisplayName string `json:"server_display_name,omitempty"`
+	ClientRole        string `json:"client_role,omitempty"`
+	Transport         struct {
 		IdentityFile string `json:"identity_file"`
 		KnownHosts   string `json:"known_hosts"`
 	} `json:"transport"`
 	Repositories []jsonRepo `json:"repositories"`
+}
+
+type ClientView struct{ ServerID, DisplayName, ClientRole string }
+
+func LoadClientView(path string) (ClientView, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ClientView{}, err
+	}
+	var file jsonConfig
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&file); err != nil {
+		return ClientView{}, err
+	}
+	return normalizeClientView(file)
+}
+
+func normalizeClientView(file jsonConfig) (ClientView, error) {
+	view := ClientView{ServerID: strings.TrimSpace(file.ServerID), DisplayName: strings.TrimSpace(file.ServerDisplayName), ClientRole: strings.TrimSpace(file.ClientRole)}
+	if view.ServerID == "" {
+		view.ServerID = "default"
+	}
+	if view.DisplayName == "" {
+		view.DisplayName = view.ServerID
+	}
+	if view.ClientRole == "" {
+		view.ClientRole = "normal"
+	}
+	if view.ClientRole != "normal" && view.ClientRole != "ro" {
+		return ClientView{}, errors.New("config.client_role: wymagane normal albo ro")
+	}
+	return view, nil
 }
 
 // Load — wczytuje listę repozytoriów z JSON i dokonuje walidacji + konwersji pól.
@@ -114,6 +155,10 @@ func Load(path string) ([]Repo, error) {
 	}
 	identityFile, knownHosts = filepath.Clean(identityFile), filepath.Clean(knownHosts)
 	raw := file.Repositories
+	view, err := normalizeClientView(file)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]Repo, 0, len(raw))
 	ids := make(map[string]int, len(raw))
@@ -244,12 +289,26 @@ func Load(path string) ([]Repo, error) {
 			previousMax = t.MaxMB
 		}
 
+		access := strings.TrimSpace(r.Access)
+		if access == "" {
+			access = "rw"
+		}
+		if view.ClientRole == "ro" {
+			access = "r"
+		}
+		if access != "rw" && access != "r" {
+			return nil, fmt.Errorf("config[%d].access: wymagane rw albo r", i)
+		}
 		out = append(out, Repo{
 			ID:                     id,
 			RepoURL:                repoURL,
 			LocalPath:              localPath,
 			SSHIdentityFile:        filepath.Clean(identityFile),
 			SSHKnownHosts:          filepath.Clean(knownHosts),
+			ServerID:               view.ServerID,
+			ServerDisplayName:      view.DisplayName,
+			ClientRole:             view.ClientRole,
+			Access:                 access,
 			WatchInterval:          watch,
 			CommitInterval:         commit,
 			GlobalSlots:            r.GlobalSlots,

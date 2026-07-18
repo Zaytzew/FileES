@@ -14,7 +14,7 @@ func TestBuildMenuDisconnectedMarksSnapshotStale(t *testing.T) {
 		Stale:       true,
 		Icon:        app.IconDisconnected,
 		LastRefresh: time.Date(2026, 7, 13, 20, 30, 0, 0, time.Local),
-		Repos:       []app.RepoViewModel{{ID: "projectA", State: contract.StateActive}},
+		Repos:       []app.RepoViewModel{{ID: "projectA", Access: contract.AccessReadWrite, State: contract.StateActive}},
 	}
 	menu := BuildMenu(vm)
 	if menu.Icon != app.IconDisconnected || menu.Title != "FileES — Brak połączenia" {
@@ -36,7 +36,7 @@ func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
 			contract.CapErrorList: true,
 		},
 		Repos: []app.RepoViewModel{{
-			ID: "projectA", LocalPath: "/wc/projectA", State: contract.StateActive,
+			ID: "projectA", Access: contract.AccessReadWrite, LocalPath: "/wc/projectA", State: contract.StateActive,
 			Connectivity: contract.ConnOnline, LocalRev: 41, HeadRev: 42,
 			Pending: contract.PendingStats{Added: 1, Modified: 2, Deleted: 3}, CurrentOp: &operation,
 		}},
@@ -65,7 +65,7 @@ func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
 func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{
 		Connected: true,
-		Repos:     []app.RepoViewModel{{ID: "repo", LocalPath: "/wc", State: contract.StateActive}},
+		Repos:     []app.RepoViewModel{{ID: "repo", Access: contract.AccessReadWrite, LocalPath: "/wc", State: contract.StateActive}},
 	})
 	repo := findItem(t, menu.Items, "repo.repo")
 	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
@@ -84,7 +84,7 @@ func TestBuildMenuHidesMutationsWhileSnapshotStale(t *testing.T) {
 			contract.CapRepoLock:   true,
 			contract.CapRepoUnlock: true,
 		},
-		Repos: []app.RepoViewModel{{ID: "repo", LocalPath: "/wc", State: contract.StateActive}},
+		Repos: []app.RepoViewModel{{ID: "repo", Access: contract.AccessReadWrite, LocalPath: "/wc", State: contract.StateActive}},
 	})
 	repo := findItem(t, menu.Items, "repo.repo")
 	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
@@ -120,11 +120,30 @@ func TestBuildMenuUnknownStateHasSafeFallback(t *testing.T) {
 	}
 }
 
+func TestBuildMenuGroupsReadOnlyRepoUnderActiveServer(t *testing.T) {
+	repo := app.RepoViewModel{ID: "archive", ServerID: "office", Access: contract.AccessReadOnly, LocalPath: "/wc/archive", State: contract.StateActive}
+	menu := BuildMenu(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoLock: true}, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", ClientRole: contract.ClientRoleNormal, Repos: []app.RepoViewModel{repo}}}})
+	server := findItem(t, menu.Items, "server.office")
+	if server.Title != "filees.example.net" {
+		t.Fatalf("server title=%q", server.Title)
+	}
+	repoMenu := findItem(t, server.Children, "repo.archive")
+	if got := findItem(t, repoMenu.Children, "repo.archive.access").Title; got != "Dostęp: tylko odczyt" {
+		t.Fatalf("access=%q", got)
+	}
+	if hasItem(repoMenu.Children, "repo.archive.lock") {
+		t.Fatal("read-only repo exposes lock")
+	}
+}
+
 func findItem(t *testing.T, items []MenuItemModel, id string) MenuItemModel {
 	t.Helper()
 	for _, item := range items {
 		if item.ID == id {
 			return item
+		}
+		if len(item.Children) > 0 && hasItem(item.Children, id) {
+			return findItem(t, item.Children, id)
 		}
 	}
 	t.Fatalf("menu item %q not found", id)

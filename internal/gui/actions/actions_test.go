@@ -46,7 +46,7 @@ func vmWithLock(repos ...app.RepoViewModel) app.ViewModel {
 }
 
 func repo(id, path string) app.RepoViewModel {
-	return app.RepoViewModel{ID: id, LocalPath: path, State: contract.StateActive}
+	return app.RepoViewModel{ID: id, Access: contract.AccessReadWrite, LocalPath: path, State: contract.StateActive}
 }
 
 // fakeLockUnlocker records calls and signals via channels.
@@ -67,6 +67,17 @@ func (fakeStructuredError) PresentationError() (string, string, string, string) 
 type lockCall struct {
 	repoID string
 	paths  []string
+}
+
+type fakeActivator struct {
+	emails chan string
+	otps   chan string
+}
+
+func (f *fakeActivator) Begin(_ context.Context, email string) error { f.emails <- email; return nil }
+func (f *fakeActivator) Finish(_ context.Context, otp []byte) error {
+	f.otps <- string(otp)
+	return nil
 }
 
 func newFakeLocker() *fakeLockUnlocker {
@@ -150,6 +161,33 @@ func send(t *testing.T, ch chan<- tray.Intent, intent tray.Intent) {
 	case ch <- intent:
 	case <-time.After(time.Second):
 		t.Fatal("timeout sending intent")
+	}
+}
+
+func TestControllerActivationPromptsForEmailThenSecretOTP(t *testing.T) {
+	responses := []platform.PromptTextResult{{Value: "user@example.net"}, {Value: "OTP-CODE"}}
+	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
+		result := responses[0]
+		responses = responses[1:]
+		return result, nil
+	}}
+	activator := &fakeActivator{emails: make(chan string, 1), otps: make(chan string, 1)}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Opener: fake, Picker: fake, Prompter: fake, Notifier: fake, Locker: newFakeLocker(), Activator: activator})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
+	if got := awaitCh(t, activator.emails, "activation email"); got != "user@example.net" {
+		t.Fatalf("email=%q", got)
+	}
+	if got := awaitCh(t, activator.otps, "activation OTP"); got != "OTP-CODE" {
+		t.Fatalf("otp=%q", got)
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(fake.Snapshot().PromptRequests) < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	requests := fake.Snapshot().PromptRequests
+	if len(requests) != 2 || requests[0].Secret || !requests[1].Secret {
+		t.Fatalf("prompts=%#v", requests)
 	}
 }
 

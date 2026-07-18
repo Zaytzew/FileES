@@ -126,6 +126,37 @@ func (b *LinuxBackend) PickFiles(ctx context.Context, request PickFilesRequest) 
 	return PickFilesResult{Paths: paths}, nil
 }
 
+func (b *LinuxBackend) PromptText(ctx context.Context, request PromptTextRequest) (PromptTextResult, error) {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return PromptTextResult{}, NewUnavailable("text_prompt", errors.New("zenity is not installed"))
+	}
+	args := []string{"--entry"}
+	if request.Title != "" {
+		args = append(args, "--title="+request.Title)
+	}
+	if request.Text != "" {
+		args = append(args, "--text="+request.Text)
+	}
+	if request.Placeholder != "" {
+		args = append(args, "--entry-text="+request.Placeholder)
+	}
+	if request.Secret {
+		args = append(args, "--hide-text")
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return PromptTextResult{}, ctxErr
+		}
+		if commandCancelled(err) {
+			return PromptTextResult{Cancelled: true}, nil
+		}
+		return PromptTextResult{}, NewOperationalFailure("text_prompt", err)
+	}
+	return PromptTextResult{Value: strings.TrimSpace(string(output))}, nil
+}
+
 func (b *LinuxBackend) pickerCommand(request PickFilesRequest, initialDir string) (string, []string, error) {
 	if command, err := b.runner.LookPath("zenity"); err == nil {
 		args := []string{"--file-selection", "--separator=\n", "--filename=" + filepath.Clean(initialDir) + string(filepath.Separator)}

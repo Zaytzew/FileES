@@ -24,6 +24,8 @@ type RepoState struct {
 	id        string
 	url       string
 	localPath string
+	serverID  string
+	access    string
 
 	state        string // contract.State*
 	connectivity string // contract.Conn*
@@ -112,7 +114,11 @@ func (rs *RepoState) SetLockFuncs(
 func (rs *RepoState) Lock(ctx context.Context, paths []string) (string, error) {
 	rs.mu.RLock()
 	fn := rs.lockFn
+	access := rs.access
 	rs.mu.RUnlock()
+	if access != contract.AccessReadWrite {
+		return "", fmt.Errorf("REPO_READ_ONLY: repo %s is read-only", rs.id)
+	}
 	if fn == nil {
 		return "", fmt.Errorf("lock not available for repo %s", rs.id)
 	}
@@ -123,7 +129,11 @@ func (rs *RepoState) Lock(ctx context.Context, paths []string) (string, error) {
 func (rs *RepoState) Unlock(ctx context.Context, paths []string) (string, error) {
 	rs.mu.RLock()
 	fn := rs.unlockFn
+	access := rs.access
 	rs.mu.RUnlock()
+	if access != contract.AccessReadWrite {
+		return "", fmt.Errorf("REPO_READ_ONLY: repo %s is read-only", rs.id)
+	}
 	if fn == nil {
 		return "", fmt.Errorf("unlock not available for repo %s", rs.id)
 	}
@@ -157,6 +167,8 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 
 	snap := contract.RepoStatus{
 		RepoID:           rs.id,
+		ServerID:         rs.serverID,
+		Access:           rs.access,
 		State:            state,
 		Connectivity:     conn,
 		LocalRevision:    localRev,
@@ -177,6 +189,8 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 	defer rs.mu.RUnlock()
 	return contract.RepoSummary{
 		ID:        rs.id,
+		ServerID:  rs.serverID,
+		Access:    rs.access,
 		URL:       rs.url,
 		LocalPath: rs.localPath,
 		State:     rs.state,

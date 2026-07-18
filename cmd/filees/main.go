@@ -89,6 +89,11 @@ func runDaemon() {
 	if len(repos) == 0 {
 		lg.Warnf("no repositories configured in %s", cfgPath)
 	}
+	clientView, err := config.LoadClientView(cfgPath)
+	if err != nil {
+		lg.Errorf("config client view: %v", err)
+		os.Exit(1)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -98,6 +103,7 @@ func runDaemon() {
 
 	// IPC contract server
 	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
+	ipc.RegisterActivation(contract.ActivationStatus{ServerID: clientView.ServerID, DisplayName: clientView.DisplayName, ClientRole: clientView.ClientRole})
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
@@ -140,6 +146,18 @@ func runDaemon() {
 		clientUUID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
 		rlg.Debugf("client UUID: %s", clientUUID)
 
+		// The access mode comes from the daemon's cached server projection. A
+		// read-only repo never receives watcher, commit or edit-passport wiring.
+		rs := ipc.RegisterRepoAccess(r.ID, r.RepoURL, wc, r.ServerID, r.Access)
+		if r.Access == contract.AccessReadOnly {
+			wg.Add(1)
+			go func(repo config.Repo, repoState *ipcserver.RepoState, svn client.Client) {
+				defer wg.Done()
+				runReadOnlyRepo(ctx, repo, repoState, svn, talk.With("readonly:"+repo.ID))
+			}(r, rs, cli)
+			continue
+		}
+
 		var editPassports *passport.Manager
 		if r.EditPassports {
 			backend := passport.SVNBackend{Client: cli, WC: wc}
@@ -159,7 +177,6 @@ func runDaemon() {
 		}
 
 		// Register repo in IPC server; rs is updated by daemon goroutines
-		rs := ipc.RegisterRepo(r.ID, r.RepoURL, wc)
 		if editPassports != nil {
 			rs.SetLockFuncs(
 				func(ctx context.Context, paths []string) (string, error) {
@@ -334,6 +351,44 @@ func runDaemon() {
 		_ = os.Remove(p)
 	}
 }
+
+func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, lg talk.Logger) {
+	interval := repo.PollInterval
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	update := func() {
+		rs.SetCurrentOp(stringPtr("update"))
+		defer rs.SetCurrentOp(nil)
+		out, err := cli.Update(ctx, repo.LocalPath)
+		if err != nil {
+			if ctx.Err() == nil {
+				lg.Warnf("svn update failed: %v %s", err, out)
+				rs.SetConnectivity(contract.ConnOffline)
+				rs.SetState(contract.StateOffline)
+			}
+			return
+		}
+		rs.SetConnectivity(contract.ConnOnline)
+		rs.SetState(contract.StateActive)
+		rs.SetLastSyncAt(time.Now())
+	}
+	rs.SetState(contract.StateActive)
+	update()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			rs.SetState(contract.StateStopping)
+			return
+		case <-ticker.C:
+			update()
+		}
+	}
+}
+
+func stringPtr(value string) *string { return &value }
 
 func wireRepoStatus(svc *commit.Service, rs *ipcserver.RepoState) {
 	svc.Tickets = tickets.New()

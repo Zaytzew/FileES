@@ -16,6 +16,7 @@ import (
 	"filees/internal/gui/platform"
 	"filees/internal/gui/singleinstance"
 	"filees/internal/gui/tray"
+	"filees/pkg/deploy"
 	"filees/pkg/ipcclient"
 )
 
@@ -26,6 +27,11 @@ func main() {
 	socket := flags.String("socket", ipcclient.DefaultSocketPath(), "ścieżka do gniazda IPC daemona")
 	autostart := flags.String("autostart", "", "zarządzaj autostartem: status, enable albo disable")
 	showVersion := flags.Bool("version", false, "pokaż wersję i zakończ")
+	activationRoot := flags.String("activation-state", "", "katalog stanu aktywacji klienta")
+	serverID := flags.String("server-id", "", "identyfikator profilu serwera")
+	serverAddress := flags.String("server", "", "adres SSH serwera FileES host:port")
+	knownHosts := flags.String("known-hosts", "", "plik z pinowanym kluczem hosta")
+	remotePort := flags.Int("activation-remote-port", 42000, "przydzielony port reverse tunnel")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		os.Exit(2)
 	}
@@ -78,6 +84,9 @@ func main() {
 		platform: platformBackend,
 		client:   ipcclient.New(*socket, "filees-gui"),
 		icons:    tray.PlatformIcons(),
+		activator: clientActivator{root: *activationRoot, remotePort: *remotePort, profile: deploy.ServerProfile{
+			ID: *serverID, Address: *serverAddress, KnownHostsPath: *knownHosts,
+		}},
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "filees-gui: %v\n", err)
 		os.Exit(1)

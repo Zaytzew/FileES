@@ -16,6 +16,7 @@ import (
 	"filees/pkg/ipcserver"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/talk"
+	"filees/pkg/watcher"
 )
 
 func TestReadOnlyStarterUsesDaemonLifecycleNotReconcileContext(t *testing.T) {
@@ -44,6 +45,62 @@ func TestReadOnlyStarterUsesDaemonLifecycleNotReconcileContext(t *testing.T) {
 	}
 	if err := instance.Stop(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type fakeEventSource struct {
+	started chan struct{}
+	events  chan watcher.Event
+}
+
+func (f *fakeEventSource) Start(context.Context) <-chan watcher.Event {
+	close(f.started)
+	return f.events
+}
+
+type blockingCommitRunner struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *blockingCommitRunner) Run(context.Context, string, string, <-chan watcher.Event) {
+	close(f.entered)
+	<-f.release
+}
+
+func TestReadWritePipelineOwnsWatcherCommitterAndStateOrder(t *testing.T) {
+	server := ipcserver.New(t.TempDir() + "/sock")
+	state := server.RegisterRepoAccess("docs", "svn+ssh://_filees-client@example/docs", t.TempDir(), "office", contract.AccessReadWrite)
+	source := &fakeEventSource{started: make(chan struct{}), events: make(chan watcher.Event)}
+	runner := &blockingCommitRunner{entered: make(chan struct{}), release: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		done <- runReadWritePipeline(t.Context(), config.Repo{ID: "docs", LocalPath: t.TempDir()}, state, source, runner)
+	}()
+	select {
+	case <-source.started:
+	case <-time.After(time.Second):
+		t.Fatal("watcher not started")
+	}
+	select {
+	case <-runner.entered:
+	case <-time.After(time.Second):
+		t.Fatal("committer not started")
+	}
+	if got := state.Snapshot().State; got != contract.StateActive {
+		t.Fatalf("state=%s", got)
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("pipeline returned early: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(runner.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := state.Snapshot().State; got != contract.StateStopping {
+		t.Fatalf("state=%s", got)
 	}
 }
 

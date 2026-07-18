@@ -20,7 +20,7 @@ type activationFlags struct {
 
 func addActivationFlags(flags *flag.FlagSet, values *activationFlags) {
 	flags.StringVar(&values.serverID, "server-id", "", "local server profile ID")
-	flags.StringVar(&values.address, "server", "", "FileES SSH endpoint host:port")
+	flags.StringVar(&values.address, "server", "", "FileES server address (SSH port defaults to 22)")
 	flags.StringVar(&values.knownHosts, "known-hosts", "", "absolute pinned known_hosts path")
 	flags.StringVar(&values.stateRoot, "state-root", "", "absolute activation state root")
 }

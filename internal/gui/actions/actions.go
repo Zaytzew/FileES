@@ -114,7 +114,7 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationFailure(ctx, err)
 			return
 		}
-		endpoint, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Adres serwera FileES (host:port):", Placeholder: "filees.example.net:22"})
+		endpoint, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Adres serwera FileES:", Placeholder: "filees.example.net"})
 		if err != nil || endpoint.Cancelled || endpoint.Value == "" {
 			c.activationFailure(ctx, err)
 			return

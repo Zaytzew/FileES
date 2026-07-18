@@ -16,11 +16,30 @@ import (
 	"filees/pkg/ipcserver"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/talk"
+	"filees/pkg/watcher"
 )
 
 type repoRuntime struct {
 	config config.Repo
 	state  *ipcserver.RepoState
+}
+
+type repoEventSource interface {
+	Start(context.Context) <-chan watcher.Event
+}
+type repoCommitRunner interface {
+	Run(context.Context, string, string, <-chan watcher.Event)
+}
+
+func runReadWritePipeline(ctx context.Context, repo config.Repo, state *ipcserver.RepoState, source repoEventSource, committer repoCommitRunner) error {
+	if state == nil || source == nil || committer == nil {
+		return errors.New("read-write pipeline is incomplete")
+	}
+	state.SetState(contract.StateActive)
+	events := source.Start(ctx)
+	committer.Run(ctx, repo.ID, repo.LocalPath, events)
+	state.SetState(contract.StateStopping)
+	return nil
 }
 
 type passportRunner interface {

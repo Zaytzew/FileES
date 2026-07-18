@@ -316,10 +316,9 @@ func runDaemon() {
 		wg.Add(1)
 		go func(repo config.Repo, repoState *ipcserver.RepoState) {
 			defer wg.Done()
-			repoState.SetState(contract.StateActive)
-			events := scn.Start(ctx)
-			svc.Run(ctx, repo.ID, repo.LocalPath, events)
-			repoState.SetState(contract.StateStopping)
+			if err := runReadWritePipeline(ctx, repo, repoState, scn, svc); err != nil {
+				talk.With("repo:"+repo.ID).Errorf("pipeline: %v", err)
+			}
 		}(r, rs)
 	}
 

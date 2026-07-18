@@ -244,15 +244,24 @@ func TestReadWriteStarterReceivesDaemonContextAndRuntime(t *testing.T) {
 	key := reposupervisor.Key{ServerID: "office", RepoID: "documents"}
 	state := ipcserver.New(t.TempDir()+"/sock").RegisterRepoAccess(key.RepoID, "svn+ssh://_filees-client@example/documents", t.TempDir(), key.ServerID, contract.AccessReadWrite)
 	called := make(chan struct{}, 1)
-	starter := &daemonRepoStarter{daemonCtx: daemonCtx, repos: map[reposupervisor.Key]repoRuntime{key: {config: config.Repo{ID: key.RepoID}, state: state}}, newSVN: func(config.Repo) client.Client { return &updateOnlyClient{called: make(chan struct{}, 1)} }, startReadWrite: func(ctx context.Context, runtime repoRuntime, _ client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
+	projectedURL := "svn+ssh://_filees-client@new.example/documents"
+	starter := &daemonRepoStarter{daemonCtx: daemonCtx, repos: map[reposupervisor.Key]repoRuntime{key: {config: config.Repo{ID: key.RepoID, RepoURL: "svn+ssh://_filees-client@old.example/documents", Access: contract.AccessReadOnly}, state: state}}, newSVN: func(repo config.Repo) client.Client {
+		if repo.RepoURL != projectedURL || repo.Access != contract.AccessReadWrite {
+			t.Fatalf("SVN factory received stale authority: %+v", repo)
+		}
+		return &updateOnlyClient{called: make(chan struct{}, 1)}
+	}, startReadWrite: func(ctx context.Context, runtime repoRuntime, _ client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
 		if ctx != daemonCtx || runtime.state != state || desired.Key != key {
 			t.Fatal("read-write factory received wrong lifecycle binding")
+		}
+		if runtime.config.RepoURL != projectedURL || runtime.config.Access != contract.AccessReadWrite {
+			t.Fatalf("runtime received stale authority: %+v", runtime.config)
 		}
 		called <- struct{}{}
 		return reposupervisor.StartManaged(ctx, func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }, nil)
 	}}
 	reconcileCtx, cancelReconcile := context.WithCancel(context.Background())
-	instance, err := starter.Start(reconcileCtx, reposupervisor.Desired{Key: key, Access: contract.AccessReadWrite, State: "active"})
+	instance, err := starter.Start(reconcileCtx, reposupervisor.Desired{Key: key, Access: contract.AccessReadWrite, State: "active", URL: projectedURL})
 	if err != nil {
 		t.Fatal(err)
 	}

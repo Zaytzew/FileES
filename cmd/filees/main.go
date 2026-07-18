@@ -88,7 +88,6 @@ func runDaemon() {
 	}
 	if len(repos) == 0 {
 		lg.Warnf("no repositories configured in %s", cfgPath)
-		return
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

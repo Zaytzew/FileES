@@ -110,7 +110,7 @@ func runDaemon() {
 
 	var wg sync.WaitGroup
 	var pidPaths []string
-	var passportManagers []*passport.Manager
+	var passportSessions []*passportSession
 
 	for _, r := range repos {
 		wc := r.LocalPath
@@ -171,9 +171,12 @@ func runDaemon() {
 				rlg.Errorf("edit passports: %v", err)
 				continue
 			}
-			passportManagers = append(passportManagers, editPassports)
-			wg.Add(1)
-			go func(manager *passport.Manager) { defer wg.Done(); manager.Run(ctx) }(editPassports)
+			passportSession, sessionErr := startPassportSession(ctx, editPassports)
+			if sessionErr != nil {
+				rlg.Errorf("edit passport lifecycle: %v", sessionErr)
+				continue
+			}
+			passportSessions = append(passportSessions, passportSession)
 		}
 
 		// Register repo in IPC server; rs is updated by daemon goroutines
@@ -323,9 +326,9 @@ func runDaemon() {
 	<-ctx.Done()
 	lg.Infof("shutdown")
 	wg.Wait()
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	for _, manager := range passportManagers {
-		if err := manager.ReleaseAll(shutdownCtx); err != nil {
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 35*time.Second)
+	for _, session := range passportSessions {
+		if err := session.Stop(shutdownCtx); err != nil {
 			lg.Warnf("edit passports shutdown release: %v", err)
 		}
 	}

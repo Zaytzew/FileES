@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,6 +44,40 @@ func TestReadOnlyStarterUsesDaemonLifecycleNotReconcileContext(t *testing.T) {
 	}
 	if err := instance.Stop(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type fakePassportRunner struct {
+	runExited         chan struct{}
+	releaseCalls      atomic.Int32
+	releaseBeforeExit atomic.Bool
+}
+
+func (f *fakePassportRunner) Run(ctx context.Context) { <-ctx.Done(); close(f.runExited) }
+func (f *fakePassportRunner) ReleaseAll(context.Context) error {
+	select {
+	case <-f.runExited:
+	default:
+		f.releaseBeforeExit.Store(true)
+	}
+	f.releaseCalls.Add(1)
+	return nil
+}
+
+func TestPassportSessionStopsRunBeforeReleaseAllExactlyOnce(t *testing.T) {
+	fake := &fakePassportRunner{runExited: make(chan struct{})}
+	session, err := startPassportSession(context.Background(), fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if fake.releaseBeforeExit.Load() || fake.releaseCalls.Load() != 1 {
+		t.Fatalf("release before exit=%v calls=%d", fake.releaseBeforeExit.Load(), fake.releaseCalls.Load())
 	}
 }
 

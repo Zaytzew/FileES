@@ -70,13 +70,16 @@ type lockCall struct {
 }
 
 type fakeActivator struct {
-	emails chan string
-	otps   chan string
+	begins   chan string
+	finishes chan string
 }
 
-func (f *fakeActivator) Begin(_ context.Context, email string) error { f.emails <- email; return nil }
-func (f *fakeActivator) Finish(_ context.Context, otp []byte) error {
-	f.otps <- string(otp)
+func (f *fakeActivator) Begin(_ context.Context, serverID, address, email string) error {
+	f.begins <- serverID + "|" + address + "|" + email
+	return nil
+}
+func (f *fakeActivator) Finish(_ context.Context, serverID, address string, otp []byte) error {
+	f.finishes <- serverID + "|" + address + "|" + string(otp)
 	return nil
 }
 
@@ -164,29 +167,29 @@ func send(t *testing.T, ch chan<- tray.Intent, intent tray.Intent) {
 	}
 }
 
-func TestControllerActivationPromptsForEmailThenSecretOTP(t *testing.T) {
-	responses := []platform.PromptTextResult{{Value: "user@example.net"}, {Value: "OTP-CODE"}}
+func TestControllerActivationPromptsForServerEmailThenSecretOTP(t *testing.T) {
+	responses := []platform.PromptTextResult{{Value: "office"}, {Value: "filees.example.net:22"}, {Value: "user@example.net"}, {Value: "OTP-CODE"}}
 	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
 		result := responses[0]
 		responses = responses[1:]
 		return result, nil
 	}}
-	activator := &fakeActivator{emails: make(chan string, 1), otps: make(chan string, 1)}
+	activator := &fakeActivator{begins: make(chan string, 1), finishes: make(chan string, 1)}
 	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Opener: fake, Picker: fake, Prompter: fake, Notifier: fake, Locker: newFakeLocker(), Activator: activator})
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
-	if got := awaitCh(t, activator.emails, "activation email"); got != "user@example.net" {
-		t.Fatalf("email=%q", got)
+	if got := awaitCh(t, activator.begins, "activation begin"); got != "office|filees.example.net:22|user@example.net" {
+		t.Fatalf("begin=%q", got)
 	}
-	if got := awaitCh(t, activator.otps, "activation OTP"); got != "OTP-CODE" {
-		t.Fatalf("otp=%q", got)
+	if got := awaitCh(t, activator.finishes, "activation finish"); got != "office|filees.example.net:22|OTP-CODE" {
+		t.Fatalf("finish=%q", got)
 	}
 	deadline := time.Now().Add(time.Second)
-	for len(fake.Snapshot().PromptRequests) < 2 && time.Now().Before(deadline) {
+	for len(fake.Snapshot().PromptRequests) < 4 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	requests := fake.Snapshot().PromptRequests
-	if len(requests) != 2 || requests[0].Secret || !requests[1].Secret {
+	if len(requests) != 4 || requests[0].Secret || requests[1].Secret || requests[2].Secret || !requests[3].Secret {
 		t.Fatalf("prompts=%#v", requests)
 	}
 }

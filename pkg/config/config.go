@@ -90,10 +90,25 @@ type jsonConfig struct {
 		IdentityFile string `json:"identity_file"`
 		KnownHosts   string `json:"known_hosts"`
 	} `json:"transport"`
+	Projection *struct {
+		WorkingCopy      string `json:"working_copy"`
+		RelativeViewPath string `json:"relative_view_path"`
+		CachePath        string `json:"cache_path"`
+		Interval         string `json:"interval,omitempty"`
+	} `json:"projection,omitempty"`
 	Repositories []jsonRepo `json:"repositories"`
 }
 
-type ClientView struct{ ServerID, DisplayName, ClientRole string }
+type Projection struct {
+	WorkingCopy, RelativeViewPath, CachePath string
+	Interval                                 time.Duration
+}
+
+type ClientView struct {
+	ServerID, DisplayName, ClientRole string
+	IdentityFile, KnownHosts          string
+	Projection                        *Projection
+}
 
 func LoadClientView(path string) (ClientView, error) {
 	data, err := os.ReadFile(path)
@@ -110,7 +125,7 @@ func LoadClientView(path string) (ClientView, error) {
 }
 
 func normalizeClientView(file jsonConfig) (ClientView, error) {
-	view := ClientView{ServerID: strings.TrimSpace(file.ServerID), DisplayName: strings.TrimSpace(file.ServerDisplayName), ClientRole: strings.TrimSpace(file.ClientRole)}
+	view := ClientView{ServerID: strings.TrimSpace(file.ServerID), DisplayName: strings.TrimSpace(file.ServerDisplayName), ClientRole: strings.TrimSpace(file.ClientRole), IdentityFile: filepath.Clean(strings.TrimSpace(file.Transport.IdentityFile)), KnownHosts: filepath.Clean(strings.TrimSpace(file.Transport.KnownHosts))}
 	if view.ServerID == "" {
 		view.ServerID = "default"
 	}
@@ -122,6 +137,26 @@ func normalizeClientView(file jsonConfig) (ClientView, error) {
 	}
 	if view.ClientRole != "normal" && view.ClientRole != "ro" {
 		return ClientView{}, errors.New("config.client_role: wymagane normal albo ro")
+	}
+	if file.Projection != nil {
+		workingCopy := filepath.Clean(strings.TrimSpace(file.Projection.WorkingCopy))
+		cachePath := filepath.Clean(strings.TrimSpace(file.Projection.CachePath))
+		relative := filepath.Clean(strings.TrimSpace(file.Projection.RelativeViewPath))
+		if !filepath.IsAbs(workingCopy) || !filepath.IsAbs(cachePath) {
+			return ClientView{}, errors.New("config.projection: working_copy i cache_path muszą być ścieżkami bezwzględnymi")
+		}
+		if relative == "." || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return ClientView{}, errors.New("config.projection.relative_view_path: wymagana bezpieczna ścieżka względna")
+		}
+		interval := time.Minute
+		if raw := strings.TrimSpace(file.Projection.Interval); raw != "" {
+			var err error
+			interval, err = time.ParseDuration(raw)
+			if err != nil || interval <= 0 {
+				return ClientView{}, errors.New("config.projection.interval: wymagana dodatnia wartość duration")
+			}
+		}
+		view.Projection = &Projection{WorkingCopy: workingCopy, RelativeViewPath: relative, CachePath: cachePath, Interval: interval}
 	}
 	return view, nil
 }

@@ -39,6 +39,15 @@ type RepoState struct {
 	unlockFn func(ctx context.Context, paths []string) (string, error)
 }
 
+// SetProjection refreshes server-owned presentation and authorization fields
+// while preserving local runtime counters and callbacks.
+func (rs *RepoState) SetProjection(url, access string) {
+	rs.mu.Lock()
+	rs.url = url
+	rs.access = access
+	rs.mu.Unlock()
+}
+
 // SetState transitions the repo to a new state constant (contract.State*).
 // Emits EvRepoStateChanged if the state actually changed.
 func (rs *RepoState) SetState(newState string) {
@@ -147,6 +156,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	rs.mu.RLock()
 	state := rs.state
 	conn := rs.connectivity
+	access := rs.access
 	headRev := rs.headRev
 	conflicts := rs.conflicts
 	lastSync := rs.lastSyncAt
@@ -168,7 +178,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	snap := contract.RepoStatus{
 		RepoID:           rs.id,
 		ServerID:         rs.serverID,
-		Access:           rs.access,
+		Access:           access,
 		State:            state,
 		Connectivity:     conn,
 		LocalRevision:    localRev,

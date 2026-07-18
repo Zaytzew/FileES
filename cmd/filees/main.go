@@ -300,23 +300,7 @@ func runDaemon() {
 		// Reconcile startup-update conflicts through the same lossless path as
 		// periodic updates. In particular, this covers a SIGKILL after the server
 		// accepted a commit but before SVN updated the working-copy metadata.
-		if _, err := os.Stat(filepath.Join(wc, ".svn")); err == nil {
-			if out, err := cli.Cleanup(ctx, wc); err != nil {
-				rlg.Warnf("svn cleanup failed: %v %s", err, out)
-			}
-			status, statusErr := cli.Status(ctx, wc, nil)
-			if statusErr != nil {
-				rlg.Warnf("svn status before update failed: %v — update deferred", statusErr)
-			} else if client.HasMissingPaths(status) {
-				rlg.Infof("svn update deferred: working copy contains local removals")
-			} else {
-				out, updateErr := cli.Update(ctx, wc)
-				svc.ReconcileUpdateConflicts(ctx, wc, out)
-				if updateErr != nil {
-					rlg.Warnf("svn update failed: %v %s", updateErr, out)
-				}
-			}
-		}
+		recoverReadWriteWorkingCopy(ctx, cli, wc, svc, rlg)
 
 		if editPassports != nil {
 			if err := passport.EnsureNeedsLock(ctx, cli, wc, clientUUID, intOrDefault(r.MaxBatchFiles, 100)); err != nil {

@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
 	"filees/pkg/reposupervisor"
+	"filees/pkg/talk"
 )
 
 func TestReadOnlyStarterUsesDaemonLifecycleNotReconcileContext(t *testing.T) {
@@ -38,6 +43,48 @@ func TestReadOnlyStarterUsesDaemonLifecycleNotReconcileContext(t *testing.T) {
 	}
 	if err := instance.Stop(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type recoveryClient struct {
+	client.Client
+	cleanup, status, update int
+	entries                 []client.StatusEntry
+	statusErr               error
+}
+
+func (f *recoveryClient) Cleanup(context.Context, string) (string, error) {
+	f.cleanup++
+	return "", nil
+}
+func (f *recoveryClient) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
+	f.status++
+	return f.entries, f.statusErr
+}
+func (f *recoveryClient) Update(context.Context, string) (string, error) { f.update++; return "", nil }
+
+func TestReadWriteRecoveryDefersUpdateForMissingPathsOrStatusFailure(t *testing.T) {
+	for _, fake := range []*recoveryClient{{entries: []client.StatusEntry{{Path: "gone", Item: "missing"}}}, {statusErr: errors.New("status failed")}} {
+		wc := t.TempDir()
+		if err := os.Mkdir(filepath.Join(wc, ".svn"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, talk.With("test-recovery"))
+		if fake.cleanup != 1 || fake.status != 1 || fake.update != 0 {
+			t.Fatalf("calls cleanup=%d status=%d update=%d", fake.cleanup, fake.status, fake.update)
+		}
+	}
+}
+
+func TestReadWriteRecoveryUpdatesCleanWorkingCopy(t *testing.T) {
+	wc := t.TempDir()
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake := &recoveryClient{}
+	recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, talk.With("test-recovery"))
+	if fake.cleanup != 1 || fake.status != 1 || fake.update != 1 {
+		t.Fatalf("calls cleanup=%d status=%d update=%d", fake.cleanup, fake.status, fake.update)
 	}
 }
 

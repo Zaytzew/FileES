@@ -39,8 +39,9 @@ func NewServiceAccessProver(profile ServerProfile, identityRoot string) (SSHAcce
 	if _, err := knownhosts.New(knownHostsPath); err != nil {
 		return SSHAccessProver{}, fmt.Errorf("load service host pin: %w", err)
 	}
+	host, port := profile.hostAndPort()
 	return SSHAccessProver{
-		Address: profile.Address, KnownHostsPath: filepath.Clean(knownHostsPath),
+		Address: net.JoinHostPort(host, port), KnownHostsPath: filepath.Clean(knownHostsPath),
 		IdentityRoot: filepath.Clean(identityRoot), Timeout: 10 * time.Second,
 	}, nil
 }

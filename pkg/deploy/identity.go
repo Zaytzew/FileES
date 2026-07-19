@@ -193,6 +193,23 @@ func loadIdentity(path string) (Identity, error) {
 	return state, nil
 }
 
+// LoadActiveIdentity returns the durable installation identity after the
+// server has completed activation. Callers use it to build local attachments;
+// it never reads or returns private key bytes.
+func LoadActiveIdentity(identityRoot string) (Identity, error) {
+	if !filepath.IsAbs(identityRoot) {
+		return Identity{}, errors.New("installation identity root must be absolute")
+	}
+	identity, err := loadIdentity(filepath.Join(filepath.Clean(identityRoot), "identity.json"))
+	if err != nil {
+		return Identity{}, err
+	}
+	if identity.State != identityActive || strings.TrimSpace(identity.ClientID) == "" || identity.PrivateKeyPath != filepath.Join(filepath.Clean(identityRoot), "id_ed25519") {
+		return Identity{}, errors.New("installation identity is not active or is inconsistent")
+	}
+	return identity, nil
+}
+
 func writeJSONExclusive(path string, value any, mode os.FileMode) (bool, error) {
 	raw, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {

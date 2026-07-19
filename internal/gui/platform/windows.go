@@ -192,6 +192,18 @@ func (b *WindowsBackend) PromptText(ctx context.Context, request PromptTextReque
 	return PromptTextResult{Value: strings.TrimSpace(string(output))}, nil
 }
 
+func (b *WindowsBackend) ShowInfo(ctx context.Context, request InfoRequest) error {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return NewUnavailable("info_dialog", err)
+	}
+	script := "Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'OK','Information')|Out-Null"
+	if err := b.runner.Run(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script); err != nil {
+		return NewOperationalFailure("info_dialog", err)
+	}
+	return nil
+}
+
 func buildPromptScript(request PromptTextRequest) string {
 	var sb strings.Builder
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;")

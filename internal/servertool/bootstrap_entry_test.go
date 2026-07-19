@@ -9,6 +9,9 @@ import (
 )
 
 func TestBootstrapEntryRunsOnboardThenOneMailSubmission(t *testing.T) {
+	if bootstrapEntryPromises != "stdio rpath proc exec" {
+		t.Fatalf("bootstrap entry promises = %q", bootstrapEntryPromises)
+	}
 	if bootstrapChildPromises != "stdio rpath wpath cpath fattr flock inet dns proc unveil" {
 		t.Fatalf("bootstrap child promises = %q", bootstrapChildPromises)
 	}

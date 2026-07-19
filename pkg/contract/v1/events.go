@@ -15,6 +15,7 @@ const (
 	EvInteractionRequired = "interaction.required"
 	EvNoticeCreated       = "notice.created"
 	EvErrorRaised         = "error.raised"
+	EvActivationChanged   = "activation.changed"
 )
 
 // RepoStateChangedPayload is the payload for EvRepoStateChanged.

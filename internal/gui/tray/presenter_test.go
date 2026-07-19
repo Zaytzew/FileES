@@ -143,6 +143,18 @@ func TestBuildMenuHeaderShowsAtLeastOneActiveServer(t *testing.T) {
 	}
 }
 
+func TestServerMenuUsesAliasAndExposesInformationDialog(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "office", Address: "filees.example.net:2222"}}})
+	server := findItem(t, menu.Items, "server.office")
+	if server.Title != "office" {
+		t.Fatalf("server title = %q", server.Title)
+	}
+	info := findItem(t, server.Children, "server.office.info")
+	if info.Intent == nil || info.Intent.Kind != IntentServerInfo || info.Intent.ServerID != "office" {
+		t.Fatalf("server info action = %+v", info)
+	}
+}
+
 func TestBuildMenuShowsProjectedUnattachedRepositoryByDisplayName(t *testing.T) {
 	repo := app.RepoViewModel{ID: "repo-uuid", DisplayName: "Dokumenty wspólne", ServerID: "office", Access: contract.AccessReadOnly, State: contract.StateUnattached}
 	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", Repos: []app.RepoViewModel{repo}}}})

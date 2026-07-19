@@ -89,6 +89,9 @@ type ActivationStatus struct {
 	ServerID    string `json:"server_id"`
 	DisplayName string `json:"display_name"`
 	ClientRole  string `json:"client_role"`
+	Address     string `json:"address,omitempty"`
+	ClientID    string `json:"client_id,omitempty"`
+	SSHPort     int    `json:"ssh_port,omitempty"`
 }
 
 type ActivationBeginPayload struct {

@@ -4,9 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	contract "filees/pkg/contract/v1"
 )
+
+func TestRegisterActivationEmitsRefreshEvent(t *testing.T) {
+	server := New(t.TempDir() + "/daemon.sock")
+	events := make(chan contract.Event, 1)
+	server.addSub(events)
+	server.RegisterActivation(contract.ActivationStatus{ServerID: "office", DisplayName: "office", Address: "filees.example.net", SSHPort: 22})
+	select {
+	case event := <-events:
+		if event.Type != contract.EvActivationChanged || event.RepoID != "" {
+			t.Fatalf("event = %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("activation refresh event not emitted")
+	}
+}
 
 type fakeActivationService struct{ began, finished bool }
 

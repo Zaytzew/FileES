@@ -20,8 +20,9 @@ import (
 )
 
 type projectionUpdate struct {
-	serverID, displayName string
-	view                  clientview.View
+	serverID, displayName, address, clientID string
+	sshPort                                  int
+	view                                     clientview.View
 }
 
 type serviceProjectionUpdater struct {
@@ -61,7 +62,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 	updates := make(chan projectionUpdate, 16)
 	monitored := make(map[string]bool)
-	startMonitor := func(serverID, displayName, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval time.Duration) error {
+	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval time.Duration) error {
 		if monitored[serverID] {
 			return nil
 		}
@@ -75,7 +76,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			}
 		}
 		monitored[serverID] = true
-		ipc.RegisterActivation(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: "normal"})
+		ipc.RegisterActivation(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: "normal", Address: address, ClientID: clientID, SSHPort: sshPort})
 		svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort})
 		var updater clientview.Updater = svn
 		if serviceURL != "" {
@@ -85,7 +86,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		go func() {
 			for view := range views {
 				select {
-				case updates <- projectionUpdate{serverID: serverID, displayName: displayName, view: view}:
+				case updates <- projectionUpdate{serverID: serverID, displayName: displayName, address: address, clientID: clientID, sshPort: sshPort, view: view}:
 				case <-ctx.Done():
 					return
 				}
@@ -94,7 +95,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		return nil
 	}
 	startProfile := func(profile clientprofile.Profile) error {
-		return startMonitor(profile.ServerID, profile.DisplayName, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval)
+		return startMonitor(profile.ServerID, profile.ServerID, profile.Address, profile.ClientID, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval)
 	}
 	for _, profile := range profiles {
 		if err := startProfile(profile); err != nil {
@@ -102,7 +103,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		}
 	}
 	if projection := activation.Projection; projection != nil && !monitored[activation.ServerID] {
-		if err := startMonitor(activation.ServerID, activation.DisplayName, activation.IdentityFile, activation.KnownHosts, 0, "", clientview.SyncConfig{WorkingCopy: projection.WorkingCopy, RelativeViewPath: projection.RelativeViewPath, CachePath: projection.CachePath}, projection.Interval); err != nil {
+		if err := startMonitor(activation.ServerID, activation.DisplayName, "", "", activation.IdentityFile, activation.KnownHosts, 0, "", clientview.SyncConfig{WorkingCopy: projection.WorkingCopy, RelativeViewPath: projection.RelativeViewPath, CachePath: projection.CachePath}, projection.Interval); err != nil {
 			talk.With("projection:"+activation.ServerID).Errorf("start configured monitor: %v", err)
 		}
 	}
@@ -133,7 +134,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				talk.With("projection:"+profile.ServerID).Errorf("start activated profile: %v", err)
 			}
 		case update := <-updates:
-			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole})
+			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort})
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
 			}

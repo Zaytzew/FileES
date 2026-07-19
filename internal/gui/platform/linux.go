@@ -157,6 +157,18 @@ func (b *LinuxBackend) PromptText(ctx context.Context, request PromptTextRequest
 	return PromptTextResult{Value: strings.TrimSpace(string(output))}, nil
 }
 
+func (b *LinuxBackend) ShowInfo(ctx context.Context, request InfoRequest) error {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return NewUnavailable("info_dialog", errors.New("zenity is not installed"))
+	}
+	args := []string{"--info", "--title=" + request.Title, "--text=" + request.Text, "--no-wrap"}
+	if _, err := b.runner.Output(ctx, command, args...); err != nil && ctx.Err() == nil && !commandCancelled(err) {
+		return NewOperationalFailure("info_dialog", err)
+	}
+	return ctx.Err()
+}
+
 func (b *LinuxBackend) pickerCommand(request PickFilesRequest, initialDir string) (string, []string, error) {
 	if command, err := b.runner.LookPath("zenity"); err == nil {
 		args := []string{"--file-selection", "--separator=\n", "--filename=" + filepath.Clean(initialDir) + string(filepath.Separator)}

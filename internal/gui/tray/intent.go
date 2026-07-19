@@ -10,11 +10,13 @@ const (
 	IntentUnlock     IntentKind = "unlock"
 	IntentReconnect  IntentKind = "reconnect"
 	IntentActivate   IntentKind = "activate"
+	IntentServerInfo IntentKind = "server_info"
 	IntentQuit       IntentKind = "quit"
 )
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.
 type Intent struct {
-	Kind   IntentKind
-	RepoID string
+	Kind     IntentKind
+	RepoID   string
+	ServerID string
 }

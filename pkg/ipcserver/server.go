@@ -109,12 +109,26 @@ func (s *Server) RegisterRepoAccess(id, url, localPath, serverID, access string)
 		localPath:    localPath,
 		serverID:     serverID,
 		access:       access,
+		displayName:  id,
+		attached:     true,
 		state:        contract.StateInitializing,
 		connectivity: contract.ConnOnline,
 	}
 	s.mu.Lock()
 	s.repos[id] = rs
 	s.mu.Unlock()
+	return rs
+}
+
+func (s *Server) RegisterProjectedRepo(id, displayName, url, serverID, access, state string, attached bool) *RepoState {
+	s.mu.Lock()
+	rs := s.repos[id]
+	if rs == nil {
+		rs = &RepoState{server: s, id: id, serverID: serverID, connectivity: contract.ConnOnline}
+		s.repos[id] = rs
+	}
+	s.mu.Unlock()
+	rs.SetProjectedMetadata(displayName, url, access, state, attached)
 	return rs
 }
 

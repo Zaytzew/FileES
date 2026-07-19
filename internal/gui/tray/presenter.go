@@ -88,7 +88,11 @@ func lastRefreshLabel(vm app.ViewModel) string {
 }
 
 func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
-	title := fmt.Sprintf("%s — %s", repo.ID, repoStateLabel(repo))
+	name := repo.DisplayName
+	if strings.TrimSpace(name) == "" {
+		name = repo.ID
+	}
+	title := fmt.Sprintf("%s — %s", name, repoStateLabel(repo))
 	pending := repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted
 	children := []MenuItemModel{
 		disabledItem("repo."+repo.ID+".state", "Stan: "+repoStateLabel(repo)),
@@ -143,6 +147,12 @@ func repoStateLabel(repo app.RepoViewModel) string {
 		return "Offline"
 	case app.RepoDisplayAttention:
 		return "Wymaga uwagi"
+	case app.RepoDisplayUnattached:
+		return "Nieprzypięte lokalnie"
+	case app.RepoDisplayDisabled:
+		return "Wyłączone"
+	case app.RepoDisplayRevoked:
+		return "Dostęp cofnięty"
 	default:
 		return "Stan nieznany"
 	}

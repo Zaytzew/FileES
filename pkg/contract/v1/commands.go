@@ -120,12 +120,14 @@ type RepoListResult struct {
 
 // RepoSummary is a minimal descriptor used in RepoListResult.
 type RepoSummary struct {
-	ID        string `json:"id"`
-	ServerID  string `json:"server_id"`
-	Access    string `json:"access"`
-	URL       string `json:"url"`
-	LocalPath string `json:"local_path"`
-	State     string `json:"state"`
+	ID          string `json:"id"`
+	ServerID    string `json:"server_id"`
+	DisplayName string `json:"display_name"`
+	Attached    bool   `json:"attached"`
+	Access      string `json:"access"`
+	URL         string `json:"url"`
+	LocalPath   string `json:"local_path"`
+	State       string `json:"state"`
 }
 
 // RepoIDPayload is used by commands that target a specific repo (CmdRepoPause, etc.).

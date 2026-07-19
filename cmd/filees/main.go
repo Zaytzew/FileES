@@ -123,10 +123,15 @@ func runDaemon() {
 
 }
 
-func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supervisor, serverID string, view clientview.View, runtimes map[reposupervisor.Key]repoRuntime) error {
+func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supervisor, ipc *ipcserver.Server, serverID string, view clientview.View, runtimes map[reposupervisor.Key]repoRuntime) error {
+	syncProjectionKnowledge(ipc, serverID, view, runtimes)
 	items := attachedProjection(serverID, view, runtimes)
 	updateProjectedRepoStates(items, runtimes)
-	return supervisor.Apply(ctx, serverID, view.Generation, items)
+	if err := supervisor.Apply(ctx, serverID, view.Generation, items); err != nil {
+		return err
+	}
+	syncProjectionKnowledge(ipc, serverID, view, runtimes)
+	return nil
 }
 
 func updateProjectedRepoStates(items []reposupervisor.Desired, runtimes map[reposupervisor.Key]repoRuntime) {

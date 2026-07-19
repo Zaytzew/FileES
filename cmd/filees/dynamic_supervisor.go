@@ -70,7 +70,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			return fmt.Errorf("load cached projection: %w", err)
 		}
 		if exists {
-			if err := reconcileProjectedView(ctx, supervisor, serverID, cached, runtimes); err != nil {
+			if err := reconcileProjectedView(ctx, supervisor, ipc, serverID, cached, runtimes); err != nil {
 				return fmt.Errorf("apply cached projection: %w", err)
 			}
 		}
@@ -134,7 +134,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			}
 		case update := <-updates:
 			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole})
-			if err := reconcileProjectedView(ctx, supervisor, update.serverID, update.view, runtimes); err != nil && ctx.Err() == nil {
+			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
 			}
 		}

@@ -48,12 +48,13 @@ func TestReconcileProjectedViewChangesLiveAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	view := clientview.View{Generation: 1, Repositories: []clientview.Repository{{RepoID: key.RepoID, DisplayName: "Repo", URL: "svn+ssh://_filees-client@new.example/repo", Access: "rw", State: "active"}}}
-	if err := reconcileProjectedView(t.Context(), supervisor, serverID, view, runtimes); err != nil {
+	server := ipcserver.New(t.TempDir() + "/projection.sock")
+	if err := reconcileProjectedView(t.Context(), supervisor, server, serverID, view, runtimes); err != nil {
 		t.Fatal(err)
 	}
 	view.Generation = 2
 	view.Repositories[0].Access = "r"
-	if err := reconcileProjectedView(t.Context(), supervisor, serverID, view, runtimes); err != nil {
+	if err := reconcileProjectedView(t.Context(), supervisor, server, serverID, view, runtimes); err != nil {
 		t.Fatal(err)
 	}
 	if starter.starts != 2 || starter.stops != 1 {

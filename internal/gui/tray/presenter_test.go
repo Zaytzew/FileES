@@ -136,6 +136,18 @@ func TestBuildMenuGroupsReadOnlyRepoUnderActiveServer(t *testing.T) {
 	}
 }
 
+func TestBuildMenuShowsProjectedUnattachedRepositoryByDisplayName(t *testing.T) {
+	repo := app.RepoViewModel{ID: "repo-uuid", DisplayName: "Dokumenty wspólne", ServerID: "office", Access: contract.AccessReadOnly, State: contract.StateUnattached}
+	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", Repos: []app.RepoViewModel{repo}}}})
+	item := findItem(t, menu.Items, "repo.repo-uuid")
+	if item.Title != "Dokumenty wspólne — Nieprzypięte lokalnie" {
+		t.Fatalf("title=%q", item.Title)
+	}
+	if findItem(t, item.Children, "repo.repo-uuid.open").Enabled {
+		t.Fatal("unattached repository exposes open-folder action")
+	}
+}
+
 func findItem(t *testing.T, items []MenuItemModel, id string) MenuItemModel {
 	t.Helper()
 	for _, item := range items {

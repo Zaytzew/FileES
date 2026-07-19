@@ -11,6 +11,9 @@ const (
 	StateInteractionRequired = "interaction_required"
 	StateDegraded            = "degraded"
 	StateStopping            = "stopping"
+	StateUnattached          = "unattached"
+	StateDisabled            = "disabled"
+	StateRevoked             = "revoked"
 )
 
 // Connectivity values for RepoStatus.Connectivity.
@@ -39,6 +42,8 @@ const (
 type RepoStatus struct {
 	RepoID           string       `json:"repo_id"`
 	ServerID         string       `json:"server_id"`
+	DisplayName      string       `json:"display_name"`
+	Attached         bool         `json:"attached"`
 	Access           string       `json:"access"`
 	State            string       `json:"state"`        // one of the State* constants
 	Connectivity     string       `json:"connectivity"` // ConnOnline | ConnOffline

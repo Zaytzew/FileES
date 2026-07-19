@@ -20,12 +20,14 @@ import (
 type RepoState struct {
 	mu sync.RWMutex
 
-	server    *Server // for auto-emitting state-change events
-	id        string
-	url       string
-	localPath string
-	serverID  string
-	access    string
+	server      *Server // for auto-emitting state-change events
+	id          string
+	url         string
+	localPath   string
+	serverID    string
+	access      string
+	displayName string
+	attached    bool
 
 	state        string // contract.State*
 	connectivity string // contract.Conn*
@@ -45,6 +47,20 @@ func (rs *RepoState) SetProjection(url, access string) {
 	rs.mu.Lock()
 	rs.url = url
 	rs.access = access
+	rs.mu.Unlock()
+}
+
+func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedState string, attached bool) {
+	rs.mu.Lock()
+	rs.displayName = displayName
+	rs.url = url
+	rs.access = access
+	rs.attached = attached
+	if projectedState != "active" {
+		rs.state = projectedState
+	} else if !attached {
+		rs.state = contract.StateUnattached
+	}
 	rs.mu.Unlock()
 }
 
@@ -157,6 +173,8 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	state := rs.state
 	conn := rs.connectivity
 	access := rs.access
+	displayName := rs.displayName
+	attached := rs.attached
 	headRev := rs.headRev
 	conflicts := rs.conflicts
 	lastSync := rs.lastSyncAt
@@ -168,16 +186,21 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	wc := rs.localPath
 	rs.mu.RUnlock()
 
-	localRev := readRevFile(filepath.Join(wc, ".filees", "state", "head.rev"))
+	localRev := int64(0)
+	pending := contract.PendingStats{}
+	if attached && wc != "" {
+		localRev = readRevFile(filepath.Join(wc, ".filees", "state", "head.rev"))
+		pending = readPendingStats(filepath.Join(wc, ".filees", "commit_cache", "cache.json"))
+	}
 	if headRev == 0 {
 		headRev = localRev
 	}
 
-	pending := readPendingStats(filepath.Join(wc, ".filees", "commit_cache", "cache.json"))
-
 	snap := contract.RepoStatus{
 		RepoID:           rs.id,
 		ServerID:         rs.serverID,
+		DisplayName:      displayName,
+		Attached:         attached,
 		Access:           access,
 		State:            state,
 		Connectivity:     conn,
@@ -198,12 +221,14 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 	rs.mu.RLock()
 	defer rs.mu.RUnlock()
 	return contract.RepoSummary{
-		ID:        rs.id,
-		ServerID:  rs.serverID,
-		Access:    rs.access,
-		URL:       rs.url,
-		LocalPath: rs.localPath,
-		State:     rs.state,
+		ID:          rs.id,
+		ServerID:    rs.serverID,
+		DisplayName: rs.displayName,
+		Attached:    rs.attached,
+		Access:      rs.access,
+		URL:         rs.url,
+		LocalPath:   rs.localPath,
+		State:       rs.state,
 	}
 }
 

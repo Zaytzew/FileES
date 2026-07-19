@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,6 +17,14 @@ import (
 )
 
 const Schema = "filees.client-profile/v1"
+
+func DefaultRoot() string {
+	if root := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); filepath.IsAbs(root) {
+		return filepath.Join(filepath.Clean(root), "filees", "servers")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "share", "filees", "servers")
+}
 
 type Profile struct {
 	Schema           string        `json:"schema"`
@@ -128,4 +137,44 @@ func Load(path string) (Profile, error) {
 		return Profile{}, err
 	}
 	return profile, nil
+}
+
+// List discovers only complete profile documents one directory below root.
+// Other activation artifacts are ignored; malformed profile files fail closed.
+func List(root string) ([]Profile, error) {
+	if !filepath.IsAbs(root) {
+		return nil, errors.New("client profile root must be absolute")
+	}
+	entries, err := os.ReadDir(filepath.Clean(root))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	profiles := make([]Profile, 0, len(entries))
+	seen := make(map[string]struct{})
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name(), "client-profile.json")
+		profile, err := Load(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("load client profile %s: %w", entry.Name(), err)
+		}
+		if profile.ServerID != entry.Name() {
+			return nil, fmt.Errorf("client profile directory does not match server ID %q", profile.ServerID)
+		}
+		if _, exists := seen[profile.ServerID]; exists {
+			return nil, fmt.Errorf("client profile %q is duplicated", profile.ServerID)
+		}
+		seen[profile.ServerID] = struct{}{}
+		profiles = append(profiles, profile)
+	}
+	sort.Slice(profiles, func(i, j int) bool { return profiles[i].ServerID < profiles[j].ServerID })
+	return profiles, nil
 }

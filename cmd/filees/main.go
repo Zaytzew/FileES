@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"filees/pkg/client"
+	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
 	"filees/pkg/commit"
 	"filees/pkg/config"
@@ -94,94 +94,33 @@ func runDaemon() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	profiles, err := clientprofile.List(clientprofile.DefaultRoot())
+	if err != nil {
+		lg.Errorf("client profiles: %v", err)
+		os.Exit(1)
+	}
+	profileEvents := make(chan clientprofile.Profile, 8)
 
 	gate := runtime.NewHostGate(3)
 	mtx := runtime.NewRepoMutex()
 
 	// IPC contract server
 	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
-	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation})
+	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
+		select {
+		case profileEvents <- profile:
+		case <-ctx.Done():
+		}
+	}})
 	ipc.RegisterActivation(contract.ActivationStatus{ServerID: clientView.ServerID, DisplayName: clientView.DisplayName, ClientRole: clientView.ClientRole})
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runSupervisedRepositories(ctx, repos, clientView, ipc, gate, mtx); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, ipc, gate, mtx); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	return
 
-}
-
-func runSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex) error {
-	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
-	byServer := make(map[string][]reposupervisor.Desired)
-	for _, repo := range repos {
-		key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
-		state := ipc.RegisterRepoAccess(repo.ID, repo.RepoURL, repo.LocalPath, repo.ServerID, repo.Access)
-		runtimes[key] = repoRuntime{config: repo, state: state}
-		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID})
-	}
-	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc}
-	starter := &daemonRepoStarter{daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
-		return client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts})
-	}}
-	starter.startReadWrite = func(lifecycle context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
-		return startReadWrite(lifecycle, runtimeRepo, svn, desired, deps)
-	}
-	supervisor, err := reposupervisor.New(starter, nil)
-	if err != nil {
-		return err
-	}
-	servers := make([]string, 0, len(byServer))
-	for serverID := range byServer {
-		servers = append(servers, serverID)
-	}
-	sort.Strings(servers)
-	for _, serverID := range servers {
-		if activation.Projection != nil && serverID == activation.ServerID {
-			continue
-		}
-		if err := supervisor.Apply(ctx, serverID, 1, byServer[serverID]); err != nil {
-			stopCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
-			defer cancel()
-			_ = supervisor.Stop(stopCtx)
-			return err
-		}
-	}
-	var projected <-chan clientview.View
-	if projection := activation.Projection; projection != nil {
-		cached, exists, err := clientview.CachedOrNone(projection.CachePath)
-		if err != nil {
-			return fmt.Errorf("load cached projection: %w", err)
-		}
-		if exists {
-			if err := reconcileProjectedView(ctx, supervisor, activation.ServerID, cached, runtimes); err != nil {
-				return fmt.Errorf("apply cached projection: %w", err)
-			}
-		}
-		updater := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:projection:" + activation.ServerID, SSHIdentityFile: activation.IdentityFile, SSHKnownHosts: activation.KnownHosts})
-		projected = clientview.Monitor(ctx, updater, clientview.MonitorConfig{Sync: clientview.SyncConfig{WorkingCopy: projection.WorkingCopy, RelativeViewPath: projection.RelativeViewPath, CachePath: projection.CachePath}, Interval: projection.Interval, OnError: func(err error) { talk.With("projection:"+activation.ServerID).Warnf("sync failed: %v", err) }})
-	}
-	for projected != nil {
-		select {
-		case <-ctx.Done():
-			projected = nil
-		case view, ok := <-projected:
-			if !ok {
-				projected = nil
-				continue
-			}
-			if err := reconcileProjectedView(ctx, supervisor, activation.ServerID, view, runtimes); err != nil && ctx.Err() == nil {
-				talk.With("projection:"+activation.ServerID).Errorf("reconcile generation %d: %v", view.Generation, err)
-			}
-		}
-	}
-	if ctx.Err() == nil {
-		<-ctx.Done()
-	}
-	stopCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
-	defer cancel()
-	return supervisor.Stop(stopCtx)
 }
 
 func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supervisor, serverID string, view clientview.View, runtimes map[reposupervisor.Key]repoRuntime) error {

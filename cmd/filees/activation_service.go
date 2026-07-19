@@ -16,7 +16,8 @@ import (
 )
 
 type daemonActivationService struct {
-	onActive func(contract.ActivationStatus)
+	onActive  func(contract.ActivationStatus)
+	onProfile func(clientprofile.Profile)
 }
 
 func (service daemonActivationService) Begin(ctx context.Context, payload contract.ActivationBeginPayload) (contract.ActivationCommandResult, error) {
@@ -40,8 +41,12 @@ func (service daemonActivationService) Finish(ctx context.Context, payload contr
 		return contract.ActivationCommandResult{}, err
 	}
 	state := "active"
-	if err := prepareActivatedClientProfile(ctx, payload); err != nil {
-		talk.With("activation:"+passport.ServerID).Warnf("client profile pending: %v", err)
+	clientProfile, profileErr := prepareActivatedClientProfile(ctx, payload)
+	if clientProfile.ServerID != "" && service.onProfile != nil {
+		service.onProfile(clientProfile)
+	}
+	if profileErr != nil {
+		talk.With("activation:"+passport.ServerID).Warnf("client profile pending: %v", profileErr)
 		state = "active_profile_pending"
 	}
 	if service.onActive != nil {
@@ -50,16 +55,16 @@ func (service daemonActivationService) Finish(ctx context.Context, payload contr
 	return contract.ActivationCommandResult{ServerID: passport.ServerID, State: state}, nil
 }
 
-func prepareActivatedClientProfile(ctx context.Context, payload contract.ActivationFinishPayload) error {
+func prepareActivatedClientProfile(ctx context.Context, payload contract.ActivationFinishPayload) (clientprofile.Profile, error) {
 	root := filepath.Join(filepath.Clean(payload.StateRoot), payload.ServerID)
 	identityRoot := filepath.Join(root, "identity")
 	identity, err := deploy.LoadActiveIdentity(identityRoot)
 	if err != nil {
-		return err
+		return clientprofile.Profile{}, err
 	}
 	host, port, err := deploy.NormalizeServerAddress(payload.ServerAddress)
 	if err != nil {
-		return err
+		return clientprofile.Profile{}, err
 	}
 	urlHost := host
 	if strings.Contains(host, ":") {
@@ -69,15 +74,18 @@ func prepareActivatedClientProfile(ctx context.Context, payload contract.Activat
 	serviceWC := filepath.Join(root, "service-wc")
 	profile := clientprofile.Profile{Schema: clientprofile.Schema, ServerID: payload.ServerID, DisplayName: host, Address: payload.ServerAddress, ClientID: identity.ClientID, IdentityFile: filepath.Join(identityRoot, "id_ed25519"), KnownHosts: filepath.Clean(payload.KnownHostsPath), SSHPort: port, ServiceURL: serviceURL, ServiceWC: serviceWC, RelativeViewPath: filepath.Join("clients", identity.ClientID, "view.json"), CachePath: filepath.Join(root, "cache", "view.json"), PollInterval: time.Minute}
 	if err := clientprofile.Store(filepath.Join(root, "client-profile.json"), profile); err != nil {
-		return err
+		return clientprofile.Profile{}, err
 	}
 	svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:service:" + payload.ServerID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: port})
 	if _, err := svn.Update(ctx, serviceWC); err == nil {
-		return nil
+		return profile, nil
 	}
 	if err := os.MkdirAll(serviceWC, 0o700); err != nil {
-		return err
+		return clientprofile.Profile{}, err
 	}
 	_, err = svn.Checkout(ctx, serviceURL, serviceWC)
-	return err
+	if err != nil {
+		return profile, err
+	}
+	return profile, nil
 }

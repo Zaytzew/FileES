@@ -16,6 +16,7 @@ import (
 	"filees/internal/gui/platform"
 	"filees/internal/gui/singleinstance"
 	"filees/internal/gui/tray"
+	"filees/pkg/clientprofile"
 	"filees/pkg/deploy"
 	"filees/pkg/ipcclient"
 )
@@ -27,7 +28,7 @@ func main() {
 	socket := flags.String("socket", ipcclient.DefaultSocketPath(), "ścieżka do gniazda IPC daemona")
 	autostart := flags.String("autostart", "", "zarządzaj autostartem: status, enable albo disable")
 	showVersion := flags.Bool("version", false, "pokaż wersję i zakończ")
-	activationRoot := flags.String("activation-state", "", "katalog stanu aktywacji klienta")
+	activationRoot := flags.String("activation-state", clientprofile.DefaultRoot(), "katalog stanu aktywacji klienta")
 	serverID := flags.String("server-id", "", "identyfikator profilu serwera")
 	serverAddress := flags.String("server", "", "adres SSH serwera FileES host:port")
 	knownHosts := flags.String("known-hosts", "", "plik z pinowanym kluczem hosta")

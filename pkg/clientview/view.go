@@ -26,17 +26,34 @@ type View struct {
 	GeneratedAt          time.Time         `json:"generated_at"`
 	MinimumClientVersion string            `json:"minimum_client_version,omitempty"`
 	ClientRole           string            `json:"client_role"`
+	Capabilities         *Capabilities     `json:"capabilities,omitempty"`
 	Repositories         []Repository      `json:"repositories"`
 	ActiveOperations     []json.RawMessage `json:"active_operations"`
 }
 
+type Capabilities struct {
+	CanCreateRepositories bool `json:"can_create_repositories"`
+}
+
 type Repository struct {
-	RepoID         string `json:"repo_id"`
-	DisplayName    string `json:"display_name"`
-	URL            string `json:"url"`
-	Access         string `json:"access"`
-	State          string `json:"state"`
-	MetadataDigest string `json:"metadata_digest,omitempty"`
+	RepoID           string `json:"repo_id"`
+	DisplayName      string `json:"display_name"`
+	URL              string `json:"url"`
+	Access           string `json:"access"`
+	State            string `json:"state"`
+	OwnerRealmID     string `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy string `json:"attachment_policy,omitempty"`
+	MetadataDigest   string `json:"metadata_digest,omitempty"`
+}
+
+func (v View) CanCreateRepositories() bool {
+	if v.ClientRole == "ro" {
+		return false
+	}
+	if v.Capabilities == nil {
+		return true // compatibility with pre-capability v1 projections
+	}
+	return v.Capabilities.CanCreateRepositories
 }
 
 func Load(path string) (View, error) {
@@ -80,6 +97,9 @@ func (v View) Validate() error {
 	if v.ClientRole != "normal" && v.ClientRole != "ro" {
 		return errors.New("client view client_role must be normal or ro")
 	}
+	if v.ClientRole == "ro" && v.Capabilities != nil && v.Capabilities.CanCreateRepositories {
+		return errors.New("client view read-only role cannot create repositories")
+	}
 	seen := make(map[string]struct{}, len(v.Repositories))
 	for i, repo := range v.Repositories {
 		if _, err := uuid.Parse(repo.RepoID); err != nil {
@@ -107,6 +127,14 @@ func (v View) Validate() error {
 		}
 		if repo.State != "active" && repo.State != "disabled" && repo.State != "revoked" {
 			return fmt.Errorf("repositories[%d].state is invalid", i)
+		}
+		if repo.OwnerRealmID != "" {
+			if _, err := uuid.Parse(repo.OwnerRealmID); err != nil {
+				return fmt.Errorf("repositories[%d].owner_realm_id must be UUID", i)
+			}
+		}
+		if repo.AttachmentPolicy != "" && repo.AttachmentPolicy != "optional" && repo.AttachmentPolicy != "required" {
+			return fmt.Errorf("repositories[%d].attachment_policy is invalid", i)
 		}
 	}
 	return nil

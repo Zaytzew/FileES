@@ -20,14 +20,16 @@ import (
 type RepoState struct {
 	mu sync.RWMutex
 
-	server      *Server // for auto-emitting state-change events
-	id          string
-	url         string
-	localPath   string
-	serverID    string
-	access      string
-	displayName string
-	attached    bool
+	server           *Server // for auto-emitting state-change events
+	id               string
+	url              string
+	localPath        string
+	serverID         string
+	access           string
+	displayName      string
+	attached         bool
+	ownerRealmID     string
+	attachmentPolicy string
 
 	state        string // contract.State*
 	connectivity string // contract.Conn*
@@ -56,12 +58,17 @@ func (rs *RepoState) SetProjection(url, access string) {
 	rs.mu.Unlock()
 }
 
-func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedState string, attached bool) {
+func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedState, ownerRealmID, attachmentPolicy string, attached bool) {
 	rs.mu.Lock()
 	rs.displayName = displayName
 	rs.url = url
 	rs.access = access
 	rs.attached = attached
+	rs.ownerRealmID = ownerRealmID
+	if attachmentPolicy == "" {
+		attachmentPolicy = "optional"
+	}
+	rs.attachmentPolicy = attachmentPolicy
 	if projectedState != "active" {
 		rs.state = projectedState
 	} else if !attached {
@@ -181,6 +188,8 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	access := rs.access
 	displayName := rs.displayName
 	attached := rs.attached
+	ownerRealmID := rs.ownerRealmID
+	attachmentPolicy := rs.attachmentPolicy
 	headRev := rs.headRev
 	conflicts := rs.conflicts
 	lastSync := rs.lastSyncAt
@@ -208,6 +217,8 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		DisplayName:      displayName,
 		Attached:         attached,
 		Access:           access,
+		OwnerRealmID:     ownerRealmID,
+		AttachmentPolicy: attachmentPolicy,
 		State:            state,
 		Connectivity:     conn,
 		LocalRevision:    localRev,
@@ -227,14 +238,16 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 	rs.mu.RLock()
 	defer rs.mu.RUnlock()
 	return contract.RepoSummary{
-		ID:          rs.id,
-		ServerID:    rs.serverID,
-		DisplayName: rs.displayName,
-		Attached:    rs.attached,
-		Access:      rs.access,
-		URL:         rs.url,
-		LocalPath:   rs.localPath,
-		State:       rs.state,
+		ID:               rs.id,
+		ServerID:         rs.serverID,
+		DisplayName:      rs.displayName,
+		Attached:         rs.attached,
+		Access:           rs.access,
+		URL:              rs.url,
+		LocalPath:        rs.localPath,
+		State:            rs.state,
+		OwnerRealmID:     rs.ownerRealmID,
+		AttachmentPolicy: rs.attachmentPolicy,
 	}
 }
 

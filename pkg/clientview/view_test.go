@@ -44,3 +44,38 @@ func TestReadOnlyRoleCannotCarryWritableRepository(t *testing.T) {
 		t.Fatal("global ro with rw repository accepted")
 	}
 }
+
+func TestRepositoryPolicyAndCreationCapabilities(t *testing.T) {
+	view := fixture()
+	if !view.CanCreateRepositories() {
+		t.Fatal("legacy normal projection lost repository creation capability")
+	}
+	view.Capabilities = &Capabilities{CanCreateRepositories: false}
+	view.Repositories[0].OwnerRealmID = view.RealmID
+	view.Repositories[0].AttachmentPolicy = "required"
+	if err := view.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if view.CanCreateRepositories() {
+		t.Fatal("explicit managed profile can create repositories")
+	}
+	view.ClientRole = "ro"
+	view.Repositories[0].Access = "r"
+	view.Capabilities.CanCreateRepositories = true
+	if err := view.Validate(); err == nil {
+		t.Fatal("read-only profile with creation capability accepted")
+	}
+}
+
+func TestRepositoryPolicyValidationFailsClosed(t *testing.T) {
+	view := fixture()
+	view.Repositories[0].OwnerRealmID = "not-a-uuid"
+	if err := view.Validate(); err == nil {
+		t.Fatal("invalid owner realm accepted")
+	}
+	view.Repositories[0].OwnerRealmID = view.RealmID
+	view.Repositories[0].AttachmentPolicy = "automatic"
+	if err := view.Validate(); err == nil {
+		t.Fatal("unknown attachment policy accepted")
+	}
+}

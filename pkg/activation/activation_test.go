@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/clientview"
 	"filees/pkg/onboarding"
 
 	"github.com/google/uuid"
@@ -36,6 +37,10 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	revision, err := manager.Publish(context.Background(), grant)
 	if err != nil || revision <= 1 {
 		t.Fatalf("revision=%d err=%v", revision, err)
+	}
+	view, err := clientview.Load(filepath.Join(config.ServiceWorkingCopy, "clients", grant.ClientID, "view.json"))
+	if err != nil || !view.CanCreateRepositories() || view.Capabilities == nil {
+		t.Fatalf("activation view capabilities=%+v err=%v", view.Capabilities, err)
 	}
 	again, err := manager.Publish(context.Background(), grant)
 	if err != nil || again != revision {

@@ -76,7 +76,17 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			}
 		}
 		monitored[serverID] = true
-		ipc.RegisterActivation(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: "normal", Address: address, ClientID: clientID, SSHPort: sshPort})
+		clientRole := "normal"
+		canCreate := false
+		if exists {
+			clientRole = cached.ClientRole
+			canCreate = cached.CanCreateRepositories()
+		}
+		realmID := ""
+		if exists {
+			realmID = cached.RealmID
+		}
+		ipc.RegisterActivation(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate})
 		svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort})
 		var updater clientview.Updater = svn
 		if serviceURL != "" {
@@ -134,7 +144,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				talk.With("projection:"+profile.ServerID).Errorf("start activated profile: %v", err)
 			}
 		case update := <-updates:
-			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort})
+			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories()})
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
 			}

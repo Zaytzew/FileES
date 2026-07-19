@@ -32,7 +32,7 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	for _, repo := range view.Repositories {
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
 		_, attached := attachments[key]
-		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: repo.State, Attached: attached})
+		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, Attached: attached})
 	}
 	ipc.ReconcileProjectedRepos(serverID, projected)
 }

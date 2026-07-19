@@ -122,6 +122,10 @@ func (s *Server) RegisterRepoAccess(id, url, localPath, serverID, access string)
 }
 
 func (s *Server) RegisterProjectedRepo(id, displayName, url, serverID, access, state string, attached bool) *RepoState {
+	return s.RegisterProjectedRepoPolicy(id, displayName, url, serverID, access, state, "", "optional", attached)
+}
+
+func (s *Server) RegisterProjectedRepoPolicy(id, displayName, url, serverID, access, state, ownerRealmID, attachmentPolicy string, attached bool) *RepoState {
 	s.mu.Lock()
 	rs := s.repos[id]
 	if rs == nil {
@@ -129,7 +133,7 @@ func (s *Server) RegisterProjectedRepo(id, displayName, url, serverID, access, s
 		s.repos[id] = rs
 	}
 	s.mu.Unlock()
-	rs.SetProjectedMetadata(displayName, url, access, state, attached)
+	rs.SetProjectedMetadata(displayName, url, access, state, ownerRealmID, attachmentPolicy, attached)
 	return rs
 }
 
@@ -140,7 +144,7 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 	present := make(map[string]struct{}, len(repos))
 	for _, repo := range repos {
 		present[repo.ID] = struct{}{}
-		s.RegisterProjectedRepo(repo.ID, repo.DisplayName, repo.URL, serverID, repo.Access, repo.State, repo.Attached)
+		s.RegisterProjectedRepoPolicy(repo.ID, repo.DisplayName, repo.URL, serverID, repo.Access, repo.State, repo.OwnerRealmID, repo.AttachmentPolicy, repo.Attached)
 	}
 	s.mu.Lock()
 	removed := false
@@ -161,6 +165,7 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 
 type ProjectedRepo struct {
 	ID, DisplayName, URL, Access, State string
+	OwnerRealmID, AttachmentPolicy      string
 	Attached                            bool
 }
 

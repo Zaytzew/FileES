@@ -88,12 +88,14 @@ type SystemStatusResult struct {
 }
 
 type ActivationStatus struct {
-	ServerID    string `json:"server_id"`
-	DisplayName string `json:"display_name"`
-	ClientRole  string `json:"client_role"`
-	Address     string `json:"address,omitempty"`
-	ClientID    string `json:"client_id,omitempty"`
-	SSHPort     int    `json:"ssh_port,omitempty"`
+	ServerID              string `json:"server_id"`
+	DisplayName           string `json:"display_name"`
+	ClientRole            string `json:"client_role"`
+	RealmID               string `json:"realm_id,omitempty"`
+	Address               string `json:"address,omitempty"`
+	ClientID              string `json:"client_id,omitempty"`
+	SSHPort               int    `json:"ssh_port,omitempty"`
+	CanCreateRepositories bool   `json:"can_create_repositories"`
 }
 
 type ActivationBeginPayload struct {
@@ -141,14 +143,16 @@ type RepoListResult struct {
 
 // RepoSummary is a minimal descriptor used in RepoListResult.
 type RepoSummary struct {
-	ID          string `json:"id"`
-	ServerID    string `json:"server_id"`
-	DisplayName string `json:"display_name"`
-	Attached    bool   `json:"attached"`
-	Access      string `json:"access"`
-	URL         string `json:"url"`
-	LocalPath   string `json:"local_path"`
-	State       string `json:"state"`
+	ID               string `json:"id"`
+	ServerID         string `json:"server_id"`
+	DisplayName      string `json:"display_name"`
+	Attached         bool   `json:"attached"`
+	Access           string `json:"access"`
+	URL              string `json:"url"`
+	LocalPath        string `json:"local_path"`
+	State            string `json:"state"`
+	OwnerRealmID     string `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy string `json:"attachment_policy"`
 }
 
 // RepoIDPayload is used by commands that target a specific repo (CmdRepoPause, etc.).

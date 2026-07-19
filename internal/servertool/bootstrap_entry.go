@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	bootstrapEntryPromises = "stdio proc exec"
+	bootstrapEntryPromises = "stdio rpath proc exec"
 	bootstrapChildPromises = "stdio rpath wpath cpath fattr flock inet dns proc unveil"
 	onboardPath            = "/usr/local/libexec/filees/filees-onboard"
 	mailPath               = "/usr/local/libexec/filees/filees-mail"

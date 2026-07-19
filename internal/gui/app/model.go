@@ -61,6 +61,9 @@ type ServerViewModel struct {
 	ID          string
 	DisplayName string
 	ClientRole  string
+	Address     string
+	ClientID    string
+	SSHPort     int
 	Repos       []RepoViewModel
 }
 

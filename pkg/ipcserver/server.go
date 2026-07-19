@@ -73,6 +73,7 @@ func (s *Server) RegisterActivation(status contract.ActivationStatus) {
 	s.mu.Lock()
 	s.activations[status.ServerID] = status
 	s.mu.Unlock()
+	s.Emit(contract.NewEvent("", 0, contract.EvActivationChanged, "", status))
 }
 
 func (s *Server) allActivations() []contract.ActivationStatus {

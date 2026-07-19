@@ -17,6 +17,12 @@ type Backend interface {
 
 type Prompter interface {
 	PromptText(ctx context.Context, request PromptTextRequest) (PromptTextResult, error)
+	ShowInfo(ctx context.Context, request InfoRequest) error
+}
+
+type InfoRequest struct {
+	Title string
+	Text  string
 }
 
 type PromptTextRequest struct {

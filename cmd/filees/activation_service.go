@@ -50,7 +50,7 @@ func (service daemonActivationService) Finish(ctx context.Context, payload contr
 		state = "active_profile_pending"
 	}
 	if service.onActive != nil {
-		service.onActive(contract.ActivationStatus{ServerID: passport.ServerID, DisplayName: payload.ServerAddress, ClientRole: "normal"})
+		service.onActive(contract.ActivationStatus{ServerID: passport.ServerID, DisplayName: passport.ServerID, ClientRole: "normal", Address: payload.ServerAddress, ClientID: clientProfile.ClientID, SSHPort: clientProfile.SSHPort})
 	}
 	return contract.ActivationCommandResult{ServerID: passport.ServerID, State: state}, nil
 }
@@ -72,7 +72,7 @@ func prepareActivatedClientProfile(ctx context.Context, payload contract.Activat
 	}
 	serviceURL := (&url.URL{Scheme: "svn+ssh", User: url.User(deploy.ServiceClientUser), Host: urlHost, Path: "/"}).String()
 	serviceWC := filepath.Join(root, "service-wc")
-	profile := clientprofile.Profile{Schema: clientprofile.Schema, ServerID: payload.ServerID, DisplayName: host, Address: payload.ServerAddress, ClientID: identity.ClientID, IdentityFile: filepath.Join(identityRoot, "id_ed25519"), KnownHosts: filepath.Clean(payload.KnownHostsPath), SSHPort: port, ServiceURL: serviceURL, ServiceWC: serviceWC, RelativeViewPath: filepath.Join("clients", identity.ClientID, "view.json"), CachePath: filepath.Join(root, "cache", "view.json"), PollInterval: time.Minute}
+	profile := clientprofile.Profile{Schema: clientprofile.Schema, ServerID: payload.ServerID, DisplayName: payload.ServerID, Address: payload.ServerAddress, ClientID: identity.ClientID, IdentityFile: filepath.Join(identityRoot, "id_ed25519"), KnownHosts: filepath.Clean(payload.KnownHostsPath), SSHPort: port, ServiceURL: serviceURL, ServiceWC: serviceWC, RelativeViewPath: filepath.Join("clients", identity.ClientID, "view.json"), CachePath: filepath.Join(root, "cache", "view.json"), PollInterval: time.Minute}
 	if err := clientprofile.Store(filepath.Join(root, "client-profile.json"), profile); err != nil {
 		return clientprofile.Profile{}, err
 	}

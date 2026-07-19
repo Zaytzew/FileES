@@ -54,7 +54,10 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	if strings.TrimSpace(name) == "" {
 		name = server.ID
 	}
-	children := []MenuItemModel{disabledItem("server."+server.ID+".role", "Tryb klienta: "+clientRoleLabel(server.ClientRole))}
+	children := []MenuItemModel{
+		disabledItem("server."+server.ID+".role", "Tryb klienta: "+clientRoleLabel(server.ClientRole)),
+		actionItem("server."+server.ID+".info", "Informacje o serwerze…", "Pokaż rzeczywisty adres i identyfikatory", Intent{Kind: IntentServerInfo, ServerID: server.ID}),
+	}
 	if len(server.Repos) == 0 {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak repozytoriów"))
 	}

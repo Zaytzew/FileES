@@ -94,11 +94,46 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		}
 	case tray.IntentActivate:
 		c.startActivation(ctx)
+	case tray.IntentServerInfo:
+		c.startServerInfo(ctx, intent.ServerID)
 	case tray.IntentQuit:
 		if c.cfg.Quit != nil {
 			c.cfg.Quit()
 		}
 	}
+}
+
+func (c *Controller) startServerInfo(ctx context.Context, serverID string) {
+	if c.cfg.Prompter == nil || serverID == "" {
+		return
+	}
+	for _, server := range c.cfg.ViewModel().Servers {
+		if server.ID != serverID {
+			continue
+		}
+		address := server.Address
+		if address == "" {
+			address = "brak danych"
+		}
+		clientID := server.ClientID
+		if clientID == "" {
+			clientID = "brak danych"
+		}
+		text := fmt.Sprintf("Alias: %s\nAdres serwera: %s\nPort SSH: %d\nID klienta: %s\nTryb klienta: %s", server.ID, address, server.SSHPort, clientID, clientRoleDescription(server.ClientRole))
+		c.tasks.Add(1)
+		go func() {
+			defer c.tasks.Done()
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Serwer FileES — " + server.ID, Text: text})
+		}()
+		return
+	}
+}
+
+func clientRoleDescription(role string) string {
+	if role == "ro" {
+		return "tylko odczyt"
+	}
+	return "pełny"
 }
 
 func (c *Controller) startActivation(ctx context.Context) {

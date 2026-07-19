@@ -89,3 +89,17 @@ func splitServerAddress(address string) (string, string, error) {
 	}
 	return address, "22", nil
 }
+
+// NormalizeServerAddress resolves the user-facing server address into the SSH
+// endpoint used by transports. An omitted port means the standard SSH port.
+func NormalizeServerAddress(address string) (string, int, error) {
+	host, port, err := splitServerAddress(strings.TrimSpace(address))
+	if err != nil {
+		return "", 0, err
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return "", 0, errors.New("server port is invalid")
+	}
+	return host, n, nil
+}

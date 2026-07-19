@@ -1,6 +1,9 @@
 package deploy
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestServerProfileAddressDefaultsToSSHPort(t *testing.T) {
 	for input, wantHost := range map[string]string{"filees.example.net": "filees.example.net", "192.0.2.10": "192.0.2.10", "[2001:db8::1]": "2001:db8::1", "2001:db8::1": "2001:db8::1"} {
@@ -12,6 +15,20 @@ func TestServerProfileAddressDefaultsToSSHPort(t *testing.T) {
 		if host != wantHost || port != "22" {
 			t.Fatalf("%q => %q:%q", input, host, port)
 		}
+	}
+}
+
+func TestServiceAccessProverUsesNormalizedDefaultPort(t *testing.T) {
+	knownHosts := t.TempDir() + "/known_hosts"
+	if err := os.WriteFile(knownHosts, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prover, err := NewServiceAccessProver(ServerProfile{ID: "server", Address: "filees.example.net", KnownHostsPath: knownHosts}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prover.Address != "filees.example.net:22" {
+		t.Fatalf("address=%q", prover.Address)
 	}
 }
 

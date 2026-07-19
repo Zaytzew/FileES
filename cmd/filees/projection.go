@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"filees/pkg/clientview"
+	"filees/pkg/ipcserver"
 	"filees/pkg/reposupervisor"
 )
 
@@ -21,4 +22,15 @@ func attachedProjection(serverID string, view clientview.View, attachments map[r
 	}
 	sort.Slice(desired, func(i, j int) bool { return desired[i].Key.String() < desired[j].Key.String() })
 	return desired
+}
+
+func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime) {
+	if ipc == nil {
+		return
+	}
+	for _, repo := range view.Repositories {
+		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
+		_, attached := attachments[key]
+		ipc.RegisterProjectedRepo(repo.RepoID, repo.DisplayName, repo.URL, serverID, repo.Access, repo.State, attached)
+	}
 }

@@ -143,7 +143,9 @@ func (s appState) viewModel() ViewModel {
 		snap := s.snapshots[id]
 		repos = append(repos, RepoViewModel{
 			ID:           id,
+			DisplayName:  sum.DisplayName,
 			ServerID:     snap.ServerID,
+			Attached:     sum.Attached,
 			Access:       snap.Access,
 			URL:          sum.URL,
 			LocalPath:    sum.LocalPath,

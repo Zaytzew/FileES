@@ -31,6 +31,9 @@ const (
 	RepoDisplayStopping     RepoDisplayState = "stopping"
 	RepoDisplayOffline      RepoDisplayState = "offline"
 	RepoDisplayAttention    RepoDisplayState = "attention"
+	RepoDisplayUnattached   RepoDisplayState = "unattached"
+	RepoDisplayDisabled     RepoDisplayState = "disabled"
+	RepoDisplayRevoked      RepoDisplayState = "revoked"
 	RepoDisplayUnknown      RepoDisplayState = "unknown"
 )
 
@@ -38,7 +41,9 @@ const (
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
 	ID           string
+	DisplayName  string
 	ServerID     string
+	Attached     bool
 	Access       string
 	URL          string
 	LocalPath    string
@@ -126,6 +131,12 @@ func (r RepoViewModel) DisplayState() RepoDisplayState {
 		return RepoDisplayPaused
 	case contract.StateStopping:
 		return RepoDisplayStopping
+	case contract.StateUnattached:
+		return RepoDisplayUnattached
+	case contract.StateDisabled:
+		return RepoDisplayDisabled
+	case contract.StateRevoked:
+		return RepoDisplayRevoked
 	default:
 		return RepoDisplayUnknown
 	}

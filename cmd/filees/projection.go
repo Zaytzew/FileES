@@ -28,9 +28,11 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	if ipc == nil {
 		return
 	}
+	projected := make([]ipcserver.ProjectedRepo, 0, len(view.Repositories))
 	for _, repo := range view.Repositories {
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
 		_, attached := attachments[key]
-		ipc.RegisterProjectedRepo(repo.RepoID, repo.DisplayName, repo.URL, serverID, repo.Access, repo.State, attached)
+		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: repo.State, Attached: attached})
 	}
+	ipc.ReconcileProjectedRepos(serverID, projected)
 }

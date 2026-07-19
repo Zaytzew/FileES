@@ -126,22 +126,16 @@ func runDaemon() {
 }
 
 func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supervisor, ipc *ipcserver.Server, serverID string, view clientview.View, runtimes map[reposupervisor.Key]repoRuntime) error {
-	syncProjectionKnowledge(ipc, serverID, view, runtimes)
 	items := attachedProjection(serverID, view, runtimes)
-	updateProjectedRepoStates(items, runtimes)
-	if err := supervisor.Apply(ctx, serverID, view.Generation, items); err != nil {
+	if err := supervisor.ApplyWithTransition(ctx, serverID, view.Generation, items, func(item reposupervisor.Desired) {
+		if runtime, ok := runtimes[item.Key]; ok {
+			runtime.state.SetProjection(item.URL, item.Access)
+		}
+	}); err != nil {
 		return err
 	}
 	syncProjectionKnowledge(ipc, serverID, view, runtimes)
 	return nil
-}
-
-func updateProjectedRepoStates(items []reposupervisor.Desired, runtimes map[reposupervisor.Key]repoRuntime) {
-	for _, item := range items {
-		if runtime, ok := runtimes[item.Key]; ok {
-			runtime.state.SetProjection(item.URL, item.Access)
-		}
-	}
 }
 
 func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, lg talk.Logger) {

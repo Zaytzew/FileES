@@ -14,11 +14,19 @@ type projectionStop func()
 
 func (stop projectionStop) Stop(context.Context) error { stop(); return nil }
 
-type projectionStarter struct{ starts, stops int }
+type projectionStarter struct {
+	starts, stops int
+	onStop        func()
+}
 
 func (starter *projectionStarter) Start(context.Context, reposupervisor.Desired) (reposupervisor.Instance, error) {
 	starter.starts++
-	return projectionStop(func() { starter.stops++ }), nil
+	return projectionStop(func() {
+		starter.stops++
+		if starter.onStop != nil {
+			starter.onStop()
+		}
+	}), nil
 }
 
 func TestAttachedProjectionUsesServerAuthorityAndSkipsUnattachedRepositories(t *testing.T) {
@@ -54,9 +62,15 @@ func TestReconcileProjectedViewChangesLiveAuthority(t *testing.T) {
 	}
 	view.Generation = 2
 	view.Repositories[0].Access = "r"
+	starter.onStop = func() {
+		if got := state.Summary().Access; got != contract.AccessReadWrite {
+			t.Fatalf("rw authority changed to %q before writer stopped", got)
+		}
+	}
 	if err := reconcileProjectedView(t.Context(), supervisor, server, serverID, view, runtimes); err != nil {
 		t.Fatal(err)
 	}
+	starter.onStop = nil
 	if starter.starts != 2 || starter.stops != 1 {
 		t.Fatalf("starts=%d stops=%d", starter.starts, starter.stops)
 	}

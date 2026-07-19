@@ -39,6 +39,24 @@ func TestAccessTransitionStopsBeforeStartingReplacement(t *testing.T) {
 	}
 }
 
+func TestTransitionBarrierRunsAfterStopBeforeReadOnlyStart(t *testing.T) {
+	var log []string
+	supervisor, _ := New(fakeStarter{&log}, nil)
+	key := Key{"office", "repo"}
+	if err := supervisor.Apply(t.Context(), "office", 1, []Desired{{Key: key, Access: "rw", State: "active", URL: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.ApplyWithTransition(t.Context(), "office", 2, []Desired{{Key: key, Access: "r", State: "active", URL: "one"}}, func(d Desired) {
+		log = append(log, "publish:"+d.Key.String()+":"+d.Access)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"start:office/repo:rw", "stop:office/repo:rw", "publish:office/repo:r", "start:office/repo:r"}
+	if !reflect.DeepEqual(log, want) {
+		t.Fatalf("log=%v want=%v", log, want)
+	}
+}
+
 func TestDisableRemovalAndOtherServerIsolation(t *testing.T) {
 	var log []string
 	supervisor, _ := New(fakeStarter{&log}, nil)

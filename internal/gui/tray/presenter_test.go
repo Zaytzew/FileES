@@ -14,7 +14,6 @@ func TestBuildMenuDisconnectedMarksSnapshotStale(t *testing.T) {
 		Stale:       true,
 		Icon:        app.IconDisconnected,
 		LastRefresh: time.Date(2026, 7, 13, 20, 30, 0, 0, time.Local),
-		Repos:       []app.RepoViewModel{{ID: "projectA", Access: contract.AccessReadWrite, State: contract.StateActive}},
 	}
 	menu := BuildMenu(vm)
 	if menu.Icon != app.IconDisconnected || menu.Title != "FileES — Brak połączenia" {
@@ -42,7 +41,7 @@ func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
 		}},
 	}
 
-	menu := BuildMenu(vm)
+	menu := BuildMenu(withServer(vm))
 	repo := findItem(t, menu.Items, "repo.projectA")
 	if repo.Title != "projectA — Praca w toku" {
 		t.Fatalf("repo title = %q", repo.Title)
@@ -63,10 +62,10 @@ func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
 }
 
 func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
-	menu := BuildMenu(app.ViewModel{
+	menu := BuildMenu(withServer(app.ViewModel{
 		Connected: true,
 		Repos:     []app.RepoViewModel{{ID: "repo", Access: contract.AccessReadWrite, LocalPath: "/wc", State: contract.StateActive}},
-	})
+	}))
 	repo := findItem(t, menu.Items, "repo.repo")
 	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
 		t.Fatal("lock actions visible without capabilities")
@@ -77,7 +76,7 @@ func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
 }
 
 func TestBuildMenuHidesMutationsWhileSnapshotStale(t *testing.T) {
-	menu := BuildMenu(app.ViewModel{
+	menu := BuildMenu(withServer(app.ViewModel{
 		Connected: true,
 		Stale:     true,
 		Capabilities: map[string]bool{
@@ -85,7 +84,7 @@ func TestBuildMenuHidesMutationsWhileSnapshotStale(t *testing.T) {
 			contract.CapRepoUnlock: true,
 		},
 		Repos: []app.RepoViewModel{{ID: "repo", Access: contract.AccessReadWrite, LocalPath: "/wc", State: contract.StateActive}},
-	})
+	}))
 	repo := findItem(t, menu.Items, "repo.repo")
 	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
 		t.Fatal("mutation actions visible while snapshot is stale")
@@ -111,10 +110,10 @@ func TestBuildMenuStructuredErrorsNewestFirst(t *testing.T) {
 }
 
 func TestBuildMenuUnknownStateHasSafeFallback(t *testing.T) {
-	menu := BuildMenu(app.ViewModel{
+	menu := BuildMenu(withServer(app.ViewModel{
 		Connected: true,
 		Repos:     []app.RepoViewModel{{ID: "future", LocalPath: "/wc", State: "future-state"}},
-	})
+	}))
 	if got := findItem(t, menu.Items, "repo.future").Title; got != "future — Stan nieznany" {
 		t.Fatalf("title = %q", got)
 	}
@@ -140,6 +139,13 @@ func TestBuildMenuHeaderShowsAtLeastOneActiveServer(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net"}}})
 	if menu.Title != "FileES — Połączono — Klient aktywowany" {
 		t.Fatalf("menu title = %q", menu.Title)
+	}
+}
+
+func TestBuildMenuDoesNotSynthesizeDefaultServer(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{{ID: "orphan"}}})
+	if hasItem(menu.Items, "server.default") || !hasItem(menu.Items, "servers.empty") {
+		t.Fatalf("menu synthesized a server: %+v", menu.Items)
 	}
 }
 
@@ -188,4 +194,11 @@ func hasItem(items []MenuItemModel, id string) bool {
 		}
 	}
 	return false
+}
+
+func withServer(vm app.ViewModel) app.ViewModel {
+	if len(vm.Servers) == 0 && len(vm.Repos) > 0 {
+		vm.Servers = []app.ServerViewModel{{ID: "test", DisplayName: "Test", Repos: vm.Repos}}
+	}
+	return vm
 }

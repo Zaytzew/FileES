@@ -10,9 +10,6 @@ import (
 // BuildMenu converts an app ViewModel into a deterministic tray menu.
 func BuildMenu(vm app.ViewModel) MenuModel {
 	active := len(vm.Servers) > 0
-	if len(vm.Servers) == 0 && len(vm.Repos) > 0 {
-		vm.Servers = []app.ServerViewModel{{ID: "default", DisplayName: "Serwer", ClientRole: "normal", Repos: vm.Repos}}
-	}
 	status := connectionLabel(vm)
 	model := MenuModel{
 		Icon:    vm.Icon,

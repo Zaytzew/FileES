@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"net/url"
 	"os"
@@ -35,7 +36,7 @@ func (service daemonActivationService) Finish(ctx context.Context, payload contr
 	if err != nil {
 		return contract.ActivationCommandResult{}, err
 	}
-	otp := []byte(strings.TrimSpace(payload.OTP))
+	otp := append([]byte(nil), bytes.TrimSpace(payload.OTP)...)
 	defer clear(otp)
 	if err := deploy.RunActivation(ctx, passport, deploy.ActivationOptions{Root: payload.StateRoot, ServerProfile: profile, RemotePort: payload.RemotePort}, otp); err != nil {
 		return contract.ActivationCommandResult{}, err

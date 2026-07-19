@@ -133,6 +133,37 @@ func (s *Server) RegisterProjectedRepo(id, displayName, url, serverID, access, s
 	return rs
 }
 
+// ReconcileProjectedRepos replaces the presentation knowledge for one server.
+// Repositories omitted by the authoritative projection are removed from IPC;
+// this never removes or otherwise mutates their local working copies.
+func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo) {
+	present := make(map[string]struct{}, len(repos))
+	for _, repo := range repos {
+		present[repo.ID] = struct{}{}
+		s.RegisterProjectedRepo(repo.ID, repo.DisplayName, repo.URL, serverID, repo.Access, repo.State, repo.Attached)
+	}
+	s.mu.Lock()
+	removed := false
+	for id, repo := range s.repos {
+		if repo.ServerID() != serverID {
+			continue
+		}
+		if _, ok := present[id]; !ok {
+			delete(s.repos, id)
+			removed = true
+		}
+	}
+	s.mu.Unlock()
+	if removed {
+		s.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
+	}
+}
+
+type ProjectedRepo struct {
+	ID, DisplayName, URL, Access, State string
+	Attached                            bool
+}
+
 // NewRepoEvent builds an event envelope for the given repo.
 // Sequence and EventID are intentionally zero/empty: Emit() assigns them
 // inside subsMu so sequence order == delivery order.

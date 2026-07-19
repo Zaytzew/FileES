@@ -136,6 +136,13 @@ func TestBuildMenuGroupsReadOnlyRepoUnderActiveServer(t *testing.T) {
 	}
 }
 
+func TestBuildMenuHeaderShowsAtLeastOneActiveServer(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net"}}})
+	if menu.Title != "FileES — Połączono — Klient aktywowany" {
+		t.Fatalf("menu title = %q", menu.Title)
+	}
+}
+
 func TestBuildMenuShowsProjectedUnattachedRepositoryByDisplayName(t *testing.T) {
 	repo := app.RepoViewModel{ID: "repo-uuid", DisplayName: "Dokumenty wspólne", ServerID: "office", Access: contract.AccessReadOnly, State: contract.StateUnattached}
 	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", Repos: []app.RepoViewModel{repo}}}})

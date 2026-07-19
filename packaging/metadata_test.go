@@ -228,7 +228,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	}
 	text := string(raw)
 	for _, required := range []string{
-		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-operation filees-mail",
+		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail",
 		"filees-ssh-auth filees-entry filees-worker filees-client-entry",
 		`"./cmd/$command"`, "SHA256SUMS", "sha256 -r",
 	} {
@@ -257,6 +257,8 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	}
 	openBSDInstallerText := string(openBSDInstaller)
 	for _, required := range []string{
+		`-m 4511 "$bundle/bin/filees-bootstrap-entry"`,
+		`-m 0555 "$bundle/bin/filees-onboard"`,
 		`-m 4511 "$bundle/bin/filees-entry"`,
 		`-m 0555 "$bundle/bin/filees-worker"`,
 		`-m 4550 "$bundle/bin/filees-client-entry"`,
@@ -269,11 +271,17 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	if strings.Contains(openBSDInstallerText, `-m 4511 "$bundle/bin/filees-worker"`) {
 		t.Error("OpenBSD worker must not be set-id: pledge execpromises reject set-id images")
 	}
+	if strings.Contains(openBSDInstallerText, `-m 4511 "$bundle/bin/filees-onboard"`) {
+		t.Error("OpenBSD onboard child must inherit the dispatcher's state UID, not be set-id")
+	}
 	sshPolicy, err := os.ReadFile("server/openbsd/filees.conf")
 	if err != nil {
 		t.Fatal(err)
 	}
 	clientPolicy := strings.SplitN(string(sshPolicy), "Match User _filees-client", 2)
+	if !strings.Contains(string(sshPolicy), "ForceCommand /usr/local/libexec/filees/filees-bootstrap-entry") {
+		t.Fatal("OpenBSD bootstrap Match block does not trigger bounded onboard+mail entry")
+	}
 	for _, required := range []string{"AuthorizedKeysFile none", "AuthorizedKeysCommand /bin/cat /var/filees/activation/authorized_keys", "AuthorizedKeysCommandUser _filees-state"} {
 		if len(clientPolicy) != 2 || !strings.Contains(clientPolicy[1], required) {
 			t.Fatalf("OpenBSD client Match block missing state-owned key reader %q", required)

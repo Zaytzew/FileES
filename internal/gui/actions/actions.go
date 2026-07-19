@@ -139,7 +139,7 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationFailure(ctx, err)
 			return
 		}
-		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany", Urgency: platform.UrgencyNormal})
+		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: endpoint.Value, Urgency: platform.UrgencyNormal})
 	}()
 }
 

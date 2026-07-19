@@ -33,12 +33,16 @@ usermod -p "$password_hash" _filees-tunnel
 usermod -p "$password_hash" _filees-client
 unset password_hash
 install -o "$state_user" -g auth -m 4550 "$bundle/bin/filees-ssh-auth" /usr/libexec/auth/login_-filees
-install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-onboard" /usr/local/libexec/filees/filees-onboard
+# The dispatcher is the sole set-id boundary. Its two ordinary child images
+# inherit the effective state UID; pledge execpromises reject set-id children.
+install -o root -g wheel -m 0555 "$bundle/bin/filees-onboard" /usr/local/libexec/filees/filees-onboard
+install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-bootstrap-entry" /usr/local/libexec/filees/filees-bootstrap-entry
 # pledge(2) rejects exec of a set-id image after execpromises have been set.
 # Keep the privilege boundary on the tiny forced-command dispatcher; the
 # ordinary worker image inherits its effective state UID across exec.
 install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-entry" /usr/local/libexec/filees/filees-entry
 install -o root -g wheel -m 0555 "$bundle/bin/filees-worker" /usr/local/libexec/filees/filees-worker
+install -o root -g wheel -m 0555 "$bundle/bin/filees-mail" /usr/local/libexec/filees/filees-mail
 client_group=$(id -gn _filees-client)
 install -o "$state_user" -g "$client_group" -m 4550 "$bundle/bin/filees-client-entry" /usr/local/libexec/filees/filees-client-entry
 

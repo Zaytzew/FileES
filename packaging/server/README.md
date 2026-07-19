@@ -3,7 +3,9 @@
 This bundle contains short-lived tools, not services:
 
 - `filees-admin` and `filees-operation` are administrative commands;
-- `filees-onboard` is the public-key bootstrap forced command;
+- `filees-bootstrap-entry` is the bounded public-key forced command; it runs
+  `filees-onboard take` followed by one `filees-mail send` attempt;
+- `filees-onboard` consumes the ticket and creates the durable mail outbox;
 - `filees-ssh-auth` is the local BSD Authentication OTP style;
 - `filees-entry` is the tunnel-account forced command;
 - `filees-worker` is exec'd once per authenticated deploy and exits after its bounded action;

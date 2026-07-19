@@ -59,6 +59,7 @@ func (s *Server) handleActivationBegin(req contract.Request) contract.Response {
 }
 
 func (s *Server) handleActivationFinish(req contract.Request) contract.Response {
+	defer clear(req.Payload)
 	service := s.activationService()
 	if service == nil {
 		return contract.ErrResponse(req.RequestID, "ACTIVATION-0001", "ERROR", "RETRY", "activation.unavailable", nil)
@@ -67,10 +68,10 @@ func (s *Server) handleActivationFinish(req contract.Request) contract.Response 
 	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
 		return protoErr(req.RequestID, "proto.invalid_payload", nil)
 	}
+	defer clear(payload.OTP)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	result, err := service.Finish(ctx, payload)
-	payload.OTP = ""
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "ACTIVATION-1002", "ERROR", "RETRY", "activation.finish_failed", nil)
 	}

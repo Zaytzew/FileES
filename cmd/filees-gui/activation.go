@@ -40,8 +40,8 @@ func (a clientActivator) Finish(parent context.Context, serverID, serverAddress 
 	}
 	ctx, cancel := context.WithTimeout(parent, 45*time.Second)
 	defer cancel()
-	secret := string(otp)
-	defer func() { secret = "" }()
+	secret := append(contract.Secret(nil), otp...)
+	defer clear(secret)
 	_, err := a.client.ActivationFinish(ctx, contract.ActivationFinishPayload{ServerID: profile.ID, ServerAddress: profile.Address, KnownHostsPath: profile.KnownHostsPath, StateRoot: a.root, RemotePort: a.remotePort, OTP: secret})
 	return err
 }

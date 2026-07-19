@@ -1,5 +1,7 @@
 package contract
 
+import "encoding/json"
+
 // Command name constants — stable identifiers sent in Request.Command.
 // Names follow the <namespace>.<verb> pattern (§7).
 const (
@@ -108,7 +110,23 @@ type ActivationFinishPayload struct {
 	KnownHostsPath string `json:"known_hosts_path"`
 	StateRoot      string `json:"state_root"`
 	RemotePort     int    `json:"remote_port"`
-	OTP            string `json:"otp"`
+	OTP            Secret `json:"otp"`
+}
+
+// Secret preserves the wire representation as a JSON string while keeping
+// the decoded value in mutable memory that callers can explicitly clear.
+type Secret []byte
+
+func (secret Secret) MarshalJSON() ([]byte, error) { return json.Marshal(string(secret)) }
+
+func (secret *Secret) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	clear(*secret)
+	*secret = append((*secret)[:0], value...)
+	return nil
 }
 
 type ActivationCommandResult struct {

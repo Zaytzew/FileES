@@ -41,6 +41,12 @@ type RepoState struct {
 	unlockFn func(ctx context.Context, paths []string) (string, error)
 }
 
+func (rs *RepoState) ServerID() string {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	return rs.serverID
+}
+
 // SetProjection refreshes server-owned presentation and authorization fields
 // while preserving local runtime counters and callbacks.
 func (rs *RepoState) SetProjection(url, access string) {

@@ -81,7 +81,7 @@ func TestDecodePayloadIgnoresUnknownFields(t *testing.T) {
 }
 
 func TestActivationPayloadRoundTrip(t *testing.T) {
-	want := contract.ActivationFinishPayload{ServerID: "office", ServerAddress: "filees.example.net:22", KnownHostsPath: "/state/known_hosts", StateRoot: "/state/activation", RemotePort: 42000, OTP: "OTP-CODE"}
+	want := contract.ActivationFinishPayload{ServerID: "office", ServerAddress: "filees.example.net:22", KnownHostsPath: "/state/known_hosts", StateRoot: "/state/activation", RemotePort: 42000, OTP: contract.Secret("OTP-CODE")}
 	raw, err := json.Marshal(want)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +90,7 @@ func TestActivationPayloadRoundTrip(t *testing.T) {
 	if err := contract.DecodePayload(raw, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got != want {
+	if got.ServerID != want.ServerID || got.ServerAddress != want.ServerAddress || got.KnownHostsPath != want.KnownHostsPath || got.StateRoot != want.StateRoot || got.RemotePort != want.RemotePort || string(got.OTP) != string(want.OTP) {
 		t.Fatalf("payload=%+v", got)
 	}
 }

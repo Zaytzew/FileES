@@ -57,6 +57,13 @@ func New(starter Starter, onEvent func(Event)) (*Supervisor, error) {
 // Apply reconciles one server projection. Stop always completes before a
 // replacement start, so rw->r cannot overlap watcher/committer with update-only.
 func (s *Supervisor) Apply(ctx context.Context, serverID string, generation int64, desired []Desired) error {
+	return s.ApplyWithTransition(ctx, serverID, generation, desired, nil)
+}
+
+// ApplyWithTransition invokes transition after the old instance has stopped
+// and before its replacement starts. The daemon uses this boundary to publish
+// changed access only when the old writer can no longer commit.
+func (s *Supervisor) ApplyWithTransition(ctx context.Context, serverID string, generation int64, desired []Desired, transition func(Desired)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	serverID = strings.TrimSpace(serverID)
@@ -99,6 +106,9 @@ func (s *Supervisor) Apply(ctx context.Context, serverID string, generation int6
 			}
 			delete(s.live, key)
 			s.emit(Event{Key: key, Action: "stopped", Access: old.desired.Access})
+		}
+		if present && transition != nil {
+			transition(wanted)
 		}
 		if shouldRun {
 			instance, err := s.starter.Start(ctx, wanted)

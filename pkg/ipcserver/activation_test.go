@@ -24,7 +24,10 @@ func TestRegisterActivationEmitsRefreshEvent(t *testing.T) {
 	}
 }
 
-type fakeActivationService struct{ began, finished bool }
+type fakeActivationService struct {
+	began, finished bool
+	lastOTP         contract.Secret
+}
 
 func (service *fakeActivationService) Begin(_ context.Context, payload contract.ActivationBeginPayload) (contract.ActivationCommandResult, error) {
 	service.began = payload.Email == "user@example.net" && payload.ServerAddress == "filees.example.net:22"
@@ -32,7 +35,8 @@ func (service *fakeActivationService) Begin(_ context.Context, payload contract.
 }
 
 func (service *fakeActivationService) Finish(_ context.Context, payload contract.ActivationFinishPayload) (contract.ActivationCommandResult, error) {
-	service.finished = payload.OTP == "OTP-CODE" && payload.RemotePort == 42000
+	service.finished = string(payload.OTP) == "OTP-CODE" && payload.RemotePort == 42000
+	service.lastOTP = payload.OTP
 	return contract.ActivationCommandResult{ServerID: payload.ServerID, State: "active"}, nil
 }
 
@@ -53,9 +57,21 @@ func TestActivationCommandsAreExecutedByConfiguredDaemonService(t *testing.T) {
 	if begin.Status != contract.StatusOK || !service.began {
 		t.Fatalf("begin=%+v called=%v", begin, service.began)
 	}
-	finish := server.dispatch(activationRequest(t, contract.CmdActivationFinish, contract.ActivationFinishPayload{ServerID: "office", RemotePort: 42000, OTP: "OTP-CODE"}))
+	finishRequest := activationRequest(t, contract.CmdActivationFinish, contract.ActivationFinishPayload{ServerID: "office", RemotePort: 42000, OTP: contract.Secret("OTP-CODE")})
+	raw := finishRequest.Payload
+	finish := server.dispatch(finishRequest)
 	if finish.Status != contract.StatusOK || !service.finished {
 		t.Fatalf("finish=%+v called=%v", finish, service.finished)
+	}
+	for _, b := range raw {
+		if b != 0 {
+			t.Fatal("activation finish request retained raw OTP payload")
+		}
+	}
+	for _, b := range service.lastOTP {
+		if b != 0 {
+			t.Fatal("activation finish retained decoded OTP bytes")
+		}
 	}
 }
 

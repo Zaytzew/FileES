@@ -41,3 +41,25 @@ func TestLoadRejectsUnknownOrTrailingProfileData(t *testing.T) {
 		}
 	}
 }
+
+func TestListDiscoversSortedCompleteProfiles(t *testing.T) {
+	root := t.TempDir()
+	base := Profile{Schema: Schema, DisplayName: "Server", Address: "example.net", ClientID: "00000000-0000-0000-0000-000000000001", IdentityFile: filepath.Join(root, "id"), KnownHosts: filepath.Join(root, "known"), SSHPort: 22, ServiceURL: "svn+ssh://_filees-client@example.net/", ServiceWC: filepath.Join(root, "wc"), RelativeViewPath: "clients/00000000-0000-0000-0000-000000000001/view.json", CachePath: filepath.Join(root, "cache"), PollInterval: time.Minute}
+	for _, id := range []string{"zeta", "alpha"} {
+		profile := base
+		profile.ServerID = id
+		if err := Store(filepath.Join(root, id, "client-profile.json"), profile); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(root, "unfinished"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := List(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 2 || profiles[0].ServerID != "alpha" || profiles[1].ServerID != "zeta" {
+		t.Fatalf("profiles=%+v", profiles)
+	}
+}

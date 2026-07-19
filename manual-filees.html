@@ -268,7 +268,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <p class="hero-copy">A file-centric synchronization system built around explicit ownership, durable artifacts, bounded publication and recoverable failure.</p>
 <div class="meta-strip">
 <span><strong>Version</strong> 0.1.0</span>
-<span><strong>Date</strong> 2026-07-18</span>
+<span><strong>Date</strong> 2026-07-19</span>
 <span><strong>Server</strong> OpenBSD reference; Linux build</span>
 <span><strong>Client</strong> Linux; Windows GUI artifact</span>
 </div>
@@ -647,11 +647,11 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <h2 id="ch1-otp">1.5 OTP Mechanism</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>OTP storage, attempt limits, redaction and BSD Auth handoff implemented.</span></div>
 <p>The one-time password for tunnel authorisation has 120 bits of entropy encoded as Base32 in the format <code>LLLLLLLL-SSSSSSSSSSSSSSSS</code>. The 40-bit prefix is a <em>locator</em> that identifies the operation bundle without exposing the operation ID. The full value is verified as HMAC-SHA-256 against a server-side private pepper (minimum 256 bits) stored at the path given by <code>otp_pepper_file</code> in <code>server.json</code>.</p>
 <p>Each wrong attempt atomically decrements a counter stored in the bundle. On expiry, OTP exhaustion, or successful use the hash and locator are erased from the bundle. The plaintext OTP exists only in the pending mail outbox entry until the mail is accepted by the smarthost (<code>250</code> after DATA), at which point the delivery address and OTP are atomically redacted.</p>
-<h2 id="ch1-ssh">1.6 SSH Transport: entry → worker → helper</h2><div class="section-meta"><span class="status status-implemented">Implemented to active</span><span>System-sshd, forced-command and real network svn acceptance passed on Fedora; the S4 activation path and sandbox passed natively on OpenBSD.</span></div>
+<h2 id="ch1-ssh">1.6 SSH Transport: entry → worker → helper</h2><div class="section-meta"><span class="status status-verified">Verified to active</span><span>The complete revoke/reactivate path, system sshd, forced commands and tunnel-mode svnserve passed natively on OpenBSD.</span></div>
 <p>FileES uses the system <code>sshd</code> as its only network endpoint. Three separate protocol accounts are created on the server:</p>
 <div class="table-wrap"><table>
 <tr><th>Account</th><th>Auth method</th><th>Forced command</th><th>Forwarding</th></tr>
-<tr><td><code>_filees-onboard</code></td><td>Public key (compiled bootstrap Ed25519)</td><td><code>filees-onboard take</code></td><td>None (<code>DisableForwarding yes</code>)</td></tr>
+<tr><td><code>_filees-onboard</code></td><td>Public key (compiled bootstrap Ed25519)</td><td><code>filees-bootstrap-entry</code></td><td>None (<code>DisableForwarding yes</code>)</td></tr>
 <tr><td><code>_filees-tunnel</code></td><td><code>keyboard-interactive:bsdauth</code> via <code>login_-filees</code> style</td><td><code>filees-entry</code></td><td>Remote TCP on <code>127.0.0.1:42000</code> only</td></tr>
 <tr><td><code>_filees-client</code></td><td>Per-installation Ed25519 public key</td><td>Per-key <code>filees-client-entry &lt;operation_id&gt; &lt;client_id&gt;</code></td><td>None (<code>DisableForwarding yes</code>)</td></tr>
 </table></div><div class="decision">
@@ -665,7 +665,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 </div>
 <p>The push deploy and activation flow:</p>
 <ol>
-<li><strong>Entry A — onboarding request.</strong> The client SSH-connects with a compiled bootstrap Ed25519 key to <code>_filees-onboard</code>. <code>filees-onboard take</code> reads a versioned <code>filees.onboard-request/v1</code> frame from stdin, atomically claims the administrator ticket by renaming it, builds a complete operation bundle, and emails the OTP. Connection then closes.</li>
+<li><strong>Entry A — onboarding request.</strong> The client SSH-connects with a compiled bootstrap Ed25519 key to <code>_filees-onboard</code>. The bounded <code>filees-bootstrap-entry</code> reads one versioned <code>filees.onboard-request/v1</code> frame, runs the atomic onboarding take, and then performs exactly one SMTP outbox submission. Connection then closes; no FileES mail daemon remains running.</li>
 <li><strong>Entry B — OTP and reverse tunnel.</strong> After receiving the OTP by email, the client runs:<br/>
 <pre><code>ssh -F /dev/null -l _filees-tunnel -T \
   -R 127.0.0.1:42000:127.0.0.1:&lt;local-helper-port&gt; \
@@ -820,16 +820,16 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <div class="note">Every <code>local_path</code> must be absolute. Paths must not be identical or nested in either direction. Validation resolves symlinks on existing directories and aborts daemon startup with a hard error before any state is created.</div>
 <p>To validate configuration without starting the daemon:</p>
 <pre><code>filees config-check --config /path/to/config.json</code></pre>
-<h2 id="ch2-firstrun">2.3 First Run and Onboarding</h2><div class="section-meta"><span class="status status-implemented">Activation vertical implemented</span><span class="status status-designed">End-user orchestration pending</span><span>The tested components reach active; no public <code>filees onboard</code> CLI is shipped yet.</span></div>
-<p>The onboarding flow provisions the client’s identity and activates its first service-repository projection. It requires an administrator to create a one-time ticket. The complete flow exists as integrated client/server components and tests, but it is not yet composed into a supported end-user command.</p>
+<h2 id="ch2-firstrun">2.3 First Run and Onboarding</h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>The end-user flow is owned by the daemon and GUI; no client-side onboarding CLI is required.</span></div>
+<p>The onboarding flow provisions the client’s identity and activates its first service-repository projection. It requires an administrator to create a one-time ticket. On the client, choose <strong>Activate client on a new server…</strong>, enter a local alias, the FileES server address and the ticket email, then paste the OTP when prompted. The GUI only presents the flow; the daemon owns all network and state transitions.</p>
 <ol>
 <li>Administrator creates a ticket with an email delivery signal and an approved realm: <code>filees-admin ticket create --email you@example.com --realm-id &lt;uuid&gt;</code>.</li>
-<li>The client component submits the email through the compiled bootstrap-key SSH entry. The server consumes the ticket and sends an OTP.</li>
-<li>The client component supplies the OTP through FIFO askpass and establishes the fixed reverse tunnel to its loopback helper.</li>
+<li>The daemon submits the email through the compiled bootstrap-key SSH entry. The server consumes the ticket and makes one SMTP submission attempt.</li>
+<li>The GUI prompts for the delivered OTP; the daemon supplies it through FIFO askpass and establishes the fixed reverse tunnel to its loopback helper.</li>
 <li>The helper generates an Ed25519 installation key locally. The worker stages access, asks the helper for service proof, and validates the receipt written after system-sshd authentication.</li>
 <li>The worker publishes the client record and first view in the service repository and marks the operation <code>active</code>.</li>
 </ol>
-<div class="warn"><strong>Production blockers:</strong> compose the existing components into the supported end-user onboarding lifecycle, ship production host/worker pins and signed payload installation, and repeat the S5 daemon round-trip on OpenBSD through a fresh onboarding operation. Windows bootstrap remains unsupported. See <code>PUSH_DEPLOY_CLIENT_READINESS.md</code>.</div>
+<div class="note"><strong>Acceptance status:</strong> revoke followed by a fresh GUI activation, real SMTP delivery, OTP entry, reverse tunnel, installation-key proof and external <code>svn info</code> passed on the persistent OpenBSD 7.9 reference VM. Release engineering still has to provide production pins, release-bound bootstrap-key rotation and a signed-payload policy. Windows bootstrap remains unsupported. See <code>PUSH_DEPLOY_CLIENT_READINESS.md</code> and <code>concepts/GUI_REDEPLOY_OPENBSD_E2E_2026-07-19.md</code>.</div>
 <h4>Adding a local directory</h4>
 <p>The local provisioning state machine models the following two-step data-repository process, but the authenticated server-side repository worker is not connected yet:</p>
 <ol>
@@ -876,7 +876,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <tr><td><code>edit_passport_close_grace</code></td><td>5 m</td><td>Silence period after confirmed commit before unlock</td></tr>
 </table></div>
 <div class="note"><strong>Multi-client guarantee caveat:</strong> the current implementation enforces passports within one daemon instance. Full distributed compare-and-swap (preventing a race between two competing clients) requires a server-side <code>pre-lock</code> hook or authoritative worker, which is not yet deployed. The <code>previous_token</code> field in the lock comment is already transmitted so the server hook can be added without protocol changes.</div>
-<h2 id="ch2-gui">2.6 GUI Tray</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>GUI is a separate binary over contract/v1; Linux acceptance completed.</span></div>
+<h2 id="ch2-gui">2.6 GUI Tray</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>GUI is a separate binary over contract/v1; activation presentation and OpenBSD redeploy acceptance completed.</span></div>
 <p><code>filees-gui</code> is a separate process and a thin UX layer over the daemon IPC contract. It does not import any sync engine packages. Closing the GUI does not stop the daemon.</p><div class="decision">
 <div class="decision-head">Design rationale / integrated daemon, separate menu binary</div>
 <div class="decision-grid">
@@ -905,6 +905,9 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <li>On reconnect, sequence gap, or unknown event: perform full resync.</li>
 </ol>
 <p>Events are cache-invalidation signals. The GUI never builds state purely by applying events; each event triggers a fresh <code>repo.status</code> fetch. Mutation actions (lock/unlock) are shown only when the daemon reports them as capabilities and the connection state is <code>Connected</code> (not <code>Stale</code>).</p>
+<h4>Server activations</h4>
+<p>Each active server is listed by its user-chosen alias and groups its repositories underneath. The technical host is not used as the primary label. <strong>Server information…</strong> shows the address, SSH port, client ID and effective client role. A transport configuration without an activation does not create a synthetic <code>default</code> server. If at least one activation exists, the tray header says <strong>Client activated</strong>.</p>
+<p><strong>Activate client on a new server…</strong> asks for an alias, <strong>FileES server address</strong> and email. A plain IP address or FQDN uses SSH port 22; an explicit <code>host:port</code> selects a non-default port. After the daemon begins onboarding, the GUI displays <strong>Enter the OTP code…</strong>. On success the daemon emits <code>activation.changed</code>, which triggers a full snapshot refresh; reconnecting the GUI manually is not part of the successful flow.</p>
 <h4>Autostart</h4>
 <pre><code>filees-gui --autostart enable    # write autostart entry for current executable path
 filees-gui --autostart disable   # remove entry
@@ -950,14 +953,14 @@ FILEES_LOG=trace ./filees   # includes svn invocations
 <tr><td><code>_filees-tunnel</code></td><td>Receives OTP SSH connections with one fixed reverse tunnel; forced command only</td></tr>
 <tr><td><code>_filees-client</code></td><td>Receives installation-key SSH connections; per-key forced command permits only tunnel-mode svnserve</td></tr>
 </table></div>
-<h2 id="ch3-install">3.2 Running <code>install-server.sh</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Generic and OpenBSD integration paths include the complete activation vertical; production acceptance remains separate.</span></div>
+<h2 id="ch3-install">3.2 Running <code>install-server.sh</code></h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>Generic and OpenBSD integration paths include the complete activation vertical.</span></div>
 <p>The generic installer script is <code>packaging/server/install-server.sh</code> (also included in the bundle at <code>dist/filees-server-openbsd-amd64/</code>).</p>
 <pre><code># As root or with doas:
 ./install-server.sh</code></pre>
 <p>What the installer does:</p>
 <ul>
 <li>Installs <code>filees-admin</code> and <code>filees-operation</code> to <code>\$PREFIX/sbin/</code> (default <code>/usr/local/sbin</code>).</li>
-<li>Installs <code>filees-onboard</code>, <code>filees-mail</code>, <code>filees-entry</code>, <code>filees-worker</code>, and <code>filees-client-entry</code> to <code>\$PREFIX/libexec/filees/</code>.</li>
+<li>Installs <code>filees-onboard</code>, <code>filees-bootstrap-entry</code>, <code>filees-mail</code>, <code>filees-entry</code>, <code>filees-worker</code>, and <code>filees-client-entry</code> to <code>\$PREFIX/libexec/filees/</code>.</li>
 <li>Creates <code>/etc/filees/</code> (mode 0700) and copies <code>server.example.json</code> to <code>/etc/filees/server.json</code> if not already present.</li>
 <li>Generates a 256-bit random OTP pepper: <code>/etc/filees/otp.pepper</code> (mode 0600).</li>
 <li>Generates an Ed25519 worker key pair: <code>/etc/filees/worker_ed25519</code> (mode 0600) and <code>/etc/filees/worker_ed25519.pub</code> (mode 0644).</li>
@@ -986,7 +989,7 @@ FILEES_LOG=trace ./filees   # includes svn invocations
     AuthorizedKeysFile /etc/ssh/filees_bootstrap_authorized_keys
     PasswordAuthentication no
     KbdInteractiveAuthentication no
-    ForceCommand /usr/local/libexec/filees/filees-onboard take
+    ForceCommand /usr/local/libexec/filees/filees-bootstrap-entry
     DisableForwarding yes
     PermitTTY no
     MaxSessions 1
@@ -1200,8 +1203,8 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
  "severity":"WARN","hint":"RETRY_BACKOFF","msg":"Network unreachable — retrying"}</code></pre>
 <p>The most recent entries can be viewed with:</p>
 <pre><code>filees log 50</code></pre>
-<h2 id="ch4-mail">4.4 Mail Outbox</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>One-shot SMTP outbox with redaction and retry semantics.</span></div>
-<p>The OTP email is sent by <code>filees-mail send</code> which reads the pending outbox entry from the operation bundle and submits it to the configured SMTP smarthost. FileES does not maintain a background mailer process; the command is a one-shot submission.</p>
+<h2 id="ch4-mail">4.4 Mail Outbox</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>One-shot SMTP outbox, public bootstrap composition, redaction and retry semantics.</span></div>
+<p>The public SSH forced command is <code>filees-bootstrap-entry</code>. It atomically creates or resumes the onboarding operation and then invokes exactly one <code>filees-mail send</code> attempt. That command reads the pending outbox entry from the operation bundle and submits it to the configured SMTP smarthost. FileES does not maintain a background mailer process.</p>
 <p>The outbox delivery state machine:</p>
 <pre><code>pending  -&gt;  sending  -&gt;  queued    (250 after DATA; OTP and address redacted)
                       -&gt;  pending   (4xx temporary failure; OTP preserved)
@@ -1261,7 +1264,7 @@ filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
 <h2 id="ch5-invariants">5.1 Core Deployment Invariants</h2><div class="section-meta"><span class="status status-verified">Verified contract</span><span>Security and ownership invariants enforced by tests and package boundaries.</span></div>
 <p><strong>I-1. Private keys never leave their origin machine.</strong> The client generates its Ed25519 installation key locally using Go’s <code>crypto/rand</code>. Only the public key and SHA-256 fingerprint cross the wire back to the server worker. The worker records them in the operation bundle. The server never generates, stores, or transmits private keys.</p>
 <p><strong>I-2. OTP never appears in arguments, environment, logs, or SVN.</strong> The OTP is transmitted through a FIFO (<code>SSH_ASKPASS_REQUIRE=force</code>) that is created in a private directory (<code>0700</code> in <code>\$XDG_RUNTIME_DIR</code>), opened with <code>O_RDONLY|O_NOFOLLOW</code>, and zeroed after use. The OTP is stored only in the operation bundle’s pending outbox entry until the mail is accepted, at which point both the delivery address and the OTP are atomically redacted. BSD Auth receives the OTP through file descriptor 3, not through the environment.</p>
-<p><strong>I-3. The bootstrap Ed25519 key is a public capability, not a secret.</strong> It is compiled into the client binary and its corresponding authorized-key entry on the server can only invoke the enumeration-free <code>filees-onboard take</code> forced command. The account has <code>DisableForwarding yes</code>. A copy of this key does not grant any privilege beyond triggering the onboarding protocol, which still requires a valid administrator ticket.</p>
+<p><strong>I-3. The bootstrap Ed25519 key is a public capability, not a secret.</strong> It is compiled into the client binary and its corresponding authorized-key entry on the server can only invoke the enumeration-free <code>filees-bootstrap-entry</code> forced command. That entry performs one atomic onboarding take followed by at most one outbox submission. The account has <code>DisableForwarding yes</code>. A copy of this key does not grant any privilege beyond triggering the onboarding protocol, which still requires a valid administrator ticket.</p>
 <p><strong>I-4. The reverse tunnel is strictly limited.</strong> Remote TCP forwarding is allowed only to <code>127.0.0.1:42000</code>. All other forwarding types (local, dynamic, stream-local, X11, agent) are explicitly prohibited. The port is statically configured to serialise infrequent deploys rather than requiring a custom listener or dynamic per-operation allocation.</p>
 <p><strong>I-5. The client-side helper accepts exactly one command name.</strong> The loopback SSH helper rejects global requests, non-session channels, PTY, shell, subsystem, environment, and any exec other than <code>filees-deploy/v1</code>. The request decoder rejects unknown fields and trailing JSON. Response size is limited to 64 KiB by <code>io.LimitReader</code> before decoding — not as a post-hoc check — preventing OOM from a misbehaving server worker (S3 hardening, WORKER-001).</p>
 <p><strong>I-6. Pledge/unveil profiles are closed in code, not configuration.</strong> No server tool accepts pledge promises or unveil paths as configuration values. Profiles are hardcoded per verb in <code>internal/servertool/</code> and applied through the native sandbox wrapper. The activation worker and client entry retain only the fixed <code>proc exec</code> composition required for configured SVN executables; those executables must be regular and not group/other-writable. Profiles have been exercised natively on OpenBSD 7.9.</p>

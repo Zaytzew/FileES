@@ -49,6 +49,22 @@ func TestSVNSSHTransportIsInjectedIntoSVNProcess(t *testing.T) {
 	}
 }
 
+func TestSVNSSHUserinfoGetsExplicitEmptyPegRevision(t *testing.T) {
+	dir := t.TempDir()
+	fakeSVN := filepath.Join(dir, "svn")
+	if err := os.WriteFile(fakeSVN, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cli := New(Options{SvnPath: fakeSVN, SSHIdentityFile: "/run/filees/id_ed25519", SSHKnownHosts: "/run/filees/known_hosts"})
+	out, err := cli.GetInfo(context.Background(), "svn+ssh://_filees-client@example/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "svn+ssh://_filees-client@example/repo@") {
+		t.Fatalf("svn args do not escape userinfo as an empty peg revision: %q", out)
+	}
+}
+
 func TestSVNSSHTransportWithoutIdentityFailsBeforeExec(t *testing.T) {
 	cli := New(Options{SvnPath: "/definitely/not/executed"})
 	if _, err := cli.GetInfo(context.Background(), "svn+ssh://_filees-client@example/repo"); err == nil || !strings.Contains(err.Error(), "requires") {

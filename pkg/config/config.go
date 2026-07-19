@@ -108,6 +108,7 @@ type ClientView struct {
 	ServerID, DisplayName, ClientRole string
 	IdentityFile, KnownHosts          string
 	Projection                        *Projection
+	Configured                        bool
 }
 
 func LoadClientView(path string) (ClientView, error) {
@@ -126,6 +127,7 @@ func LoadClientView(path string) (ClientView, error) {
 
 func normalizeClientView(file jsonConfig) (ClientView, error) {
 	view := ClientView{ServerID: strings.TrimSpace(file.ServerID), DisplayName: strings.TrimSpace(file.ServerDisplayName), ClientRole: strings.TrimSpace(file.ClientRole), IdentityFile: filepath.Clean(strings.TrimSpace(file.Transport.IdentityFile)), KnownHosts: filepath.Clean(strings.TrimSpace(file.Transport.KnownHosts))}
+	view.Configured = view.ServerID != "" || view.DisplayName != "" || view.ClientRole != "" || file.Projection != nil || len(file.Repositories) != 0
 	if view.ServerID == "" {
 		view.ServerID = "default"
 	}

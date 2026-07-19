@@ -82,6 +82,16 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 }
 
 func TestWorkerSVNProfileIncludesOnlyExactRuntimeAndTreeParents(t *testing.T) {
+	access := toolAccess{name: "filees-admin/client-revoke", areas: onboarding.AreaOperations, write: true, needActivation: true, needSVN: true}
+	if got := access.promises(); got != svnPromises {
+		t.Fatalf("SVN parent promises = %q", got)
+	}
+	if svnPromises != "stdio rpath wpath cpath fattr flock proc exec" {
+		t.Fatalf("closed SVN parent promises = %q", svnPromises)
+	}
+	if svnExecPromises != "stdio rpath wpath cpath fattr flock proc unveil" {
+		t.Fatalf("SVN child promises = %q; native OpenBSD svn must retain unveil", svnExecPromises)
+	}
 	config := activation.Config{
 		Root: "/srv/activation", AuthorizedKeysFile: "/srv/activation/authorized_keys", AuthzFile: "/srv/activation/authz",
 		ServiceWorkingCopy: "/srv/svn/service-wc", ServiceRepository: "/srv/svn/service-repo",

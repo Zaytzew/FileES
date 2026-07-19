@@ -9,6 +9,7 @@ import (
 
 // BuildMenu converts an app ViewModel into a deterministic tray menu.
 func BuildMenu(vm app.ViewModel) MenuModel {
+	active := len(vm.Servers) > 0
 	if len(vm.Servers) == 0 && len(vm.Repos) > 0 {
 		vm.Servers = []app.ServerViewModel{{ID: "default", DisplayName: "Serwer", ClientRole: "normal", Repos: vm.Repos}}
 	}
@@ -17,6 +18,10 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 		Icon:    vm.Icon,
 		Title:   "FileES — " + status,
 		Tooltip: fmt.Sprintf("FileES — %s — repozytoria: %d", status, len(vm.Repos)),
+	}
+	if active {
+		model.Title += " — Klient aktywowany"
+		model.Tooltip += " — klient aktywowany"
 	}
 	model.Items = append(model.Items,
 		disabledItem("system.status", model.Title),
@@ -37,7 +42,7 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 	}
 	model.Items = append(model.Items,
 		separator("sep.actions"),
-		actionItem("action.activate", "Aktywuj klienta…", "Rozpocznij aktywację serwera kodem z e-maila", Intent{Kind: IntentActivate}),
+		actionItem("action.activate", "Aktywuj klienta na nowym serwerze…", "Dodaj aktywację FileES kodem z e-maila", Intent{Kind: IntentActivate}),
 		actionItem("action.reconnect", "Połącz ponownie", "Odśwież połączenie z daemonem", Intent{Kind: IntentReconnect}),
 		actionItem("action.quit", "Zamknij GUI", "Zamknij tylko aplikację tray", Intent{Kind: IntentQuit}),
 	)

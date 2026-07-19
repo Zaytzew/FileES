@@ -24,10 +24,12 @@ const (
 )
 
 const (
-	readPromises   = "stdio rpath wpath flock"
-	writePromises  = "stdio rpath wpath cpath fattr flock"
-	mailPromises   = writePromises + " inet dns"
-	workerPromises = writePromises + " inet proc exec"
+	readPromises    = "stdio rpath wpath flock"
+	writePromises   = "stdio rpath wpath cpath fattr flock"
+	mailPromises    = writePromises + " inet dns"
+	workerPromises  = writePromises + " inet proc exec"
+	svnPromises     = writePromises + " proc exec"
+	svnExecPromises = "stdio rpath wpath cpath fattr flock proc unveil"
 )
 
 type toolAccess struct {
@@ -48,6 +50,9 @@ func (access toolAccess) promises() string {
 	}
 	if access.needWorker {
 		return workerPromises
+	}
+	if access.needSVN {
+		return svnPromises
 	}
 	if access.write {
 		return writePromises
@@ -86,7 +91,10 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	profile := repositoryProfile(config.Root, access, config.Activation)
 	var sandboxErr error
 	if access.needSVN {
-		sandboxErr = sandboxApplyForExec(profile, "stdio rpath wpath cpath fattr flock proc")
+		// The OpenBSD ports build of svn establishes its own unveil table after
+		// exec.  unveil therefore has to survive in the child promise set; the
+		// parent's table still limits which paths the child can reveal.
+		sandboxErr = sandboxApplyForExec(profile, svnExecPromises)
 	} else {
 		sandboxErr = sandboxApply(profile)
 	}

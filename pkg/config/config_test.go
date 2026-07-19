@@ -67,6 +67,20 @@ func TestLoadClientViewProjection(t *testing.T) {
 	if view.IdentityFile != "/tmp/id" || view.KnownHosts != "/tmp/known" {
 		t.Fatalf("transport=%+v", view)
 	}
+	if !view.Configured {
+		t.Fatal("projection-backed client view is not marked configured")
+	}
+}
+
+func TestLoadClientViewTransportOnlyDoesNotCreateSyntheticServer(t *testing.T) {
+	path := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"repositories":[]}`)
+	view, err := LoadClientView(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Configured {
+		t.Fatalf("transport-only view unexpectedly configured: %+v", view)
+	}
 }
 
 func TestLoadClientViewRejectsUnsafeProjection(t *testing.T) {

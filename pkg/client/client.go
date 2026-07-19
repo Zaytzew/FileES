@@ -370,9 +370,15 @@ func (c *execClient) Revision(ctx context.Context, target string) (int64, error)
 func (c *execClient) run(parentCtx context.Context, workingDir string, args []string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, arg := range args {
+	for i, arg := range args {
 		if strings.HasPrefix(arg, "svn+ssh://") && c.sshCommand == "" {
 			return "", errors.New("svn+ssh transport requires an installation identity and pinned known_hosts")
+		}
+		// Subversion also uses '@' to introduce a peg revision.  A URL with
+		// SSH userinfo must therefore carry an empty peg revision explicitly;
+		// otherwise `_filees-client@host` is parsed as URL + peg `host`.
+		if strings.HasPrefix(arg, "svn+ssh://") && strings.Contains(strings.TrimPrefix(arg, "svn+ssh://"), "@") && !strings.HasSuffix(arg, "@") {
+			args[i] = arg + "@"
 		}
 	}
 

@@ -119,7 +119,11 @@ func (c *Controller) startServerInfo(ctx context.Context, serverID string) {
 		if clientID == "" {
 			clientID = "brak danych"
 		}
-		text := fmt.Sprintf("Alias: %s\nAdres serwera: %s\nPort SSH: %d\nID klienta: %s\nTryb klienta: %s", server.ID, address, server.SSHPort, clientID, clientRoleDescription(server.ClientRole))
+		creation := "niedozwolone"
+		if server.CanOfferRepositoryCreation() {
+			creation = "dozwolone"
+		}
+		text := fmt.Sprintf("Alias: %s\nAdres serwera: %s\nPort SSH: %d\nID klienta: %s\nTryb klienta: %s\nTworzenie repozytoriów: %s", server.ID, address, server.SSHPort, clientID, clientRoleDescription(server.ClientRole), creation)
 		c.tasks.Add(1)
 		go func() {
 			defer c.tasks.Done()

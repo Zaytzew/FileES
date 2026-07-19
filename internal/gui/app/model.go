@@ -40,31 +40,43 @@ const (
 // RepoViewModel is the read-only presentation model for one repository.
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
-	ID           string
-	DisplayName  string
-	ServerID     string
-	Attached     bool
-	Access       string
-	URL          string
-	LocalPath    string
-	State        string
-	Connectivity string
-	LocalRev     int64
-	HeadRev      int64
-	Pending      contract.PendingStats
-	Conflicts    int
-	LastSyncAt   string
-	CurrentOp    *string
+	ID               string
+	DisplayName      string
+	ServerID         string
+	Attached         bool
+	Access           string
+	OwnerRealmID     string
+	AttachmentPolicy string
+	URL              string
+	LocalPath        string
+	State            string
+	Connectivity     string
+	LocalRev         int64
+	HeadRev          int64
+	Pending          contract.PendingStats
+	Conflicts        int
+	LastSyncAt       string
+	CurrentOp        *string
 }
 
 type ServerViewModel struct {
-	ID          string
-	DisplayName string
-	ClientRole  string
-	Address     string
-	ClientID    string
-	SSHPort     int
-	Repos       []RepoViewModel
+	ID                    string
+	DisplayName           string
+	ClientRole            string
+	RealmID               string
+	Address               string
+	ClientID              string
+	SSHPort               int
+	CanCreateRepositories bool
+	Repos                 []RepoViewModel
+}
+
+func (server ServerViewModel) CanOfferRepositoryCreation() bool {
+	return server.ClientRole != contract.ClientRoleReadOnly && server.CanCreateRepositories
+}
+
+func (server ServerViewModel) Owns(repo RepoViewModel) bool {
+	return server.RealmID != "" && repo.OwnerRealmID == server.RealmID
 }
 
 // ErrorViewModel is a presentation-safe structured daemon error. Details are

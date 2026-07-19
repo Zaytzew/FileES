@@ -162,14 +162,31 @@ func TestServerMenuUsesAliasAndExposesInformationDialog(t *testing.T) {
 }
 
 func TestBuildMenuShowsProjectedUnattachedRepositoryByDisplayName(t *testing.T) {
-	repo := app.RepoViewModel{ID: "repo-uuid", DisplayName: "Dokumenty wspólne", ServerID: "office", Access: contract.AccessReadOnly, State: contract.StateUnattached}
-	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", Repos: []app.RepoViewModel{repo}}}})
+	repo := app.RepoViewModel{ID: "repo-uuid", DisplayName: "Dokumenty wspólne", ServerID: "office", OwnerRealmID: "foreign", AttachmentPolicy: "required", Access: contract.AccessReadOnly, State: contract.StateUnattached}
+	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", RealmID: "mine", Repos: []app.RepoViewModel{repo}}}})
 	item := findItem(t, menu.Items, "repo.repo-uuid")
 	if item.Title != "Dokumenty wspólne — Nieprzypięte lokalnie" {
 		t.Fatalf("title=%q", item.Title)
 	}
 	if findItem(t, item.Children, "repo.repo-uuid.open").Enabled {
 		t.Fatal("unattached repository exposes open-folder action")
+	}
+	if got := findItem(t, item.Children, "repo.repo-uuid.ownership").Title; got != "Repozytorium: udostępnione" {
+		t.Fatalf("ownership=%q", got)
+	}
+	if got := findItem(t, item.Children, "repo.repo-uuid.policy").Title; got != "Podłączenie: wymagane przez serwer" {
+		t.Fatalf("policy=%q", got)
+	}
+}
+
+func TestServerCreationCapabilityIsPresentationOnly(t *testing.T) {
+	allowed := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "full", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}})
+	if got := findItem(t, allowed.Items, "server.full.creation").Title; got != "Tworzenie repozytoriów: dozwolone" {
+		t.Fatalf("allowed=%q", got)
+	}
+	readOnly := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "ro", ClientRole: contract.ClientRoleReadOnly, CanCreateRepositories: true}}})
+	if got := findItem(t, readOnly.Items, "server.ro.creation").Title; got != "Tworzenie repozytoriów: niedozwolone" {
+		t.Fatalf("read-only=%q", got)
 	}
 }
 

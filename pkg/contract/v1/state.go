@@ -45,6 +45,8 @@ type RepoStatus struct {
 	DisplayName      string       `json:"display_name"`
 	Attached         bool         `json:"attached"`
 	Access           string       `json:"access"`
+	OwnerRealmID     string       `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy string       `json:"attachment_policy"`
 	State            string       `json:"state"`        // one of the State* constants
 	Connectivity     string       `json:"connectivity"` // ConnOnline | ConnOffline
 	LocalRevision    int64        `json:"local_revision"`

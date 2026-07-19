@@ -70,3 +70,15 @@ func TestProjectedUnattachedRepoIsPresentationOnly(t *testing.T) {
 		t.Fatal("unattached repository accepted lock")
 	}
 }
+
+func TestProjectedPolicyReachesSummaryAndSnapshot(t *testing.T) {
+	owner := "7b807185-aa75-4169-8a65-705c7cbab176"
+	rs := New(t.TempDir()+"/daemon.sock").RegisterProjectedRepoPolicy("repo-id", "Team", "svn+ssh://_filees-client@example/repo", "office", contract.AccessReadWrite, "active", owner, "required", false)
+	summary, snapshot := rs.Summary(), rs.Snapshot()
+	if summary.OwnerRealmID != owner || summary.AttachmentPolicy != "required" {
+		t.Fatalf("summary=%+v", summary)
+	}
+	if snapshot.OwnerRealmID != owner || snapshot.AttachmentPolicy != "required" {
+		t.Fatalf("snapshot=%+v", snapshot)
+	}
+}

@@ -142,28 +142,30 @@ func (s appState) viewModel() ViewModel {
 		sum := s.summaries[id]
 		snap := s.snapshots[id]
 		repos = append(repos, RepoViewModel{
-			ID:           id,
-			DisplayName:  sum.DisplayName,
-			ServerID:     snap.ServerID,
-			Attached:     sum.Attached,
-			Access:       snap.Access,
-			URL:          sum.URL,
-			LocalPath:    sum.LocalPath,
-			State:        snap.State,
-			Connectivity: snap.Connectivity,
-			LocalRev:     snap.LocalRevision,
-			HeadRev:      snap.HeadRevision,
-			Pending:      snap.Pending,
-			Conflicts:    snap.Conflicts,
-			LastSyncAt:   snap.LastSyncAt,
-			CurrentOp:    snap.CurrentOperation,
+			ID:               id,
+			DisplayName:      sum.DisplayName,
+			ServerID:         snap.ServerID,
+			Attached:         sum.Attached,
+			Access:           snap.Access,
+			OwnerRealmID:     snap.OwnerRealmID,
+			AttachmentPolicy: snap.AttachmentPolicy,
+			URL:              sum.URL,
+			LocalPath:        sum.LocalPath,
+			State:            snap.State,
+			Connectivity:     snap.Connectivity,
+			LocalRev:         snap.LocalRevision,
+			HeadRev:          snap.HeadRevision,
+			Pending:          snap.Pending,
+			Conflicts:        snap.Conflicts,
+			LastSyncAt:       snap.LastSyncAt,
+			CurrentOp:        snap.CurrentOperation,
 		})
 	}
 	servers := make([]ServerViewModel, 0, len(s.system.Activations))
 	byServer := make(map[string]int, len(s.system.Activations))
 	for _, activation := range s.system.Activations {
 		byServer[activation.ServerID] = len(servers)
-		servers = append(servers, ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort})
+		servers = append(servers, ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories})
 	}
 	for _, repo := range repos {
 		index, ok := byServer[repo.ServerID]

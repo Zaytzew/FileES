@@ -53,15 +53,23 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	}
 	children := []MenuItemModel{
 		disabledItem("server."+server.ID+".role", "Tryb klienta: "+clientRoleLabel(server.ClientRole)),
+		disabledItem("server."+server.ID+".creation", repositoryCreationLabel(server)),
 		actionItem("server."+server.ID+".info", "Informacje o serwerze…", "Pokaż rzeczywisty adres i identyfikatory", Intent{Kind: IntentServerInfo, ServerID: server.ID}),
 	}
 	if len(server.Repos) == 0 {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak repozytoriów"))
 	}
 	for _, repo := range server.Repos {
-		children = append(children, repoMenu(vm, repo))
+		children = append(children, repoMenu(vm, server, repo))
 	}
 	return MenuItemModel{ID: "server." + server.ID, Title: name, Enabled: true, Children: children}
+}
+
+func repositoryCreationLabel(server app.ServerViewModel) string {
+	if server.CanOfferRepositoryCreation() {
+		return "Tworzenie repozytoriów: dozwolone"
+	}
+	return "Tworzenie repozytoriów: niedozwolone"
 }
 
 func clientRoleLabel(role string) string {
@@ -92,7 +100,7 @@ func lastRefreshLabel(vm app.ViewModel) string {
 	return label
 }
 
-func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
+func repoMenu(vm app.ViewModel, server app.ServerViewModel, repo app.RepoViewModel) MenuItemModel {
 	name := repo.DisplayName
 	if strings.TrimSpace(name) == "" {
 		name = repo.ID
@@ -113,6 +121,8 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 	}
 	children = append(children, open)
 	children = append(children, disabledItem("repo."+repo.ID+".access", "Dostęp: "+accessLabel(repo.Access)))
+	children = append(children, disabledItem("repo."+repo.ID+".ownership", "Repozytorium: "+ownershipLabel(server, repo)))
+	children = append(children, disabledItem("repo."+repo.ID+".policy", "Podłączenie: "+attachmentPolicyLabel(repo.AttachmentPolicy)))
 	if vm.CanMutateLock() && repo.CanWrite() {
 		children = append(children, actionItem("repo."+repo.ID+".lock", "Zablokuj pliki…", "Wybierz pliki do zablokowania",
 			Intent{Kind: IntentLock, RepoID: repo.ID}))
@@ -122,6 +132,23 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 			Intent{Kind: IntentUnlock, RepoID: repo.ID}))
 	}
 	return MenuItemModel{ID: "repo." + repo.ID, Title: title, Enabled: true, Children: children}
+}
+
+func ownershipLabel(server app.ServerViewModel, repo app.RepoViewModel) string {
+	if server.Owns(repo) {
+		return "własne"
+	}
+	if repo.OwnerRealmID != "" {
+		return "udostępnione"
+	}
+	return "własność niepotwierdzona"
+}
+
+func attachmentPolicyLabel(policy string) string {
+	if policy == "required" {
+		return "wymagane przez serwer"
+	}
+	return "opcjonalne"
 }
 
 func accessLabel(access string) string {

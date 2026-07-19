@@ -376,6 +376,7 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 	view := map[string]any{
 		"schema": ViewSchema, "client_id": record.ClientID, "realm_id": record.RealmID,
 		"generation": 1, "generated_at": activatedAt, "client_role": "normal",
+		"capabilities": map[string]any{"can_create_repositories": true},
 		"repositories": []any{}, "active_operations": []any{},
 	}
 	audit := map[string]any{

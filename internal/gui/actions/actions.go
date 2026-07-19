@@ -163,7 +163,7 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationFailure(ctx, err)
 			return
 		}
-		otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wklej kod OTP otrzymany e-mailem:", Secret: true})
+		otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wprowadź kod OTP otrzymany e-mailem:", Secret: true})
 		if err != nil || otp.Cancelled || otp.Value == "" {
 			c.activationFailure(ctx, err)
 			return

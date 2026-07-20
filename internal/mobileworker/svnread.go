@@ -99,6 +99,35 @@ func (r SVNReader) List(ctx context.Context, repoPath string, rev int64) ([]v1.M
 	return entries, nil
 }
 
+type xmlInfo struct {
+	Entry struct {
+		Kind string `xml:"kind,attr"`
+	} `xml:"entry"`
+}
+
+// Stat reports whether path exists at rev and, if so, its kind. Existence is
+// derived from the svn info exit status (locale-independent); a lookup failure is
+// treated as "absent" so the caller — and ultimately the authoritative commit —
+// decides. A genuine tool error surfaces only when the output is unparseable.
+func (r SVNReader) Stat(ctx context.Context, repoPath, path string, rev int64) (v1.Kind, bool, error) {
+	target := fileURL(repoPath)
+	if path != "" {
+		target += "/" + path
+	}
+	out, err := output(ctx, r.svn(), "info", "--xml", "-r", strconv.FormatInt(rev, 10), target)
+	if err != nil {
+		return "", false, nil // absent (or unreadable): fail closed to "does not exist"
+	}
+	var info xmlInfo
+	if err := xml.Unmarshal(out, &info); err != nil {
+		return "", false, fmt.Errorf("parse svn info xml: %w", err)
+	}
+	if info.Entry.Kind == "dir" {
+		return v1.KindDirectory, true, nil
+	}
+	return v1.KindFile, true, nil
+}
+
 // Cat streams the file at path (root-relative, no leading slash) at rev into w
 // while computing its size and SHA-256. It errors if path is a directory or is
 // absent — the worker relies on that to enforce "existing file, read-only".

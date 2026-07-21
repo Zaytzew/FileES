@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,7 @@ type Options struct {
 	SSHIdentityFile string        // absolute installation Ed25519 private key
 	SSHKnownHosts   string        // absolute pinned known_hosts file
 	SSHPort         int           // OpenSSH port; zero means the default port 22
+	SSHHostName     string        // optional connection host overriding the hostname in a canonical URL
 }
 
 // Client exposes the subset of SVN commands we need.
@@ -75,12 +77,12 @@ func New(opts Options) Client {
 	}
 	sshCommand := ""
 	if opts.SSHIdentityFile != "" || opts.SSHKnownHosts != "" {
-		sshCommand = buildSSHCommand(opts.SSHIdentityFile, opts.SSHKnownHosts, opts.SSHPort)
+		sshCommand = buildSSHCommand(opts.SSHIdentityFile, opts.SSHKnownHosts, opts.SSHPort, opts.SSHHostName)
 	}
 	return &execClient{svnPath: p, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
 }
 
-func buildSSHCommand(identityFile, knownHosts string, port int) string {
+func buildSSHCommand(identityFile, knownHosts string, port int, connectHost ...string) string {
 	// Config validates these as absolute deployment-owned paths. Rejecting
 	// whitespace here avoids relying on shell quoting in SVN's tunnel parser.
 	for _, path := range []string{identityFile, knownHosts} {
@@ -91,6 +93,19 @@ func buildSSHCommand(identityFile, knownHosts string, port int) string {
 	if port < 0 || port > 65535 {
 		return ""
 	}
+	hostName := ""
+	if len(connectHost) > 0 {
+		hostName = strings.TrimSpace(connectHost[0])
+		if hostName != "" {
+			if host, _, err := net.SplitHostPort(hostName); err == nil {
+				hostName = host
+			}
+			hostName = strings.Trim(hostName, "[]")
+			if hostName == "" || strings.ContainsAny(hostName, " \t\r\n\x00") {
+				return ""
+			}
+		}
+	}
 	args := []string{
 		"ssh", "-F", "/dev/null", "-T", "-o", "BatchMode=yes",
 		"-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
@@ -100,6 +115,13 @@ func buildSSHCommand(identityFile, knownHosts string, port int) string {
 	}
 	if port > 0 {
 		args = append(args, "-p", strconv.Itoa(port))
+	}
+	if hostName != "" {
+		hostKeyAlias := hostName
+		if port > 0 && port != 22 {
+			hostKeyAlias = fmt.Sprintf("[%s]:%d", hostName, port)
+		}
+		args = append(args, "-o", "HostName="+hostName, "-o", "HostKeyAlias="+hostKeyAlias)
 	}
 	return strings.Join(args, " ")
 }
@@ -138,7 +160,10 @@ func (c *execClient) Checkout(ctx context.Context, repoURL, localPath string) (s
 	if err := os.MkdirAll(localPath, 0o755); err != nil {
 		return "", err
 	}
-	return c.run(ctx, "", []string{"checkout", repoURL, localPath})
+	// --force preserves unversioned content already present in a directory.
+	// This is required when a newly provisioned repository adopts an existing
+	// local tree; Subversion still refuses conflicting versioned obstructions.
+	return c.run(ctx, "", []string{"checkout", "--force", repoURL, localPath})
 }
 
 func (c *execClient) Cleanup(ctx context.Context, localPath string) (string, error) {

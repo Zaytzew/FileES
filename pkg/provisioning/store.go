@@ -242,8 +242,11 @@ func (s *Store) MarkInitialSnapshotPublished(operationID, requestID string, revi
 		if op.State != StateInitialCommitInProgress || record.Status != RequestPending {
 			return invalidTransition(op.State, StateInitialSnapshotPublished)
 		}
-		if revision <= 0 || paths < 0 {
-			return errors.New("revision must be positive and paths cannot be negative")
+		if revision < 0 || paths < 0 {
+			return errors.New("revision and paths cannot be negative")
+		}
+		if revision == 0 && paths != 0 {
+			return errors.New("revision zero is valid only for an empty snapshot")
 		}
 		op.Revision, op.Paths, op.State = revision, paths, StateInitialSnapshotPublished
 		return nil
@@ -434,8 +437,11 @@ func validateOperation(op Operation) error {
 	if stateNeedsRepository(op.State) && (op.RepoID == "" || op.RepoURL == "") {
 		return fmt.Errorf("state %s requires repository identity", op.State)
 	}
-	if (op.State == StateInitialSnapshotPublished || op.State == StateActive) && op.Revision <= 0 {
+	if (op.State == StateInitialSnapshotPublished || op.State == StateActive) && op.Revision < 0 {
 		return fmt.Errorf("state %s requires published revision", op.State)
+	}
+	if (op.State == StateInitialSnapshotPublished || op.State == StateActive) && op.Revision == 0 && op.Paths != 0 {
+		return fmt.Errorf("state %s has non-empty revision-zero snapshot", op.State)
 	}
 	for requestID, record := range op.Requests {
 		if _, err := uuid.Parse(requestID); err != nil {

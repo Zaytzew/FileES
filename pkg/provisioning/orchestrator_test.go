@@ -1,0 +1,85 @@
+package provisioning
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	control "filees/pkg/control/v1"
+)
+
+func TestOrchestratorRunsCreateThroughActive(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "document"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := newTestStore(t, filepath.Join(t.TempDir(), "state"))
+	opID := uuid.NewString()
+	if _, err := store.CreateValidated(opID, "client", root, "Docs"); err != nil {
+		t.Fatal(err)
+	}
+	transport := &fakeControlExchange{}
+	svn := &fakeInitialSVN{root: root, items: map[string]string{}}
+	orchestrator := Orchestrator{Store: store, Control: transport, SVN: svn, Limits: ImportLimits{MaxBatchFiles: 10, MaxBatchBytes: 1024}}
+	op, err := orchestrator.RunCreate(context.Background(), opID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.State != StateActive || op.Revision != 1 || len(transport.types) != 2 {
+		t.Fatalf("operation=%+v tickets=%v", op, transport.types)
+	}
+}
+
+func TestOrchestratorResumesAtPublishedSnapshotWithoutRecommit(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "document"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := newTestStore(t, filepath.Join(t.TempDir(), "state"))
+	opID := uuid.NewString()
+	_, _ = store.CreateValidated(opID, "client", root, "Docs")
+	transport := &fakeControlExchange{failInitialOnce: true}
+	svn := &fakeInitialSVN{root: root, items: map[string]string{}}
+	orchestrator := Orchestrator{Store: store, Control: transport, SVN: svn, Limits: ImportLimits{MaxBatchFiles: 10, MaxBatchBytes: 1024}}
+	if _, err := orchestrator.RunCreate(context.Background(), opID); err == nil {
+		t.Fatal("expected interrupted INITIAL_COMMIT exchange")
+	}
+	before, err := store.Get(opID)
+	if err != nil || before.State != StateInitialSnapshotPublished || len(svn.commits) != 1 {
+		t.Fatalf("before restart=%+v commits=%v err=%v", before, svn.commits, err)
+	}
+	after, err := orchestrator.RunCreate(context.Background(), opID)
+	if err != nil || after.State != StateActive || len(svn.commits) != 1 {
+		t.Fatalf("after restart=%+v commits=%v err=%v", after, svn.commits, err)
+	}
+}
+
+type fakeControlExchange struct {
+	types           []control.TicketType
+	failInitialOnce bool
+}
+
+func (f *fakeControlExchange) Exchange(_ context.Context, ticket control.Ticket) (control.Result, error) {
+	f.types = append(f.types, ticket.Type)
+	if ticket.Type == control.TicketInitialCommit && f.failInitialOnce {
+		f.failInitialOnce = false
+		return control.Result{}, errors.New("connection lost after local publication")
+	}
+	var payload any
+	switch ticket.Type {
+	case control.TicketCreateRepository:
+		payload = control.CreateRepositoryResult{RepoID: "repo", RepoURL: "file:///repo"}
+	case control.TicketInitialCommit:
+		payload = control.InitialCommitResult{Acknowledged: true}
+	default:
+		return control.Result{}, errors.New("unexpected ticket")
+	}
+	raw, _ := json.Marshal(payload)
+	return control.Result{Schema: control.Schema, OperationID: ticket.OperationID, RequestID: ticket.RequestID, Type: ticket.Type, Status: control.ResultOK, CompletedAt: time.Now().UTC().Format(time.RFC3339Nano), Result: raw}, nil
+}

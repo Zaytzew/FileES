@@ -75,3 +75,33 @@ func TestDisableRemovalAndOtherServerIsolation(t *testing.T) {
 		t.Fatal("same generation accepted")
 	}
 }
+
+func TestInitializingRepositoryNeverStarts(t *testing.T) {
+	var log []string
+	supervisor, _ := New(fakeStarter{&log}, nil)
+	key := Key{"office", "repo"}
+	if err := supervisor.Apply(context.Background(), "office", 1, []Desired{{Key: key, Access: "rw", State: "initializing", URL: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(log) != 0 {
+		t.Fatalf("initializing repository started: %v", log)
+	}
+}
+
+func TestLocalAttachmentReappliesOnlyCurrentGeneration(t *testing.T) {
+	var log []string
+	supervisor, _ := New(fakeStarter{&log}, nil)
+	if err := supervisor.Apply(context.Background(), "office", 4, nil); err != nil {
+		t.Fatal(err)
+	}
+	item := Desired{Key: Key{"office", "repo"}, Access: "rw", State: "active", URL: "one"}
+	if err := supervisor.ApplyLocalAttachment(context.Background(), "office", 3, []Desired{item}, nil); err == nil {
+		t.Fatal("stale local attachment generation accepted")
+	}
+	if err := supervisor.ApplyLocalAttachment(context.Background(), "office", 4, []Desired{item}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(log); got != "[start:office/repo:rw]" {
+		t.Fatalf("log=%s", got)
+	}
+}

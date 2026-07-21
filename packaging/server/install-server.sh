@@ -34,6 +34,10 @@ if [ ! -e "$statedir/.toolchain.lock" ]; then
 	install -m 600 /dev/null "$statedir/.toolchain.lock"
 fi
 install -d -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs
+install -d -m 700 /var/filees/repositories /var/filees/repository-operations
+if [ ! -e /var/filees/activation/repositories.authz ]; then
+	install -m 600 /dev/null /var/filees/activation/repositories.authz
+fi
 
 echo "FileES server tools installed. Edit $sysconfdir/server.json before use."
 echo "No daemon or rc.d service was installed."

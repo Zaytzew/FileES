@@ -66,11 +66,27 @@ func (s *Supervisor) Apply(ctx context.Context, serverID string, generation int6
 func (s *Supervisor) ApplyWithTransition(ctx context.Context, serverID string, generation int64, desired []Desired, transition func(Desired)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.applyLocked(ctx, serverID, generation, desired, transition, false)
+}
+
+// ApplyLocalAttachment reapplies the current authoritative generation after a
+// local path is attached. It never accepts an older or speculative server
+// generation; only local topology is allowed to change at this boundary.
+func (s *Supervisor) ApplyLocalAttachment(ctx context.Context, serverID string, generation int64, desired []Desired, transition func(Desired)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.applyLocked(ctx, serverID, generation, desired, transition, true)
+}
+
+func (s *Supervisor) applyLocked(ctx context.Context, serverID string, generation int64, desired []Desired, transition func(Desired), localReapply bool) error {
 	serverID = strings.TrimSpace(serverID)
 	if serverID == "" || generation < 1 {
 		return errors.New("server ID and positive generation are required")
 	}
-	if generation <= s.generation[serverID] {
+	if localReapply && generation != s.generation[serverID] {
+		return fmt.Errorf("local attachment generation %d does not match authoritative generation %d", generation, s.generation[serverID])
+	}
+	if !localReapply && generation <= s.generation[serverID] {
 		return fmt.Errorf("projection generation %d is not newer than %d", generation, s.generation[serverID])
 	}
 	next := make(map[Key]Desired, len(desired))
@@ -81,7 +97,7 @@ func (s *Supervisor) ApplyWithTransition(ctx context.Context, serverID string, g
 		if item.Access != "r" && item.Access != "rw" {
 			return fmt.Errorf("repository %s access is invalid", item.Key)
 		}
-		if item.State != "active" && item.State != "disabled" && item.State != "revoked" {
+		if item.State != "initializing" && item.State != "active" && item.State != "disabled" && item.State != "revoked" {
 			return fmt.Errorf("repository %s state is invalid", item.Key)
 		}
 		if _, exists := next[item.Key]; exists {
@@ -119,7 +135,9 @@ func (s *Supervisor) ApplyWithTransition(ctx context.Context, serverID string, g
 			s.emit(Event{Key: key, Action: "started", Access: wanted.Access})
 		}
 	}
-	s.generation[serverID] = generation
+	if !localReapply {
+		s.generation[serverID] = generation
+	}
 	return nil
 }
 

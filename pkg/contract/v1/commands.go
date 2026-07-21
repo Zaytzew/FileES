@@ -15,14 +15,16 @@ const (
 	CmdActivationFinish = "activation.finish"
 
 	// Repos
-	CmdRepoList    = "repo.list"     // list all configured repos
-	CmdRepoStatus  = "repo.status"   // snapshot of one repo
-	CmdRepoPause   = "repo.pause"    // suspend automatic operations
-	CmdRepoResume  = "repo.resume"   // resume after pause
-	CmdRepoSyncNow = "repo.sync_now" // request immediate poll/update
-	CmdRepoPublish = "repo.publish"  // request immediate commit of pending changes
-	CmdRepoLock    = "repo.lock"     // acquire SVN lock on one or more paths
-	CmdRepoUnlock  = "repo.unlock"   // release SVN lock on one or more paths
+	CmdRepoList          = "repo.list"           // list all configured repos
+	CmdRepoStatus        = "repo.status"         // snapshot of one repo
+	CmdRepoPause         = "repo.pause"          // suspend automatic operations
+	CmdRepoResume        = "repo.resume"         // resume after pause
+	CmdRepoSyncNow       = "repo.sync_now"       // request immediate poll/update
+	CmdRepoPublish       = "repo.publish"        // request immediate commit of pending changes
+	CmdRepoCreateRequest = "repo.create_request" // persist intent; server work is a later stage
+	CmdRepoAttachIntent  = "repo.attach_intent"  // persist local path choice; no checkout yet
+	CmdRepoLock          = "repo.lock"           // acquire SVN lock on one or more paths
+	CmdRepoUnlock        = "repo.unlock"         // release SVN lock on one or more paths
 
 	// Conflicts and user decisions
 	CmdConflictList   = "conflict.list"   // list pending conflicts / interactions
@@ -45,12 +47,14 @@ const (
 // GUI shows only capabilities declared in HelloResult.Capabilities.
 // Only list commands that are actually implemented.
 const (
-	CapEventsSubscribe  = "events.subscribe"
-	CapRepoLock         = "repo.lock"
-	CapRepoUnlock       = "repo.unlock"
-	CapErrorList        = "error.list"
-	CapActivationBegin  = "activation.begin"
-	CapActivationFinish = "activation.finish"
+	CapEventsSubscribe   = "events.subscribe"
+	CapRepoLock          = "repo.lock"
+	CapRepoUnlock        = "repo.unlock"
+	CapErrorList         = "error.list"
+	CapActivationBegin   = "activation.begin"
+	CapActivationFinish  = "activation.finish"
+	CapRepoCreateRequest = "repo.create_request"
+	CapRepoAttachIntent  = "repo.attach_intent"
 
 	// Not yet implemented — defined for future use but NOT in AllCapabilities.
 	CapRepoPause      = "repo.pause"
@@ -68,6 +72,8 @@ var AllCapabilities = []string{
 	CapErrorList,
 	CapActivationBegin,
 	CapActivationFinish,
+	CapRepoCreateRequest,
+	CapRepoAttachIntent,
 }
 
 // --- result and payload types ---
@@ -134,6 +140,26 @@ func (secret *Secret) UnmarshalJSON(data []byte) error {
 type ActivationCommandResult struct {
 	ServerID string `json:"server_id"`
 	State    string `json:"state"`
+}
+
+type RepoCreateRequestPayload struct {
+	ServerID    string `json:"server_id"`
+	DisplayName string `json:"display_name"`
+	LocalPath   string `json:"local_path"`
+}
+
+type RepoAttachIntentPayload struct {
+	ServerID  string `json:"server_id"`
+	RepoID    string `json:"repo_id"`
+	LocalPath string `json:"local_path"`
+}
+
+type RepoLifecycleResult struct {
+	OperationID string `json:"operation_id"`
+	ServerID    string `json:"server_id"`
+	RepoID      string `json:"repo_id,omitempty"`
+	LocalPath   string `json:"local_path"`
+	State       string `json:"state"`
 }
 
 // RepoListResult is the result for CmdRepoList.

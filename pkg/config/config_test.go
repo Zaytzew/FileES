@@ -55,6 +55,17 @@ func TestGlobalReadOnlyRoleDegradesRepositoryAccess(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsDedicatedDataAccount(t *testing.T) {
+	path := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"repositories":[{"id":"r","repo_url":"svn+ssh://_filees-data@example/r","local_path":"/tmp/data-account","commit_interval":"1m"}]}`)
+	repos, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := repos[0].RepoURL; got != "svn+ssh://_filees-data@example/r" {
+		t.Fatalf("repo URL = %q", got)
+	}
+}
+
 func TestLoadClientViewProjection(t *testing.T) {
 	path := writeRawConfig(t, `{"server_id":"office","transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"projection":{"working_copy":"/tmp/service-wc","relative_view_path":"clients/client/view.json","cache_path":"/tmp/cache/view.json","interval":"15s"},"repositories":[]}`)
 	view, err := LoadClientView(path)

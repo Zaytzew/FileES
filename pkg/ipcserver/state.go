@@ -72,7 +72,11 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 	if projectedState != "active" {
 		rs.state = projectedState
 	} else if !attached {
-		rs.state = contract.StateUnattached
+		if attachmentPolicy == "required" {
+			rs.state = contract.StatePolicyPending
+		} else {
+			rs.state = contract.StateUnattached
+		}
 	}
 	rs.mu.Unlock()
 }

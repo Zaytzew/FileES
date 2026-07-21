@@ -192,3 +192,34 @@ func TestInitialCommitTicketRejectsUnregisteredRequest(t *testing.T) {
 		t.Fatal("unregistered initial request accepted")
 	}
 }
+
+func TestEmptyInitialSnapshotMayPublishRevisionZero(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	opID, createReq, initialReq := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	_, _ = store.CreateValidated(opID, "client", filepath.Join(t.TempDir(), "repo"), "Empty")
+	_, _ = store.RequestRepository(opID, createReq)
+	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "repo", RepoURL: "svn+ssh://_filees-data@example/repo"}))
+	_, _ = store.StartInitialCommit(opID, initialReq)
+	op, err := store.MarkInitialSnapshotPublished(opID, initialReq, 0, 0)
+	if err != nil || op.State != StateInitialSnapshotPublished || op.Revision != 0 {
+		t.Fatalf("MarkInitialSnapshotPublished = %#v, %v", op, err)
+	}
+	if _, err := store.InitialCommitTicket(opID, initialReq); err != nil {
+		t.Fatalf("revision-zero INITIAL_COMMIT ticket rejected: %v", err)
+	}
+}
+
+func TestRevisionZeroRejectsNonEmptyInitialSnapshot(t *testing.T) {
+	store := newTestStore(t, filepath.Join(t.TempDir(), "state"))
+	opID, createReq, initialReq := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	_, _ = store.CreateValidated(opID, "client", filepath.Join(t.TempDir(), "repo"), "Non-empty")
+	_, _ = store.RequestRepository(opID, createReq)
+	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "repo", RepoURL: "svn+ssh://_filees-data@example/repo"}))
+	_, _ = store.StartInitialCommit(opID, initialReq)
+	if _, err := store.MarkInitialSnapshotPublished(opID, initialReq, 0, 1); err == nil {
+		t.Fatal("non-empty revision-zero snapshot accepted")
+	}
+}

@@ -19,6 +19,8 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/deploy"
 	"filees/pkg/ipcserver"
+	"filees/pkg/localrepo"
+	"filees/pkg/provisioning"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
@@ -106,7 +108,27 @@ func runDaemon() {
 
 	// IPC contract server
 	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
+	lifecycleStore, err := localrepo.Open(defaultRepositoryLifecyclePath())
+	if err != nil {
+		lg.Errorf("repository lifecycle: %v", err)
+		os.Exit(1)
+	}
+	provisioningStore, err := provisioning.NewStore(defaultRepositoryProvisioningPath())
+	if err != nil {
+		lg.Errorf("repository provisioning: %v", err)
+		os.Exit(1)
+	}
+	provisionedAttachments := make(chan provisionedAttachment, 16)
+	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
+	provisioner.attachments = provisionedAttachments
+	go provisioner.Run(ctx)
+	existingRoots := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		existingRoots = append(existingRoots, repo.LocalPath)
+	}
+	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, existingRoots: existingRoots, onCreate: provisioner.Enqueue})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
+		provisioner.AddProfile(profile)
 		select {
 		case profileEvents <- profile:
 		case <-ctx.Done():
@@ -118,7 +140,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, ipc, gate, mtx); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, provisionedAttachments, ipc, gate, mtx); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	return

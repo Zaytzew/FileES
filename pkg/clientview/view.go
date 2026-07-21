@@ -113,7 +113,7 @@ func (v View) Validate() error {
 			return fmt.Errorf("repositories[%d].display_name is invalid", i)
 		}
 		parsed, err := url.Parse(repo.URL)
-		if err != nil || parsed.Scheme != "svn+ssh" || parsed.Hostname() == "" || parsed.User == nil || parsed.User.Username() != "_filees-client" || parsed.Port() != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		if err != nil || parsed.Scheme != "svn+ssh" || parsed.Hostname() == "" || parsed.User == nil || (parsed.User.Username() != "_filees-client" && parsed.User.Username() != "_filees-data") || parsed.Port() != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 			return fmt.Errorf("repositories[%d].url must use restricted svn+ssh transport", i)
 		}
 		if _, hasPassword := parsed.User.Password(); hasPassword {
@@ -125,7 +125,7 @@ func (v View) Validate() error {
 		if v.ClientRole == "ro" && repo.Access != "r" {
 			return fmt.Errorf("repositories[%d].access exceeds global read-only role", i)
 		}
-		if repo.State != "active" && repo.State != "disabled" && repo.State != "revoked" {
+		if repo.State != "initializing" && repo.State != "active" && repo.State != "disabled" && repo.State != "revoked" {
 			return fmt.Errorf("repositories[%d].state is invalid", i)
 		}
 		if repo.OwnerRealmID != "" {

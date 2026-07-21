@@ -14,6 +14,9 @@ const (
 	StateUnattached          = "unattached"
 	StateDisabled            = "disabled"
 	StateRevoked             = "revoked"
+	StatePolicyPending       = "policy_pending"
+	StateAttaching           = "attaching"
+	StateAttachmentError     = "attachment_error"
 )
 
 // Connectivity values for RepoStatus.Connectivity.

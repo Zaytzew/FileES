@@ -142,11 +142,14 @@ func (t Ticket) Validate() error {
 		if strings.TrimSpace(p.RepoID) == "" {
 			return errors.New("INITIAL_COMMIT payload.repo_id is required")
 		}
-		if p.Revision <= 0 {
-			return errors.New("INITIAL_COMMIT payload.revision must be positive")
+		if p.Revision < 0 {
+			return errors.New("INITIAL_COMMIT payload.revision cannot be negative")
 		}
 		if p.Paths < 0 {
 			return errors.New("INITIAL_COMMIT payload.paths cannot be negative")
+		}
+		if p.Revision == 0 && p.Paths != 0 {
+			return errors.New("INITIAL_COMMIT revision zero requires an empty snapshot")
 		}
 	default:
 		return fmt.Errorf("unsupported ticket type %q", t.Type)

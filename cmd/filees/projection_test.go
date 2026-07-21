@@ -45,6 +45,24 @@ func TestAttachedProjectionUsesServerAuthorityAndSkipsUnattachedRepositories(t *
 	}
 }
 
+func TestInitializingProjectionDoesNotStartAttachedPipeline(t *testing.T) {
+	serverID := "office"
+	key := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000001"}
+	view := clientview.View{Generation: 1, Repositories: []clientview.Repository{{RepoID: key.RepoID, DisplayName: "Import", URL: "svn+ssh://_filees-data@example/repo", Access: "rw", State: "initializing"}}}
+	desired := attachedProjection(serverID, view, map[reposupervisor.Key]repoRuntime{key: {}})
+	starter := &projectionStarter{}
+	supervisor, err := reposupervisor.New(starter, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Apply(t.Context(), serverID, 1, desired); err != nil {
+		t.Fatal(err)
+	}
+	if starter.starts != 0 {
+		t.Fatalf("initializing repository started %d pipelines", starter.starts)
+	}
+}
+
 func TestReconcileProjectedViewChangesLiveAuthority(t *testing.T) {
 	serverID := "office"
 	key := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000001"}

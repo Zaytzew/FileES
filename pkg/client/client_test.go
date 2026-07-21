@@ -94,6 +94,16 @@ func TestBuildSSHCommandUsesExplicitPort(t *testing.T) {
 	}
 }
 
+func TestBuildSSHCommandUsesPinnedConnectionHost(t *testing.T) {
+	got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 2222, "127.0.0.1:2222")
+	if !strings.Contains(got, "HostName=127.0.0.1") || !strings.Contains(got, "HostKeyAlias=[127.0.0.1]:2222") || !strings.Contains(got, "-p 2222") {
+		t.Fatalf("SSH command %q does not pin connection endpoint", got)
+	}
+	if got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 22, "bad host"); got != "" {
+		t.Fatalf("accepted unsafe connection host: %q", got)
+	}
+}
+
 func TestBuildSSHCommandRejectsInvalidPort(t *testing.T) {
 	if got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 65536); got != "" {
 		t.Fatalf("accepted invalid port: %q", got)
@@ -126,6 +136,26 @@ func TestCommitRefusesEmptyPathList(t *testing.T) {
 	cli := New(Options{})
 	if _, err := cli.Commit(context.Background(), t.TempDir(), nil, "test"); err == nil {
 		t.Fatal("Commit() accepted an empty path list")
+	}
+}
+
+func TestCheckoutPreservesExistingDirectoryWithForce(t *testing.T) {
+	dir := t.TempDir()
+	fakeSVN := filepath.Join(dir, "svn")
+	if err := os.WriteFile(fakeSVN, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "existing")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cli := New(Options{SvnPath: fakeSVN})
+	out, err := cli.Checkout(context.Background(), "file:///repository", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "checkout\n--force\nfile:///repository") {
+		t.Fatalf("checkout args = %q", out)
 	}
 }
 

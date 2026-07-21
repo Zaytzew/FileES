@@ -40,7 +40,7 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 	return updater.client.Checkout(ctx, updater.url, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex) error {
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
 	for _, repo := range repos {
@@ -62,6 +62,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 	updates := make(chan projectionUpdate, 16)
 	monitored := make(map[string]bool)
+	currentViews := make(map[string]clientview.View)
 	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval time.Duration) error {
 		if monitored[serverID] {
 			return nil
@@ -71,6 +72,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			return fmt.Errorf("load cached projection: %w", err)
 		}
 		if exists {
+			currentViews[serverID] = cached
 			if err := reconcileProjectedView(ctx, supervisor, ipc, serverID, cached, runtimes); err != nil {
 				return fmt.Errorf("apply cached projection: %w", err)
 			}
@@ -144,10 +146,32 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				talk.With("projection:"+profile.ServerID).Errorf("start activated profile: %v", err)
 			}
 		case update := <-updates:
+			currentViews[update.serverID] = update.view
 			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories()})
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
 			}
+		case attachment := <-attachmentEvents:
+			repo := attachment.Repo
+			key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
+			if _, exists := runtimes[key]; exists {
+				continue
+			}
+			state := ipc.RegisterRepoAccess(repo.ID, repo.RepoURL, repo.LocalPath, repo.ServerID, repo.Access)
+			runtimes[key] = repoRuntime{config: repo, state: state}
+			view, exists := currentViews[repo.ServerID]
+			if !exists {
+				continue
+			}
+			desired := attachedProjection(repo.ServerID, view, runtimes)
+			if err := supervisor.ApplyLocalAttachment(ctx, repo.ServerID, view.Generation, desired, func(item reposupervisor.Desired) {
+				if runtime, ok := runtimes[item.Key]; ok {
+					runtime.state.SetProjection(item.URL, item.Access)
+				}
+			}); err != nil && ctx.Err() == nil {
+				talk.With("projection:"+repo.ServerID).Errorf("attach repository %s: %v", repo.ID, err)
+			}
+			syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes)
 		}
 	}
 }

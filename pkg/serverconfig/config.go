@@ -32,6 +32,7 @@ type File struct {
 	WorkerPrivateKeyFile string         `json:"worker_private_key_file,omitempty"`
 	WorkerPublicKeyFile  string         `json:"worker_public_key_file,omitempty"`
 	Activation           ActivationFile `json:"activation,omitempty"`
+	Repositories         RepositoryFile `json:"repositories,omitempty"`
 	SMTP                 SMTPFile       `json:"smtp"`
 }
 
@@ -45,6 +46,13 @@ type ActivationFile struct {
 	ClientEntryPath    string `json:"client_entry_path"`
 	SVNBinary          string `json:"svn_binary"`
 	SVNServeBinary     string `json:"svnserve_binary"`
+}
+type RepositoryFile struct {
+	Root           string `json:"root,omitempty"`
+	ResultsRoot    string `json:"results_root,omitempty"`
+	DataAuthzFile  string `json:"data_authz_file,omitempty"`
+	SVNAdminBinary string `json:"svnadmin_binary,omitempty"`
+	URLPrefix      string `json:"url_prefix,omitempty"`
 }
 
 type SMTPFile struct {
@@ -75,6 +83,7 @@ type Config struct {
 	WorkerPublicKey      string
 	WorkerSigner         ssh.Signer
 	Activation           activation.Config
+	Repositories         RepositoryFile
 }
 
 type Secrets uint8
@@ -254,9 +263,10 @@ func load(path string, secrets Secrets) (Config, error) {
 		SMTPPasswordFile: file.SMTP.PasswordFile, SMTPCAFile: file.SMTP.CAFile,
 		WorkerPrivateKeyFile: file.WorkerPrivateKeyFile, WorkerSigner: workerSigner,
 		WorkerPublicKeyFile: file.WorkerPublicKeyFile, WorkerPublicKey: workerPublicKey,
-		Activation: activationConfig,
-		Onboarding: onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
-		SMTP:       smtpsubmit.Config{Address: file.SMTP.Address, ServerName: file.SMTP.ServerName, ClientName: file.SMTP.ClientName, Username: file.SMTP.Username, Password: password, TLSMode: smtpsubmit.TLSMode(file.SMTP.TLS), RootCAs: pool, ConnectTimeout: connectTimeout, CommandTimeout: commandTimeout},
+		Activation:   activationConfig,
+		Repositories: file.Repositories,
+		Onboarding:   onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
+		SMTP:         smtpsubmit.Config{Address: file.SMTP.Address, ServerName: file.SMTP.ServerName, ClientName: file.SMTP.ClientName, Username: file.SMTP.Username, Password: password, TLSMode: smtpsubmit.TLSMode(file.SMTP.TLS), RootCAs: pool, ConnectTimeout: connectTimeout, CommandTimeout: commandTimeout},
 	}
 	if config.MessageIDDomain == "" || strings.ContainsAny(config.MessageIDDomain, "@<>\r\n \t") {
 		return Config{}, errors.New("SMTP message_id_domain is required")

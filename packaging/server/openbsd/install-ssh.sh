@@ -8,6 +8,11 @@ fi
 
 bundle=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 state_user=_filees-state
+client_access_group=_filees-access
+
+if ! grep -q "^${client_access_group}:" /etc/group; then
+	groupadd "$client_access_group"
+fi
 
 if ! id "$state_user" >/dev/null 2>&1; then
 	useradd -c "FileES state owner" -d /var/empty -s /sbin/nologin "$state_user"
@@ -25,12 +30,18 @@ fi
 if ! id _filees-client >/dev/null 2>&1; then
 	useradd -c "FileES active SVN client" -d /var/empty -s /bin/sh _filees-client
 fi
+if ! id _filees-data >/dev/null 2>&1; then
+	useradd -c "FileES data repository client" -d /var/empty -s /bin/sh _filees-data
+fi
 # A '*' password field makes BSD Authentication reject the account before a
 # local style can run. Install an unknowable random hash; sshd still disables
 # password authentication. Public-key policy remains explicit per Match block.
 password_hash=$(openssl rand -hex 32 | encrypt -b 12)
 usermod -p "$password_hash" _filees-tunnel
 usermod -p "$password_hash" _filees-client
+usermod -p "$password_hash" _filees-data
+usermod -G "$client_access_group" _filees-client
+usermod -G "$client_access_group" _filees-data
 unset password_hash
 install -o "$state_user" -g auth -m 4550 "$bundle/bin/filees-ssh-auth" /usr/libexec/auth/login_-filees
 # The dispatcher is the sole set-id boundary. Its two ordinary child images
@@ -43,8 +54,7 @@ install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-bootstrap-entry" /
 install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-entry" /usr/local/libexec/filees/filees-entry
 install -o root -g wheel -m 0555 "$bundle/bin/filees-worker" /usr/local/libexec/filees/filees-worker
 install -o root -g wheel -m 0555 "$bundle/bin/filees-mail" /usr/local/libexec/filees/filees-mail
-client_group=$(id -gn _filees-client)
-install -o "$state_user" -g "$client_group" -m 4550 "$bundle/bin/filees-client-entry" /usr/local/libexec/filees/filees-client-entry
+install -o "$state_user" -g "$client_access_group" -m 4550 "$bundle/bin/filees-client-entry" /usr/local/libexec/filees/filees-client-entry
 
 install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/bootstrap_authorized_keys" /etc/ssh/filees_bootstrap_authorized_keys
 install -d -o root -g wheel -m 755 /etc/ssh/sshd_config.d
@@ -55,8 +65,12 @@ install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/filees.conf" /etc/
 install -d -o root -g wheel -m 755 /etc/sasl2 /etc/subversion
 
 install -d -o "$state_user" -g wheel -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs
+install -d -o "$state_user" -g wheel -m 700 /var/filees/repositories /var/filees/repository-operations
 if [ ! -e /var/filees/activation/authorized_keys ]; then
 	install -o "$state_user" -g wheel -m 600 /dev/null /var/filees/activation/authorized_keys
+fi
+if [ ! -e /var/filees/activation/repositories.authz ]; then
+	install -o "$state_user" -g wheel -m 600 /dev/null /var/filees/activation/repositories.authz
 fi
 if [ ! -e /var/filees/activation/service.authz ]; then
 	install -o "$state_user" -g wheel -m 600 /dev/null /var/filees/activation/service.authz

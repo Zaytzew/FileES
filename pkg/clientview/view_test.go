@@ -11,6 +11,18 @@ func fixture() View {
 	return View{Schema: Schema, ClientID: "e71ecd0b-bd99-489d-b822-41b01bd91346", RealmID: "7b807185-aa75-4169-8a65-705c7cbab176", Generation: 1, GeneratedAt: time.Date(2026, 7, 19, 1, 0, 0, 0, time.UTC), ClientRole: "normal", Repositories: []Repository{{RepoID: "5103f16d-7a22-4631-a4f2-765b437201ef", DisplayName: "Dokumenty", URL: "svn+ssh://_filees-client@example.net/repositories/docs", Access: "rw", State: "active"}}, ActiveOperations: []json.RawMessage{}}
 }
 
+func TestViewAcceptsSeparatedDataRepositoryAccount(t *testing.T) {
+	view := fixture()
+	view.Repositories[0].URL = "svn+ssh://_filees-data@example.net/" + view.Repositories[0].RepoID
+	if err := view.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	view.Repositories[0].URL = "svn+ssh://root@example.net/repo"
+	if err := view.Validate(); err == nil {
+		t.Fatal("arbitrary SSH account accepted")
+	}
+}
+
 func TestStoreIfNewerRejectsRollbackAndConflictingGeneration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache", "view.json")
 	first := fixture()

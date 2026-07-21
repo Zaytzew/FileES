@@ -27,6 +27,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoList(req)
 	case contract.CmdRepoStatus:
 		return s.handleRepoStatus(req)
+	case contract.CmdRepoCreateRequest:
+		return s.handleRepoCreateRequest(req)
+	case contract.CmdRepoAttachIntent:
+		return s.handleRepoAttachIntent(req)
 	case contract.CmdErrorList:
 		return s.handleErrorList(req)
 	case contract.CmdRepoLock:
@@ -38,6 +42,52 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleRepoCreateRequest(req contract.Request) contract.Response {
+	service := s.repositoryLifecycleService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "REPO-0001", "ERROR", "RETRY", "repo.lifecycle_unavailable", nil)
+	}
+	var payload contract.RepoCreateRequestPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories {
+		return contract.ErrResponse(req.RequestID, "REPO-2001", "ERROR", "NONE", "repo.create_forbidden", nil)
+	}
+	result, err := service.BeginCreate(payload.ServerID, payload.DisplayName, payload.LocalPath)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleRepoAttachIntent(req contract.Request) contract.Response {
+	service := s.repositoryLifecycleService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "REPO-0001", "ERROR", "RETRY", "repo.lifecycle_unavailable", nil)
+	}
+	var payload contract.RepoAttachIntentPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	rs := s.repoByID(payload.RepoID)
+	if rs == nil || rs.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	snapshot := rs.Snapshot()
+	if snapshot.Attached {
+		return contract.ErrResponse(req.RequestID, "REPO-2003", "ERROR", "NONE", "repo.already_attached", nil)
+	}
+	result, err := service.BeginAttach(payload.ServerID, payload.RepoID, payload.LocalPath, snapshot.AttachmentPolicy == "required")
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
 }
 
 func (s *Server) handleActivationBegin(req contract.Request) contract.Response {

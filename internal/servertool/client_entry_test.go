@@ -84,10 +84,13 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
-		originalBegin, originalApply := sandboxBegin, sandboxApplyForExec
-		t.Cleanup(func() { sandboxBegin, sandboxApplyForExec = originalBegin, originalApply })
+		originalBegin, originalApply, originalPledge := sandboxBegin, sandboxApplyForExec, sandboxPledgeForExec
+		t.Cleanup(func() {
+			sandboxBegin, sandboxApplyForExec, sandboxPledgeForExec = originalBegin, originalApply, originalPledge
+		})
 		sandboxBegin = func(string) error { return nil }
 		sandboxApplyForExec = func(obsandbox.Profile, string) error { return nil }
+		sandboxPledgeForExec = func(string, string) error { return nil }
 	}
 	called := false
 	execute := func(_ serverconfig.Config, clientID string) error {
@@ -119,6 +122,21 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitOK || !called {
 		t.Fatalf("entry code=%d called=%v stderr=%s", code, called, stderr.String())
 	}
+	if os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
+		originalControl := execRepositoryWorker
+		defer func() { execRepositoryWorker = originalControl }()
+		controlClient := ""
+		execRepositoryWorker = func(_ string, id string) error { controlClient = id; return nil }
+		getenv = func(name string) string {
+			if name == "SSH_ORIGINAL_COMMAND" {
+				return ClientControlCommand
+			}
+			return ""
+		}
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitOK || controlClient != grant.ClientID {
+			t.Fatalf("control code=%d client=%q stderr=%s", code, controlClient, stderr.String())
+		}
+	}
 	if err := manager.HasProof(grant); err != nil {
 		t.Fatalf("server proof receipt: %v", err)
 	}
@@ -128,5 +146,23 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 	getenv = func(string) string { return "sh" }
 	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitUnavailable {
 		t.Fatalf("entry accepted arbitrary original command: %d", code)
+	}
+}
+
+func TestClientSVNRootIsSeparatedByLoginAccount(t *testing.T) {
+	c := serverconfig.Config{Activation: activation.Config{SVNServeBinary: "/usr/local/bin/svnserve", ServiceRepository: "/var/filees/service-repo"}, Repositories: serverconfig.RepositoryFile{Root: "/var/filees/repositories"}}
+	service := clientSVNArgs(c, "client", "_filees-client")
+	data := clientSVNArgs(c, "client", "_filees-data")
+	if service[len(service)-1] != "/var/filees/service-repo" || data[len(data)-1] != "/var/filees/repositories" {
+		t.Fatalf("service=%v data=%v", service, data)
+	}
+}
+
+func TestClientSVNChildRetainsWritePromises(t *testing.T) {
+	if got := clientChildPromises(ClientSVNCommand); got != svnExecPromises {
+		t.Fatalf("SVN child promises = %q, want %q", got, svnExecPromises)
+	}
+	if got := clientChildPromises(deploy.ServiceProofCommand); got == svnExecPromises {
+		t.Fatalf("proof child unexpectedly received SVN write promises: %q", got)
 	}
 }

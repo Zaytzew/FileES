@@ -29,7 +29,7 @@ const (
 	mailPromises    = writePromises + " inet dns"
 	workerPromises  = writePromises + " inet proc exec"
 	svnPromises     = writePromises + " proc exec"
-	svnExecPromises = "stdio rpath wpath cpath fattr flock proc unveil"
+	svnExecPromises = "stdio rpath wpath cpath fattr flock proc prot_exec unveil"
 )
 
 type toolAccess struct {
@@ -162,9 +162,10 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 }
 
 var (
-	sandboxBegin        = obsandbox.Begin
-	sandboxApply        = obsandbox.Apply
-	sandboxApplyForExec = obsandbox.ApplyForExec
+	sandboxBegin         = obsandbox.Begin
+	sandboxApply         = obsandbox.Apply
+	sandboxApplyForExec  = obsandbox.ApplyForExec
+	sandboxPledgeForExec = obsandbox.PledgeForExec
 )
 
 func writeJSON(writer io.Writer, value any) error {

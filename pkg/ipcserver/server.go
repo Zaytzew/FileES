@@ -28,6 +28,7 @@ type Server struct {
 	repos       map[string]*RepoState // keyed by repo ID
 	activations map[string]contract.ActivationStatus
 	activation  ActivationService
+	lifecycle   RepositoryLifecycleService
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -42,6 +43,23 @@ type Server struct {
 type ActivationService interface {
 	Begin(context.Context, contract.ActivationBeginPayload) (contract.ActivationCommandResult, error)
 	Finish(context.Context, contract.ActivationFinishPayload) (contract.ActivationCommandResult, error)
+}
+
+type RepositoryLifecycleService interface {
+	BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error)
+	BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error)
+}
+
+func (s *Server) SetRepositoryLifecycleService(service RepositoryLifecycleService) {
+	s.mu.Lock()
+	s.lifecycle = service
+	s.mu.Unlock()
+}
+
+func (s *Server) repositoryLifecycleService() RepositoryLifecycleService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lifecycle
 }
 
 func (s *Server) SetActivationService(service ActivationService) {

@@ -213,7 +213,7 @@ func Load(path string) ([]Repo, error) {
 			return nil, fmt.Errorf("config[%d]: brak pola 'repo_url'", i)
 		}
 		parsedURL, parseErr := url.Parse(repoURL)
-		if parseErr != nil || parsedURL.Scheme != "svn+ssh" || parsedURL.Hostname() == "" || parsedURL.User == nil || parsedURL.User.Username() != "_filees-client" {
+		if parseErr != nil || parsedURL.Scheme != "svn+ssh" || parsedURL.Hostname() == "" || parsedURL.User == nil || (parsedURL.User.Username() != "_filees-client" && parsedURL.User.Username() != "_filees-data") {
 			return nil, fmt.Errorf("config[%d].repo_url: wymagany transport svn+ssh://: %q", i, repoURL)
 		}
 		if _, hasPassword := parsedURL.User.Password(); hasPassword || parsedURL.Port() != "" || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {

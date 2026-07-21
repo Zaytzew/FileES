@@ -15,6 +15,13 @@
     "svn_binary": "/usr/local/bin/svn",
     "svnserve_binary": "/usr/local/bin/svnserve"
   },
+  "repositories": {
+    "root": "/var/filees/repositories",
+    "results_root": "/var/filees/repository-operations",
+    "data_authz_file": "/var/filees/activation/repositories.authz",
+    "svnadmin_binary": "/usr/local/bin/svnadmin",
+    "url_prefix": "svn+ssh://_filees-data@filees.example.net/"
+  },
   "operation_ttl": "30m",
   "otp_attempts": 5,
   "reverse_port_first": 42000,

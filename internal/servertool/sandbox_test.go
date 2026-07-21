@@ -89,7 +89,7 @@ func TestWorkerSVNProfileIncludesOnlyExactRuntimeAndTreeParents(t *testing.T) {
 	if svnPromises != "stdio rpath wpath cpath fattr flock proc exec" {
 		t.Fatalf("closed SVN parent promises = %q", svnPromises)
 	}
-	if svnExecPromises != "stdio rpath wpath cpath fattr flock proc unveil" {
+	if svnExecPromises != "stdio rpath wpath cpath fattr flock proc prot_exec unveil" {
 		t.Fatalf("SVN child promises = %q; native OpenBSD svn must retain unveil", svnExecPromises)
 	}
 	config := activation.Config{

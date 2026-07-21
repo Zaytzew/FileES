@@ -23,6 +23,7 @@ const (
 	CmdRepoPublish       = "repo.publish"        // request immediate commit of pending changes
 	CmdRepoCreateRequest = "repo.create_request" // persist intent; server work is a later stage
 	CmdRepoAttachIntent  = "repo.attach_intent"  // persist local path choice; no checkout yet
+	CmdRepoAttachApprove = "repo.attach_approve" // approve the persisted intent and start checkout
 	CmdRepoLock          = "repo.lock"           // acquire SVN lock on one or more paths
 	CmdRepoUnlock        = "repo.unlock"         // release SVN lock on one or more paths
 
@@ -55,6 +56,7 @@ const (
 	CapActivationFinish  = "activation.finish"
 	CapRepoCreateRequest = "repo.create_request"
 	CapRepoAttachIntent  = "repo.attach_intent"
+	CapRepoAttachApprove = "repo.attach_approve"
 
 	// Not yet implemented — defined for future use but NOT in AllCapabilities.
 	CapRepoPause      = "repo.pause"
@@ -74,6 +76,7 @@ var AllCapabilities = []string{
 	CapActivationFinish,
 	CapRepoCreateRequest,
 	CapRepoAttachIntent,
+	CapRepoAttachApprove,
 }
 
 // --- result and payload types ---
@@ -152,6 +155,12 @@ type RepoAttachIntentPayload struct {
 	ServerID  string `json:"server_id"`
 	RepoID    string `json:"repo_id"`
 	LocalPath string `json:"local_path"`
+}
+
+type RepoAttachApprovePayload struct {
+	OperationID string `json:"operation_id"`
+	ServerID    string `json:"server_id"`
+	RepoID      string `json:"repo_id"`
 }
 
 type RepoLifecycleResult struct {

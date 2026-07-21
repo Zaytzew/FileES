@@ -18,6 +18,11 @@ type repositoryLifecycleService struct {
 	clientID      func(string) string
 	existingRoots []string
 	onCreate      func(string)
+	onAttach      func(attachmentRequest)
+}
+
+type attachmentRequest struct {
+	OperationID, ServerID, RepoID, RepoURL, Access string
 }
 
 func (service repositoryLifecycleService) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
@@ -58,6 +63,20 @@ func (service repositoryLifecycleService) BeginAttach(serverID, repoID, localPat
 	}
 	record, err := service.store.BeginAttach(serverID, repoID, check.CanonicalPath, required)
 	return lifecycleResult(record), err
+}
+
+func (service repositoryLifecycleService) ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error) {
+	if access != "r" && access != "rw" {
+		return contract.RepoLifecycleResult{}, errors.New("repository attachment access must be r or rw")
+	}
+	record, err := service.store.ApproveAttach(operationID, serverID, repoID, repoURL, access)
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	if service.onAttach != nil {
+		service.onAttach(attachmentRequest{OperationID: operationID, ServerID: serverID, RepoID: repoID, RepoURL: repoURL, Access: access})
+	}
+	return lifecycleResult(record), nil
 }
 
 func (service repositoryLifecycleService) allRoots() []string {

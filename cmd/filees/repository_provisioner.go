@@ -3,6 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,18 +20,28 @@ import (
 )
 
 type daemonProvisioner struct {
-	local        *localrepo.Store
-	provisioning *provisioning.Store
-	mu           sync.RWMutex
-	profiles     map[string]clientprofile.Profile
-	queue        chan string
-	attachments  chan<- provisionedAttachment
+	local            *localrepo.Store
+	provisioning     *provisioning.Store
+	mu               sync.RWMutex
+	profiles         map[string]clientprofile.Profile
+	queue            chan string
+	attachments      chan<- provisionedAttachment
+	newAttachmentSVN func(clientprofile.Profile, string) attachmentSVN
+}
+
+type attachmentSVN interface {
+	Checkout(context.Context, string, string) (string, error)
+	GetInfo(context.Context, string) (string, error)
+	Status(context.Context, string, []string) ([]client.StatusEntry, error)
 }
 
 type provisionedAttachment struct{ Repo config.Repo }
 
 func newDaemonProvisioner(local *localrepo.Store, store *provisioning.Store, profiles []clientprofile.Profile) *daemonProvisioner {
 	p := &daemonProvisioner{local: local, provisioning: store, profiles: make(map[string]clientprofile.Profile), queue: make(chan string, 32)}
+	p.newAttachmentSVN = func(profile clientprofile.Profile, operationID string) attachmentSVN {
+		return client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:attachment:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
+	}
 	for _, profile := range profiles {
 		p.profiles[profile.ServerID] = profile
 	}
@@ -66,6 +80,18 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 			}
 		}
 	}
+	for _, record := range p.local.List() {
+		if record.State == localrepo.StateAttaching {
+			p.Enqueue(record.OperationID)
+		} else if record.State == localrepo.StateAttached && record.RepoURL != "" {
+			p.mu.RLock()
+			profile, ok := p.profiles[record.ServerID]
+			p.mu.RUnlock()
+			if ok {
+				p.publishLocalRecord(ctx, record, profile)
+			}
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -89,6 +115,10 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		_, _ = p.local.MarkError(operationID, errors.New("activated client profile is unavailable"))
 		return
 	}
+	if record.RepoID != "" {
+		p.runAttach(ctx, record, profile)
+		return
+	}
 	controlTransport, err := controlclient.New(controlclient.Config{Address: profile.Address, Port: profile.SSHPort, IdentityFile: profile.IdentityFile, KnownHosts: profile.KnownHosts, Timeout: 30 * time.Second})
 	if err != nil {
 		_, _ = p.local.MarkError(operationID, err)
@@ -109,6 +139,71 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	p.publishAttachment(ctx, operation)
 }
 
+func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
+	mode := provisioning.LocalPathAttach
+	if info, statErr := os.Stat(filepath.Join(record.LocalPath, ".svn")); statErr == nil && info.IsDir() {
+		mode = provisioning.LocalPathAttachResume
+	}
+	check, err := provisioning.PreflightLocalPath(record.LocalPath, mode, p.otherRoots(record.OperationID))
+	if err != nil {
+		p.failAttach(record.OperationID, err)
+		return
+	}
+	svn := p.newAttachmentSVN(profile, record.OperationID)
+	if _, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath); err != nil {
+		p.failAttach(record.OperationID, fmt.Errorf("checkout shared repository: %w", err))
+		return
+	}
+	info, err := svn.GetInfo(ctx, check.CanonicalPath)
+	if err != nil || !infoHasURL(info, record.RepoURL) {
+		if err == nil {
+			err = errors.New("working copy URL does not match projected repository")
+		}
+		p.failAttach(record.OperationID, err)
+		return
+	}
+	entries, err := svn.Status(ctx, check.CanonicalPath, nil)
+	if err != nil {
+		p.failAttach(record.OperationID, err)
+		return
+	}
+	for _, entry := range entries {
+		if entry.Item != "normal" && entry.Item != "none" && entry.Item != "external" {
+			p.failAttach(record.OperationID, fmt.Errorf("checkout is incomplete or modified at %s (%s)", entry.Path, entry.Item))
+			return
+		}
+	}
+	if _, err := p.local.MarkAttached(record.OperationID, record.RepoID); err != nil {
+		p.failAttach(record.OperationID, err)
+		return
+	}
+	p.publishLocalRecord(ctx, record, profile)
+}
+
+func (p *daemonProvisioner) failAttach(operationID string, err error) {
+	_, _ = p.local.MarkError(operationID, err)
+	talk.With("attachment:"+operationID).Warnf("attachment failed: %v", err)
+}
+
+func (p *daemonProvisioner) otherRoots(operationID string) []string {
+	var roots []string
+	for _, record := range p.local.List() {
+		if record.OperationID != operationID {
+			roots = append(roots, record.LocalPath)
+		}
+	}
+	return roots
+}
+
+func infoHasURL(info, want string) bool {
+	for _, line := range strings.Split(strings.ReplaceAll(info, "\r\n", "\n"), "\n") {
+		if strings.TrimSpace(strings.TrimPrefix(line, "URL:")) == want && strings.HasPrefix(strings.TrimSpace(line), "URL:") {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *daemonProvisioner) publishAttachment(ctx context.Context, operation provisioning.Operation) {
 	if p.attachments == nil {
 		return
@@ -126,5 +221,16 @@ func (p *daemonProvisioner) publishAttachment(ctx context.Context, operation pro
 		case p.attachments <- provisionedAttachment{Repo: repo}:
 		case <-ctx.Done():
 		}
+	}
+}
+
+func (p *daemonProvisioner) publishLocalRecord(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
+	if p.attachments == nil {
+		return
+	}
+	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access}
+	select {
+	case p.attachments <- provisionedAttachment{Repo: repo}:
+	case <-ctx.Done():
 	}
 }

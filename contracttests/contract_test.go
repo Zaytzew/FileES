@@ -167,6 +167,7 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapActivationFinish:  true,
 		contract.CapRepoCreateRequest: true,
 		contract.CapRepoAttachIntent:  true,
+		contract.CapRepoAttachApprove: true,
 	}
 	if len(contract.AllCapabilities) != len(want) {
 		t.Fatalf("AllCapabilities = %#v", contract.AllCapabilities)

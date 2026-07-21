@@ -38,6 +38,26 @@ func TestPreflightLocalPathAttachRequiresEmptyTarget(t *testing.T) {
 	}
 }
 
+func TestPreflightLocalPathAttachResumeAcceptsOnlyExactWorkingCopyRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "share")
+	if err := os.MkdirAll(filepath.Join(root, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PreflightLocalPath(root, LocalPathAttachResume, nil); err != nil {
+		t.Fatalf("exact resumed WC rejected: %v", err)
+	}
+	if _, err := PreflightLocalPath(filepath.Join(root, "child"), LocalPathAttachResume, nil); err == nil {
+		t.Fatal("path below an existing WC accepted as resumed root")
+	}
+	plain := filepath.Join(t.TempDir(), "plain")
+	if err := os.MkdirAll(plain, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PreflightLocalPath(plain, LocalPathAttachResume, nil); err == nil {
+		t.Fatal("plain directory accepted as resumed WC")
+	}
+}
+
 func TestPreflightLocalPathRejectsUnsafeTargets(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")

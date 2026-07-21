@@ -48,6 +48,7 @@ type ActivationService interface {
 type RepositoryLifecycleService interface {
 	BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error)
 	BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error)
+	ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error)
 }
 
 func (s *Server) SetRepositoryLifecycleService(service RepositoryLifecycleService) {

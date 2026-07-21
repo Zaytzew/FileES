@@ -30,6 +30,7 @@ type RepoState struct {
 	attached         bool
 	ownerRealmID     string
 	attachmentPolicy string
+	projectedState   string
 
 	state        string // contract.State*
 	connectivity string // contract.Conn*
@@ -69,6 +70,7 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 		attachmentPolicy = "optional"
 	}
 	rs.attachmentPolicy = attachmentPolicy
+	rs.projectedState = projectedState
 	if projectedState != "active" {
 		rs.state = projectedState
 	} else if !attached {
@@ -79,6 +81,12 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 		}
 	}
 	rs.mu.Unlock()
+}
+
+func (rs *RepoState) ProjectedState() string {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	return rs.projectedState
 }
 
 // SetState transitions the repo to a new state constant (contract.State*).

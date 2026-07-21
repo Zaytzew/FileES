@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:label="FileES"
+        android:allowBackup="false"
+        android:fullBackupContent="false">
+
+        <!--
+             Read-only content:// surface over the local manifest cache
+             (concept doc §7: a retrieved object is served through a
+             read-only content:// grant, never file://, and is never a
+             re-upload candidate). No Activity yet: Etap 6 skeleton.
+        -->
+        <!--
+             exported=false: nothing outside this app can query the provider
+             directly. A viewer gets access only through a temporary,
+             per-URI FLAG_GRANT_READ_URI_PERMISSION grant issued by this app
+             (Etap 6 follow-up), never a standing permission string.
+        -->
+        <provider
+            android:name=".ManifestCacheProvider"
+            android:authorities="net.filees.mobile.manifest"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

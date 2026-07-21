@@ -34,6 +34,8 @@ type Record struct {
 	OperationID string    `json:"operation_id"`
 	ServerID    string    `json:"server_id"`
 	RepoID      string    `json:"repo_id,omitempty"`
+	RepoURL     string    `json:"repo_url,omitempty"`
+	Access      string    `json:"access,omitempty"`
 	DisplayName string    `json:"display_name,omitempty"`
 	LocalPath   string    `json:"local_path"`
 	State       State     `json:"state"`
@@ -151,6 +153,22 @@ func (s *Store) MarkAttached(operationID, repoID string) (Record, error) {
 	})
 }
 
+func (s *Store) ApproveAttach(operationID, serverID, repoID, repoURL, access string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.ServerID != serverID || record.RepoID != repoID {
+			return errors.New("attachment approval does not match the persisted intent")
+		}
+		if record.State == StateAttaching && record.RepoURL == repoURL && record.Access == access {
+			return nil
+		}
+		if record.State != StateUnattached && record.State != StatePolicyPending && record.State != StateError {
+			return errors.New("local repository operation cannot start attachment")
+		}
+		record.State, record.LastError, record.RepoURL, record.Access = StateAttaching, "", repoURL, access
+		return nil
+	})
+}
+
 func (s *Store) MarkError(operationID string, cause error) (Record, error) {
 	return s.update(operationID, func(record *Record) error {
 		if cause == nil || strings.TrimSpace(cause.Error()) == "" {
@@ -220,6 +238,11 @@ func validate(r Record) error {
 	}
 	if r.RepoID != "" && strings.ContainsAny(r.RepoID, "/\\\x00\r\n\t ") {
 		return errors.New("local repository ID is invalid")
+	}
+	if r.RepoURL != "" || r.Access != "" || r.State == StateAttaching {
+		if !strings.HasPrefix(r.RepoURL, "svn+ssh://") || (r.Access != "r" && r.Access != "rw") {
+			return errors.New("attached repository authority is invalid")
+		}
 	}
 	switch r.State {
 	case StateRequestPending, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateError:

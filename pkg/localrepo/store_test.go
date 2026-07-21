@@ -65,6 +65,28 @@ func TestStorePersistsExplicitOperationAndTerminalStates(t *testing.T) {
 	}
 }
 
+func TestStoreRequiresMatchingApprovalBeforeAttachment(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.BeginAttach("primary", "repo-1", filepath.Join(t.TempDir(), "share"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "svn+ssh://_filees-client@example/repo"
+	if _, err := store.ApproveAttach(record.OperationID, "other", "repo-1", url, "r"); err == nil {
+		t.Fatal("mismatched server approval accepted")
+	}
+	approved, err := store.ApproveAttach(record.OperationID, "primary", "repo-1", url, "r")
+	if err != nil || approved.State != StateAttaching {
+		t.Fatalf("approved=%+v err=%v", approved, err)
+	}
+	if _, err := store.ApproveAttach(record.OperationID, "primary", "repo-1", url, "r"); err != nil {
+		t.Fatalf("idempotent approval failed: %v", err)
+	}
+}
+
 func TestStoreRejectsDuplicateRepoAndOverlappingRoots(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

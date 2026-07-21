@@ -7,11 +7,15 @@ import (
 	contract "filees/pkg/contract/v1"
 )
 
-type lifecycleStub struct{ createCalls, attachCalls int }
+type lifecycleStub struct{ createCalls, attachCalls, approveCalls int }
 
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
 	stub.createCalls++
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, LocalPath: localPath, State: "request_pending"}, nil
+}
+func (stub *lifecycleStub) ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error) {
+	stub.approveCalls++
+	return contract.RepoLifecycleResult{OperationID: operationID, ServerID: serverID, RepoID: repoID, State: "attaching"}, nil
 }
 func (stub *lifecycleStub) BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error) {
 	stub.attachCalls++
@@ -57,5 +61,19 @@ func TestAttachIntentUsesProjectedRequiredPolicy(t *testing.T) {
 	}
 	if stub.attachCalls != 1 {
 		t.Fatalf("attach calls=%d", stub.attachCalls)
+	}
+}
+
+func TestAttachApprovalUsesCurrentProjectedAuthority(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn+ssh://_filees-client@example/repo", "primary", "r", "active", "owner", "optional", false)
+	req := lifecycleRequest(contract.CmdRepoAttachApprove, contract.RepoAttachApprovePayload{OperationID: "op", ServerID: "primary", RepoID: "repo-1"})
+	if response := server.dispatch(req); response.Status != contract.StatusOK {
+		t.Fatalf("approval rejected: %+v", response.Error)
+	}
+	if stub.approveCalls != 1 {
+		t.Fatalf("approval calls=%d", stub.approveCalls)
 	}
 }

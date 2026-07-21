@@ -70,13 +70,18 @@ func (s Store) SaveManifestIfNewer(m *v1.Manifest) (bool, error) {
 	return true, nil
 }
 
-// atomicWriteJSON writes value to path via temp file, fsync, rename, dir fsync,
-// mode 0600.
+// atomicWriteJSON writes value as indented JSON to path atomically, mode 0600.
 func atomicWriteJSON(path string, value any) error {
 	raw, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
+	return atomicWriteBytes(path, append(raw, '\n'))
+}
+
+// atomicWriteBytes writes data to path via temp file, fsync, rename, dir fsync,
+// mode 0600.
+func atomicWriteBytes(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -91,7 +96,7 @@ func atomicWriteJSON(path string, value any) error {
 		tmp.Close()
 		return err
 	}
-	if _, err := tmp.Write(append(raw, '\n')); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return err
 	}

@@ -145,6 +145,56 @@ func TestDaemonProvisionerRejectsMismatchedWorkingCopyURL(t *testing.T) {
 	}
 }
 
+func TestOpenBSDAttachmentE2E(t *testing.T) {
+	profilePath := os.Getenv("FILEES_ATTACHMENT_E2E_PROFILE")
+	repoID := os.Getenv("FILEES_ATTACHMENT_E2E_REPO_ID")
+	repoURL := os.Getenv("FILEES_ATTACHMENT_E2E_REPO_URL")
+	if profilePath == "" || repoID == "" || repoURL == "" {
+		t.Skip("set FILEES_ATTACHMENT_E2E_PROFILE, FILEES_ATTACHMENT_E2E_REPO_ID and FILEES_ATTACHMENT_E2E_REPO_URL")
+	}
+	profile, err := clientprofile.Load(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	local, err := localrepo.Open(filepath.Join(root, "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := provisioning.NewStore(filepath.Join(root, "provisioning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc := filepath.Join(root, "shared-wc")
+	record, err := local.BeginAttach(profile.ServerID, repoID, wc, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = local.ApproveAttach(record.OperationID, profile.ServerID, repoID, repoURL, "r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachments := make(chan provisionedAttachment, 1)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = attachments
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached {
+		t.Fatalf("attachment state=%s error=%s", got.State, got.LastError)
+	}
+	select {
+	case attachment := <-attachments:
+		if attachment.Repo.Access != "r" || attachment.Repo.ID != repoID {
+			t.Fatalf("runtime attachment=%+v", attachment)
+		}
+	default:
+		t.Fatal("runtime attachment not published")
+	}
+	if _, err := os.Stat(filepath.Join(wc, "e2e.txt")); err != nil {
+		t.Fatalf("checked-out repository content: %v", err)
+	}
+}
+
 type fixedInfoAttachmentSVN struct{ attachmentSVNStub *attachmentSVNStub }
 
 func (stub *fixedInfoAttachmentSVN) Checkout(ctx context.Context, url, path string) (string, error) {

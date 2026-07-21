@@ -7,8 +7,8 @@ package androidbind
 import (
 	"encoding/json"
 
-	"filees/pkg/mobileclient"
 	v1 "filees/pkg/mobile/v1"
+	"filees/pkg/mobileclient"
 )
 
 // Store is the gomobile-bindable handle onto the local manifest cache under

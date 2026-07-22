@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,6 +34,34 @@ func TestRepositoryLifecycleCreateSharesCanonicalOperationWithProvisioning(t *te
 	}
 	if queued != result.OperationID || op.OperationID != result.OperationID || op.LocalPath != filepath.Join(real, "new") || result.LocalPath != op.LocalPath {
 		t.Fatalf("result=%+v operation=%+v queued=%q", result, op, queued)
+	}
+}
+
+func TestRepositoryLifecycleAllowsRetryAtSamePathAfterErroredCreate(t *testing.T) {
+	local, _ := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	target := filepath.Join(t.TempDir(), "RIP")
+	service := repositoryLifecycleService{store: local, provisioning: journal, clientID: func(string) string { return "client-a" }, onCreate: func(string) {}}
+
+	first, err := service.BeginCreate("office", "RIP", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a later, unrelated failure (e.g. STORAGE_INSUFFICIENT reported
+	// by the server) reaching terminal StateError, exactly as MarkError does
+	// in BeginCreate's own error path.
+	if _, err := local.MarkError(first.OperationID, errors.New("STORAGE_INSUFFICIENT: server storage requires more bytes than available")); err != nil {
+		t.Fatal(err)
+	}
+
+	// A fresh attempt at the identical path must not be rejected merely
+	// because a dead, terminal record still names that path.
+	second, err := service.BeginCreate("office", "RIP", target)
+	if err != nil {
+		t.Fatalf("retry at the same path after a terminal error was rejected: %v", err)
+	}
+	if second.OperationID == first.OperationID {
+		t.Fatal("retry must be a new operation, not the errored one")
 	}
 }
 

@@ -159,11 +159,19 @@ func NewSink(w io.Writer, scope string) *Sink {
 
 // Emit writes entry as a JSON Line. A nil Sink or a noop Entry is silently ignored.
 func (s *Sink) Emit(entry Entry) {
+	s.EmitAt(time.Now(), entry)
+}
+
+// EmitAt writes entry as a JSON Line using an explicit timestamp. Callers
+// that need to correlate this entry with the deterministic error.list ID
+// (`ts + ":" + code`, see pkg/ipcserver/handlers.go's parseErrLine) must use
+// the same ts value they pass here to compute that ID themselves.
+func (s *Sink) EmitAt(ts time.Time, entry Entry) {
 	if s == nil || entry.IsNoop() {
 		return
 	}
 	rec := jsonLine{
-		TS:       time.Now().UTC().Format(time.RFC3339),
+		TS:       ts.UTC().Format(time.RFC3339),
 		Scope:    s.scope,
 		Code:     entry.Code,
 		Severity: entry.Severity,

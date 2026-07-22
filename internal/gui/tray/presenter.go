@@ -23,8 +23,11 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 	model.Items = append(model.Items,
 		disabledItem("system.status", model.Title),
 		disabledItem("system.refreshed", lastRefreshLabel(vm)),
-		separator("sep.repositories"),
 	)
+	if vm.Update.Available() {
+		model.Items = append(model.Items, updateMenu(vm))
+	}
+	model.Items = append(model.Items, separator("sep.repositories"))
 
 	if len(vm.Servers) == 0 {
 		model.Items = append(model.Items, disabledItem("servers.empty", "Brak aktywnych serwerów"))
@@ -44,6 +47,26 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 		actionItem("action.quit", "Zamknij GUI", "Zamknij tylko aplikację tray", Intent{Kind: IntentQuit}),
 	)
 	return model
+}
+
+func updateMenu(vm app.ViewModel) MenuItemModel {
+	update := vm.Update
+	children := []MenuItemModel{
+		disabledItem("update.version", fmt.Sprintf("Wersja: %s → %s", update.CurrentVersion, update.AvailableVersion)),
+	}
+	if strings.TrimSpace(update.Summary) != "" {
+		children = append(children, disabledItem("update.summary", update.Summary))
+	}
+	if vm.CanPlanUpdate() {
+		children = append(children, actionItem("update.plan", "Pokaż, co ulegnie zmianie…", "Zweryfikowany dry run bez instalacji", Intent{Kind: IntentUpdatePlan}))
+	}
+	if vm.CanApplyUpdate() {
+		children = append(children, actionItem("update.apply", "Zaktualizuj i uruchom ponownie…", "Instalacja wymaga potwierdzenia", Intent{Kind: IntentUpdateApply}))
+	}
+	return MenuItemModel{
+		ID: "update", Title: "● Dostępna aktualizacja " + update.AvailableVersion,
+		Tooltip: "Podpisane wydanie " + update.ReleaseID, Enabled: true, Children: children,
+	}
 }
 
 func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {

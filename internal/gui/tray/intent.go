@@ -5,13 +5,15 @@ package tray
 type IntentKind string
 
 const (
-	IntentOpenFolder IntentKind = "open_folder"
-	IntentLock       IntentKind = "lock"
-	IntentUnlock     IntentKind = "unlock"
-	IntentReconnect  IntentKind = "reconnect"
-	IntentActivate   IntentKind = "activate"
-	IntentServerInfo IntentKind = "server_info"
-	IntentQuit       IntentKind = "quit"
+	IntentOpenFolder  IntentKind = "open_folder"
+	IntentLock        IntentKind = "lock"
+	IntentUnlock      IntentKind = "unlock"
+	IntentReconnect   IntentKind = "reconnect"
+	IntentActivate    IntentKind = "activate"
+	IntentServerInfo  IntentKind = "server_info"
+	IntentUpdatePlan  IntentKind = "update_plan"
+	IntentUpdateApply IntentKind = "update_apply"
+	IntentQuit        IntentKind = "quit"
 )
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.

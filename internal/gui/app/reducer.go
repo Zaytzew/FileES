@@ -19,6 +19,7 @@ type appState struct {
 	lastSeq   int64                           // last event sequence number received
 	system    contract.SystemStatusResult
 	errors    []ErrorViewModel
+	activity  []ActivityViewModel
 	refreshed time.Time
 }
 
@@ -47,7 +48,7 @@ func (s appState) applyConnected(caps []string) appState {
 // applyFullSnapshot atomically replaces all authoritative daemon/repository
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
-func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, refreshed time.Time) appState {
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, refreshed time.Time) appState {
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -61,6 +62,10 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 			ID: record.ID, RepoID: record.RepoID, Timestamp: record.TS,
 			Code: record.Code, Severity: record.Severity, Hint: record.Hint, Message: record.Msg,
 		})
+	}
+	s.activity = make([]ActivityViewModel, 0, len(activityRecords))
+	for _, record := range activityRecords {
+		s.activity = append(s.activity, ActivityViewModel{RepoID: record.RepoID, Path: record.Path, Kind: record.Kind, Stage: record.Stage, UpdatedAt: record.UpdatedAt, Revision: record.Revision})
 	}
 	s.refreshed = refreshed
 	s.stale = false
@@ -190,6 +195,7 @@ func (s appState) viewModel() ViewModel {
 		Repos:        repos,
 		Servers:      servers,
 		Errors:       append([]ErrorViewModel(nil), s.errors...),
+		Activity:     append([]ActivityViewModel(nil), s.activity...),
 	}
 	if update := s.system.Update; update != nil {
 		vm.Update = &UpdateViewModel{

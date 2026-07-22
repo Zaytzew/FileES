@@ -133,6 +133,7 @@ type msgFullSnapshot struct {
 	summaries []contract.RepoSummary
 	statuses  []contract.RepoStatus
 	errors    []contract.ErrorRecord
+	activity  []contract.ActivityRecord
 	refreshed time.Time
 }
 type msgPartialSnapshots struct {
@@ -223,6 +224,7 @@ func (a *App) loop(ctx context.Context) {
 		sesCtx := currentSesCtx
 		gen := connectGen
 		includeErrors := state.caps[contract.CapErrorList]
+		includeActivity := state.caps[contract.CapRepoActivity]
 
 		go func() {
 			system, err := a.cfg.Client.SystemStatus(sesCtx)
@@ -254,9 +256,22 @@ func (a *App) loop(ctx context.Context) {
 				}
 				errors = result.Errors
 			}
+			var activityRecords []contract.ActivityRecord
+			if includeActivity {
+				if client, ok := a.cfg.Client.(interface {
+					RepoActivity(context.Context, int) (*contract.RepoActivityResult, error)
+				}); ok {
+					result, err := client.RepoActivity(sesCtx, 20)
+					if err != nil {
+						a.sendSessionFailure(sesCtx, gen, send)
+						return
+					}
+					activityRecords = result.Entries
+				}
+			}
 			if sesCtx.Err() == nil {
 				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos,
-					statuses: statuses, errors: errors, refreshed: a.cfg.Clock.Now()})
+					statuses: statuses, errors: errors, activity: activityRecords, refreshed: a.cfg.Clock.Now()})
 			}
 		}()
 	}
@@ -417,7 +432,7 @@ func (a *App) loop(ctx context.Context) {
 				if msg.gen != connectGen || currentSesCtx == nil {
 					break
 				}
-				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.refreshed)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.refreshed)
 				a.cfg.Backoff.Reset()
 				notify()
 				finishRefresh()

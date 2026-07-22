@@ -85,6 +85,22 @@ func TestBuildMenuShowsRepositoryAsCompactOpenFolderRow(t *testing.T) {
 	}
 }
 
+func TestBuildMenuShowsGlobalRecentActivityBesideHistory(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapRepoActivity: true, contract.CapErrorList: true},
+		Repos:        []app.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty"}},
+		Activity:     []app.ActivityViewModel{{RepoID: "docs", Path: "raport.pdf", Stage: "published", Revision: 18}},
+	})
+	activity := findItem(t, menu.Items, "activity")
+	if activity.Title != "Ostatnia aktywność" || len(activity.Children) != 1 || activity.Children[0].Title != "Dokumenty / raport.pdf — Opublikowano · r18" {
+		t.Fatalf("activity=%+v", activity)
+	}
+	if len(activity.Children[0].Children) != 0 || activity.Children[0].Enabled {
+		t.Fatalf("activity row should be informational: %+v", activity.Children[0])
+	}
+}
+
 func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
 	menu := BuildMenu(withServer(app.ViewModel{
 		Connected: true,

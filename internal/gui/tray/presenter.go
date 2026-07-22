@@ -75,9 +75,7 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 		name = server.ID
 	}
 	children := []MenuItemModel{
-		disabledItem("server."+server.ID+".role", "Tryb klienta: "+clientRoleLabel(server.ClientRole)),
-		disabledItem("server."+server.ID+".creation", repositoryCreationLabel(server)),
-		actionItem("server."+server.ID+".info", "Informacje o serwerze…", "Pokaż rzeczywisty adres i identyfikatory", Intent{Kind: IntentServerInfo, ServerID: server.ID}),
+		actionItem("server."+server.ID+".info", "Informacje o serwerze…", "Pokaż adres, identyfikatory i uprawnienia klienta", Intent{Kind: IntentServerInfo, ServerID: server.ID}),
 	}
 	if len(server.Repos) == 0 {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak repozytoriów"))
@@ -86,20 +84,6 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 		children = append(children, repoMenu(vm, server, repo))
 	}
 	return MenuItemModel{ID: "server." + server.ID, Title: name, Enabled: true, Children: children}
-}
-
-func repositoryCreationLabel(server app.ServerViewModel) string {
-	if server.CanOfferRepositoryCreation() {
-		return "Tworzenie repozytoriów: dozwolone"
-	}
-	return "Tworzenie repozytoriów: niedozwolone"
-}
-
-func clientRoleLabel(role string) string {
-	if role == "ro" {
-		return "tylko odczyt"
-	}
-	return "pełny"
 }
 
 func connectionLabel(vm app.ViewModel) string {

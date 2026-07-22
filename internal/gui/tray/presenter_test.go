@@ -210,14 +210,19 @@ func TestBuildMenuShowsProjectedUnattachedRepositoryByDisplayName(t *testing.T) 
 	}
 }
 
-func TestServerCreationCapabilityIsPresentationOnly(t *testing.T) {
+func TestServerPermissionsAreOnlyInInformationDialog(t *testing.T) {
 	allowed := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "full", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}})
-	if got := findItem(t, allowed.Items, "server.full.creation").Title; got != "Tworzenie repozytoriów: dozwolone" {
-		t.Fatalf("allowed=%q", got)
+	allowedServer := findItem(t, allowed.Items, "server.full")
+	if hasItem(allowedServer.Children, "server.full.creation") || hasItem(allowedServer.Children, "server.full.role") {
+		t.Fatal("server permission metadata clutters tray menu")
 	}
 	readOnly := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "ro", ClientRole: contract.ClientRoleReadOnly, CanCreateRepositories: true}}})
-	if got := findItem(t, readOnly.Items, "server.ro.creation").Title; got != "Tworzenie repozytoriów: niedozwolone" {
-		t.Fatalf("read-only=%q", got)
+	readOnlyServer := findItem(t, readOnly.Items, "server.ro")
+	if hasItem(readOnlyServer.Children, "server.ro.creation") || hasItem(readOnlyServer.Children, "server.ro.role") {
+		t.Fatal("read-only permission metadata clutters tray menu")
+	}
+	if !hasItem(allowedServer.Children, "server.full.info") || !hasItem(readOnlyServer.Children, "server.ro.info") {
+		t.Fatal("server information action is missing")
 	}
 }
 

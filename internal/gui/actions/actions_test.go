@@ -914,3 +914,22 @@ func TestControllerUpdateDryRunAndConfirmedApply(t *testing.T) {
 		t.Fatalf("confirmation = %#v", confirm)
 	}
 }
+
+func TestControllerServerInformationContainsPermissions(t *testing.T) {
+	platformFake := &platformtest.Fake{}
+	view := app.ViewModel{Servers: []app.ServerViewModel{{
+		ID: "office", Address: "filees.example", SSHPort: 22, ClientID: "client-1",
+		ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true,
+	}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, Prompter: platformFake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentServerInfo, ServerID: "office"})
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().InfoRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	requests := platformFake.Snapshot().InfoRequests
+	if len(requests) != 1 || !strings.Contains(requests[0].Text, "Tryb klienta: pełny") || !strings.Contains(requests[0].Text, "Tworzenie repozytoriów: dozwolone") {
+		t.Fatalf("server information = %#v", requests)
+	}
+}

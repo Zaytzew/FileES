@@ -95,6 +95,18 @@ func (s *Server) RegisterActivation(status contract.ActivationStatus) {
 	s.Emit(contract.NewEvent("", 0, contract.EvActivationChanged, "", status))
 }
 
+func (s *Server) SetActivationRepositoryReadiness(serverID string, ready bool, pending int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	status, ok := s.activations[serverID]
+	if !ok {
+		return
+	}
+	status.RepositoriesReady = ready
+	status.PendingRequiredRepos = pending
+	s.activations[serverID] = status
+}
+
 func (s *Server) allActivations() []contract.ActivationStatus {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

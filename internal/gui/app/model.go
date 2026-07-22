@@ -68,6 +68,8 @@ type ServerViewModel struct {
 	ClientID              string
 	SSHPort               int
 	CanCreateRepositories bool
+	RepositoriesReady     bool
+	PendingRequiredRepos  int
 	Repos                 []RepoViewModel
 }
 

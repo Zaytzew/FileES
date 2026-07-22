@@ -82,3 +82,17 @@ func TestActivationCommandFailsClosedWithoutDaemonService(t *testing.T) {
 		t.Fatalf("response=%+v", response)
 	}
 }
+
+func TestActivationRepositoryReadinessPreservesProfileMetadata(t *testing.T) {
+	server := New("unused")
+	server.RegisterActivation(contract.ActivationStatus{ServerID: "office", DisplayName: "Office", ClientID: "client", CanCreateRepositories: true})
+	server.SetActivationRepositoryReadiness("office", false, 2)
+	statuses := server.allActivations()
+	if len(statuses) != 1 || statuses[0].DisplayName != "Office" || !statuses[0].CanCreateRepositories || statuses[0].RepositoriesReady || statuses[0].PendingRequiredRepos != 2 {
+		t.Fatalf("activation=%+v", statuses)
+	}
+	server.SetActivationRepositoryReadiness("office", true, 0)
+	if got := server.allActivations()[0]; !got.RepositoriesReady || got.PendingRequiredRepos != 0 {
+		t.Fatalf("ready activation=%+v", got)
+	}
+}

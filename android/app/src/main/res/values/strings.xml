@@ -18,4 +18,17 @@
     <string name="status_activated">Aktywny: %1$s (%2$s)</string>
     <string name="status_refreshing">Odświeżanie…</string>
     <string name="status_error">Błąd: %1$s</string>
+
+    <string name="section_uploads">Kolejka uploadów</string>
+    <string name="hint_parent_path">Katalog docelowy (pusty = katalog główny)</string>
+    <string name="action_pick_file">Wybierz plik do wysłania…</string>
+    <string name="action_drain">Wyślij kolejkę</string>
+    <string name="action_discard">Odrzuć</string>
+    <string name="upload_state_pending_create">w kolejce</string>
+    <string name="upload_state_uploading">wysyłanie…</string>
+    <string name="upload_state_committed">wysłano</string>
+    <string name="upload_state_dropped_duplicate">pominięto (duplikat)</string>
+    <string name="upload_state_conflict">konflikt nazwy — wymaga decyzji</string>
+    <string name="upload_state_parked">zatrzymano — wymaga decyzji</string>
+    <string name="uploads_empty">Kolejka jest pusta.</string>
 </resources>

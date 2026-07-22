@@ -93,6 +93,19 @@ type ErrorViewModel struct {
 	Message   string
 }
 
+type UpdateViewModel struct {
+	State            string
+	CurrentVersion   string
+	AvailableVersion string
+	ReleaseID        string
+	Summary          string
+	RestartRequired  bool
+}
+
+func (update *UpdateViewModel) Available() bool {
+	return update != nil && update.State == "available" && update.AvailableVersion != ""
+}
+
 // ViewModel is the complete read-only presentation model consumed by the tray adapter.
 // It is replaced atomically on every state change; the tray layer must not mutate it.
 type ViewModel struct {
@@ -105,7 +118,16 @@ type ViewModel struct {
 	Repos        []RepoViewModel
 	Servers      []ServerViewModel
 	Errors       []ErrorViewModel
+	Update       *UpdateViewModel
 	Icon         IconState
+}
+
+func (vm ViewModel) CanPlanUpdate() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapUpdatePlan) && vm.Update.Available()
+}
+
+func (vm ViewModel) CanApplyUpdate() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapUpdateApply) && vm.Update.Available()
 }
 
 // HasCap reports whether the daemon advertised the given capability.

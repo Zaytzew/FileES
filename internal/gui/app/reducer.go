@@ -191,6 +191,13 @@ func (s appState) viewModel() ViewModel {
 		Servers:      servers,
 		Errors:       append([]ErrorViewModel(nil), s.errors...),
 	}
+	if update := s.system.Update; update != nil {
+		vm.Update = &UpdateViewModel{
+			State: update.State, CurrentVersion: update.CurrentVersion,
+			AvailableVersion: update.AvailableVersion, ReleaseID: update.ReleaseID,
+			Summary: update.Summary, RestartRequired: update.RestartRequired,
+		}
+	}
 	if s.connected && s.stale {
 		vm.Icon = IconBusy
 	} else {

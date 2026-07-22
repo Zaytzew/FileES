@@ -25,6 +25,37 @@ func TestBuildMenuDisconnectedMarksSnapshotStale(t *testing.T) {
 	}
 }
 
+func TestBuildMenuShowsUpdateBadgeAndCapabilityGatedUX(t *testing.T) {
+	vm := app.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapUpdatePlan: true, contract.CapUpdateApply: true},
+		Update:       &app.UpdateViewModel{State: "available", CurrentVersion: "1.0", AvailableVersion: "1.1", ReleaseID: "r180", Summary: "Aktualizacja bezpieczeństwa"},
+	}
+	menu := BuildMenu(vm)
+	update := findItem(t, menu.Items, "update")
+	if update.Title != "● Dostępna aktualizacja 1.1" {
+		t.Fatalf("update badge = %q", update.Title)
+	}
+	plan := findItem(t, update.Children, "update.plan")
+	apply := findItem(t, update.Children, "update.apply")
+	if plan.Intent == nil || plan.Intent.Kind != IntentUpdatePlan || apply.Intent == nil || apply.Intent.Kind != IntentUpdateApply {
+		t.Fatalf("update intents = %#v / %#v", plan.Intent, apply.Intent)
+	}
+
+	vm.Stale = true
+	stale := findItem(t, BuildMenu(vm).Items, "update")
+	if hasItem(stale.Children, "update.plan") || hasItem(stale.Children, "update.apply") {
+		t.Fatal("update mutations visible for stale status")
+	}
+}
+
+func TestBuildMenuHidesUpdateWhenCurrent(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{Connected: true, Update: &app.UpdateViewModel{State: "current", CurrentVersion: "1.1"}})
+	if hasItem(menu.Items, "update") {
+		t.Fatal("update badge visible without an available release")
+	}
+}
+
 func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
 	operation := "commit"
 	vm := app.ViewModel{

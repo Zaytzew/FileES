@@ -9,6 +9,9 @@ const (
 	CmdSystemHello    = "system.hello"    // capability negotiation
 	CmdSystemStatus   = "system.status"   // daemon uptime and aggregate state
 	CmdSystemShutdown = "system.shutdown" // graceful stop (privileged)
+	CmdUpdateStatus   = "update.status"   // signed release availability
+	CmdUpdatePlan     = "update.plan"     // verified dry-run change plan
+	CmdUpdateApply    = "update.apply"    // apply and request GUI restart
 
 	// Client activation (executed by daemon; GUI only supplies user intent).
 	CmdActivationBegin  = "activation.begin"
@@ -60,6 +63,12 @@ const (
 	CapRepoAttachApprove = "repo.attach_approve"
 	CapRepoRelocate      = "repo.relocate"
 
+	// Update capabilities are advertised only after the daemon wires a signed
+	// release checker and transactional platform installer.
+	CapUpdateStatus = "update.status"
+	CapUpdatePlan   = "update.plan"
+	CapUpdateApply  = "update.apply"
+
 	// Not yet implemented — defined for future use but NOT in AllCapabilities.
 	CapRepoPause      = "repo.pause"
 	CapRepoSyncNow    = "repo.sync_now"
@@ -97,6 +106,35 @@ type SystemStatusResult struct {
 	UptimeSec   int64              `json:"uptime_sec"`
 	Repos       int                `json:"repos"`
 	Activations []ActivationStatus `json:"activations"`
+	Update      *UpdateStatus      `json:"update,omitempty"`
+}
+
+type UpdateStatus struct {
+	State            string `json:"state"` // current | available | planning | applying | restart_required | failed
+	CurrentVersion   string `json:"current_version"`
+	AvailableVersion string `json:"available_version,omitempty"`
+	ReleaseID        string `json:"release_id,omitempty"`
+	Summary          string `json:"summary,omitempty"`
+	RestartRequired  bool   `json:"restart_required"`
+}
+
+type UpdateChange struct {
+	Action string `json:"action"` // add | update | remove | unchanged
+	Path   string `json:"path"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type UpdatePlanResult struct {
+	CurrentVersion   string         `json:"current_version"`
+	AvailableVersion string         `json:"available_version"`
+	ReleaseID        string         `json:"release_id"`
+	Changes          []UpdateChange `json:"changes"`
+	RestartRequired  bool           `json:"restart_required"`
+}
+
+type UpdateApplyResult struct {
+	InstalledVersion string `json:"installed_version"`
+	RestartRequired  bool   `json:"restart_required"`
 }
 
 type ActivationStatus struct {

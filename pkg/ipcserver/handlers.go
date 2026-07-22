@@ -33,6 +33,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoList(req)
 	case contract.CmdRepoStatus:
 		return s.handleRepoStatus(req)
+	case contract.CmdRepoActivity:
+		return s.handleRepoActivity(req)
 	case contract.CmdRepoCreateRequest:
 		return s.handleRepoCreateRequest(req)
 	case contract.CmdRepoAttachIntent:
@@ -52,6 +54,30 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleRepoActivity(req contract.Request) contract.Response {
+	source := s.activitySource()
+	if source == nil {
+		return contract.ErrResponse(req.RequestID, "REPO-3001", "ERROR", "NONE", "repo.activity_unavailable", nil)
+	}
+	var payload contract.RepoActivityPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	limit := payload.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	entries := source.List()
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	result := make([]contract.ActivityRecord, len(entries))
+	for i, entry := range entries {
+		result[i] = contract.ActivityRecord{RepoID: entry.RepoID, Path: entry.Path, Kind: string(entry.Kind), Stage: string(entry.Stage), DetectedAt: entry.DetectedAt.Format(time.RFC3339Nano), UpdatedAt: entry.UpdatedAt.Format(time.RFC3339Nano), Revision: entry.Revision, ErrorID: entry.ErrorID}
+	}
+	return contract.OKResponse(req.RequestID, contract.RepoActivityResult{Entries: result})
 }
 
 func (s *Server) handleRepoRelocate(req contract.Request) contract.Response {

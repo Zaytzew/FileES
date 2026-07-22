@@ -128,6 +128,7 @@ func runDaemon() {
 		lg.Errorf("recent activity: %v", err)
 		os.Exit(1)
 	}
+	ipc.SetActivitySource(activityJournal)
 	provisionedAttachments := make(chan provisionedAttachment, 16)
 	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
 	provisioner.attachments = provisionedAttachments

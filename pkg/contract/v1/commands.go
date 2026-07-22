@@ -28,6 +28,7 @@ const (
 	CmdRepoAttachIntent  = "repo.attach_intent"  // persist local path choice; no checkout yet
 	CmdRepoAttachApprove = "repo.attach_approve" // approve the persisted intent and start checkout
 	CmdRepoRelocate      = "repo.relocate"       // approve relocation of an attached working copy
+	CmdRepoActivity      = "repo.activity"       // global recent synchronization activity snapshot
 	CmdRepoLock          = "repo.lock"           // acquire SVN lock on one or more paths
 	CmdRepoUnlock        = "repo.unlock"         // release SVN lock on one or more paths
 
@@ -62,6 +63,7 @@ const (
 	CapRepoAttachIntent  = "repo.attach_intent"
 	CapRepoAttachApprove = "repo.attach_approve"
 	CapRepoRelocate      = "repo.relocate"
+	CapRepoActivity      = "repo.activity"
 
 	// Update capabilities are advertised only after the daemon wires a signed
 	// release checker and transactional platform installer.
@@ -219,6 +221,25 @@ type RepoLifecycleResult struct {
 	LocalPath        string `json:"local_path"`
 	PendingLocalPath string `json:"pending_local_path,omitempty"`
 	State            string `json:"state"`
+}
+
+type RepoActivityPayload struct {
+	Limit int `json:"limit,omitempty"`
+}
+
+type ActivityRecord struct {
+	RepoID     string `json:"repo_id"`
+	Path       string `json:"path"`
+	Kind       string `json:"kind"`
+	Stage      string `json:"stage"`
+	DetectedAt string `json:"detected_at"`
+	UpdatedAt  string `json:"updated_at"`
+	Revision   int64  `json:"revision,omitempty"`
+	ErrorID    string `json:"error_id,omitempty"`
+}
+
+type RepoActivityResult struct {
+	Entries []ActivityRecord `json:"entries"`
 }
 
 // RepoListResult is the result for CmdRepoList.

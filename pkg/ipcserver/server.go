@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"filees/pkg/activity"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/talk"
 )
@@ -30,6 +31,7 @@ type Server struct {
 	activation  ActivationService
 	lifecycle   RepositoryLifecycleService
 	updates     UpdateService
+	activity    ActivitySource
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -59,6 +61,22 @@ type UpdateService interface {
 	Apply(context.Context) (contract.UpdateApplyResult, error)
 }
 
+type ActivitySource interface {
+	List() []activity.Entry
+}
+
+func (s *Server) SetActivitySource(source ActivitySource) {
+	s.mu.Lock()
+	s.activity = source
+	s.mu.Unlock()
+}
+
+func (s *Server) activitySource() ActivitySource {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.activity
+}
+
 func (s *Server) SetUpdateService(service UpdateService) {
 	s.mu.Lock()
 	s.updates = service
@@ -75,6 +93,9 @@ func (s *Server) capabilities() []string {
 	caps := append([]string(nil), contract.AllCapabilities...)
 	if s.updateService() != nil {
 		caps = append(caps, contract.CapUpdateStatus, contract.CapUpdatePlan, contract.CapUpdateApply)
+	}
+	if s.activitySource() != nil {
+		caps = append(caps, contract.CapRepoActivity)
 	}
 	return caps
 }

@@ -570,7 +570,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 </div>
 </div>
 <h4>IPC Server (<code>pkg/ipcserver</code>) and Client (<code>pkg/ipcclient</code>)</h4>
-<p>The daemon exposes a Unix domain socket at <code>\$XDG_RUNTIME_DIR/filees.sock</code> (fallback: <code>~/.filees/daemon.sock</code>). The protocol is <code>filees.contract/v1</code> — versioned JSON Lines, one object per line. Normal requests are request/response; <code>events.subscribe</code> switches the connection to a server-push stream. Currently implemented commands: <code>system.hello</code>, <code>system.status</code>, <code>repo.list</code>, <code>repo.status</code>, <code>repo.lock</code>, <code>repo.unlock</code>, <code>error.list</code>, <code>events.subscribe</code>.</p><div class="decision">
+<p>The daemon exposes a Unix domain socket at <code>\$XDG_RUNTIME_DIR/filees.sock</code> (fallback: <code>~/.filees/daemon.sock</code>). The protocol is <code>filees.contract/v1</code> — versioned JSON Lines, one object per line. Normal requests are request/response; <code>events.subscribe</code> switches the connection to a server-push stream. Currently implemented commands: <code>system.hello</code>, <code>system.status</code>, <code>update.status</code>, <code>update.plan</code>, <code>update.apply</code>, <code>activation.begin</code>, <code>activation.finish</code>, <code>repo.list</code>, <code>repo.status</code>, <code>repo.activity</code>, <code>repo.create_request</code>, <code>repo.attach_intent</code>, <code>repo.attach_approve</code>, <code>repo.relocate</code>, <code>repo.lifecycle_status</code>, <code>repo.lock</code>, <code>repo.unlock</code>, <code>error.list</code>, <code>events.subscribe</code>. <code>repo.pause</code>, <code>repo.sync_now</code>, <code>repo.publish</code>, <code>conflict.list</code>, <code>conflict.get</code>, <code>conflict.decide</code>, <code>notice.list</code> and <code>notice.ack</code> are declared in the contract but not yet wired into the daemon dispatcher.</p><div class="decision">
 <div class="decision-head">Design rationale / events invalidate snapshots</div>
 <div class="decision-grid">
 <div class="decision-label">Decision</div><div class="decision-value">GUI events are signals to refetch daemon-owned snapshots, not a second state machine.</div>
@@ -598,6 +598,9 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 </table></div>
 <p>Repository provisioning states (from <code>pkg/provisioning</code>):</p>
 <pre><code>local_validated
+  -&gt; storage_preflight_requested
+  -&gt; storage_preflight_failed -&gt; storage_preflight_requested
+  -&gt; storage_approved
   -&gt; provisioning_requested
   -&gt; repository_request_failed -&gt; provisioning_requested
   -&gt; repository_ready
@@ -605,6 +608,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
   -&gt; initial_commit_failed -&gt; initial_commit_in_progress
   -&gt; initial_snapshot_published
   -&gt; active</code></pre>
+<p>A <code>storage_preflight_failed</code> terminus (e.g. the worker's <code>STORAGE_INSUFFICIENT</code> refusal when the physical filesystem lacks room) is durable but not itself self-healing: the GUI polls <code>repo.lifecycle_status</code> by <code>operation_id</code> and surfaces the outcome as a second notification, since a repository that never reaches <code>active</code> never gets a registered <code>repo_id</code> and is therefore invisible to <code>repo.list</code>/<code>error.list</code>.</p>
 <h2 id="ch1-bundle">1.4 Bundle Layout and Filesystem Protocol</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Atomic claim/commit and recovery paths tested natively on OpenBSD.</span></div>
 <p>The server side uses a filesystem-based protocol with no hidden database or background daemon. A single committed <code>filees.onboarding-bundle/v4</code> JSON file is the atomic record of an onboarding operation. It contains three sub-objects: <code>Operation</code>, <code>Outbox</code> (delivery state retained, OTP and address redacted after terminal delivery), and <code>Audit</code> (append-only history). One <code>rename(2)</code> publishes all three atomically.</p><div class="decision">
 <div class="decision-head">Design rationale / filesystem protocol instead of hidden transactional service</div>
@@ -848,12 +852,13 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 </ol>
 <div class="note"><strong>Acceptance status:</strong> revoke followed by a fresh GUI activation, real SMTP delivery, OTP entry, reverse tunnel, installation-key proof and external <code>svn info</code> passed on the persistent OpenBSD 7.9 reference VM. Release engineering still has to provide production pins, release-bound bootstrap-key rotation and a signed-payload policy. Windows bootstrap remains unsupported. See <code>PUSH_DEPLOY_CLIENT_READINESS.md</code> and <code>concepts/GUI_REDEPLOY_OPENBSD_E2E_2026-07-19.md</code>.</div>
 <h4>Adding a local directory</h4>
-<p>The local provisioning state machine models the following two-step data-repository process, but the authenticated server-side repository worker is not connected yet:</p>
+<p>The local provisioning state machine drives the following data-repository process against the authenticated server-side repository worker (<code>pkg/repoworker</code>), which is connected and verified end to end — including its refusal path:</p>
 <ol>
+<li><strong><code>STORAGE_PREFLIGHT</code></strong> — the client sends an authenticated ticket with the local snapshot's total size; the worker checks it against the physical filesystem's available capacity (optionally through a reservation ledger that accounts for other in-flight operations) and refuses with <code>STORAGE_INSUFFICIENT</code> (exact required/available bytes, rendered in human-readable units) if there isn't room.</li>
 <li><strong><code>CREATE_REPOSITORY</code></strong> — the client sends an authenticated ticket to the server worker, which creates the SVN data repository, sets the owner grant and ACL, and returns a canonical <code>repo_id</code> and <code>repo_url</code>.</li>
 <li><strong><code>INITIAL_COMMIT</code></strong> — the client checks out the empty repository root into the local directory, performs a controlled <code>svn add</code> respecting ignore patterns, publishes the initial snapshot in bounded batches, confirms <code>INITIAL_COMMIT</code>, and only then starts the normal sync pipeline.</li>
 </ol>
-<p>The local state machine preserves <code>operation_id</code> across retry. End-to-end <code>CREATE_REPOSITORY</code>, server ACL creation and controlled <code>INITIAL_COMMIT</code> remain the next integration vertical.</p>
+<p>The local state machine preserves <code>operation_id</code> across retry, and each ticket type is idempotent on the worker side (a repeated request with the same <code>operation_id</code> replays the durable result rather than re-executing). A failure at any of these three durable boundaries is reported back to the GUI via <code>repo.lifecycle_status</code> polling rather than left silent.</p>
 <h2 id="ch2-sync">2.4 Day-to-Day Sync</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Normal operation, outage accumulation, bounded shutdown and restart reconciliation tested.</span></div>
 <p>Once active, the daemon operates without user interaction:</p>
 <ul>
@@ -864,7 +869,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <li>On controlled shutdown (<code>SIGINT</code>/<code>SIGTERM</code>) the daemon drains the staging in bounded batches within <code>shutdown_commit_timeout</code>. Any remaining changes are written to <code>cache.json</code> and resumed on next start.</li>
 </ul>
 <h4>File ignore patterns</h4>
-<p>Built-in ignores (cannot be overridden): <code>~\$*</code>, <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code>.</p>
+<p>Built-in ignores (cannot be overridden): <code>~\$*</code> (MS Office), <code>.~lock.*#</code> (LibreOffice/OpenOffice), <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code>.</p>
 <p>User-defined ignores: place patterns in <code>.filees/user_ignore.cfg</code> (hot-reloaded on every scan). Lines starting with <code>!</code> are hard ignores that skip entire subtrees. Glob syntax supports <code>**</code> for any depth.</p>
 <h2 id="ch2-passports">2.5 Edit Passports</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-designed">Distributed completion</span><span>Single-daemon passport lifecycle exists; authoritative cross-client CAS is not yet deployed.</span></div>
 <p>Edit passports are an opt-in feature (<code>"edit_passports": true</code>) that provides explicit per-file locking with heartbeat renewal. When enabled, <code>lock_first</code> is automatically disabled.</p><div class="decision">
@@ -1141,7 +1146,7 @@ ssh-keygen -q -t ed25519 -N '' -C filees-worker-v1 \
 <li>Connects svnserve to <code>/var/filees/activation/service.authz</code>; the activation manager atomically regenerates authz and authorized keys.</li>
 <li>Commits <code>format.json</code>, realm, client, projection and audit on the first successful possession proof.</li>
 </ol>
-<p>This is the completed activation vertical. General data-repository creation, grants and <code>INITIAL_COMMIT</code> orchestration are not yet connected to a server-side control-plane worker.</p>
+<p>This is the completed activation vertical. General data-repository creation, storage preflight, grants and <code>INITIAL_COMMIT</code> orchestration are now also connected to a server-side control-plane worker (<code>pkg/repoworker</code>, dispatched over the same forced-command SSH session) and verified end to end, including the <code>STORAGE_INSUFFICIENT</code> refusal path on a physically constrained filesystem — see the provisioning state machine in §2.3.</p>
 <h4>Running administrative commands</h4>
 <p>Administrative and one-shot server commands that read or mutate private state are run as <code>_filees-state</code>:</p>
 <pre><code>doas -u _filees-state filees-admin ticket create --email user@example.com --realm-id &lt;realm_uuid&gt;

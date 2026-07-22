@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,7 +100,11 @@ func TestActivityStagesFollowDurableCacheAndConfirmedCommit(t *testing.T) {
 	}
 	recorder := &activityRecorder{}
 	var emitted []string
-	cli := &stagingClient{statuses: map[string]string{"report.pdf": "unversioned"}, commitOut: "Committed revision 18.\n"}
+	// commitOut deliberately uses svn's Polish-locale wording ("Zatwierdzona
+	// wersja" rather than "Committed revision"): the confirmed revision must
+	// come from Cli.Revision (locale-independent), never by scraping this
+	// free-text message.
+	cli := &stagingClient{statuses: map[string]string{"report.pdf": "unversioned"}, commitOut: "Zatwierdzona wersja 18.\n", revision: 18}
 	service := &Service{Cli: cli, Rules: Rules{NewLatency: time.Nanosecond, MaxBatchFiles: 10}, Activity: recorder, Emit: func(eventType string, _ any) { emitted = append(emitted, eventType) }, repoID: "docs", staging: make(map[string]*stageItem), cachePath: filepath.Join(wc, ".filees", "commit_cache", "cache.json")}
 	service.acceptEvent(watcher.Event{Path: abs, Rel: "report.pdf", Type: watcher.EntryFile, Op: watcher.Added})
 	if err := service.tryCommit(context.Background(), wc); err != nil {
@@ -124,6 +129,48 @@ func TestActivityStagesFollowDurableCacheAndConfirmedCommit(t *testing.T) {
 	}
 	if activityEvents != 4 {
 		t.Fatalf("events=%v", emitted)
+	}
+}
+
+func TestCommitConfirmationIgnoresLocalizedCommitOutputAndUsesRevisionQuery(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "report.pdf")
+	if err := os.WriteFile(abs, []byte("report"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var headRev int64
+	var completed []contract.CommitCompletedPayload
+	cli := &stagingClient{
+		statuses: map[string]string{"report.pdf": "unversioned"},
+		// Real svn on a non-English locale never contains the word
+		// "revision" anywhere in its commit output — this must not be the
+		// source of truth for the confirmed revision.
+		commitOut: "Zatwierdzona wersja 42.\n",
+		revision:  42,
+	}
+	service := &Service{
+		Cli: cli, Rules: Rules{NewLatency: time.Nanosecond, MaxBatchFiles: 10},
+		OnHeadRevision: func(rev int64) { headRev = rev },
+		Emit: func(eventType string, payload any) {
+			if eventType == contract.EvCommitCompleted {
+				completed = append(completed, payload.(contract.CommitCompletedPayload))
+			}
+		},
+		repoID: "docs", staging: make(map[string]*stageItem), cachePath: filepath.Join(wc, ".filees", "commit_cache", "cache.json"),
+	}
+	service.acceptEvent(watcher.Event{Path: abs, Rel: "report.pdf", Type: watcher.EntryFile, Op: watcher.Added})
+	if err := service.tryCommit(context.Background(), wc); err != nil {
+		t.Fatal(err)
+	}
+	if headRev != 42 {
+		t.Fatalf("OnHeadRevision = %d, want 42", headRev)
+	}
+	if len(completed) != 1 || completed[0].Revision != 42 {
+		t.Fatalf("commit.completed = %+v, want revision 42", completed)
+	}
+	head, err := os.ReadFile(filepath.Join(wc, ".filees", "state", "head.rev"))
+	if err != nil || strings.TrimSpace(string(head)) != "42" {
+		t.Fatalf("head.rev = %q, %v, want \"42\"", head, err)
 	}
 }
 

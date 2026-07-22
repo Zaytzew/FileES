@@ -184,6 +184,15 @@ func (c *Client) RepoList(ctx context.Context) (*contract.RepoListResult, error)
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
+func (c *Client) RepoActivity(ctx context.Context, limit int) (*contract.RepoActivityResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoActivity, "", contract.RepoActivityPayload{Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoActivityResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoCreateRequest(ctx context.Context, payload contract.RepoCreateRequestPayload) (*contract.RepoLifecycleResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoCreateRequest, "", payload)
 	if err != nil {

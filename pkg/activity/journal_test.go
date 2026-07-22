@@ -51,6 +51,39 @@ func TestJournalIsGloballyBoundedAndNewestFirst(t *testing.T) {
 	}
 }
 
+func TestJournalForgetRemovesEntryAndSurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "activity.json")
+	j, err := Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Record(Entry{RepoID: "docs", Path: "lockfile.tmp", Kind: Added, Stage: Pending}); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Record(Entry{RepoID: "docs", Path: "kept.txt", Kind: Added, Stage: Pending}); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Forget("docs", "lockfile.tmp"); err != nil {
+		t.Fatal(err)
+	}
+	entries := j.List()
+	if len(entries) != 1 || entries[0].Path != "kept.txt" {
+		t.Fatalf("entries=%+v, want only kept.txt", entries)
+	}
+	// Forgetting an unknown path is a harmless no-op, not an error.
+	if err := j.Forget("docs", "never-existed"); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries := reopened.List(); len(entries) != 1 || entries[0].Path != "kept.txt" {
+		t.Fatalf("entries after reopen=%+v, want only kept.txt", entries)
+	}
+}
+
 func TestJournalRejectsFalsePublishedAndEscapingPath(t *testing.T) {
 	j, _ := Open(filepath.Join(t.TempDir(), "activity.json"), 20)
 	if err := j.Record(Entry{RepoID: "docs", Path: "../secret", Kind: Added, Stage: Detected}); err == nil {

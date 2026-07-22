@@ -79,6 +79,7 @@ type Service struct {
 	ErrSink  *errmap.Sink // optional; structured error log (JSON Lines)
 	Activity interface {
 		Record(activity.Entry) error
+		Forget(repoID, path string) error
 	}
 	// OnConnectivity is called (async) when online/offline state changes.
 	// Argument is "online" or "offline". May be nil.
@@ -337,6 +338,20 @@ func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.S
 	s.emit(contract.EvActivityChanged, nil)
 }
 
+// forgetActivity clears any journal entry for rel. Used when a staged
+// operation is cancelled before it ever reached the repository, so there is
+// nothing left that will advance a stale Pending entry.
+func (s *Service) forgetActivity(rel string) {
+	if s.Activity == nil || s.repoID == "" || rel == "" {
+		return
+	}
+	if err := s.Activity.Forget(s.repoID, filepath.ToSlash(rel)); err != nil {
+		s.Logger.Warnf("activity journal: forget %s: %v", rel, err)
+		return
+	}
+	s.emit(contract.EvActivityChanged, nil)
+}
+
 func (s *Service) shutdownDrain(wc string) {
 	s.saveCache()
 	drainCtx, cancel := context.WithTimeout(context.Background(), s.Rules.ShutdownTimeout)
@@ -506,8 +521,11 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		if it.Op == watcher.Added {
 			if _, err := os.Stat(it.Abs); errors.Is(err, os.ErrNotExist) {
 				// Added and removed before publication is a cancelled addition,
-				// not a deletion that should reach SVN.
+				// not a deletion that should reach SVN. Nothing will ever
+				// advance this path's activity entry past Pending, so forget
+				// it instead of leaving it permanently stuck.
 				delete(s.staging, key)
+				s.forgetActivity(it.Rel)
 				continue
 			}
 			if !force && now.Sub(it.FirstSeen) < s.Rules.NewLatency {
@@ -628,6 +646,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			if errors.Is(err, os.ErrNotExist) {
 				s.Logger.Debugf("cancel add %s (removed before publish)", p)
 				s.removePendingIfUnchanged(p, pending)
+				s.forgetActivity(p)
 				continue
 			}
 			s.Logger.Warnf("skip add %s (stat: %v)", p, err)
@@ -700,8 +719,13 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			alreadyStaged = append(alreadyStaged, p)
 			s.Logger.Debugf("skip svn delete %s (already staged)", p)
 		default:
+			// Never actually reached SVN (e.g. added, then deleted again before
+			// its first commit) -- nothing will ever advance this path's
+			// activity entry past Pending, so forget it instead of leaving a
+			// permanently stale "Oczekuje na wysyłkę".
 			s.Logger.Debugf("skip delete %s (status=%s)", p, st[p])
 			s.removePendingIfUnchanged(p, pending)
+			s.forgetActivity(p)
 		}
 	}
 	delPaths = append(toSvnDelete, alreadyStaged...)

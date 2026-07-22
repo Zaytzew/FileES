@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+var sha256Pattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
 func stripBOM(data []byte) []byte { return bytes.TrimPrefix(data, utf8BOM) }
 
@@ -64,8 +67,11 @@ type Orphan struct {
 
 func ParseChannel(data []byte) (*Channel, error) {
 	var ch Channel
-	if err := json.Unmarshal(stripBOM(data), &ch); err != nil {
+	if err := decodeStrict(stripBOM(data), &ch); err != nil {
 		return nil, err
+	}
+	if ch.SchemaVersion != 1 {
+		return nil, fmt.Errorf("unsupported channel schema_version %d", ch.SchemaVersion)
 	}
 	if strings.TrimSpace(ch.ReleaseID) == "" {
 		return nil, fmt.Errorf("channel release_id is required")
@@ -78,8 +84,11 @@ func ParseChannel(data []byte) (*Channel, error) {
 
 func Parse(data []byte) (*Manifest, error) {
 	var m Manifest
-	if err := json.Unmarshal(stripBOM(data), &m); err != nil {
+	if err := decodeStrict(stripBOM(data), &m); err != nil {
 		return nil, err
+	}
+	if m.SchemaVersion != 1 {
+		return nil, fmt.Errorf("unsupported manifest schema_version %d", m.SchemaVersion)
 	}
 	if strings.TrimSpace(m.ReleaseID) == "" {
 		return nil, fmt.Errorf("manifest release_id is required")
@@ -97,8 +106,26 @@ func Parse(data []byte) (*Manifest, error) {
 		if strings.TrimSpace(f.Target) == "" {
 			return nil, fmt.Errorf("manifest file %d target is required", i)
 		}
+		if !sha256Pattern.MatchString(strings.TrimSpace(f.SHA256)) {
+			return nil, fmt.Errorf("manifest file %d sha256 must be 64 hexadecimal characters", i)
+		}
 	}
 	return &m, nil
+}
+
+func decodeStrict(data []byte, out any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(out); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("document contains trailing JSON value")
+		}
+		return fmt.Errorf("document contains trailing data: %w", err)
+	}
+	return nil
 }
 
 func ReleaseManifestPath(releaseID, platform string) string {

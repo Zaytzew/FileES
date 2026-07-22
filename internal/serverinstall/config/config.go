@@ -127,7 +127,7 @@ func defaults(abs string) *Config {
 		OrphanFiles:     "keep",
 		Interactive:     true,
 		RequireHash:     true,
-		VerifySignature: false,
+		VerifySignature: true,
 		SignifyProgram:  "signify",
 	}
 }
@@ -216,6 +216,12 @@ func (cfg *Config) finalize() error {
 	if cfg.RepoURL == "" {
 		return fmt.Errorf("repo.url is required")
 	}
+	if !cfg.RequireHash {
+		return fmt.Errorf("policy.require_hash cannot be disabled")
+	}
+	if !cfg.VerifySignature {
+		return fmt.Errorf("policy.verify_signature cannot be disabled")
+	}
 	if !oneOf(cfg.DefaultAction, "check", "dry-run", "apply") {
 		return fmt.Errorf("policy.default_action must be check, dry-run or apply")
 	}
@@ -232,7 +238,6 @@ func (cfg *Config) finalize() error {
 	}
 	return nil
 }
-
 
 func cleanPath(path string) string {
 	path = strings.TrimSpace(path)

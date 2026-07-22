@@ -53,6 +53,7 @@ type RepositoryLifecycleService interface {
 	BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error)
 	ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error)
 	BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error)
+	Status(operationID string) (contract.RepoLifecycleResult, error)
 }
 
 type UpdateService interface {

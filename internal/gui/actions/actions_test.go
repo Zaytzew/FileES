@@ -76,11 +76,24 @@ type fakeActivator struct {
 }
 
 type createCall struct{ serverID, displayName, localPath string }
-type fakeRepositoryCreator struct{ calls chan createCall }
+type fakeRepositoryCreator struct {
+	calls chan createCall
+	// statusFunc controls CreationStatus's reply; nil means "attached" with
+	// no error, so tests that don't care about the outcome poll never block
+	// on it or emit an unwanted extra notification before ctx is cancelled.
+	statusFunc func(operationID string) (state, lastError string, err error)
+}
 
 func (f *fakeRepositoryCreator) CreateRepository(_ context.Context, serverID, displayName, localPath string) (string, error) {
 	f.calls <- createCall{serverID, displayName, localPath}
 	return "op-123", nil
+}
+
+func (f *fakeRepositoryCreator) CreationStatus(_ context.Context, operationID string) (string, string, error) {
+	if f.statusFunc != nil {
+		return f.statusFunc(operationID)
+	}
+	return "attached", "", nil
 }
 
 func (f *fakeActivator) Begin(_ context.Context, serverID, address, email string) error {
@@ -969,6 +982,48 @@ func TestControllerCreatesRepositoryAfterNativeFolderAndConfirmation(t *testing.
 	if len(snapshot.ConfirmRequests) != 1 || !strings.Contains(snapshot.ConfirmRequests[0].Text, "Dostęp: odczyt i zapis") {
 		t.Fatalf("confirmation = %#v", snapshot.ConfirmRequests)
 	}
+}
+
+func TestControllerSurfacesAsyncRepositoryCreationFailure(t *testing.T) {
+	creator := &fakeRepositoryCreator{calls: make(chan createCall, 1)}
+	creator.statusFunc = func(string) (string, string, error) {
+		return "error", "STORAGE_INSUFFICIENT: server storage requires 187424908 bytes, 118276096 available", nil
+	}
+	fake := &platformtest.Fake{
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			return platform.PickFolderResult{Path: "/data/skany"}, nil
+		},
+		PromptTextFunc: func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error) {
+			return platform.PromptTextResult{Value: "Skany"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, FolderPicker: fake, Prompter: fake,
+		RepositoryCreator: creator, Notifier: fake,
+		CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: time.Second,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateRepository, ServerID: "office"})
+	<-creator.calls
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, n := range fake.Snapshot().Notifications {
+			if n.Title == "Nie udało się utworzyć repozytorium" {
+				if !strings.Contains(n.Body, "STORAGE_INSUFFICIENT") {
+					t.Fatalf("failure notification body = %q, want it to contain the real error", n.Body)
+				}
+				if n.Urgency != platform.UrgencyCritical {
+					t.Fatalf("failure notification urgency = %v, want Critical", n.Urgency)
+				}
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("async repository creation failure was never surfaced to the user")
 }
 
 func TestControllerDoesNotCreateRepositoryWhenAuthorityIsStale(t *testing.T) {

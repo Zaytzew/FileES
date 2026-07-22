@@ -2,12 +2,18 @@ package ipcserver
 
 import (
 	"encoding/json"
+	"os"
+	"strings"
 	"testing"
 
 	contract "filees/pkg/contract/v1"
 )
 
-type lifecycleStub struct{ createCalls, attachCalls, approveCalls, relocateCalls int }
+type lifecycleStub struct {
+	createCalls, attachCalls, approveCalls, relocateCalls, statusCalls int
+	statusResult                                                      contract.RepoLifecycleResult
+	statusErr                                                         error
+}
 
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
 	stub.createCalls++
@@ -28,6 +34,11 @@ func (stub *lifecycleStub) BeginAttach(serverID, repoID, localPath string, requi
 		state = "policy_pending"
 	}
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, LocalPath: localPath, State: state}, nil
+}
+
+func (stub *lifecycleStub) Status(operationID string) (contract.RepoLifecycleResult, error) {
+	stub.statusCalls++
+	return stub.statusResult, stub.statusErr
 }
 
 func lifecycleRequest(command string, payload any) contract.Request {
@@ -79,6 +90,40 @@ func TestAttachApprovalUsesCurrentProjectedAuthority(t *testing.T) {
 	}
 	if stub.approveCalls != 1 {
 		t.Fatalf("approval calls=%d", stub.approveCalls)
+	}
+}
+
+func TestLifecycleStatusReturnsCurrentStateAndError(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{statusResult: contract.RepoLifecycleResult{
+		OperationID: "op-1", ServerID: "primary", LocalPath: "/data/skany", State: "error",
+		LastError: "STORAGE_INSUFFICIENT: server storage requires 187424908 bytes, 118276096 available",
+	}}
+	server.SetRepositoryLifecycleService(stub)
+	req := lifecycleRequest(contract.CmdRepoLifecycleStatus, contract.RepoLifecycleStatusPayload{OperationID: "op-1"})
+	response := server.dispatch(req)
+	if response.Status != contract.StatusOK {
+		t.Fatalf("status query rejected: %+v", response.Error)
+	}
+	var result contract.RepoLifecycleResult
+	if err := contract.DecodeResult(response.Result, &result); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if result.State != "error" || !strings.Contains(result.LastError, "STORAGE_INSUFFICIENT") {
+		t.Fatalf("status result = %+v", result)
+	}
+	if stub.statusCalls != 1 {
+		t.Fatalf("status calls=%d", stub.statusCalls)
+	}
+}
+
+func TestLifecycleStatusRejectsUnknownOperation(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{statusErr: os.ErrNotExist}
+	server.SetRepositoryLifecycleService(stub)
+	req := lifecycleRequest(contract.CmdRepoLifecycleStatus, contract.RepoLifecycleStatusPayload{OperationID: "missing"})
+	if response := server.dispatch(req); response.Status == contract.StatusOK {
+		t.Fatal("unknown operation ID accepted")
 	}
 }
 

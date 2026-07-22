@@ -82,6 +82,14 @@ func (service repositoryLifecycleService) BeginCreate(serverID, displayName, loc
 	return lifecycleResult(record), nil
 }
 
+func (service repositoryLifecycleService) Status(operationID string) (contract.RepoLifecycleResult, error) {
+	record, ok := service.store.Get(operationID)
+	if !ok {
+		return contract.RepoLifecycleResult{}, os.ErrNotExist
+	}
+	return lifecycleResult(record), nil
+}
+
 func (service repositoryLifecycleService) BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error) {
 	check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathAttach, service.allRoots())
 	if err != nil {
@@ -126,7 +134,7 @@ func (service repositoryLifecycleService) allRoots() []string {
 }
 
 func lifecycleResult(record localrepo.Record) contract.RepoLifecycleResult {
-	return contract.RepoLifecycleResult{OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State)}
+	return contract.RepoLifecycleResult{OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State), LastError: record.LastError}
 }
 
 func defaultRepositoryLifecyclePath() string {

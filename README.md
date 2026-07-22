@@ -53,6 +53,15 @@ instalacji klienta, a nie do pojedynczego repozytorium:
     "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
     "known_hosts": "/home/user/.local/share/filees/known_hosts"
   },
+  "update": {
+    "enabled": true,
+    "repo_url": "https://releases.example/FILESS-BIN",
+    "channel": "stable",
+    "component": "desktop",
+    "platform": "linux-amd64",
+    "state_path": "/home/user/.local/state/filees/update.json",
+    "stage_root": "/home/user/.local/state/filees/update-stage"
+  },
   "repositories": [
     {
       "id":              "projectA",
@@ -89,6 +98,11 @@ instalacji klienta, a nie do pojedynczego repozytorium:
 | `id`               | Unikalny identyfikator repo (używany w logach i ścieżkach stanu) |
 | `transport.identity_file` | Bezwzględna ścieżka do klucza Ed25519 utworzonego podczas aktywacji |
 | `transport.known_hosts` | Bezwzględna ścieżka do pinowanego klucza hosta usługi |
+| `update.enabled` | Włącza podpisany updater klienta; domyślnie wyłączony |
+| `update.repo_url` | URL repozytorium release SVN/HTTPS bez hasła, query i fragmentu |
+| `update.channel` | Kanał release, domyślnie `stable` |
+| `update.state_path` | Prywatny, bezwzględny plik trwałego high-water mark |
+| `update.stage_root` | Prywatny, bezwzględny katalog zweryfikowanego stagingu |
 | `repo_url`         | URL `svn+ssh://_filees-client@host/...`; inne transporty są odrzucane |
 | `local_path`       | Bezwzględna ścieżka do kopii roboczej |
 | `commit_interval`  | Okno commitów (np. `1m`, `30s`) |
@@ -228,7 +242,27 @@ Menu tray powinno zawierać:
 - „Połącz ponownie” przy niedostępnym daemonie,
 - „Zamknij GUI”.
 
-Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities. W aktualnym kontrakcie r42 GUI może udostępniać `events.subscribe`, `repo.lock`, `repo.unlock` i `error.list`. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.lock`, `repo.unlock`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+
+### Podpisane aktualizacje klienta desktopowego
+
+Updater jest opt-in i fail-closed. Produkcyjny build musi zawierać osadzony
+publiczny klucz release oraz jego `key_id`; konfiguracja nie może podmienić
+klucza ani wyłączyć podpisów. Daemon reklamuje `update.status`, `update.plan`
+i `update.apply` wyłącznie po zarejestrowaniu kompletnej usługi aktualizacji.
+
+Zweryfikowany envelope v2 wiąże `release_id`, monotoniczne `sequence` i
+`security_epoch`, termin ważności, komponent, platformę oraz manifest artefaktu.
+Klient sprawdza format OpenBSD signify wewnętrznie przez Ed25519, następnie
+dokładny rozmiar i SHA-256 bundla. Trwały high-water mark blokuje downgrade,
+obniżenie epoki bezpieczeństwa i fork tego samego sequence.
+
+GUI pokazuje badge „Dostępna aktualizacja”. „Pokaż, co ulegnie zmianie…” jest
+dry runem, a „Zaktualizuj i uruchom ponownie…” ponownie rozwiązuje podpisane
+wydanie, wyświetla natywne potwierdzenie i uruchamia istniejący instalator.
+Linux zachowuje konfigurację i wyłącza restart/autostart wewnątrz skryptu;
+po sukcesie GUI kończy pracę, zwalnia blokadę single-instance i dopiero wtedy
+uruchamia nową binarkę. Procedura publikacji: `tools/RELEASE_PUBLISHING.md`.
 
 ### Powiadomienia
 

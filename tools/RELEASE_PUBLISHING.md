@@ -59,8 +59,35 @@ niepodpisane wydanie.
 
 Manifest v1 jest konsumowany przez serwerowy `filees-install`. Klientowe
 instalatory Linux/MSI/Android pozostają własnymi wykonawcami lifecycle'u; ich
-artefakty będą związane wspólnym wielokomponentowym release envelope, zamiast
+artefakty są związane wspólnym wielokomponentowym release envelope v2, zamiast
 otrzymywać serwerowe pola `target`.
+
+Envelope klienta ma ścisły schemat i wskazuje manifest każdego
+`component/platform`. Przykład kanału:
+
+```json
+{
+  "schema_version": 2,
+  "release_id": "r188",
+  "sequence": 188,
+  "security_epoch": 1,
+  "key_id": "release-2026-a",
+  "expires_at": "2026-08-22T00:00:00Z",
+  "components": [
+    {
+      "name": "desktop",
+      "platform": "linux-amd64",
+      "manifest": "releases/r188/desktop/linux-amd64/manifest.json"
+    }
+  ]
+}
+```
+
+Manifest v2 musi powtórzyć `release_id`, `sequence`, `security_epoch`, `key_id`,
+`component` i `platform`, podać wersję oraz dokładny rozmiar i SHA-256 bundla.
+Kanał i manifest są podpisywane oddzielnie tym samym zaufanym kluczem. Nie wolno
+ponownie użyć sequence dla innego release ani go obniżyć; zainstalowany klient
+utrzymuje trwały high-water mark.
 
 ## 2. Podpisanie offline
 
@@ -77,3 +104,21 @@ Skrypt preferuje `channels/stable.v2.json` (z fallbackiem do v1), podpisuje
 każdy manifest `component/platform` i kanał, natychmiast weryfikuje
 nowe podpisy kluczem publicznym i commituje wyłącznie odłączone pliki `.sig`.
 Jeśli cały release jest już poprawnie podpisany, wykonanie jest no-op.
+
+## 3. Odbiór klienta i test regresyjny
+
+Po publikacji produkcyjny klient z odpowiednim embedded keyringiem powinien:
+
+1. pokazać badge nowej wersji dopiero po weryfikacji envelope i manifestu;
+2. zwrócić dry run bez modyfikacji filesystemu;
+3. przed apply ponownie rozwiązać wydanie i pokazać natywne potwierdzenie;
+4. sprawdzić rozmiar i SHA-256 bundla przed ekstrakcją;
+5. uruchomić istniejący instalator platformowy i dopiero po sukcesie zapisać
+   high-water mark;
+6. zwolnić blokadę GUI przed uruchomieniem nowej binarki.
+
+Reprodukowalne E2E jest częścią `go test ./internal/clientupdate`. Tworzy lokalne
+repo SVN, podpisuje release testowym kluczem w formacie OpenBSD signify, wykonuje
+rzeczywisty `packaging/linux/install-user.sh` w izolowanym HOME i potwierdza
+odmowę rollbacku, złego podpisu oraz artefaktu o niezgodnym SHA-256. Testowy
+klucz powstaje wyłącznie w katalogu tymczasowym i nie jest trust rootem wydania.

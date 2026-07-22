@@ -268,7 +268,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <p class="hero-copy">A file-centric synchronization system built around explicit ownership, durable artifacts, bounded publication and recoverable failure.</p>
 <div class="meta-strip">
 <span><strong>Version</strong> 0.1.0</span>
-<span><strong>Date</strong> 2026-07-19</span>
+<span><strong>Date</strong> 2026-07-22</span>
 <span><strong>Server</strong> OpenBSD reference; Linux build</span>
 <span><strong>Client</strong> Linux; Windows GUI artifact</span>
 </div>
@@ -328,6 +328,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <li><a href="#ch2-sync">Day-to-day sync</a></li>
 <li><a href="#ch2-passports">Edit passports</a></li>
 <li><a href="#ch2-gui">GUI tray</a></li>
+<li><a href="#ch2-update">Signed desktop updates</a></li>
 <li><a href="#ch2-cli">CLI commands</a></li>
 <li><a href="#ch2-trouble">Troubleshooting</a></li>
 </ol>
@@ -767,32 +768,41 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
     "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
     "known_hosts": "/home/user/.local/share/filees/known_hosts"
   },
+  "update": {
+    "enabled": true,
+    "repo_url": "https://releases.example/FILESS-BIN",
+    "channel": "stable",
+    "component": "desktop",
+    "platform": "linux-amd64",
+    "state_path": "/home/user/.local/state/filees/update.json",
+    "stage_root": "/home/user/.local/state/filees/update-stage"
+  },
   "repositories": [
     {
       "id":              "projectA",
       "repo_url":        "svn+ssh://_filees-client@server/repo/trunk",
       "local_path":      "/home/user/projectA",
-    "commit_interval": "1m",
-    "watch_interval":  "30s",
-    "poll_interval":   "30s",
-    "max_batch_files": 100,
-    "max_batch_mib":   512,
-    "backlog_flush_mib": 1024,
-    "shutdown_commit_timeout": "10m",
-    "lock_first":      false,
-    "edit_passports":  false,
-    "edit_passport_ttl": "15m",
-    "edit_passport_heartbeat": "5m",
-    "edit_passport_max_session": "24h",
-    "edit_passport_close_grace": "5m",
-    "shout_patterns":  ["\\.psd\$", "\\.blend\$"],
-    "rate_limit_shout": "5m",
-    "commit_tiers": [
-      {"max_mb": 1,  "interval": "2m"},
-      {"max_mb": 10, "interval": "5m"},
-      {"max_mb": 50, "interval": "15m"},
-      {"max_mb": 0,  "interval": "24h"}
-    ]
+      "commit_interval": "1m",
+      "watch_interval":  "30s",
+      "poll_interval":   "30s",
+      "max_batch_files": 100,
+      "max_batch_mib":   512,
+      "backlog_flush_mib": 1024,
+      "shutdown_commit_timeout": "10m",
+      "lock_first":      false,
+      "edit_passports":  false,
+      "edit_passport_ttl": "15m",
+      "edit_passport_heartbeat": "5m",
+      "edit_passport_max_session": "24h",
+      "edit_passport_close_grace": "5m",
+      "shout_patterns":  ["\\.psd$", "\\.blend$"],
+      "rate_limit_shout": "5m",
+      "commit_tiers": [
+        {"max_mb": 1,  "interval": "2m"},
+        {"max_mb": 10, "interval": "5m"},
+        {"max_mb": 50, "interval": "15m"},
+        {"max_mb": 0,  "interval": "24h"}
+      ]
     }
   ]
 }</code></pre>
@@ -802,6 +812,13 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <tr><td><code>id</code></td><td>Unique repository identifier (used in logs and state paths)</td></tr>
 <tr><td><code>transport.identity_file</code></td><td>Absolute path to the Ed25519 installation key created during activation</td></tr>
 <tr><td><code>transport.known_hosts</code></td><td>Absolute path to the pinned service host key file</td></tr>
+<tr><td><code>update.enabled</code></td><td>Enable the signed desktop updater; disabled by default</td></tr>
+<tr><td><code>update.repo_url</code></td><td>Release repository URL using SVN, SVN+SSH or HTTPS, without password, query or fragment</td></tr>
+<tr><td><code>update.channel</code></td><td>Release channel identifier; defaults to <code>stable</code></td></tr>
+<tr><td><code>update.component</code></td><td>Must be <code>desktop</code> for this client</td></tr>
+<tr><td><code>update.platform</code></td><td>Must match the running <code>GOOS-GOARCH</code>; defaults to that value</td></tr>
+<tr><td><code>update.state_path</code></td><td>Absolute private path for the durable anti-rollback high-water state</td></tr>
+<tr><td><code>update.stage_root</code></td><td>Absolute private directory used for verified bundle staging</td></tr>
 <tr><td><code>repo_url</code></td><td>Restricted <code>svn+ssh://_filees-client@host/...</code> URL; other transports are rejected</td></tr>
 <tr><td><code>local_path</code></td><td>Absolute path to the working copy. Must not overlap with other configured roots.</td></tr>
 <tr><td><code>commit_interval</code></td><td>Base commit window, e.g. <code>1m</code>, <code>30s</code></td></tr>
@@ -913,7 +930,20 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 filees-gui --autostart disable   # remove entry
 filees-gui --autostart status    # enabled / enabled-stale / disabled</code></pre>
 <p><code>enabled-stale</code> means the entry points to a different path or arguments than the current executable. Re-run <code>--autostart enable</code> from the installed location to fix it. On Linux this writes an XDG <code>.desktop</code> file to <code>~/.config/autostart/</code>; on Windows it writes to <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code>.</p>
-<h2 id="ch2-cli">2.7 CLI Commands</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Commands use daemon IPC and do not bypass the engine with direct SVN mutation.</span></div>
+<h2 id="ch2-update">2.7 Signed Desktop Updates</h2><div class="section-meta"><span class="status status-verified">Verified end to end</span><span>Signed SVN release, dry run, existing Linux installer, anti-rollback and controlled GUI restart are covered by a reproducible integration test.</span></div>
+<p>Desktop updates are opt-in and fail closed. A production client build embeds only the trusted OpenBSD signify public key and its canonical <code>key_id</code>; the configuration cannot replace that key or disable signature verification. The daemon advertises <code>update.status</code>, <code>update.plan</code> and <code>update.apply</code> only when the complete signed update service has been registered.</p>
+<p>The signed release envelope v2 binds the release ID, monotonic <code>sequence</code>, <code>security_epoch</code>, expiry time, component and platform to a separately signed artifact manifest. The client verifies the signify format internally with standard Ed25519, then checks the bundle's exact size and SHA-256 before extraction. Its private, fsynced high-water state rejects sequence rollback, security-epoch rollback and a different release reusing the same sequence.</p>
+<h4>User flow</h4>
+<ol>
+<li>A verified newer release adds a <strong>New update available</strong> badge to the tray menu.</li>
+<li><strong>Show what will change…</strong> performs a fresh signed dry run. On Linux it compares the daemon, GUI and icon, reports regenerated desktop/service entries and explicitly marks an existing configuration as unchanged.</li>
+<li><strong>Update and restart…</strong> resolves and verifies the release again, then shows a native confirmation dialog with the plan.</li>
+<li>On approval the existing platform installer runs from the verified bundle. Linux disables installer-internal autostart and daemon restart and preserves the user's configuration.</li>
+<li>After successful apply and durable high-water update, the GUI shuts down its loops, releases the single-instance lock and only then launches the newly installed executable with the original arguments.</li>
+</ol>
+<div class="warn"><strong>Do not bypass the updater.</strong> A locally restored older binary does not lower the high-water mark. Emergency binary recovery and authorising a remote downgrade are separate operations; publishing an older sequence under the normal channel is rejected.</div>
+<p>Release operators must use the offline signing workflow in <code>tools/RELEASE_PUBLISHING.md</code>. Private release keys must never enter the source repository, build host, client bundle or test VM.</p>
+<h2 id="ch2-cli">2.8 CLI Commands</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Commands use daemon IPC and do not bypass the engine with direct SVN mutation.</span></div>
 <p>All CLI sub-commands communicate with the running daemon through the Unix socket and never invoke <code>svn</code> directly:</p>
 <pre><code>filees status               # state of all repositories
 filees lock   &lt;file&gt;...    # acquire SVN lock
@@ -926,7 +956,7 @@ filees help</code></pre>
 <pre><code>FILEES_LOG=debug ./filees
 FILEES_LOG=trace ./filees   # includes svn invocations
 # Available: silent error warn info (default) debug trace</code></pre>
-<h2 id="ch2-trouble">2.8 Troubleshooting</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Operational guidance for current client and GUI behaviour.</span></div>
+<h2 id="ch2-trouble">2.9 Troubleshooting</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Operational guidance for current client and GUI behaviour.</span></div>
 <div class="table-wrap"><table>
 <tr><th>Symptom</th><th>Action</th></tr>
 <tr><td>GUI icon does not appear (GNOME)</td><td>Install the <strong>AppIndicator and KStatusNotifierItem Support</strong> extension from extensions.gnome.org; log out and back in</td></tr>
@@ -1119,8 +1149,8 @@ doas -u _filees-state filees-admin ticket list
 doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
 doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
 doas -u _filees-state filees-mail send</code></pre>
-<h2 id="ch3-managed">3.6 Managed Install and Upgrade: <code>filees-install</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Manifest-driven installer/updater; full-cycle validation on the OpenBSD reference machine is still pending, so the shell installers above remain the supported path until then.</span></div>
-<p><code>filees-install</code> is the manifest-driven replacement for the shell installers, modelled on the ksefUCK upgrade channel. Binaries are distributed through a dedicated SVN repository (<strong>FILESS-BIN</strong>) with a channel/release structure: <code>channels/&lt;name&gt;.json</code> points at <code>releases/&lt;id&gt;/&lt;platform&gt;/manifest.json</code>, and every file carries a SHA-256 hash. Channel and manifest files can additionally be verified against a <code>signify</code> release key embedded in the binary at build time (<code>policy.verify_signature</code>).</p>
+<h2 id="ch3-managed">3.6 Managed Install and Upgrade: <code>filees-install</code></h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Manifest-driven OpenBSD server installer and updater with mandatory signature and digest verification.</span></div>
+<p><code>filees-install</code> is the manifest-driven replacement for the server shell installers, modelled on the ksefUCK upgrade channel. Binaries are distributed through a dedicated SVN repository (<strong>FILESS-BIN</strong>) with a channel/release structure: <code>channels/&lt;name&gt;.json</code> points at <code>releases/&lt;id&gt;/&lt;platform&gt;/manifest.json</code>, and every file carries a SHA-256 hash. Production operation requires the embedded OpenBSD signify release key and strict channel/manifest verification; configuration cannot disable these checks.</p>
 <pre><code># Plan against the configured channel (no changes):
 filees-install -check
 # Full plan including config-contract drift, no payload download:

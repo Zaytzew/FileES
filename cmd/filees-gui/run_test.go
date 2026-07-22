@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,6 +77,18 @@ func (b *fakeTrayBackend) hasItemContaining(fragment string) bool {
 	return false
 }
 
+func (b *fakeTrayBackend) clickItemContaining(fragment string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for title, item := range b.items {
+		if strings.Contains(title, fragment) {
+			item.clicks <- struct{}{}
+			return true
+		}
+	}
+	return false
+}
+
 type fakeTrayItem struct {
 	backend *fakeTrayBackend
 	clicks  chan struct{}
@@ -109,6 +122,59 @@ func (fakeDaemon) Lock(context.Context, string, []string) (string, error)   { re
 func (fakeDaemon) Unlock(context.Context, string, []string) (string, error) { return "", nil }
 func (fakeDaemon) Subscribe(context.Context) (<-chan contract.Event, error) {
 	return make(chan contract.Event), nil
+}
+
+type updateDaemon struct{ fakeDaemon }
+
+func (updateDaemon) Hello(context.Context) (*contract.HelloResult, error) {
+	capabilities := append([]string(nil), contract.AllCapabilities...)
+	capabilities = append(capabilities, contract.CapUpdateStatus, contract.CapUpdatePlan, contract.CapUpdateApply)
+	return &contract.HelloResult{Capabilities: capabilities}, nil
+}
+
+func (updateDaemon) SystemStatus(context.Context) (*contract.SystemStatusResult, error) {
+	return &contract.SystemStatusResult{State: "running", Update: &contract.UpdateStatus{
+		State: "available", CurrentVersion: "1.0", AvailableVersion: "2.0", ReleaseID: "release-2", RestartRequired: true,
+	}}, nil
+}
+
+func (updateDaemon) UpdatePlan(context.Context) (*contract.UpdatePlanResult, error) {
+	return &contract.UpdatePlanResult{CurrentVersion: "1.0", AvailableVersion: "2.0", ReleaseID: "release-2", RestartRequired: true}, nil
+}
+
+func (updateDaemon) UpdateApply(context.Context) (*contract.UpdateApplyResult, error) {
+	return &contract.UpdateApplyResult{InstalledVersion: "2.0", RestartRequired: true}, nil
+}
+
+func TestRunReturnsRestartRequestAfterConfirmedUpdate(t *testing.T) {
+	backend := newFakeTrayBackend()
+	done := make(chan error, 1)
+	go func() {
+		done <- run(context.Background(), dependencies{
+			tray: backend, platform: &platformtest.Fake{ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil }},
+			client: updateDaemon{},
+		})
+	}()
+	select {
+	case <-backend.ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("tray did not become ready")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !backend.clickItemContaining("Zaktualizuj i uruchom ponownie") {
+		if time.Now().After(deadline) {
+			t.Fatal("update action did not appear")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, errGUIRestartRequested) {
+			t.Fatalf("run error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("run did not request restart")
+	}
 }
 
 func TestRunStartsAfterTrayReadyAndStopsWithContext(t *testing.T) {

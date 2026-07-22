@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -70,10 +71,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "filees-gui: single instance: %v\n", err)
 		os.Exit(1)
 	}
-	defer instance.Close()
-
 	trayBackend, err := tray.NewSystrayBackend()
 	if err != nil {
+		instance.Close()
 		fmt.Fprintf(os.Stderr, "filees-gui: tray: %v\n", err)
 		os.Exit(1)
 	}
@@ -81,7 +81,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	daemonClient := ipcclient.New(*socket, "filees-gui")
-	if err := run(ctx, dependencies{
+	runErr := run(ctx, dependencies{
 		tray:     trayBackend,
 		platform: platformBackend,
 		client:   daemonClient,
@@ -89,10 +89,47 @@ func main() {
 		activator: clientActivator{client: daemonClient, root: *activationRoot, remotePort: *remotePort, profile: deploy.ServerProfile{
 			ID: *serverID, Address: *serverAddress, KnownHostsPath: *knownHosts,
 		}},
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "filees-gui: %v\n", err)
+	})
+	closeErr := instance.Close()
+	if errors.Is(runErr, errGUIRestartRequested) {
+		if closeErr != nil {
+			fmt.Fprintf(os.Stderr, "filees-gui: release instance lock before restart: %v\n", closeErr)
+			os.Exit(1)
+		}
+		if err := launchReplacement(os.Args); err != nil {
+			fmt.Fprintf(os.Stderr, "filees-gui: restart: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if closeErr != nil {
+		fmt.Fprintf(os.Stderr, "filees-gui: release instance lock: %v\n", closeErr)
 		os.Exit(1)
 	}
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "filees-gui: %v\n", runErr)
+		os.Exit(1)
+	}
+}
+
+func launchReplacement(argv []string) error {
+	if len(argv) == 0 {
+		return errors.New("missing GUI process arguments")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	executable, err = filepath.Abs(executable)
+	if err != nil {
+		return err
+	}
+	command := exec.Command(executable, argv[1:]...)
+	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := command.Start(); err != nil {
+		return err
+	}
+	return command.Process.Release()
 }
 
 func newAutostartSpec(executable, socket string) platform.AutostartSpec {

@@ -14,6 +14,8 @@ import (
 	contract "filees/pkg/contract/v1"
 )
 
+var errGUIRestartRequested = errors.New("GUI restart requested")
+
 type dependencies struct {
 	tray      tray.Backend
 	platform  platform.Backend
@@ -106,6 +108,7 @@ func run(parent context.Context, deps dependencies) error {
 			}
 		},
 	})
+	restartRequested := make(chan struct{}, 1)
 	var updater actions.Updater
 	if candidate, ok := deps.client.(updateClient); ok {
 		updater = updateAdapter{client: candidate}
@@ -122,6 +125,13 @@ func run(parent context.Context, deps dependencies) error {
 		Locker:    deps.client,
 		Reconnect: guiApp.Reconnect,
 		Quit: func() {
+			cancel()
+		},
+		Restart: func() {
+			select {
+			case restartRequested <- struct{}{}:
+			default:
+			}
 			cancel()
 		},
 	})
@@ -168,5 +178,10 @@ func run(parent context.Context, deps dependencies) error {
 	cancel()
 	renderer.Close()
 	wg.Wait()
+	select {
+	case <-restartRequested:
+		return errGUIRestartRequested
+	default:
+	}
 	return nil
 }

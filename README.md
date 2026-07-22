@@ -239,6 +239,8 @@ Menu tray powinno zawierać:
 - „Dodaj folder do FileES…” przy serwerze, który pozwala temu klientowi tworzyć repozytoria,
 - „Otwórz katalog” dla każdego repozytorium,
 - `Lock…` i `Unlock…` z wyborem plików wewnątrz danego repozytorium,
+- globalne podmenu „Ostatnia aktywność”, równorzędne z „Ostatnimi błędami”,
+  pokazujące repozytorium, plik i potwierdzony etap synchronizacji,
 - ostatnie błędy z `error.list`, mapowane przez `message_key`, `severity` i `hint`,
 - „Połącz ponownie” przy niedostępnym daemonie,
 - „Zamknij GUI”.

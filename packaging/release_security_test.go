@@ -16,6 +16,8 @@ func TestReleaseSigningToolKeepsPrivateKeyOffBuildAndVerifiesBeforeCommit(t *tes
 		`SIGNIFY_SEC_KEY="${SIGNIFY_SEC_KEY:-$HOME/.signify/filees-release.sec}"`,
 		`[ -z "$(svn status)" ]`,
 		`svn update --quiet`,
+		`channels/${CHANNEL}.v2.json`,
+		`"$release_root"/*/*/manifest.json`,
 		`"$SIGNIFY_BIN" -S`,
 		`"$SIGNIFY_BIN" -V -q`,
 		`mv "$tmp_sig" "${path}.sig"`,

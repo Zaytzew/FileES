@@ -57,6 +57,7 @@ SIGNIFY_PUB_KEY="$HOME/.signify/filees-release.pub" \
 CHANNEL=stable ./tools/release-sign-and-publish.sh
 ```
 
-Skrypt podpisuje każdy manifest platformowy i kanał, natychmiast weryfikuje
+Skrypt preferuje `channels/stable.v2.json` (z fallbackiem do v1), podpisuje
+każdy manifest `component/platform` i kanał, natychmiast weryfikuje
 nowe podpisy kluczem publicznym i commituje wyłącznie odłączone pliki `.sig`.
 Jeśli cały release jest już poprawnie podpisany, wykonanie jest no-op.

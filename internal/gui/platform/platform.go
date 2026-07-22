@@ -18,11 +18,19 @@ type Backend interface {
 type Prompter interface {
 	PromptText(ctx context.Context, request PromptTextRequest) (PromptTextResult, error)
 	ShowInfo(ctx context.Context, request InfoRequest) error
+	Confirm(ctx context.Context, request ConfirmRequest) (bool, error)
 }
 
 type InfoRequest struct {
 	Title string
 	Text  string
+}
+
+type ConfirmRequest struct {
+	Title       string
+	Text        string
+	ConfirmText string
+	CancelText  string
 }
 
 type PromptTextRequest struct {

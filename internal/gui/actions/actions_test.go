@@ -3,6 +3,7 @@ package actions_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -864,4 +865,52 @@ func TestControllerContextCancelledDuringPickerAbortsDaemonCall(t *testing.T) {
 
 	awaitCh(t, done, "Run to return")
 	assertNotReceived(t, locker.lockCh, "Lock must not be called after ctx cancel")
+}
+
+type fakeUpdater struct {
+	planCalls  chan struct{}
+	applyCalls chan struct{}
+}
+
+func (fake *fakeUpdater) UpdatePlan(context.Context) (*contract.UpdatePlanResult, error) {
+	fake.planCalls <- struct{}{}
+	return &contract.UpdatePlanResult{
+		CurrentVersion: "1.0", AvailableVersion: "1.1", ReleaseID: "r180", RestartRequired: true,
+		Changes: []contract.UpdateChange{{Action: "update", Path: "filees-gui", Detail: "podpis zweryfikowany"}},
+	}, nil
+}
+
+func (fake *fakeUpdater) UpdateApply(context.Context) (*contract.UpdateApplyResult, error) {
+	fake.applyCalls <- struct{}{}
+	return &contract.UpdateApplyResult{InstalledVersion: "1.1", RestartRequired: true}, nil
+}
+
+func TestControllerUpdateDryRunAndConfirmedApply(t *testing.T) {
+	updater := &fakeUpdater{planCalls: make(chan struct{}, 2), applyCalls: make(chan struct{}, 1)}
+	platformFake := &platformtest.Fake{ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil }}
+	restarted := make(chan struct{}, 1)
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return app.ViewModel{} }, Prompter: platformFake,
+		Notifier: platformFake, Updater: updater, Restart: func() { restarted <- struct{}{} },
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentUpdatePlan})
+	awaitCh(t, updater.planCalls, "dry-run plan")
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().InfoRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	info := platformFake.Snapshot().InfoRequests
+	if len(info) != 1 || !strings.Contains(info[0].Text, "UPDATE  filees-gui") {
+		t.Fatalf("dry-run dialog = %#v", info)
+	}
+
+	send(t, intents, tray.Intent{Kind: tray.IntentUpdateApply})
+	awaitCh(t, updater.planCalls, "fresh apply plan")
+	awaitCh(t, updater.applyCalls, "confirmed apply")
+	awaitCh(t, restarted, "restart callback")
+	confirm := platformFake.Snapshot().ConfirmRequests
+	if len(confirm) != 1 || confirm[0].ConfirmText != "Zaktualizuj" || !strings.Contains(confirm[0].Text, "podpis zweryfikowany") {
+		t.Fatalf("confirmation = %#v", confirm)
+	}
 }

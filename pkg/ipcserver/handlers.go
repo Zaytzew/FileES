@@ -19,6 +19,12 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleHello(req)
 	case contract.CmdSystemStatus:
 		return s.handleSystemStatus(req)
+	case contract.CmdUpdateStatus:
+		return s.handleUpdateStatus(req)
+	case contract.CmdUpdatePlan:
+		return s.handleUpdatePlan(req)
+	case contract.CmdUpdateApply:
+		return s.handleUpdateApply(req)
 	case contract.CmdActivationBegin:
 		return s.handleActivationBegin(req)
 	case contract.CmdActivationFinish:
@@ -187,18 +193,72 @@ func (s *Server) handleHello(req contract.Request) contract.Response {
 	return contract.OKResponse(req.RequestID, contract.HelloResult{
 		DaemonVersion:    "0.1.0",
 		ProtocolVersions: []string{contract.Protocol},
-		Capabilities:     contract.AllCapabilities,
+		Capabilities:     s.capabilities(),
 	})
 }
 
 // handleSystemStatus implements system.status.
 func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
-	return contract.OKResponse(req.RequestID, contract.SystemStatusResult{
+	result := contract.SystemStatusResult{
 		State:       "running",
 		UptimeSec:   s.uptime(),
 		Repos:       len(s.allRepos()),
 		Activations: s.allActivations(),
-	})
+	}
+	if service := s.updateService(); service != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if status, err := service.Status(ctx); err == nil {
+			result.Update = &status
+		}
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleUpdateStatus(req contract.Request) contract.Response {
+	service := s.updateService()
+	if service == nil {
+		return updateUnavailable(req.RequestID)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	result, err := service.Status(ctx)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "UPDATE-1001", "ERROR", "RETRY_BACKOFF", "update.status_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleUpdatePlan(req contract.Request) contract.Response {
+	service := s.updateService()
+	if service == nil {
+		return updateUnavailable(req.RequestID)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := service.Plan(ctx)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "UPDATE-1002", "ERROR", "RETRY_BACKOFF", "update.plan_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleUpdateApply(req contract.Request) contract.Response {
+	service := s.updateService()
+	if service == nil {
+		return updateUnavailable(req.RequestID)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	result, err := service.Apply(ctx)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "UPDATE-1003", "ERROR", "REQUIRE_ACTION", "update.apply_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func updateUnavailable(requestID string) contract.Response {
+	return contract.ErrResponse(requestID, "UPDATE-0001", "ERROR", "NONE", "update.unavailable", nil)
 }
 
 // handleRepoList implements repo.list.

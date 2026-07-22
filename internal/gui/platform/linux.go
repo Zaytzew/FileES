@@ -169,6 +169,30 @@ func (b *LinuxBackend) ShowInfo(ctx context.Context, request InfoRequest) error 
 	return ctx.Err()
 }
 
+func (b *LinuxBackend) Confirm(ctx context.Context, request ConfirmRequest) (bool, error) {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return false, NewUnavailable("confirm_dialog", errors.New("zenity is not installed"))
+	}
+	args := []string{"--question", "--title=" + request.Title, "--text=" + request.Text, "--no-wrap"}
+	if request.ConfirmText != "" {
+		args = append(args, "--ok-label="+request.ConfirmText)
+	}
+	if request.CancelText != "" {
+		args = append(args, "--cancel-label="+request.CancelText)
+	}
+	if _, err := b.runner.Output(ctx, command, args...); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return false, ctxErr
+		}
+		if commandCancelled(err) {
+			return false, nil
+		}
+		return false, NewOperationalFailure("confirm_dialog", err)
+	}
+	return true, nil
+}
+
 func (b *LinuxBackend) pickerCommand(request PickFilesRequest, initialDir string) (string, []string, error) {
 	if command, err := b.runner.LookPath("zenity"); err == nil {
 		args := []string{"--file-selection", "--separator=\n", "--filename=" + filepath.Clean(initialDir) + string(filepath.Separator)}

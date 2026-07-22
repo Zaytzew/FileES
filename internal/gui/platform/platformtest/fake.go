@@ -13,18 +13,31 @@ type Fake struct {
 	PickFilesFunc       func(context.Context, platform.PickFilesRequest) (platform.PickFilesResult, error)
 	PromptTextFunc      func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error)
 	ShowInfoFunc        func(context.Context, platform.InfoRequest) error
+	ConfirmFunc         func(context.Context, platform.ConfirmRequest) (bool, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
 	SetAutostartFunc    func(context.Context, platform.AutostartSpec, bool) error
 
-	mu             sync.Mutex
-	OpenedFolders  []string
-	PickRequests   []platform.PickFilesRequest
-	PromptRequests []platform.PromptTextRequest
-	InfoRequests   []platform.InfoRequest
-	Notifications  []platform.Notification
-	StatusRequests []platform.AutostartSpec
-	AutostartSets  []AutostartSet
+	mu              sync.Mutex
+	OpenedFolders   []string
+	PickRequests    []platform.PickFilesRequest
+	PromptRequests  []platform.PromptTextRequest
+	InfoRequests    []platform.InfoRequest
+	ConfirmRequests []platform.ConfirmRequest
+	Notifications   []platform.Notification
+	StatusRequests  []platform.AutostartSpec
+	AutostartSets   []AutostartSet
+}
+
+func (f *Fake) Confirm(ctx context.Context, request platform.ConfirmRequest) (bool, error) {
+	f.mu.Lock()
+	f.ConfirmRequests = append(f.ConfirmRequests, request)
+	fn := f.ConfirmFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return false, nil
 }
 
 func (f *Fake) ShowInfo(ctx context.Context, request platform.InfoRequest) error {
@@ -113,24 +126,26 @@ func (f *Fake) Snapshot() Snapshot {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return Snapshot{
-		OpenedFolders:  append([]string(nil), f.OpenedFolders...),
-		PickRequests:   append([]platform.PickFilesRequest(nil), f.PickRequests...),
-		PromptRequests: append([]platform.PromptTextRequest(nil), f.PromptRequests...),
-		InfoRequests:   append([]platform.InfoRequest(nil), f.InfoRequests...),
-		Notifications:  append([]platform.Notification(nil), f.Notifications...),
-		StatusRequests: append([]platform.AutostartSpec(nil), f.StatusRequests...),
-		AutostartSets:  append([]AutostartSet(nil), f.AutostartSets...),
+		OpenedFolders:   append([]string(nil), f.OpenedFolders...),
+		PickRequests:    append([]platform.PickFilesRequest(nil), f.PickRequests...),
+		PromptRequests:  append([]platform.PromptTextRequest(nil), f.PromptRequests...),
+		InfoRequests:    append([]platform.InfoRequest(nil), f.InfoRequests...),
+		ConfirmRequests: append([]platform.ConfirmRequest(nil), f.ConfirmRequests...),
+		Notifications:   append([]platform.Notification(nil), f.Notifications...),
+		StatusRequests:  append([]platform.AutostartSpec(nil), f.StatusRequests...),
+		AutostartSets:   append([]AutostartSet(nil), f.AutostartSets...),
 	}
 }
 
 type Snapshot struct {
-	OpenedFolders  []string
-	PickRequests   []platform.PickFilesRequest
-	PromptRequests []platform.PromptTextRequest
-	InfoRequests   []platform.InfoRequest
-	Notifications  []platform.Notification
-	StatusRequests []platform.AutostartSpec
-	AutostartSets  []AutostartSet
+	OpenedFolders   []string
+	PickRequests    []platform.PickFilesRequest
+	PromptRequests  []platform.PromptTextRequest
+	InfoRequests    []platform.InfoRequest
+	ConfirmRequests []platform.ConfirmRequest
+	Notifications   []platform.Notification
+	StatusRequests  []platform.AutostartSpec
+	AutostartSets   []AutostartSet
 }
 
 var _ platform.Backend = (*Fake)(nil)

@@ -204,6 +204,22 @@ func (b *WindowsBackend) ShowInfo(ctx context.Context, request InfoRequest) erro
 	return nil
 }
 
+func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (bool, error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return false, NewUnavailable("confirm_dialog", err)
+	}
+	script := "Add-Type -AssemblyName System.Windows.Forms;$r=[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'YesNo','Question');if($r-eq'Yes'){'yes'}else{'no'}"
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return false, ctxErr
+		}
+		return false, NewOperationalFailure("confirm_dialog", err)
+	}
+	return strings.TrimSpace(string(output)) == "yes", nil
+}
+
 func buildPromptScript(request PromptTextRequest) string {
 	var sb strings.Builder
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;")

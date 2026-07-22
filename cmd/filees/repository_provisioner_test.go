@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -126,6 +127,33 @@ func TestDaemonProvisionerChecksOutApprovedSharedRepository(t *testing.T) {
 	}
 }
 
+func TestDaemonProvisionerResumesAttachmentAfterCheckoutBoundary(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	wc := filepath.Join(t.TempDir(), "wc")
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	repoID, url := uuid.NewString(), "svn+ssh://_filees-client@example/shared"
+	// The durable state still says attaching while .svn already exists: this is
+	// the exact post-checkout/pre-publication crash boundary.
+	record, _ := local.BeginAttach("office", repoID, wc, false)
+	record, _ = local.ApproveAttach(record.OperationID, "office", repoID, url, "r")
+	stub := &attachmentSVNStub{url: url}
+	profile := clientprofile.Profile{ServerID: "office"}
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = make(chan provisionedAttachment, 1)
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached || stub.checkout != 1 {
+		t.Fatalf("resumed record=%+v checkout=%d", got, stub.checkout)
+	}
+}
+
 func TestDaemonProvisionerRejectsMismatchedWorkingCopyURL(t *testing.T) {
 	local, _ := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
@@ -194,6 +222,58 @@ func TestDaemonProvisionerRelocationRollbackRestoresOldRuntime(t *testing.T) {
 	if restored.Quiesce || restored.Repo.LocalPath != record.LocalPath {
 		t.Fatalf("restored attachment=%+v", restored)
 	}
+}
+
+func TestDaemonProvisionerDoesNotCheckoutWhenRelocationQuiesceFails(t *testing.T) {
+	local, journal, profile, record := relocationFixture(t)
+	stub := &attachmentSVNStub{}
+	events := make(chan provisionedAttachment, 2)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	go func() {
+		quiesce := <-events
+		quiesce.Result <- errors.New("writer did not stop")
+	}()
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached || got.LocalPath != record.LocalPath || stub.checkout != 0 {
+		t.Fatalf("record=%+v checkout=%d", got, stub.checkout)
+	}
+	restored := <-events
+	if restored.Repo.LocalPath != record.LocalPath {
+		t.Fatalf("restored runtime=%+v", restored)
+	}
+}
+
+func TestDaemonProvisionerRestartPublishesOldRuntimeBeforeRelocation(t *testing.T) {
+	local, journal, profile, record := relocationFixture(t)
+	stub := &attachmentSVNStub{}
+	events := make(chan provisionedAttachment, 4)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); provisioner.Run(ctx) }()
+	oldRuntime := <-events
+	if oldRuntime.Quiesce || oldRuntime.Repo.LocalPath != record.LocalPath {
+		cancel()
+		t.Fatalf("first restart event=%+v", oldRuntime)
+	}
+	quiesce := <-events
+	if !quiesce.Quiesce {
+		cancel()
+		t.Fatalf("second restart event=%+v", quiesce)
+	}
+	quiesce.Result <- nil
+	newRuntime := <-events
+	if newRuntime.Quiesce || newRuntime.Repo.LocalPath != record.PendingLocalPath {
+		cancel()
+		t.Fatalf("final restart event=%+v", newRuntime)
+	}
+	cancel()
+	<-done
 }
 
 func relocationFixture(t *testing.T) (*localrepo.Store, *provisioning.Store, clientprofile.Profile, localrepo.Record) {

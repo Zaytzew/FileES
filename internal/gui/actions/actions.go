@@ -10,10 +10,22 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
+)
+
+// creationStatusPollInterval/creationStatusPollTimeout bound how long the GUI
+// waits for a server-side outcome (attached/error) after CreateRepository
+// returns. Provisioning runs entirely in the daemon's background queue, so a
+// repository creation that fails after the "started" toast (e.g. a storage
+// preflight rejection) would otherwise vanish without ever telling the user
+// -- see finding on silent repo-create failures.
+const (
+	creationStatusPollInterval = 3 * time.Second
+	creationStatusPollTimeout  = 15 * time.Minute
 )
 
 // LockUnlocker is the narrow daemon surface required by the controller.
@@ -31,6 +43,11 @@ type Activator interface {
 
 type RepositoryCreator interface {
 	CreateRepository(ctx context.Context, serverID, displayName, localPath string) (operationID string, err error)
+	// CreationStatus polls the outcome of a prior CreateRepository call.
+	// state is the daemon's localrepo lifecycle state ("request_pending",
+	// "attached", "error", ...); lastError is populated only once state
+	// reaches "error".
+	CreationStatus(ctx context.Context, operationID string) (state, lastError string, err error)
 }
 
 type Updater interface {
@@ -73,6 +90,12 @@ type Config struct {
 	Reconnect         func() // nil → reconnect intent is a no-op
 	Quit              func() // nil → quit intent is a no-op
 	Restart           func() // called only after a successful apply requiring restart
+
+	// CreationStatusPollInterval/CreationStatusPollTimeout override how often
+	// and how long awaitCreationOutcome polls after a repository-create
+	// request; zero means use the package defaults (tests may shrink these).
+	CreationStatusPollInterval time.Duration
+	CreationStatusPollTimeout  time.Duration
 }
 
 // Controller reads tray intents and dispatches them to platform and daemon
@@ -204,7 +227,51 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 			return
 		}
 		c.notify(ctx, platform.Notification{ID: "repository-create." + serverID, Group: "repository-create." + serverID, Title: "Tworzenie repozytorium rozpoczęte", Body: displayName + " — operacja " + operationID, Urgency: platform.UrgencyNormal})
+		c.awaitCreationOutcome(ctx, serverID, displayName, operationID)
 	}()
+}
+
+// awaitCreationOutcome polls the daemon for the real outcome of a
+// repository creation after the optimistic "started" toast, since
+// provisioning (storage preflight, repository creation, initial commit) all
+// run asynchronously in the daemon and would otherwise fail silently.
+func (c *Controller) awaitCreationOutcome(ctx context.Context, serverID, displayName, operationID string) {
+	interval, timeout := c.cfg.CreationStatusPollInterval, c.cfg.CreationStatusPollTimeout
+	if interval <= 0 {
+		interval = creationStatusPollInterval
+	}
+	if timeout <= 0 {
+		timeout = creationStatusPollTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		state, lastError, err := c.cfg.RepositoryCreator.CreationStatus(ctx, operationID)
+		if err != nil {
+			return
+		}
+		switch state {
+		case "error":
+			body := displayName
+			if strings.TrimSpace(lastError) != "" {
+				body = displayName + " — " + lastError
+			}
+			c.notify(ctx, platform.Notification{ID: "repository-create." + serverID, Group: "repository-create." + serverID, Title: "Nie udało się utworzyć repozytorium", Body: body, Urgency: platform.UrgencyCritical})
+			return
+		case "attached":
+			c.notify(ctx, platform.Notification{ID: "repository-create." + serverID, Group: "repository-create." + serverID, Title: "Repozytorium utworzone", Body: displayName, Urgency: platform.UrgencyNormal})
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+	}
 }
 
 func (c *Controller) repositoryCreationFailure(ctx context.Context, err error) {

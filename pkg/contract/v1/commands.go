@@ -18,19 +18,20 @@ const (
 	CmdActivationFinish = "activation.finish"
 
 	// Repos
-	CmdRepoList          = "repo.list"           // list all configured repos
-	CmdRepoStatus        = "repo.status"         // snapshot of one repo
-	CmdRepoPause         = "repo.pause"          // suspend automatic operations
-	CmdRepoResume        = "repo.resume"         // resume after pause
-	CmdRepoSyncNow       = "repo.sync_now"       // request immediate poll/update
-	CmdRepoPublish       = "repo.publish"        // request immediate commit of pending changes
-	CmdRepoCreateRequest = "repo.create_request" // persist intent; server work is a later stage
-	CmdRepoAttachIntent  = "repo.attach_intent"  // persist local path choice; no checkout yet
-	CmdRepoAttachApprove = "repo.attach_approve" // approve the persisted intent and start checkout
-	CmdRepoRelocate      = "repo.relocate"       // approve relocation of an attached working copy
-	CmdRepoActivity      = "repo.activity"       // global recent synchronization activity snapshot
-	CmdRepoLock          = "repo.lock"           // acquire SVN lock on one or more paths
-	CmdRepoUnlock        = "repo.unlock"         // release SVN lock on one or more paths
+	CmdRepoList            = "repo.list"             // list all configured repos
+	CmdRepoStatus          = "repo.status"           // snapshot of one repo
+	CmdRepoPause           = "repo.pause"            // suspend automatic operations
+	CmdRepoResume          = "repo.resume"           // resume after pause
+	CmdRepoSyncNow         = "repo.sync_now"         // request immediate poll/update
+	CmdRepoPublish         = "repo.publish"          // request immediate commit of pending changes
+	CmdRepoCreateRequest   = "repo.create_request"   // persist intent; server work is a later stage
+	CmdRepoAttachIntent    = "repo.attach_intent"    // persist local path choice; no checkout yet
+	CmdRepoAttachApprove   = "repo.attach_approve"   // approve the persisted intent and start checkout
+	CmdRepoRelocate        = "repo.relocate"         // approve relocation of an attached working copy
+	CmdRepoLifecycleStatus = "repo.lifecycle_status" // poll outcome of a create/attach/relocate operation by ID
+	CmdRepoActivity        = "repo.activity"         // global recent synchronization activity snapshot
+	CmdRepoLock            = "repo.lock"             // acquire SVN lock on one or more paths
+	CmdRepoUnlock          = "repo.unlock"           // release SVN lock on one or more paths
 
 	// Conflicts and user decisions
 	CmdConflictList   = "conflict.list"   // list pending conflicts / interactions
@@ -53,17 +54,18 @@ const (
 // GUI shows only capabilities declared in HelloResult.Capabilities.
 // Only list commands that are actually implemented.
 const (
-	CapEventsSubscribe   = "events.subscribe"
-	CapRepoLock          = "repo.lock"
-	CapRepoUnlock        = "repo.unlock"
-	CapErrorList         = "error.list"
-	CapActivationBegin   = "activation.begin"
-	CapActivationFinish  = "activation.finish"
-	CapRepoCreateRequest = "repo.create_request"
-	CapRepoAttachIntent  = "repo.attach_intent"
-	CapRepoAttachApprove = "repo.attach_approve"
-	CapRepoRelocate      = "repo.relocate"
-	CapRepoActivity      = "repo.activity"
+	CapEventsSubscribe     = "events.subscribe"
+	CapRepoLock            = "repo.lock"
+	CapRepoUnlock          = "repo.unlock"
+	CapErrorList           = "error.list"
+	CapActivationBegin     = "activation.begin"
+	CapActivationFinish    = "activation.finish"
+	CapRepoCreateRequest   = "repo.create_request"
+	CapRepoAttachIntent    = "repo.attach_intent"
+	CapRepoAttachApprove   = "repo.attach_approve"
+	CapRepoRelocate        = "repo.relocate"
+	CapRepoLifecycleStatus = "repo.lifecycle_status"
+	CapRepoActivity        = "repo.activity"
 
 	// Update capabilities are advertised only after the daemon wires a signed
 	// release checker and transactional platform installer.
@@ -91,6 +93,7 @@ var AllCapabilities = []string{
 	CapRepoAttachIntent,
 	CapRepoAttachApprove,
 	CapRepoRelocate,
+	CapRepoLifecycleStatus,
 }
 
 // --- result and payload types ---
@@ -214,6 +217,10 @@ type RepoRelocatePayload struct {
 	NewLocalPath string `json:"new_local_path"`
 }
 
+type RepoLifecycleStatusPayload struct {
+	OperationID string `json:"operation_id"`
+}
+
 type RepoLifecycleResult struct {
 	OperationID      string `json:"operation_id"`
 	ServerID         string `json:"server_id"`
@@ -221,6 +228,7 @@ type RepoLifecycleResult struct {
 	LocalPath        string `json:"local_path"`
 	PendingLocalPath string `json:"pending_local_path,omitempty"`
 	State            string `json:"state"`
+	LastError        string `json:"last_error,omitempty"`
 }
 
 type RepoActivityPayload struct {

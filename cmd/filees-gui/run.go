@@ -36,6 +36,7 @@ type updateClient interface {
 
 type repositoryCreateClient interface {
 	RepoCreateRequest(context.Context, contract.RepoCreateRequestPayload) (*contract.RepoLifecycleResult, error)
+	RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
 }
 
 type repositoryCreateAdapter struct{ client repositoryCreateClient }
@@ -49,6 +50,17 @@ func (adapter repositoryCreateAdapter) CreateRepository(ctx context.Context, ser
 		return "", errors.New("daemon returned an empty repository operation")
 	}
 	return result.OperationID, nil
+}
+
+func (adapter repositoryCreateAdapter) CreationStatus(ctx context.Context, operationID string) (state, lastError string, err error) {
+	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
+	if err != nil {
+		return "", "", err
+	}
+	if result == nil {
+		return "", "", errors.New("daemon returned an empty repository operation")
+	}
+	return result.State, result.LastError, nil
 }
 
 type updateAdapter struct{ client updateClient }

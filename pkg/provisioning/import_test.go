@@ -113,6 +113,22 @@ func TestPublishCommitsFileLargerThanBatchLimitAlone(t *testing.T) {
 	}
 }
 
+func TestPublishRecoversMissingScheduledAddAfterFailedCommit(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "kept.txt"), []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := readyOperation(t, root)
+	svn := &fakeInitialSVN{root: root, items: map[string]string{}, extraStatus: []client.StatusEntry{{Path: "removed.bin", Item: "missing"}}}
+	op, err := PublishInitialSnapshot(context.Background(), store, onlyOperationID(t, store), uuid.NewString(), svn, ImportLimits{MaxBatchFiles: 10, MaxBatchBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.Revision != 1 || len(svn.extraStatus) != 0 || len(svn.commits) != 1 || len(svn.commits[0]) != 1 || svn.commits[0][0] != "kept.txt" {
+		t.Fatalf("recovered publication = %#v, status=%#v commits=%#v", op, svn.extraStatus, svn.commits)
+	}
+}
+
 func readyOperation(t *testing.T, localPath string) *Store {
 	t.Helper()
 	store := newTestStore(t, filepath.Join(t.TempDir(), "state"))
@@ -136,12 +152,13 @@ func onlyOperationID(t *testing.T, store *Store) string {
 }
 
 type fakeInitialSVN struct {
-	root       string
-	items      map[string]string
-	revision   int64
-	commitTry  int
-	failCommit int
-	commits    [][]string
+	root        string
+	items       map[string]string
+	revision    int64
+	commitTry   int
+	failCommit  int
+	commits     [][]string
+	extraStatus []client.StatusEntry
 }
 
 func (f *fakeInitialSVN) Checkout(context.Context, string, string) (string, error) {
@@ -162,7 +179,24 @@ func (f *fakeInitialSVN) Status(context.Context, string, []string) ([]client.Sta
 		}
 		entries = append(entries, client.StatusEntry{Path: path, Item: item})
 	}
+	entries = append(entries, f.extraStatus...)
 	return entries, nil
+}
+
+func (f *fakeInitialSVN) Revert(_ context.Context, _ string, paths []string) (string, error) {
+	remove := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		remove[filepath.Clean(path)] = true
+		delete(f.items, filepath.Clean(path))
+	}
+	kept := f.extraStatus[:0]
+	for _, entry := range f.extraStatus {
+		if !remove[filepath.Clean(entry.Path)] {
+			kept = append(kept, entry)
+		}
+	}
+	f.extraStatus = kept
+	return "", nil
 }
 
 func (f *fakeInitialSVN) Add(_ context.Context, _ string, paths []string) (string, error) {

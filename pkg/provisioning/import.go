@@ -37,6 +37,10 @@ type InitialSVN interface {
 	Revision(context.Context, string) (int64, error)
 }
 
+type initialReverter interface {
+	Revert(context.Context, string, []string) (string, error)
+}
+
 func ScanInitialSnapshot(root string) (Snapshot, error) {
 	var snapshot Snapshot
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -117,6 +121,25 @@ func PublishInitialSnapshot(ctx context.Context, store *Store, operationID, requ
 	entries, err := svn.Status(ctx, op.LocalPath, nil)
 	if err != nil {
 		return fail(fmt.Errorf("read initial working-copy status: %w", err))
+	}
+	var missing []string
+	for _, entry := range entries {
+		if entry.Item == "missing" {
+			missing = append(missing, filepath.Clean(entry.Path))
+		}
+	}
+	if len(missing) > 0 {
+		reverter, ok := svn.(initialReverter)
+		if !ok {
+			return fail(errors.New("initial import recovery requires SVN revert support"))
+		}
+		if _, err := reverter.Revert(ctx, op.LocalPath, missing); err != nil {
+			return fail(fmt.Errorf("revert missing initial paths: %w", err))
+		}
+		entries, err = svn.Status(ctx, op.LocalPath, nil)
+		if err != nil {
+			return fail(fmt.Errorf("read recovered working-copy status: %w", err))
+		}
 	}
 	status := make(map[string]string, len(entries))
 	for _, entry := range entries {

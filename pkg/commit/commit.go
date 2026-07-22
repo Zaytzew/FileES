@@ -323,7 +323,9 @@ func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.S
 	}
 	if err := s.Activity.Record(activity.Entry{RepoID: s.repoID, Path: filepath.ToSlash(rel), Kind: kind, Stage: stage, Revision: revision}); err != nil {
 		s.Logger.Warnf("activity journal: %v", err)
+		return
 	}
+	s.emit(contract.EvActivityChanged, nil)
 }
 
 func (s *Service) shutdownDrain(wc string) {

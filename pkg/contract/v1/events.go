@@ -17,6 +17,7 @@ const (
 	EvErrorRaised         = "error.raised"
 	EvActivationChanged   = "activation.changed"
 	EvProjectionChanged   = "projection.changed"
+	EvActivityChanged     = "activity.changed"
 )
 
 // RepoStateChangedPayload is the payload for EvRepoStateChanged.

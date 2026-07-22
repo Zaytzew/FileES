@@ -12,6 +12,7 @@ import (
 
 	"filees/pkg/activity"
 	"filees/pkg/client"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/watcher"
 )
 
@@ -91,8 +92,9 @@ func TestActivityStagesFollowDurableCacheAndConfirmedCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder := &activityRecorder{}
+	var emitted []string
 	cli := &stagingClient{statuses: map[string]string{"report.pdf": "unversioned"}, commitOut: "Committed revision 18.\n"}
-	service := &Service{Cli: cli, Rules: Rules{NewLatency: time.Nanosecond, MaxBatchFiles: 10}, Activity: recorder, repoID: "docs", staging: make(map[string]*stageItem), cachePath: filepath.Join(wc, ".filees", "commit_cache", "cache.json")}
+	service := &Service{Cli: cli, Rules: Rules{NewLatency: time.Nanosecond, MaxBatchFiles: 10}, Activity: recorder, Emit: func(eventType string, _ any) { emitted = append(emitted, eventType) }, repoID: "docs", staging: make(map[string]*stageItem), cachePath: filepath.Join(wc, ".filees", "commit_cache", "cache.json")}
 	service.acceptEvent(watcher.Event{Path: abs, Rel: "report.pdf", Type: watcher.EntryFile, Op: watcher.Added})
 	if err := service.tryCommit(context.Background(), wc); err != nil {
 		t.Fatal(err)
@@ -104,6 +106,18 @@ func TestActivityStagesFollowDurableCacheAndConfirmedCommit(t *testing.T) {
 	want := []activity.Stage{activity.Detected, activity.Pending, activity.Publishing, activity.Published}
 	if !reflect.DeepEqual(stages, want) || recorder.entries[len(recorder.entries)-1].Revision != 18 {
 		t.Fatalf("activity=%+v", recorder.entries)
+	}
+	if len(emitted) != 5 { // four activity invalidations plus commit.completed
+		t.Fatalf("events=%v", emitted)
+	}
+	activityEvents := 0
+	for _, eventType := range emitted {
+		if eventType == contract.EvActivityChanged {
+			activityEvents++
+		}
+	}
+	if activityEvents != 4 {
+		t.Fatalf("events=%v", emitted)
 	}
 }
 

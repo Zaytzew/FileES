@@ -75,6 +75,14 @@ type fakeActivator struct {
 	finishes chan string
 }
 
+type createCall struct{ serverID, displayName, localPath string }
+type fakeRepositoryCreator struct{ calls chan createCall }
+
+func (f *fakeRepositoryCreator) CreateRepository(_ context.Context, serverID, displayName, localPath string) (string, error) {
+	f.calls <- createCall{serverID, displayName, localPath}
+	return "op-123", nil
+}
+
 func (f *fakeActivator) Begin(_ context.Context, serverID, address, email string) error {
 	f.begins <- serverID + "|" + address + "|" + email
 	return nil
@@ -931,5 +939,54 @@ func TestControllerServerInformationContainsPermissions(t *testing.T) {
 	requests := platformFake.Snapshot().InfoRequests
 	if len(requests) != 1 || !strings.Contains(requests[0].Text, "Tryb klienta: pełny") || !strings.Contains(requests[0].Text, "Tworzenie repozytoriów: dozwolone") {
 		t.Fatalf("server information = %#v", requests)
+	}
+}
+
+func TestControllerCreatesRepositoryAfterNativeFolderAndConfirmation(t *testing.T) {
+	creator := &fakeRepositoryCreator{calls: make(chan createCall, 1)}
+	fake := &platformtest.Fake{
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			return platform.PickFolderResult{Path: "/data/projekt"}, nil
+		},
+		PromptTextFunc: func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error) {
+			return platform.PromptTextResult{Value: "Projekt A"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, FolderPicker: fake, Prompter: fake, RepositoryCreator: creator, Notifier: fake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateRepository, ServerID: "office"})
+	select {
+	case call := <-creator.calls:
+		if call.serverID != "office" || call.displayName != "Projekt A" || call.localPath != "/data/projekt" {
+			t.Fatalf("create call = %#v", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("repository creation was not requested")
+	}
+	snapshot := fake.Snapshot()
+	if len(snapshot.ConfirmRequests) != 1 || !strings.Contains(snapshot.ConfirmRequests[0].Text, "Dostęp: odczyt i zapis") {
+		t.Fatalf("confirmation = %#v", snapshot.ConfirmRequests)
+	}
+}
+
+func TestControllerDoesNotCreateRepositoryWhenAuthorityIsStale(t *testing.T) {
+	creator := &fakeRepositoryCreator{calls: make(chan createCall, 1)}
+	fake := &platformtest.Fake{PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+		return platform.PickFolderResult{Path: "/data/projekt"}, nil
+	}}
+	view := app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, FolderPicker: fake, Prompter: fake, RepositoryCreator: creator})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateRepository, ServerID: "office"})
+	time.Sleep(20 * time.Millisecond)
+	if len(fake.Snapshot().FolderRequests) != 0 {
+		t.Fatal("folder picker opened for stale authority")
+	}
+	select {
+	case <-creator.calls:
+		t.Fatal("create called for stale authority")
+	default:
 	}
 }

@@ -29,6 +29,10 @@ type Activator interface {
 	Finish(ctx context.Context, serverID, serverAddress string, otp []byte) error
 }
 
+type RepositoryCreator interface {
+	CreateRepository(ctx context.Context, serverID, displayName, localPath string) (operationID string, err error)
+}
+
 type Updater interface {
 	UpdatePlan(context.Context) (*UpdatePlan, error)
 	UpdateApply(context.Context) (*UpdateResult, error)
@@ -55,18 +59,20 @@ type presentationError interface {
 // Config wires the controller to its dependencies.
 // Notifier, Reconnect and Quit may be nil; all other fields are required.
 type Config struct {
-	Intents   <-chan tray.Intent
-	ViewModel func() app.ViewModel
-	Opener    platform.FolderOpener
-	Picker    platform.FilePicker
-	Prompter  platform.Prompter
-	Activator Activator
-	Updater   Updater
-	Notifier  platform.Notifier // nil → notifications silently dropped
-	Locker    LockUnlocker
-	Reconnect func() // nil → reconnect intent is a no-op
-	Quit      func() // nil → quit intent is a no-op
-	Restart   func() // called only after a successful apply requiring restart
+	Intents           <-chan tray.Intent
+	ViewModel         func() app.ViewModel
+	Opener            platform.FolderOpener
+	Picker            platform.FilePicker
+	FolderPicker      platform.FolderPicker
+	Prompter          platform.Prompter
+	RepositoryCreator RepositoryCreator
+	Activator         Activator
+	Updater           Updater
+	Notifier          platform.Notifier // nil → notifications silently dropped
+	Locker            LockUnlocker
+	Reconnect         func() // nil → reconnect intent is a no-op
+	Quit              func() // nil → quit intent is a no-op
+	Restart           func() // called only after a successful apply requiring restart
 }
 
 // Controller reads tray intents and dispatches them to platform and daemon
@@ -117,6 +123,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startActivation(ctx)
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
+	case tray.IntentCreateRepository:
+		c.startCreateRepository(ctx, intent.ServerID)
 	case tray.IntentUpdatePlan:
 		c.startUpdate(ctx, false)
 	case tray.IntentUpdateApply:
@@ -126,6 +134,84 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 			c.cfg.Quit()
 		}
 	}
+}
+
+func (c *Controller) startCreateRepository(ctx context.Context, serverID string) {
+	key := "create-repository:" + serverID
+	if serverID == "" || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil || c.cfg.RepositoryCreator == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		var server *app.ServerViewModel
+		for i := range vm.Servers {
+			if vm.Servers[i].ID == serverID {
+				server = &vm.Servers[i]
+				break
+			}
+		}
+		if !vm.Connected || vm.Stale || server == nil || !server.CanOfferRepositoryCreation() {
+			return
+		}
+		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz folder dla nowego repozytorium FileES"})
+		if err != nil {
+			c.repositoryCreationFailure(ctx, err)
+			return
+		}
+		if picked.Cancelled || strings.TrimSpace(picked.Path) == "" {
+			return
+		}
+		name := filepath.Base(filepath.Clean(picked.Path))
+		prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Nowe repozytorium FileES", Text: "Nazwa repozytorium:", Placeholder: name})
+		if err != nil {
+			c.repositoryCreationFailure(ctx, err)
+			return
+		}
+		if prompted.Cancelled {
+			return
+		}
+		displayName := strings.TrimSpace(prompted.Value)
+		if displayName == "" {
+			displayName = name
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Utwórz repozytorium FileES", Text: fmt.Sprintf("Serwer: %s\nNazwa: %s\nFolder: %s\nDostęp: odczyt i zapis\n\nUtworzyć repozytorium i rozpocząć synchronizację?", server.ID, displayName, picked.Path), ConfirmText: "Utwórz", CancelText: "Anuluj"})
+		if err != nil {
+			c.repositoryCreationFailure(ctx, err)
+			return
+		}
+		if !confirmed {
+			return
+		}
+		// Re-check live authority immediately before the mutating IPC request.
+		latest := c.cfg.ViewModel()
+		allowed, found := latest.Connected && !latest.Stale, false
+		for _, candidate := range latest.Servers {
+			if candidate.ID == serverID {
+				found = true
+				allowed = allowed && candidate.CanOfferRepositoryCreation()
+				break
+			}
+		}
+		if !allowed || !found {
+			return
+		}
+		operationID, err := c.cfg.RepositoryCreator.CreateRepository(ctx, serverID, displayName, picked.Path)
+		if err != nil {
+			c.repositoryCreationFailure(ctx, err)
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: "repository-create." + serverID, Group: "repository-create." + serverID, Title: "Tworzenie repozytorium rozpoczęte", Body: displayName + " — operacja " + operationID, Urgency: platform.UrgencyNormal})
+	}()
+}
+
+func (c *Controller) repositoryCreationFailure(ctx context.Context, err error) {
+	if err == nil || ctx.Err() != nil {
+		return
+	}
+	c.notify(ctx, platform.Notification{ID: "repository-create", Group: "repository-create", Title: "Nie można utworzyć repozytorium", Body: err.Error(), Urgency: platform.UrgencyCritical})
 }
 
 func (c *Controller) startUpdate(ctx context.Context, apply bool) {

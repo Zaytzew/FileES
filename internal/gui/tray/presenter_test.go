@@ -226,6 +226,23 @@ func TestServerPermissionsAreOnlyInInformationDialog(t *testing.T) {
 	}
 }
 
+func TestServerCreateRepositoryActionIsPermissionAndFreshnessGated(t *testing.T) {
+	server := app.ServerViewModel{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}
+	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}})
+	action := findItem(t, findItem(t, menu.Items, "server.office").Children, "server.office.create")
+	if action.Intent == nil || action.Intent.Kind != IntentCreateRepository || action.Intent.ServerID != "office" {
+		t.Fatalf("create action = %#v", action)
+	}
+	server.ClientRole = contract.ClientRoleReadOnly
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create") {
+		t.Fatal("create action visible for read-only client")
+	}
+	server.ClientRole = contract.ClientRoleNormal
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create") {
+		t.Fatal("create action visible for stale snapshot")
+	}
+}
+
 func findItem(t *testing.T, items []MenuItemModel, id string) MenuItemModel {
 	t.Helper()
 	for _, item := range items {

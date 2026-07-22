@@ -213,6 +213,19 @@ func TestWindowsPickerInvokesPowerShellAndValidatesSelection(t *testing.T) {
 	}
 }
 
+func TestWindowsFolderPickerUsesFolderBrowserDialog(t *testing.T) {
+	runner := &fakeWindowsRunner{output: func(context.Context, string, []string) ([]byte, error) { return []byte(`C:\data\projekt`), nil }}
+	backend := newTestWindowsBackend(runner, time.Now)
+	result, err := backend.PickFolder(context.Background(), PickFolderRequest{Title: "Folder", InitialDir: `C:\data`})
+	if err != nil || result.Path != `C:\data\projekt` {
+		t.Fatalf("PickFolder() = %#v, %v", result, err)
+	}
+	args := strings.Join(runner.Calls()[0].args, " ")
+	if !strings.Contains(args, "FolderBrowserDialog") {
+		t.Fatalf("script = %s", args)
+	}
+}
+
 func TestWindowsPickerCancellationAndOutsideRoot(t *testing.T) {
 	runner := &fakeWindowsRunner{
 		output: func(_ context.Context, _ string, _ []string) ([]byte, error) {

@@ -77,6 +77,9 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	children := []MenuItemModel{
 		actionItem("server."+server.ID+".info", "Informacje o serwerze…", "Pokaż adres, identyfikatory i uprawnienia klienta", Intent{Kind: IntentServerInfo, ServerID: server.ID}),
 	}
+	if vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
+		children = append(children, actionItem("server."+server.ID+".create", "Dodaj folder do FileES…", "Utwórz nowe repozytorium z lokalnego katalogu", Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
+	}
 	if len(server.Repos) == 0 {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak repozytoriów"))
 	}

@@ -126,6 +126,51 @@ func (b *LinuxBackend) PickFiles(ctx context.Context, request PickFilesRequest) 
 	return PickFilesResult{Paths: paths}, nil
 }
 
+func (b *LinuxBackend) PickFolder(ctx context.Context, request PickFolderRequest) (PickFolderResult, error) {
+	initialDir := request.InitialDir
+	if initialDir == "" {
+		initialDir, _ = os.UserHomeDir()
+	}
+	if err := requireAbsolutePath(initialDir); err != nil {
+		return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
+	}
+	var command string
+	var args []string
+	if candidate, err := b.runner.LookPath("zenity"); err == nil {
+		command = candidate
+		args = []string{"--file-selection", "--directory", "--filename=" + filepath.Clean(initialDir) + string(filepath.Separator)}
+		if request.Title != "" {
+			args = append(args, "--title="+request.Title)
+		}
+	} else if candidate, err := b.runner.LookPath("kdialog"); err == nil {
+		command = candidate
+		args = []string{"--getexistingdirectory", filepath.Clean(initialDir)}
+		if request.Title != "" {
+			args = append(args, "--title", request.Title)
+		}
+	} else {
+		return PickFolderResult{}, NewUnavailable("folder_picker", errors.New("neither zenity nor kdialog is installed"))
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return PickFolderResult{}, ctxErr
+		}
+		if commandCancelled(err) {
+			return PickFolderResult{Cancelled: true}, nil
+		}
+		return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
+	}
+	path := strings.TrimSpace(string(output))
+	if path == "" {
+		return PickFolderResult{Cancelled: true}, nil
+	}
+	if err := requireAbsolutePath(path); err != nil {
+		return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
+	}
+	return PickFolderResult{Path: filepath.Clean(path)}, nil
+}
+
 func (b *LinuxBackend) PromptText(ctx context.Context, request PromptTextRequest) (PromptTextResult, error) {
 	command, err := b.runner.LookPath("zenity")
 	if err != nil {

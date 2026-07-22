@@ -139,9 +139,6 @@ func PublishInitialSnapshot(ctx context.Context, store *Store, operationID, requ
 
 	pending := make([]SnapshotFile, 0, len(snapshot.Files))
 	for _, file := range snapshot.Files {
-		if file.Size > limits.MaxBatchBytes {
-			return fail(fmt.Errorf("file %q (%d bytes) exceeds initial commit limit %d", file.Path, file.Size, limits.MaxBatchBytes))
-		}
 		if status[file.Path] == "unversioned" || status[file.Path] == "added" {
 			pending = append(pending, file)
 		}

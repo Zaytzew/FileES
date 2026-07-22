@@ -97,16 +97,19 @@ func TestPublishEmptyInitialSnapshotAcknowledgesRevisionZero(t *testing.T) {
 	}
 }
 
-func TestPublishRejectsFileLargerThanCommitLimit(t *testing.T) {
+func TestPublishCommitsFileLargerThanBatchLimitAlone(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "large"), []byte("12345"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store := readyOperation(t, root)
 	svn := &fakeInitialSVN{root: root, items: map[string]string{}}
-	_, err := PublishInitialSnapshot(context.Background(), store, onlyOperationID(t, store), uuid.NewString(), svn, ImportLimits{MaxBatchFiles: 1, MaxBatchBytes: 4})
-	if err == nil || !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("expected oversize rejection, got %v", err)
+	op, err := PublishInitialSnapshot(context.Background(), store, onlyOperationID(t, store), uuid.NewString(), svn, ImportLimits{MaxBatchFiles: 1, MaxBatchBytes: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.Revision != 1 || len(svn.commits) != 1 || len(svn.commits[0]) != 1 || svn.commits[0][0] != "large" {
+		t.Fatalf("large-file publication = %#v, commits=%#v", op, svn.commits)
 	}
 }
 

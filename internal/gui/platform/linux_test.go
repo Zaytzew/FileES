@@ -144,6 +144,19 @@ func TestLinuxPickerFallsBackToKDialog(t *testing.T) {
 	}
 }
 
+func TestLinuxFolderPickerUsesDirectoryMode(t *testing.T) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) { return []byte("/data/projekt\n"), nil }}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	result, err := backend.PickFolder(context.Background(), PickFolderRequest{Title: "Folder", InitialDir: "/data"})
+	if err != nil || result.Path != "/data/projekt" {
+		t.Fatalf("PickFolder() = %#v, %v", result, err)
+	}
+	args := strings.Join(runner.Calls()[0].args, "\n")
+	if !strings.Contains(args, "--directory") || !strings.Contains(args, "--filename=/data/") {
+		t.Fatalf("folder picker args = %s", args)
+	}
+}
+
 func TestLinuxPickerCancellationUnavailableAndOutsideRoot(t *testing.T) {
 	runner := &fakeLinuxRunner{
 		paths:  map[string]string{"zenity": "/usr/bin/zenity"},

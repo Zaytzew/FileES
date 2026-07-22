@@ -34,6 +34,23 @@ type updateClient interface {
 	UpdateApply(context.Context) (*contract.UpdateApplyResult, error)
 }
 
+type repositoryCreateClient interface {
+	RepoCreateRequest(context.Context, contract.RepoCreateRequestPayload) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryCreateAdapter struct{ client repositoryCreateClient }
+
+func (adapter repositoryCreateAdapter) CreateRepository(ctx context.Context, serverID, displayName, localPath string) (string, error) {
+	result, err := adapter.client.RepoCreateRequest(ctx, contract.RepoCreateRequestPayload{ServerID: serverID, DisplayName: displayName, LocalPath: localPath})
+	if err != nil {
+		return "", err
+	}
+	if result == nil {
+		return "", errors.New("daemon returned an empty repository operation")
+	}
+	return result.OperationID, nil
+}
+
 type updateAdapter struct{ client updateClient }
 
 func (adapter updateAdapter) UpdatePlan(ctx context.Context) (*actions.UpdatePlan, error) {
@@ -113,17 +130,23 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(updateClient); ok {
 		updater = updateAdapter{client: candidate}
 	}
+	var repositoryCreator actions.RepositoryCreator
+	if candidate, ok := deps.client.(repositoryCreateClient); ok {
+		repositoryCreator = repositoryCreateAdapter{client: candidate}
+	}
 	controller := actions.New(actions.Config{
-		Intents:   intents,
-		ViewModel: views.load,
-		Opener:    deps.platform,
-		Picker:    deps.platform,
-		Prompter:  deps.platform,
-		Activator: deps.activator,
-		Updater:   updater,
-		Notifier:  deps.platform,
-		Locker:    deps.client,
-		Reconnect: guiApp.Reconnect,
+		Intents:           intents,
+		ViewModel:         views.load,
+		Opener:            deps.platform,
+		Picker:            deps.platform,
+		FolderPicker:      deps.platform,
+		Prompter:          deps.platform,
+		RepositoryCreator: repositoryCreator,
+		Activator:         deps.activator,
+		Updater:           updater,
+		Notifier:          deps.platform,
+		Locker:            deps.client,
+		Reconnect:         guiApp.Reconnect,
 		Quit: func() {
 			cancel()
 		},

@@ -11,6 +11,7 @@ import (
 type Fake struct {
 	OpenFolderFunc      func(context.Context, string) error
 	PickFilesFunc       func(context.Context, platform.PickFilesRequest) (platform.PickFilesResult, error)
+	PickFolderFunc      func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error)
 	PromptTextFunc      func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error)
 	ShowInfoFunc        func(context.Context, platform.InfoRequest) error
 	ConfirmFunc         func(context.Context, platform.ConfirmRequest) (bool, error)
@@ -21,12 +22,24 @@ type Fake struct {
 	mu              sync.Mutex
 	OpenedFolders   []string
 	PickRequests    []platform.PickFilesRequest
+	FolderRequests  []platform.PickFolderRequest
 	PromptRequests  []platform.PromptTextRequest
 	InfoRequests    []platform.InfoRequest
 	ConfirmRequests []platform.ConfirmRequest
 	Notifications   []platform.Notification
 	StatusRequests  []platform.AutostartSpec
 	AutostartSets   []AutostartSet
+}
+
+func (f *Fake) PickFolder(ctx context.Context, request platform.PickFolderRequest) (platform.PickFolderResult, error) {
+	f.mu.Lock()
+	f.FolderRequests = append(f.FolderRequests, request)
+	fn := f.PickFolderFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.PickFolderResult{Cancelled: true}, nil
 }
 
 func (f *Fake) Confirm(ctx context.Context, request platform.ConfirmRequest) (bool, error) {
@@ -128,6 +141,7 @@ func (f *Fake) Snapshot() Snapshot {
 	return Snapshot{
 		OpenedFolders:   append([]string(nil), f.OpenedFolders...),
 		PickRequests:    append([]platform.PickFilesRequest(nil), f.PickRequests...),
+		FolderRequests:  append([]platform.PickFolderRequest(nil), f.FolderRequests...),
 		PromptRequests:  append([]platform.PromptTextRequest(nil), f.PromptRequests...),
 		InfoRequests:    append([]platform.InfoRequest(nil), f.InfoRequests...),
 		ConfirmRequests: append([]platform.ConfirmRequest(nil), f.ConfirmRequests...),
@@ -140,6 +154,7 @@ func (f *Fake) Snapshot() Snapshot {
 type Snapshot struct {
 	OpenedFolders   []string
 	PickRequests    []platform.PickFilesRequest
+	FolderRequests  []platform.PickFolderRequest
 	PromptRequests  []platform.PromptTextRequest
 	InfoRequests    []platform.InfoRequest
 	ConfirmRequests []platform.ConfirmRequest

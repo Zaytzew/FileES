@@ -156,6 +156,45 @@ func (b *WindowsBackend) PickFiles(ctx context.Context, request PickFilesRequest
 	return PickFilesResult{Paths: paths}, nil
 }
 
+func (b *WindowsBackend) PickFolder(ctx context.Context, request PickFolderRequest) (PickFolderResult, error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return PickFolderResult{}, NewUnavailable("folder_picker", err)
+	}
+	initialDir := request.InitialDir
+	if initialDir != "" {
+		if err := requireAbsolutePath(initialDir); err != nil {
+			return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
+		}
+	}
+	script := "Add-Type -AssemblyName System.Windows.Forms;$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
+	if request.Title != "" {
+		script += "$d.Description=" + psString(request.Title) + ";"
+	}
+	if initialDir != "" {
+		script += "$d.SelectedPath=" + psString(initialDir) + ";"
+	}
+	script += "if($d.ShowDialog()-eq[System.Windows.Forms.DialogResult]::OK){$d.SelectedPath}else{exit 1}"
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return PickFolderResult{}, ctxErr
+		}
+		if commandCancelled(err) {
+			return PickFolderResult{Cancelled: true}, nil
+		}
+		return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
+	}
+	path := strings.TrimSpace(string(output))
+	if path == "" {
+		return PickFolderResult{Cancelled: true}, nil
+	}
+	if err := requireAbsolutePath(path); err != nil {
+		return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
+	}
+	return PickFolderResult{Path: filepath.Clean(path)}, nil
+}
+
 // buildPickerScript returns a PowerShell one-liner that opens a WinForms file
 // dialog. On cancel the script exits with code 1 (recognised by commandCancelled).
 func buildPickerScript(request PickFilesRequest, initialDir string) string {

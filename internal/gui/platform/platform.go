@@ -9,6 +9,7 @@ import "context"
 // whenever they need only one capability.
 type Backend interface {
 	FolderOpener
+	FolderPicker
 	FilePicker
 	Prompter
 	Notifier
@@ -51,6 +52,20 @@ type FolderOpener interface {
 
 type FilePicker interface {
 	PickFiles(ctx context.Context, request PickFilesRequest) (PickFilesResult, error)
+}
+
+type FolderPicker interface {
+	PickFolder(ctx context.Context, request PickFolderRequest) (PickFolderResult, error)
+}
+
+type PickFolderRequest struct {
+	Title      string
+	InitialDir string
+}
+
+type PickFolderResult struct {
+	Path      string
+	Cancelled bool
 }
 
 type Notifier interface {

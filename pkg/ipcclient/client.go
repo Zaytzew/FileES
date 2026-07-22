@@ -184,6 +184,15 @@ func (c *Client) RepoList(ctx context.Context) (*contract.RepoListResult, error)
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
+func (c *Client) RepoCreateRequest(ctx context.Context, payload contract.RepoCreateRequestPayload) (*contract.RepoLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoCreateRequest, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoStatus(ctx context.Context, repoID string) (*contract.RepoStatus, error) {
 	resp, err := c.do(ctx, contract.CmdRepoStatus, repoID, nil)
 	if err != nil {

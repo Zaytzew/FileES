@@ -741,7 +741,7 @@ func authGrantFor(op Operation) AuthGrant {
 func activationGrantFor(op Operation) ActivationGrant {
 	return ActivationGrant{
 		OperationID: op.OperationID, ClientID: op.ClientID, RealmID: op.ApprovedPolicy.RealmID,
-		DeployRequestID: op.DeployRequestID, InstallationPublicKey: op.InstallationPublicKey,
+		Kind: op.ApprovedPolicy.Kind, DeployRequestID: op.DeployRequestID, InstallationPublicKey: op.InstallationPublicKey,
 		InstallationFingerprint: op.InstallationFingerprint, ExpiresAt: op.ExpiresAt,
 	}
 }
@@ -1276,6 +1276,11 @@ func validDomain(value string) bool {
 func validatePolicy(policy Policy) error {
 	if _, err := uuid.Parse(policy.RealmID); err != nil {
 		return errors.New("policy realm_id must be a UUID")
+	}
+	switch policy.Kind {
+	case "", KindDesktop, KindMobile:
+	default:
+		return errors.New("policy kind must be \"desktop\" or \"mobile\"")
 	}
 	return nil
 }

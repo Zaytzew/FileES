@@ -115,6 +115,74 @@ func TestExpiredStagingIsFailClosedAndRemovedFromRuntimeAccess(t *testing.T) {
 	}
 }
 
+func TestRenderAccessLockedBranchesOnKind(t *testing.T) {
+	manager, config := newActivationTestManager(t)
+	config.MobileEntryPath = "/usr/local/libexec/filees/filees-mobile-v1"
+	manager, err := New(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	desktop := testActivationGrant(t, time.Now().Add(time.Hour))
+	if err := manager.Stage(desktop); err != nil {
+		t.Fatal(err)
+	}
+	mobile := testActivationGrant(t, time.Now().Add(time.Hour))
+	mobile.Kind = onboarding.KindMobile
+	if err := manager.Stage(mobile); err != nil {
+		t.Fatal(err)
+	}
+
+	keys, err := os.ReadFile(config.AuthorizedKeysFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(keys), `restrict,command="`+config.ClientEntryPath+" "+desktop.OperationID+" "+desktop.ClientID+`"`) {
+		t.Fatalf("desktop (empty Kind) command line missing or wrong: %s", keys)
+	}
+	if !strings.Contains(string(keys), `restrict,command="`+config.MobileEntryPath+" "+mobile.OperationID+" "+mobile.ClientID+`"`) {
+		t.Fatalf("mobile command line missing or wrong: %s", keys)
+	}
+
+	// Mobile records still get an authz stanza too (deliberate, see
+	// concepts/FILEES_ANDROID_CLIENT_CONCEPT_V2.md S3.1 - harmless and not
+	// worth filtering).
+	authz, err := os.ReadFile(config.AuthzFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(authz), mobile.ClientID+" = r") {
+		t.Fatalf("mobile client missing from authz: %s", authz)
+	}
+}
+
+func TestRenderAccessLockedRequiresMobileEntryPathConfigured(t *testing.T) {
+	manager, _ := newActivationTestManager(t)
+	grant := testActivationGrant(t, time.Now().Add(time.Hour))
+	grant.Kind = onboarding.KindMobile
+	if err := manager.Stage(grant); err == nil {
+		t.Fatal("staged a mobile record with mobile_entry_path unconfigured")
+	}
+}
+
+func TestSameGrantRejectsMismatchedKind(t *testing.T) {
+	manager, config := newActivationTestManager(t)
+	config.MobileEntryPath = "/usr/local/libexec/filees/filees-mobile-v1"
+	manager, err := New(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := testActivationGrant(t, time.Now().Add(time.Hour))
+	if err := manager.Stage(grant); err != nil {
+		t.Fatal(err)
+	}
+	resumed := grant
+	resumed.Kind = onboarding.KindMobile
+	if err := manager.Stage(resumed); err == nil {
+		t.Fatal("resume with a different Kind than the original stage was accepted")
+	}
+}
+
 func newActivationTestManager(t *testing.T) (*Manager, Config) {
 	t.Helper()
 	svn, err := exec.LookPath("svn")

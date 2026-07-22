@@ -30,8 +30,20 @@ var (
 	ErrMailAttempt       = errors.New("mail outbox attempt mismatch")
 )
 
+// Kind values for Policy.Kind. Empty (the zero value, used by every ticket
+// and operation persisted before this field existed) means KindDesktop.
+const (
+	KindDesktop = "desktop"
+	KindMobile  = "mobile"
+)
+
 type Policy struct {
 	RealmID string `json:"realm_id"`
+	// Kind selects which forced-command class an activated installation
+	// binds to (pkg/activation.renderAccessLocked). Empty means KindDesktop,
+	// for backward compatibility with tickets/operations persisted before
+	// this field existed.
+	Kind string `json:"kind,omitempty"`
 }
 
 type Ticket struct {
@@ -150,6 +162,7 @@ type ActivationGrant struct {
 	OperationID             string
 	ClientID                string
 	RealmID                 string
+	Kind                    string
 	DeployRequestID         string
 	InstallationPublicKey   string
 	InstallationFingerprint string

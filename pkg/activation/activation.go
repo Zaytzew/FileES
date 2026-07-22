@@ -39,16 +39,24 @@ type Config struct {
 	ServiceRepository  string
 	RepositoryName     string
 	ClientEntryPath    string
-	SVNBinary          string
-	SVNServeBinary     string
+	// MobileEntryPath is the forced-command binary bound to Record.Kind ==
+	// onboarding.KindMobile installations, alongside ClientEntryPath for
+	// everything else. See renderAccessLocked.
+	MobileEntryPath string
+	SVNBinary       string
+	SVNServeBinary  string
 }
 
 type Record struct {
-	Schema                  string     `json:"schema"`
-	OperationID             string     `json:"operation_id"`
-	DeployRequestID         string     `json:"deploy_request_id"`
-	ClientID                string     `json:"client_id"`
-	RealmID                 string     `json:"realm_id"`
+	Schema          string `json:"schema"`
+	OperationID     string `json:"operation_id"`
+	DeployRequestID string `json:"deploy_request_id"`
+	ClientID        string `json:"client_id"`
+	RealmID         string `json:"realm_id"`
+	// Kind mirrors onboarding.Policy.Kind. Empty (the zero value, including
+	// every record persisted before this field existed) means
+	// onboarding.KindDesktop.
+	Kind                    string     `json:"kind,omitempty"`
 	InstallationPublicKey   string     `json:"installation_public_key"`
 	InstallationFingerprint string     `json:"installation_fingerprint"`
 	State                   string     `json:"state"`
@@ -107,6 +115,14 @@ func New(config Config, runner CommandRunner) (*Manager, error) {
 	if strings.ContainsAny(config.ClientEntryPath, "\"' \t\r\n") {
 		return nil, errors.New("activation client_entry_path cannot require shell quoting")
 	}
+	if config.MobileEntryPath != "" {
+		if !filepath.IsAbs(config.MobileEntryPath) {
+			return nil, errors.New("activation mobile_entry_path must be absolute")
+		}
+		if strings.ContainsAny(config.MobileEntryPath, "\"' \t\r\n") {
+			return nil, errors.New("activation mobile_entry_path cannot require shell quoting")
+		}
+	}
 	if runner == nil {
 		runner = ExecRunner{}
 	}
@@ -142,7 +158,7 @@ func (m *Manager) Stage(grant onboarding.ActivationGrant) error {
 		now := m.now().UTC()
 		record := Record{
 			Schema: RecordSchema, OperationID: grant.OperationID, DeployRequestID: grant.DeployRequestID,
-			ClientID: grant.ClientID, RealmID: grant.RealmID, InstallationPublicKey: canonical,
+			ClientID: grant.ClientID, RealmID: grant.RealmID, Kind: grant.Kind, InstallationPublicKey: canonical,
 			InstallationFingerprint: grant.InstallationFingerprint, State: "staged", CreatedAt: now,
 			ExpiresAt: grant.ExpiresAt.UTC(),
 		}
@@ -481,7 +497,14 @@ func (m *Manager) renderAccessLocked() error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(&keys, "restrict,command=\"%s %s %s\" %s filees:%s\n", m.config.ClientEntryPath, record.OperationID, record.ClientID, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))), record.ClientID)
+		entryPath := m.config.ClientEntryPath
+		if record.Kind == onboarding.KindMobile {
+			if m.config.MobileEntryPath == "" {
+				return fmt.Errorf("activation record %s is kind mobile but mobile_entry_path is not configured", record.ClientID)
+			}
+			entryPath = m.config.MobileEntryPath
+		}
+		fmt.Fprintf(&keys, "restrict,command=\"%s %s %s\" %s filees:%s\n", entryPath, record.OperationID, record.ClientID, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))), record.ClientID)
 		fmt.Fprintf(&authz, "%s = r\n", record.ClientID)
 	}
 	for _, record := range records {
@@ -539,7 +562,7 @@ func validateGrant(grant onboarding.ActivationGrant) (string, error) {
 
 func sameGrant(record Record, grant onboarding.ActivationGrant, canonical string) bool {
 	return record.OperationID == grant.OperationID && record.DeployRequestID == grant.DeployRequestID &&
-		record.ClientID == grant.ClientID && record.RealmID == grant.RealmID &&
+		record.ClientID == grant.ClientID && record.RealmID == grant.RealmID && record.Kind == grant.Kind &&
 		record.InstallationPublicKey == canonical && record.InstallationFingerprint == grant.InstallationFingerprint
 }
 

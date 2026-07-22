@@ -84,7 +84,7 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak repozytoriów"))
 	}
 	for _, repo := range server.Repos {
-		children = append(children, repoMenu(vm, server, repo))
+		children = append(children, repoMenu(repo))
 	}
 	return MenuItemModel{ID: "server." + server.ID, Title: name, Enabled: true, Children: children}
 }
@@ -110,38 +110,19 @@ func lastRefreshLabel(vm app.ViewModel) string {
 	return label
 }
 
-func repoMenu(vm app.ViewModel, server app.ServerViewModel, repo app.RepoViewModel) MenuItemModel {
+func repoMenu(repo app.RepoViewModel) MenuItemModel {
 	name := repo.DisplayName
 	if strings.TrimSpace(name) == "" {
 		name = repo.ID
 	}
 	title := fmt.Sprintf("%s — %s", name, repoStateLabel(repo))
-	pending := repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted
-	children := []MenuItemModel{
-		disabledItem("repo."+repo.ID+".state", "Stan: "+repoStateLabel(repo)),
-		disabledItem("repo."+repo.ID+".revision", fmt.Sprintf("Rewizja: %d / %d", repo.LocalRev, repo.HeadRev)),
-		disabledItem("repo."+repo.ID+".pending", fmt.Sprintf("Oczekujące zmiany: %d", pending)),
-		separator("repo." + repo.ID + ".sep.actions"),
+	item := disabledItem("repo."+repo.ID, title)
+	item.Tooltip = repo.LocalPath
+	if repo.Attached && strings.TrimSpace(repo.LocalPath) != "" {
+		item.Enabled = true
+		item.Intent = &Intent{Kind: IntentOpenFolder, RepoID: repo.ID}
 	}
-	open := actionItem("repo."+repo.ID+".open", "Otwórz katalog", repo.LocalPath,
-		Intent{Kind: IntentOpenFolder, RepoID: repo.ID})
-	if strings.TrimSpace(repo.LocalPath) == "" {
-		open.Enabled = false
-		open.Intent = nil
-	}
-	children = append(children, open)
-	children = append(children, disabledItem("repo."+repo.ID+".access", "Dostęp: "+accessLabel(repo.Access)))
-	children = append(children, disabledItem("repo."+repo.ID+".ownership", "Repozytorium: "+ownershipLabel(server, repo)))
-	children = append(children, disabledItem("repo."+repo.ID+".policy", "Podłączenie: "+attachmentPolicyLabel(repo.AttachmentPolicy)))
-	if vm.CanMutateLock() && repo.CanWrite() {
-		children = append(children, actionItem("repo."+repo.ID+".lock", "Zablokuj pliki…", "Wybierz pliki do zablokowania",
-			Intent{Kind: IntentLock, RepoID: repo.ID}))
-	}
-	if vm.CanMutateUnlock() && repo.CanWrite() {
-		children = append(children, actionItem("repo."+repo.ID+".unlock", "Odblokuj pliki…", "Wybierz pliki do odblokowania",
-			Intent{Kind: IntentUnlock, RepoID: repo.ID}))
-	}
-	return MenuItemModel{ID: "repo." + repo.ID, Title: title, Enabled: true, Children: children}
+	return item
 }
 
 func ownershipLabel(server app.ServerViewModel, repo app.RepoViewModel) string {

@@ -56,7 +56,7 @@ func TestBuildMenuHidesUpdateWhenCurrent(t *testing.T) {
 	}
 }
 
-func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
+func TestBuildMenuShowsRepositoryAsCompactOpenFolderRow(t *testing.T) {
 	operation := "commit"
 	vm := app.ViewModel{
 		Connected: true,
@@ -66,7 +66,7 @@ func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
 			contract.CapErrorList: true,
 		},
 		Repos: []app.RepoViewModel{{
-			ID: "projectA", Access: contract.AccessReadWrite, LocalPath: "/wc/projectA", State: contract.StateActive,
+			ID: "projectA", Attached: true, Access: contract.AccessReadWrite, LocalPath: "/wc/projectA", State: contract.StateActive,
 			Connectivity: contract.ConnOnline, LocalRev: 41, HeadRev: 42,
 			Pending: contract.PendingStats{Added: 1, Modified: 2, Deleted: 3}, CurrentOp: &operation,
 		}},
@@ -77,15 +77,8 @@ func TestBuildMenuRepoDetailsAndCapabilityGating(t *testing.T) {
 	if repo.Title != "projectA — Praca w toku" {
 		t.Fatalf("repo title = %q", repo.Title)
 	}
-	if got := findItem(t, repo.Children, "repo.projectA.pending").Title; got != "Oczekujące zmiany: 6" {
-		t.Fatalf("pending title = %q", got)
-	}
-	lock := findItem(t, repo.Children, "repo.projectA.lock")
-	if lock.Intent == nil || lock.Intent.Kind != IntentLock || lock.Intent.RepoID != "projectA" {
-		t.Fatalf("lock item = %#v", lock)
-	}
-	if hasItem(repo.Children, "repo.projectA.unlock") {
-		t.Fatal("unlock must be hidden without repo.unlock capability")
+	if len(repo.Children) != 0 || repo.Intent == nil || repo.Intent.Kind != IntentOpenFolder || repo.Intent.RepoID != "projectA" || repo.Tooltip != "/wc/projectA" {
+		t.Fatalf("compact repository row = %#v", repo)
 	}
 	if !hasItem(menu.Items, "errors") {
 		t.Fatal("errors menu missing despite error.list capability")
@@ -151,18 +144,15 @@ func TestBuildMenuUnknownStateHasSafeFallback(t *testing.T) {
 }
 
 func TestBuildMenuGroupsReadOnlyRepoUnderActiveServer(t *testing.T) {
-	repo := app.RepoViewModel{ID: "archive", ServerID: "office", Access: contract.AccessReadOnly, LocalPath: "/wc/archive", State: contract.StateActive}
+	repo := app.RepoViewModel{ID: "archive", ServerID: "office", Attached: true, Access: contract.AccessReadOnly, LocalPath: "/wc/archive", State: contract.StateActive}
 	menu := BuildMenu(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoLock: true}, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", ClientRole: contract.ClientRoleNormal, Repos: []app.RepoViewModel{repo}}}})
 	server := findItem(t, menu.Items, "server.office")
 	if server.Title != "filees.example.net" {
 		t.Fatalf("server title=%q", server.Title)
 	}
 	repoMenu := findItem(t, server.Children, "repo.archive")
-	if got := findItem(t, repoMenu.Children, "repo.archive.access").Title; got != "Dostęp: tylko odczyt" {
-		t.Fatalf("access=%q", got)
-	}
-	if hasItem(repoMenu.Children, "repo.archive.lock") {
-		t.Fatal("read-only repo exposes lock")
+	if len(repoMenu.Children) != 0 || repoMenu.Intent == nil || repoMenu.Intent.Kind != IntentOpenFolder {
+		t.Fatalf("read-only repository row=%#v", repoMenu)
 	}
 }
 
@@ -199,14 +189,8 @@ func TestBuildMenuShowsProjectedUnattachedRepositoryByDisplayName(t *testing.T) 
 	if item.Title != "Dokumenty wspólne — Nieprzypięte lokalnie" {
 		t.Fatalf("title=%q", item.Title)
 	}
-	if findItem(t, item.Children, "repo.repo-uuid.open").Enabled {
-		t.Fatal("unattached repository exposes open-folder action")
-	}
-	if got := findItem(t, item.Children, "repo.repo-uuid.ownership").Title; got != "Repozytorium: udostępnione" {
-		t.Fatalf("ownership=%q", got)
-	}
-	if got := findItem(t, item.Children, "repo.repo-uuid.policy").Title; got != "Podłączenie: wymagane przez serwer" {
-		t.Fatalf("policy=%q", got)
+	if item.Enabled || item.Intent != nil || len(item.Children) != 0 {
+		t.Fatalf("unattached repository must be a compact disabled row: %#v", item)
 	}
 }
 

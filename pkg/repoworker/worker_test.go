@@ -40,6 +40,25 @@ func (c *fakeCapacity) Check(context.Context, int64) (int64, int64, error) {
 	return c.available, c.required, nil
 }
 
+func TestFormatBytesRendersHumanReadableMagnitudes(t *testing.T) {
+	cases := []struct {
+		n    int64
+		want string
+	}{
+		{0, "0 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KiB"},
+		{187424908, "178.7 MiB"},
+		{118276096, "112.8 MiB"},
+		{1 << 30, "1.0 GiB"},
+	}
+	for _, c := range cases {
+		if got := formatBytes(c.n); got != c.want {
+			t.Errorf("formatBytes(%d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+}
+
 func TestWorkerStoragePreflightHardRefusalAndDurableSuccess(t *testing.T) {
 	session := Session{ClientID: "client", RealmID: uuid.NewString(), CanCreateRepositories: true}
 	newTicket := func() control.Ticket {
@@ -57,6 +76,9 @@ func TestWorkerStoragePreflightHardRefusalAndDurableSuccess(t *testing.T) {
 	}
 	if result.Error.Details["available_bytes"] != "99" || result.Error.Details["required_bytes"] != "100" {
 		t.Fatalf("refusal details=%v", result.Error.Details)
+	}
+	if result.Error.Message != "server storage requires 100 B, 99 B available" {
+		t.Fatalf("refusal message should be human-readable, got %q", result.Error.Message)
 	}
 
 	capacity := &fakeCapacity{available: 1000, required: 300}

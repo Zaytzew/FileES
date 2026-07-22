@@ -27,21 +27,23 @@ const (
 	StatePolicyPending  State = "policy_pending"
 	StateAttaching      State = "attaching"
 	StateAttached       State = "attached"
+	StateRelocating     State = "relocating"
 	StateError          State = "error"
 )
 
 type Record struct {
-	OperationID string    `json:"operation_id"`
-	ServerID    string    `json:"server_id"`
-	RepoID      string    `json:"repo_id,omitempty"`
-	RepoURL     string    `json:"repo_url,omitempty"`
-	Access      string    `json:"access,omitempty"`
-	DisplayName string    `json:"display_name,omitempty"`
-	LocalPath   string    `json:"local_path"`
-	State       State     `json:"state"`
-	LastError   string    `json:"last_error,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	OperationID      string    `json:"operation_id"`
+	ServerID         string    `json:"server_id"`
+	RepoID           string    `json:"repo_id,omitempty"`
+	RepoURL          string    `json:"repo_url,omitempty"`
+	Access           string    `json:"access,omitempty"`
+	DisplayName      string    `json:"display_name,omitempty"`
+	LocalPath        string    `json:"local_path"`
+	PendingLocalPath string    `json:"pending_local_path,omitempty"`
+	State            State     `json:"state"`
+	LastError        string    `json:"last_error,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type document struct {
@@ -179,6 +181,68 @@ func (s *Store) MarkError(operationID string, cause error) (Record, error) {
 	})
 }
 
+func (s *Store) BeginRelocation(serverID, repoID, newLocalPath string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	newLocalPath = filepath.Clean(newLocalPath)
+	var operationID string
+	for id, record := range s.records {
+		if record.ServerID == serverID && record.RepoID == repoID {
+			operationID = id
+			break
+		}
+	}
+	if operationID == "" {
+		return Record{}, os.ErrNotExist
+	}
+	record := s.records[operationID]
+	if record.State == StateRelocating && record.PendingLocalPath == newLocalPath {
+		return record, nil
+	}
+	if record.State != StateAttached {
+		return Record{}, errors.New("only an attached repository can be relocated")
+	}
+	if !filepath.IsAbs(newLocalPath) || newLocalPath == string(filepath.Separator) || pathsOverlap(record.LocalPath, newLocalPath) {
+		return Record{}, errors.New("relocation target must be an absolute disjoint non-root path")
+	}
+	for id, existing := range s.records {
+		if id != operationID && pathsOverlap(existing.LocalPath, newLocalPath) {
+			return Record{}, errors.New("relocation target overlaps another FileES repository root")
+		}
+	}
+	before := record
+	record.State, record.PendingLocalPath, record.LastError, record.UpdatedAt = StateRelocating, newLocalPath, "", s.now().UTC()
+	if err := validate(record); err != nil {
+		return Record{}, err
+	}
+	s.records[operationID] = record
+	if err := s.persist(); err != nil {
+		s.records[operationID] = before
+		return Record{}, err
+	}
+	return record, nil
+}
+
+func (s *Store) CompleteRelocation(operationID string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateRelocating || record.PendingLocalPath == "" {
+			return errors.New("repository relocation is not in progress")
+		}
+		record.LocalPath, record.PendingLocalPath, record.State, record.LastError = record.PendingLocalPath, "", StateAttached, ""
+		return nil
+	})
+}
+
+func (s *Store) FailRelocation(operationID string, cause error) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateRelocating || cause == nil || strings.TrimSpace(cause.Error()) == "" {
+			return errors.New("active relocation and failure are required")
+		}
+		record.State, record.PendingLocalPath, record.LastError = StateAttached, "", cause.Error()
+		return nil
+	})
+}
+
 func (s *Store) update(operationID string, mutate func(*Record) error) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -245,9 +309,16 @@ func validate(r Record) error {
 		}
 	}
 	switch r.State {
-	case StateRequestPending, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateError:
+	case StateRequestPending, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateError:
 	default:
 		return errors.New("local repository lifecycle state is invalid")
+	}
+	if r.State == StateRelocating {
+		if !filepath.IsAbs(r.PendingLocalPath) || r.PendingLocalPath == string(filepath.Separator) || pathsOverlap(r.LocalPath, r.PendingLocalPath) {
+			return errors.New("repository relocation target is invalid")
+		}
+	} else if r.PendingLocalPath != "" {
+		return errors.New("repository relocation target exists outside relocation")
 	}
 	if r.CreatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) {
 		return errors.New("local repository lifecycle timestamps are invalid")

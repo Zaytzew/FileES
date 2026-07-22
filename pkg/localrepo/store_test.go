@@ -87,6 +87,30 @@ func TestStoreRequiresMatchingApprovalBeforeAttachment(t *testing.T) {
 	}
 }
 
+func TestStoreRelocationIsDurableAndKeepsOldPathOnFailure(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPath, newPath := filepath.Join(t.TempDir(), "old"), filepath.Join(t.TempDir(), "new")
+	record, _ := store.BeginAttach("primary", "repo-1", oldPath, false)
+	_, _ = store.ApproveAttach(record.OperationID, "primary", "repo-1", "svn+ssh://_filees-client@example/repo", "rw")
+	_, _ = store.MarkAttached(record.OperationID, "repo-1")
+	relocating, err := store.BeginRelocation("primary", "repo-1", newPath)
+	if err != nil || relocating.State != StateRelocating || relocating.LocalPath != oldPath || relocating.PendingLocalPath != newPath {
+		t.Fatalf("relocating=%+v err=%v", relocating, err)
+	}
+	failed, err := store.FailRelocation(record.OperationID, os.ErrPermission)
+	if err != nil || failed.State != StateAttached || failed.LocalPath != oldPath || failed.PendingLocalPath != "" || failed.LastError == "" {
+		t.Fatalf("failed=%+v err=%v", failed, err)
+	}
+	_, _ = store.BeginRelocation("primary", "repo-1", newPath)
+	completed, err := store.CompleteRelocation(record.OperationID)
+	if err != nil || completed.State != StateAttached || completed.LocalPath != newPath || completed.PendingLocalPath != "" {
+		t.Fatalf("completed=%+v err=%v", completed, err)
+	}
+}
+
 func TestStoreRejectsDuplicateRepoAndOverlappingRoots(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

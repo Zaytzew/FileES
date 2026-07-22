@@ -105,6 +105,8 @@ type ActivationStatus struct {
 	ClientID              string `json:"client_id,omitempty"`
 	SSHPort               int    `json:"ssh_port,omitempty"`
 	CanCreateRepositories bool   `json:"can_create_repositories"`
+	RepositoriesReady     bool   `json:"repositories_ready"`
+	PendingRequiredRepos  int    `json:"pending_required_repositories"`
 }
 
 type ActivationBeginPayload struct {

@@ -63,6 +63,25 @@ func TestInitializingProjectionDoesNotStartAttachedPipeline(t *testing.T) {
 	}
 }
 
+func TestRepositoryReadinessRequiresEveryActiveRequiredAttachment(t *testing.T) {
+	serverID := "office"
+	required := "00000000-0000-0000-0000-000000000001"
+	view := clientview.View{Repositories: []clientview.Repository{
+		{RepoID: required, State: "active", AttachmentPolicy: "required"},
+		{RepoID: "00000000-0000-0000-0000-000000000002", State: "active", AttachmentPolicy: "optional"},
+		{RepoID: "00000000-0000-0000-0000-000000000003", State: "disabled", AttachmentPolicy: "required"},
+	}}
+	ready, pending := repositoryReadiness(serverID, view, nil)
+	if ready || pending != 1 {
+		t.Fatalf("readiness=%v pending=%d", ready, pending)
+	}
+	attachments := map[reposupervisor.Key]repoRuntime{{ServerID: serverID, RepoID: required}: {}}
+	ready, pending = repositoryReadiness(serverID, view, attachments)
+	if !ready || pending != 0 {
+		t.Fatalf("attached readiness=%v pending=%d", ready, pending)
+	}
+}
+
 func TestReconcileProjectedViewChangesLiveAuthority(t *testing.T) {
 	serverID := "office"
 	key := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000001"}

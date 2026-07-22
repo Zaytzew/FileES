@@ -35,4 +35,20 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, Attached: attached})
 	}
 	ipc.ReconcileProjectedRepos(serverID, projected)
+	ready, pending := repositoryReadiness(serverID, view, attachments)
+	ipc.SetActivationRepositoryReadiness(serverID, ready, pending)
+}
+
+func repositoryReadiness(serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime) (bool, int) {
+	pending := 0
+	for _, repo := range view.Repositories {
+		if repo.AttachmentPolicy != "required" || repo.State != "active" {
+			continue
+		}
+		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
+		if _, attached := attachments[key]; !attached {
+			pending++
+		}
+	}
+	return pending == 0, pending
 }

@@ -174,6 +174,13 @@ func (c *execClient) Update(ctx context.Context, localPath string) (string, erro
 	return c.run(ctx, localPath, []string{"update", "."})
 }
 
+// Revert removes local scheduling metadata for selected paths. It is kept off
+// the broad Client interface because only restart recovery needs it.
+func (c *execClient) Revert(ctx context.Context, rootDirectory string, paths []string) (string, error) {
+	args := append([]string{"revert"}, c.relativize(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, args)
+}
+
 func (c *execClient) UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string) (string, error) {
 	args := append([]string{"update", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)

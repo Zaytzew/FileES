@@ -66,7 +66,7 @@ func TestDaemonProvisionerRestoresActiveAttachmentWithoutNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	attachments := make(chan provisionedAttachment, 1)
+	attachments := make(chan provisionedAttachment, 2)
 	profile := clientprofile.Profile{ServerID: "office", DisplayName: "Office", ClientID: clientID, IdentityFile: "/identity", KnownHosts: "/known"}
 	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
 	provisioner.attachments = attachments
@@ -246,7 +246,7 @@ func TestOpenBSDAttachmentE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attachments := make(chan provisionedAttachment, 1)
+	attachments := make(chan provisionedAttachment, 2)
 	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
 	provisioner.attachments = attachments
 	provisioner.runOne(context.Background(), record.OperationID)
@@ -264,6 +264,37 @@ func TestOpenBSDAttachmentE2E(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(wc, "e2e.txt")); err != nil {
 		t.Fatalf("checked-out repository content: %v", err)
+	}
+	relocatedWC := filepath.Join(root, "relocated-wc")
+	record, err = local.BeginRelocation(profile.ServerID, repoID, relocatedWC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiesced := make(chan struct{})
+	go func() {
+		defer close(quiesced)
+		event := <-attachments
+		if !event.Quiesce {
+			t.Errorf("relocation did not request runtime quiesce: %+v", event)
+			return
+		}
+		event.Result <- nil
+	}()
+	provisioner.runOne(context.Background(), record.OperationID)
+	<-quiesced
+	got, _ = local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached || got.LocalPath != relocatedWC || got.PendingLocalPath != "" {
+		t.Fatalf("relocated state=%+v", got)
+	}
+	relocated := <-attachments
+	if relocated.Quiesce || relocated.Repo.LocalPath != relocatedWC || relocated.Repo.Access != "r" {
+		t.Fatalf("relocated runtime=%+v", relocated)
+	}
+	if _, err := os.Stat(filepath.Join(relocatedWC, "e2e.txt")); err != nil {
+		t.Fatalf("relocated repository content: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(wc, "e2e.txt")); err != nil {
+		t.Fatalf("old working copy was not preserved: %v", err)
 	}
 }
 

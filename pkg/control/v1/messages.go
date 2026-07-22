@@ -75,8 +75,9 @@ type StoragePreflightPayload struct {
 	Paths        int   `json:"paths"`
 }
 type StoragePreflightResult struct {
-	AvailableBytes int64 `json:"available_bytes"`
-	RequiredBytes  int64 `json:"required_bytes"`
+	AvailableBytes       int64  `json:"available_bytes"`
+	RequiredBytes        int64  `json:"required_bytes"`
+	ReservationExpiresAt string `json:"reservation_expires_at,omitempty"`
 }
 
 func NewTicket(operationID, requestID string, typ TicketType, clientID string, payload any, now time.Time) (Ticket, error) {
@@ -218,6 +219,11 @@ func validateSuccessPayload(r Result) error {
 		}
 		if result.AvailableBytes < 0 || result.RequiredBytes < 0 {
 			return errors.New("STORAGE_PREFLIGHT result sizes cannot be negative")
+		}
+		if result.ReservationExpiresAt != "" {
+			if _, err := time.Parse(time.RFC3339Nano, result.ReservationExpiresAt); err != nil {
+				return fmt.Errorf("invalid STORAGE_PREFLIGHT reservation expiry: %w", err)
+			}
 		}
 	case TicketCreateRepository:
 		var result CreateRepositoryResult

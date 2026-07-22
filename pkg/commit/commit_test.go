@@ -771,3 +771,76 @@ func TestTryCommitRechecksAddedFileAfterStatus(t *testing.T) {
 		t.Fatalf("SVN called after file disappeared: adds=%d commits=%d", cli.adds, cli.commits)
 	}
 }
+
+func TestModifiedDebounceWithholdsCommitDuringQuietWindow(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "edited.txt")
+	if err := os.WriteFile(abs, []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := &stagingClient{statuses: map[string]string{"edited.txt": "modified"}}
+	s := &Service{
+		Cli:   cli,
+		Rules: Rules{ModifiedQuiet: time.Minute, ModifiedMaxWait: time.Hour, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		staging: map[string]*stageItem{
+			"edited.txt": {Rel: "edited.txt", Abs: abs, Op: watcher.Modified, FirstSeen: time.Now().Add(-time.Second), LastSeen: time.Now().Add(-time.Second)},
+		},
+	}
+	if err := s.tryCommit(context.Background(), wc); err != nil {
+		t.Fatal(err)
+	}
+	if cli.commits != 0 {
+		t.Fatalf("commits=%d, want 0 (still inside the quiet window since the last write)", cli.commits)
+	}
+	if len(s.staging) != 1 {
+		t.Fatalf("staging=%#v, want the entry preserved for a later retry", s.staging)
+	}
+}
+
+func TestModifiedDebounceCommitsAfterQuietWindowElapses(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "edited.txt")
+	if err := os.WriteFile(abs, []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := &stagingClient{statuses: map[string]string{"edited.txt": "modified"}}
+	s := &Service{
+		Cli:   cli,
+		Rules: Rules{ModifiedQuiet: time.Minute, ModifiedMaxWait: time.Hour, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		staging: map[string]*stageItem{
+			"edited.txt": {Rel: "edited.txt", Abs: abs, Op: watcher.Modified, FirstSeen: time.Now().Add(-2 * time.Minute), LastSeen: time.Now().Add(-2 * time.Minute)},
+		},
+	}
+	if err := s.tryCommit(context.Background(), wc); err != nil {
+		t.Fatal(err)
+	}
+	if cli.commits != 1 {
+		t.Fatalf("commits=%d, want 1 (quiet window since the last write has elapsed)", cli.commits)
+	}
+}
+
+func TestModifiedHardCeilingForcesCommitDespiteContinuousWrites(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "edited.txt")
+	if err := os.WriteFile(abs, []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := &stagingClient{statuses: map[string]string{"edited.txt": "modified"}}
+	s := &Service{
+		Cli:   cli,
+		Rules: Rules{ModifiedQuiet: 2 * time.Minute, ModifiedMaxWait: 5 * time.Minute, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		staging: map[string]*stageItem{
+			// A relay of writes: LastSeen is recent (as if the user just saved
+			// again, inside the quiet window), but FirstSeen is old enough to
+			// cross ModifiedMaxWait. Without the hard ceiling, a fast enough
+			// relay of saves would never let this commit at all.
+			"edited.txt": {Rel: "edited.txt", Abs: abs, Op: watcher.Modified, FirstSeen: time.Now().Add(-6 * time.Minute), LastSeen: time.Now().Add(-time.Second)},
+		},
+	}
+	if err := s.tryCommit(context.Background(), wc); err != nil {
+		t.Fatal(err)
+	}
+	if cli.commits != 1 {
+		t.Fatalf("commits=%d, want 1 (hard ceiling from the first unconfirmed write must force the commit)", cli.commits)
+	}
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FileES</string>
+
+    <string name="section_activation">Aktywacja</string>
+    <string name="hint_alias">Alias</string>
+    <string name="hint_address">Adres serwera FileES (host:port)</string>
+    <string name="hint_host_public_key">Host key serwera (ssh-ed25519 AAAA…)</string>
+    <string name="action_activate">Aktywuj klienta na nowym serwerze…</string>
+    <string name="label_device_public_key">Klucz publiczny tego urządzenia (do zatwierdzenia po stronie serwera):</string>
+
+    <string name="section_repository">Repozytorium</string>
+    <string name="hint_repo_id">ID repozytorium</string>
+    <string name="action_refresh">Odśwież</string>
+
+    <string name="status_idle">Nieaktywny. Wprowadź dane serwera i naciśnij „%1$s”.</string>
+    <string name="status_activating">Aktywowanie…</string>
+    <string name="status_activated">Aktywny: %1$s (%2$s)</string>
+    <string name="status_refreshing">Odświeżanie…</string>
+    <string name="status_error">Błąd: %1$s</string>
+</resources>

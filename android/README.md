@@ -1,4 +1,4 @@
-# FileES Android client — Etap 6 skeleton
+# FileES Android client — Etap 6
 
 This is the Kotlin/Gradle side of the mobile client from
 `concepts/FILEES_ANDROID_CLIENT_CONCEPT_V2.md`. The Go core (protocol,
@@ -13,8 +13,20 @@ built and verified.
 
 - `app/src/main/java/net/filees/mobile/ManifestCacheProvider.kt` — a
   read-only `content://` provider over the local manifest cache
-  (`androidbind.Store`). No Activity yet; this is the first Etap 6 slice from
-  `SESSION_HANDOFF.md` §17's resumption list.
+  (`androidbind.Store`), `exported=false`.
+- `app/src/main/java/net/filees/mobile/MainActivity.kt` — the activation +
+  repository screen. **This is a direct-connect placeholder for the real
+  onboarding flow**: concept doc §4.2 wants ticket + OTP + reverse-tunnel
+  activation exactly like the desktop daemon's push deploy, and that Go-side
+  protocol doesn't exist yet for mobile (only the desktop `pkg/deploy`
+  helper/worker dance does). Building an OTP screen against a backend call
+  that doesn't exist would just be UI to throw away later, so "activation"
+  here means: the device generates its own persistent identity (as it always
+  would), the operator pins the server address + host key by hand, and the
+  resulting device public key is shown to authorize server-side by hand
+  (today; see the `_filees-mobile` stub authority in `SESSION_HANDOFF.md`
+  §17). The OTP screen slots in later, in front of this same
+  `androidbind.Client` wiring, once the real protocol exists.
 - `app/libs/filees-androidbind.aar` — **a build artifact, not source. Not
   committed to SVN.** Regenerate it whenever `pkg/mobileclient/androidbind`
   (or anything it depends on) changes; see below.
@@ -80,3 +92,37 @@ query` against it correctly gets a `SecurityException` — that's the intended
 through the "external" provider-access path (which even `run-as` can't
 satisfy), so exercising the provider's actual query logic needs an in-app
 caller (instrumented test or an Activity) once one exists.
+
+## Verified real end-to-end on-device (2026-07-22)
+
+With `MainActivity`, the whole chain has been driven for real from the
+emulator, not just built: entered `10.0.2.2:2222` (the Android emulator's
+alias for the host's loopback — **not** `127.0.0.1`, which is the emulator's
+own loopback) and the lab VM's pinned host key, tapped "Aktywuj klienta na
+nowym serwerze…", got the device's freshly generated Ed25519 public key back
+in the UI. First "Odśwież" attempt correctly surfaced
+`sshtransport: handshake: ... "Too many authentication failures"` — the
+freshly generated device key wasn't registered yet, exactly as it shouldn't
+be. After adding that device's key to the VM's `_filees-mobile` authorized_keys
+and a grant entry (same additive process as the Etap 4b test device), a
+second "Odśwież" returned the real manifest: `revision=2 generation=1`,
+`photos/a.jpg (6 B)`, `photos/e2e-real.txt (21 B)` — matching the file
+uploaded during the Etap 4b Go-only end-to-end test exactly.
+
+Practical notes from driving the UI over `adb` for this test:
+- Use `adb shell uiautomator dump` to get exact view `bounds` rather than
+  guessing tap coordinates from a screenshot — screenshots don't reliably
+  tell you where a view boundary actually is once layout has reflowed (e.g.
+  a multi-line field growing).
+- Loop many `input keyevent`/`input tap` calls **inside one `adb shell`
+  invocation** (`adb shell "for i in ...; do input keyevent 67; done"`), not
+  as separate `adb shell` processes per keystroke — the latter is slow
+  enough under load that keystrokes get dropped or land after the field
+  loses focus.
+- `adb shell input text` truncates long strings unpredictably; split long
+  text (like a pasted SSH key) into several `input text` calls.
+- A fresh `google_apis_playstore` system image is very noisy on first boot
+  (Play Store/GMS background sync, Chimera module downloads) and will throw
+  a string of unrelated `*isn't responding*` ANRs for `system_server`,
+  the launcher, and SystemUI in the first few minutes — none of that is
+  about this app; wait it out rather than debugging it.

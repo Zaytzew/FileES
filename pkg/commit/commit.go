@@ -860,23 +860,31 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	s.lastCommit = time.Now()
 	s.commitBatches.Add(1)
 
-	// head.rev + commit event
+	// head.rev + commit event. svn's free-text commit output is
+	// locale-dependent ("Zatwierdzona wersja N." in pl_PL, "Committed
+	// revision N." in en_US, ...) and must never be scraped for the
+	// authoritative revision number — on any non-English locale that scrape
+	// silently finds nothing, which used to leave every confirmed commit
+	// looking unconfirmed (activity stuck at Pending forever, head.rev never
+	// updated, EvCommitCompleted never emitted). `svn info --show-item
+	// revision` is locale-independent and already used elsewhere for exactly
+	// this reason.
 	var confirmedRevision int64
-	if rev := parseRevision(out); rev != "" {
+	if rev, revErr := s.Cli.Revision(ctx, wc); revErr != nil {
+		s.Logger.Warnf("read confirmed revision after commit: %v", revErr)
+	} else if rev > 0 {
+		confirmedRevision = rev
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
-		_ = atomicWriteString(head, rev+"\n")
-		if rev64, err := strconv.ParseInt(rev, 10, 64); err == nil {
-			confirmedRevision = rev64
-			if s.OnHeadRevision != nil {
-				s.OnHeadRevision(rev64)
-			}
-			if s.OnLastSync != nil {
-				s.OnLastSync(time.Now())
-			}
-			s.emit(contract.EvCommitCompleted, contract.CommitCompletedPayload{
-				Revision: rev64, Paths: len(commitPaths),
-			})
+		_ = atomicWriteString(head, strconv.FormatInt(rev, 10)+"\n")
+		if s.OnHeadRevision != nil {
+			s.OnHeadRevision(rev)
 		}
+		if s.OnLastSync != nil {
+			s.OnLastSync(time.Now())
+		}
+		s.emit(contract.EvCommitCompleted, contract.CommitCompletedPayload{
+			Revision: rev, Paths: len(commitPaths),
+		})
 	}
 	if confirmedRevision > 0 {
 		for _, item := range activityItems {
@@ -1222,19 +1230,6 @@ func atomicWriteJSONSlice(path string, v any) error {
 }
 
 // --- helpers ---
-
-func parseRevision(out string) string {
-	// common patterns:
-	// "Committed revision 123."
-	// "At revision 456."
-	fields := strings.Fields(out)
-	for i := 0; i+1 < len(fields); i++ {
-		if fields[i] == "revision" {
-			return strings.TrimRight(fields[i+1], ".")
-		}
-	}
-	return ""
-}
 
 func atomicWriteString(path string, data string) error {
 	d := filepath.Dir(path)

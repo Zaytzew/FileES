@@ -10,7 +10,18 @@ import (
 	"testing"
 
 	"filees/internal/gui/identity"
+	"filees/pkg/config"
 )
+
+func TestLinuxExampleConfigPassesProductionLoader(t *testing.T) {
+	repositories, err := config.Load("linux/config.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repositories) != 0 {
+		t.Fatalf("example config repositories = %d, want 0", len(repositories))
+	}
+}
 
 func TestLinuxDesktopMetadata(t *testing.T) {
 	data, err := os.ReadFile("linux/filees-gui.desktop")

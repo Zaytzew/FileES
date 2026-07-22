@@ -1,1 +1,7 @@
-[]
+{
+  "transport": {
+    "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
+    "known_hosts": "/home/user/.local/share/filees/known_hosts"
+  },
+  "repositories": []
+}

@@ -93,6 +93,11 @@ type ErrorViewModel struct {
 	Message   string
 }
 
+type ActivityViewModel struct {
+	RepoID, Path, Kind, Stage, UpdatedAt string
+	Revision                             int64
+}
+
 type UpdateViewModel struct {
 	State            string
 	CurrentVersion   string
@@ -118,6 +123,7 @@ type ViewModel struct {
 	Repos        []RepoViewModel
 	Servers      []ServerViewModel
 	Errors       []ErrorViewModel
+	Activity     []ActivityViewModel
 	Update       *UpdateViewModel
 	Icon         IconState
 }
@@ -137,10 +143,11 @@ func (vm ViewModel) HasCap(cap string) bool { return vm.Capabilities[cap] }
 // leaking capability names into tray adapters. CanMutateLock and
 // CanMutateUnlock additionally apply the live-state gate shared by presenters
 // and action controllers.
-func (vm ViewModel) CanLock() bool       { return vm.HasCap(contract.CapRepoLock) }
-func (vm ViewModel) CanUnlock() bool     { return vm.HasCap(contract.CapRepoUnlock) }
-func (vm ViewModel) CanListErrors() bool { return vm.HasCap(contract.CapErrorList) }
-func (vm ViewModel) CanMutateLock() bool { return vm.Connected && !vm.Stale && vm.CanLock() }
+func (vm ViewModel) CanLock() bool         { return vm.HasCap(contract.CapRepoLock) }
+func (vm ViewModel) CanUnlock() bool       { return vm.HasCap(contract.CapRepoUnlock) }
+func (vm ViewModel) CanListErrors() bool   { return vm.HasCap(contract.CapErrorList) }
+func (vm ViewModel) CanListActivity() bool { return vm.HasCap(contract.CapRepoActivity) }
+func (vm ViewModel) CanMutateLock() bool   { return vm.Connected && !vm.Stale && vm.CanLock() }
 func (vm ViewModel) CanMutateUnlock() bool {
 	return vm.Connected && !vm.Stale && vm.CanUnlock()
 }

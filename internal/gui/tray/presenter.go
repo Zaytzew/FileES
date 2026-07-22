@@ -37,8 +37,14 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 		}
 	}
 
+	if vm.CanListActivity() || vm.CanListErrors() {
+		model.Items = append(model.Items, separator("sep.history"))
+	}
+	if vm.CanListActivity() {
+		model.Items = append(model.Items, activityMenu(vm))
+	}
 	if vm.CanListErrors() {
-		model.Items = append(model.Items, separator("sep.errors"), errorsMenu(vm.Errors))
+		model.Items = append(model.Items, errorsMenu(vm.Errors))
 	}
 	model.Items = append(model.Items,
 		separator("sep.actions"),
@@ -47,6 +53,47 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 		actionItem("action.quit", "Zamknij GUI", "Zamknij tylko aplikację tray", Intent{Kind: IntentQuit}),
 	)
 	return model
+}
+
+func activityMenu(vm app.ViewModel) MenuItemModel {
+	names := make(map[string]string, len(vm.Repos))
+	for _, repo := range vm.Repos {
+		name := repo.DisplayName
+		if strings.TrimSpace(name) == "" {
+			name = repo.ID
+		}
+		names[repo.ID] = name
+	}
+	children := make([]MenuItemModel, 0, len(vm.Activity))
+	for i, record := range vm.Activity {
+		repo := names[record.RepoID]
+		if repo == "" {
+			repo = record.RepoID
+		}
+		title := fmt.Sprintf("%s / %s — %s", repo, record.Path, activityStageLabel(record))
+		children = append(children, disabledItem(fmt.Sprintf("activity.%d", i), title))
+	}
+	if len(children) == 0 {
+		children = append(children, disabledItem("activity.empty", "Brak ostatniej aktywności"))
+	}
+	return MenuItemModel{ID: "activity", Title: "Ostatnia aktywność", Enabled: true, Children: children}
+}
+
+func activityStageLabel(record app.ActivityViewModel) string {
+	switch record.Stage {
+	case "detected":
+		return "Wykryto lokalnie"
+	case "pending":
+		return "Oczekuje na wysłanie"
+	case "publishing":
+		return "Publikowanie"
+	case "published":
+		return fmt.Sprintf("Opublikowano · r%d", record.Revision)
+	case "failed":
+		return "Nie opublikowano"
+	default:
+		return "Stan nieznany"
+	}
 }
 
 func updateMenu(vm app.ViewModel) MenuItemModel {

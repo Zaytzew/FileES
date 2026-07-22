@@ -14,7 +14,6 @@ import (
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
-	contract "filees/pkg/contract/v1"
 )
 
 // LockUnlocker is the narrow daemon surface required by the controller.
@@ -31,8 +30,21 @@ type Activator interface {
 }
 
 type Updater interface {
-	UpdatePlan(context.Context) (*contract.UpdatePlanResult, error)
-	UpdateApply(context.Context) (*contract.UpdateApplyResult, error)
+	UpdatePlan(context.Context) (*UpdatePlan, error)
+	UpdateApply(context.Context) (*UpdateResult, error)
+}
+
+type UpdateChange struct{ Action, Path, Detail string }
+
+type UpdatePlan struct {
+	CurrentVersion, AvailableVersion, ReleaseID string
+	Changes                                     []UpdateChange
+	RestartRequired                             bool
+}
+
+type UpdateResult struct {
+	InstalledVersion string
+	RestartRequired  bool
 }
 
 type presentationError interface {
@@ -157,7 +169,7 @@ func (c *Controller) startUpdate(ctx context.Context, apply bool) {
 	}()
 }
 
-func updatePlanText(plan *contract.UpdatePlanResult) string {
+func updatePlanText(plan *UpdatePlan) string {
 	if plan == nil {
 		return "Daemon nie zwrócił planu aktualizacji."
 	}

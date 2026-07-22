@@ -166,3 +166,29 @@ func TestWorkerInitialCommitActivatesOwnerAndHasSeparateLedger(t *testing.T) {
 		t.Fatalf("replay=%+v calls=%d err=%v", second, a.calls, err)
 	}
 }
+
+func TestWorkerCarriesReservationThroughCreationAndReleasesAfterActivation(t *testing.T) {
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	opID := uuid.NewString()
+	store, _ := NewFileStore(t.TempDir())
+	capacity := &fakeCapacity{available: 1000, required: 300}
+	reservations := &FileReservationLedger{Root: t.TempDir(), Capacity: capacity, TTL: time.Hour}
+	worker := &Worker{Backend: &fakeBackend{}, Activator: &fakeActivator{}, Capacity: capacity, Reservations: reservations, Store: store, Now: func() time.Time { return now }}
+	session := Session{ClientID: "client", RealmID: uuid.NewString(), CanCreateRepositories: true}
+
+	preflight, _ := control.NewTicket(opID, uuid.NewString(), control.TicketStoragePreflight, session.ClientID, control.StoragePreflightPayload{ContentBytes: 100}, now)
+	if result, err := worker.Handle(context.Background(), session, preflight); err != nil || result.Status != control.ResultOK {
+		t.Fatalf("preflight=%+v err=%v", result, err)
+	}
+	create, _ := control.NewTicket(opID, uuid.NewString(), control.TicketCreateRepository, session.ClientID, control.CreateRepositoryPayload{Name: "Docs"}, now)
+	if result, err := worker.Handle(context.Background(), session, create); err != nil || result.Status != control.ResultOK {
+		t.Fatalf("create=%+v err=%v", result, err)
+	}
+	initial, _ := control.NewTicket(opID, uuid.NewString(), control.TicketInitialCommit, session.ClientID, control.InitialCommitPayload{RepoID: "repo-1", Revision: 0}, now)
+	if result, err := worker.Handle(context.Background(), session, initial); err != nil || result.Status != control.ResultOK {
+		t.Fatalf("initial=%+v err=%v", result, err)
+	}
+	if err := reservations.Ensure(context.Background(), opID, now); !errors.Is(err, ErrReservationUnavailable) {
+		t.Fatalf("reservation remained after activation: %v", err)
+	}
+}

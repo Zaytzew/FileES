@@ -52,11 +52,12 @@ type CapacityChecker interface {
 }
 
 type Worker struct {
-	Backend   Backend
-	Activator RepositoryActivator
-	Store     ResultStore
-	Capacity  CapacityChecker
-	Now       func() time.Time
+	Backend      Backend
+	Activator    RepositoryActivator
+	Store        ResultStore
+	Capacity     CapacityChecker
+	Reservations ReservationLedger
+	Now          func() time.Time
 }
 
 func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
@@ -92,6 +93,11 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.Type == control.TicketStoragePreflight {
 		return w.preflight(ctx, ticket)
 	}
+	if w.Reservations != nil {
+		if err := w.Reservations.Ensure(ctx, ticket.OperationID, w.now()); err != nil {
+			return control.NewErrorResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ErrorBody{Code: "STORAGE_RESERVATION_UNAVAILABLE", Message: err.Error()}, w.now())
+		}
+	}
 	var payload control.CreateRepositoryPayload
 	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 		return control.Result{}, err
@@ -123,11 +129,21 @@ func (w *Worker) preflight(ctx context.Context, ticket control.Ticket) (control.
 	if w.Capacity == nil {
 		return control.Result{}, errors.New("repository capacity checker is required")
 	}
-	available, required, err := w.Capacity.Check(ctx, payload.ContentBytes)
-	if err != nil {
-		return w.failure(ticket, "STORAGE_PREFLIGHT_FAILED", err.Error())
+	var available, required int64
+	var expires time.Time
+	var err error
+	if w.Reservations != nil {
+		available, required, expires, err = w.Reservations.Reserve(ctx, ticket.OperationID, payload.ContentBytes, w.now())
+		if err != nil && !errors.Is(err, ErrReservationUnavailable) {
+			return w.failure(ticket, "STORAGE_PREFLIGHT_FAILED", err.Error())
+		}
+	} else {
+		available, required, err = w.Capacity.Check(ctx, payload.ContentBytes)
+		if err != nil {
+			return w.failure(ticket, "STORAGE_PREFLIGHT_FAILED", err.Error())
+		}
 	}
-	if available < required {
+	if err != nil || available < required {
 		result, resultErr := control.NewErrorResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ErrorBody{
 			Code:    "STORAGE_INSUFFICIENT",
 			Message: fmt.Sprintf("server storage requires %d bytes, %d available", required, available),
@@ -141,7 +157,11 @@ func (w *Worker) preflight(ctx context.Context, ticket control.Ticket) (control.
 		}
 		return result, resultErr
 	}
-	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.StoragePreflightResult{AvailableBytes: available, RequiredBytes: required}, w.now())
+	expiresAt := ""
+	if !expires.IsZero() {
+		expiresAt = expires.UTC().Format(time.RFC3339Nano)
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.StoragePreflightResult{AvailableBytes: available, RequiredBytes: required, ReservationExpiresAt: expiresAt}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}
@@ -162,6 +182,9 @@ func (w *Worker) activate(ctx context.Context, session Session, ticket control.T
 	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.InitialCommitResult{Acknowledged: true}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
+	}
+	if err == nil && w.Reservations != nil {
+		err = w.Reservations.Release(ticket.OperationID)
 	}
 	return result, err
 }

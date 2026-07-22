@@ -59,10 +59,24 @@ cd android
 a working Android SDK; see the project memory for how the SDK/NDK/gomobile
 toolchain was set up on this box.
 
-## Known gap: the emulator
+## Running on the emulator
 
-The `medium_phone` AVD segfaults on startup in the sandbox this was built in,
-regardless of GPU backend — see the test report for details. This skeleton
-has been built and its Gradle config validated, but **not yet run on a
-device or working emulator**. That's the next concrete blocker for Etap 6,
-independent of any more Kotlin code being written.
+The `medium_phone` AVD used to segfault on startup regardless of GPU backend.
+Root cause: SELinux (Enforcing) was denying `execheap` to the emulator's
+`RenderThread` (SwiftShader's JIT needs to mprotect its heap-allocated code
+buffer executable). Fixed with:
+
+```sh
+sudo setsebool -P selinuxuser_execheap on
+```
+
+(reversible with `... off`). After that fix the AVD boots cleanly
+(`INFO | Boot completed in ...`), `adb devices` shows it as `device`, and
+`adb install app-debug.apk` + `adb shell pm list packages` /
+`dumpsys package net.filees.mobile` confirm the app and its
+`ManifestCacheProvider` install and register correctly. `adb shell content
+query` against it correctly gets a `SecurityException` — that's the intended
+`exported=false` boundary working, not a bug; the `content` CLI always goes
+through the "external" provider-access path (which even `run-as` can't
+satisfy), so exercising the provider's actual query logic needs an in-app
+caller (instrumented test or an Activity) once one exists.

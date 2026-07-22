@@ -29,6 +29,10 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    buildFeatures {
+        viewBinding = true
+    }
 }
 
 dependencies {
@@ -36,4 +40,9 @@ dependencies {
     // android/README.md for how to (re)generate this file. Not vendored in
     // SVN: it's a build artifact of committed Go source, not source itself.
     implementation(files("libs/filees-androidbind.aar"))
+
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.core:core-ktx:1.15.0")
 }

@@ -306,7 +306,7 @@ func (p *daemonProvisioner) publishAttachment(ctx context.Context, operation pro
 	profile, ok := p.profiles[record.ServerID]
 	p.mu.RUnlock()
 	if ok {
-		repo := config.Repo{ID: operation.RepoID, RepoURL: operation.RepoURL, LocalPath: operation.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: "rw"}
+		repo := config.Repo{ID: operation.RepoID, RepoURL: operation.RepoURL, LocalPath: operation.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: "rw"}
 		select {
 		case p.attachments <- provisionedAttachment{Repo: repo}:
 		case <-ctx.Done():
@@ -318,7 +318,7 @@ func (p *daemonProvisioner) publishLocalRecord(ctx context.Context, record local
 	if p.attachments == nil {
 		return
 	}
-	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access}
+	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access}
 	select {
 	case p.attachments <- provisionedAttachment{Repo: repo}:
 	case <-ctx.Done():

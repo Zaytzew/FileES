@@ -51,7 +51,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc}
 	starter := &daemonRepoStarter{daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
-		return client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts})
+		return client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts, SSHHostName: repo.SSHHostName, SSHPort: repo.SSHPort})
 	}}
 	starter.startReadWrite = func(lifecycle context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
 		return startReadWrite(lifecycle, runtimeRepo, svn, desired, deps)

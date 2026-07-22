@@ -69,7 +69,7 @@ func TestDaemonProvisionerRestoresActiveAttachmentWithoutNetwork(t *testing.T) {
 	}
 
 	attachments := make(chan provisionedAttachment, 2)
-	profile := clientprofile.Profile{ServerID: "office", DisplayName: "Office", ClientID: clientID, IdentityFile: "/identity", KnownHosts: "/known"}
+	profile := clientprofile.Profile{ServerID: "office", DisplayName: "Office", Address: "127.0.0.1:2222", SSHPort: 2222, ClientID: clientID, IdentityFile: "/identity", KnownHosts: "/known"}
 	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
 	provisioner.attachments = attachments
 	ctx, cancel := context.WithCancel(context.Background())
@@ -78,7 +78,7 @@ func TestDaemonProvisionerRestoresActiveAttachmentWithoutNetwork(t *testing.T) {
 	select {
 	case attachment := <-attachments:
 		cancel()
-		if attachment.Repo.ID != repoID || attachment.Repo.LocalPath != wc || attachment.Repo.ServerID != "office" {
+		if attachment.Repo.ID != repoID || attachment.Repo.LocalPath != wc || attachment.Repo.ServerID != "office" || attachment.Repo.SSHHostName != profile.Address || attachment.Repo.SSHPort != profile.SSHPort {
 			t.Fatalf("restored attachment = %+v", attachment)
 		}
 	case <-time.After(time.Second):

@@ -29,6 +29,8 @@ type Repo struct {
 	LocalPath         string        `json:"local_path"`
 	SSHIdentityFile   string        `json:"ssh_identity_file"`
 	SSHKnownHosts     string        `json:"ssh_known_hosts"`
+	SSHHostName       string        `json:"-"`
+	SSHPort           int           `json:"-"`
 	ServerID          string        `json:"-"`
 	ServerDisplayName string        `json:"-"`
 	ClientRole        string        `json:"-"`

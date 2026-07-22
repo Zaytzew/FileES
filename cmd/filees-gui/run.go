@@ -68,6 +68,10 @@ func run(parent context.Context, deps dependencies) error {
 			}
 		},
 	})
+	var updater actions.Updater
+	if candidate, ok := deps.client.(actions.Updater); ok {
+		updater = candidate
+	}
 	controller := actions.New(actions.Config{
 		Intents:   intents,
 		ViewModel: views.load,
@@ -75,6 +79,7 @@ func run(parent context.Context, deps dependencies) error {
 		Picker:    deps.platform,
 		Prompter:  deps.platform,
 		Activator: deps.activator,
+		Updater:   updater,
 		Notifier:  deps.platform,
 		Locker:    deps.client,
 		Reconnect: guiApp.Reconnect,

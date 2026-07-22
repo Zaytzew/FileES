@@ -130,6 +130,33 @@ func (c *Client) SystemStatus(ctx context.Context) (*contract.SystemStatusResult
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
+func (c *Client) UpdateStatus(ctx context.Context) (*contract.UpdateStatus, error) {
+	resp, err := c.do(ctx, contract.CmdUpdateStatus, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.UpdateStatus
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) UpdatePlan(ctx context.Context) (*contract.UpdatePlanResult, error) {
+	resp, err := c.do(ctx, contract.CmdUpdatePlan, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.UpdatePlanResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) UpdateApply(ctx context.Context) (*contract.UpdateApplyResult, error) {
+	resp, err := c.do(ctx, contract.CmdUpdateApply, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.UpdateApplyResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) ActivationBegin(ctx context.Context, payload contract.ActivationBeginPayload) (*contract.ActivationCommandResult, error) {
 	resp, err := c.do(ctx, contract.CmdActivationBegin, "", payload)
 	if err != nil {

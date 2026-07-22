@@ -29,6 +29,7 @@ type Server struct {
 	activations map[string]contract.ActivationStatus
 	activation  ActivationService
 	lifecycle   RepositoryLifecycleService
+	updates     UpdateService
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -50,6 +51,32 @@ type RepositoryLifecycleService interface {
 	BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error)
 	ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error)
 	BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error)
+}
+
+type UpdateService interface {
+	Status(context.Context) (contract.UpdateStatus, error)
+	Plan(context.Context) (contract.UpdatePlanResult, error)
+	Apply(context.Context) (contract.UpdateApplyResult, error)
+}
+
+func (s *Server) SetUpdateService(service UpdateService) {
+	s.mu.Lock()
+	s.updates = service
+	s.mu.Unlock()
+}
+
+func (s *Server) updateService() UpdateService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.updates
+}
+
+func (s *Server) capabilities() []string {
+	caps := append([]string(nil), contract.AllCapabilities...)
+	if s.updateService() != nil {
+		caps = append(caps, contract.CapUpdateStatus, contract.CapUpdatePlan, contract.CapUpdateApply)
+	}
+	return caps
 }
 
 func (s *Server) SetRepositoryLifecycleService(service RepositoryLifecycleService) {

@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
+	contract "filees/pkg/contract/v1"
 )
 
 // LockUnlocker is the narrow daemon surface required by the controller.
@@ -26,6 +28,11 @@ type LockUnlocker interface {
 type Activator interface {
 	Begin(ctx context.Context, serverID, serverAddress, email string) error
 	Finish(ctx context.Context, serverID, serverAddress string, otp []byte) error
+}
+
+type Updater interface {
+	UpdatePlan(context.Context) (*contract.UpdatePlanResult, error)
+	UpdateApply(context.Context) (*contract.UpdateApplyResult, error)
 }
 
 type presentationError interface {
@@ -42,10 +49,12 @@ type Config struct {
 	Picker    platform.FilePicker
 	Prompter  platform.Prompter
 	Activator Activator
+	Updater   Updater
 	Notifier  platform.Notifier // nil → notifications silently dropped
 	Locker    LockUnlocker
 	Reconnect func() // nil → reconnect intent is a no-op
 	Quit      func() // nil → quit intent is a no-op
+	Restart   func() // called only after a successful apply requiring restart
 }
 
 // Controller reads tray intents and dispatches them to platform and daemon
@@ -96,11 +105,90 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startActivation(ctx)
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
+	case tray.IntentUpdatePlan:
+		c.startUpdate(ctx, false)
+	case tray.IntentUpdateApply:
+		c.startUpdate(ctx, true)
 	case tray.IntentQuit:
 		if c.cfg.Quit != nil {
 			c.cfg.Quit()
 		}
 	}
+}
+
+func (c *Controller) startUpdate(ctx context.Context, apply bool) {
+	if c.cfg.Updater == nil || c.cfg.Prompter == nil || !c.beginOperation("update") {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation("update")
+		plan, err := c.cfg.Updater.UpdatePlan(ctx)
+		if err != nil {
+			c.updateFailure(ctx, "Nie można przygotować planu aktualizacji", err)
+			return
+		}
+		text := updatePlanText(plan)
+		if !apply {
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Plan aktualizacji FileES", Text: text})
+			return
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			Title: "Aktualizacja FileES", Text: text + "\n\nZaktualizować i uruchomić FileES ponownie?",
+			ConfirmText: "Zaktualizuj", CancelText: "Anuluj",
+		})
+		if err != nil {
+			c.updateFailure(ctx, "Nie można wyświetlić potwierdzenia", err)
+			return
+		}
+		if !confirmed {
+			return
+		}
+		result, err := c.cfg.Updater.UpdateApply(ctx)
+		if err != nil {
+			c.updateFailure(ctx, "Aktualizacja nie powiodła się", err)
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: "update", Group: "update", Title: "FileES zaktualizowano do wersji " + result.InstalledVersion, Urgency: platform.UrgencyNormal})
+		if result.RestartRequired && c.cfg.Restart != nil {
+			c.cfg.Restart()
+		}
+	}()
+}
+
+func updatePlanText(plan *contract.UpdatePlanResult) string {
+	if plan == nil {
+		return "Daemon nie zwrócił planu aktualizacji."
+	}
+	var text strings.Builder
+	fmt.Fprintf(&text, "Wersja: %s → %s\n", plan.CurrentVersion, plan.AvailableVersion)
+	if plan.ReleaseID != "" {
+		fmt.Fprintf(&text, "Wydanie: %s\n", plan.ReleaseID)
+	}
+	if len(plan.Changes) == 0 {
+		text.WriteString("\nBrak zmian plików.")
+	} else {
+		text.WriteString("\nZmiany:\n")
+		for _, change := range plan.Changes {
+			fmt.Fprintf(&text, "• %s  %s", strings.ToUpper(change.Action), change.Path)
+			if change.Detail != "" {
+				fmt.Fprintf(&text, " — %s", change.Detail)
+			}
+			text.WriteByte('\n')
+		}
+	}
+	if plan.RestartRequired {
+		text.WriteString("\nPo instalacji wymagane jest ponowne uruchomienie FileES.")
+	}
+	return strings.TrimSpace(text.String())
+}
+
+func (c *Controller) updateFailure(ctx context.Context, title string, err error) {
+	if err == nil || ctx.Err() != nil {
+		return
+	}
+	c.notify(ctx, platform.Notification{ID: "update", Group: "update", Title: title, Body: err.Error(), Urgency: platform.UrgencyCritical})
 }
 
 func (c *Controller) startServerInfo(ctx context.Context, serverID string) {

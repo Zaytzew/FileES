@@ -83,6 +83,26 @@ func TestLinuxOpenFolderReportsUnavailableAndRejectsRelativePath(t *testing.T) {
 	}
 }
 
+func TestLinuxConfirmUsesNativeQuestionAndTreatsCancelNormally(t *testing.T) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	confirmed, err := backend.Confirm(context.Background(), ConfirmRequest{Title: "Aktualizacja", Text: "Zainstalować?", ConfirmText: "Zaktualizuj", CancelText: "Anuluj"})
+	if err != nil || !confirmed {
+		t.Fatalf("Confirm() = %v, %v", confirmed, err)
+	}
+	args := strings.Join(runner.Calls()[0].args, "\n")
+	for _, wanted := range []string{"--question", "--ok-label=Zaktualizuj", "--cancel-label=Anuluj"} {
+		if !strings.Contains(args, wanted) {
+			t.Errorf("confirm args missing %q: %s", wanted, args)
+		}
+	}
+	runner.output = func(context.Context, string, []string) ([]byte, error) { return nil, fakeExitError(1) }
+	confirmed, err = backend.Confirm(context.Background(), ConfirmRequest{})
+	if err != nil || confirmed {
+		t.Fatalf("cancelled Confirm() = %v, %v", confirmed, err)
+	}
+}
+
 func TestLinuxPickerUsesZenityAndValidatesSelection(t *testing.T) {
 	runner := &fakeLinuxRunner{
 		paths: map[string]string{"zenity": "/usr/bin/zenity", "kdialog": "/usr/bin/kdialog"},

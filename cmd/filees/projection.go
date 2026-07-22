@@ -8,6 +8,30 @@ import (
 	"filees/pkg/reposupervisor"
 )
 
+// unprojectedLocalKeys returns attachments for serverID whose repo ID is not
+// (yet) present in the server's projected view. A repository this daemon
+// instance just created and attached is authoritative local knowledge the
+// moment CREATE_REPOSITORY/INITIAL_COMMIT succeed; the server's projected
+// view only catches up on its own poll interval. Without this fallback,
+// treating "absent from this snapshot" as "does not exist" both stops the
+// supervisor from starting the pipeline immediately and — via
+// ReconcileProjectedRepos — deletes the freshly registered RepoState from
+// the IPC registry, hiding a fully working repository from repo.list/GUI
+// until the next projection refresh (or a full daemon restart) rediscovers it.
+func unprojectedLocalKeys(serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime) []reposupervisor.Key {
+	known := make(map[string]bool, len(view.Repositories))
+	for _, repo := range view.Repositories {
+		known[repo.RepoID] = true
+	}
+	var extra []reposupervisor.Key
+	for key := range attachments {
+		if key.ServerID == serverID && !known[key.RepoID] {
+			extra = append(extra, key)
+		}
+	}
+	return extra
+}
+
 // attachedProjection converts server authority into supervisor input. Entries
 // without a local attachment remain visible control-plane knowledge, but do
 // not start a data pipeline until the user chooses a local working copy.
@@ -19,6 +43,10 @@ func attachedProjection(serverID string, view clientview.View, attachments map[r
 			continue
 		}
 		desired = append(desired, reposupervisor.Desired{Key: key, Access: repo.Access, State: repo.State, URL: repo.URL, DisplayName: repo.DisplayName})
+	}
+	for _, key := range unprojectedLocalKeys(serverID, view, attachments) {
+		repo := attachments[key].config
+		desired = append(desired, reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID})
 	}
 	sort.Slice(desired, func(i, j int) bool { return desired[i].Key.String() < desired[j].Key.String() })
 	return desired
@@ -33,6 +61,10 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
 		_, attached := attachments[key]
 		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, Attached: attached})
+	}
+	for _, key := range unprojectedLocalKeys(serverID, view, attachments) {
+		repo := attachments[key].config
+		projected = append(projected, ipcserver.ProjectedRepo{ID: key.RepoID, DisplayName: repo.ID, URL: repo.RepoURL, Access: repo.Access, State: "active", Attached: true})
 	}
 	ipc.ReconcileProjectedRepos(serverID, projected)
 	ready, pending := repositoryReadiness(serverID, view, attachments)

@@ -117,6 +117,24 @@ func (j *Journal) List() []Entry {
 	return j.sorted()
 }
 
+// Forget removes the entry for repoID/path, if any. Used when a locally
+// staged operation is cancelled before ever reaching the repository (e.g. a
+// file added and deleted again before its first commit, or a delete for a
+// path that was never actually under version control) -- there is nothing
+// meaningful to report as Published or Failed for something that never
+// really happened, and leaving the last-known stage in place would hang
+// forever since nothing else will ever touch that path again.
+func (j *Journal) Forget(repoID, path string) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	k := key(repoID, path)
+	if _, ok := j.entries[k]; !ok {
+		return nil
+	}
+	delete(j.entries, k)
+	return j.persist()
+}
+
 func (j *Journal) sorted() []Entry {
 	out := make([]Entry, 0, len(j.entries))
 	for _, entry := range j.entries {

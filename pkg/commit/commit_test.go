@@ -92,6 +92,18 @@ func (r *activityRecorder) Record(entry activity.Entry) error {
 	return nil
 }
 
+func (r *activityRecorder) Forget(repoID, path string) error {
+	kept := r.entries[:0]
+	for _, e := range r.entries {
+		if e.RepoID == repoID && e.Path == path {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	r.entries = kept
+	return nil
+}
+
 func TestActivityStagesFollowDurableCacheAndConfirmedCommit(t *testing.T) {
 	wc := t.TempDir()
 	abs := filepath.Join(wc, "report.pdf")
@@ -842,5 +854,71 @@ func TestModifiedHardCeilingForcesCommitDespiteContinuousWrites(t *testing.T) {
 	}
 	if cli.commits != 1 {
 		t.Fatalf("commits=%d, want 1 (hard ceiling from the first unconfirmed write must force the commit)", cli.commits)
+	}
+}
+
+func TestActivityForgottenWhenLockFileIsAddedThenDeletedBeforePublish(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, ".~lock.report.doc#")
+	if err := os.WriteFile(abs, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &activityRecorder{}
+	// Never present in statuses: exactly what a real `svn status` reports
+	// for a path that was never added to version control at all.
+	cli := &stagingClient{statuses: map[string]string{}}
+	service := &Service{
+		Cli: cli, Rules: Rules{NewLatency: time.Hour, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		Activity: recorder, repoID: "docs", staging: make(map[string]*stageItem), cachePath: filepath.Join(wc, ".filees", "commit_cache", "cache.json"),
+	}
+	// A short-lived office lock file: created (Added), then removed again
+	// (Deleted) well before Added's own NewLatency would ever let it publish.
+	service.acceptEvent(watcher.Event{Path: abs, Rel: ".~lock.report.doc#", Type: watcher.EntryFile, Op: watcher.Added})
+	if err := os.Remove(abs); err != nil {
+		t.Fatal(err)
+	}
+	service.acceptEvent(watcher.Event{Path: abs, Rel: ".~lock.report.doc#", Type: watcher.EntryFile, Op: watcher.Deleted})
+
+	if err := service.tryCommit(context.Background(), wc); err != nil {
+		t.Fatal(err)
+	}
+	if cli.commits != 0 || cli.adds != 0 {
+		t.Fatalf("adds=%d commits=%d, want 0/0 (never really existed in SVN)", cli.adds, cli.commits)
+	}
+	if len(service.staging) != 0 {
+		t.Fatalf("staging=%#v, want empty", service.staging)
+	}
+	if len(recorder.entries) != 0 {
+		t.Fatalf("activity=%+v, want forgotten instead of permanently stuck", recorder.entries)
+	}
+}
+
+func TestActivityForgottenWhenAddedFileVanishesBeforePublishWithoutDeleteEvent(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "transient.tmp")
+	if err := os.WriteFile(abs, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &activityRecorder{}
+	cli := &stagingClient{statuses: map[string]string{"transient.tmp": "unversioned"}}
+	service := &Service{
+		Cli: cli, Rules: Rules{NewLatency: time.Nanosecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		Activity: recorder, repoID: "docs", staging: make(map[string]*stageItem), cachePath: filepath.Join(wc, ".filees", "commit_cache", "cache.json"),
+	}
+	service.acceptEvent(watcher.Event{Path: abs, Rel: "transient.tmp", Type: watcher.EntryFile, Op: watcher.Added})
+	// Vanished from disk without ever producing a Deleted watcher event --
+	// the item is still staged as Added when tryCommit runs.
+	if err := os.Remove(abs); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.tryCommit(context.Background(), wc); err != nil {
+		t.Fatal(err)
+	}
+	if cli.commits != 0 || cli.adds != 0 {
+		t.Fatalf("adds=%d commits=%d, want 0/0", cli.adds, cli.commits)
+	}
+	if len(recorder.entries) != 0 {
+		t.Fatalf("activity=%+v, want forgotten instead of permanently stuck", recorder.entries)
 	}
 }

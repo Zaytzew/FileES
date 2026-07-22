@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -375,6 +376,147 @@ func TestOpenBSDAttachmentE2E(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(wc, "e2e.txt")); err != nil {
 		t.Fatalf("old working copy was not preserved: %v", err)
+	}
+}
+
+func TestOpenBSDChaosChild(t *testing.T) {
+	stage := os.Getenv("FILEES_CHAOS_CHILD_STAGE")
+	if stage == "" {
+		t.Skip("chaos child only")
+	}
+	root := os.Getenv("FILEES_CHAOS_ROOT")
+	profile, err := clientprofile.Load(os.Getenv("FILEES_ATTACHMENT_E2E_PROFILE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := localrepo.Open(filepath.Join(root, "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := local.List()
+	if len(records) != 1 {
+		t.Fatalf("records=%d", len(records))
+	}
+	record := records[0]
+	svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:chaos:" + stage, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
+	switch stage {
+	case "attachment_checked_out":
+		if _, err := svn.Checkout(t.Context(), record.RepoURL, record.LocalPath); err != nil {
+			t.Fatal(err)
+		}
+	case "relocation_intent":
+		if _, err := local.BeginRelocation(record.ServerID, record.RepoID, os.Getenv("FILEES_CHAOS_TARGET")); err != nil {
+			t.Fatal(err)
+		}
+	case "relocation_switched":
+		target := os.Getenv("FILEES_CHAOS_TARGET")
+		record, err = local.BeginRelocation(record.ServerID, record.RepoID, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svn.Checkout(t.Context(), record.RepoURL, target); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := local.CompleteRelocation(record.OperationID); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatalf("unknown chaos stage %q", stage)
+	}
+	os.Exit(91)
+}
+
+func TestOpenBSDRepositoryLifecycleChaosE2E(t *testing.T) {
+	profilePath := os.Getenv("FILEES_ATTACHMENT_E2E_PROFILE")
+	repoID := os.Getenv("FILEES_ATTACHMENT_E2E_REPO_ID")
+	repoURL := os.Getenv("FILEES_ATTACHMENT_E2E_REPO_URL")
+	if profilePath == "" || repoID == "" || repoURL == "" {
+		t.Skip("set attachment E2E environment")
+	}
+	profile, err := clientprofile.Load(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	local, err := localrepo.Open(filepath.Join(root, "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := provisioning.NewStore(filepath.Join(root, "provisioning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstWC := filepath.Join(root, "wc-1")
+	record, _ := local.BeginAttach(profile.ServerID, repoID, firstWC, false)
+	record, _ = local.ApproveAttach(record.OperationID, profile.ServerID, repoID, repoURL, "r")
+	runChaosChild(t, root, profilePath, "attachment_checked_out", "")
+
+	events := make(chan provisionedAttachment, 4)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.runOne(t.Context(), record.OperationID)
+	if got, _ := local.Get(record.OperationID); got.State != localrepo.StateAttached {
+		t.Fatalf("post-checkout recovery=%+v", got)
+	}
+	<-events
+
+	secondWC := filepath.Join(root, "wc-2")
+	runChaosChild(t, root, profilePath, "relocation_intent", secondWC)
+	local, _ = localrepo.Open(filepath.Join(root, "lifecycle.json"))
+	provisioner = newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); provisioner.Run(ctx) }()
+	oldRuntime := <-events
+	quiesce := <-events
+	if oldRuntime.Quiesce || !quiesce.Quiesce || oldRuntime.Repo.LocalPath != firstWC {
+		cancel()
+		t.Fatalf("relocation recovery order old=%+v quiesce=%+v", oldRuntime, quiesce)
+	}
+	quiesce.Result <- nil
+	newRuntime := <-events
+	if newRuntime.Repo.LocalPath != secondWC {
+		cancel()
+		t.Fatalf("relocated runtime=%+v", newRuntime)
+	}
+	cancel()
+	<-done
+
+	thirdWC := filepath.Join(root, "wc-3")
+	runChaosChild(t, root, profilePath, "relocation_switched", thirdWC)
+	local, _ = localrepo.Open(filepath.Join(root, "lifecycle.json"))
+	provisioner = newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN {
+		t.Fatal("restart after atomic switch attempted network")
+		return nil
+	}
+	ctx, cancel = context.WithCancel(context.Background())
+	done = make(chan struct{})
+	go func() { defer close(done); provisioner.Run(ctx) }()
+	restored := <-events
+	if restored.Quiesce || restored.Repo.LocalPath != thirdWC {
+		cancel()
+		t.Fatalf("post-switch runtime=%+v", restored)
+	}
+	cancel()
+	<-done
+	for _, wc := range []string{firstWC, secondWC, thirdWC} {
+		if _, err := os.Stat(filepath.Join(wc, "e2e.txt")); err != nil {
+			t.Fatalf("preserved WC %s: %v", wc, err)
+		}
+	}
+}
+
+func runChaosChild(t *testing.T, root, profilePath, stage, target string) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestOpenBSDChaosChild$")
+	cmd.Env = append(os.Environ(), "FILEES_CHAOS_CHILD_STAGE="+stage, "FILEES_CHAOS_ROOT="+root, "FILEES_CHAOS_TARGET="+target, "FILEES_ATTACHMENT_E2E_PROFILE="+profilePath)
+	err := cmd.Run()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 91 {
+		t.Fatalf("chaos child %s did not stop at boundary: %v", stage, err)
 	}
 }
 

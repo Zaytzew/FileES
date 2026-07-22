@@ -31,7 +31,7 @@ func TestOrchestratorRunsCreateThroughActive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if op.State != StateActive || op.Revision != 1 || len(transport.types) != 2 {
+	if op.State != StateActive || op.Revision != 1 || len(transport.types) != 3 {
 		t.Fatalf("operation=%+v tickets=%v", op, transport.types)
 	}
 }
@@ -58,7 +58,7 @@ func TestOrchestratorResumesAtPublishedSnapshotWithoutRecommit(t *testing.T) {
 	if err != nil || after.State != StateActive || len(svn.commits) != 1 {
 		t.Fatalf("after restart=%+v commits=%v err=%v", after, svn.commits, err)
 	}
-	if len(transport.tickets) != 3 || transport.tickets[1].RequestID != transport.tickets[2].RequestID {
+	if len(transport.tickets) != 4 || transport.tickets[2].RequestID != transport.tickets[3].RequestID {
 		t.Fatalf("INITIAL_COMMIT request ID changed across retry: %+v", transport.tickets)
 	}
 }
@@ -74,15 +74,15 @@ func TestOrchestratorRetriesSameCreateRequestAfterLostResponse(t *testing.T) {
 		t.Fatal("expected lost CREATE_REPOSITORY response")
 	}
 	pending, err := store.Get(opID)
-	if err != nil || pending.State != StateProvisioningRequested || len(transport.tickets) != 1 {
+	if err != nil || pending.State != StateProvisioningRequested || len(transport.tickets) != 2 {
 		t.Fatalf("pending=%+v tickets=%d err=%v", pending, len(transport.tickets), err)
 	}
 	completed, err := orchestrator.RunCreate(context.Background(), opID)
-	if err != nil || completed.State != StateActive || len(transport.tickets) != 3 {
+	if err != nil || completed.State != StateActive || len(transport.tickets) != 4 {
 		t.Fatalf("completed=%+v tickets=%d err=%v", completed, len(transport.tickets), err)
 	}
-	if transport.tickets[0].RequestID != transport.tickets[1].RequestID {
-		t.Fatalf("CREATE request ID changed across retry: %s != %s", transport.tickets[0].RequestID, transport.tickets[1].RequestID)
+	if transport.tickets[1].RequestID != transport.tickets[2].RequestID {
+		t.Fatalf("CREATE request ID changed across retry: %s != %s", transport.tickets[1].RequestID, transport.tickets[2].RequestID)
 	}
 }
 
@@ -106,6 +106,8 @@ func (f *fakeControlExchange) Exchange(_ context.Context, ticket control.Ticket)
 	}
 	var payload any
 	switch ticket.Type {
+	case control.TicketStoragePreflight:
+		payload = control.StoragePreflightResult{AvailableBytes: 1 << 30, RequiredBytes: 64 << 20}
 	case control.TicketCreateRepository:
 		payload = control.CreateRepositoryResult{RepoID: "repo", RepoURL: "file:///repo"}
 	case control.TicketInitialCommit:

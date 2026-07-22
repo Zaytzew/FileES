@@ -23,14 +23,17 @@ const StateSchema = "filees.provisioning/v1"
 type State string
 
 const (
-	StateLocalValidated           State = "local_validated"
-	StateProvisioningRequested    State = "provisioning_requested"
-	StateRepositoryRequestFailed  State = "repository_request_failed"
-	StateRepositoryReady          State = "repository_ready"
-	StateInitialCommitInProgress  State = "initial_commit_in_progress"
-	StateInitialCommitFailed      State = "initial_commit_failed"
-	StateInitialSnapshotPublished State = "initial_snapshot_published"
-	StateActive                   State = "active"
+	StateLocalValidated            State = "local_validated"
+	StateStoragePreflightRequested State = "storage_preflight_requested"
+	StateStoragePreflightFailed    State = "storage_preflight_failed"
+	StateStorageApproved           State = "storage_approved"
+	StateProvisioningRequested     State = "provisioning_requested"
+	StateRepositoryRequestFailed   State = "repository_request_failed"
+	StateRepositoryReady           State = "repository_ready"
+	StateInitialCommitInProgress   State = "initial_commit_in_progress"
+	StateInitialCommitFailed       State = "initial_commit_failed"
+	StateInitialSnapshotPublished  State = "initial_snapshot_published"
+	StateActive                    State = "active"
 )
 
 type RequestStatus string
@@ -49,19 +52,21 @@ type RequestRecord struct {
 }
 
 type Operation struct {
-	Schema      string                   `json:"schema"`
-	OperationID string                   `json:"operation_id"`
-	ClientID    string                   `json:"client_id"`
-	LocalPath   string                   `json:"local_path"`
-	Name        string                   `json:"name"`
-	State       State                    `json:"state"`
-	RepoID      string                   `json:"repo_id,omitempty"`
-	RepoURL     string                   `json:"repo_url,omitempty"`
-	Revision    int64                    `json:"revision,omitempty"`
-	Paths       int                      `json:"paths,omitempty"`
-	Requests    map[string]RequestRecord `json:"requests,omitempty"`
-	CreatedAt   string                   `json:"created_at"`
-	UpdatedAt   string                   `json:"updated_at"`
+	Schema        string                   `json:"schema"`
+	OperationID   string                   `json:"operation_id"`
+	ClientID      string                   `json:"client_id"`
+	LocalPath     string                   `json:"local_path"`
+	Name          string                   `json:"name"`
+	State         State                    `json:"state"`
+	RepoID        string                   `json:"repo_id,omitempty"`
+	RepoURL       string                   `json:"repo_url,omitempty"`
+	Revision      int64                    `json:"revision,omitempty"`
+	Paths         int                      `json:"paths,omitempty"`
+	SnapshotBytes int64                    `json:"snapshot_bytes,omitempty"`
+	SnapshotPaths int                      `json:"snapshot_paths,omitempty"`
+	Requests      map[string]RequestRecord `json:"requests,omitempty"`
+	CreatedAt     string                   `json:"created_at"`
+	UpdatedAt     string                   `json:"updated_at"`
 }
 
 type Store struct {
@@ -82,6 +87,10 @@ func NewStore(root string) (*Store, error) {
 }
 
 func (s *Store) CreateValidated(operationID, clientID, localPath, name string) (Operation, error) {
+	return s.CreateValidatedSnapshot(operationID, clientID, localPath, name, 0, 0)
+}
+
+func (s *Store) CreateValidatedSnapshot(operationID, clientID, localPath, name string, snapshotBytes int64, snapshotPaths int) (Operation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := uuid.Parse(operationID); err != nil {
@@ -95,8 +104,11 @@ func (s *Store) CreateValidated(operationID, clientID, localPath, name string) (
 		return Operation{}, errors.New("local_path must be absolute")
 	}
 	localPath = filepath.Clean(localPath)
+	if snapshotBytes < 0 || snapshotPaths < 0 {
+		return Operation{}, errors.New("snapshot size cannot be negative")
+	}
 	if existing, err := s.loadLocked(operationID); err == nil {
-		if existing.ClientID == clientID && existing.LocalPath == localPath && existing.Name == name {
+		if existing.ClientID == clientID && existing.LocalPath == localPath && existing.Name == name && existing.SnapshotBytes == snapshotBytes && existing.SnapshotPaths == snapshotPaths {
 			return clone(existing), nil
 		}
 		return Operation{}, errors.New("operation_id already exists with different parameters")
@@ -104,11 +116,76 @@ func (s *Store) CreateValidated(operationID, clientID, localPath, name string) (
 		return Operation{}, err
 	}
 	now := s.timestamp()
-	op := Operation{Schema: StateSchema, OperationID: operationID, ClientID: clientID, LocalPath: localPath, Name: name, State: StateLocalValidated, Requests: make(map[string]RequestRecord), CreatedAt: now, UpdatedAt: now}
+	op := Operation{Schema: StateSchema, OperationID: operationID, ClientID: clientID, LocalPath: localPath, Name: name, SnapshotBytes: snapshotBytes, SnapshotPaths: snapshotPaths, State: StateLocalValidated, Requests: make(map[string]RequestRecord), CreatedAt: now, UpdatedAt: now}
 	if err := s.saveLocked(op); err != nil {
 		return Operation{}, err
 	}
 	return clone(op), nil
+}
+
+func (s *Store) RequestStoragePreflight(operationID, requestID string) (Operation, error) {
+	return s.mutate(operationID, func(op *Operation) error {
+		if record, ok := op.Requests[requestID]; ok {
+			if record.Type == control.TicketStoragePreflight {
+				return nil
+			}
+			return errors.New("request_id already used for another ticket type")
+		}
+		if _, err := uuid.Parse(requestID); err != nil {
+			return fmt.Errorf("request_id must be UUID: %w", err)
+		}
+		if op.State != StateLocalValidated && op.State != StateStoragePreflightFailed {
+			return invalidTransition(op.State, StateStoragePreflightRequested)
+		}
+		op.Requests[requestID] = RequestRecord{Type: control.TicketStoragePreflight, Status: RequestPending}
+		op.State = StateStoragePreflightRequested
+		return nil
+	})
+}
+
+func (s *Store) StoragePreflightTicket(operationID, requestID string) (control.Ticket, error) {
+	op, err := s.Get(operationID)
+	if err != nil {
+		return control.Ticket{}, err
+	}
+	record, ok := op.Requests[requestID]
+	if !ok || record.Type != control.TicketStoragePreflight || record.Status != RequestPending {
+		return control.Ticket{}, errors.New("pending STORAGE_PREFLIGHT request is not registered")
+	}
+	return control.NewTicket(op.OperationID, requestID, control.TicketStoragePreflight, op.ClientID, control.StoragePreflightPayload{ContentBytes: op.SnapshotBytes, Paths: op.SnapshotPaths}, s.now())
+}
+
+func (s *Store) ApplyStoragePreflightResult(result control.Result) (Operation, error) {
+	if err := result.Validate(); err != nil {
+		return Operation{}, err
+	}
+	if result.Type != control.TicketStoragePreflight {
+		return Operation{}, errors.New("expected STORAGE_PREFLIGHT result")
+	}
+	digest := resultDigest(result)
+	return s.mutate(result.OperationID, func(op *Operation) error {
+		record, ok := op.Requests[result.RequestID]
+		if !ok || record.Type != control.TicketStoragePreflight {
+			return errors.New("result does not match a registered request")
+		}
+		if record.Status != RequestPending {
+			if record.ResultDigest == digest {
+				return nil
+			}
+			return errors.New("conflicting result for an already completed request")
+		}
+		if op.State != StateStoragePreflightRequested {
+			return invalidTransition(op.State, StateStorageApproved)
+		}
+		record.ResultDigest = digest
+		if result.Status == control.ResultError {
+			record.Status, record.Error, op.State = RequestError, cloneError(result.Error), StateStoragePreflightFailed
+		} else {
+			record.Status, op.State = RequestOK, StateStorageApproved
+		}
+		op.Requests[result.RequestID] = record
+		return nil
+	})
 }
 
 func (s *Store) RequestRepository(operationID, requestID string) (Operation, error) {
@@ -122,7 +199,7 @@ func (s *Store) RequestRepository(operationID, requestID string) (Operation, err
 		if _, err := uuid.Parse(requestID); err != nil {
 			return fmt.Errorf("request_id must be UUID: %w", err)
 		}
-		if op.State != StateLocalValidated && op.State != StateRepositoryRequestFailed {
+		if op.State != StateStorageApproved && op.State != StateLocalValidated && op.State != StateRepositoryRequestFailed {
 			return invalidTransition(op.State, StateProvisioningRequested)
 		}
 		op.Requests[requestID] = RequestRecord{Type: control.TicketCreateRepository, Status: RequestPending}
@@ -428,7 +505,7 @@ func validateOperation(op Operation) error {
 		return errors.New("invalid provisioning identity or path")
 	}
 	switch op.State {
-	case StateLocalValidated, StateProvisioningRequested, StateRepositoryRequestFailed,
+	case StateLocalValidated, StateStoragePreflightRequested, StateStoragePreflightFailed, StateStorageApproved, StateProvisioningRequested, StateRepositoryRequestFailed,
 		StateRepositoryReady, StateInitialCommitInProgress, StateInitialCommitFailed,
 		StateInitialSnapshotPublished, StateActive:
 	default:
@@ -447,7 +524,7 @@ func validateOperation(op Operation) error {
 		if _, err := uuid.Parse(requestID); err != nil {
 			return fmt.Errorf("invalid stored request_id %q", requestID)
 		}
-		if record.Type != control.TicketCreateRepository && record.Type != control.TicketInitialCommit {
+		if record.Type != control.TicketStoragePreflight && record.Type != control.TicketCreateRepository && record.Type != control.TicketInitialCommit {
 			return fmt.Errorf("invalid stored request type %q", record.Type)
 		}
 		if record.Status != RequestPending && record.Status != RequestOK && record.Status != RequestError {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
@@ -50,6 +51,15 @@ func (service repositoryLifecycleService) BeginCreate(serverID, displayName, loc
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}
+	var snapshot provisioning.Snapshot
+	if _, statErr := os.Stat(check.CanonicalPath); statErr == nil {
+		snapshot, err = provisioning.ScanInitialSnapshot(check.CanonicalPath)
+		if err != nil {
+			return contract.RepoLifecycleResult{}, err
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return contract.RepoLifecycleResult{}, statErr
+	}
 	clientID := ""
 	if service.clientID != nil {
 		clientID = service.clientID(serverID)
@@ -62,7 +72,7 @@ func (service repositoryLifecycleService) BeginCreate(serverID, displayName, loc
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
 	}
-	if _, err := service.provisioning.CreateValidated(operationID, clientID, check.CanonicalPath, displayName); err != nil {
+	if _, err := service.provisioning.CreateValidatedSnapshot(operationID, clientID, check.CanonicalPath, displayName, snapshot.TotalBytes, len(snapshot.Directories)+len(snapshot.Files)); err != nil {
 		_, _ = service.store.MarkError(operationID, err)
 		return contract.RepoLifecycleResult{}, err
 	}

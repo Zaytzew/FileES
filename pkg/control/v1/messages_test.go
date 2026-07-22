@@ -73,3 +73,16 @@ func TestResultConstructors(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStoragePreflightContract(t *testing.T) {
+	opID, requestID := uuid.NewString(), uuid.NewString()
+	if _, err := NewTicket(opID, requestID, TicketStoragePreflight, "client", StoragePreflightPayload{ContentBytes: 123, Paths: 4}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSuccessResult(opID, requestID, TicketStoragePreflight, StoragePreflightResult{AvailableBytes: 1000, RequiredBytes: 310}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTicket(opID, requestID, TicketStoragePreflight, "client", StoragePreflightPayload{ContentBytes: -1}, time.Now()); err == nil {
+		t.Fatal("negative content size accepted")
+	}
+}

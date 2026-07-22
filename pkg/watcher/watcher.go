@@ -159,6 +159,7 @@ type backlogItem struct {
 var builtinIgnorePatterns = []string{
 	// Office lock/temp files
 	"**/~$*",
+	"**/.~lock.*#", // LibreOffice/OpenOffice lock marker
 	"**/*.tmp",
 	"**/*.bak",
 	// OS metadata noise

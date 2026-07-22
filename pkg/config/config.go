@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -96,6 +97,17 @@ type jsonConfig struct {
 		CachePath        string `json:"cache_path"`
 		Interval         string `json:"interval,omitempty"`
 	} `json:"projection,omitempty"`
+	Update *struct {
+		Enabled        bool   `json:"enabled"`
+		RepoURL        string `json:"repo_url"`
+		Channel        string `json:"channel,omitempty"`
+		Component      string `json:"component,omitempty"`
+		Platform       string `json:"platform,omitempty"`
+		StatePath      string `json:"state_path"`
+		StageRoot      string `json:"stage_root"`
+		SVNProgram     string `json:"svn_program,omitempty"`
+		SignifyProgram string `json:"signify_program,omitempty"`
+	} `json:"update,omitempty"`
 	Repositories []jsonRepo `json:"repositories"`
 }
 
@@ -108,7 +120,14 @@ type ClientView struct {
 	ServerID, DisplayName, ClientRole string
 	IdentityFile, KnownHosts          string
 	Projection                        *Projection
+	Update                            *UpdateConfig
 	Configured                        bool
+}
+
+type UpdateConfig struct {
+	RepoURL, Channel, Component, Platform string
+	StatePath, StageRoot                  string
+	SVNProgram, SignifyProgram            string
 }
 
 func LoadClientView(path string) (ClientView, error) {
@@ -160,7 +179,79 @@ func normalizeClientView(file jsonConfig) (ClientView, error) {
 		}
 		view.Projection = &Projection{WorkingCopy: workingCopy, RelativeViewPath: relative, CachePath: cachePath, Interval: interval}
 	}
+	if file.Update != nil && file.Update.Enabled {
+		update, err := normalizeUpdate(file.Update.RepoURL, file.Update.Channel, file.Update.Component, file.Update.Platform, file.Update.StatePath, file.Update.StageRoot, file.Update.SVNProgram, file.Update.SignifyProgram)
+		if err != nil {
+			return ClientView{}, err
+		}
+		view.Update = &update
+	}
 	return view, nil
+}
+
+func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot, svnProgram, signifyProgram string) (UpdateConfig, error) {
+	repoURL = strings.TrimRight(strings.TrimSpace(repoURL), "/")
+	parsed, err := url.Parse(repoURL)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "svn" && parsed.Scheme != "svn+ssh" && parsed.Scheme != "https") {
+		return UpdateConfig{}, errors.New("config.update.repo_url: wymagany URL svn, svn+ssh albo https")
+	}
+	password := false
+	if parsed.User != nil {
+		_, password = parsed.User.Password()
+	}
+	if password || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return UpdateConfig{}, errors.New("config.update.repo_url: hasło, query i fragment są zabronione")
+	}
+	channel = strings.TrimSpace(channel)
+	if channel == "" {
+		channel = "stable"
+	}
+	component = strings.TrimSpace(component)
+	if component == "" {
+		component = "desktop"
+	}
+	if component != "desktop" {
+		return UpdateConfig{}, errors.New("config.update.component: klient desktopowy wymaga wartości desktop")
+	}
+	platform = strings.TrimSpace(platform)
+	if platform == "" {
+		platform = runtime.GOOS + "-" + runtime.GOARCH
+	}
+	for name, value := range map[string]string{"channel": channel, "platform": platform} {
+		if !safeConfigIdentifier(value) {
+			return UpdateConfig{}, fmt.Errorf("config.update.%s: nieprawidłowy identyfikator", name)
+		}
+	}
+	statePath = filepath.Clean(strings.TrimSpace(statePath))
+	stageRoot = filepath.Clean(strings.TrimSpace(stageRoot))
+	if !filepath.IsAbs(statePath) || !filepath.IsAbs(stageRoot) {
+		return UpdateConfig{}, errors.New("config.update: state_path i stage_root muszą być ścieżkami bezwzględnymi")
+	}
+	svnProgram = strings.TrimSpace(svnProgram)
+	if svnProgram == "" {
+		svnProgram = "svn"
+	}
+	signifyProgram = strings.TrimSpace(signifyProgram)
+	if signifyProgram == "" {
+		signifyProgram = "signify"
+	}
+	if strings.ContainsAny(svnProgram+signifyProgram, "\r\n\x00") {
+		return UpdateConfig{}, errors.New("config.update: nieprawidłowa nazwa programu")
+	}
+	return UpdateConfig{RepoURL: repoURL, Channel: channel, Component: component, Platform: platform, StatePath: statePath, StageRoot: stageRoot, SVNProgram: svnProgram, SignifyProgram: signifyProgram}, nil
+}
+
+func safeConfigIdentifier(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '.' || character == '_' || character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // Load — wczytuje listę repozytoriów z JSON i dokonuje walidacji + konwersji pól.

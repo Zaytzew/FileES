@@ -30,7 +30,7 @@ func TestLoadMinimal(t *testing.T) {
 	if cfg.DefaultAction != "check" || cfg.ConfigDrift != "block" || cfg.OrphanFiles != "keep" {
 		t.Fatalf("policy defaults: %q %q %q", cfg.DefaultAction, cfg.ConfigDrift, cfg.OrphanFiles)
 	}
-	if !cfg.RequireHash || cfg.VerifySignature {
+	if !cfg.RequireHash || !cfg.VerifySignature {
 		t.Fatalf("hash/signature defaults: %v %v", cfg.RequireHash, cfg.VerifySignature)
 	}
 	if cfg.StateDir != "/var/filees/install-state" || cfg.SbinDir != "/usr/local/sbin" {
@@ -52,7 +52,7 @@ func TestLoadFullOverride(t *testing.T) {
 		"config_drift = warn",
 		"orphan_files = remove",
 		"interactive = no",
-		"require_hash = off",
+		"require_hash = on",
 		"verify_signature = yes",
 		"talkative = 1",
 		"[security]",
@@ -70,7 +70,7 @@ func TestLoadFullOverride(t *testing.T) {
 	if cfg.DefaultAction != "apply" || cfg.ConfigDrift != "warn" || cfg.OrphanFiles != "remove" {
 		t.Fatalf("policy enums: %q %q %q", cfg.DefaultAction, cfg.ConfigDrift, cfg.OrphanFiles)
 	}
-	if cfg.Interactive || cfg.RequireHash || !cfg.VerifySignature || !cfg.Talkative {
+	if cfg.Interactive || !cfg.RequireHash || !cfg.VerifySignature || !cfg.Talkative {
 		t.Fatalf("policy bools: %v %v %v %v", cfg.Interactive, cfg.RequireHash, cfg.VerifySignature, cfg.Talkative)
 	}
 	if cfg.SignifyProgram != "/usr/bin/signify" {
@@ -80,11 +80,13 @@ func TestLoadFullOverride(t *testing.T) {
 
 func TestLoadRejects(t *testing.T) {
 	cases := map[string]string{
-		"missing repo.url": "[policy]\ndefault_action = check\n",
-		"unknown key":      "[repo]\nurl = svn://h/B\nbogus = 1\n",
-		"bad enum":         "[repo]\nurl = svn://h/B\n[policy]\ndefault_action = destroy\n",
-		"bad bool":         "[repo]\nurl = svn://h/B\n[policy]\ninteractive = maybe\n",
-		"bad line":         "[repo]\nurl = svn://h/B\nno separator here\n",
+		"missing repo.url":   "[policy]\ndefault_action = check\n",
+		"unknown key":        "[repo]\nurl = svn://h/B\nbogus = 1\n",
+		"bad enum":           "[repo]\nurl = svn://h/B\n[policy]\ndefault_action = destroy\n",
+		"bad bool":           "[repo]\nurl = svn://h/B\n[policy]\ninteractive = maybe\n",
+		"bad line":           "[repo]\nurl = svn://h/B\nno separator here\n",
+		"hash disabled":      "[repo]\nurl = svn://h/B\n[policy]\nrequire_hash = no\n",
+		"signature disabled": "[repo]\nurl = svn://h/B\n[policy]\nverify_signature = no\n",
 	}
 	for name, content := range cases {
 		if _, err := Load(writeConfig(t, content)); err == nil {

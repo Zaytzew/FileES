@@ -19,13 +19,30 @@ func TestParseChannelDefaultManifest(t *testing.T) {
 
 func TestParseSkipsUTF8BOM(t *testing.T) {
 	withBOM := append([]byte{0xEF, 0xBB, 0xBF},
-		[]byte(`{"schema_version":1,"release_id":"v0.9","platform":"openbsd-amd64","files":[{"source":"bin/filees-admin","target":"{sbin_dir}/filees-admin","sha256":"deadbeef"}]}`)...)
+		[]byte(`{"schema_version":1,"release_id":"v0.9","platform":"openbsd-amd64","files":[{"source":"bin/filees-admin","target":"{sbin_dir}/filees-admin","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`)...)
 	m, err := Parse(withBOM)
 	if err != nil {
 		t.Fatalf("Parse with BOM: %v", err)
 	}
 	if m.ReleaseID != "v0.9" {
 		t.Fatalf("release_id = %q", m.ReleaseID)
+	}
+}
+
+func TestParseRejectsUnknownFieldsSchemaAndBadDigest(t *testing.T) {
+	cases := [][]byte{
+		[]byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","files":[{"source":"bin/x","target":"{sbin_dir}/x","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
+		[]byte(`{"schema_version":1,"release_id":"v1","platform":"openbsd-amd64","unknown":true,"files":[{"source":"bin/x","target":"{sbin_dir}/x","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
+		[]byte(`{"schema_version":1,"release_id":"v1","platform":"openbsd-amd64","files":[{"source":"bin/x","target":"{sbin_dir}/x","sha256":"deadbeef"}]}`),
+		[]byte(`{"schema_version":1,"release_id":"v1","platform":"openbsd-amd64","files":[{"source":"bin/x","target":"{sbin_dir}/x","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]} {}`),
+	}
+	for i, data := range cases {
+		if _, err := Parse(data); err == nil {
+			t.Errorf("case %d accepted", i)
+		}
+	}
+	if _, err := ParseChannel([]byte(`{"schema_version":1,"release_id":"v1","extra":true}`)); err == nil {
+		t.Fatal("channel unknown field accepted")
 	}
 }
 

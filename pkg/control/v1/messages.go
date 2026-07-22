@@ -19,6 +19,7 @@ type TicketType string
 const (
 	TicketCreateRepository TicketType = "CREATE_REPOSITORY"
 	TicketInitialCommit    TicketType = "INITIAL_COMMIT"
+	TicketStoragePreflight TicketType = "STORAGE_PREFLIGHT"
 )
 
 type ResultStatus string
@@ -68,6 +69,14 @@ type InitialCommitPayload struct {
 }
 type InitialCommitResult struct {
 	Acknowledged bool `json:"acknowledged"`
+}
+type StoragePreflightPayload struct {
+	ContentBytes int64 `json:"content_bytes"`
+	Paths        int   `json:"paths"`
+}
+type StoragePreflightResult struct {
+	AvailableBytes int64 `json:"available_bytes"`
+	RequiredBytes  int64 `json:"required_bytes"`
 }
 
 func NewTicket(operationID, requestID string, typ TicketType, clientID string, payload any, now time.Time) (Ticket, error) {
@@ -126,6 +135,14 @@ func (t Ticket) Validate() error {
 		return fmt.Errorf("invalid created_at: %w", err)
 	}
 	switch t.Type {
+	case TicketStoragePreflight:
+		var p StoragePreflightPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("STORAGE_PREFLIGHT payload: %w", err)
+		}
+		if p.ContentBytes < 0 || p.Paths < 0 {
+			return errors.New("STORAGE_PREFLIGHT sizes cannot be negative")
+		}
 	case TicketCreateRepository:
 		var p CreateRepositoryPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -170,7 +187,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketCreateRepository && r.Type != TicketInitialCommit {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -194,6 +211,14 @@ func (r Result) Validate() error {
 
 func validateSuccessPayload(r Result) error {
 	switch r.Type {
+	case TicketStoragePreflight:
+		var result StoragePreflightResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("STORAGE_PREFLIGHT result: %w", err)
+		}
+		if result.AvailableBytes < 0 || result.RequiredBytes < 0 {
+			return errors.New("STORAGE_PREFLIGHT result sizes cannot be negative")
+		}
 	case TicketCreateRepository:
 		var result CreateRepositoryResult
 		if err := decodeStrict(r.Result, &result); err != nil {

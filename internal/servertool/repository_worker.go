@@ -35,7 +35,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		report(stderr, "repository worker store", err)
 		return ExitConfig
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Store: store}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: repoworker.FilesystemCapacity{Root: r.Root}, Store: store}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}
 	if err := repoworker.WithFileLock(filepath.Join(r.ResultsRoot, ".worker.lock"), func() error { return dispatcher.Serve(context.Background(), args[0], in, out) }); err != nil {
 		report(stderr, "repository worker", err)

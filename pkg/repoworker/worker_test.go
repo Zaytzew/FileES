@@ -30,6 +30,48 @@ type fakeActivator struct {
 	realm string
 }
 
+type fakeCapacity struct {
+	available, required int64
+	calls               int
+}
+
+func (c *fakeCapacity) Check(context.Context, int64) (int64, int64, error) {
+	c.calls++
+	return c.available, c.required, nil
+}
+
+func TestWorkerStoragePreflightHardRefusalAndDurableSuccess(t *testing.T) {
+	session := Session{ClientID: "client", RealmID: uuid.NewString(), CanCreateRepositories: true}
+	newTicket := func() control.Ticket {
+		ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketStoragePreflight, session.ClientID, control.StoragePreflightPayload{ContentBytes: 100, Paths: 2}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ticket
+	}
+	store, _ := NewFileStore(t.TempDir())
+	insufficient := &fakeCapacity{available: 99, required: 100}
+	result, err := (&Worker{Capacity: insufficient, Store: store}).Handle(context.Background(), session, newTicket())
+	if err != nil || result.Status != control.ResultError || result.Error == nil || result.Error.Code != "STORAGE_INSUFFICIENT" {
+		t.Fatalf("refusal=%+v err=%v", result, err)
+	}
+	if result.Error.Details["available_bytes"] != "99" || result.Error.Details["required_bytes"] != "100" {
+		t.Fatalf("refusal details=%v", result.Error.Details)
+	}
+
+	capacity := &fakeCapacity{available: 1000, required: 300}
+	ticket := newTicket()
+	worker := &Worker{Capacity: capacity, Store: store}
+	first, err := worker.Handle(context.Background(), session, ticket)
+	if err != nil || first.Status != control.ResultOK {
+		t.Fatalf("success=%+v err=%v", first, err)
+	}
+	second, err := worker.Handle(context.Background(), session, ticket)
+	if err != nil || second.CompletedAt != first.CompletedAt || capacity.calls != 1 {
+		t.Fatalf("replay=%+v calls=%d err=%v", second, capacity.calls, err)
+	}
+}
+
 func (a *fakeActivator) Activate(_ context.Context, repo, realm string) error {
 	a.calls++
 	a.repo, a.realm = repo, realm

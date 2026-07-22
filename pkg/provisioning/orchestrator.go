@@ -38,7 +38,31 @@ func (o Orchestrator) RunCreate(ctx context.Context, operationID string) (Operat
 			return Operation{}, err
 		}
 		switch op.State {
-		case StateLocalValidated, StateRepositoryRequestFailed:
+		case StateLocalValidated, StateStoragePreflightFailed:
+			if _, err := o.Store.RequestStoragePreflight(operationID, uuid.NewString()); err != nil {
+				return Operation{}, err
+			}
+		case StateStoragePreflightRequested:
+			requestID, err := pendingRequest(op, control.TicketStoragePreflight)
+			if err != nil {
+				return Operation{}, err
+			}
+			ticket, err := o.Store.StoragePreflightTicket(operationID, requestID)
+			if err != nil {
+				return Operation{}, err
+			}
+			result, err := o.Control.Exchange(ctx, ticket)
+			if err != nil {
+				return Operation{}, fmt.Errorf("exchange STORAGE_PREFLIGHT: %w", err)
+			}
+			updated, err := o.Store.ApplyStoragePreflightResult(result)
+			if err != nil {
+				return Operation{}, err
+			}
+			if updated.State == StateStoragePreflightFailed {
+				return updated, requestFailure(updated, requestID)
+			}
+		case StateStorageApproved, StateRepositoryRequestFailed:
 			if _, err := o.Store.RequestRepository(operationID, uuid.NewString()); err != nil {
 				return Operation{}, err
 			}

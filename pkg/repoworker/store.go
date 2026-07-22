@@ -31,7 +31,7 @@ func (s *FileStore) path(id string, typ control.TicketType) (string, error) {
 	if _, e := uuid.Parse(id); e != nil {
 		return "", errors.New("operation ID must be UUID")
 	}
-	if typ != control.TicketCreateRepository && typ != control.TicketInitialCommit {
+	if typ != control.TicketStoragePreflight && typ != control.TicketCreateRepository && typ != control.TicketInitialCommit {
 		return "", errors.New("unsupported result ticket type")
 	}
 	return filepath.Join(s.root, id+"."+strings.ToLower(string(typ))+".json"), nil

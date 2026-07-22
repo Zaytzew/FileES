@@ -47,10 +47,15 @@ type RepositoryActivator interface {
 	Activate(context.Context, string, string) error // repo ID, authenticated realm ID
 }
 
+type CapacityChecker interface {
+	Check(context.Context, int64) (availableBytes, requiredBytes int64, err error)
+}
+
 type Worker struct {
 	Backend   Backend
 	Activator RepositoryActivator
 	Store     ResultStore
+	Capacity  CapacityChecker
 	Now       func() time.Time
 }
 
@@ -64,10 +69,10 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
-	if ticket.Type == control.TicketCreateRepository && !session.CanCreateRepositories {
+	if (ticket.Type == control.TicketStoragePreflight || ticket.Type == control.TicketCreateRepository) && !session.CanCreateRepositories {
 		return w.failure(ticket, "CREATE_REPOSITORY_FORBIDDEN", "authenticated session cannot create repositories")
 	}
 	if w.Store == nil {
@@ -83,6 +88,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.Type == control.TicketInitialCommit {
 		return w.activate(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketStoragePreflight {
+		return w.preflight(ctx, ticket)
 	}
 	var payload control.CreateRepositoryPayload
 	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
@@ -101,6 +109,39 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 		return control.Result{}, fmt.Errorf("backend returned incomplete repository")
 	}
 	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.CreateRepositoryResult{RepoID: repo.RepoID, RepoURL: repo.URL}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
+func (w *Worker) preflight(ctx context.Context, ticket control.Ticket) (control.Result, error) {
+	var payload control.StoragePreflightPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	if w.Capacity == nil {
+		return control.Result{}, errors.New("repository capacity checker is required")
+	}
+	available, required, err := w.Capacity.Check(ctx, payload.ContentBytes)
+	if err != nil {
+		return w.failure(ticket, "STORAGE_PREFLIGHT_FAILED", err.Error())
+	}
+	if available < required {
+		result, resultErr := control.NewErrorResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ErrorBody{
+			Code:    "STORAGE_INSUFFICIENT",
+			Message: fmt.Sprintf("server storage requires %d bytes, %d available", required, available),
+			Details: map[string]string{
+				"available_bytes": fmt.Sprintf("%d", available),
+				"required_bytes":  fmt.Sprintf("%d", required),
+			},
+		}, w.now())
+		if resultErr == nil {
+			resultErr = w.Store.Save(result)
+		}
+		return result, resultErr
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.StoragePreflightResult{AvailableBytes: available, RequiredBytes: required}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}

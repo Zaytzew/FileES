@@ -51,7 +51,11 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, c
 	verifier := releaseenvelope.SignifyVerifier{
 		Keys: keys, Verifier: signify.CLI{Program: update.SignifyProgram, Timeout: 30 * time.Second}, TempRoot: update.StageRoot,
 	}
-	resolver := &releaseenvelope.Resolver{Fetcher: fetcher, Verifier: verifier, TrustedKeys: []string{embeddedClientReleaseKeyID}}
+	trustedKeys := make([]string, 0, len(keys))
+	for keyID := range keys {
+		trustedKeys = append(trustedKeys, keyID)
+	}
+	resolver := &releaseenvelope.Resolver{Fetcher: fetcher, Verifier: verifier, TrustedKeys: trustedKeys}
 	installer := clientupdate.LinuxInstaller{
 		Stager: clientupdate.BundleStager{Fetcher: fetcher, Root: update.StageRoot},
 		Paths:  clientupdate.LinuxPaths{Home: home, Prefix: filepath.Join(home, ".local"), DataHome: dataHome, ConfigHome: configHome},

@@ -5,6 +5,22 @@ release nie może znajdować się na build hoście, VM testowej ani w repozytori
 
 ## 1. Deterministyczny manifest
 
+Produkcyjny build klienta przyjmuje wyłącznie publiczny trust root:
+
+```sh
+FILEES_RELEASE_PUBKEY="$HOME/.signify/filees-release.pub" \
+FILEES_RELEASE_KEY_ID="release-2026-a" \
+./packaging/build-gui.sh linux-amd64
+```
+
+Obie zmienne muszą wystąpić razem. Build odrzuca placeholder i nie zna żadnej
+ścieżki ani zmiennej private key. Publiczny klucz jest kodowany base64 i
+wstrzykiwany do binarki daemona przez linker; źródłowy placeholder i WC nie są
+modyfikowane. `build-gui.sh` tworzy katalog bundla oraz deterministyczny
+`filees-client-linux-amd64.tar.gz` przez `filees-release-bundle`: sortowane
+ścieżki, uid/gid i czas równe zero, tryby 0755/0644, bez symlinków i plików
+specjalnych.
+
 Na maszynie budującej przygotuj katalog payloadu oraz recenzowalną specyfikację:
 
 ```json

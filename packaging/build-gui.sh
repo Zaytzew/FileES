@@ -5,6 +5,31 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 dist=${DIST:-"$root/dist"}
 target=${1:-all}
 version=$(sed -n '1p' "$root/VERSION")
+release_ldflags=""
+
+if [ -n "${FILEES_RELEASE_PUBKEY:-}" ] || [ -n "${FILEES_RELEASE_KEY_ID:-}" ]; then
+	[ -n "${FILEES_RELEASE_PUBKEY:-}" ] && [ -n "${FILEES_RELEASE_KEY_ID:-}" ] || {
+		echo "FILEES_RELEASE_PUBKEY and FILEES_RELEASE_KEY_ID must be set together" >&2
+		exit 2
+	}
+	[ -f "$FILEES_RELEASE_PUBKEY" ] || {
+		echo "release public key not found: $FILEES_RELEASE_PUBKEY" >&2
+		exit 2
+	}
+	case "$FILEES_RELEASE_KEY_ID" in
+		[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*|'') echo "invalid FILEES_RELEASE_KEY_ID" >&2; exit 2 ;;
+	esac
+	if grep -Eq 'PLACEHOLDER|xxxx' "$FILEES_RELEASE_PUBKEY"; then
+		echo "refusing placeholder release public key" >&2
+		exit 2
+	fi
+	release_pubkey_b64=$(base64 <"$FILEES_RELEASE_PUBKEY" | tr -d '\r\n')
+	[ -n "$release_pubkey_b64" ] || {
+		echo "release public key is empty" >&2
+		exit 2
+	}
+	release_ldflags="-X main.injectedClientReleasePublicKeyB64=$release_pubkey_b64 -X main.injectedClientReleaseKeyID=$FILEES_RELEASE_KEY_ID"
+fi
 
 prepare_output() {
 	name=$1
@@ -26,7 +51,7 @@ build_linux() {
 	mkdir -p "$tmp/bin" "$tmp/share/applications" "$tmp/share/icons/hicolor/scalable/apps" "$tmp/share/systemd/user" "$tmp/share/filees"
 	(
 		cd "$root"
-		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$tmp/bin/filees" ./cmd/filees
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version $release_ldflags" -o "$tmp/bin/filees" ./cmd/filees
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$tmp/bin/filees-gui" ./cmd/filees-gui
 	)
 	cp "$root/packaging/linux/filees-gui.desktop" "$tmp/share/applications/"
@@ -48,6 +73,10 @@ build_linux() {
 		find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | xargs sha256sum > SHA256SUMS
 	)
 	publish_output "$tmp" "$out"
+	(
+		cd "$root"
+		go run ./cmd/filees-release-bundle -source "$out" -output "$out.tar.gz"
+	)
 	trap - EXIT HUP INT TERM
 }
 

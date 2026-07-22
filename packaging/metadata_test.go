@@ -214,6 +214,7 @@ func TestLinuxBuildContainsFullClientServiceAndChecksums(t *testing.T) {
 	for _, required := range []string{
 		"filees-client-linux-amd64", "./cmd/filees", "./cmd/filees-gui",
 		"filees.service", "config.example.json", "SHA256SUMS", "sha256sum",
+		"filees-release-bundle", `-output "$out.tar.gz"`,
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("Linux client build missing %q", required)

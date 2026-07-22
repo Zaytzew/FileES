@@ -101,6 +101,30 @@ func TestBuildMenuShowsGlobalRecentActivityBesideHistory(t *testing.T) {
 	}
 }
 
+func TestActivityStageLabelDistinguishesKindForPublishedAndFailed(t *testing.T) {
+	cases := []struct {
+		kind, stage string
+		revision    int64
+		want        string
+	}{
+		{"added", "published", 3, "Dodano · r3"},
+		{"modified", "published", 3, "Zaktualizowano · r3"},
+		{"deleted", "published", 3, "Usunięto · r3"},
+		{"renamed", "published", 3, "Zmieniono nazwę · r3"},
+		{"", "published", 3, "Opublikowano · r3"},
+		{"added", "failed", 0, "Nie udało się: dodanie"},
+		{"modified", "failed", 0, "Nie udało się: aktualizacja"},
+		{"deleted", "failed", 0, "Nie udało się: usunięcie"},
+		{"renamed", "failed", 0, "Nie udało się: zmiana nazwy"},
+	}
+	for _, c := range cases {
+		got := activityStageLabel(app.ActivityViewModel{Kind: c.kind, Stage: c.stage, Revision: c.revision})
+		if got != c.want {
+			t.Errorf("activityStageLabel(kind=%q, stage=%q) = %q, want %q", c.kind, c.stage, got, c.want)
+		}
+	}
+}
+
 func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
 	menu := BuildMenu(withServer(app.ViewModel{
 		Connected: true,

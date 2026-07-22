@@ -88,11 +88,43 @@ func activityStageLabel(record app.ActivityViewModel) string {
 	case "publishing":
 		return "Publikowanie"
 	case "published":
-		return fmt.Sprintf("Opublikowano · r%d", record.Revision)
+		return fmt.Sprintf("%s · r%d", activityKindPastTense(record.Kind), record.Revision)
 	case "failed":
-		return "Nie opublikowano"
+		return fmt.Sprintf("Nie udało się: %s", activityKindInfinitive(record.Kind))
 	default:
 		return "Stan nieznany"
+	}
+}
+
+// activityKindPastTense names the completed operation for a published entry
+// -- "Opublikowano rN" alone would read as an add/update even for a delete.
+func activityKindPastTense(kind string) string {
+	switch kind {
+	case "added":
+		return "Dodano"
+	case "modified":
+		return "Zaktualizowano"
+	case "deleted":
+		return "Usunięto"
+	case "renamed":
+		return "Zmieniono nazwę"
+	default:
+		return "Opublikowano"
+	}
+}
+
+func activityKindInfinitive(kind string) string {
+	switch kind {
+	case "added":
+		return "dodanie"
+	case "modified":
+		return "aktualizacja"
+	case "deleted":
+		return "usunięcie"
+	case "renamed":
+		return "zmiana nazwy"
+	default:
+		return "publikacja"
 	}
 }
 

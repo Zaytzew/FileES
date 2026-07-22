@@ -44,6 +44,8 @@ type Rules struct {
 	NeedsLock         bool           // attach svn:needs-lock to newly added regular files
 	RateLimitShout    time.Duration  // min duration between shouts
 	NewLatency        time.Duration  // delay for new (Added) entries before commit (default 5m)
+	ModifiedQuiet     time.Duration  // debounce: commit a Modified entry after this much quiet since its last write (default 2m)
+	ModifiedMaxWait   time.Duration  // hard ceiling from a Modified entry's first unconfirmed write, never reset (default 5m)
 	SizeTiers         []SizeTier     // size-adaptive intervals; empty = use Window only
 	PollInterval      time.Duration  // HEAD polling interval; 0 = disabled
 }
@@ -141,7 +143,8 @@ type stageItem struct {
 	OldRel    string // source path for Renamed; empty otherwise
 	IsDir     bool
 	Op        watcher.OpType
-	FirstSeen time.Time // for Added latency
+	FirstSeen time.Time // for Added latency; also the Modified debounce ceiling anchor
+	LastSeen  time.Time // most recent write; anchors the Modified debounce quiet period
 	ver       uint64    // incremented on every in-place update
 }
 
@@ -223,6 +226,12 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	lg := s.Logger
 	if s.Rules.NewLatency <= 0 {
 		s.Rules.NewLatency = 5 * time.Minute
+	}
+	if s.Rules.ModifiedQuiet <= 0 {
+		s.Rules.ModifiedQuiet = 2 * time.Minute
+	}
+	if s.Rules.ModifiedMaxWait <= 0 {
+		s.Rules.ModifiedMaxWait = 5 * time.Minute
 	}
 	if s.Rules.MaxBatchFiles <= 0 {
 		s.Rules.MaxBatchFiles = 1000
@@ -436,7 +445,8 @@ func (s *Service) addEvent(ev watcher.Event) {
 	key := ev.Rel
 	it, ok := s.staging[key]
 	if !ok {
-		it = &stageItem{Rel: ev.Rel, Abs: ev.Path, OldRel: ev.OldRel, IsDir: ev.Type == watcher.EntryDir, Op: ev.Op, FirstSeen: time.Now()}
+		now := time.Now()
+		it = &stageItem{Rel: ev.Rel, Abs: ev.Path, OldRel: ev.OldRel, IsDir: ev.Type == watcher.EntryDir, Op: ev.Op, FirstSeen: now, LastSeen: now}
 		s.staging[key] = it
 		return
 	}
@@ -459,6 +469,7 @@ func (s *Service) addEvent(ev watcher.Event) {
 	// refresh Abs/IsDir if needed
 	it.Abs = ev.Path
 	it.IsDir = (ev.Type == watcher.EntryDir)
+	it.LastSeen = time.Now()
 	it.ver++
 }
 
@@ -475,6 +486,21 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	s.mu.Lock()
 	// snapshot and filter by latency & max batch
 	now := time.Now()
+	// A large backlog overrides the Modified debounce below, same as it
+	// already accelerates stable modifications past the normal Window tick
+	// (see watermarkState/BacklogFlushBytes) -- both exist to stop the
+	// backlog from growing without bound, one by size and one by time, and
+	// neither should block the other.
+	var stagedBytes int64
+	for _, it := range s.staging {
+		if it.IsDir || it.Op == watcher.Deleted {
+			continue
+		}
+		if fi, err := os.Stat(it.Abs); err == nil {
+			stagedBytes += fi.Size()
+		}
+	}
+	backlogHigh := s.Rules.BacklogFlushBytes > 0 && stagedBytes >= s.Rules.BacklogFlushBytes
 	pending := make([]pendingEntry, 0, len(s.staging))
 	for key, it := range s.staging {
 		if it.Op == watcher.Added {
@@ -485,6 +511,19 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 				continue
 			}
 			if !force && now.Sub(it.FirstSeen) < s.Rules.NewLatency {
+				continue
+			}
+		}
+		if it.Op == watcher.Modified && !force && !backlogHigh {
+			// Debounce with a hard ceiling: a quiet period since the last
+			// write absorbs a burst of saves into one commit, but it must
+			// never reset indefinitely. A relay of writes closer together
+			// than ModifiedQuiet would otherwise postpone the commit
+			// forever, so ModifiedMaxWait (measured from the first
+			// unconfirmed write, never reset) forces it regardless.
+			quiet := now.Sub(it.LastSeen) >= s.Rules.ModifiedQuiet
+			ceiling := now.Sub(it.FirstSeen) >= s.Rules.ModifiedMaxWait
+			if !quiet && !ceiling {
 				continue
 			}
 		}
@@ -1122,6 +1161,7 @@ type cacheEntry struct {
 	IsDir     bool      `json:"is_dir,omitempty"`
 	Op        string    `json:"op"`
 	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen,omitempty"`
 }
 
 func opName(op watcher.OpType) string {
@@ -1166,6 +1206,13 @@ func (s *Service) loadCache() {
 
 	s.mu.Lock()
 	for _, e := range entries {
+		lastSeen := e.LastSeen
+		if lastSeen.IsZero() {
+			// Cache written before LastSeen existed, or never updated:
+			// treat as no writes since the entry was first staged, which is
+			// the safe (never-younger) assumption for the debounce check.
+			lastSeen = e.FirstSeen
+		}
 		s.staging[e.Rel] = &stageItem{
 			Rel:       e.Rel,
 			Abs:       e.Abs,
@@ -1173,6 +1220,7 @@ func (s *Service) loadCache() {
 			IsDir:     e.IsDir,
 			Op:        opFromName(e.Op),
 			FirstSeen: e.FirstSeen,
+			LastSeen:  lastSeen,
 		}
 	}
 	s.mu.Unlock()
@@ -1198,6 +1246,7 @@ func (s *Service) saveCache() {
 			IsDir:     it.IsDir,
 			Op:        opName(it.Op),
 			FirstSeen: it.FirstSeen,
+			LastSeen:  it.LastSeen,
 		})
 	}
 	s.mu.Unlock()

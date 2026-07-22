@@ -30,7 +30,10 @@ cd "$FILESS_BIN_WC"
 svn update --quiet
 [ -z "$(svn status -u | sed -n '/^[[:space:]]*\*/p')" ] || die "working copy is not at repository HEAD"
 
-channel_path="channels/${CHANNEL}.json"
+channel_path="channels/${CHANNEL}.v2.json"
+if [ ! -f "$channel_path" ]; then
+	channel_path="channels/${CHANNEL}.json"
+fi
 [ -f "$channel_path" ] || die "channel file not found: $channel_path"
 release_id=$(sed -n 's/.*"release_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$channel_path" | head -1)
 case "$release_id" in
@@ -40,21 +43,21 @@ esac
 release_root="releases/${release_id}"
 [ -d "$release_root" ] || die "release directory not found: $release_root"
 
-platforms=0
+manifests=0
 all_signed=true
-for manifest_path in "$release_root"/*/manifest.json; do
+for manifest_path in "$release_root"/*/manifest.json "$release_root"/*/*/manifest.json; do
 	[ -f "$manifest_path" ] || continue
-	platforms=$((platforms + 1))
+	manifests=$((manifests + 1))
 	if [ ! -f "${manifest_path}.sig" ] || ! "$SIGNIFY_BIN" -V -q -p "$SIGNIFY_PUB_KEY" -m "$manifest_path" -x "${manifest_path}.sig"; then
 		all_signed=false
 	fi
 done
-[ "$platforms" -gt 0 ] || die "release has no platform manifests: $release_root"
+[ "$manifests" -gt 0 ] || die "release has no component manifests: $release_root"
 if [ ! -f "${channel_path}.sig" ] || ! "$SIGNIFY_BIN" -V -q -p "$SIGNIFY_PUB_KEY" -m "$channel_path" -x "${channel_path}.sig"; then
 	all_signed=false
 fi
 if [ "$all_signed" = true ]; then
-	echo "release ${release_id} is already signed and verified for ${platforms} platform(s)"
+	echo "release ${release_id} is already signed and verified for ${manifests} manifest(s)"
 	exit 0
 fi
 
@@ -74,7 +77,7 @@ sign_one() {
 	echo "signed + verified: ${path}.sig"
 }
 
-for manifest_path in "$release_root"/*/manifest.json; do
+for manifest_path in "$release_root"/*/manifest.json "$release_root"/*/*/manifest.json; do
 	[ -f "$manifest_path" ] || continue
 	sign_one "$manifest_path"
 done
@@ -90,7 +93,7 @@ done
 # shellcheck disable=SC2086 # signed_paths is an internally generated path list.
 svn commit $signed_paths -m "Sign FileES release ${release_id} (channel ${CHANNEL})
 
-Detached signify signatures for ${platforms} platform manifest(s) and the
+Detached signify signatures for ${manifests} component/platform manifest(s) and the
 channel, verified against the release public key on the signing machine."
 
-echo "done: FileES release ${release_id}, platforms=${platforms}, channel=${CHANNEL}"
+echo "done: FileES release ${release_id}, manifests=${manifests}, channel=${CHANNEL}"

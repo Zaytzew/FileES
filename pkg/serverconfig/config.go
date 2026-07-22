@@ -44,6 +44,7 @@ type ActivationFile struct {
 	ServiceRepository  string `json:"service_repository"`
 	RepositoryName     string `json:"repository_name"`
 	ClientEntryPath    string `json:"client_entry_path"`
+	MobileEntryPath    string `json:"mobile_entry_path,omitempty"`
 	SVNBinary          string `json:"svn_binary"`
 	SVNServeBinary     string `json:"svnserve_binary"`
 }
@@ -148,7 +149,8 @@ func load(path string, secrets Secrets) (Config, error) {
 		AuthzFile: file.Activation.AuthzFile, ServiceWorkingCopy: file.Activation.ServiceWorkingCopy,
 		ServiceRepository: file.Activation.ServiceRepository,
 		RepositoryName:    file.Activation.RepositoryName, ClientEntryPath: file.Activation.ClientEntryPath,
-		SVNBinary: file.Activation.SVNBinary, SVNServeBinary: file.Activation.SVNServeBinary,
+		MobileEntryPath: file.Activation.MobileEntryPath,
+		SVNBinary:       file.Activation.SVNBinary, SVNServeBinary: file.Activation.SVNServeBinary,
 	}
 	if secrets&SecretActivation != 0 {
 		if _, err := activation.New(activationConfig, nil); err != nil {

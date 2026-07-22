@@ -104,7 +104,7 @@ func TestLoadClientViewStrictOptionalUpdateConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Update == nil || view.Update.RepoURL != "https://releases.example/FILESS-BIN" || view.Update.Channel != "stable" || view.Update.Component != "desktop" || view.Update.Platform == "" || view.Update.SVNProgram != "svn" || view.Update.SignifyProgram != "signify" {
+	if view.Update == nil || view.Update.RepoURL != "https://releases.example/FILESS-BIN" || view.Update.Channel != "stable" || view.Update.Component != "desktop" || view.Update.Platform == "" || view.Update.SVNProgram != "svn" {
 		t.Fatalf("update config = %+v", view.Update)
 	}
 	disabled := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"update":{"enabled":false,"repo_url":"not-used","state_path":"relative","stage_root":"relative"},"repositories":[]}`)
@@ -124,6 +124,7 @@ func TestLoadClientViewRejectsUnsafeUpdateConfigAndTrustOverrides(t *testing.T) 
 		`{"enabled":true,"repo_url":"https://example/releases","state_path":"relative","stage_root":"/tmp/stage"}`,
 		`{"enabled":true,"repo_url":"https://example/releases","state_path":"/tmp/state","stage_root":"/tmp/stage","public_key":"attacker.pub"}`,
 		`{"enabled":true,"repo_url":"https://example/releases","state_path":"/tmp/state","stage_root":"/tmp/stage","verify_signature":false}`,
+		`{"enabled":true,"repo_url":"https://example/releases","state_path":"/tmp/state","stage_root":"/tmp/stage","signify_program":"attacker-signify"}`,
 	}
 	for _, update := range updates {
 		path := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"update":`+update+`,"repositories":[]}`)

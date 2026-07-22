@@ -98,15 +98,14 @@ type jsonConfig struct {
 		Interval         string `json:"interval,omitempty"`
 	} `json:"projection,omitempty"`
 	Update *struct {
-		Enabled        bool   `json:"enabled"`
-		RepoURL        string `json:"repo_url"`
-		Channel        string `json:"channel,omitempty"`
-		Component      string `json:"component,omitempty"`
-		Platform       string `json:"platform,omitempty"`
-		StatePath      string `json:"state_path"`
-		StageRoot      string `json:"stage_root"`
-		SVNProgram     string `json:"svn_program,omitempty"`
-		SignifyProgram string `json:"signify_program,omitempty"`
+		Enabled    bool   `json:"enabled"`
+		RepoURL    string `json:"repo_url"`
+		Channel    string `json:"channel,omitempty"`
+		Component  string `json:"component,omitempty"`
+		Platform   string `json:"platform,omitempty"`
+		StatePath  string `json:"state_path"`
+		StageRoot  string `json:"stage_root"`
+		SVNProgram string `json:"svn_program,omitempty"`
 	} `json:"update,omitempty"`
 	Repositories []jsonRepo `json:"repositories"`
 }
@@ -127,7 +126,7 @@ type ClientView struct {
 type UpdateConfig struct {
 	RepoURL, Channel, Component, Platform string
 	StatePath, StageRoot                  string
-	SVNProgram, SignifyProgram            string
+	SVNProgram                            string
 }
 
 func LoadClientView(path string) (ClientView, error) {
@@ -180,7 +179,7 @@ func normalizeClientView(file jsonConfig) (ClientView, error) {
 		view.Projection = &Projection{WorkingCopy: workingCopy, RelativeViewPath: relative, CachePath: cachePath, Interval: interval}
 	}
 	if file.Update != nil && file.Update.Enabled {
-		update, err := normalizeUpdate(file.Update.RepoURL, file.Update.Channel, file.Update.Component, file.Update.Platform, file.Update.StatePath, file.Update.StageRoot, file.Update.SVNProgram, file.Update.SignifyProgram)
+		update, err := normalizeUpdate(file.Update.RepoURL, file.Update.Channel, file.Update.Component, file.Update.Platform, file.Update.StatePath, file.Update.StageRoot, file.Update.SVNProgram)
 		if err != nil {
 			return ClientView{}, err
 		}
@@ -189,7 +188,7 @@ func normalizeClientView(file jsonConfig) (ClientView, error) {
 	return view, nil
 }
 
-func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot, svnProgram, signifyProgram string) (UpdateConfig, error) {
+func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot, svnProgram string) (UpdateConfig, error) {
 	repoURL = strings.TrimRight(strings.TrimSpace(repoURL), "/")
 	parsed, err := url.Parse(repoURL)
 	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "svn" && parsed.Scheme != "svn+ssh" && parsed.Scheme != "https") {
@@ -231,14 +230,10 @@ func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot
 	if svnProgram == "" {
 		svnProgram = "svn"
 	}
-	signifyProgram = strings.TrimSpace(signifyProgram)
-	if signifyProgram == "" {
-		signifyProgram = "signify"
-	}
-	if strings.ContainsAny(svnProgram+signifyProgram, "\r\n\x00") {
+	if strings.ContainsAny(svnProgram, "\r\n\x00") {
 		return UpdateConfig{}, errors.New("config.update: nieprawidłowa nazwa programu")
 	}
-	return UpdateConfig{RepoURL: repoURL, Channel: channel, Component: component, Platform: platform, StatePath: statePath, StageRoot: stageRoot, SVNProgram: svnProgram, SignifyProgram: signifyProgram}, nil
+	return UpdateConfig{RepoURL: repoURL, Channel: channel, Component: component, Platform: platform, StatePath: statePath, StageRoot: stageRoot, SVNProgram: svnProgram}, nil
 }
 
 func safeConfigIdentifier(value string) bool {

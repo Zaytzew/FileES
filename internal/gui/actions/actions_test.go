@@ -872,17 +872,17 @@ type fakeUpdater struct {
 	applyCalls chan struct{}
 }
 
-func (fake *fakeUpdater) UpdatePlan(context.Context) (*contract.UpdatePlanResult, error) {
+func (fake *fakeUpdater) UpdatePlan(context.Context) (*actions.UpdatePlan, error) {
 	fake.planCalls <- struct{}{}
-	return &contract.UpdatePlanResult{
+	return &actions.UpdatePlan{
 		CurrentVersion: "1.0", AvailableVersion: "1.1", ReleaseID: "r180", RestartRequired: true,
-		Changes: []contract.UpdateChange{{Action: "update", Path: "filees-gui", Detail: "podpis zweryfikowany"}},
+		Changes: []actions.UpdateChange{{Action: "update", Path: "filees-gui", Detail: "podpis zweryfikowany"}},
 	}, nil
 }
 
-func (fake *fakeUpdater) UpdateApply(context.Context) (*contract.UpdateApplyResult, error) {
+func (fake *fakeUpdater) UpdateApply(context.Context) (*actions.UpdateResult, error) {
 	fake.applyCalls <- struct{}{}
-	return &contract.UpdateApplyResult{InstalledVersion: "1.1", RestartRequired: true}, nil
+	return &actions.UpdateResult{InstalledVersion: "1.1", RestartRequired: true}, nil
 }
 
 func TestControllerUpdateDryRunAndConfirmedApply(t *testing.T) {

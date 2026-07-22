@@ -11,7 +11,6 @@ import (
 
 	"filees/internal/clientupdate"
 	"filees/internal/releaseenvelope"
-	"filees/internal/serverinstall/signify"
 	"filees/internal/serverinstall/svnfetch"
 	"filees/pkg/config"
 	"filees/pkg/ipcserver"
@@ -48,9 +47,7 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, c
 		configHome = filepath.Join(home, ".config")
 	}
 	fetcher := svnfetch.SVN{Program: update.SVNProgram, RepoURL: update.RepoURL, Timeout: 2 * time.Minute}
-	verifier := releaseenvelope.SignifyVerifier{
-		Keys: keys, Verifier: signify.CLI{Program: update.SignifyProgram, Timeout: 30 * time.Second}, TempRoot: update.StageRoot,
-	}
+	verifier := releaseenvelope.Ed25519Verifier{Keys: keys}
 	trustedKeys := make([]string, 0, len(keys))
 	for keyID := range keys {
 		trustedKeys = append(trustedKeys, keyID)

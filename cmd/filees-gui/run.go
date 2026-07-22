@@ -11,6 +11,7 @@ import (
 	"filees/internal/gui/notifications"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
+	contract "filees/pkg/contract/v1"
 )
 
 type dependencies struct {
@@ -24,6 +25,43 @@ type dependencies struct {
 type viewStore struct {
 	mu sync.RWMutex
 	vm app.ViewModel
+}
+
+type updateClient interface {
+	UpdatePlan(context.Context) (*contract.UpdatePlanResult, error)
+	UpdateApply(context.Context) (*contract.UpdateApplyResult, error)
+}
+
+type updateAdapter struct{ client updateClient }
+
+func (adapter updateAdapter) UpdatePlan(ctx context.Context) (*actions.UpdatePlan, error) {
+	result, err := adapter.client.UpdatePlan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty update plan")
+	}
+	plan := &actions.UpdatePlan{
+		CurrentVersion: result.CurrentVersion, AvailableVersion: result.AvailableVersion,
+		ReleaseID: result.ReleaseID, RestartRequired: result.RestartRequired,
+		Changes: make([]actions.UpdateChange, len(result.Changes)),
+	}
+	for index, change := range result.Changes {
+		plan.Changes[index] = actions.UpdateChange{Action: change.Action, Path: change.Path, Detail: change.Detail}
+	}
+	return plan, nil
+}
+
+func (adapter updateAdapter) UpdateApply(ctx context.Context) (*actions.UpdateResult, error) {
+	result, err := adapter.client.UpdateApply(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty update result")
+	}
+	return &actions.UpdateResult{InstalledVersion: result.InstalledVersion, RestartRequired: result.RestartRequired}, nil
 }
 
 func (s *viewStore) load() app.ViewModel {
@@ -69,8 +107,8 @@ func run(parent context.Context, deps dependencies) error {
 		},
 	})
 	var updater actions.Updater
-	if candidate, ok := deps.client.(actions.Updater); ok {
-		updater = candidate
+	if candidate, ok := deps.client.(updateClient); ok {
+		updater = updateAdapter{client: candidate}
 	}
 	controller := actions.New(actions.Config{
 		Intents:   intents,

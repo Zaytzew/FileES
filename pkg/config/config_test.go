@@ -94,6 +94,45 @@ func TestLoadClientViewTransportOnlyDoesNotCreateSyntheticServer(t *testing.T) {
 	}
 }
 
+func TestLoadClientViewStrictOptionalUpdateConfig(t *testing.T) {
+	path := writeRawConfig(t, `{
+  "transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},
+  "update":{"enabled":true,"repo_url":"https://releases.example/FILESS-BIN/","channel":"stable","state_path":"/tmp/filees/update.json","stage_root":"/tmp/filees/stage"},
+  "repositories":[]
+}`)
+	view, err := LoadClientView(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Update == nil || view.Update.RepoURL != "https://releases.example/FILESS-BIN" || view.Update.Channel != "stable" || view.Update.Component != "desktop" || view.Update.Platform == "" || view.Update.SVNProgram != "svn" || view.Update.SignifyProgram != "signify" {
+		t.Fatalf("update config = %+v", view.Update)
+	}
+	disabled := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"update":{"enabled":false,"repo_url":"not-used","state_path":"relative","stage_root":"relative"},"repositories":[]}`)
+	view, err = LoadClientView(disabled)
+	if err != nil || view.Update != nil {
+		t.Fatalf("disabled update = %+v, %v", view.Update, err)
+	}
+}
+
+func TestLoadClientViewRejectsUnsafeUpdateConfigAndTrustOverrides(t *testing.T) {
+	updates := []string{
+		`{"enabled":true,"repo_url":"file:///tmp/releases","state_path":"/tmp/state","stage_root":"/tmp/stage"}`,
+		`{"enabled":true,"repo_url":"https://user:secret@example/releases","state_path":"/tmp/state","stage_root":"/tmp/stage"}`,
+		`{"enabled":true,"repo_url":"https://example/releases?revision=old","state_path":"/tmp/state","stage_root":"/tmp/stage"}`,
+		`{"enabled":true,"repo_url":"https://example/releases","channel":"../old","state_path":"/tmp/state","stage_root":"/tmp/stage"}`,
+		`{"enabled":true,"repo_url":"https://example/releases","component":"server","state_path":"/tmp/state","stage_root":"/tmp/stage"}`,
+		`{"enabled":true,"repo_url":"https://example/releases","state_path":"relative","stage_root":"/tmp/stage"}`,
+		`{"enabled":true,"repo_url":"https://example/releases","state_path":"/tmp/state","stage_root":"/tmp/stage","public_key":"attacker.pub"}`,
+		`{"enabled":true,"repo_url":"https://example/releases","state_path":"/tmp/state","stage_root":"/tmp/stage","verify_signature":false}`,
+	}
+	for _, update := range updates {
+		path := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"update":`+update+`,"repositories":[]}`)
+		if _, err := LoadClientView(path); err == nil {
+			t.Fatalf("accepted unsafe update config: %s", update)
+		}
+	}
+}
+
 func TestLoadClientViewRejectsUnsafeProjection(t *testing.T) {
 	for _, projection := range []string{
 		`{"working_copy":"relative","relative_view_path":"view.json","cache_path":"/tmp/cache"}`,

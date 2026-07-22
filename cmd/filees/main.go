@@ -108,6 +108,10 @@ func runDaemon() {
 
 	// IPC contract server
 	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
+	if err := configureClientUpdate(ipc, clientView.Update, version); err != nil {
+		lg.Errorf("client update: %v", err)
+		os.Exit(1)
+	}
 	lifecycleStore, err := localrepo.Open(defaultRepositoryLifecyclePath())
 	if err != nil {
 		lg.Errorf("repository lifecycle: %v", err)

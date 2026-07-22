@@ -70,7 +70,7 @@ func stagedRelease(bundle []byte) *releaseenvelope.Resolved {
 
 func TestBundleStagerVerifiesThenExtractsRegularFiles(t *testing.T) {
 	bundle := makeBundle(t,
-		tarEntry{name: "bin", typeflag: tar.TypeDir, mode: 0o755},
+		tarEntry{name: "bin/", typeflag: tar.TypeDir, mode: 0o755},
 		tarEntry{name: "bin/filees", typeflag: tar.TypeReg, mode: 0o755, data: "binary"},
 		tarEntry{name: "VERSION", typeflag: tar.TypeReg, mode: 0o644, data: "1.1\n"},
 	)

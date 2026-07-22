@@ -131,7 +131,7 @@ func extractTarGzip(data []byte, destination string, maxFiles int, maxBytes int6
 		if err != nil {
 			return fmt.Errorf("read bundle tar: %w", err)
 		}
-		name, err := safeArchivePath(header.Name)
+		name, err := safeArchivePath(header.Name, header.Typeflag == tar.TypeDir)
 		if err != nil {
 			return err
 		}
@@ -182,8 +182,13 @@ func extractTarGzip(data []byte, destination string, maxFiles int, maxBytes int6
 	return nil
 }
 
-func safeArchivePath(value string) (string, error) {
+func safeArchivePath(value string, directory bool) (string, error) {
 	value = strings.TrimPrefix(strings.ReplaceAll(value, "\\", "/"), "./")
+	if directory {
+		value = strings.TrimSuffix(value, "/")
+	} else if strings.HasSuffix(value, "/") {
+		return "", fmt.Errorf("unsafe bundle path %q", value)
+	}
 	clean := path.Clean(value)
 	if value == "" || clean == "." || clean != value || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
 		return "", fmt.Errorf("unsafe bundle path %q", value)

@@ -236,13 +236,23 @@ Menu tray powinno zawierać:
 
 - zagregowany stan daemona i czas ostatniego poprawnego odświeżenia,
 - listę repozytoriów ze stanem, connectivity, rewizją i liczbą oczekujących zmian,
+- „Dodaj folder do FileES…” przy serwerze, który pozwala temu klientowi tworzyć repozytoria,
 - „Otwórz katalog” dla każdego repozytorium,
 - `Lock…` i `Unlock…` z wyborem plików wewnątrz danego repozytorium,
 - ostatnie błędy z `error.list`, mapowane przez `message_key`, `severity` i `hint`,
 - „Połącz ponownie” przy niedostępnym daemonie,
 - „Zamknij GUI”.
 
-Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.lock`, `repo.unlock`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.lock`, `repo.unlock`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+
+Tworzenie repozytorium jest zwykłą operacją użytkownika, bez kontaktu z konsolą:
+
+1. W podmenu właściwego serwera wybierz „Dodaj folder do FileES…”. Akcja jest ukryta dla klienta tylko do odczytu, serwera bez zezwolenia lub nieaktualnego połączenia.
+2. Wskaż istniejący lokalny folder w natywnym pickerze Linux/Windows.
+3. Zaakceptuj nazwę wyprowadzoną z nazwy folderu albo wpisz własną.
+4. Sprawdź serwer, folder oraz dostęp `rw` w podsumowaniu i wybierz „Utwórz”.
+
+GUI ponownie sprawdza świeżość i uprawnienia bezpośrednio przed żądaniem IPC. Daemon kanonizuje ścieżkę, odrzuca nakładające się korzenie i trwale zapisuje operację przed odpowiedzią. Dalsze tworzenie na serwerze, import zawartości, pierwszy commit i dołączenie repozytorium odbywają się asynchronicznie; przyjęcie operacji daje powiadomienie, a wynik jest widoczny w stanie repozytoriów i `error.list`.
 
 ### Podpisane aktualizacje klienta desktopowego
 
@@ -292,9 +302,9 @@ Etapy 1 i 2 są ukończone. Adapter `fyne.io/systray` jest odseparowany od IPC i
 
 Etap 3A jest ukończony: `internal/gui/platform` definiuje czyste interfejsy systemowe, klasyfikację niedostępności i błędów operacyjnych oraz współbieżnie bezpieczny fake backend. Pakiet nie zależy od traya, aplikacji, kontraktu IPC ani silnika; granicę sprawdza test architektoniczny.
 
-Etap 3B jest ukończony: adapter Linux zapewnia `xdg-open`, wielokrotny wybór przez Zenity/KDialog, grupowane i limitowane powiadomienia `notify-send` oraz atomowy autostart XDG z obsługą `Hidden=true`. Wywołania desktopowe są wstrzyknięte i testowane bez otwierania rzeczywistych okien.
+Etap 3B jest ukończony: adapter Linux zapewnia `xdg-open`, wybór plików i katalogów przez Zenity/KDialog, grupowane i limitowane powiadomienia `notify-send` oraz atomowy autostart XDG z obsługą `Hidden=true`. Wywołania desktopowe są wstrzyknięte i testowane bez otwierania rzeczywistych okien.
 
-Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, picker PowerShell/WinForms, `ToastGeneric` i autostart HKCU. Procesy oraz rejestr są wstrzyknięte; quoting korzysta z reguł Windows, a powiadomienia wymagają własnego AUMID FileES zarejestrowanego przez pakiet Etapu 4. Natywny odbiór pozostaje częścią checklisty Windows.
+Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, pickery plików i katalogów PowerShell/WinForms, `ToastGeneric` i autostart HKCU. Procesy oraz rejestr są wstrzyknięte; quoting korzysta z reguł Windows, a powiadomienia wymagają własnego AUMID FileES zarejestrowanego przez pakiet Etapu 4. Natywny odbiór pozostaje częścią checklisty Windows.
 
 Etap 3D jest ukończony: `internal/gui/actions` nieblokująco obsługuje intencje traya, ponownie sprawdza świeżość modelu i repozytorium po interakcji z pickerem, waliduje ścieżki przed IPC oraz serializuje lock/unlock w obrębie jednego repozytorium. Kontroler posiada lifecycle swoich zadań i single-flight dla otwierania katalogu. Granicę importów chroni test architektoniczny.
 

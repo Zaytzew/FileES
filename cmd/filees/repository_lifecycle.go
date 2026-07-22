@@ -105,10 +105,20 @@ func (service repositoryLifecycleService) ApproveAttach(operationID, serverID, r
 	return lifecycleResult(record), nil
 }
 
+// allRoots lists local paths that must not be nested inside a new
+// repository's target. A record in StateError never reached a live
+// checkout or attachment — it claims no real resource — so it is excluded;
+// otherwise one failed attempt (e.g. a transient STORAGE_INSUFFICIENT that
+// later clears server-side) would permanently block every future attempt at
+// the same path. Genuine leftover Subversion metadata on disk is still
+// caught independently by rejectWorkingCopy's on-disk check.
 func (service repositoryLifecycleService) allRoots() []string {
 	roots := append([]string{}, service.existingRoots...)
 	if service.store != nil {
 		for _, record := range service.store.List() {
+			if record.State == localrepo.StateError {
+				continue
+			}
 			roots = append(roots, record.LocalPath)
 		}
 	}

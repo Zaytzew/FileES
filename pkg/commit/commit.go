@@ -302,13 +302,13 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 }
 
 func (s *Service) acceptEvent(ev watcher.Event) {
-	s.recordActivity(ev.Rel, ev.Op, activity.Detected, 0)
+	s.recordActivity(ev.Rel, ev.Op, activity.Detected, 0, "")
 	s.addEvent(ev)
 	s.saveCache()
-	s.recordActivity(ev.Rel, ev.Op, activity.Pending, 0)
+	s.recordActivity(ev.Rel, ev.Op, activity.Pending, 0, "")
 }
 
-func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.Stage, revision int64) {
+func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.Stage, revision int64, errorID string) {
 	if s.Activity == nil || s.repoID == "" || rel == "" {
 		return
 	}
@@ -321,7 +321,7 @@ func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.S
 	case watcher.Renamed:
 		kind = activity.Renamed
 	}
-	if err := s.Activity.Record(activity.Entry{RepoID: s.repoID, Path: filepath.ToSlash(rel), Kind: kind, Stage: stage, Revision: revision}); err != nil {
+	if err := s.Activity.Record(activity.Entry{RepoID: s.repoID, Path: filepath.ToSlash(rel), Kind: kind, Stage: stage, Revision: revision, ErrorID: errorID}); err != nil {
 		s.Logger.Warnf("activity journal: %v", err)
 		return
 	}
@@ -571,6 +571,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	// immediately before staging to close the debounce/status race window.
 	toSvnAdd := make([]string, 0, len(addPaths))
 	alreadyAdded := make([]string, 0, len(addPaths))
+	var alreadyPublished []string
 	for _, p := range addPaths {
 		if _, err := os.Stat(filepath.Join(wc, filepath.FromSlash(p))); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -588,9 +589,15 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			alreadyAdded = append(alreadyAdded, p)
 			s.Logger.Debugf("skip svn add %s (already staged)", p)
 		} else if item == "normal" {
+			// Already published — by an earlier run of this process, by the
+			// initial-import path, or by a restart that raced this one. The
+			// activity journal must be told explicitly: nothing else ever
+			// advances an entry past Pending except an in-process commit
+			// success below, so without this call it would hang there forever.
 			s.Logger.Debugf("skip add %s (status=%s)", p, item)
 			s.alreadyAccepted.Add(1)
 			s.removePendingIfUnchanged(p, pending)
+			alreadyPublished = append(alreadyPublished, p)
 		} else {
 			// Empty and unknown statuses are inconclusive. In particular this can
 			// happen when a never-published file is renamed while its surrounding
@@ -601,6 +608,15 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	}
 	toSvnAdd = dedup(toSvnAdd)
 	addPaths = dedup(append(toSvnAdd, alreadyAdded...))
+	if len(alreadyPublished) > 0 && s.Activity != nil {
+		if rev, err := s.Cli.Revision(ctx, wc); err != nil {
+			s.Logger.Warnf("already-published activity: read WC revision: %v", err)
+		} else if rev > 0 {
+			for _, p := range alreadyPublished {
+				s.recordActivity(p, watcher.Added, activity.Published, rev, "")
+			}
+		}
+	}
 
 	// DELETE: rozróżnij systemowe usunięcia (missing) od już zestejdżowanych (deleted)
 	var toSvnDelete, alreadyStaged []string
@@ -780,7 +796,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	for _, pe := range pending {
 		if _, ok := commitSet[pe.item.Rel]; ok && !pe.item.IsDir {
 			activityItems = append(activityItems, pe.item)
-			s.recordActivity(pe.item.Rel, pe.item.Op, activity.Publishing, 0)
+			s.recordActivity(pe.item.Rel, pe.item.Op, activity.Publishing, 0, "")
 		}
 	}
 	var out string
@@ -790,13 +806,24 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		out, err = s.Cli.Commit(ctx, wc, commitPaths, msg)
 	}
 	if err != nil {
-		for _, item := range activityItems {
-			s.recordActivity(item.Rel, item.Op, activity.Pending, 0)
-		}
+		ts := time.Now()
 		entry := errmap.Classify(err)
-		s.ErrSink.Emit(entry)
+		s.ErrSink.EmitAt(ts, entry)
 		if client.IsNetworkError(err) {
+			// Transient: the same batch will be retried once connectivity
+			// returns, so the activity feed should keep showing it as queued.
+			for _, item := range activityItems {
+				s.recordActivity(item.Rel, item.Op, activity.Pending, 0, "")
+			}
 			s.goOffline()
+		} else {
+			// Not a connectivity problem: retrying the identical batch will
+			// fail identically. Surface it as failed with a link to the
+			// error.list entry instead of leaving it looking merely queued.
+			errorID := ts.UTC().Format(time.RFC3339) + ":" + string(entry.Code)
+			for _, item := range activityItems {
+				s.recordActivity(item.Rel, item.Op, activity.Failed, 0, errorID)
+			}
 		}
 		return fmt.Errorf("svn commit: %w\n%s", err, out)
 	}
@@ -824,11 +851,11 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	}
 	if confirmedRevision > 0 {
 		for _, item := range activityItems {
-			s.recordActivity(item.Rel, item.Op, activity.Published, confirmedRevision)
+			s.recordActivity(item.Rel, item.Op, activity.Published, confirmedRevision, "")
 		}
 	} else {
 		for _, item := range activityItems {
-			s.recordActivity(item.Rel, item.Op, activity.Pending, 0)
+			s.recordActivity(item.Rel, item.Op, activity.Pending, 0, "")
 		}
 	}
 

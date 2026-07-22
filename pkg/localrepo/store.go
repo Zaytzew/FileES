@@ -124,6 +124,13 @@ func (s *Store) begin(record Record) (Record, error) {
 		return Record{}, err
 	}
 	for _, existing := range s.records {
+		if existing.State == StateError {
+			// A terminal error claims no live checkout or attachment. Counting
+			// it here would let one failed attempt (e.g. a transient
+			// STORAGE_INSUFFICIENT that later clears server-side) permanently
+			// block every future attempt at the same path or repo ID.
+			continue
+		}
 		if existing.ServerID == record.ServerID && record.RepoID != "" && existing.RepoID == record.RepoID {
 			return Record{}, errors.New("repository already has a local lifecycle record")
 		}

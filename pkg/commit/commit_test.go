@@ -33,6 +33,12 @@ type stagingClient struct {
 	commitErr      error
 	commitOut      string
 	updatedEmpty   []string
+	revision       int64
+	revisionErr    error
+}
+
+func (c *stagingClient) Revision(context.Context, string) (int64, error) {
+	return c.revision, c.revisionErr
 }
 
 func (c *stagingClient) UpdateDepthEmpty(_ context.Context, _ string, paths []string) (string, error) {
@@ -118,6 +124,55 @@ func TestActivityStagesFollowDurableCacheAndConfirmedCommit(t *testing.T) {
 	}
 	if activityEvents != 4 {
 		t.Fatalf("events=%v", emitted)
+	}
+}
+
+func TestActivityMarksPermanentCommitFailureAsFailedWithCorrelatedErrorID(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "rejected.txt")
+	if err := os.WriteFile(abs, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &activityRecorder{}
+	cli := &stagingClient{statuses: map[string]string{"rejected.txt": "unversioned"}, commitErr: errors.New("svn: E165001: commit blocked by pre-commit hook")}
+	service := &Service{Cli: cli, Rules: Rules{NewLatency: time.Nanosecond, MaxBatchFiles: 10}, Activity: recorder, repoID: "docs", staging: make(map[string]*stageItem), cachePath: filepath.Join(wc, ".filees", "commit_cache", "cache.json")}
+	service.acceptEvent(watcher.Event{Path: abs, Rel: "rejected.txt", Type: watcher.EntryFile, Op: watcher.Added})
+	if err := service.tryCommit(context.Background(), wc); err == nil {
+		t.Fatal("expected permanent commit error")
+	}
+	last := recorder.entries[len(recorder.entries)-1]
+	if last.Stage != activity.Failed || last.ErrorID == "" || last.Revision != 0 {
+		t.Fatalf("activity=%+v, want Failed with a non-empty ErrorID", last)
+	}
+}
+
+func TestActivityAdvancesAlreadyPublishedPathToPublished(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "already-normal.txt")
+	if err := os.WriteFile(abs, []byte("done"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &activityRecorder{}
+	cli := &stagingClient{statuses: map[string]string{"already-normal.txt": "normal"}, revision: 7}
+	service := &Service{
+		Cli: cli, Rules: Rules{NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		Activity: recorder, repoID: "docs",
+		staging: map[string]*stageItem{
+			"already-normal.txt": {Rel: "already-normal.txt", Abs: abs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Second)},
+		},
+	}
+	// This is exactly the lost-reply / initial-import / prior-instance scenario:
+	// the path was published through some route other than this commit, and
+	// svn status is the only proof. Without the fix, the entry recorded by a
+	// hypothetical earlier acceptEvent would stay Pending forever.
+	if err := service.tryCommitMode(context.Background(), wc, true); err != nil {
+		t.Fatalf("reconciliation: %v", err)
+	}
+	if len(recorder.entries) != 1 {
+		t.Fatalf("activity=%+v, want exactly one Published entry", recorder.entries)
+	}
+	if entry := recorder.entries[0]; entry.Stage != activity.Published || entry.Revision != 7 {
+		t.Fatalf("activity=%+v, want Published at revision 7", entry)
 	}
 }
 

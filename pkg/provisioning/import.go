@@ -150,21 +150,28 @@ func PublishInitialSnapshot(ctx context.Context, store *Store, operationID, requ
 		}
 	}
 
+	// Both lists are decided from the same, unmutated status snapshot before
+	// any svn add happens below. svn status never descends into an ancestor
+	// that is itself still fully unversioned, so a path nested under one is
+	// absent from the map entirely rather than reported "unversioned" — that
+	// absence must still count as "needs add", or deeply nested content is
+	// silently skipped forever (it only ever gets a single status snapshot).
 	var addedDirs []string
 	for _, path := range snapshot.Directories {
-		if status[path] == "unversioned" || status[path] == "added" {
+		if needsInitialAdd(path, status) {
 			addedDirs = append(addedDirs, path)
 		}
-	}
-	if err := addUnversioned(ctx, svn, op.LocalPath, addedDirs, status); err != nil {
-		return fail(err)
 	}
 
 	pending := make([]SnapshotFile, 0, len(snapshot.Files))
 	for _, file := range snapshot.Files {
-		if status[file.Path] == "unversioned" || status[file.Path] == "added" {
+		if needsInitialAdd(file.Path, status) {
 			pending = append(pending, file)
 		}
+	}
+
+	if err := addUnversioned(ctx, svn, op.LocalPath, addedDirs, status); err != nil {
+		return fail(err)
 	}
 	firstCommit := true
 	for len(pending) > 0 {
@@ -200,7 +207,7 @@ func PublishInitialSnapshot(ctx context.Context, store *Store, operationID, requ
 func addUnversioned(ctx context.Context, svn InitialSVN, root string, paths []string, status map[string]string) error {
 	var unversioned []string
 	for _, path := range paths {
-		if status[path] == "unversioned" {
+		if status[path] == "unversioned" || (status[path] == "" && hasUnversionedAncestor(path, status)) {
 			unversioned = append(unversioned, path)
 		}
 	}
@@ -214,6 +221,39 @@ func addUnversioned(ctx context.Context, svn InitialSVN, root string, paths []st
 		status[path] = "added"
 	}
 	return nil
+}
+
+// needsInitialAdd reports whether path still requires `svn add` (or, if
+// already locally scheduled in this same run, still requires commit).
+func needsInitialAdd(path string, status map[string]string) bool {
+	switch status[path] {
+	case "unversioned", "added":
+		return true
+	case "":
+		return hasUnversionedAncestor(path, status)
+	default:
+		return false
+	}
+}
+
+// hasUnversionedAncestor mirrors pkg/commit's helper of the same name: svn
+// status collapses an entirely unversioned directory into a single "?" entry
+// for the directory itself and never describes its content individually, so
+// an absent status entry for a nested path means "definitely not yet added",
+// not "already done". "added" also counts: an ancestor already scheduled by
+// an earlier call in this same run was "unversioned" in the same snapshot.
+func hasUnversionedAncestor(rel string, status map[string]string) bool {
+	for {
+		parent := filepath.Dir(rel)
+		if parent == rel || parent == "." {
+			return false
+		}
+		switch status[parent] {
+		case "unversioned", "added":
+			return true
+		}
+		rel = parent
+	}
 }
 
 func takeInitialBatch(files []SnapshotFile, limits ImportLimits) ([]SnapshotFile, []SnapshotFile) {

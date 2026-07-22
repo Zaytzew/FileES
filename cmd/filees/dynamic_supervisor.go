@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"filees/pkg/activity"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
@@ -40,7 +41,7 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 	return updater.client.Checkout(ctx, updater.url, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal) error {
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
 	for _, repo := range repos {
@@ -49,7 +50,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		runtimes[key] = repoRuntime{config: repo, state: state}
 		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID})
 	}
-	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc}
+	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc, activity: activityJournal}
 	starter := &daemonRepoStarter{daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
 		return client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts, SSHHostName: repo.SSHHostName, SSHPort: repo.SSHPort})
 	}}

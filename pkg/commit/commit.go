@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"filees/pkg/activity"
 	"filees/pkg/client"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errmap"
@@ -74,6 +75,9 @@ type Service struct {
 	RepoURL  string
 	UUID     string       // stable client UUID (persisted in .filees/state/client.uuid)
 	ErrSink  *errmap.Sink // optional; structured error log (JSON Lines)
+	Activity interface {
+		Record(activity.Entry) error
+	}
 	// OnConnectivity is called (async) when online/offline state changes.
 	// Argument is "online" or "offline". May be nil.
 	OnConnectivity func(string)
@@ -260,7 +264,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 			// The watcher closes its channel after its final state save. Consume
 			// everything it emitted before beginning the bounded shutdown drain.
 			for ev := range events {
-				s.addEvent(ev)
+				s.acceptEvent(ev)
 			}
 			s.shutdownDrain(wc)
 			lg.Infof("commit service stop")
@@ -271,8 +275,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				lg.Infof("commit service stop")
 				return
 			}
-			s.addEvent(ev)
-			s.saveCache()
+			s.acceptEvent(ev)
 			stagedBytes, watermarkEligible := s.watermarkState(time.Now())
 			if stagedBytes >= s.Rules.BacklogFlushBytes && watermarkEligible && !s.isOfflineBackoff() {
 				// A high watermark may accelerate stable modifications, but it must
@@ -295,6 +298,31 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 			}
 			s.saveCache()
 		}
+	}
+}
+
+func (s *Service) acceptEvent(ev watcher.Event) {
+	s.recordActivity(ev.Rel, ev.Op, activity.Detected, 0)
+	s.addEvent(ev)
+	s.saveCache()
+	s.recordActivity(ev.Rel, ev.Op, activity.Pending, 0)
+}
+
+func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.Stage, revision int64) {
+	if s.Activity == nil || s.repoID == "" || rel == "" {
+		return
+	}
+	kind := activity.Modified
+	switch op {
+	case watcher.Added:
+		kind = activity.Added
+	case watcher.Deleted:
+		kind = activity.Deleted
+	case watcher.Renamed:
+		kind = activity.Renamed
+	}
+	if err := s.Activity.Record(activity.Entry{RepoID: s.repoID, Path: filepath.ToSlash(rel), Kind: kind, Stage: stage, Revision: revision}); err != nil {
+		s.Logger.Warnf("activity journal: %v", err)
 	}
 }
 
@@ -742,6 +770,17 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		uid = "unknown"
 	}
 	msg := fmt.Sprintf("Auto-commit by FileES client %s: %d paths", uid, len(commitPaths))
+	commitSet := make(map[string]struct{}, len(commitPaths))
+	for _, rel := range commitPaths {
+		commitSet[rel] = struct{}{}
+	}
+	var activityItems []*stageItem
+	for _, pe := range pending {
+		if _, ok := commitSet[pe.item.Rel]; ok && !pe.item.IsDir {
+			activityItems = append(activityItems, pe.item)
+			s.recordActivity(pe.item.Rel, pe.item.Op, activity.Publishing, 0)
+		}
+	}
 	var out string
 	if s.Rules.NeedsLock {
 		out, err = s.Cli.CommitKeepLocks(ctx, wc, commitPaths, msg)
@@ -749,6 +788,9 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		out, err = s.Cli.Commit(ctx, wc, commitPaths, msg)
 	}
 	if err != nil {
+		for _, item := range activityItems {
+			s.recordActivity(item.Rel, item.Op, activity.Pending, 0)
+		}
 		entry := errmap.Classify(err)
 		s.ErrSink.Emit(entry)
 		if client.IsNetworkError(err) {
@@ -761,10 +803,12 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	s.commitBatches.Add(1)
 
 	// head.rev + commit event
+	var confirmedRevision int64
 	if rev := parseRevision(out); rev != "" {
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
 		_ = atomicWriteString(head, rev+"\n")
 		if rev64, err := strconv.ParseInt(rev, 10, 64); err == nil {
+			confirmedRevision = rev64
 			if s.OnHeadRevision != nil {
 				s.OnHeadRevision(rev64)
 			}
@@ -774,6 +818,15 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			s.emit(contract.EvCommitCompleted, contract.CommitCompletedPayload{
 				Revision: rev64, Paths: len(commitPaths),
 			})
+		}
+	}
+	if confirmedRevision > 0 {
+		for _, item := range activityItems {
+			s.recordActivity(item.Rel, item.Op, activity.Published, confirmedRevision)
+		}
+	} else {
+		for _, item := range activityItems {
+			s.recordActivity(item.Rel, item.Op, activity.Pending, 0)
 		}
 	}
 

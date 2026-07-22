@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"filees/pkg/activity"
 	"filees/pkg/client"
 	"filees/pkg/commit"
 	"filees/pkg/config"
@@ -36,8 +37,8 @@ func openRepoErrorSink(path, scope string) (*errmap.Sink, *os.File, error) {
 	return errmap.NewSink(file, scope), file, nil
 }
 
-func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules, gate runtime.Gate, mutex runtime.RepoMutex, clientUUID string, sink *errmap.Sink, ipc *ipcserver.Server, state *ipcserver.RepoState, passports *passport.Manager) *commit.Service {
-	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, UUID: clientUUID, ErrSink: sink}
+func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules, gate runtime.Gate, mutex runtime.RepoMutex, clientUUID string, sink *errmap.Sink, ipc *ipcserver.Server, state *ipcserver.RepoState, passports *passport.Manager, activityJournal *activity.Journal) *commit.Service {
+	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, UUID: clientUUID, ErrSink: sink, Activity: activityJournal}
 	if ipc != nil {
 		service.Emit = func(eventType string, payload any) { ipc.Emit(ipc.NewRepoEvent(repo.ID, eventType, payload)) }
 	}
@@ -168,9 +169,10 @@ type svnFactory func(config.Repo) client.Client
 type readWriteFactory func(context.Context, repoRuntime, client.Client, reposupervisor.Desired) (reposupervisor.Instance, error)
 
 type readWriteDependencies struct {
-	gate  runtime.Gate
-	mutex runtime.RepoMutex
-	ipc   *ipcserver.Server
+	gate     runtime.Gate
+	mutex    runtime.RepoMutex
+	ipc      *ipcserver.Server
+	activity *activity.Journal
 }
 
 func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired, deps readWriteDependencies) (reposupervisor.Instance, error) {
@@ -236,7 +238,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		sink = nil
 		errorFile = nil
 	}
-	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager)
+	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
 	recoverReadWriteWorkingCopy(ctx, svn, wc, service, logger)
 	if manager != nil {
 		if err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, intOrDefault(repo.MaxBatchFiles, 100)); err != nil {

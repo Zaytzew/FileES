@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/activity"
 	"filees/pkg/client"
 	"filees/pkg/watcher"
 )
@@ -29,6 +30,7 @@ type stagingClient struct {
 	commitBatches  [][]string
 	commitCh       chan struct{}
 	commitErr      error
+	commitOut      string
 	updatedEmpty   []string
 }
 
@@ -72,7 +74,37 @@ func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, _ st
 	if c.commitCh != nil {
 		c.commitCh <- struct{}{}
 	}
-	return "", c.commitErr
+	return c.commitOut, c.commitErr
+}
+
+type activityRecorder struct{ entries []activity.Entry }
+
+func (r *activityRecorder) Record(entry activity.Entry) error {
+	r.entries = append(r.entries, entry)
+	return nil
+}
+
+func TestActivityStagesFollowDurableCacheAndConfirmedCommit(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "report.pdf")
+	if err := os.WriteFile(abs, []byte("report"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &activityRecorder{}
+	cli := &stagingClient{statuses: map[string]string{"report.pdf": "unversioned"}, commitOut: "Committed revision 18.\n"}
+	service := &Service{Cli: cli, Rules: Rules{NewLatency: time.Nanosecond, MaxBatchFiles: 10}, Activity: recorder, repoID: "docs", staging: make(map[string]*stageItem), cachePath: filepath.Join(wc, ".filees", "commit_cache", "cache.json")}
+	service.acceptEvent(watcher.Event{Path: abs, Rel: "report.pdf", Type: watcher.EntryFile, Op: watcher.Added})
+	if err := service.tryCommit(context.Background(), wc); err != nil {
+		t.Fatal(err)
+	}
+	var stages []activity.Stage
+	for _, entry := range recorder.entries {
+		stages = append(stages, entry.Stage)
+	}
+	want := []activity.Stage{activity.Detected, activity.Pending, activity.Publishing, activity.Published}
+	if !reflect.DeepEqual(stages, want) || recorder.entries[len(recorder.entries)-1].Revision != 18 {
+		t.Fatalf("activity=%+v", recorder.entries)
+	}
 }
 
 func (c *stagingClient) CommitKeepLocks(ctx context.Context, wc string, paths []string, message string) (string, error) {

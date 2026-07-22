@@ -126,3 +126,7 @@ func defaultRepositoryLifecyclePath() string {
 func defaultRepositoryProvisioningPath() string {
 	return filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "repository-provisioning")
 }
+
+func defaultActivityJournalPath() string {
+	return filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recent-activity.json")
+}

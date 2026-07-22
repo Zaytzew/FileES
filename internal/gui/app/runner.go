@@ -458,6 +458,10 @@ func (a *App) loop(ctx context.Context) {
 					launchFullRefresh()
 					break
 				}
+				if msg.ev.Type == contract.EvActivityChanged {
+					launchFullRefresh()
+					break
+				}
 				if dirtyID == "" {
 					launchFullRefresh()
 					break

@@ -254,7 +254,7 @@ Tworzenie repozytorium jest zwykłą operacją użytkownika, bez kontaktu z kons
 3. Zaakceptuj nazwę wyprowadzoną z nazwy folderu albo wpisz własną.
 4. Sprawdź serwer, folder oraz dostęp `rw` w podsumowaniu i wybierz „Utwórz”.
 
-GUI ponownie sprawdza świeżość i uprawnienia bezpośrednio przed żądaniem IPC. Daemon kanonizuje ścieżkę, odrzuca nakładające się korzenie i trwale zapisuje operację przed odpowiedzią. Dalsze tworzenie na serwerze, import zawartości, pierwszy commit i dołączenie repozytorium odbywają się asynchronicznie; przyjęcie operacji daje powiadomienie, a wynik jest widoczny w stanie repozytoriów i `error.list`.
+GUI ponownie sprawdza świeżość i uprawnienia bezpośrednio przed żądaniem IPC. Daemon kanonizuje ścieżkę, odrzuca nakładające się korzenie i trwale zapisuje operację przed odpowiedzią. Dalsze tworzenie na serwerze, import zawartości, pierwszy commit i dołączenie repozytorium odbywają się asynchronicznie; przyjęcie operacji daje pierwsze powiadomienie ("Tworzenie repozytorium rozpoczęte"). GUI odpytuje następnie `repo.lifecycle_status` po `operation_id` (domyślnie co 3 s, do 15 min) i pokazuje drugie powiadomienie z realnym wynikiem: "Repozytorium utworzone" albo, w razie niepowodzenia dowolnego etapu (np. `STORAGE_INSUFFICIENT` przy braku miejsca na serwerze), komunikat błędu z dokładną treścią przyczyny. Repozytorium, które nie przejdzie tego pipeline'u, nigdy nie dostaje zarejestrowanego `RepoID`, więc nie pojawi się w stanie repozytoriów ani w `error.list` — drugie powiadomienie jest jedynym miejscem, gdzie taka porażka jest widoczna.
 
 ### Podpisane aktualizacje klienta desktopowego
 
@@ -521,7 +521,7 @@ Daemon zawsze ignoruje: `.svn/`, `.filees/state/`, `.filees/locks/`.
 
 | Kategoria | Wzorce |
 |-----------|--------|
-| Pliki tymczasowe Office | `~$*`, `*.tmp`, `*.bak` |
+| Pliki tymczasowe Office | `~$*` (MS Office), `.~lock.*#` (LibreOffice/OpenOffice), `*.tmp`, `*.bak` |
 | Metadane OS | `.DS_Store`, `Thumbs.db`, `desktop.ini` |
 | Katalogi edytorów | `.vscode/`, `.idea/` |
 | Pliki edytorów | `*.swp`, `*.swo` |

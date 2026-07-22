@@ -185,6 +185,12 @@ Zamknij GUI
 
 ## Blokowanie i odblokowanie plików
 
+> **Funkcja w trakcie refaktoru.** W obecnym buildzie `Zablokuj pliki…` /
+> `Odblokuj pliki…` nie pojawiają się w menu tray, mimo że mechanizm
+> opisany niżej pozostaje zaimplementowany w demonie i IPC. Ta sekcja
+> opisuje zamierzone/docelowe zachowanie — zweryfikuj przeciw aktualnie
+> zainstalowanej wersji przed poleganiem na niej.
+
 Pozwala założyć lub zdjąć blokadę SVN na wybranych plikach. Blokada zapobiega równoległej edycji przez innych użytkowników.
 
 Operacja dostępna wyłącznie gdy:

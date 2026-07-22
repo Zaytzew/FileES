@@ -24,6 +24,7 @@ const (
 	CmdRepoCreateRequest = "repo.create_request" // persist intent; server work is a later stage
 	CmdRepoAttachIntent  = "repo.attach_intent"  // persist local path choice; no checkout yet
 	CmdRepoAttachApprove = "repo.attach_approve" // approve the persisted intent and start checkout
+	CmdRepoRelocate      = "repo.relocate"       // approve relocation of an attached working copy
 	CmdRepoLock          = "repo.lock"           // acquire SVN lock on one or more paths
 	CmdRepoUnlock        = "repo.unlock"         // release SVN lock on one or more paths
 
@@ -57,6 +58,7 @@ const (
 	CapRepoCreateRequest = "repo.create_request"
 	CapRepoAttachIntent  = "repo.attach_intent"
 	CapRepoAttachApprove = "repo.attach_approve"
+	CapRepoRelocate      = "repo.relocate"
 
 	// Not yet implemented — defined for future use but NOT in AllCapabilities.
 	CapRepoPause      = "repo.pause"
@@ -77,6 +79,7 @@ var AllCapabilities = []string{
 	CapRepoCreateRequest,
 	CapRepoAttachIntent,
 	CapRepoAttachApprove,
+	CapRepoRelocate,
 }
 
 // --- result and payload types ---
@@ -165,12 +168,19 @@ type RepoAttachApprovePayload struct {
 	RepoID      string `json:"repo_id"`
 }
 
+type RepoRelocatePayload struct {
+	ServerID     string `json:"server_id"`
+	RepoID       string `json:"repo_id"`
+	NewLocalPath string `json:"new_local_path"`
+}
+
 type RepoLifecycleResult struct {
-	OperationID string `json:"operation_id"`
-	ServerID    string `json:"server_id"`
-	RepoID      string `json:"repo_id,omitempty"`
-	LocalPath   string `json:"local_path"`
-	State       string `json:"state"`
+	OperationID      string `json:"operation_id"`
+	ServerID         string `json:"server_id"`
+	RepoID           string `json:"repo_id,omitempty"`
+	LocalPath        string `json:"local_path"`
+	PendingLocalPath string `json:"pending_local_path,omitempty"`
+	State            string `json:"state"`
 }
 
 // RepoListResult is the result for CmdRepoList.

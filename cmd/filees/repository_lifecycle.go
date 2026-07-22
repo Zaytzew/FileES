@@ -19,6 +19,22 @@ type repositoryLifecycleService struct {
 	existingRoots []string
 	onCreate      func(string)
 	onAttach      func(attachmentRequest)
+	onRelocate    func(string)
+}
+
+func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error) {
+	check, err := provisioning.PreflightLocalPath(newLocalPath, provisioning.LocalPathAttach, service.allRoots())
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	record, err := service.store.BeginRelocation(serverID, repoID, check.CanonicalPath)
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	if service.onRelocate != nil {
+		service.onRelocate(record.OperationID)
+	}
+	return lifecycleResult(record), nil
 }
 
 type attachmentRequest struct {
@@ -90,7 +106,7 @@ func (service repositoryLifecycleService) allRoots() []string {
 }
 
 func lifecycleResult(record localrepo.Record) contract.RepoLifecycleResult {
-	return contract.RepoLifecycleResult{OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, State: string(record.State)}
+	return contract.RepoLifecycleResult{OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State)}
 }
 
 func defaultRepositoryLifecyclePath() string {

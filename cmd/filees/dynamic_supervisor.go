@@ -159,6 +159,22 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		case attachment := <-attachmentEvents:
 			repo := attachment.Repo
 			key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
+			if attachment.Quiesce {
+				old, exists := runtimes[key]
+				view, hasView := currentViews[repo.ServerID]
+				if !exists || !hasView {
+					attachment.Result <- fmt.Errorf("attached runtime or authoritative projection is unavailable")
+					continue
+				}
+				delete(runtimes, key)
+				desired := attachedProjection(repo.ServerID, view, runtimes)
+				err := supervisor.ApplyLocalAttachment(ctx, repo.ServerID, view.Generation, desired, nil)
+				if err != nil {
+					runtimes[key] = old
+				}
+				attachment.Result <- err
+				continue
+			}
 			if _, exists := runtimes[key]; exists {
 				continue
 			}

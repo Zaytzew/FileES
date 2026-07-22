@@ -35,7 +35,11 @@ type attachmentSVN interface {
 	Status(context.Context, string, []string) ([]client.StatusEntry, error)
 }
 
-type provisionedAttachment struct{ Repo config.Repo }
+type provisionedAttachment struct {
+	Repo    config.Repo
+	Quiesce bool
+	Result  chan error
+}
 
 func newDaemonProvisioner(local *localrepo.Store, store *provisioning.Store, profiles []clientprofile.Profile) *daemonProvisioner {
 	p := &daemonProvisioner{local: local, provisioning: store, profiles: make(map[string]clientprofile.Profile), queue: make(chan string, 32)}
@@ -83,6 +87,14 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 	for _, record := range p.local.List() {
 		if record.State == localrepo.StateAttaching {
 			p.Enqueue(record.OperationID)
+		} else if record.State == localrepo.StateRelocating {
+			p.mu.RLock()
+			profile, ok := p.profiles[record.ServerID]
+			p.mu.RUnlock()
+			if ok {
+				p.publishLocalRecord(ctx, record, profile)
+			}
+			p.Enqueue(record.OperationID)
 		} else if record.State == localrepo.StateAttached && record.RepoURL != "" {
 			p.mu.RLock()
 			profile, ok := p.profiles[record.ServerID]
@@ -112,7 +124,16 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	profile, ok := p.profiles[record.ServerID]
 	p.mu.RUnlock()
 	if !ok {
-		_, _ = p.local.MarkError(operationID, errors.New("activated client profile is unavailable"))
+		cause := errors.New("activated client profile is unavailable")
+		if record.State == localrepo.StateRelocating {
+			_, _ = p.local.FailRelocation(operationID, cause)
+		} else {
+			_, _ = p.local.MarkError(operationID, cause)
+		}
+		return
+	}
+	if record.State == localrepo.StateRelocating {
+		p.runRelocate(ctx, record, profile)
 		return
 	}
 	if record.RepoID != "" {
@@ -137,6 +158,75 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		return
 	}
 	p.publishAttachment(ctx, operation)
+}
+
+func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
+	check, err := provisioning.PreflightLocalPath(record.PendingLocalPath, provisioning.LocalPathAttach, p.otherRoots(record.OperationID))
+	if err != nil {
+		p.rollbackRelocation(ctx, record, profile, err)
+		return
+	}
+	if err := p.quiesceAttachment(ctx, record); err != nil {
+		p.rollbackRelocation(ctx, record, profile, err)
+		return
+	}
+	svn := p.newAttachmentSVN(profile, record.OperationID)
+	if _, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath); err != nil {
+		p.rollbackRelocation(ctx, record, profile, fmt.Errorf("checkout relocated repository: %w", err))
+		return
+	}
+	info, err := svn.GetInfo(ctx, check.CanonicalPath)
+	if err != nil || !infoHasURL(info, record.RepoURL) {
+		if err == nil {
+			err = errors.New("relocated working copy URL does not match projected repository")
+		}
+		p.rollbackRelocation(ctx, record, profile, err)
+		return
+	}
+	entries, err := svn.Status(ctx, check.CanonicalPath, nil)
+	if err != nil {
+		p.rollbackRelocation(ctx, record, profile, err)
+		return
+	}
+	for _, entry := range entries {
+		if entry.Item != "normal" && entry.Item != "none" && entry.Item != "external" {
+			p.rollbackRelocation(ctx, record, profile, fmt.Errorf("relocated checkout is incomplete or modified at %s (%s)", entry.Path, entry.Item))
+			return
+		}
+	}
+	updated, err := p.local.CompleteRelocation(record.OperationID)
+	if err != nil {
+		p.rollbackRelocation(ctx, record, profile, err)
+		return
+	}
+	p.publishLocalRecord(ctx, updated, profile)
+}
+
+func (p *daemonProvisioner) quiesceAttachment(ctx context.Context, record localrepo.Record) error {
+	if p.attachments == nil {
+		return errors.New("repository supervisor attachment channel is unavailable")
+	}
+	result := make(chan error, 1)
+	repo := config.Repo{ID: record.RepoID, ServerID: record.ServerID}
+	select {
+	case p.attachments <- provisionedAttachment{Repo: repo, Quiesce: true, Result: result}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (p *daemonProvisioner) rollbackRelocation(ctx context.Context, record localrepo.Record, profile clientprofile.Profile, cause error) {
+	if _, err := p.local.FailRelocation(record.OperationID, cause); err != nil {
+		talk.With("relocation:"+record.OperationID).Errorf("persist rollback: %v", err)
+	}
+	p.publishLocalRecord(ctx, record, profile)
+	talk.With("relocation:"+record.OperationID).Warnf("relocation failed; old runtime restored: %v", cause)
 }
 
 func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {

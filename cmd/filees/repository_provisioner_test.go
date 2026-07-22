@@ -145,6 +145,78 @@ func TestDaemonProvisionerRejectsMismatchedWorkingCopyURL(t *testing.T) {
 	}
 }
 
+func TestDaemonProvisionerRelocatesOnlyAfterQuiesce(t *testing.T) {
+	local, journal, profile, record := relocationFixture(t)
+	stub := &attachmentSVNStub{}
+	events := make(chan provisionedAttachment, 2)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	done := make(chan struct{})
+	go func() {
+		first := <-events
+		if !first.Quiesce {
+			t.Errorf("first relocation event is not quiesce: %+v", first)
+		} else {
+			first.Result <- nil
+		}
+		close(done)
+	}()
+	provisioner.runOne(context.Background(), record.OperationID)
+	<-done
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached || got.LocalPath != record.PendingLocalPath || got.PendingLocalPath != "" {
+		t.Fatalf("relocated record=%+v", got)
+	}
+	final := <-events
+	if final.Quiesce || final.Repo.LocalPath != got.LocalPath {
+		t.Fatalf("final attachment=%+v", final)
+	}
+}
+
+func TestDaemonProvisionerRelocationRollbackRestoresOldRuntime(t *testing.T) {
+	local, journal, profile, record := relocationFixture(t)
+	stub := &attachmentSVNStub{status: []client.StatusEntry{{Path: "broken", Item: "missing"}}}
+	events := make(chan provisionedAttachment, 2)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	go func() {
+		quiesce := <-events
+		quiesce.Result <- nil
+	}()
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached || got.LocalPath != record.LocalPath || got.PendingLocalPath != "" || got.LastError == "" {
+		t.Fatalf("rollback record=%+v", got)
+	}
+	restored := <-events
+	if restored.Quiesce || restored.Repo.LocalPath != record.LocalPath {
+		t.Fatalf("restored attachment=%+v", restored)
+	}
+}
+
+func relocationFixture(t *testing.T) (*localrepo.Store, *provisioning.Store, clientprofile.Profile, localrepo.Record) {
+	t.Helper()
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPath, newPath := filepath.Join(t.TempDir(), "old"), filepath.Join(t.TempDir(), "new")
+	record, _ := local.BeginAttach("office", uuid.NewString(), oldPath, false)
+	record, _ = local.ApproveAttach(record.OperationID, "office", record.RepoID, "svn+ssh://_filees-client@example/shared", "rw")
+	record, _ = local.MarkAttached(record.OperationID, record.RepoID)
+	record, err = local.BeginRelocation("office", record.RepoID, newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return local, journal, clientprofile.Profile{ServerID: "office", DisplayName: "Office"}, record
+}
+
 func TestOpenBSDAttachmentE2E(t *testing.T) {
 	profilePath := os.Getenv("FILEES_ATTACHMENT_E2E_PROFILE")
 	repoID := os.Getenv("FILEES_ATTACHMENT_E2E_REPO_ID")

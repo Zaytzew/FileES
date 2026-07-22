@@ -32,7 +32,12 @@ build_linux() {
 	cp "$root/packaging/linux/filees-gui.desktop" "$tmp/share/applications/"
 	cp "$root/packaging/linux/filees.service" "$tmp/share/systemd/user/"
 	cp "$root/packaging/linux/config.example.json" "$tmp/share/filees/"
-	cp "$root/internal/gui/tray/assets/svg/active.svg" "$tmp/share/icons/hicolor/scalable/apps/filees-gui.svg"
+	# The static app/launcher icon is the neutral brand mark, not a tray
+	# status icon: active.svg's green checkmark badge means "connected", and
+	# baking that into the taskbar/launcher icon permanently makes the app
+	# look stuck showing one connectivity state forever. Status badges belong
+	# only in the dynamic system tray icon (internal/gui/tray).
+	cp "$root/branded-assets/filees-space-symbol-square.svg" "$tmp/share/icons/hicolor/scalable/apps/filees-gui.svg"
 	cp "$root/packaging/ACCEPTANCE.md" "$tmp/"
 	cp "$root/packaging/linux/install-user.sh" "$tmp/"
 	cp "$root/packaging/linux/uninstall-user.sh" "$tmp/"
@@ -58,7 +63,9 @@ build_windows() {
 	cp "$root/packaging/windows/identity.json" "$tmp/"
 	cp "$root/packaging/windows/filees-gui.wxs" "$tmp/"
 	cp "$root/packaging/windows/build-msi.ps1" "$tmp/"
-	cp "$root/internal/gui/tray/assets/windows/active.ico" "$tmp/filees-gui.ico"
+	# Same reasoning as the Linux .svg above: the static app icon must not
+	# carry a tray status badge.
+	cp "$root/branded-assets/filees-space-symbol-square.ico" "$tmp/filees-gui.ico"
 	cp "$root/packaging/ACCEPTANCE.md" "$tmp/"
 	cp "$root/VERSION" "$tmp/"
 	publish_output "$tmp" "$out"

@@ -146,7 +146,7 @@ func (w *Worker) preflight(ctx context.Context, ticket control.Ticket) (control.
 	if err != nil || available < required {
 		result, resultErr := control.NewErrorResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ErrorBody{
 			Code:    "STORAGE_INSUFFICIENT",
-			Message: fmt.Sprintf("server storage requires %d bytes, %d available", required, available),
+			Message: fmt.Sprintf("server storage requires %s, %s available", formatBytes(required), formatBytes(available)),
 			Details: map[string]string{
 				"available_bytes": fmt.Sprintf("%d", available),
 				"required_bytes":  fmt.Sprintf("%d", required),
@@ -199,6 +199,22 @@ func (w *Worker) failure(t control.Ticket, code, message string) (control.Result
 	}
 	return r, e
 }
+// formatBytes renders a byte count for a human reader (e.g. "178.7 MB"),
+// used only in user-facing error messages -- Details keeps the exact
+// integer byte counts for anything that parses the result programmatically.
+func formatBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
 func (w *Worker) now() time.Time {
 	if w.Now != nil {
 		return w.Now()

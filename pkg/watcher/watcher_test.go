@@ -21,6 +21,31 @@ func TestMD5BacklogHashHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestBuiltinIgnoresLibreOfficeLockMarker(t *testing.T) {
+	cases := []struct {
+		rel    string
+		ignore bool
+	}{
+		{".~lock.report.doc#", true},
+		{".~lock.powykonawczy12_9-2006.docx#", true},
+		{"sub/dir/.~lock.spreadsheet.xlsx#", true},
+		{"report.doc", false},
+		{"~$report.doc", true}, // pre-existing MS Office pattern, sanity check
+	}
+	for _, c := range cases {
+		got := false
+		for _, pattern := range builtinIgnorePatterns {
+			if (glob{raw: pattern}).match(c.rel, false) {
+				got = true
+				break
+			}
+		}
+		if got != c.ignore {
+			t.Errorf("isIgnored(%q) = %v, want %v", c.rel, got, c.ignore)
+		}
+	}
+}
+
 func TestScannerClosesEventsAfterWorkersStop(t *testing.T) {
 	wc := t.TempDir()
 	scanner, err := NewScanner(Options{

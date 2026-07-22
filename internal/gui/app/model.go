@@ -211,6 +211,10 @@ func repoIconState(r RepoViewModel) IconState {
 		return IconActive
 	case contract.StateInitializing, contract.StateBaselining, contract.StatePaused, contract.StateStopping:
 		return IconBusy
+	case contract.StateUnattached, contract.StateDisabled:
+		return IconActive
+	case contract.StateRevoked:
+		return IconError
 	default:
 		return IconBusy // safe fallback for unknown/future states
 	}

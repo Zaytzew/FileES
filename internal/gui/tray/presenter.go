@@ -80,11 +80,16 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	if vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
 		children = append(children, actionItem("server."+server.ID+".create", "Dodaj folder do FileES…", "Utwórz nowe repozytorium z lokalnego katalogu", Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
 	}
-	if len(server.Repos) == 0 {
-		children = append(children, disabledItem("server."+server.ID+".empty", "Brak repozytoriów"))
-	}
+	visibleRepos := 0
 	for _, repo := range server.Repos {
+		if !repo.Attached && repo.AttachmentPolicy != "required" {
+			continue
+		}
+		visibleRepos++
 		children = append(children, repoMenu(repo))
+	}
+	if visibleRepos == 0 {
+		children = append(children, disabledItem("server."+server.ID+".empty", "Brak lokalnych folderów FileES"))
 	}
 	return MenuItemModel{ID: "server." + server.ID, Title: name, Enabled: true, Children: children}
 }
@@ -115,7 +120,7 @@ func repoMenu(repo app.RepoViewModel) MenuItemModel {
 	if strings.TrimSpace(name) == "" {
 		name = repo.ID
 	}
-	title := fmt.Sprintf("%s — %s", name, repoStateLabel(repo))
+	title := repoStatusMark(repo) + " " + name
 	item := disabledItem("repo."+repo.ID, title)
 	item.Tooltip = repo.LocalPath
 	if repo.Attached && strings.TrimSpace(repo.LocalPath) != "" {
@@ -123,6 +128,19 @@ func repoMenu(repo app.RepoViewModel) MenuItemModel {
 		item.Intent = &Intent{Kind: IntentOpenFolder, RepoID: repo.ID}
 	}
 	return item
+}
+
+func repoStatusMark(repo app.RepoViewModel) string {
+	switch repo.DisplayState() {
+	case app.RepoDisplayActive:
+		return "✓"
+	case app.RepoDisplayBusy, app.RepoDisplayInitializing, app.RepoDisplayBaselining, app.RepoDisplayPaused, app.RepoDisplayStopping:
+		return "◷"
+	case app.RepoDisplayOffline, app.RepoDisplayAttention, app.RepoDisplayRevoked:
+		return "⚠"
+	default:
+		return "○"
+	}
 }
 
 func ownershipLabel(server app.ServerViewModel, repo app.RepoViewModel) string {

@@ -74,7 +74,7 @@ func TestBuildMenuShowsRepositoryAsCompactOpenFolderRow(t *testing.T) {
 
 	menu := BuildMenu(withServer(vm))
 	repo := findItem(t, menu.Items, "repo.projectA")
-	if repo.Title != "projectA — Praca w toku" {
+	if repo.Title != "◷ projectA" {
 		t.Fatalf("repo title = %q", repo.Title)
 	}
 	if len(repo.Children) != 0 || repo.Intent == nil || repo.Intent.Kind != IntentOpenFolder || repo.Intent.RepoID != "projectA" || repo.Tooltip != "/wc/projectA" {
@@ -88,7 +88,7 @@ func TestBuildMenuShowsRepositoryAsCompactOpenFolderRow(t *testing.T) {
 func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
 	menu := BuildMenu(withServer(app.ViewModel{
 		Connected: true,
-		Repos:     []app.RepoViewModel{{ID: "repo", Access: contract.AccessReadWrite, LocalPath: "/wc", State: contract.StateActive}},
+		Repos:     []app.RepoViewModel{{ID: "repo", Attached: true, Access: contract.AccessReadWrite, LocalPath: "/wc", State: contract.StateActive}},
 	}))
 	repo := findItem(t, menu.Items, "repo.repo")
 	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
@@ -107,7 +107,7 @@ func TestBuildMenuHidesMutationsWhileSnapshotStale(t *testing.T) {
 			contract.CapRepoLock:   true,
 			contract.CapRepoUnlock: true,
 		},
-		Repos: []app.RepoViewModel{{ID: "repo", Access: contract.AccessReadWrite, LocalPath: "/wc", State: contract.StateActive}},
+		Repos: []app.RepoViewModel{{ID: "repo", Attached: true, Access: contract.AccessReadWrite, LocalPath: "/wc", State: contract.StateActive}},
 	}))
 	repo := findItem(t, menu.Items, "repo.repo")
 	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
@@ -136,9 +136,9 @@ func TestBuildMenuStructuredErrorsNewestFirst(t *testing.T) {
 func TestBuildMenuUnknownStateHasSafeFallback(t *testing.T) {
 	menu := BuildMenu(withServer(app.ViewModel{
 		Connected: true,
-		Repos:     []app.RepoViewModel{{ID: "future", LocalPath: "/wc", State: "future-state"}},
+		Repos:     []app.RepoViewModel{{ID: "future", Attached: true, LocalPath: "/wc", State: "future-state"}},
 	}))
-	if got := findItem(t, menu.Items, "repo.future").Title; got != "future — Stan nieznany" {
+	if got := findItem(t, menu.Items, "repo.future").Title; got != "○ future" {
 		t.Fatalf("title = %q", got)
 	}
 }
@@ -186,11 +186,23 @@ func TestBuildMenuShowsProjectedUnattachedRepositoryByDisplayName(t *testing.T) 
 	repo := app.RepoViewModel{ID: "repo-uuid", DisplayName: "Dokumenty wspólne", ServerID: "office", OwnerRealmID: "foreign", AttachmentPolicy: "required", Access: contract.AccessReadOnly, State: contract.StateUnattached}
 	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", RealmID: "mine", Repos: []app.RepoViewModel{repo}}}})
 	item := findItem(t, menu.Items, "repo.repo-uuid")
-	if item.Title != "Dokumenty wspólne — Nieprzypięte lokalnie" {
+	if item.Title != "○ Dokumenty wspólne" {
 		t.Fatalf("title=%q", item.Title)
 	}
 	if item.Enabled || item.Intent != nil || len(item.Children) != 0 {
 		t.Fatalf("unattached repository must be a compact disabled row: %#v", item)
+	}
+}
+
+func TestBuildMenuHidesOptionalRepositoryWithoutLocalFolder(t *testing.T) {
+	repo := app.RepoViewModel{ID: "remote", DisplayName: "Archiwum", ServerID: "office", AttachmentPolicy: "optional", State: contract.StateUnattached}
+	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{repo}}}})
+	server := findItem(t, menu.Items, "server.office")
+	if hasItem(server.Children, "repo.remote") {
+		t.Fatal("optional repository without a local folder clutters the tray")
+	}
+	if !hasItem(server.Children, "server.office.empty") {
+		t.Fatal("empty local-folder label missing")
 	}
 }
 

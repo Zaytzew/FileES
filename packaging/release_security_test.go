@@ -33,3 +33,24 @@ func TestReleaseSigningToolKeepsPrivateKeyOffBuildAndVerifiesBeforeCommit(t *tes
 		}
 	}
 }
+
+func TestClientBuildInjectsOnlyPublicReleaseTrust(t *testing.T) {
+	raw, err := os.ReadFile("build-gui.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw)
+	for _, required := range []string{
+		"FILEES_RELEASE_PUBKEY", "FILEES_RELEASE_KEY_ID", "injectedClientReleasePublicKeyB64",
+		"injectedClientReleaseKeyID", "base64", "refusing placeholder release public key",
+	} {
+		if !strings.Contains(script, required) {
+			t.Errorf("client build missing release trust control %q", required)
+		}
+	}
+	for _, forbidden := range []string{"RELEASE_SEC", "release.sec", "SIGNIFY_SEC_KEY"} {
+		if strings.Contains(script, forbidden) {
+			t.Errorf("client build references private signing material %q", forbidden)
+		}
+	}
+}

@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"filees/pkg/clientview"
+	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcclient"
 	"filees/pkg/ipcserver"
 	"filees/pkg/reposupervisor"
 )
@@ -42,6 +45,54 @@ func TestAttachedProjectionUsesServerAuthorityAndSkipsUnattachedRepositories(t *
 	}
 	if got[0].Key != attached || got[0].Access != "rw" || got[0].State != "disabled" || got[0].URL != view.Repositories[1].URL || got[0].DisplayName != "Documents" {
 		t.Fatalf("desired=%+v", got[0])
+	}
+}
+
+func TestAttachedProjectionIncludesLocallyAttachedRepoMissingFromView(t *testing.T) {
+	serverID := "office"
+	key := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000009"}
+	runtimes := map[reposupervisor.Key]repoRuntime{
+		key: {config: config.Repo{ID: key.RepoID, RepoURL: "svn+ssh://_filees-data@example/repo", Access: "rw", ServerID: serverID}},
+	}
+	// The server's projected view has not caught up with this brand-new
+	// repository yet: it isn't in view.Repositories at all.
+	view := clientview.View{Generation: 1}
+	got := attachedProjection(serverID, view, runtimes)
+	if len(got) != 1 || got[0].Key != key || got[0].State != "active" || got[0].Access != "rw" || got[0].URL != "svn+ssh://_filees-data@example/repo" {
+		t.Fatalf("desired=%+v, want the locally attached repo started from local knowledge", got)
+	}
+}
+
+func TestSyncProjectionKnowledgeDoesNotOrphanLocallyAttachedRepoMissingFromView(t *testing.T) {
+	serverID := "office"
+	key := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000009"}
+	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	server := ipcserver.New(sock)
+	state := server.RegisterRepoAccess(key.RepoID, "svn+ssh://_filees-data@example/repo", t.TempDir(), serverID, contract.AccessReadWrite)
+	state.SetState(contract.StateActive)
+	runtimes := map[reposupervisor.Key]repoRuntime{
+		key: {config: config.Repo{ID: key.RepoID, RepoURL: "svn+ssh://_filees-data@example/repo", Access: "rw", ServerID: serverID}, state: state},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Exactly the moment right after CREATE_REPOSITORY/INITIAL_COMMIT succeed:
+	// the repo is fully attached and running locally, but the server's
+	// projected view (refreshed on its own poll interval) does not know
+	// about it yet.
+	view := clientview.View{Generation: 1}
+	syncProjectionKnowledge(server, serverID, view, runtimes)
+
+	list, err := ipcclient.New(sock, "test").RepoList(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Repos) != 1 || list.Repos[0].ID != key.RepoID {
+		t.Fatalf("locally attached repo missing from the projected view was orphaned from repo.list: %+v", list.Repos)
 	}
 }
 

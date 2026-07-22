@@ -147,7 +147,7 @@ func TestCommitServiceBuilderWiresRuntimeAndIPCState(t *testing.T) {
 	svn := &updateOnlyClient{called: make(chan struct{}, 1)}
 	state := ipcserver.New(t.TempDir()+"/sock").RegisterRepoAccess(repo.ID, repo.RepoURL, t.TempDir(), "office", contract.AccessReadWrite)
 	rules := commit.Rules{Window: time.Minute}
-	service := buildCommitService(repo, svn, rules, nil, nil, "client-uuid", nil, nil, state, nil)
+	service := buildCommitService(repo, svn, rules, nil, nil, "client-uuid", nil, nil, state, nil, nil)
 	if service.Cli != svn || service.RepoURL != repo.RepoURL || service.UUID != "client-uuid" || service.Rules.Window != time.Minute {
 		t.Fatalf("service=%+v", service)
 	}

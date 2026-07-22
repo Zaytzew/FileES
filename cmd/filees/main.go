@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"filees/pkg/activity"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
@@ -122,6 +123,11 @@ func runDaemon() {
 		lg.Errorf("repository provisioning: %v", err)
 		os.Exit(1)
 	}
+	activityJournal, err := activity.Open(defaultActivityJournalPath(), activity.DefaultLimit)
+	if err != nil {
+		lg.Errorf("recent activity: %v", err)
+		os.Exit(1)
+	}
 	provisionedAttachments := make(chan provisionedAttachment, 16)
 	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
 	provisioner.attachments = provisionedAttachments
@@ -144,7 +150,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, provisionedAttachments, ipc, gate, mtx); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, provisionedAttachments, ipc, gate, mtx, activityJournal); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	return

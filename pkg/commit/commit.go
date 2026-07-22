@@ -538,8 +538,16 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		}
 	}
 
+	var modifiedPaths []string
+	for _, pe := range pending {
+		if pe.item.Op == watcher.Modified {
+			modifiedPaths = append(modifiedPaths, pe.item.Rel)
+		}
+	}
+
 	// --- FILTR STAGINGU PRZEZ `svn status` ---
 	all := append(append([]string{}, addPaths...), delPaths...)
+	all = append(all, modifiedPaths...)
 	for _, it := range renamedItems {
 		all = append(all, it.OldRel, it.Rel)
 	}
@@ -571,7 +579,11 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	// immediately before staging to close the debounce/status race window.
 	toSvnAdd := make([]string, 0, len(addPaths))
 	alreadyAdded := make([]string, 0, len(addPaths))
-	var alreadyPublished []string
+	type publishedElsewhere struct {
+		rel string
+		op  watcher.OpType
+	}
+	var alreadyPublished []publishedElsewhere
 	for _, p := range addPaths {
 		if _, err := os.Stat(filepath.Join(wc, filepath.FromSlash(p))); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -597,7 +609,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			s.Logger.Debugf("skip add %s (status=%s)", p, item)
 			s.alreadyAccepted.Add(1)
 			s.removePendingIfUnchanged(p, pending)
-			alreadyPublished = append(alreadyPublished, p)
+			alreadyPublished = append(alreadyPublished, publishedElsewhere{rel: p, op: watcher.Added})
 		} else {
 			// Empty and unknown statuses are inconclusive. In particular this can
 			// happen when a never-published file is renamed while its surrounding
@@ -608,12 +620,33 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	}
 	toSvnAdd = dedup(toSvnAdd)
 	addPaths = dedup(append(toSvnAdd, alreadyAdded...))
+
+	// MODIFY: unlike add/delete, a modified path was never given a status
+	// check before this fix, so a file already committed by another process
+	// or an earlier daemon instance (the same restart/race that "already
+	// normal" handles for add) was resubmitted to svn commit every cycle.
+	// That commit silently no-ops (nothing to commit, no revision in the
+	// output), which the success path below cannot tell apart from a real
+	// failure to parse — so it kept re-recording Pending forever instead of
+	// ever reaching Published.
+	toCommitModified := make([]string, 0, len(modifiedPaths))
+	for _, p := range modifiedPaths {
+		if st[p] == "normal" {
+			s.Logger.Debugf("skip modify %s (status=%s)", p, st[p])
+			s.removePendingIfUnchanged(p, pending)
+			alreadyPublished = append(alreadyPublished, publishedElsewhere{rel: p, op: watcher.Modified})
+			continue
+		}
+		toCommitModified = append(toCommitModified, p)
+	}
+	modifiedPaths = toCommitModified
+
 	if len(alreadyPublished) > 0 && s.Activity != nil {
 		if rev, err := s.Cli.Revision(ctx, wc); err != nil {
 			s.Logger.Warnf("already-published activity: read WC revision: %v", err)
 		} else if rev > 0 {
 			for _, p := range alreadyPublished {
-				s.recordActivity(p, watcher.Added, activity.Published, rev, "")
+				s.recordActivity(p.rel, p.op, activity.Published, rev, "")
 			}
 		}
 	}
@@ -638,11 +671,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	// because it appeared in the pre-filter snapshot.
 	commitPaths = commitPaths[:0]
 	commitPaths = append(commitPaths, addPaths...)
-	for _, pe := range pending {
-		if pe.item.Op == watcher.Modified {
-			commitPaths = append(commitPaths, pe.item.Rel)
-		}
-	}
+	commitPaths = append(commitPaths, modifiedPaths...)
 	commitPaths = append(commitPaths, delPaths...)
 	for _, it := range renamedItems {
 		commitPaths = append(commitPaths, it.OldRel, it.Rel)

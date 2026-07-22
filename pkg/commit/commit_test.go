@@ -176,6 +176,41 @@ func TestActivityAdvancesAlreadyPublishedPathToPublished(t *testing.T) {
 	}
 }
 
+func TestActivityAdvancesAlreadyPublishedModifiedPathToPublishedInsteadOfLoopingPending(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "style.md")
+	if err := os.WriteFile(abs, []byte("edited"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &activityRecorder{}
+	// A modified path whose SVN status is already "normal": another daemon
+	// instance (or an earlier commit cycle before a restart raced this one)
+	// already published this exact change. Before the fix, a Modified path
+	// never got a status check at all, so it was resubmitted to svn commit
+	// every cycle; the resulting no-op commit (nothing to commit, no
+	// revision in the output) rolled the entry back to Pending forever.
+	cli := &stagingClient{statuses: map[string]string{"style.md": "normal"}, revision: 9}
+	service := &Service{
+		Cli: cli, Rules: Rules{NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		Activity: recorder, repoID: "docs",
+		staging: map[string]*stageItem{
+			"style.md": {Rel: "style.md", Abs: abs, Op: watcher.Modified, FirstSeen: time.Now().Add(-time.Second)},
+		},
+	}
+	if err := service.tryCommitMode(context.Background(), wc, true); err != nil {
+		t.Fatalf("reconciliation: %v", err)
+	}
+	if cli.commits != 0 {
+		t.Fatalf("commits=%d, want 0 (already-normal path must not be resubmitted)", cli.commits)
+	}
+	if len(recorder.entries) != 1 {
+		t.Fatalf("activity=%+v, want exactly one Published entry", recorder.entries)
+	}
+	if entry := recorder.entries[0]; entry.Stage != activity.Published || entry.Revision != 9 || entry.Kind != activity.Modified {
+		t.Fatalf("activity=%+v, want Modified Published at revision 9", entry)
+	}
+}
+
 func (c *stagingClient) CommitKeepLocks(ctx context.Context, wc string, paths []string, message string) (string, error) {
 	c.keepCommits++
 	return c.Commit(ctx, wc, paths, message)

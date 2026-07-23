@@ -95,10 +95,13 @@ func reconnectMessage(nonce []byte, deployRequestID string) []byte {
 	return append(message, deployRequestID...)
 }
 
+// validateBareEd25519PublicKey is shared by the reconnect-key path and
+// ClaimAuthorizedMobilePush - both need one bare (no comment/options) Ed25519
+// authorized_keys line.
 func validateBareEd25519PublicKey(value string) error {
 	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(value)))
 	if err != nil || key.Type() != ssh.KeyAlgoED25519 || comment != "" || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
-		return errors.New("reconnect_public_key must be one bare ssh-ed25519 key")
+		return errors.New("public key must be one bare ssh-ed25519 key")
 	}
 	return nil
 }

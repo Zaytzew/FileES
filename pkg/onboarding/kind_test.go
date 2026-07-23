@@ -1,12 +1,35 @@
 package onboarding
 
 import (
+	"crypto/ed25519"
+	crand "crypto/rand"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 )
+
+// testBarePublicKey generates a real (but throwaway) bare Ed25519
+// authorized_keys line - ClaimAuthorizedMobilePush requires the pushed key
+// to be bare (no comment), since the client cannot know its own client_id
+// (needed for the "filees:<clientID>" comment activation.validateGrant
+// requires) until after the server assigns one; the server appends that
+// comment itself once it knows which operation this is.
+func testBarePublicKey(t *testing.T) string {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(crand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+}
 
 func TestCreateTicketRejectsInvalidKind(t *testing.T) {
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
@@ -134,18 +157,19 @@ func TestClaimAuthorizedMobilePushClaimsTheAuthorizedOperation(t *testing.T) {
 	defer store.Close()
 
 	receipt := createMobileAuthorizedOperation(t, store, "push@example.net")
-	const publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFZZUks/QxQg+QkoDHcY5mDZHBHpOd67MX6L3yjDH/UG filees:mobile-test"
+	bareKey := testBarePublicKey(t)
 	const fingerprint = "SHA256:test-fingerprint"
 
-	grant, err := store.ClaimAuthorizedMobilePush(publicKey, fingerprint)
+	grant, err := store.ClaimAuthorizedMobilePush(bareKey, fingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if grant.OperationID != receipt.OperationID || grant.Kind != KindMobile {
 		t.Fatalf("grant=%+v, want operation %s kind %s", grant, receipt.OperationID, KindMobile)
 	}
-	if grant.InstallationPublicKey != publicKey || grant.InstallationFingerprint != fingerprint {
-		t.Fatalf("grant identity=%+v, want key=%q fingerprint=%q", grant, publicKey, fingerprint)
+	wantKey := bareKey + " filees:" + grant.ClientID
+	if grant.InstallationPublicKey != wantKey || grant.InstallationFingerprint != fingerprint {
+		t.Fatalf("grant identity=%+v, want key=%q fingerprint=%q", grant, wantKey, fingerprint)
 	}
 	// activation.validateGrant (pkg/activation) requires DeployRequestID to
 	// be a UUID even though mobile has no reverse-tunnel deploy session to
@@ -162,8 +186,19 @@ func TestClaimAuthorizedMobilePushClaimsTheAuthorizedOperation(t *testing.T) {
 	if op.State != OperationIdentityGenerated {
 		t.Fatalf("operation state=%q, want %q (tunnel_started/helper_announced skipped)", op.State, OperationIdentityGenerated)
 	}
-	if op.InstallationPublicKey != publicKey || op.InstallationFingerprint != fingerprint {
+	if op.InstallationPublicKey != wantKey || op.InstallationFingerprint != fingerprint {
 		t.Fatalf("persisted identity=%+v", op)
+	}
+}
+
+func TestClaimAuthorizedMobilePushRejectsCommentedKey(t *testing.T) {
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 43350, 43360)
+	defer store.Close()
+
+	createMobileAuthorizedOperation(t, store, "push-commented@example.net")
+	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t)+" filees:already-commented", "SHA256:x"); err == nil {
+		t.Fatal("a client-supplied comment was accepted")
 	}
 }
 
@@ -172,7 +207,7 @@ func TestClaimAuthorizedMobilePushRejectsWhenNothingAuthorized(t *testing.T) {
 	store, _ := openTestStore(t, &now, 3, 43400, 43410)
 	defer store.Close()
 
-	if _, err := store.ClaimAuthorizedMobilePush("ssh-ed25519 AAAA filees:x", "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
+	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
 		t.Fatalf("push with nothing authorized error=%v", err)
 	}
 }
@@ -183,10 +218,10 @@ func TestClaimAuthorizedMobilePushRejectsSecondClaim(t *testing.T) {
 	defer store.Close()
 
 	createMobileAuthorizedOperation(t, store, "push-once@example.net")
-	if _, err := store.ClaimAuthorizedMobilePush("ssh-ed25519 AAAA filees:x", "SHA256:x"); err != nil {
+	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), "SHA256:x"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ClaimAuthorizedMobilePush("ssh-ed25519 AAAA filees:x", "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
+	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
 		t.Fatalf("second push error=%v", err)
 	}
 }
@@ -197,10 +232,10 @@ func TestClaimAuthorizedMobilePushRejectsEmptyIdentity(t *testing.T) {
 	defer store.Close()
 
 	createMobileAuthorizedOperation(t, store, "push-empty@example.net")
-	if _, err := store.ClaimAuthorizedMobilePush("", "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
-		t.Fatalf("empty public key error=%v", err)
+	if _, err := store.ClaimAuthorizedMobilePush("", "SHA256:x"); err == nil {
+		t.Fatalf("empty public key accepted")
 	}
-	if _, err := store.ClaimAuthorizedMobilePush("ssh-ed25519 AAAA filees:x", ""); !errors.Is(err, ErrTunnelGrant) {
+	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), ""); !errors.Is(err, ErrTunnelGrant) {
 		t.Fatalf("empty fingerprint error=%v", err)
 	}
 }

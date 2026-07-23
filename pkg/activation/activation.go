@@ -243,20 +243,24 @@ func (m *Manager) HasProof(grant onboarding.ActivationGrant) error {
 }
 
 func (m *Manager) Publish(ctx context.Context, grant onboarding.ActivationGrant) (int64, error) {
-	if err := m.HasProof(grant); err != nil {
+	canonical, err := validateGrant(grant)
+	if err != nil {
 		return 0, err
 	}
 	var revision int64
-	err := withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+	err = withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
 		record, err := readRecord(m.recordPath(grant.OperationID))
 		if err != nil {
 			return err
 		}
-		if record.State == "active" {
+		if record.State == "active" && sameGrant(record, grant, canonical) {
 			revision = record.ServiceRevision
 			return nil
 		}
-		if record.State != "staged" || !sameGrant(record, grant, record.InstallationPublicKey) {
+		if err := m.HasProof(grant); err != nil {
+			return err
+		}
+		if record.State != "staged" || !sameGrant(record, grant, canonical) {
 			return errors.New("activation record is not publishable")
 		}
 		receipt, err := readReceipt(m.receiptPath(grant.OperationID))

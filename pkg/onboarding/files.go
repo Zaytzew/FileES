@@ -536,7 +536,15 @@ func (s *Files) AuthenticateOTP(otp string) (AuthGrant, error) {
 			}
 			return ErrOTPInvalid
 		}
-		op.State, op.OTPHash, op.OTPLocator = OperationTunnelAuthorized, "", ""
+		// OTPLocator is not secret (only OTPHash guards the actual secret
+		// half) and is kept live past this transition: mobile onboarding's
+		// ClaimAuthorizedMobilePush needs it as the rendezvous key between
+		// this BSD-Auth session and the separately exec'd forced command,
+		// since OpenBSD sshd does not propagate BSD-Auth state into the
+		// command environment (see ClaimAuthorizedTunnel's doc comment
+		// below). It is blanked once genuinely consumed there, or at
+		// terminal expiry/activation as before.
+		op.State, op.OTPHash = OperationTunnelAuthorized, ""
 		bundle.addAudit("tunnel_authorized", "filees-ssh-auth", now)
 		if err := atomicWriteJSON(path, bundle); err != nil {
 			return err
@@ -605,17 +613,29 @@ func (s *Files) ClaimAuthorizedTunnel(expectedPort uint16) (AuthGrant, error) {
 // port to correlate on, because mobile never sets one up (KindMobile skips
 // the reverse-tunnel dance entirely - a public key is not secret and can be
 // pushed directly over the same OTP-authenticated session that just
-// authenticated it). The BSD-Auth rendezvous problem is instead solved the
-// same way PendingActivation solves it elsewhere: there can only ever be one
-// live operation in OperationTunnelAuthorized at a time, so finding it is
-// unambiguous without a port. This claims that one operation, records the
-// pushed installation public key, and transitions straight to
-// OperationIdentityGenerated - skipping OperationTunnelStarted/
-// OperationHelperAnnounced, which only exist to track reverse-tunnel
-// handshake sub-steps mobile never performs.
-func (s *Files) ClaimAuthorizedMobilePush(publicKey, fingerprint string) (ActivationGrant, error) {
+// authenticated it). The BSD-Auth rendezvous problem cannot be solved the
+// way ClaimAuthorizedTunnel solves it (a scarce, per-operation resource like
+// AssignedReversePort that structurally admits only one live operation at a
+// time) because mobile allocates no such resource - so the caller resends
+// the pairing token itself alongside the pushed key (it already possesses
+// it, having scanned it from the QR, and the payload only ever travels over
+// the session that same token just authenticated - not a fresh exposure).
+// The token's locator half re-derives the exact operation instead of
+// scanning for "the only one", so two concurrent mobile pairings - or a
+// mobile pairing racing a concurrent desktop deploy also sitting in
+// OperationTunnelAuthorized - can never claim each other's operation.
+// ApprovedPolicy.Kind is checked too, as defense in depth. This claims the
+// exact matched operation, records the pushed installation public key, and
+// transitions straight to OperationIdentityGenerated - skipping
+// OperationTunnelStarted/OperationHelperAnnounced, which only exist to
+// track reverse-tunnel handshake sub-steps mobile never performs.
+func (s *Files) ClaimAuthorizedMobilePush(token, publicKey, fingerprint string) (ActivationGrant, error) {
 	if err := s.requireAreas(AreaOperations); err != nil {
 		return ActivationGrant{}, err
+	}
+	_, locator, err := parseOTP(token)
+	if err != nil {
+		return ActivationGrant{}, ErrOTPInvalid
 	}
 	publicKey, fingerprint = strings.TrimSpace(publicKey), strings.TrimSpace(fingerprint)
 	if fingerprint == "" {
@@ -635,7 +655,7 @@ func (s *Files) ClaimAuthorizedMobilePush(publicKey, fingerprint string) (Activa
 		return ActivationGrant{}, err
 	}
 	var grant ActivationGrant
-	err := s.withLock(func() error {
+	err = s.withLock(func() error {
 		paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
 		if err != nil {
 			return err
@@ -652,7 +672,8 @@ func (s *Files) ClaimAuthorizedMobilePush(publicKey, fingerprint string) (Activa
 				return err
 			}
 			op := bundle.Operation
-			if op.State != OperationTunnelAuthorized || !now.Before(op.ExpiresAt) {
+			if op.State != OperationTunnelAuthorized || !now.Before(op.ExpiresAt) ||
+				op.OTPLocator != locator || op.ApprovedPolicy.Kind != KindMobile {
 				continue
 			}
 			if selectedPath != "" {
@@ -676,6 +697,7 @@ func (s *Files) ClaimAuthorizedMobilePush(publicKey, fingerprint string) (Activa
 			selected.Operation.DeployRequestID = deployRequestID
 		}
 		selected.Operation.State = OperationIdentityGenerated
+		selected.Operation.OTPLocator = ""
 		selected.Operation.InstallationPublicKey = publicKey + " filees:" + selected.Operation.ClientID
 		selected.Operation.InstallationFingerprint = fingerprint
 		selected.addAudit("mobile_key_pushed", "filees-mobile-onboard", now)

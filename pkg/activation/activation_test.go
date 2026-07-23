@@ -115,6 +115,51 @@ func TestExpiredStagingIsFailClosedAndRemovedFromRuntimeAccess(t *testing.T) {
 	}
 }
 
+// TestPublishSucceedsAfterTTLExpiryWhenAlreadyActive is the A-02 regression
+// guard: Publish previously called HasProof (hard TTL-gated) before ever
+// reading the record, so its own already-active short-circuit was
+// unreachable once the grant's TTL had passed - a lost finish response
+// followed by a retry past TTL could never recover the already-published
+// revision. It must now be reachable regardless of TTL, but only for a
+// grant that genuinely matches the persisted record.
+func TestPublishSucceedsAfterTTLExpiryWhenAlreadyActive(t *testing.T) {
+	manager, _ := newActivationTestManager(t)
+	now := time.Now().UTC()
+	manager.now = func() time.Time { return now }
+	grant := testActivationGrant(t, now.Add(time.Hour))
+	if err := manager.Stage(grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RecordProof(grant.OperationID, grant.ClientID); err != nil {
+		t.Fatal(err)
+	}
+	revision, err := manager.Publish(context.Background(), grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance well past the grant's own TTL - a naive HasProof-first Publish
+	// would now reject even a replay of the exact same, already-published
+	// grant.
+	now = now.Add(2 * time.Hour)
+	replay, err := manager.Publish(context.Background(), grant)
+	if err != nil {
+		t.Fatalf("post-TTL replay of an already-active grant failed: %v", err)
+	}
+	if replay != revision {
+		t.Fatalf("post-TTL replay revision=%d, want %d", replay, revision)
+	}
+
+	// A genuinely different grant for the same OperationID must still be
+	// rejected post-TTL, not silently treated as "already active" just
+	// because a record for that OperationID happens to exist.
+	conflicting := grant
+	conflicting.ClientID = uuid.NewString()
+	if _, err := manager.Publish(context.Background(), conflicting); err == nil {
+		t.Fatal("conflicting grant for the same operation was accepted post-TTL")
+	}
+}
+
 func TestRenderAccessLockedBranchesOnKind(t *testing.T) {
 	manager, config := newActivationTestManager(t)
 	config.MobileEntryPath = "/usr/local/libexec/filees/filees-mobile-v1"

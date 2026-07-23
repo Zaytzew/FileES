@@ -69,8 +69,7 @@ func TestCreateMobilePairingTokenRoundTripsToPushableOperation(t *testing.T) {
 		t.Fatalf("pending activation=%+v, want operation=%s kind=%s", pending, receipt.OperationID, KindMobile)
 	}
 
-	const publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFZZUks/QxQg+QkoDHcY5mDZHBHpOd67MX6L3yjDH/UG filees:mobile-pairing-test"
-	pushed, err := store.ClaimAuthorizedMobilePush(publicKey, "SHA256:test")
+	pushed, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), "SHA256:test")
 	if err != nil {
 		t.Fatal(err)
 	}

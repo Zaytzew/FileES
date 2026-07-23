@@ -618,8 +618,21 @@ func (s *Files) ClaimAuthorizedMobilePush(publicKey, fingerprint string) (Activa
 		return ActivationGrant{}, err
 	}
 	publicKey, fingerprint = strings.TrimSpace(publicKey), strings.TrimSpace(fingerprint)
-	if publicKey == "" || fingerprint == "" {
+	if fingerprint == "" {
 		return ActivationGrant{}, ErrTunnelGrant
+	}
+	// The pushed key must be bare (no comment): the client generates its
+	// identity fully offline, before it has ever talked to the server, so it
+	// cannot know its own client_id yet to embed in a "filees:<clientID>"
+	// comment the way activation.validateGrant requires. The server already
+	// minted client_id in CreateMobilePairing, before the token was ever
+	// shown - exactly like desktop's identity generator receives its
+	// client_id from the server's HelperRequest before commenting its own
+	// key (pkg/deploy/identity.go). So the comment is appended here, once
+	// the operation (and its client_id) is found below, not supplied by the
+	// client.
+	if err := validateBareEd25519PublicKey(publicKey); err != nil {
+		return ActivationGrant{}, err
 	}
 	var grant ActivationGrant
 	err := s.withLock(func() error {
@@ -663,7 +676,7 @@ func (s *Files) ClaimAuthorizedMobilePush(publicKey, fingerprint string) (Activa
 			selected.Operation.DeployRequestID = deployRequestID
 		}
 		selected.Operation.State = OperationIdentityGenerated
-		selected.Operation.InstallationPublicKey = publicKey
+		selected.Operation.InstallationPublicKey = publicKey + " filees:" + selected.Operation.ClientID
 		selected.Operation.InstallationFingerprint = fingerprint
 		selected.addAudit("mobile_key_pushed", "filees-mobile-onboard", now)
 		selected.addAudit("identity_generated", "filees-mobile-onboard", now)

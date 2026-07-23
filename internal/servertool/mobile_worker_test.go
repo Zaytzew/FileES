@@ -128,7 +128,11 @@ func (f mobileWorkerFixture) pair(t *testing.T) string {
 	return token
 }
 
-func testInstallationKey(t *testing.T, comment string) (public, fingerprint string) {
+// testInstallationKey generates a real, throwaway, bare (no comment) Ed25519
+// key - ClaimAuthorizedMobilePush requires bare keys and appends the
+// "filees:<clientID>" comment itself, since the client cannot know its own
+// client_id until after the server assigns one.
+func testInstallationKey(t *testing.T) (public, fingerprint string) {
 	t.Helper()
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -138,13 +142,13 @@ func testInstallationKey(t *testing.T, comment string) (public, fingerprint stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))) + " " + comment, ssh.FingerprintSHA256(key)
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))), ssh.FingerprintSHA256(key)
 }
 
 func TestRunMobileOnboardWorkerStagesPushedKey(t *testing.T) {
 	f := newMobileWorkerFixture(t)
 	f.pair(t)
-	publicKey, fingerprint := testInstallationKey(t, "filees:mobile-onboard-test")
+	publicKey, fingerprint := testInstallationKey(t)
 
 	payload, err := json.Marshal(MobileOnboardPushPayload{PublicKey: publicKey, Fingerprint: fingerprint})
 	if err != nil {
@@ -170,7 +174,7 @@ func TestRunMobileOnboardWorkerStagesPushedKey(t *testing.T) {
 
 func TestRunMobileOnboardWorkerRejectsWithoutAnAuthorizedPairing(t *testing.T) {
 	f := newMobileWorkerFixture(t)
-	publicKey, fingerprint := testInstallationKey(t, "filees:no-pairing")
+	publicKey, fingerprint := testInstallationKey(t)
 	payload, _ := json.Marshal(MobileOnboardPushPayload{PublicKey: publicKey, Fingerprint: fingerprint})
 	var stdout, stderr bytes.Buffer
 	if code := runMobileOnboardWorker(f.configPath, bytes.NewReader(payload), &stdout, &stderr); code == ExitOK {
@@ -186,7 +190,7 @@ func TestRunMobileOnboardWorkerRejectsWithoutAnAuthorizedPairing(t *testing.T) {
 func (f mobileWorkerFixture) stageMobileInstallation(t *testing.T) (operationID, clientID string) {
 	t.Helper()
 	f.pair(t)
-	publicKey, fingerprint := testInstallationKey(t, "filees:mobile-stage-test")
+	publicKey, fingerprint := testInstallationKey(t)
 	store, err := onboarding.OpenExisting(f.root, f.options(), onboarding.Access{Areas: onboarding.AreaAll, NeedOTP: true})
 	if err != nil {
 		t.Fatal(err)

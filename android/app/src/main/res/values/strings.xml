@@ -2,22 +2,24 @@
 <resources>
     <string name="app_name">FileES</string>
 
-    <string name="section_activation">Aktywacja</string>
-    <string name="hint_alias">Alias</string>
-    <string name="hint_address">Adres serwera FileES (host:port)</string>
-    <string name="hint_host_public_key">Host key serwera (ssh-ed25519 AAAA…)</string>
-    <string name="action_activate">Aktywuj klienta na nowym serwerze…</string>
-    <string name="label_device_public_key">Klucz publiczny tego urządzenia (do zatwierdzenia po stronie serwera):</string>
+    <string name="section_activation">Parowanie</string>
+    <string name="hint_pairing_payload">Dane parowania (wklej JSON zamiast skanować QR)</string>
+    <string name="action_scan_qr">Skanuj QR i sparuj z desktopem</string>
+    <string name="action_pair_pasted">Sparuj (wklejone dane)</string>
+    <string name="label_device_public_key">Klucz publiczny tego urządzenia:</string>
 
     <string name="section_repository">Repozytorium</string>
     <string name="hint_repo_id">ID repozytorium</string>
     <string name="action_refresh">Odśwież</string>
 
-    <string name="status_idle">Nieaktywny. Wprowadź dane serwera i naciśnij „%1$s”.</string>
-    <string name="status_activating">Aktywowanie…</string>
-    <string name="status_activated">Aktywny: %1$s (%2$s)</string>
+    <string name="status_idle">Niesparowany. Zeskanuj kod QR z aktywnego klienta desktopowego.</string>
+    <string name="status_pairing">Parowanie…</string>
+    <string name="status_activating">Łączenie…</string>
+    <string name="status_activated">Sparowany: %1$s</string>
     <string name="status_refreshing">Odświeżanie…</string>
     <string name="status_error">Błąd: %1$s</string>
+    <string name="status_camera_permission_denied">Brak zgody na kamerę — użyj pola wklejania danych parowania.</string>
+    <string name="status_scan_cancelled">Skanowanie anulowane.</string>
 
     <string name="section_uploads">Kolejka uploadów</string>
     <string name="hint_parent_path">Katalog docelowy (pusty = katalog główny)</string>

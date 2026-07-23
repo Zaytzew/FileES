@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
+	"filees/pkg/clientview"
 	v1 "filees/pkg/mobile/v1"
 
 	"github.com/google/uuid"
@@ -40,20 +42,52 @@ func mobileFileURL(abs string) string {
 	return u.String()
 }
 
-func newMobileSeededRepo(t *testing.T) string {
+// newMobileSeededRepoAt creates a real SVN repository at the exact path a
+// clientviewMobileAuthority-resolved grant would point to
+// (RepositoriesRoot/repoID), seeded with one file so REFRESH_MANIFEST has
+// something to report.
+func newMobileSeededRepoAt(t *testing.T, repoPath string) {
 	t.Helper()
-	dir := t.TempDir()
-	repo := filepath.Join(dir, "repo")
-	mobileRun(t, "svnadmin", "create", repo)
-	seed := filepath.Join(dir, "seed")
+	mobileRun(t, "svnadmin", "create", repoPath)
+	seed := filepath.Join(t.TempDir(), "seed")
 	if err := os.MkdirAll(filepath.Join(seed, "photos"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(seed, "photos", "a.jpg"), []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mobileRun(t, "svn", "import", "-q", seed, mobileFileURL(repo), "-m", "seed import")
-	return repo
+	mobileRun(t, "svn", "import", "-q", seed, mobileFileURL(repoPath), "-m", "seed import")
+}
+
+// writeMobileClientView publishes clients/<clientID>/view.json under the
+// given service working copy, exactly the projection
+// pkg/activation.Manager.Publish/pkg/repoworker.ServicePublisher maintain in
+// production - this is what clientviewMobileAuthority.Resolve reads.
+func writeMobileClientView(t *testing.T, serviceWC, clientID, realmID string, generation int64, repos []clientview.Repository) {
+	t.Helper()
+	view := clientview.View{
+		Schema:       clientview.Schema,
+		ClientID:     clientID,
+		RealmID:      realmID,
+		Generation:   generation,
+		GeneratedAt:  time.Now().UTC(),
+		ClientRole:   "normal",
+		Repositories: repos,
+	}
+	viewPath := filepath.Join(serviceWC, "clients", clientID, "view.json")
+	if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mobileGrantedRepository(repoID, access string) clientview.Repository {
+	return clientview.Repository{
+		RepoID:      repoID,
+		DisplayName: "repo-1",
+		URL:         "svn+ssh://" + url.User("_filees-client").String() + "@filees.test/" + repoID,
+		Access:      access,
+		State:       "active",
+	}
 }
 
 func mobileOperationalGetenv(key string) string {
@@ -154,12 +188,16 @@ func TestMobileEntryRejectsMissingConfig(t *testing.T) {
 }
 
 // TestMobileEntryServesRefreshOverRealDispatcher drives runMobileEntry exactly
-// as the filees-mobile-v1 forced command would: a real seeded SVN repo, a real
-// mobileworker.Dispatcher, one framed REFRESH_MANIFEST request in and one
-// framed response out. On OpenBSD this re-execs the test binary in a child
-// process so the real pledge/unveil syscalls in obsandbox.Apply cannot
-// permanently narrow the shared `go test` process (mirrors
-// TestClientEntrySeparatesProofFromForcedSVNCommand's isolation).
+// as the filees-mobile-v1 forced command would: a real server.json, a real
+// published clients/<clientID>/view.json granting one repository (the same
+// projection pkg/activation.Manager.Publish/pkg/repoworker.ServicePublisher
+// maintain in production, not a static stub), a real seeded SVN repo at the
+// resolved repository-root path, a real mobileworker.Dispatcher, one framed
+// REFRESH_MANIFEST request in and one framed response out. On OpenBSD this
+// re-execs the test binary in a child process so the real pledge/unveil
+// syscalls in obsandbox.Apply cannot permanently narrow the shared `go test`
+// process (mirrors TestClientEntrySeparatesProofFromForcedSVNCommand's
+// isolation).
 func TestMobileEntryServesRefreshOverRealDispatcher(t *testing.T) {
 	mobileRequireSVN(t)
 
@@ -173,21 +211,12 @@ func TestMobileEntryServesRefreshOverRealDispatcher(t *testing.T) {
 		return
 	}
 
-	repo := newMobileSeededRepo(t)
-	root := t.TempDir()
-	ledgerDir := filepath.Join(root, "ledger")
-	configPath := filepath.Join(root, "mobile-repos.json")
+	f := newMobileWorkerFixture(t)
+	clientID, repoID := uuid.NewString(), uuid.NewString()
+	newMobileSeededRepoAt(t, filepath.Join(f.repositoriesRoot, repoID))
+	writeMobileClientView(t, f.serviceWC, clientID, f.realmID, 9, []clientview.Repository{mobileGrantedRepository(repoID, "rw")})
 
-	grants := []MobileRepoGrant{{ClientID: "device-1", RepoID: "repo-1", RepoPath: repo, Access: "rw", Generation: 9}}
-	raw, err := json.Marshal(grants)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(configPath, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	req, err := v1.NewRequest(uuid.NewString(), v1.OpRefreshManifest, v1.RefreshManifestPayload{RepoID: "repo-1"})
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpRefreshManifest, v1.RefreshManifestPayload{RepoID: repoID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +230,7 @@ func TestMobileEntryServesRefreshOverRealDispatcher(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := runMobileEntry(configPath, ledgerDir, []string{"op-1", "device-1"}, mobileOperationalGetenv, &stdin, &stdout, &stderr, mobileNeverExec(t))
+	code := runMobileEntry(f.configPath, filepath.Join(t.TempDir(), "ledger"), []string{"op-1", clientID}, mobileOperationalGetenv, &stdin, &stdout, &stderr, mobileNeverExec(t))
 	if code != ExitOK {
 		t.Fatalf("code=%d stderr=%s", code, stderr.String())
 	}
@@ -227,16 +256,12 @@ func TestMobileEntryServesRefreshOverRealDispatcher(t *testing.T) {
 }
 
 func TestMobileEntryRejectsUngrantedClient(t *testing.T) {
-	repo := newMobileSeededRepo(t)
-	root := t.TempDir()
-	configPath := filepath.Join(root, "mobile-repos.json")
-	grants := []MobileRepoGrant{{ClientID: "device-1", RepoID: "repo-1", RepoPath: repo, Access: "rw", Generation: 1}}
-	raw, _ := json.Marshal(grants)
-	if err := os.WriteFile(configPath, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	f := newMobileWorkerFixture(t)
+	clientID, repoID := uuid.NewString(), uuid.NewString()
+	newMobileSeededRepoAt(t, filepath.Join(f.repositoriesRoot, repoID))
+	writeMobileClientView(t, f.serviceWC, clientID, f.realmID, 1, []clientview.Repository{mobileGrantedRepository(repoID, "rw")})
 
-	req, err := v1.NewRequest(uuid.NewString(), v1.OpRefreshManifest, v1.RefreshManifestPayload{RepoID: "repo-1"})
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpRefreshManifest, v1.RefreshManifestPayload{RepoID: repoID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,8 +271,11 @@ func TestMobileEntryRejectsUngrantedClient(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// someone-else has no published view.json at all - this is the mobile
+	// equivalent of a client that was never granted anything.
+	someoneElse := uuid.NewString()
 	var stdout, stderr bytes.Buffer
-	code := runMobileEntry(configPath, filepath.Join(root, "ledger"), []string{"op-1", "someone-else"}, mobileOperationalGetenv, &stdin, &stdout, &stderr, mobileNeverExec(t))
+	code := runMobileEntry(f.configPath, filepath.Join(t.TempDir(), "ledger"), []string{"op-1", someoneElse}, mobileOperationalGetenv, &stdin, &stdout, &stderr, mobileNeverExec(t))
 	if code != ExitOK {
 		// The dispatcher itself turns an authority error into a StatusError
 		// response, not a process failure -- runMobileEntry only fails hard on

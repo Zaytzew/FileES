@@ -2,27 +2,29 @@ package servertool
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 
 	"filees/internal/mobileworker"
 	"filees/internal/obsandbox"
+	"filees/pkg/clientview"
+	"filees/pkg/serverconfig"
 )
 
 const (
 	mobileEntryPromises = writePromises + " proc exec"
-	// Deliberately outside /etc/filees and /var/filees: those trees are
-	// owned and locked to _filees-state (0700), unreachable by the
-	// _filees-mobile login this forced command runs as. Etap 4b's stub gets
-	// its own small, separately-owned tree instead of loosening that
-	// boundary.
-	mobileRepoConfigDefaultPath = "/etc/filees-mobile/mobile-repos.json"
-	mobileLedgerDefaultDir      = "/var/filees-mobile/ledger"
+
+	// mobileServerConfigDefaultPath is the same server.json every other
+	// forced command reads (RunClientEntry, RunRepositoryWorker) - mobile
+	// client_ids now go through the real activation/repoworker pipeline, so
+	// there is no separate mobile-only configuration surface left.
+	mobileServerConfigDefaultPath = "/etc/filees/server.json"
+	mobileLedgerDefaultDir        = "/var/filees-mobile/ledger"
 
 	// MobileOperationalCommand is what pkg/mobileclient/sshtransport.Do
 	// sends for ongoing REFRESH_MANIFEST/UPLOAD_OBJECT traffic - the only
@@ -38,32 +40,41 @@ const (
 	MobileFinishCommand = "filees-mobile-finish/v1"
 )
 
-// MobileRepoGrant is one static client_id -> repo mapping.
+// clientviewMobileAuthority resolves mobile repository access from the same
+// server-owned projection desktop clients already consume:
+// <ServiceWorkingCopy>/clients/<clientID>/view.json, published by
+// pkg/activation.Manager.Publish on activation and kept current by
+// pkg/repoworker.ServicePublisher as repositories are granted. This retires
+// the Etap 4b static-JSON stub (staticMobileAuthority) now that mobile
+// client_ids actually go through pkg/activation instead of being
+// hand-registered (concepts/FILEES_ANDROID_CLIENT_CONCEPT_V2.md SS3.1).
 //
-// This is the Etap 4b stub authority: it exists only to prove that sshd, the
-// filees-mobile-v1 forced command and mobileworker.Dispatcher work together
-// over a real network connection. It is deliberately NOT the production
-// grant model — pkg/repoworker's realm/grant system (built separately,
-// desktop/server side) is meant to replace it outright. Do not grow this
-// into a general authorization system; once real grants exist, swap the
-// Authority passed to the Dispatcher below and delete this stub.
-type MobileRepoGrant struct {
-	ClientID   string `json:"client_id"`
-	RepoID     string `json:"repo_id"`
-	RepoPath   string `json:"repo_path"`
-	Access     string `json:"access"` // "rw" or "r"
-	Generation int64  `json:"generation"`
+// Mirrors pkg/repoworker.ViewResolver: the view is knowledge, never local
+// authority. repo.State is deliberately not consulted here - it matches how
+// pkg/repoworker's rendered svnserve authz grants realm-wide access
+// regardless of a repository's initializing/active state, so mobile stays
+// consistent with the desktop access model rather than inventing a second,
+// stricter one.
+type clientviewMobileAuthority struct {
+	ServiceWorkingCopy string
+	RepositoriesRoot   string
 }
 
-type staticMobileAuthority []MobileRepoGrant
-
-func (grants staticMobileAuthority) Resolve(_ context.Context, clientID, repoID string) (mobileworker.View, error) {
-	for _, g := range grants {
-		if g.ClientID == clientID && g.RepoID == repoID {
-			if g.Access != "rw" && g.Access != "r" {
-				return mobileworker.View{}, fmt.Errorf("mobile: grant for %s/%s has invalid access %q", clientID, repoID, g.Access)
-			}
-			return mobileworker.View{RepoPath: g.RepoPath, Generation: g.Generation, Access: g.Access}, nil
+func (a clientviewMobileAuthority) Resolve(_ context.Context, clientID, repoID string) (mobileworker.View, error) {
+	view, err := clientview.Load(filepath.Join(a.ServiceWorkingCopy, "clients", clientID, "view.json"))
+	if err != nil {
+		return mobileworker.View{}, err
+	}
+	if view.ClientID != clientID {
+		return mobileworker.View{}, errors.New("mobile: client view identity mismatch")
+	}
+	for _, repo := range view.Repositories {
+		if repo.RepoID == repoID {
+			return mobileworker.View{
+				RepoPath:   filepath.Join(a.RepositoriesRoot, repo.RepoID),
+				Generation: view.Generation,
+				Access:     repo.Access,
+			}, nil
 		}
 	}
 	return mobileworker.View{}, errors.New("mobile: no grant for this client/repo")
@@ -85,7 +96,7 @@ func (grants staticMobileAuthority) Resolve(_ context.Context, clientID, repoID 
 // The operational branch (default, unchanged) serves exactly one framed
 // mobile operation per invocation, then the process exits.
 func RunMobileEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
-	return runMobileEntry(mobileRepoConfigDefaultPath, mobileLedgerDefaultDir, args, getenv, stdin, stdout, stderr, execMobileWorkerSubcommand)
+	return runMobileEntry(mobileServerConfigDefaultPath, mobileLedgerDefaultDir, args, getenv, stdin, stdout, stderr, execMobileWorkerSubcommand)
 }
 
 func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer, execSubcommand func(subcommand, operationID, clientID string) error) int {
@@ -130,18 +141,25 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 		return ExitSoftware
 	}
 
-	raw, err := os.ReadFile(configPath)
+	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation)
 	if err != nil {
 		report(stderr, "filees-mobile-v1 config", err)
 		return ExitConfig
 	}
-	var grants staticMobileAuthority
-	if err := json.Unmarshal(raw, &grants); err != nil {
-		report(stderr, "filees-mobile-v1 config", err)
+	if !filepath.IsAbs(config.Repositories.Root) || !filepath.IsAbs(config.Activation.ServiceWorkingCopy) {
+		fmt.Fprintln(stderr, "filees-mobile-v1: repository configuration is incomplete")
 		return ExitConfig
 	}
+	authority := clientviewMobileAuthority{
+		ServiceWorkingCopy: config.Activation.ServiceWorkingCopy,
+		RepositoriesRoot:   config.Repositories.Root,
+	}
 
-	profile := obsandbox.Profile{Name: "filees-mobile-v1", Promises: mobileEntryPromises, Paths: mobileUnveilPaths(grants, ledgerDir, svnPath, svnlookPath)}
+	profile := obsandbox.Profile{
+		Name:     "filees-mobile-v1",
+		Promises: mobileEntryPromises,
+		Paths:    mobileUnveilPaths(config.Repositories.Root, config.Activation.ServiceWorkingCopy, ledgerDir, svnPath, svnlookPath),
+	}
 	if err := obsandbox.Apply(profile); err != nil {
 		report(stderr, "filees-mobile-v1 sandbox", err)
 		return ExitSoftware
@@ -149,11 +167,11 @@ func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(str
 
 	dispatcher := mobileworker.Dispatcher{
 		Browser: mobileworker.Browser{
-			Authority: grants,
+			Authority: authority,
 			Reader:    mobileworker.SVNReader{SvnPath: svnPath, SvnlookPath: svnlookPath},
 		},
 		Appender: mobileworker.Appender{
-			Authority: grants,
+			Authority: authority,
 			Reader:    mobileworker.SVNReader{SvnPath: svnPath, SvnlookPath: svnlookPath},
 			Committer: mobileworker.SVNAppender{SvnPath: svnPath, SvnlookPath: svnlookPath},
 			Ledger:    mobileworker.Ledger{Dir: ledgerDir},
@@ -179,11 +197,19 @@ func execMobileWorkerSubcommand(subcommand, operationID, clientID string) error 
 	return syscall.Exec(workerPath, []string{"filees-worker", subcommand, operationID, clientID}, []string{})
 }
 
-func mobileUnveilPaths(grants staticMobileAuthority, ledgerDir, svnPath, svnlookPath string) []obsandbox.Path {
-	paths := []obsandbox.Path{
+func mobileUnveilPaths(repositoriesRoot, serviceWorkingCopy, ledgerDir, svnPath, svnlookPath string) []obsandbox.Path {
+	return []obsandbox.Path{
 		{Label: "svn", Name: svnPath, Perms: "rx"},
 		{Label: "svnlook", Name: svnlookPath, Perms: "rx"},
 		{Label: "ledger", Name: ledgerDir, Perms: "rwc"},
+		// The whole repositories root is unveiled once, exactly like
+		// filees-client-entry unveils it for _filees-data/svnserve - the
+		// actual per-(client,repo) gate is clientviewMobileAuthority.Resolve
+		// above, not the OS-level sandbox.
+		{Label: "repository-root", Name: repositoriesRoot, Perms: "rwc"},
+		// Read-only: this dispatcher only ever reads
+		// clients/<clientID>/view.json, never writes to the service WC.
+		{Label: "service-working-copy", Name: serviceWorkingCopy, Perms: "r"},
 		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
 		{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
 		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
@@ -195,17 +221,4 @@ func mobileUnveilPaths(grants staticMobileAuthority, ledgerDir, svnPath, svnlook
 		// directly the way filees-client-entry execs into svnserve.
 		{Label: "devnull", Name: "/dev/null", Perms: "rw"},
 	}
-	seen := make(map[string]bool, len(grants))
-	for _, g := range grants {
-		if seen[g.RepoPath] {
-			continue
-		}
-		seen[g.RepoPath] = true
-		perms := "r"
-		if g.Access == "rw" {
-			perms = "rwc"
-		}
-		paths = append(paths, obsandbox.Path{Label: "repo:" + g.RepoID, Name: g.RepoPath, Perms: perms})
-	}
-	return paths
 }

@@ -46,4 +46,10 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+
+    // QR scanning for mobile pairing (concept doc §4.2). Deliberately ZXing,
+    // not ML Kit: no Google Play Services dependency, works on any device
+    // regardless of GMS availability -- a firm project preference, even at
+    // the cost of a less polished scanner UX than ML Kit would give.
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }

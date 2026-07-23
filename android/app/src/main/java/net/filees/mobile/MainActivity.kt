@@ -1,5 +1,7 @@
 package net.filees.mobile
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -8,28 +10,28 @@ import android.provider.OpenableColumns
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidbind.Androidbind
 import androidbind.Client
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import net.filees.mobile.databinding.ActivityMainBinding
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
 /**
- * The activation + repository screen. This is a direct-connect placeholder
- * for the real onboarding flow: concept doc §4.2 wants ticket + OTP +
- * reverse-tunnel activation exactly like the desktop daemon's push deploy.
- * That protocol has no Go-side port yet (pkg/deploy's helper/worker dance is
- * desktop-only so far) -- building an OTP screen against a backend call that
- * doesn't exist would just be UI to throw away. Instead, "activation" here
- * means: the device generates its own persistent identity (as it always
- * would), the operator pins the server's address and host key by hand, and
- * the resulting device public key is shown for the operator to authorize
- * server-side (today, by hand -- see SESSION_HANDOFF.md §17 for the
- * Etap 4b stub authority this talks to). The OTP screen slots in later,
- * in front of this same androidbind.Client wiring, once the real protocol
- * exists.
+ * The activation + repository screen. Mobile never self-activates (concept
+ * doc §4.2): a device can only be paired by an already-active desktop
+ * installation of the same realm, which mints a short-lived pairing token
+ * and displays it as a QR code (address + host public key + token). This
+ * screen scans that QR (or accepts the same JSON pasted, as a fallback for
+ * testing/accessibility), drives androidbind.Androidbind.pairJSON to push
+ * this device's own already-generated public key and complete activation,
+ * and only then persists address/host key for future silent reconnects.
+ * The pairing token itself is single-use and short-lived and is never
+ * written to SharedPreferences.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -38,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private val main = Handler(Looper.getMainLooper())
 
     private var client: Client? = null
+    private var pairedAddress: String? = null
     private val uploadsAdapter = PendingUploadsAdapter(onDiscard = { onDiscardClicked(it) })
 
     private val prefs by lazy { getSharedPreferences("filees_connection", MODE_PRIVATE) }
@@ -46,19 +49,31 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) onFilePicked(uri)
     }
 
+    private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
+        val contents = result.contents
+        if (contents == null) {
+            setStatus(getString(R.string.status_scan_cancelled))
+        } else {
+            pairFromPayload(contents)
+        }
+    }
+
+    private val cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchScanner() else setStatus(getString(R.string.status_camera_permission_denied))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.editAlias.setText(prefs.getString(PREF_ALIAS, ""))
-        binding.editAddress.setText(prefs.getString(PREF_ADDRESS, ""))
-        binding.editHostKey.setText(prefs.getString(PREF_HOST_KEY, ""))
-
         binding.recyclerUploads.layoutManager = LinearLayoutManager(this)
         binding.recyclerUploads.adapter = uploadsAdapter
 
-        binding.buttonActivate.setOnClickListener { onActivateClicked() }
+        binding.buttonScanQr.setOnClickListener { onScanQrClicked() }
+        binding.buttonPairPasted.setOnClickListener {
+            pairFromPayload(binding.editPairingPayload.text?.toString()?.trim().orEmpty())
+        }
         binding.buttonRefresh.setOnClickListener { onRefreshClicked() }
         binding.buttonPickFile.setOnClickListener { pickFileLauncher.launch(arrayOf("*/*")) }
         binding.buttonDrain.setOnClickListener { onDrainClicked() }
@@ -66,45 +81,87 @@ class MainActivity : AppCompatActivity() {
         // A prior activation persists its identity under filesDir regardless
         // of whether this Activity is still alive (concept doc §9.2); if we
         // have the connection details saved, reconnect silently so a rotated
-        // screen or reopened app does not force the operator to reactivate.
+        // screen or reopened app does not force the operator to re-pair.
         val savedAddress = prefs.getString(PREF_ADDRESS, null)
         val savedHostKey = prefs.getString(PREF_HOST_KEY, null)
         if (!savedAddress.isNullOrBlank() && !savedHostKey.isNullOrBlank()) {
             activate(savedAddress, savedHostKey, silent = true)
         } else {
-            setStatus(getString(R.string.status_idle, getString(R.string.action_activate)))
+            setStatus(getString(R.string.status_idle))
         }
     }
 
-    private fun onActivateClicked() {
-        val alias = binding.editAlias.text?.toString()?.trim().orEmpty()
-        val address = binding.editAddress.text?.toString()?.trim().orEmpty()
-        val hostKey = binding.editHostKey.text?.toString()?.trim().orEmpty()
-        if (address.isEmpty() || hostKey.isEmpty()) {
-            setStatus(getString(R.string.status_error, "adres i host key są wymagane"))
+    private fun onScanQrClicked() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            launchScanner()
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun launchScanner() {
+        val options = ScanOptions()
+        options.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+        options.setBeepEnabled(false)
+        options.setOrientationLocked(true)
+        scanLauncher.launch(options)
+    }
+
+    private fun pairFromPayload(payload: String) {
+        if (payload.isBlank()) {
+            setStatus(getString(R.string.status_error, "brak danych parowania"))
             return
         }
-        prefs.edit {
-            putString(PREF_ALIAS, alias)
-            putString(PREF_ADDRESS, address)
-            putString(PREF_HOST_KEY, hostKey)
+        val address: String
+        val hostKey: String
+        val token: String
+        try {
+            val json = JSONObject(payload)
+            address = json.getString("address")
+            hostKey = json.getString("host_public_key")
+            token = json.getString("token")
+        } catch (e: Exception) {
+            setStatus(getString(R.string.status_error, "nieprawidłowe dane parowania"))
+            return
         }
-        activate(address, hostKey, silent = false)
+        pairAndActivate(address, hostKey, token)
+    }
+
+    private fun pairAndActivate(address: String, hostKey: String, token: String) {
+        setStatus(getString(R.string.status_pairing))
+        io.execute {
+            try {
+                // PairJSON drives push -> prove -> finish against this
+                // device's own already-persisted identity (concept doc
+                // §4.2); the token is single-use and short-lived, so it is
+                // consumed here and never saved.
+                Androidbind.pairJSON(filesDir.absolutePath, address, hostKey, token)
+                prefs.edit {
+                    putString(PREF_ADDRESS, address)
+                    putString(PREF_HOST_KEY, hostKey)
+                }
+                main.post { activate(address, hostKey, silent = false) }
+            } catch (e: Exception) {
+                main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
+            }
+        }
     }
 
     private fun activate(address: String, hostKey: String, silent: Boolean) {
         if (!silent) setStatus(getString(R.string.status_activating))
         io.execute {
             try {
-                // MOBILE_USER matches the _filees-mobile SSH class from Etap
-                // 4b (SESSION_HANDOFF.md §17) -- it is not operator-editable,
-                // since the technical account is fixed by the server class,
-                // not chosen by the client.
+                // MOBILE_USER matches the _filees-mobile SSH class (concept
+                // doc §4.2) -- it is not operator-editable, since the
+                // technical account is fixed by the server class, not
+                // chosen by the client.
                 val newClient = Androidbind.newClient(filesDir.absolutePath, address, MOBILE_USER, hostKey)
                 main.post {
                     client = newClient
-                    val alias = binding.editAlias.text?.toString()?.trim().orEmpty()
-                    setStatus(getString(R.string.status_activated, alias.ifEmpty { address }, address))
+                    pairedAddress = address
+                    setStatus(getString(R.string.status_activated, address))
                     binding.labelDevicePublicKey.visibility = View.VISIBLE
                     binding.textDevicePublicKey.visibility = View.VISIBLE
                     binding.textDevicePublicKey.text = newClient.publicKey()
@@ -135,7 +192,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 val manifestJson = active.refreshJSON(repoId)
                 main.post {
-                    setStatus(getString(R.string.status_activated, repoId, binding.editAddress.text.toString()))
+                    setStatus(getString(R.string.status_activated, pairedAddress ?: repoId))
                     binding.textManifest.text = formatManifest(manifestJson)
                     refreshUploadsList()
                 }
@@ -271,7 +328,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val MOBILE_USER = "_filees-mobile"
-        private const val PREF_ALIAS = "alias"
         private const val PREF_ADDRESS = "address"
         private const val PREF_HOST_KEY = "host_public_key"
     }

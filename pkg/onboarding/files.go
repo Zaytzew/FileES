@@ -40,7 +40,14 @@ type Options struct {
 	OTPAttempts      int
 	ReversePortFirst uint16
 	ReversePortLast  uint16
+	// MobilePairingTTL bounds mobile pairing tokens (CreateMobilePairing) -
+	// deliberately much shorter than OperationTTL, since a QR code is meant
+	// to be scanned promptly, not redeemed hours later. Defaults to 5
+	// minutes when zero, so existing callers/tests need no change.
+	MobilePairingTTL time.Duration
 }
+
+const defaultMobilePairingTTL = 5 * time.Minute
 
 // Area is a filesystem capability within the service repository. Callers
 // declare the areas needed by one tool invocation before OpenExisting; the
@@ -72,6 +79,7 @@ type Files struct {
 	otpAttempts      int
 	reversePortFirst uint16
 	reversePortLast  uint16
+	mobilePairingTTL time.Duration
 }
 
 // Open is the compatibility entry point used by embedded callers and tests.
@@ -186,8 +194,11 @@ func OpenPrepared(root string, opts Options, access Access) (*Files, error) {
 	if opts.ReversePortFirst == 0 || opts.ReversePortLast < opts.ReversePortFirst {
 		return nil, errors.New("invalid reverse port range")
 	}
+	if opts.MobilePairingTTL <= 0 {
+		opts.MobilePairingTTL = defaultMobilePairingTTL
+	}
 	root = filepath.Clean(root)
-	return &Files{root: root, areas: access.Areas, needOTP: access.NeedOTP, clock: opts.Clock, random: opts.Random, portAllocator: opts.PortAllocator, pepper: append([]byte(nil), opts.OTPPepper...), operationTTL: opts.OperationTTL, otpAttempts: opts.OTPAttempts, reversePortFirst: opts.ReversePortFirst, reversePortLast: opts.ReversePortLast}, nil
+	return &Files{root: root, areas: access.Areas, needOTP: access.NeedOTP, clock: opts.Clock, random: opts.Random, portAllocator: opts.PortAllocator, pepper: append([]byte(nil), opts.OTPPepper...), operationTTL: opts.OperationTTL, otpAttempts: opts.OTPAttempts, reversePortFirst: opts.ReversePortFirst, reversePortLast: opts.ReversePortLast, mobilePairingTTL: opts.MobilePairingTTL}, nil
 }
 
 func (s *Files) Close() error { return nil }
@@ -285,6 +296,66 @@ func (s *Files) CreateTicket(email string, policy Policy, ttl time.Duration) (Ti
 		return s.writeAuditLocked(AuditEvent{Event: "ticket_created", Actor: "filees-admin", ObjectType: "ticket", ObjectID: ticket.TicketID, At: now})
 	})
 	return ticket, err
+}
+
+// CreateMobilePairing mints a mobile pairing operation directly - no
+// Ticket, no e-mail, no MailOutboxEntry. Mobile has no admin-ticket
+// self-activation path at all (architectural decision: mobile can only be
+// paired by an already-active desktop of the same realm, via its own
+// authenticated control-plane request - see concepts/
+// FILEES_ANDROID_CLIENT_CONCEPT_V2.md). The desktop displays the returned
+// token as a QR code; the phone presents it exactly where a desktop client
+// would present its mailed OTP (the same _filees-tunnel BSD-Auth class,
+// AuthenticateOTP, completely unchanged). realmID is supplied by the
+// caller's already-authenticated session (e.g. repoworker.Session.RealmID,
+// resolved server-side from the connection, never from a client payload) -
+// this method does not and must not accept a client_id or installation key.
+func (s *Files) CreateMobilePairing(realmID string) (string, TakeReceipt, error) {
+	if err := s.requireAreas(AreaOperations | AreaAudit); err != nil {
+		return "", TakeReceipt{}, err
+	}
+	if err := s.requireOTP(); err != nil {
+		return "", TakeReceipt{}, err
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return "", TakeReceipt{}, errors.New("realm_id must be a UUID")
+	}
+	requestID, err := randomUUID(s.random)
+	if err != nil {
+		return "", TakeReceipt{}, err
+	}
+	operationID, err := randomUUID(s.random)
+	if err != nil {
+		return "", TakeReceipt{}, err
+	}
+	clientID, err := randomUUID(s.random)
+	if err != nil {
+		return "", TakeReceipt{}, err
+	}
+	token, locator, err := generateOTP(s.random)
+	if err != nil {
+		return "", TakeReceipt{}, err
+	}
+	var receipt TakeReceipt
+	err = s.withLock(func() error {
+		now := s.clock.Now().UTC()
+		op := Operation{
+			Schema: OperationSchema, OperationID: operationID, ClientID: clientID, OnboardingRequestID: requestID,
+			OTPHash: s.hashOTP(token), OTPLocator: locator, ApprovedPolicy: Policy{RealmID: realmID, Kind: KindMobile},
+			AttemptsLeft: s.otpAttempts, State: OperationAwaitingTunnel, CreatedAt: now, ExpiresAt: now.Add(s.mobilePairingTTL),
+		}
+		bundle := Bundle{Schema: BundleSchema, Operation: op}
+		bundle.addAudit("mobile_pairing_created", "filees-mobile-pairing", now)
+		if err := atomicWriteJSON(s.operationPath(requestID), bundle); err != nil {
+			return err
+		}
+		if err := syncDirectory(filepath.Join(s.root, operationsDir)); err != nil {
+			return err
+		}
+		receipt = receiptFor(op)
+		return nil
+	})
+	return token, receipt, err
 }
 
 func (s *Files) RevokeTicket(ticketID string) error {
@@ -524,6 +595,82 @@ func (s *Files) ClaimAuthorizedTunnel(expectedPort uint16) (AuthGrant, error) {
 		}
 		op := selected.Operation
 		grant = authGrantFor(op)
+		return nil
+	})
+	return grant, err
+}
+
+// ClaimAuthorizedMobilePush is the mobile-onboarding rendezvous: unlike
+// ClaimAuthorizedTunnel/ClaimAuthorizedHelper, there is no reverse-forwarded
+// port to correlate on, because mobile never sets one up (KindMobile skips
+// the reverse-tunnel dance entirely - a public key is not secret and can be
+// pushed directly over the same OTP-authenticated session that just
+// authenticated it). The BSD-Auth rendezvous problem is instead solved the
+// same way PendingActivation solves it elsewhere: there can only ever be one
+// live operation in OperationTunnelAuthorized at a time, so finding it is
+// unambiguous without a port. This claims that one operation, records the
+// pushed installation public key, and transitions straight to
+// OperationIdentityGenerated - skipping OperationTunnelStarted/
+// OperationHelperAnnounced, which only exist to track reverse-tunnel
+// handshake sub-steps mobile never performs.
+func (s *Files) ClaimAuthorizedMobilePush(publicKey, fingerprint string) (ActivationGrant, error) {
+	if err := s.requireAreas(AreaOperations); err != nil {
+		return ActivationGrant{}, err
+	}
+	publicKey, fingerprint = strings.TrimSpace(publicKey), strings.TrimSpace(fingerprint)
+	if publicKey == "" || fingerprint == "" {
+		return ActivationGrant{}, ErrTunnelGrant
+	}
+	var grant ActivationGrant
+	err := s.withLock(func() error {
+		paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
+		if err != nil {
+			return err
+		}
+		var selectedPath string
+		var selected Bundle
+		now := s.clock.Now().UTC()
+		for _, path := range paths {
+			if strings.HasPrefix(filepath.Base(path), claimPrefix) {
+				continue
+			}
+			bundle, err := s.readBundlePathLocked(path)
+			if err != nil {
+				return err
+			}
+			op := bundle.Operation
+			if op.State != OperationTunnelAuthorized || !now.Before(op.ExpiresAt) {
+				continue
+			}
+			if selectedPath != "" {
+				return ErrTunnelGrant
+			}
+			selectedPath, selected = path, bundle
+		}
+		if selectedPath == "" {
+			return ErrTunnelGrant
+		}
+		if selected.Operation.DeployRequestID == "" {
+			// Mobile has no reverse-tunnel deploy session to correlate (that
+			// concept is desktop-specific, see ClaimAuthorizedHelper), but
+			// activation.validateGrant still requires DeployRequestID to be a
+			// UUID - synthesize one, exactly as ClientID already is when a
+			// fresh operation has none.
+			deployRequestID, err := randomUUID(s.random)
+			if err != nil {
+				return err
+			}
+			selected.Operation.DeployRequestID = deployRequestID
+		}
+		selected.Operation.State = OperationIdentityGenerated
+		selected.Operation.InstallationPublicKey = publicKey
+		selected.Operation.InstallationFingerprint = fingerprint
+		selected.addAudit("mobile_key_pushed", "filees-mobile-onboard", now)
+		selected.addAudit("identity_generated", "filees-mobile-onboard", now)
+		if err := atomicWriteJSON(selectedPath, selected); err != nil {
+			return err
+		}
+		grant = activationGrantFor(selected.Operation)
 		return nil
 	})
 	return grant, err
@@ -885,6 +1032,12 @@ func (s *Files) ListOutbox() ([]MailOutboxEntry, error) {
 			return err
 		}
 		for _, bundle := range bundles {
+			// Mobile pairing operations (CreateMobilePairing) have no
+			// e-mail/outbox step at all - their Bundle.Outbox is the zero
+			// value, not a pending mail job to report or deliver.
+			if bundle.Outbox.MessageID == "" {
+				continue
+			}
 			entries = append(entries, bundle.Outbox)
 		}
 		return nil

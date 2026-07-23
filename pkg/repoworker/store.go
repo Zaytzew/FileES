@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	control "filees/pkg/control/v1"
 	"github.com/google/uuid"
@@ -108,4 +109,58 @@ func (s *FileStore) Save(r control.Result) error {
 	}
 	defer d.Close()
 	return d.Sync()
+}
+
+// PurgeExpiredMobilePairings deletes MOBILE_PAIRING result files whose
+// MobilePairingResult.ExpiresAt has passed. A stored result is only ever
+// re-read to make a retried control-plane request idempotent (Worker.Handle
+// returns it unchanged for a matching operation_id+request_id) - once the
+// token's own TTL has passed it can never authenticate again
+// (onboarding.Files.AuthenticateOTP is TTL-gated on the same clock), so no
+// legitimate retry can still need it. Deletes rather than redacts, matching
+// this codebase's existing expire-and-remove convention
+// (activation.Manager.expireStagedLocked, onboarding.Files's own
+// expireOperationsLocked) - nothing in this package is treated as a
+// long-term audit log today.
+func (s *FileStore) PurgeExpiredMobilePairings(now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pattern := filepath.Join(s.root, "*."+strings.ToLower(string(control.TicketMobilePairing))+".json")
+	paths, err := filepath.Glob(pattern)
+	if err != nil {
+		return 0, err
+	}
+	purged := 0
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return purged, err
+		}
+		result, err := control.ParseResult(raw)
+		if err != nil {
+			return purged, err
+		}
+		if result.Status != control.ResultOK {
+			continue
+		}
+		var payload control.MobilePairingResult
+		if err := control.DecodePayload(result.Result, &payload); err != nil {
+			return purged, err
+		}
+		expiresAt, err := time.Parse(time.RFC3339Nano, payload.ExpiresAt)
+		if err != nil {
+			return purged, err
+		}
+		if !now.After(expiresAt) {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return purged, err
+		}
+		purged++
+	}
+	return purged, nil
 }

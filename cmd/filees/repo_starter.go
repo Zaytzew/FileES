@@ -178,6 +178,9 @@ type readWriteDependencies struct {
 func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired, deps readWriteDependencies) (reposupervisor.Instance, error) {
 	repo := runtimeRepo.config
 	wc := repo.LocalPath
+	if runtimeRepo.state == nil {
+		return nil, errors.New("read-write repository state is required")
+	}
 	logger := talk.With("repo:" + repo.ID)
 	stateDir := filepath.Join(wc, ".filees", "state")
 	logsDir := filepath.Join(wc, ".filees", "logs")
@@ -248,10 +251,18 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			return nil, err
 		}
 	}
+	wireRepoLockFuncs(runtimeRepo.state, svn, wc, manager)
+	lockFuncsWired := true
+	defer func() {
+		if lockFuncsWired {
+			runtimeRepo.state.SetLockFuncs(nil, nil)
+		}
+	}()
 	instance, err := reposupervisor.StartManaged(ctx, func(runCtx context.Context) error {
 		return runReadWritePipeline(runCtx, repo, runtimeRepo.state, scanner, service)
 	}, func(cleanupCtx context.Context) error {
 		var first error
+		runtimeRepo.state.SetLockFuncs(nil, nil)
 		if passports != nil {
 			if err := passports.Stop(cleanupCtx); err != nil {
 				first = err
@@ -275,8 +286,30 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	}
 	cleanupPID = false
 	rollbackPassport = false
+	lockFuncsWired = false
 	_ = desired
 	return instance, nil
+}
+
+func wireRepoLockFuncs(state *ipcserver.RepoState, svn client.Client, wc string, manager *passport.Manager) {
+	if manager != nil {
+		state.SetLockFuncs(
+			func(ctx context.Context, paths []string) (string, error) {
+				_, out, err := manager.Acquire(ctx, paths)
+				return out, err
+			},
+			manager.Release,
+		)
+		return
+	}
+	state.SetLockFuncs(
+		func(ctx context.Context, paths []string) (string, error) {
+			return svn.Lock(ctx, wc, paths)
+		},
+		func(ctx context.Context, paths []string) (string, error) {
+			return svn.Unlock(ctx, wc, paths)
+		},
+	)
 }
 
 // daemonRepoStarter binds generic supervisor lifecycle to concrete daemon

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -152,6 +153,20 @@ func TestWindowsOpenFolderCallsExplorer(t *testing.T) {
 	}
 }
 
+func TestHideConsoleWindowOnlyAffectsPowerShell(t *testing.T) {
+	powerShell := exec.Command(`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`)
+	hideConsoleWindow(powerShell)
+	if powerShell.SysProcAttr == nil || !powerShell.SysProcAttr.HideWindow {
+		t.Fatal("PowerShell must start with its console hidden")
+	}
+
+	explorer := exec.Command(`C:\Windows\explorer.exe`)
+	hideConsoleWindow(explorer)
+	if explorer.SysProcAttr != nil {
+		t.Fatal("Explorer must keep its normal visible window behavior")
+	}
+}
+
 func TestWindowsOpenFolderReportsUnavailableAndStartFailure(t *testing.T) {
 	missing := &fakeWindowsRunner{paths: map[string]string{}}
 	backend := newWindowsBackend(missing, newFakeWindowsAutostartStore(), time.Now, "ATMProjekt.FileES")
@@ -197,6 +212,9 @@ func TestWindowsPickerInvokesPowerShellAndValidatesSelection(t *testing.T) {
 		t.Fatalf("calls = %#v", calls)
 	}
 	script := calls[0].args[len(calls[0].args)-1]
+	if !strings.HasPrefix(script, dpiAwarenessPrelude) {
+		t.Fatalf("picker must set DPI awareness before WinForms: %s", script)
+	}
 	for _, expected := range []string{
 		"OpenFileDialog",
 		"Multiselect=$true",
@@ -221,6 +239,9 @@ func TestWindowsFolderPickerUsesFolderBrowserDialog(t *testing.T) {
 		t.Fatalf("PickFolder() = %#v, %v", result, err)
 	}
 	args := strings.Join(runner.Calls()[0].args, " ")
+	if !strings.HasPrefix(runner.Calls()[0].args[len(runner.Calls()[0].args)-1], dpiAwarenessPrelude) {
+		t.Fatalf("folder picker must set DPI awareness before WinForms: %s", args)
+	}
 	if !strings.Contains(args, "FolderBrowserDialog") {
 		t.Fatalf("script = %s", args)
 	}

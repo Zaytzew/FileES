@@ -149,6 +149,10 @@ type stageItem struct {
 	ver       uint64    // incremented on every in-place update
 }
 
+type revisionCommitter interface {
+	CommitWithRevision(ctx context.Context, rootDirectory, repoURL string, paths []string, message string, keepLocks bool) (string, int64, error)
+}
+
 func (s *Service) goOffline() {
 	s.offMu.Lock()
 	wasOnline := !s.offline
@@ -700,8 +704,8 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	modifiedPaths = toCommitModified
 
 	if len(alreadyPublished) > 0 && s.Activity != nil {
-		if rev, err := s.Cli.Revision(ctx, wc); err != nil {
-			s.Logger.Warnf("already-published activity: read WC revision: %v", err)
+		if rev, err := s.Cli.Revision(ctx, s.RepoURL); err != nil {
+			s.Logger.Warnf("already-published activity: read repository revision: %v", err)
 		} else if rev > 0 {
 			for _, p := range alreadyPublished {
 				s.recordActivity(p.rel, p.op, activity.Published, rev, "")
@@ -891,8 +895,13 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			s.recordActivity(pe.item.Rel, pe.item.Op, activity.Publishing, 0, "")
 		}
 	}
-	var out string
-	if s.Rules.NeedsLock {
+	var (
+		out               string
+		confirmedRevision int64
+	)
+	if committer, ok := s.Cli.(revisionCommitter); ok {
+		out, confirmedRevision, err = committer.CommitWithRevision(ctx, wc, s.RepoURL, commitPaths, msg, s.Rules.NeedsLock)
+	} else if s.Rules.NeedsLock {
 		out, err = s.Cli.CommitKeepLocks(ctx, wc, commitPaths, msg)
 	} else {
 		out, err = s.Cli.Commit(ctx, wc, commitPaths, msg)
@@ -923,30 +932,29 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	s.lastCommit = time.Now()
 	s.commitBatches.Add(1)
 
-	// head.rev + commit event. svn's free-text commit output is
-	// locale-dependent ("Zatwierdzona wersja N." in pl_PL, "Committed
-	// revision N." in en_US, ...) and must never be scraped for the
-	// authoritative revision number — on any non-English locale that scrape
-	// silently finds nothing, which used to leave every confirmed commit
-	// looking unconfirmed (activity stuck at Pending forever, head.rev never
-	// updated, EvCommitCompleted never emitted). `svn info --show-item
-	// revision` is locale-independent and already used elsewhere for exactly
-	// this reason.
-	var confirmedRevision int64
-	if rev, revErr := s.Cli.Revision(ctx, wc); revErr != nil {
-		s.Logger.Warnf("read confirmed revision after commit: %v", revErr)
-	} else if rev > 0 {
-		confirmedRevision = rev
+	// head.rev + commit event. The real exec client returns an exact receipt
+	// identified by a transaction-specific revision property. Test doubles and
+	// legacy clients fall back to the repository URL (never the mixed-revision
+	// WC root); that fallback is intentionally less exact under concurrent
+	// writers but cannot regress to a stale local base revision.
+	if confirmedRevision == 0 {
+		if rev, revErr := s.Cli.Revision(ctx, s.RepoURL); revErr != nil {
+			s.Logger.Warnf("read confirmed repository revision after commit: %v", revErr)
+		} else {
+			confirmedRevision = rev
+		}
+	}
+	if confirmedRevision > 0 {
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
-		_ = atomicWriteString(head, strconv.FormatInt(rev, 10)+"\n")
+		_ = atomicWriteString(head, strconv.FormatInt(confirmedRevision, 10)+"\n")
 		if s.OnHeadRevision != nil {
-			s.OnHeadRevision(rev)
+			s.OnHeadRevision(confirmedRevision)
 		}
 		if s.OnLastSync != nil {
 			s.OnLastSync(time.Now())
 		}
 		s.emit(contract.EvCommitCompleted, contract.CommitCompletedPayload{
-			Revision: rev, Paths: len(commitPaths),
+			Revision: confirmedRevision, Paths: len(commitPaths),
 		})
 	}
 	if confirmedRevision > 0 {

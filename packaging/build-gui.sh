@@ -91,6 +91,7 @@ build_windows() {
 	cp "$root/packaging/windows/filees-gui.exe.manifest" "$tmp/"
 	cp "$root/packaging/windows/identity.json" "$tmp/"
 	cp "$root/packaging/windows/filees-gui.wxs" "$tmp/"
+	cp "$root/packaging/windows/License.rtf" "$tmp/"
 	cp "$root/packaging/windows/build-msi.ps1" "$tmp/"
 	# Same reasoning as the Linux .svg above: the static app icon must not
 	# carry a tray status badge.

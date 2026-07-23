@@ -65,6 +65,41 @@ func TestRepositoryLifecycleAllowsRetryAtSamePathAfterErroredCreate(t *testing.T
 	}
 }
 
+func TestRepositoryLifecycleResumesCreatedRepositoryAtSamePath(t *testing.T) {
+	local, _ := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	target := filepath.Join(t.TempDir(), "recover")
+	queued := make([]string, 0, 2)
+	service := repositoryLifecycleService{
+		store: local, provisioning: journal,
+		clientID: func(string) string { return "client-a" },
+		onCreate: func(id string) { queued = append(queued, id) },
+	}
+	first, err := service.BeginCreate("office", "Docs", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkRepositoryCreated(first.OperationID, "repo-1", "svn+ssh://_filees-data@example/repo-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkError(first.OperationID, errors.New("INITIAL_IMPORT_FAILED: interrupted")); err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.BeginCreate("office", "Different ignored name", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.OperationID != first.OperationID || second.RepoID != "repo-1" || second.State != string(localrepo.StateRepositoryCreated) {
+		t.Fatalf("resume created a new operation: first=%+v second=%+v", first, second)
+	}
+	if len(queued) != 2 || queued[1] != first.OperationID {
+		t.Fatalf("queued=%v", queued)
+	}
+	if records := local.List(); len(records) != 1 || records[0].LastError != "" {
+		t.Fatalf("local records after resume=%+v", records)
+	}
+}
+
 func TestRepositoryLifecycleDoesNotQueueRejectedCreate(t *testing.T) {
 	local, _ := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))

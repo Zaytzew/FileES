@@ -36,6 +36,34 @@ func TestOrchestratorRunsCreateThroughActive(t *testing.T) {
 	}
 }
 
+func TestOrchestratorPersistsRepositoryReadyBoundaryBeforeInitialImport(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "document"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := newTestStore(t, filepath.Join(t.TempDir(), "state"))
+	opID := uuid.NewString()
+	if _, err := store.CreateValidated(opID, "client", root, "Docs"); err != nil {
+		t.Fatal(err)
+	}
+	svn := &fakeInitialSVN{root: root, items: map[string]string{}, failCommit: 1}
+	var boundaries []Operation
+	orchestrator := Orchestrator{
+		Store: store, Control: &fakeControlExchange{}, SVN: svn,
+		Limits: ImportLimits{MaxBatchFiles: 10, MaxBatchBytes: 1024},
+		OnRepositoryReady: func(op Operation) error {
+			boundaries = append(boundaries, op)
+			return nil
+		},
+	}
+	if _, err := orchestrator.RunCreate(context.Background(), opID); err == nil {
+		t.Fatal("expected initial import failure")
+	}
+	if len(boundaries) == 0 || boundaries[0].State != StateRepositoryReady || boundaries[0].RepoID == "" {
+		t.Fatalf("repository boundary was not published before import: %+v", boundaries)
+	}
+}
+
 func TestOrchestratorResumesAtPublishedSnapshotWithoutRecommit(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "document"), []byte("data"), 0o600); err != nil {

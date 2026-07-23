@@ -16,10 +16,11 @@ type ControlExchange interface {
 }
 
 type Orchestrator struct {
-	Store   *Store
-	Control ControlExchange
-	SVN     InitialSVN
-	Limits  ImportLimits
+	Store             *Store
+	Control           ControlExchange
+	SVN               InitialSVN
+	Limits            ImportLimits
+	OnRepositoryReady func(Operation) error
 }
 
 // RunCreate advances one operation through every durable boundary. It is safe
@@ -36,6 +37,11 @@ func (o Orchestrator) RunCreate(ctx context.Context, operationID string) (Operat
 		op, err := o.Store.Get(operationID)
 		if err != nil {
 			return Operation{}, err
+		}
+		if op.RepoID != "" && o.OnRepositoryReady != nil {
+			if err := o.OnRepositoryReady(op); err != nil {
+				return Operation{}, fmt.Errorf("persist repository-created boundary: %w", err)
+			}
 		}
 		switch op.State {
 		case StateLocalValidated, StateStoragePreflightFailed:
@@ -85,6 +91,11 @@ func (o Orchestrator) RunCreate(ctx context.Context, operationID string) (Operat
 			}
 			if updated.State == StateRepositoryRequestFailed {
 				return updated, requestFailure(updated, requestID)
+			}
+			if o.OnRepositoryReady != nil {
+				if err := o.OnRepositoryReady(updated); err != nil {
+					return Operation{}, fmt.Errorf("persist repository-created boundary: %w", err)
+				}
 			}
 		case StateRepositoryReady, StateInitialCommitFailed:
 			if _, err := o.Store.StartInitialCommit(operationID, uuid.NewString()); err != nil {

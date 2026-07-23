@@ -23,12 +23,17 @@ type State string
 
 const (
 	StateRequestPending State = "request_pending"
-	StateUnattached     State = "unattached"
-	StatePolicyPending  State = "policy_pending"
-	StateAttaching      State = "attaching"
-	StateAttached       State = "attached"
-	StateRelocating     State = "relocating"
-	StateError          State = "error"
+	// StateRepositoryCreated is the durable boundary after the server has
+	// created the repository but before the initial snapshot is acknowledged.
+	// Unlike StateError it continues to own its local path and repository ID:
+	// retries must resume this operation, never mint another server repository.
+	StateRepositoryCreated State = "repository_created"
+	StateUnattached        State = "unattached"
+	StatePolicyPending     State = "policy_pending"
+	StateAttaching         State = "attaching"
+	StateAttached          State = "attached"
+	StateRelocating        State = "relocating"
+	StateError             State = "error"
 )
 
 type Record struct {
@@ -151,13 +156,47 @@ func (s *Store) MarkAttached(operationID, repoID string) (Record, error) {
 		if record.State == StateAttached && record.RepoID == repoID {
 			return nil
 		}
-		if record.State != StateRequestPending && record.State != StateAttaching && record.State != StateError {
+		if record.State != StateRequestPending && record.State != StateRepositoryCreated && record.State != StateAttaching && record.State != StateError {
 			return errors.New("local repository operation cannot become attached")
 		}
 		if strings.TrimSpace(repoID) == "" || strings.ContainsAny(repoID, "/\\\x00\r\n\t ") {
 			return errors.New("repository ID is invalid")
 		}
 		record.RepoID, record.State, record.LastError = repoID, StateAttached, ""
+		return nil
+	})
+}
+
+func (s *Store) MarkRepositoryCreated(operationID, repoID, repoURL string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		repoID, repoURL = strings.TrimSpace(repoID), strings.TrimSpace(repoURL)
+		if record.State == StateRepositoryCreated && record.RepoID == repoID && record.RepoURL == repoURL {
+			return nil
+		}
+		if record.State != StateRequestPending && record.State != StateRepositoryCreated && record.State != StateError {
+			return errors.New("local repository operation cannot record a created repository")
+		}
+		if repoID == "" || strings.ContainsAny(repoID, "/\\\x00\r\n\t ") {
+			return errors.New("created repository ID is invalid")
+		}
+		if !strings.HasPrefix(repoURL, "svn+ssh://") {
+			return errors.New("created repository URL is invalid")
+		}
+		record.RepoID, record.RepoURL, record.Access = repoID, repoURL, "rw"
+		record.State, record.LastError = StateRepositoryCreated, ""
+		return nil
+	})
+}
+
+// ResumeCreate clears the last provisioning failure without discarding the
+// durable server-repository boundary. The daemon will reuse the provisioning
+// journal and its existing repo_id/request IDs.
+func (s *Store) ResumeCreate(operationID string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateRepositoryCreated {
+			return errors.New("only a created repository can resume initial import")
+		}
+		record.LastError = ""
 		return nil
 	})
 }
@@ -183,7 +222,13 @@ func (s *Store) MarkError(operationID string, cause error) (Record, error) {
 		if cause == nil || strings.TrimSpace(cause.Error()) == "" {
 			return errors.New("local repository error is required")
 		}
-		record.State, record.LastError = StateError, cause.Error()
+		// Once CREATE_REPOSITORY succeeded, the record must keep owning both
+		// its local path and server repository identity. Downgrading it to the
+		// generic StateError would allow a retry to create a second orphan.
+		if record.State != StateRepositoryCreated {
+			record.State = StateError
+		}
+		record.LastError = cause.Error()
 		return nil
 	})
 }
@@ -316,9 +361,14 @@ func validate(r Record) error {
 		}
 	}
 	switch r.State {
-	case StateRequestPending, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateError:
+	case StateRequestPending, StateRepositoryCreated, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateError:
 	default:
 		return errors.New("local repository lifecycle state is invalid")
+	}
+	if r.State == StateRepositoryCreated {
+		if r.RepoID == "" || r.RepoURL == "" || r.Access != "rw" {
+			return errors.New("created repository lifecycle is incomplete")
+		}
 	}
 	if r.State == StateRelocating {
 		if !filepath.IsAbs(r.PendingLocalPath) || r.PendingLocalPath == string(filepath.Separator) || pathsOverlap(r.LocalPath, r.PendingLocalPath) {

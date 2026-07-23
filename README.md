@@ -177,7 +177,7 @@ filees help
 
 ## GUI Tray — koncepcja
 
-`filees-gui` będzie osobnym procesem i cienką warstwą UX nad publicznym kontraktem IPC. GUI nie jest częścią daemona, nie zna SVN i nie przejmuje odpowiedzialności za synchronizację. Zamknięcie GUI nie zatrzymuje daemona ani pracy repozytoriów.
+`filees-gui` jest osobnym procesem i cienką warstwą UX nad publicznym kontraktem IPC. GUI nie jest częścią daemona, nie zna SVN i nie przejmuje odpowiedzialności za synchronizację. Zamknięcie GUI nie zatrzymuje daemona ani pracy repozytoriów.
 
 ### Twarda granica GUI–daemon
 
@@ -203,7 +203,7 @@ Jedynym wyjątkiem poza IPC są lokalne działania należące do UX, np. otwarci
 - `filees-gui` może startować wraz z sesją graficzną i łączy się z istniejącym socketem,
 - brak daemona jest normalnym stanem UX, a nie awarią samego GUI,
 - GUI ponawia połączenie z ograniczonym backoffem, np. `1s → 2s → 5s → 10s → 30s`,
-- „Zamknij GUI” kończy tylko tray-app; zatrzymanie daemona będzie osobną akcją dopiero po pojawieniu się odpowiedniej capability.
+- „Zamknij GUI” kończy tylko tray-app; zatrzymanie daemona pozostaje niedostępne, dopóki daemon nie udostępni osobnej capability.
 
 Po połączeniu GUI wykonuje:
 
@@ -232,7 +232,7 @@ Priorytet agregacji to: `disconnected > error > offline > busy > active`. Przy b
 
 ### Menu MVP
 
-Menu tray powinno zawierać:
+Menu tray zawiera:
 
 - zagregowany stan daemona i czas ostatniego poprawnego odświeżenia,
 - listę repozytoriów ze stanem, connectivity, rewizją i liczbą oczekujących zmian,
@@ -306,7 +306,7 @@ Etap 3A jest ukończony: `internal/gui/platform` definiuje czyste interfejsy sys
 
 Etap 3B jest ukończony: adapter Linux zapewnia `xdg-open`, wybór plików i katalogów przez Zenity/KDialog, grupowane i limitowane powiadomienia `notify-send` oraz atomowy autostart XDG z obsługą `Hidden=true`. Wywołania desktopowe są wstrzyknięte i testowane bez otwierania rzeczywistych okien.
 
-Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, pickery plików i katalogów PowerShell/WinForms, `ToastGeneric` i autostart HKCU. Procesy oraz rejestr są wstrzyknięte; quoting korzysta z reguł Windows, a powiadomienia wymagają własnego AUMID FileES zarejestrowanego przez pakiet Etapu 4. Natywny odbiór pozostaje częścią checklisty Windows.
+Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, pickery plików i katalogów PowerShell/WinForms, `ToastGeneric` i autostart HKCU. Procesy oraz rejestr są wstrzyknięte; quoting korzysta z reguł Windows, a powiadomienia wymagają własnego AUMID FileES zarejestrowanego przez pakiet Etapu 4. Picker, prompt i powiadomienia uruchamiają PowerShell bez widocznego okna konsoli i ustawiają per-monitor DPI awareness przed utworzeniem okna. Natywny odbiór pozostaje częścią checklisty każdego wydania Windows.
 
 Etap 3D jest ukończony: `internal/gui/actions` nieblokująco obsługuje intencje traya, ponownie sprawdza świeżość modelu i repozytorium po interakcji z pickerem, waliduje ścieżki przed IPC oraz serializuje lock/unlock w obrębie jednego repozytorium. Kontroler posiada lifecycle swoich zadań i single-flight dla otwierania katalogu. Granicę importów chroni test architektoniczny.
 

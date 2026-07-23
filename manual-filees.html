@@ -752,11 +752,11 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 chmod +x install-user.sh
 ./install-user.sh                     # installs to ~/.local/
 ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
-<p>The installer copies the daemon binary to <code>~/.local/bin/filees</code>, the GUI binary to <code>~/.local/bin/filees-gui</code>, an icon, and a <code>.desktop</code> file. It installs a <code>systemd --user</code> unit (<code>filees.service</code>) but does <em>not</em> start or enable it without explicit request. An existing <code>config.json</code> is never overwritten on upgrade.</p>
+<p>The installer copies the daemon binary to <code>~/.local/bin/filees</code>, the GUI binary to <code>~/.local/bin/filees-gui</code>, an icon, and a <code>.desktop</code> file. It installs a <code>systemd --user</code> unit (<code>filees.service</code>) but does <em>not</em> enable an inactive service without explicit request; an already active service is restarted by default (set <code>RESTART_DAEMON=0</code> to suppress that restart). An existing <code>config.json</code> is never overwritten on upgrade.</p>
 <p>To start the daemon as a user service:</p>
 <pre><code>systemctl --user enable --now filees.service</code></pre>
 <h4>Windows GUI artifact (MSI)</h4>
-<p>Run <code>build-msi.ps1</code> on a machine with WiX Toolset v4 and <code>pwsh</code>, then install the generated <code>.msi</code>. Installation is per-user; no UAC prompt is required. The Start Menu shortcut has <code>System.AppUserModel.ID = ATMProjekt.FileES</code>, enabling toast notifications. This artifact does not constitute acceptance or packaging of the complete Windows sync daemon.</p>
+<p>Run <code>build-msi.ps1</code> in PowerShell on a machine with the WiX Toolset <code>wix</code> command (verified with WiX v7), then install the generated <code>.msi</code>. A first WiX v7 build needs the one-time command <code>wix eula accept wix7</code>. Installation is per-user; no UAC prompt is required. The Start Menu shortcut has <code>System.AppUserModel.ID = ATMProjekt.FileES</code>, enabling toast notifications. This artifact does not constitute acceptance or packaging of the complete Windows sync daemon.</p>
 <div class="warn"><strong>Before uninstalling the MSI on Windows:</strong> run <code>filees-gui --autostart disable</code> first. The installer does not automatically remove the <code>HKCU\...\Run</code> registry value that the application creates.</div>
 <h4>Requirements</h4>
 <div class="table-wrap"><table>
@@ -858,7 +858,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <li><strong><code>CREATE_REPOSITORY</code></strong> — the client sends an authenticated ticket to the server worker, which creates the SVN data repository, sets the owner grant and ACL, and returns a canonical <code>repo_id</code> and <code>repo_url</code>.</li>
 <li><strong><code>INITIAL_COMMIT</code></strong> — the client checks out the empty repository root into the local directory, performs a controlled <code>svn add</code> respecting ignore patterns, publishes the initial snapshot in bounded batches, confirms <code>INITIAL_COMMIT</code>, and only then starts the normal sync pipeline.</li>
 </ol>
-<p>The local state machine preserves <code>operation_id</code> across retry, and each ticket type is idempotent on the worker side (a repeated request with the same <code>operation_id</code> replays the durable result rather than re-executing). A failure at any of these three durable boundaries is reported back to the GUI via <code>repo.lifecycle_status</code> polling rather than left silent.</p>
+<p>The local state machine preserves <code>operation_id</code> across retry, and each ticket type is idempotent on the worker side (a repeated request with the same <code>operation_id</code> replays the durable result rather than re-executing). After successful repository creation the client records the returned repository identity durably before starting its import, so a restart or retry resumes that import instead of creating a duplicate server repository. A failure at any of these three durable boundaries is reported back to the GUI via <code>repo.lifecycle_status</code> polling rather than left silent.</p>
 <h2 id="ch2-sync">2.4 Day-to-Day Sync</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Normal operation, outage accumulation, bounded shutdown and restart reconciliation tested.</span></div>
 <p>Once active, the daemon operates without user interaction:</p>
 <ul>
@@ -884,7 +884,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Behaviour under passport mode:</p>
 <ul>
 <li>All existing regular files are migrated to carry <code>svn:needs-lock</code> on first start (the daemon refuses to start migration if the working copy has local content changes, deletes, or missing files).</li>
-<li>A file without an active passport is locally read-only. It becomes writable after a successful <code>repo.lock</code> / <code>filees lock</code> call.</li>
+<li>A file without an active passport is locally read-only. It becomes writable after a successful <code>repo.lock</code> / <code>filees lock</code> call, including the <strong>Lock files…</strong> action in the repository tray submenu.</li>
 <li>New files do not require a passport before their first publication; the daemon assigns <code>svn:needs-lock</code> before the commit.</li>
 <li>Commits use <code>svn commit --no-unlock</code> so that SVN does not bypass the close-grace period.</li>
 <li>After a confirmed commit, the daemon waits for the close-grace period (<code>edit_passport_close_grace</code>, default 5 m) before unlocking and returning the file to read-only.</li>

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"filees/pkg/talk"
+	"github.com/google/uuid"
 )
 
 // Options configures the SVN exec wrapper.
@@ -266,6 +267,83 @@ func (c *execClient) CommitKeepLocks(ctx context.Context, rootDirectory string, 
 	}
 	args := append([]string{"commit", "--no-unlock", "-m", message}, c.relativize(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
+}
+
+// CommitWithRevision commits paths and returns the exact repository revision
+// created by this transaction. A WC root can remain at an older base revision
+// after committing one of its children, so `svn info --show-item revision
+// <wc-root>` is not a valid commit receipt. The per-transaction revprop is
+// machine-readable, locale-independent, survives deletion-only commits, and
+// disambiguates this commit from concurrent writers.
+//
+// This method intentionally remains an optional extension to Client: packages
+// that only need the historical Commit API do not have to implement receipt
+// lookup, while pkg/commit uses it whenever the real exec client is present.
+func (c *execClient) CommitWithRevision(ctx context.Context, rootDirectory, repoURL string, paths []string, message string, keepLocks bool) (string, int64, error) {
+	if len(paths) == 0 {
+		return "", 0, errors.New("svn commit refused: empty path list")
+	}
+	if strings.TrimSpace(repoURL) == "" {
+		return "", 0, errors.New("svn commit receipt requires repository URL")
+	}
+	headBefore, err := c.Revision(ctx, repoURL)
+	if err != nil {
+		return "", 0, fmt.Errorf("read repository revision before commit: %w", err)
+	}
+	marker := uuid.NewString()
+	args := []string{"commit"}
+	if keepLocks {
+		args = append(args, "--no-unlock")
+	}
+	args = append(args, "--with-revprop", "filees:commit-id="+marker, "-m", message)
+	args = append(args, c.relativize(rootDirectory, paths)...)
+	out, err := c.run(ctx, rootDirectory, args)
+	if err != nil {
+		return out, 0, err
+	}
+	revision, err := c.commitRevisionByMarker(ctx, repoURL, headBefore+1, marker)
+	if err != nil {
+		return out, 0, fmt.Errorf("read exact commit revision: %w", err)
+	}
+	return out, revision, nil
+}
+
+func (c *execClient) commitRevisionByMarker(ctx context.Context, repoURL string, firstRevision int64, marker string) (int64, error) {
+	if firstRevision < 1 {
+		firstRevision = 1
+	}
+	out, err := c.run(ctx, "", []string{
+		"log", "--xml", "--with-revprop", "filees:commit-id",
+		"-r", fmt.Sprintf("HEAD:%d", firstRevision), repoURL,
+	})
+	if err != nil {
+		return 0, err
+	}
+	var logXML struct {
+		Entries []struct {
+			Revision int64 `xml:"revision,attr"`
+			RevProps struct {
+				Properties []struct {
+					Name  string `xml:"name,attr"`
+					Value string `xml:",chardata"`
+				} `xml:"property"`
+			} `xml:"revprops"`
+		} `xml:"logentry"`
+	}
+	if err := xml.Unmarshal([]byte(out), &logXML); err != nil {
+		return 0, fmt.Errorf("parse commit receipt log: %w", err)
+	}
+	for _, entry := range logXML.Entries {
+		for _, property := range entry.RevProps.Properties {
+			if property.Name == "filees:commit-id" && strings.TrimSpace(property.Value) == marker {
+				if entry.Revision <= 0 {
+					return 0, errors.New("commit receipt contains invalid revision")
+				}
+				return entry.Revision, nil
+			}
+		}
+	}
+	return 0, errors.New("commit receipt marker is absent from repository log")
 }
 
 func (c *execClient) Lock(ctx context.Context, rootDirectory string, paths []string) (string, error) {

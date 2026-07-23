@@ -3,8 +3,10 @@ package client
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,6 +138,74 @@ func TestCommitRefusesEmptyPathList(t *testing.T) {
 	cli := New(Options{})
 	if _, err := cli.Commit(context.Background(), t.TempDir(), nil, "test"); err == nil {
 		t.Fatal("Commit() accepted an empty path list")
+	}
+}
+
+func TestCommitWithRevisionReturnsExactReceiptForMixedRevisionAndDeletion(t *testing.T) {
+	svnadmin, err := exec.LookPath("svnadmin")
+	if err != nil {
+		t.Skip("svnadmin is not installed")
+	}
+	svn, err := exec.LookPath("svn")
+	if err != nil {
+		t.Skip("svn is not installed")
+	}
+	root := t.TempDir()
+	repository := filepath.Join(root, "repository")
+	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
+		t.Fatalf("svnadmin create: %v\n%s", err, out)
+	}
+	repoURL := "file://" + filepath.ToSlash(repository)
+	if out, err := exec.Command(svn, "mkdir", "-q", "-m", "init", repoURL+"/trunk").CombinedOutput(); err != nil {
+		t.Fatalf("svn mkdir: %v\n%s", err, out)
+	}
+	wc := filepath.Join(root, "wc")
+	cli := New(Options{SvnPath: svn})
+	if _, err := cli.Checkout(context.Background(), repoURL+"/trunk", wc); err != nil {
+		t.Fatal(err)
+	}
+	committer, ok := cli.(interface {
+		CommitWithRevision(context.Context, string, string, []string, string, bool) (string, int64, error)
+	})
+	if !ok {
+		t.Fatal("exec client does not expose exact commit receipts")
+	}
+
+	path := filepath.Join(wc, "document.txt")
+	if err := os.WriteFile(path, []byte("one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.Add(context.Background(), wc, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	if _, revision, err := committer.CommitWithRevision(context.Background(), wc, repoURL+"/trunk", []string{path}, "add", false); err != nil || revision != 2 {
+		t.Fatalf("add receipt revision=%d err=%v", revision, err)
+	}
+	rootRevision, err := cli.Revision(context.Background(), wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootRevision != 1 {
+		t.Fatalf("test precondition failed: WC root revision=%d, want mixed root r1", rootRevision)
+	}
+
+	if err := os.WriteFile(path, []byte("two"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, revision, err := committer.CommitWithRevision(context.Background(), wc, repoURL+"/trunk", []string{path}, "modify", true); err != nil || revision != 3 {
+		t.Fatalf("modify receipt revision=%d err=%v", revision, err)
+	}
+	if _, err := cli.Delete(context.Background(), wc, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	if _, revision, err := committer.CommitWithRevision(context.Background(), wc, repoURL+"/trunk", []string{path}, "delete", false); err != nil || revision != 4 {
+		t.Fatalf("deletion-only receipt revision=%d err=%v", revision, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("deleted path still exists: %v", err)
+	}
+	if got, err := cli.Revision(context.Background(), repoURL+"/trunk"); err != nil || strconv.FormatInt(got, 10) != "4" {
+		t.Fatalf("repository revision=%d err=%v", got, err)
 	}
 }
 

@@ -87,6 +87,43 @@ func TestStoreRequiresMatchingApprovalBeforeAttachment(t *testing.T) {
 	}
 }
 
+func TestCreatedRepositoryBoundarySurvivesFailureAndResumes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localPath := filepath.Join(t.TempDir(), "docs")
+	record, err := store.BeginCreate("primary", "Docs", localPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const repoURL = "svn+ssh://_filees-data@example/repo-1"
+	created, err := store.MarkRepositoryCreated(record.OperationID, "repo-1", repoURL)
+	if err != nil || created.State != StateRepositoryCreated || created.Access != "rw" {
+		t.Fatalf("created=%+v err=%v", created, err)
+	}
+	failed, err := store.MarkError(record.OperationID, os.ErrPermission)
+	if err != nil || failed.State != StateRepositoryCreated || failed.LastError == "" {
+		t.Fatalf("failed boundary=%+v err=%v", failed, err)
+	}
+	if _, err := store.BeginCreate("primary", "Duplicate", localPath); err == nil {
+		t.Fatal("created server repository stopped owning its local path")
+	}
+	resumed, err := store.ResumeCreate(record.OperationID)
+	if err != nil || resumed.State != StateRepositoryCreated || resumed.LastError != "" || resumed.RepoURL != repoURL {
+		t.Fatalf("resumed=%+v err=%v", resumed, err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := reopened.Get(record.OperationID)
+	if !ok || got.State != StateRepositoryCreated || got.RepoID != "repo-1" {
+		t.Fatalf("reopened=%+v found=%v", got, ok)
+	}
+}
+
 func TestStoreRelocationIsDurableAndKeepsOldPathOnFailure(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

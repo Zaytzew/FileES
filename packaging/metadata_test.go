@@ -329,11 +329,20 @@ func TestWindowsInstallerCreatesPerUserShortcutWithAUMID(t *testing.T) {
 	for _, required := range []string{
 		`Scope="perUser"`, `Id="LocalAppDataFolder"`, `Id="ProgramMenuFolder"`,
 		`Key="System.AppUserModel.ID"`, `Value="` + identity.AUMID + `"`,
-		`Version="$(var.ProductVersion)"`,
+		`Version="$(var.ProductVersion)"`, `Id="FileESGUIManifest"`,
+		`Id="FileESRegistry"`, `<ui:WixUI Id="WixUI_Minimal" />`,
+		`WixUILicenseRtf`,
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("WiX source missing %q", required)
 		}
+	}
+	license, err := os.ReadFile("windows/License.rtf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(license), `okre\'9clone`) || strings.Contains(string(license), `okre\'b6lone`) {
+		t.Fatalf("Windows license does not encode Polish ś in CP1250: %q", license)
 	}
 }
 
@@ -343,7 +352,7 @@ func TestWindowsMSIBuildScriptUsesWiX4(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, required := range []string{"WiX Toolset v4", "wix build", `SourceDir=$source`, `ProductVersion=$productVersion`, `VERSION`} {
+	for _, required := range []string{"WiX Toolset v4", "wix build", "WixToolset.UI.wixext", `SourceDir=$source`, `ProductVersion=$productVersion`, `VERSION`} {
 		if !strings.Contains(text, required) {
 			t.Errorf("MSI build script missing %q", required)
 		}

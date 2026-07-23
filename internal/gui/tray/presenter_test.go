@@ -56,14 +56,15 @@ func TestBuildMenuHidesUpdateWhenCurrent(t *testing.T) {
 	}
 }
 
-func TestBuildMenuShowsRepositoryAsCompactOpenFolderRow(t *testing.T) {
+func TestBuildMenuShowsRepositoryActionsWhenCapabilitiesAllow(t *testing.T) {
 	operation := "commit"
 	vm := app.ViewModel{
 		Connected: true,
 		Icon:      app.IconBusy,
 		Capabilities: map[string]bool{
-			contract.CapRepoLock:  true,
-			contract.CapErrorList: true,
+			contract.CapRepoLock:   true,
+			contract.CapRepoUnlock: true,
+			contract.CapErrorList:  true,
 		},
 		Repos: []app.RepoViewModel{{
 			ID: "projectA", Attached: true, Access: contract.AccessReadWrite, LocalPath: "/wc/projectA", State: contract.StateActive,
@@ -77,8 +78,11 @@ func TestBuildMenuShowsRepositoryAsCompactOpenFolderRow(t *testing.T) {
 	if repo.Title != "◷ projectA" {
 		t.Fatalf("repo title = %q", repo.Title)
 	}
-	if len(repo.Children) != 0 || repo.Intent == nil || repo.Intent.Kind != IntentOpenFolder || repo.Intent.RepoID != "projectA" || repo.Tooltip != "/wc/projectA" {
-		t.Fatalf("compact repository row = %#v", repo)
+	open := findItem(t, repo.Children, "repo.projectA.open")
+	lock := findItem(t, repo.Children, "repo.projectA.lock")
+	unlock := findItem(t, repo.Children, "repo.projectA.unlock")
+	if repo.Intent != nil || open.Intent == nil || open.Intent.Kind != IntentOpenFolder || lock.Intent == nil || lock.Intent.Kind != IntentLock || unlock.Intent == nil || unlock.Intent.Kind != IntentUnlock || repo.Tooltip != "/wc/projectA" {
+		t.Fatalf("repository actions = %#v", repo)
 	}
 	if !hasItem(menu.Items, "errors") {
 		t.Fatal("errors menu missing despite error.list capability")

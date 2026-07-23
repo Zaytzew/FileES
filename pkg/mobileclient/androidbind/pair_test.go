@@ -26,6 +26,7 @@ type fakePairingServer struct {
 
 	mu           sync.Mutex
 	pushedKey    string
+	pushedToken  string
 	provenKey    ssh.PublicKey
 	seenCommands []string
 }
@@ -42,7 +43,14 @@ func (f *fakePairingServer) lastPushedKey() string {
 	return f.pushedKey
 }
 
+func (f *fakePairingServer) lastPushedToken() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pushedToken
+}
+
 type wirePushPayload struct {
+	Token       string `json:"token"`
 	PublicKey   string `json:"public_key"`
 	Fingerprint string `json:"fingerprint"`
 }
@@ -150,6 +158,7 @@ func (f *fakePairingServer) serveOneExec(channel ssh.Channel, requests <-chan *s
 			}
 			f.mu.Lock()
 			f.pushedKey = push.PublicKey
+			f.pushedToken = push.Token
 			f.provenKey = key
 			f.mu.Unlock()
 			result = wireResult{Status: "staged", OperationID: "op-1", ClientID: "client-1"}
@@ -203,6 +212,53 @@ func TestPairDrivesPushProveFinishWithThePersistedIdentity(t *testing.T) {
 	wantBareKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(ident.signer.PublicKey())))
 	if f.lastPushedKey() != wantBareKey {
 		t.Fatalf("pushed key=%q, want %q", f.lastPushedKey(), wantBareKey)
+	}
+	// A-03: the pairing token itself must be resent inside the push
+	// payload, not only presented during the outer keyboard-interactive
+	// challenge - ClaimAuthorizedMobilePush needs it as its correlation key.
+	if f.lastPushedToken() != f.wantToken {
+		t.Fatalf("pushed token=%q, want %q", f.lastPushedToken(), f.wantToken)
+	}
+}
+
+// TestPairResumesFromProofWhenKeyAlreadyStaged is the A-02 regression guard
+// for the probe-first client design: if the server already recognizes this
+// device's persisted identity - simulating an earlier attempt whose push
+// committed server-side but whose own response never reached the client, so
+// no local checkpoint exists at all - PairJSON must skip push entirely
+// (never spending the possibly single-use token) and resume straight from
+// proof.
+func TestPairResumesFromProofWhenKeyAlreadyStaged(t *testing.T) {
+	hostSigner := generateEd25519(t)
+	f := &fakePairingServer{hostSigner: hostSigner, wantToken: "ABCDEFGH-IJKLMNOPQRSTUVWX"}
+	addr := startFakePairingServer(t, f)
+	hostKeyLine := string(ssh.MarshalAuthorizedKey(hostSigner.PublicKey()))
+
+	storeDir := t.TempDir()
+	ident, err := loadOrCreateIdentity(storeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.provenKey = ident.signer.PublicKey()
+	f.mu.Unlock()
+
+	// A token that would fail if ever presented (wrong shape/value) -
+	// proves push truly never runs, rather than happening to succeed.
+	resultJSON, err := PairJSON(storeDir, addr, hostKeyLine, "unused-token-never-spent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result PairResult
+	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ClientID != "client-1" || result.ServiceRevision != 9 {
+		t.Fatalf("result=%+v raw=%s", result, resultJSON)
+	}
+	want := []string{"filees-mobile-proof/v1", "filees-mobile-finish/v1"}
+	if got := f.commands(); !equalStrings(got, want) {
+		t.Fatalf("server saw commands=%v, want %v (push must be skipped)", got, want)
 	}
 }
 

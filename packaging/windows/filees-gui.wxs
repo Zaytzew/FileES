@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
       Name="FileES GUI"
       Manufacturer="ATM Projekt"
@@ -21,7 +21,7 @@
     <Icon Id="FileESIcon" SourceFile="$(var.SourceDir)\filees-gui.ico" />
 
     <Component Id="FileESGUI" Directory="INSTALLFOLDER" Guid="*">
-      <File Id="FileESGUIExe" Source="$(var.SourceDir)\filees-gui.exe">
+      <File Id="FileESGUIExe" Source="$(var.SourceDir)\filees-gui.exe" KeyPath="yes">
         <Shortcut
             Id="FileESStartMenuShortcut"
             Directory="ApplicationProgramsFolder"
@@ -32,8 +32,14 @@
           <ShortcutProperty Key="System.AppUserModel.ID" Value="ATMProjekt.FileES" />
         </Shortcut>
       </File>
-      <File Id="FileESGUIManifest" Source="$(var.SourceDir)\filees-gui.exe.manifest" />
       <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+    </Component>
+
+    <Component Id="FileESGUIManifest" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESGUIManifest" Source="$(var.SourceDir)\filees-gui.exe.manifest" KeyPath="yes" />
+    </Component>
+
+    <Component Id="FileESRegistry" Directory="INSTALLFOLDER" Guid="*">
       <RegistryValue
           Root="HKCU"
           Key="Software\ATMProjekt\FileES"
@@ -45,6 +51,11 @@
 
     <Feature Id="ProductFeature" Title="FileES GUI" Level="1">
       <ComponentRef Id="FileESGUI" />
+      <ComponentRef Id="FileESGUIManifest" />
+      <ComponentRef Id="FileESRegistry" />
     </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\License.rtf" />
   </Package>
 </Wix>

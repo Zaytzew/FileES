@@ -73,11 +73,17 @@ func (p *daemonProvisioner) Enqueue(operationID string) {
 }
 
 func (p *daemonProvisioner) Run(ctx context.Context) {
+	provisionedActive := make(map[string]struct{})
 	if operations, err := p.provisioning.List(); err != nil {
 		talk.With("provisioning").Errorf("restore operations: %v", err)
 	} else {
 		for _, operation := range operations {
+			if err := p.reconcileLocalBoundary(operation); err != nil {
+				talk.With("provisioning:"+operation.OperationID).Errorf("reconcile local lifecycle: %v", err)
+				continue
+			}
 			if operation.State == provisioning.StateActive {
+				provisionedActive[operation.OperationID] = struct{}{}
 				p.publishAttachment(ctx, operation)
 			} else {
 				p.Enqueue(operation.OperationID)
@@ -85,6 +91,9 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 		}
 	}
 	for _, record := range p.local.List() {
+		if _, published := provisionedActive[record.OperationID]; published {
+			continue
+		}
 		if record.State == localrepo.StateAttaching {
 			p.Enqueue(record.OperationID)
 		} else if record.State == localrepo.StateRelocating {
@@ -136,7 +145,12 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		p.runRelocate(ctx, record, profile)
 		return
 	}
-	if record.RepoID != "" {
+	if record.State == localrepo.StateRepositoryCreated {
+		if resumed, err := p.local.ResumeCreate(operationID); err == nil {
+			record = resumed
+		}
+	}
+	if record.RepoID != "" && record.State != localrepo.StateRepositoryCreated {
 		p.runAttach(ctx, record, profile)
 		return
 	}
@@ -146,9 +160,26 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		return
 	}
 	svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:provisioning:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
-	orchestrator := provisioning.Orchestrator{Store: p.provisioning, Control: controlTransport, SVN: svn, Limits: provisioning.ImportLimits{MaxBatchFiles: 100, MaxBatchBytes: 512 << 20}}
+	orchestrator := provisioning.Orchestrator{
+		Store: p.provisioning, Control: controlTransport, SVN: svn,
+		Limits: provisioning.ImportLimits{MaxBatchFiles: 100, MaxBatchBytes: 512 << 20},
+		OnRepositoryReady: func(operation provisioning.Operation) error {
+			_, err := p.local.MarkRepositoryCreated(operation.OperationID, operation.RepoID, operation.RepoURL)
+			return err
+		},
+	}
 	operation, err := orchestrator.RunCreate(ctx, operationID)
 	if err != nil {
+		if durable, getErr := p.provisioning.Get(operationID); getErr == nil && durable.RepoID != "" {
+			if _, boundaryErr := p.local.MarkRepositoryCreated(operationID, durable.RepoID, durable.RepoURL); boundaryErr != nil {
+				// Never downgrade this record to generic StateError: that state
+				// deliberately releases its path for unrelated failed requests.
+				// Keeping request_pending claims the path until startup
+				// reconciliation can persist the server-created boundary.
+				talk.With("provisioning:"+operationID).Errorf("persist repository-created boundary after failure: %v", boundaryErr)
+				return
+			}
+		}
 		_, _ = p.local.MarkError(operationID, err)
 		talk.With("provisioning:"+operationID).Warnf("create failed: %v", err)
 		return
@@ -158,6 +189,24 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		return
 	}
 	p.publishAttachment(ctx, operation)
+}
+
+func (p *daemonProvisioner) reconcileLocalBoundary(operation provisioning.Operation) error {
+	if operation.RepoID == "" {
+		return nil
+	}
+	if _, err := p.local.MarkRepositoryCreated(operation.OperationID, operation.RepoID, operation.RepoURL); err != nil {
+		record, ok := p.local.Get(operation.OperationID)
+		if !ok || record.State != localrepo.StateAttached || record.RepoID != operation.RepoID {
+			return err
+		}
+	}
+	if operation.State == provisioning.StateActive {
+		if _, err := p.local.MarkAttached(operation.OperationID, operation.RepoID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {

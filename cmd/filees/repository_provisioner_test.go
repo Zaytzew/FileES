@@ -77,15 +77,64 @@ func TestDaemonProvisionerRestoresActiveAttachmentWithoutNetwork(t *testing.T) {
 	go func() { defer close(done); provisioner.Run(ctx) }()
 	select {
 	case attachment := <-attachments:
-		cancel()
 		if attachment.Repo.ID != repoID || attachment.Repo.LocalPath != wc || attachment.Repo.ServerID != "office" || attachment.Repo.SSHHostName != profile.Address || attachment.Repo.SSHPort != profile.SSHPort {
+			cancel()
 			t.Fatalf("restored attachment = %+v", attachment)
 		}
+		select {
+		case duplicate := <-attachments:
+			cancel()
+			t.Fatalf("active provisioning attachment was published twice: %+v", duplicate)
+		case <-time.After(20 * time.Millisecond):
+		}
+		cancel()
 	case <-time.After(time.Second):
 		cancel()
 		t.Fatal("active attachment was not restored")
 	}
 	<-done
+}
+
+func TestDaemonProvisionerReconcilesRepositoryCreatedBoundary(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opID, createID := uuid.NewString(), uuid.NewString()
+	record, err := local.BeginCreateOperation(opID, "office", "Docs", filepath.Join(t.TempDir(), "wc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.CreateValidated(opID, uuid.NewString(), record.LocalPath, record.DisplayName); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.RequestRepository(opID, createID); err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	repoURL := "svn+ssh://_filees-data@example/" + repoID
+	payload, _ := json.Marshal(control.CreateRepositoryResult{RepoID: repoID, RepoURL: repoURL})
+	operation, err := journal.ApplyRepositoryResult(control.Result{
+		Schema: control.Schema, OperationID: opID, RequestID: createID,
+		Type: control.TicketCreateRepository, Status: control.ResultOK,
+		CompletedAt: time.Now().UTC().Format(time.RFC3339Nano), Result: payload,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provisioner := newDaemonProvisioner(local, journal, nil)
+	if err := provisioner.reconcileLocalBoundary(operation); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := local.Get(opID)
+	if !ok || got.State != localrepo.StateRepositoryCreated || got.RepoID != repoID || got.RepoURL != repoURL || got.Access != "rw" {
+		t.Fatalf("reconciled local boundary=%+v found=%v", got, ok)
+	}
 }
 
 func TestDaemonProvisionerChecksOutApprovedSharedRepository(t *testing.T) {

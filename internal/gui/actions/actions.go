@@ -167,7 +167,12 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 	c.tasks.Add(1)
 	go func() {
 		defer c.tasks.Done()
-		defer c.endOperation(key)
+		operationHeld := true
+		defer func() {
+			if operationHeld {
+				c.endOperation(key)
+			}
+		}()
 		vm := c.cfg.ViewModel()
 		var server *app.ServerViewModel
 		for i := range vm.Servers {
@@ -227,6 +232,12 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 			return
 		}
 		c.notify(ctx, platform.Notification{ID: "repository-create." + serverID, Group: "repository-create." + serverID, Title: "Tworzenie repozytorium rozpoczęte", Body: displayName + " — operacja " + operationID, Urgency: platform.UrgencyNormal})
+		// The mutating request has returned a durable operation ID. Release the
+		// short UI de-duplication gate before the potentially long monitor loop;
+		// the daemon lifecycle store, not this in-memory GUI mutex, owns overlap
+		// and retry safety from this point onward.
+		c.endOperation(key)
+		operationHeld = false
 		c.awaitCreationOutcome(ctx, serverID, displayName, operationID)
 	}()
 }
@@ -244,18 +255,53 @@ func (c *Controller) awaitCreationOutcome(ctx context.Context, serverID, display
 		timeout = creationStatusPollTimeout
 	}
 	deadline := time.Now().Add(timeout)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	pollCtx, cancelPoll := context.WithDeadline(ctx, deadline)
+	defer cancelPoll()
+	delay := interval
+	var lastStatusError error
 	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			body := displayName + " — nie udało się potwierdzić końcowego wyniku operacji " + operationID
+			if lastStatusError != nil {
+				body += ": " + lastStatusError.Error()
+			}
+			c.notify(ctx, platform.Notification{
+				ID: "repository-create." + serverID, Group: "repository-create." + serverID,
+				Title: "Status tworzenia repozytorium jest nieznany", Body: body,
+				Urgency: platform.UrgencyCritical,
+			})
+			return
+		}
+		if delay > remaining {
+			delay = remaining
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
-		state, lastError, err := c.cfg.RepositoryCreator.CreationStatus(ctx, operationID)
+		state, lastError, err := c.cfg.RepositoryCreator.CreationStatus(pollCtx, operationID)
 		if err != nil {
-			return
+			if ctx.Err() != nil {
+				return
+			}
+			lastStatusError = err
+			delay *= 2
+			if delay > 30*time.Second {
+				delay = 30 * time.Second
+			}
+			continue
 		}
+		lastStatusError = nil
+		delay = interval
 		switch state {
 		case "error":
 			body := displayName
@@ -264,11 +310,18 @@ func (c *Controller) awaitCreationOutcome(ctx context.Context, serverID, display
 			}
 			c.notify(ctx, platform.Notification{ID: "repository-create." + serverID, Group: "repository-create." + serverID, Title: "Nie udało się utworzyć repozytorium", Body: body, Urgency: platform.UrgencyCritical})
 			return
+		case "repository_created":
+			if strings.TrimSpace(lastError) != "" {
+				c.notify(ctx, platform.Notification{
+					ID: "repository-create." + serverID, Group: "repository-create." + serverID,
+					Title:   "Nie udało się dokończyć tworzenia repozytorium",
+					Body:    displayName + " — " + lastError + ". Ponowienie użyje już utworzonego repozytorium.",
+					Urgency: platform.UrgencyCritical,
+				})
+				return
+			}
 		case "attached":
 			c.notify(ctx, platform.Notification{ID: "repository-create." + serverID, Group: "repository-create." + serverID, Title: "Repozytorium utworzone", Body: displayName, Urgency: platform.UrgencyNormal})
-			return
-		}
-		if time.Now().After(deadline) {
 			return
 		}
 	}

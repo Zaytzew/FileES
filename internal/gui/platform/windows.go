@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -52,8 +53,33 @@ func (osWindowsCommandRunner) LookPath(name string) (string, error) {
 	return exec.LookPath(name)
 }
 
+// hideConsoleWindow suppresses the console window Windows would otherwise
+// briefly flash when spawning a console subprocess (e.g. powershell.exe) from
+// a GUI-subsystem process. Passing -WindowStyle Hidden to PowerShell is not
+// enough on its own: CreateProcess still allocates and shows a console window
+// before PowerShell gets a chance to hide it. Setting HideWindow here tells
+// CreateProcess to start the window hidden from the outset.
+func hideConsoleWindow(cmd *exec.Cmd) {
+	if !strings.EqualFold(filepath.Base(cmd.Path), "powershell.exe") {
+		return
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+}
+
+// dpiAwarenessPrelude opts the spawned powershell.exe into per-monitor-v2 DPI
+// awareness before any WinForms window is created. filees-gui.exe itself is
+// per-monitor-v2 aware via filees-gui.exe.manifest, but these dialogs are
+// drawn by a separate powershell.exe process that does not inherit that
+// manifest and defaults to DPI-unaware; on any scaled display Windows then
+// bitmap-stretches the whole window, producing blurry text. Wrapped in
+// try/catch because SetProcessDpiAwarenessContext requires Windows 10
+// 1703+; older Windows 10 builds silently keep the unaware (but still
+// functional) default.
+const dpiAwarenessPrelude = "try{Add-Type -Name Dpi -Namespace Native -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value); [DllImport(\"user32.dll\")] public static extern uint GetDpiForSystem();';[Native.Dpi]::SetProcessDpiAwarenessContext([IntPtr](-4))|Out-Null}catch{};"
+
 func (osWindowsCommandRunner) Start(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
+	hideConsoleWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -62,11 +88,15 @@ func (osWindowsCommandRunner) Start(ctx context.Context, name string, args ...st
 }
 
 func (osWindowsCommandRunner) Run(ctx context.Context, name string, args ...string) error {
-	return exec.CommandContext(ctx, name, args...).Run()
+	cmd := exec.CommandContext(ctx, name, args...)
+	hideConsoleWindow(cmd)
+	return cmd.Run()
 }
 
 func (osWindowsCommandRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
+	cmd := exec.CommandContext(ctx, name, args...)
+	hideConsoleWindow(cmd)
+	return cmd.Output()
 }
 
 // WindowsOptions contains integration identity supplied by the composition
@@ -167,7 +197,7 @@ func (b *WindowsBackend) PickFolder(ctx context.Context, request PickFolderReque
 			return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
 		}
 	}
-	script := "Add-Type -AssemblyName System.Windows.Forms;$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
 	if request.Title != "" {
 		script += "$d.Description=" + psString(request.Title) + ";"
 	}
@@ -199,6 +229,7 @@ func (b *WindowsBackend) PickFolder(ctx context.Context, request PickFolderReque
 // dialog. On cancel the script exits with code 1 (recognised by commandCancelled).
 func buildPickerScript(request PickFilesRequest, initialDir string) string {
 	var sb strings.Builder
+	sb.WriteString(dpiAwarenessPrelude)
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;")
 	sb.WriteString("$d=New-Object System.Windows.Forms.OpenFileDialog;")
 	sb.WriteString("$d.InitialDirectory=" + psString(initialDir) + ";")
@@ -236,7 +267,7 @@ func (b *WindowsBackend) ShowInfo(ctx context.Context, request InfoRequest) erro
 	if err != nil {
 		return NewUnavailable("info_dialog", err)
 	}
-	script := "Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'OK','Information')|Out-Null"
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'OK','Information')|Out-Null"
 	if err := b.runner.Run(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script); err != nil {
 		return NewOperationalFailure("info_dialog", err)
 	}
@@ -248,7 +279,7 @@ func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (b
 	if err != nil {
 		return false, NewUnavailable("confirm_dialog", err)
 	}
-	script := "Add-Type -AssemblyName System.Windows.Forms;$r=[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'YesNo','Question');if($r-eq'Yes'){'yes'}else{'no'}"
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;$r=[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'YesNo','Question');if($r-eq'Yes'){'yes'}else{'no'}"
 	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -261,18 +292,35 @@ func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (b
 
 func buildPromptScript(request PromptTextRequest) string {
 	var sb strings.Builder
+	sb.WriteString(dpiAwarenessPrelude)
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;")
-	sb.WriteString("$f=New-Object System.Windows.Forms.Form;$f.Width=520;$f.Height=190;$f.StartPosition='CenterScreen';")
+	// WinForms' own AutoScaleMode/AutoScaleDimensions rescaling (tried and
+	// confirmed ineffective here) needs the "high DPI improvements" opt-in
+	// that .NET Framework WinForms only honors from the *host executable's*
+	// app.config — powershell.exe's own config doesn't carry it and this
+	// script cannot supply one, so AutoScaleMode is silently a no-op in this
+	// process. Querying the real system DPI and scaling every literal pixel
+	// value ourselves, before laying out any control, works regardless of
+	// host configuration. Without it, the process being DPI-aware (see
+	// dpiAwarenessPrelude) fixes the blur but leaves the literal 96-DPI pixel
+	// sizes unscaled, which is what clipped the OK button and truncated the
+	// title on a 250% display.
+	sb.WriteString("try{$s=[Native.Dpi]::GetDpiForSystem()/96.0}catch{$s=1.0};")
+	sb.WriteString("$f=New-Object System.Windows.Forms.Form;$f.Width=[int](520*$s);$f.Height=[int](190*$s);$f.StartPosition='CenterScreen';")
 	sb.WriteString("$f.Text=" + psString(request.Title) + ";")
-	sb.WriteString("$l=New-Object System.Windows.Forms.Label;$l.Left=12;$l.Top=15;$l.Width=480;$l.Text=" + psString(request.Text) + ";$f.Controls.Add($l);")
-	sb.WriteString("$t=New-Object System.Windows.Forms.TextBox;$t.Left=12;$t.Top=45;$t.Width=480;")
+	// AutoSize=false with an explicit, scaled Height is required here: Label's
+	// default AutoSize sizing is computed from the design-time (96 DPI) box
+	// and does not grow to match the DPI-scaled font, so at 250%+ scaling the
+	// larger glyphs get clipped against the control's own bounding box.
+	sb.WriteString("$l=New-Object System.Windows.Forms.Label;$l.AutoSize=$false;$l.Left=[int](12*$s);$l.Top=[int](15*$s);$l.Width=[int](480*$s);$l.Height=[int](24*$s);$l.Text=" + psString(request.Text) + ";$f.Controls.Add($l);")
+	sb.WriteString("$t=New-Object System.Windows.Forms.TextBox;$t.Left=[int](12*$s);$t.Top=[int](45*$s);$t.Width=[int](480*$s);")
 	if request.Placeholder != "" {
 		sb.WriteString("$t.Text=" + psString(request.Placeholder) + ";")
 	}
 	if request.Secret {
 		sb.WriteString("$t.UseSystemPasswordChar=$true;")
 	}
-	sb.WriteString("$f.Controls.Add($t);$b=New-Object System.Windows.Forms.Button;$b.Text='OK';$b.Left=412;$b.Top=82;$b.DialogResult='OK';$f.AcceptButton=$b;$f.Controls.Add($b);")
+	sb.WriteString("$f.Controls.Add($t);$b=New-Object System.Windows.Forms.Button;$b.Text='OK';$b.Width=[int](75*$s);$b.Height=[int](23*$s);$b.Left=[int](412*$s);$b.Top=[int](82*$s);$b.DialogResult='OK';$f.AcceptButton=$b;$f.Controls.Add($b);")
 	sb.WriteString("if($f.ShowDialog()-eq[System.Windows.Forms.DialogResult]::OK){$t.Text}else{exit 1}")
 	return sb.String()
 }

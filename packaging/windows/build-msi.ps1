@@ -17,6 +17,7 @@ if (-not (Test-Path $versionFile)) {
 $productVersion = (Get-Content $versionFile -Raw).Trim()
 & wix build (Join-Path $source "filees-gui.wxs") `
     -arch x64 `
+    -ext WixToolset.UI.wixext `
     -d "SourceDir=$source" `
     -d "ProductVersion=$productVersion" `
     -out $Output

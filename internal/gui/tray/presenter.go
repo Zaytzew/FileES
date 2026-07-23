@@ -165,7 +165,7 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 			continue
 		}
 		visibleRepos++
-		children = append(children, repoMenu(repo))
+		children = append(children, repoMenu(vm, repo))
 	}
 	if visibleRepos == 0 {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak lokalnych folderów FileES"))
@@ -194,7 +194,7 @@ func lastRefreshLabel(vm app.ViewModel) string {
 	return label
 }
 
-func repoMenu(repo app.RepoViewModel) MenuItemModel {
+func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 	name := repo.DisplayName
 	if strings.TrimSpace(name) == "" {
 		name = repo.ID
@@ -203,8 +203,27 @@ func repoMenu(repo app.RepoViewModel) MenuItemModel {
 	item := disabledItem("repo."+repo.ID, title)
 	item.Tooltip = repo.LocalPath
 	if repo.Attached && strings.TrimSpace(repo.LocalPath) != "" {
-		item.Enabled = true
-		item.Intent = &Intent{Kind: IntentOpenFolder, RepoID: repo.ID}
+		lockVisible := repo.CanWrite() && vm.CanMutateLock()
+		unlockVisible := repo.CanWrite() && vm.CanMutateUnlock()
+		if lockVisible || unlockVisible {
+			item.Enabled = true
+			item.Children = append(item.Children,
+				actionItem("repo."+repo.ID+".open", "Otwórz folder", repo.LocalPath, Intent{Kind: IntentOpenFolder, RepoID: repo.ID}),
+			)
+			if lockVisible {
+				item.Children = append(item.Children,
+					actionItem("repo."+repo.ID+".lock", "Zablokuj pliki…", "Nabierz blokadę lub edit-passport dla wybranych plików", Intent{Kind: IntentLock, RepoID: repo.ID}),
+				)
+			}
+			if unlockVisible {
+				item.Children = append(item.Children,
+					actionItem("repo."+repo.ID+".unlock", "Odblokuj pliki…", "Zwolnij blokadę lub edit-passport wybranych plików", Intent{Kind: IntentUnlock, RepoID: repo.ID}),
+				)
+			}
+		} else {
+			item.Enabled = true
+			item.Intent = &Intent{Kind: IntentOpenFolder, RepoID: repo.ID}
+		}
 	}
 	return item
 }

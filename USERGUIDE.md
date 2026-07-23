@@ -41,7 +41,7 @@ Skrypt kopiuje binary do `~/.local/bin/`, ikonę do `~/.local/share/icons/` i pl
 
 ### Windows (MSI)
 
-Uruchomić `build-msi.ps1` na maszynie z WiX v4 i `pwsh`, następnie zainstalować wygenerowany `.msi`. Instalacja jest per-user — nie wymaga uprawnień administratora. Skrót w menu Start ma ustawiony atrybut `System.AppUserModel.ID`, który umożliwia powiadomienia toast.
+Uruchomić `build-msi.ps1` w PowerShellu na maszynie z WiX Toolset (`wix`; sprawdzone z WiX v7), następnie zainstalować wygenerowany `.msi`. Instalacja jest per-user — nie wymaga uprawnień administratora. Skrót w menu Start ma ustawiony atrybut `System.AppUserModel.ID`, który umożliwia powiadomienia toast. Przy pierwszym użyciu WiX v7 trzeba jednorazowo zaakceptować jego EULA: `wix eula accept wix7`.
 
 ---
 
@@ -185,13 +185,11 @@ Zamknij GUI
 
 ## Blokowanie i odblokowanie plików
 
-> **Funkcja w trakcie refaktoru.** W obecnym buildzie `Zablokuj pliki…` /
-> `Odblokuj pliki…` nie pojawiają się w menu tray, mimo że mechanizm
-> opisany niżej pozostaje zaimplementowany w demonie i IPC. Ta sekcja
-> opisuje zamierzone/docelowe zachowanie — zweryfikuj przeciw aktualnie
-> zainstalowanej wersji przed poleganiem na niej.
-
-Pozwala założyć lub zdjąć blokadę SVN na wybranych plikach. Blokada zapobiega równoległej edycji przez innych użytkowników.
+`Zablokuj pliki…` i `Odblokuj pliki…` są dostępne w podmenu repozytorium,
+gdy daemon zgłasza odpowiednie capabilities. W zwykłym repozytorium wykonują
+blokadę SVN; w repozytorium z `edit_passports` nabywają lub zwalniają
+edit-passport. W obu przypadkach operacja zapobiega równoległej edycji, a w
+trybie passportu udane zablokowanie przywraca plikowi lokalną zapisywalność.
 
 Operacja dostępna wyłącznie gdy:
 - GUI jest połączone z daemonem (**Połączono**, nie **Odświeżanie**)
@@ -273,5 +271,5 @@ Aktualna wersja blokuje drugą instancję przed utworzeniem ikony. Jeśli mimo t
 
 - **Aktywacja powiadomień**: powiadomienia są informacyjne; kliknięcie nie otwiera jeszcze katalogu ani szczegółów błędu. Nie wykonuje też żadnej operacji mutującej.
 - **MSI Windows**: przed odinstalowaniem należy wykonać `filees-gui --autostart disable`; automatyczne usunięcie utworzonej przez aplikację wartości `HKCU\...\Run` pozostaje otwartą bramką instalatora.
-- **Odbiór natywny**: źródło WiX i bundle Windows wymagają przed wydaniem budowy oraz testów install/upgrade/uninstall na Windows 10/11.
+- **Odbiór natywny**: build MSI oraz instalacja i deinstalacja per-user zostały ręcznie potwierdzone na Windows 11. Każde kolejne wydanie nadal wymaga testów install/upgrade/uninstall na Windows 10/11.
 - **Wstrzymanie / Sync now / Zatrzymaj daemon**: funkcje nieobecne w bieżącym kontrakcie daemona; pojawią się po dodaniu odpowiednich capabilities.

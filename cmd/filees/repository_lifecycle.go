@@ -47,6 +47,18 @@ func (service repositoryLifecycleService) BeginCreate(serverID, displayName, loc
 		record, err := service.store.BeginCreate(serverID, displayName, localPath)
 		return lifecycleResult(record), err
 	}
+	if record, ok, err := service.recoverableCreate(serverID, localPath); err != nil {
+		return contract.RepoLifecycleResult{}, err
+	} else if ok {
+		record, err = service.store.ResumeCreate(record.OperationID)
+		if err != nil {
+			return contract.RepoLifecycleResult{}, err
+		}
+		if service.onCreate != nil {
+			service.onCreate(record.OperationID)
+		}
+		return lifecycleResult(record), nil
+	}
 	check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathCreate, service.allRoots())
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err
@@ -80,6 +92,25 @@ func (service repositoryLifecycleService) BeginCreate(serverID, displayName, loc
 		service.onCreate(operationID)
 	}
 	return lifecycleResult(record), nil
+}
+
+func (service repositoryLifecycleService) recoverableCreate(serverID, localPath string) (localrepo.Record, bool, error) {
+	if service.store == nil {
+		return localrepo.Record{}, false, nil
+	}
+	for _, record := range service.store.List() {
+		if record.ServerID != serverID || record.State != localrepo.StateRepositoryCreated {
+			continue
+		}
+		check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathCreateResume, service.allRootsExcept(record.OperationID))
+		if err != nil {
+			continue
+		}
+		if check.CanonicalPath == record.LocalPath {
+			return record, true, nil
+		}
+	}
+	return localrepo.Record{}, false, nil
 }
 
 func (service repositoryLifecycleService) Status(operationID string) (contract.RepoLifecycleResult, error) {
@@ -121,10 +152,14 @@ func (service repositoryLifecycleService) ApproveAttach(operationID, serverID, r
 // the same path. Genuine leftover Subversion metadata on disk is still
 // caught independently by rejectWorkingCopy's on-disk check.
 func (service repositoryLifecycleService) allRoots() []string {
+	return service.allRootsExcept("")
+}
+
+func (service repositoryLifecycleService) allRootsExcept(operationID string) []string {
 	roots := append([]string{}, service.existingRoots...)
 	if service.store != nil {
 		for _, record := range service.store.List() {
-			if record.State == localrepo.StateError {
+			if record.OperationID == operationID || record.State == localrepo.StateError {
 				continue
 			}
 			roots = append(roots, record.LocalPath)

@@ -81,7 +81,8 @@ type fakeRepositoryCreator struct {
 	// statusFunc controls CreationStatus's reply; nil means "attached" with
 	// no error, so tests that don't care about the outcome poll never block
 	// on it or emit an unwanted extra notification before ctx is cancelled.
-	statusFunc func(operationID string) (state, lastError string, err error)
+	statusFunc        func(operationID string) (state, lastError string, err error)
+	statusContextFunc func(context.Context, string) (state, lastError string, err error)
 }
 
 func (f *fakeRepositoryCreator) CreateRepository(_ context.Context, serverID, displayName, localPath string) (string, error) {
@@ -89,7 +90,10 @@ func (f *fakeRepositoryCreator) CreateRepository(_ context.Context, serverID, di
 	return "op-123", nil
 }
 
-func (f *fakeRepositoryCreator) CreationStatus(_ context.Context, operationID string) (string, string, error) {
+func (f *fakeRepositoryCreator) CreationStatus(ctx context.Context, operationID string) (string, string, error) {
+	if f.statusContextFunc != nil {
+		return f.statusContextFunc(ctx, operationID)
+	}
 	if f.statusFunc != nil {
 		return f.statusFunc(operationID)
 	}
@@ -1024,6 +1028,144 @@ func TestControllerSurfacesAsyncRepositoryCreationFailure(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("async repository creation failure was never surfaced to the user")
+}
+
+func TestControllerRetriesTransientCreationStatusFailure(t *testing.T) {
+	creator := &fakeRepositoryCreator{calls: make(chan createCall, 1)}
+	var statusCalls int
+	creator.statusFunc = func(string) (string, string, error) {
+		statusCalls++
+		if statusCalls == 1 {
+			return "", "", errors.New("daemon restarting")
+		}
+		return "attached", "", nil
+	}
+	fake := repositoryCreationPlatform()
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, FolderPicker: fake, Prompter: fake,
+		RepositoryCreator: creator, Notifier: fake,
+		CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: 100 * time.Millisecond,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateRepository, ServerID: "office"})
+	<-creator.calls
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, notification := range fake.Snapshot().Notifications {
+			if notification.Title == "Repozytorium utworzone" {
+				if statusCalls < 2 {
+					t.Fatalf("status calls=%d", statusCalls)
+				}
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("transient status error stopped monitoring; calls=%d notifications=%+v", statusCalls, fake.Snapshot().Notifications)
+}
+
+func TestControllerReportsUnknownCreationStatusAfterTimeout(t *testing.T) {
+	creator := &fakeRepositoryCreator{calls: make(chan createCall, 1)}
+	creator.statusFunc = func(string) (string, string, error) {
+		return "", "", errors.New("IPC unavailable")
+	}
+	fake := repositoryCreationPlatform()
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, FolderPicker: fake, Prompter: fake,
+		RepositoryCreator: creator, Notifier: fake,
+		CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: 10 * time.Millisecond,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateRepository, ServerID: "office"})
+	<-creator.calls
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, notification := range fake.Snapshot().Notifications {
+			if notification.Title == "Status tworzenia repozytorium jest nieznany" {
+				if !strings.Contains(notification.Body, "IPC unavailable") || !strings.Contains(notification.Body, "op-123") {
+					t.Fatalf("unknown status body=%q", notification.Body)
+				}
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("missing unknown-status notification: %+v", fake.Snapshot().Notifications)
+}
+
+func TestControllerTimeoutCancelsBlockedCreationStatus(t *testing.T) {
+	creator := &fakeRepositoryCreator{calls: make(chan createCall, 1)}
+	creator.statusContextFunc = func(ctx context.Context, _ string) (string, string, error) {
+		<-ctx.Done()
+		return "", "", ctx.Err()
+	}
+	fake := repositoryCreationPlatform()
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, FolderPicker: fake, Prompter: fake,
+		RepositoryCreator: creator, Notifier: fake,
+		CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: 10 * time.Millisecond,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateRepository, ServerID: "office"})
+	<-creator.calls
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, notification := range fake.Snapshot().Notifications {
+			if notification.Title == "Status tworzenia repozytorium jest nieznany" {
+				if !strings.Contains(notification.Body, "context deadline exceeded") {
+					t.Fatalf("blocked status body=%q", notification.Body)
+				}
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("blocked status call outlived monitor deadline: %+v", fake.Snapshot().Notifications)
+}
+
+func TestControllerSurfacesRecoverableInitialImportFailure(t *testing.T) {
+	creator := &fakeRepositoryCreator{calls: make(chan createCall, 1)}
+	creator.statusFunc = func(string) (string, string, error) {
+		return "repository_created", "INITIAL_IMPORT_FAILED: disk full", nil
+	}
+	fake := repositoryCreationPlatform()
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, FolderPicker: fake, Prompter: fake,
+		RepositoryCreator: creator, Notifier: fake,
+		CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: time.Second,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentCreateRepository, ServerID: "office"})
+	<-creator.calls
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, notification := range fake.Snapshot().Notifications {
+			if notification.Title == "Nie udało się dokończyć tworzenia repozytorium" {
+				if !strings.Contains(notification.Body, "Ponowienie użyje już utworzonego repozytorium") {
+					t.Fatalf("recoverable failure body=%q", notification.Body)
+				}
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("recoverable failure was not surfaced: %+v", fake.Snapshot().Notifications)
+}
+
+func repositoryCreationPlatform() *platformtest.Fake {
+	return &platformtest.Fake{
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			return platform.PickFolderResult{Path: "/data/projekt"}, nil
+		},
+		PromptTextFunc: func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error) {
+			return platform.PromptTextResult{Value: "Projekt"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
 }
 
 func TestControllerDoesNotCreateRepositoryWhenAuthorityIsStale(t *testing.T) {

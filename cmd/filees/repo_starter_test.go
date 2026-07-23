@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
+	"filees/pkg/passport"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
@@ -159,6 +161,83 @@ func TestCommitServiceBuilderWiresRuntimeAndIPCState(t *testing.T) {
 	snapshot := state.Snapshot()
 	if snapshot.HeadRevision != 42 || snapshot.Connectivity != contract.ConnOffline || snapshot.State != contract.StateOffline {
 		t.Fatalf("snapshot=%+v", snapshot)
+	}
+}
+
+type lockClient struct {
+	client.Client
+	locked, unlocked [][]string
+}
+
+func (f *lockClient) Lock(_ context.Context, _ string, paths []string) (string, error) {
+	f.locked = append(f.locked, append([]string{}, paths...))
+	return "locked", nil
+}
+
+func (f *lockClient) Unlock(_ context.Context, _ string, paths []string) (string, error) {
+	f.unlocked = append(f.unlocked, append([]string{}, paths...))
+	return "unlocked", nil
+}
+
+type passportBackend struct {
+	lock *passport.Lock
+	seq  int
+}
+
+func (b *passportBackend) Inspect(context.Context, string) (*passport.Lock, error) {
+	if b.lock == nil {
+		return nil, nil
+	}
+	copy := *b.lock
+	return &copy, nil
+}
+
+func (b *passportBackend) Lock(_ context.Context, _ string, comment string, _ bool) (*passport.Lock, string, error) {
+	b.seq++
+	b.lock = &passport.Lock{Token: fmt.Sprintf("token-%d", b.seq), Owner: "client", Comment: comment}
+	copy := *b.lock
+	return &copy, "passport locked", nil
+}
+
+func (b *passportBackend) Unlock(context.Context, string) (string, error) {
+	b.lock = nil
+	return "passport unlocked", nil
+}
+
+func TestRepoLockFunctionsUseSVNOrEditPassportManager(t *testing.T) {
+	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	state := server.RegisterRepoAccess("docs", "svn+ssh://example/docs", t.TempDir(), "office", contract.AccessReadWrite)
+	plain := &lockClient{}
+	wireRepoLockFuncs(state, plain, "/wc/docs", nil)
+	if out, err := state.Lock(t.Context(), []string{"/wc/docs/a"}); err != nil || out != "locked" {
+		t.Fatalf("plain lock out=%q err=%v", out, err)
+	}
+	if out, err := state.Unlock(t.Context(), []string{"/wc/docs/a"}); err != nil || out != "unlocked" {
+		t.Fatalf("plain unlock out=%q err=%v", out, err)
+	}
+	if len(plain.locked) != 1 || len(plain.unlocked) != 1 {
+		t.Fatalf("plain lock calls=%v unlock calls=%v", plain.locked, plain.unlocked)
+	}
+
+	backend := &passportBackend{}
+	manager, err := passport.Open(filepath.Join(t.TempDir(), "passports.json"), "instance", backend, passport.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireRepoLockFuncs(state, nil, "/wc/docs", manager)
+	path := "/wc/docs/edited.dwg"
+	if _, err := state.Lock(t.Context(), []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := manager.Snapshot()
+	if len(snapshot) != 1 || snapshot[0].Path != path || backend.lock == nil {
+		t.Fatalf("passport acquisition snapshot=%+v backend=%+v", snapshot, backend.lock)
+	}
+	if _, err := state.Unlock(t.Context(), []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	if len(manager.Snapshot()) != 0 || backend.lock != nil {
+		t.Fatalf("passport was not released: snapshot=%+v backend=%+v", manager.Snapshot(), backend.lock)
 	}
 }
 

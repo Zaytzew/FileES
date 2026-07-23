@@ -14,6 +14,7 @@ type LocalPathMode string
 
 const (
 	LocalPathCreate       LocalPathMode = "create"
+	LocalPathCreateResume LocalPathMode = "create_resume"
 	LocalPathAttach       LocalPathMode = "attach"
 	LocalPathAttachResume LocalPathMode = "attach_resume"
 )
@@ -28,7 +29,7 @@ type LocalPathCheck struct {
 // It resolves symlinks even when the final path does not exist, so aliases
 // cannot bypass the disjoint-root check.
 func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string) (LocalPathCheck, error) {
-	if mode != LocalPathCreate && mode != LocalPathAttach && mode != LocalPathAttachResume {
+	if mode != LocalPathCreate && mode != LocalPathCreateResume && mode != LocalPathAttach && mode != LocalPathAttachResume {
 		return LocalPathCheck{}, fmt.Errorf("unsupported local path mode %q", mode)
 	}
 	if !filepath.IsAbs(path) {
@@ -49,6 +50,13 @@ func PreflightLocalPath(path string, mode LocalPathMode, existingRoots []string)
 		}
 		if info, err := os.Stat(filepath.Join(canonical, ".svn")); err != nil || !info.IsDir() {
 			return LocalPathCheck{}, errors.New("resumed attachment is not a Subversion working copy")
+		}
+	} else if mode == LocalPathCreateResume {
+		// A failed initial import may already have checked the new repository
+		// out at the exact target. Parent working copies remain forbidden, but
+		// this operation's own .svn metadata is a valid recovery boundary.
+		if err := rejectWorkingCopy(filepath.Dir(canonical)); err != nil {
+			return LocalPathCheck{}, err
 		}
 	} else if err := rejectWorkingCopy(canonical); err != nil {
 		return LocalPathCheck{}, err

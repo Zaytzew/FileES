@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"filees/internal/mobileworker"
 	"filees/internal/obsandbox"
@@ -22,6 +23,19 @@ const (
 	// boundary.
 	mobileRepoConfigDefaultPath = "/etc/filees-mobile/mobile-repos.json"
 	mobileLedgerDefaultDir      = "/var/filees-mobile/ledger"
+
+	// MobileOperationalCommand is what pkg/mobileclient/sshtransport.Do
+	// sends for ongoing REFRESH_MANIFEST/UPLOAD_OBJECT traffic - the only
+	// thing this forced command served before onboarding existed.
+	MobileOperationalCommand = "filees-mobile-v1"
+	// MobileProofCommand/MobileFinishCommand are the two onboarding-only
+	// commands a freshly-staged mobile key uses once, right after
+	// MobileOnboardCommand (internal/servertool/entry.go) staged it -
+	// renderAccessLocked forces every mobile key's command= to this same
+	// binary, so it must dispatch among all three itself, exactly like
+	// filees-client-entry already dispatches desktop's svn/proof/control.
+	MobileProofCommand  = "filees-mobile-proof/v1"
+	MobileFinishCommand = "filees-mobile-finish/v1"
 )
 
 // MobileRepoGrant is one static client_id -> repo mapping.
@@ -56,21 +70,46 @@ func (grants staticMobileAuthority) Resolve(_ context.Context, clientID, repoID 
 }
 
 // RunMobileEntry is the forced command behind the filees-mobile-v1 SSH client
-// class (FILEES_ANDROID_CLIENT_CONCEPT_V2.md §4.3). args[0] is the client_id
-// baked into the per-key command= option in the rendered authorized_keys
-// entry (mirrors RunClientEntry's binding) — a connecting device can never
-// claim a different one itself. Exactly one framed mobile operation is
-// served per invocation, then the process exits (one op per SSH session).
-func RunMobileEntry(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return runMobileEntry(mobileRepoConfigDefaultPath, mobileLedgerDefaultDir, args, stdin, stdout, stderr)
+// class (FILEES_ANDROID_CLIENT_CONCEPT_V2.md §4.3). args are
+// [operation_id, client_id], baked into the per-key command= option in the
+// rendered authorized_keys entry (renderAccessLocked, mirrors
+// RunClientEntry's binding) — a connecting device can never claim different
+// ones itself. renderAccessLocked forces every mobile key's command= to this
+// exact binary regardless of what the client asks for, so this is the one
+// place a mobile key can ever land: it dispatches by SSH_ORIGINAL_COMMAND,
+// exactly like filees-client-entry already dispatches desktop's
+// svn/proof/control over one shared forced command. The onboarding-only
+// proof/finish branches do nothing but validate and syscall.Exec into the
+// already-audited filees-worker binary (mirrors execWorker in entry.go) -
+// all activation-touching privilege stays there, never in this dispatcher.
+// The operational branch (default, unchanged) serves exactly one framed
+// mobile operation per invocation, then the process exits.
+func RunMobileEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+	return runMobileEntry(mobileRepoConfigDefaultPath, mobileLedgerDefaultDir, args, getenv, stdin, stdout, stderr, execMobileWorkerSubcommand)
 }
 
-func runMobileEntry(configPath, ledgerDir string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) != 1 || args[0] == "" {
+func runMobileEntry(configPath, ledgerDir string, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer, execSubcommand func(subcommand, operationID, clientID string) error) int {
+	if len(args) != 2 || args[0] == "" || args[1] == "" {
 		fmt.Fprintln(stderr, "filees-mobile-v1: rejected command")
 		return ExitUnavailable
 	}
-	clientID := args[0]
+	operationID, clientID := args[0], args[1]
+	originalCommand := getenv("SSH_ORIGINAL_COMMAND")
+	if originalCommand == MobileProofCommand || originalCommand == MobileFinishCommand {
+		subcommand := "mobile-proof"
+		if originalCommand == MobileFinishCommand {
+			subcommand = "mobile-finish"
+		}
+		if err := execSubcommand(subcommand, operationID, clientID); err != nil {
+			report(stderr, "filees-mobile-v1 "+subcommand, err)
+			return ExitSoftware
+		}
+		return ExitOK
+	}
+	if originalCommand != MobileOperationalCommand {
+		fmt.Fprintln(stderr, "filees-mobile-v1: rejected command")
+		return ExitUnavailable
+	}
 
 	// Resolved before the sandbox narrows: a locked-down forced command may
 	// not keep enough of PATH unveiled to search it afterward, and the
@@ -126,6 +165,18 @@ func runMobileEntry(configPath, ledgerDir string, args []string, stdin io.Reader
 		return ExitSoftware
 	}
 	return ExitOK
+}
+
+// execMobileWorkerSubcommand hands off to filees-worker for the two
+// onboarding-only commands. Mirrors entry.go's execWorker exactly: this
+// dispatcher never touches onboarding/activation state itself, it only
+// pledges a fixed post-exec promise set and execs - the worker installs its
+// own narrower unveil immediately after.
+func execMobileWorkerSubcommand(subcommand, operationID, clientID string) error {
+	if err := obsandbox.PledgeForExec(entryPromises, workerPromises+" unveil"); err != nil {
+		return err
+	}
+	return syscall.Exec(workerPath, []string{"filees-worker", subcommand, operationID, clientID}, []string{})
 }
 
 func mobileUnveilPaths(grants staticMobileAuthority, ledgerDir, svnPath, svnlookPath string) []obsandbox.Path {

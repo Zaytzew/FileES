@@ -3,6 +3,7 @@ package servertool
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"os/exec"
@@ -55,22 +56,98 @@ func newMobileSeededRepo(t *testing.T) string {
 	return repo
 }
 
+func mobileOperationalGetenv(key string) string {
+	if key == "SSH_ORIGINAL_COMMAND" {
+		return MobileOperationalCommand
+	}
+	return ""
+}
+
+func mobileNeverExec(t *testing.T) func(string, string, string) error {
+	return func(subcommand, operationID, clientID string) error {
+		t.Fatalf("unexpected exec: %s %s %s", subcommand, operationID, clientID)
+		return nil
+	}
+}
+
 func TestMobileEntryRejectsBadArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := runMobileEntry("/nonexistent", t.TempDir(), nil, &bytes.Buffer{}, &stdout, &stderr); code != ExitUnavailable {
+	exec := mobileNeverExec(t)
+	if code := runMobileEntry("/nonexistent", t.TempDir(), nil, mobileOperationalGetenv, &bytes.Buffer{}, &stdout, &stderr, exec); code != ExitUnavailable {
 		t.Fatalf("no args: code=%d", code)
 	}
-	if code := runMobileEntry("/nonexistent", t.TempDir(), []string{""}, &bytes.Buffer{}, &stdout, &stderr); code != ExitUnavailable {
+	if code := runMobileEntry("/nonexistent", t.TempDir(), []string{"op-1"}, mobileOperationalGetenv, &bytes.Buffer{}, &stdout, &stderr, exec); code != ExitUnavailable {
+		t.Fatalf("one arg: code=%d", code)
+	}
+	if code := runMobileEntry("/nonexistent", t.TempDir(), []string{"", "device-1"}, mobileOperationalGetenv, &bytes.Buffer{}, &stdout, &stderr, exec); code != ExitUnavailable {
+		t.Fatalf("empty operation id: code=%d", code)
+	}
+	if code := runMobileEntry("/nonexistent", t.TempDir(), []string{"op-1", ""}, mobileOperationalGetenv, &bytes.Buffer{}, &stdout, &stderr, exec); code != ExitUnavailable {
 		t.Fatalf("empty client id: code=%d", code)
 	}
-	if code := runMobileEntry("/nonexistent", t.TempDir(), []string{"a", "b"}, &bytes.Buffer{}, &stdout, &stderr); code != ExitUnavailable {
+	if code := runMobileEntry("/nonexistent", t.TempDir(), []string{"op-1", "device-1", "extra"}, mobileOperationalGetenv, &bytes.Buffer{}, &stdout, &stderr, exec); code != ExitUnavailable {
 		t.Fatalf("too many args: code=%d", code)
+	}
+}
+
+func TestMobileEntryRejectsUnknownCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	getenv := func(key string) string {
+		if key == "SSH_ORIGINAL_COMMAND" {
+			return "something else"
+		}
+		return ""
+	}
+	code := runMobileEntry("/nonexistent", t.TempDir(), []string{"op-1", "device-1"}, getenv, &bytes.Buffer{}, &stdout, &stderr, mobileNeverExec(t))
+	if code != ExitUnavailable {
+		t.Fatalf("code=%d", code)
+	}
+}
+
+func TestMobileEntryDispatchesProofAndFinishToExec(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	for _, tc := range []struct {
+		command, wantSubcommand string
+	}{
+		{MobileProofCommand, "mobile-proof"},
+		{MobileFinishCommand, "mobile-finish"},
+	} {
+		var gotSubcommand, gotOp, gotClient string
+		exec := func(subcommand, operationID, clientID string) error {
+			gotSubcommand, gotOp, gotClient = subcommand, operationID, clientID
+			return nil
+		}
+		getenv := func(key string) string {
+			if key == "SSH_ORIGINAL_COMMAND" {
+				return tc.command
+			}
+			return ""
+		}
+		code := runMobileEntry("/nonexistent", t.TempDir(), []string{"op-1", "device-1"}, getenv, &bytes.Buffer{}, &stdout, &stderr, exec)
+		if code != ExitOK || gotSubcommand != tc.wantSubcommand || gotOp != "op-1" || gotClient != "device-1" {
+			t.Fatalf("command=%s: code=%d subcommand=%s op=%s client=%s", tc.command, code, gotSubcommand, gotOp, gotClient)
+		}
+	}
+}
+
+func TestMobileEntryReportsExecFailureForProofAndFinish(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	failing := func(string, string, string) error { return errors.New("exec failed") }
+	getenv := func(key string) string {
+		if key == "SSH_ORIGINAL_COMMAND" {
+			return MobileProofCommand
+		}
+		return ""
+	}
+	code := runMobileEntry("/nonexistent", t.TempDir(), []string{"op-1", "device-1"}, getenv, &bytes.Buffer{}, &stdout, &stderr, failing)
+	if code != ExitSoftware {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
 	}
 }
 
 func TestMobileEntryRejectsMissingConfig(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := runMobileEntry(filepath.Join(t.TempDir(), "missing.json"), t.TempDir(), []string{"device-1"}, &bytes.Buffer{}, &stdout, &stderr)
+	code := runMobileEntry(filepath.Join(t.TempDir(), "missing.json"), t.TempDir(), []string{"op-1", "device-1"}, mobileOperationalGetenv, &bytes.Buffer{}, &stdout, &stderr, mobileNeverExec(t))
 	if code != ExitConfig {
 		t.Fatalf("code=%d stderr=%s", code, stderr.String())
 	}
@@ -124,7 +201,7 @@ func TestMobileEntryServesRefreshOverRealDispatcher(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := runMobileEntry(configPath, ledgerDir, []string{"device-1"}, &stdin, &stdout, &stderr)
+	code := runMobileEntry(configPath, ledgerDir, []string{"op-1", "device-1"}, mobileOperationalGetenv, &stdin, &stdout, &stderr, mobileNeverExec(t))
 	if code != ExitOK {
 		t.Fatalf("code=%d stderr=%s", code, stderr.String())
 	}
@@ -170,7 +247,7 @@ func TestMobileEntryRejectsUngrantedClient(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := runMobileEntry(configPath, filepath.Join(root, "ledger"), []string{"someone-else"}, &stdin, &stdout, &stderr)
+	code := runMobileEntry(configPath, filepath.Join(root, "ledger"), []string{"op-1", "someone-else"}, mobileOperationalGetenv, &stdin, &stdout, &stderr, mobileNeverExec(t))
 	if code != ExitOK {
 		// The dispatcher itself turns an authority error into a StatusError
 		// response, not a process failure -- runMobileEntry only fails hard on

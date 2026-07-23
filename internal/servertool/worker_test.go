@@ -506,7 +506,8 @@ func TestEntryExecutesOnlyWorkerForExactForcedCommand(t *testing.T) {
 		}
 		return ""
 	}
-	if code := runEntry(nil, &bytes.Buffer{}, env, func() error { called = true; return nil }); code != ExitOK || !called {
+	neverMobile := func() error { t.Fatal("mobile onboard exec called for a tunnel command"); return nil }
+	if code := runEntry(nil, &bytes.Buffer{}, env, func() error { called = true; return nil }, neverMobile); code != ExitOK || !called {
 		t.Fatalf("entry code=%d called=%v", code, called)
 	}
 }

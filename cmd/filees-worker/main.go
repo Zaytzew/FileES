@@ -7,8 +7,17 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "repository-control" {
-		os.Exit(servertool.RunRepositoryWorker(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "repository-control":
+			os.Exit(servertool.RunRepositoryWorker(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "mobile-onboard":
+			os.Exit(servertool.RunMobileOnboardWorker(os.Stdin, os.Stdout, os.Stderr))
+		case "mobile-proof":
+			os.Exit(servertool.RunMobileProofWorker(os.Args[2:], os.Stdout, os.Stderr))
+		case "mobile-finish":
+			os.Exit(servertool.RunMobileFinishWorker(os.Args[2:], os.Stdout, os.Stderr))
+		}
 	}
 	os.Exit(servertool.RunWorker(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }

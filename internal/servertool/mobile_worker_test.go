@@ -22,10 +22,11 @@ import (
 )
 
 type mobileWorkerFixture struct {
-	root       string
-	serviceWC  string
-	configPath string
-	realmID    string
+	root             string
+	serviceWC        string
+	repositoriesRoot string
+	configPath       string
+	realmID          string
 }
 
 // newMobileWorkerFixture builds a real onboarding root + activation root +
@@ -79,6 +80,16 @@ func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 		t.Fatal(err)
 	}
 
+	// Not used by the onboard/proof/finish worker subcommands tested in this
+	// file, but the operational forced command (mobile_entry_test.go, Etap
+	// 4b's staticMobileAuthority retirement) reads config.Repositories.Root
+	// to resolve a granted repo_id to its local path - same server.json,
+	// same convention as pkg/repoworker.
+	repositoriesRoot := filepath.Join(base, "repositories")
+	if err := os.MkdirAll(repositoriesRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
 	configPath := filepath.Join(base, "server.json")
 	config := map[string]any{
 		"schema": "filees.server-toolchain/v1", "root": root, "otp_pepper_file": pepperPath,
@@ -91,6 +102,11 @@ func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 			"mobile_entry_path": "/usr/local/libexec/filees/filees-mobile-v1",
 			"svn_binary":        svnBinary, "svnserve_binary": svnserveBinary,
 		},
+		"repositories": map[string]any{
+			"root": repositoriesRoot, "results_root": filepath.Join(base, "repo-results"),
+			"data_authz_file": filepath.Join(base, "data.authz"), "svnadmin_binary": svnadminBinary,
+			"url_prefix": "svn+ssh://filees.test/_filees-data/",
+		},
 		"smtp": map[string]any{"address": "127.0.0.1:2525", "client_name": "filees.test", "from": "filees@example.test", "message_id_domain": "filees.test", "tls": "none"},
 	}
 	raw, err := json.Marshal(config)
@@ -100,7 +116,7 @@ func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 	if err := os.WriteFile(configPath, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return mobileWorkerFixture{root: root, serviceWC: serviceWC, configPath: configPath, realmID: uuid.NewString()}
+	return mobileWorkerFixture{root: root, serviceWC: serviceWC, repositoriesRoot: repositoriesRoot, configPath: configPath, realmID: uuid.NewString()}
 }
 
 func (f mobileWorkerFixture) options() onboarding.Options {

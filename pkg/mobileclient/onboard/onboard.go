@@ -65,8 +65,14 @@ type workerResult struct {
 }
 
 // pushPayload mirrors internal/servertool/mobile_worker.go's
-// MobileOnboardPushPayload.
+// MobileOnboardPushPayload. Token is resent here even though it already
+// authenticated the outer BSD-Auth session: ClaimAuthorizedMobilePush needs
+// it as the rendezvous key back to the exact pending operation, since
+// OpenBSD sshd does not propagate BSD-Auth session state into the
+// separately exec'd forced command. Not a new exposure - the payload only
+// ever travels over the session the same token just authenticated.
 type pushPayload struct {
+	Token       string `json:"token"`
 	PublicKey   string `json:"public_key"`
 	Fingerprint string `json:"fingerprint"`
 }
@@ -109,7 +115,7 @@ func PushInstallationKey(ctx context.Context, cfg PairingConfig, token, publicKe
 	if err != nil {
 		return "", "", err
 	}
-	payload, err := json.Marshal(pushPayload{PublicKey: publicKey, Fingerprint: fingerprint})
+	payload, err := json.Marshal(pushPayload{Token: token, PublicKey: publicKey, Fingerprint: fingerprint})
 	if err != nil {
 		return "", "", fmt.Errorf("onboard: encode push payload: %w", err)
 	}
@@ -217,6 +223,22 @@ func doProofOrFinish(ctx context.Context, cfg ProofConfig, command string) (work
 		Timeout:           timeout,
 	}
 	return dialExecAndDecode(ctx, cfg.Address, timeout, config, command, nil)
+}
+
+// IsKeyUnauthorized reports whether err is an SSH authentication rejection
+// (the connecting device's installation key is not - or not yet - staged
+// server-side), as opposed to a transient/network/protocol failure. Callers
+// use this to decide whether it is safe to fall through to a fresh
+// PushInstallationKey call (spending the pairing token) versus surfacing the
+// error unchanged. golang.org/x/crypto/ssh does not expose a typed error for
+// this - clientAuthenticate returns a plain fmt.Errorf containing this exact
+// substring when every configured auth method is rejected - so matching on
+// it is the only available signal. Misclassifying a transient failure as
+// "unauthorized" costs one extra failed connection attempt before the
+// caller's full flow retries, which is self-correcting, not a correctness
+// bug.
+func IsKeyUnauthorized(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "unable to authenticate")
 }
 
 func pinnedHostKey(pinned ssh.PublicKey) ssh.HostKeyCallback {

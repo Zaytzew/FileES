@@ -2,6 +2,7 @@ package servertool
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -163,10 +164,10 @@ func testInstallationKey(t *testing.T) (public, fingerprint string) {
 
 func TestRunMobileOnboardWorkerStagesPushedKey(t *testing.T) {
 	f := newMobileWorkerFixture(t)
-	f.pair(t)
+	token := f.pair(t)
 	publicKey, fingerprint := testInstallationKey(t)
 
-	payload, err := json.Marshal(MobileOnboardPushPayload{PublicKey: publicKey, Fingerprint: fingerprint})
+	payload, err := json.Marshal(MobileOnboardPushPayload{Token: token, PublicKey: publicKey, Fingerprint: fingerprint})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,6 +186,19 @@ func TestRunMobileOnboardWorkerStagesPushedKey(t *testing.T) {
 	}
 	if !strings.Contains(string(keysRaw), "/usr/local/libexec/filees/filees-mobile-v1 "+result.OperationID+" "+result.ClientID) {
 		t.Fatalf("mobile key not rendered with MobileEntryPath: %s", keysRaw)
+	}
+
+	store, err := onboarding.OpenExisting(f.root, f.options(), onboarding.Access{Areas: onboarding.AreaAll, NeedOTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	op, err := store.GetOperation(result.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.State != onboarding.OperationAccessStaged {
+		t.Fatalf("operation state=%q, want %q (A-01: CompleteAccessStaged must run)", op.State, onboarding.OperationAccessStaged)
 	}
 }
 
@@ -205,14 +219,14 @@ func TestRunMobileOnboardWorkerRejectsWithoutAnAuthorizedPairing(t *testing.T) {
 // binary each time.
 func (f mobileWorkerFixture) stageMobileInstallation(t *testing.T) (operationID, clientID string) {
 	t.Helper()
-	f.pair(t)
+	token := f.pair(t)
 	publicKey, fingerprint := testInstallationKey(t)
 	store, err := onboarding.OpenExisting(f.root, f.options(), onboarding.Access{Areas: onboarding.AreaAll, NeedOTP: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	grant, err := store.ClaimAuthorizedMobilePush(publicKey, fingerprint)
+	grant, err := store.ClaimAuthorizedMobilePush(token, publicKey, fingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,6 +239,12 @@ func (f mobileWorkerFixture) stageMobileInstallation(t *testing.T) (operationID,
 		t.Fatal(err)
 	}
 	if err := manager.Stage(grant); err != nil {
+		t.Fatal(err)
+	}
+	// Mirrors runMobileOnboardWorker's own post-Stage state-advance (A-01):
+	// CompletePossessionProof later requires the operation to already be at
+	// OperationAccessStaged.
+	if err := store.CompleteAccessStaged(grant.OperationID, grant.DeployRequestID); err != nil {
 		t.Fatal(err)
 	}
 	return grant.OperationID, grant.ClientID
@@ -261,6 +281,58 @@ func TestRunMobileProofWorkerRecordsProof(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || result.Status != "proved" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
+
+	store, err := onboarding.OpenExisting(f.root, f.options(), onboarding.Access{Areas: onboarding.AreaAll, NeedOTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	op, err := store.GetOperation(operationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.State != onboarding.OperationPossessionProved {
+		t.Fatalf("operation state=%q, want %q (A-01: CompletePossessionProof must run)", op.State, onboarding.OperationPossessionProved)
+	}
+}
+
+// TestRunMobileProofWorkerRejectsOutOfOrderState is the A-01 regression
+// guard for the proof worker: CompletePossessionProof must actually run and
+// enforce the onboarding state machine. An activation record staged without
+// ever advancing the onboarding operation past OperationIdentityGenerated
+// (as if the onboard worker's own CompleteAccessStaged call had never run)
+// must make the proof worker fail, not silently succeed while leaving the
+// operation stuck.
+func TestRunMobileProofWorkerRejectsOutOfOrderState(t *testing.T) {
+	f := newMobileWorkerFixture(t)
+	token := f.pair(t)
+	publicKey, fingerprint := testInstallationKey(t)
+	store, err := onboarding.OpenExisting(f.root, f.options(), onboarding.Access{Areas: onboarding.AreaAll, NeedOTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	grant, err := store.ClaimAuthorizedMobilePush(token, publicKey, fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := activationConfigFor(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := activation.New(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Stage(grant); err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately skip CompleteAccessStaged here.
+
+	var stdout, stderr bytes.Buffer
+	if code := runMobileProofWorker(f.configPath, []string{grant.OperationID, grant.ClientID}, &stdout, &stderr); code == ExitOK {
+		t.Fatalf("proof accepted despite out-of-order onboarding state: %s", stdout.String())
+	}
 }
 
 func TestRunMobileProofWorkerRejectsMismatchedClient(t *testing.T) {
@@ -276,16 +348,9 @@ func TestRunMobileFinishWorkerPublishesAfterProof(t *testing.T) {
 	f := newMobileWorkerFixture(t)
 	operationID, clientID := f.stageMobileInstallation(t)
 
-	config, err := activationConfigFor(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := activation.New(config, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := manager.RecordProof(operationID, clientID); err != nil {
-		t.Fatal(err)
+	var proofOut, proofErr bytes.Buffer
+	if code := runMobileProofWorker(f.configPath, []string{operationID, clientID}, &proofOut, &proofErr); code != ExitOK {
+		t.Fatalf("proof code=%d stderr=%s", code, proofErr.String())
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -301,6 +366,22 @@ func TestRunMobileFinishWorkerPublishesAfterProof(t *testing.T) {
 		t.Fatalf("view=%+v err=%v, want realm=%s", view, err, f.realmID)
 	}
 
+	// A-01 regression guard: the onboarding operation itself must reach
+	// OperationActive with the matching revision, not just the activation
+	// record/service view.
+	store, err := onboarding.OpenExisting(f.root, f.options(), onboarding.Access{Areas: onboarding.AreaAll, NeedOTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	op, err := store.GetOperation(operationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.State != onboarding.OperationActive || op.ServiceRevision != result.ServiceRevision {
+		t.Fatalf("operation=%+v, want state=%q revision=%d", op, onboarding.OperationActive, result.ServiceRevision)
+	}
+
 	// Idempotent replay must not fail or re-publish a second revision.
 	var replayOut, replayErr bytes.Buffer
 	if code := runMobileFinishWorker(f.configPath, []string{operationID, clientID}, &replayOut, &replayErr); code != ExitOK {
@@ -309,6 +390,65 @@ func TestRunMobileFinishWorkerPublishesAfterProof(t *testing.T) {
 	var replay mobileWorkerResult
 	if err := json.Unmarshal(replayOut.Bytes(), &replay); err != nil || replay.ServiceRevision != result.ServiceRevision {
 		t.Fatalf("replay=%+v want revision=%d", replay, result.ServiceRevision)
+	}
+}
+
+// TestRunMobileFinishWorkerReplaySucceedsPastTTL is the A-02 regression
+// guard: Publish's already-active short-circuit must be reachable even once
+// the grant's TTL has expired, since HasProof's unconditional TTL check
+// previously ran before that short-circuit could ever be reached.
+func TestRunMobileFinishWorkerReplaySucceedsPastTTL(t *testing.T) {
+	f := newMobileWorkerFixture(t)
+	operationID, clientID := f.stageMobileInstallation(t)
+
+	var proofOut, proofErr bytes.Buffer
+	if code := runMobileProofWorker(f.configPath, []string{operationID, clientID}, &proofOut, &proofErr); code != ExitOK {
+		t.Fatalf("proof code=%d stderr=%s", code, proofErr.String())
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := runMobileFinishWorker(f.configPath, []string{operationID, clientID}, &stdout, &stderr); code != ExitOK {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	var result mobileWorkerResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || result.Status != "active" || result.ServiceRevision <= 0 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+
+	store, err := onboarding.OpenExisting(f.root, f.options(), onboarding.Access{Areas: onboarding.AreaAll, NeedOTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := store.GetOperation(operationID)
+	store.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := activationConfigFor(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := activation.New(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the client retrying finish long after the activation's TTL:
+	// a direct Publish call with a grant whose ExpiresAt is already in the
+	// past must still resolve to the same revision via the already-active
+	// short-circuit, not error (sameGrant does not compare ExpiresAt, so
+	// this otherwise-identical grant still matches the persisted record).
+	pastExpiry := onboarding.ActivationGrant{
+		OperationID: op.OperationID, ClientID: op.ClientID, RealmID: op.ApprovedPolicy.RealmID, Kind: op.ApprovedPolicy.Kind,
+		DeployRequestID: op.DeployRequestID, InstallationPublicKey: op.InstallationPublicKey,
+		InstallationFingerprint: op.InstallationFingerprint, ExpiresAt: time.Now().Add(-time.Hour),
+	}
+	revision, err := manager.Publish(context.Background(), pastExpiry)
+	if err != nil {
+		t.Fatalf("post-TTL Publish replay failed: %v", err)
+	}
+	if revision != result.ServiceRevision {
+		t.Fatalf("post-TTL Publish replay revision=%d, want %d", revision, result.ServiceRevision)
 	}
 }
 

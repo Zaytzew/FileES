@@ -20,6 +20,7 @@ import (
 // fetched by the server through a reverse tunnel. See
 // concepts/FILEES_ANDROID_CLIENT_CONCEPT_V2.md SS4.2.
 type MobileOnboardPushPayload struct {
+	Token       string `json:"token"`
 	PublicKey   string `json:"public_key"`
 	Fingerprint string `json:"fingerprint"`
 }
@@ -60,7 +61,7 @@ func runMobileOnboardWorker(configPath string, stdin io.Reader, stdout, stderr i
 		report(stderr, "filees-worker mobile-onboard onboarding", err)
 		return ExitConfig
 	}
-	grant, err := files.ClaimAuthorizedMobilePush(payload.PublicKey, payload.Fingerprint)
+	grant, err := files.ClaimAuthorizedMobilePush(payload.Token, payload.PublicKey, payload.Fingerprint)
 	if err != nil {
 		report(stderr, "filees-worker mobile-onboard claim", err)
 		return ExitTempFail
@@ -72,6 +73,10 @@ func runMobileOnboardWorker(configPath string, stdin io.Reader, stdout, stderr i
 	}
 	if err := manager.Stage(grant); err != nil {
 		report(stderr, "filees-worker mobile-onboard stage", err)
+		return ExitTempFail
+	}
+	if err := files.CompleteAccessStaged(grant.OperationID, grant.DeployRequestID); err != nil {
+		report(stderr, "filees-worker mobile-onboard stage state", err)
 		return ExitTempFail
 	}
 	if err := writeJSON(stdout, mobileWorkerResult{Schema: mobileWorkerResultSchema, Status: "staged", OperationID: grant.OperationID, ClientID: grant.ClientID}); err != nil {
@@ -95,10 +100,24 @@ func runMobileProofWorker(configPath string, args []string, stdout, stderr io.Wr
 		return ExitUsage
 	}
 	operationID, clientID := args[0], args[1]
-	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation)
+	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation|serverconfig.SecretOTP)
 	if err != nil {
 		report(stderr, "filees-worker mobile-proof config", err)
 		return ExitConfig
+	}
+	files, err := onboarding.OpenPrepared(config.Root, config.Onboarding, onboarding.Access{Areas: onboarding.AreaOperations | onboarding.AreaAudit, NeedOTP: true})
+	if err != nil {
+		report(stderr, "filees-worker mobile-proof onboarding", err)
+		return ExitConfig
+	}
+	op, err := files.GetOperation(operationID)
+	if err != nil {
+		report(stderr, "filees-worker mobile-proof operation", err)
+		return ExitTempFail
+	}
+	if op.ClientID != clientID {
+		report(stderr, "filees-worker mobile-proof", errors.New("operation does not belong to this client"))
+		return ExitUnavailable
 	}
 	manager, err := activation.New(config.Activation, nil)
 	if err != nil {
@@ -107,6 +126,10 @@ func runMobileProofWorker(configPath string, args []string, stdout, stderr io.Wr
 	}
 	if err := manager.RecordProof(operationID, clientID); err != nil {
 		report(stderr, "filees-worker mobile-proof record", err)
+		return ExitTempFail
+	}
+	if err := files.CompletePossessionProof(operationID, op.DeployRequestID); err != nil {
+		report(stderr, "filees-worker mobile-proof state", err)
 		return ExitTempFail
 	}
 	if err := writeJSON(stdout, mobileWorkerResult{Schema: mobileWorkerResultSchema, Status: "proved", OperationID: operationID, ClientID: clientID}); err != nil {
@@ -161,13 +184,13 @@ func runMobileFinishWorker(configPath string, args []string, stdout, stderr io.W
 		report(stderr, "filees-worker mobile-finish activation", err)
 		return ExitConfig
 	}
-	if err := manager.HasProof(grant); err != nil {
-		report(stderr, "filees-worker mobile-finish proof", err)
-		return ExitTempFail
-	}
 	revision, err := manager.Publish(context.Background(), grant)
 	if err != nil {
 		report(stderr, "filees-worker mobile-finish publish", err)
+		return ExitTempFail
+	}
+	if err := files.CompleteActivation(operationID, grant.DeployRequestID, revision); err != nil {
+		report(stderr, "filees-worker mobile-finish activate", err)
 		return ExitTempFail
 	}
 	if err := writeJSON(stdout, mobileWorkerResult{Schema: mobileWorkerResultSchema, Status: "active", OperationID: operationID, ClientID: clientID, ServiceRevision: revision}); err != nil {

@@ -125,10 +125,21 @@ func TestPolicyKindDefaultsToDesktopForPreExistingRecords(t *testing.T) {
 // createMobileAuthorizedOperation drives a ticket through Take and
 // AuthenticateOTP so the resulting operation sits in OperationTunnelAuthorized
 // - the state ClaimAuthorizedMobilePush claims from - with Policy.Kind ==
-// KindMobile.
-func createMobileAuthorizedOperation(t *testing.T, store *Files, email string) TakeReceipt {
+// KindMobile. It also returns the OTP itself: ClaimAuthorizedMobilePush now
+// requires the pairing token as its correlation key (the locator half
+// re-derives the exact operation instead of scanning for "the only one" -
+// see files.go's ClaimAuthorizedMobilePush doc comment).
+func createMobileAuthorizedOperation(t *testing.T, store *Files, email string) (TakeReceipt, string) {
 	t.Helper()
-	if _, err := store.CreateTicket(email, Policy{RealmID: testRealmID, Kind: KindMobile}, time.Hour); err != nil {
+	return createAuthorizedOperation(t, store, email, KindMobile)
+}
+
+// createAuthorizedOperation is the Kind-parameterized form, used directly by
+// tests that need a non-mobile operation concurrently authorized (e.g. to
+// prove ClaimAuthorizedMobilePush's Kind filter).
+func createAuthorizedOperation(t *testing.T, store *Files, email string, kind string) (TakeReceipt, string) {
+	t.Helper()
+	if _, err := store.CreateTicket(email, Policy{RealmID: testRealmID, Kind: kind}, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	receipt, err := store.Take(email, uuid.NewString())
@@ -144,11 +155,11 @@ func createMobileAuthorizedOperation(t *testing.T, store *Files, email string) T
 			if _, err := store.AuthenticateOTP(entry.OTP); err != nil {
 				t.Fatal(err)
 			}
-			return receipt
+			return receipt, entry.OTP
 		}
 	}
 	t.Fatalf("no outbox entry for operation %s", receipt.OperationID)
-	return TakeReceipt{}
+	return TakeReceipt{}, ""
 }
 
 func TestClaimAuthorizedMobilePushClaimsTheAuthorizedOperation(t *testing.T) {
@@ -156,11 +167,11 @@ func TestClaimAuthorizedMobilePushClaimsTheAuthorizedOperation(t *testing.T) {
 	store, _ := openTestStore(t, &now, 3, 43300, 43310)
 	defer store.Close()
 
-	receipt := createMobileAuthorizedOperation(t, store, "push@example.net")
+	receipt, token := createMobileAuthorizedOperation(t, store, "push@example.net")
 	bareKey := testBarePublicKey(t)
 	const fingerprint = "SHA256:test-fingerprint"
 
-	grant, err := store.ClaimAuthorizedMobilePush(bareKey, fingerprint)
+	grant, err := store.ClaimAuthorizedMobilePush(token, bareKey, fingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,8 +207,8 @@ func TestClaimAuthorizedMobilePushRejectsCommentedKey(t *testing.T) {
 	store, _ := openTestStore(t, &now, 3, 43350, 43360)
 	defer store.Close()
 
-	createMobileAuthorizedOperation(t, store, "push-commented@example.net")
-	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t)+" filees:already-commented", "SHA256:x"); err == nil {
+	_, token := createMobileAuthorizedOperation(t, store, "push-commented@example.net")
+	if _, err := store.ClaimAuthorizedMobilePush(token, testBarePublicKey(t)+" filees:already-commented", "SHA256:x"); err == nil {
 		t.Fatal("a client-supplied comment was accepted")
 	}
 }
@@ -207,7 +218,13 @@ func TestClaimAuthorizedMobilePushRejectsWhenNothingAuthorized(t *testing.T) {
 	store, _ := openTestStore(t, &now, 3, 43400, 43410)
 	defer store.Close()
 
-	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
+	// A syntactically valid but unmatched token: no operation exists at
+	// all, so parseOTP succeeds but the locator matches nothing.
+	token, _, err := generateOTP(crand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimAuthorizedMobilePush(token, testBarePublicKey(t), "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
 		t.Fatalf("push with nothing authorized error=%v", err)
 	}
 }
@@ -217,11 +234,13 @@ func TestClaimAuthorizedMobilePushRejectsSecondClaim(t *testing.T) {
 	store, _ := openTestStore(t, &now, 3, 43500, 43510)
 	defer store.Close()
 
-	createMobileAuthorizedOperation(t, store, "push-once@example.net")
-	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), "SHA256:x"); err != nil {
+	_, token := createMobileAuthorizedOperation(t, store, "push-once@example.net")
+	if _, err := store.ClaimAuthorizedMobilePush(token, testBarePublicKey(t), "SHA256:x"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
+	// The same token cannot claim twice: its locator was blanked at first
+	// consumption, so replaying it now matches no live operation.
+	if _, err := store.ClaimAuthorizedMobilePush(token, testBarePublicKey(t), "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
 		t.Fatalf("second push error=%v", err)
 	}
 }
@@ -231,11 +250,71 @@ func TestClaimAuthorizedMobilePushRejectsEmptyIdentity(t *testing.T) {
 	store, _ := openTestStore(t, &now, 3, 43600, 43610)
 	defer store.Close()
 
-	createMobileAuthorizedOperation(t, store, "push-empty@example.net")
-	if _, err := store.ClaimAuthorizedMobilePush("", "SHA256:x"); err == nil {
+	_, token := createMobileAuthorizedOperation(t, store, "push-empty@example.net")
+	if _, err := store.ClaimAuthorizedMobilePush(token, "", "SHA256:x"); err == nil {
 		t.Fatalf("empty public key accepted")
 	}
-	if _, err := store.ClaimAuthorizedMobilePush(testBarePublicKey(t), ""); !errors.Is(err, ErrTunnelGrant) {
+	if _, err := store.ClaimAuthorizedMobilePush(token, testBarePublicKey(t), ""); !errors.Is(err, ErrTunnelGrant) {
 		t.Fatalf("empty fingerprint error=%v", err)
+	}
+}
+
+// TestClaimAuthorizedMobilePushRejectsWrongLocator is the direct regression
+// test for the concurrent-pairing hijack/deadlock bug: two mobile operations
+// live in OperationTunnelAuthorized at the same time, and each token must
+// claim only its own operation, never the other's.
+func TestClaimAuthorizedMobilePushRejectsWrongLocator(t *testing.T) {
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 43700, 43720)
+	defer store.Close()
+
+	receiptA, tokenA := createMobileAuthorizedOperation(t, store, "phone-a@example.net")
+	receiptB, tokenB := createMobileAuthorizedOperation(t, store, "phone-b@example.net")
+
+	opB, err := store.GetOperation(receiptB.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opB.State != OperationTunnelAuthorized {
+		t.Fatalf("operation B state=%q, want still %q before any claim", opB.State, OperationTunnelAuthorized)
+	}
+
+	grantA, err := store.ClaimAuthorizedMobilePush(tokenA, testBarePublicKey(t), "SHA256:a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grantA.OperationID != receiptA.OperationID {
+		t.Fatalf("token A claimed operation %s, want %s", grantA.OperationID, receiptA.OperationID)
+	}
+
+	opB, err = store.GetOperation(receiptB.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opB.State != OperationTunnelAuthorized {
+		t.Fatalf("operation B state=%q, want still %q after A's claim", opB.State, OperationTunnelAuthorized)
+	}
+
+	grantB, err := store.ClaimAuthorizedMobilePush(tokenB, testBarePublicKey(t), "SHA256:b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grantB.OperationID != receiptB.OperationID {
+		t.Fatalf("token B claimed operation %s, want %s", grantB.OperationID, receiptB.OperationID)
+	}
+}
+
+// TestClaimAuthorizedMobilePushRejectsDesktopKindOperation covers the Kind
+// filter independently of locator matching: a desktop-kind operation's own
+// (correctly formatted, correctly locatored) token must still never be
+// accepted by the mobile push path.
+func TestClaimAuthorizedMobilePushRejectsDesktopKindOperation(t *testing.T) {
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 43800, 43810)
+	defer store.Close()
+
+	_, desktopToken := createAuthorizedOperation(t, store, "desktop-concurrent@example.net", KindDesktop)
+	if _, err := store.ClaimAuthorizedMobilePush(desktopToken, testBarePublicKey(t), "SHA256:x"); !errors.Is(err, ErrTunnelGrant) {
+		t.Fatalf("mobile push against desktop-kind operation error=%v, want ErrTunnelGrant", err)
 	}
 }

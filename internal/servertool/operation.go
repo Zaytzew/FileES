@@ -4,9 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
+	"time"
 
 	"filees/pkg/activation"
 	"filees/pkg/onboarding"
+	"filees/pkg/repoworker"
 )
 
 func RunOperation(args []string, stdout, stderr io.Writer) int {
@@ -39,7 +42,21 @@ func RunOperation(args []string, stdout, stderr io.Writer) int {
 			report(stderr, "filees-operation activation cleanup", err)
 			return ExitTempFail
 		}
-		if err := writeJSON(stdout, map[string]any{"schema": "filees.operation-result/v1", "status": "ok", "expired_activations": expired}); err != nil {
+		result := map[string]any{"schema": "filees.operation-result/v1", "status": "ok", "expired_activations": expired}
+		if root := config.Repositories.ResultsRoot; root != "" {
+			resultStore, err := repoworker.NewFileStore(filepath.Join(root, "results"))
+			if err != nil {
+				report(stderr, "filees-operation repository results", err)
+				return ExitConfig
+			}
+			purged, err := resultStore.PurgeExpiredMobilePairings(time.Now())
+			if err != nil {
+				report(stderr, "filees-operation mobile pairing purge", err)
+				return ExitTempFail
+			}
+			result["purged_mobile_pairings"] = purged
+		}
+		if err := writeJSON(stdout, result); err != nil {
 			return ExitSoftware
 		}
 		return ExitOK

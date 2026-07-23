@@ -2,11 +2,13 @@ package servertool
 
 import (
 	"context"
+	"filees/pkg/onboarding"
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 	"fmt"
 	"io"
 	"path/filepath"
+	"time"
 )
 
 func RunRepositoryWorker(args []string, in io.Reader, out, stderr io.Writer) int {
@@ -17,7 +19,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		fmt.Fprintln(stderr, "filees-worker repository-control: client ID required")
 		return ExitUsage
 	}
-	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation)
+	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation|serverconfig.SecretOTP)
 	if err != nil {
 		report(stderr, "repository worker config", err)
 		return ExitConfig
@@ -37,11 +39,25 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	}
 	capacity := repoworker.FilesystemCapacity{Root: r.Root}
 	reservations := &repoworker.FileReservationLedger{Root: filepath.Join(r.ResultsRoot, "reservations"), Capacity: capacity}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store}
+	onboardingFiles, err := onboarding.OpenPrepared(config.Root, config.Onboarding, onboarding.Access{Areas: onboarding.AreaOperations | onboarding.AreaAudit, NeedOTP: true})
+	if err != nil {
+		report(stderr, "repository worker onboarding", err)
+		return ExitConfig
+	}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}
 	if err := repoworker.WithFileLock(filepath.Join(r.ResultsRoot, ".worker.lock"), func() error { return dispatcher.Serve(context.Background(), args[0], in, out) }); err != nil {
 		report(stderr, "repository worker", err)
 		return ExitData
 	}
 	return ExitOK
+}
+
+// mobilePairingMinter adapts onboarding.Files.CreateMobilePairing to
+// repoworker.MobilePairingMinter.
+type mobilePairingMinter struct{ files *onboarding.Files }
+
+func (m mobilePairingMinter) CreatePairing(realmID string) (string, time.Time, error) {
+	token, receipt, err := m.files.CreateMobilePairing(realmID)
+	return token, receipt.ExpiresAt, err
 }

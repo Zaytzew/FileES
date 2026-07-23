@@ -73,6 +73,7 @@ type SMTPFile struct {
 type Config struct {
 	Path                 string
 	Root                 string
+	OTPPepperFile        string
 	Onboarding           onboarding.Options
 	SMTP                 smtpsubmit.Config
 	SMTPFrom             string
@@ -260,7 +261,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		}
 	}
 	config := Config{
-		Path: path, Root: filepath.Clean(file.Root), SMTPFrom: from,
+		Path: path, Root: filepath.Clean(file.Root), OTPPepperFile: file.OTPPepperFile, SMTPFrom: from,
 		MessageIDDomain:  strings.ToLower(strings.TrimSpace(file.SMTP.MessageIDDomain)),
 		SMTPPasswordFile: file.SMTP.PasswordFile, SMTPCAFile: file.SMTP.CAFile,
 		WorkerPrivateKeyFile: file.WorkerPrivateKeyFile, WorkerSigner: workerSigner,

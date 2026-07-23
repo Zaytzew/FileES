@@ -35,6 +35,30 @@ type fakeCapacity struct {
 	calls               int
 }
 
+type fakeMobilePairingMinter struct {
+	calls int
+	realm string
+	err   error
+}
+
+func (m *fakeMobilePairingMinter) CreatePairing(realmID string) (string, time.Time, error) {
+	m.calls++
+	m.realm = realmID
+	if m.err != nil {
+		return "", time.Time{}, m.err
+	}
+	return "TESTLOCA-TORXXXXXXXXXXXXXXXX", time.Now().Add(5 * time.Minute), nil
+}
+
+func mobilePairingTicket(t *testing.T, client string) control.Ticket {
+	t.Helper()
+	v, e := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketMobilePairing, client, control.MobilePairingPayload{}, time.Now())
+	if e != nil {
+		t.Fatal(e)
+	}
+	return v
+}
+
 func (c *fakeCapacity) Check(context.Context, int64) (int64, int64, error) {
 	c.calls++
 	return c.available, c.required, nil
@@ -212,5 +236,48 @@ func TestWorkerCarriesReservationThroughCreationAndReleasesAfterActivation(t *te
 	}
 	if err := reservations.Ensure(context.Background(), opID, now); !errors.Is(err, ErrReservationUnavailable) {
 		t.Fatalf("reservation remained after activation: %v", err)
+	}
+}
+
+func TestWorkerMobilePairingUsesSessionRealmNotPayloadAndIsIdempotent(t *testing.T) {
+	minter := &fakeMobilePairingMinter{}
+	store, _ := NewFileStore(t.TempDir())
+	w := &Worker{Store: store, MobilePairing: minter}
+	realm := uuid.NewString()
+	tk := mobilePairingTicket(t, "client-a")
+	// No CanCreateRepositories needed - any authenticated session may pair a
+	// mobile device into its own realm.
+	session := Session{ClientID: "client-a", RealmID: realm}
+
+	result, err := w.Handle(context.Background(), session, tk)
+	if err != nil || result.Status != control.ResultOK || minter.calls != 1 || minter.realm != realm {
+		t.Fatalf("result=%+v minter calls=%d realm=%s err=%v", result, minter.calls, minter.realm, err)
+	}
+	var payload control.MobilePairingResult
+	if err := control.DecodeResultPayload(result.Result, &payload); err != nil || payload.Token == "" {
+		t.Fatalf("decode result=%+v err=%v", payload, err)
+	}
+
+	// A fresh worker instance must reuse the durable result, not mint again.
+	replay, err := (&Worker{Store: store, MobilePairing: minter}).Handle(context.Background(), session, tk)
+	if err != nil || minter.calls != 1 || replay.CompletedAt != result.CompletedAt {
+		t.Fatalf("replay=%+v minter calls=%d err=%v", replay, minter.calls, err)
+	}
+}
+
+func TestWorkerMobilePairingFailsClosedWithoutMinterOrOnMinterError(t *testing.T) {
+	store, _ := NewFileStore(t.TempDir())
+	session := Session{ClientID: "client-a", RealmID: uuid.NewString()}
+
+	unconfigured := &Worker{Store: store}
+	tk := mobilePairingTicket(t, "client-a")
+	if result, err := unconfigured.Handle(context.Background(), session, tk); err != nil || result.Status != control.ResultError {
+		t.Fatalf("unconfigured worker result=%+v err=%v", result, err)
+	}
+
+	failing := &Worker{Store: store, MobilePairing: &fakeMobilePairingMinter{err: errors.New("disk full")}}
+	tk2 := mobilePairingTicket(t, "client-a")
+	if result, err := failing.Handle(context.Background(), session, tk2); err != nil || result.Status != control.ResultError {
+		t.Fatalf("failing minter result=%+v err=%v", result, err)
 	}
 }

@@ -123,9 +123,14 @@ class MainActivity : AppCompatActivity() {
             hostKey = json.getString("host_public_key")
             token = json.getString("token")
         } catch (e: Exception) {
+            binding.editPairingPayload.text?.clear()
             setStatus(getString(R.string.status_error, "nieprawidłowe dane parowania"))
             return
         }
+        // The token must not linger in the UI a moment longer than parsing
+        // needs it - clear synchronously here, not after pairAndActivate's
+        // async network round trip completes.
+        binding.editPairingPayload.text?.clear()
         pairAndActivate(address, hostKey, token)
     }
 

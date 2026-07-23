@@ -34,7 +34,8 @@
                 android:layout_height="wrap_content"
                 android:hint="@string/hint_pairing_payload"
                 android:inputType="textMultiLine"
-                android:minLines="2" />
+                android:minLines="2"
+                android:saveEnabled="false" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton

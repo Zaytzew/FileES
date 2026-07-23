@@ -29,7 +29,6 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		flags.SetOutput(stderr)
 		email := flags.String("email", "", "delivery e-mail")
 		realmID := flags.String("realm-id", "", "approved realm UUID")
-		kind := flags.String("kind", onboarding.KindDesktop, "client kind: desktop or mobile")
 		ttl := flags.Duration("ttl", 24*time.Hour, "ticket lifetime")
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
 			return ExitUsage
@@ -39,7 +38,10 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
 		}
-		ticket, err := files.CreateTicket(*email, onboarding.Policy{RealmID: *realmID, Kind: *kind}, *ttl)
+		// Mobile clients are never admin-ticketed - only paired by an
+		// already-active desktop of the same realm (pkg/onboarding.Files.
+		// CreateMobilePairing). Admin-created tickets are always desktop.
+		ticket, err := files.CreateTicket(*email, onboarding.Policy{RealmID: *realmID}, *ttl)
 		if err != nil {
 			return adminError(stderr, err)
 		}

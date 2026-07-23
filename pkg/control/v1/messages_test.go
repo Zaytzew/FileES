@@ -86,3 +86,25 @@ func TestStoragePreflightContract(t *testing.T) {
 		t.Fatal("negative content size accepted")
 	}
 }
+
+func TestMobilePairingContract(t *testing.T) {
+	opID, requestID := uuid.NewString(), uuid.NewString()
+	ticket, err := NewTicket(opID, requestID, TicketMobilePairing, "client", MobilePairingPayload{}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The payload deliberately carries no realm_id - the worker resolves it
+	// from the authenticated session, never from a client-supplied field.
+	if ticket.Type != TicketMobilePairing || string(ticket.Payload) != "{}" {
+		t.Fatalf("ticket=%+v, want empty MOBILE_PAIRING payload", ticket)
+	}
+	if _, err := NewSuccessResult(opID, requestID, TicketMobilePairing, MobilePairingResult{Token: "AAAAAAAA-BBBBBBBBBBBBBBBB", ExpiresAt: time.Now().Format(time.RFC3339Nano)}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSuccessResult(opID, requestID, TicketMobilePairing, MobilePairingResult{Token: "", ExpiresAt: time.Now().Format(time.RFC3339Nano)}, time.Now()); err == nil {
+		t.Fatal("empty token accepted")
+	}
+	if _, err := NewSuccessResult(opID, requestID, TicketMobilePairing, MobilePairingResult{Token: "x", ExpiresAt: "not-a-time"}, time.Now()); err == nil {
+		t.Fatal("invalid expires_at accepted")
+	}
+}

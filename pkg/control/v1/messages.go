@@ -20,6 +20,11 @@ const (
 	TicketCreateRepository TicketType = "CREATE_REPOSITORY"
 	TicketInitialCommit    TicketType = "INITIAL_COMMIT"
 	TicketStoragePreflight TicketType = "STORAGE_PREFLIGHT"
+	// TicketMobilePairing is requested by an already-active desktop client
+	// to mint a mobile pairing token for its own realm (never a payload-
+	// supplied one - the worker resolves realm_id from the authenticated
+	// session, same discipline as every other ticket type here).
+	TicketMobilePairing TicketType = "MOBILE_PAIRING"
 )
 
 type ResultStatus string
@@ -78,6 +83,14 @@ type StoragePreflightResult struct {
 	AvailableBytes       int64  `json:"available_bytes"`
 	RequiredBytes        int64  `json:"required_bytes"`
 	ReservationExpiresAt string `json:"reservation_expires_at,omitempty"`
+}
+
+// MobilePairingPayload is deliberately empty: the requesting realm is
+// derived from the authenticated session, never from the payload.
+type MobilePairingPayload struct{}
+type MobilePairingResult struct {
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expires_at"`
 }
 
 func NewTicket(operationID, requestID string, typ TicketType, clientID string, payload any, now time.Time) (Ticket, error) {
@@ -169,6 +182,11 @@ func (t Ticket) Validate() error {
 		if p.Revision == 0 && p.Paths != 0 {
 			return errors.New("INITIAL_COMMIT revision zero requires an empty snapshot")
 		}
+	case TicketMobilePairing:
+		var p MobilePairingPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("MOBILE_PAIRING payload: %w", err)
+		}
 	default:
 		return fmt.Errorf("unsupported ticket type %q", t.Type)
 	}
@@ -188,7 +206,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketMobilePairing {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -240,6 +258,17 @@ func validateSuccessPayload(r Result) error {
 		}
 		if !result.Acknowledged {
 			return errors.New("INITIAL_COMMIT result must be acknowledged")
+		}
+	case TicketMobilePairing:
+		var result MobilePairingResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("MOBILE_PAIRING result: %w", err)
+		}
+		if strings.TrimSpace(result.Token) == "" {
+			return errors.New("MOBILE_PAIRING result requires token")
+		}
+		if _, err := time.Parse(time.RFC3339Nano, result.ExpiresAt); err != nil {
+			return fmt.Errorf("invalid MOBILE_PAIRING expires_at: %w", err)
 		}
 	}
 	return nil

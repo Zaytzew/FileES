@@ -51,13 +51,21 @@ type CapacityChecker interface {
 	Check(context.Context, int64) (availableBytes, requiredBytes int64, err error)
 }
 
+// MobilePairingMinter mints a mobile pairing token for realmID - always the
+// authenticated session's own realm, never a payload-supplied one. See
+// pkg/onboarding.Files.CreateMobilePairing, which this wraps.
+type MobilePairingMinter interface {
+	CreatePairing(realmID string) (token string, expiresAt time.Time, err error)
+}
+
 type Worker struct {
-	Backend      Backend
-	Activator    RepositoryActivator
-	Store        ResultStore
-	Capacity     CapacityChecker
-	Reservations ReservationLedger
-	Now          func() time.Time
+	Backend       Backend
+	Activator     RepositoryActivator
+	Store         ResultStore
+	Capacity      CapacityChecker
+	Reservations  ReservationLedger
+	MobilePairing MobilePairingMinter
+	Now           func() time.Time
 }
 
 func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
@@ -70,7 +78,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketMobilePairing {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if (ticket.Type == control.TicketStoragePreflight || ticket.Type == control.TicketCreateRepository) && !session.CanCreateRepositories {
@@ -86,6 +94,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 			return control.Result{}, errors.New("operation already bound to another request")
 		}
 		return result, nil
+	}
+	if ticket.Type == control.TicketMobilePairing {
+		return w.mobilePairing(session, ticket)
 	}
 	if ticket.Type == control.TicketInitialCommit {
 		return w.activate(ctx, session, ticket)
@@ -115,6 +126,27 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 		return control.Result{}, fmt.Errorf("backend returned incomplete repository")
 	}
 	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.CreateRepositoryResult{RepoID: repo.RepoID, RepoURL: repo.URL}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
+// mobilePairing mints a pairing token for the authenticated session's own
+// realm. session.RealmID is resolved server-side from the connection
+// (ViewResolver), never from the ticket payload (MobilePairingPayload
+// carries no realm_id at all) - any authenticated client of a realm may
+// pair a new mobile device into that same realm, no CanCreateRepositories
+// gate needed.
+func (w *Worker) mobilePairing(session Session, ticket control.Ticket) (control.Result, error) {
+	if w.MobilePairing == nil {
+		return w.failure(ticket, "MOBILE_PAIRING_UNAVAILABLE", "mobile pairing is not configured on this worker")
+	}
+	token, expiresAt, err := w.MobilePairing.CreatePairing(session.RealmID)
+	if err != nil {
+		return w.failure(ticket, "MOBILE_PAIRING_FAILED", err.Error())
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.MobilePairingResult{Token: token, ExpiresAt: expiresAt.UTC().Format(time.RFC3339Nano)}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}
@@ -199,6 +231,7 @@ func (w *Worker) failure(t control.Ticket, code, message string) (control.Result
 	}
 	return r, e
 }
+
 // formatBytes renders a byte count for a human reader (e.g. "178.7 MB"),
 // used only in user-facing error messages -- Details keeps the exact
 // integer byte counts for anything that parses the result programmatically.

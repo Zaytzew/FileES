@@ -29,13 +29,17 @@ type PairResult struct {
 	ServiceRevision int64  `json:"service_revision"`
 }
 
-// PairJSON drives the full mobile pairing sequence end to end
-// (concepts/FILEES_ANDROID_CLIENT_CONCEPT_V2.md §4.2): pushes this device's
+// PairJSON drives the mobile pairing sequence
+// (concepts/FILEES_ANDROID_CLIENT_CONCEPT_V2.md §4.2) using this device's
 // already-persisted installation public key (the same identity NewClient
 // itself uses - generated once by loadOrCreateIdentity, private key never
-// leaves the device) over the pairing token scanned from the desktop's QR,
-// proves possession, and requests activation. storeDir must be the same
-// non-evictable filesDir NewClient will later use for this same device.
+// leaves the device). It probes with a proof attempt first and only pushes
+// the key (spending the pairing token scanned from the desktop's QR) if the
+// server does not already recognize it - this makes a retried call safe
+// even when an earlier attempt's own response (push or finish) never
+// reached the caller, without needing any local checkpoint. storeDir must
+// be the same non-evictable filesDir NewClient will later use for this same
+// device.
 //
 // Returns a PairResult as JSON (gomobile cannot bind more than one non-error
 // return value, hence JSON here - same convention as RefreshJSON/
@@ -59,25 +63,43 @@ func PairJSON(storeDir, address, hostPublicKey, token string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), pairTimeout)
 	defer cancel()
 
-	pairing := onboard.PairingConfig{Address: address, HostPublicKey: hostPublicKey}
-	_, pushedClientID, err := onboard.PushInstallationKey(ctx, pairing, token, publicKey, fingerprint)
-	if err != nil {
-		return "", fmt.Errorf("androidbind: push installation key: %w", err)
-	}
-
 	proof := onboard.ProofConfig{Address: address, User: mobileOperationalUser, HostPublicKey: hostPublicKey, Signer: ident.signer}
-	if _, provedClientID, err := onboard.ProveInstallationKey(ctx, proof); err != nil {
+
+	// Probe first with the already-persisted identity: if the server
+	// already knows this device's key - staged by an earlier attempt whose
+	// own response never reached this call, e.g. the push committed
+	// server-side but the client crashed or lost the connection before
+	// decoding the result - resume straight from proof instead of
+	// re-spending the (possibly single-use) pairing token on a redundant
+	// push. Only a confirmed "key unknown" auth rejection falls through to
+	// the full push flow below; any other error (network, timeout, host key
+	// mismatch) is returned unchanged, with no pairing state touched.
+	_, clientID, err := onboard.ProveInstallationKey(ctx, proof)
+	switch {
+	case err == nil:
+		// Already staged from an earlier attempt - proceed straight to finish.
+	case onboard.IsKeyUnauthorized(err):
+		pairing := onboard.PairingConfig{Address: address, HostPublicKey: hostPublicKey}
+		_, pushedClientID, pushErr := onboard.PushInstallationKey(ctx, pairing, token, publicKey, fingerprint)
+		if pushErr != nil {
+			return "", fmt.Errorf("androidbind: push installation key: %w", pushErr)
+		}
+		if _, clientID, err = onboard.ProveInstallationKey(ctx, proof); err != nil {
+			return "", fmt.Errorf("androidbind: prove installation key: %w", err)
+		}
+		if clientID != pushedClientID {
+			return "", errors.New("androidbind: client_id mismatch between push and proof")
+		}
+	default:
 		return "", fmt.Errorf("androidbind: prove installation key: %w", err)
-	} else if provedClientID != pushedClientID {
-		return "", errors.New("androidbind: client_id mismatch between push and proof")
 	}
 
 	_, finishedClientID, revision, err := onboard.FinishActivation(ctx, proof)
 	if err != nil {
 		return "", fmt.Errorf("androidbind: finish activation: %w", err)
 	}
-	if finishedClientID != pushedClientID {
-		return "", errors.New("androidbind: client_id mismatch between push and finish")
+	if finishedClientID != clientID {
+		return "", errors.New("androidbind: client_id mismatch between proof and finish")
 	}
 	raw, err := json.Marshal(PairResult{ClientID: finishedClientID, ServiceRevision: revision})
 	if err != nil {

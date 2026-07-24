@@ -238,7 +238,20 @@ func doProofOrFinish(ctx context.Context, cfg ProofConfig, command string) (work
 // caller's full flow retries, which is self-correcting, not a correctness
 // bug.
 func IsKeyUnauthorized(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "unable to authenticate")
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	// "unable to authenticate" is golang.org/x/crypto/ssh's own message when
+	// the CLIENT exhausts every configured auth method without the server
+	// cutting the connection first. Against a real OpenBSD sshd with a low
+	// MaxAuthTries (e.g. the operational _filees-mobile class's
+	// MaxAuthTries 1 - confirmed against a real server, not assumed), the
+	// SERVER disconnects first instead, presenting "Too many authentication
+	// failures" - a real-world case an in-process fake SSH server's default
+	// leniency does not reproduce, only found by testing against the actual
+	// deployed sshd config.
+	return strings.Contains(msg, "unable to authenticate") || strings.Contains(msg, "authentication failures")
 }
 
 func pinnedHostKey(pinned ssh.PublicKey) ssh.HostKeyCallback {

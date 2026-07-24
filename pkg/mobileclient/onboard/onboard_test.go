@@ -290,3 +290,32 @@ func TestProofConfigRejectsMissingFields(t *testing.T) {
 		t.Fatal("missing user/signer accepted")
 	}
 }
+
+// TestIsKeyUnauthorizedRecognizesBothRealSSHRejectionForms is the E2E-found
+// regression guard: golang.org/x/crypto/ssh's own "unable to authenticate"
+// (the client exhausting its configured methods) is only ONE real rejection
+// shape. Against a real OpenBSD sshd with a low MaxAuthTries - confirmed
+// live against the operational _filees-mobile class (MaxAuthTries 1) - the
+// SERVER disconnects first with "Too many authentication failures" instead,
+// which an in-process fake SSH server's default leniency never reproduces.
+// Both must be recognized as "key not yet staged", not treated as an
+// unexpected fatal error.
+func TestIsKeyUnauthorizedRecognizesBothRealSSHRejectionForms(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"client exhausted methods", errors.New(`onboard: handshake: ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain`), true},
+		{"server MaxAuthTries disconnect", errors.New(`onboard: handshake: ssh: handshake failed: ssh: disconnect, reason 2: "Too many authentication failures"`), true},
+		{"unrelated network error", errors.New(`onboard: dial: dial tcp 10.0.2.2:2222: connect: connection refused`), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsKeyUnauthorized(c.err); got != c.want {
+				t.Fatalf("IsKeyUnauthorized(%v) = %v, want %v", c.err, got, c.want)
+			}
+		})
+	}
+}

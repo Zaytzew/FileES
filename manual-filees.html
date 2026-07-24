@@ -884,11 +884,13 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Behaviour under passport mode:</p>
 <ul>
 <li>All existing regular files are migrated to carry <code>svn:needs-lock</code> on first start (the daemon refuses to start migration if the working copy has local content changes, deletes, or missing files).</li>
-<li>A file without an active passport is locally read-only. It becomes writable after a successful <code>repo.lock</code> / <code>filees lock</code> call, including the <strong>Lock files…</strong> action in the repository tray submenu.</li>
+<li>A file without an active passport is locally read-only. For a repository whose owner realm is <strong>not</strong> this client's own realm, it becomes writable only after a successful <code>repo.lock</code> / <code>filees lock</code> call, including the <strong>Lock files…</strong> action in the repository tray submenu.</li>
+<li><strong>Autolock (owner realm):</strong> for a repository this client's own realm owns, no manual lock action is needed at all. Right after every <code>svn up</code>, the daemon makes its own read-only files locally writable immediately — before the real SVN lock is acquired. The real lock is only requested at the moment of the next commit attempt for that path: if the repository is genuinely free (or the lock is already held by another of this same realm's own instances, which is taken over silently, no dialog), the commit proceeds; if a <em>different</em> realm already holds the lock, the commit is held back and the change stays staged for a later retry — it is never stolen, and the local edit is never lost.</li>
 <li>New files do not require a passport before their first publication; the daemon assigns <code>svn:needs-lock</code> before the commit.</li>
 <li>Commits use <code>svn commit --no-unlock</code> so that SVN does not bypass the close-grace period.</li>
 <li>After a confirmed commit, the daemon waits for the close-grace period (<code>edit_passport_close_grace</code>, default 5 m) before unlocking and returning the file to read-only.</li>
 </ul>
+<div class="note"><strong>Scope of autolock (V1):</strong> a repository's owner realm is whichever realm created it (<code>OwnerRealmID</code>) — the same realm identity described in §5.5. Since cross-realm repository sharing is still a designed, not yet implemented, extension (§5.5), a repository has exactly one realm with write access today, so autolock and "the repository's own realm" currently mean the same thing. Once cross-realm sharing exists, autolock priority is designed to generalize to per-path ownership (whoever's realm first committed a given path) without changing the mechanics described here.</div>
 <p>Passport timing parameters:</p>
 <div class="table-wrap"><table>
 <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>

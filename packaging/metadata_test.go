@@ -111,6 +111,9 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(bundle, "bin", "filees-pair-gui"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(fakeBin, "systemctl"), []byte("#!/bin/sh\n[ \"$2\" = is-active ] && exit 1\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +138,7 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 	}
 	for _, path := range []string{
 		filepath.Join(prefix, "bin", "filees"), filepath.Join(prefix, "bin", "filees-gui"),
+		filepath.Join(prefix, "bin", "filees-pair-gui"),
 		filepath.Join(configHome, "systemd", "user", "filees.service"),
 	} {
 		if _, err := os.Stat(path); err != nil {
@@ -144,6 +148,9 @@ func TestLinuxInstallUpgradeUninstallLifecyclePreservesConfig(t *testing.T) {
 	runScript(t, filepath.Join(bundle, "uninstall-user.sh"), env)
 	if _, err := os.Stat(filepath.Join(prefix, "bin", "filees")); !os.IsNotExist(err) {
 		t.Fatalf("daemon binary survived uninstall: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(prefix, "bin", "filees-pair-gui")); !os.IsNotExist(err) {
+		t.Fatalf("pairing helper binary survived uninstall: %v", err)
 	}
 	if got, err := os.ReadFile(configPath); err != nil || !stringEqual(got, custom) {
 		t.Fatalf("uninstall removed config: %q err=%v", got, err)

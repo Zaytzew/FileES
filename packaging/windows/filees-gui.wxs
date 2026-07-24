@@ -39,6 +39,13 @@
       <File Id="FileESGUIManifest" Source="$(var.SourceDir)\filees-gui.exe.manifest" KeyPath="yes" />
     </Component>
 
+    <!-- Spawned by filees-gui.exe as a background subprocess to render the
+         mobile-pairing QR code - no Start Menu shortcut, never launched
+         directly by the user. -->
+    <Component Id="FileESPairGUI" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESPairGUIExe" Source="$(var.SourceDir)\filees-pair-gui.exe" KeyPath="yes" />
+    </Component>
+
     <Component Id="FileESRegistry" Directory="INSTALLFOLDER" Guid="*">
       <RegistryValue
           Root="HKCU"
@@ -52,6 +59,7 @@
     <Feature Id="ProductFeature" Title="FileES GUI" Level="1">
       <ComponentRef Id="FileESGUI" />
       <ComponentRef Id="FileESGUIManifest" />
+      <ComponentRef Id="FileESPairGUI" />
       <ComponentRef Id="FileESRegistry" />
     </Feature>
 

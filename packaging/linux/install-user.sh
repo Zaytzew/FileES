@@ -7,6 +7,7 @@ data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 daemon_bin="$prefix/bin/filees"
 gui_bin="$prefix/bin/filees-gui"
+pair_gui_bin="$prefix/bin/filees-pair-gui"
 desktop="$data_home/applications/filees-gui.desktop"
 icon="$data_home/icons/hicolor/scalable/apps/filees-gui.svg"
 config_dir="$config_home/filees"
@@ -42,6 +43,7 @@ fi
 mkdir -p "$(dirname -- "$daemon_bin")" "$(dirname -- "$desktop")" "$(dirname -- "$icon")" "$unit_dir"
 install -m 0755 "$bundle/bin/filees" "$daemon_bin"
 install -m 0755 "$bundle/bin/filees-gui" "$gui_bin"
+install -m 0755 "$bundle/bin/filees-pair-gui" "$pair_gui_bin"
 install -m 0644 "$bundle/share/icons/hicolor/scalable/apps/filees-gui.svg" "$icon"
 
 escaped_gui=$(escape_sed_replacement "$gui_bin")
@@ -75,5 +77,6 @@ fi
 printf 'FileES client installed\n'
 printf '  daemon: %s\n' "$daemon_bin"
 printf '  GUI:    %s\n' "$gui_bin"
+printf '  pairing helper: %s\n' "$pair_gui_bin"
 printf '  config: %s\n' "$config"
 printf 'Enable now with: systemctl --user enable --now filees.service\n'

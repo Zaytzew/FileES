@@ -57,7 +57,11 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 // repoworker.MobilePairingMinter.
 type mobilePairingMinter struct{ files *onboarding.Files }
 
-func (m mobilePairingMinter) CreatePairing(realmID string) (string, time.Time, error) {
-	token, receipt, err := m.files.CreateMobilePairing(realmID)
+func (m mobilePairingMinter) CreatePairing(realmID string, repos []repoworker.MobilePairingRepoGrant) (string, time.Time, error) {
+	grants := make([]onboarding.MobileRepositoryGrant, 0, len(repos))
+	for _, r := range repos {
+		grants = append(grants, onboarding.MobileRepositoryGrant{RepoID: r.RepoID, Access: r.Access, AttachmentPolicy: r.AttachmentPolicy})
+	}
+	token, receipt, err := m.files.CreateMobilePairing(realmID, grants)
 	return token, receipt.ExpiresAt, err
 }

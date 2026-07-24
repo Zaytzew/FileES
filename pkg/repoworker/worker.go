@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
 	"github.com/google/uuid"
 )
@@ -18,6 +19,11 @@ type Session struct {
 	ClientID              string
 	RealmID               string
 	CanCreateRepositories bool
+	// Repositories is the authenticated session's own current repository
+	// grants, as resolved server-side from its view.json (never client
+	// supplied). Used only to let a MOBILE_PAIRING request inherit the
+	// initiating desktop's own repository list 1:1 - see mobilePairing.
+	Repositories []clientview.Repository
 }
 
 func (s Session) Validate() error {
@@ -51,11 +57,24 @@ type CapacityChecker interface {
 	Check(context.Context, int64) (availableBytes, requiredBytes int64, err error)
 }
 
+// MobilePairingRepoGrant is one repository grant carried over from the
+// pairing initiator's own session.Repositories into the minted operation,
+// so the eventual mobile client's view.json can inherit it 1:1. Access and
+// AttachmentPolicy are per-client and cannot be derived from the canonical
+// repository record alone, so they must be threaded through from here
+// rather than re-derived at publish time.
+type MobilePairingRepoGrant struct {
+	RepoID, Access, AttachmentPolicy string
+}
+
 // MobilePairingMinter mints a mobile pairing token for realmID - always the
-// authenticated session's own realm, never a payload-supplied one. See
-// pkg/onboarding.Files.CreateMobilePairing, which this wraps.
+// authenticated session's own realm, never a payload-supplied one. repos is
+// the initiating session's own current repository list, forwarded so the
+// resulting mobile client can inherit it; the minter decides how (or
+// whether) to persist it. See pkg/onboarding.Files.CreateMobilePairing,
+// which this wraps.
 type MobilePairingMinter interface {
-	CreatePairing(realmID string) (token string, expiresAt time.Time, err error)
+	CreatePairing(realmID string, repos []MobilePairingRepoGrant) (token string, expiresAt time.Time, err error)
 }
 
 type Worker struct {
@@ -142,7 +161,11 @@ func (w *Worker) mobilePairing(session Session, ticket control.Ticket) (control.
 	if w.MobilePairing == nil {
 		return w.failure(ticket, "MOBILE_PAIRING_UNAVAILABLE", "mobile pairing is not configured on this worker")
 	}
-	token, expiresAt, err := w.MobilePairing.CreatePairing(session.RealmID)
+	grants := make([]MobilePairingRepoGrant, 0, len(session.Repositories))
+	for _, repo := range session.Repositories {
+		grants = append(grants, MobilePairingRepoGrant{RepoID: repo.RepoID, Access: repo.Access, AttachmentPolicy: repo.AttachmentPolicy})
+	}
+	token, expiresAt, err := w.MobilePairing.CreatePairing(session.RealmID, grants)
 	if err != nil {
 		return w.failure(ticket, "MOBILE_PAIRING_FAILED", err.Error())
 	}

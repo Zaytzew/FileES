@@ -30,7 +30,7 @@ func (r ViewResolver) Resolve(clientID string) (Session, error) {
 	if v.ClientID != clientID {
 		return Session{}, errors.New("client view identity mismatch")
 	}
-	return Session{ClientID: v.ClientID, RealmID: v.RealmID, CanCreateRepositories: v.CanCreateRepositories()}, nil
+	return Session{ClientID: v.ClientID, RealmID: v.RealmID, CanCreateRepositories: v.CanCreateRepositories(), Repositories: v.Repositories}, nil
 }
 
 type Dispatcher struct {

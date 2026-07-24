@@ -3,8 +3,10 @@ package repoworker
 import (
 	"context"
 	"errors"
+	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
 	"github.com/google/uuid"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -38,12 +40,14 @@ type fakeCapacity struct {
 type fakeMobilePairingMinter struct {
 	calls int
 	realm string
+	repos []MobilePairingRepoGrant
 	err   error
 }
 
-func (m *fakeMobilePairingMinter) CreatePairing(realmID string) (string, time.Time, error) {
+func (m *fakeMobilePairingMinter) CreatePairing(realmID string, repos []MobilePairingRepoGrant) (string, time.Time, error) {
 	m.calls++
 	m.realm = realmID
+	m.repos = repos
 	if m.err != nil {
 		return "", time.Time{}, m.err
 	}
@@ -245,13 +249,20 @@ func TestWorkerMobilePairingUsesSessionRealmNotPayloadAndIsIdempotent(t *testing
 	w := &Worker{Store: store, MobilePairing: minter}
 	realm := uuid.NewString()
 	tk := mobilePairingTicket(t, "client-a")
+	repoID := uuid.NewString()
 	// No CanCreateRepositories needed - any authenticated session may pair a
 	// mobile device into its own realm.
-	session := Session{ClientID: "client-a", RealmID: realm}
+	session := Session{ClientID: "client-a", RealmID: realm, Repositories: []clientview.Repository{
+		{RepoID: repoID, DisplayName: "Docs", URL: "svn+ssh://_filees-client@example.net/" + repoID, Access: "rw", State: "active", AttachmentPolicy: "optional"},
+	}}
 
 	result, err := w.Handle(context.Background(), session, tk)
 	if err != nil || result.Status != control.ResultOK || minter.calls != 1 || minter.realm != realm {
 		t.Fatalf("result=%+v minter calls=%d realm=%s err=%v", result, minter.calls, minter.realm, err)
+	}
+	wantGrants := []MobilePairingRepoGrant{{RepoID: repoID, Access: "rw", AttachmentPolicy: "optional"}}
+	if !reflect.DeepEqual(minter.repos, wantGrants) {
+		t.Fatalf("minter.repos=%+v, want %+v", minter.repos, wantGrants)
 	}
 	var payload control.MobilePairingResult
 	if err := control.DecodeResultPayload(result.Result, &payload); err != nil || payload.Token == "" {

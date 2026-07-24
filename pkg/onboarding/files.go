@@ -310,7 +310,7 @@ func (s *Files) CreateTicket(email string, policy Policy, ttl time.Duration) (Ti
 // caller's already-authenticated session (e.g. repoworker.Session.RealmID,
 // resolved server-side from the connection, never from a client payload) -
 // this method does not and must not accept a client_id or installation key.
-func (s *Files) CreateMobilePairing(realmID string) (string, TakeReceipt, error) {
+func (s *Files) CreateMobilePairing(realmID string, repos []MobileRepositoryGrant) (string, TakeReceipt, error) {
 	if err := s.requireAreas(AreaOperations | AreaAudit); err != nil {
 		return "", TakeReceipt{}, err
 	}
@@ -341,7 +341,7 @@ func (s *Files) CreateMobilePairing(realmID string) (string, TakeReceipt, error)
 		now := s.clock.Now().UTC()
 		op := Operation{
 			Schema: OperationSchema, OperationID: operationID, ClientID: clientID, OnboardingRequestID: requestID,
-			OTPHash: s.hashOTP(token), OTPLocator: locator, ApprovedPolicy: Policy{RealmID: realmID, Kind: KindMobile},
+			OTPHash: s.hashOTP(token), OTPLocator: locator, ApprovedPolicy: Policy{RealmID: realmID, Kind: KindMobile, Repositories: repos},
 			AttemptsLeft: s.otpAttempts, State: OperationAwaitingTunnel, CreatedAt: now, ExpiresAt: now.Add(s.mobilePairingTTL),
 		}
 		bundle := Bundle{Schema: BundleSchema, Operation: op}
@@ -923,7 +923,7 @@ func authGrantFor(op Operation) AuthGrant {
 func activationGrantFor(op Operation) ActivationGrant {
 	return ActivationGrant{
 		OperationID: op.OperationID, ClientID: op.ClientID, RealmID: op.ApprovedPolicy.RealmID,
-		Kind: op.ApprovedPolicy.Kind, DeployRequestID: op.DeployRequestID, InstallationPublicKey: op.InstallationPublicKey,
+		Kind: op.ApprovedPolicy.Kind, Repositories: op.ApprovedPolicy.Repositories, DeployRequestID: op.DeployRequestID, InstallationPublicKey: op.InstallationPublicKey,
 		InstallationFingerprint: op.InstallationFingerprint, ExpiresAt: op.ExpiresAt,
 	}
 }

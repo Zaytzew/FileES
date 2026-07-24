@@ -75,9 +75,15 @@ type Service struct {
 	RepoMtx  runtime.RepoMutex
 	Logger   talk.Logger
 	RepoURL  string
-	UUID     string       // stable client UUID (persisted in .filees/state/client.uuid)
-	ErrSink  *errmap.Sink // optional; structured error log (JSON Lines)
-	Activity interface {
+	// RealmID/OwnerRealmID drive the autolock priority check
+	// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md): when they match, this
+	// client's own realm is treated as this repo's owner and gets silent
+	// lock priority instead of the manual edit-passport borrow flow.
+	RealmID      string
+	OwnerRealmID string
+	UUID         string       // stable client UUID (persisted in .filees/state/client.uuid)
+	ErrSink      *errmap.Sink // optional; structured error log (JSON Lines)
+	Activity     interface {
 		Record(activity.Entry) error
 		Forget(repoID, path string) error
 	}
@@ -93,6 +99,11 @@ type Service struct {
 	// BeginPublish verifies edit-passport fencing and freezes lock mutation until
 	// the returned release function is called after the publication attempt.
 	BeginPublish func(context.Context, []string) (func(), error)
+	// AutoUnlockOwned grants local RW on this repo's owned, currently
+	// read-only paths right after a successful svn up, without acquiring
+	// the real SVN lock yet (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §3).
+	// Only called when RealmID == OwnerRealmID. May be nil.
+	AutoUnlockOwned func(ctx context.Context, wc, realmID string) error
 	// OnPathActivity resets close-grace after any further watcher activity.
 	OnPathActivity func(string)
 	// OnPathsPublished starts close-grace after a confirmed central commit.
@@ -442,6 +453,12 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	}
 
 	s.ReconcileUpdateConflicts(ctx, wc, out)
+
+	if s.AutoUnlockOwned != nil && s.RealmID != "" && s.RealmID == s.OwnerRealmID {
+		if err := s.AutoUnlockOwned(ctx, wc, s.RealmID); err != nil {
+			s.Logger.Warnf("poll: autolock unlock-owned failed: %v", err)
+		}
+	}
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
 	_ = atomicWriteString(headRevPath, fmt.Sprintf("%d\n", headRev))

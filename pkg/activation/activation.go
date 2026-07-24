@@ -281,6 +281,41 @@ func (m *Manager) Publish(ctx context.Context, grant onboarding.ActivationGrant)
 	return revision, err
 }
 
+// RevokeRealm revokes every still-revocable client installation belonging
+// to realmID in one administrative action
+// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §5, "Poziom 3" whole-realm
+// revoke) - needed on its own regardless of the autolock path-ownership
+// richness, since a person leaving the team still needs every one of their
+// installations cut off together, not one client_id at a time. Each
+// matching client is revoked through the existing per-client Revoke, so its
+// individual idempotency/validation rules apply unchanged; a client already
+// revoked for this same reason is treated as already-done, not an error.
+// Candidate client IDs are gathered with a best-effort, unlocked read (each
+// actual revoke below is its own properly-locked transaction) - a client
+// activating for this realm in the narrow window between listing and
+// revoking simply isn't swept this pass, which is acceptable for an
+// administrative action, not a live security boundary.
+func (m *Manager) RevokeRealm(ctx context.Context, realmID, reason string) ([]string, error) {
+	if _, err := uuid.Parse(realmID); err != nil {
+		return nil, errors.New("revoke realm_id must be a UUID")
+	}
+	records, err := m.recordsLocked()
+	if err != nil {
+		return nil, err
+	}
+	var revoked []string
+	for _, record := range records {
+		if record.RealmID != realmID || record.State == "revoked" {
+			continue
+		}
+		if _, err := m.Revoke(ctx, record.ClientID, reason); err != nil {
+			return revoked, fmt.Errorf("revoke client %s: %w", record.ClientID, err)
+		}
+		revoked = append(revoked, record.ClientID)
+	}
+	return revoked, nil
+}
+
 func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, error) {
 	if _, err := uuid.Parse(clientID); err != nil {
 		return 0, errors.New("revoke client_id must be a UUID")

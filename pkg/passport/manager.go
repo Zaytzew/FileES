@@ -32,9 +32,13 @@ var (
 )
 
 type Metadata struct {
-	PassportID    string    `json:"passport_id"`
-	InstanceUID   string    `json:"instance_uid"`
-	PreviousToken string    `json:"previous_token,omitempty"`
+	PassportID    string `json:"passport_id"`
+	InstanceUID   string `json:"instance_uid"`
+	PreviousToken string `json:"previous_token,omitempty"`
+	// RealmID identifies the owning realm for autolock priority
+	// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md). Empty for passports
+	// acquired without realm awareness (manual borrow by a non-owner).
+	RealmID       string    `json:"realm_id,omitempty"`
 	IssuedAt      time.Time `json:"issued_at"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	HardExpiresAt time.Time `json:"hard_expires_at"`
@@ -44,6 +48,7 @@ type Passport struct {
 	Path            string    `json:"path"`
 	PassportID      string    `json:"passport_id"`
 	InstanceUID     string    `json:"instance_uid"`
+	RealmID         string    `json:"realm_id,omitempty"`
 	FencingToken    string    `json:"fencing_token"`
 	IssuedAt        time.Time `json:"issued_at"`
 	LastHeartbeatAt time.Time `json:"last_heartbeat_at"`
@@ -119,7 +124,16 @@ func Open(storePath, instanceUID string, backend Backend, cfg Config) (*Manager,
 	return m, nil
 }
 
-func (m *Manager) Acquire(ctx context.Context, paths []string) ([]Passport, string, error) {
+// Acquire acquires an edit passport for each path. realmID, when non-empty,
+// is the caller's own realm: it is stamped onto newly-issued passports for
+// autolock priority, and - critically - it is the ONLY thing that allows a
+// silent takeover of an unexpired lock. A lock is force-taken over without
+// waiting for expiry only when its own metadata already carries the SAME
+// non-empty realm (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §4: migration
+// between one realm's own instances, never a steal from another realm).
+// Passing an empty realmID preserves the original behaviour exactly: no
+// silent takeover, only FileES's own already-expired locks are stolen.
+func (m *Manager) Acquire(ctx context.Context, paths []string, realmID string) ([]Passport, string, error) {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
 	m.mu.Lock()
@@ -148,14 +162,15 @@ func (m *Manager) Acquire(ctx context.Context, paths []string) ([]Passport, stri
 				acquired = append(acquired, local)
 				continue
 			}
-			if now.Before(meta.ExpiresAt) {
+			sameRealm := realmID != "" && meta.RealmID == realmID
+			if !sameRealm && now.Before(meta.ExpiresAt) {
 				m.rollback(ctx, newlyAcquired)
 				return nil, strings.Join(outputs, "\n"), fmt.Errorf("%w: %s until %s", ErrHeldByOther, path, meta.ExpiresAt.Format(time.RFC3339))
 			}
 			force = true
 		}
 		hard := now.Add(m.cfg.MaxSession)
-		meta := Metadata{PassportID: uuid.NewString(), InstanceUID: m.instanceUID, IssuedAt: now, ExpiresAt: minTime(now.Add(m.cfg.TTL), hard), HardExpiresAt: hard}
+		meta := Metadata{PassportID: uuid.NewString(), InstanceUID: m.instanceUID, RealmID: realmID, IssuedAt: now, ExpiresAt: minTime(now.Add(m.cfg.TTL), hard), HardExpiresAt: hard}
 		if info != nil {
 			meta.PreviousToken = info.Token
 		}
@@ -169,7 +184,7 @@ func (m *Manager) Acquire(ctx context.Context, paths []string) ([]Passport, stri
 			m.rollback(ctx, newlyAcquired)
 			return nil, strings.Join(outputs, "\n"), errors.New("passport: backend returned no fencing token")
 		}
-		p := Passport{Path: path, PassportID: meta.PassportID, InstanceUID: meta.InstanceUID, FencingToken: lock.Token, IssuedAt: now, LastHeartbeatAt: now, ExpiresAt: meta.ExpiresAt, HardExpiresAt: hard, State: StateActive}
+		p := Passport{Path: path, PassportID: meta.PassportID, InstanceUID: meta.InstanceUID, RealmID: realmID, FencingToken: lock.Token, IssuedAt: now, LastHeartbeatAt: now, ExpiresAt: meta.ExpiresAt, HardExpiresAt: hard, State: StateActive}
 		m.passports[path] = p
 		acquired = append(acquired, p)
 		newlyAcquired = append(newlyAcquired, p)
@@ -275,7 +290,7 @@ func (m *Manager) Heartbeat(ctx context.Context) error {
 			continue
 		}
 		expires := minTime(now.Add(m.cfg.TTL), p.HardExpiresAt)
-		meta := Metadata{PassportID: p.PassportID, InstanceUID: p.InstanceUID, IssuedAt: p.IssuedAt, ExpiresAt: expires, HardExpiresAt: p.HardExpiresAt}
+		meta := Metadata{PassportID: p.PassportID, InstanceUID: p.InstanceUID, RealmID: p.RealmID, IssuedAt: p.IssuedAt, ExpiresAt: expires, HardExpiresAt: p.HardExpiresAt}
 		meta.PreviousToken = p.FencingToken
 		lock, _, err := m.backend.Lock(ctx, path, FormatComment(meta), true)
 		if err != nil {
@@ -393,6 +408,60 @@ func (m *Manager) authorize(ctx context.Context, paths []string) error {
 		}
 	}
 	return nil
+}
+
+// AutoUnlockOwned walks wc for regular, currently read-only files (SVN's own
+// svn:needs-lock behaviour after checkout/update) and makes each one locally
+// writable, without acquiring the real SVN lock yet, when either nobody
+// holds it or the current holder's metadata already carries the SAME
+// realmID. A path held by anyone else - a foreign realm, or an
+// unrecognized/non-FileES lock - is left untouched: the existing manual
+// "Wypożycz do edycji" flow remains the only way to get RW on it.
+//
+// This is the local-RW half of AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §3:
+// the real Acquire is deferred to the actual publish attempt (BeginPublish),
+// so between an `svn up` and the next commit a realm's own file is writable
+// without yet being covered by a real server-side lock - a deliberate,
+// accepted optimism, never a claim of exclusivity.
+func (m *Manager) AutoUnlockOwned(ctx context.Context, wc, realmID string) error {
+	if strings.TrimSpace(realmID) == "" {
+		return nil
+	}
+	var first error
+	walkErr := filepath.WalkDir(wc, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".svn" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil || info.Mode().Perm()&0o200 != 0 {
+			return nil // already writable, or unreadable - nothing to do
+		}
+		lock, err := m.backend.Inspect(ctx, path)
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+			return nil
+		}
+		if lock != nil {
+			meta, ok := ParseComment(lock.Comment)
+			if !ok || meta.RealmID != realmID {
+				return nil // foreign or unrecognized hold - never touched
+			}
+		}
+		_ = os.Chmod(path, info.Mode().Perm()|0o200)
+		return nil
+	})
+	if walkErr != nil && first == nil {
+		first = walkErr
+	}
+	return first
 }
 
 // ForgetRemoved drops local state after a central commit confirmed that the

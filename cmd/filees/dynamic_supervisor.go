@@ -185,6 +185,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if !exists {
 				continue
 			}
+			applyRealmOwnership(repo.ServerID, view, runtimes)
 			desired := attachedProjection(repo.ServerID, view, runtimes)
 			if err := supervisor.ApplyLocalAttachment(ctx, repo.ServerID, view.Generation, desired, func(item reposupervisor.Desired) {
 				if runtime, ok := runtimes[item.Key]; ok {

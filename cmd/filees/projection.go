@@ -52,7 +52,28 @@ func attachedProjection(serverID string, view clientview.View, attachments map[r
 	return desired
 }
 
+// applyRealmOwnership stamps the client's own RealmID and each repo's
+// OwnerRealmID onto the matching runtime's config.Repo, for the autolock
+// priority check in pkg/commit (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md).
+// config.Repo is stored by value in the runtimes map, so an already-running
+// repo instance (built from an earlier copy) only picks up a changed
+// OwnerRealmID on its next restart - an accepted V1 simplification, since
+// ownership transfer is a rare administrative action, not a live event.
+func applyRealmOwnership(serverID string, view clientview.View, runtimes map[reposupervisor.Key]repoRuntime) {
+	for _, repo := range view.Repositories {
+		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
+		entry, ok := runtimes[key]
+		if !ok {
+			continue
+		}
+		entry.config.RealmID = view.RealmID
+		entry.config.OwnerRealmID = repo.OwnerRealmID
+		runtimes[key] = entry
+	}
+}
+
 func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime) {
+	applyRealmOwnership(serverID, view, attachments)
 	if ipc == nil {
 		return
 	}

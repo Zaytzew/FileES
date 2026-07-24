@@ -35,6 +35,8 @@ type Repo struct {
 	ServerDisplayName string        `json:"-"`
 	ClientRole        string        `json:"-"`
 	Access            string        `json:"access"`
+	RealmID           string        `json:"-"` // z clientview.View.RealmID (własna tożsamość klienta)
+	OwnerRealmID      string        `json:"-"` // z clientview.View.Repository.OwnerRealmID (właściciel tego repo)
 	WatchInterval     time.Duration `json:"-"` // z pola JSON "watch_interval"
 	CommitInterval    time.Duration `json:"-"` // z pola JSON "commit_interval"
 

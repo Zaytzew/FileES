@@ -64,3 +64,59 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 		t.Fatalf("authz=%s", raw)
 	}
 }
+
+// TestTransferOwnerMovesRepositoryAndRegeneratesAuthz is the admin
+// repo-ownership-transfer regression guard
+// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §6): the old owner's client
+// projection loses the repository entirely, the new owner's client gains rw
+// on it, and authz's owner group flips from old to new.
+func TestTransferOwnerMovesRepositoryAndRegeneratesAuthz(t *testing.T) {
+	root := t.TempDir()
+	oldRealm, newRealm := uuid.NewString(), uuid.NewString()
+	oldClient, newClient := uuid.NewString(), uuid.NewString()
+	writeView := func(client, realm string) {
+		v := clientview.View{Schema: clientview.Schema, ClientID: client, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
+		if _, e := clientview.StoreIfNewer(filepath.Join(root, "clients", client, "view.json"), v); e != nil {
+			t.Fatal(e)
+		}
+	}
+	writeView(oldClient, oldRealm)
+	writeView(newClient, newRealm)
+	run := &publishRunner{}
+	authz := filepath.Join(t.TempDir(), "data.authz")
+	p := ServicePublisher{ServiceWC: root, DataAuthzFile: authz, Runner: run}
+	repo := uuid.NewString()
+	url := "svn+ssh://_filees-client@example/repos/" + repo
+	if e := p.Publish(context.Background(), repo, oldRealm, "Docs", url); e != nil {
+		t.Fatal(e)
+	}
+	if e := p.Activate(context.Background(), repo, oldRealm); e != nil {
+		t.Fatal(e)
+	}
+
+	if err := p.TransferOwner(context.Background(), repo, newRealm); err != nil {
+		t.Fatal(err)
+	}
+
+	old, _ := clientview.Load(filepath.Join(root, "clients", oldClient, "view.json"))
+	if len(old.Repositories) != 0 {
+		t.Fatalf("old owner still projects the repository: %+v", old.Repositories)
+	}
+	fresh, _ := clientview.Load(filepath.Join(root, "clients", newClient, "view.json"))
+	if len(fresh.Repositories) != 1 || fresh.Repositories[0].RepoID != repo || fresh.Repositories[0].Access != "rw" || fresh.Repositories[0].OwnerRealmID != newRealm {
+		t.Fatalf("new owner projection = %+v", fresh.Repositories)
+	}
+	raw, _ := os.ReadFile(authz)
+	if !strings.Contains(string(raw), newClient) || strings.Contains(string(raw), oldClient) {
+		t.Fatalf("authz did not flip owner group: %s", raw)
+	}
+
+	// Idempotent no-op: transferring to the already-current owner changes nothing.
+	callsBefore := run.calls
+	if err := p.TransferOwner(context.Background(), repo, newRealm); err != nil {
+		t.Fatal(err)
+	}
+	if run.calls != callsBefore {
+		t.Fatalf("no-op transfer still published: calls=%d, want %d", run.calls, callsBefore)
+	}
+}

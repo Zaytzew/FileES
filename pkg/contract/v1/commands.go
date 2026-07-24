@@ -17,6 +17,11 @@ const (
 	CmdActivationBegin  = "activation.begin"
 	CmdActivationFinish = "activation.finish"
 
+	// Mobile pairing (Phase 2c): daemon mints a MOBILE_PAIRING token through
+	// its own already-authenticated control-plane channel; the tray hands
+	// the result to a separate helper process that renders it as a QR code.
+	CmdMobilePairingBegin = "mobile_pairing.begin"
+
 	// Repos
 	CmdRepoList            = "repo.list"             // list all configured repos
 	CmdRepoStatus          = "repo.status"           // snapshot of one repo
@@ -60,6 +65,7 @@ const (
 	CapErrorList           = "error.list"
 	CapActivationBegin     = "activation.begin"
 	CapActivationFinish    = "activation.finish"
+	CapMobilePairingBegin  = "mobile_pairing.begin"
 	CapRepoCreateRequest   = "repo.create_request"
 	CapRepoAttachIntent    = "repo.attach_intent"
 	CapRepoAttachApprove   = "repo.attach_approve"
@@ -89,6 +95,7 @@ var AllCapabilities = []string{
 	CapErrorList,
 	CapActivationBegin,
 	CapActivationFinish,
+	CapMobilePairingBegin,
 	CapRepoCreateRequest,
 	CapRepoAttachIntent,
 	CapRepoAttachApprove,
@@ -191,6 +198,27 @@ func (secret *Secret) UnmarshalJSON(data []byte) error {
 type ActivationCommandResult struct {
 	ServerID string `json:"server_id"`
 	State    string `json:"state"`
+}
+
+// MobilePairingBeginPayload is the payload for CmdMobilePairingBegin.
+// ServerID selects which activated server profile to pair against - a
+// daemon may hold several.
+type MobilePairingBeginPayload struct {
+	ServerID string `json:"server_id"`
+}
+
+// MobilePairingBeginResult is the result for CmdMobilePairingBegin. Field
+// names are fixed by the already-shipped Android client (MainActivity.kt /
+// androidbind.PairJSON expect exactly address/host_public_key/token) - do
+// not rename. Token/ExpiresAt come from the server's MOBILE_PAIRING ticket
+// exchange; Address/HostPublicKey are filled in locally by the daemon from
+// its own already-activated clientprofile.Profile, since the server-side
+// result carries neither.
+type MobilePairingBeginResult struct {
+	Token         string `json:"token"`
+	ExpiresAt     string `json:"expires_at"`
+	Address       string `json:"address"`
+	HostPublicKey string `json:"host_public_key"`
 }
 
 type RepoCreateRequestPayload struct {

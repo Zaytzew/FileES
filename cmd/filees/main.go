@@ -138,6 +138,7 @@ func runDaemon() {
 		existingRoots = append(existingRoots, repo.LocalPath)
 	}
 	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, existingRoots: existingRoots, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue})
+	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
 		provisioner.AddProfile(profile)
 		select {

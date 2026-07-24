@@ -29,6 +29,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleActivationBegin(req)
 	case contract.CmdActivationFinish:
 		return s.handleActivationFinish(req)
+	case contract.CmdMobilePairingBegin:
+		return s.handleMobilePairingBegin(req)
 	case contract.CmdRepoList:
 		return s.handleRepoList(req)
 	case contract.CmdRepoStatus:
@@ -144,6 +146,30 @@ func (s *Server) handleRepoAttachApprove(req contract.Request) contract.Response
 	result, err := service.ApproveAttach(payload.OperationID, payload.ServerID, payload.RepoID, summary.URL, summary.Access)
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "REPO-2005", "ERROR", "REQUIRE_ACTION", "repo.attachment_approval_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleMobilePairingBegin(req contract.Request) contract.Response {
+	service := s.mobilePairingService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "MOBILE-0001", "ERROR", "RETRY", "mobile_pairing.unavailable", nil)
+	}
+	var payload contract.MobilePairingBeginPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	_, ok := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !ok {
+		return contract.ErrResponse(req.RequestID, "MOBILE-1001", "ERROR", "NONE", "mobile_pairing.server_not_activated", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, err := service.Begin(ctx, payload.ServerID)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "MOBILE-1002", "ERROR", "RETRY", "mobile_pairing.begin_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

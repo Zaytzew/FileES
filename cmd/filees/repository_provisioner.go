@@ -64,6 +64,13 @@ func (p *daemonProvisioner) ClientID(serverID string) string {
 	return p.profiles[serverID].ClientID
 }
 
+func (p *daemonProvisioner) Profile(serverID string) (clientprofile.Profile, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	profile, ok := p.profiles[serverID]
+	return profile, ok
+}
+
 func (p *daemonProvisioner) Enqueue(operationID string) {
 	select {
 	case p.queue <- operationID:

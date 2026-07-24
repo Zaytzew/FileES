@@ -365,43 +365,74 @@ func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []s
 	return c.run(ctx, rootDirectory, args)
 }
 
+// LockInfo reports the CURRENT repository lock on path, regardless of which
+// working copy is asking. `svn info` (no -u) only ever reflects a lock this
+// same working copy already knows about from its own last lock/update
+// operation - querying it from a WC that never touched the lock itself
+// returns no lock at all even when one genuinely exists server-side
+// (confirmed empirically: a lock taken from one WC is invisible to `svn
+// info --xml` run from a sibling checkout of the same repository, even
+// after `svn update`). `svn status --show-updates` contacts the repository
+// and reports the live lock under <repos-status>, independent of which WC
+// asks - required for AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md's
+// cross-machine guarantees (silent migration between one realm's own
+// instances, never stealing a different realm's lock) to work at all
+// between two different machines, not just two calls from the same one.
 func (c *execClient) LockInfo(ctx context.Context, rootDirectory, path string) (*LockInfo, error) {
 	targets := c.relativize(rootDirectory, []string{path})
 	if len(targets) != 1 {
 		return nil, errors.New("svn info lock requires exactly one path")
 	}
-	out, err := c.run(ctx, rootDirectory, []string{"info", "--xml", targets[0]})
+	out, err := c.run(ctx, rootDirectory, []string{"status", "--show-updates", "--xml", targets[0]})
 	if err != nil {
 		return nil, err
 	}
 	return parseLockInfoXML(out)
 }
 
+type lockXML struct {
+	Token   string `xml:"token"`
+	Owner   string `xml:"owner"`
+	Comment string `xml:"comment"`
+	Created string `xml:"created"`
+}
+
 func parseLockInfoXML(output string) (*LockInfo, error) {
-	var infoXML struct {
-		Entry struct {
-			Lock *struct {
-				Token   string `xml:"token"`
-				Owner   string `xml:"owner"`
-				Comment string `xml:"comment"`
-				Created string `xml:"created"`
-			} `xml:"lock"`
-		} `xml:"entry"`
+	var statusXML struct {
+		Target struct {
+			Entry struct {
+				ReposStatus *struct {
+					Lock *lockXML `xml:"lock"`
+				} `xml:"repos-status"`
+				WCStatus struct {
+					Lock *lockXML `xml:"lock"`
+				} `xml:"wc-status"`
+			} `xml:"entry"`
+		} `xml:"target"`
 	}
-	if err := xml.Unmarshal([]byte(output), &infoXML); err != nil {
-		return nil, fmt.Errorf("parse info xml: %w", err)
+	if err := xml.Unmarshal([]byte(output), &statusXML); err != nil {
+		return nil, fmt.Errorf("parse status xml: %w", err)
 	}
-	if infoXML.Entry.Lock == nil {
+	entry := statusXML.Target.Entry
+	// The live, authoritative repository lock always wins when present; the
+	// local wc-status lock is only a fallback for output shapes that omit
+	// repos-status entirely (observed for a path this same WC already holds
+	// the lock on, with nothing else changed server-side to report).
+	lock := entry.WCStatus.Lock
+	if entry.ReposStatus != nil && entry.ReposStatus.Lock != nil {
+		lock = entry.ReposStatus.Lock
+	}
+	if lock == nil {
 		return nil, nil
 	}
-	created, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(infoXML.Entry.Lock.Created))
+	created, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(lock.Created))
 	if err != nil {
 		return nil, fmt.Errorf("parse lock created time: %w", err)
 	}
 	return &LockInfo{
-		Token:   strings.TrimSpace(infoXML.Entry.Lock.Token),
-		Owner:   strings.TrimSpace(infoXML.Entry.Lock.Owner),
-		Comment: infoXML.Entry.Lock.Comment,
+		Token:   strings.TrimSpace(lock.Token),
+		Owner:   strings.TrimSpace(lock.Owner),
+		Comment: lock.Comment,
 		Created: created,
 	}, nil
 }

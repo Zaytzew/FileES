@@ -112,8 +112,14 @@ func TestBuildSSHCommandRejectsInvalidPort(t *testing.T) {
 	}
 }
 
+// TestParseLockInfoXML uses `svn status --show-updates --xml`'s real shape
+// (confirmed empirically), not `svn info --xml`'s: info only ever reflects
+// a lock the querying working copy already knows about itself, which makes
+// it blind to a lock taken from a sibling checkout of the same repository -
+// exactly the cross-machine case AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md
+// depends on (see the doc comment on LockInfo).
 func TestParseLockInfoXML(t *testing.T) {
-	const output = `<info><entry><lock><token>opaquelocktoken:abc</token><owner>alice</owner><comment>passport</comment><created>2026-07-15T07:39:29.023983Z</created></lock></entry></info>`
+	const output = `<status><target path="/wc/doc.txt"><entry path="/wc/doc.txt"><repos-status item="none" props="none"><lock><token>opaquelocktoken:abc</token><owner>alice</owner><comment>passport</comment><created>2026-07-15T07:39:29.023983Z</created></lock></repos-status></entry></target></status>`
 	got, err := parseLockInfoXML(output)
 	if err != nil {
 		t.Fatal(err)
@@ -127,8 +133,25 @@ func TestParseLockInfoXML(t *testing.T) {
 	}
 }
 
+// TestParseLockInfoXMLFallsBackToWCStatusLock covers the shape observed when
+// the querying WC itself already holds the lock and nothing else changed
+// server-side to report under repos-status.
+func TestParseLockInfoXMLFallsBackToWCStatusLock(t *testing.T) {
+	const output = `<status><target path="/wc/doc.txt"><entry path="/wc/doc.txt"><wc-status item="normal" props="normal" revision="1"><lock><token>opaquelocktoken:def</token><owner>root</owner><comment>self</comment><created>2026-07-15T07:39:29.023983Z</created></lock></wc-status></entry></target></status>`
+	got, err := parseLockInfoXML(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Token != "opaquelocktoken:def" || got.Owner != "root" {
+		t.Fatalf("lock info = %#v", got)
+	}
+}
+
+// TestParseLockInfoXMLWithoutLock covers the shape observed for an
+// unmodified, unlocked path: svn status omits the <entry> element entirely
+// since there is nothing to report.
 func TestParseLockInfoXMLWithoutLock(t *testing.T) {
-	got, err := parseLockInfoXML(`<info><entry></entry></info>`)
+	got, err := parseLockInfoXML(`<status><target path="/wc/doc.txt"><against revision="1"/></target></status>`)
 	if err != nil || got != nil {
 		t.Fatalf("lock info = %#v, error = %v", got, err)
 	}

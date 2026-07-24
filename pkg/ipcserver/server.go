@@ -30,6 +30,7 @@ type Server struct {
 	activations map[string]contract.ActivationStatus
 	activation  ActivationService
 	lifecycle   RepositoryLifecycleService
+	mobilePair  MobilePairingService
 	updates     UpdateService
 	activity    ActivitySource
 
@@ -54,6 +55,13 @@ type RepositoryLifecycleService interface {
 	ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error)
 	BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error)
 	Status(operationID string) (contract.RepoLifecycleResult, error)
+}
+
+// MobilePairingService mints a mobile pairing token for the given
+// activated server profile, through the daemon's own control-plane
+// channel (mirrors RepositoryLifecycleService's role for repo-create).
+type MobilePairingService interface {
+	Begin(ctx context.Context, serverID string) (contract.MobilePairingBeginResult, error)
 }
 
 type UpdateService interface {
@@ -111,6 +119,18 @@ func (s *Server) repositoryLifecycleService() RepositoryLifecycleService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lifecycle
+}
+
+func (s *Server) SetMobilePairingService(service MobilePairingService) {
+	s.mu.Lock()
+	s.mobilePair = service
+	s.mu.Unlock()
+}
+
+func (s *Server) mobilePairingService() MobilePairingService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mobilePair
 }
 
 func (s *Server) SetActivationService(service ActivationService) {

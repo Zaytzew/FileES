@@ -202,6 +202,15 @@ func (c *Client) RepoCreateRequest(ctx context.Context, payload contract.RepoCre
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) MobilePairingBegin(ctx context.Context, serverID string) (*contract.MobilePairingBeginResult, error) {
+	resp, err := c.do(ctx, contract.CmdMobilePairingBegin, "", contract.MobilePairingBeginPayload{ServerID: serverID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.MobilePairingBeginResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoLifecycleStatus(ctx context.Context, operationID string) (*contract.RepoLifecycleResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoLifecycleStatus, "", contract.RepoLifecycleStatusPayload{OperationID: operationID})
 	if err != nil {

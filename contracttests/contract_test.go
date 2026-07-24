@@ -95,6 +95,31 @@ func TestActivationPayloadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMobilePairingBeginRoundTrip(t *testing.T) {
+	wantPayload := contract.MobilePairingBeginPayload{ServerID: "biuro"}
+	raw, err := json.Marshal(wantPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotPayload contract.MobilePairingBeginPayload
+	if err := contract.DecodePayload(raw, &gotPayload); err != nil {
+		t.Fatal(err)
+	}
+	if gotPayload != wantPayload {
+		t.Fatalf("payload=%+v", gotPayload)
+	}
+
+	wantResult := contract.MobilePairingBeginResult{Token: "OTP-TOKEN", ExpiresAt: "2026-07-24T12:00:00Z", Address: "filees.example.net:22", HostPublicKey: "ssh-ed25519 AAAA..."}
+	resp := contract.OKResponse("request-1", wantResult)
+	var gotResult contract.MobilePairingBeginResult
+	if err := contract.DecodeResult(resp.Result, &gotResult); err != nil {
+		t.Fatal(err)
+	}
+	if gotResult != wantResult {
+		t.Fatalf("result=%+v", gotResult)
+	}
+}
+
 func TestResponseBuilders(t *testing.T) {
 	ok := contract.OKResponse("request-1", contract.RepoListResult{
 		Repos: []contract.RepoSummary{{ID: "projectA"}},
@@ -165,6 +190,7 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapErrorList:           true,
 		contract.CapActivationBegin:     true,
 		contract.CapActivationFinish:    true,
+		contract.CapMobilePairingBegin:  true,
 		contract.CapRepoCreateRequest:   true,
 		contract.CapRepoAttachIntent:    true,
 		contract.CapRepoAttachApprove:   true,

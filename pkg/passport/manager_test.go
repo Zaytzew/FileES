@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func TestReleasePersistsEarlierSuccessBeforeLaterFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := m.Acquire(context.Background(), []string{"/wc/a", "/wc/b"}); err != nil {
+	if _, _, err := m.Acquire(context.Background(), []string{"/wc/a", "/wc/b"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	b.unlockErrors["/wc/b"] = errors.New("unlock b failed")
@@ -103,7 +104,7 @@ func TestAcquirePersistsAuthoritativeFencingToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := m.Acquire(context.Background(), []string{"/wc/a.bin"})
+	got, _, err := m.Acquire(context.Background(), []string{"/wc/a.bin"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +124,7 @@ func TestHeartbeatRotatesTokenOnlyAfterOwnershipCheck(t *testing.T) {
 	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
 	b := newFakeBackend()
 	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute})
-	p, _, _ := m.Acquire(context.Background(), []string{"/wc/a.bin"})
+	p, _, _ := m.Acquire(context.Background(), []string{"/wc/a.bin"}, "")
 	old := p[0].FencingToken
 	now = now.Add(11 * time.Minute)
 	if err := m.Heartbeat(context.Background()); err != nil {
@@ -148,7 +149,7 @@ func TestBeginPublishFreezesHeartbeatTokenRotation(t *testing.T) {
 	b := newFakeBackend()
 	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute})
 	path := "/wc/a.bin"
-	_, _, _ = m.Acquire(context.Background(), []string{path})
+	_, _, _ = m.Acquire(context.Background(), []string{path}, "")
 	release, err := m.BeginPublish(context.Background(), []string{path})
 	if err != nil {
 		t.Fatal(err)
@@ -178,9 +179,9 @@ func TestAcquireDoesNotReuseExpiredLocalPassport(t *testing.T) {
 	b := newFakeBackend()
 	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute})
 	path := "/wc/a.bin"
-	first, _, _ := m.Acquire(context.Background(), []string{path})
+	first, _, _ := m.Acquire(context.Background(), []string{path}, "")
 	now = now.Add(16 * time.Minute)
-	second, _, err := m.Acquire(context.Background(), []string{path})
+	second, _, err := m.Acquire(context.Background(), []string{path}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,12 +196,12 @@ func TestAcquireRollbackDoesNotReleasePreexistingPassport(t *testing.T) {
 	m := openTestManager(t, b, &now, Config{})
 	owned := "/wc/already-owned.bin"
 	foreign := "/wc/foreign.bin"
-	first, _, err := m.Acquire(context.Background(), []string{owned})
+	first, _, err := m.Acquire(context.Background(), []string{owned}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	b.locks[foreign] = &Lock{Token: "foreign", Comment: "ordinary foreign lock"}
-	if _, _, err := m.Acquire(context.Background(), []string{owned, foreign}); !errors.Is(err, ErrHeldByOther) {
+	if _, _, err := m.Acquire(context.Background(), []string{owned, foreign}, ""); !errors.Is(err, ErrHeldByOther) {
 		t.Fatalf("error=%v", err)
 	}
 	snap := m.Snapshot()
@@ -229,13 +230,13 @@ func TestExpiredForeignPassportMayBeTakenButLiveOneMayNot(t *testing.T) {
 	path := "/wc/a.bin"
 	b.locks[path] = &Lock{Token: "foreign", Comment: FormatComment(Metadata{PassportID: "foreign", InstanceUID: "instance-b", IssuedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Minute), HardExpiresAt: now.Add(time.Hour)})}
 	m := openTestManager(t, b, &now, Config{})
-	if _, _, err := m.Acquire(context.Background(), []string{path}); !errors.Is(err, ErrHeldByOther) {
+	if _, _, err := m.Acquire(context.Background(), []string{path}, ""); !errors.Is(err, ErrHeldByOther) {
 		t.Fatalf("live lock error=%v", err)
 	}
 	meta, _ := ParseComment(b.locks[path].Comment)
 	meta.ExpiresAt = now.Add(-time.Second)
 	b.locks[path].Comment = FormatComment(meta)
-	if _, _, err := m.Acquire(context.Background(), []string{path}); err != nil {
+	if _, _, err := m.Acquire(context.Background(), []string{path}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if b.forceCalls != 1 {
@@ -248,7 +249,7 @@ func TestCloseGraceResetsOnActivityAndReleasesAfterPublishedQuiet(t *testing.T) 
 	b := newFakeBackend()
 	m := openTestManager(t, b, &now, Config{CloseGrace: 5 * time.Minute, HeartbeatInterval: time.Minute})
 	path := "/wc/a.bin"
-	_, _, _ = m.Acquire(context.Background(), []string{path})
+	_, _, _ = m.Acquire(context.Background(), []string{path}, "")
 	m.MarkPublished([]string{path})
 	now = now.Add(4 * time.Minute)
 	m.Touch(path)
@@ -273,7 +274,7 @@ func TestReleaseAllUnlocksOnlyOwnedTokens(t *testing.T) {
 	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
 	b := newFakeBackend()
 	m := openTestManager(t, b, &now, Config{})
-	_, _, _ = m.Acquire(context.Background(), []string{"/wc/a", "/wc/b"})
+	_, _, _ = m.Acquire(context.Background(), []string{"/wc/a", "/wc/b"}, "")
 	b.locks["/wc/b"] = &Lock{Token: "stolen", Comment: "foreign"}
 	if err := m.ReleaseAll(context.Background()); err != nil {
 		t.Fatal(err)
@@ -302,7 +303,7 @@ func TestRestartAfterSIGKILLMidReleaseRecoversThroughHeartbeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, _, err := m.Acquire(ctx, []string{"/wc/a", "/wc/b"}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{"/wc/a", "/wc/b"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate SIGKILL: SVN unlocked /wc/a on the server but the process died
@@ -332,7 +333,7 @@ func TestRestartAfterSIGKILLMidReleaseRecoversThroughHeartbeat(t *testing.T) {
 	}
 
 	// Re-acquire must succeed: server no longer holds the lock for /wc/a.
-	if _, _, err := m2.Acquire(ctx, []string{"/wc/a"}); err != nil {
+	if _, _, err := m2.Acquire(ctx, []string{"/wc/a"}, ""); err != nil {
 		t.Fatalf("re-acquire after StateLost: %v", err)
 	}
 	snap := m2.Snapshot()
@@ -359,7 +360,7 @@ func TestPartialReleaseFailureSavesOnlyRemainingPathsOnDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, _, err := m.Acquire(ctx, []string{"/wc/a", "/wc/b", "/wc/c"}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{"/wc/a", "/wc/b", "/wc/c"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	// cleanPaths sorts alphabetically; /wc/b is second — Release(A) succeeds,
@@ -399,7 +400,7 @@ func TestTokenHardExpiryDuringBeginPublishBlockedHeartbeat(t *testing.T) {
 	b := newFakeBackend()
 	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute, MaxSession: 30 * time.Minute})
 	ctx := context.Background()
-	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	initialToken := m.Snapshot()[0].FencingToken
@@ -426,7 +427,7 @@ func TestTokenHardExpiryDuringBeginPublishBlockedHeartbeat(t *testing.T) {
 	}
 
 	// Re-acquire must succeed now that the server lock is free.
-	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}, ""); err != nil {
 		t.Fatalf("re-acquire after hard expiry: %v", err)
 	}
 	snap = m.Snapshot()
@@ -446,7 +447,7 @@ func TestNetworkPartitionLongerThanTTLAllowsRenewalAfterReconnect(t *testing.T) 
 	b := newFakeBackend()
 	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute, MaxSession: 2 * time.Hour})
 	ctx := context.Background()
-	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	token0 := m.Snapshot()[0].FencingToken
@@ -492,7 +493,7 @@ func TestNetworkPartitionExceedingHardExpiryRequiresFreshAcquire(t *testing.T) {
 	b := newFakeBackend()
 	m := openTestManager(t, b, &now, Config{TTL: 15 * time.Minute, HeartbeatInterval: 5 * time.Minute, MaxSession: 30 * time.Minute})
 	ctx := context.Background()
-	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -518,7 +519,7 @@ func TestNetworkPartitionExceedingHardExpiryRequiresFreshAcquire(t *testing.T) {
 
 	// Fresh Acquire must succeed without force (server lock was already released
 	// by Heartbeat's hard-expiry path).
-	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{"/wc/doc.txt"}, ""); err != nil {
 		t.Fatalf("re-acquire after hard expiry: %v", err)
 	}
 	if b.forceCalls != 0 {
@@ -527,5 +528,136 @@ func TestNetworkPartitionExceedingHardExpiryRequiresFreshAcquire(t *testing.T) {
 	snap = m.Snapshot()
 	if len(snap) != 1 || snap[0].State != StateActive {
 		t.Fatalf("state after re-acquire = %#v, want active", snap)
+	}
+}
+
+// TestAcquireMigratesSilentlyBetweenSameRealmInstances is the A-04 autolock
+// regression guard (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §4): a second
+// instance of the SAME realm takes over an unexpired lock silently (force
+// takeover, no ErrHeldByOther), because Acquire is realm-aware.
+func TestAcquireMigratesSilentlyBetweenSameRealmInstances(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	path := "/wc/owned.bin"
+
+	m1, err := Open(filepath.Join(t.TempDir(), "passports.json"), "instance-laptop", b, Config{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := m1.Acquire(context.Background(), []string{path}, "realm-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m2, err := Open(filepath.Join(t.TempDir(), "passports.json"), "instance-desktop", b, Config{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := m2.Acquire(context.Background(), []string{path}, "realm-a")
+	if err != nil {
+		t.Fatalf("same-realm migration rejected: %v", err)
+	}
+	if second[0].PassportID == first[0].PassportID {
+		t.Fatal("migration did not issue a new passport")
+	}
+	if b.forceCalls != 1 {
+		t.Fatalf("force calls = %d, want 1 (silent takeover)", b.forceCalls)
+	}
+}
+
+// TestAcquireNeverStealsFromForeignRealmEvenUnexpired confirms the migration
+// path never applies across realms: a different realm's still-live lock is
+// rejected exactly as before this feature, with zero force calls.
+func TestAcquireNeverStealsFromForeignRealmEvenUnexpired(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	path := "/wc/owned.bin"
+
+	m1 := openTestManager(t, b, &now, Config{})
+	if _, _, err := m1.Acquire(context.Background(), []string{path}, "realm-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	m2, err := Open(filepath.Join(t.TempDir(), "passports.json"), "instance-b", b, Config{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m2.Acquire(context.Background(), []string{path}, "realm-b"); !errors.Is(err, ErrHeldByOther) {
+		t.Fatalf("foreign realm error=%v, want ErrHeldByOther", err)
+	}
+	if b.forceCalls != 0 {
+		t.Fatalf("force calls = %d, want 0 (never steal from a different realm)", b.forceCalls)
+	}
+}
+
+// TestAutoUnlockOwnedChmodsFreeAndSameRealmPaths is the A-02/A-03 autolock
+// regression guard: a read-only file with no lock, or a lock already
+// belonging to the same realm, becomes locally writable without any real
+// Lock() call; a foreign or unrecognized hold is left untouched.
+func TestAutoUnlockOwnedChmodsFreeAndSameRealmPaths(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	m := openTestManager(t, b, &now, Config{})
+
+	wc := t.TempDir()
+	free := filepath.Join(wc, "free.txt")
+	ownedByMe := filepath.Join(wc, "owned-by-me.txt")
+	foreignHeld := filepath.Join(wc, "foreign.txt")
+	unrecognized := filepath.Join(wc, "unrecognized.txt")
+	for _, p := range []string{free, ownedByMe, foreignHeld, unrecognized} {
+		if err := writeFile(p, 0o444); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.locks[ownedByMe] = &Lock{Token: "t1", Comment: FormatComment(Metadata{PassportID: "p1", InstanceUID: "instance-other", RealmID: "realm-a", IssuedAt: now, ExpiresAt: now.Add(time.Hour), HardExpiresAt: now.Add(2 * time.Hour)})}
+	b.locks[foreignHeld] = &Lock{Token: "t2", Comment: FormatComment(Metadata{PassportID: "p2", InstanceUID: "instance-other", RealmID: "realm-b", IssuedAt: now, ExpiresAt: now.Add(time.Hour), HardExpiresAt: now.Add(2 * time.Hour)})}
+	b.locks[unrecognized] = &Lock{Token: "t3", Comment: "some other application's lock, not FileES"}
+
+	if err := m.AutoUnlockOwned(context.Background(), wc, "realm-a"); err != nil {
+		t.Fatal(err)
+	}
+	assertWritable(t, free, true)
+	assertWritable(t, ownedByMe, true)
+	assertWritable(t, foreignHeld, false)
+	assertWritable(t, unrecognized, false)
+	if b.seq != 0 {
+		t.Fatalf("AutoUnlockOwned must never call the real Lock: seq=%d", b.seq)
+	}
+}
+
+// TestAutoUnlockOwnedNoopWithoutRealmID confirms the function is inert when
+// no realm identity is known (matches config.Repo.RealmID's zero value for
+// clients that haven't yet loaded a projection).
+func TestAutoUnlockOwnedNoopWithoutRealmID(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	b := newFakeBackend()
+	m := openTestManager(t, b, &now, Config{})
+	wc := t.TempDir()
+	path := filepath.Join(wc, "free.txt")
+	if err := writeFile(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AutoUnlockOwned(context.Background(), wc, ""); err != nil {
+		t.Fatal(err)
+	}
+	assertWritable(t, path, false)
+}
+
+func writeFile(path string, mode os.FileMode) error {
+	if err := os.WriteFile(path, []byte("content"), 0o644); err != nil {
+		return err
+	}
+	return os.Chmod(path, mode)
+}
+
+func assertWritable(t *testing.T, path string, want bool) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := info.Mode().Perm()&0o200 != 0
+	if got != want {
+		t.Fatalf("%s writable=%v, want %v (mode=%v)", path, got, want, info.Mode())
 	}
 }

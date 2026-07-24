@@ -93,6 +93,62 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	}
 }
 
+// TestRevokeRealmRevokesEveryClientOfThatRealmOnly is the whole-realm-revoke
+// regression guard (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §5 "Poziom 3"):
+// two active clients sharing one realm are both revoked in a single call,
+// while an active client of a different realm is left untouched.
+func TestRevokeRealmRevokesEveryClientOfThatRealmOnly(t *testing.T) {
+	manager, config := newActivationTestManager(t)
+	realmID := uuid.NewString()
+
+	activate := func(realm string) onboarding.ActivationGrant {
+		grant := testActivationGrant(t, time.Now().Add(time.Hour))
+		grant.RealmID = realm
+		if err := manager.Stage(grant); err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.RecordProof(grant.OperationID, grant.ClientID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := manager.Publish(context.Background(), grant); err != nil {
+			t.Fatal(err)
+		}
+		return grant
+	}
+	a := activate(realmID)
+	b := activate(realmID)
+	other := activate(uuid.NewString())
+
+	revoked, err := manager.RevokeRealm(context.Background(), realmID, "left the team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revoked) != 2 || !containsClient(revoked, a.ClientID) || !containsClient(revoked, b.ClientID) {
+		t.Fatalf("revoked=%v, want exactly [%s %s]", revoked, a.ClientID, b.ClientID)
+	}
+	keys, _ := os.ReadFile(config.AuthorizedKeysFile)
+	if strings.Contains(string(keys), a.ClientID) || strings.Contains(string(keys), b.ClientID) {
+		t.Fatalf("revoked realm's clients remain authorized: %s", keys)
+	}
+	if !strings.Contains(string(keys), other.ClientID) {
+		t.Fatalf("other realm's client was wrongly deauthorized: %s", keys)
+	}
+
+	// Idempotent: a second call finds nothing left to revoke for this realm.
+	if revoked, err := manager.RevokeRealm(context.Background(), realmID, "left the team"); err != nil || len(revoked) != 0 {
+		t.Fatalf("second call revoked=%v err=%v, want none", revoked, err)
+	}
+}
+
+func containsClient(list []string, id string) bool {
+	for _, v := range list {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
 func TestExpiredStagingIsFailClosedAndRemovedFromRuntimeAccess(t *testing.T) {
 	manager, config := newActivationTestManager(t)
 	now := time.Now().UTC()

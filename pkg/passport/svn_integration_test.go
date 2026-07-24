@@ -75,7 +75,7 @@ func TestSVNBackendAcquireReleaseRoundTrip(t *testing.T) {
 	pathA := filepath.Join(wc, "doc_a.txt")
 	pathB := filepath.Join(wc, "doc_b.txt")
 
-	passports, _, err := m.Acquire(ctx, []string{pathA, pathB})
+	passports, _, err := m.Acquire(ctx, []string{pathA, pathB}, "")
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestSVNBackendStateLostWhenLockStolenExternally(t *testing.T) {
 	ctx := context.Background()
 	pathA := filepath.Join(wc, "doc_a.txt")
 
-	if _, _, err := m.Acquire(ctx, []string{pathA}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{pathA}, ""); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
 	ownedToken := m.Snapshot()[0].FencingToken
@@ -161,7 +161,7 @@ func TestSVNBackendHeartbeatRenewsTokenBeforeExpiry(t *testing.T) {
 	ctx := context.Background()
 	pathA := filepath.Join(wc, "doc_a.txt")
 
-	if _, _, err := m.Acquire(ctx, []string{pathA}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{pathA}, ""); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
 	token0 := m.Snapshot()[0].FencingToken
@@ -213,7 +213,7 @@ func TestSVNRestartAfterSIGKILLMidRelease(t *testing.T) {
 	pathA := filepath.Join(wc, "doc_a.txt")
 	pathB := filepath.Join(wc, "doc_b.txt")
 
-	if _, _, err := m.Acquire(ctx, []string{pathA, pathB}); err != nil {
+	if _, _, err := m.Acquire(ctx, []string{pathA, pathB}, ""); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
 
@@ -247,7 +247,7 @@ func TestSVNRestartAfterSIGKILLMidRelease(t *testing.T) {
 	}
 
 	// Re-acquire A must succeed — server has no lock on it.
-	if _, _, err := m2.Acquire(ctx, []string{pathA}); err != nil {
+	if _, _, err := m2.Acquire(ctx, []string{pathA}, ""); err != nil {
 		t.Fatalf("re-acquire after StateLost: %v", err)
 	}
 	snap := m2.Snapshot()

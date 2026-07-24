@@ -38,13 +38,30 @@ func openRepoErrorSink(path, scope string) (*errmap.Sink, *os.File, error) {
 }
 
 func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules, gate runtime.Gate, mutex runtime.RepoMutex, clientUUID string, sink *errmap.Sink, ipc *ipcserver.Server, state *ipcserver.RepoState, passports *passport.Manager, activityJournal *activity.Journal) *commit.Service {
-	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, UUID: clientUUID, ErrSink: sink, Activity: activityJournal}
+	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, RealmID: repo.RealmID, OwnerRealmID: repo.OwnerRealmID, UUID: clientUUID, ErrSink: sink, Activity: activityJournal}
 	if ipc != nil {
 		service.Emit = func(eventType string, payload any) { ipc.Emit(ipc.NewRepoEvent(repo.ID, eventType, payload)) }
 	}
 	wireRepoStatus(service, state)
 	if passports != nil {
-		service.BeginPublish = passports.BeginPublish
+		beginPublish := passports.BeginPublish
+		isOwner := repo.RealmID != "" && repo.RealmID == repo.OwnerRealmID
+		if isOwner {
+			// Real Acquire is deferred to the actual publish attempt
+			// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §3): the two calls
+			// are sequential, not nested, so this cannot deadlock against
+			// BeginPublish's own opMu hold. A foreign hold surfaces here as
+			// an error and blocks publish without stealing; the local edit
+			// stays staged for a later retry.
+			beginPublish = func(ctx context.Context, paths []string) (func(), error) {
+				if _, _, err := passports.Acquire(ctx, paths, repo.RealmID); err != nil {
+					return func() {}, err
+				}
+				return passports.BeginPublish(ctx, paths)
+			}
+			service.AutoUnlockOwned = passports.AutoUnlockOwned
+		}
+		service.BeginPublish = beginPublish
 		service.OnPathActivity = passports.Touch
 		service.OnPathsPublished = passports.MarkPublished
 		service.OnPathsRemoved = passports.ForgetRemoved
@@ -295,7 +312,11 @@ func wireRepoLockFuncs(state *ipcserver.RepoState, svn client.Client, wc string,
 	if manager != nil {
 		state.SetLockFuncs(
 			func(ctx context.Context, paths []string) (string, error) {
-				_, out, err := manager.Acquire(ctx, paths)
+				// Manual tray "Wypożycz do edycji" - deliberately realm-unaware
+				// (empty realmID): this is the non-owner borrow path
+				// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §3.2), never a
+				// silent same-realm takeover.
+				_, out, err := manager.Acquire(ctx, paths, "")
 				return out, err
 			},
 			manager.Release,

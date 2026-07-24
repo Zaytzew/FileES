@@ -159,6 +159,7 @@ func runDaemon() {
 }
 
 func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supervisor, ipc *ipcserver.Server, serverID string, view clientview.View, runtimes map[reposupervisor.Key]repoRuntime) error {
+	applyRealmOwnership(serverID, view, runtimes)
 	items := attachedProjection(serverID, view, runtimes)
 	if err := supervisor.ApplyWithTransition(ctx, serverID, view.Generation, items, func(item reposupervisor.Desired) {
 		if runtime, ok := runtimes[item.Key]; ok {

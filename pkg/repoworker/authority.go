@@ -178,6 +178,106 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 	return p.Runner.Publish(ctx, changed, "filees: activate repository "+repoID)
 }
 
+// TransferOwner reassigns a repository's owning realm - the administrative
+// escape hatch for a repo orphaned by a whole-realm revoke
+// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §6). It rewrites the canonical
+// record, drops the repository from every client view that belonged to the
+// old owner realm (in this V1, single-owner-per-repo world there is nothing
+// else to "zero" - no separate delegation store exists yet), adds/updates an
+// entry for every client of the new owner realm, and regenerates authz so
+// renderAuthz's owner-realm group picks up the change immediately.
+func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID string) error {
+	if !filepath.IsAbs(p.ServiceWC) || !filepath.IsAbs(p.DataAuthzFile) || p.Runner == nil {
+		return errors.New("authority publisher is incomplete")
+	}
+	repoPath := filepath.Join(p.ServiceWC, "admin", "repositories", repoID+".json")
+	raw, err := os.ReadFile(repoPath)
+	if err != nil {
+		return err
+	}
+	var record repositoryRecord
+	if err := json.Unmarshal(raw, &record); err != nil || record.Schema != RepositorySchema || record.RepoID != repoID {
+		return errors.New("canonical repository record is invalid")
+	}
+	oldRealmID := record.OwnerRealmID
+	if oldRealmID == newRealmID {
+		return nil // already owned by the requested realm
+	}
+	now := time.Now().UTC()
+	if p.Now != nil {
+		now = p.Now().UTC()
+	}
+	record.OwnerRealmID = newRealmID
+	if err := atomicJSON(repoPath, record); err != nil {
+		return err
+	}
+	changed := []string{repoPath}
+
+	clientsRoot := filepath.Join(p.ServiceWC, "clients")
+	entries, err := os.ReadDir(clientsRoot)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		viewPath := filepath.Join(clientsRoot, entry.Name(), "view.json")
+		view, err := clientview.Load(viewPath)
+		if err != nil {
+			continue
+		}
+		switch view.RealmID {
+		case oldRealmID:
+			kept := view.Repositories[:0]
+			removed := false
+			for _, r := range view.Repositories {
+				if r.RepoID == repoID {
+					removed = true
+					continue
+				}
+				kept = append(kept, r)
+			}
+			if !removed {
+				continue
+			}
+			view.Repositories = kept
+		case newRealmID:
+			found := false
+			for i := range view.Repositories {
+				if view.Repositories[i].RepoID == repoID {
+					view.Repositories[i].OwnerRealmID = newRealmID
+					view.Repositories[i].Access = "rw"
+					found = true
+					break
+				}
+			}
+			if !found {
+				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: "rw", State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional"})
+				sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
+			}
+		default:
+			continue
+		}
+		view.Generation++
+		view.GeneratedAt = now
+		if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+			return err
+		}
+		changed = append(changed, viewPath)
+	}
+
+	authz, err := p.renderAuthz()
+	if err != nil {
+		return err
+	}
+	if err := atomicBytes(p.DataAuthzFile, authz); err != nil {
+		return err
+	}
+	changed = append(changed, p.DataAuthzFile)
+	return p.Runner.Publish(ctx, changed, "filees: transfer repository "+repoID+" owner")
+}
+
 func (p ServicePublisher) renderAuthz() ([]byte, error) {
 	repoDir := filepath.Join(p.ServiceWC, "admin", "repositories")
 	entries, err := os.ReadDir(repoDir)

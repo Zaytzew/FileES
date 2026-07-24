@@ -57,6 +57,10 @@ type Record struct {
 	// every record persisted before this field existed) means
 	// onboarding.KindDesktop.
 	Kind                    string     `json:"kind,omitempty"`
+	// Repositories carries the mobile pairing initiator's own repository
+	// grants (Kind == onboarding.KindMobile only), consumed at publish time
+	// by mobileRepositoryEntries to seed the new client's view.json.
+	Repositories            []onboarding.MobileRepositoryGrant `json:"repositories,omitempty"`
 	InstallationPublicKey   string     `json:"installation_public_key"`
 	InstallationFingerprint string     `json:"installation_fingerprint"`
 	State                   string     `json:"state"`
@@ -158,7 +162,7 @@ func (m *Manager) Stage(grant onboarding.ActivationGrant) error {
 		now := m.now().UTC()
 		record := Record{
 			Schema: RecordSchema, OperationID: grant.OperationID, DeployRequestID: grant.DeployRequestID,
-			ClientID: grant.ClientID, RealmID: grant.RealmID, Kind: grant.Kind, InstallationPublicKey: canonical,
+			ClientID: grant.ClientID, RealmID: grant.RealmID, Kind: grant.Kind, Repositories: grant.Repositories, InstallationPublicKey: canonical,
 			InstallationFingerprint: grant.InstallationFingerprint, State: "staged", CreatedAt: now,
 			ExpiresAt: grant.ExpiresAt.UTC(),
 		}
@@ -428,11 +432,15 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 		"public_key": record.InstallationPublicKey, "fingerprint": record.InstallationFingerprint,
 		"state": "active", "created_at": record.CreatedAt, "activated_at": activatedAt,
 	}
+	repositories, err := m.mobileRepositoryEntries(record)
+	if err != nil {
+		return 0, err
+	}
 	view := map[string]any{
 		"schema": ViewSchema, "client_id": record.ClientID, "realm_id": record.RealmID,
 		"generation": 1, "generated_at": activatedAt, "client_role": "normal",
 		"capabilities": map[string]any{"can_create_repositories": true},
-		"repositories": []any{}, "active_operations": []any{},
+		"repositories": repositories, "active_operations": []any{},
 	}
 	audit := map[string]any{
 		"schema": AuditSchema, "event": "client_activated", "operation_id": record.OperationID,

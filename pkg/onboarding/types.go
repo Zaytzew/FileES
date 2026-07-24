@@ -44,6 +44,23 @@ type Policy struct {
 	// for backward compatibility with tickets/operations persisted before
 	// this field existed.
 	Kind string `json:"kind,omitempty"`
+	// Repositories carries the mobile pairing initiator's own repository
+	// grants (KindMobile only), so the resulting mobile client's view.json
+	// can inherit them 1:1 at publish time. Empty for every desktop
+	// ticket/operation.
+	Repositories []MobileRepositoryGrant `json:"repositories,omitempty"`
+}
+
+// MobileRepositoryGrant is one repository grant to carry over into a newly
+// paired mobile client's view.json. Access/AttachmentPolicy are per-client
+// and captured from the pairing initiator's own session at mint time;
+// DisplayName/URL/OwnerRealmID/State are deliberately not snapshotted here -
+// pkg/activation re-reads them fresh from the canonical repository record
+// at publish time instead.
+type MobileRepositoryGrant struct {
+	RepoID           string `json:"repo_id"`
+	Access           string `json:"access"`
+	AttachmentPolicy string `json:"attachment_policy,omitempty"`
 }
 
 type Ticket struct {
@@ -163,6 +180,7 @@ type ActivationGrant struct {
 	ClientID                string
 	RealmID                 string
 	Kind                    string
+	Repositories            []MobileRepositoryGrant
 	DeployRequestID         string
 	InstallationPublicKey   string
 	InstallationFingerprint string

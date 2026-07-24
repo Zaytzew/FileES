@@ -10,7 +10,7 @@ func TestCreateMobilePairingRejectsInvalidRealmID(t *testing.T) {
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
 	store, _ := openTestStore(t, &now, 3, 43700, 43710)
 	defer store.Close()
-	if _, _, err := store.CreateMobilePairing("not-a-uuid"); err == nil {
+	if _, _, err := store.CreateMobilePairing("not-a-uuid", nil); err == nil {
 		t.Fatal("invalid realm_id accepted")
 	}
 }
@@ -20,7 +20,8 @@ func TestCreateMobilePairingTokenRoundTripsToPushableOperation(t *testing.T) {
 	store, _ := openTestStore(t, &now, 3, 43800, 43810)
 	defer store.Close()
 
-	token, receipt, err := store.CreateMobilePairing(testRealmID)
+	wantRepos := []MobileRepositoryGrant{{RepoID: "5103f16d-7a22-4631-a4f2-765b437201ef", Access: "rw", AttachmentPolicy: "optional"}}
+	token, receipt, err := store.CreateMobilePairing(testRealmID, wantRepos)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,6 +38,9 @@ func TestCreateMobilePairingTokenRoundTripsToPushableOperation(t *testing.T) {
 	}
 	if op.ApprovedPolicy.RealmID != testRealmID || op.ApprovedPolicy.Kind != KindMobile {
 		t.Fatalf("operation policy=%+v, want realm=%s kind=%s", op.ApprovedPolicy, testRealmID, KindMobile)
+	}
+	if len(op.ApprovedPolicy.Repositories) != 1 || op.ApprovedPolicy.Repositories[0] != wantRepos[0] {
+		t.Fatalf("operation policy repositories=%+v, want %+v", op.ApprovedPolicy.Repositories, wantRepos)
 	}
 	// No ticket, no e-mail, no port - a mobile pairing has none of these.
 	if op.AssignedReversePort != 0 {
@@ -76,6 +80,9 @@ func TestCreateMobilePairingTokenRoundTripsToPushableOperation(t *testing.T) {
 	if pushed.OperationID != receipt.OperationID {
 		t.Fatalf("pushed grant operation=%s, want %s", pushed.OperationID, receipt.OperationID)
 	}
+	if len(pushed.Repositories) != 1 || pushed.Repositories[0] != wantRepos[0] {
+		t.Fatalf("activation grant repositories=%+v, want %+v", pushed.Repositories, wantRepos)
+	}
 }
 
 func TestCreateMobilePairingUsesAShortDefaultTTL(t *testing.T) {
@@ -83,7 +90,7 @@ func TestCreateMobilePairingUsesAShortDefaultTTL(t *testing.T) {
 	store, _ := openTestStore(t, &now, 3, 43900, 43910)
 	defer store.Close()
 
-	_, receipt, err := store.CreateMobilePairing(testRealmID)
+	_, receipt, err := store.CreateMobilePairing(testRealmID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +113,7 @@ func TestCreateMobilePairingRequiresOTPSecretAndOperationsArea(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if _, _, err := store.CreateMobilePairing(testRealmID); err == nil {
+	if _, _, err := store.CreateMobilePairing(testRealmID, nil); err == nil {
 		t.Fatal("narrowly-scoped access (no AreaOperations, no OTP) unexpectedly allowed CreateMobilePairing")
 	}
 }

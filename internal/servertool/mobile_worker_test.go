@@ -135,7 +135,7 @@ func (f mobileWorkerFixture) pair(t *testing.T) string {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	token, _, err := store.CreateMobilePairing(f.realmID)
+	token, _, err := store.CreateMobilePairing(f.realmID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

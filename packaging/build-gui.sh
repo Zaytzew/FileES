@@ -54,6 +54,13 @@ build_linux() {
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version $release_ldflags" -o "$tmp/bin/filees" ./cmd/filees
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$tmp/bin/filees-gui" ./cmd/filees-gui
 	)
+	(
+		# tools/filees-pair-gui is a separate Go module (its own go.mod,
+		# QR-encoding dependency) - built from its own directory rather than
+		# via the root module's ./cmd/... package paths.
+		cd "$root/tools/filees-pair-gui"
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$tmp/bin/filees-pair-gui" .
+	)
 	cp "$root/packaging/linux/filees-gui.desktop" "$tmp/share/applications/"
 	cp "$root/packaging/linux/filees.service" "$tmp/share/systemd/user/"
 	cp "$root/packaging/linux/config.example.json" "$tmp/share/filees/"
@@ -87,6 +94,13 @@ build_windows() {
 	(
 		cd "$root"
 		CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-H=windowsgui -X main.version=$version" -o "$tmp/filees-gui.exe" ./cmd/filees-gui
+	)
+	(
+		# -H=windowsgui here too: this is spawned by filees-gui.exe (also
+		# windowsgui) as a background helper - without it, launching would
+		# briefly flash a console window on Windows.
+		cd "$root/tools/filees-pair-gui"
+		CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags "-H=windowsgui -X main.version=$version" -o "$tmp/filees-pair-gui.exe" .
 	)
 	cp "$root/packaging/windows/filees-gui.exe.manifest" "$tmp/"
 	cp "$root/packaging/windows/identity.json" "$tmp/"

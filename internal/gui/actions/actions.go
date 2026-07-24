@@ -15,6 +15,7 @@ import (
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
+	"filees/pkg/localpin"
 )
 
 // creationStatusPollInterval/creationStatusPollTimeout bound how long the GUI
@@ -50,6 +51,15 @@ type RepositoryCreator interface {
 	CreationStatus(ctx context.Context, operationID string) (state, lastError string, err error)
 }
 
+// MobilePairingLauncher fetches a mobile pairing token from the daemon and
+// hands it to the separate pairing-helper process, which renders it as a QR
+// code and handles its own PIN gate and UI - unlike RepositoryCreator, no
+// polling/outcome-tracking is needed here: the helper process is itself the
+// long-running, user-facing surface.
+type MobilePairingLauncher interface {
+	Launch(ctx context.Context, serverID string) error
+}
+
 type Updater interface {
 	UpdatePlan(context.Context) (*UpdatePlan, error)
 	UpdateApply(context.Context) (*UpdateResult, error)
@@ -83,13 +93,18 @@ type Config struct {
 	FolderPicker      platform.FolderPicker
 	Prompter          platform.Prompter
 	RepositoryCreator RepositoryCreator
-	Activator         Activator
-	Updater           Updater
-	Notifier          platform.Notifier // nil → notifications silently dropped
-	Locker            LockUnlocker
-	Reconnect         func() // nil → reconnect intent is a no-op
-	Quit              func() // nil → quit intent is a no-op
-	Restart           func() // called only after a successful apply requiring restart
+	MobilePairer      MobilePairingLauncher
+	// PinStore, if non-nil, offers PIN setup at the end of a successful
+	// activation (see startActivation) - nil means the local-PIN feature is
+	// disabled entirely (e.g. platform without a durable state root).
+	PinStore  *localpin.Store
+	Activator Activator
+	Updater   Updater
+	Notifier  platform.Notifier // nil → notifications silently dropped
+	Locker    LockUnlocker
+	Reconnect func() // nil → reconnect intent is a no-op
+	Quit      func() // nil → quit intent is a no-op
+	Restart   func() // called only after a successful apply requiring restart
 
 	// CreationStatusPollInterval/CreationStatusPollTimeout override how often
 	// and how long awaitCreationOutcome polls after a repository-create
@@ -148,6 +163,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startServerInfo(ctx, intent.ServerID)
 	case tray.IntentCreateRepository:
 		c.startCreateRepository(ctx, intent.ServerID)
+	case tray.IntentPairMobileDevice:
+		c.startPairMobileDevice(ctx, intent.ServerID)
 	case tray.IntentUpdatePlan:
 		c.startUpdate(ctx, false)
 	case tray.IntentUpdateApply:
@@ -239,6 +256,33 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 		c.endOperation(key)
 		operationHeld = false
 		c.awaitCreationOutcome(ctx, serverID, displayName, operationID)
+	}()
+}
+
+// startPairMobileDevice fetches a pairing token via MobilePairer and hands
+// off to the separate pairing-helper process. Unlike repository creation,
+// there is no daemon-side lifecycle to poll afterward: the helper process
+// itself owns the rest of the user-facing flow (PIN gate, QR rendering,
+// success/expiry), so this only reports whether the helper could be
+// launched at all.
+func (c *Controller) startPairMobileDevice(ctx context.Context, serverID string) {
+	key := "pair-mobile:" + serverID
+	if serverID == "" || c.cfg.MobilePairer == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		if !vm.Connected || vm.Stale {
+			return
+		}
+		if err := c.cfg.MobilePairer.Launch(ctx, serverID); err != nil {
+			if ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: "pair-mobile." + serverID, Group: "pair-mobile." + serverID, Title: "Nie można sparować urządzenia mobilnego", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			}
+		}
 	}()
 }
 
@@ -484,8 +528,30 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationFailure(ctx, err)
 			return
 		}
+		c.offerLocalPinSetup(ctx)
 		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: endpoint.Value, Urgency: platform.UrgencyNormal})
 	}()
+}
+
+// offerLocalPinSetup prompts for a local PIN once, right after a successful
+// activation, if none is configured yet. Best-effort and silent on
+// cancel/failure - skipping here does not block activation from
+// succeeding; the mandatory PIN gate at mobile-pairing launch time offers
+// setup again if the user skipped it here.
+func (c *Controller) offerLocalPinSetup(ctx context.Context) {
+	if c.cfg.PinStore == nil || c.cfg.Prompter == nil {
+		return
+	}
+	if configured, err := c.cfg.PinStore.IsConfigured(); err != nil || configured {
+		return
+	}
+	prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Ustaw PIN do generowania kodu parowania telefonu (opcjonalnie):", Secret: true})
+	if err != nil || prompted.Cancelled || prompted.Value == "" {
+		return
+	}
+	pin := []byte(prompted.Value)
+	defer clear(pin)
+	_ = c.cfg.PinStore.Setup(pin)
 }
 
 func (c *Controller) activationFailure(ctx context.Context, err error) {

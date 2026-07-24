@@ -159,6 +159,9 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	if vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
 		children = append(children, actionItem("server."+server.ID+".create", "Dodaj folder do FileES…", "Utwórz nowe repozytorium z lokalnego katalogu", Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
 	}
+	if vm.Connected && !vm.Stale {
+		children = append(children, actionItem("server."+server.ID+".pair_mobile", "Sparuj urządzenie mobilne…", "Wygeneruj kod QR do parowania telefonu", Intent{Kind: IntentPairMobileDevice, ServerID: server.ID}))
+	}
 	visibleRepos := 0
 	for _, repo := range server.Repos {
 		if !repo.Attached && repo.AttachmentPolicy != "required" {

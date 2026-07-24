@@ -283,6 +283,21 @@ func TestServerCreateRepositoryActionIsPermissionAndFreshnessGated(t *testing.T)
 	}
 }
 
+func TestServerPairMobileDeviceActionIsFreshnessGatedNotRoleGated(t *testing.T) {
+	server := app.ServerViewModel{ID: "office", ClientRole: contract.ClientRoleReadOnly, CanCreateRepositories: false}
+	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}})
+	action := findItem(t, findItem(t, menu.Items, "server.office").Children, "server.office.pair_mobile")
+	if action.Intent == nil || action.Intent.Kind != IntentPairMobileDevice || action.Intent.ServerID != "office" {
+		t.Fatalf("pair mobile action = %#v", action)
+	}
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.pair_mobile") {
+		t.Fatal("pair mobile action visible for stale snapshot")
+	}
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: false, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.pair_mobile") {
+		t.Fatal("pair mobile action visible while disconnected")
+	}
+}
+
 func findItem(t *testing.T, items []MenuItemModel, id string) MenuItemModel {
 	t.Helper()
 	for _, item := range items {

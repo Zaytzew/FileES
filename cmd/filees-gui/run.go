@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 
 	"filees/internal/gui/actions"
@@ -12,6 +16,7 @@ import (
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/localpin"
 )
 
 var errGUIRestartRequested = errors.New("GUI restart requested")
@@ -22,6 +27,10 @@ type dependencies struct {
 	client    app.DaemonClient
 	icons     tray.IconSet
 	activator actions.Activator
+	// pinStore is nil if the local PIN store could not be opened (e.g. no
+	// durable state root available) - the local-PIN feature is then simply
+	// disabled, activation and mobile pairing still work.
+	pinStore *localpin.Store
 }
 
 type viewStore struct {
@@ -61,6 +70,88 @@ func (adapter repositoryCreateAdapter) CreationStatus(ctx context.Context, opera
 		return "", "", errors.New("daemon returned an empty repository operation")
 	}
 	return result.State, result.LastError, nil
+}
+
+type mobilePairingClient interface {
+	MobilePairingBegin(context.Context, string) (*contract.MobilePairingBeginResult, error)
+}
+
+// mobilePairingAdapter fetches a pairing token from the daemon over IPC,
+// then hands it to the separate filees-pair-gui helper process over its
+// stdin - a single JSON line, written once, stdin closed immediately after
+// (os/exec already gives a private, unnamed pipe invisible to argv/env/ps;
+// see pkg/deploy/tunnel_linux.go for the analogous discipline used where a
+// named FIFO is unavoidable). The helper owns the rest of the flow (PIN
+// gate, QR rendering) entirely on its own - this adapter does not wait for
+// it to exit.
+type mobilePairingAdapter struct {
+	client     mobilePairingClient
+	helperPath func() (string, error)
+}
+
+// defaultPairingHelperPath resolves the helper binary next to the running
+// filees-gui executable, so it works identically whether installed via
+// install-user.sh or run from a dist/ staging tree during development.
+func defaultPairingHelperPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	name := "filees-pair-gui"
+	if filepath.Ext(exe) == ".exe" {
+		name += ".exe"
+	}
+	return filepath.Join(filepath.Dir(exe), name), nil
+}
+
+func (adapter mobilePairingAdapter) Launch(ctx context.Context, serverID string) error {
+	result, err := adapter.client.MobilePairingBegin(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty mobile pairing result")
+	}
+	helperPathFunc := adapter.helperPath
+	if helperPathFunc == nil {
+		helperPathFunc = defaultPairingHelperPath
+	}
+	helperPath, err := helperPathFunc()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(struct {
+		Address       string `json:"address"`
+		HostPublicKey string `json:"host_public_key"`
+		Token         string `json:"token"`
+		ExpiresAt     string `json:"expires_at"`
+	}{Address: result.Address, HostPublicKey: result.HostPublicKey, Token: result.Token, ExpiresAt: result.ExpiresAt})
+	if err != nil {
+		return err
+	}
+	defer clear(payload)
+	cmd := exec.Command(helperPath)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	if _, err := stdin.Write(payload); err != nil {
+		stdin.Close()
+		_ = cmd.Wait()
+		return err
+	}
+	if err := stdin.Close(); err != nil {
+		_ = cmd.Wait()
+		return err
+	}
+	// Reap the helper process in the background - Launch does not wait for
+	// the helper's own UI lifetime (PIN entry, QR display, timeout), only
+	// for the handoff to succeed.
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 type updateAdapter struct{ client updateClient }
@@ -146,6 +237,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(repositoryCreateClient); ok {
 		repositoryCreator = repositoryCreateAdapter{client: candidate}
 	}
+	var mobilePairer actions.MobilePairingLauncher
+	if candidate, ok := deps.client.(mobilePairingClient); ok {
+		mobilePairer = mobilePairingAdapter{client: candidate}
+	}
 	controller := actions.New(actions.Config{
 		Intents:           intents,
 		ViewModel:         views.load,
@@ -154,6 +249,8 @@ func run(parent context.Context, deps dependencies) error {
 		FolderPicker:      deps.platform,
 		Prompter:          deps.platform,
 		RepositoryCreator: repositoryCreator,
+		MobilePairer:      mobilePairer,
+		PinStore:          deps.pinStore,
 		Activator:         deps.activator,
 		Updater:           updater,
 		Notifier:          deps.platform,

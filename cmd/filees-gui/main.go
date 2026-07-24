@@ -20,6 +20,7 @@ import (
 	"filees/pkg/clientprofile"
 	"filees/pkg/deploy"
 	"filees/pkg/ipcclient"
+	"filees/pkg/localpin"
 )
 
 var version = "dev"
@@ -71,6 +72,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "filees-gui: single instance: %v\n", err)
 		os.Exit(1)
 	}
+
+	pinStore, pinErr := localpin.Open(localpin.DefaultRoot())
+	if pinErr != nil {
+		// Best-effort: the local-PIN feature (optional GUI-startup lock,
+		// mandatory mobile-pairing gate) is simply unavailable, never a
+		// reason to refuse starting the GUI entirely.
+		fmt.Fprintf(os.Stderr, "filees-gui: local PIN store unavailable: %v\n", pinErr)
+		pinStore = nil
+	}
+	if err := requireLocalPinAtLaunch(context.Background(), platformBackend, pinStore); err != nil {
+		instance.Close()
+		fmt.Fprintf(os.Stderr, "filees-gui: %v\n", err)
+		os.Exit(1)
+	}
+
 	trayBackend, err := tray.NewSystrayBackend()
 	if err != nil {
 		instance.Close()
@@ -89,6 +105,7 @@ func main() {
 		activator: clientActivator{client: daemonClient, root: *activationRoot, remotePort: *remotePort, profile: deploy.ServerProfile{
 			ID: *serverID, Address: *serverAddress, KnownHostsPath: *knownHosts,
 		}},
+		pinStore: pinStore,
 	})
 	closeErr := instance.Close()
 	if errors.Is(runErr, errGUIRestartRequested) {

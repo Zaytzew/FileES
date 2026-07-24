@@ -12,6 +12,7 @@ const (
 	IntentActivate         IntentKind = "activate"
 	IntentServerInfo       IntentKind = "server_info"
 	IntentCreateRepository IntentKind = "create_repository"
+	IntentPairMobileDevice IntentKind = "pair_mobile_device"
 	IntentUpdatePlan       IntentKind = "update_plan"
 	IntentUpdateApply      IntentKind = "update_apply"
 	IntentQuit             IntentKind = "quit"

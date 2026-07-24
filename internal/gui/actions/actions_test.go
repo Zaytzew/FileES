@@ -14,6 +14,7 @@ import (
 	"filees/internal/gui/platform/platformtest"
 	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/localpin"
 )
 
 // ---- helpers ----------------------------------------------------------------
@@ -218,6 +219,64 @@ func TestControllerActivationPromptsForServerEmailThenSecretOTP(t *testing.T) {
 	if len(requests) != 4 || requests[0].Secret || requests[1].Secret || requests[2].Secret || !requests[3].Secret {
 		t.Fatalf("prompts=%#v", requests)
 	}
+}
+
+func TestControllerOffersLocalPinSetupAfterActivationWhenNotConfigured(t *testing.T) {
+	responses := []platform.PromptTextResult{{Value: "office"}, {Value: "filees.example.net:22"}, {Value: "user@example.net"}, {Value: "OTP-CODE"}, {Value: "4242"}}
+	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
+		result := responses[0]
+		responses = responses[1:]
+		return result, nil
+	}}
+	pinStore, err := localpin.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	activator := &fakeActivator{begins: make(chan string, 1), finishes: make(chan string, 1)}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Opener: fake, Picker: fake, Prompter: fake, Notifier: fake, Locker: newFakeLocker(), Activator: activator, PinStore: pinStore})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
+	awaitCh(t, activator.finishes, "activation finish")
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if configured, _ := pinStore.IsConfigured(); configured {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if configured, err := pinStore.IsConfigured(); err != nil || !configured {
+		t.Fatalf("configured=%v err=%v, want PIN set up after activation", configured, err)
+	}
+	if ok, _, err := pinStore.Verify([]byte("4242")); err != nil || !ok {
+		t.Fatalf("verify prompted PIN: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestControllerSkipsLocalPinPromptWhenAlreadyConfigured(t *testing.T) {
+	responses := []platform.PromptTextResult{{Value: "office"}, {Value: "filees.example.net:22"}, {Value: "user@example.net"}, {Value: "OTP-CODE"}}
+	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
+		if len(responses) == 0 {
+			t.Error("unexpected extra prompt - PIN already configured")
+			return platform.PromptTextResult{Cancelled: true}, nil
+		}
+		result := responses[0]
+		responses = responses[1:]
+		return result, nil
+	}}
+	pinStore, err := localpin.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pinStore.Setup([]byte("0000")); err != nil {
+		t.Fatal(err)
+	}
+	activator := &fakeActivator{begins: make(chan string, 1), finishes: make(chan string, 1)}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Opener: fake, Picker: fake, Prompter: fake, Notifier: fake, Locker: newFakeLocker(), Activator: activator, PinStore: pinStore})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
+	awaitCh(t, activator.finishes, "activation finish")
+	time.Sleep(50 * time.Millisecond)
 }
 
 // ---- OpenFolder tests -------------------------------------------------------
@@ -956,6 +1015,70 @@ func TestControllerServerInformationContainsPermissions(t *testing.T) {
 	requests := platformFake.Snapshot().InfoRequests
 	if len(requests) != 1 || !strings.Contains(requests[0].Text, "Tryb klienta: pełny") || !strings.Contains(requests[0].Text, "Tworzenie repozytoriów: dozwolone") {
 		t.Fatalf("server information = %#v", requests)
+	}
+}
+
+type pairMobileCall struct{ serverID string }
+type fakeMobilePairer struct {
+	calls chan pairMobileCall
+	err   error
+}
+
+func (f *fakeMobilePairer) Launch(_ context.Context, serverID string) error {
+	f.calls <- pairMobileCall{serverID}
+	return f.err
+}
+
+func TestControllerLaunchesMobilePairingHelper(t *testing.T) {
+	pairer := &fakeMobilePairer{calls: make(chan pairMobileCall, 1)}
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, MobilePairer: pairer})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentPairMobileDevice, ServerID: "office"})
+	select {
+	case call := <-pairer.calls:
+		if call.serverID != "office" {
+			t.Fatalf("pair call = %#v", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("mobile pairing was not launched")
+	}
+}
+
+func TestControllerSurfacesMobilePairingLaunchFailure(t *testing.T) {
+	pairer := &fakeMobilePairer{calls: make(chan pairMobileCall, 1), err: errors.New("helper binary not found")}
+	fake := &platformtest.Fake{}
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, MobilePairer: pairer, Notifier: fake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentPairMobileDevice, ServerID: "office"})
+	<-pairer.calls
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, n := range fake.Snapshot().Notifications {
+			if n.Title == "Nie można sparować urządzenia mobilnego" {
+				if !strings.Contains(n.Body, "helper binary not found") || n.Urgency != platform.UrgencyCritical {
+					t.Fatalf("failure notification = %#v", n)
+				}
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("mobile pairing launch failure was never surfaced")
+}
+
+func TestControllerDoesNotLaunchMobilePairingWhileDisconnectedOrStale(t *testing.T) {
+	pairer := &fakeMobilePairer{calls: make(chan pairMobileCall, 1)}
+	view := app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{{ID: "office", ClientRole: contract.ClientRoleNormal}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, MobilePairer: pairer})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentPairMobileDevice, ServerID: "office"})
+	select {
+	case call := <-pairer.calls:
+		t.Fatalf("mobile pairing launched while stale: %#v", call)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 

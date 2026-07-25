@@ -52,7 +52,14 @@ func execWorker() error {
 	// exec and prevent the worker from installing its own configuration-derived
 	// exact profile, so this boundary uses pledge+execpromises only. The worker
 	// immediately begins and locks its own unveil before opening state.
-	if err := obsandbox.PledgeForExec(entryPromises, workerPromises+" unveil"); err != nil {
+	//
+	// "deploy" eventually opens its files with needSVN, which re-pledges with
+	// execpromises=svnExecPromises (includes prot_exec, for the native SVN
+	// binary's own W^X setup) ahead of an actual exec into svn. execpromises
+	// can only ever narrow across a pledge chain, never widen beyond what was
+	// granted here at exec time - so prot_exec must already be present in this
+	// grant even though filees-worker itself never calls prot_exec directly.
+	if err := obsandbox.PledgeForExec(entryPromises, workerPromises+" prot_exec unveil"); err != nil {
 		return err
 	}
 	return syscall.Exec(workerPath, []string{"filees-worker", "deploy"}, []string{})

@@ -71,9 +71,17 @@ func prepareActivatedClientProfile(ctx context.Context, payload contract.Activat
 	if strings.Contains(host, ":") {
 		urlHost = "[" + host + "]"
 	}
-	serviceURL := (&url.URL{Scheme: "svn+ssh", User: url.User(deploy.ServiceClientUser), Host: urlHost, Path: "/"}).String()
+	// The service repo's authz has only ever granted a client read on its own
+	// /clients/<id> subtree (pkg/activation.renderAccessLocked, unchanged
+	// since r98) - root itself is always "* =" (deny). svnserve does not do a
+	// masked/partial checkout of a denied root even when a child path is
+	// granted, so pointing the working copy at repo root here made the very
+	// first projection sync unconditionally fail for every fresh activation.
+	// Scope the checkout to the one subtree the client is actually granted
+	// (and the only thing ever read from it, view.json) instead.
+	serviceURL := (&url.URL{Scheme: "svn+ssh", User: url.User(deploy.ServiceClientUser), Host: urlHost, Path: "/clients/" + identity.ClientID + "/"}).String()
 	serviceWC := filepath.Join(root, "service-wc")
-	profile := clientprofile.Profile{Schema: clientprofile.Schema, ServerID: payload.ServerID, DisplayName: payload.ServerID, Address: payload.ServerAddress, ClientID: identity.ClientID, IdentityFile: filepath.Join(identityRoot, "id_ed25519"), KnownHosts: filepath.Clean(payload.KnownHostsPath), SSHPort: port, ServiceURL: serviceURL, ServiceWC: serviceWC, RelativeViewPath: filepath.Join("clients", identity.ClientID, "view.json"), CachePath: filepath.Join(root, "cache", "view.json"), PollInterval: time.Minute}
+	profile := clientprofile.Profile{Schema: clientprofile.Schema, ServerID: payload.ServerID, DisplayName: payload.ServerID, Address: payload.ServerAddress, ClientID: identity.ClientID, IdentityFile: filepath.Join(identityRoot, "id_ed25519"), KnownHosts: filepath.Clean(payload.KnownHostsPath), SSHPort: port, ServiceURL: serviceURL, ServiceWC: serviceWC, RelativeViewPath: "view.json", CachePath: filepath.Join(root, "cache", "view.json"), PollInterval: time.Minute}
 	if err := clientprofile.Store(filepath.Join(root, "client-profile.json"), profile); err != nil {
 		return clientprofile.Profile{}, err
 	}

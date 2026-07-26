@@ -33,22 +33,28 @@ const (
 	StateAttaching         State = "attaching"
 	StateAttached          State = "attached"
 	StateRelocating        State = "relocating"
+	StateDetaching         State = "detaching"
+	StateDeleting          State = "deleting"
+	StateDetached          State = "detached"
+	StateDeleted           State = "deleted"
 	StateError             State = "error"
 )
 
 type Record struct {
-	OperationID      string    `json:"operation_id"`
-	ServerID         string    `json:"server_id"`
-	RepoID           string    `json:"repo_id,omitempty"`
-	RepoURL          string    `json:"repo_url,omitempty"`
-	Access           string    `json:"access,omitempty"`
-	DisplayName      string    `json:"display_name,omitempty"`
-	LocalPath        string    `json:"local_path"`
-	PendingLocalPath string    `json:"pending_local_path,omitempty"`
-	State            State     `json:"state"`
-	LastError        string    `json:"last_error,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	OperationID       string    `json:"operation_id"`
+	ServerID          string    `json:"server_id"`
+	RepoID            string    `json:"repo_id,omitempty"`
+	RepoURL           string    `json:"repo_url,omitempty"`
+	Access            string    `json:"access,omitempty"`
+	DisplayName       string    `json:"display_name,omitempty"`
+	LocalPath         string    `json:"local_path"`
+	PendingLocalPath  string    `json:"pending_local_path,omitempty"`
+	DetachOperationID string    `json:"detach_operation_id,omitempty"`
+	DeleteRepository  bool      `json:"delete_repository,omitempty"`
+	State             State     `json:"state"`
+	LastError         string    `json:"last_error,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type document struct {
@@ -116,9 +122,46 @@ func (s *Store) BeginAttach(serverID, repoID, localPath string, required bool) (
 	return s.begin(Record{ServerID: serverID, RepoID: repoID, LocalPath: localPath, State: state})
 }
 
+// EnsureConfiguredAttached imports a legacy/static config entry into the
+// durable lifecycle store. A detach/delete tombstone wins over the unchanged
+// config file, so restarting the daemon cannot silently reattach that WC.
+func (s *Store) EnsureConfiguredAttached(serverID, repoID, repoURL, access, localPath, displayName string) (Record, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var tombstone Record
+	for _, existing := range s.records {
+		if existing.ServerID != serverID || existing.RepoID != repoID {
+			continue
+		}
+		switch existing.State {
+		case StateDetached, StateDeleted:
+			if tombstone.OperationID == "" || existing.UpdatedAt.After(tombstone.UpdatedAt) {
+				tombstone = existing
+			}
+		case StateError:
+			continue
+		default:
+			return existing, false, nil
+		}
+	}
+	if tombstone.OperationID != "" {
+		return tombstone, false, nil
+	}
+	record, err := s.beginLocked(Record{
+		ServerID: serverID, RepoID: repoID, RepoURL: repoURL, Access: access,
+		DisplayName: strings.TrimSpace(displayName), LocalPath: localPath, State: StateAttached,
+	})
+	return record, err == nil, err
+}
+
 func (s *Store) begin(record Record) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.beginLocked(record)
+}
+
+func (s *Store) beginLocked(record Record) (Record, error) {
 	if record.OperationID == "" {
 		record.OperationID = uuid.NewString()
 	}
@@ -129,7 +172,7 @@ func (s *Store) begin(record Record) (Record, error) {
 		return Record{}, err
 	}
 	for _, existing := range s.records {
-		if existing.State == StateError {
+		if terminal(existing.State) {
 			// A terminal error claims no live checkout or attachment. Counting
 			// it here would let one failed attempt (e.g. a transient
 			// STORAGE_INSUFFICIENT that later clears server-side) permanently
@@ -149,6 +192,10 @@ func (s *Store) begin(record Record) (Record, error) {
 		return Record{}, err
 	}
 	return record, nil
+}
+
+func terminal(state State) bool {
+	return state == StateError || state == StateDetached || state == StateDeleted
 }
 
 func (s *Store) MarkAttached(operationID, repoID string) (Record, error) {
@@ -295,6 +342,77 @@ func (s *Store) FailRelocation(operationID string, cause error) (Record, error) 
 	})
 }
 
+func (s *Store) BeginDetach(serverID, repoID string, deleteRepository bool) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var operationID string
+	for id, record := range s.records {
+		if record.ServerID == serverID && record.RepoID == repoID && !terminal(record.State) {
+			operationID = id
+			break
+		}
+	}
+	if operationID == "" {
+		return Record{}, os.ErrNotExist
+	}
+	record := s.records[operationID]
+	targetState := StateDetaching
+	if deleteRepository {
+		targetState = StateDeleting
+	}
+	if record.State == targetState && record.DeleteRepository == deleteRepository && record.DetachOperationID != "" {
+		return record, nil
+	}
+	if record.State != StateAttached {
+		return Record{}, errors.New("only an attached repository can be detached")
+	}
+	before := record
+	record.State = targetState
+	record.DetachOperationID = uuid.NewString()
+	record.DeleteRepository = deleteRepository
+	record.LastError = ""
+	record.UpdatedAt = s.now().UTC()
+	if err := validate(record); err != nil {
+		return Record{}, err
+	}
+	s.records[operationID] = record
+	if err := s.persist(); err != nil {
+		s.records[operationID] = before
+		return Record{}, err
+	}
+	return record, nil
+}
+
+func (s *Store) CompleteDetach(operationID string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		switch record.State {
+		case StateDetaching:
+			record.State = StateDetached
+		case StateDeleting:
+			record.State = StateDeleted
+		case StateDetached, StateDeleted:
+			return nil
+		default:
+			return errors.New("repository detach is not in progress")
+		}
+		record.LastError = ""
+		return nil
+	})
+}
+
+func (s *Store) RecordDetachError(operationID string, cause error) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateDetaching && record.State != StateDeleting {
+			return errors.New("repository detach is not in progress")
+		}
+		if cause == nil || strings.TrimSpace(cause.Error()) == "" {
+			return errors.New("repository detach error is required")
+		}
+		record.LastError = cause.Error()
+		return nil
+	})
+}
+
 func (s *Store) update(operationID string, mutate func(*Record) error) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -361,7 +479,7 @@ func validate(r Record) error {
 		}
 	}
 	switch r.State {
-	case StateRequestPending, StateRepositoryCreated, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateError:
+	case StateRequestPending, StateRepositoryCreated, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateDetaching, StateDeleting, StateDetached, StateDeleted, StateError:
 	default:
 		return errors.New("local repository lifecycle state is invalid")
 	}
@@ -376,6 +494,16 @@ func validate(r Record) error {
 		}
 	} else if r.PendingLocalPath != "" {
 		return errors.New("repository relocation target exists outside relocation")
+	}
+	if r.State == StateDetaching || r.State == StateDeleting || r.State == StateDetached || r.State == StateDeleted {
+		if _, err := uuid.Parse(r.DetachOperationID); err != nil {
+			return errors.New("repository detach operation ID must be UUID")
+		}
+		if (r.State == StateDeleting || r.State == StateDeleted) != r.DeleteRepository {
+			return errors.New("repository deletion state is inconsistent")
+		}
+	} else if r.DetachOperationID != "" || r.DeleteRepository {
+		return errors.New("repository detach metadata exists outside detach")
 	}
 	if r.CreatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) {
 		return errors.New("local repository lifecycle timestamps are invalid")

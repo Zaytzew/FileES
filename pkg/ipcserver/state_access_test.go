@@ -71,6 +71,17 @@ func TestProjectedUnattachedRepoIsPresentationOnly(t *testing.T) {
 	}
 }
 
+func TestMarkRepoDetachedClearsLocalPathWithoutProjection(t *testing.T) {
+	server := New(t.TempDir() + "/daemon.sock")
+	repo := server.RegisterRepoAccess("repo-id", "svn+ssh://_filees-client@example/repo", "/wc/repo", "office", contract.AccessReadWrite)
+	repo.SetProjectedMetadata("Docs", "svn+ssh://_filees-client@example/repo", contract.AccessReadWrite, "active", "realm", "optional", true)
+	server.MarkRepoDetached("office", "repo-id")
+	summary := repo.Summary()
+	if summary.Attached || summary.LocalPath != "" || summary.State != contract.StateUnattached {
+		t.Fatalf("detached summary=%+v", summary)
+	}
+}
+
 func TestProjectedPolicyReachesSummaryAndSnapshot(t *testing.T) {
 	owner := "7b807185-aa75-4169-8a65-705c7cbab176"
 	rs := New(t.TempDir()+"/daemon.sock").RegisterProjectedRepoPolicy("repo-id", "Team", "svn+ssh://_filees-client@example/repo", "office", contract.AccessReadWrite, "active", owner, "required", false)

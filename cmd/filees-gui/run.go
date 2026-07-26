@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"filees/internal/gui/actions"
 	"filees/internal/gui/app"
@@ -70,6 +71,74 @@ func (adapter repositoryCreateAdapter) CreationStatus(ctx context.Context, opera
 		return "", "", errors.New("daemon returned an empty repository operation")
 	}
 	return result.State, result.LastError, nil
+}
+
+type repositoryDetachClient interface {
+	RepoDetach(context.Context, string, string) (*contract.RepoLifecycleResult, error)
+	RepoDelete(context.Context, string, string) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryDetachAdapter struct{ client repositoryDetachClient }
+
+func (adapter repositoryDetachAdapter) DetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) error {
+	operationCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer cancel()
+	var (
+		result *contract.RepoLifecycleResult
+		err    error
+	)
+	if deleteRepository {
+		result, err = adapter.client.RepoDelete(operationCtx, serverID, repoID)
+	} else {
+		result, err = adapter.client.RepoDetach(operationCtx, serverID, repoID)
+	}
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty repository detach result")
+	}
+	expectedState := "detached"
+	if deleteRepository {
+		expectedState = "deleted"
+	}
+	if result.State != expectedState {
+		if result.LastError != "" {
+			return errors.New(result.LastError)
+		}
+		return errors.New("daemon did not complete repository detach")
+	}
+	return nil
+}
+
+type systemLifecycleClient interface {
+	SystemRestart(context.Context) (*contract.SystemLifecycleResult, error)
+	SystemShutdown(context.Context) (*contract.SystemLifecycleResult, error)
+}
+
+type stackLifecycleAdapter struct{ client systemLifecycleClient }
+
+func (adapter stackLifecycleAdapter) RestartFileES(ctx context.Context) error {
+	result, err := adapter.client.SystemRestart(ctx)
+	return validateSystemLifecycleResult(result, "restart", err)
+}
+
+func (adapter stackLifecycleAdapter) ShutdownFileES(ctx context.Context) error {
+	result, err := adapter.client.SystemShutdown(ctx)
+	return validateSystemLifecycleResult(result, "shutdown", err)
+}
+
+func validateSystemLifecycleResult(result *contract.SystemLifecycleResult, expected string, err error) error {
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty lifecycle result")
+	}
+	if result.Action != expected {
+		return errors.New("daemon returned an unexpected lifecycle action")
+	}
+	return nil
 }
 
 type mobilePairingClient interface {
@@ -237,28 +306,35 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(repositoryCreateClient); ok {
 		repositoryCreator = repositoryCreateAdapter{client: candidate}
 	}
+	var repositoryDetacher actions.RepositoryDetacher
+	if candidate, ok := deps.client.(repositoryDetachClient); ok {
+		repositoryDetacher = repositoryDetachAdapter{client: candidate}
+	}
+	var stack actions.StackLifecycle
+	if candidate, ok := deps.client.(systemLifecycleClient); ok {
+		stack = stackLifecycleAdapter{client: candidate}
+	}
 	var mobilePairer actions.MobilePairingLauncher
 	if candidate, ok := deps.client.(mobilePairingClient); ok {
 		mobilePairer = mobilePairingAdapter{client: candidate}
 	}
 	controller := actions.New(actions.Config{
-		Intents:           intents,
-		ViewModel:         views.load,
-		Opener:            deps.platform,
-		Picker:            deps.platform,
-		FolderPicker:      deps.platform,
-		Prompter:          deps.platform,
-		RepositoryCreator: repositoryCreator,
-		MobilePairer:      mobilePairer,
-		PinStore:          deps.pinStore,
-		Activator:         deps.activator,
-		Updater:           updater,
-		Notifier:          deps.platform,
-		Locker:            deps.client,
-		Reconnect:         guiApp.Reconnect,
-		Quit: func() {
-			cancel()
-		},
+		Intents:            intents,
+		ViewModel:          views.load,
+		Opener:             deps.platform,
+		Picker:             deps.platform,
+		FolderPicker:       deps.platform,
+		Prompter:           deps.platform,
+		RepositoryCreator:  repositoryCreator,
+		RepositoryDetacher: repositoryDetacher,
+		MobilePairer:       mobilePairer,
+		PinStore:           deps.pinStore,
+		Activator:          deps.activator,
+		Updater:            updater,
+		Stack:              stack,
+		Notifier:           deps.platform,
+		Locker:             deps.client,
+		Reconnect:          guiApp.Reconnect,
 		Restart: func() {
 			select {
 			case restartRequested <- struct{}{}:
@@ -266,6 +342,7 @@ func run(parent context.Context, deps dependencies) error {
 			}
 			cancel()
 		},
+		Shutdown: cancel,
 	})
 
 	var wg sync.WaitGroup

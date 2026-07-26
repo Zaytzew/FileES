@@ -1,6 +1,7 @@
 package ipcserver
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"strings"
@@ -10,9 +11,10 @@ import (
 )
 
 type lifecycleStub struct {
-	createCalls, attachCalls, approveCalls, relocateCalls, statusCalls int
-	statusResult                                                      contract.RepoLifecycleResult
-	statusErr                                                         error
+	createCalls, attachCalls, approveCalls, relocateCalls, detachCalls, statusCalls int
+	deleteRepository                                                                bool
+	statusResult                                                                    contract.RepoLifecycleResult
+	statusErr                                                                       error
 }
 
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
@@ -34,6 +36,15 @@ func (stub *lifecycleStub) BeginAttach(serverID, repoID, localPath string, requi
 		state = "policy_pending"
 	}
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, LocalPath: localPath, State: state}, nil
+}
+func (stub *lifecycleStub) BeginDetach(_ context.Context, serverID, repoID string, deleteRepository bool) (contract.RepoLifecycleResult, error) {
+	stub.detachCalls++
+	stub.deleteRepository = deleteRepository
+	state := "detached"
+	if deleteRepository {
+		state = "deleted"
+	}
+	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, State: state}, nil
 }
 
 func (stub *lifecycleStub) Status(operationID string) (contract.RepoLifecycleResult, error) {
@@ -142,5 +153,60 @@ func TestRelocationRequiresAttachedRepository(t *testing.T) {
 	}
 	if stub.relocateCalls != 1 {
 		t.Fatalf("relocation calls=%d", stub.relocateCalls)
+	}
+}
+
+func TestDetachAndDeleteAreDistinctAndRequiredPolicyIsEnforced(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	server.RegisterActivation(contract.ActivationStatus{
+		ServerID: "office", ClientRole: contract.ClientRoleNormal, RealmID: "realm-1",
+		CanCreateRepositories: true,
+	})
+	server.RegisterRepoAccess("repo-1", "svn://example/repo-1", "/wc/repo-1", "office", "rw")
+	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn://example/repo-1", "office", "rw", "active", "realm-1", "optional", true)
+
+	detach := lifecycleRequest(contract.CmdRepoDetach, contract.RepoDetachPayload{ServerID: "office", RepoID: "repo-1"})
+	if response := server.dispatch(detach); response.Status != contract.StatusOK {
+		t.Fatalf("local detach rejected: %+v", response.Error)
+	}
+	if stub.detachCalls != 1 || stub.deleteRepository {
+		t.Fatalf("local detach routed incorrectly: calls=%d delete=%v", stub.detachCalls, stub.deleteRepository)
+	}
+
+	deleteRequest := lifecycleRequest(contract.CmdRepoDelete, contract.RepoDetachPayload{ServerID: "office", RepoID: "repo-1"})
+	if response := server.dispatch(deleteRequest); response.Status != contract.StatusOK {
+		t.Fatalf("permanent delete rejected: %+v", response.Error)
+	}
+	if stub.detachCalls != 2 || !stub.deleteRepository {
+		t.Fatalf("permanent delete routed incorrectly: calls=%d delete=%v", stub.detachCalls, stub.deleteRepository)
+	}
+
+	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn://example/repo-1", "office", "rw", "active", "realm-1", "required", true)
+	if response := server.dispatch(detach); response.Status == contract.StatusOK {
+		t.Fatal("required repository accepted local detach")
+	}
+	if response := server.dispatch(deleteRequest); response.Status == contract.StatusOK {
+		t.Fatal("required repository accepted permanent delete")
+	}
+}
+
+func TestDeleteRequiresAuthenticatedOwningRealm(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	server.RegisterActivation(contract.ActivationStatus{
+		ServerID: "office", ClientRole: contract.ClientRoleNormal, RealmID: "caller",
+		CanCreateRepositories: true,
+	})
+	server.RegisterRepoAccess("repo-1", "svn://example/repo-1", "/wc/repo-1", "office", "rw")
+	server.RegisterProjectedRepoPolicy("repo-1", "Shared", "svn://example/repo-1", "office", "rw", "active", "owner", "optional", true)
+	request := lifecycleRequest(contract.CmdRepoDelete, contract.RepoDetachPayload{ServerID: "office", RepoID: "repo-1"})
+	if response := server.dispatch(request); response.Status == contract.StatusOK {
+		t.Fatal("foreign realm deleted repository")
+	}
+	if stub.detachCalls != 0 {
+		t.Fatalf("forbidden delete reached lifecycle service: %d", stub.detachCalls)
 	}
 }

@@ -10,9 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/config"
+	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
@@ -23,6 +26,7 @@ type daemonProvisioner struct {
 	local            *localrepo.Store
 	provisioning     *provisioning.Store
 	mu               sync.RWMutex
+	detachMu         sync.Mutex
 	profiles         map[string]clientprofile.Profile
 	queue            chan string
 	attachments      chan<- provisionedAttachment
@@ -38,6 +42,7 @@ type attachmentSVN interface {
 type provisionedAttachment struct {
 	Repo    config.Repo
 	Quiesce bool
+	Detach  bool
 	Result  chan error
 }
 
@@ -111,6 +116,8 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 				p.publishLocalRecord(ctx, record, profile)
 			}
 			p.Enqueue(record.OperationID)
+		} else if record.State == localrepo.StateDetaching || record.State == localrepo.StateDeleting {
+			p.Enqueue(record.OperationID)
 		} else if record.State == localrepo.StateAttached && record.RepoURL != "" {
 			p.mu.RLock()
 			profile, ok := p.profiles[record.ServerID]
@@ -139,6 +146,18 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	p.mu.RLock()
 	profile, ok := p.profiles[record.ServerID]
 	p.mu.RUnlock()
+	if record.State == localrepo.StateDetaching || record.State == localrepo.StateDeleting {
+		if record.State == localrepo.StateDeleting && !ok {
+			cause := errors.New("activated client profile is unavailable")
+			_, _ = p.local.RecordDetachError(operationID, cause)
+			return
+		}
+		if _, err := p.runDetach(ctx, record, profile); err != nil {
+			_, _ = p.local.RecordDetachError(operationID, err)
+			talk.With("detach:"+operationID).Warnf("detach failed: %v", err)
+		}
+		return
+	}
 	if !ok {
 		cause := errors.New("activated client profile is unavailable")
 		if record.State == localrepo.StateRelocating {
@@ -265,7 +284,7 @@ func (p *daemonProvisioner) quiesceAttachment(ctx context.Context, record localr
 	result := make(chan error, 1)
 	repo := config.Repo{ID: record.RepoID, ServerID: record.ServerID}
 	select {
-	case p.attachments <- provisionedAttachment{Repo: repo, Quiesce: true, Result: result}:
+	case p.attachments <- provisionedAttachment{Repo: repo, Quiesce: true, Detach: record.State == localrepo.StateDetaching || record.State == localrepo.StateDeleting, Result: result}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -275,6 +294,128 @@ func (p *daemonProvisioner) quiesceAttachment(ctx context.Context, record localr
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (p *daemonProvisioner) Detach(ctx context.Context, operationID string) (localrepo.Record, error) {
+	record, ok := p.local.Get(operationID)
+	if !ok {
+		return localrepo.Record{}, os.ErrNotExist
+	}
+	profile, ok := p.Profile(record.ServerID)
+	if record.State == localrepo.StateDeleting && !ok {
+		return record, errors.New("activated client profile is unavailable")
+	}
+	return p.runDetach(ctx, record, profile)
+}
+
+func (p *daemonProvisioner) runDetach(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) (localrepo.Record, error) {
+	p.detachMu.Lock()
+	defer p.detachMu.Unlock()
+
+	current, ok := p.local.Get(record.OperationID)
+	if !ok {
+		return localrepo.Record{}, os.ErrNotExist
+	}
+	if current.State == localrepo.StateDetached || current.State == localrepo.StateDeleted {
+		return current, nil
+	}
+	if current.State != localrepo.StateDetaching && current.State != localrepo.StateDeleting {
+		return current, errors.New("repository detach is not in progress")
+	}
+	if err := p.quiesceAttachment(ctx, current); err != nil {
+		return current, err
+	}
+	if current.State == localrepo.StateDeleting {
+		if err := p.deleteServerRepository(ctx, current, profile); err != nil {
+			return current, err
+		}
+	}
+	if err := stripWorkingCopyMetadata(current.LocalPath, current.DetachOperationID); err != nil {
+		return current, err
+	}
+	return p.local.CompleteDetach(current.OperationID)
+}
+
+func (p *daemonProvisioner) deleteServerRepository(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) error {
+	transport, err := controlclient.New(controlclient.Config{
+		Address: profile.Address, Port: profile.SSHPort, IdentityFile: profile.IdentityFile,
+		KnownHosts: profile.KnownHosts, Timeout: 45 * time.Minute,
+	})
+	if err != nil {
+		return err
+	}
+	requestID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(record.DetachOperationID+":delete-repository")).String()
+	ticket, err := control.NewTicket(
+		record.DetachOperationID, requestID, control.TicketDeleteRepository,
+		profile.ClientID, control.DeleteRepositoryPayload{RepoID: record.RepoID}, time.Now(),
+	)
+	if err != nil {
+		return err
+	}
+	result, err := transport.Exchange(ctx, ticket)
+	if err != nil {
+		return err
+	}
+	if result.Status != control.ResultOK {
+		if result.Error == nil {
+			return errors.New("server rejected repository deletion")
+		}
+		return fmt.Errorf("%s: %s", result.Error.Code, result.Error.Message)
+	}
+	return nil
+}
+
+func stripWorkingCopyMetadata(root, operationID string) error {
+	root = filepath.Clean(root)
+	if _, err := uuid.Parse(operationID); err != nil {
+		return errors.New("repository detach operation ID must be UUID")
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !filepath.IsAbs(root) || root == string(filepath.Separator) {
+		return errors.New("working copy root must be an absolute real directory")
+	}
+	entries := []string{".svn", ".filees"}
+	// Validate the complete mutation set before removing either metadata tree.
+	// A hostile replacement of .filees must not leave a half-detached WC where
+	// .svn was already removed.
+	for _, entry := range entries {
+		source := filepath.Join(root, entry)
+		sourceInfo, err := os.Lstat(source)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !sourceInfo.IsDir() || sourceInfo.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s is not a real metadata directory", source)
+		}
+	}
+	for _, entry := range entries {
+		source := filepath.Join(root, entry)
+		sourceInfo, err := os.Lstat(source)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !sourceInfo.IsDir() || sourceInfo.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s is not a real metadata directory", source)
+		}
+		if err := os.RemoveAll(source); err != nil {
+			return err
+		}
+	}
+	dir, err := os.Open(root)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (p *daemonProvisioner) rollbackRelocation(ctx context.Context, record localrepo.Record, profile clientprofile.Profile, cause error) {
@@ -334,7 +475,7 @@ func (p *daemonProvisioner) failAttach(operationID string, err error) {
 func (p *daemonProvisioner) otherRoots(operationID string) []string {
 	var roots []string
 	for _, record := range p.local.List() {
-		if record.OperationID != operationID {
+		if record.OperationID != operationID && record.State != localrepo.StateDetached && record.State != localrepo.StateDeleted && record.State != localrepo.StateError {
 			roots = append(roots, record.LocalPath)
 		}
 	}

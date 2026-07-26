@@ -195,6 +195,8 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapRepoAttachIntent:    true,
 		contract.CapRepoAttachApprove:   true,
 		contract.CapRepoRelocate:        true,
+		contract.CapRepoDetach:          true,
+		contract.CapRepoDelete:          true,
 		contract.CapRepoLifecycleStatus: true,
 	}
 	if len(contract.AllCapabilities) != len(want) {

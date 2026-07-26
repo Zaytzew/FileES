@@ -20,10 +20,15 @@ func (b *retryBackend) Create(context.Context, string, string, string) (Reposito
 	}
 	return Repository{RepoID: "33333333-3333-4333-8333-333333333333", URL: "svn://example/repo"}, nil
 }
+func (b *retryBackend) Delete(context.Context, string, string, string) (time.Time, error) {
+	return time.Time{}, nil
+}
 
 type fakeBackend struct {
-	calls int
-	realm string
+	calls       int
+	deleteCalls int
+	realm       string
+	deletedRepo string
 }
 
 type fakeActivator struct {
@@ -153,6 +158,12 @@ func (b *fakeBackend) Create(_ context.Context, _ string, realm, name string) (R
 	b.realm = realm
 	return Repository{RepoID: "22222222-2222-4222-8222-222222222222", URL: "svn://example/repo-1"}, nil
 }
+func (b *fakeBackend) Delete(_ context.Context, _ string, realm, repoID string) (time.Time, error) {
+	b.deleteCalls++
+	b.realm = realm
+	b.deletedRepo = repoID
+	return time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC), nil
+}
 func ticket(t *testing.T, client string) control.Ticket {
 	t.Helper()
 	v, e := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketCreateRepository, client, control.CreateRepositoryPayload{Name: "Docs"}, time.Now())
@@ -176,6 +187,57 @@ func TestWorkerUsesSessionRealmAndIsIdempotent(t *testing.T) {
 	z, e := (&Worker{Backend: b, Store: store}).Handle(context.Background(), s, tk)
 	if e != nil || b.calls != 1 || b.realm != realm || a.CompletedAt != z.CompletedAt {
 		t.Fatalf("calls=%d realm=%s err=%v", b.calls, b.realm, e)
+	}
+}
+
+func TestWorkerDeleteUsesAuthenticatedRealmAndIsIdempotent(t *testing.T) {
+	backend := &fakeBackend{}
+	store, _ := NewFileStore(t.TempDir())
+	worker := &Worker{Backend: backend, Store: store}
+	realm, repoID := uuid.NewString(), uuid.NewString()
+	session := Session{ClientID: "client-a", RealmID: realm, CanCreateRepositories: true}
+	ticket, err := control.NewTicket(
+		uuid.NewString(), uuid.NewString(), control.TicketDeleteRepository,
+		session.ClientID, control.DeleteRepositoryPayload{RepoID: repoID}, time.Now(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := worker.Handle(context.Background(), session, ticket)
+	if err != nil || first.Status != control.ResultOK {
+		t.Fatalf("delete=%+v err=%v", first, err)
+	}
+	if backend.deleteCalls != 1 || backend.realm != realm || backend.deletedRepo != repoID {
+		t.Fatalf("backend calls=%d realm=%s repo=%s", backend.deleteCalls, backend.realm, backend.deletedRepo)
+	}
+	var payload control.DeleteRepositoryResult
+	if err := control.DecodeResultPayload(first.Result, &payload); err != nil || payload.RepoID != repoID || payload.RetainUntil == "" {
+		t.Fatalf("result=%+v err=%v", payload, err)
+	}
+	replay, err := (&Worker{Backend: backend, Store: store}).Handle(context.Background(), session, ticket)
+	if err != nil || replay.CompletedAt != first.CompletedAt || backend.deleteCalls != 1 {
+		t.Fatalf("replay=%+v calls=%d err=%v", replay, backend.deleteCalls, err)
+	}
+}
+
+func TestWorkerDeleteRequiresRepositoryAdministrationCapability(t *testing.T) {
+	backend := &fakeBackend{}
+	store, _ := NewFileStore(t.TempDir())
+	worker := &Worker{Backend: backend, Store: store}
+	session := Session{ClientID: "managed", RealmID: uuid.NewString()}
+	ticket, err := control.NewTicket(
+		uuid.NewString(), uuid.NewString(), control.TicketDeleteRepository,
+		session.ClientID, control.DeleteRepositoryPayload{RepoID: uuid.NewString()}, time.Now(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := worker.Handle(context.Background(), session, ticket)
+	if err != nil || result.Status != control.ResultError || result.Error == nil || result.Error.Code != "DELETE_REPOSITORY_FORBIDDEN" {
+		t.Fatalf("forbidden result=%+v err=%v", result, err)
+	}
+	if backend.deleteCalls != 0 {
+		t.Fatalf("forbidden request reached backend: %d", backend.deleteCalls)
 	}
 }
 func TestWorkerRejectsForgedClientAndCapability(t *testing.T) {

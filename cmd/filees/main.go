@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -29,6 +30,29 @@ import (
 )
 
 var version = "dev"
+
+const (
+	daemonActionNone int32 = iota
+	daemonActionShutdown
+	daemonActionRestart
+)
+
+type daemonLifecycle struct {
+	cancel context.CancelFunc
+	action atomic.Int32
+}
+
+func (lifecycle *daemonLifecycle) Shutdown() {
+	if lifecycle.action.CompareAndSwap(daemonActionNone, daemonActionShutdown) {
+		lifecycle.cancel()
+	}
+}
+
+func (lifecycle *daemonLifecycle) Restart() {
+	if lifecycle.action.CompareAndSwap(daemonActionNone, daemonActionRestart) {
+		lifecycle.cancel()
+	}
+}
 
 func main() {
 	if deploy.AskpassConfigured() {
@@ -109,6 +133,8 @@ func runDaemon() {
 
 	// IPC contract server
 	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
+	lifecycle := &daemonLifecycle{cancel: cancel}
+	ipc.SetSystemLifecycleService(lifecycle)
 	if err := configureClientUpdate(ipc, clientView.Update, version); err != nil {
 		lg.Errorf("client update: %v", err)
 		os.Exit(1)
@@ -116,6 +142,11 @@ func runDaemon() {
 	lifecycleStore, err := localrepo.Open(defaultRepositoryLifecyclePath())
 	if err != nil {
 		lg.Errorf("repository lifecycle: %v", err)
+		os.Exit(1)
+	}
+	repos, err = reconcileConfiguredRepositoryLifecycle(lifecycleStore, repos)
+	if err != nil {
+		lg.Errorf("repository lifecycle migration: %v", err)
 		os.Exit(1)
 	}
 	provisioningStore, err := provisioning.NewStore(defaultRepositoryProvisioningPath())
@@ -133,11 +164,7 @@ func runDaemon() {
 	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
 	provisioner.attachments = provisionedAttachments
 	go provisioner.Run(ctx)
-	existingRoots := make([]string, 0, len(repos))
-	for _, repo := range repos {
-		existingRoots = append(existingRoots, repo.LocalPath)
-	}
-	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, existingRoots: existingRoots, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue})
+	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach})
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
 		provisioner.AddProfile(profile)
@@ -154,6 +181,11 @@ func runDaemon() {
 	}
 	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, provisionedAttachments, ipc, gate, mtx, activityJournal); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
+	}
+	if lifecycle.action.Load() == daemonActionRestart {
+		if err := restartCurrentProcess(); err != nil {
+			lg.Errorf("restart daemon: %v", err)
+		}
 	}
 	return
 

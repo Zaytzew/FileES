@@ -147,7 +147,19 @@ func (vm ViewModel) CanLock() bool         { return vm.HasCap(contract.CapRepoLo
 func (vm ViewModel) CanUnlock() bool       { return vm.HasCap(contract.CapRepoUnlock) }
 func (vm ViewModel) CanListErrors() bool   { return vm.HasCap(contract.CapErrorList) }
 func (vm ViewModel) CanListActivity() bool { return vm.HasCap(contract.CapRepoActivity) }
-func (vm ViewModel) CanMutateLock() bool   { return vm.Connected && !vm.Stale && vm.CanLock() }
+func (vm ViewModel) CanDetachRepository() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoDetach)
+}
+func (vm ViewModel) CanDeleteRepository() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoDelete)
+}
+func (vm ViewModel) CanRestartFileES() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapSystemRestart)
+}
+func (vm ViewModel) CanShutdownFileES() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapSystemShutdown)
+}
+func (vm ViewModel) CanMutateLock() bool { return vm.Connected && !vm.Stale && vm.CanLock() }
 func (vm ViewModel) CanMutateUnlock() bool {
 	return vm.Connected && !vm.Stale && vm.CanUnlock()
 }

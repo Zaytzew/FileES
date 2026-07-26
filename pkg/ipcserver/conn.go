@@ -45,7 +45,26 @@ func (s *Server) handleConn(c net.Conn) {
 		}
 
 		resp := s.dispatch(req)
-		_ = enc.Encode(resp)
+		if err := enc.Encode(resp); err == nil && resp.Status == contract.StatusOK {
+			s.afterResponse(req.Command)
+		}
+	}
+}
+
+// afterResponse performs process-lifecycle actions only after their
+// acknowledgement is on the wire. Closing the daemon context from the handler
+// itself could tear down the request connection before the GUI learns that the
+// command was accepted.
+func (s *Server) afterResponse(command string) {
+	service := s.systemLifecycleService()
+	if service == nil {
+		return
+	}
+	switch command {
+	case contract.CmdSystemRestart:
+		service.Restart()
+	case contract.CmdSystemShutdown:
+		service.Shutdown()
 	}
 }
 
@@ -62,7 +81,8 @@ func (s *Server) streamEvents(req contract.Request, c net.Conn, enc *json.Encode
 	// detect disconnection: drain scanner in a goroutine
 	disconnected := make(chan struct{})
 	go func() {
-		for sc.Scan() {} // blocks until EOF / error
+		for sc.Scan() {
+		} // blocks until EOF / error
 		close(disconnected)
 	}()
 

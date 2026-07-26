@@ -19,6 +19,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleHello(req)
 	case contract.CmdSystemStatus:
 		return s.handleSystemStatus(req)
+	case contract.CmdSystemRestart:
+		return s.handleSystemLifecycle(req, true)
+	case contract.CmdSystemShutdown:
+		return s.handleSystemLifecycle(req, false)
 	case contract.CmdUpdateStatus:
 		return s.handleUpdateStatus(req)
 	case contract.CmdUpdatePlan:
@@ -45,6 +49,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoAttachApprove(req)
 	case contract.CmdRepoRelocate:
 		return s.handleRepoRelocate(req)
+	case contract.CmdRepoDetach:
+		return s.handleRepoDetach(req, false)
+	case contract.CmdRepoDelete:
+		return s.handleRepoDetach(req, true)
 	case contract.CmdRepoLifecycleStatus:
 		return s.handleRepoLifecycleStatus(req)
 	case contract.CmdErrorList:
@@ -58,6 +66,55 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleSystemLifecycle(req contract.Request, restart bool) contract.Response {
+	if s.systemLifecycleService() == nil {
+		return contract.ErrResponse(req.RequestID, "SYSTEM-0001", "ERROR", "NONE", "system.lifecycle_unavailable", nil)
+	}
+	action := "shutdown"
+	if restart {
+		action = "restart"
+	}
+	return contract.OKResponse(req.RequestID, contract.SystemLifecycleResult{Action: action})
+}
+
+func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) contract.Response {
+	service := s.repositoryLifecycleService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "REPO-0001", "ERROR", "RETRY", "repo.lifecycle_unavailable", nil)
+	}
+	var payload contract.RepoDetachPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	rs := s.repoByID(payload.RepoID)
+	if rs == nil || rs.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	summary := rs.Summary()
+	if !summary.Attached {
+		return contract.ErrResponse(req.RequestID, "REPO-2006", "ERROR", "NONE", "repo.not_attached", nil)
+	}
+	if summary.AttachmentPolicy == "required" {
+		return contract.ErrResponse(req.RequestID, "REPO-2010", "ERROR", "NONE", "repo.detach_required_forbidden", nil)
+	}
+	if deleteRepository {
+		s.mu.RLock()
+		activation, ok := s.activations[payload.ServerID]
+		s.mu.RUnlock()
+		if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories ||
+			activation.RealmID == "" || summary.OwnerRealmID != activation.RealmID {
+			return contract.ErrResponse(req.RequestID, "REPO-2011", "ERROR", "NONE", "repo.delete_forbidden", nil)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
+	result, err := service.BeginDetach(ctx, payload.ServerID, payload.RepoID, deleteRepository)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "REPO-2012", "ERROR", "REQUIRE_ACTION", "repo.detach_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
 }
 
 func (s *Server) handleRepoActivity(req contract.Request) contract.Response {

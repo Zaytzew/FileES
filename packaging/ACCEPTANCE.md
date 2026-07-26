@@ -34,4 +34,5 @@ Automatyczne testy potwierdzają kontrakt, lifecycle, reconnect, bundle i metada
 - [ ] Zrestartować daemon przy otwartym GUI; potwierdzić stan disconnected, reconnect i świeży snapshot.
 - [ ] Sprawdzić co najmniej dwa repozytoria, eventy, lukę sekwencji i pełny resync.
 - [ ] Sprawdzić lock/unlock, błąd operacji i wybór ścieżki spoza repozytorium.
-- [ ] Zamknąć GUI z menu i potwierdzić, że daemon oraz synchronizacja nadal działają.
+- [ ] Użyć „Uruchom FileES ponownie…” i potwierdzić kontrolowany restart daemona oraz GUI.
+- [ ] Użyć „Zamknij FileES…” i potwierdzić, że daemon, watchery oraz GUI pozostają wyłączone.

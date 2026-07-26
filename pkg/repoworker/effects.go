@@ -7,15 +7,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 type AuthorityPublisher interface {
 	Publish(context.Context, string, string, string, string) error
+	Delete(context.Context, string, string) error
 }
 type ServerEffects struct {
 	SVNAdmin, RepositoriesRoot string
 	DataAuthzFile              string
+	DeletionArchiveRoot        string
+	DeletionRetentionDays      int
 	Authority                  AuthorityPublisher
+	Now                        func() time.Time
 }
 
 func (e ServerEffects) CreateFSFS(ctx context.Context, repoID, operationID string) error {
@@ -66,6 +71,12 @@ func (e ServerEffects) CreateFSFS(ctx context.Context, repoID, operationID strin
 }
 func (e ServerEffects) PublishAuthority(ctx context.Context, repoID, realmID, name, url string) error {
 	return e.Authority.Publish(ctx, repoID, realmID, name, url)
+}
+func (e ServerEffects) WithdrawAuthority(ctx context.Context, repoID, realmID string) error {
+	if e.Authority == nil {
+		return errors.New("authority publisher is required")
+	}
+	return e.Authority.Delete(ctx, repoID, realmID)
 }
 func (e ServerEffects) Activate(ctx context.Context, repoID, realmID string) error {
 	activator, ok := e.Authority.(interface {

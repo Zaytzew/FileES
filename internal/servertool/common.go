@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"filees/internal/obsandbox"
 	"filees/pkg/activation"
@@ -89,7 +90,7 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	if err := onboarding.CheckExisting(config.Root, repositoryAccess); err != nil {
 		return nil, serverconfig.Config{}, err
 	}
-	profile := repositoryProfile(config.Root, access, config.Activation, config.Repositories.ResultsRoot)
+	profile := repositoryProfile(config.Root, access, config.Activation, config.Repositories.ResultsRoot, config.Repositories.DeletionArchiveRoot)
 	var sandboxErr error
 	if access.needSVN {
 		// The OpenBSD ports build of svn establishes its own unveil table after
@@ -109,7 +110,7 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	return files, config, nil
 }
 
-func repositoryProfile(root string, access toolAccess, activationConfig activation.Config, repositoryResultsRoot string) obsandbox.Profile {
+func repositoryProfile(root string, access toolAccess, activationConfig activation.Config, repositoryResultsRoot, deletionArchiveRoot string) obsandbox.Profile {
 	areaPerms := "r"
 	if access.write {
 		areaPerms = "rwc"
@@ -147,6 +148,9 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 	}
 	if access.needRepoResults && repositoryResultsRoot != "" {
 		paths = append(paths, obsandbox.Path{Label: "repository-results", Name: repositoryResultsRoot, Perms: "rwc"})
+		if deletionArchiveNeedsOwnUnveil(repositoryResultsRoot, deletionArchiveRoot) {
+			paths = append(paths, obsandbox.Path{Label: "repository-deletion-archive", Name: deletionArchiveRoot, Perms: "rwc"})
+		}
 	}
 	if access.needSVN {
 		paths = append(paths,
@@ -168,6 +172,18 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		)
 	}
 	return obsandbox.Profile{Name: access.name, Promises: access.promises(), Paths: paths}
+}
+
+func deletionArchiveNeedsOwnUnveil(resultsRoot, archiveRoot string) bool {
+	if archiveRoot == "" {
+		return false
+	}
+	resultsRoot = filepath.Clean(resultsRoot)
+	archiveRoot = filepath.Clean(archiveRoot)
+	if resultsRoot == "" || resultsRoot == "." {
+		return true
+	}
+	return archiveRoot != resultsRoot && !strings.HasPrefix(archiveRoot, resultsRoot+string(filepath.Separator))
 }
 
 var (

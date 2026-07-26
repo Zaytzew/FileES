@@ -51,6 +51,15 @@ type RepositoryCreator interface {
 	CreationStatus(ctx context.Context, operationID string) (state, lastError string, err error)
 }
 
+type RepositoryDetacher interface {
+	DetachRepository(context.Context, string, string, bool) error
+}
+
+type StackLifecycle interface {
+	RestartFileES(context.Context) error
+	ShutdownFileES(context.Context) error
+}
+
 // MobilePairingLauncher fetches a mobile pairing token from the daemon and
 // hands it to the separate pairing-helper process, which renders it as a QR
 // code and handles its own PIN gate and UI - unlike RepositoryCreator, no
@@ -84,27 +93,29 @@ type presentationError interface {
 }
 
 // Config wires the controller to its dependencies.
-// Notifier, Reconnect and Quit may be nil; all other fields are required.
+// Notifier and Reconnect may be nil; all other fields are required.
 type Config struct {
-	Intents           <-chan tray.Intent
-	ViewModel         func() app.ViewModel
-	Opener            platform.FolderOpener
-	Picker            platform.FilePicker
-	FolderPicker      platform.FolderPicker
-	Prompter          platform.Prompter
-	RepositoryCreator RepositoryCreator
-	MobilePairer      MobilePairingLauncher
+	Intents            <-chan tray.Intent
+	ViewModel          func() app.ViewModel
+	Opener             platform.FolderOpener
+	Picker             platform.FilePicker
+	FolderPicker       platform.FolderPicker
+	Prompter           platform.Prompter
+	RepositoryCreator  RepositoryCreator
+	RepositoryDetacher RepositoryDetacher
+	MobilePairer       MobilePairingLauncher
 	// PinStore, if non-nil, offers PIN setup at the end of a successful
 	// activation (see startActivation) - nil means the local-PIN feature is
 	// disabled entirely (e.g. platform without a durable state root).
 	PinStore  *localpin.Store
 	Activator Activator
 	Updater   Updater
+	Stack     StackLifecycle
 	Notifier  platform.Notifier // nil → notifications silently dropped
 	Locker    LockUnlocker
 	Reconnect func() // nil → reconnect intent is a no-op
-	Quit      func() // nil → quit intent is a no-op
 	Restart   func() // called only after a successful apply requiring restart
+	Shutdown  func() // called after daemon accepts a full-stack shutdown
 
 	// CreationStatusPollInterval/CreationStatusPollTimeout override how often
 	// and how long awaitCreationOutcome polls after a repository-create
@@ -169,11 +180,150 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startUpdate(ctx, false)
 	case tray.IntentUpdateApply:
 		c.startUpdate(ctx, true)
-	case tray.IntentQuit:
-		if c.cfg.Quit != nil {
-			c.cfg.Quit()
+	case tray.IntentDetachRepository:
+		c.startDetachRepository(ctx, intent.ServerID, intent.RepoID, false)
+	case tray.IntentDeleteRepository:
+		c.startDetachRepository(ctx, intent.ServerID, intent.RepoID, true)
+	case tray.IntentRestartFileES:
+		c.startStackLifecycle(ctx, true)
+	case tray.IntentShutdownFileES:
+		c.startStackLifecycle(ctx, false)
+	}
+}
+
+func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) {
+	key := "detach:" + serverID + ":" + repoID
+	if serverID == "" || repoID == "" || c.cfg.RepositoryDetacher == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		repo, ok := findRepo(vm, repoID)
+		if !ok || repo.ServerID != serverID || !repo.Attached || !vm.Connected || vm.Stale {
+			return
+		}
+		name := repo.DisplayName
+		if strings.TrimSpace(name) == "" {
+			name = repo.ID
+		}
+		if !deleteRepository {
+			if repo.AttachmentPolicy == "required" || !vm.CanDetachRepository() {
+				return
+			}
+			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+				Title:       "Odłącz folder od FileES",
+				Text:        fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie.", name, repo.LocalPath),
+				ConfirmText: "Odłącz folder", CancelText: "Anuluj",
+			})
+			if err != nil || !confirmed {
+				return
+			}
+		} else {
+			if repo.AttachmentPolicy == "required" || !vm.CanDeleteRepository() || !repositoryOwnedByCurrentRealm(vm, repo) {
+				return
+			}
+			first, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+				Title:       "Odłącz trwale repozytorium",
+				Text:        fmt.Sprintf("%s\n%s\n\nRepozytorium zostanie usunięte z serwera, a folder lokalny odłączony. Dane lokalne pozostaną, ale synchronizacja i historia serwerowa przestaną być dostępne.", name, repo.LocalPath),
+				ConfirmText: "Przejdź dalej", CancelText: "Anuluj",
+			})
+			if err != nil || !first {
+				return
+			}
+			second, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+				Title:       "Ostateczne potwierdzenie",
+				Text:        "To jest operacja destrukcyjna. Serwer zastosuje skonfigurowaną retencję; w trybie panic (retencja 0 dni) nie pozostanie żadna kopia do odzyskania.\n\nCzy na pewno trwale usunąć repozytorium „" + name + "”?",
+				ConfirmText: "Usuń repozytorium", CancelText: "Nie usuwaj",
+			})
+			if err != nil || !second {
+				return
+			}
+		}
+		latest := c.cfg.ViewModel()
+		current, ok := findRepo(latest, repoID)
+		if !ok || current.ServerID != serverID || !current.Attached || !latest.Connected || latest.Stale {
+			return
+		}
+		if deleteRepository {
+			if current.AttachmentPolicy == "required" || !latest.CanDeleteRepository() || !repositoryOwnedByCurrentRealm(latest, current) {
+				return
+			}
+		} else if !latest.CanDetachRepository() || current.AttachmentPolicy == "required" {
+			return
+		}
+		if err := c.cfg.RepositoryDetacher.DetachRepository(ctx, serverID, repoID, deleteRepository); err != nil {
+			if ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: "Nie udało się odłączyć repozytorium", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			}
+			return
+		}
+		title := "Folder odłączony od FileES"
+		if deleteRepository {
+			title = "Repozytorium trwale odłączone"
+		}
+		c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: title, Body: name, Urgency: platform.UrgencyNormal})
+	}()
+}
+
+func repositoryOwnedByCurrentRealm(vm app.ViewModel, repo app.RepoViewModel) bool {
+	for _, server := range vm.Servers {
+		if server.ID == repo.ServerID {
+			return server.Owns(repo) && server.CanOfferRepositoryCreation()
 		}
 	}
+	return false
+}
+
+func (c *Controller) startStackLifecycle(ctx context.Context, restart bool) {
+	key := "stack-lifecycle"
+	if c.cfg.Stack == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		if !vm.Connected || vm.Stale || (restart && !vm.CanRestartFileES()) || (!restart && !vm.CanShutdownFileES()) {
+			return
+		}
+		request := platform.ConfirmRequest{
+			Title:       "Uruchom FileES ponownie",
+			Text:        "Daemon kontrolowanie zakończy bieżące operacje i opróżni kolejkę zmian, po czym daemon i GUI uruchomią się ponownie.",
+			ConfirmText: "Uruchom ponownie", CancelText: "Anuluj",
+		}
+		if !restart {
+			request = platform.ConfirmRequest{
+				Title:       "Zamknij FileES",
+				Text:        "Synchronizacja zostanie zatrzymana, a daemon i GUI zamknięte. Zmiany wykonane później zostaną wykryte przy następnym uruchomieniu FileES.",
+				ConfirmText: "Zamknij FileES", CancelText: "Anuluj",
+			}
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, request)
+		if err != nil || !confirmed {
+			return
+		}
+		if restart {
+			err = c.cfg.Stack.RestartFileES(ctx)
+		} else {
+			err = c.cfg.Stack.ShutdownFileES(ctx)
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: "stack-lifecycle", Group: "stack-lifecycle", Title: "Nie udało się zmienić stanu FileES", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			}
+			return
+		}
+		if restart && c.cfg.Restart != nil {
+			c.cfg.Restart()
+		}
+		if !restart && c.cfg.Shutdown != nil {
+			c.cfg.Shutdown()
+		}
+	}()
 }
 
 func (c *Controller) startCreateRepository(ctx context.Context, serverID string) {
@@ -414,6 +564,12 @@ func (c *Controller) startUpdate(ctx context.Context, apply bool) {
 		}
 		c.notify(ctx, platform.Notification{ID: "update", Group: "update", Title: "FileES zaktualizowano do wersji " + result.InstalledVersion, Urgency: platform.UrgencyNormal})
 		if result.RestartRequired && c.cfg.Restart != nil {
+			if c.cfg.Stack != nil {
+				if err := c.cfg.Stack.RestartFileES(ctx); err != nil {
+					c.updateFailure(ctx, "Aktualizacja została zainstalowana, ale restart FileES nie powiódł się", err)
+					return
+				}
+			}
 			c.cfg.Restart()
 		}
 	}()

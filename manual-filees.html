@@ -974,7 +974,7 @@ FILEES_LOG=trace ./filees   # includes svn invocations
 <tr><td>“Disconnected” but daemon is running</td><td>Check socket path: <code>filees status</code>; run <code>filees-gui --socket /path/to/daemon.sock</code>; check <code>filees-gui --autostart status</code> for <code>enabled-stale</code></td></tr>
 <tr><td>File picker does not open (Linux)</td><td>Install <code>zenity</code> or <code>kdialog</code>: <code>apt install zenity</code> / <code>dnf install zenity</code></td></tr>
 <tr><td>Toast notifications missing (Windows)</td><td>Ensure installation was via MSI (registers AUMID). Running <code>filees-gui.exe</code> without the installer will not register the AUMID.</td></tr>
-<tr><td>Multiple tray icons</td><td>A per-user lock prevents a second instance from initialising the tray. If two icons appear, one may be from an older version. Use “Close GUI” on each, then restart the current installation.</td></tr>
+<tr><td>Multiple tray icons</td><td>A per-user lock prevents a second instance from initialising the tray. If two icons appear, one may be from an older version. Terminate the obsolete GUI process with the operating-system tools, then use “Shut down FileES” in the current instance and start the current installation again. The menu has no GUI-only shutdown action.</td></tr>
 <tr><td>Conflict files accumulating in <code>!kolizje/</code></td><td>These are preserved local versions of files where a server change won. Review them manually. The directory is scanner-ignored and will never be committed.</td></tr>
 </table></div>
 </div><hr class="chapter"/><h1 id="ch3">Chapter 3: Server Installation and Deploy</h1><div class="chapter-content">

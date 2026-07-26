@@ -21,7 +21,9 @@
     "results_root": "/var/filees/repository-operations",
     "data_authz_file": "/var/filees/activation/repositories.authz",
     "svnadmin_binary": "/usr/local/bin/svnadmin",
-    "url_prefix": "svn+ssh://_filees-data@filees.example.net/"
+    "url_prefix": "svn+ssh://_filees-data@filees.example.net/",
+    "deletion_archive_root": "/var/filees/repository-operations/deleted-repositories",
+    "deletion_retention_days": 30
   },
   "operation_ttl": "30m",
   "otp_attempts": 5,

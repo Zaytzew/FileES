@@ -42,6 +42,7 @@ type Repository struct{ RepoID, URL string }
 // grant, authz and projection. Create must itself be resumable by operation ID.
 type Backend interface {
 	Create(context.Context, string, string, string) (Repository, error) // operation, realm, name
+	Delete(context.Context, string, string, string) (time.Time, error)  // operation, realm, repo ID
 }
 
 type ResultStore interface {
@@ -97,8 +98,11 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketMobilePairing {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
+	}
+	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
+		return w.failure(ticket, "DELETE_REPOSITORY_FORBIDDEN", "authenticated session cannot delete repositories")
 	}
 	if (ticket.Type == control.TicketStoragePreflight || ticket.Type == control.TicketCreateRepository) && !session.CanCreateRepositories {
 		return w.failure(ticket, "CREATE_REPOSITORY_FORBIDDEN", "authenticated session cannot create repositories")
@@ -119,6 +123,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.Type == control.TicketInitialCommit {
 		return w.activate(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketDeleteRepository {
+		return w.deleteRepository(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketStoragePreflight {
 		return w.preflight(ctx, ticket)
@@ -145,6 +152,27 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 		return control.Result{}, fmt.Errorf("backend returned incomplete repository")
 	}
 	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.CreateRepositoryResult{RepoID: repo.RepoID, RepoURL: repo.URL}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
+func (w *Worker) deleteRepository(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	var payload control.DeleteRepositoryPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	if w.Backend == nil {
+		return control.Result{}, errors.New("repository backend is required")
+	}
+	retainUntil, err := w.Backend.Delete(ctx, ticket.OperationID, session.RealmID, payload.RepoID)
+	if err != nil {
+		return w.retryable(ticket, "DELETE_REPOSITORY_RETRY", err.Error())
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.DeleteRepositoryResult{
+		RepoID: payload.RepoID, RetainUntil: retainUntil.UTC().Format(time.RFC3339Nano),
+	}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}

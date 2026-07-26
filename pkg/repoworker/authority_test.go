@@ -121,6 +121,67 @@ func TestTransferOwnerMovesRepositoryAndRegeneratesAuthz(t *testing.T) {
 	}
 }
 
+func TestDeleteWithdrawsProjectionAndAuthorityAndLeavesTombstone(t *testing.T) {
+	root := t.TempDir()
+	realm, clientID := uuid.NewString(), uuid.NewString()
+	viewPath := filepath.Join(root, "clients", clientID, "view.json")
+	view := clientview.View{
+		Schema: clientview.Schema, ClientID: clientID, RealmID: realm,
+		Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal",
+		Capabilities: &clientview.Capabilities{CanCreateRepositories: true},
+		Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{},
+	}
+	if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+		t.Fatal(err)
+	}
+	authz := filepath.Join(t.TempDir(), "data.authz")
+	runner := &publishRunner{}
+	publisher := ServicePublisher{ServiceWC: root, DataAuthzFile: authz, Runner: runner}
+	repoID := uuid.NewString()
+	url := "svn+ssh://_filees-client@example/repos/" + repoID
+	if err := publisher.Publish(context.Background(), repoID, realm, "Docs", url); err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.Activate(context.Background(), repoID, realm); err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.Delete(context.Background(), repoID, uuid.NewString()); err == nil {
+		t.Fatal("foreign realm deleted repository")
+	}
+	if err := publisher.Delete(context.Background(), repoID, realm); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := clientview.Load(viewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Repositories) != 0 {
+		t.Fatalf("deleted repository remains projected: %+v", updated.Repositories)
+	}
+	raw, err := os.ReadFile(authz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), repoID) {
+		t.Fatalf("deleted repository remains in authz: %s", raw)
+	}
+	recordPath, _ := repositoryRecordPath(root, repoID)
+	recordRaw, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record repositoryRecord
+	if err := json.Unmarshal(recordRaw, &record); err != nil || record.State != "deleted" {
+		t.Fatalf("canonical tombstone=%+v err=%v", record, err)
+	}
+	if err := publisher.Publish(context.Background(), repoID, realm, "Docs", url); err == nil {
+		t.Fatal("deleted repository was republished")
+	}
+	if err := publisher.TransferOwner(context.Background(), repoID, uuid.NewString()); err == nil {
+		t.Fatal("deleted repository ownership was transferred")
+	}
+}
+
 // TestRepositoryRecordPathRefusesEscape is the second-layer half of the audit's
 // Finding B. pkg/control/v1 now rejects a non-UUID repo_id on the wire, but
 // this is the last point before a client-influenced string becomes a filesystem

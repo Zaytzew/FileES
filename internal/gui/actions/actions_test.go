@@ -786,24 +786,6 @@ func TestControllerReconnectCallsCallback(t *testing.T) {
 	awaitCh(t, done, "Reconnect callback")
 }
 
-func TestControllerQuitCallsCallback(t *testing.T) {
-	done := make(chan struct{}, 1)
-	fake := &platformtest.Fake{}
-	vm := &vmStore{}
-
-	intents, cancel := setup(actions.Config{
-		ViewModel: vm.Load,
-		Opener:    fake,
-		Picker:    fake,
-		Locker:    newFakeLocker(),
-		Quit:      func() { done <- struct{}{} },
-	})
-	defer cancel()
-
-	send(t, intents, tray.Intent{Kind: tray.IntentQuit})
-	awaitCh(t, done, "Quit callback")
-}
-
 // ---- Lifecycle tests --------------------------------------------------------
 
 func TestControllerExitsOnContextCancellation(t *testing.T) {

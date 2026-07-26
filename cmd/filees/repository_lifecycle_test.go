@@ -6,9 +6,39 @@ import (
 	"path/filepath"
 	"testing"
 
+	"filees/pkg/config"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
 )
+
+func TestConfiguredRepositoryMigrationSuppressesDetachedWCOnRestart(t *testing.T) {
+	store, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := config.Repo{
+		ID: "repo-1", ServerID: "office", RepoURL: "svn+ssh://_filees-client@example/repo-1",
+		Access: "rw", LocalPath: filepath.Join(t.TempDir(), "wc"),
+	}
+	active, err := reconcileConfiguredRepositoryLifecycle(store, []config.Repo{repository})
+	if err != nil || len(active) != 1 {
+		t.Fatalf("initial migration=%+v err=%v", active, err)
+	}
+	records := store.List()
+	if len(records) != 1 || records[0].State != localrepo.StateAttached {
+		t.Fatalf("imported records=%+v", records)
+	}
+	if _, err := store.BeginDetach("office", "repo-1", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteDetach(records[0].OperationID); err != nil {
+		t.Fatal(err)
+	}
+	active, err = reconcileConfiguredRepositoryLifecycle(store, []config.Repo{repository})
+	if err != nil || len(active) != 0 || len(store.List()) != 1 {
+		t.Fatalf("detached config reactivated: active=%+v records=%+v err=%v", active, store.List(), err)
+	}
+}
 
 func TestRepositoryLifecycleCreateSharesCanonicalOperationWithProvisioning(t *testing.T) {
 	root := t.TempDir()

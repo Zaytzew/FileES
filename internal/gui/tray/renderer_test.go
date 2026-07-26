@@ -120,7 +120,7 @@ func TestRendererCancelsListenersFromPreviousGeneration(t *testing.T) {
 	backend.mu.Unlock()
 
 	renderer.Render(MenuModel{Items: []MenuItemModel{
-		actionItem("new", "New", "", Intent{Kind: IntentQuit}),
+		actionItem("new", "New", "", Intent{Kind: IntentRestartFileES}),
 	}})
 	// Make both the stale click and cancelled context ready. Cancellation via
 	// select alone is nondeterministic; the generation fence must always win.
@@ -139,7 +139,7 @@ func TestRendererCancelsListenersFromPreviousGeneration(t *testing.T) {
 	current.clicks <- struct{}{}
 	select {
 	case intent := <-intents:
-		if intent.Kind != IntentQuit {
+		if intent.Kind != IntentRestartFileES {
 			t.Fatalf("intent = %#v", intent)
 		}
 	case <-time.After(time.Second):

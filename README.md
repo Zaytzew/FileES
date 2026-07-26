@@ -177,7 +177,7 @@ filees help
 
 ## GUI Tray — koncepcja
 
-`filees-gui` jest osobnym procesem i cienką warstwą UX nad publicznym kontraktem IPC. GUI nie jest częścią daemona, nie zna SVN i nie przejmuje odpowiedzialności za synchronizację. Zamknięcie GUI nie zatrzymuje daemona ani pracy repozytoriów.
+`filees-gui` jest osobnym procesem i cienką warstwą UX nad publicznym kontraktem IPC. GUI nie jest częścią daemona, nie zna SVN i nie przejmuje odpowiedzialności za synchronizację. Awaria samego procesu GUI nie zabija daemona, natomiast jawna akcja użytkownika **Zamknij FileES** kontrolowanie zatrzymuje daemon i GUI jako jeden stack kliencki.
 
 ### Twarda granica GUI–daemon
 
@@ -203,7 +203,9 @@ Jedynym wyjątkiem poza IPC są lokalne działania należące do UX, np. otwarci
 - `filees-gui` może startować wraz z sesją graficzną i łączy się z istniejącym socketem,
 - brak daemona jest normalnym stanem UX, a nie awarią samego GUI,
 - GUI ponawia połączenie z ograniczonym backoffem, np. `1s → 2s → 5s → 10s → 30s`,
-- „Zamknij GUI” kończy tylko tray-app; zatrzymanie daemona pozostaje niedostępne, dopóki daemon nie udostępni osobnej capability.
+- **Uruchom FileES ponownie…** i **Zamknij FileES…** są dostępne wyłącznie po
+  zareklamowaniu `system.restart`/`system.shutdown`; obie operacje obejmują
+  daemon i GUI.
 
 Po połączeniu GUI wykonuje:
 
@@ -239,13 +241,17 @@ Menu tray zawiera:
 - „Dodaj folder do FileES…” przy serwerze, który pozwala temu klientowi tworzyć repozytoria,
 - „Otwórz katalog” dla każdego repozytorium,
 - `Lock…` i `Unlock…` z wyborem plików wewnątrz danego repozytorium,
+- „Odłącz folder…” dla opcjonalnej WC oraz osobne, podwójnie potwierdzane
+  „Odłącz trwale…” dla repozytorium własnego realmu,
 - globalne podmenu „Ostatnia aktywność”, równorzędne z „Ostatnimi błędami”,
   pokazujące repozytorium, plik i potwierdzony etap synchronizacji,
 - ostatnie błędy z `error.list`, mapowane przez `message_key`, `severity` i `hint`,
 - „Połącz ponownie” przy niedostępnym daemonie,
-- „Zamknij GUI”.
+- placeholder „Aktualizacja klienta — w przygotowaniu”, gdy nie ma
+  zareklamowanego wydania,
+- „Uruchom FileES ponownie…” i „Zamknij FileES…”.
 
-Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.lock`, `repo.unlock`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.detach`, `repo.delete`, `repo.lock`, `repo.unlock`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
 
 Tworzenie repozytorium jest zwykłą operacją użytkownika, bez kontaktu z konsolą:
 
@@ -255,6 +261,20 @@ Tworzenie repozytorium jest zwykłą operacją użytkownika, bez kontaktu z kons
 4. Sprawdź serwer, folder oraz dostęp `rw` w podsumowaniu i wybierz „Utwórz”.
 
 GUI ponownie sprawdza świeżość i uprawnienia bezpośrednio przed żądaniem IPC. Daemon kanonizuje ścieżkę, odrzuca nakładające się korzenie i trwale zapisuje operację przed odpowiedzią. Dalsze tworzenie na serwerze, import zawartości, pierwszy commit i dołączenie repozytorium odbywają się asynchronicznie; przyjęcie operacji daje pierwsze powiadomienie ("Tworzenie repozytorium rozpoczęte"). GUI odpytuje następnie `repo.lifecycle_status` po `operation_id` (domyślnie co 3 s, do 15 min) i pokazuje drugie powiadomienie z realnym wynikiem: "Repozytorium utworzone" albo, w razie niepowodzenia dowolnego etapu (np. `STORAGE_INSUFFICIENT` przy braku miejsca na serwerze), komunikat błędu z dokładną treścią przyczyny. Repozytorium, które nie przejdzie tego pipeline'u, nigdy nie dostaje zarejestrowanego `RepoID`, więc nie pojawi się w stanie repozytoriów ani w `error.list` — drugie powiadomienie jest jedynym miejscem, gdzie taka porażka jest widoczna.
+
+Odłączenie ma dwa rozłączne kontrakty:
+
+- **Odłącz folder…** zatrzymuje runtime, usuwa wyłącznie `.svn` i `.filees`
+  z lokalnego rootu i zostawia wszystkie dane użytkownika jako zwykły folder;
+  działa także dla repo offline, a trwały tombstone blokuje ponowne podłączenie
+  starego wpisu `config.json`;
+- **Odłącz trwale…** wymaga dwóch osobnych potwierdzeń, server-side ownership
+  oraz capability administracji repo. Dla retencji `X>0` serwer tworzy i
+  weryfikuje pełny dump, natychmiast usuwa FSFS i trzyma wyłącznie dump przez
+  `X` dni. Dla `X=0` usuwa FSFS natychmiast bez tworzenia dumpa.
+
+Repozytorium `attachment_policy=required` nie udostępnia żadnej z tych akcji.
+Lifecycle jest trwały i wznawialny po restarcie.
 
 ### Podpisane aktualizacje klienta desktopowego
 
@@ -273,8 +293,9 @@ GUI pokazuje badge „Dostępna aktualizacja”. „Pokaż, co ulegnie zmianie�
 dry runem, a „Zaktualizuj i uruchom ponownie…” ponownie rozwiązuje podpisane
 wydanie, wyświetla natywne potwierdzenie i uruchamia istniejący instalator.
 Linux zachowuje konfigurację i wyłącza restart/autostart wewnątrz skryptu;
-po sukcesie GUI kończy pracę, zwalnia blokadę single-instance i dopiero wtedy
-uruchamia nową binarkę. Procedura publikacji: `tools/RELEASE_PUBLISHING.md`.
+po sukcesie GUI żąda restartu całego stacku, kończy pracę, zwalnia blokadę
+single-instance i dopiero wtedy uruchamia nową binarkę. Procedura publikacji:
+`tools/RELEASE_PUBLISHING.md`.
 
 ### Powiadomienia
 
@@ -310,7 +331,7 @@ Etap 3C jest ukończony implementacyjnie: adapter Windows obejmuje Explorer, pic
 
 Etap 3D jest ukończony: `internal/gui/actions` nieblokująco obsługuje intencje traya, ponownie sprawdza świeżość modelu i repozytorium po interakcji z pickerem, waliduje ścieżki przed IPC oraz serializuje lock/unlock w obrębie jednego repozytorium. Kontroler posiada lifecycle swoich zadań i single-flight dla otwierania katalogu. Granicę importów chroni test architektoniczny.
 
-Etap 4 jest ukończony implementacyjnie. `cmd/filees-gui` stanowi composition root dla `ipcclient`, modelu `app`, renderera `tray`, polityki `notifications`, kontrolera `actions` i adaptera platformowego. Lifecycle ma wspólne anulowanie dla sygnałów systemowych, quit i zamknięcia traya, czeka na zadania kontrolera oraz listenery renderera, a ręczny reconnect przechodzi przez pętlę zdarzeń `app`. Per-user lock blokuje drugą instancję przed inicjalizacją traya. Test pionowy z rzeczywistym transportem IPC obejmuje wiele repozytoriów oraz zamknięcie i restart daemona; shutdown serwera zamyka aktywne streamy, więc reconnect nie zależy od śmierci procesu. Skrypt `packaging/build-gui.sh` tworzy pure-Go bundle Linux/Windows w świeżych katalogach i przekazuje wersję z `VERSION` do GUI oraz WiX. Linux ma instalację per-user, a źródło MSI WiX tworzy na Windows skrót Start Menu z AUMID. Odbiór w prawdziwych sesjach obu systemów opisuje `packaging/ACCEPTANCE.md` i pozostaje bramką wydania.
+Etap 4 jest ukończony implementacyjnie. `cmd/filees-gui` stanowi composition root dla `ipcclient`, modelu `app`, renderera `tray`, polityki `notifications`, kontrolera `actions` i adaptera platformowego. Lifecycle ma wspólne anulowanie dla sygnałów systemowych, restartu/zamknięcia całego FileES i zamknięcia traya, czeka na zadania kontrolera oraz listenery renderera, a ręczny reconnect przechodzi przez pętlę zdarzeń `app`. Per-user lock blokuje drugą instancję przed inicjalizacją traya. Test pionowy z rzeczywistym transportem IPC obejmuje wiele repozytoriów oraz zamknięcie i restart daemona; shutdown serwera zamyka aktywne streamy, więc reconnect nie zależy od śmierci procesu. Skrypt `packaging/build-gui.sh` tworzy pure-Go bundle Linux/Windows w świeżych katalogach i przekazuje wersję z `VERSION` do GUI oraz WiX. Linux ma instalację per-user, a źródło MSI WiX tworzy na Windows skrót Start Menu z AUMID. Odbiór w prawdziwych sesjach obu systemów opisuje `packaging/ACCEPTANCE.md` i pozostaje bramką wydania.
 
 Autostart procesu GUI jest zarządzany bez uruchamiania traya przez `filees-gui --autostart status|enable|disable`. Status rozróżnia poprawny wpis `enabled` od `enabled-stale`, który wskazuje inną komendę. Wpis zachowuje absolutną ścieżkę executable i parametr `--socket`; `enable` należy zatem wykonać dopiero dla pliku umieszczonego w docelowej lokalizacji instalacyjnej. Operacja jest per-user: XDG na Linuksie i HKCU na Windowsie.
 

@@ -178,12 +178,12 @@ func (c *execClient) Update(ctx context.Context, localPath string) (string, erro
 // Revert removes local scheduling metadata for selected paths. It is kept off
 // the broad Client interface because only restart recovery needs it.
 func (c *execClient) Revert(ctx context.Context, rootDirectory string, paths []string) (string, error) {
-	args := append([]string{"revert"}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"revert"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
 func (c *execClient) UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string) (string, error) {
-	args := append([]string{"update", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"update", "--depth", "empty"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
@@ -192,7 +192,7 @@ func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []s
 	if len(paths) == 0 {
 		depth = "infinity"
 	}
-	args := append([]string{"status", "--xml", "--verbose", "--ignore-externals", "--depth", depth}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"status", "--xml", "--verbose", "--ignore-externals", "--depth", depth}, c.pathArgs(rootDirectory, paths)...)
 	output, err := c.run(ctx, rootDirectory, args)
 	if err != nil {
 		return nil, fmt.Errorf("svn status failed: %w\n%s", err, output)
@@ -244,12 +244,12 @@ func (c *execClient) Add(ctx context.Context, rootDirectory string, paths []stri
 	// Keep directory expansion under the commit planner's control. --parents
 	// schedules required ancestors, while --depth empty prevents a directory
 	// from recursively bypassing file-count and byte limits.
-	args := append([]string{"add", "--parents", "--depth", "empty"}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"add", "--parents", "--depth", "empty"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
 func (c *execClient) Delete(ctx context.Context, rootDirectory string, paths []string) (string, error) {
-	args := append([]string{"delete"}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"delete"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
@@ -257,7 +257,7 @@ func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []s
 	if len(paths) == 0 {
 		return "", errors.New("svn commit refused: empty path list")
 	}
-	args := append([]string{"commit", "-m", message}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"commit", "-m", message}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
@@ -265,7 +265,7 @@ func (c *execClient) CommitKeepLocks(ctx context.Context, rootDirectory string, 
 	if len(paths) == 0 {
 		return "", errors.New("svn commit refused: empty path list")
 	}
-	args := append([]string{"commit", "--no-unlock", "-m", message}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"commit", "--no-unlock", "-m", message}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
@@ -296,7 +296,7 @@ func (c *execClient) CommitWithRevision(ctx context.Context, rootDirectory, repo
 		args = append(args, "--no-unlock")
 	}
 	args = append(args, "--with-revprop", "filees:commit-id="+marker, "-m", message)
-	args = append(args, c.relativize(rootDirectory, paths)...)
+	args = append(args, c.pathArgs(rootDirectory, paths)...)
 	out, err := c.run(ctx, rootDirectory, args)
 	if err != nil {
 		return out, 0, err
@@ -347,7 +347,7 @@ func (c *execClient) commitRevisionByMarker(ctx context.Context, repoURL string,
 }
 
 func (c *execClient) Lock(ctx context.Context, rootDirectory string, paths []string) (string, error) {
-	args := append([]string{"lock"}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"lock"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
@@ -356,12 +356,12 @@ func (c *execClient) LockWithComment(ctx context.Context, rootDirectory string, 
 	if force {
 		args = append(args, "--force")
 	}
-	args = append(args, c.relativize(rootDirectory, paths)...)
+	args = append(args, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
 func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []string) (string, error) {
-	args := append([]string{"unlock"}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"unlock"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
@@ -383,7 +383,7 @@ func (c *execClient) LockInfo(ctx context.Context, rootDirectory, path string) (
 	if len(targets) != 1 {
 		return nil, errors.New("svn info lock requires exactly one path")
 	}
-	out, err := c.run(ctx, rootDirectory, []string{"status", "--show-updates", "--xml", targets[0]})
+	out, err := c.run(ctx, rootDirectory, []string{"status", "--show-updates", "--xml", "--", targets[0]})
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +438,7 @@ func parseLockInfoXML(output string) (*LockInfo, error) {
 }
 
 func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string, paths []string) (string, error) {
-	args := append([]string{"propget", propName}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"propget", propName}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
@@ -446,7 +446,7 @@ func (c *execClient) PropSet(ctx context.Context, rootDirectory, propName, value
 	if len(paths) == 0 {
 		return "", errors.New("svn propset refused: empty path list")
 	}
-	args := append([]string{"propset", propName, value}, c.relativize(rootDirectory, paths)...)
+	args := append([]string{"propset", propName, value}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
@@ -490,7 +490,7 @@ func parsePropGetXML(output, rootDirectory string) (map[string]bool, error) {
 }
 
 func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, accept string) (string, error) {
-	args := append([]string{"resolve", "--accept", accept}, c.relativize(wc, paths)...)
+	args := append([]string{"resolve", "--accept", accept}, c.pathArgs(wc, paths)...)
 	return c.run(ctx, wc, args)
 }
 
@@ -559,6 +559,22 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 		return buf.String(), fmt.Errorf("komenda '%s' zakończyła się błędem: %v\n%s", name, err, buf.String())
 	}
 	return buf.String(), nil
+}
+
+// pathArgs builds the trailing positional path arguments of an svn invocation,
+// preceded by the "--" end-of-options marker. Every path-taking command must
+// go through this helper rather than appending relativize() directly: a file or
+// directory whose name begins with '-' is a perfectly legal filename, and a
+// collaborator can place one in a shared working copy. Without the marker svn
+// parses such a name as an option instead of a path (CWE-88 argument
+// injection). No separator is emitted for an empty path list, so commands that
+// deliberately fall back to the whole working copy (Status with no paths) keep
+// their current meaning.
+func (c *execClient) pathArgs(rootDirectory string, paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	return append([]string{"--"}, c.relativize(rootDirectory, paths)...)
 }
 
 // relativize converts absolute paths under rootDirectory into relative ones for svn CLI.

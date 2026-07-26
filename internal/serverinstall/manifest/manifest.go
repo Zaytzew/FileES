@@ -15,11 +15,19 @@ var sha256Pattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
 func stripBOM(data []byte) []byte { return bytes.TrimPrefix(data, utf8BOM) }
 
+// Sequence and SecurityEpoch carry release freshness. A signature proves that a
+// release is authentic, never that it is current: without a monotonic counter an
+// attacker can replay an old, validly signed release containing a known
+// vulnerability and the installer would accept it as a normal update. Both are
+// required and must be non-zero, mirroring internal/releaseenvelope's rules for
+// the desktop client, which already enforced this.
 type Channel struct {
 	SchemaVersion int    `json:"schema_version"`
 	ReleaseID     string `json:"release_id"`
 	Manifest      string `json:"manifest"`
 	SVNRevision   string `json:"svn_revision,omitempty"`
+	Sequence      uint64 `json:"sequence"`
+	SecurityEpoch uint64 `json:"security_epoch"`
 }
 
 type Manifest struct {
@@ -28,6 +36,8 @@ type Manifest struct {
 	Platform      string           `json:"platform"`
 	SVNRevision   string           `json:"svn_revision,omitempty"`
 	CreatedAt     string           `json:"created_at,omitempty"`
+	Sequence      uint64           `json:"sequence"`
+	SecurityEpoch uint64           `json:"security_epoch"`
 	Files         []File           `json:"files"`
 	Configs       []ConfigContract `json:"configs,omitempty"`
 	Orphans       []Orphan         `json:"orphans,omitempty"`
@@ -76,6 +86,12 @@ func ParseChannel(data []byte) (*Channel, error) {
 	if strings.TrimSpace(ch.ReleaseID) == "" {
 		return nil, fmt.Errorf("channel release_id is required")
 	}
+	if ch.Sequence == 0 {
+		return nil, fmt.Errorf("channel sequence is required and must be non-zero")
+	}
+	if ch.SecurityEpoch == 0 {
+		return nil, fmt.Errorf("channel security_epoch is required and must be non-zero")
+	}
 	if strings.TrimSpace(ch.Manifest) == "" {
 		ch.Manifest = fmt.Sprintf("releases/%s/{platform}/manifest.json", ch.ReleaseID)
 	}
@@ -95,6 +111,12 @@ func Parse(data []byte) (*Manifest, error) {
 	}
 	if strings.TrimSpace(m.Platform) == "" {
 		return nil, fmt.Errorf("manifest platform is required")
+	}
+	if m.Sequence == 0 {
+		return nil, fmt.Errorf("manifest sequence is required and must be non-zero")
+	}
+	if m.SecurityEpoch == 0 {
+		return nil, fmt.Errorf("manifest security_epoch is required and must be non-zero")
 	}
 	if len(m.Files) == 0 {
 		return nil, fmt.Errorf("manifest files are required")

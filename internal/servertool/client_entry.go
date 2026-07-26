@@ -20,11 +20,13 @@ const (
 	clientEntryPromises  = writePromises + " proc exec"
 )
 
-func RunClientEntry(args []string, _ io.Reader, _ io.Writer, stderr io.Writer, getenv func(string) string) int {
-	return runClientEntry("/etc/filees/server.json", args, stderr, getenv, execClientSVN)
+func RunClientEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+	return runClientEntry("/etc/filees/server.json", args, stdin, stdout, stderr, getenv, runSVNSessionSupervisor)
 }
 
-func runClientEntry(configPath string, args []string, stderr io.Writer, getenv func(string) string, execute func(serverconfig.Config, string) error) int {
+type clientSVNSupervisor func(serverconfig.Config, string, *activation.Manager, *activation.SessionLease, io.Reader, io.Writer, io.Writer) error
+
+func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string, supervise clientSVNSupervisor) int {
 	originalCommand := getenv("SSH_ORIGINAL_COMMAND")
 	if len(args) != 2 || (originalCommand != ClientSVNCommand && originalCommand != deploy.ServiceProofCommand && originalCommand != ClientControlCommand) {
 		fmt.Fprintln(stderr, "filees-client-entry: rejected command")
@@ -80,19 +82,14 @@ func runClientEntry(configPath string, args []string, stderr io.Writer, getenv f
 		return ExitConfig
 	}
 	if originalCommand == ClientSVNCommand {
-		if err := manager.RecordProof(args[0], args[1]); err != nil {
-			report(stderr, "filees-client-entry proof", err)
+		lease, err := manager.ClaimSession(args[0], args[1])
+		if err != nil {
+			report(stderr, "filees-client-entry session", err)
 			return ExitUnavailable
 		}
-		// Native OpenBSD svnserve establishes its own unveil table. Pre-unveiling
-		// and locking paths in this dispatcher would survive exec and make the
-		// child's unveil(2) fail. Keep only the pledge exec boundary here.
-		if err := sandboxPledgeForExec(clientEntryPromises, childPromises); err != nil {
-			report(stderr, "filees-client-entry SVN pledge", err)
-			return ExitSoftware
-		}
-		if err := execute(config, args[1]); err != nil {
-			report(stderr, "filees-client-entry exec", err)
+		defer func() { _ = lease.Close() }()
+		if err := supervise(config, args[1], manager, lease, stdin, stdout, stderr); err != nil {
+			report(stderr, "filees-client-entry supervisor", err)
 			return ExitSoftware
 		}
 		return ExitOK
@@ -115,11 +112,7 @@ func runClientEntry(configPath string, args []string, stderr io.Writer, getenv f
 		}
 		return ExitOK
 	}
-	if err := execute(config, args[1]); err != nil {
-		report(stderr, "filees-client-entry exec", err)
-		return ExitSoftware
-	}
-	return ExitOK
+	return ExitUnavailable
 }
 
 func clientChildPromises(originalCommand string) string {
@@ -134,10 +127,6 @@ func clientChildPromises(originalCommand string) string {
 
 var execRepositoryWorker = func(tempRoot, clientID string) error {
 	return syscall.Exec(repositoryWorkerPath, []string{"filees-worker", "repository-control", clientID}, []string{"TMPDIR=" + tempRoot})
-}
-
-func execClientSVN(config serverconfig.Config, clientID string) error {
-	return syscall.Exec(config.Activation.SVNServeBinary, clientSVNArgs(config, clientID, os.Getenv("USER")), []string{})
 }
 
 func clientSVNArgs(config serverconfig.Config, clientID, loginUser string) []string {

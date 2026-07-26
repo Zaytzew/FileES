@@ -43,7 +43,7 @@ func (r SVNReader) svnlook() string {
 
 // Youngest returns the repository HEAD revision.
 func (r SVNReader) Youngest(ctx context.Context, repoPath string) (int64, error) {
-	out, err := output(ctx, r.svnlook(), "youngest", repoPath)
+	out, err := output(ctx, r.svnlook(), "youngest", "--", repoPath)
 	if err != nil {
 		return 0, err
 	}
@@ -135,7 +135,12 @@ func (r SVNReader) Cat(ctx context.Context, repoPath, path string, rev int64, w 
 	h := sha256.New()
 	counter := &countWriter{}
 	sink := io.MultiWriter(w, h, counter)
-	if err := runStream(ctx, sink, r.svnlook(), "cat", "-r", strconv.FormatInt(rev, 10), repoPath, path); err != nil {
+	// The "--" end-of-options marker is required, not cosmetic: path arrives
+	// straight from a client's ReadObject request and v1.validateRelPath
+	// deliberately permits a leading '-' (an ordinary filename character).
+	// Without the marker svnlook would parse such a name as an option
+	// (CWE-88 argument injection) rather than as the file to read.
+	if err := runStream(ctx, sink, r.svnlook(), "cat", "-r", strconv.FormatInt(rev, 10), "--", repoPath, path); err != nil {
 		return 0, "", err
 	}
 	return counter.n, hex.EncodeToString(h.Sum(nil)), nil

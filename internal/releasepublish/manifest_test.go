@@ -13,7 +13,7 @@ func TestGenerateIsDeterministicSortedAndConsumable(t *testing.T) {
 	root := t.TempDir()
 	writePayload(t, root, "bin/z", "z")
 	writePayload(t, root, "bin/a", "a")
-	spec := Spec{ReleaseID: "r178", Platform: "openbsd-amd64", SVNRevision: "178", Files: []FileSpec{
+	spec := Spec{ReleaseID: "r178", Platform: "openbsd-amd64", SVNRevision: "178", Sequence: 178, SecurityEpoch: 1, Files: []FileSpec{
 		{Source: "bin/z", Target: "{libexec_dir}/filees/z", Kind: "executable", Mode: "755"},
 		{Source: "bin/a", Target: "{sbin_dir}/a", Kind: "executable", Mode: "0755"},
 	}}
@@ -46,11 +46,11 @@ func TestGenerateIsDeterministicSortedAndConsumable(t *testing.T) {
 func TestGenerateRejectsDuplicatesTraversalAndEscapingSymlink(t *testing.T) {
 	root := t.TempDir()
 	writePayload(t, root, "bin/a", "a")
-	base := Spec{ReleaseID: "r1", Platform: "linux-amd64"}
+	base := Spec{ReleaseID: "r1", Platform: "linux-amd64", Sequence: 1, SecurityEpoch: 1}
 	bad := []Spec{
-		{ReleaseID: base.ReleaseID, Platform: base.Platform, Files: []FileSpec{{Source: "../a", Target: "/a"}}},
-		{ReleaseID: base.ReleaseID, Platform: base.Platform, Files: []FileSpec{{Source: "bin/a", Target: "/a"}, {Source: "bin/a", Target: "/b"}}},
-		{ReleaseID: base.ReleaseID, Platform: base.Platform, Files: []FileSpec{{Source: "bin/a", Target: "/a"}, {Source: "bin/a2", Target: "/a"}}},
+		{ReleaseID: base.ReleaseID, Platform: base.Platform, Sequence: base.Sequence, SecurityEpoch: base.SecurityEpoch, Files: []FileSpec{{Source: "../a", Target: "/a"}}},
+		{ReleaseID: base.ReleaseID, Platform: base.Platform, Sequence: base.Sequence, SecurityEpoch: base.SecurityEpoch, Files: []FileSpec{{Source: "bin/a", Target: "/a"}, {Source: "bin/a", Target: "/b"}}},
+		{ReleaseID: base.ReleaseID, Platform: base.Platform, Sequence: base.Sequence, SecurityEpoch: base.SecurityEpoch, Files: []FileSpec{{Source: "bin/a", Target: "/a"}, {Source: "bin/a2", Target: "/a"}}},
 	}
 	for _, spec := range bad {
 		if _, err := Generate(root, spec); err == nil {
@@ -98,5 +98,29 @@ func writePayload(t *testing.T, root, relative, value string) {
 	}
 	if err := os.WriteFile(path, []byte(value), 0o755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestGenerateRequiresFreshnessCounters keeps the release generator in step
+// with the installer's anti-rollback contract (audit Finding E): a release that
+// carries no position in the ordering cannot be protected against replay, so it
+// must not be publishable in the first place.
+func TestGenerateRequiresFreshnessCounters(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := []FileSpec{{Source: "a", Target: "/a"}}
+	for _, spec := range []Spec{
+		{ReleaseID: "r1", Platform: "linux-amd64", Files: files},
+		{ReleaseID: "r1", Platform: "linux-amd64", Sequence: 1, Files: files},
+		{ReleaseID: "r1", Platform: "linux-amd64", SecurityEpoch: 1, Files: files},
+	} {
+		if _, err := Generate(root, spec); err == nil {
+			t.Fatalf("generated a manifest without freshness counters: %+v", spec)
+		}
+	}
+	if _, err := Generate(root, Spec{ReleaseID: "r1", Platform: "linux-amd64", Sequence: 1, SecurityEpoch: 1, Files: files}); err != nil {
+		t.Fatalf("fully counted spec rejected: %v", err)
 	}
 }

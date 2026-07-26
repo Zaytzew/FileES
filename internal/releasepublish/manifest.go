@@ -17,12 +17,19 @@ import (
 )
 
 type Spec struct {
-	ReleaseID   string                           `json:"release_id"`
-	Platform    string                           `json:"platform"`
-	SVNRevision string                           `json:"svn_revision,omitempty"`
-	Files       []FileSpec                       `json:"files"`
-	Configs     []installmanifest.ConfigContract `json:"configs,omitempty"`
-	Orphans     []installmanifest.Orphan         `json:"orphans,omitempty"`
+	ReleaseID string `json:"release_id"`
+	Platform  string `json:"platform"`
+	// Sequence increases by one with every published release; SecurityEpoch is
+	// bumped only when a release fixes something an older release must never be
+	// allowed to undo. Together they let an installer refuse a stale but validly
+	// signed release (anti-rollback). Both are mandatory: an unnumbered release
+	// cannot be ordered, so it cannot be protected.
+	Sequence      uint64                           `json:"sequence"`
+	SecurityEpoch uint64                           `json:"security_epoch"`
+	SVNRevision   string                           `json:"svn_revision,omitempty"`
+	Files         []FileSpec                       `json:"files"`
+	Configs       []installmanifest.ConfigContract `json:"configs,omitempty"`
+	Orphans       []installmanifest.Orphan         `json:"orphans,omitempty"`
 }
 
 type FileSpec struct {
@@ -57,6 +64,9 @@ func Generate(payloadRoot string, spec Spec) ([]byte, error) {
 	if strings.TrimSpace(spec.ReleaseID) == "" || strings.TrimSpace(spec.Platform) == "" {
 		return nil, errors.New("release_id and platform are required")
 	}
+	if spec.Sequence == 0 || spec.SecurityEpoch == 0 {
+		return nil, errors.New("sequence and security_epoch are required and must be non-zero")
+	}
 	if len(spec.Files) == 0 {
 		return nil, errors.New("at least one file is required")
 	}
@@ -73,6 +83,8 @@ func Generate(payloadRoot string, spec Spec) ([]byte, error) {
 		ReleaseID:     strings.TrimSpace(spec.ReleaseID),
 		Platform:      strings.TrimSpace(spec.Platform),
 		SVNRevision:   strings.TrimSpace(spec.SVNRevision),
+		Sequence:      spec.Sequence,
+		SecurityEpoch: spec.SecurityEpoch,
 		Configs:       spec.Configs,
 		Orphans:       spec.Orphans,
 	}

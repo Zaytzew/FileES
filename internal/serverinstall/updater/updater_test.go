@@ -1,11 +1,14 @@
 package updater
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"errors"
 	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"filees/internal/serverinstall/config"
@@ -187,5 +190,41 @@ func TestSSHDFragmentUpdated(t *testing.T) {
 		if got := r.sshdFragmentUpdated(plan); got != want {
 			t.Errorf("action %s: got %v, want %v", action, got, want)
 		}
+	}
+}
+
+// TestCheckFreshnessGatesRollback covers the updater's half of the audit's
+// Finding E: a stale release must be refused before anything is staged, and a
+// deliberate downgrade must require an explicit operator override rather than
+// arriving disguised as an ordinary update.
+func TestCheckFreshnessGatesRollback(t *testing.T) {
+	r, _ := testRunner(t)
+	installed := &state.State{InstalledRelease: "v11", HighestSequence: 11, SecurityEpoch: 3}
+	stale := &manifest.Manifest{ReleaseID: "v10", Sequence: 10, SecurityEpoch: 3}
+	fresh := &manifest.Manifest{ReleaseID: "v12", Sequence: 12, SecurityEpoch: 3}
+
+	if err := r.checkFreshness(fresh, installed, Options{}); err != nil {
+		t.Fatalf("a newer release was refused: %v", err)
+	}
+	err := r.checkFreshness(stale, installed, Options{})
+	if err == nil {
+		t.Fatal("a stale release passed the freshness gate")
+	}
+	if !errors.Is(err, state.ErrRollback) {
+		t.Fatalf("refusal is not ErrRollback: %v", err)
+	}
+	// The override is deliberate, explicit, and announced.
+	var out bytes.Buffer
+	r.Out = &out
+	if err := r.checkFreshness(stale, installed, Options{AllowRollback: true}); err != nil {
+		t.Fatalf("explicit rollback override refused: %v", err)
+	}
+	if !strings.Contains(out.String(), "rollback explicitly allowed") {
+		t.Fatalf("rollback override was silent: %q", out.String())
+	}
+	// The override must not turn into a blanket bypass of unrelated failures.
+	uncounted := &manifest.Manifest{ReleaseID: "v13", Sequence: 0, SecurityEpoch: 0}
+	if err := r.checkFreshness(uncounted, installed, Options{}); err == nil {
+		t.Fatal("a release without freshness counters passed the gate")
 	}
 }

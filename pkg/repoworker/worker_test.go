@@ -18,7 +18,7 @@ func (b *retryBackend) Create(context.Context, string, string, string) (Reposito
 	if b.calls == 1 {
 		return Repository{}, errors.New("temporary")
 	}
-	return Repository{RepoID: "repo", URL: "svn://example/repo"}, nil
+	return Repository{RepoID: "33333333-3333-4333-8333-333333333333", URL: "svn://example/repo"}, nil
 }
 
 type fakeBackend struct {
@@ -35,6 +35,7 @@ type fakeActivator struct {
 type fakeCapacity struct {
 	available, required int64
 	calls               int
+	err                 error
 }
 
 type fakeMobilePairingMinter struct {
@@ -65,6 +66,9 @@ func mobilePairingTicket(t *testing.T, client string) control.Ticket {
 
 func (c *fakeCapacity) Check(context.Context, int64) (int64, int64, error) {
 	c.calls++
+	if c.err != nil {
+		return 0, 0, c.err
+	}
 	return c.available, c.required, nil
 }
 
@@ -147,7 +151,7 @@ func TestWorkerRetriesSameOperationAfterBackendBoundaryFailure(t *testing.T) {
 func (b *fakeBackend) Create(_ context.Context, _ string, realm, name string) (Repository, error) {
 	b.calls++
 	b.realm = realm
-	return Repository{RepoID: "repo-1", URL: "svn://example/repo-1"}, nil
+	return Repository{RepoID: "22222222-2222-4222-8222-222222222222", URL: "svn://example/repo-1"}, nil
 }
 func ticket(t *testing.T, client string) control.Ticket {
 	t.Helper()
@@ -203,12 +207,12 @@ func TestWorkerInitialCommitActivatesOwnerAndHasSeparateLedger(t *testing.T) {
 	if result, err := w.Handle(context.Background(), session, create); err != nil || result.Status != control.ResultOK {
 		t.Fatalf("create result=%+v err=%v", result, err)
 	}
-	initial, err := control.NewTicket(opID, uuid.NewString(), control.TicketInitialCommit, session.ClientID, control.InitialCommitPayload{RepoID: "repo-1", Revision: 0, Paths: 0}, time.Now())
+	initial, err := control.NewTicket(opID, uuid.NewString(), control.TicketInitialCommit, session.ClientID, control.InitialCommitPayload{RepoID: "22222222-2222-4222-8222-222222222222", Revision: 0, Paths: 0}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	first, err := w.Handle(context.Background(), session, initial)
-	if err != nil || first.Status != control.ResultOK || a.calls != 1 || a.repo != "repo-1" || a.realm != realm {
+	if err != nil || first.Status != control.ResultOK || a.calls != 1 || a.repo != "22222222-2222-4222-8222-222222222222" || a.realm != realm {
 		t.Fatalf("initial=%+v activator=%+v err=%v", first, a, err)
 	}
 	second, err := (&Worker{Backend: b, Activator: a, Store: store}).Handle(context.Background(), session, initial)
@@ -234,7 +238,7 @@ func TestWorkerCarriesReservationThroughCreationAndReleasesAfterActivation(t *te
 	if result, err := worker.Handle(context.Background(), session, create); err != nil || result.Status != control.ResultOK {
 		t.Fatalf("create=%+v err=%v", result, err)
 	}
-	initial, _ := control.NewTicket(opID, uuid.NewString(), control.TicketInitialCommit, session.ClientID, control.InitialCommitPayload{RepoID: "repo-1", Revision: 0}, now)
+	initial, _ := control.NewTicket(opID, uuid.NewString(), control.TicketInitialCommit, session.ClientID, control.InitialCommitPayload{RepoID: "22222222-2222-4222-8222-222222222222", Revision: 0}, now)
 	if result, err := worker.Handle(context.Background(), session, initial); err != nil || result.Status != control.ResultOK {
 		t.Fatalf("initial=%+v err=%v", result, err)
 	}
@@ -290,5 +294,79 @@ func TestWorkerMobilePairingFailsClosedWithoutMinterOrOnMinterError(t *testing.T
 	tk2 := mobilePairingTicket(t, "client-a")
 	if result, err := failing.Handle(context.Background(), session, tk2); err != nil || result.Status != control.ResultError {
 		t.Fatalf("failing minter result=%+v err=%v", result, err)
+	}
+}
+
+// TestStoragePreflightRefusalStaysRetryable is the regression test for the
+// audit's Finding G. A transient shortage (disk momentarily full) must not bind
+// the operation's terminal result: the sibling CREATE_REPOSITORY_RETRY and
+// INITIAL_COMMIT_RETRY branches deliberately stay retryable for exactly this
+// reason, and pkg/provisioning has no reset/abandon path, so persisting
+// STORAGE_INSUFFICIENT stranded that (client, local path, name) tuple forever.
+func TestStoragePreflightRefusalStaysRetryable(t *testing.T) {
+	session := Session{ClientID: "client", RealmID: uuid.NewString(), CanCreateRepositories: true}
+	store, _ := NewFileStore(t.TempDir())
+	ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketStoragePreflight, session.ClientID, control.StoragePreflightPayload{ContentBytes: 100, Paths: 2}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	full := &fakeCapacity{available: 99, required: 100}
+	worker := &Worker{Capacity: full, Store: store}
+	refused, err := worker.Handle(context.Background(), session, ticket)
+	if err != nil || refused.Status != control.ResultError || refused.Error.Code != "STORAGE_INSUFFICIENT" {
+		t.Fatalf("refusal=%+v err=%v", refused, err)
+	}
+	// Nothing may have been bound as this operation's terminal result.
+	if stored, ok, err := store.Load(ticket.OperationID, ticket.Type); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatalf("STORAGE_INSUFFICIENT was persisted as terminal: %+v", stored)
+	}
+
+	// The operator frees space; the very same ticket must now succeed rather
+	// than replay the cached refusal.
+	freed := &fakeCapacity{available: 1000, required: 100}
+	worker = &Worker{Capacity: freed, Store: store}
+	retried, err := worker.Handle(context.Background(), session, ticket)
+	if err != nil || retried.Status != control.ResultOK {
+		t.Fatalf("retry after freeing space=%+v err=%v", retried, err)
+	}
+	if freed.calls != 1 {
+		t.Fatalf("retry did not re-check capacity: calls=%d", freed.calls)
+	}
+	// A success, by contrast, must still be durable.
+	again, err := worker.Handle(context.Background(), session, ticket)
+	if err != nil || again.CompletedAt != retried.CompletedAt || freed.calls != 1 {
+		t.Fatalf("success is not idempotent: %+v err=%v calls=%d", again, err, freed.calls)
+	}
+}
+
+// TestStoragePreflightDependencyErrorStaysRetryable covers the same defect on
+// the capacity-checker error path: a failing statfs is a temporarily
+// unavailable dependency, not an invalid request.
+func TestStoragePreflightDependencyErrorStaysRetryable(t *testing.T) {
+	session := Session{ClientID: "client", RealmID: uuid.NewString(), CanCreateRepositories: true}
+	store, _ := NewFileStore(t.TempDir())
+	ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketStoragePreflight, session.ClientID, control.StoragePreflightPayload{ContentBytes: 100, Paths: 2}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	broken := &fakeCapacity{err: errors.New("statfs: input/output error")}
+	result, err := (&Worker{Capacity: broken, Store: store}).Handle(context.Background(), session, ticket)
+	if err != nil || result.Status != control.ResultError || result.Error.Code != "STORAGE_PREFLIGHT_FAILED" {
+		t.Fatalf("dependency failure=%+v err=%v", result, err)
+	}
+	if _, ok, err := store.Load(ticket.OperationID, ticket.Type); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("STORAGE_PREFLIGHT_FAILED was persisted as terminal")
+	}
+
+	healthy := &fakeCapacity{available: 1000, required: 100}
+	retried, err := (&Worker{Capacity: healthy, Store: store}).Handle(context.Background(), session, ticket)
+	if err != nil || retried.Status != control.ResultOK {
+		t.Fatalf("retry after recovery=%+v err=%v", retried, err)
 	}
 }

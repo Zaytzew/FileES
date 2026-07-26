@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -216,6 +217,9 @@ func (cfg *Config) finalize() error {
 	if cfg.RepoURL == "" {
 		return fmt.Errorf("repo.url is required")
 	}
+	if err := validateRepoURL(cfg.RepoURL); err != nil {
+		return err
+	}
 	if !cfg.RequireHash {
 		return fmt.Errorf("policy.require_hash cannot be disabled")
 	}
@@ -265,4 +269,37 @@ func oneOf(v string, values ...string) bool {
 		}
 	}
 	return false
+}
+
+// validateRepoURL restricts the release repository to transports the installer
+// is willing to fetch from. Release artifacts are signature-verified end to
+// end, so this is defence in depth rather than the primary control - but the
+// setting previously accepted anything at all, including a bare hostname or a
+// scheme the fetcher would mis-handle, while the desktop client
+// (pkg/config.normalizeUpdate) has always constrained its equivalent. Credentials,
+// query strings and fragments are rejected for the same reason they are on the
+// desktop side: they do not belong in a repository locator and their presence
+// signals a malformed or hostile configuration.
+func validateRepoURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("repo.url is not a valid URL: %w", err)
+	}
+	switch parsed.Scheme {
+	case "svn", "svn+ssh", "https":
+	default:
+		return fmt.Errorf("repo.url must use svn, svn+ssh or https, got %q", parsed.Scheme)
+	}
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("repo.url must include a host")
+	}
+	if parsed.User != nil {
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			return fmt.Errorf("repo.url must not embed a password")
+		}
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("repo.url must not contain a query string or fragment")
+	}
+	return nil
 }

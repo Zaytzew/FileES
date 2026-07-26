@@ -108,3 +108,41 @@ func TestMobilePairingContract(t *testing.T) {
 		t.Fatal("invalid expires_at accepted")
 	}
 }
+
+// TestInitialCommitRepoIDMustBeUUID is the wire-level half of the audit's
+// Finding B. INITIAL_COMMIT is the only ticket type whose repo_id travels back
+// from the client, so it is the only place a client-chosen string can reach
+// server-side path construction. It previously required nothing but
+// non-emptiness while the sibling operation_id/request_id fields were both
+// UUID-validated.
+func TestInitialCommitRepoIDMustBeUUID(t *testing.T) {
+	hostile := []string{
+		"../../../../etc/passwd",
+		"../activation",
+		"foo/../../../bar",
+		`..\windows`,
+		"repo-a",
+		"",
+		"   ",
+		"a\nb",
+		"a\x00b",
+		strings.Repeat("a", 4096),
+	}
+	for _, repoID := range hostile {
+		ticket, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketInitialCommit, "client-a", InitialCommitPayload{RepoID: repoID, Revision: 1, Paths: 1}, time.Now())
+		if err != nil {
+			continue // rejected at construction time is equally fine
+		}
+		if err := ticket.Validate(); err == nil {
+			t.Fatalf("INITIAL_COMMIT accepted repo_id %q", repoID)
+		}
+	}
+	// A genuine, server-generated repo_id must still pass.
+	ticket, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketInitialCommit, "client-a", InitialCommitPayload{RepoID: uuid.NewString(), Revision: 1, Paths: 1}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ticket.Validate(); err != nil {
+		t.Fatalf("INITIAL_COMMIT rejected a valid UUID repo_id: %v", err)
+	}
+}

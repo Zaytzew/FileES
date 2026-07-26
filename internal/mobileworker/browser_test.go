@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -225,5 +226,48 @@ func TestAccessDenied(t *testing.T) {
 	}
 	if _, err := b.ReadObject(context.Background(), "c", v1.ReadObjectPayload{RepoID: "r", Path: "top.txt"}, &bytes.Buffer{}); err != ErrAccessDenied {
 		t.Fatalf("expected ErrAccessDenied, got %v", err)
+	}
+}
+
+// TestReadObjectAcceptsDashPrefixedPath is the server-side regression test for
+// the audit's Finding C. Unlike the desktop instance, this one needs no hostile
+// collaborator: v1.validateRelPath deliberately permits a leading '-' (a legal
+// filename character), so a single crafted ReadObject request from any
+// authenticated mobile client reaches svnlook's argv directly. Without the "--"
+// end-of-options marker svnlook parses the name as an option and the read fails.
+func TestReadObjectAcceptsDashPrefixedPath(t *testing.T) {
+	requireSVN(t)
+	repo := newSeededRepo(t)
+	const hostile = "--no-ignore"
+	commitFileInto(t, repo, hostile, []byte("payload"))
+	b := newBrowser(repo, 5, "r")
+
+	// Precondition: the wire validator really does let this through, so the
+	// worker cannot rely on it to stop the name from reaching svnlook.
+	payload, err := json.Marshal(v1.ReadObjectPayload{RepoID: "00000000-0000-0000-0000-000000000001", Path: hostile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := v1.Request{
+		Schema:    v1.Schema,
+		RequestID: "00000000-0000-0000-0000-0000000000ff",
+		Operation: v1.OpReadObject,
+		Payload:   payload,
+	}
+	if err := req.Validate(); err != nil {
+		t.Fatalf("test precondition changed: wire validation now rejects %q: %v", hostile, err)
+	}
+
+	var buf bytes.Buffer
+	res, err := b.ReadObject(context.Background(), "c", v1.ReadObjectPayload{RepoID: "r", Path: hostile}, &buf)
+	if err != nil {
+		t.Fatalf("ReadObject(%q): %v", hostile, err)
+	}
+	if buf.String() != "payload" {
+		t.Fatalf("content = %q, want payload", buf.String())
+	}
+	sum := sha256.Sum256([]byte("payload"))
+	if res.Sha256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("sha256 = %s", res.Sha256)
 	}
 }

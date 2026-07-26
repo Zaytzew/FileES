@@ -168,6 +168,7 @@ func (b *openbsdBackend) ApplyStateDirs(stateOwner string) error {
 		{"/var/filees/activation", 0o700, uid, wheelGID},
 		{"/var/filees/activation/records", 0o700, uid, wheelGID},
 		{"/var/filees/activation/proofs", 0o700, uid, wheelGID},
+		{"/var/filees/sessions", 0o700, uid, wheelGID},
 		{"/etc/filees", 0o700, uid, wheelGID},
 	}
 	for _, d := range dirs {
@@ -290,4 +291,3 @@ func copyFileMode(src, dst string, mode os.FileMode) error {
 	}
 	return os.Chmod(dst, mode)
 }
-

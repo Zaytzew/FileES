@@ -3,16 +3,66 @@ package state
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 )
 
 type State struct {
-	InstalledRelease string        `json:"installed_release,omitempty"`
-	InstalledAt      string        `json:"installed_at,omitempty"`
-	System           *SystemState  `json:"system,omitempty"`
+	InstalledRelease string         `json:"installed_release,omitempty"`
+	InstalledAt      string         `json:"installed_at,omitempty"`
+	HighestSequence  uint64         `json:"highest_sequence,omitempty"`
+	SecurityEpoch    uint64         `json:"security_epoch,omitempty"`
+	System           *SystemState   `json:"system,omitempty"`
 	History          []HistoryEntry `json:"history,omitempty"`
+}
+
+// ErrRollback marks a refusal caused by release freshness rather than by a
+// malformed or unreadable release.
+var ErrRollback = errors.New("release rollback refused")
+
+// CheckFreshness refuses a release that is not at least as new as what this
+// machine already installed. A valid signature proves authenticity, never
+// freshness: without this an attacker able to serve repository content (or to
+// replay it over an unauthenticated transport) can push a genuine older release
+// carrying a known vulnerability and it installs as an ordinary update. The
+// desktop client has enforced this since internal/clientupdate/state.go; the
+// server installer never got the equivalent.
+//
+// The state backing this check lives in the installer's own state directory,
+// never in the staging directory, and advances only after an install succeeds.
+func (s *State) CheckFreshness(sequence, securityEpoch uint64, releaseID string) error {
+	if s == nil {
+		return errors.New("installer state is nil")
+	}
+	if sequence == 0 || securityEpoch == 0 {
+		return fmt.Errorf("%w: release carries no sequence/security_epoch", ErrRollback)
+	}
+	if securityEpoch < s.SecurityEpoch {
+		return fmt.Errorf("%w: security epoch %d is older than the installed %d", ErrRollback, securityEpoch, s.SecurityEpoch)
+	}
+	if sequence < s.HighestSequence {
+		return fmt.Errorf("%w: sequence %d is older than the installed %d", ErrRollback, sequence, s.HighestSequence)
+	}
+	// The same sequence under a different release_id means two artifacts claim
+	// one position in the ordering: a forked or forged release.
+	if sequence == s.HighestSequence && s.InstalledRelease != "" && releaseID != s.InstalledRelease {
+		return fmt.Errorf("%w: releases %q and %q both claim sequence %d", ErrRollback, s.InstalledRelease, releaseID, sequence)
+	}
+	return nil
+}
+
+// AdvanceFreshness records a successful install. It never moves a counter
+// backwards, so an interrupted or partial write can only leave the machine more
+// conservative, never less.
+func (s *State) AdvanceFreshness(sequence, securityEpoch uint64) {
+	if sequence > s.HighestSequence {
+		s.HighestSequence = sequence
+	}
+	if securityEpoch > s.SecurityEpoch {
+		s.SecurityEpoch = securityEpoch
+	}
 }
 
 // SystemState records what the first-install system tasks created.
@@ -70,8 +120,28 @@ func Save(dir string, st *State) error {
 		return err
 	}
 	data = append(data, '\n')
-	tmp := Path(dir) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// Random temporary name rather than "<path>.tmp": the predictable form is
+	// the same symlink-following defect the audit recorded as Finding D for
+	// pkg/watcher and pkg/commit, and this file is written by root.
+	temp, err := os.CreateTemp(dir, ".state-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := temp.Name()
+	defer os.Remove(tmp)
+	if err := temp.Chmod(0o600); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, Path(dir))

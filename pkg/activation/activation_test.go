@@ -95,8 +95,9 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 
 // TestRevokeRealmRevokesEveryClientOfThatRealmOnly is the whole-realm-revoke
 // regression guard (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §5 "Poziom 3"):
-// two active clients sharing one realm are both revoked in a single call,
-// while an active client of a different realm is left untouched.
+// two active clients and one staged proof-session client sharing one realm are
+// all revoked in a single call, while an active client of a different realm is
+// left untouched.
 func TestRevokeRealmRevokesEveryClientOfThatRealmOnly(t *testing.T) {
 	manager, config := newActivationTestManager(t)
 	realmID := uuid.NewString()
@@ -117,17 +118,34 @@ func TestRevokeRealmRevokesEveryClientOfThatRealmOnly(t *testing.T) {
 	}
 	a := activate(realmID)
 	b := activate(realmID)
+	staged := testActivationGrant(t, time.Now().Add(time.Hour))
+	staged.RealmID = realmID
+	if err := manager.Stage(staged); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := manager.ClaimSession(staged.OperationID, staged.ClientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = lease.Close() })
 	other := activate(uuid.NewString())
 
 	revoked, err := manager.RevokeRealm(context.Background(), realmID, "left the team")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(revoked) != 2 || !containsClient(revoked, a.ClientID) || !containsClient(revoked, b.ClientID) {
-		t.Fatalf("revoked=%v, want exactly [%s %s]", revoked, a.ClientID, b.ClientID)
+	if len(revoked) != 3 || !containsClient(revoked, a.ClientID) || !containsClient(revoked, b.ClientID) || !containsClient(revoked, staged.ClientID) {
+		t.Fatalf("revoked=%v, want exactly [%s %s %s]", revoked, a.ClientID, b.ClientID, staged.ClientID)
+	}
+	leaseRevoked, err := lease.Revoked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !leaseRevoked || manager.SessionAllowed(staged.OperationID, staged.ClientID) {
+		t.Fatal("realm revoke left staged proof session live")
 	}
 	keys, _ := os.ReadFile(config.AuthorizedKeysFile)
-	if strings.Contains(string(keys), a.ClientID) || strings.Contains(string(keys), b.ClientID) {
+	if strings.Contains(string(keys), a.ClientID) || strings.Contains(string(keys), b.ClientID) || strings.Contains(string(keys), staged.ClientID) {
 		t.Fatalf("revoked realm's clients remain authorized: %s", keys)
 	}
 	if !strings.Contains(string(keys), other.ClientID) {

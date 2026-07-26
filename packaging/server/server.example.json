@@ -6,6 +6,7 @@
   "worker_public_key_file": "/etc/filees/worker_ed25519.pub",
   "activation": {
     "root": "/var/filees/activation",
+    "session_root": "/var/filees/sessions",
     "authorized_keys_file": "/var/filees/activation/authorized_keys",
     "authz_file": "/var/filees/activation/service.authz",
     "service_working_copy": "/var/filees/service-wc",

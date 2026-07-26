@@ -1305,20 +1305,34 @@ func (s *Service) saveCache() {
 	}
 }
 
+// atomicWriteJSONSlice writes v to path through a randomly named temporary file
+// in the same directory. See atomicWriteString below for why the temporary name
+// must not be derived from path.
 func atomicWriteJSONSlice(path string, v any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.CreateTemp(dir, ".filees-cache-*.tmp")
 	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	// os.CreateTemp opens 0600; keep the mode these state files always had so
+	// the only behavioural change here is the symlink fix.
+	if err := f.Chmod(0o644); err != nil {
+		f.Close()
 		return err
 	}
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
 		f.Close()
-		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
@@ -1329,13 +1343,38 @@ func atomicWriteJSONSlice(path string, v any) error {
 
 // --- helpers ---
 
+// atomicWriteString writes data to path through a randomly named temporary file
+// in the same directory. The temporary name must not be derived from path:
+// these state files sit inside a synced working copy, so a collaborator can
+// commit an svn:special symlink at a predictable "<path>.tmp" and have an
+// ordinary svn update materialize it before the daemon writes. os.WriteFile
+// follows symlinks and would overwrite the link's target with daemon-generated
+// content; os.CreateTemp creates exclusively, under an unpredictable name.
+// Rename replaces a symlink at the destination rather than following it.
 func atomicWriteString(path string, data string) error {
 	d := filepath.Dir(path)
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(data), 0o644); err != nil {
+	f, err := os.CreateTemp(d, ".filees-state-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0o644); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

@@ -882,16 +882,30 @@ func toDiskList(m index) []diskEntry {
 	return list
 }
 
+// atomicWriteJSON writes v to path through a randomly named temporary file in
+// the same directory. The temp name must not be derived from path: these state
+// files live inside a synced working copy, so a collaborator can commit an
+// svn:special symlink at a predictable "<path>.tmp" and have an ordinary svn
+// update materialize it before we write. os.Create follows symlinks and would
+// overwrite the link's target; os.CreateTemp creates exclusively, under a name
+// the attacker cannot predict. Same idiom as pkg/passport's saveLocked. Rename
+// replaces a symlink at the destination rather than following it, so the
+// destination itself needs no separate guard.
 func atomicWriteJSON(path string, v any) error {
 	d := filepath.Dir(path)
 	if err := os.MkdirAll(d, 0o755); err != nil { return err }
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.CreateTemp(d, ".filees-state-*.tmp")
 	if err != nil { return err }
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	// os.CreateTemp opens 0600; keep the mode this state file always had so the
+	// only behavioural change here is the symlink fix.
+	if err := f.Chmod(0o644); err != nil { f.Close(); return err }
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil { f.Close(); _ = os.Remove(tmp); return err }
-	_ = f.Sync(); _ = f.Close()
+	if err := enc.Encode(v); err != nil { f.Close(); return err }
+	if err := f.Sync(); err != nil { f.Close(); return err }
+	if err := f.Close(); err != nil { return err }
 	return os.Rename(tmp, path)
 }
 

@@ -703,7 +703,14 @@ func TestAppEventCoalescence(t *testing.T) {
 	vc := newVMCollector()
 	startApp(ctx, d, vc, clock, &fakeBackoff{steps: []time.Duration{time.Hour}})
 
-	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected })
+	// Connecting also launches a full refresh, and that refresh calls RepoStatus
+	// itself. Waiting only for Connected races it: the connect-time call can
+	// still be in flight when statusCalls is sampled below, and would then be
+	// counted against the debounce flush, making a perfectly coalesced flush
+	// look like two refreshes. Wait for the repo to actually reach the view
+	// model instead - that happens only once the connect-time refresh has
+	// completed and been applied.
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && len(vm.Repos) == 1 })
 
 	mu.Lock()
 	before := statusCalls

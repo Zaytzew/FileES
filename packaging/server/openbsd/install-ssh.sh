@@ -64,7 +64,7 @@ install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/filees.conf" /etc/
 # Keep it present so filees-client-entry can unveil the exact path, not /etc.
 install -d -o root -g wheel -m 755 /etc/sasl2 /etc/subversion
 
-install -d -o "$state_user" -g wheel -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs
+install -d -o "$state_user" -g wheel -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs /var/filees/sessions
 install -d -o "$state_user" -g wheel -m 700 /var/filees/repositories /var/filees/repository-operations
 if [ ! -e /var/filees/activation/authorized_keys ]; then
 	install -o "$state_user" -g wheel -m 600 /dev/null /var/filees/activation/authorized_keys

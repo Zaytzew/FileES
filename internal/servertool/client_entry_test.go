@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,7 +94,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		sandboxPledgeForExec = func(string, string) error { return nil }
 	}
 	called := false
-	execute := func(_ serverconfig.Config, clientID string) error {
+	supervise := func(_ serverconfig.Config, clientID string, _ *activation.Manager, _ *activation.SessionLease, _ io.Reader, _ io.Writer, _ io.Writer) error {
 		called = clientID == grant.ClientID
 		return nil
 	}
@@ -110,7 +111,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		return ""
 	}
-	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitOK || called {
+	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || called {
 		t.Fatalf("proof entry code=%d called-svn=%v stderr=%s", code, called, stderr.String())
 	}
 	getenv = func(name string) string {
@@ -119,7 +120,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		return ""
 	}
-	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitOK || !called {
+	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || !called {
 		t.Fatalf("entry code=%d called=%v stderr=%s", code, called, stderr.String())
 	}
 	if os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
@@ -133,7 +134,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 			}
 			return ""
 		}
-		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitOK || controlClient != grant.ClientID {
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || controlClient != grant.ClientID {
 			t.Fatalf("control code=%d client=%q stderr=%s", code, controlClient, stderr.String())
 		}
 	}
@@ -144,7 +145,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		return
 	}
 	getenv = func(string) string { return "sh" }
-	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, &stderr, getenv, execute); code != ExitUnavailable {
+	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitUnavailable {
 		t.Fatalf("entry accepted arbitrary original command: %d", code)
 	}
 }

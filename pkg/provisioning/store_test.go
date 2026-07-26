@@ -52,8 +52,8 @@ func TestStoreFullLifecycleSurvivesRestart(t *testing.T) {
 	}
 
 	store = newTestStore(t, root)
-	op, err = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "repo-a", RepoURL: "svn://example/repo-a"}))
-	if err != nil || op.State != StateRepositoryReady || op.RepoID != "repo-a" {
+	op, err = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "11111111-1111-4111-8111-111111111111", RepoURL: "svn://example/repo-a"}))
+	if err != nil || op.State != StateRepositoryReady || op.RepoID != "11111111-1111-4111-8111-111111111111" {
 		t.Fatalf("repository result = %#v, %v", op, err)
 	}
 	op, err = store.StartInitialCommit(opID, initialReq)
@@ -98,7 +98,7 @@ func TestStoreRequestAndResultAreIdempotent(t *testing.T) {
 	if first.UpdatedAt != second.UpdatedAt {
 		t.Fatal("idempotent request rewrote operation")
 	}
-	r := result(t, opID, reqID, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "repo", RepoURL: "svn://example/repo"})
+	r := result(t, opID, reqID, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "33333333-3333-4333-8333-333333333333", RepoURL: "svn://example/repo"})
 	first, err = store.ApplyRepositoryResult(r)
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +185,7 @@ func TestInitialCommitTicketRejectsUnregisteredRequest(t *testing.T) {
 	opID, createReq, initialReq := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	_, _ = store.CreateValidated(opID, "client", filepath.Join(t.TempDir(), "repo"), "Repo")
 	_, _ = store.RequestRepository(opID, createReq)
-	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "repo", RepoURL: "svn://example/repo"}))
+	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "33333333-3333-4333-8333-333333333333", RepoURL: "svn://example/repo"}))
 	_, _ = store.StartInitialCommit(opID, initialReq)
 	_, _ = store.MarkInitialSnapshotPublished(opID, initialReq, 1, 0)
 	if _, err := store.InitialCommitTicket(opID, uuid.NewString()); err == nil {
@@ -201,7 +201,7 @@ func TestEmptyInitialSnapshotMayPublishRevisionZero(t *testing.T) {
 	opID, createReq, initialReq := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	_, _ = store.CreateValidated(opID, "client", filepath.Join(t.TempDir(), "repo"), "Empty")
 	_, _ = store.RequestRepository(opID, createReq)
-	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "repo", RepoURL: "svn+ssh://_filees-data@example/repo"}))
+	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "33333333-3333-4333-8333-333333333333", RepoURL: "svn+ssh://_filees-data@example/repo"}))
 	_, _ = store.StartInitialCommit(opID, initialReq)
 	op, err := store.MarkInitialSnapshotPublished(opID, initialReq, 0, 0)
 	if err != nil || op.State != StateInitialSnapshotPublished || op.Revision != 0 {
@@ -217,7 +217,7 @@ func TestRevisionZeroRejectsNonEmptyInitialSnapshot(t *testing.T) {
 	opID, createReq, initialReq := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	_, _ = store.CreateValidated(opID, "client", filepath.Join(t.TempDir(), "repo"), "Non-empty")
 	_, _ = store.RequestRepository(opID, createReq)
-	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "repo", RepoURL: "svn+ssh://_filees-data@example/repo"}))
+	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: "33333333-3333-4333-8333-333333333333", RepoURL: "svn+ssh://_filees-data@example/repo"}))
 	_, _ = store.StartInitialCommit(opID, initialReq)
 	if _, err := store.MarkInitialSnapshotPublished(opID, initialReq, 0, 1); err == nil {
 		t.Fatal("non-empty revision-zero snapshot accepted")

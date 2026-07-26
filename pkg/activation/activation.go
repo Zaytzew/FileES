@@ -194,6 +194,20 @@ func (m *Manager) CleanupExpired() (int, error) {
 	return count, err
 }
 
+// CleanupOrphanedSessionLeases removes only leases whose private revoke FIFO
+// has no reader. It shares the activation lock with ClaimSession, so a lease
+// cannot be observed between publishing its directory and opening its FIFO.
+// No age or PID heuristic participates in the decision.
+func (m *Manager) CleanupOrphanedSessionLeases() (int, error) {
+	count := 0
+	err := withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+		var err error
+		count, err = cleanupOrphanedSessionLeases(m.sessionRoot())
+		return err
+	})
+	return count, err
+}
+
 func (m *Manager) expireStagedLocked(now time.Time) (int, error) {
 	records, err := m.recordsLocked()
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -94,9 +95,11 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		sandboxPledgeForExec = func(string, string) error { return nil }
 	}
 	called := false
-	supervise := func(_ serverconfig.Config, clientID string, _ *activation.Manager, _ *activation.SessionLease, _ io.Reader, _ io.Writer, _ io.Writer) error {
+	supervisorCode := ExitOK
+	var supervisorErr error
+	supervise := func(_ serverconfig.Config, clientID string, _ *activation.Manager, _ *activation.SessionLease, _ io.Reader, _ io.Writer, _ io.Writer) (int, error) {
 		called = clientID == grant.ClientID
-		return nil
+		return supervisorCode, supervisorErr
 	}
 	getenv := func(name string) string {
 		if name == "SSH_ORIGINAL_COMMAND" {
@@ -124,6 +127,17 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		t.Fatalf("entry code=%d called=%v stderr=%s", code, called, stderr.String())
 	}
 	if os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
+		supervisorCode = 23
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != 23 {
+			t.Fatalf("entry replaced child exit code: got=%d want=23 stderr=%s", code, stderr.String())
+		}
+		supervisorCode = ExitOK
+		supervisorErr = errors.New("test supervisor failure")
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitSoftware {
+			t.Fatalf("entry supervisor failure code=%d, want=%d stderr=%s", code, ExitSoftware, stderr.String())
+		}
+		supervisorErr = nil
+
 		originalControl := execRepositoryWorker
 		defer func() { execRepositoryWorker = originalControl }()
 		controlClient := ""

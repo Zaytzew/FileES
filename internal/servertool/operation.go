@@ -42,7 +42,17 @@ func RunOperation(args []string, stdout, stderr io.Writer) int {
 			report(stderr, "filees-operation activation cleanup", err)
 			return ExitTempFail
 		}
-		result := map[string]any{"schema": "filees.operation-result/v1", "status": "ok", "expired_activations": expired}
+		orphanedSessions, err := manager.CleanupOrphanedSessionLeases()
+		if err != nil {
+			report(stderr, "filees-operation session lease cleanup", err)
+			return ExitTempFail
+		}
+		result := map[string]any{
+			"schema":                          "filees.operation-result/v1",
+			"status":                          "ok",
+			"expired_activations":             expired,
+			"orphaned_session_leases_removed": orphanedSessions,
+		}
 		if root := config.Repositories.ResultsRoot; root != "" {
 			resultStore, err := repoworker.NewFileStore(filepath.Join(root, "results"))
 			if err != nil {

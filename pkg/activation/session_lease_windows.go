@@ -33,3 +33,7 @@ func createSessionLease(string, SessionMetadata) (*SessionLease, error) {
 func signalSessionLeases(string, string, string) error {
 	return errors.New("supervised session leases are unsupported on windows")
 }
+
+func cleanupOrphanedSessionLeases(string) (int, error) {
+	return 0, errors.New("supervised session lease cleanup is unsupported on windows")
+}

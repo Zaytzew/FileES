@@ -78,37 +78,37 @@ func RunClientSessionChild(args []string, stderr io.Writer) int {
 	return ExitSoftware
 }
 
-func runSVNSessionSupervisor(config serverconfig.Config, clientID string, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer) error {
+func runSVNSessionSupervisor(config serverconfig.Config, clientID string, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	if lease == nil || manager == nil {
-		return errors.New("session supervisor requires an activation lease")
+		return 0, errors.New("session supervisor requires an activation lease")
 	}
 	root := config.Activation.ServiceRepository
 	if os.Getenv("USER") == "_filees-data" {
 		root = config.Repositories.Root
 	}
 	if !filepath.IsAbs(root) || !filepath.IsAbs(config.Activation.ClientEntryPath) {
-		return errors.New("session supervisor received a non-absolute trusted path")
+		return 0, errors.New("session supervisor received a non-absolute trusted path")
 	}
 	nonce, err := sessionNonce()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	gateRead, gateWrite, err := os.Pipe()
 	if err != nil {
-		return fmt.Errorf("create session gate: %w", err)
+		return 0, fmt.Errorf("create session gate: %w", err)
 	}
 	defer gateWrite.Close()
 	childInRead, childInWrite, err := pipePair("child stdin")
 	if err != nil {
 		gateRead.Close()
-		return err
+		return 0, err
 	}
 	childOutRead, childOutWrite, err := pipePair("child stdout")
 	if err != nil {
 		gateRead.Close()
 		childInRead.Close()
 		childInWrite.Close()
-		return err
+		return 0, err
 	}
 	childErrRead, childErrWrite, err := pipePair("child stderr")
 	if err != nil {
@@ -117,13 +117,13 @@ func runSVNSessionSupervisor(config serverconfig.Config, clientID string, manage
 		childInWrite.Close()
 		childOutRead.Close()
 		childOutWrite.Close()
-		return err
+		return 0, err
 	}
 
 	cmd, err := startSessionChild(config, clientID, root, nonce, gateRead, childInRead, childOutWrite, childErrWrite)
 	if err != nil {
 		closeSessionPipes(gateRead, gateWrite, childInRead, childInWrite, childOutRead, childOutWrite, childErrRead, childErrWrite)
-		return fmt.Errorf("start session child: %w", err)
+		return 0, fmt.Errorf("start session child: %w", err)
 	}
 	// The child now owns only private pipe ends and its gate. It never owns an
 	// SSH descriptor. Close the parent's duplicate child ends before relay.
@@ -133,28 +133,28 @@ func runSVNSessionSupervisor(config serverconfig.Config, clientID string, manage
 	childErrWrite.Close()
 
 	if err := sandboxApply(sessionSupervisorProfile(config, lease)); err != nil {
-		terminateSessionChild(cmd.Process.Pid, nil)
+		_ = terminateSessionChild(cmd.Process.Pid, nil)
 		_ = cmd.Wait()
 		closeSessionPipes(gateWrite, childInWrite, childOutRead, childErrRead)
-		return err
+		return 0, err
 	}
 	if !manager.SessionAllowed(lease.Metadata.OperationID, clientID) {
-		terminateSessionChild(cmd.Process.Pid, nil)
+		_ = terminateSessionChild(cmd.Process.Pid, nil)
 		_ = cmd.Wait()
 		closeSessionPipes(gateWrite, childInWrite, childOutRead, childErrRead)
-		return nil
+		return ExitUnavailable, nil
 	}
 	if _, err := io.WriteString(gateWrite, nonce); err != nil {
-		terminateSessionChild(cmd.Process.Pid, nil)
+		_ = terminateSessionChild(cmd.Process.Pid, nil)
 		_ = cmd.Wait()
 		closeSessionPipes(gateWrite, childInWrite, childOutRead, childErrRead)
-		return fmt.Errorf("open session child gate: %w", err)
+		return 0, fmt.Errorf("open session child gate: %w", err)
 	}
 	if err := gateWrite.Close(); err != nil {
-		terminateSessionChild(cmd.Process.Pid, nil)
+		_ = terminateSessionChild(cmd.Process.Pid, nil)
 		_ = cmd.Wait()
 		closeSessionPipes(childInWrite, childOutRead, childErrRead)
-		return fmt.Errorf("close session child gate: %w", err)
+		return 0, fmt.Errorf("close session child gate: %w", err)
 	}
 
 	return relaySession(cmd, manager, lease, stdin, stdout, stderr, childInWrite, childOutRead, childErrRead)
@@ -187,7 +187,7 @@ func sessionSupervisorProfile(config serverconfig.Config, lease *activation.Sess
 	}}
 }
 
-func relaySession(cmd *exec.Cmd, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer, childIn *os.File, childOut, childErr *os.File) error {
+func relaySession(cmd *exec.Cmd, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer, childIn *os.File, childOut, childErr *os.File) (int, error) {
 	if stdin == nil {
 		stdin = strings.NewReader("")
 	}
@@ -222,41 +222,70 @@ func relaySession(cmd *exec.Cmd, manager *activation.Manager, lease *activation.
 	defer fifoPoll.Stop()
 	for {
 		select {
-		case <-wait:
+		case waitErr := <-wait:
 			closeInput(stdin, childIn)
 			outputs.Wait()
-			return nil
+			return sessionChildExitCode(waitErr)
 		case <-fifoPoll.C:
 			revoked, err := lease.Revoked()
-			if err != nil || revoked {
+			if err != nil {
 				closeInput(stdin, childIn)
-				terminateSessionChild(cmd.Process.Pid, wait)
+				_ = terminateSessionChild(cmd.Process.Pid, wait)
 				outputs.Wait()
-				return nil
+				return 0, fmt.Errorf("poll session revoke lease: %w", err)
+			}
+			if revoked {
+				closeInput(stdin, childIn)
+				waitErr := terminateSessionChild(cmd.Process.Pid, wait)
+				outputs.Wait()
+				return sessionChildExitCode(waitErr)
 			}
 		case <-poll.C:
 			if !manager.SessionAllowed(lease.Metadata.OperationID, lease.Metadata.ClientID) {
 				closeInput(stdin, childIn)
-				terminateSessionChild(cmd.Process.Pid, wait)
+				waitErr := terminateSessionChild(cmd.Process.Pid, wait)
 				outputs.Wait()
-				return nil
+				return sessionChildExitCode(waitErr)
 			}
 		}
 	}
 }
 
-func terminateSessionChild(pid int, wait <-chan error) {
+func terminateSessionChild(pid int, wait <-chan error) error {
 	_ = syscall.Kill(-pid, syscall.SIGTERM)
 	if wait == nil {
-		return
+		return nil
 	}
 	select {
-	case <-wait:
-		return
+	case waitErr := <-wait:
+		return waitErr
 	case <-time.After(sessionKillGrace):
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
-		<-wait
+		return <-wait
 	}
+}
+
+func sessionChildExitCode(waitErr error) (int, error) {
+	if waitErr == nil {
+		return ExitOK, nil
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(waitErr, &exitErr) {
+		return 0, fmt.Errorf("wait for session child: %w", waitErr)
+	}
+	status, ok := exitErr.ProcessState.Sys().(syscall.WaitStatus)
+	if !ok {
+		return 0, fmt.Errorf("read session child exit status: %w", waitErr)
+	}
+	if status.Exited() {
+		return status.ExitStatus(), nil
+	}
+	if status.Signaled() {
+		// Match the conventional shell representation while preserving the
+		// distinction from a supervisor infrastructure failure.
+		return 128 + int(status.Signal()), nil
+	}
+	return 0, fmt.Errorf("session child ended without an exit status: %w", waitErr)
 }
 
 func closeInput(stdin io.Reader, childIn *os.File) {

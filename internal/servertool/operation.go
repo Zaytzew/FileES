@@ -65,6 +65,16 @@ func RunOperation(args []string, stdout, stderr io.Writer) int {
 				return ExitTempFail
 			}
 			result["purged_mobile_pairings"] = purged
+			archiveRoot := config.Repositories.DeletionArchiveRoot
+			if archiveRoot == "" {
+				archiveRoot = filepath.Join(root, "deleted-repositories")
+			}
+			reaped, err := repoworker.ReapDeletionArchives(archiveRoot, time.Now())
+			if err != nil {
+				report(stderr, "filees-operation repository deletion archive cleanup", err)
+				return ExitTempFail
+			}
+			result["purged_repository_deletion_archives"] = reaped
 		}
 		if err := writeJSON(stdout, result); err != nil {
 			return ExitSoftware

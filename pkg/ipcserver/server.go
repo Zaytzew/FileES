@@ -33,6 +33,7 @@ type Server struct {
 	mobilePair  MobilePairingService
 	updates     UpdateService
 	activity    ActivitySource
+	lifecycleFn SystemLifecycleService
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -54,7 +55,13 @@ type RepositoryLifecycleService interface {
 	BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error)
 	ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error)
 	BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error)
+	BeginDetach(context.Context, string, string, bool) (contract.RepoLifecycleResult, error)
 	Status(operationID string) (contract.RepoLifecycleResult, error)
+}
+
+type SystemLifecycleService interface {
+	Restart()
+	Shutdown()
 }
 
 // MobilePairingService mints a mobile pairing token for the given
@@ -100,6 +107,9 @@ func (s *Server) updateService() UpdateService {
 
 func (s *Server) capabilities() []string {
 	caps := append([]string(nil), contract.AllCapabilities...)
+	if s.systemLifecycleService() != nil {
+		caps = append(caps, contract.CapSystemRestart, contract.CapSystemShutdown)
+	}
 	if s.updateService() != nil {
 		caps = append(caps, contract.CapUpdateStatus, contract.CapUpdatePlan, contract.CapUpdateApply)
 	}
@@ -107,6 +117,18 @@ func (s *Server) capabilities() []string {
 		caps = append(caps, contract.CapRepoActivity)
 	}
 	return caps
+}
+
+func (s *Server) SetSystemLifecycleService(service SystemLifecycleService) {
+	s.mu.Lock()
+	s.lifecycleFn = service
+	s.mu.Unlock()
+}
+
+func (s *Server) systemLifecycleService() SystemLifecycleService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lifecycleFn
 }
 
 func (s *Server) SetRepositoryLifecycleService(service RepositoryLifecycleService) {
@@ -262,6 +284,19 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 	if removed {
 		s.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
 	}
+}
+
+// MarkRepoDetached clears only local attachment knowledge when no current
+// authoritative projection is available (for example during an offline
+// detach). Server-owned metadata remains presentation-only until the next
+// projection refresh.
+func (s *Server) MarkRepoDetached(serverID, repoID string) {
+	repo := s.repoByID(repoID)
+	if repo == nil || repo.ServerID() != serverID {
+		return
+	}
+	repo.markDetached()
+	s.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
 }
 
 type ProjectedRepo struct {

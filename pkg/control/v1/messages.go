@@ -20,6 +20,7 @@ const (
 	TicketCreateRepository TicketType = "CREATE_REPOSITORY"
 	TicketInitialCommit    TicketType = "INITIAL_COMMIT"
 	TicketStoragePreflight TicketType = "STORAGE_PREFLIGHT"
+	TicketDeleteRepository TicketType = "DELETE_REPOSITORY"
 	// TicketMobilePairing is requested by an already-active desktop client
 	// to mint a mobile pairing token for its own realm (never a payload-
 	// supplied one - the worker resolves realm_id from the authenticated
@@ -74,6 +75,13 @@ type InitialCommitPayload struct {
 }
 type InitialCommitResult struct {
 	Acknowledged bool `json:"acknowledged"`
+}
+type DeleteRepositoryPayload struct {
+	RepoID string `json:"repo_id"`
+}
+type DeleteRepositoryResult struct {
+	RepoID      string `json:"repo_id"`
+	RetainUntil string `json:"retain_until"`
 }
 type StoragePreflightPayload struct {
 	ContentBytes int64 `json:"content_bytes"`
@@ -187,6 +195,14 @@ func (t Ticket) Validate() error {
 		if p.Revision == 0 && p.Paths != 0 {
 			return errors.New("INITIAL_COMMIT revision zero requires an empty snapshot")
 		}
+	case TicketDeleteRepository:
+		var p DeleteRepositoryPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("DELETE_REPOSITORY payload: %w", err)
+		}
+		if err := validateUUID("DELETE_REPOSITORY payload.repo_id", p.RepoID); err != nil {
+			return err
+		}
 	case TicketMobilePairing:
 		var p MobilePairingPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -211,7 +227,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketMobilePairing {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -263,6 +279,17 @@ func validateSuccessPayload(r Result) error {
 		}
 		if !result.Acknowledged {
 			return errors.New("INITIAL_COMMIT result must be acknowledged")
+		}
+	case TicketDeleteRepository:
+		var result DeleteRepositoryResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("DELETE_REPOSITORY result: %w", err)
+		}
+		if err := validateUUID("DELETE_REPOSITORY result.repo_id", result.RepoID); err != nil {
+			return err
+		}
+		if _, err := time.Parse(time.RFC3339Nano, result.RetainUntil); err != nil {
+			return fmt.Errorf("invalid DELETE_REPOSITORY retain_until: %w", err)
 		}
 	case TicketMobilePairing:
 		var result MobilePairingResult

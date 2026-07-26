@@ -15,7 +15,10 @@ const (
 	IntentPairMobileDevice IntentKind = "pair_mobile_device"
 	IntentUpdatePlan       IntentKind = "update_plan"
 	IntentUpdateApply      IntentKind = "update_apply"
-	IntentQuit             IntentKind = "quit"
+	IntentDetachRepository IntentKind = "detach_repository"
+	IntentDeleteRepository IntentKind = "delete_repository"
+	IntentRestartFileES    IntentKind = "restart_filees"
+	IntentShutdownFileES   IntentKind = "shutdown_filees"
 )
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.

@@ -77,6 +77,9 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		if json.Unmarshal(raw, &old) != nil || old.RepoID != repoID || old.OwnerRealmID != realmID || old.DisplayName != name || old.URL != url {
 			return errors.New("canonical repository record conflicts")
 		}
+		if old.State == "deleted" {
+			return errors.New("deleted repository cannot be republished")
+		}
 		record = old
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -207,6 +210,84 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 	return p.Runner.Publish(ctx, changed, "filees: activate repository "+repoID)
 }
 
+// Delete removes the repository from every client projection and from data
+// authz while retaining a canonical tombstone. Physical FSFS disposal is a
+// separate, later backend stage and therefore cannot happen before this
+// authority boundary is durably published.
+func (p ServicePublisher) Delete(ctx context.Context, repoID, realmID string) error {
+	if !filepath.IsAbs(p.ServiceWC) || !filepath.IsAbs(p.DataAuthzFile) || p.Runner == nil {
+		return errors.New("authority publisher is incomplete")
+	}
+	repoPath, err := repositoryRecordPath(p.ServiceWC, repoID)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(repoPath)
+	if err != nil {
+		return err
+	}
+	var record repositoryRecord
+	if err := json.Unmarshal(raw, &record); err != nil || record.Schema != RepositorySchema || record.RepoID != repoID {
+		return errors.New("canonical repository record is invalid")
+	}
+	if record.OwnerRealmID != realmID {
+		return errors.New("authenticated realm does not own repository")
+	}
+	now := time.Now().UTC()
+	if p.Now != nil {
+		now = p.Now().UTC()
+	}
+	if record.State != "deleted" {
+		record.State = "deleted"
+		if err := atomicJSON(repoPath, record); err != nil {
+			return err
+		}
+	}
+	changed := []string{repoPath}
+	entries, err := os.ReadDir(filepath.Join(p.ServiceWC, "clients"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		viewPath := filepath.Join(p.ServiceWC, "clients", entry.Name(), "view.json")
+		view, err := clientview.Load(viewPath)
+		if err != nil {
+			continue
+		}
+		kept := view.Repositories[:0]
+		removed := false
+		for _, repository := range view.Repositories {
+			if repository.RepoID == repoID {
+				removed = true
+				continue
+			}
+			kept = append(kept, repository)
+		}
+		if !removed {
+			continue
+		}
+		view.Repositories = kept
+		view.Generation++
+		view.GeneratedAt = now
+		if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+			return err
+		}
+		changed = append(changed, viewPath)
+	}
+	authz, err := p.renderAuthz()
+	if err != nil {
+		return err
+	}
+	if err := atomicBytes(p.DataAuthzFile, authz); err != nil {
+		return err
+	}
+	changed = append(changed, p.DataAuthzFile)
+	return p.Runner.Publish(ctx, changed, "filees: delete repository "+repoID)
+}
+
 // TransferOwner reassigns a repository's owning realm - the administrative
 // escape hatch for a repo orphaned by a whole-realm revoke
 // (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §6). It rewrites the canonical
@@ -232,6 +313,9 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 		return errors.New("canonical repository record is invalid")
 	}
 	oldRealmID := record.OwnerRealmID
+	if record.State == "deleted" {
+		return errors.New("deleted repository cannot be transferred")
+	}
 	if oldRealmID == newRealmID {
 		return nil // already owned by the requested realm
 	}
@@ -328,6 +412,9 @@ func (p ServicePublisher) renderAuthz() ([]byte, error) {
 		var r repositoryRecord
 		if err = json.Unmarshal(raw, &r); err != nil || r.Schema != RepositorySchema {
 			return nil, errors.New("invalid canonical repository record")
+		}
+		if r.State == "deleted" {
+			continue
 		}
 		records = append(records, r)
 	}

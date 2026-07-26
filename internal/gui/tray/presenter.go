@@ -50,8 +50,16 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 		separator("sep.actions"),
 		actionItem("action.activate", "Aktywuj klienta na nowym serwerze…", "Dodaj aktywację FileES kodem z e-maila", Intent{Kind: IntentActivate}),
 		actionItem("action.reconnect", "Połącz ponownie", "Odśwież połączenie z daemonem", Intent{Kind: IntentReconnect}),
-		actionItem("action.quit", "Zamknij GUI", "Zamknij tylko aplikację tray", Intent{Kind: IntentQuit}),
 	)
+	if !vm.Update.Available() {
+		model.Items = append(model.Items, disabledItem("action.update.placeholder", "Aktualizacja klienta — w przygotowaniu"))
+	}
+	if vm.CanRestartFileES() {
+		model.Items = append(model.Items, actionItem("action.restart_filees", "Uruchom FileES ponownie…", "Kontrolowanie zrestartuj daemon i GUI", Intent{Kind: IntentRestartFileES}))
+	}
+	if vm.CanShutdownFileES() {
+		model.Items = append(model.Items, actionItem("action.shutdown_filees", "Zamknij FileES…", "Kontrolowanie zatrzymaj synchronizację, daemon i GUI", Intent{Kind: IntentShutdownFileES}))
+	}
 	return model
 }
 
@@ -208,27 +216,41 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 	if repo.Attached && strings.TrimSpace(repo.LocalPath) != "" {
 		lockVisible := repo.CanWrite() && vm.CanMutateLock()
 		unlockVisible := repo.CanWrite() && vm.CanMutateUnlock()
-		if lockVisible || unlockVisible {
-			item.Enabled = true
+		item.Enabled = true
+		item.Children = append(item.Children,
+			actionItem("repo."+repo.ID+".open", "Otwórz folder", repo.LocalPath, Intent{Kind: IntentOpenFolder, RepoID: repo.ID}),
+		)
+		if lockVisible {
 			item.Children = append(item.Children,
-				actionItem("repo."+repo.ID+".open", "Otwórz folder", repo.LocalPath, Intent{Kind: IntentOpenFolder, RepoID: repo.ID}),
+				actionItem("repo."+repo.ID+".lock", "Zablokuj pliki…", "Nabierz blokadę lub edit-passport dla wybranych plików", Intent{Kind: IntentLock, RepoID: repo.ID}),
 			)
-			if lockVisible {
-				item.Children = append(item.Children,
-					actionItem("repo."+repo.ID+".lock", "Zablokuj pliki…", "Nabierz blokadę lub edit-passport dla wybranych plików", Intent{Kind: IntentLock, RepoID: repo.ID}),
-				)
-			}
-			if unlockVisible {
-				item.Children = append(item.Children,
-					actionItem("repo."+repo.ID+".unlock", "Odblokuj pliki…", "Zwolnij blokadę lub edit-passport wybranych plików", Intent{Kind: IntentUnlock, RepoID: repo.ID}),
-				)
-			}
-		} else {
-			item.Enabled = true
-			item.Intent = &Intent{Kind: IntentOpenFolder, RepoID: repo.ID}
+		}
+		if unlockVisible {
+			item.Children = append(item.Children,
+				actionItem("repo."+repo.ID+".unlock", "Odblokuj pliki…", "Zwolnij blokadę lub edit-passport wybranych plików", Intent{Kind: IntentUnlock, RepoID: repo.ID}),
+			)
+		}
+		if vm.CanDetachRepository() && repo.AttachmentPolicy != "required" {
+			item.Children = append(item.Children,
+				actionItem("repo."+repo.ID+".detach", "Odłącz folder…", "Zatrzymaj synchronizację; lokalne dane pozostaną", Intent{Kind: IntentDetachRepository, RepoID: repo.ID, ServerID: repo.ServerID}),
+			)
+		}
+		if vm.CanDeleteRepository() && repo.AttachmentPolicy != "required" && repositoryOwnedByActiveRealm(vm, repo) {
+			item.Children = append(item.Children,
+				actionItem("repo."+repo.ID+".delete", "Odłącz trwale…", "Usuń repozytorium z serwera i odłącz lokalny folder", Intent{Kind: IntentDeleteRepository, RepoID: repo.ID, ServerID: repo.ServerID}),
+			)
 		}
 	}
 	return item
+}
+
+func repositoryOwnedByActiveRealm(vm app.ViewModel, repo app.RepoViewModel) bool {
+	for _, server := range vm.Servers {
+		if server.ID == repo.ServerID {
+			return server.Owns(repo) && server.CanOfferRepositoryCreation()
+		}
+	}
+	return false
 }
 
 func repoStatusMark(repo app.RepoViewModel) string {

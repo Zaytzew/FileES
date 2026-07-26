@@ -34,6 +34,33 @@ func TestStorePersistsCreateAndAttachIntents(t *testing.T) {
 	}
 }
 
+func TestConfiguredAttachmentIsImportedOnceAndDetachTombstoneWins(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc := filepath.Join(t.TempDir(), "wc")
+	url := "svn+ssh://_filees-client@example/repo-1"
+	imported, created, err := store.EnsureConfiguredAttached("primary", "repo-1", url, "rw", wc, "Repo")
+	if err != nil || !created || imported.State != StateAttached {
+		t.Fatalf("imported=%+v created=%v err=%v", imported, created, err)
+	}
+	replay, created, err := store.EnsureConfiguredAttached("primary", "repo-1", url, "rw", wc, "Repo")
+	if err != nil || created || replay.OperationID != imported.OperationID {
+		t.Fatalf("replay=%+v created=%v err=%v", replay, created, err)
+	}
+	if _, err := store.BeginDetach("primary", "repo-1", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteDetach(imported.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	tombstone, created, err := store.EnsureConfiguredAttached("primary", "repo-1", url, "rw", wc, "Repo")
+	if err != nil || created || tombstone.State != StateDetached || tombstone.OperationID != imported.OperationID {
+		t.Fatalf("tombstone=%+v created=%v err=%v", tombstone, created, err)
+	}
+}
+
 func TestStorePersistsExplicitOperationAndTerminalStates(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lifecycle.json")
 	store, err := Open(path)
@@ -172,5 +199,71 @@ func TestStoreFailsClosedOnUnknownFields(t *testing.T) {
 	}
 	if _, err := Open(path); err == nil {
 		t.Fatal("unknown field accepted")
+	}
+}
+
+func TestStorePersistsAndCompletesLocalDetach(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.BeginAttach("primary", "repo-1", filepath.Join(t.TempDir(), "wc"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ApproveAttach(record.OperationID, "primary", "repo-1", "svn+ssh://example/repo-1", "rw"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkAttached(record.OperationID, "repo-1"); err != nil {
+		t.Fatal(err)
+	}
+	detaching, err := store.BeginDetach("primary", "repo-1", false)
+	if err != nil || detaching.State != StateDetaching || detaching.DeleteRepository {
+		t.Fatalf("detaching=%+v err=%v", detaching, err)
+	}
+	if _, err := uuid.Parse(detaching.DetachOperationID); err != nil {
+		t.Fatalf("detach operation ID=%q: %v", detaching.DetachOperationID, err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.Get(record.OperationID)
+	if !ok || persisted.State != StateDetaching || persisted.DetachOperationID != detaching.DetachOperationID {
+		t.Fatalf("persisted detach=%+v found=%v", persisted, ok)
+	}
+	completed, err := reopened.CompleteDetach(record.OperationID)
+	if err != nil || completed.State != StateDetached {
+		t.Fatalf("completed=%+v err=%v", completed, err)
+	}
+	if _, err := reopened.BeginAttach("primary", "repo-1", completed.LocalPath, false); err != nil {
+		t.Fatalf("terminal detach still claims repo/path: %v", err)
+	}
+}
+
+func TestStoreDeletionRetryKeepsSameDurableOperation(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, _ := store.BeginAttach("primary", "repo-1", filepath.Join(t.TempDir(), "wc"), false)
+	_, _ = store.ApproveAttach(record.OperationID, "primary", "repo-1", "svn+ssh://example/repo-1", "rw")
+	_, _ = store.MarkAttached(record.OperationID, "repo-1")
+	deleting, err := store.BeginDetach("primary", "repo-1", true)
+	if err != nil || deleting.State != StateDeleting || !deleting.DeleteRepository {
+		t.Fatalf("deleting=%+v err=%v", deleting, err)
+	}
+	failed, err := store.RecordDetachError(record.OperationID, os.ErrPermission)
+	if err != nil || failed.State != StateDeleting || failed.LastError == "" {
+		t.Fatalf("failed=%+v err=%v", failed, err)
+	}
+	retry, err := store.BeginDetach("primary", "repo-1", true)
+	if err != nil || retry.DetachOperationID != deleting.DetachOperationID {
+		t.Fatalf("retry=%+v err=%v", retry, err)
+	}
+	completed, err := store.CompleteDetach(record.OperationID)
+	if err != nil || completed.State != StateDeleted || !completed.DeleteRepository {
+		t.Fatalf("completed=%+v err=%v", completed, err)
 	}
 }

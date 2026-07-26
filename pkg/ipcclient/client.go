@@ -130,6 +130,24 @@ func (c *Client) SystemStatus(ctx context.Context) (*contract.SystemStatusResult
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
+func (c *Client) SystemRestart(ctx context.Context) (*contract.SystemLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdSystemRestart, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.SystemLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) SystemShutdown(ctx context.Context) (*contract.SystemLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdSystemShutdown, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.SystemLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) UpdateStatus(ctx context.Context) (*contract.UpdateStatus, error) {
 	resp, err := c.do(ctx, contract.CmdUpdateStatus, "", nil)
 	if err != nil {
@@ -213,6 +231,24 @@ func (c *Client) MobilePairingBegin(ctx context.Context, serverID string) (*cont
 
 func (c *Client) RepoLifecycleStatus(ctx context.Context, operationID string) (*contract.RepoLifecycleResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoLifecycleStatus, "", contract.RepoLifecycleStatusPayload{OperationID: operationID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) RepoDetach(ctx context.Context, serverID, repoID string) (*contract.RepoLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoDetach, repoID, contract.RepoDetachPayload{ServerID: serverID, RepoID: repoID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) RepoDelete(ctx context.Context, serverID, repoID string) (*contract.RepoLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoDelete, repoID, contract.RepoDetachPayload{ServerID: serverID, RepoID: repoID})
 	if err != nil {
 		return nil, err
 	}

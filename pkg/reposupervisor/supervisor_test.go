@@ -105,3 +105,21 @@ func TestLocalAttachmentReappliesOnlyCurrentGeneration(t *testing.T) {
 		t.Fatalf("log=%s", got)
 	}
 }
+
+func TestDetachLocalStopsWithoutAuthoritativeProjection(t *testing.T) {
+	var log []string
+	supervisor, _ := New(fakeStarter{&log}, nil)
+	key := Key{"offline", "repo"}
+	if err := supervisor.Apply(context.Background(), "offline", 1, []Desired{{Key: key, Access: "rw", State: "active", URL: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.DetachLocal(context.Background(), key); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.DetachLocal(context.Background(), key); err != nil {
+		t.Fatalf("idempotent detach: %v", err)
+	}
+	if got := fmt.Sprint(log); got != "[start:offline/repo:rw stop:offline/repo:rw]" {
+		t.Fatalf("log=%s", got)
+	}
+}

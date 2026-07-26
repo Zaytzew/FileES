@@ -109,6 +109,24 @@ func TestMobilePairingContract(t *testing.T) {
 	}
 }
 
+func TestDeleteRepositoryContract(t *testing.T) {
+	operationID, requestID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	ticket, err := NewTicket(operationID, requestID, TicketDeleteRepository, "client-a", DeleteRepositoryPayload{RepoID: repoID}, time.Now())
+	if err != nil || ticket.Type != TicketDeleteRepository {
+		t.Fatalf("ticket=%+v err=%v", ticket, err)
+	}
+	retainUntil := time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339Nano)
+	if _, err := NewSuccessResult(operationID, requestID, TicketDeleteRepository, DeleteRepositoryResult{RepoID: repoID, RetainUntil: retainUntil}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTicket(operationID, requestID, TicketDeleteRepository, "client-a", DeleteRepositoryPayload{RepoID: "../repo"}, time.Now()); err == nil {
+		t.Fatal("traversing delete repo ID accepted")
+	}
+	if _, err := NewSuccessResult(operationID, requestID, TicketDeleteRepository, DeleteRepositoryResult{RepoID: repoID, RetainUntil: "never"}, time.Now()); err == nil {
+		t.Fatal("invalid deletion retention timestamp accepted")
+	}
+}
+
 // TestInitialCommitRepoIDMustBeUUID is the wire-level half of the audit's
 // Finding B. INITIAL_COMMIT is the only ticket type whose repo_id travels back
 // from the client, so it is the only place a client-chosen string can reach

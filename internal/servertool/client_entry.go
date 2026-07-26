@@ -73,6 +73,9 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 			obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
 		)
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-worker", Name: repositoryWorkerPath, Perms: "rx"}, obsandbox.Path{Label: "service-wc", Name: config.Activation.ServiceWorkingCopy, Perms: "rwc"}, obsandbox.Path{Label: "repository-root", Name: r.Root, Perms: "rwc"}, obsandbox.Path{Label: "repository-results", Name: r.ResultsRoot, Perms: "rwc"}, obsandbox.Path{Label: "data-authz", Name: r.DataAuthzFile, Perms: "rwc"}, obsandbox.Path{Label: "svnadmin", Name: r.SVNAdminBinary, Perms: "rx"}, obsandbox.Path{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"})
+		if deletionArchiveNeedsOwnUnveil(r.ResultsRoot, r.DeletionArchiveRoot) {
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-deletion-archive", Name: r.DeletionArchiveRoot, Perms: "rwc"})
+		}
 		// Onboarding root + OTP pepper: needed by the exec'd worker to mint
 		// mobile pairing tokens (MOBILE_PAIRING ticket, onboarding.Files.
 		// CreateMobilePairing) - the same token-hashing discipline already

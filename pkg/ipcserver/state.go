@@ -71,6 +71,12 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 	}
 	rs.attachmentPolicy = attachmentPolicy
 	rs.projectedState = projectedState
+	if !attached {
+		rs.localPath = ""
+		rs.currentOp = nil
+		rs.lockFn = nil
+		rs.unlockFn = nil
+	}
 	if projectedState != "active" {
 		rs.state = projectedState
 	} else if !attached {
@@ -79,6 +85,21 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 		} else {
 			rs.state = contract.StateUnattached
 		}
+	}
+	rs.mu.Unlock()
+}
+
+func (rs *RepoState) markDetached() {
+	rs.mu.Lock()
+	rs.attached = false
+	rs.localPath = ""
+	rs.currentOp = nil
+	rs.lockFn = nil
+	rs.unlockFn = nil
+	if rs.attachmentPolicy == "required" {
+		rs.state = contract.StatePolicyPending
+	} else {
+		rs.state = contract.StateUnattached
 	}
 	rs.mu.Unlock()
 }

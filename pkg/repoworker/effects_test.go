@@ -14,6 +14,7 @@ func (p *publisher) Publish(context.Context, string, string, string, string) err
 	p.calls++
 	return nil
 }
+func (p *publisher) Delete(context.Context, string, string) error { return nil }
 func TestServerEffectsCreatesFSFSIdempotently(t *testing.T) {
 	bin, e := exec.LookPath("svnadmin")
 	if e != nil {

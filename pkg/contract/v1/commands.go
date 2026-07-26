@@ -8,6 +8,7 @@ const (
 	// System
 	CmdSystemHello    = "system.hello"    // capability negotiation
 	CmdSystemStatus   = "system.status"   // daemon uptime and aggregate state
+	CmdSystemRestart  = "system.restart"  // graceful daemon restart
 	CmdSystemShutdown = "system.shutdown" // graceful stop (privileged)
 	CmdUpdateStatus   = "update.status"   // signed release availability
 	CmdUpdatePlan     = "update.plan"     // verified dry-run change plan
@@ -33,6 +34,8 @@ const (
 	CmdRepoAttachIntent    = "repo.attach_intent"    // persist local path choice; no checkout yet
 	CmdRepoAttachApprove   = "repo.attach_approve"   // approve the persisted intent and start checkout
 	CmdRepoRelocate        = "repo.relocate"         // approve relocation of an attached working copy
+	CmdRepoDetach          = "repo.detach"           // detach one local working copy, preserving user data
+	CmdRepoDelete          = "repo.delete"           // delete an owned server repository, then detach locally
 	CmdRepoLifecycleStatus = "repo.lifecycle_status" // poll outcome of a create/attach/relocate operation by ID
 	CmdRepoActivity        = "repo.activity"         // global recent synchronization activity snapshot
 	CmdRepoLock            = "repo.lock"             // acquire SVN lock on one or more paths
@@ -70,8 +73,12 @@ const (
 	CapRepoAttachIntent    = "repo.attach_intent"
 	CapRepoAttachApprove   = "repo.attach_approve"
 	CapRepoRelocate        = "repo.relocate"
+	CapRepoDetach          = "repo.detach"
+	CapRepoDelete          = "repo.delete"
 	CapRepoLifecycleStatus = "repo.lifecycle_status"
 	CapRepoActivity        = "repo.activity"
+	CapSystemRestart       = "system.restart"
+	CapSystemShutdown      = "system.shutdown"
 
 	// Update capabilities are advertised only after the daemon wires a signed
 	// release checker and transactional platform installer.
@@ -100,6 +107,8 @@ var AllCapabilities = []string{
 	CapRepoAttachIntent,
 	CapRepoAttachApprove,
 	CapRepoRelocate,
+	CapRepoDetach,
+	CapRepoDelete,
 	CapRepoLifecycleStatus,
 }
 
@@ -243,6 +252,15 @@ type RepoRelocatePayload struct {
 	ServerID     string `json:"server_id"`
 	RepoID       string `json:"repo_id"`
 	NewLocalPath string `json:"new_local_path"`
+}
+
+type RepoDetachPayload struct {
+	ServerID string `json:"server_id"`
+	RepoID   string `json:"repo_id"`
+}
+
+type SystemLifecycleResult struct {
+	Action string `json:"action"` // restart | shutdown
 }
 
 type RepoLifecycleStatusPayload struct {

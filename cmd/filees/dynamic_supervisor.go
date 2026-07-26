@@ -163,7 +163,28 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if attachment.Quiesce {
 				old, exists := runtimes[key]
 				view, hasView := currentViews[repo.ServerID]
-				if !exists || !hasView {
+				if attachment.Detach {
+					if exists {
+						delete(runtimes, key)
+					}
+					err := supervisor.DetachLocal(ctx, key)
+					if err != nil {
+						if exists {
+							runtimes[key] = old
+						}
+					} else if hasView {
+						syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes)
+					} else {
+						ipc.MarkRepoDetached(repo.ServerID, repo.ID)
+					}
+					attachment.Result <- err
+					continue
+				}
+				if !hasView {
+					attachment.Result <- fmt.Errorf("attached runtime or authoritative projection is unavailable")
+					continue
+				}
+				if !exists {
 					attachment.Result <- fmt.Errorf("attached runtime or authoritative projection is unavailable")
 					continue
 				}

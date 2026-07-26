@@ -35,3 +35,12 @@ An existing S2 `server.json` must be extended with absolute
 `worker_private_key_file` and `worker_public_key_file` paths before enabling
 S3. Re-running the generic installer creates a missing keypair but never
 overwrites the existing configuration.
+
+Repository deletion policy lives under `repositories`. Omitted
+`deletion_retention_days` defaults to 30. A positive value means: verified SVN
+dump retained for that many days, with FSFS removed immediately after
+verification. Explicit `0` is the panic policy: remove FSFS immediately and do
+not create a dump. `deletion_archive_root`, when set, must be absolute; otherwise
+the worker uses `results_root/deleted-repositories`. A custom root outside
+`results_root` is an exact OpenBSD `unveil` target and must already exist as a
+dedicated, mode-0700 directory before the worker starts.

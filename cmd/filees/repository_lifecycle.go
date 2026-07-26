@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"filees/pkg/clientprofile"
+	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
@@ -21,6 +23,7 @@ type repositoryLifecycleService struct {
 	onCreate      func(string)
 	onAttach      func(attachmentRequest)
 	onRelocate    func(string)
+	onDetach      func(context.Context, string) (localrepo.Record, error)
 }
 
 func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error) {
@@ -36,6 +39,23 @@ func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLoc
 		service.onRelocate(record.OperationID)
 	}
 	return lifecycleResult(record), nil
+}
+
+func (service repositoryLifecycleService) BeginDetach(ctx context.Context, serverID, repoID string, deleteRepository bool) (contract.RepoLifecycleResult, error) {
+	record, err := service.store.BeginDetach(serverID, repoID, deleteRepository)
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	if service.onDetach == nil {
+		return contract.RepoLifecycleResult{}, errors.New("repository detach executor is unavailable")
+	}
+	record, err = service.onDetach(ctx, record.OperationID)
+	if err != nil {
+		if failed, persistErr := service.store.RecordDetachError(record.OperationID, err); persistErr == nil {
+			record = failed
+		}
+	}
+	return lifecycleResult(record), err
 }
 
 type attachmentRequest struct {
@@ -159,7 +179,7 @@ func (service repositoryLifecycleService) allRootsExcept(operationID string) []s
 	roots := append([]string{}, service.existingRoots...)
 	if service.store != nil {
 		for _, record := range service.store.List() {
-			if record.OperationID == operationID || record.State == localrepo.StateError {
+			if record.OperationID == operationID || record.State == localrepo.StateError || record.State == localrepo.StateDetached || record.State == localrepo.StateDeleted {
 				continue
 			}
 			roots = append(roots, record.LocalPath)
@@ -170,6 +190,37 @@ func (service repositoryLifecycleService) allRootsExcept(operationID string) []s
 
 func lifecycleResult(record localrepo.Record) contract.RepoLifecycleResult {
 	return contract.RepoLifecycleResult{OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State), LastError: record.LastError}
+}
+
+func reconcileConfiguredRepositoryLifecycle(store *localrepo.Store, repositories []config.Repo) ([]config.Repo, error) {
+	if store == nil {
+		return repositories, nil
+	}
+	active := make([]config.Repo, 0, len(repositories))
+	for _, repository := range repositories {
+		record, _, err := store.EnsureConfiguredAttached(
+			repository.ServerID, repository.ID, repository.RepoURL, repository.Access,
+			repository.LocalPath, repository.ID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		switch record.State {
+		case localrepo.StateDetaching, localrepo.StateDeleting, localrepo.StateDetached, localrepo.StateDeleted:
+			continue
+		}
+		if record.RepoURL != "" {
+			repository.RepoURL = record.RepoURL
+		}
+		if record.Access != "" {
+			repository.Access = record.Access
+		}
+		if record.LocalPath != "" {
+			repository.LocalPath = record.LocalPath
+		}
+		active = append(active, repository)
+	}
+	return active, nil
 }
 
 func defaultRepositoryLifecyclePath() string {

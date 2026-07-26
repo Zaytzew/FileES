@@ -155,11 +155,19 @@ Wpisy są wyszarzone (informacyjne). Tooltip każdego wpisu zawiera wskazówkę 
 ```
 ─────────────────────────
 Połącz ponownie
-Zamknij GUI
+Aktualizacja klienta — w przygotowaniu
+Uruchom FileES ponownie…
+Zamknij FileES…
 ```
 
 - **Połącz ponownie** — wymusza natychmiastową próbę połączenia z daemonem, pomijając czas oczekiwania backoffu. Działa zarówno przy braku połączenia, jak i w trakcie sesji (resetuje sesję).
-- **Zamknij GUI** — kończy wyłącznie aplikację tray. Demon i synchronizacja działają dalej.
+- **Aktualizacja klienta — w przygotowaniu** — nieaktywne miejsce dla przyszłego
+  UX aktualizacji; gdy daemon zgłosi rzeczywiście dostępne, podpisane wydanie,
+  zastępuje je aktywne menu aktualizacji.
+- **Uruchom FileES ponownie…** — kontrolowanie opróżnia kolejkę i zatrzymuje
+  runtime, po czym uruchamia ponownie daemon i GUI.
+- **Zamknij FileES…** — kontrolowanie zatrzymuje cały stack kliencki: daemon,
+  watchery i GUI.
 
 ---
 
@@ -218,11 +226,38 @@ Dla tego samego repozytorium można mieć aktywną tylko jedną operację naraz.
 
 ---
 
-## Zamykanie
+## Odłączanie folderu
 
-**Zamknij GUI** kończy wyłącznie proces `filees-gui`. Demon synchronizuje pliki nadal bez przerwy. Można ponownie uruchomić GUI i podłączyć się do działającego demona w dowolnym momencie.
+W podmenu opcjonalnie podłączonego repozytorium są dwie różne operacje:
 
-Aby zatrzymać synchronizację, należy zatrzymać demon (`filees`). Opcja zatrzymania demona z poziomu GUI pojawi się w przyszłej wersji po dodaniu odpowiedniej capability przez daemon.
+- **Odłącz folder…** — po jednym potwierdzeniu zatrzymuje synchronizację tej
+  working copy. FileES usuwa z rootu wyłącznie katalogi `.svn` i `.filees`.
+  Wszystkie dokumenty i pozostałe katalogi zostają na dysku; wynik jest
+  zwykłym folderem. Operacja działa również wtedy, gdy samo repo jest offline;
+  trwały tombstone zapobiega ponownemu podłączeniu starego wpisu z
+  `config.json` po restarcie.
+- **Odłącz trwale…** — jest dostępne tylko dla repozytorium własnego realmu i
+  wymaga dwóch oddzielnych potwierdzeń. Serwer wycofuje dostęp i usuwa FSFS.
+  Przy retencji większej od zera najpierw tworzy oraz weryfikuje pełny dump,
+  usuwa FSFS natychmiast i zachowuje wyłącznie dump przez skonfigurowaną liczbę
+  dni. Retencja `0` to tryb panic: natychmiastowe usunięcie bez dumpa i bez
+  serwerowej kopii odzyskowej.
+
+Repozytoriów oznaczonych jako **Wymagane przez serwer** nie można odłączyć ani
+usunąć tą ścieżką. Odłączenie trwa do końcowego potwierdzenia daemona; nie
+zamykaj FileES w trakcie operacji.
+
+---
+
+## Restart i zamykanie
+
+**Uruchom FileES ponownie…** i **Zamknij FileES…** obejmują cały stack
+kliencki, nie tylko ikonę. Przed zakończeniem daemon zatrzymuje aktywne
+repozytoria i wykonuje końcowy scan/flush.
+
+Pliki zmienione, gdy FileES jest wyłączony, nie przepadają: po następnym
+uruchomieniu watcher ładuje trwały manifest, porównuje go z bieżącym
+filesystemem i traktuje różnice jako zwykłe dodania, modyfikacje lub usunięcia.
 
 ---
 
@@ -263,7 +298,7 @@ Powiadomienia wymagają zarejestrowanego AUMID. Upewnij się, że `filees-gui.ex
 
 ### Wiele ikon w trayu
 
-Aktualna wersja blokuje drugą instancję przed utworzeniem ikony. Jeśli mimo to widoczne są dwie ikony, jedna może pochodzić ze starszej wersji GUI albo z innej sesji użytkownika. Zamknij stare procesy przez *Zamknij GUI*, sprawdź wersję poleceniem `filees-gui --version` i uruchom ponownie bieżącą instalację.
+Aktualna wersja blokuje drugą instancję przed utworzeniem ikony. Jeśli mimo to widoczne są dwie ikony, jedna może pochodzić ze starszej wersji GUI albo z innej sesji użytkownika. Zakończ stary proces `filees-gui` z poziomu jego sesji lub menedżera procesów, sprawdź wersję poleceniem `filees-gui --version` i uruchom ponownie bieżącą instalację.
 
 ---
 
@@ -272,4 +307,5 @@ Aktualna wersja blokuje drugą instancję przed utworzeniem ikony. Jeśli mimo t
 - **Aktywacja powiadomień**: powiadomienia są informacyjne; kliknięcie nie otwiera jeszcze katalogu ani szczegółów błędu. Nie wykonuje też żadnej operacji mutującej.
 - **MSI Windows**: przed odinstalowaniem należy wykonać `filees-gui --autostart disable`; automatyczne usunięcie utworzonej przez aplikację wartości `HKCU\...\Run` pozostaje otwartą bramką instalatora.
 - **Odbiór natywny**: build MSI oraz instalacja i deinstalacja per-user zostały ręcznie potwierdzone na Windows 11. Każde kolejne wydanie nadal wymaga testów install/upgrade/uninstall na Windows 10/11.
-- **Wstrzymanie / Sync now / Zatrzymaj daemon**: funkcje nieobecne w bieżącym kontrakcie daemona; pojawią się po dodaniu odpowiednich capabilities.
+- **Wstrzymanie / Sync now**: funkcje nieobecne w bieżącym kontrakcie daemona;
+  pojawią się po dodaniu odpowiednich capabilities.

@@ -78,6 +78,27 @@ func (s *Supervisor) ApplyLocalAttachment(ctx context.Context, serverID string, 
 	return s.applyLocked(ctx, serverID, generation, desired, transition, true)
 }
 
+// DetachLocal stops exactly one local pipeline without requiring a current
+// server projection. Detach changes local topology only, so it must remain
+// available while the realm is offline or its cached projection is missing.
+func (s *Supervisor) DetachLocal(ctx context.Context, key Key) error {
+	if strings.TrimSpace(key.ServerID) == "" || strings.TrimSpace(key.RepoID) == "" {
+		return errors.New("repository key is invalid")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, running := s.live[key]
+	if !running {
+		return nil
+	}
+	if err := item.instance.Stop(ctx); err != nil {
+		return fmt.Errorf("stop repository %s: %w", key, err)
+	}
+	delete(s.live, key)
+	s.emit(Event{Key: key, Action: "stopped", Access: item.desired.Access})
+	return nil
+}
+
 func (s *Supervisor) applyLocked(ctx context.Context, serverID string, generation int64, desired []Desired, transition func(Desired), localReapply bool) error {
 	serverID = strings.TrimSpace(serverID)
 	if serverID == "" || generation < 1 {

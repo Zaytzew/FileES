@@ -50,11 +50,20 @@ type ActivationFile struct {
 	SVNServeBinary     string `json:"svnserve_binary"`
 }
 type RepositoryFile struct {
-	Root           string `json:"root,omitempty"`
-	ResultsRoot    string `json:"results_root,omitempty"`
-	DataAuthzFile  string `json:"data_authz_file,omitempty"`
-	SVNAdminBinary string `json:"svnadmin_binary,omitempty"`
-	URLPrefix      string `json:"url_prefix,omitempty"`
+	Root                  string `json:"root,omitempty"`
+	ResultsRoot           string `json:"results_root,omitempty"`
+	DataAuthzFile         string `json:"data_authz_file,omitempty"`
+	SVNAdminBinary        string `json:"svnadmin_binary,omitempty"`
+	URLPrefix             string `json:"url_prefix,omitempty"`
+	DeletionArchiveRoot   string `json:"deletion_archive_root,omitempty"`
+	DeletionRetentionDays *int   `json:"deletion_retention_days,omitempty"`
+}
+
+func (repository RepositoryFile) EffectiveDeletionRetentionDays() int {
+	if repository.DeletionRetentionDays == nil {
+		return 30
+	}
+	return *repository.DeletionRetentionDays
 }
 
 type SMTPFile struct {
@@ -271,6 +280,12 @@ func load(path string, secrets Secrets) (Config, error) {
 		Repositories: file.Repositories,
 		Onboarding:   onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
 		SMTP:         smtpsubmit.Config{Address: file.SMTP.Address, ServerName: file.SMTP.ServerName, ClientName: file.SMTP.ClientName, Username: file.SMTP.Username, Password: password, TLSMode: smtpsubmit.TLSMode(file.SMTP.TLS), RootCAs: pool, ConnectTimeout: connectTimeout, CommandTimeout: commandTimeout},
+	}
+	if config.Repositories.EffectiveDeletionRetentionDays() < 0 {
+		return Config{}, errors.New("repositories deletion_retention_days cannot be negative")
+	}
+	if config.Repositories.DeletionArchiveRoot != "" && !filepath.IsAbs(config.Repositories.DeletionArchiveRoot) {
+		return Config{}, errors.New("repositories deletion_archive_root must be absolute")
 	}
 	if config.MessageIDDomain == "" || strings.ContainsAny(config.MessageIDDomain, "@<>\r\n \t") {
 		return Config{}, errors.New("SMTP message_id_domain is required")

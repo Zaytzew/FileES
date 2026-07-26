@@ -54,6 +54,50 @@ func TestBuildMenuHidesUpdateWhenCurrent(t *testing.T) {
 	if hasItem(menu.Items, "update") {
 		t.Fatal("update badge visible without an available release")
 	}
+	if !hasItem(menu.Items, "action.update.placeholder") {
+		t.Fatal("client update placeholder missing")
+	}
+}
+
+func TestBuildMenuOffersDetachDeleteAndWholeStackLifecycle(t *testing.T) {
+	repo := app.RepoViewModel{
+		ID: "docs", ServerID: "office", DisplayName: "Dokumenty", Attached: true,
+		AttachmentPolicy: "optional", OwnerRealmID: "realm", LocalPath: "/wc/docs",
+		Access: contract.AccessReadWrite, State: contract.StateActive,
+	}
+	vm := app.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoDetach:     true,
+			contract.CapRepoDelete:     true,
+			contract.CapSystemRestart:  true,
+			contract.CapSystemShutdown: true,
+		},
+		Repos: []app.RepoViewModel{repo},
+		Servers: []app.ServerViewModel{{
+			ID: "office", RealmID: "realm", CanCreateRepositories: true,
+			ClientRole: contract.ClientRoleNormal, Repos: []app.RepoViewModel{repo},
+		}},
+	}
+	menu := BuildMenu(vm)
+	repoItem := findItem(t, menu.Items, "repo.docs")
+	if !hasItem(repoItem.Children, "repo.docs.detach") || !hasItem(repoItem.Children, "repo.docs.delete") {
+		t.Fatalf("repository lifecycle actions=%+v", repoItem.Children)
+	}
+	if !hasItem(menu.Items, "action.restart_filees") || !hasItem(menu.Items, "action.shutdown_filees") {
+		t.Fatalf("whole-stack lifecycle actions missing: %+v", menu.Items)
+	}
+	if hasItem(menu.Items, "action.quit") {
+		t.Fatal("misleading GUI-only quit action is still visible")
+	}
+
+	repo.AttachmentPolicy = "required"
+	vm.Repos[0] = repo
+	vm.Servers[0].Repos[0] = repo
+	required := findItem(t, BuildMenu(vm).Items, "repo.docs")
+	if hasItem(required.Children, "repo.docs.detach") || hasItem(required.Children, "repo.docs.delete") {
+		t.Fatalf("required repository can be detached: %+v", required.Children)
+	}
 }
 
 func TestBuildMenuShowsRepositoryActionsWhenCapabilitiesAllow(t *testing.T) {
@@ -195,7 +239,7 @@ func TestBuildMenuGroupsReadOnlyRepoUnderActiveServer(t *testing.T) {
 		t.Fatalf("server title=%q", server.Title)
 	}
 	repoMenu := findItem(t, server.Children, "repo.archive")
-	if len(repoMenu.Children) != 0 || repoMenu.Intent == nil || repoMenu.Intent.Kind != IntentOpenFolder {
+	if repoMenu.Intent != nil || len(repoMenu.Children) != 1 || repoMenu.Children[0].Intent == nil || repoMenu.Children[0].Intent.Kind != IntentOpenFolder {
 		t.Fatalf("read-only repository row=%#v", repoMenu)
 	}
 }

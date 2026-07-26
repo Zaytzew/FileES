@@ -34,13 +34,18 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 			},
 		},
 		{
-			access:   toolAccess{name: "filees-operation/recover", areas: onboarding.AreaAll, write: true, needOTP: true},
+			access:   toolAccess{name: "filees-operation/recover", areas: onboarding.AreaAll, write: true, needOTP: true, needActivation: true, needRepoResults: true},
 			promises: writePromises,
 			paths: []obsandbox.Path{
 				{Label: "lock", Name: "/srv/filees/.toolchain.lock", Perms: "rw"},
 				{Label: "tickets", Name: "/srv/filees/tickets", Perms: "rwc"},
 				{Label: "operations", Name: "/srv/filees/operations", Perms: "rwc"},
 				{Label: "audit", Name: "/srv/filees/audit", Perms: "rwc"},
+				{Label: "activation", Name: "/srv/activation", Perms: "rwc"},
+				{Label: "client-authorized-keys", Name: "/srv/activation/authorized_keys", Perms: "rwc"},
+				{Label: "service-authz", Name: "/srv/activation/authz", Perms: "rwc"},
+				{Label: "session-root", Name: "/srv/activation/sessions", Perms: "rwc"},
+				{Label: "repository-results", Name: "/srv/repository-results", Perms: "rwc"},
 			},
 		},
 		{
@@ -70,8 +75,13 @@ func TestRepositoryProfilesAreClosedPerAction(t *testing.T) {
 			},
 		},
 	}
+	activationConfig := activation.Config{
+		Root:               "/srv/activation",
+		AuthorizedKeysFile: "/srv/activation/authorized_keys",
+		AuthzFile:          "/srv/activation/authz",
+	}
 	for _, test := range tests {
-		profile := repositoryProfile("/srv/filees", test.access, activation.Config{})
+		profile := repositoryProfile("/srv/filees", test.access, activationConfig, "/srv/repository-results")
 		if profile.Name != test.access.name || profile.Promises != test.promises || !reflect.DeepEqual(profile.Paths, test.paths) {
 			t.Fatalf("profile %s = %+v", test.access.name, profile)
 		}
@@ -97,7 +107,7 @@ func TestWorkerSVNProfileIncludesOnlyExactRuntimeAndTreeParents(t *testing.T) {
 		ServiceWorkingCopy: "/srv/svn/service-wc", ServiceRepository: "/srv/svn/service-repo",
 		SVNBinary: "/usr/local/bin/svn", SVNServeBinary: "/usr/local/bin/svnserve",
 	}
-	profile := repositoryProfile("/srv/filees", toolAccess{name: "worker", needSVN: true}, config)
+	profile := repositoryProfile("/srv/filees", toolAccess{name: "worker", needSVN: true}, config, "")
 	wanted := map[string]obsandbox.Path{
 		"service-working-copy-parent": {Label: "service-working-copy-parent", Name: "/srv/svn", Perms: "r"},
 		"service-repository-parent":   {Label: "service-repository-parent", Name: "/srv/svn", Perms: "r"},

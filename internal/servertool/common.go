@@ -41,6 +41,7 @@ type toolAccess struct {
 	needWorker       bool
 	needWorkerPublic bool
 	needActivation   bool
+	needRepoResults  bool
 	needSVN          bool
 }
 
@@ -88,7 +89,7 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	if err := onboarding.CheckExisting(config.Root, repositoryAccess); err != nil {
 		return nil, serverconfig.Config{}, err
 	}
-	profile := repositoryProfile(config.Root, access, config.Activation)
+	profile := repositoryProfile(config.Root, access, config.Activation, config.Repositories.ResultsRoot)
 	var sandboxErr error
 	if access.needSVN {
 		// The OpenBSD ports build of svn establishes its own unveil table after
@@ -108,7 +109,7 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	return files, config, nil
 }
 
-func repositoryProfile(root string, access toolAccess, activationConfig activation.Config) obsandbox.Profile {
+func repositoryProfile(root string, access toolAccess, activationConfig activation.Config, repositoryResultsRoot string) obsandbox.Profile {
 	areaPerms := "r"
 	if access.write {
 		areaPerms = "rwc"
@@ -143,6 +144,9 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 			obsandbox.Path{Label: "service-authz", Name: activationConfig.AuthzFile, Perms: "rwc"},
 			obsandbox.Path{Label: "session-root", Name: sessionRoot, Perms: "rwc"},
 		)
+	}
+	if access.needRepoResults && repositoryResultsRoot != "" {
+		paths = append(paths, obsandbox.Path{Label: "repository-results", Name: repositoryResultsRoot, Perms: "rwc"})
 	}
 	if access.needSVN {
 		paths = append(paths,

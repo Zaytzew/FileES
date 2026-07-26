@@ -74,6 +74,22 @@ func TestSessionSupervisorRelaysOpaqueBytes(t *testing.T) {
 	}
 }
 
+func TestSessionSupervisorProfileAllowsLeaseCleanup(t *testing.T) {
+	config := serverconfig.Config{Activation: activation.Config{Root: "/var/filees/activation"}}
+	lease := &activation.SessionLease{Dir: "/var/filees/activation/sessions/session-0123456789abcdef0123456789abcdef"}
+	profile := sessionSupervisorProfile(config, lease)
+	paths := map[string]string{}
+	for _, path := range profile.Paths {
+		paths[path.Label] = path.Perms
+	}
+	if paths["session-root-cleanup"] != "c" {
+		t.Fatalf("session root cleanup permissions = %q, want c", paths["session-root-cleanup"])
+	}
+	if paths["session-lease"] != "rwc" {
+		t.Fatalf("session lease permissions = %q, want rwc", paths["session-lease"])
+	}
+}
+
 func sessionSupervisorTestChild(_ serverconfig.Config, _ string, _ string, _ string, gate, stdin, stdout, stderr *os.File) (*exec.Cmd, error) {
 	if _, err := os.Stat("/bin/sleep"); err != nil {
 		return nil, err

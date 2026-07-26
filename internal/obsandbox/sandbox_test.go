@@ -7,6 +7,10 @@ func TestValidateRejectsRelativeAndConfigurableLookingProfiles(t *testing.T) {
 	if err := Validate(valid); err != nil {
 		t.Fatal(err)
 	}
+	createOnly := Profile{Name: "tool/cleanup", Promises: "stdio cpath", Paths: []Path{{Label: "parent", Name: "/srv/filees/sessions", Perms: "c"}}}
+	if err := Validate(createOnly); err != nil {
+		t.Fatal(err)
+	}
 	for _, profile := range []Profile{
 		{Name: "", Promises: valid.Promises},
 		{Name: valid.Name, Promises: ""},

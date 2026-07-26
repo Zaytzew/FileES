@@ -4,8 +4,11 @@ package activation
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestRevokeSignalsClaimedSessionLease(t *testing.T) {
@@ -70,4 +73,50 @@ func TestRevokeSignalsStagedSessionLease(t *testing.T) {
 	if manager.SessionAllowed(grant.OperationID, grant.ClientID) {
 		t.Fatal("revoked staged session remained allowed")
 	}
+}
+
+func TestSessionLeaseCloseRemovesOnlyKnownArtifacts(t *testing.T) {
+	lease := newTestSessionLease(t)
+	dir := lease.Dir
+	if err := os.WriteFile(dir+"/unexpected", []byte("preserve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Close(); err == nil {
+		t.Fatal("session lease cleanup unexpectedly removed a directory with an unknown artifact")
+	}
+	if _, err := os.Stat(dir + "/unexpected"); err != nil {
+		t.Fatalf("unknown lease artifact was not preserved: %v", err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("lease directory was not preserved after fail-closed cleanup: %v", err)
+	}
+}
+
+func TestSessionLeaseCloseRemovesKnownArtifacts(t *testing.T) {
+	lease := newTestSessionLease(t)
+	dir := lease.Dir
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("closed lease directory still exists: %v", err)
+	}
+}
+
+func newTestSessionLease(t *testing.T) *SessionLease {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := createSessionLease(root, SessionMetadata{
+		OperationID: uuid.NewString(),
+		ClientID:    uuid.NewString(),
+		RealmID:     uuid.NewString(),
+		StartedAt:   time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lease
 }

@@ -173,8 +173,16 @@ var startSessionChild = func(config serverconfig.Config, clientID, root, nonce s
 }
 
 func sessionSupervisorProfile(config serverconfig.Config, lease *activation.SessionLease) obsandbox.Profile {
+	sessionRoot := config.Activation.SessionRoot
+	if sessionRoot == "" {
+		sessionRoot = filepath.Join(config.Activation.Root, "sessions")
+	}
 	return obsandbox.Profile{Name: "filees-client-entry/session-supervisor", Promises: writePromises + " proc", Paths: []obsandbox.Path{
 		{Label: "activation-records", Name: filepath.Join(config.Activation.Root, "records"), Perms: "r"},
+		// The parent grants only create/remove authority needed to rmdir the
+		// known lease. Cleanup removes two exact, validated artifacts and never
+		// enumerates the session root.
+		{Label: "session-root-cleanup", Name: sessionRoot, Perms: "c"},
 		{Label: "session-lease", Name: lease.Dir, Perms: "rwc"},
 	}}
 }

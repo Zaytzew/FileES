@@ -167,3 +167,12 @@ func TestClientSVNChildRetainsWritePromises(t *testing.T) {
 		t.Fatalf("proof child unexpectedly received SVN write promises: %q", got)
 	}
 }
+
+func TestClientSVNBootstrapPromisesIncludeDPathForSessionFIFO(t *testing.T) {
+	if !strings.Contains(" "+clientSVNEntryPromises+" ", " dpath ") {
+		t.Fatalf("client SVN entry promises %q omit dpath required by mkfifo", clientSVNEntryPromises)
+	}
+	if strings.Contains(" "+clientEntryPromises+" ", " dpath ") {
+		t.Fatalf("non-SVN client entry promises unexpectedly include dpath: %q", clientEntryPromises)
+	}
+}

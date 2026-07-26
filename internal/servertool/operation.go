@@ -23,7 +23,7 @@ func RunOperation(args []string, stdout, stderr io.Writer) int {
 		if len(args) != 1 {
 			return ExitUsage
 		}
-		files, config, err := openFiles(path, toolAccess{name: "filees-operation/recover", areas: onboarding.AreaAll, write: true, needOTP: true, needActivation: true})
+		files, config, err := openFiles(path, toolAccess{name: "filees-operation/recover", areas: onboarding.AreaAll, write: true, needOTP: true, needActivation: true, needRepoResults: true})
 		if err != nil {
 			report(stderr, "filees-operation config", err)
 			return ExitConfig

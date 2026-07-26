@@ -37,18 +37,26 @@ func TestSessionSupervisorTerminatesChildOnRevoke(t *testing.T) {
 
 	input, keepInputOpen := io.Pipe()
 	defer keepInputOpen.Close()
-	done := make(chan error, 1)
+	type result struct {
+		exitCode int
+		err      error
+	}
+	done := make(chan result, 1)
 	go func() {
-		done <- runSVNSessionSupervisor(config, grant.ClientID, manager, lease, input, io.Discard, io.Discard)
+		exitCode, err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, input, io.Discard, io.Discard)
+		done <- result{exitCode: exitCode, err: err}
 	}()
 	time.Sleep(100 * time.Millisecond)
 	if _, err := manager.Revoke(context.Background(), grant.ClientID, "supervisor FIFO test"); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("supervisor returned error after revoke: %v", err)
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("supervisor returned error after revoke: %v", got.err)
+		}
+		if got.exitCode != 128+int(syscall.SIGTERM) {
+			t.Fatalf("revoked child exit=%d, want %d", got.exitCode, 128+int(syscall.SIGTERM))
 		}
 	case <-time.After(4 * time.Second):
 		t.Fatal("supervisor did not end after revoke")
@@ -66,12 +74,49 @@ func TestSessionSupervisorRelaysOpaqueBytes(t *testing.T) {
 	startSessionChild = sessionRelayTestChild
 	const payload = "svn-protocol-bytes\x00stay-opaque"
 	var stdout bytes.Buffer
-	if err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, strings.NewReader(payload), &stdout, io.Discard); err != nil {
+	exitCode, err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, strings.NewReader(payload), &stdout, io.Discard)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if exitCode != ExitOK {
+		t.Fatalf("relay child exit=%d, want 0", exitCode)
 	}
 	if got := stdout.String(); got != payload {
 		t.Fatalf("relay changed bytes: got %q want %q", got, payload)
 	}
+}
+
+func TestSessionSupervisorPropagatesChildExitCode(t *testing.T) {
+	if runtime.GOOS == "openbsd" {
+		t.Skip("native supervisor behavior is covered by the OpenBSD audit-lab acceptance test")
+	}
+	manager, config, grant, lease := newSupervisorTestSession(t)
+	t.Cleanup(func() { _ = lease.Close() })
+	originalStarter := startSessionChild
+	t.Cleanup(func() { startSessionChild = originalStarter })
+	startSessionChild = sessionExitTestChild
+	exitCode, err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, strings.NewReader(""), io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exitCode != 23 {
+		t.Fatalf("child exit=%d, want 23", exitCode)
+	}
+}
+
+func TestSessionExitChild(t *testing.T) {
+	if os.Getenv("FILEES_SESSION_EXIT_CHILD") == "" {
+		return
+	}
+	gate := os.NewFile(3, "test-session-gate")
+	if gate == nil {
+		os.Exit(97)
+	}
+	defer gate.Close()
+	if _, err := io.CopyN(io.Discard, gate, 64); err != nil {
+		os.Exit(98)
+	}
+	os.Exit(23)
 }
 
 func TestSessionSupervisorProfileAllowsLeaseCleanup(t *testing.T) {
@@ -113,6 +158,18 @@ func sessionRelayTestChild(_ serverconfig.Config, _ string, _ string, _ string, 
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
 	command.ExtraFiles = []*os.File{gate}
 	command.Env = []string{}
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		return nil, err
+	}
+	return command, nil
+}
+
+func sessionExitTestChild(_ serverconfig.Config, _ string, _ string, _ string, gate, stdin, stdout, stderr *os.File) (*exec.Cmd, error) {
+	command := exec.Command(os.Args[0], "-test.run=^TestSessionExitChild$")
+	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
+	command.ExtraFiles = []*os.File{gate}
+	command.Env = append(os.Environ(), "FILEES_SESSION_EXIT_CHILD=1")
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		return nil, err

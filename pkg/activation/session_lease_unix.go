@@ -185,6 +185,72 @@ func signalSessionLeases(root, clientID, realmID string) error {
 	return firstErr
 }
 
+func cleanupOrphanedSessionLeases(root string) (int, error) {
+	info, err := os.Lstat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil || !privateSessionDirectory(info) {
+		return 0, errors.New("session root must be a private directory")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0, fmt.Errorf("list session leases for cleanup: %w", err)
+	}
+	cleaned := 0
+	var firstErr error
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "session-") {
+			continue
+		}
+		dir := filepath.Join(root, entry.Name())
+		artifacts, err := inspectSessionLeaseArtifacts(dir)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if artifacts.fifo == "" {
+			// The creator may have died after publishing its private directory
+			// or metadata but before opening the FIFO. ClaimSession holds the
+			// same activation lock throughout creation, so no live creator can
+			// be in this state while cleanup owns the lock.
+			if err := removeSessionLease(dir); err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			cleaned++
+			continue
+		}
+		fifo, err := os.OpenFile(artifacts.fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		if err == nil {
+			// A reader exists, hence this lease is live. A liveness probe must
+			// never write the revoke marker.
+			if closeErr := fifo.Close(); closeErr != nil && firstErr == nil {
+				firstErr = fmt.Errorf("close live session lease probe: %w", closeErr)
+			}
+			continue
+		}
+		if !errors.Is(err, syscall.ENXIO) && !errors.Is(err, os.ErrNotExist) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("probe session revoke fifo: %w", err)
+			}
+			continue
+		}
+		if err := removeSessionLease(dir); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		cleaned++
+	}
+	return cleaned, firstErr
+}
+
 func readSessionMetadata(dir string) (SessionMetadata, error) {
 	info, err := os.Lstat(dir)
 	if err != nil || !privateSessionDirectory(info) {
@@ -229,39 +295,19 @@ func validateSessionRoot(root string) error {
 }
 
 func removeSessionLease(dir string) error {
-	info, err := os.Lstat(dir)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(dir); errors.Is(err, os.ErrNotExist) {
 		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect session lease directory: %w", err)
 	}
-	if err != nil || !privateSessionDirectory(info) {
-		return errors.New("refusing to remove unsafe session lease")
+	artifacts, err := inspectSessionLeaseArtifacts(dir)
+	if err != nil {
+		return err
 	}
-	sessionID := strings.TrimPrefix(filepath.Base(dir), "session-")
-	if !validSessionID(sessionID) || filepath.Base(dir) != sessionLeaseDirectoryName(sessionID) {
-		return errors.New("refusing to remove invalid session lease path")
-	}
-
-	type leaseArtifact struct {
-		name string
-		safe func(os.FileInfo) bool
-	}
-	artifacts := []leaseArtifact{
-		{name: sessionFIFOName, safe: privateSessionFIFO},
-		{name: sessionRecordName, safe: privateSessionFile},
-	}
-	present := make([]string, 0, len(artifacts))
-	for _, artifact := range artifacts {
-		path := filepath.Join(dir, artifact.name)
-		info, err := os.Lstat(path)
-		if errors.Is(err, os.ErrNotExist) {
+	for _, path := range []string{artifacts.fifo, artifacts.metadata} {
+		if path == "" {
 			continue
 		}
-		if err != nil || !artifact.safe(info) {
-			return fmt.Errorf("refusing to remove unsafe session lease artifact %s", artifact.name)
-		}
-		present = append(present, path)
-	}
-	for _, path := range present {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove session lease artifact %s: %w", filepath.Base(path), err)
 		}
@@ -270,6 +316,63 @@ func removeSessionLease(dir string) error {
 		return fmt.Errorf("remove session lease directory: %w", err)
 	}
 	return nil
+}
+
+type sessionLeaseArtifacts struct {
+	metadata string
+	fifo     string
+}
+
+// inspectSessionLeaseArtifacts validates the complete directory before any
+// deletion. In particular, an unknown object preserves both the object and
+// the lease metadata needed for administrative diagnosis.
+func inspectSessionLeaseArtifacts(dir string) (sessionLeaseArtifacts, error) {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return sessionLeaseArtifacts{}, err
+	}
+	if !privateSessionDirectory(info) {
+		return sessionLeaseArtifacts{}, errors.New("refusing to remove unsafe session lease")
+	}
+	sessionID := strings.TrimPrefix(filepath.Base(dir), "session-")
+	if !validSessionID(sessionID) || filepath.Base(dir) != sessionLeaseDirectoryName(sessionID) {
+		return sessionLeaseArtifacts{}, errors.New("refusing to remove invalid session lease path")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return sessionLeaseArtifacts{}, fmt.Errorf("inspect session lease: %w", err)
+	}
+	var artifacts sessionLeaseArtifacts
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		info, err := os.Lstat(path)
+		if err != nil {
+			return sessionLeaseArtifacts{}, fmt.Errorf("inspect session lease artifact %s: %w", entry.Name(), err)
+		}
+		switch entry.Name() {
+		case sessionRecordName:
+			if !privateSessionFile(info) {
+				return sessionLeaseArtifacts{}, errors.New("session lease metadata is unsafe")
+			}
+			artifacts.metadata = path
+		case sessionFIFOName:
+			if !privateSessionFIFO(info) {
+				return sessionLeaseArtifacts{}, errors.New("session revoke fifo is unsafe")
+			}
+			artifacts.fifo = path
+		default:
+			return sessionLeaseArtifacts{}, fmt.Errorf("refusing to remove unknown session lease artifact %s", entry.Name())
+		}
+	}
+	if artifacts.metadata != "" {
+		if _, err := readSessionMetadata(dir); err != nil {
+			return sessionLeaseArtifacts{}, err
+		}
+	}
+	if artifacts.metadata == "" && artifacts.fifo != "" {
+		return sessionLeaseArtifacts{}, errors.New("session lease FIFO has no metadata")
+	}
+	return artifacts, nil
 }
 
 func newSessionID() (string, error) {

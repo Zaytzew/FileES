@@ -3,7 +3,6 @@ package servertool
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"syscall"
 
@@ -28,7 +27,9 @@ func RunClientEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 	return runClientEntry("/etc/filees/server.json", args, stdin, stdout, stderr, getenv, runSVNSessionSupervisor)
 }
 
-type clientSVNSupervisor func(serverconfig.Config, string, *activation.Manager, *activation.SessionLease, io.Reader, io.Writer, io.Writer) error
+// clientSVNSupervisor returns the svnserve exit status separately from an
+// infrastructure error in the one-shot supervisor.
+type clientSVNSupervisor func(serverconfig.Config, string, *activation.Manager, *activation.SessionLease, io.Reader, io.Writer, io.Writer) (int, error)
 
 func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string, supervise clientSVNSupervisor) int {
 	originalCommand := getenv("SSH_ORIGINAL_COMMAND")
@@ -62,10 +63,6 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		{Label: "random", Name: "/dev/urandom", Perms: "r"},
 	}}
 	childPromises := clientChildPromises(originalCommand)
-	if originalCommand == ClientSVNCommand && os.Getenv("USER") == "_filees-data" {
-		r := config.Repositories
-		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-root-parent", Name: filepath.Dir(r.Root), Perms: "r"}, obsandbox.Path{Label: "repository-root", Name: r.Root, Perms: "rwc"}, obsandbox.Path{Label: "data-authz", Name: r.DataAuthzFile, Perms: "r"})
-	}
 	if originalCommand == ClientControlCommand {
 		r := config.Repositories
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"})
@@ -100,11 +97,12 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 				report(stderr, "filees-client-entry session cleanup", closeErr)
 			}
 		}()
-		if err := supervise(config, args[1], manager, lease, stdin, stdout, stderr); err != nil {
+		childExitCode, err := supervise(config, args[1], manager, lease, stdin, stdout, stderr)
+		if err != nil {
 			report(stderr, "filees-client-entry supervisor", err)
 			return ExitSoftware
 		}
-		return ExitOK
+		return childExitCode
 	}
 	if err := sandboxApplyForExec(profile, childPromises); err != nil {
 		report(stderr, "filees-client-entry sandbox", err)

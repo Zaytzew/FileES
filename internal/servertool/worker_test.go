@@ -220,6 +220,9 @@ func TestS4RecoverAfterPowerLoss(t *testing.T) {
 	if code := RunOperation([]string{"-config", configPath, "recover"}, &stdout, &stderr); code != ExitOK {
 		t.Fatalf("recovery exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
+	if !strings.Contains(stdout.String(), `"orphaned_session_leases_removed":0`) {
+		t.Fatalf("recovery did not report session lease cleanup: %s", stdout.String())
+	}
 	root := filepath.Join(filepath.Dir(configPath), "onboarding")
 	paths, err := filepath.Glob(filepath.Join(root, "operations", "*.json"))
 	if err != nil || len(paths) != 1 {

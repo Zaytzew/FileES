@@ -111,3 +111,32 @@ func TestFindPrefersCLI(t *testing.T) {
 		t.Fatalf("Find(cli): %q %v", got, err)
 	}
 }
+
+// TestRepoURLSchemeAllowList covers the second half of the audit's Finding E:
+// repo.url previously accepted any string at all, unlike the desktop client's
+// equivalent setting.
+func TestRepoURLSchemeAllowList(t *testing.T) {
+	for _, raw := range []string{
+		"svn://releases.example.net/FILEES-BIN",
+		"svn+ssh://releases@releases.example.net/FILEES-BIN",
+		"https://releases.example.net/FILEES-BIN",
+	} {
+		if err := validateRepoURL(raw); err != nil {
+			t.Fatalf("legitimate repo.url %q rejected: %v", raw, err)
+		}
+	}
+	for _, raw := range []string{
+		"http://releases.example.net/FILEES-BIN",
+		"file:///tmp/releases",
+		"ftp://releases.example.net/x",
+		"releases.example.net/FILEES-BIN",
+		"svn://",
+		"https://user:secret@releases.example.net/x",
+		"https://releases.example.net/x?a=b",
+		"https://releases.example.net/x#frag",
+	} {
+		if err := validateRepoURL(raw); err == nil {
+			t.Fatalf("repo.url %q accepted", raw)
+		}
+	}
+}

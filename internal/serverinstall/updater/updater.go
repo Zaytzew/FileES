@@ -35,6 +35,12 @@ type Options struct {
 	ReleaseID string
 	DryRun    bool
 	Yes       bool
+	// AllowRollback deliberately installs a release older than the one already
+	// recorded. Downgrading is sometimes legitimate (backing out a bad
+	// release), but it must be an explicit administrative act: the whole point
+	// of the freshness check is that a rollback must never be able to arrive
+	// looking like an ordinary update.
+	AllowRollback bool
 }
 
 type PurgeOptions struct {
@@ -127,7 +133,19 @@ func (r *Runner) ResolveManifest(ctx context.Context, releaseID string) (*manife
 		}
 		releaseID = ch.ReleaseID
 		path := manifest.ExpandPlatform(ch.Manifest, r.Config.Platform)
-		return r.fetchManifest(ctx, path, releaseID)
+		m, err := r.fetchManifest(ctx, path, releaseID)
+		if err != nil {
+			return nil, err
+		}
+		// Both documents are signed separately, so both must agree on the
+		// release's position in the ordering. A mismatch means one of them was
+		// substituted, which is exactly what the freshness counters exist to
+		// detect.
+		if m.Sequence != ch.Sequence || m.SecurityEpoch != ch.SecurityEpoch {
+			return nil, fmt.Errorf("channel and manifest disagree on release freshness: channel sequence=%d epoch=%d, manifest sequence=%d epoch=%d",
+				ch.Sequence, ch.SecurityEpoch, m.Sequence, m.SecurityEpoch)
+		}
+		return m, nil
 	}
 	path := manifest.ReleaseManifestPath(strings.TrimSpace(releaseID), r.Config.Platform)
 	return r.fetchManifest(ctx, path, releaseID)
@@ -247,6 +265,9 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if err := r.checkFreshness(m, st, opts); err != nil {
+		return err
+	}
 	base, err := r.baseUnveils()
 	if err != nil {
 		return err
@@ -262,6 +283,21 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	return nil
 }
 
+// checkFreshness refuses a stale or replayed release before anything is
+// fetched, staged or installed. AllowRollback turns the refusal into a loud,
+// explicit override rather than silently skipping the check.
+func (r *Runner) checkFreshness(m *manifest.Manifest, st *state.State, opts Options) error {
+	err := st.CheckFreshness(m.Sequence, m.SecurityEpoch, m.ReleaseID)
+	if err == nil {
+		return nil
+	}
+	if opts.AllowRollback && errors.Is(err, state.ErrRollback) {
+		fmt.Fprintf(r.Out, "[SECURITY] rollback explicitly allowed by operator: %v\n", err)
+		return nil
+	}
+	return err
+}
+
 func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	st, err := state.Load(r.Config.StateDir)
 	if err != nil {
@@ -269,6 +305,11 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	}
 	m, err := r.ResolveManifest(ctx, opts.ReleaseID)
 	if err != nil {
+		return err
+	}
+	// Before anything is staged or written: a stale release must never get as
+	// far as touching the filesystem.
+	if err := r.checkFreshness(m, st, opts); err != nil {
 		return err
 	}
 
@@ -339,6 +380,10 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 
 	st.InstalledRelease = m.ReleaseID
 	st.InstalledAt = entry.InstalledAt
+	// Advanced only now, after the install actually succeeded - never at
+	// download or staging time, so a failed or abandoned update cannot raise
+	// the floor and lock the machine out of a legitimate retry.
+	st.AdvanceFreshness(m.Sequence, m.SecurityEpoch)
 	if sysSt != nil {
 		st.System = sysSt
 	}

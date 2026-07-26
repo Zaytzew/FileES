@@ -137,7 +137,7 @@ func (f *fakeControlExchange) Exchange(_ context.Context, ticket control.Ticket)
 	case control.TicketStoragePreflight:
 		payload = control.StoragePreflightResult{AvailableBytes: 1 << 30, RequiredBytes: 64 << 20}
 	case control.TicketCreateRepository:
-		payload = control.CreateRepositoryResult{RepoID: "repo", RepoURL: "file:///repo"}
+		payload = control.CreateRepositoryResult{RepoID: "33333333-3333-4333-8333-333333333333", RepoURL: "file:///repo"}
 	case control.TicketInitialCommit:
 		payload = control.InitialCommitResult{Acknowledged: true}
 	default:

@@ -298,3 +298,200 @@ func TestRelativizeDoesNotAcceptPrefixSibling(t *testing.T) {
 		t.Fatalf("prefix sibling was relativized: %q", got[1])
 	}
 }
+
+// TestLeadingDashPathsAreTreatedAsPathsNotOptions is the regression test for the
+// audit's Finding C (CWE-88 argument injection). A file whose name begins with
+// '-' is an ordinary, legal filename that any collaborator can commit to a
+// shared repository; once synced, the victim's own daemon feeds it back to the
+// svn CLI. Without an explicit "--" end-of-options marker svn parses the name as
+// an option instead of a path. This exercises the real svn binary on a real
+// working copy — a process mock would not reproduce svn's own argv parsing,
+// which is the entire subject of the finding.
+func TestLeadingDashPathsAreTreatedAsPathsNotOptions(t *testing.T) {
+	svnadmin, err := exec.LookPath("svnadmin")
+	if err != nil {
+		t.Skip("svnadmin is not installed")
+	}
+	svn, err := exec.LookPath("svn")
+	if err != nil {
+		t.Skip("svn is not installed")
+	}
+	root := t.TempDir()
+	repository := filepath.Join(root, "repository")
+	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
+		t.Fatalf("svnadmin create: %v\n%s", err, out)
+	}
+	repoURL := "file://" + filepath.ToSlash(repository)
+	wc := filepath.Join(root, "wc")
+	cli := New(Options{SvnPath: svn})
+	ctx := context.Background()
+	if _, err := cli.Checkout(ctx, repoURL, wc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each name is a real svn option spelling, so a missing "--" is not merely
+	// mis-parsed but actively consumed as a flag.
+	hostile := []string{"--no-ignore", "--depth", "-m"}
+	var paths []string
+	for _, name := range hostile {
+		p := filepath.Join(wc, name)
+		if err := os.WriteFile(p, []byte("content of "+name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, p)
+	}
+
+	if _, err := cli.Add(ctx, wc, paths); err != nil {
+		t.Fatalf("Add() on dash-prefixed paths: %v", err)
+	}
+	entries, err := cli.Status(ctx, wc, paths)
+	if err != nil {
+		t.Fatalf("Status() on dash-prefixed paths: %v", err)
+	}
+	scheduled := map[string]bool{}
+	for _, e := range entries {
+		scheduled[e.Path] = e.Item == "added"
+	}
+	for _, name := range hostile {
+		if !scheduled[name] {
+			t.Fatalf("%q was not scheduled for addition; svn consumed it as an option instead of a path (status=%v)", name, entries)
+		}
+	}
+
+	if _, err := cli.Commit(ctx, wc, paths, "add dash-prefixed names"); err != nil {
+		t.Fatalf("Commit() on dash-prefixed paths: %v", err)
+	}
+	// The commit must have really landed in the repository, not just locally.
+	for _, name := range hostile {
+		out, err := exec.Command(svn, "cat", "--", repoURL+"/"+name).CombinedOutput()
+		if err != nil {
+			t.Fatalf("svn cat %q: %v\n%s", name, err, out)
+		}
+		if got, want := strings.TrimSpace(string(out)), "content of "+name; got != want {
+			t.Fatalf("committed content for %q = %q, want %q", name, got, want)
+		}
+	}
+
+	// Lock/Unlock and PropSet/PropGet take the same trailing-path shape.
+	if _, err := cli.Lock(ctx, wc, paths); err != nil {
+		t.Fatalf("Lock() on dash-prefixed paths: %v", err)
+	}
+	if _, err := cli.Unlock(ctx, wc, paths); err != nil {
+		t.Fatalf("Unlock() on dash-prefixed paths: %v", err)
+	}
+	if _, err := cli.PropSet(ctx, wc, "filees:probe", "value", paths); err != nil {
+		t.Fatalf("PropSet() on dash-prefixed paths: %v", err)
+	}
+	got, err := cli.PropGet(ctx, wc, "filees:probe", paths)
+	if err != nil {
+		t.Fatalf("PropGet() on dash-prefixed paths: %v", err)
+	}
+	for _, name := range hostile {
+		if !strings.Contains(got, name) {
+			t.Fatalf("PropGet() output missing %q: %s", name, got)
+		}
+	}
+
+	// Revert must also address the path rather than a flag.
+	if err := os.WriteFile(filepath.Join(wc, hostile[0]), []byte("dirty"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reverter, ok := cli.(interface {
+		Revert(context.Context, string, []string) (string, error)
+	})
+	if !ok {
+		t.Fatal("exec client does not expose Revert")
+	}
+	if _, err := reverter.Revert(ctx, wc, paths[:1]); err != nil {
+		t.Fatalf("Revert() on a dash-prefixed path: %v", err)
+	}
+	restored, err := os.ReadFile(filepath.Join(wc, hostile[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(restored) != "content of "+hostile[0] {
+		t.Fatalf("Revert() did not restore %q: %q", hostile[0], restored)
+	}
+}
+
+// TestPathArgsEmitsEndOfOptionsMarker pins the wiring: every path-taking command
+// must receive "--" immediately before its first path. This is the unit-level
+// half of Finding C's regression coverage; TestSVNRequiresEndOfOptionsMarker
+// below pins the premise that makes it necessary.
+func TestPathArgsEmitsEndOfOptionsMarker(t *testing.T) {
+	c := &execClient{}
+	got := c.pathArgs("/wc", []string{"/wc/--no-ignore", "/wc/plain.txt"})
+	want := []string{"--", "--no-ignore", "plain.txt"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pathArgs() = %q, want %q", got, want)
+	}
+	// An empty path list must stay empty: commands like Status rely on "no
+	// paths" meaning "the whole working copy", and a bare "--" would not.
+	if got := c.pathArgs("/wc", nil); len(got) != 0 {
+		t.Fatalf("pathArgs() with no paths = %q, want empty", got)
+	}
+}
+
+// TestSVNRequiresEndOfOptionsMarker documents, against the real binaries, WHY
+// the marker is mandatory: without it svn and svnlook consume a dash-prefixed
+// filename as an option. If a future SVN release changed this, the fix's premise
+// would no longer hold and this test would say so.
+func TestSVNRequiresEndOfOptionsMarker(t *testing.T) {
+	svnadmin, err := exec.LookPath("svnadmin")
+	if err != nil {
+		t.Skip("svnadmin is not installed")
+	}
+	svn, err := exec.LookPath("svn")
+	if err != nil {
+		t.Skip("svn is not installed")
+	}
+	svnlook, err := exec.LookPath("svnlook")
+	if err != nil {
+		t.Skip("svnlook is not installed")
+	}
+	root := t.TempDir()
+	repository := filepath.Join(root, "repository")
+	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
+		t.Fatalf("svnadmin create: %v\n%s", err, out)
+	}
+	repoURL := "file://" + filepath.ToSlash(repository)
+	wc := filepath.Join(root, "wc")
+	if out, err := exec.Command(svn, "checkout", "-q", repoURL, wc).CombinedOutput(); err != nil {
+		t.Fatalf("svn checkout: %v\n%s", err, out)
+	}
+	const name = "--no-ignore"
+	if err := os.WriteFile(filepath.Join(wc, name), []byte("payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without the marker: svn must NOT schedule the file, because it read the
+	// name as an option. This is the vulnerable argv shape the fix removed.
+	add := exec.Command(svn, "add", "--parents", "--depth", "empty", name)
+	add.Dir = wc
+	if out, err := add.CombinedOutput(); err == nil && strings.Contains(string(out), "A         "+name) {
+		t.Fatalf("svn accepted %q as a path without an end-of-options marker; the finding's premise no longer holds: %s", name, out)
+	}
+	// With the marker it must succeed.
+	addOK := exec.Command(svn, "add", "--parents", "--depth", "empty", "--", name)
+	addOK.Dir = wc
+	if out, err := addOK.CombinedOutput(); err != nil {
+		t.Fatalf("svn add with marker: %v\n%s", err, out)
+	}
+	commit := exec.Command(svn, "commit", "-m", "probe", "--", name)
+	commit.Dir = wc
+	if out, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("svn commit with marker: %v\n%s", err, out)
+	}
+
+	// Same for svnlook, which is the server-side half of Finding C.
+	if out, err := exec.Command(svnlook, "cat", "-r", "1", repository, name).CombinedOutput(); err == nil {
+		t.Fatalf("svnlook accepted %q as a path without a marker: %s", name, out)
+	}
+	out, err := exec.Command(svnlook, "cat", "-r", "1", "--", repository, name).CombinedOutput()
+	if err != nil {
+		t.Fatalf("svnlook cat with marker: %v\n%s", err, out)
+	}
+	if strings.TrimSpace(string(out)) != "payload" {
+		t.Fatalf("svnlook cat with marker returned %q, want %q", out, "payload")
+	}
+}

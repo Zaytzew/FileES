@@ -25,6 +25,10 @@ func main() {
 	wipeState := flag.Bool("wipe-state", false, "with --purge: also delete /var/filees and /etc/filees (irreversible)")
 	yes := flag.Bool("yes", false, "answer yes to interactive prompts")
 	talkative := flag.Bool("talkative", false, "print [SECURITY] unveil/pledge diagnostics")
+	// A downgrade is a deliberate administrative act, never an ordinary
+	// update: without this flag a release older than the one already installed
+	// is refused outright (anti-rollback, audit Finding E).
+	allowRollback := flag.Bool("allow-rollback", false, "permit installing a release older than the one recorded locally")
 	flag.Parse()
 
 	cfgPath, err := config.Find(*cfgFlag)
@@ -81,15 +85,15 @@ func main() {
 
 	switch action {
 	case "check":
-		if err := r.Check(ctx, updater.Options{ReleaseID: releaseID}); err != nil {
+		if err := r.Check(ctx, updater.Options{ReleaseID: releaseID, AllowRollback: *allowRollback}); err != nil {
 			die(err)
 		}
 	case "dry-run":
-		if err := r.Apply(ctx, updater.Options{ReleaseID: releaseID, DryRun: true, Yes: *yes}); err != nil {
+		if err := r.Apply(ctx, updater.Options{ReleaseID: releaseID, DryRun: true, Yes: *yes, AllowRollback: *allowRollback}); err != nil {
 			die(err)
 		}
 	case "apply":
-		if err := r.Apply(ctx, updater.Options{ReleaseID: releaseID, Yes: *yes}); err != nil {
+		if err := r.Apply(ctx, updater.Options{ReleaseID: releaseID, Yes: *yes, AllowRollback: *allowRollback}); err != nil {
 			die(err)
 		}
 	case "rollback":

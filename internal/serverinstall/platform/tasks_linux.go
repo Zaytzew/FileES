@@ -124,6 +124,7 @@ func (b *linuxBackend) ApplyStateDirs(stateOwner string) error {
 		{"/var/filees/activation", 0o700, uid, gid},
 		{"/var/filees/activation/records", 0o700, uid, gid},
 		{"/var/filees/activation/proofs", 0o700, uid, gid},
+		{"/var/filees/sessions", 0o700, uid, gid},
 		{"/etc/filees", 0o700, uid, gid},
 	}
 	for _, d := range dirs {

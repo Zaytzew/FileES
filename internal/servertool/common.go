@@ -133,10 +133,15 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		)
 	}
 	if access.needActivation {
+		sessionRoot := activationConfig.SessionRoot
+		if sessionRoot == "" {
+			sessionRoot = filepath.Join(activationConfig.Root, "sessions")
+		}
 		paths = append(paths,
 			obsandbox.Path{Label: "activation", Name: activationConfig.Root, Perms: "rwc"},
 			obsandbox.Path{Label: "client-authorized-keys", Name: activationConfig.AuthorizedKeysFile, Perms: "rwc"},
 			obsandbox.Path{Label: "service-authz", Name: activationConfig.AuthzFile, Perms: "rwc"},
+			obsandbox.Path{Label: "session-root", Name: sessionRoot, Perms: "rwc"},
 		)
 	}
 	if access.needSVN {

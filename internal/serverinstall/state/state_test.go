@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,5 +85,108 @@ func TestLoadCorruptFails(t *testing.T) {
 	}
 	if _, err := Load(dir); err == nil {
 		t.Fatal("corrupt state.json must fail loudly, not reset to first install")
+	}
+}
+
+// TestFreshnessRejectsRollback is the regression test for the audit's Finding
+// E. It follows the finding's own required matrix: forward upgrades pass, any
+// backwards move is refused, a re-offer of the installed release is a
+// controlled no-op, and a stale security epoch loses even when it carries a
+// higher release sequence.
+func TestFreshnessRejectsRollback(t *testing.T) {
+	installed := &State{InstalledRelease: "v11", HighestSequence: 11, SecurityEpoch: 3}
+
+	t.Run("upgrade 11->12 passes", func(t *testing.T) {
+		if err := installed.CheckFreshness(12, 3, "v12"); err != nil {
+			t.Fatalf("forward upgrade refused: %v", err)
+		}
+	})
+	t.Run("downgrade 11->10 refused", func(t *testing.T) {
+		err := installed.CheckFreshness(10, 3, "v10")
+		if err == nil {
+			t.Fatal("downgrade accepted")
+		}
+		if !errors.Is(err, ErrRollback) {
+			t.Fatalf("downgrade error is not ErrRollback: %v", err)
+		}
+	})
+	t.Run("same release re-offered is a no-op", func(t *testing.T) {
+		if err := installed.CheckFreshness(11, 3, "v11"); err != nil {
+			t.Fatalf("re-offer of the installed release refused: %v", err)
+		}
+	})
+	t.Run("same sequence, different release is refused", func(t *testing.T) {
+		if err := installed.CheckFreshness(11, 3, "v11-forged"); err == nil {
+			t.Fatal("sequence fork accepted")
+		}
+	})
+	t.Run("higher security epoch passes", func(t *testing.T) {
+		if err := installed.CheckFreshness(12, 4, "v12"); err != nil {
+			t.Fatalf("security epoch bump refused: %v", err)
+		}
+	})
+	t.Run("older epoch loses despite a higher sequence", func(t *testing.T) {
+		if err := installed.CheckFreshness(99, 2, "v99"); err == nil {
+			t.Fatal("stale security epoch accepted because the sequence was higher")
+		}
+	})
+	t.Run("missing counters fail closed", func(t *testing.T) {
+		if err := installed.CheckFreshness(0, 0, "v-unversioned"); err == nil {
+			t.Fatal("release without freshness counters accepted")
+		}
+		fresh := &State{}
+		if err := fresh.CheckFreshness(0, 0, "v1"); err == nil {
+			t.Fatal("first install accepted a release without freshness counters")
+		}
+	})
+	t.Run("first install accepts any counted release", func(t *testing.T) {
+		fresh := &State{}
+		if err := fresh.CheckFreshness(1, 1, "v1"); err != nil {
+			t.Fatalf("first install refused: %v", err)
+		}
+	})
+}
+
+func TestAdvanceFreshnessNeverMovesBackwards(t *testing.T) {
+	st := &State{HighestSequence: 11, SecurityEpoch: 3}
+	st.AdvanceFreshness(10, 2)
+	if st.HighestSequence != 11 || st.SecurityEpoch != 3 {
+		t.Fatalf("counters moved backwards: %+v", st)
+	}
+	st.AdvanceFreshness(12, 4)
+	if st.HighestSequence != 12 || st.SecurityEpoch != 4 {
+		t.Fatalf("counters did not advance: %+v", st)
+	}
+}
+
+// TestCorruptStateFailsClosed covers the finding's "uszkodzony stan lokalny
+// powoduje fail closed" requirement: an unreadable anti-rollback state must
+// stop the update, never silently reset the floor to zero.
+func TestCorruptStateFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(Path(dir), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err == nil {
+		t.Fatal("corrupt state loaded without error; the rollback floor would silently reset to zero")
+	}
+}
+
+// TestSaveRoundTripsFreshness makes sure the counters actually survive a
+// save/load cycle - the check is worthless if the state does not persist.
+func TestSaveRoundTripsFreshness(t *testing.T) {
+	dir := t.TempDir()
+	if err := Save(dir, &State{InstalledRelease: "v12", HighestSequence: 12, SecurityEpoch: 4}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HighestSequence != 12 || got.SecurityEpoch != 4 {
+		t.Fatalf("freshness did not persist: %+v", got)
+	}
+	if err := got.CheckFreshness(11, 4, "v11"); err == nil {
+		t.Fatal("reloaded state accepted a rollback")
 	}
 }

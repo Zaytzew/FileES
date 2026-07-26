@@ -28,6 +28,8 @@ Na maszynie budującej przygotuj katalog payloadu oraz recenzowalną specyfikacj
   "release_id": "r178",
   "platform": "openbsd-amd64",
   "svn_revision": "178",
+  "sequence": 178,
+  "security_epoch": 1,
   "files": [
     {
       "source": "bin/filees-admin",
@@ -38,6 +40,17 @@ Na maszynie budującej przygotuj katalog payloadu oraz recenzowalną specyfikacj
   ]
 }
 ```
+
+`sequence` i `security_epoch` są **obowiązkowe i niezerowe**. `sequence` rośnie
+o jeden z każdym publikowanym wydaniem i nigdy nie jest ponownie użyty dla innego
+`release_id`. `security_epoch` podnosi się wyłącznie wtedy, gdy wydanie naprawia
+coś, czego starsze wydanie nie może cofnąć — po podniesieniu epoki instalator
+odmówi zejścia poniżej niej nawet dla wydania o wyższym `sequence`. Bez tych
+liczników poprawnie podpisane, ale stare wydanie z załataną już podatnością
+byłoby przyjęte jak zwykła aktualizacja (podpis dowodzi autentyczności, nie
+świeżości). Plik kanału musi powtórzyć obie wartości — instalator odrzuca
+rozjazd między kanałem a manifestem. Świadome cofnięcie wymaga jawnego
+`filees-install --allow-rollback` i jest głośno logowane.
 
 Generator nie przyjmuje digestów od operatora. Czyta każdy regularny plik z
 payloadu, odrzuca traversal, wyjście przez symlink, powtórzone źródła i targety

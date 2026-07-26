@@ -70,3 +70,38 @@ func TestScannerClosesEventsAfterWorkersStop(t *testing.T) {
 		t.Fatal("scanner did not close events after cancellation")
 	}
 }
+
+// TestAtomicWriteJSONDoesNotFollowPredictableSymlink is the watcher half of the
+// audit's Finding D regression coverage; see pkg/commit's equivalent for the
+// full attack description.
+func TestAtomicWriteJSONDoesNotFollowPredictableSymlink(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim.txt")
+	const original = "precious user data"
+	if err := os.WriteFile(victim, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(dir, "manifest.json")
+	if err := os.Symlink(victim, state+".tmp"); err != nil {
+		t.Skipf("symlinks unsupported here: %v", err)
+	}
+
+	if err := atomicWriteJSON(state, []string{"daemon-content"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != original {
+		t.Fatalf("atomicWriteJSON followed the symlink and overwrote the target: %q", got)
+	}
+	info, err := os.Lstat(state)
+	if err != nil {
+		t.Fatalf("atomicWriteJSON did not write the state file: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("atomicWriteJSON left a symlink at the state path")
+	}
+}

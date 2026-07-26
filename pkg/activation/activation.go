@@ -32,7 +32,12 @@ const (
 )
 
 type Config struct {
-	Root               string
+	Root string
+	// SessionRoot is private runtime state for per-SSH-session leases. It
+	// must be outside every SVN working copy and repository. Empty is kept
+	// only as a migration fallback to Root/sessions for installations created
+	// before supervised sessions existed.
+	SessionRoot        string
 	AuthorizedKeysFile string
 	AuthzFile          string
 	ServiceWorkingCopy string
@@ -112,6 +117,9 @@ func New(config Config, runner CommandRunner) (*Manager, error) {
 		if !filepath.IsAbs(path) {
 			return nil, fmt.Errorf("activation %s must be absolute", label)
 		}
+	}
+	if config.SessionRoot != "" && !filepath.IsAbs(config.SessionRoot) {
+		return nil, errors.New("activation session_root must be absolute")
 	}
 	if strings.TrimSpace(config.RepositoryName) == "" || strings.ContainsAny(config.RepositoryName, "/:\r\n[]") {
 		return nil, errors.New("activation repository_name is invalid")
@@ -216,20 +224,79 @@ func (m *Manager) RecordProof(operationID, clientID string) error {
 		return errors.New("proof client_id must be a UUID")
 	}
 	return withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
-		record, err := readRecord(m.recordPath(operationID))
+		_, err := m.recordProofLocked(operationID, clientID)
+		return err
+	})
+}
+
+// ClaimSession records possession when required and creates a private
+// supervised-session lease while holding the same lock as Revoke. Therefore a
+// revoke either sees this lease and signals it, or wins the lock first and
+// prevents the session from being admitted.
+func (m *Manager) ClaimSession(operationID, clientID string) (*SessionLease, error) {
+	if _, err := uuid.Parse(operationID); err != nil {
+		return nil, errors.New("session operation_id must be a UUID")
+	}
+	if _, err := uuid.Parse(clientID); err != nil {
+		return nil, errors.New("session client_id must be a UUID")
+	}
+	var lease *SessionLease
+	err := withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+		record, err := m.recordProofLocked(operationID, clientID)
 		if err != nil {
 			return err
 		}
-		now := m.now().UTC()
-		if record.ClientID != clientID || record.State != "staged" || !now.Before(record.ExpiresAt) {
-			if record.ClientID == clientID && record.State == "active" {
-				return nil
-			}
-			return errors.New("proof does not match one live staged or active client")
+		if record.State != "active" && record.State != "staged" {
+			return errors.New("session record is not active")
 		}
-		receipt := Receipt{Schema: ReceiptSchema, OperationID: operationID, ClientID: clientID, At: now}
-		return atomicWriteJSON(m.receiptPath(operationID), receipt, 0o600)
+		lease, err = createSessionLease(m.sessionRoot(), SessionMetadata{
+			OperationID: operationID,
+			ClientID:    clientID,
+			RealmID:     record.RealmID,
+			StartedAt:   m.now().UTC(),
+		})
+		return err
 	})
+	return lease, err
+}
+
+// SessionAllowed is deliberately read-only: record updates are atomic and a
+// supervisor treats every error or non-live state as a fail-closed result.
+func (m *Manager) SessionAllowed(operationID, clientID string) bool {
+	record, err := readRecord(m.recordPath(operationID))
+	if err != nil || record.ClientID != clientID {
+		return false
+	}
+	if record.State == "active" {
+		return true
+	}
+	return record.State == "staged" && m.now().UTC().Before(record.ExpiresAt)
+}
+
+func (m *Manager) recordProofLocked(operationID, clientID string) (Record, error) {
+	record, err := readRecord(m.recordPath(operationID))
+	if err != nil {
+		return Record{}, err
+	}
+	now := m.now().UTC()
+	if record.ClientID != clientID || record.State != "staged" || !now.Before(record.ExpiresAt) {
+		if record.ClientID == clientID && record.State == "active" {
+			return record, nil
+		}
+		return Record{}, errors.New("proof does not match one live staged or active client")
+	}
+	receipt := Receipt{Schema: ReceiptSchema, OperationID: operationID, ClientID: clientID, At: now}
+	if err := atomicWriteJSON(m.receiptPath(operationID), receipt, 0o600); err != nil {
+		return Record{}, err
+	}
+	return record, nil
+}
+
+func (m *Manager) sessionRoot() string {
+	if m.config.SessionRoot != "" {
+		return m.config.SessionRoot
+	}
+	return filepath.Join(m.config.Root, "sessions")
 }
 
 func (m *Manager) HasProof(grant onboarding.ActivationGrant) error {
@@ -285,37 +352,52 @@ func (m *Manager) Publish(ctx context.Context, grant onboarding.ActivationGrant)
 	return revision, err
 }
 
-// RevokeRealm revokes every still-revocable client installation belonging
-// to realmID in one administrative action
-// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §5, "Poziom 3" whole-realm
-// revoke) - needed on its own regardless of the autolock path-ownership
-// richness, since a person leaving the team still needs every one of their
-// installations cut off together, not one client_id at a time. Each
-// matching client is revoked through the existing per-client Revoke, so its
-// individual idempotency/validation rules apply unchanged; a client already
-// revoked for this same reason is treated as already-done, not an error.
-// Candidate client IDs are gathered with a best-effort, unlocked read (each
-// actual revoke below is its own properly-locked transaction) - a client
-// activating for this realm in the narrow window between listing and
-// revoking simply isn't swept this pass, which is acceptable for an
-// administrative action, not a live security boundary.
+// RevokeRealm first moves every selected client to revoking under one
+// activation lock. That closes the admission barrier for all of the realm
+// before publishing individual service revisions or notifying live leases.
 func (m *Manager) RevokeRealm(ctx context.Context, realmID, reason string) ([]string, error) {
 	if _, err := uuid.Parse(realmID); err != nil {
 		return nil, errors.New("revoke realm_id must be a UUID")
 	}
-	records, err := m.recordsLocked()
+	reason, err := validateRevokeReason(reason)
 	if err != nil {
 		return nil, err
 	}
+	var targets []string
+	err = withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+		records, err := m.recordsLocked()
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			if record.RealmID != realmID || record.State == "revoked" {
+				continue
+			}
+			if record.State == "staged" || record.State == "active" {
+				now := m.now().UTC()
+				record.State, record.RevokedAt, record.RevokeReason = "revoking", &now, reason
+				if err := atomicWriteJSON(m.recordPath(record.OperationID), record, 0o600); err != nil {
+					return err
+				}
+			} else if record.State != "revoking" || record.RevokeReason != reason || record.RevokedAt == nil {
+				return fmt.Errorf("client %s is not revocable from its current state", record.ClientID)
+			}
+			targets = append(targets, record.ClientID)
+		}
+		return m.renderAccessLocked()
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, clientID := range targets {
+		_ = signalSessionLeases(m.sessionRoot(), clientID, "")
+	}
 	var revoked []string
-	for _, record := range records {
-		if record.RealmID != realmID || record.State == "revoked" {
-			continue
+	for _, clientID := range targets {
+		if _, err := m.Revoke(ctx, clientID, reason); err != nil {
+			return revoked, fmt.Errorf("revoke client %s: %w", clientID, err)
 		}
-		if _, err := m.Revoke(ctx, record.ClientID, reason); err != nil {
-			return revoked, fmt.Errorf("revoke client %s: %w", record.ClientID, err)
-		}
-		revoked = append(revoked, record.ClientID)
+		revoked = append(revoked, clientID)
 	}
 	return revoked, nil
 }
@@ -324,12 +406,13 @@ func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, e
 	if _, err := uuid.Parse(clientID); err != nil {
 		return 0, errors.New("revoke client_id must be a UUID")
 	}
-	reason = strings.TrimSpace(reason)
-	if reason == "" || len(reason) > 200 || strings.ContainsAny(reason, "\r\n") {
-		return 0, errors.New("revoke reason must be 1..200 characters on one line")
+	reason, err := validateRevokeReason(reason)
+	if err != nil {
+		return 0, err
 	}
 	var revision int64
-	err := withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+	signalLease := false
+	err = withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
 		records, err := m.recordsLocked()
 		if err != nil {
 			return err
@@ -352,9 +435,10 @@ func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, e
 				return errors.New("client was already revoked for a different reason")
 			}
 			revision = record.ServiceRevision
+			signalLease = true
 			return nil
 		}
-		if record.State == "active" {
+		if record.State == "staged" || record.State == "active" {
 			now := m.now().UTC()
 			record.State, record.RevokedAt, record.RevokeReason = "revoking", &now, reason
 			if err := atomicWriteJSON(m.recordPath(record.OperationID), record, 0o600); err != nil {
@@ -376,9 +460,24 @@ func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, e
 		if err := atomicWriteJSON(m.recordPath(record.OperationID), record, 0o600); err != nil {
 			return err
 		}
+		signalLease = true
 		return m.renderAccessLocked()
 	})
+	if err == nil && signalLease {
+		// The durable state transition is the security boundary. FIFO delivery
+		// only reduces latency; a failed/open-less lease is reconciled by the
+		// supervisor's one-second fail-closed poll.
+		_ = signalSessionLeases(m.sessionRoot(), clientID, "")
+	}
 	return revision, err
+}
+
+func validateRevokeReason(reason string) (string, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || len(reason) > 200 || strings.ContainsAny(reason, "\r\n") {
+		return "", errors.New("revoke reason must be 1..200 characters on one line")
+	}
+	return reason, nil
 }
 
 func (m *Manager) publishRevocation(ctx context.Context, record Record) (int64, error) {
@@ -403,7 +502,7 @@ func (m *Manager) publishRevocation(ctx context.Context, record Record) (int64, 
 	if err := atomicWriteJSON(auditPath, audit, 0o600); err != nil {
 		return 0, err
 	}
-	if output, err := m.runner.Output(ctx, m.config.SVNBinary, "add", "--force", "--parents", "--non-interactive", "--no-auth-cache", auditPath); err != nil {
+	if output, err := m.runner.Output(ctx, m.config.SVNBinary, "add", "--force", "--parents", "--non-interactive", "--no-auth-cache", clientPath, auditPath); err != nil {
 		return 0, fmt.Errorf("svn add service revoke: %w: %s", err, sanitizeOutput(output))
 	}
 	message := "filees: revoke client " + record.ClientID

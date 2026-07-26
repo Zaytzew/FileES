@@ -190,16 +190,23 @@ func (w *Worker) preflight(ctx context.Context, ticket control.Ticket) (control.
 	if w.Reservations != nil {
 		available, required, expires, err = w.Reservations.Reserve(ctx, ticket.OperationID, payload.ContentBytes, w.now())
 		if err != nil && !errors.Is(err, ErrReservationUnavailable) {
-			return w.failure(ticket, "STORAGE_PREFLIGHT_FAILED", err.Error())
+			return w.retryable(ticket, "STORAGE_PREFLIGHT_FAILED", err.Error())
 		}
 	} else {
 		available, required, err = w.Capacity.Check(ctx, payload.ContentBytes)
 		if err != nil {
-			return w.failure(ticket, "STORAGE_PREFLIGHT_FAILED", err.Error())
+			return w.retryable(ticket, "STORAGE_PREFLIGHT_FAILED", err.Error())
 		}
 	}
 	if err != nil || available < required {
-		result, resultErr := control.NewErrorResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ErrorBody{
+		// Deliberately NOT persisted through Store.Save. Insufficient storage is
+		// a temporarily-unavailable dependency, not an invalid request: binding
+		// it as the operation's terminal result would permanently block this
+		// exact (client, local path, name) tuple even after the disk is freed,
+		// with no reset path anywhere in pkg/provisioning. Same reasoning, and
+		// same treatment, as the CREATE_REPOSITORY_RETRY/INITIAL_COMMIT_RETRY
+		// branches above.
+		return control.NewErrorResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ErrorBody{
 			Code:    "STORAGE_INSUFFICIENT",
 			Message: fmt.Sprintf("server storage requires %s, %s available", formatBytes(required), formatBytes(available)),
 			Details: map[string]string{
@@ -207,10 +214,6 @@ func (w *Worker) preflight(ctx context.Context, ticket control.Ticket) (control.
 				"required_bytes":  fmt.Sprintf("%d", required),
 			},
 		}, w.now())
-		if resultErr == nil {
-			resultErr = w.Store.Save(result)
-		}
-		return result, resultErr
 	}
 	expiresAt := ""
 	if !expires.IsZero() {
@@ -242,6 +245,14 @@ func (w *Worker) activate(ctx context.Context, session Session, ticket control.T
 		err = w.Reservations.Release(ticket.OperationID)
 	}
 	return result, err
+}
+
+// retryable reports a failure without binding it as the operation's terminal
+// result, so the same operation may be attempted again once the underlying
+// dependency recovers. Use it for "temporarily unavailable"; use failure() for
+// "this request is invalid and will never succeed".
+func (w *Worker) retryable(t control.Ticket, code, message string) (control.Result, error) {
+	return control.NewErrorResult(t.OperationID, t.RequestID, t.Type, control.ErrorBody{Code: code, Message: message}, w.now())
 }
 
 func (w *Worker) failure(t control.Ticket, code, message string) (control.Result, error) {

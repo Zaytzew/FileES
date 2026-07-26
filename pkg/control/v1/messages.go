@@ -170,8 +170,13 @@ func (t Ticket) Validate() error {
 		if err := decodeStrict(t.Payload, &p); err != nil {
 			return fmt.Errorf("INITIAL_COMMIT payload: %w", err)
 		}
-		if strings.TrimSpace(p.RepoID) == "" {
-			return errors.New("INITIAL_COMMIT payload.repo_id is required")
+		// INITIAL_COMMIT is the one ticket type where a previously-issued
+		// repo_id travels back from the client, so it is the one place a
+		// client-chosen string reaches server-side path construction. It must
+		// be held to the same UUID shape as operation_id/request_id above; a
+		// bare non-empty check would let "../.." through to filepath.Join.
+		if err := validateUUID("INITIAL_COMMIT payload.repo_id", p.RepoID); err != nil {
+			return err
 		}
 		if p.Revision < 0 {
 			return errors.New("INITIAL_COMMIT payload.revision cannot be negative")

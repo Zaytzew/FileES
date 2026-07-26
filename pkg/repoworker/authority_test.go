@@ -120,3 +120,83 @@ func TestTransferOwnerMovesRepositoryAndRegeneratesAuthz(t *testing.T) {
 		t.Fatalf("no-op transfer still published: calls=%d, want %d", run.calls, callsBefore)
 	}
 }
+
+// TestRepositoryRecordPathRefusesEscape is the second-layer half of the audit's
+// Finding B. pkg/control/v1 now rejects a non-UUID repo_id on the wire, but
+// this is the last point before a client-influenced string becomes a filesystem
+// path and it has several callers, so containment must hold on its own rather
+// than being inherited from an upstream check.
+func TestRepositoryRecordPathRefusesEscape(t *testing.T) {
+	const serviceWC = "/srv/filees/service-wc"
+	root := filepath.Join(serviceWC, "admin", "repositories")
+
+	for _, repoID := range []string{
+		"../../../../etc/passwd",
+		"../activation",
+		"foo/../../../bar",
+		`..\windows`,
+		"a/b",
+		`a\b`,
+		"..",
+		".",
+		"",
+		"a\x00b",
+	} {
+		if got, err := repositoryRecordPath(serviceWC, repoID); err == nil {
+			t.Fatalf("repositoryRecordPath accepted %q -> %q", repoID, got)
+		}
+	}
+
+	valid := uuid.NewString()
+	got, err := repositoryRecordPath(serviceWC, valid)
+	if err != nil {
+		t.Fatalf("repositoryRecordPath rejected a valid UUID: %v", err)
+	}
+	if want := filepath.Join(root, valid+".json"); got != want {
+		t.Fatalf("repositoryRecordPath = %q, want %q", got, want)
+	}
+}
+
+// TestActivateRefusesTraversalRepoID drives the same escape attempt through the
+// real Activate() entry point, which is where the audit traced the client's
+// INITIAL_COMMIT payload landing. The neighbouring record must survive untouched:
+// the original defect allowed both a cross-directory read and, on the
+// state-change path, a write.
+func TestActivateRefusesTraversalRepoID(t *testing.T) {
+	root := t.TempDir()
+	serviceWC := filepath.Join(root, "service-wc")
+	realm := uuid.NewString()
+	if err := os.MkdirAll(filepath.Join(serviceWC, "admin", "repositories"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A plausible traversal target: a valid record one directory up.
+	outside := filepath.Join(serviceWC, "admin", "secret.json")
+	record := repositoryRecord{Schema: RepositorySchema, RepoID: "../secret", OwnerRealmID: realm, State: "initializing", CreatedAt: time.Now().UTC()}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &publishRunner{}
+	p := ServicePublisher{ServiceWC: serviceWC, DataAuthzFile: filepath.Join(root, "authz"), Runner: runner}
+	if err := p.Activate(context.Background(), "../secret", realm); err == nil {
+		t.Fatal("Activate accepted a traversing repo_id")
+	}
+	after, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("Activate rewrote a record outside the repositories directory")
+	}
+	if runner.calls != 0 {
+		t.Fatalf("Activate published %d change sets for a rejected repo_id", runner.calls)
+	}
+}

@@ -922,3 +922,70 @@ func TestActivityForgottenWhenAddedFileVanishesBeforePublishWithoutDeleteEvent(t
 		t.Fatalf("activity=%+v, want forgotten instead of permanently stuck", recorder.entries)
 	}
 }
+
+// TestAtomicWritesDoNotFollowPredictableSymlinks is the regression test for the
+// audit's Finding D. The old helpers built their temporary file as
+// path + ".tmp" and opened it with os.Create/os.WriteFile, both of which follow
+// symlinks. Because these state files live at fixed paths inside a synced
+// working copy, an ordinary collaborator could commit an svn:special symlink at
+// that predictable name; a plain svn update materializes it on the victim's
+// disk, and the next housekeeping write would overwrite whatever the link
+// pointed at with daemon-generated content.
+func TestAtomicWritesDoNotFollowPredictableSymlinks(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		write func(path string) error
+	}{
+		{"atomicWriteString", func(path string) error { return atomicWriteString(path, "daemon-content") }},
+		{"atomicWriteJSONSlice", func(path string) error { return atomicWriteJSONSlice(path, []string{"daemon-content"}) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			victim := filepath.Join(dir, "victim.txt")
+			const original = "precious user data"
+			if err := os.WriteFile(victim, []byte(original), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			state := filepath.Join(dir, "state.json")
+			// The attack: pre-place a symlink at the formerly predictable name.
+			if err := os.Symlink(victim, state+".tmp"); err != nil {
+				t.Skipf("symlinks unsupported here: %v", err)
+			}
+
+			// Premise check: confirm that on this platform a write to the
+			// predictable name really does reach through the symlink. Without
+			// it the test could pass vacuously on a system where it does not.
+			if err := os.WriteFile(state+".tmp", []byte("clobbered"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if probe, err := os.ReadFile(victim); err != nil {
+				t.Fatal(err)
+			} else if string(probe) != "clobbered" {
+				t.Skip("writes do not follow symlinks here; the finding's premise does not apply")
+			}
+			if err := os.WriteFile(victim, []byte(original), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := tc.write(state); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+
+			got, err := os.ReadFile(victim)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != original {
+				t.Fatalf("%s followed the symlink and overwrote the target: %q", tc.name, got)
+			}
+			// The real state file must still have been written, at the real path.
+			info, err := os.Lstat(state)
+			if err != nil {
+				t.Fatalf("%s did not write the state file: %v", tc.name, err)
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				t.Fatalf("%s left a symlink at the state path", tc.name)
+			}
+		})
+	}
+}

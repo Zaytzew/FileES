@@ -38,6 +38,7 @@ type File struct {
 
 type ActivationFile struct {
 	Root               string `json:"root"`
+	SessionRoot        string `json:"session_root,omitempty"`
 	AuthorizedKeysFile string `json:"authorized_keys_file"`
 	AuthzFile          string `json:"authz_file"`
 	ServiceWorkingCopy string `json:"service_working_copy"`
@@ -146,7 +147,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		return Config{}, errors.New("worker_public_key_file must be absolute")
 	}
 	activationConfig := activation.Config{
-		Root: file.Activation.Root, AuthorizedKeysFile: file.Activation.AuthorizedKeysFile,
+		Root: file.Activation.Root, SessionRoot: file.Activation.SessionRoot, AuthorizedKeysFile: file.Activation.AuthorizedKeysFile,
 		AuthzFile: file.Activation.AuthzFile, ServiceWorkingCopy: file.Activation.ServiceWorkingCopy,
 		ServiceRepository: file.Activation.ServiceRepository,
 		RepositoryName:    file.Activation.RepositoryName, ClientEntryPath: file.Activation.ClientEntryPath,

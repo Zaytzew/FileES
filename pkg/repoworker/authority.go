@@ -16,6 +16,29 @@ import (
 
 const RepositorySchema = "filees.repository/v1"
 
+// repositoryRecordPath builds the canonical record path for repoID and refuses
+// any identifier that would not stay inside the records directory. The wire
+// contract already requires a UUID (pkg/control/v1 Ticket.Validate), but this
+// is the last point before a client-influenced string becomes a filesystem
+// path, and it is reached from several callers — so containment is enforced
+// here rather than trusted from upstream. A repo_id is an opaque identifier,
+// never a path: a separator or parent reference in one is always a bug or an
+// attack, so both are rejected outright instead of being cleaned away.
+func repositoryRecordPath(serviceWC, repoID string) (string, error) {
+	if repoID == "" || repoID == "." || repoID == ".." ||
+		strings.ContainsAny(repoID, `/\`) ||
+		strings.ContainsRune(repoID, 0) {
+		return "", fmt.Errorf("invalid repository id %q", repoID)
+	}
+	root := filepath.Join(serviceWC, "admin", "repositories")
+	target := filepath.Join(root, repoID+".json")
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel != repoID+".json" {
+		return "", fmt.Errorf("repository id %q escapes the records directory", repoID)
+	}
+	return target, nil
+}
+
 type repositoryRecord struct {
 	Schema       string    `json:"schema"`
 	RepoID       string    `json:"repo_id"`
@@ -44,7 +67,10 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 	if p.Now != nil {
 		now = p.Now().UTC()
 	}
-	repoPath := filepath.Join(p.ServiceWC, "admin", "repositories", repoID+".json")
+	repoPath, err := repositoryRecordPath(p.ServiceWC, repoID)
+	if err != nil {
+		return err
+	}
 	record := repositoryRecord{Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realmID, DisplayName: name, URL: url, State: "initializing", CreatedAt: now}
 	if raw, err := os.ReadFile(repoPath); err == nil {
 		var old repositoryRecord
@@ -115,7 +141,10 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 	if !filepath.IsAbs(p.ServiceWC) || p.Runner == nil {
 		return errors.New("authority publisher is incomplete")
 	}
-	repoPath := filepath.Join(p.ServiceWC, "admin", "repositories", repoID+".json")
+	repoPath, err := repositoryRecordPath(p.ServiceWC, repoID)
+	if err != nil {
+		return err
+	}
 	raw, err := os.ReadFile(repoPath)
 	if err != nil {
 		return err
@@ -190,7 +219,10 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 	if !filepath.IsAbs(p.ServiceWC) || !filepath.IsAbs(p.DataAuthzFile) || p.Runner == nil {
 		return errors.New("authority publisher is incomplete")
 	}
-	repoPath := filepath.Join(p.ServiceWC, "admin", "repositories", repoID+".json")
+	repoPath, err := repositoryRecordPath(p.ServiceWC, repoID)
+	if err != nil {
+		return err
+	}
 	raw, err := os.ReadFile(repoPath)
 	if err != nil {
 		return err

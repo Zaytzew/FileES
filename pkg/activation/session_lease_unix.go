@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,7 +100,10 @@ func (lease *SessionLease) Revoked() (bool, error) {
 		return false, errors.New("session lease is closed")
 	}
 	var marker [16]byte
-	n, err := lease.fifo.Read(marker[:])
+	// os.File.Read registers non-blocking descriptors with Go's netpoller and
+	// waits for readiness instead of surfacing EAGAIN. This FIFO is a periodic
+	// poll source, so use unix.Read to preserve O_NONBLOCK semantics.
+	n, err := unix.Read(int(lease.fifo.Fd()), marker[:])
 	if n > 0 {
 		return true, nil
 	}
@@ -168,7 +170,10 @@ func signalSessionLeases(root, clientID, realmID string) error {
 			}
 			continue
 		}
-		_, writeErr := io.WriteString(fifo, "R")
+		// Preserve O_NONBLOCK semantics here as well: a full or otherwise
+		// unwritable FIFO must fail the revoke notification rather than park
+		// the administrative caller in Go's netpoller.
+		_, writeErr := unix.Write(int(fifo.Fd()), []byte{'R'})
 		closeErr := fifo.Close()
 		if writeErr != nil && firstErr == nil {
 			firstErr = fmt.Errorf("write session revoke fifo: %w", writeErr)

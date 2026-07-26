@@ -103,6 +103,31 @@ func TestSessionLeaseCloseRemovesKnownArtifacts(t *testing.T) {
 	}
 }
 
+func TestFreshSessionLeaseRevokedDoesNotBlock(t *testing.T) {
+	lease := newTestSessionLease(t)
+	defer func() { _ = lease.Close() }()
+	type result struct {
+		revoked bool
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		revoked, err := lease.Revoked()
+		done <- result{revoked: revoked, err: err}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		if got.revoked {
+			t.Fatal("fresh session lease unexpectedly reported revoke")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("fresh session lease revoke poll blocked instead of returning EAGAIN")
+	}
+}
+
 func newTestSessionLease(t *testing.T) *SessionLease {
 	t.Helper()
 	root := t.TempDir()

@@ -231,7 +231,40 @@ func removeSessionLease(dir string) error {
 	if err != nil || !privateSessionDirectory(info) {
 		return errors.New("refusing to remove unsafe session lease")
 	}
-	return os.RemoveAll(dir)
+	sessionID := strings.TrimPrefix(filepath.Base(dir), "session-")
+	if !validSessionID(sessionID) || filepath.Base(dir) != sessionLeaseDirectoryName(sessionID) {
+		return errors.New("refusing to remove invalid session lease path")
+	}
+
+	type leaseArtifact struct {
+		name string
+		safe func(os.FileInfo) bool
+	}
+	artifacts := []leaseArtifact{
+		{name: sessionFIFOName, safe: privateSessionFIFO},
+		{name: sessionRecordName, safe: privateSessionFile},
+	}
+	present := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		path := filepath.Join(dir, artifact.name)
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !artifact.safe(info) {
+			return fmt.Errorf("refusing to remove unsafe session lease artifact %s", artifact.name)
+		}
+		present = append(present, path)
+	}
+	for _, path := range present {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove session lease artifact %s: %w", filepath.Base(path), err)
+		}
+	}
+	if err := os.Remove(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove session lease directory: %w", err)
+	}
+	return nil
 }
 
 func newSessionID() (string, error) {

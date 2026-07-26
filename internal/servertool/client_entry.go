@@ -18,6 +18,10 @@ const (
 	ClientControlCommand = "filees control-v1"
 	repositoryWorkerPath = "/usr/local/libexec/filees/filees-worker"
 	clientEntryPromises  = writePromises + " proc exec"
+	// dpath is needed only while the SVN branch's ClaimSession creates its
+	// private revoke FIFO with mkfifo(2). The later supervisor profile drops
+	// it before relaying the client session.
+	clientSVNEntryPromises = writePromises + " dpath proc exec"
 )
 
 func RunClientEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -32,7 +36,11 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		fmt.Fprintln(stderr, "filees-client-entry: rejected command")
 		return ExitUnavailable
 	}
-	if err := sandboxBegin(clientEntryPromises); err != nil {
+	entryPromises := clientEntryPromises
+	if originalCommand == ClientSVNCommand {
+		entryPromises = clientSVNEntryPromises
+	}
+	if err := sandboxBegin(entryPromises); err != nil {
 		report(stderr, "filees-client-entry sandbox", err)
 		return ExitSoftware
 	}
@@ -41,7 +49,7 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		report(stderr, "filees-client-entry config", err)
 		return ExitConfig
 	}
-	profile := obsandbox.Profile{Name: "filees-client-entry/proof", Promises: clientEntryPromises, Paths: []obsandbox.Path{
+	profile := obsandbox.Profile{Name: "filees-client-entry/proof", Promises: entryPromises, Paths: []obsandbox.Path{
 		{Label: "activation", Name: config.Activation.Root, Perms: "rwc"},
 		{Label: "svnserve", Name: config.Activation.SVNServeBinary, Perms: "rx"},
 		{Label: "service-repository", Name: config.Activation.ServiceRepository, Perms: "r"},
@@ -87,7 +95,11 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 			report(stderr, "filees-client-entry session", err)
 			return ExitUnavailable
 		}
-		defer func() { _ = lease.Close() }()
+		defer func() {
+			if closeErr := lease.Close(); closeErr != nil {
+				report(stderr, "filees-client-entry session cleanup", closeErr)
+			}
+		}()
 		if err := supervise(config, args[1], manager, lease, stdin, stdout, stderr); err != nil {
 			report(stderr, "filees-client-entry supervisor", err)
 			return ExitSoftware

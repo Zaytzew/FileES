@@ -37,6 +37,13 @@ type LockUnlocker interface {
 	Unlock(ctx context.Context, repoID string, paths []string) (string, error)
 }
 
+// ReservationManager is the server-scoped, token-fenced surface used by the
+// native reservation browser. The daemon remains the sole SVN caller.
+type ReservationManager interface {
+	ListReservations(context.Context, string) ([]app.Reservation, error)
+	ReleaseReservation(context.Context, app.ReservationReleaseRequest) error
+}
+
 type Activator interface {
 	Begin(ctx context.Context, serverID, serverAddress, email string) error
 	Finish(ctx context.Context, serverID, serverAddress string, otp []byte) error
@@ -107,15 +114,17 @@ type Config struct {
 	// PinStore, if non-nil, offers PIN setup at the end of a successful
 	// activation (see startActivation) - nil means the local-PIN feature is
 	// disabled entirely (e.g. platform without a durable state root).
-	PinStore  *localpin.Store
-	Activator Activator
-	Updater   Updater
-	Stack     StackLifecycle
-	Notifier  platform.Notifier // nil → notifications silently dropped
-	Locker    LockUnlocker
-	Reconnect func() // nil → reconnect intent is a no-op
-	Restart   func() // called only after a successful apply requiring restart
-	Shutdown  func() // called after daemon accepts a full-stack shutdown
+	PinStore           *localpin.Store
+	Activator          Activator
+	Updater            Updater
+	Stack              StackLifecycle
+	Notifier           platform.Notifier // nil → notifications silently dropped
+	Locker             LockUnlocker
+	Reservations       ReservationManager
+	ReservationBrowser platform.ReservationBrowser
+	Reconnect          func() // nil → reconnect intent is a no-op
+	Restart            func() // called only after a successful apply requiring restart
+	Shutdown           func() // called after daemon accepts a full-stack shutdown
 
 	// CreationStatusPollInterval/CreationStatusPollTimeout override how often
 	// and how long awaitCreationOutcome polls after a repository-create
@@ -172,6 +181,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startActivation(ctx)
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
+	case tray.IntentServerReservations:
+		c.startReservations(ctx, intent.ServerID)
 	case tray.IntentCreateRepository:
 		c.startCreateRepository(ctx, intent.ServerID)
 	case tray.IntentPairMobileDevice:
@@ -743,6 +754,19 @@ func (c *Controller) startLockUnlock(ctx context.Context, repoID string, lock bo
 	}()
 }
 
+func (c *Controller) startReservations(ctx context.Context, serverID string) {
+	key := "reservations:" + serverID
+	if serverID == "" || c.cfg.Reservations == nil || c.cfg.ReservationBrowser == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		c.handleReservations(ctx, serverID)
+	}()
+}
+
 func (c *Controller) beginOperation(key string) bool {
 	c.operationsMu.Lock()
 	defer c.operationsMu.Unlock()
@@ -870,6 +894,96 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		Body:    repoID,
 		Urgency: platform.UrgencyLow,
 	})
+}
+
+func (c *Controller) handleReservations(ctx context.Context, serverID string) {
+	for {
+		vm := c.cfg.ViewModel()
+		if !vm.CanListReservations() || !viewHasServer(vm, serverID) {
+			return
+		}
+		reservations, err := c.cfg.Reservations.ListReservations(ctx, serverID)
+		if err != nil {
+			if ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: "reservations." + serverID, Group: "reservations." + serverID, Title: "Nie można pobrać rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
+			}
+			return
+		}
+		rows, byID := reservationRows(reservations)
+		result, err := c.cfg.ReservationBrowser.ShowReservations(ctx, platform.ReservationDialogRequest{
+			Title: "Lista rezerwacji",
+			Text:  "Aktywne rezerwacje widoczne z lokalnych folderów roboczych tego serwera. Wybierz pozycję i użyj „Zwolnij”.",
+			Rows:  rows,
+		})
+		if err != nil || ctx.Err() != nil {
+			if err != nil && ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: "reservations." + serverID, Group: "reservations." + serverID, Title: "Błąd listy rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
+			}
+			return
+		}
+		switch result.Action {
+		case platform.ReservationDialogClose:
+			return
+		case platform.ReservationDialogRefresh:
+			continue
+		case platform.ReservationDialogRelease:
+			reservation, ok := byID[result.RowID]
+			if !ok {
+				continue
+			}
+			if !reservation.CanRelease {
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Rezerwacja niedostępna", Text: "Ta rezerwacja jest powiązana z aktywnym paszportem edycji na innym urządzeniu i nie może zostać zwolniona z tego klienta."})
+				continue
+			}
+			risk := reservation.LocalChanges || reservation.ActivePassport
+			text := fmt.Sprintf("%s\nFolder roboczy: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservation.Path, reservation.WorkingCopy)
+			if risk {
+				text += "\n\nTen folder ma lokalne zmiany lub aktywny paszport edycji. Otwarte programy mogą mieć niezapisane dane; FileES nie bada uchwytów otwartych przez edytory. Kontynuować świadomie?"
+			}
+			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Zwolnij rezerwację", Text: text, ConfirmText: "Zwolnij", CancelText: "Anuluj"})
+			if err != nil || !confirmed || ctx.Err() != nil {
+				continue
+			}
+			vm = c.cfg.ViewModel()
+			if !vm.CanReleaseReservations() || !viewHasServer(vm, serverID) {
+				return
+			}
+			err = c.cfg.Reservations.ReleaseReservation(ctx, app.ReservationReleaseRequest{ServerID: serverID, RepoID: reservation.RepoID, Path: reservation.Path, ExpectedToken: reservation.Token, ConfirmRisk: risk})
+			if err != nil {
+				if ctx.Err() == nil {
+					c.notify(ctx, platform.Notification{ID: "release_reservation." + serverID, Group: "release_reservation." + serverID, Title: "Nie można zwolnić rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
+				}
+				continue
+			}
+			c.notify(ctx, platform.Notification{ID: "release_reservation." + serverID, Group: "release_reservation." + serverID, Title: "Zwolniono rezerwację", Body: reservation.Path, Urgency: platform.UrgencyLow})
+		}
+	}
+}
+
+func reservationRows(reservations []app.Reservation) ([]platform.ReservationDialogRow, map[string]app.Reservation) {
+	rows := make([]platform.ReservationDialogRow, 0, len(reservations))
+	byID := make(map[string]app.Reservation, len(reservations))
+	for i, reservation := range reservations {
+		id := fmt.Sprintf("reservation-%d", i)
+		status := "dostępne"
+		if !reservation.CanRelease {
+			status = "niedostępne na tym urządzeniu"
+		} else if reservation.LocalChanges || reservation.ActivePassport {
+			status = "wymaga potwierdzenia"
+		}
+		rows = append(rows, platform.ReservationDialogRow{ID: id, WorkingCopy: reservation.WorkingCopy, Path: reservation.Path, Owner: reservation.Owner, CreatedAt: reservation.CreatedAt, ReleaseStatus: status})
+		byID[id] = reservation
+	}
+	return rows, byID
+}
+
+func viewHasServer(vm app.ViewModel, serverID string) bool {
+	for _, server := range vm.Servers {
+		if server.ID == serverID {
+			return true
+		}
+	}
+	return false
 }
 
 func canMutate(vm app.ViewModel, lock bool) bool {

@@ -239,6 +239,8 @@ Menu tray zawiera:
 - zagregowany stan daemona i czas ostatniego poprawnego odświeżenia,
 - listę repozytoriów ze stanem, connectivity, rewizją i liczbą oczekujących zmian,
 - „Dodaj folder do FileES…” przy serwerze, który pozwala temu klientowi tworzyć repozytoria,
+- „Rezerwacje plików…” w podmenu serwera: natywną listę aktywnych blokad
+  widocznych z lokalnie podłączonych WC, uporządkowaną według folderu roboczego,
 - „Otwórz katalog” dla każdego repozytorium,
 - `Lock…` i `Unlock…` z wyborem plików wewnątrz danego repozytorium,
 - „Odłącz folder…” dla opcjonalnej WC oraz osobne, podwójnie potwierdzane
@@ -251,7 +253,7 @@ Menu tray zawiera:
   zareklamowanego wydania,
 - „Uruchom FileES ponownie…” i „Zamknij FileES…”.
 
-Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.detach`, `repo.delete`, `repo.lock`, `repo.unlock`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.detach`, `repo.delete`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
 
 Tworzenie repozytorium jest zwykłą operacją użytkownika, bez kontaktu z konsolą:
 
@@ -275,6 +277,24 @@ Odłączenie ma dwa rozłączne kontrakty:
 
 Repozytorium `attachment_policy=required` nie udostępnia żadnej z tych akcji.
 Lifecycle jest trwały i wznawialny po restarcie.
+
+### Rezerwacje plików
+
+W podmenu serwera **Rezerwacje plików…** otwiera natywne okno Linux/Windows z
+aktywnymi blokadami SVN znalezionymi w working copy podłączonych lokalnie do
+tego serwera. Lista jest uporządkowana według katalogu roboczego, a następnie
+ścieżki. Nie jest to administracyjny spis wszystkich blokad całego serwera —
+repozytorium bez lokalnej WC nie jest w tym widoku obserwowalne.
+
+Po wybraniu wiersza **Zwolnij** GUI zawsze pyta o potwierdzenie. Gdy w tej WC
+są lokalne zmiany lub blokada odpowiada aktywnemu paszportowi edycji, dialog
+wyraźnie ostrzega o niezapisanych danych i wymaga świadomego potwierdzenia.
+GUI nie próbuje wykrywać uchwytów edytora: wiele programów zapisuje atomową
+podmianą pliku, więc taki test byłby pozornym zabezpieczeniem. Rezerwacja
+związana z paszportem aktywnym na innym urządzeniu jest tylko informacyjna i
+nie może zostać zwolniona z tego klienta. Żądanie zwolnienia zawiera token
+z listy; daemon odczytuje stan ponownie i odrzuca zmieniony lub nieaktualny
+wiersz, zanim wywoła SVN.
 
 ### Podpisane aktualizacje klienta desktopowego
 
@@ -438,8 +458,14 @@ Daemon wystawia gniazdo Unix i przyjmuje połączenia od CLI i GUI. Protokół: 
 - Każde połączenie obsługuje jedno żądanie i się zamyka (request/response), z wyjątkiem `events.subscribe` — które przełącza połączenie w tryb push (serwer wysyła eventy aż do rozłączenia klienta)
 - `RepoState` — live snapshot stanu repozytorium, aktualizowany przez daemon, serwowany klientom bez dostępu do silnika
 - Wszystkie ścieżki w `repo.lock`/`repo.unlock` są walidowane — muszą być absolutne i leżeć wewnątrz kopii roboczej (`LOCK-2002` przy naruszeniu)
+- `repo.reservation_list` agreguje tylko live locki widoczne z lokalnie
+  podłączonych WC danego serwera; `repo.reservation_release` ponownie odczytuje
+  lock i wymaga jego tokenu, repo, serwera oraz bezpiecznej ścieżki względnej
 
-Zaimplementowane komendy: `system.hello`, `system.status`, `repo.list`, `repo.status`, `repo.lock`, `repo.unlock`, `error.list`, `events.subscribe`.
+Zaimplementowane komendy są capability-gated i obejmują system lifecycle,
+podpisane aktualizacje, aktywację/pairing, lifecycle repozytoriów, aktywność,
+`repo.lock`, `repo.unlock`, `repo.reservation_list`,
+`repo.reservation_release`, `error.list` i `events.subscribe`.
 
 ### IPC Client (`pkg/ipcclient`)
 

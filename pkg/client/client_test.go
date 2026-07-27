@@ -157,6 +157,30 @@ func TestParseLockInfoXMLWithoutLock(t *testing.T) {
 	}
 }
 
+func TestParseLockListXMLPrefersLiveLockAndKeepsLocalRisk(t *testing.T) {
+	const output = `<status><target path="/wc"><entry path="/wc/docs/a.txt"><wc-status item="modified" props="none" revision="1"><lock><token>stale</token><owner>old</owner><created>2026-07-15T07:39:29Z</created></lock></wc-status><repos-status item="none" props="none"><lock><token>live</token><owner>alice</owner><comment>passport</comment><created>2026-07-16T07:39:29Z</created></lock></repos-status></entry><entry path="/wc/docs/b.txt"><wc-status item="normal" props="normal" revision="1"><lock><token>local</token><owner>bob</owner><created>2026-07-17T07:39:29Z</created></lock></wc-status></entry></target></status>`
+	rows, err := parseLockListXML(output, "/wc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows=%#v", rows)
+	}
+	if rows[0].Path != filepath.Join("docs", "a.txt") || rows[0].Token != "live" || rows[0].Owner != "alice" || rows[0].LocalItem != "modified" {
+		t.Fatalf("first row=%#v", rows[0])
+	}
+	if rows[1].Path != filepath.Join("docs", "b.txt") || rows[1].Token != "local" || rows[1].LocalItem != "normal" {
+		t.Fatalf("second row=%#v", rows[1])
+	}
+}
+
+func TestParseLockListXMLRejectsTokenlessLock(t *testing.T) {
+	_, err := parseLockListXML(`<status><target path="/wc"><entry path="/wc/a"><wc-status item="normal"><lock><owner>alice</owner><created>2026-07-15T07:39:29Z</created></lock></wc-status></entry></target></status>`, "/wc")
+	if err == nil || !strings.Contains(err.Error(), "without token") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestCommitRefusesEmptyPathList(t *testing.T) {
 	cli := New(Options{})
 	if _, err := cli.Commit(context.Background(), t.TempDir(), nil, "test"); err == nil {

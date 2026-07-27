@@ -144,6 +144,24 @@ type LockInfo struct {
 	Created time.Time
 }
 
+// LockEntry is one live repository lock found while scanning a working copy.
+// Path is relative to RootDirectory and uses the native filesystem separator;
+// callers converting it to a protocol value must normalize it deliberately.
+// LocalItem/LocalProps are SVN's current local status for the same path and
+// allow the daemon to require an explicit user acknowledgement before release.
+type LockEntry struct {
+	Path string
+	LockInfo
+	LocalItem, LocalProps string
+}
+
+// LockLister is intentionally optional: keeping it separate from Client
+// avoids making every lightweight test/client implementation pretend it can
+// enumerate repository locks.  The production exec client implements it.
+type LockLister interface {
+	ListLocks(ctx context.Context, rootDirectory string) ([]LockEntry, error)
+}
+
 // ---- High-level helpers ----
 
 func (c *execClient) GetInfo(ctx context.Context, repoURL string) (string, error) {
@@ -365,6 +383,17 @@ func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []s
 	return c.run(ctx, rootDirectory, args)
 }
 
+// ListLocks contacts the repository once and extracts every live lock visible
+// below rootDirectory.  svn status --show-updates is used rather than svn info:
+// the latter only knows locks previously seen by this very working copy.
+func (c *execClient) ListLocks(ctx context.Context, rootDirectory string) ([]LockEntry, error) {
+	out, err := c.run(ctx, rootDirectory, []string{"status", "--show-updates", "--xml", "--verbose", "--ignore-externals", "--depth", "infinity", "--", "."})
+	if err != nil {
+		return nil, fmt.Errorf("svn reservation list: %w", err)
+	}
+	return parseLockListXML(out, rootDirectory)
+}
+
 // LockInfo reports the CURRENT repository lock on path, regardless of which
 // working copy is asking. `svn info` (no -u) only ever reflects a lock this
 // same working copy already knows about from its own last lock/update
@@ -435,6 +464,61 @@ func parseLockInfoXML(output string) (*LockInfo, error) {
 		Comment: lock.Comment,
 		Created: created,
 	}, nil
+}
+
+// parseLockListXML accepts the same status XML variants as parseLockInfoXML,
+// but walks all entries in a working-copy scan.  The live repos-status lock
+// wins over the local wc-status fallback for each path.
+func parseLockListXML(output, rootDirectory string) ([]LockEntry, error) {
+	var statusXML struct {
+		Targets []struct {
+			Entries []struct {
+				Path        string `xml:"path,attr"`
+				ReposStatus *struct {
+					Lock *lockXML `xml:"lock"`
+				} `xml:"repos-status"`
+				WCStatus struct {
+					Item  string   `xml:"item,attr"`
+					Props string   `xml:"props,attr"`
+					Lock  *lockXML `xml:"lock"`
+				} `xml:"wc-status"`
+			} `xml:"entry"`
+		} `xml:"target"`
+	}
+	if err := xml.Unmarshal([]byte(output), &statusXML); err != nil {
+		return nil, fmt.Errorf("parse lock list xml: %w", err)
+	}
+	var entries []LockEntry
+	for _, target := range statusXML.Targets {
+		for _, entry := range target.Entries {
+			lock := entry.WCStatus.Lock
+			if entry.ReposStatus != nil && entry.ReposStatus.Lock != nil {
+				lock = entry.ReposStatus.Lock
+			}
+			if lock == nil {
+				continue
+			}
+			if strings.TrimSpace(lock.Token) == "" {
+				return nil, fmt.Errorf("lock list returned a lock without token for %q", entry.Path)
+			}
+			created, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(lock.Created))
+			if err != nil {
+				return nil, fmt.Errorf("parse lock created time: %w", err)
+			}
+			path := entry.Path
+			if rel, err := filepath.Rel(rootDirectory, path); err == nil && pathInsideRoot(rel) {
+				path = rel
+			}
+			path = filepath.Clean(path)
+			if path == "." || !pathInsideRoot(path) {
+				return nil, fmt.Errorf("lock list returned invalid path %q", entry.Path)
+			}
+			entries = append(entries, LockEntry{Path: path, LockInfo: LockInfo{
+				Token: strings.TrimSpace(lock.Token), Owner: strings.TrimSpace(lock.Owner), Comment: lock.Comment, Created: created,
+			}, LocalItem: entry.WCStatus.Item, LocalProps: entry.WCStatus.Props})
+		}
+	}
+	return entries, nil
 }
 
 func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string, paths []string) (string, error) {

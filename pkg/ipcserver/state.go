@@ -40,8 +40,10 @@ type RepoState struct {
 	currentOp    *string
 
 	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
-	lockFn   func(ctx context.Context, paths []string) (string, error)
-	unlockFn func(ctx context.Context, paths []string) (string, error)
+	lockFn               func(ctx context.Context, paths []string) (string, error)
+	unlockFn             func(ctx context.Context, paths []string) (string, error)
+	reservationListFn    func(ctx context.Context) ([]contract.Reservation, error)
+	reservationReleaseFn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error
 }
 
 func (rs *RepoState) ServerID() string {
@@ -76,6 +78,8 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 		rs.currentOp = nil
 		rs.lockFn = nil
 		rs.unlockFn = nil
+		rs.reservationListFn = nil
+		rs.reservationReleaseFn = nil
 	}
 	if projectedState != "active" {
 		rs.state = projectedState
@@ -96,6 +100,8 @@ func (rs *RepoState) markDetached() {
 	rs.currentOp = nil
 	rs.lockFn = nil
 	rs.unlockFn = nil
+	rs.reservationListFn = nil
+	rs.reservationReleaseFn = nil
 	if rs.attachmentPolicy == "required" {
 		rs.state = contract.StatePolicyPending
 	} else {
@@ -179,6 +185,52 @@ func (rs *RepoState) SetLockFuncs(
 	rs.lockFn = lockFn
 	rs.unlockFn = unlockFn
 	rs.mu.Unlock()
+}
+
+// SetReservationFuncs wires the server-menu reservation inventory to this
+// working copy.  The list callback may be present on read-only attachments;
+// the release callback is deliberately nil there.
+func (rs *RepoState) SetReservationFuncs(
+	listFn func(ctx context.Context) ([]contract.Reservation, error),
+	releaseFn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error,
+) {
+	rs.mu.Lock()
+	rs.reservationListFn = listFn
+	rs.reservationReleaseFn = releaseFn
+	rs.mu.Unlock()
+}
+
+// ListReservations returns live lock data for this one attached working copy.
+func (rs *RepoState) ListReservations(ctx context.Context) ([]contract.Reservation, error) {
+	rs.mu.RLock()
+	fn := rs.reservationListFn
+	attached := rs.attached
+	rs.mu.RUnlock()
+	if !attached || fn == nil {
+		return nil, nil
+	}
+	return fn(ctx)
+}
+
+// ReleaseReservation performs the token-fenced release supplied by the daemon
+// runtime.  It is distinct from the legacy repo.unlock picker path: callers
+// can only target a row they just obtained from repo.reservation_list.
+func (rs *RepoState) ReleaseReservation(ctx context.Context, path, expectedToken string, confirmRisk bool) error {
+	rs.mu.RLock()
+	fn := rs.reservationReleaseFn
+	access := rs.access
+	attached := rs.attached
+	rs.mu.RUnlock()
+	if !attached {
+		return fmt.Errorf("reservation release not available for detached repo %s", rs.id)
+	}
+	if access != contract.AccessReadWrite {
+		return fmt.Errorf("REPO_READ_ONLY: repo %s is read-only", rs.id)
+	}
+	if fn == nil {
+		return fmt.Errorf("reservation release not available for repo %s", rs.id)
+	}
+	return fn(ctx, path, expectedToken, confirmRisk)
 }
 
 // Lock calls svn lock for the given absolute paths via the wired lockFn.

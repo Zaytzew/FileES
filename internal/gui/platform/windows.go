@@ -5,6 +5,8 @@ package platform
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -288,6 +290,61 @@ func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (b
 		return false, NewOperationalFailure("confirm_dialog", err)
 	}
 	return strings.TrimSpace(string(output)) == "yes", nil
+}
+
+// ShowReservations presents a real WinForms table rather than serialising a
+// lock list into a browser or notification.  Only opaque GUI row IDs cross the
+// PowerShell boundary; SVN lock tokens stay in the FileES process.
+func (b *WindowsBackend) ShowReservations(ctx context.Context, request ReservationDialogRequest) (ReservationDialogResult, error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return ReservationDialogResult{}, NewUnavailable("reservation_dialog", err)
+	}
+	script, err := buildReservationDialogScript(request)
+	if err != nil {
+		return ReservationDialogResult{}, NewOperationalFailure("reservation_dialog", err)
+	}
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ReservationDialogResult{}, ctxErr
+		}
+		return ReservationDialogResult{}, NewOperationalFailure("reservation_dialog", err)
+	}
+	answer := strings.TrimSpace(string(output))
+	if answer == "refresh" {
+		return ReservationDialogResult{Action: ReservationDialogRefresh}, nil
+	}
+	if strings.HasPrefix(answer, "release:") {
+		rowID := strings.TrimPrefix(answer, "release:")
+		for _, row := range request.Rows {
+			if row.ID == rowID {
+				return ReservationDialogResult{Action: ReservationDialogRelease, RowID: rowID}, nil
+			}
+		}
+	}
+	return ReservationDialogResult{Action: ReservationDialogClose}, nil
+}
+
+func buildReservationDialogScript(request ReservationDialogRequest) (string, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return "", err
+	}
+	encoded := base64.StdEncoding.EncodeToString(payload)
+	var sb strings.Builder
+	sb.WriteString(dpiAwarenessPrelude)
+	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;")
+	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;")
+	sb.WriteString("try{$s=[Native.Dpi]::GetDpiForSystem()/96.0}catch{$s=1.0};")
+	sb.WriteString("$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=[int](1160*$s);$f.Height=[int](620*$s);$f.StartPosition='CenterScreen';")
+	sb.WriteString("$l=New-Object System.Windows.Forms.Label;$l.AutoSize=$false;$l.Left=[int](12*$s);$l.Top=[int](12*$s);$l.Width=[int](1110*$s);$l.Height=[int](38*$s);$l.Text=$d.Text;$f.Controls.Add($l);")
+	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=[int](12*$s);$g.Top=[int](58*$s);$g.Width=[int](1110*$s);$g.Height=[int](470*$s);$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.AllowUserToDeleteRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';")
+	sb.WriteString("$t=New-Object System.Data.DataTable;[void]$t.Columns.Add('ID');[void]$t.Columns.Add('Katalog roboczy');[void]$t.Columns.Add('Plik');[void]$t.Columns.Add('Właściciel');[void]$t.Columns.Add('Utworzono');[void]$t.Columns.Add('Zwolnienie');foreach($r in $d.Rows){[void]$t.Rows.Add($r.ID,$r.WorkingCopy,$r.Path,$r.Owner,$r.CreatedAt,$r.ReleaseStatus)};$g.DataSource=$t;$g.Columns['ID'].Visible=$false;$f.Controls.Add($g);")
+	sb.WriteString("$script:answer='close';$release=New-Object System.Windows.Forms.Button;$release.Text='Zwolnij';$release.Width=[int](100*$s);$release.Height=[int](28*$s);$release.Left=[int](790*$s);$release.Top=[int](540*$s);$release.Add_Click({if($g.CurrentRow -ne $null){$script:answer='release:'+[string]$g.CurrentRow.Cells['ID'].Value;$f.Close()}});$f.Controls.Add($release);")
+	sb.WriteString("$refresh=New-Object System.Windows.Forms.Button;$refresh.Text='Odśwież';$refresh.Width=[int](100*$s);$refresh.Height=[int](28*$s);$refresh.Left=[int](900*$s);$refresh.Top=[int](540*$s);$refresh.Add_Click({$script:answer='refresh';$f.Close()});$f.Controls.Add($refresh);")
+	sb.WriteString("$close=New-Object System.Windows.Forms.Button;$close.Text='Zamknij';$close.Width=[int](100*$s);$close.Height=[int](28*$s);$close.Left=[int](1010*$s);$close.Top=[int](540*$s);$close.DialogResult='Cancel';$f.CancelButton=$close;$f.Controls.Add($close);[void]$f.ShowDialog();$script:answer")
+	return sb.String(), nil
 }
 
 func buildPromptScript(request PromptTextRequest) string {

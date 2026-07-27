@@ -12,6 +12,7 @@ type Backend interface {
 	FolderPicker
 	FilePicker
 	Prompter
+	ReservationBrowser
 	Notifier
 	Autostart
 }
@@ -20,6 +21,41 @@ type Prompter interface {
 	PromptText(ctx context.Context, request PromptTextRequest) (PromptTextResult, error)
 	ShowInfo(ctx context.Context, request InfoRequest) error
 	Confirm(ctx context.Context, request ConfirmRequest) (bool, error)
+}
+
+// ReservationBrowser renders the native, server-scoped reservation window.
+// It receives display-only data and returns an opaque row ID; token fencing and
+// all SVN work remain in the GUI action/daemon layers.
+type ReservationBrowser interface {
+	ShowReservations(ctx context.Context, request ReservationDialogRequest) (ReservationDialogResult, error)
+}
+
+type ReservationDialogRequest struct {
+	Title string
+	Text  string
+	Rows  []ReservationDialogRow
+}
+
+type ReservationDialogRow struct {
+	ID            string
+	WorkingCopy   string
+	Path          string
+	Owner         string
+	CreatedAt     string
+	ReleaseStatus string
+}
+
+type ReservationDialogAction string
+
+const (
+	ReservationDialogClose   ReservationDialogAction = "close"
+	ReservationDialogRefresh ReservationDialogAction = "refresh"
+	ReservationDialogRelease ReservationDialogAction = "release"
+)
+
+type ReservationDialogResult struct {
+	Action ReservationDialogAction
+	RowID  string
 }
 
 type InfoRequest struct {

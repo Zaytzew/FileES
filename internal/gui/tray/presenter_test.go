@@ -270,6 +270,20 @@ func TestServerMenuUsesAliasAndExposesInformationDialog(t *testing.T) {
 	}
 }
 
+func TestServerMenuExposesReservationsOnlyWhenAdvertised(t *testing.T) {
+	base := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "office"}}}
+	without := findItem(t, BuildMenu(base).Items, "server.office")
+	if hasItem(without.Children, "server.office.reservations") {
+		t.Fatal("reservation action shown without capability")
+	}
+	base.Capabilities = map[string]bool{contract.CapRepoReservationList: true}
+	with := findItem(t, BuildMenu(base).Items, "server.office")
+	item := findItem(t, with.Children, "server.office.reservations")
+	if item.Intent == nil || item.Intent.Kind != IntentServerReservations || item.Intent.ServerID != "office" {
+		t.Fatalf("reservation action = %+v", item)
+	}
+}
+
 func TestBuildMenuShowsProjectedUnattachedRepositoryByDisplayName(t *testing.T) {
 	repo := app.RepoViewModel{ID: "repo-uuid", DisplayName: "Dokumenty wspólne", ServerID: "office", OwnerRealmID: "foreign", AttachmentPolicy: "required", Access: contract.AccessReadOnly, State: contract.StateUnattached}
 	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{repo}, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net", RealmID: "mine", Repos: []app.RepoViewModel{repo}}}})

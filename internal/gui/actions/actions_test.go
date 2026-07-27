@@ -71,6 +71,30 @@ type lockCall struct {
 	paths  []string
 }
 
+type reservationCall struct {
+	payload app.ReservationReleaseRequest
+}
+
+type fakeReservations struct {
+	items   []app.Reservation
+	listCh  chan string
+	release chan reservationCall
+}
+
+func newFakeReservations(items []app.Reservation) *fakeReservations {
+	return &fakeReservations{items: items, listCh: make(chan string, 4), release: make(chan reservationCall, 1)}
+}
+
+func (f *fakeReservations) ListReservations(_ context.Context, serverID string) ([]app.Reservation, error) {
+	f.listCh <- serverID
+	return append([]app.Reservation(nil), f.items...), nil
+}
+
+func (f *fakeReservations) ReleaseReservation(_ context.Context, payload app.ReservationReleaseRequest) error {
+	f.release <- reservationCall{payload: payload}
+	return nil
+}
+
 type fakeActivator struct {
 	begins   chan string
 	finishes chan string
@@ -763,6 +787,42 @@ func TestControllerLockSuccessNotifies(t *testing.T) {
 	n := awaitCh(t, notifCh, "success notification")
 	if n.Urgency != platform.UrgencyLow {
 		t.Fatalf("success notification urgency = %v", n.Urgency)
+	}
+}
+
+func TestControllerReservationsConfirmsRiskAndTokenFencesRelease(t *testing.T) {
+	reservation := app.Reservation{RepoID: "docs", WorkingCopy: "/wc/docs", Path: "plan.dwg", Token: "opaque-lock-token", Owner: "anna", CreatedAt: "2026-07-27", CanRelease: true, LocalChanges: true}
+	manager := newFakeReservations([]app.Reservation{reservation})
+	shows := 0
+	fake := &platformtest.Fake{
+		ReservationsFunc: func(_ context.Context, request platform.ReservationDialogRequest) (platform.ReservationDialogResult, error) {
+			shows++
+			if shows == 1 {
+				if len(request.Rows) != 1 || request.Rows[0].ID == reservation.Token || request.Rows[0].ReleaseStatus != "wymaga potwierdzenia" {
+					t.Fatalf("dialog rows=%+v", request.Rows)
+				}
+				return platform.ReservationDialogResult{Action: platform.ReservationDialogRelease, RowID: request.Rows[0].ID}, nil
+			}
+			return platform.ReservationDialogResult{Action: platform.ReservationDialogClose}, nil
+		},
+		ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+			if !strings.Contains(request.Text, "lokalne zmiany") || !strings.Contains(request.Text, "nie bada uchwytów") {
+				t.Fatalf("risk confirmation text=%q", request.Text)
+			}
+			return true, nil
+		},
+	}
+	vm := &vmStore{}
+	vm.Store(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoReservationList: true, contract.CapRepoReservationRelease: true}, Servers: []app.ServerViewModel{{ID: "office"}}})
+	intents, cancel := setup(actions.Config{ViewModel: vm.Load, Prompter: fake, Notifier: fake, Reservations: manager, ReservationBrowser: fake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentServerReservations, ServerID: "office"})
+	if got := awaitCh(t, manager.listCh, "reservation list"); got != "office" {
+		t.Fatalf("server ID=%q", got)
+	}
+	call := awaitCh(t, manager.release, "reservation release")
+	if call.payload.ServerID != "office" || call.payload.RepoID != "docs" || call.payload.Path != "plan.dwg" || call.payload.ExpectedToken != reservation.Token || !call.payload.ConfirmRisk {
+		t.Fatalf("release payload=%+v", call.payload)
 	}
 }
 

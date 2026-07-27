@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -273,6 +274,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	defer func() {
 		if lockFuncsWired {
 			runtimeRepo.state.SetLockFuncs(nil, nil)
+			runtimeRepo.state.SetReservationFuncs(nil, nil)
 		}
 	}()
 	instance, err := reposupervisor.StartManaged(ctx, func(runCtx context.Context) error {
@@ -280,6 +282,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	}, func(cleanupCtx context.Context) error {
 		var first error
 		runtimeRepo.state.SetLockFuncs(nil, nil)
+		runtimeRepo.state.SetReservationFuncs(nil, nil)
 		if passports != nil {
 			if err := passports.Stop(cleanupCtx); err != nil {
 				first = err
@@ -309,6 +312,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 }
 
 func wireRepoLockFuncs(state *ipcserver.RepoState, svn client.Client, wc string, manager *passport.Manager) {
+	wireRepoReservationFuncs(state, svn, wc, manager)
 	if manager != nil {
 		state.SetLockFuncs(
 			func(ctx context.Context, paths []string) (string, error) {
@@ -331,6 +335,88 @@ func wireRepoLockFuncs(state *ipcserver.RepoState, svn client.Client, wc string,
 			return svn.Unlock(ctx, wc, paths)
 		},
 	)
+}
+
+// wireRepoReservationFuncs supplies a live, server-contacting lock inventory
+// for this working copy.  A reservation can only be released using the token
+// returned by the immediately preceding list, and a passport-backed lock can
+// only be released by the local passport manager that owns it.
+func wireRepoReservationFuncs(state *ipcserver.RepoState, svn client.Client, wc string, manager *passport.Manager) {
+	lister, ok := svn.(client.LockLister)
+	if !ok || lister == nil {
+		state.SetReservationFuncs(nil, nil)
+		return
+	}
+	list := func(ctx context.Context) ([]contract.Reservation, error) {
+		entries, err := lister.ListLocks(ctx, wc)
+		if err != nil {
+			return nil, err
+		}
+		activePassports := make(map[string]passport.Passport)
+		if manager != nil {
+			for _, item := range manager.Snapshot() {
+				if item.State == passport.StateActive {
+					activePassports[filepath.Clean(item.Path)] = item
+				}
+			}
+		}
+		rows := make([]contract.Reservation, 0, len(entries))
+		for _, entry := range entries {
+			absolute := filepath.Join(wc, entry.Path)
+			passportItem, hasPassport := activePassports[filepath.Clean(absolute)]
+			activePassport := hasPassport && passportItem.FencingToken == entry.Token
+			rows = append(rows, contract.Reservation{
+				RepoID:         state.Summary().ID,
+				WorkingCopy:    wc,
+				Path:           filepath.ToSlash(entry.Path),
+				Token:          entry.Token,
+				Owner:          entry.Owner,
+				CreatedAt:      entry.Created.UTC().Format(time.RFC3339Nano),
+				CanRelease:     manager == nil || activePassport,
+				LocalChanges:   reservationHasLocalChanges(entry),
+				ActivePassport: activePassport,
+			})
+		}
+		return rows, nil
+	}
+	release := func(ctx context.Context, relativePath, expectedToken string, confirmRisk bool) error {
+		rows, err := list(ctx)
+		if err != nil {
+			return err
+		}
+		var row *contract.Reservation
+		for i := range rows {
+			if rows[i].Path == filepath.ToSlash(relativePath) && rows[i].Token == expectedToken {
+				row = &rows[i]
+				break
+			}
+		}
+		if row == nil {
+			return errors.New("reservation changed or no longer exists; refresh the list")
+		}
+		if !row.CanRelease {
+			return errors.New("reservation is not owned by this FileES instance")
+		}
+		if (row.LocalChanges || row.ActivePassport) && !confirmRisk {
+			return errors.New("reservation has local editing risk; explicit confirmation is required")
+		}
+		absolute := filepath.Join(wc, filepath.FromSlash(relativePath))
+		if rel, err := filepath.Rel(wc, absolute); err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+			return errors.New("reservation path is outside its working copy")
+		}
+		if manager != nil {
+			_, err := manager.Release(ctx, []string{absolute})
+			return err
+		}
+		_, err = svn.Unlock(ctx, wc, []string{absolute})
+		return err
+	}
+	state.SetReservationFuncs(list, release)
+}
+
+func reservationHasLocalChanges(entry client.LockEntry) bool {
+	return (entry.LocalItem != "" && entry.LocalItem != "normal" && entry.LocalItem != "none") ||
+		(entry.LocalProps != "" && entry.LocalProps != "normal" && entry.LocalProps != "none")
 }
 
 // daemonRepoStarter binds generic supervisor lifecycle to concrete daemon
@@ -367,6 +453,9 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 	if desired.Access != contract.AccessReadOnly {
 		return nil, errors.New("repository access is invalid")
 	}
+	// Read-only attachments contribute to the server-menu inventory as well,
+	// but intentionally receive no release callback.
+	wireRepoReservationFuncs(runtime.state, svn, runtime.config.LocalPath, nil)
 	stateDir := filepath.Join(runtime.config.LocalPath, ".filees", "state")
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, err
@@ -379,6 +468,7 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, talk.With("readonly:"+desired.Key.String()))
 		return nil
 	}, func(context.Context) error {
+		runtime.state.SetReservationFuncs(nil, nil)
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}

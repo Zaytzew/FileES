@@ -24,22 +24,24 @@ const (
 	CmdMobilePairingBegin = "mobile_pairing.begin"
 
 	// Repos
-	CmdRepoList            = "repo.list"             // list all configured repos
-	CmdRepoStatus          = "repo.status"           // snapshot of one repo
-	CmdRepoPause           = "repo.pause"            // suspend automatic operations
-	CmdRepoResume          = "repo.resume"           // resume after pause
-	CmdRepoSyncNow         = "repo.sync_now"         // request immediate poll/update
-	CmdRepoPublish         = "repo.publish"          // request immediate commit of pending changes
-	CmdRepoCreateRequest   = "repo.create_request"   // persist intent; server work is a later stage
-	CmdRepoAttachIntent    = "repo.attach_intent"    // persist local path choice; no checkout yet
-	CmdRepoAttachApprove   = "repo.attach_approve"   // approve the persisted intent and start checkout
-	CmdRepoRelocate        = "repo.relocate"         // approve relocation of an attached working copy
-	CmdRepoDetach          = "repo.detach"           // detach one local working copy, preserving user data
-	CmdRepoDelete          = "repo.delete"           // delete an owned server repository, then detach locally
-	CmdRepoLifecycleStatus = "repo.lifecycle_status" // poll outcome of a create/attach/relocate operation by ID
-	CmdRepoActivity        = "repo.activity"         // global recent synchronization activity snapshot
-	CmdRepoLock            = "repo.lock"             // acquire SVN lock on one or more paths
-	CmdRepoUnlock          = "repo.unlock"           // release SVN lock on one or more paths
+	CmdRepoList               = "repo.list"                // list all configured repos
+	CmdRepoStatus             = "repo.status"              // snapshot of one repo
+	CmdRepoPause              = "repo.pause"               // suspend automatic operations
+	CmdRepoResume             = "repo.resume"              // resume after pause
+	CmdRepoSyncNow            = "repo.sync_now"            // request immediate poll/update
+	CmdRepoPublish            = "repo.publish"             // request immediate commit of pending changes
+	CmdRepoCreateRequest      = "repo.create_request"      // persist intent; server work is a later stage
+	CmdRepoAttachIntent       = "repo.attach_intent"       // persist local path choice; no checkout yet
+	CmdRepoAttachApprove      = "repo.attach_approve"      // approve the persisted intent and start checkout
+	CmdRepoRelocate           = "repo.relocate"            // approve relocation of an attached working copy
+	CmdRepoDetach             = "repo.detach"              // detach one local working copy, preserving user data
+	CmdRepoDelete             = "repo.delete"              // delete an owned server repository, then detach locally
+	CmdRepoLifecycleStatus    = "repo.lifecycle_status"    // poll outcome of a create/attach/relocate operation by ID
+	CmdRepoActivity           = "repo.activity"            // global recent synchronization activity snapshot
+	CmdRepoLock               = "repo.lock"                // acquire SVN lock on one or more paths
+	CmdRepoUnlock             = "repo.unlock"              // release SVN lock on one or more paths
+	CmdRepoReservationList    = "repo.reservation_list"    // list live locks in this client's working copies for one server
+	CmdRepoReservationRelease = "repo.reservation_release" // safely release one listed lock
 
 	// Conflicts and user decisions
 	CmdConflictList   = "conflict.list"   // list pending conflicts / interactions
@@ -62,23 +64,25 @@ const (
 // GUI shows only capabilities declared in HelloResult.Capabilities.
 // Only list commands that are actually implemented.
 const (
-	CapEventsSubscribe     = "events.subscribe"
-	CapRepoLock            = "repo.lock"
-	CapRepoUnlock          = "repo.unlock"
-	CapErrorList           = "error.list"
-	CapActivationBegin     = "activation.begin"
-	CapActivationFinish    = "activation.finish"
-	CapMobilePairingBegin  = "mobile_pairing.begin"
-	CapRepoCreateRequest   = "repo.create_request"
-	CapRepoAttachIntent    = "repo.attach_intent"
-	CapRepoAttachApprove   = "repo.attach_approve"
-	CapRepoRelocate        = "repo.relocate"
-	CapRepoDetach          = "repo.detach"
-	CapRepoDelete          = "repo.delete"
-	CapRepoLifecycleStatus = "repo.lifecycle_status"
-	CapRepoActivity        = "repo.activity"
-	CapSystemRestart       = "system.restart"
-	CapSystemShutdown      = "system.shutdown"
+	CapEventsSubscribe        = "events.subscribe"
+	CapRepoLock               = "repo.lock"
+	CapRepoUnlock             = "repo.unlock"
+	CapRepoReservationList    = "repo.reservation_list"
+	CapRepoReservationRelease = "repo.reservation_release"
+	CapErrorList              = "error.list"
+	CapActivationBegin        = "activation.begin"
+	CapActivationFinish       = "activation.finish"
+	CapMobilePairingBegin     = "mobile_pairing.begin"
+	CapRepoCreateRequest      = "repo.create_request"
+	CapRepoAttachIntent       = "repo.attach_intent"
+	CapRepoAttachApprove      = "repo.attach_approve"
+	CapRepoRelocate           = "repo.relocate"
+	CapRepoDetach             = "repo.detach"
+	CapRepoDelete             = "repo.delete"
+	CapRepoLifecycleStatus    = "repo.lifecycle_status"
+	CapRepoActivity           = "repo.activity"
+	CapSystemRestart          = "system.restart"
+	CapSystemShutdown         = "system.shutdown"
 
 	// Update capabilities are advertised only after the daemon wires a signed
 	// release checker and transactional platform installer.
@@ -99,6 +103,8 @@ var AllCapabilities = []string{
 	CapEventsSubscribe,
 	CapRepoLock,
 	CapRepoUnlock,
+	CapRepoReservationList,
+	CapRepoReservationRelease,
 	CapErrorList,
 	CapActivationBegin,
 	CapActivationFinish,
@@ -394,4 +400,45 @@ type RepoLockPayload struct {
 // LockResult is the result for CmdRepoLock and CmdRepoUnlock.
 type LockResult struct {
 	Output string `json:"output"` // raw SVN output for display
+}
+
+// RepoReservationListPayload scopes a live lock inventory to one activated
+// server.  The daemon returns locks only from locally attached working copies;
+// it never claims to be a server-administrative inventory of unseen repos.
+type RepoReservationListPayload struct {
+	ServerID string `json:"server_id"`
+}
+
+// Reservation describes one authoritative SVN lock observed by the daemon.
+// Token is an opaque fencing value: callers must return it unchanged when
+// asking to release a row, so a stale dialog cannot unlock a later lock.
+type Reservation struct {
+	RepoID         string `json:"repo_id"`
+	WorkingCopy    string `json:"working_copy"`
+	Path           string `json:"path"` // repository-relative, slash-separated
+	Token          string `json:"token"`
+	Owner          string `json:"owner,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+	CanRelease     bool   `json:"can_release"`
+	LocalChanges   bool   `json:"local_changes"`
+	ActivePassport bool   `json:"active_passport"`
+}
+
+// RepoReservationListResult is sorted by working copy and path by the daemon.
+type RepoReservationListResult struct {
+	ServerID     string        `json:"server_id"`
+	Reservations []Reservation `json:"reservations"`
+}
+
+// RepoReservationReleasePayload identifies a row returned by
+// repo.reservation_list.  Path is relative to the selected working copy;
+// ExpectedToken prevents a stale client from releasing a newer reservation.
+// ConfirmRisk records the user's explicit acknowledgement of known local
+// changes or an active FileES edit passport.
+type RepoReservationReleasePayload struct {
+	ServerID      string `json:"server_id"`
+	RepoID        string `json:"repo_id"`
+	Path          string `json:"path"`
+	ExpectedToken string `json:"expected_token"`
+	ConfirmRisk   bool   `json:"confirm_risk,omitempty"`
 }

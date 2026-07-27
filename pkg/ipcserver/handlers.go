@@ -61,11 +61,80 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoLockUnlock(req, true)
 	case contract.CmdRepoUnlock:
 		return s.handleRepoLockUnlock(req, false)
+	case contract.CmdRepoReservationList:
+		return s.handleRepoReservationList(req)
+	case contract.CmdRepoReservationRelease:
+		return s.handleRepoReservationRelease(req)
 	default:
 		return contract.ErrResponse(req.RequestID,
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleRepoReservationList(req contract.Request) contract.Response {
+	var payload contract.RepoReservationListPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	repos := make([]*RepoState, 0, len(s.repos))
+	for _, repo := range s.repos {
+		if repo.ServerID() == payload.ServerID {
+			repos = append(repos, repo)
+		}
+	}
+	s.mu.RUnlock()
+	if len(repos) == 0 {
+		s.mu.RLock()
+		_, activated := s.activations[payload.ServerID]
+		s.mu.RUnlock()
+		if !activated {
+			return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+		}
+		return contract.OKResponse(req.RequestID, contract.RepoReservationListResult{ServerID: payload.ServerID})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	result := contract.RepoReservationListResult{ServerID: payload.ServerID}
+	for _, repo := range repos {
+		rows, err := repo.ListReservations(ctx)
+		if err != nil {
+			return contract.ErrResponse(req.RequestID, "LOCK-2101", "ERROR", "RETRY", "reservation.list_failed", map[string]string{"repo_id": repo.Summary().ID, "detail": err.Error()})
+		}
+		result.Reservations = append(result.Reservations, rows...)
+	}
+	sort.Slice(result.Reservations, func(i, j int) bool {
+		left, right := result.Reservations[i], result.Reservations[j]
+		if left.WorkingCopy != right.WorkingCopy {
+			return left.WorkingCopy < right.WorkingCopy
+		}
+		if left.Path != right.Path {
+			return left.Path < right.Path
+		}
+		return left.RepoID < right.RepoID
+	})
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleRepoReservationRelease(req contract.Request) contract.Response {
+	var payload contract.RepoReservationReleasePayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" || strings.TrimSpace(payload.RepoID) == "" || strings.TrimSpace(payload.Path) == "" || strings.TrimSpace(payload.ExpectedToken) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	if filepath.IsAbs(payload.Path) || payload.Path == "." || strings.HasPrefix(filepath.Clean(payload.Path), ".."+string(filepath.Separator)) || filepath.Clean(payload.Path) == ".." {
+		return contract.ErrResponse(req.RequestID, "LOCK-2102", "ERROR", "NONE", "reservation.invalid_path", nil)
+	}
+	repo := s.repoByID(payload.RepoID)
+	if repo == nil || repo.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if err := repo.ReleaseReservation(ctx, payload.Path, payload.ExpectedToken, payload.ConfirmRisk); err != nil {
+		return contract.ErrResponse(req.RequestID, "LOCK-2103", "ERROR", "REQUIRE_ACTION", "reservation.release_failed", map[string]string{"detail": err.Error()})
+	}
+	return contract.OKResponse(req.RequestID, contract.LockResult{Output: "released"})
 }
 
 func (s *Server) handleSystemLifecycle(req contract.Request, restart bool) contract.Response {

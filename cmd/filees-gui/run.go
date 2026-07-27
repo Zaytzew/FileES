@@ -80,6 +80,32 @@ type repositoryDetachClient interface {
 
 type repositoryDetachAdapter struct{ client repositoryDetachClient }
 
+type reservationClient interface {
+	RepoReservationList(context.Context, string) (*contract.RepoReservationListResult, error)
+	RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error
+}
+
+type reservationAdapter struct{ client reservationClient }
+
+func (adapter reservationAdapter) ListReservations(ctx context.Context, serverID string) ([]app.Reservation, error) {
+	result, err := adapter.client.RepoReservationList(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty reservation list")
+	}
+	reservations := make([]app.Reservation, len(result.Reservations))
+	for i, reservation := range result.Reservations {
+		reservations[i] = app.Reservation{RepoID: reservation.RepoID, WorkingCopy: reservation.WorkingCopy, Path: reservation.Path, Token: reservation.Token, Owner: reservation.Owner, CreatedAt: reservation.CreatedAt, CanRelease: reservation.CanRelease, LocalChanges: reservation.LocalChanges, ActivePassport: reservation.ActivePassport}
+	}
+	return reservations, nil
+}
+
+func (adapter reservationAdapter) ReleaseReservation(ctx context.Context, request app.ReservationReleaseRequest) error {
+	return adapter.client.RepoReservationRelease(ctx, contract.RepoReservationReleasePayload{ServerID: request.ServerID, RepoID: request.RepoID, Path: request.Path, ExpectedToken: request.ExpectedToken, ConfirmRisk: request.ConfirmRisk})
+}
+
 func (adapter repositoryDetachAdapter) DetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) error {
 	operationCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	defer cancel()
@@ -310,6 +336,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(repositoryDetachClient); ok {
 		repositoryDetacher = repositoryDetachAdapter{client: candidate}
 	}
+	var reservations actions.ReservationManager
+	if candidate, ok := deps.client.(reservationClient); ok {
+		reservations = reservationAdapter{client: candidate}
+	}
 	var stack actions.StackLifecycle
 	if candidate, ok := deps.client.(systemLifecycleClient); ok {
 		stack = stackLifecycleAdapter{client: candidate}
@@ -334,6 +364,8 @@ func run(parent context.Context, deps dependencies) error {
 		Stack:              stack,
 		Notifier:           deps.platform,
 		Locker:             deps.client,
+		Reservations:       reservations,
+		ReservationBrowser: deps.platform,
 		Reconnect:          guiApp.Reconnect,
 		Restart: func() {
 			select {

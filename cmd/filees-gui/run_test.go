@@ -120,6 +120,12 @@ func (fakeDaemon) ErrorList(context.Context, contract.ErrorListPayload) (*contra
 }
 func (fakeDaemon) Lock(context.Context, string, []string) (string, error)   { return "", nil }
 func (fakeDaemon) Unlock(context.Context, string, []string) (string, error) { return "", nil }
+func (fakeDaemon) RepoReservationList(context.Context, string) (*contract.RepoReservationListResult, error) {
+	return &contract.RepoReservationListResult{}, nil
+}
+func (fakeDaemon) RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error {
+	return nil
+}
 func (fakeDaemon) Subscribe(context.Context) (<-chan contract.Event, error) {
 	return make(chan contract.Event), nil
 }

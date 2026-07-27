@@ -147,6 +147,12 @@ func (vm ViewModel) CanLock() bool         { return vm.HasCap(contract.CapRepoLo
 func (vm ViewModel) CanUnlock() bool       { return vm.HasCap(contract.CapRepoUnlock) }
 func (vm ViewModel) CanListErrors() bool   { return vm.HasCap(contract.CapErrorList) }
 func (vm ViewModel) CanListActivity() bool { return vm.HasCap(contract.CapRepoActivity) }
+func (vm ViewModel) CanListReservations() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoReservationList)
+}
+func (vm ViewModel) CanReleaseReservations() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoReservationList) && vm.HasCap(contract.CapRepoReservationRelease)
+}
 func (vm ViewModel) CanDetachRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoDetach)
 }

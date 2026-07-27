@@ -292,6 +292,28 @@ func (c *Client) Unlock(ctx context.Context, repoID string, paths []string) (str
 	return r.Output, contract.DecodeResult(resp.Result, &r)
 }
 
+// RepoReservationList returns the live SVN lock inventory visible in this
+// installation's attached working copies for one activated server.
+func (c *Client) RepoReservationList(ctx context.Context, serverID string) (*contract.RepoReservationListResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoReservationList, "", contract.RepoReservationListPayload{ServerID: serverID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoReservationListResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+// RepoReservationRelease performs a token-fenced release of one row returned
+// by RepoReservationList.  It never accepts an absolute filesystem path.
+func (c *Client) RepoReservationRelease(ctx context.Context, payload contract.RepoReservationReleasePayload) error {
+	resp, err := c.do(ctx, contract.CmdRepoReservationRelease, payload.RepoID, payload)
+	if err != nil {
+		return err
+	}
+	var result contract.LockResult
+	return contract.DecodeResult(resp.Result, &result)
+}
+
 // do is the internal helper: builds envelope, calls Do, unwraps error responses.
 func (c *Client) do(ctx context.Context, command, repoID string, payload any) (contract.Response, error) {
 	req := c.newReq(command, repoID, payload)

@@ -238,6 +238,50 @@ func (b *LinuxBackend) Confirm(ctx context.Context, request ConfirmRequest) (boo
 	return true, nil
 }
 
+// ShowReservations uses Zenity's native list window.  Zenity cannot disable a
+// single row action, so ReleaseStatus is rendered explicitly and the action
+// layer remains the final authority for whether a selected row can be freed.
+// The returned ID is an opaque GUI-local handle, never an SVN lock token.
+func (b *LinuxBackend) ShowReservations(ctx context.Context, request ReservationDialogRequest) (ReservationDialogResult, error) {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return ReservationDialogResult{}, NewUnavailable("reservation_dialog", errors.New("zenity is not installed"))
+	}
+	args := []string{
+		"--list", "--radiolist", "--title=" + request.Title,
+		"--text=" + request.Text, "--width=1200", "--height=560",
+		"--column=", "--column=ID", "--column=Katalog roboczy", "--column=Plik",
+		"--column=Właściciel", "--column=Utworzono", "--column=Zwolnienie",
+		"--hide-column=2", "--print-column=2", "--ok-label=Zwolnij",
+		"--cancel-label=Zamknij", "--extra-button=Odśwież",
+	}
+	for _, row := range request.Rows {
+		args = append(args, "FALSE", row.ID, row.WorkingCopy, row.Path, row.Owner, row.CreatedAt, row.ReleaseStatus)
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ReservationDialogResult{}, ctxErr
+		}
+		if commandCancelled(err) {
+			return ReservationDialogResult{Action: ReservationDialogClose}, nil
+		}
+		return ReservationDialogResult{}, NewOperationalFailure("reservation_dialog", err)
+	}
+	selection := strings.TrimSpace(string(output))
+	if selection == "Odśwież" {
+		return ReservationDialogResult{Action: ReservationDialogRefresh}, nil
+	}
+	for _, row := range request.Rows {
+		if selection == row.ID {
+			return ReservationDialogResult{Action: ReservationDialogRelease, RowID: row.ID}, nil
+		}
+	}
+	// Zenity permits confirming an empty selection.  Treat it as a harmless
+	// close instead of inventing a release target.
+	return ReservationDialogResult{Action: ReservationDialogClose}, nil
+}
+
 func (b *LinuxBackend) pickerCommand(request PickFilesRequest, initialDir string) (string, []string, error) {
 	if command, err := b.runner.LookPath("zenity"); err == nil {
 		args := []string{"--file-selection", "--separator=\n", "--filename=" + filepath.Clean(initialDir) + string(filepath.Separator)}

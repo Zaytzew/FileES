@@ -18,5 +18,7 @@ type DaemonClient interface {
 	ErrorList(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error)
 	Lock(ctx context.Context, repoID string, paths []string) (string, error)
 	Unlock(ctx context.Context, repoID string, paths []string) (string, error)
+	RepoReservationList(ctx context.Context, serverID string) (*contract.RepoReservationListResult, error)
+	RepoReservationRelease(ctx context.Context, payload contract.RepoReservationReleasePayload) error
 	Subscribe(ctx context.Context) (<-chan contract.Event, error)
 }

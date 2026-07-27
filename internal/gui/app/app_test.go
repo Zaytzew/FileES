@@ -91,6 +91,12 @@ func (f *fakeDaemon) Unlock(ctx context.Context, id string, paths []string) (str
 	}
 	return fn(ctx, id, paths)
 }
+func (f *fakeDaemon) RepoReservationList(context.Context, string) (*contract.RepoReservationListResult, error) {
+	return &contract.RepoReservationListResult{}, nil
+}
+func (f *fakeDaemon) RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error {
+	return nil
+}
 func (f *fakeDaemon) Subscribe(ctx context.Context) (<-chan contract.Event, error) {
 	f.mu.Lock()
 	fn := f.subscribe

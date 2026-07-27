@@ -218,6 +218,23 @@ Anulowanie selektora (ESC lub przycisk Anuluj) nie wykonuje żadnej operacji i n
 
 Dla tego samego repozytorium można mieć aktywną tylko jedną operację naraz. Kliknięcie ponownie podczas trwającej operacji jest ignorowane.
 
+## Lista rezerwacji
+
+W podmenu serwera wybierz **Rezerwacje plików…**, aby otworzyć natywne okno z
+blokadami SVN widocznymi z folderów roboczych podłączonych lokalnie do tego
+serwera. Wiersze są uporządkowane według working copy i ścieżki; można je
+odświeżyć bez zamykania okna. To nie jest globalny panel administracyjny:
+blokady w repozytorium bez lokalnej working copy nie pojawią się na liście.
+
+**Zwolnij** zawsze wymaga potwierdzenia. Gdy folder zawiera lokalne zmiany lub
+rezerwacja ma aktywny paszport edycji, pojawia się dodatkowe ostrzeżenie o
+możliwych niezapisanych danych. FileES nie sprawdza, czy edytor ma „otwarty
+plik”, ponieważ nowoczesne edytory często zapisują przez atomową podmianę i
+taki wskaźnik byłby niewiarygodny. Rezerwację aktywną na innym urządzeniu
+oznaczono jako niedostępną; nie można jej tu zwolnić. Po zatwierdzeniu daemon
+ponownie sprawdza blokadę i jej token, więc odświeżony lub podmieniony wiersz
+nie zwolni przypadkowo innej rezerwacji.
+
 ---
 
 ## Otwieranie katalogu

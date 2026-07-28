@@ -172,6 +172,9 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	children := []MenuItemModel{
 		actionItem("server."+server.ID+".info", "Informacje o serwerze…", "Pokaż adres, identyfikatory i uprawnienia klienta", Intent{Kind: IntentServerInfo, ServerID: server.ID}),
 	}
+	if vm.Connected && !vm.Stale && server.RealmID != "" && server.RealmAlias == "" && vm.HasCap(contract.CapRealmAliasClaim) {
+		children = append(children, actionItem("server."+server.ID+".realm_alias", "Ustaw stały alias…", "Ustaw niezmienny pseudonim widoczny przy blokadach", Intent{Kind: IntentSetRealmAlias, ServerID: server.ID}))
+	}
 	if vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
 		children = append(children, actionItem("server."+server.ID+".create", "Dodaj folder do FileES…", "Utwórz nowe repozytorium z lokalnego katalogu", Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
 	}
@@ -222,7 +225,7 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 	item := disabledItem("repo."+repo.ID, title)
 	item.Tooltip = repo.LocalPath
 	if repo.Attached && strings.TrimSpace(repo.LocalPath) != "" {
-		lockVisible := repo.CanWrite() && vm.CanMutateLock()
+		lockVisible := repo.CanWrite() && vm.CanMutateLock() && serverHasRealmAlias(vm, repo.ServerID)
 		unlockVisible := repo.CanWrite() && vm.CanMutateUnlock()
 		item.Enabled = true
 		item.Children = append(item.Children,
@@ -254,6 +257,17 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 		}
 	}
 	return item
+}
+
+func serverHasRealmAlias(vm app.ViewModel, serverID string) bool {
+	for _, server := range vm.Servers {
+		if server.ID == serverID {
+			return server.RealmID == "" || server.RealmAlias != ""
+		}
+	}
+	// A repository without a server binding is only possible in a legacy or
+	// pre-activation snapshot; do not hide historical controls in that state.
+	return true
 }
 
 func repositoryOwnedByActiveRealm(vm app.ViewModel, repo app.RepoViewModel) bool {

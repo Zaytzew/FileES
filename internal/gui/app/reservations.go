@@ -4,7 +4,7 @@ package app
 // lock. It intentionally mirrors only the public IPC data the GUI needs.
 type Reservation struct {
 	RepoID, WorkingCopy, Path, Token string
-	Owner, CreatedAt                 string
+	OwnerLabel, CreatedAt            string
 	CanRelease, LocalChanges         bool
 	ActivePassport                   bool
 }

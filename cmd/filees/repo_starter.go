@@ -370,7 +370,7 @@ func wireRepoReservationFuncs(state *ipcserver.RepoState, svn client.Client, wc 
 				WorkingCopy:    wc,
 				Path:           filepath.ToSlash(entry.Path),
 				Token:          entry.Token,
-				Owner:          entry.Owner,
+				OwnerID:        entry.Owner,
 				CreatedAt:      entry.Created.UTC().Format(time.RFC3339Nano),
 				CanRelease:     manager == nil || activePassport,
 				LocalChanges:   reservationHasLocalChanges(entry),

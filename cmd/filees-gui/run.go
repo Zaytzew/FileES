@@ -85,6 +85,23 @@ type reservationClient interface {
 	RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error
 }
 
+type realmAliasClient interface {
+	RealmAliasClaim(context.Context, string, string) (*contract.RealmAliasClaimResult, error)
+}
+
+type realmAliasAdapter struct{ client realmAliasClient }
+
+func (adapter realmAliasAdapter) ClaimAlias(ctx context.Context, serverID, alias string) error {
+	result, err := adapter.client.RealmAliasClaim(ctx, serverID, alias)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.Alias == "" {
+		return errors.New("daemon returned an empty realm alias")
+	}
+	return nil
+}
+
 type reservationAdapter struct{ client reservationClient }
 
 func (adapter reservationAdapter) ListReservations(ctx context.Context, serverID string) ([]app.Reservation, error) {
@@ -97,7 +114,7 @@ func (adapter reservationAdapter) ListReservations(ctx context.Context, serverID
 	}
 	reservations := make([]app.Reservation, len(result.Reservations))
 	for i, reservation := range result.Reservations {
-		reservations[i] = app.Reservation{RepoID: reservation.RepoID, WorkingCopy: reservation.WorkingCopy, Path: reservation.Path, Token: reservation.Token, Owner: reservation.Owner, CreatedAt: reservation.CreatedAt, CanRelease: reservation.CanRelease, LocalChanges: reservation.LocalChanges, ActivePassport: reservation.ActivePassport}
+		reservations[i] = app.Reservation{RepoID: reservation.RepoID, WorkingCopy: reservation.WorkingCopy, Path: reservation.Path, Token: reservation.Token, OwnerLabel: reservation.OwnerLabel, CreatedAt: reservation.CreatedAt, CanRelease: reservation.CanRelease, LocalChanges: reservation.LocalChanges, ActivePassport: reservation.ActivePassport}
 	}
 	return reservations, nil
 }
@@ -340,6 +357,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(reservationClient); ok {
 		reservations = reservationAdapter{client: candidate}
 	}
+	var realmAliases actions.RealmAliasManager
+	if candidate, ok := deps.client.(realmAliasClient); ok {
+		realmAliases = realmAliasAdapter{client: candidate}
+	}
 	var stack actions.StackLifecycle
 	if candidate, ok := deps.client.(systemLifecycleClient); ok {
 		stack = stackLifecycleAdapter{client: candidate}
@@ -365,6 +386,7 @@ func run(parent context.Context, deps dependencies) error {
 		Notifier:           deps.platform,
 		Locker:             deps.client,
 		Reservations:       reservations,
+		RealmAliases:       realmAliases,
 		ReservationBrowser: deps.platform,
 		Reconnect:          guiApp.Reconnect,
 		Refresh:            guiApp.Refresh,

@@ -65,6 +65,7 @@ type ServerViewModel struct {
 	DisplayName           string
 	ClientRole            string
 	RealmID               string
+	RealmAlias            string
 	Address               string
 	ClientID              string
 	SSHPort               int

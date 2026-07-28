@@ -10,6 +10,7 @@ const (
 	IntentUnlock           IntentKind = "unlock"
 	IntentReconnect        IntentKind = "reconnect"
 	IntentActivate         IntentKind = "activate"
+	IntentSetRealmAlias    IntentKind = "set_realm_alias"
 	IntentServerInfo       IntentKind = "server_info"
 	IntentReservations     IntentKind = "reservations"
 	IntentCreateRepository IntentKind = "create_repository"

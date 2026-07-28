@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/realmalias"
+
 	"github.com/google/uuid"
 )
 
@@ -22,6 +24,7 @@ type View struct {
 	Schema               string            `json:"schema"`
 	ClientID             string            `json:"client_id"`
 	RealmID              string            `json:"realm_id"`
+	RealmAlias           string            `json:"realm_alias,omitempty"`
 	Generation           int64             `json:"generation"`
 	GeneratedAt          time.Time         `json:"generated_at"`
 	MinimumClientVersion string            `json:"minimum_client_version,omitempty"`
@@ -90,6 +93,12 @@ func (v View) Validate() error {
 	}
 	if _, err := uuid.Parse(v.RealmID); err != nil {
 		return errors.New("client view realm_id must be UUID")
+	}
+	if v.RealmAlias != "" {
+		canonical, err := realmalias.Normalize(v.RealmAlias)
+		if err != nil || canonical != v.RealmAlias {
+			return errors.New("client view realm_alias is invalid")
+		}
 	}
 	if v.Generation < 1 || v.GeneratedAt.IsZero() {
 		return errors.New("client view generation and generated_at are required")

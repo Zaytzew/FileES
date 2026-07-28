@@ -314,6 +314,17 @@ func (c *Client) RepoReservationRelease(ctx context.Context, payload contract.Re
 	return contract.DecodeResult(resp.Result, &result)
 }
 
+// RealmAliasClaim permanently assigns the caller realm's human-facing alias.
+// The daemon intentionally exposes no availability query.
+func (c *Client) RealmAliasClaim(ctx context.Context, serverID, alias string) (*contract.RealmAliasClaimResult, error) {
+	resp, err := c.do(ctx, contract.CmdRealmAliasClaim, "", contract.RealmAliasClaimPayload{ServerID: serverID, Alias: alias})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmAliasClaimResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 // do is the internal helper: builds envelope, calls Do, unwraps error responses.
 func (c *Client) do(ctx context.Context, command, repoID string, payload any) (contract.Response, error) {
 	req := c.newReq(command, repoID, payload)

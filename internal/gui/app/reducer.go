@@ -185,7 +185,7 @@ func (s appState) viewModel() ViewModel {
 	byServer := make(map[string]int, len(s.system.Activations))
 	for _, activation := range s.system.Activations {
 		byServer[activation.ServerID] = len(servers)
-		servers = append(servers, ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.reservationsKnown})
+		servers = append(servers, ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, RealmAlias: activation.RealmAlias, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.reservationsKnown})
 	}
 	for _, repo := range repos {
 		index, ok := byServer[repo.ServerID]

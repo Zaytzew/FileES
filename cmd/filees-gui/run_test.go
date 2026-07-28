@@ -126,6 +126,9 @@ func (fakeDaemon) RepoReservationList(context.Context, string) (*contract.RepoRe
 func (fakeDaemon) RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error {
 	return nil
 }
+func (fakeDaemon) RealmAliasClaim(context.Context, string, string) (*contract.RealmAliasClaimResult, error) {
+	return &contract.RealmAliasClaimResult{Alias: "test"}, nil
+}
 func (fakeDaemon) Subscribe(context.Context) (<-chan contract.Event, error) {
 	return make(chan contract.Event), nil
 }

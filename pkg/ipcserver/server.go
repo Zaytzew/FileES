@@ -29,6 +29,8 @@ type Server struct {
 	repos       map[string]*RepoState // keyed by repo ID
 	activations map[string]contract.ActivationStatus
 	activation  ActivationService
+	realmAlias  RealmAliasService
+	ownerLabels OwnerLabelResolver
 	lifecycle   RepositoryLifecycleService
 	mobilePair  MobilePairingService
 	updates     UpdateService
@@ -48,6 +50,16 @@ type Server struct {
 type ActivationService interface {
 	Begin(context.Context, contract.ActivationBeginPayload) (contract.ActivationCommandResult, error)
 	Finish(context.Context, contract.ActivationFinishPayload) (contract.ActivationCommandResult, error)
+}
+
+type RealmAliasService interface {
+	Claim(context.Context, string, string) (string, error)
+}
+
+// OwnerLabelResolver converts opaque SVN client IDs to server-owned display
+// aliases. It is deliberately absent from GUI-facing contracts.
+type OwnerLabelResolver interface {
+	Resolve(context.Context, string, []string) (map[string]string, error)
 }
 
 type RepositoryLifecycleService interface {
@@ -159,6 +171,30 @@ func (s *Server) SetActivationService(service ActivationService) {
 	s.mu.Lock()
 	s.activation = service
 	s.mu.Unlock()
+}
+
+func (s *Server) SetRealmAliasService(service RealmAliasService) {
+	s.mu.Lock()
+	s.realmAlias = service
+	s.mu.Unlock()
+}
+
+func (s *Server) realmAliasService() RealmAliasService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.realmAlias
+}
+
+func (s *Server) SetOwnerLabelResolver(resolver OwnerLabelResolver) {
+	s.mu.Lock()
+	s.ownerLabels = resolver
+	s.mu.Unlock()
+}
+
+func (s *Server) ownerLabelResolver() OwnerLabelResolver {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ownerLabels
 }
 
 func (s *Server) activationService() ActivationService {

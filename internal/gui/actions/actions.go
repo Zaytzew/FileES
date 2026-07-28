@@ -123,6 +123,9 @@ type Config struct {
 	Reservations       ReservationManager
 	ReservationBrowser platform.ReservationBrowser
 	Reconnect          func() // nil → reconnect intent is a no-op
+	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
+	// after a successful mutation whose result changes tray eligibility.
+	Refresh func()
 	// PrepareRestart suppresses the intentional daemon disconnect before a
 	// user-confirmed restart request reaches IPC. AbortRestart restores normal
 	// notifications if that request is rejected.
@@ -186,8 +189,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startActivation(ctx)
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
-	case tray.IntentServerReservations:
-		c.startReservations(ctx, intent.ServerID)
+	case tray.IntentReservations:
+		c.startReservations(ctx)
 	case tray.IntentCreateRepository:
 		c.startCreateRepository(ctx, intent.ServerID)
 	case tray.IntentPairMobileDevice:
@@ -771,16 +774,15 @@ func (c *Controller) startLockUnlock(ctx context.Context, repoID string, lock bo
 	}()
 }
 
-func (c *Controller) startReservations(ctx context.Context, serverID string) {
-	key := "reservations:" + serverID
-	if serverID == "" || c.cfg.Reservations == nil || c.cfg.ReservationBrowser == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+func (c *Controller) startReservations(ctx context.Context) {
+	if c.cfg.Reservations == nil || c.cfg.ReservationBrowser == nil || c.cfg.Prompter == nil || !c.beginOperation("reservations") {
 		return
 	}
 	c.tasks.Add(1)
 	go func() {
 		defer c.tasks.Done()
-		defer c.endOperation(key)
-		c.handleReservations(ctx, serverID)
+		defer c.endOperation("reservations")
+		c.handleReservations(ctx)
 	}()
 }
 
@@ -827,6 +829,9 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 	}
 	repo, ok := findRepo(vm, repoID)
 	if !ok || repo.LocalPath == "" || !repo.CanWrite() {
+		return
+	}
+	if !lock && repo.ReservationCount == 0 {
 		return
 	}
 
@@ -911,30 +916,52 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		Body:    repoID,
 		Urgency: platform.UrgencyLow,
 	})
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
 }
 
-func (c *Controller) handleReservations(ctx context.Context, serverID string) {
+type reservationEntry struct {
+	serverID    string
+	serverName  string
+	reservation app.Reservation
+}
+
+func (c *Controller) handleReservations(ctx context.Context) {
 	for {
 		vm := c.cfg.ViewModel()
-		if !vm.CanListReservations() || !viewHasServer(vm, serverID) {
+		if !vm.CanBrowseReservations() {
 			return
 		}
-		reservations, err := c.cfg.Reservations.ListReservations(ctx, serverID)
-		if err != nil {
-			if ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "reservations." + serverID, Group: "reservations." + serverID, Title: "Nie można pobrać rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
+		entries := make([]reservationEntry, 0)
+		for _, server := range vm.Servers {
+			reservations, err := c.cfg.Reservations.ListReservations(ctx, server.ID)
+			if err != nil {
+				if ctx.Err() == nil {
+					c.notify(ctx, platform.Notification{ID: "reservations", Group: "reservations", Title: "Nie można pobrać rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
+				}
+				return
 			}
+			serverName := server.DisplayName
+			if strings.TrimSpace(serverName) == "" {
+				serverName = server.ID
+			}
+			for _, reservation := range reservations {
+				entries = append(entries, reservationEntry{serverID: server.ID, serverName: serverName, reservation: reservation})
+			}
+		}
+		if len(entries) == 0 {
 			return
 		}
-		rows, byID := reservationRows(reservations)
+		rows, byID := reservationRows(entries)
 		result, err := c.cfg.ReservationBrowser.ShowReservations(ctx, platform.ReservationDialogRequest{
-			Title: "Lista rezerwacji",
-			Text:  "Aktywne rezerwacje widoczne z lokalnych folderów roboczych tego serwera. Wybierz pozycję i użyj „Zwolnij”.",
+			Title: "Lista rezerwacji plikowych",
+			Text:  "Aktywne rezerwacje widoczne z lokalnych folderów roboczych. Kolumna „Serwer” rozdziela pozycje między aktywacjami FileES.",
 			Rows:  rows,
 		})
 		if err != nil || ctx.Err() != nil {
 			if err != nil && ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "reservations." + serverID, Group: "reservations." + serverID, Title: "Błąd listy rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
+				c.notify(ctx, platform.Notification{ID: "reservations", Group: "reservations", Title: "Błąd listy rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
 			}
 			return
 		}
@@ -944,10 +971,11 @@ func (c *Controller) handleReservations(ctx context.Context, serverID string) {
 		case platform.ReservationDialogRefresh:
 			continue
 		case platform.ReservationDialogRelease:
-			reservation, ok := byID[result.RowID]
+			entry, ok := byID[result.RowID]
 			if !ok {
 				continue
 			}
+			reservation := entry.reservation
 			if !reservation.CanRelease {
 				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Rezerwacja niedostępna", Text: "Ta rezerwacja jest powiązana z aktywnym paszportem edycji na innym urządzeniu i nie może zostać zwolniona z tego klienta."})
 				continue
@@ -962,25 +990,29 @@ func (c *Controller) handleReservations(ctx context.Context, serverID string) {
 				continue
 			}
 			vm = c.cfg.ViewModel()
-			if !vm.CanReleaseReservations() || !viewHasServer(vm, serverID) {
+			if !vm.CanReleaseReservations() || !viewHasServer(vm, entry.serverID) {
 				return
 			}
-			err = c.cfg.Reservations.ReleaseReservation(ctx, app.ReservationReleaseRequest{ServerID: serverID, RepoID: reservation.RepoID, Path: reservation.Path, ExpectedToken: reservation.Token, ConfirmRisk: risk})
+			err = c.cfg.Reservations.ReleaseReservation(ctx, app.ReservationReleaseRequest{ServerID: entry.serverID, RepoID: reservation.RepoID, Path: reservation.Path, ExpectedToken: reservation.Token, ConfirmRisk: risk})
 			if err != nil {
 				if ctx.Err() == nil {
-					c.notify(ctx, platform.Notification{ID: "release_reservation." + serverID, Group: "release_reservation." + serverID, Title: "Nie można zwolnić rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
+					c.notify(ctx, platform.Notification{ID: "release_reservation." + entry.serverID, Group: "release_reservation." + entry.serverID, Title: "Nie można zwolnić rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
 				}
 				continue
 			}
-			c.notify(ctx, platform.Notification{ID: "release_reservation." + serverID, Group: "release_reservation." + serverID, Title: "Zwolniono rezerwację", Body: reservation.Path, Urgency: platform.UrgencyLow})
+			c.notify(ctx, platform.Notification{ID: "release_reservation." + entry.serverID, Group: "release_reservation." + entry.serverID, Title: "Zwolniono rezerwację", Body: reservation.Path, Urgency: platform.UrgencyLow})
+			if c.cfg.Refresh != nil {
+				c.cfg.Refresh()
+			}
 		}
 	}
 }
 
-func reservationRows(reservations []app.Reservation) ([]platform.ReservationDialogRow, map[string]app.Reservation) {
-	rows := make([]platform.ReservationDialogRow, 0, len(reservations))
-	byID := make(map[string]app.Reservation, len(reservations))
-	for i, reservation := range reservations {
+func reservationRows(entries []reservationEntry) ([]platform.ReservationDialogRow, map[string]reservationEntry) {
+	rows := make([]platform.ReservationDialogRow, 0, len(entries))
+	byID := make(map[string]reservationEntry, len(entries))
+	for i, entry := range entries {
+		reservation := entry.reservation
 		id := fmt.Sprintf("reservation-%d", i)
 		status := "dostępne"
 		if !reservation.CanRelease {
@@ -988,8 +1020,8 @@ func reservationRows(reservations []app.Reservation) ([]platform.ReservationDial
 		} else if reservation.LocalChanges || reservation.ActivePassport {
 			status = "wymaga potwierdzenia"
 		}
-		rows = append(rows, platform.ReservationDialogRow{ID: id, WorkingCopy: reservation.WorkingCopy, Path: reservation.Path, Owner: reservation.Owner, CreatedAt: reservation.CreatedAt, ReleaseStatus: status})
-		byID[id] = reservation
+		rows = append(rows, platform.ReservationDialogRow{ID: id, Server: entry.serverName, WorkingCopy: reservation.WorkingCopy, Path: reservation.Path, Owner: reservation.Owner, CreatedAt: reservation.CreatedAt, ReleaseStatus: status})
+		byID[id] = entry
 	}
 	return rows, byID
 }

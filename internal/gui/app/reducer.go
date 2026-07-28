@@ -10,24 +10,29 @@ import (
 // All methods are pure — they return a new appState and have no side effects.
 // Only the event loop goroutine accesses appState; no locking needed.
 type appState struct {
-	connected bool
-	stale     bool
-	caps      map[string]bool
-	summaries map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
-	snapshots map[string]contract.RepoStatus  // from repo.status; carries live state
-	order     []string                        // repoID insertion order from repo.list
-	lastSeq   int64                           // last event sequence number received
-	system    contract.SystemStatusResult
-	errors    []ErrorViewModel
-	activity  []ActivityViewModel
-	refreshed time.Time
+	connected         bool
+	stale             bool
+	caps              map[string]bool
+	summaries         map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
+	snapshots         map[string]contract.RepoStatus  // from repo.status; carries live state
+	order             []string                        // repoID insertion order from repo.list
+	lastSeq           int64                           // last event sequence number received
+	system            contract.SystemStatusResult
+	errors            []ErrorViewModel
+	activity          []ActivityViewModel
+	reservations      map[string]int
+	repoReservations  map[string]int
+	reservationsKnown bool
+	refreshed         time.Time
 }
 
 func newAppState() appState {
 	return appState{
-		caps:      make(map[string]bool),
-		summaries: make(map[string]contract.RepoSummary),
-		snapshots: make(map[string]contract.RepoStatus),
+		caps:             make(map[string]bool),
+		summaries:        make(map[string]contract.RepoSummary),
+		snapshots:        make(map[string]contract.RepoStatus),
+		reservations:     make(map[string]int),
+		repoReservations: make(map[string]int),
 	}
 }
 
@@ -48,7 +53,7 @@ func (s appState) applyConnected(caps []string) appState {
 // applyFullSnapshot atomically replaces all authoritative daemon/repository
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
-func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, refreshed time.Time) appState {
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationsKnown bool, refreshed time.Time) appState {
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -67,6 +72,15 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	for _, record := range activityRecords {
 		s.activity = append(s.activity, ActivityViewModel{RepoID: record.RepoID, Path: record.Path, Kind: record.Kind, Stage: record.Stage, UpdatedAt: record.UpdatedAt, Revision: record.Revision})
 	}
+	s.reservations = make(map[string]int, len(reservationCounts))
+	for serverID, count := range reservationCounts {
+		s.reservations[serverID] = count
+	}
+	s.repoReservations = make(map[string]int, len(repoReservationCounts))
+	for key, count := range repoReservationCounts {
+		s.repoReservations[key] = count
+	}
+	s.reservationsKnown = reservationsKnown
 	s.refreshed = refreshed
 	s.stale = false
 	return s
@@ -164,19 +178,20 @@ func (s appState) viewModel() ViewModel {
 			Conflicts:        snap.Conflicts,
 			LastSyncAt:       snap.LastSyncAt,
 			CurrentOp:        snap.CurrentOperation,
+			ReservationCount: s.repoReservations[reservationKey(sum.ServerID, sum.ID)],
 		})
 	}
 	servers := make([]ServerViewModel, 0, len(s.system.Activations))
 	byServer := make(map[string]int, len(s.system.Activations))
 	for _, activation := range s.system.Activations {
 		byServer[activation.ServerID] = len(servers)
-		servers = append(servers, ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos})
+		servers = append(servers, ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.reservationsKnown})
 	}
 	for _, repo := range repos {
 		index, ok := byServer[repo.ServerID]
 		if !ok {
 			byServer[repo.ServerID] = len(servers)
-			servers = append(servers, ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID})
+			servers = append(servers, ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID, ReservationCount: s.reservations[repo.ServerID], ReservationsKnown: s.reservationsKnown})
 			index = len(servers) - 1
 		}
 		servers[index].Repos = append(servers[index].Repos, repo)
@@ -211,3 +226,5 @@ func (s appState) viewModel() ViewModel {
 	}
 	return vm
 }
+
+func reservationKey(serverID, repoID string) string { return serverID + "\x00" + repoID }

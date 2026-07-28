@@ -48,7 +48,7 @@ func vmWithLock(repos ...app.RepoViewModel) app.ViewModel {
 }
 
 func repo(id, path string) app.RepoViewModel {
-	return app.RepoViewModel{ID: id, Access: contract.AccessReadWrite, LocalPath: path, State: contract.StateActive}
+	return app.RepoViewModel{ID: id, Access: contract.AccessReadWrite, LocalPath: path, State: contract.StateActive, ReservationCount: 1}
 }
 
 // fakeLockUnlocker records calls and signals via channels.
@@ -761,6 +761,7 @@ func TestControllerLockStructuredDaemonErrorNotifiesSafely(t *testing.T) {
 func TestControllerLockSuccessNotifies(t *testing.T) {
 	locker := newFakeLocker()
 	notifCh := make(chan platform.Notification, 1)
+	refreshCh := make(chan struct{}, 1)
 	fake := &platformtest.Fake{
 		PickFilesFunc: func(_ context.Context, req platform.PickFilesRequest) (platform.PickFilesResult, error) {
 			return platform.PickFilesResult{Paths: []string{req.Root + "/a.dwg", req.Root + "/b.dwg"}}, nil
@@ -779,6 +780,7 @@ func TestControllerLockSuccessNotifies(t *testing.T) {
 		Picker:    fake,
 		Notifier:  fake,
 		Locker:    locker,
+		Refresh:   func() { refreshCh <- struct{}{} },
 	})
 	defer cancel()
 
@@ -788,6 +790,7 @@ func TestControllerLockSuccessNotifies(t *testing.T) {
 	if n.Urgency != platform.UrgencyLow {
 		t.Fatalf("success notification urgency = %v", n.Urgency)
 	}
+	awaitCh(t, refreshCh, "post-lock refresh")
 }
 
 func TestControllerReservationsConfirmsRiskAndTokenFencesRelease(t *testing.T) {
@@ -813,10 +816,10 @@ func TestControllerReservationsConfirmsRiskAndTokenFencesRelease(t *testing.T) {
 		},
 	}
 	vm := &vmStore{}
-	vm.Store(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoReservationList: true, contract.CapRepoReservationRelease: true}, Servers: []app.ServerViewModel{{ID: "office"}}})
+	vm.Store(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoReservationList: true, contract.CapRepoReservationRelease: true}, Servers: []app.ServerViewModel{{ID: "office", ReservationsKnown: true, ReservationCount: 1}}})
 	intents, cancel := setup(actions.Config{ViewModel: vm.Load, Prompter: fake, Notifier: fake, Reservations: manager, ReservationBrowser: fake})
 	defer cancel()
-	send(t, intents, tray.Intent{Kind: tray.IntentServerReservations, ServerID: "office"})
+	send(t, intents, tray.Intent{Kind: tray.IntentReservations})
 	if got := awaitCh(t, manager.listCh, "reservation list"); got != "office" {
 		t.Fatalf("server ID=%q", got)
 	}

@@ -367,6 +367,7 @@ func run(parent context.Context, deps dependencies) error {
 		Reservations:       reservations,
 		ReservationBrowser: deps.platform,
 		Reconnect:          guiApp.Reconnect,
+		Refresh:            guiApp.Refresh,
 		PrepareRestart:     notificationPolicy.SuppressConnectionTransitions,
 		AbortRestart:       notificationPolicy.RestoreConnectionTransitions,
 		Restart: func() {

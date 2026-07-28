@@ -38,6 +38,7 @@ type ReservationDialogRequest struct {
 
 type ReservationDialogRow struct {
 	ID            string
+	Server        string
 	WorkingCopy   string
 	Path          string
 	Owner         string

@@ -250,13 +250,13 @@ func (b *LinuxBackend) ShowReservations(ctx context.Context, request Reservation
 	args := []string{
 		"--list", "--radiolist", "--title=" + request.Title,
 		"--text=" + request.Text, "--width=1200", "--height=560",
-		"--column=", "--column=ID", "--column=Katalog roboczy", "--column=Plik",
+		"--column=", "--column=ID", "--column=Serwer", "--column=Katalog roboczy", "--column=Plik",
 		"--column=Właściciel", "--column=Utworzono", "--column=Zwolnienie",
 		"--hide-column=2", "--print-column=2", "--ok-label=Zwolnij",
 		"--cancel-label=Zamknij", "--extra-button=Odśwież",
 	}
 	for _, row := range request.Rows {
-		args = append(args, "FALSE", row.ID, row.WorkingCopy, row.Path, row.Owner, row.CreatedAt, row.ReleaseStatus)
+		args = append(args, "FALSE", row.ID, row.Server, row.WorkingCopy, row.Path, row.Owner, row.CreatedAt, row.ReleaseStatus)
 	}
 	output, err := b.runner.Output(ctx, command, args...)
 	if err != nil {

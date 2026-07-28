@@ -1025,6 +1025,9 @@ func (c *Controller) handleReservations(ctx context.Context) {
 			return
 		case platform.ReservationDialogRefresh:
 			continue
+		case platform.ReservationDialogReleaseAll:
+			c.releaseAllReservations(ctx, entries)
+			continue
 		case platform.ReservationDialogRelease:
 			entry, ok := byID[result.RowID]
 			if !ok {
@@ -1032,7 +1035,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 			}
 			reservation := entry.reservation
 			if !reservation.CanRelease {
-				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Rezerwacja niedostępna", Text: "Ta rezerwacja jest powiązana z aktywnym paszportem edycji na innym urządzeniu i nie może zostać zwolniona z tego klienta."})
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Poproś o zwolnienie", Text: "Ta blokada należy do innego użytkownika lub jest aktywna na innym urządzeniu. Wysłanie prośby o zwolnienie będzie dostępne w kolejnej wersji."})
 				continue
 			}
 			risk := reservation.LocalChanges || reservation.ActivePassport
@@ -1063,26 +1066,88 @@ func (c *Controller) handleReservations(ctx context.Context) {
 	}
 }
 
+func (c *Controller) releaseAllReservations(ctx context.Context, entries []reservationEntry) {
+	eligible := make([]reservationEntry, 0, len(entries))
+	risky := 0
+	for _, entry := range entries {
+		if !entry.reservation.CanRelease {
+			continue
+		}
+		eligible = append(eligible, entry)
+		if entry.reservation.LocalChanges || entry.reservation.ActivePassport {
+			risky++
+		}
+	}
+	if len(eligible) == 0 {
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Brak rezerwacji do zwolnienia", Text: "Nie ma tutaj rezerwacji należących do tego klienta. Dla cudzych blokad przygotowujemy opcję „Poproś o zwolnienie”."})
+		return
+	}
+	text := fmt.Sprintf("Zwolnić wszystkie moje rezerwacje (%d)?\n\nCudze blokady nie zostaną zmienione.", len(eligible))
+	if risky > 0 {
+		text += fmt.Sprintf("\n\n%d rezerwacji jest powiązanych z lokalnymi zmianami lub aktywnym paszportem edycji. Otwarte programy mogą mieć niezapisane dane.", risky)
+	}
+	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Zwolnij wszystkie moje rezerwacje", Text: text, ConfirmText: "Zwolnij wszystko", CancelText: "Anuluj"})
+	if err != nil || !confirmed || ctx.Err() != nil {
+		return
+	}
+	vm := c.cfg.ViewModel()
+	if !vm.CanReleaseReservations() {
+		return
+	}
+	released, failed := 0, 0
+	for _, entry := range eligible {
+		if !viewHasServer(vm, entry.serverID) {
+			failed++
+			continue
+		}
+		reservation := entry.reservation
+		risk := reservation.LocalChanges || reservation.ActivePassport
+		if err := c.cfg.Reservations.ReleaseReservation(ctx, app.ReservationReleaseRequest{ServerID: entry.serverID, RepoID: reservation.RepoID, Path: reservation.Path, ExpectedToken: reservation.Token, ConfirmRisk: risk}); err != nil {
+			failed++
+			continue
+		}
+		released++
+	}
+	if released > 0 {
+		body := fmt.Sprintf("Zwolniono %d rezerwacji.", released)
+		if failed > 0 {
+			body += fmt.Sprintf(" Nie zwolniono: %d.", failed)
+		}
+		c.notify(ctx, platform.Notification{ID: "release_all_reservations", Group: "release_all_reservations", Title: "Zwolniono moje rezerwacje", Body: body, Urgency: platform.UrgencyLow})
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+		return
+	}
+	c.notify(ctx, platform.Notification{ID: "release_all_reservations", Group: "release_all_reservations", Title: "Nie zwolniono rezerwacji", Body: "Lista zostanie odświeżona przed następną próbą.", Urgency: platform.UrgencyNormal})
+}
+
 func reservationRows(entries []reservationEntry) ([]platform.ReservationDialogRow, map[string]reservationEntry) {
 	rows := make([]platform.ReservationDialogRow, 0, len(entries))
 	byID := make(map[string]reservationEntry, len(entries))
 	for i, entry := range entries {
 		reservation := entry.reservation
 		id := fmt.Sprintf("reservation-%d", i)
-		status := "dostępne"
+		action := "Zwolnij"
 		if !reservation.CanRelease {
-			status = "niedostępne na tym urządzeniu"
-		} else if reservation.LocalChanges || reservation.ActivePassport {
-			status = "wymaga potwierdzenia"
+			action = "Poproś o zwolnienie (wkrótce)"
 		}
 		owner := reservation.OwnerLabel
 		if owner == "" {
 			owner = "właściciel nieustawiony"
 		}
-		rows = append(rows, platform.ReservationDialogRow{ID: id, Server: entry.serverName, WorkingCopy: entry.workingCopyAlias, Path: reservationDisplayPath(reservation.WorkingCopy, reservation.Path), Owner: owner, CreatedAt: reservation.CreatedAt, ReleaseStatus: status})
+		rows = append(rows, platform.ReservationDialogRow{ID: id, Server: entry.serverName, WorkingCopy: entry.workingCopyAlias, Path: reservationDisplayPath(reservation.WorkingCopy, reservation.Path), Owner: owner, CreatedAt: formatReservationTime(reservation.CreatedAt), Action: action})
 		byID[id] = entry
 	}
 	return rows, byID
+}
+
+func formatReservationTime(value string) string {
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if err != nil {
+		return value
+	}
+	return parsed.Local().Format("15:04 02-01-2006")
 }
 
 func reservationWorkingCopyAlias(server app.ServerViewModel, reservation app.Reservation) string {

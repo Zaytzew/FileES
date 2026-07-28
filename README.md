@@ -239,8 +239,9 @@ Menu tray zawiera:
 - zagregowany stan daemona i czas ostatniego poprawnego odświeżenia,
 - listę repozytoriów ze stanem, connectivity, rewizją i liczbą oczekujących zmian,
 - „Dodaj folder do FileES…” przy serwerze, który pozwala temu klientowi tworzyć repozytoria,
-- „Rezerwacje plików…” w podmenu serwera: natywną listę aktywnych blokad
-  widocznych z lokalnie podłączonych WC, uporządkowaną według folderu roboczego,
+- globalną pozycję nagłówkową „Lista rezerwacji plikowych…”, aktywną tylko gdy
+  lokalnie widoczna jest co najmniej jedna rezerwacja; otwiera natywną,
+  wieloserwerową listę blokad z lokalnie podłączonych WC,
 - „Otwórz katalog” dla każdego repozytorium,
 - `Lock…` i `Unlock…` z wyborem plików wewnątrz danego repozytorium,
 - „Odłącz folder…” dla opcjonalnej WC oraz osobne, podwójnie potwierdzane
@@ -253,7 +254,7 @@ Menu tray zawiera:
   zareklamowanego wydania,
 - „Uruchom FileES ponownie…” i „Zamknij FileES…”.
 
-Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.detach`, `repo.delete`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.detach`, `repo.delete`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `realm.alias_claim`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
 
 Tworzenie repozytorium jest zwykłą operacją użytkownika, bez kontaktu z konsolą:
 
@@ -280,21 +281,31 @@ Lifecycle jest trwały i wznawialny po restarcie.
 
 ### Rezerwacje plików
 
-W podmenu serwera **Rezerwacje plików…** otwiera natywne okno Linux/Windows z
-aktywnymi blokadami SVN znalezionymi w working copy podłączonych lokalnie do
-tego serwera. Lista jest uporządkowana według katalogu roboczego, a następnie
-ścieżki. Nie jest to administracyjny spis wszystkich blokad całego serwera —
-repozytorium bez lokalnej WC nie jest w tym widoku obserwowalne.
+Nagłówkowa pozycja **Lista rezerwacji plikowych…** otwiera natywne okno
+Linux/Windows z aktywnymi blokadami SVN znalezionymi we wszystkich working copy
+podłączonych lokalnie do aktywnych serwerów. Wiersz zawiera serwer, nazwę kopii
+roboczej, ścieżkę względną, alias właściciela oraz lokalny czas utworzenia w
+formacie `HH:MM DD-MM-RRRR`. Lista jest uporządkowana według katalogu roboczego,
+a następnie ścieżki. Nie jest to administracyjny spis wszystkich blokad całego
+serwera — repozytorium bez lokalnej WC nie jest w tym widoku obserwowalne.
 
 Po wybraniu wiersza **Zwolnij** GUI zawsze pyta o potwierdzenie. Gdy w tej WC
 są lokalne zmiany lub blokada odpowiada aktywnemu paszportowi edycji, dialog
 wyraźnie ostrzega o niezapisanych danych i wymaga świadomego potwierdzenia.
 GUI nie próbuje wykrywać uchwytów edytora: wiele programów zapisuje atomową
 podmianą pliku, więc taki test byłby pozornym zabezpieczeniem. Rezerwacja
-związana z paszportem aktywnym na innym urządzeniu jest tylko informacyjna i
-nie może zostać zwolniona z tego klienta. Żądanie zwolnienia zawiera token
-z listy; daemon odczytuje stan ponownie i odrzuca zmieniony lub nieaktualny
-wiersz, zanim wywoła SVN.
+związana z paszportem aktywnym na innym urządzeniu jest tylko informacyjna: w
+kolumnie działania ma placeholder **Poproś o zwolnienie (wkrótce)** i nie może
+zostać zwolniona z tego klienta. Przycisk **Zwolnij wszystko** obejmuje
+wyłącznie rezerwacje możliwe do zwolnienia przez ten klient, wymaga jednego
+potwierdzenia i wykonuje każdą operację z jej tokenem. Żądanie pojedynczego
+zwolnienia również zawiera token z listy; daemon odczytuje stan ponownie i
+odrzuca zmieniony lub nieaktualny wiersz, zanim wywoła SVN.
+
+Alias właściciela jest stałą tożsamością realmu, nie adresem e-mail ani UID.
+Po aktywacji istniejącego klienta można go raz ustawić z podmenu serwera przez
+**Ustaw stały alias…**. Worker serwerowy waliduje format i unikatowość podczas
+zapisu; aliasu nie da się później zmienić.
 
 ### Podpisane aktualizacje klienta desktopowego
 

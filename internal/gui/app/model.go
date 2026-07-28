@@ -57,6 +57,7 @@ type RepoViewModel struct {
 	Conflicts        int
 	LastSyncAt       string
 	CurrentOp        *string
+	ReservationCount int
 }
 
 type ServerViewModel struct {
@@ -70,6 +71,8 @@ type ServerViewModel struct {
 	CanCreateRepositories bool
 	RepositoriesReady     bool
 	PendingRequiredRepos  int
+	ReservationCount      int
+	ReservationsKnown     bool
 	Repos                 []RepoViewModel
 }
 
@@ -149,6 +152,20 @@ func (vm ViewModel) CanListErrors() bool   { return vm.HasCap(contract.CapErrorL
 func (vm ViewModel) CanListActivity() bool { return vm.HasCap(contract.CapRepoActivity) }
 func (vm ViewModel) CanListReservations() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoReservationList)
+}
+func (vm ViewModel) CanBrowseReservations() bool {
+	if !vm.CanListReservations() {
+		return false
+	}
+	for _, server := range vm.Servers {
+		if !server.ReservationsKnown {
+			return false
+		}
+		if server.ReservationCount > 0 {
+			return true
+		}
+	}
+	return false
 }
 func (vm ViewModel) CanReleaseReservations() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoReservationList) && vm.HasCap(contract.CapRepoReservationRelease)

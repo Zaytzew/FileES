@@ -5,21 +5,21 @@ package tray
 type IntentKind string
 
 const (
-	IntentOpenFolder         IntentKind = "open_folder"
-	IntentLock               IntentKind = "lock"
-	IntentUnlock             IntentKind = "unlock"
-	IntentReconnect          IntentKind = "reconnect"
-	IntentActivate           IntentKind = "activate"
-	IntentServerInfo         IntentKind = "server_info"
-	IntentServerReservations IntentKind = "server_reservations"
-	IntentCreateRepository   IntentKind = "create_repository"
-	IntentPairMobileDevice   IntentKind = "pair_mobile_device"
-	IntentUpdatePlan         IntentKind = "update_plan"
-	IntentUpdateApply        IntentKind = "update_apply"
-	IntentDetachRepository   IntentKind = "detach_repository"
-	IntentDeleteRepository   IntentKind = "delete_repository"
-	IntentRestartFileES      IntentKind = "restart_filees"
-	IntentShutdownFileES     IntentKind = "shutdown_filees"
+	IntentOpenFolder       IntentKind = "open_folder"
+	IntentLock             IntentKind = "lock"
+	IntentUnlock           IntentKind = "unlock"
+	IntentReconnect        IntentKind = "reconnect"
+	IntentActivate         IntentKind = "activate"
+	IntentServerInfo       IntentKind = "server_info"
+	IntentReservations     IntentKind = "reservations"
+	IntentCreateRepository IntentKind = "create_repository"
+	IntentPairMobileDevice IntentKind = "pair_mobile_device"
+	IntentUpdatePlan       IntentKind = "update_plan"
+	IntentUpdateApply      IntentKind = "update_apply"
+	IntentDetachRepository IntentKind = "detach_repository"
+	IntentDeleteRepository IntentKind = "delete_repository"
+	IntentRestartFileES    IntentKind = "restart_filees"
+	IntentShutdownFileES   IntentKind = "shutdown_filees"
 )
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.

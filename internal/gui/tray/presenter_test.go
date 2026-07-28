@@ -112,7 +112,7 @@ func TestBuildMenuShowsRepositoryActionsWhenCapabilitiesAllow(t *testing.T) {
 		},
 		Repos: []app.RepoViewModel{{
 			ID: "projectA", Attached: true, Access: contract.AccessReadWrite, LocalPath: "/wc/projectA", State: contract.StateActive,
-			Connectivity: contract.ConnOnline, LocalRev: 41, HeadRev: 42,
+			Connectivity: contract.ConnOnline, LocalRev: 41, HeadRev: 42, ReservationCount: 1,
 			Pending: contract.PendingStats{Added: 1, Modified: 2, Deleted: 3}, CurrentOp: &operation,
 		}},
 	}
@@ -130,6 +130,15 @@ func TestBuildMenuShowsRepositoryActionsWhenCapabilitiesAllow(t *testing.T) {
 	}
 	if !hasItem(menu.Items, "errors") {
 		t.Fatal("errors menu missing despite error.list capability")
+	}
+}
+
+func TestBuildMenuDisablesUnlockWithoutReservation(t *testing.T) {
+	repo := app.RepoViewModel{ID: "projectA", Attached: true, Access: contract.AccessReadWrite, LocalPath: "/wc/projectA", State: contract.StateActive}
+	menu := BuildMenu(withServer(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoUnlock: true}, Repos: []app.RepoViewModel{repo}}))
+	unlock := findItem(t, findItem(t, menu.Items, "repo.projectA").Children, "repo.projectA.unlock")
+	if unlock.Enabled || unlock.Intent != nil {
+		t.Fatalf("unlock without reservation must be disabled: %#v", unlock)
 	}
 }
 
@@ -270,17 +279,25 @@ func TestServerMenuUsesAliasAndExposesInformationDialog(t *testing.T) {
 	}
 }
 
-func TestServerMenuExposesReservationsOnlyWhenAdvertised(t *testing.T) {
+func TestBuildMenuExposesGlobalReservationListAndDisablesItWhenEmpty(t *testing.T) {
 	base := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "office"}}}
-	without := findItem(t, BuildMenu(base).Items, "server.office")
-	if hasItem(without.Children, "server.office.reservations") {
+	if hasItem(BuildMenu(base).Items, "action.reservations") {
 		t.Fatal("reservation action shown without capability")
 	}
 	base.Capabilities = map[string]bool{contract.CapRepoReservationList: true}
-	with := findItem(t, BuildMenu(base).Items, "server.office")
-	item := findItem(t, with.Children, "server.office.reservations")
-	if item.Intent == nil || item.Intent.Kind != IntentServerReservations || item.Intent.ServerID != "office" {
+	empty := findItem(t, BuildMenu(base).Items, "action.reservations")
+	if empty.Enabled || empty.Title != "Lista rezerwacji plikowych" {
+		t.Fatalf("empty reservation action = %+v", empty)
+	}
+	base.Servers[0].ReservationsKnown = true
+	base.Servers[0].ReservationCount = 1
+	item := findItem(t, BuildMenu(base).Items, "action.reservations")
+	if item.Intent == nil || item.Intent.Kind != IntentReservations {
 		t.Fatalf("reservation action = %+v", item)
+	}
+	server := findItem(t, BuildMenu(base).Items, "server.office")
+	if hasItem(server.Children, "server.office.reservations") {
+		t.Fatal("reservation action must not be nested under the server")
 	}
 }
 

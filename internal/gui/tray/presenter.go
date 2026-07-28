@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	app "filees/internal/gui/app"
+	contract "filees/pkg/contract/v1"
 )
 
 // BuildMenu converts an app ViewModel into a deterministic tray menu.
@@ -24,6 +25,13 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 		disabledItem("system.status", model.Title),
 		disabledItem("system.refreshed", lastRefreshLabel(vm)),
 	)
+	if vm.HasCap(contract.CapRepoReservationList) {
+		if vm.CanBrowseReservations() {
+			model.Items = append(model.Items, actionItem("action.reservations", "Lista rezerwacji plikowych", "Pokaż aktywne rezerwacje ze wszystkich serwerów FileES", Intent{Kind: IntentReservations}))
+		} else {
+			model.Items = append(model.Items, disabledItem("action.reservations", "Lista rezerwacji plikowych"))
+		}
+	}
 	if vm.Update.Available() {
 		model.Items = append(model.Items, updateMenu(vm))
 	}
@@ -164,9 +172,6 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	children := []MenuItemModel{
 		actionItem("server."+server.ID+".info", "Informacje o serwerze…", "Pokaż adres, identyfikatory i uprawnienia klienta", Intent{Kind: IntentServerInfo, ServerID: server.ID}),
 	}
-	if vm.CanListReservations() {
-		children = append(children, actionItem("server."+server.ID+".reservations", "Rezerwacje plików…", "Pokaż aktywne rezerwacje z lokalnych folderów roboczych", Intent{Kind: IntentServerReservations, ServerID: server.ID}))
-	}
 	if vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
 		children = append(children, actionItem("server."+server.ID+".create", "Dodaj folder do FileES…", "Utwórz nowe repozytorium z lokalnego katalogu", Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
 	}
@@ -229,9 +234,13 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 			)
 		}
 		if unlockVisible {
-			item.Children = append(item.Children,
-				actionItem("repo."+repo.ID+".unlock", "Odblokuj pliki…", "Zwolnij blokadę lub edit-passport wybranych plików", Intent{Kind: IntentUnlock, RepoID: repo.ID}),
-			)
+			if repo.ReservationCount > 0 {
+				item.Children = append(item.Children,
+					actionItem("repo."+repo.ID+".unlock", "Odblokuj pliki…", "Zwolnij blokadę lub edit-passport wybranych plików", Intent{Kind: IntentUnlock, RepoID: repo.ID}),
+				)
+			} else {
+				item.Children = append(item.Children, disabledItem("repo."+repo.ID+".unlock", "Odblokuj pliki…"))
+			}
 		}
 		if vm.CanDetachRepository() && repo.AttachmentPolicy != "required" {
 			item.Children = append(item.Children,

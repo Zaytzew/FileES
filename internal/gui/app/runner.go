@@ -93,6 +93,16 @@ func (a *App) Reconnect() {
 	}
 }
 
+// Refresh requests an immediate full snapshot without tearing down the live
+// daemon session. Mutation actions use it to reflect new lock reservations in
+// the tray before the periodic refresh interval expires.
+func (a *App) Refresh() {
+	select {
+	case a.msgCh <- msgRefreshNow{}:
+	default:
+	}
+}
+
 // New creates an App. cfg.Client must be non-nil.
 func New(cfg Config) *App {
 	if cfg.Clock == nil {
@@ -127,14 +137,18 @@ type msgDisconnected struct{ gen int }
 type msgReconnect struct{ gen int }
 type msgManualReconnect struct{}
 type msgPeriodic struct{}
+type msgRefreshNow struct{}
 type msgFullSnapshot struct {
-	gen       int
-	system    contract.SystemStatusResult
-	summaries []contract.RepoSummary
-	statuses  []contract.RepoStatus
-	errors    []contract.ErrorRecord
-	activity  []contract.ActivityRecord
-	refreshed time.Time
+	gen                   int
+	system                contract.SystemStatusResult
+	summaries             []contract.RepoSummary
+	statuses              []contract.RepoStatus
+	errors                []contract.ErrorRecord
+	activity              []contract.ActivityRecord
+	reservationCounts     map[string]int
+	repoReservationCounts map[string]int
+	reservationsKnown     bool
+	refreshed             time.Time
 }
 type msgPartialSnapshots struct {
 	gen      int
@@ -151,6 +165,7 @@ func (msgDisconnected) sealed()     {}
 func (msgReconnect) sealed()        {}
 func (msgManualReconnect) sealed()  {}
 func (msgPeriodic) sealed()         {}
+func (msgRefreshNow) sealed()       {}
 func (msgFullSnapshot) sealed()     {}
 func (msgPartialSnapshots) sealed() {}
 func (msgEvent) sealed()            {}
@@ -225,6 +240,7 @@ func (a *App) loop(ctx context.Context) {
 		gen := connectGen
 		includeErrors := state.caps[contract.CapErrorList]
 		includeActivity := state.caps[contract.CapRepoActivity]
+		includeReservations := state.caps[contract.CapRepoReservationList]
 
 		go func() {
 			system, err := a.cfg.Client.SystemStatus(sesCtx)
@@ -269,9 +285,31 @@ func (a *App) loop(ctx context.Context) {
 					activityRecords = result.Entries
 				}
 			}
+			reservationCounts := make(map[string]int)
+			repoReservationCounts := make(map[string]int)
+			reservationsKnown := false
+			if includeReservations {
+				reservationsKnown = true
+				for _, activation := range system.Activations {
+					result, err := a.cfg.Client.RepoReservationList(sesCtx, activation.ServerID)
+					if err != nil {
+						// The inventory is supplemental presentation data. A
+						// temporary failure must not take down the primary GUI
+						// session; keep the header action safely disabled instead.
+						reservationsKnown = false
+						break
+					}
+					reservationCounts[activation.ServerID] = len(result.Reservations)
+					for _, reservation := range result.Reservations {
+						repoReservationCounts[reservationKey(activation.ServerID, reservation.RepoID)]++
+					}
+				}
+			}
 			if sesCtx.Err() == nil {
 				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos,
-					statuses: statuses, errors: errors, activity: activityRecords, refreshed: a.cfg.Clock.Now()})
+					statuses: statuses, errors: errors, activity: activityRecords,
+					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
+					reservationsKnown: reservationsKnown, refreshed: a.cfg.Clock.Now()})
 			}
 		}()
 	}
@@ -432,7 +470,7 @@ func (a *App) loop(ctx context.Context) {
 				if msg.gen != connectGen || currentSesCtx == nil {
 					break
 				}
-				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.refreshed)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservationsKnown, msg.refreshed)
 				a.cfg.Backoff.Reset()
 				notify()
 				finishRefresh()
@@ -487,6 +525,9 @@ func (a *App) loop(ctx context.Context) {
 					launchFullRefresh()
 				}
 				schedulePeriodic()
+
+			case msgRefreshNow:
+				launchFullRefresh()
 			}
 		}
 	}

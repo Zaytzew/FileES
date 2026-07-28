@@ -123,8 +123,13 @@ type Config struct {
 	Reservations       ReservationManager
 	ReservationBrowser platform.ReservationBrowser
 	Reconnect          func() // nil → reconnect intent is a no-op
-	Restart            func() // called only after a successful apply requiring restart
-	Shutdown           func() // called after daemon accepts a full-stack shutdown
+	// PrepareRestart suppresses the intentional daemon disconnect before a
+	// user-confirmed restart request reaches IPC. AbortRestart restores normal
+	// notifications if that request is rejected.
+	PrepareRestart func()
+	AbortRestart   func()
+	Restart        func() // called only after a successful apply requiring restart
+	Shutdown       func() // called after daemon accepts a full-stack shutdown
 
 	// CreationStatusPollInterval/CreationStatusPollTimeout override how often
 	// and how long awaitCreationOutcome polls after a repository-create
@@ -317,12 +322,18 @@ func (c *Controller) startStackLifecycle(ctx context.Context, restart bool) {
 		if err != nil || !confirmed {
 			return
 		}
+		if restart && c.cfg.PrepareRestart != nil {
+			c.cfg.PrepareRestart()
+		}
 		if restart {
 			err = c.cfg.Stack.RestartFileES(ctx)
 		} else {
 			err = c.cfg.Stack.ShutdownFileES(ctx)
 		}
 		if err != nil {
+			if restart && c.cfg.AbortRestart != nil {
+				c.cfg.AbortRestart()
+			}
 			if ctx.Err() == nil {
 				c.notify(ctx, platform.Notification{ID: "stack-lifecycle", Group: "stack-lifecycle", Title: "Nie udało się zmienić stanu FileES", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			}
@@ -575,8 +586,14 @@ func (c *Controller) startUpdate(ctx context.Context, apply bool) {
 		}
 		c.notify(ctx, platform.Notification{ID: "update", Group: "update", Title: "FileES zaktualizowano do wersji " + result.InstalledVersion, Urgency: platform.UrgencyNormal})
 		if result.RestartRequired && c.cfg.Restart != nil {
+			if c.cfg.PrepareRestart != nil {
+				c.cfg.PrepareRestart()
+			}
 			if c.cfg.Stack != nil {
 				if err := c.cfg.Stack.RestartFileES(ctx); err != nil {
+					if c.cfg.AbortRestart != nil {
+						c.cfg.AbortRestart()
+					}
 					c.updateFailure(ctx, "Aktualizacja została zainstalowana, ale restart FileES nie powiódł się", err)
 					return
 				}

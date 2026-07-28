@@ -82,7 +82,7 @@ type fakeReservations struct {
 }
 
 func newFakeReservations(items []app.Reservation) *fakeReservations {
-	return &fakeReservations{items: items, listCh: make(chan string, 4), release: make(chan reservationCall, 1)}
+	return &fakeReservations{items: items, listCh: make(chan string, 4), release: make(chan reservationCall, 8)}
 }
 
 func (f *fakeReservations) ListReservations(_ context.Context, serverID string) ([]app.Reservation, error) {
@@ -801,7 +801,7 @@ func TestControllerReservationsConfirmsRiskAndTokenFencesRelease(t *testing.T) {
 		ReservationsFunc: func(_ context.Context, request platform.ReservationDialogRequest) (platform.ReservationDialogResult, error) {
 			shows++
 			if shows == 1 {
-				if len(request.Rows) != 1 || request.Rows[0].ID == reservation.Token || request.Rows[0].ReleaseStatus != "wymaga potwierdzenia" {
+				if len(request.Rows) != 1 || request.Rows[0].ID == reservation.Token || request.Rows[0].Action != "Zwolnij" {
 					t.Fatalf("dialog rows=%+v", request.Rows)
 				}
 				return platform.ReservationDialogResult{Action: platform.ReservationDialogRelease, RowID: request.Rows[0].ID}, nil
@@ -827,6 +827,44 @@ func TestControllerReservationsConfirmsRiskAndTokenFencesRelease(t *testing.T) {
 	if call.payload.ServerID != "office" || call.payload.RepoID != "docs" || call.payload.Path != "plan.dwg" || call.payload.ExpectedToken != reservation.Token || !call.payload.ConfirmRisk {
 		t.Fatalf("release payload=%+v", call.payload)
 	}
+}
+
+func TestControllerReservationsReleaseAllSkipsForeignLocks(t *testing.T) {
+	first := app.Reservation{RepoID: "docs", WorkingCopy: "/wc/docs", Path: "own-a.dwg", Token: "token-a", CanRelease: true}
+	foreign := app.Reservation{RepoID: "docs", WorkingCopy: "/wc/docs", Path: "foreign.dwg", Token: "token-foreign", CanRelease: false}
+	second := app.Reservation{RepoID: "docs", WorkingCopy: "/wc/docs", Path: "own-b.dwg", Token: "token-b", CanRelease: true, ActivePassport: true}
+	manager := newFakeReservations([]app.Reservation{first, foreign, second})
+	refreshCh := make(chan struct{}, 1)
+	shows := 0
+	fake := &platformtest.Fake{
+		ReservationsFunc: func(_ context.Context, request platform.ReservationDialogRequest) (platform.ReservationDialogResult, error) {
+			shows++
+			if len(request.Rows) != 3 || request.Rows[1].Action != "Poproś o zwolnienie (wkrótce)" {
+				t.Fatalf("dialog rows=%+v", request.Rows)
+			}
+			if shows > 1 {
+				return platform.ReservationDialogResult{Action: platform.ReservationDialogClose}, nil
+			}
+			return platform.ReservationDialogResult{Action: platform.ReservationDialogReleaseAll}, nil
+		},
+		ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+			if request.Title != "Zwolnij wszystkie moje rezerwacje" || !strings.Contains(request.Text, "(2)") || !strings.Contains(request.Text, "Cudze blokady") {
+				t.Fatalf("confirmation=%+v", request)
+			}
+			return true, nil
+		},
+	}
+	vm := &vmStore{}
+	vm.Store(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoReservationList: true, contract.CapRepoReservationRelease: true}, Servers: []app.ServerViewModel{{ID: "office", ReservationsKnown: true, ReservationCount: 3}}})
+	intents, cancel := setup(actions.Config{ViewModel: vm.Load, Prompter: fake, Notifier: fake, Reservations: manager, ReservationBrowser: fake, Refresh: func() { refreshCh <- struct{}{} }})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentReservations})
+	firstCall := awaitCh(t, manager.release, "first batch release")
+	secondCall := awaitCh(t, manager.release, "second batch release")
+	if firstCall.payload.ExpectedToken != first.Token || secondCall.payload.ExpectedToken != second.Token || !secondCall.payload.ConfirmRisk {
+		t.Fatalf("batch payloads=%+v / %+v", firstCall.payload, secondCall.payload)
+	}
+	awaitCh(t, refreshCh, "post-batch refresh")
 }
 
 // ---- Reconnect / Quit -------------------------------------------------------

@@ -220,9 +220,10 @@ Dla tego samego repozytorium można mieć aktywną tylko jedną operację naraz.
 
 ## Lista rezerwacji
 
-W podmenu serwera wybierz **Rezerwacje plików…**, aby otworzyć natywne okno z
-blokadami SVN widocznymi z folderów roboczych podłączonych lokalnie do tego
-serwera. Wiersze są uporządkowane według working copy i ścieżki; można je
+W nagłówku menu wybierz **Lista rezerwacji plikowych…**. Pozycja jest aktywna,
+gdy lokalne kopie robocze mają co najmniej jedną rezerwację, i otwiera jedną
+listę blokad SVN ze wszystkich aktywnych serwerów. Wiersz podaje serwer, kopię
+roboczą, ścieżkę względną, właściciela i czas `GG:MM DD-MM-RRRR`. Listę można
 odświeżyć bez zamykania okna. To nie jest globalny panel administracyjny:
 blokady w repozytorium bez lokalnej working copy nie pojawią się na liście.
 
@@ -230,10 +231,19 @@ blokady w repozytorium bez lokalnej working copy nie pojawią się na liście.
 rezerwacja ma aktywny paszport edycji, pojawia się dodatkowe ostrzeżenie o
 możliwych niezapisanych danych. FileES nie sprawdza, czy edytor ma „otwarty
 plik”, ponieważ nowoczesne edytory często zapisują przez atomową podmianę i
-taki wskaźnik byłby niewiarygodny. Rezerwację aktywną na innym urządzeniu
-oznaczono jako niedostępną; nie można jej tu zwolnić. Po zatwierdzeniu daemon
-ponownie sprawdza blokadę i jej token, więc odświeżony lub podmieniony wiersz
-nie zwolni przypadkowo innej rezerwacji.
+taki wskaźnik byłby niewiarygodny. Rezerwacja aktywna na innym urządzeniu lub
+należąca do innego użytkownika ma działanie **Poproś o zwolnienie (wkrótce)**;
+nie można jej dziś zwolnić z tego klienta. **Zwolnij wszystko** wymaga jednego
+potwierdzenia i zwalnia wyłącznie moje rezerwacje, każdą z aktualnym tokenem.
+Po zatwierdzeniu daemon ponownie sprawdza blokadę i jej token, więc odświeżony
+lub podmieniony wiersz nie zwolni przypadkowo innej rezerwacji.
+
+### Stały alias
+
+Alias jest publiczną nazwą realmu widoczną przy rezerwacjach; nie jest adresem
+e-mail ani UID. Po aktywacji wybierz w podmenu serwera **Ustaw stały alias…**.
+Wpis jest sprawdzany przez serwer pod względem formatu i unikatowości, a po
+zatwierdzeniu pozostaje niezmienny.
 
 ---
 

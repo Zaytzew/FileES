@@ -238,10 +238,11 @@ func (b *LinuxBackend) Confirm(ctx context.Context, request ConfirmRequest) (boo
 	return true, nil
 }
 
-// ShowReservations uses Zenity's native list window.  Zenity cannot disable a
-// single row action, so ReleaseStatus is rendered explicitly and the action
-// layer remains the final authority for whether a selected row can be freed.
-// The returned ID is an opaque GUI-local handle, never an SVN lock token.
+// ShowReservations uses Zenity's native list window. The action column names
+// the operation offered for a row rather than exposing implementation states;
+// the action layer remains the final authority for whether a selected row can
+// be freed. The returned ID is an opaque GUI-local handle, never an SVN lock
+// token.
 func (b *LinuxBackend) ShowReservations(ctx context.Context, request ReservationDialogRequest) (ReservationDialogResult, error) {
 	command, err := b.runner.LookPath("zenity")
 	if err != nil {
@@ -251,14 +252,24 @@ func (b *LinuxBackend) ShowReservations(ctx context.Context, request Reservation
 		"--list", "--radiolist", "--title=" + request.Title,
 		"--text=" + request.Text, "--width=1200", "--height=560",
 		"--column=", "--column=ID", "--column=Serwer", "--column=Kopia robocza", "--column=Plik",
-		"--column=Właściciel", "--column=Utworzono", "--column=Zwolnienie",
+		"--column=Właściciel", "--column=Utworzono", "--column=Działanie",
 		"--hide-column=2", "--print-column=2", "--ok-label=Zwolnij",
-		"--cancel-label=Zamknij", "--extra-button=Odśwież",
+		"--cancel-label=Zamknij", "--extra-button=Zwolnij wszystko", "--extra-button=Odśwież",
 	}
 	for _, row := range request.Rows {
-		args = append(args, "FALSE", row.ID, row.Server, row.WorkingCopy, row.Path, row.Owner, row.CreatedAt, row.ReleaseStatus)
+		args = append(args, "FALSE", row.ID, row.Server, row.WorkingCopy, row.Path, row.Owner, row.CreatedAt, row.Action)
 	}
 	output, err := b.runner.Output(ctx, command, args...)
+	// Zenity 4 returns the text of an extra button on stdout but exits with
+	// status 1, the same status it uses for Cancel. Read a recognised explicit
+	// button result before treating the exit code as cancellation.
+	selection := strings.TrimSpace(string(output))
+	if selection == "Odśwież" {
+		return ReservationDialogResult{Action: ReservationDialogRefresh}, nil
+	}
+	if selection == "Zwolnij wszystko" {
+		return ReservationDialogResult{Action: ReservationDialogReleaseAll}, nil
+	}
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ReservationDialogResult{}, ctxErr
@@ -267,10 +278,6 @@ func (b *LinuxBackend) ShowReservations(ctx context.Context, request Reservation
 			return ReservationDialogResult{Action: ReservationDialogClose}, nil
 		}
 		return ReservationDialogResult{}, NewOperationalFailure("reservation_dialog", err)
-	}
-	selection := strings.TrimSpace(string(output))
-	if selection == "Odśwież" {
-		return ReservationDialogResult{Action: ReservationDialogRefresh}, nil
 	}
 	for _, row := range request.Rows {
 		if selection == row.ID {

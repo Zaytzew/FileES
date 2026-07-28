@@ -37,21 +37,22 @@ type ReservationDialogRequest struct {
 }
 
 type ReservationDialogRow struct {
-	ID            string
-	Server        string
-	WorkingCopy   string
-	Path          string
-	Owner         string
-	CreatedAt     string
-	ReleaseStatus string
+	ID          string
+	Server      string
+	WorkingCopy string
+	Path        string
+	Owner       string
+	CreatedAt   string
+	Action      string
 }
 
 type ReservationDialogAction string
 
 const (
-	ReservationDialogClose   ReservationDialogAction = "close"
-	ReservationDialogRefresh ReservationDialogAction = "refresh"
-	ReservationDialogRelease ReservationDialogAction = "release"
+	ReservationDialogClose      ReservationDialogAction = "close"
+	ReservationDialogRefresh    ReservationDialogAction = "refresh"
+	ReservationDialogRelease    ReservationDialogAction = "release"
+	ReservationDialogReleaseAll ReservationDialogAction = "release_all"
 )
 
 type ReservationDialogResult struct {

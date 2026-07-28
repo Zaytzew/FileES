@@ -106,15 +106,37 @@ func TestLinuxConfirmUsesNativeQuestionAndTreatsCancelNormally(t *testing.T) {
 func TestLinuxShowReservationsReturnsOnlyOpaqueRowID(t *testing.T) {
 	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) { return []byte("row-1\n"), nil }}
 	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
-	result, err := backend.ShowReservations(context.Background(), ReservationDialogRequest{Title: "Lista rezerwacji", Rows: []ReservationDialogRow{{ID: "row-1", WorkingCopy: "/wc/a", Path: "plan.dwg", Owner: "user", CreatedAt: "today", ReleaseStatus: "dostępne"}}})
+	result, err := backend.ShowReservations(context.Background(), ReservationDialogRequest{Title: "Lista rezerwacji", Rows: []ReservationDialogRow{{ID: "row-1", WorkingCopy: "/wc/a", Path: "plan.dwg", Owner: "user", CreatedAt: "today", Action: "Zwolnij"}}})
 	if err != nil || result.Action != ReservationDialogRelease || result.RowID != "row-1" {
 		t.Fatalf("ShowReservations() = %+v, %v", result, err)
 	}
 	args := strings.Join(runner.Calls()[0].args, "\n")
-	for _, wanted := range []string{"--radiolist", "--ok-label=Zwolnij", "--extra-button=Odśwież", "row-1", "/wc/a"} {
+	for _, wanted := range []string{"--radiolist", "--ok-label=Zwolnij", "--extra-button=Zwolnij wszystko", "--extra-button=Odśwież", "row-1", "/wc/a"} {
 		if !strings.Contains(args, wanted) {
 			t.Errorf("reservation dialog args missing %q: %s", wanted, args)
 		}
+	}
+}
+
+func TestLinuxShowReservationsReturnsReleaseAll(t *testing.T) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) {
+		return []byte("Zwolnij wszystko\n"), fakeExitError(1)
+	}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	result, err := backend.ShowReservations(context.Background(), ReservationDialogRequest{Rows: []ReservationDialogRow{{ID: "row-1", Action: "Zwolnij"}}})
+	if err != nil || result.Action != ReservationDialogReleaseAll {
+		t.Fatalf("ShowReservations() = %+v, %v", result, err)
+	}
+}
+
+func TestLinuxShowReservationsRefreshesOnZenityExtraButtonExit(t *testing.T) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) {
+		return []byte("Odśwież\n"), fakeExitError(1)
+	}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	result, err := backend.ShowReservations(context.Background(), ReservationDialogRequest{Rows: []ReservationDialogRow{{ID: "row-1", Action: "Zwolnij"}}})
+	if err != nil || result.Action != ReservationDialogRefresh {
+		t.Fatalf("ShowReservations() = %+v, %v", result, err)
 	}
 }
 

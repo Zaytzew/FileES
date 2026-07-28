@@ -367,6 +367,8 @@ func run(parent context.Context, deps dependencies) error {
 		Reservations:       reservations,
 		ReservationBrowser: deps.platform,
 		Reconnect:          guiApp.Reconnect,
+		PrepareRestart:     notificationPolicy.SuppressConnectionTransitions,
+		AbortRestart:       notificationPolicy.RestoreConnectionTransitions,
 		Restart: func() {
 			select {
 			case restartRequested <- struct{}{}:

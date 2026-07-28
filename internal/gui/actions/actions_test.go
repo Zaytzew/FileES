@@ -125,12 +125,12 @@ func (f *fakeRepositoryCreator) CreationStatus(ctx context.Context, operationID 
 	return "attached", "", nil
 }
 
-func (f *fakeActivator) Begin(_ context.Context, serverID, address, email string) error {
-	f.begins <- serverID + "|" + address + "|" + email
-	return nil
+func (f *fakeActivator) Begin(_ context.Context, invitation string) (actions.ActivationTarget, error) {
+	f.begins <- invitation
+	return actions.ActivationTarget{ServerID: "office", Address: "filees.example.net:22"}, nil
 }
-func (f *fakeActivator) Finish(_ context.Context, serverID, address string, otp []byte) error {
-	f.finishes <- serverID + "|" + address + "|" + string(otp)
+func (f *fakeActivator) Finish(_ context.Context, target actions.ActivationTarget, otp []byte) error {
+	f.finishes <- target.ServerID + "|" + target.Address + "|" + string(otp)
 	return nil
 }
 
@@ -218,8 +218,8 @@ func send(t *testing.T, ch chan<- tray.Intent, intent tray.Intent) {
 	}
 }
 
-func TestControllerActivationPromptsForServerEmailThenSecretOTP(t *testing.T) {
-	responses := []platform.PromptTextResult{{Value: "office"}, {Value: "filees.example.net:22"}, {Value: "user@example.net"}, {Value: "OTP-CODE"}}
+func TestControllerActivationPromptsForInvitationThenSecretOTP(t *testing.T) {
+	responses := []platform.PromptTextResult{{Value: "filees-invite:v1:test"}, {Value: "OTP-CODE"}}
 	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
 		result := responses[0]
 		responses = responses[1:]
@@ -229,24 +229,24 @@ func TestControllerActivationPromptsForServerEmailThenSecretOTP(t *testing.T) {
 	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Opener: fake, Picker: fake, Prompter: fake, Notifier: fake, Locker: newFakeLocker(), Activator: activator})
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
-	if got := awaitCh(t, activator.begins, "activation begin"); got != "office|filees.example.net:22|user@example.net" {
+	if got := awaitCh(t, activator.begins, "activation begin"); got != "filees-invite:v1:test" {
 		t.Fatalf("begin=%q", got)
 	}
 	if got := awaitCh(t, activator.finishes, "activation finish"); got != "office|filees.example.net:22|OTP-CODE" {
 		t.Fatalf("finish=%q", got)
 	}
 	deadline := time.Now().Add(time.Second)
-	for len(fake.Snapshot().PromptRequests) < 4 && time.Now().Before(deadline) {
+	for len(fake.Snapshot().PromptRequests) < 2 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	requests := fake.Snapshot().PromptRequests
-	if len(requests) != 4 || requests[0].Secret || requests[1].Secret || requests[2].Secret || !requests[3].Secret {
+	if len(requests) != 2 || !requests[0].Secret || !requests[1].Secret {
 		t.Fatalf("prompts=%#v", requests)
 	}
 }
 
 func TestControllerOffersLocalPinSetupAfterActivationWhenNotConfigured(t *testing.T) {
-	responses := []platform.PromptTextResult{{Value: "office"}, {Value: "filees.example.net:22"}, {Value: "user@example.net"}, {Value: "OTP-CODE"}, {Value: "4242"}}
+	responses := []platform.PromptTextResult{{Value: "filees-invite:v1:test"}, {Value: "OTP-CODE"}, {Value: "4242"}}
 	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
 		result := responses[0]
 		responses = responses[1:]
@@ -278,7 +278,7 @@ func TestControllerOffersLocalPinSetupAfterActivationWhenNotConfigured(t *testin
 }
 
 func TestControllerSkipsLocalPinPromptWhenAlreadyConfigured(t *testing.T) {
-	responses := []platform.PromptTextResult{{Value: "office"}, {Value: "filees.example.net:22"}, {Value: "user@example.net"}, {Value: "OTP-CODE"}}
+	responses := []platform.PromptTextResult{{Value: "filees-invite:v1:test"}, {Value: "OTP-CODE"}}
 	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
 		if len(responses) == 0 {
 			t.Error("unexpected extra prompt - PIN already configured")
@@ -789,6 +789,9 @@ func TestControllerLockSuccessNotifies(t *testing.T) {
 	n := awaitCh(t, notifCh, "success notification")
 	if n.Urgency != platform.UrgencyLow {
 		t.Fatalf("success notification urgency = %v", n.Urgency)
+	}
+	if n.Body != "/a.dwg\n/b.dwg" {
+		t.Fatalf("success notification body = %q, want relative locked paths", n.Body)
 	}
 	awaitCh(t, refreshCh, "post-lock refresh")
 }

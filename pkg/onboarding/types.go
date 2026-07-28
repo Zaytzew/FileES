@@ -1,8 +1,16 @@
 package onboarding
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -28,6 +36,7 @@ var (
 	ErrOTPExpired        = errors.New("onboarding OTP expired")
 	ErrTunnelGrant       = errors.New("authorized tunnel grant unavailable")
 	ErrMailAttempt       = errors.New("mail outbox attempt mismatch")
+	ErrInvitationInvalid = errors.New("onboarding invitation is invalid")
 )
 
 // Kind values for Policy.Kind. Empty (the zero value, used by every ticket
@@ -64,12 +73,17 @@ type MobileRepositoryGrant struct {
 }
 
 type Ticket struct {
-	Schema               string    `json:"schema"`
-	TicketID             string    `json:"ticket_id"`
-	EmailDeliveryAddress string    `json:"email_delivery_address"`
-	ApprovedPolicy       Policy    `json:"approved_policy"`
-	CreatedAt            time.Time `json:"created_at"`
-	ExpiresAt            time.Time `json:"expires_at"`
+	Schema               string `json:"schema"`
+	TicketID             string `json:"ticket_id"`
+	EmailDeliveryAddress string `json:"email_delivery_address"`
+	ApprovedPolicy       Policy `json:"approved_policy"`
+	// InvitationTokenHash is the SHA-256 digest of the opaque capability sent
+	// to the recipient.  The capability itself is retained only while its
+	// invitation mail is pending, then scrubbed from InvitationOutbox.
+	InvitationTokenHash string          `json:"invitation_token_hash,omitempty"`
+	InvitationOutbox    MailOutboxEntry `json:"invitation_outbox,omitempty"`
+	CreatedAt           time.Time       `json:"created_at"`
+	ExpiresAt           time.Time       `json:"expires_at"`
 }
 
 type OperationState string
@@ -90,13 +104,17 @@ const (
 // Operation deliberately has no e-mail field. The delivery address belongs
 // only to the short-lived ticket/outbox path and is not client identity.
 type Operation struct {
-	Schema                  string         `json:"schema"`
-	OperationID             string         `json:"operation_id"`
-	ClientID                string         `json:"client_id"`
-	OnboardingRequestID     string         `json:"onboarding_request_id"`
-	OTPHash                 string         `json:"otp_hash,omitempty"`
-	OTPLocator              string         `json:"otp_locator,omitempty"`
-	ApprovedPolicy          Policy         `json:"approved_policy"`
+	Schema              string `json:"schema"`
+	OperationID         string `json:"operation_id"`
+	ClientID            string `json:"client_id"`
+	OnboardingRequestID string `json:"onboarding_request_id"`
+	OTPHash             string `json:"otp_hash,omitempty"`
+	OTPLocator          string `json:"otp_locator,omitempty"`
+	ApprovedPolicy      Policy `json:"approved_policy"`
+	// ProposedRealmID is supplied by the invite-bearing client, but is not a
+	// realm binding. AuthenticateOTP moves it into ApprovedPolicy atomically
+	// only after the recipient proves possession of the OTP.
+	ProposedRealmID         string         `json:"proposed_realm_id,omitempty"`
 	AssignedReversePort     uint16         `json:"assigned_reverse_port"`
 	AttemptsLeft            int            `json:"attempts_left"`
 	State                   OperationState `json:"state"`
@@ -126,6 +144,7 @@ type MailOutboxEntry struct {
 	OperationID     string        `json:"operation_id"`
 	DeliveryAddress string        `json:"delivery_address,omitempty"`
 	OTP             string        `json:"otp,omitempty"`
+	Invitation      string        `json:"invitation,omitempty"`
 	Template        string        `json:"template"`
 	DeliveryState   DeliveryState `json:"delivery_state"`
 	RetryCount      int           `json:"retry_count"`
@@ -134,6 +153,106 @@ type MailOutboxEntry struct {
 	AttemptedAt     *time.Time    `json:"attempted_at,omitempty"`
 	LastError       string        `json:"last_error,omitempty"`
 	QueuedAt        *time.Time    `json:"queued_at,omitempty"`
+}
+
+const (
+	InvitationSchema       = "filees.invitation/v1"
+	InvitationWirePrefix   = "filees-invite:v1:"
+	InvitationMailTemplate = "filees-onboarding-invitation/v1"
+	OTPMailTemplate        = "filees-onboarding-otp/v1"
+)
+
+// Invitation is the non-secret server profile and the one-time capability
+// delivered to the approved mailbox. Its known-host line is deliberately
+// carried with the invite so normal GUI onboarding never asks a user to type
+// an SSH endpoint or manage known_hosts manually.
+type Invitation struct {
+	Schema        string `json:"schema"`
+	Token         string `json:"token"`
+	ServerID      string `json:"server_id"`
+	ServerAddress string `json:"server_address"`
+	KnownHost     string `json:"known_host"`
+}
+
+func EncodeInvitation(invitation Invitation) (string, error) {
+	if err := invitation.Validate(); err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(invitation)
+	if err != nil {
+		return "", err
+	}
+	return InvitationWirePrefix + base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func DecodeInvitation(value string) (Invitation, error) {
+	if !strings.HasPrefix(strings.TrimSpace(value), InvitationWirePrefix) {
+		return Invitation{}, ErrInvitationInvalid
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(strings.TrimSpace(value), InvitationWirePrefix))
+	if err != nil || len(raw) == 0 || len(raw) > 16*1024 {
+		return Invitation{}, ErrInvitationInvalid
+	}
+	var invitation Invitation
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&invitation); err != nil {
+		return Invitation{}, ErrInvitationInvalid
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return Invitation{}, ErrInvitationInvalid
+	}
+	if err := invitation.Validate(); err != nil {
+		return Invitation{}, err
+	}
+	return invitation, nil
+}
+
+func (invitation Invitation) Validate() error {
+	if invitation.Schema != InvitationSchema || !validInvitationToken(invitation.Token) {
+		return ErrInvitationInvalid
+	}
+	if invitation.ServerID == "" || strings.ContainsAny(invitation.ServerID, "/\\\x00\r\n\t ") || invitation.ServerID == "." || invitation.ServerID == ".." {
+		return ErrInvitationInvalid
+	}
+	if invitation.ServerAddress == "" || strings.TrimSpace(invitation.ServerAddress) != invitation.ServerAddress || strings.ContainsAny(invitation.ServerAddress, "\x00\r\n\t /@?#") || strings.Contains(invitation.ServerAddress, "://") {
+		return ErrInvitationInvalid
+	}
+	if strings.TrimSpace(invitation.KnownHost) != invitation.KnownHost || !strings.Contains(invitation.KnownHost, " ssh-ed25519 ") || strings.ContainsAny(invitation.KnownHost, "\x00\r\n") {
+		return ErrInvitationInvalid
+	}
+	return nil
+}
+
+func validInvitationToken(token string) bool {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	return err == nil && len(raw) == 32
+}
+
+func ValidateInvitationToken(token string) error {
+	if !validInvitationToken(token) {
+		return ErrInvitationInvalid
+	}
+	return nil
+}
+
+func invitationTokenHash(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return base64.RawStdEncoding.EncodeToString(digest[:])
+}
+
+func newInvitationToken(reader io.Reader) (string, error) {
+	raw := make([]byte, 32)
+	if _, err := io.ReadFull(reader, raw); err != nil {
+		return "", fmt.Errorf("generate invitation token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func validRealmID(value string) bool {
+	_, err := uuid.Parse(value)
+	return err == nil
 }
 
 type MailJob struct {
@@ -164,6 +283,7 @@ type Bundle struct {
 type TakeReceipt struct {
 	OperationID         string    `json:"operation_id"`
 	OnboardingRequestID string    `json:"onboarding_request_id"`
+	AssignedReversePort uint16    `json:"assigned_reverse_port"`
 	ExpiresAt           time.Time `json:"expires_at"`
 }
 

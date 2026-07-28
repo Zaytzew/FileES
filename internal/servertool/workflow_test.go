@@ -43,6 +43,7 @@ func TestS1FilesystemWorkflow(t *testing.T) {
   "otp_attempts":3,
   "reverse_port_first":42000,
   "reverse_port_last":42010,
+	  "invitation":{"server_id":"office","server_address":"filees.test:2222","known_host":"[filees.test]:2222 ` + workerPublic + `"},
   "smtp":{"address":"127.0.0.1:2525","client_name":"filees.test","from":"filees@example.test","message_id_domain":"filees.test","tls":"none"}
 }`
 	if err := os.WriteFile(configPath, []byte(configJSON), 0o600); err != nil {
@@ -50,13 +51,23 @@ func TestS1FilesystemWorkflow(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := RunAdmin([]string{"-config", configPath, "ticket", "create", "-email", "alice@example.test", "-realm-id", "7b807185-aa75-4169-8a65-705c7cbab176", "-ttl", "1h"}, &stdout, &stderr)
+	originalSubmit := smtpSubmit
+	t.Cleanup(func() { smtpSubmit = originalSubmit })
+	var submitted []smtpsubmit.Request
+	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, request smtpsubmit.Request) error {
+		submitted = append(submitted, request)
+		return nil
+	}
+	code := RunAdmin([]string{"-config", configPath, "ticket", "create", "alice@example.test", "-ttl", "1h"}, &stdout, &stderr)
 	if code != ExitOK {
 		t.Fatalf("ticket create exit=%d stderr=%s", code, stderr.String())
 	}
+	if len(submitted) != 1 || submitted[0].Recipient != "alice@example.test" || !bytes.Contains(submitted[0].Message, []byte("FileES activation invitation")) {
+		t.Fatalf("ticket create did not deliver invitation: %+v", submitted)
+	}
 
 	requestID := uuid.NewString()
-	request, _ := json.Marshal(onboarding.OnboardRequest{Schema: onboarding.OnboardRequestSchema, Email: "alice@example.test", OnboardingRequestID: requestID})
+	request, _ := json.Marshal(onboarding.OnboardRequest{Schema: onboarding.LegacyOnboardRequestSchema, Email: "alice@example.test", OnboardingRequestID: requestID})
 	stdout.Reset()
 	stderr.Reset()
 	code = RunOnboard([]string{"-config", configPath, "take"}, bytes.NewReader(request), &stdout, &stderr)
@@ -70,21 +81,14 @@ func TestS1FilesystemWorkflow(t *testing.T) {
 		t.Fatalf("idempotent take exit=%d stderr=%s", code, stderr.String())
 	}
 
-	originalSubmit := smtpSubmit
-	t.Cleanup(func() { smtpSubmit = originalSubmit })
-	var submitted smtpsubmit.Request
-	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, request smtpsubmit.Request) error {
-		submitted = request
-		return nil
-	}
 	stdout.Reset()
 	stderr.Reset()
 	code = RunMail([]string{"-config", configPath, "send"}, &stdout, &stderr)
 	if code != ExitOK || !strings.Contains(stdout.String(), `"status":"queued"`) {
 		t.Fatalf("mail exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	if submitted.Recipient != "alice@example.test" || !bytes.Contains(submitted.Message, []byte("FileES onboarding code")) {
-		t.Fatalf("unexpected SMTP request: recipient=%q message=%q", submitted.Recipient, submitted.Message)
+	if len(submitted) != 2 || submitted[1].Recipient != "alice@example.test" || !bytes.Contains(submitted[1].Message, []byte("FileES onboarding code")) {
+		t.Fatalf("unexpected SMTP requests: %+v", submitted)
 	}
 
 	config, err := serverconfig.LoadFor(configPath, 0)

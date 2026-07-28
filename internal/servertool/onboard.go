@@ -24,12 +24,24 @@ func RunOnboard(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		report(stderr, "filees-onboard config", err)
 		return ExitConfig
 	}
-	_, err = files.Take(request.Email, request.OnboardingRequestID)
+	var receipt onboarding.TakeReceipt
+	if request.Schema == onboarding.LegacyOnboardRequestSchema {
+		receipt, err = files.Take(request.Email, request.OnboardingRequestID)
+	} else {
+		receipt, err = files.TakeInvitation(request.InvitationToken, request.ProposedRealmID, request.OnboardingRequestID)
+	}
 	if err != nil && !errors.Is(err, onboarding.ErrTicketUnavailable) {
 		report(stderr, "filees-onboard", err)
 		return ExitTempFail
 	}
-	if _, err := stdout.Write(onboarding.EncodeOnboardResponse(request.OnboardingRequestID, config.WorkerPublicKey)); err != nil {
+	port := receipt.AssignedReversePort
+	if port == 0 {
+		// Keep an unavailable invitation indistinguishable from an accepted
+		// one at this unauthenticated boundary. The later OTP is still the
+		// only proof and the only operation-capable credential.
+		port = config.Onboarding.ReversePortFirst
+	}
+	if _, err := stdout.Write(onboarding.EncodeOnboardResponse(request.OnboardingRequestID, config.WorkerPublicKey, port)); err != nil {
 		return ExitSoftware
 	}
 	return ExitOK

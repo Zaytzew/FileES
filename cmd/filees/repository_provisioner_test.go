@@ -137,6 +137,30 @@ func TestDaemonProvisionerReconcilesRepositoryCreatedBoundary(t *testing.T) {
 	}
 }
 
+func TestDaemonProvisionerLeavesFailedRepositoryCreationForExplicitRetry(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := local.BeginCreateOperation(uuid.NewString(), "office", "Docs", filepath.Join(t.TempDir(), "wc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkRepositoryCreated(record.OperationID, uuid.NewString(), "svn+ssh://_filees-data@example/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkError(record.OperationID, errors.New("initial import requires user recovery")); err != nil {
+		t.Fatal(err)
+	}
+
+	p := newDaemonProvisioner(local, nil, nil)
+	p.runOne(context.Background(), record.OperationID)
+	got, ok := local.Get(record.OperationID)
+	if !ok || got.State != localrepo.StateRepositoryCreated || got.LastError == "" {
+		t.Fatalf("failed creation was replayed or lost: %+v", got)
+	}
+}
+
 func TestDaemonProvisionerChecksOutApprovedSharedRepository(t *testing.T) {
 	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

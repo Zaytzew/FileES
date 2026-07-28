@@ -842,11 +842,11 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>To validate configuration without starting the daemon:</p>
 <pre><code>filees config-check --config /path/to/config.json</code></pre>
 <h2 id="ch2-firstrun">2.3 First Run and Onboarding</h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>The end-user flow is owned by the daemon and GUI; no client-side onboarding CLI is required.</span></div>
-<p>The onboarding flow provisions the client’s identity and activates its first service-repository projection. It requires an administrator to create a one-time ticket. On the client, choose <strong>Activate client on a new server…</strong>, enter the FileES server address and the ticket email, then paste the OTP when prompted. After activation, the GUI asks once for an immutable realm alias. The alias is the human-facing identity used for reservations and future user-to-user operations; it is neither an email address nor a UID. The GUI only presents the flow; the daemon owns all network and state transitions.</p>
+<p>The onboarding flow provisions the client’s identity and activates its first service-repository projection. It starts with an administrator-issued e-mail invitation. On the client, choose <strong>Activate client on a new server…</strong>, paste the one-time invitation from the first e-mail, then paste the separately delivered OTP when prompted. The invitation carries the server profile and its pinned SSH host key, so a normal user never types a server address, port, profile name, client UUID or <code>known_hosts</code> path. The client generates its candidate realm UUID locally; the server binds it only after correct OTP proof. After activation, the GUI asks once for an immutable realm alias. The alias is the human-facing identity used for reservations and future user-to-user operations; it is neither an email address nor a UID. The GUI only presents the flow; the daemon owns all network and state transitions.</p>
 <ol>
-<li>Administrator creates a ticket with an email delivery signal and an approved realm: <code>filees-admin ticket create --email you@example.com --realm-id &lt;uuid&gt;</code>.</li>
-<li>The daemon submits the email through the compiled bootstrap-key SSH entry. The server consumes the ticket and makes one SMTP submission attempt.</li>
-<li>The GUI prompts for the delivered OTP; the daemon supplies it through FIFO askpass and establishes the fixed reverse tunnel to its loopback helper.</li>
+<li>Administrator creates a ticket: <code>filees-admin ticket create you@example.com</code>. The default configuration is <code>/etc/filees/server.json</code>; the default TTL is 24 hours.</li>
+<li>The server sends the first e-mail invitation through its configured relay. The invitation is an opaque single-use capability plus a pinned public server profile.</li>
+<li>Redeeming the invitation creates the short-lived operation and causes the server to send the OTP in a second e-mail. The server does not expose an address- or alias-availability probe. The daemon supplies the OTP through FIFO askpass and establishes the assigned reverse tunnel to its loopback helper.</li>
 <li>The helper generates an Ed25519 installation key locally. The worker stages access, asks the helper for service proof, and validates the receipt written after system-sshd authentication.</li>
 <li>The worker publishes the client record and first view in the service repository and marks the operation <code>active</code>.</li>
 </ol>
@@ -931,6 +931,8 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Events are cache-invalidation signals. The GUI never builds state purely by applying events; each event triggers a fresh <code>repo.status</code> fetch. Mutation actions (lock/unlock) are shown only when the daemon reports them as capabilities and the connection state is <code>Connected</code> (not <code>Stale</code>).</p>
 <h4>Server activations</h4>
 <p>Each active server is listed by its user-chosen alias and groups its repositories underneath. The technical host is not used as the primary label. <strong>Server information…</strong> shows the address, SSH port, client ID and effective client role. A transport configuration without an activation does not create a synthetic <code>default</code> server. If at least one activation exists, the tray header says <strong>Client activated</strong>.</p>
+<h4>Folder lifecycle</h4>
+<p>For each attached, optional working copy the server menu exposes <strong>Detach folder “name”…</strong> before the expandable folder row, so the action remains reachable even when the folder submenu is long. It stops FileES handling for that directory and removes only <code>.svn</code> and <code>.filees</code>; user files remain as an ordinary local directory. If the active realm owns the repository and has repository-administration capability, the same server menu additionally exposes <strong>Detach permanently “name”…</strong>. It requires two confirmations, removes the active server repository and generated access projection, then detaches the local directory. With positive server retention, the worker stores a verified SVN dump and SHA-256 manifest until <code>retain_until</code>; it is not an immediate unrecoverable erase.</p>
 <h4>File reservations</h4>
 <p>The header item <strong>File reservation list…</strong> opens one native Linux/Windows window for every live SVN lock observed through this installation's locally attached working copies, across active servers. It is enabled only when at least one reservation exists. Each row names the server, working copy, repository-relative path, owner realm alias and local creation time (<code>HH:MM DD-MM-YYYY</code>). Rows are ordered by working copy and then path; the window can refresh without closing. It is deliberately not a server-administration inventory: a repository with no local working copy cannot be observed through this client.</p>
 <p>Choosing <strong>Release</strong> always asks for confirmation. <strong>Release all</strong> asks once and releases only the reservations this client is entitled to release; every release is separately token-fenced. Local modifications or an active edit passport add an explicit warning about unsaved editor data. FileES does not use “is the file open?” as a safety gate because many editors save by atomic replacement and such a check would be misleading. A foreign or other-device reservation shows the placeholder <strong>Request release (coming soon)</strong> and cannot be released here. The dialog returns only opaque row IDs; the daemon re-lists each lock and matches its token before releasing, so a stale row cannot release a different lock.</p>
@@ -1101,6 +1103,15 @@ Match all</code></pre>
     "svn_binary": "/usr/local/bin/svn",
     "svnserve_binary": "/usr/local/bin/svnserve"
   },
+  "repositories": {
+    "root": "/var/filees/repositories",
+    "results_root": "/var/filees/repository-operations",
+    "data_authz_file": "/var/filees/activation/repositories.authz",
+    "svnadmin_binary": "/usr/local/bin/svnadmin",
+    "url_prefix": "svn+ssh://_filees-data@filees.example.net/",
+    "deletion_archive_root": "/var/filees/repository-operations/deleted-repositories",
+    "deletion_retention_days": 30
+  },
   "operation_ttl": "30m",
   "otp_attempts": 5,
   "reverse_port_first": 42000,
@@ -1125,6 +1136,10 @@ Match all</code></pre>
 <tr><td><code>worker_private_key_file</code></td><td>Absolute path to Ed25519 private key used by <code>filees-worker</code> (mode 0600)</td></tr>
 <tr><td><code>worker_public_key_file</code></td><td>Absolute path to the corresponding public key in authorized_keys format</td></tr>
 <tr><td><code>activation</code></td><td>Absolute private runtime paths, service repository/WC, repository name and fixed client-entry/SVN executable paths</td></tr>
+<tr><td><code>repositories.root</code></td><td>Absolute root of UUID-named data repositories; use a dedicated storage mount when appropriate. The default is <code>/var/filees/repositories</code>.</td></tr>
+<tr><td><code>repositories.results_root</code></td><td>Absolute root for durable repository-operation records; it is separate from FSFS data storage.</td></tr>
+<tr><td><code>repositories.url_prefix</code></td><td>Canonical public repository URL prefix. It must use the restricted <code>svn+ssh://_filees-data@host/</code> form, with no explicit port.</td></tr>
+<tr><td><code>repositories.deletion_archive_root</code></td><td>Optional absolute archive location for verified deletion dumps. If omitted, it is under <code>results_root</code>.</td></tr>
 <tr><td><code>operation_ttl</code></td><td>Lifetime of each onboarding operation, e.g. <code>30m</code></td></tr>
 <tr><td><code>otp_attempts</code></td><td>Maximum wrong OTP attempts before exhaustion</td></tr>
 <tr><td><code>reverse_port_first</code></td><td>First (or only) permitted reverse tunnel port</td></tr>
@@ -1158,7 +1173,7 @@ ssh-keygen -q -t ed25519 -N '' -C filees-worker-v1 \
 <p>This is the completed activation vertical. General data-repository creation, storage preflight, grants and <code>INITIAL_COMMIT</code> orchestration are now also connected to a server-side control-plane worker (<code>pkg/repoworker</code>, dispatched over the same forced-command SSH session) and verified end to end, including the <code>STORAGE_INSUFFICIENT</code> refusal path on a physically constrained filesystem — see the provisioning state machine in §2.3.</p>
 <h4>Running administrative commands</h4>
 <p>Administrative and one-shot server commands that read or mutate private state are run as <code>_filees-state</code>:</p>
-<pre><code>doas -u _filees-state filees-admin ticket create --email user@example.com --realm-id &lt;realm_uuid&gt;
+<pre><code>doas -u _filees-state filees-admin ticket create user@example.com
 doas -u _filees-state filees-admin ticket list
 doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
 doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
@@ -1200,10 +1215,11 @@ filees-install -purge -wipe-state</code></pre>
 <tr><td>78</td><td><code>ExitConfig</code></td><td>Configuration error</td></tr>
 </table></div>
 <h4>Ticket management</h4>
-<pre><code>filees-admin ticket create --email &lt;mailbox&gt; --realm-id &lt;realm_uuid&gt; [--ttl 24h]
+<pre><code>filees-admin ticket create &lt;mailbox&gt; [--ttl 24h]
+filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;
 filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
 filees-admin ticket list</code></pre>
-<p>A ticket is a one-time administrator grant authorising the start of one onboarding operation for a given email signal. The ticket file is named by <code>sha256(canonical_email)</code> so the file name does not reveal the address. <code>create</code> writes the ticket with a TTL; <code>revoke</code> removes it. Once claimed by <code>filees-onboard take</code> the ticket physically disappears and is replaced by an operation bundle.</p>
+<p>A ticket is a one-time administrator grant authorising one e-mail invitation. The ticket file is named by <code>sha256(canonical_email)</code> so the file name does not reveal the address. <code>create</code> writes the ticket with a TTL and immediately sends its invitation; <code>resend</code> replaces a failed delivery capability with a fresh one without changing the ticket recipient or TTL; <code>revoke</code> removes it. Once its opaque invitation capability is claimed by <code>filees-onboard take</code> the ticket physically disappears and is replaced by an operation bundle.</p>
 <h4>Operation inspection</h4>
 <pre><code>filees-admin operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <p>Displays the current state and audit trail of an onboarding operation. If an operation is in state <code>awaiting_tunnel</code> after the TTL has passed, the OTP is exhausted or expired, and the record can be cleaned up by <code>filees-operation recover</code>.</p>
@@ -1261,6 +1277,36 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <h4>Interrupted onboarding claim</h4>
 <pre><code>doas -u _filees-state filees-operation recover</code></pre>
 <p>The command finishes any <code>.claim-*</code> file, expires unfinished operations past TTL, redacts their OTP material and removes expired activation staging. Active clients remain active. Safe to run repeatedly.</p>
+<h4>Moving the data-repository storage root</h4>
+<p><code>repositories.root</code> is an absolute, administrator-selected FSFS storage root; <code>/var/filees/repositories</code> is only the default. It may point to a dedicated filesystem such as <code>/srv/filees/repositories</code>. This is a maintenance migration, not a live configuration change: every data repository is a directory below that root, named by its repository UUID.</p>
+<ol>
+<li>Schedule an exclusive maintenance window. Stop all FileES client daemons that can write to this server, do not issue repository create/delete requests, and wait until there are no active <code>svnserve -t</code>, <code>filees-worker</code> or <code>filees-client-entry</code> processes for the installation.</li>
+<li>Verify the source before copying. Run <code>svnadmin verify</code> for every direct child repository; resolve any verification error before proceeding.</li>
+<li>Create a destination on the target mount that is traversable and writable only by <code>_filees-state</code>, then copy as root while the maintenance window remains in force. For example:</li>
+</ol>
+<pre><code>doas install -d -o _filees-state -g _filees-state -m 0750 /srv/filees
+doas install -d -o _filees-state -g _filees-state -m 0700 /srv/filees/repositories
+
+# Verify source repositories before the copy.
+for repo in /var/filees/repositories/*; do
+  [ -d "$repo" ] || continue
+  doas -u _filees-state /usr/local/bin/svnadmin verify "$repo" || exit 1
+done
+
+# Preserve the complete FSFS directory trees, ownership and modes.
+doas cp -Rp /var/filees/repositories/. /srv/filees/repositories/
+
+# Verify the copied repositories before switching configuration.
+for repo in /srv/filees/repositories/*; do
+  [ -d "$repo" ] || continue
+  doas -u _filees-state /usr/local/bin/svnadmin verify "$repo" || exit 1
+done</code></pre>
+<ol start="4">
+<li>Change only <code>repositories.root</code> in <code>/etc/filees/server.json</code> to the new absolute path. Keep <code>results_root</code> and <code>deletion_archive_root</code> unchanged unless they are deliberately being migrated as separate state stores.</li>
+<li>Before admitting clients again, test one read-only SVN access and one controlled FileES operation. The short-lived server worker reads <code>server.json</code> per request, so there is no daemon to restart; the maintenance boundary is still required to prevent writes from landing in the old root during the switch.</li>
+<li>Keep the old root intact and read-only until backups and the acceptance check are complete. Rollback is simply restoring the old <code>repositories.root</code> value while the maintenance window is still active. Remove the old copy only under a separately approved retention policy.</li>
+</ol>
+<div class="warn"><strong>Never merge two live roots or use a filesystem move while clients are connected.</strong> A repository's UUID, hooks and FSFS metadata must move together. Copy-and-verify first, then make one configuration switch; this keeps rollback available.</div>
 <h4>Client recovery after SIGKILL or power loss</h4>
 <p>The client daemon recovers automatically on the next start:</p>
 <ol>
@@ -1343,7 +1389,7 @@ filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
 <tr><td><strong>Client (installation)</strong></td><td>until revoked</td><td>One machine. Transport identity: svnserve runs as <code>--tunnel-user &lt;client_id&gt;</code> forced by the server-side key entry. Per-machine audit.</td></tr>
 <tr><td><strong>Installation key</strong></td><td>until rotated</td><td>Ed25519 material authenticating one machine's SSH sessions. Never appears in any ACL.</td></tr>
 </table></div>
-<p>The binding is created exactly once, at onboarding: the admin issues the ticket with <code>--realm-id</code>, so every activation record ties <code>client_id ↔ realm_id ↔ installation key</code>, canonically published under <code>admin/realms/</code> and <code>admin/clients/</code> in the service repository. A user with four machines has four client IDs and four key pairs under one realm — and the question "which keys belong to this user" always has a deterministic answer.</p>
+<p>The binding is created exactly once, after correct OTP authentication: the client generates a candidate realm UUID locally, and the server atomically pins it only when the recipient proves possession of the OTP. Administrators never type or copy a user UUID. Every activated record still ties <code>client_id ↔ realm_id ↔ installation key</code>, canonically published under <code>admin/realms/</code> and <code>admin/clients/</code> in the service repository. A user with four machines has four client IDs and four key pairs under one realm — and the question "which keys belong to this user" always has a deterministic answer.</p>
 <p><strong>I-10. Grants bind to realms, never to keys or client IDs.</strong> The canonical record is <code>(realm → repository, permissions)</code>. The svnserve authz file is a generated <em>projection</em> of grants onto the realm's currently active installations — reproducible at any time, never a source of truth.</p>
 <p><strong>I-11. Installation lifecycle never touches grants.</strong> A new installation inherits its realm's grants automatically at activation (authz regeneration); revoking one machine removes one key without affecting the realm's rights; revoking a realm removes everything in one step; key rotation is a redeploy and leaves ACLs untouched.</p>
 <p><strong>I-12. Administrative actions take a realm as their subject.</strong> No administrative operation accepts a public key, fingerprint or client ID as an authorisation argument (the sole exception is per-machine revocation, which targets a machine, not the subject's rights). Moving an installation between realms is not an edit — it is revoke plus fresh onboarding.</p>

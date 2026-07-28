@@ -244,8 +244,9 @@ Menu tray zawiera:
   wieloserwerową listę blokad z lokalnie podłączonych WC,
 - „Otwórz katalog” dla każdego repozytorium,
 - `Lock…` i `Unlock…` z wyborem plików wewnątrz danego repozytorium,
-- „Odłącz folder…” dla opcjonalnej WC oraz osobne, podwójnie potwierdzane
-  „Odłącz trwale…” dla repozytorium własnego realmu,
+- bezpośrednio w menu serwera (przed rozwijanym folderem) **Odłącz folder
+  „&lt;nazwa&gt;”…** dla opcjonalnej WC oraz osobne, podwójnie potwierdzane
+  **Odłącz trwale „&lt;nazwa&gt;”…** dla repozytorium własnego realmu,
 - globalne podmenu „Ostatnia aktywność”, równorzędne z „Ostatnimi błędami”,
   pokazujące repozytorium, plik i potwierdzony etap synchronizacji,
 - ostatnie błędy z `error.list`, mapowane przez `message_key`, `severity` i `hint`,
@@ -274,7 +275,9 @@ Odłączenie ma dwa rozłączne kontrakty:
 - **Odłącz trwale…** wymaga dwóch osobnych potwierdzeń, server-side ownership
   oraz capability administracji repo. Dla retencji `X>0` serwer tworzy i
   weryfikuje pełny dump, natychmiast usuwa FSFS i trzyma wyłącznie dump przez
-  `X` dni. Dla `X=0` usuwa FSFS natychmiast bez tworzenia dumpa.
+  `X` dni. Domyślne `X=30` zapisuje dump i manifest z SHA-256 pod
+  `results_root/deleted-repositories`; wynik workera zawiera dokładny
+  `retain_until`. Dla `X=0` usuwa FSFS natychmiast bez tworzenia dumpa.
 
 Repozytorium `attachment_policy=required` nie udostępnia żadnej z tych akcji.
 Lifecycle jest trwały i wznawialny po restarcie.

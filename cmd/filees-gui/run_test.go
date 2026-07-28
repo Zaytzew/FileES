@@ -284,8 +284,8 @@ func TestRunRealIPCReconnectsAfterDaemonRestart(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "daemon.sock")
 	firstCtx, stopFirst := context.WithCancel(context.Background())
 	first := ipcserver.New(socket)
-	first.RegisterRepo("alpha", "svn://example/alpha", t.TempDir()).SetState(contract.StateActive)
-	first.RegisterRepo("beta", "svn://example/beta", t.TempDir()).SetState(contract.StateActive)
+	first.RegisterRepo("alpha", "svn://example/alpha", "/wc/alpha").SetState(contract.StateActive)
+	first.RegisterRepo("beta", "svn://example/beta", "/wc/beta").SetState(contract.StateActive)
 	if err := first.Start(firstCtx); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,6 @@ func TestRunRealIPCReconnectsAfterDaemonRestart(t *testing.T) {
 			client:   ipcclient.New(socket, "filees-gui-integration-test"),
 		})
 	}()
-
 	waitFor(t, "two repositories from first daemon", func() bool {
 		return backend.hasItemContaining("alpha") && backend.hasItemContaining("beta")
 	})
@@ -319,7 +318,7 @@ func TestRunRealIPCReconnectsAfterDaemonRestart(t *testing.T) {
 	secondCtx, stopSecond := context.WithCancel(context.Background())
 	defer stopSecond()
 	second := ipcserver.New(socket)
-	second.RegisterRepo("gamma", "svn://example/gamma", t.TempDir()).SetState(contract.StateActive)
+	second.RegisterRepo("gamma", "svn://example/gamma", "/wc/gamma").SetState(contract.StateActive)
 	if err := second.Start(secondCtx); err != nil {
 		t.Fatal(err)
 	}

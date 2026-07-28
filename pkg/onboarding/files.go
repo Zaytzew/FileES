@@ -298,6 +298,114 @@ func (s *Files) CreateTicket(email string, policy Policy, ttl time.Duration) (Ti
 	return ticket, err
 }
 
+// CreateInvitationTicket creates a desktop invitation without binding a
+// realm. The raw capability is stored only in the pending mail entry; after
+// successful relay acceptance it is scrubbed from server state and remains
+// only in the recipient's invitation message.
+func (s *Files) CreateInvitationTicket(email string, ttl time.Duration, profile Invitation) (Ticket, error) {
+	if err := s.requireAreas(AreaTickets | AreaAudit); err != nil {
+		return Ticket{}, err
+	}
+	canonical, err := canonicalEmail(email)
+	if err != nil {
+		return Ticket{}, err
+	}
+	if ttl <= 0 {
+		return Ticket{}, errors.New("ticket TTL must be positive")
+	}
+	token, err := newInvitationToken(s.random)
+	if err != nil {
+		return Ticket{}, err
+	}
+	profile.Schema, profile.Token = InvitationSchema, token
+	wire, err := EncodeInvitation(profile)
+	if err != nil {
+		return Ticket{}, err
+	}
+	id, err := randomUUID(s.random)
+	if err != nil {
+		return Ticket{}, fmt.Errorf("generate ticket ID: %w", err)
+	}
+	messageID, err := randomUUID(s.random)
+	if err != nil {
+		return Ticket{}, fmt.Errorf("generate invitation message ID: %w", err)
+	}
+	now := s.clock.Now().UTC()
+	ticket := Ticket{
+		Schema: TicketSchema, TicketID: id, EmailDeliveryAddress: canonical,
+		ApprovedPolicy: Policy{Kind: KindDesktop}, InvitationTokenHash: invitationTokenHash(token),
+		InvitationOutbox: MailOutboxEntry{Schema: OutboxSchema, MessageID: messageID, DeliveryAddress: canonical, Invitation: wire, Template: InvitationMailTemplate, DeliveryState: DeliveryPending, CreatedAt: now},
+		CreatedAt:        now, ExpiresAt: now.Add(ttl),
+	}
+	err = s.withLock(func() error {
+		path := s.ticketPath(canonical)
+		if _, err := os.Lstat(path); err == nil {
+			return ErrTicketExists
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := atomicWriteJSON(path, ticket); err != nil {
+			return err
+		}
+		return s.writeAuditLocked(AuditEvent{Event: "ticket_invited", Actor: "filees-admin", ObjectType: "ticket", ObjectID: ticket.TicketID, At: now})
+	})
+	return ticket, err
+}
+
+// ResendInvitation replaces a failed or expired-delivery invitation capability
+// without changing the ticket's recipient, policy or TTL.
+func (s *Files) ResendInvitation(ticketID string, profile Invitation) error {
+	if err := s.requireAreas(AreaTickets | AreaAudit); err != nil {
+		return err
+	}
+	if _, err := uuid.Parse(ticketID); err != nil {
+		return errors.New("ticket_id must be a UUID")
+	}
+	return s.withLock(func() error {
+		entries, err := s.readTicketsLocked()
+		if err != nil {
+			return err
+		}
+		var path string
+		var ticket Ticket
+		for candidatePath, candidate := range entries {
+			if candidate.TicketID == ticketID {
+				path, ticket = candidatePath, candidate
+				break
+			}
+		}
+		if path == "" {
+			return ErrNotFound
+		}
+		now := s.clock.Now().UTC()
+		if !now.Before(ticket.ExpiresAt) {
+			return ErrTicketUnavailable
+		}
+		if ticket.InvitationOutbox.DeliveryState == DeliveryPending || ticket.InvitationOutbox.DeliveryState == DeliverySending {
+			return errors.New("invitation delivery is already pending")
+		}
+		token, err := newInvitationToken(s.random)
+		if err != nil {
+			return err
+		}
+		profile.Schema, profile.Token = InvitationSchema, token
+		wire, err := EncodeInvitation(profile)
+		if err != nil {
+			return err
+		}
+		messageID, err := randomUUID(s.random)
+		if err != nil {
+			return err
+		}
+		ticket.InvitationTokenHash = invitationTokenHash(token)
+		ticket.InvitationOutbox = MailOutboxEntry{Schema: OutboxSchema, MessageID: messageID, DeliveryAddress: ticket.EmailDeliveryAddress, Invitation: wire, Template: InvitationMailTemplate, DeliveryState: DeliveryPending, CreatedAt: now}
+		if err := atomicWriteJSON(path, ticket); err != nil {
+			return err
+		}
+		return s.writeAuditLocked(AuditEvent{Event: "ticket_invitation_resent", Actor: "filees-admin", ObjectType: "ticket", ObjectID: ticket.TicketID, At: now})
+	})
+}
+
 // CreateMobilePairing mints a mobile pairing operation directly - no
 // Ticket, no e-mail, no MailOutboxEntry. Mobile has no admin-ticket
 // self-activation path at all (architectural decision: mobile can only be
@@ -493,6 +601,113 @@ func (s *Files) Take(email, requestID string) (TakeReceipt, error) {
 	return receipt, err
 }
 
+// TakeInvitation consumes an administrator-issued opaque invitation. The
+// caller proposes a realm UUID, but it is held only on the pending operation;
+// AuthenticateOTP makes it the approved realm after the e-mail recipient has
+// proven possession of the second factor.
+func (s *Files) TakeInvitation(token, proposedRealmID, requestID string) (TakeReceipt, error) {
+	if err := s.requireAreas(AreaAll); err != nil {
+		return TakeReceipt{}, err
+	}
+	if err := s.requireOTP(); err != nil {
+		return TakeReceipt{}, err
+	}
+	if !validInvitationToken(token) || !validRealmID(proposedRealmID) {
+		return TakeReceipt{}, ErrTicketUnavailable
+	}
+	if _, err := uuid.Parse(requestID); err != nil {
+		return TakeReceipt{}, errors.New("onboarding_request_id must be a UUID")
+	}
+	wantedHash := invitationTokenHash(token)
+	var receipt TakeReceipt
+	err := s.withLock(func() error {
+		if err := s.recoverClaimsLocked(); err != nil {
+			return err
+		}
+		bundle, err := s.readBundlePathLocked(s.operationPath(requestID))
+		if err == nil {
+			if bundle.Operation.ProposedRealmID != proposedRealmID {
+				return ErrRequestConflict
+			}
+			receipt = receiptFor(bundle.Operation)
+			return nil
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		entries, err := s.readTicketsLocked()
+		if err != nil {
+			return err
+		}
+		var ticketPath string
+		var ticket Ticket
+		for path, candidate := range entries {
+			if candidate.InvitationTokenHash == "" {
+				continue
+			}
+			if hmac.Equal([]byte(candidate.InvitationTokenHash), []byte(wantedHash)) {
+				ticketPath, ticket = path, candidate
+				break
+			}
+		}
+		if ticketPath == "" {
+			return ErrTicketUnavailable
+		}
+		now := s.clock.Now().UTC()
+		if !now.Before(ticket.ExpiresAt) {
+			if err := os.Remove(ticketPath); err != nil {
+				return err
+			}
+			if err := syncDirectory(filepath.Dir(ticketPath)); err != nil {
+				return err
+			}
+			if err := s.writeAuditLocked(AuditEvent{Event: "ticket_expired", Actor: "filees-onboard", ObjectType: "ticket", ObjectID: ticket.TicketID, At: now}); err != nil {
+				return err
+			}
+			return ErrTicketUnavailable
+		}
+		claimPath := s.claimPath(requestID)
+		if _, err := os.Lstat(claimPath); err == nil {
+			return ErrRequestConflict
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.Rename(ticketPath, claimPath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return ErrTicketUnavailable
+			}
+			return err
+		}
+		if err := syncDirectory(filepath.Dir(ticketPath)); err != nil {
+			return err
+		}
+		if err := syncDirectory(filepath.Dir(claimPath)); err != nil {
+			return err
+		}
+		bundle, err = s.bundleFromTicketLocked(ticket, requestID, now)
+		if err != nil {
+			_ = os.Rename(claimPath, ticketPath)
+			_ = syncDirectory(filepath.Dir(ticketPath))
+			_ = syncDirectory(filepath.Dir(claimPath))
+			return err
+		}
+		bundle.Operation.ProposedRealmID = proposedRealmID
+		bundle.addAudit("invitation_accepted", "filees-onboard", now)
+		if err := atomicWriteJSON(claimPath, bundle); err != nil {
+			return err
+		}
+		if err := os.Rename(claimPath, s.operationPath(requestID)); err != nil {
+			return err
+		}
+		if err := syncDirectory(filepath.Join(s.root, operationsDir)); err != nil {
+			return err
+		}
+		receipt = receiptFor(bundle.Operation)
+		return nil
+	})
+	return receipt, err
+}
+
 func (s *Files) AuthenticateOTP(otp string) (AuthGrant, error) {
 	if err := s.requireAreas(AreaOperations); err != nil {
 		return AuthGrant{}, err
@@ -534,6 +749,16 @@ func (s *Files) AuthenticateOTP(otp string) (AuthGrant, error) {
 			if err := atomicWriteJSON(path, bundle); err != nil {
 				return err
 			}
+			return ErrOTPInvalid
+		}
+		if op.ProposedRealmID != "" {
+			if !validRealmID(op.ProposedRealmID) || op.ApprovedPolicy.RealmID != "" {
+				return ErrOTPInvalid
+			}
+			op.ApprovedPolicy.RealmID, op.ProposedRealmID = op.ProposedRealmID, ""
+			bundle.addAudit("realm_bound", "filees-ssh-auth", now)
+		}
+		if !validRealmID(op.ApprovedPolicy.RealmID) {
 			return ErrOTPInvalid
 		}
 		// OTPLocator is not secret (only OTPHash guards the actual secret
@@ -929,7 +1154,7 @@ func activationGrantFor(op Operation) ActivationGrant {
 }
 
 func (s *Files) ClaimPendingMail(staleAfter time.Duration) (MailJob, error) {
-	if err := s.requireAreas(AreaOperations); err != nil {
+	if err := s.requireAreas(AreaTickets | AreaOperations | AreaAudit); err != nil {
 		return MailJob{}, err
 	}
 	if staleAfter <= 0 {
@@ -937,11 +1162,58 @@ func (s *Files) ClaimPendingMail(staleAfter time.Duration) (MailJob, error) {
 	}
 	var job MailJob
 	err := s.withLock(func() error {
-		paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
+		// Invitation messages live with their still-unconsumed ticket. They
+		// are deliberately claimed before OTP mail: an invitation never
+		// allocates a reverse port or creates an onboarding operation.
+		ticketPaths, err := filepath.Glob(filepath.Join(s.root, ticketsDir, "*"+jsonSuffix))
 		if err != nil {
 			return err
 		}
 		now := s.clock.Now().UTC()
+		for _, path := range ticketPaths {
+			ticket, err := s.readTicketPathLocked(path)
+			if err != nil {
+				return err
+			}
+			entry := &ticket.InvitationOutbox
+			if entry.MessageID == "" {
+				continue
+			}
+			if entry.DeliveryState == DeliverySending && entry.AttemptedAt != nil && now.Sub(*entry.AttemptedAt) >= staleAfter {
+				entry.DeliveryState, entry.AttemptID, entry.AttemptedAt = DeliveryPending, "", nil
+				entry.LastError = "previous sender exited before recording a result"
+			}
+			if entry.DeliveryState != DeliveryPending {
+				continue
+			}
+			if !now.Before(ticket.ExpiresAt) {
+				entry.DeliveryState, entry.DeliveryAddress, entry.Invitation = DeliveryFailed, "", ""
+				entry.LastError = "ticket expired before invitation submission"
+				if err := atomicWriteJSON(path, ticket); err != nil {
+					return err
+				}
+				continue
+			}
+			attemptID, err := randomUUID(s.random)
+			if err != nil {
+				return err
+			}
+			entry.DeliveryState, entry.AttemptID, entry.AttemptedAt, entry.LastError = DeliverySending, attemptID, &now, ""
+			entry.RetryCount++
+			if err := atomicWriteJSON(path, ticket); err != nil {
+				return err
+			}
+			if err := s.writeAuditLocked(AuditEvent{Event: "invitation_mail_attempt_started", Actor: "filees-mail", ObjectType: "ticket", ObjectID: ticket.TicketID, At: now}); err != nil {
+				return err
+			}
+			job = MailJob{Entry: *entry, ExpiresAt: ticket.ExpiresAt}
+			return nil
+		}
+		paths, err := filepath.Glob(filepath.Join(s.root, operationsDir, "*"+jsonSuffix))
+		if err != nil {
+			return err
+		}
+		now = s.clock.Now().UTC()
 		for _, path := range paths {
 			if strings.HasPrefix(filepath.Base(path), claimPrefix) {
 				continue
@@ -987,10 +1259,28 @@ func (s *Files) ClaimPendingMail(staleAfter time.Duration) (MailJob, error) {
 }
 
 func (s *Files) MarkOutboxQueued(messageID, attemptID string) error {
-	if err := s.requireAreas(AreaOperations); err != nil {
+	if err := s.requireAreas(AreaTickets | AreaOperations | AreaAudit); err != nil {
 		return err
 	}
 	return s.withLock(func() error {
+		if path, ticket, err := s.findInvitationTicketLocked(messageID); err == nil {
+			entry := &ticket.InvitationOutbox
+			if entry.DeliveryState == DeliveryQueued {
+				return nil
+			}
+			if entry.DeliveryState != DeliverySending || entry.AttemptID != attemptID {
+				return ErrMailAttempt
+			}
+			now := s.clock.Now().UTC()
+			entry.DeliveryState, entry.DeliveryAddress, entry.Invitation = DeliveryQueued, "", ""
+			entry.AttemptID, entry.AttemptedAt, entry.LastError, entry.QueuedAt = "", nil, "", &now
+			if err := atomicWriteJSON(path, ticket); err != nil {
+				return err
+			}
+			return s.writeAuditLocked(AuditEvent{Event: "invitation_mail_queued", Actor: "filees-mail", ObjectType: "ticket", ObjectID: ticket.TicketID, At: now})
+		} else if !errors.Is(err, ErrNotFound) {
+			return err
+		}
 		path, bundle, err := s.findBundleLocked(func(bundle Bundle) bool { return bundle.Outbox.MessageID == messageID })
 		if err != nil {
 			return err
@@ -1010,7 +1300,7 @@ func (s *Files) MarkOutboxQueued(messageID, attemptID string) error {
 }
 
 func (s *Files) MarkOutboxFailed(messageID, attemptID, reason string, permanent bool) error {
-	if err := s.requireAreas(AreaOperations); err != nil {
+	if err := s.requireAreas(AreaTickets | AreaOperations | AreaAudit); err != nil {
 		return err
 	}
 	reason = strings.TrimSpace(reason)
@@ -1021,6 +1311,25 @@ func (s *Files) MarkOutboxFailed(messageID, attemptID, reason string, permanent 
 		reason = "mail submission failed"
 	}
 	return s.withLock(func() error {
+		if path, ticket, err := s.findInvitationTicketLocked(messageID); err == nil {
+			entry := &ticket.InvitationOutbox
+			if entry.DeliveryState != DeliverySending || entry.AttemptID != attemptID {
+				return ErrMailAttempt
+			}
+			entry.DeliveryState, entry.AttemptID, entry.AttemptedAt, entry.LastError = DeliveryPending, "", nil, reason
+			event := "invitation_mail_attempt_failed"
+			if permanent {
+				entry.DeliveryState, entry.DeliveryAddress, entry.Invitation = DeliveryFailed, "", ""
+				event = "invitation_mail_failed"
+			}
+			now := s.clock.Now().UTC()
+			if err := atomicWriteJSON(path, ticket); err != nil {
+				return err
+			}
+			return s.writeAuditLocked(AuditEvent{Event: event, Actor: "filees-mail", ObjectType: "ticket", ObjectID: ticket.TicketID, At: now})
+		} else if !errors.Is(err, ErrNotFound) {
+			return err
+		}
 		path, bundle, err := s.findBundleLocked(func(bundle Bundle) bool { return bundle.Outbox.MessageID == messageID })
 		if err != nil {
 			return err
@@ -1033,6 +1342,9 @@ func (s *Files) MarkOutboxFailed(messageID, attemptID, reason string, permanent 
 		event := "mail_attempt_failed"
 		if permanent {
 			entry.DeliveryState, entry.DeliveryAddress, entry.OTP = DeliveryFailed, "", ""
+			// A permanent OTP delivery failure must not hold the scarce reverse
+			// tunnel port until the normal operation TTL elapses.
+			bundle.Operation.State, bundle.Operation.OTPHash, bundle.Operation.OTPLocator, bundle.Operation.AttemptsLeft = OperationExpired, "", "", 0
 			event = "mail_failed"
 		}
 		bundle.addAudit(event, "filees-mail", s.clock.Now().UTC())
@@ -1231,13 +1543,21 @@ func (s *Files) readTicketsLocked() (map[string]Ticket, error) {
 	}
 	result := make(map[string]Ticket, len(paths))
 	for _, path := range paths {
-		var ticket Ticket
-		if err := readStrictJSON(path, TicketSchema, &ticket); err != nil {
+		ticket, err := s.readTicketPathLocked(path)
+		if err != nil {
 			return nil, err
 		}
 		result[path] = ticket
 	}
 	return result, nil
+}
+
+func (s *Files) readTicketPathLocked(path string) (Ticket, error) {
+	var ticket Ticket
+	if err := readStrictJSON(path, TicketSchema, &ticket); err != nil {
+		return Ticket{}, err
+	}
+	return ticket, nil
 }
 
 func (s *Files) readBundlesLocked() ([]Bundle, error) {
@@ -1296,6 +1616,23 @@ func (s *Files) findBundleLocked(match func(Bundle) bool) (string, Bundle, error
 		}
 	}
 	return "", Bundle{}, ErrNotFound
+}
+
+func (s *Files) findInvitationTicketLocked(messageID string) (string, Ticket, error) {
+	paths, err := filepath.Glob(filepath.Join(s.root, ticketsDir, "*"+jsonSuffix))
+	if err != nil {
+		return "", Ticket{}, err
+	}
+	for _, path := range paths {
+		ticket, err := s.readTicketPathLocked(path)
+		if err != nil {
+			return "", Ticket{}, err
+		}
+		if ticket.InvitationOutbox.MessageID == messageID {
+			return path, ticket, nil
+		}
+	}
+	return "", Ticket{}, ErrNotFound
 }
 
 func (s *Files) writeAuditLocked(event AuditEvent) error {
@@ -1514,7 +1851,7 @@ func (s *Files) hashOTP(otp string) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 func receiptFor(op Operation) TakeReceipt {
-	return TakeReceipt{OperationID: op.OperationID, OnboardingRequestID: op.OnboardingRequestID, ExpiresAt: op.ExpiresAt}
+	return TakeReceipt{OperationID: op.OperationID, OnboardingRequestID: op.OnboardingRequestID, AssignedReversePort: op.AssignedReversePort, ExpiresAt: op.ExpiresAt}
 }
 
 type Clock interface{ Now() time.Time }

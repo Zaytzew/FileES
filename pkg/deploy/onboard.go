@@ -28,9 +28,6 @@ func SubmitOnboarding(ctx context.Context, profile ServerProfile, email, request
 	if err := profile.validate(); err != nil {
 		return onboarding.OnboardResponse{}, err
 	}
-	host, port := profile.hostAndPort()
-	address := net.JoinHostPort(host, port)
-	knownHostsPath := filepath.Clean(profile.KnownHostsPath)
 	canonical, err := onboarding.CanonicalEmail(email)
 	if err != nil {
 		return onboarding.OnboardResponse{}, err
@@ -38,6 +35,28 @@ func SubmitOnboarding(ctx context.Context, profile ServerProfile, email, request
 	if _, err := uuid.Parse(requestID); err != nil {
 		return onboarding.OnboardResponse{}, errors.New("onboarding_request_id must be a UUID")
 	}
+	return submitOnboarding(ctx, profile, onboarding.OnboardRequest{Schema: onboarding.LegacyOnboardRequestSchema, Email: canonical, OnboardingRequestID: requestID})
+}
+
+// SubmitInvitation starts onboarding from the opaque capability delivered in
+// the administrator's first e-mail. No mailbox address is sent by the
+// client; the server resolves it from the ticket record.
+func SubmitInvitation(ctx context.Context, profile ServerProfile, invitationToken, proposedRealmID, requestID string) (onboarding.OnboardResponse, error) {
+	if err := profile.validate(); err != nil {
+		return onboarding.OnboardResponse{}, err
+	}
+	request := onboarding.OnboardRequest{Schema: onboarding.OnboardRequestSchema, InvitationToken: invitationToken, ProposedRealmID: proposedRealmID, OnboardingRequestID: requestID}
+	raw, _ := json.Marshal(request)
+	if _, err := onboarding.DecodeOnboardRequest(bytes.NewReader(raw)); err != nil {
+		return onboarding.OnboardResponse{}, err
+	}
+	return submitOnboarding(ctx, profile, request)
+}
+
+func submitOnboarding(ctx context.Context, profile ServerProfile, request onboarding.OnboardRequest) (onboarding.OnboardResponse, error) {
+	host, port := profile.hostAndPort()
+	address := net.JoinHostPort(host, port)
+	knownHostsPath := filepath.Clean(profile.KnownHostsPath)
 	signer, err := BootstrapSigner()
 	if err != nil {
 		return onboarding.OnboardResponse{}, err
@@ -71,7 +90,6 @@ func SubmitOnboarding(ctx context.Context, profile ServerProfile, email, request
 		return onboarding.OnboardResponse{}, err
 	}
 	defer session.Close()
-	request := onboarding.OnboardRequest{Schema: onboarding.OnboardRequestSchema, Email: canonical, OnboardingRequestID: requestID}
 	raw, _ := json.Marshal(request)
 	session.Stdin = bytes.NewReader(append(raw, '\n'))
 	var stderr bytes.Buffer
@@ -97,7 +115,7 @@ func SubmitOnboarding(ctx context.Context, profile ServerProfile, email, request
 		return onboarding.OnboardResponse{}, errors.New("bootstrap response contains trailing JSON")
 	}
 	workerKey, _, options, rest, keyErr := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(response.WorkerPublicKey)))
-	if response.Schema != onboarding.OnboardResponseSchema || response.Status != "accepted" || response.OnboardingRequestID != requestID || keyErr != nil || workerKey.Type() != ssh.KeyAlgoED25519 || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+	if response.Schema != onboarding.OnboardResponseSchema || response.Status != "accepted" || response.OnboardingRequestID != request.OnboardingRequestID || response.AssignedReversePort == 0 || keyErr != nil || workerKey.Type() != ssh.KeyAlgoED25519 || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
 		return onboarding.OnboardResponse{}, errors.New("bootstrap response does not match request")
 	}
 	return response, nil

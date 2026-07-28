@@ -186,6 +186,7 @@ type ActivationBeginPayload struct {
 	ServerAddress  string `json:"server_address"`
 	KnownHostsPath string `json:"known_hosts_path"`
 	StateRoot      string `json:"state_root"`
+	Invitation     string `json:"invitation,omitempty"`
 	Email          string `json:"email"`
 }
 

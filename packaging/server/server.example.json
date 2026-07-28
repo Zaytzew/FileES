@@ -29,6 +29,11 @@
   "otp_attempts": 5,
   "reverse_port_first": 42000,
   "reverse_port_last": 42000,
+  "invitation": {
+    "server_id": "example-office",
+    "server_address": "filees.example.net:2222",
+    "known_host": "[filees.example.net]:2222 ssh-ed25519 AAAA...replace-with-the-verified-server-host-key"
+  },
   "smtp": {
     "address": "smtp.example.net:587",
     "server_name": "smtp.example.net",

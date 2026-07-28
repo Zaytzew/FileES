@@ -187,6 +187,11 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 			continue
 		}
 		visibleRepos++
+		// Repository actions already live one level below this item.  Keep
+		// lifecycle actions at the server level: on GNOME a third menu level is
+		// easy to overlook, and detaching is a folder/server decision rather
+		// than a file-operation decision.
+		children = append(children, repositoryLifecycleItems(vm, repo)...)
 		children = append(children, repoMenu(vm, repo))
 	}
 	if visibleRepos == 0 {
@@ -245,18 +250,36 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 				item.Children = append(item.Children, disabledItem("repo."+repo.ID+".unlock", "Odblokuj pliki…"))
 			}
 		}
-		if vm.CanDetachRepository() && repo.AttachmentPolicy != "required" {
-			item.Children = append(item.Children,
-				actionItem("repo."+repo.ID+".detach", "Odłącz folder…", "Zatrzymaj synchronizację; lokalne dane pozostaną", Intent{Kind: IntentDetachRepository, RepoID: repo.ID, ServerID: repo.ServerID}),
-			)
-		}
-		if vm.CanDeleteRepository() && repo.AttachmentPolicy != "required" && repositoryOwnedByActiveRealm(vm, repo) {
-			item.Children = append(item.Children,
-				actionItem("repo."+repo.ID+".delete", "Odłącz trwale…", "Usuń repozytorium z serwera i odłącz lokalny folder", Intent{Kind: IntentDeleteRepository, RepoID: repo.ID, ServerID: repo.ServerID}),
-			)
-		}
 	}
 	return item
+}
+
+func repositoryLifecycleItems(vm app.ViewModel, repo app.RepoViewModel) []MenuItemModel {
+	if !repo.Attached || strings.TrimSpace(repo.LocalPath) == "" || repo.AttachmentPolicy == "required" {
+		return nil
+	}
+	name := strings.TrimSpace(repo.DisplayName)
+	if name == "" {
+		name = repo.ID
+	}
+	items := make([]MenuItemModel, 0, 2)
+	if vm.CanDetachRepository() {
+		items = append(items, actionItem(
+			"repo."+repo.ID+".detach",
+			fmt.Sprintf("Odłącz folder „%s”…", name),
+			"Zatrzymaj synchronizację; lokalne dane pozostaną",
+			Intent{Kind: IntentDetachRepository, RepoID: repo.ID, ServerID: repo.ServerID},
+		))
+	}
+	if vm.CanDeleteRepository() && repositoryOwnedByActiveRealm(vm, repo) {
+		items = append(items, actionItem(
+			"repo."+repo.ID+".delete",
+			fmt.Sprintf("Odłącz trwale „%s”…", name),
+			"Usuń repozytorium z serwera i odłącz lokalny folder",
+			Intent{Kind: IntentDeleteRepository, RepoID: repo.ID, ServerID: repo.ServerID},
+		))
+	}
+	return items
 }
 
 func serverHasRealmAlias(vm app.ViewModel, serverID string) bool {

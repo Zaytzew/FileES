@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,36 +22,73 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
 	case "ticket create":
 		flags := flag.NewFlagSet("ticket create", flag.ContinueOnError)
 		flags.SetOutput(stderr)
-		email := flags.String("email", "", "delivery e-mail")
-		realmID := flags.String("realm-id", "", "approved realm UUID")
+		emailFlag := flags.String("email", "", "delivery e-mail (legacy spelling; prefer positional argument)")
 		ttl := flags.Duration("ttl", 24*time.Hour, "ticket lifetime")
-		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
+		values := args[2:]
+		positionalEmail := ""
+		if len(values) > 0 && !strings.HasPrefix(values[0], "-") {
+			positionalEmail, values = values[0], values[1:]
+		}
+		if err := flags.Parse(values); err != nil || flags.NArg() != 0 || (*emailFlag != "" && positionalEmail != "") {
 			return ExitUsage
 		}
-		files, _, err := openFiles(path, toolAccess{name: "filees-admin/ticket-create", areas: onboarding.AreaTickets | onboarding.AreaAudit, write: true})
+		email := *emailFlag
+		if positionalEmail != "" {
+			email = positionalEmail
+		}
+		if email == "" {
+			fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create <e-mail> [--ttl 24h]")
+			return ExitUsage
+		}
+		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-create", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
 		}
-		// Mobile clients are never admin-ticketed - only paired by an
-		// already-active desktop of the same realm (pkg/onboarding.Files.
-		// CreateMobilePairing). Admin-created tickets are always desktop.
-		ticket, err := files.CreateTicket(*email, onboarding.Policy{RealmID: *realmID}, *ttl)
+		profile := onboarding.Invitation{ServerID: config.Invitation.ServerID, ServerAddress: config.Invitation.ServerAddress, KnownHost: config.Invitation.KnownHost}
+		ticket, err := files.CreateInvitationTicket(email, *ttl, profile)
 		if err != nil {
 			return adminError(stderr, err)
 		}
+		if code := deliverPendingMail(files, config, io.Discard, stderr); code != ExitOK {
+			return code
+		}
+		// The invitation capability belongs only in the recipient's e-mail;
+		// never echo it into an administrator's shell history or JSON log.
+		ticket.InvitationOutbox.Invitation = ""
+		ticket.InvitationOutbox.DeliveryAddress = ""
 		response := onboarding.AdminResponse{Schema: onboarding.AdminProtocolSchema, RequestID: uuid.NewString(), Status: onboarding.AdminOK, Ticket: &ticket}
 		if err := writeJSON(stdout, response); err != nil {
 			return ExitSoftware
 		}
 		return ExitOK
+	case "ticket resend":
+		flags := flag.NewFlagSet("ticket resend", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		ticketID := flags.String("ticket-id", "", "ticket UUID")
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
+			return ExitUsage
+		}
+		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-resend", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true})
+		if err != nil {
+			report(stderr, "filees-admin config", err)
+			return ExitConfig
+		}
+		profile := onboarding.Invitation{ServerID: config.Invitation.ServerID, ServerAddress: config.Invitation.ServerAddress, KnownHost: config.Invitation.KnownHost}
+		if err := files.ResendInvitation(*ticketID, profile); err != nil {
+			return adminError(stderr, err)
+		}
+		if code := deliverPendingMail(files, config, io.Discard, stderr); code != ExitOK {
+			return code
+		}
+		return writeAdminEmpty(stdout, uuid.NewString())
 	case "ticket revoke":
 		flags := flag.NewFlagSet("ticket revoke", flag.ContinueOnError)
 		flags.SetOutput(stderr)

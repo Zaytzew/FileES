@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"filees/internal/gui/actions"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/deploy"
+	"filees/pkg/onboarding"
 )
 
 type activationClient interface {
@@ -22,19 +25,26 @@ type clientActivator struct {
 	remotePort int
 }
 
-func (a clientActivator) Begin(parent context.Context, serverID, serverAddress, email string) error {
-	profile := deploy.ServerProfile{ID: serverID, Address: serverAddress, KnownHostsPath: a.profile.KnownHostsPath}
+func (a clientActivator) Begin(parent context.Context, wire string) (actions.ActivationTarget, error) {
+	invitation, err := onboarding.DecodeInvitation(wire)
+	if err != nil {
+		return actions.ActivationTarget{}, err
+	}
+	profile := deploy.ServerProfile{ID: invitation.ServerID, Address: invitation.ServerAddress, KnownHostsPath: filepath.Join(filepath.Clean(a.root), invitation.ServerID, "known_hosts")}
 	if err := a.validate(profile); err != nil {
-		return err
+		return actions.ActivationTarget{}, err
 	}
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
-	_, err := a.client.ActivationBegin(ctx, contract.ActivationBeginPayload{ServerID: profile.ID, ServerAddress: profile.Address, KnownHostsPath: profile.KnownHostsPath, StateRoot: a.root, Email: email})
-	return err
+	_, err = a.client.ActivationBegin(ctx, contract.ActivationBeginPayload{ServerID: profile.ID, ServerAddress: profile.Address, KnownHostsPath: profile.KnownHostsPath, StateRoot: a.root, Invitation: wire})
+	if err != nil {
+		return actions.ActivationTarget{}, err
+	}
+	return actions.ActivationTarget{ServerID: profile.ID, Address: profile.Address}, nil
 }
 
-func (a clientActivator) Finish(parent context.Context, serverID, serverAddress string, otp []byte) error {
-	profile := deploy.ServerProfile{ID: serverID, Address: serverAddress, KnownHostsPath: a.profile.KnownHostsPath}
+func (a clientActivator) Finish(parent context.Context, target actions.ActivationTarget, otp []byte) error {
+	profile := deploy.ServerProfile{ID: target.ServerID, Address: target.Address, KnownHostsPath: filepath.Join(filepath.Clean(a.root), target.ServerID, "known_hosts")}
 	if err := a.validate(profile); err != nil {
 		return err
 	}
@@ -42,7 +52,7 @@ func (a clientActivator) Finish(parent context.Context, serverID, serverAddress 
 	defer cancel()
 	secret := append(contract.Secret(nil), otp...)
 	defer clear(secret)
-	_, err := a.client.ActivationFinish(ctx, contract.ActivationFinishPayload{ServerID: profile.ID, ServerAddress: profile.Address, KnownHostsPath: profile.KnownHostsPath, StateRoot: a.root, RemotePort: a.remotePort, OTP: secret})
+	_, err := a.client.ActivationFinish(ctx, contract.ActivationFinishPayload{ServerID: profile.ID, ServerAddress: profile.Address, KnownHostsPath: profile.KnownHostsPath, StateRoot: a.root, OTP: secret})
 	return err
 }
 

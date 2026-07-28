@@ -156,8 +156,11 @@ func TestWindowsOpenFolderCallsExplorer(t *testing.T) {
 func TestHideConsoleWindowOnlyAffectsPowerShell(t *testing.T) {
 	powerShell := exec.Command(`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`)
 	hideConsoleWindow(powerShell)
-	if powerShell.SysProcAttr == nil || !powerShell.SysProcAttr.HideWindow {
-		t.Fatal("PowerShell must start with its console hidden")
+	if powerShell.SysProcAttr == nil || powerShell.SysProcAttr.CreationFlags&createNoWindow == 0 {
+		t.Fatal("PowerShell must start with no console allocated")
+	}
+	if powerShell.SysProcAttr.HideWindow {
+		t.Fatal("PowerShell must not use HideWindow: it overrides the first ShowWindow call any dialog the script opens makes, forcing it to start minimized")
 	}
 
 	explorer := exec.Command(`C:\Windows\explorer.exe`)

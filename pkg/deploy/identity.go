@@ -289,15 +289,6 @@ func writeBytesAtomic(path string, raw []byte, mode os.FileMode) error {
 	return syncDir(dir)
 }
 
-func syncDir(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
-}
-
 func zero(value []byte) {
 	for i := range value {
 		value[i] = 0

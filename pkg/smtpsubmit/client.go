@@ -104,12 +104,22 @@ func Submit(ctx context.Context, config Config, request Request) error {
 		}
 	}
 	if config.Username != "" {
-		if !capabilityContains(capabilities, "AUTH", "PLAIN") {
-			return &Error{Stage: "auth", Err: errors.New("relay did not advertise AUTH PLAIN")}
-		}
-		payload := base64.StdEncoding.EncodeToString([]byte("\x00" + config.Username + "\x00" + config.Password))
-		if err := client.command("auth", []int{235}, "AUTH PLAIN "+payload); err != nil {
-			return err
+		switch {
+		case capabilityContains(capabilities, "AUTH", "PLAIN"):
+			payload := base64.StdEncoding.EncodeToString([]byte("\x00" + config.Username + "\x00" + config.Password))
+			if err := client.command("auth", []int{235}, "AUTH PLAIN "+payload); err != nil {
+				return err
+			}
+		case capabilityContains(capabilities, "AUTH", "LOGIN"):
+			// Some relays (e.g. OVH's submission service) advertise LOGIN but
+			// never PLAIN, even after STARTTLS - both send the password in
+			// the clear over the already-encrypted channel, so LOGIN is an
+			// equally safe fallback, not a downgrade.
+			if err := client.authLogin(config.Username, config.Password); err != nil {
+				return err
+			}
+		default:
+			return &Error{Stage: "auth", Err: errors.New("relay did not advertise AUTH PLAIN or AUTH LOGIN")}
 		}
 	}
 	if err := client.command("mail_from", []int{250}, "MAIL FROM:<"+request.EnvelopeFrom+">"); err != nil {
@@ -179,6 +189,48 @@ func (c *client) ehlo(name string) (map[string]string, error) {
 		}
 	}
 	return result, nil
+}
+
+// authLogin performs the AUTH LOGIN challenge/response exchange: server
+// prompts (334) for a base64 username, then a base64 password, then
+// confirms with 235. The prompt text itself is not validated - it is
+// conventionally "Username:"/"Password:" but that is not part of the
+// protocol contract, only the 334 status code and the sequence are.
+func (c *client) authLogin(username, password string) error {
+	if err := c.writeLine("AUTH LOGIN"); err != nil {
+		return &Error{Stage: "auth", Temporary: true, Err: err}
+	}
+	if err := c.expect334("auth"); err != nil {
+		return err
+	}
+	if err := c.writeLine(base64.StdEncoding.EncodeToString([]byte(username))); err != nil {
+		return &Error{Stage: "auth", Temporary: true, Err: err}
+	}
+	if err := c.expect334("auth"); err != nil {
+		return err
+	}
+	if err := c.writeLine(base64.StdEncoding.EncodeToString([]byte(password))); err != nil {
+		return &Error{Stage: "auth", Temporary: true, Err: err}
+	}
+	code, lines, err := c.readResponse()
+	if err != nil {
+		return &Error{Stage: "auth", Temporary: isTransientResponseError(err), Err: err}
+	}
+	if code != 235 {
+		return responseError("auth", code, lines)
+	}
+	return nil
+}
+
+func (c *client) expect334(stage string) error {
+	code, lines, err := c.readResponse()
+	if err != nil {
+		return &Error{Stage: stage, Temporary: isTransientResponseError(err), Err: err}
+	}
+	if code != 334 {
+		return responseError(stage, code, lines)
+	}
+	return nil
 }
 
 func (c *client) command(stage string, expected []int, line string) error {

@@ -55,17 +55,33 @@ func (osWindowsCommandRunner) LookPath(name string) (string, error) {
 	return exec.LookPath(name)
 }
 
+// createNoWindow (CREATE_NO_WINDOW) tells CreateProcess not to allocate a
+// console for the child at all, unlike syscall.SysProcAttr.HideWindow (which
+// allocates one with STARTF_USESHOWWINDOW/SW_HIDE). Not exported by the
+// standard syscall package on Windows, so it is duplicated here.
+const createNoWindow = 0x08000000
+
 // hideConsoleWindow suppresses the console window Windows would otherwise
 // briefly flash when spawning a console subprocess (e.g. powershell.exe) from
 // a GUI-subsystem process. Passing -WindowStyle Hidden to PowerShell is not
 // enough on its own: CreateProcess still allocates and shows a console window
-// before PowerShell gets a chance to hide it. Setting HideWindow here tells
-// CreateProcess to start the window hidden from the outset.
+// before PowerShell gets a chance to hide it.
+//
+// HideWindow (STARTF_USESHOWWINDOW + SW_HIDE) looks like the obvious fix, but
+// Win32 documents that the *first* ShowWindow call made by a process is
+// overridden by the show-state CreateProcess passed in, regardless of what
+// the caller explicitly requests. Our prompt/confirm/info/reservation
+// dialogs call Form.ShowDialog() as literally the first window the spawned
+// powershell.exe ever shows, so HideWindow silently forced every one of
+// them to open minimized/hidden instead of focused - confirmed live on a
+// real Windows 11 session (see SESSION_HANDOFF.md, Windows client bring-up).
+// CREATE_NO_WINDOW avoids the console without touching that show-state
+// inheritance, so windows created later by the script are unaffected.
 func hideConsoleWindow(cmd *exec.Cmd) {
 	if !strings.EqualFold(filepath.Base(cmd.Path), "powershell.exe") {
 		return
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
 }
 
 // dpiAwarenessPrelude opts the spawned powershell.exe into per-monitor-v2 DPI

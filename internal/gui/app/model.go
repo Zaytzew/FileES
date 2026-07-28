@@ -240,6 +240,14 @@ func aggregateIcon(connected bool, repos []RepoViewModel) IconState {
 }
 
 func repoIconState(r RepoViewModel) IconState {
+	// A projected optional repository without a local attachment cannot be
+	// doing work on this machine. In particular, a remote INITIALIZING record
+	// may outlive a failed or abandoned creation attempt. It remains visible
+	// in server authority, but must not keep the whole client permanently in
+	// the busy state.
+	if !r.Attached && r.AttachmentPolicy == "optional" {
+		return IconActive
+	}
 	if r.Conflicts > 0 || r.State == contract.StateDegraded || r.State == contract.StateInteractionRequired {
 		return IconError
 	}

@@ -171,6 +171,15 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		p.runRelocate(ctx, record, profile)
 		return
 	}
+	if record.State == localrepo.StateRepositoryCreated && record.LastError != "" {
+		// The server repository is durable, but the last import attempt ended
+		// with a concrete error. Do not replay it blindly at every daemon
+		// startup: a user-initiated retry through BeginCreate resumes this exact
+		// operation, while the idle client stays truthful instead of appearing
+		// permanently busy.
+		talk.With("provisioning:"+operationID).Warnf("creation requires explicit retry: %s", record.LastError)
+		return
+	}
 	if record.State == localrepo.StateRepositoryCreated {
 		if resumed, err := p.local.ResumeCreate(operationID); err == nil {
 			record = resumed

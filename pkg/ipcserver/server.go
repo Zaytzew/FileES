@@ -262,6 +262,10 @@ func (s *Server) RegisterRepo(id, url, localPath string) *RepoState {
 }
 
 func (s *Server) RegisterRepoAccess(id, url, localPath, serverID, access string) *RepoState {
+	displayName := filepath.Base(filepath.Clean(localPath))
+	if displayName == "." || displayName == string(filepath.Separator) || displayName == "" {
+		displayName = id
+	}
 	rs := &RepoState{
 		server:       s,
 		id:           id,
@@ -269,7 +273,7 @@ func (s *Server) RegisterRepoAccess(id, url, localPath, serverID, access string)
 		localPath:    localPath,
 		serverID:     serverID,
 		access:       access,
-		displayName:  id,
+		displayName:  displayName,
 		attached:     true,
 		state:        contract.StateInitializing,
 		connectivity: contract.ConnOnline,

@@ -49,8 +49,15 @@ type RealmAliasManager interface {
 }
 
 type Activator interface {
-	Begin(ctx context.Context, serverID, serverAddress, email string) error
-	Finish(ctx context.Context, serverID, serverAddress string, otp []byte) error
+	Begin(ctx context.Context, invitation string) (ActivationTarget, error)
+	Finish(ctx context.Context, target ActivationTarget, otp []byte) error
+}
+
+// ActivationTarget is derived from a validated invitation, never typed as a
+// transport endpoint by the user.
+type ActivationTarget struct {
+	ServerID string
+	Address  string
 }
 
 type RepositoryCreator interface {
@@ -692,22 +699,13 @@ func (c *Controller) startActivation(ctx context.Context) {
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation("activate")
-		profile, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Lokalna nazwa profilu serwera (np. biuro):", Placeholder: "biuro"})
-		if err != nil || profile.Cancelled || profile.Value == "" {
+		invitation, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wklej zaproszenie FileES otrzymane e-mailem:", Placeholder: "filees-invite:v1:…", Secret: true})
+		if err != nil || invitation.Cancelled || invitation.Value == "" {
 			c.activationFailure(ctx, err)
 			return
 		}
-		endpoint, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Adres serwera FileES:", Placeholder: "filees.example.net"})
-		if err != nil || endpoint.Cancelled || endpoint.Value == "" {
-			c.activationFailure(ctx, err)
-			return
-		}
-		email, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Adres e-mail, na który serwer wyśle jednorazowy kod OTP:"})
-		if err != nil || email.Cancelled || email.Value == "" {
-			c.activationFailure(ctx, err)
-			return
-		}
-		if err := c.cfg.Activator.Begin(ctx, profile.Value, endpoint.Value, email.Value); err != nil {
+		target, err := c.cfg.Activator.Begin(ctx, invitation.Value)
+		if err != nil {
 			c.activationFailure(ctx, err)
 			return
 		}
@@ -718,15 +716,15 @@ func (c *Controller) startActivation(ctx context.Context) {
 		}
 		secret := []byte(otp.Value)
 		defer clear(secret)
-		if err := c.cfg.Activator.Finish(ctx, profile.Value, endpoint.Value, secret); err != nil {
+		if err := c.cfg.Activator.Finish(ctx, target, secret); err != nil {
 			c.activationFailure(ctx, err)
 			return
 		}
-		if c.cfg.RealmAliases != nil && !c.claimRealmAlias(ctx, profile.Value) {
+		if c.cfg.RealmAliases != nil && !c.claimRealmAlias(ctx, target.ServerID) {
 			return
 		}
 		c.offerLocalPinSetup(ctx)
-		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: endpoint.Value, Urgency: platform.UrgencyNormal})
+		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: target.Address, Urgency: platform.UrgencyNormal})
 	}()
 }
 
@@ -967,12 +965,25 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		ID:      opName + "." + repoID,
 		Group:   opName + "." + repoID,
 		Title:   fmt.Sprintf("%s %d plik(ów)", successNoun, len(paths)),
-		Body:    repoID,
+		Body:    lockNotificationPaths(repo.LocalPath, paths),
 		Urgency: platform.UrgencyLow,
 	})
 	if c.cfg.Refresh != nil {
 		c.cfg.Refresh()
 	}
+}
+
+func lockNotificationPaths(workingCopy string, paths []string) string {
+	displayed := make([]string, 0, len(paths))
+	for _, path := range paths {
+		relative, err := filepath.Rel(filepath.Clean(workingCopy), filepath.Clean(path))
+		if err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			displayed = append(displayed, "/"+filepath.ToSlash(relative))
+			continue
+		}
+		displayed = append(displayed, filepath.Base(filepath.Clean(path)))
+	}
+	return strings.Join(displayed, "\n")
 }
 
 type reservationEntry struct {

@@ -23,7 +23,13 @@ type daemonActivationService struct {
 
 func (service daemonActivationService) Begin(ctx context.Context, payload contract.ActivationBeginPayload) (contract.ActivationCommandResult, error) {
 	profile := deploy.ServerProfile{ID: payload.ServerID, Address: payload.ServerAddress, KnownHostsPath: payload.KnownHostsPath}
-	passport, err := deploy.BeginOnboarding(ctx, payload.StateRoot, profile, payload.Email)
+	var passport deploy.OnboardPassport
+	var err error
+	if strings.TrimSpace(payload.Invitation) != "" {
+		passport, profile, err = deploy.BeginInvitation(ctx, payload.StateRoot, payload.Invitation)
+	} else {
+		passport, err = deploy.BeginOnboarding(ctx, payload.StateRoot, profile, payload.Email)
+	}
 	if err != nil {
 		return contract.ActivationCommandResult{}, err
 	}
@@ -38,7 +44,11 @@ func (service daemonActivationService) Finish(ctx context.Context, payload contr
 	}
 	otp := append([]byte(nil), bytes.TrimSpace(payload.OTP)...)
 	defer clear(otp)
-	if err := deploy.RunActivation(ctx, passport, deploy.ActivationOptions{Root: payload.StateRoot, ServerProfile: profile, RemotePort: payload.RemotePort}, otp); err != nil {
+	remotePort := payload.RemotePort
+	if remotePort == 0 {
+		remotePort = passport.RemotePort
+	}
+	if err := deploy.RunActivation(ctx, passport, deploy.ActivationOptions{Root: payload.StateRoot, ServerProfile: profile, RemotePort: remotePort}, otp); err != nil {
 		return contract.ActivationCommandResult{}, err
 	}
 	state := "active"

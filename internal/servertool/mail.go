@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"filees/pkg/onboarding"
+	"filees/pkg/serverconfig"
 	"filees/pkg/smtpsubmit"
 )
 
@@ -17,11 +18,15 @@ func RunMail(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: filees-mail [-config path] send")
 		return ExitUsage
 	}
-	files, config, err := openFiles(path, toolAccess{name: "filees-mail/send", areas: onboarding.AreaOperations, write: true, needSMTP: true})
+	files, config, err := openFiles(path, toolAccess{name: "filees-mail/send", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true})
 	if err != nil {
 		report(stderr, "filees-mail config", err)
 		return ExitConfig
 	}
+	return deliverPendingMail(files, config, stdout, stderr)
+}
+
+func deliverPendingMail(files *onboarding.Files, config serverconfig.Config, stdout, stderr io.Writer) int {
 	job, err := files.ClaimPendingMail(5 * time.Minute)
 	if errors.Is(err, onboarding.ErrNotFound) {
 		_ = writeJSON(stdout, map[string]string{"schema": "filees.mail-result/v1", "status": "no_work"})

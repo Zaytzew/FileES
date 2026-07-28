@@ -336,6 +336,7 @@ func TestAggregateIconPriority(t *testing.T) {
 		{[]RepoViewModel{{State: contract.StateActive, Connectivity: contract.ConnOnline}}, IconActive},
 		{[]RepoViewModel{{State: contract.StateUnattached, Connectivity: contract.ConnOnline}}, IconActive},
 		{[]RepoViewModel{{State: contract.StateInitializing, Connectivity: contract.ConnOnline}}, IconBusy},
+		{[]RepoViewModel{{State: contract.StateInitializing, Connectivity: contract.ConnOnline, AttachmentPolicy: "optional"}}, IconActive},
 		{[]RepoViewModel{{State: contract.StateActive, Connectivity: contract.ConnOnline, CurrentOp: ptr("commit")}}, IconBusy},
 		{[]RepoViewModel{{State: contract.StateActive, Connectivity: contract.ConnOffline}}, IconOffline},
 		{[]RepoViewModel{{State: contract.StateActive, Conflicts: 1}}, IconError},

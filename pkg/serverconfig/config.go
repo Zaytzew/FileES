@@ -33,7 +33,16 @@ type File struct {
 	WorkerPublicKeyFile  string         `json:"worker_public_key_file,omitempty"`
 	Activation           ActivationFile `json:"activation,omitempty"`
 	Repositories         RepositoryFile `json:"repositories,omitempty"`
+	Invitation           InvitationFile `json:"invitation,omitempty"`
 	SMTP                 SMTPFile       `json:"smtp"`
+}
+
+// InvitationFile contains the public, pinned bootstrap profile that is
+// embedded in each administrator-issued invitation.
+type InvitationFile struct {
+	ServerID      string `json:"server_id,omitempty"`
+	ServerAddress string `json:"server_address,omitempty"`
+	KnownHost     string `json:"known_host,omitempty"`
 }
 
 type ActivationFile struct {
@@ -96,6 +105,7 @@ type Config struct {
 	WorkerSigner         ssh.Signer
 	Activation           activation.Config
 	Repositories         RepositoryFile
+	Invitation           InvitationFile
 }
 
 type Secrets uint8
@@ -154,6 +164,12 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if file.WorkerPublicKeyFile != "" && !filepath.IsAbs(file.WorkerPublicKeyFile) {
 		return Config{}, errors.New("worker_public_key_file must be absolute")
+	}
+	if file.Invitation.ServerID != "" || file.Invitation.ServerAddress != "" || file.Invitation.KnownHost != "" {
+		probe := onboarding.Invitation{Schema: onboarding.InvitationSchema, Token: strings.Repeat("A", 43), ServerID: file.Invitation.ServerID, ServerAddress: file.Invitation.ServerAddress, KnownHost: file.Invitation.KnownHost}
+		if err := probe.Validate(); err != nil {
+			return Config{}, fmt.Errorf("invitation profile: %w", err)
+		}
 	}
 	activationConfig := activation.Config{
 		Root: file.Activation.Root, SessionRoot: file.Activation.SessionRoot, AuthorizedKeysFile: file.Activation.AuthorizedKeysFile,
@@ -276,6 +292,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		SMTPPasswordFile: file.SMTP.PasswordFile, SMTPCAFile: file.SMTP.CAFile,
 		WorkerPrivateKeyFile: file.WorkerPrivateKeyFile, WorkerSigner: workerSigner,
 		WorkerPublicKeyFile: file.WorkerPublicKeyFile, WorkerPublicKey: workerPublicKey,
+		Invitation:   file.Invitation,
 		Activation:   activationConfig,
 		Repositories: file.Repositories,
 		Onboarding:   onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},

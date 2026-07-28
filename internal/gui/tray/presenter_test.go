@@ -81,8 +81,12 @@ func TestBuildMenuOffersDetachDeleteAndWholeStackLifecycle(t *testing.T) {
 	}
 	menu := BuildMenu(vm)
 	repoItem := findItem(t, menu.Items, "repo.docs")
-	if !hasItem(repoItem.Children, "repo.docs.detach") || !hasItem(repoItem.Children, "repo.docs.delete") {
-		t.Fatalf("repository lifecycle actions=%+v", repoItem.Children)
+	serverItem := findItem(t, menu.Items, "server.office")
+	if !hasItem(serverItem.Children, "repo.docs.detach") || !hasItem(serverItem.Children, "repo.docs.delete") {
+		t.Fatalf("server-level lifecycle actions=%+v", serverItem.Children)
+	}
+	if hasItem(repoItem.Children, "repo.docs.detach") || hasItem(repoItem.Children, "repo.docs.delete") {
+		t.Fatalf("lifecycle actions must not be hidden in the repository submenu: %+v", repoItem.Children)
 	}
 	if !hasItem(menu.Items, "action.restart_filees") || !hasItem(menu.Items, "action.shutdown_filees") {
 		t.Fatalf("whole-stack lifecycle actions missing: %+v", menu.Items)
@@ -94,9 +98,9 @@ func TestBuildMenuOffersDetachDeleteAndWholeStackLifecycle(t *testing.T) {
 	repo.AttachmentPolicy = "required"
 	vm.Repos[0] = repo
 	vm.Servers[0].Repos[0] = repo
-	required := findItem(t, BuildMenu(vm).Items, "repo.docs")
-	if hasItem(required.Children, "repo.docs.detach") || hasItem(required.Children, "repo.docs.delete") {
-		t.Fatalf("required repository can be detached: %+v", required.Children)
+	requiredServer := findItem(t, BuildMenu(vm).Items, "server.office")
+	if hasItem(requiredServer.Children, "repo.docs.detach") || hasItem(requiredServer.Children, "repo.docs.delete") {
+		t.Fatalf("required repository can be detached: %+v", requiredServer.Children)
 	}
 }
 

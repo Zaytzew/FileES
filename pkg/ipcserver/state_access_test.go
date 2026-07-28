@@ -82,6 +82,18 @@ func TestMarkRepoDetachedClearsLocalPathWithoutProjection(t *testing.T) {
 	}
 }
 
+func TestRegisterRepoAccessUsesWorkingCopyNameUntilProjectionArrives(t *testing.T) {
+	server := New(t.TempDir() + "/daemon.sock")
+	repo := server.RegisterRepoAccess("9ecfac86-745b-51f9-8f17-fd8b6055561d", "svn+ssh://host/repo", "/work/Obrazy", "office", contract.AccessReadWrite)
+	if got := repo.Summary().DisplayName; got != "Obrazy" {
+		t.Fatalf("temporary display name = %q, want working-copy name", got)
+	}
+	repo.SetProjectedMetadata("Zdjęcia zespołu", "svn+ssh://host/repo", contract.AccessReadWrite, contract.StateActive, "", "optional", true)
+	if got := repo.Summary().DisplayName; got != "Zdjęcia zespołu" {
+		t.Fatalf("projected display name = %q", got)
+	}
+}
+
 func TestProjectedPolicyReachesSummaryAndSnapshot(t *testing.T) {
 	owner := "7b807185-aa75-4169-8a65-705c7cbab176"
 	rs := New(t.TempDir()+"/daemon.sock").RegisterProjectedRepoPolicy("repo-id", "Team", "svn+ssh://_filees-client@example/repo", "office", contract.AccessReadWrite, "active", owner, "required", false)

@@ -85,6 +85,7 @@ type Worker struct {
 	Capacity      CapacityChecker
 	Reservations  ReservationLedger
 	MobilePairing MobilePairingMinter
+	Aliases       RealmAliasStore
 	Now           func() time.Time
 }
 
@@ -98,7 +99,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -106,6 +107,12 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if (ticket.Type == control.TicketStoragePreflight || ticket.Type == control.TicketCreateRepository) && !session.CanCreateRepositories {
 		return w.failure(ticket, "CREATE_REPOSITORY_FORBIDDEN", "authenticated session cannot create repositories")
+	}
+	if ticket.Type == control.TicketClaimRealmAlias {
+		return w.claimRealmAlias(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketResolveOwnerLabels {
+		return w.resolveOwnerLabels(ctx, ticket)
 	}
 	if w.Store == nil {
 		return control.Result{}, errors.New("repository result store is required")
@@ -156,6 +163,38 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 		err = w.Store.Save(result)
 	}
 	return result, err
+}
+
+func (w *Worker) claimRealmAlias(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.Aliases == nil {
+		return w.failure(ticket, "REALM_ALIAS_UNAVAILABLE", "realm alias service is unavailable")
+	}
+	var payload control.ClaimRealmAliasPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	alias, err := w.Aliases.Claim(ctx, session.RealmID, payload.Alias)
+	if err != nil {
+		// Intentionally collapse collision and policy details: this is a claim
+		// operation, never an alias availability oracle.
+		return w.failure(ticket, "REALM_ALIAS_REJECTED", "realm alias cannot be assigned")
+	}
+	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ClaimRealmAliasResult{Alias: alias}, w.now())
+}
+
+func (w *Worker) resolveOwnerLabels(ctx context.Context, ticket control.Ticket) (control.Result, error) {
+	if w.Aliases == nil {
+		return w.failure(ticket, "OWNER_LABELS_UNAVAILABLE", "owner labels are unavailable")
+	}
+	var payload control.ResolveOwnerLabelsPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	labels, err := w.Aliases.Resolve(ctx, payload.OwnerIDs)
+	if err != nil {
+		return w.failure(ticket, "OWNER_LABELS_UNAVAILABLE", "owner labels are unavailable")
+	}
+	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ResolveOwnerLabelsResult{Labels: labels}, w.now())
 }
 
 func (w *Worker) deleteRepository(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {

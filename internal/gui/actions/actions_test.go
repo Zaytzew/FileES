@@ -794,7 +794,7 @@ func TestControllerLockSuccessNotifies(t *testing.T) {
 }
 
 func TestControllerReservationsConfirmsRiskAndTokenFencesRelease(t *testing.T) {
-	reservation := app.Reservation{RepoID: "docs", WorkingCopy: "/wc/docs", Path: "plan.dwg", Token: "opaque-lock-token", Owner: "anna", CreatedAt: "2026-07-27", CanRelease: true, LocalChanges: true}
+	reservation := app.Reservation{RepoID: "docs", WorkingCopy: "/wc/docs", Path: "plan.dwg", Token: "opaque-lock-token", OwnerLabel: "anna", CreatedAt: "2026-07-27", CanRelease: true, LocalChanges: true}
 	manager := newFakeReservations([]app.Reservation{reservation})
 	shows := 0
 	fake := &platformtest.Fake{

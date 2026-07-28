@@ -17,6 +17,7 @@ const (
 	// Client activation (executed by daemon; GUI only supplies user intent).
 	CmdActivationBegin  = "activation.begin"
 	CmdActivationFinish = "activation.finish"
+	CmdRealmAliasClaim  = "realm.alias_claim"
 
 	// Mobile pairing (Phase 2c): daemon mints a MOBILE_PAIRING token through
 	// its own already-authenticated control-plane channel; the tray hands
@@ -72,6 +73,7 @@ const (
 	CapErrorList              = "error.list"
 	CapActivationBegin        = "activation.begin"
 	CapActivationFinish       = "activation.finish"
+	CapRealmAliasClaim        = "realm.alias_claim"
 	CapMobilePairingBegin     = "mobile_pairing.begin"
 	CapRepoCreateRequest      = "repo.create_request"
 	CapRepoAttachIntent       = "repo.attach_intent"
@@ -108,6 +110,7 @@ var AllCapabilities = []string{
 	CapErrorList,
 	CapActivationBegin,
 	CapActivationFinish,
+	CapRealmAliasClaim,
 	CapMobilePairingBegin,
 	CapRepoCreateRequest,
 	CapRepoAttachIntent,
@@ -169,6 +172,7 @@ type ActivationStatus struct {
 	DisplayName           string `json:"display_name"`
 	ClientRole            string `json:"client_role"`
 	RealmID               string `json:"realm_id,omitempty"`
+	RealmAlias            string `json:"realm_alias,omitempty"`
 	Address               string `json:"address,omitempty"`
 	ClientID              string `json:"client_id,omitempty"`
 	SSHPort               int    `json:"ssh_port,omitempty"`
@@ -192,6 +196,18 @@ type ActivationFinishPayload struct {
 	StateRoot      string `json:"state_root"`
 	RemotePort     int    `json:"remote_port"`
 	OTP            Secret `json:"otp"`
+}
+
+// RealmAliasClaimPayload asks the daemon to make the authenticated realm's
+// immutable alias claim on the server. There is deliberately no companion
+// "availability" request.
+type RealmAliasClaimPayload struct {
+	ServerID string `json:"server_id"`
+	Alias    string `json:"alias"`
+}
+
+type RealmAliasClaimResult struct {
+	Alias string `json:"alias"`
 }
 
 // Secret preserves the wire representation as a JSON string while keeping
@@ -413,11 +429,14 @@ type RepoReservationListPayload struct {
 // Token is an opaque fencing value: callers must return it unchanged when
 // asking to release a row, so a stale dialog cannot unlock a later lock.
 type Reservation struct {
-	RepoID         string `json:"repo_id"`
-	WorkingCopy    string `json:"working_copy"`
-	Path           string `json:"path"` // repository-relative, slash-separated
-	Token          string `json:"token"`
-	Owner          string `json:"owner,omitempty"`
+	RepoID      string `json:"repo_id"`
+	WorkingCopy string `json:"working_copy"`
+	Path        string `json:"path"` // repository-relative, slash-separated
+	Token       string `json:"token"`
+	// OwnerID is daemon-internal data obtained from SVN and is never encoded
+	// on the local GUI IPC. The presentation contract exposes OwnerLabel only.
+	OwnerID        string `json:"-"`
+	OwnerLabel     string `json:"owner_label,omitempty"`
 	CreatedAt      string `json:"created_at,omitempty"`
 	CanRelease     bool   `json:"can_release"`
 	LocalChanges   bool   `json:"local_changes"`

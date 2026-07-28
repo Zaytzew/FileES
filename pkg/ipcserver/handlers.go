@@ -33,6 +33,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleActivationBegin(req)
 	case contract.CmdActivationFinish:
 		return s.handleActivationFinish(req)
+	case contract.CmdRealmAliasClaim:
+		return s.handleRealmAliasClaim(req)
 	case contract.CmdMobilePairingBegin:
 		return s.handleMobilePairingBegin(req)
 	case contract.CmdRepoList:
@@ -104,6 +106,29 @@ func (s *Server) handleRepoReservationList(req contract.Request) contract.Respon
 		}
 		result.Reservations = append(result.Reservations, rows...)
 	}
+	ownerIDs := make([]string, 0, len(result.Reservations))
+	seenOwners := make(map[string]struct{}, len(result.Reservations))
+	for _, row := range result.Reservations {
+		if row.OwnerID == "" {
+			continue
+		}
+		if _, seen := seenOwners[row.OwnerID]; !seen {
+			seenOwners[row.OwnerID] = struct{}{}
+			ownerIDs = append(ownerIDs, row.OwnerID)
+		}
+	}
+	labels := map[string]string{}
+	if resolver := s.ownerLabelResolver(); resolver != nil && len(ownerIDs) > 0 {
+		// Owner labels improve presentation only; an unavailable control
+		// worker must not hide otherwise authoritative reservation rows.
+		if resolved, err := resolver.Resolve(ctx, payload.ServerID, ownerIDs); err == nil {
+			labels = resolved
+		}
+	}
+	for i := range result.Reservations {
+		result.Reservations[i].OwnerLabel = labels[result.Reservations[i].OwnerID]
+		result.Reservations[i].OwnerID = ""
+	}
 	sort.Slice(result.Reservations, func(i, j int) bool {
 		left, right := result.Reservations[i], result.Reservations[j]
 		if left.WorkingCopy != right.WorkingCopy {
@@ -115,6 +140,34 @@ func (s *Server) handleRepoReservationList(req contract.Request) contract.Respon
 		return left.RepoID < right.RepoID
 	})
 	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleRealmAliasClaim(req contract.Request) contract.Response {
+	service := s.realmAliasService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "REALM-0001", "ERROR", "RETRY", "realm.alias_unavailable", nil)
+	}
+	var payload contract.RealmAliasClaimPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" || strings.TrimSpace(payload.Alias) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !ok {
+		return contract.ErrResponse(req.RequestID, "REALM-0002", "ERROR", "NONE", "realm.not_activated", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	alias, err := service.Claim(ctx, payload.ServerID, payload.Alias)
+	if err != nil {
+		// Keep the local IPC equally non-enumerating: callers are never told
+		// whether a candidate exists or merely violates server policy.
+		return contract.ErrResponse(req.RequestID, "REALM-1001", "ERROR", "REQUIRE_ACTION", "realm.alias_rejected", nil)
+	}
+	activation.RealmAlias = alias
+	s.RegisterActivation(activation)
+	return contract.OKResponse(req.RequestID, contract.RealmAliasClaimResult{Alias: alias})
 }
 
 func (s *Server) handleRepoReservationRelease(req contract.Request) contract.Response {
@@ -554,6 +607,14 @@ func (s *Server) handleRepoLockUnlock(req contract.Request, lock bool) contract.
 	if rs == nil {
 		return protoErr(req.RequestID, "proto.repo_not_found",
 			map[string]string{"repo_id": req.RepoID})
+	}
+	if lock {
+		s.mu.RLock()
+		activation, activated := s.activations[rs.ServerID()]
+		s.mu.RUnlock()
+		if activated && activation.RealmAlias == "" {
+			return contract.ErrResponse(req.RequestID, "REALM-2001", "ERROR", "REQUIRE_ACTION", "realm.alias_required", nil)
+		}
 	}
 	var pl contract.RepoLockPayload
 	if err := contract.DecodePayload(req.Payload, &pl); err != nil || len(pl.Paths) == 0 {

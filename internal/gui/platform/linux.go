@@ -250,7 +250,7 @@ func (b *LinuxBackend) ShowReservations(ctx context.Context, request Reservation
 	args := []string{
 		"--list", "--radiolist", "--title=" + request.Title,
 		"--text=" + request.Text, "--width=1200", "--height=560",
-		"--column=", "--column=ID", "--column=Serwer", "--column=Katalog roboczy", "--column=Plik",
+		"--column=", "--column=ID", "--column=Serwer", "--column=Kopia robocza", "--column=Plik",
 		"--column=Właściciel", "--column=Utworzono", "--column=Zwolnienie",
 		"--hide-column=2", "--print-column=2", "--ok-label=Zwolnij",
 		"--cancel-label=Zamknij", "--extra-button=Odśwież",

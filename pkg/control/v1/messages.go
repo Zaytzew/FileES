@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/realmalias"
+
 	"github.com/google/uuid"
 )
 
@@ -17,10 +19,12 @@ const Schema = "filees.control/v1"
 type TicketType string
 
 const (
-	TicketCreateRepository TicketType = "CREATE_REPOSITORY"
-	TicketInitialCommit    TicketType = "INITIAL_COMMIT"
-	TicketStoragePreflight TicketType = "STORAGE_PREFLIGHT"
-	TicketDeleteRepository TicketType = "DELETE_REPOSITORY"
+	TicketCreateRepository   TicketType = "CREATE_REPOSITORY"
+	TicketInitialCommit      TicketType = "INITIAL_COMMIT"
+	TicketStoragePreflight   TicketType = "STORAGE_PREFLIGHT"
+	TicketDeleteRepository   TicketType = "DELETE_REPOSITORY"
+	TicketClaimRealmAlias    TicketType = "CLAIM_REALM_ALIAS"
+	TicketResolveOwnerLabels TicketType = "RESOLVE_OWNER_LABELS"
 	// TicketMobilePairing is requested by an already-active desktop client
 	// to mint a mobile pairing token for its own realm (never a payload-
 	// supplied one - the worker resolves realm_id from the authenticated
@@ -99,6 +103,22 @@ type MobilePairingPayload struct{}
 type MobilePairingResult struct {
 	Token     string `json:"token"`
 	ExpiresAt string `json:"expires_at"`
+}
+
+type ClaimRealmAliasPayload struct {
+	Alias string `json:"alias"`
+}
+
+type ClaimRealmAliasResult struct {
+	Alias string `json:"alias"`
+}
+
+type ResolveOwnerLabelsPayload struct {
+	OwnerIDs []string `json:"owner_ids"`
+}
+
+type ResolveOwnerLabelsResult struct {
+	Labels map[string]string `json:"labels"`
 }
 
 func NewTicket(operationID, requestID string, typ TicketType, clientID string, payload any, now time.Time) (Ticket, error) {
@@ -208,6 +228,32 @@ func (t Ticket) Validate() error {
 		if err := decodeStrict(t.Payload, &p); err != nil {
 			return fmt.Errorf("MOBILE_PAIRING payload: %w", err)
 		}
+	case TicketClaimRealmAlias:
+		var p ClaimRealmAliasPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("CLAIM_REALM_ALIAS payload: %w", err)
+		}
+		if _, err := realmalias.Normalize(p.Alias); err != nil {
+			return fmt.Errorf("CLAIM_REALM_ALIAS alias: %w", err)
+		}
+	case TicketResolveOwnerLabels:
+		var p ResolveOwnerLabelsPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("RESOLVE_OWNER_LABELS payload: %w", err)
+		}
+		if len(p.OwnerIDs) == 0 || len(p.OwnerIDs) > 128 {
+			return errors.New("RESOLVE_OWNER_LABELS requires 1 to 128 owner IDs")
+		}
+		seen := make(map[string]struct{}, len(p.OwnerIDs))
+		for _, id := range p.OwnerIDs {
+			if err := validateUUID("RESOLVE_OWNER_LABELS owner_id", id); err != nil {
+				return err
+			}
+			if _, duplicate := seen[id]; duplicate {
+				return errors.New("RESOLVE_OWNER_LABELS contains duplicate owner ID")
+			}
+			seen[id] = struct{}{}
+		}
 	default:
 		return fmt.Errorf("unsupported ticket type %q", t.Type)
 	}
@@ -227,7 +273,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -301,6 +347,30 @@ func validateSuccessPayload(r Result) error {
 		}
 		if _, err := time.Parse(time.RFC3339Nano, result.ExpiresAt); err != nil {
 			return fmt.Errorf("invalid MOBILE_PAIRING expires_at: %w", err)
+		}
+	case TicketClaimRealmAlias:
+		var result ClaimRealmAliasResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("CLAIM_REALM_ALIAS result: %w", err)
+		}
+		if _, err := realmalias.Normalize(result.Alias); err != nil {
+			return fmt.Errorf("CLAIM_REALM_ALIAS result alias: %w", err)
+		}
+	case TicketResolveOwnerLabels:
+		var result ResolveOwnerLabelsResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("RESOLVE_OWNER_LABELS result: %w", err)
+		}
+		if len(result.Labels) > 128 {
+			return errors.New("RESOLVE_OWNER_LABELS result contains too many labels")
+		}
+		for id, label := range result.Labels {
+			if err := validateUUID("RESOLVE_OWNER_LABELS result owner_id", id); err != nil {
+				return err
+			}
+			if _, err := realmalias.Normalize(label); err != nil {
+				return fmt.Errorf("RESOLVE_OWNER_LABELS result label: %w", err)
+			}
 		}
 	}
 	return nil

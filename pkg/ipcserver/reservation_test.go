@@ -8,6 +8,12 @@ import (
 	contract "filees/pkg/contract/v1"
 )
 
+type ownerLabelResolverStub struct{ labels map[string]string }
+
+func (stub ownerLabelResolverStub) Resolve(_ context.Context, _ string, _ []string) (map[string]string, error) {
+	return stub.labels, nil
+}
+
 func TestReservationListAggregatesOneServerInWorkingCopyOrder(t *testing.T) {
 	server := New("unused")
 	first := server.RegisterRepoAccess("first", "svn+ssh://host/first", "/work/a", "office", contract.AccessReadWrite)
@@ -34,6 +40,25 @@ func TestReservationListAggregatesOneServerInWorkingCopyOrder(t *testing.T) {
 	}
 	if result.Reservations[0].Path != "a.txt" || result.Reservations[1].Path != "z.txt" || result.Reservations[2].RepoID != "second" {
 		t.Fatalf("reservations were not sorted/grouped deterministically: %+v", result.Reservations)
+	}
+}
+
+func TestReservationListExposesOnlyResolvedOwnerLabel(t *testing.T) {
+	server := New("unused")
+	repo := server.RegisterRepoAccess("docs", "svn+ssh://host/docs", "/work/docs", "office", contract.AccessReadWrite)
+	ownerID := "11111111-1111-4111-8111-111111111111"
+	repo.SetReservationFuncs(func(context.Context) ([]contract.Reservation, error) {
+		return []contract.Reservation{{RepoID: "docs", WorkingCopy: "/work/docs", Path: "a.txt", Token: "token", OwnerID: ownerID}}, nil
+	}, nil)
+	server.SetOwnerLabelResolver(ownerLabelResolverStub{labels: map[string]string{ownerID: "anna"}})
+	response := server.dispatch(lifecycleRequest(contract.CmdRepoReservationList, contract.RepoReservationListPayload{ServerID: "office"}))
+	if response.Status != contract.StatusOK {
+		t.Fatalf("list response=%+v", response.Error)
+	}
+	var result contract.RepoReservationListResult
+	decodeIPCResult(t, response, &result)
+	if len(result.Reservations) != 1 || result.Reservations[0].OwnerLabel != "anna" || result.Reservations[0].OwnerID != "" {
+		t.Fatalf("reservation presentation=%+v", result.Reservations)
 	}
 }
 

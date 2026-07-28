@@ -61,20 +61,20 @@ type Record struct {
 	// Kind mirrors onboarding.Policy.Kind. Empty (the zero value, including
 	// every record persisted before this field existed) means
 	// onboarding.KindDesktop.
-	Kind                    string     `json:"kind,omitempty"`
+	Kind string `json:"kind,omitempty"`
 	// Repositories carries the mobile pairing initiator's own repository
 	// grants (Kind == onboarding.KindMobile only), consumed at publish time
 	// by mobileRepositoryEntries to seed the new client's view.json.
 	Repositories            []onboarding.MobileRepositoryGrant `json:"repositories,omitempty"`
-	InstallationPublicKey   string     `json:"installation_public_key"`
-	InstallationFingerprint string     `json:"installation_fingerprint"`
-	State                   string     `json:"state"`
-	CreatedAt               time.Time  `json:"created_at"`
-	ExpiresAt               time.Time  `json:"expires_at"`
-	ActivatedAt             *time.Time `json:"activated_at,omitempty"`
-	ServiceRevision         int64      `json:"service_revision,omitempty"`
-	RevokedAt               *time.Time `json:"revoked_at,omitempty"`
-	RevokeReason            string     `json:"revoke_reason,omitempty"`
+	InstallationPublicKey   string                             `json:"installation_public_key"`
+	InstallationFingerprint string                             `json:"installation_fingerprint"`
+	State                   string                             `json:"state"`
+	CreatedAt               time.Time                          `json:"created_at"`
+	ExpiresAt               time.Time                          `json:"expires_at"`
+	ActivatedAt             *time.Time                         `json:"activated_at,omitempty"`
+	ServiceRevision         int64                              `json:"service_revision,omitempty"`
+	RevokedAt               *time.Time                         `json:"revoked_at,omitempty"`
+	RevokeReason            string                             `json:"revoke_reason,omitempty"`
 }
 
 type Receipt struct {
@@ -89,6 +89,9 @@ type Realm struct {
 	RealmID   string    `json:"realm_id"`
 	State     string    `json:"state"`
 	CreatedAt time.Time `json:"created_at"`
+	// Alias is assigned once by the authenticated realm after technical
+	// activation. It is intentionally absent until then.
+	Alias string `json:"alias,omitempty"`
 }
 
 type CommandRunner interface {

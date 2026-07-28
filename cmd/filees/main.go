@@ -164,6 +164,9 @@ func runDaemon() {
 	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
 	provisioner.attachments = provisionedAttachments
 	go provisioner.Run(ctx)
+	realmAliases := &realmAliasService{provisioner: provisioner, cache: make(map[string]ownerLabelCache)}
+	ipc.SetRealmAliasService(realmAliases)
+	ipc.SetOwnerLabelResolver(realmAliases)
 	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach})
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {

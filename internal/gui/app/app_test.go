@@ -97,6 +97,9 @@ func (f *fakeDaemon) RepoReservationList(context.Context, string) (*contract.Rep
 func (f *fakeDaemon) RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error {
 	return nil
 }
+func (f *fakeDaemon) RealmAliasClaim(context.Context, string, string) (*contract.RealmAliasClaimResult, error) {
+	return &contract.RealmAliasClaimResult{Alias: "test"}, nil
+}
 func (f *fakeDaemon) Subscribe(ctx context.Context) (<-chan contract.Event, error) {
 	f.mu.Lock()
 	fn := f.subscribe

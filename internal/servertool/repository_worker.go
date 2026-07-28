@@ -33,7 +33,8 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	if archiveRoot == "" {
 		archiveRoot = filepath.Join(r.ResultsRoot, "deleted-repositories")
 	}
-	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, Runner: repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}}
+	runner := repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}
+	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, Runner: runner}
 	effects := repoworker.ServerEffects{SVNAdmin: r.SVNAdminBinary, RepositoriesRoot: r.Root, DataAuthzFile: r.DataAuthzFile, DeletionArchiveRoot: archiveRoot, DeletionRetentionDays: r.EffectiveDeletionRetentionDays(), Authority: publisher}
 	backend := &repoworker.DurableBackend{Root: filepath.Join(r.ResultsRoot, "backend"), URLPrefix: r.URLPrefix, Effects: effects}
 	store, err := repoworker.NewFileStore(filepath.Join(r.ResultsRoot, "results"))
@@ -48,7 +49,8 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		report(stderr, "repository worker onboarding", err)
 		return ExitConfig
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}}
+	aliases := repoworker.RealmAliases{ServiceWC: config.Activation.ServiceWorkingCopy, Runner: runner}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}
 	if err := repoworker.WithFileLock(filepath.Join(r.ResultsRoot, ".worker.lock"), func() error {
 		if _, err := repoworker.ReapDeletionArchives(archiveRoot, time.Now()); err != nil {

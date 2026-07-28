@@ -20,5 +20,6 @@ type DaemonClient interface {
 	Unlock(ctx context.Context, repoID string, paths []string) (string, error)
 	RepoReservationList(ctx context.Context, serverID string) (*contract.RepoReservationListResult, error)
 	RepoReservationRelease(ctx context.Context, payload contract.RepoReservationReleasePayload) error
+	RealmAliasClaim(ctx context.Context, serverID, alias string) (*contract.RealmAliasClaimResult, error)
 	Subscribe(ctx context.Context) (<-chan contract.Event, error)
 }

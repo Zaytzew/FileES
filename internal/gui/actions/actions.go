@@ -44,6 +44,10 @@ type ReservationManager interface {
 	ReleaseReservation(context.Context, app.ReservationReleaseRequest) error
 }
 
+type RealmAliasManager interface {
+	ClaimAlias(context.Context, string, string) error
+}
+
 type Activator interface {
 	Begin(ctx context.Context, serverID, serverAddress, email string) error
 	Finish(ctx context.Context, serverID, serverAddress string, otp []byte) error
@@ -121,6 +125,7 @@ type Config struct {
 	Notifier           platform.Notifier // nil → notifications silently dropped
 	Locker             LockUnlocker
 	Reservations       ReservationManager
+	RealmAliases       RealmAliasManager
 	ReservationBrowser platform.ReservationBrowser
 	Reconnect          func() // nil → reconnect intent is a no-op
 	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
@@ -187,6 +192,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		}
 	case tray.IntentActivate:
 		c.startActivation(ctx)
+	case tray.IntentSetRealmAlias:
+		c.startRealmAlias(ctx, intent.ServerID)
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
 	case tray.IntentReservations:
@@ -715,9 +722,56 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationFailure(ctx, err)
 			return
 		}
+		if c.cfg.RealmAliases != nil && !c.claimRealmAlias(ctx, profile.Value) {
+			return
+		}
 		c.offerLocalPinSetup(ctx)
 		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: endpoint.Value, Urgency: platform.UrgencyNormal})
 	}()
+}
+
+func (c *Controller) startRealmAlias(ctx context.Context, serverID string) {
+	if serverID == "" || c.cfg.Prompter == nil || c.cfg.RealmAliases == nil || !c.beginOperation("realm-alias:"+serverID) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation("realm-alias:" + serverID)
+		vm := c.cfg.ViewModel()
+		for _, server := range vm.Servers {
+			if server.ID == serverID && server.RealmAlias == "" {
+				c.claimRealmAlias(ctx, serverID)
+				return
+			}
+		}
+	}()
+}
+
+func (c *Controller) claimRealmAlias(ctx context.Context, serverID string) bool {
+	if c.cfg.Prompter == nil || c.cfg.RealmAliases == nil {
+		return false
+	}
+	alias, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+		Title: "Alias FileES", Text: "Wybierz stały alias widoczny przy blokadach i przyszłych operacjach między użytkownikami.", Placeholder: "np. acme-k",
+	})
+	if err != nil || alias.Cancelled || strings.TrimSpace(alias.Value) == "" {
+		return false
+	}
+	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		Title: "Potwierdź stały alias", Text: "Alias „" + alias.Value + "” zostanie przypisany do tego realm na stałe. Nie można go później zmienić.", ConfirmText: "Ustaw alias", CancelText: "Anuluj",
+	})
+	if err != nil || !confirmed {
+		return false
+	}
+	if err := c.cfg.RealmAliases.ClaimAlias(ctx, serverID, alias.Value); err != nil {
+		c.notify(ctx, platform.Notification{ID: "realm_alias." + serverID, Group: "realm_alias." + serverID, Title: "Nie można ustawić aliasu", Body: "Wybierz inny alias.", Urgency: platform.UrgencyNormal})
+		return false
+	}
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
+	return true
 }
 
 // offerLocalPinSetup prompts for a local PIN once, right after a successful
@@ -922,9 +976,10 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 }
 
 type reservationEntry struct {
-	serverID    string
-	serverName  string
-	reservation app.Reservation
+	serverID         string
+	serverName       string
+	workingCopyAlias string
+	reservation      app.Reservation
 }
 
 func (c *Controller) handleReservations(ctx context.Context) {
@@ -947,7 +1002,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 				serverName = server.ID
 			}
 			for _, reservation := range reservations {
-				entries = append(entries, reservationEntry{serverID: server.ID, serverName: serverName, reservation: reservation})
+				entries = append(entries, reservationEntry{serverID: server.ID, serverName: serverName, workingCopyAlias: reservationWorkingCopyAlias(server, reservation), reservation: reservation})
 			}
 		}
 		if len(entries) == 0 {
@@ -956,7 +1011,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 		rows, byID := reservationRows(entries)
 		result, err := c.cfg.ReservationBrowser.ShowReservations(ctx, platform.ReservationDialogRequest{
 			Title: "Lista rezerwacji plikowych",
-			Text:  "Aktywne rezerwacje widoczne z lokalnych folderów roboczych. Kolumna „Serwer” rozdziela pozycje między aktywacjami FileES.",
+			Text:  "Aktywne blokady plików.",
 			Rows:  rows,
 		})
 		if err != nil || ctx.Err() != nil {
@@ -981,7 +1036,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 				continue
 			}
 			risk := reservation.LocalChanges || reservation.ActivePassport
-			text := fmt.Sprintf("%s\nFolder roboczy: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservation.Path, reservation.WorkingCopy)
+			text := fmt.Sprintf("%s\nKopia robocza: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), entry.workingCopyAlias)
 			if risk {
 				text += "\n\nTen folder ma lokalne zmiany lub aktywny paszport edycji. Otwarte programy mogą mieć niezapisane dane; FileES nie bada uchwytów otwartych przez edytory. Kontynuować świadomie?"
 			}
@@ -1000,7 +1055,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 				}
 				continue
 			}
-			c.notify(ctx, platform.Notification{ID: "release_reservation." + entry.serverID, Group: "release_reservation." + entry.serverID, Title: "Zwolniono rezerwację", Body: reservation.Path, Urgency: platform.UrgencyLow})
+			c.notify(ctx, platform.Notification{ID: "release_reservation." + entry.serverID, Group: "release_reservation." + entry.serverID, Title: "Zwolniono rezerwację", Body: reservationDisplayPath(reservation.WorkingCopy, reservation.Path), Urgency: platform.UrgencyLow})
 			if c.cfg.Refresh != nil {
 				c.cfg.Refresh()
 			}
@@ -1020,10 +1075,45 @@ func reservationRows(entries []reservationEntry) ([]platform.ReservationDialogRo
 		} else if reservation.LocalChanges || reservation.ActivePassport {
 			status = "wymaga potwierdzenia"
 		}
-		rows = append(rows, platform.ReservationDialogRow{ID: id, Server: entry.serverName, WorkingCopy: reservation.WorkingCopy, Path: reservation.Path, Owner: reservation.Owner, CreatedAt: reservation.CreatedAt, ReleaseStatus: status})
+		owner := reservation.OwnerLabel
+		if owner == "" {
+			owner = "właściciel nieustawiony"
+		}
+		rows = append(rows, platform.ReservationDialogRow{ID: id, Server: entry.serverName, WorkingCopy: entry.workingCopyAlias, Path: reservationDisplayPath(reservation.WorkingCopy, reservation.Path), Owner: owner, CreatedAt: reservation.CreatedAt, ReleaseStatus: status})
 		byID[id] = entry
 	}
 	return rows, byID
+}
+
+func reservationWorkingCopyAlias(server app.ServerViewModel, reservation app.Reservation) string {
+	for _, repo := range server.Repos {
+		if repo.ID == reservation.RepoID && strings.TrimSpace(repo.DisplayName) != "" {
+			return repo.DisplayName
+		}
+	}
+	name := filepath.Base(filepath.Clean(reservation.WorkingCopy))
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		return "kopia robocza"
+	}
+	return name
+}
+
+func reservationDisplayPath(workingCopy, path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "/"
+	}
+	if filepath.IsAbs(path) {
+		if relative, err := filepath.Rel(filepath.Clean(workingCopy), filepath.Clean(path)); err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			path = relative
+		}
+	}
+	path = filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	path = strings.TrimPrefix(path, "./")
+	if path == "." || path == "" || strings.HasPrefix(path, "../") || path == ".." {
+		return "/"
+	}
+	return "/" + strings.TrimPrefix(path, "/")
 }
 
 func viewHasServer(vm app.ViewModel, serverID string) bool {
@@ -1072,6 +1162,8 @@ func messageLabel(messageKey string) string {
 		return "Wybrana ścieżka nie należy do repozytorium"
 	case "lock.operation_failed":
 		return "Daemon nie wykonał operacji na plikach"
+	case "realm.alias_required":
+		return "Przed blokowaniem plików ustaw stały alias realm"
 	case "proto.invalid_payload":
 		return "Daemon odrzucił nieprawidłowe dane operacji"
 	default:

@@ -412,6 +412,7 @@ func (s *Server) handleActivationBegin(req contract.Request) contract.Response {
 	defer cancel()
 	result, err := service.Begin(ctx, payload)
 	if err != nil {
+		s.lg.Warnf("activation begin (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
 		return contract.ErrResponse(req.RequestID, "ACTIVATION-1001", "ERROR", "RETRY", "activation.begin_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
@@ -432,6 +433,7 @@ func (s *Server) handleActivationFinish(req contract.Request) contract.Response 
 	defer cancel()
 	result, err := service.Finish(ctx, payload)
 	if err != nil {
+		s.lg.Warnf("activation finish (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
 		return contract.ErrResponse(req.RequestID, "ACTIVATION-1002", "ERROR", "RETRY", "activation.finish_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)

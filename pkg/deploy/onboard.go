@@ -28,7 +28,8 @@ func SubmitOnboarding(ctx context.Context, profile ServerProfile, email, request
 	if err := profile.validate(); err != nil {
 		return onboarding.OnboardResponse{}, err
 	}
-	address := profile.Address
+	host, port := profile.hostAndPort()
+	address := net.JoinHostPort(host, port)
 	knownHostsPath := filepath.Clean(profile.KnownHostsPath)
 	canonical, err := onboarding.CanonicalEmail(email)
 	if err != nil {
@@ -73,8 +74,13 @@ func SubmitOnboarding(ctx context.Context, profile ServerProfile, email, request
 	request := onboarding.OnboardRequest{Schema: onboarding.OnboardRequestSchema, Email: canonical, OnboardingRequestID: requestID}
 	raw, _ := json.Marshal(request)
 	session.Stdin = bytes.NewReader(append(raw, '\n'))
+	var stderr bytes.Buffer
+	session.Stderr = &stderr
 	output, err := session.Output(OnboardServerCommand)
 	if err != nil {
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return onboarding.OnboardResponse{}, fmt.Errorf("bootstrap SSH command: %w: %s", err, detail)
+		}
 		return onboarding.OnboardResponse{}, fmt.Errorf("bootstrap SSH command: %w", err)
 	}
 	if len(output) > 16*1024 {

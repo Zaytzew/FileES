@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -230,6 +231,41 @@ func (s RealmRemovalStore) Load(operationID string) (RealmRemovalRecord, error) 
 		return RealmRemovalRecord{}, errors.New("realm removal record invalid")
 	}
 	return r, nil
+}
+
+// PendingConfirmed enumerates only operations which crossed the OTP boundary
+// and therefore must be finished server-side even if every client credential
+// has already been revoked.
+func (s RealmRemovalStore) PendingConfirmed() ([]RealmRemovalRecord, error) {
+	if err := s.valid(); err != nil {
+		return nil, err
+	}
+	var pending []RealmRemovalRecord
+	err := WithFileLock(filepath.Join(s.Root, ".realm-removal.lock"), func() error {
+		paths, err := filepath.Glob(filepath.Join(s.Root, "*.json"))
+		if err != nil {
+			return err
+		}
+		for _, path := range paths {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			var record RealmRemovalRecord
+			if json.Unmarshal(raw, &record) != nil || record.Schema != realmRemovalSchema {
+				return errors.New("realm removal record invalid")
+			}
+			switch record.State {
+			case RealmRemovalDeleting, RealmRemovalRecoveryReady, RealmRemovalRevokingClients:
+				pending = append(pending, record)
+			}
+		}
+		sort.Slice(pending, func(i, j int) bool {
+			return pending[i].OperationID < pending[j].OperationID
+		})
+		return nil
+	})
+	return pending, err
 }
 
 // ClaimPendingMail atomically reserves one OTP mail for submission. A stale

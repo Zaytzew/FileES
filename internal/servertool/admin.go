@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner | erasure complete")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
@@ -224,6 +225,38 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			return ExitTempFail
 		}
 		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-client-result/v1", "status": "transferred", "repo_id": *repoID, "realm_id": *realmID}); err != nil {
+			return ExitSoftware
+		}
+		return ExitOK
+	case "erasure complete":
+		flags := flag.NewFlagSet("erasure complete", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		operationID := flags.String("operation-id", "", "realm-removal operation UUID")
+		partiallyRetained := flags.Bool("partially-retained", false, "retention prevents complete deletion")
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *operationID == "" {
+			fmt.Fprintln(stderr, "usage: filees-admin [-config path] erasure complete --operation-id UUID [--partially-retained]")
+			return ExitUsage
+		}
+		files, config, err := openFiles(path, toolAccess{
+			name: "filees-admin/erasure-complete", areas: onboarding.AreaOperations | onboarding.AreaAudit,
+			write: true, needSMTP: true, needRepoResults: true,
+		})
+		if err != nil {
+			report(stderr, "filees-admin config", err)
+			return ExitConfig
+		}
+		store := repoworker.DataErasureStore{Root: filepath.Join(config.Repositories.ResultsRoot, "data-erasure")}
+		record, err := store.Complete(*operationID, *partiallyRetained)
+		if err != nil {
+			return adminError(stderr, err)
+		}
+		if code := deliverPendingMail(files, config, io.Discard, stderr); code != ExitOK {
+			return code
+		}
+		if err := writeJSON(stdout, map[string]any{
+			"schema": "filees.admin-erasure-result/v1", "operation_id": record.OperationID,
+			"state": record.State, "completed_at": record.CompletedAt,
+		}); err != nil {
 			return ExitSoftware
 		}
 		return ExitOK

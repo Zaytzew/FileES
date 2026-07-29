@@ -13,11 +13,13 @@ import (
 // boundary is advanced after its effects, making a repeated confirmation safe
 // after an interrupted worker process.
 type realmRemovalExecutor struct {
-	Store      repoworker.RealmRemovalStore
-	Backend    realmRemovalBackend
-	Recovery   realmRemovalRecoveryPublisher
-	Publisher  realmRemovalGrantPublisher
-	Activation realmRemovalRevoker
+	Store          repoworker.RealmRemovalStore
+	Backend        realmRemovalBackend
+	Recovery       realmRemovalRecoveryPublisher
+	Publisher      realmRemovalGrantPublisher
+	Activation     realmRemovalRevoker
+	Erasure        realmRemovalErasure
+	ErasureMaxDays int
 }
 
 type realmRemovalBackend interface {
@@ -32,10 +34,22 @@ type realmRemovalRecoveryPublisher interface {
 type realmRemovalRevoker interface {
 	RevokeRealm(context.Context, string, string) ([]string, error)
 }
+type realmRemovalErasure interface {
+	Accept(repoworker.RealmRemovalRecord, int) (repoworker.DataErasureRecord, error)
+	MarkActiveDataDeleted(string) (repoworker.DataErasureRecord, error)
+}
 
 func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.RealmRemovalRecord) error {
 	if e.Backend == nil || e.Recovery == nil || e.Publisher == nil || e.Activation == nil {
 		return errors.New("realm removal executor is incomplete")
+	}
+	if record.Request.ErasureRequested {
+		if e.Erasure == nil {
+			return errors.New("data erasure journal is unavailable")
+		}
+		if _, err := e.Erasure.Accept(record, e.ErasureMaxDays); err != nil {
+			return err
+		}
 	}
 	if record.State == repoworker.RealmRemovalDeleting {
 		for _, repoID := range record.Scope.OwnedRepoIDs {
@@ -64,6 +78,11 @@ func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.Rea
 	if record.State == repoworker.RealmRemovalRevokingClients {
 		if _, err := e.Activation.RevokeRealm(ctx, record.RealmID, "realm removal confirmed"); err != nil {
 			return err
+		}
+		if record.Request.ErasureRequested {
+			if _, err := e.Erasure.MarkActiveDataDeleted(record.OperationID); err != nil {
+				return err
+			}
 		}
 		_, err := e.Store.Advance(record.OperationID, repoworker.RealmRemovalRevokingClients, repoworker.RealmRemovalCompleted)
 		return err

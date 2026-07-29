@@ -174,7 +174,7 @@ func TestWorkerRealmRemovalUsesAuthenticatedRealmAndStoresBothBoundaries(t *test
 	service := &fakeRealmRemovalService{record: RealmRemovalRecord{OperationID: operationID, RealmID: session.RealmID, Scope: RealmRemovalScope{ClientIDs: []string{uuid.NewString()}, OwnedRepoIDs: []string{uuid.NewString()}, ForeignGrantRepoIDs: []string{uuid.NewString()}}, State: RealmRemovalAwaitingConfirmation, ExpiresAt: time.Now().Add(time.Hour)}}
 	created := time.Now().UTC()
 	service.manifest = RecoveryManifest{Schema: RecoveryManifestSchema, OperationID: operationID, RealmID: session.RealmID, CreatedAt: created, DownloadUntil: created.Add(time.Hour), AdminGraceUntil: created.Add(2 * time.Hour)}
-	worker := &Worker{Store: store, RealmRemoval: service}
+	worker := &Worker{Store: store, RealmRemoval: service, RecoveryAdminContact: "admin@example.net"}
 	publicKey := realmRecoveryPublicKey(t)
 	request, err := control.NewTicket(operationID, uuid.NewString(), control.TicketRealmRemoveRequest, session.ClientID, control.RealmRemoveRequestPayload{NotificationEmail: "user@example.net", ErasureRequested: true, RecoveryPublicKey: publicKey}, time.Now())
 	if err != nil {

@@ -25,6 +25,43 @@ type realmRemovalClientService struct {
 	local       realmLocalStore
 	provisioner *daemonProvisioner
 	profileRoot string
+	registry    recoverykit.Registry
+}
+
+func (s realmRemovalClientService) List(ctx context.Context) ([]contract.RecoveryStatus, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	entries, err := s.registry.List(time.Now())
+	if err != nil {
+		return nil, err
+	}
+	result := make([]contract.RecoveryStatus, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, contract.RecoveryStatus{
+			OperationID: entry.OperationID, ServerID: entry.ServerID, ServerName: entry.ServerName,
+			KitPath: entry.KitPath, AdminContact: entry.AdminContact, ArchiveCount: entry.ArchiveCount,
+			DownloadUntil: entry.DownloadUntil.Format(time.RFC3339Nano), AdminGraceUntil: entry.AdminGraceUntil.Format(time.RFC3339Nano),
+		})
+	}
+	return result, nil
+}
+
+func (s realmRemovalClientService) Download(ctx context.Context, payload contract.RecoveryDownloadPayload) (contract.RecoveryDownloadResult, error) {
+	now := time.Now().UTC()
+	entry, err := s.registry.Find(payload.OperationID, now)
+	if err != nil {
+		return contract.RecoveryDownloadResult{}, err
+	}
+	kit, err := recoverykit.Load(entry.KitPath, now)
+	if err != nil {
+		return contract.RecoveryDownloadResult{}, err
+	}
+	paths, err := recoverykit.Download(ctx, kit, filepath.Clean(payload.OutputRoot), now)
+	if err != nil {
+		return contract.RecoveryDownloadResult{}, err
+	}
+	return contract.RecoveryDownloadResult{OperationID: payload.OperationID, Paths: paths}, nil
 }
 
 func (s realmRemovalClientService) Begin(ctx context.Context, serverID, realmID string, payload contract.RealmRemoveBeginPayload) (contract.RealmRemoveBeginResult, error) {
@@ -70,6 +107,7 @@ func (s realmRemovalClientService) Begin(ctx context.Context, serverID, realmID 
 	return contract.RealmRemoveBeginResult{
 		ServerID: serverID, OperationID: operationID, RecoveryKitPath: kitPath, ExpiresAt: result.ExpiresAt,
 		ActiveClientCount: result.ActiveClientCount, OwnedRepositoryCount: result.OwnedRepositoryCount, ForeignGrantCount: result.ForeignGrantCount,
+		AdminContact: result.AdminContact,
 	}, nil
 }
 
@@ -115,6 +153,14 @@ func (s realmRemovalClientService) Confirm(ctx context.Context, payload contract
 	}
 	if err := recoverykit.Store(kitPath, finalKit); err != nil {
 		return contract.RealmRemoveConfirmResult{}, fmt.Errorf("finalize recovery kit: %w", err)
+	}
+	if err := s.registry.Put(recoverykit.RegistryEntry{
+		Schema: recoverykit.RegistrySchema, OperationID: payload.OperationID,
+		ServerID: payload.ServerID, ServerName: profile.DisplayName, KitPath: kitPath,
+		ArchiveCount: len(manifest.Archives), DownloadUntil: manifest.DownloadUntil,
+		AdminGraceUntil: manifest.AdminGraceUntil, AdminContact: result.AdminContact,
+	}); err != nil {
+		return contract.RealmRemoveConfirmResult{}, fmt.Errorf("register recovery capability: %w", err)
 	}
 	if err := clientprofile.Remove(s.profileRoot, payload.ServerID); err != nil {
 		return contract.RealmRemoveConfirmResult{}, fmt.Errorf("remove revoked local profile: %w", err)

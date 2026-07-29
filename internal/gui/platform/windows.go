@@ -316,6 +316,9 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 		return SettingsDialogResult{Action: SettingsDialogClose}, nil
 	}
 	result := SettingsDialogResult{ServerID: parts[1], RepoID: parts[2]}
+	if strings.HasPrefix(parts[1], "@recovery-download:") && parts[0] == "download_recovery" {
+		return SettingsDialogResult{Action: SettingsDialogDownloadRecovery, OperationID: strings.TrimPrefix(parts[1], "@recovery-download:")}, nil
+	}
 	switch parts[0] {
 	case "add":
 		result.Action = SettingsDialogAddFolder
@@ -345,6 +348,13 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 			rows = append(rows, row{s.ID, f.ID, s.Name, s.Address, s.Realm, f.Name, f.LocalPath, f.State, f.Access})
 		}
 	}
+	for _, recovery := range request.Recoveries {
+		id := "@recovery-grace:" + recovery.OperationID
+		if recovery.CanDownload {
+			id = "@recovery-download:" + recovery.OperationID
+		}
+		rows = append(rows, row{id, "", recovery.ServerName, "—", "—", recovery.Status, recovery.KitPath, "recovery", "—"})
+	}
 	payload, err := json.Marshal(struct {
 		Title, Text string
 		Rows        []row
@@ -362,7 +372,7 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	for _, spec := range []struct {
 		label, action string
 		left          int
-	}{{"Dodaj folder", "add", 420}, {"Odłącz folder", "detach", 535}, {"Odłącz trwale", "delete", 650}, {"Dezaktywuj klienta", "deactivate", 765}, {"Usuń udział FileES", "remove_realm", 880}} {
+	}{{"Dodaj folder", "add", 305}, {"Odłącz folder", "detach", 420}, {"Odłącz trwale", "delete", 535}, {"Dezaktywuj klienta", "deactivate", 650}, {"Usuń udział FileES", "remove_realm", 765}, {"Pobierz archiwa", "download_recovery", 880}} {
 		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(spec.label) + ";$b.Width=108;$b.Height=28;$b.Left=" + fmt.Sprint(spec.left) + ";$b.Top=540;$b.Add_Click({act '" + spec.action + "'});$f.Controls.Add($b);")
 	}
 	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1010;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);[void]$f.ShowDialog();$script:answer")

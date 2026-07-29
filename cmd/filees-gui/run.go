@@ -100,6 +100,18 @@ func (adapter serverDetachAdapter) DetachServer(ctx context.Context, serverID st
 type realmRemovalClient interface {
 	RealmRemoveBegin(context.Context, contract.RealmRemoveBeginPayload) (*contract.RealmRemoveBeginResult, error)
 	RealmRemoveConfirm(context.Context, contract.RealmRemoveConfirmPayload) (*contract.RealmRemoveConfirmResult, error)
+	RecoveryDownload(context.Context, contract.RecoveryDownloadPayload) (*contract.RecoveryDownloadResult, error)
+}
+
+func (adapter realmRemovalAdapter) DownloadRecovery(ctx context.Context, operationID, outputRoot string) ([]string, error) {
+	result, err := adapter.client.RecoveryDownload(ctx, contract.RecoveryDownloadPayload{OperationID: operationID, OutputRoot: outputRoot})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.OperationID != operationID {
+		return nil, errors.New("daemon returned an invalid recovery download result")
+	}
+	return result.Paths, nil
 }
 
 type realmRemovalAdapter struct{ client realmRemovalClient }
@@ -415,8 +427,10 @@ func run(parent context.Context, deps dependencies) error {
 		serverDetacher = serverDetachAdapter{client: candidate}
 	}
 	var realmRemover actions.RealmRemover
+	var recoveryDownloader actions.RecoveryDownloader
 	if candidate, ok := deps.client.(realmRemovalClient); ok {
-		realmRemover = realmRemovalAdapter{client: candidate}
+		adapter := realmRemovalAdapter{client: candidate}
+		realmRemover, recoveryDownloader = adapter, adapter
 	}
 	var reservations actions.ReservationManager
 	if candidate, ok := deps.client.(reservationClient); ok {
@@ -445,6 +459,7 @@ func run(parent context.Context, deps dependencies) error {
 		RepositoryDetacher: repositoryDetacher,
 		ServerDetacher:     serverDetacher,
 		RealmRemover:       realmRemover,
+		RecoveryDownloader: recoveryDownloader,
 		MobilePairer:       mobilePairer,
 		PinStore:           deps.pinStore,
 		Activator:          deps.activator,

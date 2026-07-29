@@ -190,7 +190,7 @@ func TestRealmRemovalContractCarriesNoTargetScope(t *testing.T) {
 	if strings.Contains(string(ticket.Payload), "realm") || strings.Contains(string(ticket.Payload), "repo") || strings.Contains(string(ticket.Payload), "client") {
 		t.Fatalf("realm-removal request exposed server-owned target: %s", ticket.Payload)
 	}
-	if _, err := NewSuccessResult(operationID, requestID, TicketRealmRemoveRequest, RealmRemoveRequestResult{ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano), ActiveClientCount: 2, OwnedRepositoryCount: 3, ForeignGrantCount: 1}, time.Now()); err != nil {
+	if _, err := NewSuccessResult(operationID, requestID, TicketRealmRemoveRequest, RealmRemoveRequestResult{ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano), ActiveClientCount: 2, OwnedRepositoryCount: 3, ForeignGrantCount: 1, AdminContact: "admin@example.net"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NewTicket(operationID, uuid.NewString(), TicketRealmRemoveConfirm, "client-a", RealmRemoveConfirmPayload{OTP: "ABCDEFGH234567"}, time.Now()); err != nil {
@@ -201,7 +201,7 @@ func TestRealmRemovalContractCarriesNoTargetScope(t *testing.T) {
 	}
 	created := time.Now().UTC()
 	manifest := RealmRecoveryManifest{Schema: "filees.realm-recovery-manifest/v1", OperationID: operationID, RealmID: uuid.NewString(), CreatedAt: created, DownloadUntil: created.Add(time.Hour), AdminGraceUntil: created.Add(2 * time.Hour)}
-	if _, err := NewSuccessResult(operationID, requestID, TicketRealmRemoveConfirm, RealmRemoveConfirmResult{State: "completed", Manifest: manifest}, time.Now()); err != nil {
+	if _, err := NewSuccessResult(operationID, requestID, TicketRealmRemoveConfirm, RealmRemoveConfirmResult{State: "completed", Manifest: manifest, AdminContact: "admin@example.net"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }

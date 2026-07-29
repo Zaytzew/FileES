@@ -311,6 +311,13 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 			args = append(args, "FALSE", server.ID+"|"+folder.ID, server.Name, server.Address, server.Realm, folder.Name, folder.LocalPath, folder.State, folder.Access)
 		}
 	}
+	for _, recovery := range request.Recoveries {
+		prefix := "@recovery-grace:"
+		if recovery.CanDownload {
+			prefix = "@recovery-download:"
+		}
+		args = append(args, "FALSE", prefix+recovery.OperationID+"|", recovery.ServerName, "—", "—", recovery.Status, recovery.KitPath, "recovery", "—")
+	}
 	output, err := b.runner.Output(ctx, command, args...)
 	selection := strings.TrimSpace(string(output))
 	if err != nil {
@@ -324,6 +331,12 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	}
 	serverID, repoID, ok := strings.Cut(selection, "|")
 	if !ok || serverID == "" {
+		return SettingsDialogResult{Action: SettingsDialogClose}, nil
+	}
+	if strings.HasPrefix(serverID, "@recovery-download:") {
+		return SettingsDialogResult{Action: SettingsDialogDownloadRecovery, OperationID: strings.TrimPrefix(serverID, "@recovery-download:")}, nil
+	}
+	if strings.HasPrefix(serverID, "@recovery-grace:") {
 		return SettingsDialogResult{Action: SettingsDialogClose}, nil
 	}
 	action, err := b.settingsAction(ctx, command, repoID != "")

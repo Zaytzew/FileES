@@ -93,6 +93,9 @@ type RealmRemover interface {
 	BeginRealmRemoval(context.Context, RealmRemovalBeginRequest) (RealmRemovalBeginResult, error)
 	ConfirmRealmRemoval(context.Context, string, string, []byte, string) (RealmRemovalConfirmResult, error)
 }
+type RecoveryDownloader interface {
+	DownloadRecovery(context.Context, string, string) ([]string, error)
+}
 
 type StackLifecycle interface {
 	RestartFileES(context.Context) error
@@ -144,6 +147,7 @@ type Config struct {
 	RepositoryDetacher RepositoryDetacher
 	ServerDetacher     ServerDetacher
 	RealmRemover       RealmRemover
+	RecoveryDownloader RecoveryDownloader
 	MobilePairer       MobilePairingLauncher
 	// PinStore, if non-nil, offers PIN setup at the end of a successful
 	// activation (see startActivation) - nil means the local-PIN feature is
@@ -278,7 +282,43 @@ func (c *Controller) startSettings(ctx context.Context) {
 			c.startDetachServer(ctx, result.ServerID)
 		case platform.SettingsDialogRemoveRealm:
 			c.startRealmRemoval(ctx, result.ServerID)
+		case platform.SettingsDialogDownloadRecovery:
+			c.startRecoveryDownload(ctx, result.OperationID)
 		}
+	}()
+}
+
+func (c *Controller) startRecoveryDownload(ctx context.Context, operationID string) {
+	key := "recovery-download:" + operationID
+	if operationID == "" || c.cfg.RecoveryDownloader == nil || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		var recovery *app.RecoveryViewModel
+		for i := range vm.Recoveries {
+			item := &vm.Recoveries[i]
+			if item.OperationID == operationID {
+				recovery = item
+				break
+			}
+		}
+		if recovery == nil || !recovery.CanDownload {
+			return
+		}
+		folder, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz katalog dla archiwów repozytoriów"})
+		if err != nil || folder.Cancelled || !filepath.IsAbs(folder.Path) {
+			return
+		}
+		paths, err := c.cfg.RecoveryDownloader.DownloadRecovery(ctx, operationID, filepath.Clean(folder.Path))
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać archiwów", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Archiwa repozytoriów pobrane", Text: strings.Join(paths, "\n")})
 	}()
 }
 
@@ -392,6 +432,20 @@ func settingsDialogRequest(vm app.ViewModel) platform.SettingsDialogRequest {
 			row.Folders = append(row.Folders, platform.SettingsFolder{ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access})
 		}
 		request.Servers = append(request.Servers, row)
+	}
+	for _, recovery := range vm.Recoveries {
+		status := "Pobierz archiwa repozytoriów do " + recovery.DownloadUntil
+		if !recovery.CanDownload {
+			contact := recovery.AdminContact
+			if contact == "" {
+				contact = "administrator serwera"
+			}
+			status = "Odzyskiwanie repozytoriów: " + contact + " do " + recovery.AdminGraceUntil
+		}
+		request.Recoveries = append(request.Recoveries, platform.SettingsRecovery{
+			OperationID: recovery.OperationID, ServerName: recovery.ServerName, KitPath: recovery.KitPath,
+			Status: status, CanDownload: recovery.CanDownload,
+		})
 	}
 	return request
 }

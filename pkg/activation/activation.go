@@ -419,6 +419,29 @@ func (m *Manager) RevokeRealm(ctx context.Context, realmID, reason string) ([]st
 	return revoked, nil
 }
 
+// ActiveClientsInRealm returns the immutable client part of a realm-removal
+// snapshot. Revoked records are deliberately excluded; staged access is
+// included because it is still an active server credential boundary.
+func (m *Manager) ActiveClientsInRealm(realmID string) ([]string, error) {
+	if _, err := uuid.Parse(realmID); err != nil {
+		return nil, errors.New("realm_id must be a UUID")
+	}
+	var clients []string
+	err := withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+		records, err := m.recordsLocked()
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			if record.RealmID == realmID && (record.State == "staged" || record.State == "active") {
+				clients = append(clients, record.ClientID)
+			}
+		}
+		return nil
+	})
+	return clients, err
+}
+
 func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, error) {
 	if _, err := uuid.Parse(clientID); err != nil {
 		return 0, errors.New("revoke client_id must be a UUID")

@@ -30,6 +30,22 @@ func TestRealmRemovalOTPConfirmsExactlyOneImmutableScope(t *testing.T) {
 	}
 }
 
+func TestRealmRemovalBeginOperationIsIdempotentWithoutSecondOTP(t *testing.T) {
+	store := RealmRemovalStore{Root: t.TempDir(), OTPPepper: []byte(strings.Repeat("p", 32)), TTL: time.Hour, Attempts: 3}
+	operationID, realm := uuid.NewString(), uuid.NewString()
+	first, otp, err := store.BeginOperation(operationID, realm, RealmRemovalScope{}, RealmRemovalRequest{NotificationEmail: "user@example.net"})
+	if err != nil || otp == "" {
+		t.Fatalf("first=%+v otp=%q err=%v", first, otp, err)
+	}
+	second, retryOTP, err := store.BeginOperation(operationID, realm, RealmRemovalScope{OwnedRepoIDs: []string{uuid.NewString()}}, RealmRemovalRequest{NotificationEmail: "user@example.net"})
+	if err != nil || retryOTP != "" || second.OperationID != first.OperationID || len(second.Scope.OwnedRepoIDs) != 0 {
+		t.Fatalf("retry=%+v otp=%q err=%v", second, retryOTP, err)
+	}
+	if _, _, err := store.BeginOperation(operationID, realm, RealmRemovalScope{}, RealmRemovalRequest{NotificationEmail: "other@example.net"}); err == nil {
+		t.Fatal("conflicting operation request accepted")
+	}
+}
+
 func TestRealmRemovalOTPExpiresWithoutDestructiveTransition(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	store := RealmRemovalStore{Root: t.TempDir(), OTPPepper: []byte(strings.Repeat("p", 32)), TTL: time.Minute, Attempts: 1, Now: func() time.Time { return now }}

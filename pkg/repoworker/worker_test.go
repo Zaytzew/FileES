@@ -56,6 +56,25 @@ type fakeClientDetacher struct {
 	err      error
 }
 
+type fakeRealmRemovalService struct {
+	requestCalls, confirmCalls int
+	realm, operation, otp      string
+	request                    RealmRemovalRequest
+	record                     RealmRemovalRecord
+	err                        error
+}
+
+func (s *fakeRealmRemovalService) Request(_ context.Context, session Session, operationID string, request RealmRemovalRequest) (RealmRemovalRecord, error) {
+	s.requestCalls++
+	s.realm, s.operation, s.request = session.RealmID, operationID, request
+	return s.record, s.err
+}
+func (s *fakeRealmRemovalService) Confirm(_ context.Context, session Session, operationID, otp string) (RealmRemovalRecord, error) {
+	s.confirmCalls++
+	s.realm, s.operation, s.otp = session.RealmID, operationID, otp
+	return s.record, s.err
+}
+
 func (d *fakeClientDetacher) DetachClient(_ context.Context, clientID string) (int64, error) {
 	d.clientID = clientID
 	return d.revision, d.err
@@ -124,6 +143,45 @@ func TestWorkerDetachClientRevokesOnlyAuthenticatedSession(t *testing.T) {
 	var payload control.ClientDeactivateResult
 	if err := control.DecodeResultPayload(result.Result, &payload); err != nil || payload.ServiceRevision != 19 {
 		t.Fatalf("payload=%+v err=%v", payload, err)
+	}
+}
+
+func TestWorkerRealmRemovalUsesAuthenticatedRealmAndStoresBothBoundaries(t *testing.T) {
+	session := Session{ClientID: "client", RealmID: uuid.NewString()}
+	store, err := NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationID := uuid.NewString()
+	service := &fakeRealmRemovalService{record: RealmRemovalRecord{OperationID: operationID, RealmID: session.RealmID, Scope: RealmRemovalScope{ClientIDs: []string{uuid.NewString()}, OwnedRepoIDs: []string{uuid.NewString()}, ForeignGrantRepoIDs: []string{uuid.NewString()}}, State: RealmRemovalAwaitingConfirmation, ExpiresAt: time.Now().Add(time.Hour)}}
+	worker := &Worker{Store: store, RealmRemoval: service}
+	request, err := control.NewTicket(operationID, uuid.NewString(), control.TicketRealmRemoveRequest, session.ClientID, control.RealmRemoveRequestPayload{NotificationEmail: "user@example.net", ErasureRequested: true}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := worker.Handle(context.Background(), session, request)
+	if err != nil || result.Status != control.ResultOK || service.requestCalls != 1 || service.realm != session.RealmID || service.request.NotificationEmail != "user@example.net" || !service.request.ErasureRequested {
+		t.Fatalf("request result=%+v service=%+v err=%v", result, service, err)
+	}
+	var requestResult control.RealmRemoveRequestResult
+	if err := control.DecodeResultPayload(result.Result, &requestResult); err != nil || requestResult.ActiveClientCount != 1 || requestResult.OwnedRepositoryCount != 1 || requestResult.ForeignGrantCount != 1 {
+		t.Fatalf("request payload=%+v err=%v", requestResult, err)
+	}
+	if _, err := (&Worker{Store: store}).Handle(context.Background(), session, request); err != nil || service.requestCalls != 1 {
+		t.Fatalf("request replay calls=%d err=%v", service.requestCalls, err)
+	}
+
+	service.record.State = RealmRemovalDeleting
+	confirm, err := control.NewTicket(operationID, uuid.NewString(), control.TicketRealmRemoveConfirm, session.ClientID, control.RealmRemoveConfirmPayload{OTP: "ABCDEFGH234567"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = worker.Handle(context.Background(), session, confirm)
+	if err != nil || result.Status != control.ResultOK || service.confirmCalls != 1 || service.otp != "ABCDEFGH234567" || service.operation != operationID {
+		t.Fatalf("confirm result=%+v service=%+v err=%v", result, service, err)
+	}
+	if _, err := (&Worker{Store: store}).Handle(context.Background(), session, confirm); err != nil || service.confirmCalls != 1 {
+		t.Fatalf("confirm replay calls=%d err=%v", service.confirmCalls, err)
 	}
 }
 

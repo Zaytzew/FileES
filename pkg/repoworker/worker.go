@@ -89,7 +89,7 @@ type ClientDetacher interface {
 // implementations derive clients, repositories and grants server-side.
 type RealmRemovalService interface {
 	Request(context.Context, Session, string, RealmRemovalRequest) (RealmRemovalRecord, error)
-	Confirm(context.Context, Session, string, string) (RealmRemovalRecord, error)
+	Confirm(context.Context, Session, string, string) (RealmRemovalRecord, RecoveryManifest, error)
 }
 
 type Worker struct {
@@ -222,15 +222,30 @@ func (w *Worker) confirmRealmRemoval(ctx context.Context, session Session, ticke
 	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 		return control.Result{}, err
 	}
-	record, err := w.RealmRemoval.Confirm(ctx, session, ticket.OperationID, payload.OTP)
+	record, manifest, err := w.RealmRemoval.Confirm(ctx, session, ticket.OperationID, payload.OTP)
 	if err != nil {
 		return w.retryable(ticket, "REALM_REMOVE_CONFIRM_RETRY", err.Error())
 	}
-	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmRemoveConfirmResult{State: string(record.State)}, w.now())
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmRemoveConfirmResult{State: string(record.State), Manifest: controlRecoveryManifest(manifest)}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}
 	return result, err
+}
+
+func controlRecoveryManifest(manifest RecoveryManifest) control.RealmRecoveryManifest {
+	archives := make([]control.RealmRecoveryArchive, 0, len(manifest.Archives))
+	for _, archive := range manifest.Archives {
+		archives = append(archives, control.RealmRecoveryArchive{
+			ArchiveID: archive.ArchiveID, RepoID: archive.RepoID,
+			SHA256: archive.SHA256, Size: archive.Size,
+		})
+	}
+	return control.RealmRecoveryManifest{
+		Schema: manifest.Schema, OperationID: manifest.OperationID, RealmID: manifest.RealmID,
+		Archives: archives, DownloadUntil: manifest.DownloadUntil,
+		AdminGraceUntil: manifest.AdminGraceUntil, CreatedAt: manifest.CreatedAt,
+	}
 }
 
 func (w *Worker) detachClient(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {

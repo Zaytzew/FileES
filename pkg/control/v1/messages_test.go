@@ -199,7 +199,9 @@ func TestRealmRemovalContractCarriesNoTargetScope(t *testing.T) {
 	if _, err := NewTicket(operationID, uuid.NewString(), TicketRealmRemoveConfirm, "client-a", RealmRemoveConfirmPayload{OTP: "bad-code"}, time.Now()); err == nil {
 		t.Fatal("malformed realm removal OTP accepted")
 	}
-	if _, err := NewSuccessResult(operationID, requestID, TicketRealmRemoveConfirm, RealmRemoveConfirmResult{State: "deleting"}, time.Now()); err != nil {
+	created := time.Now().UTC()
+	manifest := RealmRecoveryManifest{Schema: "filees.realm-recovery-manifest/v1", OperationID: operationID, RealmID: uuid.NewString(), CreatedAt: created, DownloadUntil: created.Add(time.Hour), AdminGraceUntil: created.Add(2 * time.Hour)}
+	if _, err := NewSuccessResult(operationID, requestID, TicketRealmRemoveConfirm, RealmRemoveConfirmResult{State: "completed", Manifest: manifest}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }

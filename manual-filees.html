@@ -706,8 +706,9 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <tr><td><code>filees-admin ticket create/revoke</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>tickets+audit (rwc), lock (rw)</td></tr>
 <tr><td><code>filees-admin operation inspect</code></td><td><code>stdio rpath wpath flock</code></td><td>operations (r), lock (rw)</td></tr>
 <tr><td><code>filees-onboard take</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>tickets+operations+audit (rwc), lock (rw)</td></tr>
-<tr><td><code>filees-operation recover</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>all areas (rwc), lock (rw)</td></tr>
+<tr><td><code>filees-operation recover</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>all control areas, activation state, repository results/data, exact service WC/repository and fixed SVN binaries</td></tr>
 <tr><td><code>filees-mail send</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>operations (rwc), lock (rw), /etc/resolv.conf, /etc/hosts (r)</td></tr>
+<tr><td><code>filees-admin erasure complete</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>operations+audit, data-erasure journal, SMTP configuration and resolver files</td></tr>
 <tr><td><code>filees-entry</code></td><td><code>stdio proc exec</code></td><td>fixed worker image and runtime loader</td></tr>
 <tr><td><code>filees-worker deploy</code></td><td><code>stdio rpath wpath cpath fattr flock inet proc exec</code></td><td>operations, worker key, activation root, service WC/repository and fixed SVN binary</td></tr>
 <tr><td><code>filees-client-entry</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>activation receipt root, service repository, authz and fixed svnserve binary</td></tr>
@@ -1244,7 +1245,7 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <li><strong>Claim-as-ticket</strong> — the ticket was renamed to <code>.claim-&lt;req_id&gt;.json</code> but not yet replaced by a bundle. Recovery generates the bundle and completes the final rename.</li>
 <li><strong>Claim-as-bundle</strong> — the bundle was written into the claim file but the final rename to <code>&lt;req_id&gt;.json</code> was not completed. Recovery performs only the rename.</li>
 </ul>
-<p>Recovery also expires unfinished operations whose TTL elapsed, redacts their OTP and delivery address, and removes expired staged keys from generated SSH/SVN access. Active clients are not expired by the onboarding TTL. Recovery is idempotent and safe after an unexpected system crash.</p>
+<p>Recovery also expires unfinished operations whose TTL elapsed, redacts their OTP and delivery address, removes expired staged keys from generated SSH/SVN access, and resumes confirmed realm-removal journals after all client credentials have been revoked. Active clients are not expired by the onboarding TTL. Recovery is idempotent and safe after an unexpected system crash. On OpenBSD it must run as the private state owner: <code>doas -u _filees-state filees-operation recover</code>.</p>
 <h2 id="ch4-audit">4.3 Audit Log</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Onboarding audit and client structured error logs exist.</span></div>
 <p>The server-side audit log is stored as individual JSON files in the <code>audit/</code> subdirectory of the state root (<code>/var/filees/onboarding/audit/</code>). Each event file is named <code>&lt;timestamp&gt;-&lt;object_type&gt;-&lt;event_type&gt;.json</code> and follows the <code>filees.onboarding-audit/v1</code> schema:</p>
 <pre><code>{
@@ -1264,7 +1265,7 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <p>The most recent entries can be viewed with:</p>
 <pre><code>filees log 50</code></pre>
 <h2 id="ch4-mail">4.4 Mail Outbox</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>One-shot SMTP outbox, public bootstrap composition, redaction and retry semantics.</span></div>
-<p>The public SSH forced command is <code>filees-bootstrap-entry</code>. It atomically creates or resumes the onboarding operation and then invokes exactly one <code>filees-mail send</code> attempt. That command reads the pending outbox entry from the operation bundle and submits it to the configured SMTP smarthost. FileES does not maintain a background mailer process.</p>
+<p>The public SSH forced command is <code>filees-bootstrap-entry</code>. It atomically creates or resumes the onboarding operation and then invokes exactly one <code>filees-mail send</code> attempt. Authenticated control workers use the same one-shot trigger. The mail worker reads one pending invitation/activation, realm-removal OTP or data-erasure completion entry and submits it to the configured SMTP smarthost. FileES does not maintain a background mailer process.</p>
 <p>The outbox delivery state machine:</p>
 <pre><code>pending  -&gt;  sending  -&gt;  queued    (250 after DATA; OTP and address redacted)
                       -&gt;  pending   (4xx temporary failure; OTP preserved)
@@ -1277,6 +1278,17 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <h4>Interrupted onboarding claim</h4>
 <pre><code>doas -u _filees-state filees-operation recover</code></pre>
 <p>The command finishes any <code>.claim-*</code> file, expires unfinished operations past TTL, redacts their OTP material and removes expired activation staging. Active clients remain active. Safe to run repeatedly.</p>
+<h4>Realm removal after client revocation</h4>
+<p>A confirmed realm-removal journal is server-owned. If a crash occurs after <code>revoke_all_clients</code>, no client credential remains with which to resume the request. The same explicit <code>filees-operation recover</code> command enumerates states <code>deleting</code>, <code>recovery_ready</code> and <code>revoke_all_clients</code> under the repository worker lock and completes their idempotent boundaries. It is an administrative/startup action, not polling or a cyclic service.</p>
+<h4>Data-erasure retention closure</h4>
+<p>An optional data-erasure request is created only after realm-removal OTP confirmation. After active repositories, grants and client activations are removed it waits in <code>awaiting_backup_retention</code>. The server does not claim to purge backups automatically. Once the operator has verified the retention outcome, close it explicitly:</p>
+<pre><code>doas -u _filees-state filees-admin erasure complete \
+  --operation-id &lt;realm_removal_uuid&gt;
+
+# If policy or legal retention still requires records:
+doas -u _filees-state filees-admin erasure complete \
+  --operation-id &lt;realm_removal_uuid&gt; --partially-retained</code></pre>
+<p>Closure creates one final mail job. SMTP acceptance or a permanent failure scrubs the notification address. The maximum completion window shown by the client comes from <code>repositories.data_erasure_max_days</code> (default 90), not from GUI code.</p>
 <h4>Moving the data-repository storage root</h4>
 <p><code>repositories.root</code> is an absolute, administrator-selected FSFS storage root; <code>/var/filees/repositories</code> is only the default. It may point to a dedicated filesystem such as <code>/srv/filees/repositories</code>. This is a maintenance migration, not a live configuration change: every data repository is a directory below that root, named by its repository UUID.</p>
 <ol>

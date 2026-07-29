@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -23,6 +24,7 @@ import (
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
+	"filees/pkg/recoverykit"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
@@ -172,7 +174,8 @@ func runDaemon() {
 	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach})
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
 	ipc.SetServerDetachService(serverDetachService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot()})
-	ipc.SetRealmRemovalService(realmRemovalClientService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot()})
+	recoveryRegistry := recoverykit.Registry{Root: filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recovery")}
+	ipc.SetRealmRemovalService(realmRemovalClientService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), registry: recoveryRegistry})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
 		provisioner.AddProfile(profile)
 		select {

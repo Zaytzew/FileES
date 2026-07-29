@@ -23,7 +23,8 @@
     "svnadmin_binary": "/usr/local/bin/svnadmin",
     "url_prefix": "svn+ssh://_filees-data@filees.example.net/",
     "deletion_archive_root": "/var/filees/repository-operations/deleted-repositories",
-    "deletion_retention_days": 30
+    "deletion_retention_days": 30,
+    "recovery_admin_contact": "filees-admin@example.net"
   },
   "operation_ttl": "30m",
   "otp_attempts": 5,

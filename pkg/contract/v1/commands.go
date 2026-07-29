@@ -21,6 +21,7 @@ const (
 	CmdServerDetach       = "server.detach"
 	CmdRealmRemoveBegin   = "realm.remove_begin"
 	CmdRealmRemoveConfirm = "realm.remove_confirm"
+	CmdRecoveryDownload   = "recovery.download"
 
 	// Mobile pairing (Phase 2c): daemon mints a MOBILE_PAIRING token through
 	// its own already-authenticated control-plane channel; the tray hands
@@ -80,6 +81,7 @@ const (
 	CapServerDetach           = "server.detach"
 	CapRealmRemoveBegin       = "realm.remove_begin"
 	CapRealmRemoveConfirm     = "realm.remove_confirm"
+	CapRecoveryDownload       = "recovery.download"
 	CapMobilePairingBegin     = "mobile_pairing.begin"
 	CapRepoCreateRequest      = "repo.create_request"
 	CapRepoAttachIntent       = "repo.attach_intent"
@@ -120,6 +122,7 @@ var AllCapabilities = []string{
 	CapServerDetach,
 	CapRealmRemoveBegin,
 	CapRealmRemoveConfirm,
+	CapRecoveryDownload,
 	CapMobilePairingBegin,
 	CapRepoCreateRequest,
 	CapRepoAttachIntent,
@@ -145,7 +148,28 @@ type SystemStatusResult struct {
 	UptimeSec   int64              `json:"uptime_sec"`
 	Repos       int                `json:"repos"`
 	Activations []ActivationStatus `json:"activations"`
+	Recoveries  []RecoveryStatus   `json:"recoveries,omitempty"`
 	Update      *UpdateStatus      `json:"update,omitempty"`
+}
+
+type RecoveryStatus struct {
+	OperationID     string `json:"operation_id"`
+	ServerID        string `json:"server_id"`
+	ServerName      string `json:"server_name"`
+	KitPath         string `json:"kit_path"`
+	AdminContact    string `json:"admin_contact,omitempty"`
+	ArchiveCount    int    `json:"archive_count"`
+	DownloadUntil   string `json:"download_until"`
+	AdminGraceUntil string `json:"admin_grace_until"`
+}
+
+type RecoveryDownloadPayload struct {
+	OperationID string `json:"operation_id"`
+	OutputRoot  string `json:"output_root"`
+}
+type RecoveryDownloadResult struct {
+	OperationID string   `json:"operation_id"`
+	Paths       []string `json:"paths"`
 }
 
 type UpdateStatus struct {
@@ -242,6 +266,7 @@ type RealmRemoveBeginResult struct {
 	ActiveClientCount    int    `json:"active_client_count"`
 	OwnedRepositoryCount int    `json:"owned_repository_count"`
 	ForeignGrantCount    int    `json:"foreign_grant_count"`
+	AdminContact         string `json:"admin_contact"`
 }
 type RealmRemoveConfirmPayload struct {
 	ServerID        string `json:"server_id"`

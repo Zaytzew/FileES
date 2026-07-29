@@ -66,6 +66,7 @@ type RepositoryFile struct {
 	URLPrefix             string `json:"url_prefix,omitempty"`
 	DeletionArchiveRoot   string `json:"deletion_archive_root,omitempty"`
 	DeletionRetentionDays *int   `json:"deletion_retention_days,omitempty"`
+	RecoveryAdminContact  string `json:"recovery_admin_contact"`
 }
 
 func (repository RepositoryFile) EffectiveDeletionRetentionDays() int {
@@ -286,6 +287,9 @@ func load(path string, secrets Secrets) (Config, error) {
 			pool = x509.NewCertPool()
 		}
 	}
+	if strings.TrimSpace(file.Repositories.RecoveryAdminContact) == "" {
+		file.Repositories.RecoveryAdminContact = file.SMTP.From
+	}
 	config := Config{
 		Path: path, Root: filepath.Clean(file.Root), OTPPepperFile: file.OTPPepperFile, SMTPFrom: from,
 		MessageIDDomain:  strings.ToLower(strings.TrimSpace(file.SMTP.MessageIDDomain)),
@@ -303,6 +307,9 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if config.Repositories.DeletionArchiveRoot != "" && !filepath.IsAbs(config.Repositories.DeletionArchiveRoot) {
 		return Config{}, errors.New("repositories deletion_archive_root must be absolute")
+	}
+	if _, err := onboarding.CanonicalEmail(config.Repositories.RecoveryAdminContact); err != nil {
+		return Config{}, errors.New("repositories recovery_admin_contact must be a plain mailbox address")
 	}
 	if config.MessageIDDomain == "" || strings.ContainsAny(config.MessageIDDomain, "@<>\r\n \t") {
 		return Config{}, errors.New("SMTP message_id_domain is required")

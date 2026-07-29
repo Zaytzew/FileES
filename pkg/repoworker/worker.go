@@ -93,16 +93,17 @@ type RealmRemovalService interface {
 }
 
 type Worker struct {
-	Backend        Backend
-	Activator      RepositoryActivator
-	Store          ResultStore
-	Capacity       CapacityChecker
-	Reservations   ReservationLedger
-	MobilePairing  MobilePairingMinter
-	Aliases        RealmAliasStore
-	ClientDetacher ClientDetacher
-	RealmRemoval   RealmRemovalService
-	Now            func() time.Time
+	Backend              Backend
+	Activator            RepositoryActivator
+	Store                ResultStore
+	Capacity             CapacityChecker
+	Reservations         ReservationLedger
+	MobilePairing        MobilePairingMinter
+	Aliases              RealmAliasStore
+	ClientDetacher       ClientDetacher
+	RealmRemoval         RealmRemovalService
+	RecoveryAdminContact string
+	Now                  func() time.Time
 }
 
 func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
@@ -207,6 +208,7 @@ func (w *Worker) requestRealmRemoval(ctx context.Context, session Session, ticke
 		ActiveClientCount:    len(record.Scope.ClientIDs),
 		OwnedRepositoryCount: len(record.Scope.OwnedRepoIDs),
 		ForeignGrantCount:    len(record.Scope.ForeignGrantRepoIDs),
+		AdminContact:         w.RecoveryAdminContact,
 	}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
@@ -226,7 +228,7 @@ func (w *Worker) confirmRealmRemoval(ctx context.Context, session Session, ticke
 	if err != nil {
 		return w.retryable(ticket, "REALM_REMOVE_CONFIRM_RETRY", err.Error())
 	}
-	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmRemoveConfirmResult{State: string(record.State), Manifest: controlRecoveryManifest(manifest)}, w.now())
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmRemoveConfirmResult{State: string(record.State), Manifest: controlRecoveryManifest(manifest), AdminContact: w.RecoveryAdminContact}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}

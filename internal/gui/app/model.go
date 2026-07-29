@@ -111,6 +111,13 @@ type UpdateViewModel struct {
 	RestartRequired  bool
 }
 
+type RecoveryViewModel struct {
+	OperationID, ServerID, ServerName, KitPath, AdminContact string
+	ArchiveCount                                             int
+	DownloadUntil, AdminGraceUntil                           string
+	CanDownload                                              bool
+}
+
 func (update *UpdateViewModel) Available() bool {
 	return update != nil && update.State == "available" && update.AvailableVersion != ""
 }
@@ -126,6 +133,7 @@ type ViewModel struct {
 	Capabilities map[string]bool
 	Repos        []RepoViewModel
 	Servers      []ServerViewModel
+	Recoveries   []RecoveryViewModel
 	Errors       []ErrorViewModel
 	Activity     []ActivityViewModel
 	Update       *UpdateViewModel

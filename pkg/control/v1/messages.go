@@ -156,13 +156,15 @@ type RealmRemoveRequestResult struct {
 	ActiveClientCount    int    `json:"active_client_count"`
 	OwnedRepositoryCount int    `json:"owned_repository_count"`
 	ForeignGrantCount    int    `json:"foreign_grant_count"`
+	AdminContact         string `json:"admin_contact"`
 }
 type RealmRemoveConfirmPayload struct {
 	OTP string `json:"otp"`
 }
 type RealmRemoveConfirmResult struct {
-	State    string                `json:"state"`
-	Manifest RealmRecoveryManifest `json:"manifest"`
+	State        string                `json:"state"`
+	Manifest     RealmRecoveryManifest `json:"manifest"`
+	AdminContact string                `json:"admin_contact"`
 }
 type RealmRecoveryArchive struct {
 	ArchiveID string `json:"archive_id"`
@@ -474,6 +476,9 @@ func validateSuccessPayload(r Result) error {
 		if result.ActiveClientCount < 0 || result.OwnedRepositoryCount < 0 || result.ForeignGrantCount < 0 {
 			return errors.New("REALM_REMOVE_REQUEST result counts cannot be negative")
 		}
+		if _, err := validatePlainEmail(result.AdminContact); err != nil {
+			return errors.New("REALM_REMOVE_REQUEST admin contact is invalid")
+		}
 	case TicketRealmRemoveConfirm:
 		var result RealmRemoveConfirmResult
 		if err := decodeStrict(r.Result, &result); err != nil {
@@ -487,6 +492,9 @@ func validateSuccessPayload(r Result) error {
 		}
 		if result.Manifest.OperationID != r.OperationID {
 			return errors.New("REALM_REMOVE_CONFIRM manifest belongs to another operation")
+		}
+		if _, err := validatePlainEmail(result.AdminContact); err != nil {
+			return errors.New("REALM_REMOVE_CONFIRM admin contact is invalid")
 		}
 	}
 	return nil

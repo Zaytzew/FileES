@@ -42,6 +42,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRealmRemoveBegin(req)
 	case contract.CmdRealmRemoveConfirm:
 		return s.handleRealmRemoveConfirm(req)
+	case contract.CmdRecoveryDownload:
+		return s.handleRecoveryDownload(req)
 	case contract.CmdMobilePairingBegin:
 		return s.handleMobilePairingBegin(req)
 	case contract.CmdRepoList:
@@ -79,6 +81,24 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleRecoveryDownload(req contract.Request) contract.Response {
+	service := s.realmRemovalService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "RECOVERY-0001", "ERROR", "NONE", "recovery.unavailable", nil)
+	}
+	var payload contract.RecoveryDownloadPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.OperationID) == "" || !filepath.IsAbs(payload.OutputRoot) {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer cancel()
+	result, err := service.Download(ctx, payload)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "RECOVERY-1001", "ERROR", "REQUIRE_ACTION", "recovery.download_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
 }
 
 func (s *Server) handleRealmRemoveBegin(req contract.Request) contract.Response {
@@ -532,6 +552,13 @@ func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 		UptimeSec:   s.uptime(),
 		Repos:       len(s.allRepos()),
 		Activations: s.allActivations(),
+	}
+	if service := s.realmRemovalService(); service != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if recoveries, err := service.List(ctx); err == nil {
+			result.Recoveries = recoveries
+		}
 	}
 	if service := s.updateService(); service != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

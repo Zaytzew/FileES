@@ -247,6 +247,15 @@ func (c *Client) RealmRemoveConfirm(ctx context.Context, payload contract.RealmR
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) RecoveryDownload(ctx context.Context, payload contract.RecoveryDownloadPayload) (*contract.RecoveryDownloadResult, error) {
+	resp, err := c.do(ctx, contract.CmdRecoveryDownload, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RecoveryDownloadResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) MobilePairingBegin(ctx context.Context, serverID string) (*contract.MobilePairingBeginResult, error) {
 	resp, err := c.do(ctx, contract.CmdMobilePairingBegin, "", contract.MobilePairingBeginPayload{ServerID: serverID})
 	if err != nil {

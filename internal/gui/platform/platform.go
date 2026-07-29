@@ -54,9 +54,10 @@ type SettingsBrowser interface {
 }
 
 type SettingsDialogRequest struct {
-	Title   string
-	Text    string
-	Servers []SettingsServer
+	Title      string
+	Text       string
+	Servers    []SettingsServer
+	Recoveries []SettingsRecovery
 }
 
 type SettingsServer struct {
@@ -67,21 +68,27 @@ type SettingsServer struct {
 type SettingsFolder struct {
 	ID, Name, LocalPath, State, Access string
 }
+type SettingsRecovery struct {
+	OperationID, ServerName, KitPath, Status string
+	CanDownload                              bool
+}
 
 type SettingsDialogAction string
 
 const (
-	SettingsDialogClose        SettingsDialogAction = "close"
-	SettingsDialogAddFolder    SettingsDialogAction = "add_folder"
-	SettingsDialogDetachFolder SettingsDialogAction = "detach_folder"
-	SettingsDialogDeleteRepo   SettingsDialogAction = "delete_repository"
-	SettingsDialogDetachServer SettingsDialogAction = "detach_server"
-	SettingsDialogRemoveRealm  SettingsDialogAction = "remove_realm"
+	SettingsDialogClose            SettingsDialogAction = "close"
+	SettingsDialogAddFolder        SettingsDialogAction = "add_folder"
+	SettingsDialogDetachFolder     SettingsDialogAction = "detach_folder"
+	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
+	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"
+	SettingsDialogRemoveRealm      SettingsDialogAction = "remove_realm"
+	SettingsDialogDownloadRecovery SettingsDialogAction = "download_recovery"
 )
 
 type SettingsDialogResult struct {
 	Action           SettingsDialogAction
 	ServerID, RepoID string
+	OperationID      string
 }
 
 // SettingsText is the accessible, compact fallback used by platforms that do
@@ -104,6 +111,12 @@ func SettingsText(request SettingsDialogRequest) string {
 		for _, folder := range server.Folders {
 			lines = append(lines, "• "+folder.Name, "  "+folder.LocalPath+" — "+folder.State+", "+folder.Access)
 		}
+	}
+	for _, recovery := range request.Recoveries {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, "Odzyskiwanie: "+recovery.ServerName, recovery.Status, "Pakiet: "+recovery.KitPath)
 	}
 	if len(lines) == 0 {
 		return "Brak aktywnych serwerów FileES."

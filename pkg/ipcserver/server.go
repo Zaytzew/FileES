@@ -92,6 +92,8 @@ type ServerDetachService interface {
 type RealmRemovalService interface {
 	Begin(context.Context, string, string, contract.RealmRemoveBeginPayload) (contract.RealmRemoveBeginResult, error)
 	Confirm(context.Context, contract.RealmRemoveConfirmPayload) (contract.RealmRemoveConfirmResult, error)
+	List(context.Context) ([]contract.RecoveryStatus, error)
+	Download(context.Context, contract.RecoveryDownloadPayload) (contract.RecoveryDownloadResult, error)
 }
 
 type UpdateService interface {

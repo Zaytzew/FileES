@@ -212,6 +212,16 @@ func (s appState) viewModel() ViewModel {
 		Errors:       append([]ErrorViewModel(nil), s.errors...),
 		Activity:     append([]ActivityViewModel(nil), s.activity...),
 	}
+	now := time.Now().UTC()
+	for _, recovery := range s.system.Recoveries {
+		downloadUntil, _ := time.Parse(time.RFC3339Nano, recovery.DownloadUntil)
+		vm.Recoveries = append(vm.Recoveries, RecoveryViewModel{
+			OperationID: recovery.OperationID, ServerID: recovery.ServerID, ServerName: recovery.ServerName,
+			KitPath: recovery.KitPath, AdminContact: recovery.AdminContact, ArchiveCount: recovery.ArchiveCount,
+			DownloadUntil: recovery.DownloadUntil, AdminGraceUntil: recovery.AdminGraceUntil,
+			CanDownload: now.Before(downloadUntil),
+		})
+	}
 	if update := s.system.Update; update != nil {
 		vm.Update = &UpdateViewModel{
 			State: update.State, CurrentVersion: update.CurrentVersion,

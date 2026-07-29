@@ -354,6 +354,75 @@ func (p ServicePublisher) Delete(ctx context.Context, repoID, realmID string) er
 	return p.Runner.Publish(ctx, changed, "filees: delete repository "+repoID)
 }
 
+// WithdrawRealmGrants removes only the snapshotted foreign repository grants
+// from every projection belonging to realmID. It never changes canonical
+// ownership and is idempotent, so a realm-removal executor can resume it.
+func (p ServicePublisher) WithdrawRealmGrants(ctx context.Context, realmID string, repoIDs []string) error {
+	if !filepath.IsAbs(p.ServiceWC) || !filepath.IsAbs(p.DataAuthzFile) || p.Runner == nil {
+		return errors.New("authority publisher is incomplete")
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return errors.New("realm grant withdrawal realm_id must be UUID")
+	}
+	targets := map[string]bool{}
+	for _, id := range repoIDs {
+		if _, err := uuid.Parse(id); err != nil {
+			return errors.New("realm grant withdrawal repo_id must be UUID")
+		}
+		targets[id] = true
+	}
+	now := time.Now().UTC()
+	if p.Now != nil {
+		now = p.Now().UTC()
+	}
+	changed := []string{}
+	entries, err := os.ReadDir(filepath.Join(p.ServiceWC, "clients"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(p.ServiceWC, "clients", entry.Name(), "view.json")
+		view, err := clientview.Load(path)
+		if err != nil {
+			return err
+		}
+		if view.RealmID != realmID {
+			continue
+		}
+		kept, removed := view.Repositories[:0], false
+		for _, repository := range view.Repositories {
+			if targets[repository.RepoID] && repository.OwnerRealmID != realmID {
+				removed = true
+				continue
+			}
+			kept = append(kept, repository)
+		}
+		if !removed {
+			continue
+		}
+		view.Repositories, view.Generation, view.GeneratedAt = kept, view.Generation+1, now
+		if _, err := clientview.StoreIfNewer(path, view); err != nil {
+			return err
+		}
+		changed = append(changed, path)
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	authz, err := p.renderAuthz()
+	if err != nil {
+		return err
+	}
+	if err := atomicBytes(p.DataAuthzFile, authz); err != nil {
+		return err
+	}
+	changed = append(changed, p.DataAuthzFile)
+	return p.Runner.Publish(ctx, changed, "filees: withdraw realm grants "+realmID)
+}
+
 // TransferOwner reassigns a repository's owning realm - the administrative
 // escape hatch for a repo orphaned by a whole-realm revoke
 // (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §6). It rewrites the canonical

@@ -3,6 +3,7 @@ package servertool
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"filees/pkg/repoworker"
 )
@@ -15,6 +16,7 @@ type realmRemovalCoordinator struct {
 	Store         repoworker.RealmRemovalStore
 	SnapshotScope func(string) (repoworker.RealmRemovalScope, error)
 	ActiveClients func(string) ([]string, error)
+	Execute       func(context.Context, repoworker.RealmRemovalRecord) error
 }
 
 func (c realmRemovalCoordinator) Request(ctx context.Context, session repoworker.Session, operationID string, request repoworker.RealmRemovalRequest) (repoworker.RealmRemovalRecord, error) {
@@ -48,5 +50,19 @@ func (c realmRemovalCoordinator) Confirm(ctx context.Context, session repoworker
 	if record.RealmID != session.RealmID {
 		return repoworker.RealmRemovalRecord{}, errors.New("realm removal operation does not belong to authenticated realm")
 	}
-	return c.Store.Confirm(operationID, otp)
+	if record.State == repoworker.RealmRemovalAwaitingConfirmation {
+		record, err = c.Store.Confirm(operationID, otp)
+		if err != nil {
+			return repoworker.RealmRemovalRecord{}, err
+		}
+	} else if record.State != repoworker.RealmRemovalDeleting && record.State != repoworker.RealmRemovalRecoveryReady && record.State != repoworker.RealmRemovalRevokingClients && record.State != repoworker.RealmRemovalCompleted {
+		return repoworker.RealmRemovalRecord{}, fmt.Errorf("realm removal cannot resume from state %q", record.State)
+	}
+	if c.Execute == nil {
+		return repoworker.RealmRemovalRecord{}, errors.New("realm removal executor is unavailable")
+	}
+	if err := c.Execute(ctx, record); err != nil {
+		return repoworker.RealmRemovalRecord{}, err
+	}
+	return c.Store.Load(operationID)
 }

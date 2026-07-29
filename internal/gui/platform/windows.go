@@ -325,6 +325,8 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 		result.Action = SettingsDialogDeleteRepo
 	case "deactivate":
 		result.Action = SettingsDialogDetachServer
+	case "remove_realm":
+		result.Action = SettingsDialogRemoveRealm
 	default:
 		result.Action = SettingsDialogClose
 	}
@@ -360,8 +362,8 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	for _, spec := range []struct {
 		label, action string
 		left          int
-	}{{"Dodaj folder", "add", 500}, {"Odłącz folder", "detach", 625}, {"Odłącz trwale", "delete", 750}, {"Dezaktywuj klienta", "deactivate", 875}} {
-		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(spec.label) + ";$b.Width=115;$b.Height=28;$b.Left=" + fmt.Sprint(spec.left) + ";$b.Top=540;$b.Add_Click({act '" + spec.action + "'});$f.Controls.Add($b);")
+	}{{"Dodaj folder", "add", 420}, {"Odłącz folder", "detach", 535}, {"Odłącz trwale", "delete", 650}, {"Dezaktywuj klienta", "deactivate", 765}, {"Usuń udział FileES", "remove_realm", 880}} {
+		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(spec.label) + ";$b.Width=108;$b.Height=28;$b.Left=" + fmt.Sprint(spec.left) + ";$b.Top=540;$b.Add_Click({act '" + spec.action + "'});$f.Controls.Add($b);")
 	}
 	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1010;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);[void]$f.ShowDialog();$script:answer")
 	return sb.String(), nil
@@ -381,6 +383,33 @@ func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (b
 		return false, NewOperationalFailure("confirm_dialog", err)
 	}
 	return strings.TrimSpace(string(output)) == "yes", nil
+}
+
+func (b *WindowsBackend) ConfirmConsent(ctx context.Context, request ConsentRequest) (ConsentResult, error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return ConsentResult{}, NewUnavailable("consent_dialog", err)
+	}
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;" +
+		"$f=New-Object Windows.Forms.Form;$f.Text=" + psString(request.Title) + ";$f.Width=720;$f.Height=310;$f.StartPosition='CenterScreen';" +
+		"$l=New-Object Windows.Forms.Label;$l.Text=" + psString(request.Text) + ";$l.Left=15;$l.Top=15;$l.Width=670;$l.Height=75;$f.Controls.Add($l);" +
+		"$r=New-Object Windows.Forms.CheckBox;$r.Text=" + psString(request.RequiredText) + ";$r.Left=15;$r.Top=100;$r.Width=670;$r.Height=45;$f.Controls.Add($r);" +
+		"$o=New-Object Windows.Forms.CheckBox;$o.Text=" + psString(request.OptionalText) + ";$o.Left=15;$o.Top=155;$o.Width=670;$o.Height=45;$f.Controls.Add($o);" +
+		"$ok=New-Object Windows.Forms.Button;$ok.Text='Kontynuuj';$ok.Left=480;$ok.Top=220;$ok.Width=100;$ok.DialogResult='OK';$f.AcceptButton=$ok;$f.Controls.Add($ok);" +
+		"$c=New-Object Windows.Forms.Button;$c.Text='Anuluj';$c.Left=590;$c.Top=220;$c.Width=90;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" +
+		"$d=$f.ShowDialog();if($d-eq'OK'){'ok|'+$r.Checked+'|'+$o.Checked}else{'cancel|false|false'}"
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ConsentResult{}, ctx.Err()
+		}
+		return ConsentResult{}, NewOperationalFailure("consent_dialog", err)
+	}
+	parts := strings.Split(strings.TrimSpace(string(output)), "|")
+	if len(parts) != 3 || parts[0] != "ok" {
+		return ConsentResult{Cancelled: true}, nil
+	}
+	return ConsentResult{Required: strings.EqualFold(parts[1], "true"), Optional: strings.EqualFold(parts[2], "true")}, nil
 }
 
 // ShowReservations presents a real WinForms table rather than serialising a

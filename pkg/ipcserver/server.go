@@ -34,6 +34,7 @@ type Server struct {
 	lifecycle    RepositoryLifecycleService
 	mobilePair   MobilePairingService
 	serverDetach ServerDetachService
+	realmRemoval RealmRemovalService
 	updates      UpdateService
 	activity     ActivitySource
 	lifecycleFn  SystemLifecycleService
@@ -86,6 +87,11 @@ type MobilePairingService interface {
 
 type ServerDetachService interface {
 	Detach(context.Context, string) error
+}
+
+type RealmRemovalService interface {
+	Begin(context.Context, string, string, contract.RealmRemoveBeginPayload) (contract.RealmRemoveBeginResult, error)
+	Confirm(context.Context, contract.RealmRemoveConfirmPayload) (contract.RealmRemoveConfirmResult, error)
 }
 
 type UpdateService interface {
@@ -182,6 +188,18 @@ func (s *Server) serverDetachService() ServerDetachService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.serverDetach
+}
+
+func (s *Server) SetRealmRemovalService(service RealmRemovalService) {
+	s.mu.Lock()
+	s.realmRemoval = service
+	s.mu.Unlock()
+}
+
+func (s *Server) realmRemovalService() RealmRemovalService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.realmRemoval
 }
 
 func (s *Server) SetActivationService(service ActivationService) {

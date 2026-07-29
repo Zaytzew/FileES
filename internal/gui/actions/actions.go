@@ -77,6 +77,23 @@ type ServerDetacher interface {
 	DetachServer(context.Context, string) error
 }
 
+type RealmRemovalBeginRequest struct {
+	ServerID, NotificationEmail, RecoveryDirectory string
+	ErasureRequested                               bool
+}
+type RealmRemovalBeginResult struct {
+	OperationID, RecoveryKitPath, ExpiresAt                    string
+	ActiveClientCount, OwnedRepositoryCount, ForeignGrantCount int
+}
+type RealmRemovalConfirmResult struct {
+	RecoveryKitPath, DownloadUntil, AdminGraceUntil string
+	ArchiveCount                                    int
+}
+type RealmRemover interface {
+	BeginRealmRemoval(context.Context, RealmRemovalBeginRequest) (RealmRemovalBeginResult, error)
+	ConfirmRealmRemoval(context.Context, string, string, []byte, string) (RealmRemovalConfirmResult, error)
+}
+
 type StackLifecycle interface {
 	RestartFileES(context.Context) error
 	ShutdownFileES(context.Context) error
@@ -126,6 +143,7 @@ type Config struct {
 	RepositoryCreator  RepositoryCreator
 	RepositoryDetacher RepositoryDetacher
 	ServerDetacher     ServerDetacher
+	RealmRemover       RealmRemover
 	MobilePairer       MobilePairingLauncher
 	// PinStore, if non-nil, offers PIN setup at the end of a successful
 	// activation (see startActivation) - nil means the local-PIN feature is
@@ -140,6 +158,7 @@ type Config struct {
 	RealmAliases       RealmAliasManager
 	ReservationBrowser platform.ReservationBrowser
 	SettingsBrowser    platform.SettingsBrowser
+	ConsentPrompter    platform.ConsentPrompter
 	Reconnect          func() // nil → reconnect intent is a no-op
 	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
 	// after a successful mutation whose result changes tray eligibility.
@@ -257,6 +276,72 @@ func (c *Controller) startSettings(ctx context.Context) {
 			c.startDetachRepository(ctx, result.ServerID, result.RepoID, true)
 		case platform.SettingsDialogDetachServer:
 			c.startDetachServer(ctx, result.ServerID)
+		case platform.SettingsDialogRemoveRealm:
+			c.startRealmRemoval(ctx, result.ServerID)
+		}
+	}()
+}
+
+func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
+	key := "remove-realm:" + serverID
+	if serverID == "" || c.cfg.RealmRemover == nil || c.cfg.Prompter == nil || c.cfg.ConsentPrompter == nil || c.cfg.FolderPicker == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		warning := "Ta operacja usunie z serwera repozytoria należące do Twojego realmu, cofnie granty i unieważni aktywacje wszystkich Twoich klientów — nie tylko tej instalacji. Lokalne pliki pozostaną na dysku."
+		ok, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Usuń mój udział FileES", Text: warning, ConfirmText: "Rozumiem, kontynuuj", CancelText: "Anuluj"})
+		if err != nil || !ok {
+			return
+		}
+		consent, err := c.cfg.ConsentPrompter.ConfirmConsent(ctx, platform.ConsentRequest{
+			Title:        "Retencja i usunięcie danych",
+			Text:         "Usunięcie udziału nie oznacza natychmiastowego usunięcia danych z kopii zapasowych i logów bezpieczeństwa.",
+			RequiredText: "Rozumiem, że dane mogą pozostać w backupach zgodnie z polityką retencji serwera.",
+			OptionalText: "Dodatkowo składam żądanie usunięcia wszystkich moich danych.",
+		})
+		if err != nil || consent.Cancelled || !consent.Required {
+			return
+		}
+		email, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Adres do powiadomień", Text: "Kod OTP i powiadomienia o usunięciu danych zostaną wysłane na ten adres.", Placeholder: "email@example.com"})
+		if err != nil || email.Cancelled || strings.TrimSpace(email.Value) == "" {
+			return
+		}
+		directory, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz katalog dla pakietu odzyskiwania .fkr"})
+		if err != nil || directory.Cancelled || !filepath.IsAbs(directory.Path) {
+			return
+		}
+		begin, err := c.cfg.RealmRemover.BeginRealmRemoval(ctx, RealmRemovalBeginRequest{
+			ServerID: serverID, NotificationEmail: strings.TrimSpace(email.Value),
+			RecoveryDirectory: filepath.Clean(directory.Path), ErasureRequested: consent.Optional,
+		})
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się rozpocząć usuwania udziału", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		otpText := fmt.Sprintf("Kod wysłano e-mailem. Potwierdzenie usunie %d repozytoriów, cofnie %d grantów i unieważni %d aktywacji klientów. Jeśli to nie Ty rozpocząłeś operację, zignoruj wiadomość i skontaktuj się z administratorem serwera.", begin.OwnedRepositoryCount, begin.ForeignGrantCount, begin.ActiveClientCount)
+		otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Potwierdź usunięcie udziału kodem OTP", Text: otpText, Placeholder: "Kod OTP", Secret: true})
+		if err != nil || otp.Cancelled || strings.TrimSpace(otp.Value) == "" {
+			return
+		}
+		secret := []byte(strings.TrimSpace(otp.Value))
+		result, err := c.cfg.RealmRemover.ConfirmRealmRemoval(ctx, serverID, begin.OperationID, secret, begin.RecoveryKitPath)
+		for i := range secret {
+			secret[i] = 0
+		}
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się dokończyć usuwania udziału", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		info := fmt.Sprintf("Udział FileES został usunięty. Pakiet odzyskiwania zapisano w:\n%s\n\nArchiwa: %d. Pobieranie jest dostępne do %s; potem do %s pozostaje kontakt z administratorem.", result.RecoveryKitPath, result.ArchiveCount, result.DownloadUntil, result.AdminGraceUntil)
+		if consent.Optional {
+			info += "\n\nŻądanie usunięcia wszystkich danych zostało przyjęte. Proces może potrwać do 90 dni; o zakończeniu zostaniesz poinformowany e-mailem."
+		}
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Usuwanie udziału przyjęte", Text: info})
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
 		}
 	}()
 }

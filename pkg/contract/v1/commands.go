@@ -15,10 +15,12 @@ const (
 	CmdUpdateApply    = "update.apply"    // apply and request GUI restart
 
 	// Client activation (executed by daemon; GUI only supplies user intent).
-	CmdActivationBegin  = "activation.begin"
-	CmdActivationFinish = "activation.finish"
-	CmdRealmAliasClaim  = "realm.alias_claim"
-	CmdServerDetach     = "server.detach"
+	CmdActivationBegin    = "activation.begin"
+	CmdActivationFinish   = "activation.finish"
+	CmdRealmAliasClaim    = "realm.alias_claim"
+	CmdServerDetach       = "server.detach"
+	CmdRealmRemoveBegin   = "realm.remove_begin"
+	CmdRealmRemoveConfirm = "realm.remove_confirm"
 
 	// Mobile pairing (Phase 2c): daemon mints a MOBILE_PAIRING token through
 	// its own already-authenticated control-plane channel; the tray hands
@@ -76,6 +78,8 @@ const (
 	CapActivationFinish       = "activation.finish"
 	CapRealmAliasClaim        = "realm.alias_claim"
 	CapServerDetach           = "server.detach"
+	CapRealmRemoveBegin       = "realm.remove_begin"
+	CapRealmRemoveConfirm     = "realm.remove_confirm"
 	CapMobilePairingBegin     = "mobile_pairing.begin"
 	CapRepoCreateRequest      = "repo.create_request"
 	CapRepoAttachIntent       = "repo.attach_intent"
@@ -114,6 +118,8 @@ var AllCapabilities = []string{
 	CapActivationFinish,
 	CapRealmAliasClaim,
 	CapServerDetach,
+	CapRealmRemoveBegin,
+	CapRealmRemoveConfirm,
 	CapMobilePairingBegin,
 	CapRepoCreateRequest,
 	CapRepoAttachIntent,
@@ -220,6 +226,36 @@ type ServerDetachPayload struct {
 
 type ServerDetachResult struct {
 	ServerID string `json:"server_id"`
+}
+
+type RealmRemoveBeginPayload struct {
+	ServerID          string `json:"server_id"`
+	NotificationEmail string `json:"notification_email"`
+	RecoveryDirectory string `json:"recovery_directory"`
+	ErasureRequested  bool   `json:"erasure_requested"`
+}
+type RealmRemoveBeginResult struct {
+	ServerID             string `json:"server_id"`
+	OperationID          string `json:"operation_id"`
+	RecoveryKitPath      string `json:"recovery_kit_path"`
+	ExpiresAt            string `json:"expires_at"`
+	ActiveClientCount    int    `json:"active_client_count"`
+	OwnedRepositoryCount int    `json:"owned_repository_count"`
+	ForeignGrantCount    int    `json:"foreign_grant_count"`
+}
+type RealmRemoveConfirmPayload struct {
+	ServerID        string `json:"server_id"`
+	OperationID     string `json:"operation_id"`
+	RecoveryKitPath string `json:"recovery_kit_path"`
+	OTP             Secret `json:"otp"`
+}
+type RealmRemoveConfirmResult struct {
+	ServerID        string `json:"server_id"`
+	OperationID     string `json:"operation_id"`
+	RecoveryKitPath string `json:"recovery_kit_path"`
+	ArchiveCount    int    `json:"archive_count"`
+	DownloadUntil   string `json:"download_until"`
+	AdminGraceUntil string `json:"admin_grace_until"`
 }
 
 // Secret preserves the wire representation as a JSON string while keeping

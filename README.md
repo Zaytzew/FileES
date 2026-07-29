@@ -8,35 +8,30 @@
 > - Formaty na dysku, protokoły, nazwy poleceń i schematy zmieniają się bez zapowiedzi i bez ścieżki migracji.
 > - Nie należy tego wdrażać na maszynie produkcyjnej ani powierzać temu danych, których utrata byłaby problemem.
 > - Kod jest ciągle w trakcie audytu i przeglądów; znane defekty bywają otwarte tygodniami, bo priorytet ma projekt, nie polerowanie.
-> - Wewnętrzne dokumenty projektowe, raporty z audytu i notatki robocze **nie są publikowane** — repozytorium git jest filtrowanym lustrem repozytorium SVN i zawiera wyłącznie kod, instrukcję i pliki readme. Odnośniki do dokumentów wewnętrznych poniżej nie zadziałają.
+> - Wewnętrzne dokumenty projektowe, koncepcje i raporty z audytu **nie są publikowane**. To repozytorium jest filtrowanym lustrem repozytorium SVN i zawiera wyłącznie kod, instrukcję i pliki readme.
 >
 > Zgłoszenia i pull requesty nie są oczekiwane i mogą pozostać bez odpowiedzi.
 >
 > ---
 >
-> **English:** this is a work-in-progress draft of a work-in-progress system, published only so the code can be looked at. It is not a release, has no stable version, no support and no guarantees of any kind — including security and data integrity. On-disk formats, protocols and schemas change without notice or migration. Do not deploy it and do not trust it with data you care about. Internal design and audit documents are deliberately not published; this git repository is a filtered mirror of an SVN repository and contains code, the manual and readme files only. Issues and pull requests are not expected and may go unanswered.
-
-Szczegółowy opis przepływu klienta, invariants, zachowania po awarii, zweryfikowanych edge cases i roadmapy testów znajduje się w [CLIENT_MECHANICS.md](CLIENT_MECHANICS.md).
-
-Raport końcowy audytu i wnioski z testów chaosowych znajduje się w [CLIENT_AUDIT_REPORT.md](CLIENT_AUDIT_REPORT.md). Dokumentację edit-passport uzupełniają [raport implementacji](EDIT_PASSPORT_IMPLEMENTATION_REPORT.md) i [raport testów](EDIT_PASSPORT_TEST_REPORT.md).
-
-Poprawki wynikające z przeglądu r61–r84 opisują [raport implementacji](CODE_REVIEW_FIX_IMPLEMENTATION_REPORT.md) i [raport testów](CODE_REVIEW_FIX_TEST_REPORT.md).
-
-Docelowy model dodawania katalogów, repozytorium technicznego, udostępnień oraz push-deployu tożsamości instalacji opisuje [PROVISIONING_AND_IDENTITY.md](PROVISIONING_AND_IDENTITY.md).
-
-Stan klientowej warstwy push deploy, granice obu połączeń SSH i blokery produkcyjne opisuje [PUSH_DEPLOY_CLIENT_READINESS.md](PUSH_DEPLOY_CLIENT_READINESS.md); wykonane testy są w [PUSH_DEPLOY_CLIENT_TEST_REPORT.md](PUSH_DEPLOY_CLIENT_TEST_REPORT.md).
-
-Natywny projekt narzędzi serwerowych OpenBSD, semantykę jednorazowego ticketu i OTP, podział procesów oraz plan etapów opisuje [SERVER_OPENBSD_WORKER_DESIGN.md](SERVER_OPENBSD_WORKER_DESIGN.md).
-
-Funkcjonalny układ repo serwisowego, projekcję read-only klienta, model administracyjny, ACL oraz recovery opisuje [SERVICE_REPOSITORY_DESIGN.md](SERVICE_REPOSITORY_DESIGN.md).
-
-Lokalny smoke test recovery można uruchomić przez `scripts/svn-recovery-smoke.sh`; tworzy tymczasowe repozytorium SVN i nie wymaga dostępu do sieci.
-
-Neutralny gate jakości dla CI to `make verify`. Obejmuje pełne testy Go, wybrane testy race, `go vet` oraz lokalny smoke test recovery SVN.
+> **English:** this is a work-in-progress draft of a work-in-progress system, published only so the code can be looked at. It is not a release, has no stable version, no support and no guarantees of any kind — including security and data integrity. On-disk formats, protocols and schemas change without notice or migration. Do not deploy it and do not trust it with data you care about. Internal design and audit documents are deliberately not published; this repository is a filtered mirror of an SVN repository and contains code, the manual and readme files only. Issues and pull requests are not expected and may go unanswered.
 
 Daemon synchronizujący lokalne katalogi z repozytorium SVN. Przeznaczony dla zespołów pracujących na plikach binarnych (grafika, modele 3D, zasoby projektowe). SVN jest tu warstwą transportową i magazynem — semantyka kontroli wersji jest drugorzędna.
 
 Docelowy UX: automat w trayu, który niewidocznie utrzymuje pliki zsynchronizowane z serwerem. Użytkownik nie musi wiedzieć, że pod spodem działa SVN.
+
+---
+
+## Dokumentacja
+
+- **[manual-filees.html](manual-filees.html)** — pełna instrukcja: mechanika i architektura, przewodnik użytkownika, instalacja i wdrożenie serwera, administracja oraz dodatek bezpieczeństwa.
+- **[USERGUIDE.md](USERGUIDE.md)** — krótszy przewodnik użytkownika.
+
+---
+
+## Jakość
+
+Neutralny gate jakości dla CI to `make verify`: pełne testy Go, wybrane testy race, `go vet` oraz lokalny smoke test recovery SVN. Sam smoke test uruchamia `scripts/svn-recovery-smoke.sh` — tworzy tymczasowe repozytorium SVN i nie wymaga dostępu do sieci.
 
 ---
 
@@ -142,7 +137,7 @@ instalacji klienta, a nie do pojedynczego repozytorium:
 
 Czasy podawane w formacie Go: `30s`, `5m`, `1h`.
 
-Pełny lifecycle, inwarianty i granica gwarancji wieloklientowej są opisane w [EDIT_PASSPORTS.md](EDIT_PASSPORTS.md).
+Pełny lifecycle, inwarianty i granica gwarancji wieloklientowej są opisane w instrukcji, w rozdziale [2.5 Edit Passports](manual-filees.html#ch2-passports).
 
 Każdy `local_path` musi być ścieżką bezwzględną. Identyfikatory repozytoriów muszą być unikalne, a lokalne korzenie nie mogą być identyczne ani zagnieżdżone w żadną stronę. Walidacja rozwiązuje symlinki istniejących katalogów i kończy start daemona twardym błędem przed utworzeniem stanu `.filees`.
 

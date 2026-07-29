@@ -89,8 +89,18 @@ const realmRemovalSchema = "filees.realm-removal/v1"
 const realmRemovalMailSchema = "filees.realm-removal-mail/v1"
 
 func (s RealmRemovalStore) Begin(realmID string, scope RealmRemovalScope, request RealmRemovalRequest) (RealmRemovalRecord, string, error) {
+	return s.BeginOperation(uuid.NewString(), realmID, scope, request)
+}
+
+// BeginOperation binds the immutable server-derived scope to the control
+// operation ID. Retrying a request after the record was committed returns the
+// same scope and never issues a second OTP.
+func (s RealmRemovalStore) BeginOperation(operationID, realmID string, scope RealmRemovalScope, request RealmRemovalRequest) (RealmRemovalRecord, string, error) {
 	if err := s.valid(); err != nil {
 		return RealmRemovalRecord{}, "", err
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return RealmRemovalRecord{}, "", errors.New("realm removal operation_id must be UUID")
 	}
 	if _, err := uuid.Parse(realmID); err != nil {
 		return RealmRemovalRecord{}, "", errors.New("realm removal realm_id must be UUID")
@@ -108,11 +118,21 @@ func (s RealmRemovalStore) Begin(realmID string, scope RealmRemovalScope, reques
 	if err != nil {
 		return RealmRemovalRecord{}, "", err
 	}
-	record := RealmRemovalRecord{Schema: realmRemovalSchema, OperationID: uuid.NewString(), RealmID: realmID, Scope: scope, Request: request, OTPHash: s.hash(token), AttemptsLeft: s.Attempts, State: RealmRemovalAwaitingConfirmation, CreatedAt: now, ExpiresAt: now.Add(s.TTL)}
+	record := RealmRemovalRecord{Schema: realmRemovalSchema, OperationID: operationID, RealmID: realmID, Scope: scope, Request: request, OTPHash: s.hash(token), AttemptsLeft: s.Attempts, State: RealmRemovalAwaitingConfirmation, CreatedAt: now, ExpiresAt: now.Add(s.TTL)}
 	if err := os.MkdirAll(s.Root, 0700); err != nil {
 		return RealmRemovalRecord{}, "", err
 	}
+	result, resultToken := record, token
 	err = WithFileLock(filepath.Join(s.Root, ".realm-removal.lock"), func() error {
+		if existing, err := s.load(operationID); err == nil {
+			if existing.RealmID != realmID || existing.Request != request {
+				return errors.New("realm removal operation conflicts with prior request")
+			}
+			result, resultToken = existing, ""
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 		if err := atomicJSON(s.path(record.OperationID), record); err != nil {
 			return err
 		}
@@ -127,7 +147,7 @@ func (s RealmRemovalStore) Begin(realmID string, scope RealmRemovalScope, reques
 		}
 		return nil
 	})
-	return record, token, err
+	return result, resultToken, err
 }
 func (s RealmRemovalStore) Confirm(operationID, otp string) (RealmRemovalRecord, error) {
 	if err := s.valid(); err != nil {

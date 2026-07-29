@@ -84,6 +84,14 @@ type ClientDetacher interface {
 	DetachClient(context.Context, string) (int64, error)
 }
 
+// RealmRemovalService owns the destructive scope. The worker supplies only
+// the authenticated session and opaque operation/OTP fields from the ticket;
+// implementations derive clients, repositories and grants server-side.
+type RealmRemovalService interface {
+	Request(context.Context, Session, string, RealmRemovalRequest) (RealmRemovalRecord, error)
+	Confirm(context.Context, Session, string, string) (RealmRemovalRecord, error)
+}
+
 type Worker struct {
 	Backend        Backend
 	Activator      RepositoryActivator
@@ -93,6 +101,7 @@ type Worker struct {
 	MobilePairing  MobilePairingMinter
 	Aliases        RealmAliasStore
 	ClientDetacher ClientDetacher
+	RealmRemoval   RealmRemovalService
 	Now            func() time.Time
 }
 
@@ -106,7 +115,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -134,6 +143,12 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 			return control.Result{}, errors.New("operation already bound to another request")
 		}
 		return result, nil
+	}
+	if ticket.Type == control.TicketRealmRemoveRequest {
+		return w.requestRealmRemoval(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketRealmRemoveConfirm {
+		return w.confirmRealmRemoval(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketMobilePairing {
 		return w.mobilePairing(session, ticket)
@@ -169,6 +184,49 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 		return control.Result{}, fmt.Errorf("backend returned incomplete repository")
 	}
 	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.CreateRepositoryResult{RepoID: repo.RepoID, RepoURL: repo.URL}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
+func (w *Worker) requestRealmRemoval(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.RealmRemoval == nil {
+		return w.failure(ticket, "REALM_REMOVE_UNAVAILABLE", "realm removal is unavailable")
+	}
+	var payload control.RealmRemoveRequestPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	record, err := w.RealmRemoval.Request(ctx, session, ticket.OperationID, RealmRemovalRequest{NotificationEmail: payload.NotificationEmail, ErasureRequested: payload.ErasureRequested})
+	if err != nil {
+		return w.retryable(ticket, "REALM_REMOVE_REQUEST_RETRY", err.Error())
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmRemoveRequestResult{
+		ExpiresAt:            record.ExpiresAt.UTC().Format(time.RFC3339Nano),
+		ActiveClientCount:    len(record.Scope.ClientIDs),
+		OwnedRepositoryCount: len(record.Scope.OwnedRepoIDs),
+		ForeignGrantCount:    len(record.Scope.ForeignGrantRepoIDs),
+	}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
+func (w *Worker) confirmRealmRemoval(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.RealmRemoval == nil {
+		return w.failure(ticket, "REALM_REMOVE_UNAVAILABLE", "realm removal is unavailable")
+	}
+	var payload control.RealmRemoveConfirmPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	record, err := w.RealmRemoval.Confirm(ctx, session, ticket.OperationID, payload.OTP)
+	if err != nil {
+		return w.retryable(ticket, "REALM_REMOVE_CONFIRM_RETRY", err.Error())
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmRemoveConfirmResult{State: string(record.State)}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}

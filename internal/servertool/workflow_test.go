@@ -141,6 +141,51 @@ func TestRealmRemovalMailUsesSharedSMTPWorker(t *testing.T) {
 	}
 }
 
+func TestDataErasureCompletionMailUsesSharedTriggeredWorker(t *testing.T) {
+	results := filepath.Join(t.TempDir(), "results")
+	if err := os.MkdirAll(filepath.Join(results, "realm-removals"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	store := repoworker.DataErasureStore{Root: filepath.Join(results, "data-erasure"), Now: func() time.Time { return now }}
+	removal := repoworker.RealmRemovalRecord{
+		OperationID: uuid.NewString(), RealmID: uuid.NewString(), ConfirmedAt: &now,
+		Request: repoworker.RealmRemovalRequest{NotificationEmail: "erase@example.test", ErasureRequested: true},
+	}
+	if _, err := store.Accept(removal, 90); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkActiveDataDeleted(removal.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Complete(removal.OperationID, false); err != nil {
+		t.Fatal(err)
+	}
+	originalSubmit := smtpSubmit
+	t.Cleanup(func() { smtpSubmit = originalSubmit })
+	var submitted smtpsubmit.Request
+	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, request smtpsubmit.Request) error {
+		submitted = request
+		return nil
+	}
+	var stdout, stderr bytes.Buffer
+	config := serverconfig.Config{
+		Repositories: serverconfig.RepositoryFile{ResultsRoot: results},
+		SMTPFrom:     "filees@example.test", MessageIDDomain: "filees.test",
+		SMTP: smtpsubmit.Config{Address: "127.0.0.1:2525", ClientName: "filees.test", TLSMode: smtpsubmit.TLSNone},
+	}
+	if code := deliverPendingRealmRemovalMail(config, &stdout, &stderr); code != ExitOK {
+		t.Fatalf("mail exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if submitted.Recipient != "erase@example.test" || !bytes.Contains(submitted.Message, []byte("has been completed")) {
+		t.Fatalf("unexpected data-erasure message: %+v", submitted)
+	}
+	raw, err := os.ReadFile(filepath.Join(store.Root, "outbox", removal.OperationID+".json"))
+	if err != nil || bytes.Contains(raw, []byte("erase@example.test")) || !bytes.Contains(raw, []byte(`"delivery_state": "queued"`)) {
+		t.Fatalf("data-erasure outbox was not scrubbed: %s err=%v", raw, err)
+	}
+}
+
 func quote(value string) string {
 	raw, _ := json.Marshal(value)
 	return string(raw)

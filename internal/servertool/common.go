@@ -34,16 +34,20 @@ const (
 )
 
 type toolAccess struct {
-	name             string
-	areas            onboarding.Area
-	write            bool
-	needOTP          bool
-	needSMTP         bool
-	needWorker       bool
-	needWorkerPublic bool
-	needActivation   bool
-	needRepoResults  bool
-	needSVN          bool
+	name               string
+	areas              onboarding.Area
+	write              bool
+	needOTP            bool
+	needSMTP           bool
+	needWorker         bool
+	needWorkerPublic   bool
+	needActivation     bool
+	needRepoResults    bool
+	needRepositoryData bool
+	needSVN            bool
+	repositoryRoot     string
+	repositoryAuthz    string
+	svnAdminBinary     string
 }
 
 func (access toolAccess) promises() string {
@@ -85,6 +89,11 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	config, err := serverconfig.LoadFor(configPath, secrets)
 	if err != nil {
 		return nil, serverconfig.Config{}, err
+	}
+	if access.needRepositoryData && config.Repositories.ResultsRoot != "" {
+		access.repositoryRoot = config.Repositories.Root
+		access.repositoryAuthz = config.Repositories.DataAuthzFile
+		access.svnAdminBinary = config.Repositories.SVNAdminBinary
 	}
 	repositoryAccess := onboarding.Access{Areas: access.areas, NeedOTP: access.needOTP}
 	if err := onboarding.CheckExisting(config.Root, repositoryAccess); err != nil {
@@ -151,6 +160,14 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		if deletionArchiveNeedsOwnUnveil(repositoryResultsRoot, deletionArchiveRoot) {
 			paths = append(paths, obsandbox.Path{Label: "repository-deletion-archive", Name: deletionArchiveRoot, Perms: "rwc"})
 		}
+	}
+	if access.needRepositoryData && access.repositoryRoot != "" {
+		paths = append(paths,
+			obsandbox.Path{Label: "repositories-parent", Name: filepath.Dir(access.repositoryRoot), Perms: "r"},
+			obsandbox.Path{Label: "repositories", Name: access.repositoryRoot, Perms: "rwc"},
+			obsandbox.Path{Label: "repository-authz", Name: access.repositoryAuthz, Perms: "rwc"},
+			obsandbox.Path{Label: "svnadmin", Name: access.svnAdminBinary, Perms: "rx"},
+		)
 	}
 	if access.needSVN {
 		paths = append(paths,

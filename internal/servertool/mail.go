@@ -75,8 +75,7 @@ func deliverPendingRealmRemovalMail(config serverconfig.Config, stdout, stderr i
 	store := repoworker.RealmRemovalStore{Root: filepath.Join(config.Repositories.ResultsRoot, "realm-removals")}
 	job, err := store.ClaimPendingMail(5 * time.Minute)
 	if errors.Is(err, os.ErrNotExist) {
-		_ = writeJSON(stdout, map[string]string{"schema": "filees.mail-result/v1", "status": "no_work"})
-		return ExitOK
+		return deliverPendingDataErasureMail(config, stdout, stderr)
 	}
 	if err != nil {
 		report(stderr, "filees-mail realm removal claim", err)
@@ -106,6 +105,51 @@ func deliverPendingRealmRemovalMail(config serverconfig.Config, stdout, stderr i
 		return ExitTempFail
 	}
 	if err := writeJSON(stdout, map[string]string{"schema": "filees.mail-result/v1", "status": "queued", "kind": "realm_removal_confirmation", "message_id": job.MessageID}); err != nil {
+		return ExitSoftware
+	}
+	return ExitOK
+}
+
+func deliverPendingDataErasureMail(config serverconfig.Config, stdout, stderr io.Writer) int {
+	store := repoworker.DataErasureStore{Root: filepath.Join(config.Repositories.ResultsRoot, "data-erasure")}
+	job, err := store.ClaimPendingMail(5 * time.Minute)
+	if errors.Is(err, os.ErrNotExist) {
+		_ = writeJSON(stdout, map[string]string{"schema": "filees.mail-result/v1", "status": "no_work"})
+		return ExitOK
+	}
+	if err != nil {
+		report(stderr, "filees-mail data erasure claim", err)
+		return ExitTempFail
+	}
+	message, err := repoworker.RenderDataErasureCompletionMail(job, config.SMTPFrom, config.MessageIDDomain)
+	if err != nil {
+		_ = store.MarkMailFailed(job.OperationID, job.AttemptID, err.Error(), true)
+		report(stderr, "filees-mail data erasure render", err)
+		return ExitData
+	}
+	err = smtpSubmit(context.Background(), config.SMTP, smtpsubmit.Request{
+		EnvelopeFrom: config.SMTPFrom, Recipient: job.DeliveryAddress, Message: message,
+	})
+	if err != nil {
+		temporary := smtpsubmit.IsTemporary(err)
+		if updateErr := store.MarkMailFailed(job.OperationID, job.AttemptID, err.Error(), !temporary); updateErr != nil {
+			report(stderr, "filees-mail data erasure record failure", updateErr)
+			return ExitTempFail
+		}
+		report(stderr, "filees-mail data erasure submit", err)
+		if temporary {
+			return ExitTempFail
+		}
+		return ExitUnavailable
+	}
+	if err := store.MarkMailQueued(job.OperationID, job.AttemptID); err != nil {
+		report(stderr, "filees-mail data erasure record acceptance", err)
+		return ExitTempFail
+	}
+	if err := writeJSON(stdout, map[string]string{
+		"schema": "filees.mail-result/v1", "status": "queued",
+		"kind": "data_erasure_completion", "message_id": job.MessageID,
+	}); err != nil {
 		return ExitSoftware
 	}
 	return ExitOK

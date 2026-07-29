@@ -138,6 +138,45 @@ func TestRealmRemovalMailOutboxDoesNotDeliverExpiredOTP(t *testing.T) {
 	}
 }
 
+func TestRealmRemovalPendingConfirmedExcludesUnconfirmedAndCompleted(t *testing.T) {
+	store := RealmRemovalStore{Root: t.TempDir(), OTPPepper: []byte(strings.Repeat("p", 32)), TTL: time.Hour, Attempts: 3}
+	scope := RealmRemovalScope{}
+	unconfirmed, _, err := store.Begin(uuid.NewString(), scope, RealmRemovalRequest{NotificationEmail: "one@example.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, otp, err := store.Begin(uuid.NewString(), scope, RealmRemovalRequest{NotificationEmail: "two@example.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Confirm(pending.OperationID, otp); err != nil {
+		t.Fatal(err)
+	}
+	completed, otp, err := store.Begin(uuid.NewString(), scope, RealmRemovalRequest{NotificationEmail: "three@example.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Confirm(completed.OperationID, otp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Advance(completed.OperationID, RealmRemovalDeleting, RealmRemovalRecoveryReady); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Advance(completed.OperationID, RealmRemovalRecoveryReady, RealmRemovalRevokingClients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Advance(completed.OperationID, RealmRemovalRevokingClients, RealmRemovalCompleted); err != nil {
+		t.Fatal(err)
+	}
+	records, err := store.PendingConfirmed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].OperationID != pending.OperationID {
+		t.Fatalf("pending records = %+v; unconfirmed=%s completed=%s", records, unconfirmed.OperationID, completed.OperationID)
+	}
+}
+
 func TestRenderRealmRemovalMailIncludesWarningAndOTP(t *testing.T) {
 	created := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	job := RealmRemovalMailJob{Schema: realmRemovalMailSchema, MessageID: uuid.NewString(), OperationID: uuid.NewString(), DeliveryAddress: "user@example.net", OTP: "CONFIRMATIONCODE", DeliveryState: RealmRemovalMailSending, CreatedAt: created, ExpiresAt: created.Add(time.Hour)}

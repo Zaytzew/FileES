@@ -3,6 +3,8 @@ package servertool
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -139,5 +141,41 @@ func TestRealmRemovalExecutorDoesNotRevokeBeforeRecoveryIsPublished(t *testing.T
 	current, err := store.Load(record.OperationID)
 	if err != nil || current.State != repoworker.RealmRemovalDeleting || recovery.calls != 1 || grants.calls != 0 || revoker.calls != 0 {
 		t.Fatalf("current=%+v recovery=%d grants=%d revoker=%d err=%v", current, recovery.calls, grants.calls, revoker.calls, err)
+	}
+}
+
+func TestRealmRemovalExecutorPersistsErasureOnlyAfterOTPAndActiveDeletion(t *testing.T) {
+	realm, repo := uuid.NewString(), uuid.NewString()
+	root := t.TempDir()
+	store := repoworker.RealmRemovalStore{
+		Root: filepath.Join(root, "realm-removals"), OTPPepper: []byte(strings.Repeat("p", 32)),
+		TTL: time.Hour, Attempts: 3,
+	}
+	record, otp, err := store.Begin(realm, repoworker.RealmRemovalScope{OwnedRepoIDs: []string{repo}}, repoworker.RealmRemovalRequest{
+		NotificationEmail: "user@example.net", ErasureRequested: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	erasure := repoworker.DataErasureStore{Root: filepath.Join(root, "data-erasure")}
+	if _, err := erasure.Load(record.OperationID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("erasure journal existed before OTP: %v", err)
+	}
+	record, err = store.Confirm(record.OperationID, otp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := realmRemovalExecutor{
+		Store: store, Backend: &fakeRealmDeleteBackend{}, Recovery: &fakeRealmRecoveryPublisher{},
+		Publisher: &fakeRealmGrantPublisher{}, Activation: &fakeRealmRevoker{},
+		Erasure: erasure, ErasureMaxDays: 90,
+	}
+	if err := executor.Execute(context.Background(), record); err != nil {
+		t.Fatal(err)
+	}
+	request, err := erasure.Load(record.OperationID)
+	if err != nil || request.State != repoworker.DataErasureAwaitingBackupRetention ||
+		request.ActiveDataDeletedAt == nil || !request.CompletionDueAt.Equal(record.ConfirmedAt.AddDate(0, 0, 90)) {
+		t.Fatalf("unexpected erasure request: %+v err=%v", request, err)
 	}
 }

@@ -67,12 +67,17 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		Manifests:   repoworker.RecoveryManifestStore{Root: filepath.Join(r.ResultsRoot, "recovery-manifests")},
 		Keys:        repoworker.RecoveryKeyStore{Root: filepath.Join(r.ResultsRoot, "recovery-keys")},
 	}
+	erasureStore := repoworker.DataErasureStore{Root: filepath.Join(r.ResultsRoot, "data-erasure")}
 	realmRemoval := realmRemovalCoordinator{
 		Store:         realmRemovalStore,
 		SnapshotScope: publisher.SnapshotRealmScope,
 		ActiveClients: activationManager.ActiveClientsInRealm,
-		Execute:       realmRemovalExecutor{Store: realmRemovalStore, Backend: backend, Recovery: recoveryPublisher, Publisher: publisher, Activation: activationManager}.Execute,
-		Manifests:     recoveryPublisher.Manifests,
+		Execute: realmRemovalExecutor{
+			Store: realmRemovalStore, Backend: backend, Recovery: recoveryPublisher,
+			Publisher: publisher, Activation: activationManager, Erasure: erasureStore,
+			ErasureMaxDays: r.EffectiveDataErasureMaxDays(),
+		}.Execute,
+		Manifests: recoveryPublisher.Manifests,
 	}
 	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays()}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}

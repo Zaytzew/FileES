@@ -104,9 +104,14 @@ func (store RealmAliases) Claim(ctx context.Context, realmID, alias string) (str
 			continue
 		}
 		viewPath := filepath.Join(clientsRoot, entry.Name(), "view.json")
-		if changedView, err := setViewRealmAlias(viewPath, realmID, canonical); err == nil && changedView {
-			changed = append(changed, viewPath)
-		} else if !errors.Is(err, os.ErrNotExist) {
+		changedView, err := setViewRealmAlias(viewPath, realmID, canonical)
+		if err == nil {
+			if changedView {
+				changed = append(changed, viewPath)
+			}
+			continue
+		}
+		if !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}
 	}

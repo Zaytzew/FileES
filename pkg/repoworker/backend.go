@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,6 +17,7 @@ import (
 type Effects interface {
 	CreateFSFS(context.Context, string, string) error
 	PublishAuthority(context.Context, string, string, string, string) error
+	RollbackCreate(context.Context, string, string) error
 	PrepareDelete(context.Context, string, string) error
 	WithdrawAuthority(context.Context, string, string) error
 	ArchiveAndDeleteFSFS(context.Context, string, string) (time.Time, error)
@@ -69,10 +73,19 @@ func (b *DurableBackend) Create(ctx context.Context, op, realm, name string) (Re
 		return Repository{}, e
 	} else {
 		r = backendRecord{OperationID: op, RealmID: realm, Name: name, RepoID: uuid.NewSHA1(uuid.NameSpaceOID, []byte(op)).String(), Stage: "allocated"}
-		r.URL = b.URLPrefix + r.RepoID
+		r.URL, e = repositoryURL(b.URLPrefix, r.RepoID)
+		if e != nil {
+			return Repository{}, e
+		}
 		if e = b.save(p, r); e != nil {
 			return Repository{}, e
 		}
+	}
+	if r.Stage == "rollback_pending" || r.Stage == "rolled_back" {
+		if e = b.rollbackCreate(ctx, p, &r); e != nil {
+			return Repository{}, fmt.Errorf("resume failed repository rollback: %w", e)
+		}
+		return Repository{}, errors.New("previous repository creation was rolled back; submit a new create request")
 	}
 	if r.Stage == "allocated" {
 		if e = b.Effects.CreateFSFS(ctx, r.RepoID, r.OperationID); e != nil {
@@ -85,7 +98,15 @@ func (b *DurableBackend) Create(ctx context.Context, op, realm, name string) (Re
 	}
 	if r.Stage == "fsfs_created" {
 		if e = b.Effects.PublishAuthority(ctx, r.RepoID, r.RealmID, r.Name, r.URL); e != nil {
-			return Repository{}, e
+			publishErr := e
+			r.Stage = "rollback_pending"
+			if e = b.save(p, r); e != nil {
+				return Repository{}, fmt.Errorf("record failed repository rollback: %w", e)
+			}
+			if e = b.rollbackCreate(ctx, p, &r); e != nil {
+				return Repository{}, fmt.Errorf("publish authority: %w; rollback pending: %v", publishErr, e)
+			}
+			return Repository{}, fmt.Errorf("publish authority: %w; repository was rolled back", publishErr)
 		}
 		r.Stage = "published"
 		if e = b.save(p, r); e != nil {
@@ -96,6 +117,95 @@ func (b *DurableBackend) Create(ctx context.Context, op, realm, name string) (Re
 		return Repository{}, errors.New("invalid repository backend stage")
 	}
 	return Repository{RepoID: r.RepoID, URL: r.URL}, nil
+}
+
+// ValidateURLPrefix rejects a repository URL prefix that could never appear
+// in a client projection. Running this before svnadmin prevents a server
+// configuration typo from creating an orphaned FSFS repository.
+func ValidateURLPrefix(prefix string) error {
+	_, err := repositoryURL(prefix, uuid.NewString())
+	return err
+}
+
+func repositoryURL(prefix, repoID string) (string, error) {
+	if strings.TrimSpace(prefix) == "" || strings.TrimSpace(prefix) != prefix || !strings.HasSuffix(prefix, "/") {
+		return "", errors.New("repository URL prefix must be a non-empty restricted svn+ssh URL ending in /")
+	}
+	parsed, err := url.Parse(prefix + repoID)
+	if err != nil || parsed.Scheme != "svn+ssh" || parsed.Hostname() == "" || parsed.User == nil || (parsed.User.Username() != "_filees-client" && parsed.User.Username() != "_filees-data") || parsed.User.String() != parsed.User.Username() || parsed.Port() != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("repository URL prefix must use restricted svn+ssh transport")
+	}
+	return prefix + repoID, nil
+}
+
+// rollbackCreate finishes the compensation recorded before any server-side
+// state is removed. Keeping rollback_pending durable makes an interrupted
+// rollback retryable on the same operation without ever retrying publication.
+func (b *DurableBackend) rollbackCreate(ctx context.Context, path string, record *backendRecord) error {
+	if record.Stage == "rollback_pending" {
+		if err := b.Effects.RollbackCreate(ctx, record.RepoID, record.RealmID); err != nil {
+			return err
+		}
+		record.Stage = "rolled_back"
+		if err := b.save(path, *record); err != nil {
+			return err
+		}
+	}
+	if record.Stage != "rolled_back" {
+		return errors.New("invalid repository rollback stage")
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	directory, err := os.Open(b.Root)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
+}
+
+// ReapFailedCreates completes only creation rollbacks which were durably
+// marked before compensation began. It never guesses about fsfs_created: that
+// stage can still be a recoverable in-flight publication from an older worker.
+func (b *DurableBackend) ReapFailedCreates(ctx context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !filepath.IsAbs(b.Root) || b.Effects == nil {
+		return errors.New("repository backend is incomplete")
+	}
+	entries, err := os.ReadDir(b.Root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), "delete-") || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		operationID := strings.TrimSuffix(entry.Name(), ".json")
+		if _, err := uuid.Parse(operationID); err != nil {
+			continue
+		}
+		path := filepath.Join(b.Root, entry.Name())
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var record backendRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			return err
+		}
+		if record.OperationID != operationID || (record.Stage != "rollback_pending" && record.Stage != "rolled_back") {
+			continue
+		}
+		if err := b.rollbackCreate(ctx, path, &record); err != nil {
+			return fmt.Errorf("rollback failed create %s: %w", operationID, err)
+		}
+	}
+	return nil
 }
 
 func (b *DurableBackend) Delete(ctx context.Context, operationID, realmID, repoID string) (time.Time, error) {

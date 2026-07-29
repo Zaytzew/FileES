@@ -109,7 +109,7 @@ func TestFormatBytesRendersHumanReadableMagnitudes(t *testing.T) {
 
 func TestWorkerDetachClientRevokesOnlyAuthenticatedSession(t *testing.T) {
 	session := Session{ClientID: "client", RealmID: uuid.NewString()}
-	ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketDetachClient, session.ClientID, control.DetachClientPayload{}, time.Now())
+	ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketClientDeactivate, session.ClientID, control.ClientDeactivatePayload{}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestWorkerDetachClientRevokesOnlyAuthenticatedSession(t *testing.T) {
 	if detacher.clientID != session.ClientID {
 		t.Fatalf("revoked client=%q want %q", detacher.clientID, session.ClientID)
 	}
-	var payload control.DetachClientResult
+	var payload control.ClientDeactivateResult
 	if err := control.DecodeResultPayload(result.Result, &payload); err != nil || payload.ServiceRevision != 19 {
 		t.Fatalf("payload=%+v err=%v", payload, err)
 	}

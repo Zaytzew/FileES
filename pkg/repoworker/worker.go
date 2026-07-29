@@ -106,7 +106,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketDetachClient {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -121,7 +121,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.Type == control.TicketResolveOwnerLabels {
 		return w.resolveOwnerLabels(ctx, ticket)
 	}
-	if ticket.Type == control.TicketDetachClient {
+	if ticket.Type == control.TicketClientDeactivate {
 		return w.detachClient(ctx, session, ticket)
 	}
 	if w.Store == nil {
@@ -183,7 +183,7 @@ func (w *Worker) detachClient(ctx context.Context, session Session, ticket contr
 	if err != nil {
 		return w.retryable(ticket, "CLIENT_DETACH_RETRY", err.Error())
 	}
-	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.DetachClientResult{ServiceRevision: revision}, w.now())
+	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ClientDeactivateResult{ServiceRevision: revision}, w.now())
 }
 
 func (w *Worker) claimRealmAlias(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {

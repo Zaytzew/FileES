@@ -102,6 +102,23 @@ func (s RecoveryKeyStore) path(operationID string) string {
 	return filepath.Join(s.Root, operationID+".json")
 }
 
+// Remove deletes the public capability only after the manifest reaper has
+// crossed grace. It is deliberately operation-specific and idempotent.
+func (s RecoveryKeyStore) Remove(operationID string) error {
+	if !filepath.IsAbs(s.Root) {
+		return errors.New("recovery key root must be absolute")
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return errors.New("recovery key operation_id must be UUID")
+	}
+	return WithFileLock(filepath.Join(s.Root, ".recovery-key.lock"), func() error {
+		if err := os.Remove(s.path(operationID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	})
+}
+
 func normalizeRecoveryPublicKey(value string) (string, error) {
 	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(value)))
 	if err != nil || key.Type() != ssh.KeyAlgoED25519 || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 || comment != "" {

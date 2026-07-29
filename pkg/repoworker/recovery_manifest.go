@@ -93,6 +93,48 @@ func (s RecoveryManifestStore) path(operationID string) string {
 	return filepath.Join(s.Root, operationID+".json")
 }
 
+// ReapExpired removes only receipts whose manual-contact grace period ended.
+// It is intentionally an explicit call from another server action, never a
+// resident or scheduled worker.
+func (s RecoveryManifestStore) ReapExpired(now time.Time) ([]string, error) {
+	if !filepath.IsAbs(s.Root) {
+		return nil, errors.New("recovery manifest root must be absolute")
+	}
+	var removed []string
+	err := WithFileLock(filepath.Join(s.Root, ".recovery-manifest.lock"), func() error {
+		entries, err := os.ReadDir(s.Root)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			path := filepath.Join(s.Root, entry.Name())
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			var manifest RecoveryManifest
+			if json.Unmarshal(raw, &manifest) != nil || validateRecoveryManifest(manifest) != nil {
+				return errors.New("stored recovery manifest is invalid")
+			}
+			if now.UTC().Before(manifest.AdminGraceUntil) {
+				continue
+			}
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+			removed = append(removed, manifest.OperationID)
+		}
+		return nil
+	})
+	return removed, err
+}
+
 func validateRecoveryManifest(m RecoveryManifest) error {
 	if m.Schema != RecoveryManifestSchema {
 		return errors.New("recovery manifest schema is invalid")

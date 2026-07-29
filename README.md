@@ -1,5 +1,7 @@
 # FileES
 
+Sync and share system built on top of Apache Subversion, server side targeted to OpenBSD.
+
 > ## ⚠️ Wersja robocza — nie do użytku
 >
 > **To nie jest wydanie. To nie jest beta. To jest robocza wersja roboczego systemu, publikowana wyłącznie po to, żeby kod dało się obejrzeć.**
@@ -650,3 +652,9 @@ Wzorce z `!` na początku są "twardymi" ignorami — przy katalogu powodują po
 | `pkg/runtime` | HostGate, RepoMutex |
 | `pkg/talk` | Logger z poziomami i zmienną `FILEES_LOG` |
 | `pkg/tickets` | Zapis plików powiadomień `.filees/tickets/` |
+
+---
+
+## Licencja
+
+BSD 2-Clause — zob. [LICENSE](LICENSE).

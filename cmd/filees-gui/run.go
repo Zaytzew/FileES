@@ -97,6 +97,46 @@ func (adapter serverDetachAdapter) DetachServer(ctx context.Context, serverID st
 	return nil
 }
 
+type realmRemovalClient interface {
+	RealmRemoveBegin(context.Context, contract.RealmRemoveBeginPayload) (*contract.RealmRemoveBeginResult, error)
+	RealmRemoveConfirm(context.Context, contract.RealmRemoveConfirmPayload) (*contract.RealmRemoveConfirmResult, error)
+}
+
+type realmRemovalAdapter struct{ client realmRemovalClient }
+
+func (adapter realmRemovalAdapter) BeginRealmRemoval(ctx context.Context, request actions.RealmRemovalBeginRequest) (actions.RealmRemovalBeginResult, error) {
+	result, err := adapter.client.RealmRemoveBegin(ctx, contract.RealmRemoveBeginPayload{
+		ServerID: request.ServerID, NotificationEmail: request.NotificationEmail,
+		RecoveryDirectory: request.RecoveryDirectory, ErasureRequested: request.ErasureRequested,
+	})
+	if err != nil {
+		return actions.RealmRemovalBeginResult{}, err
+	}
+	if result == nil {
+		return actions.RealmRemovalBeginResult{}, errors.New("daemon returned an empty realm removal request")
+	}
+	return actions.RealmRemovalBeginResult{
+		OperationID: result.OperationID, RecoveryKitPath: result.RecoveryKitPath, ExpiresAt: result.ExpiresAt,
+		ActiveClientCount: result.ActiveClientCount, OwnedRepositoryCount: result.OwnedRepositoryCount, ForeignGrantCount: result.ForeignGrantCount,
+	}, nil
+}
+
+func (adapter realmRemovalAdapter) ConfirmRealmRemoval(ctx context.Context, serverID, operationID string, otp []byte, kitPath string) (actions.RealmRemovalConfirmResult, error) {
+	result, err := adapter.client.RealmRemoveConfirm(ctx, contract.RealmRemoveConfirmPayload{
+		ServerID: serverID, OperationID: operationID, RecoveryKitPath: kitPath, OTP: contract.Secret(otp),
+	})
+	if err != nil {
+		return actions.RealmRemovalConfirmResult{}, err
+	}
+	if result == nil {
+		return actions.RealmRemovalConfirmResult{}, errors.New("daemon returned an empty realm removal confirmation")
+	}
+	return actions.RealmRemovalConfirmResult{
+		RecoveryKitPath: result.RecoveryKitPath, ArchiveCount: result.ArchiveCount,
+		DownloadUntil: result.DownloadUntil, AdminGraceUntil: result.AdminGraceUntil,
+	}, nil
+}
+
 type reservationClient interface {
 	RepoReservationList(context.Context, string) (*contract.RepoReservationListResult, error)
 	RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error
@@ -374,6 +414,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(serverDetachClient); ok {
 		serverDetacher = serverDetachAdapter{client: candidate}
 	}
+	var realmRemover actions.RealmRemover
+	if candidate, ok := deps.client.(realmRemovalClient); ok {
+		realmRemover = realmRemovalAdapter{client: candidate}
+	}
 	var reservations actions.ReservationManager
 	if candidate, ok := deps.client.(reservationClient); ok {
 		reservations = reservationAdapter{client: candidate}
@@ -400,6 +444,7 @@ func run(parent context.Context, deps dependencies) error {
 		RepositoryCreator:  repositoryCreator,
 		RepositoryDetacher: repositoryDetacher,
 		ServerDetacher:     serverDetacher,
+		RealmRemover:       realmRemover,
 		MobilePairer:       mobilePairer,
 		PinStore:           deps.pinStore,
 		Activator:          deps.activator,
@@ -411,6 +456,7 @@ func run(parent context.Context, deps dependencies) error {
 		RealmAliases:       realmAliases,
 		ReservationBrowser: deps.platform,
 		SettingsBrowser:    deps.platform,
+		ConsentPrompter:    deps.platform,
 		Reconnect:          guiApp.Reconnect,
 		Refresh:            guiApp.Refresh,
 		PrepareRestart:     notificationPolicy.SuppressConnectionTransitions,

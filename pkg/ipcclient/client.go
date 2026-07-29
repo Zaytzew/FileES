@@ -229,6 +229,24 @@ func (c *Client) ServerDetach(ctx context.Context, serverID string) (*contract.S
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) RealmRemoveBegin(ctx context.Context, payload contract.RealmRemoveBeginPayload) (*contract.RealmRemoveBeginResult, error) {
+	resp, err := c.do(ctx, contract.CmdRealmRemoveBegin, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmRemoveBeginResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) RealmRemoveConfirm(ctx context.Context, payload contract.RealmRemoveConfirmPayload) (*contract.RealmRemoveConfirmResult, error) {
+	resp, err := c.do(ctx, contract.CmdRealmRemoveConfirm, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmRemoveConfirmResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) MobilePairingBegin(ctx context.Context, serverID string) (*contract.MobilePairingBeginResult, error) {
 	resp, err := c.do(ctx, contract.CmdMobilePairingBegin, "", contract.MobilePairingBeginPayload{ServerID: serverID})
 	if err != nil {

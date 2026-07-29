@@ -334,7 +334,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 }
 
 func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder bool) (SettingsDialogAction, error) {
-	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "add_folder", "Dodaj folder do FileES", "FALSE", "detach_server", "Dezaktywuj klienta na serwerze"}
+	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "add_folder", "Dodaj folder do FileES", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
 	if hasFolder {
 		args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder", "FALSE", "delete_repository", "Odłącz trwale repozytorium")
 	}
@@ -351,16 +351,47 @@ func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFo
 	return settingsAction(strings.TrimSpace(string(output))), nil
 }
 
+func (b *LinuxBackend) ConfirmConsent(ctx context.Context, request ConsentRequest) (ConsentResult, error) {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return ConsentResult{}, NewUnavailable("consent_dialog", err)
+	}
+	output, err := b.runner.Output(ctx, command,
+		"--list", "--checklist", "--title="+request.Title, "--text="+request.Text,
+		"--column=", "--column=ID", "--column=Potwierdzenie", "--hide-column=2", "--print-column=2",
+		"--separator=\n", "--ok-label=Kontynuuj", "--cancel-label=Anuluj",
+		"TRUE", "required", request.RequiredText, "FALSE", "optional", request.OptionalText,
+	)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ConsentResult{}, ctx.Err()
+		}
+		if commandCancelled(err) {
+			return ConsentResult{Cancelled: true}, nil
+		}
+		return ConsentResult{}, NewOperationalFailure("consent_dialog", err)
+	}
+	selected := strings.Fields(string(output))
+	result := ConsentResult{}
+	for _, value := range selected {
+		result.Required = result.Required || value == "required"
+		result.Optional = result.Optional || value == "optional"
+	}
+	return result, nil
+}
+
 func settingsAction(label string) SettingsDialogAction {
 	switch label {
-	case "Dodaj folder":
+	case "add_folder", "Dodaj folder":
 		return SettingsDialogAddFolder
-	case "Odłącz folder":
+	case "detach_folder", "Odłącz folder":
 		return SettingsDialogDetachFolder
-	case "Odłącz trwale":
+	case "delete_repository", "Odłącz trwale":
 		return SettingsDialogDeleteRepo
-	case "Dezaktywuj klienta":
+	case "detach_server", "Dezaktywuj klienta":
 		return SettingsDialogDetachServer
+	case "remove_realm":
+		return SettingsDialogRemoveRealm
 	default:
 		return SettingsDialogClose
 	}

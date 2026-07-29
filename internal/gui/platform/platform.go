@@ -15,6 +15,7 @@ type Backend interface {
 	FolderPicker
 	FilePicker
 	Prompter
+	ConsentPrompter
 	ReservationBrowser
 	SettingsBrowser
 	Notifier
@@ -25,6 +26,18 @@ type Prompter interface {
 	PromptText(ctx context.Context, request PromptTextRequest) (PromptTextResult, error)
 	ShowInfo(ctx context.Context, request InfoRequest) error
 	Confirm(ctx context.Context, request ConfirmRequest) (bool, error)
+}
+
+type ConsentPrompter interface {
+	ConfirmConsent(context.Context, ConsentRequest) (ConsentResult, error)
+}
+
+type ConsentRequest struct {
+	Title, Text, RequiredText, OptionalText string
+}
+
+type ConsentResult struct {
+	Cancelled, Required, Optional bool
 }
 
 // ReservationBrowser renders the native, server-scoped reservation window.
@@ -63,6 +76,7 @@ const (
 	SettingsDialogDetachFolder SettingsDialogAction = "detach_folder"
 	SettingsDialogDeleteRepo   SettingsDialogAction = "delete_repository"
 	SettingsDialogDetachServer SettingsDialogAction = "detach_server"
+	SettingsDialogRemoveRealm  SettingsDialogAction = "remove_realm"
 )
 
 type SettingsDialogResult struct {

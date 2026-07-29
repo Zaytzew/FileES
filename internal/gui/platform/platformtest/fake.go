@@ -15,6 +15,7 @@ type Fake struct {
 	PromptTextFunc      func(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error)
 	ShowInfoFunc        func(context.Context, platform.InfoRequest) error
 	ConfirmFunc         func(context.Context, platform.ConfirmRequest) (bool, error)
+	ConsentFunc         func(context.Context, platform.ConsentRequest) (platform.ConsentResult, error)
 	ReservationsFunc    func(context.Context, platform.ReservationDialogRequest) (platform.ReservationDialogResult, error)
 	SettingsFunc        func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
@@ -28,6 +29,7 @@ type Fake struct {
 	PromptRequests      []platform.PromptTextRequest
 	InfoRequests        []platform.InfoRequest
 	ConfirmRequests     []platform.ConfirmRequest
+	ConsentRequests     []platform.ConsentRequest
 	ReservationRequests []platform.ReservationDialogRequest
 	SettingsRequests    []platform.SettingsDialogRequest
 	Notifications       []platform.Notification
@@ -77,6 +79,17 @@ func (f *Fake) Confirm(ctx context.Context, request platform.ConfirmRequest) (bo
 		return fn(ctx, request)
 	}
 	return false, nil
+}
+
+func (f *Fake) ConfirmConsent(ctx context.Context, request platform.ConsentRequest) (platform.ConsentResult, error) {
+	f.mu.Lock()
+	f.ConsentRequests = append(f.ConsentRequests, request)
+	fn := f.ConsentFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.ConsentResult{Cancelled: true}, nil
 }
 
 func (f *Fake) ShowInfo(ctx context.Context, request platform.InfoRequest) error {
@@ -171,6 +184,7 @@ func (f *Fake) Snapshot() Snapshot {
 		PromptRequests:      append([]platform.PromptTextRequest(nil), f.PromptRequests...),
 		InfoRequests:        append([]platform.InfoRequest(nil), f.InfoRequests...),
 		ConfirmRequests:     append([]platform.ConfirmRequest(nil), f.ConfirmRequests...),
+		ConsentRequests:     append([]platform.ConsentRequest(nil), f.ConsentRequests...),
 		ReservationRequests: append([]platform.ReservationDialogRequest(nil), f.ReservationRequests...),
 		SettingsRequests:    append([]platform.SettingsDialogRequest(nil), f.SettingsRequests...),
 		Notifications:       append([]platform.Notification(nil), f.Notifications...),
@@ -186,6 +200,7 @@ type Snapshot struct {
 	PromptRequests      []platform.PromptTextRequest
 	InfoRequests        []platform.InfoRequest
 	ConfirmRequests     []platform.ConfirmRequest
+	ConsentRequests     []platform.ConsentRequest
 	ReservationRequests []platform.ReservationDialogRequest
 	SettingsRequests    []platform.SettingsDialogRequest
 	Notifications       []platform.Notification

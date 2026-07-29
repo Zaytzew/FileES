@@ -88,6 +88,8 @@ type RealmRemovalBeginResult struct {
 type RealmRemovalConfirmResult struct {
 	RecoveryKitPath, DownloadUntil, AdminGraceUntil string
 	ArchiveCount                                    int
+	ErasureRequested                                bool
+	ErasureMaxDays                                  int
 }
 type RealmRemover interface {
 	BeginRealmRemoval(context.Context, RealmRemovalBeginRequest) (RealmRemovalBeginResult, error)
@@ -376,8 +378,8 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			return
 		}
 		info := fmt.Sprintf("Udział FileES został usunięty. Pakiet odzyskiwania zapisano w:\n%s\n\nArchiwa: %d. Pobieranie jest dostępne do %s; potem do %s pozostaje kontakt z administratorem.", result.RecoveryKitPath, result.ArchiveCount, result.DownloadUntil, result.AdminGraceUntil)
-		if consent.Optional {
-			info += "\n\nŻądanie usunięcia wszystkich danych zostało przyjęte. Proces może potrwać do 90 dni; o zakończeniu zostaniesz poinformowany e-mailem."
+		if result.ErasureRequested {
+			info += fmt.Sprintf("\n\nŻądanie usunięcia wszystkich danych zostało przyjęte. Proces może potrwać do %d dni; o zakończeniu zostaniesz poinformowany e-mailem.", result.ErasureMaxDays)
 		}
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Usuwanie udziału przyjęte", Text: info})
 		if c.cfg.Refresh != nil {

@@ -67,6 +67,7 @@ type RepositoryFile struct {
 	DeletionArchiveRoot   string `json:"deletion_archive_root,omitempty"`
 	DeletionRetentionDays *int   `json:"deletion_retention_days,omitempty"`
 	RecoveryAdminContact  string `json:"recovery_admin_contact"`
+	DataErasureMaxDays    *int   `json:"data_erasure_max_days,omitempty"`
 }
 
 func (repository RepositoryFile) EffectiveDeletionRetentionDays() int {
@@ -74,6 +75,13 @@ func (repository RepositoryFile) EffectiveDeletionRetentionDays() int {
 		return 30
 	}
 	return *repository.DeletionRetentionDays
+}
+
+func (repository RepositoryFile) EffectiveDataErasureMaxDays() int {
+	if repository.DataErasureMaxDays == nil {
+		return 90
+	}
+	return *repository.DataErasureMaxDays
 }
 
 type SMTPFile struct {
@@ -304,6 +312,9 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if config.Repositories.EffectiveDeletionRetentionDays() < 0 {
 		return Config{}, errors.New("repositories deletion_retention_days cannot be negative")
+	}
+	if days := config.Repositories.EffectiveDataErasureMaxDays(); days <= 0 || days > 3650 {
+		return Config{}, errors.New("repositories data_erasure_max_days must be between 1 and 3650")
 	}
 	if config.Repositories.DeletionArchiveRoot != "" && !filepath.IsAbs(config.Repositories.DeletionArchiveRoot) {
 		return Config{}, errors.New("repositories deletion_archive_root must be absolute")

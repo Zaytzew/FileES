@@ -162,9 +162,11 @@ type RealmRemoveConfirmPayload struct {
 	OTP string `json:"otp"`
 }
 type RealmRemoveConfirmResult struct {
-	State        string                `json:"state"`
-	Manifest     RealmRecoveryManifest `json:"manifest"`
-	AdminContact string                `json:"admin_contact"`
+	State            string                `json:"state"`
+	Manifest         RealmRecoveryManifest `json:"manifest"`
+	AdminContact     string                `json:"admin_contact"`
+	ErasureRequested bool                  `json:"erasure_requested"`
+	ErasureMaxDays   int                   `json:"erasure_max_days,omitempty"`
 }
 type RealmRecoveryArchive struct {
 	ArchiveID string `json:"archive_id"`

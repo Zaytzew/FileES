@@ -275,12 +275,14 @@ type RealmRemoveConfirmPayload struct {
 	OTP             Secret `json:"otp"`
 }
 type RealmRemoveConfirmResult struct {
-	ServerID        string `json:"server_id"`
-	OperationID     string `json:"operation_id"`
-	RecoveryKitPath string `json:"recovery_kit_path"`
-	ArchiveCount    int    `json:"archive_count"`
-	DownloadUntil   string `json:"download_until"`
-	AdminGraceUntil string `json:"admin_grace_until"`
+	ServerID         string `json:"server_id"`
+	OperationID      string `json:"operation_id"`
+	RecoveryKitPath  string `json:"recovery_kit_path"`
+	ArchiveCount     int    `json:"archive_count"`
+	DownloadUntil    string `json:"download_until"`
+	AdminGraceUntil  string `json:"admin_grace_until"`
+	ErasureRequested bool   `json:"erasure_requested"`
+	ErasureMaxDays   int    `json:"erasure_max_days,omitempty"`
 }
 
 // Secret preserves the wire representation as a JSON string while keeping

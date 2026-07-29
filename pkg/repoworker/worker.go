@@ -103,6 +103,7 @@ type Worker struct {
 	ClientDetacher       ClientDetacher
 	RealmRemoval         RealmRemovalService
 	RecoveryAdminContact string
+	DataErasureMaxDays   int
 	Now                  func() time.Time
 }
 
@@ -228,7 +229,11 @@ func (w *Worker) confirmRealmRemoval(ctx context.Context, session Session, ticke
 	if err != nil {
 		return w.retryable(ticket, "REALM_REMOVE_CONFIRM_RETRY", err.Error())
 	}
-	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmRemoveConfirmResult{State: string(record.State), Manifest: controlRecoveryManifest(manifest), AdminContact: w.RecoveryAdminContact}, w.now())
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmRemoveConfirmResult{
+		State: string(record.State), Manifest: controlRecoveryManifest(manifest),
+		AdminContact: w.RecoveryAdminContact, ErasureRequested: record.Request.ErasureRequested,
+		ErasureMaxDays: w.DataErasureMaxDays,
+	}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}

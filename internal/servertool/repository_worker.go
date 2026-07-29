@@ -74,7 +74,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		Execute:       realmRemovalExecutor{Store: realmRemovalStore, Backend: backend, Recovery: recoveryPublisher, Publisher: publisher, Activation: activationManager}.Execute,
 		Manifests:     recoveryPublisher.Manifests,
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays()}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}
 	if err := repoworker.WithFileLock(filepath.Join(r.ResultsRoot, ".worker.lock"), func() error {
 		if err := backend.ReapFailedCreates(context.Background()); err != nil {

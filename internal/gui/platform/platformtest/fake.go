@@ -16,7 +16,7 @@ type Fake struct {
 	ShowInfoFunc        func(context.Context, platform.InfoRequest) error
 	ConfirmFunc         func(context.Context, platform.ConfirmRequest) (bool, error)
 	ReservationsFunc    func(context.Context, platform.ReservationDialogRequest) (platform.ReservationDialogResult, error)
-	SettingsFunc        func(context.Context, platform.SettingsDialogRequest) error
+	SettingsFunc        func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
 	SetAutostartFunc    func(context.Context, platform.AutostartSpec, bool) error
@@ -46,7 +46,7 @@ func (f *Fake) ShowReservations(ctx context.Context, request platform.Reservatio
 	return platform.ReservationDialogResult{Action: platform.ReservationDialogClose}, nil
 }
 
-func (f *Fake) ShowSettings(ctx context.Context, request platform.SettingsDialogRequest) error {
+func (f *Fake) ShowSettings(ctx context.Context, request platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
 	f.mu.Lock()
 	f.SettingsRequests = append(f.SettingsRequests, request)
 	fn := f.SettingsFunc
@@ -54,7 +54,7 @@ func (f *Fake) ShowSettings(ctx context.Context, request platform.SettingsDialog
 	if fn != nil {
 		return fn(ctx, request)
 	}
-	return nil
+	return platform.SettingsDialogResult{Action: platform.SettingsDialogClose}, nil
 }
 
 func (f *Fake) PickFolder(ctx context.Context, request platform.PickFolderRequest) (platform.PickFolderResult, error) {

@@ -18,6 +18,9 @@ type Effects interface {
 	CreateFSFS(context.Context, string, string) error
 	PublishAuthority(context.Context, string, string, string, string) error
 	RollbackCreate(context.Context, string, string) error
+	// AuthorizeDelete is a side-effect-free ownership boundary. It must run
+	// before PrepareDelete installs a commit-blocking hook in the FSFS tree.
+	AuthorizeDelete(context.Context, string, string) error
 	PrepareDelete(context.Context, string, string) error
 	WithdrawAuthority(context.Context, string, string) error
 	ArchiveAndDeleteFSFS(context.Context, string, string) (time.Time, error)
@@ -221,6 +224,12 @@ func (b *DurableBackend) Delete(ctx context.Context, operationID, realmID, repoI
 		return time.Time{}, err
 	}
 	if _, err := uuid.Parse(repoID); err != nil {
+		return time.Time{}, err
+	}
+	// The canonical ownership check deliberately precedes creation of the
+	// durable delete record and every filesystem side effect. A read grant must
+	// never be enough to install a blocking hook on another realm's repository.
+	if err := b.Effects.AuthorizeDelete(ctx, repoID, realmID); err != nil {
 		return time.Time{}, err
 	}
 	if err := os.MkdirAll(b.Root, 0700); err != nil {

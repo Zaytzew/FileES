@@ -284,20 +284,9 @@ func (p ServicePublisher) Delete(ctx context.Context, repoID, realmID string) er
 	if !filepath.IsAbs(p.ServiceWC) || !filepath.IsAbs(p.DataAuthzFile) || p.Runner == nil {
 		return errors.New("authority publisher is incomplete")
 	}
-	repoPath, err := repositoryRecordPath(p.ServiceWC, repoID)
+	repoPath, record, err := p.authorizeDelete(repoID, realmID)
 	if err != nil {
 		return err
-	}
-	raw, err := os.ReadFile(repoPath)
-	if err != nil {
-		return err
-	}
-	var record repositoryRecord
-	if err := json.Unmarshal(raw, &record); err != nil || record.Schema != RepositorySchema || record.RepoID != repoID {
-		return errors.New("canonical repository record is invalid")
-	}
-	if record.OwnerRealmID != realmID {
-		return errors.New("authenticated realm does not own repository")
 	}
 	now := time.Now().UTC()
 	if p.Now != nil {
@@ -352,6 +341,39 @@ func (p ServicePublisher) Delete(ctx context.Context, repoID, realmID string) er
 	}
 	changed = append(changed, p.DataAuthzFile)
 	return p.Runner.Publish(ctx, changed, "filees: delete repository "+repoID)
+}
+
+// AuthorizeDelete reads only the canonical service projection. DurableBackend
+// calls it before touching the FSFS repository; Delete calls the same helper
+// again as a defence-in-depth check at the authority publication boundary.
+func (p ServicePublisher) AuthorizeDelete(_ context.Context, repoID, realmID string) error {
+	if !filepath.IsAbs(p.ServiceWC) || !filepath.IsAbs(p.DataAuthzFile) || p.Runner == nil {
+		return errors.New("authority publisher is incomplete")
+	}
+	_, _, err := p.authorizeDelete(repoID, realmID)
+	return err
+}
+
+func (p ServicePublisher) authorizeDelete(repoID, realmID string) (string, repositoryRecord, error) {
+	if _, err := uuid.Parse(realmID); err != nil {
+		return "", repositoryRecord{}, errors.New("repository deletion realm ID is invalid")
+	}
+	repoPath, err := repositoryRecordPath(p.ServiceWC, repoID)
+	if err != nil {
+		return "", repositoryRecord{}, err
+	}
+	raw, err := os.ReadFile(repoPath)
+	if err != nil {
+		return "", repositoryRecord{}, err
+	}
+	var record repositoryRecord
+	if err := json.Unmarshal(raw, &record); err != nil || record.Schema != RepositorySchema || record.RepoID != repoID {
+		return "", repositoryRecord{}, errors.New("canonical repository record is invalid")
+	}
+	if record.OwnerRealmID != realmID {
+		return "", repositoryRecord{}, errors.New("authenticated realm does not own repository")
+	}
+	return repoPath, record, nil
 }
 
 // WithdrawRealmGrants removes only the snapshotted foreign repository grants

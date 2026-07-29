@@ -139,3 +139,38 @@ func TestPrepareDeleteBlocksCommitsAndPreservesPriorHook(t *testing.T) {
 		t.Fatalf("idempotent prepare: %v", err)
 	}
 }
+
+func TestForeignDeleteCannotInstallCommitBlockerBeforeAuthorityCheck(t *testing.T) {
+	effects, repoID, repo := deletionFixture(t, 7, time.Now())
+	ownerRealm, foreignRealm := uuid.NewString(), uuid.NewString()
+	serviceRoot := t.TempDir()
+	recordPath, err := repositoryRecordPath(serviceRoot, repoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(recordPath, repositoryRecord{
+		Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: ownerRealm,
+		DisplayName: "Owned", URL: "svn+ssh://_filees-data@example/" + repoID,
+		State: "active", CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	effects.Authority = ServicePublisher{ServiceWC: serviceRoot, DataAuthzFile: filepath.Join(serviceRoot, "repositories.authz"), Runner: &publishRunner{}}
+	backend := &DurableBackend{Root: t.TempDir(), Effects: effects}
+	operationID := uuid.NewString()
+	hook := filepath.Join(repo, "hooks", "pre-commit")
+	original := []byte("#!/bin/sh\nexit 0\n")
+	if err := os.WriteFile(hook, original, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Delete(context.Background(), operationID, foreignRealm, repoID); err == nil {
+		t.Fatal("foreign realm deletion was accepted")
+	}
+	if got, err := os.ReadFile(hook); err != nil || string(got) != string(original) {
+		t.Fatalf("foreign deletion changed pre-commit hook: %q err=%v", got, err)
+	}
+	backup := hook + ".filees-delete-" + operationID + ".original"
+	if _, err := os.Lstat(backup); !os.IsNotExist(err) {
+		t.Fatalf("foreign deletion parked the owner's hook: %v", err)
+	}
+}

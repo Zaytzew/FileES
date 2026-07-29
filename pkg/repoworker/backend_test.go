@@ -13,6 +13,8 @@ import (
 
 type effects struct {
 	fsfs, publish int
+	authorize     int
+	failAuthorize bool
 	failPublish   bool
 	rollback      int
 	failRollback  bool
@@ -32,6 +34,13 @@ func (e *effects) RollbackCreate(context.Context, string, string) error {
 	e.rollback++
 	if e.failRollback {
 		return errors.New("rollback boundary")
+	}
+	return nil
+}
+func (e *effects) AuthorizeDelete(context.Context, string, string) error {
+	e.authorize++
+	if e.failAuthorize {
+		return errors.New("authenticated realm does not own repository")
 	}
 	return nil
 }
@@ -81,6 +90,21 @@ func TestDurableBackendResumesRepositoryDeletionBoundaries(t *testing.T) {
 	}
 	if len(fx.deleteSteps) != before {
 		t.Fatalf("completed delete replayed effects: %v", fx.deleteSteps)
+	}
+}
+
+func TestDurableBackendRejectsForeignDeleteBeforeBlockingHook(t *testing.T) {
+	fx := &effects{failAuthorize: true}
+	backend := &DurableBackend{Root: t.TempDir(), Effects: fx}
+	operationID, realmID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	if _, err := backend.Delete(context.Background(), operationID, realmID, repoID); err == nil {
+		t.Fatal("foreign deletion was accepted")
+	}
+	if fx.authorize != 1 || len(fx.deleteSteps) != 0 {
+		t.Fatalf("foreign deletion reached destructive effects: %+v", fx)
+	}
+	if _, err := os.Stat(filepath.Join(backend.Root, "delete-"+operationID+".json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("foreign deletion left a durable record: %v", err)
 	}
 }
 func TestDurableBackendRollsBackAfterAuthorityFailure(t *testing.T) {

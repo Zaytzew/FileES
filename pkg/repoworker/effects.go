@@ -16,6 +16,10 @@ type AuthorityPublisher interface {
 	Publish(context.Context, string, string, string, string) error
 	Delete(context.Context, string, string) error
 }
+
+type DeleteAuthority interface {
+	AuthorizeDelete(context.Context, string, string) error
+}
 type ServerEffects struct {
 	SVNAdmin, RepositoriesRoot string
 	DataAuthzFile              string
@@ -98,6 +102,14 @@ func (e ServerEffects) WithdrawAuthority(ctx context.Context, repoID, realmID st
 		return errors.New("authority publisher is required")
 	}
 	return e.Authority.Delete(ctx, repoID, realmID)
+}
+
+func (e ServerEffects) AuthorizeDelete(ctx context.Context, repoID, realmID string) error {
+	authority, ok := e.Authority.(DeleteAuthority)
+	if !ok {
+		return errors.New("authority publisher cannot authorize repository deletion")
+	}
+	return authority.AuthorizeDelete(ctx, repoID, realmID)
 }
 func (e ServerEffects) Activate(ctx context.Context, repoID, realmID string) error {
 	activator, ok := e.Authority.(interface {

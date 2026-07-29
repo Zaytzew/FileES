@@ -377,7 +377,12 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się dokończyć usuwania udziału", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			return
 		}
-		info := fmt.Sprintf("Udział FileES został usunięty. Pakiet odzyskiwania zapisano w:\n%s\n\nArchiwa: %d. Pobieranie jest dostępne do %s; potem do %s pozostaje kontakt z administratorem.", result.RecoveryKitPath, result.ArchiveCount, result.DownloadUntil, result.AdminGraceUntil)
+		info := "Udział FileES został usunięty."
+		if result.ArchiveCount > 0 {
+			info += fmt.Sprintf("\n\nPakiet odzyskiwania zapisano w:\n%s\n\nArchiwa: %d. Pobieranie jest dostępne do %s; potem do %s pozostaje kontakt z administratorem.", result.RecoveryKitPath, result.ArchiveCount, result.DownloadUntil, result.AdminGraceUntil)
+		} else {
+			info += "\n\nSerwer nie zachował archiwów repozytoriów (retencja wynosi 0 albo udział nie zawierał własnych repozytoriów). Nie utworzono akcji odzyskiwania."
+		}
 		if result.ErasureRequested {
 			info += fmt.Sprintf("\n\nŻądanie usunięcia wszystkich danych zostało przyjęte. Proces może potrwać do %d dni; o zakończeniu zostaniesz poinformowany e-mailem.", result.ErasureMaxDays)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,35 @@ func testRecoveryPublicKey(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+}
+
+func TestRealmRecoveryPublisherWithNoRetainedDumpCreatesNoCapability(t *testing.T) {
+	root := t.TempDir()
+	operationID, realmID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	confirmedAt := time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)
+	publicKey := testRecoveryPublicKey(t)
+	manifests := repoworker.RecoveryManifestStore{Root: filepath.Join(root, "manifests")}
+	keys := repoworker.RecoveryKeyStore{Root: filepath.Join(root, "keys")}
+	record := repoworker.RealmRemovalRecord{
+		OperationID: operationID, RealmID: realmID,
+		Scope:       repoworker.RealmRemovalScope{OwnedRepoIDs: []string{repoID}},
+		Request:     repoworker.RealmRemovalRequest{RecoveryPublicKey: publicKey},
+		ConfirmedAt: &confirmedAt,
+	}
+	publisher := realmRecoveryPublisher{
+		ArchiveRoot: filepath.Join(root, "absent-zero-retention-archives"),
+		Manifests:   manifests, Keys: keys,
+	}
+	if err := publisher.Prepare(record); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := manifests.Load(operationID)
+	if err != nil || len(manifest.Archives) != 0 {
+		t.Fatalf("zero-retention manifest=%+v err=%v", manifest, err)
+	}
+	if _, err := keys.FindByPublicKey(publicKey, confirmedAt); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("zero-retention recovery key exists: %v", err)
+	}
 }
 
 func TestRealmRecoveryPublisherBindsExactArchivesIdempotently(t *testing.T) {

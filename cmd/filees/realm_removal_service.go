@@ -154,27 +154,38 @@ func (s realmRemovalClientService) Confirm(ctx context.Context, payload contract
 	if err != nil {
 		return contract.RealmRemoveConfirmResult{}, err
 	}
-	if err := recoverykit.Store(kitPath, finalKit); err != nil {
-		return contract.RealmRemoveConfirmResult{}, fmt.Errorf("finalize recovery kit: %w", err)
-	}
-	if err := s.registry.Put(recoverykit.RegistryEntry{
-		Schema: recoverykit.RegistrySchema, OperationID: payload.OperationID,
-		ServerID: payload.ServerID, ServerName: profile.DisplayName, KitPath: kitPath,
-		ArchiveCount: len(manifest.Archives), DownloadUntil: manifest.DownloadUntil,
-		AdminGraceUntil: manifest.AdminGraceUntil, AdminContact: result.AdminContact,
-	}); err != nil {
-		return contract.RealmRemoveConfirmResult{}, fmt.Errorf("register recovery capability: %w", err)
+	if len(manifest.Archives) == 0 {
+		if err := os.Remove(kitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return contract.RealmRemoveConfirmResult{}, fmt.Errorf("remove unused recovery kit: %w", err)
+		}
+		kitPath = ""
+	} else {
+		if err := recoverykit.Store(kitPath, finalKit); err != nil {
+			return contract.RealmRemoveConfirmResult{}, fmt.Errorf("finalize recovery kit: %w", err)
+		}
+		if err := s.registry.Put(recoverykit.RegistryEntry{
+			Schema: recoverykit.RegistrySchema, OperationID: payload.OperationID,
+			ServerID: payload.ServerID, ServerName: profile.DisplayName, KitPath: kitPath,
+			ArchiveCount: len(manifest.Archives), DownloadUntil: manifest.DownloadUntil,
+			AdminGraceUntil: manifest.AdminGraceUntil, AdminContact: result.AdminContact,
+		}); err != nil {
+			return contract.RealmRemoveConfirmResult{}, fmt.Errorf("register recovery capability: %w", err)
+		}
 	}
 	if err := clientprofile.Remove(s.profileRoot, payload.ServerID); err != nil {
 		return contract.RealmRemoveConfirmResult{}, fmt.Errorf("remove revoked local profile: %w", err)
 	}
 	s.provisioner.RemoveProfile(payload.ServerID)
-	return contract.RealmRemoveConfirmResult{
+	confirmResult := contract.RealmRemoveConfirmResult{
 		ServerID: payload.ServerID, OperationID: payload.OperationID, RecoveryKitPath: kitPath,
-		ArchiveCount: len(manifest.Archives), DownloadUntil: manifest.DownloadUntil.Format(time.RFC3339Nano),
-		AdminGraceUntil:  manifest.AdminGraceUntil.Format(time.RFC3339Nano),
+		ArchiveCount:     len(manifest.Archives),
 		ErasureRequested: result.ErasureRequested, ErasureMaxDays: result.ErasureMaxDays,
-	}, nil
+	}
+	if len(manifest.Archives) > 0 {
+		confirmResult.DownloadUntil = manifest.DownloadUntil.Format(time.RFC3339Nano)
+		confirmResult.AdminGraceUntil = manifest.AdminGraceUntil.Format(time.RFC3339Nano)
+	}
+	return confirmResult, nil
 }
 
 func realmRemovalTransport(profile clientprofile.Profile) (*controlclient.Client, error) {

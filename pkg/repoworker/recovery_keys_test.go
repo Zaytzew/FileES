@@ -3,6 +3,8 @@ package repoworker
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -36,5 +38,14 @@ func TestRecoveryKeyBindsOneManifestAndExpires(t *testing.T) {
 	}
 	if _, err := store.Bind(manifest, record.PublicKey+" comment"); err == nil {
 		t.Fatal("commented recovery key accepted")
+	}
+	if err := store.Remove(manifest.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Remove(manifest.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FindByPublicKey(record.PublicKey, now); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("removed key lookup=%v", err)
 	}
 }

@@ -289,6 +289,40 @@ func (b *LinuxBackend) ShowReservations(ctx context.Context, request Reservation
 	return ReservationDialogResult{Action: ReservationDialogClose}, nil
 }
 
+// ShowSettings presents the server/folder overview as a native Zenity table.
+// It is deliberately read-only at this stage; later buttons return only an
+// opaque intent to the GUI controller.
+func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) error {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return NewUnavailable("settings_dialog", errors.New("zenity is not installed"))
+	}
+	args := []string{
+		"--list", "--title=" + request.Title, "--text=" + SettingsText(SettingsDialogRequest{Text: request.Text}), "--width=1240", "--height=600",
+		"--column=Serwer", "--column=Adres", "--column=Realm", "--column=Folder", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
+		"--ok-label=Zamknij", "--cancel-label=Zamknij",
+	}
+	for _, server := range request.Servers {
+		if len(server.Folders) == 0 {
+			args = append(args, server.Name, server.Address, server.Realm, "Brak folderów", "—", "—", "—")
+			continue
+		}
+		for _, folder := range server.Folders {
+			args = append(args, server.Name, server.Address, server.Realm, folder.Name, folder.LocalPath, folder.State, folder.Access)
+		}
+	}
+	if _, err := b.runner.Output(ctx, command, args...); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if commandCancelled(err) {
+			return nil
+		}
+		return NewOperationalFailure("settings_dialog", err)
+	}
+	return nil
+}
+
 func (b *LinuxBackend) pickerCommand(request PickFilesRequest, initialDir string) (string, []string, error) {
 	if command, err := b.runner.LookPath("zenity"); err == nil {
 		args := []string{"--file-selection", "--separator=\n", "--filename=" + filepath.Clean(initialDir) + string(filepath.Separator)}

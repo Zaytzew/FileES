@@ -118,6 +118,28 @@ func TestLinuxShowReservationsReturnsOnlyOpaqueRowID(t *testing.T) {
 	}
 }
 
+func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	request := SettingsDialogRequest{Title: "Ustawienia FileES", Text: "Serwery i foldery", Servers: []SettingsServer{{
+		Name: "Biuro", Address: "filees.example:2222", Realm: "acme", ClientID: "client-1",
+		Folders: []SettingsFolder{{Name: "Dokumenty", LocalPath: "/wc/docs", State: "aktywne", Access: "odczyt i zapis"}},
+	}}}
+	if err := backend.ShowSettings(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	calls := runner.Calls()
+	if len(calls) != 1 || calls[0].name != "/usr/bin/zenity" {
+		t.Fatalf("settings calls = %#v", calls)
+	}
+	args := strings.Join(calls[0].args, "\n")
+	for _, wanted := range []string{"--list", "--column=Serwer", "--column=Folder", "Biuro", "Dokumenty", "/wc/docs", "--ok-label=Zamknij"} {
+		if !strings.Contains(args, wanted) {
+			t.Errorf("settings args missing %q: %s", wanted, args)
+		}
+	}
+}
+
 func TestLinuxShowReservationsReturnsReleaseAll(t *testing.T) {
 	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) {
 		return []byte("Zwolnij wszystko\n"), fakeExitError(1)

@@ -292,6 +292,13 @@ func (b *WindowsBackend) ShowInfo(ctx context.Context, request InfoRequest) erro
 	return nil
 }
 
+// ShowSettings uses the native information window until the interactive
+// WinForms settings table is introduced. The same complete overview remains
+// available on Windows without exposing lifecycle actions through the tray.
+func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) error {
+	return b.ShowInfo(ctx, InfoRequest{Title: request.Title, Text: SettingsText(request)})
+}
+
 func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (bool, error) {
 	command, err := b.runner.LookPath("powershell.exe")
 	if err != nil {

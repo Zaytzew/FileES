@@ -101,9 +101,9 @@ type fakeActivator struct {
 }
 
 type fakeRealmAliases struct {
-	mu       sync.Mutex
-	errs     []error
-	aliases  chan string
+	mu      sync.Mutex
+	errs    []error
+	aliases chan string
 }
 
 func (f *fakeRealmAliases) ClaimAlias(_ context.Context, _ string, alias string) error {
@@ -1159,6 +1159,34 @@ func TestControllerServerInformationContainsPermissions(t *testing.T) {
 	requests := platformFake.Snapshot().InfoRequests
 	if len(requests) != 1 || !strings.Contains(requests[0].Text, "Tryb klienta: pełny") || !strings.Contains(requests[0].Text, "Tworzenie repozytoriów: dozwolone") {
 		t.Fatalf("server information = %#v", requests)
+	}
+}
+
+func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
+	platformFake := &platformtest.Fake{}
+	view := app.ViewModel{Servers: []app.ServerViewModel{{
+		ID: "office", DisplayName: "Biuro", Address: "filees.example", SSHPort: 2222,
+		RealmID: "realm-1", RealmAlias: "acme", ClientID: "client-1",
+		Repos: []app.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty", Attached: true, LocalPath: "/wc/docs", Access: contract.AccessReadWrite, State: contract.StateActive}},
+	}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, SettingsBrowser: platformFake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().SettingsRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	requests := platformFake.Snapshot().SettingsRequests
+	if len(requests) != 1 || len(requests[0].Servers) != 1 {
+		t.Fatalf("settings request = %#v", requests)
+	}
+	server := requests[0].Servers[0]
+	if server.Name != "Biuro" || server.Address != "filees.example:2222" || !strings.Contains(server.Realm, "acme") || len(server.Folders) != 1 {
+		t.Fatalf("settings server = %#v", server)
+	}
+	folder := server.Folders[0]
+	if folder.Name != "Dokumenty" || folder.LocalPath != "/wc/docs" || folder.State != "aktywne" || folder.Access != "odczyt i zapis" {
+		t.Fatalf("settings folder = %#v", folder)
 	}
 }
 

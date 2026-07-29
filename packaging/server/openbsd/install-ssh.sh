@@ -60,6 +60,10 @@ install -o root -g wheel -m 0555 "$bundle/bin/filees-worker" /usr/local/libexec/
 install -o root -g wheel -m 0555 "$bundle/bin/filees-mail" /usr/local/libexec/filees/filees-mail
 install -o "$state_user" -g "$client_access_group" -m 4550 "$bundle/bin/filees-client-entry" /usr/local/libexec/filees/filees-client-entry
 install -o "$state_user" -g _filees-recovery -m 4550 "$bundle/bin/filees-recovery-entry" /usr/local/libexec/filees/filees-recovery-entry
+# OpenSSH requires every AuthorizedKeysCommand component to be root-owned and
+# not writable by group/other. The session entry remains the separate set-id
+# boundary; this second image executes only the read-only "authorize" branch.
+install -o root -g wheel -m 0555 "$bundle/bin/filees-recovery-entry" /usr/local/libexec/filees/filees-recovery-authorize
 
 install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/bootstrap_authorized_keys" /etc/ssh/filees_bootstrap_authorized_keys
 install -d -o root -g wheel -m 755 /etc/ssh/sshd_config.d

@@ -80,7 +80,7 @@ func TestRealmRemovalCoordinatorDerivesScopeAndBindsRealm(t *testing.T) {
 	if err != nil || record.RealmID != realm || len(record.Scope.ClientIDs) != 1 || len(record.Scope.OwnedRepoIDs) != 1 || len(record.Scope.ForeignGrantRepoIDs) != 1 {
 		t.Fatalf("record=%+v err=%v", record, err)
 	}
-	if _, err := coordinator.Confirm(context.Background(), repoworker.Session{ClientID: "other", RealmID: uuid.NewString()}, record.OperationID, "CODE"); err == nil {
+	if _, _, err := coordinator.Confirm(context.Background(), repoworker.Session{ClientID: "other", RealmID: uuid.NewString()}, record.OperationID, "CODE"); err == nil {
 		t.Fatal("different realm confirmed operation")
 	}
 }

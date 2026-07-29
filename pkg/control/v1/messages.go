@@ -2,6 +2,8 @@
 package v1
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -159,7 +161,23 @@ type RealmRemoveConfirmPayload struct {
 	OTP string `json:"otp"`
 }
 type RealmRemoveConfirmResult struct {
-	State string `json:"state"`
+	State    string                `json:"state"`
+	Manifest RealmRecoveryManifest `json:"manifest"`
+}
+type RealmRecoveryArchive struct {
+	ArchiveID string `json:"archive_id"`
+	RepoID    string `json:"repo_id"`
+	SHA256    string `json:"sha256"`
+	Size      int64  `json:"size"`
+}
+type RealmRecoveryManifest struct {
+	Schema          string                 `json:"schema"`
+	OperationID     string                 `json:"operation_id"`
+	RealmID         string                 `json:"realm_id"`
+	Archives        []RealmRecoveryArchive `json:"archives"`
+	DownloadUntil   time.Time              `json:"download_until"`
+	AdminGraceUntil time.Time              `json:"admin_grace_until"`
+	CreatedAt       time.Time              `json:"created_at"`
 }
 
 func NewTicket(operationID, requestID string, typ TicketType, clientID string, payload any, now time.Time) (Ticket, error) {
@@ -461,8 +479,14 @@ func validateSuccessPayload(r Result) error {
 		if err := decodeStrict(r.Result, &result); err != nil {
 			return fmt.Errorf("REALM_REMOVE_CONFIRM result: %w", err)
 		}
-		if result.State != "deleting" && result.State != "recovery_ready" && result.State != "revoke_all_clients" && result.State != "completed" {
+		if result.State != "completed" {
 			return errors.New("REALM_REMOVE_CONFIRM result state is invalid")
+		}
+		if err := validateRealmRecoveryManifest(result.Manifest); err != nil {
+			return fmt.Errorf("REALM_REMOVE_CONFIRM recovery manifest: %w", err)
+		}
+		if result.Manifest.OperationID != r.OperationID {
+			return errors.New("REALM_REMOVE_CONFIRM manifest belongs to another operation")
 		}
 	}
 	return nil
@@ -525,6 +549,32 @@ func validateRecoveryPublicKey(value string) error {
 	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(value)))
 	if err != nil || key.Type() != ssh.KeyAlgoED25519 || comment != "" || len(options) != 0 || len(strings.TrimSpace(string(rest))) != 0 {
 		return errors.New("must be one comment-free Ed25519 public key")
+	}
+	return nil
+}
+
+func validateRealmRecoveryManifest(manifest RealmRecoveryManifest) error {
+	if manifest.Schema != "filees.realm-recovery-manifest/v1" {
+		return errors.New("schema is invalid")
+	}
+	if err := validateUUID("operation_id", manifest.OperationID); err != nil {
+		return err
+	}
+	if err := validateUUID("realm_id", manifest.RealmID); err != nil {
+		return err
+	}
+	if manifest.CreatedAt.IsZero() || manifest.DownloadUntil.Before(manifest.CreatedAt) || manifest.AdminGraceUntil.Before(manifest.DownloadUntil) {
+		return errors.New("retention is invalid")
+	}
+	seen := map[string]bool{}
+	for _, archive := range manifest.Archives {
+		if validateUUID("archive_id", archive.ArchiveID) != nil || validateUUID("repo_id", archive.RepoID) != nil || seen[archive.ArchiveID] || archive.Size < 0 || archive.Size > 1<<50 || len(archive.SHA256) != sha256.Size*2 {
+			return errors.New("archive is invalid")
+		}
+		if _, err := hex.DecodeString(archive.SHA256); err != nil {
+			return errors.New("archive digest is invalid")
+		}
+		seen[archive.ArchiveID] = true
 	}
 	return nil
 }

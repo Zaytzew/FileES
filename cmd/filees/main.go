@@ -83,6 +83,8 @@ func main() {
 			os.Exit(cmdActivateFinish(os.Args[2:]))
 		case "activate-resume":
 			os.Exit(cmdActivateResume(os.Args[2:]))
+		case "recovery":
+			os.Exit(cmdRecovery(os.Args[2:]))
 		case "daemon":
 			// fall through to daemon startup below
 		case "help", "--help", "-h":
@@ -294,6 +296,8 @@ commands:
   activate-begin   create/resume a server-scoped onboarding passport
   activate-finish  read one OTP from stdin and run activation
   activate-resume  resume an OTP-authorized activation with reconnect key
+  recovery download --kit FILE.fkr --output DIR
+            download verified repository archives without an active profile
 
 flags:
   --config path   path to config.json (default: ./config.json)`)

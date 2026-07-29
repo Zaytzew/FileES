@@ -199,7 +199,7 @@ func validateRecoveryManifest(m RecoveryManifest) error {
 		if _, err := uuid.Parse(archive.ArchiveID); err != nil {
 			return errors.New("recovery archive_id must be UUID")
 		}
-		if _, err := uuid.Parse(archive.RepoID); err != nil || seen[archive.ArchiveID] || archive.Size < 0 || len(archive.SHA256) != sha256.Size*2 {
+		if _, err := uuid.Parse(archive.RepoID); err != nil || seen[archive.ArchiveID] || archive.Size < 0 || archive.Size > 1<<50 || len(archive.SHA256) != sha256.Size*2 {
 			return errors.New("recovery archive is invalid")
 		}
 		if _, err := hex.DecodeString(archive.SHA256); err != nil {
@@ -209,6 +209,8 @@ func validateRecoveryManifest(m RecoveryManifest) error {
 	}
 	return nil
 }
+
+func (m RecoveryManifest) Validate() error { return validateRecoveryManifest(m) }
 
 func SortedRecoveryArchives(archives []RecoveryArchive) []RecoveryArchive {
 	out := append([]RecoveryArchive(nil), archives...)

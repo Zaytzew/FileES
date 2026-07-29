@@ -282,6 +282,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 		`-m 0555 "$bundle/bin/filees-worker"`,
 		`-m 4550 "$bundle/bin/filees-client-entry"`,
 		`-g _filees-recovery -m 4550 "$bundle/bin/filees-recovery-entry"`,
+		`-o root -g wheel -m 0555 "$bundle/bin/filees-recovery-entry" /usr/local/libexec/filees/filees-recovery-authorize`,
 		`svnadmin create /var/filees/service-repo`,
 	} {
 		if !strings.Contains(openBSDInstallerText, required) {
@@ -310,7 +311,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	recoveryPolicy := strings.SplitN(string(sshPolicy), "Match User _filees-recovery", 2)
 	for _, required := range []string{
 		"AuthenticationMethods publickey",
-		"AuthorizedKeysCommand /usr/local/libexec/filees/filees-recovery-entry authorize %t %k",
+		"AuthorizedKeysCommand /usr/local/libexec/filees/filees-recovery-authorize authorize %t %k",
 		"AuthorizedKeysCommandUser _filees-state",
 		"DisableForwarding yes",
 		"PermitTTY no",

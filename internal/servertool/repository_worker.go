@@ -61,7 +61,12 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		report(stderr, "repository worker activation", err)
 		return ExitConfig
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}}
+	realmRemoval := realmRemovalCoordinator{
+		Store:         repoworker.RealmRemovalStore{Root: filepath.Join(r.ResultsRoot, "realm-removals"), OTPPepper: config.Onboarding.OTPPepper, TTL: config.Onboarding.OperationTTL, Attempts: config.Onboarding.OTPAttempts},
+		SnapshotScope: publisher.SnapshotRealmScope,
+		ActiveClients: activationManager.ActiveClientsInRealm,
+	}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}
 	if err := repoworker.WithFileLock(filepath.Join(r.ResultsRoot, ".worker.lock"), func() error {
 		if err := backend.ReapFailedCreates(context.Background()); err != nil {

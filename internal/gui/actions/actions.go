@@ -73,6 +73,10 @@ type RepositoryDetacher interface {
 	DetachRepository(context.Context, string, string, bool) error
 }
 
+type ServerDetacher interface {
+	DetachServer(context.Context, string) error
+}
+
 type StackLifecycle interface {
 	RestartFileES(context.Context) error
 	ShutdownFileES(context.Context) error
@@ -121,6 +125,7 @@ type Config struct {
 	Prompter           platform.Prompter
 	RepositoryCreator  RepositoryCreator
 	RepositoryDetacher RepositoryDetacher
+	ServerDetacher     ServerDetacher
 	MobilePairer       MobilePairingLauncher
 	// PinStore, if non-nil, offers PIN setup at the end of a successful
 	// activation (see startActivation) - nil means the local-PIN feature is
@@ -217,11 +222,43 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startDetachRepository(ctx, intent.ServerID, intent.RepoID, false)
 	case tray.IntentDeleteRepository:
 		c.startDetachRepository(ctx, intent.ServerID, intent.RepoID, true)
+	case tray.IntentDetachServer:
+		c.startDetachServer(ctx, intent.ServerID)
 	case tray.IntentRestartFileES:
 		c.startStackLifecycle(ctx, true)
 	case tray.IntentShutdownFileES:
 		c.startStackLifecycle(ctx, false)
 	}
+}
+
+func (c *Controller) startDetachServer(ctx context.Context, serverID string) {
+	key := "detach-server:" + serverID
+	if serverID == "" || c.cfg.ServerDetacher == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		if !vm.CanDetachServer() {
+			return
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Odłącz serwer od FileES", Text: "Wszystkie lokalne foldery tego serwera zostaną odłączone; pliki pozostaną na dysku. Serwer unieważni klucz tej instalacji, a lokalny profil z credentialami zostanie usunięty.", ConfirmText: "Odłącz serwer", CancelText: "Anuluj"})
+		if err != nil || !confirmed {
+			return
+		}
+		if err := c.cfg.ServerDetacher.DetachServer(ctx, serverID); err != nil {
+			if ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: "server-detach." + serverID, Group: "server-detach." + serverID, Title: "Nie udało się odłączyć serwera", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			}
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: "server-detach." + serverID, Group: "server-detach." + serverID, Title: "Serwer odłączony od FileES", Body: "Lokalne dane pozostały na dysku", Urgency: platform.UrgencyNormal})
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+	}()
 }
 
 func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) {
@@ -720,11 +757,22 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationFailure(ctx, err)
 			return
 		}
-		if c.cfg.RealmAliases != nil && !c.claimRealmAlias(ctx, target.ServerID) {
-			return
+		aliasPending := c.cfg.RealmAliases != nil && !c.claimRealmAlias(ctx, target.ServerID)
+		if aliasPending {
+			// Activation itself has already completed.  An alias is required
+			// before some collaboration actions, but an interrupted alias claim
+			// must never make a successfully activated client appear to vanish.
+			c.notify(ctx, platform.Notification{ID: "realm_alias." + target.ServerID, Group: "realm_alias." + target.ServerID, Title: "Klient aktywowany — alias wymaga ustawienia", Body: "Ustaw stały alias z menu serwera, zanim użyjesz blokad lub współdzielonych operacji.", Urgency: platform.UrgencyNormal})
+			if c.cfg.Prompter != nil {
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Klient FileES aktywowany", Text: "Połączenie z serwerem " + target.Address + " jest aktywne. Alias nie został jeszcze potwierdzony — ustaw go ponownie z menu serwera przed użyciem blokad lub operacji współdzielonych."})
+			}
 		}
 		c.offerLocalPinSetup(ctx)
-		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: target.Address, Urgency: platform.UrgencyNormal})
+		body := target.Address
+		if aliasPending {
+			body += "\nAktywacja zakończona; alias wymaga ustawienia."
+		}
+		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: body, Urgency: platform.UrgencyNormal})
 	}()
 }
 
@@ -750,26 +798,33 @@ func (c *Controller) claimRealmAlias(ctx context.Context, serverID string) bool 
 	if c.cfg.Prompter == nil || c.cfg.RealmAliases == nil {
 		return false
 	}
-	alias, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
-		Title: "Alias FileES", Text: "Wybierz stały alias widoczny przy blokadach i przyszłych operacjach między użytkownikami.", Placeholder: "np. acme-k",
-	})
-	if err != nil || alias.Cancelled || strings.TrimSpace(alias.Value) == "" {
-		return false
+	for {
+		alias, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+			Title: "Alias FileES", Text: "Wybierz stały alias widoczny przy blokadach i przyszłych operacjach między użytkownikami.", Placeholder: "np. acme-k",
+		})
+		if err != nil || alias.Cancelled || strings.TrimSpace(alias.Value) == "" {
+			return false
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			Title: "Potwierdź stały alias", Text: "Alias „" + alias.Value + "” zostanie przypisany do tego realm na stałe. Nie można go później zmienić.", ConfirmText: "Ustaw alias", CancelText: "Anuluj",
+		})
+		if err != nil || !confirmed {
+			return false
+		}
+		if err := c.cfg.RealmAliases.ClaimAlias(ctx, serverID, alias.Value); err == nil {
+			if c.cfg.Refresh != nil {
+				c.cfg.Refresh()
+			}
+			return true
+		}
+		retry, retryErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			Title: "Alias nie został potwierdzony", Text: "Serwer nie potwierdził ustawienia aliasu. Wprowadź alias ponownie; ten sam alias można bezpiecznie ponowić po przerwanym połączeniu.", ConfirmText: "Wprowadź ponownie", CancelText: "Później",
+		})
+		if retryErr != nil || !retry {
+			c.notify(ctx, platform.Notification{ID: "realm_alias." + serverID, Group: "realm_alias." + serverID, Title: "Alias nie został ustawiony", Body: "Klient pozostaje aktywny. Ustaw stały alias z menu serwera przed operacjami współdzielonymi.", Urgency: platform.UrgencyNormal})
+			return false
+		}
 	}
-	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
-		Title: "Potwierdź stały alias", Text: "Alias „" + alias.Value + "” zostanie przypisany do tego realm na stałe. Nie można go później zmienić.", ConfirmText: "Ustaw alias", CancelText: "Anuluj",
-	})
-	if err != nil || !confirmed {
-		return false
-	}
-	if err := c.cfg.RealmAliases.ClaimAlias(ctx, serverID, alias.Value); err != nil {
-		c.notify(ctx, platform.Notification{ID: "realm_alias." + serverID, Group: "realm_alias." + serverID, Title: "Nie można ustawić aliasu", Body: "Wybierz inny alias.", Urgency: platform.UrgencyNormal})
-		return false
-	}
-	if c.cfg.Refresh != nil {
-		c.cfg.Refresh()
-	}
-	return true
 }
 
 // offerLocalPinSetup prompts for a local PIN once, right after a successful

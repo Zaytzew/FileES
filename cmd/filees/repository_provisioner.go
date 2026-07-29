@@ -63,6 +63,12 @@ func (p *daemonProvisioner) AddProfile(profile clientprofile.Profile) {
 	p.mu.Unlock()
 }
 
+func (p *daemonProvisioner) RemoveProfile(serverID string) {
+	p.mu.Lock()
+	delete(p.profiles, serverID)
+	p.mu.Unlock()
+}
+
 func (p *daemonProvisioner) ClientID(serverID string) string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

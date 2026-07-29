@@ -2,10 +2,12 @@ package servertool
 
 import (
 	"context"
+	"fmt"
+
+	"filees/pkg/activation"
 	"filees/pkg/onboarding"
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
-	"fmt"
 	"io"
 	"path/filepath"
 	"time"
@@ -50,7 +52,12 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		return ExitConfig
 	}
 	aliases := repoworker.RealmAliases{ServiceWC: config.Activation.ServiceWorkingCopy, Runner: runner}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases}
+	activationManager, err := activation.New(config.Activation, nil)
+	if err != nil {
+		report(stderr, "repository worker activation", err)
+		return ExitConfig
+	}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}
 	if err := repoworker.WithFileLock(filepath.Join(r.ResultsRoot, ".worker.lock"), func() error {
 		if _, err := repoworker.ReapDeletionArchives(archiveRoot, time.Now()); err != nil {
@@ -62,6 +69,15 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		return ExitData
 	}
 	return ExitOK
+}
+
+type clientDetacher struct{ manager *activation.Manager }
+
+func (d clientDetacher) DetachClient(ctx context.Context, clientID string) (int64, error) {
+	if d.manager == nil {
+		return 0, fmt.Errorf("activation manager is unavailable")
+	}
+	return d.manager.Revoke(ctx, clientID, "client requested server detach")
 }
 
 // mobilePairingMinter adapts onboarding.Files.CreateMobilePairing to

@@ -25,6 +25,11 @@ const (
 	TicketDeleteRepository   TicketType = "DELETE_REPOSITORY"
 	TicketClaimRealmAlias    TicketType = "CLAIM_REALM_ALIAS"
 	TicketResolveOwnerLabels TicketType = "RESOLVE_OWNER_LABELS"
+	// TicketDetachClient lets an authenticated installation permanently remove
+	// itself from a server. The server derives the target client from the SSH
+	// session; the ticket carries no target ID beyond the required session
+	// binding in Ticket.ClientID.
+	TicketDetachClient TicketType = "DETACH_CLIENT"
 	// TicketMobilePairing is requested by an already-active desktop client
 	// to mint a mobile pairing token for its own realm (never a payload-
 	// supplied one - the worker resolves realm_id from the authenticated
@@ -119,6 +124,11 @@ type ResolveOwnerLabelsPayload struct {
 
 type ResolveOwnerLabelsResult struct {
 	Labels map[string]string `json:"labels"`
+}
+
+type DetachClientPayload struct{}
+type DetachClientResult struct {
+	ServiceRevision int64 `json:"service_revision"`
 }
 
 func NewTicket(operationID, requestID string, typ TicketType, clientID string, payload any, now time.Time) (Ticket, error) {
@@ -254,6 +264,11 @@ func (t Ticket) Validate() error {
 			}
 			seen[id] = struct{}{}
 		}
+	case TicketDetachClient:
+		var p DetachClientPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("DETACH_CLIENT payload: %w", err)
+		}
 	default:
 		return fmt.Errorf("unsupported ticket type %q", t.Type)
 	}
@@ -273,7 +288,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketDetachClient {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -371,6 +386,14 @@ func validateSuccessPayload(r Result) error {
 			if _, err := realmalias.Normalize(label); err != nil {
 				return fmt.Errorf("RESOLVE_OWNER_LABELS result label: %w", err)
 			}
+		}
+	case TicketDetachClient:
+		var result DetachClientResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("DETACH_CLIENT result: %w", err)
+		}
+		if result.ServiceRevision < 1 {
+			return errors.New("DETACH_CLIENT result service revision must be positive")
 		}
 	}
 	return nil

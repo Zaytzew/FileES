@@ -80,6 +80,23 @@ type repositoryDetachClient interface {
 
 type repositoryDetachAdapter struct{ client repositoryDetachClient }
 
+type serverDetachClient interface {
+	ServerDetach(context.Context, string) (*contract.ServerDetachResult, error)
+}
+
+type serverDetachAdapter struct{ client serverDetachClient }
+
+func (adapter serverDetachAdapter) DetachServer(ctx context.Context, serverID string) error {
+	result, err := adapter.client.ServerDetach(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ServerID != serverID {
+		return errors.New("daemon did not complete server detach")
+	}
+	return nil
+}
+
 type reservationClient interface {
 	RepoReservationList(context.Context, string) (*contract.RepoReservationListResult, error)
 	RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error
@@ -353,6 +370,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(repositoryDetachClient); ok {
 		repositoryDetacher = repositoryDetachAdapter{client: candidate}
 	}
+	var serverDetacher actions.ServerDetacher
+	if candidate, ok := deps.client.(serverDetachClient); ok {
+		serverDetacher = serverDetachAdapter{client: candidate}
+	}
 	var reservations actions.ReservationManager
 	if candidate, ok := deps.client.(reservationClient); ok {
 		reservations = reservationAdapter{client: candidate}
@@ -378,6 +399,7 @@ func run(parent context.Context, deps dependencies) error {
 		Prompter:           deps.platform,
 		RepositoryCreator:  repositoryCreator,
 		RepositoryDetacher: repositoryDetacher,
+		ServerDetacher:     serverDetacher,
 		MobilePairer:       mobilePairer,
 		PinStore:           deps.pinStore,
 		Activator:          deps.activator,

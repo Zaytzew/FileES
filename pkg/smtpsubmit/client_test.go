@@ -137,6 +137,34 @@ func TestSubmitSTARTTLSAuthAndDotStuffing(t *testing.T) {
 	}
 }
 
+func TestSubmitSTARTTLSAuthLoginFallback(t *testing.T) {
+	certificate, roots := testCertificate(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	result := make(chan serverResult, 1)
+	go serveTLSLoginRelay(listener, certificate, result)
+
+	err = Submit(context.Background(), Config{Address: listener.Addr().String(), ServerName: "localhost", ClientName: "filees.test", Username: "filees", Password: "secret", TLSMode: TLSStartTLS, RootCAs: roots, CommandTimeout: 2 * time.Second}, Request{EnvelopeFrom: "filees@example.net", Recipient: "user@example.net", Message: []byte("From: <filees@example.net>\r\n\r\ntest\r\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := <-result
+	if got.err != nil {
+		t.Fatal(got.err)
+	}
+	for _, command := range []string{"AUTH LOGIN\r\n", "ZmlsZWVz\r\n", "c2VjcmV0\r\n"} {
+		if !strings.Contains(got.commands, command) {
+			t.Fatalf("AUTH LOGIN exchange missing %q in %q", command, got.commands)
+		}
+	}
+	if strings.Contains(got.commands, "AUTH PLAIN") {
+		t.Fatalf("used AUTH PLAIN despite LOGIN-only relay: %q", got.commands)
+	}
+}
+
 func TestSubmitClassifiesRelayErrorsAndRejectsUnsafePlaintext(t *testing.T) {
 	for _, test := range []struct {
 		code      int
@@ -246,6 +274,95 @@ func serveTLSRelay(listener net.Listener, certificate tls.Certificate, result ch
 		_ = write("221 bye")
 	}
 	result <- serverResult{commands: commands.String(), message: message.String()}
+}
+
+func serveTLSLoginRelay(listener net.Listener, certificate tls.Certificate, result chan<- serverResult) {
+	connection, err := listener.Accept()
+	if err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	defer connection.Close()
+	commands := &strings.Builder{}
+	reader := bufio.NewReader(connection)
+	write := func(line string) error { _, err := fmt.Fprintf(connection, "%s\r\n", line); return err }
+	read := func() (string, error) {
+		line, err := reader.ReadString('\n')
+		commands.WriteString(line)
+		return line, err
+	}
+	if err := write("220 relay.test ESMTP"); err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	if _, err := read(); err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	if _, err := fmt.Fprint(connection, "250-relay.test\r\n250 STARTTLS\r\n"); err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	if line, err := read(); err != nil || line != "STARTTLS\r\n" {
+		result <- serverResult{err: fmt.Errorf("STARTTLS command=%q err=%v", line, err)}
+		return
+	}
+	if err := write("220 ready"); err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	tlsConnection := tls.Server(connection, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
+	if err := tlsConnection.Handshake(); err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	connection, reader = tlsConnection, bufio.NewReader(tlsConnection)
+	if _, err := read(); err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	if _, err := fmt.Fprint(connection, "250-relay.test\r\n250 AUTH LOGIN\r\n"); err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	for _, exchange := range []struct {
+		want, reply string
+	}{
+		{"AUTH LOGIN\r\n", "334 VXNlcm5hbWU6"},
+		{"ZmlsZWVz\r\n", "334 UGFzc3dvcmQ6"},
+		{"c2VjcmV0\r\n", "235 authenticated"},
+		{"MAIL FROM:<filees@example.net>\r\n", "250 sender ok"},
+		{"RCPT TO:<user@example.net>\r\n", "250 recipient ok"},
+		{"DATA\r\n", "354 end with dot"},
+	} {
+		line, err := read()
+		if err != nil || line != exchange.want {
+			result <- serverResult{err: fmt.Errorf("command=%q want=%q err=%v", line, exchange.want, err)}
+			return
+		}
+		if err := write(exchange.reply); err != nil {
+			result <- serverResult{err: err}
+			return
+		}
+	}
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			result <- serverResult{err: err}
+			return
+		}
+		if line == ".\r\n" {
+			break
+		}
+	}
+	if err := write("250 queued"); err != nil {
+		result <- serverResult{err: err}
+		return
+	}
+	if _, err := read(); err == nil {
+		_ = write("221 bye")
+	}
+	result <- serverResult{commands: commands.String()}
 }
 
 func serveRejectingRelay(listener net.Listener, code int) {

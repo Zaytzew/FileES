@@ -82,11 +82,17 @@ func TestBuildMenuOffersDetachDeleteAndWholeStackLifecycle(t *testing.T) {
 	menu := BuildMenu(vm)
 	repoItem := findItem(t, menu.Items, "repo.docs")
 	serverItem := findItem(t, menu.Items, "server.office")
-	if !hasItem(serverItem.Children, "repo.docs.detach") || !hasItem(serverItem.Children, "repo.docs.delete") {
-		t.Fatalf("server-level lifecycle actions=%+v", serverItem.Children)
+	if hasItem(serverItem.Children, "repo.docs.detach") || hasItem(serverItem.Children, "repo.docs.delete") {
+		t.Fatalf("folder lifecycle actions must not be duplicated at server level: %+v", serverItem.Children)
 	}
-	if hasItem(repoItem.Children, "repo.docs.detach") || hasItem(repoItem.Children, "repo.docs.delete") {
-		t.Fatalf("lifecycle actions must not be hidden in the repository submenu: %+v", repoItem.Children)
+	if !hasItem(repoItem.Children, "repo.docs.detach") || !hasItem(repoItem.Children, "repo.docs.delete") {
+		t.Fatalf("repository lifecycle actions=%+v", repoItem.Children)
+	}
+	if got := findItem(t, repoItem.Children, "repo.docs.detach").Title; got != "Odłącz folder…" {
+		t.Fatalf("detach label=%q", got)
+	}
+	if got := findItem(t, repoItem.Children, "repo.docs.delete").Title; got != "Odłącz trwale…" {
+		t.Fatalf("delete label=%q", got)
 	}
 	if !hasItem(menu.Items, "action.restart_filees") || !hasItem(menu.Items, "action.shutdown_filees") {
 		t.Fatalf("whole-stack lifecycle actions missing: %+v", menu.Items)
@@ -98,9 +104,9 @@ func TestBuildMenuOffersDetachDeleteAndWholeStackLifecycle(t *testing.T) {
 	repo.AttachmentPolicy = "required"
 	vm.Repos[0] = repo
 	vm.Servers[0].Repos[0] = repo
-	requiredServer := findItem(t, BuildMenu(vm).Items, "server.office")
-	if hasItem(requiredServer.Children, "repo.docs.detach") || hasItem(requiredServer.Children, "repo.docs.delete") {
-		t.Fatalf("required repository can be detached: %+v", requiredServer.Children)
+	requiredRepo := findItem(t, findItem(t, BuildMenu(vm).Items, "server.office").Children, "repo.docs")
+	if hasItem(requiredRepo.Children, "repo.docs.detach") || hasItem(requiredRepo.Children, "repo.docs.delete") {
+		t.Fatalf("required repository can be detached: %+v", requiredRepo.Children)
 	}
 }
 

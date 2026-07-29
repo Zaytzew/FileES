@@ -100,6 +100,24 @@ type fakeActivator struct {
 	finishes chan string
 }
 
+type fakeRealmAliases struct {
+	mu       sync.Mutex
+	errs     []error
+	aliases  chan string
+}
+
+func (f *fakeRealmAliases) ClaimAlias(_ context.Context, _ string, alias string) error {
+	f.aliases <- alias
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.errs) == 0 {
+		return nil
+	}
+	err := f.errs[0]
+	f.errs = f.errs[1:]
+	return err
+}
+
 type createCall struct{ serverID, displayName, localPath string }
 type fakeRepositoryCreator struct {
 	calls chan createCall
@@ -243,6 +261,46 @@ func TestControllerActivationPromptsForInvitationThenSecretOTP(t *testing.T) {
 	if len(requests) != 2 || !requests[0].Secret || !requests[1].Secret {
 		t.Fatalf("prompts=%#v", requests)
 	}
+}
+
+func TestControllerActivationStaysVisibleWhenAliasIsNotConfirmed(t *testing.T) {
+	responses := []platform.PromptTextResult{{Value: "filees-invite:v1:test"}, {Value: "OTP-CODE"}, {Value: "acme"}}
+	fake := &platformtest.Fake{
+		PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
+			result := responses[0]
+			responses = responses[1:]
+			return result, nil
+		},
+		ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+			// Confirm the immutable value, then decline the retry dialog.
+			return request.Title == "Potwierdź stały alias", nil
+		},
+	}
+	activator := &fakeActivator{begins: make(chan string, 1), finishes: make(chan string, 1)}
+	aliases := &fakeRealmAliases{errs: []error{errors.New("connection reset after server commit")}, aliases: make(chan string, 1)}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Opener: fake, Picker: fake, Prompter: fake, Notifier: fake, Locker: newFakeLocker(), Activator: activator, RealmAliases: aliases})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
+	awaitCh(t, activator.finishes, "activation finish")
+	if got := awaitCh(t, aliases.aliases, "realm alias claim"); got != "acme" {
+		t.Fatalf("alias=%q", got)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		snapshot := fake.Snapshot()
+		if len(snapshot.InfoRequests) > 0 && len(snapshot.Notifications) >= 2 {
+			if !strings.Contains(snapshot.InfoRequests[0].Text, "jest aktywne") {
+				t.Fatalf("info=%q", snapshot.InfoRequests[0].Text)
+			}
+			if !strings.Contains(snapshot.Notifications[len(snapshot.Notifications)-1].Body, "alias wymaga ustawienia") {
+				t.Fatalf("activation notification=%q", snapshot.Notifications[len(snapshot.Notifications)-1].Body)
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("activation completion was not communicated: %#v", fake.Snapshot())
 }
 
 func TestControllerOffersLocalPinSetupAfterActivationWhenNotConfigured(t *testing.T) {

@@ -25,17 +25,18 @@ type Server struct {
 	startTime time.Time
 	lg        talk.Logger
 
-	mu          sync.RWMutex
-	repos       map[string]*RepoState // keyed by repo ID
-	activations map[string]contract.ActivationStatus
-	activation  ActivationService
-	realmAlias  RealmAliasService
-	ownerLabels OwnerLabelResolver
-	lifecycle   RepositoryLifecycleService
-	mobilePair  MobilePairingService
-	updates     UpdateService
-	activity    ActivitySource
-	lifecycleFn SystemLifecycleService
+	mu           sync.RWMutex
+	repos        map[string]*RepoState // keyed by repo ID
+	activations  map[string]contract.ActivationStatus
+	activation   ActivationService
+	realmAlias   RealmAliasService
+	ownerLabels  OwnerLabelResolver
+	lifecycle    RepositoryLifecycleService
+	mobilePair   MobilePairingService
+	serverDetach ServerDetachService
+	updates      UpdateService
+	activity     ActivitySource
+	lifecycleFn  SystemLifecycleService
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -81,6 +82,10 @@ type SystemLifecycleService interface {
 // channel (mirrors RepositoryLifecycleService's role for repo-create).
 type MobilePairingService interface {
 	Begin(ctx context.Context, serverID string) (contract.MobilePairingBeginResult, error)
+}
+
+type ServerDetachService interface {
+	Detach(context.Context, string) error
 }
 
 type UpdateService interface {
@@ -167,6 +172,18 @@ func (s *Server) mobilePairingService() MobilePairingService {
 	return s.mobilePair
 }
 
+func (s *Server) SetServerDetachService(service ServerDetachService) {
+	s.mu.Lock()
+	s.serverDetach = service
+	s.mu.Unlock()
+}
+
+func (s *Server) serverDetachService() ServerDetachService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.serverDetach
+}
+
 func (s *Server) SetActivationService(service ActivationService) {
 	s.mu.Lock()
 	s.activation = service
@@ -221,6 +238,20 @@ func (s *Server) RegisterActivation(status contract.ActivationStatus) {
 	s.activations[status.ServerID] = status
 	s.mu.Unlock()
 	s.Emit(contract.NewEvent("", 0, contract.EvActivationChanged, "", status))
+}
+
+// RemoveServer clears one profile's in-memory activation and repositories
+// after its credential has been revoked and local profile removed.
+func (s *Server) RemoveServer(serverID string) {
+	s.mu.Lock()
+	delete(s.activations, serverID)
+	for id, repo := range s.repos {
+		if repo.ServerID() == serverID {
+			delete(s.repos, id)
+		}
+	}
+	s.mu.Unlock()
+	s.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
 }
 
 func (s *Server) SetActivationRepositoryReadiness(serverID string, ready bool, pending int) {

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"filees/internal/durable"
+
 	"github.com/google/uuid"
 )
 
@@ -104,12 +106,7 @@ func Store(path string, profile Profile) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return durable.SyncDirectory(filepath.Dir(path))
 }
 
 func Load(path string) (Profile, error) {
@@ -177,4 +174,21 @@ func List(root string) ([]Profile, error) {
 	}
 	sort.Slice(profiles, func(i, j int) bool { return profiles[i].ServerID < profiles[j].ServerID })
 	return profiles, nil
+}
+
+// Remove permanently removes one server's profile directory, including its
+// private key, projection checkout and cache.
+func Remove(root, serverID string) error {
+	cleanRoot := filepath.Clean(root)
+	if !filepath.IsAbs(cleanRoot) || strings.TrimSpace(serverID) == "" || strings.ContainsAny(serverID, "/\\\x00\r\n\t ") {
+		return errors.New("client profile root or server ID is invalid")
+	}
+	target := filepath.Join(cleanRoot, serverID)
+	if filepath.Dir(target) != cleanRoot {
+		return errors.New("client profile path escapes root")
+	}
+	if err := os.RemoveAll(target); err != nil {
+		return err
+	}
+	return durable.SyncDirectory(cleanRoot)
 }

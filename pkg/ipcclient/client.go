@@ -220,6 +220,15 @@ func (c *Client) RepoCreateRequest(ctx context.Context, payload contract.RepoCre
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) ServerDetach(ctx context.Context, serverID string) (*contract.ServerDetachResult, error) {
+	resp, err := c.do(ctx, contract.CmdServerDetach, "", contract.ServerDetachPayload{ServerID: serverID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.ServerDetachResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) MobilePairingBegin(ctx context.Context, serverID string) (*contract.MobilePairingBeginResult, error) {
 	resp, err := c.do(ctx, contract.CmdMobilePairingBegin, "", contract.MobilePairingBeginPayload{ServerID: serverID})
 	if err != nil {

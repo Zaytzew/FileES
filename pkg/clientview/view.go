@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/internal/durable"
 	"filees/pkg/realmalias"
 
 	"github.com/google/uuid"
@@ -206,12 +207,7 @@ func StoreIfNewer(path string, next View) (bool, error) {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return false, err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return false, err
-	}
-	defer dir.Close()
-	if err := dir.Sync(); err != nil {
+	if err := durable.SyncDirectory(filepath.Dir(path)); err != nil {
 		return false, err
 	}
 	return true, nil

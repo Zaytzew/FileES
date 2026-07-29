@@ -18,6 +18,7 @@ const (
 	CmdActivationBegin  = "activation.begin"
 	CmdActivationFinish = "activation.finish"
 	CmdRealmAliasClaim  = "realm.alias_claim"
+	CmdServerDetach     = "server.detach"
 
 	// Mobile pairing (Phase 2c): daemon mints a MOBILE_PAIRING token through
 	// its own already-authenticated control-plane channel; the tray hands
@@ -74,6 +75,7 @@ const (
 	CapActivationBegin        = "activation.begin"
 	CapActivationFinish       = "activation.finish"
 	CapRealmAliasClaim        = "realm.alias_claim"
+	CapServerDetach           = "server.detach"
 	CapMobilePairingBegin     = "mobile_pairing.begin"
 	CapRepoCreateRequest      = "repo.create_request"
 	CapRepoAttachIntent       = "repo.attach_intent"
@@ -111,6 +113,7 @@ var AllCapabilities = []string{
 	CapActivationBegin,
 	CapActivationFinish,
 	CapRealmAliasClaim,
+	CapServerDetach,
 	CapMobilePairingBegin,
 	CapRepoCreateRequest,
 	CapRepoAttachIntent,
@@ -209,6 +212,14 @@ type RealmAliasClaimPayload struct {
 
 type RealmAliasClaimResult struct {
 	Alias string `json:"alias"`
+}
+
+type ServerDetachPayload struct {
+	ServerID string `json:"server_id"`
+}
+
+type ServerDetachResult struct {
+	ServerID string `json:"server_id"`
 }
 
 // Secret preserves the wire representation as a JSON string while keeping

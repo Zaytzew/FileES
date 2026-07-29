@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"filees/internal/durable"
 	v1 "filees/pkg/mobile/v1"
 )
 
@@ -110,10 +111,5 @@ func atomicWriteBytes(path string, data []byte) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return durable.SyncDirectory(dir)
 }

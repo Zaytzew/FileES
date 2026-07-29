@@ -50,6 +50,17 @@ type fakeMobilePairingMinter struct {
 	err   error
 }
 
+type fakeClientDetacher struct {
+	clientID string
+	revision int64
+	err      error
+}
+
+func (d *fakeClientDetacher) DetachClient(_ context.Context, clientID string) (int64, error) {
+	d.clientID = clientID
+	return d.revision, d.err
+}
+
 func (m *fakeMobilePairingMinter) CreatePairing(realmID string, repos []MobilePairingRepoGrant) (string, time.Time, error) {
 	m.calls++
 	m.realm = realmID
@@ -93,6 +104,26 @@ func TestFormatBytesRendersHumanReadableMagnitudes(t *testing.T) {
 		if got := formatBytes(c.n); got != c.want {
 			t.Errorf("formatBytes(%d) = %q, want %q", c.n, got, c.want)
 		}
+	}
+}
+
+func TestWorkerDetachClientRevokesOnlyAuthenticatedSession(t *testing.T) {
+	session := Session{ClientID: "client", RealmID: uuid.NewString()}
+	ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketDetachClient, session.ClientID, control.DetachClientPayload{}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	detacher := &fakeClientDetacher{revision: 19}
+	result, err := (&Worker{ClientDetacher: detacher}).Handle(context.Background(), session, ticket)
+	if err != nil || result.Status != control.ResultOK {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if detacher.clientID != session.ClientID {
+		t.Fatalf("revoked client=%q want %q", detacher.clientID, session.ClientID)
+	}
+	var payload control.DetachClientResult
+	if err := control.DecodeResultPayload(result.Result, &payload); err != nil || payload.ServiceRevision != 19 {
+		t.Fatalf("payload=%+v err=%v", payload, err)
 	}
 }
 

@@ -1,6 +1,7 @@
 package repoworker
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -46,6 +47,9 @@ func TestDataErasureRequestRequiresConfirmedIntentAndExplicitOperatorCompletion(
 	if record.State != DataErasurePartiallyRetained || record.CompletedAt == nil {
 		t.Fatalf("unexpected completed request: %+v", record)
 	}
+	if record, err = store.MarkActiveDataDeleted(operationID); err != nil || record.State != DataErasurePartiallyRetained {
+		t.Fatalf("completed active-data boundary was not idempotent: %+v err=%v", record, err)
+	}
 	job, err := store.ClaimPendingMail(time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +71,43 @@ func TestDataErasureRequestRequiresConfirmedIntentAndExplicitOperatorCompletion(
 	record, err = store.Load(operationID)
 	if err != nil || record.NotificationEmail != "" {
 		t.Fatalf("completed erasure record retained notification address: %+v err=%v", record, err)
+	}
+}
+
+func TestDataErasureCompletionMailMustMatchCompletedJournal(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	store := DataErasureStore{Root: t.TempDir(), Now: func() time.Time { return now }}
+	removal := RealmRemovalRecord{
+		OperationID: uuid.NewString(), RealmID: uuid.NewString(), ConfirmedAt: &now,
+		Request: RealmRemovalRequest{NotificationEmail: "user@example.net", ErasureRequested: true},
+	}
+	if _, err := store.Accept(removal, 90); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkActiveDataDeleted(removal.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Complete(removal.OperationID, false); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(store.mailPath(removal.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var job DataErasureMailJob
+	if err := json.Unmarshal(raw, &job); err != nil {
+		t.Fatal(err)
+	}
+	job.DeliveryAddress = "attacker@example.net"
+	raw, err = json.MarshalIndent(job, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.mailPath(removal.OperationID), append(raw, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimPendingMail(time.Minute); err == nil {
+		t.Fatal("completion mail with forged recipient was claimed")
 	}
 }
 

@@ -85,8 +85,8 @@ func (s DataErasureStore) Accept(removal RealmRemovalRecord, maxDays int) (DataE
 	var out DataErasureRecord
 	err = WithFileLock(filepath.Join(s.Root, ".data-erasure.lock"), func() error {
 		if existing, err := s.load(removal.OperationID); err == nil {
-			if existing.RealmID != record.RealmID || existing.RequestedAt != record.RequestedAt ||
-				existing.CompletionDueAt != record.CompletionDueAt {
+			if existing.RealmID != record.RealmID || !existing.RequestedAt.Equal(record.RequestedAt) ||
+				!existing.CompletionDueAt.Equal(record.CompletionDueAt) {
 				return errors.New("data erasure request conflicts with existing record")
 			}
 			out = existing
@@ -107,7 +107,8 @@ func (s DataErasureStore) Accept(removal RealmRemovalRecord, maxDays int) (DataE
 // removal. Remaining backup/log retention is an operator responsibility.
 func (s DataErasureStore) MarkActiveDataDeleted(operationID string) (DataErasureRecord, error) {
 	return s.update(operationID, func(record *DataErasureRecord) error {
-		if record.State == DataErasureAwaitingBackupRetention {
+		if record.State == DataErasureAwaitingBackupRetention ||
+			record.State == DataErasureCompleted || record.State == DataErasurePartiallyRetained {
 			return nil
 		}
 		if record.State != DataErasureRequested {
@@ -184,6 +185,18 @@ func (s DataErasureStore) ClaimPendingMail(staleAfter time.Duration) (DataErasur
 			job, err := s.loadMail(path)
 			if err != nil {
 				return err
+			}
+			record, err := s.load(job.OperationID)
+			if err != nil {
+				return err
+			}
+			expectedMessageID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(job.OperationID+":data-erasure-completion")).String()
+			if record.State != job.FinalState || record.CompletedAt == nil || job.MessageID != expectedMessageID {
+				return errors.New("data erasure mail is not bound to a completed request")
+			}
+			if (job.DeliveryState == RealmRemovalMailPending || job.DeliveryState == RealmRemovalMailSending) &&
+				(record.NotificationEmail == "" || job.DeliveryAddress != record.NotificationEmail) {
+				return errors.New("data erasure mail recipient does not match request")
 			}
 			now := s.now()
 			if job.DeliveryState == RealmRemovalMailSending && job.AttemptedAt != nil && now.Sub(*job.AttemptedAt) >= staleAfter {
@@ -309,6 +322,27 @@ func (s DataErasureStore) load(operationID string) (DataErasureRecord, error) {
 	if json.Unmarshal(raw, &record) != nil || record.Schema != dataErasureSchema ||
 		record.OperationID != operationID || record.RealmID == "" ||
 		(record.NotificationEmail == "" && record.State != DataErasureCompleted && record.State != DataErasurePartiallyRetained) {
+		return DataErasureRecord{}, errors.New("data erasure record is invalid")
+	}
+	if _, err := uuid.Parse(record.OperationID); err != nil {
+		return DataErasureRecord{}, errors.New("data erasure record is invalid")
+	}
+	if _, err := uuid.Parse(record.RealmID); err != nil {
+		return DataErasureRecord{}, errors.New("data erasure record is invalid")
+	}
+	switch record.State {
+	case DataErasureRequested, DataErasureAwaitingBackupRetention:
+		if record.CompletedAt != nil {
+			return DataErasureRecord{}, errors.New("data erasure record is invalid")
+		}
+	case DataErasureCompleted, DataErasurePartiallyRetained:
+		if record.CompletedAt == nil {
+			return DataErasureRecord{}, errors.New("data erasure record is invalid")
+		}
+	default:
+		return DataErasureRecord{}, errors.New("data erasure record is invalid")
+	}
+	if record.RequestedAt.IsZero() || !record.CompletionDueAt.After(record.RequestedAt) {
 		return DataErasureRecord{}, errors.New("data erasure record is invalid")
 	}
 	return record, nil

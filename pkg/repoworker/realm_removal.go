@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/onboarding"
 	"github.com/google/uuid"
 )
 
@@ -37,21 +38,26 @@ const (
 )
 
 type RealmRemovalScope struct{ ClientIDs, OwnedRepoIDs, ForeignGrantRepoIDs []string }
+type RealmRemovalRequest struct {
+	NotificationEmail string `json:"notification_email"`
+	ErasureRequested  bool   `json:"erasure_requested"`
+}
 type RealmRemovalRecord struct {
-	Schema       string            `json:"schema"`
-	OperationID  string            `json:"operation_id"`
-	RealmID      string            `json:"realm_id"`
-	Scope        RealmRemovalScope `json:"scope"`
-	OTPHash      string            `json:"otp_hash,omitempty"`
-	AttemptsLeft int               `json:"attempts_left"`
-	State        RealmRemovalState `json:"state"`
-	CreatedAt    time.Time         `json:"created_at"`
-	ExpiresAt    time.Time         `json:"expires_at"`
+	Schema       string              `json:"schema"`
+	OperationID  string              `json:"operation_id"`
+	RealmID      string              `json:"realm_id"`
+	Scope        RealmRemovalScope   `json:"scope"`
+	Request      RealmRemovalRequest `json:"request"`
+	OTPHash      string              `json:"otp_hash,omitempty"`
+	AttemptsLeft int                 `json:"attempts_left"`
+	State        RealmRemovalState   `json:"state"`
+	CreatedAt    time.Time           `json:"created_at"`
+	ExpiresAt    time.Time           `json:"expires_at"`
 }
 
 const realmRemovalSchema = "filees.realm-removal/v1"
 
-func (s RealmRemovalStore) Begin(realmID string, scope RealmRemovalScope) (RealmRemovalRecord, string, error) {
+func (s RealmRemovalStore) Begin(realmID string, scope RealmRemovalScope, request RealmRemovalRequest) (RealmRemovalRecord, string, error) {
 	if err := s.valid(); err != nil {
 		return RealmRemovalRecord{}, "", err
 	}
@@ -61,12 +67,17 @@ func (s RealmRemovalStore) Begin(realmID string, scope RealmRemovalScope) (Realm
 	if err := validateScope(scope); err != nil {
 		return RealmRemovalRecord{}, "", err
 	}
+	email, err := onboarding.CanonicalEmail(request.NotificationEmail)
+	if err != nil {
+		return RealmRemovalRecord{}, "", errors.New("realm removal notification email is invalid")
+	}
+	request.NotificationEmail = email
 	now := s.now()
 	token, err := newRealmRemovalOTP()
 	if err != nil {
 		return RealmRemovalRecord{}, "", err
 	}
-	record := RealmRemovalRecord{Schema: realmRemovalSchema, OperationID: uuid.NewString(), RealmID: realmID, Scope: scope, OTPHash: s.hash(token), AttemptsLeft: s.Attempts, State: RealmRemovalAwaitingConfirmation, CreatedAt: now, ExpiresAt: now.Add(s.TTL)}
+	record := RealmRemovalRecord{Schema: realmRemovalSchema, OperationID: uuid.NewString(), RealmID: realmID, Scope: scope, Request: request, OTPHash: s.hash(token), AttemptsLeft: s.Attempts, State: RealmRemovalAwaitingConfirmation, CreatedAt: now, ExpiresAt: now.Add(s.TTL)}
 	err = WithFileLock(filepath.Join(s.Root, ".realm-removal.lock"), func() error {
 		if err := os.MkdirAll(s.Root, 0700); err != nil {
 			return err

@@ -78,15 +78,22 @@ type MobilePairingMinter interface {
 	CreatePairing(realmID string, repos []MobilePairingRepoGrant) (token string, expiresAt time.Time, err error)
 }
 
+// ClientDetacher revokes the authenticated installation's server credential.
+// Its target is the forced-command session client ID, never ticket data.
+type ClientDetacher interface {
+	DetachClient(context.Context, string) (int64, error)
+}
+
 type Worker struct {
-	Backend       Backend
-	Activator     RepositoryActivator
-	Store         ResultStore
-	Capacity      CapacityChecker
-	Reservations  ReservationLedger
-	MobilePairing MobilePairingMinter
-	Aliases       RealmAliasStore
-	Now           func() time.Time
+	Backend        Backend
+	Activator      RepositoryActivator
+	Store          ResultStore
+	Capacity       CapacityChecker
+	Reservations   ReservationLedger
+	MobilePairing  MobilePairingMinter
+	Aliases        RealmAliasStore
+	ClientDetacher ClientDetacher
+	Now            func() time.Time
 }
 
 func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
@@ -99,7 +106,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketDetachClient {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -113,6 +120,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.Type == control.TicketResolveOwnerLabels {
 		return w.resolveOwnerLabels(ctx, ticket)
+	}
+	if ticket.Type == control.TicketDetachClient {
+		return w.detachClient(ctx, session, ticket)
 	}
 	if w.Store == nil {
 		return control.Result{}, errors.New("repository result store is required")
@@ -163,6 +173,17 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 		err = w.Store.Save(result)
 	}
 	return result, err
+}
+
+func (w *Worker) detachClient(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.ClientDetacher == nil {
+		return w.failure(ticket, "CLIENT_DETACH_UNAVAILABLE", "client detach is unavailable")
+	}
+	revision, err := w.ClientDetacher.DetachClient(ctx, session.ClientID)
+	if err != nil {
+		return w.retryable(ticket, "CLIENT_DETACH_RETRY", err.Error())
+	}
+	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.DetachClientResult{ServiceRevision: revision}, w.now())
 }
 
 func (w *Worker) claimRealmAlias(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {

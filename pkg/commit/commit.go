@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"filees/internal/durable"
 	"filees/pkg/activity"
 	"filees/pkg/client"
 	contract "filees/pkg/contract/v1"
@@ -1338,7 +1339,10 @@ func atomicWriteJSONSlice(path string, v any) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return durable.SyncDirectory(dir)
 }
 
 // --- helpers ---
@@ -1377,7 +1381,10 @@ func atomicWriteString(path string, data string) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return durable.SyncDirectory(d)
 }
 
 // dedup usuwa duplikaty ścieżek (REL, POSIX).

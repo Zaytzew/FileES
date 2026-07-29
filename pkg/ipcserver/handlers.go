@@ -9,6 +9,7 @@ import (
 	"time"
 
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/talk"
 )
 
 // dispatch routes a validated request to the appropriate handler.
@@ -35,6 +36,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleActivationFinish(req)
 	case contract.CmdRealmAliasClaim:
 		return s.handleRealmAliasClaim(req)
+	case contract.CmdServerDetach:
+		return s.handleServerDetach(req)
 	case contract.CmdMobilePairingBegin:
 		return s.handleMobilePairingBegin(req)
 	case contract.CmdRepoList:
@@ -72,6 +75,30 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleServerDetach(req contract.Request) contract.Response {
+	service := s.serverDetachService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "SERVER-0001", "ERROR", "NONE", "server.detach_unavailable", nil)
+	}
+	var payload contract.ServerDetachPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	_, active := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !active {
+		return contract.ErrResponse(req.RequestID, "SERVER-0002", "ERROR", "NONE", "server.not_activated", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
+	if err := service.Detach(ctx, payload.ServerID); err != nil {
+		return contract.ErrResponse(req.RequestID, "SERVER-1001", "ERROR", "REQUIRE_ACTION", "server.detach_failed", nil)
+	}
+	s.RemoveServer(payload.ServerID)
+	return contract.OKResponse(req.RequestID, contract.ServerDetachResult{ServerID: payload.ServerID})
 }
 
 func (s *Server) handleRepoReservationList(req contract.Request) contract.Response {
@@ -163,6 +190,7 @@ func (s *Server) handleRealmAliasClaim(req contract.Request) contract.Response {
 	if err != nil {
 		// Keep the local IPC equally non-enumerating: callers are never told
 		// whether a candidate exists or merely violates server policy.
+		talk.With("realm-alias:" + payload.ServerID).Warnf("claim failed: %v", err)
 		return contract.ErrResponse(req.RequestID, "REALM-1001", "ERROR", "REQUIRE_ACTION", "realm.alias_rejected", nil)
 	}
 	activation.RealmAlias = alias

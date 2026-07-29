@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"filees/internal/durable"
 )
 
 const Schema = "filees.activity/v1"
@@ -188,12 +190,7 @@ func (j *Journal) persist() error {
 	if err := os.Rename(tmp, j.path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(j.path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return durable.SyncDirectory(filepath.Dir(j.path))
 }
 
 func validate(entry Entry) error {

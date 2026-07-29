@@ -63,3 +63,27 @@ func TestListDiscoversSortedCompleteProfiles(t *testing.T) {
 		t.Fatalf("profiles=%+v", profiles)
 	}
 }
+
+func TestRemoveDeletesOnlySelectedProfileDirectory(t *testing.T) {
+	root := t.TempDir()
+	for _, serverID := range []string{"office", "home"} {
+		if err := os.MkdirAll(filepath.Join(root, serverID, "identity"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, serverID, "identity", "id_ed25519"), []byte("private"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Remove(root, "office"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "office")); !os.IsNotExist(err) {
+		t.Fatalf("removed profile stat error=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "home", "identity", "id_ed25519")); err != nil {
+		t.Fatalf("other profile was affected: %v", err)
+	}
+	if err := Remove(root, "../escape"); err == nil {
+		t.Fatal("accepted escaping profile ID")
+	}
+}

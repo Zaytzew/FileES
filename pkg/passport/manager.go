@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"filees/internal/durable"
+
 	"github.com/google/uuid"
 )
 
@@ -630,10 +632,5 @@ func (m *Manager) saveLocked() error {
 	if err := os.Rename(name, m.storePath); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(m.storePath))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return durable.SyncDirectory(filepath.Dir(m.storePath))
 }

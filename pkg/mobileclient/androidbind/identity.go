@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"filees/internal/durable"
+
 	"golang.org/x/crypto/ssh"
 )
 
@@ -91,12 +93,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return durable.SyncDirectory(dir)
 }
 
 func zero(b []byte) {

@@ -19,6 +19,7 @@ const (
 	IntentUpdateApply      IntentKind = "update_apply"
 	IntentDetachRepository IntentKind = "detach_repository"
 	IntentDeleteRepository IntentKind = "delete_repository"
+	IntentDetachServer     IntentKind = "detach_server"
 	IntentRestartFileES    IntentKind = "restart_filees"
 	IntentShutdownFileES   IntentKind = "shutdown_filees"
 )

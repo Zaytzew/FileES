@@ -16,6 +16,7 @@ type Fake struct {
 	ShowInfoFunc        func(context.Context, platform.InfoRequest) error
 	ConfirmFunc         func(context.Context, platform.ConfirmRequest) (bool, error)
 	ReservationsFunc    func(context.Context, platform.ReservationDialogRequest) (platform.ReservationDialogResult, error)
+	SettingsFunc        func(context.Context, platform.SettingsDialogRequest) error
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
 	SetAutostartFunc    func(context.Context, platform.AutostartSpec, bool) error
@@ -28,6 +29,7 @@ type Fake struct {
 	InfoRequests        []platform.InfoRequest
 	ConfirmRequests     []platform.ConfirmRequest
 	ReservationRequests []platform.ReservationDialogRequest
+	SettingsRequests    []platform.SettingsDialogRequest
 	Notifications       []platform.Notification
 	StatusRequests      []platform.AutostartSpec
 	AutostartSets       []AutostartSet
@@ -42,6 +44,17 @@ func (f *Fake) ShowReservations(ctx context.Context, request platform.Reservatio
 		return fn(ctx, request)
 	}
 	return platform.ReservationDialogResult{Action: platform.ReservationDialogClose}, nil
+}
+
+func (f *Fake) ShowSettings(ctx context.Context, request platform.SettingsDialogRequest) error {
+	f.mu.Lock()
+	f.SettingsRequests = append(f.SettingsRequests, request)
+	fn := f.SettingsFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return nil
 }
 
 func (f *Fake) PickFolder(ctx context.Context, request platform.PickFolderRequest) (platform.PickFolderResult, error) {
@@ -159,6 +172,7 @@ func (f *Fake) Snapshot() Snapshot {
 		InfoRequests:        append([]platform.InfoRequest(nil), f.InfoRequests...),
 		ConfirmRequests:     append([]platform.ConfirmRequest(nil), f.ConfirmRequests...),
 		ReservationRequests: append([]platform.ReservationDialogRequest(nil), f.ReservationRequests...),
+		SettingsRequests:    append([]platform.SettingsDialogRequest(nil), f.SettingsRequests...),
 		Notifications:       append([]platform.Notification(nil), f.Notifications...),
 		StatusRequests:      append([]platform.AutostartSpec(nil), f.StatusRequests...),
 		AutostartSets:       append([]AutostartSet(nil), f.AutostartSets...),
@@ -173,6 +187,7 @@ type Snapshot struct {
 	InfoRequests        []platform.InfoRequest
 	ConfirmRequests     []platform.ConfirmRequest
 	ReservationRequests []platform.ReservationDialogRequest
+	SettingsRequests    []platform.SettingsDialogRequest
 	Notifications       []platform.Notification
 	StatusRequests      []platform.AutostartSpec
 	AutostartSets       []AutostartSet

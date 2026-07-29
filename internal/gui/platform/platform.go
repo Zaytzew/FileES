@@ -2,7 +2,10 @@
 // It contains no platform implementation and no daemon/IPC concepts.
 package platform
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Backend is the complete set of operating-system services required by the
 // tray application. Consumers should depend on the smaller embedded interfaces
@@ -13,6 +16,7 @@ type Backend interface {
 	FilePicker
 	Prompter
 	ReservationBrowser
+	SettingsBrowser
 	Notifier
 	Autostart
 }
@@ -28,6 +32,54 @@ type Prompter interface {
 // all SVN work remain in the GUI action/daemon layers.
 type ReservationBrowser interface {
 	ShowReservations(ctx context.Context, request ReservationDialogRequest) (ReservationDialogResult, error)
+}
+
+// SettingsBrowser renders the read-only settings overview. Actions are kept
+// out of this boundary until the controller has validated the user's intent.
+type SettingsBrowser interface {
+	ShowSettings(ctx context.Context, request SettingsDialogRequest) error
+}
+
+type SettingsDialogRequest struct {
+	Title   string
+	Text    string
+	Servers []SettingsServer
+}
+
+type SettingsServer struct {
+	Name, Address, Realm, ClientID string
+	Folders                        []SettingsFolder
+}
+
+type SettingsFolder struct {
+	Name, LocalPath, State, Access string
+}
+
+// SettingsText is the accessible, compact fallback used by platforms that do
+// not yet have a tabular settings surface.
+func SettingsText(request SettingsDialogRequest) string {
+	lines := make([]string, 0, 4+len(request.Servers)*4)
+	if strings.TrimSpace(request.Text) != "" {
+		lines = append(lines, request.Text)
+	}
+	for _, server := range request.Servers {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, "Serwer: "+server.Name, "Adres: "+server.Address, "Realm: "+server.Realm, "ID klienta: "+server.ClientID)
+		if len(server.Folders) == 0 {
+			lines = append(lines, "Foldery: brak")
+			continue
+		}
+		lines = append(lines, "Foldery:")
+		for _, folder := range server.Folders {
+			lines = append(lines, "• "+folder.Name, "  "+folder.LocalPath+" — "+folder.State+", "+folder.Access)
+		}
+	}
+	if len(lines) == 0 {
+		return "Brak aktywnych serwerów FileES."
+	}
+	return strings.Join(lines, "\n")
 }
 
 type ReservationDialogRequest struct {

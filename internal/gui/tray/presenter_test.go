@@ -270,6 +270,13 @@ func TestBuildMenuHeaderShowsAtLeastOneActiveServer(t *testing.T) {
 	}
 }
 
+func TestBuildMenuExposesSettingsAsTheManagementEntryPoint(t *testing.T) {
+	item := findItem(t, BuildMenu(app.ViewModel{}).Items, "action.settings")
+	if item.Title != "Ustawienia FileES…" || item.Intent == nil || item.Intent.Kind != IntentSettings {
+		t.Fatalf("settings item = %#v", item)
+	}
+}
+
 func TestBuildMenuDoesNotSynthesizeDefaultServer(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{Connected: true, Repos: []app.RepoViewModel{{ID: "orphan"}}})
 	if hasItem(menu.Items, "server.default") || !hasItem(menu.Items, "servers.empty") {

@@ -55,6 +55,7 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 	}
 	model.Items = append(model.Items,
 		separator("sep.actions"),
+		actionItem("action.settings", "Ustawienia FileES…", "Zarządzaj serwerami i folderami FileES", Intent{Kind: IntentSettings}),
 		actionItem("action.activate", "Aktywuj klienta na nowym serwerze…", "Dodaj aktywację FileES kodem z e-maila", Intent{Kind: IntentActivate}),
 		actionItem("action.reconnect", "Połącz ponownie", "Odśwież połączenie z daemonem", Intent{Kind: IntentReconnect}),
 	)

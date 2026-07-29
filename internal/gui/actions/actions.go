@@ -139,6 +139,7 @@ type Config struct {
 	Reservations       ReservationManager
 	RealmAliases       RealmAliasManager
 	ReservationBrowser platform.ReservationBrowser
+	SettingsBrowser    platform.SettingsBrowser
 	Reconnect          func() // nil → reconnect intent is a no-op
 	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
 	// after a successful mutation whose result changes tray eligibility.
@@ -208,6 +209,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startRealmAlias(ctx, intent.ServerID)
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
+	case tray.IntentSettings:
+		c.startSettings(ctx)
 	case tray.IntentReservations:
 		c.startReservations(ctx)
 	case tray.IntentCreateRepository:
@@ -228,6 +231,97 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startStackLifecycle(ctx, true)
 	case tray.IntentShutdownFileES:
 		c.startStackLifecycle(ctx, false)
+	}
+}
+
+func (c *Controller) startSettings(ctx context.Context) {
+	if c.cfg.SettingsBrowser == nil || !c.beginOperation("settings") {
+		return
+	}
+	request := settingsDialogRequest(c.cfg.ViewModel())
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation("settings")
+		if err := c.cfg.SettingsBrowser.ShowSettings(ctx, request); err != nil && ctx.Err() == nil {
+			c.notify(ctx, platform.Notification{ID: "settings", Group: "settings", Title: "Nie udało się otworzyć ustawień FileES", Body: err.Error(), Urgency: platform.UrgencyCritical})
+		}
+	}()
+}
+
+func settingsDialogRequest(vm app.ViewModel) platform.SettingsDialogRequest {
+	request := platform.SettingsDialogRequest{Title: "Ustawienia FileES", Text: "Serwery i foldery powiązane z tym klientem."}
+	if len(vm.Servers) == 0 {
+		request.Text = "Brak aktywnych serwerów FileES. Użyj „Aktywuj klienta na nowym serwerze…”, aby dodać pierwszy serwer."
+		return request
+	}
+	for _, server := range vm.Servers {
+		name := server.DisplayName
+		if strings.TrimSpace(name) == "" {
+			name = server.ID
+		}
+		address := server.Address
+		if address == "" {
+			address = "brak danych"
+		} else if server.SSHPort > 0 {
+			address = fmt.Sprintf("%s:%d", address, server.SSHPort)
+		}
+		realm := server.RealmAlias
+		if realm == "" {
+			realm = "alias nieustawiony"
+		}
+		if server.RealmID != "" {
+			realm += " (" + server.RealmID + ")"
+		}
+		clientID := server.ClientID
+		if clientID == "" {
+			clientID = "brak danych"
+		}
+		row := platform.SettingsServer{Name: name, Address: address, Realm: realm, ClientID: clientID}
+		for _, repo := range server.Repos {
+			repoName := repo.DisplayName
+			if strings.TrimSpace(repoName) == "" {
+				repoName = repo.ID
+			}
+			path := repo.LocalPath
+			if path == "" {
+				path = "brak lokalnego folderu"
+			}
+			state := settingsRepositoryState(repo)
+			access := "tylko odczyt"
+			if repo.Access == "rw" {
+				access = "odczyt i zapis"
+			}
+			row.Folders = append(row.Folders, platform.SettingsFolder{Name: repoName, LocalPath: path, State: state, Access: access})
+		}
+		request.Servers = append(request.Servers, row)
+	}
+	return request
+}
+
+func settingsRepositoryState(repo app.RepoViewModel) string {
+	if !repo.Attached {
+		return "nieprzypięte lokalnie"
+	}
+	switch repo.DisplayState() {
+	case app.RepoDisplayActive:
+		return "aktywne"
+	case app.RepoDisplayBusy, app.RepoDisplayInitializing, app.RepoDisplayBaselining:
+		return "praca w toku"
+	case app.RepoDisplayPaused:
+		return "wstrzymane"
+	case app.RepoDisplayStopping:
+		return "zatrzymywanie"
+	case app.RepoDisplayOffline:
+		return "offline"
+	case app.RepoDisplayAttention:
+		return "wymaga uwagi"
+	case app.RepoDisplayDisabled:
+		return "wyłączone"
+	case app.RepoDisplayRevoked:
+		return "dostęp cofnięty"
+	default:
+		return "stan nieznany"
 	}
 }
 

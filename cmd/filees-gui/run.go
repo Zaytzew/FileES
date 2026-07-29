@@ -410,6 +410,7 @@ func run(parent context.Context, deps dependencies) error {
 		Reservations:       reservations,
 		RealmAliases:       realmAliases,
 		ReservationBrowser: deps.platform,
+		SettingsBrowser:    deps.platform,
 		Reconnect:          guiApp.Reconnect,
 		Refresh:            guiApp.Refresh,
 		PrepareRestart:     notificationPolicy.SuppressConnectionTransitions,

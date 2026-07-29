@@ -1,5 +1,21 @@
 # FileES
 
+> ## ⚠️ Wersja robocza — nie do użytku
+>
+> **To nie jest wydanie. To nie jest beta. To jest robocza wersja roboczego systemu, publikowana wyłącznie po to, żeby kod dało się obejrzeć.**
+>
+> - Nie ma tu żadnej wersji stabilnej, żadnego wsparcia i żadnej gwarancji — ani działania, ani bezpieczeństwa, ani zachowania danych.
+> - Formaty na dysku, protokoły, nazwy poleceń i schematy zmieniają się bez zapowiedzi i bez ścieżki migracji.
+> - Nie należy tego wdrażać na maszynie produkcyjnej ani powierzać temu danych, których utrata byłaby problemem.
+> - Kod jest ciągle w trakcie audytu i przeglądów; znane defekty bywają otwarte tygodniami, bo priorytet ma projekt, nie polerowanie.
+> - Wewnętrzne dokumenty projektowe, raporty z audytu i notatki robocze **nie są publikowane** — repozytorium git jest filtrowanym lustrem repozytorium SVN i zawiera wyłącznie kod, instrukcję i pliki readme. Odnośniki do dokumentów wewnętrznych poniżej nie zadziałają.
+>
+> Zgłoszenia i pull requesty nie są oczekiwane i mogą pozostać bez odpowiedzi.
+>
+> ---
+>
+> **English:** this is a work-in-progress draft of a work-in-progress system, published only so the code can be looked at. It is not a release, has no stable version, no support and no guarantees of any kind — including security and data integrity. On-disk formats, protocols and schemas change without notice or migration. Do not deploy it and do not trust it with data you care about. Internal design and audit documents are deliberately not published; this git repository is a filtered mirror of an SVN repository and contains code, the manual and readme files only. Issues and pull requests are not expected and may go unanswered.
+
 Szczegółowy opis przepływu klienta, invariants, zachowania po awarii, zweryfikowanych edge cases i roadmapy testów znajduje się w [CLIENT_MECHANICS.md](CLIENT_MECHANICS.md).
 
 Raport końcowy audytu i wnioski z testów chaosowych znajduje się w [CLIENT_AUDIT_REPORT.md](CLIENT_AUDIT_REPORT.md). Dokumentację edit-passport uzupełniają [raport implementacji](EDIT_PASSPORT_IMPLEMENTATION_REPORT.md) i [raport testów](EDIT_PASSPORT_TEST_REPORT.md).

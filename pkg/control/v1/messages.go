@@ -38,6 +38,13 @@ const (
 	// supplied one - the worker resolves realm_id from the authenticated
 	// session, same discipline as every other ticket type here).
 	TicketMobilePairing TicketType = "MOBILE_PAIRING"
+	// TicketRealmRemoveRequest starts the OTP-protected removal of the
+	// authenticated realm's FileES participation. The payload intentionally
+	// contains neither a realm ID nor any repository/client target.
+	TicketRealmRemoveRequest TicketType = "REALM_REMOVE_REQUEST"
+	// TicketRealmRemoveConfirm consumes the OTP for the same operation_id.
+	// The server owns every destructive target from the request-time snapshot.
+	TicketRealmRemoveConfirm TicketType = "REALM_REMOVE_CONFIRM"
 )
 
 type ResultStatus string
@@ -135,6 +142,23 @@ type ClientDeactivateResult struct {
 }
 type DetachClientPayload = ClientDeactivatePayload
 type DetachClientResult = ClientDeactivateResult
+
+type RealmRemoveRequestPayload struct {
+	NotificationEmail string `json:"notification_email"`
+	ErasureRequested  bool   `json:"erasure_requested"`
+}
+type RealmRemoveRequestResult struct {
+	ExpiresAt            string `json:"expires_at"`
+	ActiveClientCount    int    `json:"active_client_count"`
+	OwnedRepositoryCount int    `json:"owned_repository_count"`
+	ForeignGrantCount    int    `json:"foreign_grant_count"`
+}
+type RealmRemoveConfirmPayload struct {
+	OTP string `json:"otp"`
+}
+type RealmRemoveConfirmResult struct {
+	State string `json:"state"`
+}
 
 func NewTicket(operationID, requestID string, typ TicketType, clientID string, payload any, now time.Time) (Ticket, error) {
 	raw, err := json.Marshal(payload)
@@ -274,6 +298,22 @@ func (t Ticket) Validate() error {
 		if err := decodeStrict(t.Payload, &p); err != nil {
 			return fmt.Errorf("CLIENT_DEACTIVATE payload: %w", err)
 		}
+	case TicketRealmRemoveRequest:
+		var p RealmRemoveRequestPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("REALM_REMOVE_REQUEST payload: %w", err)
+		}
+		if _, err := validatePlainEmail(p.NotificationEmail); err != nil {
+			return fmt.Errorf("REALM_REMOVE_REQUEST notification_email: %w", err)
+		}
+	case TicketRealmRemoveConfirm:
+		var p RealmRemoveConfirmPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("REALM_REMOVE_CONFIRM payload: %w", err)
+		}
+		if !validRealmRemovalOTP(p.OTP) {
+			return errors.New("REALM_REMOVE_CONFIRM otp is invalid")
+		}
 	default:
 		return fmt.Errorf("unsupported ticket type %q", t.Type)
 	}
@@ -293,7 +333,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -400,6 +440,25 @@ func validateSuccessPayload(r Result) error {
 		if result.ServiceRevision < 1 {
 			return errors.New("CLIENT_DEACTIVATE result service revision must be positive")
 		}
+	case TicketRealmRemoveRequest:
+		var result RealmRemoveRequestResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("REALM_REMOVE_REQUEST result: %w", err)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, result.ExpiresAt); err != nil {
+			return fmt.Errorf("invalid REALM_REMOVE_REQUEST expiry: %w", err)
+		}
+		if result.ActiveClientCount < 0 || result.OwnedRepositoryCount < 0 || result.ForeignGrantCount < 0 {
+			return errors.New("REALM_REMOVE_REQUEST result counts cannot be negative")
+		}
+	case TicketRealmRemoveConfirm:
+		var result RealmRemoveConfirmResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("REALM_REMOVE_CONFIRM result: %w", err)
+		}
+		if result.State != "deleting" && result.State != "recovery_ready" && result.State != "revoke_all_clients" && result.State != "completed" {
+			return errors.New("REALM_REMOVE_CONFIRM result state is invalid")
+		}
 	}
 	return nil
 }
@@ -430,4 +489,29 @@ func validateUUID(field, value string) error {
 		return fmt.Errorf("%s must be UUID: %w", field, err)
 	}
 	return nil
+}
+
+func validatePlainEmail(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if len(value) == 0 || len(value) > 254 || strings.ContainsAny(value, "<>\r\n\t ") {
+		return "", errors.New("must be a plain mailbox address")
+	}
+	at := strings.LastIndexByte(value, '@')
+	if at <= 0 || at == len(value)-1 || strings.Count(value, "@") != 1 {
+		return "", errors.New("must be a plain mailbox address")
+	}
+	return value, nil
+}
+
+func validRealmRemovalOTP(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) < 12 || len(value) > 64 {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'A' && r <= 'Z') && !(r >= '2' && r <= '7') {
+			return false
+		}
+	}
+	return true
 }

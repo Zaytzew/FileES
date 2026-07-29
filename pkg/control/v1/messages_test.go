@@ -164,3 +164,37 @@ func TestInitialCommitRepoIDMustBeUUID(t *testing.T) {
 		t.Fatalf("INITIAL_COMMIT rejected a valid UUID repo_id: %v", err)
 	}
 }
+
+func TestRealmRemovalContractCarriesNoTargetScope(t *testing.T) {
+	operationID, requestID := uuid.NewString(), uuid.NewString()
+	ticket, err := NewTicket(operationID, requestID, TicketRealmRemoveRequest, "client-a", RealmRemoveRequestPayload{NotificationEmail: "user@example.net", ErasureRequested: true}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(ticket.Payload), "realm") || strings.Contains(string(ticket.Payload), "repo") || strings.Contains(string(ticket.Payload), "client") {
+		t.Fatalf("realm-removal request exposed server-owned target: %s", ticket.Payload)
+	}
+	if _, err := NewSuccessResult(operationID, requestID, TicketRealmRemoveRequest, RealmRemoveRequestResult{ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano), ActiveClientCount: 2, OwnedRepositoryCount: 3, ForeignGrantCount: 1}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTicket(operationID, uuid.NewString(), TicketRealmRemoveConfirm, "client-a", RealmRemoveConfirmPayload{OTP: "ABCDEFGH234567"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTicket(operationID, uuid.NewString(), TicketRealmRemoveConfirm, "client-a", RealmRemoveConfirmPayload{OTP: "bad-code"}, time.Now()); err == nil {
+		t.Fatal("malformed realm removal OTP accepted")
+	}
+	if _, err := NewSuccessResult(operationID, requestID, TicketRealmRemoveConfirm, RealmRemoveConfirmResult{State: "deleting"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRealmRemovalRequestRejectsForgedScope(t *testing.T) {
+	ticket, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketRealmRemoveRequest, "client-a", RealmRemoveRequestPayload{NotificationEmail: "user@example.net"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket.Payload = json.RawMessage(`{"notification_email":"user@example.net","realm_id":"` + uuid.NewString() + `"}`)
+	if err := ticket.Validate(); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("forged realm scope accepted: %v", err)
+	}
+}

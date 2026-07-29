@@ -3,7 +3,9 @@ package repoworker
 import (
 	"context"
 	"errors"
+	"filees/internal/durable"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,6 +73,25 @@ func (e ServerEffects) CreateFSFS(ctx context.Context, repoID, operationID strin
 }
 func (e ServerEffects) PublishAuthority(ctx context.Context, repoID, realmID, name, url string) error {
 	return e.Authority.Publish(ctx, repoID, realmID, name, url)
+}
+func (e ServerEffects) RollbackCreate(ctx context.Context, repoID, realmID string) error {
+	if !filepath.IsAbs(e.RepositoriesRoot) || e.Authority == nil {
+		return errors.New("repository rollback is incomplete")
+	}
+	if _, err := uuid.Parse(repoID); err != nil {
+		return errors.New("repository rollback repo ID is invalid")
+	}
+	if err := e.Authority.Delete(ctx, repoID, realmID); err != nil {
+		return fmt.Errorf("withdraw failed repository authority: %w", err)
+	}
+	path := filepath.Join(e.RepositoriesRoot, repoID)
+	if rel, err := filepath.Rel(e.RepositoriesRoot, path); err != nil || rel != repoID {
+		return errors.New("repository rollback path escapes root")
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return err
+	}
+	return durable.SyncDirectory(e.RepositoriesRoot)
 }
 func (e ServerEffects) WithdrawAuthority(ctx context.Context, repoID, realmID string) error {
 	if e.Authority == nil {

@@ -31,6 +31,10 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		fmt.Fprintln(stderr, "repository worker: repository configuration is incomplete")
 		return ExitConfig
 	}
+	if err := repoworker.ValidateURLPrefix(r.URLPrefix); err != nil {
+		report(stderr, "repository worker url_prefix", err)
+		return ExitConfig
+	}
 	archiveRoot := r.DeletionArchiveRoot
 	if archiveRoot == "" {
 		archiveRoot = filepath.Join(r.ResultsRoot, "deleted-repositories")
@@ -60,6 +64,9 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}
 	if err := repoworker.WithFileLock(filepath.Join(r.ResultsRoot, ".worker.lock"), func() error {
+		if err := backend.ReapFailedCreates(context.Background()); err != nil {
+			return err
+		}
 		if _, err := repoworker.ReapDeletionArchives(archiveRoot, time.Now()); err != nil {
 			return err
 		}

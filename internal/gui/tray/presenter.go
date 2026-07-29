@@ -169,20 +169,12 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	if strings.TrimSpace(name) == "" {
 		name = server.ID
 	}
-	children := []MenuItemModel{
-		actionItem("server."+server.ID+".info", "Informacje o serwerze…", "Pokaż adres, identyfikatory i uprawnienia klienta", Intent{Kind: IntentServerInfo, ServerID: server.ID}),
-	}
+	children := []MenuItemModel{}
 	if server.RealmID != "" && server.RealmAlias == "" && vm.CanClaimRealmAlias() {
 		children = append(children, actionItem("server."+server.ID+".realm_alias", "Ustaw stały alias…", "Ustaw niezmienny pseudonim widoczny przy blokadach", Intent{Kind: IntentSetRealmAlias, ServerID: server.ID}))
 	}
-	if vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
-		children = append(children, actionItem("server."+server.ID+".create", "Dodaj folder do FileES…", "Utwórz nowe repozytorium z lokalnego katalogu", Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
-	}
 	if vm.Connected && !vm.Stale {
 		children = append(children, actionItem("server."+server.ID+".pair_mobile", "Sparuj urządzenie mobilne…", "Wygeneruj kod QR do parowania telefonu", Intent{Kind: IntentPairMobileDevice, ServerID: server.ID}))
-	}
-	if vm.CanDetachServer() {
-		children = append(children, actionItem("server."+server.ID+".detach", "Odłącz ten serwer…", "Odłącz wszystkie foldery i usuń dostęp tego klienta", Intent{Kind: IntentDetachServer, ServerID: server.ID}))
 	}
 	visibleRepos := 0
 	for _, repo := range server.Repos {
@@ -248,36 +240,8 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 				item.Children = append(item.Children, disabledItem("repo."+repo.ID+".unlock", "Odblokuj pliki…"))
 			}
 		}
-		if lifecycle := repositoryLifecycleItems(vm, repo); len(lifecycle) > 0 {
-			item.Children = append(item.Children, separator("repo."+repo.ID+".lifecycle"))
-			item.Children = append(item.Children, lifecycle...)
-		}
 	}
 	return item
-}
-
-func repositoryLifecycleItems(vm app.ViewModel, repo app.RepoViewModel) []MenuItemModel {
-	if !repo.Attached || strings.TrimSpace(repo.LocalPath) == "" || repo.AttachmentPolicy == "required" {
-		return nil
-	}
-	items := make([]MenuItemModel, 0, 2)
-	if vm.CanDetachRepository() {
-		items = append(items, actionItem(
-			"repo."+repo.ID+".detach",
-			"Odłącz folder…",
-			"Zatrzymaj synchronizację; lokalne dane pozostaną",
-			Intent{Kind: IntentDetachRepository, RepoID: repo.ID, ServerID: repo.ServerID},
-		))
-	}
-	if vm.CanDeleteRepository() && repositoryOwnedByActiveRealm(vm, repo) {
-		items = append(items, actionItem(
-			"repo."+repo.ID+".delete",
-			"Odłącz trwale…",
-			"Usuń repozytorium z serwera i odłącz lokalny folder",
-			Intent{Kind: IntentDeleteRepository, RepoID: repo.ID, ServerID: repo.ServerID},
-		))
-	}
-	return items
 }
 
 func serverHasRealmAlias(vm app.ViewModel, serverID string) bool {

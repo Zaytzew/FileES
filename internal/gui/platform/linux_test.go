@@ -125,7 +125,7 @@ func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
 		Name: "Biuro", Address: "filees.example:2222", Realm: "acme", ClientID: "client-1",
 		Folders: []SettingsFolder{{Name: "Dokumenty", LocalPath: "/wc/docs", State: "aktywne", Access: "odczyt i zapis"}},
 	}}}
-	if err := backend.ShowSettings(context.Background(), request); err != nil {
+	if _, err := backend.ShowSettings(context.Background(), request); err != nil {
 		t.Fatal(err)
 	}
 	calls := runner.Calls()
@@ -133,7 +133,7 @@ func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
 		t.Fatalf("settings calls = %#v", calls)
 	}
 	args := strings.Join(calls[0].args, "\n")
-	for _, wanted := range []string{"--list", "--column=Serwer", "--column=Folder", "Biuro", "Dokumenty", "/wc/docs", "--ok-label=Zamknij"} {
+	for _, wanted := range []string{"--list", "--column=Serwer", "--column=Folder", "Biuro", "Dokumenty", "/wc/docs", "--ok-label=Wybierz"} {
 		if !strings.Contains(args, wanted) {
 			t.Errorf("settings args missing %q: %s", wanted, args)
 		}

@@ -292,35 +292,78 @@ func (b *LinuxBackend) ShowReservations(ctx context.Context, request Reservation
 // ShowSettings presents the server/folder overview as a native Zenity table.
 // It is deliberately read-only at this stage; later buttons return only an
 // opaque intent to the GUI controller.
-func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) error {
+func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error) {
 	command, err := b.runner.LookPath("zenity")
 	if err != nil {
-		return NewUnavailable("settings_dialog", errors.New("zenity is not installed"))
+		return SettingsDialogResult{}, NewUnavailable("settings_dialog", errors.New("zenity is not installed"))
 	}
 	args := []string{
-		"--list", "--title=" + request.Title, "--text=" + SettingsText(SettingsDialogRequest{Text: request.Text}), "--width=1240", "--height=600",
-		"--column=Serwer", "--column=Adres", "--column=Realm", "--column=Folder", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
-		"--ok-label=Zamknij", "--cancel-label=Zamknij",
+		"--list", "--radiolist", "--title=" + request.Title, "--text=" + SettingsText(SettingsDialogRequest{Text: request.Text}), "--width=1240", "--height=600",
+		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Realm", "--column=Folder", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
+		"--hide-column=2", "--print-column=2", "--ok-label=Wybierz", "--cancel-label=Zamknij",
 	}
 	for _, server := range request.Servers {
 		if len(server.Folders) == 0 {
-			args = append(args, server.Name, server.Address, server.Realm, "Brak folderów", "—", "—", "—")
+			args = append(args, "FALSE", server.ID+"|", server.Name, server.Address, server.Realm, "Brak folderów", "—", "—", "—")
 			continue
 		}
 		for _, folder := range server.Folders {
-			args = append(args, server.Name, server.Address, server.Realm, folder.Name, folder.LocalPath, folder.State, folder.Access)
+			args = append(args, "FALSE", server.ID+"|"+folder.ID, server.Name, server.Address, server.Realm, folder.Name, folder.LocalPath, folder.State, folder.Access)
 		}
 	}
-	if _, err := b.runner.Output(ctx, command, args...); err != nil {
+	output, err := b.runner.Output(ctx, command, args...)
+	selection := strings.TrimSpace(string(output))
+	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
+			return SettingsDialogResult{}, ctxErr
 		}
 		if commandCancelled(err) {
-			return nil
+			return SettingsDialogResult{Action: SettingsDialogClose}, nil
 		}
-		return NewOperationalFailure("settings_dialog", err)
+		return SettingsDialogResult{}, NewOperationalFailure("settings_dialog", err)
 	}
-	return nil
+	serverID, repoID, ok := strings.Cut(selection, "|")
+	if !ok || serverID == "" {
+		return SettingsDialogResult{Action: SettingsDialogClose}, nil
+	}
+	action, err := b.settingsAction(ctx, command, repoID != "")
+	if err != nil || action == SettingsDialogClose {
+		return SettingsDialogResult{Action: action}, err
+	}
+	return SettingsDialogResult{Action: action, ServerID: serverID, RepoID: repoID}, nil
+}
+
+func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder bool) (SettingsDialogAction, error) {
+	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "add_folder", "Dodaj folder do FileES", "FALSE", "detach_server", "Dezaktywuj klienta na serwerze"}
+	if hasFolder {
+		args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder", "FALSE", "delete_repository", "Odłącz trwale repozytorium")
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctx.Err() != nil {
+			return SettingsDialogClose, ctx.Err()
+		}
+		if commandCancelled(err) {
+			return SettingsDialogClose, nil
+		}
+		return SettingsDialogClose, NewOperationalFailure("settings_dialog", err)
+	}
+	return settingsAction(strings.TrimSpace(string(output))), nil
+}
+
+func settingsAction(label string) SettingsDialogAction {
+	switch label {
+	case "Dodaj folder":
+		return SettingsDialogAddFolder
+	case "Odłącz folder":
+		return SettingsDialogDetachFolder
+	case "Odłącz trwale":
+		return SettingsDialogDeleteRepo
+	case "Dezaktywuj klienta":
+		return SettingsDialogDetachServer
+	default:
+		return SettingsDialogClose
+	}
 }
 
 func (b *LinuxBackend) pickerCommand(request PickFilesRequest, initialDir string) (string, []string, error) {

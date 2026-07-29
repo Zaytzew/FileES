@@ -243,8 +243,20 @@ func (c *Controller) startSettings(ctx context.Context) {
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation("settings")
-		if err := c.cfg.SettingsBrowser.ShowSettings(ctx, request); err != nil && ctx.Err() == nil {
+		result, err := c.cfg.SettingsBrowser.ShowSettings(ctx, request)
+		if err != nil && ctx.Err() == nil {
 			c.notify(ctx, platform.Notification{ID: "settings", Group: "settings", Title: "Nie udało się otworzyć ustawień FileES", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		switch result.Action {
+		case platform.SettingsDialogAddFolder:
+			c.startCreateRepository(ctx, result.ServerID)
+		case platform.SettingsDialogDetachFolder:
+			c.startDetachRepository(ctx, result.ServerID, result.RepoID, false)
+		case platform.SettingsDialogDeleteRepo:
+			c.startDetachRepository(ctx, result.ServerID, result.RepoID, true)
+		case platform.SettingsDialogDetachServer:
+			c.startDetachServer(ctx, result.ServerID)
 		}
 	}()
 }
@@ -277,7 +289,7 @@ func settingsDialogRequest(vm app.ViewModel) platform.SettingsDialogRequest {
 		if clientID == "" {
 			clientID = "brak danych"
 		}
-		row := platform.SettingsServer{Name: name, Address: address, Realm: realm, ClientID: clientID}
+		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID}
 		for _, repo := range server.Repos {
 			repoName := repo.DisplayName
 			if strings.TrimSpace(repoName) == "" {
@@ -292,7 +304,7 @@ func settingsDialogRequest(vm app.ViewModel) platform.SettingsDialogRequest {
 			if repo.Access == "rw" {
 				access = "odczyt i zapis"
 			}
-			row.Folders = append(row.Folders, platform.SettingsFolder{Name: repoName, LocalPath: path, State: state, Access: access})
+			row.Folders = append(row.Folders, platform.SettingsFolder{ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access})
 		}
 		request.Servers = append(request.Servers, row)
 	}

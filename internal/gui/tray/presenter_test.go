@@ -85,14 +85,8 @@ func TestBuildMenuOffersDetachDeleteAndWholeStackLifecycle(t *testing.T) {
 	if hasItem(serverItem.Children, "repo.docs.detach") || hasItem(serverItem.Children, "repo.docs.delete") {
 		t.Fatalf("folder lifecycle actions must not be duplicated at server level: %+v", serverItem.Children)
 	}
-	if !hasItem(repoItem.Children, "repo.docs.detach") || !hasItem(repoItem.Children, "repo.docs.delete") {
-		t.Fatalf("repository lifecycle actions=%+v", repoItem.Children)
-	}
-	if got := findItem(t, repoItem.Children, "repo.docs.detach").Title; got != "Odłącz folder…" {
-		t.Fatalf("detach label=%q", got)
-	}
-	if got := findItem(t, repoItem.Children, "repo.docs.delete").Title; got != "Odłącz trwale…" {
-		t.Fatalf("delete label=%q", got)
+	if hasItem(repoItem.Children, "repo.docs.detach") || hasItem(repoItem.Children, "repo.docs.delete") {
+		t.Fatalf("folder lifecycle actions must be managed through settings: %+v", repoItem.Children)
 	}
 	if !hasItem(menu.Items, "action.restart_filees") || !hasItem(menu.Items, "action.shutdown_filees") {
 		t.Fatalf("whole-stack lifecycle actions missing: %+v", menu.Items)
@@ -284,15 +278,14 @@ func TestBuildMenuDoesNotSynthesizeDefaultServer(t *testing.T) {
 	}
 }
 
-func TestServerMenuUsesAliasAndExposesInformationDialog(t *testing.T) {
+func TestServerMenuUsesAliasWithoutManagementActions(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "office", Address: "filees.example.net:2222"}}})
 	server := findItem(t, menu.Items, "server.office")
 	if server.Title != "office" {
 		t.Fatalf("server title = %q", server.Title)
 	}
-	info := findItem(t, server.Children, "server.office.info")
-	if info.Intent == nil || info.Intent.Kind != IntentServerInfo || info.Intent.ServerID != "office" {
-		t.Fatalf("server info action = %+v", info)
+	if hasItem(server.Children, "server.office.info") || hasItem(server.Children, "server.office.create") || hasItem(server.Children, "server.office.detach") {
+		t.Fatalf("server management action remains in tray: %+v", server.Children)
 	}
 }
 
@@ -342,7 +335,7 @@ func TestBuildMenuHidesOptionalRepositoryWithoutLocalFolder(t *testing.T) {
 	}
 }
 
-func TestServerPermissionsAreOnlyInInformationDialog(t *testing.T) {
+func TestServerPermissionsAndManagementDoNotClutterTray(t *testing.T) {
 	allowed := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "full", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}})
 	allowedServer := findItem(t, allowed.Items, "server.full")
 	if hasItem(allowedServer.Children, "server.full.creation") || hasItem(allowedServer.Children, "server.full.role") {
@@ -353,21 +346,20 @@ func TestServerPermissionsAreOnlyInInformationDialog(t *testing.T) {
 	if hasItem(readOnlyServer.Children, "server.ro.creation") || hasItem(readOnlyServer.Children, "server.ro.role") {
 		t.Fatal("read-only permission metadata clutters tray menu")
 	}
-	if !hasItem(allowedServer.Children, "server.full.info") || !hasItem(readOnlyServer.Children, "server.ro.info") {
-		t.Fatal("server information action is missing")
+	if hasItem(allowedServer.Children, "server.full.info") || hasItem(readOnlyServer.Children, "server.ro.info") {
+		t.Fatal("server information action remains in tray")
 	}
 }
 
-func TestServerCreateRepositoryActionIsPermissionAndFreshnessGated(t *testing.T) {
+func TestServerCreateRepositoryActionIsManagedThroughSettings(t *testing.T) {
 	server := app.ServerViewModel{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}
 	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}})
-	action := findItem(t, findItem(t, menu.Items, "server.office").Children, "server.office.create")
-	if action.Intent == nil || action.Intent.Kind != IntentCreateRepository || action.Intent.ServerID != "office" {
-		t.Fatalf("create action = %#v", action)
+	if hasItem(findItem(t, menu.Items, "server.office").Children, "server.office.create") {
+		t.Fatal("create action remains in tray")
 	}
 	server.ClientRole = contract.ClientRoleReadOnly
 	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create") {
-		t.Fatal("create action visible for read-only client")
+		t.Fatal("create action visible in tray for read-only client")
 	}
 	server.ClientRole = contract.ClientRoleNormal
 	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create") {

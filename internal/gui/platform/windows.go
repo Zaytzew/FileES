@@ -295,8 +295,76 @@ func (b *WindowsBackend) ShowInfo(ctx context.Context, request InfoRequest) erro
 // ShowSettings uses the native information window until the interactive
 // WinForms settings table is introduced. The same complete overview remains
 // available on Windows without exposing lifecycle actions through the tray.
-func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) error {
-	return b.ShowInfo(ctx, InfoRequest{Title: request.Title, Text: SettingsText(request)})
+func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return SettingsDialogResult{}, NewUnavailable("settings_dialog", err)
+	}
+	script, err := buildSettingsDialogScript(request)
+	if err != nil {
+		return SettingsDialogResult{}, NewOperationalFailure("settings_dialog", err)
+	}
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
+	if err != nil {
+		if ctx.Err() != nil {
+			return SettingsDialogResult{}, ctx.Err()
+		}
+		return SettingsDialogResult{}, NewOperationalFailure("settings_dialog", err)
+	}
+	parts := strings.Split(strings.TrimSpace(string(output)), ":")
+	if len(parts) != 3 {
+		return SettingsDialogResult{Action: SettingsDialogClose}, nil
+	}
+	result := SettingsDialogResult{ServerID: parts[1], RepoID: parts[2]}
+	switch parts[0] {
+	case "add":
+		result.Action = SettingsDialogAddFolder
+	case "detach":
+		result.Action = SettingsDialogDetachFolder
+	case "delete":
+		result.Action = SettingsDialogDeleteRepo
+	case "deactivate":
+		result.Action = SettingsDialogDetachServer
+	default:
+		result.Action = SettingsDialogClose
+	}
+	return result, nil
+}
+
+func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
+	type row struct{ ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access string }
+	rows := []row{}
+	for _, s := range request.Servers {
+		if len(s.Folders) == 0 {
+			rows = append(rows, row{s.ID, "", s.Name, s.Address, s.Realm, "Brak folderów", "—", "—", "—"})
+			continue
+		}
+		for _, f := range s.Folders {
+			rows = append(rows, row{s.ID, f.ID, s.Name, s.Address, s.Realm, f.Name, f.LocalPath, f.State, f.Access})
+		}
+	}
+	payload, err := json.Marshal(struct {
+		Title, Text string
+		Rows        []row
+	}{request.Title, request.Text, rows})
+	if err != nil {
+		return "", err
+	}
+	encoded := base64.StdEncoding.EncodeToString(payload)
+	var sb strings.Builder
+	sb.WriteString(dpiAwarenessPrelude)
+	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;")
+	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1200;$f.Height=620;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1150;$l.Height=34;$f.Controls.Add($l);")
+	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1150;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @('ServerID','RepoID','Serwer','Adres','Realm','Folder','Ścieżka','Stan','Dostęp')){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add($r.ServerID,$r.RepoID,$r.Server,$r.Address,$r.Realm,$r.Folder,$r.Path,$r.State,$r.Access)};$g.DataSource=$t;$g.Columns['ServerID'].Visible=$false;$g.Columns['RepoID'].Visible=$false;$f.Controls.Add($g);$script:answer='close';")
+	sb.WriteString("function act($a){if($g.CurrentRow -ne $null){$script:answer=$a+':[string]$g.CurrentRow.Cells['ServerID'].Value+':[string]$g.CurrentRow.Cells['RepoID'].Value;$f.Close()}};")
+	for _, spec := range []struct {
+		label, action string
+		left          int
+	}{{"Dodaj folder", "add", 500}, {"Odłącz folder", "detach", 625}, {"Odłącz trwale", "delete", 750}, {"Dezaktywuj klienta", "deactivate", 875}} {
+		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(spec.label) + ";$b.Width=115;$b.Height=28;$b.Left=" + fmt.Sprint(spec.left) + ";$b.Top=540;$b.Add_Click({act '" + spec.action + "'});$f.Controls.Add($b);")
+	}
+	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1010;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);[void]$f.ShowDialog();$script:answer")
+	return sb.String(), nil
 }
 
 func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (bool, error) {

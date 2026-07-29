@@ -109,6 +109,27 @@ func TestControllerPermanentDeleteRequiresTwoSeparateConfirmations(t *testing.T)
 	}
 }
 
+func TestControllerSettingsRoutesFolderDetachThroughExistingConfirmation(t *testing.T) {
+	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogDetachFolder, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := lifecycleView(contract.CapRepoDetach)
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, Prompter: platformFake, RepositoryDetacher: detacher})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
+	call := awaitCh(t, detacher.calls, "settings detach")
+	if call.serverID != "office" || call.repoID != "repo-1" || call.deleteRepository {
+		t.Fatalf("settings detach call=%+v", call)
+	}
+	if len(platformFake.Snapshot().ConfirmRequests) != 1 {
+		t.Fatalf("settings detach bypassed confirmation: %#v", platformFake.Snapshot())
+	}
+}
+
 func TestControllerPermanentDeleteStopsWhenSecondConfirmationIsRejected(t *testing.T) {
 	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
 	count := 0

@@ -37,7 +37,7 @@ type ReservationBrowser interface {
 // SettingsBrowser renders the read-only settings overview. Actions are kept
 // out of this boundary until the controller has validated the user's intent.
 type SettingsBrowser interface {
-	ShowSettings(ctx context.Context, request SettingsDialogRequest) error
+	ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error)
 }
 
 type SettingsDialogRequest struct {
@@ -47,12 +47,27 @@ type SettingsDialogRequest struct {
 }
 
 type SettingsServer struct {
-	Name, Address, Realm, ClientID string
-	Folders                        []SettingsFolder
+	ID, Name, Address, Realm, ClientID string
+	Folders                            []SettingsFolder
 }
 
 type SettingsFolder struct {
-	Name, LocalPath, State, Access string
+	ID, Name, LocalPath, State, Access string
+}
+
+type SettingsDialogAction string
+
+const (
+	SettingsDialogClose        SettingsDialogAction = "close"
+	SettingsDialogAddFolder    SettingsDialogAction = "add_folder"
+	SettingsDialogDetachFolder SettingsDialogAction = "detach_folder"
+	SettingsDialogDeleteRepo   SettingsDialogAction = "delete_repository"
+	SettingsDialogDetachServer SettingsDialogAction = "detach_server"
+)
+
+type SettingsDialogResult struct {
+	Action           SettingsDialogAction
+	ServerID, RepoID string
 }
 
 // SettingsText is the accessible, compact fallback used by platforms that do

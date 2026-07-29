@@ -42,6 +42,36 @@ type RealmRemovalRequest struct {
 	NotificationEmail string `json:"notification_email"`
 	ErasureRequested  bool   `json:"erasure_requested"`
 }
+
+// RealmRemovalMailState is separate from the irreversible removal state:
+// SMTP acceptance does not establish confirmation, and confirmation must not
+// wait for a later mail retry.
+type RealmRemovalMailState string
+
+const (
+	RealmRemovalMailPending  RealmRemovalMailState = "pending"
+	RealmRemovalMailSending  RealmRemovalMailState = "sending"
+	RealmRemovalMailQueued   RealmRemovalMailState = "queued"
+	RealmRemovalMailFailed   RealmRemovalMailState = "failed"
+	RealmRemovalMailCanceled RealmRemovalMailState = "canceled"
+)
+
+// RealmRemovalMailJob contains the short-lived delivery secret. It never
+// appears in the removal record nor in a control-plane response.
+type RealmRemovalMailJob struct {
+	Schema          string                `json:"schema"`
+	MessageID       string                `json:"message_id"`
+	OperationID     string                `json:"operation_id"`
+	DeliveryAddress string                `json:"delivery_address,omitempty"`
+	OTP             string                `json:"otp,omitempty"`
+	DeliveryState   RealmRemovalMailState `json:"delivery_state"`
+	AttemptID       string                `json:"attempt_id,omitempty"`
+	AttemptedAt     *time.Time            `json:"attempted_at,omitempty"`
+	QueuedAt        *time.Time            `json:"queued_at,omitempty"`
+	LastError       string                `json:"last_error,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
+	ExpiresAt       time.Time             `json:"expires_at"`
+}
 type RealmRemovalRecord struct {
 	Schema       string              `json:"schema"`
 	OperationID  string              `json:"operation_id"`
@@ -56,6 +86,7 @@ type RealmRemovalRecord struct {
 }
 
 const realmRemovalSchema = "filees.realm-removal/v1"
+const realmRemovalMailSchema = "filees.realm-removal-mail/v1"
 
 func (s RealmRemovalStore) Begin(realmID string, scope RealmRemovalScope, request RealmRemovalRequest) (RealmRemovalRecord, string, error) {
 	if err := s.valid(); err != nil {
@@ -78,11 +109,23 @@ func (s RealmRemovalStore) Begin(realmID string, scope RealmRemovalScope, reques
 		return RealmRemovalRecord{}, "", err
 	}
 	record := RealmRemovalRecord{Schema: realmRemovalSchema, OperationID: uuid.NewString(), RealmID: realmID, Scope: scope, Request: request, OTPHash: s.hash(token), AttemptsLeft: s.Attempts, State: RealmRemovalAwaitingConfirmation, CreatedAt: now, ExpiresAt: now.Add(s.TTL)}
+	if err := os.MkdirAll(s.Root, 0700); err != nil {
+		return RealmRemovalRecord{}, "", err
+	}
 	err = WithFileLock(filepath.Join(s.Root, ".realm-removal.lock"), func() error {
-		if err := os.MkdirAll(s.Root, 0700); err != nil {
+		if err := atomicJSON(s.path(record.OperationID), record); err != nil {
 			return err
 		}
-		return atomicJSON(s.path(record.OperationID), record)
+		if err := os.MkdirAll(s.outboxRoot(), 0700); err != nil {
+			_ = os.Remove(s.path(record.OperationID))
+			return err
+		}
+		job := RealmRemovalMailJob{Schema: realmRemovalMailSchema, MessageID: uuid.NewString(), OperationID: record.OperationID, DeliveryAddress: request.NotificationEmail, OTP: token, DeliveryState: RealmRemovalMailPending, CreatedAt: now, ExpiresAt: record.ExpiresAt}
+		if err := atomicJSON(s.mailPath(record.OperationID), job); err != nil {
+			_ = os.Remove(s.path(record.OperationID))
+			return err
+		}
+		return nil
 	})
 	return record, token, err
 }
@@ -130,6 +173,15 @@ func (s RealmRemovalStore) Confirm(operationID, otp string) (RealmRemovalRecord,
 		if err := atomicJSON(s.path(operationID), r); err != nil {
 			return err
 		}
+		// The confirmed operation no longer needs a delivery secret. A sender
+		// that already copied a claimed message may still finish SMTP, but can
+		// no longer update this outbox record as if it were needed.
+		if job, err := s.loadMail(s.mailPath(operationID)); err == nil && (job.DeliveryState == RealmRemovalMailPending || job.DeliveryState == RealmRemovalMailSending) {
+			job.DeliveryState, job.DeliveryAddress, job.OTP, job.AttemptID, job.AttemptedAt = RealmRemovalMailCanceled, "", "", "", nil
+			if err := atomicJSON(s.mailPath(operationID), job); err != nil {
+				return err
+			}
+		}
 		out = r
 		return nil
 	})
@@ -154,6 +206,106 @@ func (s RealmRemovalStore) Load(operationID string) (RealmRemovalRecord, error) 
 		return RealmRemovalRecord{}, errors.New("realm removal record invalid")
 	}
 	return r, nil
+}
+
+// ClaimPendingMail atomically reserves one OTP mail for submission. A stale
+// sending claim is recovered, while a confirmed or expired operation causes
+// its secret to be scrubbed rather than mailed late.
+func (s RealmRemovalStore) ClaimPendingMail(staleAfter time.Duration) (RealmRemovalMailJob, error) {
+	if err := s.mailValid(staleAfter); err != nil {
+		return RealmRemovalMailJob{}, err
+	}
+	var claimed RealmRemovalMailJob
+	err := WithFileLock(filepath.Join(s.Root, ".realm-removal.lock"), func() error {
+		paths, err := filepath.Glob(filepath.Join(s.outboxRoot(), "*.json"))
+		if err != nil {
+			return err
+		}
+		for _, path := range paths {
+			job, err := s.loadMail(path)
+			if err != nil {
+				return err
+			}
+			record, err := s.load(job.OperationID)
+			if err != nil {
+				return err
+			}
+			now := s.now()
+			if record.State != RealmRemovalAwaitingConfirmation || !now.Before(record.ExpiresAt) {
+				if !now.Before(record.ExpiresAt) && record.State == RealmRemovalAwaitingConfirmation {
+					record.State, record.OTPHash = RealmRemovalExpired, ""
+					if err := atomicJSON(s.path(record.OperationID), record); err != nil {
+						return err
+					}
+				}
+				if job.DeliveryState == RealmRemovalMailPending || job.DeliveryState == RealmRemovalMailSending {
+					job.DeliveryState, job.DeliveryAddress, job.OTP, job.AttemptID, job.AttemptedAt = RealmRemovalMailCanceled, "", "", "", nil
+					if err := atomicJSON(path, job); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			if job.DeliveryState == RealmRemovalMailSending && job.AttemptedAt != nil && now.Sub(*job.AttemptedAt) >= staleAfter {
+				job.DeliveryState, job.AttemptID, job.AttemptedAt = RealmRemovalMailPending, "", nil
+			}
+			if job.DeliveryState != RealmRemovalMailPending {
+				continue
+			}
+			job.DeliveryState, job.AttemptID = RealmRemovalMailSending, uuid.NewString()
+			job.AttemptedAt, job.LastError = &now, ""
+			if err := atomicJSON(path, job); err != nil {
+				return err
+			}
+			claimed = job
+			return nil
+		}
+		return os.ErrNotExist
+	})
+	return claimed, err
+}
+
+func (s RealmRemovalStore) MarkMailQueued(operationID, attemptID string) error {
+	return s.markMail(operationID, attemptID, "", false, true)
+}
+
+func (s RealmRemovalStore) MarkMailFailed(operationID, attemptID, reason string, permanent bool) error {
+	return s.markMail(operationID, attemptID, reason, permanent, false)
+}
+
+func (s RealmRemovalStore) markMail(operationID, attemptID, reason string, permanent, queued bool) error {
+	if err := s.mailValid(time.Second); err != nil {
+		return err
+	}
+	if _, err := uuid.Parse(operationID); err != nil || attemptID == "" {
+		return errors.New("realm removal mail identifiers are invalid")
+	}
+	return WithFileLock(filepath.Join(s.Root, ".realm-removal.lock"), func() error {
+		job, err := s.loadMail(s.mailPath(operationID))
+		if err != nil {
+			return err
+		}
+		if job.DeliveryState == RealmRemovalMailQueued && queued {
+			return nil
+		}
+		if job.DeliveryState != RealmRemovalMailSending || job.AttemptID != attemptID {
+			return errors.New("realm removal mail attempt mismatch")
+		}
+		now := s.now()
+		if queued {
+			job.DeliveryState, job.DeliveryAddress, job.OTP = RealmRemovalMailQueued, "", ""
+			job.AttemptID, job.AttemptedAt, job.LastError, job.QueuedAt = "", nil, "", &now
+		} else {
+			job.LastError = safeMailError(reason)
+			job.AttemptID, job.AttemptedAt = "", nil
+			if permanent {
+				job.DeliveryState, job.DeliveryAddress, job.OTP = RealmRemovalMailFailed, "", ""
+			} else {
+				job.DeliveryState = RealmRemovalMailPending
+			}
+		}
+		return atomicJSON(s.mailPath(operationID), job)
+	})
 }
 
 // Advance permits only the server-owned irreversible sequence after OTP.
@@ -195,6 +347,12 @@ func (s RealmRemovalStore) valid() error {
 	}
 	return nil
 }
+func (s RealmRemovalStore) mailValid(staleAfter time.Duration) error {
+	if !filepath.IsAbs(s.Root) || staleAfter <= 0 {
+		return errors.New("realm removal mail store is incomplete")
+	}
+	return nil
+}
 func (s RealmRemovalStore) now() time.Time {
 	if s.Now != nil {
 		return s.Now().UTC()
@@ -202,6 +360,38 @@ func (s RealmRemovalStore) now() time.Time {
 	return time.Now().UTC()
 }
 func (s RealmRemovalStore) path(id string) string { return filepath.Join(s.Root, id+".json") }
+func (s RealmRemovalStore) outboxRoot() string    { return filepath.Join(s.Root, "outbox") }
+func (s RealmRemovalStore) mailPath(id string) string {
+	return filepath.Join(s.outboxRoot(), id+".json")
+}
+func (s RealmRemovalStore) load(operationID string) (RealmRemovalRecord, error) {
+	raw, err := os.ReadFile(s.path(operationID))
+	if err != nil {
+		return RealmRemovalRecord{}, err
+	}
+	var record RealmRemovalRecord
+	if err := json.Unmarshal(raw, &record); err != nil || record.Schema != realmRemovalSchema || record.OperationID != operationID {
+		return RealmRemovalRecord{}, errors.New("realm removal record invalid")
+	}
+	return record, nil
+}
+func (s RealmRemovalStore) loadMail(path string) (RealmRemovalMailJob, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return RealmRemovalMailJob{}, err
+	}
+	var job RealmRemovalMailJob
+	if err := json.Unmarshal(raw, &job); err != nil || job.Schema != realmRemovalMailSchema {
+		return RealmRemovalMailJob{}, errors.New("realm removal mail record invalid")
+	}
+	if _, err := uuid.Parse(job.OperationID); err != nil {
+		return RealmRemovalMailJob{}, errors.New("realm removal mail record invalid")
+	}
+	if _, err := uuid.Parse(job.MessageID); err != nil {
+		return RealmRemovalMailJob{}, errors.New("realm removal mail record invalid")
+	}
+	return job, nil
+}
 func (s RealmRemovalStore) hash(otp string) string {
 	h := hmac.New(sha256.New, s.OTPPepper)
 	h.Write([]byte(otp))
@@ -228,4 +418,15 @@ func validateScope(scope RealmRemovalScope) error {
 		}
 	}
 	return nil
+}
+
+func safeMailError(value string) string {
+	value = strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(value), "\r", " "), "\n", " ")
+	if len(value) > 240 {
+		value = value[:240]
+	}
+	if value == "" {
+		return "mail submission failed"
+	}
+	return value
 }

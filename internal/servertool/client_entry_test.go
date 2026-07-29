@@ -138,18 +138,20 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		supervisorErr = nil
 
-		originalControl := execRepositoryWorker
-		defer func() { execRepositoryWorker = originalControl }()
+		originalControl, originalMail := runRepositoryWorkerProcess, runMailAfterControl
+		defer func() { runRepositoryWorkerProcess, runMailAfterControl = originalControl, originalMail }()
 		controlClient := ""
-		execRepositoryWorker = func(_ string, id string) error { controlClient = id; return nil }
+		runRepositoryWorkerProcess = func(_ string, id string, _ io.Reader, _ io.Writer, _ io.Writer) error { controlClient = id; return nil }
+		mailTriggered := false
+		runMailAfterControl = func(io.Writer) error { mailTriggered = true; return nil }
 		getenv = func(name string) string {
 			if name == "SSH_ORIGINAL_COMMAND" {
 				return ClientControlCommand
 			}
 			return ""
 		}
-		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || controlClient != grant.ClientID {
-			t.Fatalf("control code=%d client=%q stderr=%s", code, controlClient, stderr.String())
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || controlClient != grant.ClientID || !mailTriggered {
+			t.Fatalf("control code=%d client=%q mail=%v stderr=%s", code, controlClient, mailTriggered, stderr.String())
 		}
 	}
 	if err := manager.HasProof(grant); err != nil {

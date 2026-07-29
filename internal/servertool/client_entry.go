@@ -3,8 +3,8 @@ package servertool
 import (
 	"fmt"
 	"io"
+	"os/exec"
 	"path/filepath"
-	"syscall"
 
 	"filees/internal/obsandbox"
 	"filees/pkg/activation"
@@ -41,6 +41,11 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	if originalCommand == ClientSVNCommand {
 		entryPromises = clientSVNEntryPromises
 	}
+	if originalCommand == ClientControlCommand {
+		// The entry process never opens SMTP itself, but its separately
+		// sandboxed mail child must retain these promises after exec.
+		entryPromises += " inet dns"
+	}
 	if err := sandboxBegin(entryPromises); err != nil {
 		report(stderr, "filees-client-entry sandbox", err)
 		return ExitSoftware
@@ -66,6 +71,13 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	if originalCommand == ClientControlCommand {
 		r := config.Repositories
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"})
+		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "mail-worker", Name: mailPath, Perms: "rx"}, obsandbox.Path{Label: "resolver", Name: "/etc/resolv.conf", Perms: "r"}, obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"})
+		if config.SMTPPasswordFile != "" {
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "smtp-password", Name: config.SMTPPasswordFile, Perms: "r"})
+		}
+		if config.SMTPCAFile != "" {
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "smtp-ca", Name: config.SMTPCAFile, Perms: "r"})
+		}
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "null-device", Name: "/dev/null", Perms: "rw"})
 		profile.Paths = append(profile.Paths,
 			obsandbox.Path{Label: "service-wc-parent", Name: filepath.Dir(config.Activation.ServiceWorkingCopy), Perms: "r"},
@@ -82,7 +94,7 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		// used for admin-issued tickets, just triggered from this
 		// authenticated control-plane channel instead of filees-admin.
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "onboarding-root", Name: config.Root, Perms: "rwc"}, obsandbox.Path{Label: "otp-pepper", Name: config.OTPPepperFile, Perms: "r"})
-		childPromises = workerPromises + " unveil"
+		childPromises = workerPromises + " dns unveil"
 	}
 	manager, err := activation.New(config.Activation, nil)
 	if err != nil {
@@ -119,9 +131,15 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		return ExitOK
 	}
 	if originalCommand == ClientControlCommand {
-		if err := execRepositoryWorker(config.Repositories.ResultsRoot, args[1]); err != nil {
+		if err := runRepositoryWorkerProcess(config.Repositories.ResultsRoot, args[1], stdin, stdout, stderr); err != nil {
 			report(stderr, "filees-client-entry control", err)
 			return ExitSoftware
+		}
+		// Mail submission remains a separately sandboxed worker. A failure here
+		// never rewrites the already durable control result; the outbox is
+		// retried by the next server-side action instead of a periodic job.
+		if err := runMailAfterControl(stderr); err != nil {
+			report(stderr, "filees-client-entry mail trigger", err)
 		}
 		return ExitOK
 	}
@@ -138,8 +156,17 @@ func clientChildPromises(originalCommand string) string {
 	return "stdio rpath flock prot_exec"
 }
 
-var execRepositoryWorker = func(tempRoot, clientID string) error {
-	return syscall.Exec(repositoryWorkerPath, []string{"filees-worker", "repository-control", clientID}, []string{"TMPDIR=" + tempRoot})
+var runRepositoryWorkerProcess = func(tempRoot, clientID string, stdin io.Reader, stdout, stderr io.Writer) error {
+	command := exec.Command(repositoryWorkerPath, "repository-control", clientID)
+	command.Env = []string{"TMPDIR=" + tempRoot}
+	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
+	return command.Run()
+}
+
+var runMailAfterControl = func(stderr io.Writer) error {
+	command := exec.Command(mailPath, "send")
+	command.Stdout, command.Stderr = io.Discard, stderr
+	return command.Run()
 }
 
 func clientSVNArgs(config serverconfig.Config, clientID, loginUser string) []string {

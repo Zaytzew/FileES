@@ -61,10 +61,12 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		report(stderr, "repository worker activation", err)
 		return ExitConfig
 	}
+	realmRemovalStore := repoworker.RealmRemovalStore{Root: filepath.Join(r.ResultsRoot, "realm-removals"), OTPPepper: config.Onboarding.OTPPepper, TTL: config.Onboarding.OperationTTL, Attempts: config.Onboarding.OTPAttempts}
 	realmRemoval := realmRemovalCoordinator{
-		Store:         repoworker.RealmRemovalStore{Root: filepath.Join(r.ResultsRoot, "realm-removals"), OTPPepper: config.Onboarding.OTPPepper, TTL: config.Onboarding.OperationTTL, Attempts: config.Onboarding.OTPAttempts},
+		Store:         realmRemovalStore,
 		SnapshotScope: publisher.SnapshotRealmScope,
 		ActiveClients: activationManager.ActiveClientsInRealm,
+		Execute:       realmRemovalExecutor{Store: realmRemovalStore, Backend: backend, Publisher: publisher, Activation: activationManager}.Execute,
 	}
 	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval}
 	dispatcher := repoworker.Dispatcher{Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy}}

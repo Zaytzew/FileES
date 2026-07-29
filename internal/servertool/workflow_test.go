@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"filees/pkg/deploy"
 	"filees/pkg/onboarding"
+	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 	"filees/pkg/smtpsubmit"
 )
@@ -105,6 +107,37 @@ func TestS1FilesystemWorkflow(t *testing.T) {
 	}
 	if entries[0].DeliveryState != onboarding.DeliveryQueued || entries[0].DeliveryAddress != "" || entries[0].OTP != "" {
 		t.Fatalf("queued outbox retained delivery secret: %+v", entries[0])
+	}
+}
+
+func TestRealmRemovalMailUsesSharedSMTPWorker(t *testing.T) {
+	results := filepath.Join(t.TempDir(), "results")
+	store := repoworker.RealmRemovalStore{Root: filepath.Join(results, "realm-removals"), OTPPepper: bytes.Repeat([]byte{0x42}, 32), TTL: time.Hour, Attempts: 3}
+	record, otp, err := store.Begin(uuid.NewString(), repoworker.RealmRemovalScope{}, repoworker.RealmRemovalRequest{NotificationEmail: "remove@example.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalSubmit := smtpSubmit
+	t.Cleanup(func() { smtpSubmit = originalSubmit })
+	var submitted smtpsubmit.Request
+	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, request smtpsubmit.Request) error {
+		submitted = request
+		return nil
+	}
+	var stdout, stderr bytes.Buffer
+	config := serverconfig.Config{Repositories: serverconfig.RepositoryFile{ResultsRoot: results}, SMTPFrom: "filees@example.test", MessageIDDomain: "filees.test", SMTP: smtpsubmit.Config{Address: "127.0.0.1:2525", ClientName: "filees.test", TLSMode: smtpsubmit.TLSNone}}
+	if code := deliverPendingRealmRemovalMail(config, &stdout, &stderr); code != ExitOK {
+		t.Fatalf("mail exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if submitted.Recipient != "remove@example.test" || !bytes.Contains(submitted.Message, []byte(otp)) || !bytes.Contains(submitted.Message, []byte("If this was not you")) {
+		t.Fatalf("unexpected realm removal message: %+v", submitted)
+	}
+	raw, err := os.ReadFile(filepath.Join(store.Root, "outbox", record.OperationID+".json"))
+	containsOTP := bytes.Contains(raw, []byte(otp))
+	containsAddress := bytes.Contains(raw, []byte("remove@example.test"))
+	queued := bytes.Contains(raw, []byte(`"delivery_state": "queued"`))
+	if err != nil || containsOTP || containsAddress || !queued {
+		t.Fatalf("realm removal outbox not scrubbed: otp=%v address=%v queued=%v raw=%s err=%v", containsOTP, containsAddress, queued, raw, err)
 	}
 }
 

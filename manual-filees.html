@@ -352,6 +352,7 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <li><a href="#ch4-recovery">Recovery</a></li>
 <li><a href="#ch4-monitoring">Monitoring</a></li>
 <li><a href="#ch4-rotate">Repository rotation: filees-rotate</a></li>
+<li><a href="#ch4-realm-removal">Realm removal and recovery archives</a></li>
 </ol>
 </li>
 <li><a href="#ch5">5. Security Appendix</a>
@@ -659,7 +660,10 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <tr><td><code>_filees-onboard</code></td><td>Public key (compiled bootstrap Ed25519)</td><td><code>filees-bootstrap-entry</code></td><td>None (<code>DisableForwarding yes</code>)</td></tr>
 <tr><td><code>_filees-tunnel</code></td><td><code>keyboard-interactive:bsdauth</code> via <code>login_-filees</code> style</td><td><code>filees-entry</code></td><td>Remote TCP on <code>127.0.0.1:42000</code> only</td></tr>
 <tr><td><code>_filees-client</code></td><td>Per-installation Ed25519 public key</td><td>Per-key <code>filees-client-entry &lt;operation_id&gt; &lt;client_id&gt;</code></td><td>None (<code>DisableForwarding yes</code>)</td></tr>
-</table></div><div class="decision">
+<tr><td><code>_filees-data</code></td><td>Same per-installation key, served by <code>AuthorizedKeysCommand</code></td><td>Per-key <code>filees-client-entry</code>, which serves <code>svnserve -t</code> rooted at the data repositories instead of the service repository</td><td>None (<code>DisableForwarding yes</code>)</td></tr>
+<tr><td><code>_filees-recovery</code></td><td>Per-operation recovery Ed25519 public key, resolved by the separate <code>filees-recovery-authorize</code> helper</td><td><code>filees-recovery-entry serve &lt;operation_id&gt;</code></td><td>None (<code>DisableForwarding yes</code>)</td></tr>
+</table></div>
+<p>The last account exists only so that a realm which removed its FileES share can still fetch its own archives. It is described in <a href="#ch4-realm-removal">§4.8</a>; the key it accepts is a capability bound to exactly one removal operation and is not a client credential.</p><div class="decision">
 <div class="decision-head">Design rationale / system sshd as the only network endpoint</div>
 <div class="decision-grid">
 <div class="decision-label">Decision</div><div class="decision-value">OpenSSH provides authentication, forced commands, forwarding policy, limits and mature platform integration.</div>
@@ -681,6 +685,22 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <li><strong>Activation publication.</strong> After validating the receipt, the worker commits the service format, realm, client record, first client view and audit event in one SVN revision, then advances the operation to <code>active</code>. The active key retains read-only access only to its own client subtree.</li>
 </ol>
 <p>The client-side helper is a minimal SSH server listening only on loopback with an ephemeral host key. It refuses shell, PTY, subsystems, global requests, and any command other than <code>filees-deploy/v1</code>. Responses are size-limited to 64 KiB using <code>io.LimitReader</code> before decoding (S3 hardening).</p>
+<h4>Authenticated control plane</h4>
+<p>Once a client is active it reaches the server over the same <code>_filees-client</code> account with <code>SSH_ORIGINAL_COMMAND</code> set to <code>filees control-v1</code>. <code>filees-client-entry</code> then runs <code>filees-worker repository-control &lt;client_id&gt;</code> and relays one versioned ticket frame. The worker serialises every control request behind a single file lock, so requests from different sessions never interleave.</p>
+<p>Identity and authority always come from the forced-command session, never from the ticket body: the worker resolves <code>client_id</code> from the per-key command binding and the realm from the server-side projection. The ticket family currently accepted is:</p>
+<div class="table-wrap"><table>
+<tr><th>Ticket</th><th>Purpose</th><th>Authority required</th></tr>
+<tr><td><code>STORAGE_PREFLIGHT</code></td><td>Capacity check before an import</td><td>Repository-creating client</td></tr>
+<tr><td><code>CREATE_REPOSITORY</code></td><td>Create a data repository owned by the session's realm</td><td>Repository-creating client</td></tr>
+<tr><td><code>INITIAL_COMMIT</code></td><td>Activate a freshly imported repository</td><td>Owner realm of that repository</td></tr>
+<tr><td><code>DELETE_REPOSITORY</code></td><td>Permanent detach of an owned repository</td><td>Owner realm of that repository</td></tr>
+<tr><td><code>MOBILE_PAIRING</code></td><td>Mint a pairing token for a phone of the same realm</td><td>Any active client of the realm</td></tr>
+<tr><td><code>CLAIM_REALM_ALIAS</code></td><td>Claim the realm's one immutable alias</td><td>Any active client of the realm</td></tr>
+<tr><td><code>RESOLVE_OWNER_LABELS</code></td><td>Map observed SVN lock owners to display aliases</td><td>Any active client</td></tr>
+<tr><td><code>CLIENT_DEACTIVATE</code></td><td>Deactivate this one installation on the server</td><td>The authenticated installation itself</td></tr>
+<tr><td><code>REALM_REMOVE_REQUEST</code> / <code>REALM_REMOVE_CONFIRM</code></td><td>Remove the whole FileES share of the realm, gated by a mailed OTP</td><td>Any active client of the realm, plus OTP proof</td></tr>
+</table></div>
+<p>Every ticket is idempotent on <code>operation_id</code>: repeating a request replays the stored durable result instead of re-executing the effect. Binding the same <code>operation_id</code> to a different <code>request_id</code> is rejected.</p>
 <h2 id="ch1-sandbox">1.7 pledge / unveil Sandbox Model</h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>Per-command pledge/unveil profiles and dispatcher/worker exec boundary tested natively.</span></div>
 <p>On OpenBSD every server-side tool calls <code>pledge(2)</code> and <code>unveil(2)</code> with per-command minimal profiles. The process flow is:</p>
 <pre><code>parse argv / verb
@@ -711,11 +731,22 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 <tr><td><code>filees-admin erasure complete</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>operations+audit, data-erasure journal, SMTP configuration and resolver files</td></tr>
 <tr><td><code>filees-entry</code></td><td><code>stdio proc exec</code></td><td>fixed worker image and runtime loader</td></tr>
 <tr><td><code>filees-worker deploy</code></td><td><code>stdio rpath wpath cpath fattr flock inet proc exec</code></td><td>operations, worker key, activation root, service WC/repository and fixed SVN binary</td></tr>
-<tr><td><code>filees-client-entry</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>activation receipt root, service repository, authz and fixed svnserve binary</td></tr>
+<tr><td><code>filees-client-entry</code> (SVN mode)</td><td><code>stdio rpath wpath cpath fattr flock dpath proc exec</code></td><td>activation receipt root, service repository, authz and fixed svnserve binary; <code>dpath</code> only to create the session's private revoke FIFO</td></tr>
+<tr><td><code>filees-client-entry</code> (control mode)</td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec</code></td><td>as above plus repository root/results, data authz, service WC, onboarding root, OTP pepper and the fixed worker and mail images</td></tr>
+<tr><td><code>filees-worker repository-control</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec unveil</code></td><td>inherits the entry's locked table; no table of its own</td></tr>
+<tr><td><code>filees-recovery-entry authorize|serve</code></td><td><code>stdio rpath</code></td><td>server config (r), repository results root (r), deletion archive root (r) — read-only throughout</td></tr>
 <tr><td><code>filees-admin client revoke</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>activation root, service WC/repository and fixed SVN binary</td></tr>
 <tr><td><code>login_-filees</code> (BSD Auth style)</td><td><code>stdio rpath wpath cpath flock</code></td><td>operation root, pepper file</td></tr>
 </table></div>
 <div class="note"><strong>Key invariant:</strong> pledge and unveil profiles are closed in code. Only the dispatcher, activation worker, client entry and administrative revoke retain the narrowly required <code>proc exec</code> boundary for a fixed executable; no promise or executable path is supplied by a network request.</div>
+<h4>Two exec disciplines</h4>
+<p>An <code>unveil(2)</code> table survives <code>execve</code> and, once locked with <code>unveil(NULL, NULL)</code>, can never be replaced or extended — not even by a child that wants a narrower one. A dispatcher must therefore pick one of two disciplines up front, and the choice determines what its children may be:</p>
+<div class="table-wrap"><table>
+<tr><th>Discipline</th><th>Call</th><th>Consequence for the child</th></tr>
+<tr><td>Pre-unveiled child</td><td><code>obsandbox.ApplyForExec</code></td><td>The parent builds and locks the table; the child must <em>not</em> call <code>unveil</code> itself and instead opens prepared handles (<code>onboarding.OpenPrepared</code>). Used by <code>filees-client-entry</code> → <code>filees-worker</code>.</td></tr>
+<tr><td>Self-sandboxing child</td><td><code>obsandbox.PledgeForExec</code></td><td>The parent restricts promises only and leaves the table open, so the child can install and lock its own narrower profile. Used by <code>filees-bootstrap-entry</code> → <code>filees-onboard</code>, <code>filees-mail</code>.</td></tr>
+</table></div>
+<p>Mixing the two — exec'ing a self-sandboxing tool from a dispatcher that already locked its table — fails at the child's first <code>unveil</code> call with <code>EPERM</code>, and does so only on OpenBSD, since the sandbox is a no-op elsewhere. Any new server-side child process has to be classified against this table before it is wired in.</p>
 <p>The <code>filees-entry</code> binary is setuid to <code>_filees-state</code>. <code>filees-worker</code> is mode <code>0555</code> and inherits the effective UID through <code>exec</code>. This split is required because OpenBSD refuses to execute a setuid/setgid image when <code>execpromises</code> are set.</p>
 <h2 id="ch1-service-repo">1.8 Service Repository</h2><div class="section-meta"><span class="status status-implemented">Activation vertical implemented</span><span>Client activation projection and read-only ACL exist; the broader repository/grant control plane remains designed.</span></div>
 <p>The service repository (also called the technical repository) is a private SVN repository that acts as the versioned control plane. It does <em>not</em> store synchronised user files. Each monitored directory has its own separate data repository.</p><div class="decision">
@@ -920,6 +951,21 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <tr><td>orange</td><td>Busy</td><td>Commit, update, initialisation, or baselining in progress</td></tr>
 <tr><td>green</td><td>Active</td><td>All repositories synchronised and online</td></tr>
 </table></div>
+<h4>FileES Settings window</h4>
+<p>The tray menu is for day-to-day work: state, opening a directory, locking and unlocking files, and the global reservation list. Anything that changes the shape of the installation lives in a separate native <strong>FileES Settings…</strong> window, so long directory names never have to compete with administrative actions inside a GNOME submenu.</p>
+<p>The window aggregates, per server: server and activation information, adding a directory, detaching a working copy, permanently detaching an owned repository, and deactivating this installation. Destructive scope, retention and the full warning text are shown there rather than in a menu label.</p>
+<h4>Repository and installation lifecycle</h4>
+<p>Four different actions are deliberately kept distinct. The wording matters, because two of them are local and two change server state:</p>
+<div class="table-wrap"><table>
+<tr><th>Action</th><th>Subject</th><th>Server effect</th><th>Local effect</th></tr>
+<tr><td><strong>Detach folder</strong></td><td>One working copy</td><td>None</td><td>Stops the local pipeline and removes <code>.svn</code> and <code>.filees</code>. Your files stay exactly where they are.</td></tr>
+<tr><td><strong>Detach permanently</strong></td><td>One repository you own</td><td>Removes the live FSFS repository and its authorisation. With positive retention the server first writes a verified SVN dump with a SHA-256 manifest.</td><td>As above.</td></tr>
+<tr><td><strong>Deactivate this client…</strong></td><td>One installation</td><td>Revokes this installation's key. Grants and repositories of the realm are untouched.</td><td>Detaches this installation's working copies, removes its profile and key.</td></tr>
+<tr><td><strong>Remove FileES share…</strong></td><td>The whole realm on that server</td><td>Withdraws every grant of the realm, deletes the realm's own repositories and revokes all of its installations. Gated by a mailed OTP.</td><td>Detaches the current installation and removes its profile.</td></tr>
+</table></div>
+<p>The last one runs a fixed sequence and cannot be shortened: a warning with the derived scope, an explicit consent step, the notification address for the OTP, a directory chosen by you for the <code>.fkr</code> recovery kit, and only then the OTP prompt. The kit is written before the operation reaches its irreversible boundary, because after the removal completes there is no client credential left with which to obtain one. <strong>Keep it — without it the archives cannot be fetched</strong> (<a href="#ch4-realm-removal">§4.8</a>). Permanent detach of a single repository likewise requires two separate confirmations.</p>
+<p>Permanent removal is always limited to repositories of your own realm. It can never reach a share belonging to another realm, nor a repository with <code>attachment_policy=required</code>. Detaching a folder never deletes user files — that applies to every row above.</p>
+<div class="note"><strong>Realm alias:</strong> after activation the GUI asks once for an immutable, globally unique realm alias. It is what other users see as the owner of a file reservation; the internal owner ID is never sent to the GUI. Because reservations must be attributable, the daemon refuses to lock files for a known active realm that has no alias yet.</div>
 <h4>Reconnect behaviour</h4>
 <p>If the daemon is unreachable, the GUI retries with exponential backoff: 1 s → 2 s → 5 s → 10 s → 30 s. The last known snapshot remains visible but is marked stale. “Reconnect” in the menu forces an immediate retry.</p>
 <h4>Initialisation sequence</h4>
@@ -968,6 +1014,9 @@ filees unlock &lt;file&gt;...    # release SVN lock
 filees log [N]              # last N error log entries (default 20)
 filees config-check         # validate config without starting daemon
 filees help</code></pre>
+<p>One command deliberately does <em>not</em> use the daemon, because it has to work on a machine that has no FileES installation left:</p>
+<pre><code>filees recovery download --kit FILE.fkr --output DIR</code></pre>
+<p>It reads a recovery kit produced during removal of a FileES share and fetches that operation's archives over the <code>_filees-recovery</code> account, verifying the pinned host key, the archive identity, its size and its SHA-256 against the manifest carried in the kit. See <a href="#ch4-realm-removal">§4.8</a>.</p>
 <p><code>lock</code> and <code>unlock</code> accept multiple files and group them by repository automatically. Relative paths are resolved to absolute and validated as lying inside a working copy.</p>
 <p>Daemon log level (environment variable):</p>
 <pre><code>FILEES_LOG=debug ./filees
@@ -1361,6 +1410,24 @@ filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
 filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
 <p>Safety contract: an flock excludes concurrent runs; repo and archive must share a filesystem (the swap is a rename); commits are blocked by a temporary <code>pre-commit</code> hook for the duration; rotation <em>refuses</em> to run while active locks (live edit passports) exist unless <code>-break-locks</code> is passed explicitly; every failure before the swap restores the repository as found.</p>
 <div class="warn"><strong>When to rotate at all:</strong> for the FileES append-only profile, repository depth does not degrade performance, and FSFS binary deltas plus rep-sharing keep growth tracking <em>unique</em> data, not revision count. Rotation pays off only as a retention/tiering tool (SVN has no <code>obliterate</code>) — see the verdict in <code>concepts/SVN_ROTATOR_CONCEPT_V2.md</code> §7 before scheduling anything.</div>
+<h2 id="ch4-realm-removal">4.8 Realm Removal and Recovery Archives</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Journal, OTP, executor, recovery manifest, key registry, the recovery SSH transport, the GUI flow with kit generation and the data-erasure request all exist as of r332. Not yet exercised end to end on the reference VM.</span></div>
+<p>Removing a FileES share is realm-scoped and irreversible for live access. It is not the same as deactivating one installation — see the table in <a href="#ch2-gui">§2.6</a>. The design contract is <code>concepts/REALM_DETACH_AND_ERASURE_CONCEPT.md</code>.</p>
+<h4>Scope derivation</h4>
+<p>The worker derives the target realm from the authenticated session alone. No client payload names a realm, a repository or another installation. From the canonical service working copy the server takes a snapshot of: every active installation of that realm, every repository whose <code>owner_realm_id</code> is that realm (these are deleted), and every foreign repository the realm holds a grant on (the grant is withdrawn, the owner's repository is untouched). Scope derivation is fail-closed: an unreadable client projection aborts the request rather than silently narrowing it.</p>
+<h4>States</h4>
+<pre><code>awaiting_confirmation --OTP--&gt; deleting --&gt; recovery_ready
+                                    --&gt; revoke_all_clients --&gt; completed
+       |
+       +--&gt; expired      (TTL elapsed, or attempts exhausted)</code></pre>
+<p>The OTP is peppered and stored only as a hash, compared in constant time, single-use, attempt-limited and TTL-bound. Failure to confirm leaves grants, repositories and credentials untouched. Revoking the realm's installations is deliberately the <em>last</em> boundary: until that point an interrupted operation can still be resumed by an authenticated client of the same realm, and a resume never widens the snapshot or produces a second dump.</p>
+<div class="warn"><strong>Mail delivery caveat:</strong> the confirmation OTP is queued in a durable outbox and sent by <code>filees-mail</code>. The trigger that is supposed to drain that outbox immediately after a control-plane action does not currently work on OpenBSD — see finding B in <code>reports/CODE_REVIEW_POST_AUDIT_r280_r318_2026-07-29.md</code>. Until that is fixed, the queued message goes out on the next server-side action that drains the outbox, so do not treat a missing OTP mail as proof that the request was rejected; inspect the operation instead.</div>
+<h4>Recovery archives</h4>
+<p>With positive retention the removal produces one verified SVN dump per owned repository, each with a SHA-256 digest, and a manifest describing them. The manifest is capability-neutral: <code>archive_id</code> is an opaque UUID and is never interpreted as a filesystem path. Two independent windows apply — <code>download_until</code>, after which archives can no longer be fetched, and <code>admin_grace_until</code>, after which the receipt itself is reaped. Retention of zero means no dump is written at all, and the interface must not promise recoverable data in that case.</p>
+<p>Access to those archives is the sole purpose of the <code>_filees-recovery</code> account. The client presents a per-operation Ed25519 recovery key; the separate <code>filees-recovery-authorize</code> helper — deliberately split from the session entry, so key lookup and session service are distinct executables — looks it up in the key registry, refuses it once <code>download_until</code> has passed, and emits a <code>restrict</code>ed authorized-key line whose forced command is bound to that one operation ID. The served protocol is exactly two verbs:</p>
+<pre><code>list &lt;operation_id&gt;
+get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
+<p>The entry runs read-only (<code>stdio rpath</code>) and never sees a private key. A recovery key grants no SVN access, no shell, no re-onboarding, and no access to any other operation or repository.</p>
+<div class="note"><strong>Not to be confused with <a href="#ch4-recovery">§4.5 Recovery</a></strong>, which is about recovering a damaged SVN repository on a running server. This section is about retrieving data after a realm has deliberately removed its share.</div>
 </div><hr class="chapter"/><h1 id="ch5">Chapter 5: Security Appendix</h1><div class="chapter-content">
 <p>This appendix summarises the design invariants that were established or hardened as a result of code reviews S1–S3, the client audit, the GUI audit, and the r61–r84 review. It is written for a security-aware deployer. It does not reproduce raw review findings; it captures <em>what was decided and why</em>.</p>
 <h2 id="ch5-invariants">5.1 Core Deployment Invariants</h2><div class="section-meta"><span class="status status-verified">Verified contract</span><span>Security and ownership invariants enforced by tests and package boundaries.</span></div>

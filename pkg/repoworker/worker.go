@@ -198,7 +198,7 @@ func (w *Worker) requestRealmRemoval(ctx context.Context, session Session, ticke
 	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 		return control.Result{}, err
 	}
-	record, err := w.RealmRemoval.Request(ctx, session, ticket.OperationID, RealmRemovalRequest{NotificationEmail: payload.NotificationEmail, ErasureRequested: payload.ErasureRequested})
+	record, err := w.RealmRemoval.Request(ctx, session, ticket.OperationID, RealmRemovalRequest{NotificationEmail: payload.NotificationEmail, ErasureRequested: payload.ErasureRequested, RecoveryPublicKey: payload.RecoveryPublicKey})
 	if err != nil {
 		return w.retryable(ticket, "REALM_REMOVE_REQUEST_RETRY", err.Error())
 	}

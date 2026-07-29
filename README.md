@@ -1,6 +1,6 @@
 # FileES
 
-Sync and share system built on top of Apache Subversion, server side targeted to OpenBSD.
+Sync and share system built on top of Apache Subversion, server side targeting OpenBSD.
 
 > ## ⚠️ Wersja robocza — nie do użytku
 >

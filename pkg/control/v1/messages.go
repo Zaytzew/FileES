@@ -12,6 +12,7 @@ import (
 	"filees/pkg/realmalias"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 )
 
 const Schema = "filees.control/v1"
@@ -146,6 +147,7 @@ type DetachClientResult = ClientDeactivateResult
 type RealmRemoveRequestPayload struct {
 	NotificationEmail string `json:"notification_email"`
 	ErasureRequested  bool   `json:"erasure_requested"`
+	RecoveryPublicKey string `json:"recovery_public_key"`
 }
 type RealmRemoveRequestResult struct {
 	ExpiresAt            string `json:"expires_at"`
@@ -305,6 +307,9 @@ func (t Ticket) Validate() error {
 		}
 		if _, err := validatePlainEmail(p.NotificationEmail); err != nil {
 			return fmt.Errorf("REALM_REMOVE_REQUEST notification_email: %w", err)
+		}
+		if err := validateRecoveryPublicKey(p.RecoveryPublicKey); err != nil {
+			return fmt.Errorf("REALM_REMOVE_REQUEST recovery_public_key: %w", err)
 		}
 	case TicketRealmRemoveConfirm:
 		var p RealmRemoveConfirmPayload
@@ -514,4 +519,12 @@ func validRealmRemovalOTP(value string) bool {
 		}
 	}
 	return true
+}
+
+func validateRecoveryPublicKey(value string) error {
+	key, comment, options, rest, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(value)))
+	if err != nil || key.Type() != ssh.KeyAlgoED25519 || comment != "" || len(options) != 0 || len(strings.TrimSpace(string(rest))) != 0 {
+		return errors.New("must be one comment-free Ed25519 public key")
+	}
+	return nil
 }

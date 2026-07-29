@@ -15,6 +15,7 @@ import (
 type realmRemovalExecutor struct {
 	Store      repoworker.RealmRemovalStore
 	Backend    realmRemovalBackend
+	Recovery   realmRemovalRecoveryPublisher
 	Publisher  realmRemovalGrantPublisher
 	Activation realmRemovalRevoker
 }
@@ -25,12 +26,15 @@ type realmRemovalBackend interface {
 type realmRemovalGrantPublisher interface {
 	WithdrawRealmGrants(context.Context, string, []string) error
 }
+type realmRemovalRecoveryPublisher interface {
+	Prepare(repoworker.RealmRemovalRecord) error
+}
 type realmRemovalRevoker interface {
 	RevokeRealm(context.Context, string, string) ([]string, error)
 }
 
 func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.RealmRemovalRecord) error {
-	if e.Backend == nil || e.Activation == nil {
+	if e.Backend == nil || e.Recovery == nil || e.Publisher == nil || e.Activation == nil {
 		return errors.New("realm removal executor is incomplete")
 	}
 	if record.State == repoworker.RealmRemovalDeleting {
@@ -39,6 +43,9 @@ func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.Rea
 			if _, err := e.Backend.Delete(ctx, op, record.RealmID, repoID); err != nil {
 				return err
 			}
+		}
+		if err := e.Recovery.Prepare(record); err != nil {
+			return err
 		}
 		if _, err := e.Store.Advance(record.OperationID, repoworker.RealmRemovalDeleting, repoworker.RealmRemovalRecoveryReady); err != nil {
 			return err

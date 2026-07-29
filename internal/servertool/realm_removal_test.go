@@ -30,6 +30,16 @@ type fakeRealmGrantPublisher struct {
 	repos []string
 }
 
+type fakeRealmRecoveryPublisher struct {
+	calls int
+	fail  error
+}
+
+func (p *fakeRealmRecoveryPublisher) Prepare(_ repoworker.RealmRemovalRecord) error {
+	p.calls++
+	return p.fail
+}
+
 func (p *fakeRealmGrantPublisher) WithdrawRealmGrants(_ context.Context, realm string, repos []string) error {
 	p.calls++
 	p.realm, p.repos = realm, append([]string(nil), repos...)
@@ -87,23 +97,47 @@ func TestRealmRemovalExecutorResumesAfterInterruptedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := &fakeRealmDeleteBackend{failOnce: true}
+	recovery := &fakeRealmRecoveryPublisher{}
 	grants, revoker := &fakeRealmGrantPublisher{}, &fakeRealmRevoker{}
-	executor := realmRemovalExecutor{Store: store, Backend: backend, Publisher: grants, Activation: revoker}
+	executor := realmRemovalExecutor{Store: store, Backend: backend, Recovery: recovery, Publisher: grants, Activation: revoker}
 	if err := executor.Execute(context.Background(), record); err == nil {
 		t.Fatal("interrupted archive completed")
 	}
 	partial, err := store.Load(record.OperationID)
-	if err != nil || partial.State != repoworker.RealmRemovalDeleting || grants.calls != 0 || revoker.calls != 0 {
-		t.Fatalf("partial=%+v grants=%d revoker=%d err=%v", partial, grants.calls, revoker.calls, err)
+	if err != nil || partial.State != repoworker.RealmRemovalDeleting || recovery.calls != 0 || grants.calls != 0 || revoker.calls != 0 {
+		t.Fatalf("partial=%+v recovery=%d grants=%d revoker=%d err=%v", partial, recovery.calls, grants.calls, revoker.calls, err)
 	}
 	if err := executor.Execute(context.Background(), partial); err != nil {
 		t.Fatal(err)
 	}
 	completed, err := store.Load(record.OperationID)
-	if err != nil || completed.State != repoworker.RealmRemovalCompleted || grants.calls != 1 || revoker.calls != 1 || grants.realm != realm || revoker.realm != realm {
-		t.Fatalf("completed=%+v grants=%+v revoker=%+v err=%v", completed, grants, revoker, err)
+	if err != nil || completed.State != repoworker.RealmRemovalCompleted || recovery.calls != 1 || grants.calls != 1 || revoker.calls != 1 || grants.realm != realm || revoker.realm != realm {
+		t.Fatalf("completed=%+v recovery=%d grants=%+v revoker=%+v err=%v", completed, recovery.calls, grants, revoker, err)
 	}
 	if len(grants.repos) != 1 || grants.repos[0] != foreign || !strings.Contains(revoker.reason, "confirmed") {
 		t.Fatalf("grants=%+v revoker=%+v", grants, revoker)
+	}
+}
+
+func TestRealmRemovalExecutorDoesNotRevokeBeforeRecoveryIsPublished(t *testing.T) {
+	realm, repo := uuid.NewString(), uuid.NewString()
+	store := repoworker.RealmRemovalStore{Root: t.TempDir(), OTPPepper: []byte(strings.Repeat("p", 32)), TTL: time.Hour, Attempts: 3}
+	record, otp, err := store.Begin(realm, repoworker.RealmRemovalScope{OwnedRepoIDs: []string{repo}}, repoworker.RealmRemovalRequest{NotificationEmail: "user@example.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = store.Confirm(record.OperationID, otp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovery := &fakeRealmRecoveryPublisher{fail: errors.New("manifest unavailable")}
+	grants, revoker := &fakeRealmGrantPublisher{}, &fakeRealmRevoker{}
+	executor := realmRemovalExecutor{Store: store, Backend: &fakeRealmDeleteBackend{}, Recovery: recovery, Publisher: grants, Activation: revoker}
+	if err := executor.Execute(context.Background(), record); err == nil {
+		t.Fatal("recovery publication failure did not stop removal")
+	}
+	current, err := store.Load(record.OperationID)
+	if err != nil || current.State != repoworker.RealmRemovalDeleting || recovery.calls != 1 || grants.calls != 0 || revoker.calls != 0 {
+		t.Fatalf("current=%+v recovery=%d grants=%d revoker=%d err=%v", current, recovery.calls, grants.calls, revoker.calls, err)
 	}
 }

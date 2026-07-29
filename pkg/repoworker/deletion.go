@@ -30,6 +30,37 @@ type deletionArchiveMeta struct {
 	DeleteAfter time.Time `json:"delete_after"`
 }
 
+// DeletionRecoveryArchive resolves one exact deletion receipt into the
+// capability-neutral descriptor exposed by a recovery manifest. It never
+// scans archive names supplied by a client.
+func DeletionRecoveryArchive(root, repoID, operationID string) (RecoveryArchive, time.Time, bool, error) {
+	if !filepath.IsAbs(root) {
+		return RecoveryArchive{}, time.Time{}, false, errors.New("repository deletion archive root must be absolute")
+	}
+	if _, err := uuid.Parse(repoID); err != nil {
+		return RecoveryArchive{}, time.Time{}, false, errors.New("repository ID must be UUID")
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return RecoveryArchive{}, time.Time{}, false, errors.New("repository deletion operation ID must be UUID")
+	}
+	base := repoID + "-" + operationID
+	dumpPath := filepath.Join(root, base+".svndump")
+	metaPath := filepath.Join(root, base+".json")
+	meta, found, err := loadDeletionArchive(metaPath, dumpPath, repoID, operationID)
+	if err != nil || !found {
+		return RecoveryArchive{}, time.Time{}, found, err
+	}
+	info, err := os.Lstat(dumpPath)
+	if err != nil {
+		return RecoveryArchive{}, time.Time{}, false, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return RecoveryArchive{}, time.Time{}, false, errors.New("repository deletion dump is not a regular file")
+	}
+	archiveID := uuid.NewSHA1(uuid.NameSpaceOID, []byte("filees-recovery:"+repoID+":"+operationID)).String()
+	return RecoveryArchive{ArchiveID: archiveID, RepoID: repoID, SHA256: meta.SHA256, Size: info.Size()}, meta.DeleteAfter, true, nil
+}
+
 func (e ServerEffects) PrepareDelete(_ context.Context, repoID, operationID string) error {
 	repo, err := e.deleteRepoPath(repoID, operationID)
 	if err != nil {

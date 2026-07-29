@@ -88,6 +88,10 @@ func TestArchiveAndDeleteFSFSDumpsVerifiesThenReaps(t *testing.T) {
 	if info, err := os.Stat(dump); err != nil || info.Size() == 0 {
 		t.Fatalf("retained dump missing or empty: info=%v err=%v", info, err)
 	}
+	descriptor, descriptorUntil, found, err := DeletionRecoveryArchive(effects.DeletionArchiveRoot, repoID, operationID)
+	if err != nil || !found || descriptor.RepoID != repoID || descriptor.Size <= 0 || descriptor.SHA256 == "" || !descriptorUntil.Equal(retainUntil) {
+		t.Fatalf("recovery descriptor=%+v until=%s found=%v err=%v", descriptor, descriptorUntil, found, err)
+	}
 	if _, err := os.Stat(meta); err != nil {
 		t.Fatalf("retained dump metadata: %v", err)
 	}

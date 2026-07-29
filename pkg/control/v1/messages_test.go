@@ -1,13 +1,29 @@
 package v1
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 )
+
+func recoveryPublicKey(t *testing.T) string {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+}
 
 func TestCreateRepositoryTicketRoundTripAndValidate(t *testing.T) {
 	ticket, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreateRepository, "client-a", CreateRepositoryPayload{Name: "Project A"}, time.Now())
@@ -167,7 +183,7 @@ func TestInitialCommitRepoIDMustBeUUID(t *testing.T) {
 
 func TestRealmRemovalContractCarriesNoTargetScope(t *testing.T) {
 	operationID, requestID := uuid.NewString(), uuid.NewString()
-	ticket, err := NewTicket(operationID, requestID, TicketRealmRemoveRequest, "client-a", RealmRemoveRequestPayload{NotificationEmail: "user@example.net", ErasureRequested: true}, time.Now())
+	ticket, err := NewTicket(operationID, requestID, TicketRealmRemoveRequest, "client-a", RealmRemoveRequestPayload{NotificationEmail: "user@example.net", ErasureRequested: true, RecoveryPublicKey: recoveryPublicKey(t)}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +205,7 @@ func TestRealmRemovalContractCarriesNoTargetScope(t *testing.T) {
 }
 
 func TestRealmRemovalRequestRejectsForgedScope(t *testing.T) {
-	ticket, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketRealmRemoveRequest, "client-a", RealmRemoveRequestPayload{NotificationEmail: "user@example.net"}, time.Now())
+	ticket, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketRealmRemoveRequest, "client-a", RealmRemoveRequestPayload{NotificationEmail: "user@example.net", RecoveryPublicKey: recoveryPublicKey(t)}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

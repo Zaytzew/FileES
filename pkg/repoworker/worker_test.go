@@ -2,14 +2,31 @@ package repoworker
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
+
+func realmRecoveryPublicKey(t *testing.T) string {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
+}
 
 type retryBackend struct{ calls int }
 
@@ -155,12 +172,13 @@ func TestWorkerRealmRemovalUsesAuthenticatedRealmAndStoresBothBoundaries(t *test
 	operationID := uuid.NewString()
 	service := &fakeRealmRemovalService{record: RealmRemovalRecord{OperationID: operationID, RealmID: session.RealmID, Scope: RealmRemovalScope{ClientIDs: []string{uuid.NewString()}, OwnedRepoIDs: []string{uuid.NewString()}, ForeignGrantRepoIDs: []string{uuid.NewString()}}, State: RealmRemovalAwaitingConfirmation, ExpiresAt: time.Now().Add(time.Hour)}}
 	worker := &Worker{Store: store, RealmRemoval: service}
-	request, err := control.NewTicket(operationID, uuid.NewString(), control.TicketRealmRemoveRequest, session.ClientID, control.RealmRemoveRequestPayload{NotificationEmail: "user@example.net", ErasureRequested: true}, time.Now())
+	publicKey := realmRecoveryPublicKey(t)
+	request, err := control.NewTicket(operationID, uuid.NewString(), control.TicketRealmRemoveRequest, session.ClientID, control.RealmRemoveRequestPayload{NotificationEmail: "user@example.net", ErasureRequested: true, RecoveryPublicKey: publicKey}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	result, err := worker.Handle(context.Background(), session, request)
-	if err != nil || result.Status != control.ResultOK || service.requestCalls != 1 || service.realm != session.RealmID || service.request.NotificationEmail != "user@example.net" || !service.request.ErasureRequested {
+	if err != nil || result.Status != control.ResultOK || service.requestCalls != 1 || service.realm != session.RealmID || service.request.NotificationEmail != "user@example.net" || !service.request.ErasureRequested || service.request.RecoveryPublicKey != publicKey {
 		t.Fatalf("request result=%+v service=%+v err=%v", result, service, err)
 	}
 	var requestResult control.RealmRemoveRequestResult

@@ -41,6 +41,7 @@ type RealmRemovalScope struct{ ClientIDs, OwnedRepoIDs, ForeignGrantRepoIDs []st
 type RealmRemovalRequest struct {
 	NotificationEmail string `json:"notification_email"`
 	ErasureRequested  bool   `json:"erasure_requested"`
+	RecoveryPublicKey string `json:"recovery_public_key"`
 }
 
 // RealmRemovalMailState is separate from the irreversible removal state:
@@ -82,6 +83,7 @@ type RealmRemovalRecord struct {
 	AttemptsLeft int                 `json:"attempts_left"`
 	State        RealmRemovalState   `json:"state"`
 	CreatedAt    time.Time           `json:"created_at"`
+	ConfirmedAt  *time.Time          `json:"confirmed_at,omitempty"`
 	ExpiresAt    time.Time           `json:"expires_at"`
 }
 
@@ -190,6 +192,8 @@ func (s RealmRemovalStore) Confirm(operationID, otp string) (RealmRemovalRecord,
 		r.OTPHash = ""
 		r.AttemptsLeft = 0
 		r.State = RealmRemovalDeleting
+		confirmedAt := s.now()
+		r.ConfirmedAt = &confirmedAt
 		if err := atomicJSON(s.path(operationID), r); err != nil {
 			return err
 		}

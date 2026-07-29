@@ -37,3 +37,29 @@ func TestRealmRemovalOTPExpiresWithoutDestructiveTransition(t *testing.T) {
 		t.Fatalf("expired OTP error=%v", err)
 	}
 }
+
+func TestRealmRemovalAdvanceIsOrderedAndIdempotent(t *testing.T) {
+	store := RealmRemovalStore{Root: t.TempDir(), OTPPepper: []byte(strings.Repeat("p", 32)), TTL: time.Hour, Attempts: 2}
+	record, otp, err := store.Begin(uuid.NewString(), RealmRemovalScope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Confirm(record.OperationID, otp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Advance(record.OperationID, RealmRemovalDeleting, RealmRemovalRevokingClients); err == nil {
+		t.Fatal("skipped recovery boundary")
+	}
+	if next, err := store.Advance(record.OperationID, RealmRemovalDeleting, RealmRemovalRecoveryReady); err != nil || next.State != RealmRemovalRecoveryReady {
+		t.Fatalf("recovery boundary=%+v err=%v", next, err)
+	}
+	if _, err = store.Advance(record.OperationID, RealmRemovalRecoveryReady, RealmRemovalRevokingClients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Advance(record.OperationID, RealmRemovalRevokingClients, RealmRemovalCompleted); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := store.Advance(record.OperationID, RealmRemovalRevokingClients, RealmRemovalCompleted); err != nil || again.State != RealmRemovalCompleted {
+		t.Fatalf("completed replay=%+v err=%v", again, err)
+	}
+}

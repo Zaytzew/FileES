@@ -124,6 +124,60 @@ func (s RealmRemovalStore) Confirm(operationID, otp string) (RealmRemovalRecord,
 	})
 	return out, err
 }
+func (s RealmRemovalStore) Load(operationID string) (RealmRemovalRecord, error) {
+	if err := s.valid(); err != nil {
+		return RealmRemovalRecord{}, err
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return RealmRemovalRecord{}, errors.New("realm removal operation_id must be UUID")
+	}
+	raw, err := os.ReadFile(s.path(operationID))
+	if err != nil {
+		return RealmRemovalRecord{}, err
+	}
+	var r RealmRemovalRecord
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return RealmRemovalRecord{}, err
+	}
+	if r.Schema != realmRemovalSchema || r.OperationID != operationID {
+		return RealmRemovalRecord{}, errors.New("realm removal record invalid")
+	}
+	return r, nil
+}
+
+// Advance permits only the server-owned irreversible sequence after OTP.
+func (s RealmRemovalStore) Advance(operationID string, from, to RealmRemovalState) (RealmRemovalRecord, error) {
+	if err := s.valid(); err != nil {
+		return RealmRemovalRecord{}, err
+	}
+	if !validRealmRemovalTransition(from, to) {
+		return RealmRemovalRecord{}, errors.New("invalid realm removal transition")
+	}
+	var out RealmRemovalRecord
+	err := WithFileLock(filepath.Join(s.Root, ".realm-removal.lock"), func() error {
+		r, err := s.Load(operationID)
+		if err != nil {
+			return err
+		}
+		if r.State == to {
+			out = r
+			return nil
+		}
+		if r.State != from {
+			return errors.New("realm removal state conflicts with requested transition")
+		}
+		r.State = to
+		if err := atomicJSON(s.path(operationID), r); err != nil {
+			return err
+		}
+		out = r
+		return nil
+	})
+	return out, err
+}
+func validRealmRemovalTransition(from, to RealmRemovalState) bool {
+	return (from == RealmRemovalDeleting && to == RealmRemovalRecoveryReady) || (from == RealmRemovalRecoveryReady && to == RealmRemovalRevokingClients) || (from == RealmRemovalRevokingClients && to == RealmRemovalCompleted)
+}
 func (s RealmRemovalStore) valid() error {
 	if !filepath.IsAbs(s.Root) || len(s.OTPPepper) < 32 || s.TTL <= 0 || s.Attempts <= 0 {
 		return errors.New("realm removal store is incomplete")

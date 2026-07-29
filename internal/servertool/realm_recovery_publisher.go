@@ -38,8 +38,15 @@ func (p realmRecoveryPublisher) Prepare(record repoworker.RealmRemovalRecord) er
 
 	archives := make([]repoworker.RecoveryArchive, 0, len(record.Scope.OwnedRepoIDs))
 	downloadUntil := record.ConfirmedAt.UTC()
+	grace := p.Grace
+	if grace <= 0 {
+		grace = realmRecoveryAdminGrace
+	}
 	for _, repoID := range record.Scope.OwnedRepoIDs {
 		deleteOperationID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(record.OperationID+":"+repoID+":delete")).String()
+		if _, _, err := repoworker.PromoteDeletionArchiveToRecovery(p.ArchiveRoot, repoID, deleteOperationID, grace); err != nil {
+			return err
+		}
 		archive, retainedUntil, found, err := repoworker.DeletionRecoveryArchive(p.ArchiveRoot, repoID, deleteOperationID)
 		if err != nil {
 			return err
@@ -51,10 +58,6 @@ func (p realmRecoveryPublisher) Prepare(record repoworker.RealmRemovalRecord) er
 		if len(archives) == 1 || retainedUntil.Before(downloadUntil) {
 			downloadUntil = retainedUntil
 		}
-	}
-	grace := p.Grace
-	if grace <= 0 {
-		grace = realmRecoveryAdminGrace
 	}
 	manifest := repoworker.RecoveryManifest{
 		Schema:          repoworker.RecoveryManifestSchema,

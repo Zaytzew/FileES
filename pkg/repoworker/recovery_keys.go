@@ -111,6 +111,11 @@ func (s RecoveryKeyStore) Remove(operationID string) error {
 	if _, err := uuid.Parse(operationID); err != nil {
 		return errors.New("recovery key operation_id must be UUID")
 	}
+	if _, err := os.Stat(s.Root); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
 	return WithFileLock(filepath.Join(s.Root, ".recovery-key.lock"), func() error {
 		if err := os.Remove(s.path(operationID)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

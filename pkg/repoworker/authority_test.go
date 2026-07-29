@@ -65,6 +65,27 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestServicePublisherSnapshotsOwnedAndForeignRealmScope(t *testing.T) {
+	root := t.TempDir()
+	realm, other := uuid.NewString(), uuid.NewString()
+	client := uuid.NewString()
+	owned, foreign := uuid.NewString(), uuid.NewString()
+	for _, record := range []repositoryRecord{{Schema: RepositorySchema, RepoID: owned, OwnerRealmID: realm, DisplayName: "Własne", URL: "svn+ssh://_filees-client@example/" + owned, State: "active", CreatedAt: time.Now()}, {Schema: RepositorySchema, RepoID: foreign, OwnerRealmID: other, DisplayName: "Cudze", URL: "svn+ssh://_filees-client@example/" + foreign, State: "active", CreatedAt: time.Now()}} {
+		path, _ := repositoryRecordPath(root, record.RepoID)
+		if err := atomicJSON(path, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view := clientview.View{Schema: clientview.Schema, ClientID: client, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Repositories: []clientview.Repository{{RepoID: foreign, DisplayName: "Cudze", URL: "svn+ssh://_filees-client@example/" + foreign, Access: "r", State: "active", OwnerRealmID: other}}, ActiveOperations: []json.RawMessage{}}
+	if _, err := clientview.StoreIfNewer(filepath.Join(root, "clients", client, "view.json"), view); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := (ServicePublisher{ServiceWC: root}).SnapshotRealmScope(realm)
+	if err != nil || len(scope.OwnedRepoIDs) != 1 || scope.OwnedRepoIDs[0] != owned || len(scope.ForeignGrantRepoIDs) != 1 || scope.ForeignGrantRepoIDs[0] != foreign {
+		t.Fatalf("scope=%+v err=%v", scope, err)
+	}
+}
+
 // TestTransferOwnerMovesRepositoryAndRegeneratesAuthz is the admin
 // repo-ownership-transfer regression guard
 // (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §6): the old owner's client

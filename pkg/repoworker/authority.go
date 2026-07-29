@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"filees/pkg/clientview"
+	"github.com/google/uuid"
 )
 
 const RepositorySchema = "filees.repository/v1"
@@ -57,6 +58,71 @@ type ServicePublisher struct {
 	ServiceWC, DataAuthzFile string
 	Runner                   PublishRunner
 	Now                      func() time.Time
+}
+
+// SnapshotRealmScope derives repository scope only from the canonical service
+// working copy. It is intentionally fail-closed: a malformed client view may
+// otherwise conceal a foreign grant from a realm-removal request.
+func (p ServicePublisher) SnapshotRealmScope(realmID string) (RealmRemovalScope, error) {
+	if !filepath.IsAbs(p.ServiceWC) {
+		return RealmRemovalScope{}, errors.New("authority service working copy is incomplete")
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return RealmRemovalScope{}, errors.New("realm snapshot realm_id must be UUID")
+	}
+	entries, err := os.ReadDir(filepath.Join(p.ServiceWC, "admin", "repositories"))
+	if err != nil {
+		return RealmRemovalScope{}, err
+	}
+	owned := map[string]bool{}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(p.ServiceWC, "admin", "repositories", entry.Name()))
+		if err != nil {
+			return RealmRemovalScope{}, err
+		}
+		var record repositoryRecord
+		if err := json.Unmarshal(raw, &record); err != nil || record.Schema != RepositorySchema {
+			return RealmRemovalScope{}, errors.New("canonical repository record is invalid")
+		}
+		if record.OwnerRealmID == realmID && record.State != "deleted" {
+			owned[record.RepoID] = true
+		}
+	}
+	foreign := map[string]bool{}
+	clients, err := os.ReadDir(filepath.Join(p.ServiceWC, "clients"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return RealmRemovalScope{}, err
+	}
+	for _, client := range clients {
+		if !client.IsDir() {
+			continue
+		}
+		view, err := clientview.Load(filepath.Join(p.ServiceWC, "clients", client.Name(), "view.json"))
+		if err != nil {
+			return RealmRemovalScope{}, fmt.Errorf("load client projection %s: %w", client.Name(), err)
+		}
+		if view.RealmID != realmID {
+			continue
+		}
+		for _, repository := range view.Repositories {
+			if repository.OwnerRealmID != realmID {
+				foreign[repository.RepoID] = true
+			}
+		}
+	}
+	scope := RealmRemovalScope{}
+	for id := range owned {
+		scope.OwnedRepoIDs = append(scope.OwnedRepoIDs, id)
+	}
+	for id := range foreign {
+		scope.ForeignGrantRepoIDs = append(scope.ForeignGrantRepoIDs, id)
+	}
+	sort.Strings(scope.OwnedRepoIDs)
+	sort.Strings(scope.ForeignGrantRepoIDs)
+	return scope, validateScope(scope)
 }
 
 func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, url string) error {

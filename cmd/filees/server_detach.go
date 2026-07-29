@@ -55,7 +55,7 @@ func (s serverDetachService) Detach(ctx context.Context, serverID string) error 
 		return err
 	}
 	operationID := uuid.NewString()
-	ticket, err := control.NewTicket(operationID, uuid.NewSHA1(uuid.NameSpaceOID, []byte(operationID+":detach-client")).String(), control.TicketDetachClient, profile.ClientID, control.DetachClientPayload{}, time.Now())
+	ticket, err := control.NewTicket(operationID, uuid.NewSHA1(uuid.NameSpaceOID, []byte(operationID+":client-deactivate")).String(), control.TicketClientDeactivate, profile.ClientID, control.ClientDeactivatePayload{}, time.Now())
 	if err != nil {
 		return err
 	}

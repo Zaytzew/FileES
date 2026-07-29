@@ -146,6 +146,9 @@ func (s realmRemovalClientService) Confirm(ctx context.Context, payload contract
 	if err := control.DecodeResultPayload(response.Result, &result); err != nil {
 		return contract.RealmRemoveConfirmResult{}, err
 	}
+	if result.ErasureRequested && result.ErasureMaxDays <= 0 {
+		return contract.RealmRemoveConfirmResult{}, errors.New("server returned an invalid data-erasure completion window")
+	}
 	manifest := recoveryManifestFromControl(result.Manifest)
 	finalKit, err := recoverykit.Finalize(kit, manifest)
 	if err != nil {
@@ -169,7 +172,8 @@ func (s realmRemovalClientService) Confirm(ctx context.Context, payload contract
 	return contract.RealmRemoveConfirmResult{
 		ServerID: payload.ServerID, OperationID: payload.OperationID, RecoveryKitPath: kitPath,
 		ArchiveCount: len(manifest.Archives), DownloadUntil: manifest.DownloadUntil.Format(time.RFC3339Nano),
-		AdminGraceUntil: manifest.AdminGraceUntil.Format(time.RFC3339Nano),
+		AdminGraceUntil:  manifest.AdminGraceUntil.Format(time.RFC3339Nano),
+		ErasureRequested: result.ErasureRequested, ErasureMaxDays: result.ErasureMaxDays,
 	}, nil
 }
 

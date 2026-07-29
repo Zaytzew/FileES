@@ -27,7 +27,7 @@ func (fake *fakeRealmRemover) BeginRealmRemoval(_ context.Context, request actio
 
 func (fake *fakeRealmRemover) ConfirmRealmRemoval(_ context.Context, serverID, operationID string, otp []byte, kitPath string) (actions.RealmRemovalConfirmResult, error) {
 	fake.confirm <- strings.Join([]string{serverID, operationID, string(otp), kitPath}, "|")
-	return actions.RealmRemovalConfirmResult{RecoveryKitPath: kitPath, ArchiveCount: 2, DownloadUntil: "2026-08-29", AdminGraceUntil: "2026-09-08"}, nil
+	return actions.RealmRemovalConfirmResult{RecoveryKitPath: kitPath, ArchiveCount: 2, DownloadUntil: "2026-08-29", AdminGraceUntil: "2026-09-08", ErasureRequested: true, ErasureMaxDays: 90}, nil
 }
 
 func TestSettingsRealmRemovalRequiresRetentionConsentAndCarriesOptionalErasureIntent(t *testing.T) {

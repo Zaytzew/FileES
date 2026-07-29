@@ -24,7 +24,8 @@
     "url_prefix": "svn+ssh://_filees-data@filees.example.net/",
     "deletion_archive_root": "/var/filees/repository-operations/deleted-repositories",
     "deletion_retention_days": 30,
-    "recovery_admin_contact": "filees-admin@example.net"
+    "recovery_admin_contact": "filees-admin@example.net",
+    "data_erasure_max_days": 90
   },
   "operation_ttl": "30m",
   "otp_attempts": 5,

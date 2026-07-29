@@ -146,6 +146,7 @@ func (adapter realmRemovalAdapter) ConfirmRealmRemoval(ctx context.Context, serv
 	return actions.RealmRemovalConfirmResult{
 		RecoveryKitPath: result.RecoveryKitPath, ArchiveCount: result.ArchiveCount,
 		DownloadUntil: result.DownloadUntil, AdminGraceUntil: result.AdminGraceUntil,
+		ErasureRequested: result.ErasureRequested, ErasureMaxDays: result.ErasureMaxDays,
 	}, nil
 }
 

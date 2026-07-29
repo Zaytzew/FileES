@@ -33,6 +33,9 @@ fi
 if ! id _filees-data >/dev/null 2>&1; then
 	useradd -c "FileES data repository client" -d /var/empty -s /bin/sh _filees-data
 fi
+if ! id _filees-recovery >/dev/null 2>&1; then
+	useradd -c "FileES recovery download" -d /var/empty -s /bin/sh _filees-recovery
+fi
 # A '*' password field makes BSD Authentication reject the account before a
 # local style can run. Install an unknowable random hash; sshd still disables
 # password authentication. Public-key policy remains explicit per Match block.
@@ -40,6 +43,7 @@ password_hash=$(openssl rand -hex 32 | encrypt -b 12)
 usermod -p "$password_hash" _filees-tunnel
 usermod -p "$password_hash" _filees-client
 usermod -p "$password_hash" _filees-data
+usermod -p "$password_hash" _filees-recovery
 usermod -G "$client_access_group" _filees-client
 usermod -G "$client_access_group" _filees-data
 unset password_hash
@@ -55,6 +59,7 @@ install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-entry" /usr/local/
 install -o root -g wheel -m 0555 "$bundle/bin/filees-worker" /usr/local/libexec/filees/filees-worker
 install -o root -g wheel -m 0555 "$bundle/bin/filees-mail" /usr/local/libexec/filees/filees-mail
 install -o "$state_user" -g "$client_access_group" -m 4550 "$bundle/bin/filees-client-entry" /usr/local/libexec/filees/filees-client-entry
+install -o "$state_user" -g _filees-recovery -m 4550 "$bundle/bin/filees-recovery-entry" /usr/local/libexec/filees/filees-recovery-entry
 
 install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/bootstrap_authorized_keys" /etc/ssh/filees_bootstrap_authorized_keys
 install -d -o root -g wheel -m 755 /etc/ssh/sshd_config.d

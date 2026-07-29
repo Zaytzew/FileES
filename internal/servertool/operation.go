@@ -75,6 +75,12 @@ func RunOperation(args []string, stdout, stderr io.Writer) int {
 				return ExitTempFail
 			}
 			result["purged_repository_deletion_archives"] = reaped
+			recoveryCapabilities, err := reapRecoveryCapabilities(root, time.Now())
+			if err != nil {
+				report(stderr, "filees-operation recovery capability cleanup", err)
+				return ExitTempFail
+			}
+			result["purged_recovery_capabilities"] = recoveryCapabilities
 		}
 		if err := writeJSON(stdout, result); err != nil {
 			return ExitSoftware

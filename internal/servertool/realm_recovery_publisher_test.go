@@ -77,4 +77,10 @@ func TestRealmRecoveryPublisherBindsExactArchivesIdempotently(t *testing.T) {
 	if _, err := keys.FindByPublicKey(record.Request.RecoveryPublicKey, manifest.DownloadUntil.Add(-time.Second)); err != nil {
 		t.Fatalf("bound recovery key: %v", err)
 	}
+	if removed, err := repoworker.ReapDeletionArchives(archiveRoot, manifest.DownloadUntil); err != nil || removed != 0 {
+		t.Fatalf("download expiry removed grace archive: removed=%d err=%v", removed, err)
+	}
+	if removed, err := repoworker.ReapDeletionArchives(archiveRoot, manifest.AdminGraceUntil); err != nil || removed != 1 {
+		t.Fatalf("grace expiry did not remove archive: removed=%d err=%v", removed, err)
+	}
 }

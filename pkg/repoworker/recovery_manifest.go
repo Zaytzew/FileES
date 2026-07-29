@@ -97,10 +97,30 @@ func (s RecoveryManifestStore) path(operationID string) string {
 // It is intentionally an explicit call from another server action, never a
 // resident or scheduled worker.
 func (s RecoveryManifestStore) ReapExpired(now time.Time) ([]string, error) {
+	expired, err := s.Expired(now)
+	if err != nil {
+		return nil, err
+	}
+	removed := make([]string, 0, len(expired))
+	for _, operationID := range expired {
+		if err := s.RemoveExpired(operationID, now); err != nil {
+			return removed, err
+		}
+		removed = append(removed, operationID)
+	}
+	return removed, nil
+}
+
+func (s RecoveryManifestStore) Expired(now time.Time) ([]string, error) {
 	if !filepath.IsAbs(s.Root) {
 		return nil, errors.New("recovery manifest root must be absolute")
 	}
-	var removed []string
+	if _, err := os.Stat(s.Root); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	var expired []string
 	err := WithFileLock(filepath.Join(s.Root, ".recovery-manifest.lock"), func() error {
 		entries, err := os.ReadDir(s.Root)
 		if errors.Is(err, os.ErrNotExist) {
@@ -125,14 +145,40 @@ func (s RecoveryManifestStore) ReapExpired(now time.Time) ([]string, error) {
 			if now.UTC().Before(manifest.AdminGraceUntil) {
 				continue
 			}
-			if err := os.Remove(path); err != nil {
-				return err
-			}
-			removed = append(removed, manifest.OperationID)
+			expired = append(expired, manifest.OperationID)
 		}
 		return nil
 	})
-	return removed, err
+	return expired, err
+}
+
+func (s RecoveryManifestStore) RemoveExpired(operationID string, now time.Time) error {
+	manifest, err := s.Load(operationID)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if now.UTC().Before(manifest.AdminGraceUntil) {
+		return errors.New("recovery manifest grace has not expired")
+	}
+	return WithFileLock(filepath.Join(s.Root, ".recovery-manifest.lock"), func() error {
+		current, err := s.Load(operationID)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if now.UTC().Before(current.AdminGraceUntil) {
+			return errors.New("recovery manifest grace has not expired")
+		}
+		if err := os.Remove(s.path(operationID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return syncDirectory(s.Root)
+	})
 }
 
 func validateRecoveryManifest(m RecoveryManifest) error {

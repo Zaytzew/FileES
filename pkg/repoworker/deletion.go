@@ -27,7 +27,10 @@ type deletionArchiveMeta struct {
 	DumpFile    string    `json:"dump_file"`
 	SHA256      string    `json:"sha256"`
 	CreatedAt   time.Time `json:"created_at"`
-	DeleteAfter time.Time `json:"delete_after"`
+	// RecoveryDownloadUntil is set only when a realm-removal recovery
+	// capability promotes this ordinary deletion archive into grace storage.
+	RecoveryDownloadUntil *time.Time `json:"recovery_download_until,omitempty"`
+	DeleteAfter           time.Time  `json:"delete_after"`
 }
 
 // DeletionRecoveryArchive resolves one exact deletion receipt into the
@@ -58,7 +61,89 @@ func DeletionRecoveryArchive(root, repoID, operationID string) (RecoveryArchive,
 		return RecoveryArchive{}, time.Time{}, false, errors.New("repository deletion dump is not a regular file")
 	}
 	archiveID := uuid.NewSHA1(uuid.NameSpaceOID, []byte("filees-recovery:"+repoID+":"+operationID)).String()
-	return RecoveryArchive{ArchiveID: archiveID, RepoID: repoID, SHA256: meta.SHA256, Size: info.Size()}, meta.DeleteAfter, true, nil
+	downloadUntil := meta.DeleteAfter
+	if meta.RecoveryDownloadUntil != nil {
+		downloadUntil = meta.RecoveryDownloadUntil.UTC()
+	}
+	return RecoveryArchive{ArchiveID: archiveID, RepoID: repoID, SHA256: meta.SHA256, Size: info.Size()}, downloadUntil, true, nil
+}
+
+// PromoteDeletionArchiveToRecovery preserves the dump through the manual
+// contact grace period while keeping the original download deadline. Replays
+// are immutable and cannot extend either deadline repeatedly.
+func PromoteDeletionArchiveToRecovery(root, repoID, operationID string, grace time.Duration) (time.Time, bool, error) {
+	if grace <= 0 {
+		return time.Time{}, false, errors.New("recovery grace must be positive")
+	}
+	if !filepath.IsAbs(root) {
+		return time.Time{}, false, errors.New("repository deletion archive root must be absolute")
+	}
+	if _, err := uuid.Parse(repoID); err != nil {
+		return time.Time{}, false, errors.New("repository ID must be UUID")
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return time.Time{}, false, errors.New("repository deletion operation ID must be UUID")
+	}
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		return time.Time{}, false, nil
+	} else if err != nil {
+		return time.Time{}, false, err
+	}
+	base := repoID + "-" + operationID
+	dumpPath := filepath.Join(root, base+".svndump")
+	metaPath := filepath.Join(root, base+".json")
+	var downloadUntil time.Time
+	var found bool
+	err := WithFileLock(filepath.Join(root, ".deletion-archive.lock"), func() error {
+		meta, ok, err := loadDeletionArchive(metaPath, dumpPath, repoID, operationID)
+		if err != nil || !ok {
+			found = ok
+			return err
+		}
+		found = true
+		if meta.RecoveryDownloadUntil != nil {
+			downloadUntil = meta.RecoveryDownloadUntil.UTC()
+			if !meta.DeleteAfter.Equal(downloadUntil.Add(grace)) {
+				return errors.New("repository recovery grace conflicts with prior receipt")
+			}
+			return nil
+		}
+		value := meta.DeleteAfter.UTC()
+		meta.RecoveryDownloadUntil = &value
+		meta.DeleteAfter = value.Add(grace)
+		if err := atomicJSON(metaPath, meta); err != nil {
+			return err
+		}
+		downloadUntil = value
+		return nil
+	})
+	return downloadUntil, found, err
+}
+
+// OpenDeletionRecoveryArchive opens only the deterministic dump represented
+// by expected, after revalidating its immutable metadata and filesystem shape.
+func OpenDeletionRecoveryArchive(root, operationID string, expected RecoveryArchive) (*os.File, error) {
+	actual, _, found, err := DeletionRecoveryArchive(root, expected.RepoID, operationID)
+	if err != nil {
+		return nil, err
+	}
+	if !found || actual != expected {
+		return nil, errors.New("recovery archive no longer matches its manifest")
+	}
+	base := expected.RepoID + "-" + operationID + ".svndump"
+	file, err := os.Open(filepath.Join(root, base))
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() != expected.Size {
+		_ = file.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("recovery archive changed while opening")
+	}
+	return file, nil
 }
 
 func (e ServerEffects) PrepareDelete(_ context.Context, repoID, operationID string) error {
@@ -365,6 +450,9 @@ func validateDeletionArchiveMeta(meta deletionArchiveMeta) error {
 	}
 	if meta.CreatedAt.IsZero() || meta.DeleteAfter.Before(meta.CreatedAt) {
 		return errors.New("repository deletion archive retention is invalid")
+	}
+	if meta.RecoveryDownloadUntil != nil && (meta.RecoveryDownloadUntil.Before(meta.CreatedAt) || meta.DeleteAfter.Before(*meta.RecoveryDownloadUntil)) {
+		return errors.New("repository deletion archive recovery retention is invalid")
 	}
 	if filepath.Base(meta.DumpFile) != meta.DumpFile || meta.DumpFile == "." || meta.DumpFile == "" {
 		return errors.New("repository deletion archive dump path is invalid")

@@ -248,7 +248,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	text := string(raw)
 	for _, required := range []string{
 		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail",
-		"filees-ssh-auth filees-entry filees-worker filees-client-entry",
+		"filees-ssh-auth filees-entry filees-worker filees-client-entry filees-recovery-entry",
 		`"./cmd/$command"`, "SHA256SUMS", "sha256 -r",
 	} {
 		if !strings.Contains(text, required) {
@@ -281,6 +281,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 		`-m 4511 "$bundle/bin/filees-entry"`,
 		`-m 0555 "$bundle/bin/filees-worker"`,
 		`-m 4550 "$bundle/bin/filees-client-entry"`,
+		`-g _filees-recovery -m 4550 "$bundle/bin/filees-recovery-entry"`,
 		`svnadmin create /var/filees/service-repo`,
 	} {
 		if !strings.Contains(openBSDInstallerText, required) {
@@ -304,6 +305,18 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	for _, required := range []string{"AuthorizedKeysFile none", "AuthorizedKeysCommand /bin/cat /var/filees/activation/authorized_keys", "AuthorizedKeysCommandUser _filees-state"} {
 		if len(clientPolicy) != 2 || !strings.Contains(clientPolicy[1], required) {
 			t.Fatalf("OpenBSD client Match block missing state-owned key reader %q", required)
+		}
+	}
+	recoveryPolicy := strings.SplitN(string(sshPolicy), "Match User _filees-recovery", 2)
+	for _, required := range []string{
+		"AuthenticationMethods publickey",
+		"AuthorizedKeysCommand /usr/local/libexec/filees/filees-recovery-entry authorize %t %k",
+		"AuthorizedKeysCommandUser _filees-state",
+		"DisableForwarding yes",
+		"PermitTTY no",
+	} {
+		if len(recoveryPolicy) != 2 || !strings.Contains(recoveryPolicy[1], required) {
+			t.Fatalf("OpenBSD recovery Match block missing %q", required)
 		}
 	}
 	configRaw, err := os.ReadFile("server/server.example.json")

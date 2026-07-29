@@ -82,6 +82,9 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		if _, err := repoworker.ReapDeletionArchives(archiveRoot, time.Now()); err != nil {
 			return err
 		}
+		if _, err := reapRecoveryCapabilities(r.ResultsRoot, time.Now()); err != nil {
+			return err
+		}
 		return dispatcher.Serve(context.Background(), args[0], in, out)
 	}); err != nil {
 		report(stderr, "repository worker", err)

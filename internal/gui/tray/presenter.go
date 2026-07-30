@@ -53,9 +53,11 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 	if vm.CanListErrors() {
 		model.Items = append(model.Items, errorsMenu(vm.Errors))
 	}
+	if len(vm.Recoveries) > 0 {
+		model.Items = append(model.Items, actionItem("action.recoveries", "Odzyskiwanie repozytoriów…", "Pobierz dostępne archiwa odzyskiwania", Intent{Kind: IntentRecoveries}))
+	}
 	model.Items = append(model.Items,
 		separator("sep.actions"),
-		actionItem("action.settings", "Ustawienia FileES…", "Zarządzaj serwerami i folderami FileES", Intent{Kind: IntentSettings}),
 		actionItem("action.activate", "Aktywuj klienta na nowym serwerze…", "Dodaj aktywację FileES kodem z e-maila", Intent{Kind: IntentActivate}),
 		actionItem("action.reconnect", "Połącz ponownie", "Odśwież połączenie z daemonem", Intent{Kind: IntentReconnect}),
 	)
@@ -170,6 +172,7 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 		name = server.ID
 	}
 	children := []MenuItemModel{}
+	children = append(children, actionItem("server."+server.ID+".settings", "Zarządzaj serwerem…", "Informacje o serwerze, foldery i akcje administracyjne", Intent{Kind: IntentSettings, ServerID: server.ID}))
 	if server.RealmID != "" && server.RealmAlias == "" && vm.CanClaimRealmAlias() {
 		children = append(children, actionItem("server."+server.ID+".realm_alias", "Ustaw stały alias…", "Ustaw niezmienny pseudonim widoczny przy blokadach", Intent{Kind: IntentSetRealmAlias, ServerID: server.ID}))
 	}
@@ -177,15 +180,22 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 		children = append(children, actionItem("server."+server.ID+".pair_mobile", "Sparuj urządzenie mobilne…", "Wygeneruj kod QR do parowania telefonu", Intent{Kind: IntentPairMobileDevice, ServerID: server.ID}))
 	}
 	visibleRepos := 0
+	localFolders := 0
 	for _, repo := range server.Repos {
 		if !repo.Attached && repo.AttachmentPolicy != "required" {
 			continue
 		}
 		visibleRepos++
+		if repo.Attached && strings.TrimSpace(repo.LocalPath) != "" {
+			localFolders++
+		}
 		children = append(children, repoMenu(vm, repo))
 	}
 	if visibleRepos == 0 {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak lokalnych folderów FileES"))
+	}
+	if localFolders == 0 && vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
+		children = append(children, actionItem("server."+server.ID+".create_first", "Dodaj pierwszy folder do FileES…", "Utwórz pierwsze lokalne repozytorium na tym serwerze", Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
 	}
 	return MenuItemModel{ID: "server." + server.ID, Title: name, Enabled: true, Children: children}
 }

@@ -120,7 +120,7 @@ func TestControllerSettingsRoutesFolderDetachThroughExistingConfirmation(t *test
 	view := lifecycleView(contract.CapRepoDetach)
 	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, Prompter: platformFake, RepositoryDetacher: detacher})
 	defer cancel()
-	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
 	call := awaitCh(t, detacher.calls, "settings detach")
 	if call.serverID != "office" || call.repoID != "repo-1" || call.deleteRepository {
 		t.Fatalf("settings detach call=%+v", call)

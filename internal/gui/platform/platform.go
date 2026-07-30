@@ -47,8 +47,9 @@ type ReservationBrowser interface {
 	ShowReservations(ctx context.Context, request ReservationDialogRequest) (ReservationDialogResult, error)
 }
 
-// SettingsBrowser renders the read-only settings overview. Actions are kept
-// out of this boundary until the controller has validated the user's intent.
+// SettingsBrowser renders a server-scoped management overview (or the narrow
+// recovery view). Actions are kept out of this boundary until the controller
+// has validated the user's intent.
 type SettingsBrowser interface {
 	ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error)
 }

@@ -264,10 +264,14 @@ func TestBuildMenuHeaderShowsAtLeastOneActiveServer(t *testing.T) {
 	}
 }
 
-func TestBuildMenuExposesSettingsAsTheManagementEntryPoint(t *testing.T) {
-	item := findItem(t, BuildMenu(app.ViewModel{}).Items, "action.settings")
-	if item.Title != "Ustawienia FileES…" || item.Intent == nil || item.Intent.Kind != IntentSettings {
+func TestServerMenuExposesServerScopedManagementEntryPoint(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office"}}})
+	item := findItem(t, findItem(t, menu.Items, "server.office").Children, "server.office.settings")
+	if item.Title != "Zarządzaj serwerem…" || item.Intent == nil || item.Intent.Kind != IntentSettings || item.Intent.ServerID != "office" {
 		t.Fatalf("settings item = %#v", item)
+	}
+	if hasItem(menu.Items, "action.settings") {
+		t.Fatal("global settings entry must not be rendered")
 	}
 }
 
@@ -278,13 +282,13 @@ func TestBuildMenuDoesNotSynthesizeDefaultServer(t *testing.T) {
 	}
 }
 
-func TestServerMenuUsesAliasWithoutManagementActions(t *testing.T) {
+func TestServerMenuUsesAliasWithOnlyServerScopedManagementAction(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "office", Address: "filees.example.net:2222"}}})
 	server := findItem(t, menu.Items, "server.office")
 	if server.Title != "office" {
 		t.Fatalf("server title = %q", server.Title)
 	}
-	if hasItem(server.Children, "server.office.info") || hasItem(server.Children, "server.office.create") || hasItem(server.Children, "server.office.detach") {
+	if !hasItem(server.Children, "server.office.settings") || hasItem(server.Children, "server.office.info") || hasItem(server.Children, "server.office.create") || hasItem(server.Children, "server.office.detach") {
 		t.Fatalf("server management action remains in tray: %+v", server.Children)
 	}
 }
@@ -308,6 +312,18 @@ func TestBuildMenuExposesGlobalReservationListAndDisablesItWhenEmpty(t *testing.
 	server := findItem(t, BuildMenu(base).Items, "server.office")
 	if hasItem(server.Children, "server.office.reservations") {
 		t.Fatal("reservation action must not be nested under the server")
+	}
+}
+
+func TestBuildMenuShowsRecoveryEntryOnlyWhenRecoveryIsAvailable(t *testing.T) {
+	base := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office"}}}
+	if hasItem(BuildMenu(base).Items, "action.recoveries") {
+		t.Fatal("recovery entry shown without recovery records")
+	}
+	base.Recoveries = []app.RecoveryViewModel{{OperationID: "recovery-1", ServerName: "Biuro"}}
+	item := findItem(t, BuildMenu(base).Items, "action.recoveries")
+	if item.Intent == nil || item.Intent.Kind != IntentRecoveries {
+		t.Fatalf("recovery entry = %#v", item)
 	}
 }
 
@@ -351,19 +367,28 @@ func TestServerPermissionsAndManagementDoNotClutterTray(t *testing.T) {
 	}
 }
 
-func TestServerCreateRepositoryActionIsManagedThroughSettings(t *testing.T) {
+func TestServerShowsFirstFolderShortcutOnlyWhenEligible(t *testing.T) {
 	server := app.ServerViewModel{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}
 	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}})
-	if hasItem(findItem(t, menu.Items, "server.office").Children, "server.office.create") {
-		t.Fatal("create action remains in tray")
+	shortcut := findItem(t, findItem(t, menu.Items, "server.office").Children, "server.office.create_first")
+	if shortcut.Intent == nil || shortcut.Intent.Kind != IntentCreateRepository || shortcut.Intent.ServerID != "office" {
+		t.Fatalf("first-folder shortcut = %#v", shortcut)
 	}
 	server.ClientRole = contract.ClientRoleReadOnly
-	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create") {
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_first") {
 		t.Fatal("create action visible in tray for read-only client")
 	}
 	server.ClientRole = contract.ClientRoleNormal
-	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create") {
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_first") {
 		t.Fatal("create action visible for stale snapshot")
+	}
+	server.Repos = []app.RepoViewModel{{ID: "docs", Attached: true, LocalPath: "/wc/docs"}}
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_first") {
+		t.Fatal("first-folder shortcut remains after a local folder exists")
+	}
+	server.Repos = []app.RepoViewModel{{ID: "remote", AttachmentPolicy: "optional", State: contract.StateUnattached}}
+	if !hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_first") {
+		t.Fatal("remote projection without a local folder hides first-folder shortcut")
 	}
 }
 

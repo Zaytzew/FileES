@@ -1167,21 +1167,24 @@ func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 	view := app.ViewModel{Servers: []app.ServerViewModel{{
 		ID: "office", DisplayName: "Biuro", Address: "filees.example", SSHPort: 2222,
 		RealmID: "realm-1", RealmAlias: "acme", ClientID: "client-1",
-		Repos: []app.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty", Attached: true, LocalPath: "/wc/docs", Access: contract.AccessReadWrite, State: contract.StateActive}},
+		Repos: []app.RepoViewModel{
+			{ID: "docs", DisplayName: "Dokumenty", Attached: true, LocalPath: "/wc/docs", Access: contract.AccessReadWrite, State: contract.StateActive},
+			{ID: "remote", DisplayName: "Zdalna projekcja", AttachmentPolicy: "optional", State: contract.StateUnattached},
+		},
 	}}}
 	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, SettingsBrowser: platformFake})
 	defer cancel()
-	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
 	deadline := time.Now().Add(time.Second)
 	for len(platformFake.Snapshot().SettingsRequests) == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	requests := platformFake.Snapshot().SettingsRequests
-	if len(requests) != 1 || len(requests[0].Servers) != 1 {
+	if len(requests) != 1 || requests[0].Title != "FileES — Biuro" || len(requests[0].Servers) != 1 {
 		t.Fatalf("settings request = %#v", requests)
 	}
 	server := requests[0].Servers[0]
-	if server.Name != "Biuro" || server.Address != "filees.example:2222" || !strings.Contains(server.Realm, "acme") || len(server.Folders) != 1 {
+	if server.Name != "Biuro" || server.Address != "filees.example" || !strings.Contains(server.Realm, "acme") || len(server.Folders) != 1 {
 		t.Fatalf("settings server = %#v", server)
 	}
 	folder := server.Folders[0]

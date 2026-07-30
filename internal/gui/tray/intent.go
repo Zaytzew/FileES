@@ -13,6 +13,7 @@ const (
 	IntentSetRealmAlias    IntentKind = "set_realm_alias"
 	IntentServerInfo       IntentKind = "server_info"
 	IntentSettings         IntentKind = "settings"
+	IntentRecoveries       IntentKind = "recoveries"
 	IntentReservations     IntentKind = "reservations"
 	IntentCreateRepository IntentKind = "create_repository"
 	IntentPairMobileDevice IntentKind = "pair_mobile_device"

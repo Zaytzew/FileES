@@ -55,7 +55,7 @@ func TestSettingsRealmRemovalRequiresRetentionConsentAndCarriesOptionalErasureIn
 		ConsentPrompter: fake, FolderPicker: fake, RealmRemover: remover, Notifier: fake,
 	})
 	defer cancel()
-	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
 	begin := awaitCh(t, remover.begin, "realm removal begin")
 	if begin.ServerID != "office" || begin.NotificationEmail != "user@example.net" || begin.RecoveryDirectory != "/tmp/recovery" || !begin.ErasureRequested {
 		t.Fatalf("begin=%+v", begin)
@@ -87,7 +87,7 @@ func TestSettingsRealmRemovalStopsWhenMandatoryRetentionConsentIsUnchecked(t *te
 	}
 	intents, cancel := setup(actions.Config{ViewModel: viewCopy(lifecycleView()), SettingsBrowser: fake, Prompter: fake, ConsentPrompter: fake, FolderPicker: fake, RealmRemover: remover})
 	defer cancel()
-	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
 	select {
 	case call := <-remover.begin:
 		t.Fatalf("realm removal started without mandatory consent: %+v", call)

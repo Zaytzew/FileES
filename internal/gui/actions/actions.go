@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -235,7 +237,9 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
 	case tray.IntentSettings:
-		c.startSettings(ctx)
+		c.startSettings(ctx, intent.ServerID)
+	case tray.IntentRecoveries:
+		c.startRecoverySettings(ctx)
 	case tray.IntentReservations:
 		c.startReservations(ctx)
 	case tray.IntentCreateRepository:
@@ -259,18 +263,39 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	}
 }
 
-func (c *Controller) startSettings(ctx context.Context) {
-	if c.cfg.SettingsBrowser == nil || !c.beginOperation("settings") {
+func (c *Controller) startSettings(ctx context.Context, serverID string) {
+	if serverID == "" {
 		return
 	}
-	request := settingsDialogRequest(c.cfg.ViewModel())
+	request, ok := settingsDialogRequest(c.cfg.ViewModel(), serverID)
+	if !ok {
+		return
+	}
+	c.showSettings(ctx, "settings:"+serverID, request)
+}
+
+// startRecoverySettings is intentionally a narrow global dialog, rather than
+// a second instance-wide settings surface: recovery archives may outlive the
+// activation that created them and therefore have no server submenu.
+func (c *Controller) startRecoverySettings(ctx context.Context) {
+	request, ok := recoverySettingsDialogRequest(c.cfg.ViewModel())
+	if !ok {
+		return
+	}
+	c.showSettings(ctx, "recoveries", request)
+}
+
+func (c *Controller) showSettings(ctx context.Context, operationKey string, request platform.SettingsDialogRequest) {
+	if c.cfg.SettingsBrowser == nil || !c.beginOperation(operationKey) {
+		return
+	}
 	c.tasks.Add(1)
 	go func() {
 		defer c.tasks.Done()
-		defer c.endOperation("settings")
+		defer c.endOperation(operationKey)
 		result, err := c.cfg.SettingsBrowser.ShowSettings(ctx, request)
 		if err != nil && ctx.Err() == nil {
-			c.notify(ctx, platform.Notification{ID: "settings", Group: "settings", Title: "Nie udało się otworzyć ustawień FileES", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: operationKey, Group: operationKey, Title: "Nie udało się otworzyć okna FileES", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			return
 		}
 		switch result.Action {
@@ -393,13 +418,11 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 	}()
 }
 
-func settingsDialogRequest(vm app.ViewModel) platform.SettingsDialogRequest {
-	request := platform.SettingsDialogRequest{Title: "Ustawienia FileES", Text: "Serwery i foldery powiązane z tym klientem."}
-	if len(vm.Servers) == 0 {
-		request.Text = "Brak aktywnych serwerów FileES. Użyj „Aktywuj klienta na nowym serwerze…”, aby dodać pierwszy serwer."
-		return request
-	}
+func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.SettingsDialogRequest, bool) {
 	for _, server := range vm.Servers {
+		if server.ID != serverID {
+			continue
+		}
 		name := server.DisplayName
 		if strings.TrimSpace(name) == "" {
 			name = server.ID
@@ -407,22 +430,27 @@ func settingsDialogRequest(vm app.ViewModel) platform.SettingsDialogRequest {
 		address := server.Address
 		if address == "" {
 			address = "brak danych"
-		} else if server.SSHPort > 0 {
-			address = fmt.Sprintf("%s:%d", address, server.SSHPort)
+		} else {
+			address = settingsServerHost(address)
 		}
 		realm := server.RealmAlias
 		if realm == "" {
 			realm = "alias nieustawiony"
 		}
-		if server.RealmID != "" {
-			realm += " (" + server.RealmID + ")"
-		}
 		clientID := server.ClientID
 		if clientID == "" {
 			clientID = "brak danych"
 		}
+		request := platform.SettingsDialogRequest{Title: "FileES — " + name, Text: "Informacje o serwerze, aktywacji i lokalnych folderach."}
 		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID}
 		for _, repo := range server.Repos {
+			// Optional remote projections are not folders on this client. Showing
+			// them beside their attached counterpart produces duplicate-looking
+			// rows and contradicts the server-popup contract. Required entries
+			// remain visible so a server-mandated attachment is not hidden.
+			if !repo.Attached && repo.AttachmentPolicy != "required" {
+				continue
+			}
 			repoName := repo.DisplayName
 			if strings.TrimSpace(repoName) == "" {
 				repoName = repo.ID
@@ -439,7 +467,33 @@ func settingsDialogRequest(vm app.ViewModel) platform.SettingsDialogRequest {
 			row.Folders = append(row.Folders, platform.SettingsFolder{ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access})
 		}
 		request.Servers = append(request.Servers, row)
+		return request, true
 	}
+	return platform.SettingsDialogRequest{}, false
+}
+
+// settingsServerHost keeps the management table readable. The transport port
+// remains available in technical server information, but is not part of the
+// user-facing server label. It also avoids duplicating a port that is already
+// present in older profile addresses.
+func settingsServerHost(address string) string {
+	address = strings.TrimSpace(address)
+	if host, _, err := net.SplitHostPort(address); err == nil {
+		return host
+	}
+	if colon := strings.LastIndex(address, ":"); colon > 0 && strings.Count(address, ":") == 1 {
+		if _, err := strconv.ParseUint(address[colon+1:], 10, 16); err == nil {
+			return address[:colon]
+		}
+	}
+	return address
+}
+
+func recoverySettingsDialogRequest(vm app.ViewModel) (platform.SettingsDialogRequest, bool) {
+	if len(vm.Recoveries) == 0 {
+		return platform.SettingsDialogRequest{}, false
+	}
+	request := platform.SettingsDialogRequest{Title: "Odzyskiwanie repozytoriów FileES", Text: "Dostępne archiwa odzyskiwania."}
 	for _, recovery := range vm.Recoveries {
 		status := "Pobierz archiwa repozytoriów do " + recovery.DownloadUntil
 		if !recovery.CanDownload {
@@ -454,7 +508,7 @@ func settingsDialogRequest(vm app.ViewModel) platform.SettingsDialogRequest {
 			Status: status, CanDownload: recovery.CanDownload,
 		})
 	}
-	return request
+	return request, true
 }
 
 func settingsRepositoryState(repo app.RepoViewModel) string {

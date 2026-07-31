@@ -39,7 +39,7 @@ Neutralny gate jakości dla CI to `make verify`: pełne testy Go, wybrane testy 
 
 ## Wymagania
 
-- Go 1.24+
+- Go 1.25+
 - Klient SVN (`svn`) dostępny w `PATH`
 - Klient OpenSSH (`ssh`) i aktywna tożsamość instalacji FileES
 - Dostęp przez systemowy `sshd` do tunelowego `svnserve -t`; nasłuchujący

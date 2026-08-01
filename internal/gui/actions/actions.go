@@ -88,6 +88,18 @@ type ServerDetacher interface {
 	DetachServer(context.Context, string) error
 }
 
+type RealmGrantRecipient struct {
+	RealmID string
+	Alias   string
+}
+
+type RealmGrantManager interface {
+	ListRecipients(context.Context, string) ([]RealmGrantRecipient, error)
+	SetVisibility(context.Context, string, string) error
+	Grant(context.Context, string, string, string, string) error
+	Revoke(context.Context, string, string, string) error
+}
+
 type RealmRemovalBeginRequest struct {
 	ServerID, NotificationEmail, RecoveryDirectory string
 	ErasureRequested                               bool
@@ -174,8 +186,10 @@ type Config struct {
 	Locker             LockUnlocker
 	Reservations       ReservationManager
 	RealmAliases       RealmAliasManager
+	RealmGrants        RealmGrantManager
 	ReservationBrowser platform.ReservationBrowser
 	SettingsBrowser    platform.SettingsBrowser
+	RealmGrantBrowser  platform.RealmGrantBrowser
 	ConsentPrompter    platform.ConsentPrompter
 	Reconnect          func() // nil → reconnect intent is a no-op
 	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
@@ -317,6 +331,10 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startDetachRepository(ctx, result.ServerID, result.RepoID, true)
 		case platform.SettingsDialogLoadDump:
 			c.startLoadDump(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogManageGrants:
+			c.startManageRealmGrants(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogRealmVisibility:
+			c.startSetRealmVisibility(ctx, result.ServerID)
 		case platform.SettingsDialogDetachServer:
 			c.startDetachServer(ctx, result.ServerID)
 		case platform.SettingsDialogRemoveRealm:
@@ -454,7 +472,7 @@ func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.Settings
 			clientID = "brak danych"
 		}
 		request := platform.SettingsDialogRequest{Title: "FileES — " + name, Text: "Informacje o serwerze, aktywacji i lokalnych folderach."}
-		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID}
+		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility()}
 		for _, repo := range server.Repos {
 			// Optional remote projections are not folders on this client. Showing
 			// them beside their attached counterpart produces duplicate-looking
@@ -476,7 +494,7 @@ func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.Settings
 			if repo.Access == "rw" {
 				access = "odczyt i zapis"
 			}
-			row.Folders = append(row.Folders, platform.SettingsFolder{ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access})
+			row.Folders = append(row.Folders, platform.SettingsFolder{ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access, CanManageGrants: vm.CanManageRealmGrants() && server.Owns(repo) && server.CanOfferRepositoryCreation()})
 		}
 		request.Servers = append(request.Servers, row)
 		return request, true
@@ -699,6 +717,157 @@ func (c *Controller) startLoadDump(ctx context.Context, serverID, repoID string)
 			return
 		}
 		c.notify(ctx, platform.Notification{ID: "repository-load-dump." + repoID, Group: "repository-load-dump." + repoID, Title: "Odtwarzanie z archiwum rozpoczęte", Body: name, Urgency: platform.UrgencyNormal})
+	}()
+}
+
+func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoID string) {
+	key := "realm-grants." + serverID + "." + repoID
+	if serverID == "" || repoID == "" || c.cfg.RealmGrants == nil || c.cfg.RealmGrantBrowser == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		if !vm.CanManageRealmGrants() {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Zarządzanie dostępem jest niedostępne", Body: "Demon FileES nie udostępnia kompletnej obsługi grantów.", Urgency: platform.UrgencyCritical})
+			return
+		}
+		var (
+			server app.ServerViewModel
+			repo   app.RepoViewModel
+			found  bool
+		)
+		for _, candidate := range vm.Servers {
+			if candidate.ID != serverID {
+				continue
+			}
+			server = candidate
+			for _, candidateRepo := range candidate.Repos {
+				if candidateRepo.ID == repoID {
+					repo, found = candidateRepo, true
+					break
+				}
+			}
+			break
+		}
+		if !found || !server.Owns(repo) || !server.CanOfferRepositoryCreation() {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można zarządzać dostępem", Body: "Granty może zmieniać wyłącznie właściciel repozytorium.", Urgency: platform.UrgencyCritical})
+			return
+		}
+		recipients, err := c.cfg.RealmGrants.ListRecipients(ctx, serverID)
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać realmów", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		if len(recipients) == 0 {
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Brak widocznych realmów. Odbiorca musi najpierw włączyć widoczność w prywatnym katalogu realmów."})
+			return
+		}
+		request := platform.RealmGrantDialogRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Wybierz realm i docelowy poziom dostępu. Ponowne nadanie zmienia istniejący grant."}
+		known := make(map[string]RealmGrantRecipient, len(recipients))
+		for _, recipient := range recipients {
+			known[recipient.RealmID] = recipient
+			request.Recipients = append(request.Recipients, platform.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias})
+		}
+		choice, err := c.cfg.RealmGrantBrowser.ShowRealmGrants(ctx, request)
+		if err != nil || choice.Action == platform.RealmGrantDialogClose {
+			if err != nil && ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć grantów", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			}
+			return
+		}
+		recipient, ok := known[choice.RealmID]
+		if !ok {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nieprawidłowy odbiorca", Body: "Wybrany realm nie pochodzi z aktualnego katalogu odbiorców.", Urgency: platform.UrgencyCritical})
+			return
+		}
+		label := strings.TrimSpace(recipient.Alias)
+		if label == "" {
+			label = recipient.RealmID
+		}
+		actionText := "nadać dostęp tylko do odczytu"
+		if choice.Action == platform.RealmGrantDialogWrite {
+			actionText = "nadać dostęp do odczytu i zapisu"
+		} else if choice.Action == platform.RealmGrantDialogRevoke {
+			actionText = "cofnąć dostęp"
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Potwierdź zmianę dostępu", Text: "Czy " + actionText + " realmowi „" + label + "” do repozytorium „" + repo.DisplayName + "”?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
+		if err != nil || !confirmed {
+			return
+		}
+		if choice.Action == platform.RealmGrantDialogRevoke {
+			err = c.cfg.RealmGrants.Revoke(ctx, serverID, repoID, recipient.RealmID)
+		} else {
+			access := "r"
+			if choice.Action == platform.RealmGrantDialogWrite {
+				access = "rw"
+			}
+			err = c.cfg.RealmGrants.Grant(ctx, serverID, repoID, recipient.RealmID, access)
+		}
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zmienić dostępu", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Dostęp został zaktualizowany", Body: repo.DisplayName + " — " + label, Urgency: platform.UrgencyNormal})
+	}()
+}
+
+func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID string) {
+	key := "realm-visibility." + serverID
+	if serverID == "" || c.cfg.RealmGrants == nil || c.cfg.RealmGrantBrowser == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		if !vm.CanSetRealmVisibility() {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Widoczność realmu jest niedostępna", Body: "Demon FileES nie obsługuje katalogu realmów.", Urgency: platform.UrgencyCritical})
+			return
+		}
+		var server app.ServerViewModel
+		found := false
+		for _, candidate := range vm.Servers {
+			if candidate.ID == serverID {
+				server, found = candidate, true
+				break
+			}
+		}
+		if !found || strings.TrimSpace(server.RealmID) == "" || strings.TrimSpace(server.RealmAlias) == "" {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można zmienić widoczności", Body: "Najpierw ustaw stały alias realmu.", Urgency: platform.UrgencyCritical})
+			return
+		}
+		choice, err := c.cfg.RealmGrantBrowser.ShowRealmVisibility(ctx, platform.RealmVisibilityDialogRequest{Title: "Widoczność realmu „" + server.RealmAlias + "”", Text: "Widoczny realm może zostać wybrany jako odbiorca grantu. Nie ujawnia to repozytoriów ani istniejących dostępów. Tak — widoczny; Nie — ukryty; Anuluj — bez zmian."})
+		if err != nil || choice.Action == platform.RealmVisibilityDialogClose {
+			if err != nil && ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć widoczności realmu", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			}
+			return
+		}
+		if choice.Action != platform.RealmVisibilityDialogListed && choice.Action != platform.RealmVisibilityDialogPrivate {
+			return
+		}
+		visibility := string(choice.Action)
+		description := "ukryć realm w katalogu odbiorców"
+		if choice.Action == platform.RealmVisibilityDialogListed {
+			description = "pokazać realm w prywatnym katalogu odbiorców"
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Potwierdź widoczność realmu", Text: "Czy " + description + "?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
+		if err != nil || !confirmed {
+			return
+		}
+		if err := c.cfg.RealmGrants.SetVisibility(ctx, serverID, visibility); err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zmienić widoczności", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		body := "Realm jest teraz ukryty."
+		if choice.Action == platform.RealmVisibilityDialogListed {
+			body = "Realm jest teraz widoczny dla innych aktywnych realmów."
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Widoczność realmu została zmieniona", Body: body, Urgency: platform.UrgencyNormal})
 	}()
 }
 

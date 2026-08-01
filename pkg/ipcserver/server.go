@@ -30,6 +30,7 @@ type Server struct {
 	activations  map[string]contract.ActivationStatus
 	activation   ActivationService
 	realmAlias   RealmAliasService
+	realmGrants  RealmGrantService
 	ownerLabels  OwnerLabelResolver
 	lifecycle    RepositoryLifecycleService
 	mobilePair   MobilePairingService
@@ -56,6 +57,13 @@ type ActivationService interface {
 
 type RealmAliasService interface {
 	Claim(context.Context, string, string) (string, error)
+}
+
+type RealmGrantService interface {
+	ListRecipients(context.Context, string) ([]contract.RealmGrantRecipient, error)
+	SetVisibility(context.Context, string, string) (string, error)
+	Grant(context.Context, string, string, string, string) (contract.RealmGrantResult, error)
+	Revoke(context.Context, string, string, string) (contract.RealmGrantResult, error)
 }
 
 // OwnerLabelResolver converts opaque SVN client IDs to server-owned display
@@ -133,6 +141,9 @@ func (s *Server) updateService() UpdateService {
 
 func (s *Server) capabilities() []string {
 	caps := append([]string(nil), contract.AllCapabilities...)
+	if s.realmGrantService() != nil {
+		caps = append(caps, contract.CapRealmGrantRecipients, contract.CapRealmSetVisibility, contract.CapRepoGrantAccess, contract.CapRepoRevokeAccess)
+	}
 	if s.systemLifecycleService() != nil {
 		caps = append(caps, contract.CapSystemRestart, contract.CapSystemShutdown)
 	}
@@ -221,6 +232,18 @@ func (s *Server) realmAliasService() RealmAliasService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.realmAlias
+}
+
+func (s *Server) SetRealmGrantService(service RealmGrantService) {
+	s.mu.Lock()
+	s.realmGrants = service
+	s.mu.Unlock()
+}
+
+func (s *Server) realmGrantService() RealmGrantService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.realmGrants
 }
 
 func (s *Server) SetOwnerLabelResolver(resolver OwnerLabelResolver) {

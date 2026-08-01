@@ -292,6 +292,54 @@ func (c *Client) RepoLoadDump(ctx context.Context, serverID, repoID string, appl
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) RealmGrantRecipients(ctx context.Context, serverID string) (*contract.RealmGrantRecipientsResult, error) {
+	resp, err := c.do(ctx, contract.CmdRealmGrantRecipients, "", contract.RealmGrantRecipientsPayload{ServerID: serverID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmGrantRecipientsResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) RealmSetVisibility(ctx context.Context, serverID, visibility string) (*contract.RealmSetVisibilityResult, error) {
+	resp, err := c.do(ctx, contract.CmdRealmSetVisibility, "", contract.RealmSetVisibilityPayload{ServerID: serverID, Visibility: visibility})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmSetVisibilityResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) RepoGrantAccess(ctx context.Context, payload contract.RepoGrantAccessPayload) (*contract.RealmGrantResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoGrantAccess, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmGrantResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) RepoRevokeAccess(ctx context.Context, payload contract.RepoRevokeAccessPayload) (*contract.RealmGrantResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoRevokeAccess, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmGrantResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (c *Client) RepoDelete(ctx context.Context, serverID, repoID string) (*contract.RepoLifecycleResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoDelete, repoID, contract.RepoDetachPayload{ServerID: serverID, RepoID: repoID})
 	if err != nil {

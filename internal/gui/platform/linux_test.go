@@ -140,6 +140,66 @@ func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
 	}
 }
 
+func TestLinuxRealmGrantDialogReturnsSelectedAccess(t *testing.T) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) {
+		return []byte("realm-2|rw\n"), nil
+	}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	result, err := backend.ShowRealmGrants(context.Background(), RealmGrantDialogRequest{Title: "Dostęp", Text: "Wybierz", Recipients: []RealmGrantRecipient{{RealmID: "realm-2", Alias: "biuro"}}})
+	if err != nil || result.Action != RealmGrantDialogWrite || result.RealmID != "realm-2" {
+		t.Fatalf("ShowRealmGrants()=%+v err=%v", result, err)
+	}
+	args := strings.Join(runner.Calls()[0].args, "\n")
+	for _, wanted := range []string{"biuro", "Tylko odczyt", "Odczyt i zapis", "Cofnij dostęp", "realm-2|rw"} {
+		if !strings.Contains(args, wanted) {
+			t.Errorf("grant args missing %q: %s", wanted, args)
+		}
+	}
+}
+
+func TestLinuxSettingsOffersRealmGrantsOnlyForEligibleFolder(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		eligible bool
+		want     bool
+	}{{name: "owned", eligible: true, want: true}, {name: "foreign", eligible: false, want: false}} {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(_ context.Context, _ string, args []string) ([]byte, error) {
+				calls++
+				if calls == 1 {
+					return []byte("office|repo-1\n"), nil
+				}
+				has := strings.Contains(strings.Join(args, "\n"), "manage_grants")
+				if has != test.want {
+					t.Errorf("manage_grants present=%v want=%v args=%v", has, test.want, args)
+				}
+				return nil, fakeExitError(1)
+			}}
+			backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+			_, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{Title: "FileES", Servers: []SettingsServer{{ID: "office", Folders: []SettingsFolder{{ID: "repo-1", CanManageGrants: test.eligible}}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestLinuxRealmVisibilityDialogReturnsListed(t *testing.T) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) {
+		return []byte("listed\n"), nil
+	}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	result, err := backend.ShowRealmVisibility(context.Background(), RealmVisibilityDialogRequest{Title: "Widoczność", Text: "Wybierz"})
+	if err != nil || result.Action != RealmVisibilityDialogListed {
+		t.Fatalf("ShowRealmVisibility()=%+v err=%v", result, err)
+	}
+	args := strings.Join(runner.Calls()[0].args, "\n")
+	if !strings.Contains(args, "Widoczny w prywatnym katalogu odbiorców") || !strings.Contains(args, "Ukryty") {
+		t.Fatalf("visibility args=%s", args)
+	}
+}
+
 func TestLinuxShowReservationsReturnsReleaseAll(t *testing.T) {
 	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) {
 		return []byte("Zwolnij wszystko\n"), fakeExitError(1)

@@ -170,6 +170,7 @@ func runDaemon() {
 	go provisioner.Run(ctx)
 	realmAliases := &realmAliasService{provisioner: provisioner, cache: make(map[string]ownerLabelCache)}
 	ipc.SetRealmAliasService(realmAliases)
+	ipc.SetRealmGrantService(realmAliases)
 	ipc.SetOwnerLabelResolver(realmAliases)
 	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue})
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})

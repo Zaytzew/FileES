@@ -191,6 +191,12 @@ func (vm ViewModel) CanDeleteRepository() bool {
 func (vm ViewModel) CanClaimRealmAlias() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmAliasClaim)
 }
+func (vm ViewModel) CanManageRealmGrants() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmGrantRecipients) && vm.HasCap(contract.CapRepoGrantAccess) && vm.HasCap(contract.CapRepoRevokeAccess)
+}
+func (vm ViewModel) CanSetRealmVisibility() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmSetVisibility)
+}
 func (vm ViewModel) CanDetachServer() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerDetach)
 }

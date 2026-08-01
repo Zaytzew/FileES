@@ -616,9 +616,15 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 
 	cmd := exec.CommandContext(ctx, c.svnPath, cmdArgs...)
 	cmd.Dir = workingDir
+	// Callers (infoHasURL, infoHasUUID, ...) scan `svn info` output for
+	// fixed English line prefixes ("Repository UUID:", ...); svn localizes
+	// those under the process's own locale, so the parent's LANG/LC_* must
+	// never leak through here regardless of transport.
+	env := append(os.Environ(), "LC_ALL=C")
 	if c.sshCommand != "" {
-		cmd.Env = append(os.Environ(), "SVN_SSH="+c.sshCommand)
+		env = append(env, "SVN_SSH="+c.sshCommand)
 	}
+	cmd.Env = env
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf

@@ -110,8 +110,9 @@ func testDumpLoadService(root, serviceWC, reposRoot string) DumpLoadService {
 	svndumpfilter, _ := exec.LookPath("svndumpfilter")
 	return DumpLoadService{
 		ServiceWC: serviceWC, RepositoriesRoot: reposRoot,
-		ArchiveDir: filepath.Join(root, "archive"),
-		SVNAdmin:   svnadmin, SVNLook: svnlook, SVNDumpFilter: svndumpfilter,
+		ArchiveDir:    filepath.Join(root, "archive"),
+		DataAuthzFile: filepath.Join(root, "data-authz.conf"),
+		SVNAdmin:      svnadmin, SVNLook: svnlook, SVNDumpFilter: svndumpfilter,
 	}
 }
 
@@ -151,8 +152,8 @@ func TestDumpLoadServiceFullCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(confRaw), "authz-db") {
-		t.Fatalf("new generation conf/svnserve.conf missing canonical authz-db: %s", confRaw)
+	if !strings.Contains(string(confRaw), "authz-db = "+svc.DataAuthzFile) {
+		t.Fatalf("new generation conf/svnserve.conf does not point at the configured data authz file %q: %s", svc.DataAuthzFile, confRaw)
 	}
 }
 

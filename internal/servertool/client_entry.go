@@ -89,6 +89,16 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 			obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
 		)
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-worker", Name: repositoryWorkerPath, Perms: "rx"}, obsandbox.Path{Label: "service-wc", Name: config.Activation.ServiceWorkingCopy, Perms: "rwc"}, obsandbox.Path{Label: "repository-root", Name: r.Root, Perms: "rwc"}, obsandbox.Path{Label: "repository-results", Name: r.ResultsRoot, Perms: "rwc"}, obsandbox.Path{Label: "data-authz", Name: r.DataAuthzFile, Perms: "rwc"}, obsandbox.Path{Label: "svnadmin", Name: r.SVNAdminBinary, Perms: "rx"}, obsandbox.Path{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"})
+		// LOAD_REPOSITORY_DUMP's DumpLoadService shells out to svnlook
+		// (always) and svndumpfilter (only when applying the ignore
+		// policy); both must be unveiled up front like svnadmin/svn since
+		// this profile is locked before the worker is exec'd.
+		if svnlook := r.EffectiveSVNLookBinary(); svnlook != "" {
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "svnlook", Name: svnlook, Perms: "rx"})
+		}
+		if svndumpfilter := r.EffectiveSVNDumpFilterBinary(); svndumpfilter != "" {
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "svndumpfilter", Name: svndumpfilter, Perms: "rx"})
+		}
 		if deletionArchiveNeedsOwnUnveil(r.ResultsRoot, r.DeletionArchiveRoot) {
 			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-deletion-archive", Name: r.DeletionArchiveRoot, Perms: "rwc"})
 		}
@@ -135,7 +145,7 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		return ExitOK
 	}
 	if originalCommand == ClientControlCommand {
-		if err := runRepositoryWorkerProcess(config.Repositories.ResultsRoot, args[1], stdin, stdout, stderr); err != nil {
+		if err := runRepositoryWorkerProcess(config.Repositories.ResultsRoot, filepath.Dir(config.Repositories.SVNAdminBinary), args[1], stdin, stdout, stderr); err != nil {
 			report(stderr, "filees-client-entry control", err)
 			return ExitSoftware
 		}
@@ -163,9 +173,14 @@ func clientChildPromises(originalCommand string) string {
 	return "stdio rpath flock prot_exec"
 }
 
-var runRepositoryWorkerProcess = func(tempRoot, clientID string, stdin io.Reader, stdout, stderr io.Writer) error {
+// svnBinDir becomes the worker's entire $PATH. internal/svnrotate (reused by
+// LOAD_REPOSITORY_DUMP) shells out to bare "svnadmin"/"svnlook"/"svn" names,
+// unlike DumpLoadService which takes configured absolute paths; PATH lets
+// that bare-name lookup resolve without widening what unveil actually
+// permits — LookPath still only succeeds for names unveil already allows.
+var runRepositoryWorkerProcess = func(tempRoot, svnBinDir, clientID string, stdin io.Reader, stdout, stderr io.Writer) error {
 	command := exec.Command(repositoryWorkerPath, "repository-control", clientID)
-	command.Env = []string{"TMPDIR=" + tempRoot}
+	command.Env = []string{"TMPDIR=" + tempRoot, "PATH=" + svnBinDir}
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
 	return command.Run()
 }

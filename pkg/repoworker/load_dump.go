@@ -38,6 +38,7 @@ type DumpLoadService struct {
 	ServiceWC        string
 	RepositoriesRoot string
 	ArchiveDir       string
+	DataAuthzFile    string
 	SVNAdmin         string
 	SVNLook          string
 	SVNDumpFilter    string
@@ -46,7 +47,8 @@ type DumpLoadService struct {
 func (s DumpLoadService) validate() error {
 	for name, path := range map[string]string{
 		"service working copy": s.ServiceWC, "repositories root": s.RepositoriesRoot,
-		"archive dir": s.ArchiveDir, "svnadmin": s.SVNAdmin, "svnlook": s.SVNLook,
+		"archive dir": s.ArchiveDir, "data authz file": s.DataAuthzFile,
+		"svnadmin": s.SVNAdmin, "svnlook": s.SVNLook,
 	} {
 		if !filepath.IsAbs(path) {
 			return fmt.Errorf("LOAD_REPOSITORY_DUMP: %s must be an absolute path", name)
@@ -123,7 +125,7 @@ func (s DumpLoadService) Load(ctx context.Context, realmID, repoID, operationID 
 	// (LoadGeneration does not inherit a carrier's conf/ — it never had any
 	// of its own beyond what CreateFSFS wrote). Overwrite it with the same
 	// canonical data-authz configuration every repository gets.
-	if err := writeDataAuthzConf(repoPath, s.dataAuthzFile()); err != nil {
+	if err := writeDataAuthzConf(repoPath, s.DataAuthzFile); err != nil {
 		return LoadedDump{}, fmt.Errorf("LOAD_REPOSITORY_DUMP: %w", err)
 	}
 
@@ -132,10 +134,6 @@ func (s DumpLoadService) Load(ctx context.Context, realmID, repoID, operationID 
 		SourceRevisionRange: fmt.Sprintf("r%d:r%d", low, high),
 		ToolVersions:        toolVersions,
 	}, nil
-}
-
-func (s DumpLoadService) dataAuthzFile() string {
-	return filepath.Join(s.ServiceWC, "admin", "data-authz.conf")
 }
 
 // writeDataAuthzConf restores the canonical svnserve.conf every FileES data

@@ -142,7 +142,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		originalControl, originalMail := runRepositoryWorkerProcess, runMailAfterControl
 		defer func() { runRepositoryWorkerProcess, runMailAfterControl = originalControl, originalMail }()
 		controlClient := ""
-		runRepositoryWorkerProcess = func(_ string, id string, _ io.Reader, _ io.Writer, _ io.Writer) error { controlClient = id; return nil }
+		runRepositoryWorkerProcess = func(_, _, id string, _ io.Reader, _ io.Writer, _ io.Writer) error { controlClient = id; return nil }
 		mailTriggered := false
 		runMailAfterControl = func(serverconfig.Config, io.Writer) error { mailTriggered = true; return nil }
 		getenv = func(name string) string {

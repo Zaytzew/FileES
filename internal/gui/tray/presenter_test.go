@@ -367,28 +367,39 @@ func TestServerPermissionsAndManagementDoNotClutterTray(t *testing.T) {
 	}
 }
 
-func TestServerShowsFirstFolderShortcutOnlyWhenEligible(t *testing.T) {
+func TestServerShowsFolderCreationShortcutWhenEligible(t *testing.T) {
 	server := app.ServerViewModel{ID: "office", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}
 	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}})
-	shortcut := findItem(t, findItem(t, menu.Items, "server.office").Children, "server.office.create_first")
+	shortcut := findItem(t, findItem(t, menu.Items, "server.office").Children, "server.office.create_folder")
 	if shortcut.Intent == nil || shortcut.Intent.Kind != IntentCreateRepository || shortcut.Intent.ServerID != "office" {
-		t.Fatalf("first-folder shortcut = %#v", shortcut)
+		t.Fatalf("folder-creation shortcut = %#v", shortcut)
+	}
+	if shortcut.Title != "Dodaj pierwszy folder do FileES…" {
+		t.Fatalf("first-folder label = %q", shortcut.Title)
 	}
 	server.ClientRole = contract.ClientRoleReadOnly
-	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_first") {
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_folder") {
 		t.Fatal("create action visible in tray for read-only client")
 	}
 	server.ClientRole = contract.ClientRoleNormal
-	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_first") {
+	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_folder") {
 		t.Fatal("create action visible for stale snapshot")
 	}
+	// A local folder already exists: the shortcut must survive (this is the
+	// only other way to reach folder creation is the Settings dialog, which
+	// forces picking an existing folder row first) but relabel itself so it
+	// no longer claims to be adding the "first" folder.
 	server.Repos = []app.RepoViewModel{{ID: "docs", Attached: true, LocalPath: "/wc/docs"}}
-	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_first") {
-		t.Fatal("first-folder shortcut remains after a local folder exists")
+	withFolder := findItem(t, findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_folder")
+	if withFolder.Intent == nil || withFolder.Intent.Kind != IntentCreateRepository {
+		t.Fatal("folder-creation shortcut disappears once a local folder exists")
+	}
+	if withFolder.Title != "Dodaj kolejny folder do FileES…" {
+		t.Fatalf("additional-folder label = %q", withFolder.Title)
 	}
 	server.Repos = []app.RepoViewModel{{ID: "remote", AttachmentPolicy: "optional", State: contract.StateUnattached}}
-	if !hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_first") {
-		t.Fatal("remote projection without a local folder hides first-folder shortcut")
+	if !hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_folder") {
+		t.Fatal("remote projection without a local folder hides the shortcut")
 	}
 }
 

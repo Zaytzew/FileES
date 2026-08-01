@@ -79,7 +79,22 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		}.Execute,
 		Manifests: recoveryPublisher.Manifests,
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays()}
+	// A dedicated subdirectory of ResultsRoot (not the deletion-archive root):
+	// ReapDeletionArchives above hard-fails the whole worker startup on any
+	// *.json file in DeletionArchiveRoot it doesn't recognize, and
+	// svnrotate.LoadGeneration's own archive metadata is a different shape.
+	// Living under ResultsRoot keeps it covered by the existing unveil grant
+	// without a new one.
+	dumpLoader := repoworker.DumpLoadService{
+		ServiceWC:        config.Activation.ServiceWorkingCopy,
+		RepositoriesRoot: r.Root,
+		ArchiveDir:       filepath.Join(r.ResultsRoot, "load-dump-archive"),
+		DataAuthzFile:    r.DataAuthzFile,
+		SVNAdmin:         r.SVNAdminBinary,
+		SVNLook:          r.EffectiveSVNLookBinary(),
+		SVNDumpFilter:    r.EffectiveSVNDumpFilterBinary(),
+	}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
 	dispatcher := repoworker.Dispatcher{
 		Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy},
 		Admission: realmRemovalAdmission{Fences: activationManager},

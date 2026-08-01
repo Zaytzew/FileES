@@ -63,11 +63,38 @@ type RepositoryFile struct {
 	ResultsRoot           string `json:"results_root,omitempty"`
 	DataAuthzFile         string `json:"data_authz_file,omitempty"`
 	SVNAdminBinary        string `json:"svnadmin_binary,omitempty"`
+	SVNLookBinary         string `json:"svnlook_binary,omitempty"`
+	SVNDumpFilterBinary   string `json:"svndumpfilter_binary,omitempty"`
 	URLPrefix             string `json:"url_prefix,omitempty"`
 	DeletionArchiveRoot   string `json:"deletion_archive_root,omitempty"`
 	DeletionRetentionDays *int   `json:"deletion_retention_days,omitempty"`
 	RecoveryAdminContact  string `json:"recovery_admin_contact"`
 	DataErasureMaxDays    *int   `json:"data_erasure_max_days,omitempty"`
+}
+
+// EffectiveSVNLookBinary returns the configured svnlook path, or — since
+// svnlook always ships alongside svnadmin in the same SVN distribution — the
+// sibling of SVNAdminBinary if left unconfigured, so existing server.json
+// files keep working without an admin edit.
+func (repository RepositoryFile) EffectiveSVNLookBinary() string {
+	if repository.SVNLookBinary != "" {
+		return repository.SVNLookBinary
+	}
+	if repository.SVNAdminBinary == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(repository.SVNAdminBinary), "svnlook")
+}
+
+// EffectiveSVNDumpFilterBinary mirrors EffectiveSVNLookBinary for svndumpfilter.
+func (repository RepositoryFile) EffectiveSVNDumpFilterBinary() string {
+	if repository.SVNDumpFilterBinary != "" {
+		return repository.SVNDumpFilterBinary
+	}
+	if repository.SVNAdminBinary == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(repository.SVNAdminBinary), "svndumpfilter")
 }
 
 func (repository RepositoryFile) EffectiveDeletionRetentionDays() int {

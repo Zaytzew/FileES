@@ -326,6 +326,8 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 		result.Action = SettingsDialogDetachFolder
 	case "delete":
 		result.Action = SettingsDialogDeleteRepo
+	case "load_dump":
+		result.Action = SettingsDialogLoadDump
 	case "deactivate":
 		result.Action = SettingsDialogDetachServer
 	case "remove_realm":
@@ -366,16 +368,16 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	var sb strings.Builder
 	sb.WriteString(dpiAwarenessPrelude)
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;")
-	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1200;$f.Height=620;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1150;$l.Height=34;$f.Controls.Add($l);")
-	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1150;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @('ServerID','RepoID','Serwer','Adres','Realm','Folder','Ścieżka','Stan','Dostęp')){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add($r.ServerID,$r.RepoID,$r.Server,$r.Address,$r.Realm,$r.Folder,$r.Path,$r.State,$r.Access)};$g.DataSource=$t;$g.Columns['ServerID'].Visible=$false;$g.Columns['RepoID'].Visible=$false;$f.Controls.Add($g);$script:answer='close';")
+	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1320;$f.Height=620;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1270;$l.Height=34;$f.Controls.Add($l);")
+	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1270;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @('ServerID','RepoID','Serwer','Adres','Realm','Folder','Ścieżka','Stan','Dostęp')){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add($r.ServerID,$r.RepoID,$r.Server,$r.Address,$r.Realm,$r.Folder,$r.Path,$r.State,$r.Access)};$g.DataSource=$t;$g.Columns['ServerID'].Visible=$false;$g.Columns['RepoID'].Visible=$false;$f.Controls.Add($g);$script:answer='close';")
 	sb.WriteString("function act($a){if($g.CurrentRow -ne $null){$script:answer=$a+':[string]$g.CurrentRow.Cells['ServerID'].Value+':[string]$g.CurrentRow.Cells['RepoID'].Value;$f.Close()}};")
 	for _, spec := range []struct {
 		label, action string
 		left          int
-	}{{"Dodaj folder", "add", 305}, {"Odłącz folder", "detach", 420}, {"Odłącz trwale", "delete", 535}, {"Dezaktywuj klienta", "deactivate", 650}, {"Usuń udział FileES", "remove_realm", 765}, {"Pobierz archiwa", "download_recovery", 880}} {
+	}{{"Dodaj folder", "add", 305}, {"Odłącz folder", "detach", 420}, {"Odłącz trwale", "delete", 535}, {"Odtwórz z archiwum", "load_dump", 650}, {"Dezaktywuj klienta", "deactivate", 765}, {"Usuń udział FileES", "remove_realm", 880}, {"Pobierz archiwa", "download_recovery", 995}} {
 		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(spec.label) + ";$b.Width=108;$b.Height=28;$b.Left=" + fmt.Sprint(spec.left) + ";$b.Top=540;$b.Add_Click({act '" + spec.action + "'});$f.Controls.Add($b);")
 	}
-	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1010;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);[void]$f.ShowDialog();$script:answer")
+	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1130;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);[void]$f.ShowDialog();$script:answer")
 	return sb.String(), nil
 }
 

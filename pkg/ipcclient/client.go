@@ -283,6 +283,15 @@ func (c *Client) RepoDetach(ctx context.Context, serverID, repoID string) (*cont
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) RepoLoadDump(ctx context.Context, serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (*contract.RepoLifecycleResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoLoadDump, repoID, contract.RepoLoadDumpPayload{ServerID: serverID, RepoID: repoID, ApplyCurrentIgnorePolicy: applyIgnorePolicy, KeepLastRevisions: keepLastRevisions})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoDelete(ctx context.Context, serverID, repoID string) (*contract.RepoLifecycleResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoDelete, repoID, contract.RepoDetachPayload{ServerID: serverID, RepoID: repoID})
 	if err != nil {

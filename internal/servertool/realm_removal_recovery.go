@@ -9,6 +9,7 @@ import (
 	"filees/pkg/activation"
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
+	"filees/public-shares/channel"
 )
 
 // recoverPendingRealmRemovals is invoked only by an explicit server recovery
@@ -51,9 +52,14 @@ func recoverPendingRealmRemovals(ctx context.Context, config serverconfig.Config
 		Manifests:   repoworker.RecoveryManifestStore{Root: filepath.Join(r.ResultsRoot, "recovery-manifests")},
 		Keys:        repoworker.RecoveryKeyStore{Root: filepath.Join(r.ResultsRoot, "recovery-keys")},
 	}
+	var publicShareChannels *channel.Store
+	if config.PublicShares.Enabled {
+		publicShareChannels = &channel.Store{Root: config.PublicShares.EffectiveStateRoot(r.ResultsRoot)}
+	}
 	executor := realmRemovalExecutor{
 		Store: store, Backend: backend, Recovery: recovery, Publisher: publisher, Activation: manager,
 		Erasure:        repoworker.DataErasureStore{Root: filepath.Join(r.ResultsRoot, "data-erasure")},
+		PublicShares:   publicShareChannels,
 		ErasureMaxDays: r.EffectiveDataErasureMaxDays(),
 	}
 	pending, err := store.PendingConfirmed()

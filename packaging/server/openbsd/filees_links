@@ -1,0 +1,10 @@
+#!/bin/ksh
+
+daemon="/usr/local/libexec/filees/filees-links"
+daemon_user="_filees-links"
+daemon_flags="-config /etc/filees/public-links.json"
+rc_bg=YES
+
+. /etc/rc.d/rc.subr
+
+rc_cmd $1

@@ -12,8 +12,10 @@
 package manifest
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -117,8 +119,10 @@ func (s Share) Validate() error {
 	if err := validUUID("repo_id", s.RepoID); err != nil {
 		return err
 	}
-	if _, err := slug.Normalize(s.Slug); err != nil {
+	if normalized, err := slug.Normalize(s.Slug); err != nil {
 		return fmt.Errorf("slug: %w", err)
+	} else if normalized != s.Slug {
+		return errors.New("slug must already be normalized")
 	}
 	if err := validRepoPath("source_root", s.SourceRoot); err != nil {
 		return err
@@ -128,15 +132,32 @@ func (s Share) Validate() error {
 		// alongside would reintroduce exactly the leak tokens remove.
 		return ErrClosedPassword
 	}
+	if s.Password != "" {
+		if err := ValidatePasswordVerifier(s.Password); err != nil {
+			return err
+		}
+	}
+	if len(s.Recipients) > 256 {
+		return errors.New("share recipient list exceeds 256 addresses")
+	}
+	seenRecipients := map[string]bool{}
 	for i, addr := range s.Recipients {
 		if err := validRecipient(i, addr); err != nil {
 			return err
 		}
+		key := strings.ToLower(strings.TrimSpace(addr))
+		if seenRecipients[key] {
+			return errors.New("share recipient list contains duplicate address")
+		}
+		seenRecipients[key] = true
 	}
 	if s.DoNotFollow != nil && *s.DoNotFollow < 1 {
 		// r0 is the empty repository root, so freezing a channel there
 		// publishes nothing. Always a mistake, never an intent.
 		return fmt.Errorf("do-not-follow: revision %d is not publishable", *s.DoNotFollow)
+	}
+	if len(s.Objects) == 0 || len(s.Objects) > 4096 {
+		return errors.New("object_map must contain 1 to 4096 objects")
 	}
 	seen := make(map[string]struct{}, len(s.Objects))
 	for i, obj := range s.Objects {
@@ -149,6 +170,9 @@ func (s Share) Validate() error {
 		seen[obj.PublicID] = struct{}{}
 		if err := validRepoPath(fmt.Sprintf("object_map[%d].repo_path", i), obj.RepoPath); err != nil {
 			return err
+		}
+		if obj.RepoPath == s.SourceRoot || !strings.HasPrefix(obj.RepoPath, strings.TrimSuffix(s.SourceRoot, "/")+"/") {
+			return fmt.Errorf("object_map[%d].repo_path: outside source_root", i)
 		}
 		if err := validDisplayName(i, obj.DisplayName); err != nil {
 			return err
@@ -183,8 +207,10 @@ func (u Upload) Validate() error {
 	if u.AuthorityRepoID == u.UploadRepoID {
 		return ErrSameRepo
 	}
-	if _, err := slug.Normalize(u.Slug); err != nil {
+	if normalized, err := slug.Normalize(u.Slug); err != nil {
 		return fmt.Errorf("slug: %w", err)
+	} else if normalized != u.Slug {
+		return errors.New("slug must already be normalized")
 	}
 	if len(u.Recipients) == 0 {
 		return ErrNoRecipients
@@ -201,7 +227,8 @@ func (u Upload) Validate() error {
 }
 
 func validUUID(field, value string) error {
-	if _, err := uuid.Parse(strings.TrimSpace(value)); err != nil {
+	parsed, err := uuid.Parse(value)
+	if err != nil || parsed.String() != value {
 		return fmt.Errorf("%s: not a UUID", field)
 	}
 	return nil
@@ -211,7 +238,11 @@ func validUUID(field, value string) error {
 // could climb out of it. The public side never supplies these, but a manifest
 // is still data and gets the same treatment as any other input.
 func validRepoPath(field, value string) error {
-	value = strings.TrimSpace(value)
+	trimmed := strings.TrimSpace(value)
+	if value != trimmed {
+		return fmt.Errorf("%s: must not have surrounding whitespace", field)
+	}
+	value = trimmed
 	if value == "" {
 		return fmt.Errorf("%s: empty", field)
 	}
@@ -252,7 +283,7 @@ func validPublicID(index int, value string) error {
 // time; here we only reject control characters, which have no business in a
 // file name and break every listing format we might emit.
 func validDisplayName(index int, value string) error {
-	if strings.TrimSpace(value) == "" {
+	if strings.TrimSpace(value) == "" || len(value) > 512 {
 		return fmt.Errorf("object_map[%d].display_name: empty", index)
 	}
 	for _, r := range value {
@@ -268,15 +299,52 @@ func validDisplayName(index int, value string) error {
 // anything further, and widening that would change what the system is.
 func validRecipient(index int, value string) error {
 	value = strings.TrimSpace(value)
-	if value == "" {
+	if value == "" || len(value) > 254 {
 		return fmt.Errorf("recipients[%d]: empty", index)
 	}
 	at := strings.LastIndex(value, "@")
-	if at <= 0 || at == len(value)-1 {
+	if at <= 0 || at == len(value)-1 || strings.Count(value, "@") != 1 {
 		return fmt.Errorf("recipients[%d]: not an e-mail address", index)
 	}
 	if strings.ContainsAny(value, " \t\r\n\x00,;") {
 		return fmt.Errorf("recipients[%d]: contains a forbidden character", index)
 	}
 	return nil
+}
+
+// ValidatePasswordVerifier bounds the Argon2id parameters before a verifier
+// can become durable policy. This prevents both unusable channels and a
+// maliciously expensive verifier reaching the public gate.
+func ValidatePasswordVerifier(encoded string) error {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" || parts[2] != "v=19" {
+		return errors.New("password_hash is not a supported Argon2id verifier")
+	}
+	parameters := strings.Split(parts[3], ",")
+	if len(parameters) != 3 {
+		return errors.New("password_hash parameters are invalid")
+	}
+	memory, errM := passwordParameter(parameters[0], "m=", 8*1024, 128*1024)
+	iterations, errT := passwordParameter(parameters[1], "t=", 1, 8)
+	threads, errP := passwordParameter(parameters[2], "p=", 1, 8)
+	if errM != nil || errT != nil || errP != nil || memory == 0 || iterations == 0 || threads == 0 {
+		return errors.New("password_hash parameters are outside supported bounds")
+	}
+	salt, errSalt := base64.RawStdEncoding.Strict().DecodeString(parts[4])
+	digest, errDigest := base64.RawStdEncoding.Strict().DecodeString(parts[5])
+	if errSalt != nil || len(salt) < 16 || len(salt) > 64 || errDigest != nil || len(digest) != 32 {
+		return errors.New("password_hash salt or digest is invalid")
+	}
+	return nil
+}
+
+func passwordParameter(value, prefix string, minimum, maximum uint64) (uint64, error) {
+	if !strings.HasPrefix(value, prefix) {
+		return 0, errors.New("password_hash parameter name is invalid")
+	}
+	parsed, err := strconv.ParseUint(strings.TrimPrefix(value, prefix), 10, 32)
+	if err != nil || parsed < minimum || parsed > maximum {
+		return 0, errors.New("password_hash parameter value is invalid")
+	}
+	return parsed, nil
 }

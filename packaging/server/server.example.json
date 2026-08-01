@@ -27,6 +27,19 @@
     "recovery_admin_contact": "filees-admin@example.net",
     "data_erasure_max_days": 90
   },
+  "public_shares": {
+    "enabled": false,
+    "base_url": "https://get.example.net",
+    "state_root": "/var/filees/repository-operations/public-shares",
+    "frost_key_file": "/etc/filees/public-share-frost.key",
+    "authority_staging_root": "/var/tmp/filees-public-share-authority",
+    "max_size": 1073741824,
+    "max_channels_per_realm": 128,
+    "password_required": false,
+    "backchannel_network": "unix",
+    "backchannel_address": "/var/run/filees/public-authority.sock",
+    "backchannel_socket_group": "_filees-public"
+  },
   "operation_ttl": "30m",
   "otp_attempts": 5,
   "reverse_port_first": 42000,

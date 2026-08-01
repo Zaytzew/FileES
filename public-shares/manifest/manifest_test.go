@@ -89,12 +89,27 @@ func TestShareRejectsPasswordOnClosedChannel(t *testing.T) {
 
 func TestShareOpenChannelMayCarryPassword(t *testing.T) {
 	s := validShare()
-	s.Password = "argon2id$..."
+	s.Password = "$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	if err := s.Validate(); err != nil {
 		t.Fatalf("open channel with password rejected: %v", err)
 	}
 	if s.Closed() {
 		t.Fatal("channel without recipients reported as closed")
+	}
+}
+
+func TestShareRejectsUnboundedOrMalformedPasswordVerifier(t *testing.T) {
+	for _, verifier := range []string{
+		"argon2id$...",
+		"$argon2id$v=19$m=999999999,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"$argon2id$v=19$m=65536,t=0,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"$argon2id$v=19$m=65536,t=3,p=1$short$short",
+	} {
+		s := validShare()
+		s.Password = verifier
+		if err := s.Validate(); err == nil {
+			t.Fatalf("password verifier %q was accepted", verifier)
+		}
 	}
 }
 
@@ -153,6 +168,14 @@ func TestShareRejectsEscapingRepoPaths(t *testing.T) {
 	}
 }
 
+func TestShareRejectsObjectOutsideSourceRoot(t *testing.T) {
+	s := validShare()
+	s.Objects[0].RepoPath = "inny-katalog/PB-rzuty.pdf"
+	if err := s.Validate(); err == nil {
+		t.Fatal("object outside source_root was accepted")
+	}
+}
+
 func TestShareRejectsBadPublicID(t *testing.T) {
 	for _, id := range []string{
 		"short",
@@ -206,5 +229,13 @@ func TestManifestsRejectNonUUIDIdentifiers(t *testing.T) {
 	u.AuthorityRepoID = "not-a-uuid"
 	if err := u.Validate(); err == nil {
 		t.Fatal("upload accepted a non-UUID authority_repo_id")
+	}
+}
+
+func TestManifestsRequireCanonicalUUIDIdentifiers(t *testing.T) {
+	s := validShare()
+	s.RepoID = strings.ToUpper(s.RepoID)
+	if err := s.Validate(); err == nil {
+		t.Fatal("share accepted a non-canonical UUID")
 	}
 }

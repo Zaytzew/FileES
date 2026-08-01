@@ -92,6 +92,15 @@ type RealmRemovalService interface {
 	Confirm(context.Context, Session, string, string) (RealmRemovalRecord, RecoveryManifest, error)
 }
 
+var ErrPublicShareRejected = errors.New("public share request rejected")
+
+type PublicShareService interface {
+	Create(context.Context, string, string, control.PublicShareDeclaration) (control.PublicShareResult, error)
+	Update(context.Context, string, string, string, control.PublicShareDeclaration) (control.PublicShareResult, error)
+	Revoke(context.Context, string, string) (control.PublicShareResult, error)
+	Delete(context.Context, string, string) (control.PublicShareResult, error)
+}
+
 type Worker struct {
 	Backend              Backend
 	Activator            RepositoryActivator
@@ -104,6 +113,7 @@ type Worker struct {
 	RealmRemoval         RealmRemovalService
 	DumpLoader           DumpLoader
 	Grants               RealmGrantAuthority
+	PublicShares         PublicShareService
 	RecoveryAdminContact string
 	DataErasureMaxDays   int
 	Now                  func() time.Time
@@ -119,7 +129,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -136,6 +146,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if (ticket.Type == control.TicketGrantAccess || ticket.Type == control.TicketRevokeAccess) && !session.CanCreateRepositories {
 		return w.failure(ticket, "REALM_GRANT_FORBIDDEN", "authenticated session cannot manage realm grants")
+	}
+	if (ticket.Type == control.TicketCreatePublicShare || ticket.Type == control.TicketUpdatePublicShare || ticket.Type == control.TicketRevokePublicShare || ticket.Type == control.TicketDeletePublicShare) && !session.CanCreateRepositories {
+		return w.failure(ticket, "PUBLIC_SHARE_FORBIDDEN", "authenticated session cannot publish repositories")
 	}
 	if ticket.Type == control.TicketClaimRealmAlias {
 		return w.claimRealmAlias(ctx, session, ticket)
@@ -168,6 +181,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.Type == control.TicketRealmRemoveConfirm {
 		return w.confirmRealmRemoval(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketCreatePublicShare || ticket.Type == control.TicketUpdatePublicShare || ticket.Type == control.TicketRevokePublicShare || ticket.Type == control.TicketDeletePublicShare {
+		return w.publicShare(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketMobilePairing {
 		return w.mobilePairing(session, ticket)

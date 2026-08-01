@@ -99,7 +99,11 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	if err := onboarding.CheckExisting(config.Root, repositoryAccess); err != nil {
 		return nil, serverconfig.Config{}, err
 	}
-	profile := repositoryProfile(config.Root, access, config.Activation, config.Repositories.ResultsRoot, config.Repositories.DeletionArchiveRoot)
+	publicShareStateRoot := ""
+	if config.PublicShares.Enabled {
+		publicShareStateRoot = config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot)
+	}
+	profile := repositoryProfile(config.Root, access, config.Activation, config.Repositories.ResultsRoot, config.Repositories.DeletionArchiveRoot, publicShareStateRoot)
 	var sandboxErr error
 	if access.needSVN {
 		// The OpenBSD ports build of svn establishes its own unveil table after
@@ -119,7 +123,7 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	return files, config, nil
 }
 
-func repositoryProfile(root string, access toolAccess, activationConfig activation.Config, repositoryResultsRoot, deletionArchiveRoot string) obsandbox.Profile {
+func repositoryProfile(root string, access toolAccess, activationConfig activation.Config, repositoryResultsRoot, deletionArchiveRoot, publicShareStateRoot string) obsandbox.Profile {
 	areaPerms := "r"
 	if access.write {
 		areaPerms = "rwc"
@@ -162,6 +166,9 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		paths = append(paths, obsandbox.Path{Label: "repository-results", Name: repositoryResultsRoot, Perms: "rwc"})
 		if deletionArchiveNeedsOwnUnveil(repositoryResultsRoot, deletionArchiveRoot) {
 			paths = append(paths, obsandbox.Path{Label: "repository-deletion-archive", Name: deletionArchiveRoot, Perms: "rwc"})
+		}
+		if deletionArchiveNeedsOwnUnveil(repositoryResultsRoot, publicShareStateRoot) {
+			paths = append(paths, obsandbox.Path{Label: "public-share-state", Name: publicShareStateRoot, Perms: "rwc"})
 		}
 	}
 	if access.needRepositoryData && access.repositoryRoot != "" {

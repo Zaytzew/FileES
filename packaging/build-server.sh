@@ -20,7 +20,7 @@ tmp=$(mktemp -d "$dist/.filees-server-$target.tmp.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 mkdir -p "$tmp/bin" "$tmp/share/filees/openbsd" "$tmp/openbsd"
 
-for command in filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail filees-ssh-auth filees-entry filees-worker filees-client-entry filees-recovery-entry filees-install filees-rotate; do
+for command in filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail filees-ssh-auth filees-entry filees-worker filees-client-entry filees-recovery-entry filees-public-authority filees-links filees-install filees-rotate; do
 	(
 		cd "$root"
 		CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false -o "$tmp/bin/$command" "./cmd/$command"
@@ -28,9 +28,13 @@ for command in filees-admin filees-onboard filees-bootstrap-entry filees-operati
 done
 
 cp "$root/packaging/server/server.example.json" "$tmp/share/filees/"
+cp "$root/packaging/server/public-links.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/openbsd/bootstrap_authorized_keys" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/filees-tunnel.login.conf" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/filees.conf" "$tmp/share/filees/openbsd/"
+cp "$root/packaging/server/openbsd/filees_public_authority" "$tmp/share/filees/openbsd/"
+cp "$root/packaging/server/openbsd/filees_links" "$tmp/share/filees/openbsd/"
+cp "$root/packaging/server/openbsd/public-links.httpd.conf" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/install-ssh.sh" "$tmp/openbsd/"
 cp "$root/packaging/server/install-server.sh" "$tmp/"
 cp "$root/packaging/server/README.md" "$tmp/"

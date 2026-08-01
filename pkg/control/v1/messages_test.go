@@ -287,3 +287,42 @@ func TestRealmRemovalRequestRejectsForgedScope(t *testing.T) {
 		t.Fatalf("forged realm scope accepted: %v", err)
 	}
 }
+
+func TestPublicShareTicketsContainNoOwnerOrPlaintextPassword(t *testing.T) {
+	declaration := PublicShareDeclaration{RepoID: uuid.NewString(), SourceRoot: "wydanie", Slug: "przetarg-2026", PasswordHash: "$argon2id$v=19$m=65536,t=3,p=1$c2FsdHNhbHRzYWx0c2FsdA$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g", Objects: []PublicShareObject{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt.pdf"}}}
+	operationID := uuid.NewString()
+	ticket, err := NewTicket(operationID, uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: declaration}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(ticket.Payload), "owner_realm") || strings.Contains(string(ticket.Payload), `"password"`) {
+		t.Fatalf("public share ticket leaked owner/plain password: %s", ticket.Payload)
+	}
+	if _, err := NewSuccessResult(operationID, uuid.NewString(), TicketCreatePublicShare, PublicShareResult{ChannelID: operationID, Alias: "atmprojekt", Slug: declaration.Slug, State: "active"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	forged := ticket
+	forged.Payload = json.RawMessage(`{"repo_id":"` + declaration.RepoID + `","source_root":"wydanie","slug":"przetarg-2026","owner_realm":"` + uuid.NewString() + `","object_map":[{"public_id":"7f3a1c9e2b4d6a80","repo_path":"wydanie/projekt.pdf","display_name":"Projekt.pdf"}]}`)
+	if err := forged.Validate(); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("payload-supplied owner accepted: %v", err)
+	}
+}
+
+func TestPublicShareTicketRejectsPathOutsideSourceRoot(t *testing.T) {
+	declaration := PublicShareDeclaration{RepoID: uuid.NewString(), SourceRoot: "wydanie", Slug: "przetarg-2026", Objects: []PublicShareObject{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "sekrety/projekt.pdf", DisplayName: "Projekt.pdf"}}}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: declaration}, time.Now()); err == nil {
+		t.Fatal("object outside source_root accepted")
+	}
+}
+
+func TestPublicShareTicketRejectsNonCanonicalRepoIDAndUnboundedPassword(t *testing.T) {
+	declaration := PublicShareDeclaration{RepoID: strings.ToUpper(uuid.NewString()), SourceRoot: "wydanie", Slug: "przetarg-2026", Objects: []PublicShareObject{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt.pdf"}}}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: declaration}, time.Now()); err == nil {
+		t.Fatal("non-canonical repository UUID was accepted")
+	}
+	declaration.RepoID = uuid.NewString()
+	declaration.PasswordHash = "$argon2id$v=19$m=999999999,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: declaration}, time.Now()); err == nil {
+		t.Fatal("unbounded Argon2id verifier was accepted")
+	}
+}

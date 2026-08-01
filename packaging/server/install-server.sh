@@ -15,14 +15,27 @@ install -m 755 "$bundle/bin/filees-mail" "$prefix/libexec/filees/filees-mail"
 install -m 755 "$bundle/bin/filees-entry" "$prefix/libexec/filees/filees-entry"
 install -m 755 "$bundle/bin/filees-worker" "$prefix/libexec/filees/filees-worker"
 install -m 755 "$bundle/bin/filees-client-entry" "$prefix/libexec/filees/filees-client-entry"
+install -m 755 "$bundle/bin/filees-public-authority" "$prefix/libexec/filees/filees-public-authority"
+install -m 755 "$bundle/bin/filees-links" "$prefix/libexec/filees/filees-links"
 
 install -d -m 700 "$sysconfdir"
 if [ ! -e "$sysconfdir/server.json" ]; then
 	install -m 600 "$bundle/share/filees/server.example.json" "$sysconfdir/server.json"
 fi
+if [ ! -e "$sysconfdir/public-links.json" ]; then
+	install -m 600 "$bundle/share/filees/public-links.example.json" "$sysconfdir/public-links.json"
+fi
 if [ ! -e "$sysconfdir/otp.pepper" ]; then
 	umask 077
 	openssl rand -base64 32 >"$sysconfdir/otp.pepper"
+fi
+if [ ! -e "$sysconfdir/public-share-frost.key" ]; then
+	umask 077
+	openssl rand -base64 32 >"$sysconfdir/public-share-frost.key"
+fi
+if [ ! -e "$sysconfdir/public-share-visit.key" ]; then
+	umask 077
+	openssl rand -base64 32 >"$sysconfdir/public-share-visit.key"
 fi
 if [ ! -e "$sysconfdir/worker_ed25519" ]; then
 	umask 077
@@ -35,6 +48,8 @@ if [ ! -e "$statedir/.toolchain.lock" ]; then
 fi
 install -d -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs /var/filees/sessions
 install -d -m 700 /var/filees/repositories /var/filees/repository-operations
+install -d -m 700 /var/filees/repository-operations/public-shares /var/tmp/filees-public-share-authority /var/tmp/filees-public-shares-cache
+install -d -m 750 /var/run/filees /var/www/run/filees
 if [ ! -e /var/filees/activation/repositories.authz ]; then
 	install -m 600 /dev/null /var/filees/activation/repositories.authz
 fi

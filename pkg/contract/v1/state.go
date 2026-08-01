@@ -43,21 +43,32 @@ const (
 // It contains everything a GUI needs to render the repo view without reading
 // any .filees private files directly.
 type RepoStatus struct {
-	RepoID           string       `json:"repo_id"`
-	ServerID         string       `json:"server_id"`
-	DisplayName      string       `json:"display_name"`
-	Attached         bool         `json:"attached"`
-	Access           string       `json:"access"`
-	OwnerRealmID     string       `json:"owner_realm_id,omitempty"`
-	AttachmentPolicy string       `json:"attachment_policy"`
-	State            string       `json:"state"`        // one of the State* constants
-	Connectivity     string       `json:"connectivity"` // ConnOnline | ConnOffline
-	LocalRevision    int64        `json:"local_revision"`
-	HeadRevision     int64        `json:"head_revision"`
-	Pending          PendingStats `json:"pending"`
-	Conflicts        int          `json:"conflicts"`
-	LastSyncAt       string       `json:"last_sync_at,omitempty"` // RFC3339; empty if never synced
-	CurrentOperation *string      `json:"current_operation"`      // null or short description
+	RepoID           string        `json:"repo_id"`
+	ServerID         string        `json:"server_id"`
+	DisplayName      string        `json:"display_name"`
+	Attached         bool          `json:"attached"`
+	Access           string        `json:"access"`
+	OwnerRealmID     string        `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy string        `json:"attachment_policy"`
+	State            string        `json:"state"`        // one of the State* constants
+	Connectivity     string        `json:"connectivity"` // ConnOnline | ConnOffline
+	LocalRevision    int64         `json:"local_revision"`
+	HeadRevision     int64         `json:"head_revision"`
+	Pending          PendingStats  `json:"pending"`
+	Conflicts        int           `json:"conflicts"`
+	LastSyncAt       string        `json:"last_sync_at,omitempty"` // RFC3339; empty if never synced
+	CurrentOperation *string       `json:"current_operation"`      // null or short description
+	Recovery         RecoveryStats `json:"recovery"`
+}
+
+// RecoveryStats is a point-in-time diagnostic snapshot of the commit
+// service's crash-recovery counters — how much of its work since daemon
+// start was resuming or de-duplicating rather than new commits. It has no
+// bearing on repo state or user-facing decisions; support/debugging only.
+type RecoveryStats struct {
+	CacheResumed    int64 `json:"cache_resumed"`
+	AlreadyAccepted int64 `json:"already_accepted"`
+	CommitBatches   int64 `json:"commit_batches"`
 }
 
 // PendingStats summarises changes waiting to be committed.

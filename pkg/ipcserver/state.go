@@ -44,6 +44,7 @@ type RepoState struct {
 	unlockFn             func(ctx context.Context, paths []string) (string, error)
 	reservationListFn    func(ctx context.Context) ([]contract.Reservation, error)
 	reservationReleaseFn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error
+	recoveryStatsFn      func() contract.RecoveryStats
 }
 
 func (rs *RepoState) ServerID() string {
@@ -175,6 +176,15 @@ func (rs *RepoState) SetCurrentOp(op *string) {
 	rs.mu.Unlock()
 }
 
+// SetRecoveryStatsFunc wires a live reader of the commit service's
+// crash-recovery counters into this RepoState; nil until called, in which
+// case Snapshot reports the zero value.
+func (rs *RepoState) SetRecoveryStatsFunc(fn func() contract.RecoveryStats) {
+	rs.mu.Lock()
+	rs.recoveryStatsFn = fn
+	rs.mu.Unlock()
+}
+
 // SetLockFuncs wires the SVN lock and unlock operations into this RepoState.
 // Both funcs receive absolute file paths; they handle WC-relative conversion internally.
 func (rs *RepoState) SetLockFuncs(
@@ -284,7 +294,13 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		currentOp = &value
 	}
 	wc := rs.localPath
+	recoveryStatsFn := rs.recoveryStatsFn
 	rs.mu.RUnlock()
+
+	var recovery contract.RecoveryStats
+	if recoveryStatsFn != nil {
+		recovery = recoveryStatsFn()
+	}
 
 	localRev := int64(0)
 	pending := contract.PendingStats{}
@@ -311,6 +327,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		Pending:          pending,
 		Conflicts:        conflicts,
 		CurrentOperation: currentOp,
+		Recovery:         recovery,
 	}
 	if !lastSync.IsZero() {
 		snap.LastSyncAt = lastSync.UTC().Format(time.RFC3339)

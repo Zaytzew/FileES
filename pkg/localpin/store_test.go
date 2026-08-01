@@ -1,7 +1,9 @@
 package localpin
 
 import (
+	"encoding/base64"
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 )
@@ -105,6 +107,94 @@ func TestRequireOnLaunchDefaultsFalseAndPersists(t *testing.T) {
 	if require, err := reopened.RequireOnLaunch(); err != nil || !require {
 		t.Fatalf("reopened require=%v err=%v, want true", require, err)
 	}
+}
+
+// TestVerifySurvivesMACAddressChangeAfterSetup is the core regression test
+// for the "Stabilność lokalnego PIN-u urządzenia" gap: a PIN set up under
+// one MAC address must still verify after the machine reports a different
+// (or no) "first active" interface, since encryption now binds to a
+// persisted device_id rather than live network hardware.
+func TestVerifySurvivesMACAddressChangeAfterSetup(t *testing.T) {
+	original := firstMACAddress
+	defer func() { firstMACAddress = original }()
+
+	firstMACAddress = func() string { return "aa:bb:cc:dd:ee:ff" }
+	store := newTestStore(t)
+	if err := store.Setup([]byte("1234")); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, mac := range []string{"11:22:33:44:55:66", ""} {
+		firstMACAddress = func() string { return mac }
+		if ok, locked, err := store.Verify([]byte("1234")); err != nil || !ok || locked {
+			t.Fatalf("mac=%q: verify after MAC change: ok=%v locked=%v err=%v", mac, ok, locked, err)
+		}
+	}
+}
+
+// TestVerifyMigratesLegacyMACOnlyEncryptedRecordTransparently simulates an
+// installation whose pin.json predates deviceInstanceID: the record is
+// encrypted only under the old MAC-derived key. The first successful
+// Verify must both accept the PIN and silently re-encrypt the record under
+// the current (device_id-based) primary key, so a later MAC change no
+// longer matters.
+func TestVerifyMigratesLegacyMACOnlyEncryptedRecordTransparently(t *testing.T) {
+	original := firstMACAddress
+	defer func() { firstMACAddress = original }()
+	firstMACAddress = func() string { return "aa:bb:cc:dd:ee:ff" }
+
+	root := t.TempDir()
+	store, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	legacyEncrypted := legacyEncryptForTest(t, store.path, []byte("4321"))
+	if err := store.save(record{EncryptedPIN: legacyEncrypted, AttemptsLeft: DefaultAttempts}); err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := store.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, locked, err := store.Verify([]byte("4321")); err != nil || !ok || locked {
+		t.Fatalf("verify legacy record: ok=%v locked=%v err=%v", ok, locked, err)
+	}
+
+	after, _, err := store.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.EncryptedPIN == before.EncryptedPIN {
+		t.Fatal("legacy record was not re-encrypted under the primary key on first successful verify")
+	}
+
+	// The migrated record must no longer depend on the (now-gone) MAC.
+	firstMACAddress = func() string { return "" }
+	if ok, locked, err := store.Verify([]byte("4321")); err != nil || !ok || locked {
+		t.Fatalf("verify migrated record after MAC removal: ok=%v locked=%v err=%v", ok, locked, err)
+	}
+}
+
+// legacyEncryptForTest reproduces exactly what the pre-deviceInstanceID
+// encryptPIN did: encrypt under the sole MAC-derived key, bypassing
+// deviceKeys' current device_id-first ordering entirely.
+func legacyEncryptForTest(t *testing.T, path string, pin []byte) string {
+	t.Helper()
+	hostname, _ := os.Hostname()
+	current, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := deriveKey(hostname, "uid:"+current.Uid, path, firstMACAddress())
+	gcm, err := newGCM(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	ciphertext := gcm.Seal(nonce, nonce, pin, nil)
+	return base64.StdEncoding.EncodeToString(ciphertext)
 }
 
 func TestClearRemovesPIN(t *testing.T) {

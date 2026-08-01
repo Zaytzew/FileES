@@ -194,8 +194,16 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	if visibleRepos == 0 {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak lokalnych folderów FileES"))
 	}
-	if localFolders == 0 && vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
-		children = append(children, actionItem("server."+server.ID+".create_first", "Dodaj pierwszy folder do FileES…", "Utwórz pierwsze lokalne repozytorium na tym serwerze", Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
+	// Always offered, not just before the first folder: the only other path
+	// to this action is the "Zarządzaj serwerem…" table, which forces
+	// picking an existing folder row first — confusing when the point is to
+	// add a folder that does not exist yet.
+	if vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
+		label, tooltip := "Dodaj pierwszy folder do FileES…", "Utwórz pierwsze lokalne repozytorium na tym serwerze"
+		if localFolders > 0 {
+			label, tooltip = "Dodaj kolejny folder do FileES…", "Utwórz kolejne lokalne repozytorium na tym serwerze"
+		}
+		children = append(children, actionItem("server."+server.ID+".create_folder", label, tooltip, Intent{Kind: IntentCreateRepository, ServerID: server.ID}))
 	}
 	return MenuItemModel{ID: "server." + server.ID, Title: name, Enabled: true, Children: children}
 }

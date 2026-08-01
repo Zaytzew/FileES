@@ -32,7 +32,7 @@ func (s *FileStore) path(id string, typ control.TicketType) (string, error) {
 	if _, e := uuid.Parse(id); e != nil {
 		return "", errors.New("operation ID must be UUID")
 	}
-	if typ != control.TicketStoragePreflight && typ != control.TicketCreateRepository && typ != control.TicketInitialCommit && typ != control.TicketDeleteRepository && typ != control.TicketMobilePairing && typ != control.TicketRealmRemoveRequest && typ != control.TicketRealmRemoveConfirm && typ != control.TicketLoadRepositoryDump {
+	if typ != control.TicketStoragePreflight && typ != control.TicketCreateRepository && typ != control.TicketInitialCommit && typ != control.TicketDeleteRepository && typ != control.TicketMobilePairing && typ != control.TicketRealmRemoveRequest && typ != control.TicketRealmRemoveConfirm && typ != control.TicketLoadRepositoryDump && typ != control.TicketGrantAccess && typ != control.TicketRevokeAccess {
 		return "", errors.New("unsupported result ticket type")
 	}
 	return filepath.Join(s.root, id+"."+strings.ToLower(string(typ))+".json"), nil

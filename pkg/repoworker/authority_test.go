@@ -24,6 +24,9 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 		if _, e := clientview.StoreIfNewer(filepath.Join(root, "clients", client, "view.json"), v); e != nil {
 			t.Fatal(e)
 		}
+		if e := atomicJSON(filepath.Join(root, "admin", "clients", client+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": client, "realm_id": realm, "state": "active"}); e != nil {
+			t.Fatal(e)
+		}
 	}
 	writeView(ownerClient, realm)
 	writeView(otherClient, other)
@@ -76,8 +79,10 @@ func TestServicePublisherSnapshotsOwnedAndForeignRealmScope(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	view := clientview.View{Schema: clientview.Schema, ClientID: client, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Repositories: []clientview.Repository{{RepoID: foreign, DisplayName: "Cudze", URL: "svn+ssh://_filees-client@example/" + foreign, Access: "r", State: "active", OwnerRealmID: other}}, ActiveOperations: []json.RawMessage{}}
-	if _, err := clientview.StoreIfNewer(filepath.Join(root, "clients", client, "view.json"), view); err != nil {
+	_ = client
+	grant := RealmGrantRecord{Schema: RealmGrantSchema, RepoID: foreign, OwnerRealmID: other, RecipientRealmID: realm, Access: "r", State: "active", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	grantPath, _ := realmGrantPath(root, foreign, realm)
+	if err := atomicJSON(grantPath, grant); err != nil {
 		t.Fatal(err)
 	}
 	scope, err := (ServicePublisher{ServiceWC: root}).SnapshotRealmScope(realm)
@@ -98,6 +103,9 @@ func TestTransferOwnerMovesRepositoryAndRegeneratesAuthz(t *testing.T) {
 	writeView := func(client, realm string) {
 		v := clientview.View{Schema: clientview.Schema, ClientID: client, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
 		if _, e := clientview.StoreIfNewer(filepath.Join(root, "clients", client, "view.json"), v); e != nil {
+			t.Fatal(e)
+		}
+		if e := atomicJSON(filepath.Join(root, "admin", "clients", client+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": client, "realm_id": realm, "state": "active"}); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -153,6 +161,9 @@ func TestDeleteWithdrawsProjectionAndAuthorityAndLeavesTombstone(t *testing.T) {
 		Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{},
 	}
 	if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(filepath.Join(root, "admin", "clients", clientID+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": clientID, "realm_id": realm, "state": "active"}); err != nil {
 		t.Fatal(err)
 	}
 	authz := filepath.Join(t.TempDir(), "data.authz")

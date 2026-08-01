@@ -209,7 +209,7 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	activationConfig := activation.Config{
 		Root: file.Activation.Root, SessionRoot: file.Activation.SessionRoot, AuthorizedKeysFile: file.Activation.AuthorizedKeysFile,
-		AuthzFile: file.Activation.AuthzFile, ServiceWorkingCopy: file.Activation.ServiceWorkingCopy,
+		AuthzFile: file.Activation.AuthzFile, DataAuthzFile: file.Repositories.DataAuthzFile, ServiceWorkingCopy: file.Activation.ServiceWorkingCopy,
 		ServiceRepository: file.Activation.ServiceRepository,
 		RepositoryName:    file.Activation.RepositoryName, ClientEntryPath: file.Activation.ClientEntryPath,
 		MobileEntryPath: file.Activation.MobileEntryPath,

@@ -94,7 +94,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		SVNLook:          r.EffectiveSVNLookBinary(),
 		SVNDumpFilter:    r.EffectiveSVNDumpFilterBinary(),
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
 	dispatcher := repoworker.Dispatcher{
 		Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy},
 		Admission: realmRemovalAdmission{Fences: activationManager},

@@ -181,6 +181,39 @@ func TestLoadRepositoryDumpContract(t *testing.T) {
 	}
 }
 
+func TestRealmGrantAndDirectoryContracts(t *testing.T) {
+	op, request, client := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	repo, recipient := uuid.NewString(), uuid.NewString()
+	for _, access := range []string{"r", "rw"} {
+		if _, err := NewTicket(op, request, TicketGrantAccess, client, GrantAccessPayload{RepoID: repo, RecipientRealmID: recipient, Access: access}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewSuccessResult(op, request, TicketGrantAccess, RealmGrantResult{RepoID: repo, RecipientRealmID: recipient, Access: access, State: "active"}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := NewTicket(op, request, TicketGrantAccess, client, GrantAccessPayload{RepoID: repo, RecipientRealmID: recipient, Access: "admin"}, time.Now()); err == nil {
+		t.Fatal("invalid grant access accepted")
+	}
+	if _, err := NewTicket(op, request, TicketRevokeAccess, client, RevokeAccessPayload{RepoID: repo, RecipientRealmID: recipient}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSuccessResult(op, request, TicketRevokeAccess, RealmGrantResult{RepoID: repo, RecipientRealmID: recipient, State: "revoked"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTicket(op, request, TicketListGrantRecipients, client, ListGrantRecipientsPayload{}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSuccessResult(op, request, TicketListGrantRecipients, ListGrantRecipientsResult{Recipients: []GrantRecipient{{RealmID: recipient, Alias: "recipient"}}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, visibility := range []string{"hidden", "listed"} {
+		if _, err := NewTicket(op, request, TicketSetRealmVisibility, client, SetRealmDirectoryVisibilityPayload{Visibility: visibility}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // TestInitialCommitRepoIDMustBeUUID is the wire-level half of the audit's
 // Finding B. INITIAL_COMMIT is the only ticket type whose repo_id travels back
 // from the client, so it is the only place a client-chosen string can reach

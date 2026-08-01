@@ -35,11 +35,12 @@ type RealmAliases struct {
 }
 
 type realmRecord struct {
-	Schema    string    `json:"schema"`
-	RealmID   string    `json:"realm_id"`
-	State     string    `json:"state"`
-	CreatedAt time.Time `json:"created_at"`
-	Alias     string    `json:"alias,omitempty"`
+	Schema              string    `json:"schema"`
+	RealmID             string    `json:"realm_id"`
+	State               string    `json:"state"`
+	CreatedAt           time.Time `json:"created_at"`
+	Alias               string    `json:"alias,omitempty"`
+	DirectoryVisibility string    `json:"directory_visibility,omitempty"`
 }
 
 type clientRecord struct {
@@ -160,6 +161,9 @@ func readRealmRecord(path string) (realmRecord, error) {
 			return realmRecord{}, fmt.Errorf("invalid stored realm alias: %w", err)
 		}
 		record.Alias = canonical
+	}
+	if record.DirectoryVisibility != "" && record.DirectoryVisibility != "hidden" && record.DirectoryVisibility != "listed" {
+		return realmRecord{}, errors.New("invalid stored realm directory visibility")
 	}
 	return record, nil
 }

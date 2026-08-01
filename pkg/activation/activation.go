@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"filees/pkg/onboarding"
+	"filees/pkg/repoworker"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
@@ -40,6 +41,10 @@ type Config struct {
 	SessionRoot        string
 	AuthorizedKeysFile string
 	AuthzFile          string
+	// DataAuthzFile is optional for migration compatibility. When configured,
+	// publishing a new client rebuilds data-repository authz and view.json from
+	// canonical realm grants so a later installation inherits them immediately.
+	DataAuthzFile      string
 	ServiceWorkingCopy string
 	ServiceRepository  string
 	RepositoryName     string
@@ -91,7 +96,8 @@ type Realm struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Alias is assigned once by the authenticated realm after technical
 	// activation. It is intentionally absent until then.
-	Alias string `json:"alias,omitempty"`
+	Alias               string `json:"alias,omitempty"`
+	DirectoryVisibility string `json:"directory_visibility,omitempty"`
 }
 
 type CommandRunner interface {
@@ -123,6 +129,9 @@ func New(config Config, runner CommandRunner) (*Manager, error) {
 	}
 	if config.SessionRoot != "" && !filepath.IsAbs(config.SessionRoot) {
 		return nil, errors.New("activation session_root must be absolute")
+	}
+	if config.DataAuthzFile != "" && !filepath.IsAbs(config.DataAuthzFile) {
+		return nil, errors.New("activation data_authz_file must be absolute")
 	}
 	if strings.TrimSpace(config.RepositoryName) == "" || strings.ContainsAny(config.RepositoryName, "/:\r\n[]") {
 		return nil, errors.New("activation repository_name is invalid")
@@ -364,6 +373,21 @@ func (m *Manager) Publish(ctx context.Context, grant onboarding.ActivationGrant)
 		if err != nil {
 			return err
 		}
+		if m.config.DataAuthzFile != "" {
+			if err := m.rebuildDataAuthority(ctx); err != nil {
+				return err
+			}
+			viewPath := filepath.Join(m.config.ServiceWorkingCopy, "clients", record.ClientID, "view.json")
+			output, err := m.runner.Output(ctx, m.config.SVNBinary, "info", "--show-item", "last-changed-revision", "--non-interactive", "--no-auth-cache", viewPath)
+			if err != nil {
+				return fmt.Errorf("svn info service grant projection: %w: %s", err, sanitizeOutput(output))
+			}
+			if latest, parseErr := strconv.ParseInt(strings.TrimSpace(string(output)), 10, 64); parseErr != nil || latest <= 0 {
+				return errors.New("svn returned invalid grant projection revision")
+			} else if latest > revision {
+				revision = latest
+			}
+		}
 		activatedAt := receipt.At.UTC()
 		record.State, record.ActivatedAt, record.ServiceRevision = "active", &activatedAt, revision
 		if err := atomicWriteJSON(m.recordPath(grant.OperationID), record, 0o600); err != nil {
@@ -501,6 +525,9 @@ func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, e
 		if err != nil {
 			return err
 		}
+		if err := m.rebuildDataAuthority(ctx); err != nil {
+			return err
+		}
 		record.State, record.ServiceRevision = "revoked", revision
 		if err := atomicWriteJSON(m.recordPath(record.OperationID), record, 0o600); err != nil {
 			return err
@@ -517,6 +544,17 @@ func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, e
 	return revision, err
 }
 
+func (m *Manager) rebuildDataAuthority(ctx context.Context) error {
+	if m.config.DataAuthzFile == "" {
+		return nil
+	}
+	publisher := repoworker.ServicePublisher{
+		ServiceWC: m.config.ServiceWorkingCopy, DataAuthzFile: m.config.DataAuthzFile,
+		Runner: repoworker.SVNPublishRunner{SVN: m.config.SVNBinary, WorkingCopy: m.config.ServiceWorkingCopy}, Now: m.now,
+	}
+	return publisher.RebuildGrantAuthority(ctx)
+}
+
 func validateRevokeReason(reason string) (string, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" || len(reason) > 200 || strings.ContainsAny(reason, "\r\n") {
@@ -530,6 +568,7 @@ func (m *Manager) publishRevocation(ctx context.Context, record Record) (int64, 
 	auditPath := filepath.Join(m.config.ServiceWorkingCopy, "admin", "audit", record.OperationID+"-revoke.json")
 	client := map[string]any{
 		"schema": ClientSchema, "client_id": record.ClientID, "realm_id": record.RealmID,
+		"kind":       record.Kind,
 		"public_key": record.InstallationPublicKey, "fingerprint": record.InstallationFingerprint,
 		"state": "revoked", "created_at": record.CreatedAt, "activated_at": record.ActivatedAt,
 		"revoked_at": record.RevokedAt, "revoke_reason": record.RevokeReason,
@@ -573,6 +612,7 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 	auditPath := filepath.Join(m.config.ServiceWorkingCopy, "admin", "audit", record.OperationID+".json")
 	client := map[string]any{
 		"schema": ClientSchema, "client_id": record.ClientID, "realm_id": record.RealmID,
+		"kind":       record.Kind,
 		"public_key": record.InstallationPublicKey, "fingerprint": record.InstallationFingerprint,
 		"state": "active", "created_at": record.CreatedAt, "activated_at": activatedAt,
 	}

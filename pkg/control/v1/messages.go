@@ -53,7 +53,11 @@ const (
 	// payload never carries a path or revision: the worker always resolves
 	// the carrier as the sole file present on the target's own HEAD
 	// (LOAD_REPOSITORY_DUMP_CONCEPT.md §3, §4).
-	TicketLoadRepositoryDump TicketType = "LOAD_REPOSITORY_DUMP"
+	TicketLoadRepositoryDump  TicketType = "LOAD_REPOSITORY_DUMP"
+	TicketGrantAccess         TicketType = "GRANT_ACCESS"
+	TicketRevokeAccess        TicketType = "REVOKE_ACCESS"
+	TicketListGrantRecipients TicketType = "LIST_GRANT_RECIPIENTS"
+	TicketSetRealmVisibility  TicketType = "SET_REALM_DIRECTORY_VISIBILITY"
 )
 
 type ResultStatus string
@@ -143,6 +147,36 @@ type ResolveOwnerLabelsPayload struct {
 
 type ResolveOwnerLabelsResult struct {
 	Labels map[string]string `json:"labels"`
+}
+
+type GrantAccessPayload struct {
+	RepoID           string `json:"repo_id"`
+	RecipientRealmID string `json:"recipient_realm_id"`
+	Access           string `json:"access"`
+}
+type RevokeAccessPayload struct {
+	RepoID           string `json:"repo_id"`
+	RecipientRealmID string `json:"recipient_realm_id"`
+}
+type RealmGrantResult struct {
+	RepoID           string `json:"repo_id"`
+	RecipientRealmID string `json:"recipient_realm_id"`
+	Access           string `json:"access,omitempty"`
+	State            string `json:"state"`
+}
+type ListGrantRecipientsPayload struct{}
+type GrantRecipient struct {
+	RealmID string `json:"realm_id"`
+	Alias   string `json:"alias"`
+}
+type ListGrantRecipientsResult struct {
+	Recipients []GrantRecipient `json:"recipients"`
+}
+type SetRealmDirectoryVisibilityPayload struct {
+	Visibility string `json:"visibility"`
+}
+type SetRealmDirectoryVisibilityResult struct {
+	Visibility string `json:"visibility"`
 }
 
 type ClientDeactivatePayload struct{}
@@ -342,6 +376,44 @@ func (t Ticket) Validate() error {
 			}
 			seen[id] = struct{}{}
 		}
+	case TicketGrantAccess:
+		var p GrantAccessPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("GRANT_ACCESS payload: %w", err)
+		}
+		if err := validateUUID("GRANT_ACCESS payload.repo_id", p.RepoID); err != nil {
+			return err
+		}
+		if err := validateUUID("GRANT_ACCESS payload.recipient_realm_id", p.RecipientRealmID); err != nil {
+			return err
+		}
+		if p.Access != "r" && p.Access != "rw" {
+			return errors.New("GRANT_ACCESS payload.access must be r or rw")
+		}
+	case TicketRevokeAccess:
+		var p RevokeAccessPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("REVOKE_ACCESS payload: %w", err)
+		}
+		if err := validateUUID("REVOKE_ACCESS payload.repo_id", p.RepoID); err != nil {
+			return err
+		}
+		if err := validateUUID("REVOKE_ACCESS payload.recipient_realm_id", p.RecipientRealmID); err != nil {
+			return err
+		}
+	case TicketListGrantRecipients:
+		var p ListGrantRecipientsPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("LIST_GRANT_RECIPIENTS payload: %w", err)
+		}
+	case TicketSetRealmVisibility:
+		var p SetRealmDirectoryVisibilityPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("SET_REALM_DIRECTORY_VISIBILITY payload: %w", err)
+		}
+		if p.Visibility != "hidden" && p.Visibility != "listed" {
+			return errors.New("SET_REALM_DIRECTORY_VISIBILITY visibility must be hidden or listed")
+		}
 	case TicketClientDeactivate:
 		var p ClientDeactivatePayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -396,7 +468,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -494,6 +566,52 @@ func validateSuccessPayload(r Result) error {
 			if _, err := realmalias.Normalize(label); err != nil {
 				return fmt.Errorf("RESOLVE_OWNER_LABELS result label: %w", err)
 			}
+		}
+	case TicketGrantAccess, TicketRevokeAccess:
+		var result RealmGrantResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("realm grant result: %w", err)
+		}
+		if err := validateUUID("realm grant result.repo_id", result.RepoID); err != nil {
+			return err
+		}
+		if err := validateUUID("realm grant result.recipient_realm_id", result.RecipientRealmID); err != nil {
+			return err
+		}
+		if r.Type == TicketGrantAccess && (result.State != "active" || (result.Access != "r" && result.Access != "rw")) {
+			return errors.New("GRANT_ACCESS result is invalid")
+		}
+		if r.Type == TicketRevokeAccess && (result.State != "revoked" || result.Access != "") {
+			return errors.New("REVOKE_ACCESS result is invalid")
+		}
+	case TicketListGrantRecipients:
+		var result ListGrantRecipientsResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("LIST_GRANT_RECIPIENTS result: %w", err)
+		}
+		if len(result.Recipients) > 1024 {
+			return errors.New("LIST_GRANT_RECIPIENTS result is too large")
+		}
+		seen := map[string]bool{}
+		for _, recipient := range result.Recipients {
+			if err := validateUUID("LIST_GRANT_RECIPIENTS result.realm_id", recipient.RealmID); err != nil {
+				return err
+			}
+			if seen[recipient.RealmID] {
+				return errors.New("LIST_GRANT_RECIPIENTS result contains duplicate realm")
+			}
+			seen[recipient.RealmID] = true
+			if _, err := realmalias.Normalize(recipient.Alias); err != nil {
+				return fmt.Errorf("LIST_GRANT_RECIPIENTS alias: %w", err)
+			}
+		}
+	case TicketSetRealmVisibility:
+		var result SetRealmDirectoryVisibilityResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("SET_REALM_DIRECTORY_VISIBILITY result: %w", err)
+		}
+		if result.Visibility != "hidden" && result.Visibility != "listed" {
+			return errors.New("SET_REALM_DIRECTORY_VISIBILITY result is invalid")
 		}
 	case TicketClientDeactivate:
 		var result ClientDeactivateResult

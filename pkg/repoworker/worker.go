@@ -103,6 +103,7 @@ type Worker struct {
 	ClientDetacher       ClientDetacher
 	RealmRemoval         RealmRemovalService
 	DumpLoader           DumpLoader
+	Grants               RealmGrantAuthority
 	RecoveryAdminContact string
 	DataErasureMaxDays   int
 	Now                  func() time.Time
@@ -118,7 +119,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -133,11 +134,20 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.Type == control.TicketLoadRepositoryDump && !session.CanCreateRepositories {
 		return w.failure(ticket, "LOAD_REPOSITORY_DUMP_FORBIDDEN", "authenticated session cannot create or load repositories")
 	}
+	if (ticket.Type == control.TicketGrantAccess || ticket.Type == control.TicketRevokeAccess) && !session.CanCreateRepositories {
+		return w.failure(ticket, "REALM_GRANT_FORBIDDEN", "authenticated session cannot manage realm grants")
+	}
 	if ticket.Type == control.TicketClaimRealmAlias {
 		return w.claimRealmAlias(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketResolveOwnerLabels {
 		return w.resolveOwnerLabels(ctx, ticket)
+	}
+	if ticket.Type == control.TicketListGrantRecipients {
+		return w.listGrantRecipients(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketSetRealmVisibility {
+		return w.setRealmDirectoryVisibility(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketClientDeactivate {
 		return w.detachClient(ctx, session, ticket)
@@ -171,6 +181,12 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.Type == control.TicketLoadRepositoryDump {
 		return w.loadRepositoryDump(ctx, session, ticket)
 	}
+	if ticket.Type == control.TicketGrantAccess {
+		return w.grantAccess(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketRevokeAccess {
+		return w.revokeAccess(ctx, session, ticket)
+	}
 	if ticket.Type == control.TicketStoragePreflight {
 		return w.preflight(ctx, ticket)
 	}
@@ -200,6 +216,74 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 		err = w.Store.Save(result)
 	}
 	return result, err
+}
+
+func (w *Worker) grantAccess(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.Grants == nil {
+		return w.failure(ticket, "REALM_GRANT_UNAVAILABLE", "realm grants are unavailable")
+	}
+	var payload control.GrantAccessPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	record, err := w.Grants.Grant(ctx, session.RealmID, payload.RecipientRealmID, payload.RepoID, payload.Access)
+	if err != nil {
+		return w.failure(ticket, "REALM_GRANT_REJECTED", err.Error())
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmGrantResult{RepoID: record.RepoID, RecipientRealmID: record.RecipientRealmID, Access: record.Access, State: record.State}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
+func (w *Worker) revokeAccess(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.Grants == nil {
+		return w.failure(ticket, "REALM_GRANT_UNAVAILABLE", "realm grants are unavailable")
+	}
+	var payload control.RevokeAccessPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	record, err := w.Grants.RevokeGrant(ctx, session.RealmID, payload.RecipientRealmID, payload.RepoID)
+	if err != nil {
+		return w.failure(ticket, "REALM_GRANT_REJECTED", err.Error())
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmGrantResult{RepoID: record.RepoID, RecipientRealmID: record.RecipientRealmID, State: record.State}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
+func (w *Worker) listGrantRecipients(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.Grants == nil {
+		return w.failure(ticket, "REALM_DIRECTORY_UNAVAILABLE", "realm directory is unavailable")
+	}
+	recipients, err := w.Grants.ListGrantRecipients(ctx, session.RealmID)
+	if err != nil {
+		return w.failure(ticket, "REALM_DIRECTORY_UNAVAILABLE", "realm directory is unavailable")
+	}
+	result := make([]control.GrantRecipient, 0, len(recipients))
+	for _, recipient := range recipients {
+		result = append(result, control.GrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias})
+	}
+	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ListGrantRecipientsResult{Recipients: result}, w.now())
+}
+
+func (w *Worker) setRealmDirectoryVisibility(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.Grants == nil {
+		return w.failure(ticket, "REALM_DIRECTORY_UNAVAILABLE", "realm directory is unavailable")
+	}
+	var payload control.SetRealmDirectoryVisibilityPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	visibility, err := w.Grants.SetRealmDirectoryVisibility(ctx, session.RealmID, payload.Visibility)
+	if err != nil {
+		return w.failure(ticket, "REALM_DIRECTORY_REJECTED", err.Error())
+	}
+	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.SetRealmDirectoryVisibilityResult{Visibility: visibility}, w.now())
 }
 
 func (w *Worker) requestRealmRemoval(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {

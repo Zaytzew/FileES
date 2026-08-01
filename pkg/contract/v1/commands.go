@@ -39,6 +39,7 @@ const (
 	CmdRepoAttachIntent       = "repo.attach_intent"       // persist local path choice; no checkout yet
 	CmdRepoAttachApprove      = "repo.attach_approve"      // approve the persisted intent and start checkout
 	CmdRepoRelocate           = "repo.relocate"            // approve relocation of an attached working copy
+	CmdRepoLoadDump           = "repo.load_dump"           // load a user-supplied dump into a fresh, single-carrier-commit repo
 	CmdRepoDetach             = "repo.detach"              // detach one local working copy, preserving user data
 	CmdRepoDelete             = "repo.delete"              // delete an owned server repository, then detach locally
 	CmdRepoLifecycleStatus    = "repo.lifecycle_status"    // poll outcome of a create/attach/relocate operation by ID
@@ -87,6 +88,7 @@ const (
 	CapRepoAttachIntent       = "repo.attach_intent"
 	CapRepoAttachApprove      = "repo.attach_approve"
 	CapRepoRelocate           = "repo.relocate"
+	CapRepoLoadDump           = "repo.load_dump"
 	CapRepoDetach             = "repo.detach"
 	CapRepoDelete             = "repo.delete"
 	CapRepoLifecycleStatus    = "repo.lifecycle_status"
@@ -128,6 +130,7 @@ var AllCapabilities = []string{
 	CapRepoAttachIntent,
 	CapRepoAttachApprove,
 	CapRepoRelocate,
+	CapRepoLoadDump,
 	CapRepoDetach,
 	CapRepoDelete,
 	CapRepoLifecycleStatus,
@@ -354,6 +357,18 @@ type RepoRelocatePayload struct {
 type RepoDetachPayload struct {
 	ServerID string `json:"server_id"`
 	RepoID   string `json:"repo_id"`
+}
+
+// RepoLoadDumpPayload triggers LOAD_REPOSITORY_DUMP for a repository the
+// client already has attached (create + carrier commit already done through
+// the normal repo-creation flow). ApplyCurrentIgnorePolicy/KeepLastRevisions
+// mirror the ticket's own options 1:1 - the daemon forwards them verbatim,
+// it does not interpret them.
+type RepoLoadDumpPayload struct {
+	ServerID                 string `json:"server_id"`
+	RepoID                   string `json:"repo_id"`
+	ApplyCurrentIgnorePolicy bool   `json:"apply_current_ignore_policy,omitempty"`
+	KeepLastRevisions        *int   `json:"keep_last_revisions,omitempty"`
 }
 
 type SystemLifecycleResult struct {

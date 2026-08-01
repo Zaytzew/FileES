@@ -24,6 +24,7 @@ type repositoryLifecycleService struct {
 	onAttach      func(attachmentRequest)
 	onRelocate    func(string)
 	onDetach      func(context.Context, string) (localrepo.Record, error)
+	onLoadDump    func(string)
 }
 
 func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error) {
@@ -37,6 +38,21 @@ func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLoc
 	}
 	if service.onRelocate != nil {
 		service.onRelocate(record.OperationID)
+	}
+	return lifecycleResult(record), nil
+}
+
+// BeginLoadDump durably marks repoID as reconciling and enqueues the actual
+// work (ticket exchange + WC swap, cmd/filees/repository_provisioner.go
+// runReconcile). Options travel through the durable record, not a closure,
+// so a daemon restart before the async work runs still has them.
+func (service repositoryLifecycleService) BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error) {
+	record, err := service.store.BeginReconcile(serverID, repoID, applyIgnorePolicy, keepLastRevisions)
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	if service.onLoadDump != nil {
+		service.onLoadDump(record.OperationID)
 	}
 	return lifecycleResult(record), nil
 }

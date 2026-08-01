@@ -64,11 +64,17 @@ type Record struct {
 	// across daemon restarts so the orchestration's own staging (named
 	// after this ID, mirroring CreateFSFS's operationID convention) is
 	// resumable instead of colliding with an abandoned prior attempt.
-	ReconcileOperationID string    `json:"reconcile_operation_id,omitempty"`
-	State                State     `json:"state"`
-	LastError            string    `json:"last_error,omitempty"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ReconcileOperationID string `json:"reconcile_operation_id,omitempty"`
+	// LoadDumpApplyIgnorePolicy/LoadDumpKeepLastRevisions are the user's
+	// LOAD_REPOSITORY_DUMP options, persisted here (not just passed through
+	// an in-memory enqueue) so a daemon restart mid-reconcile resumes with
+	// the same options rather than losing them.
+	LoadDumpApplyIgnorePolicy bool      `json:"load_dump_apply_ignore_policy,omitempty"`
+	LoadDumpKeepLastRevisions *int      `json:"load_dump_keep_last_revisions,omitempty"`
+	State                     State     `json:"state"`
+	LastError                 string    `json:"last_error,omitempty"`
+	CreatedAt                 time.Time `json:"created_at"`
+	UpdatedAt                 time.Time `json:"updated_at"`
 }
 
 type document struct {
@@ -360,7 +366,7 @@ func (s *Store) FailRelocation(operationID string, cause error) (Record, error) 
 // forced by a successful LOAD_REPOSITORY_DUMP. It never touches LocalPath —
 // only the orchestration layer does, and only after building and verifying
 // the replacement WC elsewhere first (LOAD_REPOSITORY_DUMP_CONCEPT.md §7).
-func (s *Store) BeginReconcile(serverID, repoID string) (Record, error) {
+func (s *Store) BeginReconcile(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var operationID string
@@ -383,6 +389,8 @@ func (s *Store) BeginReconcile(serverID, repoID string) (Record, error) {
 	before := record
 	record.State = StateReconciling
 	record.ReconcileOperationID = uuid.NewString()
+	record.LoadDumpApplyIgnorePolicy = applyIgnorePolicy
+	record.LoadDumpKeepLastRevisions = keepLastRevisions
 	record.LastError = ""
 	record.UpdatedAt = s.now().UTC()
 	if err := validate(record); err != nil {
@@ -405,6 +413,7 @@ func (s *Store) CompleteReconcile(operationID string) (Record, error) {
 			return errors.New("repository reconcile is not in progress")
 		}
 		record.State, record.ReconcileOperationID, record.LastError = StateAttached, "", ""
+		record.LoadDumpApplyIgnorePolicy, record.LoadDumpKeepLastRevisions = false, nil
 		return nil
 	})
 }
@@ -422,6 +431,7 @@ func (s *Store) FailReconcile(operationID string, cause error) (Record, error) {
 			return errors.New("active reconcile and failure are required")
 		}
 		record.State, record.ReconcileOperationID, record.LastError = StateAttached, "", cause.Error()
+		record.LoadDumpApplyIgnorePolicy, record.LoadDumpKeepLastRevisions = false, nil
 		return nil
 	})
 }
@@ -583,8 +593,11 @@ func validate(r Record) error {
 		if _, err := uuid.Parse(r.ReconcileOperationID); err != nil {
 			return errors.New("repository reconcile operation ID must be UUID")
 		}
-	} else if r.ReconcileOperationID != "" {
+	} else if r.ReconcileOperationID != "" || r.LoadDumpApplyIgnorePolicy || r.LoadDumpKeepLastRevisions != nil {
 		return errors.New("repository reconcile metadata exists outside reconcile")
+	}
+	if r.LoadDumpKeepLastRevisions != nil && *r.LoadDumpKeepLastRevisions < 1 {
+		return errors.New("load dump keep_last_revisions must be at least 1")
 	}
 	if r.State == StateDetaching || r.State == StateDeleting || r.State == StateDetached || r.State == StateDeleted {
 		if _, err := uuid.Parse(r.DetachOperationID); err != nil {

@@ -350,6 +350,118 @@ func TestDaemonProvisionerRestartPublishesOldRuntimeBeforeRelocation(t *testing.
 	<-done
 }
 
+func reconcileFixture(t *testing.T) (*localrepo.Store, *provisioning.Store, clientprofile.Profile, localrepo.Record) {
+	t.Helper()
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc := filepath.Join(t.TempDir(), "wc")
+	record, _ := local.BeginAttach("office", uuid.NewString(), wc, false)
+	record, _ = local.ApproveAttach(record.OperationID, "office", record.RepoID, "svn+ssh://_filees-client@example/shared", "rw")
+	record, _ = local.MarkAttached(record.OperationID, record.RepoID)
+	record, err = local.BeginReconcile("office", record.RepoID, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return local, journal, clientprofile.Profile{ServerID: "office", DisplayName: "Office"}, record
+}
+
+// TestDaemonProvisionerReconcileRollsBackWhenQuiesceFails mirrors
+// TestDaemonProvisionerDoesNotCheckoutWhenRelocationQuiesceFails: a failed
+// quiesce must never reach the network ticket exchange or touch the WC.
+func TestDaemonProvisionerReconcileRollsBackWhenQuiesceFails(t *testing.T) {
+	local, journal, profile, record := reconcileFixture(t)
+	stub := &attachmentSVNStub{}
+	events := make(chan provisionedAttachment, 2)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	go func() {
+		quiesce := <-events
+		quiesce.Result <- errors.New("writer did not stop")
+	}()
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateAttached || got.LocalPath != record.LocalPath || got.ReconcileOperationID != "" || got.LastError == "" || stub.checkout != 0 {
+		t.Fatalf("record=%+v checkout=%d", got, stub.checkout)
+	}
+	restored := <-events
+	if restored.Quiesce || restored.Repo.LocalPath != record.LocalPath {
+		t.Fatalf("restored runtime=%+v", restored)
+	}
+}
+
+func TestSwapReconciledWorkingCopyReplacesContentAndRemovesOld(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "wc")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "old-carrier.dump"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	newWC := filepath.Join(t.TempDir(), "new")
+	if err := os.MkdirAll(newWC, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newWC, "reconciled.txt"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := swapReconciledWorkingCopy(root, newWC, "op-1"); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "reconciled.txt")); err != nil {
+		t.Fatalf("new content missing after swap: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "old-carrier.dump")); !os.IsNotExist(err) {
+		t.Fatalf("old content survived swap: err=%v", err)
+	}
+	if _, err := os.Stat(newWC); !os.IsNotExist(err) {
+		t.Fatalf("temp new-content dir was not consumed by the swap: err=%v", err)
+	}
+	if _, err := os.Stat(root + ".filees-reconcile-op-1-old"); !os.IsNotExist(err) {
+		t.Fatalf("aside directory was not cleaned up: err=%v", err)
+	}
+}
+
+// TestSwapReconciledWorkingCopyRollsBackOnInstallFailure forces the second
+// rename to fail (newWC does not exist) and asserts root is restored to its
+// original content rather than left empty.
+func TestSwapReconciledWorkingCopyRollsBackOnInstallFailure(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "wc")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "keep.txt"), []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	missingNewWC := filepath.Join(t.TempDir(), "does-not-exist")
+	if err := swapReconciledWorkingCopy(root, missingNewWC, "op-2"); err == nil {
+		t.Fatal("swap with a missing replacement was accepted")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "keep.txt"))
+	if err != nil || string(data) != "original" {
+		t.Fatalf("original content not restored after failed swap: data=%q err=%v", data, err)
+	}
+}
+
+func TestInfoHasUUID(t *testing.T) {
+	info := "Path: .\nURL: svn+ssh://example/repo\nRepository Root: svn+ssh://example/repo\nRepository UUID: 11111111-1111-4111-8111-111111111111\nRevision: 5\n"
+	if !infoHasUUID(info, "11111111-1111-4111-8111-111111111111") {
+		t.Fatal("matching UUID not detected")
+	}
+	if infoHasUUID(info, "22222222-2222-4222-8222-222222222222") {
+		t.Fatal("mismatched UUID accepted")
+	}
+	if infoHasUUID(info, "") {
+		t.Fatal("empty want UUID accepted")
+	}
+}
+
 func relocationFixture(t *testing.T) (*localrepo.Store, *provisioning.Store, clientprofile.Profile, localrepo.Record) {
 	t.Helper()
 	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))

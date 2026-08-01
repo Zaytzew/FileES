@@ -17,12 +17,12 @@ import (
 
 func TestScanInitialSnapshotIsDeterministicAndExcludesMetadata(t *testing.T) {
 	root := t.TempDir()
-	for _, dir := range []string{"z", "a/nested", ".svn/tmp", ".filees/state"} {
+	for _, dir := range []string{"z", "a/nested", ".svn/tmp", ".filees/state", "a/node_modules", ".git"} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for path, content := range map[string]string{"z/last": "zz", "a/first": "a", "a/nested/middle": "mid", ".svn/tmp/ignored": "x", ".filees/state/ignored": "x"} {
+	for path, content := range map[string]string{"z/last": "zz", "a/first": "a", "a/nested/middle": "mid", ".svn/tmp/ignored": "x", ".filees/state/ignored": "x", "a/old.bak": "x", "a/node_modules/package.json": "x", ".git/config": "x"} {
 		if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}

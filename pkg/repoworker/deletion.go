@@ -200,6 +200,79 @@ func (e ServerEffects) PrepareDelete(_ context.Context, repoID, operationID stri
 	return syncDirectory(hooks)
 }
 
+// RestoreDelete removes only the blocker owned by operationID and restores
+// the hook parked by that same operation. It is safe only before authority
+// withdrawal begins; DurableBackend enforces that durable stage boundary.
+func (e ServerEffects) RestoreDelete(_ context.Context, repoID, operationID string) error {
+	repo, err := e.deleteRepoPath(repoID, operationID)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(repo); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if !validRepo(repo) {
+		return errors.New("repository selected for delete restoration is invalid")
+	}
+	hooks := filepath.Join(repo, "hooks")
+	hook := filepath.Join(hooks, "pre-commit")
+	backupName := "pre-commit.filees-delete-" + operationID + ".original"
+	backup := filepath.Join(hooks, backupName)
+	marker := "FileES repository deletion " + operationID
+
+	entries, err := os.ReadDir(hooks)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "pre-commit.filees-delete-") && strings.HasSuffix(name, ".original") && name != backupName {
+			return errors.New("repository has a delete hook backup owned by another operation")
+		}
+	}
+
+	backupExists := false
+	if _, err := os.Lstat(backup); err == nil {
+		backupExists = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	hookExists := false
+	if raw, err := os.ReadFile(hook); err == nil {
+		hookExists = true
+		body := string(raw)
+		if !strings.Contains(body, marker) {
+			if !backupExists && !strings.Contains(body, "FileES repository deletion ") {
+				// Either the operation was already restored, or it never changed
+				// this hook. In both cases an idempotent replay must leave it alone.
+				return nil
+			}
+			return errors.New("repository pre-commit hook is not owned by delete operation")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	if backupExists {
+		// Rename is the atomic restoration point. The ownership check above
+		// prevents replacing a hook not installed by this operation.
+		if err := os.Rename(backup, hook); err != nil {
+			return err
+		}
+		return syncDirectory(hooks)
+	}
+	if hookExists {
+		if err := os.Remove(hook); err != nil {
+			return err
+		}
+		return syncDirectory(hooks)
+	}
+	return nil
+}
+
 func (e ServerEffects) ArchiveAndDeleteFSFS(ctx context.Context, repoID, operationID string) (time.Time, error) {
 	repo, err := e.deleteRepoPath(repoID, operationID)
 	if err != nil {

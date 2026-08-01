@@ -2,6 +2,7 @@ package repoworker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
 	"os"
@@ -18,7 +19,9 @@ type effects struct {
 	failPublish   bool
 	rollback      int
 	failRollback  bool
+	failPrepare   bool
 	failArchive   bool
+	restore       int
 	deleteSteps   []string
 }
 
@@ -46,6 +49,14 @@ func (e *effects) AuthorizeDelete(context.Context, string, string) error {
 }
 func (e *effects) PrepareDelete(context.Context, string, string) error {
 	e.deleteSteps = append(e.deleteSteps, "blocked")
+	if e.failPrepare {
+		return errors.New("prepare boundary")
+	}
+	return nil
+}
+func (e *effects) RestoreDelete(context.Context, string, string) error {
+	e.restore++
+	e.deleteSteps = append(e.deleteSteps, "restored")
 	return nil
 }
 func (e *effects) WithdrawAuthority(context.Context, string, string) error {
@@ -90,6 +101,82 @@ func TestDurableBackendResumesRepositoryDeletionBoundaries(t *testing.T) {
 	}
 	if len(fx.deleteSteps) != before {
 		t.Fatalf("completed delete replayed effects: %v", fx.deleteSteps)
+	}
+}
+
+func TestDurableBackendRestoresFailedDeletePreparationAndRetries(t *testing.T) {
+	fx := &effects{failPrepare: true}
+	backend := &DurableBackend{Root: t.TempDir(), Effects: fx}
+	operationID, realmID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	if _, err := backend.Delete(context.Background(), operationID, realmID, repoID); err == nil || !strings.Contains(err.Error(), "prepare boundary") {
+		t.Fatalf("prepare failure=%v", err)
+	}
+	if got := strings.Join(fx.deleteSteps, ","); got != "blocked,restored" || fx.restore != 1 {
+		t.Fatalf("failed preparation effects=%v restore=%d", fx.deleteSteps, fx.restore)
+	}
+	raw, err := os.ReadFile(filepath.Join(backend.Root, "delete-"+operationID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record deleteBackendRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Stage != "allocated" {
+		t.Fatalf("failed preparation stage=%q", record.Stage)
+	}
+
+	fx.failPrepare = false
+	if _, err := backend.Delete(context.Background(), operationID, realmID, repoID); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(fx.deleteSteps, ","); got != "blocked,restored,blocked,withdrawn,archive" {
+		t.Fatalf("retry effects=%v", fx.deleteSteps)
+	}
+}
+
+func TestDurableBackendReapsOnlyAllocatedDeletesThenRetriesSameOperation(t *testing.T) {
+	fx := &effects{}
+	backend := &DurableBackend{Root: t.TempDir(), Effects: fx}
+	operationID, realmID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	records := []deleteBackendRecord{
+		{OperationID: operationID, RealmID: realmID, RepoID: repoID, Stage: "allocated"},
+		{OperationID: uuid.NewString(), RealmID: uuid.NewString(), RepoID: uuid.NewString(), Stage: "blocked"},
+		{OperationID: uuid.NewString(), RealmID: uuid.NewString(), RepoID: uuid.NewString(), Stage: "withdrawn"},
+	}
+	for _, record := range records {
+		path := filepath.Join(backend.Root, "delete-"+record.OperationID+".json")
+		if err := backend.saveDelete(path, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := backend.ReapUncommittedDeletes(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fx.restore != 1 || strings.Join(fx.deleteSteps, ",") != "restored" {
+		t.Fatalf("reaper effects=%v restore=%d", fx.deleteSteps, fx.restore)
+	}
+	if _, err := backend.Delete(context.Background(), operationID, realmID, repoID); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(fx.deleteSteps, ","); got != "restored,blocked,withdrawn,archive" {
+		t.Fatalf("same-operation retry effects=%v", fx.deleteSteps)
+	}
+}
+
+func TestDurableBackendDeleteReaperRejectsCorruptCanonicalRecord(t *testing.T) {
+	fx := &effects{}
+	backend := &DurableBackend{Root: t.TempDir(), Effects: fx}
+	operationID := uuid.NewString()
+	record := deleteBackendRecord{OperationID: uuid.NewString(), RealmID: uuid.NewString(), RepoID: uuid.NewString(), Stage: "allocated"}
+	if err := backend.saveDelete(filepath.Join(backend.Root, "delete-"+operationID+".json"), record); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.ReapUncommittedDeletes(context.Background()); err == nil || !strings.Contains(err.Error(), "conflicts with its filename") {
+		t.Fatalf("corrupt record error=%v", err)
+	}
+	if fx.restore != 0 {
+		t.Fatalf("corrupt record reached restoration: %+v", fx)
 	}
 }
 

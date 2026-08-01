@@ -140,6 +140,118 @@ func TestPrepareDeleteBlocksCommitsAndPreservesPriorHook(t *testing.T) {
 	}
 }
 
+func TestRestoreDeleteRestoresPriorHookAndIsIdempotent(t *testing.T) {
+	effects, repoID, repo := deletionFixture(t, 1, time.Now())
+	operationID := uuid.NewString()
+	hook := filepath.Join(repo, "hooks", "pre-commit")
+	backup := hook + ".filees-delete-" + operationID + ".original"
+	originalBody := []byte("#!/bin/sh\nexit 0\n")
+	if err := os.WriteFile(hook, originalBody, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := effects.PrepareDelete(context.Background(), repoID, operationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := effects.RestoreDelete(context.Background(), repoID, operationID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(hook); err != nil || string(got) != string(originalBody) {
+		t.Fatalf("restored hook=%q err=%v", got, err)
+	}
+	if _, err := os.Lstat(backup); !os.IsNotExist(err) {
+		t.Fatalf("delete backup survived restoration: %v", err)
+	}
+	if err := effects.RestoreDelete(context.Background(), repoID, operationID); err != nil {
+		t.Fatalf("idempotent restore: %v", err)
+	}
+}
+
+func TestRestoreDeleteWithoutPriorHookRemovesOwnBlocker(t *testing.T) {
+	effects, repoID, repo := deletionFixture(t, 1, time.Now())
+	operationID := uuid.NewString()
+	hook := filepath.Join(repo, "hooks", "pre-commit")
+	if err := effects.PrepareDelete(context.Background(), repoID, operationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := effects.RestoreDelete(context.Background(), repoID, operationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(hook); !os.IsNotExist(err) {
+		t.Fatalf("own blocker survived restoration: %v", err)
+	}
+	if err := effects.RestoreDelete(context.Background(), repoID, operationID); err != nil {
+		t.Fatalf("idempotent restore without prior hook: %v", err)
+	}
+}
+
+func TestRestoreDeleteRecoversHookMovedBeforeBlockerInstall(t *testing.T) {
+	effects, repoID, repo := deletionFixture(t, 1, time.Now())
+	operationID := uuid.NewString()
+	hook := filepath.Join(repo, "hooks", "pre-commit")
+	backup := hook + ".filees-delete-" + operationID + ".original"
+	originalBody := []byte("#!/bin/sh\nexit 0\n")
+	if err := os.WriteFile(hook, originalBody, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(hook, backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := effects.RestoreDelete(context.Background(), repoID, operationID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(hook); err != nil || string(got) != string(originalBody) {
+		t.Fatalf("partially moved hook=%q err=%v", got, err)
+	}
+}
+
+func TestRestoreDeleteRefusesArtifactsOwnedByAnotherOperation(t *testing.T) {
+	t.Run("blocker", func(t *testing.T) {
+		effects, repoID, repo := deletionFixture(t, 1, time.Now())
+		ownerOperation := uuid.NewString()
+		hook := filepath.Join(repo, "hooks", "pre-commit")
+		if err := effects.PrepareDelete(context.Background(), repoID, ownerOperation); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.ReadFile(hook)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := effects.RestoreDelete(context.Background(), repoID, uuid.NewString()); err == nil {
+			t.Fatal("foreign blocker was accepted")
+		}
+		if after, err := os.ReadFile(hook); err != nil || string(after) != string(before) {
+			t.Fatalf("foreign blocker changed: %q err=%v", after, err)
+		}
+	})
+
+	t.Run("backup", func(t *testing.T) {
+		effects, repoID, repo := deletionFixture(t, 1, time.Now())
+		ownerOperation := uuid.NewString()
+		hook := filepath.Join(repo, "hooks", "pre-commit")
+		originalBody := []byte("#!/bin/sh\nexit 0\n")
+		if err := os.WriteFile(hook, originalBody, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := effects.PrepareDelete(context.Background(), repoID, ownerOperation); err != nil {
+			t.Fatal(err)
+		}
+		backup := hook + ".filees-delete-" + ownerOperation + ".original"
+		beforeHook, err := os.ReadFile(hook)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := effects.RestoreDelete(context.Background(), repoID, uuid.NewString()); err == nil {
+			t.Fatal("foreign backup was accepted")
+		}
+		if after, err := os.ReadFile(hook); err != nil || string(after) != string(beforeHook) {
+			t.Fatalf("hook changed beside foreign backup: %q err=%v", after, err)
+		}
+		if after, err := os.ReadFile(backup); err != nil || string(after) != string(originalBody) {
+			t.Fatalf("foreign backup changed: %q err=%v", after, err)
+		}
+	})
+}
+
 func TestForeignDeleteCannotInstallCommitBlockerBeforeAuthorityCheck(t *testing.T) {
 	effects, repoID, repo := deletionFixture(t, 7, time.Now())
 	ownerRealm, foreignRealm := uuid.NewString(), uuid.NewString()

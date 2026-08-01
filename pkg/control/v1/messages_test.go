@@ -143,6 +143,44 @@ func TestDeleteRepositoryContract(t *testing.T) {
 	}
 }
 
+func TestLoadRepositoryDumpContract(t *testing.T) {
+	operationID, requestID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	ticket, err := NewTicket(operationID, requestID, TicketLoadRepositoryDump, "client-a", LoadRepositoryDumpPayload{RepoID: repoID}, time.Now())
+	if err != nil || ticket.Type != TicketLoadRepositoryDump {
+		t.Fatalf("ticket=%+v err=%v", ticket, err)
+	}
+	if strings.Contains(string(ticket.Payload), "revision") || strings.Contains(string(ticket.Payload), "path") {
+		t.Fatalf("payload carries a client-supplied carrier path or revision: %s", ticket.Payload)
+	}
+	oldUUID, newUUID := uuid.NewString(), uuid.NewString()
+	validResult := LoadRepositoryDumpResult{
+		RepoID: repoID, OldUUID: oldUUID, NewUUID: newUUID,
+		SourceRevisionRange: "r1:r842",
+		ToolVersions:        map[string]string{"svnadmin": "1.14.5"},
+	}
+	if _, err := NewSuccessResult(operationID, requestID, TicketLoadRepositoryDump, validResult, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	keep := 0
+	if _, err := NewTicket(operationID, requestID, TicketLoadRepositoryDump, "client-a", LoadRepositoryDumpPayload{RepoID: repoID, KeepLastRevisions: &keep}, time.Now()); err == nil {
+		t.Fatal("keep_last_revisions=0 accepted")
+	}
+	if _, err := NewTicket(operationID, requestID, TicketLoadRepositoryDump, "client-a", LoadRepositoryDumpPayload{RepoID: "../repo"}, time.Now()); err == nil {
+		t.Fatal("non-UUID repo_id accepted")
+	}
+	sameUUID := validResult
+	sameUUID.NewUUID = sameUUID.OldUUID
+	if _, err := NewSuccessResult(operationID, requestID, TicketLoadRepositoryDump, sameUUID, time.Now()); err == nil {
+		t.Fatal("result claiming an unchanged UUID (fake continuity) was accepted")
+	}
+	noTools := validResult
+	noTools.ToolVersions = nil
+	if _, err := NewSuccessResult(operationID, requestID, TicketLoadRepositoryDump, noTools, time.Now()); err == nil {
+		t.Fatal("result without tool_versions accepted")
+	}
+}
+
 // TestInitialCommitRepoIDMustBeUUID is the wire-level half of the audit's
 // Finding B. INITIAL_COMMIT is the only ticket type whose repo_id travels back
 // from the client, so it is the only place a client-chosen string can reach

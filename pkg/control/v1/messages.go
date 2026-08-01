@@ -48,6 +48,12 @@ const (
 	// TicketRealmRemoveConfirm consumes the OTP for the same operation_id.
 	// The server owns every destructive target from the request-time snapshot.
 	TicketRealmRemoveConfirm TicketType = "REALM_REMOVE_CONFIRM"
+	// TicketLoadRepositoryDump replaces a fresh, single-carrier-commit
+	// repository's FSFS with the content of a user-supplied SVN dump. The
+	// payload never carries a path or revision: the worker always resolves
+	// the carrier as the sole file present on the target's own HEAD
+	// (LOAD_REPOSITORY_DUMP_CONCEPT.md §3, §4).
+	TicketLoadRepositoryDump TicketType = "LOAD_REPOSITORY_DUMP"
 )
 
 type ResultStatus string
@@ -167,6 +173,25 @@ type RealmRemoveConfirmResult struct {
 	AdminContact     string                `json:"admin_contact"`
 	ErasureRequested bool                  `json:"erasure_requested"`
 	ErasureMaxDays   int                   `json:"erasure_max_days,omitempty"`
+}
+
+// LoadRepositoryDumpPayload carries no path and no revision: the worker
+// always resolves the carrier itself, from the target's own HEAD, never from
+// a client-supplied specific (LOAD_REPOSITORY_DUMP_CONCEPT.md §3).
+type LoadRepositoryDumpPayload struct {
+	RepoID                   string `json:"repo_id"`
+	ApplyCurrentIgnorePolicy bool   `json:"apply_current_ignore_policy,omitempty"`
+	KeepLastRevisions        *int   `json:"keep_last_revisions,omitempty"`
+}
+type LoadRepositoryDumpResult struct {
+	RepoID  string `json:"repo_id"`
+	OldUUID string `json:"old_uuid"`
+	NewUUID string `json:"new_uuid"`
+	// SourceRevisionRange is the range actually materialized after filtering
+	// and any keep_last_revisions bound - what happened, not what was asked.
+	SourceRevisionRange string            `json:"source_revision_range"`
+	IgnorePolicyVersion string            `json:"ignore_policy_version,omitempty"`
+	ToolVersions        map[string]string `json:"tool_versions"`
 }
 type RealmRecoveryArchive struct {
 	ArchiveID string `json:"archive_id"`
@@ -341,6 +366,17 @@ func (t Ticket) Validate() error {
 		if !validRealmRemovalOTP(p.OTP) {
 			return errors.New("REALM_REMOVE_CONFIRM otp is invalid")
 		}
+	case TicketLoadRepositoryDump:
+		var p LoadRepositoryDumpPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("LOAD_REPOSITORY_DUMP payload: %w", err)
+		}
+		if err := validateUUID("LOAD_REPOSITORY_DUMP payload.repo_id", p.RepoID); err != nil {
+			return err
+		}
+		if p.KeepLastRevisions != nil && *p.KeepLastRevisions < 1 {
+			return errors.New("LOAD_REPOSITORY_DUMP payload.keep_last_revisions must be at least 1")
+		}
 	default:
 		return fmt.Errorf("unsupported ticket type %q", t.Type)
 	}
@@ -360,7 +396,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -497,6 +533,26 @@ func validateSuccessPayload(r Result) error {
 		}
 		if _, err := validatePlainEmail(result.AdminContact); err != nil {
 			return errors.New("REALM_REMOVE_CONFIRM admin contact is invalid")
+		}
+	case TicketLoadRepositoryDump:
+		var result LoadRepositoryDumpResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("LOAD_REPOSITORY_DUMP result: %w", err)
+		}
+		if err := validateUUID("LOAD_REPOSITORY_DUMP result.repo_id", result.RepoID); err != nil {
+			return err
+		}
+		if strings.TrimSpace(result.OldUUID) == "" || strings.TrimSpace(result.NewUUID) == "" {
+			return errors.New("LOAD_REPOSITORY_DUMP result requires old_uuid and new_uuid")
+		}
+		if result.OldUUID == result.NewUUID {
+			return errors.New("LOAD_REPOSITORY_DUMP result must report a fresh new_uuid")
+		}
+		if strings.TrimSpace(result.SourceRevisionRange) == "" {
+			return errors.New("LOAD_REPOSITORY_DUMP result requires source_revision_range")
+		}
+		if len(result.ToolVersions) == 0 {
+			return errors.New("LOAD_REPOSITORY_DUMP result requires tool_versions")
 		}
 	}
 	return nil

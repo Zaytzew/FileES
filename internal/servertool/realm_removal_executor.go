@@ -32,7 +32,8 @@ type realmRemovalRecoveryPublisher interface {
 	Prepare(repoworker.RealmRemovalRecord) error
 }
 type realmRemovalRevoker interface {
-	RevokeRealm(context.Context, string, string) ([]string, error)
+	FenceRealmRemoval(string, string, []string) error
+	RevokeRealmRemoval(context.Context, string, string, []string, string) ([]string, error)
 }
 type realmRemovalErasure interface {
 	Accept(repoworker.RealmRemovalRecord, int) (repoworker.DataErasureRecord, error)
@@ -42,6 +43,11 @@ type realmRemovalErasure interface {
 func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.RealmRemovalRecord) error {
 	if e.Backend == nil || e.Recovery == nil || e.Publisher == nil || e.Activation == nil {
 		return errors.New("realm removal executor is incomplete")
+	}
+	if record.State != repoworker.RealmRemovalCompleted {
+		if err := e.Activation.FenceRealmRemoval(record.RealmID, record.OperationID, record.Scope.ClientIDs); err != nil {
+			return err
+		}
 	}
 	if record.Request.ErasureRequested {
 		if e.Erasure == nil {
@@ -76,7 +82,7 @@ func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.Rea
 		record.State = repoworker.RealmRemovalRevokingClients
 	}
 	if record.State == repoworker.RealmRemovalRevokingClients {
-		if _, err := e.Activation.RevokeRealm(ctx, record.RealmID, "realm removal confirmed"); err != nil {
+		if _, err := e.Activation.RevokeRealmRemoval(ctx, record.RealmID, record.OperationID, record.Scope.ClientIDs, "realm removal confirmed"); err != nil {
 			return err
 		}
 		if record.Request.ErasureRequested {

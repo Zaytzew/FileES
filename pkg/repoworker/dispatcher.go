@@ -17,6 +17,15 @@ const MaxTicketBytes = 64 << 10
 type SessionResolver interface {
 	Resolve(clientID string) (Session, error)
 }
+
+// SessionAdmission is evaluated after both the authenticated session and the
+// signed ticket have been resolved, but before any worker replay or mutation.
+// Production uses it to keep a realm-removal fence effective after a worker
+// crash releases the global worker lock.
+type SessionAdmission interface {
+	Admit(Session, control.Ticket) error
+}
+
 type ViewResolver struct{ ServiceWC string }
 
 func (r ViewResolver) Resolve(clientID string) (Session, error) {
@@ -34,8 +43,9 @@ func (r ViewResolver) Resolve(clientID string) (Session, error) {
 }
 
 type Dispatcher struct {
-	Worker   *Worker
-	Resolver SessionResolver
+	Worker    *Worker
+	Resolver  SessionResolver
+	Admission SessionAdmission
 }
 
 func (d Dispatcher) Serve(ctx context.Context, clientID string, in io.Reader, out io.Writer) error {
@@ -56,6 +66,11 @@ func (d Dispatcher) Serve(ctx context.Context, clientID string, in io.Reader, ou
 	session, e := d.Resolver.Resolve(clientID)
 	if e != nil {
 		return e
+	}
+	if d.Admission != nil {
+		if e := d.Admission.Admit(session, ticket); e != nil {
+			return e
+		}
 	}
 	result, e := d.Worker.Handle(ctx, session, ticket)
 	if e != nil {

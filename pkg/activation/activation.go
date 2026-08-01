@@ -170,6 +170,11 @@ func (m *Manager) Stage(grant onboarding.ActivationGrant) error {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		if _, err := m.loadRealmRemovalFence(grant.RealmID); err == nil {
+			return errors.New("activation realm is being removed")
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 		now := m.now().UTC()
 		record := Record{
 			Schema: RecordSchema, OperationID: grant.OperationID, DeployRequestID: grant.DeployRequestID,

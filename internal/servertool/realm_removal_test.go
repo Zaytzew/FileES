@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/activation"
+	control "filees/pkg/control/v1"
 	"filees/pkg/repoworker"
 	"github.com/google/uuid"
 )
@@ -49,11 +51,31 @@ func (p *fakeRealmGrantPublisher) WithdrawRealmGrants(_ context.Context, realm s
 }
 
 type fakeRealmRevoker struct {
+	fenceCalls    int
 	calls         int
 	realm, reason string
+	failFence     bool
 }
 
-func (r *fakeRealmRevoker) RevokeRealm(_ context.Context, realm, reason string) ([]string, error) {
+type fakeRealmFenceReader struct {
+	fence activation.RealmRemovalFence
+	found bool
+	err   error
+}
+
+func (r fakeRealmFenceReader) RealmRemovalFenceForRealm(string) (activation.RealmRemovalFence, bool, error) {
+	return r.fence, r.found, r.err
+}
+
+func (r *fakeRealmRevoker) FenceRealmRemoval(_ string, _ string, _ []string) error {
+	r.fenceCalls++
+	if r.failFence {
+		return errors.New("credential snapshot changed")
+	}
+	return nil
+}
+
+func (r *fakeRealmRevoker) RevokeRealmRemoval(_ context.Context, realm, _ string, _ []string, reason string) ([]string, error) {
 	r.calls++
 	r.realm, r.reason = realm, reason
 	return nil, nil
@@ -84,6 +106,102 @@ func TestRealmRemovalCoordinatorDerivesScopeAndBindsRealm(t *testing.T) {
 	}
 	if _, _, err := coordinator.Confirm(context.Background(), repoworker.Session{ClientID: "other", RealmID: uuid.NewString()}, record.OperationID, "CODE"); err == nil {
 		t.Fatal("different realm confirmed operation")
+	}
+}
+
+func TestRealmRemovalAdmissionBlocksPostCrashMutations(t *testing.T) {
+	realmID, operationID := uuid.NewString(), uuid.NewString()
+	session := repoworker.Session{ClientID: uuid.NewString(), RealmID: realmID}
+	create := control.Ticket{Type: control.TicketCreateRepository, OperationID: uuid.NewString()}
+	if err := (realmRemovalAdmission{Fences: fakeRealmFenceReader{}}).Admit(session, create); err != nil {
+		t.Fatalf("unfenced realm was blocked: %v", err)
+	}
+	if err := (realmRemovalAdmission{Fences: fakeRealmFenceReader{err: errors.New("corrupt fence")}}).Admit(session, create); err == nil {
+		t.Fatal("corrupt fence state failed open")
+	}
+	admission := realmRemovalAdmission{Fences: fakeRealmFenceReader{
+		fence: activation.RealmRemovalFence{OperationID: operationID, RealmID: realmID}, found: true,
+	}}
+	for _, typ := range []control.TicketType{
+		control.TicketCreateRepository, control.TicketInitialCommit, control.TicketDeleteRepository,
+		control.TicketMobilePairing, control.TicketClaimRealmAlias, control.TicketClientDeactivate,
+		control.TicketRealmRemoveRequest, control.TicketLoadRepositoryDump, control.TicketStoragePreflight,
+	} {
+		if err := admission.Admit(session, control.Ticket{Type: typ, OperationID: uuid.NewString()}); err == nil {
+			t.Fatalf("fenced realm admitted %s", typ)
+		}
+	}
+	if err := admission.Admit(session, control.Ticket{Type: control.TicketRealmRemoveConfirm, OperationID: uuid.NewString()}); err == nil {
+		t.Fatal("fenced realm resumed a different removal operation")
+	}
+	if err := admission.Admit(session, control.Ticket{Type: control.TicketRealmRemoveConfirm, OperationID: operationID}); err != nil {
+		t.Fatalf("matching removal confirmation was blocked: %v", err)
+	}
+	if err := admission.Admit(session, control.Ticket{Type: control.TicketResolveOwnerLabels, OperationID: uuid.NewString()}); err != nil {
+		t.Fatalf("read-only owner-label resolution was blocked: %v", err)
+	}
+}
+
+func TestRealmRemovalCoordinatorRejectsScopeDriftBeforeOTPBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*[]string, *[]string, *[]string)
+	}{
+		{"client", func(clients, _, _ *[]string) { *clients = append(*clients, uuid.NewString()) }},
+		{"owned repository", func(_, owned, _ *[]string) { *owned = append(*owned, uuid.NewString()) }},
+		{"foreign grant", func(_, _, foreign *[]string) { *foreign = append(*foreign, uuid.NewString()) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			realm := uuid.NewString()
+			clients := []string{uuid.NewString(), uuid.NewString()}
+			owned := []string{uuid.NewString()}
+			foreign := []string{uuid.NewString()}
+			store := repoworker.RealmRemovalStore{
+				Root: t.TempDir(), OTPPepper: []byte(strings.Repeat("p", 32)),
+				TTL: time.Hour, Attempts: 3,
+			}
+			executed := false
+			coordinator := realmRemovalCoordinator{
+				Store: store,
+				SnapshotScope: func(string) (repoworker.RealmRemovalScope, error) {
+					return repoworker.RealmRemovalScope{
+						OwnedRepoIDs: append([]string(nil), owned...), ForeignGrantRepoIDs: append([]string(nil), foreign...),
+					}, nil
+				},
+				ActiveClients: func(string) ([]string, error) {
+					return append([]string(nil), clients...), nil
+				},
+				Execute: func(context.Context, repoworker.RealmRemovalRecord) error {
+					executed = true
+					return nil
+				},
+			}
+			session := repoworker.Session{ClientID: clients[0], RealmID: realm}
+			record, err := coordinator.Request(context.Background(), session, uuid.NewString(), repoworker.RealmRemovalRequest{
+				NotificationEmail: "user@example.net", RecoveryPublicKey: testRecoveryPublicKey(t),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err := store.ClaimPendingMail(time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// A target added after the user saw the destructive counts must
+			// never silently expand the exact snapshot authorized by that OTP.
+			tc.mutate(&clients, &owned, &foreign)
+			if _, _, err := coordinator.Confirm(context.Background(), session, record.OperationID, job.OTP); err == nil {
+				t.Fatal("scope drift was accepted at the OTP boundary")
+			}
+			if executed {
+				t.Fatal("scope drift reached destructive executor")
+			}
+			current, err := store.Load(record.OperationID)
+			if err != nil || current.State != repoworker.RealmRemovalAwaitingConfirmation {
+				t.Fatalf("drifted operation state=%q err=%v", current.State, err)
+			}
+		})
 	}
 }
 
@@ -141,6 +259,39 @@ func TestRealmRemovalExecutorDoesNotRevokeBeforeRecoveryIsPublished(t *testing.T
 	current, err := store.Load(record.OperationID)
 	if err != nil || current.State != repoworker.RealmRemovalDeleting || recovery.calls != 1 || grants.calls != 0 || revoker.calls != 0 {
 		t.Fatalf("current=%+v recovery=%d grants=%d revoker=%d err=%v", current, recovery.calls, grants.calls, revoker.calls, err)
+	}
+}
+
+func TestRealmRemovalExecutorFencesCredentialsBeforeDeletingRepositories(t *testing.T) {
+	realm, repo, client := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	store := repoworker.RealmRemovalStore{
+		Root: t.TempDir(), OTPPepper: []byte(strings.Repeat("p", 32)), TTL: time.Hour, Attempts: 3,
+	}
+	record, otp, err := store.Begin(realm, repoworker.RealmRemovalScope{
+		ClientIDs: []string{client}, OwnedRepoIDs: []string{repo},
+	}, repoworker.RealmRemovalRequest{NotificationEmail: "user@example.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = store.Confirm(record.OperationID, otp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeRealmDeleteBackend{}
+	revoker := &fakeRealmRevoker{failFence: true}
+	executor := realmRemovalExecutor{
+		Store: store, Backend: backend, Recovery: &fakeRealmRecoveryPublisher{},
+		Publisher: &fakeRealmGrantPublisher{}, Activation: revoker,
+	}
+	if err := executor.Execute(context.Background(), record); err == nil {
+		t.Fatal("credential fence failure did not stop realm removal")
+	}
+	if revoker.fenceCalls != 1 || len(backend.calls) != 0 {
+		t.Fatalf("fence calls=%d delete calls=%v", revoker.fenceCalls, backend.calls)
+	}
+	current, err := store.Load(record.OperationID)
+	if err != nil || current.State != repoworker.RealmRemovalDeleting {
+		t.Fatalf("state after fence failure=%q err=%v", current.State, err)
 	}
 }
 

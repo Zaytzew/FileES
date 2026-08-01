@@ -158,6 +158,107 @@ func TestRevokeRealmRevokesEveryClientOfThatRealmOnly(t *testing.T) {
 	}
 }
 
+func TestRealmRemovalFenceBlocksNewCredentialsAndRevokesExactSnapshot(t *testing.T) {
+	manager, config := newActivationTestManager(t)
+	realmID, operationID := uuid.NewString(), uuid.NewString()
+	now := time.Now().UTC()
+	manager.now = func() time.Time { return now }
+	activate := func(realm string) onboarding.ActivationGrant {
+		grant := testActivationGrant(t, now.Add(time.Hour))
+		grant.RealmID = realm
+		if err := manager.Stage(grant); err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.RecordProof(grant.OperationID, grant.ClientID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := manager.Publish(context.Background(), grant); err != nil {
+			t.Fatal(err)
+		}
+		return grant
+	}
+	a, b := activate(realmID), activate(realmID)
+	other := activate(uuid.NewString())
+	staged := testActivationGrant(t, now.Add(time.Minute))
+	staged.RealmID = realmID
+	if err := manager.Stage(staged); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := manager.ClaimSession(a.OperationID, a.ClientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+
+	snapshot := []string{b.ClientID, staged.ClientID, a.ClientID}
+	if err := manager.FenceRealmRemoval(realmID, operationID, []string{a.ClientID}); err == nil {
+		t.Fatal("incomplete credential snapshot was fenced")
+	}
+	bRecord, err := readRecord(manager.recordPath(b.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bRecord.State, bRecord.RevokeReason, bRecord.RevokedAt = "revoking", "independent revoke", &now
+	if err := atomicWriteJSON(manager.recordPath(b.OperationID), bRecord, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.FenceRealmRemoval(realmID, operationID, snapshot); err == nil {
+		t.Fatal("credential already revoking for another operation was fenced")
+	}
+	bRecord.State, bRecord.RevokeReason, bRecord.RevokedAt = "active", "", nil
+	if err := atomicWriteJSON(manager.recordPath(b.OperationID), bRecord, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.FenceRealmRemoval(realmID, operationID, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.FenceRealmRemoval(realmID, operationID, snapshot); err != nil {
+		t.Fatalf("idempotent fence: %v", err)
+	}
+	if err := manager.FenceRealmRemoval(realmID, uuid.NewString(), snapshot); err == nil {
+		t.Fatal("different operation replaced realm removal fence")
+	}
+	reloaded, err := New(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded.now = func() time.Time { return now.Add(2 * time.Minute) }
+	if persisted, found, err := reloaded.RealmRemovalFenceForRealm(realmID); err != nil || !found || persisted.OperationID != operationID || len(persisted.ClientIDs) != 3 || !idSet(persisted.ClientIDs)[a.ClientID] || !idSet(persisted.ClientIDs)[b.ClientID] || !idSet(persisted.ClientIDs)[staged.ClientID] {
+		t.Fatalf("persisted fence=%+v found=%v err=%v", persisted, found, err)
+	}
+	if err := reloaded.Stage(a); err != nil {
+		t.Fatalf("existing staged identity replay was blocked: %v", err)
+	}
+	late := testActivationGrant(t, now.Add(time.Hour))
+	late.RealmID = realmID
+	if err := reloaded.Stage(late); err == nil || !strings.Contains(err.Error(), "being removed") {
+		t.Fatalf("late realm credential stage=%v", err)
+	}
+	foreignLate := testActivationGrant(t, now.Add(time.Hour))
+	foreignLate.RealmID = other.RealmID
+	if err := reloaded.Stage(foreignLate); err != nil {
+		t.Fatalf("other realm was fenced: %v", err)
+	}
+
+	revoked, err := reloaded.RevokeRealmRemoval(context.Background(), realmID, operationID, snapshot, "realm removal confirmed")
+	if err != nil || len(revoked) != 2 || !containsClient(revoked, a.ClientID) || !containsClient(revoked, b.ClientID) {
+		t.Fatalf("revoked=%v err=%v", revoked, err)
+	}
+	if revoked, err := reloaded.RevokeRealmRemoval(context.Background(), realmID, operationID, snapshot, "realm removal confirmed"); err != nil || len(revoked) != 0 {
+		t.Fatalf("idempotent exact revoke=%v err=%v", revoked, err)
+	}
+	if revoked, err := lease.Revoked(); err != nil || !revoked {
+		t.Fatalf("live lease revoked=%v err=%v", revoked, err)
+	}
+	keys, err := os.ReadFile(config.AuthorizedKeysFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(keys), a.ClientID) || strings.Contains(string(keys), b.ClientID) || !strings.Contains(string(keys), other.ClientID) {
+		t.Fatalf("realm removal authorized_keys=%s", keys)
+	}
+}
+
 func containsClient(list []string, id string) bool {
 	for _, v := range list {
 		if v == id {

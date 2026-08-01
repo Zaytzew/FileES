@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"filees/pkg/repoworker"
 )
@@ -24,18 +25,10 @@ func (c realmRemovalCoordinator) Request(ctx context.Context, session repoworker
 	if err := ctx.Err(); err != nil {
 		return repoworker.RealmRemovalRecord{}, err
 	}
-	if c.SnapshotScope == nil || c.ActiveClients == nil {
-		return repoworker.RealmRemovalRecord{}, errors.New("realm removal scope services are unavailable")
-	}
-	scope, err := c.SnapshotScope(session.RealmID)
+	scope, err := c.snapshot(session.RealmID)
 	if err != nil {
 		return repoworker.RealmRemovalRecord{}, err
 	}
-	clients, err := c.ActiveClients(session.RealmID)
-	if err != nil {
-		return repoworker.RealmRemovalRecord{}, err
-	}
-	scope.ClientIDs = clients
 	record, _, err := c.Store.BeginOperation(operationID, session.RealmID, scope, request)
 	return record, err
 }
@@ -52,6 +45,13 @@ func (c realmRemovalCoordinator) Confirm(ctx context.Context, session repoworker
 		return repoworker.RealmRemovalRecord{}, repoworker.RecoveryManifest{}, errors.New("realm removal operation does not belong to authenticated realm")
 	}
 	if record.State == repoworker.RealmRemovalAwaitingConfirmation {
+		currentScope, err := c.snapshot(session.RealmID)
+		if err != nil {
+			return repoworker.RealmRemovalRecord{}, repoworker.RecoveryManifest{}, err
+		}
+		if !sameRealmRemovalScope(record.Scope, currentScope) {
+			return repoworker.RealmRemovalRecord{}, repoworker.RecoveryManifest{}, errors.New("realm removal scope changed; start a new request")
+		}
 		record, err = c.Store.Confirm(operationID, otp)
 		if err != nil {
 			return repoworker.RealmRemovalRecord{}, repoworker.RecoveryManifest{}, err
@@ -71,4 +71,44 @@ func (c realmRemovalCoordinator) Confirm(ctx context.Context, session repoworker
 	}
 	manifest, err := c.Manifests.Load(operationID)
 	return record, manifest, err
+}
+
+func (c realmRemovalCoordinator) snapshot(realmID string) (repoworker.RealmRemovalScope, error) {
+	if c.SnapshotScope == nil || c.ActiveClients == nil {
+		return repoworker.RealmRemovalScope{}, errors.New("realm removal scope services are unavailable")
+	}
+	scope, err := c.SnapshotScope(realmID)
+	if err != nil {
+		return repoworker.RealmRemovalScope{}, err
+	}
+	clients, err := c.ActiveClients(realmID)
+	if err != nil {
+		return repoworker.RealmRemovalScope{}, err
+	}
+	scope.ClientIDs = clients
+	sort.Strings(scope.ClientIDs)
+	sort.Strings(scope.OwnedRepoIDs)
+	sort.Strings(scope.ForeignGrantRepoIDs)
+	return scope, nil
+}
+
+func sameRealmRemovalScope(left, right repoworker.RealmRemovalScope) bool {
+	return sameRealmRemovalIDs(left.ClientIDs, right.ClientIDs) &&
+		sameRealmRemovalIDs(left.OwnedRepoIDs, right.OwnedRepoIDs) &&
+		sameRealmRemovalIDs(left.ForeignGrantRepoIDs, right.ForeignGrantRepoIDs)
+}
+
+func sameRealmRemovalIDs(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	a, b := append([]string(nil), left...), append([]string(nil), right...)
+	sort.Strings(a)
+	sort.Strings(b)
+	for index := range a {
+		if a[index] != b[index] {
+			return false
+		}
+	}
+	return true
 }

@@ -76,13 +76,18 @@ type Upload struct {
 	OwnerRealm string `json:"owner_realm"`
 
 	// AuthorityRepoID is the project repository whose owner may open this
-	// channel. It is never written to. TrashRepoID does not serve here: it
+	// channel. It is never written to. UploadRepoID does not serve here: it
 	// does not exist yet when CREATE is authorized, so it cannot be the source
 	// of the right to create it (UPLOAD_CHANNEL_CONCEPT.md §2).
 	AuthorityRepoID string `json:"authority_repo_id"`
 
-	// TrashRepoID receives every upload. Never the project repository.
-	TrashRepoID string `json:"trash_repo_id"`
+	// UploadRepoID is the plain repository created for this channel — an
+	// ordinary FileES repository the owner maps locally, the clean delivery
+	// target for accepted uploads. It is never the project repository, and it
+	// is not the realm-wide trash: rejected uploads go there instead, and
+	// trash has no 1:1 relationship with a channel, so it is deliberately not
+	// a field of this manifest (UPLOAD_CHANNEL_CONCEPT.md §2, §3, §3.2).
+	UploadRepoID string `json:"upload_repo_id"`
 
 	Slug string `json:"slug"`
 
@@ -99,7 +104,7 @@ type Upload struct {
 
 var (
 	ErrNoRecipients    = errors.New("upload channel requires a non-empty recipient list")
-	ErrSameRepo        = errors.New("authority repository and trash repository must differ")
+	ErrSameRepo        = errors.New("authority repository and upload repository must differ")
 	ErrDuplicateObject = errors.New("duplicate public_id in object map")
 	ErrClosedPassword  = errors.New("closed channel must not carry a shared password")
 )
@@ -172,10 +177,10 @@ func (u Upload) Validate() error {
 	if err := validUUID("authority_repo_id", u.AuthorityRepoID); err != nil {
 		return err
 	}
-	if err := validUUID("trash_repo_id", u.TrashRepoID); err != nil {
+	if err := validUUID("upload_repo_id", u.UploadRepoID); err != nil {
 		return err
 	}
-	if u.AuthorityRepoID == u.TrashRepoID {
+	if u.AuthorityRepoID == u.UploadRepoID {
 		return ErrSameRepo
 	}
 	if _, err := slug.Normalize(u.Slug); err != nil {

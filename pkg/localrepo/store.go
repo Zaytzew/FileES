@@ -35,28 +35,40 @@ const (
 	StateAttaching         State = "attaching"
 	StateAttached          State = "attached"
 	StateRelocating        State = "relocating"
-	StateDetaching         State = "detaching"
-	StateDeleting          State = "deleting"
-	StateDetached          State = "detached"
-	StateDeleted           State = "deleted"
-	StateError             State = "error"
+	// StateReconciling is entered after LOAD_REPOSITORY_DUMP succeeds
+	// server-side: the repository's UUID and entire history changed, so the
+	// existing WC at LocalPath must be discarded and rechecked out in
+	// place, never merged via a normal svn update
+	// (LOAD_REPOSITORY_DUMP_CONCEPT.md §7). Unlike StateRelocating there is
+	// no PendingLocalPath: the target path is the same as LocalPath.
+	StateReconciling State = "reconciling"
+	StateDetaching   State = "detaching"
+	StateDeleting    State = "deleting"
+	StateDetached    State = "detached"
+	StateDeleted     State = "deleted"
+	StateError       State = "error"
 )
 
 type Record struct {
-	OperationID       string    `json:"operation_id"`
-	ServerID          string    `json:"server_id"`
-	RepoID            string    `json:"repo_id,omitempty"`
-	RepoURL           string    `json:"repo_url,omitempty"`
-	Access            string    `json:"access,omitempty"`
-	DisplayName       string    `json:"display_name,omitempty"`
-	LocalPath         string    `json:"local_path"`
-	PendingLocalPath  string    `json:"pending_local_path,omitempty"`
-	DetachOperationID string    `json:"detach_operation_id,omitempty"`
-	DeleteRepository  bool      `json:"delete_repository,omitempty"`
-	State             State     `json:"state"`
-	LastError         string    `json:"last_error,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	OperationID       string `json:"operation_id"`
+	ServerID          string `json:"server_id"`
+	RepoID            string `json:"repo_id,omitempty"`
+	RepoURL           string `json:"repo_url,omitempty"`
+	Access            string `json:"access,omitempty"`
+	DisplayName       string `json:"display_name,omitempty"`
+	LocalPath         string `json:"local_path"`
+	PendingLocalPath  string `json:"pending_local_path,omitempty"`
+	DetachOperationID string `json:"detach_operation_id,omitempty"`
+	DeleteRepository  bool   `json:"delete_repository,omitempty"`
+	// ReconcileOperationID is minted fresh by BeginReconcile and reused
+	// across daemon restarts so the orchestration's own staging (named
+	// after this ID, mirroring CreateFSFS's operationID convention) is
+	// resumable instead of colliding with an abandoned prior attempt.
+	ReconcileOperationID string    `json:"reconcile_operation_id,omitempty"`
+	State                State     `json:"state"`
+	LastError            string    `json:"last_error,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 type document struct {
@@ -344,6 +356,76 @@ func (s *Store) FailRelocation(operationID string, cause error) (Record, error) 
 	})
 }
 
+// BeginReconcile starts (or resumes, idempotently) the recheckout-in-place
+// forced by a successful LOAD_REPOSITORY_DUMP. It never touches LocalPath —
+// only the orchestration layer does, and only after building and verifying
+// the replacement WC elsewhere first (LOAD_REPOSITORY_DUMP_CONCEPT.md §7).
+func (s *Store) BeginReconcile(serverID, repoID string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var operationID string
+	for id, record := range s.records {
+		if record.ServerID == serverID && record.RepoID == repoID && !terminal(record.State) {
+			operationID = id
+			break
+		}
+	}
+	if operationID == "" {
+		return Record{}, os.ErrNotExist
+	}
+	record := s.records[operationID]
+	if record.State == StateReconciling && record.ReconcileOperationID != "" {
+		return record, nil // resume the same attempt, not a new one
+	}
+	if record.State != StateAttached {
+		return Record{}, errors.New("only an attached repository can be reconciled")
+	}
+	before := record
+	record.State = StateReconciling
+	record.ReconcileOperationID = uuid.NewString()
+	record.LastError = ""
+	record.UpdatedAt = s.now().UTC()
+	if err := validate(record); err != nil {
+		return Record{}, err
+	}
+	s.records[operationID] = record
+	if err := s.persist(); err != nil {
+		s.records[operationID] = before
+		return Record{}, err
+	}
+	return record, nil
+}
+
+func (s *Store) CompleteReconcile(operationID string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State == StateAttached {
+			return nil // idempotent replay after an already-completed reconcile
+		}
+		if record.State != StateReconciling {
+			return errors.New("repository reconcile is not in progress")
+		}
+		record.State, record.ReconcileOperationID, record.LastError = StateAttached, "", ""
+		return nil
+	})
+}
+
+// FailReconcile is only valid before the orchestration's replacement WC has
+// been swapped into LocalPath — the old WC is still there and still good,
+// so returning to StateAttached is safe, the same guarantee FailRelocation
+// gives. A crash after the swap but before CompleteReconcile is not a
+// FailReconcile case: on restart the orchestration resumes the same
+// ReconcileOperationID and must detect the swap already happened rather
+// than repeat it (LOAD_REPOSITORY_DUMP_CONCEPT.md §8).
+func (s *Store) FailReconcile(operationID string, cause error) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateReconciling || cause == nil || strings.TrimSpace(cause.Error()) == "" {
+			return errors.New("active reconcile and failure are required")
+		}
+		record.State, record.ReconcileOperationID, record.LastError = StateAttached, "", cause.Error()
+		return nil
+	})
+}
+
 func (s *Store) BeginDetach(serverID, repoID string, deleteRepository bool) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -481,7 +563,7 @@ func validate(r Record) error {
 		}
 	}
 	switch r.State {
-	case StateRequestPending, StateRepositoryCreated, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateDetaching, StateDeleting, StateDetached, StateDeleted, StateError:
+	case StateRequestPending, StateRepositoryCreated, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateReconciling, StateDetaching, StateDeleting, StateDetached, StateDeleted, StateError:
 	default:
 		return errors.New("local repository lifecycle state is invalid")
 	}
@@ -496,6 +578,13 @@ func validate(r Record) error {
 		}
 	} else if r.PendingLocalPath != "" {
 		return errors.New("repository relocation target exists outside relocation")
+	}
+	if r.State == StateReconciling {
+		if _, err := uuid.Parse(r.ReconcileOperationID); err != nil {
+			return errors.New("repository reconcile operation ID must be UUID")
+		}
+	} else if r.ReconcileOperationID != "" {
+		return errors.New("repository reconcile metadata exists outside reconcile")
 	}
 	if r.State == StateDetaching || r.State == StateDeleting || r.State == StateDetached || r.State == StateDeleted {
 		if _, err := uuid.Parse(r.DetachOperationID); err != nil {

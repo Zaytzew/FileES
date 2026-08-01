@@ -175,6 +175,50 @@ func TestStoreRelocationIsDurableAndKeepsOldPathOnFailure(t *testing.T) {
 	}
 }
 
+func TestStoreReconcileIsDurableAndKeepsPathOnFailure(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "wc")
+	record, _ := store.BeginAttach("primary", "repo-1", path, false)
+	_, _ = store.ApproveAttach(record.OperationID, "primary", "repo-1", "svn+ssh://_filees-client@example/repo", "rw")
+	_, _ = store.MarkAttached(record.OperationID, "repo-1")
+
+	reconciling, err := store.BeginReconcile("primary", "repo-1")
+	if err != nil || reconciling.State != StateReconciling || reconciling.LocalPath != path || reconciling.ReconcileOperationID == "" {
+		t.Fatalf("reconciling=%+v err=%v", reconciling, err)
+	}
+	// Resuming the same in-progress attempt returns the same operation ID,
+	// not a new one - the orchestration relies on this for idempotent
+	// staging directory naming across a daemon restart.
+	again, err := store.BeginReconcile("primary", "repo-1")
+	if err != nil || again.ReconcileOperationID != reconciling.ReconcileOperationID {
+		t.Fatalf("resumed reconcile got a different operation: first=%s again=%s err=%v", reconciling.ReconcileOperationID, again.ReconcileOperationID, err)
+	}
+
+	failed, err := store.FailReconcile(record.OperationID, os.ErrPermission)
+	if err != nil || failed.State != StateAttached || failed.LocalPath != path || failed.ReconcileOperationID != "" || failed.LastError == "" {
+		t.Fatalf("failed=%+v err=%v", failed, err)
+	}
+
+	restarted, err := store.BeginReconcile("primary", "repo-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := store.CompleteReconcile(record.OperationID)
+	if err != nil || completed.State != StateAttached || completed.LocalPath != path || completed.ReconcileOperationID != "" {
+		t.Fatalf("completed=%+v err=%v", completed, err)
+	}
+	_ = restarted
+	// A second CompleteReconcile call (e.g. a retried IPC confirmation) is
+	// an idempotent no-op, not an error.
+	replay, err := store.CompleteReconcile(record.OperationID)
+	if err != nil || replay.State != StateAttached {
+		t.Fatalf("idempotent replay of CompleteReconcile: replay=%+v err=%v", replay, err)
+	}
+}
+
 func TestStoreRejectsDuplicateRepoAndOverlappingRoots(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

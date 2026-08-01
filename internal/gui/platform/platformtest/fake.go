@@ -18,23 +18,27 @@ type Fake struct {
 	ConsentFunc         func(context.Context, platform.ConsentRequest) (platform.ConsentResult, error)
 	ReservationsFunc    func(context.Context, platform.ReservationDialogRequest) (platform.ReservationDialogResult, error)
 	SettingsFunc        func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error)
+	RealmGrantsFunc     func(context.Context, platform.RealmGrantDialogRequest) (platform.RealmGrantDialogResult, error)
+	RealmVisibilityFunc func(context.Context, platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
 	SetAutostartFunc    func(context.Context, platform.AutostartSpec, bool) error
 
-	mu                  sync.Mutex
-	OpenedFolders       []string
-	PickRequests        []platform.PickFilesRequest
-	FolderRequests      []platform.PickFolderRequest
-	PromptRequests      []platform.PromptTextRequest
-	InfoRequests        []platform.InfoRequest
-	ConfirmRequests     []platform.ConfirmRequest
-	ConsentRequests     []platform.ConsentRequest
-	ReservationRequests []platform.ReservationDialogRequest
-	SettingsRequests    []platform.SettingsDialogRequest
-	Notifications       []platform.Notification
-	StatusRequests      []platform.AutostartSpec
-	AutostartSets       []AutostartSet
+	mu                      sync.Mutex
+	OpenedFolders           []string
+	PickRequests            []platform.PickFilesRequest
+	FolderRequests          []platform.PickFolderRequest
+	PromptRequests          []platform.PromptTextRequest
+	InfoRequests            []platform.InfoRequest
+	ConfirmRequests         []platform.ConfirmRequest
+	ConsentRequests         []platform.ConsentRequest
+	ReservationRequests     []platform.ReservationDialogRequest
+	SettingsRequests        []platform.SettingsDialogRequest
+	RealmGrantRequests      []platform.RealmGrantDialogRequest
+	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
+	Notifications           []platform.Notification
+	StatusRequests          []platform.AutostartSpec
+	AutostartSets           []AutostartSet
 }
 
 func (f *Fake) ShowReservations(ctx context.Context, request platform.ReservationDialogRequest) (platform.ReservationDialogResult, error) {
@@ -57,6 +61,28 @@ func (f *Fake) ShowSettings(ctx context.Context, request platform.SettingsDialog
 		return fn(ctx, request)
 	}
 	return platform.SettingsDialogResult{Action: platform.SettingsDialogClose}, nil
+}
+
+func (f *Fake) ShowRealmGrants(ctx context.Context, request platform.RealmGrantDialogRequest) (platform.RealmGrantDialogResult, error) {
+	f.mu.Lock()
+	f.RealmGrantRequests = append(f.RealmGrantRequests, request)
+	fn := f.RealmGrantsFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.RealmGrantDialogResult{Action: platform.RealmGrantDialogClose}, nil
+}
+
+func (f *Fake) ShowRealmVisibility(ctx context.Context, request platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error) {
+	f.mu.Lock()
+	f.RealmVisibilityRequests = append(f.RealmVisibilityRequests, request)
+	fn := f.RealmVisibilityFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.RealmVisibilityDialogResult{Action: platform.RealmVisibilityDialogClose}, nil
 }
 
 func (f *Fake) PickFolder(ctx context.Context, request platform.PickFolderRequest) (platform.PickFolderResult, error) {
@@ -178,34 +204,38 @@ func (f *Fake) Snapshot() Snapshot {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return Snapshot{
-		OpenedFolders:       append([]string(nil), f.OpenedFolders...),
-		PickRequests:        append([]platform.PickFilesRequest(nil), f.PickRequests...),
-		FolderRequests:      append([]platform.PickFolderRequest(nil), f.FolderRequests...),
-		PromptRequests:      append([]platform.PromptTextRequest(nil), f.PromptRequests...),
-		InfoRequests:        append([]platform.InfoRequest(nil), f.InfoRequests...),
-		ConfirmRequests:     append([]platform.ConfirmRequest(nil), f.ConfirmRequests...),
-		ConsentRequests:     append([]platform.ConsentRequest(nil), f.ConsentRequests...),
-		ReservationRequests: append([]platform.ReservationDialogRequest(nil), f.ReservationRequests...),
-		SettingsRequests:    append([]platform.SettingsDialogRequest(nil), f.SettingsRequests...),
-		Notifications:       append([]platform.Notification(nil), f.Notifications...),
-		StatusRequests:      append([]platform.AutostartSpec(nil), f.StatusRequests...),
-		AutostartSets:       append([]AutostartSet(nil), f.AutostartSets...),
+		OpenedFolders:           append([]string(nil), f.OpenedFolders...),
+		PickRequests:            append([]platform.PickFilesRequest(nil), f.PickRequests...),
+		FolderRequests:          append([]platform.PickFolderRequest(nil), f.FolderRequests...),
+		PromptRequests:          append([]platform.PromptTextRequest(nil), f.PromptRequests...),
+		InfoRequests:            append([]platform.InfoRequest(nil), f.InfoRequests...),
+		ConfirmRequests:         append([]platform.ConfirmRequest(nil), f.ConfirmRequests...),
+		ConsentRequests:         append([]platform.ConsentRequest(nil), f.ConsentRequests...),
+		ReservationRequests:     append([]platform.ReservationDialogRequest(nil), f.ReservationRequests...),
+		SettingsRequests:        append([]platform.SettingsDialogRequest(nil), f.SettingsRequests...),
+		RealmGrantRequests:      append([]platform.RealmGrantDialogRequest(nil), f.RealmGrantRequests...),
+		RealmVisibilityRequests: append([]platform.RealmVisibilityDialogRequest(nil), f.RealmVisibilityRequests...),
+		Notifications:           append([]platform.Notification(nil), f.Notifications...),
+		StatusRequests:          append([]platform.AutostartSpec(nil), f.StatusRequests...),
+		AutostartSets:           append([]AutostartSet(nil), f.AutostartSets...),
 	}
 }
 
 type Snapshot struct {
-	OpenedFolders       []string
-	PickRequests        []platform.PickFilesRequest
-	FolderRequests      []platform.PickFolderRequest
-	PromptRequests      []platform.PromptTextRequest
-	InfoRequests        []platform.InfoRequest
-	ConfirmRequests     []platform.ConfirmRequest
-	ConsentRequests     []platform.ConsentRequest
-	ReservationRequests []platform.ReservationDialogRequest
-	SettingsRequests    []platform.SettingsDialogRequest
-	Notifications       []platform.Notification
-	StatusRequests      []platform.AutostartSpec
-	AutostartSets       []AutostartSet
+	OpenedFolders           []string
+	PickRequests            []platform.PickFilesRequest
+	FolderRequests          []platform.PickFolderRequest
+	PromptRequests          []platform.PromptTextRequest
+	InfoRequests            []platform.InfoRequest
+	ConfirmRequests         []platform.ConfirmRequest
+	ConsentRequests         []platform.ConsentRequest
+	ReservationRequests     []platform.ReservationDialogRequest
+	SettingsRequests        []platform.SettingsDialogRequest
+	RealmGrantRequests      []platform.RealmGrantDialogRequest
+	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
+	Notifications           []platform.Notification
+	StatusRequests          []platform.AutostartSpec
+	AutostartSets           []AutostartSet
 }
 
 var _ platform.Backend = (*Fake)(nil)

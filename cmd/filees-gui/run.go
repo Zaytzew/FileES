@@ -193,6 +193,63 @@ func (adapter realmAliasAdapter) ClaimAlias(ctx context.Context, serverID, alias
 	return nil
 }
 
+type realmGrantClient interface {
+	RealmGrantRecipients(context.Context, string) (*contract.RealmGrantRecipientsResult, error)
+	RealmSetVisibility(context.Context, string, string) (*contract.RealmSetVisibilityResult, error)
+	RepoGrantAccess(context.Context, contract.RepoGrantAccessPayload) (*contract.RealmGrantResult, error)
+	RepoRevokeAccess(context.Context, contract.RepoRevokeAccessPayload) (*contract.RealmGrantResult, error)
+}
+
+type realmGrantAdapter struct{ client realmGrantClient }
+
+func (adapter realmGrantAdapter) ListRecipients(ctx context.Context, serverID string) ([]actions.RealmGrantRecipient, error) {
+	result, err := adapter.client.RealmGrantRecipients(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty realm directory")
+	}
+	recipients := make([]actions.RealmGrantRecipient, 0, len(result.Recipients))
+	for _, recipient := range result.Recipients {
+		recipients = append(recipients, actions.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias})
+	}
+	return recipients, nil
+}
+
+func (adapter realmGrantAdapter) SetVisibility(ctx context.Context, serverID, visibility string) error {
+	result, err := adapter.client.RealmSetVisibility(ctx, serverID, visibility)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.Visibility != visibility {
+		return errors.New("daemon returned an invalid realm visibility result")
+	}
+	return nil
+}
+
+func (adapter realmGrantAdapter) Grant(ctx context.Context, serverID, repoID, recipientRealmID, access string) error {
+	result, err := adapter.client.RepoGrantAccess(ctx, contract.RepoGrantAccessPayload{ServerID: serverID, RepoID: repoID, RecipientRealmID: recipientRealmID, Access: access})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.RepoID != repoID || result.RecipientRealmID != recipientRealmID || result.Access != access || result.State != "active" {
+		return errors.New("daemon returned an invalid realm grant result")
+	}
+	return nil
+}
+
+func (adapter realmGrantAdapter) Revoke(ctx context.Context, serverID, repoID, recipientRealmID string) error {
+	result, err := adapter.client.RepoRevokeAccess(ctx, contract.RepoRevokeAccessPayload{ServerID: serverID, RepoID: repoID, RecipientRealmID: recipientRealmID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.RepoID != repoID || result.RecipientRealmID != recipientRealmID || result.State != "revoked" {
+		return errors.New("daemon returned an invalid realm grant revoke result")
+	}
+	return nil
+}
+
 type reservationAdapter struct{ client reservationClient }
 
 func (adapter reservationAdapter) ListReservations(ctx context.Context, serverID string) ([]app.Reservation, error) {
@@ -466,6 +523,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(realmAliasClient); ok {
 		realmAliases = realmAliasAdapter{client: candidate}
 	}
+	var realmGrants actions.RealmGrantManager
+	if candidate, ok := deps.client.(realmGrantClient); ok {
+		realmGrants = realmGrantAdapter{client: candidate}
+	}
 	var stack actions.StackLifecycle
 	if candidate, ok := deps.client.(systemLifecycleClient); ok {
 		stack = stackLifecycleAdapter{client: candidate}
@@ -496,8 +557,10 @@ func run(parent context.Context, deps dependencies) error {
 		Locker:               deps.client,
 		Reservations:         reservations,
 		RealmAliases:         realmAliases,
+		RealmGrants:          realmGrants,
 		ReservationBrowser:   deps.platform,
 		SettingsBrowser:      deps.platform,
+		RealmGrantBrowser:    deps.platform,
 		ConsentPrompter:      deps.platform,
 		Reconnect:            guiApp.Reconnect,
 		Refresh:              guiApp.Refresh,

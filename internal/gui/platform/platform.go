@@ -18,6 +18,7 @@ type Backend interface {
 	ConsentPrompter
 	ReservationBrowser
 	SettingsBrowser
+	RealmGrantBrowser
 	Notifier
 	Autostart
 }
@@ -54,6 +55,53 @@ type SettingsBrowser interface {
 	ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error)
 }
 
+type RealmGrantBrowser interface {
+	ShowRealmGrants(context.Context, RealmGrantDialogRequest) (RealmGrantDialogResult, error)
+	ShowRealmVisibility(context.Context, RealmVisibilityDialogRequest) (RealmVisibilityDialogResult, error)
+}
+
+type RealmGrantDialogRequest struct {
+	Title      string
+	Text       string
+	Recipients []RealmGrantRecipient
+}
+
+type RealmGrantRecipient struct {
+	RealmID string
+	Alias   string
+}
+
+type RealmGrantDialogAction string
+
+const (
+	RealmGrantDialogClose  RealmGrantDialogAction = "close"
+	RealmGrantDialogRead   RealmGrantDialogAction = "grant_read"
+	RealmGrantDialogWrite  RealmGrantDialogAction = "grant_write"
+	RealmGrantDialogRevoke RealmGrantDialogAction = "revoke"
+)
+
+type RealmGrantDialogResult struct {
+	Action  RealmGrantDialogAction
+	RealmID string
+}
+
+type RealmVisibilityDialogRequest struct {
+	Title string
+	Text  string
+}
+
+type RealmVisibilityDialogAction string
+
+const (
+	RealmVisibilityDialogClose   RealmVisibilityDialogAction = "close"
+	RealmVisibilityDialogListed  RealmVisibilityDialogAction = "listed"
+	RealmVisibilityDialogPrivate RealmVisibilityDialogAction = "hidden"
+)
+
+type RealmVisibilityDialogResult struct {
+	Action RealmVisibilityDialogAction
+}
+
 type SettingsDialogRequest struct {
 	Title      string
 	Text       string
@@ -63,11 +111,13 @@ type SettingsDialogRequest struct {
 
 type SettingsServer struct {
 	ID, Name, Address, Realm, ClientID string
+	CanSetRealmVisibility              bool
 	Folders                            []SettingsFolder
 }
 
 type SettingsFolder struct {
 	ID, Name, LocalPath, State, Access string
+	CanManageGrants                    bool
 }
 type SettingsRecovery struct {
 	OperationID, ServerName, KitPath, Status string
@@ -82,6 +132,8 @@ const (
 	SettingsDialogDetachFolder     SettingsDialogAction = "detach_folder"
 	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
 	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"
+	SettingsDialogManageGrants     SettingsDialogAction = "manage_grants"
+	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
 	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"
 	SettingsDialogRemoveRealm      SettingsDialogAction = "remove_realm"
 	SettingsDialogDownloadRecovery SettingsDialogAction = "download_recovery"

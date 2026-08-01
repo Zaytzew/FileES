@@ -36,6 +36,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleActivationFinish(req)
 	case contract.CmdRealmAliasClaim:
 		return s.handleRealmAliasClaim(req)
+	case contract.CmdRealmGrantRecipients:
+		return s.handleRealmGrantRecipients(req)
+	case contract.CmdRealmSetVisibility:
+		return s.handleRealmSetVisibility(req)
 	case contract.CmdServerDetach:
 		return s.handleServerDetach(req)
 	case contract.CmdRealmRemoveBegin:
@@ -62,6 +66,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoRelocate(req)
 	case contract.CmdRepoLoadDump:
 		return s.handleRepoLoadDump(req)
+	case contract.CmdRepoGrantAccess:
+		return s.handleRepoGrantAccess(req, false)
+	case contract.CmdRepoRevokeAccess:
+		return s.handleRepoGrantAccess(req, true)
 	case contract.CmdRepoDetach:
 		return s.handleRepoDetach(req, false)
 	case contract.CmdRepoDelete:
@@ -267,6 +275,106 @@ func (s *Server) handleRealmAliasClaim(req contract.Request) contract.Response {
 	activation.RealmAlias = alias
 	s.RegisterActivation(activation)
 	return contract.OKResponse(req.RequestID, contract.RealmAliasClaimResult{Alias: alias})
+}
+
+func (s *Server) handleRealmGrantRecipients(req contract.Request) contract.Response {
+	service := s.realmGrantService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "GRANT-0001", "ERROR", "RETRY", "realm.grants_unavailable", nil)
+	}
+	var payload contract.RealmGrantRecipientsPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories {
+		return contract.ErrResponse(req.RequestID, "GRANT-2001", "ERROR", "NONE", "realm.grants_forbidden", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	recipients, err := service.ListRecipients(ctx, payload.ServerID)
+	if err != nil {
+		talk.With("realm-grants:"+payload.ServerID).Warnf("recipient listing failed: %v", err)
+		return contract.ErrResponse(req.RequestID, "GRANT-1001", "ERROR", "RETRY", "realm.grant_recipients_unavailable", nil)
+	}
+	return contract.OKResponse(req.RequestID, contract.RealmGrantRecipientsResult{Recipients: recipients})
+}
+
+func (s *Server) handleRealmSetVisibility(req contract.Request) contract.Response {
+	service := s.realmGrantService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "GRANT-0001", "ERROR", "RETRY", "realm.grants_unavailable", nil)
+	}
+	var payload contract.RealmSetVisibilityPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" || (payload.Visibility != "hidden" && payload.Visibility != "listed") {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	_, ok := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !ok {
+		return contract.ErrResponse(req.RequestID, "REALM-0002", "ERROR", "NONE", "realm.not_activated", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	visibility, err := service.SetVisibility(ctx, payload.ServerID, payload.Visibility)
+	if err != nil {
+		talk.With("realm-grants:"+payload.ServerID).Warnf("directory visibility failed: %v", err)
+		return contract.ErrResponse(req.RequestID, "GRANT-1003", "ERROR", "REQUIRE_ACTION", "realm.visibility_rejected", nil)
+	}
+	return contract.OKResponse(req.RequestID, contract.RealmSetVisibilityResult{Visibility: visibility})
+}
+
+func (s *Server) handleRepoGrantAccess(req contract.Request, revoke bool) contract.Response {
+	service := s.realmGrantService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "GRANT-0001", "ERROR", "RETRY", "realm.grants_unavailable", nil)
+	}
+	var serverID, repoID, recipientRealmID, access string
+	if revoke {
+		var payload contract.RepoRevokeAccessPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID, recipientRealmID = payload.ServerID, payload.RepoID, payload.RecipientRealmID
+	} else {
+		var payload contract.RepoGrantAccessPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID, recipientRealmID, access = payload.ServerID, payload.RepoID, payload.RecipientRealmID, payload.Access
+	}
+	if strings.TrimSpace(serverID) == "" || strings.TrimSpace(repoID) == "" || strings.TrimSpace(recipientRealmID) == "" || (!revoke && access != contract.AccessReadOnly && access != contract.AccessReadWrite) {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	rs := s.repoByID(repoID)
+	if rs == nil || rs.ServerID() != serverID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[serverID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories || activation.RealmID == "" || rs.Summary().OwnerRealmID != activation.RealmID || recipientRealmID == activation.RealmID {
+		return contract.ErrResponse(req.RequestID, "GRANT-2001", "ERROR", "NONE", "realm.grants_forbidden", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var (
+		result contract.RealmGrantResult
+		err    error
+	)
+	if revoke {
+		result, err = service.Revoke(ctx, serverID, repoID, recipientRealmID)
+	} else {
+		result, err = service.Grant(ctx, serverID, repoID, recipientRealmID, access)
+	}
+	if err != nil {
+		talk.With("realm-grants:"+serverID).Warnf("grant mutation failed: %v", err)
+		return contract.ErrResponse(req.RequestID, "GRANT-1002", "ERROR", "REQUIRE_ACTION", "realm.grant_rejected", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
 }
 
 func (s *Server) handleRepoReservationRelease(req contract.Request) contract.Response {

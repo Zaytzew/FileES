@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"filees/pkg/clientprofile"
+	contract "filees/pkg/contract/v1"
 	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
 )
@@ -99,6 +100,66 @@ func (s *realmAliasService) Resolve(ctx context.Context, serverID string, ownerI
 	s.cache[serverID] = entry
 	s.mu.Unlock()
 	return labels, nil
+}
+
+func (s *realmAliasService) ListRecipients(ctx context.Context, serverID string) ([]contract.RealmGrantRecipient, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return nil, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketListGrantRecipients, control.ListGrantRecipientsPayload{})
+	if err != nil {
+		return nil, err
+	}
+	var payload control.ListGrantRecipientsResult
+	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
+		return nil, err
+	}
+	recipients := make([]contract.RealmGrantRecipient, 0, len(payload.Recipients))
+	for _, recipient := range payload.Recipients {
+		recipients = append(recipients, contract.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias})
+	}
+	return recipients, nil
+}
+
+func (s *realmAliasService) SetVisibility(ctx context.Context, serverID, visibility string) (string, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return "", fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketSetRealmVisibility, control.SetRealmDirectoryVisibilityPayload{Visibility: visibility})
+	if err != nil {
+		return "", err
+	}
+	var payload control.SetRealmDirectoryVisibilityResult
+	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
+		return "", err
+	}
+	return payload.Visibility, nil
+}
+
+func (s *realmAliasService) Grant(ctx context.Context, serverID, repoID, recipientRealmID, access string) (contract.RealmGrantResult, error) {
+	return s.realmGrantExchange(ctx, serverID, control.TicketGrantAccess, control.GrantAccessPayload{RepoID: repoID, RecipientRealmID: recipientRealmID, Access: access})
+}
+
+func (s *realmAliasService) Revoke(ctx context.Context, serverID, repoID, recipientRealmID string) (contract.RealmGrantResult, error) {
+	return s.realmGrantExchange(ctx, serverID, control.TicketRevokeAccess, control.RevokeAccessPayload{RepoID: repoID, RecipientRealmID: recipientRealmID})
+}
+
+func (s *realmAliasService) realmGrantExchange(ctx context.Context, serverID string, typ control.TicketType, payload any) (contract.RealmGrantResult, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return contract.RealmGrantResult{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, typ, payload)
+	if err != nil {
+		return contract.RealmGrantResult{}, err
+	}
+	var remote control.RealmGrantResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return contract.RealmGrantResult{}, err
+	}
+	return contract.RealmGrantResult{RepoID: remote.RepoID, RecipientRealmID: remote.RecipientRealmID, Access: remote.Access, State: remote.State}, nil
 }
 
 func (s *realmAliasService) exchange(ctx context.Context, profile clientprofile.Profile, typ control.TicketType, payload any) (control.Result, error) {

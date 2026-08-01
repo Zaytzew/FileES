@@ -339,16 +339,36 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	if strings.HasPrefix(serverID, "@recovery-grace:") {
 		return SettingsDialogResult{Action: SettingsDialogClose}, nil
 	}
-	action, err := b.settingsAction(ctx, command, repoID != "")
+	canManageGrants := false
+	canSetRealmVisibility := false
+	for _, server := range request.Servers {
+		if server.ID != serverID {
+			continue
+		}
+		canSetRealmVisibility = server.CanSetRealmVisibility
+		for _, folder := range server.Folders {
+			if folder.ID == repoID {
+				canManageGrants = folder.CanManageGrants
+				break
+			}
+		}
+	}
+	action, err := b.settingsAction(ctx, command, repoID != "", canManageGrants, canSetRealmVisibility)
 	if err != nil || action == SettingsDialogClose {
 		return SettingsDialogResult{Action: action}, err
 	}
 	return SettingsDialogResult{Action: action, ServerID: serverID, RepoID: repoID}, nil
 }
 
-func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder bool) (SettingsDialogAction, error) {
+func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canManageGrants, canSetRealmVisibility bool) (SettingsDialogAction, error) {
 	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "add_folder", "Dodaj folder do FileES", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
+	if canSetRealmVisibility {
+		args = append(args, "FALSE", "realm_visibility", "Widoczność mojego realmu")
+	}
 	if hasFolder {
+		if canManageGrants {
+			args = append(args, "FALSE", "manage_grants", "Zarządzaj dostępem realmów")
+		}
 		args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder", "FALSE", "delete_repository", "Odłącz trwale repozytorium", "FALSE", "load_dump", "Odtwórz z archiwum")
 	}
 	output, err := b.runner.Output(ctx, command, args...)
@@ -362,6 +382,74 @@ func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFo
 		return SettingsDialogClose, NewOperationalFailure("settings_dialog", err)
 	}
 	return settingsAction(strings.TrimSpace(string(output))), nil
+}
+
+func (b *LinuxBackend) ShowRealmVisibility(ctx context.Context, request RealmVisibilityDialogRequest) (RealmVisibilityDialogResult, error) {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return RealmVisibilityDialogResult{}, NewUnavailable("realm_visibility_dialog", errors.New("zenity is not installed"))
+	}
+	output, err := b.runner.Output(ctx, command, "--list", "--radiolist", "--title="+request.Title, "--text="+request.Text, "--column=", "--column=ID", "--column=Widoczność", "--hide-column=2", "--print-column=2", "--ok-label=Wybierz", "--cancel-label=Anuluj", "FALSE", "listed", "Widoczny w prywatnym katalogu odbiorców", "FALSE", "hidden", "Ukryty")
+	if err != nil {
+		if ctx.Err() != nil {
+			return RealmVisibilityDialogResult{}, ctx.Err()
+		}
+		if commandCancelled(err) {
+			return RealmVisibilityDialogResult{Action: RealmVisibilityDialogClose}, nil
+		}
+		return RealmVisibilityDialogResult{}, NewOperationalFailure("realm_visibility_dialog", err)
+	}
+	switch strings.TrimSpace(string(output)) {
+	case "listed":
+		return RealmVisibilityDialogResult{Action: RealmVisibilityDialogListed}, nil
+	case "hidden":
+		return RealmVisibilityDialogResult{Action: RealmVisibilityDialogPrivate}, nil
+	default:
+		return RealmVisibilityDialogResult{Action: RealmVisibilityDialogClose}, nil
+	}
+}
+
+func (b *LinuxBackend) ShowRealmGrants(ctx context.Context, request RealmGrantDialogRequest) (RealmGrantDialogResult, error) {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return RealmGrantDialogResult{}, NewUnavailable("realm_grant_dialog", errors.New("zenity is not installed"))
+	}
+	args := []string{"--list", "--radiolist", "--title=" + request.Title, "--text=" + request.Text, "--width=760", "--height=520", "--column=", "--column=ID", "--column=Realm", "--column=Dostęp", "--hide-column=2", "--print-column=2", "--ok-label=Zastosuj", "--cancel-label=Anuluj"}
+	for _, recipient := range request.Recipients {
+		label := strings.TrimSpace(recipient.Alias)
+		if label == "" {
+			label = recipient.RealmID
+		}
+		args = append(args,
+			"FALSE", recipient.RealmID+"|r", label, "Tylko odczyt",
+			"FALSE", recipient.RealmID+"|rw", label, "Odczyt i zapis",
+			"FALSE", recipient.RealmID+"|revoke", label, "Cofnij dostęp",
+		)
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctx.Err() != nil {
+			return RealmGrantDialogResult{}, ctx.Err()
+		}
+		if commandCancelled(err) {
+			return RealmGrantDialogResult{Action: RealmGrantDialogClose}, nil
+		}
+		return RealmGrantDialogResult{}, NewOperationalFailure("realm_grant_dialog", err)
+	}
+	realmID, access, ok := strings.Cut(strings.TrimSpace(string(output)), "|")
+	if !ok || realmID == "" {
+		return RealmGrantDialogResult{Action: RealmGrantDialogClose}, nil
+	}
+	action := RealmGrantDialogClose
+	switch access {
+	case "r":
+		action = RealmGrantDialogRead
+	case "rw":
+		action = RealmGrantDialogWrite
+	case "revoke":
+		action = RealmGrantDialogRevoke
+	}
+	return RealmGrantDialogResult{Action: action, RealmID: realmID}, nil
 }
 
 func (b *LinuxBackend) ConfirmConsent(ctx context.Context, request ConsentRequest) (ConsentResult, error) {
@@ -403,6 +491,10 @@ func settingsAction(label string) SettingsDialogAction {
 		return SettingsDialogDeleteRepo
 	case "load_dump", "Odtwórz z archiwum":
 		return SettingsDialogLoadDump
+	case "manage_grants":
+		return SettingsDialogManageGrants
+	case "realm_visibility":
+		return SettingsDialogRealmVisibility
 	case "detach_server", "Dezaktywuj klienta":
 		return SettingsDialogDetachServer
 	case "remove_realm":

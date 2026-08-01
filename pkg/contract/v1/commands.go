@@ -15,13 +15,15 @@ const (
 	CmdUpdateApply    = "update.apply"    // apply and request GUI restart
 
 	// Client activation (executed by daemon; GUI only supplies user intent).
-	CmdActivationBegin    = "activation.begin"
-	CmdActivationFinish   = "activation.finish"
-	CmdRealmAliasClaim    = "realm.alias_claim"
-	CmdServerDetach       = "server.detach"
-	CmdRealmRemoveBegin   = "realm.remove_begin"
-	CmdRealmRemoveConfirm = "realm.remove_confirm"
-	CmdRecoveryDownload   = "recovery.download"
+	CmdActivationBegin      = "activation.begin"
+	CmdActivationFinish     = "activation.finish"
+	CmdRealmAliasClaim      = "realm.alias_claim"
+	CmdRealmGrantRecipients = "realm.grant_recipients"
+	CmdRealmSetVisibility   = "realm.set_visibility"
+	CmdServerDetach         = "server.detach"
+	CmdRealmRemoveBegin     = "realm.remove_begin"
+	CmdRealmRemoveConfirm   = "realm.remove_confirm"
+	CmdRecoveryDownload     = "recovery.download"
 
 	// Mobile pairing (Phase 2c): daemon mints a MOBILE_PAIRING token through
 	// its own already-authenticated control-plane channel; the tray hands
@@ -40,6 +42,8 @@ const (
 	CmdRepoAttachApprove      = "repo.attach_approve"      // approve the persisted intent and start checkout
 	CmdRepoRelocate           = "repo.relocate"            // approve relocation of an attached working copy
 	CmdRepoLoadDump           = "repo.load_dump"           // load a user-supplied dump into a fresh, single-carrier-commit repo
+	CmdRepoGrantAccess        = "repo.grant_access"        // grant r/rw access to a visible foreign realm
+	CmdRepoRevokeAccess       = "repo.revoke_access"       // revoke a realm grant without deleting local data
 	CmdRepoDetach             = "repo.detach"              // detach one local working copy, preserving user data
 	CmdRepoDelete             = "repo.delete"              // delete an owned server repository, then detach locally
 	CmdRepoLifecycleStatus    = "repo.lifecycle_status"    // poll outcome of a create/attach/relocate operation by ID
@@ -79,6 +83,8 @@ const (
 	CapActivationBegin        = "activation.begin"
 	CapActivationFinish       = "activation.finish"
 	CapRealmAliasClaim        = "realm.alias_claim"
+	CapRealmGrantRecipients   = "realm.grant_recipients"
+	CapRealmSetVisibility     = "realm.set_visibility"
 	CapServerDetach           = "server.detach"
 	CapRealmRemoveBegin       = "realm.remove_begin"
 	CapRealmRemoveConfirm     = "realm.remove_confirm"
@@ -89,6 +95,8 @@ const (
 	CapRepoAttachApprove      = "repo.attach_approve"
 	CapRepoRelocate           = "repo.relocate"
 	CapRepoLoadDump           = "repo.load_dump"
+	CapRepoGrantAccess        = "repo.grant_access"
+	CapRepoRevokeAccess       = "repo.revoke_access"
 	CapRepoDetach             = "repo.detach"
 	CapRepoDelete             = "repo.delete"
 	CapRepoLifecycleStatus    = "repo.lifecycle_status"
@@ -247,6 +255,28 @@ type RealmAliasClaimResult struct {
 	Alias string `json:"alias"`
 }
 
+type RealmGrantRecipientsPayload struct {
+	ServerID string `json:"server_id"`
+}
+
+type RealmGrantRecipient struct {
+	RealmID string `json:"realm_id"`
+	Alias   string `json:"alias"`
+}
+
+type RealmGrantRecipientsResult struct {
+	Recipients []RealmGrantRecipient `json:"recipients"`
+}
+
+type RealmSetVisibilityPayload struct {
+	ServerID   string `json:"server_id"`
+	Visibility string `json:"visibility"`
+}
+
+type RealmSetVisibilityResult struct {
+	Visibility string `json:"visibility"`
+}
+
 type ServerDetachPayload struct {
 	ServerID string `json:"server_id"`
 }
@@ -369,6 +399,26 @@ type RepoLoadDumpPayload struct {
 	RepoID                   string `json:"repo_id"`
 	ApplyCurrentIgnorePolicy bool   `json:"apply_current_ignore_policy,omitempty"`
 	KeepLastRevisions        *int   `json:"keep_last_revisions,omitempty"`
+}
+
+type RepoGrantAccessPayload struct {
+	ServerID         string `json:"server_id"`
+	RepoID           string `json:"repo_id"`
+	RecipientRealmID string `json:"recipient_realm_id"`
+	Access           string `json:"access"`
+}
+
+type RepoRevokeAccessPayload struct {
+	ServerID         string `json:"server_id"`
+	RepoID           string `json:"repo_id"`
+	RecipientRealmID string `json:"recipient_realm_id"`
+}
+
+type RealmGrantResult struct {
+	RepoID           string `json:"repo_id"`
+	RecipientRealmID string `json:"recipient_realm_id"`
+	Access           string `json:"access,omitempty"`
+	State            string `json:"state"`
 }
 
 type SystemLifecycleResult struct {

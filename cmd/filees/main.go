@@ -268,6 +268,10 @@ func wireRepoStatus(svc *commit.Service, rs *ipcserver.RepoState) {
 	svc.OnLastSync = rs.SetLastSyncAt
 	svc.OnConflicts = rs.SetConflicts
 	svc.OnCurrentOperation = rs.SetCurrentOp
+	rs.SetRecoveryStatsFunc(func() contract.RecoveryStats {
+		stats := svc.RecoveryStats()
+		return contract.RecoveryStats{CacheResumed: stats.CacheResumed, AlreadyAccepted: stats.AlreadyAccepted, CommitBatches: stats.CommitBatches}
+	})
 }
 
 // --- helpers shared by subcommands ---

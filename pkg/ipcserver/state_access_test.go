@@ -94,6 +94,30 @@ func TestRegisterRepoAccessUsesWorkingCopyNameUntilProjectionArrives(t *testing.
 	}
 }
 
+func TestRecoveryStatsSnapshotReadsWiredFuncLive(t *testing.T) {
+	rs := New(t.TempDir() + "/daemon.sock").RegisterRepoAccess("repo", "svn+ssh://host/repo", t.TempDir(), "server", contract.AccessReadWrite)
+	if snap := rs.Snapshot(); snap.Recovery != (contract.RecoveryStats{}) {
+		t.Fatalf("recovery stats before wiring = %#v, want zero value", snap.Recovery)
+	}
+	calls := 0
+	rs.SetRecoveryStatsFunc(func() contract.RecoveryStats {
+		calls++
+		return contract.RecoveryStats{CacheResumed: 3, AlreadyAccepted: 5, CommitBatches: 7}
+	})
+	want := contract.RecoveryStats{CacheResumed: 3, AlreadyAccepted: 5, CommitBatches: 7}
+	if snap := rs.Snapshot(); snap.Recovery != want {
+		t.Fatalf("recovery stats = %#v, want %#v", snap.Recovery, want)
+	}
+	if calls != 1 {
+		t.Fatalf("recovery stats func called %d times, want exactly once per Snapshot", calls)
+	}
+	// Snapshot reads live, not a value captured at wiring time.
+	rs.SetRecoveryStatsFunc(func() contract.RecoveryStats { return contract.RecoveryStats{CacheResumed: 9} })
+	if snap := rs.Snapshot(); snap.Recovery.CacheResumed != 9 {
+		t.Fatalf("recovery stats did not update after rewiring: %#v", snap.Recovery)
+	}
+}
+
 func TestProjectedPolicyReachesSummaryAndSnapshot(t *testing.T) {
 	owner := "7b807185-aa75-4169-8a65-705c7cbab176"
 	rs := New(t.TempDir()+"/daemon.sock").RegisterProjectedRepoPolicy("repo-id", "Team", "svn+ssh://_filees-client@example/repo", "office", contract.AccessReadWrite, "active", owner, "required", false)

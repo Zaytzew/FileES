@@ -84,6 +84,12 @@ func TestWireRepoStatusConnectsCommitServiceToPublicSnapshot(t *testing.T) {
 	if snap.CurrentOperation != nil || snap.Connectivity != contract.ConnOnline || snap.State != contract.StateActive {
 		t.Fatalf("online state not wired: %#v", snap)
 	}
+
+	live := svc.RecoveryStats()
+	want := contract.RecoveryStats{CacheResumed: live.CacheResumed, AlreadyAccepted: live.AlreadyAccepted, CommitBatches: live.CommitBatches}
+	if snap.Recovery != want {
+		t.Fatalf("recovery stats not wired: snapshot=%#v, service=%#v", snap.Recovery, want)
+	}
 }
 
 func TestReadOnlyRepoNeverCreatesWatcherOrCommitQueue(t *testing.T) {

@@ -73,5 +73,9 @@ func printStatus(s contract.RepoSummary, r *contract.RepoStatus) {
 		fmt.Printf("  current:  %s\n", *r.CurrentOperation)
 	}
 
+	if rec := r.Recovery; rec.CacheResumed > 0 || rec.AlreadyAccepted > 0 || rec.CommitBatches > 0 {
+		fmt.Printf("  recovery: %d batches, %d resumed from cache, %d already accepted\n", rec.CommitBatches, rec.CacheResumed, rec.AlreadyAccepted)
+	}
+
 	fmt.Println()
 }

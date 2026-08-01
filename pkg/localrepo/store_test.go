@@ -185,14 +185,14 @@ func TestStoreReconcileIsDurableAndKeepsPathOnFailure(t *testing.T) {
 	_, _ = store.ApproveAttach(record.OperationID, "primary", "repo-1", "svn+ssh://_filees-client@example/repo", "rw")
 	_, _ = store.MarkAttached(record.OperationID, "repo-1")
 
-	reconciling, err := store.BeginReconcile("primary", "repo-1")
+	reconciling, err := store.BeginReconcile("primary", "repo-1", true, nil)
 	if err != nil || reconciling.State != StateReconciling || reconciling.LocalPath != path || reconciling.ReconcileOperationID == "" {
 		t.Fatalf("reconciling=%+v err=%v", reconciling, err)
 	}
 	// Resuming the same in-progress attempt returns the same operation ID,
 	// not a new one - the orchestration relies on this for idempotent
 	// staging directory naming across a daemon restart.
-	again, err := store.BeginReconcile("primary", "repo-1")
+	again, err := store.BeginReconcile("primary", "repo-1", true, nil)
 	if err != nil || again.ReconcileOperationID != reconciling.ReconcileOperationID {
 		t.Fatalf("resumed reconcile got a different operation: first=%s again=%s err=%v", reconciling.ReconcileOperationID, again.ReconcileOperationID, err)
 	}
@@ -202,7 +202,7 @@ func TestStoreReconcileIsDurableAndKeepsPathOnFailure(t *testing.T) {
 		t.Fatalf("failed=%+v err=%v", failed, err)
 	}
 
-	restarted, err := store.BeginReconcile("primary", "repo-1")
+	restarted, err := store.BeginReconcile("primary", "repo-1", true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

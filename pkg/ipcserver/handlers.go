@@ -60,6 +60,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoAttachApprove(req)
 	case contract.CmdRepoRelocate:
 		return s.handleRepoRelocate(req)
+	case contract.CmdRepoLoadDump:
+		return s.handleRepoLoadDump(req)
 	case contract.CmdRepoDetach:
 		return s.handleRepoDetach(req, false)
 	case contract.CmdRepoDelete:
@@ -379,6 +381,41 @@ func (s *Server) handleRepoRelocate(req contract.Request) contract.Response {
 	result, err := service.BeginRelocate(payload.ServerID, payload.RepoID, payload.NewLocalPath)
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "REPO-2007", "ERROR", "REQUIRE_ACTION", "repo.relocation_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+// handleRepoLoadDump triggers LOAD_REPOSITORY_DUMP for an already-attached
+// repository (create + carrier commit already done through the normal repo
+// flow). The server worker is the real authorization boundary
+// (session.RealmID derived from the authenticated connection, never this
+// payload) - the checks here are the same ergonomics gate every other
+// repo-administration command already applies, not the enforcement itself.
+func (s *Server) handleRepoLoadDump(req contract.Request) contract.Response {
+	service := s.repositoryLifecycleService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "REPO-0001", "ERROR", "RETRY", "repo.lifecycle_unavailable", nil)
+	}
+	var payload contract.RepoLoadDumpPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	rs := s.repoByID(payload.RepoID)
+	if rs == nil || rs.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	if !rs.Snapshot().Attached {
+		return contract.ErrResponse(req.RequestID, "REPO-2006", "ERROR", "NONE", "repo.not_attached", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories {
+		return contract.ErrResponse(req.RequestID, "REPO-2013", "ERROR", "NONE", "repo.load_dump_forbidden", nil)
+	}
+	result, err := service.BeginLoadDump(payload.ServerID, payload.RepoID, payload.ApplyCurrentIgnorePolicy, payload.KeepLastRevisions)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "REPO-2014", "ERROR", "REQUIRE_ACTION", "repo.load_dump_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

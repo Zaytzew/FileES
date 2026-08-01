@@ -11,10 +11,10 @@ import (
 )
 
 type lifecycleStub struct {
-	createCalls, attachCalls, approveCalls, relocateCalls, detachCalls, statusCalls int
-	deleteRepository                                                                bool
-	statusResult                                                                    contract.RepoLifecycleResult
-	statusErr                                                                       error
+	createCalls, attachCalls, approveCalls, relocateCalls, loadDumpCalls, detachCalls, statusCalls int
+	deleteRepository                                                                               bool
+	statusResult                                                                                   contract.RepoLifecycleResult
+	statusErr                                                                                      error
 }
 
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
@@ -28,6 +28,10 @@ func (stub *lifecycleStub) ApproveAttach(operationID, serverID, repoID, repoURL,
 func (stub *lifecycleStub) BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error) {
 	stub.relocateCalls++
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, LocalPath: "/old", PendingLocalPath: newLocalPath, State: "relocating"}, nil
+}
+func (stub *lifecycleStub) BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error) {
+	stub.loadDumpCalls++
+	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, State: "reconciling"}, nil
 }
 func (stub *lifecycleStub) BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error) {
 	stub.attachCalls++

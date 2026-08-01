@@ -114,7 +114,7 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 		}
 		if record.State == localrepo.StateAttaching {
 			p.Enqueue(record.OperationID)
-		} else if record.State == localrepo.StateRelocating {
+		} else if record.State == localrepo.StateRelocating || record.State == localrepo.StateReconciling {
 			p.mu.RLock()
 			profile, ok := p.profiles[record.ServerID]
 			p.mu.RUnlock()
@@ -166,15 +166,22 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	}
 	if !ok {
 		cause := errors.New("activated client profile is unavailable")
-		if record.State == localrepo.StateRelocating {
+		switch record.State {
+		case localrepo.StateRelocating:
 			_, _ = p.local.FailRelocation(operationID, cause)
-		} else {
+		case localrepo.StateReconciling:
+			_, _ = p.local.FailReconcile(operationID, cause)
+		default:
 			_, _ = p.local.MarkError(operationID, cause)
 		}
 		return
 	}
 	if record.State == localrepo.StateRelocating {
 		p.runRelocate(ctx, record, profile)
+		return
+	}
+	if record.State == localrepo.StateReconciling {
+		p.runReconcile(ctx, record, profile)
 		return
 	}
 	if record.State == localrepo.StateRepositoryCreated && record.LastError != "" {
@@ -431,6 +438,179 @@ func stripWorkingCopyMetadata(root, operationID string) error {
 	}
 	defer dir.Close()
 	return dir.Sync()
+}
+
+// runReconcile handles StateReconciling: issue LOAD_REPOSITORY_DUMP, then
+// replace the WC at record.LocalPath in place. Unlike runRelocate the target
+// path is the same as the source, so this cannot use "build elsewhere, leave
+// the old one alone until the very end" the same way relocate does for free
+// - it builds the replacement in a temp sibling directory, verifies it, then
+// does the same rename-aside/rename-in/remove-aside swap that
+// internal/svnrotate uses server-side (LOAD_REPOSITORY_DUMP_CONCEPT.md §7).
+func (p *daemonProvisioner) runReconcile(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
+	if err := p.quiesceAttachment(ctx, record); err != nil {
+		p.rollbackReconcile(ctx, record, profile, err)
+		return
+	}
+	loaded, err := p.issueLoadRepositoryDump(ctx, record, profile)
+	if err != nil {
+		p.rollbackReconcile(ctx, record, profile, err)
+		return
+	}
+
+	svn := p.newAttachmentSVN(profile, record.ReconcileOperationID)
+
+	// A crash between a successful swap and CompleteReconcile resumes here
+	// with the same ReconcileOperationID: the ticket exchange above already
+	// returned the same cached LoadRepositoryDumpResult from the server
+	// (operation_id-keyed), and if LocalPath's own UUID already matches
+	// NewUUID, the swap already happened - finish the bookkeeping instead
+	// of checking out and swapping a second time.
+	if info, err := svn.GetInfo(ctx, record.LocalPath); err == nil && infoHasUUID(info, loaded.NewUUID) {
+		p.completeReconcile(ctx, record, profile)
+		return
+	}
+
+	tempNew := record.LocalPath + ".filees-reconcile-" + record.ReconcileOperationID + "-new"
+	if err := os.RemoveAll(tempNew); err != nil { // clean slate for a resumed attempt
+		p.rollbackReconcile(ctx, record, profile, err)
+		return
+	}
+	if _, err := svn.Checkout(ctx, record.RepoURL, tempNew); err != nil {
+		os.RemoveAll(tempNew)
+		p.rollbackReconcile(ctx, record, profile, fmt.Errorf("checkout reconciled repository: %w", err))
+		return
+	}
+	info, err := svn.GetInfo(ctx, tempNew)
+	if err != nil || !infoHasURL(info, record.RepoURL) || !infoHasUUID(info, loaded.NewUUID) {
+		if err == nil {
+			err = errors.New("reconciled working copy does not match the projected repository")
+		}
+		os.RemoveAll(tempNew)
+		p.rollbackReconcile(ctx, record, profile, err)
+		return
+	}
+	entries, err := svn.Status(ctx, tempNew, nil)
+	if err != nil {
+		os.RemoveAll(tempNew)
+		p.rollbackReconcile(ctx, record, profile, err)
+		return
+	}
+	for _, entry := range entries {
+		if entry.Item != "normal" && entry.Item != "none" && entry.Item != "external" {
+			os.RemoveAll(tempNew)
+			p.rollbackReconcile(ctx, record, profile, fmt.Errorf("reconciled checkout is incomplete or modified at %s (%s)", entry.Path, entry.Item))
+			return
+		}
+	}
+	if err := swapReconciledWorkingCopy(record.LocalPath, tempNew, record.ReconcileOperationID); err != nil {
+		p.rollbackReconcile(ctx, record, profile, err)
+		return
+	}
+	p.completeReconcile(ctx, record, profile)
+}
+
+func (p *daemonProvisioner) completeReconcile(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
+	updated, err := p.local.CompleteReconcile(record.OperationID)
+	if err != nil {
+		talk.With("reconcile:"+record.OperationID).Errorf("persist reconcile completion: %v", err)
+		return
+	}
+	p.publishLocalRecord(ctx, updated, profile)
+}
+
+// issueLoadRepositoryDump sends the LOAD_REPOSITORY_DUMP ticket, keyed on
+// ReconcileOperationID so a resumed attempt after a restart replays the same
+// operation instead of asking the server to do it again
+// (LOAD_REPOSITORY_DUMP_CONCEPT.md §8).
+func (p *daemonProvisioner) issueLoadRepositoryDump(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) (control.LoadRepositoryDumpResult, error) {
+	transport, err := controlclient.New(controlclient.Config{
+		Address: profile.Address, Port: profile.SSHPort, IdentityFile: profile.IdentityFile,
+		KnownHosts: profile.KnownHosts, Timeout: 45 * time.Minute,
+	})
+	if err != nil {
+		return control.LoadRepositoryDumpResult{}, err
+	}
+	requestID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(record.ReconcileOperationID+":load-repository-dump")).String()
+	ticket, err := control.NewTicket(
+		record.ReconcileOperationID, requestID, control.TicketLoadRepositoryDump,
+		profile.ClientID, control.LoadRepositoryDumpPayload{
+			RepoID:                   record.RepoID,
+			ApplyCurrentIgnorePolicy: record.LoadDumpApplyIgnorePolicy,
+			KeepLastRevisions:        record.LoadDumpKeepLastRevisions,
+		}, time.Now(),
+	)
+	if err != nil {
+		return control.LoadRepositoryDumpResult{}, err
+	}
+	result, err := transport.Exchange(ctx, ticket)
+	if err != nil {
+		return control.LoadRepositoryDumpResult{}, err
+	}
+	if result.Status != control.ResultOK {
+		if result.Error == nil {
+			return control.LoadRepositoryDumpResult{}, errors.New("server rejected repository dump load")
+		}
+		return control.LoadRepositoryDumpResult{}, fmt.Errorf("%s: %s", result.Error.Code, result.Error.Message)
+	}
+	var loaded control.LoadRepositoryDumpResult
+	if err := control.DecodeResultPayload(result.Result, &loaded); err != nil {
+		return control.LoadRepositoryDumpResult{}, err
+	}
+	return loaded, nil
+}
+
+// swapReconciledWorkingCopy replaces root's content with newWC's in place,
+// mirroring the build-elsewhere-then-swap discipline used everywhere else in
+// FileES (ServerEffects.CreateFSFS, internal/svnrotate.LoadGeneration): move
+// the stale content aside, install the new content, only then discard the
+// old - so a failure of the second rename can still roll back to a working
+// state instead of leaving root empty.
+func swapReconciledWorkingCopy(root, newWC, operationID string) error {
+	if !filepath.IsAbs(root) || !filepath.IsAbs(newWC) {
+		return errors.New("reconcile swap paths must be absolute")
+	}
+	aside := root + ".filees-reconcile-" + operationID + "-old"
+	if err := os.RemoveAll(aside); err != nil { // clean slate for a resumed attempt
+		return err
+	}
+	if err := os.Rename(root, aside); err != nil {
+		return fmt.Errorf("move stale working copy aside: %w", err)
+	}
+	if err := os.Rename(newWC, root); err != nil {
+		if rerr := os.Rename(aside, root); rerr != nil {
+			return fmt.Errorf("install reconciled working copy: %w (ROLLBACK FAILED, original working copy is at %s: %v)", err, aside, rerr)
+		}
+		return fmt.Errorf("install reconciled working copy: %w", err)
+	}
+	return os.RemoveAll(aside)
+}
+
+// infoHasUUID reports whether svn info output info carries "Repository
+// UUID: want", mirroring infoHasURL's line-scan style.
+func infoHasUUID(info, want string) bool {
+	if want == "" {
+		return false
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(info, "\r\n", "\n"), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(trimmed, "Repository UUID:"); ok && strings.TrimSpace(rest) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// rollbackReconcile is only safe to call before swapReconciledWorkingCopy
+// has run: up to that point record.LocalPath is untouched, so returning to
+// StateAttached and republishing the existing attachment is exactly as safe
+// as rollbackRelocation's equivalent call.
+func (p *daemonProvisioner) rollbackReconcile(ctx context.Context, record localrepo.Record, profile clientprofile.Profile, cause error) {
+	if _, err := p.local.FailReconcile(record.OperationID, cause); err != nil {
+		talk.With("reconcile:"+record.OperationID).Errorf("persist rollback: %v", err)
+	}
+	p.publishLocalRecord(ctx, record, profile)
+	talk.With("reconcile:"+record.OperationID).Warnf("reconcile failed; old working copy left in place: %v", cause)
 }
 
 func (p *daemonProvisioner) rollbackRelocation(ctx context.Context, record localrepo.Record, profile clientprofile.Profile, cause error) {

@@ -205,6 +205,7 @@ func deletionArchiveNeedsOwnUnveil(resultsRoot, archiveRoot string) bool {
 
 var (
 	sandboxBegin         = obsandbox.Begin
+	sandboxNarrow        = obsandbox.Narrow
 	sandboxApply         = obsandbox.Apply
 	sandboxApplyForExec  = obsandbox.ApplyForExec
 	sandboxPledgeForExec = obsandbox.PledgeForExec

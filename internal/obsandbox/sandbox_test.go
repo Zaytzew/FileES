@@ -22,3 +22,9 @@ func TestValidateRejectsRelativeAndConfigurableLookingProfiles(t *testing.T) {
 		}
 	}
 }
+
+func TestNarrowRejectsEmptyPromises(t *testing.T) {
+	if err := Narrow(""); err == nil {
+		t.Fatal("empty runtime promise set accepted")
+	}
+}

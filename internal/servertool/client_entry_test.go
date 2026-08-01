@@ -86,11 +86,12 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
-		originalBegin, originalApply, originalPledge := sandboxBegin, sandboxApplyForExec, sandboxPledgeForExec
+		originalBegin, originalNarrow, originalApply, originalPledge := sandboxBegin, sandboxNarrow, sandboxApplyForExec, sandboxPledgeForExec
 		t.Cleanup(func() {
-			sandboxBegin, sandboxApplyForExec, sandboxPledgeForExec = originalBegin, originalApply, originalPledge
+			sandboxBegin, sandboxNarrow, sandboxApplyForExec, sandboxPledgeForExec = originalBegin, originalNarrow, originalApply, originalPledge
 		})
 		sandboxBegin = func(string) error { return nil }
+		sandboxNarrow = func(string) error { return nil }
 		sandboxApplyForExec = func(obsandbox.Profile, string) error { return nil }
 		sandboxPledgeForExec = func(string, string) error { return nil }
 	}
@@ -143,7 +144,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		controlClient := ""
 		runRepositoryWorkerProcess = func(_ string, id string, _ io.Reader, _ io.Writer, _ io.Writer) error { controlClient = id; return nil }
 		mailTriggered := false
-		runMailAfterControl = func(io.Writer) error { mailTriggered = true; return nil }
+		runMailAfterControl = func(serverconfig.Config, io.Writer) error { mailTriggered = true; return nil }
 		getenv = func(name string) string {
 			if name == "SSH_ORIGINAL_COMMAND" {
 				return ClientControlCommand
@@ -152,6 +153,26 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || controlClient != grant.ClientID || !mailTriggered {
 			t.Fatalf("control code=%d client=%q mail=%v stderr=%s", code, controlClient, mailTriggered, stderr.String())
+		}
+
+		// Preparing SMTP is deliberately auxiliary: a missing secret must not
+		// suppress or replace the durable control result.
+		smtpFile := file["smtp"].(map[string]any)
+		smtpFile["username"] = "mailer"
+		smtpFile["password_file"] = filepath.Join(root, "missing-smtp-password")
+		smtpFile["tls"] = "starttls"
+		smtpFile["server_name"] = "mail.example.test"
+		raw, _ = json.Marshal(file)
+		if err := os.WriteFile(configPath, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		mailTriggered = false
+		stderr.Reset()
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || mailTriggered {
+			t.Fatalf("control with mail preparation failure code=%d mail=%v stderr=%s", code, mailTriggered, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "filees-client-entry mail trigger") {
+			t.Fatalf("mail preparation failure not reported: %s", stderr.String())
 		}
 	}
 	if err := manager.HasProof(grant); err != nil {
@@ -190,5 +211,42 @@ func TestClientSVNBootstrapPromisesIncludeDPathForSessionFIFO(t *testing.T) {
 	}
 	if strings.Contains(" "+clientEntryPromises+" ", " dpath ") {
 		t.Fatalf("non-SVN client entry promises unexpectedly include dpath: %q", clientEntryPromises)
+	}
+}
+
+func TestMailAfterControlNarrowsLockedParentSandbox(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := onboarding.Initialize(root); err != nil {
+		t.Fatal(err)
+	}
+	originalNarrow := sandboxNarrow
+	t.Cleanup(func() { sandboxNarrow = originalNarrow })
+	var promises string
+	sandboxNarrow = func(got string) error {
+		promises = got
+		return nil
+	}
+	config := serverconfig.Config{Root: root, Onboarding: onboarding.Options{
+		OperationTTL: time.Minute, OTPAttempts: 1,
+		ReversePortFirst: 42000, ReversePortLast: 42000,
+	}}
+	if err := deliverMailAfterControl(config, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if promises != mailPromises {
+		t.Fatalf("mail sandbox promises = %q, want %q", promises, mailPromises)
+	}
+}
+
+func TestMailAfterControlStopsWhenSandboxCannotNarrow(t *testing.T) {
+	originalNarrow := sandboxNarrow
+	t.Cleanup(func() { sandboxNarrow = originalNarrow })
+	sandboxNarrow = func(string) error { return errors.New("pledge failed") }
+	err := deliverMailAfterControl(serverconfig.Config{Root: t.TempDir()}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "narrow sandbox for mail") {
+		t.Fatalf("sandbox failure = %v", err)
 	}
 }

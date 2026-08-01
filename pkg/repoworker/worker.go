@@ -102,6 +102,7 @@ type Worker struct {
 	Aliases              RealmAliasStore
 	ClientDetacher       ClientDetacher
 	RealmRemoval         RealmRemovalService
+	DumpLoader           DumpLoader
 	RecoveryAdminContact string
 	DataErasureMaxDays   int
 	Now                  func() time.Time
@@ -117,7 +118,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -125,6 +126,12 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if (ticket.Type == control.TicketStoragePreflight || ticket.Type == control.TicketCreateRepository) && !session.CanCreateRepositories {
 		return w.failure(ticket, "CREATE_REPOSITORY_FORBIDDEN", "authenticated session cannot create repositories")
+	}
+	// Same gate as CREATE_REPOSITORY/DELETE_REPOSITORY: LOAD_REPOSITORY_DUMP
+	// replaces a repository's FSFS wholesale, so it requires the same
+	// capability as creating one in the first place.
+	if ticket.Type == control.TicketLoadRepositoryDump && !session.CanCreateRepositories {
+		return w.failure(ticket, "LOAD_REPOSITORY_DUMP_FORBIDDEN", "authenticated session cannot create or load repositories")
 	}
 	if ticket.Type == control.TicketClaimRealmAlias {
 		return w.claimRealmAlias(ctx, session, ticket)
@@ -160,6 +167,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.Type == control.TicketDeleteRepository {
 		return w.deleteRepository(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketLoadRepositoryDump {
+		return w.loadRepositoryDump(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketStoragePreflight {
 		return w.preflight(ctx, ticket)
@@ -325,6 +335,39 @@ func (w *Worker) deleteRepository(ctx context.Context, session Session, ticket c
 // carries no realm_id at all) - any authenticated client of a realm may
 // pair a new mobile device into that same realm, no CanCreateRepositories
 // gate needed.
+// loadRepositoryDump handles LOAD_REPOSITORY_DUMP. Every failure returned by
+// DumpLoader.Load is treated as terminal (w.failure, bound to the operation
+// ID) — consistent with LOAD_REPOSITORY_DUMP_CONCEPT.md §5.2/§8: a missing
+// toolchain capability or a failed precondition never gets a silent retry.
+//
+// [KNOWN GAP] True resumability for a crash between a successful swap and
+// this function's Store.Save call is not yet implemented: a retry of the
+// same operation_id would re-run the §4 precondition, which the repository
+// no longer satisfies once loaded, and would fail — even though the load
+// itself already succeeded. The generation is still recoverable from
+// ArchiveDir by an operator; nothing is silently destroyed.
+func (w *Worker) loadRepositoryDump(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.DumpLoader == nil {
+		return w.failure(ticket, "LOAD_REPOSITORY_DUMP_UNAVAILABLE", "repository dump loading is not configured on this worker")
+	}
+	var payload control.LoadRepositoryDumpPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	loaded, err := w.DumpLoader.Load(ctx, session.RealmID, payload.RepoID, ticket.OperationID, payload.ApplyCurrentIgnorePolicy, payload.KeepLastRevisions)
+	if err != nil {
+		return w.failure(ticket, "LOAD_REPOSITORY_DUMP_FAILED", err.Error())
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.LoadRepositoryDumpResult{
+		RepoID: payload.RepoID, OldUUID: loaded.OldUUID, NewUUID: loaded.NewUUID,
+		SourceRevisionRange: loaded.SourceRevisionRange, ToolVersions: loaded.ToolVersions,
+	}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
 func (w *Worker) mobilePairing(session Session, ticket control.Ticket) (control.Result, error) {
 	if w.MobilePairing == nil {
 		return w.failure(ticket, "MOBILE_PAIRING_UNAVAILABLE", "mobile pairing is not configured on this worker")

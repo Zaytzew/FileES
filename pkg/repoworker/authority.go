@@ -92,26 +92,29 @@ func (p ServicePublisher) SnapshotRealmScope(realmID string) (RealmRemovalScope,
 		}
 	}
 	foreign := map[string]bool{}
-	clients, err := os.ReadDir(filepath.Join(p.ServiceWC, "clients"))
+	grantRoot := filepath.Join(p.ServiceWC, "admin", "grants")
+	err = filepath.WalkDir(grantRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var grant RealmGrantRecord
+		if json.Unmarshal(raw, &grant) != nil || validateRealmGrantRecord(grant) != nil {
+			return errors.New("canonical realm grant is invalid")
+		}
+		if grant.State == "active" && grant.RecipientRealmID == realmID {
+			foreign[grant.RepoID] = true
+		}
+		return nil
+	})
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return RealmRemovalScope{}, err
-	}
-	for _, client := range clients {
-		if !client.IsDir() {
-			continue
-		}
-		view, err := clientview.Load(filepath.Join(p.ServiceWC, "clients", client.Name(), "view.json"))
-		if err != nil {
-			return RealmRemovalScope{}, fmt.Errorf("load client projection %s: %w", client.Name(), err)
-		}
-		if view.RealmID != realmID {
-			continue
-		}
-		for _, repository := range view.Repositories {
-			if repository.OwnerRealmID != realmID {
-				foreign[repository.RepoID] = true
-			}
-		}
 	}
 	scope := RealmRemovalScope{}
 	for id := range owned {
@@ -299,6 +302,11 @@ func (p ServicePublisher) Delete(ctx context.Context, repoID, realmID string) er
 		}
 	}
 	changed := []string{repoPath}
+	grantChanges, err := p.revokeRepositoryGrants(repoID, now)
+	if err != nil {
+		return err
+	}
+	changed = append(changed, grantChanges...)
 	entries, err := os.ReadDir(filepath.Join(p.ServiceWC, "clients"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -332,14 +340,11 @@ func (p ServicePublisher) Delete(ctx context.Context, repoID, realmID string) er
 		}
 		changed = append(changed, viewPath)
 	}
-	authz, err := p.renderAuthz()
+	projectionChanges, err := p.rebuildGrantAuthority()
 	if err != nil {
 		return err
 	}
-	if err := atomicBytes(p.DataAuthzFile, authz); err != nil {
-		return err
-	}
-	changed = append(changed, p.DataAuthzFile)
+	changed = append(changed, projectionChanges...)
 	return p.Runner.Publish(ctx, changed, "filees: delete repository "+repoID)
 }
 
@@ -393,55 +398,37 @@ func (p ServicePublisher) WithdrawRealmGrants(ctx context.Context, realmID strin
 		}
 		targets[id] = true
 	}
-	now := time.Now().UTC()
-	if p.Now != nil {
-		now = p.Now().UTC()
-	}
 	changed := []string{}
-	entries, err := os.ReadDir(filepath.Join(p.ServiceWC, "clients"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		path := filepath.Join(p.ServiceWC, "clients", entry.Name(), "view.json")
-		view, err := clientview.Load(path)
+	for repoID := range targets {
+		path, err := realmGrantPath(p.ServiceWC, repoID, realmID)
 		if err != nil {
 			return err
 		}
-		if view.RealmID != realmID {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var grant RealmGrantRecord
+		if json.Unmarshal(raw, &grant) != nil || validateRealmGrantRecord(grant) != nil || grant.RecipientRealmID != realmID {
+			return errors.New("canonical realm grant is invalid")
+		}
+		if grant.State == "revoked" {
 			continue
 		}
-		kept, removed := view.Repositories[:0], false
-		for _, repository := range view.Repositories {
-			if targets[repository.RepoID] && repository.OwnerRealmID != realmID {
-				removed = true
-				continue
-			}
-			kept = append(kept, repository)
-		}
-		if !removed {
-			continue
-		}
-		view.Repositories, view.Generation, view.GeneratedAt = kept, view.Generation+1, now
-		if _, err := clientview.StoreIfNewer(path, view); err != nil {
+		grant.State, grant.Access, grant.PathOwnerPolicy, grant.UpdatedAt = "revoked", "", "", p.now()
+		if err := atomicJSON(path, grant); err != nil {
 			return err
 		}
 		changed = append(changed, path)
 	}
-	if len(changed) == 0 {
-		return nil
-	}
-	authz, err := p.renderAuthz()
+	projectionChanges, err := p.rebuildGrantAuthority()
 	if err != nil {
 		return err
 	}
-	if err := atomicBytes(p.DataAuthzFile, authz); err != nil {
-		return err
+	changed = append(changed, projectionChanges...)
+	if len(changed) == 0 {
+		return nil
 	}
-	changed = append(changed, p.DataAuthzFile)
 	return p.Runner.Publish(ctx, changed, "filees: withdraw realm grants "+realmID)
 }
 
@@ -485,6 +472,11 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 		return err
 	}
 	changed := []string{repoPath}
+	grantChanges, err := p.revokeRepositoryGrants(repoID, now)
+	if err != nil {
+		return err
+	}
+	changed = append(changed, grantChanges...)
 
 	clientsRoot := filepath.Join(p.ServiceWC, "clients")
 	entries, err := os.ReadDir(clientsRoot)
@@ -540,14 +532,11 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 		changed = append(changed, viewPath)
 	}
 
-	authz, err := p.renderAuthz()
+	projectionChanges, err := p.rebuildGrantAuthority()
 	if err != nil {
 		return err
 	}
-	if err := atomicBytes(p.DataAuthzFile, authz); err != nil {
-		return err
-	}
-	changed = append(changed, p.DataAuthzFile)
+	changed = append(changed, projectionChanges...)
 	return p.Runner.Publish(ctx, changed, "filees: transfer repository "+repoID+" owner")
 }
 

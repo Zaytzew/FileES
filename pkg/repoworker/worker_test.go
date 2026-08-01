@@ -82,6 +82,29 @@ type fakeRealmRemovalService struct {
 	err                        error
 }
 
+type fakeRealmGrantAuthority struct {
+	owner, recipient, repo, access, visibility string
+	grantCalls, revokeCalls                    int
+}
+
+func (g *fakeRealmGrantAuthority) Grant(_ context.Context, owner, recipient, repo, access string) (RealmGrantRecord, error) {
+	g.grantCalls++
+	g.owner, g.recipient, g.repo, g.access = owner, recipient, repo, access
+	return RealmGrantRecord{RepoID: repo, RecipientRealmID: recipient, Access: access, State: "active"}, nil
+}
+func (g *fakeRealmGrantAuthority) RevokeGrant(_ context.Context, owner, recipient, repo string) (RealmGrantRecord, error) {
+	g.revokeCalls++
+	g.owner, g.recipient, g.repo = owner, recipient, repo
+	return RealmGrantRecord{RepoID: repo, RecipientRealmID: recipient, State: "revoked"}, nil
+}
+func (g *fakeRealmGrantAuthority) ListGrantRecipients(context.Context, string) ([]RealmGrantRecipient, error) {
+	return nil, nil
+}
+func (g *fakeRealmGrantAuthority) SetRealmDirectoryVisibility(_ context.Context, _ string, visibility string) (string, error) {
+	g.visibility = visibility
+	return visibility, nil
+}
+
 func (s *fakeRealmRemovalService) Request(_ context.Context, session Session, operationID string, request RealmRemovalRequest) (RealmRemovalRecord, error) {
 	s.requestCalls++
 	s.realm, s.operation, s.request = session.RealmID, operationID, request
@@ -161,6 +184,39 @@ func TestWorkerDetachClientRevokesOnlyAuthenticatedSession(t *testing.T) {
 	var payload control.ClientDeactivateResult
 	if err := control.DecodeResultPayload(result.Result, &payload); err != nil || payload.ServiceRevision != 19 {
 		t.Fatalf("payload=%+v err=%v", payload, err)
+	}
+}
+
+func TestWorkerRealmGrantUsesAuthenticatedOwnerAndCapability(t *testing.T) {
+	store, err := NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := Session{ClientID: "client", RealmID: uuid.NewString(), CanCreateRepositories: true}
+	repo, recipient := uuid.NewString(), uuid.NewString()
+	ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketGrantAccess, session.ClientID, control.GrantAccessPayload{RepoID: repo, RecipientRealmID: recipient, Access: "rw"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants := &fakeRealmGrantAuthority{}
+	result, err := (&Worker{Store: store, Grants: grants}).Handle(context.Background(), session, ticket)
+	if err != nil || result.Status != control.ResultOK {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if grants.owner != session.RealmID || grants.recipient != recipient || grants.repo != repo || grants.access != "rw" {
+		t.Fatalf("grant authority=%+v", grants)
+	}
+
+	forbidden := Session{ClientID: "readonly", RealmID: session.RealmID}
+	blocked, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketGrantAccess, forbidden.ClientID, control.GrantAccessPayload{RepoID: repo, RecipientRealmID: recipient, Access: "r"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := (&Worker{Store: store, Grants: grants}).Handle(context.Background(), forbidden, blocked); err != nil || result.Status != control.ResultError {
+		t.Fatalf("forbidden result=%+v err=%v", result, err)
+	}
+	if grants.grantCalls != 1 {
+		t.Fatalf("forbidden grant reached authority: calls=%d", grants.grantCalls)
 	}
 }
 

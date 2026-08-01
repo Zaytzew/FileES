@@ -107,6 +107,7 @@ func newRealmRemovalE2EFixture(t *testing.T, retentionDays int) realmRemovalE2EF
 	f.activationConfig = activation.Config{
 		Root: filepath.Join(f.root, "activation"), SessionRoot: filepath.Join(f.root, "sessions"),
 		AuthorizedKeysFile: filepath.Join(f.root, "authorized_keys"), AuthzFile: filepath.Join(f.root, "service.authz"),
+		DataAuthzFile:      filepath.Join(f.root, "repositories.authz"),
 		ServiceWorkingCopy: serviceWC, ServiceRepository: serviceRepository, RepositoryName: "filees-service",
 		ClientEntryPath: "/usr/local/libexec/filees/filees-client-entry", SVNBinary: f.svn, SVNServeBinary: svnserve,
 	}
@@ -116,7 +117,7 @@ func newRealmRemovalE2EFixture(t *testing.T, retentionDays int) realmRemovalE2EF
 	}
 	f.manager = manager
 	f.publisher = repoworker.ServicePublisher{
-		ServiceWC: serviceWC, DataAuthzFile: filepath.Join(f.root, "repositories.authz"),
+		ServiceWC: serviceWC, DataAuthzFile: f.activationConfig.DataAuthzFile,
 		Runner: repoworker.SVNPublishRunner{SVN: f.svn, WorkingCopy: serviceWC}, Now: func() time.Time { return f.now },
 	}
 	effects := repoworker.ServerEffects{
@@ -186,32 +187,14 @@ func (f *realmRemovalE2EFixture) createRepository(t *testing.T, realmID, name st
 
 func (f *realmRemovalE2EFixture) grantForeignRepositories(t *testing.T) {
 	t.Helper()
-	paths := make([]string, 0, len(f.targetClients))
-	for _, client := range f.targetClients {
-		path := filepath.Join(f.activationConfig.ServiceWorkingCopy, "clients", client.ClientID, "view.json")
-		view, err := clientview.Load(path)
-		if err != nil {
+	for index, repository := range f.foreignRepos {
+		access := "r"
+		if index == 1 {
+			access = "rw"
+		}
+		if _, err := f.publisher.Grant(context.Background(), f.otherRealm, f.targetRealm, repository.RepoID, access); err != nil {
 			t.Fatal(err)
 		}
-		view.Generation++
-		view.GeneratedAt = f.now
-		for index, repository := range f.foreignRepos {
-			access := "r"
-			if index == 1 {
-				access = "rw"
-			}
-			view.Repositories = append(view.Repositories, clientview.Repository{
-				RepoID: repository.RepoID, DisplayName: "foreign", URL: repository.URL,
-				Access: access, State: "active", OwnerRealmID: f.otherRealm, AttachmentPolicy: "optional",
-			})
-		}
-		if _, err := clientview.StoreIfNewer(path, view); err != nil {
-			t.Fatal(err)
-		}
-		paths = append(paths, path)
-	}
-	if err := (repoworker.SVNPublishRunner{SVN: f.svn, WorkingCopy: f.activationConfig.ServiceWorkingCopy}).Publish(context.Background(), paths, "realm e2e: grant foreign repositories"); err != nil {
-		t.Fatal(err)
 	}
 }
 

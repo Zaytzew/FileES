@@ -13,6 +13,7 @@ import (
 
 	"filees/pkg/clientview"
 	"filees/pkg/onboarding"
+	"filees/pkg/repoworker"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
@@ -90,6 +91,52 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	authz, _ := os.ReadFile(config.AuthzFile)
 	if strings.Contains(string(authz), "[/clients/"+grant.ClientID+"]") || !strings.Contains(string(authz), "[/clients/"+second.ClientID+"]") {
 		t.Fatalf("revoked/active authz=%s", authz)
+	}
+}
+
+func TestLaterActivationInheritsCanonicalRealmGrant(t *testing.T) {
+	manager, config := newActivationTestManager(t)
+	activate := func(realmID string) onboarding.ActivationGrant {
+		grant := testActivationGrant(t, time.Now().Add(time.Hour))
+		grant.RealmID = realmID
+		if err := manager.Stage(grant); err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.RecordProof(grant.OperationID, grant.ClientID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := manager.Publish(context.Background(), grant); err != nil {
+			t.Fatal(err)
+		}
+		return grant
+	}
+	ownerRealm, recipientRealm := uuid.NewString(), uuid.NewString()
+	activate(ownerRealm)
+	firstRecipient := activate(recipientRealm)
+	repoID := uuid.NewString()
+	url := "svn+ssh://_filees-client@example/repos/" + repoID
+	publisher := repoworker.ServicePublisher{ServiceWC: config.ServiceWorkingCopy, DataAuthzFile: config.DataAuthzFile, Runner: repoworker.SVNPublishRunner{SVN: config.SVNBinary, WorkingCopy: config.ServiceWorkingCopy}}
+	if err := publisher.Publish(context.Background(), repoID, ownerRealm, "Shared", url); err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.Activate(context.Background(), repoID, ownerRealm); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := publisher.Grant(context.Background(), ownerRealm, recipientRealm, repoID, "r"); err != nil {
+		t.Fatal(err)
+	}
+	firstView, _ := clientview.Load(filepath.Join(config.ServiceWorkingCopy, "clients", firstRecipient.ClientID, "view.json"))
+	if len(firstView.Repositories) != 1 {
+		t.Fatalf("first recipient view=%+v", firstView.Repositories)
+	}
+	secondRecipient := activate(recipientRealm)
+	secondView, err := clientview.Load(filepath.Join(config.ServiceWorkingCopy, "clients", secondRecipient.ClientID, "view.json"))
+	if err != nil || len(secondView.Repositories) != 1 || secondView.Repositories[0].RepoID != repoID || secondView.Repositories[0].Access != "r" {
+		t.Fatalf("second recipient view=%+v err=%v", secondView.Repositories, err)
+	}
+	authz, _ := os.ReadFile(config.DataAuthzFile)
+	if !strings.Contains(string(authz), firstRecipient.ClientID) || !strings.Contains(string(authz), secondRecipient.ClientID) {
+		t.Fatalf("data authz=%s", authz)
 	}
 }
 
@@ -424,7 +471,7 @@ func newActivationTestManager(t *testing.T) (*Manager, Config) {
 	runActivationCommand(t, svn, "checkout", "--non-interactive", "--no-auth-cache", "file://"+repository, wc)
 	config := Config{
 		Root: filepath.Join(root, "activation"), AuthorizedKeysFile: filepath.Join(root, "authorized_keys"),
-		AuthzFile: filepath.Join(root, "authz"), ServiceWorkingCopy: wc, ServiceRepository: repository,
+		AuthzFile: filepath.Join(root, "authz"), DataAuthzFile: filepath.Join(root, "data.authz"), ServiceWorkingCopy: wc, ServiceRepository: repository,
 		RepositoryName: "filees-service", ClientEntryPath: "/usr/local/libexec/filees/filees-client-entry",
 		SVNBinary: svn, SVNServeBinary: svnserve,
 	}

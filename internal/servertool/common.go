@@ -154,6 +154,9 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 			obsandbox.Path{Label: "service-authz", Name: activationConfig.AuthzFile, Perms: "rwc"},
 			obsandbox.Path{Label: "session-root", Name: sessionRoot, Perms: "rwc"},
 		)
+		if activationConfig.DataAuthzFile != "" {
+			paths = append(paths, obsandbox.Path{Label: "data-authz", Name: activationConfig.DataAuthzFile, Perms: "rwc"})
+		}
 	}
 	if access.needRepoResults && repositoryResultsRoot != "" {
 		paths = append(paths, obsandbox.Path{Label: "repository-results", Name: repositoryResultsRoot, Perms: "rwc"})

@@ -28,7 +28,7 @@ func validUpload() Upload {
 	return Upload{
 		OwnerRealm:      uuid.NewString(),
 		AuthorityRepoID: uuid.NewString(),
-		TrashRepoID:     uuid.NewString(),
+		UploadRepoID:    uuid.NewString(),
 		Slug:            "sggw-upload",
 		Recipients:      []string{"a@example.com"},
 		CollisionPolicy: CollisionDeny,
@@ -58,11 +58,11 @@ func TestUploadRequiresRecipients(t *testing.T) {
 	}
 }
 
-// The trash repository cannot be the source of the right to create the channel
-// that creates it.
-func TestUploadRejectsAuthorityEqualToTrash(t *testing.T) {
+// The upload repository cannot be the same as the project repository whose
+// ownership grants the right to open the channel.
+func TestUploadRejectsAuthorityEqualToUploadRepo(t *testing.T) {
 	u := validUpload()
-	u.TrashRepoID = u.AuthorityRepoID
+	u.UploadRepoID = u.AuthorityRepoID
 	if err := u.Validate(); !errors.Is(err, ErrSameRepo) {
 		t.Fatalf("got %v, want ErrSameRepo", err)
 	}

@@ -22,6 +22,7 @@ type Effects interface {
 	// before PrepareDelete installs a commit-blocking hook in the FSFS tree.
 	AuthorizeDelete(context.Context, string, string) error
 	PrepareDelete(context.Context, string, string) error
+	RestoreDelete(context.Context, string, string) error
 	WithdrawAuthority(context.Context, string, string) error
 	ArchiveAndDeleteFSFS(context.Context, string, string) (time.Time, error)
 }
@@ -211,6 +212,64 @@ func (b *DurableBackend) ReapFailedCreates(ctx context.Context) error {
 	return nil
 }
 
+// ReapUncommittedDeletes compensates only delete preparations which never
+// crossed the durable authority boundary. Records remain allocated so a retry
+// with the same operation ID keeps its parameter binding and can prepare the
+// repository again. Later stages stay fail-closed and must resume to deleted.
+func (b *DurableBackend) ReapUncommittedDeletes(ctx context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !filepath.IsAbs(b.Root) || b.Effects == nil {
+		return errors.New("repository backend is incomplete")
+	}
+	entries, err := os.ReadDir(b.Root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "delete-") || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		operationID := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "delete-"), ".json")
+		if _, err := uuid.Parse(operationID); err != nil {
+			continue
+		}
+		path := filepath.Join(b.Root, entry.Name())
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var record deleteBackendRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			return fmt.Errorf("invalid repository deletion record %s: %w", entry.Name(), err)
+		}
+		if record.OperationID != operationID {
+			return fmt.Errorf("repository deletion record %s conflicts with its filename", entry.Name())
+		}
+		if _, err := uuid.Parse(record.RealmID); err != nil {
+			return fmt.Errorf("repository deletion record %s has invalid realm ID", entry.Name())
+		}
+		if _, err := uuid.Parse(record.RepoID); err != nil {
+			return fmt.Errorf("repository deletion record %s has invalid repository ID", entry.Name())
+		}
+		switch record.Stage {
+		case "allocated":
+			if err := b.Effects.RestoreDelete(ctx, record.RepoID, record.OperationID); err != nil {
+				return fmt.Errorf("restore uncommitted repository deletion %s: %w", operationID, err)
+			}
+		case "blocked", "withdrawn", "deleted":
+			// Once authority withdrawal may have begun, restoring write access
+			// would race a durable or partially published deletion.
+		default:
+			return fmt.Errorf("repository deletion record %s has invalid stage", entry.Name())
+		}
+	}
+	return nil
+}
+
 func (b *DurableBackend) Delete(ctx context.Context, operationID, realmID, repoID string) (time.Time, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -255,7 +314,11 @@ func (b *DurableBackend) Delete(ctx context.Context, operationID, realmID, repoI
 	}
 	if record.Stage == "allocated" {
 		if err := b.Effects.PrepareDelete(ctx, repoID, operationID); err != nil {
-			return time.Time{}, err
+			prepareErr := err
+			if err := b.Effects.RestoreDelete(ctx, repoID, operationID); err != nil {
+				return time.Time{}, fmt.Errorf("prepare repository deletion: %w; restore uncommitted preparation: %v", prepareErr, err)
+			}
+			return time.Time{}, prepareErr
 		}
 		record.Stage = "blocked"
 		if err := b.saveDelete(path, record); err != nil {

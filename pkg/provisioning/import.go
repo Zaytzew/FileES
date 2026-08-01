@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"filees/pkg/client"
+	"filees/pkg/filepolicy"
 )
 
 type ImportLimits struct {
@@ -57,6 +58,12 @@ func ScanInitialSnapshot(root string) (Snapshot, error) {
 		rel = filepath.Clean(rel)
 		first := strings.Split(rel, string(filepath.Separator))[0]
 		if first == ".svn" || first == ".filees" {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepolicy.IsBuiltinIgnored(filepath.ToSlash(rel)) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}

@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"filees/pkg/filepolicy"
 	"filees/pkg/talk"
 )
 
@@ -154,32 +155,6 @@ type backlogItem struct {
 	QueuedAt int64  `json:"queued_at"`
 }
 
-// builtinIgnorePatterns — hardcoded ignores applied before user patterns.
-// All use "**/" prefix so they match at any depth.
-var builtinIgnorePatterns = []string{
-	// Office lock/temp files
-	"**/~$*",
-	"**/.~lock.*#", // LibreOffice/OpenOffice lock marker
-	"**/*.tmp",
-	"**/*.bak",
-	// OS metadata noise
-	"**/.DS_Store",
-	"**/Thumbs.db",
-	"**/desktop.ini",
-	// Editor state dirs
-	"**/.vscode",
-	"**/.idea",
-	"**/*.swp",
-	"**/*.swo",
-	// Build / language artifacts
-	"**/node_modules",
-	"**/__pycache__",
-	"**/*.o",
-	"**/*.pyc",
-	// Other VCS
-	"**/.git",
-}
-
 // --- construction ---
 
 func NewScanner(opts Options) (*Scanner, error) {
@@ -236,8 +211,8 @@ func NewScanner(opts Options) (*Scanner, error) {
 		}
 	}
 	// initialize builtin ignore globs
-	s.builtinGlobs = make([]glob, len(builtinIgnorePatterns))
-	for i, p := range builtinIgnorePatterns {
+	s.builtinGlobs = make([]glob, len(filepolicy.BuiltinIgnorePatterns))
+	for i, p := range filepolicy.BuiltinIgnorePatterns {
 		s.builtinGlobs[i] = glob{raw: p}
 	}
 

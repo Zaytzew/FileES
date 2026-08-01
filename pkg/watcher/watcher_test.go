@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"filees/pkg/filepolicy"
 )
 
 func TestMD5BacklogHashHonorsCancellation(t *testing.T) {
@@ -34,7 +36,7 @@ func TestBuiltinIgnoresLibreOfficeLockMarker(t *testing.T) {
 	}
 	for _, c := range cases {
 		got := false
-		for _, pattern := range builtinIgnorePatterns {
+		for _, pattern := range filepolicy.BuiltinIgnorePatterns {
 			if (glob{raw: pattern}).match(c.rel, false) {
 				got = true
 				break

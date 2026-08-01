@@ -7,6 +7,7 @@
 package localpin
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -128,7 +129,7 @@ func (s *Store) Verify(pin []byte) (ok, locked bool, err error) {
 	if rec.AttemptsLeft <= 0 {
 		return false, true, nil
 	}
-	stored, err := decryptPIN(s.path, rec.EncryptedPIN)
+	stored, usedKey, err := decryptPIN(s.path, rec.EncryptedPIN)
 	if err != nil {
 		return false, false, err
 	}
@@ -136,6 +137,15 @@ func (s *Store) Verify(pin []byte) (ok, locked bool, err error) {
 	match := len(pin) > 0 && subtle.ConstantTimeCompare(stored, pin) == 1
 	if match {
 		rec.AttemptsLeft = DefaultAttempts
+		// A legacy (non-primary) key was needed to decrypt - one-shot,
+		// transparent migration to the current primary key so this record
+		// no longer depends on the legacy binding (e.g. a MAC address) at
+		// all going forward.
+		if primary := deviceKeys(s.path); len(primary) > 0 && !bytes.Equal(usedKey, primary[0]) {
+			if reencrypted, encErr := encryptPIN(s.path, stored); encErr == nil {
+				rec.EncryptedPIN = reencrypted
+			}
+		}
 		return true, false, s.save(rec)
 	}
 	rec.AttemptsLeft--

@@ -349,7 +349,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder bool) (SettingsDialogAction, error) {
 	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "add_folder", "Dodaj folder do FileES", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
 	if hasFolder {
-		args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder", "FALSE", "delete_repository", "Odłącz trwale repozytorium")
+		args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder", "FALSE", "delete_repository", "Odłącz trwale repozytorium", "FALSE", "load_dump", "Odtwórz z archiwum")
 	}
 	output, err := b.runner.Output(ctx, command, args...)
 	if err != nil {
@@ -401,6 +401,8 @@ func settingsAction(label string) SettingsDialogAction {
 		return SettingsDialogDetachFolder
 	case "delete_repository", "Odłącz trwale":
 		return SettingsDialogDeleteRepo
+	case "load_dump", "Odtwórz z archiwum":
+		return SettingsDialogLoadDump
 	case "detach_server", "Dezaktywuj klienta":
 		return SettingsDialogDetachServer
 	case "remove_realm":

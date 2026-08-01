@@ -80,6 +80,27 @@ type repositoryDetachClient interface {
 
 type repositoryDetachAdapter struct{ client repositoryDetachClient }
 
+type repositoryDumpLoadClient interface {
+	RepoLoadDump(context.Context, string, string, bool, *int) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryDumpLoadAdapter struct{ client repositoryDumpLoadClient }
+
+// LoadDump takes no options yet (actions.RepositoryDumpLoader, first pass):
+// always apply the shared ignore policy, never bound the history.
+func (adapter repositoryDumpLoadAdapter) LoadDump(ctx context.Context, serverID, repoID string) error {
+	operationCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer cancel()
+	result, err := adapter.client.RepoLoadDump(operationCtx, serverID, repoID, true, nil)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty repository dump-load result")
+	}
+	return nil
+}
+
 type serverDetachClient interface {
 	ServerDetach(context.Context, string) (*contract.ServerDetachResult, error)
 }
@@ -423,6 +444,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(repositoryDetachClient); ok {
 		repositoryDetacher = repositoryDetachAdapter{client: candidate}
 	}
+	var repositoryDumpLoader actions.RepositoryDumpLoader
+	if candidate, ok := deps.client.(repositoryDumpLoadClient); ok {
+		repositoryDumpLoader = repositoryDumpLoadAdapter{client: candidate}
+	}
 	var serverDetacher actions.ServerDetacher
 	if candidate, ok := deps.client.(serverDetachClient); ok {
 		serverDetacher = serverDetachAdapter{client: candidate}
@@ -450,33 +475,34 @@ func run(parent context.Context, deps dependencies) error {
 		mobilePairer = mobilePairingAdapter{client: candidate}
 	}
 	controller := actions.New(actions.Config{
-		Intents:            intents,
-		ViewModel:          views.load,
-		Opener:             deps.platform,
-		Picker:             deps.platform,
-		FolderPicker:       deps.platform,
-		Prompter:           deps.platform,
-		RepositoryCreator:  repositoryCreator,
-		RepositoryDetacher: repositoryDetacher,
-		ServerDetacher:     serverDetacher,
-		RealmRemover:       realmRemover,
-		RecoveryDownloader: recoveryDownloader,
-		MobilePairer:       mobilePairer,
-		PinStore:           deps.pinStore,
-		Activator:          deps.activator,
-		Updater:            updater,
-		Stack:              stack,
-		Notifier:           deps.platform,
-		Locker:             deps.client,
-		Reservations:       reservations,
-		RealmAliases:       realmAliases,
-		ReservationBrowser: deps.platform,
-		SettingsBrowser:    deps.platform,
-		ConsentPrompter:    deps.platform,
-		Reconnect:          guiApp.Reconnect,
-		Refresh:            guiApp.Refresh,
-		PrepareRestart:     notificationPolicy.SuppressConnectionTransitions,
-		AbortRestart:       notificationPolicy.RestoreConnectionTransitions,
+		Intents:              intents,
+		ViewModel:            views.load,
+		Opener:               deps.platform,
+		Picker:               deps.platform,
+		FolderPicker:         deps.platform,
+		Prompter:             deps.platform,
+		RepositoryCreator:    repositoryCreator,
+		RepositoryDetacher:   repositoryDetacher,
+		RepositoryDumpLoader: repositoryDumpLoader,
+		ServerDetacher:       serverDetacher,
+		RealmRemover:         realmRemover,
+		RecoveryDownloader:   recoveryDownloader,
+		MobilePairer:         mobilePairer,
+		PinStore:             deps.pinStore,
+		Activator:            deps.activator,
+		Updater:              updater,
+		Stack:                stack,
+		Notifier:             deps.platform,
+		Locker:               deps.client,
+		Reservations:         reservations,
+		RealmAliases:         realmAliases,
+		ReservationBrowser:   deps.platform,
+		SettingsBrowser:      deps.platform,
+		ConsentPrompter:      deps.platform,
+		Reconnect:            guiApp.Reconnect,
+		Refresh:              guiApp.Refresh,
+		PrepareRestart:       notificationPolicy.SuppressConnectionTransitions,
+		AbortRestart:         notificationPolicy.RestoreConnectionTransitions,
 		Restart: func() {
 			select {
 			case restartRequested <- struct{}{}:

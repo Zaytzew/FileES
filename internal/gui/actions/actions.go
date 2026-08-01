@@ -75,6 +75,15 @@ type RepositoryDetacher interface {
 	DetachRepository(context.Context, string, string, bool) error
 }
 
+// RepositoryDumpLoader triggers LOAD_REPOSITORY_DUMP for a repository whose
+// only history so far is the carrier commit the user just made
+// (LOAD_REPOSITORY_DUMP_CONCEPT.md). No options are exposed here yet - the
+// first pass always applies the shared ignore policy and keeps the full
+// history.
+type RepositoryDumpLoader interface {
+	LoadDump(ctx context.Context, serverID, repoID string) error
+}
+
 type ServerDetacher interface {
 	DetachServer(context.Context, string) error
 }
@@ -141,18 +150,19 @@ type presentationError interface {
 // Config wires the controller to its dependencies.
 // Notifier and Reconnect may be nil; all other fields are required.
 type Config struct {
-	Intents            <-chan tray.Intent
-	ViewModel          func() app.ViewModel
-	Opener             platform.FolderOpener
-	Picker             platform.FilePicker
-	FolderPicker       platform.FolderPicker
-	Prompter           platform.Prompter
-	RepositoryCreator  RepositoryCreator
-	RepositoryDetacher RepositoryDetacher
-	ServerDetacher     ServerDetacher
-	RealmRemover       RealmRemover
-	RecoveryDownloader RecoveryDownloader
-	MobilePairer       MobilePairingLauncher
+	Intents              <-chan tray.Intent
+	ViewModel            func() app.ViewModel
+	Opener               platform.FolderOpener
+	Picker               platform.FilePicker
+	FolderPicker         platform.FolderPicker
+	Prompter             platform.Prompter
+	RepositoryCreator    RepositoryCreator
+	RepositoryDetacher   RepositoryDetacher
+	RepositoryDumpLoader RepositoryDumpLoader
+	ServerDetacher       ServerDetacher
+	RealmRemover         RealmRemover
+	RecoveryDownloader   RecoveryDownloader
+	MobilePairer         MobilePairingLauncher
 	// PinStore, if non-nil, offers PIN setup at the end of a successful
 	// activation (see startActivation) - nil means the local-PIN feature is
 	// disabled entirely (e.g. platform without a durable state root).
@@ -305,6 +315,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startDetachRepository(ctx, result.ServerID, result.RepoID, false)
 		case platform.SettingsDialogDeleteRepo:
 			c.startDetachRepository(ctx, result.ServerID, result.RepoID, true)
+		case platform.SettingsDialogLoadDump:
+			c.startLoadDump(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogDetachServer:
 			c.startDetachServer(ctx, result.ServerID)
 		case platform.SettingsDialogRemoveRealm:
@@ -641,6 +653,52 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 			title = "Repozytorium trwale odłączone"
 		}
 		c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: title, Body: name, Urgency: platform.UrgencyNormal})
+	}()
+}
+
+// startLoadDump triggers LOAD_REPOSITORY_DUMP for repoID. First pass: no
+// options dialog - always applies the shared ignore policy and keeps the
+// full history (RepositoryDumpLoader.LoadDump takes no parameters yet). The
+// daemon does the actual swap asynchronously (localrepo.StateReconciling);
+// this call only starts it, the same fire-and-forget shape as detach.
+func (c *Controller) startLoadDump(ctx context.Context, serverID, repoID string) {
+	key := "load-dump:" + serverID + ":" + repoID
+	if serverID == "" || repoID == "" || c.cfg.RepositoryDumpLoader == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		repo, ok := findRepo(vm, repoID)
+		if !ok || repo.ServerID != serverID || !repo.Attached || !vm.Connected || vm.Stale || !repositoryOwnedByCurrentRealm(vm, repo) {
+			return
+		}
+		name := repo.DisplayName
+		if strings.TrimSpace(name) == "" {
+			name = repo.ID
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			Title:       "Odtwórz z archiwum",
+			Text:        fmt.Sprintf("%s\n%s\n\nZawartość tego folderu zostanie zastąpiona danymi z wcześniej skopiowanego tam archiwum. Bieżąca zawartość jest odkładana na bok na czas operacji i usuwana dopiero po potwierdzonym sukcesie.", name, repo.LocalPath),
+			ConfirmText: "Odtwórz z archiwum", CancelText: "Anuluj",
+		})
+		if err != nil || !confirmed {
+			return
+		}
+		latest := c.cfg.ViewModel()
+		current, ok := findRepo(latest, repoID)
+		if !ok || current.ServerID != serverID || !current.Attached || !latest.Connected || latest.Stale || !repositoryOwnedByCurrentRealm(latest, current) {
+			return
+		}
+		if err := c.cfg.RepositoryDumpLoader.LoadDump(ctx, serverID, repoID); err != nil {
+			if ctx.Err() == nil {
+				c.notify(ctx, platform.Notification{ID: "repository-load-dump." + repoID, Group: "repository-load-dump." + repoID, Title: "Nie udało się rozpocząć odtwarzania z archiwum", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			}
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: "repository-load-dump." + repoID, Group: "repository-load-dump." + repoID, Title: "Odtwarzanie z archiwum rozpoczęte", Body: name, Urgency: platform.UrgencyNormal})
 	}()
 }
 

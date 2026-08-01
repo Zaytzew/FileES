@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"filees/internal/gui/actions"
 	"filees/internal/gui/app"
@@ -22,6 +23,15 @@ type fakeRepositoryDetacher struct{ calls chan detachCall }
 
 func (fake *fakeRepositoryDetacher) DetachRepository(_ context.Context, serverID, repoID string, deleteRepository bool) error {
 	fake.calls <- detachCall{serverID: serverID, repoID: repoID, deleteRepository: deleteRepository}
+	return nil
+}
+
+type loadDumpCall struct{ serverID, repoID string }
+
+type fakeRepositoryDumpLoader struct{ calls chan loadDumpCall }
+
+func (fake *fakeRepositoryDumpLoader) LoadDump(_ context.Context, serverID, repoID string) error {
+	fake.calls <- loadDumpCall{serverID: serverID, repoID: repoID}
 	return nil
 }
 
@@ -127,6 +137,73 @@ func TestControllerSettingsRoutesFolderDetachThroughExistingConfirmation(t *test
 	}
 	if len(platformFake.Snapshot().ConfirmRequests) != 1 {
 		t.Fatalf("settings detach bypassed confirmation: %#v", platformFake.Snapshot())
+	}
+}
+
+func TestControllerSettingsRoutesLoadDumpThroughConfirmation(t *testing.T) {
+	loader := &fakeRepositoryDumpLoader{calls: make(chan loadDumpCall, 1)}
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogLoadDump, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := lifecycleView(contract.CapRepoCreateRequest)
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, Prompter: platformFake, RepositoryDumpLoader: loader})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	call := awaitCh(t, loader.calls, "settings load dump")
+	if call.serverID != "office" || call.repoID != "repo-1" {
+		t.Fatalf("load dump call=%+v", call)
+	}
+	if len(platformFake.Snapshot().ConfirmRequests) != 1 {
+		t.Fatalf("load dump bypassed confirmation: %#v", platformFake.Snapshot())
+	}
+}
+
+func TestControllerLoadDumpStopsWhenConfirmationIsRejected(t *testing.T) {
+	loader := &fakeRepositoryDumpLoader{calls: make(chan loadDumpCall, 1)}
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogLoadDump, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return false, nil },
+	}
+	view := lifecycleView(contract.CapRepoCreateRequest)
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, Prompter: platformFake, RepositoryDumpLoader: loader})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	select {
+	case call := <-loader.calls:
+		t.Fatalf("load dump proceeded after a rejected confirmation: %+v", call)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestControllerLoadDumpRefusesRepositoryNotOwnedByCurrentRealm(t *testing.T) {
+	loader := &fakeRepositoryDumpLoader{calls: make(chan loadDumpCall, 1)}
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogLoadDump, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := lifecycleView(contract.CapRepoCreateRequest)
+	// A guest rw-grant on a foreign repo must never reach LoadDump: the
+	// server-side gate is ownership + can-create-repositories, and the GUI
+	// mirrors it rather than relying on the server to reject after the fact.
+	view.Repos[0].OwnerRealmID = "realm-2"
+	view.Servers[0].Repos[0].OwnerRealmID = "realm-2"
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, Prompter: platformFake, RepositoryDumpLoader: loader})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	select {
+	case call := <-loader.calls:
+		t.Fatalf("load dump proceeded on a repository not owned by the current realm: %+v", call)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if len(platformFake.Snapshot().ConfirmRequests) != 0 {
+		t.Fatal("confirmation shown for a repository the realm does not own")
 	}
 }
 

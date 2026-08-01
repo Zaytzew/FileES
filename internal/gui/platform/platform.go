@@ -81,6 +81,7 @@ const (
 	SettingsDialogAddFolder        SettingsDialogAction = "add_folder"
 	SettingsDialogDetachFolder     SettingsDialogAction = "detach_folder"
 	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
+	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"
 	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"
 	SettingsDialogRemoveRealm      SettingsDialogAction = "remove_realm"
 	SettingsDialogDownloadRecovery SettingsDialogAction = "download_recovery"

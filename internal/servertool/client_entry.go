@@ -9,6 +9,7 @@ import (
 	"filees/internal/obsandbox"
 	"filees/pkg/activation"
 	"filees/pkg/deploy"
+	"filees/pkg/onboarding"
 	"filees/pkg/serverconfig"
 )
 
@@ -42,8 +43,8 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		entryPromises = clientSVNEntryPromises
 	}
 	if originalCommand == ClientControlCommand {
-		// The entry process never opens SMTP itself, but its separately
-		// sandboxed mail child must retain these promises after exec.
+		// After the repository worker exits, this process drops proc/exec and
+		// uses the already locked filesystem profile for one mail attempt.
 		entryPromises += " inet dns"
 	}
 	if err := sandboxBegin(entryPromises); err != nil {
@@ -54,6 +55,15 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	if err != nil {
 		report(stderr, "filees-client-entry config", err)
 		return ExitConfig
+	}
+	// Loading the SMTP trust store can touch system paths which must not be
+	// added to the broad forced-command unveil profile. Prepare it before
+	// unveil is locked, but keep a mail-only failure non-fatal to the durable
+	// control operation below.
+	var mailConfig serverconfig.Config
+	var mailConfigErr error
+	if originalCommand == ClientControlCommand {
+		mailConfig, mailConfigErr = serverconfig.LoadFor(configPath, serverconfig.SecretSMTP)
 	}
 	profile := obsandbox.Profile{Name: "filees-client-entry/proof", Promises: entryPromises, Paths: []obsandbox.Path{
 		{Label: "activation", Name: config.Activation.Root, Perms: "rwc"},
@@ -71,13 +81,7 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	if originalCommand == ClientControlCommand {
 		r := config.Repositories
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"})
-		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "mail-worker", Name: mailPath, Perms: "rx"}, obsandbox.Path{Label: "resolver", Name: "/etc/resolv.conf", Perms: "r"}, obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"})
-		if config.SMTPPasswordFile != "" {
-			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "smtp-password", Name: config.SMTPPasswordFile, Perms: "r"})
-		}
-		if config.SMTPCAFile != "" {
-			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "smtp-ca", Name: config.SMTPCAFile, Perms: "r"})
-		}
+		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "resolver", Name: "/etc/resolv.conf", Perms: "r"}, obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"})
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "null-device", Name: "/dev/null", Perms: "rw"})
 		profile.Paths = append(profile.Paths,
 			obsandbox.Path{Label: "service-wc-parent", Name: filepath.Dir(config.Activation.ServiceWorkingCopy), Perms: "r"},
@@ -135,10 +139,13 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 			report(stderr, "filees-client-entry control", err)
 			return ExitSoftware
 		}
-		// Mail submission remains a separately sandboxed worker. A failure here
-		// never rewrites the already durable control result; the outbox is
-		// retried by the next server-side action instead of a periodic job.
-		if err := runMailAfterControl(stderr); err != nil {
+		// A failure here never rewrites the already durable control result; the
+		// outbox is retried by the next server-side action instead of a periodic
+		// job. The in-process attempt is required because OpenBSD carries the
+		// parent's locked unveil table across exec and forbids replacing it.
+		if mailConfigErr != nil {
+			report(stderr, "filees-client-entry mail trigger", mailConfigErr)
+		} else if err := runMailAfterControl(mailConfig, stderr); err != nil {
 			report(stderr, "filees-client-entry mail trigger", err)
 		}
 		return ExitOK
@@ -163,10 +170,27 @@ var runRepositoryWorkerProcess = func(tempRoot, clientID string, stdin io.Reader
 	return command.Run()
 }
 
-var runMailAfterControl = func(stderr io.Writer) error {
-	command := exec.Command(mailPath, "send")
-	command.Stdout, command.Stderr = io.Discard, stderr
-	return command.Run()
+var runMailAfterControl = deliverMailAfterControl
+
+func deliverMailAfterControl(config serverconfig.Config, stderr io.Writer) error {
+	// No child process or second unveil pass is allowed here. Once proc/exec is
+	// dropped, the process can only use the paths fixed by the client-entry
+	// profile and the network capabilities needed for SMTP.
+	if err := sandboxNarrow(mailPromises); err != nil {
+		return fmt.Errorf("narrow sandbox for mail: %w", err)
+	}
+	access := onboarding.Access{Areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit}
+	if err := onboarding.CheckExisting(config.Root, access); err != nil {
+		return fmt.Errorf("prepare mail repository: %w", err)
+	}
+	files, err := onboarding.OpenPrepared(config.Root, config.Onboarding, access)
+	if err != nil {
+		return fmt.Errorf("open mail repository: %w", err)
+	}
+	if code := deliverPendingMail(files, config, io.Discard, stderr); code != ExitOK {
+		return fmt.Errorf("mail delivery exited with status %d", code)
+	}
+	return nil
 }
 
 func clientSVNArgs(config serverconfig.Config, clientID, loginUser string) []string {

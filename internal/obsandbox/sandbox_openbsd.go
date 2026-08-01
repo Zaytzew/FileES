@@ -20,6 +20,19 @@ func Begin(runtimePromises string) error {
 	return nil
 }
 
+// Narrow drops promises after the process has finished the phase which needed
+// them. Unlike Apply it deliberately leaves the already locked unveil table
+// untouched, so it is safe to call after Apply or ApplyForExec.
+func Narrow(runtimePromises string) error {
+	if runtimePromises == "" {
+		return fmt.Errorf("runtime pledge: empty promises")
+	}
+	if err := unix.PledgePromises(runtimePromises); err != nil {
+		return fmt.Errorf("runtime pledge %q: %w", runtimePromises, err)
+	}
+	return nil
+}
+
 func Apply(profile Profile) error {
 	return apply(profile, "")
 }

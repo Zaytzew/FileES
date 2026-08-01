@@ -6,6 +6,13 @@ import "errors"
 
 func Begin(string) error { return nil }
 
+func Narrow(runtimePromises string) error {
+	if runtimePromises == "" {
+		return errors.New("runtime pledge requires promises")
+	}
+	return nil
+}
+
 func Apply(profile Profile) error { return Validate(profile) }
 
 func ApplyForExec(profile Profile, execPromises string) error {

@@ -1,6 +1,7 @@
 # FileES server toolchain bundle
 
-This bundle contains short-lived tools, not services:
+This bundle contains the short-lived server toolchain plus two optional,
+disabled-by-default Public Shares services:
 
 - `filees-admin` and `filees-operation` are administrative commands;
 - `filees-bootstrap-entry` is the bounded public-key forced command; it runs
@@ -10,7 +11,11 @@ This bundle contains short-lived tools, not services:
 - `filees-entry` is the tunnel-account forced command;
 - `filees-worker` is exec'd once per authenticated deploy and exits after its bounded action;
 - `filees-client-entry` is the per-key forced SVN entry used for possession proof and active read-only access;
-- `filees-mail` submits one pending outbox entry to a configured smarthost.
+- `filees-mail` submits one pending outbox entry to a configured smarthost;
+- `filees-public-authority` exposes the credential-free Public Shares
+  backchannel on a Unix socket or a loopback TCP endpoint;
+- `filees-links` serves the public surface through FastCGI and owns only its
+  temporary cache.
 
 Run `install-server.sh` as the target system administrator, edit
 `/etc/filees/server.json`, and keep both configuration and OTP pepper private.
@@ -26,6 +31,33 @@ and does not modify `sshd_config`. On OpenBSD, the separate
 `openbsd/install-ssh.sh` step creates the two protocol accounts, installs the
 local login style and a validated `Match User` fragment, then reloads the
 existing system sshd. It does not install a service, listener or `inetd` entry.
+
+Public Shares are installed disabled. The OpenBSD step creates `_filees-links`
+and `_filees-public`, installs disabled `filees_public_authority` and
+`filees_links` rc.d scripts, and assigns the shared-topology paths as follows:
+
+- canonical channel state: `_filees-state`, mode `0700`;
+- authority socket directory: `_filees-state:_filees-public`, mode `0750`,
+  socket mode `0660`;
+- public cache: `_filees-links`, mode `0700`, under `/var/tmp` and outside
+  backups;
+- FastCGI directory: `_filees-links:www`, mode `0750`, socket mode `0660`.
+
+`public_shares.max_size` limits one authoritative leaf before it can fill the
+private staging filesystem; omission defaults to 1 GiB.
+`max_channels_per_realm` defaults to 128 active/revoked channels, and
+`password_required` can prohibit unauthenticated open channels. The separate
+`public-links.json` `cache.max_size` is the hard total cache capacity and its
+TTL cannot exceed 24 hours. The shipped values are 1 GiB per leaf, 10 GiB total
+and 12 hours. Password verification is serialized, identical cache misses are
+coalesced, and the authority runs at most two concurrent `svnlook` fetches.
+
+After replacing the hostname and certificate paths, merge
+`openbsd/public-links.httpd.conf` into `/etc/httpd.conf`. Enable and start the
+authority before links, then validate and reload httpd. Neither FileES binary
+terminates TLS. In a split topology keep the same backchannel protocol and
+point both ends at loopback TCP provided by a server-established reverse SSH
+forward; never expose the authority port on a public interface.
 
 The shipped bootstrap private key is deliberately compiled into the client and
 must be considered public. Its authorized-key entry can only reach the

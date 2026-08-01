@@ -240,7 +240,7 @@ func TestLinuxBuildContainsFullClientServiceAndChecksums(t *testing.T) {
 	}
 }
 
-func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
+func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 	raw, err := os.ReadFile("build-server.sh")
 	if err != nil {
 		t.Fatal(err)
@@ -249,6 +249,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 	for _, required := range []string{
 		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail",
 		"filees-ssh-auth filees-entry filees-worker filees-client-entry filees-recovery-entry",
+		"filees-public-authority filees-links",
 		`"./cmd/$command"`, "SHA256SUMS", "sha256 -r",
 	} {
 		if !strings.Contains(text, required) {
@@ -260,7 +261,7 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	installerText := string(installer)
-	for _, required := range []string{"700", "600", "openssl rand -base64 32", "ssh-keygen -q -t ed25519", "No daemon or rc.d service"} {
+	for _, required := range []string{"700", "600", "openssl rand -base64 32", "ssh-keygen -q -t ed25519", "No daemon or rc.d service", "filees-public-authority", "filees-links"} {
 		if !strings.Contains(installerText, required) {
 			t.Errorf("server installer missing %q", required)
 		}
@@ -280,6 +281,8 @@ func TestServerBundleContainsOnlyShortLivedTools(t *testing.T) {
 		`-m 0555 "$bundle/bin/filees-onboard"`,
 		`-m 4511 "$bundle/bin/filees-entry"`,
 		`-m 0555 "$bundle/bin/filees-worker"`,
+		`-m 0555 "$bundle/bin/filees-public-authority"`,
+		`-m 0555 "$bundle/bin/filees-links"`,
 		`-m 4550 "$bundle/bin/filees-client-entry"`,
 		`-g _filees-recovery -m 4550 "$bundle/bin/filees-recovery-entry"`,
 		`-o root -g wheel -m 0555 "$bundle/bin/filees-recovery-entry" /usr/local/libexec/filees/filees-recovery-authorize`,

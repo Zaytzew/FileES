@@ -8,6 +8,7 @@ import (
 	"filees/pkg/onboarding"
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
+	"filees/public-shares/channel"
 	"io"
 	"path/filepath"
 	"time"
@@ -68,13 +69,20 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		Keys:        repoworker.RecoveryKeyStore{Root: filepath.Join(r.ResultsRoot, "recovery-keys")},
 	}
 	erasureStore := repoworker.DataErasureStore{Root: filepath.Join(r.ResultsRoot, "data-erasure")}
+	var publicShares repoworker.PublicShareService
+	var publicShareChannels *channel.Store
+	if config.PublicShares.Enabled {
+		stateRoot := config.PublicShares.EffectiveStateRoot(r.ResultsRoot)
+		publicShareChannels = &channel.Store{Root: stateRoot, Authority: publisher, TokenKey: config.Onboarding.OTPPepper, MaxChannelsPerRealm: config.PublicShares.EffectiveMaxChannelsPerRealm(), PasswordRequired: config.PublicShares.PasswordRequired}
+		publicShares = repoworker.ChannelPublicShareService{Channels: publicShareChannels, Deliverer: repoworker.PublicShareOutbox{Root: filepath.Join(stateRoot, "outbox")}}
+	}
 	realmRemoval := realmRemovalCoordinator{
 		Store:         realmRemovalStore,
 		SnapshotScope: publisher.SnapshotRealmScope,
 		ActiveClients: activationManager.ActiveClientsInRealm,
 		Execute: realmRemovalExecutor{
 			Store: realmRemovalStore, Backend: backend, Recovery: recoveryPublisher,
-			Publisher: publisher, Activation: activationManager, Erasure: erasureStore,
+			Publisher: publisher, Activation: activationManager, Erasure: erasureStore, PublicShares: publicShareChannels,
 			ErasureMaxDays: r.EffectiveDataErasureMaxDays(),
 		}.Execute,
 		Manifests: recoveryPublisher.Manifests,
@@ -94,7 +102,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		SVNLook:          r.EffectiveSVNLookBinary(),
 		SVNDumpFilter:    r.EffectiveSVNDumpFilterBinary(),
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, PublicShares: publicShares, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
 	dispatcher := repoworker.Dispatcher{
 		Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy},
 		Admission: realmRemovalAdmission{Fences: activationManager},

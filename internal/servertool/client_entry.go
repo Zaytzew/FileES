@@ -102,6 +102,12 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		if deletionArchiveNeedsOwnUnveil(r.ResultsRoot, r.DeletionArchiveRoot) {
 			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-deletion-archive", Name: r.DeletionArchiveRoot, Perms: "rwc"})
 		}
+		if config.PublicShares.Enabled {
+			stateRoot := config.PublicShares.EffectiveStateRoot(r.ResultsRoot)
+			if deletionArchiveNeedsOwnUnveil(r.ResultsRoot, stateRoot) {
+				profile.Paths = append(profile.Paths, obsandbox.Path{Label: "public-share-state", Name: stateRoot, Perms: "rwc"})
+			}
+		}
 		// Onboarding root + OTP pepper: needed by the exec'd worker to mint
 		// mobile pairing tokens (MOBILE_PAIRING ticket, onboarding.Files.
 		// CreateMobilePairing) - the same token-hashing discipline already
@@ -205,7 +211,7 @@ func deliverMailAfterControl(config serverconfig.Config, stderr io.Writer) error
 	if code := deliverPendingMail(files, config, io.Discard, stderr); code != ExitOK {
 		return fmt.Errorf("mail delivery exited with status %d", code)
 	}
-	return nil
+	return deliverPendingPublicShareMail(config, stderr)
 }
 
 func clientSVNArgs(config serverconfig.Config, clientID, loginUser string) []string {

@@ -48,8 +48,15 @@ Najpierw zakres, potem funkcje wewnątrz niego.
 
 ```
 public-shares/
-    slug/        przestrzeń nazw adresu: /<alias-realmu>/<slug>
-    manifest/    oba manifesty, typy i niezmienniki
+    slug/         przestrzeń nazw adresu: /<alias-realmu>/<slug>
+    manifest/     deklaracje oraz ich czyste niezmienniki
+    channel/      kanoniczny lifecycle, ACL i tombstone'y
+    gate/         tokeny odbiorców i ograniczony Argon2id
+    authority/    frost, bieżąca autoryzacja i dokładny odczyt przez svnlook
+    backchannel/  wersjonowany protokół granicy stref
+    cache/        prywatny, opcjonalny cache liści z TTL
+    web/          bezstanowy listing i attachmenty
+    linkservice/  konfiguracja i socket procesu FastCGI
 ```
 
 Kolejne pakiety dochodzą tą samą regułą — nazwa mówi, co robi, a nie z czego
@@ -57,18 +64,29 @@ się składa.
 
 ## Stan
 
-Zaczęte. Zaimplementowane:
+Kanał dystrybucji jest zaimplementowany pionowo: owner tworzy, aktualizuje,
+odwołuje i usuwa kanał przez control-plane; tożsamość ownera pochodzi z sesji,
+a grant `rw` nie wystarcza do publikacji. Publiczna projekcja nie potrafi
+reprezentować `repo_id`, `source_root` ani ścieżki repozytorium. Wejście zamraża
+konkretną rewizję, każde użycie cache'u jest poprzedzone ponowną autoryzacją,
+a revoke daje niejawne `404` także dla ciepłego wpisu.
 
-- `slug` — walidacja i składanie adresu publicznego, z przedrostkiem aliasu
-  realmu (`PUBLIC_SHARE_CONCEPT.md` §5.1);
-- `manifest` — `Share` i `Upload` z walidacją niezmienników, w tym rozdziału
-  `authority_repo_id` od per-channel `upload_repo_id` (`UPLOAD_CHANNEL_CONCEPT.md`
-  §2, §3) oraz obowiązkowej listy odbiorców przy kanale przyjęcia (§3.1).
-  Realm-wide `trash_repo` świadomie nie jest polem tego manifestu (§3, §6).
+Proces `filees-public-authority` pozostaje po stronie FileES i jako jedyny zna
+FSFS oraz mapowanie `public_id` na ścieżkę. `filees-links` ma wyłącznie prywatny
+cache, klucz krótkiej capability wizyty oraz połączenie backchannel; nie ma
+poświadczeń SVN. TLS i publiczne HTTP kończy zewnętrzny serwer, na OpenBSD
+`httpd(8)`, który przekazuje żądania do FastCGI.
 
-Do zrobienia, w kolejności zależności: bramka wejścia (token, OTP, hasło kanału
-otwartego), generowanie listingu, cache kluczowany rewizją, backchannel v1,
-odbiornik uploadu, binarek publiczny.
+Zasoby mają twarde granice w kodzie: pojedynczy liść nie przekracza polityki
+`public_shares.max_size`, dwie operacje `svnlook` mogą trwać równolegle,
+jednoczesne chybienia tego samego liścia są scalane, a kosztowna weryfikacja
+Argon2id jest serializowana. Limit połączeń i tempo żądań ustawia frontujący
+serwer HTTP. Host może ponadto ograniczyć liczbę aktywnych lub odwołanych
+kanałów realmu i wymagać hasła dla kanałów bez listy odbiorców.
+
+Manifest kanału przyjęcia pozostaje tylko rozpoczętym kontraktem. Receiver,
+kwarantanna i AV dla Upload Channel są osobnym etapem i nie współdzielą procesu
+ani poświadczeń z dystrybucją.
 
 ## Testy
 
@@ -78,3 +96,6 @@ go test ./public-shares/...
 
 Pakiety tego pionu nie wymagają sieci, SVN-a ani uprawnień. Jeżeli któryś
 kiedykolwiek będzie wymagał, to znaczy, że złamał zasadę 2.
+
+Pełny test z prawdziwym repozytorium FSFS i `svnlook` znajduje się w
+`internal/servertool/public_shares_e2e_test.go`; wymaga dostępnych binariów SVN.

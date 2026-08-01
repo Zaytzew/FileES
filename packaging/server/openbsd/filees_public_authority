@@ -1,0 +1,10 @@
+#!/bin/ksh
+
+daemon="/usr/local/libexec/filees/filees-public-authority"
+daemon_user="_filees-state"
+daemon_flags="-config /etc/filees/server.json"
+rc_bg=YES
+
+. /etc/rc.d/rc.subr
+
+rc_cmd $1

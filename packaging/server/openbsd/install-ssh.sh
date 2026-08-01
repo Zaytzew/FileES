@@ -9,14 +9,23 @@ fi
 bundle=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 state_user=_filees-state
 client_access_group=_filees-access
+public_access_group=_filees-public
 
 if ! grep -q "^${client_access_group}:" /etc/group; then
 	groupadd "$client_access_group"
+fi
+if ! grep -q "^${public_access_group}:" /etc/group; then
+	groupadd "$public_access_group"
 fi
 
 if ! id "$state_user" >/dev/null 2>&1; then
 	useradd -c "FileES state owner" -d /var/empty -s /sbin/nologin "$state_user"
 fi
+if ! id _filees-links >/dev/null 2>&1; then
+	useradd -c "FileES public links" -d /var/empty -s /sbin/nologin _filees-links
+fi
+usermod -G "$public_access_group" "$state_user"
+usermod -G "$public_access_group,www" _filees-links
 
 install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/filees-tunnel.login.conf" /etc/login.conf.d/filees-tunnel
 cap_mkdb /etc/login.conf.d/filees-tunnel
@@ -58,6 +67,8 @@ install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-bootstrap-entry" /
 install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-entry" /usr/local/libexec/filees/filees-entry
 install -o root -g wheel -m 0555 "$bundle/bin/filees-worker" /usr/local/libexec/filees/filees-worker
 install -o root -g wheel -m 0555 "$bundle/bin/filees-mail" /usr/local/libexec/filees/filees-mail
+install -o root -g wheel -m 0555 "$bundle/bin/filees-public-authority" /usr/local/libexec/filees/filees-public-authority
+install -o root -g wheel -m 0555 "$bundle/bin/filees-links" /usr/local/libexec/filees/filees-links
 install -o "$state_user" -g "$client_access_group" -m 4550 "$bundle/bin/filees-client-entry" /usr/local/libexec/filees/filees-client-entry
 install -o "$state_user" -g _filees-recovery -m 4550 "$bundle/bin/filees-recovery-entry" /usr/local/libexec/filees/filees-recovery-entry
 # OpenSSH requires every AuthorizedKeysCommand component to be root-owned and
@@ -68,6 +79,9 @@ install -o root -g wheel -m 0555 "$bundle/bin/filees-recovery-entry" /usr/local/
 install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/bootstrap_authorized_keys" /etc/ssh/filees_bootstrap_authorized_keys
 install -d -o root -g wheel -m 755 /etc/ssh/sshd_config.d
 install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/filees.conf" /etc/ssh/sshd_config.d/filees.conf
+install -o root -g wheel -m 0555 "$bundle/share/filees/openbsd/filees_public_authority" /etc/rc.d/filees_public_authority
+install -o root -g wheel -m 0555 "$bundle/share/filees/openbsd/filees_links" /etc/rc.d/filees_links
+install -o root -g wheel -m 0644 "$bundle/share/filees/openbsd/public-links.httpd.conf" /etc/examples/filees-public-links.httpd.conf
 
 # The ports build of svnserve probes this fixed SASL configuration directory.
 # Keep it present so filees-client-entry can unveil the exact path, not /etc.
@@ -75,6 +89,11 @@ install -d -o root -g wheel -m 755 /etc/sasl2 /etc/subversion
 
 install -d -o "$state_user" -g wheel -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs /var/filees/sessions
 install -d -o "$state_user" -g wheel -m 700 /var/filees/repositories /var/filees/repository-operations
+install -d -o "$state_user" -g wheel -m 700 /var/filees/repository-operations/public-shares
+install -d -o "$state_user" -g wheel -m 700 /var/tmp/filees-public-share-authority
+install -d -o _filees-links -g wheel -m 700 /var/tmp/filees-public-shares-cache
+install -d -o "$state_user" -g "$public_access_group" -m 750 /var/run/filees
+install -d -o _filees-links -g www -m 750 /var/www/run/filees
 if [ ! -e /var/filees/activation/authorized_keys ]; then
 	install -o "$state_user" -g wheel -m 600 /dev/null /var/filees/activation/authorized_keys
 fi
@@ -110,13 +129,17 @@ chown "$state_user":wheel /var/filees
 chmod 700 /var/filees
 chown -R "$state_user":wheel /var/filees/onboarding
 chmod 700 /var/filees/onboarding /var/filees/onboarding/tickets /var/filees/onboarding/operations /var/filees/onboarding/audit
-chown "$state_user":wheel /etc/filees
-chmod 700 /etc/filees
+chown "$state_user":"$public_access_group" /etc/filees
+chmod 750 /etc/filees
 chown "$state_user":wheel /etc/filees/server.json /etc/filees/otp.pepper /etc/filees/worker_ed25519
 chmod 600 /etc/filees/server.json /etc/filees/otp.pepper /etc/filees/worker_ed25519
+chown "$state_user":wheel /etc/filees/public-share-frost.key
+chmod 600 /etc/filees/public-share-frost.key
+chown _filees-links:wheel /etc/filees/public-links.json /etc/filees/public-share-visit.key
+chmod 600 /etc/filees/public-links.json /etc/filees/public-share-visit.key
 chown root:wheel /etc/filees/worker_ed25519.pub
 chmod 644 /etc/filees/worker_ed25519.pub
 
 sshd -t
 rcctl reload sshd
-echo "FileES SSH entries and service repository installed; no service or listener was added."
+echo "FileES SSH entries, Public Shares users, binaries and disabled rc.d scripts installed; no Public Shares listener was started."

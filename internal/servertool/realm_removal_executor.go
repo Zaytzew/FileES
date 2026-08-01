@@ -19,6 +19,7 @@ type realmRemovalExecutor struct {
 	Publisher      realmRemovalGrantPublisher
 	Activation     realmRemovalRevoker
 	Erasure        realmRemovalErasure
+	PublicShares   realmPublicShareEraser
 	ErasureMaxDays int
 }
 
@@ -39,6 +40,7 @@ type realmRemovalErasure interface {
 	Accept(repoworker.RealmRemovalRecord, int) (repoworker.DataErasureRecord, error)
 	MarkActiveDataDeleted(string) (repoworker.DataErasureRecord, error)
 }
+type realmPublicShareEraser interface{ DeleteRealm(string) (int, error) }
 
 func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.RealmRemovalRecord) error {
 	if e.Backend == nil || e.Recovery == nil || e.Publisher == nil || e.Activation == nil {
@@ -86,6 +88,11 @@ func (e realmRemovalExecutor) Execute(ctx context.Context, record repoworker.Rea
 			return err
 		}
 		if record.Request.ErasureRequested {
+			if e.PublicShares != nil {
+				if _, err := e.PublicShares.DeleteRealm(record.RealmID); err != nil {
+					return err
+				}
+			}
 			if _, err := e.Erasure.MarkActiveDataDeleted(record.OperationID); err != nil {
 				return err
 			}

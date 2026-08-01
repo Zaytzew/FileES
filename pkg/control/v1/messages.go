@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"filees/pkg/realmalias"
+	publicmanifest "filees/public-shares/manifest"
+	publicslug "filees/public-shares/slug"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
@@ -58,6 +60,10 @@ const (
 	TicketRevokeAccess        TicketType = "REVOKE_ACCESS"
 	TicketListGrantRecipients TicketType = "LIST_GRANT_RECIPIENTS"
 	TicketSetRealmVisibility  TicketType = "SET_REALM_DIRECTORY_VISIBILITY"
+	TicketCreatePublicShare   TicketType = "CREATE_PUBLIC_SHARE"
+	TicketUpdatePublicShare   TicketType = "UPDATE_PUBLIC_SHARE"
+	TicketRevokePublicShare   TicketType = "REVOKE_PUBLIC_SHARE"
+	TicketDeletePublicShare   TicketType = "DELETE_PUBLIC_SHARE"
 )
 
 type ResultStatus string
@@ -177,6 +183,44 @@ type SetRealmDirectoryVisibilityPayload struct {
 }
 type SetRealmDirectoryVisibilityResult struct {
 	Visibility string `json:"visibility"`
+}
+
+type PublicShareObject struct {
+	PublicID    string `json:"public_id"`
+	RepoPath    string `json:"repo_path"`
+	DisplayName string `json:"display_name"`
+}
+
+// PublicShareDeclaration carries no owner realm: the worker always derives it
+// from the authenticated session. PasswordHash is a verifier prepared on the
+// client; plaintext passwords must never enter the SVN-backed ticket stream.
+type PublicShareDeclaration struct {
+	RepoID       string              `json:"repo_id"`
+	SourceRoot   string              `json:"source_root"`
+	Slug         string              `json:"slug"`
+	Recipients   []string            `json:"recipients,omitempty"`
+	PasswordHash string              `json:"password_hash,omitempty"`
+	DoNotFollow  *int64              `json:"do-not-follow,omitempty"`
+	Objects      []PublicShareObject `json:"object_map"`
+}
+
+type CreatePublicSharePayload struct{ PublicShareDeclaration }
+type UpdatePublicSharePayload struct {
+	ChannelID string `json:"channel_id"`
+	PublicShareDeclaration
+}
+type RevokePublicSharePayload struct {
+	ChannelID string `json:"channel_id"`
+}
+type DeletePublicSharePayload struct {
+	ChannelID string `json:"channel_id"`
+}
+type PublicShareResult struct {
+	ChannelID           string `json:"channel_id"`
+	Alias               string `json:"alias"`
+	Slug                string `json:"slug"`
+	State               string `json:"state"`
+	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
 }
 
 type ClientDeactivatePayload struct{}
@@ -414,6 +458,41 @@ func (t Ticket) Validate() error {
 		if p.Visibility != "hidden" && p.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY visibility must be hidden or listed")
 		}
+	case TicketCreatePublicShare:
+		var p CreatePublicSharePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("CREATE_PUBLIC_SHARE payload: %w", err)
+		}
+		if err := validatePublicShareDeclaration(p.PublicShareDeclaration); err != nil {
+			return fmt.Errorf("CREATE_PUBLIC_SHARE payload: %w", err)
+		}
+	case TicketUpdatePublicShare:
+		var p UpdatePublicSharePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("UPDATE_PUBLIC_SHARE payload: %w", err)
+		}
+		if err := validateUUID("UPDATE_PUBLIC_SHARE payload.channel_id", p.ChannelID); err != nil {
+			return err
+		}
+		if err := validatePublicShareDeclaration(p.PublicShareDeclaration); err != nil {
+			return fmt.Errorf("UPDATE_PUBLIC_SHARE payload: %w", err)
+		}
+	case TicketRevokePublicShare:
+		var p RevokePublicSharePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("REVOKE_PUBLIC_SHARE payload: %w", err)
+		}
+		if err := validateUUID("REVOKE_PUBLIC_SHARE payload.channel_id", p.ChannelID); err != nil {
+			return err
+		}
+	case TicketDeletePublicShare:
+		var p DeletePublicSharePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("DELETE_PUBLIC_SHARE payload: %w", err)
+		}
+		if err := validateUUID("DELETE_PUBLIC_SHARE payload.channel_id", p.ChannelID); err != nil {
+			return err
+		}
 	case TicketClientDeactivate:
 		var p ClientDeactivatePayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -468,7 +547,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -613,6 +692,33 @@ func validateSuccessPayload(r Result) error {
 		if result.Visibility != "hidden" && result.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY result is invalid")
 		}
+	case TicketCreatePublicShare, TicketUpdatePublicShare, TicketRevokePublicShare, TicketDeletePublicShare:
+		var result PublicShareResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("public share result: %w", err)
+		}
+		if err := validateUUID("public share result.channel_id", result.ChannelID); err != nil {
+			return err
+		}
+		if _, err := realmalias.Normalize(result.Alias); err != nil {
+			return errors.New("public share result alias is invalid")
+		}
+		if _, err := publicslug.Normalize(result.Slug); err != nil {
+			return errors.New("public share result slug is invalid")
+		}
+		if result.RecipientDeliveries < 0 {
+			return errors.New("public share result recipient_deliveries cannot be negative")
+		}
+		wantState := "active"
+		if r.Type == TicketRevokePublicShare {
+			wantState = "revoked"
+		}
+		if r.Type == TicketDeletePublicShare {
+			wantState = "deleted"
+		}
+		if result.State != wantState {
+			return errors.New("public share result state is invalid")
+		}
 	case TicketClientDeactivate:
 		var result ClientDeactivateResult
 		if err := decodeStrict(r.Result, &result); err != nil {
@@ -693,6 +799,89 @@ func decodeStrict(raw json.RawMessage, dst any) error {
 		return errors.New("multiple JSON values")
 	} else if !errors.Is(err, io.EOF) {
 		return err
+	}
+	return nil
+}
+
+func validatePublicShareDeclaration(p PublicShareDeclaration) error {
+	if err := validateUUID("repo_id", p.RepoID); err != nil {
+		return err
+	}
+	if parsed, _ := uuid.Parse(p.RepoID); parsed.String() != p.RepoID {
+		return errors.New("repo_id must be a canonical UUID")
+	}
+	normalizedSlug, err := publicslug.Normalize(p.Slug)
+	if err != nil || normalizedSlug != p.Slug {
+		return errors.New("slug must be normalized")
+	}
+	if err := validatePublicSharePath("source_root", p.SourceRoot); err != nil {
+		return err
+	}
+	if len(p.Recipients) > 256 {
+		return errors.New("recipients exceeds 256 addresses")
+	}
+	if len(p.Recipients) > 0 && p.PasswordHash != "" {
+		return errors.New("closed share cannot carry a shared password")
+	}
+	if p.PasswordHash != "" {
+		if len(p.PasswordHash) > 512 || publicmanifest.ValidatePasswordVerifier(p.PasswordHash) != nil {
+			return errors.New("password_hash is not a bounded Argon2id verifier")
+		}
+	}
+	seenRecipients := map[string]bool{}
+	for _, raw := range p.Recipients {
+		email, err := validatePlainEmail(raw)
+		if err != nil {
+			return errors.New("recipient address is invalid")
+		}
+		key := strings.ToLower(email)
+		if seenRecipients[key] {
+			return errors.New("recipient list contains duplicate address")
+		}
+		seenRecipients[key] = true
+	}
+	if p.DoNotFollow != nil && *p.DoNotFollow < 1 {
+		return errors.New("do-not-follow must be at least 1")
+	}
+	if len(p.Objects) == 0 || len(p.Objects) > 4096 {
+		return errors.New("object_map must contain 1 to 4096 objects")
+	}
+	seenObjects := map[string]bool{}
+	rootPrefix := p.SourceRoot + "/"
+	for i, object := range p.Objects {
+		if len(object.PublicID) < 16 || len(object.PublicID) > 64 {
+			return fmt.Errorf("object_map[%d].public_id has invalid length", i)
+		}
+		for _, ch := range object.PublicID {
+			if (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') {
+				return fmt.Errorf("object_map[%d].public_id is invalid", i)
+			}
+		}
+		if seenObjects[object.PublicID] {
+			return errors.New("object_map contains duplicate public_id")
+		}
+		seenObjects[object.PublicID] = true
+		if err := validatePublicSharePath(fmt.Sprintf("object_map[%d].repo_path", i), object.RepoPath); err != nil {
+			return err
+		}
+		if !strings.HasPrefix(object.RepoPath, rootPrefix) {
+			return fmt.Errorf("object_map[%d].repo_path is outside source_root", i)
+		}
+		if strings.TrimSpace(object.DisplayName) == "" || len(object.DisplayName) > 512 || strings.ContainsAny(object.DisplayName, "\x00\r\n") {
+			return fmt.Errorf("object_map[%d].display_name is invalid", i)
+		}
+	}
+	return nil
+}
+
+func validatePublicSharePath(field, value string) error {
+	if value == "" || value != strings.TrimSpace(value) || strings.HasPrefix(value, "/") || strings.ContainsAny(value, "\\\x00") || strings.Contains(value, "//") {
+		return fmt.Errorf("%s is not a canonical repository-relative path", field)
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return fmt.Errorf("%s contains a relative segment", field)
+		}
 	}
 	return nil
 }

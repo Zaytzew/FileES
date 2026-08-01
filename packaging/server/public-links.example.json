@@ -1,0 +1,19 @@
+{
+  "schema": "filees.public-links/v1",
+  "fastcgi": {
+    "network": "unix",
+    "address": "/var/www/run/filees/filees-links.sock",
+    "socket_group": "www"
+  },
+  "backchannel": {
+    "network": "unix",
+    "address": "/var/run/filees/public-authority.sock"
+  },
+  "visit_key_file": "/etc/filees/public-share-visit.key",
+  "cache": {
+    "enabled": true,
+    "root": "/var/tmp/filees-public-shares-cache",
+    "ttl": "12h",
+    "max_size": 10737418240
+  }
+}

@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,19 +25,34 @@ import (
 const Schema = "filees.server-toolchain/v1"
 
 type File struct {
-	Schema               string         `json:"schema"`
-	Root                 string         `json:"root"`
-	OTPPepperFile        string         `json:"otp_pepper_file"`
-	OperationTTL         string         `json:"operation_ttl"`
-	OTPAttempts          int            `json:"otp_attempts"`
-	ReversePortFirst     uint16         `json:"reverse_port_first"`
-	ReversePortLast      uint16         `json:"reverse_port_last"`
-	WorkerPrivateKeyFile string         `json:"worker_private_key_file,omitempty"`
-	WorkerPublicKeyFile  string         `json:"worker_public_key_file,omitempty"`
-	Activation           ActivationFile `json:"activation,omitempty"`
-	Repositories         RepositoryFile `json:"repositories,omitempty"`
-	Invitation           InvitationFile `json:"invitation,omitempty"`
-	SMTP                 SMTPFile       `json:"smtp"`
+	Schema               string           `json:"schema"`
+	Root                 string           `json:"root"`
+	OTPPepperFile        string           `json:"otp_pepper_file"`
+	OperationTTL         string           `json:"operation_ttl"`
+	OTPAttempts          int              `json:"otp_attempts"`
+	ReversePortFirst     uint16           `json:"reverse_port_first"`
+	ReversePortLast      uint16           `json:"reverse_port_last"`
+	WorkerPrivateKeyFile string           `json:"worker_private_key_file,omitempty"`
+	WorkerPublicKeyFile  string           `json:"worker_public_key_file,omitempty"`
+	Activation           ActivationFile   `json:"activation,omitempty"`
+	Repositories         RepositoryFile   `json:"repositories,omitempty"`
+	Invitation           InvitationFile   `json:"invitation,omitempty"`
+	SMTP                 SMTPFile         `json:"smtp"`
+	PublicShares         PublicSharesFile `json:"public_shares,omitempty"`
+}
+
+type PublicSharesFile struct {
+	Enabled                bool   `json:"enabled,omitempty"`
+	BaseURL                string `json:"base_url,omitempty"`
+	StateRoot              string `json:"state_root,omitempty"`
+	FrostKeyFile           string `json:"frost_key_file,omitempty"`
+	AuthorityStagingRoot   string `json:"authority_staging_root,omitempty"`
+	BackchannelNetwork     string `json:"backchannel_network,omitempty"`
+	BackchannelAddress     string `json:"backchannel_address,omitempty"`
+	BackchannelSocketGroup string `json:"backchannel_socket_group,omitempty"`
+	MaxLeafSize            int64  `json:"max_size,omitempty"`
+	MaxChannelsPerRealm    int    `json:"max_channels_per_realm,omitempty"`
+	PasswordRequired       bool   `json:"password_required,omitempty"`
 }
 
 // InvitationFile contains the public, pinned bootstrap profile that is
@@ -142,6 +160,8 @@ type Config struct {
 	Activation           activation.Config
 	Repositories         RepositoryFile
 	Invitation           InvitationFile
+	PublicShares         PublicSharesFile
+	PublicShareFrostKey  []byte
 }
 
 type Secrets uint8
@@ -152,6 +172,7 @@ const (
 	SecretWorker
 	SecretWorkerPublic
 	SecretActivation
+	SecretPublicShares
 )
 
 // Load retains the original full onboarding configuration contract.
@@ -273,6 +294,17 @@ func load(path string, secrets Secrets) (Config, error) {
 			return Config{}, errors.New("OTP pepper file must contain base64 for at least 32 bytes")
 		}
 	}
+	var publicShareFrostKey []byte
+	if file.PublicShares.Enabled && secrets&SecretPublicShares != 0 {
+		keyRaw, err := readPrivateSecret(file.PublicShares.FrostKeyFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("public share frost key: %w", err)
+		}
+		publicShareFrostKey, err = base64.StdEncoding.DecodeString(string(keyRaw))
+		if err != nil || len(publicShareFrostKey) < 32 {
+			return Config{}, errors.New("public share frost key must contain base64 for at least 32 bytes")
+		}
+	}
 	connectTimeout, err := optionalDuration(file.SMTP.ConnectTimeout, 10*time.Second)
 	if err != nil {
 		return Config{}, fmt.Errorf("SMTP connect_timeout: %w", err)
@@ -332,6 +364,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		WorkerPrivateKeyFile: file.WorkerPrivateKeyFile, WorkerSigner: workerSigner,
 		WorkerPublicKeyFile: file.WorkerPublicKeyFile, WorkerPublicKey: workerPublicKey,
 		Invitation:   file.Invitation,
+		PublicShares: file.PublicShares, PublicShareFrostKey: publicShareFrostKey,
 		Activation:   activationConfig,
 		Repositories: file.Repositories,
 		Onboarding:   onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
@@ -361,7 +394,79 @@ func load(path string, secrets Secrets) (Config, error) {
 	if err := smtpsubmit.ValidateConfig(smtpForValidation); err != nil {
 		return Config{}, fmt.Errorf("SMTP config: %w", err)
 	}
+	if err := validatePublicShares(file.PublicShares, file.Repositories.ResultsRoot); err != nil {
+		return Config{}, err
+	}
 	return config, nil
+}
+
+func (p PublicSharesFile) EffectiveStateRoot(resultsRoot string) string {
+	if p.StateRoot != "" {
+		return filepath.Clean(p.StateRoot)
+	}
+	return filepath.Join(resultsRoot, "public-shares")
+}
+
+func (p PublicSharesFile) EffectiveAuthorityStagingRoot() string {
+	if p.AuthorityStagingRoot != "" {
+		return filepath.Clean(p.AuthorityStagingRoot)
+	}
+	return "/var/tmp/filees-public-share-authority"
+}
+
+func (p PublicSharesFile) EffectiveMaxLeafSize() int64 {
+	if p.MaxLeafSize != 0 {
+		return p.MaxLeafSize
+	}
+	return 1 << 30
+}
+
+func (p PublicSharesFile) EffectiveMaxChannelsPerRealm() int {
+	if p.MaxChannelsPerRealm != 0 {
+		return p.MaxChannelsPerRealm
+	}
+	return 128
+}
+
+func validatePublicShares(p PublicSharesFile, resultsRoot string) error {
+	if !p.Enabled {
+		return nil
+	}
+	base, err := url.Parse(p.BaseURL)
+	if err != nil || base.Scheme != "https" || base.Host == "" || (base.Path != "" && base.Path != "/") || base.RawQuery != "" || base.Fragment != "" {
+		return errors.New("public_shares base_url must be an HTTPS origin")
+	}
+	if !filepath.IsAbs(p.EffectiveStateRoot(resultsRoot)) || !filepath.IsAbs(p.FrostKeyFile) || !filepath.IsAbs(p.EffectiveAuthorityStagingRoot()) {
+		return errors.New("public_shares state, frost key and staging paths must be absolute")
+	}
+	if p.EffectiveMaxLeafSize() <= 0 || p.EffectiveMaxLeafSize() > 1<<40 {
+		return errors.New("public_shares max_size must be positive and at most 1 TiB")
+	}
+	if p.EffectiveMaxChannelsPerRealm() < 1 || p.EffectiveMaxChannelsPerRealm() > 100000 {
+		return errors.New("public_shares max_channels_per_realm must be 1 to 100000")
+	}
+	if p.BackchannelNetwork != "unix" && p.BackchannelNetwork != "tcp" {
+		return errors.New("public_shares backchannel_network must be unix or tcp")
+	}
+	if p.BackchannelNetwork == "unix" {
+		if !filepath.IsAbs(p.BackchannelAddress) {
+			return errors.New("public_shares unix backchannel address must be absolute")
+		}
+		return nil
+	}
+	if p.BackchannelSocketGroup != "" {
+		return errors.New("public_shares backchannel_socket_group is only valid for unix")
+	}
+	host, port, err := net.SplitHostPort(p.BackchannelAddress)
+	if err != nil {
+		return errors.New("public_shares tcp backchannel address is invalid")
+	}
+	portNumber, err := strconv.Atoi(port)
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil || !ip.IsLoopback() || err != nil || portNumber < 1 || portNumber > 65535 {
+		return errors.New("public_shares tcp backchannel must bind loopback")
+	}
+	return nil
 }
 
 func readPrivateSecret(path string) ([]byte, error) {

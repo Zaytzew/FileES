@@ -8,8 +8,11 @@ Koncepcje, których to jest realizacją:
 - `concepts/PUBLIC_SHARE_CONCEPT.md` — kierunek wydawania;
 - `concepts/UPLOAD_CHANNEL_CONCEPT.md` — kierunek przyjmowania.
 
-Dokumenty są nadrzędne. Jeżeli kod i koncepcja się rozjeżdżają, to nie znaczy
-automatycznie, że kod ma rację — patrz `COMPONENT_MAP.md` §2.
+Dokumenty są nadrzędne. Bieżący wyjątek jest jawny: manifest uploadu z r376
+używa jeszcze `trash_repo_id`, podczas gdy robocza koncepcja przeszła na
+per-channel `upload_repo_id` i jeden realm-wide `trash_repo`. Do czasu
+migracji nie wolno traktować schematu uploadu z tego pakietu jako wydanego
+kontraktu.
 
 ---
 
@@ -61,9 +64,9 @@ Zaczęte. Zaimplementowane:
 
 - `slug` — walidacja i składanie adresu publicznego, z przedrostkiem aliasu
   realmu (`PUBLIC_SHARE_CONCEPT.md` §5.1);
-- `manifest` — `Share` i `Upload` z walidacją niezmienników, w tym rozdziału
-  `authority_repo_id` od `trash_repo_id` (`UPLOAD_CHANNEL_CONCEPT.md` §2) oraz
-  obowiązkowej listy odbiorców przy kanale przyjęcia (§3.1).
+- `manifest` — `Share` oraz pierwszy, **nieaktualny kontraktowo** wariant
+  `Upload`; część share może być rozwijana, część upload wymaga najpierw
+  migracji pól i testów do aktualnej koncepcji.
 
 Do zrobienia, w kolejności zależności: bramka wejścia (token, OTP, hasło kanału
 otwartego), generowanie listingu, cache kluczowany rewizją, backchannel v1,

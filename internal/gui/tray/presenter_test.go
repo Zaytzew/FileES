@@ -19,9 +19,39 @@ func TestBuildMenuDisconnectedMarksSnapshotStale(t *testing.T) {
 	if menu.Icon != app.IconDisconnected || menu.Title != "FileES — Brak połączenia" {
 		t.Fatalf("menu header = %#v", menu)
 	}
-	refresh := findItem(t, menu.Items, "system.refreshed")
-	if refresh.Enabled || refresh.Title != "Ostatnia aktualizacja: 20:30:00 (dane nieaktualne)" {
-		t.Fatalf("refresh item = %#v", refresh)
+}
+
+func TestBuildMenuClientGroupGatesRestartAndShutdown(t *testing.T) {
+	menu := BuildMenu(app.ViewModel{Connected: true})
+	client := findItem(t, menu.Items, "client")
+	if client.Title != "Klient" {
+		t.Fatalf("client group title = %q", client.Title)
+	}
+	if !hasItem(client.Children, "action.reconnect") {
+		t.Fatal("reconnect should always be present, it has no capability gate")
+	}
+	if hasItem(client.Children, "action.restart_filees") || hasItem(client.Children, "action.shutdown_filees") {
+		t.Fatalf("restart/shutdown visible without capabilities: %+v", client.Children)
+	}
+
+	menu = BuildMenu(app.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapSystemRestart: true, contract.CapSystemShutdown: true},
+	})
+	client = findItem(t, menu.Items, "client")
+	if !hasItem(client.Children, "action.restart_filees") || !hasItem(client.Children, "action.shutdown_filees") {
+		t.Fatalf("restart/shutdown missing with capabilities granted: %+v", client.Children)
+	}
+}
+
+func TestBuildMenuHeaderHasNoInfoRows(t *testing.T) {
+	vm := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "Biuro"}}}
+	menu := BuildMenu(vm)
+	if hasItem(menu.Items, "system.status") || hasItem(menu.Items, "system.refreshed") {
+		t.Fatalf("header info rows should not appear as menu items: %+v", menu.Items)
+	}
+	if menu.Title != "FileES — Połączono" || menu.Tooltip != "FileES — Połączono — repozytoria: 0" {
+		t.Fatalf("header no longer carries activation suffix = %#v", menu)
 	}
 }
 
@@ -88,8 +118,9 @@ func TestBuildMenuOffersDetachDeleteAndWholeStackLifecycle(t *testing.T) {
 	if hasItem(repoItem.Children, "repo.docs.detach") || hasItem(repoItem.Children, "repo.docs.delete") {
 		t.Fatalf("folder lifecycle actions must be managed through settings: %+v", repoItem.Children)
 	}
-	if !hasItem(menu.Items, "action.restart_filees") || !hasItem(menu.Items, "action.shutdown_filees") {
-		t.Fatalf("whole-stack lifecycle actions missing: %+v", menu.Items)
+	client := findItem(t, menu.Items, "client")
+	if !hasItem(client.Children, "action.restart_filees") || !hasItem(client.Children, "action.shutdown_filees") {
+		t.Fatalf("whole-stack lifecycle actions missing from client group: %+v", client.Children)
 	}
 	if hasItem(menu.Items, "action.quit") {
 		t.Fatal("misleading GUI-only quit action is still visible")
@@ -257,10 +288,11 @@ func TestBuildMenuGroupsReadOnlyRepoUnderActiveServer(t *testing.T) {
 	}
 }
 
-func TestBuildMenuHeaderShowsAtLeastOneActiveServer(t *testing.T) {
-	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net"}}})
-	if menu.Title != "FileES — Połączono — Klient aktywowany" {
-		t.Fatalf("menu title = %q", menu.Title)
+func TestBuildMenuHeaderDoesNotVaryWithActivation(t *testing.T) {
+	inactive := BuildMenu(app.ViewModel{Connected: true})
+	active := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "filees.example.net"}}})
+	if inactive.Title != active.Title || inactive.Title != "FileES — Połączono" {
+		t.Fatalf("header should not carry an activation suffix: inactive=%q active=%q", inactive.Title, active.Title)
 	}
 }
 
@@ -293,23 +325,27 @@ func TestServerMenuUsesAliasWithOnlyServerScopedManagementAction(t *testing.T) {
 	}
 }
 
-func TestBuildMenuExposesGlobalReservationListAndDisablesItWhenEmpty(t *testing.T) {
+func TestBuildMenuFluentReservationsSectionVanishesWhenEmpty(t *testing.T) {
 	base := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "office"}}}
 	if hasItem(BuildMenu(base).Items, "action.reservations") {
 		t.Fatal("reservation action shown without capability")
 	}
 	base.Capabilities = map[string]bool{contract.CapRepoReservationList: true}
-	empty := findItem(t, BuildMenu(base).Items, "action.reservations")
-	if empty.Enabled || empty.Title != "Lista rezerwacji plikowych" {
-		t.Fatalf("empty reservation action = %+v", empty)
+	menu := BuildMenu(base)
+	if hasItem(menu.Items, "action.reservations") || hasItem(menu.Items, "sep.fluent") {
+		t.Fatalf("fluent section must vanish entirely, separator included, when nothing is active: %+v", menu.Items)
 	}
 	base.Servers[0].ReservationsKnown = true
 	base.Servers[0].ReservationCount = 1
-	item := findItem(t, BuildMenu(base).Items, "action.reservations")
+	menu = BuildMenu(base)
+	if !hasItem(menu.Items, "sep.fluent") {
+		t.Fatal("fluent separator missing once a shortcut is active")
+	}
+	item := findItem(t, menu.Items, "action.reservations")
 	if item.Intent == nil || item.Intent.Kind != IntentReservations {
 		t.Fatalf("reservation action = %+v", item)
 	}
-	server := findItem(t, BuildMenu(base).Items, "server.office")
+	server := findItem(t, menu.Items, "server.office")
 	if hasItem(server.Children, "server.office.reservations") {
 		t.Fatal("reservation action must not be nested under the server")
 	}

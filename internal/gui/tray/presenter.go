@@ -9,28 +9,13 @@ import (
 
 // BuildMenu converts an app ViewModel into a deterministic tray menu.
 func BuildMenu(vm app.ViewModel) MenuModel {
-	active := len(vm.Servers) > 0
 	status := connectionLabel(vm)
 	model := MenuModel{
 		Icon:    vm.Icon,
 		Title:   "FileES — " + status,
 		Tooltip: fmt.Sprintf("FileES — %s — repozytoria: %d", status, len(vm.Repos)),
 	}
-	if active {
-		model.Title += " — Klient aktywowany"
-		model.Tooltip += " — klient aktywowany"
-	}
-	model.Items = append(model.Items,
-		disabledItem("system.status", model.Title),
-		disabledItem("system.refreshed", lastRefreshLabel(vm)),
-	)
-	if vm.SupportsReservationListing() {
-		if vm.CanBrowseReservations() {
-			model.Items = append(model.Items, actionItem("action.reservations", "Lista rezerwacji plikowych", "Pokaż aktywne rezerwacje ze wszystkich serwerów FileES", Intent{Kind: IntentReservations}))
-		} else {
-			model.Items = append(model.Items, disabledItem("action.reservations", "Lista rezerwacji plikowych"))
-		}
-	}
+	model.Items = append(model.Items, fluentItems(vm)...)
 	if vm.Update.Available() {
 		model.Items = append(model.Items, updateMenu(vm))
 	}
@@ -59,18 +44,43 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 	model.Items = append(model.Items,
 		separator("sep.actions"),
 		actionItem("action.activate", "Aktywuj klienta na nowym serwerze…", "Dodaj aktywację FileES kodem z e-maila", Intent{Kind: IntentActivate}),
-		actionItem("action.reconnect", "Połącz ponownie", "Odśwież połączenie z daemonem", Intent{Kind: IntentReconnect}),
 	)
 	if !vm.Update.Available() {
 		model.Items = append(model.Items, disabledItem("action.update.placeholder", "Aktualizacja klienta — w przygotowaniu"))
 	}
+	model.Items = append(model.Items, clientMenu(vm))
+	return model
+}
+
+// fluentItems returns menu items for transient, state-driven shortcuts.
+// The whole section -- including its separator -- is omitted entirely when
+// nothing is currently active, never left behind as a disabled placeholder.
+func fluentItems(vm app.ViewModel) []MenuItemModel {
+	var items []MenuItemModel
+	if vm.SupportsReservationListing() && vm.CanBrowseReservations() {
+		items = append(items, actionItem("action.reservations", "Lista rezerwacji plikowych", "Pokaż aktywne rezerwacje ze wszystkich serwerów FileES", Intent{Kind: IntentReservations}))
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return append([]MenuItemModel{separator("sep.fluent")}, items...)
+}
+
+// clientMenu groups the GUI<->local-daemon lifecycle actions. These are
+// local, technical operations unrelated to any daemon-server connection;
+// nesting them keeps the list of such operations free to grow without
+// crowding the flat top level of the menu.
+func clientMenu(vm app.ViewModel) MenuItemModel {
+	children := []MenuItemModel{
+		actionItem("action.reconnect", "Połącz ponownie", "Odśwież połączenie z daemonem", Intent{Kind: IntentReconnect}),
+	}
 	if vm.CanRestartFileES() {
-		model.Items = append(model.Items, actionItem("action.restart_filees", "Uruchom FileES ponownie…", "Kontrolowanie zrestartuj daemon i GUI", Intent{Kind: IntentRestartFileES}))
+		children = append(children, actionItem("action.restart_filees", "Uruchom FileES ponownie…", "Kontrolowanie zrestartuj daemon i GUI", Intent{Kind: IntentRestartFileES}))
 	}
 	if vm.CanShutdownFileES() {
-		model.Items = append(model.Items, actionItem("action.shutdown_filees", "Zamknij FileES…", "Kontrolowanie zatrzymaj synchronizację, daemon i GUI", Intent{Kind: IntentShutdownFileES}))
+		children = append(children, actionItem("action.shutdown_filees", "Zamknij FileES…", "Kontrolowanie zatrzymaj synchronizację, daemon i GUI", Intent{Kind: IntentShutdownFileES}))
 	}
-	return model
+	return MenuItemModel{ID: "client", Title: "Klient", Enabled: true, Children: children}
 }
 
 func activityMenu(vm app.ViewModel) MenuItemModel {
@@ -216,17 +226,6 @@ func connectionLabel(vm app.ViewModel) string {
 		return "Odświeżanie"
 	}
 	return "Połączono"
-}
-
-func lastRefreshLabel(vm app.ViewModel) string {
-	if vm.LastRefresh.IsZero() {
-		return "Ostatnia aktualizacja: brak"
-	}
-	label := "Ostatnia aktualizacja: " + vm.LastRefresh.Local().Format("15:04:05")
-	if vm.Stale || !vm.Connected {
-		label += " (dane nieaktualne)"
-	}
-	return label
 }
 
 func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {

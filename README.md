@@ -188,7 +188,7 @@ filees help
 
 ---
 
-## GUI Tray — koncepcja
+## GUI Tray
 
 `filees-gui` jest osobnym procesem i cienką warstwą UX nad publicznym kontraktem IPC. GUI nie jest częścią daemona, nie zna SVN i nie przejmuje odpowiedzialności za synchronizację. Awaria samego procesu GUI nie zabija daemona, natomiast jawna akcja użytkownika **Zamknij FileES** kontrolowanie zatrzymuje daemon i GUI jako jeden stack kliencki.
 
@@ -260,6 +260,12 @@ Menu tray zawiera:
 - bezpośrednio w menu serwera (przed rozwijanym folderem) **Odłącz folder
   „&lt;nazwa&gt;”…** dla opcjonalnej WC oraz osobne, podwójnie potwierdzane
   **Odłącz trwale „&lt;nazwa&gt;”…** dla repozytorium własnego realmu,
+- w oknie „Ustawienia FileES”, gdy daemon zgłasza capability: **Widoczność…**
+  (przełącza widoczność własnej strefy w prywatnym katalogu odbiorców),
+  **Dostęp stref…** per repozytorium (nadanie/cofnięcie `r`/`rw` widocznej
+  strefie) oraz **Odtwórz z archiwum…** dla wybranego wiersza repozytorium
+  (ładuje uprzednio wyeksportowany dump SVN jako nową generację tego
+  repozytorium, przez ten sam mechanizm co `filees-rotate`),
 - globalne podmenu „Ostatnia aktywność”, równorzędne z „Ostatnimi błędami”,
   pokazujące repozytorium, plik i potwierdzony etap synchronizacji,
 - ostatnie błędy z `error.list`, mapowane przez `message_key`, `severity` i `hint`,
@@ -268,7 +274,7 @@ Menu tray zawiera:
   zareklamowanego wydania,
 - „Uruchom FileES ponownie…” i „Zamknij FileES…”.
 
-Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.detach`, `repo.delete`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `realm.alias_claim`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.attach_intent`, `repo.attach_approve`, `repo.detach`, `repo.delete`, `repo.load_dump`, `repo.lifecycle_status`, `repo.grant_access`, `repo.revoke_access`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `realm.alias_claim`, `realm.grant_recipients`, `realm.set_visibility`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
 
 Tworzenie repozytorium jest zwykłą operacją użytkownika, bez kontaktu z konsolą:
 
@@ -294,6 +300,27 @@ Odłączenie ma dwa rozłączne kontrakty:
 
 Repozytorium `attachment_policy=required` nie udostępnia żadnej z tych akcji.
 Lifecycle jest trwały i wznawialny po restarcie.
+
+**Widoczność strefy i granty** działają przez dwie osobne akcje w oknie
+„Ustawienia FileES” (Linux: zenity radiolist; Windows: PowerShell
+`DataGridView`). **Widoczność…** przełącza wpis własnej strefy w prywatnym
+katalogu odbiorców między ukrytym a widocznym — strefa musi być widoczna,
+zanim inna strefa będzie mogła wybrać ją jako odbiorcę grantu; przełączenie
+nigdy nie ujawnia repozytoriów ani istniejących dostępów. **Dostęp stref…**,
+dostępne per wiersz repozytorium, otwiera listę aktualnie widocznych stref i
+pozwala nadać dostęp tylko do odczytu, do odczytu i zapisu albo cofnąć
+dostęp; każda zmiana wymaga potwierdzenia i natychmiast regeneruje
+`data-authz` oraz `view.json` wszystkich instalacji, których dotyczy.
+
+**Odtwórz z archiwum…** (`load_dump`, IPC `repo.load_dump`, ticket
+`LOAD_REPOSITORY_DUMP`) jest dostępne dla wybranego wiersza repozytorium
+obok Odłącz/Odłącz trwale. Ładuje wcześniej wyeksportowany dump SVN jako
+nową generację repozytorium przez ten sam mechanizm staging/weryfikacja/
+atomowy swap, którego wewnętrznie używa `filees-rotate` (`manual-filees.html`
+§4.7) — worker sam odnajduje przesłany dump, klient
+nie wysyła ścieżki ani zakresu rewizji. Pierwsze wydanie działa bez okna
+opcji: filtrowanie zawsze stosuje bieżącą politykę ignorowania serwera, a
+pełna historia źródłowa jest zachowana.
 
 ### Rezerwacje plików
 
@@ -490,8 +517,10 @@ Daemon wystawia gniazdo Unix i przyjmuje połączenia od CLI i GUI. Protokół: 
   lock i wymaga jego tokenu, repo, serwera oraz bezpiecznej ścieżki względnej
 
 Zaimplementowane komendy są capability-gated i obejmują system lifecycle,
-podpisane aktualizacje, aktywację/pairing, lifecycle repozytoriów, aktywność,
-`repo.lock`, `repo.unlock`, `repo.reservation_list`,
+podpisane aktualizacje, aktywację/pairing, lifecycle repozytoriów (w tym
+`repo.load_dump`), granty i widoczność strefy (`repo.grant_access`,
+`repo.revoke_access`, `realm.grant_recipients`, `realm.set_visibility`),
+aktywność, `repo.lock`, `repo.unlock`, `repo.reservation_list`,
 `repo.reservation_release`, `error.list` i `events.subscribe`.
 
 ### IPC Client (`pkg/ipcclient`)

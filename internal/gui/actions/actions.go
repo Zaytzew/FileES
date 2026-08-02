@@ -388,7 +388,7 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation(key)
-		warning := "Ta operacja usunie z serwera repozytoria należące do Twojego realmu, cofnie granty i unieważni aktywacje wszystkich Twoich klientów — nie tylko tej instalacji. Lokalne pliki pozostaną na dysku."
+		warning := "Ta operacja usunie z serwera repozytoria należące do Twojej strefy, cofnie granty i unieważni aktywacje wszystkich Twoich klientów — nie tylko tej instalacji. Lokalne pliki pozostaną na dysku."
 		ok, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Usuń mój udział FileES", Text: warning, ConfirmText: "Rozumiem, kontynuuj", CancelText: "Anuluj"})
 		if err != nil || !ok {
 			return
@@ -758,14 +758,14 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 		}
 		recipients, err := c.cfg.RealmGrants.ListRecipients(ctx, serverID)
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać realmów", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać stref", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			return
 		}
 		if len(recipients) == 0 {
-			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Brak widocznych realmów. Odbiorca musi najpierw włączyć widoczność w prywatnym katalogu realmów."})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Brak widocznych stref. Odbiorca musi najpierw włączyć widoczność w prywatnym katalogu stref."})
 			return
 		}
-		request := platform.RealmGrantDialogRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Wybierz realm i docelowy poziom dostępu. Ponowne nadanie zmienia istniejący grant."}
+		request := platform.RealmGrantDialogRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Wybierz strefę i docelowy poziom dostępu. Ponowne nadanie zmienia istniejący grant."}
 		known := make(map[string]RealmGrantRecipient, len(recipients))
 		for _, recipient := range recipients {
 			known[recipient.RealmID] = recipient
@@ -780,7 +780,7 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 		}
 		recipient, ok := known[choice.RealmID]
 		if !ok {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nieprawidłowy odbiorca", Body: "Wybrany realm nie pochodzi z aktualnego katalogu odbiorców.", Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nieprawidłowy odbiorca", Body: "Wybrana strefa nie pochodzi z aktualnego katalogu odbiorców.", Urgency: platform.UrgencyCritical})
 			return
 		}
 		label := strings.TrimSpace(recipient.Alias)
@@ -793,7 +793,7 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 		} else if choice.Action == platform.RealmGrantDialogRevoke {
 			actionText = "cofnąć dostęp"
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Potwierdź zmianę dostępu", Text: "Czy " + actionText + " realmowi „" + label + "” do repozytorium „" + repo.DisplayName + "”?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Potwierdź zmianę dostępu", Text: "Czy " + actionText + " strefie „" + label + "” do repozytorium „" + repo.DisplayName + "”?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
 		if err != nil || !confirmed {
 			return
 		}
@@ -825,7 +825,7 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 		defer c.endOperation(key)
 		vm := c.cfg.ViewModel()
 		if !vm.CanSetRealmVisibility() {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Widoczność realmu jest niedostępna", Body: "Demon FileES nie obsługuje katalogu realmów.", Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Widoczność strefy jest niedostępna", Body: "Demon FileES nie obsługuje katalogu stref.", Urgency: platform.UrgencyCritical})
 			return
 		}
 		var server app.ServerViewModel
@@ -837,13 +837,13 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			}
 		}
 		if !found || strings.TrimSpace(server.RealmID) == "" || strings.TrimSpace(server.RealmAlias) == "" {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można zmienić widoczności", Body: "Najpierw ustaw stały alias realmu.", Urgency: platform.UrgencyCritical})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można zmienić widoczności", Body: "Najpierw ustaw stały alias strefy.", Urgency: platform.UrgencyCritical})
 			return
 		}
-		choice, err := c.cfg.RealmGrantBrowser.ShowRealmVisibility(ctx, platform.RealmVisibilityDialogRequest{Title: "Widoczność realmu „" + server.RealmAlias + "”", Text: "Widoczny realm może zostać wybrany jako odbiorca grantu. Nie ujawnia to repozytoriów ani istniejących dostępów. Tak — widoczny; Nie — ukryty; Anuluj — bez zmian."})
+		choice, err := c.cfg.RealmGrantBrowser.ShowRealmVisibility(ctx, platform.RealmVisibilityDialogRequest{Title: "Widoczność strefy „" + server.RealmAlias + "”", Text: "Widoczna strefa może zostać wybrana jako odbiorca grantu. Nie ujawnia to repozytoriów ani istniejących dostępów. Tak — widoczna; Nie — ukryta; Anuluj — bez zmian."})
 		if err != nil || choice.Action == platform.RealmVisibilityDialogClose {
 			if err != nil && ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć widoczności realmu", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć widoczności strefy", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			}
 			return
 		}
@@ -851,11 +851,11 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			return
 		}
 		visibility := string(choice.Action)
-		description := "ukryć realm w katalogu odbiorców"
+		description := "ukryć strefę w katalogu odbiorców"
 		if choice.Action == platform.RealmVisibilityDialogListed {
-			description = "pokazać realm w prywatnym katalogu odbiorców"
+			description = "pokazać strefę w prywatnym katalogu odbiorców"
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Potwierdź widoczność realmu", Text: "Czy " + description + "?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Potwierdź widoczność strefy", Text: "Czy " + description + "?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
 		if err != nil || !confirmed {
 			return
 		}
@@ -863,11 +863,11 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zmienić widoczności", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			return
 		}
-		body := "Realm jest teraz ukryty."
+		body := "Strefa jest teraz ukryta."
 		if choice.Action == platform.RealmVisibilityDialogListed {
-			body = "Realm jest teraz widoczny dla innych aktywnych realmów."
+			body = "Strefa jest teraz widoczna dla innych aktywnych stref."
 		}
-		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Widoczność realmu została zmieniona", Body: body, Urgency: platform.UrgencyNormal})
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Widoczność strefy została zmieniona", Body: body, Urgency: platform.UrgencyNormal})
 	}()
 }
 
@@ -1339,7 +1339,7 @@ func (c *Controller) claimRealmAlias(ctx context.Context, serverID string) bool 
 			return false
 		}
 		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
-			Title: "Potwierdź stały alias", Text: "Alias „" + alias.Value + "” zostanie przypisany do tego realm na stałe. Nie można go później zmienić.", ConfirmText: "Ustaw alias", CancelText: "Anuluj",
+			Title: "Potwierdź stały alias", Text: "Alias „" + alias.Value + "” zostanie przypisany do tej strefy na stałe. Nie można go później zmienić.", ConfirmText: "Ustaw alias", CancelText: "Anuluj",
 		})
 		if err != nil || !confirmed {
 			return false
@@ -1827,7 +1827,7 @@ func messageLabel(messageKey string) string {
 	case "lock.operation_failed":
 		return "Daemon nie wykonał operacji na plikach"
 	case "realm.alias_required":
-		return "Przed blokowaniem plików ustaw stały alias realm"
+		return "Przed blokowaniem plików ustaw stały alias strefy"
 	case "proto.invalid_payload":
 		return "Daemon odrzucił nieprawidłowe dane operacji"
 	default:

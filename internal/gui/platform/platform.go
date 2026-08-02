@@ -156,7 +156,7 @@ func SettingsText(request SettingsDialogRequest) string {
 		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, "Serwer: "+server.Name, "Adres: "+server.Address, "Realm: "+server.Realm, "ID klienta: "+server.ClientID)
+		lines = append(lines, "Serwer: "+server.Name, "Adres: "+server.Address, "Strefa: "+server.Realm, "ID klienta: "+server.ClientID)
 		if len(server.Folders) == 0 {
 			lines = append(lines, "Foldery: brak")
 			continue

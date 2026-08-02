@@ -299,7 +299,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	}
 	args := []string{
 		"--list", "--radiolist", "--title=" + request.Title, "--text=" + SettingsText(SettingsDialogRequest{Text: request.Text}), "--width=1240", "--height=600",
-		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Realm", "--column=Folder", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
+		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Strefa", "--column=Folder", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
 		"--hide-column=2", "--print-column=2", "--ok-label=Wybierz", "--cancel-label=Zamknij",
 	}
 	for _, server := range request.Servers {
@@ -363,11 +363,11 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canManageGrants, canSetRealmVisibility bool) (SettingsDialogAction, error) {
 	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "add_folder", "Dodaj folder do FileES", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
 	if canSetRealmVisibility {
-		args = append(args, "FALSE", "realm_visibility", "Widoczność mojego realmu")
+		args = append(args, "FALSE", "realm_visibility", "Widoczność mojej strefy")
 	}
 	if hasFolder {
 		if canManageGrants {
-			args = append(args, "FALSE", "manage_grants", "Zarządzaj dostępem realmów")
+			args = append(args, "FALSE", "manage_grants", "Zarządzaj dostępem stref")
 		}
 		args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder", "FALSE", "delete_repository", "Odłącz trwale repozytorium", "FALSE", "load_dump", "Odtwórz z archiwum")
 	}
@@ -414,7 +414,7 @@ func (b *LinuxBackend) ShowRealmGrants(ctx context.Context, request RealmGrantDi
 	if err != nil {
 		return RealmGrantDialogResult{}, NewUnavailable("realm_grant_dialog", errors.New("zenity is not installed"))
 	}
-	args := []string{"--list", "--radiolist", "--title=" + request.Title, "--text=" + request.Text, "--width=760", "--height=520", "--column=", "--column=ID", "--column=Realm", "--column=Dostęp", "--hide-column=2", "--print-column=2", "--ok-label=Zastosuj", "--cancel-label=Anuluj"}
+	args := []string{"--list", "--radiolist", "--title=" + request.Title, "--text=" + request.Text, "--width=760", "--height=520", "--column=", "--column=ID", "--column=Strefa", "--column=Dostęp", "--hide-column=2", "--print-column=2", "--ok-label=Zastosuj", "--cancel-label=Anuluj"}
 	for _, recipient := range request.Recipients {
 		label := strings.TrimSpace(recipient.Alias)
 		if label == "" {

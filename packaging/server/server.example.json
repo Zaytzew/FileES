@@ -13,6 +13,7 @@
     "service_repository": "/var/filees/service-repo",
     "repository_name": "filees-service",
     "client_entry_path": "/usr/local/libexec/filees/filees-client-entry",
+    "mobile_entry_path": "/usr/local/libexec/filees/filees-mobile-v1",
     "svn_binary": "/usr/local/bin/svn",
     "svnserve_binary": "/usr/local/bin/svnserve"
   },

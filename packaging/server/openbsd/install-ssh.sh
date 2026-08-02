@@ -45,6 +45,9 @@ fi
 if ! id _filees-recovery >/dev/null 2>&1; then
 	useradd -c "FileES recovery download" -d /var/empty -s /bin/sh _filees-recovery
 fi
+if ! id _filees-mobile >/dev/null 2>&1; then
+	useradd -c "FileES mobile client" -d /var/empty -s /bin/sh _filees-mobile
+fi
 # A '*' password field makes BSD Authentication reject the account before a
 # local style can run. Install an unknowable random hash; sshd still disables
 # password authentication. Public-key policy remains explicit per Match block.
@@ -53,8 +56,10 @@ usermod -p "$password_hash" _filees-tunnel
 usermod -p "$password_hash" _filees-client
 usermod -p "$password_hash" _filees-data
 usermod -p "$password_hash" _filees-recovery
+usermod -p "$password_hash" _filees-mobile
 usermod -G "$client_access_group" _filees-client
 usermod -G "$client_access_group" _filees-data
+usermod -G "$client_access_group" _filees-mobile
 unset password_hash
 install -o "$state_user" -g auth -m 4550 "$bundle/bin/filees-ssh-auth" /usr/libexec/auth/login_-filees
 # The dispatcher is the sole set-id boundary. Its two ordinary child images
@@ -70,6 +75,7 @@ install -o root -g wheel -m 0555 "$bundle/bin/filees-mail" /usr/local/libexec/fi
 install -o root -g wheel -m 0555 "$bundle/bin/filees-public-authority" /usr/local/libexec/filees/filees-public-authority
 install -o root -g wheel -m 0555 "$bundle/bin/filees-links" /usr/local/libexec/filees/filees-links
 install -o "$state_user" -g "$client_access_group" -m 4550 "$bundle/bin/filees-client-entry" /usr/local/libexec/filees/filees-client-entry
+install -o "$state_user" -g "$client_access_group" -m 4550 "$bundle/bin/filees-mobile-v1" /usr/local/libexec/filees/filees-mobile-v1
 install -o "$state_user" -g _filees-recovery -m 4550 "$bundle/bin/filees-recovery-entry" /usr/local/libexec/filees/filees-recovery-entry
 # OpenSSH requires every AuthorizedKeysCommand component to be root-owned and
 # not writable by group/other. The session entry remains the separate set-id
@@ -89,6 +95,7 @@ install -d -o root -g wheel -m 755 /etc/sasl2 /etc/subversion
 
 install -d -o "$state_user" -g wheel -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs /var/filees/sessions
 install -d -o "$state_user" -g wheel -m 700 /var/filees/repositories /var/filees/repository-operations
+install -d -o "$state_user" -g wheel -m 700 /var/filees-mobile /var/filees-mobile/ledger
 install -d -o "$state_user" -g wheel -m 700 /var/filees/repository-operations/public-shares
 install -d -o "$state_user" -g wheel -m 700 /var/tmp/filees-public-share-authority
 install -d -o _filees-links -g wheel -m 700 /var/tmp/filees-public-shares-cache

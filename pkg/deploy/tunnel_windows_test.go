@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/onboarding"
+
+	"github.com/google/uuid"
 	"golang.org/x/sys/windows"
 )
 
@@ -185,6 +188,81 @@ func TestAskpassPrintsTheSecretWithASingleNewline(t *testing.T) {
 	}
 	if got := stdout(); got != "OTP-CODE\n" {
 		t.Fatalf("stdout = %q, want %q", got, "OTP-CODE\n")
+	}
+}
+
+// B7, happy path: the reconnect branch signs OpenSSH's challenge with the
+// durable key and never touches the OTP pipe.
+func TestReconnectAskpassSignsServerNonceWithoutOTP(t *testing.T) {
+	requestID := uuid.NewString()
+	identity, err := PrepareReconnectIdentity(t.TempDir(), requestID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge, err := onboarding.NewReconnectChallenge(strings.NewReader(strings.Repeat("n", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(connectKeyEnv, identity.PrivateKeyPath)
+	t.Setenv(connectRequestIDEnv, requestID)
+	t.Setenv(askpassPipeEnv, "")
+
+	originalArgs := os.Args
+	os.Args = []string{"filees", challenge}
+	defer func() { os.Args = originalArgs }()
+
+	stdout, restore := captureStdout(t)
+	err = RunAskpass()
+	restore()
+	if err != nil {
+		t.Fatalf("RunAskpass: %v", err)
+	}
+	response := strings.TrimSuffix(stdout(), "\n")
+	if response == "" || strings.Contains(response, "\n") {
+		t.Fatalf("reconnect response = %q, want one line", response)
+	}
+}
+
+// B7, the check that matters: a reconnect key any local account can read must
+// be refused before it is ever parsed. mode bits cannot express this on
+// Windows, which is why loadReconnectSigner now asks privatefile.
+func TestReconnectAskpassRefusesAWorldReadableKey(t *testing.T) {
+	requestID := uuid.NewString()
+	identity, err := PrepareReconnectIdentity(t.TempDir(), requestID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadReconnectSigner(identity.PrivateKeyPath); err != nil {
+		t.Fatalf("freshly prepared reconnect key was rejected: %v", err)
+	}
+
+	everyone, err := windows.CreateWellKnownSid(windows.WinWorldSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dacl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: windows.GENERIC_ALL,
+		AccessMode:        windows.GRANT_ACCESS,
+		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_WELL_KNOWN_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(everyone),
+		},
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(identity.PrivateKeyPath, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := loadReconnectSigner(identity.PrivateKeyPath); err == nil {
+		t.Fatal("loadReconnectSigner accepted a key readable by Everyone")
+	} else if !strings.Contains(err.Error(), "owner-only") {
+		t.Fatalf("loadReconnectSigner = %v, want an owner-only refusal", err)
 	}
 }
 

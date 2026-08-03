@@ -4,9 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"filees/pkg/privatefile"
+
+	"golang.org/x/crypto/ssh"
 )
 
 const (
@@ -66,6 +71,39 @@ func (w *boundedDiagnostic) Write(p []byte) (int, error) {
 }
 
 func (w *boundedDiagnostic) String() string { return strings.TrimSpace(string(w.data)) }
+
+// loadReconnectSigner reads the durable key the server challenges after
+// transport loss. It is shared rather than per-platform because the reconnect
+// path has no OTP channel to differ over — the secret is the key file itself,
+// and "only its owner may read it" is exactly what privatefile expresses. The
+// Linux version used to spell that as an explicit 0600 plus a Stat_t uid
+// comparison, which is the same rule written in a form Windows cannot honour.
+func loadReconnectSigner(path string) (ssh.Signer, error) {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "." || !filepath.IsAbs(path) {
+		return nil, errors.New("reconnect private key path must be absolute")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("reconnect private key must be a regular file")
+	}
+	if err := privatefile.Verify(path); err != nil {
+		return nil, fmt.Errorf("reconnect private key must be owner-only: %w", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(raw)
+	signer, err := ssh.ParsePrivateKey(raw)
+	if err != nil || signer.PublicKey().Type() != ssh.KeyAlgoED25519 {
+		return nil, errors.New("reconnect private key must be unencrypted Ed25519")
+	}
+	return signer, nil
+}
 
 func tunnelCommandError(label string, err error, diagnostic string) error {
 	if diagnostic == "" {

@@ -342,20 +342,62 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 	return result, nil
 }
 
+// settingsButtons is the single source of truth for the settings dialog's
+// action bar. Each entry ties a button to the action it emits and to the
+// hidden boolean column that decides whether it is enabled for the currently
+// selected row.
+//
+// Every button is gated, including deactivate/remove_realm, so that a
+// recovery row -- which has no server or folder behind it, only an operation
+// ID -- cannot dispatch a folder or server action. linux.go gets that for
+// free because it resolves recovery rows before it ever offers an action
+// list; the Windows dialog shows one permanent button bar instead, so the
+// same rule has to be expressed per row.
+var settingsButtons = []struct {
+	label, action, capability string
+	left                      int
+}{
+	{"Widoczność", "realm_visibility", "CanVisibility", 75},
+	{"Dostęp stref", "manage_grants", "CanGrants", 190},
+	{"Dodaj folder", "add", "CanAdd", 305},
+	{"Odłącz folder", "detach", "CanDetach", 420},
+	{"Odłącz trwale", "delete", "CanDelete", 535},
+	{"Odtwórz z archiwum", "load_dump", "CanLoadDump", 650},
+	{"Dezaktywuj klienta", "deactivate", "CanDeactivate", 765},
+	{"Usuń udział FileES", "remove_realm", "CanRemoveRealm", 880},
+	{"Pobierz archiwa", "download_recovery", "CanDownloadRecovery", 995},
+}
+
+// settingsRow carries one grid row plus one boolean per action button. The
+// Can* fields mirror the controller's own guards (actions.go) exactly, the
+// same way linux.go's settingsAction gates its list items -- offering an
+// action the controller will silently refuse is a real, reported "click it,
+// nothing happens" bug, not a cosmetic issue.
+type settingsRow struct {
+	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access string
+	CanVisibility, CanGrants, CanAdd, CanDetach, CanDelete, CanLoadDump   bool
+	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                    bool
+}
+
 func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
-	type row struct {
-		ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access string
-		CanManageGrants                                                       bool
-		CanSetRealmVisibility                                                 bool
-	}
-	rows := []row{}
+	rows := []settingsRow{}
 	for _, s := range request.Servers {
+		base := settingsRow{
+			ServerID: s.ID, Server: s.Name, Address: s.Address, Realm: s.Realm,
+			CanVisibility: s.CanSetRealmVisibility, CanAdd: s.CanAddFolder,
+			CanDeactivate: true, CanRemoveRealm: true,
+		}
 		if len(s.Folders) == 0 {
-			rows = append(rows, row{ServerID: s.ID, Server: s.Name, Address: s.Address, Realm: s.Realm, Folder: "Brak folderów", Path: "—", State: "—", Access: "—", CanSetRealmVisibility: s.CanSetRealmVisibility})
+			placeholder := base
+			placeholder.Folder, placeholder.Path, placeholder.State, placeholder.Access = "Brak folderów", "—", "—", "—"
+			rows = append(rows, placeholder)
 			continue
 		}
 		for _, f := range s.Folders {
-			rows = append(rows, row{ServerID: s.ID, RepoID: f.ID, Server: s.Name, Address: s.Address, Realm: s.Realm, Folder: f.Name, Path: f.LocalPath, State: f.State, Access: f.Access, CanManageGrants: f.CanManageGrants, CanSetRealmVisibility: s.CanSetRealmVisibility})
+			folder := base
+			folder.RepoID, folder.Folder, folder.Path, folder.State, folder.Access = f.ID, f.Name, f.LocalPath, f.State, f.Access
+			folder.CanGrants, folder.CanDetach, folder.CanDelete, folder.CanLoadDump = f.CanManageGrants, f.CanDetach, f.CanDelete, f.CanLoadDump
+			rows = append(rows, folder)
 		}
 	}
 	for _, recovery := range request.Recoveries {
@@ -363,21 +405,42 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 		if recovery.CanDownload {
 			id = "@recovery-download:" + recovery.OperationID
 		}
-		rows = append(rows, row{ServerID: id, Server: recovery.ServerName, Address: "—", Realm: "—", Folder: recovery.Status, Path: recovery.KitPath, State: "recovery", Access: "—"})
+		rows = append(rows, settingsRow{ServerID: id, Server: recovery.ServerName, Address: "—", Realm: "—", Folder: recovery.Status, Path: recovery.KitPath, State: "recovery", Access: "—", CanDownloadRecovery: recovery.CanDownload})
 	}
 	payload, err := json.Marshal(struct {
 		Title, Text string
-		Rows        []row
+		Rows        []settingsRow
 	}{request.Title, request.Text, rows})
 	if err != nil {
 		return "", err
 	}
+
+	// Column names and the values pushed into each row are generated from one
+	// list so the two can never drift apart.
+	hidden := []string{"ServerID", "RepoID"}
+	for _, button := range settingsButtons {
+		hidden = append(hidden, button.capability)
+	}
+	columns := append(append([]string{}, hidden...), "Serwer", "Adres", "Strefa", "Folder", "Ścieżka", "Stan", "Dostęp")
+	quotedColumns := make([]string, 0, len(columns))
+	for _, column := range columns {
+		quotedColumns = append(quotedColumns, psString(column))
+	}
+	values := make([]string, 0, len(columns))
+	for _, column := range columns {
+		values = append(values, "$r."+settingsRowField(column))
+	}
+	quotedHidden := make([]string, 0, len(hidden))
+	for _, column := range hidden {
+		quotedHidden = append(quotedHidden, psString(column))
+	}
+
 	encoded := base64.StdEncoding.EncodeToString(payload)
 	var sb strings.Builder
 	sb.WriteString(dpiAwarenessPrelude)
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;")
 	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1320;$f.Height=620;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1270;$l.Height=34;$f.Controls.Add($l);")
-	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1270;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @('ServerID','RepoID','Granty','Widoczność','Serwer','Adres','Strefa','Folder','Ścieżka','Stan','Dostęp')){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add($r.ServerID,$r.RepoID,$r.CanManageGrants,$r.CanSetRealmVisibility,$r.Server,$r.Address,$r.Realm,$r.Folder,$r.Path,$r.State,$r.Access)};$g.Add_DataBindingComplete({foreach($n in @('ServerID','RepoID','Granty','Widoczność')){if($g.Columns[$n] -ne $null){$g.Columns[$n].Visible=$false}}});$g.DataSource=$t;$f.Controls.Add($g);$script:answer='close';")
+	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1270;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @(" + strings.Join(quotedColumns, ",") + ")){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add(" + strings.Join(values, ",") + ")};$script:answer='close';")
 	// The answer is "action|serverID|repoID". The separator is "|", not ":",
 	// because a recovery row's ServerID is itself "@recovery-download:<id>" --
 	// with ":" the reply split into four fields, the len()==3 guard rejected
@@ -385,22 +448,43 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	// and ShowReservations already use "|" for the same reason; IDs never
 	// contain it (linux.go joins on "|" too).
 	sb.WriteString("function act($a){if($g.CurrentRow -ne $null){$script:answer=$a+'|'+[string]$g.CurrentRow.Cells['ServerID'].Value+'|'+[string]$g.CurrentRow.Cells['RepoID'].Value;$f.Close()}};")
-	for _, spec := range []struct {
-		label, action string
-		left          int
-	}{{"Widoczność", "realm_visibility", 75}, {"Dostęp stref", "manage_grants", 190}, {"Dodaj folder", "add", 305}, {"Odłącz folder", "detach", 420}, {"Odłącz trwale", "delete", 535}, {"Odtwórz z archiwum", "load_dump", 650}, {"Dezaktywuj klienta", "deactivate", 765}, {"Usuń udział FileES", "remove_realm", 880}, {"Pobierz archiwa", "download_recovery", 995}} {
-		variable := "$b"
-		if spec.action == "manage_grants" {
-			variable = "$grant"
-		} else if spec.action == "realm_visibility" {
-			variable = "$visibility"
-		}
-		sb.WriteString(variable + "=New-Object System.Windows.Forms.Button;" + variable + ".Text=" + psString(spec.label) + ";" + variable + ".Width=108;" + variable + ".Height=28;" + variable + ".Left=" + fmt.Sprint(spec.left) + ";" + variable + ".Top=540;" + variable + ".Add_Click({act '" + spec.action + "'});$f.Controls.Add(" + variable + ");")
+	sb.WriteString("$btns=@{};")
+	for _, button := range settingsButtons {
+		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(button.label) + ";$b.Width=108;$b.Height=28;$b.Left=" + fmt.Sprint(button.left) + ";$b.Top=540;$b.Add_Click({act " + psString(button.action) + "});$btns[" + psString(button.capability) + "]=$b;$f.Controls.Add($b);")
 	}
-	sb.WriteString("function updateGrantButton{$grant.Enabled=($g.CurrentRow -ne $null -and [string]$g.CurrentRow.Cells['Granty'].Value -eq 'True')};$g.Add_SelectionChanged({updateGrantButton});updateGrantButton;")
-	sb.WriteString("function updateVisibilityButton{$visibility.Enabled=($g.CurrentRow -ne $null -and [string]$g.CurrentRow.Cells['Widoczność'].Value -eq 'True')};$g.Add_SelectionChanged({updateVisibilityButton});updateVisibilityButton;")
+	sb.WriteString("function updateButtons{foreach($k in @($btns.Keys)){$btns[$k].Enabled=($g.CurrentRow -ne $null -and [string]$g.CurrentRow.Cells[$k].Value -eq 'True')}};")
+	// CurrentCellChanged, not SelectionChanged: DataGridView raises
+	// SelectionChanged while CurrentRow still points at the row being left, so
+	// gating off it lagged one row behind -- confirmed live, a row whose
+	// capability was False kept the previous row's enabled button.
+	// DataBindingComplete covers the initial state, because the columns do not
+	// exist until binding completes.
+	sb.WriteString("$g.Add_CurrentCellChanged({updateButtons});$g.Add_DataBindingComplete({foreach($n in @(" + strings.Join(quotedHidden, ",") + ")){if($g.Columns[$n] -ne $null){$g.Columns[$n].Visible=$false}};updateButtons});$g.DataSource=$t;$f.Controls.Add($g);updateButtons;")
 	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1130;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);[void]$f.ShowDialog();$script:answer")
 	return sb.String(), nil
+}
+
+// settingsRowField maps a grid column name to the settingsRow JSON field that
+// feeds it. Only the display columns differ from their field name.
+func settingsRowField(column string) string {
+	switch column {
+	case "Serwer":
+		return "Server"
+	case "Adres":
+		return "Address"
+	case "Strefa":
+		return "Realm"
+	case "Folder":
+		return "Folder"
+	case "Ścieżka":
+		return "Path"
+	case "Stan":
+		return "State"
+	case "Dostęp":
+		return "Access"
+	default:
+		return column
+	}
 }
 
 func (b *WindowsBackend) ShowRealmGrants(ctx context.Context, request RealmGrantDialogRequest) (RealmGrantDialogResult, error) {

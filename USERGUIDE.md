@@ -16,6 +16,7 @@
 ### Linux
 - Pulpit z obsługą SNI (GNOME wymaga rozszerzenia **AppIndicator/KStatusNotifierItem**; KDE, XFCE, MATE działają bez dodatków)
 - `zenity` lub `kdialog` — do wyboru plików przy operacjach blokowania
+- `yad` — do okna „Zarządzaj serwerem…” i dialogów dostępu/widoczności strefy
 - `xdg-open` — do otwierania katalogów
 - `notify-send` — opcjonalnie, do powiadomień systemowych; brak narzędzia nie zatrzymuje GUI
 
@@ -318,6 +319,12 @@ which kdialog
 ```
 
 Zainstaluj brakujące narzędzie pakietem systemowym (`apt install zenity`, `dnf install zenity`, itp.).
+
+### Okno „Zarządzaj serwerem…” nie otwiera się (Linux)
+
+To osobne okno (razem z „Widoczność…” i „Dostęp stref…”) wymaga `yad`, nie
+`zenity`. Sprawdź dostępność (`which yad`) i zainstaluj brakujące narzędzie
+pakietem systemowym (`apt install yad`, `dnf install yad`, itp.).
 
 ### Powiadomienia toast nie pojawiają się (Windows)
 

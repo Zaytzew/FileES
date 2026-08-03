@@ -1,9 +1,32 @@
 package platform
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 )
+
+type fakeExitCodeError int
+
+func (e fakeExitCodeError) Error() string { return "exit" }
+func (e fakeExitCodeError) ExitCode() int { return int(e) }
+
+func TestCommandCancelledRecognisesZenityAndYadCancelCodes(t *testing.T) {
+	// 1: zenity and yad both use this for an explicit Cancel button.
+	// 252: yad-only, dialog closed via Esc or the window's close control --
+	// zenity has no equivalent code, so this case never fires there.
+	for _, code := range []int{1, 252} {
+		if !commandCancelled(fakeExitCodeError(code)) {
+			t.Errorf("commandCancelled(exit %d) = false, want true", code)
+		}
+	}
+	if commandCancelled(fakeExitCodeError(70)) {
+		t.Error("commandCancelled(exit 70) = true, want false -- 70 is yad's --timeout code, not a user cancel")
+	}
+	if commandCancelled(errors.New("no exit code")) {
+		t.Error("commandCancelled on a non-exit error = true, want false")
+	}
+}
 
 func TestValidatePickedPaths(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator), "wc", "repo")

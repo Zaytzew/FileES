@@ -302,7 +302,7 @@ Repozytorium `attachment_policy=required` nie udostępnia żadnej z tych akcji.
 Lifecycle jest trwały i wznawialny po restarcie.
 
 **Widoczność strefy i granty** działają przez dwie osobne akcje w oknie
-„Ustawienia FileES” (Linux: zenity radiolist; Windows: PowerShell
+„Ustawienia FileES” (Linux: `yad` radiolist; Windows: PowerShell
 `DataGridView`). **Widoczność…** przełącza wpis własnej strefy w prywatnym
 katalogu odbiorców między ukrytym a widocznym — strefa musi być widoczna,
 zanim inna strefa będzie mogła wybrać ją jako odbiorcę grantu; przełączenie

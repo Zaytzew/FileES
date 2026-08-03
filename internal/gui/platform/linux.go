@@ -289,14 +289,36 @@ func (b *LinuxBackend) ShowReservations(ctx context.Context, request Reservation
 	return ReservationDialogResult{Action: ReservationDialogClose}, nil
 }
 
-// ShowSettings presents the server/folder overview as a native Zenity table.
+// applyLinuxDarkThemePreference nudges yad to match the desktop's dark-mode
+// preference. Unlike zenity, yad does not reliably pick this up from the
+// running session on its own. This only ever forces the dark variant, never
+// the light one: Adwaita's default is already light, so a failed or
+// negative detection (missing gsettings, non-GNOME desktop, explicit
+// "default"/"prefer-light") simply leaves GTK_THEME untouched rather than
+// overriding whatever the user or desktop already configured.
+func (b *LinuxBackend) applyLinuxDarkThemePreference(ctx context.Context) {
+	path, err := b.runner.LookPath("gsettings")
+	if err != nil {
+		return
+	}
+	output, err := b.runner.Output(ctx, path, "get", "org.gnome.desktop.interface", "color-scheme")
+	if err != nil {
+		return
+	}
+	if strings.Contains(string(output), "prefer-dark") {
+		os.Setenv("GTK_THEME", "Adwaita:dark")
+	}
+}
+
+// ShowSettings presents the server/folder overview as a native yad table.
 // It is deliberately read-only at this stage; later buttons return only an
 // opaque intent to the GUI controller.
 func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error) {
-	command, err := b.runner.LookPath("zenity")
+	command, err := b.runner.LookPath("yad")
 	if err != nil {
-		return SettingsDialogResult{}, NewUnavailable("settings_dialog", errors.New("zenity is not installed"))
+		return SettingsDialogResult{}, NewUnavailable("settings_dialog", errors.New("yad is not installed"))
 	}
+	b.applyLinuxDarkThemePreference(ctx)
 	args := []string{
 		"--list", "--radiolist", "--title=" + request.Title, "--text=" + SettingsText(SettingsDialogRequest{Text: request.Text}), "--width=1240", "--height=600",
 		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Strefa", "--column=Folder", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
@@ -385,10 +407,11 @@ func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFo
 }
 
 func (b *LinuxBackend) ShowRealmVisibility(ctx context.Context, request RealmVisibilityDialogRequest) (RealmVisibilityDialogResult, error) {
-	command, err := b.runner.LookPath("zenity")
+	command, err := b.runner.LookPath("yad")
 	if err != nil {
-		return RealmVisibilityDialogResult{}, NewUnavailable("realm_visibility_dialog", errors.New("zenity is not installed"))
+		return RealmVisibilityDialogResult{}, NewUnavailable("realm_visibility_dialog", errors.New("yad is not installed"))
 	}
+	b.applyLinuxDarkThemePreference(ctx)
 	output, err := b.runner.Output(ctx, command, "--list", "--radiolist", "--title="+request.Title, "--text="+request.Text, "--column=", "--column=ID", "--column=Widoczność", "--hide-column=2", "--print-column=2", "--ok-label=Wybierz", "--cancel-label=Anuluj", "FALSE", "listed", "Widoczny w prywatnym katalogu odbiorców", "FALSE", "hidden", "Ukryty")
 	if err != nil {
 		if ctx.Err() != nil {
@@ -410,10 +433,11 @@ func (b *LinuxBackend) ShowRealmVisibility(ctx context.Context, request RealmVis
 }
 
 func (b *LinuxBackend) ShowRealmGrants(ctx context.Context, request RealmGrantDialogRequest) (RealmGrantDialogResult, error) {
-	command, err := b.runner.LookPath("zenity")
+	command, err := b.runner.LookPath("yad")
 	if err != nil {
-		return RealmGrantDialogResult{}, NewUnavailable("realm_grant_dialog", errors.New("zenity is not installed"))
+		return RealmGrantDialogResult{}, NewUnavailable("realm_grant_dialog", errors.New("yad is not installed"))
 	}
+	b.applyLinuxDarkThemePreference(ctx)
 	args := []string{"--list", "--radiolist", "--title=" + request.Title, "--text=" + request.Text, "--width=760", "--height=520", "--column=", "--column=ID", "--column=Strefa", "--column=Dostęp", "--hide-column=2", "--print-column=2", "--ok-label=Zastosuj", "--cancel-label=Anuluj"}
 	for _, recipient := range request.Recipients {
 		label := strings.TrimSpace(recipient.Alias)

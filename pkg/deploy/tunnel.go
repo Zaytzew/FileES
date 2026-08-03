@@ -15,6 +15,65 @@ const (
 	TunnelServerCommand = "filees tunnel-v1"
 )
 
+// Environment names shared by the parent process and the askpass child it
+// re-execs. They are part of an internal contract between two instances of
+// the same binary, never of the server protocol. The name of the OTP channel
+// itself stays platform-specific: it is a FIFO path on Linux and will be a
+// named pipe on Windows (concepts/WINDOWS_BOOTSTRAP_CONCEPT.md §4).
+const (
+	connectKeyEnv       = "FILEES_RECONNECT_KEY"
+	connectRequestIDEnv = "FILEES_DEPLOY_REQUEST_ID"
+)
+
+// scrubEnvironment drops the named variables from an inherited environment.
+// The bootstrap path relies on this so a hostile pre-set SSH_ASKPASS cannot
+// survive into the ssh child and redirect the OTP handoff.
+func scrubEnvironment(environment []string, names ...string) []string {
+	blocked := make(map[string]bool, len(names))
+	for _, name := range names {
+		blocked[name] = true
+	}
+	out := environment[:0:0]
+	for _, entry := range environment {
+		name := entry
+		if index := strings.IndexByte(entry, '='); index >= 0 {
+			name = entry[:index]
+		}
+		if !blocked[name] {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// boundedDiagnostic keeps at most limit bytes of a child's stderr so a
+// failing ssh can explain itself without an unbounded buffer.
+type boundedDiagnostic struct {
+	data  []byte
+	limit int
+}
+
+func (w *boundedDiagnostic) Write(p []byte) (int, error) {
+	wanted := len(p)
+	remaining := w.limit - len(w.data)
+	if remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		w.data = append(w.data, p...)
+	}
+	return wanted, nil
+}
+
+func (w *boundedDiagnostic) String() string { return strings.TrimSpace(string(w.data)) }
+
+func tunnelCommandError(label string, err error, diagnostic string) error {
+	if diagnostic == "" {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return fmt.Errorf("%s: %w: %s", label, err, diagnostic)
+}
+
 type TunnelSpec struct {
 	RemotePort         int
 	HelperEndpoint     HelperEndpoint

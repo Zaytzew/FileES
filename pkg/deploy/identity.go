@@ -12,6 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"filees/pkg/privatefile"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
@@ -57,10 +60,7 @@ func (g IdentityGenerator) GenerateInstallationIdentity(operationID, clientID st
 		return Identity{}, errors.New("identity root must be absolute")
 	}
 	root := filepath.Clean(g.Root)
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return Identity{}, fmt.Errorf("create identity root: %w", err)
-	}
-	if err := os.Chmod(root, 0o700); err != nil {
+	if err := privatefile.EnsureDir(root); err != nil {
 		return Identity{}, fmt.Errorf("secure identity root: %w", err)
 	}
 
@@ -251,6 +251,9 @@ func writeBytesExclusive(path string, raw []byte, mode os.FileMode) (bool, error
 	if err := tmp.Close(); err != nil {
 		return false, err
 	}
+	if err := hardenIfPrivate(tmpPath, mode); err != nil {
+		return false, err
+	}
 	if err := os.Link(tmpPath, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return false, nil
@@ -283,10 +286,55 @@ func writeBytesAtomic(path string, raw []byte, mode os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err := hardenIfPrivate(tmpPath, mode); err != nil {
+		return err
+	}
+	if err := replaceAtomic(tmpPath, path); err != nil {
 		return err
 	}
 	return syncDir(dir)
+}
+
+// replaceAtomic publishes tmpPath over path. POSIX rename(2) always succeeds
+// against a concurrent replace of the same target; Windows MoveFileEx does
+// not — two publishers racing on one destination can lose with
+// ERROR_ACCESS_DENIED even though neither holds the file open. The identity
+// generator deliberately lets several goroutines publish the same state, so
+// that difference surfaced as a flaky "Access is denied" rather than as the
+// last-writer-wins the code intends.
+//
+// The retry is bounded and the final error is still returned, so a genuine
+// permission fault is reported rather than hidden behind a delay. On unix the
+// loop never runs a second time.
+func replaceAtomic(tmpPath, path string) error {
+	var err error
+	for attempt := 0; attempt < 20; attempt++ {
+		if err = os.Rename(tmpPath, path); err == nil {
+			return nil
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return err
+}
+
+// hardenIfPrivate restricts the temporary file to its owner before it is
+// published, and only when the caller asked for a private mode. Two details
+// are load-bearing:
+//
+// The requested mode is the intent. 0o600 means key material; 0o644 means
+// this is the public half and is meant to be readable. Hardening everything
+// would make the published public key exclusive.
+//
+// It must run before the link/rename, not after. Hardening the published path
+// held a handle on it, and a concurrent publisher's atomic replace then failed
+// with "Access is denied" on Windows — the identity generator relies on that
+// replace being atomic. Doing it here also means the file never exists at its
+// final path in a permissive state, so there is no window to lose the race in.
+func hardenIfPrivate(path string, mode os.FileMode) error {
+	if mode.Perm()&0o077 != 0 {
+		return nil
+	}
+	return privatefile.Harden(path)
 }
 
 func zero(value []byte) {

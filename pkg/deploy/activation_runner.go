@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"filees/pkg/privatefile"
+
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 )
@@ -122,10 +124,7 @@ func prepareActivationSession(root string) (ActivationSession, error) {
 	if !filepath.IsAbs(root) {
 		return ActivationSession{}, errors.New("activation session root must be absolute")
 	}
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return ActivationSession{}, err
-	}
-	if err := os.Chmod(root, 0o700); err != nil {
+	if err := privatefile.EnsureDir(root); err != nil {
 		return ActivationSession{}, err
 	}
 	path := filepath.Join(root, "activation.json")

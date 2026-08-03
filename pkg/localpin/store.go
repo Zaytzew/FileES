@@ -203,14 +203,15 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	// tmp.Chmod above is the mechanism on unix and nothing at all on Windows,
+	// where the temp file inherits its directory's DACL — on a real machine
+	// that handed a second local account full access to key material. Harden
+	// before the rename, so the record is never visible at its final path in
+	// a permissive state and no handle is held on the published file.
+	if err := privatefile.Harden(tmpPath); err != nil {
 		return err
 	}
-	// tmp.Chmod above is not the guarantee on Windows: the temp file inherits
-	// its directory's DACL, which on a real machine handed a second local
-	// account full access to key material. Harden after the rename so the
-	// published path carries the restriction, not just the temporary one.
-	if err := privatefile.Harden(path); err != nil {
+	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
 	return durable.SyncDirectory(dir)

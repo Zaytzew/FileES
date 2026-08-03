@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"filees/pkg/privatefile"
+
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 )
@@ -33,10 +35,7 @@ func PrepareReconnectIdentity(root, deployRequestID string, random io.Reader) (R
 		return ReconnectIdentity{}, errors.New("reconnect identity root must be absolute")
 	}
 	root = filepath.Join(root, deployRequestID)
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return ReconnectIdentity{}, err
-	}
-	if err := os.Chmod(root, 0o700); err != nil {
+	if err := privatefile.EnsureDir(root); err != nil {
 		return ReconnectIdentity{}, err
 	}
 	path := filepath.Join(root, "reconnect_ed25519")

@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -21,11 +20,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const (
-	askpassFIFOEnv      = "FILEES_ASKPASS_FIFO"
-	connectKeyEnv       = "FILEES_RECONNECT_KEY"
-	connectRequestIDEnv = "FILEES_DEPLOY_REQUEST_ID"
-)
+// askpassFIFOEnv is the Linux OTP channel: a FIFO path. Its Windows
+// counterpart is a named pipe, so the name stays platform-specific while
+// connectKeyEnv/connectRequestIDEnv live in tunnel.go.
+const askpassFIFOEnv = "FILEES_ASKPASS_FIFO"
 
 func AskpassConfigured() bool {
 	return os.Getenv(askpassFIFOEnv) != "" || os.Getenv(connectKeyEnv) != ""
@@ -142,32 +140,6 @@ func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyP
 	return nil
 }
 
-type boundedDiagnostic struct {
-	data  []byte
-	limit int
-}
-
-func (w *boundedDiagnostic) Write(p []byte) (int, error) {
-	wanted := len(p)
-	remaining := w.limit - len(w.data)
-	if remaining > 0 {
-		if len(p) > remaining {
-			p = p[:remaining]
-		}
-		w.data = append(w.data, p...)
-	}
-	return wanted, nil
-}
-
-func (w *boundedDiagnostic) String() string { return strings.TrimSpace(string(w.data)) }
-
-func tunnelCommandError(label string, err error, diagnostic string) error {
-	if diagnostic == "" {
-		return fmt.Errorf("%s: %w", label, err)
-	}
-	return fmt.Errorf("%s: %w: %s", label, err, diagnostic)
-}
-
 // RunAskpass serves the internal OpenSSH askpass invocation. It accepts only
 // the FIFO created by RunOpenSSHTunnel in the current user's runtime directory.
 func RunAskpass() error {
@@ -277,20 +249,3 @@ func writeOTPOnce(ctx context.Context, fifo string, otp []byte) error {
 	}
 }
 
-func scrubEnvironment(environment []string, names ...string) []string {
-	blocked := make(map[string]bool, len(names))
-	for _, name := range names {
-		blocked[name] = true
-	}
-	out := environment[:0:0]
-	for _, entry := range environment {
-		name := entry
-		if index := strings.IndexByte(entry, '='); index >= 0 {
-			name = entry[:index]
-		}
-		if !blocked[name] {
-			out = append(out, entry)
-		}
-	}
-	return out
-}

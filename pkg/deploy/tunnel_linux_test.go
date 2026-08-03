@@ -72,12 +72,9 @@ func TestAskpassRejectsOrdinaryFileAndOutsideRuntime(t *testing.T) {
 	}
 }
 
-func TestScrubEnvironmentRemovesInheritedAskpassControls(t *testing.T) {
-	got := scrubEnvironment([]string{"PATH=/bin", "SSH_ASKPASS=/evil", askpassFIFOEnv + "=/evil", "DISPLAY=:1"}, "SSH_ASKPASS", askpassFIFOEnv, "DISPLAY")
-	if len(got) != 1 || got[0] != "PATH=/bin" {
-		t.Fatalf("environment=%#v", got)
-	}
-}
+// TestScrubEnvironmentRemovesInheritedAskpassControls moved to tunnel_test.go
+// together with scrubEnvironment itself, so it now runs on every platform
+// rather than only where the FIFO implementation builds.
 
 func TestReconnectAskpassSignsServerNonceWithoutOTP(t *testing.T) {
 	requestID := uuid.NewString()

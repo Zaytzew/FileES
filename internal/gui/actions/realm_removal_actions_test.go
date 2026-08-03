@@ -20,7 +20,7 @@ type fakeRealmRemover struct {
 func (fake *fakeRealmRemover) BeginRealmRemoval(_ context.Context, request actions.RealmRemovalBeginRequest) (actions.RealmRemovalBeginResult, error) {
 	fake.begin <- request
 	return actions.RealmRemovalBeginResult{
-		OperationID: "operation", RecoveryKitPath: "/tmp/recovery/filees.fkr",
+		OperationID: "operation", RecoveryKitPath: wcPath("/tmp/recovery/filees.fkr"),
 		ActiveClientCount: 3, OwnedRepositoryCount: 2, ForeignGrantCount: 1,
 	}, nil
 }
@@ -47,7 +47,7 @@ func TestSettingsRealmRemovalRequiresRetentionConsentAndCarriesOptionalErasureIn
 			return platform.PromptTextResult{Value: "user@example.net"}, nil
 		},
 		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
-			return platform.PickFolderResult{Path: "/tmp/recovery"}, nil
+			return platform.PickFolderResult{Path: wcPath("/tmp/recovery")}, nil
 		},
 	}
 	intents, cancel := setup(actions.Config{
@@ -57,10 +57,10 @@ func TestSettingsRealmRemovalRequiresRetentionConsentAndCarriesOptionalErasureIn
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
 	begin := awaitCh(t, remover.begin, "realm removal begin")
-	if begin.ServerID != "office" || begin.NotificationEmail != "user@example.net" || begin.RecoveryDirectory != "/tmp/recovery" || !begin.ErasureRequested {
+	if begin.ServerID != "office" || begin.NotificationEmail != "user@example.net" || begin.RecoveryDirectory != wcPath("/tmp/recovery") || !begin.ErasureRequested {
 		t.Fatalf("begin=%+v", begin)
 	}
-	if got := awaitCh(t, remover.confirm, "realm removal confirm"); got != "office|operation|ABCDEFGH234567|/tmp/recovery/filees.fkr" {
+	if got := awaitCh(t, remover.confirm, "realm removal confirm"); got != "office|operation|ABCDEFGH234567|"+wcPath("/tmp/recovery/filees.fkr") {
 		t.Fatalf("confirm=%q", got)
 	}
 	deadline := time.Now().Add(time.Second)

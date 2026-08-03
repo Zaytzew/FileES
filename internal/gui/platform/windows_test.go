@@ -4,6 +4,8 @@ package platform
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -549,6 +551,108 @@ func TestWindowsSettingsDialogResolvesAnswers(t *testing.T) {
 				t.Fatalf("ShowSettings(%q) = %#v, want %#v", test.answer, got, test.want)
 			}
 		})
+	}
+}
+
+// settingsPayload decodes the base64/JSON row payload the settings script
+// embeds, so a test can assert on the data the dialog is driven by without
+// having to render WinForms.
+func settingsPayload(t *testing.T, script string) struct {
+	Title, Text string
+	Rows        []map[string]any
+} {
+	t.Helper()
+	const marker = "FromBase64String('"
+	start := strings.Index(script, marker)
+	if start < 0 {
+		t.Fatal("no base64 payload in generated script")
+	}
+	rest := script[start+len(marker):]
+	end := strings.Index(rest, "'")
+	if end < 0 {
+		t.Fatal("unterminated base64 payload")
+	}
+	raw, err := base64.StdEncoding.DecodeString(rest[:end])
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	var decoded struct {
+		Title, Text string
+		Rows        []map[string]any
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	return decoded
+}
+
+// TestWindowsSettingsDialogGatesEveryButtonPerRow pins the capability matrix
+// the dialog's button bar is driven by. Windows shows one permanent button bar
+// rather than linux.go's per-selection action list, so every button -- not
+// just the two that already had it -- needs a per-row boolean, and a recovery
+// row (an operation ID, with no server or folder behind it) must not enable
+// any folder or server action.
+//
+// Verified live against the rendered dialog: with these rows, row 0 enables
+// everything except the archive download, row 1 keeps only the server-level
+// actions, and the recovery row enables the archive download alone.
+func TestWindowsSettingsDialogGatesEveryButtonPerRow(t *testing.T) {
+	script, err := buildSettingsDialogScript(SettingsDialogRequest{
+		Title: "Ustawienia FileES",
+		Servers: []SettingsServer{{
+			ID: "biuro", Name: "Biuro", CanSetRealmVisibility: true, CanAddFolder: true,
+			Folders: []SettingsFolder{
+				{ID: "repo-1", Name: "Rysunki", CanManageGrants: true, CanDetach: true, CanDelete: true, CanLoadDump: true},
+				{ID: "repo-2", Name: "Obce"},
+			},
+		}, {ID: "readonly", Name: "Audyt"}},
+		Recoveries: []SettingsRecovery{{OperationID: "op-1", ServerName: "Biuro", Status: "gotowe", CanDownload: true}},
+	})
+	if err != nil {
+		t.Fatalf("buildSettingsDialogScript: %v", err)
+	}
+
+	// Every button must be backed by a hidden capability column, otherwise it
+	// would render permanently enabled.
+	for _, button := range settingsButtons {
+		if !contains(script, "$btns['"+button.capability+"']=$b") {
+			t.Errorf("button %q is not registered under capability %q", button.action, button.capability)
+		}
+	}
+	// DataGridView raises SelectionChanged while CurrentRow still points at
+	// the row being left, so gating off it lags exactly one row behind --
+	// the defect this test replaced. CurrentCellChanged sees the new row.
+	if !contains(script, "$g.Add_CurrentCellChanged({updateButtons})") {
+		t.Error("button gating is not wired to CurrentCellChanged")
+	}
+	if contains(script, "Add_SelectionChanged") {
+		t.Error("button gating must not use SelectionChanged: it fires before CurrentRow moves")
+	}
+
+	rows := settingsPayload(t, script).Rows
+	want := []struct {
+		folder string
+		caps   map[string]bool
+	}{
+		{"Rysunki", map[string]bool{"CanVisibility": true, "CanGrants": true, "CanAdd": true, "CanDetach": true, "CanDelete": true, "CanLoadDump": true, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		{"Obce", map[string]bool{"CanVisibility": true, "CanGrants": false, "CanAdd": true, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		// A server that offers neither realm visibility nor folder creation
+		// (e.g. a read-only client role) keeps only the two lifecycle actions.
+		{"Brak folderów", map[string]bool{"CanVisibility": false, "CanGrants": false, "CanAdd": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		{"gotowe", map[string]bool{"CanVisibility": false, "CanGrants": false, "CanAdd": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": false, "CanRemoveRealm": false, "CanDownloadRecovery": true}},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %d, want %d", len(rows), len(want))
+	}
+	for i, expected := range want {
+		if got := rows[i]["Folder"]; got != expected.folder {
+			t.Fatalf("row %d folder = %v, want %q", i, got, expected.folder)
+		}
+		for capability, wantEnabled := range expected.caps {
+			if got, ok := rows[i][capability].(bool); !ok || got != wantEnabled {
+				t.Errorf("row %d (%s) %s = %v, want %v", i, expected.folder, capability, rows[i][capability], wantEnabled)
+			}
+		}
 	}
 }
 

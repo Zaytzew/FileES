@@ -3,6 +3,8 @@ package actions_test
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +20,26 @@ import (
 )
 
 // ---- helpers ----------------------------------------------------------------
+
+// wcPath turns a POSIX-style fixture path into one that is absolute on the
+// host platform. The controller hands every picked path to
+// platform.ValidatePickedPaths, which requires filepath.IsAbs; on Windows
+// "/wc/repo1" is rooted but drive-relative, so IsAbs rejects it and the
+// controller returned before ever calling Lock/Unlock -- the tests then sat
+// waiting for a call that could not come and failed on timeout, which read
+// like a concurrency bug rather than a fixture problem.
+//
+// On every other platform this is the identity function, so the fixtures and
+// their expectations are byte-for-byte what they were.
+// An empty path stays empty: "no local path" is a meaningful fixture value
+// (TestControllerOpenFolderSkipsEmptyLocalPath), and filepath.Join would turn
+// it into a bare "C:\".
+func wcPath(posix string) string {
+	if runtime.GOOS != "windows" || posix == "" {
+		return posix
+	}
+	return filepath.Join(`C:\`, filepath.FromSlash(posix))
+}
 
 type vmStore struct {
 	mu sync.RWMutex
@@ -48,7 +70,7 @@ func vmWithLock(repos ...app.RepoViewModel) app.ViewModel {
 }
 
 func repo(id, path string) app.RepoViewModel {
-	return app.RepoViewModel{ID: id, Access: contract.AccessReadWrite, LocalPath: path, State: contract.StateActive, ReservationCount: 1}
+	return app.RepoViewModel{ID: id, Access: contract.AccessReadWrite, LocalPath: wcPath(path), State: contract.StateActive, ReservationCount: 1}
 }
 
 // fakeLockUnlocker records calls and signals via channels.
@@ -289,12 +311,24 @@ func TestControllerActivationStaysVisibleWhenAliasIsNotConfirmed(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		snapshot := fake.Snapshot()
-		if len(snapshot.InfoRequests) > 0 && len(snapshot.Notifications) >= 2 {
+		// A declined alias produces three notifications in a fixed order:
+		// "Alias nie został ustawiony" from the claim, then the
+		// "Klient aktywowany" notice, and only last the activation summary
+		// this test asserts on. Waiting for a bare count (>= 2) was already
+		// satisfied by the first two, so the assertion raced the summary and
+		// failed about one run in six. Wait for the summary itself instead.
+		var summary *platform.Notification
+		for i := range snapshot.Notifications {
+			if snapshot.Notifications[i].ID == "activation" {
+				summary = &snapshot.Notifications[i]
+			}
+		}
+		if len(snapshot.InfoRequests) > 0 && summary != nil {
 			if !strings.Contains(snapshot.InfoRequests[0].Text, "jest aktywne") {
 				t.Fatalf("info=%q", snapshot.InfoRequests[0].Text)
 			}
-			if !strings.Contains(snapshot.Notifications[len(snapshot.Notifications)-1].Body, "alias wymaga ustawienia") {
-				t.Fatalf("activation notification=%q", snapshot.Notifications[len(snapshot.Notifications)-1].Body)
+			if !strings.Contains(summary.Body, "alias wymaga ustawienia") {
+				t.Fatalf("activation summary=%q", summary.Body)
 			}
 			return
 		}
@@ -388,7 +422,7 @@ func TestControllerOpenFolderCallsOpener(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if len(opened) != 1 || opened[0] != "/wc/repo1" {
+	if len(opened) != 1 || opened[0] != wcPath("/wc/repo1") {
 		t.Fatalf("opened folders = %v", opened)
 	}
 }
@@ -594,7 +628,7 @@ func TestControllerLockStaleStatePreventsPickerAndDaemon(t *testing.T) {
 
 func TestControllerLockCapabilityRevokedWhilePickerOpen(t *testing.T) {
 	locker := newFakeLocker()
-	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/repo1/file.dwg"}})
+	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{wcPath("/wc/repo1/file.dwg")}})
 	fake := &platformtest.Fake{} // for OpenFolder, Notify
 	vm := &vmStore{}
 	vm.Store(vmWithLock(repo("repo1", "/wc/repo1")))
@@ -625,7 +659,7 @@ func TestControllerLockCapabilityRevokedWhilePickerOpen(t *testing.T) {
 
 func TestControllerLockRepoPathChangedWhilePickerOpen(t *testing.T) {
 	locker := newFakeLocker()
-	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/repo1/file.dwg"}})
+	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{wcPath("/wc/repo1/file.dwg")}})
 	fake := &platformtest.Fake{}
 	vm := &vmStore{}
 	vm.Store(vmWithLock(repo("repo1", "/wc/repo1")))
@@ -652,7 +686,7 @@ func TestControllerLockRejectsPathOutsideRepo(t *testing.T) {
 	notifCh := make(chan platform.Notification, 1)
 	fake := &platformtest.Fake{
 		PickFilesFunc: func(_ context.Context, _ platform.PickFilesRequest) (platform.PickFilesResult, error) {
-			return platform.PickFilesResult{Paths: []string{"/wc/repo-other/file.dwg"}}, nil
+			return platform.PickFilesResult{Paths: []string{wcPath("/wc/repo-other/file.dwg")}}, nil
 		},
 		NotifyFunc: func(_ context.Context, n platform.Notification) error {
 			notifCh <- n
@@ -998,14 +1032,14 @@ func TestControllerConcurrentIntentsAreAllProcessed(t *testing.T) {
 		lockCh:   make(chan lockCall, 2),
 		unlockCh: make(chan lockCall, 2),
 	}
-	gated1 := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/r1/a.dwg"}})
-	gated2 := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/r2/b.dwg"}})
+	gated1 := newGatedPicker(platform.PickFilesResult{Paths: []string{wcPath("/wc/r1/a.dwg")}})
+	gated2 := newGatedPicker(platform.PickFilesResult{Paths: []string{wcPath("/wc/r2/b.dwg")}})
 	fake := &platformtest.Fake{
 		PickFilesFunc: func(ctx context.Context, req platform.PickFilesRequest) (platform.PickFilesResult, error) {
-			if req.Root == "/wc/r1" {
+			if req.Root == wcPath("/wc/r1") {
 				return gated1.PickFiles(ctx, req)
 			}
-			if req.Root == "/wc/r2" {
+			if req.Root == wcPath("/wc/r2") {
 				return gated2.PickFiles(ctx, req)
 			}
 			return platform.PickFilesResult{}, errors.New("unexpected picker root: " + req.Root)
@@ -1039,7 +1073,7 @@ func TestControllerConcurrentIntentsAreAllProcessed(t *testing.T) {
 
 func TestControllerSerializesLockUnlockPerRepo(t *testing.T) {
 	locker := newFakeLocker()
-	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{"/wc/r1/a.dwg"}})
+	gated := newGatedPicker(platform.PickFilesResult{Paths: []string{wcPath("/wc/r1/a.dwg")}})
 	vm := &vmStore{}
 	vm.Store(vmWithLock(repo("r1", "/wc/r1")))
 

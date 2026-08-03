@@ -1,9 +1,10 @@
 package localpin
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
+
+	"filees/pkg/privatefile"
 )
 
 func TestDeviceInstanceIDPersistsAcrossCalls(t *testing.T) {
@@ -16,12 +17,12 @@ func TestDeviceInstanceIDPersistsAcrossCalls(t *testing.T) {
 	if err != nil || second != first {
 		t.Fatalf("deviceInstanceID not stable: first=%q second=%q err=%v", first, second, err)
 	}
-	info, err := os.Stat(filepath.Join(root, "device_id"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("device_id mode=%v, want 0600", info.Mode().Perm())
+	// Assert the guarantee, not the mechanism. Checking for mode 0600 tested
+	// the unix implementation of "private" and could never hold on Windows,
+	// where mode bits restrict nobody — so the exposure it was meant to catch
+	// went unnoticed there instead of being reported.
+	if err := privatefile.Verify(filepath.Join(root, "device_id")); err != nil {
+		t.Fatalf("device_id is not private: %v", err)
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"filees/pkg/privatefile"
+
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 )
@@ -28,11 +30,16 @@ func TestGenerateInstallationIdentityIsOpenSSHAtomicAndIdempotent(t *testing.T) 
 	if _, err := ssh.ParsePrivateKey(privateBefore); err != nil {
 		t.Fatalf("private key is not OpenSSH: %v", err)
 	}
-	if mode := fileMode(t, privatePath); mode != 0o600 {
-		t.Fatalf("private mode=%#o", mode)
+	// Ask whether the key is private, not which mechanism made it so. The old
+	// "mode != 0o600" spelling could not hold on Windows however tight the
+	// DACL was, so it reported a portability problem instead of the real
+	// exposure: the private key was inheriting access for a second local
+	// account.
+	if err := privatefile.Verify(privatePath); err != nil {
+		t.Fatalf("installation private key is not private: %v", err)
 	}
-	if mode := fileMode(t, filepath.Join(root, "identity.json")); mode != 0o600 {
-		t.Fatalf("state mode=%#o", mode)
+	if err := privatefile.Verify(filepath.Join(root, "identity.json")); err != nil {
+		t.Fatalf("identity state is not private: %v", err)
 	}
 	second, err := g.GenerateInstallationIdentity(op, clientID)
 	if err != nil {

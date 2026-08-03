@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"filees/internal/durable"
+	"filees/pkg/privatefile"
 
 	"github.com/google/uuid"
 )
@@ -79,7 +80,7 @@ func Store(path string, profile Profile) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := privatefile.EnsureDir(filepath.Dir(path)); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".profile-*.tmp")
@@ -101,6 +102,13 @@ func Store(path string, profile Profile) error {
 		return err
 	}
 	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// The profile names the identity-key file and pins known_hosts, so it is
+	// worth protecting in its own right. tmp.Chmod restricts nobody on
+	// Windows; harden before publishing, never after, so the atomic replace
+	// stays atomic and the file never appears permissively.
+	if err := privatefile.Harden(tmpPath); err != nil {
 		return err
 	}
 	if err := os.Rename(tmpPath, path); err != nil {

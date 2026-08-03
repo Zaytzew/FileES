@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"filees/pkg/privatefile"
 )
 
 func TestStoreLoadProfileRoundTrip(t *testing.T) {
@@ -21,12 +23,11 @@ func TestStoreLoadProfileRoundTrip(t *testing.T) {
 	if got != want {
 		t.Fatalf("got=%+v want=%+v", got, want)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("mode=%v", info.Mode())
+	// The profile names the identity-key file and pins known_hosts, so it is
+	// worth protecting in its own right. Assert the guarantee rather than the
+	// unix mode, which restricts nobody on Windows.
+	if err := privatefile.Verify(path); err != nil {
+		t.Fatalf("stored client profile is not private: %v", err)
 	}
 }
 

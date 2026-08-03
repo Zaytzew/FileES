@@ -1,8 +1,9 @@
 package deploy
 
 import (
-	"os"
 	"testing"
+
+	"filees/pkg/privatefile"
 
 	"github.com/google/uuid"
 )
@@ -13,9 +14,11 @@ func TestReconnectIdentityIsPrivateDurableAndDeploymentScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(first.PrivateKeyPath)
-	if err != nil || info.Mode().Perm() != 0o600 || first.PublicKey == "" {
-		t.Fatalf("identity=%+v info=%v err=%v", first, info, err)
+	if first.PublicKey == "" {
+		t.Fatalf("identity=%+v", first)
+	}
+	if err := privatefile.Verify(first.PrivateKeyPath); err != nil {
+		t.Fatalf("reconnect private key is not private: %v", err)
 	}
 	root := t.TempDir()
 	stable, err := PrepareReconnectIdentity(root, requestID, nil)

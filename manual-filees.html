@@ -798,7 +798,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <div class="table-wrap"><table>
 <tr><th>Platform</th><th>Requirements</th></tr>
 <tr><td>Linux daemon</td><td><code>svn</code> and OpenSSH <code>ssh</code> in PATH, an activated FileES installation identity and pinned service host key; Go 1.25+ only when building from source</td></tr>
-<tr><td>Linux GUI</td><td>SNI-compatible desktop (KDE, XFCE, MATE); GNOME requires AppIndicator extension; <code>zenity</code> or <code>kdialog</code> for file picker; <code>xdg-open</code>; <code>notify-send</code> (optional)</td></tr>
+<tr><td>Linux GUI</td><td>SNI-compatible desktop (KDE, XFCE, MATE); GNOME requires AppIndicator extension; <code>zenity</code> or <code>kdialog</code> for file picker; <code>yad</code> for the server settings/realm-grant/realm-visibility dialogs; <code>xdg-open</code>; <code>notify-send</code> (optional)</td></tr>
 <tr><td>Windows GUI</td><td>Windows 10+; PowerShell; MSI install for toast notifications (AUMID registration)</td></tr>
 </table></div>
 <h2 id="ch2-config">2.2 Configuration</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Validation and non-overlapping working-copy roots are enforced before runtime state creation.</span></div>
@@ -972,7 +972,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <div class="note"><strong>Realm alias:</strong> after activation the GUI asks once for an immutable, globally unique realm alias. It is what other users see as the owner of a file reservation; the internal owner ID is never sent to the GUI. Because reservations must be attributable, the daemon refuses to lock files for a known active realm that has no alias yet.</div>
 <h4>Realm grants and visibility</h4>
 <p>The GUI shows the realm concept to end users under the plain-language label <strong>strefa</strong> (§2.10). Where this manual says "realm" below, the desktop window says "strefa".</p>
-<p>Two further actions appear in the same FileES Settings window (Linux: zenity radiolist; Windows: PowerShell <code>DataGridView</code>) once the daemon reports the corresponding capability:</p>
+<p>Two further actions appear in the same FileES Settings window (Linux: <code>yad</code> radiolist; Windows: PowerShell <code>DataGridView</code>) once the daemon reports the corresponding capability:</p>
 <ul>
 <li><strong>Widoczność…</strong> (<code>realm_visibility</code>, IPC <code>realm.set_visibility</code>) toggles this realm's own entry in the private recipient directory between hidden and listed. A realm must be listed before another realm can pick it as a grant recipient; toggling visibility never reveals repositories or existing access — only whether this realm can be found at all.</li>
 <li><strong>Dostęp stref…</strong> (<code>manage_grants</code>, IPC <code>realm.grant_recipients</code> + <code>repo.grant_access</code> / <code>repo.revoke_access</code>), reachable per repository row, opens a picker listing every currently visible realm and lets the owner grant read-only, grant read-write, or revoke access for the chosen recipient. Every change asks for confirmation and immediately regenerates data-authz and every affected installation's <code>view.json</code> in the same worker operation.</li>
@@ -1041,6 +1041,7 @@ FILEES_LOG=trace ./filees   # includes svn invocations
 <tr><td>GUI icon does not appear (GNOME)</td><td>Install the <strong>AppIndicator and KStatusNotifierItem Support</strong> extension from extensions.gnome.org; log out and back in</td></tr>
 <tr><td>“Disconnected” but daemon is running</td><td>Check socket path: <code>filees status</code>; run <code>filees-gui --socket /path/to/daemon.sock</code>; check <code>filees-gui --autostart status</code> for <code>enabled-stale</code></td></tr>
 <tr><td>File picker does not open (Linux)</td><td>Install <code>zenity</code> or <code>kdialog</code>: <code>apt install zenity</code> / <code>dnf install zenity</code></td></tr>
+<tr><td>“Zarządzaj serwerem…” does not open (Linux)</td><td>Install <code>yad</code>: <code>apt install yad</code> / <code>dnf install yad</code></td></tr>
 <tr><td>Toast notifications missing (Windows)</td><td>Ensure installation was via MSI (registers AUMID). Running <code>filees-gui.exe</code> without the installer will not register the AUMID.</td></tr>
 <tr><td>Multiple tray icons</td><td>A per-user lock prevents a second instance from initialising the tray. If two icons appear, one may be from an older version. Terminate the obsolete GUI process with the operating-system tools, then use “Shut down FileES” in the current instance and start the current installation again. The menu has no GUI-only shutdown action.</td></tr>
 <tr><td>Conflict files accumulating in <code>!kolizje/</code></td><td>These are preserved local versions of files where a server change won. Review them manually. The directory is scanner-ignored and will never be committed.</td></tr>

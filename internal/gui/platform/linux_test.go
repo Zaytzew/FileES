@@ -119,7 +119,7 @@ func TestLinuxShowReservationsReturnsOnlyOpaqueRowID(t *testing.T) {
 }
 
 func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
-	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}}
+	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}}
 	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
 	request := SettingsDialogRequest{Title: "Ustawienia FileES", Text: "Serwery i foldery", Servers: []SettingsServer{{
 		Name: "Biuro", Address: "filees.example:2222", Realm: "acme", ClientID: "client-1",
@@ -129,7 +129,7 @@ func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := runner.Calls()
-	if len(calls) != 1 || calls[0].name != "/usr/bin/zenity" {
+	if len(calls) != 1 || calls[0].name != "/usr/bin/yad" {
 		t.Fatalf("settings calls = %#v", calls)
 	}
 	args := strings.Join(calls[0].args, "\n")
@@ -140,8 +140,59 @@ func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
 	}
 }
 
+func TestLinuxShowSettingsAppliesDarkThemeOnlyWhenDetected(t *testing.T) {
+	original, wasSet := os.LookupEnv("GTK_THEME")
+	t.Cleanup(func() {
+		if wasSet {
+			os.Setenv("GTK_THEME", original)
+		} else {
+			os.Unsetenv("GTK_THEME")
+		}
+	})
+
+	os.Unsetenv("GTK_THEME")
+	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad", "gsettings": "/usr/bin/gsettings"}, output: func(_ context.Context, name string, _ []string) ([]byte, error) {
+		if name == "/usr/bin/gsettings" {
+			return []byte("'default'\n"), nil
+		}
+		return nil, nil
+	}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	if _, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if v := os.Getenv("GTK_THEME"); v != "" {
+		t.Fatalf("GTK_THEME set to %q for a non-dark color-scheme", v)
+	}
+
+	os.Unsetenv("GTK_THEME")
+	runner = &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad", "gsettings": "/usr/bin/gsettings"}, output: func(_ context.Context, name string, _ []string) ([]byte, error) {
+		if name == "/usr/bin/gsettings" {
+			return []byte("'prefer-dark'\n"), nil
+		}
+		return nil, nil
+	}}
+	backend = newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	if _, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if v := os.Getenv("GTK_THEME"); v != "Adwaita:dark" {
+		t.Fatalf("GTK_THEME = %q, want Adwaita:dark for a prefer-dark color-scheme", v)
+	}
+
+	os.Unsetenv("GTK_THEME")
+	runner = &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}}
+	backend = newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	if _, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if v := os.Getenv("GTK_THEME"); v != "" {
+		t.Fatalf("GTK_THEME set to %q when gsettings is unavailable", v)
+	}
+}
+
 func TestLinuxRealmGrantDialogReturnsSelectedAccess(t *testing.T) {
-	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(context.Context, string, []string) ([]byte, error) {
 		return []byte("realm-2|rw\n"), nil
 	}}
 	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
@@ -165,7 +216,7 @@ func TestLinuxSettingsOffersRealmGrantsOnlyForEligibleFolder(t *testing.T) {
 	}{{name: "owned", eligible: true, want: true}, {name: "foreign", eligible: false, want: false}} {
 		t.Run(test.name, func(t *testing.T) {
 			calls := 0
-			runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(_ context.Context, _ string, args []string) ([]byte, error) {
+			runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(_ context.Context, _ string, args []string) ([]byte, error) {
 				calls++
 				if calls == 1 {
 					return []byte("office|repo-1\n"), nil
@@ -186,7 +237,7 @@ func TestLinuxSettingsOffersRealmGrantsOnlyForEligibleFolder(t *testing.T) {
 }
 
 func TestLinuxRealmVisibilityDialogReturnsListed(t *testing.T) {
-	runner := &fakeLinuxRunner{paths: map[string]string{"zenity": "/usr/bin/zenity"}, output: func(context.Context, string, []string) ([]byte, error) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(context.Context, string, []string) ([]byte, error) {
 		return []byte("listed\n"), nil
 	}}
 	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)

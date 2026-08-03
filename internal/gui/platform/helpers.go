@@ -84,5 +84,14 @@ func splitPickerOutput(output string) []string {
 // deliberate user cancellation (exit code 1 by convention across all pickers).
 func commandCancelled(err error) bool {
 	var exitErr interface{ ExitCode() int }
-	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	code := exitErr.ExitCode()
+	// zenity and yad both use 1 for an explicit Cancel button. yad
+	// additionally returns 252 when the dialog is closed via Esc or the
+	// window's own close control, which zenity folds into the same code 1
+	// -- treat both as a silent cancel, never a reportable failure. zenity
+	// never produces 252, so this is a no-op for zenity-backed dialogs.
+	return code == 1 || code == 252
 }

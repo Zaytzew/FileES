@@ -13,7 +13,9 @@ import (
 
 func TestOnboardPassportPersistsRequestBeforeSSHAndResumes(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "passport")
-	profile := ServerProfile{ID: "test", Address: "server.example.net:2222", KnownHostsPath: "/tmp/known_hosts"}
+	// filepath.Join, not "/tmp/known_hosts": validate() demands an absolute
+	// path and a leading slash is drive-relative on Windows.
+	profile := ServerProfile{ID: "test", Address: "server.example.net:2222", KnownHostsPath: filepath.Join(t.TempDir(), "known_hosts")}
 	var firstID string
 	fail := func(_ context.Context, got ServerProfile, email, requestID string) (onboarding.OnboardResponse, error) {
 		if got != profile {

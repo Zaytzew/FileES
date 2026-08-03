@@ -28,6 +28,31 @@ func TestCommandCancelledRecognisesZenityAndYadCancelCodes(t *testing.T) {
 	}
 }
 
+// TestYadSelectionStripsExactlyOneTrailingSeparator is the regression test
+// for a real bug found live: yad appends a trailing "|" field separator
+// after the last printed --print-column value, even for a single column
+// ("add_folder" comes back as "add_folder|"). Every exact-match/strings.Cut
+// consumer in this file broke silently on this -- the dialog ran and exited
+// cleanly, the caller just never recognised the selection. Only one
+// trailing separator is yad's own artifact; a second one is the caller's
+// own intentional trailing delimiter (e.g. server.ID+"|" for a folder-less
+// row) and must survive.
+func TestYadSelectionStripsExactlyOneTrailingSeparator(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"add_folder|", "add_folder"},
+		{"add_folder", "add_folder"},
+		{"biuro|8c3ecb60-a02f|", "biuro|8c3ecb60-a02f"},
+		{"biuro||", "biuro|"},
+		{"  add_folder|  ", "add_folder"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := yadSelection([]byte(c.in)); got != c.want {
+			t.Errorf("yadSelection(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestValidatePickedPaths(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator), "wc", "repo")
 	first := filepath.Join(root, "sub", "..", "a.dwg")

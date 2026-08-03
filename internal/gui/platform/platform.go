@@ -112,12 +112,30 @@ type SettingsDialogRequest struct {
 type SettingsServer struct {
 	ID, Name, Address, Realm, ClientID string
 	CanSetRealmVisibility              bool
-	Folders                            []SettingsFolder
+	// CanAddFolder mirrors startCreateRepository's own guard
+	// (server.CanOfferRepositoryCreation(), e.g. false for a read-only
+	// client role such as an audit-only client) -- add_folder used to be
+	// offered unconditionally, so a restricted client saw a real "nothing
+	// happens" click with zero feedback.
+	CanAddFolder bool
+	Folders      []SettingsFolder
 }
 
+// SettingsFolder's Can* fields mirror the exact preconditions their
+// corresponding controller action (startDetachRepository, startLoadDump in
+// actions.go) checks before doing anything. Each was added after a live,
+// reproducible "click it, nothing happens" bug: the dialog used to offer
+// every action unconditionally once a folder was selected, while the
+// controller's own guard silently returned with zero feedback (no dialog,
+// no notification) when its precondition wasn't met. Keep these in sync
+// with repositoryOwnedByCurrentRealm/CanDetachRepository/CanDeleteRepository
+// rather than reintroducing an unconditional button.
 type SettingsFolder struct {
 	ID, Name, LocalPath, State, Access string
 	CanManageGrants                    bool
+	CanDetach                          bool // detach_folder (non-destructive)
+	CanDelete                          bool // delete_repository
+	CanLoadDump                        bool // load_dump
 }
 type SettingsRecovery struct {
 	OperationID, ServerName, KitPath, Status string

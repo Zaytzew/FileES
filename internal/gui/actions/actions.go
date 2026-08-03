@@ -472,7 +472,7 @@ func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.Settings
 			clientID = "brak danych"
 		}
 		request := platform.SettingsDialogRequest{Title: "FileES — " + name, Text: "Informacje o serwerze, aktywacji i lokalnych folderach."}
-		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility()}
+		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility(), CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
 		for _, repo := range server.Repos {
 			// Optional remote projections are not folders on this client. Showing
 			// them beside their attached counterpart produces duplicate-looking
@@ -494,7 +494,15 @@ func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.Settings
 			if repo.Access == "rw" {
 				access = "odczyt i zapis"
 			}
-			row.Folders = append(row.Folders, platform.SettingsFolder{ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access, CanManageGrants: vm.CanManageRealmGrants() && server.Owns(repo) && server.CanOfferRepositoryCreation()})
+			attachmentRequired := repo.AttachmentPolicy == "required"
+			ownedAndCreatable := server.Owns(repo) && server.CanOfferRepositoryCreation()
+			row.Folders = append(row.Folders, platform.SettingsFolder{
+				ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
+				CanManageGrants: vm.CanManageRealmGrants() && ownedAndCreatable,
+				CanDetach:       !attachmentRequired && vm.CanDetachRepository(),
+				CanDelete:       !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+				CanLoadDump:     ownedAndCreatable,
+			})
 		}
 		request.Servers = append(request.Servers, row)
 		return request, true

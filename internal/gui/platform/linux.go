@@ -341,7 +341,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 		args = append(args, "FALSE", prefix+recovery.OperationID+"|", recovery.ServerName, "—", "—", recovery.Status, recovery.KitPath, "recovery", "—")
 	}
 	output, err := b.runner.Output(ctx, command, args...)
-	selection := strings.TrimSpace(string(output))
+	selection := yadSelection(output)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return SettingsDialogResult{}, ctxErr
@@ -361,29 +361,40 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	if strings.HasPrefix(serverID, "@recovery-grace:") {
 		return SettingsDialogResult{Action: SettingsDialogClose}, nil
 	}
+	canAddFolder := false
 	canManageGrants := false
+	canDetach := false
+	canDelete := false
+	canLoadDump := false
 	canSetRealmVisibility := false
 	for _, server := range request.Servers {
 		if server.ID != serverID {
 			continue
 		}
+		canAddFolder = server.CanAddFolder
 		canSetRealmVisibility = server.CanSetRealmVisibility
 		for _, folder := range server.Folders {
 			if folder.ID == repoID {
 				canManageGrants = folder.CanManageGrants
+				canDetach = folder.CanDetach
+				canDelete = folder.CanDelete
+				canLoadDump = folder.CanLoadDump
 				break
 			}
 		}
 	}
-	action, err := b.settingsAction(ctx, command, repoID != "", canManageGrants, canSetRealmVisibility)
+	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canManageGrants, canDetach, canDelete, canLoadDump, canSetRealmVisibility)
 	if err != nil || action == SettingsDialogClose {
 		return SettingsDialogResult{Action: action}, err
 	}
 	return SettingsDialogResult{Action: action, ServerID: serverID, RepoID: repoID}, nil
 }
 
-func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canManageGrants, canSetRealmVisibility bool) (SettingsDialogAction, error) {
-	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "add_folder", "Dodaj folder do FileES", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
+func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canManageGrants, canDetach, canDelete, canLoadDump, canSetRealmVisibility bool) (SettingsDialogAction, error) {
+	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
+	if canAddFolder {
+		args = append(args, "FALSE", "add_folder", "Dodaj folder do FileES")
+	}
 	if canSetRealmVisibility {
 		args = append(args, "FALSE", "realm_visibility", "Widoczność mojej strefy")
 	}
@@ -391,7 +402,15 @@ func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFo
 		if canManageGrants {
 			args = append(args, "FALSE", "manage_grants", "Zarządzaj dostępem stref")
 		}
-		args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder", "FALSE", "delete_repository", "Odłącz trwale repozytorium", "FALSE", "load_dump", "Odtwórz z archiwum")
+		if canDetach {
+			args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder")
+		}
+		if canDelete {
+			args = append(args, "FALSE", "delete_repository", "Odłącz trwale repozytorium")
+		}
+		if canLoadDump {
+			args = append(args, "FALSE", "load_dump", "Odtwórz z archiwum")
+		}
 	}
 	output, err := b.runner.Output(ctx, command, args...)
 	if err != nil {
@@ -403,7 +422,7 @@ func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFo
 		}
 		return SettingsDialogClose, NewOperationalFailure("settings_dialog", err)
 	}
-	return settingsAction(strings.TrimSpace(string(output))), nil
+	return settingsAction(yadSelection(output)), nil
 }
 
 func (b *LinuxBackend) ShowRealmVisibility(ctx context.Context, request RealmVisibilityDialogRequest) (RealmVisibilityDialogResult, error) {
@@ -422,7 +441,7 @@ func (b *LinuxBackend) ShowRealmVisibility(ctx context.Context, request RealmVis
 		}
 		return RealmVisibilityDialogResult{}, NewOperationalFailure("realm_visibility_dialog", err)
 	}
-	switch strings.TrimSpace(string(output)) {
+	switch yadSelection(output) {
 	case "listed":
 		return RealmVisibilityDialogResult{Action: RealmVisibilityDialogListed}, nil
 	case "hidden":
@@ -460,7 +479,7 @@ func (b *LinuxBackend) ShowRealmGrants(ctx context.Context, request RealmGrantDi
 		}
 		return RealmGrantDialogResult{}, NewOperationalFailure("realm_grant_dialog", err)
 	}
-	realmID, access, ok := strings.Cut(strings.TrimSpace(string(output)), "|")
+	realmID, access, ok := strings.Cut(yadSelection(output), "|")
 	if !ok || realmID == "" {
 		return RealmGrantDialogResult{Action: RealmGrantDialogClose}, nil
 	}

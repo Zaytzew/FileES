@@ -199,30 +199,9 @@ func RunAskpass() error {
 	return writeErr
 }
 
-func loadReconnectSigner(path string) (ssh.Signer, error) {
-	path = filepath.Clean(strings.TrimSpace(path))
-	if path == "." || !filepath.IsAbs(path) {
-		return nil, errors.New("reconnect private key path must be absolute")
-	}
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || stat.Uid != uint32(os.Getuid()) {
-		return nil, errors.New("reconnect private key must be an owner-only regular file")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	defer zero(raw)
-	signer, err := ssh.ParsePrivateKey(raw)
-	if err != nil || signer.PublicKey().Type() != ssh.KeyAlgoED25519 {
-		return nil, errors.New("reconnect private key must be unencrypted Ed25519")
-	}
-	return signer, nil
-}
+// loadReconnectSigner moved to tunnel.go in phase 3 of
+// concepts/WINDOWS_BOOTSTRAP_CONCEPT.md: it has no FIFO to be Linux-specific
+// about, and its owner-only check is now privatefile.Verify.
 
 func writeOTPOnce(ctx context.Context, fifo string, otp []byte) error {
 	ticker := time.NewTicker(20 * time.Millisecond)

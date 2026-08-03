@@ -8,13 +8,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"filees/pkg/onboarding"
 	"filees/pkg/privatefile"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/sys/windows"
 )
 
@@ -101,12 +105,46 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	return nil
 }
 
-// RunOpenSSHReconnectTunnel is phase 3 of
-// concepts/WINDOWS_BOOTSTRAP_CONCEPT.md. It is a distinct mechanism — the
-// server challenges a durable key instead of a mail OTP — so it is left
-// explicitly unimplemented rather than approximated by the bootstrap path.
-func RunOpenSSHReconnectTunnel(context.Context, TunnelSpec, string) error {
-	return errors.New("push reconnect tunnel is not implemented on Windows yet")
+// RunOpenSSHReconnectTunnel recreates the same fixed reverse forward after
+// transport loss. The server challenges the durable reconnect key; the
+// one-time mail OTP is neither retained nor reused, so this path needs no
+// pipe at all — the askpass child signs a nonce instead of reading a secret.
+func RunOpenSSHReconnectTunnel(ctx context.Context, spec TunnelSpec, privateKeyPath string) error {
+	args, err := OpenSSHArgs(spec)
+	if err != nil {
+		return err
+	}
+	signer, err := loadReconnectSigner(privateKeyPath)
+	if err != nil {
+		return err
+	}
+	configured, _, _, _, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(spec.ReconnectPublicKey)))
+	if err != nil || !bytes.Equal(configured.Marshal(), signer.PublicKey().Marshal()) {
+		return errors.New("reconnect private key does not match tunnel binding")
+	}
+	frame, err := EncodeTunnelSession(TunnelSession{Schema: TunnelSessionSchema, DeployRequestID: spec.DeployRequestID, HelperHostPublicKey: spec.HelperEndpoint.HostPublicKey, ReconnectPublicKey: spec.ReconnectPublicKey})
+	if err != nil {
+		return err
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	cmd.Stdin = bytes.NewReader(frame)
+	diagnostic := &boundedDiagnostic{limit: 16 * 1024}
+	cmd.Stderr = diagnostic
+	cmd.Env = scrubEnvironment(os.Environ(), "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "DISPLAY", askpassPipeEnv, connectKeyEnv, connectRequestIDEnv)
+	cmd.Env = append(cmd.Env,
+		"SSH_ASKPASS="+executable,
+		"SSH_ASKPASS_REQUIRE=force",
+		connectKeyEnv+"="+filepath.Clean(privateKeyPath),
+		connectRequestIDEnv+"="+spec.DeployRequestID,
+	)
+	if err := cmd.Run(); err != nil {
+		return tunnelCommandError("reconnect SSH tunnel", err, diagnostic.String())
+	}
+	return nil
 }
 
 // createOTPPipe publishes a single-instance pipe under an unguessable name,
@@ -169,7 +207,22 @@ func serveOTPOnce(pipe windows.Handle, otp []byte) error {
 // a pipe published by RunOpenSSHTunnel in this session.
 func RunAskpass() error {
 	if os.Getenv(connectKeyEnv) != "" {
-		return errors.New("reconnect askpass is not implemented on Windows yet")
+		// Reconnect mode: OpenSSH passes its challenge as the last argument
+		// and expects the signature back on stdout. Nothing secret travels
+		// through the environment here — only the path to the key.
+		if len(os.Args) < 2 {
+			return errors.New("reconnect askpass challenge is missing")
+		}
+		signer, err := loadReconnectSigner(os.Getenv(connectKeyEnv))
+		if err != nil {
+			return err
+		}
+		response, err := onboarding.EncodeReconnectResponse(os.Args[len(os.Args)-1], os.Getenv(connectRequestIDEnv), signer)
+		if err != nil {
+			return err
+		}
+		_, err = io.WriteString(os.Stdout, response+"\n")
+		return err
 	}
 	name := strings.TrimSpace(os.Getenv(askpassPipeEnv))
 	if !strings.HasPrefix(name, otpPipePrefix) || len(name) != len(otpPipePrefix)+32 {

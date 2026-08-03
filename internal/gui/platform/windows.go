@@ -311,7 +311,7 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 		}
 		return SettingsDialogResult{}, NewOperationalFailure("settings_dialog", err)
 	}
-	parts := strings.Split(strings.TrimSpace(string(output)), ":")
+	parts := strings.SplitN(strings.TrimSpace(string(output)), "|", 3)
 	if len(parts) != 3 {
 		return SettingsDialogResult{Action: SettingsDialogClose}, nil
 	}
@@ -377,8 +377,14 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	sb.WriteString(dpiAwarenessPrelude)
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;")
 	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1320;$f.Height=620;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1270;$l.Height=34;$f.Controls.Add($l);")
-	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1270;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @('ServerID','RepoID','Granty','Widoczność','Serwer','Adres','Strefa','Folder','Ścieżka','Stan','Dostęp')){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add($r.ServerID,$r.RepoID,$r.CanManageGrants,$r.CanSetRealmVisibility,$r.Server,$r.Address,$r.Realm,$r.Folder,$r.Path,$r.State,$r.Access)};$g.DataSource=$t;$g.Columns['ServerID'].Visible=$false;$g.Columns['RepoID'].Visible=$false;$g.Columns['Granty'].Visible=$false;$g.Columns['Widoczność'].Visible=$false;$f.Controls.Add($g);$script:answer='close';")
-	sb.WriteString("function act($a){if($g.CurrentRow -ne $null){$script:answer=$a+':[string]$g.CurrentRow.Cells['ServerID'].Value+':[string]$g.CurrentRow.Cells['RepoID'].Value;$f.Close()}};")
+	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1270;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @('ServerID','RepoID','Granty','Widoczność','Serwer','Adres','Strefa','Folder','Ścieżka','Stan','Dostęp')){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add($r.ServerID,$r.RepoID,$r.CanManageGrants,$r.CanSetRealmVisibility,$r.Server,$r.Address,$r.Realm,$r.Folder,$r.Path,$r.State,$r.Access)};$g.Add_DataBindingComplete({foreach($n in @('ServerID','RepoID','Granty','Widoczność')){if($g.Columns[$n] -ne $null){$g.Columns[$n].Visible=$false}}});$g.DataSource=$t;$f.Controls.Add($g);$script:answer='close';")
+	// The answer is "action|serverID|repoID". The separator is "|", not ":",
+	// because a recovery row's ServerID is itself "@recovery-download:<id>" --
+	// with ":" the reply split into four fields, the len()==3 guard rejected
+	// it and the archive-download button silently did nothing. ShowRealmGrants
+	// and ShowReservations already use "|" for the same reason; IDs never
+	// contain it (linux.go joins on "|" too).
+	sb.WriteString("function act($a){if($g.CurrentRow -ne $null){$script:answer=$a+'|'+[string]$g.CurrentRow.Cells['ServerID'].Value+'|'+[string]$g.CurrentRow.Cells['RepoID'].Value;$f.Close()}};")
 	for _, spec := range []struct {
 		label, action string
 		left          int

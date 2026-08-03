@@ -507,3 +507,201 @@ func TestWindowsConcurrentNotificationsSameGroupSendOnce(t *testing.T) {
 }
 
 func contains(s, substr string) bool { return strings.Contains(s, substr) }
+
+// TestWindowsSettingsDialogResolvesAnswers pins the reply contract between
+// buildSettingsDialogScript's act() helper and ShowSettings' parser. The
+// recovery cases are the ones that regressed: a recovery row's ServerID is
+// "@recovery-download:<id>", so while the reply was ":"-separated it split
+// into four fields, failed the len()==3 guard and resolved to Close -- the
+// archive-download button ran the dialog and then did nothing at all. The
+// "@recovery-grace:" row must still resolve to Close, because its archive is
+// not downloadable yet.
+func TestWindowsSettingsDialogResolvesAnswers(t *testing.T) {
+	tests := []struct {
+		name   string
+		answer string
+		want   SettingsDialogResult
+	}{
+		{"download recovery with colon in id", "download_recovery|@recovery-download:op-1|\r\n", SettingsDialogResult{Action: SettingsDialogDownloadRecovery, OperationID: "op-1"}},
+		{"recovery still in grace period", "download_recovery|@recovery-grace:op-2|\r\n", SettingsDialogResult{Action: SettingsDialogClose, ServerID: "@recovery-grace:op-2"}},
+		{"detach folder", "detach|biuro|repo-1\r\n", SettingsDialogResult{Action: SettingsDialogDetachFolder, ServerID: "biuro", RepoID: "repo-1"}},
+		{"delete repository", "delete|biuro|repo-1\r\n", SettingsDialogResult{Action: SettingsDialogDeleteRepo, ServerID: "biuro", RepoID: "repo-1"}},
+		{"load dump", "load_dump|biuro|repo-1\r\n", SettingsDialogResult{Action: SettingsDialogLoadDump, ServerID: "biuro", RepoID: "repo-1"}},
+		{"manage grants", "manage_grants|biuro|repo-1\r\n", SettingsDialogResult{Action: SettingsDialogManageGrants, ServerID: "biuro", RepoID: "repo-1"}},
+		{"realm visibility", "realm_visibility|biuro|\r\n", SettingsDialogResult{Action: SettingsDialogRealmVisibility, ServerID: "biuro"}},
+		{"add folder without a selected repo", "add|biuro|\r\n", SettingsDialogResult{Action: SettingsDialogAddFolder, ServerID: "biuro"}},
+		{"deactivate client", "deactivate|biuro|\r\n", SettingsDialogResult{Action: SettingsDialogDetachServer, ServerID: "biuro"}},
+		{"remove realm", "remove_realm|biuro|\r\n", SettingsDialogResult{Action: SettingsDialogRemoveRealm, ServerID: "biuro"}},
+		{"closed without choosing", "close\r\n", SettingsDialogResult{Action: SettingsDialogClose}},
+		{"unknown action", "nonsense|biuro|repo-1\r\n", SettingsDialogResult{Action: SettingsDialogClose, ServerID: "biuro", RepoID: "repo-1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &fakeWindowsRunner{output: func(context.Context, string, []string) ([]byte, error) {
+				return []byte(test.answer), nil
+			}}
+			backend := newTestWindowsBackend(runner, time.Now)
+			got, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{Title: "Ustawienia FileES"})
+			if err != nil {
+				t.Fatalf("ShowSettings: %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("ShowSettings(%q) = %#v, want %#v", test.answer, got, test.want)
+			}
+		})
+	}
+}
+
+// capturedScript returns the argument every dialog method passes to
+// powershell.exe after -Command, i.e. the script the backend actually
+// generated. Asserting on substrings of that script is not enough: a
+// generated script can contain every expected fragment and still be
+// syntactically invalid as a whole (see
+// TestWindowsGeneratedScriptsAreValidPowerShell).
+func capturedScript(t *testing.T, runner *fakeWindowsRunner) string {
+	t.Helper()
+	calls := runner.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("powershell invocations = %d, want 1", len(calls))
+	}
+	args := calls[0].args
+	for i, arg := range args {
+		if arg == "-Command" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	t.Fatalf("no -Command argument in %q", args)
+	return ""
+}
+
+// assertPowerShellParses feeds a generated script to the real Windows
+// PowerShell parser. It deliberately does not execute it: parsing alone is
+// what catches a malformed generator, and executing would open real windows.
+//
+// The script is handed over as a file rather than inline so that quoting in
+// the script under test cannot leak into the quoting of the check itself --
+// which is exactly the class of bug this test exists to catch.
+func assertPowerShellParses(t *testing.T, label, script string) {
+	t.Helper()
+	shell, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Skipf("powershell.exe unavailable: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "script.ps1")
+	// UTF-8 with BOM: the generated scripts carry Polish labels, and
+	// Windows PowerShell 5.1 assumes the ANSI codepage for a BOM-less file.
+	if err := os.WriteFile(path, append([]byte{0xEF, 0xBB, 0xBF}, []byte(script)...), 0o600); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	// The path travels in the environment, not in the command string:
+	// powershell.exe -Command appends any trailing arguments to the command
+	// itself rather than exposing them as $args.
+	const check = `$e=$null;[void][System.Management.Automation.Language.Parser]::ParseFile($env:FILEES_TEST_SCRIPT,[ref]$null,[ref]$e);if($e.Count -gt 0){$e|ForEach-Object{$_.Message};exit 1}`
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, shell, "-NoProfile", "-NonInteractive", "-Command", check)
+	cmd.Env = append(os.Environ(), "FILEES_TEST_SCRIPT="+path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Errorf("%s: generated script is not valid PowerShell: %v\n%s", label, err, out)
+	}
+}
+
+// TestWindowsGeneratedScriptsAreValidPowerShell covers every WinForms/toast
+// script the Windows backend generates. Added after the settings dialog was
+// found to emit a script that fails to parse outright -- the concatenation
+// around the answer separator was written as "$a+':[string]$g...Cells['ID']"
+// instead of "$a+':'+[string]$g...Cells['ID']", so the single quotes meant to
+// delimit the separator swallowed the cell lookup. PowerShell parses the whole
+// -Command payload before running any of it, so the window never opened at
+// all; the user got an operational-failure toast instead of a dialog. No test
+// existed for any generated script, which is why a syntax error shipped.
+//
+// Data deliberately includes Polish characters, an apostrophe (psString
+// escaping) and a colon inside an operation ID.
+func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
+	settings := SettingsDialogRequest{
+		Title: "Ustawienia FileES",
+		Text:  "Serwery i foldery",
+		Servers: []SettingsServer{{
+			ID: "biuro", Name: "Biuro l'Atelier", Address: "svn://example", Realm: "strefa", ClientID: "c1",
+			CanSetRealmVisibility: true, CanAddFolder: true,
+			Folders: []SettingsFolder{
+				{ID: "repo-1", Name: "Rysunki", LocalPath: `C:\wc\repo-1`, State: "aktywny", Access: "rw", CanManageGrants: true, CanDetach: true, CanDelete: true, CanLoadDump: true},
+				{ID: "repo-2", Name: "Zdjęcia", LocalPath: `C:\wc\repo-2`, State: "wstrzymany", Access: "r"},
+			},
+		}, {ID: "pusty", Name: "Bez folderów", Address: "svn://empty", Realm: "strefa", ClientID: "c2"}},
+		Recoveries: []SettingsRecovery{
+			{OperationID: "op-1", ServerName: "Biuro", KitPath: `C:\kit.fkr`, Status: "gotowe", CanDownload: true},
+			{OperationID: "op-2", ServerName: "Biuro", KitPath: `C:\kit2.fkr`, Status: "oczekuje"},
+		},
+	}
+	cases := []struct {
+		name string
+		call func(*testing.T, *WindowsBackend)
+	}{
+		{"settings", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.ShowSettings(context.Background(), settings); err != nil {
+				t.Fatalf("ShowSettings: %v", err)
+			}
+		}},
+		{"realm_grants", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.ShowRealmGrants(context.Background(), RealmGrantDialogRequest{Title: "Dostęp stref", Text: "Wybierz", Recipients: []RealmGrantRecipient{{RealmID: "r1", Alias: "Zespół l'A"}}}); err != nil {
+				t.Fatalf("ShowRealmGrants: %v", err)
+			}
+		}},
+		{"realm_visibility", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.ShowRealmVisibility(context.Background(), RealmVisibilityDialogRequest{Title: "Widoczność", Text: "Wybierz tryb"}); err != nil {
+				t.Fatalf("ShowRealmVisibility: %v", err)
+			}
+		}},
+		{"reservations", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.ShowReservations(context.Background(), ReservationDialogRequest{Title: "Rezerwacje", Text: "Aktywne", Rows: []ReservationDialogRow{{ID: "res-1", Server: "Biuro", WorkingCopy: "Rysunki", Path: `rysunki\a.dwg`, Owner: "acme", CreatedAt: "2026-08-03", Action: "zwolnij"}}}); err != nil {
+				t.Fatalf("ShowReservations: %v", err)
+			}
+		}},
+		{"prompt", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.PromptText(context.Background(), PromptTextRequest{Title: "Kod", Text: "Podaj kod OTP z e-maila", Placeholder: "np. 123456"}); err != nil {
+				t.Fatalf("PromptText: %v", err)
+			}
+		}},
+		{"info", func(t *testing.T, b *WindowsBackend) {
+			if err := b.ShowInfo(context.Background(), InfoRequest{Title: "Informacje", Text: "Powiązanie zakończone na serwerze"}); err != nil {
+				t.Fatalf("ShowInfo: %v", err)
+			}
+		}},
+		{"confirm", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.Confirm(context.Background(), ConfirmRequest{Title: "Potwierdź", Text: "Czy na pewno?", ConfirmText: "Tak", CancelText: "Nie"}); err != nil {
+				t.Fatalf("Confirm: %v", err)
+			}
+		}},
+		{"consent", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.ConfirmConsent(context.Background(), ConsentRequest{Title: "Zgoda", Text: "Usunięcie repozytorium", RequiredText: "Rozumiem, że dane zostaną usunięte", OptionalText: "Poproś też o usunięcie danych"}); err != nil {
+				t.Fatalf("ConfirmConsent: %v", err)
+			}
+		}},
+		{"file_picker", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.PickFiles(context.Background(), PickFilesRequest{Title: "Wybierz pliki", Root: `C:\wc\repo-1`, AllowMultiple: true}); err != nil {
+				t.Fatalf("PickFiles: %v", err)
+			}
+		}},
+		{"folder_picker", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.PickFolder(context.Background(), PickFolderRequest{Title: "Wybierz folder", InitialDir: `C:\wc`}); err != nil {
+				t.Fatalf("PickFolder: %v", err)
+			}
+		}},
+		{"toast", func(t *testing.T, b *WindowsBackend) {
+			if err := b.Notify(context.Background(), Notification{ID: "n1", Group: "repo-1", Title: "Zmiany pobrane", Body: "Zaktualizowano l'Atelier", Urgency: UrgencyNormal}); err != nil {
+				t.Fatalf("Notify: %v", err)
+			}
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &fakeWindowsRunner{}
+			backend := newTestWindowsBackend(runner, time.Now)
+			test.call(t, backend)
+			assertPowerShellParses(t, test.name, capturedScript(t, runner))
+		})
+	}
+}

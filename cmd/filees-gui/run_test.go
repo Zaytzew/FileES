@@ -27,6 +27,7 @@ type fakeTrayBackend struct {
 	mu     sync.Mutex
 	resets int
 	items  map[string]*fakeTrayItem
+	title  string
 }
 
 func newFakeTrayBackend() *fakeTrayBackend {
@@ -50,10 +51,27 @@ func (b *fakeTrayBackend) ResetMenu() {
 	b.items = make(map[string]*fakeTrayItem)
 	b.mu.Unlock()
 }
-func (*fakeTrayBackend) SetIcon([]byte)    {}
-func (*fakeTrayBackend) SetTitle(string)   {}
+func (*fakeTrayBackend) SetIcon([]byte) {}
+
+// SetTitle is recorded because the connection status lives in the tray header
+// and nowhere else. Until r421 the header text was also mirrored into a
+// disabled "system.status" menu row, which is what the reconnect test used to
+// assert on; r421 deliberately dropped that row (the daemon-disconnect toast
+// already covers it) and the discarded title left the test with nothing to
+// observe.
+func (b *fakeTrayBackend) SetTitle(title string) {
+	b.mu.Lock()
+	b.title = title
+	b.mu.Unlock()
+}
 func (*fakeTrayBackend) SetTooltip(string) {}
 func (*fakeTrayBackend) AddSeparator()     {}
+
+func (b *fakeTrayBackend) titleContains(fragment string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return strings.Contains(b.title, fragment)
+}
 func (b *fakeTrayBackend) AddMenuItem(title, _ string) tray.ItemHandle {
 	return b.addItem(title)
 }
@@ -308,7 +326,7 @@ func TestRunRealIPCReconnectsAfterDaemonRestart(t *testing.T) {
 
 	stopFirst()
 	waitFor(t, "GUI disconnect after daemon shutdown", func() bool {
-		return backend.hasItemContaining("Brak połączenia")
+		return backend.titleContains("Brak połączenia")
 	})
 	waitFor(t, "old socket removal", func() bool {
 		_, err := os.Stat(socket)
@@ -324,6 +342,12 @@ func TestRunRealIPCReconnectsAfterDaemonRestart(t *testing.T) {
 	}
 	waitFor(t, "repository snapshot from restarted daemon", func() bool {
 		return backend.hasItemContaining("gamma") && !backend.hasItemContaining("alpha")
+	})
+	// Pin the header the other way round too. The status surface is a single
+	// string with no other observer, so losing it again would otherwise only
+	// show up as a disconnect that is never reported.
+	waitFor(t, "connected status back in the tray header", func() bool {
+		return backend.titleContains("Połączono")
 	})
 
 	stopGUI()

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"filees/internal/durable"
+	"filees/pkg/privatefile"
 )
 
 const Schema = "filees.local-pin/v1"
@@ -53,14 +54,11 @@ func Open(root string) (*Store, error) {
 	if !filepath.IsAbs(root) {
 		return nil, errors.New("localpin root must be absolute")
 	}
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return nil, err
-	}
-	// MkdirAll only sets the mode on directories it actually creates - if
-	// root already existed (e.g. under a looser umask, or pre-dating this
-	// feature), force it to 0700 explicitly rather than trusting whatever
-	// mode it already had.
-	if err := os.Chmod(root, 0o700); err != nil {
+	// MkdirAll only sets the mode on directories it actually creates, so a
+	// root that already existed under a looser umask keeps it; and on Windows
+	// mode bits restrict nobody at all. privatefile owns both halves of that
+	// rule - see its package comment for why os.Chmod was never enough there.
+	if err := privatefile.EnsureDir(root); err != nil {
 		return nil, err
 	}
 	return &Store{path: filepath.Join(root, "pin.json")}, nil
@@ -206,6 +204,13 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	// tmp.Chmod above is not the guarantee on Windows: the temp file inherits
+	// its directory's DACL, which on a real machine handed a second local
+	// account full access to key material. Harden after the rename so the
+	// published path carries the restriction, not just the temporary one.
+	if err := privatefile.Harden(path); err != nil {
 		return err
 	}
 	return durable.SyncDirectory(dir)

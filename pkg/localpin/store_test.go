@@ -6,6 +6,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"testing"
+
+	"filees/pkg/privatefile"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -223,18 +225,13 @@ func TestStoredPINFilePermissions(t *testing.T) {
 	if err := store.Setup([]byte("1234")); err != nil {
 		t.Fatal(err)
 	}
-	dirInfo, err := os.Stat(root)
-	if err != nil {
-		t.Fatal(err)
+	// Both assertions ask whether the path is private, not which mechanism
+	// made it so: mode bits on unix, an explicit DACL on Windows. The former
+	// spelling silently held nothing on Windows.
+	if err := privatefile.Verify(root); err != nil {
+		t.Fatalf("localpin root is not private: %v", err)
 	}
-	if dirInfo.Mode().Perm() != 0o700 {
-		t.Fatalf("localpin root mode=%v, want 0700", dirInfo.Mode().Perm())
-	}
-	fileInfo, err := os.Stat(filepath.Join(root, "pin.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fileInfo.Mode().Perm() != 0o600 {
-		t.Fatalf("pin.json mode=%v, want 0600", fileInfo.Mode().Perm())
+	if err := privatefile.Verify(filepath.Join(root, "pin.json")); err != nil {
+		t.Fatalf("pin.json is not private: %v", err)
 	}
 }

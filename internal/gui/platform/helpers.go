@@ -80,6 +80,18 @@ func splitPickerOutput(output string) []string {
 	return paths
 }
 
+// yadSelection cleans raw stdout from a yad --print-column dialog. Found
+// live: yad appends a trailing field separator ("|") after the last printed
+// column even when only one column is printed -- e.g. "add_folder|" instead
+// of "add_folder" -- which silently breaks every exact-match/strings.Cut
+// consumer downstream (settingsAction, ShowRealmVisibility's switch,
+// ShowRealmGrants' Cut) with zero visible error: the dialog runs and exits
+// cleanly, the caller just never recognises the selection. zenity dialogs in
+// this file don't exhibit this and must not be routed through this helper.
+func yadSelection(output []byte) string {
+	return strings.TrimSuffix(strings.TrimSpace(string(output)), "|")
+}
+
 // commandCancelled reports whether the error from a subprocess represents a
 // deliberate user cancellation (exit code 1 by convention across all pickers).
 func commandCancelled(err error) bool {

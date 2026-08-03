@@ -193,7 +193,7 @@ func TestLinuxShowSettingsAppliesDarkThemeOnlyWhenDetected(t *testing.T) {
 
 func TestLinuxRealmGrantDialogReturnsSelectedAccess(t *testing.T) {
 	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(context.Context, string, []string) ([]byte, error) {
-		return []byte("realm-2|rw\n"), nil
+		return []byte("realm-2|rw|\n"), nil // trailing "|" is yad's own artifact, not part of the printed value
 	}}
 	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
 	result, err := backend.ShowRealmGrants(context.Background(), RealmGrantDialogRequest{Title: "Dostęp", Text: "Wybierz", Recipients: []RealmGrantRecipient{{RealmID: "realm-2", Alias: "biuro"}}})
@@ -236,9 +236,117 @@ func TestLinuxSettingsOffersRealmGrantsOnlyForEligibleFolder(t *testing.T) {
 	}
 }
 
+// TestLinuxShowSettingsResolvesActionThroughRealisticYadTrailingSeparator is
+// the end-to-end regression test for the trailing-"|" bug: yad's real stdout
+// for both the folder-list dialog and the action-list dialog carries a
+// trailing field separator ("biuro|repo-1|", "add_folder|") that none of the
+// other tests in this file reproduce, since their canned output is always
+// hand-written clean. Every other test here would have passed against the
+// pre-fix code too -- this is the one that actually would have caught it.
+func TestLinuxShowSettingsResolvesActionThroughRealisticYadTrailingSeparator(t *testing.T) {
+	calls := 0
+	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(_ context.Context, _ string, _ []string) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return []byte("biuro|repo-1|\n"), nil
+		}
+		return []byte("add_folder|\n"), nil
+	}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	result, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{Title: "FileES", Servers: []SettingsServer{{ID: "biuro", CanAddFolder: true, Folders: []SettingsFolder{{ID: "repo-1"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != SettingsDialogAddFolder || result.ServerID != "biuro" {
+		t.Fatalf("ShowSettings() = %+v, want add_folder on biuro", result)
+	}
+}
+
+// TestLinuxSettingsOffersFolderActionsOnlyWhenEligible is the regression
+// test for two real bugs found live on the same evening: the action picker
+// used to offer "Odłącz tylko folder" / "Odłącz trwale repozytorium" /
+// "Odtwórz z archiwum" unconditionally for any selected folder, while the
+// controller (startDetachRepository/startLoadDump in actions.go) silently
+// refuses each one -- no dialog, no notification -- when its own
+// precondition isn't met (AttachmentPolicy=="required", missing
+// CanDetach/CanDeleteRepository capability, or not owned by this realm and
+// the server currently disallowing repository creation, e.g. a read-only
+// client role). A real "nothing happens" click, twice reported. Each
+// action's eligibility is now decided once in the request builder
+// (SettingsFolder.CanDetach/CanDelete/CanLoadDump) and the dialog must not
+// offer an action its folder is ineligible for.
+func TestLinuxSettingsOffersFolderActionsOnlyWhenEligible(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		folder     SettingsFolder
+		wantAction string
+		want       bool
+	}{
+		{name: "detach eligible", folder: SettingsFolder{ID: "repo-1", CanDetach: true}, wantAction: "detach_folder", want: true},
+		{name: "detach ineligible", folder: SettingsFolder{ID: "repo-1", CanDetach: false}, wantAction: "detach_folder", want: false},
+		{name: "delete eligible", folder: SettingsFolder{ID: "repo-1", CanDelete: true}, wantAction: "delete_repository", want: true},
+		{name: "delete ineligible", folder: SettingsFolder{ID: "repo-1", CanDelete: false}, wantAction: "delete_repository", want: false},
+		{name: "load_dump eligible", folder: SettingsFolder{ID: "repo-1", CanLoadDump: true}, wantAction: "load_dump", want: true},
+		{name: "load_dump ineligible", folder: SettingsFolder{ID: "repo-1", CanLoadDump: false}, wantAction: "load_dump", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(_ context.Context, _ string, args []string) ([]byte, error) {
+				calls++
+				if calls == 1 {
+					return []byte("office|repo-1\n"), nil
+				}
+				has := strings.Contains(strings.Join(args, "\n"), test.wantAction)
+				if has != test.want {
+					t.Errorf("%s present=%v want=%v args=%v", test.wantAction, has, test.want, args)
+				}
+				return nil, fakeExitError(1)
+			}}
+			backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+			_, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{Title: "FileES", Servers: []SettingsServer{{ID: "office", Folders: []SettingsFolder{test.folder}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// TestLinuxSettingsOffersAddFolderOnlyWhenServerAllowsRepositoryCreation is
+// the regression test for a fourth "click it, nothing happens" instance
+// found live: add_folder used to be offered unconditionally, while
+// startCreateRepository (actions.go) silently refuses it -- no folder
+// picker, no notification -- when the server currently disallows
+// repository creation (e.g. a read-only/audit-only client role).
+func TestLinuxSettingsOffersAddFolderOnlyWhenServerAllowsRepositoryCreation(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		can  bool
+	}{{name: "allowed", can: true}, {name: "read-only client", can: false}} {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(_ context.Context, _ string, args []string) ([]byte, error) {
+				calls++
+				if calls == 1 {
+					return []byte("audit-lab|\n"), nil
+				}
+				has := strings.Contains(strings.Join(args, "\n"), "add_folder")
+				if has != test.can {
+					t.Errorf("add_folder present=%v want=%v args=%v", has, test.can, args)
+				}
+				return nil, fakeExitError(1)
+			}}
+			backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+			_, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{Title: "FileES", Servers: []SettingsServer{{ID: "audit-lab", CanAddFolder: test.can}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestLinuxRealmVisibilityDialogReturnsListed(t *testing.T) {
 	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(context.Context, string, []string) ([]byte, error) {
-		return []byte("listed\n"), nil
+		return []byte("listed|\n"), nil // trailing "|" is yad's own artifact, not part of the printed value
 	}}
 	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
 	result, err := backend.ShowRealmVisibility(context.Background(), RealmVisibilityDialogRequest{Title: "Widoczność", Text: "Wybierz"})

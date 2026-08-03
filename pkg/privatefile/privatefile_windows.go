@@ -31,16 +31,7 @@ func Harden(path string) error {
 	if err != nil {
 		return err
 	}
-	dacl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.GENERIC_ALL,
-		AccessMode:        windows.GRANT_ACCESS,
-		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
-		Trustee: windows.TRUSTEE{
-			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_USER,
-			TrusteeValue: windows.TrusteeValueFromSID(sid),
-		},
-	}}, nil)
+	dacl, err := ownerOnlyDACL(sid)
 	if err != nil {
 		return err
 	}
@@ -80,6 +71,48 @@ func Verify(path string) error {
 		}
 	}
 	return nil
+}
+
+// OwnerOnlyAttributes returns SECURITY_ATTRIBUTES carrying the same
+// owner-only DACL that Harden applies to files, for kernel objects that take
+// their security at creation time rather than through SetNamedSecurityInfo —
+// a named pipe being the case this exists for.
+//
+// It is exported only on Windows, deliberately. The alternative was to
+// rebuild the SID lookup and the ACL next to the pipe code, which would have
+// left two definitions of "owner-only" free to drift apart.
+func OwnerOnlyAttributes() (*windows.SecurityAttributes, error) {
+	sid, err := currentUserSID()
+	if err != nil {
+		return nil, err
+	}
+	dacl, err := ownerOnlyDACL(sid)
+	if err != nil {
+		return nil, err
+	}
+	sd, err := windows.NewSecurityDescriptor()
+	if err != nil {
+		return nil, err
+	}
+	if err := sd.SetDACL(dacl, true, false); err != nil {
+		return nil, err
+	}
+	attributes := windows.SecurityAttributes{SecurityDescriptor: sd}
+	attributes.Length = uint32(unsafe.Sizeof(attributes))
+	return &attributes, nil
+}
+
+func ownerOnlyDACL(sid *windows.SID) (*windows.ACL, error) {
+	return windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: windows.GENERIC_ALL,
+		AccessMode:        windows.GRANT_ACCESS,
+		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_USER,
+			TrusteeValue: windows.TrusteeValueFromSID(sid),
+		},
+	}}, nil)
 }
 
 func currentUserSID() (*windows.SID, error) {

@@ -94,6 +94,18 @@ func buildSSHCommand(identityFile, knownHosts string, port int, connectHost ...s
 	if port < 0 || port > 65535 {
 		return ""
 	}
+	// Subversion reads this whole string from SVN_SSH and unescapes it before
+	// splitting, so a Windows path arrives at ssh with its separators eaten:
+	// C:\Users\...\id_ed25519 becomes C:UsersDELL...id_ed25519 and both the
+	// identity and the pinned known_hosts silently fail to open. Measured
+	// against a real server — ssh then reported "Identity file ... not
+	// accessible" and "No ED25519 host key is known", and every projection
+	// sync failed. OpenSSH accepts forward slashes on Windows, and ToSlash is
+	// a no-op everywhere else, so this is the whole fix. Doubling the
+	// backslashes would work too but leaves the escaping rule spread across
+	// two layers.
+	identityFile = filepath.ToSlash(identityFile)
+	knownHosts = filepath.ToSlash(knownHosts)
 	hostName := ""
 	if len(connectHost) > 0 {
 		hostName = strings.TrimSpace(connectHost[0])

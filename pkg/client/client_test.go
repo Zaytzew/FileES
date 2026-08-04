@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -517,5 +518,37 @@ func TestSVNRequiresEndOfOptionsMarker(t *testing.T) {
 	}
 	if strings.TrimSpace(string(out)) != "payload" {
 		t.Fatalf("svnlook cat with marker returned %q, want %q", out, "payload")
+	}
+}
+
+// TestBuildSSHCommandKeepsWindowsPathsUsable pins the fix for a defect found
+// against a live server: SVN unescapes SVN_SSH before splitting it, so a
+// Windows path lost every separator on the way to ssh, which then could not
+// open the identity or the pinned known_hosts. Activation had already
+// succeeded at that point, so the client looked activated while every
+// projection sync failed once a minute.
+//
+// The assertion is deliberately about what ssh receives, not about the host
+// platform: a backslash must never reach SVN_SSH, on any OS.
+func TestBuildSSHCommandKeepsWindowsPathsUsable(t *testing.T) {
+	// A drive-qualified root on Windows: "\wc" is rooted but drive-relative
+	// there, so filepath.IsAbs rejects it and the test would never reach the
+	// assertion it exists for.
+	root := "/wc"
+	if runtime.GOOS == "windows" {
+		root = `C:\wc`
+	}
+	got := buildSSHCommand(filepath.Join(root, "id_ed25519"), filepath.Join(root, "known_hosts"), 2222, "example.net")
+	if got == "" {
+		t.Fatal("buildSSHCommand rejected an absolute path")
+	}
+	if strings.Contains(got, `\`) {
+		t.Fatalf("SVN_SSH carries a backslash, which Subversion will eat: %q", got)
+	}
+	for _, want := range []string{"-i " + filepath.ToSlash(filepath.Join(root, "id_ed25519")),
+		"UserKnownHostsFile=" + filepath.ToSlash(filepath.Join(root, "known_hosts"))} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("buildSSHCommand = %q, want it to contain %q", got, want)
+		}
 	}
 }

@@ -150,6 +150,43 @@ func (store RealmAliases) Resolve(_ context.Context, ownerIDs []string) (map[str
 	return labels, nil
 }
 
+// ResolveAlias finds the realm ID currently holding the given alias, for
+// callers that need to name a realm (e.g. filees-admin's
+// --join-realm-alias) without asking an operator to remember or paste a raw
+// UUID. Returns ErrAliasUnavailable if no active realm currently holds it -
+// deliberately the same error a failed claim uses, since from the caller's
+// perspective both mean "this alias does not currently resolve."
+func ResolveAlias(serviceWC, alias string) (string, error) {
+	if !filepath.IsAbs(serviceWC) {
+		return "", errors.New("realm alias store is incomplete")
+	}
+	canonical, err := realmalias.Normalize(alias)
+	if err != nil {
+		return "", err
+	}
+	realmsRoot := filepath.Join(serviceWC, "admin", "realms")
+	entries, err := os.ReadDir(realmsRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", ErrAliasUnavailable
+		}
+		return "", err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		record, err := readRealmRecord(filepath.Join(realmsRoot, entry.Name()))
+		if err != nil || record.Alias == "" || record.State != "active" {
+			continue
+		}
+		if record.Alias == canonical {
+			return record.RealmID, nil
+		}
+	}
+	return "", ErrAliasUnavailable
+}
+
 func readRealmRecord(path string) (realmRecord, error) {
 	var record realmRecord
 	if err := decodeJSONFile(path, &record); err != nil {

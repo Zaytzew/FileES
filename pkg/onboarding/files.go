@@ -298,11 +298,19 @@ func (s *Files) CreateTicket(email string, policy Policy, ttl time.Duration) (Ti
 	return ticket, err
 }
 
-// CreateInvitationTicket creates a desktop invitation without binding a
-// realm. The raw capability is stored only in the pending mail entry; after
+// CreateInvitationTicket creates a desktop invitation. An empty realmID
+// leaves the realm unbound - AuthenticateOTP mints a fresh one when the
+// invitation is redeemed, the ordinary new-realm path. A non-empty realmID
+// (already resolved and validated by the caller - see
+// internal/servertool/admin.go's --join-realm-alias and
+// pkg/repoworker's RealmJoinRequestStore, the only two legitimate sources)
+// is baked into the ticket and is the *only* thing that can ever bind a
+// new installation to an existing realm; the redeeming client's own
+// proposal is never authoritative (concepts/REALM_JOIN_AUTHORIZATION_CONCEPT.md).
+// The raw capability is stored only in the pending mail entry; after
 // successful relay acceptance it is scrubbed from server state and remains
 // only in the recipient's invitation message.
-func (s *Files) CreateInvitationTicket(email string, ttl time.Duration, profile Invitation) (Ticket, error) {
+func (s *Files) CreateInvitationTicket(email string, ttl time.Duration, profile Invitation, realmID string) (Ticket, error) {
 	if err := s.requireAreas(AreaTickets | AreaAudit); err != nil {
 		return Ticket{}, err
 	}
@@ -312,6 +320,11 @@ func (s *Files) CreateInvitationTicket(email string, ttl time.Duration, profile 
 	}
 	if ttl <= 0 {
 		return Ticket{}, errors.New("ticket TTL must be positive")
+	}
+	if realmID != "" {
+		if _, err := uuid.Parse(realmID); err != nil {
+			return Ticket{}, errors.New("realm ID must be a UUID")
+		}
 	}
 	token, err := newInvitationToken(s.random)
 	if err != nil {
@@ -333,7 +346,7 @@ func (s *Files) CreateInvitationTicket(email string, ttl time.Duration, profile 
 	now := s.clock.Now().UTC()
 	ticket := Ticket{
 		Schema: TicketSchema, TicketID: id, EmailDeliveryAddress: canonical,
-		ApprovedPolicy: Policy{Kind: KindDesktop}, InvitationTokenHash: invitationTokenHash(token),
+		ApprovedPolicy: Policy{Kind: KindDesktop, RealmID: realmID}, InvitationTokenHash: invitationTokenHash(token),
 		InvitationOutbox: MailOutboxEntry{Schema: OutboxSchema, MessageID: messageID, DeliveryAddress: canonical, Invitation: wire, Template: InvitationMailTemplate, DeliveryState: DeliveryPending, CreatedAt: now},
 		CreatedAt:        now, ExpiresAt: now.Add(ttl),
 	}
@@ -751,13 +764,27 @@ func (s *Files) AuthenticateOTP(otp string) (AuthGrant, error) {
 			}
 			return ErrOTPInvalid
 		}
-		if op.ProposedRealmID != "" {
-			if !validRealmID(op.ProposedRealmID) || op.ApprovedPolicy.RealmID != "" {
-				return ErrOTPInvalid
+		// The realm is decided here, never by the client: op.ApprovedPolicy.RealmID
+		// is either already set from the ticket (filees-admin ticket create
+		// --join-realm-alias, or a confirmed self-service join-request -
+		// pkg/repoworker's RealmJoinRequestStore) or gets freshly generated
+		// right here for an ordinary new-realm ticket. op.ProposedRealmID -
+		// the client's own locally-generated proposal - is read from the
+		// wire for backward compatibility with already-deployed clients but
+		// is never consulted for this decision; the OTP only proves
+		// possession of the invited mailbox, never authorization to name or
+		// join a realm. See concepts/REALM_JOIN_AUTHORIZATION_CONCEPT.md.
+		if op.ApprovedPolicy.RealmID == "" {
+			realmID, err := randomUUID(s.random)
+			if err != nil {
+				return err
 			}
-			op.ApprovedPolicy.RealmID, op.ProposedRealmID = op.ProposedRealmID, ""
+			op.ApprovedPolicy.RealmID = realmID
+			bundle.addAudit("realm_created", "filees-ssh-auth", now)
+		} else {
 			bundle.addAudit("realm_bound", "filees-ssh-auth", now)
 		}
+		op.ProposedRealmID = ""
 		if !validRealmID(op.ApprovedPolicy.RealmID) {
 			return ErrOTPInvalid
 		}

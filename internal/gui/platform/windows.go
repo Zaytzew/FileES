@@ -95,6 +95,25 @@ func hideConsoleWindow(cmd *exec.Cmd) {
 // functional) default.
 const dpiAwarenessPrelude = "try{Add-Type -Name Dpi -Namespace Native -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value); [DllImport(\"user32.dll\")] public static extern uint GetDpiForSystem();';[Native.Dpi]::SetProcessDpiAwarenessContext([IntPtr](-4))|Out-Null}catch{};"
 
+// foregroundPrelude, inserted right before every $f.ShowDialog() below,
+// forces the dialog to the foreground instead of opening behind whatever
+// window already has focus - confirmed live: dialogs rendered correctly
+// (IsWindowVisible=True, sensible position) but never became the active
+// window, so the user saw what looked like a click doing nothing (r442+,
+// concepts/REALM_JOIN_AUTHORIZATION_CONCEPT.md session notes; distinct from
+// the earlier minimized-window bug fixed via CREATE_NO_WINDOW above - that
+// one was about the window's initial show state, this one is about Win32's
+// foreground-lock rules for a window with no owner). TopMost is turned back
+// off once activated so the dialog does not stay pinned above other windows
+// after the user starts interacting with it.
+const foregroundPrelude = "$f.TopMost=$true;$f.Add_Shown({$f.Activate();$f.TopMost=$false});"
+
+// foregroundOwnerPrelude does the same for the two stock common dialogs
+// (OpenFileDialog, FolderBrowserDialog), which have no TopMost/Add_Shown of
+// their own - forcing them to the foreground instead requires passing an
+// owner window handle to ShowDialog itself.
+const foregroundOwnerPrelude = "$owner=New-Object System.Windows.Forms.Form;$owner.StartPosition='Manual';$owner.Location=New-Object System.Drawing.Point(-2000,-2000);$owner.ShowInTaskbar=$false;$owner.TopMost=$true;$owner.Show();$owner.Hide();"
+
 func (osWindowsCommandRunner) Start(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	hideConsoleWindow(cmd)
@@ -215,14 +234,14 @@ func (b *WindowsBackend) PickFolder(ctx context.Context, request PickFolderReque
 			return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
 		}
 	}
-	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;$d=New-Object System.Windows.Forms.FolderBrowserDialog;" + foregroundOwnerPrelude
 	if request.Title != "" {
 		script += "$d.Description=" + psString(request.Title) + ";"
 	}
 	if initialDir != "" {
 		script += "$d.SelectedPath=" + psString(initialDir) + ";"
 	}
-	script += "if($d.ShowDialog()-eq[System.Windows.Forms.DialogResult]::OK){$d.SelectedPath}else{exit 1}"
+	script += "if($d.ShowDialog($owner)-eq[System.Windows.Forms.DialogResult]::OK){$d.SelectedPath}else{exit 1}"
 	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -250,6 +269,7 @@ func buildPickerScript(request PickFilesRequest, initialDir string) string {
 	sb.WriteString(dpiAwarenessPrelude)
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;")
 	sb.WriteString("$d=New-Object System.Windows.Forms.OpenFileDialog;")
+	sb.WriteString(foregroundOwnerPrelude)
 	sb.WriteString("$d.InitialDirectory=" + psString(initialDir) + ";")
 	if request.Title != "" {
 		sb.WriteString("$d.Title=" + psString(request.Title) + ";")
@@ -257,7 +277,7 @@ func buildPickerScript(request PickFilesRequest, initialDir string) string {
 	if request.AllowMultiple {
 		sb.WriteString("$d.Multiselect=$true;")
 	}
-	sb.WriteString("$null=$d.ShowDialog();")
+	sb.WriteString("$null=$d.ShowDialog($owner);")
 	sb.WriteString("if($d.DialogResult-eq[System.Windows.Forms.DialogResult]::OK){$d.FileNames -join \"`n\"}else{exit 1}")
 	return sb.String()
 }
@@ -285,7 +305,7 @@ func (b *WindowsBackend) ShowInfo(ctx context.Context, request InfoRequest) erro
 	if err != nil {
 		return NewUnavailable("info_dialog", err)
 	}
-	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'OK','Information')|Out-Null"
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;" + foregroundOwnerPrelude + "[System.Windows.Forms.MessageBox]::Show($owner," + psString(request.Text) + "," + psString(request.Title) + ",'OK','Information')|Out-Null"
 	if err := b.runner.Run(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script); err != nil {
 		return NewOperationalFailure("info_dialog", err)
 	}
@@ -460,7 +480,7 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	// DataBindingComplete covers the initial state, because the columns do not
 	// exist until binding completes.
 	sb.WriteString("$g.Add_CurrentCellChanged({updateButtons});$g.Add_DataBindingComplete({foreach($n in @(" + strings.Join(quotedHidden, ",") + ")){if($g.Columns[$n] -ne $null){$g.Columns[$n].Visible=$false}};updateButtons});$g.DataSource=$t;$f.Controls.Add($g);updateButtons;")
-	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1130;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);[void]$f.ShowDialog();$script:answer")
+	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1130;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" + foregroundPrelude + "[void]$f.ShowDialog();$script:answer")
 	return sb.String(), nil
 }
 
@@ -508,7 +528,7 @@ func (b *WindowsBackend) ShowRealmGrants(ctx context.Context, request RealmGrant
 		"$r=New-Object System.Windows.Forms.Button;$r.Text='Tylko odczyt';$r.Left=180;$r.Top=438;$r.Width=115;$r.Add_Click({grant 'grant_read'});$f.Controls.Add($r);" +
 		"$w=New-Object System.Windows.Forms.Button;$w.Text='Odczyt i zapis';$w.Left=305;$w.Top=438;$w.Width=115;$w.Add_Click({grant 'grant_write'});$f.Controls.Add($w);" +
 		"$x=New-Object System.Windows.Forms.Button;$x.Text='Cofnij dostęp';$x.Left=430;$x.Top=438;$x.Width=115;$x.Add_Click({grant 'revoke'});$f.Controls.Add($x);" +
-		"$c=New-Object System.Windows.Forms.Button;$c.Text='Anuluj';$c.Left=580;$c.Top=438;$c.Width=100;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);[void]$f.ShowDialog();$script:answer"
+		"$c=New-Object System.Windows.Forms.Button;$c.Text='Anuluj';$c.Left=580;$c.Top=438;$c.Width=100;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" + foregroundPrelude + "[void]$f.ShowDialog();$script:answer"
 	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -539,7 +559,7 @@ func (b *WindowsBackend) ShowRealmVisibility(ctx context.Context, request RealmV
 	if err != nil {
 		return RealmVisibilityDialogResult{}, NewUnavailable("realm_visibility_dialog", err)
 	}
-	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;$r=[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'YesNoCancel','Question');if($r-eq'Yes'){'listed'}elseif($r-eq'No'){'hidden'}else{'close'}"
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;" + foregroundOwnerPrelude + "$r=[System.Windows.Forms.MessageBox]::Show($owner," + psString(request.Text) + "," + psString(request.Title) + ",'YesNoCancel','Question');if($r-eq'Yes'){'listed'}elseif($r-eq'No'){'hidden'}else{'close'}"
 	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -562,7 +582,7 @@ func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (b
 	if err != nil {
 		return false, NewUnavailable("confirm_dialog", err)
 	}
-	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;$r=[System.Windows.Forms.MessageBox]::Show(" + psString(request.Text) + "," + psString(request.Title) + ",'YesNo','Question');if($r-eq'Yes'){'yes'}else{'no'}"
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;" + foregroundOwnerPrelude + "$r=[System.Windows.Forms.MessageBox]::Show($owner," + psString(request.Text) + "," + psString(request.Title) + ",'YesNo','Question');if($r-eq'Yes'){'yes'}else{'no'}"
 	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {

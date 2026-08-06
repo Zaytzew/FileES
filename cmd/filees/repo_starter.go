@@ -207,6 +207,9 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			return nil, fmt.Errorf("init directory %s: %w", dir, err)
 		}
 	}
+	if err := hideFileesDir(filepath.Join(wc, ".filees")); err != nil {
+		logger.Warnf("hide .filees directory: %v", err)
+	}
 	manifest := filepath.Join(stateDir, "manifest.json")
 	tmpManifest := filepath.Join(stateDir, "manifest.tmp")
 	baselineOK := filepath.Join(stateDir, "baseline.ok")

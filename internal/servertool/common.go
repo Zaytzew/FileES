@@ -45,6 +45,7 @@ type toolAccess struct {
 	needRepoResults    bool
 	needRepositoryData bool
 	needSVN            bool
+	needRealmAlias     bool
 	repositoryRoot     string
 	repositoryAuthz    string
 	svnAdminBinary     string
@@ -178,6 +179,21 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 			obsandbox.Path{Label: "repository-authz", Name: access.repositoryAuthz, Perms: "rwc"},
 			obsandbox.Path{Label: "svnadmin", Name: access.svnAdminBinary, Perms: "rx"},
 		)
+	}
+	if access.needRealmAlias {
+		// Read-only, and deliberately narrower than needSVN's full
+		// service-working-copy unveil (which also grants svn exec and
+		// service-repository access this lookup never needs): just enough
+		// for filees-admin's --join-realm-alias to resolve an alias to a
+		// realm ID by reading admin/realms/*.json directly, the same
+		// records pkg/repoworker/realm_alias.go's Claim/Resolve already
+		// read. Missing this unveil doesn't deny with EACCES - unveiled-out
+		// paths read back as ENOENT, which repoworker.ResolveAlias then
+		// (correctly, from its own vantage point) reports as "alias
+		// unavailable" instead of the real cause. Confirmed live: identical
+		// code run outside the sandbox as _filees-state resolved the alias
+		// correctly on the first try.
+		paths = append(paths, obsandbox.Path{Label: "service-working-copy-realms", Name: filepath.Join(activationConfig.ServiceWorkingCopy, "admin", "realms"), Perms: "r"})
 	}
 	if access.needSVN {
 		paths = append(paths,

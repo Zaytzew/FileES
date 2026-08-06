@@ -179,6 +179,9 @@ func (s *realmAliasService) exchange(ctx context.Context, profile clientprofile.
 		return control.Result{}, err
 	}
 	if result.Status != control.ResultOK {
+		if result.Error != nil {
+			return control.Result{}, fmt.Errorf("server rejected identity request: %s: %s", result.Error.Code, result.Error.Message)
+		}
 		return control.Result{}, errors.New("server rejected identity request")
 	}
 	return result, nil

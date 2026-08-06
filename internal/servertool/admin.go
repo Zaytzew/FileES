@@ -32,12 +32,16 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		flags.SetOutput(stderr)
 		emailFlag := flags.String("email", "", "delivery e-mail (legacy spelling; prefer positional argument)")
 		ttl := flags.Duration("ttl", 24*time.Hour, "ticket lifetime")
+		joinRealmAlias := flags.String("join-realm-alias", "", "bind this invitation to an existing realm by its alias, instead of creating a new realm")
+		const ticketCreateUsage = "usage: filees-admin [-config path] ticket create <e-mail> [--ttl 24h] [--join-realm-alias <alias>]\n" +
+			"  the e-mail must come first, before any flags"
 		values := args[2:]
 		positionalEmail := ""
 		if len(values) > 0 && !strings.HasPrefix(values[0], "-") {
 			positionalEmail, values = values[0], values[1:]
 		}
 		if err := flags.Parse(values); err != nil || flags.NArg() != 0 || (*emailFlag != "" && positionalEmail != "") {
+			fmt.Fprintln(stderr, ticketCreateUsage)
 			return ExitUsage
 		}
 		email := *emailFlag
@@ -45,16 +49,24 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			email = positionalEmail
 		}
 		if email == "" {
-			fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create <e-mail> [--ttl 24h]")
+			fmt.Fprintln(stderr, ticketCreateUsage)
 			return ExitUsage
 		}
-		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-create", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true})
+		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-create", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true, needRealmAlias: *joinRealmAlias != ""})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
 		}
+		realmID := ""
+		if *joinRealmAlias != "" {
+			realmID, err = repoworker.ResolveAlias(config.Activation.ServiceWorkingCopy, *joinRealmAlias)
+			if err != nil {
+				report(stderr, "filees-admin ticket create: resolve --join-realm-alias", err)
+				return ExitConfig
+			}
+		}
 		profile := onboarding.Invitation{ServerID: config.Invitation.ServerID, ServerAddress: config.Invitation.ServerAddress, KnownHost: config.Invitation.KnownHost}
-		ticket, err := files.CreateInvitationTicket(email, *ttl, profile)
+		ticket, err := files.CreateInvitationTicket(email, *ttl, profile, realmID)
 		if err != nil {
 			return adminError(stderr, err)
 		}

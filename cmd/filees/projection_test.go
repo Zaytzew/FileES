@@ -10,6 +10,7 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcclient"
 	"filees/pkg/ipcserver"
+	"filees/pkg/localrepo"
 	"filees/pkg/reposupervisor"
 )
 
@@ -85,7 +86,7 @@ func TestSyncProjectionKnowledgeDoesNotOrphanLocallyAttachedRepoMissingFromView(
 	// projected view (refreshed on its own poll interval) does not know
 	// about it yet.
 	view := clientview.View{Generation: 1}
-	syncProjectionKnowledge(server, serverID, view, runtimes)
+	syncProjectionKnowledge(server, serverID, view, runtimes, nil)
 
 	list, err := ipcclient.New(sock, "test").RepoList(context.Background())
 	if err != nil {
@@ -93,6 +94,35 @@ func TestSyncProjectionKnowledgeDoesNotOrphanLocallyAttachedRepoMissingFromView(
 	}
 	if len(list.Repos) != 1 || list.Repos[0].ID != key.RepoID {
 		t.Fatalf("locally attached repo missing from the projected view was orphaned from repo.list: %+v", list.Repos)
+	}
+}
+
+func TestSyncProjectionKnowledgeKeepsPendingCreationLocalPath(t *testing.T) {
+	serverID := "office"
+	repoID := "00000000-0000-0000-0000-000000000010"
+	localPath := filepath.Join(t.TempDir(), "Biblia Audio KIDS")
+	lifecycle, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := lifecycle.BeginCreate(serverID, "Biblia Audio KIDS", localPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.MarkRepositoryCreated(record.OperationID, repoID, "svn+ssh://_filees-data@example/"+repoID); err != nil {
+		t.Fatal(err)
+	}
+	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	state := server.RegisterProjectedRepo(repoID, "Biblia Audio KIDS", "svn+ssh://_filees-data@example/"+repoID, serverID, contract.AccessReadWrite, contract.StateInitializing, false)
+	view := clientview.View{Repositories: []clientview.Repository{{
+		RepoID: repoID, DisplayName: "Biblia Audio KIDS", URL: "svn+ssh://_filees-data@example/" + repoID,
+		Access: contract.AccessReadWrite, State: contract.StateInitializing, AttachmentPolicy: "optional",
+	}}}
+	syncProjectionKnowledge(server, serverID, view, nil, lifecycle)
+
+	summary := state.Summary()
+	if summary.Attached || summary.LocalPath != localPath || summary.State != contract.StateInitializing {
+		t.Fatalf("pending creation summary=%+v", summary)
 	}
 }
 
@@ -145,7 +175,7 @@ func TestReconcileProjectedViewChangesLiveAuthority(t *testing.T) {
 	}
 	view := clientview.View{Generation: 1, Repositories: []clientview.Repository{{RepoID: key.RepoID, DisplayName: "Repo", URL: "svn+ssh://_filees-client@new.example/repo", Access: "rw", State: "active"}}}
 	server := ipcserver.New(t.TempDir() + "/projection.sock")
-	if err := reconcileProjectedView(t.Context(), supervisor, server, serverID, view, runtimes); err != nil {
+	if err := reconcileProjectedView(t.Context(), supervisor, server, serverID, view, runtimes, nil); err != nil {
 		t.Fatal(err)
 	}
 	view.Generation = 2
@@ -155,7 +185,7 @@ func TestReconcileProjectedViewChangesLiveAuthority(t *testing.T) {
 			t.Fatalf("rw authority changed to %q before writer stopped", got)
 		}
 	}
-	if err := reconcileProjectedView(t.Context(), supervisor, server, serverID, view, runtimes); err != nil {
+	if err := reconcileProjectedView(t.Context(), supervisor, server, serverID, view, runtimes, nil); err != nil {
 		t.Fatal(err)
 	}
 	starter.onStop = nil

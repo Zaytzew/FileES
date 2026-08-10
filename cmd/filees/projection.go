@@ -4,7 +4,9 @@ import (
 	"sort"
 
 	"filees/pkg/clientview"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
+	"filees/pkg/localrepo"
 	"filees/pkg/reposupervisor"
 )
 
@@ -72,16 +74,27 @@ func applyRealmOwnership(serverID string, view clientview.View, runtimes map[rep
 	}
 }
 
-func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime) {
+func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime, lifecycle *localrepo.Store) {
 	applyRealmOwnership(serverID, view, attachments)
 	if ipc == nil {
 		return
 	}
+	pendingCreates := pendingRepositoryCreations(serverID, lifecycle)
 	projected := make([]ipcserver.ProjectedRepo, 0, len(view.Repositories))
 	for _, repo := range view.Repositories {
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
 		_, attached := attachments[key]
-		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, Attached: attached})
+		state := repo.State
+		pendingPath := ""
+		if record, pending := pendingCreates[repo.RepoID]; pending && !attached {
+			pendingPath = record.LocalPath
+			if record.LastError != "" {
+				state = contract.StateInteractionRequired
+			} else {
+				state = contract.StateInitializing
+			}
+		}
+		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: state, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, Attached: attached, PendingLocalPath: pendingPath})
 	}
 	for _, key := range unprojectedLocalKeys(serverID, view, attachments) {
 		repo := attachments[key].config
@@ -90,6 +103,19 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	ipc.ReconcileProjectedRepos(serverID, projected)
 	ready, pending := repositoryReadiness(serverID, view, attachments)
 	ipc.SetActivationRepositoryReadiness(serverID, ready, pending)
+}
+
+func pendingRepositoryCreations(serverID string, lifecycle *localrepo.Store) map[string]localrepo.Record {
+	pending := make(map[string]localrepo.Record)
+	if lifecycle == nil {
+		return pending
+	}
+	for _, record := range lifecycle.List() {
+		if record.ServerID == serverID && record.RepoID != "" && record.State == localrepo.StateRepositoryCreated {
+			pending[record.RepoID] = record
+		}
+	}
+	return pending
 }
 
 func repositoryReadiness(serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime) (bool, int) {

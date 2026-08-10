@@ -851,6 +851,18 @@ func recoverySettingsDialogRequest(vm app.ViewModel) (platform.SettingsDialogReq
 
 func settingsRepositoryState(repo app.RepoViewModel) string {
 	if !repo.Attached {
+		if strings.TrimSpace(repo.LocalPath) != "" {
+			switch repo.DisplayState() {
+			case app.RepoDisplayInitializing, app.RepoDisplayBaselining, app.RepoDisplayBusy:
+				return "import początkowy w toku"
+			case app.RepoDisplayAttention:
+				return "import początkowy wymaga uwagi"
+			case app.RepoDisplayOffline:
+				return "import początkowy — offline"
+			default:
+				return "lokalny folder oczekuje na aktywację"
+			}
+		}
 		return "nieprzypięte lokalnie"
 	}
 	switch repo.DisplayState() {

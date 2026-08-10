@@ -146,11 +146,11 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	visibleRepos := 0
 	localFolders := 0
 	for _, repo := range server.Repos {
-		if !repo.Attached && repo.AttachmentPolicy != "required" {
+		if !repo.Attached && strings.TrimSpace(repo.LocalPath) == "" && repo.AttachmentPolicy != "required" {
 			continue
 		}
 		visibleRepos++
-		if repo.Attached && strings.TrimSpace(repo.LocalPath) != "" {
+		if strings.TrimSpace(repo.LocalPath) != "" {
 			localFolders++
 		}
 		children = append(children, repoMenu(vm, repo))

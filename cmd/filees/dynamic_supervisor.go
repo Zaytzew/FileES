@@ -15,6 +15,7 @@ import (
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
+	"filees/pkg/localrepo"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
@@ -41,7 +42,7 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 	return updater.client.Checkout(ctx, updater.url, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string) error {
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
 	for _, repo := range repos {
@@ -74,7 +75,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		}
 		if exists {
 			currentViews[serverID] = cached
-			if err := reconcileProjectedView(ctx, supervisor, ipc, serverID, cached, runtimes); err != nil {
+			if err := reconcileProjectedView(ctx, supervisor, ipc, serverID, cached, runtimes, lifecycle); err != nil {
 				return fmt.Errorf("apply cached projection: %w", err)
 			}
 		}
@@ -165,7 +166,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				realmAlias = projectRealmAlias(update.serverID, update.view.RealmID, realmAlias)
 			}
 			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired})
-			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes); err != nil && ctx.Err() == nil {
+			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes, lifecycle); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
 			}
 		case attachment := <-attachmentEvents:
@@ -184,7 +185,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 							runtimes[key] = old
 						}
 					} else if hasView {
-						syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes)
+						syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes, lifecycle)
 					} else {
 						ipc.MarkRepoDetached(repo.ServerID, repo.ID)
 					}
@@ -226,7 +227,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			}); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+repo.ServerID).Errorf("attach repository %s: %v", repo.ID, err)
 			}
-			syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes)
+			syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes, lifecycle)
 		}
 	}
 }

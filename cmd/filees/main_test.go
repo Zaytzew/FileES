@@ -18,8 +18,17 @@ import (
 
 type updateOnlyClient struct {
 	client.Client
-	calls  atomic.Int32
-	called chan struct{}
+	calls   atomic.Int32
+	called  chan struct{}
+	infoURL string
+	infoErr error
+}
+
+func (c *updateOnlyClient) GetInfo(context.Context, string) (string, error) {
+	if c.infoErr != nil {
+		return "", c.infoErr
+	}
+	return "URL: " + c.infoURL + "\n", nil
 }
 
 func (c *updateOnlyClient) Update(context.Context, string) (string, error) {

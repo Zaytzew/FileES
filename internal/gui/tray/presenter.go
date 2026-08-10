@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	app "filees/internal/gui/app"
+	"filees/internal/gui/journal"
 )
 
 // BuildMenu converts an app ViewModel into a deterministic tray menu.
@@ -30,13 +31,7 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 	}
 
 	if vm.CanListActivity() || vm.CanListErrors() {
-		model.Items = append(model.Items, separator("sep.history"))
-	}
-	if vm.CanListActivity() {
-		model.Items = append(model.Items, activityMenu(vm))
-	}
-	if vm.CanListErrors() {
-		model.Items = append(model.Items, errorsMenu(vm.Errors))
+		model.Items = append(model.Items, separator("sep.history"), journalMenu(vm))
 	}
 	if len(vm.Recoveries) > 0 {
 		model.Items = append(model.Items, actionItem("action.recoveries", "Odzyskiwanie repozytoriów…", "Pobierz dostępne archiwa odzyskiwania", Intent{Kind: IntentRecoveries}))
@@ -50,6 +45,38 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 	}
 	model.Items = append(model.Items, clientMenu(vm))
 	return model
+}
+
+func journalMenu(vm app.ViewModel) MenuItemModel {
+	entries := journal.Build(vm)
+	visible := entries
+	if len(visible) > journal.TrayLimit {
+		visible = visible[:journal.TrayLimit]
+	}
+	children := make([]MenuItemModel, 0, len(visible)+2)
+	for index, entry := range visible {
+		item := disabledItem(fmt.Sprintf("journal.%d.%s", index, entry.ID), entry.Summary)
+		item.Tooltip = entry.Details
+		children = append(children, item)
+	}
+	if len(children) == 0 {
+		children = append(children, disabledItem("journal.empty", "Brak wpisów"))
+	}
+	children = append(children,
+		separator("journal.sep.open"),
+		actionItem("journal.open", "Otwórz log…", "Pokaż pełny dziennik aktywności i błędów", Intent{Kind: IntentJournal}),
+	)
+	title := "Dziennik"
+	errorCount := 0
+	for _, entry := range entries {
+		if entry.Emphasized {
+			errorCount++
+		}
+	}
+	if errorCount > 0 {
+		title = fmt.Sprintf("Dziennik · ⚠ %d", errorCount)
+	}
+	return MenuItemModel{ID: "journal", Title: title, Enabled: true, Children: children}
 }
 
 // fluentItems returns menu items for transient, state-driven shortcuts.
@@ -83,79 +110,6 @@ func clientMenu(vm app.ViewModel) MenuItemModel {
 	return MenuItemModel{ID: "client", Title: "Klient", Enabled: true, Children: children}
 }
 
-func activityMenu(vm app.ViewModel) MenuItemModel {
-	names := make(map[string]string, len(vm.Repos))
-	for _, repo := range vm.Repos {
-		name := repo.DisplayName
-		if strings.TrimSpace(name) == "" {
-			name = repo.ID
-		}
-		names[repo.ID] = name
-	}
-	children := make([]MenuItemModel, 0, len(vm.Activity))
-	for i, record := range vm.Activity {
-		repo := names[record.RepoID]
-		if repo == "" {
-			repo = record.RepoID
-		}
-		title := fmt.Sprintf("%s / %s — %s", repo, record.Path, activityStageLabel(record))
-		children = append(children, disabledItem(fmt.Sprintf("activity.%d", i), title))
-	}
-	if len(children) == 0 {
-		children = append(children, disabledItem("activity.empty", "Brak ostatniej aktywności"))
-	}
-	return MenuItemModel{ID: "activity", Title: "Ostatnia aktywność", Enabled: true, Children: children}
-}
-
-func activityStageLabel(record app.ActivityViewModel) string {
-	switch record.Stage {
-	case "detected":
-		return "Wykryto lokalnie"
-	case "pending":
-		return "Oczekuje na wysłanie"
-	case "publishing":
-		return "Publikowanie"
-	case "published":
-		return fmt.Sprintf("%s · r%d", activityKindPastTense(record.Kind), record.Revision)
-	case "failed":
-		return fmt.Sprintf("Nie udało się: %s", activityKindInfinitive(record.Kind))
-	default:
-		return "Stan nieznany"
-	}
-}
-
-// activityKindPastTense names the completed operation for a published entry
-// -- "Opublikowano rN" alone would read as an add/update even for a delete.
-func activityKindPastTense(kind string) string {
-	switch kind {
-	case "added":
-		return "Dodano"
-	case "modified":
-		return "Zaktualizowano"
-	case "deleted":
-		return "Usunięto"
-	case "renamed":
-		return "Zmieniono nazwę"
-	default:
-		return "Opublikowano"
-	}
-}
-
-func activityKindInfinitive(kind string) string {
-	switch kind {
-	case "added":
-		return "dodanie"
-	case "modified":
-		return "aktualizacja"
-	case "deleted":
-		return "usunięcie"
-	case "renamed":
-		return "zmiana nazwy"
-	default:
-		return "publikacja"
-	}
-}
-
 func updateMenu(vm app.ViewModel) MenuItemModel {
 	update := vm.Update
 	children := []MenuItemModel{
@@ -183,7 +137,7 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	}
 	children := []MenuItemModel{}
 	children = append(children, actionItem("server."+server.ID+".settings", "Zarządzaj serwerem…", "Informacje o serwerze, foldery i akcje administracyjne", Intent{Kind: IntentSettings, ServerID: server.ID}))
-	if server.RealmID != "" && server.RealmAlias == "" && vm.CanClaimRealmAlias() {
+	if server.NeedsRealmAliasClaim() && vm.CanClaimRealmAlias() {
 		children = append(children, actionItem("server."+server.ID+".realm_alias", "Ustaw stały alias…", "Ustaw niezmienny pseudonim widoczny przy blokadach", Intent{Kind: IntentSetRealmAlias, ServerID: server.ID}))
 	}
 	if vm.Connected && !vm.Stale {
@@ -347,35 +301,5 @@ func repoStateLabel(repo app.RepoViewModel) string {
 		return "Dostęp cofnięty"
 	default:
 		return "Stan nieznany"
-	}
-}
-
-func errorsMenu(errors []app.ErrorViewModel) MenuItemModel {
-	children := make([]MenuItemModel, 0, len(errors))
-	for i := len(errors) - 1; i >= 0; i-- {
-		record := errors[i]
-		title := fmt.Sprintf("[%s] %s — %s", record.Severity, record.Code, record.Message)
-		item := disabledItem(fmt.Sprintf("error.%d.%s", i, record.ID), title)
-		item.Tooltip = errorHintLabel(record.Hint)
-		children = append(children, item)
-	}
-	if len(children) == 0 {
-		children = append(children, disabledItem("errors.empty", "Brak błędów"))
-	}
-	return MenuItemModel{ID: "errors", Title: "Ostatnie błędy", Enabled: true, Children: children}
-}
-
-func errorHintLabel(hint string) string {
-	switch hint {
-	case "RETRY_LOCAL":
-		return "Spróbuj ponownie"
-	case "RETRY_BACKOFF":
-		return "Ponowienie nastąpi później"
-	case "REQUIRE_ACTION":
-		return "Wymagane działanie użytkownika"
-	case "ADMIN_ONLY":
-		return "Skontaktuj się z administratorem"
-	default:
-		return ""
 	}
 }

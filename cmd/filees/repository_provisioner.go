@@ -258,7 +258,11 @@ func (p *daemonProvisioner) reconcileLocalBoundary(operation provisioning.Operat
 }
 
 func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
-	check, err := provisioning.PreflightLocalPath(record.PendingLocalPath, provisioning.LocalPathAttach, p.otherRoots(record.OperationID))
+	mode := provisioning.LocalPathAttach
+	if record.RelocationAdoptExisting {
+		mode = provisioning.LocalPathAttachResume
+	}
+	check, err := provisioning.PreflightLocalPath(record.PendingLocalPath, mode, p.otherRoots(record.OperationID))
 	if err != nil {
 		p.rollbackRelocation(ctx, record, profile, err)
 		return
@@ -268,9 +272,11 @@ func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Re
 		return
 	}
 	svn := p.newAttachmentSVN(profile, record.OperationID)
-	if _, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath); err != nil {
-		p.rollbackRelocation(ctx, record, profile, fmt.Errorf("checkout relocated repository: %w", err))
-		return
+	if !record.RelocationAdoptExisting {
+		if _, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath); err != nil {
+			p.rollbackRelocation(ctx, record, profile, fmt.Errorf("checkout relocated repository: %w", err))
+			return
+		}
 	}
 	info, err := svn.GetInfo(ctx, check.CanonicalPath)
 	if err != nil || !infoHasURL(info, record.RepoURL) {
@@ -285,11 +291,17 @@ func (p *daemonProvisioner) runRelocate(ctx context.Context, record localrepo.Re
 		p.rollbackRelocation(ctx, record, profile, err)
 		return
 	}
-	for _, entry := range entries {
-		if entry.Item != "normal" && entry.Item != "none" && entry.Item != "external" {
-			p.rollbackRelocation(ctx, record, profile, fmt.Errorf("relocated checkout is incomplete or modified at %s (%s)", entry.Path, entry.Item))
-			return
+	if !record.RelocationAdoptExisting {
+		for _, entry := range entries {
+			if entry.Item != "normal" && entry.Item != "none" && entry.Item != "external" {
+				p.rollbackRelocation(ctx, record, profile, fmt.Errorf("relocated checkout is incomplete or modified at %s (%s)", entry.Path, entry.Item))
+				return
+			}
 		}
+	}
+	if err := ensureWorkingCopyIdentity(check.CanonicalPath, expectedWorkingCopyIdentity(record.ServerID, record.RepoID, record.RepoURL)); err != nil {
+		p.rollbackRelocation(ctx, record, profile, fmt.Errorf("validate working-copy identity: %w", err))
+		return
 	}
 	updated, err := p.local.CompleteRelocation(record.OperationID)
 	if err != nil {

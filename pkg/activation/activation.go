@@ -610,6 +610,10 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 	clientPath := filepath.Join(m.config.ServiceWorkingCopy, "admin", "clients", record.ClientID+".json")
 	viewPath := filepath.Join(m.config.ServiceWorkingCopy, "clients", record.ClientID, "view.json")
 	auditPath := filepath.Join(m.config.ServiceWorkingCopy, "admin", "audit", record.OperationID+".json")
+	realm, err := ensureRealm(realmPath, Realm{Schema: RealmSchema, RealmID: record.RealmID, State: "active", CreatedAt: record.CreatedAt})
+	if err != nil {
+		return 0, err
+	}
 	client := map[string]any{
 		"schema": ClientSchema, "client_id": record.ClientID, "realm_id": record.RealmID,
 		"kind":       record.Kind,
@@ -626,16 +630,19 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 		"capabilities": map[string]any{"can_create_repositories": true},
 		"repositories": repositories, "active_operations": []any{},
 	}
+	if realm.Alias != "" {
+		// A ticket-authorized join reuses an existing realm. Its immutable
+		// alias is canonical server state and must be present in the new
+		// client's very first projection; asking that client to claim it again
+		// is both misleading UX and breaks alias-gated operations.
+		view["realm_alias"] = realm.Alias
+	}
 	audit := map[string]any{
 		"schema": AuditSchema, "event": "client_activated", "operation_id": record.OperationID,
 		"client_id": record.ClientID, "realm_id": record.RealmID, "at": activatedAt,
 	}
 	format := map[string]any{"schema": FormatSchema, "format_version": 1}
-	realm := Realm{Schema: RealmSchema, RealmID: record.RealmID, State: "active", CreatedAt: record.CreatedAt}
 	if err := writeStableBootstrapJSON(formatPath, FormatSchema, format); err != nil {
-		return 0, err
-	}
-	if err := ensureRealm(realmPath, realm); err != nil {
 		return 0, err
 	}
 	for path, value := range map[string]any{clientPath: client, viewPath: view, auditPath: audit} {
@@ -672,22 +679,25 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 	return revision, nil
 }
 
-func ensureRealm(path string, wanted Realm) error {
+func ensureRealm(path string, wanted Realm) (Realm, error) {
 	var existing Realm
 	err := readStrict(path, RealmSchema, &existing)
 	if err == nil {
 		if existing.RealmID != wanted.RealmID || existing.State != "active" || existing.CreatedAt.IsZero() {
-			return fmt.Errorf("service realm file %s conflicts with approved realm", path)
+			return Realm{}, fmt.Errorf("service realm file %s conflicts with approved realm", path)
 		}
-		return nil
+		return existing, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return Realm{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
+		return Realm{}, err
 	}
-	return atomicWriteJSON(path, wanted, 0o600)
+	if err := atomicWriteJSON(path, wanted, 0o600); err != nil {
+		return Realm{}, err
+	}
+	return wanted, nil
 }
 
 func writeStableBootstrapJSON(path, schema string, value any) error {

@@ -14,6 +14,7 @@ const (
 	IntentServerInfo       IntentKind = "server_info"
 	IntentSettings         IntentKind = "settings"
 	IntentRecoveries       IntentKind = "recoveries"
+	IntentJournal          IntentKind = "journal"
 	IntentReservations     IntentKind = "reservations"
 	IntentCreateRepository IntentKind = "create_repository"
 	IntentPairMobileDevice IntentKind = "pair_mobile_device"

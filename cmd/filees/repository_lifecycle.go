@@ -42,6 +42,21 @@ func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLoc
 	return lifecycleResult(record), nil
 }
 
+func (service repositoryLifecycleService) BeginLocate(serverID, repoID, existingLocalPath string) (contract.RepoLifecycleResult, error) {
+	check, err := provisioning.PreflightLocalPath(existingLocalPath, provisioning.LocalPathAttachResume, service.allRoots())
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	record, err := service.store.BeginLocate(serverID, repoID, check.CanonicalPath)
+	if err != nil {
+		return contract.RepoLifecycleResult{}, err
+	}
+	if service.onRelocate != nil {
+		service.onRelocate(record.OperationID)
+	}
+	return lifecycleResult(record), nil
+}
+
 // BeginLoadDump durably marks repoID as reconciling and enqueues the actual
 // work (ticket exchange + WC swap, cmd/filees/repository_provisioner.go
 // runReconcile). Options travel through the durable record, not a closure,

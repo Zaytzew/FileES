@@ -234,7 +234,7 @@ func (b *WindowsBackend) PickFolder(ctx context.Context, request PickFolderReque
 			return PickFolderResult{}, NewOperationalFailure("folder_picker", err)
 		}
 	}
-	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;$d=New-Object System.Windows.Forms.FolderBrowserDialog;" + foregroundOwnerPrelude
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;$d=New-Object System.Windows.Forms.FolderBrowserDialog;$d.ShowNewFolderButton=$true;" + foregroundOwnerPrelude
 	if request.Title != "" {
 		script += "$d.Description=" + psString(request.Title) + ";"
 	}
@@ -342,6 +342,16 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 	switch parts[0] {
 	case "add":
 		result.Action = SettingsDialogAddFolder
+	case "connect":
+		result.Action = SettingsDialogConnectRepos
+		result.RepoID = ""
+		for _, repoID := range strings.Split(parts[2], ",") {
+			if repoID = strings.TrimSpace(repoID); repoID != "" {
+				result.RepoIDs = append(result.RepoIDs, repoID)
+			}
+		}
+	case "locate":
+		result.Action = SettingsDialogLocateFolder
 	case "detach":
 		result.Action = SettingsDialogDetachFolder
 	case "delete":
@@ -375,17 +385,18 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 // same rule has to be expressed per row.
 var settingsButtons = []struct {
 	label, action, capability string
-	left                      int
 }{
-	{"Widoczność", "realm_visibility", "CanVisibility", 75},
-	{"Dostęp stref", "manage_grants", "CanGrants", 190},
-	{"Dodaj folder", "add", "CanAdd", 305},
-	{"Odłącz folder", "detach", "CanDetach", 420},
-	{"Odłącz trwale", "delete", "CanDelete", 535},
-	{"Odtwórz z archiwum", "load_dump", "CanLoadDump", 650},
-	{"Dezaktywuj klienta", "deactivate", "CanDeactivate", 765},
-	{"Usuń udział FileES", "remove_realm", "CanRemoveRealm", 880},
-	{"Pobierz archiwa", "download_recovery", "CanDownloadRecovery", 995},
+	{"Widoczność", "realm_visibility", "CanVisibility"},
+	{"Dostęp stref", "manage_grants", "CanGrants"},
+	{"Dodaj folder", "add", "CanAdd"},
+	{"Połącz", "connect", "CanConnect"},
+	{"Wskaż kopię", "locate", "CanLocate"},
+	{"Odłącz folder", "detach", "CanDetach"},
+	{"Odłącz trwale", "delete", "CanDelete"},
+	{"Odtwórz z archiwum", "load_dump", "CanLoadDump"},
+	{"Dezaktywuj klienta", "deactivate", "CanDeactivate"},
+	{"Usuń udział FileES", "remove_realm", "CanRemoveRealm"},
+	{"Pobierz archiwa", "download_recovery", "CanDownloadRecovery"},
 }
 
 // settingsRow carries one grid row plus one boolean per action button. The
@@ -394,9 +405,9 @@ var settingsButtons = []struct {
 // action the controller will silently refuse is a real, reported "click it,
 // nothing happens" bug, not a cosmetic issue.
 type settingsRow struct {
-	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access string
-	CanVisibility, CanGrants, CanAdd, CanDetach, CanDelete, CanLoadDump   bool
-	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                    bool
+	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access                      string
+	CanVisibility, CanGrants, CanAdd, CanConnect, CanLocate, CanDetach, CanDelete, CanLoadDump bool
+	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                                         bool
 }
 
 func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
@@ -416,7 +427,7 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 		for _, f := range s.Folders {
 			folder := base
 			folder.RepoID, folder.Folder, folder.Path, folder.State, folder.Access = f.ID, f.Name, f.LocalPath, f.State, f.Access
-			folder.CanGrants, folder.CanDetach, folder.CanDelete, folder.CanLoadDump = f.CanManageGrants, f.CanDetach, f.CanDelete, f.CanLoadDump
+			folder.CanGrants, folder.CanConnect, folder.CanLocate, folder.CanDetach, folder.CanDelete, folder.CanLoadDump = f.CanManageGrants, f.CanConnect, f.CanLocate, f.CanDetach, f.CanDelete, f.CanLoadDump
 			rows = append(rows, folder)
 		}
 	}
@@ -441,7 +452,7 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	for _, button := range settingsButtons {
 		hidden = append(hidden, button.capability)
 	}
-	columns := append(append([]string{}, hidden...), "Serwer", "Adres", "Strefa", "Folder", "Ścieżka", "Stan", "Dostęp")
+	columns := append(append([]string{}, hidden...), "Serwer", "Adres", "Strefa", "Repozytorium", "Ścieżka", "Stan", "Dostęp")
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
 		quotedColumns = append(quotedColumns, psString(column))
@@ -459,28 +470,32 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	var sb strings.Builder
 	sb.WriteString(dpiAwarenessPrelude)
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;")
-	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1320;$f.Height=620;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1270;$l.Height=34;$f.Controls.Add($l);")
-	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1270;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @(" + strings.Join(quotedColumns, ",") + ")){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add(" + strings.Join(values, ",") + ")};$script:answer='close';")
+	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1320;$f.Height=700;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1270;$l.Height=34;$f.Controls.Add($l);")
+	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1270;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$true;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @(" + strings.Join(quotedColumns, ",") + ")){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add(" + strings.Join(values, ",") + ")};$script:answer='close';")
 	// The answer is "action|serverID|repoID". The separator is "|", not ":",
 	// because a recovery row's ServerID is itself "@recovery-download:<id>" --
 	// with ":" the reply split into four fields, the len()==3 guard rejected
 	// it and the archive-download button silently did nothing. ShowRealmGrants
 	// and ShowReservations already use "|" for the same reason; IDs never
 	// contain it (linux.go joins on "|" too).
-	sb.WriteString("function act($a){if($g.CurrentRow -ne $null){$script:answer=$a+'|'+[string]$g.CurrentRow.Cells['ServerID'].Value+'|'+[string]$g.CurrentRow.Cells['RepoID'].Value;$f.Close()}};")
+	// A refreshed multi-select grid can retain an already-attached row next to
+	// an unattached one. Connect acts on the connectable subset; otherwise the
+	// attached row disables the whole selection and the remaining repository
+	// appears to die silently after the first successful checkout.
+	sb.WriteString("function act($a){if($a-eq'connect'){$rows=@($g.SelectedRows|Where-Object{[string]$_.Cells['CanConnect'].Value-eq'True'}|Sort-Object Index);if($rows.Count-gt 0){$ids=@($rows|ForEach-Object{[string]$_.Cells['RepoID'].Value});$script:answer=$a+'|'+[string]$rows[0].Cells['ServerID'].Value+'|'+($ids-join ',');$f.Close()}}elseif($g.CurrentRow-ne$null){$script:answer=$a+'|'+[string]$g.CurrentRow.Cells['ServerID'].Value+'|'+[string]$g.CurrentRow.Cells['RepoID'].Value;$f.Close()}};")
 	sb.WriteString("$btns=@{};")
-	for _, button := range settingsButtons {
-		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(button.label) + ";$b.Width=108;$b.Height=28;$b.Left=" + fmt.Sprint(button.left) + ";$b.Top=540;$b.Add_Click({act " + psString(button.action) + "});$btns[" + psString(button.capability) + "]=$b;$f.Controls.Add($b);")
+	for index, button := range settingsButtons {
+		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(button.label) + ";$b.Width=238;$b.Height=28;$b.Left=" + fmt.Sprint(12+(index%5)*250) + ";$b.Top=" + fmt.Sprint(540+(index/5)*36) + ";$b.Add_Click({act " + psString(button.action) + "});$btns[" + psString(button.capability) + "]=$b;$f.Controls.Add($b);")
 	}
-	sb.WriteString("function updateButtons{foreach($k in @($btns.Keys)){$btns[$k].Enabled=($g.CurrentRow -ne $null -and [string]$g.CurrentRow.Cells[$k].Value -eq 'True')}};")
+	sb.WriteString("function updateButtons{foreach($k in @($btns.Keys)){if($k-eq'CanConnect'){$rows=@($g.SelectedRows|Where-Object{[string]$_.Cells[$k].Value-eq'True'});$btns[$k].Enabled=$rows.Count-gt0}else{$btns[$k].Enabled=($g.CurrentRow-ne$null-and[string]$g.CurrentRow.Cells[$k].Value-eq'True')}}};")
 	// CurrentCellChanged, not SelectionChanged: DataGridView raises
 	// SelectionChanged while CurrentRow still points at the row being left, so
 	// gating off it lagged one row behind -- confirmed live, a row whose
 	// capability was False kept the previous row's enabled button.
 	// DataBindingComplete covers the initial state, because the columns do not
 	// exist until binding completes.
-	sb.WriteString("$g.Add_CurrentCellChanged({updateButtons});$g.Add_DataBindingComplete({foreach($n in @(" + strings.Join(quotedHidden, ",") + ")){if($g.Columns[$n] -ne $null){$g.Columns[$n].Visible=$false}};updateButtons});$g.DataSource=$t;$f.Controls.Add($g);updateButtons;")
-	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1130;$c.Top=540;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" + foregroundPrelude + "[void]$f.ShowDialog();$script:answer")
+	sb.WriteString("$g.Add_CurrentCellChanged({updateButtons});$g.Add_SelectionChanged({updateButtons});$g.Add_DataBindingComplete({foreach($n in @(" + strings.Join(quotedHidden, ",") + ")){if($g.Columns[$n] -ne $null){$g.Columns[$n].Visible=$false}};updateButtons});$g.DataSource=$t;$f.Controls.Add($g);updateButtons;")
+	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1180;$c.Top=620;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" + foregroundPrelude + "[void]$f.ShowDialog();$script:answer")
 	return sb.String(), nil
 }
 
@@ -494,7 +509,7 @@ func settingsRowField(column string) string {
 		return "Address"
 	case "Strefa":
 		return "Realm"
-	case "Folder":
+	case "Repozytorium":
 		return "Folder"
 	case "Ścieżka":
 		return "Path"
@@ -675,6 +690,48 @@ func buildReservationDialogScript(request ReservationDialogRequest) (string, err
 	sb.WriteString("$script:answer='close';$all=New-Object System.Windows.Forms.Button;$all.Text='Zwolnij wszystko';$all.Width=[int](150*$s);$all.Height=[int](28*$s);$all.Left=[int](630*$s);$all.Top=[int](540*$s);$all.Add_Click({$script:answer='release_all';$f.Close()});$f.Controls.Add($all);$release=New-Object System.Windows.Forms.Button;$release.Text='Zwolnij';$release.Width=[int](100*$s);$release.Height=[int](28*$s);$release.Left=[int](790*$s);$release.Top=[int](540*$s);$release.Add_Click({if($g.CurrentRow -ne $null){$script:answer='release:'+[string]$g.CurrentRow.Cells['ID'].Value;$f.Close()}});$f.Controls.Add($release);")
 	sb.WriteString("$refresh=New-Object System.Windows.Forms.Button;$refresh.Text='Odśwież';$refresh.Width=[int](100*$s);$refresh.Height=[int](28*$s);$refresh.Left=[int](900*$s);$refresh.Top=[int](540*$s);$refresh.Add_Click({$script:answer='refresh';$f.Close()});$f.Controls.Add($refresh);")
 	sb.WriteString("$close=New-Object System.Windows.Forms.Button;$close.Text='Zamknij';$close.Width=[int](100*$s);$close.Height=[int](28*$s);$close.Left=[int](1010*$s);$close.Top=[int](540*$s);$close.DialogResult='Cancel';$f.CancelButton=$close;$f.Controls.Add($close);[void]$f.ShowDialog();$script:answer")
+	return sb.String(), nil
+}
+
+// ShowJournal displays the shared activity/error chronology. Error rows are
+// rendered in bold and dark red; this emphasis is intentionally native rather
+// than encoded into the journal data.
+func (b *WindowsBackend) ShowJournal(ctx context.Context, request JournalDialogRequest) error {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return NewUnavailable("journal_dialog", err)
+	}
+	script, err := buildJournalDialogScript(request)
+	if err != nil {
+		return NewOperationalFailure("journal_dialog", err)
+	}
+	if err := b.runner.Run(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return NewOperationalFailure("journal_dialog", err)
+	}
+	return nil
+}
+
+func buildJournalDialogScript(request JournalDialogRequest) (string, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return "", err
+	}
+	encoded := base64.StdEncoding.EncodeToString(payload)
+	var sb strings.Builder
+	sb.WriteString(dpiAwarenessPrelude)
+	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;")
+	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;")
+	sb.WriteString("try{$s=[Native.Dpi]::GetDpiForSystem()/96.0}catch{$s=1.0};")
+	sb.WriteString("$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=[int](1220*$s);$f.Height=[int](700*$s);$f.StartPosition='CenterScreen';")
+	sb.WriteString("$l=New-Object System.Windows.Forms.Label;$l.AutoSize=$false;$l.Left=[int](12*$s);$l.Top=[int](12*$s);$l.Width=[int](1170*$s);$l.Height=[int](36*$s);$l.Text=$d.Text;$f.Controls.Add($l);")
+	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=[int](12*$s);$g.Top=[int](54*$s);$g.Width=[int](1170*$s);$g.Height=[int](550*$s);$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.AllowUserToDeleteRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';$g.AutoSizeRowsMode='AllCells';$g.DefaultCellStyle.WrapMode='True';")
+	sb.WriteString("$t=New-Object System.Data.DataTable;[void]$t.Columns.Add('Timestamp');[void]$t.Columns.Add('Repository');[void]$t.Columns.Add('Summary');[void]$t.Columns.Add('Details');[void]$t.Columns.Add('Severity');[void]$t.Columns.Add('Emphasized',[bool]);foreach($r in $d.Rows){[void]$t.Rows.Add($r.Timestamp,$r.Repository,$r.Summary,$r.Details,$r.Severity,[bool]$r.Emphasized)};$g.DataSource=$t;")
+	sb.WriteString("$g.Columns['Timestamp'].HeaderText='Czas';$g.Columns['Timestamp'].FillWeight=22;$g.Columns['Repository'].HeaderText='Repozytorium';$g.Columns['Repository'].FillWeight=24;$g.Columns['Summary'].HeaderText='Wpis';$g.Columns['Summary'].FillWeight=58;$g.Columns['Details'].HeaderText='Szczegóły';$g.Columns['Details'].FillWeight=42;$g.Columns['Severity'].Visible=$false;$g.Columns['Emphasized'].Visible=$false;")
+	sb.WriteString("$errorFont=New-Object Drawing.Font($g.Font,[Drawing.FontStyle]::Bold);foreach($row in $g.Rows){if([bool]$row.Cells['Emphasized'].Value){$row.DefaultCellStyle.Font=$errorFont;$row.DefaultCellStyle.ForeColor=[Drawing.Color]::Firebrick}};$f.Controls.Add($g);")
+	sb.WriteString("$close=New-Object System.Windows.Forms.Button;$close.Text='Zamknij';$close.Width=[int](100*$s);$close.Height=[int](28*$s);$close.Left=[int](1082*$s);$close.Top=[int](616*$s);$close.DialogResult='Cancel';$f.CancelButton=$close;$f.Controls.Add($close);[void]$f.ShowDialog();$errorFont.Dispose()")
 	return sb.String(), nil
 }
 

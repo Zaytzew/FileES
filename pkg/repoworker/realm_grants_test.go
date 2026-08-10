@@ -63,7 +63,7 @@ func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 		t.Fatalf("grant=%+v err=%v", record, err)
 	}
 	view, _ := clientview.Load(filepath.Join(root, "clients", recipientClient, "view.json"))
-	if len(view.Repositories) != 1 || view.Repositories[0].Access != "r" {
+	if len(view.Repositories) != 1 || view.Repositories[0].Access != "r" || view.RealmAlias != "recipient" {
 		t.Fatalf("recipient view=%+v", view.Repositories)
 	}
 	raw, _ := os.ReadFile(authz)
@@ -87,8 +87,8 @@ func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, _ := clientview.Load(filepath.Join(root, "clients", secondClient, "view.json"))
-	if len(second.Repositories) != 1 || second.Repositories[0].Access != "rw" {
-		t.Fatalf("new client view=%+v", second.Repositories)
+	if len(second.Repositories) != 1 || second.Repositories[0].Access != "rw" || second.RealmAlias != "recipient" {
+		t.Fatalf("new client view=%+v alias=%q", second.Repositories, second.RealmAlias)
 	}
 
 	// Revoking one installation does not change the realm grant.

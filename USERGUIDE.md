@@ -138,18 +138,24 @@ Każde repozytorium jest podmenu z nazwą i bieżącym stanem:
 
 Gdy brak repozytoriów, w miejscu listy pojawia się wpis *Brak repozytoriów*.
 
-### Ostatnie błędy
+### Dziennik
 
-Sekcja widoczna tylko gdy daemon obsługuje `error.list`. Wyświetla błędy od najnowszego:
+Sekcja jest widoczna, gdy daemon udostępnia aktywność albo błędy. Łączy oba
+rodzaje wpisów od najnowszego, zamiast dzielić je na dwie rzadko kompletne
+listy:
 
 ```
-▶ Ostatnie błędy
-    [ERROR] LOCK-2001 — Operacja blokady nie powiodła się   ← tooltip: Wymagane działanie użytkownika
-    [WARN]  NET-4007 — Brak połączenia z serwerem           ← tooltip: Ponowienie nastąpi później
-    Brak błędów                                 ← gdy dziennik pusty
+▶ Dziennik · ⚠ 1
+    ⚠ BŁĄD · Dokumenty — [LOCK-2001] Plik jest zablokowany
+    Dokumenty / projekt.dwg — opublikowano · r1042
+    Otwórz log…
 ```
 
-Wpisy są wyszarzone (informacyjne). Tooltip każdego wpisu zawiera wskazówkę jak postępować.
+Tray pokazuje maksymalnie 12 zagregowanych wpisów. Wiele ścieżek tej samej
+rewizji lub etapu może zostać złączonych, a nieudana aktywność nie dubluje
+powiązanego błędu. Wpisy są informacyjne; tooltip zawiera szczegóły lub
+wskazówkę. **Otwórz log…** pokazuje cały dostępny snapshot w natywnym oknie.
+Na Windows błędy są dodatkowo pogrubione i ciemnoczerwone.
 
 ### Akcje globalne
 
@@ -189,6 +195,26 @@ Zamknij FileES…
 **Rewizja** — para `lokalna / HEAD`. Gdy są równe, kopia robocza jest aktualna. Różnica oznacza trwającą lub oczekującą aktualizację.
 
 **Oczekujące zmiany** — liczba plików zmodyfikowanych lokalnie, czekających na commit.
+
+---
+
+## Dołączenie do istniejącej strefy i wybór repozytoriów
+
+Administrator może wystawić zaproszenie do już istniejącej strefy. Po
+zaproszeniu i OTP klient dziedziczy jej tożsamość oraz prawa, lecz nie pobiera
+automatycznie wszystkich repozytoriów na dysk.
+
+1. Otwórz podmenu serwera i wybierz **Zarządzaj serwerem…**.
+2. Ustawienia pokazują wszystkie repozytoria strefy: podłączone i niepodłączone.
+3. Na Windows zaznacz jedno lub wiele niepodłączonych repozytoriów i wybierz
+   **Połącz**. Na Linux wybierz pojedynczy wiersz.
+4. Dla każdego repozytorium wskaż albo utwórz lokalny folder.
+5. Po akceptacji wiersz natychmiast pokazuje ścieżkę i `łączenie…`. Pierwszy
+   checkout działa w tle; końcowy sukces albo błąd pojawi się w powiadomieniu.
+
+Stary, nadal zaznaczony wiersz już podłączonego repozytorium nie blokuje
+podłączania kolejnego. Nie wybieraj ponownie tego samego folderu, gdy wiersz ma
+stan `łączenie…`.
 
 ---
 
@@ -242,15 +268,39 @@ lub podmieniony wiersz nie zwolni przypadkowo innej rezerwacji.
 ### Stały alias
 
 Alias jest publiczną nazwą realmu widoczną przy rezerwacjach; nie jest adresem
-e-mail ani UID. Po aktywacji wybierz w podmenu serwera **Ustaw stały alias…**.
-Wpis jest sprawdzany przez serwer pod względem formatu i unikatowości, a po
-zatwierdzeniu pozostaje niezmienny.
+e-mail ani UID. **Ustaw stały alias…** pojawia się tylko dla świeżej, pustej
+strefy. Klient dołączony do istniejącej strefy dziedziczy jej alias i nie
+powinien być pytany o nową nazwę. Jeżeli repozytoria są już widoczne, a aliasu
+brakuje, jest to niepełna projekcja serwera — nie próbuj tworzyć innego aliasu.
+Do czasu odświeżenia FileES ukrywa **Widoczność…** i operacje lock wymagające
+tożsamości strefy.
 
 ---
 
 ## Otwieranie katalogu
 
 **Otwórz katalog** otwiera lokalny katalog repozytorium w domyślnym menedżerze plików (Linux: `xdg-open`, Windows: Explorer). Opcja jest wyszarzona, jeśli demon nie podał lokalnej ścieżki dla tego repozytorium.
+
+---
+
+## Przeniesiona albo brakująca kopia robocza
+
+Nie zmieniaj nazwy ani nie usuwaj rootu aktywnej kopii poza FileES. Na Windows
+działający daemon blokuje taki rename/delete uchwytem systemowym. Po zamknięciu
+FileES system nie może już tego wymusić, dlatego następny start sprawdza `.svn`,
+URL repozytorium i marker tożsamości.
+
+Jeżeli poprawna kopia została przeniesiona:
+
+1. Repozytorium przejdzie do **Wymaga uwagi** z operacją
+   `working_copy_missing`; FileES nie utworzy pustego zamiennika.
+2. Otwórz **Zarządzaj serwerem…** i wybierz **Wskaż kopię**.
+3. Wskaż istniejący root z `.svn`. FileES sprawdzi URL i tożsamość, a następnie
+   trwale przepnie lokalną ścieżkę bez checkoutu.
+
+Lokalne, niecommitowane zmiany są dozwolone i pozostają nietknięte. Nie używaj
+**Połącz** do odzyskania przeniesionej WC — ta akcja oznacza pierwszy checkout
+repozytorium, które nie ma jeszcze lokalnej kopii na tym kliencie.
 
 ---
 
@@ -333,6 +383,19 @@ Powiadomienia wymagają zarejestrowanego AUMID. Upewnij się, że `filees-gui.ex
 ### Wiele ikon w trayu
 
 Aktualna wersja blokuje drugą instancję przed utworzeniem ikony. Jeśli mimo to widoczne są dwie ikony, jedna może pochodzić ze starszej wersji GUI albo z innej sesji użytkownika. Zakończ stary proces `filees-gui` z poziomu jego sesji lub menedżera procesów, sprawdź wersję poleceniem `filees-gui --version` i uruchom ponownie bieżącą instalację.
+
+### „Widoczność…” nie jest dostępna albo folder pokazuje „brak aliasu”
+
+Tożsamość istniejącej strefy nie dotarła jeszcze w projekcji. Nie ustawiaj
+nowego aliasu. Odczekaj odświeżenie, użyj **Połącz ponownie**, a jeżeli stan
+wraca po restarcie — administrator musi zrekoncyliować widok klienta po stronie
+serwera. GUI celowo nie otwiera dialogu widoczności bez kanonicznego aliasu.
+
+### Repozytorium pokazuje `working_copy_missing`
+
+Sprawdź, czy kopia nie została przeniesiona lub czy dysk jest podłączony. Jeśli
+znasz jej nową lokalizację, użyj **Wskaż kopię**. Nie twórz ręcznie pustego
+katalogu pod starą nazwą; nie jest on prawidłową WC i nie zostanie uruchomiony.
 
 ---
 

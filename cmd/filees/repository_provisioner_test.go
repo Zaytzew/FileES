@@ -320,6 +320,46 @@ func TestDaemonProvisionerDoesNotCheckoutWhenRelocationQuiesceFails(t *testing.T
 	}
 }
 
+func TestDaemonProvisionerLocateAdoptsExistingWorkingCopyWithoutCheckout(t *testing.T) {
+	local, journal, profile, record := relocationFixture(t)
+	record, err := local.FailRelocation(record.OperationID, errors.New("switch to locate fixture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "moved")
+	if err := os.MkdirAll(filepath.Join(target, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record, err = local.BeginLocate(record.ServerID, record.RepoID, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := &attachmentSVNStub{url: record.RepoURL, status: []client.StatusEntry{
+		{Path: ".filees", Item: "unversioned"},
+		{Path: "user-draft.txt", Item: "modified"},
+	}}
+	events := make(chan provisionedAttachment, 2)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	go func() {
+		quiesce := <-events
+		quiesce.Result <- nil
+	}()
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if stub.checkout != 0 || got.State != localrepo.StateAttached || got.LocalPath != target || got.RelocationAdoptExisting {
+		t.Fatalf("adopted=%+v checkout=%d", got, stub.checkout)
+	}
+	if _, err := os.Stat(workingCopyIdentityPath(target)); err != nil {
+		t.Fatalf("working-copy marker: %v", err)
+	}
+	final := <-events
+	if final.Quiesce || final.Repo.LocalPath != target {
+		t.Fatalf("final attachment=%+v", final)
+	}
+}
+
 func TestDaemonProvisionerRestartPublishesOldRuntimeBeforeRelocation(t *testing.T) {
 	local, journal, profile, record := relocationFixture(t)
 	stub := &attachmentSVNStub{}

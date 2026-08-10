@@ -64,6 +64,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoAttachApprove(req)
 	case contract.CmdRepoRelocate:
 		return s.handleRepoRelocate(req)
+	case contract.CmdRepoLocate:
+		return s.handleRepoLocate(req)
 	case contract.CmdRepoLoadDump:
 		return s.handleRepoLoadDump(req)
 	case contract.CmdRepoGrantAccess:
@@ -489,6 +491,29 @@ func (s *Server) handleRepoRelocate(req contract.Request) contract.Response {
 	result, err := service.BeginRelocate(payload.ServerID, payload.RepoID, payload.NewLocalPath)
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "REPO-2007", "ERROR", "REQUIRE_ACTION", "repo.relocation_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleRepoLocate(req contract.Request) contract.Response {
+	service := s.repositoryLifecycleService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "REPO-0001", "ERROR", "RETRY", "repo.lifecycle_unavailable", nil)
+	}
+	var payload contract.RepoLocatePayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	rs := s.repoByID(payload.RepoID)
+	if rs == nil || rs.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	if !rs.Snapshot().Attached {
+		return contract.ErrResponse(req.RequestID, "REPO-2006", "ERROR", "NONE", "repo.not_attached", nil)
+	}
+	result, err := service.BeginLocate(payload.ServerID, payload.RepoID, payload.ExistingLocalPath)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "REPO-2010", "ERROR", "REQUIRE_ACTION", "repo.locate_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

@@ -85,6 +85,15 @@ func (server ServerViewModel) Owns(repo RepoViewModel) bool {
 	return server.RealmID != "" && repo.OwnerRealmID == server.RealmID
 }
 
+// NeedsRealmAliasClaim keeps the recovery action scoped to a fresh, empty
+// realm. Once the server projects any repository, realm membership is already
+// established and a folder/client must not be invited to rename that realm.
+// A missing RealmAlias in that state is stale/incomplete projection data, not
+// an alias-creation task for the user.
+func (server ServerViewModel) NeedsRealmAliasClaim() bool {
+	return server.RealmID != "" && server.RealmAlias == "" && len(server.Repos) == 0
+}
+
 // ErrorViewModel is a presentation-safe structured daemon error. Details are
 // intentionally excluded from the tray model.
 type ErrorViewModel struct {
@@ -98,8 +107,8 @@ type ErrorViewModel struct {
 }
 
 type ActivityViewModel struct {
-	RepoID, Path, Kind, Stage, UpdatedAt string
-	Revision                             int64
+	RepoID, Path, Kind, Stage, UpdatedAt, ErrorID string
+	Revision                                      int64
 }
 
 type UpdateViewModel struct {
@@ -187,6 +196,12 @@ func (vm ViewModel) CanDetachRepository() bool {
 }
 func (vm ViewModel) CanDeleteRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoDelete)
+}
+func (vm ViewModel) CanAttachRepository() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoAttachIntent) && vm.HasCap(contract.CapRepoAttachApprove)
+}
+func (vm ViewModel) CanLocateRepository() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoLocate)
 }
 func (vm ViewModel) CanClaimRealmAlias() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmAliasClaim)

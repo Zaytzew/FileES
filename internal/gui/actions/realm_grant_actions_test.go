@@ -117,3 +117,24 @@ func TestControllerSettingsPublishesRealmDirectoryVisibility(t *testing.T) {
 		t.Fatalf("visibility call=%+v", call)
 	}
 }
+
+func TestControllerSettingsHidesRealmVisibilityUntilAliasProjectionArrives(t *testing.T) {
+	platformFake := &platformtest.Fake{SettingsFunc: func(_ context.Context, request platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+		if len(request.Servers) != 1 || request.Servers[0].CanSetRealmVisibility {
+			t.Fatalf("visibility offered without projected realm alias: %+v", request)
+		}
+		return platform.SettingsDialogResult{Action: platform.SettingsDialogClose}, nil
+	}}
+	view := lifecycleView(contract.CapRealmSetVisibility)
+	view.Servers[0].RealmAlias = ""
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, RealmGrantBrowser: platformFake, Prompter: platformFake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().SettingsRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(platformFake.Snapshot().SettingsRequests) != 1 || len(platformFake.Snapshot().RealmVisibilityRequests) != 0 {
+		t.Fatalf("settings/visibility requests=%+v/%+v", platformFake.Snapshot().SettingsRequests, platformFake.Snapshot().RealmVisibilityRequests)
+	}
+}

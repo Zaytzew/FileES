@@ -143,3 +143,36 @@ func TestRepositoryLifecycleDoesNotQueueRejectedCreate(t *testing.T) {
 		t.Fatalf("rejected operation was persisted or queued: queued=%v records=%d", queued, len(local.List()))
 	}
 }
+
+func TestRepositoryLifecycleLocateAcceptsOnlyExistingWorkingCopy(t *testing.T) {
+	local, _ := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	oldPath := filepath.Join(t.TempDir(), "old")
+	record, _ := local.BeginAttach("office", "repo-1", oldPath, false)
+	_, _ = local.ApproveAttach(record.OperationID, "office", "repo-1", "svn+ssh://_filees-client@example/repo-1", "rw")
+	_, _ = local.MarkAttached(record.OperationID, "repo-1")
+	queued := ""
+	service := repositoryLifecycleService{store: local, provisioning: journal, onRelocate: func(id string) { queued = id }}
+	plain := filepath.Join(t.TempDir(), "plain")
+	if err := os.MkdirAll(plain, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.BeginLocate("office", "repo-1", plain); err == nil {
+		t.Fatal("plain directory accepted as moved working copy")
+	}
+	if queued != "" {
+		t.Fatal("rejected locate was queued")
+	}
+	moved := filepath.Join(t.TempDir(), "moved")
+	if err := os.MkdirAll(filepath.Join(moved, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.BeginLocate("office", "repo-1", moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := local.Get(record.OperationID)
+	if queued != record.OperationID || result.PendingLocalPath != moved || !stored.RelocationAdoptExisting {
+		t.Fatalf("result=%+v stored=%+v queued=%q", result, stored, queued)
+	}
+}

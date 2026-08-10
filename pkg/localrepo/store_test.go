@@ -175,6 +175,34 @@ func TestStoreRelocationIsDurableAndKeepsOldPathOnFailure(t *testing.T) {
 	}
 }
 
+func TestStoreLocatePersistsAdoptExistingAndClearsItAtBoundary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPath, movedPath := filepath.Join(t.TempDir(), "old"), filepath.Join(t.TempDir(), "moved")
+	record, _ := store.BeginAttach("primary", "repo-1", oldPath, false)
+	_, _ = store.ApproveAttach(record.OperationID, "primary", "repo-1", "svn+ssh://_filees-client@example/repo", "rw")
+	_, _ = store.MarkAttached(record.OperationID, "repo-1")
+	locating, err := store.BeginLocate("primary", "repo-1", movedPath)
+	if err != nil || !locating.RelocationAdoptExisting || locating.PendingLocalPath != movedPath {
+		t.Fatalf("locating=%+v err=%v", locating, err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, _ := reopened.Get(record.OperationID)
+	if !persisted.RelocationAdoptExisting {
+		t.Fatalf("locate mode was not durable: %+v", persisted)
+	}
+	completed, err := reopened.CompleteRelocation(record.OperationID)
+	if err != nil || completed.LocalPath != movedPath || completed.RelocationAdoptExisting {
+		t.Fatalf("completed=%+v err=%v", completed, err)
+	}
+}
+
 func TestStoreReconcileIsDurableAndKeepsPathOnFailure(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

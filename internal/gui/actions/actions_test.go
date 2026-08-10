@@ -150,6 +150,28 @@ type fakeRepositoryCreator struct {
 	statusContextFunc func(context.Context, string) (state, lastError string, err error)
 }
 
+type attachCall struct{ serverID, repoID, localPath string }
+type fakeRepositoryAttacher struct {
+	calls chan attachCall
+}
+
+type locateCall struct{ serverID, repoID, localPath string }
+type fakeRepositoryLocator struct{ calls chan locateCall }
+
+func (f *fakeRepositoryLocator) LocateRepository(_ context.Context, serverID, repoID, localPath string) (string, error) {
+	f.calls <- locateCall{serverID: serverID, repoID: repoID, localPath: localPath}
+	return "locate-" + repoID, nil
+}
+
+func (f *fakeRepositoryAttacher) AttachRepository(_ context.Context, serverID, repoID, localPath string) (string, error) {
+	f.calls <- attachCall{serverID: serverID, repoID: repoID, localPath: localPath}
+	return "attach-" + repoID, nil
+}
+
+func (f *fakeRepositoryAttacher) AttachmentStatus(_ context.Context, _ string) (string, string, error) {
+	return "attached", "", nil
+}
+
 func (f *fakeRepositoryCreator) CreateRepository(_ context.Context, serverID, displayName, localPath string) (string, error) {
 	f.calls <- createCall{serverID, displayName, localPath}
 	return "op-123", nil
@@ -255,6 +277,52 @@ func send(t *testing.T, ch chan<- tray.Intent, intent tray.Intent) {
 	case ch <- intent:
 	case <-time.After(time.Second):
 		t.Fatal("timeout sending intent")
+	}
+}
+
+func TestControllerOpensCombinedJournalWithEmphasizedErrors(t *testing.T) {
+	fake := &platformtest.Fake{}
+	vm := app.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapRepoActivity: true, contract.CapErrorList: true},
+		Repos:        []app.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty"}},
+		Activity: []app.ActivityViewModel{
+			{RepoID: "docs", Path: "a.txt", Stage: "published", Revision: 7, UpdatedAt: "2026-08-10T12:00:00Z"},
+			{RepoID: "docs", Path: "b.txt", Stage: "published", Revision: 7, UpdatedAt: "2026-08-10T12:00:01Z"},
+		},
+		Errors: []app.ErrorViewModel{{ID: "err", RepoID: "docs", Timestamp: "2026-08-10T12:01:00Z", Severity: "ERROR", Code: "SVN-1", Message: "Odmowa"}},
+	}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return vm }, JournalBrowser: fake, Notifier: fake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentJournal})
+	deadline := time.Now().Add(time.Second)
+	for len(fake.Snapshot().JournalRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	requests := fake.Snapshot().JournalRequests
+	if len(requests) != 1 || requests[0].Title != "Dziennik FileES" || len(requests[0].Rows) != 2 {
+		t.Fatalf("journal requests=%+v", requests)
+	}
+	if !requests[0].Rows[0].Emphasized || !strings.Contains(requests[0].Rows[0].Summary, "⚠ BŁĄD") {
+		t.Fatalf("error row=%+v", requests[0].Rows[0])
+	}
+	if requests[0].Rows[1].Summary != "Dokumenty — publikacja: 2 elementy · r7" || requests[0].Rows[1].Timestamp == "2026-08-10T12:00:01Z" {
+		t.Fatalf("activity row=%+v", requests[0].Rows[1])
+	}
+}
+
+func TestControllerRejectsAliasIntentForRealmWithRepositories(t *testing.T) {
+	fake := &platformtest.Fake{}
+	aliases := &fakeRealmAliases{aliases: make(chan string, 1)}
+	vm := app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRealmAliasClaim: true}, Servers: []app.ServerViewModel{{
+		ID: "manual", RealmID: "realm-acme", Repos: []app.RepoViewModel{{ID: "docs", OwnerRealmID: "realm-acme"}},
+	}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return vm }, Prompter: fake, RealmAliases: aliases})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSetRealmAlias, ServerID: "manual"})
+	time.Sleep(20 * time.Millisecond)
+	if requests := fake.Snapshot().PromptRequests; len(requests) != 0 {
+		t.Fatalf("alias prompt shown for established realm: %+v", requests)
 	}
 }
 
@@ -1198,7 +1266,7 @@ func TestControllerServerInformationContainsPermissions(t *testing.T) {
 
 func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 	platformFake := &platformtest.Fake{}
-	view := app.ViewModel{Servers: []app.ServerViewModel{{
+	view := app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoAttachIntent: true, contract.CapRepoAttachApprove: true}, Servers: []app.ServerViewModel{{
 		ID: "office", DisplayName: "Biuro", Address: "filees.example", SSHPort: 2222,
 		RealmID: "realm-1", RealmAlias: "acme", ClientID: "client-1",
 		Repos: []app.RepoViewModel{
@@ -1218,12 +1286,151 @@ func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 		t.Fatalf("settings request = %#v", requests)
 	}
 	server := requests[0].Servers[0]
-	if server.Name != "Biuro" || server.Address != "filees.example" || !strings.Contains(server.Realm, "acme") || len(server.Folders) != 1 {
+	if server.Name != "Biuro" || server.Address != "filees.example" || !strings.Contains(server.Realm, "acme") || len(server.Folders) != 2 {
 		t.Fatalf("settings server = %#v", server)
 	}
 	folder := server.Folders[0]
 	if folder.Name != "Dokumenty" || folder.LocalPath != "/wc/docs" || folder.State != "aktywne" || folder.Access != "odczyt i zapis" {
 		t.Fatalf("settings folder = %#v", folder)
+	}
+	remote := server.Folders[1]
+	if remote.ID != "remote" || remote.LocalPath != "brak lokalnego folderu" || !remote.CanConnect {
+		t.Fatalf("unattached repository = %#v", remote)
+	}
+}
+
+func TestControllerConnectsSelectedRealmRepositoriesToFoldersSequentially(t *testing.T) {
+	attacher := &fakeRepositoryAttacher{calls: make(chan attachCall, 2)}
+	paths := []string{filepath.Join(t.TempDir(), "docs"), filepath.Join(t.TempDir(), "cad")}
+	var pickerIndex int
+	var settingsCalls int
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			settingsCalls++
+			if settingsCalls == 1 {
+				return platform.SettingsDialogResult{Action: platform.SettingsDialogConnectRepos, ServerID: "office", RepoIDs: []string{"docs", "cad"}}, nil
+			}
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogClose}, nil
+		},
+		PickFolderFunc: func(_ context.Context, request platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			if pickerIndex >= len(paths) {
+				t.Fatalf("unexpected folder picker: %#v", request)
+			}
+			path := paths[pickerIndex]
+			pickerIndex++
+			return platform.PickFolderResult{Path: path}, nil
+		},
+	}
+	view := app.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoAttachIntent:  true,
+			contract.CapRepoAttachApprove: true,
+		},
+		Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{
+			{ID: "docs", DisplayName: "Dokumenty", State: contract.StateUnattached},
+			{ID: "cad", DisplayName: "CAD", State: contract.StateUnattached},
+		}}},
+	}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, SettingsBrowser: platformFake, FolderPicker: platformFake,
+		RepositoryAttacher: attacher, Notifier: platformFake, CreationStatusPollInterval: time.Millisecond,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	for index, repoID := range []string{"docs", "cad"} {
+		select {
+		case call := <-attacher.calls:
+			if call.serverID != "office" || call.repoID != repoID || call.localPath != paths[index] {
+				t.Fatalf("attach %d = %#v", index, call)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("attachment %s was not started", repoID)
+		}
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().SettingsRequests) < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := len(platformFake.Snapshot().SettingsRequests); got != 2 {
+		t.Fatalf("settings windows = %d, want reopened after folder selection", got)
+	}
+	reopened := platformFake.Snapshot().SettingsRequests[1]
+	if !strings.Contains(reopened.Text, "Pierwszy checkout trwa w tle") || len(reopened.Servers) != 1 || len(reopened.Servers[0].Folders) != 2 {
+		t.Fatalf("reopened settings do not explain pending checkout: %#v", reopened)
+	}
+	for index, folder := range reopened.Servers[0].Folders {
+		if folder.State != "łączenie…" || folder.LocalPath != paths[index] || folder.CanConnect {
+			t.Errorf("pending folder %d = %#v, want path %q and non-connectable łączenie state", index, folder, paths[index])
+		}
+	}
+
+	// Lifecycle success alone keeps the overlay until the authoritative model
+	// catches up. Once it does, the next Settings snapshot must drop the
+	// optimistic label and use normal attached state.
+	for index := range view.Servers[0].Repos {
+		view.Servers[0].Repos[index].Attached = true
+		view.Servers[0].Repos[index].LocalPath = paths[index]
+		view.Servers[0].Repos[index].State = contract.StateActive
+	}
+	time.Sleep(10 * time.Millisecond) // let the auto-reopened dialog release its operation key
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	deadline = time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().SettingsRequests) < 3 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	requests := platformFake.Snapshot().SettingsRequests
+	if len(requests) != 3 {
+		t.Fatalf("settings windows = %d, want explicit post-tick reopen", len(requests))
+	}
+	for index, folder := range requests[2].Servers[0].Folders {
+		if folder.State != "aktywne" || folder.LocalPath != paths[index] {
+			t.Errorf("post-tick folder %d = %#v, want authoritative active path %q", index, folder, paths[index])
+		}
+	}
+}
+
+func TestControllerOffersAndLocatesMovedWorkingCopy(t *testing.T) {
+	locator := &fakeRepositoryLocator{calls: make(chan locateCall, 1)}
+	target := filepath.Join(t.TempDir(), "ZEGRZE")
+	operation := "working_copy_missing"
+	var request platform.SettingsDialogRequest
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(_ context.Context, got platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			request = got
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogLocateFolder, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		PickFolderFunc: func(_ context.Context, got platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			if !strings.Contains(got.Title, "przeniesioną kopię roboczą") {
+				t.Fatalf("picker title=%q", got.Title)
+			}
+			return platform.PickFolderResult{Path: target}, nil
+		},
+	}
+	view := app.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapRepoLocate: true},
+		Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{{
+			ID: "repo-1", DisplayName: "ZEGRZE", Attached: true, LocalPath: filepath.Join(t.TempDir(), "missing"),
+			State: contract.StateInteractionRequired, CurrentOp: &operation,
+		}}}},
+	}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, SettingsBrowser: platformFake,
+		FolderPicker: platformFake, RepositoryLocator: locator, Notifier: platformFake,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	select {
+	case call := <-locator.calls:
+		if call != (locateCall{serverID: "office", repoID: "repo-1", localPath: target}) {
+			t.Fatalf("locate=%#v", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("locate was not started")
+	}
+	if len(request.Servers) != 1 || len(request.Servers[0].Folders) != 1 || !request.Servers[0].Folders[0].CanLocate {
+		t.Fatalf("missing working-copy row=%#v", request)
 	}
 }
 

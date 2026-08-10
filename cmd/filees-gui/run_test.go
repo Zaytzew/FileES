@@ -30,6 +30,65 @@ type fakeTrayBackend struct {
 	title  string
 }
 
+type repositoryAttachClientStub struct {
+	intents   []contract.RepoAttachIntentPayload
+	approvals []contract.RepoAttachApprovePayload
+}
+
+type repositoryLocateClientStub struct {
+	payloads []contract.RepoLocatePayload
+}
+
+func (stub *repositoryLocateClientStub) RepoLocate(_ context.Context, payload contract.RepoLocatePayload) (*contract.RepoLifecycleResult, error) {
+	stub.payloads = append(stub.payloads, payload)
+	return &contract.RepoLifecycleResult{OperationID: "op-locate", State: "relocating"}, nil
+}
+
+func (stub *repositoryAttachClientStub) RepoAttachIntent(_ context.Context, payload contract.RepoAttachIntentPayload) (*contract.RepoLifecycleResult, error) {
+	stub.intents = append(stub.intents, payload)
+	return &contract.RepoLifecycleResult{OperationID: "op-attach", State: "unattached"}, nil
+}
+
+func (stub *repositoryAttachClientStub) RepoAttachApprove(_ context.Context, payload contract.RepoAttachApprovePayload) (*contract.RepoLifecycleResult, error) {
+	stub.approvals = append(stub.approvals, payload)
+	return &contract.RepoLifecycleResult{OperationID: payload.OperationID, State: "attaching"}, nil
+}
+
+func (stub *repositoryAttachClientStub) RepoLifecycleStatus(_ context.Context, operationID string) (*contract.RepoLifecycleResult, error) {
+	return &contract.RepoLifecycleResult{OperationID: operationID, State: "attached"}, nil
+}
+
+func TestRepositoryAttachAdapterPersistsIntentBeforeApproval(t *testing.T) {
+	stub := &repositoryAttachClientStub{}
+	adapter := repositoryAttachAdapter{client: stub}
+	path := filepath.Join(t.TempDir(), "repo")
+	operationID, err := adapter.AttachRepository(context.Background(), "office", "repo-1", path)
+	if err != nil {
+		t.Fatalf("AttachRepository: %v", err)
+	}
+	if operationID != "op-attach" || len(stub.intents) != 1 || len(stub.approvals) != 1 {
+		t.Fatalf("operation=%q intents=%#v approvals=%#v", operationID, stub.intents, stub.approvals)
+	}
+	if stub.intents[0].ServerID != "office" || stub.intents[0].RepoID != "repo-1" || stub.intents[0].LocalPath != path {
+		t.Fatalf("intent=%#v", stub.intents[0])
+	}
+	if stub.approvals[0].OperationID != operationID || stub.approvals[0].ServerID != "office" || stub.approvals[0].RepoID != "repo-1" {
+		t.Fatalf("approval=%#v", stub.approvals[0])
+	}
+}
+
+func TestRepositoryLocateAdapterUsesExistingWorkingCopyCommand(t *testing.T) {
+	stub := &repositoryLocateClientStub{}
+	path := filepath.Join(t.TempDir(), "moved")
+	operationID, err := (repositoryLocateAdapter{client: stub}).LocateRepository(context.Background(), "office", "repo-1", path)
+	if err != nil || operationID != "op-locate" {
+		t.Fatalf("operation=%q err=%v", operationID, err)
+	}
+	if len(stub.payloads) != 1 || stub.payloads[0] != (contract.RepoLocatePayload{ServerID: "office", RepoID: "repo-1", ExistingLocalPath: path}) {
+		t.Fatalf("payloads=%#v", stub.payloads)
+	}
+}
+
 func newFakeTrayBackend() *fakeTrayBackend {
 	return &fakeTrayBackend{
 		ready: make(chan struct{}),

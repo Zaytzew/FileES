@@ -44,6 +44,27 @@ func TestBuildMenuClientGroupGatesRestartAndShutdown(t *testing.T) {
 	}
 }
 
+func TestBuildMenuDoesNotOfferRealmAliasForRealmWithRepositories(t *testing.T) {
+	vm := app.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapRealmAliasClaim: true},
+		Servers: []app.ServerViewModel{{
+			ID: "manual", RealmID: "realm-acme",
+			Repos: []app.RepoViewModel{{ID: "docs", ServerID: "manual", OwnerRealmID: "realm-acme", Attached: true, LocalPath: "/wc/docs"}},
+		}},
+	}
+	server := findItem(t, BuildMenu(vm).Items, "server.manual")
+	if hasItem(server.Children, "server.manual.realm_alias") {
+		t.Fatalf("alias claim offered for established realm repositories: %+v", server.Children)
+	}
+
+	vm.Servers[0].Repos = nil
+	server = findItem(t, BuildMenu(vm).Items, "server.manual")
+	if !hasItem(server.Children, "server.manual.realm_alias") {
+		t.Fatalf("alias recovery missing for a fresh empty realm: %+v", server.Children)
+	}
+}
+
 func TestBuildMenuHeaderHasNoInfoRows(t *testing.T) {
 	vm := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", DisplayName: "Biuro"}}}
 	menu := BuildMenu(vm)
@@ -163,8 +184,8 @@ func TestBuildMenuShowsRepositoryActionsWhenCapabilitiesAllow(t *testing.T) {
 	if repo.Intent != nil || open.Intent == nil || open.Intent.Kind != IntentOpenFolder || lock.Intent == nil || lock.Intent.Kind != IntentLock || unlock.Intent == nil || unlock.Intent.Kind != IntentUnlock || repo.Tooltip != "/wc/projectA" {
 		t.Fatalf("repository actions = %#v", repo)
 	}
-	if !hasItem(menu.Items, "errors") {
-		t.Fatal("errors menu missing despite error.list capability")
+	if !hasItem(menu.Items, "journal") {
+		t.Fatal("journal menu missing despite error.list capability")
 	}
 }
 
@@ -177,43 +198,37 @@ func TestBuildMenuDisablesUnlockWithoutReservation(t *testing.T) {
 	}
 }
 
-func TestBuildMenuShowsGlobalRecentActivityBesideHistory(t *testing.T) {
+func TestBuildMenuShowsCombinedJournalWithOpenAction(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{
 		Connected:    true,
 		Capabilities: map[string]bool{contract.CapRepoActivity: true, contract.CapErrorList: true},
 		Repos:        []app.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty"}},
-		Activity:     []app.ActivityViewModel{{RepoID: "docs", Path: "raport.pdf", Stage: "published", Revision: 18}},
+		Activity:     []app.ActivityViewModel{{RepoID: "docs", Path: "raport.pdf", Stage: "published", Revision: 18, UpdatedAt: "2026-08-10T12:00:00Z"}},
+		Errors:       []app.ErrorViewModel{{ID: "e1", RepoID: "docs", Timestamp: "2026-08-10T12:01:00Z", Severity: "ERROR", Code: "LOCK-1", Message: "Plik jest zablokowany", Hint: "REQUIRE_ACTION"}},
 	})
-	activity := findItem(t, menu.Items, "activity")
-	if activity.Title != "Ostatnia aktywność" || len(activity.Children) != 1 || activity.Children[0].Title != "Dokumenty / raport.pdf — Opublikowano · r18" {
-		t.Fatalf("activity=%+v", activity)
+	journal := findItem(t, menu.Items, "journal")
+	if journal.Title != "Dziennik · ⚠ 1" || len(journal.Children) != 4 {
+		t.Fatalf("journal=%+v", journal)
 	}
-	if len(activity.Children[0].Children) != 0 || activity.Children[0].Enabled {
-		t.Fatalf("activity row should be informational: %+v", activity.Children[0])
+	if journal.Children[0].Enabled || journal.Children[0].Title != "⚠ BŁĄD · Dokumenty — [LOCK-1] Plik jest zablokowany" || journal.Children[0].Tooltip != "Wymagane działanie użytkownika" {
+		t.Fatalf("error row=%+v", journal.Children[0])
+	}
+	open := findItem(t, journal.Children, "journal.open")
+	if open.Title != "Otwórz log…" || open.Intent == nil || open.Intent.Kind != IntentJournal || hasItem(menu.Items, "activity") || hasItem(menu.Items, "errors") {
+		t.Fatalf("journal action or legacy menus are wrong: %+v", menu.Items)
 	}
 }
 
-func TestActivityStageLabelDistinguishesKindForPublishedAndFailed(t *testing.T) {
-	cases := []struct {
-		kind, stage string
-		revision    int64
-		want        string
-	}{
-		{"added", "published", 3, "Dodano · r3"},
-		{"modified", "published", 3, "Zaktualizowano · r3"},
-		{"deleted", "published", 3, "Usunięto · r3"},
-		{"renamed", "published", 3, "Zmieniono nazwę · r3"},
-		{"", "published", 3, "Opublikowano · r3"},
-		{"added", "failed", 0, "Nie udało się: dodanie"},
-		{"modified", "failed", 0, "Nie udało się: aktualizacja"},
-		{"deleted", "failed", 0, "Nie udało się: usunięcie"},
-		{"renamed", "failed", 0, "Nie udało się: zmiana nazwy"},
+func TestBuildMenuLimitsJournalPreviewToTwelveEntries(t *testing.T) {
+	activity := make([]app.ActivityViewModel, 13)
+	for index := range activity {
+		activity[index] = app.ActivityViewModel{RepoID: "docs", Path: "plik", Stage: "published", Revision: int64(index + 1), UpdatedAt: time.Date(2026, 8, 10, 12, index, 0, 0, time.UTC).Format(time.RFC3339)}
 	}
-	for _, c := range cases {
-		got := activityStageLabel(app.ActivityViewModel{Kind: c.kind, Stage: c.stage, Revision: c.revision})
-		if got != c.want {
-			t.Errorf("activityStageLabel(kind=%q, stage=%q) = %q, want %q", c.kind, c.stage, got, c.want)
-		}
+	menu := BuildMenu(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoActivity: true}, Activity: activity})
+	journal := findItem(t, menu.Items, "journal")
+	// 12 informational rows, one separator and the full-journal action.
+	if len(journal.Children) != 14 || journal.Children[0].Title != "docs / plik — opublikowano · r13" || journal.Children[11].Title != "docs / plik — opublikowano · r2" {
+		t.Fatalf("limited journal=%+v", journal.Children)
 	}
 }
 
@@ -226,8 +241,8 @@ func TestBuildMenuHidesCapabilityActionsAndErrors(t *testing.T) {
 	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
 		t.Fatal("lock actions visible without capabilities")
 	}
-	if hasItem(menu.Items, "errors") {
-		t.Fatal("errors visible without error.list capability")
+	if hasItem(menu.Items, "journal") {
+		t.Fatal("journal visible without activity/error capability")
 	}
 }
 
@@ -244,24 +259,6 @@ func TestBuildMenuHidesMutationsWhileSnapshotStale(t *testing.T) {
 	repo := findItem(t, menu.Items, "repo.repo")
 	if hasItem(repo.Children, "repo.repo.lock") || hasItem(repo.Children, "repo.repo.unlock") {
 		t.Fatal("mutation actions visible while snapshot is stale")
-	}
-}
-
-func TestBuildMenuStructuredErrorsNewestFirst(t *testing.T) {
-	menu := BuildMenu(app.ViewModel{
-		Connected:    true,
-		Capabilities: map[string]bool{contract.CapErrorList: true},
-		Errors: []app.ErrorViewModel{
-			{ID: "old", Severity: "WARN", Code: "NET-4007", Message: "Offline"},
-			{ID: "new", Severity: "ERROR", Code: "LOCK-2001", Hint: "REQUIRE_ACTION", Message: "Locked"},
-		},
-	})
-	errors := findItem(t, menu.Items, "errors")
-	if len(errors.Children) != 2 || errors.Children[0].Title != "[ERROR] LOCK-2001 — Locked" {
-		t.Fatalf("errors = %#v", errors.Children)
-	}
-	if errors.Children[0].Tooltip != "Wymagane działanie użytkownika" {
-		t.Fatalf("error hint tooltip = %q", errors.Children[0].Tooltip)
 	}
 }
 

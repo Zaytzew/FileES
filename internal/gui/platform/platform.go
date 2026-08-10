@@ -18,6 +18,7 @@ type Backend interface {
 	ConsentPrompter
 	ReservationBrowser
 	SettingsBrowser
+	JournalBrowser
 	RealmGrantBrowser
 	Notifier
 	Autostart
@@ -53,6 +54,28 @@ type ReservationBrowser interface {
 // has validated the user's intent.
 type SettingsBrowser interface {
 	ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error)
+}
+
+// JournalBrowser renders the combined activity and error history. Rows are
+// already aggregated and ordered by the presentation layer; the platform only
+// owns native rendering (including emphasis for errors).
+type JournalBrowser interface {
+	ShowJournal(ctx context.Context, request JournalDialogRequest) error
+}
+
+type JournalDialogRequest struct {
+	Title string
+	Text  string
+	Rows  []JournalDialogRow
+}
+
+type JournalDialogRow struct {
+	Timestamp  string
+	Repository string
+	Summary    string
+	Details    string
+	Severity   string
+	Emphasized bool
 }
 
 type RealmGrantBrowser interface {
@@ -133,6 +156,8 @@ type SettingsServer struct {
 type SettingsFolder struct {
 	ID, Name, LocalPath, State, Access string
 	CanManageGrants                    bool
+	CanConnect                         bool // connect selected unattached repository
+	CanLocate                          bool // adopt an existing moved working copy
 	CanDetach                          bool // detach_folder (non-destructive)
 	CanDelete                          bool // delete_repository
 	CanLoadDump                        bool // load_dump
@@ -147,6 +172,8 @@ type SettingsDialogAction string
 const (
 	SettingsDialogClose            SettingsDialogAction = "close"
 	SettingsDialogAddFolder        SettingsDialogAction = "add_folder"
+	SettingsDialogConnectRepos     SettingsDialogAction = "connect_repositories"
+	SettingsDialogLocateFolder     SettingsDialogAction = "locate_folder"
 	SettingsDialogDetachFolder     SettingsDialogAction = "detach_folder"
 	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
 	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"
@@ -160,6 +187,7 @@ const (
 type SettingsDialogResult struct {
 	Action           SettingsDialogAction
 	ServerID, RepoID string
+	RepoIDs          []string
 	OperationID      string
 }
 
@@ -176,10 +204,10 @@ func SettingsText(request SettingsDialogRequest) string {
 		}
 		lines = append(lines, "Serwer: "+server.Name, "Adres: "+server.Address, "Strefa: "+server.Realm, "ID klienta: "+server.ClientID)
 		if len(server.Folders) == 0 {
-			lines = append(lines, "Foldery: brak")
+			lines = append(lines, "Repozytoria: brak")
 			continue
 		}
-		lines = append(lines, "Foldery:")
+		lines = append(lines, "Repozytoria:")
 		for _, folder := range server.Folders {
 			lines = append(lines, "• "+folder.Name, "  "+folder.LocalPath+" — "+folder.State+", "+folder.Access)
 		}

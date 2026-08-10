@@ -18,6 +18,7 @@ type Fake struct {
 	ConsentFunc         func(context.Context, platform.ConsentRequest) (platform.ConsentResult, error)
 	ReservationsFunc    func(context.Context, platform.ReservationDialogRequest) (platform.ReservationDialogResult, error)
 	SettingsFunc        func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error)
+	JournalFunc         func(context.Context, platform.JournalDialogRequest) error
 	RealmGrantsFunc     func(context.Context, platform.RealmGrantDialogRequest) (platform.RealmGrantDialogResult, error)
 	RealmVisibilityFunc func(context.Context, platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
@@ -34,11 +35,23 @@ type Fake struct {
 	ConsentRequests         []platform.ConsentRequest
 	ReservationRequests     []platform.ReservationDialogRequest
 	SettingsRequests        []platform.SettingsDialogRequest
+	JournalRequests         []platform.JournalDialogRequest
 	RealmGrantRequests      []platform.RealmGrantDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec
 	AutostartSets           []AutostartSet
+}
+
+func (f *Fake) ShowJournal(ctx context.Context, request platform.JournalDialogRequest) error {
+	f.mu.Lock()
+	f.JournalRequests = append(f.JournalRequests, request)
+	fn := f.JournalFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return nil
 }
 
 func (f *Fake) ShowReservations(ctx context.Context, request platform.ReservationDialogRequest) (platform.ReservationDialogResult, error) {
@@ -213,6 +226,7 @@ func (f *Fake) Snapshot() Snapshot {
 		ConsentRequests:         append([]platform.ConsentRequest(nil), f.ConsentRequests...),
 		ReservationRequests:     append([]platform.ReservationDialogRequest(nil), f.ReservationRequests...),
 		SettingsRequests:        append([]platform.SettingsDialogRequest(nil), f.SettingsRequests...),
+		JournalRequests:         append([]platform.JournalDialogRequest(nil), f.JournalRequests...),
 		RealmGrantRequests:      append([]platform.RealmGrantDialogRequest(nil), f.RealmGrantRequests...),
 		RealmVisibilityRequests: append([]platform.RealmVisibilityDialogRequest(nil), f.RealmVisibilityRequests...),
 		Notifications:           append([]platform.Notification(nil), f.Notifications...),
@@ -231,6 +245,7 @@ type Snapshot struct {
 	ConsentRequests         []platform.ConsentRequest
 	ReservationRequests     []platform.ReservationDialogRequest
 	SettingsRequests        []platform.SettingsDialogRequest
+	JournalRequests         []platform.JournalDialogRequest
 	RealmGrantRequests      []platform.RealmGrantDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification

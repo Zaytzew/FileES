@@ -68,35 +68,40 @@ func (store RealmAliases) Claim(ctx context.Context, realmID, alias string) (str
 	if record.RealmID != realmID || record.Schema != "filees.realm/v1" || record.State != "active" {
 		return "", errors.New("authenticated realm record is invalid")
 	}
-	if record.Alias != "" {
-		if record.Alias == canonical {
-			return canonical, nil
-		}
+	if record.Alias != "" && record.Alias != canonical {
 		return "", ErrAliasImmutable
 	}
-	entries, err := os.ReadDir(filepath.Dir(realmPath))
-	if err != nil {
-		return "", err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == filepath.Base(realmPath) {
-			continue
+	changed := []string{}
+	if record.Alias == "" {
+		entries, err := os.ReadDir(filepath.Dir(realmPath))
+		if err != nil {
+			return "", err
 		}
-		other, err := readRealmRecord(filepath.Join(filepath.Dir(realmPath), entry.Name()))
-		if err != nil || other.Alias == "" {
-			continue
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == filepath.Base(realmPath) {
+				continue
+			}
+			other, err := readRealmRecord(filepath.Join(filepath.Dir(realmPath), entry.Name()))
+			if err != nil || other.Alias == "" {
+				continue
+			}
+			if other.Alias == canonical {
+				return "", ErrAliasUnavailable
+			}
 		}
-		if other.Alias == canonical {
-			return "", ErrAliasUnavailable
+		record.Alias = canonical
+		if err := atomicJSON(realmPath, record); err != nil {
+			return "", err
 		}
+		changed = append(changed, realmPath)
 	}
-	record.Alias = canonical
-	if err := atomicJSON(realmPath, record); err != nil {
-		return "", err
-	}
-	changed := []string{realmPath}
+	// An idempotent claim is also a repair operation. Older activation and
+	// grant-projection paths could leave view.json without realm_alias even
+	// though the canonical realm record already had it. Reconcile every view
+	// before returning success instead of treating the matching alias as a
+	// no-op at the realm file alone.
 	clientsRoot := filepath.Join(store.ServiceWC, "clients")
-	entries, err = os.ReadDir(clientsRoot)
+	entries, err := os.ReadDir(clientsRoot)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
@@ -116,8 +121,10 @@ func (store RealmAliases) Claim(ctx context.Context, realmID, alias string) (str
 			return "", err
 		}
 	}
-	if err := store.Runner.Publish(ctx, changed, "filees: claim realm alias "+canonical); err != nil {
-		return "", err
+	if len(changed) > 0 {
+		if err := store.Runner.Publish(ctx, changed, "filees: claim realm alias "+canonical); err != nil {
+			return "", err
+		}
 	}
 	return canonical, nil
 }

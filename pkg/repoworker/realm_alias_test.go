@@ -77,4 +77,20 @@ func TestRealmAliasesClaimSkipsForeignClientViews(t *testing.T) {
 	if err != nil || view.RealmAlias != "biuro" {
 		t.Fatalf("owned view = %+v, %v", view, err)
 	}
+	// A matching retry must repair a stale projection, not return before
+	// visiting client views merely because the canonical realm already has the
+	// requested immutable alias.
+	view.RealmAlias = ""
+	view.Generation++
+	view.GeneratedAt = view.GeneratedAt.Add(time.Second)
+	if _, err := clientview.StoreIfNewer(filepath.Join(root, "clients", ownedClient, "view.json"), view); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.Claim(context.Background(), ownedRealm, "biuro"); err != nil || got != "biuro" {
+		t.Fatalf("idempotent repair claim = %q, %v", got, err)
+	}
+	view, err = clientview.Load(filepath.Join(root, "clients", ownedClient, "view.json"))
+	if err != nil || view.RealmAlias != "biuro" || runner.calls != 2 {
+		t.Fatalf("repaired view=%+v err=%v publishes=%d", view, err, runner.calls)
+	}
 }

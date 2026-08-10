@@ -11,10 +11,10 @@ import (
 )
 
 type lifecycleStub struct {
-	createCalls, attachCalls, approveCalls, relocateCalls, loadDumpCalls, detachCalls, statusCalls int
-	deleteRepository                                                                               bool
-	statusResult                                                                                   contract.RepoLifecycleResult
-	statusErr                                                                                      error
+	createCalls, attachCalls, approveCalls, relocateCalls, locateCalls, loadDumpCalls, detachCalls, statusCalls int
+	deleteRepository                                                                                            bool
+	statusResult                                                                                                contract.RepoLifecycleResult
+	statusErr                                                                                                   error
 }
 
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
@@ -28,6 +28,10 @@ func (stub *lifecycleStub) ApproveAttach(operationID, serverID, repoID, repoURL,
 func (stub *lifecycleStub) BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error) {
 	stub.relocateCalls++
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, LocalPath: "/old", PendingLocalPath: newLocalPath, State: "relocating"}, nil
+}
+func (stub *lifecycleStub) BeginLocate(serverID, repoID, existingLocalPath string) (contract.RepoLifecycleResult, error) {
+	stub.locateCalls++
+	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, LocalPath: "/old", PendingLocalPath: existingLocalPath, State: "relocating"}, nil
 }
 func (stub *lifecycleStub) BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error) {
 	stub.loadDumpCalls++
@@ -157,6 +161,24 @@ func TestRelocationRequiresAttachedRepository(t *testing.T) {
 	}
 	if stub.relocateCalls != 1 {
 		t.Fatalf("relocation calls=%d", stub.relocateCalls)
+	}
+}
+
+func TestLocateRequiresAttachedRepositoryAndUsesDistinctCommand(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn+ssh://_filees-client@example/repo", "primary", "r", "active", "owner", "optional", false)
+	req := lifecycleRequest(contract.CmdRepoLocate, contract.RepoLocatePayload{ServerID: "primary", RepoID: "repo-1", ExistingLocalPath: "/moved"})
+	if response := server.dispatch(req); response.Status == contract.StatusOK {
+		t.Fatal("unattached repository locate accepted")
+	}
+	server.RegisterRepoAccess("repo-1", "svn+ssh://_filees-client@example/repo", "/old", "primary", "r")
+	if response := server.dispatch(req); response.Status != contract.StatusOK {
+		t.Fatalf("attached locate rejected: %+v", response.Error)
+	}
+	if stub.locateCalls != 1 || stub.relocateCalls != 0 {
+		t.Fatalf("locate calls=%d relocation calls=%d", stub.locateCalls, stub.relocateCalls)
 	}
 }
 

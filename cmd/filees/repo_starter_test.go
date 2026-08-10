@@ -14,6 +14,7 @@ import (
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
 	"filees/pkg/passport"
 	"filees/pkg/reposupervisor"
@@ -25,12 +26,17 @@ func TestReadOnlyStarterUsesDaemonLifecycleNotReconcileContext(t *testing.T) {
 	daemonCtx, daemonCancel := context.WithCancel(context.Background())
 	defer daemonCancel()
 	key := reposupervisor.Key{ServerID: "office", RepoID: "archive"}
+	url := "svn+ssh://example/archive"
+	wc := t.TempDir()
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	server := ipcserver.New(t.TempDir() + "/sock")
-	state := server.RegisterRepoAccess(key.RepoID, "svn+ssh://_filees-client@example/archive", t.TempDir(), key.ServerID, contract.AccessReadOnly)
-	fake := &updateOnlyClient{called: make(chan struct{}, 4)}
-	starter := &daemonRepoStarter{daemonCtx: daemonCtx, repos: map[reposupervisor.Key]repoRuntime{key: {config: config.Repo{ID: key.RepoID, LocalPath: t.TempDir(), PollInterval: 10 * time.Millisecond}, state: state}}, newSVN: func(config.Repo) client.Client { return fake }}
+	state := server.RegisterRepoAccess(key.RepoID, url, wc, key.ServerID, contract.AccessReadOnly)
+	fake := &updateOnlyClient{called: make(chan struct{}, 4), infoURL: url}
+	starter := &daemonRepoStarter{daemonCtx: daemonCtx, repos: map[reposupervisor.Key]repoRuntime{key: {config: config.Repo{ID: key.RepoID, LocalPath: wc, PollInterval: 10 * time.Millisecond}, state: state}}, newSVN: func(config.Repo) client.Client { return fake }}
 	reconcileCtx, cancel := context.WithCancel(context.Background())
-	instance, err := starter.Start(reconcileCtx, reposupervisor.Desired{Key: key, Access: "r", State: "active"})
+	instance, err := starter.Start(reconcileCtx, reposupervisor.Desired{Key: key, Access: "r", State: "active", URL: url})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,23 +130,26 @@ func TestReadWriteBuildersPreserveDefaultsAndPassportLockPolicy(t *testing.T) {
 	}
 }
 
-func TestRepoErrorSinkReturnsOwnedClosableFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "logs", "errors.jsonl")
+func TestRepoErrorSinkDoesNotPinWorkingCopyDirectory(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".filees", "logs", "errors.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	sink, file, err := openRepoErrorSink(path, "commit:docs")
-	if err != nil || sink == nil || file == nil {
-		t.Fatalf("sink=%v file=%v err=%v", sink, file, err)
+	sink, err := openRepoErrorSink(path, "commit:docs")
+	if err != nil || sink == nil {
+		t.Fatalf("sink=%v err=%v", sink, err)
 	}
-	if _, err := file.Write([]byte("probe\n")); err != nil {
+	sink.EmitAt(time.Unix(1, 0), errmap.Classify(errors.New("probe")))
+	if info, err := os.Stat(path); err != nil || info.Size() == 0 {
+		t.Fatalf("structured log was not written: info=%v err=%v", info, err)
+	}
+	moved := root + "-moved"
+	if err := os.Rename(root, moved); err != nil {
+		t.Fatalf("structured error sink pinned working-copy directory: %v", err)
+	}
+	if err := os.Rename(moved, root); err != nil {
 		t.Fatal(err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := file.Write([]byte("late\n")); err == nil {
-		t.Fatal("write succeeded after lifecycle close")
 	}
 }
 
@@ -207,12 +216,14 @@ func (b *passportBackend) Unlock(context.Context, string) (string, error) {
 func TestRepoLockFunctionsUseSVNOrEditPassportManager(t *testing.T) {
 	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
 	state := server.RegisterRepoAccess("docs", "svn+ssh://example/docs", t.TempDir(), "office", contract.AccessReadWrite)
+	wcRoot := filepath.Join(t.TempDir(), "wc", "docs")
 	plain := &lockClient{}
-	wireRepoLockFuncs(state, plain, "/wc/docs", nil)
-	if out, err := state.Lock(t.Context(), []string{"/wc/docs/a"}); err != nil || out != "locked" {
+	wireRepoLockFuncs(state, plain, wcRoot, nil)
+	plainPath := filepath.Join(wcRoot, "a")
+	if out, err := state.Lock(t.Context(), []string{plainPath}); err != nil || out != "locked" {
 		t.Fatalf("plain lock out=%q err=%v", out, err)
 	}
-	if out, err := state.Unlock(t.Context(), []string{"/wc/docs/a"}); err != nil || out != "unlocked" {
+	if out, err := state.Unlock(t.Context(), []string{plainPath}); err != nil || out != "unlocked" {
 		t.Fatalf("plain unlock out=%q err=%v", out, err)
 	}
 	if len(plain.locked) != 1 || len(plain.unlocked) != 1 {
@@ -224,8 +235,8 @@ func TestRepoLockFunctionsUseSVNOrEditPassportManager(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wireRepoLockFuncs(state, nil, "/wc/docs", manager)
-	path := "/wc/docs/edited.dwg"
+	wireRepoLockFuncs(state, nil, wcRoot, manager)
+	path := filepath.Join(wcRoot, "edited.dwg")
 	if _, err := state.Lock(t.Context(), []string{path}); err != nil {
 		t.Fatal(err)
 	}
@@ -324,11 +335,15 @@ func TestReadWriteStarterReceivesDaemonContextAndRuntime(t *testing.T) {
 	state := ipcserver.New(t.TempDir()+"/sock").RegisterRepoAccess(key.RepoID, "svn+ssh://_filees-client@example/documents", t.TempDir(), key.ServerID, contract.AccessReadWrite)
 	called := make(chan struct{}, 1)
 	projectedURL := "svn+ssh://_filees-client@new.example/documents"
-	starter := &daemonRepoStarter{daemonCtx: daemonCtx, repos: map[reposupervisor.Key]repoRuntime{key: {config: config.Repo{ID: key.RepoID, RepoURL: "svn+ssh://_filees-client@old.example/documents", Access: contract.AccessReadOnly}, state: state}}, newSVN: func(repo config.Repo) client.Client {
+	wc := t.TempDir()
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	starter := &daemonRepoStarter{daemonCtx: daemonCtx, repos: map[reposupervisor.Key]repoRuntime{key: {config: config.Repo{ID: key.RepoID, RepoURL: "svn+ssh://_filees-client@old.example/documents", LocalPath: wc, Access: contract.AccessReadOnly}, state: state}}, newSVN: func(repo config.Repo) client.Client {
 		if repo.RepoURL != projectedURL || repo.Access != contract.AccessReadWrite {
 			t.Fatalf("SVN factory received stale authority: %+v", repo)
 		}
-		return &updateOnlyClient{called: make(chan struct{}, 1)}
+		return &updateOnlyClient{called: make(chan struct{}, 1), infoURL: projectedURL}
 	}, startReadWrite: func(ctx context.Context, runtime repoRuntime, _ client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
 		if ctx != daemonCtx || runtime.state != state || desired.Key != key {
 			t.Fatal("read-write factory received wrong lifecycle binding")
@@ -349,6 +364,54 @@ func TestReadWriteStarterReceivesDaemonContextAndRuntime(t *testing.T) {
 	case <-called:
 	case <-time.After(time.Second):
 		t.Fatal("read-write factory not called")
+	}
+	if err := instance.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStarterDoesNotRecreateMissingWorkingCopyAndRecoversWhenItReturns(t *testing.T) {
+	daemonCtx, cancelDaemon := context.WithCancel(context.Background())
+	defer cancelDaemon()
+	key := reposupervisor.Key{ServerID: "office", RepoID: "documents"}
+	url := "svn+ssh://example/documents"
+	wc := filepath.Join(t.TempDir(), "renamed-working-copy")
+	state := ipcserver.New(t.TempDir()+"/sock").RegisterRepoAccess(key.RepoID, url, wc, key.ServerID, contract.AccessReadWrite)
+	started := make(chan struct{}, 1)
+	starter := &daemonRepoStarter{
+		daemonCtx: daemonCtx,
+		repos: map[reposupervisor.Key]repoRuntime{key: {
+			config: config.Repo{ID: key.RepoID, RepoURL: url, LocalPath: wc, Access: contract.AccessReadWrite},
+			state:  state,
+		}},
+		newSVN:        func(config.Repo) client.Client { return &updateOnlyClient{infoURL: url} },
+		retryInterval: 10 * time.Millisecond,
+		startReadWrite: func(ctx context.Context, runtime repoRuntime, _ client.Client, _ reposupervisor.Desired) (reposupervisor.Instance, error) {
+			runtime.state.SetState(contract.StateActive)
+			started <- struct{}{}
+			return reposupervisor.StartManaged(ctx, func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }, nil)
+		},
+	}
+	instance, err := starter.Start(t.Context(), reposupervisor.Desired{Key: key, Access: contract.AccessReadWrite, State: "active", URL: url})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot := state.Snapshot(); snapshot.State != contract.StateInteractionRequired || snapshot.CurrentOperation == nil || *snapshot.CurrentOperation != "working_copy_missing" {
+		t.Fatalf("missing working copy snapshot=%+v", snapshot)
+	}
+	if _, err := os.Stat(wc); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing working copy was recreated: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("pipeline did not recover after working copy returned")
+	}
+	if snapshot := state.Snapshot(); snapshot.State != contract.StateActive || snapshot.CurrentOperation != nil {
+		t.Fatalf("restored working copy snapshot=%+v", snapshot)
 	}
 	if err := instance.Stop(t.Context()); err != nil {
 		t.Fatal(err)

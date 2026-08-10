@@ -118,6 +118,24 @@ func TestLinuxShowReservationsReturnsOnlyOpaqueRowID(t *testing.T) {
 	}
 }
 
+func TestLinuxShowJournalUsesCombinedTable(t *testing.T) {
+	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	err := backend.ShowJournal(context.Background(), JournalDialogRequest{
+		Title: "Dziennik FileES", Text: "Aktywność i błędy",
+		Rows: []JournalDialogRow{{Timestamp: "2026-08-10 12:00:00", Repository: "Dokumenty", Summary: "⚠ BŁĄD · odmowa", Details: "Wymagane działanie", Emphasized: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(runner.Calls()[0].args, "\n")
+	for _, wanted := range []string{"--list", "--column=Czas", "--column=Repozytorium", "⚠ BŁĄD · odmowa", "Wymagane działanie"} {
+		if !strings.Contains(args, wanted) {
+			t.Errorf("journal args missing %q: %s", wanted, args)
+		}
+	}
+}
+
 func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
 	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}}
 	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)

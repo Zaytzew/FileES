@@ -321,7 +321,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	b.applyLinuxDarkThemePreference(ctx)
 	args := []string{
 		"--list", "--radiolist", "--title=" + request.Title, "--text=" + SettingsText(SettingsDialogRequest{Text: request.Text}), "--width=1240", "--height=600",
-		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Strefa", "--column=Folder", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
+		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Strefa", "--column=Repozytorium", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
 		"--hide-column=2", "--print-column=2", "--ok-label=Wybierz", "--cancel-label=Zamknij",
 	}
 	for _, server := range request.Servers {
@@ -362,6 +362,8 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 		return SettingsDialogResult{Action: SettingsDialogClose}, nil
 	}
 	canAddFolder := false
+	canConnect := false
+	canLocate := false
 	canManageGrants := false
 	canDetach := false
 	canDelete := false
@@ -375,6 +377,8 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 		canSetRealmVisibility = server.CanSetRealmVisibility
 		for _, folder := range server.Folders {
 			if folder.ID == repoID {
+				canConnect = folder.CanConnect
+				canLocate = folder.CanLocate
 				canManageGrants = folder.CanManageGrants
 				canDetach = folder.CanDetach
 				canDelete = folder.CanDelete
@@ -383,17 +387,56 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 			}
 		}
 	}
-	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canManageGrants, canDetach, canDelete, canLoadDump, canSetRealmVisibility)
+	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canConnect, canLocate, canManageGrants, canDetach, canDelete, canLoadDump, canSetRealmVisibility)
 	if err != nil || action == SettingsDialogClose {
 		return SettingsDialogResult{Action: action}, err
 	}
-	return SettingsDialogResult{Action: action, ServerID: serverID, RepoID: repoID}, nil
+	result := SettingsDialogResult{Action: action, ServerID: serverID, RepoID: repoID}
+	if action == SettingsDialogConnectRepos {
+		result.RepoIDs = []string{repoID}
+	}
+	return result, nil
 }
 
-func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canManageGrants, canDetach, canDelete, canLoadDump, canSetRealmVisibility bool) (SettingsDialogAction, error) {
+// ShowJournal uses the same combined chronology as Windows. Yad does not
+// expose reliable per-row font styling, so the presentation model's explicit
+// warning prefix remains the error emphasis on Linux.
+func (b *LinuxBackend) ShowJournal(ctx context.Context, request JournalDialogRequest) error {
+	command, err := b.runner.LookPath("yad")
+	if err != nil {
+		return NewUnavailable("journal_dialog", errors.New("yad is not installed"))
+	}
+	b.applyLinuxDarkThemePreference(ctx)
+	args := []string{
+		"--list", "--title=" + request.Title, "--text=" + request.Text,
+		"--width=1240", "--height=680", "--button=Zamknij:0",
+		"--column=Czas", "--column=Repozytorium", "--column=Wpis", "--column=Szczegóły",
+	}
+	for _, row := range request.Rows {
+		args = append(args, row.Timestamp, row.Repository, row.Summary, row.Details)
+	}
+	if _, err := b.runner.Output(ctx, command, args...); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if commandCancelled(err) {
+			return nil
+		}
+		return NewOperationalFailure("journal_dialog", err)
+	}
+	return nil
+}
+
+func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canDetach, canDelete, canLoadDump, canSetRealmVisibility bool) (SettingsDialogAction, error) {
 	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
 	if canAddFolder {
 		args = append(args, "FALSE", "add_folder", "Dodaj folder do FileES")
+	}
+	if canConnect {
+		args = append(args, "FALSE", "connect_repositories", "Połącz z lokalnym folderem")
+	}
+	if canLocate {
+		args = append(args, "FALSE", "locate_folder", "Wskaż przeniesioną kopię roboczą")
 	}
 	if canSetRealmVisibility {
 		args = append(args, "FALSE", "realm_visibility", "Widoczność mojej strefy")
@@ -528,6 +571,10 @@ func settingsAction(label string) SettingsDialogAction {
 	switch label {
 	case "add_folder", "Dodaj folder":
 		return SettingsDialogAddFolder
+	case "connect_repositories", "Połącz":
+		return SettingsDialogConnectRepos
+	case "locate_folder":
+		return SettingsDialogLocateFolder
 	case "detach_folder", "Odłącz folder":
 		return SettingsDialogDetachFolder
 	case "delete_repository", "Odłącz trwale":

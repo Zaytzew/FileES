@@ -41,6 +41,7 @@ const (
 	CmdRepoAttachIntent       = "repo.attach_intent"       // persist local path choice; no checkout yet
 	CmdRepoAttachApprove      = "repo.attach_approve"      // approve the persisted intent and start checkout
 	CmdRepoRelocate           = "repo.relocate"            // approve relocation of an attached working copy
+	CmdRepoLocate             = "repo.locate"              // rebind an attachment to an existing moved working copy
 	CmdRepoLoadDump           = "repo.load_dump"           // load a user-supplied dump into a fresh, single-carrier-commit repo
 	CmdRepoGrantAccess        = "repo.grant_access"        // grant r/rw access to a visible foreign realm
 	CmdRepoRevokeAccess       = "repo.revoke_access"       // revoke a realm grant without deleting local data
@@ -94,6 +95,7 @@ const (
 	CapRepoAttachIntent       = "repo.attach_intent"
 	CapRepoAttachApprove      = "repo.attach_approve"
 	CapRepoRelocate           = "repo.relocate"
+	CapRepoLocate             = "repo.locate"
 	CapRepoLoadDump           = "repo.load_dump"
 	CapRepoGrantAccess        = "repo.grant_access"
 	CapRepoRevokeAccess       = "repo.revoke_access"
@@ -138,6 +140,7 @@ var AllCapabilities = []string{
 	CapRepoAttachIntent,
 	CapRepoAttachApprove,
 	CapRepoRelocate,
+	CapRepoLocate,
 	CapRepoLoadDump,
 	CapRepoDetach,
 	CapRepoDelete,
@@ -382,6 +385,12 @@ type RepoRelocatePayload struct {
 	ServerID     string `json:"server_id"`
 	RepoID       string `json:"repo_id"`
 	NewLocalPath string `json:"new_local_path"`
+}
+
+type RepoLocatePayload struct {
+	ServerID          string `json:"server_id"`
+	RepoID            string `json:"repo_id"`
+	ExistingLocalPath string `json:"existing_local_path"`
 }
 
 type RepoDetachPayload struct {

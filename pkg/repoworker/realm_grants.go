@@ -258,15 +258,22 @@ func (p ServicePublisher) rebuildGrantAuthority() ([]string, error) {
 		if view.RealmID != client.RealmID {
 			return nil, errors.New("client projection realm conflicts with canonical client")
 		}
+		realm, err := readRealmRecord(filepath.Join(p.ServiceWC, "admin", "realms", view.RealmID+".json"))
+		if err != nil || realm.Schema != "filees.realm/v1" || realm.RealmID != view.RealmID || realm.State != "active" {
+			return nil, errors.New("client projection realm record is invalid")
+		}
 		next := projectedRepositories(repositories, grants, view.RealmID, view.ClientRole, client.Kind, view.Repositories)
 		effective[clientID] = map[string]string{}
 		for _, repository := range next {
 			effective[clientID][repository.RepoID] = repository.Access
 		}
-		if reflect.DeepEqual(view.Repositories, next) {
+		if reflect.DeepEqual(view.Repositories, next) && view.RealmAlias == realm.Alias {
 			continue
 		}
-		view.Repositories, view.Generation, view.GeneratedAt = next, view.Generation+1, now
+		// Repository grants and realm identity are one canonical projection.
+		// Rebuilding either must repair an alias omitted by older activation
+		// code, including already-attached clients of an existing realm.
+		view.Repositories, view.RealmAlias, view.Generation, view.GeneratedAt = next, realm.Alias, view.Generation+1, now
 		if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
 			return nil, err
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,64 @@ func (stub *attachmentSVNStub) GetInfo(context.Context, string) (string, error) 
 }
 func (stub *attachmentSVNStub) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
 	return stub.status, nil
+}
+
+func TestDaemonProvisionerCompletesDetachAfterRemovingMetadata(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	root := filepath.Join(t.TempDir(), "wc")
+	for _, path := range []string{filepath.Join(root, ".svn"), filepath.Join(root, ".filees")} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	userFile := filepath.Join(root, "projekt.txt")
+	if err := os.WriteFile(userFile, []byte("zachowaj"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, err := local.BeginAttach("office", repoID, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.ApproveAttach(record.OperationID, "office", repoID, "svn+ssh://example/"+repoID, "rw"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkAttached(record.OperationID, repoID); err != nil {
+		t.Fatal(err)
+	}
+	record, err = local.BeginDetach("office", repoID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachments := make(chan provisionedAttachment, 1)
+	provisioner := newDaemonProvisioner(local, nil, nil)
+	provisioner.attachments = attachments
+	go func() {
+		request := <-attachments
+		if !request.Quiesce || !request.Detach || request.Repo.ID != repoID {
+			request.Result <- fmt.Errorf("unexpected quiesce request: %#v", request)
+			return
+		}
+		request.Result <- nil
+	}()
+	completed, err := provisioner.runDetach(t.Context(), record, clientprofile.Profile{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.State != localrepo.StateDetached || completed.LastError != "" {
+		t.Fatalf("completed detach=%+v", completed)
+	}
+	for _, metadata := range []string{".svn", ".filees"} {
+		if _, err := os.Lstat(filepath.Join(root, metadata)); !os.IsNotExist(err) {
+			t.Fatalf("metadata %s survived: %v", metadata, err)
+		}
+	}
+	if raw, err := os.ReadFile(userFile); err != nil || string(raw) != "zachowaj" {
+		t.Fatalf("user file=%q err=%v", raw, err)
+	}
 }
 
 func TestDaemonProvisionerRestoresActiveAttachmentWithoutNetwork(t *testing.T) {

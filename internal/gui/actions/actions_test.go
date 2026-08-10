@@ -88,6 +88,13 @@ func (fakeStructuredError) PresentationError() (string, string, string, string) 
 	return "LOCK-2001", "ERROR", "REQUIRE_ACTION", "lock.operation_failed"
 }
 
+type fakeStructuredAttachError struct{}
+
+func (fakeStructuredAttachError) Error() string { return "wire fallback" }
+func (fakeStructuredAttachError) PresentationError() (string, string, string, string) {
+	return "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent"
+}
+
 type lockCall struct {
 	repoID string
 	paths  []string
@@ -153,6 +160,7 @@ type fakeRepositoryCreator struct {
 type attachCall struct{ serverID, repoID, localPath string }
 type fakeRepositoryAttacher struct {
 	calls chan attachCall
+	err   error
 }
 
 type locateCall struct{ serverID, repoID, localPath string }
@@ -165,7 +173,7 @@ func (f *fakeRepositoryLocator) LocateRepository(_ context.Context, serverID, re
 
 func (f *fakeRepositoryAttacher) AttachRepository(_ context.Context, serverID, repoID, localPath string) (string, error) {
 	f.calls <- attachCall{serverID: serverID, repoID: repoID, localPath: localPath}
-	return "attach-" + repoID, nil
+	return "attach-" + repoID, f.err
 }
 
 func (f *fakeRepositoryAttacher) AttachmentStatus(_ context.Context, _ string) (string, string, error) {
@@ -1387,6 +1395,59 @@ func TestControllerConnectsSelectedRealmRepositoriesToFoldersSequentially(t *tes
 		if folder.State != "aktywne" || folder.LocalPath != paths[index] {
 			t.Errorf("post-tick folder %d = %#v, want authoritative active path %q", index, folder, paths[index])
 		}
+	}
+}
+
+func TestControllerShowsModalWhenRepositoryAttachmentIsRejected(t *testing.T) {
+	attacher := &fakeRepositoryAttacher{calls: make(chan attachCall, 1), err: fakeStructuredAttachError{}}
+	target := filepath.Join(t.TempDir(), "janczewice")
+	settingsCalls := 0
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			settingsCalls++
+			if settingsCalls == 1 {
+				return platform.SettingsDialogResult{Action: platform.SettingsDialogConnectRepos, ServerID: "office", RepoIDs: []string{"repo-1"}}, nil
+			}
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogClose}, nil
+		},
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			return platform.PickFolderResult{Path: target}, nil
+		},
+	}
+	view := app.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoAttachIntent:  true,
+			contract.CapRepoAttachApprove: true,
+		},
+		Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{{
+			ID: "repo-1", DisplayName: "JANCZEWICE", State: contract.StateUnattached,
+		}}}},
+	}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, SettingsBrowser: platformFake,
+		FolderPicker: platformFake, Prompter: platformFake, RepositoryAttacher: attacher, Notifier: platformFake,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	select {
+	case call := <-attacher.calls:
+		if call.repoID != "repo-1" || call.localPath != target {
+			t.Fatalf("attach call=%#v", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("attachment was not attempted")
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().InfoRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	snapshot := platformFake.Snapshot()
+	if len(snapshot.InfoRequests) != 1 || snapshot.InfoRequests[0].Title != "Nie można połączyć repozytorium" || !strings.Contains(snapshot.InfoRequests[0].Text, "lokalny stan repozytorium") || strings.Contains(snapshot.InfoRequests[0].Text, "wire fallback") {
+		t.Fatalf("modal errors=%#v", snapshot.InfoRequests)
+	}
+	if len(snapshot.Notifications) != 1 || snapshot.Notifications[0].Urgency != platform.UrgencyCritical {
+		t.Fatalf("notifications=%#v", snapshot.Notifications)
 	}
 }
 

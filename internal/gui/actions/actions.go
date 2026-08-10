@@ -711,14 +711,14 @@ func (c *Controller) startConnectRepositories(ctx context.Context, serverID stri
 			}
 			picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz lub utwórz lokalny folder dla repozytorium „" + name + "”"})
 			if err != nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można wybrać lokalnego folderu", Body: name + " — " + err.Error(), Urgency: platform.UrgencyCritical})
+				c.reportActionError(ctx, key, "Nie można wybrać lokalnego folderu", name+" — "+err.Error())
 				return
 			}
 			if picked.Cancelled {
 				return
 			}
 			if strings.TrimSpace(picked.Path) == "" || !filepath.IsAbs(picked.Path) {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można połączyć repozytorium", Body: name + " — wybrana ścieżka nie jest bezwzględna", Urgency: platform.UrgencyCritical})
+				c.reportActionError(ctx, key, "Nie można połączyć repozytorium", name+" — wybrana ścieżka nie jest bezwzględna")
 				return
 			}
 			if _, ok := attachableRepository(c.cfg.ViewModel(), serverID, repoID); !ok {
@@ -726,7 +726,8 @@ func (c *Controller) startConnectRepositories(ctx context.Context, serverID stri
 			}
 			operationID, err := c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, repoID, filepath.Clean(picked.Path))
 			if err != nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można połączyć repozytorium", Body: name + " — " + err.Error(), Urgency: platform.UrgencyCritical})
+				_, body, _ := operationErrorPresentation("połączenie repozytorium", err)
+				c.reportActionError(ctx, key, "Nie można połączyć repozytorium", name+" — "+body)
 				continue
 			}
 			c.setPendingAttachment(serverID, repoID, filepath.Clean(picked.Path), operationID)
@@ -2484,6 +2485,14 @@ func messageLabel(messageKey string) string {
 		return "Przed blokowaniem plików ustaw stały alias strefy"
 	case "proto.invalid_payload":
 		return "Daemon odrzucił nieprawidłowe dane operacji"
+	case "repo.invalid_local_intent":
+		return "Wybrany folder lub lokalny stan repozytorium nie pozwala rozpocząć połączenia"
+	case "repo.attachment_approval_failed":
+		return "Daemon nie zatwierdził połączenia repozytorium"
+	case "repo.already_attached":
+		return "Repozytorium jest już połączone na tym kliencie"
+	case "repo.not_attachable":
+		return "Repozytorium nie jest obecnie gotowe do połączenia"
 	default:
 		return "Błąd zgłoszony przez daemon"
 	}
@@ -2509,6 +2518,17 @@ func (c *Controller) notify(ctx context.Context, n platform.Notification) {
 		return
 	}
 	_ = c.cfg.Notifier.Notify(ctx, n)
+}
+
+// reportActionError keeps an explicitly initiated foreground workflow from
+// degrading into a toast-only failure. The notification remains useful for
+// the system history, while ShowInfo guarantees an owned modal explanation
+// when the platform provides one.
+func (c *Controller) reportActionError(ctx context.Context, group, title, body string) {
+	c.notify(ctx, platform.Notification{ID: group, Group: group, Title: title, Body: body, Urgency: platform.UrgencyCritical})
+	if c.cfg.Prompter != nil {
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: title, Text: body})
+	}
 }
 
 func findRepo(vm app.ViewModel, repoID string) (app.RepoViewModel, bool) {

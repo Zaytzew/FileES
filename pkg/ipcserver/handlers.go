@@ -72,6 +72,16 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoGrantAccess(req, false)
 	case contract.CmdRepoRevokeAccess:
 		return s.handleRepoGrantAccess(req, true)
+	case contract.CmdRepoPublicShareList:
+		return s.handlePublicShare(req, "list")
+	case contract.CmdRepoPublicShareCreate:
+		return s.handlePublicShare(req, "create")
+	case contract.CmdRepoPublicShareUpdate:
+		return s.handlePublicShare(req, "update")
+	case contract.CmdRepoPublicShareRevoke:
+		return s.handlePublicShare(req, "revoke")
+	case contract.CmdRepoPublicShareDelete:
+		return s.handlePublicShare(req, "delete")
 	case contract.CmdRepoDetach:
 		return s.handleRepoDetach(req, false)
 	case contract.CmdRepoDelete:
@@ -294,9 +304,18 @@ func (s *Server) handleRealmGrantRecipients(req contract.Request) contract.Respo
 	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories {
 		return contract.ErrResponse(req.RequestID, "GRANT-2001", "ERROR", "NONE", "realm.grants_forbidden", nil)
 	}
+	if payload.RepoID != "" {
+		repo := s.repoByID(payload.RepoID)
+		if repo == nil || repo.ServerID() != payload.ServerID {
+			return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+		}
+		if activation.RealmID == "" || repo.Summary().OwnerRealmID != activation.RealmID {
+			return contract.ErrResponse(req.RequestID, "GRANT-2001", "ERROR", "NONE", "realm.grants_forbidden", nil)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	recipients, err := service.ListRecipients(ctx, payload.ServerID)
+	recipients, err := service.ListRecipients(ctx, payload.ServerID, payload.RepoID)
 	if err != nil {
 		talk.With("realm-grants:"+payload.ServerID).Warnf("recipient listing failed: %v", err)
 		return contract.ErrResponse(req.RequestID, "GRANT-1001", "ERROR", "RETRY", "realm.grant_recipients_unavailable", nil)
@@ -375,6 +394,89 @@ func (s *Server) handleRepoGrantAccess(req contract.Request, revoke bool) contra
 	if err != nil {
 		talk.With("realm-grants:"+serverID).Warnf("grant mutation failed: %v", err)
 		return contract.ErrResponse(req.RequestID, "GRANT-1002", "ERROR", "REQUIRE_ACTION", "realm.grant_rejected", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handlePublicShare(req contract.Request, action string) contract.Response {
+	service := s.publicShareService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "SHARE-0001", "ERROR", "RETRY", "public_share.unavailable", nil)
+	}
+	var serverID, repoID, channelID string
+	var declaration contract.PublicShareDeclaration
+	keepPassword := false
+	switch action {
+	case "list":
+		var payload contract.PublicShareListPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID = payload.ServerID, payload.RepoID
+	case "create":
+		var payload contract.PublicShareCreatePayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID, declaration = payload.ServerID, payload.RepoID, payload.PublicShareDeclaration
+	case "update":
+		var payload contract.PublicShareUpdatePayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID, channelID, declaration, keepPassword = payload.ServerID, payload.RepoID, payload.ChannelID, payload.PublicShareDeclaration, payload.KeepPassword
+	case "revoke", "delete":
+		var payload contract.PublicShareChannelPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID, channelID = payload.ServerID, payload.RepoID, payload.ChannelID
+	default:
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	if strings.TrimSpace(serverID) == "" || strings.TrimSpace(repoID) == "" || (req.RepoID != "" && req.RepoID != repoID) || ((action == "update" || action == "revoke" || action == "delete") && strings.TrimSpace(channelID) == "") {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	if (action == "create" || action == "update") && declaration.RepoID != repoID {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	repo := s.repoByID(repoID)
+	if repo == nil || repo.ServerID() != serverID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[serverID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories || activation.RealmID == "" || repo.Summary().OwnerRealmID != activation.RealmID {
+		return contract.ErrResponse(req.RequestID, "SHARE-2001", "ERROR", "NONE", "public_share.forbidden", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if action == "list" {
+		shares, err := service.ListPublicShares(ctx, serverID, repoID)
+		if err != nil {
+			talk.With("public-shares:"+serverID).Warnf("channel listing failed: %v", err)
+			return contract.ErrResponse(req.RequestID, "SHARE-1001", "ERROR", "RETRY", "public_share.list_failed", nil)
+		}
+		return contract.OKResponse(req.RequestID, contract.PublicShareListResult{Shares: shares})
+	}
+	var (
+		result contract.PublicShareResult
+		err    error
+	)
+	switch action {
+	case "create":
+		result, err = service.CreatePublicShare(ctx, serverID, declaration)
+	case "update":
+		result, err = service.UpdatePublicShare(ctx, serverID, channelID, declaration, keepPassword)
+	case "revoke":
+		result, err = service.RevokePublicShare(ctx, serverID, channelID)
+	case "delete":
+		result, err = service.DeletePublicShare(ctx, serverID, channelID)
+	}
+	if err != nil {
+		talk.With("public-shares:"+serverID).Warnf("channel %s failed: %v", action, err)
+		return contract.ErrResponse(req.RequestID, "SHARE-1002", "ERROR", "REQUIRE_ACTION", "public_share.rejected", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

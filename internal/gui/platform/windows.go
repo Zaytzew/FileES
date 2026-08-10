@@ -95,24 +95,23 @@ func hideConsoleWindow(cmd *exec.Cmd) {
 // functional) default.
 const dpiAwarenessPrelude = "try{Add-Type -Name Dpi -Namespace Native -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value); [DllImport(\"user32.dll\")] public static extern uint GetDpiForSystem();';[Native.Dpi]::SetProcessDpiAwarenessContext([IntPtr](-4))|Out-Null}catch{};"
 
-// foregroundPrelude, inserted right before every $f.ShowDialog() below,
-// forces the dialog to the foreground instead of opening behind whatever
-// window already has focus - confirmed live: dialogs rendered correctly
-// (IsWindowVisible=True, sensible position) but never became the active
-// window, so the user saw what looked like a click doing nothing (r442+,
-// concepts/REALM_JOIN_AUTHORIZATION_CONCEPT.md session notes; distinct from
-// the earlier minimized-window bug fixed via CREATE_NO_WINDOW above - that
-// one was about the window's initial show state, this one is about Win32's
-// foreground-lock rules for a window with no owner). TopMost is turned back
-// off once activated so the dialog does not stay pinned above other windows
-// after the user starts interacting with it.
-const foregroundPrelude = "$f.TopMost=$true;$f.Add_Shown({$f.Activate();$f.TopMost=$false});"
+// foregroundPrelude is inserted immediately before every custom
+// $f.ShowDialog() below.  Settings actions are a two-process hand-off:
+// the foreground PowerShell window closes, control returns to the tray
+// process, and the tray starts another PowerShell process for the follow-up
+// dialog. Windows is allowed to reject Activate() for that second process.
+// Turning TopMost off in Shown therefore recreated the reported "silent
+// death": a fully functional modal window dropped behind the user's current
+// application. Keep the short-lived modal window TopMost for its lifetime;
+// it exits with the helper process and cannot pin the main application.
+const foregroundPrelude = "$f.TopMost=$true;$f.Add_Shown({$f.Activate();$f.BringToFront()});"
 
-// foregroundOwnerPrelude does the same for the two stock common dialogs
-// (OpenFileDialog, FolderBrowserDialog), which have no TopMost/Add_Shown of
-// their own - forcing them to the foreground instead requires passing an
-// owner window handle to ShowDialog itself.
-const foregroundOwnerPrelude = "$owner=New-Object System.Windows.Forms.Form;$owner.StartPosition='Manual';$owner.Location=New-Object System.Drawing.Point(-2000,-2000);$owner.ShowInTaskbar=$false;$owner.TopMost=$true;$owner.Show();$owner.Hide();"
+// foregroundOwnerPrelude provides a live TopMost owner for stock common and
+// message-box dialogs. The old helper hid the owner before ShowDialog, which
+// removed the only z-order anchor and let the child open behind other apps.
+// A one-pixel transparent owner remains alive for the modal lifetime without
+// producing a taskbar button or a visible helper window.
+const foregroundOwnerPrelude = "$owner=New-Object System.Windows.Forms.Form;$owner.StartPosition='CenterScreen';$owner.Width=1;$owner.Height=1;$owner.FormBorderStyle='None';$owner.ShowInTaskbar=$false;$owner.Opacity=0;$owner.TopMost=$true;$owner.Show();$owner.Activate();"
 
 func (osWindowsCommandRunner) Start(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
@@ -360,6 +359,8 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 		result.Action = SettingsDialogLoadDump
 	case "manage_grants":
 		result.Action = SettingsDialogManageGrants
+	case "public_shares":
+		result.Action = SettingsDialogPublicShares
 	case "realm_visibility":
 		result.Action = SettingsDialogRealmVisibility
 	case "deactivate":
@@ -387,7 +388,8 @@ var settingsButtons = []struct {
 	label, action, capability string
 }{
 	{"Widoczność", "realm_visibility", "CanVisibility"},
-	{"Dostęp stref", "manage_grants", "CanGrants"},
+	{"Uprawnienia gości", "manage_grants", "CanGrants"},
+	{"Udostępnienia publiczne", "public_shares", "CanPublicShares"},
 	{"Dodaj folder", "add", "CanAdd"},
 	{"Połącz", "connect", "CanConnect"},
 	{"Wskaż kopię", "locate", "CanLocate"},
@@ -405,9 +407,9 @@ var settingsButtons = []struct {
 // action the controller will silently refuse is a real, reported "click it,
 // nothing happens" bug, not a cosmetic issue.
 type settingsRow struct {
-	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access                      string
-	CanVisibility, CanGrants, CanAdd, CanConnect, CanLocate, CanDetach, CanDelete, CanLoadDump bool
-	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                                         bool
+	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access                                       string
+	CanVisibility, CanGrants, CanPublicShares, CanAdd, CanConnect, CanLocate, CanDetach, CanDelete, CanLoadDump bool
+	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                                                          bool
 }
 
 func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
@@ -427,7 +429,7 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 		for _, f := range s.Folders {
 			folder := base
 			folder.RepoID, folder.Folder, folder.Path, folder.State, folder.Access = f.ID, f.Name, f.LocalPath, f.State, f.Access
-			folder.CanGrants, folder.CanConnect, folder.CanLocate, folder.CanDetach, folder.CanDelete, folder.CanLoadDump = f.CanManageGrants, f.CanConnect, f.CanLocate, f.CanDetach, f.CanDelete, f.CanLoadDump
+			folder.CanGrants, folder.CanPublicShares, folder.CanConnect, folder.CanLocate, folder.CanDetach, folder.CanDelete, folder.CanLoadDump = f.CanManageGrants, f.CanManagePublicShares, f.CanConnect, f.CanLocate, f.CanDetach, f.CanDelete, f.CanLoadDump
 			rows = append(rows, folder)
 		}
 	}
@@ -538,7 +540,7 @@ func (b *WindowsBackend) ShowRealmGrants(ctx context.Context, request RealmGrant
 		"$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=760;$f.Height=520;$f.StartPosition='CenterScreen';" +
 		"$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=710;$l.Height=44;$f.Controls.Add($l);" +
 		"$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=62;$g.Width=710;$g.Height=360;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';" +
-		"$t=New-Object System.Data.DataTable;[void]$t.Columns.Add('RealmID');[void]$t.Columns.Add('Strefa');foreach($r in $d.Recipients){$name=$r.Alias;if([string]::IsNullOrWhiteSpace($name)){$name=$r.RealmID};[void]$t.Rows.Add($r.RealmID,$name)};$g.DataSource=$t;$g.Columns['RealmID'].Visible=$false;$f.Controls.Add($g);$script:answer='close';" +
+		"$t=New-Object System.Data.DataTable;[void]$t.Columns.Add('RealmID');[void]$t.Columns.Add('Gość');[void]$t.Columns.Add('Aktualne uprawnienie');foreach($r in $d.Recipients){$name=$r.Alias;if([string]::IsNullOrWhiteSpace($name)){$name=$r.RealmID};$access='brak';if($r.State-eq'active'-and$r.Access-eq'r'){$access='tylko odczyt'}elseif($r.State-eq'active'-and$r.Access-eq'rw'){$access='odczyt i zapis'};[void]$t.Rows.Add($r.RealmID,$name,$access)};$g.DataSource=$t;$g.Columns['RealmID'].Visible=$false;$f.Controls.Add($g);$script:answer='close';" +
 		"function grant($a){if($g.CurrentRow -ne $null){$script:answer=$a+'|'+[string]$g.CurrentRow.Cells['RealmID'].Value;$f.Close()}};" +
 		"$r=New-Object System.Windows.Forms.Button;$r.Text='Tylko odczyt';$r.Left=180;$r.Top=438;$r.Width=115;$r.Add_Click({grant 'grant_read'});$f.Controls.Add($r);" +
 		"$w=New-Object System.Windows.Forms.Button;$w.Text='Odczyt i zapis';$w.Left=305;$w.Top=438;$w.Width=115;$w.Add_Click({grant 'grant_write'});$f.Controls.Add($w);" +
@@ -565,6 +567,56 @@ func (b *WindowsBackend) ShowRealmGrants(ctx context.Context, request RealmGrant
 		result.Action = RealmGrantDialogRevoke
 	default:
 		result.Action = RealmGrantDialogClose
+	}
+	return result, nil
+}
+
+func (b *WindowsBackend) ShowPublicShares(ctx context.Context, request PublicShareDialogRequest) (PublicShareDialogResult, error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return PublicShareDialogResult{}, NewUnavailable("public_share_dialog", err)
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return PublicShareDialogResult{}, NewOperationalFailure("public_share_dialog", err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(payload)
+	script := dpiAwarenessPrelude +
+		"Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;" +
+		"$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;" +
+		"$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1100;$f.Height=590;$f.StartPosition='CenterScreen';" +
+		"$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1040;$l.Height=44;$f.Controls.Add($l);" +
+		"$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=62;$g.Width=1040;$g.Height=420;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';" +
+		"$t=New-Object System.Data.DataTable;foreach($c in @('ChannelID','Adres','Stan','Folder źródłowy','Odbiorcy','Hasło','Rewizja')){[void]$t.Columns.Add($c)};foreach($r in $d.Shares){[void]$t.Rows.Add($r.ChannelID,$r.Address,$r.State,$r.SourceRoot,$r.Recipients,$r.Password,$r.Revision)};$g.DataSource=$t;if($g.Columns['ChannelID']-ne$null){$g.Columns['ChannelID'].Visible=$false};$f.Controls.Add($g);$script:answer='close';" +
+		"function choose($a){if($a-eq'create'){$script:answer='create|';$f.Close()}elseif($g.CurrentRow-ne$null){$script:answer=$a+'|'+[string]$g.CurrentRow.Cells['ChannelID'].Value;$f.Close()}};" +
+		"$n=New-Object System.Windows.Forms.Button;$n.Text='Nowe';$n.Left=390;$n.Top=500;$n.Width=100;$n.Add_Click({choose 'create'});$f.Controls.Add($n);" +
+		"$e=New-Object System.Windows.Forms.Button;$e.Text='Edytuj';$e.Left=500;$e.Top=500;$e.Width=100;$e.Add_Click({choose 'edit'});$f.Controls.Add($e);" +
+		"$r=New-Object System.Windows.Forms.Button;$r.Text='Cofnij';$r.Left=610;$r.Top=500;$r.Width=100;$r.Add_Click({choose 'revoke'});$f.Controls.Add($r);" +
+		"$x=New-Object System.Windows.Forms.Button;$x.Text='Usuń';$x.Left=720;$x.Top=500;$x.Width=100;$x.Add_Click({choose 'delete'});$f.Controls.Add($x);" +
+		"$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Left=900;$c.Top=500;$c.Width=100;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" + foregroundPrelude + "[void]$f.ShowDialog();$script:answer"
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
+	if err != nil {
+		if ctx.Err() != nil {
+			return PublicShareDialogResult{}, ctx.Err()
+		}
+		return PublicShareDialogResult{}, NewOperationalFailure("public_share_dialog", err)
+	}
+	action, channelID, ok := strings.Cut(strings.TrimSpace(string(output)), "|")
+	if !ok {
+		return PublicShareDialogResult{Action: PublicShareDialogClose}, nil
+	}
+	result := PublicShareDialogResult{ChannelID: channelID}
+	switch action {
+	case "create":
+		result.Action = PublicShareDialogCreate
+	case "edit":
+		result.Action = PublicShareDialogEdit
+	case "revoke":
+		result.Action = PublicShareDialogRevoke
+	case "delete":
+		result.Action = PublicShareDialogDelete
+	default:
+		result.Action = PublicShareDialogClose
 	}
 	return result, nil
 }
@@ -620,7 +672,7 @@ func (b *WindowsBackend) ConfirmConsent(ctx context.Context, request ConsentRequ
 		"$o=New-Object Windows.Forms.CheckBox;$o.Text=" + psString(request.OptionalText) + ";$o.Left=15;$o.Top=155;$o.Width=670;$o.Height=45;$f.Controls.Add($o);" +
 		"$ok=New-Object Windows.Forms.Button;$ok.Text='Kontynuuj';$ok.Left=480;$ok.Top=220;$ok.Width=100;$ok.DialogResult='OK';$f.AcceptButton=$ok;$f.Controls.Add($ok);" +
 		"$c=New-Object Windows.Forms.Button;$c.Text='Anuluj';$c.Left=590;$c.Top=220;$c.Width=90;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" +
-		"$d=$f.ShowDialog();if($d-eq'OK'){'ok|'+$r.Checked+'|'+$o.Checked}else{'cancel|false|false'}"
+		foregroundPrelude + "$d=$f.ShowDialog();if($d-eq'OK'){'ok|'+$r.Checked+'|'+$o.Checked}else{'cancel|false|false'}"
 	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -689,7 +741,7 @@ func buildReservationDialogScript(request ReservationDialogRequest) (string, err
 	sb.WriteString("$t=New-Object System.Data.DataTable;[void]$t.Columns.Add('ID');[void]$t.Columns.Add('Serwer');[void]$t.Columns.Add('Kopia robocza');[void]$t.Columns.Add('Plik');[void]$t.Columns.Add('Właściciel');[void]$t.Columns.Add('Utworzono');[void]$t.Columns.Add('Działanie');foreach($r in $d.Rows){[void]$t.Rows.Add($r.ID,$r.Server,$r.WorkingCopy,$r.Path,$r.Owner,$r.CreatedAt,$r.Action)};$g.DataSource=$t;$g.Columns['ID'].Visible=$false;$f.Controls.Add($g);")
 	sb.WriteString("$script:answer='close';$all=New-Object System.Windows.Forms.Button;$all.Text='Zwolnij wszystko';$all.Width=[int](150*$s);$all.Height=[int](28*$s);$all.Left=[int](630*$s);$all.Top=[int](540*$s);$all.Add_Click({$script:answer='release_all';$f.Close()});$f.Controls.Add($all);$release=New-Object System.Windows.Forms.Button;$release.Text='Zwolnij';$release.Width=[int](100*$s);$release.Height=[int](28*$s);$release.Left=[int](790*$s);$release.Top=[int](540*$s);$release.Add_Click({if($g.CurrentRow -ne $null){$script:answer='release:'+[string]$g.CurrentRow.Cells['ID'].Value;$f.Close()}});$f.Controls.Add($release);")
 	sb.WriteString("$refresh=New-Object System.Windows.Forms.Button;$refresh.Text='Odśwież';$refresh.Width=[int](100*$s);$refresh.Height=[int](28*$s);$refresh.Left=[int](900*$s);$refresh.Top=[int](540*$s);$refresh.Add_Click({$script:answer='refresh';$f.Close()});$f.Controls.Add($refresh);")
-	sb.WriteString("$close=New-Object System.Windows.Forms.Button;$close.Text='Zamknij';$close.Width=[int](100*$s);$close.Height=[int](28*$s);$close.Left=[int](1010*$s);$close.Top=[int](540*$s);$close.DialogResult='Cancel';$f.CancelButton=$close;$f.Controls.Add($close);[void]$f.ShowDialog();$script:answer")
+	sb.WriteString("$close=New-Object System.Windows.Forms.Button;$close.Text='Zamknij';$close.Width=[int](100*$s);$close.Height=[int](28*$s);$close.Left=[int](1010*$s);$close.Top=[int](540*$s);$close.DialogResult='Cancel';$f.CancelButton=$close;$f.Controls.Add($close);" + foregroundPrelude + "[void]$f.ShowDialog();$script:answer")
 	return sb.String(), nil
 }
 
@@ -731,7 +783,7 @@ func buildJournalDialogScript(request JournalDialogRequest) (string, error) {
 	sb.WriteString("$t=New-Object System.Data.DataTable;[void]$t.Columns.Add('Timestamp');[void]$t.Columns.Add('Repository');[void]$t.Columns.Add('Summary');[void]$t.Columns.Add('Details');[void]$t.Columns.Add('Severity');[void]$t.Columns.Add('Emphasized',[bool]);foreach($r in $d.Rows){[void]$t.Rows.Add($r.Timestamp,$r.Repository,$r.Summary,$r.Details,$r.Severity,[bool]$r.Emphasized)};$g.DataSource=$t;")
 	sb.WriteString("$g.Columns['Timestamp'].HeaderText='Czas';$g.Columns['Timestamp'].FillWeight=22;$g.Columns['Repository'].HeaderText='Repozytorium';$g.Columns['Repository'].FillWeight=24;$g.Columns['Summary'].HeaderText='Wpis';$g.Columns['Summary'].FillWeight=58;$g.Columns['Details'].HeaderText='Szczegóły';$g.Columns['Details'].FillWeight=42;$g.Columns['Severity'].Visible=$false;$g.Columns['Emphasized'].Visible=$false;")
 	sb.WriteString("$errorFont=New-Object Drawing.Font($g.Font,[Drawing.FontStyle]::Bold);foreach($row in $g.Rows){if([bool]$row.Cells['Emphasized'].Value){$row.DefaultCellStyle.Font=$errorFont;$row.DefaultCellStyle.ForeColor=[Drawing.Color]::Firebrick}};$f.Controls.Add($g);")
-	sb.WriteString("$close=New-Object System.Windows.Forms.Button;$close.Text='Zamknij';$close.Width=[int](100*$s);$close.Height=[int](28*$s);$close.Left=[int](1082*$s);$close.Top=[int](616*$s);$close.DialogResult='Cancel';$f.CancelButton=$close;$f.Controls.Add($close);[void]$f.ShowDialog();$errorFont.Dispose()")
+	sb.WriteString("$close=New-Object System.Windows.Forms.Button;$close.Text='Zamknij';$close.Width=[int](100*$s);$close.Height=[int](28*$s);$close.Left=[int](1082*$s);$close.Top=[int](616*$s);$close.DialogResult='Cancel';$f.CancelButton=$close;$f.Controls.Add($close);" + foregroundPrelude + "[void]$f.ShowDialog();$errorFont.Dispose()")
 	return sb.String(), nil
 }
 
@@ -766,7 +818,7 @@ func buildPromptScript(request PromptTextRequest) string {
 		sb.WriteString("$t.UseSystemPasswordChar=$true;")
 	}
 	sb.WriteString("$f.Controls.Add($t);$b=New-Object System.Windows.Forms.Button;$b.Text='OK';$b.Width=[int](75*$s);$b.Height=[int](23*$s);$b.Left=[int](412*$s);$b.Top=[int](82*$s);$b.DialogResult='OK';$f.AcceptButton=$b;$f.Controls.Add($b);")
-	sb.WriteString("if($f.ShowDialog()-eq[System.Windows.Forms.DialogResult]::OK){$t.Text}else{exit 1}")
+	sb.WriteString(foregroundPrelude + "if($f.ShowDialog()-eq[System.Windows.Forms.DialogResult]::OK){$t.Text}else{exit 1}")
 	return sb.String()
 }
 

@@ -71,6 +71,14 @@ reprezentować `repo_id`, `source_root` ani ścieżki repozytorium. Wejście zam
 konkretną rewizję, każde użycie cache'u jest poprzedzone ponowną autoryzacją,
 a revoke daje niejawne `404` także dla ciepłego wpisu.
 
+Desktop ownera jest również kompletny: dynamiczne IPC udostępnia
+list/create/update/revoke/delete, a natywne Ustawienia Windows/Linux budują
+deklarację z wybranego podfolderu WC. Plaintext hasła jest hashowany przed
+ticketem; lista pokazuje tylko flagę ochrony, a update może zachować istniejący
+verifier bez przesyłania go przez control ani IPC. Ta powierzchnia nie zmienia
+granicy zaufania: daemon wykonuje ergonomiczną bramkę ownership, worker
+autoryzuje ponownie na podstawie uwierzytelnionej sesji.
+
 Proces `filees-public-authority` pozostaje po stronie FileES i jako jedyny zna
 FSFS oraz mapowanie `public_id` na ścieżkę. `filees-links` ma wyłącznie prywatny
 cache, klucz krótkiej capability wizyty oraz połączenie backchannel; nie ma

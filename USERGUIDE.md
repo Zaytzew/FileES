@@ -218,6 +218,39 @@ stan `łączenie…`.
 
 ---
 
+## Uprawnienia gości i udostępnienia publiczne
+
+W **Zarządzaj serwerem…** właściciel repozytorium ma dwie odrębne akcje:
+
+- **Uprawnienia gości** pokazuje widoczne strefy oraz każdą ukrytą strefę,
+  która nadal ma aktywny grant do tego repozytorium. Kolumna „Aktualne
+  uprawnienie” pokazuje brak, tylko odczyt albo odczyt i zapis. Można ustawić
+  `r`, `rw` lub cofnąć dostęp; każda zmiana wymaga potwierdzenia.
+- **Udostępnienia publiczne** pokazuje kanały wydawania plików. Widać adres,
+  stan, folder źródłowy, odbiorców, ochronę hasłem oraz `HEAD` albo zamrożoną
+  rewizję. Dostępne są **Nowe**, **Edytuj**, **Cofnij** i **Usuń**.
+
+Tworzenie albo edycja kanału wymaga podłączonej lokalnej kopii roboczej:
+
+1. Wybierz niepusty podfolder wewnątrz WC. FileES zbierze z niego zwykłe pliki
+   rekurencyjnie; `.svn` jest pomijane, symlinki i ponad 4096 plików są
+   odrzucane.
+2. Dla nowego kanału wpisz końcówkę adresu (`slug`): 3–64 małe litery, cyfry
+   lub pojedyncze myślniki.
+3. Opcjonalnie wpisz adresy e-mail oddzielone przecinkami lub średnikami.
+   Taki kanał jest zamknięty i każdy odbiorca dostaje osobny token. Puste pole
+   tworzy kanał otwarty.
+4. Kanał otwarty może dostać wspólne hasło (co najmniej 8 znaków). Hasło jest
+   hashowane lokalnie; plaintext nie trafia do serwera ani dziennika. Przy
+   edycji można zachować dotychczasowe hasło bez ponownego wpisywania.
+5. Puste pole rewizji śledzi `HEAD`; dodatni numer zamraża kanał na tej rewizji.
+
+**Cofnij** natychmiast przestaje wydawać pliki, ale zachowuje rekord i adres.
+**Usuń** usuwa politykę kanału; adres pozostaje zarezerwowany jako tombstone i
+nie może zostać przejęty przez późniejszy kanał.
+
+---
+
 ## Blokowanie i odblokowanie plików
 
 `Zablokuj pliki…` i `Odblokuj pliki…` są dostępne w podmenu repozytorium,

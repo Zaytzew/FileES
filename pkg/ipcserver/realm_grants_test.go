@@ -17,8 +17,8 @@ type realmGrantStub struct {
 	visibility string
 }
 
-func (stub *realmGrantStub) ListRecipients(_ context.Context, serverID string) ([]contract.RealmGrantRecipient, error) {
-	stub.serverID = serverID
+func (stub *realmGrantStub) ListRecipients(_ context.Context, serverID, repoID string) ([]contract.RealmGrantRecipient, error) {
+	stub.serverID, stub.repoID = serverID, repoID
 	return stub.recipients, nil
 }
 
@@ -54,20 +54,23 @@ func TestRealmGrantCapabilitiesAreAdvertisedOnlyWhenWired(t *testing.T) {
 
 func TestRealmGrantIPCListsAndMutatesOwnedRepository(t *testing.T) {
 	const owner = "owner-realm"
-	stub := &realmGrantStub{recipients: []contract.RealmGrantRecipient{{RealmID: "recipient-realm", Alias: "biuro"}}}
+	stub := &realmGrantStub{recipients: []contract.RealmGrantRecipient{{RealmID: "recipient-realm", Alias: "biuro", Access: "r", State: "active"}}}
 	server := New("unused")
 	server.SetRealmGrantService(stub)
 	server.RegisterActivation(contract.ActivationStatus{ServerID: "office", ClientRole: contract.ClientRoleNormal, RealmID: owner, CanCreateRepositories: true})
 	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn://example/repo-1", "office", "rw", "active", owner, "optional", true)
 
-	list := lifecycleRequest(contract.CmdRealmGrantRecipients, contract.RealmGrantRecipientsPayload{ServerID: "office"})
+	list := lifecycleRequest(contract.CmdRealmGrantRecipients, contract.RealmGrantRecipientsPayload{ServerID: "office", RepoID: "repo-1"})
 	response := server.dispatch(list)
 	if response.Status != contract.StatusOK {
 		t.Fatalf("recipient list rejected: %+v", response.Error)
 	}
 	var listed contract.RealmGrantRecipientsResult
-	if err := contract.DecodeResult(response.Result, &listed); err != nil || len(listed.Recipients) != 1 || listed.Recipients[0].Alias != "biuro" {
+	if err := contract.DecodeResult(response.Result, &listed); err != nil || len(listed.Recipients) != 1 || listed.Recipients[0].Alias != "biuro" || listed.Recipients[0].Access != "r" {
 		t.Fatalf("recipient list=%+v err=%v", listed, err)
+	}
+	if stub.repoID != "repo-1" {
+		t.Fatalf("recipient list repo=%q", stub.repoID)
 	}
 	visibility := lifecycleRequest(contract.CmdRealmSetVisibility, contract.RealmSetVisibilityPayload{ServerID: "office", Visibility: "listed"})
 	if response := server.dispatch(visibility); response.Status != contract.StatusOK {

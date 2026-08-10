@@ -89,10 +89,40 @@ func TestPublicShareServiceClassifiesInvalidDeclarationAsRejected(t *testing.T) 
 	}
 }
 
+func TestPublicShareServiceListsProtectedChannelsAndPreservesVerifier(t *testing.T) {
+	owner, repo := uuid.NewString(), uuid.NewString()
+	store := &channel.Store{Root: t.TempDir(), Authority: shareAuthority{owner: owner, repo: repo, alias: "atmprojekt"}, TokenKey: []byte(strings.Repeat("t", 32))}
+	service := ChannelPublicShareService{Channels: store, Deliverer: &shareDeliverer{}}
+	declaration := shareDeclaration(repo)
+	declaration.Recipients = nil
+	declaration.PasswordHash = "$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	channelID := uuid.NewString()
+	if _, err := service.Create(context.Background(), channelID, owner, declaration); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := service.List(context.Background(), owner, repo)
+	if err != nil || len(listed) != 1 || listed[0].ChannelID != channelID || !listed[0].PasswordProtected {
+		t.Fatalf("list=%+v err=%v", listed, err)
+	}
+	declaration.PasswordHash = ""
+	declaration.Objects[0].DisplayName = "Aktualizacja.pdf"
+	if _, err := service.Update(context.Background(), uuid.NewString(), owner, channelID, declaration, true); err != nil {
+		t.Fatal(err)
+	}
+	listed, err = service.List(context.Background(), owner, repo)
+	if err != nil || len(listed) != 1 || !listed[0].PasswordProtected || listed[0].Objects[0].DisplayName != "Aktualizacja.pdf" {
+		t.Fatalf("updated list=%+v err=%v", listed, err)
+	}
+}
+
 type fakePublicShares struct {
 	calls       int
 	owner       string
 	declaration control.PublicShareDeclaration
+}
+
+func (s *fakePublicShares) List(context.Context, string, string) ([]control.PublicShareSummary, error) {
+	return nil, errors.New("unused")
 }
 
 func (s *fakePublicShares) Create(_ context.Context, operationID, owner string, declaration control.PublicShareDeclaration) (control.PublicShareResult, error) {
@@ -100,7 +130,7 @@ func (s *fakePublicShares) Create(_ context.Context, operationID, owner string, 
 	s.owner, s.declaration = owner, declaration
 	return control.PublicShareResult{ChannelID: operationID, Alias: "atmprojekt", Slug: declaration.Slug, State: "active"}, nil
 }
-func (s *fakePublicShares) Update(context.Context, string, string, string, control.PublicShareDeclaration) (control.PublicShareResult, error) {
+func (s *fakePublicShares) Update(context.Context, string, string, string, control.PublicShareDeclaration, bool) (control.PublicShareResult, error) {
 	return control.PublicShareResult{}, errors.New("unused")
 }
 func (s *fakePublicShares) Revoke(context.Context, string, string) (control.PublicShareResult, error) {

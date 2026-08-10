@@ -60,6 +60,7 @@ const (
 	TicketRevokeAccess        TicketType = "REVOKE_ACCESS"
 	TicketListGrantRecipients TicketType = "LIST_GRANT_RECIPIENTS"
 	TicketSetRealmVisibility  TicketType = "SET_REALM_DIRECTORY_VISIBILITY"
+	TicketListPublicShares    TicketType = "LIST_PUBLIC_SHARES"
 	TicketCreatePublicShare   TicketType = "CREATE_PUBLIC_SHARE"
 	TicketUpdatePublicShare   TicketType = "UPDATE_PUBLIC_SHARE"
 	TicketRevokePublicShare   TicketType = "REVOKE_PUBLIC_SHARE"
@@ -170,10 +171,14 @@ type RealmGrantResult struct {
 	Access           string `json:"access,omitempty"`
 	State            string `json:"state"`
 }
-type ListGrantRecipientsPayload struct{}
+type ListGrantRecipientsPayload struct {
+	RepoID string `json:"repo_id,omitempty"`
+}
 type GrantRecipient struct {
 	RealmID string `json:"realm_id"`
 	Alias   string `json:"alias"`
+	Access  string `json:"access,omitempty"`
+	State   string `json:"state,omitempty"`
 }
 type ListGrantRecipientsResult struct {
 	Recipients []GrantRecipient `json:"recipients"`
@@ -206,8 +211,28 @@ type PublicShareDeclaration struct {
 
 type CreatePublicSharePayload struct{ PublicShareDeclaration }
 type UpdatePublicSharePayload struct {
-	ChannelID string `json:"channel_id"`
+	ChannelID    string `json:"channel_id"`
+	KeepPassword bool   `json:"keep_password,omitempty"`
 	PublicShareDeclaration
+}
+type ListPublicSharesPayload struct {
+	RepoID string `json:"repo_id"`
+}
+type PublicShareSummary struct {
+	ChannelID         string              `json:"channel_id"`
+	RepoID            string              `json:"repo_id"`
+	Alias             string              `json:"alias"`
+	Slug              string              `json:"slug"`
+	State             string              `json:"state"`
+	SourceRoot        string              `json:"source_root"`
+	Recipients        []string            `json:"recipients,omitempty"`
+	PasswordProtected bool                `json:"password_protected,omitempty"`
+	DoNotFollow       *int64              `json:"do-not-follow,omitempty"`
+	Objects           []PublicShareObject `json:"object_map"`
+	UpdatedAt         string              `json:"updated_at"`
+}
+type ListPublicSharesResult struct {
+	Shares []PublicShareSummary `json:"shares"`
 }
 type RevokePublicSharePayload struct {
 	ChannelID string `json:"channel_id"`
@@ -450,6 +475,11 @@ func (t Ticket) Validate() error {
 		if err := decodeStrict(t.Payload, &p); err != nil {
 			return fmt.Errorf("LIST_GRANT_RECIPIENTS payload: %w", err)
 		}
+		if p.RepoID != "" {
+			if err := validateUUID("LIST_GRANT_RECIPIENTS payload.repo_id", p.RepoID); err != nil {
+				return err
+			}
+		}
 	case TicketSetRealmVisibility:
 		var p SetRealmDirectoryVisibilityPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -457,6 +487,14 @@ func (t Ticket) Validate() error {
 		}
 		if p.Visibility != "hidden" && p.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY visibility must be hidden or listed")
+		}
+	case TicketListPublicShares:
+		var p ListPublicSharesPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("LIST_PUBLIC_SHARES payload: %w", err)
+		}
+		if err := validateUUID("LIST_PUBLIC_SHARES payload.repo_id", p.RepoID); err != nil {
+			return err
 		}
 	case TicketCreatePublicShare:
 		var p CreatePublicSharePayload
@@ -476,6 +514,9 @@ func (t Ticket) Validate() error {
 		}
 		if err := validatePublicShareDeclaration(p.PublicShareDeclaration); err != nil {
 			return fmt.Errorf("UPDATE_PUBLIC_SHARE payload: %w", err)
+		}
+		if p.KeepPassword && (p.PasswordHash != "" || len(p.Recipients) > 0) {
+			return errors.New("UPDATE_PUBLIC_SHARE keep_password requires an open declaration without a new verifier")
 		}
 	case TicketRevokePublicShare:
 		var p RevokePublicSharePayload
@@ -547,7 +588,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -683,6 +724,21 @@ func validateSuccessPayload(r Result) error {
 			if _, err := realmalias.Normalize(recipient.Alias); err != nil {
 				return fmt.Errorf("LIST_GRANT_RECIPIENTS alias: %w", err)
 			}
+			if recipient.State == "" {
+				if recipient.Access != "" {
+					return errors.New("LIST_GRANT_RECIPIENTS ungranted recipient has access")
+				}
+				continue
+			}
+			if recipient.State != "active" && recipient.State != "revoked" {
+				return errors.New("LIST_GRANT_RECIPIENTS result has invalid grant state")
+			}
+			if recipient.State == "active" && recipient.Access != "r" && recipient.Access != "rw" {
+				return errors.New("LIST_GRANT_RECIPIENTS active grant has invalid access")
+			}
+			if recipient.State == "revoked" && recipient.Access != "" {
+				return errors.New("LIST_GRANT_RECIPIENTS revoked grant has access")
+			}
 		}
 	case TicketSetRealmVisibility:
 		var result SetRealmDirectoryVisibilityResult
@@ -691,6 +747,37 @@ func validateSuccessPayload(r Result) error {
 		}
 		if result.Visibility != "hidden" && result.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY result is invalid")
+		}
+	case TicketListPublicShares:
+		var result ListPublicSharesResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("LIST_PUBLIC_SHARES result: %w", err)
+		}
+		if len(result.Shares) > 1024 {
+			return errors.New("LIST_PUBLIC_SHARES result is too large")
+		}
+		seen := map[string]bool{}
+		for _, share := range result.Shares {
+			if err := validateUUID("public share summary.channel_id", share.ChannelID); err != nil {
+				return err
+			}
+			if seen[share.ChannelID] {
+				return errors.New("LIST_PUBLIC_SHARES result contains duplicate channel")
+			}
+			seen[share.ChannelID] = true
+			if _, err := realmalias.Normalize(share.Alias); err != nil {
+				return errors.New("public share summary alias is invalid")
+			}
+			if share.State != "active" && share.State != "revoked" {
+				return errors.New("public share summary state is invalid")
+			}
+			declaration := PublicShareDeclaration{RepoID: share.RepoID, SourceRoot: share.SourceRoot, Slug: share.Slug, Recipients: share.Recipients, DoNotFollow: share.DoNotFollow, Objects: share.Objects}
+			if err := validatePublicShareDeclaration(declaration); err != nil {
+				return fmt.Errorf("public share summary: %w", err)
+			}
+			if _, err := time.Parse(time.RFC3339Nano, share.UpdatedAt); err != nil {
+				return errors.New("public share summary updated_at is invalid")
+			}
 		}
 	case TicketCreatePublicShare, TicketUpdatePublicShare, TicketRevokePublicShare, TicketDeletePublicShare:
 		var result PublicShareResult

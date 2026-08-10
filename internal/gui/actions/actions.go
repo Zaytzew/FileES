@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -101,13 +102,44 @@ type ServerDetacher interface {
 type RealmGrantRecipient struct {
 	RealmID string
 	Alias   string
+	Access  string
+	State   string
 }
 
 type RealmGrantManager interface {
-	ListRecipients(context.Context, string) ([]RealmGrantRecipient, error)
+	ListRecipients(context.Context, string, string) ([]RealmGrantRecipient, error)
 	SetVisibility(context.Context, string, string) error
 	Grant(context.Context, string, string, string, string) error
 	Revoke(context.Context, string, string, string) error
+}
+
+type PublicShareObject struct {
+	PublicID, RepoPath, DisplayName string
+}
+
+type PublicShareSummary struct {
+	ChannelID, Alias, Slug, State, SourceRoot, UpdatedAt string
+	Recipients                                           []string
+	PasswordProtected                                    bool
+	DoNotFollow                                          *int64
+	Objects                                              []PublicShareObject
+}
+
+type PublicShareDeclaration struct {
+	RepoID, SourceRoot, Slug string
+	Recipients               []string
+	Password                 []byte
+	KeepPassword             bool
+	DoNotFollow              *int64
+	Objects                  []PublicShareObject
+}
+
+type PublicShareManager interface {
+	ListPublicShares(context.Context, string, string) ([]PublicShareSummary, error)
+	CreatePublicShare(context.Context, string, PublicShareDeclaration) error
+	UpdatePublicShare(context.Context, string, string, PublicShareDeclaration) error
+	RevokePublicShare(context.Context, string, string, string) error
+	DeletePublicShare(context.Context, string, string, string) error
 }
 
 type RealmRemovalBeginRequest struct {
@@ -199,10 +231,12 @@ type Config struct {
 	Reservations       ReservationManager
 	RealmAliases       RealmAliasManager
 	RealmGrants        RealmGrantManager
+	PublicShares       PublicShareManager
 	ReservationBrowser platform.ReservationBrowser
 	SettingsBrowser    platform.SettingsBrowser
 	JournalBrowser     platform.JournalBrowser
 	RealmGrantBrowser  platform.RealmGrantBrowser
+	PublicShareBrowser platform.PublicShareBrowser
 	ConsentPrompter    platform.ConsentPrompter
 	Reconnect          func() // nil → reconnect intent is a no-op
 	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
@@ -405,6 +439,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startLoadDump(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogManageGrants:
 			c.startManageRealmGrants(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogPublicShares:
+			c.startManagePublicShares(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogRealmVisibility:
 			c.startSetRealmVisibility(ctx, result.ServerID)
 		case platform.SettingsDialogDetachServer:
@@ -571,12 +607,13 @@ func settingsDialogRequest(vm app.ViewModel, serverID string, pending map[string
 			ownedAndCreatable := server.Owns(repo) && server.CanOfferRepositoryCreation()
 			row.Folders = append(row.Folders, platform.SettingsFolder{
 				ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
-				CanManageGrants: vm.CanManageRealmGrants() && ownedAndCreatable,
-				CanConnect:      !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
-				CanLocate:       repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
-				CanDetach:       repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
-				CanDelete:       repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
-				CanLoadDump:     repo.Attached && ownedAndCreatable,
+				CanManageGrants:       vm.CanManageRealmGrants() && ownedAndCreatable,
+				CanManagePublicShares: vm.CanManagePublicShares() && ownedAndCreatable,
+				CanConnect:            !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
+				CanLocate:             repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
+				CanDetach:             repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
+				CanDelete:             repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+				CanLoadDump:           repo.Attached && ownedAndCreatable,
 			})
 		}
 		request.Servers = append(request.Servers, row)
@@ -1026,7 +1063,7 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można zarządzać dostępem", Body: "Granty może zmieniać wyłącznie właściciel repozytorium.", Urgency: platform.UrgencyCritical})
 			return
 		}
-		recipients, err := c.cfg.RealmGrants.ListRecipients(ctx, serverID)
+		recipients, err := c.cfg.RealmGrants.ListRecipients(ctx, serverID, repoID)
 		if err != nil {
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać stref", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			return
@@ -1035,11 +1072,11 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Brak widocznych stref. Odbiorca musi najpierw włączyć widoczność w prywatnym katalogu stref."})
 			return
 		}
-		request := platform.RealmGrantDialogRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Wybierz strefę i docelowy poziom dostępu. Ponowne nadanie zmienia istniejący grant."}
+		request := platform.RealmGrantDialogRequest{Title: "Uprawnienia gości — „" + repo.DisplayName + "”", Text: "Wybierz gościa i docelowy poziom dostępu. Aktualne uprawnienie jest widoczne w tabeli."}
 		known := make(map[string]RealmGrantRecipient, len(recipients))
 		for _, recipient := range recipients {
 			known[recipient.RealmID] = recipient
-			request.Recipients = append(request.Recipients, platform.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias})
+			request.Recipients = append(request.Recipients, platform.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias, Access: recipient.Access, State: recipient.State})
 		}
 		choice, err := c.cfg.RealmGrantBrowser.ShowRealmGrants(ctx, request)
 		if err != nil || choice.Action == platform.RealmGrantDialogClose {
@@ -1082,6 +1119,283 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 		}
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Dostęp został zaktualizowany", Body: repo.DisplayName + " — " + label, Urgency: platform.UrgencyNormal})
 	}()
+}
+
+func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repoID string) {
+	key := "public-shares." + serverID + "." + repoID
+	if serverID == "" || repoID == "" || c.cfg.PublicShares == nil || c.cfg.PublicShareBrowser == nil || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		for ctx.Err() == nil {
+			vm := c.cfg.ViewModel()
+			repo, ok := managedPublicShareRepository(vm, serverID, repoID)
+			if !ok || !vm.CanManagePublicShares() {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienia publiczne są niedostępne", Body: "Kanałami może zarządzać właściciel repozytorium na kliencie z pełną obsługą udostępnień.", Urgency: platform.UrgencyCritical})
+				return
+			}
+			shares, err := c.cfg.PublicShares.ListPublicShares(ctx, serverID, repoID)
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać udostępnień", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+			request := platform.PublicShareDialogRequest{Title: "Udostępnienia publiczne — „" + repo.DisplayName + "”", Text: "Kanał otwarty może być chroniony hasłem; kanał zamknięty wysyła osobne tokeny wskazanym odbiorcom."}
+			known := make(map[string]PublicShareSummary, len(shares))
+			for _, share := range shares {
+				known[share.ChannelID] = share
+				password := "brak"
+				if share.PasswordProtected {
+					password = "ustawione"
+				}
+				revision := "HEAD"
+				if share.DoNotFollow != nil {
+					revision = "r" + strconv.FormatInt(*share.DoNotFollow, 10)
+				}
+				recipients := "kanał otwarty"
+				if len(share.Recipients) > 0 {
+					recipients = strings.Join(share.Recipients, ", ")
+				}
+				request.Shares = append(request.Shares, platform.PublicShareSummary{ChannelID: share.ChannelID, Address: share.Alias + "/" + share.Slug, State: publicShareStateLabel(share.State), SourceRoot: share.SourceRoot, Recipients: recipients, Password: password, Revision: revision})
+			}
+			choice, err := c.cfg.PublicShareBrowser.ShowPublicShares(ctx, request)
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć udostępnień", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+			if choice.Action == platform.PublicShareDialogClose {
+				return
+			}
+			var current *PublicShareSummary
+			if choice.Action != platform.PublicShareDialogCreate {
+				share, exists := known[choice.ChannelID]
+				if !exists {
+					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nieprawidłowe udostępnienie", Body: "Wybrany kanał nie pochodzi z aktualnej listy.", Urgency: platform.UrgencyCritical})
+					return
+				}
+				current = &share
+			}
+			switch choice.Action {
+			case platform.PublicShareDialogCreate, platform.PublicShareDialogEdit:
+				if current != nil && current.State != "active" {
+					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Kanał nie jest aktywny", Text: "Cofniętego kanału nie można edytować. Utwórz nowe udostępnienie pod nowym adresem."})
+					continue
+				}
+				declaration, accepted := c.collectPublicShareDeclaration(ctx, repo, current)
+				if !accepted {
+					continue
+				}
+				if current == nil {
+					err = c.cfg.PublicShares.CreatePublicShare(ctx, serverID, declaration)
+				} else {
+					err = c.cfg.PublicShares.UpdatePublicShare(ctx, serverID, current.ChannelID, declaration)
+				}
+				zeroBytes(declaration.Password)
+			case platform.PublicShareDialogRevoke:
+				if current.State != "active" {
+					continue
+				}
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Cofnij udostępnienie", Text: "Adres przestanie wydawać pliki, ale pozostanie zarezerwowany i widoczny w historii.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
+				if confirmErr != nil || !confirmed {
+					continue
+				}
+				err = c.cfg.PublicShares.RevokePublicShare(ctx, serverID, repoID, current.ChannelID)
+			case platform.PublicShareDialogDelete:
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Usuń udostępnienie", Text: "Polityka kanału zostanie usunięta, a jego adres pozostanie trwale zarezerwowany jako tombstone.", ConfirmText: "Usuń", CancelText: "Anuluj"})
+				if confirmErr != nil || !confirmed {
+					continue
+				}
+				err = c.cfg.PublicShares.DeletePublicShare(ctx, serverID, repoID, current.ChannelID)
+			default:
+				return
+			}
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zmienić udostępnienia", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				continue
+			}
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienie zostało zaktualizowane", Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
+		}
+	}()
+}
+
+func managedPublicShareRepository(vm app.ViewModel, serverID, repoID string) (app.RepoViewModel, bool) {
+	for _, server := range vm.Servers {
+		if server.ID != serverID || !server.CanOfferRepositoryCreation() {
+			continue
+		}
+		for _, repo := range server.Repos {
+			if repo.ID == repoID && server.Owns(repo) {
+				return repo, true
+			}
+		}
+	}
+	return app.RepoViewModel{}, false
+}
+
+func publicShareStateLabel(state string) string {
+	switch state {
+	case "active":
+		return "aktywne"
+	case "revoked":
+		return "cofnięte"
+	default:
+		return state
+	}
+}
+
+func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app.RepoViewModel, current *PublicShareSummary) (PublicShareDeclaration, bool) {
+	if !repo.Attached || !filepath.IsAbs(repo.LocalPath) {
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Najpierw połącz repozytorium", Text: "Utworzenie lub edycja udostępnienia wymaga lokalnej kopii roboczej, z której można wybrać folder źródłowy."})
+		return PublicShareDeclaration{}, false
+	}
+	initialDir := repo.LocalPath
+	if current != nil {
+		initialDir = filepath.Join(repo.LocalPath, filepath.FromSlash(current.SourceRoot))
+	}
+	picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz folder udostępnienia", InitialDir: initialDir})
+	if err != nil || picked.Cancelled {
+		return PublicShareDeclaration{}, false
+	}
+	objects, sourceRoot, err := publicShareObjects(repo.LocalPath, picked.Path, current)
+	if err != nil {
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie można udostępnić folderu", Text: err.Error()})
+		return PublicShareDeclaration{}, false
+	}
+	declaration := PublicShareDeclaration{RepoID: repo.ID, SourceRoot: sourceRoot, Objects: objects}
+	if current == nil {
+		slug, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Adres udostępnienia", Text: "Wpisz końcówkę publicznego adresu: 3–64 małe litery, cyfry lub pojedyncze myślniki."})
+		if promptErr != nil || slug.Cancelled || strings.TrimSpace(slug.Value) == "" {
+			return PublicShareDeclaration{}, false
+		}
+		declaration.Slug = strings.ToLower(strings.TrimSpace(slug.Value))
+	} else {
+		declaration.Slug = current.Slug
+	}
+	recipientDefault := ""
+	if current != nil {
+		recipientDefault = strings.Join(current.Recipients, ", ")
+	}
+	recipients, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Odbiorcy", Text: "Opcjonalne adresy e-mail oddziel przecinkiem lub średnikiem. Puste pole tworzy kanał otwarty.", Placeholder: recipientDefault})
+	if promptErr != nil || recipients.Cancelled {
+		return PublicShareDeclaration{}, false
+	}
+	declaration.Recipients = splitRecipients(recipients.Value)
+	if len(declaration.Recipients) == 0 {
+		if current != nil && current.PasswordProtected {
+			keep, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Hasło udostępnienia", Text: "Czy zachować obecne hasło? Wybierz Nie, aby je zmienić albo usunąć.", ConfirmText: "Zachowaj", CancelText: "Zmień lub usuń"})
+			if confirmErr != nil {
+				return PublicShareDeclaration{}, false
+			}
+			declaration.KeepPassword = keep
+		}
+		if !declaration.KeepPassword {
+			password, passwordErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Hasło udostępnienia", Text: "Opcjonalne wspólne hasło kanału otwartego. Pozostaw puste, aby nie wymagać hasła.", Secret: true})
+			if passwordErr != nil || password.Cancelled {
+				return PublicShareDeclaration{}, false
+			}
+			declaration.Password = []byte(password.Value)
+		}
+	}
+	revisionDefault := ""
+	if current != nil && current.DoNotFollow != nil {
+		revisionDefault = strconv.FormatInt(*current.DoNotFollow, 10)
+	}
+	revision, revisionErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Wersja plików", Text: "Puste pole śledzi HEAD. Wpisz numer rewizji, aby zamrozić udostępnienie.", Placeholder: revisionDefault})
+	if revisionErr != nil || revision.Cancelled {
+		zeroBytes(declaration.Password)
+		return PublicShareDeclaration{}, false
+	}
+	if value := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(revision.Value), "r")); value != "" {
+		parsed, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil || parsed < 1 {
+			zeroBytes(declaration.Password)
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nieprawidłowa rewizja", Text: "Podaj dodatni numer rewizji albo pozostaw pole puste."})
+			return PublicShareDeclaration{}, false
+		}
+		declaration.DoNotFollow = &parsed
+	}
+	return declaration, true
+}
+
+func publicShareObjects(repoRoot, selected string, current *PublicShareSummary) ([]PublicShareObject, string, error) {
+	repoRoot = filepath.Clean(repoRoot)
+	selected = filepath.Clean(selected)
+	relRoot, err := filepath.Rel(repoRoot, selected)
+	if err != nil || relRoot == "." || relRoot == ".." || strings.HasPrefix(relRoot, ".."+string(filepath.Separator)) || filepath.IsAbs(relRoot) {
+		return nil, "", errors.New("wybierz niepusty podfolder wewnątrz kopii roboczej")
+	}
+	info, err := os.Stat(selected)
+	if err != nil || !info.IsDir() {
+		return nil, "", errors.New("wybrany folder nie istnieje")
+	}
+	knownIDs := map[string]string{}
+	if current != nil {
+		for _, object := range current.Objects {
+			knownIDs[object.RepoPath] = object.PublicID
+		}
+	}
+	objects := make([]PublicShareObject, 0)
+	err = filepath.WalkDir(selected, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() && entry.Name() == ".svn" {
+			return filepath.SkipDir
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("łącza symboliczne nie mogą należeć do udostępnienia: %s", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		repoPath, relErr := filepath.Rel(repoRoot, path)
+		if relErr != nil {
+			return relErr
+		}
+		displayName, relErr := filepath.Rel(selected, path)
+		if relErr != nil {
+			return relErr
+		}
+		repoPath, displayName = filepath.ToSlash(repoPath), filepath.ToSlash(displayName)
+		objects = append(objects, PublicShareObject{PublicID: knownIDs[repoPath], RepoPath: repoPath, DisplayName: displayName})
+		if len(objects) > 4096 {
+			return errors.New("folder zawiera więcej niż 4096 plików")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if len(objects) == 0 {
+		return nil, "", errors.New("wybrany folder nie zawiera plików")
+	}
+	return objects, filepath.ToSlash(relRoot), nil
+}
+
+func splitRecipients(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ';' || r == '\n' || r == '\r' })
+	result := make([]string, 0, len(fields))
+	seen := map[string]bool{}
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		key := strings.ToLower(field)
+		if field != "" && !seen[key] {
+			seen[key] = true
+			result = append(result, field)
+		}
+	}
+	return result
+}
+
+func zeroBytes(value []byte) {
+	for i := range value {
+		value[i] = 0
+	}
 }
 
 func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID string) {

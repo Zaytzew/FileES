@@ -31,6 +31,7 @@ type Server struct {
 	activation   ActivationService
 	realmAlias   RealmAliasService
 	realmGrants  RealmGrantService
+	publicShares PublicShareService
 	ownerLabels  OwnerLabelResolver
 	lifecycle    RepositoryLifecycleService
 	mobilePair   MobilePairingService
@@ -60,10 +61,18 @@ type RealmAliasService interface {
 }
 
 type RealmGrantService interface {
-	ListRecipients(context.Context, string) ([]contract.RealmGrantRecipient, error)
+	ListRecipients(context.Context, string, string) ([]contract.RealmGrantRecipient, error)
 	SetVisibility(context.Context, string, string) (string, error)
 	Grant(context.Context, string, string, string, string) (contract.RealmGrantResult, error)
 	Revoke(context.Context, string, string, string) (contract.RealmGrantResult, error)
+}
+
+type PublicShareService interface {
+	ListPublicShares(context.Context, string, string) ([]contract.PublicShareSummary, error)
+	CreatePublicShare(context.Context, string, contract.PublicShareDeclaration) (contract.PublicShareResult, error)
+	UpdatePublicShare(context.Context, string, string, contract.PublicShareDeclaration, bool) (contract.PublicShareResult, error)
+	RevokePublicShare(context.Context, string, string) (contract.PublicShareResult, error)
+	DeletePublicShare(context.Context, string, string) (contract.PublicShareResult, error)
 }
 
 // OwnerLabelResolver converts opaque SVN client IDs to server-owned display
@@ -144,6 +153,9 @@ func (s *Server) capabilities() []string {
 	caps := append([]string(nil), contract.AllCapabilities...)
 	if s.realmGrantService() != nil {
 		caps = append(caps, contract.CapRealmGrantRecipients, contract.CapRealmSetVisibility, contract.CapRepoGrantAccess, contract.CapRepoRevokeAccess)
+	}
+	if s.publicShareService() != nil {
+		caps = append(caps, contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
 	}
 	if s.systemLifecycleService() != nil {
 		caps = append(caps, contract.CapSystemRestart, contract.CapSystemShutdown)
@@ -245,6 +257,18 @@ func (s *Server) realmGrantService() RealmGrantService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.realmGrants
+}
+
+func (s *Server) SetPublicShareService(service PublicShareService) {
+	s.mu.Lock()
+	s.publicShares = service
+	s.mu.Unlock()
+}
+
+func (s *Server) publicShareService() PublicShareService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.publicShares
 }
 
 func (s *Server) SetOwnerLabelResolver(resolver OwnerLabelResolver) {

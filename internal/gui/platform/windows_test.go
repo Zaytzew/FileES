@@ -754,7 +754,7 @@ func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
 			ID: "biuro", Name: "Biuro l'Atelier", Address: "svn://example", Realm: "strefa", ClientID: "c1",
 			CanSetRealmVisibility: true, CanAddFolder: true,
 			Folders: []SettingsFolder{
-				{ID: "repo-1", Name: "Rysunki", LocalPath: `C:\wc\repo-1`, State: "aktywny", Access: "rw", CanManageGrants: true, CanDetach: true, CanDelete: true, CanLoadDump: true},
+				{ID: "repo-1", Name: "Rysunki", LocalPath: `C:\wc\repo-1`, State: "aktywny", Access: "rw", CanManageGrants: true, CanManagePublicShares: true, CanDetach: true, CanDelete: true, CanLoadDump: true},
 				{ID: "repo-2", Name: "Zdjęcia", LocalPath: `C:\wc\repo-2`, State: "wstrzymany", Access: "r"},
 			},
 		}, {ID: "pusty", Name: "Bez folderów", Address: "svn://empty", Realm: "strefa", ClientID: "c2"}},
@@ -775,6 +775,11 @@ func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
 		{"realm_grants", func(t *testing.T, b *WindowsBackend) {
 			if _, err := b.ShowRealmGrants(context.Background(), RealmGrantDialogRequest{Title: "Dostęp stref", Text: "Wybierz", Recipients: []RealmGrantRecipient{{RealmID: "r1", Alias: "Zespół l'A"}}}); err != nil {
 				t.Fatalf("ShowRealmGrants: %v", err)
+			}
+		}},
+		{"public_shares", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.ShowPublicShares(context.Background(), PublicShareDialogRequest{Title: "Udostępnienia", Text: "Kanały", Shares: []PublicShareSummary{{ChannelID: "c1", Address: "acme/wydanie", State: "aktywne", SourceRoot: "public", Recipients: "kanał otwarty", Password: "brak", Revision: "HEAD"}}}); err != nil {
+				t.Fatalf("ShowPublicShares: %v", err)
 			}
 		}},
 		{"realm_visibility", func(t *testing.T, b *WindowsBackend) {
@@ -833,7 +838,16 @@ func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
 			runner := &fakeWindowsRunner{}
 			backend := newTestWindowsBackend(runner, time.Now)
 			test.call(t, backend)
-			assertPowerShellParses(t, test.name, capturedScript(t, runner))
+			script := capturedScript(t, runner)
+			assertPowerShellParses(t, test.name, script)
+			if test.name != "toast" {
+				if !strings.Contains(script, "$f.TopMost=$true") && !strings.Contains(script, "$owner.TopMost=$true") {
+					t.Fatal("modal script has no persistent TopMost window or owner")
+				}
+				if strings.Contains(script, "$f.TopMost=$false") || strings.Contains(script, "$owner.Hide()") {
+					t.Fatal("modal script drops its foreground anchor before the dialog closes")
+				}
+			}
 		})
 	}
 }

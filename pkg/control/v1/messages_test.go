@@ -326,3 +326,22 @@ func TestPublicShareTicketRejectsNonCanonicalRepoIDAndUnboundedPassword(t *testi
 		t.Fatal("unbounded Argon2id verifier was accepted")
 	}
 }
+
+func TestPublicShareListAndPasswordPreservationContracts(t *testing.T) {
+	repoID, channelID := uuid.NewString(), uuid.NewString()
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketListPublicShares, "client-a", ListPublicSharesPayload{RepoID: repoID}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	declaration := PublicShareDeclaration{RepoID: repoID, SourceRoot: "wydanie", Slug: "przetarg-2026", Objects: []PublicShareObject{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt.pdf"}}}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketUpdatePublicShare, "client-a", UpdatePublicSharePayload{ChannelID: channelID, KeepPassword: true, PublicShareDeclaration: declaration}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	declaration.Recipients = []string{"a@example.com"}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketUpdatePublicShare, "client-a", UpdatePublicSharePayload{ChannelID: channelID, KeepPassword: true, PublicShareDeclaration: declaration}, time.Now()); err == nil {
+		t.Fatal("password preservation with recipient tokens was accepted")
+	}
+	result := ListPublicSharesResult{Shares: []PublicShareSummary{{ChannelID: channelID, RepoID: repoID, Alias: "atmprojekt", Slug: "przetarg-2026", State: "active", SourceRoot: "wydanie", PasswordProtected: true, Objects: declaration.Objects, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}}}
+	if _, err := NewSuccessResult(uuid.NewString(), uuid.NewString(), TicketListPublicShares, result, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}

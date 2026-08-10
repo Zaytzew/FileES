@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	control "filees/pkg/control/v1"
 	"filees/public-shares/channel"
@@ -19,6 +20,32 @@ type PublicShareTokenDeliverer interface {
 type ChannelPublicShareService struct {
 	Channels  *channel.Store
 	Deliverer PublicShareTokenDeliverer
+}
+
+func (s ChannelPublicShareService) List(_ context.Context, ownerRealm, repoID string) ([]control.PublicShareSummary, error) {
+	if s.Channels == nil {
+		return nil, errors.New("public share channel store is unavailable")
+	}
+	records, err := s.Channels.ListOwned(ownerRealm, repoID)
+	if err != nil {
+		return nil, classifyPublicShareError(err)
+	}
+	result := make([]control.PublicShareSummary, 0, len(records))
+	for _, record := range records {
+		if record.Manifest == nil {
+			return nil, errors.New("public share channel record is incomplete")
+		}
+		objects := make([]control.PublicShareObject, 0, len(record.Manifest.Objects))
+		for _, object := range record.Manifest.Objects {
+			objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+		}
+		result = append(result, control.PublicShareSummary{
+			ChannelID: record.ChannelID, RepoID: record.RepoID, Alias: record.Alias, Slug: record.Slug, State: record.State,
+			SourceRoot: record.Manifest.SourceRoot, Recipients: append([]string(nil), record.Manifest.Recipients...), PasswordProtected: record.Manifest.Password != "",
+			DoNotFollow: record.Manifest.DoNotFollow, Objects: objects, UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	return result, nil
 }
 
 func (s ChannelPublicShareService) Create(ctx context.Context, operationID, ownerRealm string, declaration control.PublicShareDeclaration) (control.PublicShareResult, error) {
@@ -44,7 +71,7 @@ func (s ChannelPublicShareService) Create(ctx context.Context, operationID, owne
 	return publicShareResult(record, len(deliveries)), nil
 }
 
-func (s ChannelPublicShareService) Update(ctx context.Context, operationID, ownerRealm, channelID string, declaration control.PublicShareDeclaration) (control.PublicShareResult, error) {
+func (s ChannelPublicShareService) Update(ctx context.Context, operationID, ownerRealm, channelID string, declaration control.PublicShareDeclaration, keepPassword bool) (control.PublicShareResult, error) {
 	if s.Channels == nil {
 		return control.PublicShareResult{}, errors.New("public share channel store is unavailable")
 	}
@@ -52,7 +79,14 @@ func (s ChannelPublicShareService) Update(ctx context.Context, operationID, owne
 	if err := share.Validate(); err != nil {
 		return control.PublicShareResult{}, fmt.Errorf("%w: %v", ErrPublicShareRejected, err)
 	}
-	record, deliveries, err := s.Channels.Update(operationID, ownerRealm, channelID, share)
+	var record channel.Record
+	var deliveries []channel.Delivery
+	var err error
+	if keepPassword {
+		record, deliveries, err = s.Channels.UpdatePreservingPassword(operationID, ownerRealm, channelID, share)
+	} else {
+		record, deliveries, err = s.Channels.Update(operationID, ownerRealm, channelID, share)
+	}
 	if err != nil {
 		return control.PublicShareResult{}, classifyPublicShareError(err)
 	}

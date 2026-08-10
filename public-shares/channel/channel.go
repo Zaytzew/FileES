@@ -187,6 +187,18 @@ func (s *Store) Create(operationID, requesterRealm string, declaration manifest.
 // tombstone. Existing recipients retain their tokens, while newly added (or
 // re-added) addresses receive a fresh operation-bound epoch.
 func (s *Store) Update(operationID, requesterRealm, channelID string, declaration manifest.Share) (Record, []Delivery, error) {
+	return s.update(operationID, requesterRealm, channelID, declaration, false)
+}
+
+// UpdatePreservingPassword keeps the current verifier when an authenticated
+// desktop owner edits a password-protected open channel without entering the
+// plaintext password again. The verifier never needs to cross the control or
+// IPC boundary. It cannot be preserved while switching to recipient tokens.
+func (s *Store) UpdatePreservingPassword(operationID, requesterRealm, channelID string, declaration manifest.Share) (Record, []Delivery, error) {
+	return s.update(operationID, requesterRealm, channelID, declaration, true)
+}
+
+func (s *Store) update(operationID, requesterRealm, channelID string, declaration manifest.Share, preservePassword bool) (Record, []Delivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.validate(); err != nil {
@@ -207,6 +219,12 @@ func (s *Store) Update(operationID, requesterRealm, channelID string, declaratio
 	}
 	if declaration.OwnerRealm != requesterRealm || declaration.RepoID != record.Manifest.RepoID || declaration.Slug != record.Manifest.Slug {
 		return Record{}, nil, ErrRecordConflict
+	}
+	if preservePassword {
+		if len(declaration.Recipients) > 0 || declaration.Password != "" {
+			return Record{}, nil, ErrRecordConflict
+		}
+		declaration.Password = record.Manifest.Password
 	}
 	if err := declaration.Validate(); err != nil {
 		return Record{}, nil, err
@@ -231,6 +249,54 @@ func (s *Store) Update(operationID, requesterRealm, channelID string, declaratio
 		return Record{}, nil, err
 	}
 	return record, deliveries, nil
+}
+
+// ListOwned returns the non-deleted channels for one repository after checking
+// the authenticated realm still owns that active repository. Records are
+// newest-first and remain authoritative objects; callers must project only the
+// fields suitable for their own trust boundary.
+func (s *Store) ListOwned(requesterRealm, repoID string) ([]Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.validate(); err != nil {
+		return nil, err
+	}
+	if _, err := uuid.Parse(requesterRealm); err != nil {
+		return nil, ErrForbidden
+	}
+	if _, err := uuid.Parse(repoID); err != nil {
+		return nil, ErrNotFound
+	}
+	if err := s.Authority.OwnsActiveRepository(requesterRealm, repoID); err != nil {
+		return nil, ErrForbidden
+	}
+	entries, err := os.ReadDir(filepath.Join(s.Root, "channels"))
+	if errors.Is(err, os.ErrNotExist) {
+		return []Record{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Record, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		record, err := s.loadPath(filepath.Join(s.Root, "channels", entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		if record.OwnerRealm == requesterRealm && record.RepoID == repoID && record.State != StateDeleted {
+			result = append(result, record)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].UpdatedAt.Equal(result[j].UpdatedAt) {
+			return result[i].ChannelID < result[j].ChannelID
+		}
+		return result[i].UpdatedAt.After(result[j].UpdatedAt)
+	})
+	return result, nil
 }
 
 func (s *Store) Revoke(requesterRealm, channelID string) (Record, error) {

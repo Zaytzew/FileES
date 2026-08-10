@@ -209,6 +209,9 @@ func (vm ViewModel) CanClaimRealmAlias() bool {
 func (vm ViewModel) CanManageRealmGrants() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmGrantRecipients) && vm.HasCap(contract.CapRepoGrantAccess) && vm.HasCap(contract.CapRepoRevokeAccess)
 }
+func (vm ViewModel) CanManagePublicShares() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoPublicShareList) && vm.HasCap(contract.CapRepoPublicShareCreate) && vm.HasCap(contract.CapRepoPublicShareUpdate) && vm.HasCap(contract.CapRepoPublicShareRevoke) && vm.HasCap(contract.CapRepoPublicShareDelete)
+}
 func (vm ViewModel) CanSetRealmVisibility() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmSetVisibility)
 }

@@ -47,6 +47,15 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	if err != nil || again != revision {
 		t.Fatalf("idempotent publish=%d err=%v, want %d", again, err, revision)
 	}
+	realmPath := filepath.Join(config.ServiceWorkingCopy, "admin", "realms", grant.RealmID+".json")
+	var realm Realm
+	if err := readStrict(realmPath, RealmSchema, &realm); err != nil {
+		t.Fatal(err)
+	}
+	realm.Alias = "acme"
+	if err := atomicWriteJSON(realmPath, realm, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	second := testActivationGrant(t, time.Now().Add(time.Hour))
 	second.RealmID = grant.RealmID
 	if err := manager.Stage(second); err != nil {
@@ -58,6 +67,10 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	secondRevision, err := manager.Publish(context.Background(), second)
 	if err != nil || secondRevision <= revision {
 		t.Fatalf("second client in realm revision=%d err=%v, first=%d", secondRevision, err, revision)
+	}
+	secondView, err := clientview.Load(filepath.Join(config.ServiceWorkingCopy, "clients", second.ClientID, "view.json"))
+	if err != nil || secondView.RealmAlias != "acme" {
+		t.Fatalf("joined client realm alias=%q err=%v, want acme", secondView.RealmAlias, err)
 	}
 	if err := manager.RecordProof(grant.OperationID, grant.ClientID); err != nil {
 		t.Fatalf("active client was denied subsequent SVN entry: %v", err)

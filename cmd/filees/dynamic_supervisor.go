@@ -41,7 +41,7 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 	return updater.client.Checkout(ctx, updater.url, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string) error {
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
 	for _, repo := range repos {
@@ -96,6 +96,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		realmAlias := ""
 		if exists {
 			realmAlias = cached.RealmAlias
+		}
+		if projectRealmAlias != nil {
+			realmAlias = projectRealmAlias(serverID, realmID, realmAlias)
 		}
 		ipc.RegisterActivation(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired})
 		svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort})
@@ -157,7 +160,11 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		case update := <-updates:
 			currentViews[update.serverID] = update.view
 			ready, pendingRequired := repositoryReadiness(update.serverID, update.view, runtimes)
-			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: update.view.RealmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired})
+			realmAlias := update.view.RealmAlias
+			if projectRealmAlias != nil {
+				realmAlias = projectRealmAlias(update.serverID, update.view.RealmID, realmAlias)
+			}
+			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired})
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
 			}

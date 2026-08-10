@@ -26,6 +26,18 @@ which the set-id onboarding command intentionally cannot read. The normal
 command is `filees-admin ticket create user@example.com`: it uses
 `/etc/filees/server.json`, a 24-hour TTL and immediately sends the first,
 single-use activation invitation through the configured SMTP relay.
+To authorize another desktop installation to join an existing realm, bind the
+ticket server-side by immutable alias:
+
+```text
+doas -u _filees-state filees-admin ticket create user@example.com \
+  --join-realm-alias existing-alias --ttl 24h
+```
+
+The server resolves the alias before issuing the invitation and stores the
+approved realm ID in ticket policy. The client never supplies an existing
+realm ID. A ticket created without `--join-realm-alias` authorizes a new realm;
+revoke an incorrectly created unused ticket instead of trying to edit it.
 The generic installer deliberately does not create an `rc.d`/systemd service
 and does not modify `sshd_config`. On OpenBSD, the separate
 `openbsd/install-ssh.sh` step creates the two protocol accounts, installs the
@@ -100,3 +112,21 @@ read-only until acceptance and backup checks complete, so rollback remains a
 configuration change. Do not use a live move or allow writes to both roots.
 The full OpenBSD procedure is in the administrative recovery section of
 `manual-filees.html`.
+
+## OpenBSD upgrade boundary
+
+On an already integrated OpenBSD host, `install-server.sh` alone is not a safe
+complete upgrade. The generic installer writes ordinary `0755` modes, while
+`openbsd/install-ssh.sh` assigns the required set-id ownership and modes to the
+protocol entry binaries. Running only the generic script can therefore make
+onboarding or client entry lose access to `_filees-state` files.
+
+For a full bundle upgrade, run both installation stages, validate with
+`sshd -t`, and retain a recoverable copy of the previous binaries. For a
+targeted update of an ordinary short-lived binary such as `filees-worker`, an
+operator may instead install a temporary file as `root:wheel 0555` and rename
+it atomically over `/usr/local/libexec/filees/filees-worker`. FileES has no
+resident worker service to restart; the next authenticated operation execs the
+new image. Never overwrite `filees-bootstrap-entry`, `filees-entry`,
+`filees-client-entry`, mobile or recovery entries without restoring their exact
+OpenBSD ownership and set-id modes.

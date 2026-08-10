@@ -73,6 +73,60 @@ func (adapter repositoryCreateAdapter) CreationStatus(ctx context.Context, opera
 	return result.State, result.LastError, nil
 }
 
+type repositoryAttachClient interface {
+	RepoAttachIntent(context.Context, contract.RepoAttachIntentPayload) (*contract.RepoLifecycleResult, error)
+	RepoAttachApprove(context.Context, contract.RepoAttachApprovePayload) (*contract.RepoLifecycleResult, error)
+	RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryAttachAdapter struct{ client repositoryAttachClient }
+
+type repositoryLocateClient interface {
+	RepoLocate(context.Context, contract.RepoLocatePayload) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryLocateAdapter struct{ client repositoryLocateClient }
+
+func (adapter repositoryLocateAdapter) LocateRepository(ctx context.Context, serverID, repoID, existingLocalPath string) (string, error) {
+	result, err := adapter.client.RepoLocate(ctx, contract.RepoLocatePayload{ServerID: serverID, RepoID: repoID, ExistingLocalPath: existingLocalPath})
+	if err != nil {
+		return "", err
+	}
+	if result == nil || result.OperationID == "" {
+		return "", errors.New("daemon returned an empty repository locate operation")
+	}
+	return result.OperationID, nil
+}
+
+func (adapter repositoryAttachAdapter) AttachRepository(ctx context.Context, serverID, repoID, localPath string) (string, error) {
+	intent, err := adapter.client.RepoAttachIntent(ctx, contract.RepoAttachIntentPayload{ServerID: serverID, RepoID: repoID, LocalPath: localPath})
+	if err != nil {
+		return "", err
+	}
+	if intent == nil || intent.OperationID == "" {
+		return "", errors.New("daemon returned an empty repository attachment intent")
+	}
+	approved, err := adapter.client.RepoAttachApprove(ctx, contract.RepoAttachApprovePayload{OperationID: intent.OperationID, ServerID: serverID, RepoID: repoID})
+	if err != nil {
+		return "", err
+	}
+	if approved == nil || approved.OperationID != intent.OperationID {
+		return "", errors.New("daemon returned an invalid repository attachment approval")
+	}
+	return approved.OperationID, nil
+}
+
+func (adapter repositoryAttachAdapter) AttachmentStatus(ctx context.Context, operationID string) (state, lastError string, err error) {
+	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
+	if err != nil {
+		return "", "", err
+	}
+	if result == nil {
+		return "", "", errors.New("daemon returned an empty repository attachment operation")
+	}
+	return result.State, result.LastError, nil
+}
+
 type repositoryDetachClient interface {
 	RepoDetach(context.Context, string, string) (*contract.RepoLifecycleResult, error)
 	RepoDelete(context.Context, string, string) (*contract.RepoLifecycleResult, error)
@@ -497,6 +551,14 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(repositoryCreateClient); ok {
 		repositoryCreator = repositoryCreateAdapter{client: candidate}
 	}
+	var repositoryAttacher actions.RepositoryAttacher
+	if candidate, ok := deps.client.(repositoryAttachClient); ok {
+		repositoryAttacher = repositoryAttachAdapter{client: candidate}
+	}
+	var repositoryLocator actions.RepositoryLocator
+	if candidate, ok := deps.client.(repositoryLocateClient); ok {
+		repositoryLocator = repositoryLocateAdapter{client: candidate}
+	}
 	var repositoryDetacher actions.RepositoryDetacher
 	if candidate, ok := deps.client.(repositoryDetachClient); ok {
 		repositoryDetacher = repositoryDetachAdapter{client: candidate}
@@ -543,6 +605,8 @@ func run(parent context.Context, deps dependencies) error {
 		FolderPicker:         deps.platform,
 		Prompter:             deps.platform,
 		RepositoryCreator:    repositoryCreator,
+		RepositoryAttacher:   repositoryAttacher,
+		RepositoryLocator:    repositoryLocator,
 		RepositoryDetacher:   repositoryDetacher,
 		RepositoryDumpLoader: repositoryDumpLoader,
 		ServerDetacher:       serverDetacher,
@@ -560,6 +624,7 @@ func run(parent context.Context, deps dependencies) error {
 		RealmGrants:          realmGrants,
 		ReservationBrowser:   deps.platform,
 		SettingsBrowser:      deps.platform,
+		JournalBrowser:       deps.platform,
 		RealmGrantBrowser:    deps.platform,
 		ConsentPrompter:      deps.platform,
 		Reconnect:            guiApp.Reconnect,

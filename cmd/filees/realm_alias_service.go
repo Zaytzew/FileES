@@ -21,6 +21,18 @@ type realmAliasService struct {
 	provisioner *daemonProvisioner
 	mu          sync.Mutex
 	cache       map[string]ownerLabelCache
+	// confirmedAliases is a short-lived bridge for an older server projection:
+	// a successful claim is canonical confirmation, so an empty view from the
+	// next polling tick must not erase it while that server publishes its
+	// repaired view. Keys include the realm ID to avoid carrying an alias across
+	// a later detach/join on the same server profile.
+	projectionRealms map[string]string
+	confirmedAliases map[realmAliasProjectionKey]string
+}
+
+type realmAliasProjectionKey struct {
+	serverID string
+	realmID  string
 }
 
 type ownerLabelCache struct {
@@ -41,7 +53,45 @@ func (s *realmAliasService) Claim(ctx context.Context, serverID, alias string) (
 	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
 		return "", err
 	}
+	s.rememberConfirmedAlias(serverID, payload.Alias)
 	return payload.Alias, nil
+}
+
+func (s *realmAliasService) rememberConfirmedAlias(serverID, alias string) {
+	if alias == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	realmID := s.projectionRealms[serverID]
+	if realmID == "" {
+		return
+	}
+	if s.confirmedAliases == nil {
+		s.confirmedAliases = make(map[realmAliasProjectionKey]string)
+	}
+	s.confirmedAliases[realmAliasProjectionKey{serverID: serverID, realmID: realmID}] = alias
+}
+
+// ProjectAlias merges authoritative projection state with a successful claim
+// made by this daemon process. A non-empty projected value always wins and is
+// remembered; only an older empty projection receives the confirmed fallback.
+func (s *realmAliasService) ProjectAlias(serverID, realmID, projected string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.projectionRealms == nil {
+		s.projectionRealms = make(map[string]string)
+	}
+	s.projectionRealms[serverID] = realmID
+	key := realmAliasProjectionKey{serverID: serverID, realmID: realmID}
+	if projected != "" {
+		if s.confirmedAliases == nil {
+			s.confirmedAliases = make(map[realmAliasProjectionKey]string)
+		}
+		s.confirmedAliases[key] = projected
+		return projected
+	}
+	return s.confirmedAliases[key]
 }
 
 func (s *realmAliasService) Resolve(ctx context.Context, serverID string, ownerIDs []string) (map[string]string, error) {

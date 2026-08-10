@@ -50,16 +50,20 @@ const (
 )
 
 type Record struct {
-	OperationID       string `json:"operation_id"`
-	ServerID          string `json:"server_id"`
-	RepoID            string `json:"repo_id,omitempty"`
-	RepoURL           string `json:"repo_url,omitempty"`
-	Access            string `json:"access,omitempty"`
-	DisplayName       string `json:"display_name,omitempty"`
-	LocalPath         string `json:"local_path"`
-	PendingLocalPath  string `json:"pending_local_path,omitempty"`
-	DetachOperationID string `json:"detach_operation_id,omitempty"`
-	DeleteRepository  bool   `json:"delete_repository,omitempty"`
+	OperationID      string `json:"operation_id"`
+	ServerID         string `json:"server_id"`
+	RepoID           string `json:"repo_id,omitempty"`
+	RepoURL          string `json:"repo_url,omitempty"`
+	Access           string `json:"access,omitempty"`
+	DisplayName      string `json:"display_name,omitempty"`
+	LocalPath        string `json:"local_path"`
+	PendingLocalPath string `json:"pending_local_path,omitempty"`
+	// RelocationAdoptExisting distinguishes a user-selected moved WC from a
+	// normal relocation. The provisioner must validate and adopt this path;
+	// it must never checkout into or otherwise replace it.
+	RelocationAdoptExisting bool   `json:"relocation_adopt_existing,omitempty"`
+	DetachOperationID       string `json:"detach_operation_id,omitempty"`
+	DeleteRepository        bool   `json:"delete_repository,omitempty"`
 	// ReconcileOperationID is minted fresh by BeginReconcile and reused
 	// across daemon restarts so the orchestration's own staging (named
 	// after this ID, mirroring CreateFSFS's operationID convention) is
@@ -301,6 +305,14 @@ func (s *Store) MarkError(operationID string, cause error) (Record, error) {
 }
 
 func (s *Store) BeginRelocation(serverID, repoID, newLocalPath string) (Record, error) {
+	return s.beginRelocation(serverID, repoID, newLocalPath, false)
+}
+
+func (s *Store) BeginLocate(serverID, repoID, existingLocalPath string) (Record, error) {
+	return s.beginRelocation(serverID, repoID, existingLocalPath, true)
+}
+
+func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExisting bool) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	newLocalPath = filepath.Clean(newLocalPath)
@@ -315,7 +327,7 @@ func (s *Store) BeginRelocation(serverID, repoID, newLocalPath string) (Record, 
 		return Record{}, os.ErrNotExist
 	}
 	record := s.records[operationID]
-	if record.State == StateRelocating && record.PendingLocalPath == newLocalPath {
+	if record.State == StateRelocating && record.PendingLocalPath == newLocalPath && record.RelocationAdoptExisting == adoptExisting {
 		return record, nil
 	}
 	if record.State != StateAttached {
@@ -330,7 +342,7 @@ func (s *Store) BeginRelocation(serverID, repoID, newLocalPath string) (Record, 
 		}
 	}
 	before := record
-	record.State, record.PendingLocalPath, record.LastError, record.UpdatedAt = StateRelocating, newLocalPath, "", s.now().UTC()
+	record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.LastError, record.UpdatedAt = StateRelocating, newLocalPath, adoptExisting, "", s.now().UTC()
 	if err := validate(record); err != nil {
 		return Record{}, err
 	}
@@ -347,7 +359,7 @@ func (s *Store) CompleteRelocation(operationID string) (Record, error) {
 		if record.State != StateRelocating || record.PendingLocalPath == "" {
 			return errors.New("repository relocation is not in progress")
 		}
-		record.LocalPath, record.PendingLocalPath, record.State, record.LastError = record.PendingLocalPath, "", StateAttached, ""
+		record.LocalPath, record.PendingLocalPath, record.RelocationAdoptExisting, record.State, record.LastError = record.PendingLocalPath, "", false, StateAttached, ""
 		return nil
 	})
 }
@@ -357,7 +369,7 @@ func (s *Store) FailRelocation(operationID string, cause error) (Record, error) 
 		if record.State != StateRelocating || cause == nil || strings.TrimSpace(cause.Error()) == "" {
 			return errors.New("active relocation and failure are required")
 		}
-		record.State, record.PendingLocalPath, record.LastError = StateAttached, "", cause.Error()
+		record.State, record.PendingLocalPath, record.RelocationAdoptExisting, record.LastError = StateAttached, "", false, cause.Error()
 		return nil
 	})
 }
@@ -586,7 +598,7 @@ func validate(r Record) error {
 		if !filepath.IsAbs(r.PendingLocalPath) || r.PendingLocalPath == string(filepath.Separator) || pathsOverlap(r.LocalPath, r.PendingLocalPath) {
 			return errors.New("repository relocation target is invalid")
 		}
-	} else if r.PendingLocalPath != "" {
+	} else if r.PendingLocalPath != "" || r.RelocationAdoptExisting {
 		return errors.New("repository relocation target exists outside relocation")
 	}
 	if r.State == StateReconciling {

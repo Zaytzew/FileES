@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -510,6 +511,18 @@ func TestWindowsConcurrentNotificationsSameGroupSendOnce(t *testing.T) {
 
 func contains(s, substr string) bool { return strings.Contains(s, substr) }
 
+func TestWindowsJournalScriptUsesNativeErrorEmphasis(t *testing.T) {
+	script, err := buildJournalDialogScript(JournalDialogRequest{Rows: []JournalDialogRow{{Summary: "⚠ BŁĄD", Emphasized: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wanted := range []string{"DataGridView", "[Drawing.FontStyle]::Bold", "[Drawing.Color]::Firebrick", "Cells['Emphasized']"} {
+		if !strings.Contains(script, wanted) {
+			t.Errorf("journal script missing %q", wanted)
+		}
+	}
+}
+
 // TestWindowsSettingsDialogResolvesAnswers pins the reply contract between
 // buildSettingsDialogScript's act() helper and ShowSettings' parser. The
 // recovery cases are the ones that regressed: a recovery row's ServerID is
@@ -532,6 +545,8 @@ func TestWindowsSettingsDialogResolvesAnswers(t *testing.T) {
 		{"manage grants", "manage_grants|biuro|repo-1\r\n", SettingsDialogResult{Action: SettingsDialogManageGrants, ServerID: "biuro", RepoID: "repo-1"}},
 		{"realm visibility", "realm_visibility|biuro|\r\n", SettingsDialogResult{Action: SettingsDialogRealmVisibility, ServerID: "biuro"}},
 		{"add folder without a selected repo", "add|biuro|\r\n", SettingsDialogResult{Action: SettingsDialogAddFolder, ServerID: "biuro"}},
+		{"connect multiple repositories", "connect|biuro|repo-1,repo-2\r\n", SettingsDialogResult{Action: SettingsDialogConnectRepos, ServerID: "biuro", RepoIDs: []string{"repo-1", "repo-2"}}},
+		{"locate moved working copy", "locate|biuro|repo-1\r\n", SettingsDialogResult{Action: SettingsDialogLocateFolder, ServerID: "biuro", RepoID: "repo-1"}},
 		{"deactivate client", "deactivate|biuro|\r\n", SettingsDialogResult{Action: SettingsDialogDetachServer, ServerID: "biuro"}},
 		{"remove realm", "remove_realm|biuro|\r\n", SettingsDialogResult{Action: SettingsDialogRemoveRealm, ServerID: "biuro"}},
 		{"closed without choosing", "close\r\n", SettingsDialogResult{Action: SettingsDialogClose}},
@@ -547,7 +562,7 @@ func TestWindowsSettingsDialogResolvesAnswers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ShowSettings: %v", err)
 			}
-			if got != test.want {
+			if !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("ShowSettings(%q) = %#v, want %#v", test.answer, got, test.want)
 			}
 		})
@@ -602,8 +617,8 @@ func TestWindowsSettingsDialogGatesEveryButtonPerRow(t *testing.T) {
 		Servers: []SettingsServer{{
 			ID: "biuro", Name: "Biuro", CanSetRealmVisibility: true, CanAddFolder: true,
 			Folders: []SettingsFolder{
-				{ID: "repo-1", Name: "Rysunki", CanManageGrants: true, CanDetach: true, CanDelete: true, CanLoadDump: true},
-				{ID: "repo-2", Name: "Obce"},
+				{ID: "repo-1", Name: "Rysunki", CanManageGrants: true, CanLocate: true, CanDetach: true, CanDelete: true, CanLoadDump: true},
+				{ID: "repo-2", Name: "Obce", CanConnect: true},
 			},
 		}, {ID: "readonly", Name: "Audyt"}},
 		Recoveries: []SettingsRecovery{{OperationID: "op-1", ServerName: "Biuro", Status: "gotowe", CanDownload: true}},
@@ -619,14 +634,22 @@ func TestWindowsSettingsDialogGatesEveryButtonPerRow(t *testing.T) {
 			t.Errorf("button %q is not registered under capability %q", button.action, button.capability)
 		}
 	}
-	// DataGridView raises SelectionChanged while CurrentRow still points at
-	// the row being left, so gating off it lags exactly one row behind --
-	// the defect this test replaced. CurrentCellChanged sees the new row.
+	// CurrentCellChanged gates single-row actions. SelectionChanged is also
+	// required so Connect follows the connectable subset of a mixed selection.
 	if !contains(script, "$g.Add_CurrentCellChanged({updateButtons})") {
 		t.Error("button gating is not wired to CurrentCellChanged")
 	}
-	if contains(script, "Add_SelectionChanged") {
-		t.Error("button gating must not use SelectionChanged: it fires before CurrentRow moves")
+	if !contains(script, "$g.Add_SelectionChanged({updateButtons})") {
+		t.Error("multi-row Connect gating is not wired to SelectionChanged")
+	}
+	if !contains(script, "$g.MultiSelect=$true") || !contains(script, "$ids-join ','") {
+		t.Error("settings dialog does not return all selected repositories for Connect")
+	}
+	if !contains(script, "$g.SelectedRows|Where-Object{[string]$_.Cells['CanConnect'].Value-eq'True'}|Sort-Object Index") {
+		t.Error("Connect does not exclude already-attached rows from a mixed selection")
+	}
+	if !contains(script, "$g.SelectedRows|Where-Object{[string]$_.Cells[$k].Value-eq'True'}") {
+		t.Error("Connect button is not enabled for the connectable subset of a mixed selection")
 	}
 
 	rows := settingsPayload(t, script).Rows
@@ -634,12 +657,12 @@ func TestWindowsSettingsDialogGatesEveryButtonPerRow(t *testing.T) {
 		folder string
 		caps   map[string]bool
 	}{
-		{"Rysunki", map[string]bool{"CanVisibility": true, "CanGrants": true, "CanAdd": true, "CanDetach": true, "CanDelete": true, "CanLoadDump": true, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
-		{"Obce", map[string]bool{"CanVisibility": true, "CanGrants": false, "CanAdd": true, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		{"Rysunki", map[string]bool{"CanVisibility": true, "CanGrants": true, "CanAdd": true, "CanConnect": false, "CanLocate": true, "CanDetach": true, "CanDelete": true, "CanLoadDump": true, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		{"Obce", map[string]bool{"CanVisibility": true, "CanGrants": false, "CanAdd": true, "CanConnect": true, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
 		// A server that offers neither realm visibility nor folder creation
 		// (e.g. a read-only client role) keeps only the two lifecycle actions.
-		{"Brak folderów", map[string]bool{"CanVisibility": false, "CanGrants": false, "CanAdd": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
-		{"gotowe", map[string]bool{"CanVisibility": false, "CanGrants": false, "CanAdd": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": false, "CanRemoveRealm": false, "CanDownloadRecovery": true}},
+		{"Brak folderów", map[string]bool{"CanVisibility": false, "CanGrants": false, "CanAdd": false, "CanConnect": false, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		{"gotowe", map[string]bool{"CanVisibility": false, "CanGrants": false, "CanAdd": false, "CanConnect": false, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": false, "CanRemoveRealm": false, "CanDownloadRecovery": true}},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("rows = %d, want %d", len(rows), len(want))
@@ -762,6 +785,11 @@ func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
 		{"reservations", func(t *testing.T, b *WindowsBackend) {
 			if _, err := b.ShowReservations(context.Background(), ReservationDialogRequest{Title: "Rezerwacje", Text: "Aktywne", Rows: []ReservationDialogRow{{ID: "res-1", Server: "Biuro", WorkingCopy: "Rysunki", Path: `rysunki\a.dwg`, Owner: "acme", CreatedAt: "2026-08-03", Action: "zwolnij"}}}); err != nil {
 				t.Fatalf("ShowReservations: %v", err)
+			}
+		}},
+		{"journal", func(t *testing.T, b *WindowsBackend) {
+			if err := b.ShowJournal(context.Background(), JournalDialogRequest{Title: "Dziennik FileES", Text: "Aktywność i błędy", Rows: []JournalDialogRow{{Timestamp: "2026-08-10 12:00:00", Repository: "Zdjęcia", Summary: "⚠ BŁĄD · odmowa", Details: "Wymagane działanie", Severity: "ERROR", Emphasized: true}}}); err != nil {
+				t.Fatalf("ShowJournal: %v", err)
 			}
 		}},
 		{"prompt", func(t *testing.T, b *WindowsBackend) {

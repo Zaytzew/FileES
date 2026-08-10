@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"filees/internal/gui/app"
+	"filees/internal/gui/journal"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 	"filees/pkg/localpin"
@@ -69,6 +70,15 @@ type RepositoryCreator interface {
 	// "attached", "error", ...); lastError is populated only once state
 	// reaches "error".
 	CreationStatus(ctx context.Context, operationID string) (state, lastError string, err error)
+}
+
+type RepositoryAttacher interface {
+	AttachRepository(ctx context.Context, serverID, repoID, localPath string) (operationID string, err error)
+	AttachmentStatus(ctx context.Context, operationID string) (state, lastError string, err error)
+}
+
+type RepositoryLocator interface {
+	LocateRepository(ctx context.Context, serverID, repoID, existingLocalPath string) (operationID string, err error)
 }
 
 type RepositoryDetacher interface {
@@ -169,6 +179,8 @@ type Config struct {
 	FolderPicker         platform.FolderPicker
 	Prompter             platform.Prompter
 	RepositoryCreator    RepositoryCreator
+	RepositoryAttacher   RepositoryAttacher
+	RepositoryLocator    RepositoryLocator
 	RepositoryDetacher   RepositoryDetacher
 	RepositoryDumpLoader RepositoryDumpLoader
 	ServerDetacher       ServerDetacher
@@ -189,6 +201,7 @@ type Config struct {
 	RealmGrants        RealmGrantManager
 	ReservationBrowser platform.ReservationBrowser
 	SettingsBrowser    platform.SettingsBrowser
+	JournalBrowser     platform.JournalBrowser
 	RealmGrantBrowser  platform.RealmGrantBrowser
 	ConsentPrompter    platform.ConsentPrompter
 	Reconnect          func() // nil → reconnect intent is a no-op
@@ -218,12 +231,19 @@ type Controller struct {
 
 	operationsMu sync.Mutex
 	operations   map[string]struct{}
+	pendingMu    sync.Mutex
+	pending      map[string]pendingAttachment
 	tasks        sync.WaitGroup
+}
+
+type pendingAttachment struct {
+	localPath   string
+	operationID string
 }
 
 // New creates a Controller with the given configuration.
 func New(cfg Config) *Controller {
-	return &Controller{cfg: cfg, operations: make(map[string]struct{})}
+	return &Controller{cfg: cfg, operations: make(map[string]struct{}), pending: make(map[string]pendingAttachment)}
 }
 
 // Run processes intents until ctx is cancelled or the intents channel closes.
@@ -262,6 +282,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startServerInfo(ctx, intent.ServerID)
 	case tray.IntentSettings:
 		c.startSettings(ctx, intent.ServerID)
+	case tray.IntentJournal:
+		c.startJournal(ctx)
 	case tray.IntentRecoveries:
 		c.startRecoverySettings(ctx)
 	case tray.IntentReservations:
@@ -287,11 +309,52 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	}
 }
 
+func (c *Controller) startJournal(ctx context.Context) {
+	vm := c.cfg.ViewModel()
+	if c.cfg.JournalBrowser == nil || (!vm.CanListActivity() && !vm.CanListErrors()) || !c.beginOperation("journal") {
+		return
+	}
+	entries := journal.Build(vm)
+	rows := make([]platform.JournalDialogRow, 0, len(entries))
+	for _, entry := range entries {
+		rows = append(rows, platform.JournalDialogRow{
+			Timestamp:  journalTimestamp(entry.Timestamp),
+			Repository: entry.Repo,
+			Summary:    entry.Summary,
+			Details:    entry.Details,
+			Severity:   entry.Severity,
+			Emphasized: entry.Emphasized,
+		})
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation("journal")
+		err := c.cfg.JournalBrowser.ShowJournal(ctx, platform.JournalDialogRequest{
+			Title: "Dziennik FileES",
+			Text:  "Aktywność i błędy ze wszystkich lokalnych repozytoriów, od najnowszych.",
+			Rows:  rows,
+		})
+		if err != nil && !errors.Is(err, context.Canceled) {
+			c.notify(ctx, platform.Notification{ID: "journal", Group: "journal", Title: "Nie udało się otworzyć dziennika", Body: err.Error(), Urgency: platform.UrgencyCritical})
+		}
+	}()
+}
+
+func journalTimestamp(value string) string {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return value
+	}
+	return parsed.Local().Format("2006-01-02 15:04:05")
+}
+
 func (c *Controller) startSettings(ctx context.Context, serverID string) {
 	if serverID == "" {
 		return
 	}
-	request, ok := settingsDialogRequest(c.cfg.ViewModel(), serverID)
+	vm := c.cfg.ViewModel()
+	request, ok := settingsDialogRequest(vm, serverID, c.pendingAttachments(vm, serverID))
 	if !ok {
 		return
 	}
@@ -325,6 +388,15 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		switch result.Action {
 		case platform.SettingsDialogAddFolder:
 			c.startCreateRepository(ctx, result.ServerID)
+		case platform.SettingsDialogConnectRepos:
+			// The native settings window closes before folder selection. Release
+			// its de-duplication key now so the connect flow can reopen the
+			// refreshed repository list after the last picker.
+			c.endOperation(operationKey)
+			c.startConnectRepositories(ctx, result.ServerID, result.RepoIDs)
+		case platform.SettingsDialogLocateFolder:
+			c.endOperation(operationKey)
+			c.startLocateRepository(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogDetachFolder:
 			c.startDetachRepository(ctx, result.ServerID, result.RepoID, false)
 		case platform.SettingsDialogDeleteRepo:
@@ -448,7 +520,7 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 	}()
 }
 
-func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.SettingsDialogRequest, bool) {
+func settingsDialogRequest(vm app.ViewModel, serverID string, pending map[string]pendingAttachment) (platform.SettingsDialogRequest, bool) {
 	for _, server := range vm.Servers {
 		if server.ID != serverID {
 			continue
@@ -471,16 +543,12 @@ func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.Settings
 		if clientID == "" {
 			clientID = "brak danych"
 		}
-		request := platform.SettingsDialogRequest{Title: "FileES — " + name, Text: "Informacje o serwerze, aktywacji i lokalnych folderach."}
-		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility(), CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
+		request := platform.SettingsDialogRequest{Title: "FileES — " + name, Text: "Repozytoria strefy i ich lokalne połączenia na tym kliencie."}
+		if len(pending) > 0 {
+			request.Text += " Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
+		}
+		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
 		for _, repo := range server.Repos {
-			// Optional remote projections are not folders on this client. Showing
-			// them beside their attached counterpart produces duplicate-looking
-			// rows and contradicts the server-popup contract. Required entries
-			// remain visible so a server-mandated attachment is not hidden.
-			if !repo.Attached && repo.AttachmentPolicy != "required" {
-				continue
-			}
 			repoName := repo.DisplayName
 			if strings.TrimSpace(repoName) == "" {
 				repoName = repo.ID
@@ -490,6 +558,11 @@ func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.Settings
 				path = "brak lokalnego folderu"
 			}
 			state := settingsRepositoryState(repo)
+			pendingAttachment, connecting := pending[repo.ID]
+			if connecting {
+				path = pendingAttachment.localPath
+				state = "łączenie…"
+			}
 			access := "tylko odczyt"
 			if repo.Access == "rw" {
 				access = "odczyt i zapis"
@@ -499,15 +572,204 @@ func settingsDialogRequest(vm app.ViewModel, serverID string) (platform.Settings
 			row.Folders = append(row.Folders, platform.SettingsFolder{
 				ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
 				CanManageGrants: vm.CanManageRealmGrants() && ownedAndCreatable,
-				CanDetach:       !attachmentRequired && vm.CanDetachRepository(),
-				CanDelete:       !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
-				CanLoadDump:     ownedAndCreatable,
+				CanConnect:      !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
+				CanLocate:       repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
+				CanDetach:       repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
+				CanDelete:       repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+				CanLoadDump:     repo.Attached && ownedAndCreatable,
 			})
 		}
 		request.Servers = append(request.Servers, row)
 		return request, true
 	}
 	return platform.SettingsDialogRequest{}, false
+}
+
+func (c *Controller) startLocateRepository(ctx context.Context, serverID, repoID string) {
+	key := "locate-repository:" + serverID + ":" + repoID
+	if serverID == "" || repoID == "" || c.cfg.RepositoryLocator == nil || c.cfg.FolderPicker == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		repo, ok := locatableRepository(c.cfg.ViewModel(), serverID, repoID)
+		if !ok {
+			return
+		}
+		name := strings.TrimSpace(repo.DisplayName)
+		if name == "" {
+			name = repo.ID
+		}
+		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wskaż przeniesioną kopię roboczą repozytorium „" + name + "”"})
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można wskazać kopii roboczej", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		if picked.Cancelled || !filepath.IsAbs(picked.Path) {
+			return
+		}
+		if _, err := c.cfg.RepositoryLocator.LocateRepository(ctx, serverID, repoID, filepath.Clean(picked.Path)); err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można połączyć przeniesionej kopii", Body: name + " — " + err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Sprawdzanie kopii roboczej", Body: name + " — FileES weryfikuje wskazany folder.", Urgency: platform.UrgencyNormal})
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+	}()
+}
+
+func locatableRepository(vm app.ViewModel, serverID, repoID string) (app.RepoViewModel, bool) {
+	if !vm.CanLocateRepository() {
+		return app.RepoViewModel{}, false
+	}
+	for _, server := range vm.Servers {
+		if server.ID != serverID {
+			continue
+		}
+		for _, repo := range server.Repos {
+			if repo.ID == repoID && repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" {
+				return repo, true
+			}
+		}
+	}
+	return app.RepoViewModel{}, false
+}
+
+func (c *Controller) startConnectRepositories(ctx context.Context, serverID string, repoIDs []string) {
+	key := "connect-repositories:" + serverID
+	if serverID == "" || len(repoIDs) == 0 || c.cfg.RepositoryAttacher == nil || c.cfg.FolderPicker == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		defer func() {
+			if ctx.Err() == nil {
+				if c.cfg.Refresh != nil {
+					c.cfg.Refresh()
+				}
+				c.startSettings(ctx, serverID)
+			}
+		}()
+
+		seen := make(map[string]bool, len(repoIDs))
+		for _, repoID := range repoIDs {
+			repoID = strings.TrimSpace(repoID)
+			if repoID == "" || seen[repoID] {
+				continue
+			}
+			seen[repoID] = true
+			vm := c.cfg.ViewModel()
+			repo, ok := attachableRepository(vm, serverID, repoID)
+			if !ok {
+				continue
+			}
+			name := repo.DisplayName
+			if strings.TrimSpace(name) == "" {
+				name = repo.ID
+			}
+			picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz lub utwórz lokalny folder dla repozytorium „" + name + "”"})
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można wybrać lokalnego folderu", Body: name + " — " + err.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+			if picked.Cancelled {
+				return
+			}
+			if strings.TrimSpace(picked.Path) == "" || !filepath.IsAbs(picked.Path) {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można połączyć repozytorium", Body: name + " — wybrana ścieżka nie jest bezwzględna", Urgency: platform.UrgencyCritical})
+				return
+			}
+			if _, ok := attachableRepository(c.cfg.ViewModel(), serverID, repoID); !ok {
+				continue
+			}
+			operationID, err := c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, repoID, filepath.Clean(picked.Path))
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można połączyć repozytorium", Body: name + " — " + err.Error(), Urgency: platform.UrgencyCritical})
+				continue
+			}
+			c.setPendingAttachment(serverID, repoID, filepath.Clean(picked.Path), operationID)
+			c.notify(ctx, platform.Notification{ID: "repository-attach." + repoID, Group: "repository-attach." + repoID, Title: "Rozpoczęto pierwszy checkout", Body: name + " — " + filepath.Clean(picked.Path), Urgency: platform.UrgencyNormal})
+			c.tasks.Add(1)
+			go func(serverID, repoID, name, operationID string) {
+				defer c.tasks.Done()
+				c.awaitAttachmentOutcome(ctx, serverID, repoID, name, operationID)
+			}(serverID, repoID, name, operationID)
+		}
+	}()
+}
+
+func pendingAttachmentKey(serverID, repoID string) string {
+	return serverID + "\x00" + repoID
+}
+
+func (c *Controller) setPendingAttachment(serverID, repoID, localPath, operationID string) {
+	c.pendingMu.Lock()
+	c.pending[pendingAttachmentKey(serverID, repoID)] = pendingAttachment{localPath: localPath, operationID: operationID}
+	c.pendingMu.Unlock()
+}
+
+func (c *Controller) clearPendingAttachment(serverID, repoID, operationID string) {
+	key := pendingAttachmentKey(serverID, repoID)
+	c.pendingMu.Lock()
+	if pending, ok := c.pending[key]; ok && (operationID == "" || pending.operationID == operationID) {
+		delete(c.pending, key)
+	}
+	c.pendingMu.Unlock()
+}
+
+// pendingAttachments returns the controller-owned optimistic overlay for the
+// settings snapshot. Lifecycle "attached" can precede the next daemon model
+// tick, so success polling deliberately does not clear it. The overlay is
+// removed only when the authoritative ViewModel finally reports Attached.
+func (c *Controller) pendingAttachments(vm app.ViewModel, serverID string) map[string]pendingAttachment {
+	attached := make(map[string]bool)
+	for _, server := range vm.Servers {
+		if server.ID != serverID {
+			continue
+		}
+		for _, repo := range server.Repos {
+			attached[repo.ID] = repo.Attached
+		}
+	}
+
+	c.pendingMu.Lock()
+	defer c.pendingMu.Unlock()
+	result := make(map[string]pendingAttachment)
+	prefix := serverID + "\x00"
+	for key, pending := range c.pending {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		repoID := strings.TrimPrefix(key, prefix)
+		if attached[repoID] {
+			delete(c.pending, key)
+			continue
+		}
+		result[repoID] = pending
+	}
+	return result
+}
+
+func attachableRepository(vm app.ViewModel, serverID, repoID string) (app.RepoViewModel, bool) {
+	if !vm.CanAttachRepository() {
+		return app.RepoViewModel{}, false
+	}
+	for _, server := range vm.Servers {
+		if server.ID != serverID {
+			continue
+		}
+		for _, repo := range server.Repos {
+			if repo.ID == repoID && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached {
+				return repo, true
+			}
+		}
+	}
+	return app.RepoViewModel{}, false
 }
 
 // settingsServerHost keeps the management table readable. The transport port
@@ -845,7 +1107,8 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			}
 		}
 		if !found || strings.TrimSpace(server.RealmID) == "" || strings.TrimSpace(server.RealmAlias) == "" {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można zmienić widoczności", Body: "Najpierw ustaw stały alias strefy.", Urgency: platform.UrgencyCritical})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Tożsamość strefy nie jest jeszcze dostępna", Text: "FileES nie otrzymał aliasu istniejącej strefy z serwera. Odświeżenie projekcji jest wymagane przed zmianą widoczności; nie ustawiaj nowego aliasu dla tej strefy."})
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można zmienić widoczności", Body: "Serwer nie przekazał tożsamości istniejącej strefy; wymagane jest odświeżenie projekcji.", Urgency: platform.UrgencyCritical})
 			return
 		}
 		choice, err := c.cfg.RealmGrantBrowser.ShowRealmVisibility(ctx, platform.RealmVisibilityDialogRequest{Title: "Widoczność strefy „" + server.RealmAlias + "”", Text: "Widoczna strefa może zostać wybrana jako odbiorca grantu. Nie ujawnia to repozytoriów ani istniejących dostępów. Tak — widoczna; Nie — ukryta; Anuluj — bez zmian."})
@@ -1051,6 +1314,75 @@ func (c *Controller) startPairMobileDevice(ctx context.Context, serverID string)
 			}
 		}
 	}()
+}
+
+func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoID, displayName, operationID string) {
+	interval, timeout := c.cfg.CreationStatusPollInterval, c.cfg.CreationStatusPollTimeout
+	if interval <= 0 {
+		interval = creationStatusPollInterval
+	}
+	if timeout <= 0 {
+		timeout = creationStatusPollTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	delay := interval
+	var lastStatusError error
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			body := displayName + " — nie udało się potwierdzić pierwszego checkoutu " + operationID
+			if lastStatusError != nil {
+				body += ": " + lastStatusError.Error()
+			}
+			c.notify(ctx, platform.Notification{ID: "repository-attach." + repoID, Group: "repository-attach." + repoID, Title: "Status połączenia repozytorium jest nieznany", Body: body, Urgency: platform.UrgencyCritical})
+			return
+		}
+		if delay > remaining {
+			delay = remaining
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		case <-timer.C:
+		}
+		state, lastError, err := c.cfg.RepositoryAttacher.AttachmentStatus(ctx, operationID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			lastStatusError = err
+			delay *= 2
+			if delay > 30*time.Second {
+				delay = 30 * time.Second
+			}
+			continue
+		}
+		lastStatusError = nil
+		delay = interval
+		switch state {
+		case "error":
+			c.clearPendingAttachment(serverID, repoID, operationID)
+			body := displayName
+			if strings.TrimSpace(lastError) != "" {
+				body += " — " + lastError
+			}
+			c.notify(ctx, platform.Notification{ID: "repository-attach." + repoID, Group: "repository-attach." + repoID, Title: "Pierwszy checkout nie powiódł się", Body: body, Urgency: platform.UrgencyCritical})
+			return
+		case "attached":
+			c.notify(ctx, platform.Notification{ID: "repository-attach." + repoID, Group: "repository-attach." + repoID, Title: "Repozytorium połączone", Body: displayName, Urgency: platform.UrgencyNormal})
+			if c.cfg.Refresh != nil {
+				c.cfg.Refresh()
+			}
+			return
+		}
+	}
 }
 
 // awaitCreationOutcome polls the daemon for the real outcome of a
@@ -1327,7 +1659,7 @@ func (c *Controller) startRealmAlias(ctx context.Context, serverID string) {
 		defer c.endOperation("realm-alias:" + serverID)
 		vm := c.cfg.ViewModel()
 		for _, server := range vm.Servers {
-			if server.ID == serverID && server.RealmAlias == "" {
+			if server.ID == serverID && server.NeedsRealmAliasClaim() {
 				c.claimRealmAlias(ctx, serverID)
 				return
 			}

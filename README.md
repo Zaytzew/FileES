@@ -29,6 +29,13 @@ Docelowy UX: automat w trayu, który niewidocznie utrzymuje pliki zsynchronizowa
 - **[manual-filees.html](manual-filees.html)** — pełna instrukcja: mechanika i architektura, przewodnik użytkownika, instalacja i wdrożenie serwera, administracja oraz dodatek bezpieczeństwa.
 - **[USERGUIDE.md](USERGUIDE.md)** — krótszy przewodnik użytkownika.
 
+Aktualny klient desktopowy obsługuje na Windows pełne dołączenie kolejnej
+instalacji do istniejącego realmu, listę wszystkich repozytoriów realmu w
+Ustawieniach i selektywny pierwszy checkout. Grant realmu nie oznacza
+automatycznego pobrania wszystkich repozytoriów na każde urządzenie. Szczegóły
+obsługi lifecycle WC, dziennika i projekcji aliasu opisuje
+`reports/WINDOWS_REALM_JOIN_WC_AND_JOURNAL_FIX_BLOCK_2026-08-10.md`.
+
 ---
 
 ## Jakość
@@ -266,15 +273,24 @@ Menu tray zawiera:
   strefie) oraz **Odtwórz z archiwum…** dla wybranego wiersza repozytorium
   (ładuje uprzednio wyeksportowany dump SVN jako nową generację tego
   repozytorium, przez ten sam mechanizm co `filees-rotate`),
-- globalne podmenu „Ostatnia aktywność”, równorzędne z „Ostatnimi błędami”,
-  pokazujące repozytorium, plik i potwierdzony etap synchronizacji,
-- ostatnie błędy z `error.list`, mapowane przez `message_key`, `severity` i `hint`,
+- jedno globalne podmenu **Dziennik**, łączące aktywność i błędy newest-first;
+  tray pokazuje maksymalnie 12 zagregowanych wpisów, a **Otwórz log…** otwiera
+  pełny dostępny snapshot w natywnym oknie; błędy są jawnie wyróżnione,
 - „Połącz ponownie” przy niedostępnym daemonie,
 - placeholder „Aktualizacja klienta — w przygotowaniu”, gdy nie ma
   zareklamowanego wydania,
 - „Uruchom FileES ponownie…” i „Zamknij FileES…”.
 
-Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.attach_intent`, `repo.attach_approve`, `repo.detach`, `repo.delete`, `repo.load_dump`, `repo.lifecycle_status`, `repo.grant_access`, `repo.revoke_access`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `realm.alias_claim`, `realm.grant_recipients`, `realm.set_visibility`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.attach_intent`, `repo.attach_approve`, `repo.locate`, `repo.detach`, `repo.delete`, `repo.load_dump`, `repo.lifecycle_status`, `repo.activity`, `repo.grant_access`, `repo.revoke_access`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `realm.alias_claim`, `realm.grant_recipients`, `realm.set_visibility`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+
+Dołączenie kolejnej instalacji do istniejącego realmu jest autoryzowane przez
+administratora przy tworzeniu ticketu (`--join-realm-alias`). Po aktywacji
+Ustawienia pokazują pełną projekcję repozytoriów realmu jako lokalnie
+`attached` lub `unattached`. Windows pozwala zaznaczyć wiele niepodłączonych
+wierszy i wybrać **Połącz**; dla każdego repo pojawia się osobny picker
+lokalnego katalogu. Po akceptacji wiersz natychmiast pokazuje wybrany path i
+`łączenie…`, aż daemon potwierdzi pierwszy checkout. Linux korzysta z tego
+samego lifecycle dla pojedynczego wybranego wiersza.
 
 Tworzenie repozytorium jest zwykłą operacją użytkownika, bez kontaktu z konsolą:
 
@@ -300,6 +316,15 @@ Odłączenie ma dwa rozłączne kontrakty:
 
 Repozytorium `attachment_policy=required` nie udostępnia żadnej z tych akcji.
 Lifecycle jest trwały i wznawialny po restarcie.
+
+Root aktywnej WC jest artefaktem śledzonym. Przed uruchomieniem pipeline daemon
+sprawdza `.svn`, dokładny URL oraz marker tożsamości FileES. Brakujący albo
+podmieniony root daje `interaction_required / working_copy_missing`; FileES nie
+odtwarza pustego katalogu i nie raportuje go jako zdrowej rewizji 0. Ustawienia
+pokazują wtedy **Wskaż kopię**, które przez `repo.locate` przyjmuje istniejącą,
+przeniesioną WC bez checkoutu i bez kasowania lokalnych zmian. Na Windows
+aktywny root jest dodatkowo chroniony uchwytem blokującym zewnętrzny
+rename/delete; kontrolowana operacja FileES najpierw zwalnia ten uchwyt.
 
 **Widoczność strefy i granty** działają przez dwie osobne akcje w oknie
 „Ustawienia FileES” (Linux: `yad` radiolist; Windows: PowerShell
@@ -346,9 +371,12 @@ zwolnienia również zawiera token z listy; daemon odczytuje stan ponownie i
 odrzuca zmieniony lub nieaktualny wiersz, zanim wywoła SVN.
 
 Alias właściciela jest stałą tożsamością realmu, nie adresem e-mail ani UID.
-Po aktywacji istniejącego klienta można go raz ustawić z podmenu serwera przez
-**Ustaw stały alias…**. Worker serwerowy waliduje format i unikatowość podczas
-zapisu; aliasu nie da się później zmienić.
+**Ustaw stały alias…** jest oferowane tylko świeżemu, pustemu realmowi. Klient
+dołączający do istniejącego realmu dziedziczy jego kanoniczny alias w pierwszej
+projekcji i nie może go ponownie nazwać. Brak aliasu przy już projektowanych
+repozytoriach oznacza niepełną projekcję, a nie zadanie dla użytkownika;
+**Widoczność…** i locki są wtedy blokowane z jawnym komunikatem do czasu
+rekoncyliacji serwera.
 
 ### Podpisane aktualizacje klienta desktopowego
 

@@ -77,6 +77,7 @@ type RepositoryLifecycleService interface {
 	BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error)
 	ApproveAttach(operationID, serverID, repoID, repoURL, access string) (contract.RepoLifecycleResult, error)
 	BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error)
+	BeginLocate(serverID, repoID, existingLocalPath string) (contract.RepoLifecycleResult, error)
 	BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error)
 	BeginDetach(context.Context, string, string, bool) (contract.RepoLifecycleResult, error)
 	Status(operationID string) (contract.RepoLifecycleResult, error)

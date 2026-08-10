@@ -70,7 +70,7 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	}
 	s.activity = make([]ActivityViewModel, 0, len(activityRecords))
 	for _, record := range activityRecords {
-		s.activity = append(s.activity, ActivityViewModel{RepoID: record.RepoID, Path: record.Path, Kind: record.Kind, Stage: record.Stage, UpdatedAt: record.UpdatedAt, Revision: record.Revision})
+		s.activity = append(s.activity, ActivityViewModel{RepoID: record.RepoID, Path: record.Path, Kind: record.Kind, Stage: record.Stage, UpdatedAt: record.UpdatedAt, Revision: record.Revision, ErrorID: record.ErrorID})
 	}
 	s.reservations = make(map[string]int, len(reservationCounts))
 	for serverID, count := range reservationCounts {

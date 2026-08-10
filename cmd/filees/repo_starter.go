@@ -30,12 +30,35 @@ type repoRuntime struct {
 	state  *ipcserver.RepoState
 }
 
-func openRepoErrorSink(path, scope string) (*errmap.Sink, *os.File, error) {
+// repoErrorWriter opens the structured error log only for the duration of a
+// write. In particular, it must not retain a file handle below the working
+// copy: Go's regular Windows OpenFile share mode omits FILE_SHARE_DELETE, so a
+// long-lived log handle would prevent users from moving or renaming the whole
+// working-copy directory.
+type repoErrorWriter struct {
+	path string
+}
+
+func (w repoErrorWriter) Write(raw []byte) (int, error) {
+	file, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return 0, err
+	}
+	n, writeErr := file.Write(raw)
+	closeErr := file.Close()
+	return n, errors.Join(writeErr, closeErr)
+}
+
+func openRepoErrorSink(path, scope string) (*errmap.Sink, error) {
+	// Validate and create the log eagerly, but release the handle immediately.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return errmap.NewSink(file, scope), file, nil
+	if err := file.Close(); err != nil {
+		return nil, err
+	}
+	return errmap.NewSink(repoErrorWriter{path: path}, scope), nil
 }
 
 func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules, gate runtime.Gate, mutex runtime.RepoMutex, clientUUID string, sink *errmap.Sink, ipc *ipcserver.Server, state *ipcserver.RepoState, passports *passport.Manager, activityJournal *activity.Journal) *commit.Service {
@@ -256,19 +279,15 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		return nil, err
 	}
 	rules := buildCommitRules(repo, latency)
-	sink, errorFile, err := openRepoErrorSink(filepath.Join(logsDir, "errors.jsonl"), "commit:"+repo.ID)
+	sink, err := openRepoErrorSink(filepath.Join(logsDir, "errors.jsonl"), "commit:"+repo.ID)
 	if err != nil {
 		logger.Warnf("structured errors disabled: %v", err)
 		sink = nil
-		errorFile = nil
 	}
 	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
 	recoverReadWriteWorkingCopy(ctx, svn, wc, service, logger)
 	if manager != nil {
 		if err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, intOrDefault(repo.MaxBatchFiles, 100)); err != nil {
-			if errorFile != nil {
-				_ = errorFile.Close()
-			}
 			return nil, err
 		}
 	}
@@ -291,20 +310,12 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 				first = err
 			}
 		}
-		if errorFile != nil {
-			if err := errorFile.Close(); err != nil && first == nil {
-				first = err
-			}
-		}
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) && first == nil {
 			first = err
 		}
 		return first
 	})
 	if err != nil {
-		if errorFile != nil {
-			_ = errorFile.Close()
-		}
 		return nil, err
 	}
 	cleanupPID = false
@@ -429,6 +440,7 @@ type daemonRepoStarter struct {
 	repos          map[reposupervisor.Key]repoRuntime
 	newSVN         svnFactory
 	startReadWrite readWriteFactory
+	retryInterval  time.Duration
 }
 
 func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
@@ -447,15 +459,54 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 	runtime.config.Access = desired.Access
 	runtime.config.RepoURL = desired.URL
 	svn := s.newSVN(runtime.config)
+	if err := validateAttachedWorkingCopy(startCtx, svn, runtime.config.LocalPath, desired); err != nil {
+		return s.waitForWorkingCopy(runtime, svn, desired, err), nil
+	}
+	return s.startConfigured(s.daemonCtx, runtime, svn, desired)
+}
+
+func validateAttachedWorkingCopy(ctx context.Context, svn client.Client, workingCopy string, desired reposupervisor.Desired) error {
+	if _, err := os.Stat(filepath.Join(workingCopy, ".svn")); err != nil {
+		return fmt.Errorf("working copy metadata is missing: %w", err)
+	}
+	info, err := svn.GetInfo(ctx, workingCopy)
+	if err != nil {
+		return fmt.Errorf("working copy is invalid: %w", err)
+	}
+	if !infoHasURL(info, desired.URL) {
+		return errors.New("working copy URL does not match projected repository")
+	}
+	return validateWorkingCopyIdentity(workingCopy, expectedWorkingCopyIdentity(desired.Key.ServerID, desired.Key.RepoID, desired.URL))
+}
+
+func (s *daemonRepoStarter) startConfigured(lifecycle context.Context, runtime repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
+	if err := ensureWorkingCopyIdentity(runtime.config.LocalPath, expectedWorkingCopyIdentity(desired.Key.ServerID, desired.Key.RepoID, desired.URL)); err != nil {
+		return nil, err
+	}
+	guard, err := acquireWorkingCopyGuard(runtime.config.LocalPath)
+	if err != nil {
+		return nil, err
+	}
+	var instance reposupervisor.Instance
 	if desired.Access == contract.AccessReadWrite {
 		if s.startReadWrite == nil {
+			_ = guard.Close()
 			return nil, errors.New("read-write pipeline factory is not connected yet")
 		}
-		return s.startReadWrite(s.daemonCtx, runtime, svn, desired)
+		instance, err = s.startReadWrite(lifecycle, runtime, svn, desired)
+	} else if desired.Access == contract.AccessReadOnly {
+		instance, err = s.startReadOnly(lifecycle, runtime, svn, desired)
+	} else {
+		err = errors.New("repository access is invalid")
 	}
-	if desired.Access != contract.AccessReadOnly {
-		return nil, errors.New("repository access is invalid")
+	if err != nil {
+		_ = guard.Close()
+		return nil, err
 	}
+	return &guardedRepoInstance{inner: instance, guard: guard}, nil
+}
+
+func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
 	// Read-only attachments contribute to the server-menu inventory as well,
 	// but intentionally receive no release callback.
 	wireRepoReservationFuncs(runtime.state, svn, runtime.config.LocalPath, nil)
@@ -467,7 +518,7 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
 		return nil, err
 	}
-	return reposupervisor.StartManaged(s.daemonCtx, func(ctx context.Context) error {
+	return reposupervisor.StartManaged(lifecycle, func(ctx context.Context) error {
 		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, talk.With("readonly:"+desired.Key.String()))
 		return nil
 	}, func(context.Context) error {
@@ -477,4 +528,87 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 		}
 		return nil
 	})
+}
+
+type guardedRepoInstance struct {
+	inner reposupervisor.Instance
+	guard workingCopyGuard
+}
+
+func (instance *guardedRepoInstance) Stop(ctx context.Context) error {
+	var stopErr error
+	if instance.inner != nil {
+		stopErr = instance.inner.Stop(ctx)
+	}
+	return errors.Join(stopErr, instance.guard.Close())
+}
+
+type waitingWorkingCopyInstance struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+	state  *ipcserver.RepoState
+
+	mu    sync.Mutex
+	inner reposupervisor.Instance
+}
+
+func (instance *waitingWorkingCopyInstance) Stop(ctx context.Context) error {
+	instance.cancel()
+	select {
+	case <-instance.done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	instance.mu.Lock()
+	inner := instance.inner
+	instance.mu.Unlock()
+	instance.state.SetCurrentOp(nil)
+	if inner != nil {
+		return inner.Stop(ctx)
+	}
+	instance.state.SetState(contract.StateStopping)
+	return nil
+}
+
+func (s *daemonRepoStarter) waitForWorkingCopy(runtime repoRuntime, svn client.Client, desired reposupervisor.Desired, initialErr error) reposupervisor.Instance {
+	ctx, cancel := context.WithCancel(s.daemonCtx)
+	instance := &waitingWorkingCopyInstance{cancel: cancel, done: make(chan struct{}), state: runtime.state}
+	runtime.state.SetConnectivity(contract.ConnOnline)
+	runtime.state.SetCurrentOp(stringPtr("working_copy_missing"))
+	runtime.state.SetState(contract.StateInteractionRequired)
+	logger := talk.With("repo:" + runtime.config.ID)
+	logger.Warnf("working copy unavailable at %s: %v", runtime.config.LocalPath, initialErr)
+	interval := s.retryInterval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	go func() {
+		defer close(instance.done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			if err := validateAttachedWorkingCopy(ctx, svn, runtime.config.LocalPath, desired); err != nil {
+				continue
+			}
+			runtime.state.SetCurrentOp(nil)
+			inner, err := s.startConfigured(ctx, runtime, svn, desired)
+			if err != nil {
+				runtime.state.SetCurrentOp(stringPtr("working_copy_missing"))
+				runtime.state.SetState(contract.StateDegraded)
+				logger.Warnf("working copy returned but pipeline start failed: %v", err)
+				continue
+			}
+			instance.mu.Lock()
+			instance.inner = inner
+			instance.mu.Unlock()
+			logger.Infof("working copy restored at %s", runtime.config.LocalPath)
+			return
+		}
+	}()
+	return instance
 }

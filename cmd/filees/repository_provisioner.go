@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"filees/internal/durable"
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
 	"filees/pkg/config"
@@ -444,12 +445,7 @@ func stripWorkingCopyMetadata(root, operationID string) error {
 			return err
 		}
 	}
-	dir, err := os.Open(root)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return durable.SyncDirectory(root)
 }
 
 // runReconcile handles StateReconciling: issue LOAD_REPOSITORY_DUMP, then

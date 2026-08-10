@@ -358,6 +358,12 @@ Repozytoriów oznaczonych jako **Wymagane przez serwer** nie można odłączyć 
 usunąć tą ścieżką. Odłączenie trwa do końcowego potwierdzenia daemona; nie
 zamykaj FileES w trakcie operacji.
 
+Po odłączeniu zachowany katalog jest zwykłym folderem, a nie kopią roboczą.
+Ponowne **Połącz** wykonuje pierwszy checkout do nowego lub pustego folderu;
+nie scala automatycznie zachowanych plików z repozytorium. Odrzucenie wybranego
+celu albo konflikt lokalnego lifecycle jest pokazywany w modalnym oknie błędu,
+nie tylko w powiadomieniu Windows.
+
 ---
 
 ## Restart i zamykanie

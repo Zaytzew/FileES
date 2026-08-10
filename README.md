@@ -308,7 +308,11 @@ Odłączenie ma dwa rozłączne kontrakty:
 - **Odłącz folder…** zatrzymuje runtime, usuwa wyłącznie `.svn` i `.filees`
   z lokalnego rootu i zostawia wszystkie dane użytkownika jako zwykły folder;
   działa także dla repo offline, a trwały tombstone blokuje ponowne podłączenie
-  starego wpisu `config.json`;
+  starego wpisu `config.json`. Końcowa synchronizacja katalogu korzysta z
+  platformowego `durable.SyncDirectory`: zachowuje `fsync` na POSIX i nie
+  wpada w `ERROR_ACCESS_DENIED` na Windows. Ponowne **Połącz** wymaga nowego
+  albo pustego celu; odrzucenie attach jest pokazywane modalnie oraz jako
+  powiadomienie;
 - **Odłącz trwale…** wymaga dwóch osobnych potwierdzeń, server-side ownership
   oraz capability administracji repo. Dla retencji `X>0` serwer tworzy i
   weryfikuje pełny dump, natychmiast usuwa FSFS i trzyma wyłącznie dump przez

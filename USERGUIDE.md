@@ -198,6 +198,19 @@ Zamknij FileES…
 
 ---
 
+## Dodawanie lokalnego folderu jako nowego repozytorium
+
+W podmenu serwera wybierz **Dodaj pierwszy/kolejny folder do FileES…**, wskaż
+istniejący folder i potwierdź jego nazwę. Tworzenie repozytorium oraz pierwszy
+commit działają w tle. Dla dużego folderu może to potrwać kilka minut.
+
+Po utworzeniu bytu serwerowego, ale przed końcem pierwszego commitu, Ustawienia
+pokazują wybraną ścieżkę i stan **import początkowy w toku**. Nie jest to
+repozytorium nieprzypięte: FileES trwale zajmuje ten lokalny root, lecz do czasu
+zakończenia importu nie uruchamia synchronizacji ani operacji na plikach.
+
+---
+
 ## Dołączenie do istniejącej strefy i wybór repozytoriów
 
 Administrator może wystawić zaproszenie do już istniejącej strefy. Po

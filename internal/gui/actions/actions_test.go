@@ -1280,6 +1280,7 @@ func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 		Repos: []app.RepoViewModel{
 			{ID: "docs", DisplayName: "Dokumenty", Attached: true, LocalPath: "/wc/docs", Access: contract.AccessReadWrite, State: contract.StateActive},
 			{ID: "remote", DisplayName: "Zdalna projekcja", AttachmentPolicy: "optional", State: contract.StateUnattached},
+			{ID: "import", DisplayName: "Biblia Audio KIDS", LocalPath: "/wc/biblia", Access: contract.AccessReadWrite, AttachmentPolicy: "optional", State: contract.StateInitializing},
 		},
 	}}}
 	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, SettingsBrowser: platformFake})
@@ -1294,7 +1295,7 @@ func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 		t.Fatalf("settings request = %#v", requests)
 	}
 	server := requests[0].Servers[0]
-	if server.Name != "Biuro" || server.Address != "filees.example" || !strings.Contains(server.Realm, "acme") || len(server.Folders) != 2 {
+	if server.Name != "Biuro" || server.Address != "filees.example" || !strings.Contains(server.Realm, "acme") || len(server.Folders) != 3 {
 		t.Fatalf("settings server = %#v", server)
 	}
 	folder := server.Folders[0]
@@ -1304,6 +1305,10 @@ func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 	remote := server.Folders[1]
 	if remote.ID != "remote" || remote.LocalPath != "brak lokalnego folderu" || !remote.CanConnect {
 		t.Fatalf("unattached repository = %#v", remote)
+	}
+	pending := server.Folders[2]
+	if pending.ID != "import" || pending.LocalPath != "/wc/biblia" || pending.State != "import początkowy w toku" || pending.CanConnect {
+		t.Fatalf("pending repository creation = %#v", pending)
 	}
 }
 

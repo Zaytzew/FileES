@@ -94,6 +94,19 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 	rs.mu.Unlock()
 }
 
+// SetPendingLocalPath exposes a daemon-owned local folder while repository
+// creation is still importing its initial snapshot. It deliberately does not
+// mark the repository attached: no working-copy runtime or mutation actions
+// may start before INITIAL_COMMIT succeeds.
+func (rs *RepoState) SetPendingLocalPath(localPath string) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.attached {
+		return
+	}
+	rs.localPath = localPath
+}
+
 func (rs *RepoState) markDetached() {
 	rs.mu.Lock()
 	rs.attached = false

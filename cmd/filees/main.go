@@ -191,7 +191,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, provisionedAttachments, ipc, gate, mtx, activityJournal, realmAliases.ProjectAlias); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, provisionedAttachments, ipc, lifecycleStore, gate, mtx, activityJournal, realmAliases.ProjectAlias); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	if lifecycle.action.Load() == daemonActionRestart {
@@ -203,7 +203,7 @@ func runDaemon() {
 
 }
 
-func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supervisor, ipc *ipcserver.Server, serverID string, view clientview.View, runtimes map[reposupervisor.Key]repoRuntime) error {
+func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supervisor, ipc *ipcserver.Server, serverID string, view clientview.View, runtimes map[reposupervisor.Key]repoRuntime, lifecycle *localrepo.Store) error {
 	applyRealmOwnership(serverID, view, runtimes)
 	items := attachedProjection(serverID, view, runtimes)
 	if err := supervisor.ApplyWithTransition(ctx, serverID, view.Generation, items, func(item reposupervisor.Desired) {
@@ -213,7 +213,7 @@ func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supe
 	}); err != nil {
 		return err
 	}
-	syncProjectionKnowledge(ipc, serverID, view, runtimes)
+	syncProjectionKnowledge(ipc, serverID, view, runtimes, lifecycle)
 	return nil
 }
 

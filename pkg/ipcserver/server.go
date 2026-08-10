@@ -407,7 +407,10 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 	present := make(map[string]struct{}, len(repos))
 	for _, repo := range repos {
 		present[repo.ID] = struct{}{}
-		s.RegisterProjectedRepoPolicy(repo.ID, repo.DisplayName, repo.URL, serverID, repo.Access, repo.State, repo.OwnerRealmID, repo.AttachmentPolicy, repo.Attached)
+		state := s.RegisterProjectedRepoPolicy(repo.ID, repo.DisplayName, repo.URL, serverID, repo.Access, repo.State, repo.OwnerRealmID, repo.AttachmentPolicy, repo.Attached)
+		if repo.PendingLocalPath != "" {
+			state.SetPendingLocalPath(repo.PendingLocalPath)
+		}
 	}
 	s.mu.Lock()
 	removed := false
@@ -443,6 +446,7 @@ type ProjectedRepo struct {
 	ID, DisplayName, URL, Access, State string
 	OwnerRealmID, AttachmentPolicy      string
 	Attached                            bool
+	PendingLocalPath                    string
 }
 
 // NewRepoEvent builds an event envelope for the given repo.

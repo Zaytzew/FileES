@@ -384,6 +384,19 @@ func TestBuildMenuHidesOptionalRepositoryWithoutLocalFolder(t *testing.T) {
 	}
 }
 
+func TestBuildMenuShowsPendingLocalRepositoryCreation(t *testing.T) {
+	repo := app.RepoViewModel{ID: "import", DisplayName: "Biblia Audio KIDS", ServerID: "office", LocalPath: `F:\BIBLIA\Biblia Audio KIDS`, AttachmentPolicy: "optional", State: contract.StateInitializing}
+	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{repo}}}})
+	server := findItem(t, menu.Items, "server.office")
+	item := findItem(t, server.Children, "repo.import")
+	if item.Title != "◷ Biblia Audio KIDS" || item.Tooltip != repo.LocalPath || item.Enabled {
+		t.Fatalf("pending local repository = %#v", item)
+	}
+	if hasItem(server.Children, "server.office.empty") {
+		t.Fatal("pending local import is incorrectly presented as no local folders")
+	}
+}
+
 func TestServerPermissionsAndManagementDoNotClutterTray(t *testing.T) {
 	allowed := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "full", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true}}})
 	allowedServer := findItem(t, allowed.Items, "server.full")

@@ -319,8 +319,8 @@ func (c *Client) RepoLoadDump(ctx context.Context, serverID, repoID string, appl
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
-func (c *Client) RealmGrantRecipients(ctx context.Context, serverID string) (*contract.RealmGrantRecipientsResult, error) {
-	resp, err := c.do(ctx, contract.CmdRealmGrantRecipients, "", contract.RealmGrantRecipientsPayload{ServerID: serverID})
+func (c *Client) RealmGrantRecipients(ctx context.Context, serverID, repoID string) (*contract.RealmGrantRecipientsResult, error) {
+	resp, err := c.do(ctx, contract.CmdRealmGrantRecipients, repoID, contract.RealmGrantRecipientsPayload{ServerID: serverID, RepoID: repoID})
 	if err != nil {
 		return nil, err
 	}
@@ -373,6 +373,51 @@ func (c *Client) RepoDelete(ctx context.Context, serverID, repoID string) (*cont
 		return nil, err
 	}
 	var result contract.RepoLifecycleResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) PublicShareList(ctx context.Context, serverID, repoID string) (*contract.PublicShareListResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoPublicShareList, repoID, contract.PublicShareListPayload{ServerID: serverID, RepoID: repoID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.PublicShareListResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) PublicShareCreate(ctx context.Context, payload contract.PublicShareCreatePayload) (*contract.PublicShareResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoPublicShareCreate, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.PublicShareResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) PublicShareUpdate(ctx context.Context, payload contract.PublicShareUpdatePayload) (*contract.PublicShareResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoPublicShareUpdate, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.PublicShareResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) PublicShareRevoke(ctx context.Context, payload contract.PublicShareChannelPayload) (*contract.PublicShareResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoPublicShareRevoke, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.PublicShareResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) PublicShareDelete(ctx context.Context, payload contract.PublicShareChannelPayload) (*contract.PublicShareResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoPublicShareDelete, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.PublicShareResult
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 

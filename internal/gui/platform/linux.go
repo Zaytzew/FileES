@@ -365,6 +365,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	canConnect := false
 	canLocate := false
 	canManageGrants := false
+	canManagePublicShares := false
 	canDetach := false
 	canDelete := false
 	canLoadDump := false
@@ -380,6 +381,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 				canConnect = folder.CanConnect
 				canLocate = folder.CanLocate
 				canManageGrants = folder.CanManageGrants
+				canManagePublicShares = folder.CanManagePublicShares
 				canDetach = folder.CanDetach
 				canDelete = folder.CanDelete
 				canLoadDump = folder.CanLoadDump
@@ -387,7 +389,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 			}
 		}
 	}
-	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canConnect, canLocate, canManageGrants, canDetach, canDelete, canLoadDump, canSetRealmVisibility)
+	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canConnect, canLocate, canManageGrants, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility)
 	if err != nil || action == SettingsDialogClose {
 		return SettingsDialogResult{Action: action}, err
 	}
@@ -427,7 +429,7 @@ func (b *LinuxBackend) ShowJournal(ctx context.Context, request JournalDialogReq
 	return nil
 }
 
-func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canDetach, canDelete, canLoadDump, canSetRealmVisibility bool) (SettingsDialogAction, error) {
+func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility bool) (SettingsDialogAction, error) {
 	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
 	if canAddFolder {
 		args = append(args, "FALSE", "add_folder", "Dodaj folder do FileES")
@@ -443,7 +445,10 @@ func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFo
 	}
 	if hasFolder {
 		if canManageGrants {
-			args = append(args, "FALSE", "manage_grants", "Zarządzaj dostępem stref")
+			args = append(args, "FALSE", "manage_grants", "Uprawnienia gości")
+		}
+		if canManagePublicShares {
+			args = append(args, "FALSE", "public_shares", "Udostępnienia publiczne")
 		}
 		if canDetach {
 			args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder")
@@ -500,16 +505,22 @@ func (b *LinuxBackend) ShowRealmGrants(ctx context.Context, request RealmGrantDi
 		return RealmGrantDialogResult{}, NewUnavailable("realm_grant_dialog", errors.New("yad is not installed"))
 	}
 	b.applyLinuxDarkThemePreference(ctx)
-	args := []string{"--list", "--radiolist", "--title=" + request.Title, "--text=" + request.Text, "--width=760", "--height=520", "--column=", "--column=ID", "--column=Strefa", "--column=Dostęp", "--hide-column=2", "--print-column=2", "--ok-label=Zastosuj", "--cancel-label=Anuluj"}
+	args := []string{"--list", "--radiolist", "--title=" + request.Title, "--text=" + request.Text, "--width=820", "--height=520", "--column=", "--column=ID", "--column=Gość", "--column=Aktualne", "--column=Ustaw", "--hide-column=2", "--print-column=2", "--ok-label=Zastosuj", "--cancel-label=Anuluj"}
 	for _, recipient := range request.Recipients {
 		label := strings.TrimSpace(recipient.Alias)
 		if label == "" {
 			label = recipient.RealmID
 		}
+		current := "brak"
+		if recipient.State == "active" && recipient.Access == "r" {
+			current = "tylko odczyt"
+		} else if recipient.State == "active" && recipient.Access == "rw" {
+			current = "odczyt i zapis"
+		}
 		args = append(args,
-			"FALSE", recipient.RealmID+"|r", label, "Tylko odczyt",
-			"FALSE", recipient.RealmID+"|rw", label, "Odczyt i zapis",
-			"FALSE", recipient.RealmID+"|revoke", label, "Cofnij dostęp",
+			"FALSE", recipient.RealmID+"|r", label, current, "Tylko odczyt",
+			"FALSE", recipient.RealmID+"|rw", label, current, "Odczyt i zapis",
+			"FALSE", recipient.RealmID+"|revoke", label, current, "Cofnij dostęp",
 		)
 	}
 	output, err := b.runner.Output(ctx, command, args...)
@@ -536,6 +547,48 @@ func (b *LinuxBackend) ShowRealmGrants(ctx context.Context, request RealmGrantDi
 		action = RealmGrantDialogRevoke
 	}
 	return RealmGrantDialogResult{Action: action, RealmID: realmID}, nil
+}
+
+func (b *LinuxBackend) ShowPublicShares(ctx context.Context, request PublicShareDialogRequest) (PublicShareDialogResult, error) {
+	command, err := b.runner.LookPath("yad")
+	if err != nil {
+		return PublicShareDialogResult{}, NewUnavailable("public_share_dialog", errors.New("yad is not installed"))
+	}
+	b.applyLinuxDarkThemePreference(ctx)
+	args := []string{"--list", "--radiolist", "--title=" + request.Title, "--text=" + request.Text, "--width=1100", "--height=620", "--column=", "--column=ID", "--column=Adres", "--column=Stan", "--column=Folder źródłowy", "--column=Odbiorcy", "--column=Hasło", "--column=Rewizja", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Zamknij", "FALSE", "create|", "—", "—", "—", "—", "—", "—", "Nowe udostępnienie"}
+	for _, share := range request.Shares {
+		for _, action := range []struct{ id, label string }{{"edit", "Edytuj"}, {"revoke", "Cofnij"}, {"delete", "Usuń"}} {
+			args = append(args, "FALSE", action.id+"|"+share.ChannelID, share.Address, share.State, share.SourceRoot, share.Recipients, share.Password, share.Revision, action.label)
+		}
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctx.Err() != nil {
+			return PublicShareDialogResult{}, ctx.Err()
+		}
+		if commandCancelled(err) {
+			return PublicShareDialogResult{Action: PublicShareDialogClose}, nil
+		}
+		return PublicShareDialogResult{}, NewOperationalFailure("public_share_dialog", err)
+	}
+	action, channelID, ok := strings.Cut(yadSelection(output), "|")
+	if !ok {
+		return PublicShareDialogResult{Action: PublicShareDialogClose}, nil
+	}
+	result := PublicShareDialogResult{ChannelID: channelID}
+	switch action {
+	case "create":
+		result.Action = PublicShareDialogCreate
+	case "edit":
+		result.Action = PublicShareDialogEdit
+	case "revoke":
+		result.Action = PublicShareDialogRevoke
+	case "delete":
+		result.Action = PublicShareDialogDelete
+	default:
+		result.Action = PublicShareDialogClose
+	}
+	return result, nil
 }
 
 func (b *LinuxBackend) ConfirmConsent(ctx context.Context, request ConsentRequest) (ConsentResult, error) {
@@ -583,6 +636,8 @@ func settingsAction(label string) SettingsDialogAction {
 		return SettingsDialogLoadDump
 	case "manage_grants":
 		return SettingsDialogManageGrants
+	case "public_shares":
+		return SettingsDialogPublicShares
 	case "realm_visibility":
 		return SettingsDialogRealmVisibility
 	case "detach_server", "Dezaktywuj klienta":

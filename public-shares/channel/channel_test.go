@@ -181,3 +181,42 @@ func TestHostPolicyBoundsChannelsAndMayRequirePassword(t *testing.T) {
 		t.Fatalf("deleted channel did not release active quota: %v", err)
 	}
 }
+
+func TestUpdatePreservingPasswordAndListOwnedDoNotExposeOrLosePolicy(t *testing.T) {
+	store, share, owner := fixture(t)
+	share.Recipients = nil
+	share.Password = "$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	channelID := uuid.NewString()
+	created, _, err := store.Create(channelID, owner, share)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declaration := share
+	declaration.Password = ""
+	declaration.Objects[0].DisplayName = "Nowa nazwa.pdf"
+	updated, _, err := store.UpdatePreservingPassword(uuid.NewString(), owner, channelID, declaration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Manifest == nil || updated.Manifest.Password != created.Manifest.Password || updated.Manifest.Objects[0].DisplayName != "Nowa nazwa.pdf" {
+		t.Fatalf("preserved update=%+v", updated)
+	}
+	listed, err := store.ListOwned(owner, share.RepoID)
+	if err != nil || len(listed) != 1 || listed[0].ChannelID != channelID || listed[0].State != StateActive {
+		t.Fatalf("list=%+v err=%v", listed, err)
+	}
+	if _, err := store.Revoke(owner, channelID); err != nil {
+		t.Fatal(err)
+	}
+	listed, err = store.ListOwned(owner, share.RepoID)
+	if err != nil || len(listed) != 1 || listed[0].State != StateRevoked {
+		t.Fatalf("revoked list=%+v err=%v", listed, err)
+	}
+	if _, err := store.Delete(owner, channelID); err != nil {
+		t.Fatal(err)
+	}
+	listed, err = store.ListOwned(owner, share.RepoID)
+	if err != nil || len(listed) != 0 {
+		t.Fatalf("deleted list=%+v err=%v", listed, err)
+	}
+}

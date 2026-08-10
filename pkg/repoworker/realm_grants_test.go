@@ -46,14 +46,14 @@ func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recipients, err := p.ListGrantRecipients(context.Background(), ownerRealm)
+	recipients, err := p.ListGrantRecipients(context.Background(), ownerRealm, "")
 	if err != nil || len(recipients) != 1 || recipients[0].RealmID != recipientRealm {
 		t.Fatalf("recipients=%+v err=%v", recipients, err)
 	}
 	if _, err := p.SetRealmDirectoryVisibility(context.Background(), otherRealm, "listed"); err != nil {
 		t.Fatal(err)
 	}
-	recipients, _ = p.ListGrantRecipients(context.Background(), ownerRealm)
+	recipients, _ = p.ListGrantRecipients(context.Background(), ownerRealm, "")
 	if len(recipients) != 2 {
 		t.Fatalf("listed recipients=%+v", recipients)
 	}
@@ -78,6 +78,22 @@ func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 	raw, _ = os.ReadFile(authz)
 	if !strings.Contains(string(raw), "writer-"+repoID+" = "+recipientClient) {
 		t.Fatalf("writer authz=%s", raw)
+	}
+	if _, err := p.SetRealmDirectoryVisibility(context.Background(), recipientRealm, "hidden"); err != nil {
+		t.Fatal(err)
+	}
+	recipients, err = p.ListGrantRecipients(context.Background(), ownerRealm, repoID)
+	if err != nil || len(recipients) != 2 {
+		t.Fatalf("repo recipients=%+v err=%v", recipients, err)
+	}
+	foundActiveHidden := false
+	for _, recipient := range recipients {
+		if recipient.RealmID == recipientRealm {
+			foundActiveHidden = recipient.State == "active" && recipient.Access == "rw"
+		}
+	}
+	if !foundActiveHidden {
+		t.Fatalf("hidden active grant missing from management list: %+v", recipients)
 	}
 
 	// A later installation inherits the realm grant from canonical records.

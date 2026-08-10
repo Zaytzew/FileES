@@ -20,6 +20,7 @@ type Fake struct {
 	SettingsFunc        func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error)
 	JournalFunc         func(context.Context, platform.JournalDialogRequest) error
 	RealmGrantsFunc     func(context.Context, platform.RealmGrantDialogRequest) (platform.RealmGrantDialogResult, error)
+	PublicSharesFunc    func(context.Context, platform.PublicShareDialogRequest) (platform.PublicShareDialogResult, error)
 	RealmVisibilityFunc func(context.Context, platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
@@ -37,6 +38,7 @@ type Fake struct {
 	SettingsRequests        []platform.SettingsDialogRequest
 	JournalRequests         []platform.JournalDialogRequest
 	RealmGrantRequests      []platform.RealmGrantDialogRequest
+	PublicShareRequests     []platform.PublicShareDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec
@@ -85,6 +87,17 @@ func (f *Fake) ShowRealmGrants(ctx context.Context, request platform.RealmGrantD
 		return fn(ctx, request)
 	}
 	return platform.RealmGrantDialogResult{Action: platform.RealmGrantDialogClose}, nil
+}
+
+func (f *Fake) ShowPublicShares(ctx context.Context, request platform.PublicShareDialogRequest) (platform.PublicShareDialogResult, error) {
+	f.mu.Lock()
+	f.PublicShareRequests = append(f.PublicShareRequests, request)
+	fn := f.PublicSharesFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.PublicShareDialogResult{Action: platform.PublicShareDialogClose}, nil
 }
 
 func (f *Fake) ShowRealmVisibility(ctx context.Context, request platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error) {
@@ -228,6 +241,7 @@ func (f *Fake) Snapshot() Snapshot {
 		SettingsRequests:        append([]platform.SettingsDialogRequest(nil), f.SettingsRequests...),
 		JournalRequests:         append([]platform.JournalDialogRequest(nil), f.JournalRequests...),
 		RealmGrantRequests:      append([]platform.RealmGrantDialogRequest(nil), f.RealmGrantRequests...),
+		PublicShareRequests:     append([]platform.PublicShareDialogRequest(nil), f.PublicShareRequests...),
 		RealmVisibilityRequests: append([]platform.RealmVisibilityDialogRequest(nil), f.RealmVisibilityRequests...),
 		Notifications:           append([]platform.Notification(nil), f.Notifications...),
 		StatusRequests:          append([]platform.AutostartSpec(nil), f.StatusRequests...),
@@ -247,6 +261,7 @@ type Snapshot struct {
 	SettingsRequests        []platform.SettingsDialogRequest
 	JournalRequests         []platform.JournalDialogRequest
 	RealmGrantRequests      []platform.RealmGrantDialogRequest
+	PublicShareRequests     []platform.PublicShareDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec

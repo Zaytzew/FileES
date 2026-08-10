@@ -30,13 +30,13 @@ type RealmGrantRecord struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-type RealmGrantRecipient struct{ RealmID, Alias string }
+type RealmGrantRecipient struct{ RealmID, Alias, Access, State string }
 type canonicalGrantClient struct{ RealmID, Kind string }
 
 type RealmGrantAuthority interface {
 	Grant(context.Context, string, string, string, string) (RealmGrantRecord, error)
 	RevokeGrant(context.Context, string, string, string) (RealmGrantRecord, error)
-	ListGrantRecipients(context.Context, string) ([]RealmGrantRecipient, error)
+	ListGrantRecipients(context.Context, string, string) ([]RealmGrantRecipient, error)
 	SetRealmDirectoryVisibility(context.Context, string, string) (string, error)
 }
 
@@ -147,12 +147,37 @@ func (p ServicePublisher) RevokeGrant(ctx context.Context, ownerRealmID, recipie
 	return record, nil
 }
 
-func (p ServicePublisher) ListGrantRecipients(_ context.Context, requesterRealmID string) ([]RealmGrantRecipient, error) {
+func (p ServicePublisher) ListGrantRecipients(_ context.Context, requesterRealmID, repoID string) ([]RealmGrantRecipient, error) {
 	if !filepath.IsAbs(p.ServiceWC) {
 		return nil, errors.New("realm directory is incomplete")
 	}
 	if _, err := uuid.Parse(requesterRealmID); err != nil {
 		return nil, errors.New("realm directory requester must be UUID")
+	}
+	grants := map[string]RealmGrantRecord{}
+	if repoID != "" {
+		repo, err := p.loadActiveRepository(repoID)
+		if err != nil || repo.OwnerRealmID != requesterRealmID {
+			return nil, errors.New("authenticated realm does not own repository")
+		}
+		grantEntries, err := os.ReadDir(filepath.Join(p.ServiceWC, "admin", "grants", repoID))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		for _, entry := range grantEntries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(p.ServiceWC, "admin", "grants", repoID, entry.Name()))
+			if err != nil {
+				return nil, err
+			}
+			var grant RealmGrantRecord
+			if json.Unmarshal(raw, &grant) != nil || validateRealmGrantRecord(grant) != nil || grant.RepoID != repoID || grant.OwnerRealmID != requesterRealmID {
+				return nil, errors.New("canonical realm grant is invalid")
+			}
+			grants[grant.RecipientRealmID] = grant
+		}
 	}
 	entries, err := os.ReadDir(filepath.Join(p.ServiceWC, "admin", "realms"))
 	if err != nil {
@@ -167,10 +192,11 @@ func (p ServicePublisher) ListGrantRecipients(_ context.Context, requesterRealmI
 		if err != nil {
 			return nil, err
 		}
-		if record.RealmID == requesterRealmID || record.State != "active" || record.DirectoryVisibility != "listed" || record.Alias == "" {
+		grant, hasGrant := grants[record.RealmID]
+		if record.RealmID == requesterRealmID || record.State != "active" || record.Alias == "" || (record.DirectoryVisibility != "listed" && (!hasGrant || grant.State != "active")) {
 			continue
 		}
-		result = append(result, RealmGrantRecipient{RealmID: record.RealmID, Alias: record.Alias})
+		result = append(result, RealmGrantRecipient{RealmID: record.RealmID, Alias: record.Alias, Access: grant.Access, State: grant.State})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Alias == result[j].Alias {
@@ -260,7 +286,7 @@ func (p ServicePublisher) rebuildGrantAuthority() ([]string, error) {
 		}
 		realm, err := readRealmRecord(filepath.Join(p.ServiceWC, "admin", "realms", view.RealmID+".json"))
 		if err != nil || realm.Schema != "filees.realm/v1" || realm.RealmID != view.RealmID || realm.State != "active" {
-			return nil, errors.New("client projection realm record is invalid")
+			return nil, fmt.Errorf("client projection realm record is invalid: realm_id=%s schema=%q state=%q: %v", view.RealmID, realm.Schema, realm.State, err)
 		}
 		next := projectedRepositories(repositories, grants, view.RealmID, view.ClientRole, client.Kind, view.Repositories)
 		effective[clientID] = map[string]string{}

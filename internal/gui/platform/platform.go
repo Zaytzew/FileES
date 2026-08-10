@@ -20,6 +20,7 @@ type Backend interface {
 	SettingsBrowser
 	JournalBrowser
 	RealmGrantBrowser
+	PublicShareBrowser
 	Notifier
 	Autostart
 }
@@ -83,6 +84,38 @@ type RealmGrantBrowser interface {
 	ShowRealmVisibility(context.Context, RealmVisibilityDialogRequest) (RealmVisibilityDialogResult, error)
 }
 
+// PublicShareBrowser renders the owner's channels for one repository. It
+// returns only an action and opaque channel ID; declarations and secrets are
+// collected by the controller after the list window has closed.
+type PublicShareBrowser interface {
+	ShowPublicShares(context.Context, PublicShareDialogRequest) (PublicShareDialogResult, error)
+}
+
+type PublicShareDialogRequest struct {
+	Title  string
+	Text   string
+	Shares []PublicShareSummary
+}
+
+type PublicShareSummary struct {
+	ChannelID, Address, State, SourceRoot, Recipients, Password, Revision string
+}
+
+type PublicShareDialogAction string
+
+const (
+	PublicShareDialogClose  PublicShareDialogAction = "close"
+	PublicShareDialogCreate PublicShareDialogAction = "create"
+	PublicShareDialogEdit   PublicShareDialogAction = "edit"
+	PublicShareDialogRevoke PublicShareDialogAction = "revoke"
+	PublicShareDialogDelete PublicShareDialogAction = "delete"
+)
+
+type PublicShareDialogResult struct {
+	Action    PublicShareDialogAction
+	ChannelID string
+}
+
 type RealmGrantDialogRequest struct {
 	Title      string
 	Text       string
@@ -92,6 +125,8 @@ type RealmGrantDialogRequest struct {
 type RealmGrantRecipient struct {
 	RealmID string
 	Alias   string
+	Access  string
+	State   string
 }
 
 type RealmGrantDialogAction string
@@ -156,6 +191,7 @@ type SettingsServer struct {
 type SettingsFolder struct {
 	ID, Name, LocalPath, State, Access string
 	CanManageGrants                    bool
+	CanManagePublicShares              bool
 	CanConnect                         bool // connect selected unattached repository
 	CanLocate                          bool // adopt an existing moved working copy
 	CanDetach                          bool // detach_folder (non-destructive)
@@ -178,6 +214,7 @@ const (
 	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
 	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"
 	SettingsDialogManageGrants     SettingsDialogAction = "manage_grants"
+	SettingsDialogPublicShares     SettingsDialogAction = "public_shares"
 	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
 	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"
 	SettingsDialogRemoveRealm      SettingsDialogAction = "remove_realm"

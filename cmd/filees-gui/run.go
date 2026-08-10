@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/localpin"
+	"filees/public-shares/gate"
+	"github.com/google/uuid"
 )
 
 var errGUIRestartRequested = errors.New("GUI restart requested")
@@ -248,7 +251,7 @@ func (adapter realmAliasAdapter) ClaimAlias(ctx context.Context, serverID, alias
 }
 
 type realmGrantClient interface {
-	RealmGrantRecipients(context.Context, string) (*contract.RealmGrantRecipientsResult, error)
+	RealmGrantRecipients(context.Context, string, string) (*contract.RealmGrantRecipientsResult, error)
 	RealmSetVisibility(context.Context, string, string) (*contract.RealmSetVisibilityResult, error)
 	RepoGrantAccess(context.Context, contract.RepoGrantAccessPayload) (*contract.RealmGrantResult, error)
 	RepoRevokeAccess(context.Context, contract.RepoRevokeAccessPayload) (*contract.RealmGrantResult, error)
@@ -256,8 +259,8 @@ type realmGrantClient interface {
 
 type realmGrantAdapter struct{ client realmGrantClient }
 
-func (adapter realmGrantAdapter) ListRecipients(ctx context.Context, serverID string) ([]actions.RealmGrantRecipient, error) {
-	result, err := adapter.client.RealmGrantRecipients(ctx, serverID)
+func (adapter realmGrantAdapter) ListRecipients(ctx context.Context, serverID, repoID string) ([]actions.RealmGrantRecipient, error) {
+	result, err := adapter.client.RealmGrantRecipients(ctx, serverID, repoID)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +269,7 @@ func (adapter realmGrantAdapter) ListRecipients(ctx context.Context, serverID st
 	}
 	recipients := make([]actions.RealmGrantRecipient, 0, len(result.Recipients))
 	for _, recipient := range result.Recipients {
-		recipients = append(recipients, actions.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias})
+		recipients = append(recipients, actions.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias, Access: recipient.Access, State: recipient.State})
 	}
 	return recipients, nil
 }
@@ -302,6 +305,107 @@ func (adapter realmGrantAdapter) Revoke(ctx context.Context, serverID, repoID, r
 		return errors.New("daemon returned an invalid realm grant revoke result")
 	}
 	return nil
+}
+
+type publicShareClient interface {
+	PublicShareList(context.Context, string, string) (*contract.PublicShareListResult, error)
+	PublicShareCreate(context.Context, contract.PublicShareCreatePayload) (*contract.PublicShareResult, error)
+	PublicShareUpdate(context.Context, contract.PublicShareUpdatePayload) (*contract.PublicShareResult, error)
+	PublicShareRevoke(context.Context, contract.PublicShareChannelPayload) (*contract.PublicShareResult, error)
+	PublicShareDelete(context.Context, contract.PublicShareChannelPayload) (*contract.PublicShareResult, error)
+}
+
+type publicShareAdapter struct{ client publicShareClient }
+
+func (adapter publicShareAdapter) ListPublicShares(ctx context.Context, serverID, repoID string) ([]actions.PublicShareSummary, error) {
+	result, err := adapter.client.PublicShareList(ctx, serverID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty public share list")
+	}
+	shares := make([]actions.PublicShareSummary, 0, len(result.Shares))
+	for _, share := range result.Shares {
+		row := actions.PublicShareSummary{ChannelID: share.ChannelID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, UpdatedAt: share.UpdatedAt, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow}
+		for _, object := range share.Objects {
+			row.Objects = append(row.Objects, actions.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+		}
+		shares = append(shares, row)
+	}
+	return shares, nil
+}
+
+func (adapter publicShareAdapter) CreatePublicShare(ctx context.Context, serverID string, declaration actions.PublicShareDeclaration) error {
+	remote, err := publicShareDeclarationToContract(declaration)
+	if err != nil {
+		return err
+	}
+	result, err := adapter.client.PublicShareCreate(ctx, contract.PublicShareCreatePayload{ServerID: serverID, PublicShareDeclaration: remote})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID == "" || result.State != "active" {
+		return errors.New("daemon returned an invalid public share result")
+	}
+	return nil
+}
+
+func (adapter publicShareAdapter) UpdatePublicShare(ctx context.Context, serverID, channelID string, declaration actions.PublicShareDeclaration) error {
+	remote, err := publicShareDeclarationToContract(declaration)
+	if err != nil {
+		return err
+	}
+	result, err := adapter.client.PublicShareUpdate(ctx, contract.PublicShareUpdatePayload{ServerID: serverID, ChannelID: channelID, KeepPassword: declaration.KeepPassword, PublicShareDeclaration: remote})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "active" {
+		return errors.New("daemon returned an invalid public share update result")
+	}
+	return nil
+}
+
+func (adapter publicShareAdapter) RevokePublicShare(ctx context.Context, serverID, repoID, channelID string) error {
+	result, err := adapter.client.PublicShareRevoke(ctx, contract.PublicShareChannelPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "revoked" {
+		return errors.New("daemon returned an invalid public share revoke result")
+	}
+	return nil
+}
+
+func (adapter publicShareAdapter) DeletePublicShare(ctx context.Context, serverID, repoID, channelID string) error {
+	result, err := adapter.client.PublicShareDelete(ctx, contract.PublicShareChannelPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "deleted" {
+		return errors.New("daemon returned an invalid public share delete result")
+	}
+	return nil
+}
+
+func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration) (contract.PublicShareDeclaration, error) {
+	passwordHash := ""
+	if len(declaration.Password) > 0 {
+		var err error
+		passwordHash, err = gate.HashPassword(string(declaration.Password), nil)
+		if err != nil {
+			return contract.PublicShareDeclaration{}, err
+		}
+	}
+	objects := make([]contract.PublicShareObject, 0, len(declaration.Objects))
+	for _, object := range declaration.Objects {
+		publicID := object.PublicID
+		if publicID == "" {
+			publicID = strings.ReplaceAll(uuid.NewString(), "-", "")
+		}
+		objects = append(objects, contract.PublicShareObject{PublicID: publicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+	}
+	return contract.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: passwordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}, nil
 }
 
 type reservationAdapter struct{ client reservationClient }
@@ -589,6 +693,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(realmGrantClient); ok {
 		realmGrants = realmGrantAdapter{client: candidate}
 	}
+	var publicShares actions.PublicShareManager
+	if candidate, ok := deps.client.(publicShareClient); ok {
+		publicShares = publicShareAdapter{client: candidate}
+	}
 	var stack actions.StackLifecycle
 	if candidate, ok := deps.client.(systemLifecycleClient); ok {
 		stack = stackLifecycleAdapter{client: candidate}
@@ -622,10 +730,12 @@ func run(parent context.Context, deps dependencies) error {
 		Reservations:         reservations,
 		RealmAliases:         realmAliases,
 		RealmGrants:          realmGrants,
+		PublicShares:         publicShares,
 		ReservationBrowser:   deps.platform,
 		SettingsBrowser:      deps.platform,
 		JournalBrowser:       deps.platform,
 		RealmGrantBrowser:    deps.platform,
+		PublicShareBrowser:   deps.platform,
 		ConsentPrompter:      deps.platform,
 		Reconnect:            guiApp.Reconnect,
 		Refresh:              guiApp.Refresh,

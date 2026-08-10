@@ -27,6 +27,9 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 		if e := atomicJSON(filepath.Join(root, "admin", "clients", client+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": client, "realm_id": realm, "state": "active"}); e != nil {
 			t.Fatal(e)
 		}
+		if e := atomicJSON(filepath.Join(root, "admin", "realms", realm+".json"), realmRecord{Schema: "filees.realm/v1", RealmID: realm, State: "active", CreatedAt: time.Now(), Alias: "realm-" + realm[:8]}); e != nil {
+			t.Fatal(e)
+		}
 	}
 	writeView(ownerClient, realm)
 	writeView(otherClient, other)
@@ -108,6 +111,9 @@ func TestTransferOwnerMovesRepositoryAndRegeneratesAuthz(t *testing.T) {
 		if e := atomicJSON(filepath.Join(root, "admin", "clients", client+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": client, "realm_id": realm, "state": "active"}); e != nil {
 			t.Fatal(e)
 		}
+		if e := atomicJSON(filepath.Join(root, "admin", "realms", realm+".json"), realmRecord{Schema: "filees.realm/v1", RealmID: realm, State: "active", CreatedAt: time.Now(), Alias: "realm-" + realm[:8]}); e != nil {
+			t.Fatal(e)
+		}
 	}
 	writeView(oldClient, oldRealm)
 	writeView(newClient, newRealm)
@@ -164,6 +170,9 @@ func TestDeleteWithdrawsProjectionAndAuthorityAndLeavesTombstone(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := atomicJSON(filepath.Join(root, "admin", "clients", clientID+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": clientID, "realm_id": realm, "state": "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(filepath.Join(root, "admin", "realms", realm+".json"), realmRecord{Schema: "filees.realm/v1", RealmID: realm, State: "active", CreatedAt: time.Now(), Alias: "owner-realm"}); err != nil {
 		t.Fatal(err)
 	}
 	authz := filepath.Join(t.TempDir(), "data.authz")

@@ -269,8 +269,10 @@ Menu tray zawiera:
   **Odłącz trwale „&lt;nazwa&gt;”…** dla repozytorium własnego realmu,
 - w oknie „Ustawienia FileES”, gdy daemon zgłasza capability: **Widoczność…**
   (przełącza widoczność własnej strefy w prywatnym katalogu odbiorców),
-  **Dostęp stref…** per repozytorium (nadanie/cofnięcie `r`/`rw` widocznej
-  strefie) oraz **Odtwórz z archiwum…** dla wybranego wiersza repozytorium
+  **Uprawnienia gości** per repozytorium (aktualny stan oraz nadanie/cofnięcie
+  `r`/`rw` widocznej strefie), **Udostępnienia publiczne** per własne
+  repozytorium (lista, utworzenie, edycja, revoke i delete kanału) oraz
+  **Odtwórz z archiwum…** dla wybranego wiersza repozytorium
   (ładuje uprzednio wyeksportowany dump SVN jako nową generację tego
   repozytorium, przez ten sam mechanizm co `filees-rotate`),
 - jedno globalne podmenu **Dziennik**, łączące aktywność i błędy newest-first;
@@ -281,7 +283,7 @@ Menu tray zawiera:
   zareklamowanego wydania,
 - „Uruchom FileES ponownie…” i „Zamknij FileES…”.
 
-Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.attach_intent`, `repo.attach_approve`, `repo.locate`, `repo.detach`, `repo.delete`, `repo.load_dump`, `repo.lifecycle_status`, `repo.activity`, `repo.grant_access`, `repo.revoke_access`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `realm.alias_claim`, `realm.grant_recipients`, `realm.set_visibility`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
+Elementy zależne od komend mutujących są tworzone wyłącznie na podstawie capabilities i świeżego snapshotu. GUI obsługuje obecnie m.in. `events.subscribe`, `repo.create_request`, `repo.attach_intent`, `repo.attach_approve`, `repo.locate`, `repo.detach`, `repo.delete`, `repo.load_dump`, `repo.lifecycle_status`, `repo.activity`, `repo.grant_access`, `repo.revoke_access`, `repo.public_share_list`, `repo.public_share_create`, `repo.public_share_update`, `repo.public_share_revoke`, `repo.public_share_delete`, `repo.lock`, `repo.unlock`, `repo.reservation_list`, `repo.reservation_release`, `realm.alias_claim`, `realm.grant_recipients`, `realm.set_visibility`, `system.restart`, `system.shutdown`, `error.list` oraz dynamiczne `update.status`, `update.plan` i `update.apply`. Capability aktualizacji pojawiają się wyłącznie przy kompletnej, podpisanej usłudze update. `Pause`, `Sync now`, publikowanie zmian i decyzje konfliktowe pozostają ukryte do czasu wdrożenia i zareklamowania ich przez daemon.
 
 Dołączenie kolejnej instalacji do istniejącego realmu jest autoryzowane przez
 administratora przy tworzeniu ticketu (`--join-realm-alias`). Po aktywacji
@@ -331,11 +333,26 @@ rename/delete; kontrolowana operacja FileES najpierw zwalnia ten uchwyt.
 `DataGridView`). **Widoczność…** przełącza wpis własnej strefy w prywatnym
 katalogu odbiorców między ukrytym a widocznym — strefa musi być widoczna,
 zanim inna strefa będzie mogła wybrać ją jako odbiorcę grantu; przełączenie
-nigdy nie ujawnia repozytoriów ani istniejących dostępów. **Dostęp stref…**,
-dostępne per wiersz repozytorium, otwiera listę aktualnie widocznych stref i
-pozwala nadać dostęp tylko do odczytu, do odczytu i zapisu albo cofnąć
-dostęp; każda zmiana wymaga potwierdzenia i natychmiast regeneruje
-`data-authz` oraz `view.json` wszystkich instalacji, których dotyczy.
+nigdy nie ujawnia repozytoriów ani istniejących dostępów. **Uprawnienia gości**,
+dostępne per wiersz repozytorium, otwiera sumę aktualnie widocznych stref oraz
+ukrytych stref z aktywnym grantem. Tabela pokazuje bieżące `r`/`rw` albo brak
+dostępu i pozwala nadać dostęp tylko do odczytu, do odczytu i zapisu albo go
+cofnąć; ukrycie strefy nie czyni istniejącego grantu niemożliwym do zarządzania.
+Każda zmiana wymaga potwierdzenia i natychmiast regeneruje `data-authz` oraz
+`view.json` wszystkich instalacji, których dotyczy.
+
+**Udostępnienia publiczne** są akcją wyłącznie właściciela repozytorium. Okno
+pokazuje aktywne i cofnięte kanały oraz ich adres, źródło, odbiorców, ochronę
+hasłem i politykę rewizji. Kanał można utworzyć, edytować, cofnąć lub usunąć.
+Przy create/update użytkownik wybiera niepusty podfolder lokalnej kopii
+roboczej; GUI rekurencyjnie buduje mapę maksymalnie 4096 zwykłych plików,
+pomija `.svn`, odrzuca symlinki i zachowuje stabilne `public_id` dla ścieżek
+już obecnych w edytowanym kanale. Kanał zamknięty używa osobnych tokenów dla
+adresów e-mail; kanał otwarty może być bez hasła albo z hasłem Argon2id.
+Plaintext jest hashowany przed IPC control-plane i nigdy nie trafia do ticketu
+SVN. Edycja może zachować istniejący verifier po stronie serwera bez odsyłania
+go do klienta. Pusta rewizja śledzi HEAD, dodatni numer ustawia
+`do-not-follow`.
 
 **Odtwórz z archiwum…** (`load_dump`, IPC `repo.load_dump`, ticket
 `LOAD_REPOSITORY_DUMP`) jest dostępne dla wybranego wiersza repozytorium

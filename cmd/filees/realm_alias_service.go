@@ -152,12 +152,12 @@ func (s *realmAliasService) Resolve(ctx context.Context, serverID string, ownerI
 	return labels, nil
 }
 
-func (s *realmAliasService) ListRecipients(ctx context.Context, serverID string) ([]contract.RealmGrantRecipient, error) {
+func (s *realmAliasService) ListRecipients(ctx context.Context, serverID, repoID string) ([]contract.RealmGrantRecipient, error) {
 	profile, ok := s.provisioner.Profile(serverID)
 	if !ok {
 		return nil, fmt.Errorf("no activated profile for server %q", serverID)
 	}
-	result, err := s.exchange(ctx, profile, control.TicketListGrantRecipients, control.ListGrantRecipientsPayload{})
+	result, err := s.exchange(ctx, profile, control.TicketListGrantRecipients, control.ListGrantRecipientsPayload{RepoID: repoID})
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (s *realmAliasService) ListRecipients(ctx context.Context, serverID string)
 	}
 	recipients := make([]contract.RealmGrantRecipient, 0, len(payload.Recipients))
 	for _, recipient := range payload.Recipients {
-		recipients = append(recipients, contract.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias})
+		recipients = append(recipients, contract.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias, Access: recipient.Access, State: recipient.State})
 	}
 	return recipients, nil
 }
@@ -194,6 +194,74 @@ func (s *realmAliasService) Grant(ctx context.Context, serverID, repoID, recipie
 
 func (s *realmAliasService) Revoke(ctx context.Context, serverID, repoID, recipientRealmID string) (contract.RealmGrantResult, error) {
 	return s.realmGrantExchange(ctx, serverID, control.TicketRevokeAccess, control.RevokeAccessPayload{RepoID: repoID, RecipientRealmID: recipientRealmID})
+}
+
+func (s *realmAliasService) ListPublicShares(ctx context.Context, serverID, repoID string) ([]contract.PublicShareSummary, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return nil, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketListPublicShares, control.ListPublicSharesPayload{RepoID: repoID})
+	if err != nil {
+		return nil, err
+	}
+	var payload control.ListPublicSharesResult
+	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
+		return nil, err
+	}
+	shares := make([]contract.PublicShareSummary, 0, len(payload.Shares))
+	for _, share := range payload.Shares {
+		shares = append(shares, publicShareSummaryFromControl(share))
+	}
+	return shares, nil
+}
+
+func (s *realmAliasService) CreatePublicShare(ctx context.Context, serverID string, declaration contract.PublicShareDeclaration) (contract.PublicShareResult, error) {
+	return s.publicShareExchange(ctx, serverID, control.TicketCreatePublicShare, control.CreatePublicSharePayload{PublicShareDeclaration: publicShareDeclarationToControl(declaration)})
+}
+
+func (s *realmAliasService) UpdatePublicShare(ctx context.Context, serverID, channelID string, declaration contract.PublicShareDeclaration, keepPassword bool) (contract.PublicShareResult, error) {
+	return s.publicShareExchange(ctx, serverID, control.TicketUpdatePublicShare, control.UpdatePublicSharePayload{ChannelID: channelID, KeepPassword: keepPassword, PublicShareDeclaration: publicShareDeclarationToControl(declaration)})
+}
+
+func (s *realmAliasService) RevokePublicShare(ctx context.Context, serverID, channelID string) (contract.PublicShareResult, error) {
+	return s.publicShareExchange(ctx, serverID, control.TicketRevokePublicShare, control.RevokePublicSharePayload{ChannelID: channelID})
+}
+
+func (s *realmAliasService) DeletePublicShare(ctx context.Context, serverID, channelID string) (contract.PublicShareResult, error) {
+	return s.publicShareExchange(ctx, serverID, control.TicketDeletePublicShare, control.DeletePublicSharePayload{ChannelID: channelID})
+}
+
+func (s *realmAliasService) publicShareExchange(ctx context.Context, serverID string, typ control.TicketType, payload any) (contract.PublicShareResult, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return contract.PublicShareResult{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, typ, payload)
+	if err != nil {
+		return contract.PublicShareResult{}, err
+	}
+	var remote control.PublicShareResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return contract.PublicShareResult{}, err
+	}
+	return contract.PublicShareResult{ChannelID: remote.ChannelID, Alias: remote.Alias, Slug: remote.Slug, State: remote.State, RecipientDeliveries: remote.RecipientDeliveries}, nil
+}
+
+func publicShareDeclarationToControl(declaration contract.PublicShareDeclaration) control.PublicShareDeclaration {
+	objects := make([]control.PublicShareObject, 0, len(declaration.Objects))
+	for _, object := range declaration.Objects {
+		objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+	}
+	return control.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
+}
+
+func publicShareSummaryFromControl(share control.PublicShareSummary) contract.PublicShareSummary {
+	objects := make([]contract.PublicShareObject, 0, len(share.Objects))
+	for _, object := range share.Objects {
+		objects = append(objects, contract.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+	}
+	return contract.PublicShareSummary{ChannelID: share.ChannelID, RepoID: share.RepoID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow, Objects: objects, UpdatedAt: share.UpdatedAt}
 }
 
 func (s *realmAliasService) realmGrantExchange(ctx context.Context, serverID string, typ control.TicketType, payload any) (contract.RealmGrantResult, error) {

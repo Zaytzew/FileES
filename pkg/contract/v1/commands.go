@@ -45,6 +45,11 @@ const (
 	CmdRepoLoadDump           = "repo.load_dump"           // load a user-supplied dump into a fresh, single-carrier-commit repo
 	CmdRepoGrantAccess        = "repo.grant_access"        // grant r/rw access to a visible foreign realm
 	CmdRepoRevokeAccess       = "repo.revoke_access"       // revoke a realm grant without deleting local data
+	CmdRepoPublicShareList    = "repo.public_share_list"   // list owned public distribution channels
+	CmdRepoPublicShareCreate  = "repo.public_share_create" // create an owned public distribution channel
+	CmdRepoPublicShareUpdate  = "repo.public_share_update" // update one owned active channel
+	CmdRepoPublicShareRevoke  = "repo.public_share_revoke" // revoke access while retaining the channel record
+	CmdRepoPublicShareDelete  = "repo.public_share_delete" // delete policy while retaining the address tombstone
 	CmdRepoDetach             = "repo.detach"              // detach one local working copy, preserving user data
 	CmdRepoDelete             = "repo.delete"              // delete an owned server repository, then detach locally
 	CmdRepoLifecycleStatus    = "repo.lifecycle_status"    // poll outcome of a create/attach/relocate operation by ID
@@ -99,6 +104,11 @@ const (
 	CapRepoLoadDump           = "repo.load_dump"
 	CapRepoGrantAccess        = "repo.grant_access"
 	CapRepoRevokeAccess       = "repo.revoke_access"
+	CapRepoPublicShareList    = "repo.public_share_list"
+	CapRepoPublicShareCreate  = "repo.public_share_create"
+	CapRepoPublicShareUpdate  = "repo.public_share_update"
+	CapRepoPublicShareRevoke  = "repo.public_share_revoke"
+	CapRepoPublicShareDelete  = "repo.public_share_delete"
 	CapRepoDetach             = "repo.detach"
 	CapRepoDelete             = "repo.delete"
 	CapRepoLifecycleStatus    = "repo.lifecycle_status"
@@ -260,11 +270,14 @@ type RealmAliasClaimResult struct {
 
 type RealmGrantRecipientsPayload struct {
 	ServerID string `json:"server_id"`
+	RepoID   string `json:"repo_id,omitempty"`
 }
 
 type RealmGrantRecipient struct {
 	RealmID string `json:"realm_id"`
 	Alias   string `json:"alias"`
+	Access  string `json:"access,omitempty"`
+	State   string `json:"state,omitempty"`
 }
 
 type RealmGrantRecipientsResult struct {
@@ -428,6 +441,71 @@ type RealmGrantResult struct {
 	RecipientRealmID string `json:"recipient_realm_id"`
 	Access           string `json:"access,omitempty"`
 	State            string `json:"state"`
+}
+
+type PublicShareObject struct {
+	PublicID    string `json:"public_id"`
+	RepoPath    string `json:"repo_path"`
+	DisplayName string `json:"display_name"`
+}
+
+type PublicShareDeclaration struct {
+	RepoID       string              `json:"repo_id"`
+	SourceRoot   string              `json:"source_root"`
+	Slug         string              `json:"slug"`
+	Recipients   []string            `json:"recipients,omitempty"`
+	PasswordHash string              `json:"password_hash,omitempty"`
+	DoNotFollow  *int64              `json:"do-not-follow,omitempty"`
+	Objects      []PublicShareObject `json:"object_map"`
+}
+
+type PublicShareListPayload struct {
+	ServerID string `json:"server_id"`
+	RepoID   string `json:"repo_id"`
+}
+
+type PublicShareCreatePayload struct {
+	ServerID string `json:"server_id"`
+	PublicShareDeclaration
+}
+
+type PublicShareUpdatePayload struct {
+	ServerID     string `json:"server_id"`
+	ChannelID    string `json:"channel_id"`
+	KeepPassword bool   `json:"keep_password,omitempty"`
+	PublicShareDeclaration
+}
+
+type PublicShareChannelPayload struct {
+	ServerID  string `json:"server_id"`
+	RepoID    string `json:"repo_id"`
+	ChannelID string `json:"channel_id"`
+}
+
+type PublicShareSummary struct {
+	ChannelID         string              `json:"channel_id"`
+	RepoID            string              `json:"repo_id"`
+	Alias             string              `json:"alias"`
+	Slug              string              `json:"slug"`
+	State             string              `json:"state"`
+	SourceRoot        string              `json:"source_root"`
+	Recipients        []string            `json:"recipients,omitempty"`
+	PasswordProtected bool                `json:"password_protected,omitempty"`
+	DoNotFollow       *int64              `json:"do-not-follow,omitempty"`
+	Objects           []PublicShareObject `json:"object_map"`
+	UpdatedAt         string              `json:"updated_at"`
+}
+
+type PublicShareListResult struct {
+	Shares []PublicShareSummary `json:"shares"`
+}
+
+type PublicShareResult struct {
+	ChannelID           string `json:"channel_id"`
+	Alias               string `json:"alias"`
+	Slug                string `json:"slug"`
+	State               string `json:"state"`
+	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
 }
 
 type SystemLifecycleResult struct {

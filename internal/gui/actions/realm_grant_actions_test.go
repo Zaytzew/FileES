@@ -20,9 +20,11 @@ type realmGrantCall struct {
 type fakeRealmGrantManager struct {
 	recipients []actions.RealmGrantRecipient
 	calls      chan realmGrantCall
+	listedRepo string
 }
 
-func (fake *fakeRealmGrantManager) ListRecipients(context.Context, string) ([]actions.RealmGrantRecipient, error) {
+func (fake *fakeRealmGrantManager) ListRecipients(_ context.Context, _, repoID string) ([]actions.RealmGrantRecipient, error) {
+	fake.listedRepo = repoID
 	return fake.recipients, nil
 }
 
@@ -42,7 +44,7 @@ func (fake *fakeRealmGrantManager) Revoke(_ context.Context, serverID, repoID, r
 }
 
 func TestControllerSettingsGrantsWriteAccessToSelectedRealm(t *testing.T) {
-	manager := &fakeRealmGrantManager{recipients: []actions.RealmGrantRecipient{{RealmID: "realm-2", Alias: "biuro"}}, calls: make(chan realmGrantCall, 1)}
+	manager := &fakeRealmGrantManager{recipients: []actions.RealmGrantRecipient{{RealmID: "realm-2", Alias: "biuro", Access: "r", State: "active"}}, calls: make(chan realmGrantCall, 1)}
 	platformFake := &platformtest.Fake{
 		SettingsFunc: func(_ context.Context, request platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
 			if len(request.Servers) != 1 || len(request.Servers[0].Folders) != 1 || !request.Servers[0].Folders[0].CanManageGrants {
@@ -51,7 +53,7 @@ func TestControllerSettingsGrantsWriteAccessToSelectedRealm(t *testing.T) {
 			return platform.SettingsDialogResult{Action: platform.SettingsDialogManageGrants, ServerID: "office", RepoID: "repo-1"}, nil
 		},
 		RealmGrantsFunc: func(_ context.Context, request platform.RealmGrantDialogRequest) (platform.RealmGrantDialogResult, error) {
-			if len(request.Recipients) != 1 || request.Recipients[0].Alias != "biuro" {
+			if len(request.Recipients) != 1 || request.Recipients[0].Alias != "biuro" || request.Recipients[0].Access != "r" || request.Recipients[0].State != "active" {
 				t.Fatalf("grant recipients=%+v", request.Recipients)
 			}
 			return platform.RealmGrantDialogResult{Action: platform.RealmGrantDialogWrite, RealmID: "realm-2"}, nil
@@ -63,6 +65,9 @@ func TestControllerSettingsGrantsWriteAccessToSelectedRealm(t *testing.T) {
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
 	call := awaitCh(t, manager.calls, "realm grant")
+	if manager.listedRepo != "repo-1" {
+		t.Fatalf("grant list repo=%q", manager.listedRepo)
+	}
 	if call.serverID != "office" || call.repoID != "repo-1" || call.realmID != "realm-2" || call.access != contract.AccessReadWrite || call.revoke {
 		t.Fatalf("grant call=%+v", call)
 	}

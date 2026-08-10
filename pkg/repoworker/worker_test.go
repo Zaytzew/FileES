@@ -97,7 +97,7 @@ func (g *fakeRealmGrantAuthority) RevokeGrant(_ context.Context, owner, recipien
 	g.owner, g.recipient, g.repo = owner, recipient, repo
 	return RealmGrantRecord{RepoID: repo, RecipientRealmID: recipient, State: "revoked"}, nil
 }
-func (g *fakeRealmGrantAuthority) ListGrantRecipients(context.Context, string) ([]RealmGrantRecipient, error) {
+func (g *fakeRealmGrantAuthority) ListGrantRecipients(context.Context, string, string) ([]RealmGrantRecipient, error) {
 	return nil, nil
 }
 func (g *fakeRealmGrantAuthority) SetRealmDirectoryVisibility(_ context.Context, _ string, visibility string) (string, error) {

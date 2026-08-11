@@ -190,3 +190,54 @@ func quote(value string) string {
 	raw, _ := json.Marshal(value)
 	return string(raw)
 }
+
+// A command that exits non-zero and prints nothing is the command-line form
+// of "click it and nothing happens": the caller cannot tell a typo from a
+// stale binary. That is not hypothetical - it cost a live debugging session on
+// 2026-08-06, where `ticket create` with flags before the positional e-mail
+// exited mute and looked like the feature was missing.
+//
+// Every usage refusal is walked here rather than the one that was noticed,
+// because the defect is a class, not an instance.
+func TestAdminUsageRefusalsAlwaysExplainThemselves(t *testing.T) {
+	for _, args := range [][]string{
+		{},
+		{"ticket"},
+		{"ticket", "resend"},
+		{"ticket", "revoke"},
+		{"ticket", "list", "extra"},
+		{"operation", "inspect"},
+		{"client", "revoke"},
+		{"client", "revoke-realm"},
+		{"repo", "transfer-owner"},
+		{"repo", "transfer-owner", "-repo-id", "only-one-of-two"},
+		{"erasure", "complete"},
+		{"nonsense", "command"},
+	} {
+		var stdout, stderr strings.Builder
+		code := RunAdmin(args, &stdout, &stderr)
+		if code != ExitUsage {
+			t.Fatalf("RunAdmin(%q) = %d, want ExitUsage", args, code)
+		}
+		if strings.TrimSpace(stderr.String()) == "" {
+			t.Fatalf("RunAdmin(%q) refused silently; a caller cannot tell a typo from a broken binary", args)
+		}
+	}
+}
+
+// Without a version there is no way to tell how old a deployed binary is
+// except by comparing its usage text to the source, which is exactly how a
+// stale filees-admin went unnoticed while a newly added flag read as "not
+// defined". It must answer before any config is loaded, because a suspect
+// config is a common reason to be asking.
+func TestAdminReportsVersionWithoutNeedingAConfig(t *testing.T) {
+	for _, spelling := range []string{"version", "--version", "-version"} {
+		var stdout, stderr strings.Builder
+		if code := RunAdmin([]string{spelling}, &stdout, &stderr); code != ExitOK {
+			t.Fatalf("RunAdmin(%q) = %d, want ExitOK", spelling, code)
+		}
+		if strings.TrimSpace(stdout.String()) == "" {
+			t.Fatalf("RunAdmin(%q) printed no version", spelling)
+		}
+	}
+}

@@ -851,3 +851,29 @@ func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
 		})
 	}
 }
+
+// Placeholder and Default were one field, and it quietly did the wrong thing
+// for half its callers: the hint was written into the box as content, so
+// "Kod OTP" or "filees-invite:v1:…" arrived as the answer when the user just
+// pressed OK - and with Secret set it was masked, so they could not see what
+// they were about to send.
+func TestPromptHintIsNeverFieldContentButADefaultIs(t *testing.T) {
+	hint := buildPromptScript(PromptTextRequest{Title: "t", Text: "paste it", Placeholder: "filees-invite:v1:…", Secret: true})
+	if strings.Contains(hint, "$t.Text='filees-invite:v1:…'") {
+		t.Fatalf("hint was written into the field as content:\n%s", hint)
+	}
+	if !strings.Contains(hint, "PlaceholderText") {
+		t.Fatalf("hint was dropped entirely instead of shown as a placeholder:\n%s", hint)
+	}
+	// Probed rather than assigned outright: setting an absent property is a
+	// terminating error in PowerShell, and losing a hint beats losing the
+	// dialog.
+	if !strings.Contains(hint, "PSObject.Properties['PlaceholderText']") {
+		t.Fatalf("PlaceholderText was assumed present rather than probed:\n%s", hint)
+	}
+
+	value := buildPromptScript(PromptTextRequest{Title: "t", Text: "name", Default: "ZEGRZE"})
+	if !strings.Contains(value, "$t.Text='ZEGRZE'") {
+		t.Fatalf("default value was not prefilled:\n%s", value)
+	}
+}

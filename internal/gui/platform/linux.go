@@ -180,11 +180,22 @@ func (b *LinuxBackend) PromptText(ctx context.Context, request PromptTextRequest
 	if request.Title != "" {
 		args = append(args, "--title="+request.Title)
 	}
-	if request.Text != "" {
-		args = append(args, "--text="+request.Text)
-	}
+	text := request.Text
 	if request.Placeholder != "" {
-		args = append(args, "--entry-text="+request.Placeholder)
+		// yad has no placeholder concept and --entry-text is a real value, so
+		// the hint goes into the prompt instead of into the field. Putting it
+		// in the field would submit it, which is exactly the bug this split
+		// exists to remove.
+		if text != "" {
+			text += "\n"
+		}
+		text += "(" + request.Placeholder + ")"
+	}
+	if text != "" {
+		args = append(args, "--text="+text)
+	}
+	if request.Default != "" {
+		args = append(args, "--entry-text="+request.Default)
 	}
 	if request.Secret {
 		args = append(args, "--hide-text")

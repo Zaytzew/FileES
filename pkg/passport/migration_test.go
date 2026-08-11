@@ -13,13 +13,17 @@ import (
 type migrationClient struct {
 	status              []client.StatusEntry
 	props               map[string]bool
+	appendOnly          map[string]bool
 	sets, dels, commits [][]string
 }
 
 func (c *migrationClient) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
 	return c.status, nil
 }
-func (c *migrationClient) PropList(context.Context, string, string) (map[string]bool, error) {
+func (c *migrationClient) PropList(_ context.Context, _ string, propName string) (map[string]bool, error) {
+	if propName == AppendOnlyProperty {
+		return c.appendOnly, nil
+	}
 	return c.props, nil
 }
 func (c *migrationClient) PropSet(_ context.Context, _ string, _, _ string, paths []string) (string, error) {
@@ -130,5 +134,28 @@ func TestClearNeedsLockIsIdempotent(t *testing.T) {
 	}
 	if len(c.dels) != 0 || len(c.commits) != 0 {
 		t.Fatalf("nothing carried the property yet it committed: dels=%#v commits=%#v", c.dels, c.commits)
+	}
+}
+
+// The mobile channel is append-only and takes no part in edit passports, so
+// the svn:needs-lock it sets states a different intent: those files must not
+// be edited at all, whatever the repository's policy. Turning the policy off
+// must therefore leave them locked - the policy did not put that barrier
+// there and has no business removing it.
+func TestClearNeedsLockLeavesAppendOnlyUploadsLocked(t *testing.T) {
+	wc := t.TempDir()
+	c := &migrationClient{
+		props:      map[string]bool{"drawing.dwg": true, "photos/IMG_1.jpg": true},
+		appendOnly: map[string]bool{"photos/IMG_1.jpg": true},
+		status: []client.StatusEntry{
+			{Path: "drawing.dwg", Item: "normal"},
+			{Path: "photos/IMG_1.jpg", Item: "normal"},
+		},
+	}
+	if err := ClearNeedsLock(context.Background(), c, wc, "instance", 100); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.dels) != 1 || len(c.dels[0]) != 1 || c.dels[0][0] != "drawing.dwg" {
+		t.Fatalf("rollback touched append-only uploads: dels=%#v", c.dels)
 	}
 }

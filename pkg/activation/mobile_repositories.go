@@ -60,18 +60,15 @@ func (m *Manager) mobileRepositoryEntries(record Record) ([]any, error) {
 		if canonical.RepoID != grant.RepoID {
 			continue
 		}
-		entry := map[string]any{
+		// editing_policy is deliberately absent: the mobile channel is
+		// append-only and does not take part in edit passports at all, so
+		// projecting a policy it can neither honour nor act on would only
+		// invite a phone to render a barrier that does not apply to it.
+		entries = append(entries, map[string]any{
 			"repo_id": canonical.RepoID, "display_name": canonical.DisplayName, "url": canonical.URL,
 			"access": grant.Access, "state": canonical.State, "owner_realm_id": canonical.OwnerRealmID,
 			"attachment_policy": attachmentPolicyOrDefault(grant.AttachmentPolicy),
-		}
-		// Repository-wide, so it comes from the canonical record rather than
-		// the per-client grant. Omitted when empty to keep the default off
-		// the wire, matching the struct tag on every other writer.
-		if canonical.EditingPolicy != "" {
-			entry["editing_policy"] = canonical.EditingPolicy
-		}
-		entries = append(entries, entry)
+		})
 	}
 	return entries, nil
 }

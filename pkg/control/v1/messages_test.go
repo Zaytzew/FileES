@@ -345,3 +345,37 @@ func TestPublicShareListAndPasswordPreservationContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A ticket type has to be registered in three independent places here -
+// Ticket.Validate, the allowlist in Result.Validate, and
+// validateSuccessPayload - and the default arms reject anything unregistered.
+// Miss one and nothing fails to compile; it fails in production instead. This
+// walks all three for the editing-policy ticket.
+func TestSetRepositoryEditingPolicyIsRegisteredOnEveryValidationPath(t *testing.T) {
+	opID, requestID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+
+	for _, policy := range []string{"", "free", "lock_required"} {
+		if _, err := NewTicket(opID, requestID, TicketSetRepositoryEditingPolicy, "client", SetRepositoryEditingPolicyPayload{RepoID: repoID, Policy: policy}, time.Now()); err != nil {
+			t.Fatalf("policy %q rejected: %v", policy, err)
+		}
+	}
+	if _, err := NewTicket(opID, requestID, TicketSetRepositoryEditingPolicy, "client", SetRepositoryEditingPolicyPayload{RepoID: repoID, Policy: "readonly"}, time.Now()); err == nil {
+		t.Fatal("unknown policy accepted into a ticket")
+	}
+	if _, err := NewTicket(opID, requestID, TicketSetRepositoryEditingPolicy, "client", SetRepositoryEditingPolicyPayload{RepoID: "not-a-uuid", Policy: "lock_required"}, time.Now()); err == nil {
+		t.Fatal("non-UUID repo_id accepted into a ticket")
+	}
+
+	result, err := NewSuccessResult(opID, requestID, TicketSetRepositoryEditingPolicy, SetRepositoryEditingPolicyResult{RepoID: repoID, Policy: "lock_required"}, time.Now())
+	if err != nil {
+		t.Fatalf("result rejected by the type allowlist or payload validator: %v", err)
+	}
+	if err := result.Validate(); err != nil {
+		t.Fatalf("valid result failed validation: %v", err)
+	}
+	// The stored default is the empty string, never the "free" alias, so a
+	// result echoing "free" means a writer skipped normalisation.
+	if _, err := NewSuccessResult(opID, requestID, TicketSetRepositoryEditingPolicy, SetRepositoryEditingPolicyResult{RepoID: repoID, Policy: "free"}, time.Now()); err == nil {
+		t.Fatal("unnormalised \"free\" accepted in a result")
+	}
+}

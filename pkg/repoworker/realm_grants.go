@@ -40,6 +40,14 @@ type RealmGrantAuthority interface {
 	SetRealmDirectoryVisibility(context.Context, string, string) (string, error)
 }
 
+// RepositoryEditingPolicyAuthority is deliberately separate from
+// RealmGrantAuthority: grants say who may reach a repository, while this says
+// how everyone works inside one. Keeping them apart is also what stops the
+// editing policy from being reached through grant-shaped authorization.
+type RepositoryEditingPolicyAuthority interface {
+	SetRepositoryEditingPolicy(ctx context.Context, realmID, repoID, policy string) (string, error)
+}
+
 func realmGrantPath(serviceWC, repoID, recipientRealmID string) (string, error) {
 	if _, err := uuid.Parse(repoID); err != nil {
 		return "", errors.New("realm grant repo_id must be UUID")
@@ -579,4 +587,67 @@ func validateRealmGrantRecord(record RealmGrantRecord) error {
 		return errors.New("revoked realm grant is invalid")
 	}
 	return nil
+}
+
+// SetRepositoryEditingPolicy stores the repository-wide editing policy on the
+// canonical record and republishes every affected client's projection.
+//
+// Ownership is deliberately checked through OwnsActiveRepository rather than
+// any grant: the policy governs how everyone works in the repository, so a
+// recipient holding rw must not be able to impose it on the owner.
+//
+// The stored value is normalised, so the default is always the empty string
+// and never the "free" alias. That rule is load-bearing rather than cosmetic:
+// clientview decodes strictly, so a projection carrying editing_policy is
+// unreadable to any binary predating the field, and keeping the default off
+// the wire is what makes the whole feature inert until an owner opts in.
+func (p ServicePublisher) SetRepositoryEditingPolicy(ctx context.Context, realmID, repoID, policy string) (string, error) {
+	if !filepath.IsAbs(p.ServiceWC) || p.Runner == nil {
+		return "", errors.New("repository authority is incomplete")
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return "", errors.New("editing policy realm_id must be UUID")
+	}
+	if !clientview.ValidEditingPolicy(policy) {
+		return "", errors.New("editing policy must be free or lock_required")
+	}
+	policy = clientview.NormalizeEditingPolicy(policy)
+	if err := p.OwnsActiveRepository(realmID, repoID); err != nil {
+		return "", err
+	}
+	path, err := repositoryRecordPath(p.ServiceWC, repoID)
+	if err != nil {
+		return "", err
+	}
+	record, err := p.loadActiveRepository(repoID)
+	if err != nil {
+		return "", err
+	}
+	if record.EditingPolicy == policy {
+		return policy, nil // already there; nothing to publish
+	}
+	record.EditingPolicy = policy
+	if err := atomicJSON(path, record); err != nil {
+		return "", err
+	}
+	// The record is the only place the projection reads this from, so the
+	// client views have to be rebuilt in the same commit as the record. A
+	// commit carrying one without the other would leave clients acting on a
+	// policy the authority no longer states, or the reverse.
+	changed, err := p.rebuildGrantAuthority()
+	if err != nil {
+		return "", err
+	}
+	changed = append([]string{path}, changed...)
+	if err := p.Runner.Publish(ctx, changed, "filees: set repository editing policy "+editingPolicyLabel(policy)+" for "+repoID); err != nil {
+		return "", err
+	}
+	return policy, nil
+}
+
+func editingPolicyLabel(policy string) string {
+	if policy == clientview.EditingFree {
+		return "free"
+	}
+	return policy
 }

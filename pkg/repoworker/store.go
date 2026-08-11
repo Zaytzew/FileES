@@ -103,12 +103,7 @@ func (s *FileStore) Save(r control.Result) error {
 	if e = os.Rename(tmp, p); e != nil {
 		return e
 	}
-	d, e := os.Open(s.root)
-	if e != nil {
-		return e
-	}
-	defer d.Close()
-	return d.Sync()
+	return syncDirectory(s.root)
 }
 
 // PurgeExpiredMobilePairings deletes MOBILE_PAIRING result files whose

@@ -65,6 +65,10 @@ const (
 	TicketUpdatePublicShare   TicketType = "UPDATE_PUBLIC_SHARE"
 	TicketRevokePublicShare   TicketType = "REVOKE_PUBLIC_SHARE"
 	TicketDeletePublicShare   TicketType = "DELETE_PUBLIC_SHARE"
+	// payload carries no realm: the worker derives the owner from the
+	// authenticated session, and a realm grant - including rw - never
+	// satisfies ownership of a repository-wide policy.
+	TicketSetRepositoryEditingPolicy TicketType = "SET_REPOSITORY_EDITING_POLICY"
 )
 
 type ResultStatus string
@@ -188,6 +192,15 @@ type SetRealmDirectoryVisibilityPayload struct {
 }
 type SetRealmDirectoryVisibilityResult struct {
 	Visibility string `json:"visibility"`
+}
+
+type SetRepositoryEditingPolicyPayload struct {
+	RepoID string `json:"repo_id"`
+	Policy string `json:"policy"`
+}
+type SetRepositoryEditingPolicyResult struct {
+	RepoID string `json:"repo_id"`
+	Policy string `json:"policy"`
 }
 
 type PublicShareObject struct {
@@ -488,6 +501,19 @@ func (t Ticket) Validate() error {
 		if p.Visibility != "hidden" && p.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY visibility must be hidden or listed")
 		}
+	case TicketSetRepositoryEditingPolicy:
+		var p SetRepositoryEditingPolicyPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("SET_REPOSITORY_EDITING_POLICY payload: %w", err)
+		}
+		if _, err := uuid.Parse(p.RepoID); err != nil {
+			return errors.New("SET_REPOSITORY_EDITING_POLICY repo_id must be a UUID")
+		}
+		// Both spellings of the default are accepted on the wire; the worker
+		// normalises before storing so the empty form is what gets projected.
+		if p.Policy != "" && p.Policy != "free" && p.Policy != "lock_required" {
+			return errors.New("SET_REPOSITORY_EDITING_POLICY policy must be free or lock_required")
+		}
 	case TicketListPublicShares:
 		var p ListPublicSharesPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -588,7 +614,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketSetRepositoryEditingPolicy {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -747,6 +773,19 @@ func validateSuccessPayload(r Result) error {
 		}
 		if result.Visibility != "hidden" && result.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY result is invalid")
+		}
+	case TicketSetRepositoryEditingPolicy:
+		var result SetRepositoryEditingPolicyResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("SET_REPOSITORY_EDITING_POLICY result: %w", err)
+		}
+		if _, err := uuid.Parse(result.RepoID); err != nil {
+			return errors.New("SET_REPOSITORY_EDITING_POLICY result repo_id must be a UUID")
+		}
+		// The result reports the stored value, which is already normalised:
+		// the default is the empty string and never the "free" alias.
+		if result.Policy != "" && result.Policy != "lock_required" {
+			return errors.New("SET_REPOSITORY_EDITING_POLICY result policy is invalid")
 		}
 	case TicketListPublicShares:
 		var result ListPublicSharesResult

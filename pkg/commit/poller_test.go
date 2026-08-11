@@ -108,6 +108,9 @@ func (*revisionClient) PropGet(context.Context, string, string, []string) (strin
 func (*revisionClient) PropSet(context.Context, string, string, string, []string) (string, error) {
 	return "", nil
 }
+func (*revisionClient) PropDel(context.Context, string, string, []string) (string, error) {
+	return "", nil
+}
 func (*revisionClient) PropList(context.Context, string, string) (map[string]bool, error) {
 	return nil, nil
 }

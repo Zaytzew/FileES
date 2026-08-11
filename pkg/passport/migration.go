@@ -18,6 +18,7 @@ type NeedsLockClient interface {
 	Status(context.Context, string, []string) ([]client.StatusEntry, error)
 	PropList(context.Context, string, string) (map[string]bool, error)
 	PropSet(context.Context, string, string, string, []string) (string, error)
+	PropDel(context.Context, string, string, []string) (string, error)
 	Commit(context.Context, string, []string, string) (string, error)
 }
 
@@ -96,6 +97,68 @@ func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID s
 		message := fmt.Sprintf("FileES edit-passport migration by client %s: %d paths", instanceUID, len(batch))
 		if out, err := cli.Commit(ctx, wc, batch, message); err != nil {
 			return fmt.Errorf("commit svn:needs-lock migration: %w\n%s", err, out)
+		}
+	}
+	return nil
+}
+
+// ClearNeedsLock is the reverse of EnsureNeedsLock and exists so that turning
+// the editing policy off is actually reversible. svn:needs-lock is versioned,
+// so without this the property outlives the policy and every client keeps
+// seeing read-only files with no machinery left to unlock them - the
+// repository would be permanently read-only.
+//
+// Callers must release the instance's own passports before calling this;
+// removing the barrier under a live hold would leave a lock nobody renews.
+// Like its counterpart it refuses to run on a dirty working copy so that a
+// property-only commit can never smuggle out user content, and it is
+// idempotent: paths that no longer carry the property are skipped, so a run
+// interrupted halfway simply resumes.
+func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID string, batchSize int) error {
+	if cli == nil {
+		return errors.New("needs-lock migration: nil client")
+	}
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+	status, err := cli.Status(ctx, wc, nil)
+	if err != nil {
+		return err
+	}
+	carrying, err := cli.PropList(ctx, wc, "svn:needs-lock")
+	if err != nil {
+		return err
+	}
+	var paths []string
+	for _, entry := range status {
+		rel := filepath.ToSlash(filepath.Clean(entry.Path))
+		if rel == "." || rel == ".filees" || strings.HasPrefix(rel, ".filees/") {
+			continue
+		}
+		switch entry.Item {
+		case "normal":
+		case "unversioned":
+			continue
+		default:
+			return fmt.Errorf("%w: %s (%s)", ErrWorkingCopyDirty, rel, entry.Item)
+		}
+		if carrying[rel] {
+			paths = append(paths, rel)
+		}
+	}
+	paths = uniqueSorted(paths)
+	for start := 0; start < len(paths); start += batchSize {
+		end := start + batchSize
+		if end > len(paths) {
+			end = len(paths)
+		}
+		batch := paths[start:end]
+		if out, err := cli.PropDel(ctx, wc, "svn:needs-lock", batch); err != nil {
+			return fmt.Errorf("remove svn:needs-lock: %w\n%s", err, out)
+		}
+		message := fmt.Sprintf("FileES edit-passport rollback by client %s: %d paths", instanceUID, len(batch))
+		if out, err := cli.Commit(ctx, wc, batch, message); err != nil {
+			return fmt.Errorf("commit svn:needs-lock rollback: %w\n%s", err, out)
 		}
 	}
 	return nil

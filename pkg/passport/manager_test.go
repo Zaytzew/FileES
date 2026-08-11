@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -659,5 +660,34 @@ func assertWritable(t *testing.T, path string, want bool) {
 	got := info.Mode().Perm()&0o200 != 0
 	if got != want {
 		t.Fatalf("%s writable=%v, want %v (mode=%v)", path, got, want, info.Mode())
+	}
+}
+
+// The typed refusal has to stay interchangeable with the sentinel: plenty of
+// callers only ask "was this a foreign hold?" through errors.Is, and they must
+// keep working while the presentation layer reaches for who and until.
+func TestHeldByOtherCarriesHolderAndStaysComparableToTheSentinel(t *testing.T) {
+	until := time.Date(2026, 8, 11, 13, 41, 16, 0, time.UTC)
+	err := error(&HeldByOther{Path: "/wc/a.dwg", Holder: "instance-b", Realm: "realm-1", Until: until})
+
+	if !errors.Is(err, ErrHeldByOther) {
+		t.Fatal("typed refusal no longer matches the sentinel; every errors.Is caller just broke")
+	}
+	var held *HeldByOther
+	if !errors.As(err, &held) || held.Holder != "instance-b" || held.Realm != "realm-1" || !held.Until.Equal(until) {
+		t.Fatalf("holder identity lost: %+v", held)
+	}
+	if !strings.Contains(err.Error(), "13:41:16") {
+		t.Fatalf("expiry missing from the message: %q", err.Error())
+	}
+
+	// A raw SVN lock has no passport comment, so there is nobody to name.
+	// Saying so honestly beats inventing an owner.
+	anonymous := error(&HeldByOther{Path: "/wc/a.dwg"})
+	if !errors.Is(anonymous, ErrHeldByOther) {
+		t.Fatal("anonymous refusal does not match the sentinel")
+	}
+	if strings.Contains(anonymous.Error(), "until") {
+		t.Fatalf("anonymous refusal invented an expiry: %q", anonymous.Error())
 	}
 }

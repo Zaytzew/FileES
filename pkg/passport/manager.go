@@ -33,6 +33,36 @@ var (
 	ErrPassportLost = errors.New("edit passport fencing token was lost")
 )
 
+// HeldByOther reports a refusal caused by somebody else's live passport, and
+// keeps who and until when rather than formatting them into a sentence. That
+// identity is exactly what a user needs in order to act - go ask that person -
+// and it is known here, at the only place that inspects the holder's metadata.
+// Callers that only care about the category keep working through
+// errors.Is(err, ErrHeldByOther).
+type HeldByOther struct {
+	Path string
+	// Holder is the SVN lock owner, i.e. the holding client's activation
+	// identity - deliberately not the passport's InstanceUID, which is scoped
+	// to one working copy and which the server's label resolver knows nothing
+	// about. Instance keeps that per-working-copy UID for diagnostics only.
+	// Both are opaque here; turning Holder into something a human recognises
+	// is the presentation layer's job, since only it knows the aliases.
+	Holder   string
+	Instance string
+	Realm    string
+	Until    time.Time
+}
+
+func (e *HeldByOther) Error() string {
+	if e.Until.IsZero() {
+		return fmt.Sprintf("%s: %s", ErrHeldByOther, e.Path)
+	}
+	return fmt.Sprintf("%s: %s until %s", ErrHeldByOther, e.Path, e.Until.Format(time.RFC3339))
+}
+
+func (e *HeldByOther) Is(target error) bool { return target == ErrHeldByOther }
+func (e *HeldByOther) Unwrap() error        { return ErrHeldByOther }
+
 type Metadata struct {
 	PassportID    string `json:"passport_id"`
 	InstanceUID   string `json:"instance_uid"`
@@ -158,7 +188,10 @@ func (m *Manager) Acquire(ctx context.Context, paths []string, realmID string) (
 			meta, ok := ParseComment(info.Comment)
 			if !ok {
 				m.rollback(ctx, newlyAcquired)
-				return nil, strings.Join(outputs, "\n"), fmt.Errorf("%w: %s", ErrHeldByOther, path)
+				// No parseable passport comment means a raw SVN lock, so the
+				// holder is genuinely unknown: every client authenticates as
+				// the same account, so the lock's owner field names nobody.
+				return nil, strings.Join(outputs, "\n"), &HeldByOther{Path: path, Holder: info.Owner}
 			}
 			if local, ok := m.passports[path]; ok && local.State == StateActive && local.PassportID == meta.PassportID && local.FencingToken == info.Token && now.Before(meta.ExpiresAt) && now.Before(meta.HardExpiresAt) {
 				acquired = append(acquired, local)
@@ -167,7 +200,7 @@ func (m *Manager) Acquire(ctx context.Context, paths []string, realmID string) (
 			sameRealm := realmID != "" && meta.RealmID == realmID
 			if !sameRealm && now.Before(meta.ExpiresAt) {
 				m.rollback(ctx, newlyAcquired)
-				return nil, strings.Join(outputs, "\n"), fmt.Errorf("%w: %s until %s", ErrHeldByOther, path, meta.ExpiresAt.Format(time.RFC3339))
+				return nil, strings.Join(outputs, "\n"), &HeldByOther{Path: path, Holder: info.Owner, Instance: meta.InstanceUID, Realm: meta.RealmID, Until: meta.ExpiresAt}
 			}
 			force = true
 		}

@@ -200,3 +200,49 @@ func TestReconcileProjectedViewChangesLiveAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The editing policy reaches a running repository the same way access and URL
+// do - through the projection, not through the stored attachment. Keeping it
+// out of the local record means there is exactly one source of truth for a
+// repository-wide, owner-controlled setting.
+func TestAttachedProjectionCarriesEditingPolicyFromTheView(t *testing.T) {
+	serverID := "office"
+	locked := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000001"}
+	free := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000002"}
+	view := clientview.View{Repositories: []clientview.Repository{
+		{RepoID: locked.RepoID, DisplayName: "Rysunki", URL: "svn+ssh://_filees-client@example/one", Access: "rw", State: "active", EditingPolicy: clientview.EditingLockRequired},
+		{RepoID: free.RepoID, DisplayName: "Notatki", URL: "svn+ssh://_filees-client@example/two", Access: "rw", State: "active"},
+	}}
+
+	got := attachedProjection(serverID, view, map[reposupervisor.Key]repoRuntime{locked: {}, free: {}})
+	if len(got) != 2 {
+		t.Fatalf("desired=%+v", got)
+	}
+	byRepo := map[string]reposupervisor.Desired{}
+	for _, item := range got {
+		byRepo[item.Key.RepoID] = item
+	}
+	if byRepo[locked.RepoID].EditingPolicy != clientview.EditingLockRequired {
+		t.Fatalf("locked repository lost its policy: %+v", byRepo[locked.RepoID])
+	}
+	if byRepo[free.RepoID].EditingPolicy != clientview.EditingFree {
+		t.Fatalf("free repository gained a policy: %+v", byRepo[free.RepoID])
+	}
+}
+
+// A repository the server has not projected keeps the default. It cannot be
+// anything else - there is no authority to read it from - and defaulting to
+// the barrier would strand a locally attached repository with no way back.
+func TestAttachedProjectionLeavesUnprojectedRepositoriesOnTheDefaultPolicy(t *testing.T) {
+	serverID := "office"
+	key := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000003"}
+	runtimes := map[reposupervisor.Key]repoRuntime{key: {config: config.Repo{ID: key.RepoID, RepoURL: "svn+ssh://_filees-client@example/three", Access: "rw"}}}
+
+	got := attachedProjection(serverID, clientview.View{}, runtimes)
+	if len(got) != 1 {
+		t.Fatalf("desired=%+v", got)
+	}
+	if got[0].EditingPolicy != clientview.EditingFree {
+		t.Fatalf("unprojected repository invented a policy: %+v", got[0])
+	}
+}

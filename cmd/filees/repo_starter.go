@@ -13,6 +13,7 @@ import (
 
 	"filees/pkg/activity"
 	"filees/pkg/client"
+	"filees/pkg/clientview"
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
@@ -455,15 +456,27 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 		return nil, errors.New("repository starter is incomplete")
 	}
 	// The local record is an attachment (path and runtime tuning). Effective
-	// authority and endpoint always come from the validated server projection.
+	// authority, endpoint and editing policy always come from the validated
+	// server projection. The policy is deliberately not persisted alongside
+	// the attachment: it is repository-wide and owner-controlled, so a second
+	// stored copy could only ever go stale against the projection.
 	runtime.config.Access = desired.Access
 	runtime.config.RepoURL = desired.URL
+	runtime.config.EditingPolicy = desired.EditingPolicy
+	runtime.config.EditPassports = passportsRequired(desired.EditingPolicy)
 	svn := s.newSVN(runtime.config)
 	if err := validateAttachedWorkingCopy(startCtx, svn, runtime.config.LocalPath, desired); err != nil {
 		return s.waitForWorkingCopy(runtime, svn, desired, err), nil
 	}
 	return s.startConfigured(s.daemonCtx, runtime, svn, desired)
 }
+
+// passportsRequired maps the projected repository policy onto the runtime
+// switch that builds the passport manager. Only the canonical opted-in value
+// enables it: an unset policy, and equally a value this build does not
+// recognise, leave the repository on plain merge-on-commit rather than
+// half-enabling a barrier the client would not know how to satisfy.
+func passportsRequired(policy string) bool { return policy == clientview.EditingLockRequired }
 
 func validateAttachedWorkingCopy(ctx context.Context, svn client.Client, workingCopy string, desired reposupervisor.Desired) error {
 	if _, err := os.Stat(filepath.Join(workingCopy, ".svn")); err != nil {

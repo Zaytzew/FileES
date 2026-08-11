@@ -21,6 +21,12 @@ type Desired struct {
 	State       string
 	URL         string
 	DisplayName string
+	// EditingPolicy decides whether the pipeline runs the edit passport
+	// machinery. Like Access and URL it comes from the server projection and
+	// must take part in the restart comparison below: the passport manager is
+	// built once at start, so a policy that changes while URL and Access stay
+	// put would otherwise never take effect.
+	EditingPolicy string
 }
 
 type Instance interface{ Stop(context.Context) error }
@@ -131,7 +137,9 @@ func (s *Supervisor) applyLocked(ctx context.Context, serverID string, generatio
 		old, running := s.live[key]
 		wanted, present := next[key]
 		shouldRun := present && wanted.State == "active"
-		unchanged := running && shouldRun && old.desired.Access == wanted.Access && old.desired.URL == wanted.URL
+		// Every field compared here is one the running instance baked in at
+		// start time and cannot pick up live, so each must force a restart.
+		unchanged := running && shouldRun && old.desired.Access == wanted.Access && old.desired.URL == wanted.URL && old.desired.EditingPolicy == wanted.EditingPolicy
 		if unchanged {
 			old.desired = wanted
 			s.live[key] = old

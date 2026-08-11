@@ -40,6 +40,7 @@ const (
 	CodeCommitNoVCS     Code = "COMMIT-3102" // path not under version control
 	CodeCommitFailed    Code = "COMMIT-3100" // generic commit failure
 	CodeReconFlict      Code = "RECON-3002"  // conflict detected during update, local copy saved to !kolizje/
+	CodePolicyDeferred  Code = "POLICY-2201" // editing-policy migration waiting on a clean working copy
 	CodeUnknown         Code = "SYNC-0000"   // unclassified error
 )
 

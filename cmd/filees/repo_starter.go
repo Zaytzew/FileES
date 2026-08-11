@@ -287,11 +287,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	}
 	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
 	recoverReadWriteWorkingCopy(ctx, svn, wc, service, logger)
-	if manager != nil {
-		if err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, intOrDefault(repo.MaxBatchFiles, 100)); err != nil {
-			return nil, err
-		}
-	}
+	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	wireRepoLockFuncs(runtimeRepo.state, svn, wc, manager)
 	lockFuncsWired := true
 	defer func() {
@@ -380,6 +376,14 @@ func wireRepoReservationFuncs(state *ipcserver.RepoState, svn client.Client, wc 
 			absolute := filepath.Join(wc, entry.Path)
 			passportItem, hasPassport := activePassports[filepath.Clean(absolute)]
 			activePassport := hasPassport && passportItem.FencingToken == entry.Token
+			// A lock whose comment is not passport metadata predates the
+			// editing policy on this repository - it was taken through the raw
+			// SVN path that a free repository wires. No passport will ever
+			// claim it, and every client authenticates as the same SVN
+			// account, so its owner field cannot say whose it is either.
+			// Withholding release would strand it forever; the release path
+			// still demands explicit risk confirmation.
+			_, isPassportLock := passport.ParseComment(entry.Comment)
 			rows = append(rows, contract.Reservation{
 				RepoID:         state.Summary().ID,
 				WorkingCopy:    wc,
@@ -387,7 +391,7 @@ func wireRepoReservationFuncs(state *ipcserver.RepoState, svn client.Client, wc 
 				Token:          entry.Token,
 				OwnerID:        entry.Owner,
 				CreatedAt:      entry.Created.UTC().Format(time.RFC3339Nano),
-				CanRelease:     manager == nil || activePassport,
+				CanRelease:     manager == nil || activePassport || !isPassportLock,
 				LocalChanges:   reservationHasLocalChanges(entry),
 				ActivePassport: activePassport,
 			})
@@ -469,6 +473,86 @@ func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervis
 		return s.waitForWorkingCopy(runtime, svn, desired, err), nil
 	}
 	return s.startConfigured(s.daemonCtx, runtime, svn, desired)
+}
+
+// appliedEditingPolicyPath records which policy this working copy was last
+// migrated to. It exists for the rollback direction only: svn:needs-lock is
+// versioned, so leaving the repository is a content change that must happen
+// exactly on the transition and never speculatively.
+func appliedEditingPolicyPath(stateDir string) string {
+	return filepath.Join(stateDir, "editing-policy")
+}
+
+func readAppliedEditingPolicy(stateDir string) string {
+	raw, err := os.ReadFile(appliedEditingPolicyPath(stateDir))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+// applyEditingPolicyMigration brings the working copy in line with the
+// projected policy. It never fails repository start: a migration that cannot
+// run right now leaves the repository working under its previous rules and
+// says so, because the alternative - returning an error from startReadWrite -
+// takes the repository down silently and removes the very access the user
+// needs to clear the blockage.
+func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn client.Client, wc, stateDir, clientUUID string, passportsOn bool, sink *errmap.Sink, logger talk.Logger) {
+	batch := intOrDefault(repo.MaxBatchFiles, 100)
+	applied := readAppliedEditingPolicy(stateDir)
+
+	if passportsOn {
+		// Always run forward: it is idempotent and doubles as repair for
+		// paths another client added without the property.
+		if err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, batch); err != nil {
+			reportEditingPolicyBlocked(err, "włączenie", sink, logger)
+			return
+		}
+		writeAppliedEditingPolicy(stateDir, clientview.EditingLockRequired, logger)
+		return
+	}
+
+	// Rolling back only on a real transition matters for more than cost. The
+	// mobile append channel sets svn:needs-lock on uploaded files on its own
+	// (internal/mobileworker/svnappend.go), so a repository that never ran
+	// this policy may carry the property legitimately, and clearing it
+	// speculatively would destroy that.
+	if applied != clientview.EditingLockRequired {
+		return
+	}
+	if err := passport.ClearNeedsLock(ctx, svn, wc, clientUUID, batch); err != nil {
+		reportEditingPolicyBlocked(err, "wyłączenie", sink, logger)
+		return
+	}
+	writeAppliedEditingPolicy(stateDir, clientview.EditingFree, logger)
+}
+
+func writeAppliedEditingPolicy(stateDir, policy string, logger talk.Logger) {
+	// Written only after the migration it describes has committed, so a crash
+	// mid-migration retries on the next start rather than claiming to be done.
+	if err := os.WriteFile(appliedEditingPolicyPath(stateDir), []byte(policy+"\n"), 0o644); err != nil {
+		logger.Warnf("persist applied editing policy: %v", err)
+	}
+}
+
+func reportEditingPolicyBlocked(err error, direction string, sink *errmap.Sink, logger talk.Logger) {
+	if errors.Is(err, passport.ErrWorkingCopyDirty) {
+		logger.Warnf("%s polityki blokad odłożone: kopia robocza ma niezapisane zmiany (%v)", direction, err)
+		if sink != nil {
+			sink.Emit(errmap.Entry{
+				Code:     errmap.CodePolicyDeferred,
+				Severity: errmap.SevWarn,
+				Hint:     errmap.HintRequireAction,
+				Msg:      "Zmiana polityki blokad czeka na opublikowanie lokalnych zmian",
+				Details:  err.Error(),
+			})
+		}
+		return
+	}
+	logger.Warnf("%s polityki blokad nie powiodło się: %v", direction, err)
+	if sink != nil {
+		sink.Emit(errmap.Classify(err))
+	}
 }
 
 // passportsRequired maps the projected repository policy onto the runtime

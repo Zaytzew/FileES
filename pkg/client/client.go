@@ -48,6 +48,7 @@ type Client interface {
 	LockInfo(ctx context.Context, rootDirectory, path string) (*LockInfo, error)
 	PropGet(ctx context.Context, rootDirectory, propName string, paths []string) (string, error)
 	PropSet(ctx context.Context, rootDirectory, propName, value string, paths []string) (string, error)
+	PropDel(ctx context.Context, rootDirectory, propName string, paths []string) (string, error)
 	PropList(ctx context.Context, rootDirectory, propName string) (map[string]bool, error)
 	// Revision returns the revision number for target (URL or local WC path).
 	// For a remote URL it returns HEAD; for a local WC path it returns the last-updated revision.
@@ -543,6 +544,14 @@ func (c *execClient) PropSet(ctx context.Context, rootDirectory, propName, value
 		return "", errors.New("svn propset refused: empty path list")
 	}
 	args := append([]string{"propset", propName, value}, c.pathArgs(rootDirectory, paths)...)
+	return c.run(ctx, rootDirectory, args)
+}
+
+func (c *execClient) PropDel(ctx context.Context, rootDirectory, propName string, paths []string) (string, error) {
+	if len(paths) == 0 {
+		return "", errors.New("svn propdel refused: empty path list")
+	}
+	args := append([]string{"propdel", propName}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 

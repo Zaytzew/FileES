@@ -447,3 +447,173 @@ func TestDefaultPolicyLeavesNeedsLockOffInCommitRules(t *testing.T) {
 		t.Fatalf("opted-in policy did not enable needs-lock: %+v", rules)
 	}
 }
+
+type policyMigrationClient struct {
+	client.Client
+	props    map[string]bool
+	status   []client.StatusEntry
+	listed   int
+	dels     [][]string
+	sets     [][]string
+	commits  int
+}
+
+func (c *policyMigrationClient) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
+	return c.status, nil
+}
+func (c *policyMigrationClient) PropList(context.Context, string, string) (map[string]bool, error) {
+	c.listed++
+	return c.props, nil
+}
+func (c *policyMigrationClient) PropSet(_ context.Context, _ string, _, _ string, paths []string) (string, error) {
+	c.sets = append(c.sets, append([]string(nil), paths...))
+	return "", nil
+}
+func (c *policyMigrationClient) PropDel(_ context.Context, _ string, _ string, paths []string) (string, error) {
+	c.dels = append(c.dels, append([]string(nil), paths...))
+	return "", nil
+}
+func (c *policyMigrationClient) Commit(context.Context, string, []string, string) (string, error) {
+	c.commits++
+	return "", nil
+}
+
+func policyStateDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// A repository that never ran this policy must not be touched at all. The
+// mobile append channel sets svn:needs-lock on uploaded files on its own, so
+// a speculative rollback here would quietly destroy properties that another
+// feature deliberately set.
+func TestEditingPolicyMigrationLeavesRepositoriesThatNeverOptedInAlone(t *testing.T) {
+	stateDir := policyStateDir(t)
+	svn := &policyMigrationClient{props: map[string]bool{"photo.jpg": true}, status: []client.StatusEntry{{Path: "photo.jpg", Item: "normal"}}}
+
+	applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, filepath.Dir(stateDir), stateDir, "instance", false, nil, talk.With("test"))
+
+	if svn.listed != 0 || len(svn.dels) != 0 || svn.commits != 0 {
+		t.Fatalf("untouched repository was migrated: listed=%d dels=%#v commits=%d", svn.listed, svn.dels, svn.commits)
+	}
+}
+
+// Turning the policy off is a real transition and must actually roll back,
+// then forget the marker so it does not run again on every later start.
+func TestEditingPolicyMigrationRollsBackExactlyOnceAfterOptOut(t *testing.T) {
+	stateDir := policyStateDir(t)
+	if err := os.WriteFile(appliedEditingPolicyPath(stateDir), []byte(clientview.EditingLockRequired+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svn := &policyMigrationClient{props: map[string]bool{"a.bin": true}, status: []client.StatusEntry{{Path: "a.bin", Item: "normal"}}}
+	wc := filepath.Dir(stateDir)
+
+	applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, wc, stateDir, "instance", false, nil, talk.With("test"))
+	if len(svn.dels) != 1 || svn.commits != 1 {
+		t.Fatalf("rollback did not run: dels=%#v commits=%d", svn.dels, svn.commits)
+	}
+	if got := readAppliedEditingPolicy(stateDir); got != clientview.EditingFree {
+		t.Fatalf("marker=%q, want the default after rollback", got)
+	}
+
+	svn.props = map[string]bool{}
+	applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, wc, stateDir, "instance", false, nil, talk.With("test"))
+	if len(svn.dels) != 1 || svn.commits != 1 {
+		t.Fatalf("rollback repeated on a later start: dels=%#v commits=%d", svn.dels, svn.commits)
+	}
+}
+
+// A dirty working copy must never take the repository down. The user needs the
+// pipeline running to publish the very changes that are blocking the
+// migration, so the migration defers and the marker stays put for a retry.
+func TestEditingPolicyMigrationDefersOnDirtyWorkingCopyWithoutFailingStart(t *testing.T) {
+	stateDir := policyStateDir(t)
+	wc := filepath.Dir(stateDir)
+	// The file has to exist for the migration to reach its dirty check at all;
+	// entries it cannot stat are skipped as already-gone.
+	if err := os.WriteFile(filepath.Join(wc, "wip.bin"), []byte("unsaved"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svn := &policyMigrationClient{props: map[string]bool{}, status: []client.StatusEntry{{Path: "wip.bin", Item: "modified"}}}
+
+	applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, wc, stateDir, "instance", true, nil, talk.With("test"))
+
+	if svn.commits != 0 {
+		t.Fatalf("dirty working copy was committed: commits=%d", svn.commits)
+	}
+	if got := readAppliedEditingPolicy(stateDir); got != "" {
+		t.Fatalf("marker=%q, want it unwritten so the migration retries", got)
+	}
+}
+
+// Opting in runs forward and records it, which is what later allows the
+// rollback to distinguish a real transition from a repository that was always
+// free.
+func TestEditingPolicyMigrationRecordsOptInSoRollbackCanTell(t *testing.T) {
+	stateDir := policyStateDir(t)
+	svn := &policyMigrationClient{props: map[string]bool{}, status: []client.StatusEntry{{Path: "a.bin", Item: "normal"}}}
+	wc := filepath.Dir(stateDir)
+	if err := os.WriteFile(filepath.Join(wc, "a.bin"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	applyEditingPolicyMigration(t.Context(), config.Repo{ID: "docs"}, svn, wc, stateDir, "instance", true, nil, talk.With("test"))
+
+	if len(svn.sets) != 1 || svn.commits != 1 {
+		t.Fatalf("forward migration did not run: sets=%#v commits=%d", svn.sets, svn.commits)
+	}
+	if got := readAppliedEditingPolicy(stateDir); got != clientview.EditingLockRequired {
+		t.Fatalf("marker=%q, want the opted-in policy recorded", got)
+	}
+}
+
+type reservationClient struct {
+	client.Client
+	entries []client.LockEntry
+}
+
+func (c *reservationClient) ListLocks(context.Context, string) ([]client.LockEntry, error) {
+	return c.entries, nil
+}
+
+// A lock taken while the repository was free carries no passport metadata, and
+// because every client authenticates as the same SVN account its owner field
+// cannot identify who holds it either. Once the policy is on, refusing release
+// for such a lock would strand the path permanently - no passport can ever
+// match it. Locks that *are* live passport holds must still be protected.
+func TestLegacyRawLocksStayReleasableAfterThePolicyIsEnabled(t *testing.T) {
+	wc := t.TempDir()
+	server := ipcserver.New(t.TempDir() + "/sock")
+	state := server.RegisterRepoAccess("docs", "svn+ssh://_filees-data@example/docs", wc, "office", contract.AccessReadWrite)
+	manager, err := passport.Open(filepath.Join(t.TempDir(), "passports.json"), "instance", &passportBackend{}, passport.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svn := &reservationClient{entries: []client.LockEntry{
+		{Path: "legacy.bin", LockInfo: client.LockInfo{Token: "tok-legacy", Owner: "_filees-data", Comment: "locked by hand"}},
+		{Path: "held.bin", LockInfo: client.LockInfo{Token: "tok-held", Owner: "_filees-data", Comment: passport.CommentPrefix + `{"passport_id":"p1","instance_uid":"other","expires_at":"2030-01-01T00:00:00Z","hard_expires_at":"2030-01-02T00:00:00Z"}`}},
+	}}
+
+	wireRepoReservationFuncs(state, svn, wc, manager)
+	rows, err := state.ListReservations(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows=%+v", rows)
+	}
+	byPath := map[string]contract.Reservation{}
+	for _, row := range rows {
+		byPath[row.Path] = row
+	}
+	if !byPath["legacy.bin"].CanRelease {
+		t.Fatal("legacy raw lock is unreleasable, so the path is stranded forever")
+	}
+	if byPath["held.bin"].CanRelease {
+		t.Fatal("another client's live passport hold was offered for release")
+	}
+}

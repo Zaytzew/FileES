@@ -204,6 +204,10 @@ type UpdateResult struct {
 type presentationError interface {
 	error
 	PresentationError() (code, severity, hint, message string)
+	// PresentationDetails carries the structured fields belonging to the
+	// message key. Only fields a known key defines may be read; anything else
+	// is diagnostic text, not something to show a user.
+	PresentationDetails() map[string]string
 }
 
 // Config wires the controller to its dependencies.
@@ -2498,6 +2502,9 @@ func operationErrorPresentation(opName string, err error) (string, string, platf
 		title = fmt.Sprintf("Błąd operacji (%s) — %s", opName, code)
 	}
 	body = messageLabel(message)
+	if detailed := detailedMessageLabel(message, structured.PresentationDetails()); detailed != "" {
+		body = detailed
+	}
 	if label := hintLabel(hint); label != "" {
 		body += " — " + label
 	}
@@ -2507,8 +2514,42 @@ func operationErrorPresentation(opName string, err error) (string, string, platf
 	return title, body, urgency
 }
 
+// detailedMessageLabel builds the sentence a user can act on for keys that
+// define structured fields. It returns "" when the key has none, or when the
+// fields are missing, so the caller keeps the plain label rather than
+// rendering a sentence with holes in it.
+//
+// This exists because "the file is busy" is not actionable while "Anna has it
+// until 13:41" is: the whole point of naming the holder is that the reader
+// knows who to go and ask.
+func detailedMessageLabel(messageKey string, details map[string]string) string {
+	if messageKey != "lock.held_by_other" {
+		return ""
+	}
+	subject := "Plik"
+	if path := details["path"]; path != "" {
+		subject = "Plik „" + path + "”"
+	}
+	holder := details["holder"]
+	if holder == "" {
+		// A raw lock with no passport metadata names nobody, and every client
+		// authenticates as the same account, so guessing would be worse than
+		// admitting it.
+		holder = "kogoś innego"
+	}
+	sentence := subject + " jest w tej chwili wypożyczony przez " + holder
+	if until := details["until"]; until != "" {
+		if parsed, err := time.Parse(time.RFC3339, until); err == nil {
+			sentence += " do " + parsed.Local().Format("15:04")
+		}
+	}
+	return sentence
+}
+
 func messageLabel(messageKey string) string {
 	switch messageKey {
+	case "lock.held_by_other":
+		return "Plik jest w tej chwili wypożyczony przez kogoś innego"
 	case "lock.invalid_path":
 		return "Wybrana ścieżka nie należy do repozytorium"
 	case "lock.operation_failed":

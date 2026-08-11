@@ -3,12 +3,14 @@ package ipcserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/passport"
 	"filees/pkg/talk"
 )
 
@@ -1071,6 +1073,23 @@ func (s *Server) handleRepoLockUnlock(req contract.Request, lock bool) contract.
 		out, err = rs.Unlock(ctx, pl.Paths)
 	}
 	if err != nil {
+		// A foreign hold is not a generic failure: it is somebody working on
+		// the file right now, and the user can act on that only if told who
+		// and until when. Both are known here, so they are sent as structured
+		// details under their own message key rather than flattened into a
+		// sentence the presentation layer would have to parse.
+		var held *passport.HeldByOther
+		if errors.As(err, &held) {
+			details := map[string]string{"path": filepath.Base(held.Path)}
+			if !held.Until.IsZero() {
+				details["until"] = held.Until.UTC().Format(time.RFC3339)
+			}
+			if label := s.resolveHolderLabel(ctx, rs.ServerID(), held.Holder); label != "" {
+				details["holder"] = label
+			}
+			return contract.ErrResponse(req.RequestID,
+				"LOCK-2001", "ERROR", "REQUIRE_ACTION", "lock.held_by_other", details)
+		}
 		return contract.ErrResponse(req.RequestID,
 			"LOCK-2001", "ERROR", "REQUIRE_ACTION", "lock.operation_failed",
 			map[string]string{"detail": err.Error()})
@@ -1104,4 +1123,23 @@ func parseErrLine(raw, defaultRepoID string) *contract.ErrorRecord {
 		Msg:      e.Msg,
 		Details:  e.Details,
 	}
+}
+
+// resolveHolderLabel turns an opaque instance UID into something a person
+// recognises. It fails soft on purpose: an unavailable control worker must
+// degrade the message to "somebody else" rather than withhold the far more
+// useful fact that the file is held at all.
+func (s *Server) resolveHolderLabel(ctx context.Context, serverID, holder string) string {
+	if holder == "" || serverID == "" {
+		return ""
+	}
+	resolver := s.ownerLabelResolver()
+	if resolver == nil {
+		return ""
+	}
+	labels, err := resolver.Resolve(ctx, serverID, []string{holder})
+	if err != nil {
+		return ""
+	}
+	return labels[holder]
 }

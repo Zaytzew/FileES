@@ -87,6 +87,7 @@ func (fakeStructuredError) Error() string { return "wire fallback" }
 func (fakeStructuredError) PresentationError() (string, string, string, string) {
 	return "LOCK-2001", "ERROR", "REQUIRE_ACTION", "lock.operation_failed"
 }
+func (fakeStructuredError) PresentationDetails() map[string]string { return nil }
 
 type fakeStructuredAttachError struct{}
 
@@ -94,6 +95,7 @@ func (fakeStructuredAttachError) Error() string { return "wire fallback" }
 func (fakeStructuredAttachError) PresentationError() (string, string, string, string) {
 	return "REPO-2002", "ERROR", "REQUIRE_ACTION", "repo.invalid_local_intent"
 }
+func (fakeStructuredAttachError) PresentationDetails() map[string]string { return nil }
 
 type lockCall struct {
 	repoID string

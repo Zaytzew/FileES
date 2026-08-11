@@ -37,6 +37,25 @@ func (e *ResponseError) PresentationError() (code, severity, hint, message strin
 	return e.Body.Code, e.Body.Severity, e.Body.Hint, e.Body.MessageKey
 }
 
+// PresentationDetails exposes the structured fields that belong to a message
+// key, so a caller that recognises the key can name the thing that went wrong
+// instead of printing a generic sentence.
+//
+// This deliberately does not make every detail presentable. Details attached
+// to unknown keys are frequently raw command output; the contract is that a
+// caller reads only the fields its own key defines, which is why this returns
+// a copy rather than being folded into PresentationError.
+func (e *ResponseError) PresentationDetails() map[string]string {
+	if len(e.Body.Details) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(e.Body.Details))
+	for key, value := range e.Body.Details {
+		out[key] = value
+	}
+	return out
+}
+
 // Client sends contract requests to the FileES daemon over a Unix socket.
 // A new TCP-style connection is used for each request; safe for concurrent use.
 type Client struct {

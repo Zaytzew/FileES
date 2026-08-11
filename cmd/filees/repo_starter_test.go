@@ -450,19 +450,26 @@ func TestDefaultPolicyLeavesNeedsLockOffInCommitRules(t *testing.T) {
 
 type policyMigrationClient struct {
 	client.Client
-	props    map[string]bool
-	status   []client.StatusEntry
-	listed   int
-	dels     [][]string
-	sets     [][]string
-	commits  int
+	props      map[string]bool
+	appendOnly map[string]bool
+	status     []client.StatusEntry
+	listed     int
+	dels       [][]string
+	sets       [][]string
+	commits    int
 }
 
 func (c *policyMigrationClient) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
 	return c.status, nil
 }
-func (c *policyMigrationClient) PropList(context.Context, string, string) (map[string]bool, error) {
+func (c *policyMigrationClient) PropList(_ context.Context, _ string, propName string) (map[string]bool, error) {
 	c.listed++
+	// The migration asks for two different properties; answering both with the
+	// same map made every path look append-only and silently disabled the
+	// rollback under test.
+	if propName == passport.AppendOnlyProperty {
+		return c.appendOnly, nil
+	}
 	return c.props, nil
 }
 func (c *policyMigrationClient) PropSet(_ context.Context, _ string, _, _ string, paths []string) (string, error) {

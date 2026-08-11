@@ -504,8 +504,13 @@ func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn clie
 	if passportsOn {
 		// Always run forward: it is idempotent and doubles as repair for
 		// paths another client added without the property.
-		if err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, batch); err != nil {
+		skipped, err := passport.EnsureNeedsLock(ctx, svn, wc, clientUUID, batch)
+		if err != nil {
 			reportEditingPolicyBlocked(err, "włączenie", sink, logger)
+			return
+		}
+		if skipped > 0 {
+			reportEditingPolicyPartial(skipped, "włączenie", stateDir, logger)
 			return
 		}
 		writeAppliedEditingPolicy(stateDir, clientview.EditingLockRequired, logger)
@@ -520,11 +525,26 @@ func applyEditingPolicyMigration(ctx context.Context, repo config.Repo, svn clie
 	if applied != clientview.EditingLockRequired {
 		return
 	}
-	if err := passport.ClearNeedsLock(ctx, svn, wc, clientUUID, batch); err != nil {
+	skipped, err := passport.ClearNeedsLock(ctx, svn, wc, clientUUID, batch)
+	if err != nil {
 		reportEditingPolicyBlocked(err, "wyłączenie", sink, logger)
 		return
 	}
+	if skipped > 0 {
+		reportEditingPolicyPartial(skipped, "wyłączenie", stateDir, logger)
+		return
+	}
 	writeAppliedEditingPolicy(stateDir, clientview.EditingFree, logger)
+}
+
+// reportEditingPolicyPartial records that some paths were left for a later
+// pass because somebody is holding them. Deliberately not an error entry: the
+// migration did as much as it legitimately could, and the remainder finishes
+// on its own once the holds are released. Crucially it does not write the
+// marker, since that would claim a migration that only partly happened and
+// stop the retry from ever running.
+func reportEditingPolicyPartial(skipped int, direction string, stateDir string, logger talk.Logger) {
+	logger.Infof("%s polityki blokad częściowe: %d ścieżek jest wypożyczonych, dokończy się po ich zwolnieniu", direction, skipped)
 }
 
 func writeAppliedEditingPolicy(stateDir, policy string, logger talk.Logger) {

@@ -111,6 +111,11 @@ type RealmGrantManager interface {
 	SetVisibility(context.Context, string, string) error
 	Grant(context.Context, string, string, string, string) error
 	Revoke(context.Context, string, string, string) error
+	// SetEditingPolicy switches one owned repository between plain
+	// merge-on-commit and edit passports. It takes a bool rather than a policy
+	// string so the GUI layer never has to know the wire vocabulary; the
+	// adapter translates. Returns the policy the server actually stored.
+	SetEditingPolicy(ctx context.Context, serverID, repoID string, lockRequired bool) (bool, error)
 }
 
 type PublicShareObject struct {
@@ -439,6 +444,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startLoadDump(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogManageGrants:
 			c.startManageRealmGrants(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogEditingPolicy:
+			c.startSetEditingPolicy(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogPublicShares:
 			c.startManagePublicShares(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogRealmVisibility:
@@ -605,8 +612,21 @@ func settingsDialogRequest(vm app.ViewModel, serverID string, pending map[string
 			}
 			attachmentRequired := repo.AttachmentPolicy == "required"
 			ownedAndCreatable := server.Owns(repo) && server.CanOfferRepositoryCreation()
+			lockRequired := repo.RequiresLock()
+			// Shown on every client, not only the owner's: this is the sentence
+			// that turns an unexplained read-only file into a stated rule.
+			editing := "swobodna"
+			if lockRequired {
+				editing = "wymaga wypożyczenia"
+			}
 			row.Folders = append(row.Folders, platform.SettingsFolder{
 				ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
+				Editing:      editing,
+				LockRequired: lockRequired,
+				// Ownership alone, not ownedAndCreatable: whether a realm may
+				// create new repositories says nothing about its right to set
+				// the working rules of one it already owns.
+				CanSetEditingPolicy:   vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
 				CanManageGrants:       vm.CanManageRealmGrants() && ownedAndCreatable,
 				CanManagePublicShares: vm.CanManagePublicShares() && ownedAndCreatable,
 				CanConnect:            !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
@@ -2550,4 +2570,70 @@ func findRepo(vm app.ViewModel, repoID string) (app.RepoViewModel, bool) {
 		}
 	}
 	return app.RepoViewModel{}, false
+}
+
+// startSetEditingPolicy flips one owned repository between plain
+// merge-on-commit and edit passports. The confirmation is deliberately blunt
+// about consequences on both sides: turning it on marks every file in the
+// repository as needing a lock and commits that, and turning it off removes
+// those marks again. Neither is a preference toggle - both rewrite versioned
+// properties that every other client will see.
+func (c *Controller) startSetEditingPolicy(ctx context.Context, serverID, repoID string) {
+	key := "editing-policy." + serverID + "." + repoID
+	if serverID == "" || repoID == "" || c.cfg.RealmGrants == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		if !vm.CanSetEditingPolicy() {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Zasady edycji są niedostępne", Body: "Demon FileES nie obsługuje zmiany zasad edycji repozytorium.", Urgency: platform.UrgencyCritical})
+			return
+		}
+		var repo app.RepoViewModel
+		found := false
+		for _, candidate := range vm.Repos {
+			if candidate.ID == repoID && candidate.ServerID == serverID {
+				repo, found = candidate, true
+				break
+			}
+		}
+		if !found {
+			return
+		}
+		name := repo.DisplayName
+		if strings.TrimSpace(name) == "" {
+			name = repoID
+		}
+
+		title := "Włączyć wypożyczanie plików?"
+		text := "Repozytorium „" + name + "” przejdzie na pracę z wypożyczeniami.\n\n" +
+			"Każdy plik zostanie oznaczony jako wymagający wypożyczenia i ta zmiana zostanie opublikowana — zobaczą ją wszystkie komputery podłączone do tego repozytorium. " +
+			"Od tej pory pliki będą tylko do odczytu, dopóki ktoś ich nie wypożyczy, a dwie osoby nie zmienią naraz tego samego pliku.\n\n" +
+			"Jeżeli masz teraz niezapisane zmiany, zmiana poczeka, aż zostaną opublikowane."
+		lockRequired := true
+		if repo.RequiresLock() {
+			title = "Wyłączyć wypożyczanie plików?"
+			text = "Repozytorium „" + name + "” wróci do pracy bez wypożyczeń.\n\n" +
+				"Oznaczenia wymagające wypożyczenia zostaną zdjęte z plików i ta zmiana zostanie opublikowana. " +
+				"Pliki znów będą edytowalne od razu, ale dwie osoby będą mogły zmienić ten sam plik równocześnie."
+			lockRequired = false
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: title, Text: text, ConfirmText: "Zastosuj", CancelText: "Anuluj"})
+		if err != nil || !confirmed {
+			return
+		}
+		stored, err := c.cfg.RealmGrants.SetEditingPolicy(ctx, serverID, repoID, lockRequired)
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zmienić zasad edycji", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		body := "Pliki są znów edytowalne bez wypożyczania."
+		if stored {
+			body = "Pliki wymagają teraz wypożyczenia przed edycją. Zmiana dotrze do pozostałych komputerów przy najbliższym odświeżeniu."
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Zasady edycji zostały zmienione", Body: body, Urgency: platform.UrgencyNormal})
+	}()
 }

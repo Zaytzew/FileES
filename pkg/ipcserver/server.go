@@ -25,21 +25,22 @@ type Server struct {
 	startTime time.Time
 	lg        talk.Logger
 
-	mu           sync.RWMutex
-	repos        map[string]*RepoState // keyed by repo ID
-	activations  map[string]contract.ActivationStatus
-	activation   ActivationService
-	realmAlias   RealmAliasService
-	realmGrants  RealmGrantService
-	publicShares PublicShareService
-	ownerLabels  OwnerLabelResolver
-	lifecycle    RepositoryLifecycleService
-	mobilePair   MobilePairingService
-	serverDetach ServerDetachService
-	realmRemoval RealmRemovalService
-	updates      UpdateService
-	activity     ActivitySource
-	lifecycleFn  SystemLifecycleService
+	mu            sync.RWMutex
+	repos         map[string]*RepoState // keyed by repo ID
+	activations   map[string]contract.ActivationStatus
+	activation    ActivationService
+	realmAlias    RealmAliasService
+	realmGrants   RealmGrantService
+	editingPolicy EditingPolicyService
+	publicShares  PublicShareService
+	ownerLabels   OwnerLabelResolver
+	lifecycle     RepositoryLifecycleService
+	mobilePair    MobilePairingService
+	serverDetach  ServerDetachService
+	realmRemoval  RealmRemovalService
+	updates       UpdateService
+	activity      ActivitySource
+	lifecycleFn   SystemLifecycleService
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -65,6 +66,12 @@ type RealmGrantService interface {
 	SetVisibility(context.Context, string, string) (string, error)
 	Grant(context.Context, string, string, string, string) (contract.RealmGrantResult, error)
 	Revoke(context.Context, string, string, string) (contract.RealmGrantResult, error)
+}
+
+// EditingPolicyService is owner-only at the far end: the daemon forwards the
+// request and the server decides, since only it knows who owns what.
+type EditingPolicyService interface {
+	SetEditingPolicy(ctx context.Context, serverID, repoID, policy string) (string, error)
 }
 
 type PublicShareService interface {
@@ -156,6 +163,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.publicShareService() != nil {
 		caps = append(caps, contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
+	}
+	if s.editingPolicyService() != nil {
+		caps = append(caps, contract.CapRepoSetEditingPolicy)
 	}
 	if s.systemLifecycleService() != nil {
 		caps = append(caps, contract.CapSystemRestart, contract.CapSystemShutdown)
@@ -257,6 +267,18 @@ func (s *Server) realmGrantService() RealmGrantService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.realmGrants
+}
+
+func (s *Server) SetEditingPolicyService(service EditingPolicyService) {
+	s.mu.Lock()
+	s.editingPolicy = service
+	s.mu.Unlock()
+}
+
+func (s *Server) editingPolicyService() EditingPolicyService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.editingPolicy
 }
 
 func (s *Server) SetPublicShareService(service PublicShareService) {
@@ -411,6 +433,7 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 		if repo.PendingLocalPath != "" {
 			state.SetPendingLocalPath(repo.PendingLocalPath)
 		}
+		state.SetEditingPolicy(repo.EditingPolicy)
 	}
 	s.mu.Lock()
 	removed := false
@@ -445,6 +468,7 @@ func (s *Server) MarkRepoDetached(serverID, repoID string) {
 type ProjectedRepo struct {
 	ID, DisplayName, URL, Access, State string
 	OwnerRealmID, AttachmentPolicy      string
+	EditingPolicy                       string
 	Attached                            bool
 	PendingLocalPath                    string
 }

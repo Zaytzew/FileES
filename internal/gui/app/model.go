@@ -47,6 +47,7 @@ type RepoViewModel struct {
 	Access           string
 	OwnerRealmID     string
 	AttachmentPolicy string
+	EditingPolicy    string
 	URL              string
 	LocalPath        string
 	State            string
@@ -79,6 +80,12 @@ type ServerViewModel struct {
 
 func (server ServerViewModel) CanOfferRepositoryCreation() bool {
 	return server.ClientRole != contract.ClientRoleReadOnly && server.CanCreateRepositories
+}
+
+// RequiresLock reports whether this repository works through edit passports,
+// which is what makes its files read-only until borrowed.
+func (repo RepoViewModel) RequiresLock() bool {
+	return repo.EditingPolicy == contract.EditingLockRequired
 }
 
 func (server ServerViewModel) Owns(repo RepoViewModel) bool {
@@ -208,6 +215,9 @@ func (vm ViewModel) CanClaimRealmAlias() bool {
 }
 func (vm ViewModel) CanManageRealmGrants() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmGrantRecipients) && vm.HasCap(contract.CapRepoGrantAccess) && vm.HasCap(contract.CapRepoRevokeAccess)
+}
+func (vm ViewModel) CanSetEditingPolicy() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoSetEditingPolicy)
 }
 func (vm ViewModel) CanManagePublicShares() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoPublicShareList) && vm.HasCap(contract.CapRepoPublicShareCreate) && vm.HasCap(contract.CapRepoPublicShareUpdate) && vm.HasCap(contract.CapRepoPublicShareRevoke) && vm.HasCap(contract.CapRepoPublicShareDelete)

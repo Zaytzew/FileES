@@ -72,6 +72,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoGrantAccess(req, false)
 	case contract.CmdRepoRevokeAccess:
 		return s.handleRepoGrantAccess(req, true)
+	case contract.CmdRepoSetEditingPolicy:
+		return s.handleRepoSetEditingPolicy(req)
 	case contract.CmdRepoPublicShareList:
 		return s.handlePublicShare(req, "list")
 	case contract.CmdRepoPublicShareCreate:
@@ -346,6 +348,47 @@ func (s *Server) handleRealmSetVisibility(req contract.Request) contract.Respons
 		return contract.ErrResponse(req.RequestID, "GRANT-1003", "ERROR", "REQUIRE_ACTION", "realm.visibility_rejected", nil)
 	}
 	return contract.OKResponse(req.RequestID, contract.RealmSetVisibilityResult{Visibility: visibility})
+}
+
+// handleRepoSetEditingPolicy forwards an owner's policy change to the server.
+// The local checks here are a fast, honest refusal for cases the client can
+// already see are hopeless - read-only role, or a repository this realm does
+// not own. They are not the security boundary: the worker re-derives ownership
+// from the authenticated session, so a client that lies still gets refused.
+func (s *Server) handleRepoSetEditingPolicy(req contract.Request) contract.Response {
+	service := s.editingPolicyService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "POLICY-0001", "ERROR", "RETRY", "repo.editing_policy_unavailable", nil)
+	}
+	var payload contract.RepoSetEditingPolicyPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	serverID, repoID := strings.TrimSpace(payload.ServerID), strings.TrimSpace(payload.RepoID)
+	if serverID == "" || repoID == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	if payload.Policy != "" && payload.Policy != "free" && payload.Policy != "lock_required" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	rs := s.repoByID(repoID)
+	if rs == nil || rs.ServerID() != serverID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[serverID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || activation.RealmID == "" || rs.Summary().OwnerRealmID != activation.RealmID {
+		return contract.ErrResponse(req.RequestID, "POLICY-2001", "ERROR", "NONE", "repo.editing_policy_forbidden", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	policy, err := service.SetEditingPolicy(ctx, serverID, repoID, payload.Policy)
+	if err != nil {
+		talk.With("editing-policy:"+serverID).Warnf("policy change failed: %v", err)
+		return contract.ErrResponse(req.RequestID, "POLICY-2002", "ERROR", "RETRY", "repo.editing_policy_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, contract.RepoSetEditingPolicyResult{RepoID: repoID, Policy: policy})
 }
 
 func (s *Server) handleRepoGrantAccess(req contract.Request, revoke bool) contract.Response {

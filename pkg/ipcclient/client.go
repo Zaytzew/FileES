@@ -355,6 +355,18 @@ func (c *Client) RepoGrantAccess(ctx context.Context, payload contract.RepoGrant
 	return &result, nil
 }
 
+func (c *Client) RepoSetEditingPolicy(ctx context.Context, payload contract.RepoSetEditingPolicyPayload) (*contract.RepoSetEditingPolicyResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoSetEditingPolicy, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoSetEditingPolicyResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (c *Client) RepoRevokeAccess(ctx context.Context, payload contract.RepoRevokeAccessPayload) (*contract.RealmGrantResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoRevokeAccess, payload.RepoID, payload)
 	if err != nil {

@@ -255,6 +255,7 @@ type realmGrantClient interface {
 	RealmSetVisibility(context.Context, string, string) (*contract.RealmSetVisibilityResult, error)
 	RepoGrantAccess(context.Context, contract.RepoGrantAccessPayload) (*contract.RealmGrantResult, error)
 	RepoRevokeAccess(context.Context, contract.RepoRevokeAccessPayload) (*contract.RealmGrantResult, error)
+	RepoSetEditingPolicy(context.Context, contract.RepoSetEditingPolicyPayload) (*contract.RepoSetEditingPolicyResult, error)
 }
 
 type realmGrantAdapter struct{ client realmGrantClient }
@@ -799,4 +800,22 @@ func run(parent context.Context, deps dependencies) error {
 	default:
 	}
 	return nil
+}
+
+// SetEditingPolicy translates the GUI's boolean intent into the wire
+// vocabulary, and reports back what the server actually stored rather than
+// what was asked for - the server is the authority on its own repositories.
+func (adapter realmGrantAdapter) SetEditingPolicy(ctx context.Context, serverID, repoID string, lockRequired bool) (bool, error) {
+	policy := contract.EditingFree
+	if lockRequired {
+		policy = contract.EditingLockRequired
+	}
+	result, err := adapter.client.RepoSetEditingPolicy(ctx, contract.RepoSetEditingPolicyPayload{ServerID: serverID, RepoID: repoID, Policy: policy})
+	if err != nil {
+		return false, err
+	}
+	if result == nil || result.RepoID != repoID {
+		return false, errors.New("daemon returned an invalid editing policy result")
+	}
+	return result.Policy == contract.EditingLockRequired, nil
 }

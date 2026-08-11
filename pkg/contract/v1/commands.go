@@ -45,6 +45,7 @@ const (
 	CmdRepoLoadDump           = "repo.load_dump"           // load a user-supplied dump into a fresh, single-carrier-commit repo
 	CmdRepoGrantAccess        = "repo.grant_access"        // grant r/rw access to a visible foreign realm
 	CmdRepoRevokeAccess       = "repo.revoke_access"       // revoke a realm grant without deleting local data
+	CmdRepoSetEditingPolicy   = "repo.set_editing_policy"  // owner-only: switch a repository between free and lock_required editing
 	CmdRepoPublicShareList    = "repo.public_share_list"   // list owned public distribution channels
 	CmdRepoPublicShareCreate  = "repo.public_share_create" // create an owned public distribution channel
 	CmdRepoPublicShareUpdate  = "repo.public_share_update" // update one owned active channel
@@ -104,6 +105,7 @@ const (
 	CapRepoLoadDump           = "repo.load_dump"
 	CapRepoGrantAccess        = "repo.grant_access"
 	CapRepoRevokeAccess       = "repo.revoke_access"
+	CapRepoSetEditingPolicy   = "repo.set_editing_policy"
 	CapRepoPublicShareList    = "repo.public_share_list"
 	CapRepoPublicShareCreate  = "repo.public_share_create"
 	CapRepoPublicShareUpdate  = "repo.public_share_update"
@@ -428,6 +430,19 @@ type RepoGrantAccessPayload struct {
 	RepoID           string `json:"repo_id"`
 	RecipientRealmID string `json:"recipient_realm_id"`
 	Access           string `json:"access"`
+}
+
+// RepoSetEditingPolicyPayload switches a repository between plain
+// merge-on-commit and edit passports. Owner-only, enforced server-side.
+type RepoSetEditingPolicyPayload struct {
+	ServerID string `json:"server_id"`
+	RepoID   string `json:"repo_id"`
+	Policy   string `json:"policy"` // "" or "free" for the default, "lock_required" to opt in
+}
+
+type RepoSetEditingPolicyResult struct {
+	RepoID string `json:"repo_id"`
+	Policy string `json:"policy"`
 }
 
 type RepoRevokeAccessPayload struct {

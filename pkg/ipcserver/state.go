@@ -30,6 +30,7 @@ type RepoState struct {
 	attached         bool
 	ownerRealmID     string
 	attachmentPolicy string
+	editingPolicy    string
 	projectedState   string
 
 	state        string // contract.State*
@@ -59,6 +60,16 @@ func (rs *RepoState) SetProjection(url, access string) {
 	rs.mu.Lock()
 	rs.url = url
 	rs.access = access
+	rs.mu.Unlock()
+}
+
+// SetEditingPolicy records the projected repository-wide editing policy so
+// status can explain read-only files instead of leaving them unexplained. It
+// is separate from SetProjectedMetadata to keep that already long positional
+// signature from growing another string nobody can tell apart at a call site.
+func (rs *RepoState) SetEditingPolicy(policy string) {
+	rs.mu.Lock()
+	rs.editingPolicy = policy
 	rs.mu.Unlock()
 }
 
@@ -298,6 +309,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	attached := rs.attached
 	ownerRealmID := rs.ownerRealmID
 	attachmentPolicy := rs.attachmentPolicy
+	editingPolicy := rs.editingPolicy
 	headRev := rs.headRev
 	conflicts := rs.conflicts
 	lastSync := rs.lastSyncAt
@@ -333,6 +345,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		Access:           access,
 		OwnerRealmID:     ownerRealmID,
 		AttachmentPolicy: attachmentPolicy,
+		EditingPolicy:    editingPolicy,
 		State:            state,
 		Connectivity:     conn,
 		LocalRevision:    localRev,

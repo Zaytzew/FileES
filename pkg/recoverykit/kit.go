@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"filees/internal/durable"
+	"filees/pkg/privatefile"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -134,8 +137,16 @@ func LoadDraft(path string) (Kit, error) {
 	if err != nil {
 		return Kit{}, err
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0077 != 0 {
-		return Kit{}, errors.New("recovery kit must be a private regular file")
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return Kit{}, errors.New("recovery kit must be a regular file")
+	}
+	// Privacy is checked through privatefile rather than the permission bits.
+	// A mode test is meaningless on Windows - Go reports 0666 for any writable
+	// file there, so `Perm()&0077 != 0` rejected the very kit Store had just
+	// written, and a recovery kit carries a private key, so this is the one
+	// place that cannot afford a check that only works on one platform.
+	if err := privatefile.Verify(path); err != nil {
+		return Kit{}, fmt.Errorf("recovery kit must be private: %w", err)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -171,7 +182,7 @@ func Store(path string, kit Kit) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := privatefile.EnsureDir(filepath.Dir(path)); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".fkr-*.tmp")
@@ -192,13 +203,16 @@ func Store(path string, kit Kit) error {
 	if err != nil {
 		return err
 	}
+	// Harden before the rename, so the kit is never briefly visible to other
+	// accounts under its final name.
+	if err := privatefile.Harden(tmpPath); err != nil {
+		return err
+	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	// Same POSIX-only pairing as elsewhere: on Windows the os.Open handle is
+	// read-only and the flush is refused. Recovery kits are written by the
+	// client, so this runs on Windows in production, not only in tests.
+	return durable.SyncDirectory(filepath.Dir(path))
 }

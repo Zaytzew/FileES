@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"filees/internal/durable"
 	"filees/internal/releaseenvelope"
 )
 
@@ -82,12 +83,11 @@ func (store StateStore) Save(state State) error {
 	if err := os.Rename(tempPath, store.Path); err != nil {
 		return err
 	}
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	// os.Open+Sync is POSIX-only: on Windows that handle is read-only, so
+	// FlushFileBuffers refuses it with "Access is denied" and the update state
+	// fails to persist. This runs on client machines, so Windows is not a
+	// developer-only concern here.
+	return durable.SyncDirectory(dir)
 }
 
 func (state State) Check(envelope *releaseenvelope.Envelope) error {

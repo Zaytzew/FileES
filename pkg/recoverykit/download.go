@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/internal/durable"
 	"filees/pkg/deploy"
 	"filees/pkg/repoworker"
 	"golang.org/x/crypto/ssh"
@@ -192,17 +193,11 @@ func downloadRecoveryArchive(client *ssh.Client, outputRoot, operationID string,
 	if err := os.Remove(tempPath); err != nil {
 		return "", err
 	}
-	directory, err := os.Open(outputRoot)
-	if err != nil {
+	// POSIX-only pairing; on Windows the handle from os.Open is read-only and
+	// FlushFileBuffers refuses it. A recovery kit is downloaded by a client, so
+	// this path really does run there.
+	if err := durable.SyncDirectory(outputRoot); err != nil {
 		return "", err
-	}
-	syncErr := directory.Sync()
-	closeErr := directory.Close()
-	if syncErr != nil {
-		return "", syncErr
-	}
-	if closeErr != nil {
-		return "", closeErr
 	}
 	return finalPath, nil
 }

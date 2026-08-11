@@ -3,6 +3,8 @@ package recoverykit
 import (
 	"os"
 	"path/filepath"
+
+	"filees/pkg/privatefile"
 	"strings"
 	"testing"
 	"time"
@@ -23,9 +25,11 @@ func TestCreateAndStoreRecoveryKit(t *testing.T) {
 	if err := Store(path, kit); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0600 {
-		t.Fatalf("mode=%v err=%v", info.Mode(), err)
+	// Asserted through privatefile rather than the permission bits: Go reports
+	// 0666 for any writable file on Windows, so a mode assertion would fail
+	// there while proving nothing about who can actually read the private key.
+	if err := privatefile.Verify(path); err != nil {
+		t.Fatalf("stored recovery kit is not private: %v", err)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(raw), "OPENSSH PRIVATE KEY") {

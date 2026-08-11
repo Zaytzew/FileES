@@ -3,6 +3,7 @@ package recoverykit
 import (
 	"encoding/json"
 	"errors"
+	"filees/internal/durable"
 	"os"
 	"path/filepath"
 	"sort"
@@ -154,10 +155,8 @@ func storePrivateFile(path string, raw []byte) error {
 	if err := os.Rename(tempPath, path); err != nil {
 		return err
 	}
-	directory, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	// The registry lives under the client profile root, so this is a Windows
+	// path in production; os.Open+Sync would fail there with "Access is
+	// denied".
+	return durable.SyncDirectory(filepath.Dir(path))
 }

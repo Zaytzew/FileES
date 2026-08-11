@@ -3,6 +3,7 @@ package clientupdate
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"filees/internal/releaseenvelope"
@@ -41,8 +42,16 @@ func TestStateStoreIsStrictPrivateAndDurableShape(t *testing.T) {
 		t.Fatalf("loaded = %+v, %v", got, err)
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("state mode = %v, %v", info.Mode(), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The mode is only meaningful where it means something. Go reports 0666
+	// for any writable file on Windows regardless of what Chmod was asked for,
+	// so asserting 0600 there fails without telling us anything. The state file
+	// holds update sequence numbers rather than secrets, so unlike the recovery
+	// kit it does not warrant a DACL check in its place.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("state mode = %v", info.Mode())
 	}
 	if err := os.WriteFile(path, []byte(`{"schema":1,"highest_sequence":1,"security_epoch":1,"unknown":true}`), 0o600); err != nil {
 		t.Fatal(err)

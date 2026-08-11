@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -87,8 +88,14 @@ func TestBundleStagerVerifiesThenExtractsRegularFiles(t *testing.T) {
 		t.Fatalf("staged binary = %q, %v", data, err)
 	}
 	info, err := os.Stat(filepath.Join(root, "bin", "filees"))
-	if err != nil || info.Mode().Perm() != 0o755 {
-		t.Fatalf("binary mode = %v, %v", info.Mode(), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The executable bit is what this assertion is really about, and Windows
+	// has no such bit - it decides by extension, and Go reports 0666 for any
+	// writable file. Checking it there would fail while proving nothing.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o755 {
+		t.Fatalf("binary mode = %v", info.Mode())
 	}
 	if err := staged.Remove(); err != nil {
 		t.Fatal(err)

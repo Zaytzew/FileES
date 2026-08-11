@@ -235,3 +235,101 @@ func TestProjectedRepositoriesClearsEditingPolicyWhenRecordReturnsToFree(t *test
 		t.Fatal("repository still requires a lock after the owner turned the policy off")
 	}
 }
+
+// The editing policy governs how everyone works inside a repository, so it is
+// owner-only. A recipient holding rw must not be able to impose passports on
+// the owner, which is why authorization goes through OwnsActiveRepository
+// rather than any grant lookup.
+func TestSetRepositoryEditingPolicyIsOwnerOnlyAndNormalisesTheDefault(t *testing.T) {
+	root := t.TempDir()
+	runner := &publishRunner{}
+	p := ServicePublisher{ServiceWC: root, DataAuthzFile: filepath.Join(root, "authz"), Runner: runner}
+	owner, guest, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	ownerClient := uuid.NewString()
+	for _, realm := range []string{owner, guest} {
+		if err := atomicJSON(filepath.Join(root, "admin", "realms", realm+".json"), realmRecord{Schema: "filees.realm/v1", RealmID: realm, State: "active", CreatedAt: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := atomicJSON(filepath.Join(root, "admin", "clients", ownerClient+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": ownerClient, "realm_id": owner, "state": "active"}); err != nil {
+		t.Fatal(err)
+	}
+	ownerView := filepath.Join(root, "clients", ownerClient, "view.json")
+	if _, err := clientview.StoreIfNewer(ownerView, clientview.View{Schema: clientview.Schema, ClientID: ownerClient, RealmID: owner, Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(root, "admin", "repositories", repoID+".json")
+	if err := atomicJSON(recordPath, repositoryRecord{
+		Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: owner,
+		DisplayName: "Rysunki", URL: "svn+ssh://_filees-data@example/" + repoID,
+		State: "active", CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A live rw grant for the guest, so the refusal below cannot be explained
+	// by the guest simply having no access at all.
+	if err := atomicJSON(filepath.Join(root, "admin", "grants", repoID, guest+".json"), RealmGrantRecord{
+		Schema: RealmGrantSchema, RepoID: repoID, OwnerRealmID: owner, RecipientRealmID: guest,
+		Access: "rw", State: "active", PathOwnerPolicy: "first_committer",
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.SetRepositoryEditingPolicy(context.Background(), guest, repoID, "lock_required"); err == nil {
+		t.Fatal("a realm holding rw was allowed to change the repository editing policy")
+	}
+
+	got, err := p.SetRepositoryEditingPolicy(context.Background(), owner, repoID, "lock_required")
+	if err != nil || got != clientview.EditingLockRequired {
+		t.Fatalf("owner could not set the policy: got=%q err=%v", got, err)
+	}
+	stored := loadRepositoryRecordForTest(t, recordPath)
+	if stored.EditingPolicy != clientview.EditingLockRequired {
+		t.Fatalf("record editing_policy=%q", stored.EditingPolicy)
+	}
+	// Storing it is not enough: the record is the only place the projection
+	// reads this from, so the owner's view has to carry it before any client
+	// can act on the change.
+	projected, err := clientview.Load(ownerView)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected.Repositories) != 1 || !projected.Repositories[0].RequiresLock() {
+		t.Fatalf("policy did not reach the client projection: %+v", projected.Repositories)
+	}
+
+	// "free" is an input alias and must be stored as absence, or the default
+	// would reach the wire and break every reader that predates the field.
+	if got, err := p.SetRepositoryEditingPolicy(context.Background(), owner, repoID, "free"); err != nil || got != clientview.EditingFree {
+		t.Fatalf("rollback to the default failed: got=%q err=%v", got, err)
+	}
+	stored = loadRepositoryRecordForTest(t, recordPath)
+	if stored.EditingPolicy != clientview.EditingFree {
+		t.Fatalf("record kept an unnormalised default: %q", stored.EditingPolicy)
+	}
+	raw, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "editing_policy") {
+		t.Fatalf("default serialised into the canonical record: %s", raw)
+	}
+
+	if _, err := p.SetRepositoryEditingPolicy(context.Background(), owner, repoID, "readonly"); err == nil {
+		t.Fatal("unknown policy accepted")
+	}
+}
+
+func loadRepositoryRecordForTest(t *testing.T, path string) repositoryRecord {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record repositoryRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}

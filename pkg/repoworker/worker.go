@@ -114,6 +114,7 @@ type Worker struct {
 	RealmRemoval         RealmRemovalService
 	DumpLoader           DumpLoader
 	Grants               RealmGrantAuthority
+	EditingPolicies      RepositoryEditingPolicyAuthority
 	PublicShares         PublicShareService
 	RecoveryAdminContact string
 	DataErasureMaxDays   int
@@ -130,7 +131,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketSetRepositoryEditingPolicy {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -162,6 +163,12 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.Type == control.TicketSetRealmVisibility {
 		return w.setRealmDirectoryVisibility(ctx, session, ticket)
+	}
+	// Dispatched before the result-store replay check, like the other
+	// settings-shaped tickets: this is idempotent state on the repository
+	// record, not an operation whose result must stay bound to one request.
+	if ticket.Type == control.TicketSetRepositoryEditingPolicy {
+		return w.setRepositoryEditingPolicy(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketClientDeactivate {
 		return w.detachClient(ctx, session, ticket)
@@ -290,6 +297,25 @@ func (w *Worker) listGrantRecipients(ctx context.Context, session Session, ticke
 		result = append(result, control.GrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias, Access: recipient.Access, State: recipient.State})
 	}
 	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ListGrantRecipientsResult{Recipients: result}, w.now())
+}
+
+// setRepositoryEditingPolicy binds the change to the authenticated session's
+// realm. The payload never names a realm, so a caller cannot ask to change the
+// policy of a repository it does not own; the authority then rejects anything
+// short of active ownership, which no grant - not even rw - satisfies.
+func (w *Worker) setRepositoryEditingPolicy(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.EditingPolicies == nil {
+		return w.failure(ticket, "EDITING_POLICY_UNAVAILABLE", "repository editing policy is unavailable")
+	}
+	var payload control.SetRepositoryEditingPolicyPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	policy, err := w.EditingPolicies.SetRepositoryEditingPolicy(ctx, session.RealmID, payload.RepoID, payload.Policy)
+	if err != nil {
+		return w.failure(ticket, "EDITING_POLICY_REJECTED", err.Error())
+	}
+	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.SetRepositoryEditingPolicyResult{RepoID: payload.RepoID, Policy: policy}, w.now())
 }
 
 func (w *Worker) setRealmDirectoryVisibility(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {

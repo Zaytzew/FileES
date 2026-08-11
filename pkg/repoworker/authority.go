@@ -640,10 +640,5 @@ func atomicBytes(path string, raw []byte) error {
 	if e = os.Rename(tmp, path); e != nil {
 		return e
 	}
-	d, e := os.Open(filepath.Dir(path))
-	if e != nil {
-		return e
-	}
-	defer d.Close()
-	return d.Sync()
+	return syncDirectory(filepath.Dir(path))
 }

@@ -161,12 +161,7 @@ func (b *DurableBackend) rollbackCreate(ctx context.Context, path string, record
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	directory, err := os.Open(b.Root)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return syncDirectory(b.Root)
 }
 
 // ReapFailedCreates completes only creation rollbacks which were durably
@@ -377,12 +372,7 @@ func (b *DurableBackend) saveDelete(path string, record deleteBackendRecord) err
 	if err = os.Rename(tmp, path); err != nil {
 		return err
 	}
-	directory, err := os.Open(b.Root)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return syncDirectory(b.Root)
 }
 func (b *DurableBackend) save(path string, r backendRecord) error {
 	raw, e := json.MarshalIndent(r, "", "  ")
@@ -410,10 +400,5 @@ func (b *DurableBackend) save(path string, r backendRecord) error {
 	if e = os.Rename(tmp, path); e != nil {
 		return e
 	}
-	d, e := os.Open(b.Root)
-	if e != nil {
-		return e
-	}
-	defer d.Close()
-	return d.Sync()
+	return syncDirectory(b.Root)
 }

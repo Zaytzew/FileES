@@ -68,12 +68,7 @@ func (e ServerEffects) CreateFSFS(ctx context.Context, repoID, operationID strin
 		}
 		return err
 	}
-	d, err := os.Open(e.RepositoriesRoot)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return syncDirectory(e.RepositoriesRoot)
 }
 func (e ServerEffects) PublishAuthority(ctx context.Context, repoID, realmID, name, url string) error {
 	return e.Authority.Publish(ctx, repoID, realmID, name, url)

@@ -222,11 +222,16 @@ func load(path string, secrets Secrets) (Config, error) {
 	if file.WorkerPublicKeyFile != "" && !filepath.IsAbs(file.WorkerPublicKeyFile) {
 		return Config{}, errors.New("worker_public_key_file must be absolute")
 	}
-	if file.Invitation.ServerID != "" || file.Invitation.ServerAddress != "" || file.Invitation.KnownHost != "" {
-		probe := onboarding.Invitation{Schema: onboarding.InvitationSchema, Token: strings.Repeat("A", 43), ServerID: file.Invitation.ServerID, ServerAddress: file.Invitation.ServerAddress, KnownHost: file.Invitation.KnownHost}
-		if err := probe.Validate(); err != nil {
-			return Config{}, fmt.Errorf("invitation profile: %w", err)
-		}
+	// Validated unconditionally rather than only when partly filled in. The
+	// block carries the pinned host key that makes an invitation trustworthy,
+	// and a server without it cannot onboard anyone - so accepting its absence
+	// let a config pass every check and then fail at `ticket create`, which is
+	// the worst moment to discover it. An invitation with a bad profile was
+	// never issuable (EncodeInvitation validates), so this moves the refusal
+	// earlier rather than closing a hole.
+	probe := onboarding.Invitation{Schema: onboarding.InvitationSchema, Token: strings.Repeat("A", 43), ServerID: file.Invitation.ServerID, ServerAddress: file.Invitation.ServerAddress, KnownHost: file.Invitation.KnownHost}
+	if err := probe.Validate(); err != nil {
+		return Config{}, fmt.Errorf("invitation profile: %w (the invitation block is required; it carries the pinned host key)", err)
 	}
 	activationConfig := activation.Config{
 		Root: file.Activation.Root, SessionRoot: file.Activation.SessionRoot, AuthorizedKeysFile: file.Activation.AuthorizedKeysFile,

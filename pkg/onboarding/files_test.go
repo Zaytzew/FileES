@@ -740,3 +740,35 @@ func testOptions(now *time.Time, attempts int, first, last uint16) Options {
 type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, fmt.Errorf("injected entropy failure") }
+
+// An expired ticket used to hold its delivery address hostage: the guard asked
+// only whether the file existed, so once a ticket lapsed the only way to invite
+// that person again was for an administrator to find and delete it by hand,
+// with nothing in the refusal saying so.
+func TestExpiredTicketReleasesItsAddressButALiveOneStillBlocks(t *testing.T) {
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	store, _ := openTestStore(t, &now, 3, 42720, 42730)
+	defer store.Close()
+
+	first, err := store.CreateTicket("a@example.net", Policy{RealmID: testRealmID}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Still live: a second valid invitation to one address would mean two
+	// usable capabilities for the same person.
+	if _, err := store.CreateTicket("a@example.net", Policy{RealmID: testRealmID}, time.Hour); !errors.Is(err, ErrTicketExists) {
+		t.Fatalf("live ticket did not block the address: %v", err)
+	}
+
+	now = now.Add(2 * time.Hour) // past ExpiresAt
+	second, err := store.CreateTicket("a@example.net", Policy{RealmID: testRealmID}, time.Hour)
+	if err != nil {
+		t.Fatalf("expired ticket still blocked its address: %v", err)
+	}
+	if second.TicketID == first.TicketID {
+		t.Fatal("replacement reused the expired ticket's identity")
+	}
+	if !now.Before(second.ExpiresAt) {
+		t.Fatalf("replacement is already expired: %v", second.ExpiresAt)
+	}
+}

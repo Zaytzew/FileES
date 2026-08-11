@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"filees/pkg/privatefile"
 	"fmt"
 	"io"
 	"os"
@@ -108,7 +109,24 @@ func Initialize(root string) error {
 	}
 	root = filepath.Clean(root)
 	for _, dir := range []string{root, filepath.Join(root, ticketsDir), filepath.Join(root, operationsDir), filepath.Join(root, auditDir)} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+		// A directory that already exists is verified, never repaired. If it
+		// was readable by others it may already have leaked, and silently
+		// tightening it would hide that from the operator - Initialize is
+		// reached from Open, so this is the check that refuses an unsafe root
+		// rather than quietly adopting it.
+		if _, err := os.Lstat(dir); err == nil {
+			if err := requirePrivateDirectory(dir); err != nil {
+				return err
+			}
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		// Creating one is different: EnsureDir rather than MkdirAll, because on
+		// Windows a directory made with mode 0700 still inherits its parent's
+		// DACL - the mode claims private while the ACL grants other accounts
+		// access. Same exposure r435 fixed for key material.
+		if err := privatefile.EnsureDir(dir); err != nil {
 			return fmt.Errorf("create onboarding directory: %w", err)
 		}
 		if err := requirePrivateDirectory(dir); err != nil {
@@ -285,10 +303,10 @@ func (s *Files) CreateTicket(email string, policy Policy, ttl time.Duration) (Ti
 	ticket := Ticket{Schema: TicketSchema, TicketID: id, EmailDeliveryAddress: canonical, ApprovedPolicy: policy, CreatedAt: now, ExpiresAt: now.Add(ttl)}
 	err = s.withLock(func() error {
 		path := s.ticketPath(canonical)
-		if _, err := os.Lstat(path); err == nil {
-			return ErrTicketExists
-		} else if !errors.Is(err, os.ErrNotExist) {
+		if taken, err := s.ticketAddressTakenLocked(path, now); err != nil {
 			return err
+		} else if taken {
+			return ErrTicketExists
 		}
 		if err := atomicWriteJSON(path, ticket); err != nil {
 			return err
@@ -352,10 +370,10 @@ func (s *Files) CreateInvitationTicket(email string, ttl time.Duration, profile 
 	}
 	err = s.withLock(func() error {
 		path := s.ticketPath(canonical)
-		if _, err := os.Lstat(path); err == nil {
-			return ErrTicketExists
-		} else if !errors.Is(err, os.ErrNotExist) {
+		if taken, err := s.ticketAddressTakenLocked(path, now); err != nil {
 			return err
+		} else if taken {
+			return ErrTicketExists
 		}
 		if err := atomicWriteJSON(path, ticket); err != nil {
 			return err
@@ -1757,13 +1775,23 @@ func decodeStrict(raw []byte, schema string, target any) error {
 	return nil
 }
 
+// Privacy is asserted through privatefile rather than the permission bits.
+// The mode test is exactly right on the OpenBSD server these paths live on,
+// but it is meaningless anywhere Go reports 0666 for every writable file, so
+// it made the whole package untestable on a Windows developer machine - 35
+// tests refused before reaching a single assertion. privatefile keeps the
+// mode-and-owner check on Unix and uses the DACL on Windows, so the guarantee
+// is unchanged where it mattered and now also checkable where it did not.
 func requirePrivateDirectory(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("onboarding directory %s must be private", path)
+	if !info.IsDir() {
+		return fmt.Errorf("onboarding directory %s must be a directory", path)
+	}
+	if err := privatefile.Verify(path); err != nil {
+		return fmt.Errorf("onboarding directory %s must be private: %w", path, err)
 	}
 	return nil
 }
@@ -1772,8 +1800,11 @@ func requirePrivateFile(path string) error {
 	if err != nil {
 		return err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("onboarding file %s must be private", path)
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("onboarding file %s must be a regular file", path)
+	}
+	if err := privatefile.Verify(path); err != nil {
+		return fmt.Errorf("onboarding file %s must be private: %w", path, err)
 	}
 	return nil
 }
@@ -1905,4 +1936,28 @@ func firstFreePort(first, last uint16, unavailable func(uint16) bool) (uint16, e
 
 type MailSink interface {
 	Deliver(context.Context, MailOutboxEntry) error
+}
+
+// ticketAddressTakenLocked reports whether an existing ticket file still has a
+// claim on its delivery address.
+//
+// The guard this replaces asked only whether the file existed, so a ticket that
+// had lapsed kept its address reserved forever and the only remedy was an
+// administrator finding and deleting the file by hand - with nothing in the
+// refusal hinting at that. A live ticket still blocks, because two valid
+// invitations to one address would mean two usable capabilities for the same
+// person.
+//
+// An unreadable or malformed file is treated as still blocking: it is not
+// evidence that the address is free, and overwriting something we cannot parse
+// would destroy whatever it was.
+func (s *Files) ticketAddressTakenLocked(path string, now time.Time) (bool, error) {
+	ticket, err := s.readTicketPathLocked(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return true, nil
+	}
+	return now.Before(ticket.ExpiresAt), nil
 }

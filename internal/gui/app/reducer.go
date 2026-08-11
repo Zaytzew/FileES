@@ -168,6 +168,7 @@ func (s appState) viewModel() ViewModel {
 			Access:           snap.Access,
 			OwnerRealmID:     snap.OwnerRealmID,
 			AttachmentPolicy: snap.AttachmentPolicy,
+			EditingPolicy:    snap.EditingPolicy,
 			URL:              sum.URL,
 			LocalPath:        sum.LocalPath,
 			State:            snap.State,

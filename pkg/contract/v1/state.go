@@ -42,6 +42,14 @@ const (
 // RepoStatus is the full snapshot returned by CmdRepoStatus (§8).
 // It contains everything a GUI needs to render the repo view without reading
 // any .filees private files directly.
+// Editing policies as they cross the IPC boundary. The default is the empty
+// string on this contract too, for the same reason it is on the projection:
+// absence is what keeps it invisible to anything that does not know the field.
+const (
+	EditingFree         = ""
+	EditingLockRequired = "lock_required"
+)
+
 type RepoStatus struct {
 	RepoID           string        `json:"repo_id"`
 	ServerID         string        `json:"server_id"`
@@ -50,6 +58,11 @@ type RepoStatus struct {
 	Access           string        `json:"access"`
 	OwnerRealmID     string        `json:"owner_realm_id,omitempty"`
 	AttachmentPolicy string        `json:"attachment_policy"`
+	// EditingPolicy is empty for the default and "lock_required" when this
+	// repository works through edit passports. Every client needs it, not just
+	// the owner: without it a read-only file is unexplained, which is exactly
+	// the silent state the concept requires the UI to replace with a reason.
+	EditingPolicy    string        `json:"editing_policy,omitempty"`
 	State            string        `json:"state"`        // one of the State* constants
 	Connectivity     string        `json:"connectivity"` // ConnOnline | ConnOffline
 	LocalRevision    int64         `json:"local_revision"`

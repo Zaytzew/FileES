@@ -190,13 +190,19 @@ type SettingsServer struct {
 // rather than reintroducing an unconditional button.
 type SettingsFolder struct {
 	ID, Name, LocalPath, State, Access string
-	CanManageGrants                    bool
-	CanManagePublicShares              bool
-	CanConnect                         bool // connect selected unattached repository
-	CanLocate                          bool // adopt an existing moved working copy
-	CanDetach                          bool // detach_folder (non-destructive)
-	CanDelete                          bool // delete_repository
-	CanLoadDump                        bool // load_dump
+	// Editing is a human-readable rendering of the repository editing policy,
+	// shown to every client rather than only the owner: a read-only file with
+	// no stated reason is the confusing state this is meant to replace.
+	Editing               string
+	CanManageGrants       bool
+	CanSetEditingPolicy   bool // owner-only: switch between free and lock_required
+	LockRequired          bool // current policy, for the action's confirmation text
+	CanManagePublicShares bool
+	CanConnect            bool // connect selected unattached repository
+	CanLocate             bool // adopt an existing moved working copy
+	CanDetach             bool // detach_folder (non-destructive)
+	CanDelete             bool // delete_repository
+	CanLoadDump           bool // load_dump
 }
 type SettingsRecovery struct {
 	OperationID, ServerName, KitPath, Status string
@@ -214,6 +220,7 @@ const (
 	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
 	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"
 	SettingsDialogManageGrants     SettingsDialogAction = "manage_grants"
+	SettingsDialogEditingPolicy    SettingsDialogAction = "editing_policy"
 	SettingsDialogPublicShares     SettingsDialogAction = "public_shares"
 	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
 	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"

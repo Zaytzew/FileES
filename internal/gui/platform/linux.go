@@ -321,16 +321,16 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	b.applyLinuxDarkThemePreference(ctx)
 	args := []string{
 		"--list", "--radiolist", "--title=" + request.Title, "--text=" + SettingsText(SettingsDialogRequest{Text: request.Text}), "--width=1240", "--height=600",
-		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Strefa", "--column=Repozytorium", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp",
+		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Strefa", "--column=Repozytorium", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp", "--column=Edycja",
 		"--hide-column=2", "--print-column=2", "--ok-label=Wybierz", "--cancel-label=Zamknij",
 	}
 	for _, server := range request.Servers {
 		if len(server.Folders) == 0 {
-			args = append(args, "FALSE", server.ID+"|", server.Name, server.Address, server.Realm, "Brak folderów", "—", "—", "—")
+			args = append(args, "FALSE", server.ID+"|", server.Name, server.Address, server.Realm, "Brak folderów", "—", "—", "—", "—")
 			continue
 		}
 		for _, folder := range server.Folders {
-			args = append(args, "FALSE", server.ID+"|"+folder.ID, server.Name, server.Address, server.Realm, folder.Name, folder.LocalPath, folder.State, folder.Access)
+			args = append(args, "FALSE", server.ID+"|"+folder.ID, server.Name, server.Address, server.Realm, folder.Name, folder.LocalPath, folder.State, folder.Access, folder.Editing)
 		}
 	}
 	for _, recovery := range request.Recoveries {
@@ -338,7 +338,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 		if recovery.CanDownload {
 			prefix = "@recovery-download:"
 		}
-		args = append(args, "FALSE", prefix+recovery.OperationID+"|", recovery.ServerName, "—", "—", recovery.Status, recovery.KitPath, "recovery", "—")
+		args = append(args, "FALSE", prefix+recovery.OperationID+"|", recovery.ServerName, "—", "—", recovery.Status, recovery.KitPath, "recovery", "—", "—")
 	}
 	output, err := b.runner.Output(ctx, command, args...)
 	selection := yadSelection(output)
@@ -365,6 +365,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	canConnect := false
 	canLocate := false
 	canManageGrants := false
+	canSetEditingPolicy := false
 	canManagePublicShares := false
 	canDetach := false
 	canDelete := false
@@ -381,6 +382,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 				canConnect = folder.CanConnect
 				canLocate = folder.CanLocate
 				canManageGrants = folder.CanManageGrants
+				canSetEditingPolicy = folder.CanSetEditingPolicy
 				canManagePublicShares = folder.CanManagePublicShares
 				canDetach = folder.CanDetach
 				canDelete = folder.CanDelete
@@ -389,7 +391,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 			}
 		}
 	}
-	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canConnect, canLocate, canManageGrants, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility)
+	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility)
 	if err != nil || action == SettingsDialogClose {
 		return SettingsDialogResult{Action: action}, err
 	}
@@ -429,7 +431,7 @@ func (b *LinuxBackend) ShowJournal(ctx context.Context, request JournalDialogReq
 	return nil
 }
 
-func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility bool) (SettingsDialogAction, error) {
+func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility bool) (SettingsDialogAction, error) {
 	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
 	if canAddFolder {
 		args = append(args, "FALSE", "add_folder", "Dodaj folder do FileES")
@@ -446,6 +448,9 @@ func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFo
 	if hasFolder {
 		if canManageGrants {
 			args = append(args, "FALSE", "manage_grants", "Uprawnienia gości")
+		}
+		if canSetEditingPolicy {
+			args = append(args, "FALSE", "editing_policy", "Zasady edycji")
 		}
 		if canManagePublicShares {
 			args = append(args, "FALSE", "public_shares", "Udostępnienia publiczne")

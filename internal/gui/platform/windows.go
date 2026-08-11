@@ -359,6 +359,8 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 		result.Action = SettingsDialogLoadDump
 	case "manage_grants":
 		result.Action = SettingsDialogManageGrants
+	case "editing_policy":
+		result.Action = SettingsDialogEditingPolicy
 	case "public_shares":
 		result.Action = SettingsDialogPublicShares
 	case "realm_visibility":
@@ -389,6 +391,7 @@ var settingsButtons = []struct {
 }{
 	{"Widoczność", "realm_visibility", "CanVisibility"},
 	{"Uprawnienia gości", "manage_grants", "CanGrants"},
+	{"Zasady edycji", "editing_policy", "CanEditingPolicy"},
 	{"Udostępnienia publiczne", "public_shares", "CanPublicShares"},
 	{"Dodaj folder", "add", "CanAdd"},
 	{"Połącz", "connect", "CanConnect"},
@@ -407,8 +410,9 @@ var settingsButtons = []struct {
 // action the controller will silently refuse is a real, reported "click it,
 // nothing happens" bug, not a cosmetic issue.
 type settingsRow struct {
-	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access                                       string
+	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access, Editing                              string
 	CanVisibility, CanGrants, CanPublicShares, CanAdd, CanConnect, CanLocate, CanDetach, CanDelete, CanLoadDump bool
+	CanEditingPolicy                                                                                            bool
 	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                                                          bool
 }
 
@@ -422,14 +426,16 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 		}
 		if len(s.Folders) == 0 {
 			placeholder := base
-			placeholder.Folder, placeholder.Path, placeholder.State, placeholder.Access = "Brak folderów", "—", "—", "—"
+			placeholder.Folder, placeholder.Path, placeholder.State, placeholder.Access, placeholder.Editing = "Brak folderów", "—", "—", "—", "—"
 			rows = append(rows, placeholder)
 			continue
 		}
 		for _, f := range s.Folders {
 			folder := base
 			folder.RepoID, folder.Folder, folder.Path, folder.State, folder.Access = f.ID, f.Name, f.LocalPath, f.State, f.Access
+			folder.Editing = f.Editing
 			folder.CanGrants, folder.CanPublicShares, folder.CanConnect, folder.CanLocate, folder.CanDetach, folder.CanDelete, folder.CanLoadDump = f.CanManageGrants, f.CanManagePublicShares, f.CanConnect, f.CanLocate, f.CanDetach, f.CanDelete, f.CanLoadDump
+			folder.CanEditingPolicy = f.CanSetEditingPolicy
 			rows = append(rows, folder)
 		}
 	}
@@ -454,7 +460,7 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	for _, button := range settingsButtons {
 		hidden = append(hidden, button.capability)
 	}
-	columns := append(append([]string{}, hidden...), "Serwer", "Adres", "Strefa", "Repozytorium", "Ścieżka", "Stan", "Dostęp")
+	columns := append(append([]string{}, hidden...), "Serwer", "Adres", "Strefa", "Repozytorium", "Ścieżka", "Stan", "Dostęp", "Edycja")
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
 		quotedColumns = append(quotedColumns, psString(column))
@@ -519,6 +525,8 @@ func settingsRowField(column string) string {
 		return "State"
 	case "Dostęp":
 		return "Access"
+	case "Edycja":
+		return "Editing"
 	default:
 		return column
 	}

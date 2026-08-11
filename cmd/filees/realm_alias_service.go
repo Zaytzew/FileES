@@ -264,6 +264,25 @@ func publicShareSummaryFromControl(share control.PublicShareSummary) contract.Pu
 	return contract.PublicShareSummary{ChannelID: share.ChannelID, RepoID: share.RepoID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow, Objects: objects, UpdatedAt: share.UpdatedAt}
 }
 
+// SetEditingPolicy forwards the owner's choice to the server, which is the
+// only party that can decide it: ownership lives in the canonical repository
+// record, not in anything the client holds.
+func (s *realmAliasService) SetEditingPolicy(ctx context.Context, serverID, repoID, policy string) (string, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return "", fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketSetRepositoryEditingPolicy, control.SetRepositoryEditingPolicyPayload{RepoID: repoID, Policy: policy})
+	if err != nil {
+		return "", err
+	}
+	var remote control.SetRepositoryEditingPolicyResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return "", err
+	}
+	return remote.Policy, nil
+}
+
 func (s *realmAliasService) realmGrantExchange(ctx context.Context, serverID string, typ control.TicketType, payload any) (contract.RealmGrantResult, error) {
 	profile, ok := s.provisioner.Profile(serverID)
 	if !ok {

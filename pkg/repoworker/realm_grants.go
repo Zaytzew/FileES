@@ -509,7 +509,13 @@ func projectedRepositories(repositories map[string]repositoryRecord, grants map[
 		if role == "ro" {
 			access = "r"
 		}
-		result = append(result, clientview.Repository{RepoID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: attachmentPolicy, MetadataDigest: metadataDigest})
+		// EditingPolicy is read from the canonical record on every rebuild and
+		// never carried over from currentByRepo like the two above. Those are
+		// per-client grants that the record cannot reconstruct; this one is a
+		// property of the repository, so the record is the only truth and a
+		// stale projection must not be able to keep a repository on an old
+		// policy.
+		result = append(result, clientview.Repository{RepoID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: attachmentPolicy, MetadataDigest: metadataDigest, EditingPolicy: repo.EditingPolicy})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].RepoID < result[j].RepoID })
 	return result

@@ -39,6 +39,33 @@ type Capabilities struct {
 	CanCreateRepositories bool `json:"can_create_repositories"`
 }
 
+// Editing policies. EditingFree is deliberately the empty string: Decode
+// rejects unknown fields, so a projection carrying editing_policy is
+// unreadable to any binary that predates it — the whole view fails, not one
+// repository. Representing the default as absence keeps the field out of
+// every projection until an owner actually opts a repository in, which makes
+// the rollout inert instead of breaking. Never serialise EditingFree.
+const (
+	EditingFree         = ""
+	EditingLockRequired = "lock_required"
+)
+
+// ValidEditingPolicy reports whether policy is one this build understands.
+// "free" is accepted on input as an explicit spelling of the default, but
+// callers must normalise it to EditingFree before storing or projecting.
+func ValidEditingPolicy(policy string) bool {
+	return policy == EditingFree || policy == "free" || policy == EditingLockRequired
+}
+
+// NormalizeEditingPolicy collapses the explicit "free" spelling onto the
+// empty default so it never reaches the wire.
+func NormalizeEditingPolicy(policy string) string {
+	if policy == "free" {
+		return EditingFree
+	}
+	return policy
+}
+
 type Repository struct {
 	RepoID           string `json:"repo_id"`
 	DisplayName      string `json:"display_name"`
@@ -48,7 +75,16 @@ type Repository struct {
 	OwnerRealmID     string `json:"owner_realm_id,omitempty"`
 	AttachmentPolicy string `json:"attachment_policy,omitempty"`
 	MetadataDigest   string `json:"metadata_digest,omitempty"`
+	// EditingPolicy is repository-wide and always sourced from the canonical
+	// repository record, never carried over from a previous projection the
+	// way AttachmentPolicy is — that one is a per-client grant, this one is
+	// a property of the repository itself.
+	EditingPolicy string `json:"editing_policy,omitempty"`
 }
+
+// RequiresLock reports whether editing this repository goes through the edit
+// passport machinery rather than plain merge-on-commit.
+func (r Repository) RequiresLock() bool { return r.EditingPolicy == EditingLockRequired }
 
 func (v View) CanCreateRepositories() bool {
 	if v.ClientRole == "ro" {
@@ -145,6 +181,12 @@ func (v View) Validate() error {
 		}
 		if repo.AttachmentPolicy != "" && repo.AttachmentPolicy != "optional" && repo.AttachmentPolicy != "required" {
 			return fmt.Errorf("repositories[%d].attachment_policy is invalid", i)
+		}
+		// Only the canonical spellings reach a projection: "free" is an input
+		// alias that must have been normalised to absence before storing, so
+		// seeing it here means an unnormalised value escaped a writer.
+		if repo.EditingPolicy != EditingFree && repo.EditingPolicy != EditingLockRequired {
+			return fmt.Errorf("repositories[%d].editing_policy is invalid", i)
 		}
 	}
 	return nil

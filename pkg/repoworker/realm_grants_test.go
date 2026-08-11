@@ -170,3 +170,68 @@ func TestRealmDirectoryListingRequiresExplicitAliasAndVisibility(t *testing.T) {
 		t.Fatalf("hidden=%q err=%v", visibility, err)
 	}
 }
+
+// The editing policy is a property of the repository, not of a client's
+// grant, so projectedRepositories must always read it from the canonical
+// record. AttachmentPolicy and MetadataDigest deliberately do the opposite -
+// they are per-client and are carried over from the previous projection -
+// and mixing the two rules is the exact mistake that would let a stale view
+// pin a repository to a policy its owner already changed.
+func TestProjectedRepositoriesSourcesEditingPolicyFromRecordNotPreviousView(t *testing.T) {
+	realmID := uuid.NewString()
+	repoID := uuid.NewString()
+	records := map[string]repositoryRecord{repoID: {
+		Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realmID,
+		DisplayName: "Docs", URL: "svn+ssh://_filees-client@example.net/" + repoID,
+		State: "active", EditingPolicy: clientview.EditingLockRequired,
+	}}
+	// The previous projection disagrees on every carried field: it claims the
+	// repository is free and pins a non-default attachment policy.
+	previous := []clientview.Repository{{
+		RepoID: repoID, DisplayName: "Docs", URL: records[repoID].URL, Access: "rw",
+		State: "active", OwnerRealmID: realmID,
+		AttachmentPolicy: "required", MetadataDigest: "sha256:stale",
+		EditingPolicy:    clientview.EditingFree,
+	}}
+
+	got := projectedRepositories(records, nil, realmID, "normal", "desktop", previous)
+	if len(got) != 1 {
+		t.Fatalf("projected %d repositories, want 1", len(got))
+	}
+	if got[0].EditingPolicy != clientview.EditingLockRequired {
+		t.Fatalf("editing_policy=%q, want the record's %q (stale view must not win)", got[0].EditingPolicy, clientview.EditingLockRequired)
+	}
+	if !got[0].RequiresLock() {
+		t.Fatal("RequiresLock() disagrees with the projected policy")
+	}
+	// Guard the contrast: these two must still be inherited, or this test
+	// would pass for the wrong reason after a careless refactor.
+	if got[0].AttachmentPolicy != "required" || got[0].MetadataDigest != "sha256:stale" {
+		t.Fatalf("per-client fields lost their carry-over: attachment=%q digest=%q", got[0].AttachmentPolicy, got[0].MetadataDigest)
+	}
+}
+
+// Turning the policy off must actually reach clients. Because the default is
+// the empty string, a regression that "preserves" the old value instead of
+// reading the record would leave every client locked forever with no way back.
+func TestProjectedRepositoriesClearsEditingPolicyWhenRecordReturnsToFree(t *testing.T) {
+	realmID := uuid.NewString()
+	repoID := uuid.NewString()
+	records := map[string]repositoryRecord{repoID: {
+		Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realmID,
+		DisplayName: "Docs", URL: "svn+ssh://_filees-client@example.net/" + repoID,
+		State: "active", EditingPolicy: clientview.EditingFree,
+	}}
+	previous := []clientview.Repository{{
+		RepoID: repoID, DisplayName: "Docs", URL: records[repoID].URL, Access: "rw",
+		State: "active", OwnerRealmID: realmID, EditingPolicy: clientview.EditingLockRequired,
+	}}
+
+	got := projectedRepositories(records, nil, realmID, "normal", "desktop", previous)
+	if len(got) != 1 || got[0].EditingPolicy != clientview.EditingFree {
+		t.Fatalf("editing_policy=%q, want it cleared back to the default", got[0].EditingPolicy)
+	}
+	if got[0].RequiresLock() {
+		t.Fatal("repository still requires a lock after the owner turned the policy off")
+	}
+}

@@ -48,6 +48,13 @@ type repositoryRecord struct {
 	URL          string    `json:"url"`
 	State        string    `json:"state"`
 	CreatedAt    time.Time `json:"created_at"`
+	// EditingPolicy is repository-wide, unlike Access and AttachmentPolicy
+	// which are per-client grants. It has to be, because its effect already
+	// is: svn:needs-lock is a versioned property, so the barrier applies to
+	// every client regardless of what any single client believes. The empty
+	// value means EditingFree and must never be serialised — see
+	// clientview.Repository.EditingPolicy for why that rule is load-bearing.
+	EditingPolicy string `json:"editing_policy,omitempty"`
 }
 
 type PublishRunner interface {
@@ -190,7 +197,10 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		}
 		view.Generation++
 		view.GeneratedAt = now
-		view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: name, URL: url, Access: "rw", State: "initializing", OwnerRealmID: realmID, AttachmentPolicy: "optional"})
+		// record is either the freshly minted one or the re-read existing one,
+		// so a republish of a repository that already carries a policy keeps
+		// it instead of silently projecting the default.
+		view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: name, URL: url, Access: "rw", State: "initializing", OwnerRealmID: realmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy})
 		sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
 		if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
 			return err
@@ -518,7 +528,7 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 				}
 			}
 			if !found {
-				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: "rw", State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional"})
+				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: "rw", State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy})
 				sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
 			}
 		default:

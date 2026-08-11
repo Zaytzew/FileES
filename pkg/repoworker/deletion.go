@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"filees/internal/durable"
+
 	"github.com/google/uuid"
 )
 
@@ -552,11 +554,9 @@ func fileDigest(path string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
-}
+// syncDirectory delegates to the platform-split implementation instead of
+// repeating os.Open+Sync here. That pairing is POSIX-only: on Windows the
+// handle from os.Open is read-only, so FlushFileBuffers refuses it with
+// "Access is denied" and every caller below fails on a developer machine
+// even though NTFS needs no parent-directory fsync in the first place.
+func syncDirectory(path string) error { return durable.SyncDirectory(path) }

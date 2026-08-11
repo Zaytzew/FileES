@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/clientview"
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
@@ -415,5 +416,34 @@ func TestStarterDoesNotRecreateMissingWorkingCopyAndRecoversWhenItReturns(t *tes
 	}
 	if err := instance.Stop(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Only the canonical opted-in value turns passports on. The default must not,
+// or every existing repository would suddenly demand locks; and an unknown
+// value must not either, since a client that cannot recognise the policy also
+// cannot honour the machinery behind it.
+func TestPassportsRequiredOnlyForTheCanonicalOptedInPolicy(t *testing.T) {
+	if !passportsRequired(clientview.EditingLockRequired) {
+		t.Fatal("lock_required did not enable passports")
+	}
+	for _, policy := range []string{clientview.EditingFree, "free", "readonly", "LOCK_REQUIRED"} {
+		if passportsRequired(policy) {
+			t.Fatalf("policy %q enabled passports", policy)
+		}
+	}
+}
+
+// buildCommitRules derives the two commit-side switches from the same flag, so
+// a repository on the default policy must not stamp svn:needs-lock on anything
+// it commits - that property is versioned and would outlive the mistake.
+func TestDefaultPolicyLeavesNeedsLockOffInCommitRules(t *testing.T) {
+	free := config.Repo{ID: "docs", LocalPath: "/wc/docs", EditPassports: passportsRequired(clientview.EditingFree)}
+	if rules := buildCommitRules(free, 5*time.Minute); rules.NeedsLock {
+		t.Fatalf("default policy would stamp svn:needs-lock: %+v", rules)
+	}
+	locked := config.Repo{ID: "docs", LocalPath: "/wc/docs", EditPassports: passportsRequired(clientview.EditingLockRequired)}
+	if rules := buildCommitRules(locked, 5*time.Minute); !rules.NeedsLock {
+		t.Fatalf("opted-in policy did not enable needs-lock: %+v", rules)
 	}
 }

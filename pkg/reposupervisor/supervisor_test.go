@@ -123,3 +123,46 @@ func TestDetachLocalStopsWithoutAuthoritativeProjection(t *testing.T) {
 		t.Fatalf("log=%s", got)
 	}
 }
+
+// The passport manager is constructed once, when the pipeline starts, so a
+// repository whose owner turns locking on while its URL and access stay put
+// must still be torn down and rebuilt. Without EditingPolicy in the restart
+// comparison the projection would be accepted silently and the repository
+// would keep running without passports until some unrelated change happened
+// to restart it.
+func TestEditingPolicyChangeForcesRestartEvenWhenAccessAndURLAreUnchanged(t *testing.T) {
+	var log []string
+	supervisor, _ := New(fakeStarter{&log}, nil)
+	key := Key{"office", "repo"}
+	free := Desired{Key: key, Access: "rw", State: "active", URL: "one"}
+	locked := Desired{Key: key, Access: "rw", State: "active", URL: "one", EditingPolicy: "lock_required"}
+
+	if err := supervisor.Apply(t.Context(), "office", 1, []Desired{free}); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Apply(t.Context(), "office", 2, []Desired{locked}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"start:office/repo:rw", "stop:office/repo:rw", "start:office/repo:rw"}
+	if !reflect.DeepEqual(log, want) {
+		t.Fatalf("policy change did not restart the pipeline: log=%v want=%v", log, want)
+	}
+
+	// Turning it back off must restart too, otherwise a repository could
+	// never leave lock_required.
+	if err := supervisor.Apply(t.Context(), "office", 3, []Desired{free}); err != nil {
+		t.Fatal(err)
+	}
+	if len(log) != 5 {
+		t.Fatalf("policy removal did not restart the pipeline: log=%v", log)
+	}
+
+	// An identical projection must still be a no-op, or every poll would
+	// bounce every repository.
+	if err := supervisor.Apply(t.Context(), "office", 4, []Desired{free}); err != nil {
+		t.Fatal(err)
+	}
+	if len(log) != 5 {
+		t.Fatalf("unchanged projection caused a restart: log=%v", log)
+	}
+}

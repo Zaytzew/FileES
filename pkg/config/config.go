@@ -48,6 +48,11 @@ type Repo struct {
 	ShutdownCommitTimeout  time.Duration `json:"-"`
 	LockFirst              bool          `json:"lock_first,omitempty"`
 	EditPassports          bool          `json:"edit_passports,omitempty"`
+	// EditingPolicy is the projected repository-wide policy that EditPassports
+	// is derived from, kept alongside it so status and UI can explain *why* a
+	// repository behaves as it does. Like RealmID/OwnerRealmID it comes from
+	// the projection, never from config.json.
+	EditingPolicy string `json:"-"`
 	EditPassportTTL        time.Duration `json:"-"`
 	EditPassportHeartbeat  time.Duration `json:"-"`
 	EditPassportMaxSession time.Duration `json:"-"`

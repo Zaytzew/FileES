@@ -14,6 +14,13 @@ import (
 
 var ErrWorkingCopyDirty = errors.New("working copy must be clean before edit-passport migration")
 
+// AppendOnlyProperty marks paths whose svn:needs-lock expresses append-only
+// intent rather than this repository's editing policy - today the mobile
+// upload channel, which is append-only by design and does not take part in
+// edit passports at all. The rollback below leaves such paths untouched: the
+// policy did not put the barrier there and must not take it away.
+const AppendOnlyProperty = "filees:append-only"
+
 type NeedsLockClient interface {
 	Status(context.Context, string, []string) ([]client.StatusEntry, error)
 	PropList(context.Context, string, string) (map[string]bool, error)
@@ -129,6 +136,10 @@ func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID st
 	if err != nil {
 		return err
 	}
+	appendOnly, err := cli.PropList(ctx, wc, AppendOnlyProperty)
+	if err != nil {
+		return err
+	}
 	var paths []string
 	for _, entry := range status {
 		rel := filepath.ToSlash(filepath.Clean(entry.Path))
@@ -142,7 +153,7 @@ func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID st
 		default:
 			return fmt.Errorf("%w: %s (%s)", ErrWorkingCopyDirty, rel, entry.Item)
 		}
-		if carrying[rel] {
+		if carrying[rel] && !appendOnly[rel] {
 			paths = append(paths, rel)
 		}
 	}

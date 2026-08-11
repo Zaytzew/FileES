@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+
+	"filees/pkg/passport"
 )
 
 // SVNAppender publishes a new file with one controlled commit and no persistent
@@ -63,6 +65,15 @@ func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filen
 		return 0, err
 	}
 	if err := runStream(ctx, io.Discard, s.svn(), "propset", "-q", "svn:needs-lock", "*", fileInWC); err != nil {
+		return 0, err
+	}
+	// The mobile channel is append-only, so its svn:needs-lock states a
+	// different intent from the repository editing policy: these files are not
+	// meant to be edited at all, by anyone, whether or not the repository uses
+	// edit passports. Marking that intent explicitly is what lets the policy's
+	// rollback (passport.ClearNeedsLock) leave them alone instead of reading
+	// the bare property as something it had set itself.
+	if err := runStream(ctx, io.Discard, s.svn(), "propset", "-q", passport.AppendOnlyProperty, "*", fileInWC); err != nil {
 		return 0, err
 	}
 	if err := runStream(ctx, io.Discard, s.svn(), "commit", wc, "-m", "mobile append", "--with-revprop", "filees:request-id="+requestID); err != nil {

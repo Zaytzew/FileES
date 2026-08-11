@@ -1,6 +1,7 @@
 package clientview
 
 import (
+	"bytes"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -89,5 +90,64 @@ func TestRepositoryPolicyValidationFailsClosed(t *testing.T) {
 	view.Repositories[0].AttachmentPolicy = "automatic"
 	if err := view.Validate(); err == nil {
 		t.Fatal("unknown attachment policy accepted")
+	}
+}
+
+func TestEditingPolicyValidationFailsClosed(t *testing.T) {
+	view := fixture()
+	if err := view.Validate(); err != nil {
+		t.Fatalf("default (absent) policy rejected: %v", err)
+	}
+	view.Repositories[0].EditingPolicy = EditingLockRequired
+	if err := view.Validate(); err != nil {
+		t.Fatalf("lock_required rejected: %v", err)
+	}
+	// "free" is an input alias only. Reaching Validate means a writer failed
+	// to normalise it, which would put the default on the wire and break
+	// every older reader for no benefit at all.
+	view.Repositories[0].EditingPolicy = "free"
+	if err := view.Validate(); err == nil {
+		t.Fatal("unnormalised \"free\" accepted into a projection")
+	}
+	view.Repositories[0].EditingPolicy = "readonly"
+	if err := view.Validate(); err == nil {
+		t.Fatal("unknown editing policy accepted")
+	}
+}
+
+// The whole rollout rests on this: the default must never be serialised.
+// Decode rejects unknown fields, so any projection that carries the key is
+// unreadable to a binary that predates it - and that failure takes the entire
+// view, not one repository. As long as free repositories omit the key, older
+// readers keep working and the change stays inert until an owner opts in.
+func TestDefaultEditingPolicyNeverReachesTheWire(t *testing.T) {
+	view := fixture()
+	raw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("editing_policy")) {
+		t.Fatalf("default policy serialised, which breaks older readers: %s", raw)
+	}
+	if got := NormalizeEditingPolicy("free"); got != EditingFree {
+		t.Fatalf("NormalizeEditingPolicy(\"free\")=%q, want the empty default", got)
+	}
+
+	view.Repositories[0].EditingPolicy = EditingLockRequired
+	raw, err = json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(raw, []byte(`"editing_policy":"lock_required"`)) {
+		t.Fatalf("opted-in policy missing from the projection: %s", raw)
+	}
+
+	// Round-trips through the strict decoder that guards every reader.
+	decoded, err := Decode(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("strict decode of our own projection failed: %v", err)
+	}
+	if !decoded.Repositories[0].RequiresLock() {
+		t.Fatal("policy lost in round-trip")
 	}
 }

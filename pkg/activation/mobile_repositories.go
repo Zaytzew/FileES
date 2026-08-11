@@ -18,14 +18,20 @@ const canonicalRepositorySchema = "filees.repository/v1"
 // canonicalRepositoryRecord mirrors the on-disk shape written by
 // repoworker.ServicePublisher.Publish/Activate at
 // admin/repositories/<repoID>.json.
+// This mirror is decoded by readStrict, which rejects unknown fields, so it
+// must stay in lockstep with the writer's struct. A field added there and
+// forgotten here does not fail loudly: the read errors, the caller's
+// `continue` skips the repository, and the phone pairs with a silently
+// short list.
 type canonicalRepositoryRecord struct {
-	Schema       string    `json:"schema"`
-	RepoID       string    `json:"repo_id"`
-	OwnerRealmID string    `json:"owner_realm_id"`
-	DisplayName  string    `json:"display_name"`
-	URL          string    `json:"url"`
-	State        string    `json:"state"`
-	CreatedAt    time.Time `json:"created_at"`
+	Schema        string    `json:"schema"`
+	RepoID        string    `json:"repo_id"`
+	OwnerRealmID  string    `json:"owner_realm_id"`
+	DisplayName   string    `json:"display_name"`
+	URL           string    `json:"url"`
+	State         string    `json:"state"`
+	CreatedAt     time.Time `json:"created_at"`
+	EditingPolicy string    `json:"editing_policy,omitempty"`
 }
 
 // mobileRepositoryEntries builds the "repositories" array for a freshly
@@ -54,11 +60,18 @@ func (m *Manager) mobileRepositoryEntries(record Record) ([]any, error) {
 		if canonical.RepoID != grant.RepoID {
 			continue
 		}
-		entries = append(entries, map[string]any{
+		entry := map[string]any{
 			"repo_id": canonical.RepoID, "display_name": canonical.DisplayName, "url": canonical.URL,
 			"access": grant.Access, "state": canonical.State, "owner_realm_id": canonical.OwnerRealmID,
 			"attachment_policy": attachmentPolicyOrDefault(grant.AttachmentPolicy),
-		})
+		}
+		// Repository-wide, so it comes from the canonical record rather than
+		// the per-client grant. Omitted when empty to keep the default off
+		// the wire, matching the struct tag on every other writer.
+		if canonical.EditingPolicy != "" {
+			entry["editing_policy"] = canonical.EditingPolicy
+		}
+		entries = append(entries, entry)
 	}
 	return entries, nil
 }

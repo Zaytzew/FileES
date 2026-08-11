@@ -311,9 +311,18 @@ type ConfirmRequest struct {
 }
 
 type PromptTextRequest struct {
-	Title       string
-	Text        string
+	Title string
+	Text  string
+	// Placeholder is a hint shown in an empty field and never submitted.
+	// Default is a real starting value the user edits and may submit as-is.
+	//
+	// These were one field, which quietly did the wrong thing for half its
+	// callers: the hint was written into the field as content, so "Kod OTP" or
+	// "filees-invite:v1:…" arrived as the answer if the user just pressed OK -
+	// and with Secret set it was masked, so they could not even see what they
+	// were about to send.
 	Placeholder string
+	Default     string
 	Secret      bool
 }
 

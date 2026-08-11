@@ -1314,7 +1314,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 	if current != nil {
 		recipientDefault = strings.Join(current.Recipients, ", ")
 	}
-	recipients, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Odbiorcy", Text: "Opcjonalne adresy e-mail oddziel przecinkiem lub średnikiem. Puste pole tworzy kanał otwarty.", Placeholder: recipientDefault})
+	recipients, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Odbiorcy", Text: "Opcjonalne adresy e-mail oddziel przecinkiem lub średnikiem. Puste pole tworzy kanał otwarty.", Default: recipientDefault})
 	if promptErr != nil || recipients.Cancelled {
 		return PublicShareDeclaration{}, false
 	}
@@ -1339,7 +1339,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 	if current != nil && current.DoNotFollow != nil {
 		revisionDefault = strconv.FormatInt(*current.DoNotFollow, 10)
 	}
-	revision, revisionErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Wersja plików", Text: "Puste pole śledzi HEAD. Wpisz numer rewizji, aby zamrozić udostępnienie.", Placeholder: revisionDefault})
+	revision, revisionErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Wersja plików", Text: "Puste pole śledzi HEAD. Wpisz numer rewizji, aby zamrozić udostępnienie.", Default: revisionDefault})
 	if revisionErr != nil || revision.Cancelled {
 		zeroBytes(declaration.Password)
 		return PublicShareDeclaration{}, false
@@ -1591,7 +1591,7 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 			return
 		}
 		name := filepath.Base(filepath.Clean(picked.Path))
-		prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Nowe repozytorium FileES", Text: "Nazwa repozytorium:", Placeholder: name})
+		prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Nowe repozytorium FileES", Text: "Nazwa repozytorium:", Default: name})
 		if err != nil {
 			c.repositoryCreationFailure(ctx, err)
 			return

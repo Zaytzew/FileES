@@ -819,8 +819,15 @@ func buildPromptScript(request PromptTextRequest) string {
 	// larger glyphs get clipped against the control's own bounding box.
 	sb.WriteString("$l=New-Object System.Windows.Forms.Label;$l.AutoSize=$false;$l.Left=[int](12*$s);$l.Top=[int](15*$s);$l.Width=[int](480*$s);$l.Height=[int](24*$s);$l.Text=" + psString(request.Text) + ";$f.Controls.Add($l);")
 	sb.WriteString("$t=New-Object System.Windows.Forms.TextBox;$t.Left=[int](12*$s);$t.Top=[int](45*$s);$t.Width=[int](480*$s);")
+	if request.Default != "" {
+		sb.WriteString("$t.Text=" + psString(request.Default) + ";")
+	}
 	if request.Placeholder != "" {
-		sb.WriteString("$t.Text=" + psString(request.Placeholder) + ";")
+		// PlaceholderText exists from .NET Framework 4.7.2, which Windows 11
+		// comfortably exceeds, but the property is probed rather than assumed:
+		// setting an absent property is a terminating error in PowerShell, and
+		// losing a hint is worth less than losing the whole dialog.
+		sb.WriteString("if($t.PSObject.Properties['PlaceholderText']){$t.PlaceholderText=" + psString(request.Placeholder) + "};")
 	}
 	if request.Secret {
 		sb.WriteString("$t.UseSystemPasswordChar=$true;")

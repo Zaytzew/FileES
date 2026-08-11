@@ -29,24 +29,60 @@ type NeedsLockClient interface {
 	Commit(context.Context, string, []string, string) (string, error)
 }
 
+// lockedElsewhere lists paths under wc that currently carry a repository lock,
+// so a property migration can leave them alone.
+//
+// Both migrations commit a property change across many paths at once, and SVN
+// refuses the *entire* commit if any single path is locked by someone else
+// ("E160039: does not own lock"). One colleague editing one file would
+// otherwise block the whole repository's migration - measured live on
+// 2026-08-11, where one client's rollback failed wholesale because another
+// held a single file.
+//
+// Locks are enumerated through the optional LockLister, which reaches the
+// repository via `svn status --show-updates` rather than trusting the local
+// working copy: a lock taken from a different machine is invisible to a plain
+// `svn info` here. A client that cannot enumerate locks gets the previous
+// all-or-nothing behaviour, which is the honest fallback - better to attempt
+// and fail loudly than to silently skip everything.
+func lockedElsewhere(ctx context.Context, cli NeedsLockClient, wc string) map[string]bool {
+	lister, ok := cli.(client.LockLister)
+	if !ok || lister == nil {
+		return nil
+	}
+	entries, err := lister.ListLocks(ctx, wc)
+	if err != nil {
+		return nil
+	}
+	locked := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.Token) == "" {
+			continue
+		}
+		locked[filepath.ToSlash(filepath.Clean(entry.Path))] = true
+	}
+	return locked
+}
+
 // EnsureNeedsLock is an idempotent, restartable migration for existing files.
 // It refuses content changes so a property-only commit can never publish user
 // data that was edited before acquiring a passport.
-func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID string, batchSize int) error {
+func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID string, batchSize int) (skipped int, err error) {
 	if cli == nil {
-		return errors.New("needs-lock migration: nil client")
+		return 0, errors.New("needs-lock migration: nil client")
 	}
 	if batchSize <= 0 {
 		batchSize = 100
 	}
 	status, err := cli.Status(ctx, wc, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	existing, err := cli.PropList(ctx, wc, "svn:needs-lock")
 	if err != nil {
-		return err
+		return 0, err
 	}
+	locked := lockedElsewhere(ctx, cli, wc)
 	var setPaths, commitPaths []string
 	for _, entry := range status {
 		rel := filepath.ToSlash(filepath.Clean(entry.Path))
@@ -57,7 +93,7 @@ func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID s
 		info, statErr := os.Stat(abs)
 		if statErr != nil {
 			if entry.Item == "missing" || entry.Item == "deleted" {
-				return fmt.Errorf("%w: %s (%s)", ErrWorkingCopyDirty, rel, entry.Item)
+				return 0, fmt.Errorf("%w: %s (%s)", ErrWorkingCopyDirty, rel, entry.Item)
 			}
 			continue
 		}
@@ -69,7 +105,14 @@ func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID s
 		case "unversioned":
 			continue
 		default:
-			return fmt.Errorf("%w: %s (%s)", ErrWorkingCopyDirty, rel, entry.Item)
+			return 0, fmt.Errorf("%w: %s (%s)", ErrWorkingCopyDirty, rel, entry.Item)
+		}
+		if locked[rel] {
+			// Same reason as the rollback: one foreign lock would make SVN
+			// refuse the whole commit. A path someone is holding will be
+			// stamped on a later pass.
+			skipped++
+			continue
 		}
 		if !existing[rel] {
 			setPaths = append(setPaths, rel)
@@ -98,15 +141,15 @@ func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID s
 		}
 		if len(toSet) > 0 {
 			if out, err := cli.PropSet(ctx, wc, "svn:needs-lock", "*", toSet); err != nil {
-				return fmt.Errorf("set svn:needs-lock: %w\n%s", err, out)
+				return skipped, fmt.Errorf("set svn:needs-lock: %w\n%s", err, out)
 			}
 		}
 		message := fmt.Sprintf("FileES edit-passport migration by client %s: %d paths", instanceUID, len(batch))
 		if out, err := cli.Commit(ctx, wc, batch, message); err != nil {
-			return fmt.Errorf("commit svn:needs-lock migration: %w\n%s", err, out)
+			return skipped, fmt.Errorf("commit svn:needs-lock migration: %w\n%s", err, out)
 		}
 	}
-	return nil
+	return skipped, nil
 }
 
 // ClearNeedsLock is the reverse of EnsureNeedsLock and exists so that turning
@@ -121,25 +164,26 @@ func EnsureNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID s
 // property-only commit can never smuggle out user content, and it is
 // idempotent: paths that no longer carry the property are skipped, so a run
 // interrupted halfway simply resumes.
-func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID string, batchSize int) error {
+func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID string, batchSize int) (skipped int, err error) {
 	if cli == nil {
-		return errors.New("needs-lock migration: nil client")
+		return 0, errors.New("needs-lock migration: nil client")
 	}
 	if batchSize <= 0 {
 		batchSize = 100
 	}
 	status, err := cli.Status(ctx, wc, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	carrying, err := cli.PropList(ctx, wc, "svn:needs-lock")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	appendOnly, err := cli.PropList(ctx, wc, AppendOnlyProperty)
 	if err != nil {
-		return err
+		return 0, err
 	}
+	locked := lockedElsewhere(ctx, cli, wc)
 	var paths []string
 	for _, entry := range status {
 		rel := filepath.ToSlash(filepath.Clean(entry.Path))
@@ -151,11 +195,20 @@ func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID st
 		case "unversioned":
 			continue
 		default:
-			return fmt.Errorf("%w: %s (%s)", ErrWorkingCopyDirty, rel, entry.Item)
+			return 0, fmt.Errorf("%w: %s (%s)", ErrWorkingCopyDirty, rel, entry.Item)
 		}
-		if carrying[rel] && !appendOnly[rel] {
-			paths = append(paths, rel)
+		if !carrying[rel] || appendOnly[rel] {
+			continue
 		}
+		if locked[rel] {
+			// Somebody is working on this file right now. Leave the barrier
+			// where it is and report the migration as incomplete, so the
+			// caller retries rather than recording a rollback that only
+			// partly happened.
+			skipped++
+			continue
+		}
+		paths = append(paths, rel)
 	}
 	paths = uniqueSorted(paths)
 	for start := 0; start < len(paths); start += batchSize {
@@ -165,14 +218,14 @@ func ClearNeedsLock(ctx context.Context, cli NeedsLockClient, wc, instanceUID st
 		}
 		batch := paths[start:end]
 		if out, err := cli.PropDel(ctx, wc, "svn:needs-lock", batch); err != nil {
-			return fmt.Errorf("remove svn:needs-lock: %w\n%s", err, out)
+			return skipped, fmt.Errorf("remove svn:needs-lock: %w\n%s", err, out)
 		}
 		message := fmt.Sprintf("FileES edit-passport rollback by client %s: %d paths", instanceUID, len(batch))
 		if out, err := cli.Commit(ctx, wc, batch, message); err != nil {
-			return fmt.Errorf("commit svn:needs-lock rollback: %w\n%s", err, out)
+			return skipped, fmt.Errorf("commit svn:needs-lock rollback: %w\n%s", err, out)
 		}
 	}
-	return nil
+	return skipped, nil
 }
 
 func uniqueSorted(in []string) []string {

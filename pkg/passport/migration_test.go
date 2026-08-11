@@ -51,7 +51,7 @@ func TestEnsureNeedsLockMigratesRegularFilesInBatches(t *testing.T) {
 		}
 	}
 	c := &migrationClient{props: map[string]bool{}, status: []client.StatusEntry{{Path: "a.bin", Item: "normal", Props: "none"}, {Path: "dir/b.bin", Item: "normal", Props: "none"}, {Path: "new.bin", Item: "unversioned", Props: "none"}}}
-	if err := EnsureNeedsLock(context.Background(), c, wc, "instance", 1); err != nil {
+	if _, err := EnsureNeedsLock(context.Background(), c, wc, "instance", 1); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.sets) != 2 || len(c.commits) != 2 {
@@ -66,7 +66,7 @@ func TestEnsureNeedsLockRefusesContentModification(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := &migrationClient{props: map[string]bool{}, status: []client.StatusEntry{{Path: "dirty.bin", Item: "modified"}}}
-	if err := EnsureNeedsLock(context.Background(), c, wc, "instance", 100); !errors.Is(err, ErrWorkingCopyDirty) {
+	if _, err := EnsureNeedsLock(context.Background(), c, wc, "instance", 100); !errors.Is(err, ErrWorkingCopyDirty) {
 		t.Fatalf("error=%v", err)
 	}
 	if len(c.commits) != 0 {
@@ -88,7 +88,7 @@ func TestClearNeedsLockRemovesThePropertyInBatchesAndCommits(t *testing.T) {
 			{Path: "new.bin", Item: "unversioned"},
 		},
 	}
-	if err := ClearNeedsLock(context.Background(), c, wc, "instance", 1); err != nil {
+	if _, err := ClearNeedsLock(context.Background(), c, wc, "instance", 1); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.dels) != 2 || len(c.commits) != 2 {
@@ -113,7 +113,7 @@ func TestClearNeedsLockRefusesDirtyWorkingCopy(t *testing.T) {
 		props:  map[string]bool{"dirty.bin": true},
 		status: []client.StatusEntry{{Path: "dirty.bin", Item: "modified"}},
 	}
-	if err := ClearNeedsLock(context.Background(), c, wc, "instance", 100); !errors.Is(err, ErrWorkingCopyDirty) {
+	if _, err := ClearNeedsLock(context.Background(), c, wc, "instance", 100); !errors.Is(err, ErrWorkingCopyDirty) {
 		t.Fatalf("error=%v", err)
 	}
 	if len(c.commits) != 0 || len(c.dels) != 0 {
@@ -129,7 +129,7 @@ func TestClearNeedsLockIsIdempotent(t *testing.T) {
 		props:  map[string]bool{},
 		status: []client.StatusEntry{{Path: "a.bin", Item: "normal"}, {Path: "dir/b.bin", Item: "normal"}},
 	}
-	if err := ClearNeedsLock(context.Background(), c, wc, "instance", 100); err != nil {
+	if _, err := ClearNeedsLock(context.Background(), c, wc, "instance", 100); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.dels) != 0 || len(c.commits) != 0 {
@@ -152,10 +152,97 @@ func TestClearNeedsLockLeavesAppendOnlyUploadsLocked(t *testing.T) {
 			{Path: "photos/IMG_1.jpg", Item: "normal"},
 		},
 	}
-	if err := ClearNeedsLock(context.Background(), c, wc, "instance", 100); err != nil {
+	if _, err := ClearNeedsLock(context.Background(), c, wc, "instance", 100); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.dels) != 1 || len(c.dels[0]) != 1 || c.dels[0][0] != "drawing.dwg" {
 		t.Fatalf("rollback touched append-only uploads: dels=%#v", c.dels)
+	}
+}
+
+// A lock-aware client used to exercise the foreign-hold path.
+type lockAwareMigrationClient struct {
+	migrationClient
+	locks []client.LockEntry
+}
+
+func (c *lockAwareMigrationClient) ListLocks(context.Context, string) ([]client.LockEntry, error) {
+	return c.locks, nil
+}
+
+// SVN refuses an entire commit if any single path in it is locked by somebody
+// else, so one colleague editing one file used to block the whole
+// repository's migration. Measured live on 2026-08-11. The held path is now
+// left alone and reported, and everything else still migrates.
+func TestClearNeedsLockSkipsHeldPathsInsteadOfFailingTheWholeCommit(t *testing.T) {
+	wc := t.TempDir()
+	c := &lockAwareMigrationClient{
+		migrationClient: migrationClient{
+			props: map[string]bool{"free.dwg": true, "held.dwg": true},
+			status: []client.StatusEntry{
+				{Path: "free.dwg", Item: "normal"},
+				{Path: "held.dwg", Item: "normal"},
+			},
+		},
+		locks: []client.LockEntry{{Path: "held.dwg", LockInfo: client.LockInfo{Token: "tok-1", Owner: "someone-else"}}},
+	}
+
+	skipped, err := ClearNeedsLock(context.Background(), c, wc, "instance", 100)
+	if err != nil {
+		t.Fatalf("one held path failed the whole migration: %v", err)
+	}
+	if skipped != 1 {
+		t.Fatalf("skipped=%d, want the single held path reported", skipped)
+	}
+	if len(c.dels) != 1 || len(c.dels[0]) != 1 || c.dels[0][0] != "free.dwg" {
+		t.Fatalf("migration did not proceed for the unheld path: dels=%#v", c.dels)
+	}
+}
+
+// The forward direction has the same failure mode and the same fix.
+func TestEnsureNeedsLockSkipsHeldPaths(t *testing.T) {
+	wc := t.TempDir()
+	for _, p := range []string{"free.dwg", "held.dwg"} {
+		if err := os.WriteFile(filepath.Join(wc, p), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := &lockAwareMigrationClient{
+		migrationClient: migrationClient{
+			props: map[string]bool{},
+			status: []client.StatusEntry{
+				{Path: "free.dwg", Item: "normal", Props: "none"},
+				{Path: "held.dwg", Item: "normal", Props: "none"},
+			},
+		},
+		locks: []client.LockEntry{{Path: "held.dwg", LockInfo: client.LockInfo{Token: "tok-1", Owner: "someone-else"}}},
+	}
+
+	skipped, err := EnsureNeedsLock(context.Background(), c, wc, "instance", 100)
+	if err != nil {
+		t.Fatalf("one held path failed the whole migration: %v", err)
+	}
+	if skipped != 1 {
+		t.Fatalf("skipped=%d, want the single held path reported", skipped)
+	}
+	if len(c.sets) != 1 || len(c.sets[0]) != 1 || c.sets[0][0] != "free.dwg" {
+		t.Fatalf("migration did not proceed for the unheld path: sets=%#v", c.sets)
+	}
+}
+
+// A client that cannot enumerate locks keeps the old all-or-nothing
+// behaviour rather than silently skipping everything it cannot check.
+func TestMigrationWithoutLockListerStillMigratesEverything(t *testing.T) {
+	wc := t.TempDir()
+	c := &migrationClient{
+		props:  map[string]bool{"a.dwg": true},
+		status: []client.StatusEntry{{Path: "a.dwg", Item: "normal"}},
+	}
+	skipped, err := ClearNeedsLock(context.Background(), c, wc, "instance", 100)
+	if err != nil || skipped != 0 {
+		t.Fatalf("skipped=%d err=%v", skipped, err)
+	}
+	if len(c.dels) != 1 {
+		t.Fatalf("nothing migrated without a lock lister: dels=%#v", c.dels)
 	}
 }

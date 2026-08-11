@@ -16,14 +16,41 @@ import (
 	"filees/pkg/repoworker"
 )
 
+// adminVersion is overridden at link time by the packaging scripts. Without a
+// version at all, the only way to tell how old a deployed filees-admin is was
+// to compare its usage text against the source - which is how a stale binary
+// went unnoticed on 2026-08-06 while a newly added flag appeared "not
+// defined".
+var adminVersion = "dev"
+
+// adminUsage refuses a command out loud. Returning ExitUsage without printing
+// anything is the command-line form of "click it and nothing happens": the
+// caller sees a non-zero exit, no output, and no way to tell a typo from a
+// broken binary. Measured live on 2026-08-06, where `ticket create` with its
+// flags before the positional e-mail exited silently and looked like the
+// feature was missing.
+func adminUsage(stderr io.Writer, flags *flag.FlagSet, required string) int {
+	fmt.Fprintf(stderr, "usage: filees-admin [-config path] %s %s\n", flags.Name(), required)
+	flags.PrintDefaults()
+	return ExitUsage
+}
+
 func RunAdmin(args []string, stdout, stderr io.Writer) int {
+	// version is answered before the config path is even parsed. The usual
+	// reason to ask is that a deployment looks stale, and a suspect config is
+	// a common part of that suspicion - so making the answer depend on the
+	// config would withhold it exactly when it is most wanted.
+	if len(args) == 1 && (args[0] == "version" || args[0] == "--version" || args[0] == "-version") {
+		fmt.Fprintln(stdout, adminVersion)
+		return ExitOK
+	}
 	path, args, err := configPath(args)
 	if err != nil {
 		report(stderr, "filees-admin", err)
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner | erasure complete")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner | erasure complete | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
@@ -86,8 +113,8 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		flags := flag.NewFlagSet("ticket resend", flag.ContinueOnError)
 		flags.SetOutput(stderr)
 		ticketID := flags.String("ticket-id", "", "ticket UUID")
-		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
-			return ExitUsage
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *ticketID == "" {
+			return adminUsage(stderr, flags, "--ticket-id UUID")
 		}
 		files, config, err := openFiles(path, toolAccess{name: "filees-admin/ticket-resend", areas: onboarding.AreaTickets | onboarding.AreaOperations | onboarding.AreaAudit, write: true, needSMTP: true})
 		if err != nil {
@@ -106,8 +133,8 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		flags := flag.NewFlagSet("ticket revoke", flag.ContinueOnError)
 		flags.SetOutput(stderr)
 		ticketID := flags.String("ticket-id", "", "ticket UUID")
-		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
-			return ExitUsage
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *ticketID == "" {
+			return adminUsage(stderr, flags, "--ticket-id UUID")
 		}
 		files, _, err := openFiles(path, toolAccess{name: "filees-admin/ticket-revoke", areas: onboarding.AreaTickets | onboarding.AreaAudit, write: true})
 		if err != nil {
@@ -120,6 +147,7 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return writeAdminEmpty(stdout, uuid.NewString())
 	case "ticket list":
 		if len(args) != 2 {
+			fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket list")
 			return ExitUsage
 		}
 		files, _, err := openFiles(path, toolAccess{name: "filees-admin/ticket-list", areas: onboarding.AreaTickets})
@@ -140,8 +168,8 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		flags := flag.NewFlagSet("operation inspect", flag.ContinueOnError)
 		flags.SetOutput(stderr)
 		operationID := flags.String("operation-id", "", "operation UUID")
-		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
-			return ExitUsage
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *operationID == "" {
+			return adminUsage(stderr, flags, "--operation-id UUID")
 		}
 		files, _, err := openFiles(path, toolAccess{name: "filees-admin/operation-inspect", areas: onboarding.AreaOperations})
 		if err != nil {
@@ -162,8 +190,8 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		flags.SetOutput(stderr)
 		clientID := flags.String("client-id", "", "client UUID")
 		reason := flags.String("reason", "", "one-line revoke reason")
-		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
-			return ExitUsage
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *clientID == "" {
+			return adminUsage(stderr, flags, "--client-id UUID [--reason text]")
 		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/client-revoke", areas: onboarding.AreaOperations, write: true, needActivation: true, needSVN: true})
 		if err != nil {
@@ -191,8 +219,8 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		flags.SetOutput(stderr)
 		realmID := flags.String("realm-id", "", "realm UUID")
 		reason := flags.String("reason", "", "one-line revoke reason")
-		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
-			return ExitUsage
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *realmID == "" {
+			return adminUsage(stderr, flags, "--realm-id UUID [--reason text]")
 		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/client-revoke-realm", areas: onboarding.AreaOperations, write: true, needActivation: true, needSVN: true})
 		if err != nil {
@@ -220,8 +248,8 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		flags.SetOutput(stderr)
 		repoID := flags.String("repo-id", "", "repository UUID")
 		realmID := flags.String("realm-id", "", "new owner realm UUID")
-		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
-			return ExitUsage
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *repoID == "" || *realmID == "" {
+			return adminUsage(stderr, flags, "--repo-id UUID --realm-id UUID")
 		}
 		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-transfer-owner", areas: onboarding.AreaOperations, write: true, needSVN: true})
 		if err != nil {

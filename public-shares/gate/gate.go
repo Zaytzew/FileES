@@ -29,35 +29,22 @@ type Principal struct {
 	Recipient string
 }
 
-// TokenHash is the only token representation stored in public state.
+// TokenHash is retained as the digest helper for invitation compatibility.
+// Its result identifies a recipient ACL entry but is never a bearer grant.
 func TokenHash(token string) string {
 	digest := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(digest[:])
 }
 
-// Authorize applies exactly one gate. Closed channels accept only a recipient
-// token; open channels accept their password when configured, otherwise no
-// credential. All token digests are compared even after a match.
+// Authorize handles open and password-protected channels. Recipient channels
+// require the stateful, rate-limited recipientotp service and are deliberately
+// rejected here so an invitation can never regress into a bearer credential.
 func Authorize(projection channel.Projection, token, password string) (Principal, error) {
 	if err := projection.Validate(); err != nil {
 		return Principal{}, ErrDenied
 	}
 	if len(projection.Recipients) > 0 {
-		got := sha256.Sum256([]byte(token))
-		matched := -1
-		for i, recipient := range projection.Recipients {
-			want, err := hex.DecodeString(recipient.TokenHash)
-			if err != nil || len(want) != sha256.Size {
-				return Principal{}, ErrDenied
-			}
-			if subtle.ConstantTimeCompare(got[:], want) == 1 {
-				matched = i
-			}
-		}
-		if matched < 0 {
-			return Principal{}, ErrDenied
-		}
-		return Principal{Recipient: projection.Recipients[matched].Email}, nil
+		return Principal{}, ErrDenied
 	}
 	if projection.PasswordHash != "" {
 		ok, err := VerifyPassword(projection.PasswordHash, password)

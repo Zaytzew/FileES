@@ -76,7 +76,7 @@ func TestCreateSeparatesRecordFromProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"repo_path", "source_root", share.RepoID, share.OwnerRealm, "wydanie/projekt.pdf", deliveries[0].Token} {
+	for _, forbidden := range []string{"repo_path", "source_root", share.RepoID, share.OwnerRealm, "wydanie/projekt.pdf", deliveries[0].Token, "a@example.com"} {
 		if strings.Contains(string(raw), forbidden) {
 			t.Fatalf("public projection leaked %q: %s", forbidden, raw)
 		}

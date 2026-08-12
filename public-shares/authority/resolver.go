@@ -19,6 +19,7 @@ import (
 
 	"filees/public-shares/channel"
 	"filees/public-shares/manifest"
+	"filees/public-shares/recipientotp"
 )
 
 var ErrNotFound = errors.New("public share resource not found")
@@ -31,11 +32,33 @@ type Source interface {
 }
 
 type Resolver struct {
-	Channels    *channel.Store
-	Source      Source
-	FrostKey    []byte
-	StagingRoot string
-	MaxLeafSize int64
+	Channels     *channel.Store
+	Source       Source
+	FrostKey     []byte
+	StagingRoot  string
+	MaxLeafSize  int64
+	RecipientOTP *recipientotp.Service
+}
+
+func (r Resolver) RequestRecipientOTP(_ context.Context, request recipientotp.Request) error {
+	if r.RecipientOTP == nil {
+		return ErrNotFound
+	}
+	if err := r.RecipientOTP.RequestCode(request); err != nil {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r Resolver) VerifyRecipientOTP(_ context.Context, request recipientotp.VerifyRequest) (recipientotp.Grant, error) {
+	if r.RecipientOTP == nil {
+		return recipientotp.Grant{}, ErrNotFound
+	}
+	grant, err := r.RecipientOTP.Verify(request)
+	if err != nil {
+		return recipientotp.Grant{}, ErrNotFound
+	}
+	return grant, nil
 }
 
 type Entry struct {

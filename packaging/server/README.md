@@ -11,7 +11,11 @@ disabled-by-default Public Shares services:
 - `filees-entry` is the tunnel-account forced command;
 - `filees-worker` is exec'd once per authenticated deploy and exits after its bounded action;
 - `filees-client-entry` is the per-key forced SVN entry used for possession proof and active read-only access;
-- `filees-mail` submits one pending outbox entry to a configured smarthost;
+- `filees-mail send` submits one pending control-plane outbox entry; its
+  `public-loop` mode is supervised by `filees-public-authority` and drains only
+  Public Shares invitation/OTP mail without exposing the SMTP secret to the
+  authority process; authority handles service-stop signals and terminates the
+  child before exiting, so rc.d restarts do not leave orphan pollers;
 - `filees-public-authority` exposes the credential-free Public Shares
   backchannel on a Unix socket or a loopback TCP endpoint;
 - `filees-links` serves the public surface through FastCGI and owns only its

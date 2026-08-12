@@ -11,6 +11,7 @@ import (
 
 	"filees/public-shares/authority"
 	"filees/public-shares/channel"
+	"filees/public-shares/recipientotp"
 	"github.com/google/uuid"
 )
 
@@ -28,6 +29,10 @@ func (s stubAuthority) Check(context.Context, authority.ObjectRequest) (authorit
 }
 func (s stubAuthority) Fetch(context.Context, authority.ObjectRequest) (authority.FetchedLeaf, error) {
 	return authority.FetchedLeaf{ObjectPermit: authority.ObjectPermit{CacheKey: strings.Repeat("a", 64), DisplayName: "Projekt.pdf", Revision: 7}, Size: int64(len(s.body)), MD5: strings.Repeat("b", 32), Body: io.NopCloser(strings.NewReader(s.body))}, nil
+}
+func (s stubAuthority) RequestRecipientOTP(context.Context, recipientotp.Request) error { return nil }
+func (s stubAuthority) VerifyRecipientOTP(context.Context, recipientotp.VerifyRequest) (recipientotp.Grant, error) {
+	return recipientotp.Grant{}, authority.ErrNotFound
 }
 
 type handlerTransport struct{ handler http.Handler }

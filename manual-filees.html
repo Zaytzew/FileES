@@ -525,6 +525,18 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 </figure>
 <div class="design-boundary"><strong>Reading rule:</strong> a diagram node describes ownership or contract, not necessarily a process that remains resident. On the server, most nodes are short-lived commands over files and the system <code>sshd</code>.</div>
 <h2 id="ch1-client-arch">1.2 Client Architecture</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Client mechanics, recovery and IPC boundaries are covered by integration and chaos tests.</span></div>
+<h3>Module map</h3>
+<div class="table-wrap"><table class="field-table">
+<tr><th>Area</th><th>Modules</th><th>Responsibility</th></tr>
+<tr><td>Desktop presentation</td><td><code>cmd/filees-gui</code>, <code>internal/gui/*</code></td><td>View model, actions, tray, native dialogs and notifications; no SVN or engine ownership.</td></tr>
+<tr><td>Local boundary</td><td><code>pkg/contract/v1</code>, <code>pkg/ipcclient</code>, <code>pkg/ipcserver</code></td><td>Capability-gated GUI/CLI to daemon protocol over a local Unix-domain socket (AF_UNIX, including Windows).</td></tr>
+<tr><td>Client lifecycle</td><td><code>cmd/filees</code>, <code>pkg/clientview</code>, <code>pkg/localrepo</code>, <code>pkg/provisioning</code>, <code>pkg/reposupervisor</code></td><td>Projection, durable attachment state, create/attach/import operations and dynamic repository runtimes.</td></tr>
+<tr><td>Repository engine</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Scanning, update/publish, edit leases and the only SVN CLI boundary.</td></tr>
+<tr><td>Server authority</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Authenticated tickets, canonical repository/grant/policy records and forced-command workers. There is no resident FileES server daemon.</td></tr>
+<tr><td>Activation and service view</td><td><code>pkg/onboarding</code>, <code>pkg/activation</code></td><td>Installation identity, authorised realm join and client-specific service-repository projection.</td></tr>
+<tr><td>Other trust boundaries</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code></td><td>Append-only mobile access and public read distribution, separated from desktop write credentials.</td></tr>
+<tr><td>Release/install</td><td><code>internal/clientupdate</code>, <code>internal/serverinstall</code>, <code>internal/release*</code></td><td>Signed desktop updates, manifest-driven server installation and release envelopes.</td></tr>
+</table></div>
 <p>For each configured repository the daemon runs an independent pipeline:</p>
 <pre><code>Scanner (watcher) --events--&gt; Commit Service --svn--&gt; SVN server
                                      |
@@ -870,7 +882,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <tr><td><code>backlog_flush_mib</code></td><td>Force publish when staged total exceeds this (must be ≥ <code>max_batch_mib</code>)</td></tr>
 <tr><td><code>shutdown_commit_timeout</code></td><td>Max drain time on controlled shutdown (default <code>10m</code>)</td></tr>
 <tr><td><code>lock_first</code></td><td>Try <code>svn lock</code> before every commit (mutually exclusive with <code>edit_passports</code>)</td></tr>
-<tr><td><code>edit_passports</code></td><td>Enable edit-passport mode (opt-in; see section 2.5)</td></tr>
+<tr><td><code>edit_passports</code></td><td>Legacy/development-only switch for a manually configured repository. Server-projected repositories ignore it and use their canonical repository-wide <code>editing_policy</code> (see section 2.5).</td></tr>
 <tr><td><code>commit_tiers</code></td><td>Size-adaptive intervals; last entry with <code>max_mb: 0</code> is the catch-all</td></tr>
 <tr><td><code>shout_patterns</code></td><td>Regex list; matching files produce a notification ticket</td></tr>
 </table></div>
@@ -908,14 +920,14 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <h4>File ignore patterns</h4>
 <p>Built-in ignores (cannot be overridden): <code>~\$*</code> (MS Office), <code>.~lock.*#</code> (LibreOffice/OpenOffice), <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code>.</p>
 <p>User-defined ignores: place patterns in <code>.filees/user_ignore.cfg</code> (hot-reloaded on every scan). Lines starting with <code>!</code> are hard ignores that skip entire subtrees. Glob syntax supports <code>**</code> for any depth.</p>
-<h2 id="ch2-passports">2.5 Edit Passports</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-designed">Distributed completion</span><span>Single-daemon passport lifecycle exists; authoritative cross-client CAS is not yet deployed.</span></div>
-<p>Edit passports are an opt-in feature (<code>"edit_passports": true</code>) that provides explicit per-file locking with heartbeat renewal. When enabled, <code>lock_first</code> is automatically disabled.</p><div class="decision">
-<div class="decision-head">Design rationale / edit passports remain opt-in</div>
+<h2 id="ch2-passports">2.5 Edit Passports</h2><div class="section-meta"><span class="status status-verified">Verified cross-client</span><span>Repository-wide policy, owner-only control, projection and two-client lock transfer passed live acceptance on Windows.</span></div>
+<p>Edit passports provide explicit per-file locking with heartbeat renewal. The mode is selected once for the whole repository: its owner chooses <strong>Zasady edycji</strong> in FileES Settings, the server stores the canonical <code>editing_policy</code>, and every desktop projection receives the same value. The GUI column <strong>Edycja</strong> shows <strong>wymaga wypożyczenia</strong> to owners and guests; only the owner can change it. The default is ordinary free editing. On the wire the default is omitted and the only explicit value is <code>lock_required</code>.</p><div class="decision">
+<div class="decision-head">Design rationale / repository policy remains opt-in</div>
 <div class="decision-grid">
 <div class="decision-label">Decision</div><div class="decision-value">Explicit per-file locking is enabled only where the document type and workflow justify the friction.</div>
 <div class="decision-label">Why</div><div class="decision-value">Ordinary synchronization should remain silent; pessimistic locking is a policy, not a universal property of FileES.</div>
-<div class="decision-label">Rejected</div><div class="decision-value">Requiring locks for every repository; pretending the current single-daemon token model is already a distributed lease.</div>
-<div class="decision-label">Cost</div><div class="decision-value">Passport repositories require migration, read-only enforcement, heartbeat and an eventual authoritative server CAS.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Requiring locks for every repository; configuring a repository-wide barrier independently on each client.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Passport repositories require migration, read-only enforcement, heartbeat and server-visible token fencing.</div>
 </div>
 </div>
 <p>Behaviour under passport mode:</p>
@@ -926,7 +938,9 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <li>New files do not require a passport before their first publication; the daemon assigns <code>svn:needs-lock</code> before the commit.</li>
 <li>Commits use <code>svn commit --no-unlock</code> so that SVN does not bypass the close-grace period.</li>
 <li>After a confirmed commit, the daemon waits for the close-grace period (<code>edit_passport_close_grace</code>, default 5 m) before unlocking and returning the file to read-only.</li>
+<li>The server-visible SVN lock and its token are authoritative between clients. A competing client receives the holder alias and expiry; release and takeover re-read and fence the token so a stale UI row cannot release a different lock.</li>
 </ul>
+<p>Changing the policy is a migration, not a local preference. Enabling it applies and commits <code>svn:needs-lock</code> to existing regular versioned files. Disabling it removes that property and releases passports owned by the caller. Paths currently held by another owner are left untouched and retried later rather than stolen. The mobile append-only projection intentionally does not receive <code>editing_policy</code>.</p>
 <div class="note"><strong>Scope of autolock (V1):</strong> a repository's owner realm is whichever realm created it (<code>OwnerRealmID</code>) — the same realm identity described in §5.5. Cross-realm repository sharing is implemented (§5.5): an owner can grant another realm <code>r</code> or <code>rw</code> access to a repository. Autolock itself remains strictly scoped to the owner realm (<code>pkg/commit</code> only runs the silent acquire/relock path when <code>RealmID == OwnerRealmID</code>); a realm holding only a granted <code>rw</code> share uses the manual "Wypożycz do edycji" path (§2.6) like any other non-owner user. Generalizing autolock priority to per-path ownership for repositories writable by multiple realms remains a separate, not-yet-implemented extension (<code>concepts/AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md</code>).</div>
 <p>Passport timing parameters:</p>
 <div class="table-wrap"><table>
@@ -936,7 +950,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <tr><td><code>edit_passport_max_session</code></td><td>24 h</td><td>Hard session limit; cannot be extended by heartbeats</td></tr>
 <tr><td><code>edit_passport_close_grace</code></td><td>5 m</td><td>Silence period after confirmed commit before unlock</td></tr>
 </table></div>
-<div class="note"><strong>Multi-client guarantee caveat:</strong> the current implementation enforces passports within one daemon instance. Full distributed compare-and-swap (preventing a race between two competing clients) requires a server-side <code>pre-lock</code> hook or authoritative worker, which is not yet deployed. The <code>previous_token</code> field in the lock comment is already transmitted so the server hook can be added without protocol changes.</div>
+<div class="note"><strong>Acceptance status:</strong> the full six-point gate passed on two independent Windows installations in one realm: policy projection, automatic manager startup, owner autolock, an explicit “held by X” result on the competing client, transfer after release, and migration back to free editing. See <code>reports/EDITING_POLICY_E2E_2026-08-11.md</code>. Per-path ownership and a “request release” workflow remain separate future extensions; they are not gaps in this repository-wide policy.</div>
 <h2 id="ch2-gui">2.6 GUI Tray</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>GUI is a separate binary over contract/v1; Windows join, selective attach, working-copy recovery and journal were accepted on a live installation.</span></div>
 <p><code>filees-gui</code> is a separate process and a thin UX layer over the daemon IPC contract. It does not import any sync engine packages. Closing the GUI does not stop the daemon.</p><div class="decision">
 <div class="decision-head">Design rationale / integrated daemon, separate menu binary</div>

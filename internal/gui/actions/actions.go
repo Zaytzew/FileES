@@ -1549,11 +1549,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć wyboru logo", Body: homeErr.Error(), Urgency: platform.UrgencyCritical})
 				return
 			}
-			root := string(filepath.Separator)
-			if volume := filepath.VolumeName(home); volume != "" {
-				root = volume + string(filepath.Separator)
-			}
-			picked, pickErr := c.cfg.Picker.PickFiles(ctx, platform.PickFilesRequest{Title: "Wybierz logo PNG lub JPEG", Root: root, InitialDir: home})
+			picked, pickErr := c.cfg.Picker.PickFiles(ctx, platform.PickFilesRequest{Title: "Wybierz logo PNG lub JPEG", InitialDir: home, AllowOutsideRoot: true})
 			if pickErr != nil {
 				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie udało się wybrać logo", Text: pickErr.Error()})
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się wybrać logo", Body: pickErr.Error(), Urgency: platform.UrgencyCritical})
@@ -1598,6 +1594,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 			return
 		}
 		if _, err := c.cfg.RealmBranding.SetPublicBranding(ctx, serverID, requested); err != nil {
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie udało się zapisać wyglądu udziałów", Text: err.Error()})
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zapisać wyglądu udziałów", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			return
 		}

@@ -179,14 +179,20 @@ func (b *WindowsBackend) OpenFolder(ctx context.Context, path string) error {
 }
 
 func (b *WindowsBackend) PickFiles(ctx context.Context, request PickFilesRequest) (PickFilesResult, error) {
-	if err := requireAbsolutePath(request.Root); err != nil {
-		return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("root: %w", err))
+	if !request.AllowOutsideRoot {
+		if err := requireAbsolutePath(request.Root); err != nil {
+			return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("root: %w", err))
+		}
 	}
 	initialDir := request.InitialDir
 	if initialDir == "" {
 		initialDir = request.Root
 	}
-	if err := requirePathInsideRoot(initialDir, request.Root); err != nil {
+	if request.AllowOutsideRoot {
+		if err := requireAbsolutePath(initialDir); err != nil {
+			return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("initial directory: %w", err))
+		}
+	} else if err := requirePathInsideRoot(initialDir, request.Root); err != nil {
 		return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("initial directory: %w", err))
 	}
 
@@ -214,7 +220,11 @@ func (b *WindowsBackend) PickFiles(ctx context.Context, request PickFilesRequest
 		paths = paths[:1]
 	}
 	for i, path := range paths {
-		if err := requirePathInsideRoot(path, request.Root); err != nil {
+		if request.AllowOutsideRoot {
+			if err := requireAbsolutePath(path); err != nil {
+				return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("selected path: %w", err))
+			}
+		} else if err := requirePathInsideRoot(path, request.Root); err != nil {
 			return PickFilesResult{}, NewOperationalFailure("file_picker", fmt.Errorf("selected path: %w", err))
 		}
 		paths[i] = filepath.Clean(path)

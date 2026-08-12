@@ -470,6 +470,10 @@ func TestLinuxPickerCancellationUnavailableAndOutsideRoot(t *testing.T) {
 	if _, err := backend.PickFiles(context.Background(), PickFilesRequest{Root: "/wc"}); !IsFailure(err, FailureOperational) {
 		t.Fatalf("outside-root error = %v", err)
 	}
+	result, err = backend.PickFiles(context.Background(), PickFilesRequest{InitialDir: "/home/test", AllowOutsideRoot: true})
+	if err != nil || len(result.Paths) != 1 || result.Paths[0] != "/other/secret.dwg" {
+		t.Fatalf("unbounded asset picker = %#v, %v", result, err)
+	}
 
 	missing := newTestLinuxBackend(&fakeLinuxRunner{}, t.TempDir(), time.Now)
 	if _, err := missing.PickFiles(context.Background(), PickFilesRequest{Root: "/wc"}); !IsFailure(err, FailureUnavailable) {

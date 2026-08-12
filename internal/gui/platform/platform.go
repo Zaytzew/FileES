@@ -365,13 +365,18 @@ type Autostart interface {
 }
 
 // PickFilesRequest describes a native file picker without prescribing its UI
-// toolkit. Root is the repository boundary presented to the user; callers must
-// still validate the returned absolute paths before a daemon operation.
+// toolkit. Root is normally the repository boundary presented to the user;
+// local presentation assets may explicitly opt out without weakening any
+// repository operation.
 type PickFilesRequest struct {
 	Title         string
 	Root          string
 	InitialDir    string
 	AllowMultiple bool
+	// AllowOutsideRoot is reserved for local presentation assets such as a
+	// realm logo. Repository operations must leave it false: their selected
+	// paths are deliberately confined to Root.
+	AllowOutsideRoot bool
 }
 
 // PickFilesResult treats user cancellation as a normal outcome, not an error.

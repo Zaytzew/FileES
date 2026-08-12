@@ -271,6 +271,10 @@ func TestWindowsPickerCancellationAndOutsideRoot(t *testing.T) {
 	if _, err := backend.PickFiles(context.Background(), PickFilesRequest{Root: `C:\wc`}); !IsFailure(err, FailureOperational) {
 		t.Fatalf("outside-root error = %v", err)
 	}
+	result, err = backend.PickFiles(context.Background(), PickFilesRequest{InitialDir: `C:\Users\test`, AllowOutsideRoot: true})
+	if err != nil || len(result.Paths) != 1 || result.Paths[0] != `C:\other\secret.dwg` {
+		t.Fatalf("unbounded asset picker = %#v, %v", result, err)
+	}
 }
 
 func TestWindowsNotificationsRateLimitByGroup(t *testing.T) {

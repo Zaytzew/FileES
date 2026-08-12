@@ -43,7 +43,7 @@ func TestListingAppliesOnlyRealmLogoAndLeadingColor(t *testing.T) {
 	}
 }
 
-func TestPasswordPageUsesShareIdentityAndSafeRealmBranding(t *testing.T) {
+func TestPasswordPageKeepsBrandingButDoesNotDiscloseShareIdentity(t *testing.T) {
 	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
 	if err != nil {
 		t.Fatal(err)
@@ -56,12 +56,20 @@ func TestPasswordPageUsesShareIdentityAndSafeRealmBranding(t *testing.T) {
 	Handler{}.renderPassword(recorder, channel.Projection{Alias: "acme", Slug: "zegrze", Branding: branding})
 	body := recorder.Body.String()
 	for _, expected := range []string{
-		`<meta name="viewport"`, `filees:space`, `udostępnione przez acme`,
-		`<h1 id="share-title">zegrze</h1>`, `type="password"`,
+		`<meta name="viewport"`, `filees:space`, `type="password"`,
 		`--owner-accent:#2D5A3D;--owner-ink:#2D5A3D`, `data:image/png;base64,`,
+		`fill="currentColor"`, `>Hasło</label>`, `>Otwórz</button>`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("password page does not contain %q:\n%s", expected, body)
+		}
+	}
+	for _, forbidden := range []string{
+		"acme", "zegrze", "udostępnione przez", "Chronione udostępnienie",
+		"otrzymane od właściciela", "nie trafia do adresu strony",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("password page disclosed %q before authorization:\n%s", forbidden, body)
 		}
 	}
 	csp := recorder.Header().Get("Content-Security-Policy")

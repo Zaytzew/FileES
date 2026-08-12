@@ -141,7 +141,7 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 		password = request.PostForm.Get("password")
 	}
 	if request.Method == http.MethodGet && entry.Projection.PasswordHash != "" && token == "" {
-		h.renderPassword(w, alias, channelSlug)
+		h.renderPassword(w, entry.Projection)
 		return
 	}
 	if entry.Projection.PasswordHash != "" {
@@ -844,10 +844,41 @@ func formatListingCount(count int) string {
 	return strconv.Itoa(count) + " " + word
 }
 
-func (h Handler) renderPassword(w http.ResponseWriter, alias, channelSlug string) {
+func (h Handler) renderPassword(w http.ResponseWriter, projection channel.Projection) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = passwordTemplate.Execute(w, struct{ Action string }{Action: "/" + url.PathEscape(alias) + "/" + url.PathEscape(channelSlug)})
+	branding, err := realmbranding.Normalize(projection.Branding)
+	if err != nil {
+		branding = realmbranding.Default()
+	}
+	ownerInk := "#0B1D3A"
+	if branding.LeadingColor != realmbranding.DefaultLeadingColor {
+		ownerInk = branding.LeadingColor
+	}
+	css := passwordCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
+	digest := sha256.Sum256([]byte(css))
+	cssHash := base64.StdEncoding.EncodeToString(digest[:])
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	data := passwordPage{
+		Action:      "/" + url.PathEscape(projection.Alias) + "/" + url.PathEscape(projection.Slug),
+		Alias:       projection.Alias,
+		Slug:        projection.Slug,
+		BrandSymbol: brandSymbol,
+		CSS:         template.CSS(css),
+	}
+	if branding.LogoBase64 != "" {
+		data.HasOwnerLogo = true
+		data.OwnerLogo = template.URL("data:" + branding.LogoMediaType + ";base64," + branding.LogoBase64)
+	}
+	_ = passwordTemplate.Execute(w, data)
+}
+
+type passwordPage struct {
+	Action, Alias, Slug string
+	BrandSymbol         template.HTML
+	CSS                 template.CSS
+	OwnerLogo           template.URL
+	HasOwnerLogo        bool
 }
 
 func (h Handler) serveAttachment(w http.ResponseWriter, request *http.Request, name string, content io.ReadSeeker) {
@@ -986,4 +1017,25 @@ var listingTemplate = template.Must(template.New("listing").Parse(`<!doctype htm
 </html>
 {{define "directory"}}<details class="directory"><summary><span class="folder-icon" aria-hidden="true">{{.FolderIcon}}</span><span>{{.Name}}</span></summary><div class="branch">{{if .BundleEnabled}}<div class="folder-actions"><button class="folder-download" type="submit" name="folder" value="{{.Path}}"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz folder</button></div>{{end}}{{range .Directories}}{{template "directory" .}}{{end}}{{range .Files}}{{template "file" .}}{{end}}</div></details>{{end}}
 {{define "file"}}<div class="file-row" role="row"><div class="select-cell">{{if .BundleEnabled}}<input type="checkbox" name="object" value="{{.PublicID}}" aria-label="Zaznacz {{.Name}}">{{end}}</div><div class="file-name"><span class="mime-icon file-icon-{{.IconClass}}" aria-hidden="true">{{.Icon}}</span><a class="name-link" rel="nofollow" href="{{.URL}}">{{.Name}}</a></div><div class="file-type">{{.Type}}</div><div class="file-size{{if not .SizeKnown}} unknown{{end}}">{{if .SizeKnown}}{{.Size}}{{else}}—{{end}}</div><a class="download" rel="nofollow" href="{{.URL}}">Pobierz</a></div>{{end}}`))
-var passwordTemplate = template.Must(template.New("password").Parse(`<!doctype html><html lang="pl"><meta charset="utf-8"><title>Dostęp do plików</title><form method="post" action="{{.Action}}"><label>Hasło <input type="password" name="password" autocomplete="current-password" required></label><button type="submit">Otwórz</button></form></html>`))
+
+const passwordCSS = `:root{color-scheme:light;--paper:#fff;--soft:#f7f8fa;--line:#d9dee7;--ink:#0b1d3a;--muted:#667085;--accent:#ff6a00;--owner-accent:#ff6a00;--owner-ink:#0b1d3a;--focus:#1264a3;--mono:"Roboto Mono","IBM Plex Mono","DejaVu Sans Mono",ui-monospace,SFMono-Regular,Consolas,monospace;font-family:"Segoe UI",Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}*{box-sizing:border-box}html{background:var(--soft)}body{margin:0;min-height:100vh;color:var(--owner-ink);background:var(--soft)}.shell{width:min(900px,calc(100% - 48px));margin:0 auto;padding:40px 0 56px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 22px;background:var(--paper);border:1px solid var(--line);border-bottom:0;color:var(--ink);font-family:var(--mono);font-size:13px;letter-spacing:.035em}.brand{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700}.brand-mark{display:block;width:31px;height:25px}.brand-mark svg{display:block;width:100%;height:100%}.realm{color:var(--muted);font-size:12px}.card{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,280px);gap:44px;align-items:center;padding:46px 48px 43px;background:var(--paper);border:1px solid var(--line);border-left:5px solid var(--owner-accent);box-shadow:0 18px 50px rgba(11,29,58,.08)}.card:not(:has(.owner-logo)){grid-template-columns:minmax(0,560px);justify-content:center}.eyebrow{margin:0 0 11px;color:var(--owner-accent);font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}h1{margin:0 0 10px;color:var(--owner-ink);font-size:clamp(27px,5vw,40px);line-height:1.08;letter-spacing:-.035em;overflow-wrap:anywhere}.intro{max-width:560px;margin:0 0 28px;color:var(--muted);font-size:15px;line-height:1.55}.field-label{display:block;margin-bottom:8px;color:var(--owner-ink);font-family:var(--mono);font-size:12px;font-weight:650}.password-row{display:flex;gap:10px}.password-input{min-width:0;flex:1;height:46px;padding:0 13px;border:1px solid #aeb7c5;border-radius:2px;color:var(--ink);background:#fff;font:inherit;font-size:16px}.submit{min-height:46px;padding:0 20px;border:1px solid var(--owner-ink);border-radius:2px;color:#fff;background:var(--owner-ink);font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}.submit:hover{border-color:var(--owner-accent);background:var(--owner-accent)}.password-input:focus-visible,.submit:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.privacy{margin:13px 0 0;color:var(--muted);font-family:var(--mono);font-size:11px;line-height:1.5}.owner-logo{display:block;justify-self:end;max-width:100%;max-height:112px;width:auto;height:auto;object-fit:contain;object-position:right center}.footer{padding:18px 4px;color:var(--muted);text-align:center;font-family:var(--mono);font-size:11px}@media(max-width:700px){.shell{width:min(calc(100% - 24px),900px);padding-top:20px}.card{grid-template-columns:1fr;gap:28px;padding:34px 30px}.owner-logo{justify-self:start;max-width:190px;max-height:72px;grid-row:1}.realm{display:none}}@media(max-width:460px){.shell{width:100%;padding:0}.topbar,.card{border-left:0;border-right:0}.card{padding:30px 20px;border-left:5px solid var(--owner-accent)}.password-row{display:grid}.submit{width:100%}}`
+
+var passwordTemplate = template.Must(template.New("password").Parse(`<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Slug}} — dostęp do plików</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main class="shell">
+<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">{{.BrandSymbol}}</span><span>filees:space</span></div><div class="realm">udostępnione przez {{.Alias}}</div></header>
+<section class="card" aria-labelledby="share-title">
+<div class="content"><p class="eyebrow">Chronione udostępnienie</p><h1 id="share-title">{{.Slug}}</h1><p class="intro">Wpisz hasło otrzymane od właściciela, aby przejść do udostępnionych plików.</p><form method="post" action="{{.Action}}"><label class="field-label" for="share-password">Hasło dostępu</label><div class="password-row"><input class="password-input" id="share-password" type="password" name="password" autocomplete="current-password" required autofocus><button class="submit" type="submit">Przejdź do plików</button></div><p class="privacy">Hasło służy tylko do weryfikacji dostępu i nie trafia do adresu strony.</p></form></div>
+{{if .HasOwnerLogo}}<img class="owner-logo" src="{{.OwnerLogo}}" alt="Logo udostępniającego">{{end}}
+</section>
+<footer class="footer">Bezpieczne udostępnienie FileES</footer>
+</main>
+</body>
+</html>`))

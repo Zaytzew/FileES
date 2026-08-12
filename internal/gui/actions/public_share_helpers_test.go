@@ -29,7 +29,7 @@ func TestPublicShareObjectsStayInsideSelectedSubfolderAndPreserveIDs(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sourceRoot != "wydanie" || len(objects) != 1 || objects[0].RepoPath != "wydanie/a.txt" || objects[0].PublicID != "1234567890abcdef" {
+	if sourceRoot != "wydanie" || len(objects) != 1 || objects[0].RepoPath != "wydanie/a.txt" || objects[0].PublicID != "1234567890abcdef" || objects[0].Size == nil || *objects[0].Size != 1 {
 		t.Fatalf("source=%q objects=%+v", sourceRoot, objects)
 	}
 	rootObjects, rootSource, err := publicShareObjects(root, root, nil)

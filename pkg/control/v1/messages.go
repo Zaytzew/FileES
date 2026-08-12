@@ -207,6 +207,7 @@ type PublicShareObject struct {
 	PublicID    string `json:"public_id"`
 	RepoPath    string `json:"repo_path"`
 	DisplayName string `json:"display_name"`
+	Size        *int64 `json:"size,omitempty"`
 }
 
 // PublicShareDeclaration carries no owner realm: the worker always derives it
@@ -997,6 +998,9 @@ func validatePublicShareDeclaration(p PublicShareDeclaration) error {
 		}
 		if strings.TrimSpace(object.DisplayName) == "" || len(object.DisplayName) > 512 || strings.ContainsAny(object.DisplayName, "\x00\r\n") {
 			return fmt.Errorf("object_map[%d].display_name is invalid", i)
+		}
+		if object.Size != nil && *object.Size < 0 {
+			return fmt.Errorf("object_map[%d].size is invalid", i)
 		}
 	}
 	return nil

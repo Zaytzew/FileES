@@ -249,9 +249,10 @@ W **Zarządzaj serwerem…** właściciel repozytorium ma dwie odrębne akcje:
 
 Tworzenie albo edycja kanału wymaga podłączonej lokalnej kopii roboczej:
 
-1. Wybierz niepusty podfolder wewnątrz WC. FileES zbierze z niego zwykłe pliki
-   rekurencyjnie; `.svn` jest pomijane, symlinki i ponad 4096 plików są
-   odrzucane.
+1. Wybierz root WC albo dowolny folder wewnątrz niego. FileES zbierze zwykłe
+   pliki rekurencyjnie wraz z rozmiarami; `.svn` i `.filees` są pomijane,
+   symlinki i ponad 4096 plików są odrzucane. Pusty folder jest poprawnym
+   placeholderem; po dodaniu do niego plików trzeba jawnie edytować kanał.
 2. Dla nowego kanału wpisz końcówkę adresu (`slug`): 3–64 małe litery, cyfry
    lub pojedyncze myślniki.
 3. Opcjonalnie wpisz adresy e-mail oddzielone przecinkami lub średnikami.
@@ -261,6 +262,12 @@ Tworzenie albo edycja kanału wymaga podłączonej lokalnej kopii roboczej:
    hashowane lokalnie; plaintext nie trafia do serwera ani dziennika. Przy
    edycji można zachować dotychczasowe hasło bez ponownego wpisywania.
 5. Puste pole rewizji śledzi `HEAD`; dodatni numer zamraża kanał na tej rewizji.
+
+Odbiorca widzi pod publicznym adresem zwijane drzewo folderów podobne do widoku
+„Szczegóły” w Eksploratorze: nazwę, typ, rozmiar i przycisk pobrania. Widok nie
+wykonuje JavaScriptu i w pierwszej wersji nie generuje miniaturek zdjęć. Kanały
+utworzone przez starszego klienta pozostają zgodne, ale mogą pokazywać kreskę
+zamiast nieznanego rozmiaru do czasu ich edycji.
 
 **Cofnij** natychmiast przestaje wydawać pliki, ale zachowuje rekord i adres.
 **Usuń** usuwa politykę kanału; adres pozostaje zarezerwowany jako tombstone i

@@ -330,7 +330,7 @@ func (adapter publicShareAdapter) ListPublicShares(ctx context.Context, serverID
 	for _, share := range result.Shares {
 		row := actions.PublicShareSummary{ChannelID: share.ChannelID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, UpdatedAt: share.UpdatedAt, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow}
 		for _, object := range share.Objects {
-			row.Objects = append(row.Objects, actions.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+			row.Objects = append(row.Objects, actions.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 		}
 		shares = append(shares, row)
 	}
@@ -404,7 +404,7 @@ func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration
 		if publicID == "" {
 			publicID = strings.ReplaceAll(uuid.NewString(), "-", "")
 		}
-		objects = append(objects, contract.PublicShareObject{PublicID: publicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+		objects = append(objects, contract.PublicShareObject{PublicID: publicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 	}
 	return contract.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: passwordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}, nil
 }

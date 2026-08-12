@@ -133,7 +133,7 @@ instalacji klienta, a nie do pojedynczego repozytorium:
 | `backlog_flush_mib` | Próg zaległości w MiB wymuszający commit bez czekania na zwykły interwał |
 | `shutdown_commit_timeout` | Maks. czas pełnego drainu stagingu podczas kontrolowanego zamknięcia |
 | `lock_first`       | Jeśli `true` — próbuje `svn lock` przed commitem |
-| `edit_passports`   | Włącza jawne passporty edycji, migrację `svn:needs-lock`, fencing, heartbeat i kontrolowany autounlock |
+| `edit_passports`   | Tylko dla ręcznie skonfigurowanych repozytoriów legacy/deweloperskich: włącza passporty edycji. Dla repozytoriów projektowanych przez serwer pole jest ignorowane na rzecz kanonicznego `editing_policy` |
 | `edit_passport_ttl` | Ważność pojedynczego odnowienia passportu; domyślnie `15m` |
 | `edit_passport_heartbeat` | Interwał odnowienia, krótszy od TTL; domyślnie `5m` |
 | `edit_passport_max_session` | Nieprzedłużalny limit sesji; domyślnie `24h` |
@@ -146,7 +146,12 @@ instalacji klienta, a nie do pojedynczego repozytorium:
 
 Czasy podawane w formacie Go: `30s`, `5m`, `1h`.
 
-Pełny lifecycle, inwarianty i granica gwarancji wieloklientowej są opisane w instrukcji, w rozdziale [2.5 Edit Passports](manual-filees.html#ch2-passports).
+W normalnym przepływie produktu właściciel zmienia repozytoryjną politykę w
+Ustawieniach przez akcję **Zasady edycji**. Serwer zapisuje ją raz w rekordzie
+kanonicznym i projektuje identycznie do wszystkich klientów; jedyną wartością
+wysyłaną na drucie jest `lock_required`, a brak pola oznacza zwykłą edycję.
+Pełny lifecycle i gwarancje wieloklientowe opisuje rozdział
+[2.5 Edit Passports](manual-filees.html#ch2-passports).
 
 Każdy `local_path` musi być ścieżką bezwzględną. Identyfikatory repozytoriów muszą być unikalne, a lokalne korzenie nie mogą być identyczne ani zagnieżdżone w żadną stronę. Walidacja rozwiązuje symlinki istniejących katalogów i kończy start daemona twardym błędem przed utworzeniem stanu `.filees`.
 
@@ -424,15 +429,32 @@ single-instance i dopiero wtedy uruchamia nową binarkę. Procedura publikacji:
 
 Systemowe powiadomienia są wtórne wobec stanu w menu. MVP pokazuje je dla nowych błędów, przejścia repozytorium w stan wymagający uwagi, utraty/odzyskania łączności oraz zakończenia operacji istotnej dla użytkownika. Powtarzające się zdarzenia są grupowane i ograniczane czasowo. Powiadomienia pozostają informacyjne; bezpieczna aktywacja po kliknięciu wymaga osobnego odbioru natywnego i nie może wykonywać operacji mutującej.
 
-### Proponowany podział kodu
+### Mapa modułów
 
 ```text
-cmd/filees-gui/          composition root, lifecycle procesu
-internal/gui/app/        stan prezentacji, reconnect, resync, capability gating
-internal/gui/tray/       adapter fyne.io/systray, menu i mapowanie ikon
-internal/gui/platform/   autostart, powiadomienia, otwieranie katalogu
-pkg/ipcclient/           jedyna droga komunikacji z daemonem
-pkg/contract/v1/         publiczne typy graniczne
+cmd/filees/              daemon, CLI i composition root klienta
+cmd/filees-gui/          composition root i lifecycle warstwy prezentacyjnej
+internal/gui/            model, akcje, tray, platforma i powiadomienia
+pkg/contract/v1/         kontrakt IPC GUI/CLI <-> daemon
+pkg/ipcclient,ipcserver/ transport lokalnego control plane
+
+pkg/clientview/          ścisła projekcja stanu instalacji z service repo
+pkg/localrepo/           trwały lifecycle lokalnych przypięć WC
+pkg/provisioning/        create/attach/initial-commit state machine
+pkg/reposupervisor/      uruchamianie i rekoncyliacja wielu repozytoriów
+pkg/watcher,commit/      skanowanie, batching, update i publikacja SVN
+pkg/passport/            needs-lock, lease, fencing i migracje polityki edycji
+
+pkg/control/v1/          podpisywane żądania klient -> worker
+pkg/repoworker/          autorytatywne repozytoria, granty i projekcje
+internal/servertool/     forced-command entrypoints i operacje serwera
+pkg/onboarding,activation/ aktywacja, tożsamość i service repo
+
+internal/mobileworker/   append-only klient mobilny
+cmd/filees-public-authority/ publiczne udziały i ich osobna granica zaufania
+internal/clientupdate/   podpisany updater desktopu
+internal/serverinstall/  rdzeń manifestowego instalatora serwera
+internal/release*/       koperty, podpisy i publikacja artefaktów
 ```
 
 Wybraną biblioteką jest `fyne.io/systray`, izolowane jako adapter w `internal/gui/tray`. Jej API nie może przenikać do logiki aplikacji ani kontraktu. MVP obejmuje Linux (SNI; GNOME wymaga rozszerzenia AppIndicator/SNI) oraz Windows 10+. Szczegółowe decyzje platformowe znajdują się w `gui-assumptions.md`.
@@ -478,19 +500,25 @@ Poza MVP pozostają: edycja konfiguracji, zarządzanie usługą daemona, `pause/
 
 ## Architektura
 
+```text
+filees-gui / filees CLI
+          │ contract/v1 przez lokalny Unix-domain socket
+          ▼
+daemon: projekcja + supervisor + provisioning + potoki repozytoriów
+          │                    │
+          │ svn+ssh            └── control/v1 przez SSH
+          ▼                                      ▼
+repozytoria danych                    forced entry -> worker OpenBSD
+                                                  │
+                                      rekordy kanoniczne + service repo
+                                                  │
+                                      view.json wraca jako projekcja
 ```
-                    ┌─────────────────────────────────────────────┐
-                    │                  daemon                      │
-                    │                                             │
-  SVN server ◄──svn─┤  Scanner ──events──► Commit Service        │
-                    │                            │                │
-                    │                     IPC Server              │
-                    └──────────────────────┬──────────────────────┘
-                                           │ Unix socket
-                                    ┌──────┴──────┐
-                                    │             │
-                                 filees CLI    filees-gui (TBD)
-```
+
+Serwer nie ma rezydentnego „daemona FileES”. Systemowy `sshd` uruchamia
+ograniczone entrypointy i workery dla pojedynczych operacji. Autoryzacja,
+granty, polityka edycji i widoki klientów są własnością serwera; GUI jest
+wyłącznie prezentacją, a daemon pozostaje właścicielem stanu lokalnego i SVN.
 
 Dla każdego repozytorium uruchamiany jest niezależny potok:
 
@@ -724,8 +752,13 @@ Wzorce z `!` na początku są "twardymi" ignorami — przy katalogu powodują po
 | `pkg/contract/v1` | Typy protokołu IPC (`filees.contract/v1`) |
 | `pkg/control/v1` | Wersjonowane koperty ticket/result control plane (`filees.control/v1`) |
 | `pkg/provisioning` | Trwała maszyna stanów tworzenia repo i initial commit |
+| `pkg/clientview` | Ścisłe dekodowanie projekcji instalacji z service repo |
+| `pkg/localrepo` | Trwały lifecycle lokalnych przypięć i ścieżek WC |
+| `pkg/reposupervisor` | Dynamiczne uruchamianie, zatrzymywanie i rekoncyliacja repozytoriów |
+| `pkg/passport` | Passporty edycji, fencing i migracja `svn:needs-lock` |
+| `pkg/repoworker` | Kanoniczne rekordy repozytoriów, granty, polityki i projekcje |
 | `pkg/ipcserver` | Serwer gniazda Unix dla CLI/GUI |
-| `pkg/ipcclient` | Klient IPC — używany przez CLI i docelowo GUI |
+| `pkg/ipcclient` | Klient IPC używany przez CLI i GUI |
 | `pkg/errmap` | Klasyfikacja błędów + zapis do `errors.jsonl` |
 | `pkg/runtime` | HostGate, RepoMutex |
 | `pkg/talk` | Logger z poziomami i zmienną `FILEES_LOG` |

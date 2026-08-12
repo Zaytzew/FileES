@@ -242,6 +242,10 @@ W **Zarządzaj serwerem…** właściciel repozytorium ma dwie odrębne akcje:
 - **Udostępnienia publiczne** pokazuje kanały wydawania plików. Widać adres,
   stan, folder źródłowy, odbiorców, ochronę hasłem oraz `HEAD` albo zamrożoną
   rewizję. Dostępne są **Nowe**, **Edytuj**, **Cofnij** i **Usuń**.
+- Kolumna **Edycja** pokazuje, czy repozytorium pracuje zwykle, czy **wymaga
+  wypożyczenia**. Właściciel podłączonego repozytorium może użyć akcji
+  **Zasady edycji**, aby przełączyć tę politykę dla wszystkich komputerów.
+  Gość widzi stan, ale nie może zmienić polityki całego repozytorium.
 
 Tworzenie albo edycja kanału wymaga podłączonej lokalnej kopii roboczej:
 
@@ -268,9 +272,12 @@ nie może zostać przejęty przez późniejszy kanał.
 
 `Zablokuj pliki…` i `Odblokuj pliki…` są dostępne w podmenu repozytorium,
 gdy daemon zgłasza odpowiednie capabilities. W zwykłym repozytorium wykonują
-blokadę SVN; w repozytorium z `edit_passports` nabywają lub zwalniają
-edit-passport. W obu przypadkach operacja zapobiega równoległej edycji, a w
-trybie passportu udane zablokowanie przywraca plikowi lokalną zapisywalność.
+blokadę SVN; w repozytorium oznaczonym w kolumnie **Edycja** jako **wymaga
+wypożyczenia** nabywają lub zwalniają edit-passport. Politykę ustawia raz
+właściciel repozytorium i otrzymują ją wszystkie podłączone instalacje — nie
+konfiguruje się jej osobno na każdym komputerze. Udane wypożyczenie przywraca
+plikowi lokalną zapisywalność. Blokada trzymana przez inną osobę pokazuje jej
+alias oraz czas wygaśnięcia zamiast kończyć się bez komunikatu.
 
 Operacja dostępna wyłącznie gdy:
 - GUI jest połączone z daemonem (**Połączono**, nie **Odświeżanie**)

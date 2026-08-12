@@ -72,6 +72,9 @@ a grant `rw` nie wystarcza do publikacji. Publiczna projekcja nie potrafi
 reprezentować `repo_id`, `source_root` ani ścieżki repozytorium. Wejście zamraża
 konkretną rewizję, każde użycie cache'u jest poprzedzone ponowną autoryzacją,
 a revoke daje niejawne `404` także dla ciepłego wpisu.
+Wszystkie odpowiedzi kończące się 404 mają ten sam obrandowany HTML i nie
+odbijają aliasu, slugu, żądanej ścieżki ani przyczyny niedostępności. Wygasła
+wizyta recipienta z nadal aktywnym zaproszeniem wraca do bramki OTP, nie 404.
 
 Desktop ownera jest również kompletny: dynamiczne IPC udostępnia
 list/create/update/revoke/delete, a natywne Ustawienia Windows/Linux budują

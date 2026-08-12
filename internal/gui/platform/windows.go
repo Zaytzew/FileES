@@ -286,8 +286,8 @@ func buildPickerScript(request PickFilesRequest, initialDir string) string {
 	if request.AllowMultiple {
 		sb.WriteString("$d.Multiselect=$true;")
 	}
-	sb.WriteString("$null=$d.ShowDialog($owner);")
-	sb.WriteString("if($d.DialogResult-eq[System.Windows.Forms.DialogResult]::OK){$d.FileNames -join \"`n\"}else{exit 1}")
+	sb.WriteString("$r=$d.ShowDialog($owner);")
+	sb.WriteString("if($r-eq[System.Windows.Forms.DialogResult]::OK){$d.FileNames -join \"`n\"}else{exit 1}")
 	return sb.String()
 }
 

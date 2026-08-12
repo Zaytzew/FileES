@@ -35,7 +35,7 @@ func TestListingAppliesOnlyRealmLogoAndLeadingColor(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	Handler{}.renderListing(recorder, channel.Projection{Alias: "acme", Slug: "zegrze", Branding: branding}, visit{Revision: 1}, "v", false)
 	body := recorder.Body.String()
-	if !strings.Contains(body, "--owner-accent:#008C45") || !strings.Contains(body, `class="owner-logo"`) || !strings.Contains(body, "data:image/png;base64,") || !strings.Contains(body, "object-fit:contain") {
+	if !strings.Contains(body, "--owner-accent:#008C45;--owner-ink:#008C45") || !strings.Contains(body, `class="owner-logo"`) || !strings.Contains(body, "data:image/png;base64,") || !strings.Contains(body, "object-fit:contain") || !strings.Contains(body, "h1{color:var(--owner-ink)") {
 		t.Fatalf("owner branding was not rendered safely:\n%s", body)
 	}
 	if strings.Contains(body, "image/svg") || strings.Contains(recorder.Header().Get("Content-Security-Policy"), "unsafe-inline") {

@@ -1554,12 +1554,22 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 				root = volume + string(filepath.Separator)
 			}
 			picked, pickErr := c.cfg.Picker.PickFiles(ctx, platform.PickFilesRequest{Title: "Wybierz logo PNG lub JPEG", Root: root, InitialDir: home})
-			if pickErr != nil || picked.Cancelled || len(picked.Paths) == 0 {
+			if pickErr != nil {
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie udało się wybrać logo", Text: pickErr.Error()})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się wybrać logo", Body: pickErr.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+			if picked.Cancelled || len(picked.Paths) == 0 {
 				return
 			}
 			info, statErr := os.Stat(picked.Paths[0])
-			if statErr != nil || info.Size() < 1 || info.Size() > realmbranding.MaxLogoBytes {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Logo jest nieprawidłowe", Body: "Wybierz plik PNG lub JPEG o rozmiarze do 32 KiB.", Urgency: platform.UrgencyCritical})
+			if statErr != nil || info.Size() < 1 || info.Size() > realmbranding.MaxLogoInputBytes {
+				message := "Wybierz plik PNG lub JPEG o rozmiarze do 16 MiB."
+				if statErr != nil {
+					message = statErr.Error()
+				}
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Logo jest nieprawidłowe", Text: message})
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Logo jest nieprawidłowe", Body: message, Urgency: platform.UrgencyCritical})
 				return
 			}
 			raw, readErr := os.ReadFile(picked.Paths[0])
@@ -1567,8 +1577,9 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się odczytać logo", Body: readErr.Error(), Urgency: platform.UrgencyCritical})
 				return
 			}
-			requested, err = realmbranding.FromBytes(requested.LeadingColor, http.DetectContentType(raw), raw)
+			requested, err = realmbranding.PrepareLogo(requested.LeadingColor, http.DetectContentType(raw), raw)
 			if err != nil {
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Logo jest nieprawidłowe", Text: err.Error()})
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Logo jest nieprawidłowe", Body: err.Error(), Urgency: platform.UrgencyCritical})
 				return
 			}

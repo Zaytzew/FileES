@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -26,7 +27,7 @@ func (s SVNLookSource) Head(ctx context.Context, repoID string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	command := exec.CommandContext(ctx, s.SVNLook, "youngest", repository)
+	command := s.command(ctx, "youngest", repository)
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &limitedWriter{Writer: &stderr, Remaining: 4096}
 	if err := command.Run(); err != nil {
@@ -47,13 +48,30 @@ func (s SVNLookSource) Cat(ctx context.Context, repoID, repoPath string, revisio
 	if revision < 1 || !canonicalRepoPath(repoPath) {
 		return errors.New("svnlook cat request is invalid")
 	}
-	command := exec.CommandContext(ctx, s.SVNLook, "cat", "-r", strconv.FormatInt(revision, 10), repository, repoPath)
+	command := s.command(ctx, "cat", "-r", strconv.FormatInt(revision, 10), repository, repoPath)
 	var stderr bytes.Buffer
 	command.Stdout, command.Stderr = dst, &limitedWriter{Writer: &stderr, Remaining: 4096}
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("svnlook cat: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+func (s SVNLookSource) command(ctx context.Context, args ...string) *exec.Cmd {
+	command := exec.CommandContext(ctx, s.SVNLook, args...)
+	command.Env = svnLookEnvironment(os.Environ())
+	return command
+}
+
+func svnLookEnvironment(environ []string) []string {
+	result := make([]string, 0, len(environ)+1)
+	for _, entry := range environ {
+		if strings.HasPrefix(entry, "LC_ALL=") {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return append(result, "LC_ALL=C.UTF-8")
 }
 
 func canonicalRepoPath(value string) bool {

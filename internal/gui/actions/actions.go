@@ -1360,8 +1360,16 @@ func publicShareObjects(repoRoot, selected string, current *PublicShareSummary) 
 	repoRoot = filepath.Clean(repoRoot)
 	selected = filepath.Clean(selected)
 	relRoot, err := filepath.Rel(repoRoot, selected)
-	if err != nil || relRoot == "." || relRoot == ".." || strings.HasPrefix(relRoot, ".."+string(filepath.Separator)) || filepath.IsAbs(relRoot) {
-		return nil, "", errors.New("wybierz niepusty podfolder wewnątrz kopii roboczej")
+	if err != nil {
+		return nil, "", fmt.Errorf("nie można porównać wybranego folderu z kopią roboczą: %w", err)
+	}
+	if relRoot == ".." || strings.HasPrefix(relRoot, ".."+string(filepath.Separator)) || filepath.IsAbs(relRoot) {
+		return nil, "", errors.New("wybierz folder wewnątrz kopii roboczej")
+	}
+	for _, metadata := range []string{".svn", ".filees"} {
+		if relRoot == metadata || strings.HasPrefix(relRoot, metadata+string(filepath.Separator)) {
+			return nil, "", errors.New("folder metadanych kopii roboczej nie może być udostępniony")
+		}
 	}
 	info, err := os.Stat(selected)
 	if err != nil || !info.IsDir() {
@@ -1378,7 +1386,7 @@ func publicShareObjects(repoRoot, selected string, current *PublicShareSummary) 
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() && entry.Name() == ".svn" {
+		if entry.IsDir() && (entry.Name() == ".svn" || entry.Name() == ".filees") {
 			return filepath.SkipDir
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -1407,9 +1415,6 @@ func publicShareObjects(repoRoot, selected string, current *PublicShareSummary) 
 	})
 	if err != nil {
 		return nil, "", err
-	}
-	if len(objects) == 0 {
-		return nil, "", errors.New("wybrany folder nie zawiera plików")
 	}
 	return objects, filepath.ToSlash(relRoot), nil
 }

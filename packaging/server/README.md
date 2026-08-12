@@ -64,12 +64,22 @@ TTL cannot exceed 24 hours. The shipped values are 1 GiB per leaf, 10 GiB total
 and 12 hours. Password verification is serialized, identical cache misses are
 coalesced, and the authority runs at most two concurrent `svnlook` fetches.
 
-After replacing the hostname and certificate paths, merge
-`openbsd/public-links.httpd.conf` into `/etc/httpd.conf`. Enable and start the
-authority before links, then validate and reload httpd. Neither FileES binary
-terminates TLS. In a split topology keep the same backchannel protocol and
-point both ends at loopback TCP provided by a server-established reverse SSH
-forward; never expose the authority port on a public interface.
+The canonical public URL belongs to the FileES server's existing HTTPS origin:
+`https://<server-domain>/<realm>/<slug>`. Merge the ordered locations from
+`openbsd/public-links.httpd.conf` into that origin's `server` block. Static
+paths are an explicit allowlist; the final `location "/*"` sends everything
+else to `filees-links`. Do not route with `location not found`: filesystem
+presence must never shadow a realm or share, and adding a realm must not create
+a directory or reload httpd.
+
+Enable and start the authority before links, validate the complete httpd
+configuration, and only then reload httpd. Neither FileES binary terminates
+TLS. A listener behind relayd can remain on loopback; a standalone installation
+adds its normal TLS certificate and redirect blocks to the same system httpd
+server. In a split topology keep the same backchannel protocol and point both
+ends at loopback TCP provided by a server-established reverse SSH forward;
+never expose the authority port on a public interface. An external short-link
+service may redirect to the canonical URL, but is never required by FileES.
 
 The shipped bootstrap private key is deliberately compiled into the client and
 must be considered public. Its authorized-key entry can only reach the

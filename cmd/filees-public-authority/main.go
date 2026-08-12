@@ -20,6 +20,8 @@ import (
 	"filees/public-shares/channel"
 )
 
+const authoritySandboxPromises = "stdio rpath wpath cpath fattr proc exec prot_exec unix inet"
+
 func main() {
 	configPath := flag.String("config", "/etc/filees/server.json", "FileES server configuration")
 	flag.Parse()
@@ -70,7 +72,7 @@ func run(configPath string) error {
 	if config.PublicShares.BackchannelNetwork == "unix" {
 		paths = append(paths, obsandbox.Path{Label: "backchannel-socket", Name: config.PublicShares.BackchannelAddress, Perms: "rwc"})
 	}
-	if err := obsandbox.Apply(obsandbox.Profile{Name: "filees-public-authority", Promises: "stdio rpath wpath cpath proc exec prot_exec unix inet", Paths: paths}); err != nil {
+	if err := obsandbox.Apply(obsandbox.Profile{Name: "filees-public-authority", Promises: authoritySandboxPromises, Paths: paths}); err != nil {
 		return err
 	}
 	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy}

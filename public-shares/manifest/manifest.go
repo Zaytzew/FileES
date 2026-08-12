@@ -124,8 +124,10 @@ func (s Share) Validate() error {
 	} else if normalized != s.Slug {
 		return errors.New("slug must already be normalized")
 	}
-	if err := validRepoPath("source_root", s.SourceRoot); err != nil {
-		return err
+	if s.SourceRoot != "." {
+		if err := validRepoPath("source_root", s.SourceRoot); err != nil {
+			return err
+		}
 	}
 	if len(s.Recipients) > 0 && strings.TrimSpace(s.Password) != "" {
 		// A closed channel authenticates by token. Keeping a shared password
@@ -156,8 +158,8 @@ func (s Share) Validate() error {
 		// publishes nothing. Always a mistake, never an intent.
 		return fmt.Errorf("do-not-follow: revision %d is not publishable", *s.DoNotFollow)
 	}
-	if len(s.Objects) == 0 || len(s.Objects) > 4096 {
-		return errors.New("object_map must contain 1 to 4096 objects")
+	if len(s.Objects) > 4096 {
+		return errors.New("object_map must contain at most 4096 objects")
 	}
 	seen := make(map[string]struct{}, len(s.Objects))
 	for i, obj := range s.Objects {
@@ -171,7 +173,7 @@ func (s Share) Validate() error {
 		if err := validRepoPath(fmt.Sprintf("object_map[%d].repo_path", i), obj.RepoPath); err != nil {
 			return err
 		}
-		if obj.RepoPath == s.SourceRoot || !strings.HasPrefix(obj.RepoPath, strings.TrimSuffix(s.SourceRoot, "/")+"/") {
+		if s.SourceRoot != "." && (obj.RepoPath == s.SourceRoot || !strings.HasPrefix(obj.RepoPath, strings.TrimSuffix(s.SourceRoot, "/")+"/")) {
 			return fmt.Errorf("object_map[%d].repo_path: outside source_root", i)
 		}
 		if err := validDisplayName(i, obj.DisplayName); err != nil {

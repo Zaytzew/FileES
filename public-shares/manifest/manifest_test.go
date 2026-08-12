@@ -176,6 +176,21 @@ func TestShareRejectsObjectOutsideSourceRoot(t *testing.T) {
 	}
 }
 
+func TestShareAcceptsRepositoryRootAndEmptyPlaceholder(t *testing.T) {
+	root := validShare()
+	root.SourceRoot = "."
+	root.Objects[0].RepoPath = "projekt.pdf"
+	if err := root.Validate(); err != nil {
+		t.Fatalf("repository root rejected: %v", err)
+	}
+
+	empty := validShare()
+	empty.Objects = nil
+	if err := empty.Validate(); err != nil {
+		t.Fatalf("empty placeholder rejected: %v", err)
+	}
+}
+
 func TestShareRejectsBadPublicID(t *testing.T) {
 	for _, id := range []string{
 		"short",

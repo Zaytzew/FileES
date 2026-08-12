@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/realmbranding"
 )
 
 const defaultTimeout = 10 * time.Second
@@ -356,6 +357,30 @@ func (c *Client) RealmSetVisibility(ctx context.Context, serverID, visibility st
 		return nil, err
 	}
 	var result contract.RealmSetVisibilityResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) RealmPublicBranding(ctx context.Context, serverID string) (*contract.RealmPublicBrandingResult, error) {
+	resp, err := c.do(ctx, contract.CmdRealmPublicBrandingGet, "", contract.RealmPublicBrandingGetPayload{ServerID: serverID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmPublicBrandingResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) RealmSetPublicBranding(ctx context.Context, serverID string, branding realmbranding.Branding) (*contract.RealmPublicBrandingResult, error) {
+	resp, err := c.do(ctx, contract.CmdRealmPublicBrandingSet, "", contract.RealmPublicBrandingSetPayload{ServerID: serverID, Branding: branding})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RealmPublicBrandingResult
 	if err := contract.DecodeResult(resp.Result, &result); err != nil {
 		return nil, err
 	}

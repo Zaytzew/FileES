@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"filees/pkg/realmbranding"
 	"filees/public-shares/manifest"
 	"filees/public-shares/slug"
 	"github.com/google/uuid"
@@ -85,16 +86,17 @@ type PublicRecipient struct {
 // Projection is all policy the public service may know. OwnerRealm, RepoID,
 // SourceRoot and RepoPath are absent by construction.
 type Projection struct {
-	Schema       string            `json:"schema"`
-	ChannelID    string            `json:"channel_id"`
-	Alias        string            `json:"alias"`
-	Slug         string            `json:"slug"`
-	State        string            `json:"state"`
-	PasswordHash string            `json:"password_hash,omitempty"`
-	Recipients   []PublicRecipient `json:"recipients,omitempty"`
-	DoNotFollow  *int64            `json:"do-not-follow,omitempty"`
-	Objects      []PublicObject    `json:"objects"`
-	UpdatedAt    time.Time         `json:"updated_at"`
+	Schema       string                 `json:"schema"`
+	ChannelID    string                 `json:"channel_id"`
+	Alias        string                 `json:"alias"`
+	Slug         string                 `json:"slug"`
+	State        string                 `json:"state"`
+	PasswordHash string                 `json:"password_hash,omitempty"`
+	Recipients   []PublicRecipient      `json:"recipients,omitempty"`
+	DoNotFollow  *int64                 `json:"do-not-follow,omitempty"`
+	Objects      []PublicObject         `json:"objects"`
+	Branding     realmbranding.Branding `json:"branding"`
+	UpdatedAt    time.Time              `json:"updated_at"`
 }
 
 type Delivery struct {
@@ -105,6 +107,7 @@ type Delivery struct {
 type RepositoryAuthority interface {
 	OwnsActiveRepository(realmID, repoID string) error
 	ActiveRealmAlias(realmID string) (string, error)
+	ActiveRealmBranding(realmID string) (realmbranding.Branding, error)
 }
 
 type Store struct {
@@ -453,7 +456,11 @@ func (s *Store) Projection(channelID string) (Projection, error) {
 	if err != nil {
 		return Projection{}, err
 	}
-	return project(record)
+	branding, err := s.Authority.ActiveRealmBranding(record.OwnerRealm)
+	if err != nil {
+		return Projection{}, ErrNotFound
+	}
+	return project(record, branding)
 }
 
 // ResolveAddress returns only an active channel. Missing, revoked, deleted and
@@ -479,11 +486,11 @@ func (s *Store) ResolveAddress(alias, channelSlug string) (Record, error) {
 	return record, nil
 }
 
-func project(record Record) (Projection, error) {
+func project(record Record, branding realmbranding.Branding) (Projection, error) {
 	if record.State != StateActive || record.Manifest == nil {
 		return Projection{}, ErrNotFound
 	}
-	p := Projection{Schema: ProjectionSchema, ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, State: record.State, PasswordHash: record.Manifest.Password, DoNotFollow: record.Manifest.DoNotFollow, UpdatedAt: record.UpdatedAt}
+	p := Projection{Schema: ProjectionSchema, ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, State: record.State, PasswordHash: record.Manifest.Password, DoNotFollow: record.Manifest.DoNotFollow, Branding: branding, UpdatedAt: record.UpdatedAt}
 	for _, recipient := range record.Recipients {
 		p.Recipients = append(p.Recipients, PublicRecipient{Email: recipient.Email, TokenHash: recipient.TokenHash})
 	}
@@ -514,6 +521,10 @@ func (p Projection) Validate() error {
 	}
 	if p.DoNotFollow != nil && *p.DoNotFollow < 1 {
 		return errors.New("public share projection revision is invalid")
+	}
+	branding, err := realmbranding.Normalize(p.Branding)
+	if err != nil || (p.Branding != (realmbranding.Branding{}) && branding != p.Branding) {
+		return errors.New("public share projection branding is invalid or non-canonical")
 	}
 	seen := map[string]bool{}
 	for _, object := range p.Objects {

@@ -171,6 +171,7 @@ func runDaemon() {
 	realmAliases := &realmAliasService{provisioner: provisioner, cache: make(map[string]ownerLabelCache)}
 	ipc.SetRealmAliasService(realmAliases)
 	ipc.SetRealmGrantService(realmAliases)
+	ipc.SetRealmPublicBrandingService(realmAliases)
 	ipc.SetEditingPolicyService(realmAliases)
 	ipc.SetPublicShareService(realmAliases)
 	ipc.SetOwnerLabelResolver(realmAliases)

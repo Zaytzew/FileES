@@ -13,6 +13,7 @@ import (
 	contract "filees/pkg/contract/v1"
 	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
+	"filees/pkg/realmbranding"
 )
 
 // realmAliasService is the daemon's only bridge between local GUI IPC and
@@ -186,6 +187,38 @@ func (s *realmAliasService) SetVisibility(ctx context.Context, serverID, visibil
 		return "", err
 	}
 	return payload.Visibility, nil
+}
+
+func (s *realmAliasService) GetPublicBranding(ctx context.Context, serverID string) (realmbranding.Branding, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return realmbranding.Branding{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketGetRealmPublicBranding, struct{}{})
+	if err != nil {
+		return realmbranding.Branding{}, err
+	}
+	var payload control.RealmPublicBrandingResult
+	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
+		return realmbranding.Branding{}, err
+	}
+	return payload.Branding, nil
+}
+
+func (s *realmAliasService) SetPublicBranding(ctx context.Context, serverID string, branding realmbranding.Branding) (realmbranding.Branding, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return realmbranding.Branding{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketSetRealmPublicBranding, control.RealmPublicBrandingPayload{Branding: branding})
+	if err != nil {
+		return realmbranding.Branding{}, err
+	}
+	var payload control.RealmPublicBrandingResult
+	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
+		return realmbranding.Branding{}, err
+	}
+	return payload.Branding, nil
 }
 
 func (s *realmAliasService) Grant(ctx context.Context, serverID, repoID, recipientRealmID, access string) (contract.RealmGrantResult, error) {

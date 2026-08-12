@@ -1,6 +1,10 @@
 package contract
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"filees/pkg/realmbranding"
+)
 
 // Command name constants — stable identifiers sent in Request.Command.
 // Names follow the <namespace>.<verb> pattern (§7).
@@ -15,15 +19,17 @@ const (
 	CmdUpdateApply    = "update.apply"    // apply and request GUI restart
 
 	// Client activation (executed by daemon; GUI only supplies user intent).
-	CmdActivationBegin      = "activation.begin"
-	CmdActivationFinish     = "activation.finish"
-	CmdRealmAliasClaim      = "realm.alias_claim"
-	CmdRealmGrantRecipients = "realm.grant_recipients"
-	CmdRealmSetVisibility   = "realm.set_visibility"
-	CmdServerDetach         = "server.detach"
-	CmdRealmRemoveBegin     = "realm.remove_begin"
-	CmdRealmRemoveConfirm   = "realm.remove_confirm"
-	CmdRecoveryDownload     = "recovery.download"
+	CmdActivationBegin        = "activation.begin"
+	CmdActivationFinish       = "activation.finish"
+	CmdRealmAliasClaim        = "realm.alias_claim"
+	CmdRealmGrantRecipients   = "realm.grant_recipients"
+	CmdRealmSetVisibility     = "realm.set_visibility"
+	CmdRealmPublicBrandingGet = "realm.public_branding_get"
+	CmdRealmPublicBrandingSet = "realm.public_branding_set"
+	CmdServerDetach           = "server.detach"
+	CmdRealmRemoveBegin       = "realm.remove_begin"
+	CmdRealmRemoveConfirm     = "realm.remove_confirm"
+	CmdRecoveryDownload       = "recovery.download"
 
 	// Mobile pairing (Phase 2c): daemon mints a MOBILE_PAIRING token through
 	// its own already-authenticated control-plane channel; the tray hands
@@ -92,6 +98,8 @@ const (
 	CapRealmAliasClaim        = "realm.alias_claim"
 	CapRealmGrantRecipients   = "realm.grant_recipients"
 	CapRealmSetVisibility     = "realm.set_visibility"
+	CapRealmPublicBrandingGet = "realm.public_branding_get"
+	CapRealmPublicBrandingSet = "realm.public_branding_set"
 	CapServerDetach           = "server.detach"
 	CapRealmRemoveBegin       = "realm.remove_begin"
 	CapRealmRemoveConfirm     = "realm.remove_confirm"
@@ -293,6 +301,19 @@ type RealmSetVisibilityPayload struct {
 
 type RealmSetVisibilityResult struct {
 	Visibility string `json:"visibility"`
+}
+
+type RealmPublicBrandingGetPayload struct {
+	ServerID string `json:"server_id"`
+}
+
+type RealmPublicBrandingSetPayload struct {
+	ServerID string                 `json:"server_id"`
+	Branding realmbranding.Branding `json:"branding"`
+}
+
+type RealmPublicBrandingResult struct {
+	Branding realmbranding.Branding `json:"branding"`
 }
 
 type ServerDetachPayload struct {

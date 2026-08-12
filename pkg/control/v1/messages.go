@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"filees/pkg/realmalias"
+	"filees/pkg/realmbranding"
 	publicmanifest "filees/public-shares/manifest"
 	publicslug "filees/public-shares/slug"
 
@@ -55,16 +56,18 @@ const (
 	// payload never carries a path or revision: the worker always resolves
 	// the carrier as the sole file present on the target's own HEAD
 	// (LOAD_REPOSITORY_DUMP_CONCEPT.md §3, §4).
-	TicketLoadRepositoryDump  TicketType = "LOAD_REPOSITORY_DUMP"
-	TicketGrantAccess         TicketType = "GRANT_ACCESS"
-	TicketRevokeAccess        TicketType = "REVOKE_ACCESS"
-	TicketListGrantRecipients TicketType = "LIST_GRANT_RECIPIENTS"
-	TicketSetRealmVisibility  TicketType = "SET_REALM_DIRECTORY_VISIBILITY"
-	TicketListPublicShares    TicketType = "LIST_PUBLIC_SHARES"
-	TicketCreatePublicShare   TicketType = "CREATE_PUBLIC_SHARE"
-	TicketUpdatePublicShare   TicketType = "UPDATE_PUBLIC_SHARE"
-	TicketRevokePublicShare   TicketType = "REVOKE_PUBLIC_SHARE"
-	TicketDeletePublicShare   TicketType = "DELETE_PUBLIC_SHARE"
+	TicketLoadRepositoryDump     TicketType = "LOAD_REPOSITORY_DUMP"
+	TicketGrantAccess            TicketType = "GRANT_ACCESS"
+	TicketRevokeAccess           TicketType = "REVOKE_ACCESS"
+	TicketListGrantRecipients    TicketType = "LIST_GRANT_RECIPIENTS"
+	TicketSetRealmVisibility     TicketType = "SET_REALM_DIRECTORY_VISIBILITY"
+	TicketGetRealmPublicBranding TicketType = "GET_REALM_PUBLIC_BRANDING"
+	TicketSetRealmPublicBranding TicketType = "SET_REALM_PUBLIC_BRANDING"
+	TicketListPublicShares       TicketType = "LIST_PUBLIC_SHARES"
+	TicketCreatePublicShare      TicketType = "CREATE_PUBLIC_SHARE"
+	TicketUpdatePublicShare      TicketType = "UPDATE_PUBLIC_SHARE"
+	TicketRevokePublicShare      TicketType = "REVOKE_PUBLIC_SHARE"
+	TicketDeletePublicShare      TicketType = "DELETE_PUBLIC_SHARE"
 	// payload carries no realm: the worker derives the owner from the
 	// authenticated session, and a realm grant - including rw - never
 	// satisfies ownership of a repository-wide policy.
@@ -192,6 +195,12 @@ type SetRealmDirectoryVisibilityPayload struct {
 }
 type SetRealmDirectoryVisibilityResult struct {
 	Visibility string `json:"visibility"`
+}
+type RealmPublicBrandingPayload struct {
+	Branding realmbranding.Branding `json:"branding"`
+}
+type RealmPublicBrandingResult struct {
+	Branding realmbranding.Branding `json:"branding"`
 }
 
 type SetRepositoryEditingPolicyPayload struct {
@@ -502,6 +511,19 @@ func (t Ticket) Validate() error {
 		if p.Visibility != "hidden" && p.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY visibility must be hidden or listed")
 		}
+	case TicketGetRealmPublicBranding:
+		var p struct{}
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("GET_REALM_PUBLIC_BRANDING payload: %w", err)
+		}
+	case TicketSetRealmPublicBranding:
+		var p RealmPublicBrandingPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("SET_REALM_PUBLIC_BRANDING payload: %w", err)
+		}
+		if normalized, err := realmbranding.Normalize(p.Branding); err != nil || normalized != p.Branding {
+			return errors.New("SET_REALM_PUBLIC_BRANDING payload is invalid or non-canonical")
+		}
 	case TicketSetRepositoryEditingPolicy:
 		var p SetRepositoryEditingPolicyPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -615,7 +637,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketSetRepositoryEditingPolicy {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketSetRepositoryEditingPolicy {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -774,6 +796,14 @@ func validateSuccessPayload(r Result) error {
 		}
 		if result.Visibility != "hidden" && result.Visibility != "listed" {
 			return errors.New("SET_REALM_DIRECTORY_VISIBILITY result is invalid")
+		}
+	case TicketGetRealmPublicBranding, TicketSetRealmPublicBranding:
+		var result RealmPublicBrandingResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("REALM_PUBLIC_BRANDING result: %w", err)
+		}
+		if normalized, err := realmbranding.Normalize(result.Branding); err != nil || normalized != result.Branding {
+			return errors.New("REALM_PUBLIC_BRANDING result is invalid or non-canonical")
 		}
 	case TicketSetRepositoryEditingPolicy:
 		var result SetRepositoryEditingPolicyResult

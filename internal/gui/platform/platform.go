@@ -170,6 +170,7 @@ type SettingsDialogRequest struct {
 type SettingsServer struct {
 	ID, Name, Address, Realm, ClientID string
 	CanSetRealmVisibility              bool
+	CanSetRealmBranding                bool
 	// CanAddFolder mirrors startCreateRepository's own guard
 	// (server.CanOfferRepositoryCreation(), e.g. false for a read-only
 	// client role such as an audit-only client) -- add_folder used to be
@@ -223,6 +224,7 @@ const (
 	SettingsDialogEditingPolicy    SettingsDialogAction = "editing_policy"
 	SettingsDialogPublicShares     SettingsDialogAction = "public_shares"
 	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
+	SettingsDialogRealmBranding    SettingsDialogAction = "realm_branding"
 	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"
 	SettingsDialogRemoveRealm      SettingsDialogAction = "remove_realm"
 	SettingsDialogDownloadRecovery SettingsDialogAction = "download_recovery"

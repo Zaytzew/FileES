@@ -8,6 +8,7 @@ import (
 	"time"
 
 	control "filees/pkg/control/v1"
+	"filees/pkg/realmbranding"
 	"filees/public-shares/channel"
 	"github.com/google/uuid"
 )
@@ -25,6 +26,10 @@ func (a shareAuthority) ActiveRealmAlias(owner string) (string, error) {
 		return "", errors.New("not owner")
 	}
 	return a.alias, nil
+}
+
+func (a shareAuthority) ActiveRealmBranding(string) (realmbranding.Branding, error) {
+	return realmbranding.Default(), nil
 }
 
 type shareDeliverer struct {

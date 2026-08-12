@@ -15,6 +15,7 @@ import (
 
 	"filees/pkg/activity"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/realmbranding"
 	"filees/pkg/talk"
 )
 
@@ -31,6 +32,7 @@ type Server struct {
 	activation    ActivationService
 	realmAlias    RealmAliasService
 	realmGrants   RealmGrantService
+	realmBranding RealmPublicBrandingService
 	editingPolicy EditingPolicyService
 	publicShares  PublicShareService
 	ownerLabels   OwnerLabelResolver
@@ -66,6 +68,11 @@ type RealmGrantService interface {
 	SetVisibility(context.Context, string, string) (string, error)
 	Grant(context.Context, string, string, string, string) (contract.RealmGrantResult, error)
 	Revoke(context.Context, string, string, string) (contract.RealmGrantResult, error)
+}
+
+type RealmPublicBrandingService interface {
+	GetPublicBranding(context.Context, string) (realmbranding.Branding, error)
+	SetPublicBranding(context.Context, string, realmbranding.Branding) (realmbranding.Branding, error)
 }
 
 // EditingPolicyService is owner-only at the far end: the daemon forwards the
@@ -160,6 +167,9 @@ func (s *Server) capabilities() []string {
 	caps := append([]string(nil), contract.AllCapabilities...)
 	if s.realmGrantService() != nil {
 		caps = append(caps, contract.CapRealmGrantRecipients, contract.CapRealmSetVisibility, contract.CapRepoGrantAccess, contract.CapRepoRevokeAccess)
+	}
+	if s.realmPublicBrandingService() != nil {
+		caps = append(caps, contract.CapRealmPublicBrandingGet, contract.CapRealmPublicBrandingSet)
 	}
 	if s.publicShareService() != nil {
 		caps = append(caps, contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
@@ -267,6 +277,18 @@ func (s *Server) realmGrantService() RealmGrantService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.realmGrants
+}
+
+func (s *Server) SetRealmPublicBrandingService(service RealmPublicBrandingService) {
+	s.mu.Lock()
+	s.realmBranding = service
+	s.mu.Unlock()
+}
+
+func (s *Server) realmPublicBrandingService() RealmPublicBrandingService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.realmBranding
 }
 
 func (s *Server) SetEditingPolicyService(service EditingPolicyService) {

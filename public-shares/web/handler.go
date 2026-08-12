@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"filees/pkg/realmbranding"
 	"filees/public-shares/authority"
 	"filees/public-shares/cache"
 	"filees/public-shares/channel"
@@ -584,7 +585,14 @@ func hasPublicObject(projection channel.Projection, publicID string) bool {
 func (h Handler) renderListing(w http.ResponseWriter, projection channel.Projection, claims visit, encoded string, selectionNotice bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+listingCSSHash+"'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	branding, err := realmbranding.Normalize(projection.Branding)
+	if err != nil {
+		branding = realmbranding.Default()
+	}
+	css := listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS + ":root{--owner-accent:" + branding.LeadingColor + "}"
+	digest := sha256.Sum256([]byte(css))
+	cssHash := base64.StdEncoding.EncodeToString(digest[:])
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	bundles := h.Cache != nil && h.MaxBundleFiles > 0 && h.MaxBundleSize > 0
 	data := listingPage{
 		Alias:           projection.Alias,
@@ -599,7 +607,11 @@ func (h Handler) renderListing(w http.ResponseWriter, projection channel.Project
 		BrandSymbol:     brandSymbol,
 		DownloadIcon:    listingIcon("download"),
 		ArchiveIcon:     listingIcon("archive"),
-		CSS:             template.CSS(listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS),
+		CSS:             template.CSS(css),
+	}
+	if branding.LogoBase64 != "" {
+		data.HasOwnerLogo = true
+		data.OwnerLogo = template.URL("data:" + branding.LogoMediaType + ";base64," + branding.LogoBase64)
 	}
 	_ = listingTemplate.Execute(w, data)
 }
@@ -613,6 +625,8 @@ type listingPage struct {
 	Bundles, SelectionNotice               bool
 	BrandSymbol, DownloadIcon, ArchiveIcon template.HTML
 	CSS                                    template.CSS
+	OwnerLogo                              template.URL
+	HasOwnerLogo                           bool
 }
 
 type listingDirectory struct {
@@ -929,7 +943,7 @@ const listingCSS = `:root{color-scheme:light;--ink:#171717;--muted:#696969;--lin
 
 const listingCSSOverrides = `.toolbar{display:flex;align-items:center;justify-content:flex-end;gap:9px;padding:12px 18px;border-bottom:1px solid var(--line);background:#fff}.bundle-button,.folder-download{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 12px;border:1px solid #c9c9c5;border-radius:7px;color:#222;background:#fff;font:inherit;font-size:13px;font-weight:650;cursor:pointer}.bundle-button.primary{border-color:var(--accent-strong);background:var(--accent)}.bundle-button:hover,.folder-download:hover{border-color:var(--accent-strong);background:#fff6bd}.button-icon,.mime-icon,.folder-icon{display:inline-grid;place-items:center;flex:none}.button-icon svg{width:17px;height:17px}.mime-icon{width:34px;height:38px;color:#4c4c4c}.mime-icon svg{width:26px;height:26px}.folder-icon{width:25px;height:25px;border:0;border-radius:0;background:none;box-shadow:none;color:#e0b900}.folder-icon:before{content:none}.folder-icon svg{width:25px;height:25px}.columns,.file-row{grid-template-columns:34px minmax(260px,1fr) minmax(150px,220px) 100px 96px}.columns span:nth-child(4){text-align:right}.select-cell{display:grid;place-items:center}.select-cell input{width:17px;height:17px;accent-color:var(--accent-strong)}.folder-actions{display:flex;justify-content:flex-end;padding:5px 18px 8px}.notice{margin:12px 18px 0;padding:10px 12px;border-left:4px solid var(--accent-strong);background:#fff8cf;font-size:13px}.file-icon-pdf{color:#b42318}.file-icon-image{color:#16794d}.file-icon-video,.file-icon-audio{color:#6b4bb6}.file-icon-table{color:#107c41}.file-icon-slide{color:#c43e1c}.file-icon-cad{color:#1264a3}button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}@media(max-width:720px){.columns,.file-row{grid-template-columns:32px minmax(150px,1fr) 72px 84px}.columns span:nth-child(3),.file-type{display:none}.toolbar{padding:10px;flex-wrap:wrap}.mime-icon{width:30px;height:34px}.mime-icon svg{width:24px;height:24px}}@media(max-width:450px){.columns,.file-row{grid-template-columns:30px minmax(130px,1fr) 72px}.columns span:nth-child(4),.file-size{display:none}.bundle-button{flex:1}.folder-actions{padding-right:10px}}`
 
-const brandCSSOverrides = `:root{--ink:#0B1D3A;--muted:#667085;--line:#D9DEE7;--soft:#F7F8FA;--paper:#FFFFFF;--accent:#FF6A00;--accent-strong:#D95800;--focus:#1264A3;--mono:"Roboto Mono","IBM Plex Mono","DejaVu Sans Mono",ui-monospace,SFMono-Regular,Consolas,monospace}html{background:var(--soft)}body{background:var(--soft);color:var(--ink)}.shell{width:min(1200px,calc(100% - 48px));padding:24px 0 48px}.topbar{padding:16px 22px;margin:0;background:var(--paper);border:1px solid var(--line);border-bottom:0;font-family:var(--mono);font-size:13px;letter-spacing:.035em}.brand{gap:10px;font-size:14px}.brand-mark{display:block;width:31px;height:25px;background:none;border-radius:0;color:inherit}.brand-mark svg{display:block;width:100%;height:100%}.realm{font-family:var(--mono);font-size:12px}.card{border-radius:0;border-color:var(--line);box-shadow:0 18px 50px rgba(11,29,58,.08)}.heading{padding:32px 30px 27px;border-bottom-color:var(--line);border-left:5px solid var(--accent)}h1{color:var(--ink);font-size:clamp(26px,4vw,38px);letter-spacing:-.03em}.meta{font-family:var(--mono);font-size:12px}.columns{background:var(--soft);color:var(--muted);font-family:var(--mono);font-weight:600}.toolbar{background:var(--paper);padding:13px 18px}.bundle-button,.folder-download{border-color:var(--navy,var(--ink));border-radius:2px;color:var(--ink);background:var(--paper);font-family:var(--mono);font-size:12px;font-weight:600}.bundle-button.primary{border-color:var(--accent);background:var(--accent);color:var(--ink)}.bundle-button:hover,.folder-download:hover,.download:hover{border-color:var(--ink);background:var(--ink);color:#fff}.folder-icon{color:var(--accent)}.mime-icon,.file-icon-pdf,.file-icon-image,.file-icon-video,.file-icon-audio,.file-icon-table,.file-icon-slide,.file-icon-cad{color:var(--ink)}.select-cell input{accent-color:var(--accent)}.download{border-color:var(--line);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:12px}.notice{border-left-color:var(--accent);background:#FFF3EB;color:var(--ink);font-family:var(--mono)}.directory summary{color:var(--ink)}.file-row:hover{background:#FFF8F3}.footer{font-family:var(--mono);color:var(--muted)}@media(max-width:640px){.shell{width:100%;padding:0}.topbar{border-left:0;border-right:0}.card{border-left:0;border-right:0}.heading{padding:27px 20px 23px}}`
+const brandCSSOverrides = `:root{--ink:#0B1D3A;--muted:#667085;--line:#D9DEE7;--soft:#F7F8FA;--paper:#FFFFFF;--accent:#FF6A00;--accent-strong:#D95800;--owner-accent:#FF6A00;--focus:#1264A3;--mono:"Roboto Mono","IBM Plex Mono","DejaVu Sans Mono",ui-monospace,SFMono-Regular,Consolas,monospace}html{background:var(--soft)}body{background:var(--soft);color:var(--ink)}.shell{width:min(1200px,calc(100% - 48px));padding:24px 0 48px}.topbar{padding:16px 22px;margin:0;background:var(--paper);border:1px solid var(--line);border-bottom:0;font-family:var(--mono);font-size:13px;letter-spacing:.035em}.brand{gap:10px;font-size:14px}.brand-mark{display:block;width:31px;height:25px;background:none;border-radius:0;color:inherit}.brand-mark svg{display:block;width:100%;height:100%}.realm{font-family:var(--mono);font-size:12px}.card{border-radius:0;border-color:var(--line);box-shadow:0 18px 50px rgba(11,29,58,.08)}.heading{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,280px);align-items:center;gap:28px;padding:32px 30px 27px;border-bottom-color:var(--line);border-left:5px solid var(--owner-accent)}.heading:not(:has(.owner-logo)){grid-template-columns:1fr}.owner-logo{display:block;justify-self:end;max-width:100%;max-height:88px;width:auto;height:auto;object-fit:contain;object-position:right center}h1{color:var(--owner-accent);font-size:clamp(26px,4vw,38px);letter-spacing:-.03em}.meta{font-family:var(--mono);font-size:12px}.columns{background:var(--soft);color:var(--muted);font-family:var(--mono);font-weight:600}.toolbar{background:var(--paper);padding:13px 18px}.bundle-button,.folder-download{border-color:var(--navy,var(--ink));border-radius:2px;color:var(--ink);background:var(--paper);font-family:var(--mono);font-size:12px;font-weight:600}.bundle-button.primary{border-color:var(--accent);background:var(--accent);color:var(--ink)}.bundle-button:hover,.folder-download:hover,.download:hover{border-color:var(--ink);background:var(--ink);color:#fff}.folder-icon{color:var(--accent)}.mime-icon,.file-icon-pdf,.file-icon-image,.file-icon-video,.file-icon-audio,.file-icon-table,.file-icon-slide,.file-icon-cad{color:var(--ink)}.select-cell input{accent-color:var(--accent)}.download{border-color:var(--line);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:12px}.notice{border-left-color:var(--accent);background:#FFF3EB;color:var(--ink);font-family:var(--mono)}.directory summary{color:var(--ink)}.file-row:hover{background:#FFF8F3}.footer{font-family:var(--mono);color:var(--muted)}@media(max-width:640px){.shell{width:100%;padding:0}.topbar{border-left:0;border-right:0}.card{border-left:0;border-right:0}.heading{grid-template-columns:1fr auto;gap:14px;padding:27px 20px 23px}.owner-logo{max-width:130px;max-height:60px}}@media(max-width:430px){.heading{grid-template-columns:1fr}.owner-logo{justify-self:start;max-width:180px}}`
 
 const iconColorCSS = `.button-icon svg,.mime-icon svg,.folder-icon svg{fill:currentColor}.bundle-button,.folder-download{border-color:var(--ink)}.empty-icon{background:var(--accent);border-color:var(--ink);border-radius:2px}`
 
@@ -950,7 +964,7 @@ var listingTemplate = template.Must(template.New("listing").Parse(`<!doctype htm
 <main class="shell">
 <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">{{.BrandSymbol}}</span><span>filees:space</span></div><div class="realm">udostępnione przez {{.Alias}}</div></header>
 <section class="card" aria-labelledby="share-title">
-<div class="heading"><h1 id="share-title">{{.Slug}}</h1><div class="meta"><span>{{.CountText}}</span><span>wydanie r{{.Revision}}</span><span>{{.Alias}}</span></div></div>
+<div class="heading"><div><h1 id="share-title">{{.Slug}}</h1><div class="meta"><span>{{.CountText}}</span><span>wydanie r{{.Revision}}</span><span>{{.Alias}}</span></div></div>{{if .HasOwnerLogo}}<img class="owner-logo" src="{{.OwnerLogo}}" alt="Logo udostępniającego">{{end}}</div>
 <div class="browser">
 {{if eq .Count 0}}
 <div class="empty"><span class="empty-icon" aria-hidden="true"></span><strong>Ten folder jest jeszcze pusty</strong><p>Właściciel może dodać tu pliki później.</p></div>

@@ -127,6 +127,7 @@ func TestRealmRemovalAdmissionBlocksPostCrashMutations(t *testing.T) {
 		control.TicketMobilePairing, control.TicketClaimRealmAlias, control.TicketClientDeactivate,
 		control.TicketRealmRemoveRequest, control.TicketLoadRepositoryDump, control.TicketStoragePreflight,
 		control.TicketGrantAccess, control.TicketRevokeAccess, control.TicketSetRealmVisibility,
+		control.TicketGetRealmPublicBranding, control.TicketSetRealmPublicBranding,
 		control.TicketListGrantRecipients, control.TicketCreatePublicShare, control.TicketUpdatePublicShare,
 		control.TicketRevokePublicShare, control.TicketDeletePublicShare,
 	} {

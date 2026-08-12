@@ -19,6 +19,7 @@ import (
 	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/localpin"
+	"filees/pkg/realmbranding"
 	"filees/public-shares/gate"
 	"github.com/google/uuid"
 )
@@ -260,6 +261,13 @@ type realmGrantClient interface {
 
 type realmGrantAdapter struct{ client realmGrantClient }
 
+type realmBrandingClient interface {
+	RealmPublicBranding(context.Context, string) (*contract.RealmPublicBrandingResult, error)
+	RealmSetPublicBranding(context.Context, string, realmbranding.Branding) (*contract.RealmPublicBrandingResult, error)
+}
+
+type realmBrandingAdapter struct{ client realmBrandingClient }
+
 func (adapter realmGrantAdapter) ListRecipients(ctx context.Context, serverID, repoID string) ([]actions.RealmGrantRecipient, error) {
 	result, err := adapter.client.RealmGrantRecipients(ctx, serverID, repoID)
 	if err != nil {
@@ -284,6 +292,28 @@ func (adapter realmGrantAdapter) SetVisibility(ctx context.Context, serverID, vi
 		return errors.New("daemon returned an invalid realm visibility result")
 	}
 	return nil
+}
+
+func (adapter realmBrandingAdapter) PublicBranding(ctx context.Context, serverID string) (realmbranding.Branding, error) {
+	result, err := adapter.client.RealmPublicBranding(ctx, serverID)
+	if err != nil {
+		return realmbranding.Branding{}, err
+	}
+	if result == nil {
+		return realmbranding.Branding{}, errors.New("daemon returned empty realm branding")
+	}
+	return realmbranding.Normalize(result.Branding)
+}
+
+func (adapter realmBrandingAdapter) SetPublicBranding(ctx context.Context, serverID string, branding realmbranding.Branding) (realmbranding.Branding, error) {
+	result, err := adapter.client.RealmSetPublicBranding(ctx, serverID, branding)
+	if err != nil {
+		return realmbranding.Branding{}, err
+	}
+	if result == nil {
+		return realmbranding.Branding{}, errors.New("daemon returned empty realm branding")
+	}
+	return realmbranding.Normalize(result.Branding)
 }
 
 func (adapter realmGrantAdapter) Grant(ctx context.Context, serverID, repoID, recipientRealmID, access string) error {
@@ -694,6 +724,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(realmGrantClient); ok {
 		realmGrants = realmGrantAdapter{client: candidate}
 	}
+	var realmBranding actions.RealmBrandingManager
+	if candidate, ok := deps.client.(realmBrandingClient); ok {
+		realmBranding = realmBrandingAdapter{client: candidate}
+	}
 	var publicShares actions.PublicShareManager
 	if candidate, ok := deps.client.(publicShareClient); ok {
 		publicShares = publicShareAdapter{client: candidate}
@@ -731,6 +765,7 @@ func run(parent context.Context, deps dependencies) error {
 		Reservations:         reservations,
 		RealmAliases:         realmAliases,
 		RealmGrants:          realmGrants,
+		RealmBranding:        realmBranding,
 		PublicShares:         publicShares,
 		ReservationBrowser:   deps.platform,
 		SettingsBrowser:      deps.platform,

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 	"filees/pkg/localpin"
+	"filees/pkg/realmbranding"
 )
 
 // creationStatusPollInterval/creationStatusPollTimeout bound how long the GUI
@@ -116,6 +118,11 @@ type RealmGrantManager interface {
 	// string so the GUI layer never has to know the wire vocabulary; the
 	// adapter translates. Returns the policy the server actually stored.
 	SetEditingPolicy(ctx context.Context, serverID, repoID string, lockRequired bool) (bool, error)
+}
+
+type RealmBrandingManager interface {
+	PublicBranding(context.Context, string) (realmbranding.Branding, error)
+	SetPublicBranding(context.Context, string, realmbranding.Branding) (realmbranding.Branding, error)
 }
 
 type PublicShareObject struct {
@@ -241,6 +248,7 @@ type Config struct {
 	Reservations       ReservationManager
 	RealmAliases       RealmAliasManager
 	RealmGrants        RealmGrantManager
+	RealmBranding      RealmBrandingManager
 	PublicShares       PublicShareManager
 	ReservationBrowser platform.ReservationBrowser
 	SettingsBrowser    platform.SettingsBrowser
@@ -455,6 +463,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startManagePublicShares(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogRealmVisibility:
 			c.startSetRealmVisibility(ctx, result.ServerID)
+		case platform.SettingsDialogRealmBranding:
+			c.startSetRealmBranding(ctx, result.ServerID)
 		case platform.SettingsDialogDetachServer:
 			c.startDetachServer(ctx, result.ServerID)
 		case platform.SettingsDialogRemoveRealm:
@@ -595,7 +605,7 @@ func settingsDialogRequest(vm app.ViewModel, serverID string, pending map[string
 		if len(pending) > 0 {
 			request.Text += " Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
 		}
-		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
+		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanSetRealmBranding: vm.CanSetRealmBranding() && strings.TrimSpace(server.RealmAlias) != "", CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
 		for _, repo := range server.Repos {
 			repoName := repo.DisplayName
 			if strings.TrimSpace(repoName) == "" {
@@ -1501,6 +1511,86 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			body = "Strefa jest teraz widoczna dla innych aktywnych stref."
 		}
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Widoczność strefy została zmieniona", Body: body, Urgency: platform.UrgencyNormal})
+	}()
+}
+
+func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string) {
+	key := "realm-branding." + serverID
+	if serverID == "" || c.cfg.RealmBranding == nil || c.cfg.Picker == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		if !vm.CanSetRealmBranding() {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Wygląd udziałów jest niedostępny", Body: "Demon FileES nie obsługuje brandingu strefy.", Urgency: platform.UrgencyCritical})
+			return
+		}
+		current, err := c.cfg.RealmBranding.PublicBranding(ctx, serverID)
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać wyglądu udziałów", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		color, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Kolor udziałów publicznych", Text: "Podaj kolor wiodący w zapisie #RRGGBB.", Default: current.LeadingColor, Placeholder: realmbranding.DefaultLeadingColor})
+		if err != nil || color.Cancelled {
+			return
+		}
+		requested := current
+		requested.LeadingColor = strings.ToUpper(strings.TrimSpace(color.Value))
+		choose, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Logo udziałów publicznych", Text: "Czy wybrać nowe logo PNG lub JPEG? Logo zostanie proporcjonalnie dopasowane do pola po prawej stronie nagłówka.", ConfirmText: "Wybierz logo", CancelText: "Bez nowego logo"})
+		if err != nil {
+			return
+		}
+		if choose {
+			home, homeErr := os.UserHomeDir()
+			if homeErr != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć wyboru logo", Body: homeErr.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+			root := string(filepath.Separator)
+			if volume := filepath.VolumeName(home); volume != "" {
+				root = volume + string(filepath.Separator)
+			}
+			picked, pickErr := c.cfg.Picker.PickFiles(ctx, platform.PickFilesRequest{Title: "Wybierz logo PNG lub JPEG", Root: root, InitialDir: home})
+			if pickErr != nil || picked.Cancelled || len(picked.Paths) == 0 {
+				return
+			}
+			info, statErr := os.Stat(picked.Paths[0])
+			if statErr != nil || info.Size() < 1 || info.Size() > realmbranding.MaxLogoBytes {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Logo jest nieprawidłowe", Body: "Wybierz plik PNG lub JPEG o rozmiarze do 32 KiB.", Urgency: platform.UrgencyCritical})
+				return
+			}
+			raw, readErr := os.ReadFile(picked.Paths[0])
+			if readErr != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się odczytać logo", Body: readErr.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+			requested, err = realmbranding.FromBytes(requested.LeadingColor, http.DetectContentType(raw), raw)
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Logo jest nieprawidłowe", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+		} else if current.LogoBase64 != "" {
+			remove, removeErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Obecne logo", Text: "Czy usunąć obecne logo? Wybierz Nie, aby je zachować.", ConfirmText: "Usuń logo", CancelText: "Zachowaj"})
+			if removeErr != nil {
+				return
+			}
+			if remove {
+				requested.LogoMediaType, requested.LogoBase64 = "", ""
+			}
+		}
+		requested, err = realmbranding.Normalize(requested)
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Wygląd udziałów jest nieprawidłowy", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		if _, err := c.cfg.RealmBranding.SetPublicBranding(ctx, serverID, requested); err != nil {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zapisać wyglądu udziałów", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Wygląd udziałów został zapisany", Body: "Kolor i logo obowiązują we wszystkich publicznych udziałach tej strefy.", Urgency: platform.UrgencyNormal})
 	}()
 }
 

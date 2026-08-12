@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/realmbranding"
 	"filees/public-shares/authority"
 	"filees/public-shares/cache"
 	"filees/public-shares/channel"
@@ -20,6 +22,26 @@ import (
 	"filees/public-shares/manifest"
 	"github.com/google/uuid"
 )
+
+func TestListingAppliesOnlyRealmLogoAndLeadingColor(t *testing.T) {
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	branding, err := realmbranding.FromBytes("#008C45", "image/png", png)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	Handler{}.renderListing(recorder, channel.Projection{Alias: "acme", Slug: "zegrze", Branding: branding}, visit{Revision: 1}, "v", false)
+	body := recorder.Body.String()
+	if !strings.Contains(body, "--owner-accent:#008C45") || !strings.Contains(body, `class="owner-logo"`) || !strings.Contains(body, "data:image/png;base64,") || !strings.Contains(body, "object-fit:contain") {
+		t.Fatalf("owner branding was not rendered safely:\n%s", body)
+	}
+	if strings.Contains(body, "image/svg") || strings.Contains(recorder.Header().Get("Content-Security-Policy"), "unsafe-inline") {
+		t.Fatalf("unsafe branding surface rendered: %s", recorder.Header().Get("Content-Security-Policy"))
+	}
+}
 
 type webAuthority struct{ owner, repo, alias string }
 
@@ -34,6 +56,12 @@ func (a *webAuthority) ActiveRealmAlias(owner string) (string, error) {
 		return "", errors.New("not owner")
 	}
 	return a.alias, nil
+}
+func (a *webAuthority) ActiveRealmBranding(owner string) (realmbranding.Branding, error) {
+	if owner != a.owner {
+		return realmbranding.Branding{}, errors.New("not owner")
+	}
+	return realmbranding.Default(), nil
 }
 
 type webSource struct {
@@ -239,7 +267,7 @@ func TestListingBuildsEscapedExplorerTreeWithOptionalSizes(t *testing.T) {
 		t.Fatalf("listing does not use collapsed MIME-icon bundle UI:\n%s", body)
 	}
 	csp := recorder.Header().Get("Content-Security-Policy")
-	if !strings.Contains(csp, "style-src 'sha256-"+listingCSSHash+"'") || strings.Contains(csp, "unsafe-inline") {
+	if !strings.Contains(csp, "style-src 'sha256-") || !strings.Contains(csp, "img-src data:") || strings.Contains(csp, "unsafe-inline") {
 		t.Fatalf("listing CSP does not bind the embedded stylesheet: %s", csp)
 	}
 }

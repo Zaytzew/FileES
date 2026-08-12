@@ -263,11 +263,14 @@ Tworzenie albo edycja kanału wymaga podłączonej lokalnej kopii roboczej:
    edycji można zachować dotychczasowe hasło bez ponownego wpisywania.
 5. Puste pole rewizji śledzi `HEAD`; dodatni numer zamraża kanał na tej rewizji.
 
-Odbiorca widzi pod publicznym adresem zwijane drzewo folderów podobne do widoku
-„Szczegóły” w Eksploratorze: nazwę, typ, rozmiar i przycisk pobrania. Widok nie
-wykonuje JavaScriptu i w pierwszej wersji nie generuje miniaturek zdjęć. Kanały
-utworzone przez starszego klienta pozostają zgodne, ale mogą pokazywać kreskę
-zamiast nieznanego rozmiaru do czasu ich edycji.
+Odbiorca widzi pod publicznym adresem domyślnie zwinięte drzewo folderów podobne
+do widoku „Szczegóły” w Eksploratorze: nazwę, ikonę typu pliku, opis typu,
+rozmiar i przycisk pobrania. Może zaznaczyć kilka plików, pobrać pojedynczy
+folder albo cały udział jako ZIP. Publiczna strona używa identyfikacji
+`filees:space` (granat/pomarańcz) i nie wykonuje JavaScriptu; nie generuje na
+razie miniaturek zdjęć. Kanały utworzone przez starszego klienta pozostają
+zgodne, ale mogą pokazywać kreskę zamiast nieznanego rozmiaru do czasu ich
+edycji.
 
 **Cofnij** natychmiast przestaje wydawać pliki, ale zachowuje rekord i adres.
 **Usuń** usuwa politykę kanału; adres pozostaje zarezerwowany jako tombstone i

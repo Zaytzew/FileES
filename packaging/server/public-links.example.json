@@ -15,5 +15,9 @@
     "root": "/var/tmp/filees-public-shares-cache",
     "ttl": "12h",
     "max_size": 10737418240
+  },
+  "bundle": {
+    "max_files": 4096,
+    "max_size": 10737418240
   }
 }

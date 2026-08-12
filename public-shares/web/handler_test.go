@@ -225,7 +225,7 @@ func TestListingBuildsEscapedExplorerTreeWithOptionalSizes(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	securityHeaders(recorder)
-	Handler{}.renderListing(recorder, projection, visit{Revision: 17}, "visit-token")
+	Handler{Cache: &cache.Store{}, MaxBundleFiles: 10, MaxBundleSize: 1 << 20}.renderListing(recorder, projection, visit{Revision: 17}, "visit-token", false)
 	body := recorder.Body.String()
 	for _, expected := range []string{`class="directory"`, "Branża", "Rysunki", "&lt;script&gt;.pdf", "Dokument PDF", "1.5 KB", "README", ">—<", "/acme/rysunki/get/1234567890abcdef?v=visit-token"} {
 		if !strings.Contains(body, expected) {
@@ -234,6 +234,9 @@ func TestListingBuildsEscapedExplorerTreeWithOptionalSizes(t *testing.T) {
 	}
 	if strings.Contains(body, "<script>") || strings.Contains(body, "<script src") {
 		t.Fatalf("display name was not escaped:\n%s", body)
+	}
+	if strings.Contains(body, `<details class="directory" open>`) || !strings.Contains(body, `<svg`) || !strings.Contains(body, `name="object"`) || !strings.Contains(body, "Pobierz całość") {
+		t.Fatalf("listing does not use collapsed MIME-icon bundle UI:\n%s", body)
 	}
 	csp := recorder.Header().Get("Content-Security-Policy")
 	if !strings.Contains(csp, "style-src 'sha256-"+listingCSSHash+"'") || strings.Contains(csp, "unsafe-inline") {
@@ -249,7 +252,7 @@ func TestListingTreeSortsDirectoriesAndFiles(t *testing.T) {
 		{PublicID: "4444444444444444", DisplayName: "Alfa/Rysunek 10.pdf"},
 		{PublicID: "5555555555555555", DisplayName: "Alfa/Rysunek 2.pdf"},
 	}}
-	tree := buildListingTree(projection, "v")
+	tree := buildListingTree(projection, "v", false)
 	if len(tree.Directories) != 2 || tree.Directories[0].Name != "Alfa" || tree.Directories[1].Name != "zeta" {
 		t.Fatalf("directories=%+v", tree.Directories)
 	}
@@ -258,9 +261,34 @@ func TestListingTreeSortsDirectoriesAndFiles(t *testing.T) {
 	}
 }
 
+func TestBundleSelectionUsesOnlyPublicProjectionAndSafeNames(t *testing.T) {
+	projection := channel.Projection{Alias: "acme", Slug: "Zegrze: komplet", Objects: []channel.PublicObject{
+		{PublicID: "1111111111111111", DisplayName: "Dokumenty/plan?.pdf"},
+		{PublicID: "2222222222222222", DisplayName: "Dokumenty/pod/plan?.pdf"},
+		{PublicID: "3333333333333333", DisplayName: "Obrazy/widok.jpg"},
+	}}
+	objects, name, ok := selectBundleObjects(projection, url.Values{"folder": {"Dokumenty"}})
+	if !ok || name != "Dokumenty" || len(objects) != 2 {
+		t.Fatalf("folder bundle objects=%+v name=%q ok=%v", objects, name, ok)
+	}
+	objects, name, ok = selectBundleObjects(projection, url.Values{"object": {"3333333333333333"}})
+	if !ok || name != "Zegrze_ komplet-wybrane" || len(objects) != 1 || objects[0].PublicID != "3333333333333333" {
+		t.Fatalf("selection bundle objects=%+v name=%q ok=%v", objects, name, ok)
+	}
+	if _, _, ok = selectBundleObjects(projection, url.Values{"object": {"private-repo-path"}}); ok {
+		t.Fatal("unknown public ID was accepted")
+	}
+	used := map[string]int{}
+	first := uniqueArchiveName(safeArchivePath(`Dokumenty/..\\sekret?.pdf`), used)
+	second := uniqueArchiveName(first, used)
+	if strings.ContainsAny(first, `\\?`) || first == second || strings.HasPrefix(first, "/") {
+		t.Fatalf("unsafe or duplicate archive names: %q %q", first, second)
+	}
+}
+
 func TestEmptyListingExplainsPlaceholder(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	Handler{}.renderListing(recorder, channel.Projection{Alias: "acme", Slug: "placeholder"}, visit{Revision: 3}, "v")
+	Handler{}.renderListing(recorder, channel.Projection{Alias: "acme", Slug: "placeholder"}, visit{Revision: 3}, "v", false)
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Ten folder jest jeszcze pusty") || strings.Contains(recorder.Body.String(), `class="columns"`) {
 		t.Fatalf("empty listing status=%d body=%s", recorder.Code, recorder.Body.String())
 	}

@@ -353,10 +353,14 @@ Każda zmiana wymaga potwierdzenia i natychmiast regeneruje `data-authz` oraz
 **Udostępnienia publiczne** są akcją wyłącznie właściciela repozytorium. Okno
 pokazuje aktywne i cofnięte kanały oraz ich adres, źródło, odbiorców, ochronę
 hasłem i politykę rewizji. Kanał można utworzyć, edytować, cofnąć lub usunąć.
-Przy create/update użytkownik wybiera niepusty podfolder lokalnej kopii
-roboczej; GUI rekurencyjnie buduje mapę maksymalnie 4096 zwykłych plików,
-pomija `.svn`, odrzuca symlinki i zachowuje stabilne `public_id` dla ścieżek
-już obecnych w edytowanym kanale. Kanał zamknięty używa osobnych tokenów dla
+Przy create/update użytkownik wybiera root albo podfolder lokalnej kopii
+roboczej; GUI rekurencyjnie buduje mapę maksymalnie 4096 zwykłych plików wraz
+z ich rozmiarami, pomija `.svn` i `.filees`, odrzuca symlinki i zachowuje
+stabilne `public_id` dla ścieżek już obecnych w edytowanym kanale. Pusty folder
+jest legalnym placeholderem; późniejsze pliki wymagają jawnej aktualizacji
+kanału. Publiczna strona buduje wyłącznie z bezpiecznej projekcji mapy
+zwijane drzewo w stylu widoku „Szczegóły”: nazwa, typ, rozmiar i pobranie.
+Nie używa JavaScriptu ani miniaturek. Kanał zamknięty używa osobnych tokenów dla
 adresów e-mail; kanał otwarty może być bez hasła albo z hasłem Argon2id.
 Plaintext jest hashowany przed IPC control-plane i nigdy nie trafia do ticketu
 SVN. Edycja może zachować istniejący verifier po stronie serwera bez odsyłania

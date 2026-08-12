@@ -120,6 +120,7 @@ type RealmGrantManager interface {
 
 type PublicShareObject struct {
 	PublicID, RepoPath, DisplayName string
+	Size                            *int64
 }
 
 type PublicShareSummary struct {
@@ -1398,6 +1399,10 @@ func publicShareObjects(repoRoot, selected string, current *PublicShareSummary) 
 		if !entry.Type().IsRegular() {
 			return nil
 		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
 		repoPath, relErr := filepath.Rel(repoRoot, path)
 		if relErr != nil {
 			return relErr
@@ -1407,7 +1412,8 @@ func publicShareObjects(repoRoot, selected string, current *PublicShareSummary) 
 			return relErr
 		}
 		repoPath, displayName = filepath.ToSlash(repoPath), filepath.ToSlash(displayName)
-		objects = append(objects, PublicShareObject{PublicID: knownIDs[repoPath], RepoPath: repoPath, DisplayName: displayName})
+		size := info.Size()
+		objects = append(objects, PublicShareObject{PublicID: knownIDs[repoPath], RepoPath: repoPath, DisplayName: displayName, Size: &size})
 		if len(objects) > 4096 {
 			return errors.New("folder zawiera więcej niż 4096 plików")
 		}

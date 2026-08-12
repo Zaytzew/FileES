@@ -37,7 +37,7 @@ func (s ChannelPublicShareService) List(_ context.Context, ownerRealm, repoID st
 		}
 		objects := make([]control.PublicShareObject, 0, len(record.Manifest.Objects))
 		for _, object := range record.Manifest.Objects {
-			objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+			objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 		}
 		result = append(result, control.PublicShareSummary{
 			ChannelID: record.ChannelID, RepoID: record.RepoID, Alias: record.Alias, Slug: record.Slug, State: record.State,
@@ -126,7 +126,7 @@ func (s ChannelPublicShareService) Delete(_ context.Context, ownerRealm, channel
 func toShare(ownerRealm string, declaration control.PublicShareDeclaration) manifest.Share {
 	objects := make([]manifest.Object, 0, len(declaration.Objects))
 	for _, object := range declaration.Objects {
-		objects = append(objects, manifest.Object{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+		objects = append(objects, manifest.Object{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 	}
 	return manifest.Share{OwnerRealm: ownerRealm, RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: declaration.Recipients, Password: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
 }

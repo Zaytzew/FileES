@@ -326,6 +326,19 @@ func TestPublicShareTicketAcceptsRepositoryRootAndEmptyPlaceholder(t *testing.T)
 	}
 }
 
+func TestPublicShareTicketAcceptsZeroSizeAndRejectsNegativeSize(t *testing.T) {
+	zero := int64(0)
+	declaration := PublicShareDeclaration{RepoID: uuid.NewString(), SourceRoot: ".", Slug: "pusty-plik", Objects: []PublicShareObject{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "empty.txt", DisplayName: "empty.txt", Size: &zero}}}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: declaration}, time.Now()); err != nil {
+		t.Fatalf("zero-byte object rejected: %v", err)
+	}
+	negative := int64(-1)
+	declaration.Objects[0].Size = &negative
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: declaration}, time.Now()); err == nil {
+		t.Fatal("negative object size accepted")
+	}
+}
+
 func TestPublicShareTicketRejectsNonCanonicalRepoIDAndUnboundedPassword(t *testing.T) {
 	declaration := PublicShareDeclaration{RepoID: strings.ToUpper(uuid.NewString()), SourceRoot: "wydanie", Slug: "przetarg-2026", Objects: []PublicShareObject{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt.pdf"}}}
 	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: declaration}, time.Now()); err == nil {

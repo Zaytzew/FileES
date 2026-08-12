@@ -49,6 +49,7 @@ type Object struct {
 	PublicID    string `json:"public_id"`
 	RepoPath    string `json:"repo_path"`
 	DisplayName string `json:"display_name"`
+	Size        *int64 `json:"size,omitempty"`
 }
 
 // Share is the declaration of intent to hand data out.
@@ -178,6 +179,9 @@ func (s Share) Validate() error {
 		}
 		if err := validDisplayName(i, obj.DisplayName); err != nil {
 			return err
+		}
+		if obj.Size != nil && *obj.Size < 0 {
+			return fmt.Errorf("object_map[%d].size: negative", i)
 		}
 	}
 	return nil

@@ -36,11 +36,12 @@ func TestPublicShareDeclarationHashesPasswordBeforeContractAndGeneratesOpaqueID(
 
 func TestPublicShareDeclarationPreservesExistingOpaqueID(t *testing.T) {
 	const publicID = "1234567890abcdef1234567890abcdef"
-	remote, err := publicShareDeclarationToContract(actions.PublicShareDeclaration{Objects: []actions.PublicShareObject{{PublicID: publicID, RepoPath: "public/a.txt", DisplayName: "a.txt"}}})
+	size := int64(0)
+	remote, err := publicShareDeclarationToContract(actions.PublicShareDeclaration{Objects: []actions.PublicShareObject{{PublicID: publicID, RepoPath: "public/a.txt", DisplayName: "a.txt", Size: &size}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if remote.Objects[0].PublicID != publicID {
-		t.Fatalf("public id=%q", remote.Objects[0].PublicID)
+	if remote.Objects[0].PublicID != publicID || remote.Objects[0].Size == nil || *remote.Objects[0].Size != 0 {
+		t.Fatalf("object=%+v", remote.Objects[0])
 	}
 }

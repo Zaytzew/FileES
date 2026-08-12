@@ -74,6 +74,7 @@ type Record struct {
 type PublicObject struct {
 	PublicID    string `json:"public_id"`
 	DisplayName string `json:"display_name"`
+	Size        *int64 `json:"size,omitempty"`
 }
 
 type PublicRecipient struct {
@@ -487,7 +488,7 @@ func project(record Record) (Projection, error) {
 		p.Recipients = append(p.Recipients, PublicRecipient{Email: recipient.Email, TokenHash: recipient.TokenHash})
 	}
 	for _, object := range record.Manifest.Objects {
-		p.Objects = append(p.Objects, PublicObject{PublicID: object.PublicID, DisplayName: object.DisplayName})
+		p.Objects = append(p.Objects, PublicObject{PublicID: object.PublicID, DisplayName: object.DisplayName, Size: object.Size})
 	}
 	return p, p.Validate()
 }
@@ -518,6 +519,9 @@ func (p Projection) Validate() error {
 	for _, object := range p.Objects {
 		if seen[object.PublicID] || len(object.PublicID) < 16 || len(object.PublicID) > 64 || strings.TrimSpace(object.DisplayName) == "" || len(object.DisplayName) > 512 || strings.ContainsAny(object.DisplayName, "\x00\r\n") {
 			return errors.New("public share projection object map is invalid")
+		}
+		if object.Size != nil && *object.Size < 0 {
+			return errors.New("public share projection object size is invalid")
 		}
 		for _, character := range object.PublicID {
 			if (character < 'a' || character > 'z') && (character < '0' || character > '9') {

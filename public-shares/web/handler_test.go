@@ -214,3 +214,62 @@ func TestFetchCoordinatorCoalescesOneOpaqueLeaf(t *testing.T) {
 		t.Fatalf("backend fetch calls=%d, want 1", got)
 	}
 }
+
+func TestListingBuildsEscapedExplorerTreeWithOptionalSizes(t *testing.T) {
+	size := int64(1536)
+	projection := channel.Projection{
+		Alias: "acme", Slug: "rysunki", Objects: []channel.PublicObject{
+			{PublicID: "1234567890abcdef", DisplayName: "Branża/Rysunki/<script>.pdf", Size: &size},
+			{PublicID: "fedcba0987654321", DisplayName: "README", Size: nil},
+		},
+	}
+	recorder := httptest.NewRecorder()
+	securityHeaders(recorder)
+	Handler{}.renderListing(recorder, projection, visit{Revision: 17}, "visit-token")
+	body := recorder.Body.String()
+	for _, expected := range []string{`class="directory"`, "Branża", "Rysunki", "&lt;script&gt;.pdf", "Dokument PDF", "1.5 KB", "README", ">—<", "/acme/rysunki/get/1234567890abcdef?v=visit-token"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("listing lacks %q:\n%s", expected, body)
+		}
+	}
+	if strings.Contains(body, "<script>") || strings.Contains(body, "<script src") {
+		t.Fatalf("display name was not escaped:\n%s", body)
+	}
+	csp := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "style-src 'sha256-"+listingCSSHash+"'") || strings.Contains(csp, "unsafe-inline") {
+		t.Fatalf("listing CSP does not bind the embedded stylesheet: %s", csp)
+	}
+}
+
+func TestListingTreeSortsDirectoriesAndFiles(t *testing.T) {
+	projection := channel.Projection{Alias: "acme", Slug: "sort", Objects: []channel.PublicObject{
+		{PublicID: "1111111111111111", DisplayName: "zeta/z.txt"},
+		{PublicID: "2222222222222222", DisplayName: "Alfa/b.txt"},
+		{PublicID: "3333333333333333", DisplayName: "Alfa/A.txt"},
+		{PublicID: "4444444444444444", DisplayName: "Alfa/Rysunek 10.pdf"},
+		{PublicID: "5555555555555555", DisplayName: "Alfa/Rysunek 2.pdf"},
+	}}
+	tree := buildListingTree(projection, "v")
+	if len(tree.Directories) != 2 || tree.Directories[0].Name != "Alfa" || tree.Directories[1].Name != "zeta" {
+		t.Fatalf("directories=%+v", tree.Directories)
+	}
+	if len(tree.Directories[0].Files) != 4 || tree.Directories[0].Files[0].Name != "A.txt" || tree.Directories[0].Files[1].Name != "b.txt" || tree.Directories[0].Files[2].Name != "Rysunek 2.pdf" || tree.Directories[0].Files[3].Name != "Rysunek 10.pdf" {
+		t.Fatalf("files=%+v", tree.Directories[0].Files)
+	}
+}
+
+func TestEmptyListingExplainsPlaceholder(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	Handler{}.renderListing(recorder, channel.Projection{Alias: "acme", Slug: "placeholder"}, visit{Revision: 3}, "v")
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Ten folder jest jeszcze pusty") || strings.Contains(recorder.Body.String(), `class="columns"`) {
+		t.Fatalf("empty listing status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestListingCountUsesPolishPluralForm(t *testing.T) {
+	for count, want := range map[int]string{0: "0 plików", 1: "1 plik", 2: "2 pliki", 5: "5 plików", 12: "12 plików", 22: "22 pliki"} {
+		if got := formatListingCount(count); got != want {
+			t.Errorf("count %d = %q, want %q", count, got, want)
+		}
+	}
+}

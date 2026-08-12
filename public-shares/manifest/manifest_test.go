@@ -216,6 +216,20 @@ func TestShareRejectsControlCharsInDisplayName(t *testing.T) {
 	}
 }
 
+func TestShareAcceptsExactZeroSizeAndRejectsNegativeSize(t *testing.T) {
+	s := validShare()
+	zero := int64(0)
+	s.Objects[0].Size = &zero
+	if err := s.Validate(); err != nil {
+		t.Fatalf("zero-byte file rejected: %v", err)
+	}
+	negative := int64(-1)
+	s.Objects[0].Size = &negative
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "size") {
+		t.Fatalf("negative size error=%v", err)
+	}
+}
+
 func TestRecipientsMustBeAddresses(t *testing.T) {
 	for _, addr := range []string{
 		"",

@@ -251,7 +251,7 @@ func (s *realmAliasService) publicShareExchange(ctx context.Context, serverID st
 func publicShareDeclarationToControl(declaration contract.PublicShareDeclaration) control.PublicShareDeclaration {
 	objects := make([]control.PublicShareObject, 0, len(declaration.Objects))
 	for _, object := range declaration.Objects {
-		objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+		objects = append(objects, control.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 	}
 	return control.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
 }
@@ -259,7 +259,7 @@ func publicShareDeclarationToControl(declaration contract.PublicShareDeclaration
 func publicShareSummaryFromControl(share control.PublicShareSummary) contract.PublicShareSummary {
 	objects := make([]contract.PublicShareObject, 0, len(share.Objects))
 	for _, object := range share.Objects {
-		objects = append(objects, contract.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName})
+		objects = append(objects, contract.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
 	}
 	return contract.PublicShareSummary{ChannelID: share.ChannelID, RepoID: share.RepoID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow, Objects: objects, UpdatedAt: share.UpdatedAt}
 }

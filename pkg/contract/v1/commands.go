@@ -462,6 +462,7 @@ type PublicShareObject struct {
 	PublicID    string `json:"public_id"`
 	RepoPath    string `json:"repo_path"`
 	DisplayName string `json:"display_name"`
+	Size        *int64 `json:"size,omitempty"`
 }
 
 type PublicShareDeclaration struct {

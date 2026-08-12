@@ -81,8 +81,9 @@ autoryzuje ponownie na podstawie uwierzytelnionej sesji.
 
 Wygląd listingów jest dziedziczony z jednego kanonicznego rekordu realmu, a
 nie kopiowany do kanałów. Owner ustawia dokładnie dwie wartości: kolor wiodący
-`#RRGGBB` i opcjonalne logo PNG/JPEG. Logo ma limit 32 KiB i 2048 px, jest
-dekodowane i sprawdzane przed zapisem, a na stronie używa `object-fit: contain`.
+`#RRGGBB` i opcjonalne logo PNG/JPEG. GUI przyjmuje źródło do 16 MiB i
+proporcjonalnie przygotowuje wariant webowy do 32 KiB; wynik jest dekodowany i
+sprawdzany przed zapisem, a na stronie używa `object-fit: contain`.
 Nie ma powierzchni dla własnego CSS, fontów, URL-i ani SVG. Zmiana obowiązuje
 od razu we wszystkich istniejących i przyszłych udziałach realmu.
 

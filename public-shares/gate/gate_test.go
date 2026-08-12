@@ -2,7 +2,6 @@ package gate
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"filees/public-shares/channel"
@@ -29,17 +28,15 @@ func TestOpenChannelPassword(t *testing.T) {
 	}
 }
 
-func TestClosedChannelUsesOnlyRecipientToken(t *testing.T) {
+func TestClosedChannelCannotUseInvitationAsBearer(t *testing.T) {
 	p := openProjection()
-	token := strings.Repeat("t", 43)
 	p.PasswordHash = ""
-	p.Recipients = []channel.PublicRecipient{{Email: "a@example.com", TokenHash: TokenHash(token)}}
+	p.Recipients = []channel.PublicRecipient{{InvitationHash: TokenHash("invitation")}}
 	if _, err := Authorize(p, "wrong", ""); err == nil {
-		t.Fatal("wrong recipient token accepted")
+		t.Fatal("wrong invitation accepted")
 	}
-	principal, err := Authorize(p, token, "ignored")
-	if err != nil || principal.Recipient != "a@example.com" {
-		t.Fatalf("valid token = %+v, %v", principal, err)
+	if _, err := Authorize(p, "invitation", "ignored"); err == nil {
+		t.Fatal("invitation became a bearer credential")
 	}
 }
 

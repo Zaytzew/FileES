@@ -256,8 +256,9 @@ Tworzenie albo edycja kanału wymaga podłączonej lokalnej kopii roboczej:
 2. Dla nowego kanału wpisz końcówkę adresu (`slug`): 3–64 małe litery, cyfry
    lub pojedyncze myślniki.
 3. Opcjonalnie wpisz adresy e-mail oddzielone przecinkami lub średnikami.
-   Taki kanał jest zamknięty i każdy odbiorca dostaje osobny token. Puste pole
-   tworzy kanał otwarty.
+   Taki kanał jest zamknięty i każdy odbiorca dostaje osobne zaproszenie. Link
+   otwiera neutralną bramkę; po użyciu **Wyślij kod** odbiorca dostaje na tę
+   skrzynkę ośmiocyfrowy OTP ważny pięć minut. Puste pole tworzy kanał otwarty.
 4. Kanał otwarty może dostać wspólne hasło (co najmniej 8 znaków). Hasło jest
    hashowane lokalnie; plaintext nie trafia do serwera ani dziennika. Przy
    edycji można zachować dotychczasowe hasło bez ponownego wpisywania.
@@ -271,6 +272,16 @@ folder albo cały udział jako ZIP. Publiczna strona używa identyfikacji
 razie miniaturek zdjęć. Kanały utworzone przez starszego klienta pozostają
 zgodne, ale mogą pokazywać kreskę zamiast nieznanego rozmiaru do czasu ich
 edycji.
+
+FileES nie zapisuje cookies ani danych przeglądarki. Po poprawnym OTP adres
+otwartego listingu jest przenośnym kluczem tylko do końca tego samego
+pięciominutowego okna. Po wygaśnięciu skopiowany adres ponownie pokazuje bramkę
+OTP; ponowne kliknięcie wysyłki w aktywnym oknie nie wydłuża TTL ani nie zmienia
+kodu.
+
+Nieprawidłowy, wygasły, cofnięty albo usunięty adres zawsze pokazuje tę samą
+obrandowaną stronę „Przestrzeń niedostępna” z kodem HTTP 404. FileES nie
+ujawnia na niej nazwy realmu, udziału ani przyczyny niedostępności.
 
 **Cofnij** natychmiast przestaje wydawać pliki, ale zachowuje rekord i adres.
 **Usuń** usuwa politykę kanału; adres pozostaje zarezerwowany jako tombstone i

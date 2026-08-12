@@ -1190,7 +1190,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać udostępnień", Body: err.Error(), Urgency: platform.UrgencyCritical})
 				return
 			}
-			request := platform.PublicShareDialogRequest{Title: "Udostępnienia publiczne — „" + repo.DisplayName + "”", Text: "Kanał otwarty może być chroniony hasłem; kanał zamknięty wysyła osobne tokeny wskazanym odbiorcom."}
+			request := platform.PublicShareDialogRequest{Title: "Udostępnienia publiczne — „" + repo.DisplayName + "”", Text: "Kanał otwarty może być chroniony hasłem; kanał zamknięty wysyła odbiorcom osobne zaproszenia i pięciominutowe kody OTP."}
 			known := make(map[string]PublicShareSummary, len(shares))
 			for _, share := range shares {
 				known[share.ChannelID] = share

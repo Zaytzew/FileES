@@ -19,6 +19,7 @@ import (
 	"filees/public-shares/backchannel"
 	"filees/public-shares/cache"
 	"filees/public-shares/channel"
+	"filees/public-shares/recipientotp"
 	"filees/public-shares/web"
 	"github.com/google/uuid"
 )
@@ -94,7 +95,8 @@ func TestPublicSharesDestructiveE2E(t *testing.T) {
 		t.Fatalf("rw guest published owner data: %+v", guestResult)
 	}
 
-	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: f.repositoriesRoot}, FrostKey: []byte(strings.Repeat("f", 32)), StagingRoot: filepath.Join(f.root, "authority-staging"), MaxLeafSize: 1 << 20}
+	otp := &recipientotp.Service{Root: filepath.Join(stateRoot, "recipient-otp"), Key: []byte(strings.Repeat("o", 32)), Channels: channels, Outbox: outbox, Now: func() time.Time { return f.now }}
+	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: f.repositoriesRoot}, FrostKey: []byte(strings.Repeat("f", 32)), StagingRoot: filepath.Join(f.root, "authority-staging"), MaxLeafSize: 1 << 20, RecipientOTP: otp}
 	backServer := backchannel.Server{Authority: resolver}
 	backClient := backchannel.Client{BaseURL: "http://authority", HTTP: &http.Client{Transport: e2eHandlerTransport{handler: backServer}}}
 	handler := web.Handler{Backend: backClient, Cache: &cache.Store{Config: cache.Config{Root: filepath.Join(f.root, "cache"), TTL: 12 * time.Hour, MaxSize: 1 << 20}}, VisitKey: []byte(strings.Repeat("v", 32)), Now: func() time.Time { return f.now }}
@@ -117,14 +119,24 @@ func TestPublicSharesDestructiveE2E(t *testing.T) {
 	if err != nil || !ok || job.ChannelID != closedID {
 		t.Fatalf("closed token job=%+v %v %v", job, ok, err)
 	}
-	if err := outbox.MarkFailed(job.MessageID, job.AttemptID); err != nil {
+	if err := outbox.MarkSent(job.MessageID, job.AttemptID); err != nil {
 		t.Fatal(err)
 	}
-	wrong := e2eRequest(handler, http.MethodGet, "/atmprojekt/zamkniety-przetarg?token=wrong", nil)
-	if wrong.Code != http.StatusNotFound {
-		t.Fatalf("wrong closed token=%d", wrong.Code)
+	wrong := e2eRequest(handler, http.MethodGet, "/atmprojekt/zamkniety-przetarg?invite=wrong", nil)
+	if wrong.Code != http.StatusOK {
+		t.Fatalf("neutral closed invitation=%d", wrong.Code)
 	}
-	closedVisit := e2eVisit(t, handler, "/atmprojekt/zamkniety-przetarg?token="+url.QueryEscape(job.Token))
+	invitationURL := "/atmprojekt/zamkniety-przetarg?invite=" + url.QueryEscape(job.Invitation)
+	requested := e2eForm(handler, invitationURL, "action=send")
+	if requested.Code != http.StatusOK {
+		t.Fatalf("OTP request=%d %s", requested.Code, requested.Body.String())
+	}
+	otpJob, ok, err := outbox.Claim(f.now, time.Minute)
+	if err != nil || !ok || otpJob.Kind != repoworker.PublicShareMailOTP || otpJob.Code == "" {
+		t.Fatalf("OTP job=%+v %v %v", otpJob, ok, err)
+	}
+	verified := e2eForm(handler, invitationURL, "action=verify&code="+otpJob.Code)
+	closedVisit := e2eRedirectVisit(t, verified)
 	closedGet := e2eRequest(handler, http.MethodGet, "/atmprojekt/zamkniety-przetarg/get/7f3a1c9e2b4d6a80?v="+url.QueryEscape(closedVisit), nil)
 	if closedGet.Code != http.StatusSeeOther {
 		t.Fatalf("closed prepare=%d", closedGet.Code)
@@ -166,8 +178,13 @@ func e2eRequest(handler http.Handler, method, target string, headers map[string]
 func e2eVisit(t *testing.T, handler http.Handler, target string) string {
 	t.Helper()
 	response := e2eRequest(handler, http.MethodGet, target, nil)
+	return e2eRedirectVisit(t, response)
+}
+
+func e2eRedirectVisit(t *testing.T, response *httptest.ResponseRecorder) string {
+	t.Helper()
 	if response.Code != http.StatusSeeOther {
-		t.Fatalf("entry %s=%d %s", target, response.Code, response.Body.String())
+		t.Fatalf("entry=%d %s", response.Code, response.Body.String())
 	}
 	location, err := url.Parse(response.Header().Get("Location"))
 	if err != nil {
@@ -178,6 +195,14 @@ func e2eVisit(t *testing.T, handler http.Handler, target string) string {
 		t.Fatalf("entry has no visit: %s", location)
 	}
 	return visit
+}
+
+func e2eForm(handler http.Handler, target, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, "https://get.example.test"+target, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
 }
 
 func youngestRevision(t *testing.T, svnlook, repository string) int64 {

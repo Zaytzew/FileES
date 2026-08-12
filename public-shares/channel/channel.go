@@ -30,7 +30,7 @@ import (
 
 const (
 	RecordSchema     = "filees.public-share-channel/v1"
-	ProjectionSchema = "filees.public-share-projection/v1"
+	ProjectionSchema = "filees.public-share-projection/v2"
 	SlugSchema       = "filees.public-share-slug/v1"
 	StateActive      = "active"
 	StateRevoked     = "revoked"
@@ -46,9 +46,10 @@ var (
 	ErrPolicy         = errors.New("public share request exceeds host policy")
 )
 
-// RecipientCredential is canonical ACL state. TokenHash is a SHA-256 digest
-// of a high-entropy token, never the token itself. Epoch makes a removed and
-// later re-added mailbox receive a different token.
+// RecipientCredential is canonical ACL state. TokenHash is the SHA-256 digest
+// of a high-entropy invitation, never the invitation itself. The invitation
+// identifies the mailbox for OTP delivery but does not authorize a visit.
+// Epoch makes a removed and later re-added mailbox receive a new invitation.
 type RecipientCredential struct {
 	Email     string `json:"email"`
 	TokenHash string `json:"token_sha256"`
@@ -79,8 +80,7 @@ type PublicObject struct {
 }
 
 type PublicRecipient struct {
-	Email     string `json:"email"`
-	TokenHash string `json:"token_sha256"`
+	InvitationHash string `json:"invitation_sha256"`
 }
 
 // Projection is all policy the public service may know. OwnerRealm, RepoID,
@@ -492,7 +492,7 @@ func project(record Record, branding realmbranding.Branding) (Projection, error)
 	}
 	p := Projection{Schema: ProjectionSchema, ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, State: record.State, PasswordHash: record.Manifest.Password, DoNotFollow: record.Manifest.DoNotFollow, Branding: branding, UpdatedAt: record.UpdatedAt}
 	for _, recipient := range record.Recipients {
-		p.Recipients = append(p.Recipients, PublicRecipient{Email: recipient.Email, TokenHash: recipient.TokenHash})
+		p.Recipients = append(p.Recipients, PublicRecipient{InvitationHash: recipient.TokenHash})
 	}
 	for _, object := range record.Manifest.Objects {
 		p.Objects = append(p.Objects, PublicObject{PublicID: object.PublicID, DisplayName: object.DisplayName, Size: object.Size})
@@ -543,15 +543,13 @@ func (p Projection) Validate() error {
 	}
 	seenRecipients := map[string]bool{}
 	for _, recipient := range p.Recipients {
-		email := canonicalEmail(recipient.Email)
-		at := strings.LastIndexByte(email, '@')
-		if recipient.Email != email || len(email) > 254 || at <= 0 || at == len(email)-1 || strings.Count(email, "@") != 1 || strings.ContainsAny(email, "<>\r\n\t ,;") || seenRecipients[email] || len(recipient.TokenHash) != sha256.Size*2 {
+		if seenRecipients[recipient.InvitationHash] || len(recipient.InvitationHash) != sha256.Size*2 {
 			return errors.New("public share projection recipient is invalid")
 		}
-		if _, err := hex.DecodeString(recipient.TokenHash); err != nil {
+		if _, err := hex.DecodeString(recipient.InvitationHash); err != nil {
 			return errors.New("public share projection recipient hash is invalid")
 		}
-		seenRecipients[email] = true
+		seenRecipients[recipient.InvitationHash] = true
 	}
 	return nil
 }

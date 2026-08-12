@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"os/signal"
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"filees/internal/obsandbox"
@@ -18,20 +22,24 @@ import (
 	"filees/public-shares/authority"
 	"filees/public-shares/backchannel"
 	"filees/public-shares/channel"
+	"filees/public-shares/recipientotp"
 )
 
-const authoritySandboxPromises = "stdio rpath wpath cpath fattr proc exec prot_exec unix inet"
+const authoritySandboxPromises = "stdio rpath wpath cpath fattr flock proc exec prot_exec unix inet"
+const publicMailerPath = "/usr/local/libexec/filees/filees-mail"
 
 func main() {
 	configPath := flag.String("config", "/etc/filees/server.json", "FileES server configuration")
 	flag.Parse()
-	if err := run(*configPath); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, *configPath); err != nil {
 		fmt.Fprintln(os.Stderr, "filees-public-authority:", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath string) error {
+func run(ctx context.Context, configPath string) error {
 	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretPublicShares)
 	if err != nil {
 		return err
@@ -53,12 +61,23 @@ func run(configPath string) error {
 	if err := os.MkdirAll(stagingRoot, 0700); err != nil {
 		return err
 	}
+	mailer, mailerDone, err := startPublicMailer(configPath)
+	if err != nil {
+		return err
+	}
+	mailerWaited := false
+	defer func() {
+		if !mailerWaited {
+			_ = mailer.Process.Kill()
+			<-mailerDone
+		}
+	}()
 	svnlook := r.EffectiveSVNLookBinary()
 	if !filepath.IsAbs(svnlook) {
 		return errors.New("svnlook path must be absolute")
 	}
 	paths := []obsandbox.Path{
-		{Label: "public-share-state", Name: stateRoot, Perms: "r"},
+		{Label: "public-share-state", Name: stateRoot, Perms: "rwc"},
 		{Label: "service-working-copy", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},
 		{Label: "repositories", Name: r.Root, Perms: "r"},
 		{Label: "authority-staging", Name: stagingRoot, Perms: "rwc"},
@@ -77,9 +96,45 @@ func run(configPath string) error {
 	}
 	publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy}
 	channels := &channel.Store{Root: stateRoot, Authority: publisher}
-	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: r.Root}, FrostKey: config.PublicShareFrostKey, StagingRoot: stagingRoot, MaxLeafSize: config.PublicShares.EffectiveMaxLeafSize()}
+	otp := &recipientotp.Service{
+		Root: filepath.Join(stateRoot, "recipient-otp"), Key: config.PublicShareFrostKey, Channels: channels,
+		Outbox: repoworker.PublicShareOutbox{Root: filepath.Join(stateRoot, "outbox")},
+	}
+	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: r.Root}, FrostKey: config.PublicShareFrostKey, StagingRoot: stagingRoot, MaxLeafSize: config.PublicShares.EffectiveMaxLeafSize(), RecipientOTP: otp}
 	server := &http.Server{Handler: backchannel.Server{Authority: resolver, FetchSlots: make(chan struct{}, 2)}, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 0, IdleTimeout: 30 * time.Second}
-	return server.Serve(listener)
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+	select {
+	case <-ctx.Done():
+		_ = server.Close()
+		_ = mailer.Process.Kill()
+		<-mailerDone
+		mailerWaited = true
+		return nil
+	case err := <-serveDone:
+		_ = mailer.Process.Kill()
+		<-mailerDone
+		mailerWaited = true
+		return err
+	case err := <-mailerDone:
+		mailerWaited = true
+		_ = server.Close()
+		if err == nil {
+			err = errors.New("public share mailer stopped")
+		}
+		return fmt.Errorf("public share mailer: %w", err)
+	}
+}
+
+func startPublicMailer(configPath string) (*exec.Cmd, <-chan error, error) {
+	command := exec.Command(publicMailerPath, "-config", configPath, "public-loop")
+	command.Stdout, command.Stderr = os.Stdout, os.Stderr
+	if err := command.Start(); err != nil {
+		return nil, nil, fmt.Errorf("start public share mailer: %w", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	return command, done, nil
 }
 
 func listen(config serverconfig.PublicSharesFile) (net.Listener, func(), error) {

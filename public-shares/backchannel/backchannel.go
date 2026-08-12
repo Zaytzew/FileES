@@ -7,6 +7,7 @@ package backchannel
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 
 	"filees/public-shares/authority"
 	"filees/public-shares/channel"
+	"filees/public-shares/recipientotp"
 )
 
 const Protocol = "filees.public-share-backchannel/v1"
@@ -29,6 +31,8 @@ type Authority interface {
 	Inspect(string, string) (channel.Projection, error)
 	Check(context.Context, authority.ObjectRequest) (authority.ObjectPermit, error)
 	Fetch(context.Context, authority.ObjectRequest) (authority.FetchedLeaf, error)
+	RequestRecipientOTP(context.Context, recipientotp.Request) error
+	VerifyRecipientOTP(context.Context, recipientotp.VerifyRequest) (recipientotp.Grant, error)
 }
 
 type addressRequest struct {
@@ -40,6 +44,16 @@ type addressRequest struct {
 type objectRequest struct {
 	Protocol string                  `json:"protocol"`
 	Object   authority.ObjectRequest `json:"object"`
+}
+
+type recipientRequest struct {
+	Protocol string               `json:"protocol"`
+	Request  recipientotp.Request `json:"request"`
+}
+
+type recipientVerifyRequest struct {
+	Protocol string                     `json:"protocol"`
+	Request  recipientotp.VerifyRequest `json:"request"`
 }
 
 type Server struct {
@@ -85,6 +99,25 @@ func (s Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		result, err := s.Authority.Check(request.Context(), input.Object)
+		if err != nil {
+			notFound(w)
+			return
+		}
+		writeJSON(w, result)
+	case "/v1/recipient/request":
+		var input recipientRequest
+		if decode(request, &input) != nil || input.Protocol != Protocol || s.Authority.RequestRecipientOTP(request.Context(), input.Request) != nil {
+			notFound(w)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "accepted"})
+	case "/v1/recipient/verify":
+		var input recipientVerifyRequest
+		if decode(request, &input) != nil || input.Protocol != Protocol {
+			notFound(w)
+			return
+		}
+		result, err := s.Authority.VerifyRecipientOTP(request.Context(), input.Request)
 		if err != nil {
 			notFound(w)
 			return
@@ -152,6 +185,30 @@ func (c Client) Check(ctx context.Context, object authority.ObjectRequest) (auth
 	err := c.callJSON(ctx, "/v1/check", objectRequest{Protocol: Protocol, Object: object}, &result)
 	if err == nil && !validPermit(result, object.Revision) {
 		err = errors.New("public share backchannel permit is invalid")
+	}
+	return result, err
+}
+
+func (c Client) RequestRecipientOTP(ctx context.Context, request recipientotp.Request) error {
+	var result struct {
+		Status string `json:"status"`
+	}
+	err := c.callJSON(ctx, "/v1/recipient/request", recipientRequest{Protocol: Protocol, Request: request}, &result)
+	if err == nil && result.Status != "accepted" {
+		err = errors.New("public share recipient OTP response is invalid")
+	}
+	return err
+}
+
+func (c Client) VerifyRecipientOTP(ctx context.Context, request recipientotp.VerifyRequest) (recipientotp.Grant, error) {
+	var result recipientotp.Grant
+	err := c.callJSON(ctx, "/v1/recipient/verify", recipientVerifyRequest{Protocol: Protocol, Request: request}, &result)
+	if err == nil {
+		if len(result.InvitationHash) != sha256.Size*2 || result.Epoch == "" || result.ExpiresAt.IsZero() {
+			err = errors.New("public share recipient OTP grant is invalid")
+		} else if _, decodeErr := hex.DecodeString(result.InvitationHash); decodeErr != nil {
+			err = errors.New("public share recipient OTP grant is invalid")
+		}
 	}
 	return result, err
 }

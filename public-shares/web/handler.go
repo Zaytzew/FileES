@@ -32,6 +32,7 @@ import (
 	"filees/public-shares/cache"
 	"filees/public-shares/channel"
 	"filees/public-shares/gate"
+	"filees/public-shares/recipientotp"
 )
 
 const visitLifetime = 12 * time.Hour
@@ -46,6 +47,8 @@ type Backend interface {
 	Inspect(string, string) (channel.Projection, error)
 	Check(context.Context, authority.ObjectRequest) (authority.ObjectPermit, error)
 	Fetch(context.Context, authority.ObjectRequest) (authority.FetchedLeaf, error)
+	RequestRecipientOTP(context.Context, recipientotp.Request) error
+	VerifyRecipientOTP(context.Context, recipientotp.VerifyRequest) (recipientotp.Grant, error)
 }
 
 type Handler struct {
@@ -115,14 +118,22 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 		h.notFound(w)
 		return
 	}
+	invitation := request.URL.Query().Get("invite")
+	if invitation == "" {
+		invitation = request.URL.Query().Get("token") // links sent before recipient OTP shipped
+	}
 	if encoded := request.URL.Query().Get("v"); encoded != "" {
 		projection, err := h.Backend.Inspect(alias, channelSlug)
 		claims, err2 := h.verifyVisit(encoded, projection)
 		if err != nil || err2 != nil {
+			if err == nil && len(projection.Recipients) > 0 && invitation != "" {
+				h.renderRecipient(w, projection, invitation, false, false)
+				return
+			}
 			h.notFound(w)
 			return
 		}
-		h.renderListing(w, projection, claims, encoded, request.URL.Query().Get("notice") == "select")
+		h.renderListingWithInvitation(w, projection, claims, encoded, invitation, request.URL.Query().Get("notice") == "select")
 		return
 	}
 	entry, err := h.Backend.Enter(request.Context(), alias, channelSlug)
@@ -130,7 +141,10 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 		h.notFound(w)
 		return
 	}
-	token := request.URL.Query().Get("token")
+	if len(entry.Projection.Recipients) > 0 {
+		h.recipientEntry(w, request, entry, invitation)
+		return
+	}
 	password := ""
 	if request.Method == http.MethodPost {
 		request.Body = http.MaxBytesReader(w, request.Body, 8*1024)
@@ -140,7 +154,7 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 		}
 		password = request.PostForm.Get("password")
 	}
-	if request.Method == http.MethodGet && entry.Projection.PasswordHash != "" && token == "" {
+	if request.Method == http.MethodGet && entry.Projection.PasswordHash != "" {
 		h.renderPassword(w, entry.Projection)
 		return
 	}
@@ -153,12 +167,12 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 			return
 		}
 	}
-	principal, err := gate.Authorize(entry.Projection, token, password)
+	principal, err := gate.Authorize(entry.Projection, "", password)
 	if err != nil {
 		h.notFound(w)
 		return
 	}
-	subject := policySubject(entry.Projection, principal, token)
+	subject := policySubject(entry.Projection, principal)
 	claims := visit{Version: 1, ChannelID: entry.Projection.ChannelID, Revision: entry.Revision, FrostProof: entry.FrostProof, Subject: subject, ExpiresAt: h.now().Add(visitLifetime).Unix()}
 	encoded, err := h.signVisit(claims)
 	if err != nil {
@@ -166,6 +180,54 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 		return
 	}
 	http.Redirect(w, request, "/"+url.PathEscape(alias)+"/"+url.PathEscape(channelSlug)+"?v="+url.QueryEscape(encoded), http.StatusSeeOther)
+}
+
+func (h Handler) recipientEntry(w http.ResponseWriter, request *http.Request, entry authority.Entry, invitation string) {
+	if invitation == "" {
+		h.notFound(w)
+		return
+	}
+	if request.Method == http.MethodGet {
+		h.renderRecipient(w, entry.Projection, invitation, false, false)
+		return
+	}
+	request.Body = http.MaxBytesReader(w, request.Body, 8*1024)
+	if err := request.ParseForm(); err != nil {
+		h.notFound(w)
+		return
+	}
+	action := request.PostForm.Get("action")
+	base := recipientotp.Request{Alias: entry.Projection.Alias, Slug: entry.Projection.Slug, Invitation: invitation}
+	if action == "send" {
+		// The same response is rendered for valid and invalid invitations so the
+		// public surface never confirms that a mailbox is on the ACL.
+		_ = h.Backend.RequestRecipientOTP(request.Context(), base)
+		h.renderRecipient(w, entry.Projection, invitation, true, false)
+		return
+	}
+	if action != "verify" {
+		h.notFound(w)
+		return
+	}
+	grant, err := h.Backend.VerifyRecipientOTP(request.Context(), recipientotp.VerifyRequest{Request: base, Code: request.PostForm.Get("code")})
+	digest := gate.TokenHash(invitation)
+	now := h.now()
+	if err != nil || !hmac.Equal([]byte(grant.InvitationHash), []byte(digest)) || grant.Epoch == "" || !grant.ExpiresAt.After(now) || grant.ExpiresAt.After(now.Add(recipientotp.DefaultTTL)) {
+		h.renderRecipient(w, entry.Projection, invitation, true, true)
+		return
+	}
+	claims := visit{
+		Version: 1, ChannelID: entry.Projection.ChannelID, Revision: entry.Revision,
+		FrostProof: entry.FrostProof, Subject: "recipient:" + digest + ":" + grant.Epoch,
+		ExpiresAt: grant.ExpiresAt.Unix(),
+	}
+	encoded, err := h.signVisit(claims)
+	if err != nil {
+		h.notFound(w)
+		return
+	}
+	target := fmt.Sprintf("/%s/%s?invite=%s&v=%s", url.PathEscape(entry.Projection.Alias), url.PathEscape(entry.Projection.Slug), url.QueryEscape(invitation), url.QueryEscape(encoded))
+	http.Redirect(w, request, target, http.StatusSeeOther)
 }
 
 func (h Handler) prepare(w http.ResponseWriter, request *http.Request, alias, channelSlug, publicID string) {
@@ -295,7 +357,7 @@ func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, cha
 	}
 	objects, archiveName, selected := selectBundleObjects(projection, request.PostForm)
 	if !selected {
-		target := fmt.Sprintf("/%s/%s?v=%s&notice=select", url.PathEscape(alias), url.PathEscape(channelSlug), url.QueryEscape(encoded))
+		target := visitURL(fmt.Sprintf("/%s/%s", url.PathEscape(alias), url.PathEscape(channelSlug)), encoded, request.URL.Query().Get("invite")) + "&notice=select"
 		http.Redirect(w, request, target, http.StatusSeeOther)
 		return
 	}
@@ -537,10 +599,7 @@ func (h Handler) verifyVisit(encoded string, projection channel.Projection) (vis
 	return claims, nil
 }
 
-func policySubject(projection channel.Projection, principal gate.Principal, token string) string {
-	if len(projection.Recipients) > 0 {
-		return "recipient:" + gate.TokenHash(token)
-	}
+func policySubject(projection channel.Projection, _ gate.Principal) string {
 	if projection.PasswordHash != "" {
 		digest := sha256.Sum256([]byte(projection.PasswordHash))
 		return "password:" + hex.EncodeToString(digest[:])
@@ -556,10 +615,14 @@ func subjectStillAuthorized(subject string, projection channel.Projection) bool 
 		digest := sha256.Sum256([]byte(projection.PasswordHash))
 		return projection.PasswordHash != "" && hmac.Equal([]byte(strings.TrimPrefix(subject, "password:")), []byte(hex.EncodeToString(digest[:])))
 	case strings.HasPrefix(subject, "recipient:"):
-		want := strings.TrimPrefix(subject, "recipient:")
+		parts := strings.Split(strings.TrimPrefix(subject, "recipient:"), ":")
+		if len(parts) != 2 || parts[1] == "" {
+			return false
+		}
+		want := parts[0]
 		matched := 0
 		for _, recipient := range projection.Recipients {
-			matched |= subtleEqual(want, recipient.TokenHash)
+			matched |= subtleEqual(want, recipient.InvitationHash)
 		}
 		return matched == 1
 	}
@@ -583,6 +646,10 @@ func hasPublicObject(projection channel.Projection, publicID string) bool {
 }
 
 func (h Handler) renderListing(w http.ResponseWriter, projection channel.Projection, claims visit, encoded string, selectionNotice bool) {
+	h.renderListingWithInvitation(w, projection, claims, encoded, "", selectionNotice)
+}
+
+func (h Handler) renderListingWithInvitation(w http.ResponseWriter, projection channel.Projection, claims visit, encoded, invitation string, selectionNotice bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	branding, err := realmbranding.Normalize(projection.Branding)
@@ -606,7 +673,7 @@ func (h Handler) renderListing(w http.ResponseWriter, projection channel.Project
 		CountText:       formatListingCount(len(projection.Objects)),
 		Tree:            buildListingTree(projection, encoded, bundles),
 		Bundles:         bundles,
-		BundleURL:       fmt.Sprintf("/%s/%s/bundle?v=%s", url.PathEscape(projection.Alias), url.PathEscape(projection.Slug), url.QueryEscape(encoded)),
+		BundleURL:       visitURL(fmt.Sprintf("/%s/%s/bundle", url.PathEscape(projection.Alias), url.PathEscape(projection.Slug)), encoded, invitation),
 		SelectionNotice: selectionNotice,
 		BrandSymbol:     brandSymbol,
 		DownloadIcon:    listingIcon("download"),
@@ -867,6 +934,38 @@ func (h Handler) renderPassword(w http.ResponseWriter, projection channel.Projec
 	_ = passwordTemplate.Execute(w, data)
 }
 
+func (h Handler) renderRecipient(w http.ResponseWriter, projection channel.Projection, _ string, codeSent, invalid bool) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	branding, err := realmbranding.Normalize(projection.Branding)
+	if err != nil {
+		branding = realmbranding.Default()
+	}
+	ownerInk := "#0B1D3A"
+	if branding.LeadingColor != realmbranding.DefaultLeadingColor {
+		ownerInk = branding.LeadingColor
+	}
+	css := passwordCSS + recipientCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
+	digest := sha256.Sum256([]byte(css))
+	cssHash := base64.StdEncoding.EncodeToString(digest[:])
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	data := recipientPage{BrandSymbol: brandSymbol, CSS: template.CSS(css), CodeSent: codeSent, Invalid: invalid}
+	if branding.LogoBase64 != "" {
+		data.HasOwnerLogo = true
+		data.OwnerLogo = template.URL("data:" + branding.LogoMediaType + ";base64," + branding.LogoBase64)
+	}
+	_ = recipientTemplate.Execute(w, data)
+}
+
+type recipientPage struct {
+	BrandSymbol  template.HTML
+	CSS          template.CSS
+	OwnerLogo    template.URL
+	HasOwnerLogo bool
+	CodeSent     bool
+	Invalid      bool
+}
+
 type passwordPage struct {
 	BrandSymbol  template.HTML
 	CSS          template.CSS
@@ -894,6 +993,14 @@ func (h Handler) redirectFile(w http.ResponseWriter, request *http.Request, alia
 	http.Redirect(w, request, target, http.StatusSeeOther)
 }
 
+func visitURL(base, encoded, invitation string) string {
+	query := url.Values{"v": []string{encoded}}
+	if invitation != "" {
+		query.Set("invite", invitation)
+	}
+	return base + "?" + query.Encode()
+}
+
 func routeParts(u *url.URL) ([]string, bool) {
 	escaped := strings.Trim(u.EscapedPath(), "/")
 	if escaped == "" {
@@ -918,7 +1025,18 @@ func securityHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Frame-Options", "DENY")
 }
 
-func (h Handler) notFound(w http.ResponseWriter) { http.Error(w, "not found", http.StatusNotFound) }
+func (h Handler) notFound(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	digest := sha256.Sum256([]byte(notFoundCSS))
+	cssHash := base64.StdEncoding.EncodeToString(digest[:])
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.WriteHeader(http.StatusNotFound)
+	_ = notFoundTemplate.Execute(w, struct {
+		BrandSymbol template.HTML
+		CSS         template.CSS
+	}{BrandSymbol: brandSymbol, CSS: template.CSS(notFoundCSS)})
+}
 func (h Handler) now() time.Time {
 	if h.Now != nil {
 		return h.Now().UTC()
@@ -1027,6 +1145,62 @@ var passwordTemplate = template.Must(template.New("password").Parse(`<!doctype h
 <section class="card" aria-label="Dostęp">
 <div class="content"><form method="post"><label class="field-label" for="share-password">Hasło</label><div class="password-row"><input class="password-input" id="share-password" type="password" name="password" autocomplete="current-password" required autofocus><button class="submit" type="submit">Otwórz</button></div></form></div>
 {{if .HasOwnerLogo}}<img class="owner-logo" src="{{.OwnerLogo}}" alt="Logo udostępniającego">{{end}}
+</section>
+<footer class="footer">Bezpieczne udostępnienie FileES</footer>
+</main>
+</body>
+</html>`))
+
+const recipientCSS = `.hint{margin:0 0 18px;color:var(--muted);font-size:14px;line-height:1.55}.status{margin:0 0 14px;padding:10px 12px;border-left:4px solid var(--owner-accent);background:var(--soft);color:var(--owner-ink);font-family:var(--mono);font-size:12px}.status.error{border-left-color:#b42318;color:#8a1c13}.resend{margin-top:14px}.resend .submit{min-height:38px;padding:0 14px;color:var(--owner-ink);background:#fff}.code-input{font-family:var(--mono);font-size:19px;letter-spacing:.16em}`
+
+var recipientTemplate = template.Must(template.New("recipient").Parse(`<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dostęp — filees:space</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main class="shell">
+<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">{{.BrandSymbol}}</span><span>filees:space</span></div></header>
+<section class="card" aria-label="Dostęp">
+<div class="content">
+{{if .CodeSent}}
+{{if .Invalid}}<div class="status error" role="alert">Kod jest nieprawidłowy lub wygasł.</div>{{else}}<div class="status" role="status">Jeżeli zaproszenie jest aktywne, kod został wysłany.</div>{{end}}
+<form method="post"><input type="hidden" name="action" value="verify"><label class="field-label" for="share-code">Kod dostępu</label><div class="password-row"><input class="password-input code-input" id="share-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{8}" maxlength="8" required autofocus><button class="submit" type="submit">Otwórz</button></div></form>
+<form class="resend" method="post"><button class="submit" type="submit" name="action" value="send">Wyślij kod ponownie</button></form>
+{{else}}
+<p class="hint">Dostęp wymaga jednorazowego kodu wysłanego na przypisaną skrzynkę.</p>
+<form method="post"><button class="submit" type="submit" name="action" value="send">Wyślij kod</button></form>
+{{end}}
+</div>
+{{if .HasOwnerLogo}}<img class="owner-logo" src="{{.OwnerLogo}}" alt="Logo udostępniającego">{{end}}
+</section>
+<footer class="footer">Bezpieczne udostępnienie FileES</footer>
+</main>
+</body>
+</html>`))
+
+const notFoundCSS = `:root{color-scheme:light;--paper:#fff;--soft:#f7f8fa;--line:#d9dee7;--ink:#0b1d3a;--muted:#667085;--accent:#ff6a00;--focus:#1264a3;--mono:"Roboto Mono","IBM Plex Mono","DejaVu Sans Mono",ui-monospace,SFMono-Regular,Consolas,monospace;font-family:"Segoe UI",Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}*{box-sizing:border-box}html{background:var(--soft)}body{margin:0;min-height:100vh;color:var(--ink);background:var(--soft)}.shell{width:min(900px,calc(100% - 48px));margin:0 auto;padding:40px 0 56px}.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;background:var(--paper);border:1px solid var(--line);border-bottom:0;font-family:var(--mono);letter-spacing:.035em}.brand{display:flex;align-items:center;gap:10px;color:var(--accent);font-size:14px;font-weight:700}.brand-mark{display:block;width:31px;height:25px;color:inherit}.brand-mark svg{display:block;width:100%;height:100%}.error-code{padding:5px 8px;border:1px solid var(--accent);color:var(--ink);font-size:11px;font-weight:700;letter-spacing:.08em}.card{padding:52px 48px 50px;background:var(--paper);border:1px solid var(--line);border-left:5px solid var(--accent);box-shadow:0 18px 50px rgba(11,29,58,.08)}h1{margin:0 0 13px;font-size:clamp(28px,5vw,42px);line-height:1.12;letter-spacing:-.035em}.subtitle{max-width:620px;margin:0 0 12px;color:var(--muted);font-size:17px;line-height:1.6}.hint{max-width:620px;margin:0;color:var(--ink);font-size:14px;line-height:1.6}.home{display:inline-block;margin-top:27px;padding:11px 15px;border:1px solid var(--ink);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:12px;font-weight:700;text-decoration:none}.home:hover{border-color:var(--accent);color:#fff;background:var(--accent)}.home:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.footer{padding:18px 4px;color:var(--muted);text-align:center;font-family:var(--mono);font-size:11px}@media(max-width:460px){.shell{width:100%;padding:0}.topbar,.card{border-left:0;border-right:0}.topbar{padding:15px 18px}.card{padding:38px 20px;border-left:5px solid var(--accent)}.error-code{font-size:10px}}`
+
+var notFoundTemplate = template.Must(template.New("not-found").Parse(`<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Nie znaleziono — filees:space</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main class="shell">
+<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">{{.BrandSymbol}}</span><span>filees:space</span></div><span class="error-code" role="status">HTTP ERROR 404</span></header>
+<section class="card" aria-labelledby="error-title">
+<h1 id="error-title">Przestrzeń niedostępna :(</h1>
+<p class="subtitle">Adres jest nieprawidłowy albo udostępnienie wygasło.</p>
+<p class="hint">Jeśli to pomyłka, poproś nadawcę o aktualny link.</p>
+<a class="home" href="/" rel="nofollow">Strona główna</a>
 </section>
 <footer class="footer">Bezpieczne udostępnienie FileES</footer>
 </main>

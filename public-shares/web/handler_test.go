@@ -15,11 +15,13 @@ import (
 	"time"
 
 	"filees/pkg/realmbranding"
+	"filees/pkg/repoworker"
 	"filees/public-shares/authority"
 	"filees/public-shares/cache"
 	"filees/public-shares/channel"
 	"filees/public-shares/gate"
 	"filees/public-shares/manifest"
+	"filees/public-shares/recipientotp"
 	"github.com/google/uuid"
 )
 
@@ -81,6 +83,33 @@ func TestPasswordPageKeepsBrandingButDoesNotDiscloseShareIdentity(t *testing.T) 
 	}
 }
 
+func TestNotFoundPageIsBrandedGenericAndNonCacheable(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/sekretny-realm/sekretny-udzial", nil)
+	Handler{}.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status=%d, want 404", recorder.Code)
+	}
+	body := recorder.Body.String()
+	for _, expected := range []string{"filees:space", "HTTP ERROR 404", "Przestrzeń niedostępna", "udostępnienie wygasło", `href="/"`} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("404 page does not contain %q:\n%s", expected, body)
+		}
+	}
+	for _, forbidden := range []string{"sekretny-realm", "sekretny-udzial", "not found"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("404 page disclosed or retained %q:\n%s", forbidden, body)
+		}
+	}
+	if recorder.Header().Get("Cache-Control") != "no-store" || recorder.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("404 privacy headers: cache=%q referrer=%q", recorder.Header().Get("Cache-Control"), recorder.Header().Get("Referrer-Policy"))
+	}
+	csp := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "style-src 'sha256-") || strings.Contains(csp, "unsafe-inline") {
+		t.Fatalf("404 CSP is not hash-bound: %s", csp)
+	}
+}
+
 type webAuthority struct{ owner, repo, alias string }
 
 func (a *webAuthority) OwnsActiveRepository(owner, repo string) error {
@@ -123,13 +152,15 @@ type webFixture struct {
 	share            manifest.Share
 	owner, channelID string
 	deliveries       []channel.Delivery
+	now              *time.Time
 }
 
 func newWebFixture(t *testing.T, configure func(*manifest.Share)) webFixture {
 	t.Helper()
 	owner, repo := uuid.NewString(), uuid.NewString()
-	clock := time.Unix(1700000000, 0).UTC()
-	store := &channel.Store{Root: t.TempDir(), Authority: &webAuthority{owner: owner, repo: repo, alias: "atmprojekt"}, TokenKey: []byte(strings.Repeat("t", 32)), Now: func() time.Time { return clock }}
+	clockValue := time.Unix(1700000000, 0).UTC()
+	clock := &clockValue
+	store := &channel.Store{Root: t.TempDir(), Authority: &webAuthority{owner: owner, repo: repo, alias: "atmprojekt"}, TokenKey: []byte(strings.Repeat("t", 32)), Now: func() time.Time { return *clock }}
 	share := manifest.Share{OwnerRealm: owner, RepoID: repo, SourceRoot: "wydanie", Slug: "przetarg-2026", Objects: []manifest.Object{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt budowlany.pdf"}}}
 	if configure != nil {
 		configure(&share)
@@ -139,10 +170,11 @@ func newWebFixture(t *testing.T, configure func(*manifest.Share)) webFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver := authority.Resolver{Channels: store, Source: &webSource{head: 5, values: map[int64]string{5: "revision five payload"}}, FrostKey: []byte(strings.Repeat("f", 32)), StagingRoot: t.TempDir(), MaxLeafSize: 1 << 20}
+	otp := &recipientotp.Service{Root: t.TempDir(), Key: []byte(strings.Repeat("o", 32)), Channels: store, Outbox: repoworker.PublicShareOutbox{Root: t.TempDir(), Now: func() time.Time { return *clock }}, Now: func() time.Time { return *clock }}
+	resolver := authority.Resolver{Channels: store, Source: &webSource{head: 5, values: map[int64]string{5: "revision five payload"}}, FrostKey: []byte(strings.Repeat("f", 32)), StagingRoot: t.TempDir(), MaxLeafSize: 1 << 20, RecipientOTP: otp}
 	cacheStore := &cache.Store{Config: cache.Config{Root: t.TempDir(), TTL: 12 * time.Hour, MaxSize: 1024 * 1024}}
-	handler := Handler{Backend: resolver, Cache: cacheStore, VisitKey: []byte(strings.Repeat("v", 32)), Now: func() time.Time { return clock }}
-	return webFixture{handler: handler, store: store, share: share, owner: owner, channelID: channelID, deliveries: deliveries}
+	handler := Handler{Backend: resolver, Cache: cacheStore, VisitKey: []byte(strings.Repeat("v", 32)), Now: func() time.Time { return *clock }}
+	return webFixture{handler: handler, store: store, share: share, owner: owner, channelID: channelID, deliveries: deliveries, now: clock}
 }
 
 func perform(handler http.Handler, method, target, body string, headers map[string]string) *httptest.ResponseRecorder {
@@ -195,19 +227,42 @@ func TestOpenShareListingCacheAndRange(t *testing.T) {
 	}
 }
 
-func TestClosedTokenIsExchangedAndRevokeIsImmediate(t *testing.T) {
+func TestRecipientOTPIsExchangedAndRevokeIsImmediate(t *testing.T) {
 	f := newWebFixture(t, func(share *manifest.Share) { share.Recipients = []string{"a@example.com"} })
-	if wrong := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?token=wrong", "", nil); wrong.Code != http.StatusNotFound {
-		t.Fatalf("wrong token status=%d", wrong.Code)
+	if wrong := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?invite=wrong", "", nil); wrong.Code != http.StatusOK {
+		t.Fatalf("neutral invitation gate status=%d", wrong.Code)
 	}
-	token := f.deliveries[0].Token
-	visit := visitFromRedirect(t, perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?token="+url.QueryEscape(token), "", nil))
-	if strings.Contains(visit, token) {
-		t.Fatal("recipient bearer token leaked into visit capability")
+	invitation := f.deliveries[0].Token
+	target := "https://example.test/atmprojekt/przetarg-2026?invite=" + url.QueryEscape(invitation)
+	gatePage := perform(f.handler, http.MethodGet, target, "", nil)
+	if gatePage.Code != http.StatusOK || !strings.Contains(gatePage.Body.String(), "Wyślij kod") || gatePage.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("recipient gate=%d headers=%v body=%s", gatePage.Code, gatePage.Header(), gatePage.Body.String())
+	}
+	sent := perform(f.handler, http.MethodPost, target, "action=send", map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	if sent.Code != http.StatusOK || !strings.Contains(sent.Body.String(), "Kod dostępu") {
+		t.Fatalf("OTP request=%d %s", sent.Code, sent.Body.String())
+	}
+	service := f.handler.Backend.(authority.Resolver).RecipientOTP
+	job, ok, err := service.Outbox.Claim(time.Unix(1700000000, 0).UTC(), time.Minute)
+	if err != nil || !ok || job.Code == "" {
+		t.Fatalf("OTP mail=%+v %v %v", job, ok, err)
+	}
+	verified := perform(f.handler, http.MethodPost, target, "action=verify&code="+job.Code, map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	visit := visitFromRedirect(t, verified)
+	if strings.Contains(visit, invitation) || !strings.Contains(verified.Header().Get("Location"), "invite=") {
+		t.Fatal("recipient redirect did not keep a non-authorizing invitation separately")
 	}
 	getURL := "https://example.test/atmprojekt/przetarg-2026/get/7f3a1c9e2b4d6a80?v=" + url.QueryEscape(visit)
 	if got := perform(f.handler, http.MethodGet, getURL, "", nil); got.Code != http.StatusSeeOther {
 		t.Fatalf("prepare=%d", got.Code)
+	}
+	listingURL := "https://example.test/atmprojekt/przetarg-2026?invite=" + url.QueryEscape(invitation) + "&v=" + url.QueryEscape(visit)
+	if copied := perform(f.handler, http.MethodGet, listingURL, "", nil); copied.Code != http.StatusOK || !strings.Contains(copied.Body.String(), "Projekt budowlany.pdf") {
+		t.Fatalf("copied live visit=%d %s", copied.Code, copied.Body.String())
+	}
+	*f.now = f.now.Add(recipientotp.DefaultTTL)
+	if expired := perform(f.handler, http.MethodGet, listingURL, "", nil); expired.Code != http.StatusOK || !strings.Contains(expired.Body.String(), "Wyślij kod") || strings.Contains(expired.Body.String(), "Projekt budowlany.pdf") {
+		t.Fatalf("expired visit did not return to OTP gate=%d %s", expired.Code, expired.Body.String())
 	}
 	if _, err := f.store.Revoke(f.owner, f.channelID); err != nil {
 		t.Fatal(err)

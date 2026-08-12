@@ -19,7 +19,12 @@ import (
 	"github.com/google/uuid"
 )
 
-const publicShareMailSchema = "filees.public-share-mail/v1"
+const (
+	publicShareMailSchema       = "filees.public-share-mail/v2"
+	publicShareMailLegacySchema = "filees.public-share-mail/v1"
+	PublicShareMailInvitation   = "invitation"
+	PublicShareMailOTP          = "otp"
+)
 
 type PublicShareMailJob struct {
 	Schema          string    `json:"schema"`
@@ -28,7 +33,11 @@ type PublicShareMailJob struct {
 	Alias           string    `json:"alias"`
 	Slug            string    `json:"slug"`
 	DeliveryAddress string    `json:"delivery_address"`
-	Token           string    `json:"token"`
+	Kind            string    `json:"kind,omitempty"`
+	Invitation      string    `json:"invitation,omitempty"`
+	Code            string    `json:"code,omitempty"`
+	ExpiresAt       time.Time `json:"expires_at,omitempty"`
+	Token           string    `json:"token,omitempty"` // v1 compatibility
 	State           string    `json:"state"`
 	AttemptID       string    `json:"attempt_id,omitempty"`
 	LeaseUntil      time.Time `json:"lease_until,omitempty"`
@@ -51,12 +60,30 @@ func (o PublicShareOutbox) DeliverPublicShareTokens(_ context.Context, record ch
 		}
 		digest := sha256.Sum256([]byte(record.ChannelID + "\x00" + email + "\x00" + delivery.Token))
 		messageID := uuid.NewSHA1(uuid.NameSpaceOID, digest[:]).String()
-		job := PublicShareMailJob{Schema: publicShareMailSchema, MessageID: messageID, ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, DeliveryAddress: email, Token: delivery.Token, State: "pending", CreatedAt: o.now()}
+		job := PublicShareMailJob{Schema: publicShareMailSchema, MessageID: messageID, ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, DeliveryAddress: email, Kind: PublicShareMailInvitation, Invitation: delivery.Token, State: "pending", CreatedAt: o.now()}
 		if err := o.queue(job); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (o PublicShareOutbox) DeliverRecipientOTP(record channel.Record, email, invitation, epoch, code string, activatedAt, expiresAt time.Time) error {
+	canonical, err := onboarding.CanonicalEmail(email)
+	if err != nil || invitation == "" || len(code) != 8 || strings.Trim(code, "0123456789") != "" || activatedAt.IsZero() || !expiresAt.After(activatedAt) {
+		return errors.New("public share OTP delivery is invalid")
+	}
+	if _, err := uuid.Parse(epoch); err != nil {
+		return errors.New("public share OTP epoch is invalid")
+	}
+	digest := sha256.Sum256([]byte(record.ChannelID + "\x00otp\x00" + epoch + "\x00" + canonical))
+	job := PublicShareMailJob{
+		Schema: publicShareMailSchema, MessageID: uuid.NewSHA1(uuid.NameSpaceOID, digest[:]).String(),
+		ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug,
+		DeliveryAddress: canonical, Kind: PublicShareMailOTP, Invitation: invitation,
+		Code: code, ExpiresAt: expiresAt.UTC(), State: "pending", CreatedAt: activatedAt.UTC(),
+	}
+	return o.queue(job)
 }
 
 func (o PublicShareOutbox) Claim(now time.Time, lease time.Duration) (PublicShareMailJob, bool, error) {
@@ -137,12 +164,22 @@ func RenderPublicShareMail(job PublicShareMailJob, from, domain, baseURL string)
 	if err != nil || base.Scheme != "https" || base.Host == "" {
 		return nil, errors.New("public share base URL is invalid")
 	}
+	invitation := job.Invitation
+	kind := job.Kind
+	if job.Schema == publicShareMailLegacySchema {
+		invitation, kind = job.Token, PublicShareMailInvitation
+	}
 	base.Path = "/" + job.Alias + "/" + job.Slug
 	query := base.Query()
-	query.Set("token", job.Token)
+	query.Set("invite", invitation)
 	base.RawQuery = query.Encode()
-	body := fmt.Sprintf("FileES udostępnił pliki pod adresem:\r\n\r\n%s\r\n\r\nTen link jest przypisany do tej skrzynki. Jego przekazanie dalej przekazuje dostęp.\r\n", base.String())
-	message := fmt.Sprintf("From: FileES <%s>\r\nTo: <%s>\r\nDate: %s\r\nMessage-ID: <%s@%s>\r\nSubject: FileES - pliki do pobrania\r\nAuto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n%s", canonicalFrom, job.DeliveryAddress, job.CreatedAt.UTC().Format("Mon, 02 Jan 2006 15:04:05 -0700"), job.MessageID, strings.ToLower(domain), body)
+	subject := "FileES - pliki do pobrania"
+	body := fmt.Sprintf("Pliki udostępnione w FileES są dostępne pod adresem:\r\n\r\n%s\r\n\r\nNa stronie poproś o jednorazowy kod dostępu.\r\n", base.String())
+	if kind == PublicShareMailOTP {
+		subject = "FileES - kod dostępu"
+		body = fmt.Sprintf("Kod dostępu do udostępnionych plików:\r\n\r\n%s\r\n\r\nKod wygasa o %s.\r\n", job.Code, job.ExpiresAt.Local().Format("15:04:05 MST"))
+	}
+	message := fmt.Sprintf("From: FileES <%s>\r\nTo: <%s>\r\nDate: %s\r\nMessage-ID: <%s@%s>\r\nSubject: %s\r\nAuto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n%s", canonicalFrom, job.DeliveryAddress, job.CreatedAt.UTC().Format("Mon, 02 Jan 2006 15:04:05 -0700"), job.MessageID, strings.ToLower(domain), subject, body)
 	return []byte(message), nil
 }
 
@@ -186,7 +223,7 @@ func (o PublicShareOutbox) load(path string) (PublicShareMailJob, error) {
 }
 
 func validatePublicShareMail(job PublicShareMailJob) error {
-	if job.Schema != publicShareMailSchema {
+	if job.Schema != publicShareMailSchema && job.Schema != publicShareMailLegacySchema {
 		return errors.New("public share mail schema is invalid")
 	}
 	if _, err := uuid.Parse(job.MessageID); err != nil {
@@ -198,8 +235,18 @@ func validatePublicShareMail(job PublicShareMailJob) error {
 	if _, err := onboarding.CanonicalEmail(job.DeliveryAddress); err != nil {
 		return err
 	}
-	if job.Alias == "" || job.Slug == "" || strings.ContainsAny(job.Alias+job.Slug+job.Token, "\x00\r\n/\\") {
+	invitation, kind := job.Invitation, job.Kind
+	if job.Schema == publicShareMailLegacySchema {
+		invitation, kind = job.Token, PublicShareMailInvitation
+	}
+	if job.Alias == "" || job.Slug == "" || invitation == "" || strings.ContainsAny(job.Alias+job.Slug+invitation, "\x00\r\n/\\") {
 		return errors.New("public share mail address is invalid")
+	}
+	if kind != PublicShareMailInvitation && kind != PublicShareMailOTP {
+		return errors.New("public share mail kind is invalid")
+	}
+	if kind == PublicShareMailOTP && (len(job.Code) != 8 || strings.Trim(job.Code, "0123456789") != "" || job.ExpiresAt.IsZero()) {
+		return errors.New("public share OTP mail is invalid")
 	}
 	if job.State != "pending" && job.State != "sending" {
 		return errors.New("public share mail state is invalid")

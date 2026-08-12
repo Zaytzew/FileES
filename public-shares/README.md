@@ -24,7 +24,8 @@ To jest łańcuch narzędzi, a nie usługa z modelem świata w pamięci.
   `code-putter`.
 - **Brak stanu sesyjnego.** Żądanie wejściowe zamraża rewizję i niesie ją dalej
   w linkach — nie ma ciasteczka, nie ma sesji, nie ma nic, co trzeba pamiętać
-  między żądaniami.
+  między żądaniami po stronie przeglądarki. Pięciominutowa epoka OTP jest
+  trwałym stanem credentialu w systemie plików authority, nie sesją procesu.
 - **Restart nie jest zdarzeniem.** Skoro nic nie mieszka w pamięci, ubicie
   procesu w dowolnym momencie nie gubi niczego poza bieżącym żądaniem.
 
@@ -51,7 +52,8 @@ public-shares/
     slug/         przestrzeń nazw adresu: /<alias-realmu>/<slug>
     manifest/     deklaracje oraz ich czyste niezmienniki
     channel/      kanoniczny lifecycle, ACL i tombstone'y
-    gate/         tokeny odbiorców i ograniczony Argon2id
+    gate/         ograniczony Argon2id kanałów otwartych
+    recipientotp/ pięciominutowy OTP odbiorców, próby i trwałe epoki
     authority/    frost, bieżąca autoryzacja i dokładny odczyt przez svnlook
     backchannel/  wersjonowany protokół granicy stref
     cache/        prywatny, opcjonalny cache liści z TTL
@@ -92,6 +94,17 @@ FSFS oraz mapowanie `public_id` na ścieżkę. `filees-links` ma wyłącznie pry
 cache, klucz krótkiej capability wizyty oraz połączenie backchannel; nie ma
 poświadczeń SVN. TLS i publiczne HTTP kończy zewnętrzny serwer, na OpenBSD
 `httpd(8)`, który przekazuje żądania do FastCGI.
+
+Kanał odbiorców wysyła link będący wyłącznie niejawnym identyfikatorem
+zaproszenia. Publiczna projekcja nie zawiera adresów e-mail, a sam link nie
+autoryzuje. Jawne „Wyślij kod” aktywuje pięciominutową epokę OTP po stronie
+authority; pięć błędnych prób zamyka epokę, a resend nie rotuje kodu ani TTL.
+Po poprawnej weryfikacji `filees-links` wydaje podpisany URL ważny dokładnie do
+końca tej epoki. Nie używa cookies, localStorage ani JavaScriptu. `filees-mail
+public-loop` jest odizolowanym dzieckiem authority i jako jedyny z tej pary
+ładuje sekret SMTP; trwały outbox przeżywa restart obu procesów. Authority
+przechwytuje sygnał zatrzymania usługi i czeka na zakończenie dziecka, więc
+restart nie zostawia równoległego, osieroconego pollera.
 
 Zasoby mają twarde granice w kodzie: pojedynczy liść nie przekracza polityki
 `public_shares.max_size`, dwie operacje `svnlook` mogą trwać równolegle,

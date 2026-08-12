@@ -49,7 +49,7 @@ func TestPublicShareOutboxLeaseRenderAndRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(message), "/atmprojekt/przetarg-2026?token=") || strings.Contains(string(message), "Bcc:") {
+	if !strings.Contains(string(message), "/atmprojekt/przetarg-2026?invite=") || strings.Contains(string(message), "Bcc:") || strings.Contains(string(message), "przekazanie dalej przekazuje dostęp") {
 		t.Fatalf("mail=%s", message)
 	}
 	if err := outbox.MarkFailed(job.MessageID, job.AttemptID); err != nil {
@@ -64,6 +64,20 @@ func TestPublicShareOutboxLeaseRenderAndRemoval(t *testing.T) {
 	}
 	if _, ok, err := outbox.Claim(now.Add(2*time.Minute), 5*time.Minute); err != nil || ok {
 		t.Fatalf("sent job remained: %v %v", ok, err)
+	}
+	if err := outbox.DeliverRecipientOTP(record, delivery.Email, delivery.Token, uuid.NewString(), "12345678", now, now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	otp, ok, err := outbox.Claim(now, time.Minute)
+	if err != nil || !ok || otp.Kind != PublicShareMailOTP {
+		t.Fatalf("OTP claim=%+v %v %v", otp, ok, err)
+	}
+	otpMessage, err := RenderPublicShareMail(otp, "filees@example.test", "example.test", "https://get.example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(otpMessage), "12345678") || strings.Contains(string(otpMessage), delivery.Token) || strings.Contains(string(otpMessage), "?invite=") {
+		t.Fatalf("OTP mail leaked invitation or omitted code: %s", otpMessage)
 	}
 }
 

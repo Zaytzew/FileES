@@ -26,6 +26,12 @@ func deliverPendingPublicShareMail(config serverconfig.Config, stderr io.Writer)
 		if !ok {
 			return nil
 		}
+		if job.Kind == repoworker.PublicShareMailOTP && !time.Now().UTC().Before(job.ExpiresAt) {
+			if err := outbox.MarkSent(job.MessageID, job.AttemptID); err != nil {
+				return err
+			}
+			continue
+		}
 		message, err := repoworker.RenderPublicShareMail(job, config.SMTPFrom, config.MessageIDDomain, config.PublicShares.BaseURL)
 		if err == nil {
 			err = smtpSubmit(context.Background(), config.SMTP, smtpsubmit.Request{EnvelopeFrom: config.SMTPFrom, Recipient: job.DeliveryAddress, Message: message})

@@ -224,6 +224,7 @@ func TestWindowsPickerInvokesPowerShellAndValidatesSelection(t *testing.T) {
 	for _, expected := range []string{
 		"OpenFileDialog",
 		"Multiselect=$true",
+		"$r=$d.ShowDialog($owner)",
 		`C:\wc\sub`,
 		"Zablokuj",
 		"FileNames",
@@ -231,6 +232,9 @@ func TestWindowsPickerInvokesPowerShellAndValidatesSelection(t *testing.T) {
 		if !contains(script, expected) {
 			t.Errorf("picker script missing %q", expected)
 		}
+	}
+	if strings.Contains(script, "$d.DialogResult") {
+		t.Fatalf("picker reads nonexistent OpenFileDialog.DialogResult: %s", script)
 	}
 	if args := strings.Join(calls[0].args, " "); !strings.Contains(args, "-Sta") || !strings.Contains(args, "-WindowStyle Hidden") {
 		t.Fatalf("PowerShell picker args = %#v", calls[0].args)

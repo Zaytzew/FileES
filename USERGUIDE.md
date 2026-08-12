@@ -279,9 +279,11 @@ pięciominutowego okna. Po wygaśnięciu skopiowany adres ponownie pokazuje bram
 OTP; ponowne kliknięcie wysyłki w aktywnym oknie nie wydłuża TTL ani nie zmienia
 kodu.
 
-Nieprawidłowy, wygasły, cofnięty albo usunięty adres zawsze pokazuje tę samą
+Nieprawidłowy adres oraz cofnięty albo usunięty udział pokazują tę samą
 obrandowaną stronę „Przestrzeń niedostępna” z kodem HTTP 404. FileES nie
-ujawnia na niej nazwy realmu, udziału ani przyczyny niedostępności.
+ujawnia na niej nazwy realmu, udziału ani przyczyny niedostępności. Wygaśnięty
+adres wizyty, który nadal zawiera aktywne zaproszenie, wraca zamiast tego do
+neutralnej bramki OTP opisanej wyżej.
 
 **Cofnij** natychmiast przestaje wydawać pliki, ale zachowuje rekord i adres.
 **Usuń** usuwa politykę kanału; adres pozostaje zarezerwowany jako tombstone i

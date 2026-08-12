@@ -43,6 +43,36 @@ func TestListingAppliesOnlyRealmLogoAndLeadingColor(t *testing.T) {
 	}
 }
 
+func TestPasswordPageUsesShareIdentityAndSafeRealmBranding(t *testing.T) {
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	branding, err := realmbranding.FromBytes("#2D5A3D", "image/png", png)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	Handler{}.renderPassword(recorder, channel.Projection{Alias: "acme", Slug: "zegrze", Branding: branding})
+	body := recorder.Body.String()
+	for _, expected := range []string{
+		`<meta name="viewport"`, `filees:space`, `udostępnione przez acme`,
+		`<h1 id="share-title">zegrze</h1>`, `type="password"`,
+		`--owner-accent:#2D5A3D;--owner-ink:#2D5A3D`, `data:image/png;base64,`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("password page does not contain %q:\n%s", expected, body)
+		}
+	}
+	csp := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "style-src 'sha256-") || !strings.Contains(csp, "img-src data:") || strings.Contains(csp, "unsafe-inline") {
+		t.Fatalf("unsafe or incomplete password-page CSP: %s", csp)
+	}
+	if recorder.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("password page cache policy = %q", recorder.Header().Get("Cache-Control"))
+	}
+}
+
 type webAuthority struct{ owner, repo, alias string }
 
 func (a *webAuthority) OwnsActiveRepository(owner, repo string) error {

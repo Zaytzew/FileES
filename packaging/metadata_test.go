@@ -340,6 +340,27 @@ func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 	}
 }
 
+func TestPublicLinksHTTPDUsesExplicitStaticAllowlist(t *testing.T) {
+	publicHTTPD, err := os.ReadFile("server/openbsd/public-links.httpd.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(publicHTTPD)
+	for _, required := range []string{
+		`location "/.well-known/acme-challenge/*"`,
+		`location "/"`,
+		`location "/*"`,
+		`fastcgi socket "/run/filees/filees-links.sock"`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("OpenBSD public endpoint example missing %q", required)
+		}
+	}
+	if strings.Contains(text, "location not found") {
+		t.Error("OpenBSD public endpoint must not let document-root presence shadow FileES routes")
+	}
+}
+
 func TestWindowsInstallerCreatesPerUserShortcutWithAUMID(t *testing.T) {
 	data, err := os.ReadFile("windows/filees-gui.wxs")
 	if err != nil {

@@ -508,7 +508,7 @@ func (p Projection) Validate() error {
 	if p.PasswordHash != "" && manifest.ValidatePasswordVerifier(p.PasswordHash) != nil {
 		return errors.New("public share projection password verifier is invalid")
 	}
-	if len(p.Recipients) > 256 || len(p.Objects) == 0 || len(p.Objects) > 4096 {
+	if len(p.Recipients) > 256 || len(p.Objects) > 4096 {
 		return errors.New("public share projection collection size is invalid")
 	}
 	if p.DoNotFollow != nil && *p.DoNotFollow < 1 {

@@ -940,8 +940,10 @@ func validatePublicShareDeclaration(p PublicShareDeclaration) error {
 	if err != nil || normalizedSlug != p.Slug {
 		return errors.New("slug must be normalized")
 	}
-	if err := validatePublicSharePath("source_root", p.SourceRoot); err != nil {
-		return err
+	if p.SourceRoot != "." {
+		if err := validatePublicSharePath("source_root", p.SourceRoot); err != nil {
+			return err
+		}
 	}
 	if len(p.Recipients) > 256 {
 		return errors.New("recipients exceeds 256 addresses")
@@ -969,8 +971,8 @@ func validatePublicShareDeclaration(p PublicShareDeclaration) error {
 	if p.DoNotFollow != nil && *p.DoNotFollow < 1 {
 		return errors.New("do-not-follow must be at least 1")
 	}
-	if len(p.Objects) == 0 || len(p.Objects) > 4096 {
-		return errors.New("object_map must contain 1 to 4096 objects")
+	if len(p.Objects) > 4096 {
+		return errors.New("object_map must contain at most 4096 objects")
 	}
 	seenObjects := map[string]bool{}
 	rootPrefix := p.SourceRoot + "/"
@@ -990,7 +992,7 @@ func validatePublicShareDeclaration(p PublicShareDeclaration) error {
 		if err := validatePublicSharePath(fmt.Sprintf("object_map[%d].repo_path", i), object.RepoPath); err != nil {
 			return err
 		}
-		if !strings.HasPrefix(object.RepoPath, rootPrefix) {
+		if p.SourceRoot != "." && !strings.HasPrefix(object.RepoPath, rootPrefix) {
 			return fmt.Errorf("object_map[%d].repo_path is outside source_root", i)
 		}
 		if strings.TrimSpace(object.DisplayName) == "" || len(object.DisplayName) > 512 || strings.ContainsAny(object.DisplayName, "\x00\r\n") {

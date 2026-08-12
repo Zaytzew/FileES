@@ -315,6 +315,17 @@ func TestPublicShareTicketRejectsPathOutsideSourceRoot(t *testing.T) {
 	}
 }
 
+func TestPublicShareTicketAcceptsRepositoryRootAndEmptyPlaceholder(t *testing.T) {
+	root := PublicShareDeclaration{RepoID: uuid.NewString(), SourceRoot: ".", Slug: "cale-repo", Objects: []PublicShareObject{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "projekt.pdf", DisplayName: "Projekt.pdf"}}}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: root}, time.Now()); err != nil {
+		t.Fatalf("repository root rejected: %v", err)
+	}
+	empty := PublicShareDeclaration{RepoID: uuid.NewString(), SourceRoot: "placeholder", Slug: "pusty-kanal"}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: empty}, time.Now()); err != nil {
+		t.Fatalf("empty placeholder rejected: %v", err)
+	}
+}
+
 func TestPublicShareTicketRejectsNonCanonicalRepoIDAndUnboundedPassword(t *testing.T) {
 	declaration := PublicShareDeclaration{RepoID: strings.ToUpper(uuid.NewString()), SourceRoot: "wydanie", Slug: "przetarg-2026", Objects: []PublicShareObject{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt.pdf"}}}
 	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreatePublicShare, "client-a", CreatePublicSharePayload{PublicShareDeclaration: declaration}, time.Now()); err == nil {

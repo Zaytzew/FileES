@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"filees/pkg/clientview"
+	"filees/pkg/realmbranding"
 	"github.com/google/uuid"
 )
 
@@ -38,6 +39,11 @@ type RealmGrantAuthority interface {
 	RevokeGrant(context.Context, string, string, string) (RealmGrantRecord, error)
 	ListGrantRecipients(context.Context, string, string) ([]RealmGrantRecipient, error)
 	SetRealmDirectoryVisibility(context.Context, string, string) (string, error)
+}
+
+type RealmPublicBrandingAuthority interface {
+	RealmPublicBranding(context.Context, string) (realmbranding.Branding, error)
+	SetRealmPublicBranding(context.Context, string, realmbranding.Branding) (realmbranding.Branding, error)
 }
 
 // RepositoryEditingPolicyAuthority is deliberately separate from
@@ -244,6 +250,52 @@ func (p ServicePublisher) SetRealmDirectoryVisibility(ctx context.Context, realm
 		return "", err
 	}
 	return visibility, nil
+}
+
+func (p ServicePublisher) RealmPublicBranding(_ context.Context, realmID string) (realmbranding.Branding, error) {
+	if !filepath.IsAbs(p.ServiceWC) {
+		return realmbranding.Branding{}, errors.New("realm branding store is incomplete")
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return realmbranding.Branding{}, errors.New("realm branding realm_id must be UUID")
+	}
+	record, err := readRealmRecord(filepath.Join(p.ServiceWC, "admin", "realms", realmID+".json"))
+	if err != nil || record.RealmID != realmID || record.State != "active" {
+		return realmbranding.Branding{}, errors.New("active realm record is unavailable")
+	}
+	if record.PublicBranding == nil {
+		return realmbranding.Default(), nil
+	}
+	return *record.PublicBranding, nil
+}
+
+func (p ServicePublisher) SetRealmPublicBranding(ctx context.Context, realmID string, requested realmbranding.Branding) (realmbranding.Branding, error) {
+	if !filepath.IsAbs(p.ServiceWC) || p.Runner == nil {
+		return realmbranding.Branding{}, errors.New("realm branding store is incomplete")
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return realmbranding.Branding{}, errors.New("realm branding realm_id must be UUID")
+	}
+	branding, err := realmbranding.Normalize(requested)
+	if err != nil {
+		return realmbranding.Branding{}, err
+	}
+	path := filepath.Join(p.ServiceWC, "admin", "realms", realmID+".json")
+	record, err := readRealmRecord(path)
+	if err != nil || record.RealmID != realmID || record.State != "active" {
+		return realmbranding.Branding{}, errors.New("active realm record is unavailable")
+	}
+	if record.PublicBranding != nil && reflect.DeepEqual(*record.PublicBranding, branding) {
+		return branding, nil
+	}
+	record.PublicBranding = &branding
+	if err := atomicJSON(path, record); err != nil {
+		return realmbranding.Branding{}, err
+	}
+	if err := p.Runner.Publish(ctx, []string{path}, "filees: set public branding for realm "+realmID); err != nil {
+		return realmbranding.Branding{}, err
+	}
+	return branding, nil
 }
 
 func (p ServicePublisher) RebuildGrantAuthority(ctx context.Context) error {

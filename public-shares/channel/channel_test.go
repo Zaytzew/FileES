@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/realmbranding"
 	"filees/public-shares/manifest"
 	"github.com/google/uuid"
 )
@@ -28,6 +29,10 @@ func (a fakeAuthority) ActiveRealmAlias(realmID string) (string, error) {
 		return "", errors.New("not owner")
 	}
 	return a.alias, nil
+}
+
+func (a fakeAuthority) ActiveRealmBranding(string) (realmbranding.Branding, error) {
+	return realmbranding.Default(), nil
 }
 
 func fixture(t *testing.T) (*Store, manifest.Share, string) {

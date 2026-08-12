@@ -9,6 +9,7 @@ import (
 	"time"
 
 	control "filees/pkg/control/v1"
+	"filees/pkg/realmbranding"
 	"filees/public-shares/channel"
 	"filees/public-shares/manifest"
 )
@@ -161,4 +162,8 @@ func (p ServicePublisher) ActiveRealmAlias(realmID string) (string, error) {
 		return "", errors.New("active realm alias is unavailable")
 	}
 	return record.Alias, nil
+}
+
+func (p ServicePublisher) ActiveRealmBranding(realmID string) (realmbranding.Branding, error) {
+	return p.RealmPublicBranding(context.Background(), realmID)
 }

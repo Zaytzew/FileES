@@ -11,6 +11,7 @@ import (
 
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/passport"
+	"filees/pkg/realmbranding"
 	"filees/pkg/talk"
 )
 
@@ -42,6 +43,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRealmGrantRecipients(req)
 	case contract.CmdRealmSetVisibility:
 		return s.handleRealmSetVisibility(req)
+	case contract.CmdRealmPublicBrandingGet:
+		return s.handleRealmPublicBranding(req, false)
+	case contract.CmdRealmPublicBrandingSet:
+		return s.handleRealmPublicBranding(req, true)
 	case contract.CmdServerDetach:
 		return s.handleServerDetach(req)
 	case contract.CmdRealmRemoveBegin:
@@ -350,6 +355,55 @@ func (s *Server) handleRealmSetVisibility(req contract.Request) contract.Respons
 		return contract.ErrResponse(req.RequestID, "GRANT-1003", "ERROR", "REQUIRE_ACTION", "realm.visibility_rejected", nil)
 	}
 	return contract.OKResponse(req.RequestID, contract.RealmSetVisibilityResult{Visibility: visibility})
+}
+
+func (s *Server) handleRealmPublicBranding(req contract.Request, set bool) contract.Response {
+	service := s.realmPublicBrandingService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "BRANDING-0001", "ERROR", "RETRY", "realm.branding_unavailable", nil)
+	}
+	var (
+		serverID string
+		branding realmbranding.Branding
+	)
+	if set {
+		var payload contract.RealmPublicBrandingSetPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, branding = strings.TrimSpace(payload.ServerID), payload.Branding
+		if normalized, err := realmbranding.Normalize(branding); err != nil || normalized != branding {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+	} else {
+		var payload contract.RealmPublicBrandingGetPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID = strings.TrimSpace(payload.ServerID)
+	}
+	if serverID == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[serverID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories {
+		return contract.ErrResponse(req.RequestID, "BRANDING-2001", "ERROR", "NONE", "realm.branding_forbidden", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var err error
+	if set {
+		branding, err = service.SetPublicBranding(ctx, serverID, branding)
+	} else {
+		branding, err = service.GetPublicBranding(ctx, serverID)
+	}
+	if err != nil {
+		talk.With("realm-branding:"+serverID).Warnf("public branding failed: %v", err)
+		return contract.ErrResponse(req.RequestID, "BRANDING-1001", "ERROR", "REQUIRE_ACTION", "realm.branding_rejected", nil)
+	}
+	return contract.OKResponse(req.RequestID, contract.RealmPublicBrandingResult{Branding: branding})
 }
 
 // handleRepoSetEditingPolicy forwards an owner's policy change to the server.

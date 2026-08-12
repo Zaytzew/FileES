@@ -12,6 +12,7 @@ import (
 
 	"filees/pkg/clientview"
 	"filees/pkg/realmalias"
+	"filees/pkg/realmbranding"
 
 	"github.com/google/uuid"
 )
@@ -35,12 +36,13 @@ type RealmAliases struct {
 }
 
 type realmRecord struct {
-	Schema              string    `json:"schema"`
-	RealmID             string    `json:"realm_id"`
-	State               string    `json:"state"`
-	CreatedAt           time.Time `json:"created_at"`
-	Alias               string    `json:"alias,omitempty"`
-	DirectoryVisibility string    `json:"directory_visibility,omitempty"`
+	Schema              string                  `json:"schema"`
+	RealmID             string                  `json:"realm_id"`
+	State               string                  `json:"state"`
+	CreatedAt           time.Time               `json:"created_at"`
+	Alias               string                  `json:"alias,omitempty"`
+	DirectoryVisibility string                  `json:"directory_visibility,omitempty"`
+	PublicBranding      *realmbranding.Branding `json:"public_branding,omitempty"`
 }
 
 type clientRecord struct {
@@ -208,6 +210,13 @@ func readRealmRecord(path string) (realmRecord, error) {
 	}
 	if record.DirectoryVisibility != "" && record.DirectoryVisibility != "hidden" && record.DirectoryVisibility != "listed" {
 		return realmRecord{}, errors.New("invalid stored realm directory visibility")
+	}
+	if record.PublicBranding != nil {
+		branding, err := realmbranding.Normalize(*record.PublicBranding)
+		if err != nil {
+			return realmRecord{}, fmt.Errorf("invalid stored realm public branding: %w", err)
+		}
+		record.PublicBranding = &branding
 	}
 	return record, nil
 }

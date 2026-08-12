@@ -79,6 +79,13 @@ verifier bez przesyłania go przez control ani IPC. Ta powierzchnia nie zmienia
 granicy zaufania: daemon wykonuje ergonomiczną bramkę ownership, worker
 autoryzuje ponownie na podstawie uwierzytelnionej sesji.
 
+Wygląd listingów jest dziedziczony z jednego kanonicznego rekordu realmu, a
+nie kopiowany do kanałów. Owner ustawia dokładnie dwie wartości: kolor wiodący
+`#RRGGBB` i opcjonalne logo PNG/JPEG. Logo ma limit 32 KiB i 2048 px, jest
+dekodowane i sprawdzane przed zapisem, a na stronie używa `object-fit: contain`.
+Nie ma powierzchni dla własnego CSS, fontów, URL-i ani SVG. Zmiana obowiązuje
+od razu we wszystkich istniejących i przyszłych udziałach realmu.
+
 Proces `filees-public-authority` pozostaje po stronie FileES i jako jedyny zna
 FSFS oraz mapowanie `public_id` na ścieżkę. `filees-links` ma wyłącznie prywatny
 cache, klucz krótkiej capability wizyty oraz połączenie backchannel; nie ma

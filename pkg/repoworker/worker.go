@@ -12,6 +12,7 @@ import (
 
 	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
+	"filees/pkg/realmbranding"
 	"github.com/google/uuid"
 )
 
@@ -114,6 +115,7 @@ type Worker struct {
 	RealmRemoval         RealmRemovalService
 	DumpLoader           DumpLoader
 	Grants               RealmGrantAuthority
+	Branding             RealmPublicBrandingAuthority
 	EditingPolicies      RepositoryEditingPolicyAuthority
 	PublicShares         PublicShareService
 	RecoveryAdminContact string
@@ -131,7 +133,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketSetRepositoryEditingPolicy {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketGetRealmPublicBranding && ticket.Type != control.TicketSetRealmPublicBranding && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketSetRepositoryEditingPolicy {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -149,6 +151,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if (ticket.Type == control.TicketGrantAccess || ticket.Type == control.TicketRevokeAccess) && !session.CanCreateRepositories {
 		return w.failure(ticket, "REALM_GRANT_FORBIDDEN", "authenticated session cannot manage realm grants")
 	}
+	if (ticket.Type == control.TicketGetRealmPublicBranding || ticket.Type == control.TicketSetRealmPublicBranding) && !session.CanCreateRepositories {
+		return w.failure(ticket, "REALM_BRANDING_FORBIDDEN", "authenticated session cannot manage realm branding")
+	}
 	if (ticket.Type == control.TicketListPublicShares || ticket.Type == control.TicketCreatePublicShare || ticket.Type == control.TicketUpdatePublicShare || ticket.Type == control.TicketRevokePublicShare || ticket.Type == control.TicketDeletePublicShare) && !session.CanCreateRepositories {
 		return w.failure(ticket, "PUBLIC_SHARE_FORBIDDEN", "authenticated session cannot publish repositories")
 	}
@@ -163,6 +168,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.Type == control.TicketSetRealmVisibility {
 		return w.setRealmDirectoryVisibility(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketGetRealmPublicBranding || ticket.Type == control.TicketSetRealmPublicBranding {
+		return w.realmPublicBranding(ctx, session, ticket)
 	}
 	// Dispatched before the result-store replay check, like the other
 	// settings-shaped tickets: this is idempotent state on the repository
@@ -331,6 +339,29 @@ func (w *Worker) setRealmDirectoryVisibility(ctx context.Context, session Sessio
 		return w.failure(ticket, "REALM_DIRECTORY_REJECTED", err.Error())
 	}
 	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.SetRealmDirectoryVisibilityResult{Visibility: visibility}, w.now())
+}
+
+func (w *Worker) realmPublicBranding(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.Branding == nil {
+		return w.failure(ticket, "REALM_BRANDING_UNAVAILABLE", "realm public branding is unavailable")
+	}
+	var (
+		branding realmbranding.Branding
+		err      error
+	)
+	if ticket.Type == control.TicketSetRealmPublicBranding {
+		var payload control.RealmPublicBrandingPayload
+		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+			return control.Result{}, err
+		}
+		branding, err = w.Branding.SetRealmPublicBranding(ctx, session.RealmID, payload.Branding)
+	} else {
+		branding, err = w.Branding.RealmPublicBranding(ctx, session.RealmID)
+	}
+	if err != nil {
+		return w.failure(ticket, "REALM_BRANDING_REJECTED", err.Error())
+	}
+	return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.RealmPublicBrandingResult{Branding: branding}, w.now())
 }
 
 func (w *Worker) requestRealmRemoval(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {

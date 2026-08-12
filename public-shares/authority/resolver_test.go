@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/realmbranding"
 	"filees/public-shares/channel"
 	"filees/public-shares/manifest"
 	"github.com/google/uuid"
@@ -27,6 +28,12 @@ func (a *testAuthority) ActiveRealmAlias(owner string) (string, error) {
 		return "", errors.New("not owner")
 	}
 	return a.alias, nil
+}
+func (a *testAuthority) ActiveRealmBranding(owner string) (realmbranding.Branding, error) {
+	if owner != a.owner {
+		return realmbranding.Branding{}, errors.New("not owner")
+	}
+	return realmbranding.Default(), nil
 }
 
 type testSource struct {

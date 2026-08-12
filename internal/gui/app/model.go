@@ -225,6 +225,9 @@ func (vm ViewModel) CanManagePublicShares() bool {
 func (vm ViewModel) CanSetRealmVisibility() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmSetVisibility)
 }
+func (vm ViewModel) CanSetRealmBranding() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmPublicBrandingGet) && vm.HasCap(contract.CapRealmPublicBrandingSet)
+}
 func (vm ViewModel) CanDetachServer() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerDetach)
 }

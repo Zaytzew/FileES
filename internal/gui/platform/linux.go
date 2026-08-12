@@ -382,12 +382,14 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 	canDelete := false
 	canLoadDump := false
 	canSetRealmVisibility := false
+	canSetRealmBranding := false
 	for _, server := range request.Servers {
 		if server.ID != serverID {
 			continue
 		}
 		canAddFolder = server.CanAddFolder
 		canSetRealmVisibility = server.CanSetRealmVisibility
+		canSetRealmBranding = server.CanSetRealmBranding
 		for _, folder := range server.Folders {
 			if folder.ID == repoID {
 				canConnect = folder.CanConnect
@@ -402,7 +404,7 @@ func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogR
 			}
 		}
 	}
-	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility)
+	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility, canSetRealmBranding)
 	if err != nil || action == SettingsDialogClose {
 		return SettingsDialogResult{Action: action}, err
 	}
@@ -442,7 +444,7 @@ func (b *LinuxBackend) ShowJournal(ctx context.Context, request JournalDialogReq
 	return nil
 }
 
-func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility bool) (SettingsDialogAction, error) {
+func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility, canSetRealmBranding bool) (SettingsDialogAction, error) {
 	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
 	if canAddFolder {
 		args = append(args, "FALSE", "add_folder", "Dodaj folder do FileES")
@@ -455,6 +457,9 @@ func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFo
 	}
 	if canSetRealmVisibility {
 		args = append(args, "FALSE", "realm_visibility", "Widoczność mojej strefy")
+	}
+	if canSetRealmBranding {
+		args = append(args, "FALSE", "realm_branding", "Wygląd udziałów publicznych")
 	}
 	if hasFolder {
 		if canManageGrants {
@@ -656,6 +661,8 @@ func settingsAction(label string) SettingsDialogAction {
 		return SettingsDialogPublicShares
 	case "realm_visibility":
 		return SettingsDialogRealmVisibility
+	case "realm_branding":
+		return SettingsDialogRealmBranding
 	case "detach_server", "Dezaktywuj klienta":
 		return SettingsDialogDetachServer
 	case "remove_realm":

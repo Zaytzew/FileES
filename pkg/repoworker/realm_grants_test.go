@@ -10,8 +10,31 @@ import (
 	"time"
 
 	"filees/pkg/clientview"
+	"filees/pkg/realmbranding"
 	"github.com/google/uuid"
 )
+
+func TestRealmPublicBrandingIsStoredOnceOnRealm(t *testing.T) {
+	root := t.TempDir()
+	realmID := uuid.NewString()
+	if err := atomicJSON(filepath.Join(root, "admin", "realms", realmID+".json"), realmRecord{Schema: "filees.realm/v1", RealmID: realmID, State: "active", CreatedAt: time.Now().UTC(), Alias: "acme"}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &publishRunner{}
+	publisher := ServicePublisher{ServiceWC: root, Runner: runner}
+	want := realmbranding.Branding{LeadingColor: "#008C45"}
+	got, err := publisher.SetRealmPublicBranding(context.Background(), realmID, want)
+	if err != nil || got != want || runner.calls != 1 {
+		t.Fatalf("SetRealmPublicBranding()=%+v calls=%d err=%v", got, runner.calls, err)
+	}
+	got, err = publisher.RealmPublicBranding(context.Background(), realmID)
+	if err != nil || got != want {
+		t.Fatalf("RealmPublicBranding()=%+v err=%v", got, err)
+	}
+	if _, err := publisher.SetRealmPublicBranding(context.Background(), realmID, want); err != nil || runner.calls != 1 {
+		t.Fatalf("idempotent set calls=%d err=%v", runner.calls, err)
+	}
+}
 
 func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 	root := t.TempDir()
@@ -191,7 +214,7 @@ func TestProjectedRepositoriesSourcesEditingPolicyFromRecordNotPreviousView(t *t
 		RepoID: repoID, DisplayName: "Docs", URL: records[repoID].URL, Access: "rw",
 		State: "active", OwnerRealmID: realmID,
 		AttachmentPolicy: "required", MetadataDigest: "sha256:stale",
-		EditingPolicy:    clientview.EditingFree,
+		EditingPolicy: clientview.EditingFree,
 	}}
 
 	got := projectedRepositories(records, nil, realmID, "normal", "desktop", previous)

@@ -4,10 +4,12 @@
 package web
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -18,7 +20,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,11 +48,14 @@ type Backend interface {
 }
 
 type Handler struct {
-	Backend  Backend
-	Cache    *cache.Store
-	Fetches  *FetchCoordinator
-	VisitKey []byte
-	Now      func() time.Time
+	Backend        Backend
+	Cache          *cache.Store
+	Fetches        *FetchCoordinator
+	VisitKey       []byte
+	MaxBundleFiles int
+	MaxBundleSize  int64
+	BundleSlots    chan struct{}
+	Now            func() time.Time
 }
 
 type visit struct {
@@ -69,13 +74,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	parts, ok := routeParts(request.URL)
-	if !ok || (len(parts) != 2 && len(parts) != 4) {
+	if !ok || (len(parts) != 2 && len(parts) != 3 && len(parts) != 4) {
 		h.notFound(w)
 		return
 	}
 	alias, channelSlug := parts[0], parts[1]
 	if len(parts) == 2 {
 		h.entry(w, request, alias, channelSlug)
+		return
+	}
+	if len(parts) == 3 {
+		if parts[2] != "bundle" || request.Method != http.MethodPost {
+			h.notFound(w)
+			return
+		}
+		h.bundle(w, request, alias, channelSlug)
 		return
 	}
 	switch parts[2] {
@@ -108,7 +121,7 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 			h.notFound(w)
 			return
 		}
-		h.renderListing(w, projection, claims, encoded)
+		h.renderListing(w, projection, claims, encoded, request.URL.Query().Get("notice") == "select")
 		return
 	}
 	entry, err := h.Backend.Enter(request.Context(), alias, channelSlug)
@@ -249,6 +262,187 @@ func (h Handler) fillCache(ctx context.Context, request authority.ObjectRequest,
 	return h.Fetches.Do(ctx, key, fill)
 }
 
+type bundleLeaf struct {
+	cacheKey string
+	name     string
+	size     int64
+}
+
+func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, channelSlug string) {
+	if h.Cache == nil || h.MaxBundleFiles < 1 || h.MaxBundleSize < 1 {
+		h.notFound(w)
+		return
+	}
+	request.Body = http.MaxBytesReader(w, request.Body, 512<<10)
+	if err := request.ParseForm(); err != nil {
+		h.notFound(w)
+		return
+	}
+	projection, claims, encoded, ok := h.currentVisit(request, alias, channelSlug)
+	if !ok {
+		h.notFound(w)
+		return
+	}
+	if h.BundleSlots != nil {
+		select {
+		case h.BundleSlots <- struct{}{}:
+			defer func() { <-h.BundleSlots }()
+		default:
+			h.notFound(w)
+			return
+		}
+	}
+	objects, archiveName, selected := selectBundleObjects(projection, request.PostForm)
+	if !selected {
+		target := fmt.Sprintf("/%s/%s?v=%s&notice=select", url.PathEscape(alias), url.PathEscape(channelSlug), url.QueryEscape(encoded))
+		http.Redirect(w, request, target, http.StatusSeeOther)
+		return
+	}
+	if len(objects) < 1 || len(objects) > h.MaxBundleFiles {
+		h.notFound(w)
+		return
+	}
+	leaves, err := h.prepareBundle(request.Context(), claims, objects)
+	if err != nil {
+		h.notFound(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", contentDisposition(archiveName+".zip"))
+	w.Header().Set("Cache-Control", "private, no-store")
+	archive := zip.NewWriter(w)
+	for _, leaf := range leaves {
+		file, _, openErr := h.Cache.Open(leaf.cacheKey, h.now())
+		if openErr != nil {
+			_ = archive.Close()
+			return
+		}
+		header := &zip.FileHeader{Name: leaf.name, Method: zip.Store}
+		header.SetModTime(time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC))
+		entry, createErr := archive.CreateHeader(header)
+		if createErr == nil {
+			_, createErr = io.CopyN(entry, file, leaf.size)
+		}
+		_ = file.Close()
+		if createErr != nil {
+			_ = archive.Close()
+			return
+		}
+	}
+	_ = archive.Close()
+}
+
+func selectBundleObjects(projection channel.Projection, form url.Values) ([]channel.PublicObject, string, bool) {
+	if form.Get("all") == "1" {
+		return append([]channel.PublicObject(nil), projection.Objects...), safeArchivePart(projection.Slug), true
+	}
+	if folder := form.Get("folder"); folder != "" {
+		folder = strings.Join(listingPathParts(folder), "/")
+		prefix := folder + "/"
+		objects := make([]channel.PublicObject, 0)
+		for _, object := range projection.Objects {
+			if strings.HasPrefix(objectDisplayPath(object), prefix) {
+				objects = append(objects, object)
+			}
+		}
+		parts := listingPathParts(folder)
+		return objects, safeArchivePart(parts[len(parts)-1]), len(objects) > 0
+	}
+	wanted := make(map[string]bool)
+	for _, publicID := range form["object"] {
+		if publicID != "" {
+			wanted[publicID] = true
+		}
+	}
+	objects := make([]channel.PublicObject, 0, len(wanted))
+	for _, object := range projection.Objects {
+		if wanted[object.PublicID] {
+			objects = append(objects, object)
+			delete(wanted, object.PublicID)
+		}
+	}
+	if len(objects) == 0 || len(wanted) != 0 {
+		return nil, "", false
+	}
+	return objects, safeArchivePart(projection.Slug) + "-wybrane", true
+}
+
+func (h Handler) prepareBundle(ctx context.Context, claims visit, objects []channel.PublicObject) ([]bundleLeaf, error) {
+	leaves := make([]bundleLeaf, 0, len(objects))
+	var total int64
+	usedNames := make(map[string]int)
+	for _, object := range objects {
+		objectRequest := authority.ObjectRequest{ChannelID: claims.ChannelID, PublicID: object.PublicID, Revision: claims.Revision, FrostProof: claims.FrostProof}
+		permit, err := h.Backend.Check(ctx, objectRequest)
+		if err != nil {
+			return nil, err
+		}
+		file, size, err := h.Cache.Open(permit.CacheKey, h.now())
+		if err != nil {
+			if err = h.fillCache(ctx, objectRequest, permit.CacheKey); err != nil {
+				return nil, err
+			}
+			file, size, err = h.Cache.Open(permit.CacheKey, h.now())
+		}
+		if err != nil {
+			return nil, err
+		}
+		_ = file.Close()
+		if size < 0 || total > h.MaxBundleSize-size {
+			return nil, errors.New("public share bundle exceeds size limit")
+		}
+		total += size
+		name := uniqueArchiveName(safeArchivePath(object.DisplayName), usedNames)
+		leaves = append(leaves, bundleLeaf{cacheKey: permit.CacheKey, name: name, size: size})
+	}
+	return leaves, nil
+}
+
+func objectDisplayPath(object channel.PublicObject) string {
+	return strings.Join(listingPathParts(object.DisplayName), "/")
+}
+
+func safeArchivePath(displayName string) string {
+	parts := listingPathParts(displayName)
+	for index := range parts {
+		parts[index] = safeArchivePart(parts[index])
+	}
+	return strings.Join(parts, "/")
+}
+
+func safeArchivePart(value string) string {
+	value = strings.Map(func(character rune) rune {
+		if character < 32 || character == 127 || strings.ContainsRune("\\/:*?\"<>|", character) {
+			return '_'
+		}
+		return character
+	}, value)
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, ".")
+	if value == "" {
+		return "plik"
+	}
+	return value
+}
+
+func uniqueArchiveName(name string, used map[string]int) string {
+	key := strings.ToLower(name)
+	used[key]++
+	if used[key] == 1 {
+		return name
+	}
+	extension := path.Ext(name)
+	base := strings.TrimSuffix(name, extension)
+	for suffix := used[key]; ; suffix++ {
+		candidate := fmt.Sprintf("%s (%d)%s", base, suffix, extension)
+		candidateKey := strings.ToLower(candidate)
+		if used[candidateKey] == 0 {
+			used[candidateKey] = 1
+			return candidate
+		}
+	}
+}
+
 // FetchCoordinator coalesces concurrent misses for one opaque cache key. It
 // carries no policy and no bytes; waiters receive only the leader's result.
 type FetchCoordinator struct {
@@ -387,68 +581,82 @@ func hasPublicObject(projection channel.Projection, publicID string) bool {
 	return false
 }
 
-func (h Handler) renderListing(w http.ResponseWriter, projection channel.Projection, claims visit, encoded string) {
+func (h Handler) renderListing(w http.ResponseWriter, projection channel.Projection, claims visit, encoded string, selectionNotice bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+listingCSSHash+"'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	bundles := h.Cache != nil && h.MaxBundleFiles > 0 && h.MaxBundleSize > 0
 	data := listingPage{
-		Alias:     projection.Alias,
-		Slug:      projection.Slug,
-		Revision:  claims.Revision,
-		Count:     len(projection.Objects),
-		CountText: formatListingCount(len(projection.Objects)),
-		Tree:      buildListingTree(projection, encoded),
-		CSS:       template.CSS(listingCSS),
+		Alias:           projection.Alias,
+		Slug:            projection.Slug,
+		Revision:        claims.Revision,
+		Count:           len(projection.Objects),
+		CountText:       formatListingCount(len(projection.Objects)),
+		Tree:            buildListingTree(projection, encoded, bundles),
+		Bundles:         bundles,
+		BundleURL:       fmt.Sprintf("/%s/%s/bundle?v=%s", url.PathEscape(projection.Alias), url.PathEscape(projection.Slug), url.QueryEscape(encoded)),
+		SelectionNotice: selectionNotice,
+		BrandSymbol:     brandSymbol,
+		DownloadIcon:    listingIcon("download"),
+		ArchiveIcon:     listingIcon("archive"),
+		CSS:             template.CSS(listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS),
 	}
 	_ = listingTemplate.Execute(w, data)
 }
 
 type listingPage struct {
-	Alias     string
-	Slug      string
-	Revision  int64
-	Count     int
-	CountText string
-	Tree      listingDirectory
-	CSS       template.CSS
+	Alias, Slug                            string
+	Revision                               int64
+	Count                                  int
+	CountText, BundleURL                   string
+	Tree                                   listingDirectory
+	Bundles, SelectionNotice               bool
+	BrandSymbol, DownloadIcon, ArchiveIcon template.HTML
+	CSS                                    template.CSS
 }
 
 type listingDirectory struct {
-	Name        string
-	Directories []listingDirectory
-	Files       []listingFile
+	Name, Path               string
+	Directories              []listingDirectory
+	Files                    []listingFile
+	BundleEnabled            bool
+	FolderIcon, DownloadIcon template.HTML
 }
 
 type listingFile struct {
-	Name, Type, Badge, URL, Size string
-	SizeKnown                    bool
+	Name, Type, URL, Size, PublicID, IconClass string
+	SizeKnown, BundleEnabled                   bool
+	Icon                                       template.HTML
 }
 
 type listingTreeBuilder struct {
-	name        string
+	name, path  string
 	directories map[string]*listingTreeBuilder
 	files       []listingFile
 }
 
-func buildListingTree(projection channel.Projection, visit string) listingDirectory {
+func buildListingTree(projection channel.Projection, visit string, bundles bool) listingDirectory {
 	root := &listingTreeBuilder{directories: map[string]*listingTreeBuilder{}}
 	for _, object := range projection.Objects {
 		parts := listingPathParts(object.DisplayName)
 		directory := root
-		for _, part := range parts[:len(parts)-1] {
+		for index, part := range parts[:len(parts)-1] {
 			child := directory.directories[part]
 			if child == nil {
-				child = &listingTreeBuilder{name: part, directories: map[string]*listingTreeBuilder{}}
+				child = &listingTreeBuilder{name: part, path: strings.Join(parts[:index+1], "/"), directories: map[string]*listingTreeBuilder{}}
 				directory.directories[part] = child
 			}
 			directory = child
 		}
-		typeName, badge := listingFileType(parts[len(parts)-1])
+		typeName, iconName := listingFileType(parts[len(parts)-1])
 		file := listingFile{
-			Name:  parts[len(parts)-1],
-			Type:  typeName,
-			Badge: badge,
-			URL:   fmt.Sprintf("/%s/%s/get/%s?v=%s", url.PathEscape(projection.Alias), url.PathEscape(projection.Slug), url.PathEscape(object.PublicID), url.QueryEscape(visit)),
+			Name:          parts[len(parts)-1],
+			Type:          typeName,
+			Icon:          listingIcon(iconName),
+			IconClass:     iconName,
+			PublicID:      object.PublicID,
+			BundleEnabled: bundles,
+			URL:           fmt.Sprintf("/%s/%s/get/%s?v=%s", url.PathEscape(projection.Alias), url.PathEscape(projection.Slug), url.PathEscape(object.PublicID), url.QueryEscape(visit)),
 		}
 		if object.Size != nil {
 			file.SizeKnown = true
@@ -456,7 +664,7 @@ func buildListingTree(projection channel.Projection, visit string) listingDirect
 		}
 		directory.files = append(directory.files, file)
 	}
-	return freezeListingTree(root)
+	return freezeListingTree(root, bundles)
 }
 
 func listingPathParts(displayName string) []string {
@@ -473,10 +681,10 @@ func listingPathParts(displayName string) []string {
 	return clean
 }
 
-func freezeListingTree(node *listingTreeBuilder) listingDirectory {
-	result := listingDirectory{Name: node.name, Files: append([]listingFile(nil), node.files...)}
+func freezeListingTree(node *listingTreeBuilder, bundles bool) listingDirectory {
+	result := listingDirectory{Name: node.name, Path: node.path, Files: append([]listingFile(nil), node.files...), BundleEnabled: bundles, FolderIcon: listingIcon("folder"), DownloadIcon: listingIcon("download")}
 	for _, child := range node.directories {
-		result.Directories = append(result.Directories, freezeListingTree(child))
+		result.Directories = append(result.Directories, freezeListingTree(child, bundles))
 	}
 	sort.SliceStable(result.Directories, func(i, j int) bool { return listingLess(result.Directories[i].Name, result.Directories[j].Name) })
 	sort.SliceStable(result.Files, func(i, j int) bool { return listingLess(result.Files[i].Name, result.Files[j].Name) })
@@ -551,7 +759,7 @@ func isListingDigit(value byte) bool {
 }
 
 func listingFileType(name string) (string, string) {
-	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), ".")
+	ext := strings.TrimPrefix(strings.ToLower(path.Ext(name)), ".")
 	types := map[string]string{
 		"pdf": "Dokument PDF", "doc": "Dokument Word", "docx": "Dokument Word", "odt": "Dokument tekstowy", "txt": "Plik tekstowy", "rtf": "Dokument tekstowy",
 		"xls": "Arkusz kalkulacyjny", "xlsx": "Arkusz kalkulacyjny", "ods": "Arkusz kalkulacyjny", "csv": "Dane tabelaryczne",
@@ -565,15 +773,26 @@ func listingFileType(name string) (string, string) {
 	typeName := types[ext]
 	if typeName == "" {
 		if ext == "" {
-			return "Plik", "FILE"
+			return "Plik", "document"
 		}
 		typeName = "Plik " + strings.ToUpper(ext)
 	}
-	badge := strings.ToUpper(ext)
-	if len(badge) > 4 {
-		badge = badge[:4]
+	icons := map[string]string{
+		"pdf": "pdf", "doc": "document", "docx": "document", "odt": "document", "txt": "document", "rtf": "document",
+		"xls": "table", "xlsx": "table", "ods": "table", "csv": "table",
+		"ppt": "slide", "pptx": "slide", "odp": "slide",
+		"dwg": "cad", "dxf": "cad", "ifc": "cad", "stl": "cad", "obj": "cad", "step": "cad", "stp": "cad",
+		"jpg": "image", "jpeg": "image", "png": "image", "gif": "image", "webp": "image", "tif": "image", "tiff": "image", "svg": "image",
+		"zip": "archive", "7z": "archive", "rar": "archive", "tar": "archive", "gz": "archive",
+		"mp4": "video", "mkv": "video", "mov": "video", "avi": "video", "webm": "video",
+		"mp3": "audio", "wav": "audio", "flac": "audio", "m4a": "audio", "ogg": "audio",
+		"html": "code", "htm": "code", "css": "code", "js": "code", "json": "code", "xml": "code", "go": "code", "py": "code", "sh": "code",
 	}
-	return typeName, badge
+	iconName := icons[ext]
+	if iconName == "" {
+		iconName = "document"
+	}
+	return typeName, iconName
 }
 
 func formatListingSize(size int64) string {
@@ -665,10 +884,57 @@ func (h Handler) now() time.Time {
 	return time.Now().UTC()
 }
 
+// The SVGs are a pinned, vendored subset of Microsoft Fluent UI System Icons.
+// LICENSE.txt beside them records their MIT license and exact package version.
+//
+//go:embed assets/fluent/*.svg assets/brand/*.svg
+var embeddedWebAssets embed.FS
+
+var brandSymbol = func() template.HTML {
+	raw, err := embeddedWebAssets.ReadFile("assets/brand/filees-space-symbol.svg")
+	if err != nil || !strings.HasPrefix(strings.TrimSpace(string(raw)), "<svg") {
+		panic("invalid embedded filees:space symbol")
+	}
+	return template.HTML(raw) // Owner-supplied, pinned SVG asset.
+}()
+
+var listingIcons = func() map[string]template.HTML {
+	files := map[string]string{
+		"archive": "archive_24_regular.svg", "audio": "music_note_2_24_regular.svg",
+		"cad": "cube_24_regular.svg", "code": "code_24_regular.svg",
+		"document": "document_24_regular.svg", "download": "arrow_download_24_regular.svg",
+		"folder": "folder_24_filled.svg", "image": "image_24_regular.svg",
+		"pdf": "document_pdf_24_regular.svg", "slide": "slide_text_24_regular.svg",
+		"table": "table_24_regular.svg", "video": "video_24_regular.svg",
+	}
+	icons := make(map[string]template.HTML, len(files))
+	for name, file := range files {
+		raw, err := embeddedWebAssets.ReadFile("assets/fluent/" + file)
+		if err != nil || !strings.HasPrefix(strings.TrimSpace(string(raw)), "<svg") {
+			panic("invalid embedded Fluent icon: " + file)
+		}
+		icons[name] = template.HTML(raw) // Pinned, reviewed SVG assets only.
+	}
+	return icons
+}()
+
+func listingIcon(name string) template.HTML {
+	if icon := listingIcons[name]; icon != "" {
+		return icon
+	}
+	return listingIcons["document"]
+}
+
 const listingCSS = `:root{color-scheme:light;--ink:#171717;--muted:#696969;--line:#dedede;--soft:#f5f5f3;--paper:#fff;--accent:#ffd400;--accent-strong:#e5bd00;--focus:#1666c5;font-family:"Segoe UI",Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}*{box-sizing:border-box}html{background:#ececea}body{margin:0;color:var(--ink);background:linear-gradient(180deg,#f7f7f5 0,#ececea 100%);min-height:100vh}.shell{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:32px 0 56px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:28px}.brand{display:flex;align-items:center;gap:11px;font-size:15px;font-weight:700;letter-spacing:.02em}.brand-mark{display:grid;place-items:center;width:38px;height:38px;background:var(--ink);color:var(--accent);border-radius:9px;font-size:16px;font-weight:900;letter-spacing:-.08em}.realm{color:var(--muted);font-size:13px}.card{overflow:hidden;background:var(--paper);border:1px solid #d8d8d5;border-radius:14px;box-shadow:0 15px 38px rgba(0,0,0,.08)}.heading{padding:28px 30px 24px;border-bottom:1px solid var(--line)}h1{font-size:clamp(25px,4vw,36px);line-height:1.12;margin:0 0 9px;letter-spacing:-.035em}.meta{display:flex;flex-wrap:wrap;gap:7px 18px;color:var(--muted);font-size:14px}.meta span+span:before{content:"·";margin-right:18px;color:#aaa}.browser{min-width:0}.columns,.file-row{display:grid;grid-template-columns:minmax(260px,1fr) minmax(150px,220px) 100px 96px;align-items:center}.columns{min-height:42px;padding:0 18px;color:#727272;background:var(--soft);border-bottom:1px solid var(--line);font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.045em}.columns span:nth-child(3){text-align:right}.columns span:last-child{text-align:right}.tree{padding:7px 0}.directory{border-bottom:1px solid #eee}.directory:last-child{border-bottom:0}.directory summary{position:relative;display:flex;align-items:center;gap:11px;min-height:45px;padding:0 20px;cursor:pointer;font-weight:650;list-style:none;user-select:none}.directory summary::-webkit-details-marker{display:none}.directory summary:before{content:"";width:8px;height:8px;border-right:2px solid #777;border-bottom:2px solid #777;transform:rotate(-45deg);transition:transform .12s ease}.directory[open]>summary:before{transform:rotate(45deg) translate(-2px,-2px)}.folder-icon{position:relative;width:23px;height:16px;border:1px solid #d6ac00;border-radius:3px;background:var(--accent);box-shadow:inset 0 -2px 0 rgba(0,0,0,.06)}.folder-icon:before{content:"";position:absolute;left:1px;top:-5px;width:10px;height:5px;border:1px solid #d6ac00;border-bottom:0;border-radius:3px 3px 0 0;background:var(--accent)}.branch{margin-left:27px;border-left:1px solid #ddd}.branch>.directory>summary{padding-left:18px}.file-row{min-height:48px;padding:5px 18px;border-bottom:1px solid #eee;font-size:14px}.file-row:last-child{border-bottom:0}.file-row:hover{background:#fffbea}.file-name{display:flex;align-items:center;min-width:0;gap:12px}.file-badge{display:grid;place-items:center;flex:0 0 34px;height:38px;border:1px solid #cfcfcb;border-radius:4px;background:linear-gradient(145deg,#fff,#efefec);color:#555;font-size:9px;font-weight:800;letter-spacing:.015em}.name-link{min-width:0;color:var(--ink);font-weight:560;text-decoration:none;overflow-wrap:anywhere}.name-link:hover{text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px}.file-type{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-size{text-align:right;color:#4f4f4f;font-variant-numeric:tabular-nums}.unknown{color:#aaa}.download{text-align:center;justify-self:end;min-width:78px;padding:7px 10px;border:1px solid #c9c9c5;border-radius:7px;color:#222;background:#fff;text-decoration:none;font-size:13px;font-weight:650}.download:hover{border-color:var(--accent-strong);background:var(--accent)}a:focus-visible,summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.empty{padding:70px 24px;text-align:center}.empty-icon{display:block;margin:0 auto 17px;width:48px;height:35px;border:2px solid #c4a000;border-radius:6px;background:var(--accent)}.empty strong{display:block;font-size:18px;margin-bottom:6px}.empty p{margin:0;color:var(--muted)}.footer{padding:17px 4px;color:#777;text-align:center;font-size:12px}@media(max-width:720px){.shell{width:min(calc(100% - 18px),1120px);padding-top:16px}.topbar{margin:0 7px 17px}.realm{display:none}.card{border-radius:10px}.heading{padding:22px 18px 19px}.columns,.file-row{grid-template-columns:minmax(150px,1fr) 72px 84px}.columns span:nth-child(2),.file-type{display:none}.branch{margin-left:12px}.directory summary{padding:0 12px}.file-row{padding-left:12px;padding-right:10px}.file-badge{flex-basis:30px;height:34px}.download{min-width:70px}}@media(max-width:450px){.columns,.file-row{grid-template-columns:minmax(130px,1fr) 72px}.columns span:nth-child(3),.file-size{display:none}.meta span+span:before{margin-right:9px}.meta{gap:7px 9px}.branch{margin-left:7px}.file-row{font-size:13px}}@media(prefers-reduced-motion:reduce){.directory summary:before{transition:none}}`
 
+const listingCSSOverrides = `.toolbar{display:flex;align-items:center;justify-content:flex-end;gap:9px;padding:12px 18px;border-bottom:1px solid var(--line);background:#fff}.bundle-button,.folder-download{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 12px;border:1px solid #c9c9c5;border-radius:7px;color:#222;background:#fff;font:inherit;font-size:13px;font-weight:650;cursor:pointer}.bundle-button.primary{border-color:var(--accent-strong);background:var(--accent)}.bundle-button:hover,.folder-download:hover{border-color:var(--accent-strong);background:#fff6bd}.button-icon,.mime-icon,.folder-icon{display:inline-grid;place-items:center;flex:none}.button-icon svg{width:17px;height:17px}.mime-icon{width:34px;height:38px;color:#4c4c4c}.mime-icon svg{width:26px;height:26px}.folder-icon{width:25px;height:25px;border:0;border-radius:0;background:none;box-shadow:none;color:#e0b900}.folder-icon:before{content:none}.folder-icon svg{width:25px;height:25px}.columns,.file-row{grid-template-columns:34px minmax(260px,1fr) minmax(150px,220px) 100px 96px}.columns span:nth-child(4){text-align:right}.select-cell{display:grid;place-items:center}.select-cell input{width:17px;height:17px;accent-color:var(--accent-strong)}.folder-actions{display:flex;justify-content:flex-end;padding:5px 18px 8px}.notice{margin:12px 18px 0;padding:10px 12px;border-left:4px solid var(--accent-strong);background:#fff8cf;font-size:13px}.file-icon-pdf{color:#b42318}.file-icon-image{color:#16794d}.file-icon-video,.file-icon-audio{color:#6b4bb6}.file-icon-table{color:#107c41}.file-icon-slide{color:#c43e1c}.file-icon-cad{color:#1264a3}button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}@media(max-width:720px){.columns,.file-row{grid-template-columns:32px minmax(150px,1fr) 72px 84px}.columns span:nth-child(3),.file-type{display:none}.toolbar{padding:10px;flex-wrap:wrap}.mime-icon{width:30px;height:34px}.mime-icon svg{width:24px;height:24px}}@media(max-width:450px){.columns,.file-row{grid-template-columns:30px minmax(130px,1fr) 72px}.columns span:nth-child(4),.file-size{display:none}.bundle-button{flex:1}.folder-actions{padding-right:10px}}`
+
+const brandCSSOverrides = `:root{--ink:#0B1D3A;--muted:#667085;--line:#D9DEE7;--soft:#F7F8FA;--paper:#FFFFFF;--accent:#FF6A00;--accent-strong:#D95800;--focus:#1264A3;--mono:"Roboto Mono","IBM Plex Mono","DejaVu Sans Mono",ui-monospace,SFMono-Regular,Consolas,monospace}html{background:var(--soft)}body{background:var(--soft);color:var(--ink)}.shell{width:min(1200px,calc(100% - 48px));padding:24px 0 48px}.topbar{padding:16px 22px;margin:0;background:var(--paper);border:1px solid var(--line);border-bottom:0;font-family:var(--mono);font-size:13px;letter-spacing:.035em}.brand{gap:10px;font-size:14px}.brand-mark{display:block;width:31px;height:25px;background:none;border-radius:0;color:inherit}.brand-mark svg{display:block;width:100%;height:100%}.realm{font-family:var(--mono);font-size:12px}.card{border-radius:0;border-color:var(--line);box-shadow:0 18px 50px rgba(11,29,58,.08)}.heading{padding:32px 30px 27px;border-bottom-color:var(--line);border-left:5px solid var(--accent)}h1{color:var(--ink);font-size:clamp(26px,4vw,38px);letter-spacing:-.03em}.meta{font-family:var(--mono);font-size:12px}.columns{background:var(--soft);color:var(--muted);font-family:var(--mono);font-weight:600}.toolbar{background:var(--paper);padding:13px 18px}.bundle-button,.folder-download{border-color:var(--navy,var(--ink));border-radius:2px;color:var(--ink);background:var(--paper);font-family:var(--mono);font-size:12px;font-weight:600}.bundle-button.primary{border-color:var(--accent);background:var(--accent);color:var(--ink)}.bundle-button:hover,.folder-download:hover,.download:hover{border-color:var(--ink);background:var(--ink);color:#fff}.folder-icon{color:var(--accent)}.mime-icon,.file-icon-pdf,.file-icon-image,.file-icon-video,.file-icon-audio,.file-icon-table,.file-icon-slide,.file-icon-cad{color:var(--ink)}.select-cell input{accent-color:var(--accent)}.download{border-color:var(--line);border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:12px}.notice{border-left-color:var(--accent);background:#FFF3EB;color:var(--ink);font-family:var(--mono)}.directory summary{color:var(--ink)}.file-row:hover{background:#FFF8F3}.footer{font-family:var(--mono);color:var(--muted)}@media(max-width:640px){.shell{width:100%;padding:0}.topbar{border-left:0;border-right:0}.card{border-left:0;border-right:0}.heading{padding:27px 20px 23px}}`
+
+const iconColorCSS = `.button-icon svg,.mime-icon svg,.folder-icon svg{fill:currentColor}.bundle-button,.folder-download{border-color:var(--ink)}.empty-icon{background:var(--accent);border-color:var(--ink);border-radius:2px}`
+
 var listingCSSHash = func() string {
-	digest := sha256.Sum256([]byte(listingCSS))
+	digest := sha256.Sum256([]byte(listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS))
 	return base64.StdEncoding.EncodeToString(digest[:])
 }()
 
@@ -682,15 +948,17 @@ var listingTemplate = template.Must(template.New("listing").Parse(`<!doctype htm
 </head>
 <body>
 <main class="shell">
-<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">F/</span><span>FileES</span></div><div class="realm">Udostępnione przez {{.Alias}}</div></header>
+<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">{{.BrandSymbol}}</span><span>filees:space</span></div><div class="realm">udostępnione przez {{.Alias}}</div></header>
 <section class="card" aria-labelledby="share-title">
 <div class="heading"><h1 id="share-title">{{.Slug}}</h1><div class="meta"><span>{{.CountText}}</span><span>wydanie r{{.Revision}}</span><span>{{.Alias}}</span></div></div>
 <div class="browser">
 {{if eq .Count 0}}
 <div class="empty"><span class="empty-icon" aria-hidden="true"></span><strong>Ten folder jest jeszcze pusty</strong><p>Właściciel może dodać tu pliki później.</p></div>
 {{else}}
-<div class="columns" role="row"><span>Nazwa</span><span>Typ</span><span>Rozmiar</span><span>Pobierz</span></div>
+{{if .Bundles}}<form method="post" action="{{.BundleURL}}"><div class="toolbar"><button class="bundle-button" type="submit"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz zaznaczone</button><button class="bundle-button primary" type="submit" name="all" value="1"><span class="button-icon" aria-hidden="true">{{.ArchiveIcon}}</span>Pobierz całość</button></div>{{if .SelectionNotice}}<div class="notice" role="status">Najpierw zaznacz przynajmniej jeden plik.</div>{{end}}{{end}}
+<div class="columns" role="row"><span aria-hidden="true"></span><span>Nazwa</span><span>Typ</span><span>Rozmiar</span><span>Pobierz</span></div>
 <div class="tree">{{range .Tree.Directories}}{{template "directory" .}}{{end}}{{range .Tree.Files}}{{template "file" .}}{{end}}</div>
+{{if .Bundles}}</form>{{end}}
 {{end}}
 </div>
 </section>
@@ -698,6 +966,6 @@ var listingTemplate = template.Must(template.New("listing").Parse(`<!doctype htm
 </main>
 </body>
 </html>
-{{define "directory"}}<details class="directory" open><summary><span class="folder-icon" aria-hidden="true"></span><span>{{.Name}}</span></summary><div class="branch">{{range .Directories}}{{template "directory" .}}{{end}}{{range .Files}}{{template "file" .}}{{end}}</div></details>{{end}}
-{{define "file"}}<div class="file-row" role="row"><div class="file-name"><span class="file-badge" aria-hidden="true">{{.Badge}}</span><a class="name-link" rel="nofollow" href="{{.URL}}">{{.Name}}</a></div><div class="file-type">{{.Type}}</div><div class="file-size{{if not .SizeKnown}} unknown{{end}}">{{if .SizeKnown}}{{.Size}}{{else}}—{{end}}</div><a class="download" rel="nofollow" href="{{.URL}}">Pobierz</a></div>{{end}}`))
+{{define "directory"}}<details class="directory"><summary><span class="folder-icon" aria-hidden="true">{{.FolderIcon}}</span><span>{{.Name}}</span></summary><div class="branch">{{if .BundleEnabled}}<div class="folder-actions"><button class="folder-download" type="submit" name="folder" value="{{.Path}}"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz folder</button></div>{{end}}{{range .Directories}}{{template "directory" .}}{{end}}{{range .Files}}{{template "file" .}}{{end}}</div></details>{{end}}
+{{define "file"}}<div class="file-row" role="row"><div class="select-cell">{{if .BundleEnabled}}<input type="checkbox" name="object" value="{{.PublicID}}" aria-label="Zaznacz {{.Name}}">{{end}}</div><div class="file-name"><span class="mime-icon file-icon-{{.IconClass}}" aria-hidden="true">{{.Icon}}</span><a class="name-link" rel="nofollow" href="{{.URL}}">{{.Name}}</a></div><div class="file-type">{{.Type}}</div><div class="file-size{{if not .SizeKnown}} unknown{{end}}">{{if .SizeKnown}}{{.Size}}{{else}}—{{end}}</div><a class="download" rel="nofollow" href="{{.URL}}">Pobierz</a></div>{{end}}`))
 var passwordTemplate = template.Must(template.New("password").Parse(`<!doctype html><html lang="pl"><meta charset="utf-8"><title>Dostęp do plików</title><form method="post" action="{{.Action}}"><label>Hasło <input type="password" name="password" autocomplete="current-password" required></label><button type="submit">Otwórz</button></form></html>`))

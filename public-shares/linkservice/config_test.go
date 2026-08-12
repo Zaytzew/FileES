@@ -33,6 +33,9 @@ func TestLoadContainsNoRepositoryOrCredentialSurface(t *testing.T) {
 	if runtime.CacheTTL.Hours() != 12 {
 		t.Fatalf("ttl=%v", runtime.CacheTTL)
 	}
+	if runtime.BundleMaxFiles != 512 || runtime.BundleMaxSize != 1048576 {
+		t.Fatalf("bundle defaults files=%d size=%d", runtime.BundleMaxFiles, runtime.BundleMaxSize)
+	}
 	if _, err := os.Stat(runtime.Config.Cache.Root); err != nil {
 		t.Fatalf("cache root not prepared: %v", err)
 	}
@@ -41,6 +44,17 @@ func TestLoadContainsNoRepositoryOrCredentialSurface(t *testing.T) {
 		if strings.Contains(strings.ToLower(string(raw)), forbidden) {
 			t.Fatalf("public config contains %q: %s", forbidden, raw)
 		}
+	}
+}
+
+func TestLoadRejectsBundleWithoutCacheOrBeyondCache(t *testing.T) {
+	withoutCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"127.0.0.1:9001"},"visit_key_file":"@KEY@","cache":{"enabled":false},"bundle":{"max_files":10,"max_size":1024}}`)
+	if _, err := Load(withoutCache); err == nil {
+		t.Fatal("bundle without private cache accepted")
+	}
+	beyondCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"127.0.0.1:9001"},"visit_key_file":"@KEY@","cache":{"enabled":true,"root":"@ROOT@/cache","max_size":1024},"bundle":{"max_files":10,"max_size":2048}}`)
+	if _, err := Load(beyondCache); err == nil {
+		t.Fatal("bundle larger than cache accepted")
 	}
 }
 

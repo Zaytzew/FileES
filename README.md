@@ -359,9 +359,12 @@ z ich rozmiarami, pomija `.svn` i `.filees`, odrzuca symlinki i zachowuje
 stabilne `public_id` dla ścieżek już obecnych w edytowanym kanale. Pusty folder
 jest legalnym placeholderem; późniejsze pliki wymagają jawnej aktualizacji
 kanału. Publiczna strona buduje wyłącznie z bezpiecznej projekcji mapy
-zwijane drzewo w stylu widoku „Szczegóły”: nazwa, typ, rozmiar i pobranie.
-Nie używa JavaScriptu ani miniaturek. Kanał zamknięty używa osobnych tokenów dla
-adresów e-mail; kanał otwarty może być bez hasła albo z hasłem Argon2id.
+domyślnie zwinięte drzewo w stylu widoku „Szczegóły”: nazwa, ikona i opis typu,
+rozmiar oraz pobranie pojedynczego pliku. Zaznaczenie, folder i cały udział
+można pobrać również jako ograniczony ZIP. Widok używa identyfikacji
+`filees:space`; nie używa JavaScriptu ani miniaturek. Kanał zamknięty używa
+osobnych tokenów dla adresów e-mail; kanał otwarty może być bez hasła albo z
+hasłem Argon2id.
 Plaintext jest hashowany przed IPC control-plane i nigdy nie trafia do ticketu
 SVN. Edycja może zachować istniejący verifier po stronie serwera bez odsyłania
 go do klienta. Pusta rewizja śledzi HEAD, dodatni numer ustawia

@@ -42,18 +42,26 @@ type CacheConfig struct {
 	MaxSize int64  `json:"max_size,omitempty"`
 }
 
+type BundleConfig struct {
+	MaxFiles int   `json:"max_files,omitempty"`
+	MaxSize  int64 `json:"max_size,omitempty"`
+}
+
 type Config struct {
 	Schema       string          `json:"schema"`
 	FastCGI      FastCGIEndpoint `json:"fastcgi"`
 	Backchannel  Endpoint        `json:"backchannel"`
 	VisitKeyFile string          `json:"visit_key_file"`
 	Cache        CacheConfig     `json:"cache"`
+	Bundle       BundleConfig    `json:"bundle,omitempty"`
 }
 
 type Runtime struct {
-	Config   Config
-	VisitKey []byte
-	CacheTTL time.Duration
+	Config         Config
+	VisitKey       []byte
+	CacheTTL       time.Duration
+	BundleMaxFiles int
+	BundleMaxSize  int64
 }
 
 func Load(path string) (Runtime, error) {
@@ -115,7 +123,25 @@ func Load(path string) (Runtime, error) {
 			return Runtime{}, fmt.Errorf("cache root: %w", err)
 		}
 	}
-	return Runtime{Config: config, VisitKey: key, CacheTTL: ttl}, nil
+	bundleFiles, bundleSize := 0, int64(0)
+	if config.Cache.Enabled {
+		bundleFiles, bundleSize = config.Bundle.MaxFiles, config.Bundle.MaxSize
+		if bundleFiles == 0 {
+			bundleFiles = 512
+		}
+		if bundleSize == 0 {
+			bundleSize = 1 << 30
+			if config.Cache.MaxSize < bundleSize {
+				bundleSize = config.Cache.MaxSize
+			}
+		}
+		if bundleFiles < 1 || bundleFiles > 4096 || bundleSize < 1 || bundleSize > 1<<40 || bundleSize > config.Cache.MaxSize {
+			return Runtime{}, errors.New("bundle limits must fit 1..4096 files and the enabled cache capacity")
+		}
+	} else if config.Bundle.MaxFiles != 0 || config.Bundle.MaxSize != 0 {
+		return Runtime{}, errors.New("bundle downloads require the public leaf cache")
+	}
+	return Runtime{Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize}, nil
 }
 
 func (r Runtime) Handler() http.Handler {
@@ -129,7 +155,7 @@ func (r Runtime) Handler() http.Handler {
 	if r.Config.Cache.Enabled {
 		store = &cache.Store{Config: cache.Config{Root: r.Config.Cache.Root, TTL: r.CacheTTL, MaxSize: r.Config.Cache.MaxSize}}
 	}
-	return web.Handler{Backend: client, Cache: store, Fetches: &web.FetchCoordinator{}, VisitKey: r.VisitKey}
+	return web.Handler{Backend: client, Cache: store, Fetches: &web.FetchCoordinator{}, VisitKey: r.VisitKey, MaxBundleFiles: r.BundleMaxFiles, MaxBundleSize: r.BundleMaxSize, BundleSlots: make(chan struct{}, 1)}
 }
 
 func (r Runtime) ListenFastCGI() (net.Listener, func(), error) {

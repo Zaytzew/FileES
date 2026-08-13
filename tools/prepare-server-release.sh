@@ -31,7 +31,10 @@ cd "$root"
 [ -z "$(svn status -q)" ] || die "source WC has versioned changes"
 svn update --quiet
 [ -z "$(svn status -u -q | sed -n '/^[[:space:]]*\*/p')" ] || die "source WC is not at repository HEAD"
-source_revision=$(svn info --show-item revision)
+source_revision=$(svn info --show-item revision | tr -d '\r\n')
+case "$source_revision" in
+	*[!0-9]*|'') die "SVN returned an invalid source revision: $source_revision" ;;
+esac
 
 cd "$FILEES_BIN_WC"
 [ -z "$(svn status)" ] || die "FILEES-BIN WC has local or unversioned changes"

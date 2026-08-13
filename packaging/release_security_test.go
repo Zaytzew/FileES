@@ -48,6 +48,8 @@ func TestServerReleasePreparationHasNoPrivateKeyAndDoesNotMoveChannel(t *testing
 	script := string(raw)
 	for _, required := range []string{
 		"FILEES_RELEASE_PUBKEY", `svn status -q`, `svn update --quiet`,
+		`source_revision=$(svn info --show-item revision | tr -d '\r\n')`,
+		`SVN returned an invalid source revision`,
 		`openbsd-binary-policy.json`, `channel-stable.json`,
 		`review, then svn add/commit only releases/$RELEASE_ID`,
 	} {

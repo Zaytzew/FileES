@@ -75,7 +75,7 @@ instalacji klienta, a nie do pojedynczego repozytorium:
   },
   "update": {
     "enabled": true,
-    "repo_url": "https://releases.example/FILESS-BIN",
+    "repo_url": "https://releases.example/FILEES-BIN",
     "channel": "stable",
     "component": "desktop",
     "platform": "linux-amd64",

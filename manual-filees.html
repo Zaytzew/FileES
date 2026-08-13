@@ -824,7 +824,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
   },
   "update": {
     "enabled": true,
-    "repo_url": "https://releases.example/FILESS-BIN",
+    "repo_url": "https://releases.example/FILEES-BIN",
     "channel": "stable",
     "component": "desktop",
     "platform": "linux-amd64",
@@ -1279,8 +1279,8 @@ doas -u _filees-state filees-admin ticket list
 doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
 doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
 doas -u _filees-state filees-mail send</code></pre>
-<h2 id="ch3-managed">3.6 Managed Install and Upgrade: <code>filees-install</code></h2><div class="section-meta"><span class="status status-implemented">Implemented, channel not provisioned</span><span>The manifest-driven updater core exists, but no production FILESS-BIN repository, signed channel or release key has yet been provisioned.</span></div>
-<p><code>filees-install</code> is the implemented manifest-driven successor to the server shell installers, modelled on the ksefUCK upgrade channel. Its intended distribution repository (<strong>FILESS-BIN</strong>) has not yet been created, so the commands below describe the target workflow rather than the current production deployment path. The binary is present in the build bundle but the current generic <code>install-server.sh</code> does not install it. Until the signed channel, production signify key and complete ownership policy are delivered, server upgrades use a reviewed bundle copied to the host, followed by both <code>install-server.sh</code> and <code>openbsd/install-ssh.sh</code>; running only the first stage is unsafe on an integrated OpenBSD host.</p>
+<h2 id="ch3-managed">3.6 Managed Install and Upgrade: <code>filees-install</code></h2><div class="section-meta"><span class="status status-implemented">Implemented, channel not provisioned</span><span>The manifest-driven updater core and FILEES-BIN repository exist, but no signed production channel or release key has yet been provisioned.</span></div>
+<p><code>filees-install</code> is the implemented manifest-driven successor to the server shell installers, modelled on the ksefUCK upgrade channel but strengthened with signed owner/group policy, correct set-id handling, UID/GID-preserving rollback and a durable interrupted-apply journal. Its intended distribution repository (<strong>FILEES-BIN</strong>) has not yet been created, so the commands below describe the target workflow rather than the current production deployment path. The generic <code>install-server.sh</code> installs the updater and its conservative configuration; after one complete two-stage bundle deployment, <code>--adopt</code> can establish a managed baseline only when every local hash, owner, group and mode exactly matches a signed manifest. Until the signed channel and production signify key are delivered, server upgrades still use a reviewed bundle copied to the host, followed by both <code>install-server.sh</code> and <code>openbsd/install-ssh.sh</code>; running only the first stage is unsafe on an integrated OpenBSD host.</p>
 <pre><code># Plan against the configured channel (no changes):
 filees-install -check
 # Full plan including config-contract drift, no payload download:

@@ -18,6 +18,25 @@ func TestLoadMissingIsEmptyFirstInstall(t *testing.T) {
 	if st.InstalledRelease != "" || len(st.History) != 0 {
 		t.Fatalf("expected zero state, got %+v", st)
 	}
+	if !st.CanAdopt() {
+		t.Fatal("empty state must be adoptable")
+	}
+}
+
+func TestCanAdoptOnlyPristineState(t *testing.T) {
+	cases := []*State{
+		{InstalledRelease: "r1"},
+		{InstalledAt: "now"},
+		{HighestSequence: 1},
+		{SecurityEpoch: 1},
+		{System: &SystemState{Adopted: true}},
+		{History: []HistoryEntry{{ReleaseID: "r1"}}},
+	}
+	for i, st := range cases {
+		if st.CanAdopt() {
+			t.Errorf("state %d unexpectedly adoptable: %+v", i, st)
+		}
+	}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -58,6 +77,31 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if out.System.SSHDBackup != in.System.SSHDBackup {
 		t.Fatalf("system state mismatch: %+v", out.System)
+	}
+}
+
+func TestTransactionRoundTripAndRemoval(t *testing.T) {
+	dir := t.TempDir()
+	uid, gid := 100, 200
+	in := &Transaction{Entry: HistoryEntry{
+		ReleaseID: "r4", InstalledAt: "2026-08-13T00:00:00Z", BackupDir: "/backup/r4",
+		Files: []BackupFile{{Target: "/bin/x", Existed: true, UIDBefore: &uid, GIDBefore: &gid}},
+	}}
+	if err := SaveTransaction(dir, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := LoadTransaction(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out == nil || out.Entry.ReleaseID != "r4" || len(out.Entry.Files) != 1 {
+		t.Fatalf("transaction mismatch: %+v", out)
+	}
+	if err := RemoveTransaction(dir); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := LoadTransaction(dir); err != nil || out != nil {
+		t.Fatalf("transaction still present: %+v, %v", out, err)
 	}
 }
 

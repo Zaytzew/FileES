@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"filees/internal/durable"
 )
 
 func BundleDirectory(source, output string) error {
@@ -100,12 +102,7 @@ func BundleDirectory(source, output string) error {
 	if err := os.Rename(tempPath, output); err != nil {
 		return err
 	}
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return durable.SyncDirectory(dir)
 }
 
 func writeBundleEntries(writer *tar.Writer, root string, paths []string) error {

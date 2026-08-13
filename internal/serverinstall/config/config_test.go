@@ -17,11 +17,11 @@ func writeConfig(t *testing.T, content string) string {
 }
 
 func TestLoadMinimal(t *testing.T) {
-	cfg, err := Load(writeConfig(t, "[repo]\nurl = svn://example.org/FILESS-BIN/\n"))
+	cfg, err := Load(writeConfig(t, "[repo]\nurl = svn://example.org/FILEES-BIN/\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.RepoURL != "svn://example.org/FILESS-BIN" {
+	if cfg.RepoURL != "svn://example.org/FILEES-BIN" {
 		t.Fatalf("trailing slash not trimmed: %q", cfg.RepoURL)
 	}
 	if cfg.Channel != "stable" {

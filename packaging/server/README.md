@@ -129,6 +129,14 @@ The full OpenBSD procedure is in the administrative recovery section of
 
 ## OpenBSD upgrade boundary
 
+Produkcyjny bundle instaluje teraz `filees-install` oraz zachowawcze
+`/etc/filees/install.conf`. Po opublikowaniu podpisanego release’u bazowego
+uruchom `filees-install --adopt <release-id>`: komenda niczego nie podmienia i
+zaakceptuje serwer tylko wtedy, gdy hash, właściciel, grupa i pełny tryb każdego
+zarządzanego pliku dokładnie odpowiadają manifestowi. Następne upgrade’y należy
+wykonywać przez `filees-install --dry-run`, a potem `--apply`; trwały journal
+zapewnia pełne odtworzenie pre-image po przerwanym apply.
+
 On an already integrated OpenBSD host, `install-server.sh` alone is not a safe
 complete upgrade. The generic installer writes ordinary `0755` modes, while
 `openbsd/install-ssh.sh` assigns the required set-id ownership and modes to the

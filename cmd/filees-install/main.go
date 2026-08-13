@@ -19,6 +19,7 @@ func main() {
 	check := flag.Bool("check", false, "check the configured channel without installing")
 	dryRun := flag.Bool("dry-run", false, "show the install plan without downloading payload files")
 	apply := flag.Bool("apply", false, "download, verify, and install a release")
+	adopt := flag.Bool("adopt", false, "verify and adopt an existing installation as the managed baseline")
 	rollback := flag.Bool("rollback", false, "restore the previous locally installed release (binary rollback)")
 	revertTo := flag.String("revert-to", "", "install a specific release ID, e.g. r7")
 	purge := flag.Bool("purge", false, "remove all installed files and system configuration (stage 2 rollback)")
@@ -40,8 +41,8 @@ func main() {
 		die(err)
 	}
 	cfg.Talkative = cfg.Talkative || *talkative
-	if pubkeyConfigured() {
-		cfg.SignifyPubkey = embeddedPubkey
+	if key, ok := releasePubkey(); ok {
+		cfg.SignifyPubkey = key
 	}
 
 	if *checkConfig {
@@ -66,6 +67,7 @@ func main() {
 		check:     *check,
 		dryRun:    *dryRun,
 		apply:     *apply,
+		adopt:     *adopt,
 		rollback:  *rollback,
 		revertTo:  *revertTo,
 		purge:     *purge,
@@ -96,6 +98,10 @@ func main() {
 		if err := r.Apply(ctx, updater.Options{ReleaseID: releaseID, Yes: *yes, AllowRollback: *allowRollback}); err != nil {
 			die(err)
 		}
+	case "adopt":
+		if err := r.Adopt(ctx, updater.Options{ReleaseID: releaseID}); err != nil {
+			die(err)
+		}
 	case "rollback":
 		if err := r.Rollback(); err != nil {
 			die(err)
@@ -113,6 +119,7 @@ type actionFlags struct {
 	check     bool
 	dryRun    bool
 	apply     bool
+	adopt     bool
 	rollback  bool
 	revertTo  string
 	purge     bool
@@ -123,13 +130,13 @@ type actionFlags struct {
 
 func selectAction(cfg *config.Config, f actionFlags) (action, releaseID string, purgeOpts updater.PurgeOptions, err error) {
 	count := 0
-	for _, on := range []bool{f.check, f.dryRun, f.apply, f.rollback, f.purge, strings.TrimSpace(f.revertTo) != ""} {
+	for _, on := range []bool{f.check, f.dryRun, f.apply, f.adopt, f.rollback, f.purge, strings.TrimSpace(f.revertTo) != ""} {
 		if on {
 			count++
 		}
 	}
 	if count > 1 {
-		return "", "", updater.PurgeOptions{}, fmt.Errorf("choose one action: --check, --dry-run, --apply, --rollback, --purge or --revert-to")
+		return "", "", updater.PurgeOptions{}, fmt.Errorf("choose one action: --check, --dry-run, --apply, --adopt, --rollback, --purge or --revert-to")
 	}
 	if strings.TrimSpace(f.revertTo) != "" {
 		return "apply", strings.TrimSpace(f.revertTo), updater.PurgeOptions{}, nil
@@ -142,6 +149,9 @@ func selectAction(cfg *config.Config, f actionFlags) (action, releaseID string, 
 	}
 	if f.apply {
 		return "apply", firstArg(f.args), updater.PurgeOptions{}, nil
+	}
+	if f.adopt {
+		return "adopt", firstArg(f.args), updater.PurgeOptions{}, nil
 	}
 	if f.dryRun {
 		return "dry-run", firstArg(f.args), updater.PurgeOptions{}, nil

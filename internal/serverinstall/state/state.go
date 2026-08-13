@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"filees/internal/durable"
 )
 
 type State struct {
@@ -69,6 +71,10 @@ func (s *State) AdvanceFreshness(sequence, securityEpoch uint64) {
 // Written once on first apply; not modified on upgrade.
 // purge uses it to undo exactly what was set up.
 type SystemState struct {
+	// Adopted marks a pre-existing installation which was verified against a
+	// signed manifest. The installer did not create its users or system
+	// configuration, so purge must not claim ownership of those resources.
+	Adopted      bool     `json:"adopted,omitempty"`
 	UsersCreated []string `json:"users_created,omitempty"`
 	LoginConf    string   `json:"login_conf,omitempty"`
 	SSHDFragment string   `json:"sshd_fragment,omitempty"`
@@ -89,10 +95,21 @@ type BackupFile struct {
 	BackupPath   string `json:"backup_path,omitempty"`
 	Existed      bool   `json:"existed"`
 	SHA256Before string `json:"sha256_before,omitempty"`
+	UIDBefore    *int   `json:"uid_before,omitempty"`
+	GIDBefore    *int   `json:"gid_before,omitempty"`
 }
 
 // IsFirstInstall returns true when no prior apply has recorded system state.
 func (s *State) IsFirstInstall() bool { return s.System == nil }
+
+// CanAdopt is deliberately stricter than IsFirstInstall. Adoption establishes
+// the anti-rollback floor exactly once; allowing it over partial or existing
+// state would let an operator accidentally discard install history.
+func (s *State) CanAdopt() bool {
+	return s != nil && s.InstalledRelease == "" && s.InstalledAt == "" &&
+		s.HighestSequence == 0 && s.SecurityEpoch == 0 && s.System == nil &&
+		len(s.History) == 0
+}
 
 func Path(dir string) string { return filepath.Join(dir, "state.json") }
 
@@ -144,7 +161,10 @@ func Save(dir string, st *State) error {
 	if err := temp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, Path(dir))
+	if err := os.Rename(tmp, Path(dir)); err != nil {
+		return err
+	}
+	return durable.SyncDirectory(dir)
 }
 
 func NowStamp() string {

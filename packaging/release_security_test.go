@@ -17,6 +17,10 @@ func TestReleaseSigningToolKeepsPrivateKeyOffBuildAndVerifiesBeforeCommit(t *tes
 		`RELEASE_ID="${RELEASE_ID:-}"`,
 		`[ -z "$(svn status)" ]`,
 		`svn update --quiet`,
+		`CHANNEL="${CHANNEL:-}"`,
+		`alpha|beta|stable`,
+		`channel.v2.json`,
+		`channel.json`,
 		`channel-${CHANNEL}.v2.json`,
 		`channel-${CHANNEL}.json`,
 		`"$release_root"/*/*/manifest.json`,
@@ -33,9 +37,12 @@ func TestReleaseSigningToolKeepsPrivateKeyOffBuildAndVerifiesBeforeCommit(t *tes
 	if strings.Index(script, `cp "$candidate" "$channel_path"`) < strings.Index(script, `sign_manifest "$manifest_path"`) {
 		t.Fatal("channel is promoted before immutable manifests are signed")
 	}
-	for _, forbidden := range []string{"release.sec\n", "cp \"$SIGNIFY_SEC_KEY\"", "svn add \"$SIGNIFY_SEC_KEY\""} {
+	if strings.Index(script, `candidate="$release_root/channel.json"`) > strings.Index(script, `candidate="$release_root/channel-${CHANNEL}.json"`) {
+		t.Fatal("legacy channel-specific candidate takes precedence over neutral channel.json")
+	}
+	for _, forbidden := range []string{"release.sec\n", "cp \"$SIGNIFY_SEC_KEY\"", "svn add \"$SIGNIFY_SEC_KEY\"", `CHANNEL="${CHANNEL:-stable}"`} {
 		if strings.Contains(script, forbidden) {
-			t.Errorf("release signing tool contains forbidden private-key handling %q", forbidden)
+			t.Errorf("release signing tool contains forbidden pattern %q", forbidden)
 		}
 	}
 }
@@ -50,14 +57,14 @@ func TestServerReleasePreparationHasNoPrivateKeyAndDoesNotMoveChannel(t *testing
 		"FILEES_RELEASE_PUBKEY", `svn status -q`, `svn update --quiet`,
 		`source_revision=$(svn info --show-item revision | tr -d '\r\n')`,
 		`SVN returned an invalid source revision`,
-		`openbsd-binary-policy.json`, `channel-stable.json`,
+		`openbsd-binary-policy.json`, `channel.json`,
 		`review, then svn add/commit only releases/$RELEASE_ID`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("server release preparation missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{"SIGNIFY_SEC", "release.sec", "channels/stable.json"} {
+	for _, forbidden := range []string{"SIGNIFY_SEC", "release.sec", "channels/stable.json", "channel-stable.json"} {
 		if strings.Contains(script, forbidden) {
 			t.Errorf("build-host release preparation contains forbidden %q", forbidden)
 		}

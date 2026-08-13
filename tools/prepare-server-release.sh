@@ -59,7 +59,7 @@ go run ./cmd/filees-release-manifest \
 	-sequence "$SEQUENCE" \
 	-security-epoch "$SECURITY_EPOCH"
 
-candidate="$FILEES_BIN_WC/releases/$RELEASE_ID/channel-stable.json"
+candidate="$FILEES_BIN_WC/releases/$RELEASE_ID/channel.json"
 cat >"$candidate" <<EOF
 {
   "schema_version": 1,

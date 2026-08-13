@@ -14,6 +14,41 @@ case "$target" in
 		;;
 esac
 
+# Fail before producing artifacts when `go` is an interoperability wrapper
+# which does not propagate the requested target environment (for example a
+# Windows go.exe launched from WSL without WSLENV).  The output directory name
+# is part of the release contract, so silently building host binaries here is
+# unsafe.
+reported_goos=$(CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go env GOOS)
+reported_goarch=$(CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go env GOARCH)
+[ "$reported_goos" = "$goos" ] || {
+	echo "go ignored requested GOOS=$goos (reported $reported_goos)" >&2
+	exit 2
+}
+[ "$reported_goarch" = "$goarch" ] || {
+	echo "go ignored requested GOARCH=$goarch (reported $reported_goarch)" >&2
+	exit 2
+}
+
+verify_binary_target() {
+	binary=$1
+	command_name=$2
+	magic=$(od -An -tx1 -N4 "$binary" | tr -d ' \r\n')
+	[ "$magic" = "7f454c46" ] || {
+		echo "$command_name: expected ELF for $goos/$goarch, got magic $magic" >&2
+		exit 2
+	}
+	metadata=$(go version -m "$binary")
+	printf '%s\n' "$metadata" | grep -F "GOOS=$goos" >/dev/null || {
+		echo "$command_name: Go metadata does not report GOOS=$goos" >&2
+		exit 2
+	}
+	printf '%s\n' "$metadata" | grep -F "GOARCH=$goarch" >/dev/null || {
+		echo "$command_name: Go metadata does not report GOARCH=$goarch" >&2
+		exit 2
+	}
+}
+
 out="$dist/filees-server-$target"
 mkdir -p "$dist"
 tmp=$(mktemp -d "$dist/.filees-server-$target.tmp.XXXXXX")
@@ -54,6 +89,7 @@ for command in filees-admin filees-onboard filees-bootstrap-entry filees-operati
 		CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
 			-ldflags "$command_ldflags" \
 			-o "$tmp/bin/$command" "./cmd/$command"
+		verify_binary_target "$tmp/bin/$command" "$command"
 	)
 done
 

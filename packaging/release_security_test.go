@@ -83,6 +83,27 @@ func TestServerBuildInjectsOnlyPublicReleaseTrust(t *testing.T) {
 	}
 }
 
+func TestServerBuildRejectsWrongTargetArtifacts(t *testing.T) {
+	raw, err := os.ReadFile("build-server.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw)
+	for _, required := range []string{
+		`reported_goos=$(CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go env GOOS)`,
+		`reported_goarch=$(CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go env GOARCH)`,
+		`[ "$magic" = "7f454c46" ]`,
+		`go version -m "$binary"`,
+		`"GOOS=$goos"`,
+		`"GOARCH=$goarch"`,
+		`verify_binary_target "$tmp/bin/$command" "$command"`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Errorf("server build missing target guard %q", required)
+		}
+	}
+}
+
 func TestClientBuildInjectsOnlyPublicReleaseTrust(t *testing.T) {
 	raw, err := os.ReadFile("build-gui.sh")
 	if err != nil {

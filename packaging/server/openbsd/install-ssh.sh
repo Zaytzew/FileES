@@ -61,6 +61,12 @@ usermod -G "$client_access_group" _filees-client
 usermod -G "$client_access_group" _filees-data
 usermod -G "$client_access_group" _filees-mobile
 unset password_hash
+# Reinstall the administrative tools here as well so the complete two-stage
+# bootstrap establishes explicit OpenBSD ownership for every adopted target.
+install -o root -g wheel -m 0555 "$bundle/bin/filees-admin" /usr/local/sbin/filees-admin
+install -o root -g wheel -m 0555 "$bundle/bin/filees-operation" /usr/local/sbin/filees-operation
+install -o root -g wheel -m 0555 "$bundle/bin/filees-install" /usr/local/sbin/filees-install
+install -o root -g wheel -m 0555 "$bundle/bin/filees-rotate" /usr/local/sbin/filees-rotate
 install -o "$state_user" -g auth -m 4550 "$bundle/bin/filees-ssh-auth" /usr/libexec/auth/login_-filees
 # The dispatcher is the sole set-id boundary. Its two ordinary child images
 # inherit the effective state UID; pledge execpromises reject set-id children.

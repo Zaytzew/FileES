@@ -2,24 +2,56 @@ package updater
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
-	"errors"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"filees/internal/serverinstall/config"
 	"filees/internal/serverinstall/manifest"
+	"filees/internal/serverinstall/platform"
 	"filees/internal/serverinstall/state"
 )
+
+type fakeOwnership struct {
+	value platform.Ownership
+}
+
+type mapFetcher map[string][]byte
+
+func (f mapFetcher) Cat(_ context.Context, path string) ([]byte, error) {
+	data, ok := f[path]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return append([]byte(nil), data...), nil
+}
+
+func (f fakeOwnership) Resolve(owner, group string) (platform.Ownership, error) {
+	if owner == "" || group == "" {
+		return platform.Ownership{}, errors.New("owner/group required")
+	}
+	return f.value, nil
+}
+
+func (f fakeOwnership) Stat(path string) (platform.Ownership, error)          { return f.value, nil }
+func (f fakeOwnership) Apply(path string, ownership platform.Ownership) error { return nil }
 
 func testRunner(t *testing.T) (*Runner, string) {
 	t.Helper()
 	root := t.TempDir()
 	cfg := &config.Config{
+		Platform:     "openbsd-amd64",
+		StateDir:     filepath.Join(root, "state"),
+		StageDir:     filepath.Join(root, "stage"),
+		BackupDir:    filepath.Join(root, "backups"),
 		SbinDir:      filepath.Join(root, "sbin"),
 		LibexecDir:   filepath.Join(root, "libexec"),
 		SysconfDir:   filepath.Join(root, "etc/filees"),
@@ -29,7 +61,160 @@ func testRunner(t *testing.T) (*Runner, string) {
 		DataDir:      filepath.Join(root, "var/filees"),
 		OrphanFiles:  "keep",
 	}
-	return &Runner{Config: cfg, Out: io.Discard}, root
+	return &Runner{Config: cfg, Ownership: fakeOwnership{value: platform.Ownership{UID: 100, GID: 200}}, Out: io.Discard}, root
+}
+
+func TestAdoptRecordsOnlyExactSignedBaseline(t *testing.T) {
+	r, _ := testRunner(t)
+	target := filepath.Join(r.Config.SbinDir, "filees-install")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("existing managed binary")
+	if err := os.WriteFile(target, payload, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode := formatMode(info.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky))
+	m := manifest.Manifest{
+		SchemaVersion: manifest.SchemaVersion,
+		ReleaseID:     "r1",
+		Platform:      r.Config.Platform,
+		Sequence:      1,
+		SecurityEpoch: 1,
+		Files: []manifest.File{{
+			Source: "bin/filees-install", Target: "{sbin_dir}/filees-install", Kind: "binary",
+			Mode: mode, Owner: "root", Group: "wheel", SHA256: sha256hex(payload),
+		}},
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Fetcher = mapFetcher{manifest.ReleaseManifestPath("r1", r.Config.Platform): raw}
+	if err := r.Adopt(context.Background(), Options{ReleaseID: "r1"}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := state.Load(r.Config.StateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.InstalledRelease != "r1" || st.HighestSequence != 1 || st.SecurityEpoch != 1 ||
+		st.System == nil || !st.System.Adopted || len(st.History) != 0 {
+		t.Fatalf("unexpected adopted state: %+v", st)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("adopt changed payload: %q, %v", got, err)
+	}
+	if err := r.Adopt(context.Background(), Options{ReleaseID: "r1"}); err == nil {
+		t.Fatal("second adoption overwrote existing managed state")
+	}
+}
+
+func TestInterruptedApplyRecoversAllPreimages(t *testing.T) {
+	r, _ := testRunner(t)
+	oldTarget := filepath.Join(r.Config.SbinDir, "old")
+	newTarget := filepath.Join(r.Config.SbinDir, "new")
+	stageOld := filepath.Join(r.Config.StageDir, "old")
+	stageNew := filepath.Join(r.Config.StageDir, "new")
+	for path, data := range map[string][]byte{
+		oldTarget: []byte("before"), stageOld: []byte("after"), stageNew: []byte("new"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ownership := platform.Ownership{UID: 100, GID: 200}
+	staged := []StagedFile{
+		{Target: oldTarget, StagePath: stageOld, Mode: 0o666, Ownership: ownership},
+		{Target: newTarget, StagePath: stageNew, Mode: 0o666, Ownership: ownership},
+	}
+	entry, err := r.installStaged(staged, &state.State{}, "r2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.LoadTransaction(r.Config.StateDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.recoverInterrupted(); err != nil {
+		t.Fatal(err)
+	}
+	oldData, err := os.ReadFile(oldTarget)
+	if err != nil || string(oldData) != "before" {
+		t.Fatalf("old target not restored: %q, %v", oldData, err)
+	}
+	if _, err := os.Stat(newTarget); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("new target survived recovery: %v", err)
+	}
+	if transaction, err := state.LoadTransaction(r.Config.StateDir); err != nil || transaction != nil {
+		t.Fatalf("journal survived recovery: %+v, %v", transaction, err)
+	}
+
+	// A journal left after state.json committed is stale, not an instruction to
+	// roll back the already successful update.
+	if _, err := r.installStaged(staged, &state.State{}, "r2", nil); err != nil {
+		t.Fatal(err)
+	}
+	committed := &state.State{InstalledRelease: "r2", History: []state.HistoryEntry{entry}}
+	// Use the exact entry from the second transaction, whose timestamp can
+	// differ from the first invocation.
+	transaction, err := state.LoadTransaction(r.Config.StateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed.History[0] = transaction.Entry
+	if err := state.Save(r.Config.StateDir, committed); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.recoverInterrupted(); err != nil {
+		t.Fatal(err)
+	}
+	newData, err := os.ReadFile(newTarget)
+	if err != nil || string(newData) != "new" {
+		t.Fatalf("committed payload was rolled back: %q, %v", newData, err)
+	}
+}
+
+func TestRecoveryPreflightsEveryBackupBeforeChangingTargets(t *testing.T) {
+	r, _ := testRunner(t)
+	ownership := platform.Ownership{UID: 100, GID: 200}
+	var staged []StagedFile
+	for _, name := range []string{"a", "b"} {
+		target := filepath.Join(r.Config.SbinDir, name)
+		stagePath := filepath.Join(r.Config.StageDir, name)
+		for path, data := range map[string][]byte{target: []byte("old-" + name), stagePath: []byte("new-" + name)} {
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o666); err != nil {
+				t.Fatal(err)
+			}
+		}
+		staged = append(staged, StagedFile{Target: target, StagePath: stagePath, Mode: 0o666, Ownership: ownership})
+	}
+	entry, err := r.installStaged(staged, &state.State{}, "r3", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entry.Files[1].BackupPath, []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.recoverInterrupted(); err == nil {
+		t.Fatal("recovery accepted a corrupt backup")
+	}
+	for _, name := range []string{"a", "b"} {
+		got, err := os.ReadFile(filepath.Join(r.Config.SbinDir, name))
+		if err != nil || string(got) != "new-"+name {
+			t.Fatalf("target %s changed before preflight completed: %q, %v", name, got, err)
+		}
+	}
 }
 
 func sha256hex(data []byte) string {
@@ -55,9 +240,9 @@ func TestBuildPlanActions(t *testing.T) {
 		ReleaseID: "r2",
 		Platform:  "openbsd-amd64",
 		Files: []manifest.File{
-			{Source: "bin/same", Target: "{sbin_dir}/same", SHA256: sha256hex(same)},
-			{Source: "bin/drifted", Target: "{sbin_dir}/drifted", SHA256: sha256hex([]byte("new"))},
-			{Source: "bin/fresh", Target: "{sbin_dir}/fresh", SHA256: sha256hex([]byte("x"))},
+			{Source: "bin/same", Target: "{sbin_dir}/same", Owner: "root", Group: "wheel", Mode: "0755", SHA256: sha256hex(same)},
+			{Source: "bin/drifted", Target: "{sbin_dir}/drifted", Owner: "root", Group: "wheel", SHA256: sha256hex([]byte("new"))},
+			{Source: "bin/fresh", Target: "{sbin_dir}/fresh", Owner: "root", Group: "wheel", SHA256: sha256hex([]byte("x"))},
 		},
 	}
 	plan, err := r.BuildPlan(m, &state.State{InstalledRelease: "r1"})
@@ -67,7 +252,14 @@ func TestBuildPlanActions(t *testing.T) {
 	if !plan.FirstInstall {
 		t.Fatal("state without System must plan as first install")
 	}
-	want := map[string]string{"same": "UNCHANGED", "drifted": "UPDATE", "fresh": "ADD"}
+	sameAction := "UNCHANGED"
+	if runtime.GOOS == "windows" {
+		// Windows does not expose POSIX executable bits, so a server manifest's
+		// 0755 policy is correctly reported as metadata drift in this host-side
+		// unit test.
+		sameAction = "METADATA"
+	}
+	want := map[string]string{"same": sameAction, "drifted": "UPDATE", "fresh": "ADD"}
 	for _, f := range plan.Files {
 		base := filepath.Base(f.Target)
 		if f.Action != want[base] {
@@ -76,6 +268,40 @@ func TestBuildPlanActions(t *testing.T) {
 	}
 	if len(plan.Files) != 3 {
 		t.Fatalf("plan files = %d", len(plan.Files))
+	}
+}
+
+func TestBuildPlanRejectsResolvedTargetOverlap(t *testing.T) {
+	r, _ := testRunner(t)
+	target := filepath.Join(r.Config.SbinDir, "same")
+	m := &manifest.Manifest{ReleaseID: "r2", Platform: r.Config.Platform, Files: []manifest.File{
+		{Source: "bin/a", Target: "{sbin_dir}/same", Owner: "root", Group: "wheel", SHA256: sha256hex([]byte("a"))},
+		{Source: "bin/b", Target: target, Owner: "root", Group: "wheel", SHA256: sha256hex([]byte("b"))},
+	}}
+	if _, err := r.BuildPlan(m, &state.State{}); err == nil {
+		t.Fatal("two manifest entries resolving to one target were accepted")
+	}
+	m.Files = m.Files[:1]
+	m.Orphans = []manifest.Orphan{{Target: target}}
+	if _, err := r.BuildPlan(m, &state.State{}); err == nil {
+		t.Fatal("orphan overlapping a managed target was accepted")
+	}
+}
+
+func TestResolveManifestRejectsRepositoryPathInjection(t *testing.T) {
+	r, _ := testRunner(t)
+	r.Fetcher = mapFetcher{}
+	if _, err := r.ResolveManifest(context.Background(), "../r1"); err == nil {
+		t.Fatal("release path traversal reached the fetcher")
+	}
+	r.Config.Channel = "../stable"
+	if _, err := r.ResolveManifest(context.Background(), ""); err == nil {
+		t.Fatal("channel path traversal reached the fetcher")
+	}
+	r.Config.Channel = "stable"
+	r.Config.Platform = "../openbsd-amd64"
+	if _, err := r.ResolveManifest(context.Background(), "r1"); err == nil {
+		t.Fatal("platform path traversal reached the fetcher")
 	}
 }
 
@@ -118,7 +344,7 @@ func TestParseMode(t *testing.T) {
 	}{
 		{"", "binary", 0o755},
 		{"", "config", 0o644},
-		{"4755", "binary", 0o4755},
+		{"4755", "binary", 0o755 | os.ModeSetuid},
 		{"600", "", 0o600},
 	}
 	for _, c := range cases {

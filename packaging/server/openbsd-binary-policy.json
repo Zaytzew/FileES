@@ -1,0 +1,133 @@
+{
+  "platform": "openbsd-amd64",
+  "files": [
+    {
+      "source": "bin/filees-admin",
+      "target": "{sbin_dir}/filees-admin",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-operation",
+      "target": "{sbin_dir}/filees-operation",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-install",
+      "target": "{sbin_dir}/filees-install",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-rotate",
+      "target": "{sbin_dir}/filees-rotate",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-onboard",
+      "target": "{libexec_dir}/filees/filees-onboard",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-bootstrap-entry",
+      "target": "{libexec_dir}/filees/filees-bootstrap-entry",
+      "kind": "binary",
+      "mode": "4511",
+      "owner": "_filees-state",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-mail",
+      "target": "{libexec_dir}/filees/filees-mail",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-entry",
+      "target": "{libexec_dir}/filees/filees-entry",
+      "kind": "binary",
+      "mode": "4511",
+      "owner": "_filees-state",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-worker",
+      "target": "{libexec_dir}/filees/filees-worker",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-client-entry",
+      "target": "{libexec_dir}/filees/filees-client-entry",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "_filees-state",
+      "group": "_filees-access"
+    },
+    {
+      "source": "bin/filees-mobile-v1",
+      "target": "{libexec_dir}/filees/filees-mobile-v1",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "_filees-state",
+      "group": "_filees-access"
+    },
+    {
+      "source": "bin/filees-recovery-entry",
+      "target": "{libexec_dir}/filees/filees-recovery-entry",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "_filees-state",
+      "group": "_filees-recovery"
+    },
+    {
+      "source": "bin/filees-recovery-entry",
+      "target": "{libexec_dir}/filees/filees-recovery-authorize",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-public-authority",
+      "target": "{libexec_dir}/filees/filees-public-authority",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-links",
+      "target": "{libexec_dir}/filees/filees-links",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
+      "source": "bin/filees-ssh-auth",
+      "target": "/usr/libexec/auth/login_-filees",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "_filees-state",
+      "group": "auth"
+    }
+  ]
+}

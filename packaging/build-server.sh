@@ -25,18 +25,41 @@ mkdir -p "$tmp/bin" "$tmp/share/filees/openbsd" "$tmp/openbsd"
 # against the source, which is how a stale filees-admin went unnoticed while a
 # newly added flag read as "flag provided but not defined".
 version=$(cat "$root/VERSION")
+release_ldflags=""
+
+if [ -n "${FILEES_RELEASE_PUBKEY:-}" ]; then
+	[ -f "$FILEES_RELEASE_PUBKEY" ] || {
+		echo "release public key not found: $FILEES_RELEASE_PUBKEY" >&2
+		exit 2
+	}
+	if grep -Eq 'PLACEHOLDER|xxxx' "$FILEES_RELEASE_PUBKEY"; then
+		echo "refusing placeholder release public key" >&2
+		exit 2
+	fi
+	release_pubkey_b64=$(base64 <"$FILEES_RELEASE_PUBKEY" | tr -d '\r\n')
+	[ -n "$release_pubkey_b64" ] || {
+		echo "release public key is empty" >&2
+		exit 2
+	}
+	release_ldflags="-X main.injectedServerReleasePublicKeyB64=$release_pubkey_b64"
+fi
 
 for command in filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail filees-ssh-auth filees-entry filees-worker filees-client-entry filees-mobile-v1 filees-recovery-entry filees-public-authority filees-links filees-install filees-rotate; do
 	(
 		cd "$root"
+		command_ldflags="-X filees/internal/servertool.adminVersion=$version"
+		if [ "$command" = filees-install ]; then
+			command_ldflags="$command_ldflags $release_ldflags"
+		fi
 		CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
-			-ldflags "-X filees/internal/servertool.adminVersion=$version" \
+			-ldflags "$command_ldflags" \
 			-o "$tmp/bin/$command" "./cmd/$command"
 	)
 done
 
 cp "$root/packaging/server/server.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/public-links.example.json" "$tmp/share/filees/"
+cp "$root/packaging/server/install.example.conf" "$tmp/share/filees/"
 cp "$root/packaging/server/openbsd/bootstrap_authorized_keys" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/filees-tunnel.login.conf" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/filees.conf" "$tmp/share/filees/openbsd/"

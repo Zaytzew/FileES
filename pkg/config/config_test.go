@@ -97,14 +97,14 @@ func TestLoadClientViewTransportOnlyDoesNotCreateSyntheticServer(t *testing.T) {
 func TestLoadClientViewStrictOptionalUpdateConfig(t *testing.T) {
 	path := writeRawConfig(t, `{
   "transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},
-  "update":{"enabled":true,"repo_url":"https://releases.example/FILESS-BIN/","channel":"stable","state_path":"/tmp/filees/update.json","stage_root":"/tmp/filees/stage"},
+  "update":{"enabled":true,"repo_url":"https://releases.example/FILEES-BIN/","channel":"stable","state_path":"/tmp/filees/update.json","stage_root":"/tmp/filees/stage"},
   "repositories":[]
 }`)
 	view, err := LoadClientView(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Update == nil || view.Update.RepoURL != "https://releases.example/FILESS-BIN" || view.Update.Channel != "stable" || view.Update.Component != "desktop" || view.Update.Platform == "" || view.Update.SVNProgram != "svn" {
+	if view.Update == nil || view.Update.RepoURL != "https://releases.example/FILEES-BIN" || view.Update.Channel != "stable" || view.Update.Component != "desktop" || view.Update.Platform == "" || view.Update.SVNProgram != "svn" {
 		t.Fatalf("update config = %+v", view.Update)
 	}
 	disabled := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"update":{"enabled":false,"repo_url":"not-used","state_path":"relative","stage_root":"relative"},"repositories":[]}`)

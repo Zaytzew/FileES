@@ -21,21 +21,31 @@ modyfikowane. `build-gui.sh` tworzy katalog bundla oraz deterministyczny
 ścieżki, uid/gid i czas równe zero, tryby 0755/0644, bez symlinków i plików
 specjalnych.
 
-Na maszynie budującej przygotuj katalog payloadu oraz recenzowalną specyfikację:
+Produkcyjny build serwera również przyjmuje wyłącznie publiczny trust root:
+
+```sh
+FILEES_RELEASE_PUBKEY="$HOME/.signify/filees-release.pub" \
+./packaging/build-server.sh openbsd-amd64
+```
+
+Klucz jest wstrzykiwany wyłącznie do `filees-install`. Build odrzuca placeholder
+i nie zna nazwy ani ścieżki klucza prywatnego.
+
+Polityka binariów OpenBSD jest wersjonowana w
+`packaging/server/openbsd-binary-policy.json`. Każdy target ma jawny `owner`,
+`group` i pełny tryb POSIX, w tym set-id:
 
 ```json
 {
-  "release_id": "r178",
   "platform": "openbsd-amd64",
-  "svn_revision": "178",
-  "sequence": 178,
-  "security_epoch": 1,
   "files": [
     {
       "source": "bin/filees-admin",
       "target": "{sbin_dir}/filees-admin",
       "kind": "binary",
-      "mode": "0755"
+      "mode": "4511",
+      "owner": "_filees-state",
+      "group": "wheel"
     }
   ]
 }
@@ -53,24 +63,26 @@ rozjazd między kanałem a manifestem. Świadome cofnięcie wymaga jawnego
 `filees-install --allow-rollback` i jest głośno logowane.
 
 Generator nie przyjmuje digestów od operatora. Czyta każdy regularny plik z
-payloadu, odrzuca traversal, wyjście przez symlink, powtórzone źródła i targety
-oraz nieznane pola specyfikacji. Wpisy sortuje po `source`; nie dodaje bieżącej
-daty, dlatego identyczne wejście daje identyczny manifest.
+payloadu, odrzuca traversal, wyjście przez symlink, powtórzone targety oraz
+nieznane pola specyfikacji. To samo źródło może celowo zasilać dwa targety o
+różnych granicach uprawnień (np. recovery entry i authorize). Wpisy sortuje po
+`source`, a następnie `target`; nie dodaje bieżącej daty, dlatego identyczne
+wejście daje identyczny manifest.
 
 ```sh
-go run ./cmd/filees-release-manifest \
-  -spec release-openbsd-amd64.json \
-  -payload dist/filees-server-openbsd-amd64 \
-  -output FILESS-BIN/releases/r178/openbsd-amd64/manifest.json
+FILEES_BIN_WC="$HOME/FILEES-BIN" \
+FILEES_RELEASE_PUBKEY="$HOME/.signify/filees-release.pub" \
+RELEASE_ID=r178 SEQUENCE=178 SECURITY_EPOCH=1 \
+./tools/prepare-server-release.sh
 ```
 
-Specyfikacja jest polityką instalacji: targety, typy i tryby (w tym set-id)
-muszą być jawnie recenzowane. Generator nie zgaduje ich na podstawie bundla.
-Po wygenerowaniu należy sprawdzić diff i commitować payload, manifesty wszystkich
-wymaganych komponentów/platform oraz plik kanału jako kompletne, jeszcze
-niepodpisane wydanie.
+Skrypt wymaga czystej WC źródeł i czystej WC `FILEES-BIN`, aktualizuje obie do
+HEAD, buduje binaria z kluczem publicznym, generuje manifest schema v2 oraz
+`releases/<id>/channel-stable.json`. Następnie operator recenzuje i commituje
+**wyłącznie** niezmienny katalog `releases/<id>`. Kanał `channels/stable.json`
+pozostaje w tym commicie nietknięty.
 
-Manifest v1 jest konsumowany przez serwerowy `filees-install`. Klientowe
+Manifest serwera schema v2 jest konsumowany przez `filees-install`. Klientowe
 instalatory Linux/MSI/Android pozostają własnymi wykonawcami lifecycle'u; ich
 artefakty są związane wspólnym wielokomponentowym release envelope v2, zamiast
 otrzymywać serwerowe pola `target`.
@@ -104,21 +116,42 @@ utrzymuje trwały high-water mark.
 
 ## 2. Podpisanie offline
 
-Na dedykowanej maszynie podpisującej, w czystej i aktualnej WC FILESS-BIN:
+Na dedykowanej maszynie podpisującej, w czystej i aktualnej WC FILEES-BIN:
 
 ```sh
-FILESS_BIN_WC="$HOME/FILESS-BIN" \
+FILEES_BIN_WC="$HOME/FILEES-BIN" \
 SIGNIFY_SEC_KEY="$HOME/.signify/filees-release.sec" \
 SIGNIFY_PUB_KEY="$HOME/.signify/filees-release.pub" \
-CHANNEL=stable ./tools/release-sign-and-publish.sh
+RELEASE_ID=r178 CHANNEL=stable ./tools/release-sign-and-publish.sh
 ```
 
-Skrypt preferuje `channels/stable.v2.json` (z fallbackiem do v1), podpisuje
-każdy manifest `component/platform` i kanał, natychmiast weryfikuje
-nowe podpisy kluczem publicznym i commituje wyłącznie odłączone pliki `.sig`.
-Jeśli cały release jest już poprawnie podpisany, wykonanie jest no-op.
+Skrypt wybiera z release’u wcześniej zrecenzowany kandydat kanału, podpisuje
+każdy manifest, natychmiast weryfikuje podpisy kluczem publicznym, a następnie
+kopiuje kandydat do `channels/` i podpisuje go. Nowe podpisy manifestów, kanał
+i jego podpis trafiają do **jednego commita SVN**. HEAD nie ma więc okna, w
+którym `stable` wskazuje na niepodpisany release. Jeśli release jest już
+podpisany i promowany, wykonanie jest no-op; istniejący niepoprawny podpis
+manifestu powoduje fail closed zamiast nadpisania historii.
 
-## 3. Odbiór klienta i test regresyjny
+## 3. Przejęcie istniejącego serwera
+
+Po jednorazowym wdrożeniu bundla z produkcyjnym kluczem i opublikowaniu release’u
+bazowego uruchom na OpenBSD:
+
+```sh
+filees-install -c /etc/filees/install.conf --adopt r178
+filees-install -c /etc/filees/install.conf --check
+```
+
+`--adopt` nie pobiera ani nie podmienia payloadu. Wymaga idealnej zgodności
+SHA-256, właściciela, grupy i pełnego trybu każdego pliku z podpisanym
+manifestem, po czym zapisuje release i high-water mark. Dzięki temu istniejący
+serwer przechodzi pod zarządzanie bez uruchamiania zadań pierwszej instalacji.
+Każdy późniejszy `--apply` najpierw zapisuje trwały journal kompletnych
+pre-image; po przerwaniu zasilania kolejna komenda automatycznie odtwarza całą
+poprzednią wersję albo usuwa journal już zatwierdzonego upgrade’u.
+
+## 4. Odbiór klienta i test regresyjny
 
 Po publikacji produkcyjny klient z odpowiednim embedded keyringiem powinien:
 

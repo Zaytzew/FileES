@@ -14,8 +14,8 @@ func TestGenerateIsDeterministicSortedAndConsumable(t *testing.T) {
 	writePayload(t, root, "bin/z", "z")
 	writePayload(t, root, "bin/a", "a")
 	spec := Spec{ReleaseID: "r178", Platform: "openbsd-amd64", SVNRevision: "178", Sequence: 178, SecurityEpoch: 1, Files: []FileSpec{
-		{Source: "bin/z", Target: "{libexec_dir}/filees/z", Kind: "executable", Mode: "755"},
-		{Source: "bin/a", Target: "{sbin_dir}/a", Kind: "executable", Mode: "0755"},
+		{Source: "bin/z", Target: "{libexec_dir}/filees/z", Kind: "executable", Mode: "755", Owner: "root", Group: "wheel"},
+		{Source: "bin/a", Target: "{sbin_dir}/a", Kind: "executable", Mode: "0755", Owner: "root", Group: "wheel"},
 	}}
 	first, err := Generate(root, spec)
 	if err != nil {
@@ -48,9 +48,8 @@ func TestGenerateRejectsDuplicatesTraversalAndEscapingSymlink(t *testing.T) {
 	writePayload(t, root, "bin/a", "a")
 	base := Spec{ReleaseID: "r1", Platform: "linux-amd64", Sequence: 1, SecurityEpoch: 1}
 	bad := []Spec{
-		{ReleaseID: base.ReleaseID, Platform: base.Platform, Sequence: base.Sequence, SecurityEpoch: base.SecurityEpoch, Files: []FileSpec{{Source: "../a", Target: "/a"}}},
-		{ReleaseID: base.ReleaseID, Platform: base.Platform, Sequence: base.Sequence, SecurityEpoch: base.SecurityEpoch, Files: []FileSpec{{Source: "bin/a", Target: "/a"}, {Source: "bin/a", Target: "/b"}}},
-		{ReleaseID: base.ReleaseID, Platform: base.Platform, Sequence: base.Sequence, SecurityEpoch: base.SecurityEpoch, Files: []FileSpec{{Source: "bin/a", Target: "/a"}, {Source: "bin/a2", Target: "/a"}}},
+		{ReleaseID: base.ReleaseID, Platform: base.Platform, Sequence: base.Sequence, SecurityEpoch: base.SecurityEpoch, Files: []FileSpec{{Source: "../a", Target: "/a", Owner: "root", Group: "wheel"}}},
+		{ReleaseID: base.ReleaseID, Platform: base.Platform, Sequence: base.Sequence, SecurityEpoch: base.SecurityEpoch, Files: []FileSpec{{Source: "bin/a", Target: "/a", Owner: "root", Group: "wheel"}, {Source: "bin/a2", Target: "/a", Owner: "root", Group: "wheel"}}},
 	}
 	for _, spec := range bad {
 		if _, err := Generate(root, spec); err == nil {
@@ -62,11 +61,31 @@ func TestGenerateRejectsDuplicatesTraversalAndEscapingSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink creation unavailable on this test host: %v", err)
 	}
-	base.Files = []FileSpec{{Source: "escape", Target: "/secret"}}
+	base.Files = []FileSpec{{Source: "escape", Target: "/secret", Owner: "root", Group: "wheel"}}
 	if _, err := Generate(root, base); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("escaping symlink error = %v", err)
+	}
+}
+
+func TestGenerateAllowsOnePayloadAtDifferentPrivilegeBoundaries(t *testing.T) {
+	root := t.TempDir()
+	writePayload(t, root, "bin/recovery", "same executable")
+	spec := Spec{ReleaseID: "r1", Platform: "openbsd-amd64", Sequence: 1, SecurityEpoch: 1, Files: []FileSpec{
+		{Source: "bin/recovery", Target: "{libexec_dir}/filees/recovery-entry", Mode: "4550", Owner: "_filees-state", Group: "_filees-recovery"},
+		{Source: "bin/recovery", Target: "{libexec_dir}/filees/recovery-authorize", Mode: "0555", Owner: "root", Group: "wheel"},
+	}}
+	raw, err := Generate(root, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := installmanifest.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Files) != 2 || parsed.Files[0].Target == parsed.Files[1].Target {
+		t.Fatalf("shared payload targets not retained: %+v", parsed.Files)
 	}
 }
 
@@ -110,7 +129,7 @@ func TestGenerateRequiresFreshnessCounters(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "a"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	files := []FileSpec{{Source: "a", Target: "/a"}}
+	files := []FileSpec{{Source: "a", Target: "/a", Owner: "root", Group: "wheel"}}
 	for _, spec := range []Spec{
 		{ReleaseID: "r1", Platform: "linux-amd64", Files: files},
 		{ReleaseID: "r1", Platform: "linux-amd64", Sequence: 1, Files: files},

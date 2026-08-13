@@ -7,16 +7,18 @@ sysconfdir=${SYSCONFDIR:-/etc/filees}
 statedir=${STATEDIR:-/var/filees/onboarding}
 
 install -d -m 755 "$prefix/sbin" "$prefix/libexec/filees"
-install -m 755 "$bundle/bin/filees-admin" "$prefix/sbin/filees-admin"
-install -m 755 "$bundle/bin/filees-operation" "$prefix/sbin/filees-operation"
-install -m 755 "$bundle/bin/filees-onboard" "$prefix/libexec/filees/filees-onboard"
-install -m 755 "$bundle/bin/filees-bootstrap-entry" "$prefix/libexec/filees/filees-bootstrap-entry"
-install -m 755 "$bundle/bin/filees-mail" "$prefix/libexec/filees/filees-mail"
-install -m 755 "$bundle/bin/filees-entry" "$prefix/libexec/filees/filees-entry"
-install -m 755 "$bundle/bin/filees-worker" "$prefix/libexec/filees/filees-worker"
-install -m 755 "$bundle/bin/filees-client-entry" "$prefix/libexec/filees/filees-client-entry"
-install -m 755 "$bundle/bin/filees-public-authority" "$prefix/libexec/filees/filees-public-authority"
-install -m 755 "$bundle/bin/filees-links" "$prefix/libexec/filees/filees-links"
+install -m 0555 "$bundle/bin/filees-admin" "$prefix/sbin/filees-admin"
+install -m 0555 "$bundle/bin/filees-operation" "$prefix/sbin/filees-operation"
+install -m 0555 "$bundle/bin/filees-install" "$prefix/sbin/filees-install"
+install -m 0555 "$bundle/bin/filees-rotate" "$prefix/sbin/filees-rotate"
+install -m 0555 "$bundle/bin/filees-onboard" "$prefix/libexec/filees/filees-onboard"
+install -m 0555 "$bundle/bin/filees-bootstrap-entry" "$prefix/libexec/filees/filees-bootstrap-entry"
+install -m 0555 "$bundle/bin/filees-mail" "$prefix/libexec/filees/filees-mail"
+install -m 0555 "$bundle/bin/filees-entry" "$prefix/libexec/filees/filees-entry"
+install -m 0555 "$bundle/bin/filees-worker" "$prefix/libexec/filees/filees-worker"
+install -m 0555 "$bundle/bin/filees-client-entry" "$prefix/libexec/filees/filees-client-entry"
+install -m 0555 "$bundle/bin/filees-public-authority" "$prefix/libexec/filees/filees-public-authority"
+install -m 0555 "$bundle/bin/filees-links" "$prefix/libexec/filees/filees-links"
 
 install -d -m 700 "$sysconfdir"
 if [ ! -e "$sysconfdir/server.json" ]; then
@@ -24,6 +26,9 @@ if [ ! -e "$sysconfdir/server.json" ]; then
 fi
 if [ ! -e "$sysconfdir/public-links.json" ]; then
 	install -m 600 "$bundle/share/filees/public-links.example.json" "$sysconfdir/public-links.json"
+fi
+if [ ! -e "$sysconfdir/install.conf" ]; then
+	install -m 600 "$bundle/share/filees/install.example.conf" "$sysconfdir/install.conf"
 fi
 if [ ! -e "$sysconfdir/otp.pepper" ]; then
 	umask 077

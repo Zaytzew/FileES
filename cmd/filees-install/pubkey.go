@@ -2,18 +2,50 @@ package main
 
 import _ "embed"
 
+import (
+	"bytes"
+	"encoding/base64"
+	"strings"
+)
+
+// Set only by the trusted build pipeline through -ldflags -X. The value is a
+// public key, never secret material; base64 avoids newline ambiguity in argv.
+var injectedServerReleasePublicKeyB64 string
+
 //go:embed assets/release.pub
 var embeddedPubkey []byte
 
 // pubkeyConfigured returns true if the embedded key looks like a real
 // signify public key (not the placeholder shipped in the source tree).
-func pubkeyConfigured() bool {
-	for _, line := range splitLines(embeddedPubkey) {
-		if len(line) > 0 && line[0] != '#' {
-			return len(line) > 20 && !containsBytes(line, []byte("xxxx"))
+func releasePubkey() ([]byte, bool) {
+	key := embeddedPubkey
+	if encoded := strings.TrimSpace(injectedServerReleasePublicKeyB64); encoded != "" {
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, false
 		}
+		key = decoded
 	}
-	return false
+	key = bytes.TrimSpace(key)
+	if bytes.Contains(key, []byte("xxxx")) || bytes.Contains(key, []byte("PLACEHOLDER")) {
+		return nil, false
+	}
+	lines := splitLines(key)
+	if len(lines) != 2 || !bytes.HasPrefix(lines[0], []byte("untrusted comment:")) {
+		return nil, false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(lines[1])))
+	// signify public keys encode the two-byte "Ed" algorithm marker, an
+	// eight-byte key ID and a 32-byte Ed25519 public key.
+	if err != nil || len(decoded) != 42 || decoded[0] != 'E' || decoded[1] != 'd' {
+		return nil, false
+	}
+	return append([]byte(nil), key...), true
+}
+
+func pubkeyConfigured() bool {
+	_, ok := releasePubkey()
+	return ok
 }
 
 func splitLines(b []byte) [][]byte {

@@ -19,7 +19,7 @@ func TestParseChannelDefaultManifest(t *testing.T) {
 
 func TestParseSkipsUTF8BOM(t *testing.T) {
 	withBOM := append([]byte{0xEF, 0xBB, 0xBF},
-		[]byte(`{"schema_version":1,"release_id":"v0.9","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/filees-admin","target":"{sbin_dir}/filees-admin","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`)...)
+		[]byte(`{"schema_version":2,"release_id":"v0.9","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/filees-admin","target":"{sbin_dir}/filees-admin","owner":"root","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`)...)
 	m, err := Parse(withBOM)
 	if err != nil {
 		t.Fatalf("Parse with BOM: %v", err)
@@ -31,10 +31,14 @@ func TestParseSkipsUTF8BOM(t *testing.T) {
 
 func TestParseRejectsUnknownFieldsSchemaAndBadDigest(t *testing.T) {
 	cases := [][]byte{
-		[]byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
-		[]byte(`{"schema_version":1,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"unknown":true,"files":[{"source":"bin/x","target":"{sbin_dir}/x","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
-		[]byte(`{"schema_version":1,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","sha256":"deadbeef"}]}`),
-		[]byte(`{"schema_version":1,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]} {}`),
+		[]byte(`{"schema_version":1,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","owner":"root","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
+		[]byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"unknown":true,"files":[{"source":"bin/x","target":"{sbin_dir}/x","owner":"root","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
+		[]byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","owner":"root","group":"wheel","sha256":"deadbeef"}]}`),
+		[]byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","owner":"root","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]} {}`),
+		[]byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","owner":"","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
+		[]byte(`{"schema_version":2,"release_id":"../v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","owner":"root","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
+		[]byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"../bin/x","target":"{sbin_dir}/x","owner":"root","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}`),
+		[]byte(`{"schema_version":2,"release_id":"v1","platform":"openbsd-amd64","sequence":7,"security_epoch":1,"files":[{"source":"bin/x","target":"{sbin_dir}/x","owner":"root","group":"wheel","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"source":"bin/y","target":"{sbin_dir}/x","owner":"root","group":"wheel","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}`),
 	}
 	for i, data := range cases {
 		if _, err := Parse(data); err == nil {
@@ -43,6 +47,12 @@ func TestParseRejectsUnknownFieldsSchemaAndBadDigest(t *testing.T) {
 	}
 	if _, err := ParseChannel([]byte(`{"schema_version":1,"release_id":"v1","sequence":7,"security_epoch":1,"extra":true}`)); err == nil {
 		t.Fatal("channel unknown field accepted")
+	}
+	if _, err := ParseChannel([]byte(`{"schema_version":1,"release_id":"../v1","sequence":7,"security_epoch":1}`)); err == nil {
+		t.Fatal("channel traversal release_id accepted")
+	}
+	if _, err := ParseChannel([]byte(`{"schema_version":1,"release_id":"v1","manifest":"../manifest.json","sequence":7,"security_epoch":1}`)); err == nil {
+		t.Fatal("channel traversal manifest accepted")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -12,6 +13,13 @@ import (
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 var sha256Pattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+
+const SchemaVersion = 2
+
+func ValidIdentifier(value string) bool {
+	return identifierPattern.MatchString(strings.TrimSpace(value))
+}
 
 func stripBOM(data []byte) []byte { return bytes.TrimPrefix(data, utf8BOM) }
 
@@ -50,6 +58,8 @@ type File struct {
 	Target string `json:"target"`
 	Kind   string `json:"kind,omitempty"`
 	Mode   string `json:"mode,omitempty"`
+	Owner  string `json:"owner"`
+	Group  string `json:"group"`
 	SHA256 string `json:"sha256"`
 }
 
@@ -83,8 +93,8 @@ func ParseChannel(data []byte) (*Channel, error) {
 	if ch.SchemaVersion != 1 {
 		return nil, fmt.Errorf("unsupported channel schema_version %d", ch.SchemaVersion)
 	}
-	if strings.TrimSpace(ch.ReleaseID) == "" {
-		return nil, fmt.Errorf("channel release_id is required")
+	if !ValidIdentifier(ch.ReleaseID) {
+		return nil, fmt.Errorf("channel release_id is invalid")
 	}
 	if ch.Sequence == 0 {
 		return nil, fmt.Errorf("channel sequence is required and must be non-zero")
@@ -95,6 +105,9 @@ func ParseChannel(data []byte) (*Channel, error) {
 	if strings.TrimSpace(ch.Manifest) == "" {
 		ch.Manifest = fmt.Sprintf("releases/%s/{platform}/manifest.json", ch.ReleaseID)
 	}
+	if !validRelativeRepoPath(ch.Manifest) {
+		return nil, fmt.Errorf("channel manifest must be a relative repository path")
+	}
 	return &ch, nil
 }
 
@@ -103,14 +116,14 @@ func Parse(data []byte) (*Manifest, error) {
 	if err := decodeStrict(stripBOM(data), &m); err != nil {
 		return nil, err
 	}
-	if m.SchemaVersion != 1 {
+	if m.SchemaVersion != SchemaVersion {
 		return nil, fmt.Errorf("unsupported manifest schema_version %d", m.SchemaVersion)
 	}
-	if strings.TrimSpace(m.ReleaseID) == "" {
-		return nil, fmt.Errorf("manifest release_id is required")
+	if !ValidIdentifier(m.ReleaseID) {
+		return nil, fmt.Errorf("manifest release_id is invalid")
 	}
-	if strings.TrimSpace(m.Platform) == "" {
-		return nil, fmt.Errorf("manifest platform is required")
+	if !ValidIdentifier(m.Platform) {
+		return nil, fmt.Errorf("manifest platform is invalid")
 	}
 	if m.Sequence == 0 {
 		return nil, fmt.Errorf("manifest sequence is required and must be non-zero")
@@ -121,6 +134,7 @@ func Parse(data []byte) (*Manifest, error) {
 	if len(m.Files) == 0 {
 		return nil, fmt.Errorf("manifest files are required")
 	}
+	seenTargets := make(map[string]struct{}, len(m.Files))
 	for i, f := range m.Files {
 		if strings.TrimSpace(f.Source) == "" {
 			return nil, fmt.Errorf("manifest file %d source is required", i)
@@ -128,11 +142,39 @@ func Parse(data []byte) (*Manifest, error) {
 		if strings.TrimSpace(f.Target) == "" {
 			return nil, fmt.Errorf("manifest file %d target is required", i)
 		}
+		if !validRelativeRepoPath(f.Source) {
+			return nil, fmt.Errorf("manifest file %d source must be a relative repository path", i)
+		}
+		target := strings.TrimSpace(f.Target)
+		if _, exists := seenTargets[target]; exists {
+			return nil, fmt.Errorf("manifest file %d duplicates target %q", i, target)
+		}
+		seenTargets[target] = struct{}{}
+		if strings.TrimSpace(f.Owner) == "" {
+			return nil, fmt.Errorf("manifest file %d owner is required", i)
+		}
+		if strings.TrimSpace(f.Group) == "" {
+			return nil, fmt.Errorf("manifest file %d group is required", i)
+		}
 		if !sha256Pattern.MatchString(strings.TrimSpace(f.SHA256)) {
 			return nil, fmt.Errorf("manifest file %d sha256 must be 64 hexadecimal characters", i)
 		}
 	}
+	for i, orphan := range m.Orphans {
+		if strings.TrimSpace(orphan.Target) == "" {
+			return nil, fmt.Errorf("manifest orphan %d target is required", i)
+		}
+	}
 	return &m, nil
+}
+
+func validRelativeRepoPath(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.Contains(value, "\\") || strings.HasPrefix(value, "/") {
+		return false
+	}
+	clean := pathpkg.Clean(value)
+	return clean == value && clean != "." && clean != ".." && !strings.HasPrefix(clean, "../")
 }
 
 func decodeStrict(data []byte, out any) error {

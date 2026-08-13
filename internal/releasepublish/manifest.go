@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"filees/internal/durable"
 	installmanifest "filees/internal/serverinstall/manifest"
 )
 
@@ -37,6 +38,8 @@ type FileSpec struct {
 	Target string `json:"target"`
 	Kind   string `json:"kind,omitempty"`
 	Mode   string `json:"mode,omitempty"`
+	Owner  string `json:"owner"`
+	Group  string `json:"group"`
 }
 
 func LoadSpec(path string) (Spec, error) {
@@ -79,7 +82,7 @@ func Generate(payloadRoot string, spec Spec) ([]byte, error) {
 		return nil, fmt.Errorf("resolve payload root: %w", err)
 	}
 	result := installmanifest.Manifest{
-		SchemaVersion: 1,
+		SchemaVersion: installmanifest.SchemaVersion,
 		ReleaseID:     strings.TrimSpace(spec.ReleaseID),
 		Platform:      strings.TrimSpace(spec.Platform),
 		SVNRevision:   strings.TrimSpace(spec.SVNRevision),
@@ -88,7 +91,6 @@ func Generate(payloadRoot string, spec Spec) ([]byte, error) {
 		Configs:       spec.Configs,
 		Orphans:       spec.Orphans,
 	}
-	seenSources := make(map[string]struct{}, len(spec.Files))
 	seenTargets := make(map[string]struct{}, len(spec.Files))
 	for index, entry := range spec.Files {
 		source, err := cleanRelative(entry.Source)
@@ -99,13 +101,14 @@ func Generate(payloadRoot string, spec Spec) ([]byte, error) {
 		if target == "" {
 			return nil, fmt.Errorf("file %d target is required", index)
 		}
-		if _, exists := seenSources[source]; exists {
-			return nil, fmt.Errorf("duplicate source %q", source)
-		}
 		if _, exists := seenTargets[target]; exists {
 			return nil, fmt.Errorf("duplicate target %q", target)
 		}
-		seenSources[source] = struct{}{}
+		owner := strings.TrimSpace(entry.Owner)
+		group := strings.TrimSpace(entry.Group)
+		if owner == "" || group == "" {
+			return nil, fmt.Errorf("file %d owner and group are required", index)
+		}
 		seenTargets[target] = struct{}{}
 		mode, err := cleanMode(entry.Mode)
 		if err != nil {
@@ -120,13 +123,22 @@ func Generate(payloadRoot string, spec Spec) ([]byte, error) {
 			return nil, fmt.Errorf("hash %s: %w", source, err)
 		}
 		result.Files = append(result.Files, installmanifest.File{
-			Source: source, Target: target, Kind: strings.TrimSpace(entry.Kind), Mode: mode, SHA256: digest,
+			Source: source, Target: target, Kind: strings.TrimSpace(entry.Kind), Mode: mode,
+			Owner: owner, Group: group, SHA256: digest,
 		})
 	}
-	sort.Slice(result.Files, func(i, j int) bool { return result.Files[i].Source < result.Files[j].Source })
+	sort.Slice(result.Files, func(i, j int) bool {
+		if result.Files[i].Source == result.Files[j].Source {
+			return result.Files[i].Target < result.Files[j].Target
+		}
+		return result.Files[i].Source < result.Files[j].Source
+	})
 	raw, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return nil, err
+	}
+	if _, err := installmanifest.Parse(raw); err != nil {
+		return nil, fmt.Errorf("generated manifest is invalid: %w", err)
 	}
 	return append(raw, '\n'), nil
 }
@@ -160,12 +172,7 @@ func WriteAtomic(path string, data []byte) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
-	directory, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	return durable.SyncDirectory(dir)
 }
 
 func cleanRelative(path string) (string, error) {

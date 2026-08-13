@@ -1,5 +1,5 @@
 // Package signify verifies detached signify(1) signatures over files
-// filees-install fetches from the FILESS-BIN repository.
+// filees-install fetches from the FILEES-BIN repository.
 //
 // Verification shells out to the real signify(1) binary instead of
 // reimplementing its format. OpenBSD ships signify in base; on Linux

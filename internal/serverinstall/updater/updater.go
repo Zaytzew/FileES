@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/internal/durable"
 	"filees/internal/serverinstall/config"
 	"filees/internal/serverinstall/manifest"
 	"filees/internal/serverinstall/platform"
@@ -23,12 +24,13 @@ import (
 )
 
 type Runner struct {
-	Config   *config.Config
-	Fetcher  svnfetch.Fetcher
-	Verifier signify.Verifier
-	Platform platform.Backend
-	Out      io.Writer
-	In       io.Reader
+	Config    *config.Config
+	Fetcher   svnfetch.Fetcher
+	Verifier  signify.Verifier
+	Platform  platform.Backend
+	Ownership platform.OwnershipManager
+	Out       io.Writer
+	In        io.Reader
 }
 
 type Options struct {
@@ -65,6 +67,10 @@ type FilePlan struct {
 	CurrentSHA string
 	NewSHA     string
 	Mode       os.FileMode
+	Owner      string
+	Group      string
+	UID        int
+	GID        int
 }
 
 type ConfigIssue struct {
@@ -86,6 +92,7 @@ type StagedFile struct {
 	StagePath    string
 	SHA256       string
 	Mode         os.FileMode
+	Ownership    platform.Ownership
 }
 
 func NewRunner(cfg *config.Config, fetcher svnfetch.Fetcher, plat platform.Backend, out io.Writer, in io.Reader) *Runner {
@@ -96,13 +103,21 @@ func NewRunner(cfg *config.Config, fetcher svnfetch.Fetcher, plat platform.Backe
 		in = strings.NewReader("")
 	}
 	return &Runner{
-		Config:   cfg,
-		Fetcher:  fetcher,
-		Verifier: signify.CLI{Program: cfg.SignifyProgram},
-		Platform: plat,
-		Out:      out,
-		In:       in,
+		Config:    cfg,
+		Fetcher:   fetcher,
+		Verifier:  signify.CLI{Program: cfg.SignifyProgram},
+		Platform:  plat,
+		Ownership: platform.SystemOwnership{},
+		Out:       out,
+		In:        in,
 	}
+}
+
+func (r *Runner) ownershipManager() platform.OwnershipManager {
+	if r.Ownership != nil {
+		return r.Ownership
+	}
+	return platform.SystemOwnership{}
 }
 
 func (r *Runner) dirs() manifest.Dirs {
@@ -118,7 +133,13 @@ func (r *Runner) dirs() manifest.Dirs {
 }
 
 func (r *Runner) ResolveManifest(ctx context.Context, releaseID string) (*manifest.Manifest, error) {
+	if !manifest.ValidIdentifier(r.Config.Platform) {
+		return nil, fmt.Errorf("invalid platform %q", r.Config.Platform)
+	}
 	if strings.TrimSpace(releaseID) == "" {
+		if !manifest.ValidIdentifier(r.Config.Channel) {
+			return nil, fmt.Errorf("invalid channel name %q", r.Config.Channel)
+		}
 		chPath := manifest.ChannelPath(r.Config.Channel)
 		chData, err := r.Fetcher.Cat(ctx, chPath)
 		if err != nil {
@@ -146,6 +167,9 @@ func (r *Runner) ResolveManifest(ctx context.Context, releaseID string) (*manife
 				ch.Sequence, ch.SecurityEpoch, m.Sequence, m.SecurityEpoch)
 		}
 		return m, nil
+	}
+	if !manifest.ValidIdentifier(releaseID) {
+		return nil, fmt.Errorf("invalid release ID %q", releaseID)
 	}
 	path := manifest.ReleaseManifestPath(strings.TrimSpace(releaseID), r.Config.Platform)
 	return r.fetchManifest(ctx, path, releaseID)
@@ -218,17 +242,30 @@ func (r *Runner) BuildPlan(m *manifest.Manifest, st *state.State) (*Plan, error)
 		CurrentRelease: st.InstalledRelease,
 		FirstInstall:   st.IsFirstInstall(),
 	}
+	seenTargets := make(map[string]struct{}, len(m.Files)+len(m.Orphans))
 	for _, mf := range m.Files {
 		target := manifest.ResolveTarget(dirs, mf.Target)
+		if _, exists := seenTargets[target]; exists {
+			return nil, fmt.Errorf("manifest resolves more than one entry to target %s", target)
+		}
+		seenTargets[target] = struct{}{}
 		mode, err := parseMode(mf.Mode, mf.Kind)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", mf.Target, err)
+		}
+		ownership, err := r.ownershipManager().Resolve(mf.Owner, mf.Group)
+		if err != nil {
+			return nil, fmt.Errorf("%s ownership: %w", mf.Target, err)
 		}
 		fp := FilePlan{
 			Source: mf.Source,
 			Target: target,
 			NewSHA: strings.ToLower(strings.TrimSpace(mf.SHA256)),
 			Mode:   mode,
+			Owner:  mf.Owner,
+			Group:  mf.Group,
+			UID:    ownership.UID,
+			GID:    ownership.GID,
 		}
 		if sha, ok, err := fileSHA256(target); err != nil {
 			return nil, err
@@ -238,6 +275,18 @@ func (r *Runner) BuildPlan(m *manifest.Manifest, st *state.State) (*Plan, error)
 			fp.CurrentSHA = sha
 			if fp.NewSHA != "" && strings.EqualFold(sha, fp.NewSHA) {
 				fp.Action = "UNCHANGED"
+				info, err := os.Lstat(target)
+				if err != nil {
+					return nil, err
+				}
+				currentOwnership, err := r.ownershipManager().Stat(target)
+				if err != nil {
+					return nil, fmt.Errorf("stat ownership %s: %w", target, err)
+				}
+				currentMode := info.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
+				if currentMode != mode || currentOwnership != ownership {
+					fp.Action = "METADATA"
+				}
 			} else {
 				fp.Action = "UPDATE"
 			}
@@ -248,8 +297,13 @@ func (r *Runner) BuildPlan(m *manifest.Manifest, st *state.State) (*Plan, error)
 		plan.ConfigIssues = append(plan.ConfigIssues, checkConfigContract(cc)...)
 	}
 	for _, o := range m.Orphans {
+		target := manifest.ResolveOrphanTarget(dirs, o)
+		if _, exists := seenTargets[target]; exists {
+			return nil, fmt.Errorf("orphan overlaps managed or duplicate target %s", target)
+		}
+		seenTargets[target] = struct{}{}
 		plan.Orphans = append(plan.Orphans, OrphanPlan{
-			Target: manifest.ResolveOrphanTarget(dirs, o),
+			Target: target,
 			Reason: o.Reason,
 		})
 	}
@@ -257,6 +311,9 @@ func (r *Runner) BuildPlan(m *manifest.Manifest, st *state.State) (*Plan, error)
 }
 
 func (r *Runner) Check(ctx context.Context, opts Options) error {
+	if err := r.recoverInterrupted(); err != nil {
+		return err
+	}
 	st, err := state.Load(r.Config.StateDir)
 	if err != nil {
 		return err
@@ -283,6 +340,68 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	return nil
 }
 
+// Adopt verifies that an installation created by the legacy shell installers
+// already matches a signed release byte-for-byte and metadata-for-metadata,
+// then records that release as the managed baseline. It never downloads or
+// modifies payload files and never runs first-install system tasks.
+func (r *Runner) Adopt(ctx context.Context, opts Options) error {
+	if err := r.recoverInterrupted(); err != nil {
+		return err
+	}
+	st, err := state.Load(r.Config.StateDir)
+	if err != nil {
+		return err
+	}
+	if !st.CanAdopt() {
+		return fmt.Errorf("cannot adopt: installer state already exists")
+	}
+	m, err := r.ResolveManifest(ctx, opts.ReleaseID)
+	if err != nil {
+		return err
+	}
+	if err := r.checkFreshness(m, st, opts); err != nil {
+		return err
+	}
+	base, err := r.baseUnveils()
+	if err != nil {
+		return err
+	}
+	if err := r.applyUnveils(append(base, r.manifestUnveils(m, false)...)); err != nil {
+		return err
+	}
+	plan, err := r.BuildPlan(m, st)
+	if err != nil {
+		return err
+	}
+	r.PrintPlan(plan)
+	var problems []string
+	for _, file := range plan.Files {
+		if file.Action != "UNCHANGED" {
+			problems = append(problems, fmt.Sprintf("%s is %s", file.Target, file.Action))
+		}
+	}
+	for _, issue := range plan.ConfigIssues {
+		if issue.Severity == "FAIL" {
+			problems = append(problems, fmt.Sprintf("%s: %s", issue.Path, issue.Message))
+		}
+	}
+	if len(problems) != 0 {
+		return fmt.Errorf("cannot adopt release %s: local installation does not exactly match signed baseline: %s",
+			m.ReleaseID, strings.Join(problems, "; "))
+	}
+
+	installedAt := time.Now().UTC().Format(time.RFC3339)
+	st.InstalledRelease = m.ReleaseID
+	st.InstalledAt = installedAt
+	st.AdvanceFreshness(m.Sequence, m.SecurityEpoch)
+	st.System = &state.SystemState{Adopted: true}
+	if err := state.Save(r.Config.StateDir, st); err != nil {
+		return err
+	}
+	fmt.Fprintf(r.Out, "[UP] adopted release=%s files=%d (no payload changed)\n", m.ReleaseID, len(plan.Files))
+	return nil
+}
+
 // checkFreshness refuses a stale or replayed release before anything is
 // fetched, staged or installed. AllowRollback turns the refusal into a loud,
 // explicit override rather than silently skipping the check.
@@ -299,6 +418,9 @@ func (r *Runner) checkFreshness(m *manifest.Manifest, st *state.State, opts Opti
 }
 
 func (r *Runner) Apply(ctx context.Context, opts Options) error {
+	if err := r.recoverInterrupted(); err != nil {
+		return err
+	}
 	st, err := state.Load(r.Config.StateDir)
 	if err != nil {
 		return err
@@ -391,6 +513,9 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	if err := state.Save(r.Config.StateDir, st); err != nil {
 		return err
 	}
+	if err := state.RemoveTransaction(r.Config.StateDir); err != nil {
+		return fmt.Errorf("remove committed transaction journal: %w", err)
+	}
 	fmt.Fprintf(r.Out, "[UP] installed release=%s files=%d\n", m.ReleaseID, len(staged))
 	return nil
 }
@@ -477,6 +602,9 @@ func (r *Runner) sshdFragmentUpdated(plan *Plan) bool {
 }
 
 func (r *Runner) Rollback() error {
+	if err := r.recoverInterrupted(); err != nil {
+		return err
+	}
 	st, err := state.Load(r.Config.StateDir)
 	if err != nil {
 		return err
@@ -498,9 +626,16 @@ func (r *Runner) Rollback() error {
 			sshdTouched = true
 		}
 	}
+	if err := validateEntryBackups(entry); err != nil {
+		return err
+	}
 	for _, bf := range entry.Files {
 		if bf.Existed {
-			if err := installFile(bf.BackupPath, bf.Target, 0); err != nil {
+			if bf.UIDBefore == nil || bf.GIDBefore == nil {
+				return fmt.Errorf("restore %s: backup has no recorded uid/gid", bf.Target)
+			}
+			ownership := platform.Ownership{UID: *bf.UIDBefore, GID: *bf.GIDBefore}
+			if err := r.installFile(bf.BackupPath, bf.Target, 0, ownership); err != nil {
 				return fmt.Errorf("restore %s: %w", bf.Target, err)
 			}
 			fmt.Fprintf(r.Out, "RESTORE %s\n", bf.Target)
@@ -528,6 +663,9 @@ func (r *Runner) Rollback() error {
 }
 
 func (r *Runner) Purge(opts PurgeOptions) error {
+	if err := r.recoverInterrupted(); err != nil {
+		return err
+	}
 	st, err := state.Load(r.Config.StateDir)
 	if err != nil {
 		return err
@@ -658,7 +796,8 @@ func (r *Runner) PrintPlan(plan *Plan) {
 	fmt.Fprintln(r.Out)
 	for _, f := range plan.Files {
 		if f.NewSHA != "" {
-			fmt.Fprintf(r.Out, "%s %s sha256=%s\n", f.Action, f.Target, shortSHA(f.NewSHA))
+			fmt.Fprintf(r.Out, "%s %s sha256=%s owner=%s group=%s mode=%s\n",
+				f.Action, f.Target, shortSHA(f.NewSHA), f.Owner, f.Group, formatMode(f.Mode))
 		} else {
 			fmt.Fprintf(r.Out, "%s %s sha256=MISSING\n", f.Action, f.Target)
 		}
@@ -715,8 +854,11 @@ func (r *Runner) confirmInteractive(prompt string) bool {
 }
 
 func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]StagedFile, string, error) {
-	stageRoot := filepath.Join(r.Config.StageDir, m.ReleaseID+"-"+m.Platform+"-"+state.NowStamp())
-	if err := os.MkdirAll(stageRoot, 0o755); err != nil {
+	if err := os.MkdirAll(r.Config.StageDir, 0o755); err != nil {
+		return nil, "", err
+	}
+	stageRoot, err := os.MkdirTemp(r.Config.StageDir, m.ReleaseID+"-"+m.Platform+"-"+state.NowStamp()+"-")
+	if err != nil {
 		return nil, "", err
 	}
 	dirs := r.dirs()
@@ -743,6 +885,10 @@ func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]Staged
 		if err != nil {
 			return nil, "", fmt.Errorf("%s: %w", mf.Source, err)
 		}
+		ownership, err := r.ownershipManager().Resolve(mf.Owner, mf.Group)
+		if err != nil {
+			return nil, "", fmt.Errorf("%s ownership: %w", mf.Source, err)
+		}
 		if err := os.WriteFile(stagePath, data, mode); err != nil {
 			return nil, "", err
 		}
@@ -753,6 +899,7 @@ func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]Staged
 			StagePath:    stagePath,
 			SHA256:       got,
 			Mode:         mode,
+			Ownership:    ownership,
 		})
 		fmt.Fprintf(r.Out, "FETCH %s sha256=%s\n", mf.Source, shortSHA(got))
 	}
@@ -761,7 +908,16 @@ func (r *Runner) stageFiles(ctx context.Context, m *manifest.Manifest) ([]Staged
 
 func (r *Runner) installStaged(staged []StagedFile, st *state.State, releaseID string, orphans []manifest.Orphan) (state.HistoryEntry, error) {
 	stamp := time.Now().UTC().Format(time.RFC3339)
-	backupRoot := filepath.Join(r.Config.BackupDir, state.NowStamp())
+	if err := os.MkdirAll(r.Config.BackupDir, 0o700); err != nil {
+		return state.HistoryEntry{}, err
+	}
+	backupRoot, err := os.MkdirTemp(r.Config.BackupDir, state.NowStamp()+"-")
+	if err != nil {
+		return state.HistoryEntry{}, err
+	}
+	if err := os.Chmod(backupRoot, 0o700); err != nil {
+		return state.HistoryEntry{}, err
+	}
 	entry := state.HistoryEntry{
 		ReleaseID:       releaseID,
 		PreviousRelease: st.InstalledRelease,
@@ -769,6 +925,9 @@ func (r *Runner) installStaged(staged []StagedFile, st *state.State, releaseID s
 		BackupDir:       backupRoot,
 	}
 	dirs := r.dirs()
+	// Capture every pre-image before changing the first target. Once the
+	// complete entry is durable, a later invocation can recover from SIGKILL,
+	// power loss or a failed state write without guessing which files changed.
 	for _, sf := range staged {
 		bf := state.BackupFile{Target: sf.Target}
 		if sha, ok, err := fileSHA256(sf.Target); err != nil {
@@ -776,18 +935,21 @@ func (r *Runner) installStaged(staged []StagedFile, st *state.State, releaseID s
 		} else if ok {
 			bf.Existed = true
 			bf.SHA256Before = sha
+			ownership, err := r.ownershipManager().Stat(sf.Target)
+			if err != nil {
+				return entry, fmt.Errorf("stat ownership %s: %w", sf.Target, err)
+			}
+			uid, gid := ownership.UID, ownership.GID
+			bf.UIDBefore, bf.GIDBefore = &uid, &gid
 			rel := cleanBackupRel(sf.Target)
 			bf.BackupPath = filepath.Join(backupRoot, rel)
 			if err := copyFile(sf.Target, bf.BackupPath, 0); err != nil {
 				return entry, err
 			}
 		}
-		if err := installFile(sf.StagePath, sf.Target, sf.Mode); err != nil {
-			return entry, err
-		}
 		entry.Files = append(entry.Files, bf)
-		fmt.Fprintf(r.Out, "INSTALL %s\n", sf.Target)
 	}
+	var orphanTargets []string
 	if r.Config.OrphanFiles == "remove" {
 		for _, orphan := range orphans {
 			target := manifest.ResolveOrphanTarget(dirs, orphan)
@@ -804,17 +966,126 @@ func (r *Runner) installStaged(staged []StagedFile, st *state.State, releaseID s
 				SHA256Before: sha,
 				BackupPath:   filepath.Join(backupRoot, cleanBackupRel(target)),
 			}
+			ownership, err := r.ownershipManager().Stat(target)
+			if err != nil {
+				return entry, fmt.Errorf("stat ownership %s: %w", target, err)
+			}
+			uid, gid := ownership.UID, ownership.GID
+			bf.UIDBefore, bf.GIDBefore = &uid, &gid
 			if err := copyFile(target, bf.BackupPath, 0); err != nil {
 				return entry, err
 			}
-			if err := os.Remove(target); err != nil {
-				return entry, err
-			}
 			entry.Files = append(entry.Files, bf)
-			fmt.Fprintf(r.Out, "REMOVE-ORPHAN %s\n", target)
+			orphanTargets = append(orphanTargets, target)
 		}
 	}
+	if err := state.SaveTransaction(r.Config.StateDir, &state.Transaction{Entry: entry}); err != nil {
+		return entry, fmt.Errorf("save transaction journal: %w", err)
+	}
+	for _, sf := range staged {
+		if err := r.installFile(sf.StagePath, sf.Target, sf.Mode, sf.Ownership); err != nil {
+			return entry, err
+		}
+		fmt.Fprintf(r.Out, "INSTALL %s\n", sf.Target)
+	}
+	for _, target := range orphanTargets {
+		if err := os.Remove(target); err != nil {
+			return entry, err
+		}
+		if err := durable.SyncDirectory(filepath.Dir(target)); err != nil {
+			return entry, err
+		}
+		fmt.Fprintf(r.Out, "REMOVE-ORPHAN %s\n", target)
+	}
 	return entry, nil
+}
+
+// recoverInterrupted completes the write-ahead protocol before any new
+// action. If state.json already contains the transaction's history entry, the
+// apply committed and only a stale journal remains. Otherwise every pre-image
+// is restored and every newly introduced target is removed.
+func (r *Runner) recoverInterrupted() error {
+	transaction, err := state.LoadTransaction(r.Config.StateDir)
+	if err != nil {
+		return fmt.Errorf("load transaction journal: %w", err)
+	}
+	if transaction == nil {
+		return nil
+	}
+	st, err := state.Load(r.Config.StateDir)
+	if err != nil {
+		return fmt.Errorf("load state during transaction recovery: %w", err)
+	}
+	entry := transaction.Entry
+	if len(st.History) != 0 {
+		last := st.History[len(st.History)-1]
+		if last.ReleaseID == entry.ReleaseID && last.InstalledAt == entry.InstalledAt && last.BackupDir == entry.BackupDir {
+			if err := state.RemoveTransaction(r.Config.StateDir); err != nil {
+				return err
+			}
+			fmt.Fprintf(r.Out, "[RECOVERY] removed journal for committed release=%s\n", entry.ReleaseID)
+			return nil
+		}
+	}
+	if err := r.restoreEntry(entry); err != nil {
+		return fmt.Errorf("recover interrupted release %s: %w", entry.ReleaseID, err)
+	}
+	if err := state.RemoveTransaction(r.Config.StateDir); err != nil {
+		return err
+	}
+	fmt.Fprintf(r.Out, "[RECOVERY] restored pre-upgrade files for interrupted release=%s\n", entry.ReleaseID)
+	return nil
+}
+
+func (r *Runner) restoreEntry(entry state.HistoryEntry) error {
+	if err := validateEntryBackups(entry); err != nil {
+		return err
+	}
+	for index := len(entry.Files) - 1; index >= 0; index-- {
+		bf := entry.Files[index]
+		if bf.Existed {
+			if bf.UIDBefore == nil || bf.GIDBefore == nil {
+				return fmt.Errorf("restore %s: backup has no recorded uid/gid", bf.Target)
+			}
+			ownership := platform.Ownership{UID: *bf.UIDBefore, GID: *bf.GIDBefore}
+			if err := r.installFile(bf.BackupPath, bf.Target, 0, ownership); err != nil {
+				return fmt.Errorf("restore %s: %w", bf.Target, err)
+			}
+			continue
+		}
+		if err := os.Remove(bf.Target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", bf.Target, err)
+		}
+		if err := durable.SyncDirectory(filepath.Dir(bf.Target)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateEntryBackups preflights the complete restore set. A corrupt later
+// backup must be detected before an earlier target is changed, otherwise a
+// rollback could itself leave a mixed-version installation.
+func validateEntryBackups(entry state.HistoryEntry) error {
+	for _, bf := range entry.Files {
+		if !bf.Existed {
+			continue
+		}
+		if bf.UIDBefore == nil || bf.GIDBefore == nil {
+			return fmt.Errorf("restore %s: backup has no recorded uid/gid", bf.Target)
+		}
+		if strings.TrimSpace(bf.BackupPath) == "" || strings.TrimSpace(bf.SHA256Before) == "" {
+			return fmt.Errorf("restore %s: backup path or digest is missing", bf.Target)
+		}
+		sha, ok, err := fileSHA256(bf.BackupPath)
+		if err != nil {
+			return fmt.Errorf("verify backup for %s: %w", bf.Target, err)
+		}
+		if !ok || !strings.EqualFold(sha, bf.SHA256Before) {
+			return fmt.Errorf("restore %s: backup sha256 mismatch", bf.Target)
+		}
+	}
+	return nil
 }
 
 // --- helpers ---
@@ -907,11 +1178,35 @@ func parseMode(raw, kind string) (os.FileMode, error) {
 		}
 		return 0o644, nil
 	}
-	n, err := strconv.ParseUint(raw, 8, 32)
-	if err != nil {
+	n, err := strconv.ParseUint(raw, 8, 12)
+	if err != nil || n > 0o7777 {
 		return 0, fmt.Errorf("bad mode %q", raw)
 	}
-	return os.FileMode(n), nil
+	mode := os.FileMode(n & 0o777)
+	if n&0o4000 != 0 {
+		mode |= os.ModeSetuid
+	}
+	if n&0o2000 != 0 {
+		mode |= os.ModeSetgid
+	}
+	if n&0o1000 != 0 {
+		mode |= os.ModeSticky
+	}
+	return mode, nil
+}
+
+func formatMode(mode os.FileMode) string {
+	n := uint32(mode.Perm())
+	if mode&os.ModeSetuid != 0 {
+		n |= 0o4000
+	}
+	if mode&os.ModeSetgid != 0 {
+		n |= 0o2000
+	}
+	if mode&os.ModeSticky != 0 {
+		n |= 0o1000
+	}
+	return fmt.Sprintf("%04o", n)
 }
 
 // tempInstallPath returns a deterministic PID-based temp sibling for dst.
@@ -931,6 +1226,53 @@ func installFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, dst)
+}
+
+// installFile publishes a fully prepared inode. Ownership is applied before
+// the final chmod because chown clears set-id bits on Unix; doing it in the
+// opposite order would silently turn 4511/4550 boundaries into ordinary
+// executables. The file and containing directory are synced around the atomic
+// rename so a reported successful upgrade has a durable payload.
+func (r *Runner) installFile(src, dst string, mode os.FileMode, ownership platform.Ownership) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	tmp := tempInstallPath(dst)
+	if err := copyFile(src, tmp, mode&os.ModePerm); err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+	if err := r.ownershipManager().Apply(tmp, ownership); err != nil {
+		return fmt.Errorf("set uid/gid on %s: %w", tmp, err)
+	}
+	if mode == 0 {
+		st, err := os.Stat(src)
+		if err != nil {
+			return err
+		}
+		mode = st.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
+	}
+	if err := os.Chmod(tmp, mode); err != nil {
+		return fmt.Errorf("set mode on %s: %w", tmp, err)
+	}
+	// Open read/write for Sync: Windows rejects FlushFileBuffers on a
+	// read-only handle, while Unix accepts this mode for fsync as well.
+	f, err := os.OpenFile(tmp, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	syncErr := f.Sync()
+	closeErr := f.Close()
+	if syncErr != nil {
+		return syncErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	return durable.SyncDirectory(filepath.Dir(dst))
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

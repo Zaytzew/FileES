@@ -10,8 +10,48 @@ import (
 	"testing"
 
 	"filees/internal/gui/identity"
+	"filees/internal/releasepublish"
+	serverconfig "filees/internal/serverinstall/config"
 	"filees/pkg/config"
 )
+
+func TestOpenBSDServerBinaryPolicyMatchesPrivilegeBoundaries(t *testing.T) {
+	spec, err := releasepublish.LoadSpec("server/openbsd-binary-policy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byTarget := make(map[string]releasepublish.FileSpec, len(spec.Files))
+	for _, file := range spec.Files {
+		if _, exists := byTarget[file.Target]; exists {
+			t.Fatalf("duplicate managed target %s", file.Target)
+		}
+		byTarget[file.Target] = file
+	}
+	want := map[string]releasepublish.FileSpec{
+		"{libexec_dir}/filees/filees-bootstrap-entry": {Mode: "4511", Owner: "_filees-state", Group: "wheel"},
+		"{libexec_dir}/filees/filees-entry":           {Mode: "4511", Owner: "_filees-state", Group: "wheel"},
+		"{libexec_dir}/filees/filees-client-entry":    {Mode: "4550", Owner: "_filees-state", Group: "_filees-access"},
+		"{libexec_dir}/filees/filees-mobile-v1":       {Mode: "4550", Owner: "_filees-state", Group: "_filees-access"},
+		"{libexec_dir}/filees/filees-worker":          {Mode: "0555", Owner: "root", Group: "wheel"},
+		"/usr/libexec/auth/login_-filees":             {Mode: "4550", Owner: "_filees-state", Group: "auth"},
+	}
+	for target, expected := range want {
+		got, ok := byTarget[target]
+		if !ok || got.Mode != expected.Mode || got.Owner != expected.Owner || got.Group != expected.Group {
+			t.Errorf("policy %s = %+v, want mode=%s owner=%s group=%s", target, got, expected.Mode, expected.Owner, expected.Group)
+		}
+	}
+}
+
+func TestServerInstallerExampleConfigLoads(t *testing.T) {
+	cfg, err := serverconfig.Load("server/install.example.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RepoURL != "svn://cloud.atmprojekt.pl/FILEES-BIN" || cfg.Channel != "stable" || !cfg.VerifySignature {
+		t.Fatalf("unexpected installer example config: %+v", cfg)
+	}
+}
 
 func TestLinuxExampleConfigPassesProductionLoader(t *testing.T) {
 	repositories, err := config.Load("linux/config.example.json")
@@ -248,7 +288,7 @@ func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 	text := string(raw)
 	for _, required := range []string{
 		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail",
-		"filees-ssh-auth filees-entry filees-worker filees-client-entry filees-recovery-entry",
+		"filees-ssh-auth filees-entry filees-worker filees-client-entry filees-mobile-v1 filees-recovery-entry",
 		"filees-public-authority filees-links",
 		`"./cmd/$command"`, "SHA256SUMS", "sha256 -r",
 	} {
@@ -261,7 +301,7 @@ func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	installerText := string(installer)
-	for _, required := range []string{"700", "600", "openssl rand -base64 32", "ssh-keygen -q -t ed25519", "No daemon or rc.d service", "filees-public-authority", "filees-links"} {
+	for _, required := range []string{"700", "600", "openssl rand -base64 32", "ssh-keygen -q -t ed25519", "No daemon or rc.d service", "filees-public-authority", "filees-links", `install -m 0555 "$bundle/bin/filees-install"`} {
 		if !strings.Contains(installerText, required) {
 			t.Errorf("server installer missing %q", required)
 		}
@@ -283,6 +323,8 @@ func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 		`-m 0555 "$bundle/bin/filees-worker"`,
 		`-m 0555 "$bundle/bin/filees-public-authority"`,
 		`-m 0555 "$bundle/bin/filees-links"`,
+		`-o root -g wheel -m 0555 "$bundle/bin/filees-install"`,
+		`-o root -g wheel -m 0555 "$bundle/bin/filees-rotate"`,
 		`-m 4550 "$bundle/bin/filees-client-entry"`,
 		`-g _filees-recovery -m 4550 "$bundle/bin/filees-recovery-entry"`,
 		`-o root -g wheel -m 0555 "$bundle/bin/filees-recovery-entry" /usr/local/libexec/filees/filees-recovery-authorize`,

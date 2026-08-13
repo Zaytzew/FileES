@@ -20,6 +20,31 @@ func TestEd25519VerifierAcceptsOpenBSDSignifyFixture(t *testing.T) {
 	}
 }
 
+func TestCanonicalSignifyPublicKeyRepairsOnlyTransportLineEndings(t *testing.T) {
+	for _, input := range []string{
+		openBSDRegressPublicKey,
+		strings.ReplaceAll(openBSDRegressPublicKey, "\n", "\r\n"),
+		strings.TrimSuffix(openBSDRegressPublicKey, "\n"),
+	} {
+		got, err := CanonicalSignifyPublicKey([]byte(input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != openBSDRegressPublicKey {
+			t.Fatalf("canonical key = %q", got)
+		}
+	}
+	for _, input := range []string{
+		strings.Replace(openBSDRegressPublicKey, "\n", "\r", 1),
+		openBSDRegressPublicKey + "\n",
+		"untrusted comment: key\nnot-base64\n",
+	} {
+		if _, err := CanonicalSignifyPublicKey([]byte(input)); err == nil {
+			t.Fatalf("accepted malformed public key %q", input)
+		}
+	}
+}
+
 func TestEd25519VerifierFailsClosed(t *testing.T) {
 	verifier := Ed25519Verifier{Keys: map[string][]byte{"release-1": []byte(openBSDRegressPublicKey)}}
 	tests := []struct {

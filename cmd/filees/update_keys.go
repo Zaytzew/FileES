@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"strings"
+
+	"filees/internal/releaseenvelope"
 )
 
 const embeddedClientReleaseKeyID = "release-2026-a"
@@ -28,12 +30,14 @@ func clientReleaseKeyring() (map[string][]byte, bool) {
 		key = decoded
 		keyID = injectedClientReleaseKeyID
 	}
-	key = bytes.TrimSpace(key)
-	configured := len(key) > 20 && !bytes.Contains(key, []byte("PLACEHOLDER")) && !bytes.Contains(key, []byte("xxxx"))
-	if !configured || !validReleaseKeyID(keyID) {
+	if bytes.Contains(key, []byte("PLACEHOLDER")) || bytes.Contains(key, []byte("xxxx")) || !validReleaseKeyID(keyID) {
 		return nil, false
 	}
-	return map[string][]byte{keyID: append([]byte(nil), key...)}, true
+	canonical, err := releaseenvelope.CanonicalSignifyPublicKey(key)
+	if err != nil {
+		return nil, false
+	}
+	return map[string][]byte{keyID: canonical}, true
 }
 
 func validReleaseKeyID(value string) bool {

@@ -23,6 +23,30 @@ type Ed25519Verifier struct {
 	Keys map[string][]byte
 }
 
+// CanonicalSignifyPublicKey validates a signify Ed25519 public key and returns
+// its portable two-line representation.  It accepts the two transport defects
+// commonly introduced by Windows tooling (CRLF and a missing final newline),
+// but rejects every other structural deviation.
+func CanonicalSignifyPublicKey(data []byte) ([]byte, error) {
+	if len(data) == 0 || len(data) > 2048 || bytes.IndexByte(data, 0) >= 0 {
+		return nil, errors.New("invalid signify public key")
+	}
+	normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if strings.ContainsRune(normalized, '\r') {
+		return nil, errors.New("invalid signify public key line ending")
+	}
+	normalized = strings.TrimSuffix(normalized, "\n")
+	lines := strings.Split(normalized, "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], commentPrefix) || len(lines[0]) == len(commentPrefix) {
+		return nil, errors.New("invalid signify public key comment")
+	}
+	decoded, err := base64.StdEncoding.Strict().DecodeString(lines[1])
+	if err != nil || len(decoded) != 2+signifyKeyIDBytes+ed25519.PublicKeySize || string(decoded[:2]) != signifyAlgorithm {
+		return nil, errors.New("invalid signify public key payload")
+	}
+	return []byte(lines[0] + "\n" + lines[1] + "\n"), nil
+}
+
 func (verifier Ed25519Verifier) Verify(ctx context.Context, keyID string, message, signature []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err

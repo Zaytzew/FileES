@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"runtime"
 	"strings"
@@ -29,11 +30,14 @@ func TestSourceBuildDoesNotEnableClientUpdateWithPlaceholderKey(t *testing.T) {
 func TestInjectedPublicReleaseKeyOverridesPlaceholderWithoutTrustFromConfig(t *testing.T) {
 	previousKey, previousID := injectedClientReleasePublicKeyB64, injectedClientReleaseKeyID
 	defer func() { injectedClientReleasePublicKeyB64, injectedClientReleaseKeyID = previousKey, previousID }()
-	publicKey := []byte("untrusted comment: test release key\nRWT012345678901234567890123456789012345678901234567890123456789==\n")
-	injectedClientReleasePublicKeyB64 = base64.StdEncoding.EncodeToString(publicKey)
+	rawKey := make([]byte, 42)
+	copy(rawKey, "Ed")
+	publicKey := []byte("untrusted comment: test release key\n" + base64.StdEncoding.EncodeToString(rawKey) + "\n")
+	transportKey := bytes.TrimSuffix(bytes.ReplaceAll(publicKey, []byte("\n"), []byte("\r\n")), []byte("\r\n"))
+	injectedClientReleasePublicKeyB64 = base64.StdEncoding.EncodeToString(transportKey)
 	injectedClientReleaseKeyID = "release-test-1"
 	keys, configured := clientReleaseKeyring()
-	if !configured || string(keys["release-test-1"]) != strings.TrimSpace(string(publicKey)) {
+	if !configured || string(keys["release-test-1"]) != string(publicKey) {
 		t.Fatalf("injected keyring = %#v, configured=%v", keys, configured)
 	}
 	for _, invalid := range []string{"", "../key", " key", "key/other"} {

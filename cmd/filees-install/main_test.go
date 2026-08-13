@@ -19,9 +19,9 @@ func TestReleasePubkeyInjectionRequiresSignifyPublicKey(t *testing.T) {
 	rawKey := make([]byte, 42)
 	copy(rawKey, "Ed")
 	public := "untrusted comment: FileES release test\n" + base64.StdEncoding.EncodeToString(rawKey)
-	injectedServerReleasePublicKeyB64 = base64.StdEncoding.EncodeToString([]byte(public))
+	injectedServerReleasePublicKeyB64 = base64.StdEncoding.EncodeToString([]byte(strings.ReplaceAll(public, "\n", "\r\n")))
 	got, ok := releasePubkey()
-	if !ok || string(got) != public {
+	if !ok || string(got) != public+"\n" {
 		t.Fatalf("valid injected public key rejected: ok=%v key=%q", ok, got)
 	}
 }

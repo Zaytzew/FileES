@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"encoding/base64"
 	"strings"
+
+	"filees/internal/releaseenvelope"
 )
 
 // Set only by the trusted build pipeline through -ldflags -X. The value is a
@@ -26,55 +28,17 @@ func releasePubkey() ([]byte, bool) {
 		}
 		key = decoded
 	}
-	key = bytes.TrimSpace(key)
 	if bytes.Contains(key, []byte("xxxx")) || bytes.Contains(key, []byte("PLACEHOLDER")) {
 		return nil, false
 	}
-	lines := splitLines(key)
-	if len(lines) != 2 || !bytes.HasPrefix(lines[0], []byte("untrusted comment:")) {
+	canonical, err := releaseenvelope.CanonicalSignifyPublicKey(key)
+	if err != nil {
 		return nil, false
 	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(lines[1])))
-	// signify public keys encode the two-byte "Ed" algorithm marker, an
-	// eight-byte key ID and a 32-byte Ed25519 public key.
-	if err != nil || len(decoded) != 42 || decoded[0] != 'E' || decoded[1] != 'd' {
-		return nil, false
-	}
-	return append([]byte(nil), key...), true
+	return canonical, true
 }
 
 func pubkeyConfigured() bool {
 	_, ok := releasePubkey()
 	return ok
-}
-
-func splitLines(b []byte) [][]byte {
-	var lines [][]byte
-	start := 0
-	for i, c := range b {
-		if c == '\n' {
-			lines = append(lines, b[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(b) {
-		lines = append(lines, b[start:])
-	}
-	return lines
-}
-
-func containsBytes(haystack, needle []byte) bool {
-	if len(needle) == 0 {
-		return true
-	}
-outer:
-	for i := 0; i <= len(haystack)-len(needle); i++ {
-		for j := range needle {
-			if haystack[i+j] != needle[j] {
-				continue outer
-			}
-		}
-		return true
-	}
-	return false
 }

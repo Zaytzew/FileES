@@ -78,9 +78,9 @@ RELEASE_ID=r178 SEQUENCE=178 SECURITY_EPOCH=1 \
 
 Skrypt wymaga czystej WC źródeł i czystej WC `FILEES-BIN`, aktualizuje obie do
 HEAD, buduje binaria z kluczem publicznym, generuje manifest schema v2 oraz
-`releases/<id>/channel-stable.json`. Następnie operator recenzuje i commituje
-**wyłącznie** niezmienny katalog `releases/<id>`. Kanał `channels/stable.json`
-pozostaje w tym commicie nietknięty.
+`releases/<id>/channel.json`. Kandydat jest neutralny względem kanału. Następnie
+operator recenzuje i commituje **wyłącznie** niezmienny katalog
+`releases/<id>`. Katalog `channels/` pozostaje w tym commicie nietknięty.
 
 Manifest serwera schema v2 jest konsumowany przez `filees-install`. Klientowe
 instalatory Linux/MSI/Android pozostają własnymi wykonawcami lifecycle'u; ich
@@ -122,16 +122,18 @@ Na dedykowanej maszynie podpisującej, w czystej i aktualnej WC FILEES-BIN:
 FILEES_BIN_WC="$HOME/FILEES-BIN" \
 SIGNIFY_SEC_KEY="$HOME/.signify/filees-release.sec" \
 SIGNIFY_PUB_KEY="$HOME/.signify/filees-release.pub" \
-RELEASE_ID=r178 CHANNEL=stable ./tools/release-sign-and-publish.sh
+RELEASE_ID=r178 CHANNEL=alpha ./tools/release-sign-and-publish.sh
 ```
 
 Skrypt wybiera z release’u wcześniej zrecenzowany kandydat kanału, podpisuje
 każdy manifest, natychmiast weryfikuje podpisy kluczem publicznym, a następnie
 kopiuje kandydat do `channels/` i podpisuje go. Nowe podpisy manifestów, kanał
 i jego podpis trafiają do **jednego commita SVN**. HEAD nie ma więc okna, w
-którym `stable` wskazuje na niepodpisany release. Jeśli release jest już
-podpisany i promowany, wykonanie jest no-op; istniejący niepoprawny podpis
-manifestu powoduje fail closed zamiast nadpisania historii.
+którym wybrany kanał wskazuje na niepodpisany release. `CHANNEL` nie ma wartości
+domyślnej i musi być jawnie ustawiony na `alpha`, `beta` albo `stable`. Ten sam
+release można później promować do kolejnego kanału bez przebudowy payloadu.
+Jeśli release jest już podpisany i promowany, wykonanie jest no-op; istniejący
+niepoprawny podpis manifestu powoduje fail closed zamiast nadpisania historii.
 
 ## 3. Przejęcie istniejącego serwera
 

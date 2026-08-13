@@ -10,7 +10,7 @@ SIGNIFY_BIN="${SIGNIFY_BIN:-signify}"
 SIGNIFY_SEC_KEY="${SIGNIFY_SEC_KEY:-$HOME/.signify/filees-release.sec}"
 SIGNIFY_PUB_KEY="${SIGNIFY_PUB_KEY:-$HOME/.signify/filees-release.pub}"
 RELEASE_ID="${RELEASE_ID:-}"
-CHANNEL="${CHANNEL:-stable}"
+CHANNEL="${CHANNEL:-}"
 
 die() {
 	echo "filees-release-sign: $*" >&2
@@ -21,7 +21,9 @@ case "$RELEASE_ID" in
 	*[!A-Za-z0-9._-]*|'') die "invalid or missing RELEASE_ID" ;;
 esac
 case "$CHANNEL" in
-	*[!A-Za-z0-9._-]*|'') die "invalid channel name" ;;
+	alpha|beta|stable) ;;
+	'') die "missing CHANNEL (choose alpha, beta or stable)" ;;
+	*) die "invalid CHANNEL: $CHANNEL (choose alpha, beta or stable)" ;;
 esac
 
 command -v "$SIGNIFY_BIN" >/dev/null 2>&1 || die "signify not found: $SIGNIFY_BIN"
@@ -36,8 +38,18 @@ svn update --quiet
 
 release_root="releases/$RELEASE_ID"
 [ -d "$release_root" ] || die "release directory not found: $release_root"
-candidate="$release_root/channel-${CHANNEL}.v2.json"
+candidate="$release_root/channel.v2.json"
 channel_path="channels/${CHANNEL}.v2.json"
+if [ ! -f "$candidate" ]; then
+	candidate="$release_root/channel.json"
+	channel_path="channels/${CHANNEL}.json"
+fi
+# Compatibility with releases prepared before channel candidates became
+# channel-neutral.  A legacy candidate can only promote its named channel.
+if [ ! -f "$candidate" ]; then
+	candidate="$release_root/channel-${CHANNEL}.v2.json"
+	channel_path="channels/${CHANNEL}.v2.json"
+fi
 if [ ! -f "$candidate" ]; then
 	candidate="$release_root/channel-${CHANNEL}.json"
 	channel_path="channels/${CHANNEL}.json"

@@ -177,6 +177,7 @@ func (s *Service) goOffline() {
 		s.Logger.Warnf("offline: network unreachable — queuing changes locally")
 		s.ErrSink.Emit(errmap.Entry{
 			Code:     errmap.CodeNetUnreachable,
+			Key:      "net.unreachable",
 			Severity: errmap.SevWarn,
 			Hint:     errmap.HintRetryBackoff,
 			Msg:      "Network unreachable — queuing changes locally",
@@ -309,7 +310,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				// cross the watermark while they are still being written or just
 				// before an application atomically renames its temporary path.
 				if err := s.tryCommitMode(ctx, wc, false); err != nil {
-					lg.Warnf("high-water commit failed: %v", err)
+					s.recordCommitFailure("high-water commit failed", err)
 				}
 				s.saveCache()
 			}
@@ -320,7 +321,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				continue
 			}
 			if err := s.tryCommit(ctx, wc); err != nil {
-				lg.Warnf("commit attempt failed: %v", err)
+				s.recordCommitFailure("commit attempt failed", err)
 			}
 			s.saveCache()
 		}
@@ -332,6 +333,14 @@ func (s *Service) acceptEvent(ev watcher.Event) {
 	s.addEvent(ev)
 	s.saveCache()
 	s.recordActivity(ev.Rel, ev.Op, activity.Pending, 0, "")
+}
+
+// recordCommitFailure writes the classified fault to errors.jsonl and the
+// talk log. tryCommit used to Warnf only, which never reached `filees log`.
+func (s *Service) recordCommitFailure(what string, err error) {
+	entry := errmap.Classify(err)
+	s.ErrSink.Emit(entry)
+	s.Logger.Warnf("%s [%s]: %v", what, entry.Code, err)
 }
 
 func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.Stage, revision int64, errorID string) {

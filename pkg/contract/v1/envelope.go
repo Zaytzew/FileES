@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"filees/pkg/errcat"
 )
 
 // Protocol is the canonical protocol identifier sent in every envelope.
@@ -59,11 +61,11 @@ type Response struct {
 // ErrorBody is the structured error block inside an error Response.
 // GUI translates MessageKey to a localised string; it must not parse Details text.
 type ErrorBody struct {
-	Code       string            `json:"code"`               // canonical errmap code, e.g. "LOCK-2001"
-	Severity   string            `json:"severity"`           // INFO | WARN | ERROR | FATAL
-	Hint       string            `json:"hint"`               // RETRY_LOCAL | RETRY_BACKOFF | REQUIRE_ACTION | ADMIN_ONLY
-	MessageKey string            `json:"message_key"`        // i18n key, e.g. "lock.held_by_other"
-	Details    map[string]string `json:"details,omitempty"`  // structured diagnostic context
+	Code       string            `json:"code"`              // canonical errmap code, e.g. "LOCK-2001"
+	Severity   string            `json:"severity"`          // INFO | WARN | ERROR | FATAL
+	Hint       string            `json:"hint"`              // RETRY_LOCAL | RETRY_BACKOFF | REQUIRE_ACTION | ADMIN_ONLY
+	MessageKey string            `json:"message_key"`       // i18n key, e.g. "lock.held_by_other"
+	Details    map[string]string `json:"details,omitempty"` // structured diagnostic context
 }
 
 // Event is the envelope for daemon-initiated state-change notifications.
@@ -121,6 +123,13 @@ func ErrResponse(requestID, code, severity, hint, messageKey string, details map
 			Details:    details,
 		},
 	}
+}
+
+// ErrResponseFrom builds an error envelope from a catalog fault. Callers
+// that already have a Fault should use this instead of restating the
+// code/key/hint literals.
+func ErrResponseFrom(requestID string, fault errcat.Fault) Response {
+	return ErrResponse(requestID, string(fault.Code), string(fault.Severity), string(fault.Hint), string(fault.Key), fault.Details)
 }
 
 // NewEvent builds an outbound event envelope. The caller supplies an opaque,

@@ -710,6 +710,26 @@ func (c *execClient) pathArgs(rootDirectory string, paths []string) []string {
 	return append([]string{"--"}, c.relativize(rootDirectory, paths)...)
 }
 
+// pegSafe protects a filesystem path from Subversion's peg-revision syntax.
+//
+// '@' separates a target from its peg revision, and the split is at the LAST
+// '@', so "@Cancelled" is read as the empty path at peg "Cancelled" (E125001)
+// and "a@b" as path "a" at peg "b". The documented escape is an explicit empty
+// peg, which svn itself suggests in the error text. The '--' separator does not
+// help here: it stops option parsing, not peg parsing.
+//
+// The suffix is appended unconditionally whenever '@' is present, including for
+// a name that already ends in one: a file literally called "foo@" must be
+// passed as "foo@@", because "foo@" would resolve to "foo". Callers hand this
+// helper raw filesystem paths, never pre-escaped ones, so there is nothing to
+// double-escape.
+func pegSafe(path string) string {
+	if strings.Contains(path, "@") {
+		return path + "@"
+	}
+	return path
+}
+
 // relativize converts absolute paths under rootDirectory into relative ones for svn CLI.
 func (c *execClient) relativize(rootDirectory string, paths []string) []string {
 	if len(paths) == 0 {
@@ -723,7 +743,7 @@ func (c *execClient) relativize(rootDirectory string, paths []string) []string {
 				q = rel
 			}
 		}
-		out = append(out, q)
+		out = append(out, pegSafe(q))
 	}
 	return out
 }

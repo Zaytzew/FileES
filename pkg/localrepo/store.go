@@ -272,6 +272,32 @@ func (s *Store) ResumeCreate(operationID string) (Record, error) {
 	})
 }
 
+// RepairCreatedRepositoryInput corrects user input that was corrupted before
+// it crossed the daemon IPC boundary. It is intentionally limited to the
+// durable post-CREATE_REPOSITORY/pre-import boundary: the server repository
+// identity is retained, while no attached working copy can be silently moved.
+func (s *Store) RepairCreatedRepositoryInput(operationID, displayName, localPath string) (Record, error) {
+	displayName, localPath = strings.TrimSpace(displayName), filepath.Clean(localPath)
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateRepositoryCreated || record.RepoID == "" || record.RepoURL == "" {
+			return errors.New("only a created repository awaiting initial import can be repaired")
+		}
+		if displayName == "" || strings.ContainsAny(displayName, "\x00\r\n") {
+			return errors.New("repository display name is invalid")
+		}
+		if !filepath.IsAbs(localPath) || localPath == string(filepath.Separator) {
+			return errors.New("repaired repository path must be an absolute non-root path")
+		}
+		for id, existing := range s.records {
+			if id != operationID && existing.State != StateError && existing.State != StateDetached && existing.State != StateDeleted && pathsOverlap(existing.LocalPath, localPath) {
+				return errors.New("repaired repository path overlaps another FileES repository root")
+			}
+		}
+		record.DisplayName, record.LocalPath, record.LastError = displayName, localPath, ""
+		return nil
+	})
+}
+
 func (s *Store) ApproveAttach(operationID, serverID, repoID, repoURL, access string) (Record, error) {
 	return s.update(operationID, func(record *Record) error {
 		if record.ServerID != serverID || record.RepoID != repoID {

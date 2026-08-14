@@ -127,8 +127,18 @@ func (f *fakeReservations) ReleaseReservation(_ context.Context, payload app.Res
 }
 
 type fakeActivator struct {
-	begins   chan string
-	finishes chan string
+	begins     chan string
+	finishes   chan string
+	resumes    chan string
+	pending    []actions.ActivationTarget
+	pendingErr error
+	beginErr   error
+	finishErr  error
+	resumeErr  error
+}
+
+func (f *fakeActivator) Pending(_ context.Context) ([]actions.ActivationTarget, error) {
+	return append([]actions.ActivationTarget(nil), f.pending...), f.pendingErr
 }
 
 type fakeRealmAliases struct {
@@ -199,11 +209,20 @@ func (f *fakeRepositoryCreator) CreationStatus(ctx context.Context, operationID 
 
 func (f *fakeActivator) Begin(_ context.Context, invitation string) (actions.ActivationTarget, error) {
 	f.begins <- invitation
+	if f.beginErr != nil {
+		return actions.ActivationTarget{}, f.beginErr
+	}
 	return actions.ActivationTarget{ServerID: "office", Address: "filees.example.net:22"}, nil
 }
 func (f *fakeActivator) Finish(_ context.Context, target actions.ActivationTarget, otp []byte) error {
 	f.finishes <- target.ServerID + "|" + target.Address + "|" + string(otp)
-	return nil
+	return f.finishErr
+}
+func (f *fakeActivator) Resume(_ context.Context, target actions.ActivationTarget) error {
+	if f.resumes != nil {
+		f.resumes <- target.ServerID + "|" + target.Address
+	}
+	return f.resumeErr
 }
 
 func newFakeLocker() *fakeLockUnlocker {
@@ -361,6 +380,85 @@ func TestControllerActivationPromptsForInvitationThenSecretOTP(t *testing.T) {
 	if len(requests) != 2 || !requests[0].Secret || !requests[1].Secret {
 		t.Fatalf("prompts=%#v", requests)
 	}
+}
+
+func TestControllerResumesPendingActivationWithoutInvitationOrOTP(t *testing.T) {
+	fake := &platformtest.Fake{
+		ConfirmFunc: func(_ context.Context, _ platform.ConfirmRequest) (bool, error) { return true, nil },
+		PromptTextFunc: func(_ context.Context, request platform.PromptTextRequest) (platform.PromptTextResult, error) {
+			t.Fatalf("unexpected prompt while reconnect resume succeeded: %+v", request)
+			return platform.PromptTextResult{}, nil
+		},
+	}
+	activator := &fakeActivator{
+		begins: make(chan string, 1), finishes: make(chan string, 1), resumes: make(chan string, 1),
+		pending: []actions.ActivationTarget{{ServerID: "spot", Address: "spot.example.net:2223"}},
+	}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Prompter: fake, Notifier: fake, Activator: activator})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
+	if got := awaitCh(t, activator.resumes, "activation resume"); got != "spot|spot.example.net:2223" {
+		t.Fatalf("resume=%q", got)
+	}
+	select {
+	case got := <-activator.begins:
+		t.Fatalf("unexpected begin=%q", got)
+	case got := <-activator.finishes:
+		t.Fatalf("unexpected finish=%q", got)
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
+func TestControllerPendingActivationFallsBackToStoredAttemptOTP(t *testing.T) {
+	fake := &platformtest.Fake{
+		ConfirmFunc: func(_ context.Context, _ platform.ConfirmRequest) (bool, error) { return true, nil },
+		PromptTextFunc: func(_ context.Context, request platform.PromptTextRequest) (platform.PromptTextResult, error) {
+			if !request.Secret || !strings.Contains(request.Text, "OTP") {
+				t.Fatalf("unexpected fallback prompt: %+v", request)
+			}
+			return platform.PromptTextResult{Value: "OTP-CODE"}, nil
+		},
+	}
+	activator := &fakeActivator{
+		begins: make(chan string, 1), finishes: make(chan string, 1), resumes: make(chan string, 1),
+		pending: []actions.ActivationTarget{{ServerID: "spot", Address: "spot.example.net:2223"}}, resumeErr: errors.New("reconnect is not authorized yet"),
+	}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Prompter: fake, Notifier: fake, Activator: activator})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
+	awaitCh(t, activator.resumes, "activation resume")
+	if got := awaitCh(t, activator.finishes, "activation OTP fallback"); got != "spot|spot.example.net:2223|OTP-CODE" {
+		t.Fatalf("finish=%q", got)
+	}
+	select {
+	case got := <-activator.begins:
+		t.Fatalf("unexpected begin=%q", got)
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
+func TestControllerActivationFailureUsesModalFallback(t *testing.T) {
+	fake := &platformtest.Fake{PromptTextFunc: func(_ context.Context, _ platform.PromptTextRequest) (platform.PromptTextResult, error) {
+		return platform.PromptTextResult{Value: "filees-invite:v1:test"}, nil
+	}}
+	activator := &fakeActivator{begins: make(chan string, 1), finishes: make(chan string, 1), beginErr: errors.New("bootstrap rejected")}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return app.ViewModel{} }, Prompter: fake, Notifier: fake, Activator: activator})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentActivate})
+	awaitCh(t, activator.begins, "activation begin")
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		snapshot := fake.Snapshot()
+		if len(snapshot.InfoRequests) == 1 && len(snapshot.Notifications) == 1 {
+			if snapshot.InfoRequests[0].Title != "Aktywacja FileES nie powiodła się" || snapshot.InfoRequests[0].Text != "bootstrap rejected" {
+				t.Fatalf("modal fallback=%+v", snapshot.InfoRequests[0])
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("activation failure was not visible: %+v", fake.Snapshot())
 }
 
 func TestControllerActivationStaysVisibleWhenAliasIsNotConfirmed(t *testing.T) {

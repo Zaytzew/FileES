@@ -260,7 +260,9 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile, Runner: repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := publisher.TransferOwner(ctx, *repoID, *realmID); err != nil {
+		if err := withServiceWorkingCopy(ctx, config.Activation, func() error {
+			return publisher.TransferOwner(ctx, *repoID, *realmID)
+		}); err != nil {
 			report(stderr, "filees-admin repo transfer-owner", err)
 			return ExitTempFail
 		}

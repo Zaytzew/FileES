@@ -3,6 +3,7 @@ package updater
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"filees/internal/serverinstall/manifest"
@@ -46,6 +47,41 @@ func TestNearestExistingPath(t *testing.T) {
 	}
 	if got := nearestExistingPath("/nonexistent-filees-root-xyz"); got != "/" {
 		t.Fatalf("fully missing path must resolve to /: %q", got)
+	}
+}
+
+func TestBaseUnveilsIncludesIdentityDatabases(t *testing.T) {
+	r, root := testRunner(t)
+	original := sandboxEnabled
+	sandboxEnabled = func() bool { return true }
+	t.Cleanup(func() { sandboxEnabled = original })
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Config.ConfigPath = filepath.Join(root, "install.conf")
+	r.Config.SVNPath = executable
+	specs, err := r.baseUnveils()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]string{}
+	for _, spec := range specs {
+		byPath[spec.Path] = spec.Perms
+	}
+	for _, path := range []string{"/etc/passwd", "/etc/group"} {
+		if byPath[path] != "r" {
+			t.Fatalf("identity database %s must be unveiled read-only, got %q", path, byPath[path])
+		}
+	}
+}
+
+func TestFilePledgeDoesNotClaimChown(t *testing.T) {
+	for _, promise := range strings.Fields(filePromises) {
+		if promise == "chown" {
+			t.Fatalf("file pledge must be delayed until after chown/chmod, not claim chown: %q", filePromises)
+		}
 	}
 }
 

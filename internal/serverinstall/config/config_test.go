@@ -33,8 +33,8 @@ func TestLoadMinimal(t *testing.T) {
 	if !cfg.RequireHash || !cfg.VerifySignature {
 		t.Fatalf("hash/signature defaults: %v %v", cfg.RequireHash, cfg.VerifySignature)
 	}
-	if cfg.StateDir != "/var/filees/install-state" || cfg.SbinDir != "/usr/local/sbin" {
-		t.Fatalf("path defaults: %q %q", cfg.StateDir, cfg.SbinDir)
+	if cfg.StateDir != "/var/filees/install-state" || cfg.SbinDir != "/usr/local/sbin" || cfg.LockPath != "/var/run/filees-install.lock" {
+		t.Fatalf("path defaults: %q %q lock=%q", cfg.StateDir, cfg.SbinDir, cfg.LockPath)
 	}
 }
 
@@ -44,6 +44,8 @@ func TestLoadFullOverride(t *testing.T) {
 		"url = svn://h/BIN",
 		"channel = testing",
 		"platform = openbsd-amd64",
+		"[local]",
+		"lock_path = /var/run/custom-filees-install.lock",
 		"[install]",
 		"sbin_dir = /opt/sbin",
 		"sshd_conf_dir = /etc/ssh/frag.d",
@@ -66,6 +68,9 @@ func TestLoadFullOverride(t *testing.T) {
 	}
 	if cfg.SbinDir != "/opt/sbin" || cfg.SSHDConfDir != "/etc/ssh/frag.d" {
 		t.Fatalf("install section: %q %q", cfg.SbinDir, cfg.SSHDConfDir)
+	}
+	if cfg.LockPath != "/var/run/custom-filees-install.lock" {
+		t.Fatalf("local lock path: %q", cfg.LockPath)
 	}
 	if cfg.DefaultAction != "apply" || cfg.ConfigDrift != "warn" || cfg.OrphanFiles != "remove" {
 		t.Fatalf("policy enums: %q %q %q", cfg.DefaultAction, cfg.ConfigDrift, cfg.OrphanFiles)

@@ -311,6 +311,12 @@ func (r *Runner) BuildPlan(m *manifest.Manifest, st *state.State) (*Plan, error)
 }
 
 func (r *Runner) Check(ctx context.Context, opts Options) error {
+	lock, err := r.acquireRunLock()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	if err := r.recoverInterrupted(); err != nil {
 		return err
 	}
@@ -332,6 +338,9 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	if err := r.applyUnveils(append(base, r.manifestUnveils(m, false)...)); err != nil {
 		return err
 	}
+	if err := r.reducePledge(); err != nil {
+		return err
+	}
 	plan, err := r.BuildPlan(m, st)
 	if err != nil {
 		return err
@@ -345,6 +354,12 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 // then records that release as the managed baseline. It never downloads or
 // modifies payload files and never runs first-install system tasks.
 func (r *Runner) Adopt(ctx context.Context, opts Options) error {
+	lock, err := r.acquireRunLock()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	if err := r.recoverInterrupted(); err != nil {
 		return err
 	}
@@ -367,6 +382,9 @@ func (r *Runner) Adopt(ctx context.Context, opts Options) error {
 		return err
 	}
 	if err := r.applyUnveils(append(base, r.manifestUnveils(m, false)...)); err != nil {
+		return err
+	}
+	if err := r.reducePledge(); err != nil {
 		return err
 	}
 	plan, err := r.BuildPlan(m, st)
@@ -418,6 +436,12 @@ func (r *Runner) checkFreshness(m *manifest.Manifest, st *state.State, opts Opti
 }
 
 func (r *Runner) Apply(ctx context.Context, opts Options) error {
+	lock, err := r.acquireRunLock()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	if err := r.recoverInterrupted(); err != nil {
 		return err
 	}
@@ -451,7 +475,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	systemRun := !opts.DryRun && (st.IsFirstInstall() || r.manifestTouchesSSHD(m))
 	if systemRun {
 		if r.Config.Talkative {
-			fmt.Fprintln(r.Out, "[SECURITY] system run: unveil skipped, bootstrap pledge retained")
+			fmt.Fprintln(r.Out, "[SECURITY] system run: unveil skipped")
 		}
 	} else {
 		base, err := r.baseUnveils()
@@ -460,6 +484,11 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		}
 		if err := r.applyUnveils(append(base, r.manifestUnveils(m, !opts.DryRun)...)); err != nil {
 			return err
+		}
+		if opts.DryRun {
+			if err := r.reducePledge(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -493,11 +522,10 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 			return fmt.Errorf("reload sshd after fragment update: %w", err)
 		}
 	}
-	if systemRun {
-		// System phase over; drop proc+exec for the state write below.
-		if err := r.reducePledge(); err != nil {
-			return err
-		}
+	// All inode and system mutations are complete. Only now may OpenBSD
+	// pledge: its first call permanently disables setting set-id bits.
+	if err := r.reducePledge(); err != nil {
+		return err
 	}
 
 	st.InstalledRelease = m.ReleaseID
@@ -602,6 +630,12 @@ func (r *Runner) sshdFragmentUpdated(plan *Plan) bool {
 }
 
 func (r *Runner) Rollback() error {
+	lock, err := r.acquireRunLock()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	if err := r.recoverInterrupted(); err != nil {
 		return err
 	}
@@ -634,8 +668,12 @@ func (r *Runner) Rollback() error {
 			if bf.UIDBefore == nil || bf.GIDBefore == nil {
 				return fmt.Errorf("restore %s: backup has no recorded uid/gid", bf.Target)
 			}
+			mode, err := recordedBackupMode(bf)
+			if err != nil {
+				return err
+			}
 			ownership := platform.Ownership{UID: *bf.UIDBefore, GID: *bf.GIDBefore}
-			if err := r.installFile(bf.BackupPath, bf.Target, 0, ownership); err != nil {
+			if err := r.installFile(bf.BackupPath, bf.Target, mode, ownership); err != nil {
 				return fmt.Errorf("restore %s: %w", bf.Target, err)
 			}
 			fmt.Fprintf(r.Out, "RESTORE %s\n", bf.Target)
@@ -645,6 +683,9 @@ func (r *Runner) Rollback() error {
 			return fmt.Errorf("remove %s: %w", bf.Target, err)
 		}
 		fmt.Fprintf(r.Out, "REMOVE %s\n", bf.Target)
+	}
+	if err := r.reducePledge(); err != nil {
+		return err
 	}
 	st.InstalledRelease = entry.PreviousRelease
 	st.InstalledAt = ""
@@ -663,6 +704,12 @@ func (r *Runner) Rollback() error {
 }
 
 func (r *Runner) Purge(opts PurgeOptions) error {
+	lock, err := r.acquireRunLock()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	if err := r.recoverInterrupted(); err != nil {
 		return err
 	}
@@ -678,7 +725,7 @@ func (r *Runner) Purge(opts PurgeOptions) error {
 	// whose children would inherit any unveil profile — so no unveil; the
 	// bootstrap pledge (with proc exec) stays for the whole purge.
 	if r.Config.Talkative {
-		fmt.Fprintln(r.Out, "[SECURITY] system run: unveil skipped, bootstrap pledge retained")
+		fmt.Fprintln(r.Out, "[SECURITY] system run: unveil skipped")
 	}
 
 	r.printPurgeWarning(st, opts)
@@ -935,6 +982,11 @@ func (r *Runner) installStaged(staged []StagedFile, st *state.State, releaseID s
 		} else if ok {
 			bf.Existed = true
 			bf.SHA256Before = sha
+			info, err := os.Lstat(sf.Target)
+			if err != nil {
+				return entry, fmt.Errorf("stat mode %s: %w", sf.Target, err)
+			}
+			bf.ModeBefore = formatMode(info.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky))
 			ownership, err := r.ownershipManager().Stat(sf.Target)
 			if err != nil {
 				return entry, fmt.Errorf("stat ownership %s: %w", sf.Target, err)
@@ -966,6 +1018,11 @@ func (r *Runner) installStaged(staged []StagedFile, st *state.State, releaseID s
 				SHA256Before: sha,
 				BackupPath:   filepath.Join(backupRoot, cleanBackupRel(target)),
 			}
+			info, err := os.Lstat(target)
+			if err != nil {
+				return entry, fmt.Errorf("stat orphan mode %s: %w", target, err)
+			}
+			bf.ModeBefore = formatMode(info.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky))
 			ownership, err := r.ownershipManager().Stat(target)
 			if err != nil {
 				return entry, fmt.Errorf("stat ownership %s: %w", target, err)
@@ -1047,8 +1104,12 @@ func (r *Runner) restoreEntry(entry state.HistoryEntry) error {
 			if bf.UIDBefore == nil || bf.GIDBefore == nil {
 				return fmt.Errorf("restore %s: backup has no recorded uid/gid", bf.Target)
 			}
+			mode, err := recordedBackupMode(bf)
+			if err != nil {
+				return err
+			}
 			ownership := platform.Ownership{UID: *bf.UIDBefore, GID: *bf.GIDBefore}
-			if err := r.installFile(bf.BackupPath, bf.Target, 0, ownership); err != nil {
+			if err := r.installFile(bf.BackupPath, bf.Target, mode, ownership); err != nil {
 				return fmt.Errorf("restore %s: %w", bf.Target, err)
 			}
 			continue
@@ -1074,6 +1135,9 @@ func validateEntryBackups(entry state.HistoryEntry) error {
 		if bf.UIDBefore == nil || bf.GIDBefore == nil {
 			return fmt.Errorf("restore %s: backup has no recorded uid/gid", bf.Target)
 		}
+		if _, err := recordedBackupMode(bf); err != nil {
+			return err
+		}
 		if strings.TrimSpace(bf.BackupPath) == "" || strings.TrimSpace(bf.SHA256Before) == "" {
 			return fmt.Errorf("restore %s: backup path or digest is missing", bf.Target)
 		}
@@ -1086,6 +1150,17 @@ func validateEntryBackups(entry state.HistoryEntry) error {
 		}
 	}
 	return nil
+}
+
+func recordedBackupMode(bf state.BackupFile) (os.FileMode, error) {
+	if strings.TrimSpace(bf.ModeBefore) == "" {
+		return 0, fmt.Errorf("restore %s: backup has no recorded mode", bf.Target)
+	}
+	mode, err := parseMode(bf.ModeBefore, "file")
+	if err != nil {
+		return 0, fmt.Errorf("restore %s: invalid recorded mode %q: %w", bf.Target, bf.ModeBefore, err)
+	}
+	return mode, nil
 }
 
 // --- helpers ---
@@ -1255,24 +1330,33 @@ func (r *Runner) installFile(src, dst string, mode os.FileMode, ownership platfo
 	if err := os.Chmod(tmp, mode); err != nil {
 		return fmt.Errorf("set mode on %s: %w", tmp, err)
 	}
-	// Open read/write for Sync: Windows rejects FlushFileBuffers on a
-	// read-only handle, while Unix accepts this mode for fsync as well.
-	f, err := os.OpenFile(tmp, os.O_RDWR, 0)
-	if err != nil {
+	if err := syncInstalledFile(tmp); err != nil {
 		return err
 	}
-	syncErr := f.Sync()
-	closeErr := f.Close()
-	if syncErr != nil {
-		return syncErr
-	}
-	if closeErr != nil {
-		return closeErr
+	if err := verifyInstalledMode(tmp, mode); err != nil {
+		return err
 	}
 	if err := os.Rename(tmp, dst); err != nil {
 		return err
 	}
+	if err := verifyInstalledMode(dst, mode); err != nil {
+		return err
+	}
 	return durable.SyncDirectory(filepath.Dir(dst))
+}
+
+func verifyInstalledMode(path string, want os.FileMode) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	mask := os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+	got := info.Mode() & mask
+	want &= mask
+	if got != want {
+		return fmt.Errorf("verify mode on %s: got %s want %s", path, formatMode(got), formatMode(want))
+	}
+	return nil
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

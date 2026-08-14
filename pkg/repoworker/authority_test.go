@@ -71,6 +71,58 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestServicePublisherActivateHealsProjectionFromCanonicalRecord(t *testing.T) {
+	root := t.TempDir()
+	realm, clientID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	viewPath := filepath.Join(root, "clients", clientID, "view.json")
+	view := clientview.View{
+		Schema: clientview.Schema, ClientID: clientID, RealmID: realm,
+		Generation: 5, GeneratedAt: time.Now(), ClientRole: "normal",
+		Capabilities: &clientview.Capabilities{CanCreateRepositories: true},
+		Repositories: []clientview.Repository{{
+			RepoID: repoID, DisplayName: "��D�-KOLUMNY",
+			URL:    "svn+ssh://_filees-client@stale.example/" + repoID,
+			Access: "rw", State: "initializing", OwnerRealmID: realm,
+			AttachmentPolicy: "optional",
+		}}, ActiveOperations: []json.RawMessage{},
+	}
+	if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+		t.Fatal(err)
+	}
+	canonicalURL := "svn+ssh://_filees-data@example/" + repoID
+	repoPath, err := repositoryRecordPath(root, repoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(repoPath, repositoryRecord{
+		Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realm,
+		DisplayName: "Łódź-kolumny", URL: canonicalURL, State: "initializing",
+		CreatedAt: time.Now(), EditingPolicy: "lock_required",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &publishRunner{}
+	publisher := ServicePublisher{ServiceWC: root, Runner: runner}
+	if err := publisher.Activate(context.Background(), repoID, realm); err != nil {
+		t.Fatal(err)
+	}
+	got, err := clientview.Load(viewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected := got.Repositories[0]
+	if got.Generation != 6 || projected.DisplayName != "Łódź-kolumny" || projected.URL != canonicalURL || projected.State != "active" || projected.OwnerRealmID != realm || projected.EditingPolicy != "lock_required" || projected.Access != "rw" || projected.AttachmentPolicy != "optional" {
+		t.Fatalf("healed projection = %+v generation=%d", projected, got.Generation)
+	}
+	if err := publisher.Activate(context.Background(), repoID, realm); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := clientview.Load(viewPath)
+	if again.Generation != 6 || runner.calls != 1 {
+		t.Fatalf("idempotent activation republished: generation=%d calls=%d", again.Generation, runner.calls)
+	}
+}
+
 func TestServicePublisherSnapshotsOwnedAndForeignRealmScope(t *testing.T) {
 	root := t.TempDir()
 	realm, other := uuid.NewString(), uuid.NewString()

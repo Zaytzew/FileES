@@ -21,6 +21,8 @@ const (
 	// Client activation (executed by daemon; GUI only supplies user intent).
 	CmdActivationBegin        = "activation.begin"
 	CmdActivationFinish       = "activation.finish"
+	CmdActivationPending      = "activation.pending"
+	CmdActivationResume       = "activation.resume"
 	CmdRealmAliasClaim        = "realm.alias_claim"
 	CmdRealmGrantRecipients   = "realm.grant_recipients"
 	CmdRealmSetVisibility     = "realm.set_visibility"
@@ -95,6 +97,8 @@ const (
 	CapErrorList              = "error.list"
 	CapActivationBegin        = "activation.begin"
 	CapActivationFinish       = "activation.finish"
+	CapActivationPending      = "activation.pending"
+	CapActivationResume       = "activation.resume"
 	CapRealmAliasClaim        = "realm.alias_claim"
 	CapRealmGrantRecipients   = "realm.grant_recipients"
 	CapRealmSetVisibility     = "realm.set_visibility"
@@ -150,6 +154,8 @@ var AllCapabilities = []string{
 	CapErrorList,
 	CapActivationBegin,
 	CapActivationFinish,
+	CapActivationPending,
+	CapActivationResume,
 	CapRealmAliasClaim,
 	CapServerDetach,
 	CapRealmRemoveBegin,
@@ -264,6 +270,27 @@ type ActivationFinishPayload struct {
 	StateRoot      string `json:"state_root"`
 	RemotePort     int    `json:"remote_port"`
 	OTP            Secret `json:"otp"`
+}
+
+type ActivationPendingPayload struct {
+	StateRoot string `json:"state_root"`
+}
+
+type ActivationResumePayload struct {
+	ServerID       string `json:"server_id"`
+	ServerAddress  string `json:"server_address"`
+	KnownHostsPath string `json:"known_hosts_path"`
+	StateRoot      string `json:"state_root"`
+	RemotePort     int    `json:"remote_port"`
+}
+
+type ActivationPendingResult struct {
+	Targets []ActivationTarget `json:"targets"`
+}
+
+type ActivationTarget struct {
+	ServerID string `json:"server_id"`
+	Address  string `json:"address"`
 }
 
 // RealmAliasClaimPayload asks the daemon to make the authenticated realm's

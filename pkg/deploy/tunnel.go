@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"filees/internal/processoutput"
 	"filees/pkg/privatefile"
 
 	"golang.org/x/crypto/ssh"
@@ -70,7 +71,9 @@ func (w *boundedDiagnostic) Write(p []byte) (int, error) {
 	return wanted, nil
 }
 
-func (w *boundedDiagnostic) String() string { return strings.TrimSpace(string(w.data)) }
+func (w *boundedDiagnostic) String() string {
+	return strings.TrimSpace(processoutput.Text(w.data))
+}
 
 // loadReconnectSigner reads the durable key the server challenges after
 // transport loss. It is shared rather than per-platform because the reconnect

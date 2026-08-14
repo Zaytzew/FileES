@@ -39,7 +39,7 @@ func recoverPendingRealmRemovals(ctx context.Context, config serverconfig.Config
 	backend := &repoworker.DurableBackend{
 		Root: filepath.Join(r.ResultsRoot, "backend"), URLPrefix: r.URLPrefix, Effects: effects,
 	}
-	manager, err := activation.New(config.Activation, nil)
+	manager, err := activation.NewUnderServiceWorkingCopyLock(config.Activation, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -62,14 +62,19 @@ func recoverPendingRealmRemovals(ctx context.Context, config serverconfig.Config
 		PublicShares:   publicShareChannels,
 		ErasureMaxDays: r.EffectiveDataErasureMaxDays(),
 	}
-	pending, err := store.PendingConfirmed()
-	if err != nil {
-		return 0, err
-	}
-	for _, record := range pending {
-		if err := executor.Execute(ctx, record); err != nil {
-			return 0, err
+	count := 0
+	err = withServiceWorkingCopy(ctx, config.Activation, func() error {
+		pending, err := store.PendingConfirmed()
+		if err != nil {
+			return err
 		}
-	}
-	return len(pending), nil
+		for _, record := range pending {
+			if err := executor.Execute(ctx, record); err != nil {
+				return err
+			}
+		}
+		count = len(pending)
+		return nil
+	})
+	return count, err
 }

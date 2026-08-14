@@ -55,8 +55,10 @@ type RealmAliasManager interface {
 }
 
 type Activator interface {
+	Pending(ctx context.Context) ([]ActivationTarget, error)
 	Begin(ctx context.Context, invitation string) (ActivationTarget, error)
 	Finish(ctx context.Context, target ActivationTarget, otp []byte) error
+	Resume(ctx context.Context, target ActivationTarget) error
 }
 
 // ActivationTarget is derived from a validated invitation, never typed as a
@@ -2069,6 +2071,35 @@ func (c *Controller) startActivation(ctx context.Context) {
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation("activate")
+		pending, err := c.cfg.Activator.Pending(ctx)
+		if err != nil {
+			c.activationFailure(ctx, err)
+			return
+		}
+		for _, target := range pending {
+			resume, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+				Title:       "Niedokończona aktywacja FileES",
+				Text:        "Znaleziono niedokończoną aktywację serwera " + target.Address + ". Wznów ją bez ponownego wklejania zaproszenia?",
+				ConfirmText: "Wznów", CancelText: "Inne zaproszenie",
+			})
+			if confirmErr != nil {
+				c.activationFailure(ctx, confirmErr)
+				return
+			}
+			if !resume {
+				continue
+			}
+			if err := c.cfg.Activator.Resume(ctx, target); err != nil {
+				// A reconnect succeeds when the OTP was already consumed. If the
+				// previous GUI stopped earlier, the same durable attempt still
+				// needs its OTP and can finish without importing the invitation.
+				if !c.finishActivationWithOTP(ctx, target) {
+					return
+				}
+			}
+			c.activationComplete(ctx, target)
+			return
+		}
 		invitation, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wklej zaproszenie FileES otrzymane e-mailem:", Placeholder: "filees-invite:v1:…", Secret: true})
 		if err != nil || invitation.Cancelled || invitation.Value == "" {
 			c.activationFailure(ctx, err)
@@ -2079,34 +2110,45 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationFailure(ctx, err)
 			return
 		}
-		otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wprowadź kod OTP otrzymany e-mailem:", Secret: true})
-		if err != nil || otp.Cancelled || otp.Value == "" {
-			c.activationFailure(ctx, err)
+		if !c.finishActivationWithOTP(ctx, target) {
 			return
 		}
-		secret := []byte(otp.Value)
-		defer clear(secret)
-		if err := c.cfg.Activator.Finish(ctx, target, secret); err != nil {
-			c.activationFailure(ctx, err)
-			return
-		}
-		aliasPending := c.cfg.RealmAliases != nil && !c.claimRealmAlias(ctx, target.ServerID)
-		if aliasPending {
-			// Activation itself has already completed.  An alias is required
-			// before some collaboration actions, but an interrupted alias claim
-			// must never make a successfully activated client appear to vanish.
-			c.notify(ctx, platform.Notification{ID: "realm_alias." + target.ServerID, Group: "realm_alias." + target.ServerID, Title: "Klient aktywowany — alias wymaga ustawienia", Body: "Ustaw stały alias z menu serwera, zanim użyjesz blokad lub współdzielonych operacji.", Urgency: platform.UrgencyNormal})
-			if c.cfg.Prompter != nil {
-				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Klient FileES aktywowany", Text: "Połączenie z serwerem " + target.Address + " jest aktywne. Alias nie został jeszcze potwierdzony — ustaw go ponownie z menu serwera przed użyciem blokad lub operacji współdzielonych."})
-			}
-		}
-		c.offerLocalPinSetup(ctx)
-		body := target.Address
-		if aliasPending {
-			body += "\nAktywacja zakończona; alias wymaga ustawienia."
-		}
-		c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: body, Urgency: platform.UrgencyNormal})
+		c.activationComplete(ctx, target)
 	}()
+}
+
+func (c *Controller) finishActivationWithOTP(ctx context.Context, target ActivationTarget) bool {
+	otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wprowadź kod OTP otrzymany e-mailem:", Secret: true})
+	if err != nil || otp.Cancelled || otp.Value == "" {
+		c.activationFailure(ctx, err)
+		return false
+	}
+	secret := []byte(otp.Value)
+	defer clear(secret)
+	if err := c.cfg.Activator.Finish(ctx, target, secret); err != nil {
+		c.activationFailure(ctx, err)
+		return false
+	}
+	return true
+}
+
+func (c *Controller) activationComplete(ctx context.Context, target ActivationTarget) {
+	aliasPending := c.cfg.RealmAliases != nil && !c.claimRealmAlias(ctx, target.ServerID)
+	if aliasPending {
+		// Activation itself has already completed.  An alias is required
+		// before some collaboration actions, but an interrupted alias claim
+		// must never make a successfully activated client appear to vanish.
+		c.notify(ctx, platform.Notification{ID: "realm_alias." + target.ServerID, Group: "realm_alias." + target.ServerID, Title: "Klient aktywowany — alias wymaga ustawienia", Body: "Ustaw stały alias z menu serwera, zanim użyjesz blokad lub współdzielonych operacji.", Urgency: platform.UrgencyNormal})
+		if c.cfg.Prompter != nil {
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Klient FileES aktywowany", Text: "Połączenie z serwerem " + target.Address + " jest aktywne. Alias nie został jeszcze potwierdzony — ustaw go ponownie z menu serwera przed użyciem blokad lub operacji współdzielonych."})
+		}
+	}
+	c.offerLocalPinSetup(ctx)
+	body := target.Address
+	if aliasPending {
+		body += "\nAktywacja zakończona; alias wymaga ustawienia."
+	}
+	c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Klient FileES aktywowany na serwerze", Body: body, Urgency: platform.UrgencyNormal})
 }
 
 func (c *Controller) startRealmAlias(ctx context.Context, serverID string) {
@@ -2186,6 +2228,9 @@ func (c *Controller) activationFailure(ctx context.Context, err error) {
 		return
 	}
 	c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Aktywacja FileES nie powiodła się", Body: err.Error(), Urgency: platform.UrgencyCritical})
+	if c.cfg.Prompter != nil {
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Aktywacja FileES nie powiodła się", Text: err.Error()})
+	}
 }
 
 func (c *Controller) startOpenFolder(ctx context.Context, repoID string) {

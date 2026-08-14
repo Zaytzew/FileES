@@ -57,6 +57,8 @@ type Server struct {
 type ActivationService interface {
 	Begin(context.Context, contract.ActivationBeginPayload) (contract.ActivationCommandResult, error)
 	Finish(context.Context, contract.ActivationFinishPayload) (contract.ActivationCommandResult, error)
+	Pending(context.Context, contract.ActivationPendingPayload) (contract.ActivationPendingResult, error)
+	Resume(context.Context, contract.ActivationResumePayload) (contract.ActivationCommandResult, error)
 }
 
 type RealmAliasService interface {

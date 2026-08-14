@@ -198,6 +198,26 @@ Zamknij FileES…
 
 ---
 
+## Aktywacja i wznowienie przerwanej aktywacji
+
+Wybierz **Aktywuj klienta na nowym serwerze…**, wklej zaproszenie otrzymane
+e-mailem, a następnie osobno dostarczony OTP. Adres, port i przypięty klucz
+hosta pochodzą z podpisanego zaproszenia — użytkownik ich nie przepisuje.
+
+Jeśli GUI zostało zamknięte po przyjęciu zaproszenia, następne wybranie tej
+akcji najpierw pokaże **Niedokończona aktywacja FileES**. Wybierz **Wznów**.
+Gdy OTP został już zużyty, demon odtworzy połączenie trwałym kluczem reconnect;
+gdy poprzednia próba zatrzymała się wcześniej, GUI poprosi o OTP dla tej samej
+zapisanej próby. Nie usuwaj ręcznie katalogu stanu i nie zamawiaj drugiego
+ticketu tylko z powodu zamknięcia okna.
+
+Wybranie **Inne zaproszenie** pozwala wkleić nowy, serwerowo podpisany ticket.
+Może on zastąpić niedokończoną próbę, ale nigdy działający profil klienta.
+Błąd jest pokazywany w oknie modalnym oraz w Dzienniku; brak kolejnego okna nie
+jest traktowany jako sukces.
+
+---
+
 ## Dodawanie lokalnego folderu jako nowego repozytorium
 
 W podmenu serwera wybierz **Dodaj pierwszy/kolejny folder do FileES…**, wskaż

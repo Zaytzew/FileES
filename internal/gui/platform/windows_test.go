@@ -173,6 +173,46 @@ func TestHideConsoleWindowOnlyAffectsPowerShell(t *testing.T) {
 	}
 }
 
+func TestPowerShellOutputForcesUTF8WithoutMutatingCallerArgs(t *testing.T) {
+	original := []string{"-NoProfile", "-Command", "[Console]::Write('ŁÓDŹ')"}
+	got := powerShellUTF8OutputArgs(`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, original)
+	if !strings.HasPrefix(got[2], powerShellUTF8OutputPrelude) || !strings.HasSuffix(got[2], original[2]) {
+		t.Fatalf("prepared command = %q", got[2])
+	}
+	if got[2] == original[2] || original[2] != "[Console]::Write('ŁÓDŹ')" {
+		t.Fatalf("caller args were mutated: original=%q got=%q", original[2], got[2])
+	}
+	other := powerShellUTF8OutputArgs(`C:\Windows\System32\cmd.exe`, original)
+	if !reflect.DeepEqual(other, original) {
+		t.Fatalf("non-PowerShell command changed: %#v", other)
+	}
+}
+
+func TestPowerShellOutputReturnsLiveUnicodeAsUTF8(t *testing.T) {
+	command, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Skipf("Windows PowerShell unavailable: %v", err)
+	}
+	out, err := (osWindowsCommandRunner{}).Output(context.Background(), command, "-NoProfile", "-NonInteractive", "-Command", "[Console]::Write('ŁÓDŹ-kolumny')")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(out), "ŁÓDŹ-kolumny"; got != want {
+		t.Fatalf("PowerShell output = %q, want valid UTF-8 %q", got, want)
+	}
+}
+
+func TestPowerShellOutputRejectsBytesOutsideUTF8(t *testing.T) {
+	command, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Skipf("Windows PowerShell unavailable: %v", err)
+	}
+	_, err = (osWindowsCommandRunner{}).Output(context.Background(), command, "-NoProfile", "-NonInteractive", "-Command", "$o=[Console]::OpenStandardOutput();$o.Write([byte[]](0xA3),0,1)")
+	if err == nil || !strings.Contains(err.Error(), "outside UTF-8") {
+		t.Fatalf("invalid PowerShell output error = %v", err)
+	}
+}
+
 func TestWindowsOpenFolderReportsUnavailableAndStartFailure(t *testing.T) {
 	missing := &fakeWindowsRunner{paths: map[string]string{}}
 	backend := newWindowsBackend(missing, newFakeWindowsAutostartStore(), time.Now, "ATMProjekt.FileES")

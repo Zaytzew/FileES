@@ -213,6 +213,24 @@ func (c *Client) ActivationFinish(ctx context.Context, payload contract.Activati
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) ActivationPending(ctx context.Context, payload contract.ActivationPendingPayload) (*contract.ActivationPendingResult, error) {
+	resp, err := c.do(ctx, contract.CmdActivationPending, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.ActivationPendingResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) ActivationResume(ctx context.Context, payload contract.ActivationResumePayload) (*contract.ActivationCommandResult, error) {
+	resp, err := c.do(ctx, contract.CmdActivationResume, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.ActivationCommandResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoList(ctx context.Context) (*contract.RepoListResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoList, "", nil)
 	if err != nil {

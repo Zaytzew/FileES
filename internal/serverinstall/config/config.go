@@ -23,6 +23,7 @@ type Config struct {
 	StateDir  string
 	StageDir  string
 	BackupDir string
+	LockPath  string
 
 	SbinDir      string
 	LibexecDir   string
@@ -116,6 +117,7 @@ func defaults(abs string) *Config {
 		StateDir:        "/var/filees/install-state",
 		StageDir:        "/var/filees/install-stage",
 		BackupDir:       "/var/filees/install-backup",
+		LockPath:        "/var/run/filees-install.lock",
 		SbinDir:         "/usr/local/sbin",
 		LibexecDir:      "/usr/local/libexec",
 		SysconfDir:      "/etc/filees",
@@ -149,6 +151,8 @@ func set(cfg *Config, key, val string, lineNo int) error {
 		cfg.StageDir = val
 	case "local.backup_dir":
 		cfg.BackupDir = val
+	case "local.lock_path":
+		cfg.LockPath = val
 	case "install.sbin_dir":
 		cfg.SbinDir = val
 	case "install.libexec_dir":
@@ -235,7 +239,7 @@ func (cfg *Config) finalize() error {
 	if !oneOf(cfg.OrphanFiles, "keep", "warn", "remove") {
 		return fmt.Errorf("policy.orphan_files must be keep, warn or remove")
 	}
-	for _, p := range []*string{&cfg.StateDir, &cfg.StageDir, &cfg.BackupDir,
+	for _, p := range []*string{&cfg.StateDir, &cfg.StageDir, &cfg.BackupDir, &cfg.LockPath,
 		&cfg.SbinDir, &cfg.LibexecDir, &cfg.SysconfDir,
 		&cfg.SSHDConfDir, &cfg.SSHKeysDir, &cfg.DataDir} {
 		*p = cleanPath(*p)

@@ -37,6 +37,10 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleActivationBegin(req)
 	case contract.CmdActivationFinish:
 		return s.handleActivationFinish(req)
+	case contract.CmdActivationPending:
+		return s.handleActivationPending(req)
+	case contract.CmdActivationResume:
+		return s.handleActivationResume(req)
 	case contract.CmdRealmAliasClaim:
 		return s.handleRealmAliasClaim(req)
 	case contract.CmdRealmGrantRecipients:
@@ -903,6 +907,44 @@ func (s *Server) handleActivationFinish(req contract.Request) contract.Response 
 	if err != nil {
 		s.lg.Warnf("activation finish (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
 		return contract.ErrResponse(req.RequestID, "ACTIVATION-1002", "ERROR", "RETRY", "activation.finish_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleActivationPending(req contract.Request) contract.Response {
+	service := s.activationService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-0001", "ERROR", "RETRY", "activation.unavailable", nil)
+	}
+	var payload contract.ActivationPendingPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := service.Pending(ctx, payload)
+	if err != nil {
+		s.lg.Warnf("activation pending: %v", err)
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-1003", "ERROR", "RETRY", "activation.pending_failed", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleActivationResume(req contract.Request) contract.Response {
+	service := s.activationService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-0001", "ERROR", "RETRY", "activation.unavailable", nil)
+	}
+	var payload contract.ActivationResumePayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	result, err := service.Resume(ctx, payload)
+	if err != nil {
+		s.lg.Warnf("activation resume (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-1004", "ERROR", "RETRY", "activation.resume_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

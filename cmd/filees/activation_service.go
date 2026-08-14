@@ -51,6 +51,39 @@ func (service daemonActivationService) Finish(ctx context.Context, payload contr
 	if err := deploy.RunActivation(ctx, passport, deploy.ActivationOptions{Root: payload.StateRoot, ServerProfile: profile, RemotePort: remotePort}, otp); err != nil {
 		return contract.ActivationCommandResult{}, err
 	}
+	return service.finalize(ctx, payload, passport)
+}
+
+func (service daemonActivationService) Pending(_ context.Context, payload contract.ActivationPendingPayload) (contract.ActivationPendingResult, error) {
+	profiles, err := deploy.PendingInvitationActivations(payload.StateRoot)
+	if err != nil {
+		return contract.ActivationPendingResult{}, err
+	}
+	result := contract.ActivationPendingResult{Targets: make([]contract.ActivationTarget, 0, len(profiles))}
+	for _, profile := range profiles {
+		result.Targets = append(result.Targets, contract.ActivationTarget{ServerID: profile.ID, Address: profile.Address})
+	}
+	return result, nil
+}
+
+func (service daemonActivationService) Resume(ctx context.Context, payload contract.ActivationResumePayload) (contract.ActivationCommandResult, error) {
+	profile := deploy.ServerProfile{ID: payload.ServerID, Address: payload.ServerAddress, KnownHostsPath: payload.KnownHostsPath}
+	passport, err := deploy.LoadOnboardPassport(payload.StateRoot, profile)
+	if err != nil {
+		return contract.ActivationCommandResult{}, err
+	}
+	remotePort := payload.RemotePort
+	if remotePort == 0 {
+		remotePort = passport.RemotePort
+	}
+	if err := deploy.ResumeActivation(ctx, passport, deploy.ActivationOptions{Root: payload.StateRoot, ServerProfile: profile, RemotePort: remotePort}); err != nil {
+		return contract.ActivationCommandResult{}, err
+	}
+	finish := contract.ActivationFinishPayload{ServerID: payload.ServerID, ServerAddress: payload.ServerAddress, KnownHostsPath: payload.KnownHostsPath, StateRoot: payload.StateRoot, RemotePort: remotePort}
+	return service.finalize(ctx, finish, passport)
+}
+
+func (service daemonActivationService) finalize(ctx context.Context, payload contract.ActivationFinishPayload, passport deploy.OnboardPassport) (contract.ActivationCommandResult, error) {
 	state := "active"
 	clientProfile, profileErr := prepareActivatedClientProfile(ctx, payload)
 	if clientProfile.ServerID != "" && service.onProfile != nil {

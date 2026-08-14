@@ -25,8 +25,8 @@ func TestRegisterActivationEmitsRefreshEvent(t *testing.T) {
 }
 
 type fakeActivationService struct {
-	began, finished bool
-	lastOTP         contract.Secret
+	began, finished, resumed bool
+	lastOTP                  contract.Secret
 }
 
 func (service *fakeActivationService) Begin(_ context.Context, payload contract.ActivationBeginPayload) (contract.ActivationCommandResult, error) {
@@ -37,6 +37,15 @@ func (service *fakeActivationService) Begin(_ context.Context, payload contract.
 func (service *fakeActivationService) Finish(_ context.Context, payload contract.ActivationFinishPayload) (contract.ActivationCommandResult, error) {
 	service.finished = string(payload.OTP) == "OTP-CODE" && payload.RemotePort == 42000
 	service.lastOTP = payload.OTP
+	return contract.ActivationCommandResult{ServerID: payload.ServerID, State: "active"}, nil
+}
+
+func (service *fakeActivationService) Pending(_ context.Context, payload contract.ActivationPendingPayload) (contract.ActivationPendingResult, error) {
+	return contract.ActivationPendingResult{Targets: []contract.ActivationTarget{{ServerID: "pending", Address: payload.StateRoot}}}, nil
+}
+
+func (service *fakeActivationService) Resume(_ context.Context, payload contract.ActivationResumePayload) (contract.ActivationCommandResult, error) {
+	service.resumed = payload.ServerID == "office" && payload.ServerAddress == "filees.example.net:22"
 	return contract.ActivationCommandResult{ServerID: payload.ServerID, State: "active"}, nil
 }
 
@@ -72,6 +81,14 @@ func TestActivationCommandsAreExecutedByConfiguredDaemonService(t *testing.T) {
 		if b != 0 {
 			t.Fatal("activation finish retained decoded OTP bytes")
 		}
+	}
+	pending := server.dispatch(activationRequest(t, contract.CmdActivationPending, contract.ActivationPendingPayload{StateRoot: "state-root"}))
+	if pending.Status != contract.StatusOK {
+		t.Fatalf("pending=%+v", pending)
+	}
+	resume := server.dispatch(activationRequest(t, contract.CmdActivationResume, contract.ActivationResumePayload{ServerID: "office", ServerAddress: "filees.example.net:22"}))
+	if resume.Status != contract.StatusOK || !service.resumed {
+		t.Fatalf("resume=%+v called=%v", resume, service.resumed)
 	}
 }
 

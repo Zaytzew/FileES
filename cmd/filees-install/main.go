@@ -54,10 +54,6 @@ func main() {
 		die(fmt.Errorf("policy.verify_signature is true but no release key is embedded in this build (see cmd/filees-install/assets/release.pub)"))
 	}
 
-	if err := initSandbox(); err != nil {
-		die(err)
-	}
-
 	plat, err := platform.New()
 	if err != nil {
 		die(err)

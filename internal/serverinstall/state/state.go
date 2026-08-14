@@ -95,6 +95,7 @@ type BackupFile struct {
 	BackupPath   string `json:"backup_path,omitempty"`
 	Existed      bool   `json:"existed"`
 	SHA256Before string `json:"sha256_before,omitempty"`
+	ModeBefore   string `json:"mode_before,omitempty"`
 	UIDBefore    *int   `json:"uid_before,omitempty"`
 	GIDBefore    *int   `json:"gid_before,omitempty"`
 }

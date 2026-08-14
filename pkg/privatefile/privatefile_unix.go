@@ -8,6 +8,8 @@ import (
 	"syscall"
 )
 
+var effectiveUID = os.Geteuid
+
 // EnsureDir creates path and every missing parent, then forces the result to
 // owner-only. The explicit Chmod is not redundant: MkdirAll applies the
 // process umask, and it does nothing at all when the directory already
@@ -32,10 +34,13 @@ func Harden(path string) error {
 	return os.Chmod(path, mode)
 }
 
-// Verify reports ErrNotPrivate unless path is owned by the current user and
-// carries no group or other access. It deliberately checks a mask rather than
-// an exact mode: 0600 and 0700 differ only by the execute bit a directory
-// needs, and neither says anything more than "nobody else may reach this".
+// Verify reports ErrNotPrivate unless path is owned by the effective user and
+// carries no group or other access. The effective identity is the one the
+// kernel uses for filesystem access and is deliberately different from the
+// real caller in FileES' setuid entry points. It deliberately checks a mask
+// rather than an exact mode: 0600 and 0700 differ only by the execute bit a
+// directory needs, and neither says anything more than "nobody else may reach
+// this".
 func Verify(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -48,7 +53,7 @@ func Verify(path string) error {
 	if !ok {
 		return fmt.Errorf("%w: %s exposes no ownership information", ErrNotPrivate, path)
 	}
-	if int(stat.Uid) != os.Getuid() {
+	if int(stat.Uid) != effectiveUID() {
 		return fmt.Errorf("%w: %s is owned by uid %d", ErrNotPrivate, path, stat.Uid)
 	}
 	return nil

@@ -132,6 +132,25 @@ func TestStorePersistsFailureAndAllowsRetryWithNewRequest(t *testing.T) {
 	}
 }
 
+func TestRepairInitialImportInputKeepsRepositoryAndRequests(t *testing.T) {
+	store := newTestStore(t, filepath.Join(t.TempDir(), "state"))
+	opID, createReq, initialReq := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	_, _ = store.CreateValidated(opID, "client", filepath.Join(t.TempDir(), "��D�-KOLUMNY"), "��D�-KOLUMNY")
+	_, _ = store.RequestRepository(opID, createReq)
+	repoID, repoURL := "33333333-3333-4333-8333-333333333333", "svn+ssh://_filees-data@example/33333333-3333-4333-8333-333333333333"
+	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: repoID, RepoURL: repoURL}))
+	_, _ = store.StartInitialCommit(opID, initialReq)
+	_, _ = store.FailInitialCommit(opID, initialReq, "INITIAL_IMPORT_FAILED", "bad path")
+	goodPath := filepath.Join(t.TempDir(), "ŁÓDŹ-KOLUMNY")
+	repaired, err := store.RepairInitialImportInput(opID, goodPath, "Łódź-kolumny", 1234, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired.RepoID != repoID || repaired.RepoURL != repoURL || repaired.LocalPath != goodPath || repaired.Name != "Łódź-kolumny" || repaired.SnapshotBytes != 1234 || repaired.SnapshotPaths != 8 || len(repaired.Requests) != 2 {
+		t.Fatalf("repaired operation = %+v", repaired)
+	}
+}
+
 func TestStoreRejectsInvalidTransitionsAndCorruptState(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "state")
 	store := newTestStore(t, root)

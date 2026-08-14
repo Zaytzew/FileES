@@ -46,6 +46,13 @@ func (f fakeOwnership) Apply(path string, ownership platform.Ownership) error { 
 
 func testRunner(t *testing.T) (*Runner, string) {
 	t.Helper()
+	// Logic tests use disposable paths and fakes. Keep the real OpenBSD
+	// unveil/pledge profile for the dedicated sandbox tests: applying it here
+	// would irreversibly restrict the shared test process after the first case.
+	originalSandboxEnabled := sandboxEnabled
+	sandboxEnabled = func() bool { return false }
+	t.Cleanup(func() { sandboxEnabled = originalSandboxEnabled })
+
 	root := t.TempDir()
 	cfg := &config.Config{
 		Platform:     "openbsd-amd64",

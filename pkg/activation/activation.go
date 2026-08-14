@@ -111,9 +111,22 @@ func (ExecRunner) Output(ctx context.Context, command string, args ...string) ([
 }
 
 type Manager struct {
-	config Config
-	runner CommandRunner
-	now    func() time.Time
+	config                 Config
+	runner                 CommandRunner
+	now                    func() time.Time
+	serviceWorkingCopyHeld bool
+}
+
+// NewUnderServiceWorkingCopyLock is for a dispatcher that already holds
+// Root/.service-wc.lock for its complete request. It prevents recursive flock
+// acquisition while preserving the global lock order: service-WC, activation.
+func NewUnderServiceWorkingCopyLock(config Config, runner CommandRunner) (*Manager, error) {
+	manager, err := New(config, runner)
+	if err != nil {
+		return nil, err
+	}
+	manager.serviceWorkingCopyHeld = true
+	return manager, nil
 }
 
 func New(config Config, runner CommandRunner) (*Manager, error) {
@@ -350,50 +363,52 @@ func (m *Manager) Publish(ctx context.Context, grant onboarding.ActivationGrant)
 		return 0, err
 	}
 	var revision int64
-	err = withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
-		record, err := readRecord(m.recordPath(grant.OperationID))
-		if err != nil {
-			return err
-		}
-		if record.State == "active" && sameGrant(record, grant, canonical) {
-			revision = record.ServiceRevision
-			return nil
-		}
-		if err := m.HasProof(grant); err != nil {
-			return err
-		}
-		if record.State != "staged" || !sameGrant(record, grant, canonical) {
-			return errors.New("activation record is not publishable")
-		}
-		receipt, err := readReceipt(m.receiptPath(grant.OperationID))
-		if err != nil {
-			return err
-		}
-		revision, err = m.publishServiceFiles(ctx, record, receipt.At.UTC())
-		if err != nil {
-			return err
-		}
-		if m.config.DataAuthzFile != "" {
-			if err := m.rebuildDataAuthority(ctx); err != nil {
+	err = m.withServiceWorkingCopy(ctx, func() error {
+		return withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+			record, err := readRecord(m.recordPath(grant.OperationID))
+			if err != nil {
 				return err
 			}
-			viewPath := filepath.Join(m.config.ServiceWorkingCopy, "clients", record.ClientID, "view.json")
-			output, err := m.runner.Output(ctx, m.config.SVNBinary, "info", "--show-item", "last-changed-revision", "--non-interactive", "--no-auth-cache", viewPath)
+			if record.State == "active" && sameGrant(record, grant, canonical) {
+				revision = record.ServiceRevision
+				return nil
+			}
+			if err := m.HasProof(grant); err != nil {
+				return err
+			}
+			if record.State != "staged" || !sameGrant(record, grant, canonical) {
+				return errors.New("activation record is not publishable")
+			}
+			receipt, err := readReceipt(m.receiptPath(grant.OperationID))
 			if err != nil {
-				return fmt.Errorf("svn info service grant projection: %w: %s", err, sanitizeOutput(output))
+				return err
 			}
-			if latest, parseErr := strconv.ParseInt(strings.TrimSpace(string(output)), 10, 64); parseErr != nil || latest <= 0 {
-				return errors.New("svn returned invalid grant projection revision")
-			} else if latest > revision {
-				revision = latest
+			revision, err = m.publishServiceFiles(ctx, record, receipt.At.UTC())
+			if err != nil {
+				return err
 			}
-		}
-		activatedAt := receipt.At.UTC()
-		record.State, record.ActivatedAt, record.ServiceRevision = "active", &activatedAt, revision
-		if err := atomicWriteJSON(m.recordPath(grant.OperationID), record, 0o600); err != nil {
-			return err
-		}
-		return m.renderAccessLocked()
+			if m.config.DataAuthzFile != "" {
+				if err := m.rebuildDataAuthority(ctx); err != nil {
+					return err
+				}
+				viewPath := filepath.Join(m.config.ServiceWorkingCopy, "clients", record.ClientID, "view.json")
+				output, err := m.runner.Output(ctx, m.config.SVNBinary, "info", "--show-item", "last-changed-revision", "--non-interactive", "--no-auth-cache", viewPath)
+				if err != nil {
+					return fmt.Errorf("svn info service grant projection: %w: %s", err, sanitizeOutput(output))
+				}
+				if latest, parseErr := strconv.ParseInt(strings.TrimSpace(string(output)), 10, 64); parseErr != nil || latest <= 0 {
+					return errors.New("svn returned invalid grant projection revision")
+				} else if latest > revision {
+					revision = latest
+				}
+			}
+			activatedAt := receipt.At.UTC()
+			record.State, record.ActivatedAt, record.ServiceRevision = "active", &activatedAt, revision
+			if err := atomicWriteJSON(m.recordPath(grant.OperationID), record, 0o600); err != nil {
+				return err
+			}
+			return m.renderAccessLocked()
+		})
 	})
 	return revision, err
 }
@@ -481,59 +496,61 @@ func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, e
 	}
 	var revision int64
 	signalLease := false
-	err = withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
-		records, err := m.recordsLocked()
-		if err != nil {
-			return err
-		}
-		var selected *Record
-		for i := range records {
-			if records[i].ClientID == clientID {
-				if selected != nil {
-					return errors.New("multiple activation records for client")
+	err = m.withServiceWorkingCopy(ctx, func() error {
+		return withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+			records, err := m.recordsLocked()
+			if err != nil {
+				return err
+			}
+			var selected *Record
+			for i := range records {
+				if records[i].ClientID == clientID {
+					if selected != nil {
+						return errors.New("multiple activation records for client")
+					}
+					selected = &records[i]
 				}
-				selected = &records[i]
 			}
-		}
-		if selected == nil {
-			return os.ErrNotExist
-		}
-		record := *selected
-		if record.State == "revoked" {
-			if record.RevokeReason != reason {
-				return errors.New("client was already revoked for a different reason")
+			if selected == nil {
+				return os.ErrNotExist
 			}
-			revision = record.ServiceRevision
-			signalLease = true
-			return nil
-		}
-		if record.State == "staged" || record.State == "active" {
-			now := m.now().UTC()
-			record.State, record.RevokedAt, record.RevokeReason = "revoking", &now, reason
+			record := *selected
+			if record.State == "revoked" {
+				if record.RevokeReason != reason {
+					return errors.New("client was already revoked for a different reason")
+				}
+				revision = record.ServiceRevision
+				signalLease = true
+				return nil
+			}
+			if record.State == "staged" || record.State == "active" {
+				now := m.now().UTC()
+				record.State, record.RevokedAt, record.RevokeReason = "revoking", &now, reason
+				if err := atomicWriteJSON(m.recordPath(record.OperationID), record, 0o600); err != nil {
+					return err
+				}
+			} else if record.State != "revoking" || record.RevokeReason != reason || record.RevokedAt == nil {
+				return errors.New("client is not revocable from its current state")
+			}
+			// Runtime access is removed (or re-removed after a crash) before the
+			// public record is changed.
+			if err := m.renderAccessLocked(); err != nil {
+				return err
+			}
+			revision, err = m.publishRevocation(ctx, record)
+			if err != nil {
+				return err
+			}
+			if err := m.rebuildDataAuthority(ctx); err != nil {
+				return err
+			}
+			record.State, record.ServiceRevision = "revoked", revision
 			if err := atomicWriteJSON(m.recordPath(record.OperationID), record, 0o600); err != nil {
 				return err
 			}
-		} else if record.State != "revoking" || record.RevokeReason != reason || record.RevokedAt == nil {
-			return errors.New("client is not revocable from its current state")
-		}
-		// Runtime access is removed (or re-removed after a crash) before the
-		// public record is changed.
-		if err := m.renderAccessLocked(); err != nil {
-			return err
-		}
-		revision, err = m.publishRevocation(ctx, record)
-		if err != nil {
-			return err
-		}
-		if err := m.rebuildDataAuthority(ctx); err != nil {
-			return err
-		}
-		record.State, record.ServiceRevision = "revoked", revision
-		if err := atomicWriteJSON(m.recordPath(record.OperationID), record, 0o600); err != nil {
-			return err
-		}
-		signalLease = true
-		return m.renderAccessLocked()
+			signalLease = true
+			return m.renderAccessLocked()
+		})
 	})
 	if err == nil && signalLease {
 		// The durable state transition is the security boundary. FIFO delivery
@@ -542,6 +559,24 @@ func (m *Manager) Revoke(ctx context.Context, clientID, reason string) (int64, e
 		_ = signalSessionLeases(m.sessionRoot(), clientID, "")
 	}
 	return revision, err
+}
+
+func (m *Manager) withServiceWorkingCopy(ctx context.Context, fn func() error) error {
+	if m.serviceWorkingCopyHeld {
+		return fn()
+	}
+	return repoworker.WithFileLock(filepath.Join(m.config.Root, ".service-wc.lock"), func() error {
+		if err := repoworker.ReconcileServiceWorkingCopy(ctx, m.config.SVNBinary, m.config.ServiceWorkingCopy); err != nil {
+			return err
+		}
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return errors.Join(err, repoworker.ReconcileServiceWorkingCopy(cleanupCtx, m.config.SVNBinary, m.config.ServiceWorkingCopy))
+	})
 }
 
 func (m *Manager) rebuildDataAuthority(ctx context.Context) error {
@@ -587,10 +622,14 @@ func (m *Manager) publishRevocation(ctx context.Context, record Record) (int64, 
 		return 0, err
 	}
 	if output, err := m.runner.Output(ctx, m.config.SVNBinary, "add", "--force", "--parents", "--non-interactive", "--no-auth-cache", clientPath, auditPath); err != nil {
+		m.rollbackServicePaths(clientPath, auditPath)
 		return 0, fmt.Errorf("svn add service revoke: %w: %s", err, sanitizeOutput(output))
 	}
 	message := "filees: revoke client " + record.ClientID
-	if output, err := m.runner.Output(ctx, m.config.SVNBinary, "commit", "--non-interactive", "--no-auth-cache", "-m", message, m.config.ServiceWorkingCopy); err != nil {
+	commitArgs := []string{"commit", "--depth", "empty", "--non-interactive", "--no-auth-cache", "-m", message}
+	commitArgs = append(commitArgs, m.serviceCommitTargets(ctx, clientPath, auditPath)...)
+	if output, err := m.runner.Output(ctx, m.config.SVNBinary, commitArgs...); err != nil {
+		m.rollbackServicePaths(clientPath, auditPath)
 		return 0, fmt.Errorf("svn commit service revoke: %w: %s", err, sanitizeOutput(output))
 	}
 	output, err := m.runner.Output(ctx, m.config.SVNBinary, "info", "--show-item", "last-changed-revision", "--non-interactive", "--no-auth-cache", clientPath)
@@ -656,6 +695,7 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 	paths := []string{formatPath, realmPath, clientPath, viewPath, auditPath}
 	args := append([]string{"add", "--force", "--parents", "--non-interactive", "--no-auth-cache"}, paths...)
 	if output, err := m.runner.Output(ctx, m.config.SVNBinary, args...); err != nil {
+		m.rollbackServicePaths(paths...)
 		return 0, fmt.Errorf("svn add service activation: %w: %s", err, sanitizeOutput(output))
 	}
 	status, err := m.runner.Output(ctx, m.config.SVNBinary, append([]string{"status", "--quiet", "--non-interactive", "--no-auth-cache"}, paths...)...)
@@ -664,7 +704,10 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 	}
 	if len(bytes.TrimSpace(status)) != 0 {
 		message := "filees: activate client " + record.ClientID
-		if output, err := m.runner.Output(ctx, m.config.SVNBinary, "commit", "--non-interactive", "--no-auth-cache", "-m", message, m.config.ServiceWorkingCopy); err != nil {
+		commitArgs := []string{"commit", "--depth", "empty", "--non-interactive", "--no-auth-cache", "-m", message}
+		commitArgs = append(commitArgs, m.serviceCommitTargets(ctx, paths...)...)
+		if output, err := m.runner.Output(ctx, m.config.SVNBinary, commitArgs...); err != nil {
+			m.rollbackServicePaths(paths...)
 			return 0, fmt.Errorf("svn commit service activation: %w: %s", err, sanitizeOutput(output))
 		}
 	}
@@ -677,6 +720,51 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 		return 0, errors.New("svn returned invalid service revision")
 	}
 	return revision, nil
+}
+
+func (m *Manager) serviceCommitTargets(ctx context.Context, paths ...string) []string {
+	wc := filepath.Clean(m.config.ServiceWorkingCopy)
+	seen := make(map[string]bool, len(paths)*2)
+	var parents []string
+	for _, path := range paths {
+		for parent := filepath.Dir(path); parent != wc && strings.HasPrefix(parent, wc+string(filepath.Separator)); parent = filepath.Dir(parent) {
+			if seen[parent] {
+				continue
+			}
+			status, err := m.runner.Output(ctx, m.config.SVNBinary, "status", "--depth", "empty", "--non-interactive", "--no-auth-cache", parent)
+			if err == nil && len(status) > 0 && status[0] == 'A' {
+				seen[parent] = true
+				parents = append(parents, parent)
+			}
+		}
+	}
+	for i, j := 0, len(parents)-1; i < j; i, j = i+1, j-1 {
+		parents[i], parents[j] = parents[j], parents[i]
+	}
+	for _, path := range paths {
+		if !seen[path] {
+			seen[path] = true
+			parents = append(parents, path)
+		}
+	}
+	return parents
+}
+
+// rollbackServicePaths is a best-effort failure boundary for service-WC
+// publications. It restores only this transaction's explicit paths. Newly
+// added files are removed after revert so directory scans cannot mistake a
+// failed activation for canonical repository state on the next request.
+func (m *Manager) rollbackServicePaths(paths ...string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for i := len(paths) - 1; i >= 0; i-- {
+		path := filepath.Clean(paths[i])
+		_, _ = m.runner.Output(ctx, m.config.SVNBinary, "revert", "-R", "--non-interactive", "--no-auth-cache", path)
+		status, err := m.runner.Output(ctx, m.config.SVNBinary, "status", "--no-ignore", "--non-interactive", "--no-auth-cache", path)
+		if err == nil && len(status) > 0 && (status[0] == '?' || status[0] == 'I') {
+			_ = os.RemoveAll(path)
+		}
+	}
 }
 
 func ensureRealm(path string, wanted Realm) (Realm, error) {

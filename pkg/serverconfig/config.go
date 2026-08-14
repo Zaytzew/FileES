@@ -18,6 +18,7 @@ import (
 
 	"filees/pkg/activation"
 	"filees/pkg/onboarding"
+	"filees/pkg/repositoryurl"
 	"filees/pkg/smtpsubmit"
 	"golang.org/x/crypto/ssh"
 )
@@ -210,6 +211,9 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if file.Schema != Schema {
 		return Config{}, fmt.Errorf("unsupported server toolchain schema %q", file.Schema)
+	}
+	if err := repositoryurl.ValidatePrefix(file.Repositories.URLPrefix); err != nil {
+		return Config{}, fmt.Errorf("repositories.url_prefix: %w", err)
 	}
 	for label, value := range map[string]string{"root": file.Root, "otp_pepper_file": file.OTPPepperFile} {
 		if !filepath.IsAbs(value) {

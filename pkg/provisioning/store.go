@@ -123,6 +123,27 @@ func (s *Store) CreateValidatedSnapshot(operationID, clientID, localPath, name s
 	return clone(op), nil
 }
 
+// RepairInitialImportInput retargets an import whose first checkout failed
+// before any snapshot was published. CREATE_REPOSITORY and its request IDs
+// remain durable; only the corrupted presentation input is corrected.
+func (s *Store) RepairInitialImportInput(operationID, localPath, name string, snapshotBytes int64, snapshotPaths int) (Operation, error) {
+	localPath, name = filepath.Clean(localPath), strings.TrimSpace(name)
+	return s.mutate(operationID, func(op *Operation) error {
+		if op.State != StateInitialCommitFailed || op.RepoID == "" || op.RepoURL == "" {
+			return errors.New("only a failed initial import can be repaired")
+		}
+		if !filepath.IsAbs(localPath) || name == "" || strings.ContainsAny(name, "\x00\r\n") {
+			return errors.New("repaired initial import identity or path is invalid")
+		}
+		if snapshotBytes < 0 || snapshotPaths < 0 {
+			return errors.New("snapshot size cannot be negative")
+		}
+		op.LocalPath, op.Name = localPath, name
+		op.SnapshotBytes, op.SnapshotPaths = snapshotBytes, snapshotPaths
+		return nil
+	})
+}
+
 func (s *Store) RequestStoragePreflight(operationID, requestID string) (Operation, error) {
 	return s.mutate(operationID, func(op *Operation) error {
 		if record, ok := op.Requests[requestID]; ok {

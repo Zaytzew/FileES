@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"filees/internal/processoutput"
 	"filees/pkg/talk"
 	"github.com/google/uuid"
 )
@@ -647,9 +648,9 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 	}
 	cmd.Env = env
 
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
 	c.lg.Tracef("exec: %s %s (dir=%s)", c.svnPath, strings.Join(cmdArgs, " "), emptyIf(workingDir, "."))
 	if err := cmd.Start(); err != nil {
@@ -657,19 +658,40 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 		if len(args) > 0 {
 			name = args[0]
 		}
-		return buf.String(), fmt.Errorf("uruchomienie '%s' nie powiodło się: %w", name, err)
+		return processoutput.Text(stdout.Bytes()), fmt.Errorf("uruchomienie '%s' nie powiodło się: %w", name, err)
 	}
 	if err := cmd.Wait(); err != nil {
 		name := "svn"
 		if len(args) > 0 {
 			name = args[0]
 		}
-		if ctx.Err() != nil {
-			return buf.String(), fmt.Errorf("komenda '%s' anulowana/przekroczono czas: %v\n%s", name, ctx.Err(), buf.String())
+		out := processoutput.Text(stdout.Bytes())
+		diagnostic := strings.TrimSpace(processoutput.Text(stderr.Bytes()))
+		if diagnostic != "" {
+			diagnostic = "\n" + diagnostic
 		}
-		return buf.String(), fmt.Errorf("komenda '%s' zakończyła się błędem: %v\n%s", name, err, buf.String())
+		if ctx.Err() != nil {
+			return out, fmt.Errorf("komenda '%s' anulowana/przekroczono czas: %v%s", name, ctx.Err(), diagnostic)
+		}
+		return out, fmt.Errorf("komenda '%s' zakończyła się błędem: %v%s", name, err, diagnostic)
 	}
-	return buf.String(), nil
+	if svnXMLOutput(args) {
+		out, err := processoutput.UTF8(stdout.Bytes())
+		if err != nil {
+			return "", fmt.Errorf("komenda '%s' zwróciła XML poza UTF-8: %w", args[0], err)
+		}
+		return out, nil
+	}
+	return processoutput.Text(stdout.Bytes()), nil
+}
+
+func svnXMLOutput(args []string) bool {
+	for _, arg := range args {
+		if arg == "--xml" {
+			return true
+		}
+	}
+	return false
 }
 
 // pathArgs builds the trailing positional path arguments of an svn invocation,

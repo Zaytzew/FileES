@@ -57,7 +57,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		return ExitConfig
 	}
 	aliases := repoworker.RealmAliases{ServiceWC: config.Activation.ServiceWorkingCopy, Runner: runner}
-	activationManager, err := activation.New(config.Activation, nil)
+	activationManager, err := activation.NewUnderServiceWorkingCopyLock(config.Activation, nil)
 	if err != nil {
 		report(stderr, "repository worker activation", err)
 		return ExitConfig
@@ -108,19 +108,22 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		Admission: realmRemovalAdmission{Fences: activationManager},
 	}
 	if err := repoworker.WithFileLock(filepath.Join(r.ResultsRoot, ".worker.lock"), func() error {
-		if err := backend.ReapFailedCreates(context.Background()); err != nil {
-			return err
-		}
-		if err := backend.ReapUncommittedDeletes(context.Background()); err != nil {
-			return err
-		}
-		if _, err := repoworker.ReapDeletionArchives(archiveRoot, time.Now()); err != nil {
-			return err
-		}
-		if _, err := reapRecoveryCapabilities(r.ResultsRoot, time.Now()); err != nil {
-			return err
-		}
-		return dispatcher.Serve(context.Background(), args[0], in, out)
+		return withServiceWorkingCopy(context.Background(), config.Activation, func() error {
+			ctx := context.Background()
+			if err := backend.ReapFailedCreates(ctx); err != nil {
+				return err
+			}
+			if err := backend.ReapUncommittedDeletes(ctx); err != nil {
+				return err
+			}
+			if _, err := repoworker.ReapDeletionArchives(archiveRoot, time.Now()); err != nil {
+				return err
+			}
+			if _, err := reapRecoveryCapabilities(r.ResultsRoot, time.Now()); err != nil {
+				return err
+			}
+			return dispatcher.Serve(ctx, args[0], in, out)
+		})
 	}); err != nil {
 		report(stderr, "repository worker", err)
 		return ExitData

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
@@ -23,6 +24,13 @@ import (
 const (
 	autostartRegKey             = `Software\Microsoft\Windows\CurrentVersion\Run`
 	defaultWindowsNotifInterval = 2 * time.Second
+	// Windows PowerShell 5.1 inherits an OEM console encoding even when stdout
+	// is a pipe. Go receives those bytes verbatim and interprets them as UTF-8,
+	// corrupting perfectly valid paths such as ŁÓDŹ into replacement runes.
+	// Force UTF-8 at the one process boundary shared by every picker/dialog
+	// that returns text to FileES. UTF8Encoding(false) avoids a BOM in the
+	// first returned field.
+	powerShellUTF8OutputPrelude = "[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false);"
 )
 
 // WindowsBackend implements the desktop boundary for Windows 10+. It delegates
@@ -130,9 +138,28 @@ func (osWindowsCommandRunner) Run(ctx context.Context, name string, args ...stri
 }
 
 func (osWindowsCommandRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	prepared := powerShellUTF8OutputArgs(name, args)
+	cmd := exec.CommandContext(ctx, name, prepared...)
 	hideConsoleWindow(cmd)
-	return cmd.Output()
+	out, err := cmd.Output()
+	if err == nil && strings.EqualFold(filepath.Base(name), "powershell.exe") && !utf8.Valid(out) {
+		return nil, errors.New("PowerShell returned output outside UTF-8")
+	}
+	return out, err
+}
+
+func powerShellUTF8OutputArgs(name string, args []string) []string {
+	if !strings.EqualFold(filepath.Base(name), "powershell.exe") {
+		return args
+	}
+	prepared := append([]string(nil), args...)
+	for i := 0; i+1 < len(prepared); i++ {
+		if strings.EqualFold(prepared[i], "-Command") {
+			prepared[i+1] = powerShellUTF8OutputPrelude + prepared[i+1]
+			return prepared
+		}
+	}
+	return prepared
 }
 
 // WindowsOptions contains integration identity supplied by the composition

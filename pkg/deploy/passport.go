@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,10 +28,15 @@ const (
 // without consuming another ticket. The returned worker key is pinned before
 // the caller may start a deploy helper or an OTP tunnel.
 type OnboardPassport struct {
-	Schema              string `json:"schema"`
-	State               string `json:"state"`
-	Email               string `json:"email,omitempty"`
-	InvitationToken     string `json:"invitation_token,omitempty"`
+	Schema          string `json:"schema"`
+	State           string `json:"state"`
+	Email           string `json:"email,omitempty"`
+	InvitationToken string `json:"invitation_token,omitempty"`
+	// InvitationTokenHash binds an accepted local passport to the invitation
+	// that created it without retaining the one-time bearer capability. It is
+	// what lets BeginInvitation distinguish a safe retry from a genuinely new
+	// ticket instead of silently ignoring every later invitation.
+	InvitationTokenHash string `json:"invitation_token_hash,omitempty"`
 	ProposedRealmID     string `json:"proposed_realm_id,omitempty"`
 	OnboardingRequestID string `json:"onboarding_request_id"`
 	WorkerPublicKey     string `json:"worker_public_key,omitempty"`
@@ -140,6 +146,11 @@ func loadOnboardPassport(path string) (OnboardPassport, error) {
 	return passport, nil
 }
 
+func invitationTokenHash(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", digest[:])
+}
+
 func (p OnboardPassport) validate() error {
 	if p.Schema != OnboardPassportSchema {
 		return errors.New("unsupported onboard passport schema")
@@ -156,8 +167,20 @@ func (p OnboardPassport) validate() error {
 		} else if p.InvitationToken != "" {
 			return errors.New("accepted invitation passport retains a capability")
 		}
+		if p.InvitationTokenHash != "" {
+			if len(p.InvitationTokenHash) != sha256.Size*2 {
+				return errors.New("invitation passport token hash is invalid")
+			}
+			for _, r := range p.InvitationTokenHash {
+				if !strings.ContainsRune("0123456789abcdef", r) {
+					return errors.New("invitation passport token hash is invalid")
+				}
+			}
+		}
 	} else if _, err := onboarding.CanonicalEmail(p.Email); err != nil {
 		return err
+	} else if p.InvitationToken != "" || p.InvitationTokenHash != "" || p.ProposedRealmID != "" {
+		return errors.New("email onboard passport contains invitation state")
 	}
 	if _, err := uuid.Parse(p.OnboardingRequestID); err != nil {
 		return errors.New("onboard passport request ID must be UUID")

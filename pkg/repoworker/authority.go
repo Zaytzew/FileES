@@ -268,8 +268,25 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 		}
 		updated := false
 		for i := range view.Repositories {
-			if view.Repositories[i].RepoID == repoID && view.Repositories[i].State == "initializing" {
-				view.Repositories[i].State = "active"
+			projected := &view.Repositories[i]
+			if projected.RepoID != repoID {
+				continue
+			}
+			// The canonical record is the source of truth for repository
+			// metadata. Activation used to flip only State, so a corrected
+			// record (for example after an input-encoding recovery between
+			// CREATE_REPOSITORY and INITIAL_COMMIT) left every client view
+			// permanently carrying the stale display name. Preserve only the
+			// per-client grant fields; heal all canonical fields here.
+			if projected.State == "initializing" {
+				projected.State = "active"
+				updated = true
+			}
+			if projected.DisplayName != record.DisplayName || projected.URL != record.URL || projected.OwnerRealmID != record.OwnerRealmID || projected.EditingPolicy != record.EditingPolicy {
+				projected.DisplayName = record.DisplayName
+				projected.URL = record.URL
+				projected.OwnerRealmID = record.OwnerRealmID
+				projected.EditingPolicy = record.EditingPolicy
 				updated = true
 			}
 		}

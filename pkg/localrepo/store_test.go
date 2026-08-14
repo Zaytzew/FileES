@@ -1,6 +1,7 @@
 package localrepo
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -148,6 +149,33 @@ func TestCreatedRepositoryBoundarySurvivesFailureAndResumes(t *testing.T) {
 	got, ok := reopened.Get(record.OperationID)
 	if !ok || got.State != StateRepositoryCreated || got.RepoID != "repo-1" {
 		t.Fatalf("reopened=%+v found=%v", got, ok)
+	}
+}
+
+func TestRepairCreatedRepositoryInputKeepsServerIdentity(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	badPath := filepath.Join(t.TempDir(), "��D�-KOLUMNY")
+	record, err := store.BeginCreate("spot", "��D�-KOLUMNY", badPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID, repoURL := "190a9c82-335b-5ee4-9960-f7f614d06b38", "svn+ssh://_filees-data@example/190a9c82-335b-5ee4-9960-f7f614d06b38"
+	if _, err := store.MarkRepositoryCreated(record.OperationID, repoID, repoURL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkError(record.OperationID, errors.New("checkout failed")); err != nil {
+		t.Fatal(err)
+	}
+	goodPath := filepath.Join(t.TempDir(), "ŁÓDŹ-KOLUMNY")
+	repaired, err := store.RepairCreatedRepositoryInput(record.OperationID, "Łódź-kolumny", goodPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired.RepoID != repoID || repaired.RepoURL != repoURL || repaired.DisplayName != "Łódź-kolumny" || repaired.LocalPath != goodPath || repaired.LastError != "" || repaired.State != StateRepositoryCreated {
+		t.Fatalf("repaired record = %+v", repaired)
 	}
 }
 

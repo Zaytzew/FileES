@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"filees/pkg/repositoryurl"
 	"time"
 )
 
@@ -127,19 +128,11 @@ func (b *DurableBackend) Create(ctx context.Context, op, realm, name string) (Re
 // in a client projection. Running this before svnadmin prevents a server
 // configuration typo from creating an orphaned FSFS repository.
 func ValidateURLPrefix(prefix string) error {
-	_, err := repositoryURL(prefix, uuid.NewString())
-	return err
+	return repositoryurl.ValidatePrefix(prefix)
 }
 
 func repositoryURL(prefix, repoID string) (string, error) {
-	if strings.TrimSpace(prefix) == "" || strings.TrimSpace(prefix) != prefix || !strings.HasSuffix(prefix, "/") {
-		return "", errors.New("repository URL prefix must be a non-empty restricted svn+ssh URL ending in /")
-	}
-	parsed, err := url.Parse(prefix + repoID)
-	if err != nil || parsed.Scheme != "svn+ssh" || parsed.Hostname() == "" || parsed.User == nil || (parsed.User.Username() != "_filees-client" && parsed.User.Username() != "_filees-data") || parsed.User.String() != parsed.User.Username() || parsed.Port() != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", errors.New("repository URL prefix must use restricted svn+ssh transport")
-	}
-	return prefix + repoID, nil
+	return repositoryurl.Build(prefix, repoID)
 }
 
 // rollbackCreate finishes the compensation recorded before any server-side

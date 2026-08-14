@@ -17,8 +17,11 @@ type unveilSpec struct {
 	Perms string
 }
 
+const filePromises = "stdio rpath wpath cpath fattr"
+
 // baseUnveils returns paths every action needs: config file, state/stage/backup
-// dirs, /dev/null (exec defaults unset stdio to it), and the svn binary.
+// dirs, the local identity databases needed by os/user, /dev/null (exec
+// defaults unset stdio to it), and the svn binary.
 // Must be called before any unveil() — resolves binary paths via $PATH first.
 func (r *Runner) baseUnveils() ([]unveilSpec, error) {
 	if !sandboxEnabled() {
@@ -34,6 +37,8 @@ func (r *Runner) baseUnveils() ([]unveilSpec, error) {
 		{Label: "state", Path: cfg.StateDir, Perms: "rwc"},
 		{Label: "stage", Path: cfg.StageDir, Perms: "rwc"},
 		{Label: "backup", Path: cfg.BackupDir, Perms: "rwc"},
+		{Label: "passwd", Path: "/etc/passwd", Perms: "r"},
+		{Label: "group", Path: "/etc/group", Perms: "r"},
 		{Label: "null", Path: "/dev/null", Perms: "rw"},
 		{Label: "svn", Path: svn, Perms: "rx"},
 	}
@@ -82,16 +87,13 @@ func rollbackUnveils(entry state.HistoryEntry) []unveilSpec {
 	return b.specs()
 }
 
-// System runs (first-install, purge, and upgrades touching the sshd
-// fragment) do NOT unveil at all: unveil(2) state is inherited across
-// fork/exec, so the useradd/userdel/cap_mkdb/sshd/rcctl children these runs
-// spawn would see an empty filesystem — /etc/passwd, /etc/spwd.db,
-// /etc/ssh and the rc machinery are not (and must not become) part of the
-// unveil profile. Unveiling /etc wide enough for them would keep the
-// mechanism's letter while voiding its point. Those runs instead keep the
-// bootstrap pledge (with proc exec) until their system tasks finish, then
-// drop to file promises via reducePledge. File-only runs (check, dry-run,
-// upgrade, rollback) get the full two-pass unveil in applyUnveils.
+// System runs (first-install and purge) do NOT unveil: unveil(2) state is
+// inherited across fork/exec, so useradd/userdel/cap_mkdb/sshd/rcctl would see
+// an unusably narrow filesystem. File-only mutations use unveil but cannot
+// pledge before chown/chmod: OpenBSD deliberately ignores set-id bits after
+// the process's first pledge(2), regardless of promises. They reduce pledge
+// only after publishing/restoring inodes and before the final state write.
+// Read-only check/dry-run and adopt reduce immediately after unveil.
 
 // --- unveilBuilder ---
 

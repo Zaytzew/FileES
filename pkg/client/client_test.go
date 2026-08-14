@@ -33,6 +33,21 @@ func TestParseStatusXMLReadsWCStatusItemAttribute(t *testing.T) {
 	}
 }
 
+func TestSVNXMLOutputDetection(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want bool
+	}{
+		{args: []string{"status", "--xml", "."}, want: true},
+		{args: []string{"log", "--xml", "repository"}, want: true},
+		{args: []string{"info", "--show-item", "revision"}, want: false},
+	} {
+		if got := svnXMLOutput(tc.args); got != tc.want {
+			t.Fatalf("svnXMLOutput(%q) = %v, want %v", tc.args, got, tc.want)
+		}
+	}
+}
+
 func TestSVNSSHTransportIsInjectedIntoSVNProcess(t *testing.T) {
 	dir := t.TempDir()
 	fakeSVN := filepath.Join(dir, "svn")

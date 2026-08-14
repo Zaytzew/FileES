@@ -6,51 +6,62 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"filees/pkg/errcat"
 )
 
-// Severity of a classified error event.
-type Severity string
+// Severity of a classified error event. Values are owned by pkg/errcat.
+type Severity = errcat.Severity
 
 const (
-	SevInfo  Severity = "INFO"
-	SevWarn  Severity = "WARN"
-	SevError Severity = "ERROR"
-	SevFatal Severity = "FATAL"
+	SevInfo  = errcat.SevInfo
+	SevWarn  = errcat.SevWarn
+	SevError = errcat.SevError
+	SevFatal = errcat.SevFatal
 )
 
-// Hint — action hint for the caller / UI.
-type Hint string
+// Hint — action hint for the caller / UI. Values are owned by pkg/errcat.
+type Hint = errcat.Hint
 
 const (
-	HintNone          Hint = "NONE"
-	HintRetryLocal    Hint = "RETRY_LOCAL"    // retry immediately from local state
-	HintRetryBackoff  Hint = "RETRY_BACKOFF"  // retry after exponential backoff
-	HintRequireAction Hint = "REQUIRE_ACTION" // user must intervene
-	HintAdminOnly     Hint = "ADMIN_ONLY"     // admin/ops must intervene
+	HintNone          = errcat.HintNone
+	HintRetryLocal    = errcat.HintRetryLocal
+	HintRetryBackoff  = errcat.HintRetryBackoff
+	HintRequireAction = errcat.HintRequireAction
+	HintAdminOnly     = errcat.HintAdminOnly
 )
 
-// Code — canonical error code in NS-NNNN form.
-type Code string
+// Code — canonical error code in NS-NNNN form. Values are owned by pkg/errcat.
+type Code = errcat.Code
 
 const (
-	CodeNetUnreachable  Code = "NET-4007"    // network / connectivity failure
-	CodeAuthFailed      Code = "AUTH-4102"   // authentication or authorization rejected
-	CodeLockHeld        Code = "LOCK-2001"   // file locked by another user
-	CodeCommitOutdated  Code = "COMMIT-3101" // WC out of date — update required before commit
-	CodeCommitNoVCS     Code = "COMMIT-3102" // path not under version control
-	CodeCommitFailed    Code = "COMMIT-3100" // generic commit failure
-	CodeReconFlict      Code = "RECON-3002"  // conflict detected during update, local copy saved to !kolizje/
-	CodePolicyDeferred  Code = "POLICY-2201" // editing-policy migration waiting on a clean working copy
-	CodeUnknown         Code = "SYNC-0000"   // unclassified error
+	CodeNetUnreachable = errcat.CodeNet
+	CodeAuthFailed     = errcat.CodeAuth
+	CodeLockHeld       = errcat.CodeLockHeld
+	CodeCommitOutdated = errcat.CodeCommitStale
+	CodeCommitNoVCS    = errcat.CodeCommitNoVCS
+	CodeCommitFailed   = errcat.CodeCommitFail
+	CodeReconFlict     = errcat.CodeRecon
+	CodePolicyDeferred = errcat.CodePolicyWait
+	CodeUnknown        = errcat.CodeUnknown
 )
 
 // Entry is a classified error ready for logging or UI display.
 type Entry struct {
-	Code     Code     `json:"code"`
-	Severity Severity `json:"severity"`
-	Hint     Hint     `json:"hint"`
-	Msg      string   `json:"msg"`            // human-readable summary
-	Details  string   `json:"details"`        // raw error text
+	Code     Code       `json:"code"`
+	Key      errcat.Key `json:"key,omitempty"`
+	Severity Severity   `json:"severity"`
+	Hint     Hint       `json:"hint"`
+	Msg      string     `json:"msg"`     // English diagnostic from the catalog
+	Details  string     `json:"details"` // raw error text
+}
+
+func entryFrom(key errcat.Key, details string) Entry {
+	spec, ok := errcat.ByKey(key)
+	if !ok {
+		spec, _ = errcat.ByKey(errcat.KeyUnknown)
+	}
+	return Entry{Code: spec.Code, Key: spec.Key, Severity: spec.Severity, Hint: spec.Hint, Msg: spec.Diagnostic, Details: details}
 }
 
 // IsNoop reports whether entry is empty (Classify was called with nil).
@@ -70,26 +81,19 @@ func Classify(err error) Entry {
 
 	switch {
 	case containsAny(low, netNeedles):
-		return Entry{Code: CodeNetUnreachable, Severity: SevWarn, Hint: HintRetryBackoff,
-			Msg: "Network unreachable — retrying with backoff", Details: msg}
+		return entryFrom(errcat.KeyNetUnreachable, msg)
 	case containsAny(low, authNeedles):
-		return Entry{Code: CodeAuthFailed, Severity: SevError, Hint: HintAdminOnly,
-			Msg: "Authentication failed — check credentials", Details: msg}
+		return entryFrom(errcat.KeyAuthFailed, msg)
 	case containsAny(low, lockNeedles):
-		return Entry{Code: CodeLockHeld, Severity: SevError, Hint: HintRequireAction,
-			Msg: "File locked by another user", Details: msg}
+		return entryFrom(errcat.KeyLockHeldByOther, msg)
 	case containsAny(low, outdatedNeedles):
-		return Entry{Code: CodeCommitOutdated, Severity: SevWarn, Hint: HintRetryLocal,
-			Msg: "Working copy out of date — update required before next commit", Details: msg}
+		return entryFrom(errcat.KeyCommitOutdated, msg)
 	case containsAny(low, novcNeedles):
-		return Entry{Code: CodeCommitNoVCS, Severity: SevWarn, Hint: HintRetryLocal,
-			Msg: "Path not under version control", Details: msg}
+		return entryFrom(errcat.KeyCommitNoVCS, msg)
 	case containsAny(low, commitNeedles):
-		return Entry{Code: CodeCommitFailed, Severity: SevError, Hint: HintRetryLocal,
-			Msg: "Commit failed", Details: msg}
+		return entryFrom(errcat.KeyCommitFailed, msg)
 	default:
-		return Entry{Code: CodeUnknown, Severity: SevError, Hint: HintRetryLocal,
-			Msg: "Unexpected error", Details: msg}
+		return entryFrom(errcat.KeyUnknown, msg)
 	}
 }
 
@@ -144,13 +148,14 @@ type Sink struct {
 
 // jsonLine is the JSON Lines schema for one error event.
 type jsonLine struct {
-	TS       string   `json:"ts"`
-	Scope    string   `json:"scope,omitempty"`
-	Code     Code     `json:"code"`
-	Severity Severity `json:"severity"`
-	Hint     Hint     `json:"hint"`
-	Msg      string   `json:"msg"`
-	Details  string   `json:"details,omitempty"`
+	TS       string     `json:"ts"`
+	Scope    string     `json:"scope,omitempty"`
+	Code     Code       `json:"code"`
+	Key      errcat.Key `json:"key,omitempty"`
+	Severity Severity   `json:"severity"`
+	Hint     Hint       `json:"hint"`
+	Msg      string     `json:"msg"`
+	Details  string     `json:"details,omitempty"`
 }
 
 // NewSink creates a Sink that writes to w with the given scope label.
@@ -175,6 +180,7 @@ func (s *Sink) EmitAt(ts time.Time, entry Entry) {
 		TS:       ts.UTC().Format(time.RFC3339),
 		Scope:    s.scope,
 		Code:     entry.Code,
+		Key:      entry.Key,
 		Severity: entry.Severity,
 		Hint:     entry.Hint,
 		Msg:      entry.Msg,

@@ -561,6 +561,7 @@ func reportEditingPolicyBlocked(err error, direction string, sink *errmap.Sink, 
 		if sink != nil {
 			sink.Emit(errmap.Entry{
 				Code:     errmap.CodePolicyDeferred,
+				Key:      "policy.deferred",
 				Severity: errmap.SevWarn,
 				Hint:     errmap.HintRequireAction,
 				Msg:      "Zmiana polityki blokad czeka na opublikowanie lokalnych zmian",

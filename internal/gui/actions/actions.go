@@ -20,6 +20,7 @@ import (
 	"filees/internal/gui/journal"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
+	"filees/pkg/errcat"
 	"filees/pkg/localpin"
 	"filees/pkg/realmbranding"
 )
@@ -2677,67 +2678,15 @@ func operationErrorPresentation(opName string, err error) (string, string, platf
 // until 13:41" is: the whole point of naming the holder is that the reader
 // knows who to go and ask.
 func detailedMessageLabel(messageKey string, details map[string]string) string {
-	if messageKey != "lock.held_by_other" {
-		return ""
-	}
-	subject := "Plik"
-	if path := details["path"]; path != "" {
-		subject = "Plik „" + path + "”"
-	}
-	holder := details["holder"]
-	if holder == "" {
-		// A raw lock with no passport metadata names nobody, and every client
-		// authenticates as the same account, so guessing would be worse than
-		// admitting it.
-		holder = "kogoś innego"
-	}
-	sentence := subject + " jest w tej chwili wypożyczony przez " + holder
-	if until := details["until"]; until != "" {
-		if parsed, err := time.Parse(time.RFC3339, until); err == nil {
-			sentence += " do " + parsed.Local().Format("15:04")
-		}
-	}
-	return sentence
+	return errcat.PolishDetailed(messageKey, details)
 }
 
 func messageLabel(messageKey string) string {
-	switch messageKey {
-	case "lock.held_by_other":
-		return "Plik jest w tej chwili wypożyczony przez kogoś innego"
-	case "lock.invalid_path":
-		return "Wybrana ścieżka nie należy do repozytorium"
-	case "lock.operation_failed":
-		return "Daemon nie wykonał operacji na plikach"
-	case "realm.alias_required":
-		return "Przed blokowaniem plików ustaw stały alias strefy"
-	case "proto.invalid_payload":
-		return "Daemon odrzucił nieprawidłowe dane operacji"
-	case "repo.invalid_local_intent":
-		return "Wybrany folder lub lokalny stan repozytorium nie pozwala rozpocząć połączenia"
-	case "repo.attachment_approval_failed":
-		return "Daemon nie zatwierdził połączenia repozytorium"
-	case "repo.already_attached":
-		return "Repozytorium jest już połączone na tym kliencie"
-	case "repo.not_attachable":
-		return "Repozytorium nie jest obecnie gotowe do połączenia"
-	default:
-		return "Błąd zgłoszony przez daemon"
-	}
+	return errcat.Polish(messageKey)
 }
 
 func hintLabel(hint string) string {
-	switch hint {
-	case "RETRY_LOCAL":
-		return "spróbuj ponownie"
-	case "RETRY_BACKOFF":
-		return "ponowienie nastąpi później"
-	case "REQUIRE_ACTION":
-		return "wymagane działanie użytkownika"
-	case "ADMIN_ONLY":
-		return "skontaktuj się z administratorem"
-	default:
-		return ""
-	}
+	return errcat.PolishHint(hint)
 }
 
 func (c *Controller) notify(ctx context.Context, n platform.Notification) {

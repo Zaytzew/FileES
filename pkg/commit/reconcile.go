@@ -110,6 +110,7 @@ func (s *Service) reconcile(ctx context.Context, wc string, conflicted []string)
 	if resolved > 0 {
 		s.ErrSink.Emit(errmap.Entry{
 			Code:     errmap.CodeReconFlict,
+			Key:      "recon.conflict",
 			Severity: errmap.SevWarn,
 			Hint:     errmap.HintRequireAction,
 			Msg: fmt.Sprintf(

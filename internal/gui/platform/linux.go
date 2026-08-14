@@ -223,6 +223,43 @@ func (b *LinuxBackend) PromptText(ctx context.Context, request PromptTextRequest
 	return PromptTextResult{Value: strings.TrimSpace(string(output))}, nil
 }
 
+// ShowProgress opens a pulsating zenity window and returns its closer. See the
+// ProgressPresenter contract: the window ends when the controller says so, not
+// when the user acts.
+//
+// --pulsate is used deliberately without ever writing a percentage to the
+// child: the daemon does not measure import progress, so the bar reports
+// activity, not completion. --no-cancel removes the only button that could
+// desynchronise the window from the operation behind it.
+//
+// The child runs under a derived context; cancelling it kills zenity, which
+// closes the window. close() waits for the process to be reaped.
+func (b *LinuxBackend) ShowProgress(ctx context.Context, request ProgressRequest) (func(), error) {
+	command, err := b.runner.LookPath("zenity")
+	if err != nil {
+		return nil, NewUnavailable("progress_dialog", errors.New("zenity is not installed"))
+	}
+	args := []string{
+		"--progress", "--pulsate", "--no-cancel", "--width=460",
+		"--title=" + request.Title, "--text=" + request.Text,
+	}
+	child, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Killing the child is the normal exit path, so its error is expected
+		// and must not reach the user: this window is a hint, not an operation.
+		_, _ = b.runner.Output(child, command, args...)
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			<-done
+		})
+	}, nil
+}
+
 func (b *LinuxBackend) ShowInfo(ctx context.Context, request InfoRequest) error {
 	command, err := b.runner.LookPath("zenity")
 	if err != nil {

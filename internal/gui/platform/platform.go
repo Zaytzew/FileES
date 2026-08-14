@@ -57,6 +57,26 @@ type SettingsBrowser interface {
 	ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error)
 }
 
+// ProgressPresenter renders a modeless "work in progress" window for an
+// operation whose duration the user cannot otherwise see.
+//
+// It is deliberately not part of Backend: every other surface here is a modal
+// that ends when the *user* acts, while this one ends when the *controller*
+// says so. Keeping it optional lets lightweight backends and tests ignore it,
+// exactly like ConsentPrompter.
+//
+// ShowProgress returns a close function that is safe to call once and blocks
+// until the window is gone. Implementations must not report progress values:
+// the daemon does not measure import progress, and a fake percentage is worse
+// than an honest "still working".
+type ProgressPresenter interface {
+	ShowProgress(ctx context.Context, request ProgressRequest) (close func(), err error)
+}
+
+type ProgressRequest struct {
+	Title, Text string
+}
+
 // JournalBrowser renders the combined activity and error history. Rows are
 // already aggregated and ordered by the presentation layer; the platform only
 // owns native rendering (including emphasis for errors).

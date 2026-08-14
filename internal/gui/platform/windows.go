@@ -336,6 +336,59 @@ func (b *WindowsBackend) PromptText(ctx context.Context, request PromptTextReque
 	return PromptTextResult{Value: strings.TrimSpace(string(output))}, nil
 }
 
+// ShowProgress opens a modeless marquee window and returns its closer.
+//
+// Unlike every other dialog here the window is never dismissed by the user: it
+// has no control box and no buttons, so the only way out is the returned close
+// function killing the child. That is the point — it must stay on screen for
+// exactly as long as the operation runs, and disappear the moment it ends.
+//
+// The child is spawned under a derived context; cancelling it terminates
+// powershell.exe, which tears the form down with it. close() then waits for the
+// process to be reaped so a caller that immediately opens another window does
+// not race this one.
+func (b *WindowsBackend) ShowProgress(ctx context.Context, request ProgressRequest) (func(), error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return nil, NewUnavailable("progress_dialog", err)
+	}
+	script := dpiAwarenessPrelude +
+		"Add-Type -AssemblyName System.Windows.Forms;" +
+		// A Marquee ProgressBar is drawn by the themed common control. Without
+		// visual styles the classic control has no marquee at all and paints an
+		// empty trough, which is exactly what a stalled operation would look
+		// like. Measured on this box: RenderWithVisualStyles was False for a
+		// plain -Command host, so the window came up with no bar.
+		"[System.Windows.Forms.Application]::EnableVisualStyles();" +
+		"$f=New-Object System.Windows.Forms.Form;" +
+		"$f.Text=" + psString(request.Title) + ";" +
+		"$f.FormBorderStyle='FixedDialog';$f.ControlBox=$false;$f.MaximizeBox=$false;$f.MinimizeBox=$false;" +
+		"$f.StartPosition='CenterScreen';$f.Width=470;$f.Height=160;$f.TopMost=$true;$f.ShowInTaskbar=$false;" +
+		"$l=New-Object System.Windows.Forms.Label;$l.Text=" + psString(request.Text) + ";" +
+		"$l.Left=20;$l.Top=22;$l.Width=415;$l.Height=44;" +
+		"$p=New-Object System.Windows.Forms.ProgressBar;$p.Style='Marquee';$p.MarqueeAnimationSpeed=30;" +
+		"$p.Left=20;$p.Top=74;$p.Width=415;$p.Height=20;" +
+		"$f.Controls.Add($l);$f.Controls.Add($p);" +
+		"[System.Windows.Forms.Application]::Run($f)"
+
+	child, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// A killed child reports a non-nil error by design; the window is a
+		// hint, so a failure to draw it must never surface as an operation
+		// failure to the user.
+		_ = b.runner.Run(child, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			<-done
+		})
+	}, nil
+}
+
 func (b *WindowsBackend) ShowInfo(ctx context.Context, request InfoRequest) error {
 	command, err := b.runner.LookPath("powershell.exe")
 	if err != nil {

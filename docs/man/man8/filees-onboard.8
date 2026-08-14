@@ -1,0 +1,27 @@
+.Dd August 14, 2026
+.Dt FILEES-ONBOARD 8
+.Os
+.Sh NAME
+.Nm filees-onboard
+.Nd consume a FileES invitation and create the OTP outbox
+.Sh SYNOPSIS
+.Nm
+.Op Fl config Ar path
+.Cm take
+.Sh DESCRIPTION
+.Nm
+reads one JSON invitation request from standard input and atomically
+creates or resumes the onboarding operation.
+It does not send mail.
+.Xr filees-bootstrap-entry 8
+calls
+.Nm Cm take
+and then exactly one
+.Xr filees-mail 8
+.Cm send .
+.Pp
+The command is a short-lived tool.
+It has no listener and accepts no extra arguments.
+.Sh SEE ALSO
+.Xr filees-bootstrap-entry 8 ,
+.Xr filees-mail 8

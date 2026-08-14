@@ -1,0 +1,43 @@
+.Dd August 14, 2026
+.Dt FILEES-CLIENT-ENTRY 8
+.Os
+.Sh NAME
+.Nm filees-client-entry
+.Nd FileES per-key dispatcher for svnserve and control-plane tickets
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+.Nm
+is the set-id dispatcher installed for installation-key sessions.
+.Xr sshd 8
+selects the account
+.Pq Sy _filees-client
+or
+.Sy _filees-data
+and the per-key
+.Ic command=
+line.
+.Nm
+accepts exactly two original commands:
+.Bl -tag -width Ds
+.It Cm svnserve -t
+Tunnel-mode Subversion.
+.It Cm filees control-v1
+One authenticated control-plane ticket, then
+.Xr filees-worker 8 .
+.El
+.Pp
+Before a control-plane ticket it runs
+.Xr filees-service-wc-corrector 8
+so a previous root-owned administrative
+.Nm svn
+cannot leave the service working copy unreadable to
+.Sy _filees-state .
+.Pp
+The image is
+.Sy _filees-state : _filees-access
+mode 4550.
+It is not a general shell.
+.Sh SEE ALSO
+.Xr filees-worker 8 ,
+.Xr filees-service-wc-corrector 8

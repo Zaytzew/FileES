@@ -1,0 +1,47 @@
+.Dd August 14, 2026
+.Dt FILEES-LINKS 8
+.Os
+.Sh NAME
+.Nm filees-links
+.Nd public FastCGI surface for FileES shares
+.Sh SYNOPSIS
+.Nm
+.Op Fl config Ar path
+.Sh DESCRIPTION
+.Nm
+serves the credential-free public HTML and file/ZIP downloads.
+It reads
+.Xr filees-public-links 5 ,
+not
+.Xr filees.conf 5 .
+It owns only a temporary cache.
+It asks
+.Xr filees-public-authority 8
+for each leaf.
+.Pp
+The process uses no JavaScript, sets no cookies, and sends
+.Ic Cache-Control: no-store
+plus a hashed Content-Security-Policy.
+Unknown, revoked and deleted addresses share one branded HTTP 404 that
+does not echo the requested path.
+.Pp
+Listing iterates the channel's declared object map.
+It does not walk the repository tree.
+See the Public Shares chapter of the HTML manual.
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /etc/filees/public-links.json
+Configuration.
+.It Pa /var/www/run/filees/filees-links.sock
+Default FastCGI socket.
+.It Pa /var/tmp/filees-public-shares-cache
+Private cache, owner
+.Sy _filees-links ,
+outside backups.
+.It Pa /etc/rc.d/filees_links
+Disabled-by-default OpenBSD rc.d script.
+.El
+.Sh SEE ALSO
+.Xr filees-public-authority 8 ,
+.Xr filees-public-links 5 ,
+.Xr httpd 8

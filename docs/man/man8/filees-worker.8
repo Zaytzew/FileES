@@ -1,0 +1,34 @@
+.Dd August 14, 2026
+.Dt FILEES-WORKER 8
+.Os
+.Sh NAME
+.Nm filees-worker
+.Nd execute one authenticated FileES server action and exit
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+.Nm
+is exec'd once per authenticated deploy or control-plane ticket.
+It is
+.Sy root : wheel
+mode 0555 and has no resident service.
+The next operation execs the current image.
+.Pp
+It is the only process that mutates canonical service-repository records,
+data repositories, grants, editing policy and Public Shares channel
+state.
+It publishes through a path-scoped Subversion commit under the shared
+service-WC lock.
+Unversioned leftovers from a killed older binary are reconciled before
+the next scan.
+.Pp
+Do not run
+.Nm
+as root against the service working copy.
+Root can bypass the 0700 directory mode and then leaves root-owned
+pristine objects in
+.Pa .svn .
+.Sh SEE ALSO
+.Xr filees-client-entry 8 ,
+.Xr filees-entry 8 ,
+.Xr filees-service-wc-corrector 8

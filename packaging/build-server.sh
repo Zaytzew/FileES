@@ -53,7 +53,8 @@ out="$dist/filees-server-$target"
 mkdir -p "$dist"
 tmp=$(mktemp -d "$dist/.filees-server-$target.tmp.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
-mkdir -p "$tmp/bin" "$tmp/share/filees/openbsd" "$tmp/openbsd"
+mkdir -p "$tmp/bin" "$tmp/share/filees/openbsd" "$tmp/share/man/man5" \
+	"$tmp/share/man/man7" "$tmp/share/man/man8" "$tmp/openbsd"
 
 # Stamp the bundle version into the binaries that can report it. Without this
 # the only way to tell how old a deployed tool is was to compare its usage text
@@ -105,6 +106,11 @@ cp "$root/packaging/server/openbsd/public-links.httpd.conf" "$tmp/share/filees/o
 cp "$root/packaging/server/openbsd/install-ssh.sh" "$tmp/openbsd/"
 cp "$root/packaging/server/install-server.sh" "$tmp/"
 cp "$root/packaging/server/README.md" "$tmp/"
+if [ -d "$root/docs/man" ]; then
+	cp "$root/docs/man/man5/"* "$tmp/share/man/man5/"
+	cp "$root/docs/man/man7/"* "$tmp/share/man/man7/"
+	cp "$root/docs/man/man8/"* "$tmp/share/man/man8/"
+fi
 cp "$root/VERSION" "$tmp/"
 chmod +x "$tmp/install-server.sh"
 chmod +x "$tmp/openbsd/install-ssh.sh"

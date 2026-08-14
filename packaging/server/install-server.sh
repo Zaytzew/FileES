@@ -7,6 +7,17 @@ sysconfdir=${SYSCONFDIR:-/etc/filees}
 statedir=${STATEDIR:-/var/filees/onboarding}
 
 install -d -m 755 "$prefix/sbin" "$prefix/libexec/filees"
+install -d -m 755 "$prefix/man/man5" "$prefix/man/man7" "$prefix/man/man8"
+if [ -d "$bundle/share/man" ]; then
+	for section in 5 7 8; do
+		if [ -d "$bundle/share/man/man$section" ]; then
+			for page in "$bundle/share/man/man$section"/*; do
+				[ -f "$page" ] || continue
+				install -m 0444 "$page" "$prefix/man/man$section/"
+			done
+		fi
+	done
+fi
 install -m 0555 "$bundle/bin/filees-admin" "$prefix/sbin/filees-admin"
 install -m 0555 "$bundle/bin/filees-operation" "$prefix/sbin/filees-operation"
 install -m 0555 "$bundle/bin/filees-install" "$prefix/sbin/filees-install"
@@ -61,4 +72,5 @@ fi
 
 echo "FileES server tools installed. Edit $sysconfdir/server.json before use."
 echo "No daemon or rc.d service was installed."
+echo "Manual pages installed under $prefix/man (man filees, man filees-admin)."
 echo "On OpenBSD, review and run openbsd/install-ssh.sh to enable the system-sshd entries."

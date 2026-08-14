@@ -1,0 +1,41 @@
+.Dd August 14, 2026
+.Dt FILEES-RECOVERY-ENTRY 8
+.Os
+.Sh NAME
+.Nm filees-recovery-entry
+.Nd serve FileES realm-removal archives for one operation
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+.Nm
+is the set-id session entry for
+.Sy _filees-recovery .
+A second image of the same binary is installed as
+.Pa /usr/local/libexec/filees/filees-recovery-authorize
+.Pq owner root , group wheel , mode 0555
+because
+.Xr sshd 8
+requires every
+.Ic AuthorizedKeysCommand
+component to be root-owned.
+Key lookup and session service are therefore distinct executables.
+.Pp
+The client presents a per-operation Ed25519 recovery key from the
+.Pa .fkr
+kit written during realm removal.
+The authorise helper emits a restricted key line bound to that one
+operation ID and refuses it after
+.Ic download_until .
+The session protocol is exactly two verbs:
+.Bd -literal -offset indent
+list <operation_id>
+get  <operation_id> <archive_id>
+.Ed
+.Pp
+The entry is read-only
+.Pq Cm stdio rpath
+and never sees a private key.
+The key grants no SVN access, no shell and no other operation.
+.Sh SEE ALSO
+.Xr filees-admin 8 ,
+.Xr filees 7

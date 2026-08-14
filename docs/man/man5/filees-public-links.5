@@ -1,0 +1,58 @@
+.Dd August 14, 2026
+.Dt FILEES-PUBLIC-LINKS 5
+.Os
+.Sh NAME
+.Nm filees-public-links
+.Nd FileES public FastCGI configuration
+.Pq Pa /etc/filees/public-links.json
+.Sh DESCRIPTION
+.Xr filees-links 8
+reads this file.
+It does not read
+.Xr filees.conf 5
+and must not be given SVN credentials.
+The schema name is
+.Cm filees.public-links/v1 .
+.Sh FIELDS
+.Bl -tag -width Ds
+.It Ic fastcgi.network , fastcgi.address
+Listener for
+.Xr httpd 8 .
+The shipped value is a Unix socket
+.Pa /var/www/run/filees/filees-links.sock
+owned
+.Sy _filees-links : www
+mode 0660.
+.It Ic backchannel.network , backchannel.address
+How links asks
+.Xr filees-public-authority 8
+for a leaf.
+On a shared host this is the Unix socket
+.Pa /var/run/filees/public-authority.sock .
+A split topology uses loopback TCP provided by a server-established
+reverse SSH forward.
+Never expose the authority port on a public interface.
+.It Ic visit_key_file
+HMAC key for signed visit URLs, mode 0600.
+.It Ic cache.root , cache.ttl , cache.max_size
+Private cache under
+.Pa /var/tmp ,
+outside backups.
+TTL cannot exceed 24 hours.
+The shipped values are 12 hours and 10 GiB.
+.It Ic bundle.max_files , bundle.max_size
+Hard limits for ZIP requests.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /etc/filees/public-links.json
+Installed configuration.
+.It Pa /etc/examples/filees-public-links.httpd.conf
+Ordered
+.Xr httpd 8
+locations to merge into the existing HTTPS origin.
+.El
+.Sh SEE ALSO
+.Xr filees-links 8 ,
+.Xr filees-public-authority 8 ,
+.Xr httpd 8

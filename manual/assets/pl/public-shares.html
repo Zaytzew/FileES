@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>5. Udziały publiczne — podręcznik FileES</title>
+<link rel="alternate" hreflang="en" href="../en/public-shares.html"/>
+<link rel="alternate" hreflang="pl" href="public-shares.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">dokumentacja systemu FileES</span>
+</div>
+</div>
+<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
+<nav class="lang-switch" aria-label="Język">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/public-shares.html" lang="en" hreflang="en">EN</a>
+<a href="public-shares.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<a href="index.html">Przegląd</a>
+<a href="architecture.html">1. Architektura</a>
+<a href="user-guide.html">2. Przewodnik</a>
+<a href="install.html">3. Instalacja</a>
+<a href="administration.html">4. Administracja</a>
+<a href="public-shares.html" class="is-current">5. Udziały publiczne</a>
+<a href="security.html">6. Bezpieczeństwo</a>
+<a href="man-pages.html">Strony man</a>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Na tej stronie" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / ta strona</span>
+<h2>Na tej stronie</h2>
+</div>
+<ol>
+<li><a href="#ps-model">Model zaufania</a></li>
+<li><a href="#ps-url">Kanoniczny URL</a></li>
+<li><a href="#ps-map">Mapa obiektów a rewizja</a></li>
+<li><a href="#ps-access">Otwarty kanał, hasło i OTP odbiorcy</a></li>
+<li><a href="#ps-desktop">Ścieżka właściciela na pulpicie</a></li>
+<li><a href="#ps-ops">Eksploatacja serwera</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1 id="ch-ps">Rozdział 5: Udziały publiczne</h1>
+<div class="chapter-content">
+<h2 id="ps-model">5.1 Model zaufania</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane na żywo</span><span>Kanoniczny endpoint HTTPS, FastCGI links, uniksowy backchannel i izolacja authority odebrane na OpenBSD.</span></div>
+<p>Udziały publiczne to kanał dystrybucji, nie druga ścieżka zapisu. Kanał przyjęcia (Upload Channel) jest osobnym pionem i nie może współdzielić tego procesu ani tych poświadczeń.</p>
+<p>Trzy procesy, trzej właściciele:</p>
+<div class="table-wrap"><table>
+<tr><th>Proces</th><th>Właściciel</th><th>Może widzieć</th><th>Nie wolno mu widzieć</th></tr>
+<tr><td><code>filees-links</code></td><td><code>_filees-links</code></td><td>żądanie publiczne, token wizyty, prywatny cache</td><td>poświadczeń SVN, sekretu SMTP, adresów odbiorców</td></tr>
+<tr><td><code>filees-public-authority</code></td><td><code>_filees-state</code></td><td>rekordy kanałów, <code>svnlook</code>, skróty OTP</td><td>hasła SMTP (trzyma je wyłącznie dziecko pocztowe)</td></tr>
+<tr><td><code>filees-mail public-loop</code></td><td>dziecko authority</td><td>sekret SMTP i outbox udziałów publicznych</td><td>strumienia żądań HTTP</td></tr>
+</table></div>
+<p>TLS należy do <code>relayd</code>/<code>httpd</code>. FileES nigdy nie osadza stosu TLS. Publiczny HTML nie używa JavaScriptu, ciasteczek ani zasobów zewnętrznych. Branding to system <code>filees:space</code> plus kolor wiodący i logo właściciela już zapisane na serwerze.</p>
+<div class="decision">
+<div class="decision-head">Uzasadnienie / pchnięcie z authority, nigdy pobranie ze strefy publicznej</div>
+<div class="decision-grid">
+<div class="decision-label">Decyzja</div><div class="decision-value">Proces publiczny prosi o <code>(kanał, public_id, rewizja)</code>; authority rozwiązuje mapę i pcha liść.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Strefa publiczna zostaje bez poświadczeń, a kosztowny <code>svnlook</code> zostaje na koncie stanu.</div>
+<div class="decision-label">Odrzucone</div><div class="decision-value">Materializacja opublikowanego drzewa; dawanie linksowi kopii roboczej repozytorium serwisowego; osadzanie TLS.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Backchannel i prywatny cache są obowiązkowe przy dużych binariach.</div>
+</div>
+</div>
+<h2 id="ps-url">5.2 Kanoniczny URL</h2>
+<p>Publiczny adres jest zawsze:</p>
+<pre><code>https://&lt;domena-serwera&gt;/&lt;alias-strefy&gt;/&lt;slug&gt;</code></pre>
+<p>Statyczne ścieżki document root to jawna allowlista: <code>/</code>, <code>/index.html</code>, <code>/favicon.ico</code>, <code>/robots.txt</code>, <code>/.well-known/acme-challenge/*</code> i <code>/assets/*</code>. Podręcznik HTML mieszka w tym ostatnim prefiksie (<code>/assets/en/…</code> i <code>/assets/pl/…</code>). Wszystko inne jest wirtualną lokalizacją FileES. Dodanie strefy nie może tworzyć katalogu ani przeładowywać <code>httpd</code>. Nowa strona podręcznika to tylko nowy plik pod <code>/assets/</code>. Zobacz <a href="index.html#publish">wykres publikacji</a>.</p>
+<p>Nieznane, cofnięte i usunięte adresy dzielą jedno obrandowane HTTP 404, które nie odbija ścieżki, aliasu, slugu ani powodu. <code>robots.txt</code> to statyczne <code>Disallow: /</code>.</p>
+<h2 id="ps-map">5.3 Mapa obiektów a rewizja</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Zapisane po obserwacji z 2026-08-14; to jest zaimplementowany kontrakt, nie defekt.</span></div>
+<p>Są dwa zegary:</p>
+<ul>
+<li><strong>Rewizja</strong> jest wybierana przy każdej wizycie. Gdy kanał nie ma <code>do-not-follow</code>, authority czyta HEAD i zamraża tę rewizję na wizytę. <em>Treść</em> zmapowanych plików śledzi więc HEAD.</li>
+<li><strong>Skład</strong> to <code>object_map</code> zapisana przy <code>CREATE</code> albo <code>UPDATE</code>. Listing i pobieranie iterują wyłącznie po tej mapie. Plik dodany później do folderu jest niewidoczny; usunięty zostaje na liście; zmiana nazwy zostawia starą.</li>
+</ul>
+<p>Pusty wybrany folder jest legalnym placeholderem. Późniejsze pliki wymagają jawnej aktualizacji kanału. Dlatego kopia pulpitu mówi, że udział nie jest żywym lustrem folderu.</p>
+<div class="note">Zmiana składu na wyprowadzane przejście drzewa wymagałaby deterministycznych <code>public_id</code> (na przykład HMAC ścieżki i sekretu kanału), żeby rozesłane mailem linki przeżyły nowy plik. Tej decyzji nie podjęto. Do tego czasu zdanie koncepcji o „odświeżaniu samym” dotyczy wyłącznie treści już zmapowanych liści.</div>
+<h2 id="ps-access">5.4 Otwarty kanał, hasło i OTP odbiorcy</h2>
+<p><strong>Kanał otwarty.</strong> Opcjonalne hasło Argon2id. Udane przejście bramki wydaje dwunastogodzinny podpisany URL wizyty. Weryfikacja hasła jest zserializowana globalnie do jednej równoległej operacji Argon2. Ekran hasła pokazuje znak FileES, logo właściciela i kolor wiodący; nie pokazuje aliasu, slugu ani tekstu objaśniającego.</p>
+<p><strong>Kanał zamknięty.</strong> Każdy odbiorca dostaje identyfikator zaproszenia w URL (<code>?invite=</code>; stare <code>?token=</code> działa jako alias). Identyfikator nie jest bearerem. Strona wejściowa jest bramką: odbiorca prosi o kod, authority wysyła ośmiocyfrowy OTP z pięciominutową epoką, pięcioma próbami i cooldownem ponowienia. Ponowienie w aktywnej epoce nie rotuje kodu ani nie wydłuża TTL. Po poprawnym OTP proces publiczny dostaje wyłącznie skrót zaproszenia, UUID epoki i bezwzględny termin, po czym wydaje podpisany URL, który jest bearerem dokładnie do tego terminu. Skopiowanie URL przenosi pozostałe okno. Po wygaśnięciu ten sam URL zaproszenia wraca do bramki. Po cofnięciu jest 404.</p>
+<p>Publiczna projekcja nigdy nie zawiera adresów e-mail. Hasła i kody OTP w postaci jawnej są hashowane, zanim przekroczą IPC albo stan control-plane w SVN.</p>
+<h2 id="ps-desktop">5.5 Ścieżka właściciela na pulpicie</h2>
+<p><strong>Udostępnienia publiczne</strong> widzi wyłącznie kanoniczny właściciel i tylko wtedy, gdy demon reklamuje pełny zestaw list/create/update/revoke/delete. Utworzenie i edycja wymagają podłączonej kopii roboczej. GUI mapuje najwyżej 4096 zwykłych plików, pomija <code>.svn</code> i <code>.filees</code>, odrzuca symlinki i zachowuje stabilne <code>public_id</code> dla ścieżek, które zostają. Cofnięcie zatrzymuje wydawanie i zostawia rekord. Usunięcie zostawia nagrobek adresu.</p>
+<p>Po wpuszczeniu listing to domyślnie zwinięte drzewo w stylu „Szczegóły”: nazwa, ikona typu, rozmiar, pobranie pojedynczego pliku. Zaznaczenie, folder i cały udział jako ZIP są ograniczone; każdy liść jest ponownie autoryzowany i materializowany w prywatnym cache, zanim zacznie się odpowiedź archiwum. W tej wersji nie ma miniaturek.</p>
+<h2 id="ps-ops">5.6 Eksploatacja serwera</h2>
+<p>Udziały publiczne instaluje się wyłączone. Po edycji <code>server.json</code> i <code>public-links.json</code>:</p>
+<pre><code># scalić openbsd/public-links.httpd.conf do bloku originu
+doas rcctl enable filees_public_authority filees_links
+doas rcctl start filees_public_authority
+doas rcctl start filees_links
+doas rcctl check filees_public_authority filees_links
+doas httpd -n &amp;&amp; doas rcctl reload httpd</code></pre>
+<p>Uruchom authority przed links. Authority jest niezdrowe, gdy umrze jego dziecko pocztowe; sygnał stopu zamyka HTTP, kończy dziecko i czeka, więc <code>rcctl restart</code> nie może zostawić osieroconego pollera. Zobacz <a href="man-pages.html">filees-public-authority(8)</a> i <a href="man-pages.html">filees-links(8)</a>.</p>
+</div>
+<nav class="page-nav">
+<a href="administration.html">← 4. Administracja</a>
+<a href="security.html">6. Bezpieczeństwo →</a>
+</nav>
+</div>
+</div>
+<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-14 · źródło r494</span></footer>
+</main>
+</body>
+</html>

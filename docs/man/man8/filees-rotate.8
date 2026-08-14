@@ -1,0 +1,80 @@
+.Dd August 14, 2026
+.Dt FILEES-ROTATE 8
+.Os
+.Sh NAME
+.Nm filees-rotate
+.Nd perform an explicit SVN FSFS generation change
+.Sh SYNOPSIS
+.Nm
+.Fl repo Ar path
+.Fl archive Ar directory
+.Op Fl size Ar threshold
+.Op Fl age-days Ar n
+.Op Fl dry-run
+.Op Fl force
+.Op Fl break-locks
+.Op Fl dump-depth Ar n
+.Sh DESCRIPTION
+.Nm
+replaces a hot repository with a new generation.
+The new generation has a new UUID and starts at revision 1 equal to a
+complete dump of the old HEAD, including versioned properties such as
+.Ic svn:needs-lock .
+It inherits
+.Pa conf/
+and
+.Pa hooks/ ,
+is verified with
+.Nm svnadmin verify
+and a tree comparison, then swapped atomically.
+The old generation becomes a frozen, commit-blocked FSFS archive.
+Existing working copies do not survive the UUID change.
+.Pp
+For the FileES append-only profile, rotation is a retention tool, not a
+performance tool.
+There is no built-in scheduler.
+Running
+.Nm
+is an operational decision.
+The same staging and swap machinery is reused by
+.Cm LOAD_REPOSITORY_DUMP .
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl repo Ar path
+Absolute path of the hot repository.
+.It Fl archive Ar directory
+Archive directory on the same filesystem as the repository, so the swap
+is a rename.
+.It Fl size Ar threshold
+Rotate when packed size reaches this.
+Default
+.Cm 25GiB .
+.It Fl age-days Ar n
+Rotate when revision 1 is older than
+.Ar n
+days.
+Default 365.
+.It Fl dry-run
+Print the decision without rotating.
+.It Fl force
+Rotate regardless of triggers.
+.It Fl break-locks
+Proceed despite active locks.
+This destroys live edit passports.
+.It Fl dump-depth Ar n
+Also archive a gzip dump of the last
+.Ar n
+revisions before HEAD.
+Zero, the default, writes no extra dump.
+The frozen FSFS archive is canonical.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+.Bd -literal -offset indent
+$ filees-rotate -repo /STORAGE01/filees-repos/UUID \e
+    -archive /STORAGE01/filees-archive -dry-run
+.Ed
+.Sh SEE ALSO
+.Xr filees 7 ,
+.Xr svnadmin 1

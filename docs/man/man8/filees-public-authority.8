@@ -1,0 +1,55 @@
+.Dd August 14, 2026
+.Dt FILEES-PUBLIC-AUTHORITY 8
+.Os
+.Sh NAME
+.Nm filees-public-authority
+.Nd FileES Public Shares backchannel and recipient OTP
+.Sh SYNOPSIS
+.Nm
+.Op Fl config Ar path
+.Sh DESCRIPTION
+.Nm
+is the authoritative side of Public Shares.
+It listens on a Unix socket or loopback TCP.
+It never terminates TLS.
+It fetches leaves with
+.Nm svnlook
+and pushes them to
+.Xr filees-links 8 .
+.Pp
+It supervises
+.Xr filees-mail 8
+.Cm public-loop
+as a required child.
+The child holds the SMTP secret.
+.Nm
+does not.
+On
+.Dv SIGTERM
+or
+.Dv SIGINT
+it closes the HTTP server, terminates the child and waits, then exits,
+so an
+.Xr rcctl 8
+restart cannot leave an orphan poller.
+.Pp
+Recipient OTP epochs, attempt counters and invitation hashes live under
+the Public Shares state root.
+Revoke and delete cut access immediately and drop pending mail.
+They do not yet garbage-collect inactive epoch files; those files contain
+no mailbox and no plaintext code.
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /etc/filees/server.json
+Public Shares section.
+See
+.Xr filees.conf 5 .
+.It Pa /var/run/filees/public-authority.sock
+Default Unix backchannel.
+.It Pa /etc/rc.d/filees_public_authority
+Disabled-by-default OpenBSD rc.d script.
+.El
+.Sh SEE ALSO
+.Xr filees-links 8 ,
+.Xr filees-mail 8 ,
+.Xr filees-public-links 5

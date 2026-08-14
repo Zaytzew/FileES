@@ -1,0 +1,124 @@
+.Dd August 14, 2026
+.Dt FILEES-INSTALL 8
+.Os
+.Sh NAME
+.Nm filees-install
+.Nd update FileES server binaries from a signed FILEES-BIN repository
+.Sh SYNOPSIS
+.Nm
+.Op Fl c Ar file
+.Op Fl -check-config
+.Op Fl -check Op Ar release
+.Op Fl -dry-run Op Ar release
+.Op Fl -apply Op Ar release
+.Op Fl -adopt Op Ar release
+.Op Fl -rollback
+.Op Fl -revert-to Ar release
+.Op Fl -purge
+.Op Fl -wipe-state
+.Op Fl -allow-rollback
+.Op Fl -yes
+.Op Fl -talkative
+.Sh DESCRIPTION
+.Nm
+updates installed FileES server binaries from a separate binary release
+repository.
+It is not a package manager and does not create a local Subversion working
+copy.
+It fetches channel and manifest documents with
+.Cm svn cat ,
+verifies the OpenBSD signify signature against a public key embedded at
+build time, checks SHA-256 hashes, records a durable pre-image journal,
+and replaces targets atomically.
+.Pp
+Manifest schema v2 signs owner, group and full mode, including set-id bits.
+Install and rollback restore content, UID, GID and mode.
+The apply lock is exclusive; a
+.Dv SIGSTOP
+then
+.Dv SIGKILL
+chaos test on an unlocked earlier build panicked the OpenBSD kernel.
+.Pp
+.Fl -adopt
+records an existing installation as the managed baseline.
+It changes no files and accepts the host only when every managed path
+matches the signed hash, owner, group and mode.
+.Pp
+A release older than the recorded high-water mark is refused unless
+.Fl -allow-rollback
+is also given.
+That flag is a deliberate administrative act, never the ordinary update.
+.Pp
+The running
+.Pa /etc/filees/server.json
+is not overwritten.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl c Ar file
+Read
+.Xr filees-install 8
+configuration from
+.Ar file .
+The default is
+.Pa /etc/filees/install.conf .
+.It Fl -check-config
+Print the resolved configuration and exit.
+.It Fl -check
+Fetch the channel and print the install plan without downloading payloads.
+.It Fl -dry-run
+Build the full plan, including config-contract drift, without installing.
+.It Fl -apply
+Download, verify, stage, journal and install the channel head or
+.Ar release .
+.It Fl -adopt
+Verify and adopt without modification.
+.It Fl -rollback
+Restore the previous locally installed release from the journalled
+pre-image.
+.It Fl -revert-to Ar release
+Install a named release such as
+.Cm r492 .
+.It Fl -purge
+Remove files this installer manages.
+Keeps
+.Pa /var/filees
+and
+.Pa /etc/filees
+unless
+.Fl -wipe-state
+is also given.
+.It Fl -allow-rollback
+Permit installing a release older than the local high-water mark.
+.It Fl -yes
+Answer yes to interactive prompts.
+.It Fl -talkative
+Print
+.Sq Li [SECURITY]
+unveil and pledge diagnostics.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /etc/filees/install.conf
+Updater configuration.
+.It Pa /var/filees/install-state
+Recorded release, high-water mark and journal.
+.It Pa /var/run/filees-install.lock
+Exclusive apply lock.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+Adopt a host that already matches signed r492:
+.Bd -literal -offset indent
+$ doas filees-install --adopt r492
+.Ed
+.Pp
+Plan and apply the configured channel:
+.Bd -literal -offset indent
+$ doas filees-install --dry-run
+$ doas filees-install --apply
+.Ed
+.Sh SEE ALSO
+.Xr filees 7 ,
+.Xr signify 1 ,
+.Xr svn 1

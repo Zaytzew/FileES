@@ -1,0 +1,46 @@
+.Dd August 14, 2026
+.Dt FILEES-OPERATION 8
+.Os
+.Sh NAME
+.Nm filees-operation
+.Nd recover FileES onboarding claims and expire unfinished operations
+.Sh SYNOPSIS
+.Nm
+.Op Fl config Ar path
+.Cm recover
+.Nm
+.Op Fl config Ar path
+.Cm inspect Fl -operation-id Ar uuid
+.Sh DESCRIPTION
+.Nm
+finishes crash-visible onboarding state.
+It must run as
+.Sy _filees-state .
+.Pp
+.Cm recover
+scans
+.Pa operations/
+for
+.Pa .claim-*.json
+files.
+A claim-as-ticket is turned into a bundle and renamed.
+A claim-as-bundle is only renamed.
+It also expires unfinished operations whose TTL has elapsed, redacts OTP
+and delivery address, removes expired staged keys, and resumes confirmed
+realm-removal journals after every client credential has been revoked.
+Active clients are not expired by the onboarding TTL.
+The command is idempotent.
+.Pp
+.Cm inspect
+prints one operation bundle.
+.Sh EXIT STATUS
+.Xr sysexits 3
+values as in
+.Xr filees-admin 8 .
+.Sh EXAMPLES
+.Bd -literal -offset indent
+$ doas -u _filees-state filees-operation recover
+.Ed
+.Sh SEE ALSO
+.Xr filees-admin 8 ,
+.Xr filees-onboard 8

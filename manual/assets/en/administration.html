@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>4. Administration — FileES Manual</title>
+<link rel="alternate" hreflang="pl" href="../pl/administration.html"/>
+<link rel="alternate" hreflang="en" href="administration.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">split HTML · external CSS · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="#" class="is-current" lang="en" hreflang="en" aria-current="true">EN</a>
+<a href="../pl/administration.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Manual pages">
+<a href="index.html">Overview</a>
+<a href="architecture.html">1. Architecture</a>
+<a href="user-guide.html">2. User guide</a>
+<a href="install.html">3. Server install</a>
+<a href="administration.html" class="is-current">4. Administration</a>
+<a href="public-shares.html">5. Public shares</a>
+<a href="security.html">6. Security</a>
+<a href="man-pages.html">Man pages</a>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Page contents" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / this page</span>
+<h2>On this page</h2>
+</div>
+<ol>
+<li><a href="#ch4-admin">filees-admin</a></li>
+<li><a href="#ch4-operation">filees-operation</a></li>
+<li><a href="#ch4-audit">Audit log</a></li>
+<li><a href="#ch4-mail">Mail outbox</a></li>
+<li><a href="#ch4-recovery">Recovery</a></li>
+<li><a href="#ch4-monitoring">Monitoring</a></li>
+<li><a href="#ch4-rotate">filees-rotate</a></li>
+<li><a href="#ch4-realm-removal">Realm removal</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1 id="ch4">Chapter 4: Administration</h1><div class="chapter-content">
+<h2 id="ch4-admin">4.1 <code>filees-admin</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-planned">Broader commands planned</span><span>Ticket, operation inspection and fail-closed client revoke exist.</span></div>
+<p><code>filees-admin</code> is the administrative command-line tool. It must be run as <code>_filees-state</code> (e.g. via <code>doas -u _filees-state</code>) to satisfy its <code>pledge</code>/<code>unveil</code> profile. It writes structured JSON to stdout and diagnostics to stderr. Exit codes follow the <code>sysexits</code> range:</p>
+<div class="table-wrap"><table>
+<tr><th>Exit code</th><th>Constant</th><th>Meaning</th></tr>
+<tr><td>0</td><td><code>ExitOK</code></td><td>Success</td></tr>
+<tr><td>64</td><td><code>ExitUsage</code></td><td>Bad arguments</td></tr>
+<tr><td>65</td><td><code>ExitData</code></td><td>Input data error</td></tr>
+<tr><td>69</td><td><code>ExitUnavailable</code></td><td>Resource unavailable (ticket taken, port exhausted)</td></tr>
+<tr><td>70</td><td><code>ExitSoftware</code></td><td>Internal logic error</td></tr>
+<tr><td>75</td><td><code>ExitTempFail</code></td><td>Temporary failure (retry later; used by filees-mail for SMTP 4xx)</td></tr>
+<tr><td>78</td><td><code>ExitConfig</code></td><td>Configuration error</td></tr>
+</table></div>
+<h4>Ticket management</h4>
+<pre><code>filees-admin ticket create &lt;mailbox&gt; [--join-realm-alias &lt;alias&gt;] [--ttl 24h]
+filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;
+filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
+filees-admin ticket list</code></pre>
+<p>A ticket is a one-time administrator grant authorising one e-mail invitation. It must be created with effective user <code>_filees-state</code>; creating it as root produces a private root-owned file that the set-id onboarding entry intentionally cannot read. Without <code>--join-realm-alias</code> it authorises creation of a new realm. With the flag, the server resolves the immutable alias immediately and stores the approved existing realm ID in ticket policy; the client never submits that ID. Revoke an unused ticket created with the wrong policy instead of editing it. The ticket file is named by <code>sha256(canonical_email)</code> so the file name does not reveal the address. <code>create</code> writes the ticket with a TTL and immediately sends its invitation; <code>resend</code> replaces a failed delivery capability with a fresh one without changing the ticket recipient or TTL; <code>revoke</code> removes it. Once its opaque invitation capability is claimed by <code>filees-onboard take</code> the ticket physically disappears and is replaced by an operation bundle.</p>
+<h4>Operation inspection</h4>
+<pre><code>filees-admin operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
+<p>Displays the current state and audit trail of an onboarding operation. If an operation is in state <code>awaiting_tunnel</code> after the TTL has passed, the OTP is exhausted or expired, and the record can be cleaned up by <code>filees-operation recover</code>.</p>
+<h4>Client revocation</h4>
+<pre><code>filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "one-line reason"</code></pre>
+<p>Revocation first writes a durable <code>revoking</code> record and removes the client from generated SSH/SVN runtime access. Only then does it commit the revoked client record and audit event to the service repository. An identical retry is idempotent; a different reason is rejected.</p>
+<h4>Realm revocation and repository ownership transfer</h4>
+<pre><code>filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-line reason"
+filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;</code></pre>
+<p><code>client revoke-realm</code> revokes every installation belonging to the given realm in one call and reports the affected <code>client_id</code>s; it uses the same fail-closed <code>revoking</code>-then-committed sequence as single-client revoke. <code>repo transfer-owner</code> changes <code>owner_realm_id</code> for a repository and regenerates data-authz through <code>repoworker.ServicePublisher</code>; it does not touch existing grants issued by the previous owner.</p>
+<h4>Commands that remain out of this tool</h4>
+<p>Repository create/attach, grants, public shares, load-dump and realm removal are owner operations on the desktop control plane, not extra <code>filees-admin</code> verbs. The following broader console is still specified and not implemented:</p>
+<pre><code>filees-admin realm create|inspect|list|disable
+filees-admin client inspect|list|disable
+filees-admin repo inspect|list|disable|reconcile
+filees-admin grant create|change|revoke
+filees-admin invitation create|revoke|inspect
+filees-admin operation inspect|abort|retry
+filees-admin audit list|verify
+filees-admin projection rebuild|verify</code></pre>
+<h2 id="ch4-operation">4.2 <code>filees-operation</code></h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Claim recovery, unfinished-operation expiry and activation cleanup are idempotent.</span></div>
+<pre><code>filees-operation recover
+filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
+<p><code>filees-operation recover</code> scans the operations directory for claim files (<code>.claim-*.json</code>) and finishes them. A claim may be in two forms:</p>
+<ul>
+<li><strong>Claim-as-ticket</strong> — the ticket was renamed to <code>.claim-&lt;req_id&gt;.json</code> but not yet replaced by a bundle. Recovery generates the bundle and completes the final rename.</li>
+<li><strong>Claim-as-bundle</strong> — the bundle was written into the claim file but the final rename to <code>&lt;req_id&gt;.json</code> was not completed. Recovery performs only the rename.</li>
+</ul>
+<p>Recovery also expires unfinished operations whose TTL elapsed, redacts their OTP and delivery address, removes expired staged keys from generated SSH/SVN access, and resumes confirmed realm-removal journals after all client credentials have been revoked. Active clients are not expired by the onboarding TTL. Recovery is idempotent and safe after an unexpected system crash. On OpenBSD it must run as the private state owner: <code>doas -u _filees-state filees-operation recover</code>.</p>
+<h2 id="ch4-audit">4.3 Audit Log</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Onboarding audit and client structured error logs exist.</span></div>
+<p>The server-side audit log is stored as individual JSON files in the <code>audit/</code> subdirectory of the state root (<code>/var/filees/onboarding/audit/</code>). Each event file is named <code>&lt;timestamp&gt;-&lt;object_type&gt;-&lt;event_type&gt;.json</code> and follows the <code>filees.onboarding-audit/v1</code> schema:</p>
+<pre><code>{
+  "schema":       "filees.onboarding-audit/v1",
+  "event":        "tunnel_session_started",
+  "actor":        "_filees-state",
+  "object_type":  "operation",
+  "object_id":    "&lt;operation_id&gt;",
+  "operation_id": "&lt;operation_id&gt;",
+  "at":           "2026-07-16T09:15:02Z"
+}</code></pre>
+<p>The operation bundle itself contains an inline audit array (<code>Audit []AuditEvent</code>) recording the complete history of that operation. SVN history of the service repository provides an additional independent evidence layer for service-repository audit events.</p>
+<p>Recorded onboarding audit event types include: <code>ticket_created</code>, <code>ticket_revoked</code>, <code>operation_claimed</code>, <code>otp_attempt_failed</code>, <code>otp_verified</code>, <code>otp_exhausted</code>, <code>tunnel_session_started</code>, <code>helper_announced</code>, <code>helper_verified</code>, <code>identity_generated</code>, <code>access_staged</code>, <code>possession_verified</code>, and <code>client_activated</code>. The service repository independently records <code>client_activated</code> and <code>client_revoked</code> events.</p>
+<p>The client-side error log is stored in <code>&lt;wc&gt;/.filees/logs/errors.jsonl</code> as JSON Lines:</p>
+<pre><code>{"ts":"2026-07-16T10:00:00Z","scope":"commit:projectA","code":"NET-4007",
+ "severity":"WARN","hint":"RETRY_BACKOFF","msg":"Network unreachable — retrying"}</code></pre>
+<p>The most recent entries can be viewed with:</p>
+<pre><code>filees log 50</code></pre>
+<h2 id="ch4-mail">4.4 Mail Outbox</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>One-shot SMTP outbox, public bootstrap composition, redaction and retry semantics.</span></div>
+<p>The public SSH forced command is <code>filees-bootstrap-entry</code>. It atomically creates or resumes the onboarding operation and then invokes exactly one <code>filees-mail send</code> attempt. Authenticated control workers use the same one-shot trigger for onboarding, realm-removal and data-erasure mail. Public Shares additionally needs delivery triggered by an unauthenticated browser request: <code>filees-public-authority</code> therefore supervises an isolated <code>filees-mail public-loop</code> child. The child polls only the durable Public Shares outbox, loads the SMTP secret itself and is a required part of authority health; the authority process never receives that secret. On a service-stop signal, authority closes its server, terminates the mail child and waits for it before exiting, so an rc.d restart cannot leave an orphan poller.</p>
+<p>The outbox delivery state machine:</p>
+<pre><code>pending  -&gt;  sending  -&gt;  queued    (250 after DATA; OTP and address redacted)
+                      -&gt;  pending   (4xx temporary failure; OTP preserved)
+                      -&gt;  failed    (5xx permanent failure; OTP redacted)</code></pre>
+<p>A stale <code>sending</code> entry (from a previous attempt that died without recording a result) is reclaimed with a new attempt ID before retrying. The stable <code>Message-ID</code> header (derived from <code>CreatedAt</code>, not <code>time.Now()</code>) makes retry safe if the smarthost accepted but the reply was lost.</p>
+<p>To retry after a temporary failure:</p>
+<pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
+<p>Exit code 75 (<code>ExitTempFail</code>) means the smarthost returned a 4xx; the OTP is preserved and the command can be retried. Exit code 0 means the message was accepted (<code>queued</code> state). A permanent failure (5xx) sets state to <code>failed</code> and redacts the OTP; manual intervention is required.</p>
+<h2 id="ch4-recovery">4.5 Recovery</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Server claim recovery and client restart reconciliation are covered by fault injection.</span></div>
+<h4>Interrupted onboarding claim</h4>
+<pre><code>doas -u _filees-state filees-operation recover</code></pre>
+<p>The command finishes any <code>.claim-*</code> file, expires unfinished operations past TTL, redacts their OTP material and removes expired activation staging. Active clients remain active. Safe to run repeatedly.</p>
+<h4>Realm removal after client revocation</h4>
+<p>A confirmed realm-removal journal is server-owned. If a crash occurs after <code>revoke_all_clients</code>, no client credential remains with which to resume the request. The same explicit <code>filees-operation recover</code> command enumerates states <code>deleting</code>, <code>recovery_ready</code> and <code>revoke_all_clients</code> under the repository worker lock and completes their idempotent boundaries. It is an administrative/startup action, not polling or a cyclic service.</p>
+<h4>Data-erasure retention closure</h4>
+<p>An optional data-erasure request is created only after realm-removal OTP confirmation. After active repositories, grants and client activations are removed it waits in <code>awaiting_backup_retention</code>. The server does not claim to purge backups automatically. Once the operator has verified the retention outcome, close it explicitly:</p>
+<pre><code>doas -u _filees-state filees-admin erasure complete \
+  --operation-id &lt;realm_removal_uuid&gt;
+
+# If policy or legal retention still requires records:
+doas -u _filees-state filees-admin erasure complete \
+  --operation-id &lt;realm_removal_uuid&gt; --partially-retained</code></pre>
+<p>Closure creates one final mail job. SMTP acceptance or a permanent failure scrubs the notification address. The maximum completion window shown by the client comes from <code>repositories.data_erasure_max_days</code> (default 90), not from GUI code.</p>
+<h4>Moving the data-repository storage root</h4>
+<p><code>repositories.root</code> is an absolute, administrator-selected FSFS storage root; <code>/var/filees/repositories</code> is only the default. It may point to a dedicated filesystem such as <code>/srv/filees/repositories</code>. This is a maintenance migration, not a live configuration change: every data repository is a directory below that root, named by its repository UUID.</p>
+<ol>
+<li>Schedule an exclusive maintenance window. Stop all FileES client daemons that can write to this server, do not issue repository create/delete requests, and wait until there are no active <code>svnserve -t</code>, <code>filees-worker</code> or <code>filees-client-entry</code> processes for the installation.</li>
+<li>Verify the source before copying. Run <code>svnadmin verify</code> for every direct child repository; resolve any verification error before proceeding.</li>
+<li>Create a destination on the target mount that is traversable and writable only by <code>_filees-state</code>, then copy as root while the maintenance window remains in force. For example:</li>
+</ol>
+<pre><code>doas install -d -o _filees-state -g _filees-state -m 0750 /srv/filees
+doas install -d -o _filees-state -g _filees-state -m 0700 /srv/filees/repositories
+
+# Verify source repositories before the copy.
+for repo in /var/filees/repositories/*; do
+  [ -d "$repo" ] || continue
+  doas -u _filees-state /usr/local/bin/svnadmin verify "$repo" || exit 1
+done
+
+# Preserve the complete FSFS directory trees, ownership and modes.
+doas cp -Rp /var/filees/repositories/. /srv/filees/repositories/
+
+# Verify the copied repositories before switching configuration.
+for repo in /srv/filees/repositories/*; do
+  [ -d "$repo" ] || continue
+  doas -u _filees-state /usr/local/bin/svnadmin verify "$repo" || exit 1
+done</code></pre>
+<ol start="4">
+<li>Change only <code>repositories.root</code> in <code>/etc/filees/server.json</code> to the new absolute path. Keep <code>results_root</code> and <code>deletion_archive_root</code> unchanged unless they are deliberately being migrated as separate state stores.</li>
+<li>Before admitting clients again, test one read-only SVN access and one controlled FileES operation. The short-lived server worker reads <code>server.json</code> per request, so there is no daemon to restart; the maintenance boundary is still required to prevent writes from landing in the old root during the switch.</li>
+<li>Keep the old root intact and read-only until backups and the acceptance check are complete. Rollback is simply restoring the old <code>repositories.root</code> value while the maintenance window is still active. Remove the old copy only under a separately approved retention policy.</li>
+</ol>
+<div class="warn"><strong>Never merge two live roots or use a filesystem move while clients are connected.</strong> A repository's UUID, hooks and FSFS metadata must move together. Copy-and-verify first, then make one configuration switch; this keeps rollback available.</div>
+<h4>Client recovery after SIGKILL or power loss</h4>
+<p>The client daemon recovers automatically on the next start:</p>
+<ol>
+<li>Loads the full staging cache from <code>cache.json</code>.</li>
+<li>Runs <code>svn cleanup</code> and (if no <code>missing</code> entries) <code>svn update</code>.</li>
+<li>Re-classifies every cached entry by <code>svn status</code>; entries already marked <code>normal</code> (accepted by server) are dropped without re-committing.</li>
+<li>Publishes the remaining entries in bounded batches.</li>
+</ol>
+<p>This idempotent reconciliation was verified in fault-injection tests (r91–r92) where a server accepted a commit but the daemon process was killed before it could update the working-copy metadata and clear the cache. The restart correctly published only the missing remaining entry.</p>
+<h4>Moved or missing working-copy root</h4>
+<p>Startup validates the root as an identity boundary before creating FileES metadata or starting a watcher. Missing <code>.svn</code>, a mismatched repository URL or an incompatible identity marker produces <code>interaction_required / working_copy_missing</code>; the daemon leaves that path untouched and runs only a lightweight recovery monitor. If the original working copy returns at the same path, the normal pipeline resumes automatically. If it was moved, use Settings <strong>Wskaż kopię</strong>: <code>repo.locate</code> verifies the existing root and durably rebinds the attachment without checkout. Local modifications are preserved. On Windows the active root is normally protected against out-of-band rename/delete by a non-delete-sharing directory handle, but this protection necessarily ends when FileES is stopped.</p>
+<h4>Conflict copies</h4>
+<p>Files in <code>!kolizje/</code> are preserved local versions from before a server-wins conflict resolution. Each subdirectory is timestamped (<code>YYYY.MM.DD@HH.MM_lokalne</code>) and contains the file contents plus a <code>.meta</code> JSON sidecar with original path, size, and timestamp. They can be inspected and manually merged. The directory is scanner-ignored and never committed.</p>
+<h4>Orphaned passport after network loss</h4>
+<p>If the daemon loses network connectivity while holding a passport, it does not publish changes after the local TTL expires. On reconnect, the passport manager checks the actual lock on the server: if the token still matches, the heartbeat resumes; if the token has been replaced (by a force-lock or server-side expiry), the passport is marked <code>lost</code>. The file is returned to read-only; no automatic force-lock or commit is attempted.</p>
+<h4>Service repository projection rebuild</h4>
+<p>The <code>clients/</code> subtree of the service repository is derived data. There is no general-purpose administrator command for a complete deterministic rebuild yet:</p>
+<pre><code>filees-admin projection rebuild   # not yet implemented</code></pre>
+<p>The canonical grant model is implemented despite the absence of that broad command. Activation writes the first client view in the same SVN revision as its canonical client record; an existing-realm join inherits the realm alias. Grant-authority rebuild regenerates repositories and reconciles the alias for active client views. A matching idempotent <code>realm.alias_claim</code> is also a bounded repair operation for older views that omitted <code>realm_alias</code>. Never edit a client's local cached <code>view.json</code> by hand: it is a server-owned projection and will be replaced by the next update.</p>
+<h2 id="ch4-monitoring">4.6 Monitoring</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Current diagnostics and recovery counters; broader metrics remain non-contractual.</span></div>
+<p>FileES does not yet expose a metrics endpoint. The following sources are available for monitoring:</p>
+<div class="table-wrap"><table>
+<tr><th>Source</th><th>Contents</th></tr>
+<tr><td><code>.filees/logs/errors.jsonl</code></td><td>Structured error log; codes, severity, hints, timestamps. Query with standard JSON tools.</td></tr>
+<tr><td><code>filees status</code></td><td>Live snapshot of all repository states, connectivity, pending counts, and local/HEAD revisions</td></tr>
+<tr><td><code>filees log N</code></td><td>Last N error log entries, newest first</td></tr>
+<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Combined newest-first activity and error snapshot; up to 12 aggregated rows in the tray and the full available snapshot in a native window</td></tr>
+<tr><td><code>/var/filees/onboarding/operations/</code></td><td>Operation bundle files; inspect state field with <code>jq</code></td></tr>
+<tr><td><code>/var/filees/onboarding/audit/</code></td><td>Timestamped audit events</td></tr>
+<tr><td><code>/var/filees/activation/records/</code></td><td>Staged, active, revoking, revoked and expired activation records</td></tr>
+<tr><td><code>/var/filees/activation/authorized_keys</code></td><td>Generated current installation-key access; never edit by hand</td></tr>
+<tr><td><code>commit.Service.RecoveryStats()</code></td><td>Exposed over IPC as the <code>recovery</code> field of <code>repo.status</code> (shown by <code>filees status</code> when non-zero, r405): resumed cache entries, entries skipped as already accepted, batches executed</td></tr>
+</table></div>
+<p>For CI or automated checks, <code>make verify</code> runs <code>go test ./...</code> (including race detector for key packages), <code>go vet ./...</code>, and a local SVN recovery smoke test (<code>scripts/svn-recovery-smoke.sh</code>) that creates a temporary <code>svnadmin</code> repository and does not require network access.</p>
+<h2 id="ch4-rotate">4.7 Repository Rotation: <code>filees-rotate</code></h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Explicit generation change, tested end-to-end on a real FSFS repository; deliberately not scheduled — running it is an operational decision.</span></div>
+<p><code>filees-rotate</code> performs an <strong>explicit generation change</strong> of a hot repository: the new generation gets a <em>new UUID</em> and starts at r1 = a complete dump of the old HEAD (versioned properties such as <code>svn:needs-lock</code> included), inherits <code>conf/</code> and <code>hooks/</code> explicitly, and is verified (<code>svnadmin verify</code> plus tree comparison) before an atomic swap. The old generation becomes a frozen, commit-blocked FSFS archive with a history manifest and a <code>meta.json</code> recording the UUID change — the signal for client reprovisioning, since existing working copies do not survive a generation change by design.</p>
+<pre><code># Evaluate triggers only (size after pack, or age of r1's svn:date):
+filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
+# Rotate when a trigger fires; thresholds are configurable and validated:
+filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
+# Bounded backup dump of the last N revisions before HEAD (never a
+# second full history copy; the frozen FSFS archive is canonical):
+filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
+<p>Safety contract: an flock excludes concurrent runs; repo and archive must share a filesystem (the swap is a rename); commits are blocked by a temporary <code>pre-commit</code> hook for the duration; rotation <em>refuses</em> to run while active locks (live edit passports) exist unless <code>-break-locks</code> is passed explicitly; every failure before the swap restores the repository as found.</p>
+<div class="warn"><strong>When to rotate at all:</strong> for the FileES append-only profile, repository depth does not degrade performance, and FSFS binary deltas plus rep-sharing keep growth tracking <em>unique</em> data, not revision count. Rotation pays off only as a retention/tiering tool (SVN has no <code>obliterate</code>) — see the verdict in <code>concepts/SVN_ROTATOR_CONCEPT_V2.md</code> §7 before scheduling anything.</div>
+<h2 id="ch4-realm-removal">4.8 Realm Removal and Recovery Archives</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Journal, OTP, executor, recovery manifest, key registry, the recovery SSH transport, the GUI flow with kit generation and the data-erasure request are implemented and exercised end to end on the reference VM: multiple activations, own and foreign grants, retention 0 and &gt;0, invariant checks (reports/REALM_REMOVAL_RECOVERY_E2E_2026-08-01.md).</span></div>
+<p>Removing a FileES share is realm-scoped and irreversible for live access. It is not the same as deactivating one installation — see the table in <a href="user-guide.html#ch2-gui">§2.6</a>. The design contract is <code>concepts/REALM_DETACH_AND_ERASURE_CONCEPT.md</code>.</p>
+<h4>Scope derivation</h4>
+<p>The worker derives the target realm from the authenticated session alone. No client payload names a realm, a repository or another installation. From the canonical service working copy the server takes a snapshot of: every active installation of that realm, every repository whose <code>owner_realm_id</code> is that realm (these are deleted), and every foreign repository the realm holds a grant on (the grant is withdrawn, the owner's repository is untouched). Scope derivation is fail-closed: an unreadable client projection aborts the request rather than silently narrowing it.</p>
+<h4>States</h4>
+<pre><code>awaiting_confirmation --OTP--&gt; deleting --&gt; recovery_ready
+                                    --&gt; revoke_all_clients --&gt; completed
+       |
+       +--&gt; expired      (TTL elapsed, or attempts exhausted)</code></pre>
+<p>The OTP is peppered and stored only as a hash, compared in constant time, single-use, attempt-limited and TTL-bound. Failure to confirm leaves grants, repositories and credentials untouched. Revoking the realm's installations is deliberately the <em>last</em> boundary: until that point an interrupted operation can still be resumed by an authenticated client of the same realm, and a resume never widens the snapshot or produces a second dump.</p>
+<div class="note"><strong>Mail delivery:</strong> the confirmation OTP is queued in a durable outbox and sent by <code>filees-mail</code>. The trigger that drains that outbox immediately after a control-plane action runs in the parent process after <code>proc</code>/<code>exec</code> privileges are dropped, and does not attempt to re-impose a blocked <code>unveil</code> — fixed and regression-tested natively on OpenBSD 7.9 (previously finding B in <code>reports/CODE_REVIEW_POST_AUDIT_r280_r318_2026-07-29.md</code>, closed per <code>todo-control/plan/EXECUTION_ORDER.md</code> §1). A missing OTP mail should still be treated as a delivery problem to investigate, not silently retried indefinitely.</div>
+<h4>Recovery archives</h4>
+<p>With positive retention the removal produces one verified SVN dump per owned repository, each with a SHA-256 digest, and a manifest describing them. The manifest is capability-neutral: <code>archive_id</code> is an opaque UUID and is never interpreted as a filesystem path. Two independent windows apply — <code>download_until</code>, after which archives can no longer be fetched, and <code>admin_grace_until</code>, after which the receipt itself is reaped. Retention of zero means no dump is written at all, and the interface must not promise recoverable data in that case.</p>
+<p>Access to those archives is the sole purpose of the <code>_filees-recovery</code> account. The client presents a per-operation Ed25519 recovery key; the separate <code>filees-recovery-authorize</code> helper — deliberately split from the session entry, so key lookup and session service are distinct executables — looks it up in the key registry, refuses it once <code>download_until</code> has passed, and emits a <code>restrict</code>ed authorized-key line whose forced command is bound to that one operation ID. The served protocol is exactly two verbs:</p>
+<pre><code>list &lt;operation_id&gt;
+get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
+<p>The entry runs read-only (<code>stdio rpath</code>) and never sees a private key. A recovery key grants no SVN access, no shell, no re-onboarding, and no access to any other operation or repository.</p>
+<div class="note"><strong>Not to be confused with <a href="#ch4-recovery">§4.5 Recovery</a></strong>, which is about recovering a damaged SVN repository on a running server. This section is about retrieving data after a realm has deliberately removed its share.</div>
+</div>
+<nav class="page-nav"><a href="install.html">← 3. Server install</a><a href="public-shares.html">5. Public shares →</a></nav>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-14 · source r494</span></footer>
+</main>
+</body>
+</html>

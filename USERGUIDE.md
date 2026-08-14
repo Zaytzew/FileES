@@ -1,7 +1,7 @@
 # FileES GUI — podręcznik użytkownika
 
 **Wersja:** 0.1.0  
-**Dotyczy:** `filees-gui` (aplikacja tray); daemon `filees` opisany jest osobno w README.md
+**Dotyczy:** `filees-gui` (aplikacja tray); daemon `filees` opisany jest osobno w README.md. Pełna instrukcja systemu jest dwujęzyczna: `manual/index.html` to przełącznik PL/EN, rozdziały są w `manual/assets/pl/` i `manual/assets/en/`. Na `manual.filees.space` htdocs to kopia `svn://cloud.atmprojekt.pl/SYNCSHARE/manual`. Strony `mandoc` serwera są w `docs/man/` (angielski).
 
 ---
 

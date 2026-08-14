@@ -1,0 +1,105 @@
+.Dd August 14, 2026
+.Dt FILEES 7
+.Os
+.Sh NAME
+.Nm filees
+.Nd OpenBSD file-synchronisation server: accounts, layout and tools
+.Sh DESCRIPTION
+.Nm
+is a file-centric synchronisation system.
+The desktop client keeps local folders in sync with Subversion repositories.
+The server target is OpenBSD.
+There is no resident FileES daemon and no FileES listener.
+The system
+.Xr sshd 8
+is the only privileged network endpoint.
+Public Shares, when enabled, are served by the host
+.Xr httpd 8
+through FastCGI.
+.Pp
+SVN is transport and storage.
+Revision-control semantics are secondary.
+On-disk files, atomic rename and short-lived forced commands are the
+operational contract.
+.Sh ACCOUNTS
+.Bl -tag -width _filees-recovery
+.It Sy _filees-state
+Owns
+.Pa /var/filees
+and most of
+.Pa /etc/filees .
+Administrative commands run as this user.
+.It Sy _filees-onboard
+Public bootstrap account.
+Forced command
+.Xr filees-bootstrap-entry 8 .
+.It Sy _filees-tunnel
+OTP account with one reverse tunnel.
+Forced command
+.Xr filees-entry 8 .
+.It Sy _filees-client
+Installation-key account for the service repository and control plane.
+.It Sy _filees-data
+Installation-key account for data-repository
+.Nm svnserve Fl t .
+This is the user in the canonical repository URL.
+.It Sy _filees-mobile
+Mobile append-only protocol.
+.It Sy _filees-recovery
+Capability-bound archive download after realm removal.
+.It Sy _filees-links
+Public FastCGI process.
+Owns the public cache.
+Has no SVN credentials.
+.It Sy _filees-access
+Group for set-id client, mobile and ownership-corrector binaries.
+.It Sy _filees-public
+Group for the authority socket shared with links.
+.El
+.Sh LAYOUT
+.Bl -tag -width Ds
+.It Pa /etc/filees/server.json
+Server toolchain configuration.
+See
+.Xr filees.conf 5 .
+.It Pa /etc/filees/public-links.json
+Public FastCGI configuration.
+See
+.Xr filees-public-links 5 .
+.It Pa /etc/filees/install.conf
+Signed updater configuration.
+See
+.Xr filees-install 8 .
+.It Pa /var/filees/onboarding
+Tickets, operation bundles and audit files.
+.It Pa /var/filees/activation
+Generated authorized_keys, authz, records and proofs.
+.It Pa /var/filees/service-repo , /var/filees/service-wc
+Canonical service repository and its working copy.
+.It Pa /var/filees/repositories
+FSFS data repositories, one directory per repository UUID.
+.It Pa /var/filees/repository-operations
+Durable worker results, deletion archives and Public Shares state.
+.El
+.Sh TOOLS
+Operator commands live in
+.Pa /usr/local/sbin :
+.Xr filees-admin 8 ,
+.Xr filees-operation 8 ,
+.Xr filees-install 8
+and
+.Xr filees-rotate 8 .
+.Pp
+Forced commands and short-lived workers live in
+.Pa /usr/local/libexec/filees .
+The OpenBSD integration script assigns set-id owners and modes.
+The generic
+.Pa install-server.sh
+writes ordinary modes and is not a complete upgrade on an already
+integrated host.
+.Sh SEE ALSO
+.Xr filees.conf 5 ,
+.Xr filees-public-links 5 ,
+.Xr filees-admin 8 ,
+.Xr filees-install 8 ,
+.Xr sshd 8

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Manual pages — FileES Manual</title>
+<link rel="alternate" hreflang="pl" href="../pl/man-pages.html"/>
+<link rel="alternate" hreflang="en" href="man-pages.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">split HTML · external CSS · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="#" class="is-current" lang="en" hreflang="en" aria-current="true">EN</a>
+<a href="../pl/man-pages.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Manual pages">
+<a href="index.html">Overview</a>
+<a href="architecture.html">1. Architecture</a>
+<a href="user-guide.html">2. User guide</a>
+<a href="install.html">3. Server install</a>
+<a href="administration.html">4. Administration</a>
+<a href="public-shares.html">5. Public shares</a>
+<a href="security.html">6. Security</a>
+<a href="man-pages.html" class="is-current">Man pages</a>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Page contents" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / this page</span>
+<h2>On this page</h2>
+</div>
+<ol>
+<li><a href="#man-style">Style</a></li>
+<li><a href="#man-install">Installation</a></li>
+<li><a href="#man-list">Catalogue</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1>OpenBSD manual pages</h1>
+<p>The server toolchain ships <code>mandoc</code> sources written in the same style as the rest of the operator documentation: one page per command or configuration file, filesystem paths as the contract, explicit non-goals, and <code>.Xr</code> cross-references. They are not a second product story. The HTML chapters explain why; the man pages tell an operator what to type.</p>
+<h2 id="man-style">Style</h2>
+<p>Sources live in <code>docs/man/man5</code>, <code>docs/man/man7</code> and <code>docs/man/man8</code>. They use mdoc macros (<code>.Dd</code>, <code>.Dt</code>, <code>.Nm</code>, <code>.Nd</code>, <code>.Sh</code>, <code>.Xr</code>). English is canonical, matching this HTML manual and the binaries' diagnostic text. Section 8 is used for every server command, including forced-command dispatchers, because none of them is a general user utility.</p>
+<pre><code>mandoc -T lint docs/man/man8/filees-admin.8
+man -l docs/man/man7/filees.7</code></pre>
+<h2 id="man-install">Installation</h2>
+<p><code>packaging/build-server.sh</code> copies the pages into the bundle as <code>share/man/manN/</code>. <code>install-server.sh</code> installs them under <code>$PREFIX/man</code> (default <code>/usr/local/man</code>). They are not currently a FILEES-BIN payload; signed <code>filees-install</code> still manages the 16 binaries only. After a bootstrap:</p>
+<pre><code>man filees
+man 5 filees.conf
+man 8 filees-admin</code></pre>
+<h2 id="man-list">Catalogue</h2>
+<ul class="man-index">
+<li><code>filees(7)</code> — server overview, accounts, layout</li>
+<li><code>filees.conf(5)</code> — <code>/etc/filees/server.json</code></li>
+<li><code>filees-public-links(5)</code> — <code>/etc/filees/public-links.json</code></li>
+<li><code>filees-admin(8)</code> — tickets, revoke, erasure closure</li>
+<li><code>filees-install(8)</code> — signed upgrade from FILEES-BIN</li>
+<li><code>filees-operation(8)</code> — claim recovery and expiry</li>
+<li><code>filees-mail(8)</code> — one-shot SMTP and public-loop</li>
+<li><code>filees-onboard(8)</code> — consume an invitation</li>
+<li><code>filees-bootstrap-entry(8)</code> — public forced command</li>
+<li><code>filees-entry(8)</code> — OTP tunnel forced command</li>
+<li><code>filees-client-entry(8)</code> — control and svnserve dispatcher</li>
+<li><code>filees-worker(8)</code> — one authenticated action</li>
+<li><code>filees-service-wc-corrector(8)</code> — repair service-WC ownership</li>
+<li><code>filees-ssh-auth(8)</code> — BSD Auth OTP style</li>
+<li><code>filees-rotate(8)</code> — explicit FSFS generation change</li>
+<li><code>filees-public-authority(8)</code> — Public Shares backchannel</li>
+<li><code>filees-links(8)</code> — public FastCGI surface</li>
+<li><code>filees-mobile-v1(8)</code> — mobile append-only entry</li>
+<li><code>filees-recovery-entry(8)</code> — realm-removal archive download</li>
+</ul>
+<nav class="page-nav">
+<a href="security.html">← 6. Security</a>
+<span></span>
+</nav>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-14 · source r494</span></footer>
+</main>
+</body>
+</html>

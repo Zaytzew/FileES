@@ -124,8 +124,20 @@ ownership and modes preserved, verify the copy, then change only
 `repositories.root` in `/etc/filees/server.json`. Keep the original root
 read-only until acceptance and backup checks complete, so rollback remains a
 configuration change. Do not use a live move or allow writes to both roots.
-The full OpenBSD procedure is in the administrative recovery section of
-`manual-filees.html`.
+The full OpenBSD procedure is in the HTML manual
+(`manual/assets/en/install.html` and `manual/assets/en/administration.html`)
+and in the OpenBSD manual pages shipped with this bundle
+(`man filees`, `man filees.conf`, `man filees-admin`).
+The HTML set is the Subversion subtree `^/manual`. On
+`manual.filees.space` the document root is that working copy:
+
+```text
+svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs
+svn update /var/www/htdocs
+```
+
+Chapters live under the existing `/assets/*` allowlist. Do not check the
+tree out as `/var/www/htdocs/manual` and do not reload `httpd`.
 
 ## OpenBSD upgrade boundary
 

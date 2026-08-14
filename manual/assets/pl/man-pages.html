@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Strony man — podręcznik FileES</title>
+<link rel="alternate" hreflang="en" href="../en/man-pages.html"/>
+<link rel="alternate" hreflang="pl" href="man-pages.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">dokumentacja systemu FileES</span>
+</div>
+</div>
+<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
+<nav class="lang-switch" aria-label="Język">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/man-pages.html" lang="en" hreflang="en">EN</a>
+<a href="man-pages.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<a href="index.html">Przegląd</a>
+<a href="architecture.html">1. Architektura</a>
+<a href="user-guide.html">2. Przewodnik</a>
+<a href="install.html">3. Instalacja</a>
+<a href="administration.html">4. Administracja</a>
+<a href="public-shares.html">5. Udziały publiczne</a>
+<a href="security.html">6. Bezpieczeństwo</a>
+<a href="man-pages.html" class="is-current">Strony man</a>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Na tej stronie" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / ta strona</span>
+<h2>Na tej stronie</h2>
+</div>
+<ol>
+<li><a href="#man-style">Styl</a></li>
+<li><a href="#man-install">Instalacja</a></li>
+<li><a href="#man-list">Katalog</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1>Strony podręcznika OpenBSD</h1>
+<p>Zestaw narzędzi serwera dostarcza źródła <code>mandoc</code> napisane w tym samym stylu co reszta dokumentacji operatora: jedna strona na polecenie albo plik konfiguracji, ścieżki systemu plików jako kontrakt, jawne nie-cele oraz odsyłacze <code>.Xr</code>. To nie jest druga opowieść produktowa. Rozdziały HTML tłumaczą dlaczego; strony man mówią operatorowi, co wpisać.</p>
+<h2 id="man-style">Styl</h2>
+<p>Źródła leżą w <code>docs/man/man5</code>, <code>docs/man/man7</code> i <code>docs/man/man8</code>. Używają makr mdoc (<code>.Dd</code>, <code>.Dt</code>, <code>.Nm</code>, <code>.Nd</code>, <code>.Sh</code>, <code>.Xr</code>). Kanoniczny jest angielski, zgodnie z tym podręcznikiem HTML i tekstami diagnostycznymi binarek. Sekcja 8 jest używana dla każdego polecenia serwera, w tym dyspozytorów wymuszonych poleceń, bo żadne nie jest ogólnym narzędziem użytkownika.</p>
+<pre><code>mandoc -T lint docs/man/man8/filees-admin.8
+man -l docs/man/man7/filees.7</code></pre>
+<h2 id="man-install">Instalacja</h2>
+<p><code>packaging/build-server.sh</code> kopiuje strony do bundla jako <code>share/man/manN/</code>. <code>install-server.sh</code> instaluje je pod <code>$PREFIX/man</code> (domyślnie <code>/usr/local/man</code>). Nie są obecnie ładunkiem FILEES-BIN; podpisane <code>filees-install</code> nadal zarządza wyłącznie 16 binarkami. Po bootstrapie:</p>
+<pre><code>man filees
+man 5 filees.conf
+man 8 filees-admin</code></pre>
+<h2 id="man-list">Katalog</h2>
+<ul class="man-index">
+<li><code>filees(7)</code> — przegląd serwera, konta, układ</li>
+<li><code>filees.conf(5)</code> — <code>/etc/filees/server.json</code></li>
+<li><code>filees-public-links(5)</code> — <code>/etc/filees/public-links.json</code></li>
+<li><code>filees-admin(8)</code> — ticket, odwołanie, zamknięcie wymazania</li>
+<li><code>filees-install(8)</code> — podpisana aktualizacja z FILEES-BIN</li>
+<li><code>filees-operation(8)</code> — odtwarzanie claimów i wygaszanie</li>
+<li><code>filees-mail(8)</code> — jednorazowy SMTP i public-loop</li>
+<li><code>filees-onboard(8)</code> — zużycie zaproszenia</li>
+<li><code>filees-bootstrap-entry(8)</code> — publiczne wymuszone polecenie</li>
+<li><code>filees-entry(8)</code> — wymuszone polecenie tunelu OTP</li>
+<li><code>filees-client-entry(8)</code> — dyspozytor control i svnserve</li>
+<li><code>filees-worker(8)</code> — jedna uwierzytelniona akcja</li>
+<li><code>filees-service-wc-corrector(8)</code> — naprawa własności service-WC</li>
+<li><code>filees-ssh-auth(8)</code> — styl OTP BSD Auth</li>
+<li><code>filees-rotate(8)</code> — jawna zmiana generacji FSFS</li>
+<li><code>filees-public-authority(8)</code> — backchannel udziałów publicznych</li>
+<li><code>filees-links(8)</code> — publiczna powierzchnia FastCGI</li>
+<li><code>filees-mobile-v1(8)</code> — mobilne wejście wyłącznie dołączające</li>
+<li><code>filees-recovery-entry(8)</code> — pobieranie archiwum po usunięciu strefy</li>
+</ul>
+<nav class="page-nav">
+<a href="security.html">← 6. Bezpieczeństwo</a>
+<span></span>
+</nav>
+</div>
+</div>
+<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-14 · źródło r494</span></footer>
+</main>
+</body>
+</html>

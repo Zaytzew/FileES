@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>4. Administracja — podręcznik FileES</title>
+<link rel="alternate" hreflang="en" href="../en/administration.html"/>
+<link rel="alternate" hreflang="pl" href="administration.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">dokumentacja systemu FileES</span>
+</div>
+</div>
+<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
+<nav class="lang-switch" aria-label="Język">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/administration.html" lang="en" hreflang="en">EN</a>
+<a href="administration.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<a href="index.html">Przegląd</a>
+<a href="architecture.html">1. Architektura</a>
+<a href="user-guide.html">2. Przewodnik</a>
+<a href="install.html">3. Instalacja</a>
+<a href="administration.html" class="is-current">4. Administracja</a>
+<a href="public-shares.html">5. Udziały publiczne</a>
+<a href="security.html">6. Bezpieczeństwo</a>
+<a href="man-pages.html">Strony man</a>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Na tej stronie" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / ta strona</span>
+<h2>Na tej stronie</h2>
+</div>
+<ol>
+<li><a href="#ch4-admin">filees-admin</a></li>
+<li><a href="#ch4-operation">filees-operation</a></li>
+<li><a href="#ch4-audit">Dziennik audytu</a></li>
+<li><a href="#ch4-mail">Outbox pocztowy</a></li>
+<li><a href="#ch4-recovery">Odtwarzanie</a></li>
+<li><a href="#ch4-monitoring">Monitoring</a></li>
+<li><a href="#ch4-rotate">filees-rotate</a></li>
+<li><a href="#ch4-realm-removal">Usunięcie strefy</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1 id="ch4">Rozdział 4: Administracja</h1><div class="chapter-content">
+<h2 id="ch4-admin">4.1 <code>filees-admin</code></h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span class="status status-planned">Szersze polecenia planowane</span><span>Istnieją ticket, inspekcja operacji i fail-closed odwołanie klienta.</span></div>
+<p><code>filees-admin</code> jest administracyjnym narzędziem wiersza poleceń. Musi być uruchamiane jako <code>_filees-state</code> (np. przez <code>doas -u _filees-state</code>), żeby spełnić swój profil <code>pledge</code>/<code>unveil</code>. Zapisuje strukturalny JSON na stdout, a diagnostykę na stderr. Kody wyjścia są z zakresu <code>sysexits</code>:</p>
+<div class="table-wrap"><table>
+<tr><th>Kod wyjścia</th><th>Stała</th><th>Znaczenie</th></tr>
+<tr><td>0</td><td><code>ExitOK</code></td><td>Sukces</td></tr>
+<tr><td>64</td><td><code>ExitUsage</code></td><td>Błędne argumenty</td></tr>
+<tr><td>65</td><td><code>ExitData</code></td><td>Błąd danych wejściowych</td></tr>
+<tr><td>69</td><td><code>ExitUnavailable</code></td><td>Zasób niedostępny (ticket zajęty, port wyczerpany)</td></tr>
+<tr><td>70</td><td><code>ExitSoftware</code></td><td>Wewnętrzny błąd logiki</td></tr>
+<tr><td>75</td><td><code>ExitTempFail</code></td><td>Tymczasowa awaria (spróbuj później; używane przez filees-mail przy SMTP 4xx)</td></tr>
+<tr><td>78</td><td><code>ExitConfig</code></td><td>Błąd konfiguracji</td></tr>
+</table></div>
+<h4>Zarządzanie ticketami</h4>
+<pre><code>filees-admin ticket create &lt;mailbox&gt; [--join-realm-alias &lt;alias&gt;] [--ttl 24h]
+filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;
+filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
+filees-admin ticket list</code></pre>
+<p>Ticket to jednorazowe upoważnienie administratora na jedno zaproszenie e-mail. Musi zostać utworzony z efektywnym użytkownikiem <code>_filees-state</code>; utworzenie go jako root daje prywatny plik należący do roota, którego wejście onboardingu z set-id celowo nie potrafi odczytać. Bez <code>--join-realm-alias</code> upoważnia do utworzenia nowej strefy. Z flagą serwer od razu rozwiązuje niezmienny alias i zapisuje zatwierdzony ID istniejącej strefy w polityce ticketu; klient nigdy tego ID nie przesyła. Nieużywany ticket z błędną polityką odwołaj, zamiast go edytować. Plik ticketu jest nazwany <code>sha256(canonical_email)</code>, więc nazwa nie ujawnia adresu. <code>create</code> zapisuje ticket z TTL i od razu wysyła zaproszenie; <code>resend</code> zastępuje nieudane capability dostawy nowym, bez zmiany odbiorcy ani TTL; <code>revoke</code> je usuwa. Gdy nieprzezroczyste capability zaproszenia zostanie przejęte przez <code>filees-onboard take</code>, ticket fizycznie znika i zastępuje go bundle operacji.</p>
+<h4>Inspekcja operacji</h4>
+<pre><code>filees-admin operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
+<p>Pokazuje bieżący stan i ślad audytu operacji onboardingu. Jeśli operacja jest w stanie <code>awaiting_tunnel</code> po upływie TTL, OTP jest wyczerpany albo wygasły, a rekord można posprzątać przez <code>filees-operation recover</code>.</p>
+<h4>Odwołanie klienta</h4>
+<pre><code>filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "one-line reason"</code></pre>
+<p>Odwołanie najpierw zapisuje trwały rekord <code>revoking</code> i usuwa klienta z wygenerowanego dostępu runtime SSH/SVN. Dopiero potem zatwierdza rekord odwołanego klienta i zdarzenie audytu w repozytorium usługowym. Identyczne ponowienie jest idempotentne; inny powód jest odrzucany.</p>
+<h4>Odwołanie strefy i przeniesienie własności repozytorium</h4>
+<pre><code>filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-line reason"
+filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;</code></pre>
+<p><code>client revoke-realm</code> odwołuje w jednym wywołaniu każdą instalację należącą do danej strefy i zgłasza dotknięte <code>client_id</code>; używa tej samej sekwencji fail-closed <code>revoking</code>, a potem zatwierdzenia, co odwołanie pojedynczego klienta. <code>repo transfer-owner</code> zmienia <code>owner_realm_id</code> repozytorium i regeneruje data-authz przez <code>repoworker.ServicePublisher</code>; nie zmienia istniejących grantów wydanych przez poprzedniego właściciela.</p>
+<h4>Polecenia, które pozostają poza tym narzędziem</h4>
+<p>Tworzenie i podłączanie repozytoriów, granty, udziały publiczne, load-dump i usunięcie strefy to operacje właściciela na pulpitowej płaszczyźnie sterowania, a nie dodatkowe czasowniki <code>filees-admin</code>. Poniższa szersza konsola jest nadal wyspecyfikowana i niezaimplementowana:</p>
+<pre><code>filees-admin realm create|inspect|list|disable
+filees-admin client inspect|list|disable
+filees-admin repo inspect|list|disable|reconcile
+filees-admin grant create|change|revoke
+filees-admin invitation create|revoke|inspect
+filees-admin operation inspect|abort|retry
+filees-admin audit list|verify
+filees-admin projection rebuild|verify</code></pre>
+<h2 id="ch4-operation">4.2 <code>filees-operation</code></h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odtwarzanie claimów, wygaszanie niedokończonych operacji i sprzątanie aktywacji są idempotentne.</span></div>
+<pre><code>filees-operation recover
+filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
+<p><code>filees-operation recover</code> skanuje katalog operacji w poszukiwaniu plików claim (<code>.claim-*.json</code>) i je dokańcza. Claim może mieć dwie formy:</p>
+<ul>
+<li><strong>Claim-as-ticket</strong> — ticket został przemianowany na <code>.claim-&lt;req_id&gt;.json</code>, ale nie zastąpiony jeszcze bundlem. Odtwarzanie generuje bundle i wykonuje końcowe przemianowanie.</li>
+<li><strong>Claim-as-bundle</strong> — bundle został zapisany w pliku claim, ale końcowe przemianowanie na <code>&lt;req_id&gt;.json</code> nie doszło do skutku. Odtwarzanie wykonuje wyłącznie rename.</li>
+</ul>
+<p>Odtwarzanie wygasza też niedokończone operacje, których TTL upłynął, redaguje ich OTP i adres dostawy, usuwa wygasłe przygotowane klucze z wygenerowanego dostępu SSH/SVN oraz wznawia potwierdzone dzienniki usunięcia strefy po odwołaniu wszystkich poświadczeń klientów. Aktywni klienci nie są wygaszani przez TTL onboardingu. Odtwarzanie jest idempotentne i bezpieczne po nieoczekiwanej awarii systemu. Na OpenBSD musi działać jako prywatny właściciel stanu: <code>doas -u _filees-state filees-operation recover</code>.</p>
+<h2 id="ch4-audit">4.3 Dziennik audytu</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Istnieją audyt onboardingu i strukturalne logi błędów klienta.</span></div>
+<p>Serwerowy dziennik audytu jest przechowywany jako osobne pliki JSON w podkatalogu <code>audit/</code> korzenia stanu (<code>/var/filees/onboarding/audit/</code>). Każdy plik zdarzenia ma nazwę <code>&lt;timestamp&gt;-&lt;object_type&gt;-&lt;event_type&gt;.json</code> i jest zgodny ze schematem <code>filees.onboarding-audit/v1</code>:</p>
+<pre><code>{
+  "schema":       "filees.onboarding-audit/v1",
+  "event":        "tunnel_session_started",
+  "actor":        "_filees-state",
+  "object_type":  "operation",
+  "object_id":    "&lt;operation_id&gt;",
+  "operation_id": "&lt;operation_id&gt;",
+  "at":           "2026-07-16T09:15:02Z"
+}</code></pre>
+<p>Sam bundle operacji zawiera wbudowaną tablicę audytu (<code>Audit []AuditEvent</code>) z pełną historią tej operacji. Historia SVN repozytorium usługowego daje dodatkową, niezależną warstwę dowodową dla zdarzeń audytu tego repozytorium.</p>
+<p>Rejestrowane typy zdarzeń audytu onboardingu to m.in.: <code>ticket_created</code>, <code>ticket_revoked</code>, <code>operation_claimed</code>, <code>otp_attempt_failed</code>, <code>otp_verified</code>, <code>otp_exhausted</code>, <code>tunnel_session_started</code>, <code>helper_announced</code>, <code>helper_verified</code>, <code>identity_generated</code>, <code>access_staged</code>, <code>possession_verified</code> i <code>client_activated</code>. Repozytorium usługowe niezależnie zapisuje zdarzenia <code>client_activated</code> i <code>client_revoked</code>.</p>
+<p>Kliencki dziennik błędów jest w <code>&lt;wc&gt;/.filees/logs/errors.jsonl</code> jako JSON Lines:</p>
+<pre><code>{"ts":"2026-07-16T10:00:00Z","scope":"commit:projectA","code":"NET-4007",
+ "severity":"WARN","hint":"RETRY_BACKOFF","msg":"Network unreachable — retrying"}</code></pre>
+<p>Najnowsze wpisy można obejrzeć poleceniem:</p>
+<pre><code>filees log 50</code></pre>
+<h2 id="ch4-mail">4.4 Outbox pocztowy</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Jednorazowy outbox SMTP, składanie publicznego bootstrapu, redakcja i semantyka ponowień.</span></div>
+<p>Publicznym wymuszonym poleceniem SSH jest <code>filees-bootstrap-entry</code>. Atomowo tworzy albo wznawia operację onboardingu, a potem wywołuje dokładnie jedną próbę <code>filees-mail send</code>. Uwierzytelnieni workerzy płaszczyzny sterowania używają tego samego jednorazowego triggera dla poczty onboardingu, usunięcia strefy i wymazania danych. Udziały publiczne dodatkowo potrzebują dostawy wywołanej nieuwierzytelnionym żądaniem przeglądarki: <code>filees-public-authority</code> nadzoruje więc izolowane dziecko <code>filees-mail public-loop</code>. Dziecko odpytuje wyłącznie trwały outbox udziałów publicznych, samo ładuje sekret SMTP i jest wymaganą częścią zdrowia authority; proces authority nigdy tego sekretu nie otrzymuje. Przy sygnale stopu usługi authority zamyka serwer, kończy dziecko pocztowe i czeka na nie przed wyjściem, więc restart rc.d nie może zostawić osieroconego pollera.</p>
+<p>Maszyna stanów dostawy outboxu:</p>
+<pre><code>pending  -&gt;  sending  -&gt;  queued    (250 after DATA; OTP and address redacted)
+                      -&gt;  pending   (4xx temporary failure; OTP preserved)
+                      -&gt;  failed    (5xx permanent failure; OTP redacted)</code></pre>
+<p>Przestarzały wpis <code>sending</code> (z poprzedniej próby, która padła bez zapisania wyniku) jest przejmowany z nowym ID próby przed ponowieniem. Stabilny nagłówek <code>Message-ID</code> (wyprowadzony z <code>CreatedAt</code>, nie z <code>time.Now()</code>) czyni ponowienie bezpiecznym, gdy smarthost przyjął wiadomość, ale odpowiedź zaginęła.</p>
+<p>Ponowienie po tymczasowej awarii:</p>
+<pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
+<p>Kod wyjścia 75 (<code>ExitTempFail</code>) oznacza, że smarthost zwrócił 4xx; OTP jest zachowany i polecenie można ponowić. Kod wyjścia 0 oznacza przyjęcie wiadomości (stan <code>queued</code>). Trwała awaria (5xx) ustawia stan na <code>failed</code> i redaguje OTP; potrzebna jest interwencja ręczna.</p>
+<h2 id="ch4-recovery">4.5 Odtwarzanie</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odtwarzanie claimów na serwerze i uzgadnianie po restarcie klienta są pokryte wstrzykiwaniem błędów.</span></div>
+<h4>Przerwany claim onboardingu</h4>
+<pre><code>doas -u _filees-state filees-operation recover</code></pre>
+<p>Polecenie dokańcza każdy plik <code>.claim-*</code>, wygasza niedokończone operacje po TTL, redaguje ich materiał OTP i usuwa wygasłe przygotowanie aktywacji. Aktywni klienci pozostają aktywni. Bezpieczne do wielokrotnego uruchamiania.</p>
+<h4>Usunięcie strefy po odwołaniu klientów</h4>
+<p>Potwierdzony dziennik usunięcia strefy należy do serwera. Jeśli awaria nastąpi po <code>revoke_all_clients</code>, nie zostaje żadne poświadczenie klienta, którym można wznowić żądanie. To samo jawne polecenie <code>filees-operation recover</code> wylicza stany <code>deleting</code>, <code>recovery_ready</code> i <code>revoke_all_clients</code> pod blokadą workera repozytoriów i domyka ich idempotentne granice. To akcja administracyjna / startowa, nie odpytywanie ani usługa cykliczna.</p>
+<h4>Zamknięcie retencji wymazania danych</h4>
+<p>Opcjonalne żądanie wymazania danych powstaje dopiero po potwierdzeniu OTP usunięcia strefy. Po usunięciu aktywnych repozytoriów, grantów i aktywacji klientów czeka w <code>awaiting_backup_retention</code>. Serwer nie twierdzi, że automatycznie czyści kopie zapasowe. Gdy operator zweryfikuje wynik retencji, zamknij je jawnie:</p>
+<pre><code>doas -u _filees-state filees-admin erasure complete \
+  --operation-id &lt;realm_removal_uuid&gt;
+
+# Jeśli polityka albo retencja prawna nadal wymaga rekordów:
+doas -u _filees-state filees-admin erasure complete \
+  --operation-id &lt;realm_removal_uuid&gt; --partially-retained</code></pre>
+<p>Zamknięcie tworzy jedno końcowe zadanie pocztowe. Przyjęcie SMTP albo trwała awaria czyści adres powiadomienia. Maksymalne okno dokończenia pokazywane przez klienta pochodzi z <code>repositories.data_erasure_max_days</code> (domyślnie 90), nie z kodu GUI.</p>
+<h4>Przeniesienie korzenia składowania repozytoriów danych</h4>
+<p><code>repositories.root</code> jest bezwzględnym, wybranym przez administratora korzeniem składowania FSFS; <code>/var/filees/repositories</code> to tylko wartość domyślna. Może wskazywać na osobny system plików, na przykład <code>/srv/filees/repositories</code>. To migracja utrzymaniowa, nie zmiana konfiguracji na żywo: każde repozytorium danych jest katalogiem pod tym korzeniem, nazwanym UUID-em repozytorium.</p>
+<ol>
+<li>Zaplanuj wyłączne okno serwisowe. Zatrzymaj wszystkie demony klientów FileES, które mogą pisać na ten serwer, nie wydawaj żądań tworzenia ani usuwania repozytoriów i czekaj, aż nie będzie aktywnych procesów <code>svnserve -t</code>, <code>filees-worker</code> ani <code>filees-client-entry</code> dla tej instalacji.</li>
+<li>Zweryfikuj źródło przed kopiowaniem. Uruchom <code>svnadmin verify</code> dla każdego bezpośredniego repozytorium-dziecka; każdą pomyłkę weryfikacji rozwiąż przed dalszymi krokami.</li>
+<li>Utwórz miejsce docelowe na docelowym montowaniu, przechodnie i zapisywalne wyłącznie dla <code>_filees-state</code>, a następnie kopiuj jako root, dopóki okno serwisowe obowiązuje. Na przykład:</li>
+</ol>
+<pre><code>doas install -d -o _filees-state -g _filees-state -m 0750 /srv/filees
+doas install -d -o _filees-state -g _filees-state -m 0700 /srv/filees/repositories
+
+# Zweryfikuj źródłowe repozytoria przed kopią.
+for repo in /var/filees/repositories/*; do
+  [ -d "$repo" ] || continue
+  doas -u _filees-state /usr/local/bin/svnadmin verify "$repo" || exit 1
+done
+
+# Zachowaj kompletne drzewa katalogów FSFS, własność i tryby.
+doas cp -Rp /var/filees/repositories/. /srv/filees/repositories/
+
+# Zweryfikuj skopiowane repozytoria przed przełączeniem konfiguracji.
+for repo in /srv/filees/repositories/*; do
+  [ -d "$repo" ] || continue
+  doas -u _filees-state /usr/local/bin/svnadmin verify "$repo" || exit 1
+done</code></pre>
+<ol start="4">
+<li>W <code>/etc/filees/server.json</code> zmień wyłącznie <code>repositories.root</code> na nową ścieżkę bezwzględną. <code>results_root</code> i <code>deletion_archive_root</code> zostaw bez zmian, chyba że świadomie migrujesz je jako osobne magazyny stanu.</li>
+<li>Zanim znów wpuścisz klientów, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną operację FileES. Krótkożyjący worker serwera czyta <code>server.json</code> przy każdym żądaniu, więc nie ma demona do restartu; granica serwisowa nadal jest wymagana, żeby zapisy nie wylądowały w starym korzeniu podczas przełączenia.</li>
+<li>Stary korzeń zostaw nietknięty i tylko do odczytu, aż kopie zapasowe i odbiór się skończą. Wycofanie to po prostu przywrócenie starej wartości <code>repositories.root</code>, dopóki okno serwisowe jeszcze trwa. Starą kopię usuń dopiero w ramach osobno zatwierdzonej polityki retencji.</li>
+</ol>
+<div class="warn"><strong>Nigdy nie scalaj dwóch żywych korzeni i nie używaj przeniesienia systemu plików, gdy klienci są podłączeni.</strong> UUID repozytorium, hooki i metadane FSFS muszą iść razem. Najpierw kopiuj i weryfikuj, potem wykonaj jedno przełączenie konfiguracji; to zostawia dostępne wycofanie.</div>
+<h4>Odtwarzanie klienta po SIGKILL lub zaniku zasilania</h4>
+<p>Demon klienta odtwarza się automatycznie przy następnym starcie:</p>
+<ol>
+<li>Ładuje pełny cache stagingu z <code>cache.json</code>.</li>
+<li>Uruchamia <code>svn cleanup</code> oraz (gdy nie ma wpisów <code>missing</code>) <code>svn update</code>.</li>
+<li>Ponownie klasyfikuje każdy wpis cache według <code>svn status</code>; wpisy już oznaczone <code>normal</code> (przyjęte przez serwer) są odrzucane bez ponownego commitu.</li>
+<li>Publikuje pozostałe wpisy w ograniczonych partiach.</li>
+</ol>
+<p>To idempotentne uzgadnianie zweryfikowano w testach wstrzykiwania błędów (r91–r92), w których serwer przyjął commit, ale proces demona został zabity, zanim zdążył zaktualizować metadane kopii roboczej i wyczyścić cache. Restart poprawnie opublikował wyłącznie brakujący pozostały wpis.</p>
+<h4>Przeniesiony lub brakujący korzeń kopii roboczej</h4>
+<p>Start waliduje korzeń jako granicę tożsamości, zanim utworzy metadane FileES albo uruchomi watcher. Brak <code>.svn</code>, niezgodny URL repozytorium albo niekompatybilny znacznik tożsamości dają <code>interaction_required / working_copy_missing</code>; demon zostawia tę ścieżkę nietkniętą i uruchamia tylko lekki monitor odtwarzania. Jeśli oryginalna kopia robocza wróci pod tę samą ścieżkę, normalny potok wznawia się automatycznie. Jeśli została przeniesiona, użyj w Ustawieniach <strong>Wskaż kopię</strong>: <code>repo.locate</code> weryfikuje istniejący korzeń i trwale wiąże podłączenie bez checkoutu. Lokalne modyfikacje są zachowane. Na Windows aktywny korzeń jest zwykle chroniony przed pozapasmowym rename/delete przez uchwyt katalogu bez współdzielenia usuwania, ale ta ochrona kończy się z konieczności, gdy FileES jest zatrzymany.</p>
+<h4>Kopie kolizji</h4>
+<p>Pliki w <code>!kolizje/</code> to zachowane wersje lokalne sprzed rozstrzygnięcia kolizji na korzyść serwera. Każdy podkatalog ma znacznik czasu (<code>YYYY.MM.DD@HH.MM_lokalne</code>) i zawiera treść plików oraz sidecar JSON <code>.meta</code> z oryginalną ścieżką, rozmiarem i znacznikiem czasu. Można je oglądać i scalać ręcznie. Katalog jest ignorowany przez skaner i nigdy nie jest commitowany.</p>
+<h4>Osierocony paszport po utracie sieci</h4>
+<p>Jeśli demon traci łączność sieciową, trzymając paszport, nie publikuje zmian po wygaśnięciu lokalnego TTL. Po ponownym połączeniu menedżer paszportów sprawdza rzeczywisty lock na serwerze: jeśli token nadal się zgadza, heartbeat wraca; jeśli token został zastąpiony (force-lock albo wygaśnięcie po stronie serwera), paszport jest oznaczany jako <code>lost</code>. Plik wraca do trybu tylko do odczytu; nie ma automatycznego force-lock ani commitu.</p>
+<h4>Odbudowa projekcji repozytorium usługowego</h4>
+<p>Poddrzewo <code>clients/</code> repozytorium usługowego to dane pochodne. Nie ma jeszcze ogólnego polecenia administratora do pełnej deterministycznej odbudowy:</p>
+<pre><code>filees-admin projection rebuild   # jeszcze niezaimplementowane</code></pre>
+<p>Kanoniczny model grantów jest zaimplementowany mimo braku tego szerokiego polecenia. Aktywacja zapisuje pierwszy widok klienta w tej samej rewizji SVN co kanoniczny rekord klienta; dołączenie do istniejącej strefy dziedziczy alias strefy. Odbudowa grant-authority regeneruje repozytoria i uzgadnia alias dla aktywnych widoków klientów. Pasujące, idempotentne <code>realm.alias_claim</code> jest też ograniczoną operacją naprawy starszych widoków, które pominęły <code>realm_alias</code>. Nigdy nie edytuj ręcznie lokalnego cache <code>view.json</code> klienta: to projekcja należąca do serwera i następna aktualizacja ją zastąpi.</p>
+<h2 id="ch4-monitoring">4.6 Monitoring</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Bieżąca diagnostyka i liczniki odtwarzania; szersze metryki pozostają poza kontraktem.</span></div>
+<p>FileES nie udostępnia jeszcze endpointu metryk. Do monitorowania służą następujące źródła:</p>
+<div class="table-wrap"><table>
+<tr><th>Źródło</th><th>Zawartość</th></tr>
+<tr><td><code>.filees/logs/errors.jsonl</code></td><td>Strukturalny dziennik błędów; kody, ważność, wskazówki, znaczniki czasu. Odpytuj standardowymi narzędziami JSON.</td></tr>
+<tr><td><code>filees status</code></td><td>Żywy zrzut stanów wszystkich repozytoriów, łączności, liczb oczekujących oraz rewizji lokalnych/HEAD</td></tr>
+<tr><td><code>filees log N</code></td><td>Ostatnie N wpisów dziennika błędów, od najnowszego</td></tr>
+<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Połączony zrzut aktywności i błędów od najnowszego; do 12 zagregowanych wierszy w zasobniku i pełny dostępny zrzut w natywnym oknie</td></tr>
+<tr><td><code>/var/filees/onboarding/operations/</code></td><td>Pliki bundle operacji; pole stanu oglądaj przez <code>jq</code></td></tr>
+<tr><td><code>/var/filees/onboarding/audit/</code></td><td>Zdarzenia audytu ze znacznikiem czasu</td></tr>
+<tr><td><code>/var/filees/activation/records/</code></td><td>Rekordy aktywacji: staged, active, revoking, revoked i expired</td></tr>
+<tr><td><code>/var/filees/activation/authorized_keys</code></td><td>Wygenerowany bieżący dostęp klucza instalacji; nigdy nie edytuj ręcznie</td></tr>
+<tr><td><code>commit.Service.RecoveryStats()</code></td><td>Udostępniane przez IPC jako pole <code>recovery</code> w <code>repo.status</code> (pokazywane przez <code>filees status</code>, gdy niezerowe, r405): wznowione wpisy cache, wpisy pominięte jako już przyjęte, wykonane partie</td></tr>
+</table></div>
+<p>Dla CI albo automatycznych sprawdzeń <code>make verify</code> uruchamia <code>go test ./...</code> (w tym detektor wyścigów dla kluczowych pakietów), <code>go vet ./...</code> oraz lokalny test dymny odtwarzania SVN (<code>scripts/svn-recovery-smoke.sh</code>), który tworzy tymczasowe repozytorium <code>svnadmin</code> i nie wymaga dostępu do sieci.</p>
+<h2 id="ch4-rotate">4.7 Rotacja repozytorium: <code>filees-rotate</code></h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Jawna zmiana generacji, przetestowana end-to-end na prawdziwym repozytorium FSFS; świadomie nieplanowana — uruchomienie jest decyzją eksploatacyjną.</span></div>
+<p><code>filees-rotate</code> wykonuje <strong>jawną zmianę generacji</strong> gorącego repozytorium: nowa generacja dostaje <em>nowy UUID</em> i zaczyna od r1 = kompletnego dumpa starego HEAD (w tym wersjonowanych właściwości takich jak <code>svn:needs-lock</code>), dziedziczy <code>conf/</code> i <code>hooks/</code> jawnie i jest weryfikowana (<code>svnadmin verify</code> plus porównanie drzewa) przed atomową zamianą. Stara generacja staje się zamrożonym, zablokowanym na commity archiwum FSFS z manifestem historii i <code>meta.json</code> zapisującym zmianę UUID — to sygnał do ponownego zaopatrzenia klientów, bo istniejące kopie robocze z założenia nie przeżywają zmiany generacji.</p>
+<pre><code># Oceń wyłącznie wyzwalacze (rozmiar po pack albo wiek svn:date r1):
+filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
+# Rotuj, gdy odpali się wyzwalacz; progi są konfigurowalne i walidowane:
+filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
+# Ograniczony dump zapasowy ostatnich N rewizji przed HEAD (nigdy
+# druga pełna kopia historii; kanoniczne jest zamrożone archiwum FSFS):
+filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
+<p>Kontrakt bezpieczeństwa: flock wyklucza równoległe uruchomienia; repo i archiwum muszą dzielić system plików (zamiana to rename); commity blokuje na czas trwania tymczasowy hook <code>pre-commit</code>; rotacja <em>odmawia</em> działania, gdy istnieją aktywne locki (żywe paszporty edycji), chyba że jawnie podano <code>-break-locks</code>; każda awaria przed zamianą przywraca repozytorium w stanie zastanym.</p>
+<div class="warn"><strong>Kiedy w ogóle rotować:</strong> dla profilu FileES wyłącznie dołączającego głębokość repozytorium nie psuje wydajności, a binarne delty FSFS plus rep-sharing sprawiają, że wzrost śledzi dane <em>unikalne</em>, nie liczbę rewizji. Rotacja opłaca się wyłącznie jako narzędzie retencji i warstwowania (SVN nie ma <code>obliterate</code>) — zobacz werdykt w <code>concepts/SVN_ROTATOR_CONCEPT_V2.md</code> §7, zanim cokolwiek zaplanujesz.</div>
+<h2 id="ch4-realm-removal">4.8 Usunięcie strefy i archiwa odtwarzania</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Dziennik, OTP, executor, manifest odtwarzania, rejestr kluczy, transport SSH odtwarzania, przepływ GUI z generowaniem zestawu odtwarzania oraz żądanie wymazania danych są zaimplementowane i ćwiczone end-to-end na referencyjnej VM: wiele aktywacji, własne i obce granty, retencja 0 i &gt;0, sprawdzenia niezmienników (reports/REALM_REMOVAL_RECOVERY_E2E_2026-08-01.md).</span></div>
+<p>Usunięcie udziału FileES jest w zakresie strefy i nieodwracalne dla żywego dostępu. To nie to samo co deaktywacja jednej instalacji — zobacz tabelę w <a href="user-guide.html#ch2-gui">§2.6</a>. Kontrakt projektu jest w <code>concepts/REALM_DETACH_AND_ERASURE_CONCEPT.md</code>.</p>
+<h4>Wyprowadzenie zakresu</h4>
+<p>Worker wyprowadza docelową strefę wyłącznie z uwierzytelnionej sesji. Żaden ładunek klienta nie nazywa strefy, repozytorium ani innej instalacji. Z kanonicznej kopii roboczej usługowej serwer robi snapshot: każdej aktywnej instalacji tej strefy, każdego repozytorium, którego <code>owner_realm_id</code> to ta strefa (te są usuwane), oraz każdego obcego repozytorium, do którego strefa ma grant (grant jest wycofywany, repozytorium właściciela nietknięte). Wyprowadzenie zakresu jest fail-closed: nieczytelna projekcja klienta przerywa żądanie, zamiast po cichu je zwężać.</p>
+<h4>Stany</h4>
+<pre><code>awaiting_confirmation --OTP--&gt; deleting --&gt; recovery_ready
+                                    --&gt; revoke_all_clients --&gt; completed
+       |
+       +--&gt; expired      (TTL elapsed, or attempts exhausted)</code></pre>
+<p>OTP jest pepperowany i przechowywany wyłącznie jako skrót, porównywany w stałym czasie, jednorazowy, ograniczony liczbą prób i związany TTL. Niepowodzenie potwierdzenia zostawia granty, repozytoria i poświadczenia nietknięte. Odwołanie instalacji strefy jest świadomie <em>ostatnią</em> granicą: do tego momentu przerwaną operację może jeszcze wznowić uwierzytelniony klient tej samej strefy, a wznowienie nigdy nie poszerza snapshotu ani nie produkuje drugiego dumpa.</p>
+<div class="note"><strong>Dostawa poczty:</strong> OTP potwierdzenia jest kolejkowany w trwałym outboxie i wysyłany przez <code>filees-mail</code>. Trigger, który opróżnia ten outbox natychmiast po akcji płaszczyzny sterowania, działa w procesie rodzica po zrzuceniu uprawnień <code>proc</code>/<code>exec</code> i nie próbuje ponownie narzucić zablokowanego <code>unveil</code> — naprawione i pokryte testem regresji natywnie na OpenBSD 7.9 (dawniej ustalenie B w <code>reports/CODE_REVIEW_POST_AUDIT_r280_r318_2026-07-29.md</code>, zamknięte według <code>todo-control/plan/EXECUTION_ORDER.md</code> §1). Brakującą pocztę OTP nadal należy traktować jako problem dostawy do zbadania, a nie ponawiać w milczeniu w nieskończoność.</div>
+<h4>Archiwa odtwarzania</h4>
+<p>Przy dodatniej retencji usunięcie produkuje jeden zweryfikowany dump SVN na każde własne repozytorium, każdy ze skrótem SHA-256, oraz manifest je opisujący. Manifest jest neutralny wobec capability: <code>archive_id</code> jest nieprzezroczystym UUID i nigdy nie jest interpretowany jako ścieżka systemu plików. Obowiązują dwa niezależne okna — <code>download_until</code>, po którym archiwów nie da się już pobrać, oraz <code>admin_grace_until</code>, po którym samo pokwitowanie jest sprzątane. Retencja zero oznacza, że dump w ogóle nie jest zapisywany, a interfejs nie może obiecywać odtwarzalnych danych w takim przypadku.</p>
+<p>Dostęp do tych archiwów jest jedynym przeznaczeniem konta <code>_filees-recovery</code>. Klient przedstawia klucz odtwarzania Ed25519 per operacja; osobny helper <code>filees-recovery-authorize</code> — świadomie oddzielony od wejścia sesji, żeby wyszukiwanie klucza i usługa sesji były odrębnymi plikami wykonywalnymi — odszukuje go w rejestrze kluczy, odmawia po upływie <code>download_until</code> i emituje linię authorized-keys z <code>restrict</code>, której wymuszone polecenie jest związane z tym jednym ID operacji. Serwowany protokół to dokładnie dwa czasowniki:</p>
+<pre><code>list &lt;operation_id&gt;
+get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
+<p>Wejście działa tylko do odczytu (<code>stdio rpath</code>) i nigdy nie widzi klucza prywatnego. Klucz odtwarzania nie daje dostępu SVN, powłoki, ponownego onboardingu ani dostępu do żadnej innej operacji albo repozytorium.</p>
+<div class="note"><strong>Nie mylić z <a href="#ch4-recovery">§4.5 Odtwarzanie</a></strong>, które dotyczy odtwarzania uszkodzonego repozytorium SVN na działającym serwerze. Ta sekcja dotyczy pobierania danych po tym, jak strefa świadomie usunęła swój udział.</div>
+</div>
+<nav class="page-nav"><a href="install.html">← 3. Instalacja</a><a href="public-shares.html">5. Udziały publiczne →</a></nav>
+</div>
+</div>
+<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-14 · źródło r494</span></footer>
+</main>
+</body>
+</html>

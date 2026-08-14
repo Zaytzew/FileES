@@ -1,0 +1,44 @@
+.Dd August 14, 2026
+.Dt FILEES-MOBILE-V1 8
+.Os
+.Sh NAME
+.Nm filees-mobile-v1
+.Nd FileES append-only mobile protocol entry
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+.Nm
+is the set-id entry for
+.Sy _filees-mobile .
+The installed image is
+.Sy _filees-state : _filees-access
+mode 4550, the same class as
+.Xr filees-client-entry 8 .
+.Pp
+The mobile client is paired from an already activated desktop.
+It inherits that desktop's repository list once.
+The protocol is append-only.
+The mobile projection does not receive
+.Ic editing_policy .
+.Pp
+.Xr sshd 8
+uses the shared
+.Pa authorized_keys
+file.
+The per-key
+.Ic command=
+line selects this image.
+There is no
+.Ic ForceCommand
+on the
+.Sy _filees-mobile
+match block.
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /var/filees-mobile/ledger
+Append ledger, owner
+.Sy _filees-state .
+.El
+.Sh SEE ALSO
+.Xr filees-client-entry 8 ,
+.Xr filees 7

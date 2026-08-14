@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>FileES Manual — Architecture, Operations and Security</title>
+<link rel="alternate" hreflang="pl" href="../pl/index.html"/>
+<link rel="alternate" hreflang="en" href="index.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">split HTML · external CSS · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="index.html" class="is-current" lang="en" hreflang="en" aria-current="true">EN</a>
+<a href="../pl/index.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Manual pages">
+<a href="index.html" class="is-current">Overview</a>
+<a href="architecture.html">1. Architecture</a>
+<a href="user-guide.html">2. User guide</a>
+<a href="install.html">3. Server install</a>
+<a href="administration.html">4. Administration</a>
+<a href="public-shares.html">5. Public shares</a>
+<a href="security.html">6. Security</a>
+<a href="man-pages.html">Man pages</a>
+</nav>
+<section class="hero">
+<p class="eyebrow">FileES / canonical system manual</p>
+<h1>Architecture, operation and recovery</h1>
+<p class="hero-copy">A file-centric synchronisation system built around explicit ownership, durable artifacts, bounded publication and recoverable failure. This edition is a multi-page HTML manual. Server operators also have OpenBSD <code>mandoc</code> pages under <code>docs/man/</code>.</p>
+<div class="meta-strip">
+<span><strong>Version</strong> 0.1.0</span>
+<span><strong>Date</strong> 2026-08-14</span>
+<span><strong>Source</strong> SVN r494</span>
+<span><strong>Server</strong> OpenBSD 7.9 · signed r492 on production</span>
+<span><strong>Client</strong> Linux and Windows desktop</span>
+</div>
+<div class="canonical-note"><strong>Languages:</strong> this is the English edition. The Polish edition is under <a href="../pl/index.html" hreflang="pl">assets/pl/</a>. The desktop GUI remains Polish-only; architecture terms stay English on the wire — see the <a href="user-guide.html#ch2-glossary">GUI terminology glossary</a>.</div>
+</section>
+<section aria-label="Maturity status legend" class="maturity-legend">
+<div class="legend-item"><span class="status status-verified">Verified</span><p>Behaviour is implemented and covered by relevant native, integration, regression or chaos tests, or by a live production acceptance.</p></div>
+<div class="legend-item"><span class="status status-implemented">Implemented</span><p>Code exists, but some target-platform packaging or later integration remains incomplete.</p></div>
+<div class="legend-item"><span class="status status-designed">Designed</span><p>The contract and boundaries are approved; implementation is incomplete or intentionally deferred.</p></div>
+<div class="legend-item"><span class="status status-planned">Planned</span><p>Direction is recorded, but it is not part of the current operational contract.</p></div>
+</section>
+<div class="manual-layout">
+<nav aria-label="Manual contents" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / index</span>
+<h2>Contents</h2>
+</div>
+<ol>
+<li><a href="architecture.html">1. Mechanics and Architecture</a></li>
+<li><a href="user-guide.html">2. User Guide</a></li>
+<li><a href="install.html">3. Server Installation</a></li>
+<li><a href="administration.html">4. Administration</a></li>
+<li><a href="public-shares.html">5. Public Shares</a></li>
+<li><a href="security.html">6. Security Appendix</a></li>
+<li><a href="man-pages.html">OpenBSD manual pages</a></li>
+<li><a href="#publish">Publishing on manual.filees.space</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1>How to read this manual</h1>
+<p>The previous single-file <code>manual-filees.html</code> is now a compatibility stub. The living document is this directory. Each page keeps the <code>filees:space</code> visual system and has no network dependencies.</p>
+<p>FileES is a work-in-progress. On-disk formats, protocols and schemas still change. Do not treat a maturity badge as a product release.</p>
+<h2>What is current as of 2026-08-14</h2>
+<div class="table-wrap"><table>
+<tr><th>Surface</th><th>State</th></tr>
+<tr><td>Desktop daemon + tray</td><td><span class="status status-verified">Verified</span> Linux and Windows; GUI is a thin IPC client</td></tr>
+<tr><td>Activation and realm join</td><td><span class="status status-verified">Verified</span> including Windows named-pipe OTP and resume of an accepted attempt</td></tr>
+<tr><td>Selective attach, locate, detach, load-dump</td><td><span class="status status-verified">Verified</span></td></tr>
+<tr><td>Realm grants and visibility</td><td><span class="status status-verified">Verified</span> owner-only; no transitive re-delegation</td></tr>
+<tr><td>Repository editing policy</td><td><span class="status status-verified">Verified</span> live 6/6 on two Windows clients</td></tr>
+<tr><td>Public Shares</td><td><span class="status status-verified">Verified</span> live HTTPS endpoint, OTP, branding, ZIP; object map is a snapshot</td></tr>
+<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified</span> signed r492 on production OpenBSD</td></tr>
+<tr><td>Windows MSI / service packaging</td><td><span class="status status-implemented">Implemented</span> GUI MSI only; daemon is a separate binary</td></tr>
+<tr><td>Upload Channel</td><td><span class="status status-designed">Designed</span> next full product vertical</td></tr>
+</table></div>
+<h2>Operator entry points</h2>
+<p>A desktop user starts at the <a href="user-guide.html">user guide</a>. An OpenBSD operator starts at <a href="install.html">server installation</a> and then at the <a href="man-pages.html">mandoc pages</a> that ship with the server bundle:</p>
+<pre><code>man filees
+man filees.conf
+man filees-admin
+man filees-install</code></pre>
+<p>Those pages follow the same contract as the rest of the FileES server: filesystem first, no resident FileES daemon, system <code>sshd</code> as the only privileged endpoint.</p>
+<h2 id="publish">Publishing this set on <code>manual.filees.space</code></h2>
+<p>Public Shares and the HTML manual share one HTTPS origin. <code>httpd</code> does not know realms or slugs. It only owns a small static allowlist; everything else is FastCGI. A chapter file left next to <code>index.html</code> as <code>/architecture.html</code> would therefore be treated as a virtual FileES path and return the branded 404.</p>
+<p>This directory <strong>is</strong> the document-root image. It lives in Subversion as <code>^/manual</code>. On the host, <code>/var/www/htdocs</code> is a working copy of that subtree. <code>svn update</code> is the publish step. Do not add a new <code>location</code> and do not reload <code>httpd</code>.</p>
+<div class="table-wrap"><table class="field-table">
+<tr><th>Source in <code>^/manual</code></th><th>URL on the origin</th><th>Why it is static</th></tr>
+<tr><td><code>index.html</code></td><td><code>/</code> and <code>/index.html</code></td><td>existing allowlist</td></tr>
+<tr><td><code>favicon.ico</code></td><td><code>/favicon.ico</code></td><td>existing allowlist</td></tr>
+<tr><td><code>robots.txt</code></td><td><code>/robots.txt</code></td><td>existing allowlist</td></tr>
+<tr><td><code>assets/en/*.html</code>, <code>assets/pl/*.html</code></td><td><code>/assets/en/architecture.html</code> …</td><td><code>location "/assets/*"</code></td></tr>
+<tr><td><code>assets/css/manual.css</code></td><td><code>/assets/css/manual.css</code></td><td>same prefix</td></tr>
+</table></div>
+<figure class="system-figure">
+<figcaption><span class="figure-kicker">Graph D</span>Static allowlist versus virtual FileES paths on the public origin</figcaption>
+<div class="diagram-scroll">
+<svg aria-label="HTTP allowlist and FileES FastCGI split" class="diagram-d" role="img" viewbox="0 0 1180 540"><style>
+.svg-zone { fill:#FFFFFF; stroke:#D9DEE7; stroke-width:1.5; }
+.svg-node { fill:#FFFFFF; stroke:#0B1D3A; stroke-width:1.6; }
+.svg-node-authority { fill:#FFF4EA; stroke:#FF6A00; stroke-width:2; }
+.svg-node-derived { fill:#F1F5FA; stroke:#5C6F8D; stroke-width:1.5; }
+.svg-node-transient { fill:#FAFAFA; stroke:#8A94A6; stroke-width:1.5; stroke-dasharray:7 5; }
+.svg-text { fill:#0B1D3A; font-family:DejaVu Sans Mono,monospace; font-size:14px; font-weight:600; }
+.svg-small { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; }
+.svg-zone-label { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; font-weight:600; letter-spacing:1px; }
+.svg-arrow { stroke:#0B1D3A; stroke-width:2; fill:none; marker-end:url(#arrowD); }
+.svg-arrow-orange { stroke:#FF6A00; stroke-width:2.2; fill:none; marker-end:url(#arrowOrangeD); }
+.svg-arrow-dashed { stroke:#667085; stroke-width:1.7; fill:none; stroke-dasharray:7 5; marker-end:url(#arrowMutedD); }
+</style>
+<defs>
+<marker id="arrowD" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0B1D3A"></path></marker>
+<marker id="arrowOrangeD" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#FF6A00"></path></marker>
+<marker id="arrowMutedD" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"></path></marker>
+</defs>
+<rect class="svg-zone" height="500" rx="14" width="360" x="20" y="24"></rect>
+<text class="svg-zone-label" x="42" y="52">HTTPS ORIGIN</text>
+<rect class="svg-node" height="58" rx="8" width="300" x="50" y="80"></rect>
+<text class="svg-text" text-anchor="middle" x="200" y="105">Client browser</text>
+<text class="svg-small" text-anchor="middle" x="200" y="124">manual.filees.space</text>
+<rect class="svg-node-derived" height="58" rx="8" width="300" x="50" y="180"></rect>
+<text class="svg-text" text-anchor="middle" x="200" y="205">relayd / TLS</text>
+<text class="svg-small" text-anchor="middle" x="200" y="224">FileES does not terminate TLS</text>
+<rect class="svg-node-authority" height="78" rx="8" width="300" x="50" y="280"></rect>
+<text class="svg-text" text-anchor="middle" x="200" y="310">OpenBSD httpd</text>
+<text class="svg-small" text-anchor="middle" x="200" y="330">chroot /var/www · no realm knowledge</text>
+<path class="svg-arrow" d="M200 138 V180"></path>
+<path class="svg-arrow" d="M200 238 V280"></path>
+
+<rect class="svg-zone" height="230" rx="14" width="370" x="410" y="24"></rect>
+<text class="svg-zone-label" x="432" y="52">STATIC ALLOWLIST</text>
+<rect class="svg-node-derived" height="48" rx="8" width="330" x="430" y="72"></rect>
+<text class="svg-text" text-anchor="middle" x="595" y="102">/  /index.html  /favicon.ico</text>
+<rect class="svg-node-derived" height="48" rx="8" width="330" x="430" y="136"></rect>
+<text class="svg-text" text-anchor="middle" x="595" y="166">/assets/*  (this HTML set)</text>
+<rect class="svg-node-derived" height="48" rx="8" width="330" x="430" y="200"></rect>
+<text class="svg-small" text-anchor="middle" x="595" y="230">/robots.txt  /.well-known/acme-challenge/*</text>
+<path class="svg-arrow" d="M350 310 H410 Q430 310 430 96"></path>
+
+<rect class="svg-zone" height="250" rx="14" width="370" x="790" y="24"></rect>
+<text class="svg-zone-label" x="812" y="52">VIRTUAL FILEES PATHS</text>
+<rect class="svg-node-authority" height="58" rx="8" width="330" x="810" y="72"></rect>
+<text class="svg-text" text-anchor="middle" x="975" y="97">location /*</text>
+<text class="svg-small" text-anchor="middle" x="975" y="116">never “not found”</text>
+<rect class="svg-node-transient" height="58" rx="8" width="330" x="810" y="154"></rect>
+<text class="svg-text" text-anchor="middle" x="975" y="179">filees-links FastCGI</text>
+<text class="svg-small" text-anchor="middle" x="975" y="198">_filees-links · cache only</text>
+<rect class="svg-node-authority" height="58" rx="8" width="330" x="810" y="236"></rect>
+<text class="svg-text" text-anchor="middle" x="975" y="261">public-authority</text>
+<text class="svg-small" text-anchor="middle" x="975" y="280">svnlook · recipient OTP</text>
+<path class="svg-arrow-orange" d="M350 330 H790 Q810 330 810 101"></path>
+<path class="svg-arrow" d="M975 130 V154"></path>
+<path class="svg-arrow" d="M975 212 V236"></path>
+
+<rect class="svg-node" height="70" rx="8" width="370" x="410" y="300"></rect>
+<text class="svg-text" text-anchor="middle" x="595" y="328">htdocs = ^/manual</text>
+<text class="svg-small" text-anchor="middle" x="595" y="348">svn up · do not mkdir a realm</text>
+<rect class="svg-node" height="70" rx="8" width="370" x="790" y="300"></rect>
+<text class="svg-text" text-anchor="middle" x="975" y="328">/<alias>/<slug></text>
+<text class="svg-small" text-anchor="middle" x="975" y="348">virtual · no directory in docroot</text>
+<path class="svg-arrow-dashed" d="M595 254 V300"></path>
+<path class="svg-arrow-dashed" d="M975 294 V300"></path>
+
+<text class="svg-small" x="50" y="410">Check this subtree out as the document root. /assets/* is already reserved.</text>
+<text class="svg-small" x="50" y="430">A chapter placed at /architecture.html would miss the allowlist and become a FastCGI 404.</text>
+<text class="svg-small" x="50" y="450">Do not check out into htdocs/manual: /manual/index.html is a virtual FileES path.</text>
+<text class="svg-small" x="50" y="490">Adding a realm or share must not create a directory and must not reload httpd.</text>
+<text class="svg-small" x="50" y="510">Publishing a new manual page is svn commit of ^/manual plus svn up on the host.</text>
+</svg>
+</div>
+<div class="figure-legend"><span class="authority">httpd / FileES authority</span><span class="derived">static allowlist</span><span class="transient">credential-free public process</span></div>
+</figure>
+<pre><code># First time: the document root becomes a working copy of ^/manual.
+# Move any existing unversioned htdocs aside first (checkout will not mix).
+doas mv /var/www/htdocs /var/www/htdocs.pre-manual-svn
+doas svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs
+doas svn propset svn:ignore '.well-known' /var/www/htdocs
+# Keep ACME if it lived in the old tree:
+# doas cp -Rp /var/www/htdocs.pre-manual-svn/.well-known /var/www/htdocs/
+# httpd reads as www; it must not own .svn. World-readable files are enough.
+# Later publishes, as the same operator that owns the working copy:
+doas svn update /var/www/htdocs
+# No httpd -n / rcctl reload. /.svn is not on the static allowlist.</code></pre>
+<nav class="page-nav">
+<span></span>
+<a href="architecture.html">1. Architecture →</a>
+</nav>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Canonical English edition · 2026-08-14 · source r494</span></footer>
+</main>
+</body>
+</html>

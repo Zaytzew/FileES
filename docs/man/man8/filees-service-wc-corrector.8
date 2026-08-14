@@ -1,0 +1,45 @@
+.Dd August 14, 2026
+.Dt FILEES-SERVICE-WC-CORRECTOR 8
+.Os
+.Sh NAME
+.Nm filees-service-wc-corrector
+.Nd repair ownership of the FileES service working copy
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+.Nm
+is a tiny set-id-root helper.
+It accepts no arguments.
+It walks the configured service working copy and the shared
+.Pa .service-wc.lock ,
+and runs
+.Fn lchown
+on any path whose UID or GID is not the state account.
+It never changes modes or content.
+.Pp
+Effective UID 0 is required.
+The state-account UID must not be 0.
+The walk refuses to cross a filesystem boundary and refuses unsupported
+file types.
+.Pp
+.Xr filees-client-entry 8
+invokes
+.Nm
+before a control-plane ticket.
+Ordinary workers remain unprivileged.
+.Pp
+The installed image is
+.Sy root : _filees-access
+mode 4550.
+.Sh EXIT STATUS
+.Xr sysexits 3
+values as in
+.Xr filees-admin 8 .
+On success it prints a JSON object with
+.Ic inspected
+and
+.Ic corrected
+counts.
+.Sh SEE ALSO
+.Xr filees-client-entry 8 ,
+.Xr filees-worker 8

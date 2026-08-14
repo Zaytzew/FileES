@@ -26,8 +26,10 @@ Docelowy UX: automat w trayu, który niewidocznie utrzymuje pliki zsynchronizowa
 
 ## Dokumentacja
 
-- **[manual-filees.html](manual-filees.html)** — pełna instrukcja: mechanika i architektura, przewodnik użytkownika, instalacja i wdrożenie serwera, administracja oraz dodatek bezpieczeństwa.
+- **[manual/index.html](manual/index.html)** — podręcznik HTML PL/EN (obraz `htdocs` na `manual.filees.space`). Strona główna jest przełącznikiem języka; rozdziały są w `manual/assets/pl/` i `manual/assets/en/`. Na serwerze: `svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs`, potem `svn up`.
+- **[docs/man/](docs/man/)** — strony `mandoc` narzędzi serwerowych (`man filees`, `man filees-admin`, `man filees.conf`).
 - **[USERGUIDE.md](USERGUIDE.md)** — krótszy przewodnik użytkownika.
+- **[manual-filees.html](manual-filees.html)** — tylko przekierowanie do `manual/`, żeby stare odnośniki nie umarły.
 
 Aktualny klient desktopowy obsługuje na Windows pełne dołączenie kolejnej
 instalacji do istniejącego realmu, listę wszystkich repozytoriów realmu w
@@ -151,7 +153,7 @@ Ustawieniach przez akcję **Zasady edycji**. Serwer zapisuje ją raz w rekordzie
 kanonicznym i projektuje identycznie do wszystkich klientów; jedyną wartością
 wysyłaną na drucie jest `lock_required`, a brak pola oznacza zwykłą edycję.
 Pełny lifecycle i gwarancje wieloklientowe opisuje rozdział
-[2.5 Edit Passports](manual-filees.html#ch2-passports).
+[2.5 Edit Passports](manual/assets/en/user-guide.html#ch2-passports).
 
 Każdy `local_path` musi być ścieżką bezwzględną. Identyfikatory repozytoriów muszą być unikalne, a lokalne korzenie nie mogą być identyczne ani zagnieżdżone w żadną stronę. Walidacja rozwiązuje symlinki istniejących katalogów i kończy start daemona twardym błędem przed utworzeniem stanu `.filees`.
 
@@ -374,7 +376,7 @@ go do klienta. Pusta rewizja śledzi HEAD, dodatni numer ustawia
 `LOAD_REPOSITORY_DUMP`) jest dostępne dla wybranego wiersza repozytorium
 obok Odłącz/Odłącz trwale. Ładuje wcześniej wyeksportowany dump SVN jako
 nową generację repozytorium przez ten sam mechanizm staging/weryfikacja/
-atomowy swap, którego wewnętrznie używa `filees-rotate` (`manual-filees.html`
+atomowy swap, którego wewnętrznie używa `filees-rotate` (`manual/assets/en/administration.html`
 §4.7) — worker sam odnajduje przesłany dump, klient
 nie wysyła ścieżki ani zakresu rewizji. Pierwsze wydanie działa bez okna
 opcji: filtrowanie zawsze stosuje bieżącą politykę ignorowania serwera, a

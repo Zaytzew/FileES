@@ -1,0 +1,68 @@
+.Dd August 14, 2026
+.Dt FILEES-MAIL 8
+.Os
+.Sh NAME
+.Nm filees-mail
+.Nd submit one FileES outbox entry or drain Public Shares mail
+.Sh SYNOPSIS
+.Nm
+.Op Fl config Ar path
+.Cm send
+.Nm
+.Op Fl config Ar path
+.Cm public-loop
+.Sh DESCRIPTION
+.Cm send
+claims one pending control-plane mail job and submits it through the
+configured SMTP relay.
+It is the one-shot drain used after
+.Xr filees-admin 8
+ticket actions and after
+.Xr filees-bootstrap-entry 8 .
+Onboarding, realm-removal and data-erasure jobs share this path.
+.Pp
+Delivery states are
+.Cm pending ,
+.Cm sending ,
+.Cm queued ,
+and
+.Cm failed .
+A 4xx leaves the job
+.Cm pending
+and preserves the OTP.
+A 5xx marks
+.Cm failed
+and redacts the OTP.
+The
+.Ic Message-ID
+is derived from
+.Ic CreatedAt ,
+so a lost 250 can be retried safely.
+.Pp
+.Cm public-loop
+is not an operator command.
+.Xr filees-public-authority 8
+supervises it as an isolated child.
+The child loads the SMTP secret and drains only the Public Shares outbox.
+The authority process never receives that secret.
+If the child dies, the authority exits.
+.Sh EXIT STATUS
+.Bl -tag -width 4n -compact
+.It 0
+accepted
+.Pq Cm queued
+or nothing pending
+.It 75
+temporary SMTP failure; retry
+.It 64, 78, 70
+usage, configuration or internal error
+.El
+.Sh EXAMPLES
+Retry a 4xx invitation:
+.Bd -literal -offset indent
+$ doas -u _filees-state filees-mail send
+.Ed
+.Sh SEE ALSO
+.Xr filees-admin 8 ,
+.Xr filees-bootstrap-entry 8 ,
+.Xr filees-public-authority 8

@@ -1,0 +1,39 @@
+.Dd August 14, 2026
+.Dt FILEES-SSH-AUTH 8
+.Os
+.Sh NAME
+.Nm filees-ssh-auth
+.Nd BSD Authentication style for the FileES OTP tunnel
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+.Nm
+is installed as
+.Pa /usr/libexec/auth/login_-filees
+with owner
+.Sy _filees-state ,
+group
+.Sy auth
+and mode 4550.
+.Xr sshd 8
+invokes it for
+.Sy _filees-tunnel
+keyboard-interactive authentication.
+.Pp
+The OTP is received on file descriptor 3, not from the environment.
+A successful comparison advances the operation bundle from
+.Cm awaiting_tunnel
+to
+.Cm tunnel_authorized .
+.Xr filees-entry 8
+then claims that state.
+.Pp
+The
+.Sy _filees-tunnel
+password field must not be
+.Ql * ;
+BSD Auth rejects such accounts before a local style can run.
+The OpenBSD installer writes an unknowable random hash.
+.Sh SEE ALSO
+.Xr filees-entry 8 ,
+.Xr login.conf 5

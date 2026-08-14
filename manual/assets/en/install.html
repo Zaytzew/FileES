@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>3. Server install — FileES Manual</title>
+<link rel="alternate" hreflang="pl" href="../pl/install.html"/>
+<link rel="alternate" hreflang="en" href="install.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">split HTML · external CSS · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="#" class="is-current" lang="en" hreflang="en" aria-current="true">EN</a>
+<a href="../pl/install.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Manual pages">
+<a href="index.html">Overview</a>
+<a href="architecture.html">1. Architecture</a>
+<a href="user-guide.html">2. User guide</a>
+<a href="install.html" class="is-current">3. Server install</a>
+<a href="administration.html">4. Administration</a>
+<a href="public-shares.html">5. Public shares</a>
+<a href="security.html">6. Security</a>
+<a href="man-pages.html">Man pages</a>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Page contents" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / this page</span>
+<h2>On this page</h2>
+</div>
+<ol>
+<li><a href="#ch3-prereq">Prerequisites</a></li>
+<li><a href="#ch3-install">install-server.sh</a></li>
+<li><a href="#ch3-sshd">OpenBSD sshd</a></li>
+<li><a href="#ch3-serverjson">server.json</a></li>
+<li><a href="#ch3-keys">Key generation</a></li>
+<li><a href="#ch3-managed">filees-install / FILEES-BIN</a></li>
+<li><a href="#ch3-manual-htdocs">HTML manual on the public origin</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1 id="ch3">Chapter 3: Server Installation and Deploy</h1><div class="chapter-content">
+<h2 id="ch3-prereq">3.1 Prerequisites</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Production OpenBSD 7.9 host <code>spot.example.net</code> is on signed release r492.</span></div>
+<p>The FileES server toolchain targets <strong>OpenBSD 7.9/amd64</strong> as the primary and security-reference platform. A Linux/amd64 server bundle is also buildable; distribution-specific hardening remains an administrator responsibility because Linux cannot provide the same <code>pledge</code>/<code>unveil</code> contract. FileES adds no network listener: the system <code>sshd</code> is its only control and data endpoint. Public Shares, when enabled, are served by the host's existing <code>httpd</code> (or an equivalent TLS terminator) through FastCGI — FileES still does not terminate TLS itself.</p>
+<p>External dependencies:</p>
+<ul>
+<li><strong>SVN server</strong> — <code>svnserve</code>, independently installed and configured. This is the only supported access path: FileES reaches it as tunnel-mode <code>svnserve</code> over SSH. Apache/<code>mod_dav_svn</code> is not a FileES target and has never been tested.</li>
+<li><strong>SMTP smarthost</strong> — for OTP delivery; FileES does not run an MTA. Only submission-style relay (<code>host:port</code>) is supported.</li>
+<li><strong>Go 1.25+</strong> — only needed to build from source. Pre-built bundles are provided.</li>
+</ul>
+<p>Required accounts to be created by the installer on OpenBSD:</p>
+<div class="table-wrap"><table>
+<tr><th>Account / group</th><th>Purpose</th></tr>
+<tr><td><code>_filees-state</code></td><td>Owns <code>/var/filees/</code> and most of <code>/etc/filees/</code>; administrative commands run as this user</td></tr>
+<tr><td><code>_filees-onboard</code></td><td>Bootstrap SSH account; forced command <code>filees-bootstrap-entry</code> only</td></tr>
+<tr><td><code>_filees-tunnel</code></td><td>OTP SSH account; one fixed reverse tunnel; forced command <code>filees-entry</code></td></tr>
+<tr><td><code>_filees-client</code></td><td>Installation-key SSH for service-repository proof and control-plane tickets</td></tr>
+<tr><td><code>_filees-data</code></td><td>Installation-key SSH for data-repository <code>svnserve -t</code>; canonical URL user</td></tr>
+<tr><td><code>_filees-mobile</code></td><td>Mobile append-only protocol; set-id entry <code>filees-mobile-v1</code></td></tr>
+<tr><td><code>_filees-recovery</code></td><td>Capability-bound archive download after realm removal</td></tr>
+<tr><td><code>_filees-links</code></td><td>Public FastCGI process; owns the public cache, never SVN credentials</td></tr>
+<tr><td><code>_filees-access</code></td><td>Group for set-id client/mobile/corrector binaries</td></tr>
+<tr><td><code>_filees-public</code></td><td>Group for the authority socket shared with links</td></tr>
+</table></div>
+<h2 id="ch3-install">3.2 Running <code>install-server.sh</code></h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>Generic and OpenBSD integration paths include the complete activation vertical.</span></div>
+<p>The generic installer script is <code>packaging/server/install-server.sh</code> (also included in the bundle at <code>dist/filees-server-openbsd-amd64/</code>).</p>
+<pre><code># As root or with doas:
+./install-server.sh</code></pre>
+<p>What the installer does:</p>
+<ul>
+<li>Installs <code>filees-admin</code>, <code>filees-operation</code>, <code>filees-install</code> and <code>filees-rotate</code> to <code>$PREFIX/sbin/</code> (default <code>/usr/local/sbin</code>).</li>
+<li>Installs <code>filees-onboard</code>, <code>filees-bootstrap-entry</code>, <code>filees-mail</code>, <code>filees-entry</code>, <code>filees-worker</code>, <code>filees-service-wc-corrector</code>, <code>filees-client-entry</code>, <code>filees-public-authority</code> and <code>filees-links</code> to <code>$PREFIX/libexec/filees/</code>.</li>
+<li>Installs the OpenBSD manual pages from the bundle under <code>$PREFIX/man/man5</code>, <code>man7</code> and <code>man8</code>.</li>
+<li>Creates <code>/etc/filees/</code> (mode 0700) and copies <code>server.example.json</code> to <code>/etc/filees/server.json</code> if not already present.</li>
+<li>Generates a 256-bit random OTP pepper: <code>/etc/filees/otp.pepper</code> (mode 0600).</li>
+<li>Generates an Ed25519 worker key pair: <code>/etc/filees/worker_ed25519</code> (mode 0600) and <code>/etc/filees/worker_ed25519.pub</code> (mode 0644).</li>
+<li>Creates the private state directory: <code>/var/filees/onboarding/{tickets,operations,audit}/</code> (mode 0700).</li>
+<li>Creates the private activation skeleton at <code>/var/filees/activation/</code>; the OpenBSD integration step assigns final ownership and initialises the service repository.</li>
+</ul>
+<div class="note">The generic installer deliberately does <em>not</em> create an <code>rc.d</code> or <code>systemd</code> service and does <em>not</em> touch <code>sshd_config</code>. The sshd integration is the separate OpenBSD step below.</div>
+<div class="warn"><strong>OpenBSD upgrades must preserve set-id entry modes.</strong> On an already integrated host, running only <code>install-server.sh</code> is not a complete upgrade: the generic script writes ordinary <code>0755</code> files and can replace ownership/modes assigned by <code>install-ssh.sh</code>. Run both stages and validate <code>sshd -t</code>, or atomically replace only a specific ordinary binary with its documented owner and mode. The short-lived <code>filees-worker</code> is <code>root:wheel 0555</code> and has no resident service to restart; bootstrap, tunnel, client, mobile and recovery entries have distinct set-id modes and must never be overwritten generically without restoring them.</div>
+<h4>OpenBSD sshd integration: <code>install-ssh.sh</code></h4>
+<pre><code># As root, after the generic install:
+./packaging/server/openbsd/install-ssh.sh</code></pre>
+<p>What <code>install-ssh.sh</code> does:</p>
+<ul>
+<li>Creates <code>_filees-state</code>, the protocol accounts <code>_filees-onboard</code>, <code>_filees-tunnel</code>, <code>_filees-client</code>, <code>_filees-data</code>, <code>_filees-mobile</code> and <code>_filees-recovery</code>, plus <code>_filees-links</code> and the groups <code>_filees-access</code> and <code>_filees-public</code>. Protocol accounts use <code>/bin/sh</code> only so sshd can run a forced command; interactive shell, PTY and user RC remain disabled by sshd policy.</li>
+<li>Installs the <code>login_-filees</code> BSD Authentication style binary to <code>/usr/libexec/auth/</code>.</li>
+<li>Installs the <code>filees-tunnel</code> login class and rebuilds the database with <code>cap_mkdb</code>.</li>
+<li>Writes a validated <code>Match User</code> fragment to <code>/etc/ssh/sshd_config.d/filees.conf</code> (creating the <code>sshd_config.d/</code> directory and updating the main <code>sshd_config</code> Include if needed).</li>
+<li>Installs the bootstrap authorized key for <code>_filees-onboard</code> to <code>/etc/ssh/filees_bootstrap_authorized_keys</code>.</li>
+<li>Installs every set-id dispatcher with its documented owner/group/mode (including <code>filees-service-wc-corrector</code> <code>root:_filees-access 4550</code>), creates <code>/var/filees/activation</code>, initialises <code>/var/filees/service-repo</code> and its working copy, and connects svnserve to the generated authz file.</li>
+<li>Installs disabled <code>rc.d</code> scripts for <code>filees_public_authority</code> and <code>filees_links</code>.</li>
+<li>Verifies the configuration with <code>sshd -t</code> and reloads the existing sshd.</li>
+</ul>
+<h2 id="ch3-sshd">3.3 OpenBSD sshd Configuration</h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>Three protocol accounts, forced commands and forwarding policy validated natively.</span></div>
+<p>The effective <code>Match User</code> blocks applied by <code>install-ssh.sh</code> are:</p>
+<pre><code>Match User _filees-onboard
+    AuthenticationMethods publickey
+    PubkeyAuthentication yes
+    AuthorizedKeysFile /etc/ssh/filees_bootstrap_authorized_keys
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    ForceCommand /usr/local/libexec/filees/filees-bootstrap-entry
+    DisableForwarding yes
+    PermitTTY no
+    MaxSessions 1
+    AllowStreamLocalForwarding no
+    PermitTunnel no
+    PermitUserRC no
+    X11Forwarding no
+    AllowAgentForwarding no
+
+Match User _filees-tunnel
+    AuthenticationMethods keyboard-interactive:bsdauth
+    PubkeyAuthentication no
+    AuthorizedKeysFile none
+    ForceCommand /usr/local/libexec/filees/filees-entry
+    PasswordAuthentication no
+    KbdInteractiveAuthentication yes
+    PermitTTY no
+    AllowTcpForwarding remote
+    PermitListen 127.0.0.1:42000
+    PermitOpen none
+    AllowStreamLocalForwarding no
+    GatewayPorts no
+    PermitTunnel no
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitUserRC no
+    MaxSessions 1
+    MaxAuthTries 2
+
+Match User _filees-client
+    AuthenticationMethods publickey
+    PubkeyAuthentication yes
+    AuthorizedKeysFile /var/filees/activation/authorized_keys
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    DisableForwarding yes
+    AllowStreamLocalForwarding no
+    PermitTTY no
+    PermitTunnel no
+    PermitUserRC no
+    X11Forwarding no
+    AllowAgentForwarding no
+    MaxAuthTries 1
+    MaxSessions 1
+
+Match all</code></pre>
+<p>The <code>Match all</code> sentinel is required before any <code>Include</code> directive in the main <code>sshd_config</code> to prevent match blocks from leaking into included files. The installer handles this automatically.</p>
+<div class="note"><strong>Fixed port:</strong> the reverse tunnel port is a single static value (<code>127.0.0.1:42000</code> by default; configurable as <code>reverse_port_first</code>/<code>reverse_port_last</code> in <code>server.json</code>). This serialises infrequent deploys. The base <code>sshd_config</code> cannot make <code>PermitListen</code> conditional on the BSD Auth result, so a dynamic per-operation port would require a custom listener that FileES deliberately avoids.</div>
+<h2 id="ch3-serverjson">3.4 <code>server.json</code> Reference</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Configuration contract used by the current server tools.</span></div>
+<p>After running the installer, edit <code>/etc/filees/server.json</code>:</p>
+<pre><code>{
+  "schema": "filees.server-toolchain/v1",
+  "root": "/var/filees/onboarding",
+  "otp_pepper_file": "/etc/filees/otp.pepper",
+  "worker_private_key_file": "/etc/filees/worker_ed25519",
+  "worker_public_key_file": "/etc/filees/worker_ed25519.pub",
+  "activation": {
+    "root": "/var/filees/activation",
+    "authorized_keys_file": "/var/filees/activation/authorized_keys",
+    "authz_file": "/var/filees/activation/service.authz",
+    "service_working_copy": "/var/filees/service-wc",
+    "service_repository": "/var/filees/service-repo",
+    "repository_name": "filees-service",
+    "client_entry_path": "/usr/local/libexec/filees/filees-client-entry",
+    "svn_binary": "/usr/local/bin/svn",
+    "svnserve_binary": "/usr/local/bin/svnserve"
+  },
+  "repositories": {
+    "root": "/var/filees/repositories",
+    "results_root": "/var/filees/repository-operations",
+    "data_authz_file": "/var/filees/activation/repositories.authz",
+    "svnadmin_binary": "/usr/local/bin/svnadmin",
+    "url_prefix": "svn+ssh://_filees-data@filees.example.net/",
+    "deletion_archive_root": "/var/filees/repository-operations/deleted-repositories",
+    "deletion_retention_days": 30
+  },
+  "operation_ttl": "30m",
+  "otp_attempts": 5,
+  "reverse_port_first": 42000,
+  "reverse_port_last": 42000,
+  "smtp": {
+    "address": "smtp.example.net:587",
+    "server_name": "smtp.example.net",
+    "client_name": "filees.example.net",
+    "from": "filees@example.net",
+    "message_id_domain": "filees.example.net",
+    "username": "",
+    "tls": "starttls",
+    "connect_timeout": "10s",
+    "command_timeout": "30s"
+  }
+}</code></pre>
+<div class="table-wrap"><table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td><code>schema</code></td><td>Must be <code>filees.server-toolchain/v1</code></td></tr>
+<tr><td><code>root</code></td><td>Absolute path to the private state directory (tickets, operations, audit)</td></tr>
+<tr><td><code>otp_pepper_file</code></td><td>Absolute path to file containing at least 32 bytes of base64-encoded secret pepper</td></tr>
+<tr><td><code>worker_private_key_file</code></td><td>Absolute path to Ed25519 private key used by <code>filees-worker</code> (mode 0600)</td></tr>
+<tr><td><code>worker_public_key_file</code></td><td>Absolute path to the corresponding public key in authorized_keys format</td></tr>
+<tr><td><code>activation</code></td><td>Absolute private runtime paths, service repository/WC, repository name and fixed client-entry/SVN executable paths</td></tr>
+<tr><td><code>repositories.root</code></td><td>Absolute root of UUID-named data repositories; use a dedicated storage mount when appropriate. The default is <code>/var/filees/repositories</code>.</td></tr>
+<tr><td><code>repositories.results_root</code></td><td>Absolute root for durable repository-operation records; it is separate from FSFS data storage.</td></tr>
+<tr><td><code>repositories.url_prefix</code></td><td>Canonical public repository URL prefix. It must use the restricted <code>svn+ssh://_filees-data@host/</code> form, with no explicit port.</td></tr>
+<tr><td><code>repositories.deletion_archive_root</code></td><td>Optional absolute archive location for verified deletion dumps. If omitted, it is under <code>results_root</code>.</td></tr>
+<tr><td><code>operation_ttl</code></td><td>Lifetime of each onboarding operation, e.g. <code>30m</code></td></tr>
+<tr><td><code>otp_attempts</code></td><td>Maximum wrong OTP attempts before exhaustion</td></tr>
+<tr><td><code>reverse_port_first</code></td><td>First (or only) permitted reverse tunnel port</td></tr>
+<tr><td><code>reverse_port_last</code></td><td>Last permitted port (use same value as first for a single static port)</td></tr>
+<tr><td><code>smtp.address</code></td><td>Smarthost address as <code>host:port</code></td></tr>
+<tr><td><code>smtp.tls</code></td><td><code>starttls</code>, <code>implicit</code>, or <code>none</code> (none only on loopback)</td></tr>
+<tr><td><code>smtp.username</code></td><td>SMTP AUTH username; leave empty for unauthenticated relay</td></tr>
+<tr><td><code>smtp.password_file</code></td><td>Absolute path to file with SMTP password (mode 0600); required when username is set</td></tr>
+</table></div>
+<p>Mode 0600 is recommended for the config file; the loader requires a regular file that is not writable by group or others. All path values must be absolute. After editing, validate the non-secret command path:</p>
+<pre><code>doas -u _filees-state filees-admin -config /etc/filees/server.json ticket list</code></pre>
+<h2 id="ch3-keys">3.5 Key Generation</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Worker-key generation and installation-key registration are implemented; production pin distribution remains a deploy concern.</span></div>
+<p>The installer generates all required keys automatically. If you need to regenerate:</p>
+<pre><code># Regenerate OTP pepper (invalidates all pending OTPs)
+umask 077
+openssl rand -base64 32 &gt; /etc/filees/otp.pepper
+
+# Regenerate worker key pair (distribute only the .pub to client policy)
+umask 077
+ssh-keygen -q -t ed25519 -N '' -C filees-worker-v1 \
+  -f /etc/filees/worker_ed25519</code></pre>
+<div class="warn">Regenerating the OTP pepper invalidates all outstanding OTPs. Any client in the middle of an onboarding will need a new ticket. Regenerating the worker key pair requires updating the pinned public key on all clients before the next deploy attempt.</div>
+<h4>Service repository setup</h4>
+<p>The OpenBSD integration script performs the implemented activation setup:</p>
+<ol>
+<li>Creates <code>/var/filees/service-repo</code> and the initial <code>/proof</code> path.</li>
+<li>Checks out <code>/var/filees/service-wc</code> for activation and revocation commits.</li>
+<li>Connects svnserve to <code>/var/filees/activation/service.authz</code>; the activation manager atomically regenerates authz and authorized keys.</li>
+<li>Commits <code>format.json</code>, realm, client, projection and audit on the first successful possession proof.</li>
+</ol>
+<p>This is the completed activation vertical. General data-repository creation, storage preflight, grants and <code>INITIAL_COMMIT</code> orchestration are now also connected to a server-side control-plane worker (<code>pkg/repoworker</code>, dispatched over the same forced-command SSH session) and verified end to end, including the <code>STORAGE_INSUFFICIENT</code> refusal path on a physically constrained filesystem — see the provisioning state machine in §2.3.</p>
+<h4>Running administrative commands</h4>
+<p>Administrative and one-shot server commands that read or mutate private state are run as <code>_filees-state</code>:</p>
+<pre><code>doas -u _filees-state filees-admin ticket create user@example.com
+doas -u _filees-state filees-admin ticket list
+doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
+doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
+doas -u _filees-state filees-mail send</code></pre>
+<h2 id="ch3-managed">3.6 Managed Install and Upgrade: <code>filees-install</code></h2><div class="section-meta"><span class="status status-verified">Verified on production</span><span>Signed FILEES-BIN channel <code>alpha</code> currently points at release r492; <code>spot.example.net</code> reports <code>installed=r492 available=r492</code> for all 16 managed binaries.</span></div>
+<p><code>filees-install</code> is the signed, manifest-driven successor to the server shell installers. It is modelled on the ksefUCK upgrade channel and adds signed owner/group policy (schema v2), correct POSIX set-id handling, UID/GID-preserving rollback, a durable interrupted-apply journal and an exclusive updater lock. The distribution repository is <code>svn://cloud.atmprojekt.pl/FILEES-BIN</code>. The production public trust root is embedded at build time; the private <code>.sec</code> key stays on the dedicated signing host and never enters this working copy, the build host or FILEES-BIN. After a complete two-stage bootstrap, <code>--adopt</code> records the existing installation as the managed baseline only when every local hash, owner, group and mode exactly matches the signed manifest.</p>
+<p>A production upgrade is <code>filees-install --dry-run</code> then <code>--apply</code>. Chaos tests that stop the updater mid-apply belong on a VM, not on a live host. The signed updater manages the 16 binary targets from <code>packaging/server/openbsd-binary-policy.json</code>; manual pages installed by <code>install-server.sh</code> are documentation, not currently a FILEES-BIN payload.</p>
+<pre><code># Plan against the configured channel (no changes):
+filees-install -check
+# Full plan including config-contract drift, no payload download:
+filees-install -dry-run
+# Install or upgrade to the channel head (or a named release):
+filees-install -apply [r7]
+# Stage-1 rollback: restore the previously installed files:
+filees-install -rollback
+# Stage-2 rollback: remove files, sshd fragment, login class and
+# the users this installer created; keeps /var/filees and /etc/filees:
+filees-install -purge
+# ... and wipe operational state too (irreversible):
+filees-install -purge -wipe-state</code></pre>
+<p>Configuration lives in <code>/etc/filees/install.conf</code> (INI: <code>[repo]</code>, <code>[local]</code>, <code>[install]</code>, <code>[policy]</code>, <code>[security]</code>). Key behaviours:</p>
+<ul>
+<li><strong>First install</strong> also performs the system tasks that <code>install-ssh.sh</code> covers today: creates the protocol accounts (recording which ones it actually created), state directories and secrets, installs the sshd fragment Include and login class, and reloads sshd. Upgrades never repeat system tasks.</li>
+<li><strong>Backup before overwrite</strong>: every replaced file is copied (full mode bits, including setuid) into a timestamped backup dir recorded in <code>state.json</code>; <code>-rollback</code> restores exactly the last install.</li>
+<li><strong>Sandbox profile by run class</strong>: file-only runs (check, dry-run, upgrade, rollback) execute under a full two-pass <code>unveil</code> with pledge reduced to file promises. System runs (first install, purge, upgrades touching the sshd fragment) skip <code>unveil</code> — its state is inherited by exec'd children, which would blind <code>useradd</code>/<code>rcctl</code>/<code>sshd&nbsp;-t</code> — and keep <code>proc exec</code> only until the system phase ends.</li>
+<li><strong>Purge honours ownership</strong>: only users recorded as created by this installer are removed; a rollback that restores an sshd fragment prints a warning to reload sshd manually instead of exec'ing under the reduced pledge.</li>
+</ul>
+<div class="note">Design and review history: <code>concepts/SERVER_INSTALL_CONCEPT.md</code>, <code>concepts/SERVER_INSTALL_CODE_REVIEW.md</code> and its corrections document.</div>
+<h2 id="ch3-manual-htdocs">3.7 Publishing the HTML manual on the public origin</h2>
+<div class="section-meta"><span class="status status-implemented">Implemented layout</span><span>Uses the existing <code>/assets/*</code> allowlist. Document root is a working copy of <code>^/manual</code>.</span></div>
+<p>On <code>manual.filees.space</code> the document root and Public Shares share one <code>server</code> block. <code>httpd</code> first matches the static allowlist, then sends every other path to <code>filees-links</code>. The multi-page manual therefore cannot occupy sibling URLs such as <code>/architecture.html</code>. Those would miss the allowlist and become branded FastCGI 404s.</p>
+<p>The Subversion subtree <code>svn://cloud.atmprojekt.pl/SYNCSHARE/manual</code> <em>is</em> the document-root image. Check it out in place and publish with <code>svn update</code>:</p>
+<pre><code>doas svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs
+doas svn update /var/www/htdocs</code></pre>
+<pre><code>/var/www/htdocs/               ← working copy of ^/manual
+├── .svn/                      ← not on the static allowlist; FastCGI 404
+├── index.html
+├── favicon.ico
+├── robots.txt
+└── assets/
+    ├── architecture.html
+    ├── user-guide.html
+    ├── install.html
+    ├── administration.html
+    ├── public-shares.html
+    ├── security.html
+    ├── man-pages.html
+    └── css/manual.css</code></pre>
+<p>Do not check the tree out as <code>/var/www/htdocs/manual</code> — that would make <code>/manual/index.html</code> a virtual FileES path. Do not run <code>rcctl reload httpd</code>. Ignore <code>.well-known</code> in that working copy so ACME stays local. The full URL-space graph is on the <a href="index.html#publish">overview</a>; the process graph is in <a href="architecture.html#server-graph">§1 server dependency graph</a>.</p>
+</div>
+<nav class="page-nav"><a href="user-guide.html">← 2. User guide</a><a href="administration.html">4. Administration →</a></nav>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-14 · source r494</span></footer>
+</main>
+</body>
+</html>

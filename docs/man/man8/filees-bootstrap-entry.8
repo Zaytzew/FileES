@@ -1,0 +1,36 @@
+.Dd August 14, 2026
+.Dt FILEES-BOOTSTRAP-ENTRY 8
+.Os
+.Sh NAME
+.Nm filees-bootstrap-entry
+.Nd public FileES onboarding forced command
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+.Nm
+is the
+.Xr sshd 8
+forced command for
+.Sy _filees-onboard .
+It accepts no arguments.
+The compiled-in bootstrap public key is a public capability: it can only
+reach this command, and forwarding is disabled.
+.Pp
+The command performs exactly two steps:
+.Bl -enum
+.It
+.Xr filees-onboard 8
+.Cm take
+.It
+one
+.Xr filees-mail 8
+.Cm send
+attempt
+.El
+.Pp
+It does not enumerate tickets and does not expose whether an address is
+free.
+.Sh SEE ALSO
+.Xr filees-onboard 8 ,
+.Xr filees-mail 8 ,
+.Xr sshd 8

@@ -1,0 +1,32 @@
+.Dd August 14, 2026
+.Dt FILEES-ENTRY 8
+.Os
+.Sh NAME
+.Nm filees-entry
+.Nd FileES OTP-tunnel forced command
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+.Nm
+is the
+.Xr sshd 8
+forced command for
+.Sy _filees-tunnel .
+It accepts only the literal remote command
+.Cm filees tunnel-v1 .
+.Pp
+BSD Auth has already compared the OTP.
+.Nm
+then claims the operation bundle, confirming the reverse forward to
+.Li 127.0.0.1:42000 ,
+and execs
+.Xr filees-worker 8
+for the rest of the activation.
+The OTP is not taken from the environment;
+.Xr sshd 8
+does not propagate BSD Auth
+.Ic setenv
+values to the forced command.
+.Sh SEE ALSO
+.Xr filees-ssh-auth 8 ,
+.Xr filees-worker 8

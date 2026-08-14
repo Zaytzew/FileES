@@ -43,6 +43,108 @@ func TestOpenBSDServerBinaryPolicyMatchesPrivilegeBoundaries(t *testing.T) {
 	}
 }
 
+func TestManualHtdocsFitsStaticAllowlist(t *testing.T) {
+	root := filepath.Join("..", "manual")
+	allow := []string{"/", "/index.html", "/favicon.ico", "/robots.txt", "/.well-known/", "/assets/"}
+	conf, err := os.ReadFile(filepath.Join("server", "openbsd", "public-links.httpd.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(conf)
+	for _, loc := range []string{`location "/"`, `location "/index.html"`, `location "/favicon.ico"`, `location "/robots.txt"`, `location "/assets/*"`, `location "/*"`} {
+		if !strings.Contains(text, loc) {
+			t.Errorf("httpd example missing %s", loc)
+		}
+	}
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		urlPath := "/" + rel
+		if rel == "index.html" {
+			urlPath = "/index.html"
+		}
+		covered := false
+		for _, prefix := range allow {
+			if prefix == urlPath || prefix == "/" && urlPath == "/index.html" {
+				covered = true
+				break
+			}
+			if strings.HasSuffix(prefix, "/") && strings.HasPrefix(urlPath, prefix) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			t.Errorf("%s would be served as %s, which is not on the static allowlist", rel, urlPath)
+		}
+		switch rel {
+		case "index.html", "favicon.ico", "robots.txt":
+		default:
+			if !strings.HasPrefix(rel, "assets/") {
+				t.Errorf("%s must live under assets/ or be a root allowlisted file", rel)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServerMandocPagesArePresent(t *testing.T) {
+	root := filepath.Join("..", "docs", "man")
+	want := []string{
+		"man5/filees.conf.5",
+		"man5/filees-public-links.5",
+		"man7/filees.7",
+		"man8/filees-admin.8",
+		"man8/filees-install.8",
+		"man8/filees-operation.8",
+		"man8/filees-mail.8",
+		"man8/filees-onboard.8",
+		"man8/filees-rotate.8",
+		"man8/filees-bootstrap-entry.8",
+		"man8/filees-entry.8",
+		"man8/filees-client-entry.8",
+		"man8/filees-worker.8",
+		"man8/filees-service-wc-corrector.8",
+		"man8/filees-ssh-auth.8",
+		"man8/filees-public-authority.8",
+		"man8/filees-links.8",
+		"man8/filees-mobile-v1.8",
+		"man8/filees-recovery-entry.8",
+	}
+	for _, rel := range want {
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Errorf("%s: %v", rel, err)
+			continue
+		}
+		text := string(data)
+		for _, required := range []string{".Dd ", ".Dt ", ".Sh NAME", ".Nd ", ".Sh DESCRIPTION"} {
+			if !strings.Contains(text, required) {
+				t.Errorf("%s missing %q", rel, required)
+			}
+		}
+	}
+	script, err := os.ReadFile("server/install-server.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(script), "share/man") {
+		t.Fatal("install-server.sh must install bundled man pages")
+	}
+}
+
 func TestServerInstallerExampleConfigLoads(t *testing.T) {
 	cfg, err := serverconfig.Load("server/install.example.conf")
 	if err != nil {

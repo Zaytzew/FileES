@@ -1,0 +1,117 @@
+.Dd August 14, 2026
+.Dt FILEES.CONF 5
+.Os
+.Sh NAME
+.Nm filees.conf
+.Nd FileES server toolchain configuration
+.Pq Pa /etc/filees/server.json
+.Sh DESCRIPTION
+The FileES server tools read a single JSON document, by default
+.Pa /etc/filees/server.json .
+The schema name is
+.Cm filees.server-toolchain/v1 .
+The file must be a regular file, not group- or other-writable, and every
+path value must be absolute.
+.Pp
+Loaders that need secrets take an explicit secret set.
+A tool that does not need SMTP does not open the SMTP password file.
+.Sh FIELDS
+.Bl -tag -width Ds
+.It Ic schema
+Must be
+.Cm filees.server-toolchain/v1 .
+.It Ic root
+Private onboarding directory.
+Default layout is
+.Pa /var/filees/onboarding .
+.It Ic otp_pepper_file
+At least 32 bytes of base64 pepper.
+Regenerating it invalidates outstanding OTPs.
+.It Ic worker_private_key_file , worker_public_key_file
+Ed25519 key used by
+.Xr filees-worker 8
+when it pins the client helper.
+.It Ic activation
+Absolute runtime paths: activation root, session root, authorized_keys,
+service authz, service working copy, service repository, client and mobile
+entry paths, and the
+.Nm svn
+and
+.Nm svnserve
+binaries.
+.It Ic repositories.root
+Absolute FSFS storage root.
+.Pa /var/filees/repositories
+is a default, not a required mount point.
+.It Ic repositories.results_root
+Durable worker results, separate from FSFS data.
+.It Ic repositories.url_prefix
+Canonical public prefix.
+It must be
+.Cm svn+ssh://_filees-data@host/
+with no explicit port.
+The SSH port belongs in the client transport profile and in
+.Ic invitation.server_address .
+.It Ic repositories.deletion_retention_days
+Days to keep a verified dump after a permanent detach.
+Omitted defaults to 30.
+Explicit
+.Cm 0
+deletes FSFS immediately and writes no dump.
+.It Ic repositories.recovery_admin_contact
+Mailbox used for data-erasure notices.
+.It Ic public_shares
+Optional distribution channel.
+Disabled by default.
+See
+.Xr filees-public-authority 8
+and
+.Xr filees-public-links 5 .
+.It Ic invitation
+Stable
+.Ic server_id ,
+public SSH
+.Ic server_address
+and the verified Ed25519
+.Ic known_host
+line carried in every invitation.
+.It Ic smtp
+Submission-style relay.
+.Ic tls
+is
+.Cm starttls ,
+.Cm implicit
+or
+.Cm none
+.Pq loopback only .
+.Ic password_file
+is required when
+.Ic username
+is set.
+.It Ic operation_ttl , otp_attempts
+Onboarding operation lifetime and wrong-OTP limit.
+.It Ic reverse_port_first , reverse_port_last
+Permitted reverse-tunnel ports.
+A single static port is the supported deployment.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /etc/filees/server.json
+Installed configuration.
+.It Pa /etc/filees/server.example.json
+Example shipped in the server bundle.
+.It Pa /etc/filees/otp.pepper
+OTP pepper, mode 0600.
+.It Pa /etc/filees/smtp.password
+Optional SMTP secret, mode 0600, owner
+.Sy _filees-state .
+.El
+.Sh EXAMPLES
+Validate the non-secret path after editing:
+.Bd -literal -offset indent
+$ doas -u _filees-state filees-admin ticket list
+.Ed
+.Sh SEE ALSO
+.Xr filees 7 ,
+.Xr filees-admin 8 ,
+.Xr filees-public-links 5

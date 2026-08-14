@@ -1,0 +1,142 @@
+.Dd August 14, 2026
+.Dt FILEES-ADMIN 8
+.Os
+.Sh NAME
+.Nm filees-admin
+.Nd FileES administrative tickets, revocation and erasure closure
+.Sh SYNOPSIS
+.Nm
+.Op Fl config Ar path
+.Cm ticket create Ar mailbox
+.Op Fl -ttl Ar duration
+.Op Fl -join-realm-alias Ar alias
+.Nm
+.Op Fl config Ar path
+.Cm ticket resend Fl -ticket-id Ar uuid
+.Nm
+.Op Fl config Ar path
+.Cm ticket revoke Fl -ticket-id Ar uuid
+.Nm
+.Op Fl config Ar path
+.Cm ticket list
+.Nm
+.Op Fl config Ar path
+.Cm operation inspect Fl -operation-id Ar uuid
+.Nm
+.Op Fl config Ar path
+.Cm client revoke Fl -client-id Ar uuid
+.Op Fl -reason Ar text
+.Nm
+.Op Fl config Ar path
+.Cm client revoke-realm Fl -realm-id Ar uuid
+.Op Fl -reason Ar text
+.Nm
+.Op Fl config Ar path
+.Cm repo transfer-owner Fl -repo-id Ar uuid Fl -realm-id Ar uuid
+.Nm
+.Op Fl config Ar path
+.Cm erasure complete Fl -operation-id Ar uuid
+.Op Fl -partially-retained
+.Nm
+.Cm version
+.Sh DESCRIPTION
+.Nm
+is the operator command for onboarding tickets and a small set of
+fail-closed administrative actions.
+It writes structured JSON to standard output and diagnostics to standard
+error.
+It must run with effective user
+.Sy _filees-state .
+Creating a ticket as root produces a root-owned mode 0600 file that the
+set-id onboarding entry intentionally cannot read.
+.Pp
+.Cm version
+is answered before the configuration is opened, so a stale binary can be
+identified even when
+.Pa server.json
+is suspect.
+.Pp
+Repository create, grants, public shares and realm removal are desktop
+control-plane operations, not extra
+.Nm
+verbs.
+.Sh COMMANDS
+.Bl -tag -width Ds
+.It Cm ticket create
+Issue a one-time invitation to
+.Ar mailbox
+and send it immediately.
+The mailbox must come before any flag.
+Without
+.Fl -join-realm-alias
+the ticket authorises a new realm.
+With the flag the server resolves the immutable alias now and stores the
+approved realm ID; the client never submits that ID.
+The invitation capability is not printed.
+.It Cm ticket resend
+Replace a failed delivery capability without changing recipient or TTL.
+.It Cm ticket revoke
+Delete an unused ticket.
+A claimed ticket has already been replaced by an operation bundle.
+.It Cm ticket list
+List remaining tickets.
+Names are
+.Fn sha256 mailbox
+so the file name does not reveal the address.
+.It Cm operation inspect
+Show one onboarding operation.
+.It Cm client revoke
+Write a durable
+.Cm revoking
+record, drop generated SSH/SVN access, then commit the revoked client.
+An identical retry is idempotent; a different reason is rejected.
+.It Cm client revoke-realm
+Revoke every installation of a realm with the same sequence.
+.It Cm repo transfer-owner
+Change
+.Ic owner_realm_id
+and regenerate data-authz.
+Existing grants issued by the previous owner are not touched.
+.It Cm erasure complete
+Close a data-erasure request after the operator has verified backup
+retention.
+.Fl -partially-retained
+records that policy still requires some copies.
+.El
+.Sh EXIT STATUS
+.Nm
+uses
+.Xr sysexits 3
+values:
+.Bl -tag -width 4n -compact
+.It 0
+success
+.It 64
+bad arguments
+.It 65
+input data error
+.It 69
+resource unavailable
+.It 70
+internal error
+.It 75
+temporary failure
+.It 78
+configuration error
+.El
+.Sh EXAMPLES
+Create a new-realm invitation:
+.Bd -literal -offset indent
+$ doas -u _filees-state filees-admin ticket create user@example.com
+.Ed
+.Pp
+Authorise another desktop in an existing realm:
+.Bd -literal -offset indent
+$ doas -u _filees-state filees-admin ticket create user@example.com \e
+    --join-realm-alias acme --ttl 24h
+.Ed
+.Sh SEE ALSO
+.Xr filees 7 ,
+.Xr filees.conf 5 ,
+.Xr filees-operation 8 ,
+.Xr filees-mail 8

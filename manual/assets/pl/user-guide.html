@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>2. Przewodnik — podręcznik FileES</title>
+<link rel="alternate" hreflang="en" href="../en/user-guide.html"/>
+<link rel="alternate" hreflang="pl" href="user-guide.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">dokumentacja systemu FileES</span>
+</div>
+</div>
+<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
+<nav class="lang-switch" aria-label="Język">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/user-guide.html" lang="en" hreflang="en">EN</a>
+<a href="user-guide.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<a href="index.html">Przegląd</a>
+<a href="architecture.html">1. Architektura</a>
+<a href="user-guide.html" class="is-current">2. Przewodnik</a>
+<a href="install.html">3. Instalacja</a>
+<a href="administration.html">4. Administracja</a>
+<a href="public-shares.html">5. Udziały publiczne</a>
+<a href="security.html">6. Bezpieczeństwo</a>
+<a href="man-pages.html">Strony man</a>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Na tej stronie" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / ta strona</span>
+<h2>Na tej stronie</h2>
+</div>
+<ol>
+<li><a href="#ch2-install">Instalacja klienta</a></li>
+<li><a href="#ch2-config">Konfiguracja</a></li>
+<li><a href="#ch2-firstrun">Pierwsze uruchomienie i wdrożenie</a></li>
+<li><a href="#ch2-sync">Codzienna synchronizacja</a></li>
+<li><a href="#ch2-passports">Paszporty edycji</a></li>
+<li><a href="#ch2-gui">Zasobnik GUI</a></li>
+<li><a href="#ch2-update">Podpisane aktualizacje pulpitu</a></li>
+<li><a href="#ch2-cli">Polecenia CLI</a></li>
+<li><a href="#ch2-trouble">Rozwiązywanie problemów</a></li>
+<li><a href="#ch2-glossary">Terminologia GUI</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1 id="ch2">Rozdział 2: Przewodnik użytkownika</h1>
+<div class="chapter-content">
+<h2 id="ch2-install">2.1 Instalacja klienta</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Bundle użytkownika na Linux przyjęty; demon i GUI na Windows aktywują się, dołączają do strefy i synchronizują na żywo. MSI nadal pakuje wyłącznie GUI.</span></div>
+<h4>Linux (bundle z <code>build-gui.sh</code>)</h4>
+<pre><code># Rozpakuj bundle filees-client-linux-amd64
+chmod +x install-user.sh
+./install-user.sh                     # instaluje do ~/.local/
+ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</code></pre>
+<p>Instalator kopiuje binarkę demona do <code>~/.local/bin/filees</code>, binarkę GUI do <code>~/.local/bin/filees-gui</code>, helper parowania telefonu do <code>~/.local/bin/filees-pair-gui</code> (zasobnik uruchamia go w razie potrzeby — zobacz §2.6 — użytkownik nigdy nie startuje go bezpośrednio), ikonę oraz plik <code>.desktop</code>. Instaluje jednostkę <code>systemd --user</code> (<code>filees.service</code>), ale <em>nie</em> włącza nieaktywnej usługi bez jawnego żądania; już aktywna usługa jest domyślnie restartowana (ustaw <code>RESTART_DAEMON=0</code>, aby ten restart pominąć). Istniejący <code>config.json</code> nie jest nigdy nadpisywany przy aktualizacji.</p>
+<p>Aby uruchomić demona jako usługę użytkownika:</p>
+<pre><code>systemctl --user enable --now filees.service</code></pre>
+<h4>Artefakt GUI Windows (MSI)</h4>
+<p>Uruchom <code>build-msi.ps1</code> w PowerShellu na maszynie z narzędziem WiX Toolset <code>wix</code> (sprawdzone z WiX v7), a następnie zainstaluj wygenerowany <code>.msi</code>. Pierwszy build WiX v7 wymaga jednorazowego polecenia <code>wix eula accept wix7</code>. Instalacja jest per-user; monit UAC nie jest potrzebny. Skrót w menu Start ma <code>System.AppUserModel.ID = ATMProjekt.FileES</code>, co umożliwia powiadomienia toast. Bieżące MSI nadal instaluje wyłącznie GUI. Demon Windows jest budowany i uruchamiany jako osobny <code>filees.exe</code>; nie jest jeszcze pakowany jako usługa Windows ani zadanie harmonogramu. Żywa aktywacja, dołączenie do strefy, selektywne podłączenie i synchronizacja między klientami zostały przyjęte względem produkcyjnego serwera OpenBSD.</p>
+<div class="warn"><strong>Przed odinstalowaniem MSI na Windows:</strong> najpierw uruchom <code>filees-gui --autostart disable</code>. Instalator nie usuwa automatycznie wartości rejestru <code>HKCU\...\Run</code>, którą tworzy aplikacja.</div>
+<h4>Wymagania</h4>
+<div class="table-wrap"><table>
+<tr><th>Platforma</th><th>Wymagania</th></tr>
+<tr><td>Demon Linux</td><td><code>svn</code> i OpenSSH <code>ssh</code> w PATH, aktywowana tożsamość instalacji FileES oraz przypięty klucz hosta usługi; Go 1.25+ tylko przy budowie ze źródeł</td></tr>
+<tr><td>GUI Linux</td><td>pulpit zgodny z SNI (KDE, XFCE, MATE); GNOME wymaga rozszerzenia AppIndicator; <code>zenity</code> lub <code>kdialog</code> do wyboru plików; <code>yad</code> do dialogów ustawień serwera / grantu strefy / widoczności strefy; <code>xdg-open</code>; <code>notify-send</code> (opcjonalnie)</td></tr>
+<tr><td>GUI Windows</td><td>Windows 10+; PowerShell; instalacja MSI dla powiadomień toast (rejestracja AUMID)</td></tr>
+</table></div>
+<h2 id="ch2-config">2.2 Konfiguracja</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Walidacja i nienakładające się korzenie kopii roboczych są wymuszane przed utworzeniem stanu runtime.</span></div>
+<p>Demon czyta <code>config.json</code> z katalogu roboczego (albo ze ścieżki podanej przez <code>--config</code>). Tożsamość transportu SSH należy do instalacji klienta i jest współdzielona przez jej projekcje repozytoriów:</p>
+<pre><code>{
+  "transport": {
+    "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
+    "known_hosts": "/home/user/.local/share/filees/known_hosts"
+  },
+  "update": {
+    "enabled": true,
+    "repo_url": "https://releases.example/FILEES-BIN",
+    "channel": "stable",
+    "component": "desktop",
+    "platform": "linux-amd64",
+    "state_path": "/home/user/.local/state/filees/update.json",
+    "stage_root": "/home/user/.local/state/filees/update-stage"
+  },
+  "repositories": [
+    {
+      "id":              "projectA",
+      "repo_url":        "svn+ssh://_filees-client@server/repo/trunk",
+      "local_path":      "/home/user/projectA",
+      "commit_interval": "1m",
+      "watch_interval":  "30s",
+      "poll_interval":   "30s",
+      "max_batch_files": 100,
+      "max_batch_mib":   512,
+      "backlog_flush_mib": 1024,
+      "shutdown_commit_timeout": "10m",
+      "lock_first":      false,
+      "edit_passports":  false,
+      "edit_passport_ttl": "15m",
+      "edit_passport_heartbeat": "5m",
+      "edit_passport_max_session": "24h",
+      "edit_passport_close_grace": "5m",
+      "shout_patterns":  ["\\.psd$", "\\.blend$"],
+      "rate_limit_shout": "5m",
+      "commit_tiers": [
+        {"max_mb": 1,  "interval": "2m"},
+        {"max_mb": 10, "interval": "5m"},
+        {"max_mb": 50, "interval": "15m"},
+        {"max_mb": 0,  "interval": "24h"}
+      ]
+    }
+  ]
+}</code></pre>
+<p class="field-table">Kluczowe pola konfiguracji:</p>
+<div class="table-wrap"><table class="field-table">
+<tr><th>Pole</th><th>Opis</th></tr>
+<tr><td><code>id</code></td><td>Unikalny identyfikator repozytorium (używany w logach i ścieżkach stanu)</td></tr>
+<tr><td><code>transport.identity_file</code></td><td>Bezwzględna ścieżka do klucza Ed25519 instalacji utworzonego przy aktywacji</td></tr>
+<tr><td><code>transport.known_hosts</code></td><td>Bezwzględna ścieżka do pliku przypiętego klucza hosta usługi</td></tr>
+<tr><td><code>update.enabled</code></td><td>Włącza podpisany aktualizator pulpitu; domyślnie wyłączony</td></tr>
+<tr><td><code>update.repo_url</code></td><td>URL repozytorium wydań przez SVN, SVN+SSH albo HTTPS, bez hasła, query ani fragmentu</td></tr>
+<tr><td><code>update.channel</code></td><td>Identyfikator kanału wydań; domyślnie <code>stable</code></td></tr>
+<tr><td><code>update.component</code></td><td>Musi być <code>desktop</code> dla tego klienta</td></tr>
+<tr><td><code>update.platform</code></td><td>Musi odpowiadać bieżącemu <code>GOOS-GOARCH</code>; domyślnie ta wartość</td></tr>
+<tr><td><code>update.state_path</code></td><td>Bezwzględna prywatna ścieżka trwałego stanu high-water chroniącego przed rollbackiem</td></tr>
+<tr><td><code>update.stage_root</code></td><td>Bezwzględny prywatny katalog używany do stagingu zweryfikowanego bundla</td></tr>
+<tr><td><code>repo_url</code></td><td>Ograniczony URL <code>svn+ssh://_filees-client@host/...</code>; inne transporty są odrzucane</td></tr>
+<tr><td><code>local_path</code></td><td>Bezwzględna ścieżka kopii roboczej. Nie może nachodzić na inne skonfigurowane korzenie.</td></tr>
+<tr><td><code>commit_interval</code></td><td>Bazowe okno commita, np. <code>1m</code>, <code>30s</code></td></tr>
+<tr><td><code>watch_interval</code></td><td>Interwał skanowania systemu plików</td></tr>
+<tr><td><code>poll_interval</code></td><td>Jak często sprawdzać HEAD serwera i pobierać aktualizacje (domyślnie <code>30s</code>)</td></tr>
+<tr><td><code>max_batch_files</code></td><td>Maksimum plików na commit (katalogi dodane jako rodzice nie liczą się)</td></tr>
+<tr><td><code>max_batch_mib</code></td><td>Docelowy maksymalny rozmiar commita; pojedynczy zbyt duży plik dostaje własną partię</td></tr>
+<tr><td><code>backlog_flush_mib</code></td><td>Wymuś publikację, gdy suma w stagingu przekroczy tę wartość (musi być ≥ <code>max_batch_mib</code>)</td></tr>
+<tr><td><code>shutdown_commit_timeout</code></td><td>Maksymalny czas opróżniania przy kontrolowanym zamknięciu (domyślnie <code>10m</code>)</td></tr>
+<tr><td><code>lock_first</code></td><td>Próbuj <code>svn lock</code> przed każdym commitem (wzajemnie wyklucza się z <code>edit_passports</code>)</td></tr>
+<tr><td><code>edit_passports</code></td><td>Przełącznik wyłącznie legacy/deweloperski dla ręcznie skonfigurowanego repozytorium. Repozytoria projektowane przez serwer go ignorują i używają kanonicznej, wspólnej dla repozytorium <code>editing_policy</code> (zobacz sekcję 2.5).</td></tr>
+<tr><td><code>commit_tiers</code></td><td>Interwały zależne od rozmiaru; ostatni wpis z <code>max_mb: 0</code> jest zbiorczy</td></tr>
+<tr><td><code>shout_patterns</code></td><td>Lista wyrażeń regularnych; pasujące pliki generują ticket powiadomienia</td></tr>
+</table></div>
+<p>Wszystkie czasy używają formatu Go: <code>30s</code>, <code>5m</code>, <code>1h30m</code>.</p>
+<div class="note">Każde <code>local_path</code> musi być bezwzględne. Ścieżki nie mogą być identyczne ani zagnieżdżone w żadną stronę. Walidacja rozwiązuje symlinki na istniejących katalogach i przerywa start demona twardym błędem, zanim powstanie jakikolwiek stan.</div>
+<p>Aby sprawdzić konfigurację bez uruchamiania demona:</p>
+<pre><code>filees config-check --config /path/to/config.json</code></pre>
+<h2 id="ch2-firstrun">2.3 Pierwsze uruchomienie i wdrożenie</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD i Windows</span><span>Aktywacja nowej strefy i dołączenie kolejnej instalacji pulpitu autoryzowane przez administratora należą do demona i GUI.</span></div>
+<p>Przepływ wdrożenia tworzy jedną tożsamość instalacji i aktywuje jej pierwszą projekcję repozytorium serwisowego. Zaczyna się od zaproszenia e-mail wystawionego przez administratora. Na kliencie wybierz <strong>Aktywuj klienta na nowym serwerze…</strong>, wklej jednorazowe zaproszenie z pierwszej wiadomości, a następnie — gdy zostaniesz o to poproszony — osobno dostarczony OTP. Zaproszenie niesie profil serwera i przypięty klucz hosta SSH, więc zwykły użytkownik nigdy nie wpisuje adresu serwera, portu, nazwy profilu, UUID klienta ani ścieżki <code>known_hosts</code>. Zwykły ticket upoważnia nową strefę, a GUI pyta tę nową, nadal pustą strefę raz o niezmienny alias. Ticket utworzony z <code>--join-realm-alias</code> zamiast tego wiąże zaproszenie z istniejącą strefą jeszcze przed dostarczeniem: klient nie może wybrać ani wysłać tego identyfikatora strefy, dziedziczy jej alias i granty i nie może być pytany o zmianę nazwy. GUI jedynie prezentuje przepływ; demon jest właścicielem wszystkich przejść sieciowych i stanowych.</p>
+<ol>
+<li>Administrator tworzy ticket jako <code>_filees-state</code>: <code>filees-admin ticket create you@example.com</code> dla nowej strefy albo dodaje <code>--join-realm-alias existing-alias</code> dla kolejnej instalacji istniejącej strefy. Domyślna konfiguracja to <code>/etc/filees/server.json</code>; domyślny TTL to 24 godziny.</li>
+<li>Serwer wysyła pierwsze zaproszenie e-mail przez skonfigurowany przekaźnik. Zaproszenie to nieprzezroczysta, jednorazowa capability plus przypięty publiczny profil serwera.</li>
+<li>Realizacja zaproszenia tworzy krótkotrwałą operację i powoduje wysłanie OTP w drugiej wiadomości. Serwer nie udostępnia sondy dostępności adresu ani aliasu. Demon dostarcza OTP przez platformowy askpass (POSIX FIFO, named pipe w Windows) i zestawia przydzielony tunel zwrotny do swojego helpera na loopback.</li>
+<li>Helper generuje lokalnie klucz Ed25519 instalacji. Worker przygotowuje dostęp, prosi helper o dowód usługi i weryfikuje pokwitowanie zapisane po uwierzytelnieniu w systemowym sshd.</li>
+<li>Worker publikuje rekord klienta i pierwszy widok w repozytorium serwisowym oraz oznacza operację jako <code>active</code>. Pierwszy widok dołączonego klienta zawiera kanoniczny istniejący <code>realm_alias</code> i wszystkie obowiązujące repozytoria, ale opcjonalne repozytoria pozostają lokalnie niepodłączone, dopóki użytkownik ich nie wybierze.</li>
+</ol>
+<div class="note"><strong>Stan odbioru:</strong> aktywacja nowej strefy, dołączenie autoryzowane przez administratora, selektywne podłączenie oraz commit/reconnect między klientami przeszły na Windows zarówno wobec referencyjnej VM, jak i produkcyjnego <code>spot.example.net</code>. Przerwaną aktywację, która już osiągnęła <code>accepted</code>, można wznowić z GUI bez wklejania nowego zaproszenia; inne podpisane zaproszenie może zastąpić wyłącznie niedokończony stan i nie może nadpisać istniejącego <code>client-profile.json</code>. Zobacz <code>reports/ACTIVATION_HARDENING_2026-08-14.md</code>.</div>
+<h4>Dodawanie lokalnego katalogu</h4>
+<p>Lokalna maszyna stanów provisioningu prowadzi poniższy proces repozytorium danych wobec uwierzytelnionego workera repozytoriów po stronie serwera (<code>pkg/repoworker</code>), który jest połączony i zweryfikowany od końca do końca — w tym ścieżka odmowy:</p>
+<ol>
+<li><strong><code>STORAGE_PREFLIGHT</code></strong> — klient wysyła uwierzytelniony ticket z całkowitym rozmiarem lokalnego snapshotu; worker sprawdza go względem wolnej pojemności fizycznego systemu plików (opcjonalnie przez rejestr rezerwacji uwzględniający inne operacje w locie) i odmawia z <code>STORAGE_INSUFFICIENT</code> (dokładna liczba wymaganych/dostępnych bajtów, przedstawiona w jednostkach czytelnych dla człowieka), jeśli nie ma miejsca.</li>
+<li><strong><code>CREATE_REPOSITORY</code></strong> — klient wysyła uwierzytelniony ticket do workera serwera, który tworzy repozytorium danych SVN, ustawia grant właściciela i ACL oraz zwraca kanoniczne <code>repo_id</code> i <code>repo_url</code>.</li>
+<li><strong><code>INITIAL_COMMIT</code></strong> — klient robi checkout pustego korzenia repozytorium do lokalnego katalogu, wykonuje kontrolowane <code>svn add</code> z poszanowaniem wzorców ignorowania, publikuje początkowy snapshot w ograniczonych partiach, potwierdza <code>INITIAL_COMMIT</code> i dopiero wtedy uruchamia zwykły potok synchronizacji.</li>
+</ol>
+<p>Lokalna maszyna stanów zachowuje <code>operation_id</code> przy ponowieniu, a każdy typ ticketu jest po stronie workera idempotentny (powtórzone żądanie z tym samym <code>operation_id</code> odtwarza trwały wynik zamiast wykonywać operację ponownie). Po udanym utworzeniu repozytorium klient trwale zapisuje zwróconą tożsamość repozytorium, zanim rozpocznie import, więc restart albo ponowienie wznawia ten import zamiast tworzyć zduplikowane repozytorium na serwerze. Awaria na którejkolwiek z tych trzech trwałych granic jest zgłaszana z powrotem do GUI przez odpytywanie <code>repo.lifecycle_status</code>, a nie zostawiana w milczeniu.</p>
+<h2 id="ch2-sync">2.4 Codzienna synchronizacja</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Sprawdzono zwykłą pracę, gromadzenie zmian w awarii, ograniczone zamykanie i rekonsyliację po restarcie.</span></div>
+<p>Po aktywacji demon działa bez interwencji użytkownika:</p>
+<ul>
+<li>Lokalne zmiany plików są wykrywane w ciągu jednego tyknięcia <code>watch_interval</code>. Nowe pliki czekają 5 minut przed pierwszym commitem.</li>
+<li>Committy są grupowane według progu pasującego do bieżącego rozmiaru w stagingu (<code>commit_tiers</code>).</li>
+<li>Zmiany z serwera są pobierane co <code>poll_interval</code>. Gdy wykryty zostanie konflikt, kopia lokalna jest zachowywana w <code>!kolizje/</code>, a wygrywa wersja z serwera.</li>
+<li>Demon sam wraca po przerwach sieciowych z backoffem. Przygotowane zmiany gromadzą się w <code>cache.json</code> i są publikowane po odzyskaniu połączenia.</li>
+<li>Przy kontrolowanym zamknięciu (<code>SIGINT</code>/<code>SIGTERM</code>) demon opróżnia staging w ograniczonych partiach w czasie <code>shutdown_commit_timeout</code>. Pozostałe zmiany trafiają do <code>cache.json</code> i są wznawiane przy następnym starcie.</li>
+</ul>
+<h4>Wzorce ignorowania plików</h4>
+<p>Wbudowane ignorowania (nie można ich nadpisać): <code>~\$*</code> (MS Office), <code>.~lock.*#</code> (LibreOffice/OpenOffice), <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code>.</p>
+<p>Ignorowania użytkownika: umieść wzorce w <code>.filees/user_ignore.cfg</code> (przeładowywane na gorąco przy każdym skanie). Linie zaczynające się od <code>!</code> to twarde ignorowania, które pomijają całe poddrzewa. Składnia glob obsługuje <code>**</code> na dowolną głębokość.</p>
+<h2 id="ch2-passports">2.5 Paszporty edycji</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane między klientami</span><span>Polityka całego repozytorium, sterowanie wyłącznie właściciela, projekcja i przekazanie blokady między dwoma klientami przeszły żywy odbiór na Windows.</span></div>
+<p>Paszporty edycji dają jawne blokowanie per plik z odnawianiem heartbeatem. Tryb wybiera się raz dla całego repozytorium: właściciel wybiera <strong>Zasady edycji</strong> w Ustawieniach FileES, serwer zapisuje kanoniczne <code>editing_policy</code>, a każda projekcja pulpitu dostaje tę samą wartość. Kolumna GUI <strong>Edycja</strong> pokazuje właścicielom i gościom <strong>wymaga wypożyczenia</strong>; zmienić może ją tylko właściciel. Domyślnie obowiązuje zwykła swobodna edycja. Na drucie wartość domyślna jest pomijana, a jedyną jawną wartością jest <code>lock_required</code>.</p>
+<div class="decision">
+<div class="decision-head">Uzasadnienie / polityka repozytorium pozostaje opt-in</div>
+<div class="decision-grid">
+<div class="decision-label">Decyzja</div><div class="decision-value">Jawne blokowanie per plik włącza się tylko tam, gdzie typ dokumentu i przepływ pracy uzasadniają tarcie.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Zwykła synchronizacja ma pozostać cicha; blokowanie pesymistyczne jest polityką, a nie uniwersalną cechą FileES.</div>
+<div class="decision-label">Odrzucone</div><div class="decision-value">Wymaganie blokad w każdym repozytorium; konfigurowanie bariery całego repozytorium niezależnie na każdym kliencie.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Repozytoria z paszportami wymagają migracji, wymuszenia tylko do odczytu, heartbeatu i ogrodzenia tokenem widocznym na serwerze.</div>
+</div>
+</div>
+<p>Zachowanie w trybie paszportów:</p>
+<ul>
+<li>Wszystkie istniejące zwykłe pliki są przy pierwszym starcie migrowane tak, by niosły <code>svn:needs-lock</code> (demon odmawia rozpoczęcia migracji, jeśli kopia robocza ma lokalne zmiany treści, usunięcia albo brakujące pliki).</li>
+<li>Plik bez aktywnego paszportu jest lokalnie tylko do odczytu. Dla repozytorium, którego strefa właściciela <strong>nie</strong> jest własną strefą tego klienta, staje się zapisywalny dopiero po udanym wywołaniu <code>repo.lock</code> / <code>filees lock</code>, w tym po akcji <strong>Zablokuj pliki…</strong> w podmenu repozytorium w zasobniku.</li>
+<li><strong>Autolock (strefa właściciela):</strong> dla repozytorium, które należy do własnej strefy tego klienta, ręczna akcja blokady nie jest w ogóle potrzebna. Zaraz po każdym <code>svn up</code> demon natychmiast czyni własne pliki tylko do odczytu lokalnie zapisywalnymi — zanim zostanie nabyta prawdziwa blokada SVN. Prawdziwa blokada jest żądana dopiero w momencie następnej próby commita tej ścieżki: jeśli repozytorium jest rzeczywiście wolne (albo blokadę trzyma już inna instancja tej samej własnej strefy, co jest przejmowane po cichu, bez dialogu), commit przechodzi; jeśli blokadę trzyma już <em>inna</em> strefa, commit jest wstrzymywany, a zmiana zostaje w stagingu do późniejszego ponowienia — nigdy nie jest kradziona i lokalna edycja nigdy nie ginie.</li>
+<li>Nowe pliki nie wymagają paszportu przed pierwszą publikacją; demon nadaje <code>svn:needs-lock</code> przed commitem.</li>
+<li>Committy używają <code>svn commit --no-unlock</code>, żeby SVN nie omijał okresu close-grace.</li>
+<li>Po potwierdzonym commicie demon czeka przez okres close-grace (<code>edit_passport_close_grace</code>, domyślnie 5 min), zanim odblokuje plik i przywróci go do tylko do odczytu.</li>
+<li>Widoczna na serwerze blokada SVN i jej token są autorytatywne między klientami. Konkurencyjny klient dostaje alias posiadacza i czas wygaśnięcia; zwolnienie i przejęcie ponownie odczytują i ogrodzają token, więc nieaktualny wiersz UI nie może zwolnić innej blokady.</li>
+</ul>
+<p>Zmiana polityki to migracja, nie lokalna preferencja. Włączenie stosuje i commituje <code>svn:needs-lock</code> na istniejących zwykłych plikach wersjonowanych. Wyłączenie usuwa tę właściwość i zwalnia paszporty należące do wywołującego. Ścieżki aktualnie trzymane przez innego właściciela zostają nietknięte i są ponawiane później, zamiast być kradzione. Projekcja mobilna tylko-dopisująca celowo nie otrzymuje <code>editing_policy</code>.</p>
+<div class="note"><strong>Zakres autolock (V1):</strong> strefą właściciela repozytorium jest ta, która je utworzyła (<code>OwnerRealmID</code>) — ta sama tożsamość strefy opisana w §5.5. Udostępnianie repozytoriów między strefami jest zaimplementowane (§5.5): właściciel może nadać innej strefie dostęp <code>r</code> albo <code>rw</code> do repozytorium. Sam autolock pozostaje ściśle ograniczony do strefy właściciela (<code>pkg/commit</code> uruchamia cichą ścieżkę nabycia/ponownego zablokowania tylko gdy <code>RealmID == OwnerRealmID</code>); strefa mająca wyłącznie nadany udział <code>rw</code> używa ręcznej ścieżki „Wypożycz do edycji” (§2.6) jak każdy inny użytkownik niebędący właścicielem. Uogólnienie priorytetu autolock na własność per ścieżka dla repozytoriów zapisywalnych przez wiele stref pozostaje osobnym, jeszcze niezaimplementowanym rozszerzeniem (<code>concepts/AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md</code>).</div>
+<p>Parametry czasowe paszportów:</p>
+<div class="table-wrap"><table>
+<tr><th>Parametr</th><th>Domyślnie</th><th>Znaczenie</th></tr>
+<tr><td><code>edit_passport_heartbeat</code></td><td>5 min</td><td>Jak często demon odnawia token</td></tr>
+<tr><td><code>edit_passport_ttl</code></td><td>15 min</td><td>Ważność pojedynczego odnowienia; heartbeat musi być krótszy</td></tr>
+<tr><td><code>edit_passport_max_session</code></td><td>24 h</td><td>Twardy limit sesji; nie da się go przedłużyć heartbeatami</td></tr>
+<tr><td><code>edit_passport_close_grace</code></td><td>5 min</td><td>Okres ciszy po potwierdzonym commicie przed odblokowaniem</td></tr>
+</table></div>
+<div class="note"><strong>Stan odbioru:</strong> pełna bramka sześciu punktów przeszła na dwóch niezależnych instalacjach Windows w jednej strefie: projekcja polityki, automatyczny start menedżera, autolock właściciela, jawny wynik „held by X” na konkurencyjnym kliencie, przekazanie po zwolnieniu oraz migracja z powrotem do swobodnej edycji. Zobacz <code>reports/EDITING_POLICY_E2E_2026-08-11.md</code>. Własność per ścieżka i przepływ „poproś o zwolnienie” pozostają osobnymi przyszłymi rozszerzeniami; nie są lukami tej polityki całego repozytorium.</div>
+<h2 id="ch2-gui">2.6 Zasobnik GUI</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>GUI jest osobną binarką nad contract/v1; dołączenie na Windows, selektywne podłączenie, odzyskanie kopii roboczej i dziennik zostały przyjęte na żywej instalacji.</span></div>
+<p><code>filees-gui</code> jest osobnym procesem i cienką warstwą UX nad kontraktem IPC demona. Nie importuje żadnych pakietów silnika synchronizacji. Zamknięcie GUI nie zatrzymuje demona.</p>
+<div class="decision">
+<div class="decision-head">Uzasadnienie / zintegrowany demon, osobna binarka menu</div>
+<div class="decision-grid">
+<div class="decision-label">Decyzja</div><div class="decision-value">Demon jest właścicielem całego potoku operacyjnego potrzebnego do wiarygodnego UX; menu zasobnika pozostaje wymiennym klientem.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">Commit, aktualizacja, cache, odzyskiwanie i polityka muszą współpracować w jednym właścicielu runtime, a prezentacja ma inny cykl życia i inną granicę zaufania.</div>
+<div class="decision-label">Odrzucone</div><div class="decision-value">Osadzanie silnika synchronizacji w GUI; zatrzymywanie synchronizacji przy wyjściu z zasobnika; dzielenie dojrzałych operacji na usługi tylko po to, by zmniejszyć rozmiar pliku.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Demon jest wewnętrznie obszerny, a późniejsze wydzielenie musi iść za skończonymi odpowiedzialnościami, a nie za presją estetyczną.</div>
+</div>
+</div>
+<h4>Stany ikony (kolejność priorytetu)</h4>
+<div class="table-wrap"><table>
+<tr><th>Ikona</th><th>Stan</th><th>Warunek</th></tr>
+<tr><td>przyciemniona / brak</td><td>Brak połączenia</td><td>Nie można dotrzeć do demona albo niezgodność protokołu</td></tr>
+<tr><td>czerwona</td><td>Wymaga uwagi</td><td><code>interaction_required</code>, <code>degraded</code>, konflikt albo błąd wymagający działania</td></tr>
+<tr><td>szara</td><td>Offline</td><td>Co najmniej jedno repozytorium nie ma połączenia z serwerem</td></tr>
+<tr><td>pomarańczowa</td><td>Praca w toku</td><td>Trwa commit, aktualizacja, inicjalizacja albo budowanie stanu bazowego</td></tr>
+<tr><td>zielona</td><td>Aktywne</td><td>Wszystkie repozytoria zsynchronizowane i online</td></tr>
+</table></div>
+<h4>Dziennik</h4>
+<p>Zasobnik zawiera jeden wspólny <strong>Dziennik</strong>, a nie osobne menu aktywności i błędów. Porządkuje oba źródła od najnowszego, agreguje ścieżki z tej samej rewizji albo etapu repozytorium i scala nieudaną aktywność ze strukturalnym błędem o tym samym identyfikatorze błędu. W zasobniku systemowym renderowanych jest co najwyżej 12 wierszy. <strong>Otwórz log…</strong> otwiera kompletny dostępny snapshot w natywnym oknie; Windows renderuje wiersze błędów pogrubioną ciemną czerwienią. API zasobnika nie potrafi stylować pojedynczych natywnych wierszy menu, więc używa jawnego prefiksu <code>⚠ BŁĄD</code> i liczby błędów w tytule Dziennika.</p>
+<h4>Okno Ustawienia FileES</h4>
+<p>Menu zasobnika służy codziennej pracy: stanowi, otwieraniu katalogu, blokowaniu i odblokowywaniu plików oraz globalnej liście rezerwacji. Wszystko, co zmienia kształt instalacji, żyje w osobnym natywnym oknie <strong>Ustawienia FileES…</strong>, żeby długie nazwy katalogów nie musiały konkurować z akcjami administracyjnymi wewnątrz podmenu GNOME.</p>
+<p>Okno zbiera, per serwer: informacje o serwerze i aktywacji, pełną projekcję repozytoriów strefy, selektywne lokalne podłączenie, dodawanie nowego repozytorium, wskazywanie przeniesionej kopii roboczej, odłączanie kopii roboczej, trwałe odłączanie własnego repozytorium, uprawnienia gości, udziały publiczne, widoczność oraz dezaktywację tej instalacji. Repozytoria nadane strefie są pokazywane nawet wtedy, gdy nie ma ich na tym urządzeniu. Destrukcyjny zakres, retencja i pełny tekst ostrzeżenia są pokazywane tam, a nie w etykiecie menu.</p>
+<p>Na Windows użytkownik może zaznaczyć wiele niepodłączonych wierszy repozytoriów i wybrać <strong>Połącz</strong>; zwracane są tylko wiersze aktualnie uprawnione do podłączenia, nawet jeśli natywna siatka zatrzymuje w zaznaczeniu starszy, już podłączony wiersz. Dla każdego repozytorium pokazywany jest osobny wybór folderu. Linux udostępnia ten sam cykl życia dla jednego wybranego wiersza. Gdy <code>repo.attach_approve</code> się powiedzie, Ustawienia natychmiast nakładają wybraną ścieżkę i <code>łączenie…</code>, wyłączają ponowne podłączenie i dalej odpytują trwały lifecycle, aż autorytatywny snapshot demona zgłosi <code>Attached</code> albo błąd końcowy.</p>
+<h4>Cykl życia repozytorium i instalacji</h4>
+<p>Sześć różnych akcji jest celowo rozdzielonych. Sformułowanie ma znaczenie, bo podłączenie, odzyskanie przeniesionej kopii roboczej, lokalne odłączenie i destrukcyjne usunięcie na serwerze mają różne skutki:</p>
+<div class="table-wrap"><table>
+<tr><th>Akcja</th><th>Podmiot</th><th>Skutek serwerowy</th><th>Skutek lokalny</th></tr>
+<tr><td><strong>Połącz</strong></td><td>Jedno repozytorium już obecne w projekcji tej strefy</td><td>Bez zmiany grantu; uwierzytelniony dostęp SVN jest używany do pierwszego checkoutu.</td><td>Tworzy trwałe podłączenie i robi checkout do wybranego lokalnego katalogu.</td></tr>
+<tr><td><strong>Wskaż kopię</strong></td><td>Podłączone repozytorium, którego korzeń zaginął</td><td>Brak</td><td>Weryfikuje istniejący korzeń <code>.svn</code>, dokładny URL repozytorium i znacznik tożsamości FileES, a następnie przepina <code>local_path</code> bez checkoutu i bez odrzucania lokalnych zmian.</td></tr>
+<tr><td><strong>Odłącz folder</strong></td><td>Jedna kopia robocza</td><td>Brak</td><td>Zatrzymuje lokalny potok i usuwa <code>.svn</code> oraz <code>.filees</code>. Twoje pliki zostają dokładnie tam, gdzie są.</td></tr>
+<tr><td><strong>Odłącz trwale</strong></td><td>Jedno repozytorium, które posiadasz</td><td>Usuwa żywe repozytorium FSFS i jego autoryzację. Przy dodatniej retencji serwer najpierw zapisuje zweryfikowany dump SVN z manifestem SHA-256.</td><td>Jak wyżej.</td></tr>
+<tr><td><strong>Dezaktywuj klienta na serwerze…</strong></td><td>Jedna instalacja</td><td>Unieważnia klucz tej instalacji. Granty i repozytoria strefy pozostają nietknięte.</td><td>Odłącza kopie robocze tej instalacji, usuwa jej profil i klucz.</td></tr>
+<tr><td><strong>Usuń udział FileES…</strong></td><td>Cała strefa na tym serwerze</td><td>Odbiera każdy grant strefy, usuwa własne repozytoria strefy i unieważnia wszystkie jej instalacje. Bramkowane wysłanym OTP.</td><td>Odłącza bieżącą instalację i usuwa jej profil.</td></tr>
+</table></div>
+<p>Ostatnia z nich wykonuje stałą sekwencję i nie można jej skrócić: ostrzeżenie z wyprowadzonym zakresem, jawny krok zgody, adres powiadomień dla OTP, katalog wybrany przez Ciebie na pakiet odzyskiwania <code>.fkr</code> i dopiero potem monit OTP. Pakiet jest zapisywany, zanim operacja dotrze do nieodwracalnej granicy, bo po zakończeniu usunięcia nie zostaje żadne poświadczenie klienta, którym można by go uzyskać. <strong>Zachowaj go — bez niego nie da się pobrać archiwów</strong> (<a href="administration.html#ch4-realm-removal">§4.8</a>). Trwałe odłączenie pojedynczego repozytorium również wymaga dwóch osobnych potwierdzeń.</p>
+<p>Trwałe usunięcie jest zawsze ograniczone do repozytoriów Twojej własnej strefy. Nigdy nie sięga udziału należącego do innej strefy ani repozytorium z <code>attachment_policy=required</code>. Odłączenie folderu nigdy nie kasuje plików użytkownika — to dotyczy każdego wiersza powyżej.</p>
+<div class="note"><strong>Alias strefy:</strong> GUI pyta tylko raz o niezmienny, globalnie unikalny alias nowej, pustej strefy. Kolejna instalacja dołączająca do istniejącej strefy dziedziczy kanoniczny alias w pierwszej projekcji i nigdy nie jest zapraszana do jego zmiany. Jeśli repozytoria są już projektowane, a alias jest pusty, to niepełne dane projekcji serwera, a nie zadanie utworzenia aliasu. Widoczność i akcje blokad pozostają niedostępne z jawnym komunikatem projekcji do czasu rekonsyliacji; pasujące, idempotentne zgłoszenie może naprawić starszy widok serwera.</div>
+<h4>Granty stref i widoczność</h4>
+<p>GUI pokazuje użytkownikowi pojęcie realm pod potoczną etykietą <strong>strefa</strong> (§2.10). Tam gdzie ten podręcznik pisze dalej „realm”, okno pulpitu pisze „strefa”.</p>
+<p>W tym samym oknie Ustawienia FileES (Linux: radiolist <code>yad</code>; Windows: PowerShell <code>DataGridView</code>) pojawiają się dwie dalsze akcje, gdy demon zgłosi odpowiednią capability:</p>
+<ul>
+<li><strong>Widoczność…</strong> (<code>realm_visibility</code>, IPC <code>realm.set_visibility</code>) przełącza własny wpis tej strefy w prywatnym katalogu odbiorców między ukrytym a widocznym. Strefa musi być widoczna, zanim inna strefa będzie mogła wybrać ją jako odbiorcę grantu; przełączenie widoczności nigdy nie ujawnia repozytoriów ani istniejących dostępów — tylko to, czy tę strefę w ogóle da się znaleźć.</li>
+<li><strong>Uprawnienia gości</strong> (<code>manage_grants</code>, IPC <code>realm.grant_recipients</code> + <code>repo.grant_access</code> / <code>repo.revoke_access</code>), dostępne per wiersz repozytorium, wymienia widoczne strefy oraz ukryte strefy, które nadal trzymają aktywny grant. Kolumna bieżącego dostępu pokazuje brak, tylko odczyt albo odczyt i zapis, więc ukrycie strefy odbiorcy nigdy nie czyni jej istniejącego grantu niemożliwym do zarządzania. Każda zmiana pyta o potwierdzenie i natychmiast regeneruje data-authz oraz <code>view.json</code> każdej dotkniętej instalacji w tej samej operacji workera.</li>
+</ul>
+<h4>Udziały publiczne z pulpitu</h4>
+<p><strong>Udostępnienia publiczne</strong> pojawia się przy wierszu repozytorium wyłącznie dla kanonicznego właściciela i tylko wtedy, gdy demon reklamuje kompletny zestaw capability list/create/update/revoke/delete. Jego natywne okno Windows albo Linux pokazuje każdy aktywny albo cofnięty kanał wraz z publicznym adresem, korzeniem źródłowym, odbiorcami, flagą ochrony hasłem oraz rewizją HEAD/zamrożoną. Właściciel może utworzyć, edytować, cofnąć albo usunąć kanał; cofnięcie zatrzymuje wydawanie, ale zachowuje rekord kanału, a usunięcie zachowuje nagrobek adresu.</p>
+<p>Utworzenie i edycja wymagają podłączonej lokalnej kopii roboczej. Właściciel może wybrać korzeń kopii roboczej albo dowolny katalog poniżej. GUI rekurencyjnie mapuje najwyżej 4096 zwykłych plików, zawsze pomija <code>.svn</code> i <code>.filees</code>, odrzuca symlinki i zachowuje stabilne <code>public_id</code> istniejącego obiektu, gdy jego ścieżka w repozytorium nadal jest obecna. Ta mapa jest inwentarzem, a nie żywym przejściem drzewa: bez <code>do-not-follow</code> <em>treść</em> już zmapowanych plików śledzi HEAD, ale pliki dodane, usunięte albo przemianowane w folderze nie pojawiają się, dopóki właściciel nie zaktualizuje kanału. Pusty katalog jest poprawnym placeholderem z pustą jawną mapą. Lista odbiorców tworzy zamknięty kanał zaproszenie-i-OTP per odbiorca. Wysłany link jest wyłącznie nieprzezroczystym identyfikatorem zaproszenia i sam nigdy nie upoważnia do dostępu. Pusta lista tworzy kanał otwarty, który może nieść wspólne hasło. Tekst hasła jest zamieniany na weryfikator Argon2id, zanim powstanie ticket control-plane, i nigdy nie jest przechowywany w stanie sterowania opartym na SVN. Przy edycji serwer może zachować istniejący weryfikator bez oddawania go przez control-plane ani IPC. Pusta rewizja śledzi HEAD; dodatnia rewizja ustawia <code>do-not-follow</code>.</p>
+<p>Kanoniczny publiczny adres to <code>https://&lt;server-domain&gt;/&lt;realm-alias&gt;/&lt;slug&gt;</code>. Systemowy listener HTTP serwera kieruje ten wirtualny adres do bezpoświadczeniowej usługi linków FileES; nie jest potrzebny pasujący katalog w systemie plików ani osobna centralna usługa krótkich linków. Dla kanału zamkniętego neutralna strona wejściowa nie ujawnia ani tożsamości udziału, ani adresu odbiorcy. Użytkownik jawnie prosi o ośmiocyfrowy OTP dostarczony na skrzynkę związaną zaproszeniem, a następnie wpisuje go na tej samej stronie. Authority jest właścicielem mapowania skrzynek, pięciominutowej epoki, limitu pięciu prób i cooldownu ponowienia; publiczna projekcja zawiera wyłącznie skróty zaproszeń. Udany OTP daje podpisany, pozbawiony ciasteczek URL, który jest bearerem tylko do wygaśnięcia tej samej epoki OTP. Skopiowanie go w tym oknie przenosi pozostały dostęp; potem URL wraca do bramki OTP. Nie są używane ciasteczka, local storage ani JavaScript. Kanały otwarte zachowują dwunastogodzinną podpisaną wizytę i opcjonalną bramkę hasła Argon2id. Nieprawidłowe adresy oraz cofnięte albo usunięte kanały dzielą jedną obrandowaną stronę HTTP 404, która nie ujawnia ani żądanej ścieżki, ani powodu odmowy. Wygasła wizyta odbiorcy, która nadal niesie aktywne zaproszenie, wraca do neutralnej bramki OTP zamiast 404.</p>
+<p>Po wpuszczeniu strona wejściowa wymienia wyłącznie jawną mapę obiektów i serwuje pełne pliki albo zakresy bajtów z autorytatywnej rewizji SVN. Projekcja obiektu zawiera opcjonalny zadeklarowany rozmiar w bajtach: nowe albo edytowane kanały pulpitu pokazują dokładne rozmiary, w tym pliki zerobajtowe, a kanały legacy pozostają ważne i pokazują znacznik nieznanego rozmiaru. Obrandowana, pozbawiona JavaScriptu strona wejściowa odtwarza z nazw prezentacyjnych domyślnie zwinięte drzewo w stylu „Szczegóły” Eksploratora, z ikonami rodzin MIME, typem pliku, rozmiarem i jawną akcją pobrania. Odbiorca może zaznaczyć pliki, pobrać jeden folder albo pobrać cały udział jako ograniczony ZIP; każdy liść jest ponownie autoryzowany i materializowany w prywatnym cache, zanim zacznie się wyjście archiwum. Pierwsza wersja celowo nie generuje miniaturek obrazów. Cofnięcie kanału natychmiast unieważnia główny adres, żądania archiwum i już wydane linki wizyty/pliku, w tym pliki już obecne w publicznym cache.</p>
+<h4>Zachowanie przy ponownym łączeniu</h4>
+<p>Gdy demon jest nieosiągalny, GUI ponawia z wykładniczym backoffem: 1 s → 2 s → 5 s → 10 s → 30 s. Ostatni znany snapshot pozostaje widoczny, ale jest oznaczony jako nieaktualny. „Połącz ponownie” w menu wymusza natychmiastowe ponowienie.</p>
+<h4>Sekwencja inicjalizacji</h4>
+<ol>
+<li>Wyślij <code>system.hello</code>, zapisz capabilities.</li>
+<li>Wyślij <code>events.subscribe</code> (jeśli capability jest obecna) <em>przed</em> pobraniem snapshotów.</li>
+<li>Pobierz <code>system.status</code>, <code>repo.list</code> oraz <code>repo.status</code> dla każdego repozytorium.</li>
+<li>Przy ponownym połączeniu, luce sekwencji albo nieznanym zdarzeniu: wykonaj pełną resynchronizację.</li>
+</ol>
+<p>Zdarzenia są sygnałami unieważnienia cache. GUI nigdy nie buduje stanu wyłącznie przez stosowanie zdarzeń; każde zdarzenie wyzwala świeże pobranie <code>repo.status</code>. Akcje mutujące (lock/unlock) są pokazywane tylko wtedy, gdy demon zgłasza je jako capabilities, a stan połączenia to <code>Connected</code> (nie <code>Stale</code>).</p>
+<h4>Aktywacje serwerów</h4>
+<p>Każdy aktywny serwer jest wymieniany pod aliasem wybranym przez użytkownika i grupuje pod sobą swoje repozytoria. Techniczny host nie jest używany jako główna etykieta. <strong>Informacje o serwerze…</strong> pokazuje adres, port SSH, identyfikator klienta i skuteczną rolę klienta. Konfiguracja transportu bez aktywacji nie tworzy syntetycznego serwera <code>default</code>. Jeśli istnieje co najmniej jedna aktywacja, nagłówek zasobnika mówi <strong>Klient aktywowany</strong>.</p>
+<h4>Cykl życia folderu</h4>
+<p>Dla każdej podłączonej, opcjonalnej kopii roboczej menu serwera wystawia <strong>Odłącz folder „name”…</strong> przed rozwijanym wierszem folderu, żeby akcja pozostała osiągalna nawet przy długim podmenu folderu. Zatrzymuje obsługę FileES dla tego katalogu i usuwa wyłącznie <code>.svn</code> oraz <code>.filees</code>; pliki użytkownika zostają jako zwykły lokalny katalog. Końcowa granica trwałości używa świadomego platformowo syncu katalogu: prawdziwego <code>fsync</code> na POSIX i udokumentowanego no-op na Windows, gdzie opróżnienie uchwytu katalogu zwraca <code>ERROR_ACCESS_DENIED</code>. Ponowne podłączenie później wykonuje pierwszy checkout do nowego albo pustego katalogu; nigdy nie scala implicite zachowanego zwykłego folderu. Odrzucony cel albo konflikt lifecycle jest pokazywany we własnym modalnym oknie błędu oraz w powiadomieniu. Jeśli aktywna strefa jest właścicielem repozytorium i ma capability administracji repozytorium, to samo menu serwera dodatkowo wystawia <strong>Odłącz trwale „name”…</strong>. Wymaga dwóch potwierdzeń, usuwa aktywne repozytorium serwera i wygenerowaną projekcję dostępu, a następnie odłącza lokalny katalog. Przy dodatniej retencji serwera worker przechowuje zweryfikowany dump SVN i manifest SHA-256 do <code>retain_until</code>; to nie jest natychmiastowe, nieodwracalne wymazanie.</p>
+<p>Korzeń kopii roboczej jest śledzoną tożsamością, a nie tylko wygodną ścieżką. Przed uruchomieniem potoku RW albo RO demon wymaga lokalnego <code>.svn</code>, weryfikuje dokładny projektowany URL repozytorium przez <code>svn info</code> i potwierdza albo bezpiecznie migruje <code>.filees/state/working-copy.json</code>. Brakujący albo podmieniony korzeń staje się <code>interaction_required / working_copy_missing</code>; FileES nie odtwarza katalogu, nie inicjalizuje tam <code>.filees</code> i nie reklamuje fałszywej zdrowej rewizji zero. Ustawienia pokazują wtedy <strong>Wskaż kopię</strong>, które wysyła <code>repo.locate</code>, aby przyjąć zweryfikowaną istniejącą kopię roboczą bez checkoutu. Na Windows aktywny potok dodatkowo trzyma uchwyt katalogu bez współdzielenia usuwania, więc zewnętrzna zmiana nazwy albo usunięcie korzenia jest blokowane, dopóki kontrolowane wyciszenie FileES go nie zwolni.</p>
+<h4>Odtwarzanie z archiwum</h4>
+<p><strong>Odtwórz z archiwum…</strong> (<code>load_dump</code>, IPC <code>repo.load_dump</code>, ticket <code>LOAD_REPOSITORY_DUMP</code>) jest osiągalne z okna Ustawienia FileES dla wybranego wiersza repozytorium, obok Odłącz i Odłącz trwale. Ładuje wcześniej wyeksportowany dump SVN jako nową generację tego repozytorium, przez ten sam mechanizm stagingu, weryfikacji i atomowej podmiany, którego wewnętrznie używa <code>filees-rotate</code> (§4.7) — worker sam odnajduje wgrany dump; klient nigdy nie wysyła ścieżki systemu plików ani zakresu rewizji. Pierwsze wydanie idzie bez okna opcji: filtrowanie zawsze stosuje bieżącą politykę ignorowania serwera, a pełna historia źródłowa jest zachowana (zobacz <code>LOAD_REPOSITORY_DUMP_CONCEPT.md</code> o parametrach ograniczających zakres, które kontrakt ticketu już obsługuje).</p>
+<h4>Rezerwacje plików</h4>
+<p>Pozycja nagłówkowa <strong>Lista rezerwacji plikowych…</strong> otwiera jedno natywne okno Linux/Windows dla każdej żywej blokady SVN zaobserwowanej przez lokalnie podłączone kopie robocze tej instalacji, na aktywnych serwerach. Jest włączona tylko wtedy, gdy istnieje co najmniej jedna rezerwacja. Każdy wiersz podaje serwer, kopię roboczą, ścieżkę względną względem repozytorium, alias strefy właściciela i lokalny czas utworzenia (<code>HH:MM DD-MM-YYYY</code>). Wiersze są uporządkowane według kopii roboczej, a następnie ścieżki; okno można odświeżyć bez zamykania. Celowo nie jest to spis administracyjny serwera: repozytorium bez lokalnej kopii roboczej nie da się przez tego klienta zaobserwować.</p>
+<p>Wybranie <strong>Zwolnij</strong> zawsze pyta o potwierdzenie. <strong>Zwolnij wszystko</strong> pyta raz i zwalnia wyłącznie rezerwacje, które ten klient ma prawo zwolnić; każde zwolnienie jest osobno ogrodzone tokenem. Lokalne modyfikacje albo aktywny paszport edycji dodają jawne ostrzeżenie o niezapisanych danych edytora. FileES nie używa pytania „czy plik jest otwarty?” jako bramki bezpieczeństwa, bo wiele edytorów zapisuje przez atomową podmianę i taki test byłby mylący. Cudza rezerwacja albo rezerwacja z innego urządzenia pokazuje placeholder <strong>Poproś o zwolnienie (wkrótce)</strong> i nie może zostać tu zwolniona. Dialog zwraca wyłącznie nieprzezroczyste identyfikatory wierszy; demon ponownie wymienia każdą blokadę i dopasowuje jej token przed zwolnieniem, więc nieaktualny wiersz nie może zwolnić innej blokady.</p>
+<p><strong>Aktywuj klienta na nowym serwerze…</strong> zużywa nieprzezroczyste zaproszenie wystawione przez administratora serwera; zaproszenie już zawiera kanoniczny adres serwera, port i przypięty klucz hosta. Gdy demon zacznie wdrożenie, GUI pokazuje <strong>Wprowadź kod OTP…</strong>. Zanim zaimportuje kolejne zaproszenie, demon zgłasza przyjęte lokalne próby bez aktywnego profilu klienta. GUI oferuje <strong>Wznów</strong>: najpierw próbuje trwałej tożsamości reconnect, a jeśli ta tożsamość nie została upoważniona przed przerwaniem, prosi o OTP dla tej samej zapisanej próby. Obejmuje to przyjęte paszporty zapisane przez starszych klientów. Inne, podpisane przez serwer zaproszenie może zastąpić niekompletny stan efemeryczny, ale istniejący <code>client-profile.json</code> jest twardą granicą i nie może zostać nadpisany przez wdrożenie. Po sukcesie demon emituje <code>activation.changed</code> i wymusza pełne odświeżenie snapshotu. Nowa pusta strefa jest następnie pytana o niezmienny alias. Ticket związany przez <code>--join-realm-alias</code> daje zamiast tego projekcję istniejącej strefy: GUI otwiera zwykłą ścieżkę zarządzania serwerem, gdzie repozytoria można selektywnie podłączać, i nie prosi użytkownika o zgłoszenie innego aliasu. Ręczne ponowne łączenie GUI nie jest częścią udanego przepływu.</p>
+<h4>Parowanie urządzenia mobilnego</h4>
+<p>Gdy serwer jest aktywowany, jego podmenu w zasobniku oferuje <strong>Sparuj urządzenie mobilne…</strong> — widoczne zawsze, gdy połączenie jest <code>Connected</code> i nie <code>Stale</code>, niezależnie od roli klienta ani uprawnienia do tworzenia repozytoriów (parowanie telefonu nie jest bramkowane tak samo jak tworzenie repozytorium). Akcja wywołuje <code>mobile_pairing.begin</code>, które wybija krótkotrwały (5&nbsp;minut) token <code>MOBILE_PAIRING</code> przez już uwierzytelniony kanał control-plane demona, a następnie przekazuje token, adres serwera i przypięty klucz hosta osobnemu procesowi helpera (<code>filees-pair-gui</code>) na jego standardowe wejście — sam demon niczego nie renderuje.</p>
+<p><code>filees-pair-gui</code> jest celowo odrębną binarką i procesem, nie częścią <code>filees-gui</code>: otwiera małą lokalną stronę WWW (związaną wyłącznie z <code>127.0.0.1</code>, na porcie przydzielonym przez system, pod losową ścieżką sesji) w domyślnej przeglądarce systemu. Strona pyta o lokalny PIN, zanim cokolwiek pokaże; przy pierwszym użyciu proponuje jego ustawienie. Wpisanie poprawnego PIN renderuje kod QR parowania, który aplikacja mobilna FileES skanuje, aby dokończyć parowanie — po czym telefon dziedziczy, jednorazowo, tę samą listę repozytoriów, którą aktualnie ma parujący pulpit. Helper zamyka się automatycznie, gdy kod QR był pokazywany przez krótki okres grace, gdy token wygaśnie albo po okresie bezczynności — w zależności od tego, co nastąpi wcześniej.</p>
+<p>Lokalny PIN jest przechowywany zaszyfrowany w spoczynku. Główny klucz opakowujący jest związany z losowym <code>device_id</code> zapisanym obok <code>pin.json</code>, a nie z sieciowym adresem MAC — dokowanie, nowa karta sieciowa albo zmiana kolejności interfejsów nie blokują już użytkownika na stałe. Rekordy zaszyfrowane starszym kluczem wyprowadzonym z MAC nadal się odszyfrowują; pierwsze udane sprawdzenie owija je ponownie na klucz urządzenia. Kopia pliku PIN przeniesiona na inny komputer albo konto nie da się odszyfrować. Błędny PIN jest odrzucany z ograniczoną liczbą prób; po ich wyczerpaniu PIN trzeba ustawić ponownie (obecnie nie ma osobnego przepływu odzyskiwania/resetu). Ten sam PIN można opcjonalnie wymagać przy każdym starcie samego <code>filees-gui</code>, jako lokalną blokadę ekranu — domyślnie wyłączoną i niezwiązaną z żadnym uwierzytelnieniem po stronie serwera. Na Windows oba pliki są chronione per-user DACL, a nie bitem trybu POSIX.</p>
+<h4>Autostart</h4>
+<pre><code>filees-gui --autostart enable    # zapisz wpis autostartu dla bieżącej ścieżki executable
+filees-gui --autostart disable   # usuń wpis
+filees-gui --autostart status    # enabled / enabled-stale / disabled</code></pre>
+<p><code>enabled-stale</code> oznacza, że wpis wskazuje inną ścieżkę albo argumenty niż bieżący executable. Uruchom ponownie <code>--autostart enable</code> z zainstalowanej lokalizacji, aby to naprawić. Na Linux zapisuje to plik XDG <code>.desktop</code> do <code>~/.config/autostart/</code>; na Windows zapisuje do <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code>.</p>
+<h2 id="ch2-update">2.7 Podpisane aktualizacje pulpitu</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane end-to-end</span><span>Podpisane wydanie SVN, dry run, istniejący instalator Linux, ochrona przed rollbackiem i kontrolowany restart GUI są pokryte odtwarzalnym testem integracyjnym.</span></div>
+<p>Aktualizacje pulpitu są opt-in i zamykają się przy błędzie. Produkcyjny build klienta osadza wyłącznie zaufany publiczny klucz OpenBSD signify i jego kanoniczny <code>key_id</code>; konfiguracja nie może podmienić tego klucza ani wyłączyć weryfikacji podpisu. Demon reklamuje <code>update.status</code>, <code>update.plan</code> i <code>update.apply</code> tylko wtedy, gdy zarejestrowano kompletną podpisaną usługę aktualizacji.</p>
+<p>Podpisana koperta wydania v2 wiąże identyfikator wydania, monotoniczne <code>sequence</code>, <code>security_epoch</code>, czas wygaśnięcia, komponent i platformę z osobno podpisanym manifestem artefaktu. Klient weryfikuje format signify wewnętrznie standardowym Ed25519, a następnie sprawdza dokładny rozmiar bundla i SHA-256 przed rozpakowaniem. Jego prywatny, zsynchronizowany przez fsync stan high-water odrzuca rollback sekwencji, rollback epoki bezpieczeństwa oraz inne wydanie ponownie używające tej samej sekwencji.</p>
+<h4>Przepływ użytkownika</h4>
+<ol>
+<li>Zweryfikowane nowsze wydanie dodaje do menu zasobnika odznakę <strong>Dostępna aktualizacja</strong>.</li>
+<li><strong>Pokaż, co ulegnie zmianie…</strong> wykonuje świeży, podpisany dry run. Na Linux porównuje demona, GUI i ikonę, zgłasza odtworzone wpisy desktop/usługi i jawnie oznacza istniejącą konfigurację jako niezmienioną.</li>
+<li><strong>Zaktualizuj i uruchom ponownie…</strong> ponownie rozwiązuje i weryfikuje wydanie, a następnie pokazuje natywny dialog potwierdzenia z planem.</li>
+<li>Po zatwierdzeniu istniejący instalator platformy uruchamia się ze zweryfikowanego bundla. Linux wyłącza wewnętrzny autostart i restart demona w instalatorze oraz zachowuje konfigurację użytkownika.</li>
+<li>Po udanym zastosowaniu i trwałej aktualizacji high-water GUI zamyka swoje pętle, zwalnia blokadę pojedynczej instancji i dopiero wtedy uruchamia nowo zainstalowany executable z oryginalnymi argumentami.</li>
+</ol>
+<div class="warn"><strong>Nie omijaj aktualizatora.</strong> Lokalnie przywrócona starsza binarka nie obniża znacznika high-water. Awaryjne odzyskanie binarki i upoważnienie zdalnego downgrade to osobne operacje; opublikowanie starszej sekwencji w zwykłym kanale jest odrzucane.</div>
+<p>Operatorzy wydań muszą używać przepływu podpisywania offline w <code>tools/RELEASE_PUBLISHING.md</code>. Prywatne klucze wydań nigdy nie mogą wejść do repozytorium źródeł, hosta budowania, bundla klienta ani testowej VM.</p>
+<h2 id="ch2-cli">2.8 Polecenia CLI</h2>
+<div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Polecenia używają IPC demona i nie omijają silnika bezpośrednią mutacją SVN.</span></div>
+<p>Wszystkie podpolecenia CLI komunikują się z działającym demonem przez gniazdo Unix i nigdy nie wywołują <code>svn</code> bezpośrednio:</p>
+<pre><code>filees status               # stan wszystkich repozytoriów
+filees lock   &lt;file&gt;...    # nabierz blokadę SVN
+filees unlock &lt;file&gt;...    # zwolnij blokadę SVN
+filees log [N]              # ostatnie N wpisów dziennika błędów (domyślnie 20)
+filees config-check         # sprawdź konfigurację bez uruchamiania demona
+filees help</code></pre>
+<p>Jedno polecenie celowo <em>nie</em> używa demona, bo musi działać na maszynie, na której nie została już żadna instalacja FileES:</p>
+<pre><code>filees recovery download --kit FILE.fkr --output DIR</code></pre>
+<p>Czyta pakiet odzyskiwania wytworzony przy usuwaniu udziału FileES i pobiera archiwa tej operacji przez konto <code>_filees-recovery</code>, weryfikując przypięty klucz hosta, tożsamość archiwum, jego rozmiar i SHA-256 względem manifestu niesionego w pakiecie. Zobacz <a href="administration.html#ch4-realm-removal">§4.8</a>.</p>
+<p><code>lock</code> i <code>unlock</code> przyjmują wiele plików i grupują je automatycznie według repozytorium. Ścieżki względne są rozwiązywane do bezwzględnych i sprawdzane jako leżące wewnątrz kopii roboczej.</p>
+<p>Poziom logu demona (zmienna środowiskowa):</p>
+<pre><code>FILEES_LOG=debug ./filees
+FILEES_LOG=trace ./filees   # obejmuje wywołania svn
+# Dostępne: silent error warn info (domyślnie) debug trace</code></pre>
+<h2 id="ch2-trouble">2.9 Rozwiązywanie problemów</h2>
+<div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Wskazówki eksploatacyjne dla bieżącego zachowania klienta i GUI.</span></div>
+<div class="table-wrap"><table>
+<tr><th>Objaw</th><th>Działanie</th></tr>
+<tr><td>Ikona GUI się nie pojawia (GNOME)</td><td>Zainstaluj rozszerzenie <strong>AppIndicator and KStatusNotifierItem Support</strong> z extensions.gnome.org; wyloguj się i zaloguj ponownie</td></tr>
+<tr><td>„Brak połączenia”, ale demon działa</td><td>Sprawdź ścieżkę gniazda: <code>filees status</code>; uruchom <code>filees-gui --socket /path/to/daemon.sock</code>; sprawdź <code>filees-gui --autostart status</code> pod kątem <code>enabled-stale</code></td></tr>
+<tr><td>Wybór plików się nie otwiera (Linux)</td><td>Zainstaluj <code>zenity</code> albo <code>kdialog</code>: <code>apt install zenity</code> / <code>dnf install zenity</code></td></tr>
+<tr><td>„Zarządzaj serwerem…” się nie otwiera (Linux)</td><td>Zainstaluj <code>yad</code>: <code>apt install yad</code> / <code>dnf install yad</code></td></tr>
+<tr><td>Brak powiadomień toast (Windows)</td><td>Upewnij się, że instalacja była przez MSI (rejestruje AUMID). Uruchomienie <code>filees-gui.exe</code> bez instalatora nie zarejestruje AUMID.</td></tr>
+<tr><td>Wiele ikon w zasobniku</td><td>Blokada per-user zapobiega inicjalizacji zasobnika przez drugą instancję. Jeśli pojawią się dwie ikony, jedna może pochodzić ze starszej wersji. Zakończ przestarzały proces GUI narzędziami systemu operacyjnego, następnie użyj „Zamknij FileES” w bieżącej instancji i uruchom ponownie bieżącą instalację. Menu nie ma akcji zamykania wyłącznie GUI.</td></tr>
+<tr><td>Pliki konfliktów gromadzą się w <code>!kolizje/</code></td><td>To zachowane lokalne wersje plików, w których wygrała zmiana z serwera. Przejrzyj je ręcznie. Katalog jest ignorowany przez skaner i nigdy nie zostanie zcommitowany.</td></tr>
+<tr><td><strong>Widoczność…</strong> jest niedostępna albo Ustawienia pokazują <strong>brak aliasu</strong></td><td>Kanoniczny alias istniejącej strefy nie dotarł do tej projekcji klienta. Nie twórz nowego aliasu. Odśwież/połącz ponownie; jeśli stan wraca po restarcie, worker serwera musi zrekoncyliować i opublikować <code>view.json</code> tego klienta. GUI celowo blokuje widoczność i blokady zależne od aliasu, dopóki tożsamość nie jest autorytatywna.</td></tr>
+<tr><td>Repozytorium zgłasza <code>working_copy_missing</code></td><td>Sprawdź, czy dysk jest zamontowany albo czy korzeń kopii roboczej został przeniesiony. Użyj <strong>Wskaż kopię</strong>, aby wskazać istniejący korzeń <code>.svn</code>. Nie twórz pustego katalogu zastępczego i nie używaj pierwszego checkoutu <strong>Połącz</strong> do odzyskania przeniesionej kopii roboczej.</td></tr>
+</table></div>
+<h2 id="ch2-glossary">2.10 Terminologia GUI (słownik)</h2>
+<div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Rejestruje każdy przypadek, w którym polskie słownictwo GUI pulpitu świadomie odbiega od terminologii architektury wywiedzionej z SVN.</span></div>
+<p>GUI pulpitu jest wyłącznie polskie i adresowane do nietechnicznych użytkowników końcowych. Tam gdzie architektonicznie poprawny termin — używany w całym tym podręczniku, w kodzie i na drucie — odsłoniłby żargon SVN albo protokołu bez intuicyjnego znaczenia dla użytkownika, GUI podstawia zamiast tego język potoczny. Wewnętrzne identyfikatory, nazwy pól IPC i komunikaty protokołu zostawiają termin architektury bez zmian; zmienia się tylko to, co czyta użytkownik. Mapowanie jest 1:1 i stabilne: dany termin GUI zawsze odpowiada dokładnie jednemu terminowi architektury.</p>
+<div class="table-wrap"><table>
+<tr><th>Termin GUI (polski)</th><th>Termin architektury</th><th>Znaczenie</th></tr>
+<tr><td><strong>strefa</strong></td><td><code>realm</code></td><td>Trwała tożsamość właściciela (osoby albo jednostki organizacyjnej), która może obejmować wiele instalacji/urządzeń, posiada repozytoria i jest podmiotem, do którego wiążą się granty i udziały. Zobacz <a href="security.html#ch5-identity">§5.5 Tożsamość i model grantów</a>.</td></tr>
+</table></div>
+<p>Dodaj tutaj wiersz, gdy kolejny termin widoczny w GUI zostanie świadomie przemianowany z tego samego powodu, w tym samym commicie, który zmienia napisy.</p>
+</div>
+<nav class="page-nav">
+<a href="architecture.html">← 1. Architektura</a>
+<a href="install.html">3. Instalacja →</a>
+</nav>
+</div>
+</div>
+<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-14 · źródło r494</span></footer>
+</main>
+</body>
+</html>

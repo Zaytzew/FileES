@@ -125,7 +125,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <p>Zmiana polityki to migracja, nie lokalna preferencja. Pliki trzymane przez kogoś innego zostają i są ponawiane później. Gość z odczytem i zapisem nadal używa <strong>Wypożycz do edycji</strong>; autolock jest tylko dla strefy właściciela. Własność per ścieżka i <strong>Poproś o zwolnienie</strong> nie są w tej wersji.</p>
 <h2 id="ch2-gui">2.6 Zasobnik GUI</h2>
 <div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>GUI jest osobną binarką nad contract/v1; dołączenie na Windows, selektywne podłączenie, odzyskanie kopii roboczej i dziennik zostały przyjęte na żywej instalacji.</span></div>
-<p><code>filees-gui</code> jest osobnym procesem. Rozmawia tylko z demonem. Zamknięcie zasobnika nie zatrzymuje synchronizacji. Czemu ten podział istnieje, jest w <a href="operations.html#ops-gui">Eksploatacji</a> i <a href="security.html#ch5-gui">§5.4</a>.</p>
+<p><code>filees-gui</code> jest osobnym procesem. Rozmawia tylko z demonem. Zamknięcie zasobnika nie zatrzymuje synchronizacji. Czemu ten podział istnieje, jest w <a href="operations.html#ops-gui">Eksploatacji</a> i <a href="security.html#ch5-gui">granicy GUI</a>.</p>
 <h4>Stany ikony (kolejność priorytetu)</h4>
 <div class="table-wrap"><table>
 <tr><th>Ikona</th><th>Stan</th><th>Warunek</th></tr>
@@ -236,7 +236,7 @@ FILEES_LOG=trace ./filees   # obejmuje wywołania svn
 <p>GUI pulpitu jest wyłącznie polskie i adresowane do nietechnicznych użytkowników końcowych. Tam gdzie architektonicznie poprawny termin — używany w całym tym podręczniku, w kodzie i na drucie — odsłoniłby żargon SVN albo protokołu bez intuicyjnego znaczenia dla użytkownika, GUI podstawia zamiast tego język potoczny. Wewnętrzne identyfikatory, nazwy pól IPC i komunikaty protokołu zostawiają termin architektury bez zmian; zmienia się tylko to, co czyta użytkownik. Mapowanie jest 1:1 i stabilne: dany termin GUI zawsze odpowiada dokładnie jednemu terminowi architektury.</p>
 <div class="table-wrap"><table>
 <tr><th>Termin GUI (polski)</th><th>Termin architektury</th><th>Znaczenie</th></tr>
-<tr><td><strong>strefa</strong></td><td><code>realm</code></td><td>Trwała tożsamość właściciela (osoby albo jednostki organizacyjnej), która może obejmować wiele instalacji/urządzeń, posiada repozytoria i jest podmiotem, do którego wiążą się granty i udziały. Zobacz <a href="security.html#ch5-identity">§5.5 Tożsamość i model grantów</a>.</td></tr>
+<tr><td><strong>strefa</strong></td><td><code>realm</code></td><td>Trwała tożsamość właściciela (osoby albo jednostki organizacyjnej), która może obejmować wiele instalacji/urządzeń, posiada repozytoria i jest podmiotem, do którego wiążą się granty i udziały. Zobacz <a href="security.html#ch5-identity">Tożsamość i model grantów</a>.</td></tr>
 </table></div>
 <p>Dodaj tutaj wiersz, gdy kolejny termin widoczny w GUI zostanie świadomie przemianowany z tego samego powodu, w tym samym commicie, który zmienia napisy.</p>
 </div>
@@ -246,7 +246,7 @@ FILEES_LOG=trace ./filees   # obejmuje wywołania svn
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-14 · źródło r494</span></footer>
+<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-15 · źródło r523</span></footer>
 </main>
 </body>
 </html>

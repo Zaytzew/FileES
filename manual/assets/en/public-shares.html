@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>5. Public Shares — FileES Manual</title>
+<title>Public shares — FileES User</title>
 <link rel="alternate" hreflang="pl" href="../pl/public-shares.html"/>
 <link rel="alternate" hreflang="en" href="public-shares.html"/>
 <link rel="stylesheet" href="../css/manual.css"/>
@@ -38,6 +38,7 @@
 <span class="nav-pillar">Tech</span>
 <a href="architecture.html">Architecture</a>
 <a href="install.html">Install</a>
+<a href="operations.html">Operations</a>
 <a href="security.html">Security</a>
 <a href="man-pages.html">Man pages</a>
 </span>
@@ -49,75 +50,61 @@
 <h2>On this page</h2>
 </div>
 <ol>
-<li><a href="#ps-model">Trust model</a></li>
-<li><a href="#ps-url">Canonical URL</a></li>
-<li><a href="#ps-map">Object map vs revision</a></li>
-<li><a href="#ps-access">Open, password and recipient OTP</a></li>
-<li><a href="#ps-desktop">Desktop owner path</a></li>
-<li><a href="#ps-ops">Server operations</a></li>
+<li><a href="#ps-model">What this is</a></li>
+<li><a href="#ps-url">The address you hand over</a></li>
+<li><a href="#ps-map">Not a live mirror</a></li>
+<li><a href="#ps-access">Open or closed</a></li>
+<li><a href="#ps-desktop">From the desktop</a></li>
+<li><a href="#ps-ops">Turning it on</a></li>
 </ol>
 </nav>
 <div class="manual-content">
-<h1 id="ch-ps">Chapter 5: Public Shares</h1>
+<h1 id="ch-ps">Public shares</h1>
 <div class="chapter-content">
-<h2 id="ps-model">5.1 Trust model</h2>
-<div class="section-meta"><span class="status status-verified">Verified live</span><span>Canonical HTTPS endpoint, FastCGI links, Unix backchannel and authority isolation accepted on OpenBSD.</span></div>
-<p>Public Shares is a distribution channel, not a second write path. Upload Channel is a separate vertical and must not share this process or these credentials.</p>
-<p>Three processes, three owners:</p>
-<div class="table-wrap"><table>
-<tr><th>Process</th><th>Owner</th><th>May see</th><th>Must not see</th></tr>
-<tr><td><code>filees-links</code></td><td><code>_filees-links</code></td><td>public request, visit token, private cache</td><td>SVN credentials, SMTP secret, recipient addresses</td></tr>
-<tr><td><code>filees-public-authority</code></td><td><code>_filees-state</code></td><td>channel records, <code>svnlook</code>, OTP hashes</td><td>SMTP password (held by the mail child only)</td></tr>
-<tr><td><code>filees-mail public-loop</code></td><td>child of authority</td><td>SMTP secret and the Public Shares outbox</td><td>the HTTP request stream</td></tr>
-</table></div>
-<p>TLS belongs to <code>relayd</code>/<code>httpd</code>. FileES never embeds a TLS stack. The public HTML uses no JavaScript, no cookies and no third-party resources. Branding is the <code>filees:space</code> system plus the owner accent colour and logo already stored on the server.</p>
-<div class="decision">
-<div class="decision-head">Design rationale / push from authority, never pull from the public zone</div>
-<div class="decision-grid">
-<div class="decision-label">Decision</div><div class="decision-value">The public process asks for <code>(channel, public_id, revision)</code>; authority resolves the map and pushes the leaf.</div>
-<div class="decision-label">Why</div><div class="decision-value">The public zone stays credential-free and the expensive <code>svnlook</code> stays on the state account.</div>
-<div class="decision-label">Rejected</div><div class="decision-value">Materialising a published tree; giving links a service-repository working copy; embedding TLS.</div>
-<div class="decision-label">Cost</div><div class="decision-value">A backchannel and a private cache are mandatory for usable large binaries.</div>
-</div>
-</div>
-<h2 id="ps-url">5.2 Canonical URL</h2>
+<p>Hand a packet to someone who will never install FileES. This is not a second way to write into your folders. Trust zones, the object map and the OTP protocol are in Tech <a href="operations.html#ops-ps-model">Operations</a>.</p>
+
+<h2 id="ps-model">5.1 What this is</h2>
+<div class="section-meta"><span class="status status-verified">Verified live</span></div>
+<p>A public share is a read-only landing page on the same HTTPS origin as this manual. The visitor never receives write credentials. Upload Channel — if it arrives — is a different product and must not share this process or these secrets.</p>
+<p>The page uses no JavaScript, no cookies and no third-party resources. Branding is the <code>filees:space</code> system plus the owner logo and accent already stored on the server.</p>
+<p>Why the public process never talks to Subversion itself is in <a href="operations.html#ops-ps-model">Operations</a>.</p>
+
+<h2 id="ps-url">5.2 The address you hand over</h2>
 <p>The public address is always:</p>
 <pre><code>https://&lt;server-domain&gt;/&lt;realm-alias&gt;/&lt;slug&gt;</code></pre>
-<p>Static document-root paths are an explicit allowlist: <code>/</code>, <code>/index.html</code>, <code>/favicon.ico</code>, <code>/robots.txt</code>, <code>/.well-known/acme-challenge/*</code> and <code>/assets/*</code>. The HTML manual lives in that last prefix. Everything else is a virtual FileES location. Adding a realm must not create a directory and must not reload <code>httpd</code>. Publishing a new manual page is only a new file under <code>/assets/</code>. See the <a href="index.html#publish">publishing graph</a>.</p>
-<p>Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the path, alias, slug or reason. <code>robots.txt</code> is static <code>Disallow: /</code>.</p>
-<h2 id="ps-map">5.3 Object map versus revision</h2>
-<div class="section-meta"><span class="status status-verified">Verified</span><span>Documented after the 2026-08-14 live observation; this is the implemented contract, not a defect.</span></div>
-<p>Two clocks exist:</p>
+<p>Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the path or the reason. The allowlist that also serves this manual is in <a href="operations.html#ops-ps-url">Operations</a> and on the <a href="index.html#publish">overview</a>.</p>
+
+<h2 id="ps-map">5.3 Not a live mirror</h2>
+<div class="section-meta"><span class="status status-verified">Verified</span><span>Implemented contract, not a defect.</span></div>
+<p>The share lists the files that were mapped when you created or last updated the channel. A file added to the folder later is invisible. A removed file stays on the list. A rename keeps the old name. The <em>contents</em> of already mapped files follow the latest revision unless you froze one.</p>
+<p>An empty folder is a legal placeholder. Later files need an explicit update of the channel. That is why the desktop copy says the share is not a live mirror of the folder. The two clocks (<code>object_map</code> versus revision) are in <a href="operations.html#ops-ps-map">Operations</a>.</p>
+
+<h2 id="ps-access">5.4 Open or closed</h2>
+<p><strong>Open channel.</strong> Anyone with the address. You may set a shared password. After the password the visitor gets a twelve-hour signed link. The password screen shows your mark; it does not show the alias or the slug.</p>
+<p><strong>Closed channel.</strong> Each recipient gets their own invitation in the URL. The link alone is not enough. They ask for a code, receive an eight-digit OTP by mail, type it on the same page, then get a signed link that lasts until that code expires. Copying the signed link during that window carries the remaining access. After expiry the invitation URL returns to the gate. After revoke it is 404.</p>
+<p>The public page never shows e-mail addresses. How hashes, epochs and visit tokens work is in <a href="operations.html#ops-ps-access">Operations</a>.</p>
+
+<h2 id="ps-desktop">5.5 From the desktop</h2>
+<p><strong>Udostępnienia publiczne</strong> appears only for the canonical owner, and only when the daemon advertises the complete list / create / update / revoke / delete set. Create and edit need an attached working copy.</p>
 <ul>
-<li><strong>Revision</strong> is chosen at each visit. If the channel has no <code>do-not-follow</code>, authority reads HEAD and freezes that revision for the visit. Mapped file <em>contents</em> therefore follow HEAD.</li>
-<li><strong>Composition</strong> is the <code>object_map</code> written at <code>CREATE</code> or <code>UPDATE</code>. Listing and download iterate only that map. A file added to the folder later is invisible; a removed file stays listed; a rename keeps the old name.</li>
+<li>Pick the working-copy root or any folder under it.</li>
+<li>At most 4096 regular files. <code>.svn</code> and <code>.filees</code> are skipped. Symlinks are rejected.</li>
+<li>Revoke stops delivery and keeps the record. Delete keeps an address tombstone.</li>
+<li>A recipient list makes a closed channel. An empty list makes an open channel, optionally with a password. The password is never stored in the clear.</li>
+<li>Empty revision follows the latest. A positive revision freezes that snapshot.</li>
 </ul>
-<p>An empty selected folder is a legal placeholder. Later files require an explicit channel update. That is why the desktop copy says the share is not a live mirror of the folder.</p>
-<div class="note">Changing composition to a derived tree walk would require deterministic <code>public_id</code> values (for example HMAC of path and a channel secret) so mailed links survive a new file. That decision has not been taken. Until then the concept's “refreshes by itself” sentence applies only to the content of already mapped leaves.</div>
-<h2 id="ps-access">5.4 Open, password and recipient OTP</h2>
-<p><strong>Open channel.</strong> Optional Argon2id password. A successful gate issues a twelve-hour signed visit URL. Password verification is globally serialised to one in-flight Argon2. The password screen shows the FileES mark, the owner logo and the owner accent; it does not show alias, slug or explanatory text.</p>
-<p><strong>Closed channel.</strong> Each recipient gets an invitation identifier in the URL (<code>?invite=</code>; legacy <code>?token=</code> is accepted as an alias). The identifier is not a bearer. The landing page is a gate: the recipient asks for a code, authority mails an eight-digit OTP with a five-minute epoch, five attempts and a resend cooldown. Resend in an active epoch does not rotate the code or extend the TTL. After a correct OTP the public process receives only the invitation hash, the epoch UUID and an absolute expiry, then issues a signed URL that is a bearer exactly until that expiry. Copying the URL transfers the remaining window. After expiry the same invitation URL returns to the gate. After revoke it is 404.</p>
-<p>The public projection never contains e-mail addresses. Plaintext passwords and OTP codes are hashed before they cross IPC or SVN-backed control state.</p>
-<h2 id="ps-desktop">5.5 Desktop owner path</h2>
-<p>Only the canonical owner sees <strong>Udostępnienia publiczne</strong>, and only when the daemon advertises the complete list/create/update/revoke/delete set. Create and edit require an attached working copy. The GUI maps at most 4096 regular files, skips <code>.svn</code> and <code>.filees</code>, rejects symlinks and keeps a stable <code>public_id</code> for paths that remain. Revoke stops delivery and keeps the record. Delete keeps an address tombstone.</p>
-<p>After admission the listing is a collapsed-by-default details tree: name, type icon, size, single-file download. Selection, folder and whole-share ZIP are bounded; every leaf is authorised and materialised in the private cache before archive output starts. There are no thumbnails in this version.</p>
-<h2 id="ps-ops">5.6 Server operations</h2>
-<p>Public Shares are installed disabled. After editing <code>server.json</code> and <code>public-links.json</code>:</p>
-<pre><code># merge openbsd/public-links.httpd.conf into the origin server block
-doas rcctl enable filees_public_authority filees_links
-doas rcctl start filees_public_authority
-doas rcctl start filees_links
-doas rcctl check filees_public_authority filees_links
-doas httpd -n &amp;&amp; doas rcctl reload httpd</code></pre>
-<p>Start authority before links. Authority is unhealthy if its mail child dies; a stop signal closes HTTP, terminates the child and waits, so <code>rcctl restart</code> must not leave an orphan poller. See <a href="man-pages.html">filees-public-authority(8)</a> and <a href="man-pages.html">filees-links(8)</a>.</p>
+<p>After admission the visitor sees a collapsed-by-default details tree: name, type icon, size, download. They may take one file, one folder or the whole share as a bounded ZIP. This version has no thumbnails.</p>
+
+<h2 id="ps-ops">5.6 Turning it on</h2>
+<p>Public shares are installed disabled. After you have edited <code>server.json</code> and <code>public-links.json</code>, start authority before links, then reload <code>httpd</code>. The exact commands, health rule and man pages are in <a href="operations.html#ops-ps-ops">Operations</a>.</p>
 </div>
 <nav class="page-nav">
-<a href="administration.html">← 4. Administration</a>
-<a href="security.html">6. Security →</a>
+<a href="user-guide.html">← Desktop</a>
+<a href="administration.html">Administration →</a>
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-14 · source r494</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r522</span></footer>
 </main>
 </body>
 </html>

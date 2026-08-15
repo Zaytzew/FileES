@@ -38,6 +38,7 @@
 <span class="nav-pillar">Tech</span>
 <a href="architecture.html">Architecture</a>
 <a href="install.html">Install</a>
+<a href="operations.html">Operations</a>
 <a href="security.html">Security</a>
 <a href="man-pages.html">Man pages</a>
 </span>
@@ -48,8 +49,8 @@
 <p class="hero-copy">FileES keeps folders in step and lets you hand a packet to someone who will never install the client. This HTML set is the public manual. It is two pillars, not one mixed novel: <strong>User</strong> is how to live with it, <strong>Tech</strong> is how it is built. An administrator is a user. OpenBSD <code>mandoc</code> stays with Tech.</p>
 <div class="meta-strip">
 <span><strong>Version</strong> 0.1.0</span>
-<span><strong>Date</strong> 2026-08-14</span>
-<span><strong>Source</strong> SVN r494</span>
+<span><strong>Date</strong> 2026-08-15</span>
+<span><strong>Source</strong> SVN r522</span>
 <span><strong>Server</strong> OpenBSD 7.9 · signed r492 on production</span>
 <span><strong>Client</strong> Linux and Windows desktop</span>
 </div>
@@ -74,7 +75,8 @@
 <li><a href="administration.html">Administration howto</a></li>
 <li><a href="public-shares.html">Public shares, as a person</a></li>
 <li><a href="architecture.html">Architecture, tickets, sandbox</a></li>
-<li><a href="install.html">Server install and deploy</a></li>
+<li><a href="install.html">Server install walkthrough</a></li>
+<li><a href="operations.html">Operations and contracts</a></li>
 <li><a href="security.html">Security appendix</a></li>
 <li><a href="man-pages.html">OpenBSD man pages</a></li>
 <li><a href="#publish">Publishing this HTML set</a></li>
@@ -82,7 +84,7 @@
 </nav>
 <div class="manual-content">
 <h1>How to read this manual</h1>
-<p>This is not a closed thread. The host already serves the pages; the <em>books</em> are being split. Old chapter URLs stay put so links and the static allowlist do not move.</p>
+<p>The host already serves the pages. The books are split: User pages are howto, Tech <a href="operations.html">Operations</a> holds the meat that used to sit beside them. Old chapter URLs stay put so links and the static allowlist do not move.</p>
 <div class="lang-choice">
 <a class="lang-card" href="#user">
 <span class="lang-kicker">User</span>
@@ -107,7 +109,8 @@
 <p>Start here if you implement, audit or deploy. The tone is contracts, rejected alternatives and what must stay true.</p>
 <ul>
 <li><a href="architecture.html">Architecture</a> — topology, ticket relay, OTP, SSH hop, sandbox.</li>
-<li><a href="install.html">Server install</a> — <code>install-server.sh</code>, sshd, <code>filees-install</code>.</li>
+<li><a href="install.html">Server install</a> — <code>install-server.sh</code>, <code>install-ssh.sh</code>, <code>filees-install</code>.</li>
+<li><a href="operations.html">Operations</a> — ticket files, mail and audit schemas, rotate and realm-removal protocol, <code>object_map</code>, sshd and <code>server.json</code>.</li>
 <li><a href="security.html">Security appendix</a> — invariants, transport, GUI boundary.</li>
 <li><a href="man-pages.html">Man pages / CLI extract</a> — role, invocation, flags and examples for every server command.</li>
 <li><a href="#publish">Publishing this set</a> — <code>^/manual</code> is the document root; <code>svn up</code> is the publish step.</li>

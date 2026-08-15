@@ -38,6 +38,7 @@
 <span class="nav-pillar">Tech</span>
 <a href="architecture.html" class="is-current">Architektura</a>
 <a href="install.html">Instalacja</a>
+<a href="operations.html">Eksploatacja</a>
 <a href="security.html">Bezpieczeństwo</a>
 <a href="man-pages.html">Man</a>
 </span>
@@ -603,7 +604,7 @@
         └── view.json</code></pre>
 <p>Menedżer aktywacji i uwierzytelniony worker repozytoriów są ograniczonymi pisarzami w tym pionie. Każdy aktywny klient ma dostęp SVN tylko do odczytu do własnego poddrzewa <code>/clients/&lt;client_id&gt;/</code> i nie ma wglądu w <code>admin/</code> ani innych klientów. Jeden commit SVN publikuje rekord klienta, strefę jeśli nowa, projekcję i zdarzenie audytu atomowo. Klient dołączający do istniejącej strefy dziedziczy niezmienny alias tej strefy w pierwszym widoku. Właścicielstwo repozytoriów (<code>admin/repositories/</code>) i kanoniczne granty/uprawnienia strefa→repozytorium (<code>admin/grants/</code>, zob. §5.5) są zaimplementowane; każda zmiana grant/revoke i widoczności regeneruje <code>view.json</code> dotkniętych klientów oraz authz po stronie serwera w tej samej operacji workera. Przebudowa grantów uzgadnia też kanoniczny alias strefy, a idempotentne pasujące zajęcie aliasu naprawia starsze widoki, które go pomijały. Szersza konsola administracyjna poza <code>filees-admin</code> (§4.1) pozostaje osobną, późniejszą koncepcją (signed-ticket V3, priorytet 8 w <code>VERTICALS.md</code>).</p>
 </div>
-<nav class="page-nav"><a href="index.html">← Przegląd</a><a href="user-guide.html">2. Przewodnik →</a></nav>
+<nav class="page-nav"><a href="administration.html">← User: Administracja</a><a href="install.html">Instalacja →</a></nav>
 </div>
 </div>
 <footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-14 · źródło r494</span></footer>

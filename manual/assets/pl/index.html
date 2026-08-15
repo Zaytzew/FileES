@@ -38,6 +38,7 @@
 <span class="nav-pillar">Tech</span>
 <a href="architecture.html">Architektura</a>
 <a href="install.html">Instalacja</a>
+<a href="operations.html">Eksploatacja</a>
 <a href="security.html">Bezpieczeństwo</a>
 <a href="man-pages.html">Man</a>
 </span>
@@ -48,8 +49,8 @@
 <p class="hero-copy">FileES trzyma katalogi w zgodzie i pozwala oddać paczkę komuś, kto nigdy nie zainstaluje klienta. Ten zestaw HTML jest publicznym podręcznikiem. To dwa piony, nie jedna zmieszana powieść: <strong>User</strong> to jak z tym żyć, <strong>Tech</strong> to jak to jest zbudowane. Administrator też jest użytkownikiem. OpenBSD <code>mandoc</code> zostaje przy Tech.</p>
 <div class="meta-strip">
 <span><strong>Wersja</strong> 0.1.0</span>
-<span><strong>Data</strong> 2026-08-14</span>
-<span><strong>Źródło</strong> SVN r494</span>
+<span><strong>Data</strong> 2026-08-15</span>
+<span><strong>Źródło</strong> SVN r522</span>
 <span><strong>Serwer</strong> OpenBSD 7.9 · podpisane r492 na produkcji</span>
 <span><strong>Klient</strong> pulpit Linux i Windows</span>
 </div>
@@ -74,7 +75,8 @@
 <li><a href="administration.html">Howto administracji</a></li>
 <li><a href="public-shares.html">Udziały publiczne, od strony człowieka</a></li>
 <li><a href="architecture.html">Architektura, tickety, sandbox</a></li>
-<li><a href="install.html">Instalacja i wdrożenie serwera</a></li>
+<li><a href="install.html">Ścieżka instalacji serwera</a></li>
+<li><a href="operations.html">Eksploatacja i kontrakty</a></li>
 <li><a href="security.html">Dodatek bezpieczeństwa</a></li>
 <li><a href="man-pages.html">Strony man OpenBSD</a></li>
 <li><a href="#publish">Publikacja tego zestawu HTML</a></li>
@@ -82,7 +84,7 @@
 </nav>
 <div class="manual-content">
 <h1>Jak czytać ten podręcznik</h1>
-<p>To nie jest zamknięty wątek. Host już serwuje strony; <em>książki</em> dopiero się rozdzielają. Stare adresy rozdziałów zostają, żeby nie ruszać linków ani allowlisty.</p>
+<p>Host już serwuje strony. Książki są rozdzielone: strony User to howto, Tech <a href="operations.html">Eksploatacja</a> trzyma mięso, które siedziało obok nich. Stare adresy rozdziałów zostają, żeby nie ruszać linków ani allowlisty.</p>
 <div class="lang-choice">
 <a class="lang-card" href="#user">
 <span class="lang-kicker">User</span>
@@ -107,7 +109,8 @@
 <p>Tu zaczynasz, jeśli implementujesz, audytujesz albo wdrażasz. Ton: kontrakty, odrzucone alternatywy i to, co musi zostać prawdą.</p>
 <ul>
 <li><a href="architecture.html">Architektura</a> — topologia, sztafeta ticketów, OTP, skok SSH, sandbox.</li>
-<li><a href="install.html">Instalacja serwera</a> — <code>install-server.sh</code>, sshd, <code>filees-install</code>.</li>
+<li><a href="install.html">Instalacja serwera</a> — <code>install-server.sh</code>, <code>install-ssh.sh</code>, <code>filees-install</code>.</li>
+<li><a href="operations.html">Eksploatacja</a> — pliki ticketów, schematy poczty i audytu, protokół rotacji i usunięcia strefy, <code>object_map</code>, sshd i <code>server.json</code>.</li>
 <li><a href="security.html">Dodatek bezpieczeństwa</a> — niezmienniki, transport, granica GUI.</li>
 <li><a href="man-pages.html">Strony man / wyciąg CLI</a> — rola, wywołanie, flagi i przykłady każdego polecenia serwera.</li>
 <li><a href="#publish">Publikacja tego zestawu</a> — <code>^/manual</code> jest document root; krokiem publikacji jest <code>svn up</code>.</li>

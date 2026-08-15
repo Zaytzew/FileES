@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Operations — FileES Tech</title>
+<link rel="alternate" hreflang="en" href="operations.html"/>
+<link rel="alternate" hreflang="pl" href="../pl/operations.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">split HTML · external CSS · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="operations.html" class="is-current" lang="en" hreflang="en" aria-current="true">EN</a>
+<a href="../pl/operations.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Manual pages">
+<a href="index.html">Overview</a>
+<span class="nav-group" aria-label="User">
+<span class="nav-pillar">User</span>
+<a href="user-guide.html">Desktop</a>
+<a href="public-shares.html">Shares</a>
+<a href="administration.html">Administration</a>
+</span>
+<span class="nav-group" aria-label="Tech">
+<span class="nav-pillar">Tech</span>
+<a href="architecture.html">Architecture</a>
+<a href="install.html">Install</a>
+<a href="operations.html" class="is-current">Operations</a>
+<a href="security.html">Security</a>
+<a href="man-pages.html">Man pages</a>
+</span></nav>
+<div class="manual-layout">
+<nav aria-label="Page contents" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / this page</span>
+<h2>On this page</h2>
+</div>
+<ol>
+<li><a href="#ops-admin">filees-admin</a></li>
+<li><a href="#ops-operation">filees-operation</a></li>
+<li><a href="#ops-audit">Audit log</a></li>
+<li><a href="#ops-mail">Mail outbox</a></li>
+<li><a href="#ops-recovery">Recovery protocol</a></li>
+<li><a href="#ops-monitoring">Monitoring sources</a></li>
+<li><a href="#ops-rotate">filees-rotate</a></li>
+<li><a href="#ops-realm-removal">Realm-removal protocol</a></li>
+<li><a href="#ops-ps-model">Shares trust model</a></li>
+<li><a href="#ops-ps-url">Canonical URL / allowlist</a></li>
+<li><a href="#ops-ps-map">object_map vs revision</a></li>
+<li><a href="#ops-ps-access">Open, password, recipient OTP</a></li>
+<li><a href="#ops-ps-ops">Shares server operations</a></li>
+<li><a href="#ops-sshd">sshd Match User</a></li>
+<li><a href="#ops-serverjson">server.json</a></li>
+<li><a href="#ops-keys">Key generation</a></li>
+<li><a href="#ops-htdocs">Publishing this HTML set</a></li>
+<li><a href="#ops-config">Client config.json</a></li>
+<li><a href="#ops-provision">Provisioning tickets</a></li>
+<li><a href="#ops-passports">Passport internals</a></li>
+<li><a href="#ops-gui">GUI IPC sequence</a></li>
+<li><a href="#ops-update">Signed update envelope</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<div id="ch4-admin" hidden></div>
+<div id="ch4-operation" hidden></div>
+<div id="ch4-audit" hidden></div>
+<div id="ch4-mail" hidden></div>
+<div id="ch4-recovery" hidden></div>
+<div id="ch4-monitoring" hidden></div>
+<div id="ch4-rotate" hidden></div>
+<div id="ch4-realm-removal" hidden></div>
+<div id="ps-model" hidden></div>
+<div id="ps-url" hidden></div>
+<div id="ps-map" hidden></div>
+<div id="ps-access" hidden></div>
+<div id="ps-ops" hidden></div>
+<div id="ch3-sshd" hidden></div>
+<div id="ch3-serverjson" hidden></div>
+<div id="ch3-keys" hidden></div>
+<div id="ch3-manual-htdocs" hidden></div>
+<h1 id="ops">Tech: operations and contracts</h1>
+<div class="chapter-content">
+<p>This page is the meat that used to sit beside User howto. Invitation commands, Settings and the recipient view stay on the User pages. What follows is schemas, state machines, rejected alternatives and the deploy contracts.</p>
+<div class="note"><strong>Old URLs stay.</strong> <code>administration.html#ch4-admin</code> and the other chapter anchors still open the howto. The same identifiers are repeated here so a Tech reader can land on the contract.</div>
+<h2 id="ops-admin">filees-admin — exit codes and ticket files</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-planned">Broader commands planned</span><span>Ticket, operation inspection and fail-closed client revoke exist.</span></div>
+<p><code>filees-admin</code> is the administrative command-line tool. It must be run as <code>_filees-state</code> (e.g. via <code>doas -u _filees-state</code>) to satisfy its <code>pledge</code>/<code>unveil</code> profile. It writes structured JSON to stdout and diagnostics to stderr. Exit codes follow the <code>sysexits</code> range:</p>
+<div class="table-wrap"><table>
+<tr><th>Exit code</th><th>Constant</th><th>Meaning</th></tr>
+<tr><td>0</td><td><code>ExitOK</code></td><td>Success</td></tr>
+<tr><td>64</td><td><code>ExitUsage</code></td><td>Bad arguments</td></tr>
+<tr><td>65</td><td><code>ExitData</code></td><td>Input data error</td></tr>
+<tr><td>69</td><td><code>ExitUnavailable</code></td><td>Resource unavailable (ticket taken, port exhausted)</td></tr>
+<tr><td>70</td><td><code>ExitSoftware</code></td><td>Internal logic error</td></tr>
+<tr><td>75</td><td><code>ExitTempFail</code></td><td>Temporary failure (retry later; used by filees-mail for SMTP 4xx)</td></tr>
+<tr><td>78</td><td><code>ExitConfig</code></td><td>Configuration error</td></tr>
+</table></div>
+<h4>Ticket management</h4>
+<pre><code>filees-admin ticket create &lt;mailbox&gt; [--join-realm-alias &lt;alias&gt;] [--ttl 24h]
+filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;
+filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
+filees-admin ticket list</code></pre>
+<p>A ticket is a one-time administrator grant authorising one e-mail invitation. It must be created with effective user <code>_filees-state</code>; creating it as root produces a private root-owned file that the set-id onboarding entry intentionally cannot read. Without <code>--join-realm-alias</code> it authorises creation of a new realm. With the flag, the server resolves the immutable alias immediately and stores the approved existing realm ID in ticket policy; the client never submits that ID. Revoke an unused ticket created with the wrong policy instead of editing it. The ticket file is named by <code>sha256(canonical_email)</code> so the file name does not reveal the address. <code>create</code> writes the ticket with a TTL and immediately sends its invitation; <code>resend</code> replaces a failed delivery capability with a fresh one without changing the ticket recipient or TTL; <code>revoke</code> removes it. Once its opaque invitation capability is claimed by <code>filees-onboard take</code> the ticket physically disappears and is replaced by an operation bundle.</p>
+<h4>Operation inspection</h4>
+<pre><code>filees-admin operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
+<p>Displays the current state and audit trail of an onboarding operation. If an operation is in state <code>awaiting_tunnel</code> after the TTL has passed, the OTP is exhausted or expired, and the record can be cleaned up by <code>filees-operation recover</code>.</p>
+<h4>Client revocation</h4>
+<pre><code>filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "one-line reason"</code></pre>
+<p>Revocation first writes a durable <code>revoking</code> record and removes the client from generated SSH/SVN runtime access. Only then does it commit the revoked client record and audit event to the service repository. An identical retry is idempotent; a different reason is rejected.</p>
+<h4>Realm revocation and repository ownership transfer</h4>
+<pre><code>filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-line reason"
+filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;</code></pre>
+<p><code>client revoke-realm</code> revokes every installation belonging to the given realm in one call and reports the affected <code>client_id</code>s; it uses the same fail-closed <code>revoking</code>-then-committed sequence as single-client revoke. <code>repo transfer-owner</code> changes <code>owner_realm_id</code> for a repository and regenerates data-authz through <code>repoworker.ServicePublisher</code>; it does not touch existing grants issued by the previous owner.</p>
+<h4>Commands that remain out of this tool</h4>
+<p>Repository create/attach, grants, public shares, load-dump and realm removal are owner operations on the desktop control plane, not extra <code>filees-admin</code> verbs. The following broader console is still specified and not implemented:</p>
+<pre><code>filees-admin realm create|inspect|list|disable
+filees-admin client inspect|list|disable
+filees-admin repo inspect|list|disable|reconcile
+filees-admin grant create|change|revoke
+filees-admin invitation create|revoke|inspect
+filees-admin operation inspect|abort|retry
+filees-admin audit list|verify
+filees-admin projection rebuild|verify</code></pre>
+
+<h2 id="ops-operation">filees-operation — claim forms</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Claim recovery, unfinished-operation expiry and activation cleanup are idempotent.</span></div>
+<pre><code>filees-operation recover
+filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
+<p><code>filees-operation recover</code> scans the operations directory for claim files (<code>.claim-*.json</code>) and finishes them. A claim may be in two forms:</p>
+<ul>
+<li><strong>Claim-as-ticket</strong> — the ticket was renamed to <code>.claim-&lt;req_id&gt;.json</code> but not yet replaced by a bundle. Recovery generates the bundle and completes the final rename.</li>
+<li><strong>Claim-as-bundle</strong> — the bundle was written into the claim file but the final rename to <code>&lt;req_id&gt;.json</code> was not completed. Recovery performs only the rename.</li>
+</ul>
+<p>Recovery also expires unfinished operations whose TTL elapsed, redacts their OTP and delivery address, removes expired staged keys from generated SSH/SVN access, and resumes confirmed realm-removal journals after all client credentials have been revoked. Active clients are not expired by the onboarding TTL. Recovery is idempotent and safe after an unexpected system crash. On OpenBSD it must run as the private state owner: <code>doas -u _filees-state filees-operation recover</code>.</p>
+
+<h2 id="ops-audit">Audit log schema</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Onboarding audit and client structured error logs exist.</span></div>
+<p>The server-side audit log is stored as individual JSON files in the <code>audit/</code> subdirectory of the state root (<code>/var/filees/onboarding/audit/</code>). Each event file is named <code>&lt;timestamp&gt;-&lt;object_type&gt;-&lt;event_type&gt;.json</code> and follows the <code>filees.onboarding-audit/v1</code> schema:</p>
+<pre><code>{
+  "schema":       "filees.onboarding-audit/v1",
+  "event":        "tunnel_session_started",
+  "actor":        "_filees-state",
+  "object_type":  "operation",
+  "object_id":    "&lt;operation_id&gt;",
+  "operation_id": "&lt;operation_id&gt;",
+  "at":           "2026-07-16T09:15:02Z"
+}</code></pre>
+<p>The operation bundle itself contains an inline audit array (<code>Audit []AuditEvent</code>) recording the complete history of that operation. SVN history of the service repository provides an additional independent evidence layer for service-repository audit events.</p>
+<p>Recorded onboarding audit event types include: <code>ticket_created</code>, <code>ticket_revoked</code>, <code>operation_claimed</code>, <code>otp_attempt_failed</code>, <code>otp_verified</code>, <code>otp_exhausted</code>, <code>tunnel_session_started</code>, <code>helper_announced</code>, <code>helper_verified</code>, <code>identity_generated</code>, <code>access_staged</code>, <code>possession_verified</code>, and <code>client_activated</code>. The service repository independently records <code>client_activated</code> and <code>client_revoked</code> events.</p>
+<p>The client-side error log is stored in <code>&lt;wc&gt;/.filees/logs/errors.jsonl</code> as JSON Lines:</p>
+<pre><code>{"ts":"2026-07-16T10:00:00Z","scope":"commit:projectA","code":"NET-4007",
+ "severity":"WARN","hint":"RETRY_BACKOFF","msg":"Network unreachable — retrying"}</code></pre>
+<p>The most recent entries can be viewed with:</p>
+<pre><code>filees log 50</code></pre>
+
+<h2 id="ops-mail">Mail outbox state machine</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>One-shot SMTP outbox, public bootstrap composition, redaction and retry semantics.</span></div>
+<p>The public SSH forced command is <code>filees-bootstrap-entry</code>. It atomically creates or resumes the onboarding operation and then invokes exactly one <code>filees-mail send</code> attempt. Authenticated control workers use the same one-shot trigger for onboarding, realm-removal and data-erasure mail. Public Shares additionally needs delivery triggered by an unauthenticated browser request: <code>filees-public-authority</code> therefore supervises an isolated <code>filees-mail public-loop</code> child. The child polls only the durable Public Shares outbox, loads the SMTP secret itself and is a required part of authority health; the authority process never receives that secret. On a service-stop signal, authority closes its server, terminates the mail child and waits for it before exiting, so an rc.d restart cannot leave an orphan poller.</p>
+<p>The outbox delivery state machine:</p>
+<pre><code>pending  -&gt;  sending  -&gt;  queued    (250 after DATA; OTP and address redacted)
+                      -&gt;  pending   (4xx temporary failure; OTP preserved)
+                      -&gt;  failed    (5xx permanent failure; OTP redacted)</code></pre>
+<p>A stale <code>sending</code> entry (from a previous attempt that died without recording a result) is reclaimed with a new attempt ID before retrying. The stable <code>Message-ID</code> header (derived from <code>CreatedAt</code>, not <code>time.Now()</code>) makes retry safe if the smarthost accepted but the reply was lost.</p>
+<p>To retry after a temporary failure:</p>
+<pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
+<p>Exit code 75 (<code>ExitTempFail</code>) means the smarthost returned a 4xx; the OTP is preserved and the command can be retried. Exit code 0 means the message was accepted (<code>queued</code> state). A permanent failure (5xx) sets state to <code>failed</code> and redacts the OTP; manual intervention is required.</p>
+
+<h2 id="ops-recovery">Recovery protocol</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Server claim recovery and client restart reconciliation are covered by fault injection.</span></div>
+<h4>Interrupted onboarding claim</h4>
+<pre><code>doas -u _filees-state filees-operation recover</code></pre>
+<p>The command finishes any <code>.claim-*</code> file, expires unfinished operations past TTL, redacts their OTP material and removes expired activation staging. Active clients remain active. Safe to run repeatedly.</p>
+<h4>Realm removal after client revocation</h4>
+<p>A confirmed realm-removal journal is server-owned. If a crash occurs after <code>revoke_all_clients</code>, no client credential remains with which to resume the request. The same explicit <code>filees-operation recover</code> command enumerates states <code>deleting</code>, <code>recovery_ready</code> and <code>revoke_all_clients</code> under the repository worker lock and completes their idempotent boundaries. It is an administrative/startup action, not polling or a cyclic service.</p>
+<h4>Data-erasure retention closure</h4>
+<p>An optional data-erasure request is created only after realm-removal OTP confirmation. After active repositories, grants and client activations are removed it waits in <code>awaiting_backup_retention</code>. The server does not claim to purge backups automatically. Once the operator has verified the retention outcome, close it explicitly:</p>
+<pre><code>doas -u _filees-state filees-admin erasure complete \
+  --operation-id &lt;realm_removal_uuid&gt;
+
+# If policy or legal retention still requires records:
+doas -u _filees-state filees-admin erasure complete \
+  --operation-id &lt;realm_removal_uuid&gt; --partially-retained</code></pre>
+<p>Closure creates one final mail job. SMTP acceptance or a permanent failure scrubs the notification address. The maximum completion window shown by the client comes from <code>repositories.data_erasure_max_days</code> (default 90), not from GUI code.</p>
+<h4>Moving the data-repository storage root</h4>
+<p><code>repositories.root</code> is an absolute, administrator-selected FSFS storage root; <code>/var/filees/repositories</code> is only the default. It may point to a dedicated filesystem such as <code>/srv/filees/repositories</code>. This is a maintenance migration, not a live configuration change: every data repository is a directory below that root, named by its repository UUID.</p>
+<ol>
+<li>Schedule an exclusive maintenance window. Stop all FileES client daemons that can write to this server, do not issue repository create/delete requests, and wait until there are no active <code>svnserve -t</code>, <code>filees-worker</code> or <code>filees-client-entry</code> processes for the installation.</li>
+<li>Verify the source before copying. Run <code>svnadmin verify</code> for every direct child repository; resolve any verification error before proceeding.</li>
+<li>Create a destination on the target mount that is traversable and writable only by <code>_filees-state</code>, then copy as root while the maintenance window remains in force. For example:</li>
+</ol>
+<pre><code>doas install -d -o _filees-state -g _filees-state -m 0750 /srv/filees
+doas install -d -o _filees-state -g _filees-state -m 0700 /srv/filees/repositories
+
+# Verify source repositories before the copy.
+for repo in /var/filees/repositories/*; do
+  [ -d "$repo" ] || continue
+  doas -u _filees-state /usr/local/bin/svnadmin verify "$repo" || exit 1
+done
+
+# Preserve the complete FSFS directory trees, ownership and modes.
+doas cp -Rp /var/filees/repositories/. /srv/filees/repositories/
+
+# Verify the copied repositories before switching configuration.
+for repo in /srv/filees/repositories/*; do
+  [ -d "$repo" ] || continue
+  doas -u _filees-state /usr/local/bin/svnadmin verify "$repo" || exit 1
+done</code></pre>
+<ol start="4">
+<li>Change only <code>repositories.root</code> in <code>/etc/filees/server.json</code> to the new absolute path. Keep <code>results_root</code> and <code>deletion_archive_root</code> unchanged unless they are deliberately being migrated as separate state stores.</li>
+<li>Before admitting clients again, test one read-only SVN access and one controlled FileES operation. The short-lived server worker reads <code>server.json</code> per request, so there is no daemon to restart; the maintenance boundary is still required to prevent writes from landing in the old root during the switch.</li>
+<li>Keep the old root intact and read-only until backups and the acceptance check are complete. Rollback is simply restoring the old <code>repositories.root</code> value while the maintenance window is still active. Remove the old copy only under a separately approved retention policy.</li>
+</ol>
+<div class="warn"><strong>Never merge two live roots or use a filesystem move while clients are connected.</strong> A repository's UUID, hooks and FSFS metadata must move together. Copy-and-verify first, then make one configuration switch; this keeps rollback available.</div>
+<h4>Client recovery after SIGKILL or power loss</h4>
+<p>The client daemon recovers automatically on the next start:</p>
+<ol>
+<li>Loads the full staging cache from <code>cache.json</code>.</li>
+<li>Runs <code>svn cleanup</code> and (if no <code>missing</code> entries) <code>svn update</code>.</li>
+<li>Re-classifies every cached entry by <code>svn status</code>; entries already marked <code>normal</code> (accepted by server) are dropped without re-committing.</li>
+<li>Publishes the remaining entries in bounded batches.</li>
+</ol>
+<p>This idempotent reconciliation was verified in fault-injection tests (r91–r92) where a server accepted a commit but the daemon process was killed before it could update the working-copy metadata and clear the cache. The restart correctly published only the missing remaining entry.</p>
+<h4>Moved or missing working-copy root</h4>
+<p>Startup validates the root as an identity boundary before creating FileES metadata or starting a watcher. Missing <code>.svn</code>, a mismatched repository URL or an incompatible identity marker produces <code>interaction_required / working_copy_missing</code>; the daemon leaves that path untouched and runs only a lightweight recovery monitor. If the original working copy returns at the same path, the normal pipeline resumes automatically. If it was moved, use Settings <strong>Wskaż kopię</strong>: <code>repo.locate</code> verifies the existing root and durably rebinds the attachment without checkout. Local modifications are preserved. On Windows the active root is normally protected against out-of-band rename/delete by a non-delete-sharing directory handle, but this protection necessarily ends when FileES is stopped.</p>
+<h4>Conflict copies</h4>
+<p>Files in <code>!kolizje/</code> are preserved local versions from before a server-wins conflict resolution. Each subdirectory is timestamped (<code>YYYY.MM.DD@HH.MM_lokalne</code>) and contains the file contents plus a <code>.meta</code> JSON sidecar with original path, size, and timestamp. They can be inspected and manually merged. The directory is scanner-ignored and never committed.</p>
+<h4>Orphaned passport after network loss</h4>
+<p>If the daemon loses network connectivity while holding a passport, it does not publish changes after the local TTL expires. On reconnect, the passport manager checks the actual lock on the server: if the token still matches, the heartbeat resumes; if the token has been replaced (by a force-lock or server-side expiry), the passport is marked <code>lost</code>. The file is returned to read-only; no automatic force-lock or commit is attempted.</p>
+<h4>Service repository projection rebuild</h4>
+<p>The <code>clients/</code> subtree of the service repository is derived data. There is no general-purpose administrator command for a complete deterministic rebuild yet:</p>
+<pre><code>filees-admin projection rebuild   # not yet implemented</code></pre>
+<p>The canonical grant model is implemented despite the absence of that broad command. Activation writes the first client view in the same SVN revision as its canonical client record; an existing-realm join inherits the realm alias. Grant-authority rebuild regenerates repositories and reconciles the alias for active client views. A matching idempotent <code>realm.alias_claim</code> is also a bounded repair operation for older views that omitted <code>realm_alias</code>. Never edit a client's local cached <code>view.json</code> by hand: it is a server-owned projection and will be replaced by the next update.</p>
+
+<h2 id="ops-monitoring">Monitoring sources</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Current diagnostics and recovery counters; broader metrics remain non-contractual.</span></div>
+<p>FileES does not yet expose a metrics endpoint. The following sources are available for monitoring:</p>
+<div class="table-wrap"><table>
+<tr><th>Source</th><th>Contents</th></tr>
+<tr><td><code>.filees/logs/errors.jsonl</code></td><td>Structured error log; codes, severity, hints, timestamps. Query with standard JSON tools.</td></tr>
+<tr><td><code>filees status</code></td><td>Live snapshot of all repository states, connectivity, pending counts, and local/HEAD revisions</td></tr>
+<tr><td><code>filees log N</code></td><td>Last N error log entries, newest first</td></tr>
+<tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Combined newest-first activity and error snapshot; up to 12 aggregated rows in the tray and the full available snapshot in a native window</td></tr>
+<tr><td><code>/var/filees/onboarding/operations/</code></td><td>Operation bundle files; inspect state field with <code>jq</code></td></tr>
+<tr><td><code>/var/filees/onboarding/audit/</code></td><td>Timestamped audit events</td></tr>
+<tr><td><code>/var/filees/activation/records/</code></td><td>Staged, active, revoking, revoked and expired activation records</td></tr>
+<tr><td><code>/var/filees/activation/authorized_keys</code></td><td>Generated current installation-key access; never edit by hand</td></tr>
+<tr><td><code>commit.Service.RecoveryStats()</code></td><td>Exposed over IPC as the <code>recovery</code> field of <code>repo.status</code> (shown by <code>filees status</code> when non-zero, r405): resumed cache entries, entries skipped as already accepted, batches executed</td></tr>
+</table></div>
+<p>For CI or automated checks, <code>make verify</code> runs <code>go test ./...</code> (including race detector for key packages), <code>go vet ./...</code>, and a local SVN recovery smoke test (<code>scripts/svn-recovery-smoke.sh</code>) that creates a temporary <code>svnadmin</code> repository and does not require network access.</p>
+
+<h2 id="ops-rotate">filees-rotate internals</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Explicit generation change, tested end-to-end on a real FSFS repository; deliberately not scheduled — running it is an operational decision.</span></div>
+<p><code>filees-rotate</code> performs an <strong>explicit generation change</strong> of a hot repository: the new generation gets a <em>new UUID</em> and starts at r1 = a complete dump of the old HEAD (versioned properties such as <code>svn:needs-lock</code> included), inherits <code>conf/</code> and <code>hooks/</code> explicitly, and is verified (<code>svnadmin verify</code> plus tree comparison) before an atomic swap. The old generation becomes a frozen, commit-blocked FSFS archive with a history manifest and a <code>meta.json</code> recording the UUID change — the signal for client reprovisioning, since existing working copies do not survive a generation change by design.</p>
+<pre><code># Evaluate triggers only (size after pack, or age of r1's svn:date):
+filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
+# Rotate when a trigger fires; thresholds are configurable and validated:
+filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
+# Bounded backup dump of the last N revisions before HEAD (never a
+# second full history copy; the frozen FSFS archive is canonical):
+filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
+<p>Safety contract: an flock excludes concurrent runs; repo and archive must share a filesystem (the swap is a rename); commits are blocked by a temporary <code>pre-commit</code> hook for the duration; rotation <em>refuses</em> to run while active locks (live edit passports) exist unless <code>-break-locks</code> is passed explicitly; every failure before the swap restores the repository as found.</p>
+<div class="warn"><strong>When to rotate at all:</strong> for the FileES append-only profile, repository depth does not degrade performance, and FSFS binary deltas plus rep-sharing keep growth tracking <em>unique</em> data, not revision count. Rotation pays off only as a retention/tiering tool (SVN has no <code>obliterate</code>) — see the verdict in <code>concepts/SVN_ROTATOR_CONCEPT_V2.md</code> §7 before scheduling anything.</div>
+
+<h2 id="ops-realm-removal">Realm-removal protocol</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Journal, OTP, executor, recovery manifest, key registry, the recovery SSH transport, the GUI flow with kit generation and the data-erasure request are implemented and exercised end to end on the reference VM: multiple activations, own and foreign grants, retention 0 and &gt;0, invariant checks (reports/REALM_REMOVAL_RECOVERY_E2E_2026-08-01.md).</span></div>
+<p>Removing a FileES share is realm-scoped and irreversible for live access. It is not the same as deactivating one installation — see the table in <a href="user-guide.html#ch2-gui">§2.6</a>. The design contract is <code>concepts/REALM_DETACH_AND_ERASURE_CONCEPT.md</code>.</p>
+<h4>Scope derivation</h4>
+<p>The worker derives the target realm from the authenticated session alone. No client payload names a realm, a repository or another installation. From the canonical service working copy the server takes a snapshot of: every active installation of that realm, every repository whose <code>owner_realm_id</code> is that realm (these are deleted), and every foreign repository the realm holds a grant on (the grant is withdrawn, the owner's repository is untouched). Scope derivation is fail-closed: an unreadable client projection aborts the request rather than silently narrowing it.</p>
+<h4>States</h4>
+<pre><code>awaiting_confirmation --OTP--&gt; deleting --&gt; recovery_ready
+                                    --&gt; revoke_all_clients --&gt; completed
+       |
+       +--&gt; expired      (TTL elapsed, or attempts exhausted)</code></pre>
+<p>The OTP is peppered and stored only as a hash, compared in constant time, single-use, attempt-limited and TTL-bound. Failure to confirm leaves grants, repositories and credentials untouched. Revoking the realm's installations is deliberately the <em>last</em> boundary: until that point an interrupted operation can still be resumed by an authenticated client of the same realm, and a resume never widens the snapshot or produces a second dump.</p>
+<div class="note"><strong>Mail delivery:</strong> the confirmation OTP is queued in a durable outbox and sent by <code>filees-mail</code>. The trigger that drains that outbox immediately after a control-plane action runs in the parent process after <code>proc</code>/<code>exec</code> privileges are dropped, and does not attempt to re-impose a blocked <code>unveil</code> — fixed and regression-tested natively on OpenBSD 7.9 (previously finding B in <code>reports/CODE_REVIEW_POST_AUDIT_r280_r318_2026-07-29.md</code>, closed per <code>todo-control/plan/EXECUTION_ORDER.md</code> §1). A missing OTP mail should still be treated as a delivery problem to investigate, not silently retried indefinitely.</div>
+<h4>Recovery archives</h4>
+<p>With positive retention the removal produces one verified SVN dump per owned repository, each with a SHA-256 digest, and a manifest describing them. The manifest is capability-neutral: <code>archive_id</code> is an opaque UUID and is never interpreted as a filesystem path. Two independent windows apply — <code>download_until</code>, after which archives can no longer be fetched, and <code>admin_grace_until</code>, after which the receipt itself is reaped. Retention of zero means no dump is written at all, and the interface must not promise recoverable data in that case.</p>
+<p>Access to those archives is the sole purpose of the <code>_filees-recovery</code> account. The client presents a per-operation Ed25519 recovery key; the separate <code>filees-recovery-authorize</code> helper — deliberately split from the session entry, so key lookup and session service are distinct executables — looks it up in the key registry, refuses it once <code>download_until</code> has passed, and emits a <code>restrict</code>ed authorized-key line whose forced command is bound to that one operation ID. The served protocol is exactly two verbs:</p>
+<pre><code>list &lt;operation_id&gt;
+get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
+<p>The entry runs read-only (<code>stdio rpath</code>) and never sees a private key. A recovery key grants no SVN access, no shell, no re-onboarding, and no access to any other operation or repository.</p>
+<div class="note"><strong>Not to be confused with <a href="#ch4-recovery">§4.5 Recovery</a></strong>, which is about recovering a damaged SVN repository on a running server. This section is about retrieving data after a realm has deliberately removed its share.</div>
+
+<h2 id="ops-ps-model">Public Shares trust model</h2>
+<div class="section-meta"><span class="status status-verified">Verified live</span><span>Canonical HTTPS endpoint, FastCGI links, Unix backchannel and authority isolation accepted on OpenBSD.</span></div>
+<p>Public Shares is a distribution channel, not a second write path. Upload Channel is a separate vertical and must not share this process or these credentials.</p>
+<p>Three processes, three owners:</p>
+<div class="table-wrap"><table>
+<tr><th>Process</th><th>Owner</th><th>May see</th><th>Must not see</th></tr>
+<tr><td><code>filees-links</code></td><td><code>_filees-links</code></td><td>public request, visit token, private cache</td><td>SVN credentials, SMTP secret, recipient addresses</td></tr>
+<tr><td><code>filees-public-authority</code></td><td><code>_filees-state</code></td><td>channel records, <code>svnlook</code>, OTP hashes</td><td>SMTP password (held by the mail child only)</td></tr>
+<tr><td><code>filees-mail public-loop</code></td><td>child of authority</td><td>SMTP secret and the Public Shares outbox</td><td>the HTTP request stream</td></tr>
+</table></div>
+<p>TLS belongs to <code>relayd</code>/<code>httpd</code>. FileES never embeds a TLS stack. The public HTML uses no JavaScript, no cookies and no third-party resources. Branding is the <code>filees:space</code> system plus the owner accent colour and logo already stored on the server.</p>
+<div class="decision">
+<div class="decision-head">Design rationale / push from authority, never pull from the public zone</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">The public process asks for <code>(channel, public_id, revision)</code>; authority resolves the map and pushes the leaf.</div>
+<div class="decision-label">Why</div><div class="decision-value">The public zone stays credential-free and the expensive <code>svnlook</code> stays on the state account.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Materialising a published tree; giving links a service-repository working copy; embedding TLS.</div>
+<div class="decision-label">Cost</div><div class="decision-value">A backchannel and a private cache are mandatory for usable large binaries.</div>
+</div>
+</div>
+
+<h2 id="ops-ps-url">Canonical URL and static allowlist</h2>
+<p>The public address is always:</p>
+<pre><code>https://&lt;server-domain&gt;/&lt;realm-alias&gt;/&lt;slug&gt;</code></pre>
+<p>Static document-root paths are an explicit allowlist: <code>/</code>, <code>/index.html</code>, <code>/favicon.ico</code>, <code>/robots.txt</code>, <code>/.well-known/acme-challenge/*</code> and <code>/assets/*</code>. The HTML manual lives in that last prefix. Everything else is a virtual FileES location. Adding a realm must not create a directory and must not reload <code>httpd</code>. Publishing a new manual page is only a new file under <code>/assets/</code>. See the <a href="index.html#publish">publishing graph</a>.</p>
+<p>Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the path, alias, slug or reason. <code>robots.txt</code> is static <code>Disallow: /</code>.</p>
+
+<h2 id="ops-ps-map">object_map versus revision</h2>
+<div class="section-meta"><span class="status status-verified">Verified</span><span>Documented after the 2026-08-14 live observation; this is the implemented contract, not a defect.</span></div>
+<p>Two clocks exist:</p>
+<ul>
+<li><strong>Revision</strong> is chosen at each visit. If the channel has no <code>do-not-follow</code>, authority reads HEAD and freezes that revision for the visit. Mapped file <em>contents</em> therefore follow HEAD.</li>
+<li><strong>Composition</strong> is the <code>object_map</code> written at <code>CREATE</code> or <code>UPDATE</code>. Listing and download iterate only that map. A file added to the folder later is invisible; a removed file stays listed; a rename keeps the old name.</li>
+</ul>
+<p>An empty selected folder is a legal placeholder. Later files require an explicit channel update. That is why the desktop copy says the share is not a live mirror of the folder.</p>
+<div class="note">Changing composition to a derived tree walk would require deterministic <code>public_id</code> values (for example HMAC of path and a channel secret) so mailed links survive a new file. That decision has not been taken. Until then the concept's “refreshes by itself” sentence applies only to the content of already mapped leaves.</div>
+
+<h2 id="ops-ps-access">Open channel, password and recipient OTP</h2>
+<p><strong>Open channel.</strong> Optional Argon2id password. A successful gate issues a twelve-hour signed visit URL. Password verification is globally serialised to one in-flight Argon2. The password screen shows the FileES mark, the owner logo and the owner accent; it does not show alias, slug or explanatory text.</p>
+<p><strong>Closed channel.</strong> Each recipient gets an invitation identifier in the URL (<code>?invite=</code>; legacy <code>?token=</code> is accepted as an alias). The identifier is not a bearer. The landing page is a gate: the recipient asks for a code, authority mails an eight-digit OTP with a five-minute epoch, five attempts and a resend cooldown. Resend in an active epoch does not rotate the code or extend the TTL. After a correct OTP the public process receives only the invitation hash, the epoch UUID and an absolute expiry, then issues a signed URL that is a bearer exactly until that expiry. Copying the URL transfers the remaining window. After expiry the same invitation URL returns to the gate. After revoke it is 404.</p>
+<p>The public projection never contains e-mail addresses. Plaintext passwords and OTP codes are hashed before they cross IPC or SVN-backed control state.</p>
+
+<h2 id="ops-ps-ops">Public Shares server operations</h2>
+<p>Public Shares are installed disabled. After editing <code>server.json</code> and <code>public-links.json</code>:</p>
+<pre><code># merge openbsd/public-links.httpd.conf into the origin server block
+doas rcctl enable filees_public_authority filees_links
+doas rcctl start filees_public_authority
+doas rcctl start filees_links
+doas rcctl check filees_public_authority filees_links
+doas httpd -n &amp;&amp; doas rcctl reload httpd</code></pre>
+<p>Start authority before links. Authority is unhealthy if its mail child dies; a stop signal closes HTTP, terminates the child and waits, so <code>rcctl restart</code> must not leave an orphan poller. See <a href="man-pages.html">filees-public-authority(8)</a> and <a href="man-pages.html">filees-links(8)</a>.</p>
+
+<h2 id="ops-sshd">OpenBSD sshd Match User</h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD</span><span>Three protocol accounts, forced commands and forwarding policy validated natively.</span></div>
+<p>The effective <code>Match User</code> blocks applied by <code>install-ssh.sh</code> are:</p>
+<pre><code>Match User _filees-onboard
+    AuthenticationMethods publickey
+    PubkeyAuthentication yes
+    AuthorizedKeysFile /etc/ssh/filees_bootstrap_authorized_keys
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    ForceCommand /usr/local/libexec/filees/filees-bootstrap-entry
+    DisableForwarding yes
+    PermitTTY no
+    MaxSessions 1
+    AllowStreamLocalForwarding no
+    PermitTunnel no
+    PermitUserRC no
+    X11Forwarding no
+    AllowAgentForwarding no
+
+Match User _filees-tunnel
+    AuthenticationMethods keyboard-interactive:bsdauth
+    PubkeyAuthentication no
+    AuthorizedKeysFile none
+    ForceCommand /usr/local/libexec/filees/filees-entry
+    PasswordAuthentication no
+    KbdInteractiveAuthentication yes
+    PermitTTY no
+    AllowTcpForwarding remote
+    PermitListen 127.0.0.1:42000
+    PermitOpen none
+    AllowStreamLocalForwarding no
+    GatewayPorts no
+    PermitTunnel no
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitUserRC no
+    MaxSessions 1
+    MaxAuthTries 2
+
+Match User _filees-client
+    AuthenticationMethods publickey
+    PubkeyAuthentication yes
+    AuthorizedKeysFile /var/filees/activation/authorized_keys
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    DisableForwarding yes
+    AllowStreamLocalForwarding no
+    PermitTTY no
+    PermitTunnel no
+    PermitUserRC no
+    X11Forwarding no
+    AllowAgentForwarding no
+    MaxAuthTries 1
+    MaxSessions 1
+
+Match all</code></pre>
+<p>The <code>Match all</code> sentinel is required before any <code>Include</code> directive in the main <code>sshd_config</code> to prevent match blocks from leaking into included files. The installer handles this automatically.</p>
+<div class="note"><strong>Fixed port:</strong> the reverse tunnel port is a single static value (<code>127.0.0.1:42000</code> by default; configurable as <code>reverse_port_first</code>/<code>reverse_port_last</code> in <code>server.json</code>). This serialises infrequent deploys. The base <code>sshd_config</code> cannot make <code>PermitListen</code> conditional on the BSD Auth result, so a dynamic per-operation port would require a custom listener that FileES deliberately avoids.</div>
+
+<h2 id="ops-serverjson">server.json reference</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Configuration contract used by the current server tools.</span></div>
+<p>After running the installer, edit <code>/etc/filees/server.json</code>:</p>
+<pre><code>{
+  "schema": "filees.server-toolchain/v1",
+  "root": "/var/filees/onboarding",
+  "otp_pepper_file": "/etc/filees/otp.pepper",
+  "worker_private_key_file": "/etc/filees/worker_ed25519",
+  "worker_public_key_file": "/etc/filees/worker_ed25519.pub",
+  "activation": {
+    "root": "/var/filees/activation",
+    "authorized_keys_file": "/var/filees/activation/authorized_keys",
+    "authz_file": "/var/filees/activation/service.authz",
+    "service_working_copy": "/var/filees/service-wc",
+    "service_repository": "/var/filees/service-repo",
+    "repository_name": "filees-service",
+    "client_entry_path": "/usr/local/libexec/filees/filees-client-entry",
+    "svn_binary": "/usr/local/bin/svn",
+    "svnserve_binary": "/usr/local/bin/svnserve"
+  },
+  "repositories": {
+    "root": "/var/filees/repositories",
+    "results_root": "/var/filees/repository-operations",
+    "data_authz_file": "/var/filees/activation/repositories.authz",
+    "svnadmin_binary": "/usr/local/bin/svnadmin",
+    "url_prefix": "svn+ssh://_filees-data@filees.example.net/",
+    "deletion_archive_root": "/var/filees/repository-operations/deleted-repositories",
+    "deletion_retention_days": 30
+  },
+  "operation_ttl": "30m",
+  "otp_attempts": 5,
+  "reverse_port_first": 42000,
+  "reverse_port_last": 42000,
+  "smtp": {
+    "address": "smtp.example.net:587",
+    "server_name": "smtp.example.net",
+    "client_name": "filees.example.net",
+    "from": "filees@example.net",
+    "message_id_domain": "filees.example.net",
+    "username": "",
+    "tls": "starttls",
+    "connect_timeout": "10s",
+    "command_timeout": "30s"
+  }
+}</code></pre>
+<div class="table-wrap"><table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td><code>schema</code></td><td>Must be <code>filees.server-toolchain/v1</code></td></tr>
+<tr><td><code>root</code></td><td>Absolute path to the private state directory (tickets, operations, audit)</td></tr>
+<tr><td><code>otp_pepper_file</code></td><td>Absolute path to file containing at least 32 bytes of base64-encoded secret pepper</td></tr>
+<tr><td><code>worker_private_key_file</code></td><td>Absolute path to Ed25519 private key used by <code>filees-worker</code> (mode 0600)</td></tr>
+<tr><td><code>worker_public_key_file</code></td><td>Absolute path to the corresponding public key in authorized_keys format</td></tr>
+<tr><td><code>activation</code></td><td>Absolute private runtime paths, service repository/WC, repository name and fixed client-entry/SVN executable paths</td></tr>
+<tr><td><code>repositories.root</code></td><td>Absolute root of UUID-named data repositories; use a dedicated storage mount when appropriate. The default is <code>/var/filees/repositories</code>.</td></tr>
+<tr><td><code>repositories.results_root</code></td><td>Absolute root for durable repository-operation records; it is separate from FSFS data storage.</td></tr>
+<tr><td><code>repositories.url_prefix</code></td><td>Canonical public repository URL prefix. It must use the restricted <code>svn+ssh://_filees-data@host/</code> form, with no explicit port.</td></tr>
+<tr><td><code>repositories.deletion_archive_root</code></td><td>Optional absolute archive location for verified deletion dumps. If omitted, it is under <code>results_root</code>.</td></tr>
+<tr><td><code>operation_ttl</code></td><td>Lifetime of each onboarding operation, e.g. <code>30m</code></td></tr>
+<tr><td><code>otp_attempts</code></td><td>Maximum wrong OTP attempts before exhaustion</td></tr>
+<tr><td><code>reverse_port_first</code></td><td>First (or only) permitted reverse tunnel port</td></tr>
+<tr><td><code>reverse_port_last</code></td><td>Last permitted port (use same value as first for a single static port)</td></tr>
+<tr><td><code>smtp.address</code></td><td>Smarthost address as <code>host:port</code></td></tr>
+<tr><td><code>smtp.tls</code></td><td><code>starttls</code>, <code>implicit</code>, or <code>none</code> (none only on loopback)</td></tr>
+<tr><td><code>smtp.username</code></td><td>SMTP AUTH username; leave empty for unauthenticated relay</td></tr>
+<tr><td><code>smtp.password_file</code></td><td>Absolute path to file with SMTP password (mode 0600); required when username is set</td></tr>
+</table></div>
+<p>Mode 0600 is recommended for the config file; the loader requires a regular file that is not writable by group or others. All path values must be absolute. After editing, validate the non-secret command path:</p>
+<pre><code>doas -u _filees-state filees-admin -config /etc/filees/server.json ticket list</code></pre>
+
+<h2 id="ops-keys">Key generation</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Worker-key generation and installation-key registration are implemented; production pin distribution remains a deploy concern.</span></div>
+<p>The installer generates all required keys automatically. If you need to regenerate:</p>
+<pre><code># Regenerate OTP pepper (invalidates all pending OTPs)
+umask 077
+openssl rand -base64 32 &gt; /etc/filees/otp.pepper
+
+# Regenerate worker key pair (distribute only the .pub to client policy)
+umask 077
+ssh-keygen -q -t ed25519 -N '' -C filees-worker-v1 \
+  -f /etc/filees/worker_ed25519</code></pre>
+<div class="warn">Regenerating the OTP pepper invalidates all outstanding OTPs. Any client in the middle of an onboarding will need a new ticket. Regenerating the worker key pair requires updating the pinned public key on all clients before the next deploy attempt.</div>
+<h4>Service repository setup</h4>
+<p>The OpenBSD integration script performs the implemented activation setup:</p>
+<ol>
+<li>Creates <code>/var/filees/service-repo</code> and the initial <code>/proof</code> path.</li>
+<li>Checks out <code>/var/filees/service-wc</code> for activation and revocation commits.</li>
+<li>Connects svnserve to <code>/var/filees/activation/service.authz</code>; the activation manager atomically regenerates authz and authorized keys.</li>
+<li>Commits <code>format.json</code>, realm, client, projection and audit on the first successful possession proof.</li>
+</ol>
+<p>This is the completed activation vertical. General data-repository creation, storage preflight, grants and <code>INITIAL_COMMIT</code> orchestration are now also connected to a server-side control-plane worker (<code>pkg/repoworker</code>, dispatched over the same forced-command SSH session) and verified end to end, including the <code>STORAGE_INSUFFICIENT</code> refusal path on a physically constrained filesystem — see the provisioning state machine in §2.3.</p>
+<h4>Running administrative commands</h4>
+<p>Administrative and one-shot server commands that read or mutate private state are run as <code>_filees-state</code>:</p>
+<pre><code>doas -u _filees-state filees-admin ticket create user@example.com
+doas -u _filees-state filees-admin ticket list
+doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
+doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
+doas -u _filees-state filees-mail send</code></pre>
+
+<h2 id="ops-htdocs">Publishing the HTML manual</h2>
+<div class="section-meta"><span class="status status-implemented">Implemented layout</span><span>Uses the existing <code>/assets/*</code> allowlist. Document root is a working copy of <code>^/manual</code>.</span></div>
+<p>On <code>manual.filees.space</code> the document root and Public Shares share one <code>server</code> block. <code>httpd</code> first matches the static allowlist, then sends every other path to <code>filees-links</code>. The multi-page manual therefore cannot occupy sibling URLs such as <code>/architecture.html</code>. Those would miss the allowlist and become branded FastCGI 404s.</p>
+<p>The Subversion subtree <code>svn://cloud.atmprojekt.pl/SYNCSHARE/manual</code> <em>is</em> the document-root image. Check it out in place and publish with <code>svn update</code>:</p>
+<pre><code>doas svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs
+doas svn update /var/www/htdocs</code></pre>
+<pre><code>/var/www/htdocs/               ← working copy of ^/manual
+├── .svn/                      ← not on the static allowlist; FastCGI 404
+├── index.html
+├── favicon.ico
+├── robots.txt
+└── assets/
+    ├── css/manual.css
+    ├── en/*.html              ← User + Tech, including operations.html
+    └── pl/*.html</code></pre>
+<p>Do not check the tree out as <code>/var/www/htdocs/manual</code> — that would make <code>/manual/index.html</code> a virtual FileES path. Do not run <code>rcctl reload httpd</code>. Ignore <code>.well-known</code> in that working copy so ACME stays local. The full URL-space graph is on the <a href="index.html#publish">overview</a>; the process graph is in <a href="architecture.html#server-graph">§1 server dependency graph</a>.</p>
+
+<h2 id="ops-config">Client <code>config.json</code> reference</h2>
+<p>The daemon still reads <code>config.json</code>. Everyday Settings do not replace this contract. User howto is in <a href="user-guide.html#ch2-config">§2.2</a>.</p>
+<pre><code>{
+  "transport": {
+    "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
+    "known_hosts": "/home/user/.local/share/filees/known_hosts"
+  },
+  "update": {
+    "enabled": true,
+    "repo_url": "https://releases.example/FILEES-BIN",
+    "channel": "stable",
+    "component": "desktop",
+    "platform": "linux-amd64",
+    "state_path": "/home/user/.local/state/filees/update.json",
+    "stage_root": "/home/user/.local/state/filees/update-stage"
+  },
+  "repositories": [
+    {
+      "id":              "projectA",
+      "repo_url":        "svn+ssh://_filees-client@server/repo/trunk",
+      "local_path":      "/home/user/projectA",
+      "commit_interval": "1m",
+      "watch_interval":  "30s",
+      "poll_interval":   "30s",
+      "max_batch_files": 100,
+      "max_batch_mib":   512,
+      "backlog_flush_mib": 1024,
+      "shutdown_commit_timeout": "10m",
+      "lock_first":      false,
+      "edit_passports":  false,
+      "edit_passport_ttl": "15m",
+      "edit_passport_heartbeat": "5m",
+      "edit_passport_max_session": "24h",
+      "edit_passport_close_grace": "5m",
+      "shout_patterns":  ["\\.psd$", "\\.blend$"],
+      "rate_limit_shout": "5m",
+      "commit_tiers": [
+        {"max_mb": 1,  "interval": "2m"},
+        {"max_mb": 10, "interval": "5m"},
+        {"max_mb": 50, "interval": "15m"},
+        {"max_mb": 0,  "interval": "24h"}
+      ]
+    }
+  ]
+}</code></pre>
+<p class="field-table">Key configuration fields:</p>
+<div class="table-wrap"><table class="field-table">
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td><code>id</code></td><td>Unique repository identifier (used in logs and state paths)</td></tr>
+<tr><td><code>transport.identity_file</code></td><td>Absolute path to the Ed25519 installation key created during activation</td></tr>
+<tr><td><code>transport.known_hosts</code></td><td>Absolute path to the pinned service host key file</td></tr>
+<tr><td><code>update.enabled</code></td><td>Enable the signed desktop updater; disabled by default</td></tr>
+<tr><td><code>update.repo_url</code></td><td>Release repository URL using SVN, SVN+SSH or HTTPS, without password, query or fragment</td></tr>
+<tr><td><code>update.channel</code></td><td>Release channel identifier; defaults to <code>stable</code></td></tr>
+<tr><td><code>update.component</code></td><td>Must be <code>desktop</code> for this client</td></tr>
+<tr><td><code>update.platform</code></td><td>Must match the running <code>GOOS-GOARCH</code>; defaults to that value</td></tr>
+<tr><td><code>update.state_path</code></td><td>Absolute private path for the durable anti-rollback high-water state</td></tr>
+<tr><td><code>update.stage_root</code></td><td>Absolute private directory used for verified bundle staging</td></tr>
+<tr><td><code>repo_url</code></td><td>Restricted <code>svn+ssh://_filees-client@host/...</code> URL; other transports are rejected</td></tr>
+<tr><td><code>local_path</code></td><td>Absolute path to the working copy. Must not overlap with other configured roots.</td></tr>
+<tr><td><code>commit_interval</code></td><td>Base commit window, e.g. <code>1m</code>, <code>30s</code></td></tr>
+<tr><td><code>watch_interval</code></td><td>Filesystem scan interval</td></tr>
+<tr><td><code>poll_interval</code></td><td>How often to check server HEAD and pull updates (default <code>30s</code>)</td></tr>
+<tr><td><code>max_batch_files</code></td><td>Max files per commit (directories added as parents do not count)</td></tr>
+<tr><td><code>max_batch_mib</code></td><td>Target max size per commit; a single oversized file gets its own batch</td></tr>
+<tr><td><code>backlog_flush_mib</code></td><td>Force publish when staged total exceeds this (must be ≥ <code>max_batch_mib</code>)</td></tr>
+<tr><td><code>shutdown_commit_timeout</code></td><td>Max drain time on controlled shutdown (default <code>10m</code>)</td></tr>
+<tr><td><code>lock_first</code></td><td>Try <code>svn lock</code> before every commit (mutually exclusive with <code>edit_passports</code>)</td></tr>
+<tr><td><code>edit_passports</code></td><td>Legacy/development-only switch for a manually configured repository. Server-projected repositories ignore it and use their canonical repository-wide <code>editing_policy</code> (see section 2.5).</td></tr>
+<tr><td><code>commit_tiers</code></td><td>Size-adaptive intervals; last entry with <code>max_mb: 0</code> is the catch-all</td></tr>
+<tr><td><code>shout_patterns</code></td><td>Regex list; matching files produce a notification ticket</td></tr>
+</table></div>
+<p>All durations use Go format: <code>30s</code>, <code>5m</code>, <code>1h30m</code>. Every <code>local_path</code> must be absolute and non-overlapping. Validation resolves symlinks on existing directories and aborts daemon startup before any state is created.</p>
+<h2 id="ops-provision">Provisioning tickets</h2>
+<p>The desktop action is “add a folder”. The durable boundaries are these three tickets. User howto is in <a href="user-guide.html#ch2-firstrun">§2.3</a>.</p>
+<h4>Adding a local directory</h4>
+<p>The local provisioning state machine drives the following data-repository process against the authenticated server-side repository worker (<code>pkg/repoworker</code>), which is connected and verified end to end — including its refusal path:</p>
+<ol>
+<li><strong><code>STORAGE_PREFLIGHT</code></strong> — the client sends an authenticated ticket with the local snapshot's total size; the worker checks it against the physical filesystem's available capacity (optionally through a reservation ledger that accounts for other in-flight operations) and refuses with <code>STORAGE_INSUFFICIENT</code> (exact required/available bytes, rendered in human-readable units) if there isn't room.</li>
+<li><strong><code>CREATE_REPOSITORY</code></strong> — the client sends an authenticated ticket to the server worker, which creates the SVN data repository, sets the owner grant and ACL, and returns a canonical <code>repo_id</code> and <code>repo_url</code>.</li>
+<li><strong><code>INITIAL_COMMIT</code></strong> — the client checks out the empty repository root into the local directory, performs a controlled <code>svn add</code> respecting ignore patterns, publishes the initial snapshot in bounded batches, confirms <code>INITIAL_COMMIT</code>, and only then starts the normal sync pipeline.</li>
+</ol>
+<p>The local state machine preserves <code>operation_id</code> across retry, and each ticket type is idempotent on the worker side (a repeated request with the same <code>operation_id</code> replays the durable result rather than re-executing). After successful repository creation the client records the returned repository identity durably before starting its import, so a restart or retry resumes that import instead of creating a duplicate server repository. A failure at any of these three durable boundaries is reported back to the GUI via <code>repo.lifecycle_status</code> polling rather than left silent.</p>
+
+<h2 id="ops-passports">Passport internals</h2>
+<p>What the owner clicks is in <a href="user-guide.html#ch2-passports">§2.5</a>. The opt-in decision, <code>svn:needs-lock</code> migration and timing belong here.</p>
+<div class="decision">
+<div class="decision-head">Design rationale / repository policy remains opt-in</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">Explicit per-file locking is enabled only where the document type and workflow justify the friction.</div>
+<div class="decision-label">Why</div><div class="decision-value">Ordinary synchronization should remain silent; pessimistic locking is a policy, not a universal property of FileES.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Requiring locks for every repository; configuring a repository-wide barrier independently on each client.</div>
+<div class="decision-label">Cost</div><div class="decision-value">Passport repositories require migration, read-only enforcement, heartbeat and server-visible token fencing.</div>
+</div>
+</div>
+<p>Behaviour under passport mode:</p>
+<ul>
+<li>All existing regular files are migrated to carry <code>svn:needs-lock</code> on first start (the daemon refuses to start migration if the working copy has local content changes, deletes, or missing files).</li>
+<li>A file without an active passport is locally read-only. For a repository whose owner realm is <strong>not</strong> this client's own realm, it becomes writable only after a successful <code>repo.lock</code> / <code>filees lock</code> call, including the <strong>Lock files…</strong> action in the repository tray submenu.</li>
+<li><strong>Autolock (owner realm):</strong> for a repository this client's own realm owns, no manual lock action is needed at all. Right after every <code>svn up</code>, the daemon makes its own read-only files locally writable immediately — before the real SVN lock is acquired. The real lock is only requested at the moment of the next commit attempt for that path: if the repository is genuinely free (or the lock is already held by another of this same realm's own instances, which is taken over silently, no dialog), the commit proceeds; if a <em>different</em> realm already holds the lock, the commit is held back and the change stays staged for a later retry — it is never stolen, and the local edit is never lost.</li>
+<li>New files do not require a passport before their first publication; the daemon assigns <code>svn:needs-lock</code> before the commit.</li>
+<li>Commits use <code>svn commit --no-unlock</code> so that SVN does not bypass the close-grace period.</li>
+<li>After a confirmed commit, the daemon waits for the close-grace period (<code>edit_passport_close_grace</code>, default 5 m) before unlocking and returning the file to read-only.</li>
+<li>The server-visible SVN lock and its token are authoritative between clients. A competing client receives the holder alias and expiry; release and takeover re-read and fence the token so a stale UI row cannot release a different lock.</li>
+</ul>
+<p>Changing the policy is a migration, not a local preference. Enabling it applies and commits <code>svn:needs-lock</code> to existing regular versioned files. Disabling it removes that property and releases passports owned by the caller. Paths currently held by another owner are left untouched and retried later rather than stolen. The mobile append-only projection intentionally does not receive <code>editing_policy</code>.</p>
+<div class="note"><strong>Scope of autolock (V1):</strong> a repository's owner realm is whichever realm created it (<code>OwnerRealmID</code>) — the same realm identity described in §5.5. Cross-realm repository sharing is implemented (§5.5): an owner can grant another realm <code>r</code> or <code>rw</code> access to a repository. Autolock itself remains strictly scoped to the owner realm (<code>pkg/commit</code> only runs the silent acquire/relock path when <code>RealmID == OwnerRealmID</code>); a realm holding only a granted <code>rw</code> share uses the manual "Wypożycz do edycji" path (§2.6) like any other non-owner user. Generalizing autolock priority to per-path ownership for repositories writable by multiple realms remains a separate, not-yet-implemented extension (<code>concepts/AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md</code>).</div>
+<p>Passport timing parameters:</p>
+<div class="table-wrap"><table>
+<tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>edit_passport_heartbeat</code></td><td>5 m</td><td>How often the daemon renews the token</td></tr>
+<tr><td><code>edit_passport_ttl</code></td><td>15 m</td><td>Validity of a single renewal; heartbeat must be shorter</td></tr>
+<tr><td><code>edit_passport_max_session</code></td><td>24 h</td><td>Hard session limit; cannot be extended by heartbeats</td></tr>
+<tr><td><code>edit_passport_close_grace</code></td><td>5 m</td><td>Silence period after confirmed commit before unlock</td></tr>
+</table></div>
+
+<h2 id="ops-gui">GUI IPC sequence</h2>
+<p>What to click is in <a href="user-guide.html#ch2-gui">§2.6</a>. The GUI remains a thin client; this is the contract it uses.</p>
+<div class="decision">
+<div class="decision-head">Design rationale / integrated daemon, separate menu binary</div>
+<div class="decision-grid">
+<div class="decision-label">Decision</div><div class="decision-value">The daemon owns the full operational pipeline required for reliable UX; the tray menu remains a replaceable client.</div>
+<div class="decision-label">Why</div><div class="decision-value">Commit, update, cache, recovery and policy must cooperate in one runtime owner, while presentation has a different lifecycle and trust boundary.</div>
+<div class="decision-label">Rejected</div><div class="decision-value">Embedding the sync engine in the GUI; stopping synchronization when the tray exits; splitting mature operations into services merely to reduce file size.</div>
+<div class="decision-label">Cost</div><div class="decision-value">The daemon is internally substantial, and later extraction must follow finished responsibilities rather than aesthetic pressure.</div>
+</div>
+</div>
+<h4>Initialisation sequence</h4>
+<ol>
+<li>Send <code>system.hello</code>, store capabilities.</li>
+<li>Send <code>events.subscribe</code> (if capability present) <em>before</em> fetching snapshots.</li>
+<li>Fetch <code>system.status</code>, <code>repo.list</code>, and <code>repo.status</code> for each repository.</li>
+<li>On reconnect, sequence gap, or unknown event: perform full resync.</li>
+</ol>
+<p>Events are cache-invalidation signals. The GUI never builds state purely by applying events; each event triggers a fresh <code>repo.status</code> fetch. Mutation actions (lock/unlock) are shown only when the daemon reports them as capabilities and the connection state is <code>Connected</code> (not <code>Stale</code>).</p>
+
+<h2 id="ops-update">Signed desktop-update envelope</h2>
+<p>The tray flow is in <a href="user-guide.html#ch2-update">§2.7</a>.</p>
+<p>The signed release envelope v2 binds the release ID, monotonic <code>sequence</code>, <code>security_epoch</code>, expiry time, component and platform to a separately signed artifact manifest. The client verifies the signify format internally with standard Ed25519, then checks the bundle's exact size and SHA-256 before extraction. Its private, fsynced high-water state rejects sequence rollback, security-epoch rollback and a different release reusing the same sequence.</p>
+
+</div>
+<nav class="page-nav"><a href="install.html">← Install</a><a href="security.html">Security →</a></nav>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r522</span></footer>
+</main>
+</body>
+</html>

@@ -38,6 +38,7 @@
 <span class="nav-pillar">Tech</span>
 <a href="architecture.html">Architecture</a>
 <a href="install.html">Install</a>
+<a href="operations.html">Operations</a>
 <a href="security.html">Security</a>
 <a href="man-pages.html">Man pages</a>
 </span>
@@ -83,99 +84,15 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <tr><td>Windows GUI</td><td>Windows 10+; PowerShell; MSI install for toast notifications (AUMID registration)</td></tr>
 </table></div>
 <h2 id="ch2-config">2.2 Configuration</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Validation and non-overlapping working-copy roots are enforced before runtime state creation.</span></div>
-<p>The daemon reads <code>config.json</code> from the working directory (or the path given by <code>--config</code>). SSH transport identity belongs to the client installation and is shared by its repository projections:</p>
-<pre><code>{
-  "transport": {
-    "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
-    "known_hosts": "/home/user/.local/share/filees/known_hosts"
-  },
-  "update": {
-    "enabled": true,
-    "repo_url": "https://releases.example/FILEES-BIN",
-    "channel": "stable",
-    "component": "desktop",
-    "platform": "linux-amd64",
-    "state_path": "/home/user/.local/state/filees/update.json",
-    "stage_root": "/home/user/.local/state/filees/update-stage"
-  },
-  "repositories": [
-    {
-      "id":              "projectA",
-      "repo_url":        "svn+ssh://_filees-client@server/repo/trunk",
-      "local_path":      "/home/user/projectA",
-      "commit_interval": "1m",
-      "watch_interval":  "30s",
-      "poll_interval":   "30s",
-      "max_batch_files": 100,
-      "max_batch_mib":   512,
-      "backlog_flush_mib": 1024,
-      "shutdown_commit_timeout": "10m",
-      "lock_first":      false,
-      "edit_passports":  false,
-      "edit_passport_ttl": "15m",
-      "edit_passport_heartbeat": "5m",
-      "edit_passport_max_session": "24h",
-      "edit_passport_close_grace": "5m",
-      "shout_patterns":  ["\\.psd$", "\\.blend$"],
-      "rate_limit_shout": "5m",
-      "commit_tiers": [
-        {"max_mb": 1,  "interval": "2m"},
-        {"max_mb": 10, "interval": "5m"},
-        {"max_mb": 50, "interval": "15m"},
-        {"max_mb": 0,  "interval": "24h"}
-      ]
-    }
-  ]
-}</code></pre>
-<p class="field-table">Key configuration fields:</p>
-<div class="table-wrap"><table class="field-table">
-<tr><th>Field</th><th>Description</th></tr>
-<tr><td><code>id</code></td><td>Unique repository identifier (used in logs and state paths)</td></tr>
-<tr><td><code>transport.identity_file</code></td><td>Absolute path to the Ed25519 installation key created during activation</td></tr>
-<tr><td><code>transport.known_hosts</code></td><td>Absolute path to the pinned service host key file</td></tr>
-<tr><td><code>update.enabled</code></td><td>Enable the signed desktop updater; disabled by default</td></tr>
-<tr><td><code>update.repo_url</code></td><td>Release repository URL using SVN, SVN+SSH or HTTPS, without password, query or fragment</td></tr>
-<tr><td><code>update.channel</code></td><td>Release channel identifier; defaults to <code>stable</code></td></tr>
-<tr><td><code>update.component</code></td><td>Must be <code>desktop</code> for this client</td></tr>
-<tr><td><code>update.platform</code></td><td>Must match the running <code>GOOS-GOARCH</code>; defaults to that value</td></tr>
-<tr><td><code>update.state_path</code></td><td>Absolute private path for the durable anti-rollback high-water state</td></tr>
-<tr><td><code>update.stage_root</code></td><td>Absolute private directory used for verified bundle staging</td></tr>
-<tr><td><code>repo_url</code></td><td>Restricted <code>svn+ssh://_filees-client@host/...</code> URL; other transports are rejected</td></tr>
-<tr><td><code>local_path</code></td><td>Absolute path to the working copy. Must not overlap with other configured roots.</td></tr>
-<tr><td><code>commit_interval</code></td><td>Base commit window, e.g. <code>1m</code>, <code>30s</code></td></tr>
-<tr><td><code>watch_interval</code></td><td>Filesystem scan interval</td></tr>
-<tr><td><code>poll_interval</code></td><td>How often to check server HEAD and pull updates (default <code>30s</code>)</td></tr>
-<tr><td><code>max_batch_files</code></td><td>Max files per commit (directories added as parents do not count)</td></tr>
-<tr><td><code>max_batch_mib</code></td><td>Target max size per commit; a single oversized file gets its own batch</td></tr>
-<tr><td><code>backlog_flush_mib</code></td><td>Force publish when staged total exceeds this (must be ≥ <code>max_batch_mib</code>)</td></tr>
-<tr><td><code>shutdown_commit_timeout</code></td><td>Max drain time on controlled shutdown (default <code>10m</code>)</td></tr>
-<tr><td><code>lock_first</code></td><td>Try <code>svn lock</code> before every commit (mutually exclusive with <code>edit_passports</code>)</td></tr>
-<tr><td><code>edit_passports</code></td><td>Legacy/development-only switch for a manually configured repository. Server-projected repositories ignore it and use their canonical repository-wide <code>editing_policy</code> (see section 2.5).</td></tr>
-<tr><td><code>commit_tiers</code></td><td>Size-adaptive intervals; last entry with <code>max_mb: 0</code> is the catch-all</td></tr>
-<tr><td><code>shout_patterns</code></td><td>Regex list; matching files produce a notification ticket</td></tr>
-</table></div>
-<p>All durations use Go format: <code>30s</code>, <code>5m</code>, <code>1h30m</code>.</p>
-<div class="note">Every <code>local_path</code> must be absolute. Paths must not be identical or nested in either direction. Validation resolves symlinks on existing directories and aborts daemon startup with a hard error before any state is created.</div>
+<p>Everyday shape of the installation is changed in Settings (§2.6), not by editing a file. The daemon still reads <code>config.json</code> from the working directory (or <code>--config</code>). An existing file is never overwritten on upgrade. Working-copy paths must be absolute and must not nest. The field table is in <a href="operations.html#ops-config">Operations</a>.</p>
 <p>To validate configuration without starting the daemon:</p>
 <pre><code>filees config-check --config /path/to/config.json</code></pre>
 <h2 id="ch2-firstrun">2.3 First Run and Onboarding</h2><div class="section-meta"><span class="status status-verified">Verified on OpenBSD and Windows</span><span>New-realm activation and administrator-authorised join of another desktop installation are owned by the daemon and GUI.</span></div>
-<p>The onboarding flow provisions one installation identity and activates its first service-repository projection. It starts with an administrator-issued e-mail invitation. On the client, choose <strong>Activate client on a new server…</strong>, paste the one-time invitation from the first e-mail, then paste the separately delivered OTP when prompted. The invitation carries the server profile and its pinned SSH host key, so a normal user never types a server address, port, profile name, client UUID or <code>known_hosts</code> path. A normal ticket authorises a new realm and the GUI asks that new, still-empty realm once for an immutable alias. A ticket created with <code>--join-realm-alias</code> instead binds the invitation to an existing realm before delivery: the client cannot choose or submit that realm ID, inherits its alias and grants, and must not be asked to rename it. The GUI only presents the flow; the daemon owns all network and state transitions.</p>
-<ol>
-<li>Administrator creates a ticket as <code>_filees-state</code>: <code>filees-admin ticket create you@example.com</code> for a new realm, or adds <code>--join-realm-alias existing-alias</code> for another installation of an existing realm. The default configuration is <code>/etc/filees/server.json</code>; the default TTL is 24 hours.</li>
-<li>The server sends the first e-mail invitation through its configured relay. The invitation is an opaque single-use capability plus a pinned public server profile.</li>
-<li>Redeeming the invitation creates the short-lived operation and causes the server to send the OTP in a second e-mail. The server does not expose an address- or alias-availability probe. The daemon supplies the OTP through a platform askpass (POSIX FIFO, Windows named pipe) and establishes the assigned reverse tunnel to its loopback helper.</li>
-<li>The helper generates an Ed25519 installation key locally. The worker stages access, asks the helper for service proof, and validates the receipt written after system-sshd authentication.</li>
-<li>The worker publishes the client record and first view in the service repository and marks the operation <code>active</code>. A joined client's first view contains the canonical existing <code>realm_alias</code> and all effective repositories, but optional repositories remain locally unattached until the user selects them.</li>
-</ol>
-<div class="note"><strong>Acceptance status:</strong> new-realm activation, administrator-authorised join, selective attach and cross-client commit/reconnect passed on Windows against both the reference VM and production <code>spot.example.net</code>. An interrupted activation that already reached <code>accepted</code> can be resumed from the GUI without pasting a new invitation; a different signed invitation may replace only unfinished state and cannot overwrite an existing <code>client-profile.json</code>. See <code>reports/ACTIVATION_HARDENING_2026-08-14.md</code>.</div>
+<p>Someone with keys on the server sends you an e-mail invitation — see <a href="administration.html#ch4-admin">invite</a>. On this desk choose <strong>Activate client on a new server…</strong>, paste the invitation from the first letter, then paste the OTP from the second. You never type a server address, port or client identifier. The GUI only presents the steps; the daemon owns the network and the files.</p>
+<p>A normal invitation opens a new realm (<strong>strefa</strong>). The window asks that empty realm once for an immutable alias. An invitation bound to an existing realm inherits that alias and its folders; you are not asked to rename it. Optional folders stay unattached until you connect them in Settings.</p>
+<p>If activation already reached <code>accepted</code> and then stopped, choose <strong>Resume</strong>. A different invitation may replace only unfinished state. An existing <code>client-profile.json</code> is a hard stop.</p>
 <h4>Adding a local directory</h4>
-<p>The local provisioning state machine drives the following data-repository process against the authenticated server-side repository worker (<code>pkg/repoworker</code>), which is connected and verified end to end — including its refusal path:</p>
-<ol>
-<li><strong><code>STORAGE_PREFLIGHT</code></strong> — the client sends an authenticated ticket with the local snapshot's total size; the worker checks it against the physical filesystem's available capacity (optionally through a reservation ledger that accounts for other in-flight operations) and refuses with <code>STORAGE_INSUFFICIENT</code> (exact required/available bytes, rendered in human-readable units) if there isn't room.</li>
-<li><strong><code>CREATE_REPOSITORY</code></strong> — the client sends an authenticated ticket to the server worker, which creates the SVN data repository, sets the owner grant and ACL, and returns a canonical <code>repo_id</code> and <code>repo_url</code>.</li>
-<li><strong><code>INITIAL_COMMIT</code></strong> — the client checks out the empty repository root into the local directory, performs a controlled <code>svn add</code> respecting ignore patterns, publishes the initial snapshot in bounded batches, confirms <code>INITIAL_COMMIT</code>, and only then starts the normal sync pipeline.</li>
-</ol>
-<p>The local state machine preserves <code>operation_id</code> across retry, and each ticket type is idempotent on the worker side (a repeated request with the same <code>operation_id</code> replays the durable result rather than re-executing). After successful repository creation the client records the returned repository identity durably before starting its import, so a restart or retry resumes that import instead of creating a duplicate server repository. A failure at any of these three durable boundaries is reported back to the GUI via <code>repo.lifecycle_status</code> polling rather than left silent.</p>
+<p>In Settings choose the server, then <strong>Połącz z lokalnym folderem</strong> (or add a new folder you own). FileES checks that the server has room, creates the share, and publishes the first snapshot. If there is not enough room you see the required and available sizes. A failure is shown in the window; it is not left silent. The three durable tickets behind that action are in <a href="operations.html#ops-provision">Operations</a>.</p>
 <h2 id="ch2-sync">2.4 Day-to-Day Sync</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Normal operation, outage accumulation, bounded shutdown and restart reconciliation tested.</span></div>
 <p>Once active, the daemon operates without user interaction:</p>
 <ul>
@@ -189,46 +106,19 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Built-in ignores (cannot be overridden): <code>~\$*</code> (MS Office), <code>.~lock.*#</code> (LibreOffice/OpenOffice), <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code>.</p>
 <p>User-defined ignores: place patterns in <code>.filees/user_ignore.cfg</code> (hot-reloaded on every scan). Lines starting with <code>!</code> are hard ignores that skip entire subtrees. Glob syntax supports <code>**</code> for any depth.</p>
 <h2 id="ch2-passports">2.5 Edit Passports</h2><div class="section-meta"><span class="status status-verified">Verified cross-client</span><span>Repository-wide policy, owner-only control, projection and two-client lock transfer passed live acceptance on Windows.</span></div>
-<p>Edit passports provide explicit per-file locking with heartbeat renewal. The mode is selected once for the whole repository: its owner chooses <strong>Zasady edycji</strong> in FileES Settings, the server stores the canonical <code>editing_policy</code>, and every desktop projection receives the same value. The GUI column <strong>Edycja</strong> shows <strong>wymaga wypożyczenia</strong> to owners and guests; only the owner can change it. The default is ordinary free editing. On the wire the default is omitted and the only explicit value is <code>lock_required</code>.</p><div class="decision">
-<div class="decision-head">Design rationale / repository policy remains opt-in</div>
-<div class="decision-grid">
-<div class="decision-label">Decision</div><div class="decision-value">Explicit per-file locking is enabled only where the document type and workflow justify the friction.</div>
-<div class="decision-label">Why</div><div class="decision-value">Ordinary synchronization should remain silent; pessimistic locking is a policy, not a universal property of FileES.</div>
-<div class="decision-label">Rejected</div><div class="decision-value">Requiring locks for every repository; configuring a repository-wide barrier independently on each client.</div>
-<div class="decision-label">Cost</div><div class="decision-value">Passport repositories require migration, read-only enforcement, heartbeat and server-visible token fencing.</div>
-</div>
-</div>
+<p>Edit passports are an optional, repository-wide lock. The owner turns them on once under <strong>Zasady edycji</strong> in FileES Settings. The column <strong>Edycja</strong> then shows <strong>wymaga wypożyczenia</strong>. Guests cannot change the policy. The default is ordinary free editing. Why it is opt-in, and the timing numbers, are in <a href="operations.html#ops-passports">Operations</a>.</p>
 <p>Behaviour under passport mode:</p>
 <ul>
 <li>All existing regular files are migrated to carry <code>svn:needs-lock</code> on first start (the daemon refuses to start migration if the working copy has local content changes, deletes, or missing files).</li>
 <li>A file without an active passport is locally read-only. For a repository whose owner realm is <strong>not</strong> this client's own realm, it becomes writable only after a successful <code>repo.lock</code> / <code>filees lock</code> call, including the <strong>Lock files…</strong> action in the repository tray submenu.</li>
 <li><strong>Autolock (owner realm):</strong> for a repository this client's own realm owns, no manual lock action is needed at all. Right after every <code>svn up</code>, the daemon makes its own read-only files locally writable immediately — before the real SVN lock is acquired. The real lock is only requested at the moment of the next commit attempt for that path: if the repository is genuinely free (or the lock is already held by another of this same realm's own instances, which is taken over silently, no dialog), the commit proceeds; if a <em>different</em> realm already holds the lock, the commit is held back and the change stays staged for a later retry — it is never stolen, and the local edit is never lost.</li>
-<li>New files do not require a passport before their first publication; the daemon assigns <code>svn:needs-lock</code> before the commit.</li>
-<li>Commits use <code>svn commit --no-unlock</code> so that SVN does not bypass the close-grace period.</li>
-<li>After a confirmed commit, the daemon waits for the close-grace period (<code>edit_passport_close_grace</code>, default 5 m) before unlocking and returning the file to read-only.</li>
-<li>The server-visible SVN lock and its token are authoritative between clients. A competing client receives the holder alias and expiry; release and takeover re-read and fence the token so a stale UI row cannot release a different lock.</li>
+<li>New files do not need a passport before their first publication.</li>
+<li>After a confirmed send the file stays writable for a short grace, then returns to read-only.</li>
+<li>A competing desk sees who holds the file and when that hold ends. A stale row in the window cannot release a different hold.</li>
 </ul>
-<p>Changing the policy is a migration, not a local preference. Enabling it applies and commits <code>svn:needs-lock</code> to existing regular versioned files. Disabling it removes that property and releases passports owned by the caller. Paths currently held by another owner are left untouched and retried later rather than stolen. The mobile append-only projection intentionally does not receive <code>editing_policy</code>.</p>
-<div class="note"><strong>Scope of autolock (V1):</strong> a repository's owner realm is whichever realm created it (<code>OwnerRealmID</code>) — the same realm identity described in §5.5. Cross-realm repository sharing is implemented (§5.5): an owner can grant another realm <code>r</code> or <code>rw</code> access to a repository. Autolock itself remains strictly scoped to the owner realm (<code>pkg/commit</code> only runs the silent acquire/relock path when <code>RealmID == OwnerRealmID</code>); a realm holding only a granted <code>rw</code> share uses the manual "Wypożycz do edycji" path (§2.6) like any other non-owner user. Generalizing autolock priority to per-path ownership for repositories writable by multiple realms remains a separate, not-yet-implemented extension (<code>concepts/AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md</code>).</div>
-<p>Passport timing parameters:</p>
-<div class="table-wrap"><table>
-<tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
-<tr><td><code>edit_passport_heartbeat</code></td><td>5 m</td><td>How often the daemon renews the token</td></tr>
-<tr><td><code>edit_passport_ttl</code></td><td>15 m</td><td>Validity of a single renewal; heartbeat must be shorter</td></tr>
-<tr><td><code>edit_passport_max_session</code></td><td>24 h</td><td>Hard session limit; cannot be extended by heartbeats</td></tr>
-<tr><td><code>edit_passport_close_grace</code></td><td>5 m</td><td>Silence period after confirmed commit before unlock</td></tr>
-</table></div>
-<div class="note"><strong>Acceptance status:</strong> the full six-point gate passed on two independent Windows installations in one realm: policy projection, automatic manager startup, owner autolock, an explicit “held by X” result on the competing client, transfer after release, and migration back to free editing. See <code>reports/EDITING_POLICY_E2E_2026-08-11.md</code>. Per-path ownership and a “request release” workflow remain separate future extensions; they are not gaps in this repository-wide policy.</div>
+<p>Changing the policy is a migration, not a local preference. Files held by someone else are left alone and retried later. A guest with read-write access still uses <strong>Wypożycz do edycji</strong>; autolock is only for the owner realm. Per-path ownership and <strong>Poproś o zwolnienie</strong> are not in this version.</p>
 <h2 id="ch2-gui">2.6 GUI Tray</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>GUI is a separate binary over contract/v1; Windows join, selective attach, working-copy recovery and journal were accepted on a live installation.</span></div>
-<p><code>filees-gui</code> is a separate process and a thin UX layer over the daemon IPC contract. It does not import any sync engine packages. Closing the GUI does not stop the daemon.</p><div class="decision">
-<div class="decision-head">Design rationale / integrated daemon, separate menu binary</div>
-<div class="decision-grid">
-<div class="decision-label">Decision</div><div class="decision-value">The daemon owns the full operational pipeline required for reliable UX; the tray menu remains a replaceable client.</div>
-<div class="decision-label">Why</div><div class="decision-value">Commit, update, cache, recovery and policy must cooperate in one runtime owner, while presentation has a different lifecycle and trust boundary.</div>
-<div class="decision-label">Rejected</div><div class="decision-value">Embedding the sync engine in the GUI; stopping synchronization when the tray exits; splitting mature operations into services merely to reduce file size.</div>
-<div class="decision-label">Cost</div><div class="decision-value">The daemon is internally substantial, and later extraction must follow finished responsibilities rather than aesthetic pressure.</div>
-</div>
-</div>
+<p><code>filees-gui</code> is a separate process. It only talks to the daemon. Closing the tray does not stop synchronisation. Why that split exists is in <a href="operations.html#ops-gui">Operations</a> and <a href="security.html#ch5-gui">§5.4</a>.</p>
 <h4>Icon states (priority order)</h4>
 <div class="table-wrap"><table>
 <tr><th>Icon</th><th>State</th><th>Condition</th></tr>
@@ -250,7 +140,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <tr><th>Action</th><th>Subject</th><th>Server effect</th><th>Local effect</th></tr>
 <tr><td><strong>Connect</strong></td><td>One repository already present in this realm's projection</td><td>No grant change; authenticated SVN access is used for the first checkout.</td><td>Creates a durable attachment and checks out into the selected local directory.</td></tr>
 <tr><td><strong>Locate working copy</strong></td><td>An attached repository whose root is missing</td><td>None</td><td>Validates an existing <code>.svn</code> root, exact repository URL and FileES identity marker, then rebinds <code>local_path</code> without checkout and without discarding local changes.</td></tr>
-<tr><td><strong>Detach folder</strong></td><td>One working copy</td><td>None</td><td>Stops the local pipeline and removes <code>.svn</code> and <code>.filees</code>. Your files stay exactly where they are.</td></tr>
+<tr><td><strong>Detach folder</strong></td><td>One working copy</td><td>None</td><td>Stops FileES for that directory and removes <code>.svn</code> and <code>.filees</code>. Your files stay exactly where they are.</td></tr>
 <tr><td><strong>Detach permanently</strong></td><td>One repository you own</td><td>Removes the live FSFS repository and its authorisation. With positive retention the server first writes a verified SVN dump with a SHA-256 manifest.</td><td>As above.</td></tr>
 <tr><td><strong>Deactivate this client…</strong></td><td>One installation</td><td>Revokes this installation's key. Grants and repositories of the realm are untouched.</td><td>Detaches this installation's working copies, removes its profile and key.</td></tr>
 <tr><td><strong>Remove FileES share…</strong></td><td>The whole realm on that server</td><td>Withdraws every grant of the realm, deletes the realm's own repositories and revokes all of its installations. Gated by a mailed OTP.</td><td>Detaches the current installation and removes its profile.</td></tr>
@@ -265,26 +155,16 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <li><strong>Widoczność…</strong> (<code>realm_visibility</code>, IPC <code>realm.set_visibility</code>) toggles this realm's own entry in the private recipient directory between hidden and listed. A realm must be listed before another realm can pick it as a grant recipient; toggling visibility never reveals repositories or existing access — only whether this realm can be found at all.</li>
 <li><strong>Uprawnienia gości</strong> (<code>manage_grants</code>, IPC <code>realm.grant_recipients</code> + <code>repo.grant_access</code> / <code>repo.revoke_access</code>), reachable per repository row, lists visible realms plus hidden realms that still hold an active grant. The current access column shows none, read-only or read-write, so hiding a recipient realm never makes its existing grant unmanageable. Every change asks for confirmation and immediately regenerates data-authz and every affected installation's <code>view.json</code> in the same worker operation.</li>
 </ul>
-<h4>Public Shares from the desktop</h4>
-<p><strong>Udostępnienia publiczne</strong> appears on a repository row only for the canonical owner and only when the daemon advertises the complete list/create/update/revoke/delete capability set. Its native Windows or Linux window shows each active or revoked channel with the public address, source root, recipients, password-protection flag and HEAD/frozen revision. The owner can create, edit, revoke or delete a channel; revoke stops delivery but retains the channel record, while delete retains the address tombstone.</p>
-<p>Create and edit require an attached local working copy. The owner may select the working-copy root or any directory below it. The GUI recursively maps up to 4096 regular files, always skips <code>.svn</code> and <code>.filees</code>, rejects symlinks and preserves an existing object's stable <code>public_id</code> when its repository path remains present. That map is an inventory, not a live tree walk: without <code>do-not-follow</code> the <em>content</em> of already mapped files follows HEAD, but files added, removed or renamed in the folder do not appear until the owner updates the channel. An empty directory is a valid placeholder with an empty explicit map. A recipient list creates a closed per-recipient invitation-and-OTP channel. The mailed link is only an opaque invitation identifier and never authorises access by itself. An empty list creates an open channel that may carry a shared password. Password plaintext is converted to an Argon2id verifier before the control-plane ticket is constructed and is never stored in SVN-backed control state. During edit the server may preserve its existing verifier without returning it through control or IPC. An empty revision follows HEAD; a positive revision sets <code>do-not-follow</code>.</p>
-<p>The canonical public address is <code>https://&lt;server-domain&gt;/&lt;realm-alias&gt;/&lt;slug&gt;</code>. The server's system HTTP listener routes that virtual address to the credential-free FileES link service; no matching filesystem directory or separate central short-link service is required. For a closed channel the neutral landing page exposes neither share identity nor recipient address. The user explicitly requests an eight-digit OTP delivered to the mailbox bound by the invitation, then enters it on the same page. The authority owns the mailbox mapping, five-minute epoch, five-attempt limit and resend cooldown; the public projection contains only invitation hashes. A successful OTP produces a signed, cookie-free URL that is a bearer only until the same OTP epoch expires. Copying it during that window transfers the remaining access; afterwards the URL returns to the OTP gate. No cookies, local storage or JavaScript are used. Open channels retain their twelve-hour signed visit and optional Argon2id password gate. Invalid addresses and revoked or deleted channels share one branded HTTP 404 page which discloses neither the requested path nor the reason for denial. An expired recipient visit that still carries an active invitation returns to the neutral OTP gate instead of 404.</p>
-<p>After admission the landing page lists only the explicit object map and serves full files or byte ranges from an authoritative SVN revision. The object projection includes an optional declared byte size: new or edited desktop channels render exact sizes, including zero-byte files, while legacy channels remain valid and show an unknown-size marker. The branded, no-JavaScript landing page reconstructs a collapsed-by-default Explorer-like details tree from presentation names, with MIME-family icons, file type, size and an explicit download action. A recipient may select files, download one folder or download the complete share as a bounded ZIP; every leaf is re-authorized and materialized in the private cache before archive output starts. The first version deliberately generates no image thumbnails. Revoking the channel invalidates the main address, archive requests and already issued visit/file links immediately, including files already present in the public cache.</p>
+<h4>Public shares from the desktop</h4>
+<p><strong>Udostępnienia publiczne</strong> is on the owner’s repository row. How to create a channel, what the recipient sees, and why it is not a live mirror of the folder are in the <a href="public-shares.html">Shares</a> chapter.</p>
 <h4>Reconnect behaviour</h4>
 <p>If the daemon is unreachable, the GUI retries with exponential backoff: 1 s → 2 s → 5 s → 10 s → 30 s. The last known snapshot remains visible but is marked stale. “Reconnect” in the menu forces an immediate retry.</p>
-<h4>Initialisation sequence</h4>
-<ol>
-<li>Send <code>system.hello</code>, store capabilities.</li>
-<li>Send <code>events.subscribe</code> (if capability present) <em>before</em> fetching snapshots.</li>
-<li>Fetch <code>system.status</code>, <code>repo.list</code>, and <code>repo.status</code> for each repository.</li>
-<li>On reconnect, sequence gap, or unknown event: perform full resync.</li>
-</ol>
-<p>Events are cache-invalidation signals. The GUI never builds state purely by applying events; each event triggers a fresh <code>repo.status</code> fetch. Mutation actions (lock/unlock) are shown only when the daemon reports them as capabilities and the connection state is <code>Connected</code> (not <code>Stale</code>).</p>
+<p>Lock and unlock appear only while the daemon is reachable and advertises them. The hello / subscribe / resync sequence is in <a href="operations.html#ops-gui">Operations</a>.</p>
 <h4>Server activations</h4>
 <p>Each active server is listed by its user-chosen alias and groups its repositories underneath. The technical host is not used as the primary label. <strong>Server information…</strong> shows the address, SSH port, client ID and effective client role. A transport configuration without an activation does not create a synthetic <code>default</code> server. If at least one activation exists, the tray header says <strong>Client activated</strong>.</p>
 <h4>Folder lifecycle</h4>
-<p>For each attached, optional working copy the server menu exposes <strong>Detach folder “name”…</strong> before the expandable folder row, so the action remains reachable even when the folder submenu is long. It stops FileES handling for that directory and removes only <code>.svn</code> and <code>.filees</code>; user files remain as an ordinary local directory. The final durability boundary uses platform-aware directory sync: real <code>fsync</code> on POSIX and the documented no-op on Windows, where flushing a directory handle returns <code>ERROR_ACCESS_DENIED</code>. Reconnecting later performs a first checkout into a new or empty directory; it never merges the preserved ordinary folder implicitly. A rejected target or lifecycle conflict is shown in an owned modal error window as well as a notification. If the active realm owns the repository and has repository-administration capability, the same server menu additionally exposes <strong>Detach permanently “name”…</strong>. It requires two confirmations, removes the active server repository and generated access projection, then detaches the local directory. With positive server retention, the worker stores a verified SVN dump and SHA-256 manifest until <code>retain_until</code>; it is not an immediate unrecoverable erase.</p>
-<p>The working-copy root is tracked identity, not merely a convenient path. Before starting either an RW or RO pipeline, the daemon requires local <code>.svn</code>, verifies the exact projected repository URL with <code>svn info</code>, and validates or safely migrates <code>.filees/state/working-copy.json</code>. A missing or substituted root becomes <code>interaction_required / working_copy_missing</code>; FileES does not recreate the directory, initialise <code>.filees</code> there, or advertise a false healthy revision zero. Settings then exposes <strong>Wskaż kopię</strong>, which sends <code>repo.locate</code> to adopt a validated existing working copy without checkout. On Windows an active pipeline also retains a directory handle without delete sharing, so an external root rename/delete is blocked until a controlled FileES quiesce releases it.</p>
+<p>For each attached, optional working copy the server menu exposes <strong>Detach folder “name”…</strong> before the expandable folder row, so the action remains reachable even when the folder submenu is long. It stops FileES for that directory and removes only <code>.svn</code> and <code>.filees</code>; your files stay as an ordinary folder. Connecting again is a first checkout into a new or empty directory — it does not merge the preserved folder by itself. <strong>Detach permanently</strong> needs two confirmations and removes the live server repository. With positive retention the server keeps a verified dump until <code>retain_until</code>.</p>
+<p>The folder FileES is watching is an identity, not just a path. If it vanished, Settings shows <strong>Wskaż kopię</strong> — pick the existing copy; do not create an empty replacement. FileES will not invent a healthy empty folder in its place.</p>
 <h4>Restore from archive</h4>
 <p><strong>Odtwórz z archiwum…</strong> (<code>load_dump</code>, IPC <code>repo.load_dump</code>, ticket <code>LOAD_REPOSITORY_DUMP</code>) is reachable from the FileES Settings window for a selected repository row, alongside Detach and Detach permanently. It loads a previously exported SVN dump as a fresh generation of that repository, through the same staged, verified, atomic-swap mechanism <code>filees-rotate</code> uses internally (§4.7) — the worker locates the uploaded dump itself; the client never sends a filesystem path or revision range. The first release ships without an options dialog: filtering always applies the server's current ignore policy, and the full source history is kept (see <code>LOAD_REPOSITORY_DUMP_CONCEPT.md</code> for the scope-limiting parameters the ticket contract already supports).</p>
 <h4>File reservations</h4>
@@ -301,8 +181,7 @@ filees-gui --autostart disable   # remove entry
 filees-gui --autostart status    # enabled / enabled-stale / disabled</code></pre>
 <p><code>enabled-stale</code> means the entry points to a different path or arguments than the current executable. Re-run <code>--autostart enable</code> from the installed location to fix it. On Linux this writes an XDG <code>.desktop</code> file to <code>~/.config/autostart/</code>; on Windows it writes to <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code>.</p>
 <h2 id="ch2-update">2.7 Signed Desktop Updates</h2><div class="section-meta"><span class="status status-verified">Verified end to end</span><span>Signed SVN release, dry run, existing Linux installer, anti-rollback and controlled GUI restart are covered by a reproducible integration test.</span></div>
-<p>Desktop updates are opt-in and fail closed. A production client build embeds only the trusted OpenBSD signify public key and its canonical <code>key_id</code>; the configuration cannot replace that key or disable signature verification. The daemon advertises <code>update.status</code>, <code>update.plan</code> and <code>update.apply</code> only when the complete signed update service has been registered.</p>
-<p>The signed release envelope v2 binds the release ID, monotonic <code>sequence</code>, <code>security_epoch</code>, expiry time, component and platform to a separately signed artifact manifest. The client verifies the signify format internally with standard Ed25519, then checks the bundle's exact size and SHA-256 before extraction. Its private, fsynced high-water state rejects sequence rollback, security-epoch rollback and a different release reusing the same sequence.</p>
+<p>Desktop updates are opt-in. The build carries one trusted public key; Settings cannot replace it or skip the signature. The envelope and anti-rollback rules are in <a href="operations.html#ops-update">Operations</a>.</p>
 <h4>User flow</h4>
 <ol>
 <li>A verified newer release adds a <strong>New update available</strong> badge to the tray menu.</li>
@@ -350,7 +229,7 @@ FILEES_LOG=trace ./filees   # includes svn invocations
 </table></div>
 <p>Add a row here whenever another GUI-facing term is deliberately renamed for the same reason, in the same commit that changes the strings.</p>
 </div>
-<nav class="page-nav"><a href="architecture.html">← 1. Architecture</a><a href="install.html">3. Server install →</a></nav>
+<nav class="page-nav"><a href="index.html">← Overview</a><a href="public-shares.html">Shares →</a></nav>
 </div>
 </div>
 <footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-14 · source r494</span></footer>

@@ -271,6 +271,26 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 .page-nav a { text-decoration: none; }
 .man-index { columns: 2; column-gap: 36px; max-width: 78ch; }
 .man-index li { break-inside: avoid; }
+.cli-tool {
+  margin: 2.4em 0 2.8em;
+  padding-top: 1.2em;
+  border-top: 1px solid var(--line);
+}
+.cli-tool h2 {
+  margin: 0 0 .35em;
+  font: 600 22px/1.2 var(--mono);
+  letter-spacing: -.03em;
+}
+.cli-nd { margin: 0 0 1em; color: #344054; font-size: 17px; }
+.cli-kind {
+  display: inline-block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.cli-tool h3 { margin: 1.3em 0 .45em; font: 600 13px/1.4 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 
 .masthead { flex-wrap: wrap; }
 .lang-switch {

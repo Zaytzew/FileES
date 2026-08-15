@@ -410,15 +410,16 @@ func journalTimestamp(value string) string {
 }
 
 func (c *Controller) startSettings(ctx context.Context, serverID string) {
-	if serverID == "" {
-		return
-	}
 	vm := c.cfg.ViewModel()
-	request, ok := settingsDialogRequest(vm, serverID, c.pendingAttachments(vm, serverID))
+	request, ok := c.settingsDialogRequest(vm, serverID)
 	if !ok {
 		return
 	}
-	c.showSettings(ctx, "settings:"+serverID, request)
+	key := "settings"
+	if serverID != "" {
+		key = "settings:" + serverID
+	}
+	c.showSettings(ctx, key, request)
 }
 
 // startRecoverySettings is intentionally a narrow global dialog, rather than
@@ -588,87 +589,104 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 	}()
 }
 
-func settingsDialogRequest(vm app.ViewModel, serverID string, pending map[string]pendingAttachment) (platform.SettingsDialogRequest, bool) {
+func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID string) (platform.SettingsDialogRequest, bool) {
+	request := platform.SettingsDialogRequest{Title: "Ustawienia FileES", Text: "Wybierz serwer, potem działanie."}
 	for _, server := range vm.Servers {
-		if server.ID != serverID {
+		if serverID != "" && server.ID != serverID {
 			continue
 		}
-		name := server.DisplayName
-		if strings.TrimSpace(name) == "" {
-			name = server.ID
+		pending := c.pendingAttachments(vm, server.ID)
+		row, hadPending := settingsServerRow(vm, server, pending)
+		if hadPending {
+			request.Text = "Wybierz serwer, potem działanie. Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
 		}
-		address := server.Address
-		if address == "" {
-			address = "brak danych"
-		} else {
-			address = settingsServerHost(address)
-		}
-		realm := server.RealmAlias
-		if realm == "" {
-			realm = "alias nieustawiony"
-		}
-		clientID := server.ClientID
-		if clientID == "" {
-			clientID = "brak danych"
-		}
-		minutes := server.SessionTimeoutMin
-		if minutes <= 0 {
-			minutes = 30
-		}
-		request := platform.SettingsDialogRequest{Title: "FileES — " + name, Text: "Repozytoria strefy i ich lokalne połączenia na tym kliencie."}
-		if len(pending) > 0 {
-			request.Text += " Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
-		}
-		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanSetRealmBranding: vm.CanSetRealmBranding() && strings.TrimSpace(server.RealmAlias) != "", CanSetSessionTimeout: vm.CanSetSessionTimeout(), SessionTimeoutMin: minutes, CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
-		for _, repo := range server.Repos {
-			repoName := repo.DisplayName
-			if strings.TrimSpace(repoName) == "" {
-				repoName = repo.ID
+		if serverID != "" {
+			request.Title = "FileES — " + row.Name
+			request.Text = "Wybierz działanie dla tego serwera."
+			if hadPending {
+				request.Text += " Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
 			}
-			path := repo.LocalPath
-			if path == "" {
-				path = "brak lokalnego folderu"
-			}
-			state := settingsRepositoryState(repo)
-			pendingAttachment, connecting := pending[repo.ID]
-			if connecting {
-				path = pendingAttachment.localPath
-				state = "łączenie…"
-			}
-			access := "tylko odczyt"
-			if repo.Access == "rw" {
-				access = "odczyt i zapis"
-			}
-			attachmentRequired := repo.AttachmentPolicy == "required"
-			ownedAndCreatable := server.Owns(repo) && server.CanOfferRepositoryCreation()
-			lockRequired := repo.RequiresLock()
-			// Shown on every client, not only the owner's: this is the sentence
-			// that turns an unexplained read-only file into a stated rule.
-			editing := "swobodna"
-			if lockRequired {
-				editing = "wymaga wypożyczenia"
-			}
-			row.Folders = append(row.Folders, platform.SettingsFolder{
-				ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
-				Editing:      editing,
-				LockRequired: lockRequired,
-				// Ownership alone, not ownedAndCreatable: whether a realm may
-				// create new repositories says nothing about its right to set
-				// the working rules of one it already owns.
-				CanSetEditingPolicy:   vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
-				CanManageGrants:       vm.CanManageRealmGrants() && ownedAndCreatable,
-				CanManagePublicShares: vm.CanManagePublicShares() && ownedAndCreatable,
-				CanConnect:            !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
-				CanLocate:             repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
-				CanDetach:             repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
-				CanDelete:             repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
-				CanLoadDump:           repo.Attached && ownedAndCreatable,
-			})
 		}
 		request.Servers = append(request.Servers, row)
-		return request, true
 	}
-	return platform.SettingsDialogRequest{}, false
+	if len(request.Servers) == 0 {
+		return platform.SettingsDialogRequest{}, false
+	}
+	return request, true
+}
+
+func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map[string]pendingAttachment) (platform.SettingsServer, bool) {
+	name := server.DisplayName
+	if strings.TrimSpace(name) == "" {
+		name = server.ID
+	}
+	address := server.Address
+	if address == "" {
+		address = "brak danych"
+	} else {
+		address = settingsServerHost(address)
+	}
+	realm := server.RealmAlias
+	if realm == "" {
+		realm = "alias nieustawiony"
+	}
+	clientID := server.ClientID
+	if clientID == "" {
+		clientID = "brak danych"
+	}
+	minutes := server.SessionTimeoutMin
+	if minutes <= 0 {
+		minutes = 30
+	}
+	row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanSetRealmBranding: vm.CanSetRealmBranding() && strings.TrimSpace(server.RealmAlias) != "", CanSetSessionTimeout: vm.CanSetSessionTimeout(), SessionTimeoutMin: minutes, CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
+	hadPending := false
+	for _, repo := range server.Repos {
+		repoName := repo.DisplayName
+		if strings.TrimSpace(repoName) == "" {
+			repoName = repo.ID
+		}
+		path := repo.LocalPath
+		if path == "" {
+			path = "brak lokalnego folderu"
+		}
+		state := settingsRepositoryState(repo)
+		pendingAttachment, connecting := pending[repo.ID]
+		if connecting {
+			path = pendingAttachment.localPath
+			state = "łączenie…"
+			hadPending = true
+		}
+		access := "tylko odczyt"
+		if repo.Access == "rw" {
+			access = "odczyt i zapis"
+		}
+		attachmentRequired := repo.AttachmentPolicy == "required"
+		ownedAndCreatable := server.Owns(repo) && server.CanOfferRepositoryCreation()
+		lockRequired := repo.RequiresLock()
+		// Shown on every client, not only the owner's: this is the sentence
+		// that turns an unexplained read-only file into a stated rule.
+		editing := "swobodna"
+		if lockRequired {
+			editing = "wymaga wypożyczenia"
+		}
+		row.Folders = append(row.Folders, platform.SettingsFolder{
+			ID: repo.ID, Name: repoName, LocalPath: path, State: state, Access: access,
+			Editing:      editing,
+			LockRequired: lockRequired,
+			// Ownership alone, not ownedAndCreatable: whether a realm may
+			// create new repositories says nothing about its right to set
+			// the working rules of one it already owns.
+			CanSetEditingPolicy:   vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
+			CanManageGrants:       vm.CanManageRealmGrants() && ownedAndCreatable,
+			CanManagePublicShares: vm.CanManagePublicShares() && ownedAndCreatable,
+			CanConnect:            !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
+			CanLocate:             repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
+			CanDetach:             repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
+			CanDelete:             repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+			CanLoadDump:           repo.Attached && ownedAndCreatable,
+		})
+	}
+	return row, hadPending
 }
 
 func (c *Controller) startLocateRepository(ctx context.Context, serverID, repoID string) {

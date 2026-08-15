@@ -1412,6 +1412,28 @@ func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 	}
 }
 
+func TestControllerSettingsFromFileESMenuListsEveryServer(t *testing.T) {
+	platformFake := &platformtest.Fake{}
+	view := app.ViewModel{Connected: true, Servers: []app.ServerViewModel{
+		{ID: "office", DisplayName: "Biuro"},
+		{ID: "lab", DisplayName: "Laboratorium"},
+	}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, SettingsBrowser: platformFake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().SettingsRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	requests := platformFake.Snapshot().SettingsRequests
+	if len(requests) != 1 || requests[0].Title != "Ustawienia FileES" || len(requests[0].Servers) != 2 {
+		t.Fatalf("settings request = %#v", requests)
+	}
+	if requests[0].Servers[0].ID != "office" || requests[0].Servers[1].ID != "lab" {
+		t.Fatalf("servers = %#v", requests[0].Servers)
+	}
+}
+
 func TestControllerConnectsSelectedRealmRepositoriesToFoldersSequentially(t *testing.T) {
 	attacher := &fakeRepositoryAttacher{calls: make(chan attachCall, 2)}
 	paths := []string{filepath.Join(t.TempDir(), "docs"), filepath.Join(t.TempDir(), "cad")}

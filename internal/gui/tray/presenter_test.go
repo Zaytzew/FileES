@@ -24,8 +24,12 @@ func TestBuildMenuDisconnectedMarksSnapshotStale(t *testing.T) {
 func TestBuildMenuClientGroupGatesRestartAndShutdown(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{Connected: true})
 	client := findItem(t, menu.Items, "client")
-	if client.Title != "Klient" {
+	if client.Title != "FileES" {
 		t.Fatalf("client group title = %q", client.Title)
+	}
+	settings := findItem(t, client.Children, "action.settings")
+	if settings.Title != "Ustawienia…" || settings.Intent == nil || settings.Intent.Kind != IntentSettings || settings.Intent.ServerID != "" {
+		t.Fatalf("settings item = %#v", settings)
 	}
 	if !hasItem(client.Children, "action.reconnect") {
 		t.Fatal("reconnect should always be present, it has no capability gate")
@@ -293,14 +297,14 @@ func TestBuildMenuHeaderDoesNotVaryWithActivation(t *testing.T) {
 	}
 }
 
-func TestServerMenuExposesServerScopedManagementEntryPoint(t *testing.T) {
+func TestServerMenuDoesNotDuplicateSettingsEntry(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{{ID: "office"}}})
-	item := findItem(t, findItem(t, menu.Items, "server.office").Children, "server.office.settings")
-	if item.Title != "Zarządzaj serwerem…" || item.Intent == nil || item.Intent.Kind != IntentSettings || item.Intent.ServerID != "office" {
-		t.Fatalf("settings item = %#v", item)
+	server := findItem(t, menu.Items, "server.office")
+	if hasItem(server.Children, "server.office.settings") {
+		t.Fatalf("per-server settings leftover: %+v", server.Children)
 	}
-	if hasItem(menu.Items, "action.settings") {
-		t.Fatal("global settings entry must not be rendered")
+	if !hasItem(findItem(t, menu.Items, "client").Children, "action.settings") {
+		t.Fatal("FileES settings entry missing")
 	}
 }
 
@@ -317,7 +321,7 @@ func TestServerMenuUsesAliasWithOnlyServerScopedManagementAction(t *testing.T) {
 	if server.Title != "office" {
 		t.Fatalf("server title = %q", server.Title)
 	}
-	if !hasItem(server.Children, "server.office.settings") || hasItem(server.Children, "server.office.info") || hasItem(server.Children, "server.office.create") || hasItem(server.Children, "server.office.detach") {
+	if hasItem(server.Children, "server.office.settings") || hasItem(server.Children, "server.office.info") || hasItem(server.Children, "server.office.create") || hasItem(server.Children, "server.office.detach") {
 		t.Fatalf("server management action remains in tray: %+v", server.Children)
 	}
 }
@@ -431,10 +435,9 @@ func TestServerShowsFolderCreationShortcutWhenEligible(t *testing.T) {
 	if hasItem(findItem(t, BuildMenu(app.ViewModel{Connected: true, Stale: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_folder") {
 		t.Fatal("create action visible for stale snapshot")
 	}
-	// A local folder already exists: the shortcut must survive (this is the
-	// only other way to reach folder creation is the Settings dialog, which
-	// forces picking an existing folder row first) but relabel itself so it
-	// no longer claims to be adding the "first" folder.
+	// A local folder already exists: the shortcut must survive (Settings
+	// also offers add-folder after choosing the server) but relabel itself
+	// so it no longer claims to be adding the "first" folder.
 	server.Repos = []app.RepoViewModel{{ID: "docs", Attached: true, LocalPath: "/wc/docs"}}
 	withFolder := findItem(t, findItem(t, BuildMenu(app.ViewModel{Connected: true, Servers: []app.ServerViewModel{server}}).Items, "server.office").Children, "server.office.create_folder")
 	if withFolder.Intent == nil || withFolder.Intent.Kind != IntentCreateRepository {

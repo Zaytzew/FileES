@@ -93,12 +93,12 @@ func fluentItems(vm app.ViewModel) []MenuItemModel {
 	return append([]MenuItemModel{separator("sep.fluent")}, items...)
 }
 
-// clientMenu groups the GUI<->local-daemon lifecycle actions. These are
-// local, technical operations unrelated to any daemon-server connection;
-// nesting them keeps the list of such operations free to grow without
-// crowding the flat top level of the menu.
+// clientMenu is the FileES-wide group: settings for every activated server,
+// then local daemon/GUI lifecycle. Settings used to live in each server
+// submenu, which forced opening them once per server.
 func clientMenu(vm app.ViewModel) MenuItemModel {
 	children := []MenuItemModel{
+		actionItem("action.settings", "Ustawienia…", "Wybierz serwer, potem działanie", Intent{Kind: IntentSettings}),
 		actionItem("action.reconnect", "Połącz ponownie", "Odśwież połączenie z daemonem", Intent{Kind: IntentReconnect}),
 	}
 	if vm.CanRestartFileES() {
@@ -107,7 +107,7 @@ func clientMenu(vm app.ViewModel) MenuItemModel {
 	if vm.CanShutdownFileES() {
 		children = append(children, actionItem("action.shutdown_filees", "Zamknij FileES…", "Kontrolowanie zatrzymaj synchronizację, daemon i GUI", Intent{Kind: IntentShutdownFileES}))
 	}
-	return MenuItemModel{ID: "client", Title: "Klient", Enabled: true, Children: children}
+	return MenuItemModel{ID: "client", Title: "FileES", Enabled: true, Children: children}
 }
 
 func updateMenu(vm app.ViewModel) MenuItemModel {
@@ -136,7 +136,6 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 		name = server.ID
 	}
 	children := []MenuItemModel{}
-	children = append(children, actionItem("server."+server.ID+".settings", "Zarządzaj serwerem…", "Informacje o serwerze, foldery i akcje administracyjne", Intent{Kind: IntentSettings, ServerID: server.ID}))
 	if server.NeedsRealmAliasClaim() && vm.CanClaimRealmAlias() {
 		children = append(children, actionItem("server."+server.ID+".realm_alias", "Ustaw stały alias…", "Ustaw niezmienny pseudonim widoczny przy blokadach", Intent{Kind: IntentSetRealmAlias, ServerID: server.ID}))
 	}
@@ -158,10 +157,8 @@ func serverMenu(vm app.ViewModel, server app.ServerViewModel) MenuItemModel {
 	if visibleRepos == 0 {
 		children = append(children, disabledItem("server."+server.ID+".empty", "Brak lokalnych folderów FileES"))
 	}
-	// Always offered, not just before the first folder: the only other path
-	// to this action is the "Zarządzaj serwerem…" table, which forces
-	// picking an existing folder row first — confusing when the point is to
-	// add a folder that does not exist yet.
+	// Daily-use shortcut. Settings also offer "Dodaj folder" after the
+	// server is chosen, without requiring an existing share row.
 	if vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation() {
 		label, tooltip := "Dodaj pierwszy folder do FileES…", "Utwórz pierwsze lokalne repozytorium na tym serwerze"
 		if localFolders > 0 {

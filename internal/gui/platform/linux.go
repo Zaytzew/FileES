@@ -368,98 +368,187 @@ func (b *LinuxBackend) applyLinuxDarkThemePreference(ctx context.Context) {
 	}
 }
 
-// ShowSettings presents the server/folder overview as a native yad table.
-// It is deliberately read-only at this stage; later buttons return only an
-// opaque intent to the GUI controller.
+// ShowSettings is a three-step native sequence: pick the server, pick the
+// action, then — only if that action is about a working copy — pick the
+// share. Server-scoped options (visibility, session wait, deactivate) never
+// force a dummy share selection first.
 func (b *LinuxBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error) {
 	command, err := b.runner.LookPath("yad")
 	if err != nil {
 		return SettingsDialogResult{}, NewUnavailable("settings_dialog", errors.New("yad is not installed"))
 	}
 	b.applyLinuxDarkThemePreference(ctx)
+	wizard := BuildSettingsWizard(request)
+	if len(wizard.Servers) == 0 {
+		return b.showRecoverySettings(ctx, command, wizard)
+	}
+	server, ok, err := b.pickSettingsServer(ctx, command, wizard)
+	if err != nil || !ok {
+		return SettingsDialogResult{Action: SettingsDialogClose}, err
+	}
+	action, ok, err := b.pickSettingsAction(ctx, command, server)
+	if err != nil || !ok {
+		return SettingsDialogResult{Action: SettingsDialogClose}, err
+	}
+	result := SettingsDialogResult{Action: action.Action, ServerID: server.ID}
+	if !action.NeedsFolder {
+		return result, nil
+	}
+	ids, ok, err := b.pickSettingsFolders(ctx, command, action)
+	if err != nil || !ok {
+		return SettingsDialogResult{Action: SettingsDialogClose}, err
+	}
+	if action.Multi {
+		result.RepoIDs = ids
+		return result, nil
+	}
+	if len(ids) > 0 {
+		result.RepoID = ids[0]
+	}
+	return result, nil
+}
+
+func (b *LinuxBackend) showRecoverySettings(ctx context.Context, command string, wizard SettingsWizard) (SettingsDialogResult, error) {
+	if len(wizard.Recoveries) == 0 {
+		return SettingsDialogResult{Action: SettingsDialogClose}, nil
+	}
 	args := []string{
-		"--list", "--radiolist", "--title=" + request.Title, "--text=" + SettingsText(SettingsDialogRequest{Text: request.Text}), "--width=1240", "--height=600",
-		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Strefa", "--column=Repozytorium", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp", "--column=Edycja",
+		"--list", "--radiolist", "--title=" + wizardTitle(wizard, "Odzyskiwanie repozytoriów FileES"),
+		"--text=" + wizardText(wizard, "Dostępne archiwa odzyskiwania."),
+		"--width=760", "--height=360",
+		"--column=", "--column=ID", "--column=Serwer", "--column=Stan", "--column=Ścieżka",
 		"--hide-column=2", "--print-column=2", "--ok-label=Wybierz", "--cancel-label=Zamknij",
 	}
-	for _, server := range request.Servers {
-		if len(server.Folders) == 0 {
-			args = append(args, "FALSE", server.ID+"|", server.Name, server.Address, server.Realm, "Brak folderów", "—", "—", "—", "—")
-			continue
-		}
-		for _, folder := range server.Folders {
-			args = append(args, "FALSE", server.ID+"|"+folder.ID, server.Name, server.Address, server.Realm, folder.Name, folder.LocalPath, folder.State, folder.Access, folder.Editing)
-		}
-	}
-	for _, recovery := range request.Recoveries {
+	for _, recovery := range wizard.Recoveries {
 		prefix := "@recovery-grace:"
 		if recovery.CanDownload {
 			prefix = "@recovery-download:"
 		}
-		args = append(args, "FALSE", prefix+recovery.OperationID+"|", recovery.ServerName, "—", "—", recovery.Status, recovery.KitPath, "recovery", "—", "—")
+		args = append(args, "FALSE", prefix+recovery.OperationID, recovery.ServerName, recovery.Status, recovery.KitPath)
+	}
+	selection, err := b.yadPrintedSelection(ctx, command, args)
+	if err != nil || selection == "" {
+		return SettingsDialogResult{Action: SettingsDialogClose}, err
+	}
+	if strings.HasPrefix(selection, "@recovery-download:") {
+		return SettingsDialogResult{Action: SettingsDialogDownloadRecovery, OperationID: strings.TrimPrefix(selection, "@recovery-download:")}, nil
+	}
+	return SettingsDialogResult{Action: SettingsDialogClose}, nil
+}
+
+func (b *LinuxBackend) pickSettingsServer(ctx context.Context, command string, wizard SettingsWizard) (SettingsWizardServer, bool, error) {
+	args := []string{
+		"--list", "--radiolist", "--title=" + wizardTitle(wizard, "Ustawienia FileES"),
+		"--text=" + wizardText(wizard, "Wybierz serwer."),
+		"--width=720", "--height=360",
+		"--column=", "--column=ID", "--column=Serwer", "--column=Adres", "--column=Strefa",
+		"--hide-column=2", "--print-column=2", "--ok-label=Dalej", "--cancel-label=Zamknij",
+	}
+	for _, server := range wizard.Servers {
+		name := server.Name
+		if strings.TrimSpace(name) == "" {
+			name = server.ID
+		}
+		args = append(args, "FALSE", server.ID, name, server.Address, server.Realm)
+	}
+	selection, err := b.yadPrintedSelection(ctx, command, args)
+	if err != nil || selection == "" {
+		return SettingsWizardServer{}, false, err
+	}
+	server, ok := findWizardServer(wizard, selection)
+	return server, ok, nil
+}
+
+func (b *LinuxBackend) pickSettingsAction(ctx context.Context, command string, server SettingsWizardServer) (SettingsWizardAction, bool, error) {
+	name := server.Name
+	if strings.TrimSpace(name) == "" {
+		name = server.ID
+	}
+	args := []string{
+		"--list", "--radiolist", "--title=Ustawienia FileES — " + name,
+		"--text=Wybierz działanie.",
+		"--width=640", "--height=420",
+		"--column=", "--column=ID", "--column=Działanie",
+		"--hide-column=2", "--print-column=2", "--ok-label=Dalej", "--cancel-label=Anuluj",
+	}
+	for _, action := range server.Actions {
+		args = append(args, "FALSE", action.ID, action.Label)
+	}
+	selection, err := b.yadPrintedSelection(ctx, command, args)
+	if err != nil || selection == "" {
+		return SettingsWizardAction{}, false, err
+	}
+	action, ok := findWizardAction(server, selection)
+	return action, ok, nil
+}
+
+func (b *LinuxBackend) pickSettingsFolders(ctx context.Context, command string, action SettingsWizardAction) ([]string, bool, error) {
+	mode := "--radiolist"
+	okLabel := "Wykonaj"
+	text := "Wybierz folder dla tej akcji."
+	if action.Multi {
+		mode = "--checklist"
+		okLabel = "Połącz wybrane"
+		text = "Zaznacz foldery, które FileES ma połączyć z tym komputerem."
+	}
+	args := []string{
+		"--list", mode, "--title=Ustawienia FileES",
+		"--text=" + text, "--width=900", "--height=480",
+		"--column=", "--column=ID", "--column=Repozytorium", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp", "--column=Edycja",
+		"--hide-column=2", "--print-column=2", "--separator=\n", "--ok-label=" + okLabel, "--cancel-label=Anuluj",
+	}
+	for _, folder := range action.Folders {
+		args = append(args, "FALSE", folder.ID, folder.Name, folder.Path, folder.State, folder.Access, folder.Editing)
 	}
 	output, err := b.runner.Output(ctx, command, args...)
-	selection := yadSelection(output)
 	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return SettingsDialogResult{}, ctxErr
+		if ctx.Err() != nil {
+			return nil, false, ctx.Err()
 		}
 		if commandCancelled(err) {
-			return SettingsDialogResult{Action: SettingsDialogClose}, nil
+			return nil, false, nil
 		}
-		return SettingsDialogResult{}, NewOperationalFailure("settings_dialog", err)
+		return nil, false, NewOperationalFailure("settings_dialog", err)
 	}
-	serverID, repoID, ok := strings.Cut(selection, "|")
-	if !ok || serverID == "" {
-		return SettingsDialogResult{Action: SettingsDialogClose}, nil
-	}
-	if strings.HasPrefix(serverID, "@recovery-download:") {
-		return SettingsDialogResult{Action: SettingsDialogDownloadRecovery, OperationID: strings.TrimPrefix(serverID, "@recovery-download:")}, nil
-	}
-	if strings.HasPrefix(serverID, "@recovery-grace:") {
-		return SettingsDialogResult{Action: SettingsDialogClose}, nil
-	}
-	canAddFolder := false
-	canConnect := false
-	canLocate := false
-	canManageGrants := false
-	canSetEditingPolicy := false
-	canManagePublicShares := false
-	canDetach := false
-	canDelete := false
-	canLoadDump := false
-	canSetRealmVisibility := false
-	canSetRealmBranding := false
-	for _, server := range request.Servers {
-		if server.ID != serverID {
-			continue
-		}
-		canAddFolder = server.CanAddFolder
-		canSetRealmVisibility = server.CanSetRealmVisibility
-		canSetRealmBranding = server.CanSetRealmBranding
-		for _, folder := range server.Folders {
-			if folder.ID == repoID {
-				canConnect = folder.CanConnect
-				canLocate = folder.CanLocate
-				canManageGrants = folder.CanManageGrants
-				canSetEditingPolicy = folder.CanSetEditingPolicy
-				canManagePublicShares = folder.CanManagePublicShares
-				canDetach = folder.CanDetach
-				canDelete = folder.CanDelete
-				canLoadDump = folder.CanLoadDump
-				break
-			}
+	var ids []string
+	for _, line := range strings.Split(string(output), "\n") {
+		id := yadSelection([]byte(line))
+		if id != "" {
+			ids = append(ids, id)
 		}
 	}
-	action, err := b.settingsAction(ctx, command, repoID != "", canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility, canSetRealmBranding)
-	if err != nil || action == SettingsDialogClose {
-		return SettingsDialogResult{Action: action}, err
+	if len(ids) == 0 {
+		return nil, false, nil
 	}
-	result := SettingsDialogResult{Action: action, ServerID: serverID, RepoID: repoID}
-	if action == SettingsDialogConnectRepos {
-		result.RepoIDs = []string{repoID}
+	return ids, true, nil
+}
+
+func (b *LinuxBackend) yadPrintedSelection(ctx context.Context, command string, args []string) (string, error) {
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if commandCancelled(err) {
+			return "", nil
+		}
+		return "", NewOperationalFailure("settings_dialog", err)
 	}
-	return result, nil
+	return yadSelection(output), nil
+}
+
+func wizardTitle(wizard SettingsWizard, fallback string) string {
+	if strings.TrimSpace(wizard.Title) != "" {
+		return wizard.Title
+	}
+	return fallback
+}
+
+func wizardText(wizard SettingsWizard, fallback string) string {
+	if strings.TrimSpace(wizard.Text) != "" {
+		return wizard.Text
+	}
+	return fallback
 }
 
 // ShowJournal uses the same combined chronology as Windows. Yad does not
@@ -489,57 +578,6 @@ func (b *LinuxBackend) ShowJournal(ctx context.Context, request JournalDialogReq
 		return NewOperationalFailure("journal_dialog", err)
 	}
 	return nil
-}
-
-func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility, canSetRealmBranding bool) (SettingsDialogAction, error) {
-	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
-	args = append(args, "FALSE", "session_timeout", "Limit czasu wysyłki i pobierania…")
-	if canAddFolder {
-		args = append(args, "FALSE", "add_folder", "Dodaj folder do FileES")
-	}
-	if canConnect {
-		args = append(args, "FALSE", "connect_repositories", "Połącz z lokalnym folderem")
-	}
-	if canLocate {
-		args = append(args, "FALSE", "locate_folder", "Wskaż przeniesioną kopię roboczą")
-	}
-	if canSetRealmVisibility {
-		args = append(args, "FALSE", "realm_visibility", "Widoczność mojej strefy")
-	}
-	if canSetRealmBranding {
-		args = append(args, "FALSE", "realm_branding", "Wygląd udziałów publicznych")
-	}
-	if hasFolder {
-		if canManageGrants {
-			args = append(args, "FALSE", "manage_grants", "Uprawnienia gości")
-		}
-		if canSetEditingPolicy {
-			args = append(args, "FALSE", "editing_policy", "Zasady edycji")
-		}
-		if canManagePublicShares {
-			args = append(args, "FALSE", "public_shares", "Udostępnienia publiczne")
-		}
-		if canDetach {
-			args = append(args, "FALSE", "detach_folder", "Odłącz tylko folder")
-		}
-		if canDelete {
-			args = append(args, "FALSE", "delete_repository", "Odłącz trwale repozytorium")
-		}
-		if canLoadDump {
-			args = append(args, "FALSE", "load_dump", "Odtwórz z archiwum")
-		}
-	}
-	output, err := b.runner.Output(ctx, command, args...)
-	if err != nil {
-		if ctx.Err() != nil {
-			return SettingsDialogClose, ctx.Err()
-		}
-		if commandCancelled(err) {
-			return SettingsDialogClose, nil
-		}
-		return SettingsDialogClose, NewOperationalFailure("settings_dialog", err)
-	}
-	return settingsAction(yadSelection(output)), nil
 }
 
 func (b *LinuxBackend) ShowRealmVisibility(ctx context.Context, request RealmVisibilityDialogRequest) (RealmVisibilityDialogResult, error) {
@@ -690,36 +728,7 @@ func (b *LinuxBackend) ConfirmConsent(ctx context.Context, request ConsentReques
 }
 
 func settingsAction(label string) SettingsDialogAction {
-	switch label {
-	case "add_folder", "Dodaj folder":
-		return SettingsDialogAddFolder
-	case "connect_repositories", "Połącz":
-		return SettingsDialogConnectRepos
-	case "locate_folder":
-		return SettingsDialogLocateFolder
-	case "detach_folder", "Odłącz folder":
-		return SettingsDialogDetachFolder
-	case "delete_repository", "Odłącz trwale":
-		return SettingsDialogDeleteRepo
-	case "load_dump", "Odtwórz z archiwum":
-		return SettingsDialogLoadDump
-	case "manage_grants":
-		return SettingsDialogManageGrants
-	case "public_shares":
-		return SettingsDialogPublicShares
-	case "realm_visibility":
-		return SettingsDialogRealmVisibility
-	case "realm_branding":
-		return SettingsDialogRealmBranding
-	case "session_timeout":
-		return SettingsDialogSessionTimeout
-	case "detach_server", "Dezaktywuj klienta":
-		return SettingsDialogDetachServer
-	case "remove_realm":
-		return SettingsDialogRemoveRealm
-	default:
-		return SettingsDialogClose
-	}
+	return settingsActionFromID(label)
 }
 
 func (b *LinuxBackend) pickerCommand(request PickFilesRequest, initialDir string) (string, []string, error) {

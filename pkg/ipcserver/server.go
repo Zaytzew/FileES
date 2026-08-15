@@ -26,23 +26,24 @@ type Server struct {
 	startTime time.Time
 	lg        talk.Logger
 
-	mu            sync.RWMutex
-	repos         map[string]*RepoState // keyed by repo ID
-	activations   map[string]contract.ActivationStatus
-	activation    ActivationService
-	realmAlias    RealmAliasService
-	realmGrants   RealmGrantService
-	realmBranding RealmPublicBrandingService
-	editingPolicy EditingPolicyService
-	publicShares  PublicShareService
-	ownerLabels   OwnerLabelResolver
-	lifecycle     RepositoryLifecycleService
-	mobilePair    MobilePairingService
-	serverDetach  ServerDetachService
-	realmRemoval  RealmRemovalService
-	updates       UpdateService
-	activity      ActivitySource
-	lifecycleFn   SystemLifecycleService
+	mu             sync.RWMutex
+	repos          map[string]*RepoState // keyed by repo ID
+	activations    map[string]contract.ActivationStatus
+	activation     ActivationService
+	realmAlias     RealmAliasService
+	realmGrants    RealmGrantService
+	realmBranding  RealmPublicBrandingService
+	editingPolicy  EditingPolicyService
+	publicShares   PublicShareService
+	ownerLabels    OwnerLabelResolver
+	lifecycle      RepositoryLifecycleService
+	mobilePair     MobilePairingService
+	serverDetach   ServerDetachService
+	sessionTimeout SessionTimeoutService
+	realmRemoval   RealmRemovalService
+	updates        UpdateService
+	activity       ActivitySource
+	lifecycleFn    SystemLifecycleService
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -124,6 +125,10 @@ type ServerDetachService interface {
 	Detach(context.Context, string) error
 }
 
+type SessionTimeoutService interface {
+	SetSessionTimeout(context.Context, string, int) (int, error)
+}
+
 type RealmRemovalService interface {
 	Begin(context.Context, string, string, contract.RealmRemoveBeginPayload) (contract.RealmRemoveBeginResult, error)
 	Confirm(context.Context, contract.RealmRemoveConfirmPayload) (contract.RealmRemoveConfirmResult, error)
@@ -178,6 +183,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.editingPolicyService() != nil {
 		caps = append(caps, contract.CapRepoSetEditingPolicy)
+	}
+	if s.sessionTimeoutService() != nil {
+		caps = append(caps, contract.CapServerSetSessionTimeout)
 	}
 	if s.systemLifecycleService() != nil {
 		caps = append(caps, contract.CapSystemRestart, contract.CapSystemShutdown)
@@ -237,6 +245,18 @@ func (s *Server) serverDetachService() ServerDetachService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.serverDetach
+}
+
+func (s *Server) SetSessionTimeoutService(service SessionTimeoutService) {
+	s.mu.Lock()
+	s.sessionTimeout = service
+	s.mu.Unlock()
+}
+
+func (s *Server) sessionTimeoutService() SessionTimeoutService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sessionTimeout
 }
 
 func (s *Server) SetRealmRemovalService(service RealmRemovalService) {

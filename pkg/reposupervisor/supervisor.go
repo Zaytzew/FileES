@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Key struct{ ServerID, RepoID string }
@@ -27,6 +28,10 @@ type Desired struct {
 	// built once at start, so a policy that changes while URL and Access stay
 	// put would otherwise never take effect.
 	EditingPolicy string
+	// SessionTimeout is how long one send or fetch may run. A change must
+	// start the folder's work again, or the new wait would not apply until
+	// something else restarted it.
+	SessionTimeout time.Duration
 }
 
 type Instance interface{ Stop(context.Context) error }
@@ -139,7 +144,7 @@ func (s *Supervisor) applyLocked(ctx context.Context, serverID string, generatio
 		shouldRun := present && wanted.State == "active"
 		// Every field compared here is one the running instance baked in at
 		// start time and cannot pick up live, so each must force a restart.
-		unchanged := running && shouldRun && old.desired.Access == wanted.Access && old.desired.URL == wanted.URL && old.desired.EditingPolicy == wanted.EditingPolicy
+		unchanged := running && shouldRun && old.desired.Access == wanted.Access && old.desired.URL == wanted.URL && old.desired.EditingPolicy == wanted.EditingPolicy && old.desired.SessionTimeout == wanted.SessionTimeout
 		if unchanged {
 			old.desired = wanted
 			s.live[key] = old

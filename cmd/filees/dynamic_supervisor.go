@@ -42,18 +42,29 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 	return updater.client.Checkout(ctx, updater.url, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string) error {
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
+	timeouts := make(map[string]time.Duration, len(profiles))
+	for _, profile := range profiles {
+		timeouts[profile.ServerID] = profile.SVNTimeout()
+	}
 	for _, repo := range repos {
 		key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
+		if repo.SessionTimeout <= 0 {
+			repo.SessionTimeout = timeouts[repo.ServerID]
+		}
 		state := ipc.RegisterRepoAccess(repo.ID, repo.RepoURL, repo.LocalPath, repo.ServerID, repo.Access)
 		runtimes[key] = repoRuntime{config: repo, state: state}
-		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID})
+		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID, SessionTimeout: repo.SessionTimeout})
 	}
 	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc, activity: activityJournal}
 	starter := &daemonRepoStarter{daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
-		return client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts, SSHHostName: repo.SSHHostName, SSHPort: repo.SSHPort})
+		timeout := repo.SessionTimeout
+		if timeout <= 0 {
+			timeout = clientprofile.DefaultSessionTimeout
+		}
+		return client.New(client.Options{SvnPath: "svn", Timeout: timeout, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts, SSHHostName: repo.SSHHostName, SSHPort: repo.SSHPort})
 	}}
 	starter.startReadWrite = func(lifecycle context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
 		return startReadWrite(lifecycle, runtimeRepo, svn, desired, deps)
@@ -65,7 +76,10 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	updates := make(chan projectionUpdate, 16)
 	monitored := make(map[string]bool)
 	currentViews := make(map[string]clientview.View)
-	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval time.Duration) error {
+	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval, timeout time.Duration) error {
+		if timeout <= 0 {
+			timeout = clientprofile.DefaultSessionTimeout
+		}
 		if monitored[serverID] {
 			return nil
 		}
@@ -101,8 +115,8 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		if projectRealmAlias != nil {
 			realmAlias = projectRealmAlias(serverID, realmID, realmAlias)
 		}
-		ipc.RegisterActivation(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired})
-		svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort})
+		ipc.RegisterActivation(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)})
+		svn := client.New(client.Options{SvnPath: "svn", Timeout: timeout, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort})
 		var updater clientview.Updater = svn
 		if serviceURL != "" {
 			updater = serviceProjectionUpdater{client: svn, url: serviceURL}
@@ -120,7 +134,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		return nil
 	}
 	startProfile := func(profile clientprofile.Profile) error {
-		return startMonitor(profile.ServerID, profile.ServerID, profile.Address, profile.ClientID, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval)
+		return startMonitor(profile.ServerID, profile.ServerID, profile.Address, profile.ClientID, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval, profile.SVNTimeout())
 	}
 	for _, profile := range profiles {
 		if err := startProfile(profile); err != nil {
@@ -128,7 +142,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		}
 	}
 	if projection := activation.Projection; projection != nil && !monitored[activation.ServerID] {
-		if err := startMonitor(activation.ServerID, activation.DisplayName, "", "", activation.IdentityFile, activation.KnownHosts, 0, "", clientview.SyncConfig{WorkingCopy: projection.WorkingCopy, RelativeViewPath: projection.RelativeViewPath, CachePath: projection.CachePath}, projection.Interval); err != nil {
+		if err := startMonitor(activation.ServerID, activation.DisplayName, "", "", activation.IdentityFile, activation.KnownHosts, 0, "", clientview.SyncConfig{WorkingCopy: projection.WorkingCopy, RelativeViewPath: projection.RelativeViewPath, CachePath: projection.CachePath}, projection.Interval, 0); err != nil {
 			talk.With("projection:"+activation.ServerID).Errorf("start configured monitor: %v", err)
 		}
 	}
@@ -158,6 +172,13 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if err := startProfile(profile); err != nil {
 				talk.With("projection:"+profile.ServerID).Errorf("start activated profile: %v", err)
 			}
+		case profile := <-timeoutEvents:
+			stampSessionTimeout(runtimes, profile.ServerID, profile.SVNTimeout())
+			if view, ok := currentViews[profile.ServerID]; ok {
+				if err := reconcileProjectedView(ctx, supervisor, ipc, profile.ServerID, view, runtimes, lifecycle); err != nil && ctx.Err() == nil {
+					talk.With("projection:"+profile.ServerID).Errorf("apply session timeout: %v", err)
+				}
+			}
 		case update := <-updates:
 			currentViews[update.serverID] = update.view
 			ready, pendingRequired := repositoryReadiness(update.serverID, update.view, runtimes)
@@ -165,7 +186,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if projectRealmAlias != nil {
 				realmAlias = projectRealmAlias(update.serverID, update.view.RealmID, realmAlias)
 			}
-			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired})
+			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: sessionTimeoutMinutes(update.serverID, runtimes)})
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes, lifecycle); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
 			}
@@ -230,4 +251,28 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes, lifecycle)
 		}
 	}
+}
+
+func stampSessionTimeout(runtimes map[reposupervisor.Key]repoRuntime, serverID string, timeout time.Duration) {
+	for key, runtime := range runtimes {
+		if key.ServerID != serverID {
+			continue
+		}
+		runtime.config.SessionTimeout = timeout
+		runtimes[key] = runtime
+	}
+}
+
+func sessionTimeoutMinutes(serverID string, runtimes map[reposupervisor.Key]repoRuntime) int {
+	for key, runtime := range runtimes {
+		if key.ServerID != serverID {
+			continue
+		}
+		timeout := runtime.config.SessionTimeout
+		if timeout <= 0 {
+			timeout = clientprofile.DefaultSessionTimeout
+		}
+		return int(timeout / time.Minute)
+	}
+	return int(clientprofile.DefaultSessionTimeout / time.Minute)
 }

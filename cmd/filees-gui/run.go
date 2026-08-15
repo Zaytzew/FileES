@@ -266,6 +266,23 @@ type realmBrandingClient interface {
 	RealmSetPublicBranding(context.Context, string, realmbranding.Branding) (*contract.RealmPublicBrandingResult, error)
 }
 
+type sessionTimeoutClient interface {
+	ServerSetSessionTimeout(context.Context, contract.ServerSetSessionTimeoutPayload) (*contract.ServerSetSessionTimeoutResult, error)
+}
+
+type sessionTimeoutAdapter struct{ client sessionTimeoutClient }
+
+func (adapter sessionTimeoutAdapter) SetSessionTimeout(ctx context.Context, serverID string, minutes int) (int, error) {
+	result, err := adapter.client.ServerSetSessionTimeout(ctx, contract.ServerSetSessionTimeoutPayload{ServerID: serverID, Minutes: minutes})
+	if err != nil {
+		return 0, err
+	}
+	if result == nil {
+		return 0, errors.New("daemon returned an empty session timeout")
+	}
+	return result.Minutes, nil
+}
+
 type realmBrandingAdapter struct{ client realmBrandingClient }
 
 func (adapter realmGrantAdapter) ListRecipients(ctx context.Context, serverID, repoID string) ([]actions.RealmGrantRecipient, error) {
@@ -728,6 +745,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(realmBrandingClient); ok {
 		realmBranding = realmBrandingAdapter{client: candidate}
 	}
+	var sessionTimeouts actions.SessionTimeoutManager
+	if candidate, ok := deps.client.(sessionTimeoutClient); ok {
+		sessionTimeouts = sessionTimeoutAdapter{client: candidate}
+	}
 	var publicShares actions.PublicShareManager
 	if candidate, ok := deps.client.(publicShareClient); ok {
 		publicShares = publicShareAdapter{client: candidate}
@@ -766,6 +787,7 @@ func run(parent context.Context, deps dependencies) error {
 		RealmAliases:         realmAliases,
 		RealmGrants:          realmGrants,
 		RealmBranding:        realmBranding,
+		SessionTimeouts:      sessionTimeouts,
 		PublicShares:         publicShares,
 		ReservationBrowser:   deps.platform,
 		SettingsBrowser:      deps.platform,

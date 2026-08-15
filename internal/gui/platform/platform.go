@@ -197,7 +197,11 @@ type SettingsServer struct {
 	// offered unconditionally, so a restricted client saw a real "nothing
 	// happens" click with zero feedback.
 	CanAddFolder bool
-	Folders      []SettingsFolder
+	// CanSetSessionTimeout is a local setting: how long to wait for one
+	// send or fetch. Offered on a real server row. Recovery rows leave it false.
+	CanSetSessionTimeout bool
+	SessionTimeoutMin    int
+	Folders              []SettingsFolder
 }
 
 // SettingsFolder's Can* fields mirror the exact preconditions their
@@ -245,6 +249,7 @@ const (
 	SettingsDialogPublicShares     SettingsDialogAction = "public_shares"
 	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
 	SettingsDialogRealmBranding    SettingsDialogAction = "realm_branding"
+	SettingsDialogSessionTimeout   SettingsDialogAction = "session_timeout"
 	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"
 	SettingsDialogRemoveRealm      SettingsDialogAction = "remove_realm"
 	SettingsDialogDownloadRecovery SettingsDialogAction = "download_recovery"

@@ -53,6 +53,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRealmPublicBranding(req, true)
 	case contract.CmdServerDetach:
 		return s.handleServerDetach(req)
+	case contract.CmdServerSetSessionTimeout:
+		return s.handleServerSetSessionTimeout(req)
 	case contract.CmdRealmRemoveBegin:
 		return s.handleRealmRemoveBegin(req)
 	case contract.CmdRealmRemoveConfirm:
@@ -203,6 +205,36 @@ func (s *Server) handleServerDetach(req contract.Request) contract.Response {
 	}
 	s.RemoveServer(payload.ServerID)
 	return contract.OKResponse(req.RequestID, contract.ServerDetachResult{ServerID: payload.ServerID})
+}
+
+func (s *Server) handleServerSetSessionTimeout(req contract.Request) contract.Response {
+	service := s.sessionTimeoutService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "SERVER-0003", "ERROR", "RETRY", "server.session_timeout_unavailable", nil)
+	}
+	var payload contract.ServerSetSessionTimeoutPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	activation, active := s.activations[payload.ServerID]
+	s.mu.RUnlock()
+	if !active {
+		return contract.ErrResponse(req.RequestID, "SERVER-0002", "ERROR", "NONE", "server.not_activated", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	minutes, err := service.SetSessionTimeout(ctx, payload.ServerID, payload.Minutes)
+	if err != nil {
+		if strings.Contains(err.Error(), "session timeout must be") {
+			return contract.ErrResponse(req.RequestID, "SERVER-1002", "ERROR", "REQUIRE_ACTION", "server.session_timeout_invalid", nil)
+		}
+		talk.With("session-timeout:"+payload.ServerID).Warnf("save failed: %v", err)
+		return contract.ErrResponse(req.RequestID, "SERVER-1003", "ERROR", "REQUIRE_ACTION", "server.session_timeout_failed", nil)
+	}
+	activation.SessionTimeoutMin = minutes
+	s.RegisterActivation(activation)
+	return contract.OKResponse(req.RequestID, contract.ServerSetSessionTimeoutResult{ServerID: payload.ServerID, Minutes: minutes})
 }
 
 func (s *Server) handleRepoReservationList(req contract.Request) contract.Response {

@@ -493,6 +493,7 @@ func (b *LinuxBackend) ShowJournal(ctx context.Context, request JournalDialogReq
 
 func (b *LinuxBackend) settingsAction(ctx context.Context, command string, hasFolder, canAddFolder, canConnect, canLocate, canManageGrants, canSetEditingPolicy, canManagePublicShares, canDetach, canDelete, canLoadDump, canSetRealmVisibility, canSetRealmBranding bool) (SettingsDialogAction, error) {
 	args := []string{"--list", "--radiolist", "--title=Ustawienia FileES", "--text=Wybierz działanie:", "--column=", "--column=ID", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Anuluj", "FALSE", "detach_server", "Dezaktywuj tylko tego klienta", "FALSE", "remove_realm", "Usuń mój udział FileES z serwera"}
+	args = append(args, "FALSE", "session_timeout", "Limit czasu wysyłki i pobierania…")
 	if canAddFolder {
 		args = append(args, "FALSE", "add_folder", "Dodaj folder do FileES")
 	}
@@ -710,6 +711,8 @@ func settingsAction(label string) SettingsDialogAction {
 		return SettingsDialogRealmVisibility
 	case "realm_branding":
 		return SettingsDialogRealmBranding
+	case "session_timeout":
+		return SettingsDialogSessionTimeout
 	case "detach_server", "Dezaktywuj klienta":
 		return SettingsDialogDetachServer
 	case "remove_realm":

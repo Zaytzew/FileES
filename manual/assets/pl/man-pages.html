@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Strony man — podręcznik FileES</title>
+<title>Wyciąg CLI — FileES Tech</title>
 <link rel="alternate" hreflang="en" href="../en/man-pages.html"/>
 <link rel="alternate" hreflang="pl" href="man-pages.html"/>
 <link rel="stylesheet" href="../css/manual.css"/>
@@ -42,59 +42,380 @@
 <a href="man-pages.html" class="is-current">Man</a>
 </span>
 </nav>
+
 <div class="manual-layout">
 <nav aria-label="Na tej stronie" id="toc">
-<div class="toc-head">
-<span class="toc-kicker">filees:space / ta strona</span>
-<h2>Na tej stronie</h2>
-</div>
-<ol>
+<div class="toc-head"><span class="toc-kicker">filees:space / this page</span><h2>Na tej stronie</h2></div><ol>
+<li><a href="#man-extract">Polecenia</a></li>
+<li><a href="#filees-admin"><code>filees-admin</code></a> — bilety administracyjne, odwołanie i zamknięcie wymazania</li>
+<li><a href="#filees-operation"><code>filees-operation</code></a> — domknięcie claimów onboardingu i wygaszanie niedokończonych operacji</li>
+<li><a href="#filees-onboard"><code>filees-onboard</code></a> — zużywa zaproszenie i tworzy kolejkę OTP; sam nie wysyła poczty</li>
+<li><a href="#filees-mail"><code>filees-mail</code></a> — jedna pozycja skrzynki wychodzącej albo pętla poczty udziałów publicznych</li>
+<li><a href="#filees-bootstrap-entry"><code>filees-bootstrap-entry</code></a> — publiczne wymuszone polecenie pierwszego wejścia</li>
+<li><a href="#filees-entry"><code>filees-entry</code></a> — wymuszone polecenie tunelu po kodzie jednorazowym</li>
+<li><a href="#filees-ssh-auth"><code>filees-ssh-auth</code></a> — styl BSD Auth porównujący kod jednorazowy dla tunelu</li>
+<li><a href="#filees-client-entry"><code>filees-client-entry</code></a> — dyspozytor per-klucz: svnserve albo jeden ticket control-plane</li>
+<li><a href="#filees-worker"><code>filees-worker</code></a> — jedna uwierzytelniona akcja serwera i wyjście</li>
+<li><a href="#filees-service-wc-corrector"><code>filees-service-wc-corrector</code></a> — naprawa właściciela kopii roboczej repozytorium serwisowego</li>
+<li><a href="#filees-install"><code>filees-install</code></a> — podpisana aktualizacja binarek serwera z FILEES-BIN</li>
+<li><a href="#filees-rotate"><code>filees-rotate</code></a> — jawna zmiana generacji repozytorium FSFS</li>
+<li><a href="#filees-public-authority"><code>filees-public-authority</code></a> — autorytet udziałów publicznych i kody odbiorców</li>
+<li><a href="#filees-links"><code>filees-links</code></a> — publiczna powierzchnia FastCGI udziałów, bez poświadczeń</li>
+<li><a href="#filees-mobile-v1"><code>filees-mobile-v1</code></a> — wejście protokołu mobilnego wyłącznie dołączającego</li>
+<li><a href="#filees-recovery-entry"><code>filees-recovery-entry</code></a> — wydawanie archiwów po usunięciu strefy, jedna operacja</li>
 <li><a href="#man-style">Styl</a></li>
 <li><a href="#man-install">Instalacja</a></li>
-<li><a href="#man-list">Katalog</a></li>
-</ol>
-</nav>
-<div class="manual-content">
-<h1>Strony podręcznika OpenBSD</h1>
-<p>Zestaw narzędzi serwera dostarcza źródła <code>mandoc</code> napisane w tym samym stylu co reszta dokumentacji operatora: jedna strona na polecenie albo plik konfiguracji, ścieżki systemu plików jako kontrakt, jawne nie-cele oraz odsyłacze <code>.Xr</code>. To nie jest druga opowieść produktowa. Rozdziały HTML tłumaczą dlaczego; strony man mówią operatorowi, co wpisać.</p>
+</ol></nav><div class="manual-content">
+<h1>Wyciąg CLI z mandoc</h1>
+<p>To jest wyciąg Tech ze źródeł OpenBSD <code>mandoc</code> w <code>docs/man</code>. Każde polecenie serwera jest tu od <strong>roli</strong>, <strong>wywołania</strong>, <strong>flag</strong> i <strong>przykładów</strong>. Angielski jest kanoniczny: tak przyjmują binarki. Rola jest po polsku. Klient pulpitu <code>filees</code> nie ma jeszcze strony mandoc — zobacz User <a href="user-guide.html#ch2-cli">howto pulpitu</a>.</p>
+<p>Wymuszone polecenia odpala <code>sshd</code>. Są na liście, żeby było widać sztafetę, nie dlatego, że operator je wpisuje. Pliki konfiguracji <code>filees.conf(5)</code> i <code>filees-public-links(5)</code> są wskaźnikami, nie poleceniami.</p>
+<h2 id="man-extract">Polecenia</h2>
+
+<article class="cli-tool" id="filees-admin">
+<span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
+<h2>filees-admin(8)</h2>
+<p class="cli-nd">bilety administracyjne, odwołanie i zamknięcie wymazania</p>
+<h3>Rola</h3>
+<p>filees-admin is the operator command for onboarding tickets and a small set of fail-closed administrative actions. It writes structured JSON to standard output and diagnostics to standard error. It must run with effective user _filees-state . Creating a ticket as root produces a root-owned mode 0600 file that the set-id onboarding entry intentionally cannot read.</p>
+<p>version is answered before the configuration is opened, so a stale binary can be identified even when server.json is suspect.</p>
+<p>Repository create, grants, public shares and realm removal are desktop control-plane operations, not extra filees-admin verbs.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-admin [-config path] ticket create mailbox [--ttl duration] [--join-realm-alias alias]
+filees-admin [-config path] ticket resend --ticket-id uuid
+filees-admin [-config path] ticket revoke --ticket-id uuid
+filees-admin [-config path] ticket list
+filees-admin [-config path] operation inspect --operation-id uuid
+filees-admin [-config path] client revoke --client-id uuid [--reason text]
+filees-admin [-config path] client revoke-realm --realm-id uuid [--reason text]
+filees-admin [-config path] repo transfer-owner --repo-id uuid --realm-id uuid
+filees-admin [-config path] erasure complete --operation-id uuid [--partially-retained]
+filees-admin version</code></pre>
+<h3>Flagi i czasowniki</h3>
+<div class="table-wrap"><table class="field-table"><tr><th>Flaga / czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>ticket create</code></td><td>Issue a one-time invitation to mailbox and send it immediately. The mailbox must come before any flag. Without --join-realm-alias the ticket authorises a new realm. With the flag the server resolves the immutable alias now and stores the approved realm ID; the client never submits that ID. The invitation capability is not printed.</td></tr>
+<tr><td><code>ticket resend</code></td><td>Replace a failed delivery capability without changing recipient or TTL.</td></tr>
+<tr><td><code>ticket revoke</code></td><td>Delete an unused ticket. A claimed ticket has already been replaced by an operation bundle.</td></tr>
+<tr><td><code>ticket list</code></td><td>List remaining tickets. Names are sha256 mailbox so the file name does not reveal the address.</td></tr>
+<tr><td><code>operation inspect</code></td><td>Show one onboarding operation.</td></tr>
+<tr><td><code>client revoke</code></td><td>Write a durable revoking record, drop generated SSH/SVN access, then commit the revoked client. An identical retry is idempotent; a different reason is rejected.</td></tr>
+<tr><td><code>client revoke-realm</code></td><td>Revoke every installation of a realm with the same sequence.</td></tr>
+<tr><td><code>repo transfer-owner</code></td><td>Change owner_realm_id and regenerate data-authz. Existing grants issued by the previous owner are not touched.</td></tr>
+<tr><td><code>erasure complete</code></td><td>Close a data-erasure request after the operator has verified backup retention. --partially-retained records that policy still requires some copies.</td></tr>
+</table></div>
+<h3>Przykłady</h3>
+<p>Create a new-realm invitation:</p>
+<pre><code>$ doas -u _filees-state filees-admin ticket create user@example.com</code></pre>
+<p>Authorise another desktop in an existing realm:</p>
+<pre><code>$ doas -u _filees-state filees-admin ticket create user@example.com \
+    --join-realm-alias acme --ttl 24h</code></pre>
+</article>
+<article class="cli-tool" id="filees-operation">
+<span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
+<h2>filees-operation(8)</h2>
+<p class="cli-nd">domknięcie claimów onboardingu i wygaszanie niedokończonych operacji</p>
+<h3>Rola</h3>
+<p>filees-operation finishes crash-visible onboarding state. It must run as _filees-state .</p>
+<p>recover scans operations/ for .claim-*.json files. A claim-as-ticket is turned into a bundle and renamed. A claim-as-bundle is only renamed. It also expires unfinished operations whose TTL has elapsed, redacts OTP and delivery address, removes expired staged keys, and resumes confirmed realm-removal journals after every client credential has been revoked. Active clients are not expired by the onboarding TTL. The command is idempotent.</p>
+<p>inspect prints one operation bundle.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-operation [-config path] recover
+filees-operation [-config path] inspect --operation-id uuid</code></pre>
+<h3>Flagi i czasowniki</h3>
+<div class="table-wrap"><table class="field-table"><tr><th>Flaga / czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>[-config path] recover</code></td><td>Ze SYNOPSIS.</td></tr>
+<tr><td><code>[-config path] inspect --operation-id uuid</code></td><td>Ze SYNOPSIS.</td></tr>
+</table></div>
+<h3>Przykłady</h3>
+<pre><code>$ doas -u _filees-state filees-operation recover</code></pre>
+</article>
+<article class="cli-tool" id="filees-onboard">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-onboard(8)</h2>
+<p class="cli-nd">zużywa zaproszenie i tworzy kolejkę OTP; sam nie wysyła poczty</p>
+<h3>Rola</h3>
+<p>filees-onboard reads one JSON invitation request from standard input and atomically creates or resumes the onboarding operation. It does not send mail. filees-bootstrap-entry(8) calls filees-onboard take and then exactly one filees-mail(8) send .</p>
+<p>The command is a short-lived tool. It has no listener and accepts no extra arguments.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-onboard [-config path] take</code></pre>
+<h3>Flagi i czasowniki</h3>
+<div class="table-wrap"><table class="field-table"><tr><th>Flaga / czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>[-config path] take</code></td><td>Ze SYNOPSIS.</td></tr>
+</table></div>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># stdin is one JSON invitation; called by filees-bootstrap-entry
+filees-onboard take &lt; invitation.json</code></pre>
+</article>
+<article class="cli-tool" id="filees-mail">
+<span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
+<h2>filees-mail(8)</h2>
+<p class="cli-nd">jedna pozycja skrzynki wychodzącej albo pętla poczty udziałów publicznych</p>
+<h3>Rola</h3>
+<p>send claims one pending control-plane mail job and submits it through the configured SMTP relay. It is the one-shot drain used after filees-admin(8) ticket actions and after filees-bootstrap-entry(8) . Onboarding, realm-removal and data-erasure jobs share this path.</p>
+<p>Delivery states are pending , sending , queued , and failed . A 4xx leaves the job pending and preserves the OTP. A 5xx marks failed and redacts the OTP. The Message-ID is derived from CreatedAt , so a lost 250 can be retried safely.</p>
+<p>public-loop is not an operator command. filees-public-authority(8) supervises it as an isolated child. The child loads the SMTP secret and drains only the Public Shares outbox. The authority process never receives that secret. If the child dies, the authority exits.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-mail [-config path] send
+filees-mail [-config path] public-loop</code></pre>
+<h3>Flagi i czasowniki</h3>
+<div class="table-wrap"><table class="field-table"><tr><th>Flaga / czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>[-config path] send</code></td><td>Ze SYNOPSIS.</td></tr>
+<tr><td><code>[-config path] public-loop</code></td><td>Ze SYNOPSIS.</td></tr>
+</table></div>
+<h3>Przykłady</h3>
+<p>Retry a 4xx invitation:</p>
+<pre><code>$ doas -u _filees-state filees-mail send</code></pre>
+</article>
+<article class="cli-tool" id="filees-bootstrap-entry">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-bootstrap-entry(8)</h2>
+<p class="cli-nd">publiczne wymuszone polecenie pierwszego wejścia</p>
+<h3>Rola</h3>
+<p>filees-bootstrap-entry is the sshd(8) forced command for _filees-onboard . It accepts no arguments. The compiled-in bootstrap public key is a public capability: it can only reach this command, and forwarding is disabled.</p>
+<p>The command performs exactly two steps: filees-onboard(8) take one filees-mail(8) send attempt</p>
+<p>It does not enumerate tickets and does not expose whether an address is free.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-bootstrap-entry</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># sshd ForceCommand for _filees-onboard — no argv
+# internally: filees-onboard take &amp;&amp; filees-mail send
+filees-bootstrap-entry</code></pre>
+</article>
+<article class="cli-tool" id="filees-entry">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-entry(8)</h2>
+<p class="cli-nd">wymuszone polecenie tunelu po kodzie jednorazowym</p>
+<h3>Rola</h3>
+<p>filees-entry is the sshd(8) forced command for _filees-tunnel . It accepts only the literal remote command filees tunnel-v1 .</p>
+<p>BSD Auth has already compared the OTP. filees-entry then claims the operation bundle, confirming the reverse forward to 127.0.0.1:42000 , and execs filees-worker(8) for the rest of the activation. The OTP is not taken from the environment; sshd(8) does not propagate BSD Auth setenv values to the forced command.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-entry</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># sshd forced command for _filees-tunnel
+# remote command must be exactly:
+filees tunnel-v1</code></pre>
+</article>
+<article class="cli-tool" id="filees-ssh-auth">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-ssh-auth(8)</h2>
+<p class="cli-nd">styl BSD Auth porównujący kod jednorazowy dla tunelu</p>
+<h3>Rola</h3>
+<p>filees-ssh-auth is installed as /usr/libexec/auth/login_-filees with owner _filees-state , group auth and mode 4550. sshd(8) invokes it for _filees-tunnel keyboard-interactive authentication.</p>
+<p>The OTP is received on file descriptor 3, not from the environment. A successful comparison advances the operation bundle from awaiting_tunnel to tunnel_authorized . filees-entry(8) then claims that state.</p>
+<p>The _filees-tunnel password field must not be * ; BSD Auth rejects such accounts before a local style can run. The OpenBSD installer writes an unknowable random hash.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-ssh-auth</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># installed as /usr/libexec/auth/login_-filees
+# sshd keyboard-interactive for _filees-tunnel; OTP on fd 3</code></pre>
+</article>
+<article class="cli-tool" id="filees-client-entry">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-client-entry(8)</h2>
+<p class="cli-nd">dyspozytor per-klucz: svnserve albo jeden ticket control-plane</p>
+<h3>Rola</h3>
+<p>filees-client-entry is the set-id dispatcher installed for installation-key sessions. sshd(8) selects the account _filees-client or _filees-data and the per-key command= line. filees-client-entry accepts exactly two original commands: Tunnel-mode Subversion. One authenticated control-plane ticket, then filees-worker(8) .</p>
+<p>Before a control-plane ticket it runs filees-service-wc-corrector(8) so a previous root-owned administrative svn cannot leave the service working copy unreadable to _filees-state .</p>
+<p>The image is _filees-state : _filees-access mode 4550. It is not a general shell.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-client-entry</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># authorized_keys command= selects this image
+# accepted original commands only:
+svnserve -t
+filees control-v1</code></pre>
+</article>
+<article class="cli-tool" id="filees-worker">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-worker(8)</h2>
+<p class="cli-nd">jedna uwierzytelniona akcja serwera i wyjście</p>
+<h3>Rola</h3>
+<p>filees-worker is exec'd once per authenticated deploy or control-plane ticket. It is root : wheel mode 0555 and has no resident service. The next operation execs the current image.</p>
+<p>It is the only process that mutates canonical service-repository records, data repositories, grants, editing policy and Public Shares channel state. It publishes through a path-scoped Subversion commit under the shared service-WC lock. Unversioned leftovers from a killed older binary are reconciled before the next scan.</p>
+<p>Do not run filees-worker as root against the service working copy. Root can bypass the 0700 directory mode and then leaves root-owned pristine objects in .svn .</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-worker</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># exec’d once per authenticated ticket; do not run as root
+filees-worker</code></pre>
+</article>
+<article class="cli-tool" id="filees-service-wc-corrector">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-service-wc-corrector(8)</h2>
+<p class="cli-nd">naprawa właściciela kopii roboczej repozytorium serwisowego</p>
+<h3>Rola</h3>
+<p>filees-service-wc-corrector is a tiny set-id-root helper. It accepts no arguments. It walks the configured service working copy and the shared .service-wc.lock , and runs lchown on any path whose UID or GID is not the state account. It never changes modes or content.</p>
+<p>Effective UID 0 is required. The state-account UID must not be 0. The walk refuses to cross a filesystem boundary and refuses unsupported file types.</p>
+<p>filees-client-entry(8) invokes filees-service-wc-corrector before a control-plane ticket. Ordinary workers remain unprivileged.</p>
+<p>The installed image is root : _filees-access mode 4550.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-service-wc-corrector</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># no arguments; invoked by filees-client-entry before a ticket
+filees-service-wc-corrector</code></pre>
+</article>
+<article class="cli-tool" id="filees-install">
+<span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
+<h2>filees-install(8)</h2>
+<p class="cli-nd">podpisana aktualizacja binarek serwera z FILEES-BIN</p>
+<h3>Rola</h3>
+<p>filees-install updates installed FileES server binaries from a separate binary release repository. It is not a package manager and does not create a local Subversion working copy. It fetches channel and manifest documents with svn cat , verifies the OpenBSD signify signature against a public key embedded at build time, checks SHA-256 hashes, records a durable pre-image journal, and replaces targets atomically.</p>
+<p>Manifest schema v2 signs owner, group and full mode, including set-id bits. Install and rollback restore content, UID, GID and mode. The apply lock is exclusive; a SIGSTOP then SIGKILL chaos test on an unlocked earlier build panicked the OpenBSD kernel.</p>
+<p>--adopt records an existing installation as the managed baseline. It changes no files and accepts the host only when every managed path matches the signed hash, owner, group and mode.</p>
+<p>A release older than the recorded high-water mark is refused unless --allow-rollback is also given. That flag is a deliberate administrative act, never the ordinary update.</p>
+<p>The running /etc/filees/server.json is not overwritten.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-install [-c file] [--check-config] [--check [release]] [--dry-run [release]] [--apply [release]] [--adopt [release]] [--rollback] [--revert-to release] [--purge] [--wipe-state] [--allow-rollback] [--yes] [--talkative]</code></pre>
+<h3>Flagi i czasowniki</h3>
+<div class="table-wrap"><table class="field-table"><tr><th>Flaga / czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>-c file</code></td><td>Read filees-install(8) configuration from file . The default is /etc/filees/install.conf .</td></tr>
+<tr><td><code>--check-config</code></td><td>Print the resolved configuration and exit.</td></tr>
+<tr><td><code>--check</code></td><td>Fetch the channel and print the install plan without downloading payloads.</td></tr>
+<tr><td><code>--dry-run</code></td><td>Build the full plan, including config-contract drift, without installing.</td></tr>
+<tr><td><code>--apply</code></td><td>Download, verify, stage, journal and install the channel head or release .</td></tr>
+<tr><td><code>--adopt</code></td><td>Verify and adopt without modification.</td></tr>
+<tr><td><code>--rollback</code></td><td>Restore the previous locally installed release from the journalled pre-image.</td></tr>
+<tr><td><code>--revert-to release</code></td><td>Install a named release such as r492 .</td></tr>
+<tr><td><code>--purge</code></td><td>Remove files this installer manages. Keeps /var/filees and /etc/filees unless --wipe-state is also given.</td></tr>
+<tr><td><code>--allow-rollback</code></td><td>Permit installing a release older than the local high-water mark.</td></tr>
+<tr><td><code>--yes</code></td><td>Answer yes to interactive prompts.</td></tr>
+<tr><td><code>--talkative</code></td><td>Print Sq [SECURITY] unveil and pledge diagnostics.</td></tr>
+</table></div>
+<h3>Przykłady</h3>
+<p>Adopt a host that already matches signed r492:</p>
+<pre><code>$ doas filees-install --adopt r492</code></pre>
+<p>Plan and apply the configured channel:</p>
+<pre><code>$ doas filees-install --dry-run
+$ doas filees-install --apply</code></pre>
+</article>
+<article class="cli-tool" id="filees-rotate">
+<span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
+<h2>filees-rotate(8)</h2>
+<p class="cli-nd">jawna zmiana generacji repozytorium FSFS</p>
+<h3>Rola</h3>
+<p>filees-rotate replaces a hot repository with a new generation. The new generation has a new UUID and starts at revision 1 equal to a complete dump of the old HEAD, including versioned properties such as svn:needs-lock . It inherits conf/ and hooks/ , is verified with svnadmin and a tree comparison, then swapped atomically. The old generation becomes a frozen, commit-blocked FSFS archive. Existing working copies do not survive the UUID change.</p>
+<p>For the FileES append-only profile, rotation is a retention tool, not a performance tool. There is no built-in scheduler. Running filees-rotate is an operational decision. The same staging and swap machinery is reused by LOAD_REPOSITORY_DUMP .</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-rotate -repo path -archive directory [-size threshold] [-age-days n] [-dry-run] [-force] [-break-locks] [-dump-depth n]</code></pre>
+<h3>Flagi i czasowniki</h3>
+<div class="table-wrap"><table class="field-table"><tr><th>Flaga / czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>-repo path</code></td><td>Absolute path of the hot repository.</td></tr>
+<tr><td><code>-archive directory</code></td><td>Archive directory on the same filesystem as the repository, so the swap is a rename.</td></tr>
+<tr><td><code>-size threshold</code></td><td>Rotate when packed size reaches this. Default 25GiB .</td></tr>
+<tr><td><code>-age-days n</code></td><td>Rotate when revision 1 is older than n days. Default 365.</td></tr>
+<tr><td><code>-dry-run</code></td><td>Print the decision without rotating.</td></tr>
+<tr><td><code>-force</code></td><td>Rotate regardless of triggers.</td></tr>
+<tr><td><code>-break-locks</code></td><td>Proceed despite active locks. This destroys live edit passports.</td></tr>
+<tr><td><code>-dump-depth n</code></td><td>Also archive a gzip dump of the last n revisions before HEAD. Zero, the default, writes no extra dump. The frozen FSFS archive is canonical.</td></tr>
+</table></div>
+<h3>Przykłady</h3>
+<pre><code>$ filees-rotate -repo /STORAGE01/filees-repos/UUID \
+    -archive /STORAGE01/filees-archive -dry-run</code></pre>
+</article>
+<article class="cli-tool" id="filees-public-authority">
+<span class="cli-kind">Usługa — startuje rc.d, to nie jest jednorazowy wpis z klawiatury</span>
+<h2>filees-public-authority(8)</h2>
+<p class="cli-nd">autorytet udziałów publicznych i kody odbiorców</p>
+<h3>Rola</h3>
+<p>filees-public-authority is the authoritative side of Public Shares. It listens on a Unix socket or loopback TCP. It never terminates TLS. It fetches leaves with svnlook and pushes them to filees-links(8) .</p>
+<p>It supervises filees-mail(8) public-loop as a required child. The child holds the SMTP secret. filees-public-authority does not. On SIGTERM or SIGINT it closes the HTTP server, terminates the child and waits, then exits, so an rcctl(8) restart cannot leave an orphan poller.</p>
+<p>Recipient OTP epochs, attempt counters and invitation hashes live under the Public Shares state root. Revoke and delete cut access immediately and drop pending mail. They do not yet garbage-collect inactive epoch files; those files contain no mailbox and no plaintext code.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-public-authority [-config path]</code></pre>
+<h3>Flagi i czasowniki</h3>
+<div class="table-wrap"><table class="field-table"><tr><th>Flaga / czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>[-config path]</code></td><td>Ze SYNOPSIS.</td></tr>
+</table></div>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># typically /etc/rc.d/filees_public_authority
+filees-public-authority --config /etc/filees/server.json</code></pre>
+</article>
+<article class="cli-tool" id="filees-links">
+<span class="cli-kind">Usługa — startuje rc.d, to nie jest jednorazowy wpis z klawiatury</span>
+<h2>filees-links(8)</h2>
+<p class="cli-nd">publiczna powierzchnia FastCGI udziałów, bez poświadczeń</p>
+<h3>Rola</h3>
+<p>filees-links serves the credential-free public HTML and file/ZIP downloads. It reads filees-public-links(5) , not filees.conf(5) . It owns only a temporary cache. It asks filees-public-authority(8) for each leaf.</p>
+<p>The process uses no JavaScript, sets no cookies, and sends Cache-Control: no-store plus a hashed Content-Security-Policy. Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the requested path.</p>
+<p>Listing iterates the channel's declared object map. It does not walk the repository tree. See the Public Shares chapter of the HTML manual.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-links [-config path]</code></pre>
+<h3>Flagi i czasowniki</h3>
+<div class="table-wrap"><table class="field-table"><tr><th>Flaga / czasownik</th><th>Znaczenie</th></tr>
+<tr><td><code>[-config path]</code></td><td>Ze SYNOPSIS.</td></tr>
+</table></div>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># typically /etc/rc.d/filees_links
+filees-links --config /etc/filees/public-links.json</code></pre>
+</article>
+<article class="cli-tool" id="filees-mobile-v1">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-mobile-v1(8)</h2>
+<p class="cli-nd">wejście protokołu mobilnego wyłącznie dołączającego</p>
+<h3>Rola</h3>
+<p>filees-mobile-v1 is the set-id entry for _filees-mobile . The installed image is _filees-state : _filees-access mode 4550, the same class as filees-client-entry(8) .</p>
+<p>The mobile client is paired from an already activated desktop. It inherits that desktop's repository list once. The protocol is append-only. The mobile projection does not receive editing_policy .</p>
+<p>sshd(8) uses the shared authorized_keys file. The per-key command= line selects this image. There is no ForceCommand on the _filees-mobile match block.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-mobile-v1</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># authorized_keys command= for _filees-mobile
+filees-mobile-v1</code></pre>
+</article>
+<article class="cli-tool" id="filees-recovery-entry">
+<span class="cli-kind">Wymuszone polecenie — odpala je sshd; flag nie wpisujesz</span>
+<h2>filees-recovery-entry(8)</h2>
+<p class="cli-nd">wydawanie archiwów po usunięciu strefy, jedna operacja</p>
+<h3>Rola</h3>
+<p>filees-recovery-entry is the set-id session entry for _filees-recovery . A second image of the same binary is installed as /usr/local/libexec/filees/filees-recovery-authorize owner root , group wheel , mode 0555 because sshd(8) requires every AuthorizedKeysCommand component to be root-owned. Key lookup and session service are therefore distinct executables.</p>
+<p>The client presents a per-operation Ed25519 recovery key from the .fkr kit written during realm removal. The authorise helper emits a restricted key line bound to that one operation ID and refuses it after download_until . The session protocol is exactly two verbs:</p>
+<pre><code>list &lt;operation_id&gt;
+get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
+<p>The entry is read-only stdio rpath and never sees a private key. The key grants no SVN access, no shell and no other operation.</p>
+<h3>Wywołanie</h3>
+<pre><code>filees-recovery-entry</code></pre>
+<h3>Flagi i czasowniki</h3>
+<p>Brak flag — proces nie przyjmuje argumentów operatora.</p>
+<h3>Przykłady</h3>
+<p>Brak przykładu w mandoc; poniżej uczciwe wywołanie z opisu.</p>
+<pre><code># session verbs after the .fkr key is accepted
+list &lt;operation_id&gt;
+get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
+</article>
 <h2 id="man-style">Styl</h2>
-<p>Źródła leżą w <code>docs/man/man5</code>, <code>docs/man/man7</code> i <code>docs/man/man8</code>. Używają makr mdoc (<code>.Dd</code>, <code>.Dt</code>, <code>.Nm</code>, <code>.Nd</code>, <code>.Sh</code>, <code>.Xr</code>). Kanoniczny jest angielski, zgodnie z tym podręcznikiem HTML i tekstami diagnostycznymi binarek. Sekcja 8 jest używana dla każdego polecenia serwera, w tym dyspozytorów wymuszonych poleceń, bo żadne nie jest ogólnym narzędziem użytkownika.</p>
+<p>Źródła leżą w <code>docs/man/man5</code>, <code>docs/man/man7</code> i <code>docs/man/man8</code>. Makra mdoc. Kanoniczny jest angielski. Sekcja 8 dla każdego polecenia serwera.</p>
 <pre><code>mandoc -T lint docs/man/man8/filees-admin.8
 man -l docs/man/man7/filees.7</code></pre>
 <h2 id="man-install">Instalacja</h2>
-<p><code>packaging/build-server.sh</code> kopiuje strony do bundla jako <code>share/man/manN/</code>. <code>install-server.sh</code> instaluje je pod <code>$PREFIX/man</code> (domyślnie <code>/usr/local/man</code>). Nie są obecnie ładunkiem FILEES-BIN; podpisane <code>filees-install</code> nadal zarządza wyłącznie 16 binarkami. Po bootstrapie:</p>
+<p><code>packaging/build-server.sh</code> kopiuje strony do bundla jako <code>share/man/manN/</code>. <code>install-server.sh</code> instaluje je pod <code>$PREFIX/man</code> (domyślnie <code>/usr/local/man</code>).</p>
 <pre><code>man filees
 man 5 filees.conf
 man 8 filees-admin</code></pre>
-<h2 id="man-list">Katalog</h2>
-<ul class="man-index">
-<li><code>filees(7)</code> — przegląd serwera, konta, układ</li>
-<li><code>filees.conf(5)</code> — <code>/etc/filees/server.json</code></li>
-<li><code>filees-public-links(5)</code> — <code>/etc/filees/public-links.json</code></li>
-<li><code>filees-admin(8)</code> — ticket, odwołanie, zamknięcie wymazania</li>
-<li><code>filees-install(8)</code> — podpisana aktualizacja z FILEES-BIN</li>
-<li><code>filees-operation(8)</code> — odtwarzanie claimów i wygaszanie</li>
-<li><code>filees-mail(8)</code> — jednorazowy SMTP i public-loop</li>
-<li><code>filees-onboard(8)</code> — zużycie zaproszenia</li>
-<li><code>filees-bootstrap-entry(8)</code> — publiczne wymuszone polecenie</li>
-<li><code>filees-entry(8)</code> — wymuszone polecenie tunelu OTP</li>
-<li><code>filees-client-entry(8)</code> — dyspozytor control i svnserve</li>
-<li><code>filees-worker(8)</code> — jedna uwierzytelniona akcja</li>
-<li><code>filees-service-wc-corrector(8)</code> — naprawa własności service-WC</li>
-<li><code>filees-ssh-auth(8)</code> — styl OTP BSD Auth</li>
-<li><code>filees-rotate(8)</code> — jawna zmiana generacji FSFS</li>
-<li><code>filees-public-authority(8)</code> — backchannel udziałów publicznych</li>
-<li><code>filees-links(8)</code> — publiczna powierzchnia FastCGI</li>
-<li><code>filees-mobile-v1(8)</code> — mobilne wejście wyłącznie dołączające</li>
-<li><code>filees-recovery-entry(8)</code> — pobieranie archiwum po usunięciu strefy</li>
-</ul>
-<nav class="page-nav">
-<a href="security.html">← 6. Bezpieczeństwo</a>
-<span></span>
-</nav>
-</div>
-</div>
-<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-14 · źródło r494</span></footer>
-</main>
-</body>
-</html>
+
+<nav class="page-nav"><a href="security.html">← Bezpieczeństwo</a><span></span></nav>
+</div></div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>Wydanie polskie · wyciąg z docs/man · 2026-08-15</span></footer>
+</main></body></html>

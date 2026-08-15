@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>FileES Manual — Architecture, Operations and Security</title>
+<title>FileES Manual — User and Tech</title>
 <link rel="alternate" hreflang="pl" href="../pl/index.html"/>
 <link rel="alternate" hreflang="en" href="index.html"/>
 <link rel="stylesheet" href="../css/manual.css"/>
@@ -28,18 +28,24 @@
 </header>
 <nav class="site-nav" aria-label="Manual pages">
 <a href="index.html" class="is-current">Overview</a>
-<a href="architecture.html">1. Architecture</a>
-<a href="user-guide.html">2. User guide</a>
-<a href="install.html">3. Server install</a>
-<a href="administration.html">4. Administration</a>
-<a href="public-shares.html">5. Public shares</a>
-<a href="security.html">6. Security</a>
+<span class="nav-group" aria-label="User">
+<span class="nav-pillar">User</span>
+<a href="user-guide.html">Desktop</a>
+<a href="public-shares.html">Shares</a>
+<a href="administration.html">Administration</a>
+</span>
+<span class="nav-group" aria-label="Tech">
+<span class="nav-pillar">Tech</span>
+<a href="architecture.html">Architecture</a>
+<a href="install.html">Install</a>
+<a href="security.html">Security</a>
 <a href="man-pages.html">Man pages</a>
+</span>
 </nav>
 <section class="hero">
-<p class="eyebrow">FileES / canonical system manual</p>
-<h1>Architecture, operation and recovery</h1>
-<p class="hero-copy">A file-centric synchronisation system built around explicit ownership, durable artifacts, bounded publication and recoverable failure. This edition is a multi-page HTML manual. Server operators also have OpenBSD <code>mandoc</code> pages under <code>docs/man/</code>.</p>
+<p class="eyebrow">FileES / public manual</p>
+<h1>Two books, one origin</h1>
+<p class="hero-copy">FileES keeps folders in step and lets you hand a packet to someone who will never install the client. This HTML set is the public manual. It is two pillars, not one mixed novel: <strong>User</strong> is how to live with it, <strong>Tech</strong> is how it is built. An administrator is a user. OpenBSD <code>mandoc</code> stays with Tech.</p>
 <div class="meta-strip">
 <span><strong>Version</strong> 0.1.0</span>
 <span><strong>Date</strong> 2026-08-14</span>
@@ -62,20 +68,50 @@
 <h2>Contents</h2>
 </div>
 <ol>
-<li><a href="architecture.html">1. Mechanics and Architecture</a></li>
-<li><a href="user-guide.html">2. User Guide</a></li>
-<li><a href="install.html">3. Server Installation</a></li>
-<li><a href="administration.html">4. Administration</a></li>
-<li><a href="public-shares.html">5. Public Shares</a></li>
-<li><a href="security.html">6. Security Appendix</a></li>
-<li><a href="man-pages.html">OpenBSD manual pages</a></li>
-<li><a href="#publish">Publishing on manual.filees.space</a></li>
+<li><a href="#user">User — howto and why</a></li>
+<li><a href="#tech">Tech — mechanics</a></li>
+<li><a href="user-guide.html">Desktop howto</a></li>
+<li><a href="administration.html">Administration howto</a></li>
+<li><a href="public-shares.html">Public shares, as a person</a></li>
+<li><a href="architecture.html">Architecture, tickets, sandbox</a></li>
+<li><a href="install.html">Server install and deploy</a></li>
+<li><a href="security.html">Security appendix</a></li>
+<li><a href="man-pages.html">OpenBSD man pages</a></li>
+<li><a href="#publish">Publishing this HTML set</a></li>
 </ol>
 </nav>
 <div class="manual-content">
 <h1>How to read this manual</h1>
-<p>The previous single-file <code>manual-filees.html</code> is now a compatibility stub. The living document is this directory. Each page keeps the <code>filees:space</code> visual system and has no network dependencies.</p>
-<p>FileES is a work-in-progress. On-disk formats, protocols and schemas still change. Do not treat a maturity badge as a product release.</p>
+<p>This is not a closed thread. The host already serves the pages; the <em>books</em> are being split. Old chapter URLs stay put so links and the static allowlist do not move.</p>
+<div class="lang-choice">
+<a class="lang-card" href="#user">
+<span class="lang-kicker">User</span>
+<strong>Instruction and howto</strong>
+<p>What is cooking and why. Desktop, shares, inviting people, recovery. An administrator is a user.</p>
+</a>
+<a class="lang-card" href="#tech">
+<span class="lang-kicker">Tech</span>
+<strong>The meat</strong>
+<p>Protocols, ticket relay, pledge/unveil, requirements, mandoc, how this origin is published.</p>
+</a>
+</div>
+<p>The previous single-file <code>manual-filees.html</code> is a stub. Each page keeps the <code>filees:space</code> visual system and has no network dependencies. FileES is a work-in-progress. A maturity badge is not a product release.</p>
+<h2 id="user">User</h2>
+<p>Start here if you sit at a desk or run a realm. The tone is: what to click, what happens, why FileES bothers. Wire names stay English; the desktop speaks everyday Polish (<em>strefa</em> is a realm).</p>
+<ul>
+<li><a href="user-guide.html">Desktop howto</a> — install the client, first folder, Settings, locks, journal.</li>
+<li><a href="public-shares.html">Public shares</a> — hand a packet to someone who will never install FileES.</li>
+<li><a href="administration.html">Administration</a> — invite, revoke, recover, rotate. Still a user, with more keys.</li>
+</ul>
+<h2 id="tech">Tech</h2>
+<p>Start here if you implement, audit or deploy. The tone is contracts, rejected alternatives and what must stay true.</p>
+<ul>
+<li><a href="architecture.html">Architecture</a> — topology, ticket relay, OTP, SSH hop, sandbox.</li>
+<li><a href="install.html">Server install</a> — <code>install-server.sh</code>, sshd, <code>filees-install</code>.</li>
+<li><a href="security.html">Security appendix</a> — invariants, transport, GUI boundary.</li>
+<li><a href="man-pages.html">Man pages</a> — what to type on OpenBSD; not a second product story.</li>
+<li><a href="#publish">Publishing this set</a> — <code>^/manual</code> is the document root; <code>svn up</code> is the publish step.</li>
+</ul>
 <h2>What is current as of 2026-08-14</h2>
 <div class="table-wrap"><table>
 <tr><th>Surface</th><th>State</th></tr>
@@ -89,13 +125,12 @@
 <tr><td>Windows MSI / service packaging</td><td><span class="status status-implemented">Implemented</span> GUI MSI only; daemon is a separate binary</td></tr>
 <tr><td>Upload Channel</td><td><span class="status status-designed">Designed</span> next full product vertical</td></tr>
 </table></div>
-<h2>Operator entry points</h2>
-<p>A desktop user starts at the <a href="user-guide.html">user guide</a>. An OpenBSD operator starts at <a href="install.html">server installation</a> and then at the <a href="man-pages.html">mandoc pages</a> that ship with the server bundle:</p>
+<p>On the server host the Tech pages pair with:</p>
 <pre><code>man filees
 man filees.conf
 man filees-admin
 man filees-install</code></pre>
-<p>Those pages follow the same contract as the rest of the FileES server: filesystem first, no resident FileES daemon, system <code>sshd</code> as the only privileged endpoint.</p>
+<p>Filesystem first, no resident FileES daemon, system <code>sshd</code> as the only privileged endpoint.</p>
 <h2 id="publish">Publishing this set on <code>manual.filees.space</code></h2>
 <p>Public Shares and the HTML manual share one HTTPS origin. <code>httpd</code> does not know realms or slugs. It only owns a small static allowlist; everything else is FastCGI. A chapter file left next to <code>index.html</code> as <code>/architecture.html</code> would therefore be treated as a virtual FileES path and return the branded 404.</p>
 <p>This directory <strong>is</strong> the document-root image. It lives in Subversion as <code>^/manual</code>. On the host, <code>/var/www/htdocs</code> is a working copy of that subtree. <code>svn update</code> is the publish step. Do not add a new <code>location</code> and do not reload <code>httpd</code>.</p>
@@ -198,7 +233,7 @@ doas svn update /var/www/htdocs
 # No httpd -n / rcctl reload. /.svn is not on the static allowlist.</code></pre>
 <nav class="page-nav">
 <span></span>
-<a href="architecture.html">1. Architecture →</a>
+<a href="user-guide.html">User: Desktop howto →</a>
 </nav>
 </div>
 </div>

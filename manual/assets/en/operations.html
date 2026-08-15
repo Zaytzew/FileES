@@ -615,7 +615,7 @@ doas svn update /var/www/htdocs</code></pre>
 <li>The server-visible SVN lock and its token are authoritative between clients. A competing client receives the holder alias and expiry; release and takeover re-read and fence the token so a stale UI row cannot release a different lock.</li>
 </ul>
 <p>Changing the policy is a migration, not a local preference. Enabling it applies and commits <code>svn:needs-lock</code> to existing regular versioned files. Disabling it removes that property and releases passports owned by the caller. Paths currently held by another owner are left untouched and retried later rather than stolen. The mobile append-only projection intentionally does not receive <code>editing_policy</code>.</p>
-<div class="note"><strong>Scope of autolock (V1):</strong> a repository's owner realm is whichever realm created it (<code>OwnerRealmID</code>) — the same realm identity described in §5.5. Cross-realm repository sharing is implemented (§5.5): an owner can grant another realm <code>r</code> or <code>rw</code> access to a repository. Autolock itself remains strictly scoped to the owner realm (<code>pkg/commit</code> only runs the silent acquire/relock path when <code>RealmID == OwnerRealmID</code>); a realm holding only a granted <code>rw</code> share uses the manual "Wypożycz do edycji" path (§2.6) like any other non-owner user. Generalizing autolock priority to per-path ownership for repositories writable by multiple realms remains a separate, not-yet-implemented extension (<code>concepts/AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md</code>).</div>
+<div class="note"><strong>Scope of autolock (V1):</strong> a repository's owner realm is whichever realm created it (<code>OwnerRealmID</code>) — the same realm identity described in the <a href="security.html#ch5-identity">grant model</a>. Cross-realm repository sharing is implemented there too: an owner can grant another realm <code>r</code> or <code>rw</code> access to a repository. Autolock itself remains strictly scoped to the owner realm (<code>pkg/commit</code> only runs the silent acquire/relock path when <code>RealmID == OwnerRealmID</code>); a realm holding only a granted <code>rw</code> share uses the manual "Wypożycz do edycji" path (§2.6) like any other non-owner user. Generalizing autolock priority to per-path ownership for repositories writable by multiple realms remains a separate, not-yet-implemented extension (<code>concepts/AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md</code>).</div>
 <p>Passport timing parameters:</p>
 <div class="table-wrap"><table>
 <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
@@ -653,7 +653,7 @@ doas svn update /var/www/htdocs</code></pre>
 <nav class="page-nav"><a href="install.html">← Install</a><a href="security.html">Security →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r522</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r523</span></footer>
 </main>
 </body>
 </html>

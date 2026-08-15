@@ -602,12 +602,12 @@
 └── clients/
     └── &lt;client_id&gt;/
         └── view.json</code></pre>
-<p>The activation manager and authenticated repository worker are the bounded writers in this vertical. Each active client has read-only SVN access to its own <code>/clients/&lt;client_id&gt;/</code> subtree and no visibility into <code>admin/</code> or other clients. One SVN commit publishes the client record, realm if new, projection and audit event atomically. A client joining an existing realm inherits that realm's immutable alias in its first view. Repository ownership (<code>admin/repositories/</code>) and canonical realm-to-repository grants (<code>admin/grants/</code>, see §5.5) are implemented; each grant/revoke and visibility change regenerates the affected clients' <code>view.json</code> and server-side authz in the same worker operation. Grant rebuild also reconciles the canonical realm alias, and an idempotent matching alias claim repairs older views that omitted it. A broader admin console beyond <code>filees-admin</code> (§4.1) remains a separate, later concept (signed-ticket V3, <code>VERTICALS.md</code> priority 8).</p>
+<p>The activation manager and authenticated repository worker are the bounded writers in this vertical. Each active client has read-only SVN access to its own <code>/clients/&lt;client_id&gt;/</code> subtree and no visibility into <code>admin/</code> or other clients. One SVN commit publishes the client record, realm if new, projection and audit event atomically. A client joining an existing realm inherits that realm's immutable alias in its first view. Repository ownership (<code>admin/repositories/</code>) and canonical realm-to-repository grants (<code>admin/grants/</code>, see <a href="security.html#ch5-identity">identity and grant model</a>) are implemented; each grant/revoke and visibility change regenerates the affected clients' <code>view.json</code> and server-side authz in the same worker operation. Grant rebuild also reconciles the canonical realm alias, and an idempotent matching alias claim repairs older views that omitted it. A broader admin console beyond <code>filees-admin</code> (§4.1) remains a separate, later concept (signed-ticket V3, <code>VERTICALS.md</code> priority 8).</p>
 </div>
 <nav class="page-nav"><a href="administration.html">← User: Administration</a><a href="install.html">Install →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-14 · source r494</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r523</span></footer>
 </main>
 </body>
 </html>

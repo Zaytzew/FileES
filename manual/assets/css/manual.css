@@ -246,9 +246,20 @@ footer.manual-footer { display: flex; justify-content: space-between; gap: 24px;
 }
 /* multi-page additions */
 .site-nav {
-  display: flex; flex-wrap: wrap; gap: 8px 18px;
-  padding: 14px 28px; border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 10px 28px;
+  align-items: center;
+  padding: 12px 28px; border-bottom: 1px solid var(--line);
   background: #FBFCFD; font: 12px/1.5 var(--mono);
+}
+.site-nav .nav-group {
+  display: flex; flex-wrap: wrap; gap: 8px 14px;
+  align-items: center;
+}
+.site-nav .nav-pillar {
+  color: var(--muted);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-weight: 600;
 }
 .site-nav a { text-decoration: none; color: var(--navy); }
 .site-nav a.is-current { color: var(--orange); font-weight: 600; }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Podręcznik FileES — architektura, eksploatacja i odtwarzanie</title>
+<title>Podręcznik FileES — User i Tech</title>
 <link rel="alternate" hreflang="en" href="../en/index.html"/>
 <link rel="alternate" hreflang="pl" href="index.html"/>
 <link rel="stylesheet" href="../css/manual.css"/>
@@ -28,18 +28,24 @@
 </header>
 <nav class="site-nav" aria-label="Rozdziały podręcznika">
 <a href="index.html" class="is-current">Przegląd</a>
-<a href="architecture.html">1. Architektura</a>
-<a href="user-guide.html">2. Przewodnik</a>
-<a href="install.html">3. Instalacja</a>
-<a href="administration.html">4. Administracja</a>
-<a href="public-shares.html">5. Udziały publiczne</a>
-<a href="security.html">6. Bezpieczeństwo</a>
-<a href="man-pages.html">Strony man</a>
+<span class="nav-group" aria-label="User">
+<span class="nav-pillar">User</span>
+<a href="user-guide.html">Pulpit</a>
+<a href="public-shares.html">Udziały</a>
+<a href="administration.html">Administracja</a>
+</span>
+<span class="nav-group" aria-label="Tech">
+<span class="nav-pillar">Tech</span>
+<a href="architecture.html">Architektura</a>
+<a href="install.html">Instalacja</a>
+<a href="security.html">Bezpieczeństwo</a>
+<a href="man-pages.html">Man</a>
+</span>
 </nav>
 <section class="hero">
-<p class="eyebrow">FileES / kanoniczny podręcznik systemu</p>
-<h1>Architektura, eksploatacja i odtwarzanie</h1>
-<p class="hero-copy">System synchronizacji katalogów oparty na jawnym właścicielstwie, trwałych artefaktach, ograniczonym wydawaniu i odtwarzalnej awarii. To wielostronicowy podręcznik HTML. Operatorzy serwera mają też strony OpenBSD <code>mandoc</code> w <code>docs/man/</code>.</p>
+<p class="eyebrow">FileES / publiczny podręcznik</p>
+<h1>Dwie książki, jeden origin</h1>
+<p class="hero-copy">FileES trzyma katalogi w zgodzie i pozwala oddać paczkę komuś, kto nigdy nie zainstaluje klienta. Ten zestaw HTML jest publicznym podręcznikiem. To dwa piony, nie jedna zmieszana powieść: <strong>User</strong> to jak z tym żyć, <strong>Tech</strong> to jak to jest zbudowane. Administrator też jest użytkownikiem. OpenBSD <code>mandoc</code> zostaje przy Tech.</p>
 <div class="meta-strip">
 <span><strong>Wersja</strong> 0.1.0</span>
 <span><strong>Data</strong> 2026-08-14</span>
@@ -62,20 +68,50 @@
 <h2>Spis</h2>
 </div>
 <ol>
-<li><a href="architecture.html">1. Mechanika i architektura</a></li>
-<li><a href="user-guide.html">2. Przewodnik użytkownika</a></li>
-<li><a href="install.html">3. Instalacja serwera</a></li>
-<li><a href="administration.html">4. Administracja</a></li>
-<li><a href="public-shares.html">5. Udziały publiczne</a></li>
-<li><a href="security.html">6. Dodatek bezpieczeństwa</a></li>
-<li><a href="man-pages.html">Strony mandoc OpenBSD</a></li>
-<li><a href="#publish">Publikacja na manual.filees.space</a></li>
+<li><a href="#user">User — howto i po co</a></li>
+<li><a href="#tech">Tech — mechanika</a></li>
+<li><a href="user-guide.html">Howto pulpitu</a></li>
+<li><a href="administration.html">Howto administracji</a></li>
+<li><a href="public-shares.html">Udziały publiczne, od strony człowieka</a></li>
+<li><a href="architecture.html">Architektura, tickety, sandbox</a></li>
+<li><a href="install.html">Instalacja i wdrożenie serwera</a></li>
+<li><a href="security.html">Dodatek bezpieczeństwa</a></li>
+<li><a href="man-pages.html">Strony man OpenBSD</a></li>
+<li><a href="#publish">Publikacja tego zestawu HTML</a></li>
 </ol>
 </nav>
 <div class="manual-content">
 <h1>Jak czytać ten podręcznik</h1>
-<p>Dawny pojedynczy <code>manual-filees.html</code> jest już tylko stubem. Żywym dokumentem jest poddrzewo <code>^/manual</code>. Każda strona trzyma system wizualny <code>filees:space</code> i nie ma zależności sieciowych.</p>
-<p>FileES jest wersją roboczą. Formaty na dysku, protokoły i schematy nadal się zmieniają. Znacznik dojrzałości nie jest wydaniem produktu.</p>
+<p>To nie jest zamknięty wątek. Host już serwuje strony; <em>książki</em> dopiero się rozdzielają. Stare adresy rozdziałów zostają, żeby nie ruszać linków ani allowlisty.</p>
+<div class="lang-choice">
+<a class="lang-card" href="#user">
+<span class="lang-kicker">User</span>
+<strong>Instrukcja i howto</strong>
+<p>Co się gotuje i po co. Pulpit, udziały, zapraszanie ludzi, odzyskiwanie. Administrator też jest użytkownikiem.</p>
+</a>
+<a class="lang-card" href="#tech">
+<span class="lang-kicker">Tech</span>
+<strong>Mięso</strong>
+<p>Protokoły, sztafeta ticketów, pledge/unveil, wymagania, mandoc, jak ten origin jest publikowany.</p>
+</a>
+</div>
+<p>Dawny pojedynczy <code>manual-filees.html</code> jest stubem. Każda strona trzyma system wizualny <code>filees:space</code> i nie ma zależności sieciowych. FileES jest wersją roboczą. Znacznik dojrzałości nie jest wydaniem produktu.</p>
+<h2 id="user">User</h2>
+<p>Tu zaczynasz, jeśli siedzisz przy biurku albo prowadzisz strefę. Ton: co kliknąć, co się dzieje, po co FileES w ogóle. Nazwy na drucie zostają po angielsku; pulpit mówi potocznie (<em>strefa</em> to realm).</p>
+<ul>
+<li><a href="user-guide.html">Howto pulpitu</a> — instalacja klienta, pierwszy folder, Ustawienia, blokady, Dziennik.</li>
+<li><a href="public-shares.html">Udziały publiczne</a> — oddaj paczkę komuś, kto nigdy nie zainstaluje FileES.</li>
+<li><a href="administration.html">Administracja</a> — zaproszenie, cofnięcie, odzyskanie, rotacja. Nadal użytkownik, tylko z większą wiązką kluczy.</li>
+</ul>
+<h2 id="tech">Tech</h2>
+<p>Tu zaczynasz, jeśli implementujesz, audytujesz albo wdrażasz. Ton: kontrakty, odrzucone alternatywy i to, co musi zostać prawdą.</p>
+<ul>
+<li><a href="architecture.html">Architektura</a> — topologia, sztafeta ticketów, OTP, skok SSH, sandbox.</li>
+<li><a href="install.html">Instalacja serwera</a> — <code>install-server.sh</code>, sshd, <code>filees-install</code>.</li>
+<li><a href="security.html">Dodatek bezpieczeństwa</a> — niezmienniki, transport, granica GUI.</li>
+<li><a href="man-pages.html">Strony man</a> — co wpisać na OpenBSD; to nie druga opowieść produktowa.</li>
+<li><a href="#publish">Publikacja tego zestawu</a> — <code>^/manual</code> jest document root; krokiem publikacji jest <code>svn up</code>.</li>
+</ul>
 <h2>Stan na 2026-08-14</h2>
 <div class="table-wrap"><table>
 <tr><th>Powierzchnia</th><th>Stan</th></tr>
@@ -89,13 +125,12 @@
 <tr><td>MSI / usługa Windows</td><td><span class="status status-implemented">Zaimplementowane</span> MSI tylko dla GUI; demon jest osobną binarką</td></tr>
 <tr><td>Kanał przyjęcia (Upload Channel)</td><td><span class="status status-designed">Zaprojektowane</span> następny pełny pion produktowy</td></tr>
 </table></div>
-<h2>Wejście operatora</h2>
-<p>Użytkownik pulpitu zaczyna od <a href="user-guide.html">przewodnika</a>. Operator OpenBSD — od <a href="install.html">instalacji serwera</a>, potem od <a href="man-pages.html">stron mandoc</a> w bundlu:</p>
+<p>Na hoście serwera strony Tech idą w parze z:</p>
 <pre><code>man filees
 man filees.conf
 man filees-admin
 man filees-install</code></pre>
-<p>Te strony trzymają ten sam kontrakt co reszta serwera: najpierw system plików, brak rezydentnego demona FileES, systemowy <code>sshd</code> jako jedyny uprzywilejowany punkt wejścia.</p>
+<p>Najpierw system plików, brak rezydentnego demona FileES, systemowy <code>sshd</code> jako jedyny uprzywilejowany punkt wejścia.</p>
 <h2 id="publish">Publikacja zestawu na <code>manual.filees.space</code></h2>
 <p>Udziały publiczne i ten podręcznik dzielą jeden origin HTTPS. <code>httpd</code> nie zna stref ani slugów. Ma tylko małą allowlistę statyczną; reszta idzie do FastCGI. Rozdział położony obok <code>index.html</code> jako <code>/architecture.html</code> byłby więc ścieżką wirtualną FileES i dostałby obrandowane 404.</p>
 <p>Katalog <code>^/manual</code> <strong>jest</strong> obrazem document root. Na hoście <code>/var/www/htdocs</code> to kopia robocza tego poddrzewa. Krokiem publikacji jest <code>svn update</code>. Nie dodawaj nowego <code>location</code> i nie przeładowuj <code>httpd</code>.</p>
@@ -190,7 +225,7 @@ doas svn update /var/www/htdocs
 # Bez httpd -n / rcctl reload. /.svn nie jest na allowliście.</code></pre>
 <nav class="page-nav">
 <span></span>
-<a href="architecture.html">1. Architektura →</a>
+<a href="user-guide.html">User: howto pulpitu →</a>
 </nav>
 </div>
 </div>

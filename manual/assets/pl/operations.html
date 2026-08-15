@@ -310,7 +310,7 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 <h2 id="ops-ps-url">Kanoniczny URL i allowlista statyczna</h2>
 <p>Publiczny adres jest zawsze:</p>
 <pre><code>https://&lt;domena-serwera&gt;/&lt;alias-strefy&gt;/&lt;slug&gt;</code></pre>
-<p>Statyczne ścieżki document root to jawna allowlista: <code>/</code>, <code>/index.html</code>, <code>/favicon.ico</code>, <code>/robots.txt</code>, <code>/.well-known/acme-challenge/*</code> i <code>/assets/*</code>. Podręcznik HTML mieszka w tym ostatnim prefiksie (<code>/assets/en/…</code> i <code>/assets/pl/…</code>). Wszystko inne jest wirtualną lokalizacją FileES. Dodanie strefy nie może tworzyć katalogu ani przeładowywać <code>httpd</code>. Nowa strona podręcznika to tylko nowy plik pod <code>/assets/</code>. Zobacz <a href="index.html#publish">wykres publikacji</a>.</p>
+<p>Statyczne ścieżki document root to jawna allowlista: <code>/</code>, <code>/index.html</code>, <code>/favicon.ico</code>, <code>/robots.txt</code>, <code>/.well-known/acme-challenge/*</code> i <code>/assets/*</code>. Podręcznik HTML mieszka w tym ostatnim prefiksie (<code>/assets/en/…</code> i <code>/assets/pl/…</code>). Wszystko inne jest wirtualną lokalizacją FileES. Dodanie strefy nie może tworzyć katalogu ani przeładowywać <code>httpd</code>. Nowa strona podręcznika to tylko nowy plik pod <code>/assets/</code>. Zobacz <a href="#ops-htdocs">publikację tego zestawu HTML</a>.</p>
 <p>Nieznane, cofnięte i usunięte adresy dzielą jedno obrandowane HTTP 404, które nie odbija ścieżki, aliasu, slugu ani powodu. <code>robots.txt</code> to statyczne <code>Disallow: /</code>.</p>
 
 <h2 id="ops-ps-map">object_map a rewizja</h2>
@@ -507,7 +507,7 @@ doas svn update /var/www/htdocs</code></pre>
     ├── css/manual.css
     ├── en/*.html              ← User + Tech, w tym operations.html
     └── pl/*.html</code></pre>
-<p>Nie checkoutuj drzewa jako <code>/var/www/htdocs/manual</code> — wtedy <code>/manual/index.html</code> stałaby się wirtualną ścieżką FileES. Nie uruchamiaj <code>rcctl reload httpd</code>. Ignoruj <code>.well-known</code> w tej kopii roboczej, żeby ACME zostało lokalne. Pełny graf przestrzeni URL jest w <a href="index.html#publish">przeglądzie</a>; graf procesów jest w <a href="architecture.html#server-graph">§1 wykresie zależności serwera</a>.</p>
+<p>Nie checkoutuj drzewa jako <code>/var/www/htdocs/manual</code> — wtedy <code>/manual/index.html</code> stałaby się wirtualną ścieżką FileES. Nie uruchamiaj <code>rcctl reload httpd</code>. Ignoruj <code>.well-known</code> w tej kopii roboczej, żeby ACME zostało lokalne. Graf procesów jest w <a href="architecture.html#server-graph">wykresie zależności serwera</a>.</p>
 
 <h2 id="ops-config">Referencja <code>config.json</code> klienta</h2>
 <p>Demon nadal czyta <code>config.json</code>. Codzienne Ustawienia nie zastępują tego kontraktu. Howto User jest w <a href="user-guide.html#ch2-config">§2.2</a>.</p>

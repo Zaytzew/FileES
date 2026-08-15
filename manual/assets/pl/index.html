@@ -79,7 +79,6 @@
 <li><a href="operations.html">Eksploatacja i kontrakty</a></li>
 <li><a href="security.html">Dodatek bezpieczeństwa</a></li>
 <li><a href="man-pages.html">Strony man OpenBSD</a></li>
-<li><a href="#publish">Publikacja tego zestawu HTML</a></li>
 </ol>
 </nav>
 <div class="manual-content">
@@ -94,7 +93,7 @@
 <a class="lang-card" href="#tech">
 <span class="lang-kicker">Tech</span>
 <strong>Mięso</strong>
-<p>Protokoły, sztafeta ticketów, pledge/unveil, wymagania, mandoc, jak ten origin jest publikowany.</p>
+<p>Protokoły, sztafeta ticketów, pledge/unveil, wymagania, mandoc.</p>
 </a>
 </div>
 <p>Dawny pojedynczy <code>manual-filees.html</code> jest stubem. Każda strona trzyma system wizualny <code>filees:space</code> i nie ma zależności sieciowych. FileES jest wersją roboczą. Znacznik dojrzałości nie jest wydaniem produktu.</p>
@@ -113,7 +112,6 @@
 <li><a href="operations.html">Eksploatacja</a> — pliki ticketów, schematy poczty i audytu, protokół rotacji i usunięcia strefy, <code>object_map</code>, sshd i <code>server.json</code>.</li>
 <li><a href="security.html">Dodatek bezpieczeństwa</a> — niezmienniki, transport, granica GUI.</li>
 <li><a href="man-pages.html">Strony man / wyciąg CLI</a> — rola, wywołanie, flagi i przykłady każdego polecenia serwera.</li>
-<li><a href="#publish">Publikacja tego zestawu</a> — <code>^/manual</code> jest document root; krokiem publikacji jest <code>svn up</code>.</li>
 </ul>
 <h2>Stan na 2026-08-15</h2>
 <div class="table-wrap"><table>
@@ -134,98 +132,6 @@ man filees.conf
 man filees-admin
 man filees-install</code></pre>
 <p>Najpierw system plików, brak rezydentnego demona FileES, systemowy <code>sshd</code> jako jedyny uprzywilejowany punkt wejścia.</p>
-<h2 id="publish">Publikacja zestawu na <code>manual.filees.space</code></h2>
-<p>Udziały publiczne i ten podręcznik dzielą jeden origin HTTPS. <code>httpd</code> nie zna stref ani slugów. Ma tylko małą allowlistę statyczną; reszta idzie do FastCGI. Rozdział położony obok <code>index.html</code> jako <code>/architecture.html</code> byłby więc ścieżką wirtualną FileES i dostałby obrandowane 404.</p>
-<p>Katalog <code>^/manual</code> <strong>jest</strong> obrazem document root. Na hoście <code>/var/www/htdocs</code> to kopia robocza tego poddrzewa. Krokiem publikacji jest <code>svn update</code>. Nie dodawaj nowego <code>location</code> i nie przeładowuj <code>httpd</code>.</p>
-<div class="table-wrap"><table class="field-table">
-<tr><th>Źródło w <code>^/manual</code></th><th>URL na originie</th><th>Dlaczego statyczne</th></tr>
-<tr><td><code>index.html</code></td><td><code>/</code> i <code>/index.html</code></td><td>istniejąca allowlista (przełącznik języka)</td></tr>
-<tr><td><code>favicon.ico</code></td><td><code>/favicon.ico</code></td><td>istniejąca allowlista</td></tr>
-<tr><td><code>robots.txt</code></td><td><code>/robots.txt</code></td><td>istniejąca allowlista</td></tr>
-<tr><td><code>assets/en/*.html</code>, <code>assets/pl/*.html</code></td><td><code>/assets/pl/architecture.html</code> …</td><td><code>location "/assets/*"</code></td></tr>
-<tr><td><code>assets/css/manual.css</code></td><td><code>/assets/css/manual.css</code></td><td>ten sam prefiks</td></tr>
-</table></div>
-<figure class="system-figure">
-<figcaption><span class="figure-kicker">Wykres D</span>Allowlista statyczna kontra wirtualne ścieżki FileES</figcaption>
-<div class="diagram-scroll">
-<svg aria-label="Podział allowlisty HTTP i FastCGI FileES" class="diagram-d" role="img" viewbox="0 0 1180 540"><style>
-.svg-zone { fill:#FFFFFF; stroke:#D9DEE7; stroke-width:1.5; }
-.svg-node { fill:#FFFFFF; stroke:#0B1D3A; stroke-width:1.6; }
-.svg-node-authority { fill:#FFF4EA; stroke:#FF6A00; stroke-width:2; }
-.svg-node-derived { fill:#F1F5FA; stroke:#5C6F8D; stroke-width:1.5; }
-.svg-node-transient { fill:#FAFAFA; stroke:#8A94A6; stroke-width:1.5; stroke-dasharray:7 5; }
-.svg-text { fill:#0B1D3A; font-family:DejaVu Sans Mono,monospace; font-size:14px; font-weight:600; }
-.svg-small { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; }
-.svg-zone-label { fill:#667085; font-family:DejaVu Sans Mono,monospace; font-size:12px; font-weight:600; letter-spacing:1px; }
-.svg-arrow { stroke:#0B1D3A; stroke-width:2; fill:none; marker-end:url(#arrowDpl); }
-.svg-arrow-orange { stroke:#FF6A00; stroke-width:2.2; fill:none; marker-end:url(#arrowOrangeDpl); }
-.svg-arrow-dashed { stroke:#667085; stroke-width:1.7; fill:none; stroke-dasharray:7 5; marker-end:url(#arrowMutedDpl); }
-</style>
-<defs>
-<marker id="arrowDpl" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0B1D3A"></path></marker>
-<marker id="arrowOrangeDpl" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#FF6A00"></path></marker>
-<marker id="arrowMutedDpl" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"></path></marker>
-</defs>
-<rect class="svg-zone" height="500" rx="14" width="360" x="20" y="24"></rect>
-<text class="svg-zone-label" x="42" y="52">ORIGIN HTTPS</text>
-<rect class="svg-node" height="58" rx="8" width="300" x="50" y="80"></rect>
-<text class="svg-text" text-anchor="middle" x="200" y="105">Przeglądarka</text>
-<text class="svg-small" text-anchor="middle" x="200" y="124">manual.filees.space</text>
-<rect class="svg-node-derived" height="58" rx="8" width="300" x="50" y="180"></rect>
-<text class="svg-text" text-anchor="middle" x="200" y="205">relayd / TLS</text>
-<text class="svg-small" text-anchor="middle" x="200" y="224">FileES nie kończy TLS</text>
-<rect class="svg-node-authority" height="78" rx="8" width="300" x="50" y="280"></rect>
-<text class="svg-text" text-anchor="middle" x="200" y="310">OpenBSD httpd</text>
-<text class="svg-small" text-anchor="middle" x="200" y="330">chroot /var/www · bez wiedzy o strefach</text>
-<path class="svg-arrow" d="M200 138 V180"></path>
-<path class="svg-arrow" d="M200 238 V280"></path>
-<rect class="svg-zone" height="230" rx="14" width="370" x="410" y="24"></rect>
-<text class="svg-zone-label" x="432" y="52">ALLOWLISTA STATYCZNA</text>
-<rect class="svg-node-derived" height="48" rx="8" width="330" x="430" y="72"></rect>
-<text class="svg-text" text-anchor="middle" x="595" y="102">/  /index.html  /favicon.ico</text>
-<rect class="svg-node-derived" height="48" rx="8" width="330" x="430" y="136"></rect>
-<text class="svg-text" text-anchor="middle" x="595" y="166">/assets/*  (ten zestaw HTML)</text>
-<rect class="svg-node-derived" height="48" rx="8" width="330" x="430" y="200"></rect>
-<text class="svg-small" text-anchor="middle" x="595" y="230">/robots.txt  /.well-known/acme-challenge/*</text>
-<path class="svg-arrow" d="M350 310 H410 Q430 310 430 96"></path>
-<rect class="svg-zone" height="250" rx="14" width="370" x="790" y="24"></rect>
-<text class="svg-zone-label" x="812" y="52">WIRTUALNE ŚCIEŻKI FILEES</text>
-<rect class="svg-node-authority" height="58" rx="8" width="330" x="810" y="72"></rect>
-<text class="svg-text" text-anchor="middle" x="975" y="97">location /*</text>
-<text class="svg-small" text-anchor="middle" x="975" y="116">nigdy „not found”</text>
-<rect class="svg-node-transient" height="58" rx="8" width="330" x="810" y="154"></rect>
-<text class="svg-text" text-anchor="middle" x="975" y="179">filees-links FastCGI</text>
-<text class="svg-small" text-anchor="middle" x="975" y="198">_filees-links · tylko cache</text>
-<rect class="svg-node-authority" height="58" rx="8" width="330" x="810" y="236"></rect>
-<text class="svg-text" text-anchor="middle" x="975" y="261">public-authority</text>
-<text class="svg-small" text-anchor="middle" x="975" y="280">svnlook · OTP odbiorcy</text>
-<path class="svg-arrow-orange" d="M350 330 H790 Q810 330 810 101"></path>
-<path class="svg-arrow" d="M975 130 V154"></path>
-<path class="svg-arrow" d="M975 212 V236"></path>
-<rect class="svg-node" height="70" rx="8" width="370" x="410" y="300"></rect>
-<text class="svg-text" text-anchor="middle" x="595" y="328">htdocs = ^/manual</text>
-<text class="svg-small" text-anchor="middle" x="595" y="348">svn up · nie twórz katalogu strefy</text>
-<rect class="svg-node" height="70" rx="8" width="370" x="790" y="300"></rect>
-<text class="svg-text" text-anchor="middle" x="975" y="328">/&lt;alias&gt;/&lt;slug&gt;</text>
-<text class="svg-small" text-anchor="middle" x="975" y="348">wirtualne · bez katalogu w docroot</text>
-<path class="svg-arrow-dashed" d="M595 254 V300"></path>
-<path class="svg-arrow-dashed" d="M975 294 V300"></path>
-<text class="svg-small" x="50" y="410">To poddrzewo checkoutuj jako document root. /assets/* jest już zarezerwowane.</text>
-<text class="svg-small" x="50" y="430">Rozdział pod /architecture.html ominie allowlistę i stanie się FastCGI 404.</text>
-<text class="svg-small" x="50" y="450">Nie checkoutuj do htdocs/manual: /manual/index.html to wirtualna ścieżka FileES.</text>
-<text class="svg-small" x="50" y="490">Dodanie strefy albo udziału nie może tworzyć katalogu ani przeładowywać httpd.</text>
-<text class="svg-small" x="50" y="510">Nowa strona podręcznika to svn commit ^/manual i svn up na hoście.</text>
-</svg>
-</div>
-<div class="figure-legend"><span class="authority">httpd / autorytet FileES</span><span class="derived">allowlista statyczna</span><span class="transient">publiczny proces bez poświadczeń</span></div>
-</figure>
-<pre><code># Pierwszy raz: document root staje się kopią roboczą ^/manual.
-doas mv /var/www/htdocs /var/www/htdocs.pre-manual-svn
-doas svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs
-doas svn propset svn:ignore '.well-known' /var/www/htdocs
-# Kolejne publikacje:
-doas svn update /var/www/htdocs
-# Bez httpd -n / rcctl reload. /.svn nie jest na allowliście.</code></pre>
 <nav class="page-nav">
 <span></span>
 <a href="user-guide.html">User: howto pulpitu →</a>

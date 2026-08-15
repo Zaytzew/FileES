@@ -16,7 +16,7 @@
 ### Linux
 - Pulpit z obsługą SNI (GNOME wymaga rozszerzenia **AppIndicator/KStatusNotifierItem**; KDE, XFCE, MATE działają bez dodatków)
 - `zenity` lub `kdialog` — do wyboru plików przy operacjach blokowania
-- `yad` — do okna „Zarządzaj serwerem…” i dialogów dostępu/widoczności strefy
+- `yad` — do okna „Ustawienia…” i dialogów dostępu/widoczności strefy
 - `xdg-open` — do otwierania katalogów
 - `notify-send` — opcjonalnie, do powiadomień systemowych; brak narzędzia nie zatrzymuje GUI
 
@@ -237,10 +237,11 @@ Administrator może wystawić zaproszenie do już istniejącej strefy. Po
 zaproszeniu i OTP klient dziedziczy jej tożsamość oraz prawa, lecz nie pobiera
 automatycznie wszystkich repozytoriów na dysk.
 
-1. Otwórz podmenu serwera i wybierz **Zarządzaj serwerem…**.
-2. Ustawienia pokazują wszystkie repozytoria strefy: podłączone i niepodłączone.
-3. Na Windows zaznacz jedno lub wiele niepodłączonych repozytoriów i wybierz
-   **Połącz**. Na Linux wybierz pojedynczy wiersz.
+1. Otwórz menu **FileES** i wybierz **Ustawienia…**.
+2. Wskaż serwer, potem działanie **Połącz z lokalnym folderem**.
+3. Dopiero wtedy widać listę udziałów, które da się podłączyć. Na Windows
+   można zaznaczyć kilka; na Linuxie każdy udział osobno albo zaznaczenie
+   listy, jeśli FileES je pokaże.
 4. Dla każdego repozytorium wskaż albo utwórz lokalny folder.
 5. Po akceptacji wiersz natychmiast pokazuje ścieżkę i `łączenie…`. Pierwszy
    checkout działa w tle; końcowy sukces albo błąd pojawi się w powiadomieniu.
@@ -253,7 +254,7 @@ stan `łączenie…`.
 
 ## Uprawnienia gości i udostępnienia publiczne
 
-W **Zarządzaj serwerem…** właściciel repozytorium ma dwie odrębne akcje:
+W **Ustawieniach** (najpierw serwer, potem działanie) właściciel repozytorium ma dwie odrębne akcje:
 
 - **Uprawnienia gości** pokazuje widoczne strefy oraz każdą ukrytą strefę,
   która nadal ma aktywny grant do tego repozytorium. Kolumna „Aktualne
@@ -390,7 +391,7 @@ Jeżeli poprawna kopia została przeniesiona:
 
 1. Repozytorium przejdzie do **Wymaga uwagi** z operacją
    `working_copy_missing`; FileES nie utworzy pustego zamiennika.
-2. Otwórz **Zarządzaj serwerem…** i wybierz **Wskaż kopię**.
+2. Otwórz **FileES → Ustawienia…**, wskaż serwer i wybierz **Wskaż przeniesioną kopię roboczą**.
 3. Wskaż istniejący root z `.svn`. FileES sprawdzi URL i tożsamość, a następnie
    trwale przepnie lokalną ścieżkę bez checkoutu.
 
@@ -472,7 +473,7 @@ which kdialog
 
 Zainstaluj brakujące narzędzie pakietem systemowym (`apt install zenity`, `dnf install zenity`, itp.).
 
-### Okno „Zarządzaj serwerem…” nie otwiera się (Linux)
+### Okno „Ustawienia…” nie otwiera się (Linux)
 
 To osobne okno (razem z „Widoczność…” i „Dostęp stref…”) wymaga `yad`, nie
 `zenity`. Sprawdź dostępność (`which yad`) i zainstaluj brakujące narzędzie

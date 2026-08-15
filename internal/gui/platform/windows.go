@@ -401,9 +401,7 @@ func (b *WindowsBackend) ShowInfo(ctx context.Context, request InfoRequest) erro
 	return nil
 }
 
-// ShowSettings uses the native information window until the interactive
-// WinForms settings table is introduced. The same complete overview remains
-// available on Windows without exposing lifecycle actions through the tray.
+// ShowSettings runs the same server → action → folder sequence as Linux.
 func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialogRequest) (SettingsDialogResult, error) {
 	command, err := b.runner.LookPath("powershell.exe")
 	if err != nil {
@@ -469,163 +467,23 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 	return result, nil
 }
 
-// settingsButtons is the single source of truth for the settings dialog's
-// action bar. Each entry ties a button to the action it emits and to the
-// hidden boolean column that decides whether it is enabled for the currently
-// selected row.
-//
-// Every button is gated, including deactivate/remove_realm, so that a
-// recovery row -- which has no server or folder behind it, only an operation
-// ID -- cannot dispatch a folder or server action. linux.go gets that for
-// free because it resolves recovery rows before it ever offers an action
-// list; the Windows dialog shows one permanent button bar instead, so the
-// same rule has to be expressed per row.
-var settingsButtons = []struct {
-	label, action, capability string
-}{
-	{"Wygląd udziałów", "realm_branding", "CanBranding"},
-	{"Limit czasu wysyłki", "session_timeout", "CanSessionTimeout"},
-	{"Widoczność", "realm_visibility", "CanVisibility"},
-	{"Uprawnienia gości", "manage_grants", "CanGrants"},
-	{"Zasady edycji", "editing_policy", "CanEditingPolicy"},
-	{"Udostępnienia publiczne", "public_shares", "CanPublicShares"},
-	{"Dodaj folder", "add", "CanAdd"},
-	{"Połącz", "connect", "CanConnect"},
-	{"Wskaż kopię", "locate", "CanLocate"},
-	{"Odłącz folder", "detach", "CanDetach"},
-	{"Odłącz trwale", "delete", "CanDelete"},
-	{"Odtwórz z archiwum", "load_dump", "CanLoadDump"},
-	{"Dezaktywuj klienta", "deactivate", "CanDeactivate"},
-	{"Usuń udział FileES", "remove_realm", "CanRemoveRealm"},
-	{"Pobierz archiwa", "download_recovery", "CanDownloadRecovery"},
-}
-
-// settingsRow carries one grid row plus one boolean per action button. The
-// Can* fields mirror the controller's own guards (actions.go) exactly, the
-// same way linux.go's settingsAction gates its list items -- offering an
-// action the controller will silently refuse is a real, reported "click it,
-// nothing happens" bug, not a cosmetic issue.
-type settingsRow struct {
-	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access, Editing                                                              string
-	CanBranding, CanVisibility, CanSessionTimeout, CanGrants, CanPublicShares, CanAdd, CanConnect, CanLocate, CanDetach, CanDelete, CanLoadDump bool
-	CanEditingPolicy                                                                                                                            bool
-	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                                                                                          bool
-}
-
 func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
-	rows := []settingsRow{}
-	for _, s := range request.Servers {
-		base := settingsRow{
-			ServerID: s.ID, Server: s.Name, Address: s.Address, Realm: s.Realm,
-			CanBranding: s.CanSetRealmBranding, CanVisibility: s.CanSetRealmVisibility, CanSessionTimeout: s.CanSetSessionTimeout, CanAdd: s.CanAddFolder,
-			CanDeactivate: true, CanRemoveRealm: true,
-		}
-		if len(s.Folders) == 0 {
-			placeholder := base
-			placeholder.Folder, placeholder.Path, placeholder.State, placeholder.Access, placeholder.Editing = "Brak folderów", "—", "—", "—", "—"
-			rows = append(rows, placeholder)
-			continue
-		}
-		for _, f := range s.Folders {
-			folder := base
-			folder.RepoID, folder.Folder, folder.Path, folder.State, folder.Access = f.ID, f.Name, f.LocalPath, f.State, f.Access
-			folder.Editing = f.Editing
-			folder.CanGrants, folder.CanPublicShares, folder.CanConnect, folder.CanLocate, folder.CanDetach, folder.CanDelete, folder.CanLoadDump = f.CanManageGrants, f.CanManagePublicShares, f.CanConnect, f.CanLocate, f.CanDetach, f.CanDelete, f.CanLoadDump
-			folder.CanEditingPolicy = f.CanSetEditingPolicy
-			rows = append(rows, folder)
-		}
-	}
-	for _, recovery := range request.Recoveries {
-		id := "@recovery-grace:" + recovery.OperationID
-		if recovery.CanDownload {
-			id = "@recovery-download:" + recovery.OperationID
-		}
-		rows = append(rows, settingsRow{ServerID: id, Server: recovery.ServerName, Address: "—", Realm: "—", Folder: recovery.Status, Path: recovery.KitPath, State: "recovery", Access: "—", CanDownloadRecovery: recovery.CanDownload})
-	}
-	payload, err := json.Marshal(struct {
-		Title, Text string
-		Rows        []settingsRow
-	}{request.Title, request.Text, rows})
+	wizard := BuildSettingsWizard(request)
+	payload, err := json.Marshal(wizard)
 	if err != nil {
 		return "", err
 	}
-
-	// Column names and the values pushed into each row are generated from one
-	// list so the two can never drift apart.
-	hidden := []string{"ServerID", "RepoID"}
-	for _, button := range settingsButtons {
-		hidden = append(hidden, button.capability)
-	}
-	columns := append(append([]string{}, hidden...), "Serwer", "Adres", "Strefa", "Repozytorium", "Ścieżka", "Stan", "Dostęp", "Edycja")
-	quotedColumns := make([]string, 0, len(columns))
-	for _, column := range columns {
-		quotedColumns = append(quotedColumns, psString(column))
-	}
-	values := make([]string, 0, len(columns))
-	for _, column := range columns {
-		values = append(values, "$r."+settingsRowField(column))
-	}
-	quotedHidden := make([]string, 0, len(hidden))
-	for _, column := range hidden {
-		quotedHidden = append(quotedHidden, psString(column))
-	}
-
 	encoded := base64.StdEncoding.EncodeToString(payload)
 	var sb strings.Builder
 	sb.WriteString(dpiAwarenessPrelude)
 	sb.WriteString("Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;")
-	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=1320;$f.Height=700;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=1270;$l.Height=34;$f.Controls.Add($l);")
-	sb.WriteString("$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=1270;$g.Height=470;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$true;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in @(" + strings.Join(quotedColumns, ",") + ")){[void]$t.Columns.Add($c)};foreach($r in $d.Rows){[void]$t.Rows.Add(" + strings.Join(values, ",") + ")};$script:answer='close';")
-	// The answer is "action|serverID|repoID". The separator is "|", not ":",
-	// because a recovery row's ServerID is itself "@recovery-download:<id>" --
-	// with ":" the reply split into four fields, the len()==3 guard rejected
-	// it and the archive-download button silently did nothing. ShowRealmGrants
-	// and ShowReservations already use "|" for the same reason; IDs never
-	// contain it (linux.go joins on "|" too).
-	// A refreshed multi-select grid can retain an already-attached row next to
-	// an unattached one. Connect acts on the connectable subset; otherwise the
-	// attached row disables the whole selection and the remaining repository
-	// appears to die silently after the first successful checkout.
-	sb.WriteString("function act($a){if($a-eq'connect'){$rows=@($g.SelectedRows|Where-Object{[string]$_.Cells['CanConnect'].Value-eq'True'}|Sort-Object Index);if($rows.Count-gt 0){$ids=@($rows|ForEach-Object{[string]$_.Cells['RepoID'].Value});$script:answer=$a+'|'+[string]$rows[0].Cells['ServerID'].Value+'|'+($ids-join ',');$f.Close()}}elseif($g.CurrentRow-ne$null){$script:answer=$a+'|'+[string]$g.CurrentRow.Cells['ServerID'].Value+'|'+[string]$g.CurrentRow.Cells['RepoID'].Value;$f.Close()}};")
-	sb.WriteString("$btns=@{};")
-	for index, button := range settingsButtons {
-		sb.WriteString("$b=New-Object System.Windows.Forms.Button;$b.Text=" + psString(button.label) + ";$b.Width=238;$b.Height=28;$b.Left=" + fmt.Sprint(12+(index%5)*250) + ";$b.Top=" + fmt.Sprint(540+(index/5)*36) + ";$b.Add_Click({act " + psString(button.action) + "});$btns[" + psString(button.capability) + "]=$b;$f.Controls.Add($b);")
-	}
-	sb.WriteString("function updateButtons{foreach($k in @($btns.Keys)){if($k-eq'CanConnect'){$rows=@($g.SelectedRows|Where-Object{[string]$_.Cells[$k].Value-eq'True'});$btns[$k].Enabled=$rows.Count-gt0}else{$btns[$k].Enabled=($g.CurrentRow-ne$null-and[string]$g.CurrentRow.Cells[$k].Value-eq'True')}}};")
-	// CurrentCellChanged, not SelectionChanged: DataGridView raises
-	// SelectionChanged while CurrentRow still points at the row being left, so
-	// gating off it lagged one row behind -- confirmed live, a row whose
-	// capability was False kept the previous row's enabled button.
-	// DataBindingComplete covers the initial state, because the columns do not
-	// exist until binding completes.
-	sb.WriteString("$g.Add_CurrentCellChanged({updateButtons});$g.Add_SelectionChanged({updateButtons});$g.Add_DataBindingComplete({foreach($n in @(" + strings.Join(quotedHidden, ",") + ")){if($g.Columns[$n] -ne $null){$g.Columns[$n].Visible=$false}};updateButtons});$g.DataSource=$t;$f.Controls.Add($g);updateButtons;")
-	sb.WriteString("$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Width=100;$c.Height=28;$c.Left=1180;$c.Top=620;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" + foregroundPrelude + "[void]$f.ShowDialog();$script:answer")
+	sb.WriteString("$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;$script:answer='close';")
+	// One reusable grid form. Sequence is server → action → folders, matching
+	// linux.go. Folder-scoped options never require a dummy share pick first.
+	sb.WriteString("function showGrid($title,$text,$width,$height,$cols,$add,$multi,$ok){$f=New-Object System.Windows.Forms.Form;$f.Text=$title;$f.Width=$width;$f.Height=$height;$f.StartPosition='CenterScreen';$l=New-Object System.Windows.Forms.Label;$l.Text=$text;$l.Left=12;$l.Top=12;$l.Width=($width-40);$l.Height=36;$f.Controls.Add($l);$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=52;$g.Width=($width-40);$g.Height=($height-140);$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$multi;$g.AutoSizeColumnsMode='Fill';$t=New-Object System.Data.DataTable;foreach($c in $cols){[void]$t.Columns.Add($c)};& $add $t;$g.DataSource=$t;if($g.Columns['ID']-ne$null){$g.Columns['ID'].Visible=$false};$f.Controls.Add($g);$b=New-Object System.Windows.Forms.Button;$b.Text=$ok;$b.Width=120;$b.Height=28;$b.Left=($width-260);$b.Top=($height-70);$b.DialogResult='OK';$f.AcceptButton=$b;$f.Controls.Add($b);$c=New-Object System.Windows.Forms.Button;$c.Text='Anuluj';$c.Width=100;$c.Height=28;$c.Left=($width-130);$c.Top=($height-70);$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" + foregroundPrelude + "if($f.ShowDialog()-ne'OK'-or $g.CurrentRow-eq$null){return $null};return @($g.SelectedRows|Sort-Object Index)};")
+	sb.WriteString("if(-not $d.Servers -or @($d.Servers).Count -eq 0){if($d.Recoveries){$rows=showGrid($d.Title,$d.Text,760,380,@('ID','Serwer','Stan','Ścieżka'),{param($t) foreach($r in $d.Recoveries){$id='@recovery-grace:'+$r.OperationID;if($r.CanDownload){$id='@recovery-download:'+$r.OperationID};[void]$t.Rows.Add($id,$r.ServerName,$r.Status,$r.KitPath)}},$false,'Pobierz');if($rows){$id=[string]$rows[0].Cells['ID'].Value;if($id.StartsWith('@recovery-download:')){$script:answer='download_recovery|'+$id+'|'}}}else{$script:answer='close'}}else{$servers=showGrid($d.Title,$(if($d.Text){$d.Text}else{'Wybierz serwer.'}),720,380,@('ID','Serwer','Adres','Strefa'),{param($t) foreach($s in $d.Servers){$n=$s.Name;if([string]::IsNullOrWhiteSpace($n)){$n=$s.ID};[void]$t.Rows.Add($s.ID,$n,$s.Address,$s.Realm)}},$false,'Dalej');if($servers){$sid=[string]$servers[0].Cells['ID'].Value;$server=$d.Servers|Where-Object{$_.ID-eq$sid}|Select-Object -First 1;if($server){$name=$server.Name;if([string]::IsNullOrWhiteSpace($name)){$name=$server.ID};$acts=showGrid(('Ustawienia FileES — '+$name),'Wybierz działanie.',640,440,@('ID','Działanie'),{param($t) foreach($a in $server.Actions){[void]$t.Rows.Add($a.WindowsID,$a.Label)}},$false,'Dalej');if($acts){$aid=[string]$acts[0].Cells['ID'].Value;$act=$server.Actions|Where-Object{$_.WindowsID-eq$aid}|Select-Object -First 1;if($act){if(-not $act.NeedsFolder){$script:answer=$aid+'|'+$sid+'|'}else{$multi=[bool]$act.Multi;$ok='Wykonaj';if($multi){$ok='Połącz wybrane'};$folders=showGrid('Ustawienia FileES','Wybierz folder dla tej akcji.',900,500,@('ID','Repozytorium','Ścieżka','Stan','Dostęp','Edycja'),{param($t) foreach($f in $act.Folders){[void]$t.Rows.Add($f.ID,$f.Name,$f.Path,$f.State,$f.Access,$f.Editing)}},$multi,$ok);if($folders){$ids=@($folders|ForEach-Object{[string]$_.Cells['ID'].Value});$script:answer=$aid+'|'+$sid+'|'+($ids-join ',')}}}}}}};")
+	sb.WriteString("$script:answer")
 	return sb.String(), nil
-}
-
-// settingsRowField maps a grid column name to the settingsRow JSON field that
-// feeds it. Only the display columns differ from their field name.
-func settingsRowField(column string) string {
-	switch column {
-	case "Serwer":
-		return "Server"
-	case "Adres":
-		return "Address"
-	case "Strefa":
-		return "Realm"
-	case "Repozytorium":
-		return "Folder"
-	case "Ścieżka":
-		return "Path"
-	case "Stan":
-		return "State"
-	case "Dostęp":
-		return "Access"
-	case "Edycja":
-		return "Editing"
-	default:
-		return column
-	}
 }
 
 func (b *WindowsBackend) ShowRealmGrants(ctx context.Context, request RealmGrantDialogRequest) (RealmGrantDialogResult, error) {

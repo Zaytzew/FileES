@@ -136,12 +136,13 @@ func TestLinuxShowJournalUsesCombinedTable(t *testing.T) {
 	}
 }
 
-func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
+func TestLinuxShowSettingsAsksForServerBeforeFolders(t *testing.T) {
 	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}}
 	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
-	request := SettingsDialogRequest{Title: "Ustawienia FileES", Text: "Serwery i foldery", Servers: []SettingsServer{{
-		Name: "Biuro", Address: "filees.example:2222", Realm: "acme", ClientID: "client-1",
-		Folders: []SettingsFolder{{Name: "Dokumenty", LocalPath: "/wc/docs", State: "aktywne", Access: "odczyt i zapis"}},
+	request := SettingsDialogRequest{Title: "Ustawienia FileES", Text: "Wybierz serwer, potem działanie.", Servers: []SettingsServer{{
+		ID: "office", Name: "Biuro", Address: "filees.example:2222", Realm: "acme", ClientID: "client-1",
+		CanSetSessionTimeout: true,
+		Folders:              []SettingsFolder{{ID: "docs", Name: "Dokumenty", LocalPath: "/wc/docs", State: "aktywne", Access: "odczyt i zapis"}},
 	}}}
 	if _, err := backend.ShowSettings(context.Background(), request); err != nil {
 		t.Fatal(err)
@@ -151,10 +152,13 @@ func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
 		t.Fatalf("settings calls = %#v", calls)
 	}
 	args := strings.Join(calls[0].args, "\n")
-	for _, wanted := range []string{"--list", "--column=Serwer", "--column=Repozytorium", "Biuro", "Dokumenty", "/wc/docs", "--ok-label=Wybierz"} {
+	for _, wanted := range []string{"--list", "--column=Serwer", "Biuro", "filees.example:2222", "--ok-label=Dalej"} {
 		if !strings.Contains(args, wanted) {
-			t.Errorf("settings args missing %q: %s", wanted, args)
+			t.Errorf("server picker missing %q: %s", wanted, args)
 		}
+	}
+	if strings.Contains(args, "Dokumenty") || strings.Contains(args, "/wc/docs") || strings.Contains(args, "--column=Repozytorium") {
+		t.Fatalf("first settings view still lists shares: %s", args)
 	}
 }
 
@@ -237,7 +241,7 @@ func TestLinuxSettingsOffersRealmGrantsOnlyForEligibleFolder(t *testing.T) {
 			runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(_ context.Context, _ string, args []string) ([]byte, error) {
 				calls++
 				if calls == 1 {
-					return []byte("office|repo-1\n"), nil
+					return []byte("office|\n"), nil
 				}
 				has := strings.Contains(strings.Join(args, "\n"), "manage_grants")
 				if has != test.want {
@@ -266,7 +270,7 @@ func TestLinuxShowSettingsResolvesActionThroughRealisticYadTrailingSeparator(t *
 	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(_ context.Context, _ string, _ []string) ([]byte, error) {
 		calls++
 		if calls == 1 {
-			return []byte("biuro|repo-1|\n"), nil
+			return []byte("biuro|\n"), nil
 		}
 		return []byte("add_folder|\n"), nil
 	}}
@@ -275,8 +279,47 @@ func TestLinuxShowSettingsResolvesActionThroughRealisticYadTrailingSeparator(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Action != SettingsDialogAddFolder || result.ServerID != "biuro" {
-		t.Fatalf("ShowSettings() = %+v, want add_folder on biuro", result)
+	if result.Action != SettingsDialogAddFolder || result.ServerID != "biuro" || result.RepoID != "" {
+		t.Fatalf("ShowSettings() = %+v, want add_folder on biuro without a share", result)
+	}
+}
+
+func TestLinuxShowSettingsPicksShareOnlyAfterFolderScopedAction(t *testing.T) {
+	calls := 0
+	runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(_ context.Context, _ string, args []string) ([]byte, error) {
+		calls++
+		joined := strings.Join(args, "\n")
+		switch calls {
+		case 1:
+			if strings.Contains(joined, "Dokumenty") {
+				t.Fatal("server step listed a share")
+			}
+			return []byte("office|\n"), nil
+		case 2:
+			if !strings.Contains(joined, "manage_grants") || strings.Contains(joined, "Dokumenty") {
+				t.Fatalf("action step = %s", joined)
+			}
+			return []byte("manage_grants|\n"), nil
+		case 3:
+			if !strings.Contains(joined, "Dokumenty") || !strings.Contains(joined, "--column=Repozytorium") {
+				t.Fatalf("folder step = %s", joined)
+			}
+			return []byte("docs|\n"), nil
+		default:
+			t.Fatalf("unexpected yad call %d", calls)
+			return nil, nil
+		}
+	}}
+	backend := newTestLinuxBackend(runner, t.TempDir(), time.Now)
+	result, err := backend.ShowSettings(context.Background(), SettingsDialogRequest{Servers: []SettingsServer{{
+		ID: "office", Name: "Biuro",
+		Folders: []SettingsFolder{{ID: "docs", Name: "Dokumenty", CanManageGrants: true}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != SettingsDialogManageGrants || result.ServerID != "office" || result.RepoID != "docs" {
+		t.Fatalf("ShowSettings()=%+v", result)
 	}
 }
 
@@ -312,7 +355,7 @@ func TestLinuxSettingsOffersFolderActionsOnlyWhenEligible(t *testing.T) {
 			runner := &fakeLinuxRunner{paths: map[string]string{"yad": "/usr/bin/yad"}, output: func(_ context.Context, _ string, args []string) ([]byte, error) {
 				calls++
 				if calls == 1 {
-					return []byte("office|repo-1\n"), nil
+					return []byte("office|\n"), nil
 				}
 				has := strings.Contains(strings.Join(args, "\n"), test.wantAction)
 				if has != test.want {
@@ -350,6 +393,9 @@ func TestLinuxSettingsOffersAddFolderOnlyWhenServerAllowsRepositoryCreation(t *t
 				has := strings.Contains(strings.Join(args, "\n"), "add_folder")
 				if has != test.can {
 					t.Errorf("add_folder present=%v want=%v args=%v", has, test.can, args)
+				}
+				if strings.Contains(strings.Join(args, "\n"), "--column=Repozytorium") {
+					t.Error("add_folder asked for a share")
 				}
 				return nil, fakeExitError(1)
 			}}

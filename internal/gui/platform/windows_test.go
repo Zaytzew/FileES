@@ -617,13 +617,10 @@ func TestWindowsSettingsDialogResolvesAnswers(t *testing.T) {
 	}
 }
 
-// settingsPayload decodes the base64/JSON row payload the settings script
+// settingsWizardPayload decodes the base64/JSON wizard the settings script
 // embeds, so a test can assert on the data the dialog is driven by without
 // having to render WinForms.
-func settingsPayload(t *testing.T, script string) struct {
-	Title, Text string
-	Rows        []map[string]any
-} {
+func settingsWizardPayload(t *testing.T, script string) SettingsWizard {
 	t.Helper()
 	const marker = "FromBase64String('"
 	start := strings.Index(script, marker)
@@ -639,27 +636,18 @@ func settingsPayload(t *testing.T, script string) struct {
 	if err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	var decoded struct {
-		Title, Text string
-		Rows        []map[string]any
-	}
+	var decoded SettingsWizard
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 	return decoded
 }
 
-// TestWindowsSettingsDialogGatesEveryButtonPerRow pins the capability matrix
-// the dialog's button bar is driven by. Windows shows one permanent button bar
-// rather than linux.go's per-selection action list, so every button -- not
-// just the two that already had it -- needs a per-row boolean, and a recovery
-// row (an operation ID, with no server or folder behind it) must not enable
-// any folder or server action.
-//
-// Verified live against the rendered dialog: with these rows, row 0 enables
-// everything except the archive download, row 1 keeps only the server-level
-// actions, and the recovery row enables the archive download alone.
-func TestWindowsSettingsDialogGatesEveryButtonPerRow(t *testing.T) {
+// TestWindowsSettingsDialogBuildsActionFirstWizard pins the inverted
+// sequence: servers, then actions that do not require a share, then a
+// filtered folder list only for folder-scoped actions. Recovery stays a
+// separate first step when no live server is present in the same request.
+func TestWindowsSettingsDialogBuildsActionFirstWizard(t *testing.T) {
 	script, err := buildSettingsDialogScript(SettingsDialogRequest{
 		Title: "Ustawienia FileES",
 		Servers: []SettingsServer{{
@@ -674,57 +662,67 @@ func TestWindowsSettingsDialogGatesEveryButtonPerRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildSettingsDialogScript: %v", err)
 	}
-
-	// Every button must be backed by a hidden capability column, otherwise it
-	// would render permanently enabled.
-	for _, button := range settingsButtons {
-		if !contains(script, "$btns['"+button.capability+"']=$b") {
-			t.Errorf("button %q is not registered under capability %q", button.action, button.capability)
-		}
+	if !contains(script, "Wybierz działanie.") || !contains(script, "Wybierz folder dla tej akcji.") {
+		t.Error("wizard is not sequenced as server → action → folder")
 	}
-	// CurrentCellChanged gates single-row actions. SelectionChanged is also
-	// required so Connect follows the connectable subset of a mixed selection.
-	if !contains(script, "$g.Add_CurrentCellChanged({updateButtons})") {
-		t.Error("button gating is not wired to CurrentCellChanged")
-	}
-	if !contains(script, "$g.Add_SelectionChanged({updateButtons})") {
-		t.Error("multi-row Connect gating is not wired to SelectionChanged")
-	}
-	if !contains(script, "$g.MultiSelect=$true") || !contains(script, "$ids-join ','") {
-		t.Error("settings dialog does not return all selected repositories for Connect")
-	}
-	if !contains(script, "$g.SelectedRows|Where-Object{[string]$_.Cells['CanConnect'].Value-eq'True'}|Sort-Object Index") {
-		t.Error("Connect does not exclude already-attached rows from a mixed selection")
-	}
-	if !contains(script, "$g.SelectedRows|Where-Object{[string]$_.Cells[$k].Value-eq'True'}") {
-		t.Error("Connect button is not enabled for the connectable subset of a mixed selection")
+	if !contains(script, "$ids-join ','") || !contains(script, "$multi=[bool]$act.Multi") {
+		t.Error("connect step does not keep multi-select of eligible shares")
 	}
 
-	rows := settingsPayload(t, script).Rows
-	want := []struct {
-		folder string
-		caps   map[string]bool
-	}{
-		{"Rysunki", map[string]bool{"CanVisibility": true, "CanSessionTimeout": true, "CanGrants": true, "CanAdd": true, "CanConnect": false, "CanLocate": true, "CanDetach": true, "CanDelete": true, "CanLoadDump": true, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
-		{"Obce", map[string]bool{"CanVisibility": true, "CanSessionTimeout": true, "CanGrants": false, "CanAdd": true, "CanConnect": true, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
-		// A server that offers neither realm visibility nor folder creation
-		// (e.g. a read-only client role) keeps only the two lifecycle actions
-		// plus the local session-timeout setting.
-		{"Brak folderów", map[string]bool{"CanVisibility": false, "CanSessionTimeout": true, "CanGrants": false, "CanAdd": false, "CanConnect": false, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
-		{"gotowe", map[string]bool{"CanVisibility": false, "CanSessionTimeout": false, "CanGrants": false, "CanAdd": false, "CanConnect": false, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": false, "CanRemoveRealm": false, "CanDownloadRecovery": true}},
+	wizard := settingsWizardPayload(t, script)
+	if len(wizard.Servers) != 2 {
+		t.Fatalf("servers=%d", len(wizard.Servers))
 	}
-	if len(rows) != len(want) {
-		t.Fatalf("rows = %d, want %d", len(rows), len(want))
+	biuro := wizard.Servers[0]
+	if biuro.ID != "biuro" {
+		t.Fatalf("first server=%q", biuro.ID)
 	}
-	for i, expected := range want {
-		if got := rows[i]["Folder"]; got != expected.folder {
-			t.Fatalf("row %d folder = %v, want %q", i, got, expected.folder)
+	wantBiuro := map[string][]string{
+		"session_timeout":  nil,
+		"realm_visibility": nil,
+		"add":              nil,
+		"manage_grants":    {"repo-1"},
+		"locate":           {"repo-1"},
+		"detach":           {"repo-1"},
+		"delete":           {"repo-1"},
+		"load_dump":        {"repo-1"},
+		"connect":          {"repo-2"},
+		"deactivate":       nil,
+		"remove_realm":     nil,
+	}
+	got := map[string][]string{}
+	for _, action := range biuro.Actions {
+		var ids []string
+		for _, folder := range action.Folders {
+			ids = append(ids, folder.ID)
 		}
-		for capability, wantEnabled := range expected.caps {
-			if got, ok := rows[i][capability].(bool); !ok || got != wantEnabled {
-				t.Errorf("row %d (%s) %s = %v, want %v", i, expected.folder, capability, rows[i][capability], wantEnabled)
-			}
+		got[action.WindowsID] = ids
+	}
+	for id, folders := range wantBiuro {
+		if !reflect.DeepEqual(got[id], folders) && !(len(got[id]) == 0 && len(folders) == 0) {
+			t.Errorf("biuro action %s folders=%v want %v", id, got[id], folders)
 		}
+	}
+	if _, ok := got["manage_grants"]; !ok {
+		t.Fatal("grants missing on biuro")
+	}
+
+	readonly := wizard.Servers[1]
+	if readonly.ID != "readonly" {
+		t.Fatalf("second server=%q", readonly.ID)
+	}
+	for _, action := range readonly.Actions {
+		switch action.WindowsID {
+		case "session_timeout", "deactivate", "remove_realm":
+		default:
+			t.Errorf("readonly offered %s", action.WindowsID)
+		}
+		if action.NeedsFolder {
+			t.Errorf("readonly folder action %s", action.WindowsID)
+		}
+	}
+	if len(wizard.Recoveries) != 1 || wizard.Recoveries[0].OperationID != "op-1" || !wizard.Recoveries[0].CanDownload {
+		t.Fatalf("recoveries=%#v", wizard.Recoveries)
 	}
 }
 

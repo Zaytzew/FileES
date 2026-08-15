@@ -73,6 +73,7 @@ type ServerViewModel struct {
 	CanCreateRepositories bool
 	RepositoriesReady     bool
 	PendingRequiredRepos  int
+	SessionTimeoutMin     int
 	ReservationCount      int
 	ReservationsKnown     bool
 	Repos                 []RepoViewModel
@@ -227,6 +228,9 @@ func (vm ViewModel) CanSetRealmVisibility() bool {
 }
 func (vm ViewModel) CanSetRealmBranding() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmPublicBrandingGet) && vm.HasCap(contract.CapRealmPublicBrandingSet)
+}
+func (vm ViewModel) CanSetSessionTimeout() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerSetSessionTimeout)
 }
 func (vm ViewModel) CanDetachServer() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerDetach)

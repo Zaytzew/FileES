@@ -151,7 +151,7 @@ func TestLinuxShowSettingsUsesNativeTableWithServerAndFolderData(t *testing.T) {
 		t.Fatalf("settings calls = %#v", calls)
 	}
 	args := strings.Join(calls[0].args, "\n")
-	for _, wanted := range []string{"--list", "--column=Serwer", "--column=Folder", "Biuro", "Dokumenty", "/wc/docs", "--ok-label=Wybierz"} {
+	for _, wanted := range []string{"--list", "--column=Serwer", "--column=Repozytorium", "Biuro", "Dokumenty", "/wc/docs", "--ok-label=Wybierz"} {
 		if !strings.Contains(args, wanted) {
 			t.Errorf("settings args missing %q: %s", wanted, args)
 		}

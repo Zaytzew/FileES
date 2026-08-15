@@ -44,7 +44,7 @@ func attachedProjection(serverID string, view clientview.View, attachments map[r
 		if _, attached := attachments[key]; !attached {
 			continue
 		}
-		desired = append(desired, reposupervisor.Desired{Key: key, Access: repo.Access, State: repo.State, URL: repo.URL, DisplayName: repo.DisplayName, EditingPolicy: repo.EditingPolicy})
+		desired = append(desired, reposupervisor.Desired{Key: key, Access: repo.Access, State: repo.State, URL: repo.URL, DisplayName: repo.DisplayName, EditingPolicy: repo.EditingPolicy, SessionTimeout: attachments[key].config.SessionTimeout})
 	}
 	for _, key := range unprojectedLocalKeys(serverID, view, attachments) {
 		repo := attachments[key].config
@@ -52,7 +52,7 @@ func attachedProjection(serverID string, view clientview.View, attachments map[r
 		// repository yet, so it keeps the default policy. The barrier itself
 		// is versioned in the repository, so a repository that really does
 		// require locks still presents read-only files here.
-		desired = append(desired, reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID})
+		desired = append(desired, reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID, SessionTimeout: repo.SessionTimeout})
 	}
 	sort.Slice(desired, func(i, j int) bool { return desired[i].Key.String() < desired[j].Key.String() })
 	return desired

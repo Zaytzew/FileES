@@ -94,7 +94,7 @@ func (service daemonActivationService) finalize(ctx context.Context, payload con
 		state = "active_profile_pending"
 	}
 	if service.onActive != nil {
-		service.onActive(contract.ActivationStatus{ServerID: passport.ServerID, DisplayName: passport.ServerID, ClientRole: "normal", Address: payload.ServerAddress, ClientID: clientProfile.ClientID, SSHPort: clientProfile.SSHPort})
+		service.onActive(contract.ActivationStatus{ServerID: passport.ServerID, DisplayName: passport.ServerID, ClientRole: "normal", Address: payload.ServerAddress, ClientID: clientProfile.ClientID, SSHPort: clientProfile.SSHPort, SessionTimeoutMin: int(clientProfile.SVNTimeout() / time.Minute)})
 	}
 	return contract.ActivationCommandResult{ServerID: passport.ServerID, State: state}, nil
 }
@@ -128,7 +128,7 @@ func prepareActivatedClientProfile(ctx context.Context, payload contract.Activat
 	if err := clientprofile.Store(filepath.Join(root, "client-profile.json"), profile); err != nil {
 		return clientprofile.Profile{}, err
 	}
-	svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:service:" + payload.ServerID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: port})
+	svn := client.New(client.Options{SvnPath: "svn", Timeout: profile.SVNTimeout(), LogScope: "svn:service:" + payload.ServerID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: port})
 	if _, err := svn.Update(ctx, serviceWC); err == nil {
 		return profile, nil
 	}

@@ -19,7 +19,15 @@ import (
 	"github.com/google/uuid"
 )
 
-const Schema = "filees.client-profile/v1"
+const (
+	Schema = "filees.client-profile/v1"
+	// DefaultSessionTimeout is how long one send or fetch may run when
+	// the user has not set a value. It is this client's wait, not the
+	// network path's.
+	DefaultSessionTimeout = 30 * time.Minute
+	MinSessionTimeout     = time.Minute
+	MaxSessionTimeout     = 24 * time.Hour
+)
 
 func DefaultRoot() string {
 	if root := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); filepath.IsAbs(root) {
@@ -43,11 +51,35 @@ type Profile struct {
 	RelativeViewPath string        `json:"relative_view_path"`
 	CachePath        string        `json:"cache_path"`
 	PollInterval     time.Duration `json:"-"`
+	// SessionTimeout is how long one send or fetch on this server may run.
+	// Zero means DefaultSessionTimeout.
+	SessionTimeout time.Duration `json:"-"`
 }
 
 type wireProfile struct {
 	Profile
-	PollInterval string `json:"poll_interval"`
+	PollInterval   string `json:"poll_interval"`
+	SessionTimeout string `json:"session_timeout,omitempty"`
+}
+
+// SVNTimeout is how long pkg/client waits for one send or fetch. Zero and
+// negatives become the default so callers need not special-case an unset profile.
+func (profile Profile) SVNTimeout() time.Duration {
+	if profile.SessionTimeout > 0 {
+		return profile.SessionTimeout
+	}
+	return DefaultSessionTimeout
+}
+
+// NormalizeSessionTimeout accepts a user-facing minute count. 0 means default.
+func NormalizeSessionTimeout(minutes int) (time.Duration, error) {
+	if minutes == 0 {
+		return DefaultSessionTimeout, nil
+	}
+	if minutes < 1 || time.Duration(minutes)*time.Minute > MaxSessionTimeout {
+		return 0, fmt.Errorf("session timeout must be between 1 and %d minutes", int(MaxSessionTimeout/time.Minute))
+	}
+	return time.Duration(minutes) * time.Minute, nil
 }
 
 func (profile Profile) Validate() error {
@@ -76,7 +108,11 @@ func Store(path string, profile Profile) error {
 	if err := profile.Validate(); err != nil {
 		return err
 	}
-	raw, err := json.MarshalIndent(wireProfile{Profile: profile, PollInterval: profile.PollInterval.String()}, "", "  ")
+	wire := wireProfile{Profile: profile, PollInterval: profile.PollInterval.String()}
+	if profile.SessionTimeout > 0 && profile.SessionTimeout != DefaultSessionTimeout {
+		wire.SessionTimeout = profile.SessionTimeout.String()
+	}
+	raw, err := json.MarshalIndent(wire, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -138,6 +174,13 @@ func Load(path string) (Profile, error) {
 	}
 	profile := wire.Profile
 	profile.PollInterval = interval
+	if timeout := strings.TrimSpace(wire.SessionTimeout); timeout != "" {
+		parsed, err := time.ParseDuration(timeout)
+		if err != nil || parsed < MinSessionTimeout || parsed > MaxSessionTimeout {
+			return Profile{}, errors.New("client profile session timeout is invalid")
+		}
+		profile.SessionTimeout = parsed
+	}
 	if err := profile.Validate(); err != nil {
 		return Profile{}, err
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 )
 
 type fakeStarter struct{ log *[]string }
@@ -130,6 +131,24 @@ func TestDetachLocalStopsWithoutAuthoritativeProjection(t *testing.T) {
 // comparison the projection would be accepted silently and the repository
 // would keep running without passports until some unrelated change happened
 // to restart it.
+func TestSessionTimeoutChangeForcesRestartEvenWhenAccessAndURLAreUnchanged(t *testing.T) {
+	var log []string
+	supervisor, _ := New(fakeStarter{&log}, nil)
+	key := Key{"office", "repo"}
+	short := Desired{Key: key, Access: "rw", State: "active", URL: "one", SessionTimeout: 30 * time.Minute}
+	long := Desired{Key: key, Access: "rw", State: "active", URL: "one", SessionTimeout: 90 * time.Minute}
+	if err := supervisor.Apply(t.Context(), "office", 1, []Desired{short}); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Apply(t.Context(), "office", 2, []Desired{long}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"start:office/repo:rw", "stop:office/repo:rw", "start:office/repo:rw"}
+	if !reflect.DeepEqual(log, want) {
+		t.Fatalf("timeout change did not restart folder work: log=%v want=%v", log, want)
+	}
+}
+
 func TestEditingPolicyChangeForcesRestartEvenWhenAccessAndURLAreUnchanged(t *testing.T) {
 	var log []string
 	supervisor, _ := New(fakeStarter{&log}, nil)

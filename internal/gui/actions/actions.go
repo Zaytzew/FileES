@@ -128,6 +128,10 @@ type RealmBrandingManager interface {
 	SetPublicBranding(context.Context, string, realmbranding.Branding) (realmbranding.Branding, error)
 }
 
+type SessionTimeoutManager interface {
+	SetSessionTimeout(context.Context, string, int) (int, error)
+}
+
 type PublicShareObject struct {
 	PublicID, RepoPath, DisplayName string
 	Size                            *int64
@@ -252,6 +256,7 @@ type Config struct {
 	RealmAliases       RealmAliasManager
 	RealmGrants        RealmGrantManager
 	RealmBranding      RealmBrandingManager
+	SessionTimeouts    SessionTimeoutManager
 	PublicShares       PublicShareManager
 	ReservationBrowser platform.ReservationBrowser
 	SettingsBrowser    platform.SettingsBrowser
@@ -468,6 +473,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startSetRealmVisibility(ctx, result.ServerID)
 		case platform.SettingsDialogRealmBranding:
 			c.startSetRealmBranding(ctx, result.ServerID)
+		case platform.SettingsDialogSessionTimeout:
+			c.startSetSessionTimeout(ctx, result.ServerID)
 		case platform.SettingsDialogDetachServer:
 			c.startDetachServer(ctx, result.ServerID)
 		case platform.SettingsDialogRemoveRealm:
@@ -604,11 +611,15 @@ func settingsDialogRequest(vm app.ViewModel, serverID string, pending map[string
 		if clientID == "" {
 			clientID = "brak danych"
 		}
+		minutes := server.SessionTimeoutMin
+		if minutes <= 0 {
+			minutes = 30
+		}
 		request := platform.SettingsDialogRequest{Title: "FileES — " + name, Text: "Repozytoria strefy i ich lokalne połączenia na tym kliencie."}
 		if len(pending) > 0 {
 			request.Text += " Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
 		}
-		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanSetRealmBranding: vm.CanSetRealmBranding() && strings.TrimSpace(server.RealmAlias) != "", CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
+		row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanSetRealmBranding: vm.CanSetRealmBranding() && strings.TrimSpace(server.RealmAlias) != "", CanSetSessionTimeout: vm.CanSetSessionTimeout(), SessionTimeoutMin: minutes, CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
 		for _, repo := range server.Repos {
 			repoName := repo.DisplayName
 			if strings.TrimSpace(repoName) == "" {
@@ -1514,6 +1525,52 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			body = "Strefa jest teraz widoczna dla innych aktywnych stref."
 		}
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Widoczność strefy została zmieniona", Body: body, Urgency: platform.UrgencyNormal})
+	}()
+}
+
+func (c *Controller) startSetSessionTimeout(ctx context.Context, serverID string) {
+	key := "session-timeout." + serverID
+	if serverID == "" || c.cfg.SessionTimeouts == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		if !c.cfg.ViewModel().CanSetSessionTimeout() {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można teraz zmienić limitu czasu", Body: "Ta wersja FileES nie pozwala ustawić, jak długo czekać na wysyłkę i pobieranie.", Urgency: platform.UrgencyCritical})
+			return
+		}
+		current := 30
+		for _, server := range c.cfg.ViewModel().Servers {
+			if server.ID == serverID && server.SessionTimeoutMin > 0 {
+				current = server.SessionTimeoutMin
+				break
+			}
+		}
+		prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+			Title:   "Limit czasu wysyłki i pobierania",
+			Text:    "Ile minut FileES ma czekać, aż jedno wysłanie lub pobranie na tym serwerze się skończy? Zwykle 30. Przy wolnym łączu duże pliki mogą potrzebować więcej. Od 1 do 1440.",
+			Default: strconv.Itoa(current),
+		})
+		if err != nil || prompted.Cancelled {
+			return
+		}
+		minutes, convErr := strconv.Atoi(strings.TrimSpace(prompted.Value))
+		if convErr != nil {
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nieprawidłowy limit", Text: "Podaj liczbę minut od 1 do 1440."})
+			return
+		}
+		saved, setErr := c.cfg.SessionTimeouts.SetSessionTimeout(ctx, serverID, minutes)
+		if setErr != nil {
+			title, body, urgency := operationErrorPresentation("limit czasu wysyłki", setErr)
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: urgency})
+			return
+		}
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Zapisano limit czasu", Body: "FileES będzie czekał do " + strconv.Itoa(saved) + " min na jedno wysłanie lub pobranie.", Urgency: platform.UrgencyNormal})
 	}()
 }
 

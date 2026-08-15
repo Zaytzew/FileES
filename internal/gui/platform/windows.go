@@ -457,6 +457,8 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 		result.Action = SettingsDialogRealmVisibility
 	case "realm_branding":
 		result.Action = SettingsDialogRealmBranding
+	case "session_timeout":
+		result.Action = SettingsDialogSessionTimeout
 	case "deactivate":
 		result.Action = SettingsDialogDetachServer
 	case "remove_realm":
@@ -482,6 +484,7 @@ var settingsButtons = []struct {
 	label, action, capability string
 }{
 	{"Wygląd udziałów", "realm_branding", "CanBranding"},
+	{"Limit czasu wysyłki", "session_timeout", "CanSessionTimeout"},
 	{"Widoczność", "realm_visibility", "CanVisibility"},
 	{"Uprawnienia gości", "manage_grants", "CanGrants"},
 	{"Zasady edycji", "editing_policy", "CanEditingPolicy"},
@@ -503,10 +506,10 @@ var settingsButtons = []struct {
 // action the controller will silently refuse is a real, reported "click it,
 // nothing happens" bug, not a cosmetic issue.
 type settingsRow struct {
-	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access, Editing                                           string
-	CanBranding, CanVisibility, CanGrants, CanPublicShares, CanAdd, CanConnect, CanLocate, CanDetach, CanDelete, CanLoadDump bool
-	CanEditingPolicy                                                                                                         bool
-	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                                                                       bool
+	ServerID, RepoID, Server, Address, Realm, Folder, Path, State, Access, Editing                                                              string
+	CanBranding, CanVisibility, CanSessionTimeout, CanGrants, CanPublicShares, CanAdd, CanConnect, CanLocate, CanDetach, CanDelete, CanLoadDump bool
+	CanEditingPolicy                                                                                                                            bool
+	CanDeactivate, CanRemoveRealm, CanDownloadRecovery                                                                                          bool
 }
 
 func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
@@ -514,7 +517,7 @@ func buildSettingsDialogScript(request SettingsDialogRequest) (string, error) {
 	for _, s := range request.Servers {
 		base := settingsRow{
 			ServerID: s.ID, Server: s.Name, Address: s.Address, Realm: s.Realm,
-			CanBranding: s.CanSetRealmBranding, CanVisibility: s.CanSetRealmVisibility, CanAdd: s.CanAddFolder,
+			CanBranding: s.CanSetRealmBranding, CanVisibility: s.CanSetRealmVisibility, CanSessionTimeout: s.CanSetSessionTimeout, CanAdd: s.CanAddFolder,
 			CanDeactivate: true, CanRemoveRealm: true,
 		}
 		if len(s.Folders) == 0 {

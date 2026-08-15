@@ -9,6 +9,54 @@ import (
 	"filees/pkg/privatefile"
 )
 
+func TestLoadMissingSessionTimeoutUsesDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile.json")
+	raw := `{"schema":"filees.client-profile/v1","server_id":"office","display_name":"filees.example.net","address":"filees.example.net","client_id":"00000000-0000-0000-0000-000000000001","identity_file":"/id","known_hosts":"/known","ssh_port":22,"service_url":"svn+ssh://_filees-client@filees.example.net/","service_working_copy":"/wc","relative_view_path":"view.json","cache_path":"/cache/view.json","poll_interval":"1m"}` + "\n"
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SessionTimeout != 0 || got.SVNTimeout() != DefaultSessionTimeout {
+		t.Fatalf("timeout=%v svn=%v", got.SessionTimeout, got.SVNTimeout())
+	}
+}
+
+func TestStoreLoadSessionTimeoutRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "server", "client-profile.json")
+	want := Profile{Schema: Schema, ServerID: "office", DisplayName: "filees.example.net", Address: "filees.example.net", ClientID: "00000000-0000-0000-0000-000000000001", IdentityFile: filepath.Join(root, "id"), KnownHosts: filepath.Join(root, "known"), SSHPort: 22, ServiceURL: "svn+ssh://_filees-client@filees.example.net/", ServiceWC: filepath.Join(root, "wc"), RelativeViewPath: "view.json", CachePath: filepath.Join(root, "cache", "view.json"), PollInterval: time.Minute, SessionTimeout: 90 * time.Minute}
+	if err := Store(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SessionTimeout != 90*time.Minute || got.SVNTimeout() != 90*time.Minute {
+		t.Fatalf("got=%v", got.SessionTimeout)
+	}
+}
+
+func TestNormalizeSessionTimeout(t *testing.T) {
+	got, err := NormalizeSessionTimeout(0)
+	if err != nil || got != DefaultSessionTimeout {
+		t.Fatalf("default: %v %v", got, err)
+	}
+	got, err = NormalizeSessionTimeout(90)
+	if err != nil || got != 90*time.Minute {
+		t.Fatalf("90: %v %v", got, err)
+	}
+	if _, err := NormalizeSessionTimeout(-1); err == nil {
+		t.Fatal("accepted negative")
+	}
+	if _, err := NormalizeSessionTimeout(24*60 + 1); err == nil {
+		t.Fatal("accepted oversize")
+	}
+}
+
 func TestStoreLoadProfileRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "server", "client-profile.json")

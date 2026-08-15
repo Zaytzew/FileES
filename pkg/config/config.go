@@ -24,13 +24,16 @@ type TierSpec struct {
 // Pola z czasami są już sparsowane do time.Duration.
 // Nazwy odpowiadają referencjom w main.go (CommitInterval, GlobalSlots, itd.).
 type Repo struct {
-	ID                string        `json:"id"`
-	RepoURL           string        `json:"repo_url"`
-	LocalPath         string        `json:"local_path"`
-	SSHIdentityFile   string        `json:"ssh_identity_file"`
-	SSHKnownHosts     string        `json:"ssh_known_hosts"`
-	SSHHostName       string        `json:"-"`
-	SSHPort           int           `json:"-"`
+	ID              string `json:"id"`
+	RepoURL         string `json:"repo_url"`
+	LocalPath       string `json:"local_path"`
+	SSHIdentityFile string `json:"ssh_identity_file"`
+	SSHKnownHosts   string `json:"ssh_known_hosts"`
+	SSHHostName     string `json:"-"`
+	SSHPort         int    `json:"-"`
+	// SessionTimeout is how long one send or fetch may run, copied from the
+	// server profile. Zero means the client default (30m).
+	SessionTimeout time.Duration `json:"-"`
 	ServerID          string        `json:"-"`
 	ServerDisplayName string        `json:"-"`
 	ClientRole        string        `json:"-"`
@@ -41,18 +44,18 @@ type Repo struct {
 	CommitInterval    time.Duration `json:"-"` // z pola JSON "commit_interval"
 
 	// Opcjonalne rozszerzenia (mogą nie wystąpić w JSON; wtedy wartości domyślne/zero)
-	GlobalSlots            int           `json:"global_slots,omitempty"`
-	MaxBatchFiles          int           `json:"max_batch_files,omitempty"`
-	MaxBatchMiB            float64       `json:"max_batch_mib,omitempty"`
-	BacklogFlushMiB        float64       `json:"backlog_flush_mib,omitempty"`
-	ShutdownCommitTimeout  time.Duration `json:"-"`
-	LockFirst              bool          `json:"lock_first,omitempty"`
-	EditPassports          bool          `json:"edit_passports,omitempty"`
+	GlobalSlots           int           `json:"global_slots,omitempty"`
+	MaxBatchFiles         int           `json:"max_batch_files,omitempty"`
+	MaxBatchMiB           float64       `json:"max_batch_mib,omitempty"`
+	BacklogFlushMiB       float64       `json:"backlog_flush_mib,omitempty"`
+	ShutdownCommitTimeout time.Duration `json:"-"`
+	LockFirst             bool          `json:"lock_first,omitempty"`
+	EditPassports         bool          `json:"edit_passports,omitempty"`
 	// EditingPolicy is the projected repository-wide policy that EditPassports
 	// is derived from, kept alongside it so status and UI can explain *why* a
 	// repository behaves as it does. Like RealmID/OwnerRealmID it comes from
 	// the projection, never from config.json.
-	EditingPolicy string `json:"-"`
+	EditingPolicy          string        `json:"-"`
 	EditPassportTTL        time.Duration `json:"-"`
 	EditPassportHeartbeat  time.Duration `json:"-"`
 	EditPassportMaxSession time.Duration `json:"-"`

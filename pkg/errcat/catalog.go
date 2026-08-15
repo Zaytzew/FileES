@@ -97,6 +97,9 @@ var specs = []Spec{
 	{"REALM-2001", "realm.alias_required", SevError, HintRequireAction, nil, "A stable realm alias is required", "Przed blokowaniem plików ustaw stały alias strefy"},
 
 	{"SERVER-0001", "server.detach_unavailable", SevError, HintNone, nil, "Server detach is not available", "Odłączanie serwera jest teraz niedostępne"},
+	{"SERVER-0003", "server.session_timeout_unavailable", SevError, HintRetry, nil, "Session timeout is not available", "Nie można teraz zmienić limitu czasu wysyłki i pobierania"},
+	{"SERVER-1002", "server.session_timeout_invalid", SevError, HintRequireAction, nil, "Session timeout is invalid", "Podaj liczbę minut od 1 do 1440"},
+	{"SERVER-1003", "server.session_timeout_failed", SevError, HintRequireAction, nil, "Session timeout could not be saved", "Nie udało się zapisać limitu czasu"},
 	{"SERVER-0002", "server.not_activated", SevError, HintNone, nil, "Server is not activated", "Ten serwer nie jest aktywowany"},
 	{"SERVER-1001", "server.detach_failed", SevError, HintRequireAction, nil, "Server detach failed", "Odłączenie serwera nie powiodło się"},
 

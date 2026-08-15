@@ -417,6 +417,18 @@ func (c *Client) RepoGrantAccess(ctx context.Context, payload contract.RepoGrant
 	return &result, nil
 }
 
+func (c *Client) ServerSetSessionTimeout(ctx context.Context, payload contract.ServerSetSessionTimeoutPayload) (*contract.ServerSetSessionTimeoutResult, error) {
+	resp, err := c.do(ctx, contract.CmdServerSetSessionTimeout, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.ServerSetSessionTimeoutResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func (c *Client) RepoSetEditingPolicy(ctx context.Context, payload contract.RepoSetEditingPolicyPayload) (*contract.RepoSetEditingPolicyResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoSetEditingPolicy, payload.RepoID, payload)
 	if err != nil {

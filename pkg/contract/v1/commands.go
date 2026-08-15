@@ -19,19 +19,20 @@ const (
 	CmdUpdateApply    = "update.apply"    // apply and request GUI restart
 
 	// Client activation (executed by daemon; GUI only supplies user intent).
-	CmdActivationBegin        = "activation.begin"
-	CmdActivationFinish       = "activation.finish"
-	CmdActivationPending      = "activation.pending"
-	CmdActivationResume       = "activation.resume"
-	CmdRealmAliasClaim        = "realm.alias_claim"
-	CmdRealmGrantRecipients   = "realm.grant_recipients"
-	CmdRealmSetVisibility     = "realm.set_visibility"
-	CmdRealmPublicBrandingGet = "realm.public_branding_get"
-	CmdRealmPublicBrandingSet = "realm.public_branding_set"
-	CmdServerDetach           = "server.detach"
-	CmdRealmRemoveBegin       = "realm.remove_begin"
-	CmdRealmRemoveConfirm     = "realm.remove_confirm"
-	CmdRecoveryDownload       = "recovery.download"
+	CmdActivationBegin         = "activation.begin"
+	CmdActivationFinish        = "activation.finish"
+	CmdActivationPending       = "activation.pending"
+	CmdActivationResume        = "activation.resume"
+	CmdRealmAliasClaim         = "realm.alias_claim"
+	CmdRealmGrantRecipients    = "realm.grant_recipients"
+	CmdRealmSetVisibility      = "realm.set_visibility"
+	CmdRealmPublicBrandingGet  = "realm.public_branding_get"
+	CmdRealmPublicBrandingSet  = "realm.public_branding_set"
+	CmdServerDetach            = "server.detach"
+	CmdServerSetSessionTimeout = "server.set_session_timeout" // how long one send or fetch may run on this server
+	CmdRealmRemoveBegin        = "realm.remove_begin"
+	CmdRealmRemoveConfirm      = "realm.remove_confirm"
+	CmdRecoveryDownload        = "recovery.download"
 
 	// Mobile pairing (Phase 2c): daemon mints a MOBILE_PAIRING token through
 	// its own already-authenticated control-plane channel; the tray hands
@@ -89,46 +90,47 @@ const (
 // GUI shows only capabilities declared in HelloResult.Capabilities.
 // Only list commands that are actually implemented.
 const (
-	CapEventsSubscribe        = "events.subscribe"
-	CapRepoLock               = "repo.lock"
-	CapRepoUnlock             = "repo.unlock"
-	CapRepoReservationList    = "repo.reservation_list"
-	CapRepoReservationRelease = "repo.reservation_release"
-	CapErrorList              = "error.list"
-	CapActivationBegin        = "activation.begin"
-	CapActivationFinish       = "activation.finish"
-	CapActivationPending      = "activation.pending"
-	CapActivationResume       = "activation.resume"
-	CapRealmAliasClaim        = "realm.alias_claim"
-	CapRealmGrantRecipients   = "realm.grant_recipients"
-	CapRealmSetVisibility     = "realm.set_visibility"
-	CapRealmPublicBrandingGet = "realm.public_branding_get"
-	CapRealmPublicBrandingSet = "realm.public_branding_set"
-	CapServerDetach           = "server.detach"
-	CapRealmRemoveBegin       = "realm.remove_begin"
-	CapRealmRemoveConfirm     = "realm.remove_confirm"
-	CapRecoveryDownload       = "recovery.download"
-	CapMobilePairingBegin     = "mobile_pairing.begin"
-	CapRepoCreateRequest      = "repo.create_request"
-	CapRepoAttachIntent       = "repo.attach_intent"
-	CapRepoAttachApprove      = "repo.attach_approve"
-	CapRepoRelocate           = "repo.relocate"
-	CapRepoLocate             = "repo.locate"
-	CapRepoLoadDump           = "repo.load_dump"
-	CapRepoGrantAccess        = "repo.grant_access"
-	CapRepoRevokeAccess       = "repo.revoke_access"
-	CapRepoSetEditingPolicy   = "repo.set_editing_policy"
-	CapRepoPublicShareList    = "repo.public_share_list"
-	CapRepoPublicShareCreate  = "repo.public_share_create"
-	CapRepoPublicShareUpdate  = "repo.public_share_update"
-	CapRepoPublicShareRevoke  = "repo.public_share_revoke"
-	CapRepoPublicShareDelete  = "repo.public_share_delete"
-	CapRepoDetach             = "repo.detach"
-	CapRepoDelete             = "repo.delete"
-	CapRepoLifecycleStatus    = "repo.lifecycle_status"
-	CapRepoActivity           = "repo.activity"
-	CapSystemRestart          = "system.restart"
-	CapSystemShutdown         = "system.shutdown"
+	CapEventsSubscribe         = "events.subscribe"
+	CapRepoLock                = "repo.lock"
+	CapRepoUnlock              = "repo.unlock"
+	CapRepoReservationList     = "repo.reservation_list"
+	CapRepoReservationRelease  = "repo.reservation_release"
+	CapErrorList               = "error.list"
+	CapActivationBegin         = "activation.begin"
+	CapActivationFinish        = "activation.finish"
+	CapActivationPending       = "activation.pending"
+	CapActivationResume        = "activation.resume"
+	CapRealmAliasClaim         = "realm.alias_claim"
+	CapRealmGrantRecipients    = "realm.grant_recipients"
+	CapRealmSetVisibility      = "realm.set_visibility"
+	CapRealmPublicBrandingGet  = "realm.public_branding_get"
+	CapRealmPublicBrandingSet  = "realm.public_branding_set"
+	CapServerDetach            = "server.detach"
+	CapServerSetSessionTimeout = "server.set_session_timeout"
+	CapRealmRemoveBegin        = "realm.remove_begin"
+	CapRealmRemoveConfirm      = "realm.remove_confirm"
+	CapRecoveryDownload        = "recovery.download"
+	CapMobilePairingBegin      = "mobile_pairing.begin"
+	CapRepoCreateRequest       = "repo.create_request"
+	CapRepoAttachIntent        = "repo.attach_intent"
+	CapRepoAttachApprove       = "repo.attach_approve"
+	CapRepoRelocate            = "repo.relocate"
+	CapRepoLocate              = "repo.locate"
+	CapRepoLoadDump            = "repo.load_dump"
+	CapRepoGrantAccess         = "repo.grant_access"
+	CapRepoRevokeAccess        = "repo.revoke_access"
+	CapRepoSetEditingPolicy    = "repo.set_editing_policy"
+	CapRepoPublicShareList     = "repo.public_share_list"
+	CapRepoPublicShareCreate   = "repo.public_share_create"
+	CapRepoPublicShareUpdate   = "repo.public_share_update"
+	CapRepoPublicShareRevoke   = "repo.public_share_revoke"
+	CapRepoPublicShareDelete   = "repo.public_share_delete"
+	CapRepoDetach              = "repo.detach"
+	CapRepoDelete              = "repo.delete"
+	CapRepoLifecycleStatus     = "repo.lifecycle_status"
+	CapRepoActivity            = "repo.activity"
+	CapSystemRestart           = "system.restart"
+	CapSystemShutdown          = "system.shutdown"
 
 	// Update capabilities are advertised only after the daemon wires a signed
 	// release checker and transactional platform installer.
@@ -252,6 +254,19 @@ type ActivationStatus struct {
 	CanCreateRepositories bool   `json:"can_create_repositories"`
 	RepositoriesReady     bool   `json:"repositories_ready"`
 	PendingRequiredRepos  int    `json:"pending_required_repositories"`
+	// SessionTimeoutMin is how long one send or fetch may run on this
+	// server, in minutes. Zero means the default (30).
+	SessionTimeoutMin int `json:"session_timeout_min,omitempty"`
+}
+
+type ServerSetSessionTimeoutPayload struct {
+	ServerID string `json:"server_id"`
+	Minutes  int    `json:"minutes"`
+}
+
+type ServerSetSessionTimeoutResult struct {
+	ServerID string `json:"server_id"`
+	Minutes  int    `json:"minutes"`
 }
 
 type ActivationBeginPayload struct {

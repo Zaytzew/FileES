@@ -663,12 +663,12 @@ func TestWindowsSettingsDialogGatesEveryButtonPerRow(t *testing.T) {
 	script, err := buildSettingsDialogScript(SettingsDialogRequest{
 		Title: "Ustawienia FileES",
 		Servers: []SettingsServer{{
-			ID: "biuro", Name: "Biuro", CanSetRealmVisibility: true, CanAddFolder: true,
+			ID: "biuro", Name: "Biuro", CanSetRealmVisibility: true, CanSetSessionTimeout: true, CanAddFolder: true,
 			Folders: []SettingsFolder{
 				{ID: "repo-1", Name: "Rysunki", CanManageGrants: true, CanLocate: true, CanDetach: true, CanDelete: true, CanLoadDump: true},
 				{ID: "repo-2", Name: "Obce", CanConnect: true},
 			},
-		}, {ID: "readonly", Name: "Audyt"}},
+		}, {ID: "readonly", Name: "Audyt", CanSetSessionTimeout: true}},
 		Recoveries: []SettingsRecovery{{OperationID: "op-1", ServerName: "Biuro", Status: "gotowe", CanDownload: true}},
 	})
 	if err != nil {
@@ -705,12 +705,13 @@ func TestWindowsSettingsDialogGatesEveryButtonPerRow(t *testing.T) {
 		folder string
 		caps   map[string]bool
 	}{
-		{"Rysunki", map[string]bool{"CanVisibility": true, "CanGrants": true, "CanAdd": true, "CanConnect": false, "CanLocate": true, "CanDetach": true, "CanDelete": true, "CanLoadDump": true, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
-		{"Obce", map[string]bool{"CanVisibility": true, "CanGrants": false, "CanAdd": true, "CanConnect": true, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		{"Rysunki", map[string]bool{"CanVisibility": true, "CanSessionTimeout": true, "CanGrants": true, "CanAdd": true, "CanConnect": false, "CanLocate": true, "CanDetach": true, "CanDelete": true, "CanLoadDump": true, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		{"Obce", map[string]bool{"CanVisibility": true, "CanSessionTimeout": true, "CanGrants": false, "CanAdd": true, "CanConnect": true, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
 		// A server that offers neither realm visibility nor folder creation
-		// (e.g. a read-only client role) keeps only the two lifecycle actions.
-		{"Brak folderów", map[string]bool{"CanVisibility": false, "CanGrants": false, "CanAdd": false, "CanConnect": false, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
-		{"gotowe", map[string]bool{"CanVisibility": false, "CanGrants": false, "CanAdd": false, "CanConnect": false, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": false, "CanRemoveRealm": false, "CanDownloadRecovery": true}},
+		// (e.g. a read-only client role) keeps only the two lifecycle actions
+		// plus the local session-timeout setting.
+		{"Brak folderów", map[string]bool{"CanVisibility": false, "CanSessionTimeout": true, "CanGrants": false, "CanAdd": false, "CanConnect": false, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": true, "CanRemoveRealm": true, "CanDownloadRecovery": false}},
+		{"gotowe", map[string]bool{"CanVisibility": false, "CanSessionTimeout": false, "CanGrants": false, "CanAdd": false, "CanConnect": false, "CanLocate": false, "CanDetach": false, "CanDelete": false, "CanLoadDump": false, "CanDeactivate": false, "CanRemoveRealm": false, "CanDownloadRecovery": true}},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("rows = %d, want %d", len(rows), len(want))

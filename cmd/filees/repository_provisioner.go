@@ -50,7 +50,7 @@ type provisionedAttachment struct {
 func newDaemonProvisioner(local *localrepo.Store, store *provisioning.Store, profiles []clientprofile.Profile) *daemonProvisioner {
 	p := &daemonProvisioner{local: local, provisioning: store, profiles: make(map[string]clientprofile.Profile), queue: make(chan string, 32)}
 	p.newAttachmentSVN = func(profile clientprofile.Profile, operationID string) attachmentSVN {
-		return client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:attachment:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
+		return client.New(client.Options{SvnPath: "svn", Timeout: profile.SVNTimeout(), LogScope: "svn:attachment:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
 	}
 	for _, profile := range profiles {
 		p.profiles[profile.ServerID] = profile
@@ -208,7 +208,7 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		_, _ = p.local.MarkError(operationID, err)
 		return
 	}
-	svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Minute, LogScope: "svn:provisioning:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
+	svn := client.New(client.Options{SvnPath: "svn", Timeout: profile.SVNTimeout(), LogScope: "svn:provisioning:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
 	orchestrator := provisioning.Orchestrator{
 		Store: p.provisioning, Control: controlTransport, SVN: svn,
 		Limits: provisioning.ImportLimits{MaxBatchFiles: 100, MaxBatchBytes: 512 << 20},
@@ -706,7 +706,7 @@ func (p *daemonProvisioner) publishAttachment(ctx context.Context, operation pro
 	profile, ok := p.profiles[record.ServerID]
 	p.mu.RUnlock()
 	if ok {
-		repo := config.Repo{ID: operation.RepoID, RepoURL: operation.RepoURL, LocalPath: operation.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: "rw"}
+		repo := config.Repo{ID: operation.RepoID, RepoURL: operation.RepoURL, LocalPath: operation.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: "rw"}
 		select {
 		case p.attachments <- provisionedAttachment{Repo: repo}:
 		case <-ctx.Done():
@@ -718,7 +718,7 @@ func (p *daemonProvisioner) publishLocalRecord(ctx context.Context, record local
 	if p.attachments == nil {
 		return
 	}
-	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access}
+	repo := config.Repo{ID: record.RepoID, RepoURL: record.RepoURL, LocalPath: record.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: record.Access}
 	select {
 	case p.attachments <- provisionedAttachment{Repo: repo}:
 	case <-ctx.Done():

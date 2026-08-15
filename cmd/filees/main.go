@@ -131,6 +131,7 @@ func runDaemon() {
 		os.Exit(1)
 	}
 	profileEvents := make(chan clientprofile.Profile, 8)
+	timeoutEvents := make(chan clientprofile.Profile, 8)
 
 	gate := runtime.NewHostGate(3)
 	mtx := runtime.NewRepoMutex()
@@ -178,6 +179,12 @@ func runDaemon() {
 	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue})
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
 	ipc.SetServerDetachService(serverDetachService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot()})
+	ipc.SetSessionTimeoutService(sessionTimeoutService{root: clientprofile.DefaultRoot(), provisioner: provisioner, onChange: func(profile clientprofile.Profile) {
+		select {
+		case timeoutEvents <- profile:
+		case <-ctx.Done():
+		}
+	}})
 	recoveryRegistry := recoverykit.Registry{Root: filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recovery")}
 	ipc.SetRealmRemovalService(realmRemovalClientService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), registry: recoveryRegistry})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
@@ -193,7 +200,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, provisionedAttachments, ipc, lifecycleStore, gate, mtx, activityJournal, realmAliases.ProjectAlias); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, ipc, lifecycleStore, gate, mtx, activityJournal, realmAliases.ProjectAlias); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	if lifecycle.action.Load() == daemonActionRestart {

@@ -38,6 +38,7 @@
 <span class="nav-pillar">Tech</span>
 <a href="architecture.html">Architektura</a>
 <a href="install.html">Instalacja</a>
+<a href="operations.html">Eksploatacja</a>
 <a href="security.html" class="is-current">Bezpieczeństwo</a>
 <a href="man-pages.html">Man</a>
 </span>
@@ -110,7 +111,7 @@
 <p><strong>I-15. Kopia robocza usługowa nigdy nie jest mutowana jako root.</strong> Wydawcy administracyjni odmawiają uruchomienia Subversion, gdy ich efektywny UID nie jest właścicielem WC. Mały helper setuid-root, <code>filees-service-wc-corrector</code>, może naprawić wyłącznie własność — nigdy trybów ani treści — zanim wystartuje worker płaszczyzny sterowania. W przeciwnym razie obiekty pristine należące do roota w <code>.svn</code> trwale blokują każdą późniejszą operację właściciela.</p>
 <p><strong>I-16. Przyjęty paszport onboardingu jest związany z jednym zaproszeniem.</strong> Klient przechowuje SHA-256 tokenu zaproszenia. To samo zaproszenie można wznowić; inne ważne zaproszenie może zastąpić wyłącznie niedokończony stan; istniejący <code>client-profile.json</code> jest twardą granicą. Serwer serializuje też publikację service-WC za wspólną blokadą i zatwierdza wyłącznie ścieżki bieżącej transakcji.</p>
 
-<nav class="page-nav"><a href="public-shares.html">← 5. Udziały publiczne</a><a href="man-pages.html">Strony man →</a></nav>
+<nav class="page-nav"><a href="operations.html">← Eksploatacja</a><a href="man-pages.html">Strony man →</a></nav>
 </div>
 </div>
 <footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-14 · źródło r494</span></footer>

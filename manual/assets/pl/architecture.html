@@ -31,6 +31,7 @@
 <span class="nav-group" aria-label="User">
 <span class="nav-pillar">User</span>
 <a href="user-guide.html">Pulpit</a>
+<a href="android.html">Android</a>
 <a href="public-shares.html">Udziały</a>
 <a href="administration.html">Administracja</a>
 </span>
@@ -342,7 +343,7 @@
 <tr><td>Silnik repozytorium</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Skanowanie, update/publish, dzierżawy edycji i jedyna granica CLI SVN.</td></tr>
 <tr><td>Autorytet serwera</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Uwierzytelnione tickety, kanoniczne rekordy repozytorium/grant/polityki oraz workery forced-command. Nie ma rezydentnego demona serwera FileES.</td></tr>
 <tr><td>Aktywacja i widok usługowy</td><td><code>pkg/onboarding</code>, <code>pkg/activation</code></td><td>Tożsamość instalacji, autoryzowane dołączenie do strefy i projekcja repozytorium usługowego specyficzna dla klienta.</td></tr>
-<tr><td>Inne granice zaufania</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Dostęp mobilny tylko-dopisujący, publiczna dystrybucja odczytu oddzielona od poświadczeń zapisu pulpitu oraz mały helper setuid, który naprawia wyłącznie właścicielstwo usługowej WC.</td></tr>
+<tr><td>Inne granice zaufania</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Dostęp mobilny: odczyt udziału, zapis wyłącznie pod <code>mobile-uploads/</code> (inna treść na tej samej ścieżce to nowa rewizja), publiczna dystrybucja odczytu oddzielona od poświadczeń zapisu pulpitu oraz mały helper setuid, który naprawia wyłącznie właścicielstwo usługowej WC.</td></tr>
 <tr><td>Wydanie / instalacja</td><td><code>internal/clientupdate</code>, <code>internal/serverinstall</code>, <code>internal/release*</code></td><td>Podpisane aktualizacje pulpitu, instalacja serwera sterowana manifestem i koperty wydań.</td></tr>
 </table></div>
 <p>Dla każdego skonfigurowanego repozytorium demon uruchamia niezależny potok:</p>

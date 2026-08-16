@@ -1,9 +1,9 @@
-.Dd August 14, 2026
+.Dd August 16, 2026
 .Dt FILEES-MOBILE-V1 8
 .Os
 .Sh NAME
 .Nm filees-mobile-v1
-.Nd FileES append-only mobile protocol entry
+.Nd FileES mobile protocol entry
 .Sh SYNOPSIS
 .Nm
 .Sh DESCRIPTION
@@ -17,7 +17,15 @@ mode 4550, the same class as
 .Pp
 The mobile client is paired from an already activated desktop.
 It inherits that desktop's repository list once.
-The protocol is append-only.
+The phone may read a granted share and write only under
+.Pa mobile-uploads/ .
+A new path is unique-append.
+The same path under
+.Pa mobile-uploads/
+with different content becomes a new Subversion revision.
+.Ic UPLOAD_TREE
+ingests a marked zip as one commit; an unmarked zip is rejected as a
+whole.
 The mobile projection does not receive
 .Ic editing_policy .
 .Pp

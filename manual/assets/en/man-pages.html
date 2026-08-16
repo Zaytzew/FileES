@@ -31,6 +31,7 @@
 <span class="nav-group" aria-label="User">
 <span class="nav-pillar">User</span>
 <a href="user-guide.html">Desktop</a>
+<a href="android.html">Android</a>
 <a href="public-shares.html">Shares</a>
 <a href="administration.html">Administration</a>
 </span>
@@ -62,7 +63,7 @@
 <li><a href="#filees-rotate"><code>filees-rotate</code></a> — perform an explicit SVN FSFS generation change</li>
 <li><a href="#filees-public-authority"><code>filees-public-authority</code></a> — FileES Public Shares backchannel and recipient OTP</li>
 <li><a href="#filees-links"><code>filees-links</code></a> — public FastCGI surface for FileES shares</li>
-<li><a href="#filees-mobile-v1"><code>filees-mobile-v1</code></a> — FileES append-only mobile protocol entry</li>
+<li><a href="#filees-mobile-v1"><code>filees-mobile-v1</code></a> — FileES mobile protocol entry</li>
 <li><a href="#filees-recovery-entry"><code>filees-recovery-entry</code></a> — serve FileES realm-removal archives for one operation</li>
 <li><a href="#man-style">Style</a></li>
 <li><a href="#man-install">Installation</a></li>
@@ -294,15 +295,15 @@ filees-service-wc-corrector</code></pre>
 <tr><td><code>--apply</code></td><td>Download, verify, stage, journal and install the channel head or release .</td></tr>
 <tr><td><code>--adopt</code></td><td>Verify and adopt without modification.</td></tr>
 <tr><td><code>--rollback</code></td><td>Restore the previous locally installed release from the journalled pre-image.</td></tr>
-<tr><td><code>--revert-to release</code></td><td>Install a named release such as r492 .</td></tr>
+<tr><td><code>--revert-to release</code></td><td>Install a named release such as r543 .</td></tr>
 <tr><td><code>--purge</code></td><td>Remove files this installer manages. Keeps /var/filees and /etc/filees unless --wipe-state is also given.</td></tr>
 <tr><td><code>--allow-rollback</code></td><td>Permit installing a release older than the local high-water mark.</td></tr>
 <tr><td><code>--yes</code></td><td>Answer yes to interactive prompts.</td></tr>
 <tr><td><code>--talkative</code></td><td>Print Sq [SECURITY] unveil and pledge diagnostics.</td></tr>
 </table></div>
 <h3>Examples</h3>
-<p>Adopt a host that already matches signed r492:</p>
-<pre><code>$ doas filees-install --adopt r492</code></pre>
+<p>Adopt a host that already matches signed r543:</p>
+<pre><code>$ doas filees-install --adopt r543</code></pre>
 <p>Plan and apply the configured channel:</p>
 <pre><code>$ doas filees-install --dry-run
 $ doas filees-install --apply</code></pre>
@@ -372,10 +373,10 @@ filees-links --config /etc/filees/public-links.json</code></pre>
 <article class="cli-tool" id="filees-mobile-v1">
 <span class="cli-kind">Forced command — sshd starts it; you do not type flags</span>
 <h2>filees-mobile-v1(8)</h2>
-<p class="cli-nd">FileES append-only mobile protocol entry</p>
+<p class="cli-nd">FileES mobile protocol entry</p>
 <h3>Role</h3>
 <p>filees-mobile-v1 is the set-id entry for _filees-mobile . The installed image is _filees-state : _filees-access mode 4550, the same class as filees-client-entry(8) .</p>
-<p>The mobile client is paired from an already activated desktop. It inherits that desktop's repository list once. The protocol is append-only. The mobile projection does not receive editing_policy .</p>
+<p>The mobile client is paired from an already activated desktop. It inherits that desktop's repository list once. The phone may read a granted share and write only under mobile-uploads/ . A new path is unique-append. The same path under mobile-uploads/ with different content becomes a new Subversion revision. UPLOAD_TREE ingests a marked zip as one commit; an unmarked zip is rejected as a whole. The mobile projection does not receive editing_policy .</p>
 <p>sshd(8) uses the shared authorized_keys file. The per-key command= line selects this image. There is no ForceCommand on the _filees-mobile match block.</p>
 <h3>Invocation</h3>
 <pre><code>filees-mobile-v1</code></pre>

@@ -31,6 +31,7 @@
 <span class="nav-group" aria-label="User">
 <span class="nav-pillar">User</span>
 <a href="user-guide.html">Desktop</a>
+<a href="android.html">Android</a>
 <a href="public-shares.html">Shares</a>
 <a href="administration.html">Administration</a>
 </span>
@@ -62,7 +63,7 @@
 <div class="manual-content">
 <h1 id="ch3">Chapter 3: Server Installation and Deploy</h1><div class="chapter-content">
 <p>This chapter is the Tech walkthrough: what you need, the two installer scripts, and <code>filees-install</code>. sshd fragments, the <code>server.json</code> field table, key regeneration and the htdocs tree are in <a href="operations.html">Operations</a>.</p>
-<h2 id="ch3-prereq">3.1 Prerequisites</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Production OpenBSD 7.9 host <code>spot.example.net</code> is on signed release r492.</span></div>
+<h2 id="ch3-prereq">3.1 Prerequisites</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>Production OpenBSD 7.9 host <code>spot.example.net</code> is on signed release r543 (channel alpha).</span></div>
 <p>The FileES server toolchain targets <strong>OpenBSD 7.9/amd64</strong> as the primary and security-reference platform. A Linux/amd64 server bundle is also buildable; distribution-specific hardening remains an administrator responsibility because Linux cannot provide the same <code>pledge</code>/<code>unveil</code> contract. FileES adds no network listener: the system <code>sshd</code> is its only control and data endpoint. Public Shares, when enabled, are served by the host's existing <code>httpd</code> (or an equivalent TLS terminator) through FastCGI — FileES still does not terminate TLS itself.</p>
 <p>External dependencies:</p>
 <ul>
@@ -78,7 +79,7 @@
 <tr><td><code>_filees-tunnel</code></td><td>OTP SSH account; one fixed reverse tunnel; forced command <code>filees-entry</code></td></tr>
 <tr><td><code>_filees-client</code></td><td>Installation-key SSH for service-repository proof and control-plane tickets</td></tr>
 <tr><td><code>_filees-data</code></td><td>Installation-key SSH for data-repository <code>svnserve -t</code>; canonical URL user</td></tr>
-<tr><td><code>_filees-mobile</code></td><td>Mobile append-only protocol; set-id entry <code>filees-mobile-v1</code></td></tr>
+<tr><td><code>_filees-mobile</code></td><td>Mobile protocol: read the share, write only under <code>mobile-uploads/</code>; set-id entry <code>filees-mobile-v1</code></td></tr>
 <tr><td><code>_filees-recovery</code></td><td>Capability-bound archive download after realm removal</td></tr>
 <tr><td><code>_filees-links</code></td><td>Public FastCGI process; owns the public cache, never SVN credentials</td></tr>
 <tr><td><code>_filees-access</code></td><td>Group for set-id client/mobile/corrector binaries</td></tr>
@@ -124,7 +125,7 @@
 <h2 id="ch3-keys">3.5 Key Generation</h2>
 <div class="section-meta"><span class="status status-implemented">Implemented</span></div>
 <p>The installer writes the OTP pepper and the worker key pair. Regenerating either invalidates in-flight onboarding. Commands are in <a href="operations.html#ops-keys">Operations</a>.</p>
-<h2 id="ch3-managed">3.6 Managed Install and Upgrade: <code>filees-install</code></h2><div class="section-meta"><span class="status status-verified">Verified on production</span><span>Signed FILEES-BIN channel <code>alpha</code> currently points at release r492; <code>spot.example.net</code> reports <code>installed=r492 available=r492</code> for all 16 managed binaries.</span></div>
+<h2 id="ch3-managed">3.6 Managed Install and Upgrade: <code>filees-install</code></h2><div class="section-meta"><span class="status status-verified">Verified on production</span><span>Signed FILEES-BIN channel <code>alpha</code> points at release r543; <code>spot.example.net</code> took that release on 2026-08-16 (<code>UPLOAD_TREE</code> ingest).</span></div>
 <p><code>filees-install</code> is the signed, manifest-driven successor to the server shell installers. It is modelled on the ksefUCK upgrade channel and adds signed owner/group policy (schema v2), correct POSIX set-id handling, UID/GID-preserving rollback, a durable interrupted-apply journal and an exclusive updater lock. The distribution repository is <code>svn://cloud.atmprojekt.pl/FILEES-BIN</code>. The production public trust root is embedded at build time; the private <code>.sec</code> key stays on the dedicated signing host and never enters this working copy, the build host or FILEES-BIN. After a complete two-stage bootstrap, <code>--adopt</code> records the existing installation as the managed baseline only when every local hash, owner, group and mode exactly matches the signed manifest.</p>
 <p>A production upgrade is <code>filees-install --dry-run</code> then <code>--apply</code>. Chaos tests that stop the updater mid-apply belong on a VM, not on a live host. The signed updater manages the 16 binary targets from <code>packaging/server/openbsd-binary-policy.json</code>; manual pages installed by <code>install-server.sh</code> are documentation, not currently a FILEES-BIN payload.</p>
 <pre><code># Plan against the configured channel (no changes):

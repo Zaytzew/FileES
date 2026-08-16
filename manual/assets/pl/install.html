@@ -31,6 +31,7 @@
 <span class="nav-group" aria-label="User">
 <span class="nav-pillar">User</span>
 <a href="user-guide.html">Pulpit</a>
+<a href="android.html">Android</a>
 <a href="public-shares.html">Udziały</a>
 <a href="administration.html">Administracja</a>
 </span>
@@ -62,7 +63,7 @@
 <div class="manual-content">
 <h1 id="ch3">Rozdział 3: Instalacja i wdrożenie serwera</h1><div class="chapter-content">
 <p>Ten rozdział jest ścieżką Tech: czego potrzebujesz, dwa skrypty instalatora i <code>filees-install</code>. Fragmenty sshd, tabela pól <code>server.json</code>, regeneracja kluczy i drzewo htdocs są w <a href="operations.html">Eksploatacji</a>.</p>
-<h2 id="ch3-prereq">3.1 Wymagania wstępne</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Produkcyjny host OpenBSD 7.9 <code>spot.example.net</code> jest na podpisanym wydaniu r492.</span></div>
+<h2 id="ch3-prereq">3.1 Wymagania wstępne</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Produkcyjny host OpenBSD 7.9 <code>spot.example.net</code> jest na podpisanym wydaniu r543 (kanał alpha).</span></div>
 <p>Narzędzia serwera FileES celują w <strong>OpenBSD 7.9/amd64</strong> jako platformę główną i referencyjną pod względem bezpieczeństwa. Bundel serwera Linux/amd64 da się też zbudować; hartowanie zależne od dystrybucji pozostaje obowiązkiem administratora, bo Linux nie zapewnia tego samego kontraktu <code>pledge</code>/<code>unveil</code>. FileES nie dodaje żadnego nasłuchu sieciowego: systemowy <code>sshd</code> jest jedynym punktem sterowania i danych. Udziały publiczne, gdy są włączone, serwuje istniejący na hoście <code>httpd</code> (albo równoważny terminator TLS) przez FastCGI — FileES nadal sam nie kończy TLS.</p>
 <p>Zależności zewnętrzne:</p>
 <ul>
@@ -78,7 +79,7 @@
 <tr><td><code>_filees-tunnel</code></td><td>Konto SSH OTP; jeden stały tunel zwrotny; wymuszone polecenie <code>filees-entry</code></td></tr>
 <tr><td><code>_filees-client</code></td><td>SSH na kluczu instalacyjnym do dowodu repozytorium usług i biletów płaszczyzny sterowania</td></tr>
 <tr><td><code>_filees-data</code></td><td>SSH na kluczu instalacyjnym do <code>svnserve -t</code> repozytorium danych; kanoniczny użytkownik URL</td></tr>
-<tr><td><code>_filees-mobile</code></td><td>Mobilny protokół tylko do dopisywania; wejście set-id <code>filees-mobile-v1</code></td></tr>
+<tr><td><code>_filees-mobile</code></td><td>Protokół mobilny: odczyt udziału, zapis wyłącznie pod <code>mobile-uploads/</code>; wejście set-id <code>filees-mobile-v1</code></td></tr>
 <tr><td><code>_filees-recovery</code></td><td>Pobieranie archiwum związane z capability po usunięciu strefy</td></tr>
 <tr><td><code>_filees-links</code></td><td>Publiczny proces FastCGI; właściciel publicznego cache, nigdy poświadczeń SVN</td></tr>
 <tr><td><code>_filees-access</code></td><td>Grupa dla binarek set-id klienta, mobile i correctora</td></tr>
@@ -124,7 +125,7 @@
 <h2 id="ch3-keys">3.5 Generowanie kluczy</h2>
 <div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <p>Instalator zapisuje pieprz OTP i parę kluczy workera. Regeneracja któregokolwiek unieważnia onboarding w locie. Polecenia są w <a href="operations.html#ops-keys">Eksploatacji</a>.</p>
-<h2 id="ch3-managed">3.6 Zarządzana instalacja i aktualizacja: <code>filees-install</code></h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na produkcji</span><span>Podpisany kanał FILEES-BIN <code>alpha</code> wskazuje obecnie na wydanie r492; <code>spot.example.net</code> zgłasza <code>installed=r492 available=r492</code> dla wszystkich 16 zarządzanych binarek.</span></div>
+<h2 id="ch3-managed">3.6 Zarządzana instalacja i aktualizacja: <code>filees-install</code></h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na produkcji</span><span>Podpisany kanał FILEES-BIN <code>alpha</code> wskazuje na wydanie r543; <code>spot.example.net</code> przyjął to wydanie 2026-08-16 (ingest <code>UPLOAD_TREE</code>).</span></div>
 <p><code>filees-install</code> to podpisany, sterowany manifestem następca powłokowych instalatorów serwera. Jest wzorowany na kanale aktualizacji ksefUCK i dodaje podpisaną politykę właściciela/grupy (schemat v2), poprawną obsługę POSIX set-id, rollback zachowujący UID/GID, trwały dziennik przerwanego apply i wyłączną blokadę aktualizatora. Repozytorium dystrybucji to <code>svn://cloud.atmprojekt.pl/FILEES-BIN</code>. Produkcyjny publiczny korzeń zaufania jest wbudowany w czasie kompilacji; prywatny klucz <code>.sec</code> zostaje na dedykowanym hoście podpisywania i nigdy nie wchodzi do tej kopii roboczej, hosta budowania ani FILEES-BIN. Po pełnym dwuetapowym bootstrapie <code>--adopt</code> zapisuje istniejącą instalację jako zarządzaną bazę tylko wtedy, gdy każdy lokalny hash, właściciel, grupa i tryb dokładnie zgadza się z podpisanym manifestem.</p>
 <p>Produkcyjna aktualizacja to <code>filees-install --dry-run</code>, potem <code>--apply</code>. Testy chaosowe zatrzymujące aktualizator w środku apply należą na VM, nie na żywym hoście. Podpisany aktualizator zarządza 16 celami binarnymi z <code>packaging/server/openbsd-binary-policy.json</code>; strony podręcznika instalowane przez <code>install-server.sh</code> to dokumentacja, nie aktualny ładunek FILEES-BIN.</p>
 <pre><code># Plan against the configured channel (no changes):

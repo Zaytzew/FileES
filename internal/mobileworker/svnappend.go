@@ -99,6 +99,79 @@ func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filen
 	return rev, nil
 }
 
+// CommitTree checks out the repo root at depth empty and publishes every
+// extracted file in one commit: mkdir missing parents, add new objects
+// (with svn:needs-lock + append-only), overwrite existing ones.
+func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string, files []TreeFile, requestID string) (int64, error) {
+	if len(files) == 0 {
+		out, err := output(ctx, s.svnlook(), "youngest", repoPath)
+		if err != nil {
+			return 0, err
+		}
+		m := revLine.FindString(string(out))
+		rev, err := strconv.ParseInt(m, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("svnlook youngest: unexpected output %q", out)
+		}
+		return rev, nil
+	}
+	wc, err := os.MkdirTemp("", "filees-mobile-tree-")
+	if err != nil {
+		return 0, err
+	}
+	defer os.RemoveAll(wc)
+	if err := runStream(ctx, io.Discard, s.svn(), "checkout", "-q", "--depth", "empty", fileURL(repoPath), wc); err != nil {
+		return 0, err
+	}
+	for _, file := range files {
+		rel := strings.Trim(file.RelPath, "/")
+		fullRel := rel
+		if parentPath != "" {
+			fullRel = strings.Trim(parentPath, "/") + "/" + rel
+		}
+		parent := ""
+		if i := strings.LastIndex(fullRel, "/"); i >= 0 {
+			parent = fullRel[:i]
+		}
+		if err := s.ensureParent(ctx, wc, repoPath, parent); err != nil {
+			return 0, err
+		}
+		fileInWC := filepath.Join(append([]string{wc}, strings.Split(fullRel, "/")...)...)
+		if file.Replace {
+			if err := runStream(ctx, io.Discard, s.svn(), "update", "-q", "--set-depth", "empty", fileInWC); err != nil {
+				return 0, err
+			}
+		}
+		if err := copyFile(file.SpoolPath, fileInWC); err != nil {
+			return 0, err
+		}
+		if !file.Replace {
+			if err := runStream(ctx, io.Discard, s.svn(), "add", "-q", fileInWC); err != nil {
+				return 0, err
+			}
+			if err := runStream(ctx, io.Discard, s.svn(), "propset", "-q", "svn:needs-lock", "*", fileInWC); err != nil {
+				return 0, err
+			}
+			if err := runStream(ctx, io.Discard, s.svn(), "propset", "-q", passport.AppendOnlyProperty, "*", fileInWC); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if err := runStream(ctx, io.Discard, s.svn(), "commit", wc, "-m", "mobile tree ingest", "--with-revprop", "filees:request-id="+requestID); err != nil {
+		return 0, err
+	}
+	out, err := output(ctx, s.svnlook(), "youngest", repoPath)
+	if err != nil {
+		return 0, err
+	}
+	m := revLine.FindString(string(out))
+	rev, err := strconv.ParseInt(m, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("svnlook youngest: unexpected output %q", out)
+	}
+	return rev, nil
+}
+
 // ensureParent brings each parent segment into the sparse WC: update if it
 // already exists in the repository, otherwise svn mkdir. The new directories
 // are committed together with the uploaded file.
@@ -122,6 +195,12 @@ func (s SVNAppender) ensureParent(ctx context.Context, wc, repoPath, parentPath 
 			rel += "/" + seg
 		}
 		abs := filepath.Join(wc, filepath.FromSlash(rel))
+		if info, err := os.Stat(abs); err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("parent path %q is not a directory", rel)
+			}
+			continue
+		}
 		kind, exists, err := reader.Stat(ctx, repoPath, rel, rev)
 		if err != nil {
 			return err

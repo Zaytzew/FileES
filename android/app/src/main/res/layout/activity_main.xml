@@ -13,8 +13,13 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="?attr/colorSurface"
-            app:title="@string/app_name" />
+            android:background="@color/filees_navy"
+            android:minHeight="?attr/actionBarSize"
+            app:title="@string/app_name"
+            app:titleTextColor="@color/filees_white"
+            app:navigationIconTint="@color/filees_white"
+            app:subtitleTextColor="@color/filees_white"
+            app:itemIconTint="@color/filees_white" />
 
         <LinearLayout
             android:id="@+id/panelUnpaired"
@@ -70,6 +75,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:gravity="center"
+            android:textAlignment="center"
             android:text="@string/status_sending" />
     </LinearLayout>
 </FrameLayout>

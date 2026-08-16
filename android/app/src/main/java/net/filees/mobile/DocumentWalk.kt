@@ -10,18 +10,22 @@ data class WalkedFile(
     val relativeDir: String,
     val filename: String,
     val contentType: String,
+    val size: Long,
 )
 
 object DocumentWalk {
     fun single(resolver: ContentResolver, uri: Uri): WalkedFile {
         var name = uri.lastPathSegment ?: "upload.bin"
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (index >= 0 && cursor.moveToFirst()) {
-                name = cursor.getString(index) ?: name
+        var size = 0L
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameCol = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeCol = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (nameCol >= 0) name = cursor.getString(nameCol) ?: name
+                if (sizeCol >= 0 && !cursor.isNull(sizeCol)) size = cursor.getLong(sizeCol)
             }
         }
-        return WalkedFile(uri, "", name, resolver.getType(uri).orEmpty())
+        return WalkedFile(uri, "", name, resolver.getType(uri).orEmpty(), size)
     }
 
     fun tree(resolver: ContentResolver, treeUri: Uri): List<WalkedFile> {
@@ -38,11 +42,13 @@ object DocumentWalk {
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
         )
         resolver.query(children, projection, null, null, null)?.use { cursor ->
             val idCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
             val nameCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
             val mimeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            val sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
             while (cursor.moveToNext()) {
                 val id = cursor.getString(idCol) ?: continue
                 val name = cursor.getString(nameCol) ?: continue
@@ -51,11 +57,13 @@ object DocumentWalk {
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                     out += walk(resolver, treeUri, id, "$relDir/$name")
                 } else {
+                    val size = if (sizeCol >= 0 && !cursor.isNull(sizeCol)) cursor.getLong(sizeCol) else 0L
                     out += WalkedFile(
                         uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id),
                         relativeDir = relDir,
                         filename = name,
                         contentType = mime,
+                        size = size,
                     )
                 }
             }

@@ -22,7 +22,11 @@ const (
 	KeyCommitOutdated  Key = "commit.outdated"
 	KeyCommitNoVCS     Key = "commit.not_versioned"
 	KeyReconConflict   Key = "recon.conflict"
-	KeyPolicyDeferred  Key = "policy.deferred"
+	KeyPolicyDeferred        Key = "policy.deferred"
+	KeyMobileOpNotOnServer   Key = "mobile.op.not_on_server"
+	KeyMobileTreeNotIngested Key = "mobile.tree.not_ingested"
+	KeyMobileTreeNotAPack    Key = "mobile.tree.not_a_pack"
+	KeyMobileTreeCorrupt     Key = "mobile.tree.payload_corrupt"
 )
 
 var (
@@ -148,6 +152,10 @@ var specs = []Spec{
 	{"MOBILE-0001", "mobile_pairing.unavailable", SevError, HintRetry, nil, "Mobile pairing is not available", "Parowanie urządzenia mobilnego jest teraz niedostępne"},
 	{"MOBILE-1001", "mobile_pairing.server_not_activated", SevError, HintNone, nil, "Mobile pairing needs an activated server", "Parowanie wymaga aktywowanego serwera"},
 	{"MOBILE-1002", "mobile_pairing.begin_failed", SevError, HintRetry, nil, "Mobile pairing could not start", "Nie udało się rozpocząć parowania"},
+	{"MOBILE-2001", KeyMobileOpNotOnServer, SevError, HintRequireAction, nil, "Mobile worker exited 70 — applied filees-mobile-v1 does not know this operation", "Serwer nie zna tej operacji mobilnej. Zwykle stary filees-mobile-v1 (status 70) — brakuje podpisanego apply."},
+	{"MOBILE-2002", KeyMobileTreeNotIngested, SevError, HintRequireAction, nil, "UPLOAD_TREE reached the host but the worker does not ingest zip-on-wire yet", "Telefon spakował folder i wysłał jednym połączeniem. Serwer paczki jeszcze nie przyjmuje — brakuje apply filees-mobile-v1."},
+	{"MOBILE-2003", KeyMobileTreeNotAPack, SevError, HintNone, nil, "UPLOAD_TREE payload is a repository zip, not a FileES tree pack", "To zwykły plik ZIP, nie paczka FileES. Taki artefakt idzie jako jeden obiekt, nie jako drzewo."},
+	{"MOBILE-2004", KeyMobileTreeCorrupt, SevError, HintRetry, nil, "UPLOAD_TREE zip sha256 or size does not match the header", "Paczka uszkodziła się w transporcie (sha256 nie zgadza się z nagłówkiem). Nic nie zapisano — wyślij folder jeszcze raz."},
 
 	{"ACTIVATION-0001", "activation.unavailable", SevError, HintRetry, nil, "Activation service is not available", "Aktywacja jest teraz niedostępna"},
 	{"ACTIVATION-1001", "activation.begin_failed", SevError, HintRetry, nil, "Activation could not start", "Nie udało się rozpocząć aktywacji"},

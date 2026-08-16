@@ -22,6 +22,9 @@ const (
 	Schema = "filees.mobile/v1"
 	// ManifestSchema tags the manifest projection (also the client cache artifact).
 	ManifestSchema = "filees.mobile-manifest/v2"
+	// TreePackComment marks a zip as FileES wire packaging, not a repo artifact.
+	// The worker unpacks only archives whose comment is this exact string.
+	TreePackComment = "filees.tree/v1"
 )
 
 // Operation is the mobile verb carried in a request envelope.
@@ -33,12 +36,13 @@ const (
 	OpListDirectory    Operation = "LIST_DIRECTORY"
 	OpReadObject       Operation = "READ_OBJECT"
 	OpUploadObject     Operation = "UPLOAD_OBJECT" // append-only, unique
+	OpUploadTree       Operation = "UPLOAD_TREE"   // zip-on-wire folder ingest
 	OpOperationStatus  Operation = "GET_OPERATION_STATUS"
 )
 
 func (o Operation) valid() bool {
 	switch o {
-	case OpRefreshManifest, OpListRepositories, OpListDirectory, OpReadObject, OpUploadObject, OpOperationStatus:
+	case OpRefreshManifest, OpListRepositories, OpListDirectory, OpReadObject, OpUploadObject, OpUploadTree, OpOperationStatus:
 		return true
 	}
 	return false
@@ -200,6 +204,24 @@ type UploadObjectResult struct {
 	ExistingSha256 string  `json:"existing_sha256,omitempty"`
 }
 
+// UploadTreePayload heads a zip-on-wire folder ingest (TREE_INGEST_CONCEPT).
+// The zip body is the frame payload. ParentPath must be under mobile-uploads/.
+type UploadTreePayload struct {
+	RepoID     string `json:"repo_id"`
+	ParentPath string `json:"parent_path"`
+	FileCount  int    `json:"file_count"`
+	Size       int64  `json:"size"`
+	Sha256     string `json:"sha256"`
+}
+
+// UploadTreeResult is the future worker receipt. Today's live worker does
+// not ingest this operation yet.
+type UploadTreeResult struct {
+	FileCount int   `json:"file_count"`
+	Size      int64 `json:"size"`
+	Revision  int64 `json:"revision,omitempty"`
+}
+
 type OperationStatusPayload struct {
 	TargetRequestID string `json:"target_request_id"`
 }
@@ -350,6 +372,26 @@ func (r Request) Validate() error {
 		if p.ObservedRevision < 0 {
 			return errors.New("observed_revision cannot be negative")
 		}
+	case OpUploadTree:
+		var p UploadTreePayload
+		if err := decodeStrict(r.Payload, &p); err != nil {
+			return fmt.Errorf("%s payload: %w", r.Operation, err)
+		}
+		if err := requireRepoID(p.RepoID); err != nil {
+			return err
+		}
+		if err := requireMobileUploadsParent(p.ParentPath); err != nil {
+			return err
+		}
+		if p.FileCount < 1 {
+			return errors.New("file_count must be at least 1")
+		}
+		if p.Size < 0 {
+			return errors.New("upload size cannot be negative")
+		}
+		if err := validateSha256Hex(p.Sha256); err != nil {
+			return err
+		}
 	case OpOperationStatus:
 		var p OperationStatusPayload
 		if err := decodeStrict(r.Payload, &p); err != nil {
@@ -429,6 +471,14 @@ func (r Response) validateResult() error {
 			if err := validateSha256Hex(res.Sha256); err != nil {
 				return err
 			}
+		}
+	case OpUploadTree:
+		var res UploadTreeResult
+		if err := decodeStrict(r.Result, &res); err != nil {
+			return fmt.Errorf("%s result: %w", r.Operation, err)
+		}
+		if res.FileCount < 0 || res.Size < 0 {
+			return errors.New("upload tree result counts cannot be negative")
 		}
 	case OpUploadObject:
 		var res UploadObjectResult
@@ -598,6 +648,14 @@ func validateRelPath(field, p string, allowEmpty bool) error {
 		}
 	}
 	return nil
+}
+
+func requireMobileUploadsParent(parent string) error {
+	p := strings.Trim(parent, "/")
+	if p != "mobile-uploads" && !strings.HasPrefix(p, "mobile-uploads/") {
+		return errors.New("parent_path must be under mobile-uploads/")
+	}
+	return validateRelPath("parent_path", parent, false)
 }
 
 func validateFilename(name string) error {

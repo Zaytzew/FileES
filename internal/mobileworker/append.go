@@ -25,6 +25,17 @@ type Committer interface {
 	// AppendFile commits spoolPath as the new file parent/filename with
 	// svn:needs-lock and a filees:request-id revprop, returning the new revision.
 	AppendFile(ctx context.Context, repoPath, parentPath, filename, spoolPath, requestID string) (int64, error)
+	// CommitTree publishes many files under parentPath in one commit.
+	// Replace marks an existing file that must be overwritten in HEAD.
+	CommitTree(ctx context.Context, repoPath, parentPath string, files []TreeFile, requestID string) (int64, error)
+}
+
+// TreeFile is one extracted zip entry ready to land under parentPath.
+type TreeFile struct {
+	RelPath   string
+	SpoolPath string
+	Replace   bool
+	Sha       string
 }
 
 // Appender serves UPLOAD_OBJECT: read-only for existing paths, append-only-unique

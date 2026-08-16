@@ -2,14 +2,24 @@ package mobileclient
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	v1 "filees/pkg/mobile/v1"
 
 	"github.com/google/uuid"
 )
+
+// sendOneTimeout is the budget for a single upload attempt. A folder of
+// many files must not share one deadline: the previous 2-minute batch
+// timer cancelled a later dial mid-lookup and looked like a DNS failure
+// even though earlier files had already landed.
+const sendOneTimeout = 2 * time.Minute
 
 // Transport carries one framed mobile operation to the server and returns the
 // response. Implementations wrap an SSH session (one operation per session); the
@@ -108,6 +118,31 @@ func (c Client) ListRepositories(ctx context.Context) (*v1.ListRepositoriesResul
 	return &res, nil
 }
 
+// UploadTree sends one zip-on-wire folder ingest (TREE_INGEST_CONCEPT).
+// Today's live worker does not implement this operation; the phone still
+// fires it so a packed folder is one SSH session instead of N.
+func (c Client) UploadTree(ctx context.Context, repoID, parentPath string, fileCount int, zip []byte) error {
+	sum := sha256.Sum256(zip)
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpUploadTree, v1.UploadTreePayload{
+		RepoID:     repoID,
+		ParentPath: parentPath,
+		FileCount:  fileCount,
+		Size:       int64(len(zip)),
+		Sha256:     hex.EncodeToString(sum[:]),
+	})
+	if err != nil {
+		return err
+	}
+	resp, _, err := c.Transport.Do(ctx, req, zip)
+	if err != nil {
+		return fmt.Errorf("UPLOAD_TREE: %w", err)
+	}
+	if resp.Status != v1.StatusOK {
+		return fmt.Errorf("UPLOAD_TREE: %w", respError(resp))
+	}
+	return nil
+}
+
 // DrainPending sends every non-terminal queued upload for repoID, one at a
 // time, oldest first, and records whatever the worker decides. It never
 // renames or auto-resolves a collision: NAME_TAKEN_DIFF and the other
@@ -122,11 +157,16 @@ func (c Client) DrainPending(ctx context.Context, repoID string) ([]PendingUploa
 	}
 	results := make([]PendingUpload, 0, len(queued))
 	for _, item := range queued {
+		if err := ctx.Err(); err != nil {
+			return results, err
+		}
 		if item.State.terminal() {
 			results = append(results, item)
 			continue
 		}
-		item, err = c.sendOne(ctx, item)
+		itemCtx, cancel := context.WithTimeout(ctx, sendOneTimeout)
+		item, err = c.sendOne(itemCtx, item)
+		cancel()
 		if err != nil {
 			return results, err
 		}
@@ -192,6 +232,9 @@ func (c Client) sendOne(ctx context.Context, item PendingUpload) (PendingUpload,
 
 func respError(resp v1.Response) error {
 	if resp.Error != nil {
+		if strings.TrimSpace(resp.Error.Message) != "" {
+			return fmt.Errorf("mobile operation failed: %s: %s", resp.Error.Code, resp.Error.Message)
+		}
 		return fmt.Errorf("mobile operation failed: %s", resp.Error.Code)
 	}
 	return errors.New("mobile operation failed")

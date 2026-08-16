@@ -80,6 +80,14 @@ func Classify(err error) Entry {
 	low := strings.ToLower(msg)
 
 	switch {
+	case containsAny(low, mobileCorruptNeedles):
+		return entryFrom(errcat.KeyMobileTreeCorrupt, msg)
+	case containsAny(low, mobilePackNeedles):
+		return entryFrom(errcat.KeyMobileTreeNotAPack, msg)
+	case containsAny(low, mobileTreeNeedles):
+		return entryFrom(errcat.KeyMobileTreeNotIngested, msg)
+	case containsAny(low, mobileOpNeedles):
+		return entryFrom(errcat.KeyMobileOpNotOnServer, msg)
 	case containsAny(low, netNeedles):
 		return entryFrom(errcat.KeyNetUnreachable, msg)
 	case containsAny(low, authNeedles):
@@ -99,6 +107,18 @@ func Classify(err error) Entry {
 
 // Pre-built: matches same patterns as client.IsNetworkError plus common SVN E-codes.
 var (
+	mobileCorruptNeedles = []string{
+		"tree.payload_corrupt", "payload corrupt", "sha256 or size mismatch", "payload sha256 mismatch",
+	}
+	mobilePackNeedles = []string{
+		"not a filees tree pack",
+	}
+	mobileTreeNeedles = []string{
+		"upload_tree", "not ingested",
+	}
+	mobileOpNeedles = []string{
+		"status 70", "op.unsupported",
+	}
 	netNeedles = []string{
 		"unable to connect", "connection refused", "connection timed out",
 		"network is unreachable", "no route to host", "host not found",

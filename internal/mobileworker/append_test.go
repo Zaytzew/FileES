@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -132,14 +133,29 @@ func (a Appender) mustUpload(t *testing.T, parent, name string, data []byte) v1.
 	return res
 }
 
-func TestAppendDestinationGone(t *testing.T) {
+func TestAppendCreatesMissingMobileUploadsTree(t *testing.T) {
+	requireSVN(t)
+	repo := newSeededRepo(t)
+	a := newAppender(t, repo, "rw")
+	data := []byte("z telefonu")
+	res := a.mustUpload(t, "mobile-uploads/Wakacje", "foto.jpg", data)
+	if res.Outcome != v1.OutcomeCommitted || res.FinalPath != "mobile-uploads/Wakacje/foto.jpg" {
+		t.Fatalf("missing-parent upload: %+v", res)
+	}
+	kind, exists, err := SVNReader{}.Stat(context.Background(), repo, "mobile-uploads/Wakacje", res.Revision)
+	if err != nil || !exists || kind != v1.KindDirectory {
+		t.Fatalf("created parent: exists=%v kind=%q err=%v", exists, kind, err)
+	}
+}
+
+func TestAppendDestinationGoneWhenParentIsAFile(t *testing.T) {
 	requireSVN(t)
 	repo := newSeededRepo(t)
 	a := newAppender(t, repo, "rw")
 
-	res := a.mustUpload(t, "no/such/dir", "x.bin", []byte("data"))
+	res := a.mustUpload(t, "top.txt", "x.bin", []byte("data"))
 	if res.Outcome != v1.OutcomeDestGone {
-		t.Fatalf("expected DESTINATION_GONE, got %+v", res)
+		t.Fatalf("expected DESTINATION_GONE when parent is a file, got %+v", res)
 	}
 }
 
@@ -154,6 +170,32 @@ func TestAppendRejectsHashMismatch(t *testing.T) {
 	}, bytes.NewReader(data))
 	if err == nil {
 		t.Fatal("expected sha256 mismatch rejection")
+	}
+}
+
+func TestFileURLAtEncodesPolishSegments(t *testing.T) {
+	got := fileURLAt("/var/filees/repositories/repo", "00_Materiały-wyjsciowe/a.jpg")
+	if !strings.Contains(got, "00_Materia%C5%82y-wyjsciowe/a.jpg") {
+		t.Fatalf("fileURLAt = %q, want percent-encoded ł", got)
+	}
+	if fileURLAt("/var/filees/repositories/repo", "") != fileURL("/var/filees/repositories/repo") {
+		t.Fatal("empty rel must stay the repository root URL")
+	}
+}
+
+func TestAppendIntoPolishDirectory(t *testing.T) {
+	requireSVN(t)
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	run(t, "svnadmin", "create", repo)
+	seed := filepath.Join(dir, "seed")
+	writeSeed(t, seed, "00_Materiały-wyjsciowe/keep.txt", []byte("keep"))
+	run(t, "svn", "import", "-q", seed, fileURL(repo), "-m", "polish parent")
+	a := newAppender(t, repo, "rw")
+	data := []byte("z telefonu")
+	res := a.mustUpload(t, "00_Materiały-wyjsciowe", "foto.jpg", data)
+	if res.Outcome != v1.OutcomeCommitted || res.FinalPath != "00_Materiały-wyjsciowe/foto.jpg" {
+		t.Fatalf("upload into Polish parent: %+v", res)
 	}
 }
 

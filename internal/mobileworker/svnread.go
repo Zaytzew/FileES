@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -110,10 +111,7 @@ type xmlInfo struct {
 // treated as "absent" so the caller — and ultimately the authoritative commit —
 // decides. A genuine tool error surfaces only when the output is unparseable.
 func (r SVNReader) Stat(ctx context.Context, repoPath, path string, rev int64) (v1.Kind, bool, error) {
-	target := fileURL(repoPath)
-	if path != "" {
-		target += "/" + path
-	}
+	target := fileURLAt(repoPath, path)
 	out, err := output(ctx, r.svn(), "info", "--xml", "-r", strconv.FormatInt(rev, 10), target)
 	if err != nil {
 		return "", false, nil // absent (or unreadable): fail closed to "does not exist"
@@ -156,12 +154,29 @@ func (c *countWriter) Write(p []byte) (int, error) {
 func runStream(ctx context.Context, stdout io.Writer, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = stdout
+	cmd.Env = svnProcessEnvironment()
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, stderrTail(errb.Bytes()))
 	}
 	return nil
+}
+
+// svnProcessEnvironment forces C.UTF-8 so English svn prefixes stay stable
+// and Polish path segments can be created and looked up. Bare C is ASCII
+// and turns ł into {U+0142} or a failed info, which Upload then reports as
+// DESTINATION_GONE.
+func svnProcessEnvironment() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env)+1)
+	for _, item := range env {
+		if strings.HasPrefix(item, "LC_ALL=") {
+			continue
+		}
+		out = append(out, item)
+	}
+	return append(out, "LC_ALL=C.UTF-8")
 }
 
 func output(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -187,4 +202,27 @@ func stderrTail(b []byte) string {
 func fileURL(absPath string) string {
 	u := url.URL{Scheme: "file", Path: filepath.ToSlash(absPath)}
 	return u.String()
+}
+
+// fileURLAt joins a repository filesystem path with a logical relative path,
+// percent-encoding each segment. Concatenating raw UTF-8 onto file:// makes
+// svn info treat 00_Materiały-… as absent.
+func fileURLAt(repoPath, rel string) string {
+	base := fileURL(repoPath)
+	rel = strings.Trim(rel, "/")
+	if rel == "" {
+		return base
+	}
+	parts := strings.Split(rel, "/")
+	escaped := make([]string, 0, len(parts))
+	for _, seg := range parts {
+		if seg == "" {
+			continue
+		}
+		escaped = append(escaped, url.PathEscape(seg))
+	}
+	if len(escaped) == 0 {
+		return base
+	}
+	return base + "/" + strings.Join(escaped, "/")
 }

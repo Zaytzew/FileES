@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
+	v1 "filees/pkg/mobile/v1"
 	"filees/pkg/passport"
 )
 
@@ -38,10 +40,11 @@ func (s SVNAppender) svnlook() string {
 
 var revLine = regexp.MustCompile(`([0-9]+)`)
 
-// AppendFile checks out the parent at depth empty into a scratch WC, drops the
-// spooled file in, sets svn:needs-lock, and commits with the request-id revprop.
-// It returns the committed revision. A commit against an existing target fails,
-// which the worker resolves as a name collision.
+// AppendFile checks out the repository root at depth empty, creates any
+// missing parent directories in the same commit (mobile-uploads/…), drops
+// the spooled file in, sets svn:needs-lock, and commits with the request-id
+// revprop. A commit against an existing target fails, which the worker
+// resolves as a name collision.
 func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filename, spoolPath, requestID string) (int64, error) {
 	wc, err := os.MkdirTemp("", "filees-mobile-wc-")
 	if err != nil {
@@ -49,15 +52,17 @@ func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filen
 	}
 	defer os.RemoveAll(wc)
 
-	coURL := fileURL(repoPath)
-	if parentPath != "" {
-		coURL += "/" + parentPath
-	}
-	if err := runStream(ctx, io.Discard, s.svn(), "checkout", "-q", "--depth", "empty", coURL, wc); err != nil {
+	if err := runStream(ctx, io.Discard, s.svn(), "checkout", "-q", "--depth", "empty", fileURL(repoPath), wc); err != nil {
 		return 0, err
 	}
-
-	fileInWC := filepath.Join(wc, filename)
+	if err := s.ensureParent(ctx, wc, repoPath, parentPath); err != nil {
+		return 0, err
+	}
+	destDir := wc
+	if parentPath != "" {
+		destDir = filepath.Join(append([]string{wc}, strings.Split(parentPath, "/")...)...)
+	}
+	fileInWC := filepath.Join(destDir, filename)
 	if err := copyFile(spoolPath, fileInWC); err != nil {
 		return 0, err
 	}
@@ -92,6 +97,49 @@ func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filen
 		return 0, fmt.Errorf("svnlook youngest: unexpected output %q", out)
 	}
 	return rev, nil
+}
+
+// ensureParent brings each parent segment into the sparse WC: update if it
+// already exists in the repository, otherwise svn mkdir. The new directories
+// are committed together with the uploaded file.
+func (s SVNAppender) ensureParent(ctx context.Context, wc, repoPath, parentPath string) error {
+	if parentPath == "" {
+		return nil
+	}
+	reader := SVNReader{SvnPath: s.SvnPath, SvnlookPath: s.SvnlookPath}
+	rev, err := reader.Youngest(ctx, repoPath)
+	if err != nil {
+		return err
+	}
+	var rel string
+	for _, seg := range strings.Split(parentPath, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			continue
+		}
+		if rel == "" {
+			rel = seg
+		} else {
+			rel += "/" + seg
+		}
+		abs := filepath.Join(wc, filepath.FromSlash(rel))
+		kind, exists, err := reader.Stat(ctx, repoPath, rel, rev)
+		if err != nil {
+			return err
+		}
+		if exists {
+			if kind != v1.KindDirectory {
+				return fmt.Errorf("parent path %q is not a directory", rel)
+			}
+			if err := runStream(ctx, io.Discard, s.svn(), "update", "-q", "--set-depth", "empty", abs); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := runStream(ctx, io.Discard, s.svn(), "mkdir", "-q", abs); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func copyFile(src, dst string) error {

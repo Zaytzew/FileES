@@ -85,7 +85,9 @@ func (a Appender) Upload(ctx context.Context, clientID, requestID string, p v1.U
 		if err != nil {
 			return v1.UploadObjectResult{}, err
 		}
-		if !exists || kind != v1.KindDirectory {
+		// Missing parents are created in the same append commit. A file
+		// sitting where the parent should be is DESTINATION_GONE.
+		if exists && kind != v1.KindDirectory {
 			return v1.UploadObjectResult{Outcome: v1.OutcomeDestGone}, nil
 		}
 	}

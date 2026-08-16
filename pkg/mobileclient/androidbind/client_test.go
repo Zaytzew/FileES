@@ -271,6 +271,20 @@ func TestClientEndToEndRefreshAndUpload(t *testing.T) {
 	}
 }
 
+func TestListUploadsJSONEmptyRepoIsArray(t *testing.T) {
+	client, err := NewClient(t.TempDir(), "unused:0", "filees-mobile-v1", string(ssh.MarshalAuthorizedKey(generateEd25519(t).PublicKey())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listJSON, err := client.ListUploadsJSON("repo-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listJSON != "[]" {
+		t.Fatalf("empty queue must be a JSON array, got %q", listJSON)
+	}
+}
+
 func TestClientDiscardUpload(t *testing.T) {
 	client, err := NewClient(t.TempDir(), "unused:0", "filees-mobile-v1", string(ssh.MarshalAuthorizedKey(generateEd25519(t).PublicKey())))
 	if err != nil {

@@ -1,0 +1,100 @@
+package net.filees.mobile
+
+import org.json.JSONObject
+
+data class RealmShare(
+    val repoId: String,
+    val displayName: String,
+    val access: String,
+    val state: String,
+) {
+    val selectable: Boolean
+        get() = (state == "active" || state == "initializing") && (access == "r" || access == "rw")
+}
+
+data class RealmProjection(
+    val realmId: String,
+    val realmAlias: String,
+    val shares: List<RealmShare>,
+) {
+    companion object {
+        fun fromJson(json: String): RealmProjection {
+            if (json.isBlank()) return RealmProjection("", "", emptyList())
+            val root = JSONObject(json)
+            val entries = root.optJSONArray("repositories")
+            val shares = mutableListOf<RealmShare>()
+            if (entries != null) {
+                for (i in 0 until entries.length()) {
+                    val item = entries.getJSONObject(i)
+                    shares.add(
+                        RealmShare(
+                            repoId = item.optString("repo_id"),
+                            displayName = item.optString("display_name"),
+                            access = item.optString("access"),
+                            state = item.optString("state"),
+                        )
+                    )
+                }
+            }
+            return RealmProjection(
+                realmId = root.optString("realm_id"),
+                realmAlias = root.optString("realm_alias"),
+                shares = shares,
+            )
+        }
+    }
+}
+
+data class ManifestEntry(
+    val path: String,
+    val kind: String,
+    val size: Long,
+)
+
+data class BrowseRow(
+    val name: String,
+    val path: String,
+    val directory: Boolean,
+    val size: Long,
+    val repoId: String = "",
+    val share: Boolean = false,
+)
+
+object ManifestBrowse {
+    fun entriesFrom(manifestJson: String): List<ManifestEntry> {
+        if (manifestJson.isBlank()) return emptyList()
+        val root = JSONObject(manifestJson)
+        val array = root.optJSONArray("entries") ?: return emptyList()
+        val out = ArrayList<ManifestEntry>(array.length())
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            out.add(
+                ManifestEntry(
+                    path = item.optString("path"),
+                    kind = item.optString("kind"),
+                    size = item.optLong("size"),
+                )
+            )
+        }
+        return out
+    }
+
+    fun children(entries: List<ManifestEntry>, prefix: String): List<BrowseRow> {
+        val pfx = if (prefix.isEmpty()) "" else "$prefix/"
+        val seen = LinkedHashSet<String>()
+        val rows = mutableListOf<BrowseRow>()
+        for (entry in entries) {
+            if (prefix.isNotEmpty() && entry.path == prefix) continue
+            if (prefix.isNotEmpty() && !entry.path.startsWith(pfx)) continue
+            val rest = if (prefix.isEmpty()) entry.path else entry.path.removePrefix(pfx)
+            if (rest.isEmpty()) continue
+            val name = rest.substringBefore('/')
+            if (!seen.add(name)) continue
+            val nested = rest.contains('/')
+            val directory = nested || entry.kind == "directory"
+            val path = if (prefix.isEmpty()) name else "$prefix/$name"
+            rows.add(BrowseRow(name, path, directory, if (directory) 0 else entry.size))
+        }
+        return rows.sortedWith(compareBy({ !it.directory }, { it.name.lowercase() }))
+    }
+}

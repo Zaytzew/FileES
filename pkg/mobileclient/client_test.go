@@ -131,6 +131,18 @@ func newClient(t *testing.T, repo, access string) Client {
 
 // --- tests ---
 
+func TestReadFetchesExistingObject(t *testing.T) {
+	requireSVN(t)
+	c := newClient(t, newSeededRepo(t), "r")
+	data, err := c.Read(context.Background(), "repo-1", "photos/2026/a.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("read = %q", data)
+	}
+}
+
 func TestListRepositoriesReturnsProjection(t *testing.T) {
 	c := newClient(t, "", "rw")
 	res, err := c.ListRepositories(context.Background())

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -15,8 +16,9 @@ import (
 )
 
 const (
-	refreshTimeout = 30 * time.Second
-	drainTimeout   = 2 * time.Minute
+	refreshTimeout  = 30 * time.Second
+	drainTimeout    = 2 * time.Minute
+	downloadTimeout = 2 * time.Minute
 )
 
 // Client is the gomobile-bindable handle onto the whole mobile core: a
@@ -102,6 +104,21 @@ func (c *Client) RefreshJSON(repoID string) (string, error) {
 	return string(raw), nil
 }
 
+// DownloadTo writes the object at path into destPath. The phone is allowed
+// to read existing objects; it still cannot modify or delete them.
+func (c *Client) DownloadTo(repoID, path, destPath string) error {
+	if strings.TrimSpace(destPath) == "" {
+		return errors.New("androidbind: dest_path is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
+	defer cancel()
+	data, err := c.inner.Read(ctx, repoID, path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(destPath, data, 0o600)
+}
+
 // EnqueueUpload durably queues a new append-only-unique candidate (concept
 // doc §9.2 — never a candidate for re-upload of the same path) and returns
 // its id, which doubles as the wire request_id for every drain attempt.
@@ -123,6 +140,9 @@ func (c *Client) DrainPendingJSON(repoID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if items == nil {
+		items = []mobileclient.PendingUpload{}
+	}
 	raw, err := json.Marshal(items)
 	if err != nil {
 		return "", err
@@ -137,6 +157,9 @@ func (c *Client) ListUploadsJSON(repoID string) (string, error) {
 	items, err := c.inner.Store.ListUploads(repoID)
 	if err != nil {
 		return "", err
+	}
+	if items == nil {
+		items = []mobileclient.PendingUpload{}
 	}
 	raw, err := json.Marshal(items)
 	if err != nil {

@@ -6,6 +6,29 @@
     <string name="hint_pairing_payload">Dane parowania (wklej JSON zamiast skanować QR)</string>
     <string name="action_scan_qr">Skanuj QR i sparuj z desktopem</string>
     <string name="action_pair_pasted">Sparuj (wklejone dane)</string>
+    <string name="action_settings">Ustawienia</string>
+    <string name="action_pick_folder">Wybierz folder do wysłania</string>
+    <string name="action_browse_up">W górę</string>
+    <string name="action_add">Dodaj</string>
+    <string name="action_download">Pobierz</string>
+    <string name="action_add_files">Pliki</string>
+    <string name="action_add_folder">Folder</string>
+    <string name="status_sending">Wysyłanie…</string>
+    <string name="status_sent">Wysłano.</string>
+    <string name="status_downloading">Pobieranie…</string>
+    <string name="status_downloaded">Zapisano: %1$s</string>
+    <string name="action_add_watched">Śledź folder…</string>
+    <string name="action_remove_watched">Nie śledź</string>
+    <string name="browse_root">Udział</string>
+    <string name="browse_directory">folder</string>
+    <string name="browse_file_size">%1$d B</string>
+    <string name="browse_empty">Ten folder jest pusty.</string>
+    <string name="settings_pairing">Parowanie (awaryjne)</string>
+    <string name="settings_device">To urządzenie</string>
+    <string name="settings_watched">Śledzone foldery</string>
+    <string name="watched_empty">Brak śledzonych folderów. Nowe pliki z wybranego miejsca idą do mobile-uploads, co około 5 minut albo przy otwarciu aplikacji.</string>
+    <string name="status_folder_queued">Dodano folder do kolejki: %1$d plików</string>
+    <string name="status_watched_added">Śledzę folder. Nowe pliki pójdą do mobile-uploads.</string>
     <string name="label_device_public_key">Klucz publiczny tego urządzenia:</string>
 
     <string name="section_repository">Udziały strefy</string>
@@ -32,7 +55,7 @@
 
     <string name="section_uploads">Kolejka uploadów</string>
     <string name="hint_parent_path">Katalog docelowy (pusty = katalog główny)</string>
-    <string name="action_pick_file">Wybierz plik do wysłania…</string>
+    <string name="action_pick_file">Wybierz pliki do wysłania…</string>
     <string name="action_drain">Wyślij kolejkę</string>
     <string name="action_discard">Odrzuć</string>
     <string name="upload_state_pending_create">w kolejce</string>
@@ -41,5 +64,11 @@
     <string name="upload_state_dropped_duplicate">pominięto (duplikat)</string>
     <string name="upload_state_conflict">konflikt nazwy — wymaga decyzji</string>
     <string name="upload_state_parked">zatrzymano — wymaga decyzji</string>
+    <string name="upload_outcome_destination_gone">Katalog docelowy nie istnieje w udziale.</string>
+    <string name="upload_outcome_access_revoked">Brak prawa zapisu do tego udziału.</string>
+    <string name="upload_outcome_repo_inactive">Udział jest nieaktywny.</string>
+    <string name="upload_outcome_policy_rejected">Polityka serwera odrzuciła ten plik.</string>
+    <string name="upload_outcome_name_taken_diff">Taka nazwa już jest, ale treść jest inna.</string>
+    <string name="upload_outcome_name_taken_same">Taki sam plik już jest w udziale.</string>
     <string name="uploads_empty">Kolejka jest pusta.</string>
 </resources>

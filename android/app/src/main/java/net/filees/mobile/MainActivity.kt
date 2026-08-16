@@ -1,15 +1,23 @@
 package net.filees.mobile
 
 import android.Manifest
+import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.provider.OpenableColumns
+import android.provider.MediaStore
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
-import android.widget.ArrayAdapter
+import android.webkit.MimeTypeMap
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -20,90 +28,102 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import net.filees.mobile.databinding.ActivityMainBinding
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.Executors
 
-/**
- * The activation + repository screen. Mobile never self-activates (concept
- * doc §4.2): a device can only be paired by an already-active desktop
- * installation of the same realm, which mints a short-lived pairing token
- * and displays it as a QR code (address + host public key + token). This
- * screen scans that QR (or accepts the same JSON pasted, as a fallback for
- * testing/accessibility), drives androidbind.Androidbind.pairJSON to push
- * this device's own already-generated public key and complete activation,
- * and only then persists address/host key for future silent reconnects.
- * The pairing token itself is single-use and short-lived and is never
- * written to SharedPreferences.
- */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var watched: WatchedFolders
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
     private var client: Client? = null
-    private var pairedAddress: String? = null
     private var selectedRepoId: String? = null
+    private var selectedShareName: String = ""
     private var selectableShares: List<RealmShare> = emptyList()
-    private val uploadsAdapter = PendingUploadsAdapter(onDiscard = { onDiscardClicked(it) })
+    private var manifestEntries: List<ManifestEntry> = emptyList()
+    private var browsePrefix: String = ""
+    private val browseAdapter = BrowseAdapter(onOpen = { openRow(it) }, onDownload = { downloadRow(it) })
 
-    private val prefs by lazy { getSharedPreferences("filees_connection", MODE_PRIVATE) }
+    private val prefs by lazy { getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE) }
 
-    private val pickFileLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onFilePicked(uri)
+    private val pickFilesLauncher = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        enqueueWalked(uris.map { DocumentWalk.single(contentResolver, it) })
     }
-
+    private val pickFolderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) enqueueWalked(DocumentWalk.tree(contentResolver, uri))
+    }
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
-        val contents = result.contents
-        if (contents == null) {
-            setStatus(getString(R.string.status_scan_cancelled))
+        if (result.contents == null) {
+            setBusy(false, "")
         } else {
-            pairFromPayload(contents)
+            pairFromPayload(result.contents)
         }
     }
-
     private val cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) launchScanner() else setStatus(getString(R.string.status_camera_permission_denied))
+        if (granted) launchScanner()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        setSupportActionBar(binding.toolbar)
+        watched = WatchedFolders(this)
 
-        binding.recyclerUploads.layoutManager = LinearLayoutManager(this)
-        binding.recyclerUploads.adapter = uploadsAdapter
-
+        binding.recyclerBrowse.layoutManager = LinearLayoutManager(this)
+        binding.recyclerBrowse.adapter = browseAdapter
         binding.buttonScanQr.setOnClickListener { onScanQrClicked() }
-        binding.buttonPairPasted.setOnClickListener {
-            pairFromPayload(binding.editPairingPayload.text?.toString()?.trim().orEmpty())
-        }
-        binding.buttonRefresh.setOnClickListener { onRefreshClicked() }
-        binding.buttonPickFile.setOnClickListener { pickFileLauncher.launch(arrayOf("*/*")) }
-        binding.buttonDrain.setOnClickListener { onDrainClicked() }
-        binding.pickerShare.setOnItemClickListener { _, _, position, _ ->
-            if (position in selectableShares.indices) {
-                selectShare(selectableShares[position])
-            }
-        }
-        selectedRepoId = prefs.getString(PREF_REPO_ID, null)
+        binding.buttonAdd.setOnClickListener { showAddChooser() }
 
-        // A prior activation persists its identity under filesDir regardless
-        // of whether this Activity is still alive (concept doc §9.2); if we
-        // have the connection details saved, reconnect silently so a rotated
-        // screen or reopened app does not force the operator to re-pair.
-        val savedAddress = prefs.getString(PREF_ADDRESS, null)
-        val savedHostKey = prefs.getString(PREF_HOST_KEY, null)
-        if (!savedAddress.isNullOrBlank() && !savedHostKey.isNullOrBlank()) {
-            activate(savedAddress, savedHostKey, silent = true)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (!goUp()) finish()
+            }
+        })
+
+        selectedRepoId = prefs.getString(FileesSession.PREF_REPO_ID, null)
+        showPaired(false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val address = prefs.getString(FileesSession.PREF_ADDRESS, null)
+        val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null)
+        if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
+            if (client == null) activate(address, hostKey) else scanWatchedFolders()
         } else {
-            setStatus(getString(R.string.status_idle))
+            showPaired(false)
         }
     }
 
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_main, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) {
+            if (!goUp()) finish()
+            return true
+        }
+        if (item.itemId == R.id.action_settings) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+    private fun showPaired(paired: Boolean) {
+        binding.panelUnpaired.visibility = if (paired) View.GONE else View.VISIBLE
+        binding.recyclerBrowse.visibility = if (paired) View.VISIBLE else View.GONE
+        binding.buttonAdd.visibility = if (paired && !selectedRepoId.isNullOrBlank()) View.VISIBLE else View.GONE
+        supportActionBar?.setDisplayHomeAsUpEnabled(paired && selectedRepoId != null)
+    }
+
     private fun onScanQrClicked() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             launchScanner()
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -117,187 +137,49 @@ class MainActivity : AppCompatActivity() {
         options.setPrompt(getString(R.string.scan_qr_prompt))
         options.setBeepEnabled(false)
         options.setOrientationLocked(true)
-        options.addExtra("TRY_HARDER", true)
-        options.addExtra("CHARACTER_SET", "UTF-8")
         scanLauncher.launch(options)
     }
 
     private fun pairFromPayload(payload: String) {
-        if (payload.isBlank()) {
-            setStatus(getString(R.string.status_error, "brak danych parowania"))
+        val json = try {
+            JSONObject(payload)
+        } catch (_: Exception) {
             return
         }
-        val address: String
-        val hostKey: String
-        val token: String
-        try {
-            val json = JSONObject(payload)
-            address = json.getString("address")
-            hostKey = json.getString("host_public_key")
-            token = json.getString("token")
-        } catch (e: Exception) {
-            binding.editPairingPayload.text?.clear()
-            setStatus(getString(R.string.status_error, "nieprawidłowe dane parowania"))
-            return
-        }
-        // The token must not linger in the UI a moment longer than parsing
-        // needs it - clear synchronously here, not after pairAndActivate's
-        // async network round trip completes.
-        binding.editPairingPayload.text?.clear()
-        pairAndActivate(address, hostKey, token)
-    }
-
-    private fun pairAndActivate(address: String, hostKey: String, token: String) {
-        setStatus(getString(R.string.status_pairing))
+        setBusy(true, getString(R.string.status_pairing))
         io.execute {
             try {
-                // PairJSON drives push -> prove -> finish against this
-                // device's own already-persisted identity (concept doc
-                // §4.2); the token is single-use and short-lived, so it is
-                // consumed here and never saved.
-                Androidbind.pairJSON(filesDir.absolutePath, address, hostKey, token)
+                val address = json.getString("address")
+                val hostKey = json.getString("host_public_key")
+                Androidbind.pairJSON(filesDir.absolutePath, address, hostKey, json.getString("token"))
                 prefs.edit {
-                    putString(PREF_ADDRESS, address)
-                    putString(PREF_HOST_KEY, hostKey)
+                    putString(FileesSession.PREF_ADDRESS, address)
+                    putString(FileesSession.PREF_HOST_KEY, hostKey)
                 }
-                main.post { activate(address, hostKey, silent = false) }
+                main.post { activate(address, hostKey) }
             } catch (e: Exception) {
-                main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
+                main.post { setBusy(false, e.message ?: e.toString()) }
             }
         }
     }
 
-    private fun activate(address: String, hostKey: String, silent: Boolean) {
-        if (!silent) setStatus(getString(R.string.status_activating))
+    private fun activate(address: String, hostKey: String) {
+        setBusy(true, getString(R.string.status_activating))
         io.execute {
             try {
-                // MOBILE_USER matches the _filees-mobile SSH class (concept
-                // doc §4.2) -- it is not operator-editable, since the
-                // technical account is fixed by the server class, not
-                // chosen by the client.
-                val newClient = Androidbind.newClient(filesDir.absolutePath, address, MOBILE_USER, hostKey)
+                val newClient = Androidbind.newClient(filesDir.absolutePath, address, FileesSession.MOBILE_USER, hostKey)
                 main.post {
                     client = newClient
-                    pairedAddress = address
-                    setStatus(getString(R.string.status_activated, address))
-                    binding.labelDevicePublicKey.visibility = View.VISIBLE
-                    binding.textDevicePublicKey.visibility = View.VISIBLE
-                    binding.textDevicePublicKey.text = newClient.publicKey()
-                    // The queue lives in the local Store, independent of this
-                    // Activity's lifecycle (concept doc §9.2) -- show whatever
-                    // was already queued from a prior session immediately.
+                    showPaired(true)
+                    setBusy(false, "")
                     loadRealmProjection()
+                    scanWatchedFolders()
                 }
             } catch (e: Exception) {
-                main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
-            }
-        }
-    }
-
-    private fun onRefreshClicked() {
-        val active = client
-        if (active == null) {
-            setStatus(getString(R.string.status_error, "aktywuj klienta najpierw"))
-            return
-        }
-        val repoId = currentRepoId()
-        setStatus(getString(R.string.status_refreshing))
-        io.execute {
-            try {
-                val projectionJson = active.listRepositoriesJSON()
-                val manifestJson = if (repoId.isNotEmpty()) active.refreshJSON(repoId) else null
                 main.post {
-                    applyProjection(projectionJson)
-                    if (manifestJson != null) {
-                        binding.textManifest.text = formatManifest(manifestJson)
-                    }
-                    setStatus(getString(R.string.status_activated, pairedAddress ?: ""))
-                    refreshUploadsList()
+                    showPaired(false)
+                    setBusy(false, e.message ?: e.toString())
                 }
-            } catch (e: Exception) {
-                main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
-            }
-        }
-    }
-
-    private fun onFilePicked(uri: Uri) {
-        val active = client
-        val repoId = currentRepoId()
-        if (active == null) {
-            setStatus(getString(R.string.status_error, "aktywuj klienta najpierw"))
-            return
-        }
-        if (repoId.isEmpty()) {
-            setStatus(getString(R.string.status_error, "wybierz udział strefy"))
-            return
-        }
-        val parentPath = binding.editParentPath.text?.toString()?.trim().orEmpty()
-        val (filename, contentType) = queryFileMeta(uri)
-        io.execute {
-            try {
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalStateException("nie można odczytać pliku")
-                // EnqueueUpload durably queues the candidate before any
-                // network attempt (concept doc §9.2) -- the picker's job ends
-                // here; DrainPending is a separate, explicit step.
-                active.enqueueUpload(repoId, parentPath, filename, contentType, bytes)
-                main.post {
-                    setStatus("Dodano do kolejki: $filename")
-                    refreshUploadsList()
-                }
-            } catch (e: Exception) {
-                main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
-            }
-        }
-    }
-
-    private fun queryFileMeta(uri: Uri): Pair<String, String> {
-        var name = uri.lastPathSegment ?: "upload.bin"
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (index >= 0 && cursor.moveToFirst()) {
-                name = cursor.getString(index) ?: name
-            }
-        }
-        val contentType = contentResolver.getType(uri).orEmpty()
-        return name to contentType
-    }
-
-    private fun onDrainClicked() {
-        val active = client
-        val repoId = currentRepoId()
-        if (active == null) {
-            setStatus(getString(R.string.status_error, "aktywuj klienta najpierw"))
-            return
-        }
-        if (repoId.isEmpty()) {
-            setStatus(getString(R.string.status_error, "wybierz udział strefy"))
-            return
-        }
-        setStatus("Wysyłanie kolejki…")
-        io.execute {
-            try {
-                active.drainPendingJSON(repoId)
-                main.post {
-                    setStatus("Kolejka wysłana.")
-                    refreshUploadsList()
-                }
-            } catch (e: Exception) {
-                main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
-            }
-        }
-    }
-
-    private fun onDiscardClicked(item: PendingUpload) {
-        val active = client ?: return
-        val repoId = currentRepoId()
-        if (repoId.isEmpty()) return
-        io.execute {
-            try {
-                active.discardUpload(repoId, item.id)
-                main.post { refreshUploadsList() }
-            } catch (e: Exception) {
-                main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
             }
         }
     }
@@ -306,170 +188,169 @@ class MainActivity : AppCompatActivity() {
         val active = client ?: return
         io.execute {
             try {
-                val json = active.listRepositoriesJSON()
+                val projection = RealmProjection.fromJson(active.listRepositoriesJSON())
                 main.post {
-                    applyProjection(json)
-                    refreshUploadsList()
+                    selectableShares = projection.shares.filter { it.selectable }
+                    if (selectedRepoId != null && selectableShares.none { it.repoId == selectedRepoId }) {
+                        selectedRepoId = null
+                    }
+                    renderList()
                 }
             } catch (e: Exception) {
-                main.post {
-                    binding.textRealmProjection.text = ""
-                    setStatus(getString(R.string.status_error, e.message ?: e.toString()))
-                }
+                main.post { setBusy(false, e.message ?: e.toString()) }
             }
         }
     }
 
-    private fun applyProjection(json: String) {
-        val projection = RealmProjection.fromJson(json)
-        binding.textRealmProjection.text = formatProjection(projection)
-        selectableShares = projection.shares.filter { it.selectable }
-        val labels = selectableShares.map { share ->
-            if (share.access == "rw") {
-                getString(R.string.picker_share_rw, share.displayName)
-            } else {
-                getString(R.string.picker_share_r, share.displayName)
-            }
+    private fun renderList() {
+        if (selectedRepoId == null) {
+            selectedShareName = ""
+            browsePrefix = ""
+            browseAdapter.submit(
+                selectableShares.map { share ->
+                    BrowseRow(share.displayName, "", directory = true, size = 0, repoId = share.repoId, share = true)
+                },
+            )
+            binding.toolbar.title = getString(R.string.app_name)
+            binding.buttonAdd.visibility = View.GONE
+            supportActionBar?.setDisplayHomeAsUpEnabled(false)
+            return
         }
-        binding.pickerShare.setAdapter(
-            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, labels)
-        )
-        val saved = selectedRepoId
-        val restored = selectableShares.firstOrNull { it.repoId == saved }
-            ?: selectableShares.singleOrNull()
-        if (restored != null) {
-            val index = selectableShares.indexOf(restored)
-            binding.pickerShare.setText(labels[index], false)
-            selectShare(restored)
-        } else {
-            selectedRepoId = null
-            binding.pickerShare.setText("", false)
-            prefs.edit { remove(PREF_REPO_ID) }
-            uploadsAdapter.submit(emptyList())
-            binding.textUploadsEmpty.visibility = View.VISIBLE
+        binding.buttonAdd.visibility = View.VISIBLE
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        binding.toolbar.title = if (browsePrefix.isEmpty()) selectedShareName else browsePrefix.substringAfterLast('/')
+        val rows = ManifestBrowse.children(manifestEntries, browsePrefix)
+        browseAdapter.submit(rows)
+    }
+
+    private fun openRow(row: BrowseRow) {
+        if (row.share) {
+            selectedRepoId = row.repoId
+            selectedShareName = row.name
+            prefs.edit { putString(FileesSession.PREF_REPO_ID, row.repoId) }
+            browsePrefix = ""
+            refreshManifest()
+            return
+        }
+        if (row.directory) {
+            browsePrefix = row.path
+            renderList()
         }
     }
 
-    private fun selectShare(share: RealmShare) {
-        selectedRepoId = share.repoId
-        prefs.edit { putString(PREF_REPO_ID, share.repoId) }
-        refreshUploadsList()
+    private fun goUp(): Boolean {
+        if (selectedRepoId == null) return false
+        if (browsePrefix.isNotEmpty()) {
+            browsePrefix = browsePrefix.substringBeforeLast('/', "")
+            renderList()
+            return true
+        }
+        selectedRepoId = null
+        prefs.edit { remove(FileesSession.PREF_REPO_ID) }
+        renderList()
+        return true
     }
 
-    private fun currentRepoId(): String = selectedRepoId.orEmpty()
-
-    private fun formatProjection(projection: RealmProjection): String {
-        if (projection.shares.isEmpty()) {
-            return getString(R.string.projection_empty)
-        }
-        val builder = StringBuilder()
-        val realm = projection.realmAlias.ifBlank { projection.realmId }
-        if (realm.isNotBlank()) {
-            builder.append(getString(R.string.projection_realm, realm)).append('\n')
-        }
-        for (share in projection.shares) {
-            val line = if (share.access == "rw") {
-                getString(R.string.projection_share_rw, share.displayName)
-            } else {
-                getString(R.string.projection_share_r, share.displayName)
-            }
-            builder.append("• ").append(line).append('\n')
-        }
-        return builder.toString().trimEnd()
-    }
-
-    private fun refreshUploadsList() {
+    private fun refreshManifest() {
         val active = client ?: return
-        val repoId = currentRepoId()
-        if (repoId.isEmpty()) return
+        val repoId = selectedRepoId ?: return
         io.execute {
             try {
-                val listJson = active.listUploadsJSON(repoId)
-                val items = PendingUpload.listFromJson(listJson)
+                val json = active.refreshJSON(repoId)
                 main.post {
-                    uploadsAdapter.submit(items)
-                    binding.textUploadsEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+                    manifestEntries = ManifestBrowse.entriesFrom(json)
+                    renderList()
                 }
             } catch (e: Exception) {
-                main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
+                main.post { setBusy(false, e.message ?: e.toString()) }
             }
         }
     }
 
-    private fun formatManifest(manifestJson: String): String {
-        if (manifestJson.isEmpty()) {
-            return "(brak zmian od ostatniego odświeżenia)"
-        }
-        val manifest = JSONObject(manifestJson)
-        val entries = manifest.optJSONArray("entries") ?: return "(pusty manifest)"
-        val builder = StringBuilder()
-        builder.append("revision=").append(manifest.optLong("repo_revision"))
-        builder.append(" generation=").append(manifest.optLong("view_generation")).append('\n')
-        for (i in 0 until entries.length()) {
-            val entry = entries.getJSONObject(i)
-            builder.append(if (entry.optString("kind") == "directory") "d " else "  ")
-            builder.append(entry.optString("path"))
-            if (entry.optString("kind") != "directory") {
-                builder.append(" (").append(entry.optLong("size")).append(" B)")
+    private fun showAddChooser() {
+        AlertDialog.Builder(this)
+            .setItems(arrayOf(getString(R.string.action_add_files), getString(R.string.action_add_folder))) { _, which ->
+                if (which == 0) pickFilesLauncher.launch(arrayOf("*/*"))
+                else pickFolderLauncher.launch(null)
             }
-            builder.append('\n')
-        }
-        return builder.toString()
+            .show()
     }
 
-    private fun setStatus(text: String) {
-        binding.textStatus.text = text
-    }
-
-    companion object {
-        private const val MOBILE_USER = "_filees-mobile"
-        private const val PREF_ADDRESS = "address"
-        private const val PREF_HOST_KEY = "host_public_key"
-        private const val PREF_REPO_ID = "selected_repo_id"
-    }
-}
-
-private data class RealmShare(
-    val repoId: String,
-    val displayName: String,
-    val access: String,
-    val state: String,
-) {
-    val selectable: Boolean
-        get() = (state == "active" || state == "initializing") && (access == "r" || access == "rw")
-}
-
-private data class RealmProjection(
-    val realmId: String,
-    val realmAlias: String,
-    val shares: List<RealmShare>,
-) {
-    companion object {
-        fun fromJson(json: String): RealmProjection {
-            if (json.isBlank()) {
-                return RealmProjection("", "", emptyList())
-            }
-            val root = JSONObject(json)
-            val entries = root.optJSONArray("repositories")
-            val shares = mutableListOf<RealmShare>()
-            if (entries != null) {
-                for (i in 0 until entries.length()) {
-                    val item = entries.getJSONObject(i)
-                    shares.add(
-                        RealmShare(
-                            repoId = item.optString("repo_id"),
-                            displayName = item.optString("display_name"),
-                            access = item.optString("access"),
-                            state = item.optString("state"),
-                        )
-                    )
+    private fun enqueueWalked(files: List<WalkedFile>) {
+        val active = client
+        val repoId = selectedRepoId
+        if (active == null || repoId.isNullOrBlank() || files.isEmpty()) return
+        setBusy(true, getString(R.string.status_sending))
+        io.execute {
+            try {
+                for (file in files) {
+                    val bytes = contentResolver.openInputStream(file.uri)?.use { it.readBytes() } ?: continue
+                    active.enqueueUpload(repoId, UploadPaths.parent(file.relativeDir), file.filename, file.contentType, bytes)
                 }
+                active.drainPendingJSON(repoId)
+                main.post {
+                    setBusy(false, getString(R.string.status_sent))
+                    refreshManifest()
+                }
+            } catch (e: Exception) {
+                main.post { setBusy(false, e.message ?: e.toString()) }
             }
-            return RealmProjection(
-                realmId = root.optString("realm_id"),
-                realmAlias = root.optString("realm_alias"),
-                shares = shares,
-            )
+        }
+    }
+
+    private fun downloadRow(row: BrowseRow) {
+        val active = client ?: return
+        val repoId = selectedRepoId ?: return
+        setBusy(true, getString(R.string.status_downloading))
+        io.execute {
+            try {
+                val dir = File(cacheDir, "dl").apply { mkdirs() }
+                val dest = File(dir, row.name)
+                active.downloadTo(repoId, row.path, dest.absolutePath)
+                publishDownload(dest, row.name)
+                main.post { setBusy(false, getString(R.string.status_downloaded, row.name)) }
+            } catch (e: Exception) {
+                main.post { setBusy(false, e.message ?: e.toString()) }
+            }
+        }
+    }
+
+    private fun publishDownload(file: File, name: String) {
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
+        if (Build.VERSION.SDK_INT >= 29) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, name)
+                put(MediaStore.Downloads.MIME_TYPE, mime)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
+            contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } }
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+            return
+        }
+        val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        publicDir.mkdirs()
+        file.copyTo(File(publicDir, name), overwrite = true)
+    }
+
+    private fun scanWatchedFolders() {
+        FileesWatchScheduler.ensure(this)
+        if (client == null || selectedRepoId.isNullOrBlank() || watched.uris().isEmpty()) return
+        io.execute {
+            try {
+                FileesWatchTick.run(this)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun setBusy(busy: Boolean, message: String) {
+        binding.overlayBusy.visibility = if (busy) View.VISIBLE else View.GONE
+        if (message.isNotBlank()) binding.textBusy.text = message
+        if (!busy && message.isNotBlank()) {
+            binding.toolbar.subtitle = message
         }
     }
 }

@@ -1,4 +1,4 @@
-.Dd August 14, 2026
+.Dd August 16, 2026
 .Dt FILEES-INSTALL 8
 .Os
 .Sh NAME
@@ -77,7 +77,7 @@ Restore the previous locally installed release from the journalled
 pre-image.
 .It Fl -revert-to Ar release
 Install a named release such as
-.Cm r492 .
+.Cm r543 .
 .It Fl -purge
 Remove files this installer manages.
 Keeps
@@ -108,9 +108,9 @@ Exclusive apply lock.
 .Sh EXIT STATUS
 .Ex -std
 .Sh EXAMPLES
-Adopt a host that already matches signed r492:
+Adopt a host that already matches signed r543:
 .Bd -literal -offset indent
-$ doas filees-install --adopt r492
+$ doas filees-install --adopt r543
 .Ed
 .Pp
 Plan and apply the configured channel:

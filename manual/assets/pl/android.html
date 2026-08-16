@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Klient Android — podręcznik FileES User</title>
+<link rel="alternate" hreflang="en" href="../en/android.html"/>
+<link rel="alternate" hreflang="pl" href="android.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">dokumentacja systemu FileES</span>
+</div>
+</div>
+<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
+<nav class="lang-switch" aria-label="Język">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="../en/android.html" lang="en" hreflang="en">EN</a>
+<a href="android.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<a href="index.html">Przegląd</a>
+<span class="nav-group" aria-label="User">
+<span class="nav-pillar">User</span>
+<a href="user-guide.html">Pulpit</a>
+<a href="android.html" class="is-current">Android</a>
+<a href="public-shares.html">Udziały</a>
+<a href="administration.html">Administracja</a>
+</span>
+<span class="nav-group" aria-label="Tech">
+<span class="nav-pillar">Tech</span>
+<a href="architecture.html">Architektura</a>
+<a href="install.html">Instalacja</a>
+<a href="operations.html">Eksploatacja</a>
+<a href="security.html">Bezpieczeństwo</a>
+<a href="man-pages.html">Man</a>
+</span>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Na tej stronie" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / ta strona</span>
+<h2>Na tej stronie</h2>
+</div>
+<ol>
+<li><a href="#and-what">Co to jest</a></li>
+<li><a href="#and-pair">Sparowanie</a></li>
+<li><a href="#and-browse">Przeglądanie i pobieranie</a></li>
+<li><a href="#and-send">Wysyłka</a></li>
+<li><a href="#and-pack">Duży folder</a></li>
+<li><a href="#and-not">Czego telefon nie robi</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1 id="ch-and">Klient Android</h1>
+<div class="chapter-content">
+<p>Telefon jest urządzeniem capture i podglądu, nie stacją edycyjną. Czyta udział jak publiczny listing. Pisze wyłącznie do <code>mobile-uploads/</code>. Reszta drzewa zostaje read-only. Szczegóły protokołu są w Tech <a href="man-pages.html#filees-mobile-v1"><code>filees-mobile-v1</code></a> i w <code>concepts/TREE_INGEST_CONCEPT.md</code>.</p>
+
+<h2 id="and-what">Co to jest</h2>
+<div class="section-meta"><span class="status status-verified">Przetestowane na żywo</span><span>2026-08-16 na <code>spot</code>: parowanie QR, listing udziałów, pobranie, wrzutka 198 plików jednym commitem, drzewo widoczne na pulpicie.</span></div>
+<p>Aplikacja nie zakłada repozytoriów i nie pyta o UUID. Po sparowaniu pokazuje te same udziały, które ma pulpit w projekcji strefy. Wejście w udział to lista folderów i plików z rozmiarami po ludzku. Ikona startowa to znak <code>f:s</code>; w liście folderów — kwadratowy symbol filees:space.</p>
+
+<h2 id="and-pair">Sparowanie</h2>
+<p>Na już aktywowanym pulpicie: zasobnik → serwer → <strong>Sparuj urządzenie mobilne…</strong>. Otwiera się lokalna strona z PIN i kodem QR (pięć minut). Telefon skanuje QR. Po udanym parowaniu przycisk skanowania znika z ekranu głównego; parowanie awaryjne zostaje w Ustawieniach (trybik).</p>
+<p>Telefon dziedziczy listę udziałów tego pulpitu. Nie tworzy nowej strefy. Jak wystawić QR z pulpitu, jest w <a href="user-guide.html#ch2-gui">przewodniku pulpitu</a>.</p>
+
+<h2 id="and-browse">Przeglądanie i pobieranie</h2>
+<p>Strzałka wstecz wraca w drzewie (pasek jest pod belką statusu, nie pod nią). Plik ma <strong>Pobierz</strong> i ląduje w pobranych systemu. Pobrany i wyedytowany na telefonie plik nie wraca na starą ścieżkę — jeśli go wyślesz, idzie do <code>mobile-uploads/</code> jako nowy obiekt.</p>
+
+<h2 id="and-send">Wysyłka</h2>
+<p><strong>Dodaj</strong> oferuje pliki albo cały folder. Cel to zawsze <code>mobile-uploads/…</code> we wskazanym udziale. Mała liczba plików idzie po kolei, ze spinnerem <code>3 / 7</code>. Istniejąca ścieżka w <code>mobile-uploads/</code> o tej samej treści jest pomijana; inna treść to nowa rewizja, bez pytania o konflikt.</p>
+
+<h2 id="and-pack">Duży folder</h2>
+<p>Od ośmiu plików telefon najpierw liczy mięso (<code>198 plików, 14 MB</code>), pakuje folder do jednego zipa (to opakowanie na drucie, nie plik w udziale) i wysyła jednym połączeniem. Worker na serwerze sprawdza sha256 z nagłówkiem, rozpakowuje i robi <em>jeden</em> commit. Wewnętrzny <code>.zip</code>, który sam jest Twoim dokumentem, zostaje plikiem — serwer nie wchodzi w niego drugi raz.</p>
+<p>To leczy lawinę małych plików (setki handshake’ów), nie wieloryba gigabajtów. Limit czasu długiej sesji to osobna sprawa pulpitu.</p>
+
+<h2 id="and-not">Czego telefon nie robi</h2>
+<ul>
+<li>nie edytuje ani nie kasuje plików poza <code>mobile-uploads/</code>;</li>
+<li>nie zakłada udziałów i nie przyjmuje ręcznego UUID;</li>
+<li>nie pokazuje kolejki uploadów — spinner, potem sukces albo błąd;</li>
+<li>śledzenie folderu (wrzutka co ok. 5 minut) jest w Ustawieniach; na żywo jeszcze nie było pełnego odbioru.</li>
+</ul>
+<p>Serwer musi znać <code>UPLOAD_TREE</code> (podpisane wydanie z ingestem, na <code>spot</code> od r543). Starszy <code>filees-mobile-v1</code> zamyka sesję statusem 70. Telefon pokazuje, że serwer nie zna operacji albo paczki jeszcze nie przyjmuje — nie udaje sukcesu.</p>
+</div>
+<nav class="page-nav">
+<a href="user-guide.html">← Pulpit</a>
+<a href="public-shares.html">Udziały →</a>
+</nav>
+</div>
+</div>
+<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-16 · źródło r543</span></footer>
+</main>
+</body>
+</html>

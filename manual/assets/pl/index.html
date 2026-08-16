@@ -31,6 +31,7 @@
 <span class="nav-group" aria-label="User">
 <span class="nav-pillar">User</span>
 <a href="user-guide.html">Pulpit</a>
+<a href="android.html">Android</a>
 <a href="public-shares.html">Udziały</a>
 <a href="administration.html">Administracja</a>
 </span>
@@ -51,8 +52,8 @@
 <span><strong>Wersja</strong> 0.1.0</span>
 <span><strong>Data</strong> 2026-08-15</span>
 <span><strong>Źródło</strong> SVN r523</span>
-<span><strong>Serwer</strong> OpenBSD 7.9 · podpisane r492 na produkcji</span>
-<span><strong>Klient</strong> pulpit Linux i Windows</span>
+<span><strong>Serwer</strong> OpenBSD 7.9 · podpisane r543 na produkcji</span>
+<span><strong>Klient</strong> pulpit Linux i Windows · Android (przetestowany)</span>
 </div>
 <div class="canonical-note"><strong>Języki:</strong> to jest wydanie polskie. Wydanie angielskie jest w <a href="../en/index.html" hreflang="en">assets/en/</a>. GUI pulpitu pozostaje wyłącznie polskie; nazwy na drucie i w <code>mandoc</code> zostają po angielsku — zobacz <a href="user-guide.html#ch2-glossary">słownik terminologii GUI</a>.</div>
 </section>
@@ -72,6 +73,7 @@
 <li><a href="#user">User — howto i po co</a></li>
 <li><a href="#tech">Tech — mechanika</a></li>
 <li><a href="user-guide.html">Howto pulpitu</a></li>
+<li><a href="android.html">Klient Android</a></li>
 <li><a href="administration.html">Howto administracji</a></li>
 <li><a href="public-shares.html">Udziały publiczne, od strony człowieka</a></li>
 <li><a href="architecture.html">Architektura, tickety, sandbox</a></li>
@@ -101,6 +103,7 @@
 <p>Tu zaczynasz, jeśli siedzisz przy biurku albo prowadzisz strefę. Ton: co kliknąć, co się dzieje, po co FileES w ogóle. Nazwy na drucie zostają po angielsku; pulpit mówi potocznie (<em>strefa</em> to realm).</p>
 <ul>
 <li><a href="user-guide.html">Howto pulpitu</a> — instalacja klienta, pierwszy folder, Ustawienia, blokady, Dziennik.</li>
+<li><a href="android.html">Klient Android</a> — parowanie QR, przegląd udziałów, wrzutka do <code>mobile-uploads/</code>.</li>
 <li><a href="public-shares.html">Udziały publiczne</a> — oddaj paczkę komuś, kto nigdy nie zainstaluje FileES.</li>
 <li><a href="administration.html">Administracja</a> — zaproszenie, cofnięcie, odzyskanie, rotacja. Nadal użytkownik, tylko z większą wiązką kluczy.</li>
 </ul>
@@ -113,16 +116,17 @@
 <li><a href="security.html">Dodatek bezpieczeństwa</a> — niezmienniki, transport, granica GUI.</li>
 <li><a href="man-pages.html">Strony man / wyciąg CLI</a> — rola, wywołanie, flagi i przykłady każdego polecenia serwera.</li>
 </ul>
-<h2>Stan na 2026-08-15</h2>
+<h2>Stan na 2026-08-16</h2>
 <div class="table-wrap"><table>
 <tr><th>Powierzchnia</th><th>Stan</th></tr>
 <tr><td>Demon pulpitu + zasobnik</td><td><span class="status status-verified">Zweryfikowane</span> Linux i Windows; GUI jest cienkim klientem IPC</td></tr>
+<tr><td>Klient Android</td><td><span class="status status-verified">Przetestowane na żywo</span> 2026-08-16 na <code>spot</code>: QR, listing, pobranie, 198 plików jednym commitem</td></tr>
 <tr><td>Aktywacja i dołączenie do strefy</td><td><span class="status status-verified">Zweryfikowane</span> w tym OTP na named pipe w Windows i wznowienie próby <code>accepted</code></td></tr>
 <tr><td>Selektywne podłączenie, locate, odłączenie, load-dump</td><td><span class="status status-verified">Zweryfikowane</span></td></tr>
 <tr><td>Granty stref i widoczność</td><td><span class="status status-verified">Zweryfikowane</span> wyłącznie właściciel; bez redelegacji</td></tr>
 <tr><td>Polityka edycji repozytorium</td><td><span class="status status-verified">Zweryfikowane</span> odbiór 6/6 na dwóch klientach Windows</td></tr>
 <tr><td>Udziały publiczne</td><td><span class="status status-verified">Zweryfikowane</span> żywy HTTPS, OTP, branding, ZIP; mapa obiektów jest snapshotem</td></tr>
-<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Zweryfikowane</span> podpisane r492 na produkcyjnym OpenBSD</td></tr>
+<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Zweryfikowane</span> podpisane r543 (alpha) na produkcyjnym OpenBSD</td></tr>
 <tr><td>MSI / usługa Windows</td><td><span class="status status-implemented">Zaimplementowane</span> MSI tylko dla GUI; demon jest osobną binarką</td></tr>
 <tr><td>Kanał przyjęcia (Upload Channel)</td><td><span class="status status-designed">Zaprojektowane</span> następny pełny pion produktowy</td></tr>
 </table></div>

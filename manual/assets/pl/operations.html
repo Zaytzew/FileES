@@ -31,6 +31,7 @@
 <span class="nav-group" aria-label="User">
 <span class="nav-pillar">User</span>
 <a href="user-guide.html">Pulpit</a>
+<a href="android.html">Android</a>
 <a href="public-shares.html">Udziały</a>
 <a href="administration.html">Administracja</a>
 </span>
@@ -614,7 +615,7 @@ doas svn update /var/www/htdocs</code></pre>
 <li>Po potwierdzonym commicie demon czeka przez okres close-grace (<code>edit_passport_close_grace</code>, domyślnie 5 min), zanim odblokuje plik i przywróci go do tylko do odczytu.</li>
 <li>Widoczna na serwerze blokada SVN i jej token są autorytatywne między klientami. Konkurencyjny klient dostaje alias posiadacza i czas wygaśnięcia; zwolnienie i przejęcie ponownie odczytują i ogrodzają token, więc nieaktualny wiersz UI nie może zwolnić innej blokady.</li>
 </ul>
-<p>Zmiana polityki to migracja, nie lokalna preferencja. Włączenie stosuje i commituje <code>svn:needs-lock</code> na istniejących zwykłych plikach wersjonowanych. Wyłączenie usuwa tę właściwość i zwalnia paszporty należące do wywołującego. Ścieżki aktualnie trzymane przez innego właściciela zostają nietknięte i są ponawiane później, zamiast być kradzione. Projekcja mobilna tylko-dopisująca celowo nie otrzymuje <code>editing_policy</code>.</p>
+<p>Zmiana polityki to migracja, nie lokalna preferencja. Włączenie stosuje i commituje <code>svn:needs-lock</code> na istniejących zwykłych plikach wersjonowanych. Wyłączenie usuwa tę właściwość i zwalnia paszporty należące do wywołującego. Ścieżki aktualnie trzymane przez innego właściciela zostają nietknięte i są ponawiane później, zamiast być kradzione. Projekcja mobilna celowo nie otrzymuje <code>editing_policy</code>.</p>
 <div class="note"><strong>Zakres autolock (V1):</strong> strefą właściciela repozytorium jest ta, która je utworzyła (<code>OwnerRealmID</code>) — ta sama tożsamość strefy opisana w <a href="security.html#ch5-identity">modelu grantów</a>. Udostępnianie repozytoriów między strefami jest tam zaimplementowane: właściciel może nadać innej strefie dostęp <code>r</code> albo <code>rw</code> do repozytorium. Sam autolock pozostaje ściśle ograniczony do strefy właściciela (<code>pkg/commit</code> uruchamia cichą ścieżkę nabycia/ponownego zablokowania tylko gdy <code>RealmID == OwnerRealmID</code>); strefa mająca wyłącznie nadany udział <code>rw</code> używa ręcznej ścieżki „Wypożycz do edycji” (§2.6) jak każdy inny użytkownik niebędący właścicielem. Uogólnienie priorytetu autolock na własność per ścieżka dla repozytoriów zapisywalnych przez wiele stref pozostaje osobnym, jeszcze niezaimplementowanym rozszerzeniem (<code>concepts/AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md</code>).</div>
 <p>Parametry czasowe paszportów:</p>
 <div class="table-wrap"><table>

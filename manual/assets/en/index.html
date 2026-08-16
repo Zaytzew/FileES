@@ -31,6 +31,7 @@
 <span class="nav-group" aria-label="User">
 <span class="nav-pillar">User</span>
 <a href="user-guide.html">Desktop</a>
+<a href="android.html">Android</a>
 <a href="public-shares.html">Shares</a>
 <a href="administration.html">Administration</a>
 </span>
@@ -51,8 +52,8 @@
 <span><strong>Version</strong> 0.1.0</span>
 <span><strong>Date</strong> 2026-08-15</span>
 <span><strong>Source</strong> SVN r523</span>
-<span><strong>Server</strong> OpenBSD 7.9 · signed r492 on production</span>
-<span><strong>Client</strong> Linux and Windows desktop</span>
+<span><strong>Server</strong> OpenBSD 7.9 · signed r543 on production</span>
+<span><strong>Client</strong> Linux and Windows desktop · Android (live-tested)</span>
 </div>
 <div class="canonical-note"><strong>Languages:</strong> this is the English edition. The Polish edition is under <a href="../pl/index.html" hreflang="pl">assets/pl/</a>. The desktop GUI remains Polish-only; architecture terms stay English on the wire — see the <a href="user-guide.html#ch2-glossary">GUI terminology glossary</a>.</div>
 </section>
@@ -72,6 +73,7 @@
 <li><a href="#user">User — howto and why</a></li>
 <li><a href="#tech">Tech — mechanics</a></li>
 <li><a href="user-guide.html">Desktop howto</a></li>
+<li><a href="android.html">Android client</a></li>
 <li><a href="administration.html">Administration howto</a></li>
 <li><a href="public-shares.html">Public shares, as a person</a></li>
 <li><a href="architecture.html">Architecture, tickets, sandbox</a></li>
@@ -101,6 +103,7 @@
 <p>Start here if you sit at a desk or run a realm. The tone is: what to click, what happens, why FileES bothers. Wire names stay English; the desktop speaks everyday Polish (<em>strefa</em> is a realm).</p>
 <ul>
 <li><a href="user-guide.html">Desktop howto</a> — install the client, first folder, Settings, locks, journal.</li>
+<li><a href="android.html">Android client</a> — QR pairing, share listing, send into <code>mobile-uploads/</code>.</li>
 <li><a href="public-shares.html">Public shares</a> — hand a packet to someone who will never install FileES.</li>
 <li><a href="administration.html">Administration</a> — invite, revoke, recover, rotate. Still a user, with more keys.</li>
 </ul>
@@ -113,16 +116,17 @@
 <li><a href="security.html">Security appendix</a> — invariants, transport, GUI boundary.</li>
 <li><a href="man-pages.html">Man pages / CLI extract</a> — role, invocation, flags and examples for every server command.</li>
 </ul>
-<h2>What is current as of 2026-08-15</h2>
+<h2>What is current as of 2026-08-16</h2>
 <div class="table-wrap"><table>
 <tr><th>Surface</th><th>State</th></tr>
 <tr><td>Desktop daemon + tray</td><td><span class="status status-verified">Verified</span> Linux and Windows; GUI is a thin IPC client</td></tr>
+<tr><td>Android client</td><td><span class="status status-verified">Live-tested</span> 2026-08-16 on <code>spot</code>: QR, listing, download, 198 files in one commit</td></tr>
 <tr><td>Activation and realm join</td><td><span class="status status-verified">Verified</span> including Windows named-pipe OTP and resume of an accepted attempt</td></tr>
 <tr><td>Selective attach, locate, detach, load-dump</td><td><span class="status status-verified">Verified</span></td></tr>
 <tr><td>Realm grants and visibility</td><td><span class="status status-verified">Verified</span> owner-only; no transitive re-delegation</td></tr>
 <tr><td>Repository editing policy</td><td><span class="status status-verified">Verified</span> live 6/6 on two Windows clients</td></tr>
 <tr><td>Public Shares</td><td><span class="status status-verified">Verified</span> live HTTPS endpoint, OTP, branding, ZIP; object map is a snapshot</td></tr>
-<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified</span> signed r492 on production OpenBSD</td></tr>
+<tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified</span> signed r543 (alpha) on production OpenBSD</td></tr>
 <tr><td>Windows MSI / service packaging</td><td><span class="status status-implemented">Implemented</span> GUI MSI only; daemon is a separate binary</td></tr>
 <tr><td>Upload Channel</td><td><span class="status status-designed">Designed</span> next full product vertical</td></tr>
 </table></div>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Android client — FileES User manual</title>
+<link rel="alternate" hreflang="en" href="android.html"/>
+<link rel="alternate" hreflang="pl" href="../pl/android.html"/>
+<link rel="stylesheet" href="../css/manual.css"/>
+<link rel="icon" href="../../favicon.ico"/>
+</head>
+<body>
+<main class="sheet">
+<header class="masthead">
+<div class="brand-lockup">
+<div aria-hidden="true" class="brand-mark">f<span class="colon">:</span>s</div>
+<div class="brand-copy">
+<strong class="brand-name">filees<span class="colon">:</span>space</strong>
+<span class="brand-subtitle">FileES system documentation</span>
+</div>
+</div>
+<div class="masthead-meta">separate pages · external CSS · no network dependencies</div>
+<nav class="lang-switch" aria-label="Language">
+<a href="../../index.html" class="lang-home">filees:space</a>
+<a href="android.html" class="is-current" lang="en" hreflang="en" aria-current="true">EN</a>
+<a href="../pl/android.html" lang="pl" hreflang="pl">PL</a>
+</nav>
+</header>
+<nav class="site-nav" aria-label="Manual pages">
+<a href="index.html">Overview</a>
+<span class="nav-group" aria-label="User">
+<span class="nav-pillar">User</span>
+<a href="user-guide.html">Desktop</a>
+<a href="android.html" class="is-current">Android</a>
+<a href="public-shares.html">Shares</a>
+<a href="administration.html">Administration</a>
+</span>
+<span class="nav-group" aria-label="Tech">
+<span class="nav-pillar">Tech</span>
+<a href="architecture.html">Architecture</a>
+<a href="install.html">Install</a>
+<a href="operations.html">Operations</a>
+<a href="security.html">Security</a>
+<a href="man-pages.html">Man pages</a>
+</span>
+</nav>
+<div class="manual-layout">
+<nav aria-label="Page contents" id="toc">
+<div class="toc-head">
+<span class="toc-kicker">filees:space / this page</span>
+<h2>On this page</h2>
+</div>
+<ol>
+<li><a href="#and-what">What it is</a></li>
+<li><a href="#and-pair">Pairing</a></li>
+<li><a href="#and-browse">Browse and download</a></li>
+<li><a href="#and-send">Send</a></li>
+<li><a href="#and-pack">Large folder</a></li>
+<li><a href="#and-not">What the phone does not do</a></li>
+</ol>
+</nav>
+<div class="manual-content">
+<h1 id="ch-and">Android client</h1>
+<div class="chapter-content">
+<p>The phone is a capture and preview device, not an editing station. It reads a share like a public listing. It writes only under <code>mobile-uploads/</code>. The rest of the tree stays read-only. Protocol detail lives in Tech <a href="man-pages.html#filees-mobile-v1"><code>filees-mobile-v1</code></a> and in <code>concepts/TREE_INGEST_CONCEPT.md</code>.</p>
+
+<h2 id="and-what">What it is</h2>
+<div class="section-meta"><span class="status status-verified">Live-tested</span><span>2026-08-16 on <code>spot</code>: QR pairing, share listing, download, a 198-file folder in one commit, tree visible on the desktop.</span></div>
+<p>The app never creates repositories and never asks for a UUID. After pairing it shows the same shares the desktop has in the realm projection. Opening a share is a folder-and-file list with human sizes. The launcher mark is <code>f:s</code>; folder rows use the square filees:space symbol.</p>
+
+<h2 id="and-pair">Pairing</h2>
+<p>On an already activated desktop: tray → server → <strong>Pair mobile device…</strong>. A local page asks for a PIN and shows a QR code (five minutes). The phone scans it. After a successful pair the home scan button goes away; emergency pairing stays under Settings (the gear).</p>
+<p>The phone inherits that desktop's share list. It does not create a realm. How the desktop issues the QR is in the <a href="user-guide.html#ch2-gui">desktop guide</a>.</p>
+
+<h2 id="and-browse">Browse and download</h2>
+<p>The back arrow walks up the tree (the bar sits below the status bar, not under it). A file has <strong>Download</strong> and lands in the system Downloads collection. A file downloaded and edited on the phone does not write back to the original path — if you send it, it goes to <code>mobile-uploads/</code> as a new object.</p>
+
+<h2 id="and-send">Send</h2>
+<p><strong>Add</strong> offers files or a whole folder. The destination is always <code>mobile-uploads/…</code> in the chosen share. A small set goes one by one, with a <code>3 / 7</code> spinner. An existing path under <code>mobile-uploads/</code> with the same content is skipped; different content is a new revision, with no conflict prompt.</p>
+
+<h2 id="and-pack">Large folder</h2>
+<p>From eight files up the phone first counts the load (<code>198 files, 14 MB</code>), packs the folder into one zip (wire packaging, not a file in the share) and sends it in one connection. The server worker checks the header sha256, unpacks, and makes <em>one</em> commit. A nested <code>.zip</code> that is itself your document stays a file — the worker does not open it again.</p>
+<p>This cures a swarm of small files (hundreds of handshakes), not a gigabyte whale. Long-session time limits are a separate desktop concern.</p>
+
+<h2 id="and-not">What the phone does not do</h2>
+<ul>
+<li>it does not edit or delete objects outside <code>mobile-uploads/</code>;</li>
+<li>it does not create shares and does not take a typed UUID;</li>
+<li>it does not show an upload queue — a spinner, then success or an error;</li>
+<li>watched folders (about every five minutes) live in Settings; they have not had a full live acceptance yet.</li>
+</ul>
+<p>The server must know <code>UPLOAD_TREE</code> (the signed ingest release; on <code>spot</code> from r543). An older <code>filees-mobile-v1</code> exits status 70. The phone reports that the server does not know the operation or will not ingest the pack — it does not pretend success.</p>
+</div>
+<nav class="page-nav">
+<a href="user-guide.html">← Desktop</a>
+<a href="public-shares.html">Shares →</a>
+</nav>
+</div>
+</div>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-16 · source r543</span></footer>
+</main>
+</body>
+</html>

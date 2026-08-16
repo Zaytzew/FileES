@@ -106,7 +106,11 @@ func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 		"repositories": map[string]any{
 			"root": repositoriesRoot, "results_root": filepath.Join(base, "repo-results"),
 			"data_authz_file": filepath.Join(base, "data.authz"), "svnadmin_binary": svnadminBinary,
-			"url_prefix": "svn+ssh://filees.test/_filees-data/",
+			"url_prefix": "svn+ssh://_filees-data@filees.test/",
+		},
+		"invitation": map[string]any{
+			"server_id": "filees-test", "server_address": "filees.test:2222",
+			"known_host": "[filees.test]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		},
 		"smtp": map[string]any{"address": "127.0.0.1:2525", "client_name": "filees.test", "from": "filees@example.test", "message_id_domain": "filees.test", "tls": "none"},
 	}

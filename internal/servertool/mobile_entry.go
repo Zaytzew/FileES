@@ -61,12 +61,9 @@ type clientviewMobileAuthority struct {
 }
 
 func (a clientviewMobileAuthority) Resolve(_ context.Context, clientID, repoID string) (mobileworker.View, error) {
-	view, err := clientview.Load(filepath.Join(a.ServiceWorkingCopy, "clients", clientID, "view.json"))
+	view, err := a.loadView(clientID)
 	if err != nil {
 		return mobileworker.View{}, err
-	}
-	if view.ClientID != clientID {
-		return mobileworker.View{}, errors.New("mobile: client view identity mismatch")
 	}
 	for _, repo := range view.Repositories {
 		if repo.RepoID == repoID {
@@ -77,7 +74,43 @@ func (a clientviewMobileAuthority) Resolve(_ context.Context, clientID, repoID s
 			}, nil
 		}
 	}
-	return mobileworker.View{}, errors.New("mobile: no grant for this client/repo")
+	return mobileworker.View{}, mobileworker.ErrAccessDenied
+}
+
+func (a clientviewMobileAuthority) List(_ context.Context, clientID string) (mobileworker.Projection, error) {
+	view, err := a.loadView(clientID)
+	if err != nil {
+		return mobileworker.Projection{}, err
+	}
+	repos := make([]mobileworker.RepositoryGrant, 0, len(view.Repositories))
+	for _, repo := range view.Repositories {
+		repos = append(repos, mobileworker.RepositoryGrant{
+			RepoID:      repo.RepoID,
+			DisplayName: repo.DisplayName,
+			Access:      repo.Access,
+			State:       repo.State,
+		})
+	}
+	return mobileworker.Projection{
+		RealmID:      view.RealmID,
+		RealmAlias:   view.RealmAlias,
+		Generation:   view.Generation,
+		Repositories: repos,
+	}, nil
+}
+
+func (a clientviewMobileAuthority) loadView(clientID string) (clientview.View, error) {
+	view, err := clientview.Load(filepath.Join(a.ServiceWorkingCopy, "clients", clientID, "view.json"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return clientview.View{}, mobileworker.ErrAccessDenied
+		}
+		return clientview.View{}, err
+	}
+	if view.ClientID != clientID {
+		return clientview.View{}, mobileworker.ErrAccessDenied
+	}
+	return view, nil
 }
 
 // RunMobileEntry is the forced command behind the filees-mobile-v1 SSH client

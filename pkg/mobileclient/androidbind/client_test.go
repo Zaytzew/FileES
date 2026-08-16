@@ -30,6 +30,17 @@ func (f fakeAuth) Resolve(context.Context, string, string) (mobileworker.View, e
 	return mobileworker.View{RepoPath: f.repoPath, Generation: f.gen, Access: "rw"}, nil
 }
 
+func (f fakeAuth) List(context.Context, string) (mobileworker.Projection, error) {
+	return mobileworker.Projection{
+		RealmID:    "5b2b2595-312c-4e8f-9407-148e2a174033",
+		RealmAlias: "acme",
+		Generation: f.gen,
+		Repositories: []mobileworker.RepositoryGrant{{
+			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: "rw", State: "active",
+		}},
+	}, nil
+}
+
 func requireSVN(t *testing.T) {
 	t.Helper()
 	for _, tool := range []string{"svn", "svnadmin", "svnlook"} {
@@ -199,6 +210,18 @@ func TestClientEndToEndRefreshAndUpload(t *testing.T) {
 		t.Fatalf("identity did not persist: %q != %q", client.PublicKey(), clientPubLine)
 	}
 
+	listJSON, err := client.ListRepositoriesJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projection v1.ListRepositoriesResult
+	if err := json.Unmarshal([]byte(listJSON), &projection); err != nil {
+		t.Fatalf("decode projection: %v (json=%s)", err, listJSON)
+	}
+	if projection.RealmAlias != "acme" || len(projection.Repositories) != 1 || projection.Repositories[0].DisplayName != "JANCZEWICE" {
+		t.Fatalf("projection = %+v", projection)
+	}
+
 	manifestJSON, err := client.RefreshJSON("repo-1")
 	if err != nil {
 		t.Fatal(err)
@@ -219,12 +242,12 @@ func TestClientEndToEndRefreshAndUpload(t *testing.T) {
 		t.Fatal("expected a non-empty upload id")
 	}
 
-	listJSON, err := client.ListUploadsJSON("repo-1")
+	uploadsJSON, err := client.ListUploadsJSON("repo-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if listJSON == "[]" || listJSON == "" {
-		t.Fatalf("expected the queued item to show up, got %q", listJSON)
+	if uploadsJSON == "[]" || uploadsJSON == "" {
+		t.Fatalf("expected the queued item to show up, got %q", uploadsJSON)
 	}
 
 	drainJSON, err := client.DrainPendingJSON("repo-1")

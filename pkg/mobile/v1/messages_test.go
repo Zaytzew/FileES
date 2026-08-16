@@ -25,6 +25,7 @@ func TestRequestRoundTripAllOperations(t *testing.T) {
 		payload any
 	}{
 		{OpRefreshManifest, RefreshManifestPayload{RepoID: "repo-1", KnownViewGeneration: 87, KnownRepoRevision: 1847}},
+		{OpListRepositories, ListRepositoriesPayload{}},
 		{OpListDirectory, ListDirectoryPayload{RepoID: "repo-1", Path: "02_Fotografie/2026-07-20"}},
 		{OpReadObject, ReadObjectPayload{RepoID: "repo-1", Path: "02_Fotografie/IMG_0012.jpg"}},
 		{OpUploadObject, UploadObjectPayload{RepoID: "repo-1", ParentPath: "photos", Filename: "IMG_0013.jpg", Size: 5123401, Sha256: strings.Repeat("a", 64), ContentType: "image/jpeg"}},
@@ -111,6 +112,34 @@ func TestManifestValidation(t *testing.T) {
 	}}
 	if err := badHash.Validate(); err == nil {
 		t.Fatal("malformed content_hash should be rejected")
+	}
+}
+
+func TestListRepositoriesResultValidation(t *testing.T) {
+	ok := ListRepositoriesResult{
+		ViewGeneration: 2,
+		RealmID:        uuid.NewString(),
+		RealmAlias:     "acme",
+		Repositories: []RepositorySummary{
+			{RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: "rw", State: "active"},
+		},
+	}
+	resp, err := NewSuccess(rid(), OpListRepositories, ok)
+	if err != nil {
+		t.Fatalf("valid list result: %v", err)
+	}
+	raw, _ := json.Marshal(resp)
+	if _, err := ParseResponse(raw); err != nil {
+		t.Fatalf("list result round-trip: %v", err)
+	}
+
+	empty := ListRepositoriesResult{ViewGeneration: 1, RealmID: uuid.NewString(), Repositories: []RepositorySummary{}}
+	if _, err := NewSuccess(rid(), OpListRepositories, empty); err != nil {
+		t.Fatalf("empty projection should be valid: %v", err)
+	}
+
+	if _, err := NewSuccess(rid(), OpListRepositories, ListRepositoriesResult{ViewGeneration: 1, RealmID: uuid.NewString()}); err == nil {
+		t.Fatal("nil repositories should be rejected")
 	}
 }
 

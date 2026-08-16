@@ -64,6 +64,24 @@ func (c *Client) PublicKey() string {
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(c.ident.signer.PublicKey())))
 }
 
+// ListRepositoriesJSON returns the installation's realm projection as JSON
+// (view_generation, realm_alias, repositories[{repo_id, display_name,
+// access, state}]). Mobile never creates repositories: the UI picks one
+// of these shares and later operations send that repo_id.
+func (c *Client) ListRepositoriesJSON() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	defer cancel()
+	res, err := c.inner.ListRepositories(ctx)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 // RefreshJSON fetches (or confirms unchanged) the manifest for repoID and
 // returns it as JSON, or "" if nothing has ever been cached and the server
 // reports no manifest either.

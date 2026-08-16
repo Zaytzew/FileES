@@ -22,6 +22,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".QrCaptureActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:stateNotNeeded="true"
+            android:theme="@style/zxing_CaptureTheme"
+            android:windowSoftInputMode="stateAlwaysHidden" />
+
         <!--
              Read-only content:// surface over the local manifest cache
              (concept doc §7: a retrieved object is served through a

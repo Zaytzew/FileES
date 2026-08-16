@@ -8,8 +8,14 @@
     <string name="action_pair_pasted">Sparuj (wklejone dane)</string>
     <string name="label_device_public_key">Klucz publiczny tego urządzenia:</string>
 
-    <string name="section_repository">Repozytorium</string>
-    <string name="hint_repo_id">ID repozytorium</string>
+    <string name="section_repository">Udziały strefy</string>
+    <string name="hint_share">Wybierz udział</string>
+    <string name="projection_empty">Brak udziałów w projekcji strefy.</string>
+    <string name="projection_realm">Strefa: %1$s</string>
+    <string name="projection_share_rw">%1$s — zapis</string>
+    <string name="projection_share_r">%1$s — tylko odczyt</string>
+    <string name="picker_share_rw">%1$s (zapis)</string>
+    <string name="picker_share_r">%1$s (tylko odczyt)</string>
     <string name="action_refresh">Odśwież</string>
 
     <string name="status_idle">Niesparowany. Zeskanuj kod QR z aktywnego klienta desktopowego.</string>
@@ -20,6 +26,9 @@
     <string name="status_error">Błąd: %1$s</string>
     <string name="status_camera_permission_denied">Brak zgody na kamerę — użyj pola wklejania danych parowania.</string>
     <string name="status_scan_cancelled">Skanowanie anulowane.</string>
+    <string name="scan_qr_prompt">Umieść kod QR w kwadracie</string>
+    <!-- Overrides ZXing Polish barcode copy so the library default never shows. -->
+    <string name="zxing_msg_default_status">Umieść kod QR w kwadracie</string>
 
     <string name="section_uploads">Kolejka uploadów</string>
     <string name="hint_parent_path">Katalog docelowy (pusty = katalog główny)</string>

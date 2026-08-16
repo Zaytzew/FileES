@@ -126,6 +126,23 @@ func TestDispatchReadDeniedWithoutGrant(t *testing.T) {
 	}
 }
 
+func TestDispatchListRepositories(t *testing.T) {
+	d := newDispatcher(t, "", "rw")
+
+	frame := frameRequest(t, uuid.NewString(), v1.OpListRepositories, v1.ListRepositoriesPayload{}, nil)
+	resp, _ := serve(t, d, frame)
+	if resp.Status != v1.StatusOK {
+		t.Fatalf("status = %s, error = %+v", resp.Status, resp.Error)
+	}
+	var res v1.ListRepositoriesResult
+	if err := json.Unmarshal(resp.Result, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.RealmAlias != "acme" || len(res.Repositories) != 1 || res.Repositories[0].DisplayName != "JANCZEWICE" {
+		t.Fatalf("projection = %+v", res)
+	}
+}
+
 func TestDispatchUnsupportedOperation(t *testing.T) {
 	requireSVN(t)
 	d := newDispatcher(t, newSeededRepo(t), "r")

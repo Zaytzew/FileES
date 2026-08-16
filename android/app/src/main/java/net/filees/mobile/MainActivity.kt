@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.view.View
+import android.widget.ArrayAdapter
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -41,6 +42,8 @@ class MainActivity : AppCompatActivity() {
 
     private var client: Client? = null
     private var pairedAddress: String? = null
+    private var selectedRepoId: String? = null
+    private var selectableShares: List<RealmShare> = emptyList()
     private val uploadsAdapter = PendingUploadsAdapter(onDiscard = { onDiscardClicked(it) })
 
     private val prefs by lazy { getSharedPreferences("filees_connection", MODE_PRIVATE) }
@@ -77,6 +80,12 @@ class MainActivity : AppCompatActivity() {
         binding.buttonRefresh.setOnClickListener { onRefreshClicked() }
         binding.buttonPickFile.setOnClickListener { pickFileLauncher.launch(arrayOf("*/*")) }
         binding.buttonDrain.setOnClickListener { onDrainClicked() }
+        binding.pickerShare.setOnItemClickListener { _, _, position, _ ->
+            if (position in selectableShares.indices) {
+                selectShare(selectableShares[position])
+            }
+        }
+        selectedRepoId = prefs.getString(PREF_REPO_ID, null)
 
         // A prior activation persists its identity under filesDir regardless
         // of whether this Activity is still alive (concept doc §9.2); if we
@@ -103,9 +112,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun launchScanner() {
         val options = ScanOptions()
+        options.setCaptureActivity(QrCaptureActivity::class.java)
         options.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+        options.setPrompt(getString(R.string.scan_qr_prompt))
         options.setBeepEnabled(false)
         options.setOrientationLocked(true)
+        options.addExtra("TRY_HARDER", true)
+        options.addExtra("CHARACTER_SET", "UTF-8")
         scanLauncher.launch(options)
     }
 
@@ -173,7 +186,7 @@ class MainActivity : AppCompatActivity() {
                     // The queue lives in the local Store, independent of this
                     // Activity's lifecycle (concept doc §9.2) -- show whatever
                     // was already queued from a prior session immediately.
-                    refreshUploadsList()
+                    loadRealmProjection()
                 }
             } catch (e: Exception) {
                 main.post { setStatus(getString(R.string.status_error, e.message ?: e.toString())) }
@@ -183,22 +196,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun onRefreshClicked() {
         val active = client
-        val repoId = binding.editRepoId.text?.toString()?.trim().orEmpty()
         if (active == null) {
             setStatus(getString(R.string.status_error, "aktywuj klienta najpierw"))
             return
         }
-        if (repoId.isEmpty()) {
-            setStatus(getString(R.string.status_error, "podaj ID repozytorium"))
-            return
-        }
+        val repoId = currentRepoId()
         setStatus(getString(R.string.status_refreshing))
         io.execute {
             try {
-                val manifestJson = active.refreshJSON(repoId)
+                val projectionJson = active.listRepositoriesJSON()
+                val manifestJson = if (repoId.isNotEmpty()) active.refreshJSON(repoId) else null
                 main.post {
-                    setStatus(getString(R.string.status_activated, pairedAddress ?: repoId))
-                    binding.textManifest.text = formatManifest(manifestJson)
+                    applyProjection(projectionJson)
+                    if (manifestJson != null) {
+                        binding.textManifest.text = formatManifest(manifestJson)
+                    }
+                    setStatus(getString(R.string.status_activated, pairedAddress ?: ""))
                     refreshUploadsList()
                 }
             } catch (e: Exception) {
@@ -209,13 +222,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun onFilePicked(uri: Uri) {
         val active = client
-        val repoId = binding.editRepoId.text?.toString()?.trim().orEmpty()
+        val repoId = currentRepoId()
         if (active == null) {
             setStatus(getString(R.string.status_error, "aktywuj klienta najpierw"))
             return
         }
         if (repoId.isEmpty()) {
-            setStatus(getString(R.string.status_error, "podaj ID repozytorium"))
+            setStatus(getString(R.string.status_error, "wybierz udział strefy"))
             return
         }
         val parentPath = binding.editParentPath.text?.toString()?.trim().orEmpty()
@@ -252,13 +265,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun onDrainClicked() {
         val active = client
-        val repoId = binding.editRepoId.text?.toString()?.trim().orEmpty()
+        val repoId = currentRepoId()
         if (active == null) {
             setStatus(getString(R.string.status_error, "aktywuj klienta najpierw"))
             return
         }
         if (repoId.isEmpty()) {
-            setStatus(getString(R.string.status_error, "podaj ID repozytorium"))
+            setStatus(getString(R.string.status_error, "wybierz udział strefy"))
             return
         }
         setStatus("Wysyłanie kolejki…")
@@ -277,7 +290,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun onDiscardClicked(item: PendingUpload) {
         val active = client ?: return
-        val repoId = binding.editRepoId.text?.toString()?.trim().orEmpty()
+        val repoId = currentRepoId()
+        if (repoId.isEmpty()) return
         io.execute {
             try {
                 active.discardUpload(repoId, item.id)
@@ -288,9 +302,85 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun loadRealmProjection() {
+        val active = client ?: return
+        io.execute {
+            try {
+                val json = active.listRepositoriesJSON()
+                main.post {
+                    applyProjection(json)
+                    refreshUploadsList()
+                }
+            } catch (e: Exception) {
+                main.post {
+                    binding.textRealmProjection.text = ""
+                    setStatus(getString(R.string.status_error, e.message ?: e.toString()))
+                }
+            }
+        }
+    }
+
+    private fun applyProjection(json: String) {
+        val projection = RealmProjection.fromJson(json)
+        binding.textRealmProjection.text = formatProjection(projection)
+        selectableShares = projection.shares.filter { it.selectable }
+        val labels = selectableShares.map { share ->
+            if (share.access == "rw") {
+                getString(R.string.picker_share_rw, share.displayName)
+            } else {
+                getString(R.string.picker_share_r, share.displayName)
+            }
+        }
+        binding.pickerShare.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, labels)
+        )
+        val saved = selectedRepoId
+        val restored = selectableShares.firstOrNull { it.repoId == saved }
+            ?: selectableShares.singleOrNull()
+        if (restored != null) {
+            val index = selectableShares.indexOf(restored)
+            binding.pickerShare.setText(labels[index], false)
+            selectShare(restored)
+        } else {
+            selectedRepoId = null
+            binding.pickerShare.setText("", false)
+            prefs.edit { remove(PREF_REPO_ID) }
+            uploadsAdapter.submit(emptyList())
+            binding.textUploadsEmpty.visibility = View.VISIBLE
+        }
+    }
+
+    private fun selectShare(share: RealmShare) {
+        selectedRepoId = share.repoId
+        prefs.edit { putString(PREF_REPO_ID, share.repoId) }
+        refreshUploadsList()
+    }
+
+    private fun currentRepoId(): String = selectedRepoId.orEmpty()
+
+    private fun formatProjection(projection: RealmProjection): String {
+        if (projection.shares.isEmpty()) {
+            return getString(R.string.projection_empty)
+        }
+        val builder = StringBuilder()
+        val realm = projection.realmAlias.ifBlank { projection.realmId }
+        if (realm.isNotBlank()) {
+            builder.append(getString(R.string.projection_realm, realm)).append('\n')
+        }
+        for (share in projection.shares) {
+            val line = if (share.access == "rw") {
+                getString(R.string.projection_share_rw, share.displayName)
+            } else {
+                getString(R.string.projection_share_r, share.displayName)
+            }
+            builder.append("• ").append(line).append('\n')
+        }
+        return builder.toString().trimEnd()
+    }
+
     private fun refreshUploadsList() {
         val active = client ?: return
-        val repoId = binding.editRepoId.text?.toString()?.trim().orEmpty()
+        val repoId = currentRepoId()
         if (repoId.isEmpty()) return
         io.execute {
             try {
@@ -335,5 +425,51 @@ class MainActivity : AppCompatActivity() {
         private const val MOBILE_USER = "_filees-mobile"
         private const val PREF_ADDRESS = "address"
         private const val PREF_HOST_KEY = "host_public_key"
+        private const val PREF_REPO_ID = "selected_repo_id"
+    }
+}
+
+private data class RealmShare(
+    val repoId: String,
+    val displayName: String,
+    val access: String,
+    val state: String,
+) {
+    val selectable: Boolean
+        get() = (state == "active" || state == "initializing") && (access == "r" || access == "rw")
+}
+
+private data class RealmProjection(
+    val realmId: String,
+    val realmAlias: String,
+    val shares: List<RealmShare>,
+) {
+    companion object {
+        fun fromJson(json: String): RealmProjection {
+            if (json.isBlank()) {
+                return RealmProjection("", "", emptyList())
+            }
+            val root = JSONObject(json)
+            val entries = root.optJSONArray("repositories")
+            val shares = mutableListOf<RealmShare>()
+            if (entries != null) {
+                for (i in 0 until entries.length()) {
+                    val item = entries.getJSONObject(i)
+                    shares.add(
+                        RealmShare(
+                            repoId = item.optString("repo_id"),
+                            displayName = item.optString("display_name"),
+                            access = item.optString("access"),
+                            state = item.optString("state"),
+                        )
+                    )
+                }
+            }
+            return RealmProjection(
+                realmId = root.optString("realm_id"),
+                realmAlias = root.optString("realm_alias"),
+                shares = shares,
+            )
+        }
     }
 }

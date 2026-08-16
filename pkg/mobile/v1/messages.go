@@ -28,16 +28,17 @@ const (
 type Operation string
 
 const (
-	OpRefreshManifest Operation = "REFRESH_MANIFEST"
-	OpListDirectory   Operation = "LIST_DIRECTORY"
-	OpReadObject      Operation = "READ_OBJECT"
-	OpUploadObject    Operation = "UPLOAD_OBJECT" // append-only, unique
-	OpOperationStatus Operation = "GET_OPERATION_STATUS"
+	OpRefreshManifest  Operation = "REFRESH_MANIFEST"
+	OpListRepositories Operation = "LIST_REPOSITORIES"
+	OpListDirectory    Operation = "LIST_DIRECTORY"
+	OpReadObject       Operation = "READ_OBJECT"
+	OpUploadObject     Operation = "UPLOAD_OBJECT" // append-only, unique
+	OpOperationStatus  Operation = "GET_OPERATION_STATUS"
 )
 
 func (o Operation) valid() bool {
 	switch o {
-	case OpRefreshManifest, OpListDirectory, OpReadObject, OpUploadObject, OpOperationStatus:
+	case OpRefreshManifest, OpListRepositories, OpListDirectory, OpReadObject, OpUploadObject, OpOperationStatus:
 		return true
 	}
 	return false
@@ -128,6 +129,29 @@ type RefreshManifestPayload struct {
 	RepoID              string `json:"repo_id"`
 	KnownViewGeneration int64  `json:"known_view_generation"`
 	KnownRepoRevision   int64  `json:"known_repo_revision"`
+}
+
+// ListRepositoriesPayload is empty: the authenticated installation's
+// projection is bound from the session, never from the request.
+type ListRepositoriesPayload struct{}
+
+// RepositorySummary is one granted share from the installation's realm
+// projection. DisplayName is the picker label; RepoID is the only identifier
+// later operations may send. Mobile never creates repositories.
+type RepositorySummary struct {
+	RepoID      string `json:"repo_id"`
+	DisplayName string `json:"display_name"`
+	Access      string `json:"access"`
+	State       string `json:"state"`
+}
+
+// ListRepositoriesResult is the installation's current realm projection.
+// Repositories may be empty (paired, nothing granted yet) but is never omitted.
+type ListRepositoriesResult struct {
+	ViewGeneration int64               `json:"view_generation"`
+	RealmID        string              `json:"realm_id"`
+	RealmAlias     string              `json:"realm_alias,omitempty"`
+	Repositories   []RepositorySummary `json:"repositories"`
 }
 
 // RefreshManifestResult is NOT_MODIFIED (Manifest nil) only when both the view
@@ -276,6 +300,11 @@ func (r Request) Validate() error {
 		if p.KnownViewGeneration < 0 || p.KnownRepoRevision < 0 {
 			return errors.New("known_view_generation and known_repo_revision cannot be negative")
 		}
+	case OpListRepositories:
+		var p ListRepositoriesPayload
+		if err := decodeStrict(r.Payload, &p); err != nil {
+			return fmt.Errorf("%s payload: %w", r.Operation, err)
+		}
 	case OpListDirectory:
 		var p ListDirectoryPayload
 		if err := decodeStrict(r.Payload, &p); err != nil {
@@ -379,6 +408,12 @@ func (r Response) validateResult() error {
 			return errors.New("refresh result requires a manifest unless not_modified")
 		}
 		return res.Manifest.Validate()
+	case OpListRepositories:
+		var res ListRepositoriesResult
+		if err := decodeStrict(r.Result, &res); err != nil {
+			return fmt.Errorf("%s result: %w", r.Operation, err)
+		}
+		return res.Validate()
 	case OpReadObject:
 		var res ReadObjectResult
 		if err := decodeStrict(r.Result, &res); err != nil {
@@ -428,6 +463,43 @@ func (r Response) validateResult() error {
 		}
 		if !validOpState(res.State) {
 			return fmt.Errorf("invalid operation state %q", res.State)
+		}
+	}
+	return nil
+}
+
+func (r ListRepositoriesResult) Validate() error {
+	if r.ViewGeneration < 1 {
+		return errors.New("list repositories view_generation must be positive")
+	}
+	if err := validateUUID("realm_id", r.RealmID); err != nil {
+		return err
+	}
+	if strings.ContainsAny(r.RealmAlias, "\x00\r\n\t") {
+		return errors.New("realm_alias contains invalid characters")
+	}
+	if r.Repositories == nil {
+		return errors.New("list repositories result requires repositories")
+	}
+	seen := make(map[string]struct{}, len(r.Repositories))
+	for i, repo := range r.Repositories {
+		if err := requireRepoID(repo.RepoID); err != nil {
+			return fmt.Errorf("repositories[%d].repo_id: %w", i, err)
+		}
+		if _, dup := seen[repo.RepoID]; dup {
+			return fmt.Errorf("repositories[%d].repo_id is duplicated", i)
+		}
+		seen[repo.RepoID] = struct{}{}
+		if strings.TrimSpace(repo.DisplayName) == "" || strings.ContainsAny(repo.DisplayName, "\x00\r\n") {
+			return fmt.Errorf("repositories[%d].display_name is invalid", i)
+		}
+		if repo.Access != "r" && repo.Access != "rw" {
+			return fmt.Errorf("repositories[%d].access must be r or rw", i)
+		}
+		switch repo.State {
+		case "initializing", "active", "disabled", "revoked":
+		default:
+			return fmt.Errorf("repositories[%d].state is invalid", i)
 		}
 	}
 	return nil

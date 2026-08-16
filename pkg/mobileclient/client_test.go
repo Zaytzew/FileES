@@ -28,6 +28,20 @@ func (f fakeAuth) Resolve(context.Context, string, string) (mobileworker.View, e
 	return mobileworker.View{RepoPath: f.repoPath, Generation: f.gen, Access: f.access}, nil
 }
 
+func (f fakeAuth) List(context.Context, string) (mobileworker.Projection, error) {
+	if f.access == "" {
+		return mobileworker.Projection{}, mobileworker.ErrAccessDenied
+	}
+	return mobileworker.Projection{
+		RealmID:    "5b2b2595-312c-4e8f-9407-148e2a174033",
+		RealmAlias: "acme",
+		Generation: f.gen,
+		Repositories: []mobileworker.RepositoryGrant{{
+			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: f.access, State: "active",
+		}},
+	}, nil
+}
+
 // dispatcherTransport runs each operation through a real dispatcher as one
 // framed session — the same path a real SSH session would drive.
 type dispatcherTransport struct{ d mobileworker.Dispatcher }
@@ -116,6 +130,17 @@ func newClient(t *testing.T, repo, access string) Client {
 }
 
 // --- tests ---
+
+func TestListRepositoriesReturnsProjection(t *testing.T) {
+	c := newClient(t, "", "rw")
+	res, err := c.ListRepositories(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res == nil || res.RealmAlias != "acme" || len(res.Repositories) != 1 || res.Repositories[0].DisplayName != "JANCZEWICE" {
+		t.Fatalf("projection = %+v", res)
+	}
+}
 
 func TestRefreshFetchesAndCaches(t *testing.T) {
 	requireSVN(t)

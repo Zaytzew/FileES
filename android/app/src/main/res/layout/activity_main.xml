@@ -76,17 +76,27 @@
             android:text="@string/section_repository"
             android:textAppearance="?attr/textAppearanceTitleMedium" />
 
-        <com.google.android.material.textfield.TextInputLayout
+        <TextView
+            android:id="@+id/textRealmProjection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp">
+            android:layout_marginTop="8dp"
+            android:textIsSelectable="true" />
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editRepoId"
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/layoutShare"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/hint_share">
+
+            <AutoCompleteTextView
+                android:id="@+id/pickerShare"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/hint_repo_id"
-                android:inputType="text" />
+                android:inputType="none"
+                android:importantForAutofill="no" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton

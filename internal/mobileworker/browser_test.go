@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,20 @@ type fakeAuthority struct {
 
 func (f fakeAuthority) Resolve(context.Context, string, string) (View, error) {
 	return View{RepoPath: f.repoPath, Generation: f.gen, Access: f.access}, nil
+}
+
+func (f fakeAuthority) List(context.Context, string) (Projection, error) {
+	if f.access == "" {
+		return Projection{}, ErrAccessDenied
+	}
+	return Projection{
+		RealmID:    "5b2b2595-312c-4e8f-9407-148e2a174033",
+		RealmAlias: "acme",
+		Generation: f.gen,
+		Repositories: []RepositoryGrant{{
+			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: f.access, State: "active",
+		}},
+	}, nil
 }
 
 func requireSVN(t *testing.T) {
@@ -84,6 +99,28 @@ func commitFileInto(t *testing.T, repo, rel string, data []byte) {
 
 func newBrowser(repo string, gen int64, access string) Browser {
 	return Browser{Authority: fakeAuthority{repoPath: repo, gen: gen, access: access}, Reader: SVNReader{}}
+}
+
+func TestListRepositoriesReturnsProjection(t *testing.T) {
+	b := newBrowser("", 4, "rw")
+	res, err := b.ListRepositories(context.Background(), "client-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ViewGeneration != 4 || res.RealmAlias != "acme" || len(res.Repositories) != 1 {
+		t.Fatalf("projection = %+v", res)
+	}
+	got := res.Repositories[0]
+	if got.RepoID != "repo-1" || got.DisplayName != "JANCZEWICE" || got.Access != "rw" || got.State != "active" {
+		t.Fatalf("share = %+v", got)
+	}
+}
+
+func TestListRepositoriesDeniedWithoutGrant(t *testing.T) {
+	b := newBrowser("", 4, "")
+	if _, err := b.ListRepositories(context.Background(), "client-1"); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("err = %v", err)
+	}
 }
 
 func TestRefreshManifestBuildsTree(t *testing.T) {

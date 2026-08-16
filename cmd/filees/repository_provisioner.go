@@ -631,7 +631,9 @@ func (p *daemonProvisioner) rollbackRelocation(ctx context.Context, record local
 
 func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) {
 	mode := provisioning.LocalPathAttach
+	hadSVN := false
 	if info, statErr := os.Stat(filepath.Join(record.LocalPath, ".svn")); statErr == nil && info.IsDir() {
+		hadSVN = true
 		mode = provisioning.LocalPathAttachResume
 	}
 	check, err := provisioning.PreflightLocalPath(record.LocalPath, mode, p.otherRoots(record.OperationID))
@@ -641,6 +643,12 @@ func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Reco
 	}
 	svn := p.newAttachmentSVN(profile, record.OperationID)
 	if _, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath); err != nil {
+		// A failed first checkout of an existing realm share leaves an
+		// incomplete .svn admin area in an otherwise empty folder. Resume,
+		// create, relocate and mobile pairing never take this path.
+		if !hadSVN {
+			discardFailedAttachMetadata(check.CanonicalPath)
+		}
 		p.failAttach(record.OperationID, fmt.Errorf("checkout shared repository: %w", err))
 		return
 	}
@@ -673,6 +681,16 @@ func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Reco
 func (p *daemonProvisioner) failAttach(operationID string, err error) {
 	_, _ = p.local.MarkError(operationID, err)
 	talk.With("attachment:"+operationID).Warnf("attachment failed: %v", err)
+}
+
+// discardFailedAttachMetadata removes only the .svn admin area left by a
+// first checkout that failed while pairing a local folder onto an existing
+// realm share. It never deletes user files and is never used on resume.
+func discardFailedAttachMetadata(root string) {
+	if root == "" {
+		return
+	}
+	_ = os.RemoveAll(filepath.Join(root, ".svn"))
 }
 
 func (p *daemonProvisioner) otherRoots(operationID string) []string {

@@ -287,6 +287,62 @@ func TestDaemonProvisionerResumesAttachmentAfterCheckoutBoundary(t *testing.T) {
 	}
 }
 
+func TestDaemonProvisionerDiscardsLeftoverSVNAfterFailedFirstAttach(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	wc := filepath.Join(t.TempDir(), "empty")
+	if err := os.MkdirAll(wc, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	userFile := filepath.Join(wc, "not-created-by-checkout.txt")
+	record, _ := local.BeginAttach("office", uuid.NewString(), wc, false)
+	record, _ = local.ApproveAttach(record.OperationID, "office", record.RepoID, "svn+ssh://_filees-client@example/shared", "rw")
+	stub := &failingAttachCheckoutSVN{}
+	profile := clientprofile.Profile{ServerID: "office"}
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateError || stub.checkout != 1 {
+		t.Fatalf("record=%+v checkout=%d", got, stub.checkout)
+	}
+	if _, err := os.Stat(filepath.Join(wc, ".svn")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed first attach left .svn: %v", err)
+	}
+	if _, err := os.Stat(userFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("cleanup invented or preserved a user file that should not exist")
+	}
+}
+
+func TestDaemonProvisionerKeepsExistingSVNOnFailedAttachResume(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	wc := filepath.Join(t.TempDir(), "wc")
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := local.BeginAttach("office", uuid.NewString(), wc, false)
+	record, _ = local.ApproveAttach(record.OperationID, "office", record.RepoID, "svn+ssh://_filees-client@example/shared", "rw")
+	stub := &failingAttachCheckoutSVN{}
+	profile := clientprofile.Profile{ServerID: "office"}
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	provisioner.runOne(context.Background(), record.OperationID)
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateError {
+		t.Fatalf("state=%s", got.State)
+	}
+	if _, err := os.Stat(filepath.Join(wc, ".svn")); err != nil {
+		t.Fatalf("resume must not delete an existing .svn: %v", err)
+	}
+}
+
 func TestDaemonProvisionerRejectsMismatchedWorkingCopyURL(t *testing.T) {
 	local, _ := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	journal, _ := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
@@ -802,6 +858,24 @@ func runChaosChild(t *testing.T, root, profilePath, stage, target string) {
 	if !ok || exitErr.ExitCode() != 91 {
 		t.Fatalf("chaos child %s did not stop at boundary: %v", stage, err)
 	}
+}
+
+type failingAttachCheckoutSVN struct {
+	checkout int
+}
+
+func (stub *failingAttachCheckoutSVN) Checkout(_ context.Context, _, path string) (string, error) {
+	stub.checkout++
+	if err := os.MkdirAll(filepath.Join(path, ".svn"), 0o700); err != nil {
+		return "", err
+	}
+	return "", errors.New("checkout shared repository: simulated fail")
+}
+func (stub *failingAttachCheckoutSVN) GetInfo(context.Context, string) (string, error) {
+	return "", errors.New("checkout did not finish")
+}
+func (stub *failingAttachCheckoutSVN) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
+	return nil, errors.New("checkout did not finish")
 }
 
 type fixedInfoAttachmentSVN struct{ attachmentSVNStub *attachmentSVNStub }

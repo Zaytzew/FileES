@@ -20,7 +20,7 @@ var settingsActionCatalog = []settingsActionSpec{
 	{SettingsDialogRealmVisibility, "realm_visibility", "realm_visibility", "Widoczność mojej strefy", false, false},
 	{SettingsDialogRealmBranding, "realm_branding", "realm_branding", "Wygląd udziałów publicznych", false, false},
 	{SettingsDialogAddFolder, "add_folder", "add", "Dodaj folder do FileES", false, false},
-	{SettingsDialogConnectRepos, "connect_repositories", "connect", "Połącz z lokalnym folderem", true, true},
+	{SettingsDialogConnectRepos, "connect_repositories", "connect", "Połącz z istniejącymi udziałami strefy", true, true},
 	{SettingsDialogLocateFolder, "locate_folder", "locate", "Wskaż przeniesioną kopię roboczą", true, false},
 	{SettingsDialogManageGrants, "manage_grants", "manage_grants", "Uprawnienia gości", true, false},
 	{SettingsDialogEditingPolicy, "editing_policy", "editing_policy", "Zasady edycji", true, false},

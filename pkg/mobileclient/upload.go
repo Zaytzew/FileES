@@ -130,7 +130,7 @@ func (s Store) EnqueueUpload(repoID, parentPath, filename, contentType string, c
 func (s Store) ListUploads(repoID string) ([]PendingUpload, error) {
 	entries, err := os.ReadDir(s.uploadDir(repoID))
 	if os.IsNotExist(err) {
-		return nil, nil
+		return []PendingUpload{}, nil
 	}
 	if err != nil {
 		return nil, err

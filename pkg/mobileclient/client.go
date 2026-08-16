@@ -66,6 +66,23 @@ func (c Client) Refresh(ctx context.Context, repoID string) (*v1.Manifest, error
 	return res.Manifest, nil
 }
 
+// Read fetches one existing object. Append-only does not mean the phone
+// cannot download; it only forbids modifying or deleting the path.
+func (c Client) Read(ctx context.Context, repoID, path string) ([]byte, error) {
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpReadObject, v1.ReadObjectPayload{RepoID: repoID, Path: path})
+	if err != nil {
+		return nil, err
+	}
+	resp, payload, err := c.Transport.Do(ctx, req, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != v1.StatusOK {
+		return nil, respError(resp)
+	}
+	return payload, nil
+}
+
 // ListRepositories returns the authenticated installation's realm
 // projection. Mobile never creates repositories: later operations must
 // send a repo_id from this list.

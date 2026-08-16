@@ -15,6 +15,7 @@ data class PendingUpload(
     val filename: String,
     val size: Long,
     val state: String,
+    val outcome: String,
     val existingSha256: String,
     val lastError: String,
 ) {
@@ -25,7 +26,7 @@ data class PendingUpload(
 
     companion object {
         fun listFromJson(json: String): List<PendingUpload> {
-            if (json.isBlank()) return emptyList()
+            if (json.isBlank() || json == "null") return emptyList()
             val array = JSONArray(json)
             return (0 until array.length()).map { i ->
                 val o: JSONObject = array.getJSONObject(i)
@@ -35,6 +36,7 @@ data class PendingUpload(
                     filename = o.optString("filename"),
                     size = o.optLong("size"),
                     state = o.optString("state"),
+                    outcome = o.optString("outcome"),
                     existingSha256 = o.optString("existing_sha256"),
                     lastError = o.optString("last_error"),
                 )

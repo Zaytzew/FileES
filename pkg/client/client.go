@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -638,15 +639,7 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 
 	cmd := exec.CommandContext(ctx, c.svnPath, cmdArgs...)
 	cmd.Dir = workingDir
-	// Callers (infoHasURL, infoHasUUID, ...) scan `svn info` output for
-	// fixed English line prefixes ("Repository UUID:", ...); svn localizes
-	// those under the process's own locale, so the parent's LANG/LC_* must
-	// never leak through here regardless of transport.
-	env := append(os.Environ(), "LC_ALL=C")
-	if c.sshCommand != "" {
-		env = append(env, "SVN_SSH="+c.sshCommand)
-	}
-	cmd.Env = env
+	cmd.Env = svnProcessEnvironment(os.Environ(), c.sshCommand)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -683,6 +676,28 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 		return out, nil
 	}
 	return processoutput.Text(stdout.Bytes()), nil
+}
+
+// svnProcessEnvironment keeps `svn info` keys in English and still lets
+// checkout create UTF-8 paths. Plain LC_ALL=C makes APR treat the
+// filesystem as ASCII; ł then becomes {U+0142} and checkout dies E000022.
+func svnProcessEnvironment(environ []string, sshCommand string) []string {
+	result := make([]string, 0, len(environ)+2)
+	for _, entry := range environ {
+		if strings.HasPrefix(entry, "LC_ALL=") {
+			continue
+		}
+		result = append(result, entry)
+	}
+	locale := "C.UTF-8"
+	if runtime.GOOS == "windows" {
+		locale = "C"
+	}
+	result = append(result, "LC_ALL="+locale)
+	if sshCommand != "" {
+		result = append(result, "SVN_SSH="+sshCommand)
+	}
+	return result
 }
 
 func svnXMLOutput(args []string) bool {

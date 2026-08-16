@@ -567,3 +567,26 @@ func TestBuildSSHCommandKeepsWindowsPathsUsable(t *testing.T) {
 		}
 	}
 }
+
+func TestSvnProcessEnvironmentKeepsEnglishMessagesAndUTF8Paths(t *testing.T) {
+	got := svnProcessEnvironment([]string{"PATH=/bin", "LC_ALL=C", "LANG=pl_PL.UTF-8"}, "ssh -p 2223")
+	want := "LC_ALL=C.UTF-8"
+	if runtime.GOOS == "windows" {
+		want = "LC_ALL=C"
+	}
+	locales, leftoverC, ssh := 0, 0, 0
+	for _, entry := range got {
+		if entry == want {
+			locales++
+		}
+		if entry == "LC_ALL=C" && want != "LC_ALL=C" {
+			leftoverC++
+		}
+		if entry == "SVN_SSH=ssh -p 2223" {
+			ssh++
+		}
+	}
+	if locales != 1 || leftoverC != 0 || ssh != 1 {
+		t.Fatalf("env=%q locale=%s count=%d leftoverC=%d ssh=%d", got, want, locales, leftoverC, ssh)
+	}
+}

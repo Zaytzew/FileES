@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"filees/pkg/onboarding"
+	"filees/pkg/realmbranding"
 	"filees/pkg/repoworker"
 
 	"github.com/google/uuid"
@@ -98,6 +99,10 @@ type Realm struct {
 	// activation. It is intentionally absent until then.
 	Alias               string `json:"alias,omitempty"`
 	DirectoryVisibility string `json:"directory_visibility,omitempty"`
+	// PublicBranding is written by realm.public_branding_set onto the same
+	// admin/realms file. Activation must decode it so a later join does not
+	// reject an already-branded realm; this path never authors the value.
+	PublicBranding *realmbranding.Branding `json:"public_branding,omitempty"`
 }
 
 type CommandRunner interface {

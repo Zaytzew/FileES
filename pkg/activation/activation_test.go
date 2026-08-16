@@ -13,6 +13,7 @@ import (
 
 	"filees/pkg/clientview"
 	"filees/pkg/onboarding"
+	"filees/pkg/realmbranding"
 	"filees/pkg/repoworker"
 
 	"github.com/google/uuid"
@@ -104,6 +105,67 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	authz, _ := os.ReadFile(config.AuthzFile)
 	if strings.Contains(string(authz), "[/clients/"+grant.ClientID+"]") || !strings.Contains(string(authz), "[/clients/"+second.ClientID+"]") {
 		t.Fatalf("revoked/active authz=%s", authz)
+	}
+}
+
+func TestEnsureRealmAcceptsExistingPublicBranding(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "realm.json")
+	wanted := Realm{Schema: RealmSchema, RealmID: uuid.NewString(), State: "active", CreatedAt: time.Now().UTC()}
+	if _, err := ensureRealm(path, wanted); err != nil {
+		t.Fatal(err)
+	}
+	branded := wanted
+	branded.PublicBranding = &realmbranding.Branding{LeadingColor: realmbranding.DefaultLeadingColor}
+	if err := atomicWriteJSON(path, branded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ensureRealm(path, wanted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PublicBranding == nil || got.PublicBranding.LeadingColor != realmbranding.DefaultLeadingColor {
+		t.Fatalf("ensureRealm dropped public_branding: %+v", got.PublicBranding)
+	}
+}
+
+func TestPublishJoinsRealmWithPublicBranding(t *testing.T) {
+	manager, config := newActivationTestManager(t)
+	first := testActivationGrant(t, time.Now().Add(time.Hour))
+	if err := manager.Stage(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RecordProof(first.OperationID, first.ClientID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Publish(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	publisher := repoworker.ServicePublisher{
+		ServiceWC:     config.ServiceWorkingCopy,
+		DataAuthzFile: config.DataAuthzFile,
+		Runner:        repoworker.SVNPublishRunner{SVN: config.SVNBinary, WorkingCopy: config.ServiceWorkingCopy},
+	}
+	if _, err := publisher.SetRealmPublicBranding(context.Background(), first.RealmID, realmbranding.Default()); err != nil {
+		t.Fatal(err)
+	}
+	second := testActivationGrant(t, time.Now().Add(time.Hour))
+	second.RealmID = first.RealmID
+	if err := manager.Stage(second); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RecordProof(second.OperationID, second.ClientID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Publish(context.Background(), second); err != nil {
+		t.Fatalf("publish into branded realm: %v", err)
+	}
+	var realm Realm
+	if err := readStrict(filepath.Join(config.ServiceWorkingCopy, "admin", "realms", first.RealmID+".json"), RealmSchema, &realm); err != nil {
+		t.Fatal(err)
+	}
+	if realm.PublicBranding == nil || realm.PublicBranding.LeadingColor != realmbranding.DefaultLeadingColor {
+		t.Fatalf("join stripped public_branding: %+v", realm.PublicBranding)
 	}
 }
 

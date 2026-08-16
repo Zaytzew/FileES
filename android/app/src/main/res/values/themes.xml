@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Filees" parent="Theme.Material3.DayNight.NoActionBar" />
+    <style name="Theme.Filees" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/filees_navy</item>
+        <item name="android:navigationBarColor">@color/filees_navy</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorPrimary">@color/filees_navy</item>
+        <item name="colorPrimaryContainer">@color/filees_navy</item>
+        <item name="colorOnPrimary">@color/filees_white</item>
+        <item name="actionMenuTextColor">@color/filees_white</item>
+    </style>
 </resources>

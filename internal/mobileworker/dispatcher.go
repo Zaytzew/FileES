@@ -72,6 +72,15 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		}
 		return d.writeOK(out, req, res, nil)
 
+	case v1.OpUploadTree:
+		var p v1.UploadTreePayload
+		_ = json.Unmarshal(req.Payload, &p)
+		res, err := d.Appender.UploadTree(ctx, d.ClientID, req.RequestID, p, br)
+		if err != nil {
+			return d.writeError(out, req, err)
+		}
+		return d.writeOK(out, req, res, nil)
+
 	case v1.OpOperationStatus:
 		var p v1.OperationStatusPayload
 		_ = json.Unmarshal(req.Payload, &p)
@@ -102,11 +111,14 @@ func (d Dispatcher) writeOK(out io.Writer, req v1.Request, result any, payload [
 
 // writeError maps an internal error to a domain code, never leaking raw tool text.
 func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
-	code := "worker.failed"
+	code, msg := "worker.failed", "operation failed"
 	if errors.Is(err, ErrAccessDenied) {
 		code = "access.denied"
 	}
-	return d.writeErrorBody(out, req, v1.ErrorBody{Code: code, Message: "operation failed"})
+	if errors.Is(err, errTreePayloadCorrupt) {
+		code, msg = "tree.payload_corrupt", "zip sha256 or size does not match the header"
+	}
+	return d.writeErrorBody(out, req, v1.ErrorBody{Code: code, Message: msg})
 }
 
 func (d Dispatcher) writeErrorBody(out io.Writer, req v1.Request, body v1.ErrorBody) error {

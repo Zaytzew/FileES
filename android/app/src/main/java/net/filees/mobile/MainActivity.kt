@@ -52,7 +52,7 @@ class MainActivity : AppCompatActivity() {
         enqueueWalked(uris.map { DocumentWalk.single(contentResolver, it) })
     }
     private val pickFolderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) enqueueWalked(DocumentWalk.tree(contentResolver, uri))
+        if (uri != null) enqueueFolder(uri)
     }
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         if (result.contents == null) {
@@ -67,9 +67,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installFileesWindow()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         setSupportActionBar(binding.toolbar)
+        binding.toolbar.padTopSystemBars()
+        binding.buttonAdd.marginBottomSystemBars(16)
+        binding.recyclerBrowse.padBottomSystemBars(88)
         watched = WatchedFolders(this)
 
         binding.recyclerBrowse.layoutManager = LinearLayoutManager(this)
@@ -100,6 +104,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_main, menu)
+        menu.findItem(R.id.action_settings)?.icon?.setTint(
+            ContextCompat.getColor(this, R.color.filees_white),
+        )
         return true
     }
 
@@ -158,7 +165,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 main.post { activate(address, hostKey) }
             } catch (e: Exception) {
-                main.post { setBusy(false, e.message ?: e.toString()) }
+                main.post { failBusy(getString(R.string.error_pair), e) }
             }
         }
     }
@@ -167,7 +174,8 @@ class MainActivity : AppCompatActivity() {
         setBusy(true, getString(R.string.status_activating))
         io.execute {
             try {
-                val newClient = Androidbind.newClient(filesDir.absolutePath, address, FileesSession.MOBILE_USER, hostKey)
+                val dial = DialAddress.resolve(address)
+                val newClient = Androidbind.newClient(filesDir.absolutePath, dial, FileesSession.MOBILE_USER, hostKey)
                 main.post {
                     client = newClient
                     showPaired(true)
@@ -178,7 +186,7 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 main.post {
                     showPaired(false)
-                    setBusy(false, e.message ?: e.toString())
+                    failBusy(getString(R.string.error_connect), e)
                 }
             }
         }
@@ -197,7 +205,7 @@ class MainActivity : AppCompatActivity() {
                     renderList()
                 }
             } catch (e: Exception) {
-                main.post { setBusy(false, e.message ?: e.toString()) }
+                main.post { failBusy(getString(R.string.error_list), e) }
             }
         }
     }
@@ -262,7 +270,7 @@ class MainActivity : AppCompatActivity() {
                     renderList()
                 }
             } catch (e: Exception) {
-                main.post { setBusy(false, e.message ?: e.toString()) }
+                main.post { failBusy(getString(R.string.error_refresh), e) }
             }
         }
     }
@@ -276,24 +284,93 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun enqueueFolder(treeUri: Uri) {
+        if (client == null || selectedRepoId.isNullOrBlank()) return
+        setBusy(true, getString(R.string.status_scanning))
+        io.execute {
+            val files = try {
+                DocumentWalk.tree(contentResolver, treeUri)
+            } catch (e: Exception) {
+                main.post { failBusy(getString(R.string.error_send), e) }
+                return@execute
+            }
+            if (files.isEmpty()) {
+                main.post { setBusy(false, getString(R.string.browse_empty)) }
+                return@execute
+            }
+            val summary = FolderPreflight.of(files)
+            main.post { setBusy(true, preflightLabel(summary)) }
+            if (summary.pack) {
+                sendPacked(files)
+            } else {
+                sendOneByOne(files)
+            }
+        }
+    }
+
+    private fun preflightLabel(summary: FolderPreflight.Summary): String {
+        val weight = HumanSize.format(summary.bytes)
+        return resources.getQuantityString(R.plurals.status_preflight, summary.files, summary.files, weight)
+    }
+
     private fun enqueueWalked(files: List<WalkedFile>) {
-        val active = client
-        val repoId = selectedRepoId
-        if (active == null || repoId.isNullOrBlank() || files.isEmpty()) return
-        setBusy(true, getString(R.string.status_sending))
+        if (client == null || selectedRepoId.isNullOrBlank() || files.isEmpty()) return
+        val summary = FolderPreflight.of(files)
+        setBusy(true, preflightLabel(summary))
         io.execute {
             try {
-                for (file in files) {
-                    val bytes = contentResolver.openInputStream(file.uri)?.use { it.readBytes() } ?: continue
-                    active.enqueueUpload(repoId, UploadPaths.parent(file.relativeDir), file.filename, file.contentType, bytes)
-                }
-                active.drainPendingJSON(repoId)
-                main.post {
-                    setBusy(false, getString(R.string.status_sent))
-                    refreshManifest()
-                }
+                if (summary.pack) sendPacked(files) else sendOneByOne(files)
             } catch (e: Exception) {
-                main.post { setBusy(false, e.message ?: e.toString()) }
+                main.post { failBusy(getString(R.string.error_send), e) }
+            }
+        }
+    }
+
+    private fun sendPacked(files: List<WalkedFile>) {
+        val active = client ?: return
+        val repoId = selectedRepoId ?: return
+        main.post { setBusy(true, getString(R.string.status_packing)) }
+        var zip: File? = null
+        try {
+            zip = TreeZip.pack(contentResolver, files, cacheDir)
+            main.post {
+                setBusy(true, getString(R.string.status_sending_pack, HumanSize.format(zip.length())))
+            }
+            active.uploadTreeFile(repoId, UploadPaths.ROOT, files.size.toLong(), zip.absolutePath)
+            main.post {
+                setBusy(false, getString(R.string.status_sent_count, files.size))
+                refreshManifest()
+            }
+        } catch (e: Exception) {
+            main.post { failBusy(getString(R.string.error_tree), e) }
+        } finally {
+            zip?.delete()
+        }
+    }
+
+    private fun sendOneByOne(files: List<WalkedFile>) {
+        val active = client ?: return
+        val repoId = selectedRepoId ?: return
+        var done = 0
+        try {
+            for ((index, file) in files.withIndex()) {
+                main.post {
+                    setBusy(true, getString(R.string.status_sending_progress, index + 1, files.size))
+                }
+                val bytes = contentResolver.openInputStream(file.uri)?.use { it.readBytes() } ?: continue
+                active.enqueueUpload(repoId, UploadPaths.parent(file.relativeDir), file.filename, file.contentType, bytes)
+                UploadDrain.drainOrThrow(active, repoId)
+                done++
+            }
+            main.post {
+                setBusy(false, getString(R.string.status_sent_count, done))
+                refreshManifest()
+            }
+        } catch (e: Exception) {
+            val sent = done
+            main.post {
+                failBusy(getString(R.string.error_send_partial, sent, files.size), e)
+                refreshManifest()
             }
         }
     }
@@ -310,7 +387,7 @@ class MainActivity : AppCompatActivity() {
                 publishDownload(dest, row.name)
                 main.post { setBusy(false, getString(R.string.status_downloaded, row.name)) }
             } catch (e: Exception) {
-                main.post { setBusy(false, e.message ?: e.toString()) }
+                main.post { failBusy(getString(R.string.error_download), e) }
             }
         }
     }
@@ -346,10 +423,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun failBusy(headline: String, err: Exception) {
+        setBusy(false, headline)
+        showTransportError(headline, err, prefs.getString(FileesSession.PREF_ADDRESS, null))
+    }
+
     private fun setBusy(busy: Boolean, message: String) {
         binding.overlayBusy.visibility = if (busy) View.VISIBLE else View.GONE
         if (message.isNotBlank()) binding.textBusy.text = message
-        if (!busy && message.isNotBlank()) {
+        if (!busy) {
             binding.toolbar.subtitle = message
         }
     }

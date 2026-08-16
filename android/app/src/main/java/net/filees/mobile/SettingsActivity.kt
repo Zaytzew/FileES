@@ -40,11 +40,14 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installFileesWindow()
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         binding.toolbar.setNavigationOnClickListener { finish() }
+        binding.toolbar.padTopSystemBars()
+        binding.scrollSettings.padBottomSystemBars(16)
         watched = WatchedFolders(this)
 
         binding.buttonPairPasted.setOnClickListener {
@@ -70,7 +73,10 @@ class SettingsActivity : AppCompatActivity() {
                 binding.textDevicePublicKey.text = getString(R.string.label_device_public_key)
             }
         }
-        binding.textDetails.text = prefs.getString(FileesSession.PREF_DETAILS, "")
+        binding.textDetails.text = when {
+            !address.isNullOrBlank() -> getString(R.string.settings_server, address)
+            else -> prefs.getString(FileesSession.PREF_DETAILS, "")
+        }
         renderWatched()
     }
 

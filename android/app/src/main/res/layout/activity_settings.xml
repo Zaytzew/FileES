@@ -9,11 +9,18 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        app:title="@string/action_settings" />
+        android:background="@color/filees_navy"
+        android:minHeight="?attr/actionBarSize"
+        app:title="@string/action_settings"
+        app:titleTextColor="@color/filees_white"
+        app:navigationIconTint="@color/filees_white"
+        app:itemIconTint="@color/filees_white" />
 
     <ScrollView
+        android:id="@+id/scrollSettings"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"

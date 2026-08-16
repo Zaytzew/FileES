@@ -29,6 +29,7 @@ func TestRequestRoundTripAllOperations(t *testing.T) {
 		{OpListDirectory, ListDirectoryPayload{RepoID: "repo-1", Path: "02_Fotografie/2026-07-20"}},
 		{OpReadObject, ReadObjectPayload{RepoID: "repo-1", Path: "02_Fotografie/IMG_0012.jpg"}},
 		{OpUploadObject, UploadObjectPayload{RepoID: "repo-1", ParentPath: "photos", Filename: "IMG_0013.jpg", Size: 5123401, Sha256: strings.Repeat("a", 64), ContentType: "image/jpeg"}},
+		{OpUploadTree, UploadTreePayload{RepoID: "repo-1", ParentPath: "mobile-uploads", FileCount: 12, Size: 4096, Sha256: strings.Repeat("a", 64)}},
 		{OpOperationStatus, OperationStatusPayload{TargetRequestID: rid()}},
 	}
 	for _, c := range cases {
@@ -73,6 +74,15 @@ func TestUploadRejectsPathTraversal(t *testing.T) {
 		if _, err := NewRequest(rid(), OpUploadObject, p); err == nil {
 			t.Fatalf("case %d: expected rejection for %+v", i, p)
 		}
+	}
+}
+
+func TestUploadTreeRejectsOutsideMobileUploads(t *testing.T) {
+	_, err := NewRequest(rid(), OpUploadTree, UploadTreePayload{
+		RepoID: "r", ParentPath: "photos", FileCount: 2, Size: 1, Sha256: strings.Repeat("a", 64),
+	})
+	if err == nil {
+		t.Fatal("expected rejection for parent outside mobile-uploads/")
 	}
 }
 

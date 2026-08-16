@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/errcat"
+	"filees/pkg/errmap"
 	"filees/pkg/mobileclient"
 	"filees/pkg/mobileclient/sshtransport"
 
@@ -17,8 +19,8 @@ import (
 
 const (
 	refreshTimeout  = 30 * time.Second
-	drainTimeout    = 2 * time.Minute
 	downloadTimeout = 2 * time.Minute
+	treeTimeout     = 10 * time.Minute
 )
 
 // Client is the gomobile-bindable handle onto the whole mobile core: a
@@ -57,6 +59,20 @@ func NewClient(storeDir, address, user, hostPublicKey string) (*Client, error) {
 		inner: mobileclient.Client{Transport: transport, Store: mobileclient.Store{Root: storeDir}},
 		ident: ident,
 	}, nil
+}
+
+// Explain maps a transport/worker error to the catalog Polish sentence.
+// Unknown text returns "" so the UI keeps its local fallback.
+func Explain(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	entry := errmap.Classify(errors.New(raw))
+	if entry.IsNoop() || entry.Key == errcat.KeyUnknown {
+		return ""
+	}
+	return errcat.Polish(string(entry.Key))
 }
 
 // PublicKey returns this device's own SSH public key in authorized_keys
@@ -119,6 +135,22 @@ func (c *Client) DownloadTo(repoID, path, destPath string) error {
 	return os.WriteFile(destPath, data, 0o600)
 }
 
+// UploadTreeFile sends a zip produced by the Android packer as one UPLOAD_TREE
+// frame. The live worker does not ingest it yet; the error is the proof the
+// phone packed and fired a single session.
+func (c *Client) UploadTreeFile(repoID, parentPath string, fileCount int, zipPath string) error {
+	if strings.TrimSpace(zipPath) == "" {
+		return errors.New("androidbind: zip_path is required")
+	}
+	zip, err := os.ReadFile(zipPath)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
+	defer cancel()
+	return c.inner.UploadTree(ctx, repoID, parentPath, fileCount, zip)
+}
+
 // EnqueueUpload durably queues a new append-only-unique candidate (concept
 // doc §9.2 — never a candidate for re-upload of the same path) and returns
 // its id, which doubles as the wire request_id for every drain attempt.
@@ -134,9 +166,8 @@ func (c *Client) EnqueueUpload(repoID, parentPath, filename, contentType string,
 // returns the resulting items (including already-terminal ones) as a JSON
 // array — see mobileclient.PendingUpload for the shape.
 func (c *Client) DrainPendingJSON(repoID string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
-	defer cancel()
-	items, err := c.inner.DrainPending(ctx, repoID)
+	// No batch deadline: each queued file has its own timeout inside DrainPending.
+	items, err := c.inner.DrainPending(context.Background(), repoID)
 	if err != nil {
 		return "", err
 	}

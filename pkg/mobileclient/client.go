@@ -66,6 +66,31 @@ func (c Client) Refresh(ctx context.Context, repoID string) (*v1.Manifest, error
 	return res.Manifest, nil
 }
 
+// ListRepositories returns the authenticated installation's realm
+// projection. Mobile never creates repositories: later operations must
+// send a repo_id from this list.
+func (c Client) ListRepositories(ctx context.Context) (*v1.ListRepositoriesResult, error) {
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpListRepositories, v1.ListRepositoriesPayload{})
+	if err != nil {
+		return nil, err
+	}
+	resp, _, err := c.Transport.Do(ctx, req, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != v1.StatusOK {
+		return nil, respError(resp)
+	}
+	var res v1.ListRepositoriesResult
+	if err := json.Unmarshal(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("decode list repositories result: %w", err)
+	}
+	if err := res.Validate(); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 // DrainPending sends every non-terminal queued upload for repoID, one at a
 // time, oldest first, and records whatever the worker decides. It never
 // renames or auto-resolves a collision: NAME_TAKEN_DIFF and the other

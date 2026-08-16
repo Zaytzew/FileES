@@ -23,10 +23,29 @@ type View struct {
 
 func (v View) readable() bool { return v.Access == "r" || v.Access == "rw" }
 
+// RepositoryGrant is one share from the installation's realm projection.
+// DisplayName is presentation; RepoID is the only identifier later operations
+// may send. Mobile never creates repositories.
+type RepositoryGrant struct {
+	RepoID      string
+	DisplayName string
+	Access      string
+	State       string
+}
+
+// Projection is the authenticated installation's current realm view.
+type Projection struct {
+	RealmID      string
+	RealmAlias   string
+	Generation   int64
+	Repositories []RepositoryGrant
+}
+
 // Authority resolves repository path, control-plane generation and access for the
 // authenticated installation. It is the single trusted source of authorization.
 type Authority interface {
 	Resolve(ctx context.Context, clientID, repoID string) (View, error)
+	List(ctx context.Context, clientID string) (Projection, error)
 }
 
 // Reader is the read-only repository surface the browser needs.
@@ -77,6 +96,35 @@ func (b Browser) RefreshManifest(ctx context.Context, clientID string, p v1.Refr
 		return v1.RefreshManifestResult{}, err
 	}
 	return v1.RefreshManifestResult{Manifest: manifest}, nil
+}
+
+// ListRepositories returns the installation's realm projection. The client
+// never invents a repo_id: it picks one of these shares and later operations
+// send that identifier.
+func (b Browser) ListRepositories(ctx context.Context, clientID string) (v1.ListRepositoriesResult, error) {
+	proj, err := b.Authority.List(ctx, clientID)
+	if err != nil {
+		return v1.ListRepositoriesResult{}, err
+	}
+	repos := make([]v1.RepositorySummary, 0, len(proj.Repositories))
+	for _, repo := range proj.Repositories {
+		repos = append(repos, v1.RepositorySummary{
+			RepoID:      repo.RepoID,
+			DisplayName: repo.DisplayName,
+			Access:      repo.Access,
+			State:       repo.State,
+		})
+	}
+	res := v1.ListRepositoriesResult{
+		ViewGeneration: proj.Generation,
+		RealmID:        proj.RealmID,
+		RealmAlias:     proj.RealmAlias,
+		Repositories:   repos,
+	}
+	if err := res.Validate(); err != nil {
+		return v1.ListRepositoriesResult{}, err
+	}
+	return res, nil
 }
 
 // ReadObject streams the file at the requested path into w and returns its size

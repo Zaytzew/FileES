@@ -14,19 +14,10 @@ built and verified.
 - `app/src/main/java/net/filees/mobile/ManifestCacheProvider.kt` — a
   read-only `content://` provider over the local manifest cache
   (`androidbind.Store`), `exported=false`.
-- `app/src/main/java/net/filees/mobile/MainActivity.kt` — the activation +
-  repository screen. **This is a direct-connect placeholder for the real
-  onboarding flow**: concept doc §4.2 wants ticket + OTP + reverse-tunnel
-  activation exactly like the desktop daemon's push deploy, and that Go-side
-  protocol doesn't exist yet for mobile (only the desktop `pkg/deploy`
-  helper/worker dance does). Building an OTP screen against a backend call
-  that doesn't exist would just be UI to throw away later, so "activation"
-  here means: the device generates its own persistent identity (as it always
-  would), the operator pins the server address + host key by hand, and the
-  resulting device public key is shown to authorize server-side by hand
-  (today; see the `_filees-mobile` stub authority in `SESSION_HANDOFF.md`
-  §17). The OTP screen slots in later, in front of this same
-  `androidbind.Client` wiring, once the real protocol exists.
+- `app/src/main/java/net/filees/mobile/MainActivity.kt` — pairing (QR) plus
+  the operational screen. After pairing, the phone loads the realm
+  projection (`LIST_REPOSITORIES`) and offers a share picker. Mobile never
+  creates repositories and never asks the operator to type a repo UUID.
 - `app/libs/filees-androidbind.aar` — **a build artifact, not source. Not
   committed to SVN.** Regenerate it whenever `pkg/mobileclient/androidbind`
   (or anything it depends on) changes; see below.

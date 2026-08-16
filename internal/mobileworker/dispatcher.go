@@ -46,6 +46,13 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		}
 		return d.writeOK(out, req, res, nil)
 
+	case v1.OpListRepositories:
+		res, err := d.Browser.ListRepositories(ctx, d.ClientID)
+		if err != nil {
+			return d.writeError(out, req, err)
+		}
+		return d.writeOK(out, req, res, nil)
+
 	case v1.OpReadObject:
 		var p v1.ReadObjectPayload
 		_ = json.Unmarshal(req.Payload, &p)

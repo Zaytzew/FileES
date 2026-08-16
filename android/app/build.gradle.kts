@@ -11,8 +11,8 @@ android {
         applicationId = "net.filees.mobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-etap6-skeleton"
+        versionCode = 3
+        versionName = "0.1.2-picker"
     }
 
     buildTypes {

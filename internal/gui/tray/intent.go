@@ -25,11 +25,14 @@ const (
 	IntentDetachServer     IntentKind = "detach_server"
 	IntentRestartFileES    IntentKind = "restart_filees"
 	IntentShutdownFileES   IntentKind = "shutdown_filees"
+	IntentPublish          IntentKind = "publish"
+	IntentAckNotice        IntentKind = "ack_notice"
 )
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.
 type Intent struct {
 	Kind     IntentKind
+	NoticeID string
 	RepoID   string
 	ServerID string
 }

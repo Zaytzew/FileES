@@ -27,6 +27,7 @@ import (
 	"filees/pkg/recoverykit"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/runtime"
+	"filees/pkg/shout"
 	"filees/pkg/talk"
 	"filees/pkg/tickets"
 )
@@ -246,6 +247,7 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 		rs.SetConnectivity(contract.ConnOnline)
 		rs.SetState(contract.StateActive)
 		rs.SetLastSyncAt(time.Now())
+		scanShoutsAfterUpdate(ctx, cli, repo, rs, lg)
 	}
 	rs.SetState(contract.StateActive)
 	update()
@@ -263,6 +265,39 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 }
 
 func stringPtr(value string) *string { return &value }
+
+func scanShoutsAfterUpdate(ctx context.Context, cli client.Client, repo config.Repo, rs *ipcserver.RepoState, lg talk.Logger) {
+	logger, ok := cli.(interface {
+		Revision(context.Context, string) (int64, error)
+		LogMessages(context.Context, string, int64, int64) ([]client.LogMessage, error)
+	})
+	if !ok {
+		return
+	}
+	local, err := logger.Revision(ctx, repo.LocalPath)
+	if err != nil {
+		return
+	}
+	fetch := func(from, to int64) ([]shout.LogEntry, error) {
+		entries, err := logger.LogMessages(ctx, repo.LocalPath, from, to)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]shout.LogEntry, 0, len(entries))
+		for _, entry := range entries {
+			out = append(out, shout.LogEntry{Revision: entry.Revision, Message: entry.Message})
+		}
+		return out, nil
+	}
+	added, err := shout.Advance(repo.LocalPath, repo.ID, local, fetch, time.Now())
+	if err != nil {
+		lg.Warnf("shout inbox: %v", err)
+		return
+	}
+	for _, rec := range added {
+		rs.EmitEvent(contract.EvNoticeCreated, contract.NoticeCreatedPayload{NoticeID: rec.ID, Title: rec.Title})
+	}
+}
 
 func wireRepoStatus(svc *commit.Service, rs *ipcserver.RepoState) {
 	svc.Tickets = tickets.New()

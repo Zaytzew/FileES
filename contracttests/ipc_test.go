@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -20,9 +21,29 @@ import (
 
 type fakeDaemon func(contract.Request) contract.Response
 
+// testSocketPath stays under UNIX_PATH_MAX (108). t.TempDir() plus a long
+// test name overflows that on Windows and bind() returns EINVAL.
+func testSocketPath(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(os.TempDir(), "feipc")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.CreateTemp(dir, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := f.Name()
+	f.Close()
+	_ = os.Remove(base)
+	sock := base + ".s"
+	t.Cleanup(func() { _ = os.Remove(sock) })
+	return sock
+}
+
 func startFakeDaemon(t *testing.T, handle fakeDaemon) string {
 	t.Helper()
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := testSocketPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -202,7 +223,7 @@ func TestIPCServerClientRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := testSocketPath(t)
 	server := ipcserver.New(sock)
 	repo := server.RegisterRepo("projectA", "svn://example/projectA", wc)
 	repo.SetState(contract.StateActive)
@@ -273,7 +294,7 @@ func TestIPCServerClientRoundTrip(t *testing.T) {
 }
 
 func TestIPCServerRejectsUnknownCommand(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := testSocketPath(t)
 	server := ipcserver.New(sock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -298,7 +319,7 @@ func TestIPCServerRejectsUnknownCommand(t *testing.T) {
 }
 
 func TestIPCServerRejectsInvalidLockPayload(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := testSocketPath(t)
 	server := ipcserver.New(sock)
 	server.RegisterRepo("projectA", "svn://example/projectA", t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
@@ -326,7 +347,7 @@ func TestIPCServerRejectsInvalidLockPayload(t *testing.T) {
 }
 
 func TestIPCServerRejectsLockPathOutsideWorkingCopy(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := testSocketPath(t)
 	server := ipcserver.New(sock)
 	wc := t.TempDir()
 	server.RegisterRepo("projectA", "svn://example/projectA", wc)
@@ -351,7 +372,7 @@ func TestIPCServerRejectsLockPathOutsideWorkingCopy(t *testing.T) {
 }
 
 func TestIPCServerRejectsRelativeLockPath(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := testSocketPath(t)
 	server := ipcserver.New(sock)
 	server.RegisterRepo("projectA", "svn://example/projectA", t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
@@ -371,7 +392,7 @@ func TestIPCServerRejectsRelativeLockPath(t *testing.T) {
 
 func startEventServer(t *testing.T) (*ipcserver.Server, *ipcserver.RepoState, string) {
 	t.Helper()
-	sock := filepath.Join(t.TempDir(), "events.sock")
+	sock := testSocketPath(t)
 	srv := ipcserver.New(sock)
 	rs := srv.RegisterRepo("testRepo", "svn://x/y", t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
@@ -568,7 +589,7 @@ func TestEventsSubscribeConcurrentStateTransitionsRemainCausal(t *testing.T) {
 }
 
 func TestEventsSubscribeHandshakeHonorsContextCancellation(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "stalled-subscribe.sock")
+	sock := testSocketPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -607,7 +628,7 @@ func TestEventsSubscribeRejectsInvalidStreamingACK(t *testing.T) {
 }
 
 func TestEventsSubscribeRejectsMalformedEventEnvelope(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "malformed-event.sock")
+	sock := testSocketPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -698,7 +719,7 @@ func TestEventsSubscribeChannelClosesOnCancel(t *testing.T) {
 }
 
 func TestIPCServerSocketPermissionsAndCleanup(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := testSocketPath(t)
 	server := ipcserver.New(sock)
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := server.Start(ctx); err != nil {
@@ -710,9 +731,11 @@ func TestIPCServerSocketPermissionsAndCleanup(t *testing.T) {
 		cancel()
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		cancel()
-		t.Fatalf("socket permissions = %o, want 600", perm)
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			cancel()
+			t.Fatalf("socket permissions = %o, want 600", perm)
+		}
 	}
 
 	cancel()

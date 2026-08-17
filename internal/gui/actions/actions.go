@@ -189,6 +189,14 @@ type StackLifecycle interface {
 	ShutdownFileES(context.Context) error
 }
 
+type ShoutPublisher interface {
+	Publish(ctx context.Context, repoID, comment string) (int64, error)
+}
+
+type NoticeAcker interface {
+	AckNotice(ctx context.Context, noticeID string) error
+}
+
 // MobilePairingLauncher fetches a mobile pairing token from the daemon and
 // hands it to the separate pairing-helper process, which renders it as a QR
 // code and handles its own PIN gate and UI - unlike RepositoryCreator, no
@@ -258,6 +266,8 @@ type Config struct {
 	RealmBranding      RealmBrandingManager
 	SessionTimeouts    SessionTimeoutManager
 	PublicShares       PublicShareManager
+	Shouts             ShoutPublisher
+	Notices            NoticeAcker
 	ReservationBrowser platform.ReservationBrowser
 	SettingsBrowser    platform.SettingsBrowser
 	JournalBrowser     platform.JournalBrowser
@@ -366,6 +376,10 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startStackLifecycle(ctx, true)
 	case tray.IntentShutdownFileES:
 		c.startStackLifecycle(ctx, false)
+	case tray.IntentPublish:
+		c.startPublish(ctx, intent.RepoID)
+	case tray.IntentAckNotice:
+		c.startAckNotice(ctx, intent.NoticeID)
 	}
 }
 
@@ -2307,6 +2321,58 @@ func (c *Controller) activationFailure(ctx context.Context, err error) {
 	if c.cfg.Prompter != nil {
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Aktywacja FileES nie powiodła się", Text: err.Error()})
 	}
+}
+
+func (c *Controller) startPublish(ctx context.Context, repoID string) {
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		c.handlePublish(ctx, repoID)
+	}()
+}
+
+func (c *Controller) handlePublish(ctx context.Context, repoID string) {
+	if c.cfg.Shouts == nil || c.cfg.Prompter == nil {
+		return
+	}
+	vm := c.cfg.ViewModel()
+	if !vm.Connected || vm.Stale || !vm.CanPublish() {
+		return
+	}
+	result, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+		Title:       "Opublikuj wydanie",
+		Text:        "Komentarz wydania (widoczny dla zespołu po aktualizacji):",
+		Placeholder: "np. materiały na jutrzejsze spotkanie",
+	})
+	if err != nil || result.Cancelled {
+		return
+	}
+	rev, err := c.cfg.Shouts.Publish(ctx, repoID, result.Value)
+	if err != nil {
+		c.reportActionError(ctx, "shout", "Nie udało się opublikować wydania", err.Error())
+		return
+	}
+	c.notify(ctx, platform.Notification{Title: "Wydanie opublikowane", Body: fmt.Sprintf("Rewizja r%d", rev)})
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
+}
+
+func (c *Controller) startAckNotice(ctx context.Context, noticeID string) {
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		if c.cfg.Notices == nil || noticeID == "" {
+			return
+		}
+		if err := c.cfg.Notices.AckNotice(ctx, noticeID); err != nil {
+			c.reportActionError(ctx, "shout", "Nie udało się potwierdzić wydania", err.Error())
+			return
+		}
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+	}()
 }
 
 func (c *Controller) startOpenFolder(ctx context.Context, repoID string) {

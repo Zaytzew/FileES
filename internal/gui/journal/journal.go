@@ -76,6 +76,19 @@ func Build(vm app.ViewModel) []Entry {
 			entries = append(entries, errorEntry(record, repoName(names, record.RepoID), nil))
 		}
 	}
+	for _, notice := range vm.Notices {
+		when := parseTime(notice.CreatedAt)
+		entries = append(entries, Entry{
+			ID:         "notice:" + notice.ID,
+			Timestamp:  notice.CreatedAt,
+			Repo:       repoName(names, notice.RepoID),
+			Summary:    "Wydanie — " + notice.Title,
+			Details:    "Oznacz jako przeczytane w menu FileES",
+			Severity:   "notice",
+			Emphasized: true,
+			time:       when,
+		})
+	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		if !entries[i].time.Equal(entries[j].time) {
 			return entries[i].time.After(entries[j].time)

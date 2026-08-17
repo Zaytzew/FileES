@@ -12,6 +12,7 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/passport"
 	"filees/pkg/realmbranding"
+	"filees/pkg/shout"
 	"filees/pkg/talk"
 )
 
@@ -113,6 +114,12 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoReservationList(req)
 	case contract.CmdRepoReservationRelease:
 		return s.handleRepoReservationRelease(req)
+	case contract.CmdRepoPublish:
+		return s.handleRepoPublish(req)
+	case contract.CmdNoticeList:
+		return s.handleNoticeList(req)
+	case contract.CmdNoticeAck:
+		return s.handleNoticeAck(req)
 	default:
 		return contract.ErrResponse(req.RequestID,
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
@@ -1223,6 +1230,83 @@ func (s *Server) handleRepoLockUnlock(req contract.Request, lock bool) contract.
 			map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, contract.LockResult{Output: out})
+}
+
+func (s *Server) handleRepoPublish(req contract.Request) contract.Response {
+	if req.RepoID == "" {
+		return protoErr(req.RequestID, "proto.missing_repo_id", nil)
+	}
+	rs := s.repoByID(req.RepoID)
+	if rs == nil {
+		return protoErr(req.RequestID, "proto.repo_not_found", map[string]string{"repo_id": req.RepoID})
+	}
+	var payload contract.RepoPublishPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	rev, err := rs.Publish(ctx, payload.Comment)
+	if err != nil {
+		if errors.Is(err, shout.ErrNothingToPublish) || errors.Is(err, shout.ErrEmptyComment) || errors.Is(err, shout.ErrCommentHasControl) || errors.Is(err, shout.ErrCommentTooLong) {
+			key := "shout.nothing_to_publish"
+			if !errors.Is(err, shout.ErrNothingToPublish) {
+				key = "shout.invalid_comment"
+			}
+			return contract.ErrResponse(req.RequestID, "SHOUT-1001", "ERROR", "REQUIRE_ACTION", key, nil)
+		}
+		if strings.Contains(err.Error(), "REPO_READ_ONLY") {
+			return contract.ErrResponse(req.RequestID, "SHOUT-1002", "ERROR", "NONE", "shout.read_only", nil)
+		}
+		return contract.ErrResponse(req.RequestID, "SHOUT-1003", "ERROR", "REQUIRE_ACTION", "shout.publish_failed", map[string]string{"detail": err.Error()})
+	}
+	return contract.OKResponse(req.RequestID, contract.RepoPublishResult{Revision: rev})
+}
+
+func (s *Server) handleNoticeList(req contract.Request) contract.Response {
+	s.mu.RLock()
+	repos := make([]*RepoState, 0, len(s.repos))
+	for _, rs := range s.repos {
+		repos = append(repos, rs)
+	}
+	s.mu.RUnlock()
+	var notices []contract.Notice
+	for _, rs := range repos {
+		items, err := rs.Notices()
+		if err != nil {
+			return contract.ErrResponse(req.RequestID, "SHOUT-1004", "ERROR", "RETRY_LOCAL", "shout.list_failed", nil)
+		}
+		notices = append(notices, items...)
+	}
+	if notices == nil {
+		notices = []contract.Notice{}
+	}
+	sort.SliceStable(notices, func(i, j int) bool {
+		if notices[i].CreatedAt == notices[j].CreatedAt {
+			return notices[i].ID < notices[j].ID
+		}
+		return notices[i].CreatedAt < notices[j].CreatedAt
+	})
+	return contract.OKResponse(req.RequestID, contract.NoticeListResult{Notices: notices})
+}
+
+func (s *Server) handleNoticeAck(req contract.Request) contract.Response {
+	var payload contract.NoticeAckPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.NoticeID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	repos := make([]*RepoState, 0, len(s.repos))
+	for _, rs := range s.repos {
+		repos = append(repos, rs)
+	}
+	s.mu.RUnlock()
+	for _, rs := range repos {
+		if err := rs.AckNotice(payload.NoticeID); err != nil {
+			return contract.ErrResponse(req.RequestID, "SHOUT-1005", "ERROR", "RETRY_LOCAL", "shout.ack_failed", nil)
+		}
+	}
+	return contract.OKResponse(req.RequestID, map[string]bool{"acked": true})
 }
 
 // jsonErrLine is the on-disk format written by errmap.Sink.

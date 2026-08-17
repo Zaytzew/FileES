@@ -46,6 +46,9 @@ type RepoState struct {
 	reservationListFn    func(ctx context.Context) ([]contract.Reservation, error)
 	reservationReleaseFn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error
 	recoveryStatsFn      func() contract.RecoveryStats
+	publishFn            func(ctx context.Context, comment string) (int64, error)
+	noticeListFn         func() ([]contract.Notice, error)
+	noticeAckFn          func(id string) error
 }
 
 func (rs *RepoState) ServerID() string {
@@ -198,6 +201,70 @@ func (rs *RepoState) SetCurrentOp(op *string) {
 		rs.currentOp = &value
 	}
 	rs.mu.Unlock()
+}
+
+// SetPublishFunc wires the shouting-commit publisher for this working copy.
+func (rs *RepoState) SetPublishFunc(fn func(ctx context.Context, comment string) (int64, error)) {
+	rs.mu.Lock()
+	rs.publishFn = fn
+	rs.mu.Unlock()
+}
+
+// SetNoticeFuncs wires the local shout inbox for this working copy.
+func (rs *RepoState) SetNoticeFuncs(listFn func() ([]contract.Notice, error), ackFn func(id string) error) {
+	rs.mu.Lock()
+	rs.noticeListFn = listFn
+	rs.noticeAckFn = ackFn
+	rs.mu.Unlock()
+}
+
+func (rs *RepoState) Publish(ctx context.Context, comment string) (int64, error) {
+	rs.mu.RLock()
+	fn := rs.publishFn
+	access := rs.access
+	attached := rs.attached
+	rs.mu.RUnlock()
+	if !attached {
+		return 0, fmt.Errorf("publish not available for detached repo %s", rs.id)
+	}
+	if access != contract.AccessReadWrite {
+		return 0, fmt.Errorf("REPO_READ_ONLY: repo %s is read-only", rs.id)
+	}
+	if fn == nil {
+		return 0, fmt.Errorf("publish not available for repo %s", rs.id)
+	}
+	return fn(ctx, comment)
+}
+
+func (rs *RepoState) Notices() ([]contract.Notice, error) {
+	rs.mu.RLock()
+	fn := rs.noticeListFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return nil, nil
+	}
+	return fn()
+}
+
+func (rs *RepoState) EmitEvent(evType string, payload any) {
+	rs.mu.RLock()
+	srv := rs.server
+	id := rs.id
+	rs.mu.RUnlock()
+	if srv == nil {
+		return
+	}
+	srv.Emit(srv.NewRepoEvent(id, evType, payload))
+}
+
+func (rs *RepoState) AckNotice(id string) error {
+	rs.mu.RLock()
+	fn := rs.noticeAckFn
+	rs.mu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(id)
 }
 
 // SetRecoveryStatsFunc wires a live reader of the commit service's

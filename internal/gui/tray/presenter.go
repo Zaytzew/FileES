@@ -30,7 +30,7 @@ func BuildMenu(vm app.ViewModel) MenuModel {
 		}
 	}
 
-	if vm.CanListActivity() || vm.CanListErrors() {
+	if vm.CanListActivity() || vm.CanListErrors() || len(vm.Notices) > 0 {
 		model.Items = append(model.Items, separator("sep.history"), journalMenu(vm))
 	}
 	if len(vm.Recoveries) > 0 {
@@ -86,6 +86,12 @@ func fluentItems(vm app.ViewModel) []MenuItemModel {
 	var items []MenuItemModel
 	if vm.SupportsReservationListing() && vm.CanBrowseReservations() {
 		items = append(items, actionItem("action.reservations", "Lista rezerwacji plikowych", "Pokaż aktywne rezerwacje ze wszystkich serwerów FileES", Intent{Kind: IntentReservations}))
+	}
+	if vm.CanAckNotices() {
+		for _, notice := range vm.Notices {
+			title := "Wydanie: " + notice.Title
+			items = append(items, actionItem("action.notice."+notice.ID, title, "Oznacz wydanie jako przeczytane", Intent{Kind: IntentAckNotice, NoticeID: notice.ID, RepoID: notice.RepoID}))
+		}
 	}
 	if len(items) == 0 {
 		return nil
@@ -197,6 +203,11 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 		if lockVisible {
 			item.Children = append(item.Children,
 				actionItem("repo."+repo.ID+".lock", "Zablokuj pliki…", "Nabierz blokadę lub edit-passport dla wybranych plików", Intent{Kind: IntentLock, RepoID: repo.ID}),
+			)
+		}
+		if vm.Connected && !vm.Stale && repo.CanWrite() && vm.CanPublish() {
+			item.Children = append(item.Children,
+				actionItem("repo."+repo.ID+".publish", "Opublikuj wydanie…", "Wyślij bieżące zmiany z komentarzem wydania", Intent{Kind: IntentPublish, RepoID: repo.ID}),
 			)
 		}
 		if unlockVisible {

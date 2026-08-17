@@ -183,6 +183,9 @@ func TestEventJSONRoundTrip(t *testing.T) {
 }
 
 func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
+	// AllCapabilities is the always-on set. Optional surfaces (grants,
+	// public shares, updater, journal, session timeout, stack lifecycle)
+	// are appended by ipcserver.Server.capabilities() only when wired.
 	want := map[string]bool{
 		contract.CapEventsSubscribe:        true,
 		contract.CapRepoLock:               true,
@@ -192,6 +195,8 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapErrorList:              true,
 		contract.CapActivationBegin:        true,
 		contract.CapActivationFinish:       true,
+		contract.CapActivationPending:      true,
+		contract.CapActivationResume:       true,
 		contract.CapRealmAliasClaim:        true,
 		contract.CapServerDetach:           true,
 		contract.CapRealmRemoveBegin:       true,
@@ -202,17 +207,36 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapRepoAttachIntent:       true,
 		contract.CapRepoAttachApprove:      true,
 		contract.CapRepoRelocate:           true,
+		contract.CapRepoLocate:             true,
 		contract.CapRepoLoadDump:           true,
 		contract.CapRepoDetach:             true,
 		contract.CapRepoDelete:             true,
 		contract.CapRepoLifecycleStatus:    true,
+		contract.CapRepoPublish:            true,
+		contract.CapNoticeList:             true,
+		contract.CapNoticeAck:              true,
 	}
 	if len(contract.AllCapabilities) != len(want) {
 		t.Fatalf("AllCapabilities = %#v", contract.AllCapabilities)
 	}
+	seen := make(map[string]bool, len(contract.AllCapabilities))
 	for _, capability := range contract.AllCapabilities {
 		if !want[capability] {
 			t.Errorf("unexpected advertised capability %q", capability)
+		}
+		if seen[capability] {
+			t.Errorf("duplicated capability %q", capability)
+		}
+		seen[capability] = true
+	}
+	reserved := []string{
+		contract.CapRepoPause,
+		contract.CapRepoSyncNow,
+		contract.CapConflictDecide,
+	}
+	for _, capability := range reserved {
+		if seen[capability] {
+			t.Errorf("reserved capability %q must not be in AllCapabilities until implemented", capability)
 		}
 	}
 }

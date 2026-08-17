@@ -23,6 +23,7 @@ type appState struct {
 	reservations      map[string]int
 	repoReservations  map[string]int
 	reservationsKnown bool
+	notices           []NoticeViewModel
 	refreshed         time.Time
 }
 
@@ -53,7 +54,7 @@ func (s appState) applyConnected(caps []string) appState {
 // applyFullSnapshot atomically replaces all authoritative daemon/repository
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
-func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationsKnown bool, refreshed time.Time) appState {
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationsKnown bool, notices []contract.Notice, refreshed time.Time) appState {
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -81,6 +82,13 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 		s.repoReservations[key] = count
 	}
 	s.reservationsKnown = reservationsKnown
+	s.notices = make([]NoticeViewModel, 0, len(notices))
+	for _, notice := range notices {
+		if notice.Acked {
+			continue
+		}
+		s.notices = append(s.notices, NoticeViewModel{ID: notice.ID, RepoID: notice.RepoID, Title: notice.Title, CreatedAt: notice.CreatedAt})
+	}
 	s.refreshed = refreshed
 	s.stale = false
 	return s
@@ -150,6 +158,9 @@ func (s appState) applyEvent(ev contract.Event) (appState, bool, string) {
 	if gap {
 		return s, true, ""
 	}
+	if ev.Type == contract.EvNoticeCreated {
+		return s, true, ""
+	}
 	return s, false, ev.RepoID
 }
 
@@ -212,6 +223,7 @@ func (s appState) viewModel() ViewModel {
 		Servers:      servers,
 		Errors:       append([]ErrorViewModel(nil), s.errors...),
 		Activity:     append([]ActivityViewModel(nil), s.activity...),
+		Notices:      append([]NoticeViewModel(nil), s.notices...),
 	}
 	now := time.Now().UTC()
 	for _, recovery := range s.system.Recoveries {
@@ -233,7 +245,7 @@ func (s appState) viewModel() ViewModel {
 	if s.connected && s.stale {
 		vm.Icon = IconBusy
 	} else {
-		vm.Icon = aggregateIcon(s.connected, repos)
+		vm.Icon = aggregateIcon(s.connected, repos, len(s.notices))
 	}
 	return vm
 }

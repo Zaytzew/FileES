@@ -789,6 +789,8 @@ func run(parent context.Context, deps dependencies) error {
 		RealmBranding:        realmBranding,
 		SessionTimeouts:      sessionTimeouts,
 		PublicShares:         publicShares,
+		Shouts:               newShoutAdapter(deps.client),
+		Notices:              newShoutAdapter(deps.client),
 		ReservationBrowser:   deps.platform,
 		SettingsBrowser:      deps.platform,
 		JournalBrowser:       deps.platform,
@@ -875,4 +877,37 @@ func (adapter realmGrantAdapter) SetEditingPolicy(ctx context.Context, serverID,
 		return false, errors.New("daemon returned an invalid editing policy result")
 	}
 	return result.Policy == contract.EditingLockRequired, nil
+}
+
+type shoutIPC interface {
+	RepoPublish(context.Context, string, string) (*contract.RepoPublishResult, error)
+	NoticeAck(context.Context, string) error
+}
+
+type shoutAdapter struct{ client shoutIPC }
+
+func newShoutAdapter(client app.DaemonClient) shoutAdapter {
+	ipc, _ := client.(shoutIPC)
+	return shoutAdapter{client: ipc}
+}
+
+func (a shoutAdapter) Publish(ctx context.Context, repoID, comment string) (int64, error) {
+	if a.client == nil {
+		return 0, errors.New("shout publish is unavailable")
+	}
+	result, err := a.client.RepoPublish(ctx, repoID, comment)
+	if err != nil {
+		return 0, err
+	}
+	if result == nil {
+		return 0, errors.New("daemon returned an empty publish result")
+	}
+	return result.Revision, nil
+}
+
+func (a shoutAdapter) AckNotice(ctx context.Context, noticeID string) error {
+	if a.client == nil {
+		return errors.New("shout ack is unavailable")
+	}
+	return a.client.NoticeAck(ctx, noticeID)
 }

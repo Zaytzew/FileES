@@ -543,6 +543,33 @@ func (c *Client) Unlock(ctx context.Context, repoID string, paths []string) (str
 	return r.Output, contract.DecodeResult(resp.Result, &r)
 }
 
+func (c *Client) RepoPublish(ctx context.Context, repoID, comment string) (*contract.RepoPublishResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoPublish, repoID, contract.RepoPublishPayload{Comment: comment})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoPublishResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) NoticeList(ctx context.Context) (*contract.NoticeListResult, error) {
+	resp, err := c.do(ctx, contract.CmdNoticeList, "", struct{}{})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.NoticeListResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) NoticeAck(ctx context.Context, noticeID string) error {
+	resp, err := c.do(ctx, contract.CmdNoticeAck, "", contract.NoticeAckPayload{NoticeID: noticeID})
+	if err != nil {
+		return err
+	}
+	var result map[string]bool
+	return contract.DecodeResult(resp.Result, &result)
+}
+
 // RepoReservationList returns the live SVN lock inventory visible in this
 // installation's attached working copies for one activated server.
 func (c *Client) RepoReservationList(ctx context.Context, serverID string) (*contract.RepoReservationListResult, error) {

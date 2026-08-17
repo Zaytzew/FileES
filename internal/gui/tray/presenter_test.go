@@ -193,6 +193,23 @@ func TestBuildMenuShowsRepositoryActionsWhenCapabilitiesAllow(t *testing.T) {
 	}
 }
 
+func TestBuildMenuOffersLocateWhenWorkingCopyIsMissing(t *testing.T) {
+	missing := "working_copy_missing"
+	repo := app.RepoViewModel{
+		ID: "docs", ServerID: "office", DisplayName: "Dokumenty", Attached: true,
+		LocalPath: `D:\PROJEKTY\DOCS`, State: contract.StateInteractionRequired, CurrentOp: &missing,
+	}
+	menu := BuildMenu(withServer(app.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{contract.CapRepoLocate: true},
+		Repos:        []app.RepoViewModel{repo},
+	}))
+	locate := findItem(t, findItem(t, menu.Items, "repo.docs").Children, "repo.docs.locate")
+	if locate.Intent == nil || locate.Intent.Kind != IntentLocateFolder || locate.Intent.ServerID != "office" || locate.Intent.RepoID != "docs" {
+		t.Fatalf("locate=%#v", locate)
+	}
+}
+
 func TestBuildMenuDisablesUnlockWithoutReservation(t *testing.T) {
 	repo := app.RepoViewModel{ID: "projectA", Attached: true, Access: contract.AccessReadWrite, LocalPath: "/wc/projectA", State: contract.StateActive}
 	menu := BuildMenu(withServer(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoUnlock: true}, Repos: []app.RepoViewModel{repo}}))

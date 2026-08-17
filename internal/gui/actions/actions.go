@@ -380,6 +380,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startPublish(ctx, intent.RepoID)
 	case tray.IntentAckNotice:
 		c.startAckNotice(ctx, intent.NoticeID)
+	case tray.IntentLocateFolder:
+		c.startLocateRepository(ctx, intent.ServerID, intent.RepoID)
 	}
 }
 

@@ -255,6 +255,12 @@ func (vm ViewModel) CanMutateUnlock() bool {
 
 func (r RepoViewModel) CanWrite() bool { return r.Access == contract.AccessReadWrite }
 
+// NeedsLocate is the missing-WC signal: the attachment is still claimed, the
+// root is gone, and FileES is waiting for the user to point at the moved copy.
+func (r RepoViewModel) NeedsLocate() bool {
+	return r.Attached && r.CurrentOp != nil && *r.CurrentOp == "working_copy_missing"
+}
+
 // DisplayState maps protocol state to the stable vocabulary consumed by UI
 // adapters. Unknown future protocol states degrade to RepoDisplayUnknown.
 func (r RepoViewModel) DisplayState() RepoDisplayState {

@@ -27,6 +27,7 @@ const (
 	IntentShutdownFileES   IntentKind = "shutdown_filees"
 	IntentPublish          IntentKind = "publish"
 	IntentAckNotice        IntentKind = "ack_notice"
+	IntentLocateFolder     IntentKind = "locate_folder"
 )
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.

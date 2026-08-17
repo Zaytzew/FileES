@@ -129,6 +129,9 @@ const (
 	CapRepoDelete              = "repo.delete"
 	CapRepoLifecycleStatus     = "repo.lifecycle_status"
 	CapRepoActivity            = "repo.activity"
+	CapRepoPublish             = "repo.publish"
+	CapNoticeList              = "notice.list"
+	CapNoticeAck               = "notice.ack"
 	CapSystemRestart           = "system.restart"
 	CapSystemShutdown          = "system.shutdown"
 
@@ -142,7 +145,6 @@ const (
 	CapRepoPause      = "repo.pause"
 	CapRepoSyncNow    = "repo.sync_now"
 	CapConflictDecide = "conflict.decide"
-	CapRepoPublish    = "repo.publish"
 )
 
 // AllCapabilities is the set of capabilities the running daemon actually supports.
@@ -173,6 +175,9 @@ var AllCapabilities = []string{
 	CapRepoDetach,
 	CapRepoDelete,
 	CapRepoLifecycleStatus,
+	CapRepoPublish,
+	CapNoticeList,
+	CapNoticeAck,
 }
 
 // --- result and payload types ---
@@ -641,6 +646,16 @@ type RepoSummary struct {
 	State            string `json:"state"`
 	OwnerRealmID     string `json:"owner_realm_id,omitempty"`
 	AttachmentPolicy string `json:"attachment_policy"`
+}
+
+// RepoPublishPayload is the required comment for a shouting commit.
+type RepoPublishPayload struct {
+	Comment string `json:"comment"`
+}
+
+// RepoPublishResult is the revision created by a shouting commit.
+type RepoPublishResult struct {
+	Revision int64 `json:"revision"`
 }
 
 // RepoIDPayload is used by commands that target a specific repo (CmdRepoPause, etc.).

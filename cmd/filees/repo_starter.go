@@ -22,6 +22,7 @@ import (
 	"filees/pkg/passport"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/runtime"
+	"filees/pkg/shout"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
 )
@@ -289,11 +290,17 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	recoverReadWriteWorkingCopy(ctx, svn, wc, service, logger)
 	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	wireRepoLockFuncs(runtimeRepo.state, svn, wc, manager)
+	runtimeRepo.state.SetPublishFunc(func(ctx context.Context, comment string) (int64, error) {
+		return service.RequestPublish(ctx, wc, comment)
+	})
+	runtimeRepo.state.SetNoticeFuncs(service.OpenNotices, service.AckNotice)
 	lockFuncsWired := true
 	defer func() {
 		if lockFuncsWired {
 			runtimeRepo.state.SetLockFuncs(nil, nil)
 			runtimeRepo.state.SetReservationFuncs(nil, nil)
+			runtimeRepo.state.SetPublishFunc(nil)
+			runtimeRepo.state.SetNoticeFuncs(nil, nil)
 		}
 	}()
 	instance, err := reposupervisor.StartManaged(ctx, func(runCtx context.Context) error {
@@ -302,6 +309,8 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		var first error
 		runtimeRepo.state.SetLockFuncs(nil, nil)
 		runtimeRepo.state.SetReservationFuncs(nil, nil)
+		runtimeRepo.state.SetPublishFunc(nil)
+		runtimeRepo.state.SetNoticeFuncs(nil, nil)
 		if passports != nil {
 			if err := passports.Stop(cleanupCtx); err != nil {
 				first = err
@@ -628,6 +637,11 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	// Read-only attachments contribute to the server-menu inventory as well,
 	// but intentionally receive no release callback.
 	wireRepoReservationFuncs(runtime.state, svn, runtime.config.LocalPath, nil)
+	wc := runtime.config.LocalPath
+	runtime.state.SetNoticeFuncs(
+		func() ([]contract.Notice, error) { return shout.OpenNotices(wc) },
+		func(id string) error { return shout.Ack(wc, id) },
+	)
 	stateDir := filepath.Join(runtime.config.LocalPath, ".filees", "state")
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, err
@@ -641,6 +655,7 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 		return nil
 	}, func(context.Context) error {
 		runtime.state.SetReservationFuncs(nil, nil)
+		runtime.state.SetNoticeFuncs(nil, nil)
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}

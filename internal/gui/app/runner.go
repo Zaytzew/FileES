@@ -148,6 +148,7 @@ type msgFullSnapshot struct {
 	reservationCounts     map[string]int
 	repoReservationCounts map[string]int
 	reservationsKnown     bool
+	notices               []contract.Notice
 	refreshed             time.Time
 }
 type msgPartialSnapshots struct {
@@ -241,6 +242,7 @@ func (a *App) loop(ctx context.Context) {
 		includeErrors := state.caps[contract.CapErrorList]
 		includeActivity := state.caps[contract.CapRepoActivity]
 		includeReservations := state.caps[contract.CapRepoReservationList]
+		includeNotices := state.caps[contract.CapNoticeList]
 
 		go func() {
 			system, err := a.cfg.Client.SystemStatus(sesCtx)
@@ -305,11 +307,24 @@ func (a *App) loop(ctx context.Context) {
 					}
 				}
 			}
+			var notices []contract.Notice
+			if includeNotices {
+				if client, ok := a.cfg.Client.(interface {
+					NoticeList(context.Context) (*contract.NoticeListResult, error)
+				}); ok {
+					result, err := client.NoticeList(sesCtx)
+					if err != nil {
+						a.sendSessionFailure(sesCtx, gen, send)
+						return
+					}
+					notices = result.Notices
+				}
+			}
 			if sesCtx.Err() == nil {
 				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos,
 					statuses: statuses, errors: errors, activity: activityRecords,
 					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
-					reservationsKnown: reservationsKnown, refreshed: a.cfg.Clock.Now()})
+					reservationsKnown: reservationsKnown, notices: notices, refreshed: a.cfg.Clock.Now()})
 			}
 		}()
 	}
@@ -470,7 +485,7 @@ func (a *App) loop(ctx context.Context) {
 				if msg.gen != connectGen || currentSesCtx == nil {
 					break
 				}
-				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservationsKnown, msg.refreshed)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservationsKnown, msg.notices, msg.refreshed)
 				a.cfg.Backoff.Reset()
 				notify()
 				finishRefresh()

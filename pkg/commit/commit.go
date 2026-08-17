@@ -21,6 +21,7 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errmap"
 	"filees/pkg/runtime"
+	"filees/pkg/shout"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
 )
@@ -118,11 +119,18 @@ type Service struct {
 
 	// internal
 	repoID     string // set from Run(); used by emit()
+	wc         string // set from Run(); local shout inbox / last_seen
 	mu         sync.Mutex
 	staging    map[string]*stageItem // rel path -> info
 	cachePath  string                // .filees/commit_cache/cache.json
 	lastShout  time.Time
 	lastCommit time.Time // last successful commit (for size-adaptive interval)
+	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
+	// that actually publishes; last_seen then jumps to that revision so this
+	// installation does not badge its own shout.
+	shoutComment     string
+	shoutUsed        bool
+	publishRevision  int64
 
 	// offline state — guarded by offMu (accessed from multiple goroutines)
 	offMu     sync.Mutex
@@ -241,6 +249,8 @@ func nextBackoff(cur time.Duration) time.Duration {
 // Run consumes watcher events and periodically performs commits.
 func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watcher.Event) {
 	s.repoID = repoID
+	s.wc = wc
+	s.reconcileShouts(ctx, wc)
 	lg := s.Logger
 	if s.Rules.NewLatency <= 0 {
 		s.Rules.NewLatency = 5 * time.Minute
@@ -471,6 +481,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	}
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
+	s.reconcileShouts(ctx, wc)
 	_ = atomicWriteString(headRevPath, fmt.Sprintf("%d\n", headRev))
 	if s.OnHeadRevision != nil {
 		s.OnHeadRevision(headRev)
@@ -522,6 +533,85 @@ func (s *Service) addEvent(ev watcher.Event) {
 type pendingEntry struct {
 	item *stageItem
 	ver  uint64
+}
+
+func (s *Service) RequestPublish(ctx context.Context, wc, comment string) (int64, error) {
+	if err := shout.ValidateComment(comment); err != nil {
+		return 0, err
+	}
+	s.mu.Lock()
+	s.shoutComment = strings.TrimSpace(comment)
+	s.shoutUsed = false
+	s.publishRevision = 0
+	if s.wc == "" {
+		s.wc = wc
+	}
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.shoutComment = ""
+		s.mu.Unlock()
+	}()
+	if err := s.tryCommitMode(ctx, wc, true); err != nil {
+		return 0, err
+	}
+	s.mu.Lock()
+	used, rev := s.shoutUsed, s.publishRevision
+	s.mu.Unlock()
+	if !used {
+		return 0, shout.ErrNothingToPublish
+	}
+	return rev, nil
+}
+
+func (s *Service) OpenNotices() ([]contract.Notice, error) {
+	if s.wc == "" {
+		return nil, nil
+	}
+	return shout.OpenNotices(s.wc)
+}
+
+func (s *Service) AckNotice(id string) error {
+	if s.wc == "" {
+		return nil
+	}
+	return shout.Ack(s.wc, id)
+}
+
+type revisionLogger interface {
+	LogMessages(ctx context.Context, target string, fromRev, toRev int64) ([]client.LogMessage, error)
+}
+
+func (s *Service) reconcileShouts(ctx context.Context, wc string) {
+	if wc == "" || s.Cli == nil {
+		return
+	}
+	local, err := s.Cli.Revision(ctx, wc)
+	if err != nil || local < 1 {
+		return
+	}
+	var fetch shout.FetchLogs
+	if logger, ok := s.Cli.(revisionLogger); ok {
+		fetch = func(from, to int64) ([]shout.LogEntry, error) {
+			entries, err := logger.LogMessages(ctx, wc, from, to)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]shout.LogEntry, 0, len(entries))
+			for _, entry := range entries {
+				out = append(out, shout.LogEntry{Revision: entry.Revision, Message: entry.Message})
+			}
+			return out, nil
+		}
+	}
+	added, err := shout.Advance(wc, s.repoID, local, fetch, time.Now())
+	if err != nil {
+		s.Logger.Warnf("shout inbox: %v", err)
+		return
+	}
+	for _, rec := range added {
+		s.emit(contract.EvNoticeCreated, contract.NoticeCreatedPayload{NoticeID: rec.ID, Title: rec.Title})
+	}
 }
 
 func (s *Service) tryCommit(ctx context.Context, wc string) error {
@@ -578,9 +668,13 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		}
 		pending = append(pending, pendingEntry{it, it.ver})
 	}
+	shoutComment := s.shoutComment
 	s.mu.Unlock()
 
 	if len(pending) == 0 {
+		if shoutComment != "" {
+			return shout.ErrNothingToPublish
+		}
 		return nil
 	}
 
@@ -911,6 +1005,9 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		uid = "unknown"
 	}
 	msg := fmt.Sprintf("Auto-commit by FileES client %s: %d paths", uid, len(commitPaths))
+	if shoutComment != "" {
+		msg = shout.Format(shoutComment)
+	}
 	commitSet := make(map[string]struct{}, len(commitPaths))
 	for _, rel := range commitPaths {
 		commitSet[rel] = struct{}{}
@@ -972,6 +1069,15 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		}
 	}
 	if confirmedRevision > 0 {
+		if shoutComment != "" {
+			s.mu.Lock()
+			s.shoutUsed = true
+			s.publishRevision = confirmedRevision
+			s.mu.Unlock()
+			if err := shout.SaveLastSeen(wc, confirmedRevision); err != nil {
+				s.Logger.Warnf("shout last_seen after publish: %v", err)
+			}
+		}
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
 		_ = atomicWriteString(head, strconv.FormatInt(confirmedRevision, 10)+"\n")
 		if s.OnHeadRevision != nil {

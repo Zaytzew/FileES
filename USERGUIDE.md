@@ -178,6 +178,14 @@ Zamknij FileES…
 
 ---
 
+## Wydanie (shouting commit)
+
+**Opublikuj wydanie…** w podmenu folderu wysyła bieżące, jeszcze niezacommitowane zmiany z komentarzem. To nie jest zwykły autocommit: komentarz ląduje w `svn:log` i po aktualizacji inni członkowie zespołu widzą badge **Wydanie: …**. Kliknięcie oznacza „przeczytałem”. FileES nie jest komunikatorem — badge pojawia się dopiero po udanym `svn update` na danej maszynie.
+
+Pusta lista zmian kończy się odmową, nie pustym commitem. Lokalne `shout_patterns` w `config.json` to coś innego: tylko podpowiedź we własnym traju.
+
+---
+
 ## Stany repozytorium
 
 | Etykieta w menu | Znaczenie |

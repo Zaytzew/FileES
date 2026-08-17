@@ -14,6 +14,7 @@ import (
 	"filees/pkg/activity"
 	"filees/pkg/client"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/shout"
 	"filees/pkg/watcher"
 )
 
@@ -33,6 +34,7 @@ type stagingClient struct {
 	commitCh       chan struct{}
 	commitErr      error
 	commitOut      string
+	commitMessage  string
 	updatedEmpty   []string
 	revision       int64
 	revisionErr    error
@@ -75,8 +77,9 @@ func (c *stagingClient) Delete(_ context.Context, _ string, _ []string) (string,
 	return "", nil
 }
 
-func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, _ string) (string, error) {
+func (c *stagingClient) Commit(_ context.Context, _ string, paths []string, message string) (string, error) {
 	c.commits++
+	c.commitMessage = message
 	c.commitPaths = append([]string(nil), paths...)
 	c.commitBatches = append(c.commitBatches, append([]string(nil), paths...))
 	if c.commitCh != nil {
@@ -987,5 +990,40 @@ func TestAtomicWritesDoNotFollowPredictableSymlinks(t *testing.T) {
 				t.Fatalf("%s left a symlink at the state path", tc.name)
 			}
 		})
+	}
+}
+
+func TestRequestPublishWritesShoutMarker(t *testing.T) {
+	wc := t.TempDir()
+	abs := filepath.Join(wc, "pakiet.dwg")
+	if err := os.WriteFile(abs, []byte("pakiet"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cli := &stagingClient{statuses: map[string]string{"pakiet.dwg": "unversioned"}, commitOut: "Committed revision 22.\n", revision: 22}
+	service := &Service{Cli: cli, Rules: Rules{NewLatency: time.Hour, MaxBatchFiles: 10}, repoID: "docs", staging: map[string]*stageItem{
+		"pakiet.dwg": {Rel: "pakiet.dwg", Abs: abs, Op: watcher.Added, FirstSeen: time.Now(), LastSeen: time.Now()},
+	}}
+	rev, err := service.RequestPublish(context.Background(), wc, "  Ważna paka  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev != 22 {
+		t.Fatalf("revision=%d", rev)
+	}
+	if cli.commits != 1 || !strings.HasPrefix(cli.commitMessage, "[!shout@#!] Ważna paka") {
+		t.Fatalf("commit message=%q commits=%d", cli.commitMessage, cli.commits)
+	}
+	last, ok, err := shout.LoadLastSeen(wc)
+	if err != nil || !ok || last != 22 {
+		t.Fatalf("last_seen=%d ok=%v err=%v", last, ok, err)
+	}
+}
+
+func TestRequestPublishRequiresPendingChanges(t *testing.T) {
+	wc := t.TempDir()
+	service := &Service{Cli: &stagingClient{revision: 3}, staging: map[string]*stageItem{}}
+	_, err := service.RequestPublish(context.Background(), wc, "pusta")
+	if !errors.Is(err, shout.ErrNothingToPublish) {
+		t.Fatalf("error=%v", err)
 	}
 }

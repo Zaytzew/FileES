@@ -119,6 +119,10 @@ type ActivityViewModel struct {
 	Revision                                      int64
 }
 
+type NoticeViewModel struct {
+	ID, RepoID, Title, CreatedAt string
+}
+
 type UpdateViewModel struct {
 	State            string
 	CurrentVersion   string
@@ -153,6 +157,7 @@ type ViewModel struct {
 	Recoveries   []RecoveryViewModel
 	Errors       []ErrorViewModel
 	Activity     []ActivityViewModel
+	Notices      []NoticeViewModel
 	Update       *UpdateViewModel
 	Icon         IconState
 }
@@ -176,6 +181,8 @@ func (vm ViewModel) CanLock() bool         { return vm.HasCap(contract.CapRepoLo
 func (vm ViewModel) CanUnlock() bool       { return vm.HasCap(contract.CapRepoUnlock) }
 func (vm ViewModel) CanListErrors() bool   { return vm.HasCap(contract.CapErrorList) }
 func (vm ViewModel) CanListActivity() bool { return vm.HasCap(contract.CapRepoActivity) }
+func (vm ViewModel) CanPublish() bool      { return vm.HasCap(contract.CapRepoPublish) }
+func (vm ViewModel) CanAckNotices() bool   { return vm.HasCap(contract.CapNoticeAck) }
 func (vm ViewModel) SupportsReservationListing() bool {
 	return vm.HasCap(contract.CapRepoReservationList)
 }
@@ -283,9 +290,12 @@ func (r RepoViewModel) DisplayState() RepoDisplayState {
 }
 
 // aggregateIcon derives the tray icon from the connection status and all repo states.
-func aggregateIcon(connected bool, repos []RepoViewModel) IconState {
+func aggregateIcon(connected bool, repos []RepoViewModel, notices int) IconState {
 	if !connected {
 		return IconDisconnected
+	}
+	if notices > 0 {
+		return IconError
 	}
 	best := IconActive
 	for _, r := range repos {

@@ -317,13 +317,13 @@ func TestReducerApplyEventGap(t *testing.T) {
 // --- icon aggregation unit tests ---
 
 func TestAggregateIconDisconnected(t *testing.T) {
-	if got := aggregateIcon(false, nil); got != IconDisconnected {
+	if got := aggregateIcon(false, nil, 0); got != IconDisconnected {
 		t.Fatalf("got %q, want %q", got, IconDisconnected)
 	}
 }
 
 func TestAggregateIconActiveWhenEmpty(t *testing.T) {
-	if got := aggregateIcon(true, nil); got != IconActive {
+	if got := aggregateIcon(true, nil, 0); got != IconActive {
 		t.Fatalf("got %q, want %q", got, IconActive)
 	}
 }
@@ -349,7 +349,7 @@ func TestAggregateIconPriority(t *testing.T) {
 		}, IconError},
 	}
 	for _, c := range cases {
-		if got := aggregateIcon(true, c.repos); got != c.want {
+		if got := aggregateIcon(true, c.repos, 0); got != c.want {
 			t.Errorf("repos=%v: got %q, want %q", c.repos, got, c.want)
 		}
 	}

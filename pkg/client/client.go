@@ -613,6 +613,42 @@ func (c *execClient) Revision(ctx context.Context, target string) (int64, error)
 	return n, nil
 }
 
+// LogMessage is one svn log entry without changed-paths.
+type LogMessage struct {
+	Revision int64
+	Message  string
+}
+
+// LogMessages returns svn:log for the inclusive revision range. It is used by
+// shouting-commit discovery and is not part of the generic Client interface.
+func (c *execClient) LogMessages(ctx context.Context, target string, fromRev, toRev int64) ([]LogMessage, error) {
+	if fromRev < 1 || toRev < fromRev {
+		return nil, nil
+	}
+	out, err := c.run(ctx, "", []string{"log", "--xml", "-r", fmt.Sprintf("%d:%d", fromRev, toRev), target})
+	if err != nil {
+		return nil, fmt.Errorf("svn log: %w\n%s", err, out)
+	}
+	return parseLogXML(out)
+}
+
+func parseLogXML(output string) ([]LogMessage, error) {
+	var doc struct {
+		Entries []struct {
+			Revision int64  `xml:"revision,attr"`
+			Msg      string `xml:"msg"`
+		} `xml:"logentry"`
+	}
+	if err := xml.Unmarshal([]byte(output), &doc); err != nil {
+		return nil, fmt.Errorf("parse log xml: %w\n%s", err, output)
+	}
+	out := make([]LogMessage, 0, len(doc.Entries))
+	for _, entry := range doc.Entries {
+		out = append(out, LogMessage{Revision: entry.Revision, Message: entry.Msg})
+	}
+	return out, nil
+}
+
 // ---- Core exec runner ----
 
 func (c *execClient) run(parentCtx context.Context, workingDir string, args []string) (string, error) {

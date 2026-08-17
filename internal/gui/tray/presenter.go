@@ -197,6 +197,11 @@ func repoMenu(vm app.ViewModel, repo app.RepoViewModel) MenuItemModel {
 		lockVisible := repo.CanWrite() && vm.CanMutateLock() && serverHasRealmAlias(vm, repo.ServerID)
 		unlockVisible := repo.CanWrite() && vm.CanMutateUnlock()
 		item.Enabled = true
+		if vm.Connected && !vm.Stale && repo.NeedsLocate() && vm.CanLocateRepository() {
+			item.Children = append(item.Children,
+				actionItem("repo."+repo.ID+".locate", "Wskaż kopię roboczą…", "Folder zniknął albo został przeniesiony — wskaż istniejące .svn", Intent{Kind: IntentLocateFolder, RepoID: repo.ID, ServerID: repo.ServerID}),
+			)
+		}
 		item.Children = append(item.Children,
 			actionItem("repo."+repo.ID+".open", "Otwórz folder", repo.LocalPath, Intent{Kind: IntentOpenFolder, RepoID: repo.ID}),
 		)

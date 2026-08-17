@@ -793,6 +793,22 @@ func assertPowerShellParses(t *testing.T, label, script string) {
 //
 // Data deliberately includes Polish characters, an apostrophe (psString
 // escaping) and a colon inside an operation ID.
+func TestSettingsDialogScriptCallsShowGridInCommandMode(t *testing.T) {
+	script, err := buildSettingsDialogScript(SettingsDialogRequest{
+		Title: "Ustawienia FileES", Text: "Wybierz serwer, potem działanie.",
+		Servers: []SettingsServer{{ID: "spot", Name: "spot", Address: "spot.example.net", Folders: []SettingsFolder{{ID: "repo-1", Name: "Łódź", CanLocate: true}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(script, "=showGrid(") || strings.Contains(script, "showGrid($d") || strings.Contains(script, "showGrid(('") {
+		t.Fatal("showGrid(a,b) is one PowerShell array argument; the form title becomes the whole call")
+	}
+	if !strings.Contains(script, "showGrid $d.Title") {
+		t.Fatal("expected command-mode showGrid invocation")
+	}
+}
+
 func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
 	settings := SettingsDialogRequest{
 		Title: "Ustawienia FileES",

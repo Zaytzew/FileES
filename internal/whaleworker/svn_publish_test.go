@@ -14,6 +14,38 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestSVNPublisherTransactionCleanupCannotRemoveAnotherGeneration(t *testing.T) {
+	generationID := uuid.NewString()
+	var removed []string
+	publisher := SVNPublisher{
+		SVNAdmin: filepath.FromSlash("/usr/local/bin/svnadmin"), SVNLook: filepath.FromSlash("/usr/local/bin/svnlook"), SVNMucc: filepath.FromSlash("/usr/local/bin/svnmucc"),
+		Run: func(_ context.Context, binary string, args ...string) ([]byte, error) {
+			switch {
+			case binary == filepath.FromSlash("/usr/local/bin/svnadmin") && args[0] == "lstxns":
+				return []byte("4-1\n4-2\n"), nil
+			case binary == filepath.FromSlash("/usr/local/bin/svnlook") && args[0] == "proplist":
+				return []byte(generationRevprop + "\n"), nil
+			case binary == filepath.FromSlash("/usr/local/bin/svnlook") && args[0] == "propget" && args[3] == "4-1":
+				return []byte(generationID + "\n"), nil
+			case binary == filepath.FromSlash("/usr/local/bin/svnlook") && args[0] == "propget" && args[3] == "4-2":
+				return []byte(uuid.NewString() + "\n"), nil
+			case binary == filepath.FromSlash("/usr/local/bin/svnadmin") && args[0] == "rmtxns":
+				removed = append(removed, args[2])
+				return nil, nil
+			default:
+				t.Fatalf("unexpected SVN call %s %v", binary, args)
+				return nil, nil
+			}
+		},
+	}
+	if err := publisher.removeAbandonedGenerationTransactions(context.Background(), filepath.FromSlash("/srv/repos/repo"), generationID); err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "4-1" {
+		t.Fatalf("removed transactions=%v, want only matching 4-1", removed)
+	}
+}
+
 func TestSVNPublisherCommitsHiddenPathAndRecoversGeneration(t *testing.T) {
 	svnadmin, err := exec.LookPath("svnadmin")
 	if err != nil {
@@ -55,7 +87,7 @@ func TestSVNPublisherCommitsHiddenPathAndRecoversGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, _ = value(journal.Load(identity.GenerationID))
-	publisher := SVNPublisher{SVNMucc: svnmucc, SVNLook: svnlook}
+	publisher := SVNPublisher{SVNMucc: svnmucc, SVNLook: svnlook, SVNAdmin: svnadmin}
 	revision, err := publisher.PublishWhale(context.Background(), &record, journal, repository, payload)
 	if err != nil {
 		t.Fatal(err)

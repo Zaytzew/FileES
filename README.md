@@ -464,7 +464,7 @@ pkg/errcat,errmap/       wspólny język błędów i klasyfikacja diagnostyki
 pkg/control/v1/          podpisywane żądania klient -> worker
 pkg/whale/v1/            kanon generacji i framing windowed Whale
 pkg/repoworker/          autorytatywne repozytoria, granty i projekcje
-internal/servertool/     forced-command entrypoints i operacje serwera
+internal/servertool/     forced-command entrypoints, lease/revoke supervisor i operacje serwera
 internal/whaleworker/    journal, FIFO, PUT/recovery i svnmucc file://
 pkg/onboarding,activation/ aktywacja, tożsamość i service repo
 cmd/filees-service-wc-corrector/ korekta owner/group usługowej WC przed ticketem
@@ -777,7 +777,7 @@ Wzorce z `!` na początku są "twardymi" ignorami — przy katalogu powodują po
 | `pkg/reposupervisor` | Dynamiczne uruchamianie, zatrzymywanie i rekoncyliacja repozytoriów |
 | `pkg/passport` | Passporty edycji, fencing i migracja `svn:needs-lock` |
 | `pkg/repoworker` | Kanoniczne rekordy repozytoriów, granty, polityki i projekcje |
-| `internal/whaleworker` | Serwerowy journal, FIFO, windowed PUT i idempotentny commit Whale |
+| `internal/whaleworker` | Serwerowy journal, FIFO, windowed PUT i idempotentny commit Whale; zdalne sesje nadzoruje `internal/servertool` |
 | `pkg/ipcserver` | Serwer gniazda Unix dla CLI/GUI |
 | `pkg/ipcclient` | Klient IPC używany przez CLI i GUI |
 | `contracttests` | Przekrojowa bramka zgodności kopert, capability i round-trip IPC |

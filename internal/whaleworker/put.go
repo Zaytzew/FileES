@@ -113,6 +113,23 @@ func (s PutService) ServeWindow(ctx context.Context, clientID string, request wh
 }
 
 func (s PutService) Commit(ctx context.Context, clientID string, identity whale.Identity) (whale.PutResult, error) {
+	if err := identity.Validate(); err != nil {
+		return whale.PutResult{}, err
+	}
+	lockPath := filepath.Join(s.Journal.generationDir(identity.GenerationID), ".window.lock")
+	var committed whale.PutResult
+	err := repoworker.WithFileLock(lockPath, func() error {
+		var err error
+		committed, err = s.commitLocked(ctx, clientID, identity)
+		return err
+	})
+	return committed, err
+}
+
+// commitLocked shares the generation lock with PUT_WINDOW. Consequently two
+// retries cannot run svnmucc concurrently, and recovery may safely remove an
+// abandoned transaction carrying this exact generation ID.
+func (s PutService) commitLocked(ctx context.Context, clientID string, identity whale.Identity) (whale.PutResult, error) {
 	access, err := s.authorize(ctx, clientID, identity.LogicalRepoID, true)
 	if err != nil {
 		return whale.PutResult{}, err

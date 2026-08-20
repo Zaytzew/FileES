@@ -31,6 +31,11 @@ const (
 	workerPromises  = writePromises + " inet proc exec"
 	svnPromises     = writePromises + " proc exec"
 	svnExecPromises = "stdio rpath wpath cpath fattr flock proc prot_exec unveil"
+	// Whale is a long-lived, stateful repository worker. It needs proc/exec to
+	// launch svnlook/svnmucc and must retain prot_exec so the native OpenBSD SVN
+	// binaries can establish their own W^X mappings after exec.
+	whaleWorkerPromises = writePromises + " proc exec prot_exec"
+	whaleExecPromises   = whaleWorkerPromises + " unveil"
 )
 
 type toolAccess struct {

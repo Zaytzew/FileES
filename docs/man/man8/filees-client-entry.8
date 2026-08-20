@@ -1,9 +1,9 @@
-.Dd August 14, 2026
+.Dd August 20, 2026
 .Dt FILEES-CLIENT-ENTRY 8
 .Os
 .Sh NAME
 .Nm filees-client-entry
-.Nd FileES per-key dispatcher for svnserve and control-plane tickets
+.Nd FileES per-key dispatcher for svnserve, control and Whale sessions
 .Sh SYNOPSIS
 .Nm
 .Sh DESCRIPTION
@@ -18,26 +18,40 @@ and the per-key
 .Ic command=
 line.
 .Nm
-accepts exactly two original commands:
+accepts exactly three original commands:
 .Bl -tag -width Ds
 .It Cm svnserve -t
 Tunnel-mode Subversion.
 .It Cm filees control-v1
 One authenticated control-plane ticket, then
 .Xr filees-worker 8 .
+.It Cm filees whale-v1
+One framed Whale request.
+The dispatcher claims the same activation
+session lease used for Subversion, starts a gated worker in a separate
+process group and relays only private pipes.
+Revocation closes the input
+and terminates the complete worker process group, including a running
+.Cm svnmucc .
 .El
 .Pp
-Before a control-plane ticket it runs
+Before a control-plane ticket or Whale request it runs
 .Xr filees-service-wc-corrector 8
 so a previous root-owned administrative
 .Nm svn
 cannot leave the service working copy unreadable to
 .Sy _filees-state .
 .Pp
+The client identity is taken only from the forced per-key command line.
+It is never accepted from the Whale frame.
+The Whale worker authorizes
+the logical repository against the current client projection and stores
+transport state outside every working copy.
+.Pp
 The image is
 .Sy _filees-state : _filees-access
 mode 4550.
 It is not a general shell.
 .Sh SEE ALSO
-.Xr filees-worker 8 ,
-.Xr filees-service-wc-corrector 8
+.Xr filees-service-wc-corrector 8 ,
+.Xr filees-worker 8

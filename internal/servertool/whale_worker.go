@@ -8,10 +8,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"filees/internal/obsandbox"
 	"filees/internal/whaleworker"
 	"filees/pkg/clientview"
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
+
+	"github.com/google/uuid"
 )
 
 type clientviewWhaleAuthority struct {
@@ -33,13 +36,27 @@ func (a clientviewWhaleAuthority) ResolveWhale(_ context.Context, clientID, repo
 }
 
 func RunWhaleWorker(args []string, in io.Reader, out, stderr io.Writer) int {
-	return runWhaleWorker("/etc/filees/server.json", args, in, out, stderr)
+	path, rest, err := configPath(args)
+	if err != nil {
+		report(stderr, "Whale worker arguments", err)
+		return ExitUsage
+	}
+	return runWhaleWorker(path, rest, in, out, stderr)
 }
 
 func runWhaleWorker(configPath string, args []string, in io.Reader, out, stderr io.Writer) int {
-	if len(args) != 1 || args[0] == "" {
+	if len(args) != 1 {
 		fmt.Fprintln(stderr, "filees-worker whale-v1: client ID required")
 		return ExitUsage
+	}
+	clientUUID, err := uuid.Parse(args[0])
+	if err != nil || clientUUID.String() != args[0] {
+		fmt.Fprintln(stderr, "filees-worker whale-v1: client ID must be a canonical UUID")
+		return ExitUsage
+	}
+	if err := sandboxBegin(whaleExecPromises); err != nil {
+		report(stderr, "Whale worker bootstrap sandbox", err)
+		return ExitSoftware
 	}
 	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation)
 	if err != nil {
@@ -56,12 +73,16 @@ func runWhaleWorker(configPath string, args []string, in io.Reader, out, stderr 
 		report(stderr, "Whale worker state", err)
 		return ExitConfig
 	}
+	if err := sandboxApplyForExec(whaleWorkerProfile(config, configPath, stateRoot), svnExecPromises); err != nil {
+		report(stderr, "Whale worker sandbox", err)
+		return ExitSoftware
+	}
 	service := whaleworker.PutService{
 		Journal:      whaleworker.Journal{Root: filepath.Join(stateRoot, "generations")},
 		Queue:        whaleworker.PathQueue{Root: filepath.Join(stateRoot, "queues")},
 		Authority:    clientviewWhaleAuthority{ServiceWC: config.Activation.ServiceWorkingCopy, RepositoriesRoot: r.Root},
 		Reservations: &repoworker.FileReservationLedger{Root: filepath.Join(stateRoot, "reservations"), Capacity: repoworker.FilesystemCapacity{Root: r.Root}},
-		Publisher:    whaleworker.SVNPublisher{SVNMucc: r.EffectiveSVNMuccBinary(), SVNLook: r.EffectiveSVNLookBinary()},
+		Publisher:    whaleworker.SVNPublisher{SVNMucc: r.EffectiveSVNMuccBinary(), SVNLook: r.EffectiveSVNLookBinary(), SVNAdmin: r.SVNAdminBinary},
 	}
 	dispatcher := whaleworker.Dispatcher{Service: service, ClientID: args[0]}
 	if err := dispatcher.Serve(context.Background(), in, out); err != nil {
@@ -69,4 +90,26 @@ func runWhaleWorker(configPath string, args []string, in io.Reader, out, stderr 
 		return ExitData
 	}
 	return ExitOK
+}
+
+func whaleWorkerProfile(config serverconfig.Config, configPath, stateRoot string) obsandbox.Profile {
+	r := config.Repositories
+	return obsandbox.Profile{Name: "filees-worker/whale-v1", Promises: whaleWorkerPromises, Paths: []obsandbox.Path{
+		{Label: "server-config", Name: configPath, Perms: "r"},
+		{Label: "service-working-copy-parent", Name: filepath.Dir(config.Activation.ServiceWorkingCopy), Perms: "r"},
+		{Label: "service-working-copy", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},
+		{Label: "repository-root-parent", Name: filepath.Dir(r.Root), Perms: "r"},
+		{Label: "repository-root", Name: r.Root, Perms: "rwc"},
+		{Label: "whale-state", Name: stateRoot, Perms: "rwc"},
+		{Label: "svnmucc", Name: r.EffectiveSVNMuccBinary(), Perms: "rx"},
+		{Label: "svnlook", Name: r.EffectiveSVNLookBinary(), Perms: "rx"},
+		{Label: "svnadmin", Name: r.SVNAdminBinary, Perms: "rx"},
+		{Label: "null-device", Name: "/dev/null", Perms: "rw"},
+		{Label: "random", Name: "/dev/urandom", Perms: "r"},
+		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
+		{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
+		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
+		{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
+		{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
+	}}
 }

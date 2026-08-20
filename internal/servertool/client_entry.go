@@ -16,6 +16,7 @@ import (
 const (
 	ClientSVNCommand       = "svnserve -t"
 	ClientControlCommand   = "filees control-v1"
+	ClientWhaleCommand     = "filees whale-v1"
 	repositoryWorkerPath   = "/usr/local/libexec/filees/filees-worker"
 	ownershipCorrectorPath = "/usr/local/libexec/filees/filees-service-wc-corrector"
 	clientEntryPromises    = writePromises + " proc exec"
@@ -26,21 +27,21 @@ const (
 )
 
 func RunClientEntry(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
-	return runClientEntry("/etc/filees/server.json", args, stdin, stdout, stderr, getenv, runSVNSessionSupervisor)
+	return runClientEntry("/etc/filees/server.json", args, stdin, stdout, stderr, getenv, runSVNSessionSupervisor, runWhaleSessionSupervisor)
 }
 
 // clientSVNSupervisor returns the svnserve exit status separately from an
 // infrastructure error in the one-shot supervisor.
-type clientSVNSupervisor func(serverconfig.Config, string, *activation.Manager, *activation.SessionLease, io.Reader, io.Writer, io.Writer) (int, error)
+type clientSessionSupervisor func(serverconfig.Config, string, *activation.Manager, *activation.SessionLease, io.Reader, io.Writer, io.Writer) (int, error)
 
-func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string, supervise clientSVNSupervisor) int {
+func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string, superviseSVN, superviseWhale clientSessionSupervisor) int {
 	originalCommand := getenv("SSH_ORIGINAL_COMMAND")
-	if len(args) != 2 || (originalCommand != ClientSVNCommand && originalCommand != deploy.ServiceProofCommand && originalCommand != ClientControlCommand) {
+	if len(args) != 2 || (originalCommand != ClientSVNCommand && originalCommand != deploy.ServiceProofCommand && originalCommand != ClientControlCommand && originalCommand != ClientWhaleCommand) {
 		fmt.Fprintln(stderr, "filees-client-entry: rejected command")
 		return ExitUnavailable
 	}
 	entryPromises := clientEntryPromises
-	if originalCommand == ClientSVNCommand {
+	if originalCommand == ClientSVNCommand || originalCommand == ClientWhaleCommand {
 		entryPromises = clientSVNEntryPromises
 	}
 	if originalCommand == ClientControlCommand {
@@ -79,11 +80,13 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		{Label: "random", Name: "/dev/urandom", Perms: "r"},
 	}}
 	childPromises := clientChildPromises(originalCommand)
-	if originalCommand == ClientControlCommand {
+	if originalCommand == ClientControlCommand || originalCommand == ClientWhaleCommand {
 		if err := runOwnershipCorrectorProcess(stderr); err != nil {
 			report(stderr, "filees-client-entry service-WC ownership", err)
 			return ExitSoftware
 		}
+	}
+	if originalCommand == ClientControlCommand {
 		r := config.Repositories
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"})
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "resolver", Name: "/etc/resolv.conf", Perms: "r"}, obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"})
@@ -126,7 +129,7 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		report(stderr, "filees-client-entry activation", err)
 		return ExitConfig
 	}
-	if originalCommand == ClientSVNCommand {
+	if originalCommand == ClientSVNCommand || originalCommand == ClientWhaleCommand {
 		lease, err := manager.ClaimSession(args[0], args[1])
 		if err != nil {
 			report(stderr, "filees-client-entry session", err)
@@ -137,6 +140,14 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 				report(stderr, "filees-client-entry session cleanup", closeErr)
 			}
 		}()
+		supervise := superviseSVN
+		if originalCommand == ClientWhaleCommand {
+			supervise = superviseWhale
+		}
+		if supervise == nil {
+			fmt.Fprintln(stderr, "filees-client-entry: session supervisor unavailable")
+			return ExitSoftware
+		}
 		childExitCode, err := supervise(config, args[1], manager, lease, stdin, stdout, stderr)
 		if err != nil {
 			report(stderr, "filees-client-entry supervisor", err)
@@ -180,6 +191,9 @@ func clientChildPromises(originalCommand string) string {
 		// repositories. Unveil and authz still constrain the exact filesystem
 		// roots and effective per-repository access.
 		return svnExecPromises
+	}
+	if originalCommand == ClientWhaleCommand {
+		return whaleExecPromises
 	}
 	return "stdio rpath flock prot_exec"
 }

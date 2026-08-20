@@ -125,7 +125,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		return ""
 	}
-	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || called {
+	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || called {
 		t.Fatalf("proof entry code=%d called-svn=%v stderr=%s", code, called, stderr.String())
 	}
 	getenv = func(name string) string {
@@ -134,17 +134,17 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		return ""
 	}
-	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || !called {
+	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || !called {
 		t.Fatalf("entry code=%d called=%v stderr=%s", code, called, stderr.String())
 	}
 	if os.Getenv("FILEES_CLIENT_ENTRY_NATIVE") == "" {
 		supervisorCode = 23
-		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != 23 {
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != 23 {
 			t.Fatalf("entry replaced child exit code: got=%d want=23 stderr=%s", code, stderr.String())
 		}
 		supervisorCode = ExitOK
 		supervisorErr = errors.New("test supervisor failure")
-		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitSoftware {
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitSoftware {
 			t.Fatalf("entry supervisor failure code=%d, want=%d stderr=%s", code, ExitSoftware, stderr.String())
 		}
 		supervisorErr = nil
@@ -159,13 +159,28 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		runRepositoryWorkerProcess = func(_, _, id string, _ io.Reader, _ io.Writer, _ io.Writer) error { controlClient = id; return nil }
 		mailTriggered := false
 		runMailAfterControl = func(serverconfig.Config, io.Writer) error { mailTriggered = true; return nil }
+		whaleClient := ""
+		whaleSupervisor := func(_ serverconfig.Config, clientID string, _ *activation.Manager, _ *activation.SessionLease, _ io.Reader, _ io.Writer, _ io.Writer) (int, error) {
+			whaleClient = clientID
+			return ExitOK, nil
+		}
+		getenv = func(name string) string {
+			if name == "SSH_ORIGINAL_COMMAND" {
+				return ClientWhaleCommand
+			}
+			return ""
+		}
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, whaleSupervisor); code != ExitOK || whaleClient != grant.ClientID || correctorRuns != 1 {
+			t.Fatalf("Whale code=%d client=%q corrector=%d stderr=%s", code, whaleClient, correctorRuns, stderr.String())
+		}
+		correctorRuns = 0
 		getenv = func(name string) string {
 			if name == "SSH_ORIGINAL_COMMAND" {
 				return ClientControlCommand
 			}
 			return ""
 		}
-		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || controlClient != grant.ClientID || !mailTriggered || correctorRuns != 1 {
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || controlClient != grant.ClientID || !mailTriggered || correctorRuns != 1 {
 			t.Fatalf("control code=%d client=%q mail=%v corrector=%d stderr=%s", code, controlClient, mailTriggered, correctorRuns, stderr.String())
 		}
 
@@ -180,7 +195,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 			correctorRuns++
 			return errors.New("test ownership correction failure")
 		}
-		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitSoftware || correctorRuns != 1 || controlClient != "" || mailTriggered {
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitSoftware || correctorRuns != 1 || controlClient != "" || mailTriggered {
 			t.Fatalf("failed corrector code=%d client=%q mail=%v corrector=%d stderr=%s", code, controlClient, mailTriggered, correctorRuns, stderr.String())
 		}
 		if !strings.Contains(stderr.String(), "service-WC ownership") {
@@ -201,7 +216,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		mailTriggered = false
 		stderr.Reset()
-		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || mailTriggered {
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || mailTriggered {
 			t.Fatalf("control with mail preparation failure code=%d mail=%v stderr=%s", code, mailTriggered, stderr.String())
 		}
 		if !strings.Contains(stderr.String(), "filees-client-entry mail trigger") {
@@ -215,7 +230,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		return
 	}
 	getenv = func(string) string { return "sh" }
-	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitUnavailable {
+	if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitUnavailable {
 		t.Fatalf("entry accepted arbitrary original command: %d", code)
 	}
 }
@@ -236,6 +251,9 @@ func TestClientSVNChildRetainsWritePromises(t *testing.T) {
 	if got := clientChildPromises(deploy.ServiceProofCommand); got == svnExecPromises {
 		t.Fatalf("proof child unexpectedly received SVN write promises: %q", got)
 	}
+	if got := clientChildPromises(ClientWhaleCommand); got != whaleExecPromises {
+		t.Fatalf("Whale child promises = %q, want %q", got, whaleExecPromises)
+	}
 }
 
 func TestClientSVNBootstrapPromisesIncludeDPathForSessionFIFO(t *testing.T) {
@@ -244,6 +262,41 @@ func TestClientSVNBootstrapPromisesIncludeDPathForSessionFIFO(t *testing.T) {
 	}
 	if strings.Contains(" "+clientEntryPromises+" ", " dpath ") {
 		t.Fatalf("non-SVN client entry promises unexpectedly include dpath: %q", clientEntryPromises)
+	}
+}
+
+func TestWhaleWorkerProfileIsClosedToRequiredTrees(t *testing.T) {
+	serverConfigPath := filepath.FromSlash("/etc/filees/server.json")
+	serviceWC := filepath.FromSlash("/srv/filees/service-wc")
+	repositoriesRoot := filepath.FromSlash("/srv/filees/repositories")
+	resultsRoot := filepath.FromSlash("/srv/filees/results")
+	svnadmin := filepath.FromSlash("/usr/local/bin/svnadmin")
+	config := serverconfig.Config{
+		Activation: serverconfig.Config{}.Activation,
+		Repositories: serverconfig.RepositoryFile{
+			Root: repositoriesRoot, ResultsRoot: resultsRoot, SVNAdminBinary: svnadmin,
+		},
+	}
+	config.Activation.ServiceWorkingCopy = serviceWC
+	profile := whaleWorkerProfile(config, serverConfigPath, filepath.Join(resultsRoot, "whale"))
+	paths := map[string]obsandbox.Path{}
+	for _, item := range profile.Paths {
+		paths[item.Label] = item
+	}
+	for label, want := range map[string]obsandbox.Path{
+		"service-working-copy": {Label: "service-working-copy", Name: serviceWC, Perms: "r"},
+		"repository-root":      {Label: "repository-root", Name: repositoriesRoot, Perms: "rwc"},
+		"whale-state":          {Label: "whale-state", Name: filepath.Join(resultsRoot, "whale"), Perms: "rwc"},
+		"svnmucc":              {Label: "svnmucc", Name: filepath.Join(filepath.Dir(svnadmin), "svnmucc"), Perms: "rx"},
+		"svnlook":              {Label: "svnlook", Name: filepath.Join(filepath.Dir(svnadmin), "svnlook"), Perms: "rx"},
+		"svnadmin":             {Label: "svnadmin", Name: svnadmin, Perms: "rx"},
+	} {
+		if got := paths[label]; got != want {
+			t.Fatalf("Whale sandbox path %s = %+v, want %+v", label, got, want)
+		}
+	}
+	if profile.Promises != whaleWorkerPromises || strings.Contains(" "+profile.Promises+" ", " inet ") {
+		t.Fatalf("Whale runtime promises are too broad: %q", profile.Promises)
 	}
 }
 

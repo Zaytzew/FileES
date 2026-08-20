@@ -63,6 +63,44 @@ func TestSessionSupervisorTerminatesChildOnRevoke(t *testing.T) {
 	}
 }
 
+func TestWhaleSessionSupervisorUsesSameRevokeFence(t *testing.T) {
+	if runtime.GOOS == "openbsd" {
+		t.Skip("native supervisor behavior is covered by the OpenBSD audit-lab acceptance test")
+	}
+	manager, config, grant, lease := newSupervisorTestSession(t)
+	t.Cleanup(func() { _ = lease.Close() })
+	originalStarter := startWhaleSessionChild
+	t.Cleanup(func() { startWhaleSessionChild = originalStarter })
+	startWhaleSessionChild = sessionSupervisorTestChild
+
+	input, keepInputOpen := io.Pipe()
+	defer keepInputOpen.Close()
+	type result struct {
+		exitCode int
+		err      error
+	}
+	done := make(chan result, 1)
+	go func() {
+		exitCode, err := runWhaleSessionSupervisor(config, grant.ClientID, manager, lease, input, io.Discard, io.Discard)
+		done <- result{exitCode: exitCode, err: err}
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if _, err := manager.Revoke(context.Background(), grant.ClientID, "Whale supervisor FIFO test"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("Whale supervisor returned error after revoke: %v", got.err)
+		}
+		if got.exitCode != 128+int(syscall.SIGTERM) {
+			t.Fatalf("revoked Whale child exit=%d, want %d", got.exitCode, 128+int(syscall.SIGTERM))
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("Whale supervisor did not end after revoke")
+	}
+}
+
 func TestSessionSupervisorRelaysOpaqueBytes(t *testing.T) {
 	if runtime.GOOS == "openbsd" {
 		t.Skip("native supervisor behavior is covered by the OpenBSD audit-lab acceptance test")
@@ -132,6 +170,20 @@ func TestSessionSupervisorProfileAllowsLeaseCleanup(t *testing.T) {
 	}
 	if paths["session-lease"] != "rwc" {
 		t.Fatalf("session lease permissions = %q, want rwc", paths["session-lease"])
+	}
+}
+
+func TestWhaleSessionChildRejectsUntrustedArgumentsBeforeGate(t *testing.T) {
+	validClient := uuid.NewString()
+	validNonce := strings.Repeat("0", 64)
+	for _, args := range [][]string{
+		{"relative-worker", "/etc/filees/server.json", validClient, validNonce},
+		{"/usr/local/libexec/filees/filees-worker", "relative-config", validClient, validNonce},
+		{"/usr/local/libexec/filees/filees-worker", "/etc/filees/server.json", "../another-client", validNonce},
+	} {
+		if code := RunClientWhaleSessionChild(args, io.Discard); code != ExitUsage {
+			t.Fatalf("Whale child args %q returned %d, want usage", args, code)
+		}
 	}
 }
 
@@ -232,7 +284,7 @@ func newSupervisorTestSession(t *testing.T) (*activation.Manager, serverconfig.C
 	if err != nil {
 		t.Fatal(err)
 	}
-	return manager, serverconfig.Config{Activation: activationConfig}, grant, lease
+	return manager, serverconfig.Config{Path: filepath.Join(root, "server.json"), Activation: activationConfig}, grant, lease
 }
 
 func runSupervisorCommand(t *testing.T, command string, args ...string) {

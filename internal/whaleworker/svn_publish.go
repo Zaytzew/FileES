@@ -18,13 +18,14 @@ import (
 const generationRevprop = "filees:whale-generation"
 
 type SVNPublisher struct {
-	SVNMucc string
-	SVNLook string
-	Run     func(context.Context, string, ...string) ([]byte, error)
+	SVNMucc  string
+	SVNLook  string
+	SVNAdmin string
+	Run      func(context.Context, string, ...string) ([]byte, error)
 }
 
 func (p SVNPublisher) PublishWhale(ctx context.Context, record *Record, journal Journal, repositoryPath, payloadPath string) (int64, error) {
-	if record == nil || record.State != whale.StateCommitting || !filepath.IsAbs(repositoryPath) || !filepath.IsAbs(payloadPath) || !filepath.IsAbs(p.SVNMucc) || !filepath.IsAbs(p.SVNLook) {
+	if record == nil || record.State != whale.StateCommitting || !filepath.IsAbs(repositoryPath) || !filepath.IsAbs(payloadPath) || !filepath.IsAbs(p.SVNMucc) || !filepath.IsAbs(p.SVNLook) || !filepath.IsAbs(p.SVNAdmin) {
 		return 0, errors.New("Whale SVN publisher is incomplete")
 	}
 	storagePath, err := record.Identity.StoragePath()
@@ -46,6 +47,9 @@ func (p SVNPublisher) PublishWhale(ctx context.Context, record *Record, journal 
 		return 0, err
 	} else if revision != 0 {
 		return revision, nil
+	}
+	if err := p.removeAbandonedGenerationTransactions(ctx, repositoryPath, record.Identity.GenerationID); err != nil {
+		return 0, err
 	}
 
 	existing, err := p.directories(ctx, repositoryPath)
@@ -76,6 +80,66 @@ func (p SVNPublisher) PublishWhale(ctx context.Context, record *Record, journal 
 		return 0, errors.New("Whale commit succeeded without recoverable generation revprop")
 	}
 	return revision, nil
+}
+
+// removeAbandonedGenerationTransactions removes only transactions which
+// carry this immutable generation revprop. The caller holds the generation
+// lock, so a matching transaction cannot belong to a live sibling commit.
+// Unrelated Subversion commits remain completely untouched.
+func (p SVNPublisher) removeAbandonedGenerationTransactions(ctx context.Context, repositoryPath, generationID string) error {
+	raw, err := p.run(ctx, p.SVNAdmin, "lstxns", repositoryPath)
+	if err != nil {
+		return fmt.Errorf("svnadmin list Whale transactions: %w", err)
+	}
+	for _, transaction := range strings.Fields(string(raw)) {
+		properties, err := p.run(ctx, p.SVNLook, "proplist", "--revprop", "-t", transaction, repositoryPath)
+		if err != nil {
+			if exists, listErr := p.transactionExists(ctx, repositoryPath, transaction); listErr == nil && !exists {
+				// An unrelated normal commit may have completed after lstxns.
+				continue
+			}
+			return fmt.Errorf("svnlook transaction proplist %s: %w", transaction, err)
+		}
+		if !containsProperty(properties, generationRevprop) {
+			continue
+		}
+		value, err := p.run(ctx, p.SVNLook, "propget", "--revprop", "-t", transaction, repositoryPath, generationRevprop)
+		if err != nil {
+			if exists, listErr := p.transactionExists(ctx, repositoryPath, transaction); listErr == nil && !exists {
+				continue
+			}
+			return fmt.Errorf("svnlook transaction generation %s: %w", transaction, err)
+		}
+		if strings.TrimSpace(string(value)) != generationID {
+			continue
+		}
+		if _, err := p.run(ctx, p.SVNAdmin, "rmtxns", repositoryPath, transaction); err != nil {
+			return fmt.Errorf("svnadmin remove abandoned Whale transaction %s: %w", transaction, err)
+		}
+	}
+	return nil
+}
+
+func (p SVNPublisher) transactionExists(ctx context.Context, repositoryPath, target string) (bool, error) {
+	raw, err := p.run(ctx, p.SVNAdmin, "lstxns", repositoryPath)
+	if err != nil {
+		return false, err
+	}
+	for _, transaction := range strings.Fields(string(raw)) {
+		if transaction == target {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func containsProperty(raw []byte, name string) bool {
+	for _, candidate := range strings.Fields(string(raw)) {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (p SVNPublisher) youngest(ctx context.Context, repositoryPath string) (int64, error) {

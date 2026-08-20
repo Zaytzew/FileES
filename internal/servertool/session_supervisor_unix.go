@@ -41,24 +41,10 @@ func RunClientSessionChild(args []string, stderr io.Writer) int {
 	if !filepath.IsAbs(svnserve) || !filepath.IsAbs(root) || strings.ContainsAny(svnserve+root, "\r\n") {
 		return ExitUsage
 	}
-	if _, err := uuid.Parse(clientID); err != nil {
+	if id, err := uuid.Parse(clientID); err != nil || id.String() != clientID {
 		return ExitUsage
 	}
-	if len(nonce) != 64 {
-		return ExitUsage
-	}
-	decoded, err := hex.DecodeString(nonce)
-	if err != nil || len(decoded) != 32 {
-		return ExitUsage
-	}
-	gate := os.NewFile(uintptr(3), "filees-session-gate")
-	if gate == nil {
-		return ExitSoftware
-	}
-	defer gate.Close()
-	expected := []byte(nonce)
-	provided := make([]byte, len(expected))
-	if _, err := io.ReadFull(gate, provided); err != nil || subtle.ConstantTimeCompare(provided, expected) != 1 {
+	if err := passSessionGate(nonce); err != nil {
 		return ExitUnavailable
 	}
 	if err := syscall.Setpgid(0, 0); err != nil {
@@ -78,16 +64,85 @@ func RunClientSessionChild(args []string, stderr io.Writer) int {
 	return ExitSoftware
 }
 
-func runSVNSessionSupervisor(config serverconfig.Config, clientID string, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
-	if lease == nil || manager == nil {
-		return 0, errors.New("session supervisor requires an activation lease")
+// RunClientWhaleSessionChild is the gate between the SSH-facing supervisor
+// and the repository worker. The client identity comes only from the forced
+// authorized_keys command; the Whale payload cannot select or replace it.
+func RunClientWhaleSessionChild(args []string, stderr io.Writer) int {
+	if len(args) != 4 {
+		return ExitUsage
 	}
+	workerPath, configPath, clientID, nonce := args[0], args[1], args[2], args[3]
+	if !filepath.IsAbs(workerPath) || !filepath.IsAbs(configPath) || strings.ContainsAny(workerPath+configPath, "\r\n") {
+		return ExitUsage
+	}
+	if id, err := uuid.Parse(clientID); err != nil || id.String() != clientID {
+		return ExitUsage
+	}
+	if err := passSessionGate(nonce); err != nil {
+		return ExitUnavailable
+	}
+	if err := syscall.Setpgid(0, 0); err != nil && !errors.Is(err, syscall.EPERM) {
+		report(stderr, "filees-client-entry Whale child process group", err)
+		return ExitSoftware
+	}
+	// No unveil table is installed here: it survives exec and would prevent
+	// the Whale worker from creating its repository-specific profile.
+	if err := sandboxPledgeForExec("stdio proc exec", whaleExecPromises); err != nil {
+		report(stderr, "filees-client-entry Whale child sandbox", err)
+		return ExitSoftware
+	}
+	argv := []string{filepath.Base(workerPath), "whale-v1", "-config", configPath, clientID}
+	if err := syscall.Exec(workerPath, argv, []string{}); err != nil {
+		report(stderr, "filees-client-entry Whale child exec", err)
+		return ExitSoftware
+	}
+	return ExitSoftware
+}
+
+func passSessionGate(nonce string) error {
+	if len(nonce) != 64 {
+		return errors.New("invalid session nonce")
+	}
+	decoded, err := hex.DecodeString(nonce)
+	if err != nil || len(decoded) != 32 {
+		return errors.New("invalid session nonce")
+	}
+	gate := os.NewFile(uintptr(3), "filees-session-gate")
+	if gate == nil {
+		return errors.New("session gate is unavailable")
+	}
+	defer gate.Close()
+	expected := []byte(nonce)
+	provided := make([]byte, len(expected))
+	if _, err := io.ReadFull(gate, provided); err != nil || subtle.ConstantTimeCompare(provided, expected) != 1 {
+		return errors.New("session gate rejected")
+	}
+	return nil
+}
+
+func runSVNSessionSupervisor(config serverconfig.Config, clientID string, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	root := config.Activation.ServiceRepository
 	if os.Getenv("USER") == "_filees-data" {
 		root = config.Repositories.Root
 	}
 	if !filepath.IsAbs(root) || !filepath.IsAbs(config.Activation.ClientEntryPath) {
 		return 0, errors.New("session supervisor received a non-absolute trusted path")
+	}
+	return runSessionSupervisor(config, clientID, root, manager, lease, stdin, stdout, stderr, startSessionChild)
+}
+
+func runWhaleSessionSupervisor(config serverconfig.Config, clientID string, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	if !filepath.IsAbs(config.Path) || !filepath.IsAbs(config.Activation.ClientEntryPath) {
+		return 0, errors.New("Whale session supervisor received a non-absolute trusted path")
+	}
+	return runSessionSupervisor(config, clientID, "", manager, lease, stdin, stdout, stderr, startWhaleSessionChild)
+}
+
+type sessionChildStarter func(serverconfig.Config, string, string, string, *os.File, *os.File, *os.File, *os.File) (*exec.Cmd, error)
+
+func runSessionSupervisor(config serverconfig.Config, clientID, childRoot string, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer, starter sessionChildStarter) (int, error) {
+	if lease == nil || manager == nil || starter == nil {
+		return 0, errors.New("session supervisor requires an activation lease and child")
 	}
 	nonce, err := sessionNonce()
 	if err != nil {
@@ -120,7 +175,7 @@ func runSVNSessionSupervisor(config serverconfig.Config, clientID string, manage
 		return 0, err
 	}
 
-	cmd, err := startSessionChild(config, clientID, root, nonce, gateRead, childInRead, childOutWrite, childErrWrite)
+	cmd, err := starter(config, clientID, childRoot, nonce, gateRead, childInRead, childOutWrite, childErrWrite)
 	if err != nil {
 		closeSessionPipes(gateRead, gateWrite, childInRead, childInWrite, childOutRead, childOutWrite, childErrRead, childErrWrite)
 		return 0, fmt.Errorf("start session child: %w", err)
@@ -162,6 +217,18 @@ func runSVNSessionSupervisor(config serverconfig.Config, clientID string, manage
 
 var startSessionChild = func(config serverconfig.Config, clientID, root, nonce string, gate, stdin, stdout, stderr *os.File) (*exec.Cmd, error) {
 	cmd := exec.Command(config.Activation.ClientEntryPath, "--session-child", config.Activation.SVNServeBinary, root, clientID, nonce)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+	cmd.ExtraFiles = []*os.File{gate}
+	cmd.Env = []string{}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
+var startWhaleSessionChild sessionChildStarter = func(config serverconfig.Config, clientID, _ string, nonce string, gate, stdin, stdout, stderr *os.File) (*exec.Cmd, error) {
+	cmd := exec.Command(config.Activation.ClientEntryPath, "--whale-session-child", repositoryWorkerPath, config.Path, clientID, nonce)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.ExtraFiles = []*os.File{gate}
 	cmd.Env = []string{}

@@ -1,4 +1,4 @@
-.Dd August 14, 2026
+.Dd August 20, 2026
 .Dt FILEES-WORKER 8
 .Os
 .Sh NAME
@@ -21,6 +21,17 @@ It publishes through a path-scoped Subversion commit under the shared
 service-WC lock.
 Unversioned leftovers from a killed older binary are reconciled before
 the next scan.
+.Pp
+In Whale mode it serves one framed PUT window, status or commit request.
+It keeps the exact durable offset and immutable generation identity in a
+server-owned journal, checks the current client projection, and publishes
+only through
+.Cm svnmucc
+to the reserved
+.Pa .filees-whales
+namespace.
+The worker establishes its own restricted filesystem profile
+after the gated session child execs it.
 .Pp
 Do not run
 .Nm

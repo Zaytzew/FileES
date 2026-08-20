@@ -8,6 +8,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +20,31 @@ import (
 type putAuthority struct {
 	repo   string
 	access string
+}
+
+type blockingPutPublisher struct {
+	mu      sync.Mutex
+	calls   int
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *blockingPutPublisher) PublishWhale(_ context.Context, record *Record, _ Journal, _, _ string) (int64, error) {
+	p.mu.Lock()
+	p.calls++
+	if p.calls == 1 {
+		close(p.started)
+	}
+	p.mu.Unlock()
+	<-p.release
+	record.CommitBaseKnown = true
+	return 91, nil
+}
+
+func (p *blockingPutPublisher) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
 }
 
 func (a putAuthority) ResolveWhale(context.Context, string, string) (RepositoryAccess, error) {
@@ -93,6 +120,61 @@ func TestPutWindowsAckOnlyDurableOffsetThenPublishOnce(t *testing.T) {
 	again, err := service.Commit(context.Background(), "client", identity)
 	if err != nil || again != published || publisher.calls != 1 {
 		t.Fatalf("idempotent commit=%+v calls=%d err=%v", again, publisher.calls, err)
+	}
+}
+
+func TestConcurrentCommitRetriesCannotPublishGenerationTwice(t *testing.T) {
+	stateRoot := t.TempDir()
+	publisher := &blockingPutPublisher{started: make(chan struct{}), release: make(chan struct{})}
+	service := PutService{
+		Journal: Journal{Root: filepath.Join(stateRoot, "journal")}, Queue: PathQueue{Root: filepath.Join(stateRoot, "queues")},
+		Authority: putAuthority{repo: t.TempDir(), access: "rw"}, Reservations: &putReservations{}, Publisher: publisher,
+	}
+	identity := putIdentity([]byte("abcdef"))
+	if _, err := service.ReceiveWindow(context.Background(), "client", putRequest(identity, 0, []byte("abcdef")), bytes.NewReader([]byte("abcdef"))); err != nil {
+		t.Fatal(err)
+	}
+	type outcome struct {
+		result whale.PutResult
+		err    error
+	}
+	outcomes := make(chan outcome, 2)
+	for range 2 {
+		go func() {
+			result, err := service.Commit(context.Background(), "client", identity)
+			outcomes <- outcome{result: result, err: err}
+		}()
+	}
+	select {
+	case <-publisher.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first commit did not reach publisher")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if calls := publisher.callCount(); calls != 1 {
+		t.Fatalf("concurrent commit entered publisher %d times", calls)
+	}
+	close(publisher.release)
+	published, retry := 0, 0
+	for range 2 {
+		got := <-outcomes
+		if got.err != nil {
+			if !strings.Contains(got.err.Error(), "already active") {
+				t.Fatalf("unexpected concurrent commit error: %v", got.err)
+			}
+			retry++
+			continue
+		}
+		if got.result.State != whale.StatePublished || got.result.Revision != 91 {
+			t.Fatalf("commit outcome=%+v err=%v", got.result, got.err)
+		}
+		published++
+	}
+	if calls := publisher.callCount(); calls != 1 {
+		t.Fatalf("serialized retry published %d times", calls)
+	}
+	if published < 1 || published+retry != 2 {
+		t.Fatalf("published=%d retry=%d, want two resolved callers", published, retry)
 	}
 }
 

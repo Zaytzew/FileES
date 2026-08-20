@@ -66,5 +66,5 @@ func projectWhaleOperation(operation whaleclient.Operation) contract.WhaleOperat
 		identity.ExpectedSize = operation.Identity.ExpectedSize
 		identity.SHA256 = operation.Identity.SHA256
 	}
-	return contract.WhaleOperation{OperationID: operation.OperationID, ServerID: operation.ServerID, Direction: string(operation.Direction), Identity: identity, Revision: operation.Revision, SourcePath: operation.SourcePath, DestinationPath: operation.DestinationPath, State: string(operation.State), BytesHave: operation.BytesHave, PublishedRevision: operation.PublishedRevision, LastError: operation.LastError, CreatedAt: operation.CreatedAt, UpdatedAt: operation.UpdatedAt}
+	return contract.WhaleOperation{OperationID: operation.OperationID, ServerID: operation.ServerID, Direction: string(operation.Direction), Identity: identity, Revision: operation.Revision, SourcePath: operation.SourcePath, SpoolRoot: operation.SpoolRoot, SpoolVolumeID: operation.SpoolVolumeID, SpoolDeviceID: operation.SpoolDeviceID, ReservedBytes: operation.ReservedBytes, DestinationPath: operation.DestinationPath, State: string(operation.State), BytesHave: operation.BytesHave, PublishedRevision: operation.PublishedRevision, LastError: operation.LastError, CreatedAt: operation.CreatedAt, UpdatedAt: operation.UpdatedAt}
 }

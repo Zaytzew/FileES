@@ -817,6 +817,10 @@ type WhaleOperation struct {
 	Identity          WhaleIdentity `json:"identity"`
 	Revision          int64         `json:"revision,omitempty"`
 	SourcePath        string        `json:"source_path,omitempty"`
+	SpoolRoot         string        `json:"spool_root,omitempty"`
+	SpoolVolumeID     string        `json:"spool_volume_id,omitempty"`
+	SpoolDeviceID     string        `json:"spool_device_id,omitempty"`
+	ReservedBytes     int64         `json:"reserved_bytes,omitempty"`
 	DestinationPath   string        `json:"destination_path,omitempty"`
 	State             string        `json:"state"`
 	BytesHave         int64         `json:"bytes_have"`

@@ -14,7 +14,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const ioctlVolumeGetVolumeDiskExtents = uint32(0x00560000)
+const (
+	ioctlVolumeGetVolumeDiskExtents = uint32(0x00560000)
+	ioctlStorageGetDeviceNumber     = uint32(0x002d1080)
+)
 
 func (m *Manager) systemSpoolCandidates(sourcePath string) ([]spoolCandidate, error) {
 	rootBuffer := make([]uint16, 512)
@@ -34,7 +37,7 @@ func (m *Manager) systemSpoolCandidates(sourcePath string) ([]spoolCandidate, er
 		}
 		volumeRoot, volumeID, deviceID, identityErr := systemPathIdentity(root)
 		if identityErr != nil {
-			continue
+			return nil, fmt.Errorf("identify fixed volume %s: %w", root, identityErr)
 		}
 		available, availableErr := filesystemAvailable(volumeRoot)
 		if availableErr != nil {
@@ -87,8 +90,16 @@ func volumeDeviceID(root string) (string, error) {
 		return "", err
 	}
 	defer windows.CloseHandle(handle)
-	buffer := make([]byte, 4096)
+	storageNumber := make([]byte, 12)
 	var returned uint32
+	if err := windows.DeviceIoControl(handle, ioctlStorageGetDeviceNumber, nil, 0, &storageNumber[0], uint32(len(storageNumber)), &returned, nil); err == nil && returned >= 12 {
+		deviceNumber := binary.LittleEndian.Uint32(storageNumber[4:8])
+		if deviceNumber != ^uint32(0) {
+			return fmt.Sprintf("disk:%d", deviceNumber), nil
+		}
+	}
+	buffer := make([]byte, 4096)
+	returned = 0
 	if err := windows.DeviceIoControl(handle, ioctlVolumeGetVolumeDiskExtents, nil, 0, &buffer[0], uint32(len(buffer)), &returned, nil); err != nil {
 		return "", err
 	}

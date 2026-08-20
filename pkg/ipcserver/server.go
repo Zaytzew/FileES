@@ -42,6 +42,7 @@ type Server struct {
 	sessionTimeout SessionTimeoutService
 	realmRemoval   RealmRemovalService
 	updates        UpdateService
+	whales         WhaleService
 	activity       ActivitySource
 	lifecycleFn    SystemLifecycleService
 
@@ -142,6 +143,16 @@ type UpdateService interface {
 	Apply(context.Context) (contract.UpdateApplyResult, error)
 }
 
+type WhaleService interface {
+	List(context.Context) ([]contract.WhaleOperation, error)
+	Get(context.Context, string) (contract.WhaleOperation, error)
+	BeginPut(context.Context, contract.WhalePutBeginPayload) (contract.WhaleOperation, error)
+	BeginGet(context.Context, contract.WhaleGetBeginPayload) (contract.WhaleOperation, error)
+	ConfirmGet(context.Context, string) (contract.WhaleOperation, error)
+	Retry(context.Context, string) (contract.WhaleOperation, error)
+	Cancel(context.Context, string, bool) (contract.WhaleOperation, error)
+}
+
 type ActivitySource interface {
 	List() []activity.Entry
 }
@@ -196,7 +207,22 @@ func (s *Server) capabilities() []string {
 	if s.activitySource() != nil {
 		caps = append(caps, contract.CapRepoActivity)
 	}
+	if s.whaleService() != nil {
+		caps = append(caps, contract.CapWhaleList, contract.CapWhaleGet, contract.CapWhalePutBegin, contract.CapWhaleGetBegin, contract.CapWhaleGetConfirm, contract.CapWhaleRetry, contract.CapWhaleCancel)
+	}
 	return caps
+}
+
+func (s *Server) SetWhaleService(service WhaleService) {
+	s.mu.Lock()
+	s.whales = service
+	s.mu.Unlock()
+}
+
+func (s *Server) whaleService() WhaleService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.whales
 }
 
 func (s *Server) SetSystemLifecycleService(service SystemLifecycleService) {

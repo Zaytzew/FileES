@@ -592,6 +592,48 @@ func (c *Client) RepoReservationRelease(ctx context.Context, payload contract.Re
 	return contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) WhaleList(ctx context.Context) (*contract.WhaleListResult, error) {
+	resp, err := c.do(ctx, contract.CmdWhaleList, "", struct{}{})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.WhaleListResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) WhaleGet(ctx context.Context, operationID string) (*contract.WhaleOperation, error) {
+	return c.whaleOperation(ctx, contract.CmdWhaleGet, contract.WhaleOperationPayload{OperationID: operationID})
+}
+
+func (c *Client) WhalePutBegin(ctx context.Context, payload contract.WhalePutBeginPayload) (*contract.WhaleOperation, error) {
+	return c.whaleOperation(ctx, contract.CmdWhalePutBegin, payload)
+}
+
+func (c *Client) WhaleGetBegin(ctx context.Context, payload contract.WhaleGetBeginPayload) (*contract.WhaleOperation, error) {
+	return c.whaleOperation(ctx, contract.CmdWhaleGetBegin, payload)
+}
+
+func (c *Client) WhaleGetConfirm(ctx context.Context, operationID string) (*contract.WhaleOperation, error) {
+	return c.whaleOperation(ctx, contract.CmdWhaleGetConfirm, contract.WhaleOperationPayload{OperationID: operationID})
+}
+
+func (c *Client) WhaleRetry(ctx context.Context, operationID string) (*contract.WhaleOperation, error) {
+	return c.whaleOperation(ctx, contract.CmdWhaleRetry, contract.WhaleOperationPayload{OperationID: operationID})
+}
+
+func (c *Client) WhaleCancel(ctx context.Context, operationID string, removePayload bool) (*contract.WhaleOperation, error) {
+	return c.whaleOperation(ctx, contract.CmdWhaleCancel, contract.WhaleCancelPayload{OperationID: operationID, RemovePayload: removePayload})
+}
+
+func (c *Client) whaleOperation(ctx context.Context, command string, payload any) (*contract.WhaleOperation, error) {
+	resp, err := c.do(ctx, command, "", payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.WhaleOperation
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 // RealmAliasClaim permanently assigns the caller realm's human-facing alias.
 // The daemon intentionally exposes no availability query.
 func (c *Client) RealmAliasClaim(ctx context.Context, serverID, alias string) (*contract.RealmAliasClaimResult, error) {

@@ -15,6 +15,7 @@ import (
 
 type Dispatcher struct {
 	Service  PutService
+	Get      GetService
 	ClientID string
 }
 
@@ -45,6 +46,36 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		return writeResponse(out, whale.Response{Schema: whale.Schema, RequestID: request.RequestID, Operation: request.Operation, Status: "ok", Result: &result})
 	case whale.OpPutStatus:
 		result, err := d.Service.Status(ctx, d.ClientID, request.Identity)
+		if err != nil {
+			return d.writeError(out, request, err)
+		}
+		return writeResponse(out, whale.Response{Schema: whale.Schema, RequestID: request.RequestID, Operation: request.Operation, Status: "ok", Result: &result})
+	case whale.OpGetDiscover:
+		result, err := d.Get.Discover(ctx, d.ClientID, request)
+		if err != nil {
+			return d.writeError(out, request, err)
+		}
+		return writeResponse(out, whale.Response{Schema: whale.Schema, RequestID: request.RequestID, Operation: request.Operation, Status: "ok", Result: &result})
+	case whale.OpGetQuote:
+		result, err := d.Get.Quote(ctx, d.ClientID, request)
+		if err != nil {
+			return d.writeError(out, request, err)
+		}
+		return writeResponse(out, whale.Response{Schema: whale.Schema, RequestID: request.RequestID, Operation: request.Operation, Status: "ok", Result: &result})
+	case whale.OpGetWindow:
+		_, err := d.Get.ServeWindow(ctx, d.ClientID, request, func(result whale.Result, payload io.Reader) error {
+			if err := writeResponse(out, whale.Response{Schema: whale.Schema, RequestID: request.RequestID, Operation: request.Operation, Status: "ok", Result: &result}); err != nil {
+				return err
+			}
+			written, err := io.CopyN(out, payload, result.PayloadSize)
+			if err != nil {
+				return fmt.Errorf("stream Whale GET window after %d of %d bytes: %w", written, result.PayloadSize, err)
+			}
+			return nil
+		})
+		return err
+	case whale.OpGetRelease:
+		result, err := d.Get.Release(ctx, d.ClientID, request)
 		if err != nil {
 			return d.writeError(out, request, err)
 		}

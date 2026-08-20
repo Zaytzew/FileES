@@ -120,11 +120,76 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleNoticeList(req)
 	case contract.CmdNoticeAck:
 		return s.handleNoticeAck(req)
+	case contract.CmdWhaleList, contract.CmdWhaleGet, contract.CmdWhalePutBegin, contract.CmdWhaleGetBegin, contract.CmdWhaleGetConfirm, contract.CmdWhaleRetry, contract.CmdWhaleCancel:
+		return s.handleWhale(req)
 	default:
 		return contract.ErrResponse(req.RequestID,
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleWhale(req contract.Request) contract.Response {
+	service := s.whaleService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "WHALE-1001", "ERROR", "RETRY_BACKOFF", "whale.operation_failed", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var result any
+	var err error
+	switch req.Command {
+	case contract.CmdWhaleList:
+		var operations []contract.WhaleOperation
+		operations, err = service.List(ctx)
+		if operations == nil {
+			operations = []contract.WhaleOperation{}
+		}
+		result = contract.WhaleListResult{Operations: operations}
+	case contract.CmdWhaleGet:
+		var payload contract.WhaleOperationPayload
+		if contract.DecodePayload(req.Payload, &payload) != nil || strings.TrimSpace(payload.OperationID) == "" {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		result, err = service.Get(ctx, payload.OperationID)
+	case contract.CmdWhalePutBegin:
+		var payload contract.WhalePutBeginPayload
+		if contract.DecodePayload(req.Payload, &payload) != nil || !s.whaleRepoMatches(payload.ServerID, payload.RepoID) || !filepath.IsAbs(payload.SourcePath) {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		result, err = service.BeginPut(ctx, payload)
+	case contract.CmdWhaleGetBegin:
+		var payload contract.WhaleGetBeginPayload
+		if contract.DecodePayload(req.Payload, &payload) != nil || !s.whaleRepoMatches(payload.ServerID, payload.RepoID) || !filepath.IsAbs(payload.DestinationPath) {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		result, err = service.BeginGet(ctx, payload)
+	case contract.CmdWhaleGetConfirm, contract.CmdWhaleRetry:
+		var payload contract.WhaleOperationPayload
+		if contract.DecodePayload(req.Payload, &payload) != nil || strings.TrimSpace(payload.OperationID) == "" {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		if req.Command == contract.CmdWhaleGetConfirm {
+			result, err = service.ConfirmGet(ctx, payload.OperationID)
+		} else {
+			result, err = service.Retry(ctx, payload.OperationID)
+		}
+	case contract.CmdWhaleCancel:
+		var payload contract.WhaleCancelPayload
+		if contract.DecodePayload(req.Payload, &payload) != nil || strings.TrimSpace(payload.OperationID) == "" {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		result, err = service.Cancel(ctx, payload.OperationID, payload.RemovePayload)
+	}
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "WHALE-1001", "ERROR", "REQUIRE_ACTION", "whale.operation_failed", map[string]string{"detail": err.Error()})
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) whaleRepoMatches(serverID, repoID string) bool {
+	repo := s.repoByID(repoID)
+	return repo != nil && repo.ServerID() == serverID
 }
 
 func (s *Server) handleRecoveryDownload(req contract.Request) contract.Response {

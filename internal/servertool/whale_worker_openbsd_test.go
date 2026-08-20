@@ -128,6 +128,120 @@ func TestWhaleWorkerNativeSandboxPublishesAcrossSessions(t *testing.T) {
 	if !bytes.Equal(raw, payload) {
 		t.Fatalf("published payload = %q want %q", raw, payload)
 	}
+	// Discovery is relative to a logical snapshot, not necessarily to the
+	// repository revision which published the Whale itself.
+	runWhaleNativeCommand(t, svnmucc, "--non-interactive", "-m", "unrelated r2", "mkdir", "file://"+repository+"/ordinary")
+
+	// A quote is metadata-only: it proves the immutable revision tuple but
+	// does not create seekable cache state.
+	discover := whale.Request{Schema: whale.Schema, RequestID: uuid.NewString(), Operation: whale.OpGetDiscover, Identity: whale.Identity{LogicalRepoID: repoID, LogicalPath: identity.LogicalPath}, Revision: 2}
+	discovered := readWhaleNativeResponse(t, bufio.NewReader(bytes.NewReader(runWhaleWorkerNativeChild(t, configPath, clientID, whaleNativeFrame(t, discover, nil)))))
+	if discovered.Status != "ok" || discovered.Result.Identity == nil || *discovered.Result.Identity != identity || discovered.Result.Revision != 1 {
+		t.Fatalf("GET discovery = %+v", discovered)
+	}
+	quote := whale.Request{Schema: whale.Schema, RequestID: uuid.NewString(), Operation: whale.OpGetQuote, Identity: identity, Revision: 1}
+	quoted := readWhaleNativeResponse(t, bufio.NewReader(bytes.NewReader(runWhaleWorkerNativeChild(t, configPath, clientID, whaleNativeFrame(t, quote, nil)))))
+	if quoted.Status != "ok" || quoted.Result.State != whale.StateAwaitingConfirmation || quoted.Result.ExpectedSize != int64(len(payload)) {
+		t.Fatalf("GET quote = %+v", quoted)
+	}
+	getCacheRoot := filepath.Join(resultsRoot, "whale", "get-cache")
+	if entries, err := os.ReadDir(getCacheRoot); err == nil && len(entries) != 0 {
+		t.Fatalf("quote created GET cache: %v", entries)
+	} else if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+
+	transferID, confirmation := uuid.NewString(), uuid.NewString()
+	readWindow := func(offset, count int64) []byte {
+		t.Helper()
+		request := whale.Request{Schema: whale.Schema, RequestID: uuid.NewString(), Operation: whale.OpGetWindow, Identity: identity, Revision: 1, TransferID: transferID, ConfirmationToken: confirmation, Offset: offset, PayloadSize: count}
+		output := runWhaleWorkerNativeChild(t, configPath, clientID, whaleNativeFrame(t, request, nil))
+		reader := bufio.NewReader(bytes.NewReader(output))
+		response := readWhaleNativeResponse(t, reader)
+		if response.Status != "ok" || response.Result.Offset != offset || response.Result.PayloadSize != count {
+			t.Fatalf("GET window response = %+v", response)
+		}
+		window, err := io.ReadAll(reader)
+		if err != nil || int64(len(window)) != count {
+			t.Fatalf("GET window bytes=%d err=%v", len(window), err)
+		}
+		return window
+	}
+	first := readWindow(0, 7)
+	cachePath := filepath.Join(getCacheRoot, transferID, "payload.ready")
+	cacheBefore, err := os.Stat(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := readWindow(7, int64(len(payload))-7)
+	cacheAfter, err := os.Stat(cachePath)
+	if err != nil || !cacheAfter.ModTime().Equal(cacheBefore.ModTime()) {
+		t.Fatalf("GET resume rematerialized cache: before=%v after=%v err=%v", cacheBefore.ModTime(), cacheAfter.ModTime(), err)
+	}
+	if combined := append(first, second...); !bytes.Equal(combined, payload) {
+		t.Fatalf("resumed GET payload = %q want %q", combined, payload)
+	}
+	release := whale.Request{Schema: whale.Schema, RequestID: uuid.NewString(), Operation: whale.OpGetRelease, Identity: identity, Revision: 1, TransferID: transferID, ConfirmationToken: confirmation}
+	released := readWhaleNativeResponse(t, bufio.NewReader(bytes.NewReader(runWhaleWorkerNativeChild(t, configPath, clientID, whaleNativeFrame(t, release, nil)))))
+	if released.Status != "ok" || released.Result.State != whale.StateLocal {
+		t.Fatalf("GET release = %+v", released)
+	}
+	if _, err := os.Stat(filepath.Join(getCacheRoot, transferID)); !os.IsNotExist(err) {
+		t.Fatalf("released GET cache still exists: %v", err)
+	}
+}
+
+// TestWhaleSSHFixtureSetup creates only an isolated repository/config/view
+// tree for the opt-in desktop Transport E2E. The caller owns and removes Root.
+func TestWhaleSSHFixtureSetup(t *testing.T) {
+	root := os.Getenv("FILEES_WHALE_FIXTURE_ROOT")
+	clientID := os.Getenv("FILEES_WHALE_FIXTURE_CLIENT")
+	repoID := os.Getenv("FILEES_WHALE_FIXTURE_REPO")
+	if root == "" || clientID == "" || repoID == "" {
+		t.Skip("external SSH fixture is not requested")
+	}
+	if !filepath.IsAbs(root) {
+		t.Fatal("fixture root must be absolute")
+	}
+	svn := requireWhaleTool(t, "svn")
+	svnadmin := requireWhaleTool(t, "svnadmin")
+	svnlook := requireWhaleTool(t, "svnlook")
+	svnserve := requireWhaleTool(t, "svnserve")
+	repositoriesRoot := filepath.Join(root, "repositories")
+	repository := filepath.Join(repositoriesRoot, repoID)
+	resultsRoot := filepath.Join(root, "results")
+	serviceWC := filepath.Join(root, "service-wc")
+	serviceRepository := filepath.Join(root, "service-repository")
+	for _, dir := range []string{repositoriesRoot, resultsRoot, serviceWC, serviceRepository, filepath.Join(serviceWC, "clients", clientID)} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runWhaleNativeCommand(t, svnadmin, "create", repository)
+	realmID := uuid.NewString()
+	view := clientview.View{Schema: clientview.Schema, ClientID: clientID, RealmID: realmID, Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", ActiveOperations: []json.RawMessage{}, Repositories: []clientview.Repository{{RepoID: repoID, DisplayName: "SSH E2E", URL: "svn+ssh://_filees-data@filees.test/" + repoID, Access: "rw", State: "active", OwnerRealmID: realmID}}}
+	viewRaw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(serviceWC, "clients", clientID, "view.json"), viewRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	testBinary, _ := filepath.Abs(os.Args[0])
+	config := serverconfig.File{
+		Schema: serverconfig.Schema, Root: filepath.Join(root, "onboarding"), OTPPepperFile: filepath.Join(root, "pepper"), OperationTTL: "30m", OTPAttempts: 3, ReversePortFirst: 42000, ReversePortLast: 42000,
+		Activation:   serverconfig.ActivationFile{Root: filepath.Join(root, "activation"), SessionRoot: filepath.Join(root, "sessions"), AuthorizedKeysFile: filepath.Join(root, "activation", "authorized_keys"), AuthzFile: filepath.Join(root, "activation", "service.authz"), ServiceWorkingCopy: serviceWC, ServiceRepository: serviceRepository, RepositoryName: "filees-service", ClientEntryPath: testBinary, SVNBinary: svn, SVNServeBinary: svnserve},
+		Repositories: serverconfig.RepositoryFile{Root: repositoriesRoot, ResultsRoot: resultsRoot, DataAuthzFile: filepath.Join(root, "activation", "data.authz"), SVNAdminBinary: svnadmin, SVNLookBinary: svnlook, URLPrefix: "svn+ssh://_filees-data@filees.test/", DeletionArchiveRoot: filepath.Join(root, "deleted"), RecoveryAdminContact: "admin@example.test"},
+		Invitation:   serverconfig.InvitationFile{ServerID: "whale-ssh-e2e", ServerAddress: "127.0.0.1", KnownHost: "[filees.test]:22 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+		SMTP:         serverconfig.SMTPFile{Address: "127.0.0.1:2525", ClientName: "filees.test", From: "filees@example.test", MessageIDDomain: "filees.test", TLS: "none"},
+	}
+	configRaw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "server.json"), configRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func requireWhaleTool(t *testing.T, name string) string {

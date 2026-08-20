@@ -84,6 +84,16 @@ const (
 
 	// Event streaming
 	CmdEventsSubscribe = "events.subscribe" // switch connection to event push mode
+
+	// Whale operations are editor-neutral intents. GUI, CAD and other 3rd
+	// party plugins all observe and mutate the same daemon-owned actor state.
+	CmdWhaleList       = "whale.list"
+	CmdWhaleGet        = "whale.get"
+	CmdWhalePutBegin   = "whale.put_begin"
+	CmdWhaleGetBegin   = "whale.get_begin"
+	CmdWhaleGetConfirm = "whale.get_confirm"
+	CmdWhaleRetry      = "whale.retry"
+	CmdWhaleCancel     = "whale.cancel"
 )
 
 // Capability constants — the daemon advertises which commands are active (§12).
@@ -134,6 +144,13 @@ const (
 	CapNoticeAck               = "notice.ack"
 	CapSystemRestart           = "system.restart"
 	CapSystemShutdown          = "system.shutdown"
+	CapWhaleList               = "whale.list"
+	CapWhaleGet                = "whale.get"
+	CapWhalePutBegin           = "whale.put_begin"
+	CapWhaleGetBegin           = "whale.get_begin"
+	CapWhaleGetConfirm         = "whale.get_confirm"
+	CapWhaleRetry              = "whale.retry"
+	CapWhaleCancel             = "whale.cancel"
 
 	// Update capabilities are advertised only after the daemon wires a signed
 	// release checker and transactional platform installer.
@@ -781,4 +798,63 @@ type RepoReservationReleasePayload struct {
 	Path          string `json:"path"`
 	ExpectedToken string `json:"expected_token"`
 	ConfirmRisk   bool   `json:"confirm_risk,omitempty"`
+}
+
+type WhaleIdentity struct {
+	LogicalRepoID string `json:"logical_repo_id"`
+	LogicalPath   string `json:"logical_path"`
+	GenerationID  string `json:"generation_id"`
+	ExpectedSize  int64  `json:"expected_size"`
+	SHA256        string `json:"sha256"`
+}
+
+// WhaleOperation is the complete renderer-facing projection. No GUI-local
+// transition is authoritative; reconnecting clients rebuild from this value.
+type WhaleOperation struct {
+	OperationID       string        `json:"operation_id"`
+	ServerID          string        `json:"server_id"`
+	Direction         string        `json:"direction"`
+	Identity          WhaleIdentity `json:"identity"`
+	Revision          int64         `json:"revision,omitempty"`
+	SourcePath        string        `json:"source_path,omitempty"`
+	DestinationPath   string        `json:"destination_path,omitempty"`
+	State             string        `json:"state"`
+	BytesHave         int64         `json:"bytes_have"`
+	PublishedRevision int64         `json:"published_revision,omitempty"`
+	LastError         string        `json:"last_error,omitempty"`
+	CreatedAt         string        `json:"created_at"`
+	UpdatedAt         string        `json:"updated_at"`
+}
+
+type WhaleListResult struct {
+	Operations []WhaleOperation `json:"operations"`
+}
+
+type WhaleOperationPayload struct {
+	OperationID string `json:"operation_id"`
+}
+
+type WhaleCancelPayload struct {
+	OperationID   string `json:"operation_id"`
+	RemovePayload bool   `json:"remove_payload,omitempty"`
+}
+
+type WhalePutBeginPayload struct {
+	ServerID    string `json:"server_id"`
+	RepoID      string `json:"repo_id"`
+	LogicalPath string `json:"logical_path"`
+	SourcePath  string `json:"source_path"`
+}
+
+type WhaleGetBeginPayload struct {
+	ServerID    string `json:"server_id"`
+	RepoID      string `json:"repo_id"`
+	LogicalPath string `json:"logical_path"`
+	// Generation fields are optional. Without them the actor performs a
+	// metadata-only discovery at Revision before asking for confirmation.
+	GenerationID    string `json:"generation_id,omitempty"`
+	ExpectedSize    int64  `json:"expected_size,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
+	Revision        int64  `json:"revision"`
+	DestinationPath string `json:"destination_path"`
 }

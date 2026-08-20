@@ -30,6 +30,7 @@ import (
 	"filees/pkg/shout"
 	"filees/pkg/talk"
 	"filees/pkg/tickets"
+	"filees/pkg/whaleclient"
 )
 
 var version = "dev"
@@ -139,6 +140,19 @@ func runDaemon() {
 
 	// IPC contract server
 	ipc := ipcserver.New(ipcserver.DefaultSocketPath())
+	whaleManager, err := whaleclient.NewManager(whaleclient.DefaultRoot(), profiles)
+	if err != nil {
+		lg.Errorf("Whale actor: %v", err)
+		os.Exit(1)
+	}
+	whaleManager.OnChange = func(operation whaleclient.Operation) {
+		ipc.Emit(contract.NewEvent("", 0, contract.EvWhaleChanged, operation.LogicalRepoID, projectWhaleOperation(operation)))
+	}
+	ipc.SetWhaleService(whaleIPCService{manager: whaleManager, daemon: ctx})
+	if err := whaleManager.Resume(ctx); err != nil {
+		lg.Errorf("Whale actor recovery: %v", err)
+		os.Exit(1)
+	}
 	lifecycle := &daemonLifecycle{cancel: cancel}
 	ipc.SetSystemLifecycleService(lifecycle)
 	if err := configureClientUpdate(ipc, clientView.Update, version); err != nil {
@@ -190,6 +204,7 @@ func runDaemon() {
 	ipc.SetRealmRemovalService(realmRemovalClientService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), registry: recoveryRegistry})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
 		provisioner.AddProfile(profile)
+		whaleManager.AddProfile(profile)
 		select {
 		case profileEvents <- profile:
 		case <-ctx.Done():

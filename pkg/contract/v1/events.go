@@ -17,6 +17,7 @@ const (
 	EvErrorRaised         = "error.raised"
 	EvActivationChanged   = "activation.changed"
 	EvProjectionChanged   = "projection.changed"
+	EvWhaleChanged        = "whale.changed"
 	EvActivityChanged     = "activity.changed"
 )
 

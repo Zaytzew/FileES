@@ -28,6 +28,19 @@ func TestRepositorySVNMuccIsSiblingOfConfiguredSVNAdmin(t *testing.T) {
 	}
 }
 
+func TestRepositoryWhaleRootDefaultsAndCanUseCapacityFilesystem(t *testing.T) {
+	results := filepath.Join(string(filepath.Separator), "var", "filees", "results")
+	repository := RepositoryFile{ResultsRoot: results}
+	if got, want := repository.EffectiveWhaleRoot(), filepath.Join(results, "whale"); got != want {
+		t.Fatalf("default whale root=%q want=%q", got, want)
+	}
+	capacity := filepath.Join(string(filepath.Separator), "storage", "filees-whale")
+	repository.WhaleRoot = capacity
+	if got := repository.EffectiveWhaleRoot(); got != capacity {
+		t.Fatalf("explicit whale root=%q want=%q", got, capacity)
+	}
+}
+
 func TestPublicShareServerBoundaryRequiresHTTPSAndLoopbackOrUnix(t *testing.T) {
 	root := t.TempDir()
 	valid := PublicSharesFile{Enabled: true, BaseURL: "https://get.example.test", StateRoot: filepath.Join(root, "state"), FrostKeyFile: filepath.Join(root, "frost.key"), AuthorityStagingRoot: filepath.Join(root, "staging"), BackchannelNetwork: "tcp", BackchannelAddress: "127.0.0.1:9010"}

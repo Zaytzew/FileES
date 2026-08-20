@@ -80,6 +80,7 @@ type ActivationFile struct {
 type RepositoryFile struct {
 	Root                  string `json:"root,omitempty"`
 	ResultsRoot           string `json:"results_root,omitempty"`
+	WhaleRoot             string `json:"whale_root,omitempty"`
 	DataAuthzFile         string `json:"data_authz_file,omitempty"`
 	SVNAdminBinary        string `json:"svnadmin_binary,omitempty"`
 	SVNLookBinary         string `json:"svnlook_binary,omitempty"`
@@ -89,6 +90,16 @@ type RepositoryFile struct {
 	DeletionRetentionDays *int   `json:"deletion_retention_days,omitempty"`
 	RecoveryAdminContact  string `json:"recovery_admin_contact"`
 	DataErasureMaxDays    *int   `json:"data_erasure_max_days,omitempty"`
+}
+
+// EffectiveWhaleRoot keeps existing installations compatible while allowing
+// large operational payloads to live on a capacity filesystem separate from
+// the small repository-control journal.
+func (repository RepositoryFile) EffectiveWhaleRoot() string {
+	if repository.WhaleRoot != "" {
+		return filepath.Clean(repository.WhaleRoot)
+	}
+	return filepath.Join(repository.ResultsRoot, "whale")
 }
 
 // EffectiveSVNLookBinary returns the configured svnlook path, or — since
@@ -394,6 +405,9 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if config.Repositories.DeletionArchiveRoot != "" && !filepath.IsAbs(config.Repositories.DeletionArchiveRoot) {
 		return Config{}, errors.New("repositories deletion_archive_root must be absolute")
+	}
+	if config.Repositories.WhaleRoot != "" && !filepath.IsAbs(config.Repositories.WhaleRoot) {
+		return Config{}, errors.New("repositories whale_root must be absolute")
 	}
 	if _, err := onboarding.CanonicalEmail(config.Repositories.RecoveryAdminContact); err != nil {
 		return Config{}, errors.New("repositories recovery_admin_contact must be a plain mailbox address")

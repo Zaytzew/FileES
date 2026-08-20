@@ -21,6 +21,15 @@ var (
 	ErrDigestMismatch = errors.New("Whale digest mismatch")
 )
 
+type InsufficientSpaceError struct {
+	AvailableBytes int64
+	RequiredBytes  int64
+}
+
+func (e InsufficientSpaceError) Error() string { return "Whale storage reservation does not fit" }
+
+func (e InsufficientSpaceError) Unwrap() error { return repoworker.ErrReservationUnavailable }
+
 type RepositoryAccess struct {
 	RepositoryPath string
 	Access         string
@@ -84,7 +93,7 @@ func (s PutService) ServeWindow(ctx context.Context, clientID string, request wh
 		if record.State != whale.StateReceiving || record.BytesHave != request.Offset {
 			return ErrOffsetConflict
 		}
-		if _, _, _, err := s.Reservations.Reserve(ctx, record.Identity.GenerationID, record.Identity.ExpectedSize, s.now()); err != nil {
+		if err := s.reserve(ctx, record.Identity.GenerationID, record.Identity.ExpectedSize); err != nil {
 			return err
 		}
 		if ready != nil {
@@ -144,7 +153,7 @@ func (s PutService) commitLocked(ctx context.Context, clientID string, identity 
 	if record.State.Terminal() {
 		return result(record), errors.New("Whale PUT is terminal")
 	}
-	if _, _, _, err := s.Reservations.Reserve(ctx, record.Identity.GenerationID, record.Identity.ExpectedSize, s.now()); err != nil {
+	if err := s.reserve(ctx, record.Identity.GenerationID, record.Identity.ExpectedSize); err != nil {
 		return result(record), err
 	}
 	payloadPath, err := s.Journal.PayloadPath(record.Identity.GenerationID)
@@ -173,6 +182,14 @@ func (s PutService) commitLocked(ctx context.Context, clientID string, identity 
 		return result(record), err
 	}
 	return result(record), s.cleanup(record.Identity)
+}
+
+func (s PutService) reserve(ctx context.Context, operationID string, contentBytes int64) error {
+	available, required, _, err := s.Reservations.Reserve(ctx, operationID, contentBytes, s.now())
+	if errors.Is(err, repoworker.ErrReservationUnavailable) {
+		return InsufficientSpaceError{AvailableBytes: available, RequiredBytes: required}
+	}
+	return err
 }
 
 func (s PutService) Status(ctx context.Context, clientID string, identity whale.Identity) (whale.PutResult, error) {

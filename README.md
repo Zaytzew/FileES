@@ -453,13 +453,16 @@ pkg/provisioning/        create/attach/initial-commit state machine
 pkg/reposupervisor/      uruchamianie i rekoncyliacja wielu repozytoriów
 pkg/watcher,commit/      skanowanie, batching, update i publikacja SVN
 pkg/passport/            needs-lock, lease, fencing i migracje polityki edycji
+pkg/shout/               marker wydania w svn:log i lokalny inbox komunikatów
+pkg/errcat,errmap/       wspólny język błędów i klasyfikacja diagnostyki
 
 pkg/control/v1/          podpisywane żądania klient -> worker
 pkg/repoworker/          autorytatywne repozytoria, granty i projekcje
 internal/servertool/     forced-command entrypoints i operacje serwera
 pkg/onboarding,activation/ aktywacja, tożsamość i service repo
+cmd/filees-service-wc-corrector/ korekta owner/group usługowej WC przed ticketem
 
-internal/mobileworker/   append-only klient mobilny
+internal/mobileworker/   mobilny odczyt i capture pod mobile-uploads, w tym UPLOAD_TREE
 cmd/filees-public-authority/ publiczne udziały i ich osobna granica zaufania
 internal/clientupdate/   podpisany updater desktopu
 internal/serverinstall/  rdzeń manifestowego instalatora serwera

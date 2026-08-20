@@ -22,6 +22,31 @@ type clientviewWhaleAuthority struct {
 	RepositoriesRoot string
 }
 
+// whaleStorageCapacity admits a reservation only when both the operational
+// cache filesystem and the FSFS repository filesystem can carry it. They are
+// often one volume, but a separate ResultsRoot must not make either check lie.
+type whaleStorageCapacity struct{ Roots []string }
+
+func (c whaleStorageCapacity) Check(ctx context.Context, contentBytes int64) (int64, int64, error) {
+	var available, required int64
+	for index, root := range c.Roots {
+		currentAvailable, currentRequired, err := (repoworker.FilesystemCapacity{Root: root}).Check(ctx, contentBytes)
+		if err != nil {
+			return 0, 0, err
+		}
+		if index == 0 || currentAvailable < available {
+			available = currentAvailable
+		}
+		if currentRequired > required {
+			required = currentRequired
+		}
+	}
+	if len(c.Roots) == 0 {
+		return 0, 0, errors.New("Whale capacity roots are missing")
+	}
+	return available, required, nil
+}
+
 func (a clientviewWhaleAuthority) ResolveWhale(_ context.Context, clientID, repoID string) (whaleworker.RepositoryAccess, error) {
 	view, err := clientview.Load(filepath.Join(a.ServiceWC, "clients", clientID, "view.json"))
 	if err != nil || view.ClientID != clientID {
@@ -77,14 +102,17 @@ func runWhaleWorker(configPath string, args []string, in io.Reader, out, stderr 
 		report(stderr, "Whale worker sandbox", err)
 		return ExitSoftware
 	}
+	reservations := &repoworker.FileReservationLedger{Root: filepath.Join(stateRoot, "reservations"), Capacity: whaleStorageCapacity{Roots: []string{r.Root, stateRoot}}}
+	authority := clientviewWhaleAuthority{ServiceWC: config.Activation.ServiceWorkingCopy, RepositoriesRoot: r.Root}
 	service := whaleworker.PutService{
 		Journal:      whaleworker.Journal{Root: filepath.Join(stateRoot, "generations")},
 		Queue:        whaleworker.PathQueue{Root: filepath.Join(stateRoot, "queues")},
-		Authority:    clientviewWhaleAuthority{ServiceWC: config.Activation.ServiceWorkingCopy, RepositoriesRoot: r.Root},
-		Reservations: &repoworker.FileReservationLedger{Root: filepath.Join(stateRoot, "reservations"), Capacity: repoworker.FilesystemCapacity{Root: r.Root}},
+		Authority:    authority,
+		Reservations: reservations,
 		Publisher:    whaleworker.SVNPublisher{SVNMucc: r.EffectiveSVNMuccBinary(), SVNLook: r.EffectiveSVNLookBinary(), SVNAdmin: r.SVNAdminBinary},
 	}
-	dispatcher := whaleworker.Dispatcher{Service: service, ClientID: args[0]}
+	get := whaleworker.GetService{Root: filepath.Join(stateRoot, "get-cache"), Authority: authority, Reservations: reservations, Source: whaleworker.SVNGetSource{SVNLook: r.EffectiveSVNLookBinary()}}
+	dispatcher := whaleworker.Dispatcher{Service: service, Get: get, ClientID: args[0]}
 	if err := dispatcher.Serve(context.Background(), in, out); err != nil {
 		report(stderr, "Whale worker", err)
 		return ExitData

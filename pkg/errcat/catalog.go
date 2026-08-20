@@ -169,7 +169,7 @@ var specs = []Spec{
 	{"MOBILE-2003", KeyMobileTreeNotAPack, SevError, HintNone, nil, "UPLOAD_TREE payload is a repository zip, not a FileES tree pack", "To zwykły plik ZIP, nie paczka FileES. Taki artefakt idzie jako jeden obiekt, nie jako drzewo."},
 	{"MOBILE-2004", KeyMobileTreeCorrupt, SevError, HintRetry, nil, "UPLOAD_TREE zip sha256 or size does not match the header", "Paczka uszkodziła się w transporcie (sha256 nie zgadza się z nagłówkiem). Nic nie zapisano — wyślij folder jeszcze raz."},
 
-	{"WHALE-1001", KeyWhaleFailed, SevError, HintRetryBackoff, nil, "Whale operation failed", "Operacja dużego pliku nie powiodła się"},
+	{"WHALE-1001", KeyWhaleFailed, SevError, HintRetryBackoff, []string{"detail"}, "Whale operation failed", "Operacja dużego pliku nie powiodła się"},
 	{"WHALE-2001", KeyWhalePathBusy, SevWarn, HintRetryBackoff, []string{"queue_position"}, "Another Whale generation owns this path", "Inna publikacja tego dużego pliku jest w toku"},
 	{"WHALE-2002", KeyWhaleAccessDenied, SevError, HintNone, nil, "Whale repository access denied", "Brak uprawnień do tej operacji na dużym pliku"},
 	{"WHALE-2003", KeyWhaleOffsetConflict, SevWarn, HintRetryLocal, []string{"offset"}, "Whale resume offset conflicts with durable state", "Wznawianie dużego pliku wymaga aktualnego offsetu serwera"},

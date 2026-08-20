@@ -463,9 +463,10 @@ pkg/errcat,errmap/       wspólny język błędów i klasyfikacja diagnostyki
 
 pkg/control/v1/          podpisywane żądania klient -> worker
 pkg/whale/v1/            kanon generacji i framing windowed Whale
+pkg/whaleclient/         trwały aktor/spool oraz pinowany transport SSH PUT/GET
 pkg/repoworker/          autorytatywne repozytoria, granty i projekcje
 internal/servertool/     forced-command entrypoints, lease/revoke supervisor i operacje serwera
-internal/whaleworker/    journal, FIFO, PUT/recovery i svnmucc file://
+internal/whaleworker/    PUT, świadomy GET, seekowalny cache i svnmucc file://
 pkg/onboarding,activation/ aktywacja, tożsamość i service repo
 cmd/filees-service-wc-corrector/ korekta owner/group usługowej WC przed ticketem
 
@@ -618,6 +619,16 @@ podpisane aktualizacje, aktywację/pairing, lifecycle repozytoriów (w tym
 `repo.revoke_access`, `realm.grant_recipients`, `realm.set_visibility`),
 aktywność, `repo.lock`, `repo.unlock`, `repo.reservation_list`,
 `repo.reservation_release`, `error.list` i `events.subscribe`.
+Po wpięciu trwałego aktora daemon reklamuje także `whale.list`, `whale.get`,
+`whale.put_begin`, `whale.get_begin`, `whale.get_confirm`, `whale.retry` i
+`whale.cancel`. Są to intencje neutralne wobec edytora: GUI, helper CAD i inna
+wtyczka 3rd party obserwują ten sam zapisany stan, a event `whale.changed` jest
+jedynie sygnałem do ponownego pobrania projekcji.
+
+`whale.get_begin` może przyjąć pełną tożsamość generacji albo tylko repo,
+logiczną ścieżkę i rewizję snapshotu. W drugim wariancie serwer wykonuje
+metadata-only `GET_DISCOVER`, wycenia rozmiar i SHA, ale nie rezerwuje miejsca
+i nie tworzy cache. Bajty mogą ruszyć dopiero po `whale.get_confirm`.
 
 ### IPC Client (`pkg/ipcclient`)
 
@@ -708,6 +719,7 @@ Daemon tworzy katalog `.filees/` wewnątrz kopii roboczej:
         └── repo/               # blokady RepoMutex
 
 $XDG_RUNTIME_DIR/filees.sock   # gniazdo IPC daemona (lub ~/.filees/daemon.sock)
+$XDG_DATA_HOME/filees/whales/ # operacje aktora, PUT payload.ready i stan resume
 ```
 
 ---
@@ -771,13 +783,14 @@ Wzorce z `!` na początku są "twardymi" ignorami — przy katalogu powodują po
 | `pkg/contract/v1` | Typy protokołu IPC (`filees.contract/v1`) |
 | `pkg/control/v1` | Wersjonowane koperty ticket/result control plane (`filees.control/v1`) |
 | `pkg/whale/v1` | Kanon ścieżki/generacji, stany i framing transportu Whale |
+| `pkg/whaleclient` | Trwały aktor PUT/GET, spool/partial, dokładne offsety i pinowany SSH |
 | `pkg/provisioning` | Trwała maszyna stanów tworzenia repo i initial commit |
 | `pkg/clientview` | Ścisłe dekodowanie projekcji instalacji z service repo |
 | `pkg/localrepo` | Trwały lifecycle lokalnych przypięć i ścieżek WC |
 | `pkg/reposupervisor` | Dynamiczne uruchamianie, zatrzymywanie i rekoncyliacja repozytoriów |
 | `pkg/passport` | Passporty edycji, fencing i migracja `svn:needs-lock` |
 | `pkg/repoworker` | Kanoniczne rekordy repozytoriów, granty, polityki i projekcje |
-| `internal/whaleworker` | Serwerowy journal, FIFO, windowed PUT i idempotentny commit Whale; zdalne sesje nadzoruje `internal/servertool` |
+| `internal/whaleworker` | Serwerowy PUT/commit, metadata-only discovery/quote, seekowalny GET cache i jego retencja; sesje nadzoruje `internal/servertool` |
 | `pkg/ipcserver` | Serwer gniazda Unix dla CLI/GUI |
 | `pkg/ipcclient` | Klient IPC używany przez CLI i GUI |
 | `contracttests` | Przekrojowa bramka zgodności kopert, capability i round-trip IPC |

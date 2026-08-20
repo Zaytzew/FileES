@@ -23,18 +23,25 @@ const (
 type Operation string
 
 const (
-	OpPutWindow Operation = "PUT_WINDOW"
-	OpPutCommit Operation = "PUT_COMMIT"
-	OpPutStatus Operation = "PUT_STATUS"
+	OpPutWindow   Operation = "PUT_WINDOW"
+	OpPutCommit   Operation = "PUT_COMMIT"
+	OpPutStatus   Operation = "PUT_STATUS"
+	OpGetDiscover Operation = "GET_DISCOVER"
+	OpGetQuote    Operation = "GET_QUOTE"
+	OpGetWindow   Operation = "GET_WINDOW"
+	OpGetRelease  Operation = "GET_RELEASE"
 )
 
 type Request struct {
-	Schema      string    `json:"schema"`
-	RequestID   string    `json:"request_id"`
-	Operation   Operation `json:"operation"`
-	Identity    Identity  `json:"identity"`
-	Offset      int64     `json:"offset,omitempty"`
-	PayloadSize int64     `json:"payload_size,omitempty"`
+	Schema            string    `json:"schema"`
+	RequestID         string    `json:"request_id"`
+	Operation         Operation `json:"operation"`
+	Identity          Identity  `json:"identity"`
+	Revision          int64     `json:"revision,omitempty"`
+	TransferID        string    `json:"transfer_id,omitempty"`
+	ConfirmationToken string    `json:"confirmation_token,omitempty"`
+	Offset            int64     `json:"offset,omitempty"`
+	PayloadSize       int64     `json:"payload_size,omitempty"`
 }
 
 type Response struct {
@@ -42,16 +49,26 @@ type Response struct {
 	RequestID string     `json:"request_id"`
 	Operation Operation  `json:"operation"`
 	Status    string     `json:"status"`
-	Result    *PutResult `json:"result,omitempty"`
+	Result    *Result    `json:"result,omitempty"`
 	Error     *ErrorBody `json:"error,omitempty"`
 }
 
-type PutResult struct {
-	GenerationID string `json:"generation_id"`
-	Offset       int64  `json:"offset"`
-	State        State  `json:"state"`
-	Revision     int64  `json:"revision,omitempty"`
+type Result struct {
+	GenerationID string    `json:"generation_id"`
+	TransferID   string    `json:"transfer_id,omitempty"`
+	Offset       int64     `json:"offset"`
+	State        State     `json:"state"`
+	Revision     int64     `json:"revision,omitempty"`
+	ExpectedSize int64     `json:"expected_size,omitempty"`
+	SHA256       string    `json:"sha256,omitempty"`
+	Identity     *Identity `json:"identity,omitempty"`
+	PayloadSize  int64     `json:"payload_size,omitempty"`
+	ExpiresAt    string    `json:"expires_at,omitempty"`
 }
+
+// PutResult preserves the source API used by the PUT worker while both wire
+// directions share one result envelope.
+type PutResult = Result
 
 type ErrorBody struct {
 	Code    string            `json:"code"`
@@ -67,11 +84,22 @@ func (r Request) Validate() error {
 	if id, err := uuid.Parse(r.RequestID); err != nil || id.String() != r.RequestID {
 		return errors.New("request_id must be a canonical UUID")
 	}
-	if err := r.Identity.Validate(); err != nil {
+	if r.Operation == OpGetDiscover {
+		if !canonicalUUID(r.Identity.LogicalRepoID) || ValidateLogicalPath(r.Identity.LogicalPath) != nil || r.Identity.GenerationID != "" || r.Identity.ExpectedSize != 0 || r.Identity.SHA256 != "" {
+			return errors.New("GET discovery requires only logical repository and path")
+		}
+	} else if err := r.Identity.Validate(); err != nil {
 		return err
 	}
 	switch r.Operation {
+	case OpGetDiscover:
+		if r.Revision < 1 || r.TransferID != "" || r.ConfirmationToken != "" || r.Offset != 0 || r.PayloadSize != 0 {
+			return errors.New("GET discovery requires only a positive snapshot revision")
+		}
 	case OpPutWindow:
+		if r.Revision != 0 || r.TransferID != "" || r.ConfirmationToken != "" {
+			return errors.New("PUT window cannot carry GET fields")
+		}
 		if err := ValidateOffset(r.Offset, r.Identity.ExpectedSize); err != nil {
 			return err
 		}
@@ -79,13 +107,36 @@ func (r Request) Validate() error {
 			return fmt.Errorf("payload_size must fit the generation and be in range 1..%d", MaxWindowBytes)
 		}
 	case OpPutCommit, OpPutStatus:
-		if r.Offset != 0 || r.PayloadSize != 0 {
+		if r.Revision != 0 || r.TransferID != "" || r.ConfirmationToken != "" || r.Offset != 0 || r.PayloadSize != 0 {
 			return errors.New("status and commit requests cannot carry offset or payload")
+		}
+	case OpGetQuote:
+		if r.Revision < 1 || r.TransferID != "" || r.ConfirmationToken != "" || r.Offset != 0 || r.PayloadSize != 0 {
+			return errors.New("GET quote requires only a positive revision")
+		}
+	case OpGetWindow:
+		if r.Revision < 1 || !canonicalUUID(r.TransferID) || !canonicalUUID(r.ConfirmationToken) {
+			return errors.New("GET window requires revision, transfer_id and confirmation_token")
+		}
+		if err := ValidateOffset(r.Offset, r.Identity.ExpectedSize); err != nil {
+			return err
+		}
+		if r.PayloadSize < 1 || r.PayloadSize > MaxWindowBytes || r.PayloadSize > r.Identity.ExpectedSize-r.Offset {
+			return fmt.Errorf("payload_size must fit the generation and be in range 1..%d", MaxWindowBytes)
+		}
+	case OpGetRelease:
+		if r.Revision < 1 || !canonicalUUID(r.TransferID) || !canonicalUUID(r.ConfirmationToken) || r.Offset != 0 || r.PayloadSize != 0 {
+			return errors.New("GET release requires revision, transfer_id and confirmation_token only")
 		}
 	default:
 		return fmt.Errorf("unsupported Whale operation %q", r.Operation)
 	}
 	return nil
+}
+
+func canonicalUUID(value string) bool {
+	id, err := uuid.Parse(value)
+	return err == nil && id.String() == value
 }
 
 func ParseRequest(raw []byte) (Request, error) {

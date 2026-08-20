@@ -39,3 +39,15 @@ func TestPutWindowCannotClaimPastGenerationEnd(t *testing.T) {
 		t.Fatal("oversized window accepted")
 	}
 }
+
+func TestGetDiscoveryAcceptsOnlyLogicalTargetAndSnapshot(t *testing.T) {
+	identity := validIdentity()
+	request := Request{Schema: Schema, RequestID: uuid.NewString(), Operation: OpGetDiscover, Identity: Identity{LogicalRepoID: identity.LogicalRepoID, LogicalPath: identity.LogicalPath}, Revision: 17}
+	if err := request.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	request.Identity.GenerationID = identity.GenerationID
+	if err := request.Validate(); err == nil {
+		t.Fatal("GET discovery accepted caller-supplied generation")
+	}
+}

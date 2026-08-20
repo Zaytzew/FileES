@@ -286,7 +286,7 @@ func TestWhaleWorkerProfileIsClosedToRequiredTrees(t *testing.T) {
 	for label, want := range map[string]obsandbox.Path{
 		"service-working-copy": {Label: "service-working-copy", Name: serviceWC, Perms: "r"},
 		"repository-root":      {Label: "repository-root", Name: repositoriesRoot, Perms: "rwc"},
-		"whale-state":          {Label: "whale-state", Name: filepath.Join(resultsRoot, "whale"), Perms: "rwc"},
+		"whale-operational":    {Label: "whale-operational", Name: filepath.Join(resultsRoot, "whale"), Perms: "rwc"},
 		"svnmucc":              {Label: "svnmucc", Name: filepath.Join(filepath.Dir(svnadmin), "svnmucc"), Perms: "rx"},
 		"svnlook":              {Label: "svnlook", Name: filepath.Join(filepath.Dir(svnadmin), "svnlook"), Perms: "rx"},
 		"svnadmin":             {Label: "svnadmin", Name: svnadmin, Perms: "rx"},

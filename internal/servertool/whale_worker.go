@@ -24,7 +24,7 @@ type clientviewWhaleAuthority struct {
 
 // whaleStorageCapacity admits a reservation only when both the operational
 // cache filesystem and the FSFS repository filesystem can carry it. They are
-// often one volume, but a separate ResultsRoot must not make either check lie.
+// often one volume, but a separate WhaleRoot must not make either check lie.
 type whaleStorageCapacity struct{ Roots []string }
 
 func (c whaleStorageCapacity) Check(ctx context.Context, contentBytes int64) (int64, int64, error) {
@@ -93,7 +93,7 @@ func runWhaleWorker(configPath string, args []string, in io.Reader, out, stderr 
 		fmt.Fprintln(stderr, "Whale worker: repository configuration is incomplete")
 		return ExitConfig
 	}
-	stateRoot := filepath.Join(r.ResultsRoot, "whale")
+	stateRoot := r.EffectiveWhaleRoot()
 	if err := os.MkdirAll(stateRoot, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 		report(stderr, "Whale worker state", err)
 		return ExitConfig
@@ -128,7 +128,7 @@ func whaleWorkerProfile(config serverconfig.Config, configPath, stateRoot string
 		{Label: "service-working-copy", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},
 		{Label: "repository-root-parent", Name: filepath.Dir(r.Root), Perms: "r"},
 		{Label: "repository-root", Name: r.Root, Perms: "rwc"},
-		{Label: "whale-state", Name: stateRoot, Perms: "rwc"},
+		{Label: "whale-operational", Name: stateRoot, Perms: "rwc"},
 		{Label: "svnmucc", Name: r.EffectiveSVNMuccBinary(), Perms: "rx"},
 		{Label: "svnlook", Name: r.EffectiveSVNLookBinary(), Perms: "rx"},
 		{Label: "svnadmin", Name: r.SVNAdminBinary, Perms: "rx"},

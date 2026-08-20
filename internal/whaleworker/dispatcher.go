@@ -89,6 +89,7 @@ func (d Dispatcher) writeError(out io.Writer, request whale.Request, err error) 
 	key := errcat.KeyWhaleFailed
 	details := map[string]string(nil)
 	var busy BusyError
+	var capacity InsufficientSpaceError
 	switch {
 	case errors.As(err, &busy):
 		key = errcat.KeyWhalePathBusy
@@ -99,6 +100,9 @@ func (d Dispatcher) writeError(out io.Writer, request whale.Request, err error) 
 		key = errcat.KeyWhaleOffsetConflict
 	case errors.Is(err, ErrDigestMismatch):
 		key = errcat.KeyWhaleDigestMismatch
+	case errors.As(err, &capacity):
+		key = errcat.KeyWhaleInsufficientSpace
+		details = map[string]string{"available_bytes": strconv.FormatInt(capacity.AvailableBytes, 10), "required_bytes": strconv.FormatInt(capacity.RequiredBytes, 10)}
 	}
 	spec, _ := errcat.ByKey(key)
 	body := whale.ErrorBody{Code: string(spec.Code), Key: string(spec.Key), Message: spec.Diagnostic, Details: details}

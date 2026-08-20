@@ -20,6 +20,7 @@
   "repositories": {
     "root": "/var/filees/repositories",
     "results_root": "/var/filees/repository-operations",
+    "whale_root": "/var/filees/repository-operations/whale",
     "data_authz_file": "/var/filees/activation/repositories.authz",
     "svnadmin_binary": "/usr/local/bin/svnadmin",
     "url_prefix": "svn+ssh://_filees-data@filees.example.net/",

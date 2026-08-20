@@ -12,26 +12,27 @@ const (
 	CodeRecon       Code = "RECON-3002"
 	CodePolicyWait  Code = "POLICY-2201"
 
-	KeyUnknown               Key = "sync.unknown"
-	KeyNetUnreachable        Key = "net.unreachable"
-	KeyAuthFailed            Key = "auth.failed"
-	KeyLockHeldByOther       Key = "lock.held_by_other"
-	KeyLockOperation         Key = "lock.operation_failed"
-	KeyLockInvalidPath       Key = "lock.invalid_path"
-	KeyCommitFailed          Key = "commit.failed"
-	KeyCommitOutdated        Key = "commit.outdated"
-	KeyCommitNoVCS           Key = "commit.not_versioned"
-	KeyReconConflict         Key = "recon.conflict"
-	KeyPolicyDeferred        Key = "policy.deferred"
-	KeyMobileOpNotOnServer   Key = "mobile.op.not_on_server"
-	KeyMobileTreeNotIngested Key = "mobile.tree.not_ingested"
-	KeyMobileTreeNotAPack    Key = "mobile.tree.not_a_pack"
-	KeyMobileTreeCorrupt     Key = "mobile.tree.payload_corrupt"
-	KeyWhaleFailed           Key = "whale.operation_failed"
-	KeyWhalePathBusy         Key = "whale.path_busy"
-	KeyWhaleAccessDenied     Key = "whale.access_denied"
-	KeyWhaleOffsetConflict   Key = "whale.offset_conflict"
-	KeyWhaleDigestMismatch   Key = "whale.digest_mismatch"
+	KeyUnknown                Key = "sync.unknown"
+	KeyNetUnreachable         Key = "net.unreachable"
+	KeyAuthFailed             Key = "auth.failed"
+	KeyLockHeldByOther        Key = "lock.held_by_other"
+	KeyLockOperation          Key = "lock.operation_failed"
+	KeyLockInvalidPath        Key = "lock.invalid_path"
+	KeyCommitFailed           Key = "commit.failed"
+	KeyCommitOutdated         Key = "commit.outdated"
+	KeyCommitNoVCS            Key = "commit.not_versioned"
+	KeyReconConflict          Key = "recon.conflict"
+	KeyPolicyDeferred         Key = "policy.deferred"
+	KeyMobileOpNotOnServer    Key = "mobile.op.not_on_server"
+	KeyMobileTreeNotIngested  Key = "mobile.tree.not_ingested"
+	KeyMobileTreeNotAPack     Key = "mobile.tree.not_a_pack"
+	KeyMobileTreeCorrupt      Key = "mobile.tree.payload_corrupt"
+	KeyWhaleFailed            Key = "whale.operation_failed"
+	KeyWhalePathBusy          Key = "whale.path_busy"
+	KeyWhaleAccessDenied      Key = "whale.access_denied"
+	KeyWhaleOffsetConflict    Key = "whale.offset_conflict"
+	KeyWhaleDigestMismatch    Key = "whale.digest_mismatch"
+	KeyWhaleInsufficientSpace Key = "whale.insufficient_space"
 )
 
 var (
@@ -174,6 +175,7 @@ var specs = []Spec{
 	{"WHALE-2002", KeyWhaleAccessDenied, SevError, HintNone, nil, "Whale repository access denied", "Brak uprawnień do tej operacji na dużym pliku"},
 	{"WHALE-2003", KeyWhaleOffsetConflict, SevWarn, HintRetryLocal, []string{"offset"}, "Whale resume offset conflicts with durable state", "Wznawianie dużego pliku wymaga aktualnego offsetu serwera"},
 	{"WHALE-2004", KeyWhaleDigestMismatch, SevError, HintRequireAction, nil, "Whale payload size or sha256 mismatch", "Duży plik nie zgadza się z przygotowaną generacją"},
+	{"WHALE-2005", KeyWhaleInsufficientSpace, SevError, HintRequireAction, []string{"available_bytes", "required_bytes"}, "Whale storage reservation does not fit", "Serwer nie ma dość miejsca na operację dużego pliku"},
 
 	{"ACTIVATION-0001", "activation.unavailable", SevError, HintRetry, nil, "Activation service is not available", "Aktywacja jest teraz niedostępna"},
 	{"ACTIVATION-1001", "activation.begin_failed", SevError, HintRetry, nil, "Activation could not start", "Nie udało się rozpocząć aktywacji"},

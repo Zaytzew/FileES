@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/repoworker"
 	whale "filees/pkg/whale/v1"
 	"github.com/google/uuid"
 )
@@ -59,6 +60,14 @@ type putReservations struct {
 	released int
 }
 
+type insufficientReservations struct{}
+
+func (insufficientReservations) Reserve(context.Context, string, int64, time.Time) (int64, int64, time.Time, error) {
+	return 89, 180, time.Time{}, repoworker.ErrReservationUnavailable
+}
+func (insufficientReservations) Ensure(context.Context, string, time.Time) error { return nil }
+func (insufficientReservations) Release(string) error                            { return nil }
+
 func (r *putReservations) Reserve(context.Context, string, int64, time.Time) (int64, int64, time.Time, error) {
 	r.reserved++
 	return 1 << 40, 1, time.Now().Add(time.Hour), nil
@@ -67,6 +76,15 @@ func (*putReservations) Ensure(context.Context, string, time.Time) error { retur
 func (r *putReservations) Release(string) error {
 	r.released++
 	return nil
+}
+
+func TestPutReservationPreservesCapacityNumbers(t *testing.T) {
+	service := PutService{Reservations: insufficientReservations{}}
+	err := service.reserve(context.Background(), uuid.NewString(), 100)
+	var capacity InsufficientSpaceError
+	if !errors.As(err, &capacity) || capacity.AvailableBytes != 89 || capacity.RequiredBytes != 180 {
+		t.Fatalf("capacity=%+v err=%v", capacity, err)
+	}
 }
 
 type putPublisher struct {

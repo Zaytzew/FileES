@@ -295,6 +295,11 @@ func (r RepoViewModel) DisplayState() RepoDisplayState {
 	}
 }
 
+// ShowsBusy reports the same busy state that drives the tray icon. Other GUI
+// layers use this presentation method instead of importing the wire contract
+// and duplicating its state vocabulary.
+func (r RepoViewModel) ShowsBusy() bool { return repoIconState(r) == IconBusy }
+
 // aggregateIcon derives the tray icon from the connection status and all repo states.
 func aggregateIcon(connected bool, repos []RepoViewModel, notices int) IconState {
 	if !connected {

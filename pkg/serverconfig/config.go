@@ -116,6 +116,13 @@ func (repository RepositoryFile) EffectiveSVNDumpFilterBinary() string {
 	return filepath.Join(filepath.Dir(repository.SVNAdminBinary), "svndumpfilter")
 }
 
+func (repository RepositoryFile) EffectiveSVNMuccBinary() string {
+	if repository.SVNAdminBinary == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(repository.SVNAdminBinary), "svnmucc")
+}
+
 func (repository RepositoryFile) EffectiveDeletionRetentionDays() int {
 	if repository.DeletionRetentionDays == nil {
 		return 30

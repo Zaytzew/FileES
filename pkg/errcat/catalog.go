@@ -27,6 +27,11 @@ const (
 	KeyMobileTreeNotIngested Key = "mobile.tree.not_ingested"
 	KeyMobileTreeNotAPack    Key = "mobile.tree.not_a_pack"
 	KeyMobileTreeCorrupt     Key = "mobile.tree.payload_corrupt"
+	KeyWhaleFailed           Key = "whale.operation_failed"
+	KeyWhalePathBusy         Key = "whale.path_busy"
+	KeyWhaleAccessDenied     Key = "whale.access_denied"
+	KeyWhaleOffsetConflict   Key = "whale.offset_conflict"
+	KeyWhaleDigestMismatch   Key = "whale.digest_mismatch"
 )
 
 var (
@@ -163,6 +168,12 @@ var specs = []Spec{
 	{"MOBILE-2002", KeyMobileTreeNotIngested, SevError, HintRequireAction, nil, "UPLOAD_TREE reached the host but the worker does not ingest zip-on-wire yet", "Telefon spakował folder i wysłał jednym połączeniem. Serwer paczki jeszcze nie przyjmuje — brakuje apply filees-mobile-v1."},
 	{"MOBILE-2003", KeyMobileTreeNotAPack, SevError, HintNone, nil, "UPLOAD_TREE payload is a repository zip, not a FileES tree pack", "To zwykły plik ZIP, nie paczka FileES. Taki artefakt idzie jako jeden obiekt, nie jako drzewo."},
 	{"MOBILE-2004", KeyMobileTreeCorrupt, SevError, HintRetry, nil, "UPLOAD_TREE zip sha256 or size does not match the header", "Paczka uszkodziła się w transporcie (sha256 nie zgadza się z nagłówkiem). Nic nie zapisano — wyślij folder jeszcze raz."},
+
+	{"WHALE-1001", KeyWhaleFailed, SevError, HintRetryBackoff, nil, "Whale operation failed", "Operacja dużego pliku nie powiodła się"},
+	{"WHALE-2001", KeyWhalePathBusy, SevWarn, HintRetryBackoff, []string{"queue_position"}, "Another Whale generation owns this path", "Inna publikacja tego dużego pliku jest w toku"},
+	{"WHALE-2002", KeyWhaleAccessDenied, SevError, HintNone, nil, "Whale repository access denied", "Brak uprawnień do tej operacji na dużym pliku"},
+	{"WHALE-2003", KeyWhaleOffsetConflict, SevWarn, HintRetryLocal, []string{"offset"}, "Whale resume offset conflicts with durable state", "Wznawianie dużego pliku wymaga aktualnego offsetu serwera"},
+	{"WHALE-2004", KeyWhaleDigestMismatch, SevError, HintRequireAction, nil, "Whale payload size or sha256 mismatch", "Duży plik nie zgadza się z przygotowaną generacją"},
 
 	{"ACTIVATION-0001", "activation.unavailable", SevError, HintRetry, nil, "Activation service is not available", "Aktywacja jest teraz niedostępna"},
 	{"ACTIVATION-1001", "activation.begin_failed", SevError, HintRetry, nil, "Activation could not start", "Nie udało się rozpocząć aktywacji"},

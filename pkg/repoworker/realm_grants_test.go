@@ -93,6 +93,9 @@ func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 	if !strings.Contains(string(raw), "reader-"+repoID+" = "+recipientClient) {
 		t.Fatalf("reader authz=%s", raw)
 	}
+	if !strings.Contains(string(raw), "["+repoID+":/.filees-whales]\n* =") {
+		t.Fatalf("Whale namespace is not denied by canonical authz=%s", raw)
+	}
 
 	record, err = p.Grant(context.Background(), ownerRealm, recipientRealm, repoID, "rw")
 	if err != nil || record.PathOwnerPolicy != "first_committer" {

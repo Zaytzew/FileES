@@ -69,6 +69,9 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 	if !strings.Contains(string(raw), ownerClient) || strings.Contains(string(raw), otherClient) {
 		t.Fatalf("authz=%s", raw)
 	}
+	if !strings.Contains(string(raw), "["+repo+":/.filees-whales]\n* =") {
+		t.Fatalf("Whale namespace is not denied by authz=%s", raw)
+	}
 }
 
 func TestServicePublisherActivateHealsProjectionFromCanonicalRecord(t *testing.T) {

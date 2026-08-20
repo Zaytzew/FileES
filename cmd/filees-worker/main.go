@@ -11,6 +11,8 @@ func main() {
 		switch os.Args[1] {
 		case "repository-control":
 			os.Exit(servertool.RunRepositoryWorker(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "whale-v1":
+			os.Exit(servertool.RunWhaleWorker(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 		case "mobile-onboard":
 			os.Exit(servertool.RunMobileOnboardWorker(os.Stdin, os.Stdout, os.Stderr))
 		case "mobile-proof":

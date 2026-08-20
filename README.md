@@ -462,8 +462,10 @@ pkg/shout/               marker wydania w svn:log i lokalny inbox komunikatów
 pkg/errcat,errmap/       wspólny język błędów i klasyfikacja diagnostyki
 
 pkg/control/v1/          podpisywane żądania klient -> worker
+pkg/whale/v1/            kanon generacji i framing windowed Whale
 pkg/repoworker/          autorytatywne repozytoria, granty i projekcje
 internal/servertool/     forced-command entrypoints i operacje serwera
+internal/whaleworker/    journal, FIFO, PUT/recovery i svnmucc file://
 pkg/onboarding,activation/ aktywacja, tożsamość i service repo
 cmd/filees-service-wc-corrector/ korekta owner/group usługowej WC przed ticketem
 
@@ -768,12 +770,14 @@ Wzorce z `!` na początku są "twardymi" ignorami — przy katalogu powodują po
 | `pkg/config` | Parsowanie `config.json` |
 | `pkg/contract/v1` | Typy protokołu IPC (`filees.contract/v1`) |
 | `pkg/control/v1` | Wersjonowane koperty ticket/result control plane (`filees.control/v1`) |
+| `pkg/whale/v1` | Kanon ścieżki/generacji, stany i framing transportu Whale |
 | `pkg/provisioning` | Trwała maszyna stanów tworzenia repo i initial commit |
 | `pkg/clientview` | Ścisłe dekodowanie projekcji instalacji z service repo |
 | `pkg/localrepo` | Trwały lifecycle lokalnych przypięć i ścieżek WC |
 | `pkg/reposupervisor` | Dynamiczne uruchamianie, zatrzymywanie i rekoncyliacja repozytoriów |
 | `pkg/passport` | Passporty edycji, fencing i migracja `svn:needs-lock` |
 | `pkg/repoworker` | Kanoniczne rekordy repozytoriów, granty, polityki i projekcje |
+| `internal/whaleworker` | Serwerowy journal, FIFO, windowed PUT i idempotentny commit Whale |
 | `pkg/ipcserver` | Serwer gniazda Unix dla CLI/GUI |
 | `pkg/ipcclient` | Klient IPC używany przez CLI i GUI |
 | `contracttests` | Przekrojowa bramka zgodności kopert, capability i round-trip IPC |

@@ -757,7 +757,7 @@ func (s *Server) handleRepoLocate(req contract.Request) contract.Response {
 	}
 	result, err := service.BeginLocate(payload.ServerID, payload.RepoID, payload.ExistingLocalPath)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "REPO-2010", "ERROR", "REQUIRE_ACTION", "repo.locate_failed", nil)
+		return contract.ErrResponse(req.RequestID, "REPO-2010", "ERROR", "REQUIRE_ACTION", "repo.locate_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

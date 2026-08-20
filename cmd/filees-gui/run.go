@@ -87,6 +87,7 @@ type repositoryAttachAdapter struct{ client repositoryAttachClient }
 
 type repositoryLocateClient interface {
 	RepoLocate(context.Context, contract.RepoLocatePayload) (*contract.RepoLifecycleResult, error)
+	RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
 }
 
 type repositoryLocateAdapter struct{ client repositoryLocateClient }
@@ -100,6 +101,17 @@ func (adapter repositoryLocateAdapter) LocateRepository(ctx context.Context, ser
 		return "", errors.New("daemon returned an empty repository locate operation")
 	}
 	return result.OperationID, nil
+}
+
+func (adapter repositoryLocateAdapter) LocateStatus(ctx context.Context, operationID string) (string, string, error) {
+	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
+	if err != nil {
+		return "", "", err
+	}
+	if result == nil {
+		return "", "", errors.New("daemon returned an empty repository operation")
+	}
+	return result.State, result.LastError, nil
 }
 
 func (adapter repositoryAttachAdapter) AttachRepository(ctx context.Context, serverID, repoID, localPath string) (string, error) {

@@ -89,6 +89,14 @@ func (fakeStructuredError) PresentationError() (string, string, string, string) 
 }
 func (fakeStructuredError) PresentationDetails() map[string]string { return nil }
 
+type fakeStructuredLocateError struct{}
+
+func (fakeStructuredLocateError) Error() string { return "wire locate" }
+func (fakeStructuredLocateError) PresentationError() (string, string, string, string) {
+	return "REPO-2010", "ERROR", "REQUIRE_ACTION", "repo.locate_failed"
+}
+func (fakeStructuredLocateError) PresentationDetails() map[string]string { return nil }
+
 type fakeStructuredAttachError struct{}
 
 func (fakeStructuredAttachError) Error() string { return "wire fallback" }
@@ -176,11 +184,28 @@ type fakeRepositoryAttacher struct {
 }
 
 type locateCall struct{ serverID, repoID, localPath string }
-type fakeRepositoryLocator struct{ calls chan locateCall }
+type fakeRepositoryLocator struct {
+	calls     chan locateCall
+	err       error
+	status    string
+	lastError string
+	statusErr error
+}
 
 func (f *fakeRepositoryLocator) LocateRepository(_ context.Context, serverID, repoID, localPath string) (string, error) {
 	f.calls <- locateCall{serverID: serverID, repoID: repoID, localPath: localPath}
-	return "locate-" + repoID, nil
+	return "locate-" + repoID, f.err
+}
+
+func (f *fakeRepositoryLocator) LocateStatus(_ context.Context, _ string) (string, string, error) {
+	if f.statusErr != nil {
+		return "", "", f.statusErr
+	}
+	state := f.status
+	if state == "" {
+		state = "attached"
+	}
+	return state, f.lastError, nil
 }
 
 func (f *fakeRepositoryAttacher) AttachRepository(_ context.Context, serverID, repoID, localPath string) (string, error) {
@@ -1605,7 +1630,8 @@ func TestControllerOffersAndLocatesMovedWorkingCopy(t *testing.T) {
 	}
 	intents, cancel := setup(actions.Config{
 		ViewModel: func() app.ViewModel { return view }, SettingsBrowser: platformFake,
-		FolderPicker: platformFake, RepositoryLocator: locator, Notifier: platformFake,
+		FolderPicker: platformFake, Prompter: platformFake, RepositoryLocator: locator, Notifier: platformFake,
+		CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: time.Second,
 	})
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
@@ -1619,6 +1645,76 @@ func TestControllerOffersAndLocatesMovedWorkingCopy(t *testing.T) {
 	}
 	if len(request.Servers) != 1 || len(request.Servers[0].Folders) != 1 || !request.Servers[0].Folders[0].CanLocate {
 		t.Fatalf("missing working-copy row=%#v", request)
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().InfoRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if infos := platformFake.Snapshot().InfoRequests; len(infos) != 1 || infos[0].Title != "Kopia robocza została wskazana" {
+		t.Fatalf("success modal=%#v", infos)
+	}
+}
+
+func TestControllerReportsImmediateLocateRejectionAsModal(t *testing.T) {
+	locator := &fakeRepositoryLocator{calls: make(chan locateCall, 1), err: fakeStructuredLocateError{}}
+	target := filepath.Join(t.TempDir(), "plain")
+	platformFake := &platformtest.Fake{PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+		return platform.PickFolderResult{Path: target}, nil
+	}}
+	operation := "working_copy_missing"
+	view := app.ViewModel{
+		Connected: true, Capabilities: map[string]bool{contract.CapRepoLocate: true},
+		Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{{
+			ID: "repo-1", DisplayName: "ZEGRZE", Attached: true, LocalPath: filepath.Join(t.TempDir(), "missing"),
+			State: contract.StateInteractionRequired, CurrentOp: &operation,
+		}}}},
+	}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, FolderPicker: platformFake, Prompter: platformFake, RepositoryLocator: locator, Notifier: platformFake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentLocateFolder, ServerID: "office", RepoID: "repo-1"})
+	awaitCh(t, locator.calls, "locate")
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().InfoRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	snapshot := platformFake.Snapshot()
+	if len(snapshot.InfoRequests) != 1 || snapshot.InfoRequests[0].Title != "Nie można połączyć przeniesionej kopii" || !strings.Contains(snapshot.InfoRequests[0].Text, "przeniesionej kopii") || strings.Contains(snapshot.InfoRequests[0].Text, "wire") {
+		t.Fatalf("immediate locate modal=%#v", snapshot.InfoRequests)
+	}
+}
+
+func TestControllerReportsWrongWorkingCopyLocateAsModal(t *testing.T) {
+	locator := &fakeRepositoryLocator{calls: make(chan locateCall, 1), lastError: "relocated working copy URL does not match projected repository"}
+	target := filepath.Join(t.TempDir(), "WRONG")
+	platformFake := &platformtest.Fake{PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+		return platform.PickFolderResult{Path: target}, nil
+	}}
+	operation := "working_copy_missing"
+	view := app.ViewModel{
+		Connected: true, Capabilities: map[string]bool{contract.CapRepoLocate: true},
+		Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{{
+			ID: "repo-1", DisplayName: "ZEGRZE", Attached: true, LocalPath: filepath.Join(t.TempDir(), "missing"),
+			State: contract.StateInteractionRequired, CurrentOp: &operation,
+		}}}},
+	}
+	intents, cancel := setup(actions.Config{
+		ViewModel: func() app.ViewModel { return view }, FolderPicker: platformFake, Prompter: platformFake,
+		RepositoryLocator: locator, Notifier: platformFake,
+		CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: time.Second,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentLocateFolder, ServerID: "office", RepoID: "repo-1"})
+	awaitCh(t, locator.calls, "locate")
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().InfoRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	snapshot := platformFake.Snapshot()
+	if len(snapshot.InfoRequests) != 1 || snapshot.InfoRequests[0].Title != "Nie można połączyć przeniesionej kopii" || !strings.Contains(snapshot.InfoRequests[0].Text, "innego repozytorium") || strings.Contains(snapshot.InfoRequests[0].Text, "does not match") {
+		t.Fatalf("locate failure modal=%#v", snapshot.InfoRequests)
+	}
+	if len(snapshot.Notifications) != 1 || snapshot.Notifications[0].Urgency != platform.UrgencyCritical {
+		t.Fatalf("notifications=%#v", snapshot.Notifications)
 	}
 }
 

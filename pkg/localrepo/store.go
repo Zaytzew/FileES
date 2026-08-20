@@ -359,7 +359,12 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 	if record.State != StateAttached {
 		return Record{}, errors.New("only an attached repository can be relocated")
 	}
-	if !filepath.IsAbs(newLocalPath) || newLocalPath == string(filepath.Separator) || pathsOverlap(record.LocalPath, newLocalPath) {
+	if !filepath.IsAbs(newLocalPath) || newLocalPath == string(filepath.Separator) {
+		return Record{}, errors.New("relocation target must be an absolute disjoint non-root path")
+	}
+	// Locate may reaffirm the current root after the drive or mount becomes
+	// available again. A true relocation must remain disjoint.
+	if pathsOverlap(record.LocalPath, newLocalPath) && !(adoptExisting && filepath.Clean(newLocalPath) == filepath.Clean(record.LocalPath)) {
 		return Record{}, errors.New("relocation target must be an absolute disjoint non-root path")
 	}
 	for id, existing := range s.records {
@@ -621,7 +626,11 @@ func validate(r Record) error {
 		}
 	}
 	if r.State == StateRelocating {
-		if !filepath.IsAbs(r.PendingLocalPath) || r.PendingLocalPath == string(filepath.Separator) || pathsOverlap(r.LocalPath, r.PendingLocalPath) {
+		if !filepath.IsAbs(r.PendingLocalPath) || r.PendingLocalPath == string(filepath.Separator) {
+			return errors.New("repository relocation target is invalid")
+		}
+		sameRoot := filepath.Clean(r.LocalPath) == filepath.Clean(r.PendingLocalPath)
+		if pathsOverlap(r.LocalPath, r.PendingLocalPath) && !(r.RelocationAdoptExisting && sameRoot) {
 			return errors.New("repository relocation target is invalid")
 		}
 	} else if r.PendingLocalPath != "" || r.RelocationAdoptExisting {

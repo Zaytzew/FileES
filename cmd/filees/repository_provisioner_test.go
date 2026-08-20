@@ -435,6 +435,38 @@ func TestDaemonProvisionerDoesNotCheckoutWhenRelocationQuiesceFails(t *testing.T
 	}
 }
 
+func TestPublishAttachmentPrefersLifecyclePathOverProvisioningJournal(t *testing.T) {
+	local, journal, profile, record := relocationFixture(t)
+	record, err := local.FailRelocation(record.OperationID, errors.New("stay attached"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(t.TempDir(), "E-letter")
+	record, err = local.BeginLocate(record.ServerID, record.RepoID, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = local.CompleteRelocation(record.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(t.TempDir(), "F-letter")
+	events := make(chan provisionedAttachment, 1)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	provisioner.attachments = events
+	go provisioner.publishAttachment(context.Background(), provisioning.Operation{
+		OperationID: record.OperationID, RepoID: record.RepoID, RepoURL: record.RepoURL, LocalPath: stale, State: provisioning.StateActive,
+	})
+	select {
+	case got := <-events:
+		if got.Repo.LocalPath != current {
+			t.Fatalf("published %q, want lifecycle path %q (not provisioning %q)", got.Repo.LocalPath, current, stale)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("attachment was not published")
+	}
+}
+
 func TestDaemonProvisionerLocateAdoptsExistingWorkingCopyWithoutCheckout(t *testing.T) {
 	local, journal, profile, record := relocationFixture(t)
 	record, err := local.FailRelocation(record.OperationID, errors.New("switch to locate fixture"))

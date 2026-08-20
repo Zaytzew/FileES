@@ -231,6 +231,25 @@ func TestStoreLocatePersistsAdoptExistingAndClearsItAtBoundary(t *testing.T) {
 	}
 }
 
+func TestStoreLocateMayReaffirmCurrentRoot(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(t.TempDir(), "biblia")
+	record, _ := store.BeginAttach("manual", "repo-1", current, false)
+	_, _ = store.ApproveAttach(record.OperationID, "manual", "repo-1", "svn+ssh://_filees-client@example/repo", "rw")
+	_, _ = store.MarkAttached(record.OperationID, "repo-1")
+	locating, err := store.BeginLocate("manual", "repo-1", current)
+	if err != nil || locating.PendingLocalPath != current || !locating.RelocationAdoptExisting {
+		t.Fatalf("reaffirm locate=%+v err=%v", locating, err)
+	}
+	nested := filepath.Join(current, "child")
+	if _, err := store.BeginLocate("manual", "repo-1", nested); err == nil {
+		t.Fatal("nested path accepted as locate target")
+	}
+}
+
 func TestStoreReconcileIsDurableAndKeepsPathOnFailure(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

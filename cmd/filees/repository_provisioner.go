@@ -724,7 +724,13 @@ func (p *daemonProvisioner) publishAttachment(ctx context.Context, operation pro
 	profile, ok := p.profiles[record.ServerID]
 	p.mu.RUnlock()
 	if ok {
-		repo := config.Repo{ID: operation.RepoID, RepoURL: operation.RepoURL, LocalPath: operation.LocalPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: "rw"}
+		// The lifecycle record is newer after locate/relocate. The provisioning
+		// journal deliberately retains the path used when the repo was created.
+		localPath := record.LocalPath
+		if localPath == "" {
+			localPath = operation.LocalPath
+		}
+		repo := config.Repo{ID: operation.RepoID, RepoURL: operation.RepoURL, LocalPath: localPath, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHHostName: profile.Address, SSHPort: profile.SSHPort, SessionTimeout: profile.SVNTimeout(), ServerID: profile.ServerID, ServerDisplayName: profile.DisplayName, ClientRole: "normal", Access: "rw"}
 		select {
 		case p.attachments <- provisionedAttachment{Repo: repo}:
 		case <-ctx.Done():

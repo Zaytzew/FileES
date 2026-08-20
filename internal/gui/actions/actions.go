@@ -89,6 +89,9 @@ type RepositoryAttacher interface {
 
 type RepositoryLocator interface {
 	LocateRepository(ctx context.Context, serverID, repoID, existingLocalPath string) (operationID string, err error)
+	// LocateStatus observes the durable outcome. A rejected locate returns to
+	// "attached" with LastError set rather than entering lifecycle "error".
+	LocateStatus(ctx context.Context, operationID string) (state, lastError string, err error)
 }
 
 type RepositoryDetacher interface {
@@ -733,20 +736,22 @@ func (c *Controller) startLocateRepository(ctx context.Context, serverID, repoID
 		}
 		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wskaż przeniesioną kopię roboczą repozytorium „" + name + "”"})
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można wskazać kopii roboczej", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.reportActionError(ctx, key, "Nie można wskazać kopii roboczej", name+" — "+actionErrorBody(err))
 			return
 		}
-		if picked.Cancelled || !filepath.IsAbs(picked.Path) {
+		if picked.Cancelled {
 			return
 		}
-		if _, err := c.cfg.RepositoryLocator.LocateRepository(ctx, serverID, repoID, filepath.Clean(picked.Path)); err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można połączyć przeniesionej kopii", Body: name + " — " + err.Error(), Urgency: platform.UrgencyCritical})
+		if !filepath.IsAbs(picked.Path) {
+			c.reportActionError(ctx, key, "Nie można wskazać kopii roboczej", name+" — wybrana ścieżka nie jest bezwzględna")
 			return
 		}
-		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Sprawdzanie kopii roboczej", Body: name + " — FileES weryfikuje wskazany folder.", Urgency: platform.UrgencyNormal})
-		if c.cfg.Refresh != nil {
-			c.cfg.Refresh()
+		operationID, err := c.cfg.RepositoryLocator.LocateRepository(ctx, serverID, repoID, filepath.Clean(picked.Path))
+		if err != nil {
+			c.reportActionError(ctx, key, "Nie można połączyć przeniesionej kopii", name+" — "+actionErrorBody(err))
+			return
 		}
+		c.awaitLocateOutcome(ctx, key, name, operationID)
 	}()
 }
 
@@ -765,6 +770,79 @@ func locatableRepository(vm app.ViewModel, serverID, repoID string) (app.RepoVie
 		}
 	}
 	return app.RepoViewModel{}, false
+}
+
+func (c *Controller) awaitLocateOutcome(ctx context.Context, key, name, operationID string) {
+	interval, timeout := c.cfg.CreationStatusPollInterval, c.cfg.CreationStatusPollTimeout
+	if interval <= 0 {
+		interval = creationStatusPollInterval
+	}
+	if timeout <= 0 {
+		timeout = creationStatusPollTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	delay := interval
+	var lastStatusError error
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			body := name + " — FileES nie potwierdził wskazanej kopii"
+			if lastStatusError != nil {
+				body += ": " + lastStatusError.Error()
+			}
+			c.reportActionError(ctx, key, "Nie można połączyć przeniesionej kopii", body)
+			return
+		}
+		if delay > remaining {
+			delay = remaining
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		case <-timer.C:
+		}
+		state, lastError, err := c.cfg.RepositoryLocator.LocateStatus(ctx, operationID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			lastStatusError = err
+			delay *= 2
+			if delay > 30*time.Second {
+				delay = 30 * time.Second
+			}
+			continue
+		}
+		lastStatusError = nil
+		delay = interval
+		switch state {
+		case "error":
+			c.reportActionError(ctx, key, "Nie można połączyć przeniesionej kopii", name+" — "+locateFailurePolish(lastError))
+			return
+		case "attached":
+			if strings.TrimSpace(lastError) != "" {
+				c.reportActionError(ctx, key, "Nie można połączyć przeniesionej kopii", name+" — "+locateFailurePolish(lastError))
+				return
+			}
+			title := "Kopia robocza została wskazana"
+			body := name + " — FileES używa teraz wybranego folderu."
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: platform.UrgencyNormal})
+			if c.cfg.Prompter != nil {
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: title, Text: body})
+			}
+			if c.cfg.Refresh != nil {
+				c.cfg.Refresh()
+			}
+			return
+		}
+	}
 }
 
 func (c *Controller) startConnectRepositories(ctx context.Context, serverID string, repoIDs []string) {
@@ -2914,6 +2992,47 @@ func detailedMessageLabel(messageKey string, details map[string]string) string {
 
 func messageLabel(messageKey string) string {
 	return errcat.Polish(messageKey)
+}
+
+func actionErrorBody(err error) string {
+	if err == nil {
+		return ""
+	}
+	var structured presentationError
+	if !errors.As(err, &structured) {
+		return err.Error()
+	}
+	_, _, _, key := structured.PresentationError()
+	details := structured.PresentationDetails()
+	if key == "repo.locate_failed" {
+		if reason := strings.TrimSpace(details["detail"]); reason != "" {
+			return locateFailurePolish(reason)
+		}
+	}
+	if detailed := detailedMessageLabel(key, details); detailed != "" {
+		return detailed
+	}
+	return messageLabel(key)
+}
+
+func locateFailurePolish(raw string) string {
+	switch {
+	case strings.TrimSpace(raw) == "":
+		return "Wskazany folder nie jest kopią roboczą tego udziału."
+	case strings.Contains(raw, "not a Subversion working copy"):
+		return "Wskazany folder nie jest kopią roboczą Subversion."
+	case strings.Contains(raw, "does not match projected"):
+		return "Wskazany folder należy do innego repozytorium."
+	case strings.Contains(raw, "working-copy identity"):
+		return "Wskazany folder nie ma tożsamości tego udziału FileES."
+	case strings.Contains(raw, "overlaps"), strings.Contains(raw, "disjoint"):
+		return "Wskazany folder nachodzi na już zapisaną kopię FileES."
+	default:
+		if errcat.KnownKey(raw) {
+			return errcat.Polish(raw)
+		}
+		return "Wskazany folder nie jest kopią roboczą tego udziału."
+	}
 }
 
 func hintLabel(hint string) string {

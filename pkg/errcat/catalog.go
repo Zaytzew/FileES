@@ -149,7 +149,7 @@ var specs = []Spec{
 	{"REPO-2007", "repo.relocation_failed", SevError, HintRequireAction, nil, "Working-copy relocation failed", "Przeniesienie kopii roboczej nie powiodło się"},
 	{"REPO-2008", "repo.lifecycle_operation_not_found", SevError, HintNone, nil, "Lifecycle operation was not found", "Nie znaleziono tej operacji na repozytorium"},
 	{"REPO-2010", "repo.detach_required_forbidden", SevError, HintNone, nil, "Required repository cannot be detached", "Wymaganego repozytorium nie można odłączyć"},
-	{"REPO-2010", "repo.locate_failed", SevError, HintRequireAction, nil, "Moved working copy could not be rebound", "Nie udało się wskazać przeniesionej kopii roboczej"},
+	{"REPO-2010", "repo.locate_failed", SevError, HintRequireAction, []string{"detail"}, "Moved working copy could not be rebound", "Nie udało się wskazać przeniesionej kopii roboczej"},
 	{"REPO-2011", "repo.delete_forbidden", SevError, HintNone, nil, "Repository delete is forbidden", "Nie można trwale usunąć tego repozytorium"},
 	{"REPO-2012", "repo.detach_failed", SevError, HintRequireAction, nil, "Detach failed", "Odłączenie repozytorium nie powiodło się"},
 	{"REPO-2013", "repo.load_dump_forbidden", SevError, HintNone, nil, "Load-dump is forbidden", "Odtwarzanie z archiwum jest niedozwolone dla tego repozytorium"},

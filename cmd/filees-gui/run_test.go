@@ -44,6 +44,10 @@ func (stub *repositoryLocateClientStub) RepoLocate(_ context.Context, payload co
 	return &contract.RepoLifecycleResult{OperationID: "op-locate", State: "relocating"}, nil
 }
 
+func (stub *repositoryLocateClientStub) RepoLifecycleStatus(_ context.Context, operationID string) (*contract.RepoLifecycleResult, error) {
+	return &contract.RepoLifecycleResult{OperationID: operationID, State: "attached"}, nil
+}
+
 func (stub *repositoryAttachClientStub) RepoAttachIntent(_ context.Context, payload contract.RepoAttachIntentPayload) (*contract.RepoLifecycleResult, error) {
 	stub.intents = append(stub.intents, payload)
 	return &contract.RepoLifecycleResult{OperationID: "op-attach", State: "unattached"}, nil
@@ -86,6 +90,10 @@ func TestRepositoryLocateAdapterUsesExistingWorkingCopyCommand(t *testing.T) {
 	}
 	if len(stub.payloads) != 1 || stub.payloads[0] != (contract.RepoLocatePayload{ServerID: "office", RepoID: "repo-1", ExistingLocalPath: path}) {
 		t.Fatalf("payloads=%#v", stub.payloads)
+	}
+	state, lastError, err := (repositoryLocateAdapter{client: stub}).LocateStatus(context.Background(), operationID)
+	if err != nil || state != "attached" || lastError != "" {
+		t.Fatalf("status state=%q lastError=%q err=%v", state, lastError, err)
 	}
 }
 

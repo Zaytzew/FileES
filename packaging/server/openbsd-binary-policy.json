@@ -74,6 +74,14 @@
       "group": "wheel"
     },
     {
+      "source": "bin/filees-service-wc-corrector",
+      "target": "{libexec_dir}/filees/filees-service-wc-corrector",
+      "kind": "binary",
+      "mode": "4550",
+      "owner": "root",
+      "group": "_filees-access"
+    },
+    {
       "source": "bin/filees-client-entry",
       "target": "{libexec_dir}/filees/filees-client-entry",
       "kind": "binary",

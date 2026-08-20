@@ -77,6 +77,7 @@ install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-bootstrap-entry" /
 # ordinary worker image inherits its effective state UID across exec.
 install -o "$state_user" -g wheel -m 4511 "$bundle/bin/filees-entry" /usr/local/libexec/filees/filees-entry
 install -o root -g wheel -m 0555 "$bundle/bin/filees-worker" /usr/local/libexec/filees/filees-worker
+install -o root -g "$client_access_group" -m 4550 "$bundle/bin/filees-service-wc-corrector" /usr/local/libexec/filees/filees-service-wc-corrector
 install -o root -g wheel -m 0555 "$bundle/bin/filees-mail" /usr/local/libexec/filees/filees-mail
 install -o root -g wheel -m 0555 "$bundle/bin/filees-public-authority" /usr/local/libexec/filees/filees-public-authority
 install -o root -g wheel -m 0555 "$bundle/bin/filees-links" /usr/local/libexec/filees/filees-links

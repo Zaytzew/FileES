@@ -16,6 +16,15 @@ func ReconcileServiceWorkingCopy(ctx context.Context, svn, workingCopy string) e
 	if !filepath.IsAbs(svn) || !filepath.IsAbs(workingCopy) {
 		return errors.New("service working-copy reconciliation paths must be absolute")
 	}
+	// The service WC belongs to the state account. Root can bypass its 0700
+	// directory mode, but running an administrative publisher as root then
+	// leaves root-owned pristine objects in .svn. The next correctly isolated
+	// worker cannot clean those objects and every owner operation (grants,
+	// branding, public shares) fails before dispatch. Refuse the wrong effective
+	// identity before Subversion gets a chance to mutate the WC.
+	if err := verifyServiceWorkingCopyOwner(workingCopy); err != nil {
+		return err
+	}
 	commands := [][]string{
 		{"cleanup", "--non-interactive", workingCopy},
 		{"revert", "-R", "--non-interactive", "--no-auth-cache", workingCopy},

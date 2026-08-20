@@ -1248,12 +1248,11 @@ func (s *Server) handleRepoPublish(req contract.Request) contract.Response {
 	defer cancel()
 	rev, err := rs.Publish(ctx, payload.Comment)
 	if err != nil {
-		if errors.Is(err, shout.ErrNothingToPublish) || errors.Is(err, shout.ErrEmptyComment) || errors.Is(err, shout.ErrCommentHasControl) || errors.Is(err, shout.ErrCommentTooLong) {
-			key := "shout.nothing_to_publish"
-			if !errors.Is(err, shout.ErrNothingToPublish) {
-				key = "shout.invalid_comment"
-			}
-			return contract.ErrResponse(req.RequestID, "SHOUT-1001", "ERROR", "REQUIRE_ACTION", key, nil)
+		if errors.Is(err, shout.ErrNothingToPublish) {
+			return contract.ErrResponse(req.RequestID, "SHOUT-1001", "ERROR", "REQUIRE_ACTION", "shout.nothing_to_publish", nil)
+		}
+		if errors.Is(err, shout.ErrEmptyComment) || errors.Is(err, shout.ErrCommentHasControl) || errors.Is(err, shout.ErrCommentTooLong) {
+			return contract.ErrResponse(req.RequestID, "SHOUT-1001", "ERROR", "REQUIRE_ACTION", "shout.invalid_comment", nil)
 		}
 		if strings.Contains(err.Error(), "REPO_READ_ONLY") {
 			return contract.ErrResponse(req.RequestID, "SHOUT-1002", "ERROR", "NONE", "shout.read_only", nil)

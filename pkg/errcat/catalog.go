@@ -12,16 +12,16 @@ const (
 	CodeRecon       Code = "RECON-3002"
 	CodePolicyWait  Code = "POLICY-2201"
 
-	KeyUnknown         Key = "sync.unknown"
-	KeyNetUnreachable  Key = "net.unreachable"
-	KeyAuthFailed      Key = "auth.failed"
-	KeyLockHeldByOther Key = "lock.held_by_other"
-	KeyLockOperation   Key = "lock.operation_failed"
-	KeyLockInvalidPath Key = "lock.invalid_path"
-	KeyCommitFailed    Key = "commit.failed"
-	KeyCommitOutdated  Key = "commit.outdated"
-	KeyCommitNoVCS     Key = "commit.not_versioned"
-	KeyReconConflict   Key = "recon.conflict"
+	KeyUnknown               Key = "sync.unknown"
+	KeyNetUnreachable        Key = "net.unreachable"
+	KeyAuthFailed            Key = "auth.failed"
+	KeyLockHeldByOther       Key = "lock.held_by_other"
+	KeyLockOperation         Key = "lock.operation_failed"
+	KeyLockInvalidPath       Key = "lock.invalid_path"
+	KeyCommitFailed          Key = "commit.failed"
+	KeyCommitOutdated        Key = "commit.outdated"
+	KeyCommitNoVCS           Key = "commit.not_versioned"
+	KeyReconConflict         Key = "recon.conflict"
 	KeyPolicyDeferred        Key = "policy.deferred"
 	KeyMobileOpNotOnServer   Key = "mobile.op.not_on_server"
 	KeyMobileTreeNotIngested Key = "mobile.tree.not_ingested"
@@ -129,6 +129,13 @@ var specs = []Spec{
 	{"SHARE-1001", "public_share.list_failed", SevError, HintRetry, nil, "Public share list failed", "Nie udało się pobrać udostępnień"},
 	{"SHARE-1002", "public_share.rejected", SevError, HintRequireAction, nil, "Public share mutation was rejected", "Serwer odrzucił zmianę udostępnienia"},
 	{"SHARE-2001", "public_share.forbidden", SevError, HintNone, nil, "Public share action is forbidden", "Brak uprawnień do udostępnień publicznych"},
+
+	{"SHOUT-1001", "shout.nothing_to_publish", SevError, HintRequireAction, nil, "No pending changes to publish", "Brak oczekujących zmian do opublikowania"},
+	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Release comment is invalid", "Opis wydania jest nieprawidłowy"},
+	{"SHOUT-1002", "shout.read_only", SevError, HintNone, nil, "Repository is read-only", "Repozytorium jest dostępne tylko do odczytu"},
+	{"SHOUT-1003", "shout.publish_failed", SevError, HintRequireAction, []string{"detail"}, "Release publication failed", "Nie udało się opublikować wydania"},
+	{"SHOUT-1004", "shout.list_failed", SevError, HintRetryLocal, nil, "Release notice list failed", "Nie udało się pobrać komunikatów o wydaniach"},
+	{"SHOUT-1005", "shout.ack_failed", SevError, HintRetryLocal, nil, "Release notice acknowledgement failed", "Nie udało się potwierdzić komunikatu o wydaniu"},
 
 	{"SYSTEM-0001", "system.lifecycle_unavailable", SevError, HintNone, nil, "Process lifecycle is not available", "Restart i zamknięcie są teraz niedostępne"},
 

@@ -26,7 +26,11 @@ Docelowy UX: automat w trayu, który niewidocznie utrzymuje pliki zsynchronizowa
 
 ## Dokumentacja
 
-- **[manual/index.html](manual/index.html)** — podręcznik HTML PL/EN (obraz `htdocs` na `manual.filees.space`). Strona główna jest przełącznikiem języka; rozdziały są w `manual/assets/pl/` i `manual/assets/en/`. Na serwerze: `svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs`, potem `svn up`.
+- **[manual/index.html](manual/index.html)** — podręcznik HTML PL/EN (obraz
+  originu `manual.filees.space`). Strona główna jest przełącznikiem języka;
+  rozdziały są w `manual/assets/pl/` i `manual/assets/en/`. Publikację wykonuje
+  się wyłącznie na właściwym backendzie originu zgodnie z Tech
+  `operations.html#ops-htdocs`; `/var/www/htdocs` na `spot` nie jest tą WC.
 - **[docs/man/](docs/man/)** — strony `mandoc` narzędzi serwerowych (`man filees`, `man filees-admin`, `man filees.conf`).
 - **[USERGUIDE.md](USERGUIDE.md)** — krótszy przewodnik użytkownika.
 - **[manual-filees.html](manual-filees.html)** — tylko przekierowanie do `manual/`, żeby stare odnośniki nie umarły.
@@ -446,6 +450,7 @@ cmd/filees-gui/          composition root i lifecycle warstwy prezentacyjnej
 internal/gui/            model, akcje, tray, platforma i powiadomienia
 pkg/contract/v1/         kontrakt IPC GUI/CLI <-> daemon
 pkg/ipcclient,ipcserver/ transport lokalnego control plane
+contracttests/           wspólna bramka zgodności kopert, capability i IPC E2E
 
 pkg/clientview/          ścisła projekcja stanu instalacji z service repo
 pkg/localrepo/           trwały lifecycle lokalnych przypięć WC
@@ -771,6 +776,7 @@ Wzorce z `!` na początku są "twardymi" ignorami — przy katalogu powodują po
 | `pkg/repoworker` | Kanoniczne rekordy repozytoriów, granty, polityki i projekcje |
 | `pkg/ipcserver` | Serwer gniazda Unix dla CLI/GUI |
 | `pkg/ipcclient` | Klient IPC używany przez CLI i GUI |
+| `contracttests` | Przekrojowa bramka zgodności kopert, capability i round-trip IPC |
 | `pkg/errmap` | Klasyfikacja błędów + zapis do `errors.jsonl` |
 | `pkg/runtime` | HostGate, RepoMutex |
 | `pkg/talk` | Logger z poziomami i zmienną `FILEES_LOG` |

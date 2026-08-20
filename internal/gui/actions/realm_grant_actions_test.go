@@ -2,6 +2,7 @@ package actions_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ type realmGrantCall struct {
 
 type fakeRealmGrantManager struct {
 	recipients []actions.RealmGrantRecipient
+	listErr    error
 	calls      chan realmGrantCall
 	listedRepo string
 }
@@ -31,7 +33,7 @@ func (fake *fakeRealmGrantManager) SetEditingPolicy(_ context.Context, serverID,
 
 func (fake *fakeRealmGrantManager) ListRecipients(_ context.Context, _, repoID string) ([]actions.RealmGrantRecipient, error) {
 	fake.listedRepo = repoID
-	return fake.recipients, nil
+	return fake.recipients, fake.listErr
 }
 
 func (fake *fakeRealmGrantManager) SetVisibility(_ context.Context, serverID, visibility string) error {
@@ -101,6 +103,26 @@ func TestControllerDoesNotOfferOrExecuteGrantsForForeignRepository(t *testing.T)
 	}
 	if len(platformFake.Snapshot().Notifications) == 0 {
 		t.Fatal("foreign grant refusal was silent")
+	}
+}
+
+func TestControllerGrantListFailureUsesForegroundModal(t *testing.T) {
+	manager := &fakeRealmGrantManager{listErr: errors.New("service working copy ownership mismatch"), calls: make(chan realmGrantCall, 1)}
+	platformFake := &platformtest.Fake{SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+		return platform.SettingsDialogResult{Action: platform.SettingsDialogManageGrants, ServerID: "office", RepoID: "repo-1"}, nil
+	}}
+	view := lifecycleView(contract.CapRealmGrantRecipients, contract.CapRepoGrantAccess, contract.CapRepoRevokeAccess)
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, RealmGrantBrowser: platformFake, Prompter: platformFake, RealmGrants: manager, Notifier: platformFake})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	waitForInfoRequest(t, platformFake)
+	snapshot := platformFake.Snapshot()
+	if len(snapshot.InfoRequests) != 1 || !strings.Contains(snapshot.InfoRequests[0].Text, "ownership mismatch") {
+		t.Fatalf("foreground error = %+v", snapshot.InfoRequests)
+	}
+	if len(snapshot.Notifications) != 1 {
+		t.Fatalf("notification history = %+v", snapshot.Notifications)
 	}
 }
 

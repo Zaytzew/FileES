@@ -34,6 +34,10 @@ import (
 const (
 	creationStatusPollInterval = 3 * time.Second
 	creationStatusPollTimeout  = 15 * time.Minute
+	// repositorySettleInterval paces the wait that keeps a progress window on
+	// screen until the tray would stop showing the busy clock. It is shorter
+	// than the lifecycle poll because it only reads an in-memory ViewModel.
+	repositorySettleInterval = time.Second
 )
 
 // LockUnlocker is the narrow daemon surface required by the controller.
@@ -274,7 +278,12 @@ type Config struct {
 	RealmGrantBrowser  platform.RealmGrantBrowser
 	PublicShareBrowser platform.PublicShareBrowser
 	ConsentPrompter    platform.ConsentPrompter
-	Reconnect          func() // nil → reconnect intent is a no-op
+	// Progress renders the "still working" window for operations that keep
+	// running after their dialog closes. nil → the window is simply skipped;
+	// the operation itself is unaffected, because this surface never decides
+	// anything.
+	Progress  platform.ProgressPresenter
+	Reconnect func() // nil → reconnect intent is a no-op
 	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
 	// after a successful mutation whose result changes tray eligibility.
 	Refresh func()
@@ -818,7 +827,9 @@ func (c *Controller) startConnectRepositories(ctx context.Context, serverID stri
 			c.tasks.Add(1)
 			go func(serverID, repoID, name, operationID string) {
 				defer c.tasks.Done()
+				defer c.showProgress(ctx, "Pierwszy checkout", name+" — trwa pobieranie…")()
 				c.awaitAttachmentOutcome(ctx, serverID, repoID, name, operationID)
+				c.awaitRepositorySettled(ctx, picked.Path)
 			}(serverID, repoID, name, operationID)
 		}
 	}()
@@ -1161,7 +1172,7 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 		}
 		recipients, err := c.cfg.RealmGrants.ListRecipients(ctx, serverID, repoID)
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać stref", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.reportActionError(ctx, key, "Nie udało się pobrać stref", err.Error())
 			return
 		}
 		if len(recipients) == 0 {
@@ -1235,7 +1246,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 			}
 			shares, err := c.cfg.PublicShares.ListPublicShares(ctx, serverID, repoID)
 			if err != nil {
-				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać udostępnień", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.reportActionError(ctx, key, "Nie udało się pobrać udostępnień", err.Error())
 				return
 			}
 			request := platform.PublicShareDialogRequest{Title: "Udostępnienia publiczne — „" + repo.DisplayName + "”", Text: "Kanał otwarty może być chroniony hasłem; kanał zamknięty wysyła odbiorcom osobne zaproszenia i pięciominutowe kody OTP."}
@@ -1624,7 +1635,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 		}
 		current, err := c.cfg.RealmBranding.PublicBranding(ctx, serverID)
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać wyglądu udziałów", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.reportActionError(ctx, key, "Nie udało się pobrać wyglądu udziałów", err.Error())
 			return
 		}
 		color, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Kolor udziałów publicznych", Text: "Podaj kolor wiodący w zapisie #RRGGBB.", Default: current.LeadingColor, Placeholder: realmbranding.DefaultLeadingColor})
@@ -1839,7 +1850,14 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 		// and retry safety from this point onward.
 		c.endOperation(key)
 		operationHeld = false
+		// The picker has closed and the import runs for tens of seconds, during
+		// which the tray legitimately shows transient states. Without a window
+		// the user is left staring at those and reading them as failures.
+		defer c.showProgress(ctx, "Tworzenie repozytorium", displayName+" — trwa import początkowy…")()
 		c.awaitCreationOutcome(ctx, serverID, displayName, operationID)
+		// "attached" only means the working copy is bound; the initial import
+		// keeps pushing after that. Hold the window for the rest of it.
+		c.awaitRepositorySettled(ctx, picked.Path)
 	}()
 }
 
@@ -1868,6 +1886,76 @@ func (c *Controller) startPairMobileDevice(ctx context.Context, serverID string)
 			}
 		}
 	}()
+}
+
+// showProgress opens the "still working" window and returns its closer. The
+// returned function is always safe to call, so callers can `defer` it without
+// a nil check.
+//
+// Every failure path here is deliberately silent. This window explains a wait;
+// it never gates, decides or reports anything, so a missing zenity or a
+// PowerShell that would not start must not turn a working import into a
+// user-visible error.
+func (c *Controller) showProgress(ctx context.Context, title, text string) func() {
+	if c.cfg.Progress == nil {
+		return func() {}
+	}
+	close, err := c.cfg.Progress.ShowProgress(ctx, platform.ProgressRequest{Title: title, Text: text})
+	if err != nil || close == nil {
+		return func() {}
+	}
+	return close
+}
+
+// awaitRepositorySettled blocks while the working copy at localPath still has
+// work in flight, so a progress window closes when the *user's* wait ends.
+//
+// The lifecycle poll behind repository creation returns at "attached", which is
+// when the daemon has bound the working copy — not when it has finished pushing
+// its contents. Closing the window there put it back on screen for a fraction
+// of the real wait and left the tray showing the busy clock alone, which is the
+// state this window exists to explain.
+//
+// Busy is read exactly as the tray reads it (RepoViewModel.CurrentOp, plus the
+// two transient startup states), so the window and the icon can never disagree.
+// The wait is bounded: an unknown repo, a stalled daemon or a missing
+// ViewModel must not pin a window on screen forever.
+func (c *Controller) awaitRepositorySettled(ctx context.Context, localPath string) {
+	if c.cfg.ViewModel == nil || strings.TrimSpace(localPath) == "" {
+		return
+	}
+	timeout := c.cfg.CreationStatusPollTimeout
+	if timeout <= 0 {
+		timeout = creationStatusPollTimeout
+	}
+	target := filepath.Clean(localPath)
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !c.repositoryBusy(target) {
+			return
+		}
+		timer := time.NewTimer(repositorySettleInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+// repositoryBusy reports whether the working copy at target is mid-operation.
+// A repository the ViewModel does not know yet counts as busy: right after
+// creation it has not necessarily appeared in a projection, and treating that
+// gap as "done" would reintroduce the early close.
+func (c *Controller) repositoryBusy(target string) bool {
+	for _, repo := range c.cfg.ViewModel().Repos {
+		if filepath.Clean(repo.LocalPath) != target {
+			continue
+		}
+		return repo.ShowsBusy()
+	}
+	return true
 }
 
 func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoID, displayName, operationID string) {

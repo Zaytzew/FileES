@@ -797,6 +797,7 @@ func run(parent context.Context, deps dependencies) error {
 		RealmGrantBrowser:    deps.platform,
 		PublicShareBrowser:   deps.platform,
 		ConsentPrompter:      deps.platform,
+		Progress:             progressPresenter(deps.platform),
 		Reconnect:            guiApp.Reconnect,
 		Refresh:              guiApp.Refresh,
 		PrepareRestart:       notificationPolicy.SuppressConnectionTransitions,
@@ -832,7 +833,9 @@ func run(parent context.Context, deps dependencies) error {
 					case <-ctx.Done():
 						return
 					case notification := <-notificationQueue:
-						_ = deps.platform.Notify(ctx, notification)
+						if err := deps.platform.Notify(ctx, notification); err != nil && ctx.Err() == nil {
+							log.Printf("filees-gui: notification delivery failed: %v", err)
+						}
 					}
 				}
 			}()
@@ -877,6 +880,17 @@ func (adapter realmGrantAdapter) SetEditingPolicy(ctx context.Context, serverID,
 		return false, errors.New("daemon returned an invalid editing policy result")
 	}
 	return result.Policy == contract.EditingLockRequired, nil
+}
+
+// progressPresenter narrows the platform backend to the optional progress
+// surface. ProgressPresenter is deliberately outside platform.Backend, so a
+// backend that does not implement it simply yields nil and the controller
+// skips the window (see actions.Controller.showProgress).
+func progressPresenter(backend platform.Backend) platform.ProgressPresenter {
+	if presenter, ok := backend.(platform.ProgressPresenter); ok {
+		return presenter
+	}
+	return nil
 }
 
 type shoutIPC interface {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -113,7 +114,7 @@ func TestPutActorRecoversUnknownAckByStatusAndPersistsCompletion(t *testing.T) {
 	if done.BytesHave != 8 || done.PublishedRevision != 19 || exchange.putOffset != 8 {
 		t.Fatalf("done=%+v server_offset=%d", done, exchange.putOffset)
 	}
-	if _, err := os.Stat(manager.spoolPath(op.OperationID)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(manager.spoolPath(op)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("published spool survived: %v", err)
 	}
 	restarted := actorManager(t, root, exchange)
@@ -202,6 +203,57 @@ func TestGetRetryAdoptsVerifiedDestinationAfterRenameCrash(t *testing.T) {
 	done := waitOperation(t, manager, op.OperationID, StateLocal)
 	if done.LastError != "" || exchange.getWindows != 0 || exchange.releases != 1 {
 		t.Fatalf("done=%+v windows=%d releases=%d", done, exchange.getWindows, exchange.releases)
+	}
+}
+
+func TestResumePausesPutWhenBoundSpoolPayloadIsUnavailable(t *testing.T) {
+	manager := actorManager(t, filepath.Join(t.TempDir(), "control"), &actorExchange{})
+	identity := whale.Identity{LogicalRepoID: uuid.NewString(), LogicalPath: "media/missing.bin", GenerationID: uuid.NewString(), ExpectedSize: 7, SHA256: strings.Repeat("0", 64)}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	op := Operation{
+		Schema: OperationSchema, OperationID: uuid.NewString(), ServerID: "office", Direction: whale.DirectionPut,
+		LogicalRepoID: identity.LogicalRepoID, LogicalPath: identity.LogicalPath, GenerationID: identity.GenerationID,
+		Identity: &identity, SourcePath: filepath.Join(t.TempDir(), "source.bin"), SpoolRoot: filepath.Join(t.TempDir(), "spool"),
+		SpoolVolumeID: "volume-missing", SpoolDeviceID: "disk:9", ReservedBytes: identity.ExpectedSize,
+		State: StateReady, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := manager.save(op); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Resume(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	paused := waitOperation(t, manager, op.OperationID, StatePaused)
+	if !strings.Contains(paused.LastError, "Whale spool payload unavailable") {
+		t.Fatalf("paused=%+v", paused)
+	}
+}
+
+func TestLegacyV1PutResumesFromItsOriginalControlRoot(t *testing.T) {
+	content := []byte("legacy payload")
+	digest := sha256.Sum256(content)
+	exchange := &actorExchange{}
+	manager := actorManager(t, filepath.Join(t.TempDir(), "control"), exchange)
+	identity := whale.Identity{LogicalRepoID: uuid.NewString(), LogicalPath: "media/legacy.bin", GenerationID: uuid.NewString(), ExpectedSize: int64(len(content)), SHA256: hex.EncodeToString(digest[:])}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	op := Operation{
+		Schema: legacyOperationSchema, OperationID: uuid.NewString(), ServerID: "office", Direction: whale.DirectionPut,
+		LogicalRepoID: identity.LogicalRepoID, LogicalPath: identity.LogicalPath, GenerationID: identity.GenerationID,
+		Identity: &identity, SourcePath: filepath.Join(t.TempDir(), "legacy.bin"), State: StateFailed,
+		LastError: "old daemon stopped", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := manager.save(op); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manager.spoolPath(op), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Retry(context.Background(), op.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	done := waitOperation(t, manager, op.OperationID, StatePublished)
+	if done.Schema != legacyOperationSchema || done.BytesHave != int64(len(content)) {
+		t.Fatalf("done=%+v", done)
 	}
 }
 

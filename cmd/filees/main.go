@@ -145,6 +145,7 @@ func runDaemon() {
 		lg.Errorf("Whale actor: %v", err)
 		os.Exit(1)
 	}
+	whaleManager.EnableSystemSpoolSelection()
 	whaleManager.OnChange = func(operation whaleclient.Operation) {
 		ipc.Emit(contract.NewEvent("", 0, contract.EvWhaleChanged, operation.LogicalRepoID, projectWhaleOperation(operation)))
 	}

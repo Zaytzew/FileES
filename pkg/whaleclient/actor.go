@@ -24,9 +24,11 @@ import (
 )
 
 const (
-	OperationSchema   = "filees.whale-operation/v1"
-	DefaultWindowSize = int64(64 << 20)
-	clientSafetyFloor = int64(64 << 20)
+	legacyOperationSchema = "filees.whale-operation/v1"
+	OperationSchema       = "filees.whale-operation/v2"
+	DefaultWindowSize     = int64(64 << 20)
+	clientSafetyFloor     = int64(64 << 20)
+	captureBufferSize     = 4 << 20
 )
 
 type OperationState string
@@ -59,6 +61,10 @@ type Operation struct {
 	Revision          int64           `json:"revision,omitempty"`
 	ConfirmationToken string          `json:"confirmation_token,omitempty"`
 	SourcePath        string          `json:"source_path,omitempty"`
+	SpoolRoot         string          `json:"spool_root,omitempty"`
+	SpoolVolumeID     string          `json:"spool_volume_id,omitempty"`
+	SpoolDeviceID     string          `json:"spool_device_id,omitempty"`
+	ReservedBytes     int64           `json:"reserved_bytes,omitempty"`
 	DestinationPath   string          `json:"destination_path,omitempty"`
 	PartialPath       string          `json:"partial_path,omitempty"`
 	State             OperationState  `json:"state"`
@@ -80,8 +86,14 @@ type Manager struct {
 	// TransportFor is an adapter seam for tests and alternate embedded
 	// runtimes. Nil selects the pinned desktop SSH transport.
 	TransportFor func(clientprofile.Profile) (Exchanger, error)
+	// SpoolCandidates is nil for a single-root manager. The desktop daemon
+	// enables the system provider so every new PUT can choose another device.
+	SpoolCandidates func(sourcePath string) ([]spoolCandidate, error)
+	// SpoolSourceIdentity is a platform seam used by allocator tests.
+	SpoolSourceIdentity func(path string) (root, volumeID, deviceID string, err error)
 
 	mu       sync.Mutex
+	spoolMu  sync.Mutex
 	profiles map[string]clientprofile.Profile
 	cancels  map[string]context.CancelFunc
 }
@@ -123,8 +135,18 @@ func (m *Manager) BeginPut(ctx context.Context, serverID, logicalRepoID, logical
 	if _, err := m.profile(serverID); err != nil {
 		return Operation{}, err
 	}
+	info, err := os.Stat(sourcePath)
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > whale.MaxObjectBytes {
+		return Operation{}, errors.New("Whale source must be a regular file within the size limit")
+	}
+	m.spoolMu.Lock()
+	defer m.spoolMu.Unlock()
+	selection, err := m.selectSpool(sourcePath, info.Size())
+	if err != nil {
+		return Operation{}, err
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	op := Operation{Schema: OperationSchema, OperationID: uuid.NewString(), ServerID: serverID, Direction: whale.DirectionPut, LogicalRepoID: logicalRepoID, LogicalPath: logicalPath, GenerationID: uuid.NewString(), SourcePath: filepath.Clean(sourcePath), State: StatePreparing, CreatedAt: now, UpdatedAt: now}
+	op := Operation{Schema: OperationSchema, OperationID: uuid.NewString(), ServerID: serverID, Direction: whale.DirectionPut, LogicalRepoID: logicalRepoID, LogicalPath: logicalPath, GenerationID: uuid.NewString(), SourcePath: filepath.Clean(sourcePath), SpoolRoot: selection.Root, SpoolVolumeID: selection.VolumeID, SpoolDeviceID: selection.DeviceID, ReservedBytes: selection.ReservedBytes, State: StatePreparing, CreatedAt: now, UpdatedAt: now}
 	if err := m.save(op); err != nil {
 		return Operation{}, err
 	}
@@ -221,7 +243,8 @@ func (m *Manager) Cancel(operationID string, removePayload bool) (Operation, err
 		return Operation{}, err
 	}
 	if removePayload {
-		_ = os.Remove(m.spoolPath(operationID))
+		_ = os.Remove(m.spoolPath(op))
+		m.removeExternalSpoolDir(op)
 		_ = os.Remove(op.PartialPath)
 	}
 	return op, nil
@@ -285,7 +308,8 @@ func (m *Manager) Resume(ctx context.Context) error {
 		case StateMaterializing, StateVerifying:
 			m.launch(ctx, op.OperationID, m.runGet)
 		case StatePublished:
-			_ = os.Remove(m.spoolPath(op.OperationID))
+			_ = os.Remove(m.spoolPath(op))
+			m.removeExternalSpoolDir(op)
 		case StateLocal:
 			_ = os.Remove(op.PartialPath)
 		}
@@ -338,6 +362,10 @@ func (m *Manager) runPut(ctx context.Context, operationID string) {
 	if err != nil || op.State == StateCancelled {
 		return
 	}
+	if err := m.ensurePutSpool(op); err != nil {
+		m.pause(op, err)
+		return
+	}
 	if op.State == StatePreparing {
 		op, err = m.capture(ctx, op)
 		if err != nil {
@@ -360,7 +388,7 @@ func (m *Manager) runPut(ctx context.Context, operationID string) {
 			return
 		}
 		count := min(m.windowSize(), op.Identity.ExpectedSize-op.BytesHave)
-		file, err := os.Open(m.spoolPath(op.OperationID))
+		file, err := os.Open(m.spoolPath(op))
 		if err != nil {
 			m.fail(op, err)
 			return
@@ -406,7 +434,8 @@ func (m *Manager) runPut(ctx context.Context, operationID string) {
 		m.fail(op, err)
 		return
 	}
-	_ = os.Remove(m.spoolPath(op.OperationID))
+	_ = os.Remove(m.spoolPath(op))
+	m.removeExternalSpoolDir(op)
 }
 
 func (m *Manager) capture(ctx context.Context, op Operation) (Operation, error) {
@@ -419,10 +448,13 @@ func (m *Manager) capture(ctx context.Context, op Operation) (Operation, error) 
 	if err != nil || !before.Mode().IsRegular() || before.Size() < 1 || before.Size() > whale.MaxObjectBytes {
 		return op, errors.New("Whale source must be a regular file within the size limit")
 	}
-	if err := ensureSpace(m.Root, before.Size()); err != nil {
+	if op.ReservedBytes > 0 && before.Size() != op.ReservedBytes {
+		return op, errors.New("Whale source size changed after spool reservation")
+	}
+	if err := ensureSpace(op.effectiveSpoolRoot(m.Root), before.Size()); err != nil {
 		return op, err
 	}
-	dir := m.operationDir(op.OperationID)
+	dir := m.spoolOperationDir(op)
 	if err := privatefile.EnsureDir(dir); err != nil {
 		return op, err
 	}
@@ -433,7 +465,7 @@ func (m *Manager) capture(ctx context.Context, op Operation) (Operation, error) 
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(tmp, hash), &contextReader{ctx: ctx, reader: source})
+	written, copyErr := io.CopyBuffer(io.MultiWriter(tmp, hash), &contextReader{ctx: ctx, reader: source}, make([]byte, captureBufferSize))
 	syncErr := tmp.Sync()
 	closeErr := tmp.Close()
 	if err := errors.Join(copyErr, syncErr, closeErr); err != nil {
@@ -447,7 +479,7 @@ func (m *Manager) capture(ctx context.Context, op Operation) (Operation, error) 
 	if err := identity.Validate(); err != nil {
 		return op, err
 	}
-	if err := os.Rename(tmpPath, m.spoolPath(op.OperationID)); err != nil {
+	if err := os.Rename(tmpPath, m.spoolPath(op)); err != nil {
 		return op, err
 	}
 	if err := durable.SyncDirectory(dir); err != nil {
@@ -666,6 +698,28 @@ func (m *Manager) fail(op Operation, err error) {
 	_ = m.save(op)
 }
 
+func (m *Manager) pause(op Operation, err error) {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return
+	}
+	op.State, op.LastError = StatePaused, err.Error()
+	_ = m.save(op)
+}
+
+func (m *Manager) ensurePutSpool(op Operation) error {
+	root := op.effectiveSpoolRoot(m.Root)
+	if op.State == StatePreparing {
+		if err := privatefile.EnsureDir(root); err != nil {
+			return fmt.Errorf("Whale spool volume unavailable: %w", err)
+		}
+		return nil
+	}
+	if _, err := os.Stat(m.spoolPath(op)); err != nil {
+		return fmt.Errorf("Whale spool payload unavailable: %w", err)
+	}
+	return nil
+}
+
 func (m *Manager) save(op Operation) error {
 	if err := validateOperation(op); err != nil {
 		return err
@@ -758,7 +812,7 @@ func (m *Manager) waitIdle(ctx context.Context, operationID string) error {
 }
 
 func validateOperation(op Operation) error {
-	if op.Schema != OperationSchema {
+	if op.Schema != OperationSchema && op.Schema != legacyOperationSchema {
 		return errors.New("unsupported Whale operation schema")
 	}
 	if id, err := uuid.Parse(op.OperationID); err != nil || id.String() != op.OperationID || strings.TrimSpace(op.ServerID) == "" {
@@ -776,6 +830,19 @@ func validateOperation(op Operation) error {
 	}
 	if op.Identity != nil && (op.Identity.LogicalRepoID != op.LogicalRepoID || op.Identity.LogicalPath != op.LogicalPath || op.Identity.GenerationID != op.GenerationID || op.Identity.Validate() != nil) {
 		return errors.New("invalid Whale operation content identity")
+	}
+	if op.Schema == legacyOperationSchema {
+		if op.SpoolRoot != "" || op.SpoolVolumeID != "" || op.SpoolDeviceID != "" || op.ReservedBytes != 0 {
+			return errors.New("legacy Whale operation cannot contain a spool binding")
+		}
+	} else if op.SpoolRoot != "" {
+		if op.Direction != whale.DirectionPut || !filepath.IsAbs(op.SpoolRoot) || strings.TrimSpace(op.SpoolVolumeID) == "" || strings.TrimSpace(op.SpoolDeviceID) == "" || op.ReservedBytes < 1 || op.ReservedBytes > whale.MaxObjectBytes {
+			return errors.New("invalid Whale spool binding")
+		}
+	} else if op.SpoolVolumeID != "" || op.SpoolDeviceID != "" || op.ReservedBytes != 0 {
+		return errors.New("incomplete Whale spool binding")
+	} else if op.Direction == whale.DirectionPut {
+		return errors.New("Whale PUT operation has no spool binding")
 	}
 	if _, err := time.Parse(time.RFC3339Nano, op.CreatedAt); err != nil {
 		return errors.New("invalid Whale operation timestamp")
@@ -809,10 +876,26 @@ func (m *Manager) transport(serverID string) (Exchanger, error) {
 	return NewTransport(Config{Address: profile.Address, Port: profile.SSHPort, IdentityFile: profile.IdentityFile, KnownHosts: profile.KnownHosts, Timeout: profile.SVNTimeout()})
 }
 
+func (op Operation) effectiveSpoolRoot(defaultRoot string) string {
+	if op.SpoolRoot != "" {
+		return filepath.Clean(op.SpoolRoot)
+	}
+	return filepath.Clean(defaultRoot)
+}
+
 func (m *Manager) operationDir(id string) string { return filepath.Join(m.Root, id) }
 func (m *Manager) statePath(id string) string    { return filepath.Join(m.operationDir(id), "state.json") }
-func (m *Manager) spoolPath(id string) string {
-	return filepath.Join(m.operationDir(id), "payload.ready")
+func (m *Manager) spoolOperationDir(op Operation) string {
+	return filepath.Join(op.effectiveSpoolRoot(m.Root), op.OperationID)
+}
+func (m *Manager) spoolPath(op Operation) string {
+	return filepath.Join(m.spoolOperationDir(op), "payload.ready")
+}
+func (m *Manager) removeExternalSpoolDir(op Operation) {
+	dir := m.spoolOperationDir(op)
+	if filepath.Clean(dir) != filepath.Clean(m.operationDir(op.OperationID)) {
+		_ = os.Remove(dir)
+	}
 }
 func (m *Manager) windowSize() int64 {
 	if m.WindowSize > 0 && m.WindowSize <= whale.MaxWindowBytes {
@@ -842,14 +925,19 @@ func ensureSpace(path string, contentBytes int64) error {
 	if err != nil {
 		return err
 	}
-	margin := clientSafetyFloor
-	if contentBytes/20 > margin {
-		margin = contentBytes / 20
-	}
+	margin := spaceSafetyMargin(contentBytes)
 	if contentBytes > available-margin {
 		return fmt.Errorf("insufficient space for Whale: available=%d required=%d safety=%d", available, contentBytes, margin)
 	}
 	return nil
+}
+
+func spaceSafetyMargin(contentBytes int64) int64 {
+	margin := clientSafetyFloor
+	if contentBytes/20 > margin {
+		margin = contentBytes / 20
+	}
+	return margin
 }
 
 func digestPath(path string) (string, int64, error) {

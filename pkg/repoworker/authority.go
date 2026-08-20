@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"filees/pkg/clientview"
+	whale "filees/pkg/whale/v1"
 	"github.com/google/uuid"
 )
 
@@ -621,6 +622,7 @@ func (p ServicePublisher) renderAuthz() ([]byte, error) {
 	}
 	for _, r := range records {
 		fmt.Fprintf(&out, "\n[%s:/]\n@owner-%s = rw\n* =\n", r.RepoID, r.RepoID)
+		fmt.Fprintf(&out, "\n[%s:/%s]\n* =\n", r.RepoID, whale.ReservedNamespace)
 	}
 	return []byte(out.String()), nil
 }

@@ -17,6 +17,17 @@ func TestRepositoryPolicyDefaultsAndExplicitDataErasureWindow(t *testing.T) {
 	}
 }
 
+func TestRepositorySVNMuccIsSiblingOfConfiguredSVNAdmin(t *testing.T) {
+	repository := RepositoryFile{SVNAdminBinary: filepath.Join(string(filepath.Separator), "usr", "local", "bin", "svnadmin")}
+	want := filepath.Join(filepath.Dir(repository.SVNAdminBinary), "svnmucc")
+	if got := repository.EffectiveSVNMuccBinary(); got != want {
+		t.Fatalf("svnmucc=%q want=%q", got, want)
+	}
+	if got := (RepositoryFile{}).EffectiveSVNMuccBinary(); got != "" {
+		t.Fatalf("empty svnadmin derived svnmucc=%q", got)
+	}
+}
+
 func TestPublicShareServerBoundaryRequiresHTTPSAndLoopbackOrUnix(t *testing.T) {
 	root := t.TempDir()
 	valid := PublicSharesFile{Enabled: true, BaseURL: "https://get.example.test", StateRoot: filepath.Join(root, "state"), FrostKeyFile: filepath.Join(root, "frost.key"), AuthorityStagingRoot: filepath.Join(root, "staging"), BackchannelNetwork: "tcp", BackchannelAddress: "127.0.0.1:9010"}

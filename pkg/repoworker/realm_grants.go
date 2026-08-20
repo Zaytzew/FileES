@@ -14,6 +14,7 @@ import (
 
 	"filees/pkg/clientview"
 	"filees/pkg/realmbranding"
+	whale "filees/pkg/whale/v1"
 	"github.com/google/uuid"
 )
 
@@ -612,6 +613,7 @@ func renderCanonicalGrantAuthz(repositories map[string]repositoryRecord, clients
 	}
 	for _, repoID := range repoIDs {
 		fmt.Fprintf(&out, "\n[%s:/]\n@owner-%s = rw\n@writer-%s = rw\n@reader-%s = r\n* =\n", repoID, repoID, repoID, repoID)
+		fmt.Fprintf(&out, "\n[%s:/%s]\n* =\n", repoID, whale.ReservedNamespace)
 	}
 	return []byte(out.String())
 }

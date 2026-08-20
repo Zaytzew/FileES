@@ -79,6 +79,16 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 			"repository_name": config.RepositoryName, "client_entry_path": config.ClientEntryPath,
 			"svn_binary": config.SVNBinary, "svnserve_binary": config.SVNServeBinary,
 		},
+		"repositories": map[string]any{
+			"root": filepath.Join(root, "repositories"), "results_root": filepath.Join(root, "results"),
+			"data_authz_file": filepath.Join(activationRoot, "repositories.authz"), "svnadmin_binary": trueBinary,
+			"url_prefix": "svn+ssh://_filees-data@filees.test/", "deletion_archive_root": filepath.Join(root, "deleted"),
+			"recovery_admin_contact": "filees-admin@example.test",
+		},
+		"invitation": map[string]any{
+			"server_id": "client-entry-test", "server_address": "filees.test:2222",
+			"known_host": "[filees.test]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		},
 		"smtp": map[string]any{"address": "127.0.0.1:2525", "client_name": "filees.test", "from": "filees@example.test", "message_id_domain": "filees.test", "tls": "none"},
 	}
 	raw, _ := json.Marshal(file)
@@ -139,8 +149,12 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		supervisorErr = nil
 
-		originalControl, originalMail := runRepositoryWorkerProcess, runMailAfterControl
-		defer func() { runRepositoryWorkerProcess, runMailAfterControl = originalControl, originalMail }()
+		originalCorrector, originalControl, originalMail := runOwnershipCorrectorProcess, runRepositoryWorkerProcess, runMailAfterControl
+		defer func() {
+			runOwnershipCorrectorProcess, runRepositoryWorkerProcess, runMailAfterControl = originalCorrector, originalControl, originalMail
+		}()
+		correctorRuns := 0
+		runOwnershipCorrectorProcess = func(io.Writer) error { correctorRuns++; return nil }
 		controlClient := ""
 		runRepositoryWorkerProcess = func(_, _, id string, _ io.Reader, _ io.Writer, _ io.Writer) error { controlClient = id; return nil }
 		mailTriggered := false
@@ -151,9 +165,28 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 			}
 			return ""
 		}
-		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || controlClient != grant.ClientID || !mailTriggered {
-			t.Fatalf("control code=%d client=%q mail=%v stderr=%s", code, controlClient, mailTriggered, stderr.String())
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitOK || controlClient != grant.ClientID || !mailTriggered || correctorRuns != 1 {
+			t.Fatalf("control code=%d client=%q mail=%v corrector=%d stderr=%s", code, controlClient, mailTriggered, correctorRuns, stderr.String())
 		}
+
+		// Ownership correction is a hard gate. A control worker must never touch
+		// the service WC after the privileged repair failed, and the auxiliary
+		// mail pass must not run without a durable control result.
+		correctorRuns = 0
+		controlClient = ""
+		mailTriggered = false
+		stderr.Reset()
+		runOwnershipCorrectorProcess = func(io.Writer) error {
+			correctorRuns++
+			return errors.New("test ownership correction failure")
+		}
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise); code != ExitSoftware || correctorRuns != 1 || controlClient != "" || mailTriggered {
+			t.Fatalf("failed corrector code=%d client=%q mail=%v corrector=%d stderr=%s", code, controlClient, mailTriggered, correctorRuns, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "service-WC ownership") {
+			t.Fatalf("failed corrector was not reported: %s", stderr.String())
+		}
+		runOwnershipCorrectorProcess = func(io.Writer) error { correctorRuns++; return nil }
 
 		// Preparing SMTP is deliberately auxiliary: a missing secret must not
 		// suppress or replace the durable control result.

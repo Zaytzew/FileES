@@ -32,8 +32,9 @@ func TestOpenBSDServerBinaryPolicyMatchesPrivilegeBoundaries(t *testing.T) {
 		"{libexec_dir}/filees/filees-entry":           {Mode: "4511", Owner: "_filees-state", Group: "wheel"},
 		"{libexec_dir}/filees/filees-client-entry":    {Mode: "4550", Owner: "_filees-state", Group: "_filees-access"},
 		"{libexec_dir}/filees/filees-mobile-v1":       {Mode: "4550", Owner: "_filees-state", Group: "_filees-access"},
-		"{libexec_dir}/filees/filees-worker":          {Mode: "0555", Owner: "root", Group: "wheel"},
-		"/usr/libexec/auth/login_-filees":             {Mode: "4550", Owner: "_filees-state", Group: "auth"},
+		"{libexec_dir}/filees/filees-worker":               {Mode: "0555", Owner: "root", Group: "wheel"},
+		"{libexec_dir}/filees/filees-service-wc-corrector": {Mode: "4550", Owner: "root", Group: "_filees-access"},
+		"/usr/libexec/auth/login_-filees":                  {Mode: "4550", Owner: "_filees-state", Group: "auth"},
 	}
 	for target, expected := range want {
 		got, ok := byTarget[target]
@@ -390,7 +391,7 @@ func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 	text := string(raw)
 	for _, required := range []string{
 		"openbsd-amd64", "linux-amd64", "filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail",
-		"filees-ssh-auth filees-entry filees-worker filees-client-entry filees-mobile-v1 filees-recovery-entry",
+		"filees-ssh-auth filees-entry filees-worker filees-service-wc-corrector filees-client-entry filees-mobile-v1 filees-recovery-entry",
 		"filees-public-authority filees-links",
 		`"./cmd/$command"`, "SHA256SUMS", "sha256 -r",
 	} {
@@ -423,6 +424,7 @@ func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 		`-m 0555 "$bundle/bin/filees-onboard"`,
 		`-m 4511 "$bundle/bin/filees-entry"`,
 		`-m 0555 "$bundle/bin/filees-worker"`,
+		`-o root -g "$client_access_group" -m 4550 "$bundle/bin/filees-service-wc-corrector"`,
 		`-m 0555 "$bundle/bin/filees-public-authority"`,
 		`-m 0555 "$bundle/bin/filees-links"`,
 		`-o root -g wheel -m 0555 "$bundle/bin/filees-install"`,

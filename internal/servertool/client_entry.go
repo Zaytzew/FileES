@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	ClientSVNCommand     = "svnserve -t"
-	ClientControlCommand = "filees control-v1"
-	repositoryWorkerPath = "/usr/local/libexec/filees/filees-worker"
-	clientEntryPromises  = writePromises + " proc exec"
+	ClientSVNCommand       = "svnserve -t"
+	ClientControlCommand   = "filees control-v1"
+	repositoryWorkerPath   = "/usr/local/libexec/filees/filees-worker"
+	ownershipCorrectorPath = "/usr/local/libexec/filees/filees-service-wc-corrector"
+	clientEntryPromises    = writePromises + " proc exec"
 	// dpath is needed only while the SVN branch's ClaimSession creates its
 	// private revoke FIFO with mkfifo(2). The later supervisor profile drops
 	// it before relaying the client session.
@@ -79,6 +80,10 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 	}}
 	childPromises := clientChildPromises(originalCommand)
 	if originalCommand == ClientControlCommand {
+		if err := runOwnershipCorrectorProcess(stderr); err != nil {
+			report(stderr, "filees-client-entry service-WC ownership", err)
+			return ExitSoftware
+		}
 		r := config.Repositories
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"})
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "resolver", Name: "/etc/resolv.conf", Perms: "r"}, obsandbox.Path{Label: "hosts", Name: "/etc/hosts", Perms: "r"})
@@ -189,6 +194,16 @@ var runRepositoryWorkerProcess = func(tempRoot, svnBinDir, clientID string, stdi
 	command.Env = []string{"TMPDIR=" + tempRoot, "PATH=" + svnBinDir}
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
 	return command.Run()
+}
+
+var runOwnershipCorrectorProcess = func(stderr io.Writer) error {
+	command := exec.Command(ownershipCorrectorPath)
+	command.Stdout = io.Discard
+	command.Stderr = stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("run ownership corrector: %w", err)
+	}
+	return nil
 }
 
 var runMailAfterControl = deliverMailAfterControl

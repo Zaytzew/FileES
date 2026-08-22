@@ -1658,18 +1658,24 @@ func TestControllerOffersAndLocatesMovedWorkingCopy(t *testing.T) {
 func TestControllerReportsImmediateLocateRejectionAsModal(t *testing.T) {
 	locator := &fakeRepositoryLocator{calls: make(chan locateCall, 1), err: fakeStructuredLocateError{}}
 	target := filepath.Join(t.TempDir(), "plain")
-	platformFake := &platformtest.Fake{PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
-		return platform.PickFolderResult{Path: target}, nil
-	}}
+	platformFake := &platformtest.Fake{
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			return platform.PickFolderResult{Path: target}, nil
+		},
+	}
 	operation := "working_copy_missing"
 	view := app.ViewModel{
-		Connected: true, Capabilities: map[string]bool{contract.CapRepoLocate: true},
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapRepoLocate: true},
 		Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{{
 			ID: "repo-1", DisplayName: "ZEGRZE", Attached: true, LocalPath: filepath.Join(t.TempDir(), "missing"),
 			State: contract.StateInteractionRequired, CurrentOp: &operation,
 		}}}},
 	}
-	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, FolderPicker: platformFake, Prompter: platformFake, RepositoryLocator: locator, Notifier: platformFake})
+	intents, cancel := setup(actions.Config{
+		ViewModel:    func() app.ViewModel { return view },
+		FolderPicker: platformFake, Prompter: platformFake, RepositoryLocator: locator, Notifier: platformFake,
+	})
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentLocateFolder, ServerID: "office", RepoID: "repo-1"})
 	awaitCh(t, locator.calls, "locate")
@@ -1686,20 +1692,23 @@ func TestControllerReportsImmediateLocateRejectionAsModal(t *testing.T) {
 func TestControllerReportsWrongWorkingCopyLocateAsModal(t *testing.T) {
 	locator := &fakeRepositoryLocator{calls: make(chan locateCall, 1), lastError: "relocated working copy URL does not match projected repository"}
 	target := filepath.Join(t.TempDir(), "WRONG")
-	platformFake := &platformtest.Fake{PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
-		return platform.PickFolderResult{Path: target}, nil
-	}}
+	platformFake := &platformtest.Fake{
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			return platform.PickFolderResult{Path: target}, nil
+		},
+	}
 	operation := "working_copy_missing"
 	view := app.ViewModel{
-		Connected: true, Capabilities: map[string]bool{contract.CapRepoLocate: true},
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapRepoLocate: true},
 		Servers: []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{{
 			ID: "repo-1", DisplayName: "ZEGRZE", Attached: true, LocalPath: filepath.Join(t.TempDir(), "missing"),
 			State: contract.StateInteractionRequired, CurrentOp: &operation,
 		}}}},
 	}
 	intents, cancel := setup(actions.Config{
-		ViewModel: func() app.ViewModel { return view }, FolderPicker: platformFake, Prompter: platformFake,
-		RepositoryLocator: locator, Notifier: platformFake,
+		ViewModel:    func() app.ViewModel { return view },
+		FolderPicker: platformFake, Prompter: platformFake, RepositoryLocator: locator, Notifier: platformFake,
 		CreationStatusPollInterval: time.Millisecond, CreationStatusPollTimeout: time.Second,
 	})
 	defer cancel()
@@ -1715,6 +1724,29 @@ func TestControllerReportsWrongWorkingCopyLocateAsModal(t *testing.T) {
 	}
 	if len(snapshot.Notifications) != 1 || snapshot.Notifications[0].Urgency != platform.UrgencyCritical {
 		t.Fatalf("notifications=%#v", snapshot.Notifications)
+	}
+}
+
+func TestControllerSettingsOpensRecoveriesWhenNoServersRemain(t *testing.T) {
+	var got platform.SettingsDialogRequest
+	fake := &platformtest.Fake{
+		SettingsFunc: func(_ context.Context, request platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			got = request
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogClose}, nil
+		},
+	}
+	view := app.ViewModel{Connected: true, Recoveries: []app.RecoveryViewModel{{
+		OperationID: "op-1", ServerName: "spot", CanDownload: true, DownloadUntil: "2026-09-01T00:00:00Z",
+	}}}
+	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, SettingsBrowser: fake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
+	deadline := time.Now().Add(time.Second)
+	for len(got.Recoveries) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(got.Servers) != 0 || len(got.Recoveries) != 1 || got.Recoveries[0].OperationID != "op-1" || !got.Recoveries[0].CanDownload {
+		t.Fatalf("settings=%#v", got)
 	}
 }
 

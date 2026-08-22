@@ -532,16 +532,25 @@ func (c *Controller) startRecoveryDownload(ctx context.Context, operationID stri
 				break
 			}
 		}
-		if recovery == nil || !recovery.CanDownload {
+		if recovery != nil && !recovery.CanDownload {
+			c.reportActionError(ctx, key, "Pobieranie archiwów jest niedostępne", "Okno samodzielnego pobrania już minęło. Został kontakt z administratorem serwera.")
 			return
 		}
 		folder, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz katalog dla archiwów repozytoriów"})
-		if err != nil || folder.Cancelled || !filepath.IsAbs(folder.Path) {
+		if err != nil {
+			c.reportActionError(ctx, key, "Nie udało się wybrać katalogu archiwów", actionErrorBody(err))
+			return
+		}
+		if folder.Cancelled {
+			return
+		}
+		if !filepath.IsAbs(folder.Path) {
+			c.reportActionError(ctx, key, "Nie udało się pobrać archiwów", "Wybrana ścieżka nie jest bezwzględna")
 			return
 		}
 		paths, err := c.cfg.RecoveryDownloader.DownloadRecovery(ctx, operationID, filepath.Clean(folder.Path))
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać archiwów", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.reportActionError(ctx, key, "Nie udało się pobrać archiwów", actionErrorBody(err))
 			return
 		}
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Archiwa repozytoriów pobrane", Text: strings.Join(paths, "\n")})
@@ -584,10 +593,10 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			RecoveryDirectory: filepath.Clean(directory.Path), ErasureRequested: consent.Optional,
 		})
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się rozpocząć usuwania udziału", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.reportActionError(ctx, key, "Nie udało się rozpocząć usuwania udziału", actionErrorBody(err))
 			return
 		}
-		otpText := fmt.Sprintf("Kod wysłano e-mailem. Potwierdzenie usunie %d repozytoriów, cofnie %d grantów i unieważni %d aktywacji klientów. Jeśli to nie Ty rozpocząłeś operację, zignoruj wiadomość i skontaktuj się z administratorem serwera.", begin.OwnedRepositoryCount, begin.ForeignGrantCount, begin.ActiveClientCount)
+		otpText := fmt.Sprintf("Kod wysłano e-mailem. Potwierdzenie usunie %d repozytoriów, cofnie %d grantów i unieważni %d aktywacji klientów. Przygotowanie dumpów może potrwać — nie zamykaj FileES. Jeśli to nie Ty rozpocząłeś operację, zignoruj wiadomość i skontaktuj się z administratorem serwera.", begin.OwnedRepositoryCount, begin.ForeignGrantCount, begin.ActiveClientCount)
 		otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Potwierdź usunięcie udziału kodem OTP", Text: otpText, Placeholder: "Kod OTP", Secret: true})
 		if err != nil || otp.Cancelled || strings.TrimSpace(otp.Value) == "" {
 			return
@@ -598,12 +607,12 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			secret[i] = 0
 		}
 		if err != nil {
-			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się dokończyć usuwania udziału", Body: err.Error(), Urgency: platform.UrgencyCritical})
+			c.reportActionError(ctx, key, "Nie udało się dokończyć usuwania udziału", actionErrorBody(err))
 			return
 		}
 		info := "Udział FileES został usunięty."
 		if result.ArchiveCount > 0 {
-			info += fmt.Sprintf("\n\nPakiet odzyskiwania zapisano w:\n%s\n\nArchiwa: %d. Pobieranie jest dostępne do %s; potem do %s pozostaje kontakt z administratorem.", result.RecoveryKitPath, result.ArchiveCount, result.DownloadUntil, result.AdminGraceUntil)
+			info += fmt.Sprintf("\n\nPakiet odzyskiwania zapisano w:\n%s\n\nArchiwa: %d. Pobieranie jest dostępne do %s; potem do %s pozostaje kontakt z administratorem.\n\nNastępne okno pozwoli pobrać dumpy. Później ta sama lista jest w menu FileES → Odzyskiwanie repozytoriów…", result.RecoveryKitPath, result.ArchiveCount, result.DownloadUntil, result.AdminGraceUntil)
 		} else {
 			info += "\n\nSerwer nie zachował archiwów repozytoriów (retencja wynosi 0 albo udział nie zawierał własnych repozytoriów). Nie utworzono akcji odzyskiwania."
 		}
@@ -613,6 +622,9 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Usuwanie udziału przyjęte", Text: info})
 		if c.cfg.Refresh != nil {
 			c.cfg.Refresh()
+		}
+		if result.ArchiveCount > 0 {
+			c.startRecoveryDownload(ctx, begin.OperationID)
 		}
 	}()
 }
@@ -637,7 +649,10 @@ func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID string) (p
 		}
 		request.Servers = append(request.Servers, row)
 	}
-	if len(request.Servers) == 0 {
+	if rec, ok := recoverySettingsDialogRequest(vm); ok {
+		request.Recoveries = rec.Recoveries
+	}
+	if len(request.Servers) == 0 && len(request.Recoveries) == 0 {
 		return platform.SettingsDialogRequest{}, false
 	}
 	return request, true
@@ -2517,10 +2532,19 @@ func (c *Controller) handlePublish(ctx context.Context, repoID string) {
 	}
 	rev, err := c.cfg.Shouts.Publish(ctx, repoID, result.Value)
 	if err != nil {
-		c.reportActionError(ctx, "shout", "Nie udało się opublikować wydania", err.Error())
+		title, body, infoOnly := publishPresentation(err)
+		if infoOnly {
+			c.notify(ctx, platform.Notification{ID: "shout", Group: "shout", Title: title, Body: body, Urgency: platform.UrgencyNormal})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: title, Text: body})
+			return
+		}
+		c.reportActionError(ctx, "shout", title, body)
 		return
 	}
-	c.notify(ctx, platform.Notification{Title: "Wydanie opublikowane", Body: fmt.Sprintf("Rewizja r%d", rev)})
+	title := "Wydanie opublikowane"
+	body := fmt.Sprintf("Zmiany zapisano jako rewizję r%d. Zespół zobaczy komentarz po aktualizacji.", rev)
+	c.notify(ctx, platform.Notification{ID: "shout", Group: "shout", Title: title, Body: body, Urgency: platform.UrgencyNormal})
+	_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: title, Text: body})
 	if c.cfg.Refresh != nil {
 		c.cfg.Refresh()
 	}
@@ -3013,6 +3037,26 @@ func actionErrorBody(err error) string {
 		return detailed
 	}
 	return messageLabel(key)
+}
+
+func publishPresentation(err error) (title, body string, infoOnly bool) {
+	title = "Nie udało się opublikować wydania"
+	body = actionErrorBody(err)
+	var structured presentationError
+	if !errors.As(err, &structured) {
+		return title, body, false
+	}
+	_, _, _, key := structured.PresentationError()
+	switch key {
+	case "shout.nothing_to_publish":
+		return "Brak zmian do opublikowania", body, true
+	case "shout.invalid_comment":
+		return "Nieprawidłowy komentarz wydania", body, false
+	case "shout.read_only":
+		return "Repozytorium jest tylko do odczytu", body, false
+	default:
+		return title, body, false
+	}
 }
 
 func locateFailurePolish(raw string) string {

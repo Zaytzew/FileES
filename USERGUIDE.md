@@ -182,7 +182,7 @@ Zamknij FileES…
 
 **Opublikuj wydanie…** w podmenu folderu wysyła bieżące, jeszcze niezacommitowane zmiany z komentarzem. To nie jest zwykły autocommit: komentarz ląduje w `svn:log` i po aktualizacji inni członkowie zespołu widzą badge **Wydanie: …**. Kliknięcie oznacza „przeczytałem”. FileES nie jest komunikatorem — badge pojawia się dopiero po udanym `svn update` na danej maszynie.
 
-Pusta lista zmian kończy się odmową, nie pustym commitem. Lokalne `shout_patterns` w `config.json` to coś innego: tylko podpowiedź we własnym traju.
+Pusta lista zmian kończy się polskim oknem „Brak zmian do opublikowania”, nie pustym commitem i nie angielskim komunikatem SVN. Udany zapis pokazuje okno z numerem rewizji. Lokalne `shout_patterns` w `config.json` to coś innego: tylko podpowiedź we własnym traju.
 
 ---
 

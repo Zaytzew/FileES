@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +48,31 @@ func TestAcceptWritesRandomIDAndKeepsNameInMetadata(t *testing.T) {
 	}
 	if json.Unmarshal(meta, &onDisk) != nil || onDisk.OriginalName != record.OriginalName || onDisk.SHA256 != record.SHA256 {
 		t.Fatalf("meta=%s", meta)
+	}
+}
+
+func TestAcceptJobIsGroupReadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("group modes are not preserved on Windows")
+	}
+	store := Store{Root: t.TempDir(), MaxBytes: 1024}
+	record, err := store.Accept(uuid.NewString(), "atmprojekt", "oferta-a", strings.Repeat("ab", 32), "ok.bin", bytes.NewReader([]byte("payload")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(store.Root, record.UploadID)
+	for _, name := range []string{dir, filepath.Join(dir, payloadName), filepath.Join(dir, metaName), filepath.Join(dir, readyName)} {
+		info, err := os.Stat(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := os.FileMode(jobFilePerm)
+		if info.IsDir() {
+			want = jobDirPerm
+		}
+		if info.Mode().Perm() != want {
+			t.Fatalf("%s mode=%o want %o", name, info.Mode().Perm(), want)
+		}
 	}
 }
 

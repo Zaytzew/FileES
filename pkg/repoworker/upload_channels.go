@@ -32,6 +32,8 @@ type UploadChannelMailJob struct {
 	DeliveryAddress string    `json:"delivery_address"`
 	Invitation      string    `json:"invitation"`
 	State           string    `json:"state"`
+	AttemptID       string    `json:"attempt_id,omitempty"`
+	LeaseUntil      time.Time `json:"lease_until,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -55,7 +57,7 @@ func (o UploadChannelOutbox) DeliverUploadTokens(_ context.Context, record chann
 		}
 		digest := sha256.Sum256([]byte(record.ChannelID + "\x00upload\x00" + email + "\x00" + delivery.Token))
 		job := UploadChannelMailJob{Schema: uploadChannelMailSchema, MessageID: uuid.NewSHA1(uuid.NameSpaceOID, digest[:]).String(), ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, DeliveryAddress: email, Invitation: delivery.Token, State: "pending", CreatedAt: now}
-		if err := atomicJSON(filepath.Join(o.Root, job.MessageID+".json"), job); err != nil {
+		if err := o.queue(job); err != nil {
 			return err
 		}
 	}

@@ -107,6 +107,23 @@ func TestReapInfectedGoesToTrashWaitingRoom(t *testing.T) {
 	}
 }
 
+func TestReapPublisherFailureReleasesJob(t *testing.T) {
+	reaper, job, _ := fixture(t, avscan.Clean)
+	reaper.Publisher.Run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "svnmucc") {
+			return nil, errors.New("svnmucc failed")
+		}
+		return []byte("/\n"), nil
+	}
+	summary, err := reaper.Reap(context.Background())
+	if err != nil || summary.Failed != 1 || summary.Accepted != 0 {
+		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+	if _, err := os.Stat(filepath.Join(reaper.Intake.Root, job.UploadID, "READY")); err != nil {
+		t.Fatal("failed publish left the job in PROCESSING")
+	}
+}
+
 func TestReapUnavailableScannerLeavesJob(t *testing.T) {
 	reaper, job, _ := fixture(t, avscan.Unavailable)
 	if _, err := reaper.Reap(context.Background()); !errors.Is(err, avscan.ErrUnavailable) {

@@ -42,6 +42,15 @@ TTL cannot exceed 24 hours.
 The shipped values are 12 hours and 10 GiB.
 .It Ic bundle.max_files , bundle.max_size
 Hard limits for ZIP requests.
+.It Ic intake_root , max_upload_size
+Closed upload-shelf quarantine.
+Must match
+.Ic upload.intake_root
+in
+.Xr filees.conf 5 .
+Job subdirectories are mode 0770 so
+.Sy _filees-state
+can reap them.
 .El
 .Sh FILES
 .Bl -tag -width Ds

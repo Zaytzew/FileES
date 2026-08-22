@@ -67,6 +67,10 @@ func runPublicShareMailLoop(path string, stderr io.Writer) int {
 			report(stderr, "filees-mail public delivery", err)
 			wait = 10 * time.Second
 		}
+		if err := deliverPendingUploadChannelMail(config, stderr); err != nil {
+			report(stderr, "filees-mail upload channel delivery", err)
+			wait = 10 * time.Second
+		}
 		time.Sleep(wait)
 	}
 }
@@ -156,8 +160,7 @@ func deliverPendingDataErasureMail(config serverconfig.Config, stdout, stderr io
 	store := repoworker.DataErasureStore{Root: filepath.Join(config.Repositories.ResultsRoot, "data-erasure")}
 	job, err := store.ClaimPendingMail(5 * time.Minute)
 	if errors.Is(err, os.ErrNotExist) {
-		_ = writeJSON(stdout, map[string]string{"schema": "filees.mail-result/v1", "status": "no_work"})
-		return ExitOK
+		return deliverOneUploadChannelMail(config, stdout, stderr)
 	}
 	if err != nil {
 		report(stderr, "filees-mail data erasure claim", err)

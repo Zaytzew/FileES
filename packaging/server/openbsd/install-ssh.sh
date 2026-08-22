@@ -106,6 +106,7 @@ install -d -o "$state_user" -g wheel -m 700 /var/filees-mobile /var/filees-mobil
 install -d -o "$state_user" -g wheel -m 700 /var/filees/repository-operations/public-shares
 install -d -o "$state_user" -g wheel -m 700 /var/tmp/filees-public-share-authority
 install -d -o _filees-links -g wheel -m 700 /var/tmp/filees-public-shares-cache
+install -d -o _filees-links -g "$public_access_group" -m 770 /var/tmp/filees-upload-intake
 install -d -o "$state_user" -g "$public_access_group" -m 750 /var/run/filees
 install -d -o _filees-links -g www -m 750 /var/www/run/filees
 if [ ! -e /var/filees/activation/authorized_keys ]; then

@@ -19,7 +19,8 @@ It is the one-shot drain used after
 .Xr filees-admin 8
 ticket actions and after
 .Xr filees-bootstrap-entry 8 .
-Onboarding, realm-removal and data-erasure jobs share this path.
+Onboarding, realm-removal, data-erasure and upload-shelf invitation jobs
+share this path.
 .Pp
 Delivery states are
 .Cm pending ,
@@ -30,9 +31,15 @@ and
 A 4xx leaves the job
 .Cm pending
 and preserves the OTP.
-A 5xx marks
+A 5xx marks an onboarding job
 .Cm failed
 and redacts the OTP.
+An upload-shelf invitation 5xx marks the outbox job
+.Cm failed
+without retry, so
+.Cm public-loop
+does not hammer the relay.
+The invitation token remains on the channel record.
 The
 .Ic Message-ID
 is derived from
@@ -43,7 +50,8 @@ so a lost 250 can be retried safely.
 is not an operator command.
 .Xr filees-public-authority 8
 supervises it as an isolated child.
-The child loads the SMTP secret and drains only the Public Shares outbox.
+The child loads the SMTP secret and drains the Public Shares outbox and
+the upload-shelf invitation outbox.
 The authority process never receives that secret.
 If the child dies, the authority exits.
 .Sh EXIT STATUS

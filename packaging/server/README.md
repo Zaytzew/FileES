@@ -12,14 +12,18 @@ disabled-by-default Public Shares services:
 - `filees-worker` is exec'd once per authenticated deploy and exits after its bounded action;
 - `filees-client-entry` is the per-key forced SVN entry used for possession proof and active read-only access;
 - `filees-mail send` submits one pending control-plane outbox entry; its
-  `public-loop` mode is supervised by `filees-public-authority` and drains only
-  Public Shares invitation/OTP mail without exposing the SMTP secret to the
+  `public-loop` mode is supervised by `filees-public-authority` and drains
+  Public Shares invitation/OTP mail and upload-shelf invitations without exposing the SMTP secret to the
   authority process; authority handles service-stop signals and terminates the
   child before exiting, so rc.d restarts do not leave orphan pollers;
 - `filees-public-authority` exposes the credential-free Public Shares
   backchannel on a Unix socket or a loopback TCP endpoint;
 - `filees-links` serves the public surface through FastCGI and owns only its
-  temporary cache.
+  temporary cache and, when configured, the upload-shelf intake quarantine;
+- `filees-worker upload-reap` is the hostadmin cron that moves a ready intake
+  job through AV into `upload_repo` or the reject tree. The installer does
+  not install that crontab. Run it as `_filees-state` and redirect stdout
+  (`>/dev/null`) so an idle minute does not mail `accepted=0`.
 
 Run `install-server.sh` as the target system administrator, edit
 `/etc/filees/server.json`, and keep both configuration and OTP pepper private.
@@ -57,6 +61,9 @@ and `_filees-public`, installs disabled `filees_public_authority` and
   socket mode `0660`;
 - public cache: `_filees-links`, mode `0700`, under `/var/tmp` and outside
   backups;
+- upload intake: `_filees-links:_filees-public`, mode `0770`, under
+  `/var/tmp/filees-upload-intake`; job subdirectories are also `0770` so
+  `_filees-state` (in `_filees-public`) can reap them;
 - FastCGI directory: `_filees-links:www`, mode `0750`, socket mode `0660`.
 
 `public_shares.max_size` limits one authoritative leaf before it can fill the

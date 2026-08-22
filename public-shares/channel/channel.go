@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"filees/internal/durable"
 	"filees/pkg/realmbranding"
 	"filees/public-shares/manifest"
 	"filees/public-shares/slug"
@@ -803,12 +804,7 @@ func atomicJSON(path string, mode os.FileMode, value any) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return durable.SyncDirectory(filepath.Dir(path))
 }
 
 func (r Record) String() string { return fmt.Sprintf("%s/%s (%s)", r.Alias, r.ChannelID, r.State) }

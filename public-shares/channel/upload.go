@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/realmbranding"
 	"filees/public-shares/manifest"
 	"filees/public-shares/slug"
 	"github.com/google/uuid"
@@ -262,6 +263,98 @@ func (s *Store) GetUpload(channelID string) (UploadRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.loadUpload(channelID)
+}
+
+const UploadProjectionSchema = "filees.upload-channel-projection/v1"
+
+// UploadProjection is all the public FastCGI process may know. Repository
+// IDs, mailbox addresses and the upload target never appear here.
+type UploadProjection struct {
+	Schema     string                 `json:"schema"`
+	ChannelID  string                 `json:"channel_id"`
+	Alias      string                 `json:"alias"`
+	Slug       string                 `json:"slug"`
+	State      string                 `json:"state"`
+	RequireOTP bool                   `json:"require_otp,omitempty"`
+	Recipients []PublicRecipient      `json:"recipients"`
+	Branding   realmbranding.Branding `json:"branding"`
+	UpdatedAt  time.Time              `json:"updated_at"`
+}
+
+func (s *Store) ResolveUploadAddress(alias, channelSlug string) (UploadRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := slug.Path(alias, channelSlug); err != nil {
+		return UploadRecord{}, ErrNotFound
+	}
+	raw, err := os.ReadFile(s.addressPath(alias, channelSlug))
+	if err != nil {
+		return UploadRecord{}, ErrNotFound
+	}
+	var reservation slugReservation
+	if json.Unmarshal(raw, &reservation) != nil || reservation.Schema != SlugSchema || reservation.Alias != alias || reservation.Slug != channelSlug {
+		return UploadRecord{}, ErrNotFound
+	}
+	record, err := s.loadUpload(reservation.ChannelID)
+	if err != nil || record.State != StateActive || record.Manifest == nil || record.Alias != alias || record.Slug != channelSlug || record.Manifest.Slug != channelSlug {
+		return UploadRecord{}, ErrNotFound
+	}
+	return record, nil
+}
+
+func (s *Store) UploadProjection(channelID string) (UploadProjection, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, err := s.loadUpload(channelID)
+	if err != nil {
+		return UploadProjection{}, err
+	}
+	branding, err := s.Authority.ActiveRealmBranding(record.OwnerRealm)
+	if err != nil {
+		return UploadProjection{}, ErrNotFound
+	}
+	return projectUpload(record, branding)
+}
+
+func projectUpload(record UploadRecord, branding realmbranding.Branding) (UploadProjection, error) {
+	if record.State != StateActive || record.Manifest == nil {
+		return UploadProjection{}, ErrNotFound
+	}
+	p := UploadProjection{Schema: UploadProjectionSchema, ChannelID: record.ChannelID, Alias: record.Alias, Slug: record.Slug, State: record.State, RequireOTP: record.Manifest.RequireOTP, Branding: branding, UpdatedAt: record.UpdatedAt}
+	for _, recipient := range record.Recipients {
+		p.Recipients = append(p.Recipients, PublicRecipient{InvitationHash: recipient.TokenHash})
+	}
+	return p, p.Validate()
+}
+
+func (p UploadProjection) Validate() error {
+	if p.Schema != UploadProjectionSchema || p.State != StateActive {
+		return errors.New("upload channel projection schema or state is invalid")
+	}
+	if _, err := uuid.Parse(p.ChannelID); err != nil {
+		return errors.New("upload channel projection channel_id must be UUID")
+	}
+	if _, err := slug.Path(p.Alias, p.Slug); err != nil {
+		return err
+	}
+	if len(p.Recipients) == 0 || len(p.Recipients) > 256 {
+		return errors.New("upload channel projection recipient list is invalid")
+	}
+	branding, err := realmbranding.Normalize(p.Branding)
+	if err != nil || (p.Branding != (realmbranding.Branding{}) && branding != p.Branding) {
+		return errors.New("upload channel projection branding is invalid or non-canonical")
+	}
+	seen := map[string]bool{}
+	for _, recipient := range p.Recipients {
+		if seen[recipient.InvitationHash] || len(recipient.InvitationHash) != sha256.Size*2 {
+			return errors.New("upload channel projection recipient is invalid")
+		}
+		if _, err := hex.DecodeString(recipient.InvitationHash); err != nil {
+			return errors.New("upload channel projection recipient hash is invalid")
+		}
+		seen[recipient.InvitationHash] = true
+	}
+	return nil
 }
 
 func (s *Store) loadUpload(channelID string) (UploadRecord, error) {

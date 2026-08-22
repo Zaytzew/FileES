@@ -32,6 +32,7 @@ import (
 	"filees/public-shares/cache"
 	"filees/public-shares/channel"
 	"filees/public-shares/gate"
+	"filees/public-shares/intake"
 	"filees/public-shares/recipientotp"
 )
 
@@ -45,6 +46,7 @@ var passwordCheckSlot = make(chan struct{}, 1)
 type Backend interface {
 	Enter(context.Context, string, string) (authority.Entry, error)
 	Inspect(string, string) (channel.Projection, error)
+	InspectUpload(string, string) (channel.UploadProjection, error)
 	Check(context.Context, authority.ObjectRequest) (authority.ObjectPermit, error)
 	Fetch(context.Context, authority.ObjectRequest) (authority.FetchedLeaf, error)
 	RequestRecipientOTP(context.Context, recipientotp.Request) error
@@ -59,6 +61,8 @@ type Handler struct {
 	MaxBundleFiles int
 	MaxBundleSize  int64
 	BundleSlots    chan struct{}
+	Intake         *intake.Store
+	MaxUploadBytes int64
 	Now            func() time.Time
 }
 
@@ -138,7 +142,7 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 	}
 	entry, err := h.Backend.Enter(request.Context(), alias, channelSlug)
 	if err != nil {
-		h.notFound(w)
+		h.uploadEntry(w, request, alias, channelSlug)
 		return
 	}
 	if len(entry.Projection.Recipients) > 0 {

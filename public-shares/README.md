@@ -57,7 +57,8 @@ public-shares/
     authority/    frost, bieżąca autoryzacja i dokładny odczyt przez svnlook
     backchannel/  wersjonowany protokół granicy stref
     cache/        prywatny, opcjonalny cache liści z TTL
-    web/          bezstanowy listing i attachmenty
+    web/          bezstanowy listing, attachmenty i formularz przyjęcia
+    intake/       kwarantanna publicznej maszyny (losowy upload_id, bez SVN)
     linkservice/  konfiguracja i socket procesu FastCGI
 ```
 

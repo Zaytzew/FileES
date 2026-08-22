@@ -20,6 +20,7 @@ import (
 
 	"filees/public-shares/backchannel"
 	"filees/public-shares/cache"
+	"filees/public-shares/intake"
 	"filees/public-shares/web"
 )
 
@@ -48,12 +49,14 @@ type BundleConfig struct {
 }
 
 type Config struct {
-	Schema       string          `json:"schema"`
-	FastCGI      FastCGIEndpoint `json:"fastcgi"`
-	Backchannel  Endpoint        `json:"backchannel"`
-	VisitKeyFile string          `json:"visit_key_file"`
-	Cache        CacheConfig     `json:"cache"`
-	Bundle       BundleConfig    `json:"bundle,omitempty"`
+	Schema        string          `json:"schema"`
+	FastCGI       FastCGIEndpoint `json:"fastcgi"`
+	Backchannel   Endpoint        `json:"backchannel"`
+	VisitKeyFile  string          `json:"visit_key_file"`
+	Cache         CacheConfig     `json:"cache"`
+	Bundle        BundleConfig    `json:"bundle,omitempty"`
+	IntakeRoot    string          `json:"intake_root,omitempty"`
+	MaxUploadSize int64           `json:"max_upload_size,omitempty"`
 }
 
 type Runtime struct {
@@ -62,6 +65,7 @@ type Runtime struct {
 	CacheTTL       time.Duration
 	BundleMaxFiles int
 	BundleMaxSize  int64
+	Intake         *intake.Store
 }
 
 func Load(path string) (Runtime, error) {
@@ -141,7 +145,29 @@ func Load(path string) (Runtime, error) {
 	} else if config.Bundle.MaxFiles != 0 || config.Bundle.MaxSize != 0 {
 		return Runtime{}, errors.New("bundle downloads require the public leaf cache")
 	}
-	return Runtime{Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize}, nil
+	var quarantine *intake.Store
+	if config.IntakeRoot != "" {
+		if !filepath.IsAbs(config.IntakeRoot) {
+			return Runtime{}, errors.New("intake_root must be absolute")
+		}
+		if config.Cache.Enabled && filepath.Clean(config.IntakeRoot) == filepath.Clean(config.Cache.Root) {
+			return Runtime{}, errors.New("intake_root must not share the public leaf cache")
+		}
+		maxUpload := config.MaxUploadSize
+		if maxUpload == 0 {
+			maxUpload = 1 << 30
+		}
+		if maxUpload < 1 || maxUpload > 1<<40 {
+			return Runtime{}, errors.New("max_upload_size is out of range")
+		}
+		if err := os.MkdirAll(config.IntakeRoot, 0700); err != nil {
+			return Runtime{}, fmt.Errorf("intake root: %w", err)
+		}
+		quarantine = &intake.Store{Root: filepath.Clean(config.IntakeRoot), MaxBytes: maxUpload}
+	} else if config.MaxUploadSize != 0 {
+		return Runtime{}, errors.New("max_upload_size requires intake_root")
+	}
+	return Runtime{Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize, Intake: quarantine}, nil
 }
 
 func (r Runtime) Handler() http.Handler {
@@ -155,7 +181,11 @@ func (r Runtime) Handler() http.Handler {
 	if r.Config.Cache.Enabled {
 		store = &cache.Store{Config: cache.Config{Root: r.Config.Cache.Root, TTL: r.CacheTTL, MaxSize: r.Config.Cache.MaxSize}}
 	}
-	return web.Handler{Backend: client, Cache: store, Fetches: &web.FetchCoordinator{}, VisitKey: r.VisitKey, MaxBundleFiles: r.BundleMaxFiles, MaxBundleSize: r.BundleMaxSize, BundleSlots: make(chan struct{}, 1)}
+	maxUpload := int64(0)
+	if r.Intake != nil {
+		maxUpload = r.Intake.MaxBytes
+	}
+	return web.Handler{Backend: client, Cache: store, Fetches: &web.FetchCoordinator{}, VisitKey: r.VisitKey, MaxBundleFiles: r.BundleMaxFiles, MaxBundleSize: r.BundleMaxSize, BundleSlots: make(chan struct{}, 1), Intake: r.Intake, MaxUploadBytes: maxUpload}
 }
 
 func (r Runtime) ListenFastCGI() (net.Listener, func(), error) {
@@ -220,6 +250,9 @@ func (r Runtime) SandboxPaths() []string {
 	}
 	if r.Config.Backchannel.Network == "unix" {
 		paths = append(paths, r.Config.Backchannel.Address)
+	}
+	if r.Config.IntakeRoot != "" {
+		paths = append(paths, filepath.Clean(r.Config.IntakeRoot))
 	}
 	return paths
 }

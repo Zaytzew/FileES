@@ -29,6 +29,11 @@
     "recovery_admin_contact": "filees-admin@example.net",
     "data_erasure_max_days": 90
   },
+  "upload": {
+    "intake_root": "/var/tmp/filees-upload-intake",
+    "trash_root": "/var/filees/repository-operations/upload-reject",
+    "av_command": ["/usr/local/bin/clamdscan", "--no-summary", "--stdout"]
+  },
   "public_shares": {
     "enabled": false,
     "base_url": "https://get.example.net",

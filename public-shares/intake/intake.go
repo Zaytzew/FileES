@@ -173,3 +173,62 @@ func (s Store) now() time.Time {
 	}
 	return time.Now().UTC()
 }
+
+func (s Store) ListReady() ([]Record, error) {
+	if !filepath.IsAbs(s.Root) {
+		return nil, ErrIncomplete
+	}
+	entries, err := os.ReadDir(filepath.Clean(s.Root))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var records []Record
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(s.Root, entry.Name(), readyName)); err != nil {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(s.Root, entry.Name(), metaName))
+		if err != nil {
+			return nil, err
+		}
+		var record Record
+		if json.Unmarshal(raw, &record) != nil || record.UploadID != entry.Name() || record.State != StateReady {
+			continue
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func (s Store) Claim(uploadID string) error {
+	if _, err := uuid.Parse(uploadID); err != nil || !filepath.IsAbs(s.Root) {
+		return ErrIncomplete
+	}
+	dir := filepath.Join(filepath.Clean(s.Root), uploadID)
+	return os.Rename(filepath.Join(dir, readyName), filepath.Join(dir, "PROCESSING"))
+}
+
+func (s Store) Release(uploadID string) error {
+	if _, err := uuid.Parse(uploadID); err != nil || !filepath.IsAbs(s.Root) {
+		return ErrIncomplete
+	}
+	dir := filepath.Join(filepath.Clean(s.Root), uploadID)
+	return os.Rename(filepath.Join(dir, "PROCESSING"), filepath.Join(dir, readyName))
+}
+
+func (s Store) PayloadPath(uploadID string) string {
+	return filepath.Join(filepath.Clean(s.Root), uploadID, payloadName)
+}
+
+func (s Store) Remove(uploadID string) error {
+	if _, err := uuid.Parse(uploadID); err != nil || !filepath.IsAbs(s.Root) {
+		return ErrIncomplete
+	}
+	return os.RemoveAll(filepath.Join(filepath.Clean(s.Root), uploadID))
+}

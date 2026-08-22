@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 	"filees/pkg/smtpsubmit"
+	"filees/public-shares/channel"
 )
 
 func TestS1FilesystemWorkflow(t *testing.T) {
@@ -183,6 +185,111 @@ func TestDataErasureCompletionMailUsesSharedTriggeredWorker(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(store.Root, "outbox", removal.OperationID+".json"))
 	if err != nil || bytes.Contains(raw, []byte("erase@example.test")) || !bytes.Contains(raw, []byte(`"delivery_state": "queued"`)) {
 		t.Fatalf("data-erasure outbox was not scrubbed: %s err=%v", raw, err)
+	}
+}
+
+func TestUploadChannelInvitationMailUsesSharedSMTPWorker(t *testing.T) {
+	results := filepath.Join(t.TempDir(), "results")
+	if err := os.MkdirAll(filepath.Join(results, "realm-removals"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(results, "data-erasure"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1700000000, 0).UTC()
+	outbox := repoworker.UploadChannelOutbox{Root: filepath.Join(results, "public-shares", "upload-outbox"), Now: func() time.Time { return now }}
+	record := channel.UploadRecord{ChannelID: uuid.NewString(), Alias: "atmprojekt", Slug: "oferta-a"}
+	if err := outbox.DeliverUploadTokens(context.Background(), record, []channel.Delivery{{Email: "a@example.test", Token: strings.Repeat("t", 43)}}); err != nil {
+		t.Fatal(err)
+	}
+	originalSubmit := smtpSubmit
+	t.Cleanup(func() { smtpSubmit = originalSubmit })
+	var submitted smtpsubmit.Request
+	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, request smtpsubmit.Request) error {
+		submitted = request
+		return nil
+	}
+	var stdout, stderr bytes.Buffer
+	config := serverconfig.Config{
+		Repositories: serverconfig.RepositoryFile{ResultsRoot: results},
+		SMTPFrom:     "filees@example.test", MessageIDDomain: "filees.test",
+		SMTP:         smtpsubmit.Config{Address: "127.0.0.1:2525", ClientName: "filees.test", TLSMode: smtpsubmit.TLSNone},
+		PublicShares: serverconfig.PublicSharesFile{BaseURL: "https://get.example.test"},
+	}
+	if code := deliverPendingRealmRemovalMail(config, &stdout, &stderr); code != ExitOK {
+		t.Fatalf("mail exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if submitted.Recipient != "a@example.test" || !bytes.Contains(submitted.Message, []byte("/atmprojekt/oferta-a?invite=")) || !bytes.Contains(stdout.Bytes(), []byte("upload_channel_invitation")) {
+		t.Fatalf("unexpected upload invitation: %+v stdout=%s", submitted, stdout.String())
+	}
+	if entries, err := os.ReadDir(outbox.Root); err != nil {
+		t.Fatal(err)
+	} else {
+		for _, entry := range entries {
+			if filepath.Ext(entry.Name()) == ".json" {
+				t.Fatalf("sent job remained: %v", entries)
+			}
+		}
+	}
+}
+
+func TestUploadChannelInvitationPermanentSMTPFailureStopsRetry(t *testing.T) {
+	results := filepath.Join(t.TempDir(), "results")
+	if err := os.MkdirAll(filepath.Join(results, "realm-removals"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(results, "data-erasure"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1700000000, 0).UTC()
+	outbox := repoworker.UploadChannelOutbox{Root: filepath.Join(results, "public-shares", "upload-outbox"), Now: func() time.Time { return now }}
+	record := channel.UploadRecord{ChannelID: uuid.NewString(), Alias: "atmprojekt", Slug: "oferta-a"}
+	if err := outbox.DeliverUploadTokens(context.Background(), record, []channel.Delivery{{Email: "a@example.test", Token: strings.Repeat("t", 43)}}); err != nil {
+		t.Fatal(err)
+	}
+	originalSubmit := smtpSubmit
+	t.Cleanup(func() { smtpSubmit = originalSubmit })
+	smtpSubmit = func(_ context.Context, _ smtpsubmit.Config, _ smtpsubmit.Request) error {
+		return &smtpsubmit.Error{Stage: "rcpt_to", Code: 550, Err: errors.New("Invalid recipient")}
+	}
+	var stdout, stderr bytes.Buffer
+	config := serverconfig.Config{
+		Repositories: serverconfig.RepositoryFile{ResultsRoot: results},
+		SMTPFrom:     "filees@example.test", MessageIDDomain: "filees.test",
+		SMTP:         smtpsubmit.Config{Address: "127.0.0.1:2525", ClientName: "filees.test", TLSMode: smtpsubmit.TLSNone},
+		PublicShares: serverconfig.PublicSharesFile{BaseURL: "https://get.example.test"},
+	}
+	if code := deliverPendingRealmRemovalMail(config, &stdout, &stderr); code != ExitUnavailable {
+		t.Fatalf("mail exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	entries, err := os.ReadDir(outbox.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundFailed := false
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(outbox.Root, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"state": "failed"`) {
+			t.Fatalf("job was not marked failed: %s", raw)
+		}
+		foundFailed = true
+	}
+	if !foundFailed {
+		t.Fatal("rejected job missing")
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := deliverPendingRealmRemovalMail(config, &stdout, &stderr); code != ExitOK {
+		t.Fatalf("retry exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"status":"no_work"`)) {
+		t.Fatalf("rejected job was retried: %s", stdout.String())
 	}
 }
 

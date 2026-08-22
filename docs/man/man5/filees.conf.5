@@ -67,6 +67,24 @@ See
 .Xr filees-public-authority 8
 and
 .Xr filees-public-links 5 .
+.It Ic upload
+Optional closed upload-shelf intake.
+.Ic intake_root
+must be absolute and shared with
+.Xr filees-public-links 5 .
+The OpenBSD layout is
+.Pa /var/tmp/filees-upload-intake ,
+owned
+.Sy _filees-links : _filees-public
+mode 0770.
+.Ic trash_root
+holds AV rejects.
+.Ic av_command
+is required once intake is configured and runs as
+.Sy _filees-state
+from
+.Xr filees-worker 8
+.Cm upload-reap .
 .It Ic invitation
 Stable
 .Ic server_id ,

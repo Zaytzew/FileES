@@ -39,7 +39,40 @@ as root against the service working copy.
 Root can bypass the 0700 directory mode and then leaves root-owned
 pristine objects in
 .Pa .svn .
+.Pp
+.Nm
+.Cm upload-reap
+is the operator exception to the one-shot deploy contract.
+It claims ready intake jobs, runs
+.Ic upload.av_command ,
+and commits a clean payload into
+.Ic upload_repo
+or copies a rejected payload into the trash tree.
+Run it as
+.Sy _filees-state ,
+never as root:
+.Bd -literal -offset indent
+* * * * * /usr/local/libexec/filees/filees-worker upload-reap -config /etc/filees/server.json >/dev/null
+.Ed
+The installer does not install that crontab.
+Intake job directories are
+.Cm 0770
+.Sy _filees-links : _filees-public
+so
+.Sy _filees-state
+(a member of
+.Sy _filees-public )
+can read them.
+.Ic av_command
+runs as the reaper user and must be able to open the payload;
+.Nm clamscan
+does that,
+.Nm clamdscan
+does not unless
+.Sy _clamav
+can also read the job directory.
 .Sh SEE ALSO
 .Xr filees-client-entry 8 ,
 .Xr filees-entry 8 ,
-.Xr filees-service-wc-corrector 8
+.Xr filees-service-wc-corrector 8 ,
+.Xr filees.conf 5

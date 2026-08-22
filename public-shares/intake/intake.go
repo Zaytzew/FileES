@@ -27,6 +27,11 @@ const (
 	metaName     = "meta.json"
 	readyName    = "READY"
 	maxNameBytes = 512
+	// Job directories are created by _filees-links and consumed by
+	// _filees-state. Both users are in _filees-public, so 0770/0660 is the
+	// shared-topology mode; 0700/0600 left the reaper and clamscan blind.
+	jobDirPerm  os.FileMode = 0770
+	jobFilePerm os.FileMode = 0660
 )
 
 var (
@@ -72,11 +77,15 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 	}
 	uploadID := uuid.NewString()
 	dir := filepath.Join(filepath.Clean(s.Root), uploadID)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, jobDirPerm); err != nil {
+		return Record{}, err
+	}
+	if err := os.Chmod(dir, jobDirPerm); err != nil {
+		_ = os.RemoveAll(dir)
 		return Record{}, err
 	}
 	tmpPayload := filepath.Join(dir, "."+payloadName+".tmp")
-	file, err := os.OpenFile(tmpPayload, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	file, err := os.OpenFile(tmpPayload, os.O_CREATE|os.O_EXCL|os.O_WRONLY, jobFilePerm)
 	if err != nil {
 		return Record{}, err
 	}
@@ -115,11 +124,11 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 		_ = os.RemoveAll(dir)
 		return Record{}, err
 	}
-	if err := os.WriteFile(tmpMeta, append(raw, '\n'), 0600); err != nil {
+	if err := os.WriteFile(tmpMeta, append(raw, '\n'), jobFilePerm); err != nil {
 		_ = os.RemoveAll(dir)
 		return Record{}, err
 	}
-	metaFile, err := os.OpenFile(tmpMeta, os.O_RDWR, 0600)
+	metaFile, err := os.OpenFile(tmpMeta, os.O_RDWR, jobFilePerm)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		return Record{}, err
@@ -133,16 +142,30 @@ func (s Store) Accept(channelID, alias, slug, tokenSHA256, originalName string, 
 		_ = os.RemoveAll(dir)
 		return Record{}, err
 	}
-	if err := os.Rename(tmpPayload, filepath.Join(dir, payloadName)); err != nil {
+	payloadPath := filepath.Join(dir, payloadName)
+	if err := os.Rename(tmpPayload, payloadPath); err != nil {
 		_ = os.RemoveAll(dir)
 		return Record{}, err
 	}
-	if err := os.Rename(tmpMeta, filepath.Join(dir, metaName)); err != nil {
+	if err := os.Chmod(payloadPath, jobFilePerm); err != nil {
+		_ = os.RemoveAll(dir)
+		return Record{}, err
+	}
+	metaPath := filepath.Join(dir, metaName)
+	if err := os.Rename(tmpMeta, metaPath); err != nil {
+		_ = os.RemoveAll(dir)
+		return Record{}, err
+	}
+	if err := os.Chmod(metaPath, jobFilePerm); err != nil {
 		_ = os.RemoveAll(dir)
 		return Record{}, err
 	}
 	ready := filepath.Join(dir, readyName)
-	if err := os.WriteFile(ready, []byte(record.UploadID+"\n"), 0600); err != nil {
+	if err := os.WriteFile(ready, []byte(record.UploadID+"\n"), jobFilePerm); err != nil {
+		_ = os.RemoveAll(dir)
+		return Record{}, err
+	}
+	if err := os.Chmod(ready, jobFilePerm); err != nil {
 		_ = os.RemoveAll(dir)
 		return Record{}, err
 	}

@@ -83,20 +83,22 @@ func (r Reaper) Reap(ctx context.Context) (Result, error) {
 func (r Reaper) process(ctx context.Context, job intake.Record) error {
 	payload := r.Intake.PayloadPath(job.UploadID)
 	if err := verifyPayload(payload, job); err != nil {
-		return err
+		return r.fail(job.UploadID, err)
 	}
 	record, err := r.Channels.GetUpload(job.ChannelID)
-	if err != nil || record.Manifest == nil || record.State != channel.StateActive {
-		return err
+	if err != nil {
+		return r.fail(job.UploadID, err)
+	}
+	if record.Manifest == nil || record.State != channel.StateActive {
+		return r.fail(job.UploadID, errors.New("upload channel is not active"))
 	}
 	verdict, detail, err := r.Scanner.Scan(ctx, payload)
 	if err != nil || verdict == avscan.Unavailable {
-		_ = r.Intake.Release(job.UploadID)
-		return avscan.ErrUnavailable
+		return r.fail(job.UploadID, avscan.ErrUnavailable)
 	}
 	if verdict == avscan.Infected {
 		if err := r.reject(ctx, job, record, payload, detail); err != nil {
-			return err
+			return r.fail(job.UploadID, err)
 		}
 		if err := r.Intake.Remove(job.UploadID); err != nil {
 			return err
@@ -105,22 +107,27 @@ func (r Reaper) process(ctx context.Context, job intake.Record) error {
 	}
 	name, err := namingpolicy.TargetName(job.OriginalName)
 	if err != nil {
-		return err
+		return r.fail(job.UploadID, err)
 	}
 	repo := filepath.Join(r.ReposRoot, record.Manifest.UploadRepoID)
 	exists, err := r.exists(ctx, repo, name)
 	if err != nil {
-		return err
+		return r.fail(job.UploadID, err)
 	}
 	if exists {
-		return ErrCollision
+		return r.fail(job.UploadID, ErrCollision)
 	}
 	if err := r.putFile(ctx, repo, payload, name, "filees: accept upload "+job.UploadID, map[string]string{
 		"filees:upload-id": job.UploadID, "filees:upload-sha256": job.SHA256, "filees:upload-channel": job.ChannelID,
 	}); err != nil {
-		return err
+		return r.fail(job.UploadID, err)
 	}
 	return r.Intake.Remove(job.UploadID)
+}
+
+func (r Reaper) fail(uploadID string, err error) error {
+	_ = r.Intake.Release(uploadID)
+	return err
 }
 
 func (r Reaper) reject(ctx context.Context, job intake.Record, record channel.UploadRecord, payload, detail string) error {

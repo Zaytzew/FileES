@@ -25,6 +25,7 @@ var settingsActionCatalog = []settingsActionSpec{
 	{SettingsDialogManageGrants, "manage_grants", "manage_grants", "Uprawnienia gości", true, false},
 	{SettingsDialogEditingPolicy, "editing_policy", "editing_policy", "Zasady edycji", true, false},
 	{SettingsDialogPublicShares, "public_shares", "public_shares", "Udostępnienia publiczne", true, false},
+	{SettingsDialogUploadChannels, "upload_channels", "upload_channels", "Półki przyjęcia", true, false},
 	{SettingsDialogDetachFolder, "detach_folder", "detach", "Odłącz tylko folder", true, false},
 	{SettingsDialogDeleteRepo, "delete_repository", "delete", "Odłącz trwale repozytorium", true, false},
 	{SettingsDialogLoadDump, "load_dump", "load_dump", "Odtwórz z archiwum", true, false},
@@ -127,6 +128,8 @@ func folderAllowsSettingsAction(folder SettingsFolder, action SettingsDialogActi
 		return folder.CanSetEditingPolicy
 	case SettingsDialogPublicShares:
 		return folder.CanManagePublicShares
+	case SettingsDialogUploadChannels:
+		return folder.CanManageUploadChannels
 	case SettingsDialogDetachFolder:
 		return folder.CanDetach
 	case SettingsDialogDeleteRepo:
@@ -158,6 +161,8 @@ func settingsActionFromID(id string) SettingsDialogAction {
 		return SettingsDialogEditingPolicy
 	case "public_shares":
 		return SettingsDialogPublicShares
+	case "upload_channels":
+		return SettingsDialogUploadChannels
 	case "realm_visibility":
 		return SettingsDialogRealmVisibility
 	case "realm_branding":

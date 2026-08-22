@@ -21,6 +21,7 @@ type Fake struct {
 	JournalFunc         func(context.Context, platform.JournalDialogRequest) error
 	RealmGrantsFunc     func(context.Context, platform.RealmGrantDialogRequest) (platform.RealmGrantDialogResult, error)
 	PublicSharesFunc    func(context.Context, platform.PublicShareDialogRequest) (platform.PublicShareDialogResult, error)
+	UploadChannelsFunc  func(context.Context, platform.UploadChannelDialogRequest) (platform.UploadChannelDialogResult, error)
 	RealmVisibilityFunc func(context.Context, platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
@@ -39,6 +40,7 @@ type Fake struct {
 	JournalRequests         []platform.JournalDialogRequest
 	RealmGrantRequests      []platform.RealmGrantDialogRequest
 	PublicShareRequests     []platform.PublicShareDialogRequest
+	UploadChannelRequests   []platform.UploadChannelDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec
@@ -98,6 +100,17 @@ func (f *Fake) ShowPublicShares(ctx context.Context, request platform.PublicShar
 		return fn(ctx, request)
 	}
 	return platform.PublicShareDialogResult{Action: platform.PublicShareDialogClose}, nil
+}
+
+func (f *Fake) ShowUploadChannels(ctx context.Context, request platform.UploadChannelDialogRequest) (platform.UploadChannelDialogResult, error) {
+	f.mu.Lock()
+	f.UploadChannelRequests = append(f.UploadChannelRequests, request)
+	fn := f.UploadChannelsFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}, nil
 }
 
 func (f *Fake) ShowRealmVisibility(ctx context.Context, request platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error) {
@@ -242,6 +255,7 @@ func (f *Fake) Snapshot() Snapshot {
 		JournalRequests:         append([]platform.JournalDialogRequest(nil), f.JournalRequests...),
 		RealmGrantRequests:      append([]platform.RealmGrantDialogRequest(nil), f.RealmGrantRequests...),
 		PublicShareRequests:     append([]platform.PublicShareDialogRequest(nil), f.PublicShareRequests...),
+		UploadChannelRequests:   append([]platform.UploadChannelDialogRequest(nil), f.UploadChannelRequests...),
 		RealmVisibilityRequests: append([]platform.RealmVisibilityDialogRequest(nil), f.RealmVisibilityRequests...),
 		Notifications:           append([]platform.Notification(nil), f.Notifications...),
 		StatusRequests:          append([]platform.AutostartSpec(nil), f.StatusRequests...),
@@ -262,6 +276,7 @@ type Snapshot struct {
 	JournalRequests         []platform.JournalDialogRequest
 	RealmGrantRequests      []platform.RealmGrantDialogRequest
 	PublicShareRequests     []platform.PublicShareDialogRequest
+	UploadChannelRequests   []platform.UploadChannelDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec

@@ -184,7 +184,7 @@ func TestEventJSONRoundTrip(t *testing.T) {
 
 func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 	// AllCapabilities is the always-on set. Optional surfaces (grants,
-	// public shares, updater, journal, session timeout, stack lifecycle)
+	// public shares, upload channels, updater, journal, session timeout, stack lifecycle)
 	// are appended by ipcserver.Server.capabilities() only when wired.
 	want := map[string]bool{
 		contract.CapEventsSubscribe:        true,

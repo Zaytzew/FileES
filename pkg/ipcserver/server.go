@@ -35,6 +35,7 @@ type Server struct {
 	realmBranding  RealmPublicBrandingService
 	editingPolicy  EditingPolicyService
 	publicShares   PublicShareService
+	uploadChannels UploadChannelService
 	ownerLabels    OwnerLabelResolver
 	lifecycle      RepositoryLifecycleService
 	mobilePair     MobilePairingService
@@ -91,6 +92,14 @@ type PublicShareService interface {
 	UpdatePublicShare(context.Context, string, string, contract.PublicShareDeclaration, bool) (contract.PublicShareResult, error)
 	RevokePublicShare(context.Context, string, string) (contract.PublicShareResult, error)
 	DeletePublicShare(context.Context, string, string) (contract.PublicShareResult, error)
+}
+
+type UploadChannelService interface {
+	ListUploadChannels(context.Context, string, string) ([]contract.UploadChannelSummary, error)
+	CreateUploadChannel(context.Context, string, contract.UploadChannelDeclaration) (contract.UploadChannelResult, error)
+	UpdateUploadChannel(context.Context, string, string, contract.UploadChannelDeclaration) (contract.UploadChannelResult, error)
+	RevokeUploadChannel(context.Context, string, string) (contract.UploadChannelResult, error)
+	DeleteUploadChannel(context.Context, string, string) (contract.UploadChannelResult, error)
 }
 
 // OwnerLabelResolver converts opaque SVN client IDs to server-owned display
@@ -191,6 +200,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.publicShareService() != nil {
 		caps = append(caps, contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
+	}
+	if s.uploadChannelService() != nil {
+		caps = append(caps, contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete)
 	}
 	if s.editingPolicyService() != nil {
 		caps = append(caps, contract.CapRepoSetEditingPolicy)
@@ -361,6 +373,18 @@ func (s *Server) publicShareService() PublicShareService {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.publicShares
+}
+
+func (s *Server) SetUploadChannelService(service UploadChannelService) {
+	s.mu.Lock()
+	s.uploadChannels = service
+	s.mu.Unlock()
+}
+
+func (s *Server) uploadChannelService() UploadChannelService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.uploadChannels
 }
 
 func (s *Server) SetOwnerLabelResolver(resolver OwnerLabelResolver) {

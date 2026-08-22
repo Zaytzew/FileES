@@ -21,6 +21,7 @@ type Backend interface {
 	JournalBrowser
 	RealmGrantBrowser
 	PublicShareBrowser
+	UploadChannelBrowser
 	Notifier
 	Autostart
 }
@@ -136,6 +137,38 @@ type PublicShareDialogResult struct {
 	ChannelID string
 }
 
+// UploadChannelBrowser renders the owner's intake shelves for one repository.
+// It returns only an action and opaque channel ID; slug and recipients are
+// collected by the controller after the list window has closed.
+type UploadChannelBrowser interface {
+	ShowUploadChannels(context.Context, UploadChannelDialogRequest) (UploadChannelDialogResult, error)
+}
+
+type UploadChannelDialogRequest struct {
+	Title    string
+	Text     string
+	Channels []UploadChannelSummary
+}
+
+type UploadChannelSummary struct {
+	ChannelID, Address, State, Recipients string
+}
+
+type UploadChannelDialogAction string
+
+const (
+	UploadChannelDialogClose  UploadChannelDialogAction = "close"
+	UploadChannelDialogCreate UploadChannelDialogAction = "create"
+	UploadChannelDialogEdit   UploadChannelDialogAction = "edit"
+	UploadChannelDialogRevoke UploadChannelDialogAction = "revoke"
+	UploadChannelDialogDelete UploadChannelDialogAction = "delete"
+)
+
+type UploadChannelDialogResult struct {
+	Action    UploadChannelDialogAction
+	ChannelID string
+}
+
 type RealmGrantDialogRequest struct {
 	Title      string
 	Text       string
@@ -218,16 +251,17 @@ type SettingsFolder struct {
 	// Editing is a human-readable rendering of the repository editing policy,
 	// shown to every client rather than only the owner: a read-only file with
 	// no stated reason is the confusing state this is meant to replace.
-	Editing               string
-	CanManageGrants       bool
-	CanSetEditingPolicy   bool // owner-only: switch between free and lock_required
-	LockRequired          bool // current policy, for the action's confirmation text
-	CanManagePublicShares bool
-	CanConnect            bool // connect selected unattached repository
-	CanLocate             bool // adopt an existing moved working copy
-	CanDetach             bool // detach_folder (non-destructive)
-	CanDelete             bool // delete_repository
-	CanLoadDump           bool // load_dump
+	Editing                 string
+	CanManageGrants         bool
+	CanSetEditingPolicy     bool // owner-only: switch between free and lock_required
+	LockRequired            bool // current policy, for the action's confirmation text
+	CanManagePublicShares   bool
+	CanManageUploadChannels bool
+	CanConnect              bool // connect selected unattached repository
+	CanLocate               bool // adopt an existing moved working copy
+	CanDetach               bool // detach_folder (non-destructive)
+	CanDelete               bool // delete_repository
+	CanLoadDump             bool // load_dump
 }
 type SettingsRecovery struct {
 	OperationID, ServerName, KitPath, Status string
@@ -247,6 +281,7 @@ const (
 	SettingsDialogManageGrants     SettingsDialogAction = "manage_grants"
 	SettingsDialogEditingPolicy    SettingsDialogAction = "editing_policy"
 	SettingsDialogPublicShares     SettingsDialogAction = "public_shares"
+	SettingsDialogUploadChannels   SettingsDialogAction = "upload_channels"
 	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
 	SettingsDialogRealmBranding    SettingsDialogAction = "realm_branding"
 	SettingsDialogSessionTimeout   SettingsDialogAction = "session_timeout"

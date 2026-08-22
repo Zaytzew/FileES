@@ -25,6 +25,17 @@ func TestBuildSettingsWizardListsServerActionsWithoutPickingAFolder(t *testing.T
 	}
 }
 
+func TestBuildSettingsWizardOffersUploadChannelsWhenEligible(t *testing.T) {
+	wizard := BuildSettingsWizard(SettingsDialogRequest{Servers: []SettingsServer{{
+		ID: "office", Name: "Biuro",
+		Folders: []SettingsFolder{{ID: "docs", Name: "Dokumenty", CanManageUploadChannels: true}},
+	}}})
+	action := mustAction(t, wizard.Servers[0], "upload_channels")
+	if action.Label != "Półki przyjęcia" || !action.NeedsFolder || len(action.Folders) != 1 || action.Folders[0].ID != "docs" {
+		t.Fatalf("upload_channels=%#v", action)
+	}
+}
+
 func TestBuildSettingsWizardHidesFolderActionWhenNoShareIsEligible(t *testing.T) {
 	wizard := BuildSettingsWizard(SettingsDialogRequest{Servers: []SettingsServer{{
 		ID: "audit", CanSetSessionTimeout: true,

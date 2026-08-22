@@ -141,8 +141,15 @@ func (h Handler) renderUpload(w http.ResponseWriter, projection channel.UploadPr
 	css := passwordCSS + uploadCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
 	digest := sha256.Sum256([]byte(css))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	csp := "default-src 'none'; style-src 'sha256-" + cssHash + "'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	if !accepted {
+		csp += "; script-src 'sha256-" + uploadBusyScriptHash() + "'"
+	}
+	w.Header().Set("Content-Security-Policy", csp)
 	data := uploadPage{BrandSymbol: brandSymbol, CSS: template.CSS(css), Accepted: accepted}
+	if !accepted {
+		data.BusyScript = template.JS(uploadBusyJS)
+	}
 	if branding.LogoBase64 != "" {
 		data.HasOwnerLogo = true
 		data.OwnerLogo = template.URL("data:" + branding.LogoMediaType + ";base64," + branding.LogoBase64)
@@ -158,12 +165,22 @@ func (h Handler) renderUpload(w http.ResponseWriter, projection channel.UploadPr
 type uploadPage struct {
 	BrandSymbol  template.HTML
 	CSS          template.CSS
+	BusyScript   template.JS
 	OwnerLogo    template.URL
 	HasOwnerLogo bool
 	Accepted     bool
 }
 
-const uploadCSS = `.file-input{min-width:0;flex:1;height:46px;padding:10px 13px;border:1px solid #aeb7c5;border-radius:2px;background:#fff;font:inherit;font-size:16px}.status{margin:0 0 18px;color:var(--owner-ink);font-family:var(--mono);font-size:14px}`
+const uploadCSS = `.file-input{min-width:0;flex:1;height:46px;padding:10px 13px;border:1px solid #aeb7c5;border-radius:2px;background:#fff;font:inherit;font-size:16px}.file-input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.hint{margin:12px 0 0;color:var(--muted);font-size:14px;line-height:1.55}.status{margin:0 0 18px;color:var(--owner-ink);font-family:var(--mono);font-size:14px}.pending{display:none;align-items:center;gap:12px;margin:0;color:var(--owner-ink);font-family:var(--mono);font-size:14px;line-height:1.45}.spinner{flex:0 0 auto;width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--owner-accent);border-radius:50%;animation:filees-spin .8s linear infinite}@keyframes filees-spin{to{transform:rotate(360deg)}}form[data-busy="1"] .field-label,form[data-busy="1"] .password-row,form[data-busy="1"] .hint{display:none}form[data-busy="1"] .pending{display:flex}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-color:var(--owner-accent)}}`
+
+// uploadBusyJS is the only script on the public intake form. It is hashed into
+// CSP (no unsafe-inline). It must stay ASCII and must not contain "</".
+const uploadBusyJS = `(function(){var f=document.getElementById("upload-form");if(!f)return;f.addEventListener("submit",function(e){if(f.getAttribute("data-busy")==="1"){e.preventDefault();return}f.setAttribute("data-busy","1");f.setAttribute("aria-busy","true")});})();`
+
+func uploadBusyScriptHash() string {
+	digest := sha256.Sum256([]byte(uploadBusyJS))
+	return base64.StdEncoding.EncodeToString(digest[:])
+}
 
 var uploadTemplate = template.Must(template.New("upload").Parse(`<!doctype html>
 <html lang="pl">
@@ -181,7 +198,8 @@ var uploadTemplate = template.Must(template.New("upload").Parse(`<!doctype html>
 {{if .Accepted}}
 <p class="status">Plik został przyjęty.</p>
 {{else}}
-<form method="post" enctype="multipart/form-data"><label class="field-label" for="upload-file">Plik</label><div class="password-row"><input class="file-input" id="upload-file" type="file" name="file" required autofocus><button class="submit" type="submit">Wyślij</button></div></form>
+<form id="upload-form" method="post" enctype="multipart/form-data"><label class="field-label" for="upload-file">Plik</label><div class="password-row"><input class="file-input" id="upload-file" type="file" name="file" required autofocus><button class="submit" type="submit">Wyślij</button></div><p class="hint">Przy większym pliku wysyłka może potrwać. Nie zamykaj karty.</p><p class="pending" role="status" aria-live="assertive"><span class="spinner" aria-hidden="true"></span><span>Wysyłanie pliku… Czekaj na potwierdzenie przyjęcia.</span></p></form>
+<script>{{.BusyScript}}</script>
 {{end}}
 </div>
 {{if .HasOwnerLogo}}<img class="owner-logo" src="{{.OwnerLogo}}" alt="Logo przyjmującego">{{end}}

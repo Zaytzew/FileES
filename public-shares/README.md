@@ -104,7 +104,10 @@ zaproszenia. Publiczna projekcja nie zawiera adresów e-mail, a sam link nie
 autoryzuje. Jawne „Wyślij kod” aktywuje pięciominutową epokę OTP po stronie
 authority; pięć błędnych prób zamyka epokę, a resend nie rotuje kodu ani TTL.
 Po poprawnej weryfikacji `filees-links` wydaje podpisany URL ważny dokładnie do
-końca tej epoki. Nie używa cookies, localStorage ani JavaScriptu. `filees-mail
+końca tej epoki. Nie używa cookies, localStorage ani JavaScriptu, poza formularzem przyjęcia:
+jeden inline skrypt zahashowany w CSP pokazuje oczekiwanie od „Wyślij” do
+potwierdzenia i blokuje drugie submit. Listing i OTP zostają bez skryptu.
+`filees-mail
 public-loop` jest odizolowanym dzieckiem authority i jako jedyny z tej pary
 ładuje sekret SMTP; trwały outbox przeżywa restart obu procesów. Authority
 przechwytuje sygnał zatrzymania usługi i czeka na zakończenie dziecka, więc

@@ -3,6 +3,8 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -87,6 +89,21 @@ func TestUploadGetRequiresInvitationAndHidesIdentity(t *testing.T) {
 	if !strings.Contains(body, `type="file"`) || !strings.Contains(body, `name="file"`) || !strings.Contains(body, "Wyślij") {
 		t.Fatalf("form missing:\n%s", body)
 	}
+	if !strings.Contains(body, `id="upload-form"`) || !strings.Contains(body, "Wysyłanie pliku") || !strings.Contains(body, "Nie zamykaj karty") {
+		t.Fatalf("busy state missing:\n%s", body)
+	}
+	csp := ok.Header().Get("Content-Security-Policy")
+	if strings.Contains(csp, "unsafe-inline") || !strings.Contains(csp, "script-src 'sha256-"+uploadBusyScriptHash()+"'") {
+		t.Fatalf("csp=%s", csp)
+	}
+	script := between(body, "<script>", "</script>")
+	if script != uploadBusyJS {
+		t.Fatalf("rendered script diverged from CSP hash input:\n%s", script)
+	}
+	sum := sha256.Sum256([]byte(script))
+	if !strings.Contains(csp, "sha256-"+base64.StdEncoding.EncodeToString(sum[:])) {
+		t.Fatalf("csp hash mismatch: %s", csp)
+	}
 	for _, forbidden := range []string{"atmprojekt", "oferta-a", token, "invite-token"} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("form disclosed %q", forbidden)
@@ -116,6 +133,9 @@ func TestUploadPostStoresPayloadWithoutServingIt(t *testing.T) {
 	if recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), "Plik został przyjęty") {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
+	if strings.Contains(recorder.Body.String(), "<script>") || strings.Contains(recorder.Header().Get("Content-Security-Policy"), "script-src") {
+		t.Fatalf("accepted page kept the busy script: csp=%s", recorder.Header().Get("Content-Security-Policy"))
+	}
 	entries, err := os.ReadDir(store.Root)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("quarantine entries=%v err=%v", entries, err)
@@ -138,6 +158,19 @@ func TestUploadPostStoresPayloadWithoutServingIt(t *testing.T) {
 	if leak.Code != http.StatusNotFound {
 		t.Fatalf("quarantine GET status=%d", leak.Code)
 	}
+}
+
+func between(body, start, end string) string {
+	from := strings.Index(body, start)
+	if from < 0 {
+		return ""
+	}
+	from += len(start)
+	to := strings.Index(body[from:], end)
+	if to < 0 {
+		return ""
+	}
+	return body[from : from+to]
 }
 
 func TestUploadRequireOTPIsFailClosed(t *testing.T) {

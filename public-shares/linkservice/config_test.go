@@ -18,7 +18,10 @@ func writeConfigFixture(t *testing.T, body string) string {
 	body = strings.ReplaceAll(body, "@ROOT@", root)
 	body = strings.ReplaceAll(body, "@KEY@", key)
 	path := filepath.Join(root, "public-links.json")
-	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -55,6 +58,27 @@ func TestLoadRejectsBundleWithoutCacheOrBeyondCache(t *testing.T) {
 	beyondCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"127.0.0.1:9001"},"visit_key_file":"@KEY@","cache":{"enabled":true,"root":"@ROOT@/cache","max_size":1024},"bundle":{"max_files":10,"max_size":2048}}`)
 	if _, err := Load(beyondCache); err == nil {
 		t.Fatal("bundle larger than cache accepted")
+	}
+}
+
+func TestLoadPreparesOptionalIntakeRoot(t *testing.T) {
+	path := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"unix","address":"@ROOT@/fcgi.sock"},"backchannel":{"network":"unix","address":"@ROOT@/authority.sock"},"visit_key_file":"@KEY@","cache":{"enabled":false},"intake_root":"@ROOT@/intake","max_upload_size":4096}`)
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm()&0022 != 0 {
+		t.Skip("host file mode cannot satisfy public-links owner-only config")
+	}
+	runtime, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.Intake == nil || runtime.Intake.MaxBytes != 4096 {
+		t.Fatalf("intake=%+v", runtime.Intake)
+	}
+	if _, err := os.Stat(runtime.Config.IntakeRoot); err != nil {
+		t.Fatal(err)
+	}
+	sameCache := writeConfigFixture(t, `{"schema":"filees.public-links/v1","fastcgi":{"network":"tcp","address":"127.0.0.1:9000"},"backchannel":{"network":"tcp","address":"127.0.0.1:9001"},"visit_key_file":"@KEY@","cache":{"enabled":true,"root":"@ROOT@/cache","max_size":1024},"intake_root":"@ROOT@/cache"}`)
+	if _, err := Load(sameCache); err == nil {
+		t.Fatal("intake on cache root accepted")
 	}
 }
 

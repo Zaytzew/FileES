@@ -24,6 +24,9 @@ func (s stubAuthority) Enter(context.Context, string, string) (authority.Entry, 
 	return authority.Entry{Projection: s.projection, Revision: 7, FrostProof: "proof"}, nil
 }
 func (s stubAuthority) Inspect(string, string) (channel.Projection, error) { return s.projection, nil }
+func (s stubAuthority) InspectUpload(string, string) (channel.UploadProjection, error) {
+	return channel.UploadProjection{}, authority.ErrNotFound
+}
 func (s stubAuthority) Check(context.Context, authority.ObjectRequest) (authority.ObjectPermit, error) {
 	return authority.ObjectPermit{CacheKey: strings.Repeat("a", 64), DisplayName: "Projekt.pdf", Revision: 7}, nil
 }

@@ -3,6 +3,7 @@ package channel
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +82,35 @@ func TestCreateUploadRejectsRenamePolicyAndRetainsReposOnDelete(t *testing.T) {
 	}
 	if _, _, err := store.CreateUpload(uuid.NewString(), owner, declaration); err != ErrSlugTaken {
 		t.Fatalf("deleted slug was recycled: %v", err)
+	}
+}
+
+func TestUploadProjectionHidesReposAndMailboxes(t *testing.T) {
+	store, declaration, owner := uploadFixture(t)
+	channelID := uuid.NewString()
+	if _, _, err := store.CreateUpload(channelID, owner, declaration); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := store.UploadProjection(channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	for _, forbidden := range []string{declaration.AuthorityRepoID, declaration.UploadRepoID, "A@example.com", "a@example.com", owner} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("projection leaked %q: %s", forbidden, body)
+		}
+	}
+	if err := projection.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := store.ResolveUploadAddress("atmprojekt", declaration.Slug)
+	if err != nil || resolved.ChannelID != channelID {
+		t.Fatalf("resolve=%+v err=%v", resolved, err)
 	}
 }
 

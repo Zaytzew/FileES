@@ -107,6 +107,32 @@ func (r Resolver) Inspect(alias, channelSlug string) (channel.Projection, error)
 	return projection, nil
 }
 
+func (r Resolver) InspectUpload(alias, channelSlug string) (channel.UploadProjection, error) {
+	if r.Channels == nil || r.Channels.Authority == nil {
+		return channel.UploadProjection{}, ErrNotFound
+	}
+	record, err := r.Channels.ResolveUploadAddress(alias, channelSlug)
+	if err != nil || r.revalidateUpload(record) != nil {
+		return channel.UploadProjection{}, ErrNotFound
+	}
+	projection, err := r.Channels.UploadProjection(record.ChannelID)
+	if err != nil {
+		return channel.UploadProjection{}, ErrNotFound
+	}
+	return projection, nil
+}
+
+func (r Resolver) revalidateUpload(record channel.UploadRecord) error {
+	if record.Manifest == nil || r.Channels.Authority.OwnsActiveRepository(record.Manifest.OwnerRealm, record.Manifest.AuthorityRepoID) != nil {
+		return ErrNotFound
+	}
+	alias, err := r.Channels.Authority.ActiveRealmAlias(record.Manifest.OwnerRealm)
+	if err != nil || alias != record.Alias {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r Resolver) Enter(ctx context.Context, alias, channelSlug string) (Entry, error) {
 	if err := r.validate(); err != nil {
 		return Entry{}, err

@@ -29,6 +29,7 @@ const Protocol = "filees.public-share-backchannel/v1"
 type Authority interface {
 	Enter(context.Context, string, string) (authority.Entry, error)
 	Inspect(string, string) (channel.Projection, error)
+	InspectUpload(string, string) (channel.UploadProjection, error)
 	Check(context.Context, authority.ObjectRequest) (authority.ObjectPermit, error)
 	Fetch(context.Context, authority.ObjectRequest) (authority.FetchedLeaf, error)
 	RequestRecipientOTP(context.Context, recipientotp.Request) error
@@ -87,6 +88,18 @@ func (s Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		result, err := s.Authority.Inspect(input.Alias, input.Slug)
+		if err != nil {
+			notFound(w)
+			return
+		}
+		writeJSON(w, result)
+	case "/v1/upload/inspect":
+		var input addressRequest
+		if decode(request, &input) != nil || input.Protocol != Protocol {
+			notFound(w)
+			return
+		}
+		result, err := s.Authority.InspectUpload(input.Alias, input.Slug)
 		if err != nil {
 			notFound(w)
 			return
@@ -176,6 +189,15 @@ func (c Client) Inspect(alias, slug string) (channel.Projection, error) {
 	err := c.callJSON(context.Background(), "/v1/inspect", addressRequest{Protocol: Protocol, Alias: alias, Slug: slug}, &result)
 	if err == nil && (result.Validate() != nil || result.Alias != alias || result.Slug != slug) {
 		err = errors.New("public share backchannel projection is invalid")
+	}
+	return result, err
+}
+
+func (c Client) InspectUpload(alias, slug string) (channel.UploadProjection, error) {
+	var result channel.UploadProjection
+	err := c.callJSON(context.Background(), "/v1/upload/inspect", addressRequest{Protocol: Protocol, Alias: alias, Slug: slug}, &result)
+	if err == nil && (result.Validate() != nil || result.Alias != alias || result.Slug != slug) {
+		err = errors.New("upload channel backchannel projection is invalid")
 	}
 	return result, err
 }

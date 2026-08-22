@@ -237,6 +237,10 @@ func trashOperationID(realmID string) string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("filees.upload-trash:"+realmID)).String()
 }
 
+func UploadTrashRepositoryID(realmID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(trashOperationID(realmID))).String()
+}
+
 func isUploadChannelTicket(typ control.TicketType) bool {
 	switch typ {
 	case control.TicketListUploadChannels, control.TicketCreateUploadChannel, control.TicketUpdateUploadChannel, control.TicketRevokeUploadChannel, control.TicketDeleteUploadChannel:

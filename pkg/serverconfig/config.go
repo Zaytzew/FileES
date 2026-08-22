@@ -40,6 +40,13 @@ type File struct {
 	Invitation           InvitationFile   `json:"invitation,omitempty"`
 	SMTP                 SMTPFile         `json:"smtp"`
 	PublicShares         PublicSharesFile `json:"public_shares,omitempty"`
+	Upload               UploadFile       `json:"upload,omitempty"`
+}
+
+type UploadFile struct {
+	IntakeRoot string   `json:"intake_root,omitempty"`
+	TrashRoot  string   `json:"trash_root,omitempty"`
+	AVCommand  []string `json:"av_command,omitempty"`
 }
 
 type PublicSharesFile struct {
@@ -181,6 +188,7 @@ type Config struct {
 	Invitation           InvitationFile
 	PublicShares         PublicSharesFile
 	PublicShareFrostKey  []byte
+	Upload               UploadFile
 }
 
 type Secrets uint8
@@ -392,6 +400,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		WorkerPublicKeyFile: file.WorkerPublicKeyFile, WorkerPublicKey: workerPublicKey,
 		Invitation:   file.Invitation,
 		PublicShares: file.PublicShares, PublicShareFrostKey: publicShareFrostKey,
+		Upload:       file.Upload,
 		Activation:   activationConfig,
 		Repositories: file.Repositories,
 		Onboarding:   onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
@@ -408,6 +417,9 @@ func load(path string, secrets Secrets) (Config, error) {
 	}
 	if config.Repositories.WhaleRoot != "" && !filepath.IsAbs(config.Repositories.WhaleRoot) {
 		return Config{}, errors.New("repositories whale_root must be absolute")
+	}
+	if err := validateUpload(file.Upload, file.Repositories.ResultsRoot); err != nil {
+		return Config{}, err
 	}
 	if _, err := onboarding.CanonicalEmail(config.Repositories.RecoveryAdminContact); err != nil {
 		return Config{}, errors.New("repositories recovery_admin_contact must be a plain mailbox address")
@@ -456,6 +468,37 @@ func (p PublicSharesFile) EffectiveMaxChannelsPerRealm() int {
 		return p.MaxChannelsPerRealm
 	}
 	return 128
+}
+
+func (u UploadFile) Enabled() bool { return u.IntakeRoot != "" }
+
+func (u UploadFile) EffectiveTrashRoot(resultsRoot string) string {
+	if u.TrashRoot != "" {
+		return filepath.Clean(u.TrashRoot)
+	}
+	if resultsRoot == "" {
+		return ""
+	}
+	return filepath.Join(resultsRoot, "upload-reject")
+}
+
+func validateUpload(u UploadFile, resultsRoot string) error {
+	if u.IntakeRoot == "" && u.TrashRoot == "" && len(u.AVCommand) == 0 {
+		return nil
+	}
+	if u.IntakeRoot == "" || !filepath.IsAbs(u.IntakeRoot) {
+		return errors.New("upload intake_root must be an absolute path")
+	}
+	if trash := u.EffectiveTrashRoot(resultsRoot); trash == "" || !filepath.IsAbs(trash) {
+		return errors.New("upload trash_root must be an absolute path")
+	}
+	if filepath.Clean(u.IntakeRoot) == u.EffectiveTrashRoot(resultsRoot) {
+		return errors.New("upload intake_root and trash_root must differ")
+	}
+	if len(u.AVCommand) > 0 && !filepath.IsAbs(u.AVCommand[0]) {
+		return errors.New("upload av_command must be an absolute executable")
+	}
+	return nil
 }
 
 func validatePublicShares(p PublicSharesFile, resultsRoot string) error {

@@ -118,6 +118,7 @@ type Worker struct {
 	Branding             RealmPublicBrandingAuthority
 	EditingPolicies      RepositoryEditingPolicyAuthority
 	PublicShares         PublicShareService
+	UploadChannels       UploadChannelService
 	RecoveryAdminContact string
 	DataErasureMaxDays   int
 	Now                  func() time.Time
@@ -133,7 +134,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketGetRealmPublicBranding && ticket.Type != control.TicketSetRealmPublicBranding && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketSetRepositoryEditingPolicy {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketGetRealmPublicBranding && ticket.Type != control.TicketSetRealmPublicBranding && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketListUploadChannels && ticket.Type != control.TicketCreateUploadChannel && ticket.Type != control.TicketUpdateUploadChannel && ticket.Type != control.TicketRevokeUploadChannel && ticket.Type != control.TicketDeleteUploadChannel && ticket.Type != control.TicketSetRepositoryEditingPolicy {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
@@ -156,6 +157,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if (ticket.Type == control.TicketListPublicShares || ticket.Type == control.TicketCreatePublicShare || ticket.Type == control.TicketUpdatePublicShare || ticket.Type == control.TicketRevokePublicShare || ticket.Type == control.TicketDeletePublicShare) && !session.CanCreateRepositories {
 		return w.failure(ticket, "PUBLIC_SHARE_FORBIDDEN", "authenticated session cannot publish repositories")
+	}
+	if isUploadChannelTicket(ticket.Type) && !session.CanCreateRepositories {
+		return w.failure(ticket, "UPLOAD_CHANNEL_FORBIDDEN", "authenticated session cannot open an upload channel")
 	}
 	if ticket.Type == control.TicketClaimRealmAlias {
 		return w.claimRealmAlias(ctx, session, ticket)
@@ -200,6 +204,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.Type == control.TicketListPublicShares || ticket.Type == control.TicketCreatePublicShare || ticket.Type == control.TicketUpdatePublicShare || ticket.Type == control.TicketRevokePublicShare || ticket.Type == control.TicketDeletePublicShare {
 		return w.publicShare(ctx, session, ticket)
+	}
+	if isUploadChannelTicket(ticket.Type) {
+		return w.uploadChannel(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketMobilePairing {
 		return w.mobilePairing(session, ticket)

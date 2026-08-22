@@ -370,6 +370,27 @@ func TestPublicShareListAndPasswordPreservationContracts(t *testing.T) {
 	}
 }
 
+func TestUploadChannelContractsRejectAnonymousAndAcceptOwnerCreate(t *testing.T) {
+	operationID, repoID := uuid.NewString(), uuid.NewString()
+	declaration := UploadChannelDeclaration{AuthorityRepoID: repoID, Slug: "oferta-wykonawcy", Recipients: []string{"a@example.com"}}
+	ticket, err := NewTicket(operationID, uuid.NewString(), TicketCreateUploadChannel, "client-a", CreateUploadChannelPayload{UploadChannelDeclaration: declaration}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticket.Type != TicketCreateUploadChannel {
+		t.Fatalf("type=%s", ticket.Type)
+	}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreateUploadChannel, "client-a", CreateUploadChannelPayload{UploadChannelDeclaration: UploadChannelDeclaration{AuthorityRepoID: repoID, Slug: "oferta-wykonawcy"}}, time.Now()); err == nil {
+		t.Fatal("anonymous upload was accepted")
+	}
+	if _, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketCreateUploadChannel, "client-a", CreateUploadChannelPayload{UploadChannelDeclaration: UploadChannelDeclaration{AuthorityRepoID: repoID, Slug: "oferta-wykonawcy", Recipients: []string{"a@example.com"}, CollisionPolicy: "rename"}}, time.Now()); err == nil {
+		t.Fatal("rename collision policy was accepted")
+	}
+	if _, err := NewSuccessResult(operationID, uuid.NewString(), TicketCreateUploadChannel, UploadChannelResult{ChannelID: operationID, Alias: "atmprojekt", Slug: declaration.Slug, State: "active", UploadRepoID: uuid.NewString(), RecipientDeliveries: 1}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A ticket type has to be registered in three independent places here -
 // Ticket.Validate, the allowlist in Result.Validate, and
 // validateSuccessPayload - and the default arms reject anything unregistered.

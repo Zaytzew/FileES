@@ -68,6 +68,11 @@ const (
 	TicketUpdatePublicShare      TicketType = "UPDATE_PUBLIC_SHARE"
 	TicketRevokePublicShare      TicketType = "REVOKE_PUBLIC_SHARE"
 	TicketDeletePublicShare      TicketType = "DELETE_PUBLIC_SHARE"
+	TicketListUploadChannels     TicketType = "LIST_UPLOAD_CHANNELS"
+	TicketCreateUploadChannel    TicketType = "CREATE_UPLOAD_CHANNEL"
+	TicketUpdateUploadChannel    TicketType = "UPDATE_UPLOAD_CHANNEL"
+	TicketRevokeUploadChannel    TicketType = "REVOKE_UPLOAD_CHANNEL"
+	TicketDeleteUploadChannel    TicketType = "DELETE_UPLOAD_CHANNEL"
 	// payload carries no realm: the worker derives the owner from the
 	// authenticated session, and a realm grant - including rw - never
 	// satisfies ownership of a repository-wide policy.
@@ -268,6 +273,61 @@ type PublicShareResult struct {
 	Alias               string `json:"alias"`
 	Slug                string `json:"slug"`
 	State               string `json:"state"`
+	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
+}
+
+// UploadChannelDeclaration is the owner-supplied CREATE/UPDATE body. Owner
+// realm and upload_repo_id are never client-chosen: the worker derives the
+// former from the session and allocates the latter as a normal repository.
+type UploadChannelDeclaration struct {
+	AuthorityRepoID string   `json:"authority_repo_id"`
+	Slug            string   `json:"slug"`
+	Recipients      []string `json:"recipients"`
+	RequireOTP      bool     `json:"require_otp,omitempty"`
+	CollisionPolicy string   `json:"collision_policy,omitempty"`
+}
+
+type CreateUploadChannelPayload struct{ UploadChannelDeclaration }
+type UpdateUploadChannelPayload struct {
+	ChannelID string `json:"channel_id"`
+	UploadChannelDeclaration
+}
+type ListUploadChannelsPayload struct {
+	AuthorityRepoID string `json:"authority_repo_id"`
+}
+type RevokeUploadChannelPayload struct {
+	ChannelID string `json:"channel_id"`
+}
+type DeleteUploadChannelPayload struct {
+	ChannelID string `json:"channel_id"`
+}
+
+type UploadChannelSummary struct {
+	ChannelID       string   `json:"channel_id"`
+	AuthorityRepoID string   `json:"authority_repo_id"`
+	UploadRepoID    string   `json:"upload_repo_id"`
+	Alias           string   `json:"alias"`
+	Slug            string   `json:"slug"`
+	State           string   `json:"state"`
+	Recipients      []string `json:"recipients"`
+	RequireOTP      bool     `json:"require_otp,omitempty"`
+	CollisionPolicy string   `json:"collision_policy"`
+	UpdatedAt       string   `json:"updated_at"`
+}
+
+type ListUploadChannelsResult struct {
+	Channels []UploadChannelSummary `json:"channels"`
+}
+
+type UploadChannelResult struct {
+	ChannelID           string `json:"channel_id"`
+	Alias               string `json:"alias"`
+	Slug                string `json:"slug"`
+	State               string `json:"state"`
+	UploadRepoID        string `json:"upload_repo_id"`
+	UploadRepoURL       string `json:"upload_repo_url,omitempty"`
+	TrashRepoID         string `json:"trash_repo_id,omitempty"`
+	TrashRepoURL        string `json:"trash_repo_url,omitempty"`
 	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
 }
 
@@ -583,6 +643,49 @@ func (t Ticket) Validate() error {
 		if err := validateUUID("DELETE_PUBLIC_SHARE payload.channel_id", p.ChannelID); err != nil {
 			return err
 		}
+	case TicketListUploadChannels:
+		var p ListUploadChannelsPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("LIST_UPLOAD_CHANNELS payload: %w", err)
+		}
+		if err := validateUUID("LIST_UPLOAD_CHANNELS payload.authority_repo_id", p.AuthorityRepoID); err != nil {
+			return err
+		}
+	case TicketCreateUploadChannel:
+		var p CreateUploadChannelPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("CREATE_UPLOAD_CHANNEL payload: %w", err)
+		}
+		if err := validateUploadChannelDeclaration(p.UploadChannelDeclaration); err != nil {
+			return fmt.Errorf("CREATE_UPLOAD_CHANNEL payload: %w", err)
+		}
+	case TicketUpdateUploadChannel:
+		var p UpdateUploadChannelPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("UPDATE_UPLOAD_CHANNEL payload: %w", err)
+		}
+		if err := validateUUID("UPDATE_UPLOAD_CHANNEL payload.channel_id", p.ChannelID); err != nil {
+			return err
+		}
+		if err := validateUploadChannelDeclaration(p.UploadChannelDeclaration); err != nil {
+			return fmt.Errorf("UPDATE_UPLOAD_CHANNEL payload: %w", err)
+		}
+	case TicketRevokeUploadChannel:
+		var p RevokeUploadChannelPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("REVOKE_UPLOAD_CHANNEL payload: %w", err)
+		}
+		if err := validateUUID("REVOKE_UPLOAD_CHANNEL payload.channel_id", p.ChannelID); err != nil {
+			return err
+		}
+	case TicketDeleteUploadChannel:
+		var p DeleteUploadChannelPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("DELETE_UPLOAD_CHANNEL payload: %w", err)
+		}
+		if err := validateUUID("DELETE_UPLOAD_CHANNEL payload.channel_id", p.ChannelID); err != nil {
+			return err
+		}
 	case TicketClientDeactivate:
 		var p ClientDeactivatePayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -637,7 +740,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketSetRepositoryEditingPolicy {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketSetRepositoryEditingPolicy {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -849,6 +952,77 @@ func validateSuccessPayload(r Result) error {
 				return errors.New("public share summary updated_at is invalid")
 			}
 		}
+	case TicketListUploadChannels:
+		var result ListUploadChannelsResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("LIST_UPLOAD_CHANNELS result: %w", err)
+		}
+		if len(result.Channels) > 1024 {
+			return errors.New("LIST_UPLOAD_CHANNELS result is too large")
+		}
+		seen := map[string]bool{}
+		for _, item := range result.Channels {
+			if err := validateUUID("upload channel summary.channel_id", item.ChannelID); err != nil {
+				return err
+			}
+			if seen[item.ChannelID] {
+				return errors.New("LIST_UPLOAD_CHANNELS result contains duplicate channel")
+			}
+			seen[item.ChannelID] = true
+			if err := validateUUID("upload channel summary.authority_repo_id", item.AuthorityRepoID); err != nil {
+				return err
+			}
+			if err := validateUUID("upload channel summary.upload_repo_id", item.UploadRepoID); err != nil {
+				return err
+			}
+			if item.AuthorityRepoID == item.UploadRepoID {
+				return errors.New("upload channel summary must not reuse the project repository")
+			}
+			if _, err := realmalias.Normalize(item.Alias); err != nil {
+				return errors.New("upload channel summary alias is invalid")
+			}
+			if item.State != "active" && item.State != "revoked" {
+				return errors.New("upload channel summary state is invalid")
+			}
+			if err := validateUploadChannelDeclaration(UploadChannelDeclaration{AuthorityRepoID: item.AuthorityRepoID, Slug: item.Slug, Recipients: item.Recipients, RequireOTP: item.RequireOTP, CollisionPolicy: item.CollisionPolicy}); err != nil {
+				return fmt.Errorf("upload channel summary: %w", err)
+			}
+			if _, err := time.Parse(time.RFC3339Nano, item.UpdatedAt); err != nil {
+				return errors.New("upload channel summary updated_at is invalid")
+			}
+		}
+	case TicketCreateUploadChannel, TicketUpdateUploadChannel, TicketRevokeUploadChannel, TicketDeleteUploadChannel:
+		var result UploadChannelResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("upload channel result: %w", err)
+		}
+		if err := validateUUID("upload channel result.channel_id", result.ChannelID); err != nil {
+			return err
+		}
+		if _, err := realmalias.Normalize(result.Alias); err != nil {
+			return errors.New("upload channel result alias is invalid")
+		}
+		if _, err := publicslug.Normalize(result.Slug); err != nil {
+			return errors.New("upload channel result slug is invalid")
+		}
+		if result.RecipientDeliveries < 0 {
+			return errors.New("upload channel result recipient_deliveries cannot be negative")
+		}
+		wantState := "active"
+		if r.Type == TicketRevokeUploadChannel {
+			wantState = "revoked"
+		}
+		if r.Type == TicketDeleteUploadChannel {
+			wantState = "deleted"
+		}
+		if result.State != wantState {
+			return errors.New("upload channel result state is invalid")
+		}
+		if r.Type != TicketDeleteUploadChannel {
+			if err := validateUUID("upload channel result.upload_repo_id", result.UploadRepoID); err != nil {
+				return err
+			}
+		}
 	case TicketCreatePublicShare, TicketUpdatePublicShare, TicketRevokePublicShare, TicketDeletePublicShare:
 		var result PublicShareResult
 		if err := decodeStrict(r.Result, &result); err != nil {
@@ -1032,6 +1206,42 @@ func validatePublicShareDeclaration(p PublicShareDeclaration) error {
 		if object.Size != nil && *object.Size < 0 {
 			return fmt.Errorf("object_map[%d].size is invalid", i)
 		}
+	}
+	return nil
+}
+
+func validateUploadChannelDeclaration(p UploadChannelDeclaration) error {
+	if err := validateUUID("authority_repo_id", p.AuthorityRepoID); err != nil {
+		return err
+	}
+	normalizedSlug, err := publicslug.Normalize(p.Slug)
+	if err != nil || normalizedSlug != p.Slug {
+		return errors.New("slug must be normalized")
+	}
+	if len(p.Recipients) == 0 {
+		return errors.New("upload channel requires a recipient list")
+	}
+	if len(p.Recipients) > 256 {
+		return errors.New("recipients exceeds 256 addresses")
+	}
+	seen := map[string]bool{}
+	for _, raw := range p.Recipients {
+		email, err := validatePlainEmail(raw)
+		if err != nil {
+			return errors.New("recipient address is invalid")
+		}
+		key := strings.ToLower(email)
+		if seen[key] {
+			return errors.New("recipient list contains duplicate address")
+		}
+		seen[key] = true
+	}
+	policy := p.CollisionPolicy
+	if policy == "" {
+		policy = string(publicmanifest.CollisionDeny)
+	}
+	if publicmanifest.CollisionPolicy(policy) != publicmanifest.CollisionDeny {
+		return errors.New("collision_policy must be deny")
 	}
 	return nil
 }

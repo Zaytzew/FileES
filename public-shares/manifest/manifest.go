@@ -221,10 +221,19 @@ func (u Upload) Validate() error {
 	if len(u.Recipients) == 0 {
 		return ErrNoRecipients
 	}
+	if len(u.Recipients) > 256 {
+		return errors.New("upload recipient list exceeds 256 addresses")
+	}
+	seenRecipients := map[string]bool{}
 	for i, addr := range u.Recipients {
 		if err := validRecipient(i, addr); err != nil {
 			return err
 		}
+		key := strings.ToLower(strings.TrimSpace(addr))
+		if seenRecipients[key] {
+			return errors.New("upload recipient list contains duplicate address")
+		}
+		seenRecipients[key] = true
 	}
 	if !u.CollisionPolicy.valid() {
 		return fmt.Errorf("collision_policy: unsupported value %q", u.CollisionPolicy)

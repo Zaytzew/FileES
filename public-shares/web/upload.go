@@ -143,12 +143,12 @@ func (h Handler) renderUpload(w http.ResponseWriter, projection channel.UploadPr
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
 	csp := "default-src 'none'; style-src 'sha256-" + cssHash + "'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 	if !accepted {
-		csp += "; script-src 'sha256-" + uploadBusyScriptHash() + "'"
+		csp += "; script-src 'sha256-" + uploadFormScriptHash() + "'"
 	}
 	w.Header().Set("Content-Security-Policy", csp)
 	data := uploadPage{BrandSymbol: brandSymbol, CSS: template.CSS(css), Accepted: accepted}
 	if !accepted {
-		data.BusyScript = template.JS(uploadBusyJS)
+		data.FormScript = template.JS(uploadFormJS)
 	}
 	if branding.LogoBase64 != "" {
 		data.HasOwnerLogo = true
@@ -165,20 +165,20 @@ func (h Handler) renderUpload(w http.ResponseWriter, projection channel.UploadPr
 type uploadPage struct {
 	BrandSymbol  template.HTML
 	CSS          template.CSS
-	BusyScript   template.JS
+	FormScript   template.JS
 	OwnerLogo    template.URL
 	HasOwnerLogo bool
 	Accepted     bool
 }
 
-const uploadCSS = `.file-input{min-width:0;flex:1;height:46px;padding:10px 13px;border:1px solid #aeb7c5;border-radius:2px;background:#fff;font:inherit;font-size:16px}.file-input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.hint{margin:12px 0 0;color:var(--muted);font-size:14px;line-height:1.55}.status{margin:0 0 18px;color:var(--owner-ink);font-family:var(--mono);font-size:14px}.pending{display:none;align-items:center;gap:12px;margin:0;color:var(--owner-ink);font-family:var(--mono);font-size:14px;line-height:1.45}.spinner{flex:0 0 auto;width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--owner-accent);border-radius:50%;animation:filees-spin .8s linear infinite}@keyframes filees-spin{to{transform:rotate(360deg)}}form[data-busy="1"] .field-label,form[data-busy="1"] .password-row,form[data-busy="1"] .hint{display:none}form[data-busy="1"] .pending{display:flex}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-color:var(--owner-accent)}}`
+const uploadCSS = `.drop{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:148px;margin:0 0 14px;padding:22px 18px;border:2px dashed #aeb7c5;border-radius:2px;background:var(--soft);color:var(--owner-ink);text-align:center;cursor:pointer}.drop:hover,.drop:focus-within,.drop[data-over="1"]{border-color:var(--owner-accent);background:#fff}.drop-title{font-family:var(--mono);font-size:13px;font-weight:650;line-height:1.45}.drop-name{max-width:100%;color:var(--muted);font-size:13px;line-height:1.4;word-break:break-all}.drop-name:empty{display:none}.file-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.file-sr:focus-visible+ .drop-title{outline:3px solid var(--focus);outline-offset:4px}.hint{margin:12px 0 0;color:var(--muted);font-size:14px;line-height:1.55}.status{margin:0 0 18px;color:var(--owner-ink);font-family:var(--mono);font-size:14px}.pending{display:none;align-items:center;gap:12px;margin:0;color:var(--owner-ink);font-family:var(--mono);font-size:14px;line-height:1.45}.spinner{flex:0 0 auto;width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--owner-accent);border-radius:50%;animation:filees-spin .8s linear infinite}@keyframes filees-spin{to{transform:rotate(360deg)}}form[data-busy="1"] .field-label,form[data-busy="1"] .drop,form[data-busy="1"] .password-row,form[data-busy="1"] .hint{display:none}form[data-busy="1"] .pending{display:flex}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-color:var(--owner-accent)}}`
 
-// uploadBusyJS is the only script on the public intake form. It is hashed into
+// uploadFormJS is the only script on the public intake form. It is hashed into
 // CSP (no unsafe-inline). It must stay ASCII and must not contain "</".
-const uploadBusyJS = `(function(){var f=document.getElementById("upload-form");if(!f)return;f.addEventListener("submit",function(e){if(f.getAttribute("data-busy")==="1"){e.preventDefault();return}f.setAttribute("data-busy","1");f.setAttribute("aria-busy","true")});})();`
+const uploadFormJS = `(function(){var f=document.getElementById("upload-form");var input=document.getElementById("upload-file");var drop=document.getElementById("upload-drop");var name=document.getElementById("upload-name");if(!f||!input||!drop)return;function busy(e){if(f.getAttribute("data-busy")==="1"){if(e)e.preventDefault();return false}f.setAttribute("data-busy","1");f.setAttribute("aria-busy","true");return true}function showName(){if(!name)return;name.textContent=(input.files&&input.files[0]&&input.files[0].name)?input.files[0].name:""}function takeFile(file){if(!file)return false;try{var dt=new DataTransfer();dt.items.add(file);input.files=dt.files}catch(err){return false}showName();return !!(input.files&&input.files[0])}function firstFile(dt){if(!dt)return null;if(dt.items&&dt.items.length){for(var i=0;i<dt.items.length;i++){var it=dt.items[i];if(it.kind!=="file")continue;if(it.webkitGetAsEntry){var ent=it.webkitGetAsEntry();if(ent&&ent.isDirectory)continue}var file=it.getAsFile();if(file)return file}}if(dt.files&&dt.files.length)return dt.files[0];return null}var depth=0;f.addEventListener("submit",function(e){busy(e)});input.addEventListener("change",showName);drop.addEventListener("dragenter",function(e){e.preventDefault();depth++;drop.setAttribute("data-over","1")});drop.addEventListener("dragover",function(e){e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect="copy"});drop.addEventListener("dragleave",function(){depth--;if(depth<=0){depth=0;drop.removeAttribute("data-over")}});drop.addEventListener("drop",function(e){e.preventDefault();depth=0;drop.removeAttribute("data-over");if(f.getAttribute("data-busy")==="1")return;if(!takeFile(firstFile(e.dataTransfer)))return;if(f.requestSubmit)f.requestSubmit();else{busy();f.submit()}})})();`
 
-func uploadBusyScriptHash() string {
-	digest := sha256.Sum256([]byte(uploadBusyJS))
+func uploadFormScriptHash() string {
+	digest := sha256.Sum256([]byte(uploadFormJS))
 	return base64.StdEncoding.EncodeToString(digest[:])
 }
 
@@ -198,8 +198,8 @@ var uploadTemplate = template.Must(template.New("upload").Parse(`<!doctype html>
 {{if .Accepted}}
 <p class="status">Plik został przyjęty.</p>
 {{else}}
-<form id="upload-form" method="post" enctype="multipart/form-data"><label class="field-label" for="upload-file">Plik</label><div class="password-row"><input class="file-input" id="upload-file" type="file" name="file" required autofocus><button class="submit" type="submit">Wyślij</button></div><p class="hint">Przy większym pliku wysyłka może potrwać. Nie zamykaj karty.</p><p class="pending" role="status" aria-live="assertive"><span class="spinner" aria-hidden="true"></span><span>Wysyłanie pliku… Czekaj na potwierdzenie przyjęcia.</span></p></form>
-<script>{{.BusyScript}}</script>
+<form id="upload-form" method="post" enctype="multipart/form-data"><span class="field-label" id="upload-label">Plik</span><label class="drop" id="upload-drop" for="upload-file"><input class="file-sr" id="upload-file" type="file" name="file" required autofocus aria-labelledby="upload-label"><span class="drop-title">Upuść plik albo kliknij, żeby wybrać</span><span class="drop-name" id="upload-name"></span></label><div class="password-row"><button class="submit" type="submit">Wyślij</button></div><p class="hint">Przy większym pliku wysyłka może potrwać. Nie zamykaj karty.</p><p class="pending" role="status" aria-live="assertive"><span class="spinner" aria-hidden="true"></span><span>Wysyłanie pliku… Czekaj na potwierdzenie przyjęcia.</span></p></form>
+<script>{{.FormScript}}</script>
 {{end}}
 </div>
 {{if .HasOwnerLogo}}<img class="owner-logo" src="{{.OwnerLogo}}" alt="Logo przyjmującego">{{end}}

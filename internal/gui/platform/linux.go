@@ -698,6 +698,48 @@ func (b *LinuxBackend) ShowPublicShares(ctx context.Context, request PublicShare
 	return result, nil
 }
 
+func (b *LinuxBackend) ShowUploadChannels(ctx context.Context, request UploadChannelDialogRequest) (UploadChannelDialogResult, error) {
+	command, err := b.runner.LookPath("yad")
+	if err != nil {
+		return UploadChannelDialogResult{}, NewUnavailable("upload_channel_dialog", errors.New("yad is not installed"))
+	}
+	b.applyLinuxDarkThemePreference(ctx)
+	args := []string{"--list", "--radiolist", "--title=" + request.Title, "--text=" + request.Text, "--width=980", "--height=620", "--column=", "--column=ID", "--column=Adres", "--column=Stan", "--column=Wnoszący", "--column=Działanie", "--hide-column=2", "--print-column=2", "--ok-label=Wykonaj", "--cancel-label=Zamknij", "FALSE", "create|", "—", "—", "—", "Nowa półka"}
+	for _, channel := range request.Channels {
+		for _, action := range []struct{ id, label string }{{"edit", "Edytuj"}, {"revoke", "Cofnij"}, {"delete", "Usuń"}} {
+			args = append(args, "FALSE", action.id+"|"+channel.ChannelID, channel.Address, channel.State, channel.Recipients, action.label)
+		}
+	}
+	output, err := b.runner.Output(ctx, command, args...)
+	if err != nil {
+		if ctx.Err() != nil {
+			return UploadChannelDialogResult{}, ctx.Err()
+		}
+		if commandCancelled(err) {
+			return UploadChannelDialogResult{Action: UploadChannelDialogClose}, nil
+		}
+		return UploadChannelDialogResult{}, NewOperationalFailure("upload_channel_dialog", err)
+	}
+	action, channelID, ok := strings.Cut(yadSelection(output), "|")
+	if !ok {
+		return UploadChannelDialogResult{Action: UploadChannelDialogClose}, nil
+	}
+	result := UploadChannelDialogResult{ChannelID: channelID}
+	switch action {
+	case "create":
+		result.Action = UploadChannelDialogCreate
+	case "edit":
+		result.Action = UploadChannelDialogEdit
+	case "revoke":
+		result.Action = UploadChannelDialogRevoke
+	case "delete":
+		result.Action = UploadChannelDialogDelete
+	default:
+		result.Action = UploadChannelDialogClose
+	}
+	return result, nil
+}
+
 func (b *LinuxBackend) ConfirmConsent(ctx context.Context, request ConsentRequest) (ConsentResult, error) {
 	command, err := b.runner.LookPath("zenity")
 	if err != nil {

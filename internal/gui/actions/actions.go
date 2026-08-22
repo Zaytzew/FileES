@@ -169,6 +169,24 @@ type PublicShareManager interface {
 	DeletePublicShare(context.Context, string, string, string) error
 }
 
+type UploadChannelSummary struct {
+	ChannelID, Alias, Slug, State, UploadRepoID, UpdatedAt string
+	Recipients                                             []string
+}
+
+type UploadChannelDeclaration struct {
+	AuthorityRepoID, Slug string
+	Recipients            []string
+}
+
+type UploadChannelManager interface {
+	ListUploadChannels(context.Context, string, string) ([]UploadChannelSummary, error)
+	CreateUploadChannel(context.Context, string, UploadChannelDeclaration) error
+	UpdateUploadChannel(context.Context, string, string, UploadChannelDeclaration) error
+	RevokeUploadChannel(context.Context, string, string, string) error
+	DeleteUploadChannel(context.Context, string, string, string) error
+}
+
 type RealmRemovalBeginRequest struct {
 	ServerID, NotificationEmail, RecoveryDirectory string
 	ErasureRequested                               bool
@@ -261,26 +279,28 @@ type Config struct {
 	// PinStore, if non-nil, offers PIN setup at the end of a successful
 	// activation (see startActivation) - nil means the local-PIN feature is
 	// disabled entirely (e.g. platform without a durable state root).
-	PinStore           *localpin.Store
-	Activator          Activator
-	Updater            Updater
-	Stack              StackLifecycle
-	Notifier           platform.Notifier // nil → notifications silently dropped
-	Locker             LockUnlocker
-	Reservations       ReservationManager
-	RealmAliases       RealmAliasManager
-	RealmGrants        RealmGrantManager
-	RealmBranding      RealmBrandingManager
-	SessionTimeouts    SessionTimeoutManager
-	PublicShares       PublicShareManager
-	Shouts             ShoutPublisher
-	Notices            NoticeAcker
-	ReservationBrowser platform.ReservationBrowser
-	SettingsBrowser    platform.SettingsBrowser
-	JournalBrowser     platform.JournalBrowser
-	RealmGrantBrowser  platform.RealmGrantBrowser
-	PublicShareBrowser platform.PublicShareBrowser
-	ConsentPrompter    platform.ConsentPrompter
+	PinStore             *localpin.Store
+	Activator            Activator
+	Updater              Updater
+	Stack                StackLifecycle
+	Notifier             platform.Notifier // nil → notifications silently dropped
+	Locker               LockUnlocker
+	Reservations         ReservationManager
+	RealmAliases         RealmAliasManager
+	RealmGrants          RealmGrantManager
+	RealmBranding        RealmBrandingManager
+	SessionTimeouts      SessionTimeoutManager
+	PublicShares         PublicShareManager
+	UploadChannels       UploadChannelManager
+	Shouts               ShoutPublisher
+	Notices              NoticeAcker
+	ReservationBrowser   platform.ReservationBrowser
+	SettingsBrowser      platform.SettingsBrowser
+	JournalBrowser       platform.JournalBrowser
+	RealmGrantBrowser    platform.RealmGrantBrowser
+	PublicShareBrowser   platform.PublicShareBrowser
+	UploadChannelBrowser platform.UploadChannelBrowser
+	ConsentPrompter      platform.ConsentPrompter
 	// Progress renders the "still working" window for operations that keep
 	// running after their dialog closes. nil → the window is simply skipped;
 	// the operation itself is unaffected, because this surface never decides
@@ -498,6 +518,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startSetEditingPolicy(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogPublicShares:
 			c.startManagePublicShares(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogUploadChannels:
+			c.startManageUploadChannels(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogRealmVisibility:
 			c.startSetRealmVisibility(ctx, result.ServerID)
 		case platform.SettingsDialogRealmBranding:
@@ -719,14 +741,15 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			// Ownership alone, not ownedAndCreatable: whether a realm may
 			// create new repositories says nothing about its right to set
 			// the working rules of one it already owns.
-			CanSetEditingPolicy:   vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
-			CanManageGrants:       vm.CanManageRealmGrants() && ownedAndCreatable,
-			CanManagePublicShares: vm.CanManagePublicShares() && ownedAndCreatable,
-			CanConnect:            !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
-			CanLocate:             repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
-			CanDetach:             repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
-			CanDelete:             repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
-			CanLoadDump:           repo.Attached && ownedAndCreatable,
+			CanSetEditingPolicy:     vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
+			CanManageGrants:         vm.CanManageRealmGrants() && ownedAndCreatable,
+			CanManagePublicShares:   vm.CanManagePublicShares() && ownedAndCreatable,
+			CanManageUploadChannels: vm.CanManageUploadChannels() && ownedAndCreatable,
+			CanConnect:              !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
+			CanLocate:               repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
+			CanDetach:               repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
+			CanDelete:               repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+			CanLoadDump:             repo.Attached && ownedAndCreatable,
 		})
 	}
 	return row, hadPending
@@ -1418,6 +1441,119 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienie zostało zaktualizowane", Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
 		}
 	}()
+}
+
+func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, repoID string) {
+	key := "upload-channels." + serverID + "." + repoID
+	if serverID == "" || repoID == "" || c.cfg.UploadChannels == nil || c.cfg.UploadChannelBrowser == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		for ctx.Err() == nil {
+			vm := c.cfg.ViewModel()
+			repo, ok := managedPublicShareRepository(vm, serverID, repoID)
+			if !ok || !vm.CanManageUploadChannels() {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Półki przyjęcia są niedostępne", Body: "Półkę może wystawić właściciel repozytorium na kliencie z pełną obsługą przyjęcia.", Urgency: platform.UrgencyCritical})
+				return
+			}
+			channels, err := c.cfg.UploadChannels.ListUploadChannels(ctx, serverID, repoID)
+			if err != nil {
+				c.reportActionError(ctx, key, "Nie udało się pobrać półek przyjęcia", err.Error())
+				return
+			}
+			request := platform.UploadChannelDialogRequest{Title: "Półki przyjęcia — „" + repo.DisplayName + "”", Text: "Półka jest zawsze zamknięta: wnoszący dostają osobne zaproszenia i kładą plik przeglądarką. Domyślnie to zwykła półka, bez preselekcji."}
+			known := make(map[string]UploadChannelSummary, len(channels))
+			for _, channel := range channels {
+				known[channel.ChannelID] = channel
+				request.Channels = append(request.Channels, platform.UploadChannelSummary{ChannelID: channel.ChannelID, Address: channel.Alias + "/" + channel.Slug, State: publicShareStateLabel(channel.State), Recipients: strings.Join(channel.Recipients, ", ")})
+			}
+			choice, err := c.cfg.UploadChannelBrowser.ShowUploadChannels(ctx, request)
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć półek przyjęcia", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+			if choice.Action == platform.UploadChannelDialogClose {
+				return
+			}
+			var current *UploadChannelSummary
+			if choice.Action != platform.UploadChannelDialogCreate {
+				channel, exists := known[choice.ChannelID]
+				if !exists {
+					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nieprawidłowa półka", Body: "Wybrany kanał nie pochodzi z aktualnej listy.", Urgency: platform.UrgencyCritical})
+					return
+				}
+				current = &channel
+			}
+			switch choice.Action {
+			case platform.UploadChannelDialogCreate, platform.UploadChannelDialogEdit:
+				if current != nil && current.State != "active" {
+					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Półka nie jest aktywna", Text: "Cofniętej półki nie można edytować. Wystaw nową pod nowym adresem."})
+					continue
+				}
+				declaration, accepted := c.collectUploadChannelDeclaration(ctx, repo, current)
+				if !accepted {
+					continue
+				}
+				if current == nil {
+					err = c.cfg.UploadChannels.CreateUploadChannel(ctx, serverID, declaration)
+				} else {
+					err = c.cfg.UploadChannels.UpdateUploadChannel(ctx, serverID, current.ChannelID, declaration)
+				}
+			case platform.UploadChannelDialogRevoke:
+				if current.State != "active" {
+					continue
+				}
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Cofnij półkę", Text: "Adres przestanie przyjmować pliki, ale pozostanie zarezerwowany. Przyjęte przesyłki zostają u Ciebie.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
+				if confirmErr != nil || !confirmed {
+					continue
+				}
+				err = c.cfg.UploadChannels.RevokeUploadChannel(ctx, serverID, repoID, current.ChannelID)
+			case platform.UploadChannelDialogDelete:
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Usuń półkę", Text: "Polityka półki zostanie usunięta, a jej adres pozostanie trwale zarezerwowany. Folder z przyjętymi plikami nie jest kasowany.", ConfirmText: "Usuń", CancelText: "Anuluj"})
+				if confirmErr != nil || !confirmed {
+					continue
+				}
+				err = c.cfg.UploadChannels.DeleteUploadChannel(ctx, serverID, repoID, current.ChannelID)
+			default:
+				return
+			}
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zmienić półki", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				continue
+			}
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Półka została zaktualizowana", Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
+		}
+	}()
+}
+
+func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo app.RepoViewModel, current *UploadChannelSummary) (UploadChannelDeclaration, bool) {
+	declaration := UploadChannelDeclaration{AuthorityRepoID: repo.ID}
+	if current == nil {
+		slug, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Adres półki", Text: "Wpisz końcówkę publicznego adresu: 3–64 małe litery, cyfry lub pojedyncze myślniki."})
+		if promptErr != nil || slug.Cancelled || strings.TrimSpace(slug.Value) == "" {
+			return UploadChannelDeclaration{}, false
+		}
+		declaration.Slug = strings.ToLower(strings.TrimSpace(slug.Value))
+	} else {
+		declaration.Slug = current.Slug
+	}
+	recipientDefault := ""
+	if current != nil {
+		recipientDefault = strings.Join(current.Recipients, ", ")
+	}
+	recipients, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Wnoszący", Text: "Adresy e-mail oddziel przecinkiem lub średnikiem. Półka nie bywa anonimowa — lista nie może być pusta.", Default: recipientDefault})
+	if promptErr != nil || recipients.Cancelled {
+		return UploadChannelDeclaration{}, false
+	}
+	declaration.Recipients = splitRecipients(recipients.Value)
+	if len(declaration.Recipients) == 0 {
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Potrzeba wnoszącego", Text: "Półka przyjęcia wymaga co najmniej jednego adresu. Anonimowe wniesienie nie istnieje."})
+		return UploadChannelDeclaration{}, false
+	}
+	return declaration, true
 }
 
 func managedPublicShareRepository(vm app.ViewModel, serverID, repoID string) (app.RepoViewModel, bool) {

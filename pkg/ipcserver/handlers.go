@@ -98,6 +98,16 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handlePublicShare(req, "revoke")
 	case contract.CmdRepoPublicShareDelete:
 		return s.handlePublicShare(req, "delete")
+	case contract.CmdRepoUploadChannelList:
+		return s.handleUploadChannel(req, "list")
+	case contract.CmdRepoUploadChannelCreate:
+		return s.handleUploadChannel(req, "create")
+	case contract.CmdRepoUploadChannelUpdate:
+		return s.handleUploadChannel(req, "update")
+	case contract.CmdRepoUploadChannelRevoke:
+		return s.handleUploadChannel(req, "revoke")
+	case contract.CmdRepoUploadChannelDelete:
+		return s.handleUploadChannel(req, "delete")
 	case contract.CmdRepoDetach:
 		return s.handleRepoDetach(req, false)
 	case contract.CmdRepoDelete:
@@ -684,6 +694,88 @@ func (s *Server) handlePublicShare(req contract.Request, action string) contract
 	if err != nil {
 		talk.With("public-shares:"+serverID).Warnf("channel %s failed: %v", action, err)
 		return contract.ErrResponse(req.RequestID, "SHARE-1002", "ERROR", "REQUIRE_ACTION", "public_share.rejected", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleUploadChannel(req contract.Request, action string) contract.Response {
+	service := s.uploadChannelService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "UPLOAD-0001", "ERROR", "RETRY", "upload_channel.unavailable", nil)
+	}
+	var serverID, repoID, channelID string
+	var declaration contract.UploadChannelDeclaration
+	switch action {
+	case "list":
+		var payload contract.UploadChannelListPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID = payload.ServerID, payload.RepoID
+	case "create":
+		var payload contract.UploadChannelCreatePayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID, declaration = payload.ServerID, payload.AuthorityRepoID, payload.UploadChannelDeclaration
+	case "update":
+		var payload contract.UploadChannelUpdatePayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID, channelID, declaration = payload.ServerID, payload.AuthorityRepoID, payload.ChannelID, payload.UploadChannelDeclaration
+	case "revoke", "delete":
+		var payload contract.UploadChannelChannelPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, repoID, channelID = payload.ServerID, payload.RepoID, payload.ChannelID
+	default:
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	if strings.TrimSpace(serverID) == "" || strings.TrimSpace(repoID) == "" || (req.RepoID != "" && req.RepoID != repoID) || ((action == "update" || action == "revoke" || action == "delete") && strings.TrimSpace(channelID) == "") {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	if (action == "create" || action == "update") && declaration.AuthorityRepoID != repoID {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	repo := s.repoByID(repoID)
+	if repo == nil || repo.ServerID() != serverID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[serverID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories || activation.RealmID == "" || repo.Summary().OwnerRealmID != activation.RealmID {
+		return contract.ErrResponse(req.RequestID, "UPLOAD-2001", "ERROR", "NONE", "upload_channel.forbidden", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if action == "list" {
+		channels, err := service.ListUploadChannels(ctx, serverID, repoID)
+		if err != nil {
+			talk.With("upload-channels:"+serverID).Warnf("channel listing failed: %v", err)
+			return contract.ErrResponse(req.RequestID, "UPLOAD-1001", "ERROR", "RETRY", "upload_channel.list_failed", nil)
+		}
+		return contract.OKResponse(req.RequestID, contract.UploadChannelListResult{Channels: channels})
+	}
+	var (
+		result contract.UploadChannelResult
+		err    error
+	)
+	switch action {
+	case "create":
+		result, err = service.CreateUploadChannel(ctx, serverID, declaration)
+	case "update":
+		result, err = service.UpdateUploadChannel(ctx, serverID, channelID, declaration)
+	case "revoke":
+		result, err = service.RevokeUploadChannel(ctx, serverID, channelID)
+	case "delete":
+		result, err = service.DeleteUploadChannel(ctx, serverID, channelID)
+	}
+	if err != nil {
+		talk.With("upload-channels:"+serverID).Warnf("channel %s failed: %v", action, err)
+		return contract.ErrResponse(req.RequestID, "UPLOAD-1002", "ERROR", "REQUIRE_ACTION", "upload_channel.rejected", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

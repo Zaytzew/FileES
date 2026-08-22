@@ -40,34 +40,39 @@ const (
 	CmdMobilePairingBegin = "mobile_pairing.begin"
 
 	// Repos
-	CmdRepoList               = "repo.list"                // list all configured repos
-	CmdRepoStatus             = "repo.status"              // snapshot of one repo
-	CmdRepoPause              = "repo.pause"               // suspend automatic operations
-	CmdRepoResume             = "repo.resume"              // resume after pause
-	CmdRepoSyncNow            = "repo.sync_now"            // request immediate poll/update
-	CmdRepoPublish            = "repo.publish"             // request immediate commit of pending changes
-	CmdRepoCreateRequest      = "repo.create_request"      // persist intent; server work is a later stage
-	CmdRepoAttachIntent       = "repo.attach_intent"       // persist local path choice; no checkout yet
-	CmdRepoAttachApprove      = "repo.attach_approve"      // approve the persisted intent and start checkout
-	CmdRepoRelocate           = "repo.relocate"            // approve relocation of an attached working copy
-	CmdRepoLocate             = "repo.locate"              // rebind an attachment to an existing moved working copy
-	CmdRepoLoadDump           = "repo.load_dump"           // load a user-supplied dump into a fresh, single-carrier-commit repo
-	CmdRepoGrantAccess        = "repo.grant_access"        // grant r/rw access to a visible foreign realm
-	CmdRepoRevokeAccess       = "repo.revoke_access"       // revoke a realm grant without deleting local data
-	CmdRepoSetEditingPolicy   = "repo.set_editing_policy"  // owner-only: switch a repository between free and lock_required editing
-	CmdRepoPublicShareList    = "repo.public_share_list"   // list owned public distribution channels
-	CmdRepoPublicShareCreate  = "repo.public_share_create" // create an owned public distribution channel
-	CmdRepoPublicShareUpdate  = "repo.public_share_update" // update one owned active channel
-	CmdRepoPublicShareRevoke  = "repo.public_share_revoke" // revoke access while retaining the channel record
-	CmdRepoPublicShareDelete  = "repo.public_share_delete" // delete policy while retaining the address tombstone
-	CmdRepoDetach             = "repo.detach"              // detach one local working copy, preserving user data
-	CmdRepoDelete             = "repo.delete"              // delete an owned server repository, then detach locally
-	CmdRepoLifecycleStatus    = "repo.lifecycle_status"    // poll outcome of a create/attach/relocate operation by ID
-	CmdRepoActivity           = "repo.activity"            // global recent synchronization activity snapshot
-	CmdRepoLock               = "repo.lock"                // acquire SVN lock on one or more paths
-	CmdRepoUnlock             = "repo.unlock"              // release SVN lock on one or more paths
-	CmdRepoReservationList    = "repo.reservation_list"    // list live locks in this client's working copies for one server
-	CmdRepoReservationRelease = "repo.reservation_release" // safely release one listed lock
+	CmdRepoList                = "repo.list"                  // list all configured repos
+	CmdRepoStatus              = "repo.status"                // snapshot of one repo
+	CmdRepoPause               = "repo.pause"                 // suspend automatic operations
+	CmdRepoResume              = "repo.resume"                // resume after pause
+	CmdRepoSyncNow             = "repo.sync_now"              // request immediate poll/update
+	CmdRepoPublish             = "repo.publish"               // request immediate commit of pending changes
+	CmdRepoCreateRequest       = "repo.create_request"        // persist intent; server work is a later stage
+	CmdRepoAttachIntent        = "repo.attach_intent"         // persist local path choice; no checkout yet
+	CmdRepoAttachApprove       = "repo.attach_approve"        // approve the persisted intent and start checkout
+	CmdRepoRelocate            = "repo.relocate"              // approve relocation of an attached working copy
+	CmdRepoLocate              = "repo.locate"                // rebind an attachment to an existing moved working copy
+	CmdRepoLoadDump            = "repo.load_dump"             // load a user-supplied dump into a fresh, single-carrier-commit repo
+	CmdRepoGrantAccess         = "repo.grant_access"          // grant r/rw access to a visible foreign realm
+	CmdRepoRevokeAccess        = "repo.revoke_access"         // revoke a realm grant without deleting local data
+	CmdRepoSetEditingPolicy    = "repo.set_editing_policy"    // owner-only: switch a repository between free and lock_required editing
+	CmdRepoPublicShareList     = "repo.public_share_list"     // list owned public distribution channels
+	CmdRepoPublicShareCreate   = "repo.public_share_create"   // create an owned public distribution channel
+	CmdRepoPublicShareUpdate   = "repo.public_share_update"   // update one owned active channel
+	CmdRepoPublicShareRevoke   = "repo.public_share_revoke"   // revoke access while retaining the channel record
+	CmdRepoPublicShareDelete   = "repo.public_share_delete"   // delete policy while retaining the address tombstone
+	CmdRepoUploadChannelList   = "repo.upload_channel_list"   // list owned upload shelves for one authority repo
+	CmdRepoUploadChannelCreate = "repo.upload_channel_create" // create an owned closed upload shelf
+	CmdRepoUploadChannelUpdate = "repo.upload_channel_update" // update recipients of one owned active shelf
+	CmdRepoUploadChannelRevoke = "repo.upload_channel_revoke" // revoke intake while retaining the channel record
+	CmdRepoUploadChannelDelete = "repo.upload_channel_delete" // delete policy while retaining the address tombstone
+	CmdRepoDetach              = "repo.detach"                // detach one local working copy, preserving user data
+	CmdRepoDelete              = "repo.delete"                // delete an owned server repository, then detach locally
+	CmdRepoLifecycleStatus     = "repo.lifecycle_status"      // poll outcome of a create/attach/relocate operation by ID
+	CmdRepoActivity            = "repo.activity"              // global recent synchronization activity snapshot
+	CmdRepoLock                = "repo.lock"                  // acquire SVN lock on one or more paths
+	CmdRepoUnlock              = "repo.unlock"                // release SVN lock on one or more paths
+	CmdRepoReservationList     = "repo.reservation_list"      // list live locks in this client's working copies for one server
+	CmdRepoReservationRelease  = "repo.reservation_release"   // safely release one listed lock
 
 	// Conflicts and user decisions
 	CmdConflictList   = "conflict.list"   // list pending conflicts / interactions
@@ -135,6 +140,11 @@ const (
 	CapRepoPublicShareUpdate   = "repo.public_share_update"
 	CapRepoPublicShareRevoke   = "repo.public_share_revoke"
 	CapRepoPublicShareDelete   = "repo.public_share_delete"
+	CapRepoUploadChannelList   = "repo.upload_channel_list"
+	CapRepoUploadChannelCreate = "repo.upload_channel_create"
+	CapRepoUploadChannelUpdate = "repo.upload_channel_update"
+	CapRepoUploadChannelRevoke = "repo.upload_channel_revoke"
+	CapRepoUploadChannelDelete = "repo.upload_channel_delete"
 	CapRepoDetach              = "repo.detach"
 	CapRepoDelete              = "repo.delete"
 	CapRepoLifecycleStatus     = "repo.lifecycle_status"
@@ -606,6 +616,61 @@ type PublicShareResult struct {
 	Alias               string `json:"alias"`
 	Slug                string `json:"slug"`
 	State               string `json:"state"`
+	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
+}
+
+// UploadChannelDeclaration is the owner-supplied shelf body. Kind is omitted:
+// the daemon and server treat absence as shelf. RequireOTP is omitted and stays
+// false; the public form is fail-closed when it is set.
+type UploadChannelDeclaration struct {
+	AuthorityRepoID string   `json:"authority_repo_id"`
+	Slug            string   `json:"slug"`
+	Recipients      []string `json:"recipients"`
+}
+
+type UploadChannelListPayload struct {
+	ServerID string `json:"server_id"`
+	RepoID   string `json:"repo_id"`
+}
+
+type UploadChannelCreatePayload struct {
+	ServerID string `json:"server_id"`
+	UploadChannelDeclaration
+}
+
+type UploadChannelUpdatePayload struct {
+	ServerID  string `json:"server_id"`
+	ChannelID string `json:"channel_id"`
+	UploadChannelDeclaration
+}
+
+type UploadChannelChannelPayload struct {
+	ServerID  string `json:"server_id"`
+	RepoID    string `json:"repo_id"`
+	ChannelID string `json:"channel_id"`
+}
+
+type UploadChannelSummary struct {
+	ChannelID       string   `json:"channel_id"`
+	AuthorityRepoID string   `json:"authority_repo_id"`
+	UploadRepoID    string   `json:"upload_repo_id"`
+	Alias           string   `json:"alias"`
+	Slug            string   `json:"slug"`
+	State           string   `json:"state"`
+	Recipients      []string `json:"recipients"`
+	UpdatedAt       string   `json:"updated_at"`
+}
+
+type UploadChannelListResult struct {
+	Channels []UploadChannelSummary `json:"channels"`
+}
+
+type UploadChannelResult struct {
+	ChannelID           string `json:"channel_id"`
+	Alias               string `json:"alias"`
+	Slug                string `json:"slug"`
+	State               string `json:"state"`
+	UploadRepoID        string `json:"upload_repo_id,omitempty"`
 	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
 }
 

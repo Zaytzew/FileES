@@ -191,6 +191,7 @@ func runDaemon() {
 	ipc.SetRealmPublicBrandingService(realmAliases)
 	ipc.SetEditingPolicyService(realmAliases)
 	ipc.SetPublicShareService(realmAliases)
+	ipc.SetUploadChannelService(realmAliases)
 	ipc.SetOwnerLabelResolver(realmAliases)
 	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue})
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})

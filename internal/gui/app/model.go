@@ -230,6 +230,9 @@ func (vm ViewModel) CanSetEditingPolicy() bool {
 func (vm ViewModel) CanManagePublicShares() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoPublicShareList) && vm.HasCap(contract.CapRepoPublicShareCreate) && vm.HasCap(contract.CapRepoPublicShareUpdate) && vm.HasCap(contract.CapRepoPublicShareRevoke) && vm.HasCap(contract.CapRepoPublicShareDelete)
 }
+func (vm ViewModel) CanManageUploadChannels() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoUploadChannelList) && vm.HasCap(contract.CapRepoUploadChannelCreate) && vm.HasCap(contract.CapRepoUploadChannelUpdate) && vm.HasCap(contract.CapRepoUploadChannelRevoke) && vm.HasCap(contract.CapRepoUploadChannelDelete)
+}
 func (vm ViewModel) CanSetRealmVisibility() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmSetVisibility)
 }

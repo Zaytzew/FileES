@@ -854,6 +854,11 @@ func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
 				t.Fatalf("ShowPublicShares: %v", err)
 			}
 		}},
+		{"upload_channels", func(t *testing.T, b *WindowsBackend) {
+			if _, err := b.ShowUploadChannels(context.Background(), UploadChannelDialogRequest{Title: "Półki", Text: "Przyjęcie", Channels: []UploadChannelSummary{{ChannelID: "c1", Address: "acme/oferta-a", State: "aktywne", Recipients: "a@example.com"}}}); err != nil {
+				t.Fatalf("ShowUploadChannels: %v", err)
+			}
+		}},
 		{"realm_visibility", func(t *testing.T, b *WindowsBackend) {
 			if _, err := b.ShowRealmVisibility(context.Background(), RealmVisibilityDialogRequest{Title: "Widoczność", Text: "Wybierz tryb"}); err != nil {
 				t.Fatalf("ShowRealmVisibility: %v", err)

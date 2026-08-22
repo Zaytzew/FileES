@@ -448,6 +448,82 @@ func (adapter publicShareAdapter) DeletePublicShare(ctx context.Context, serverI
 	return nil
 }
 
+type uploadChannelClient interface {
+	UploadChannelList(context.Context, string, string) (*contract.UploadChannelListResult, error)
+	UploadChannelCreate(context.Context, contract.UploadChannelCreatePayload) (*contract.UploadChannelResult, error)
+	UploadChannelUpdate(context.Context, contract.UploadChannelUpdatePayload) (*contract.UploadChannelResult, error)
+	UploadChannelRevoke(context.Context, contract.UploadChannelChannelPayload) (*contract.UploadChannelResult, error)
+	UploadChannelDelete(context.Context, contract.UploadChannelChannelPayload) (*contract.UploadChannelResult, error)
+}
+
+type uploadChannelAdapter struct{ client uploadChannelClient }
+
+func (adapter uploadChannelAdapter) ListUploadChannels(ctx context.Context, serverID, repoID string) ([]actions.UploadChannelSummary, error) {
+	result, err := adapter.client.UploadChannelList(ctx, serverID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty upload channel list")
+	}
+	channels := make([]actions.UploadChannelSummary, 0, len(result.Channels))
+	for _, channel := range result.Channels {
+		channels = append(channels, actions.UploadChannelSummary{
+			ChannelID: channel.ChannelID, Alias: channel.Alias, Slug: channel.Slug, State: channel.State,
+			UploadRepoID: channel.UploadRepoID, UpdatedAt: channel.UpdatedAt, Recipients: append([]string(nil), channel.Recipients...),
+		})
+	}
+	return channels, nil
+}
+
+func (adapter uploadChannelAdapter) CreateUploadChannel(ctx context.Context, serverID string, declaration actions.UploadChannelDeclaration) error {
+	result, err := adapter.client.UploadChannelCreate(ctx, contract.UploadChannelCreatePayload{ServerID: serverID, UploadChannelDeclaration: uploadChannelDeclarationToContract(declaration)})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID == "" || result.State != "active" {
+		return errors.New("daemon returned an invalid upload channel result")
+	}
+	return nil
+}
+
+func (adapter uploadChannelAdapter) UpdateUploadChannel(ctx context.Context, serverID, channelID string, declaration actions.UploadChannelDeclaration) error {
+	result, err := adapter.client.UploadChannelUpdate(ctx, contract.UploadChannelUpdatePayload{ServerID: serverID, ChannelID: channelID, UploadChannelDeclaration: uploadChannelDeclarationToContract(declaration)})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "active" {
+		return errors.New("daemon returned an invalid upload channel update result")
+	}
+	return nil
+}
+
+func (adapter uploadChannelAdapter) RevokeUploadChannel(ctx context.Context, serverID, repoID, channelID string) error {
+	result, err := adapter.client.UploadChannelRevoke(ctx, contract.UploadChannelChannelPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "revoked" {
+		return errors.New("daemon returned an invalid upload channel revoke result")
+	}
+	return nil
+}
+
+func (adapter uploadChannelAdapter) DeleteUploadChannel(ctx context.Context, serverID, repoID, channelID string) error {
+	result, err := adapter.client.UploadChannelDelete(ctx, contract.UploadChannelChannelPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "deleted" {
+		return errors.New("daemon returned an invalid upload channel delete result")
+	}
+	return nil
+}
+
+func uploadChannelDeclarationToContract(declaration actions.UploadChannelDeclaration) contract.UploadChannelDeclaration {
+	return contract.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...)}
+}
+
 func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration) (contract.PublicShareDeclaration, error) {
 	passwordHash := ""
 	if len(declaration.Password) > 0 {
@@ -765,6 +841,10 @@ func run(parent context.Context, deps dependencies) error {
 	if candidate, ok := deps.client.(publicShareClient); ok {
 		publicShares = publicShareAdapter{client: candidate}
 	}
+	var uploadChannels actions.UploadChannelManager
+	if candidate, ok := deps.client.(uploadChannelClient); ok {
+		uploadChannels = uploadChannelAdapter{client: candidate}
+	}
 	var stack actions.StackLifecycle
 	if candidate, ok := deps.client.(systemLifecycleClient); ok {
 		stack = stackLifecycleAdapter{client: candidate}
@@ -801,6 +881,7 @@ func run(parent context.Context, deps dependencies) error {
 		RealmBranding:        realmBranding,
 		SessionTimeouts:      sessionTimeouts,
 		PublicShares:         publicShares,
+		UploadChannels:       uploadChannels,
 		Shouts:               newShoutAdapter(deps.client),
 		Notices:              newShoutAdapter(deps.client),
 		ReservationBrowser:   deps.platform,
@@ -808,6 +889,7 @@ func run(parent context.Context, deps dependencies) error {
 		JournalBrowser:       deps.platform,
 		RealmGrantBrowser:    deps.platform,
 		PublicShareBrowser:   deps.platform,
+		UploadChannelBrowser: deps.platform,
 		ConsentPrompter:      deps.platform,
 		Progress:             progressPresenter(deps.platform),
 		Reconnect:            guiApp.Reconnect,

@@ -507,6 +507,51 @@ func (c *Client) PublicShareDelete(ctx context.Context, payload contract.PublicS
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) UploadChannelList(ctx context.Context, serverID, repoID string) (*contract.UploadChannelListResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoUploadChannelList, repoID, contract.UploadChannelListPayload{ServerID: serverID, RepoID: repoID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.UploadChannelListResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) UploadChannelCreate(ctx context.Context, payload contract.UploadChannelCreatePayload) (*contract.UploadChannelResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoUploadChannelCreate, payload.AuthorityRepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.UploadChannelResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) UploadChannelUpdate(ctx context.Context, payload contract.UploadChannelUpdatePayload) (*contract.UploadChannelResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoUploadChannelUpdate, payload.AuthorityRepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.UploadChannelResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) UploadChannelRevoke(ctx context.Context, payload contract.UploadChannelChannelPayload) (*contract.UploadChannelResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoUploadChannelRevoke, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.UploadChannelResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) UploadChannelDelete(ctx context.Context, payload contract.UploadChannelChannelPayload) (*contract.UploadChannelResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoUploadChannelDelete, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.UploadChannelResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) RepoStatus(ctx context.Context, repoID string) (*contract.RepoStatus, error) {
 	resp, err := c.do(ctx, contract.CmdRepoStatus, repoID, nil)
 	if err != nil {

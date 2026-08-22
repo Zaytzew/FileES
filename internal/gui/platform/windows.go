@@ -451,6 +451,8 @@ func (b *WindowsBackend) ShowSettings(ctx context.Context, request SettingsDialo
 		result.Action = SettingsDialogEditingPolicy
 	case "public_shares":
 		result.Action = SettingsDialogPublicShares
+	case "upload_channels":
+		result.Action = SettingsDialogUploadChannels
 	case "realm_visibility":
 		result.Action = SettingsDialogRealmVisibility
 	case "realm_branding":
@@ -584,6 +586,56 @@ func (b *WindowsBackend) ShowPublicShares(ctx context.Context, request PublicSha
 		result.Action = PublicShareDialogDelete
 	default:
 		result.Action = PublicShareDialogClose
+	}
+	return result, nil
+}
+
+func (b *WindowsBackend) ShowUploadChannels(ctx context.Context, request UploadChannelDialogRequest) (UploadChannelDialogResult, error) {
+	command, err := b.runner.LookPath("powershell.exe")
+	if err != nil {
+		return UploadChannelDialogResult{}, NewUnavailable("upload_channel_dialog", err)
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return UploadChannelDialogResult{}, NewOperationalFailure("upload_channel_dialog", err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(payload)
+	script := dpiAwarenessPrelude +
+		"Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;" +
+		"$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(" + psString(encoded) + "))|ConvertFrom-Json;" +
+		"$f=New-Object System.Windows.Forms.Form;$f.Text=$d.Title;$f.Width=980;$f.Height=590;$f.StartPosition='CenterScreen';" +
+		"$l=New-Object System.Windows.Forms.Label;$l.Text=$d.Text;$l.Left=12;$l.Top=12;$l.Width=940;$l.Height=44;$f.Controls.Add($l);" +
+		"$g=New-Object System.Windows.Forms.DataGridView;$g.Left=12;$g.Top=62;$g.Width=940;$g.Height=420;$g.ReadOnly=$true;$g.AllowUserToAddRows=$false;$g.SelectionMode='FullRowSelect';$g.MultiSelect=$false;$g.AutoSizeColumnsMode='Fill';" +
+		"$t=New-Object System.Data.DataTable;foreach($c in @('ChannelID','Adres','Stan','Wnoszący')){[void]$t.Columns.Add($c)};foreach($r in $d.Channels){[void]$t.Rows.Add($r.ChannelID,$r.Address,$r.State,$r.Recipients)};$g.DataSource=$t;if($g.Columns['ChannelID']-ne$null){$g.Columns['ChannelID'].Visible=$false};$f.Controls.Add($g);$script:answer='close';" +
+		"function choose($a){if($a-eq'create'){$script:answer='create|';$f.Close()}elseif($g.CurrentRow-ne$null){$script:answer=$a+'|'+[string]$g.CurrentRow.Cells['ChannelID'].Value;$f.Close()}};" +
+		"$n=New-Object System.Windows.Forms.Button;$n.Text='Nowa półka';$n.Left=270;$n.Top=500;$n.Width=110;$n.Add_Click({choose 'create'});$f.Controls.Add($n);" +
+		"$e=New-Object System.Windows.Forms.Button;$e.Text='Edytuj';$e.Left=390;$e.Top=500;$e.Width=100;$e.Add_Click({choose 'edit'});$f.Controls.Add($e);" +
+		"$r=New-Object System.Windows.Forms.Button;$r.Text='Cofnij';$r.Left=500;$r.Top=500;$r.Width=100;$r.Add_Click({choose 'revoke'});$f.Controls.Add($r);" +
+		"$x=New-Object System.Windows.Forms.Button;$x.Text='Usuń';$x.Left=610;$x.Top=500;$x.Width=100;$x.Add_Click({choose 'delete'});$f.Controls.Add($x);" +
+		"$c=New-Object System.Windows.Forms.Button;$c.Text='Zamknij';$c.Left=790;$c.Top=500;$c.Width=100;$c.DialogResult='Cancel';$f.CancelButton=$c;$f.Controls.Add($c);" + foregroundPrelude + "[void]$f.ShowDialog();$script:answer"
+	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
+	if err != nil {
+		if ctx.Err() != nil {
+			return UploadChannelDialogResult{}, ctx.Err()
+		}
+		return UploadChannelDialogResult{}, NewOperationalFailure("upload_channel_dialog", err)
+	}
+	action, channelID, ok := strings.Cut(strings.TrimSpace(string(output)), "|")
+	if !ok {
+		return UploadChannelDialogResult{Action: UploadChannelDialogClose}, nil
+	}
+	result := UploadChannelDialogResult{ChannelID: channelID}
+	switch action {
+	case "create":
+		result.Action = UploadChannelDialogCreate
+	case "edit":
+		result.Action = UploadChannelDialogEdit
+	case "revoke":
+		result.Action = UploadChannelDialogRevoke
+	case "delete":
+		result.Action = UploadChannelDialogDelete
+	default:
+		result.Action = UploadChannelDialogClose
 	}
 	return result, nil
 }

@@ -136,6 +136,11 @@ var specs = []Spec{
 	{"SHARE-1002", "public_share.rejected", SevError, HintRequireAction, nil, "Public share mutation was rejected", "Serwer odrzucił zmianę udostępnienia"},
 	{"SHARE-2001", "public_share.forbidden", SevError, HintNone, nil, "Public share action is forbidden", "Brak uprawnień do udostępnień publicznych"},
 
+	{"UPLOAD-0001", "upload_channel.unavailable", SevError, HintRetry, nil, "Upload channel service is not available", "Półki przyjęcia są teraz niedostępne"},
+	{"UPLOAD-1001", "upload_channel.list_failed", SevError, HintRetry, nil, "Upload channel list failed", "Nie udało się pobrać półek przyjęcia"},
+	{"UPLOAD-1002", "upload_channel.rejected", SevError, HintRequireAction, nil, "Upload channel mutation was rejected", "Serwer odrzucił zmianę półki przyjęcia"},
+	{"UPLOAD-2001", "upload_channel.forbidden", SevError, HintNone, nil, "Upload channel action is forbidden", "Brak uprawnień do półek przyjęcia"},
+
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish", "Nie ma nic do wysłania — folder jest już zgodny z serwerem"},
 	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid", "Komentarz wydania nie może być pusty, dłuższy niż 500 znaków ani zawierać znaków sterujących"},
 	{"SHOUT-1002", "shout.read_only", SevError, HintNone, nil, "Repository is read-only", "To repozytorium jest tylko do odczytu"},

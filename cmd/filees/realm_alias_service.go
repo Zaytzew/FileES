@@ -289,6 +289,70 @@ func publicShareDeclarationToControl(declaration contract.PublicShareDeclaration
 	return control.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
 }
 
+func (s *realmAliasService) ListUploadChannels(ctx context.Context, serverID, repoID string) ([]contract.UploadChannelSummary, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return nil, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketListUploadChannels, control.ListUploadChannelsPayload{AuthorityRepoID: repoID})
+	if err != nil {
+		return nil, err
+	}
+	var payload control.ListUploadChannelsResult
+	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
+		return nil, err
+	}
+	channels := make([]contract.UploadChannelSummary, 0, len(payload.Channels))
+	for _, channel := range payload.Channels {
+		channels = append(channels, uploadChannelSummaryFromControl(channel))
+	}
+	return channels, nil
+}
+
+func (s *realmAliasService) CreateUploadChannel(ctx context.Context, serverID string, declaration contract.UploadChannelDeclaration) (contract.UploadChannelResult, error) {
+	return s.uploadChannelExchange(ctx, serverID, control.TicketCreateUploadChannel, control.CreateUploadChannelPayload{UploadChannelDeclaration: uploadChannelDeclarationToControl(declaration)})
+}
+
+func (s *realmAliasService) UpdateUploadChannel(ctx context.Context, serverID, channelID string, declaration contract.UploadChannelDeclaration) (contract.UploadChannelResult, error) {
+	return s.uploadChannelExchange(ctx, serverID, control.TicketUpdateUploadChannel, control.UpdateUploadChannelPayload{ChannelID: channelID, UploadChannelDeclaration: uploadChannelDeclarationToControl(declaration)})
+}
+
+func (s *realmAliasService) RevokeUploadChannel(ctx context.Context, serverID, channelID string) (contract.UploadChannelResult, error) {
+	return s.uploadChannelExchange(ctx, serverID, control.TicketRevokeUploadChannel, control.RevokeUploadChannelPayload{ChannelID: channelID})
+}
+
+func (s *realmAliasService) DeleteUploadChannel(ctx context.Context, serverID, channelID string) (contract.UploadChannelResult, error) {
+	return s.uploadChannelExchange(ctx, serverID, control.TicketDeleteUploadChannel, control.DeleteUploadChannelPayload{ChannelID: channelID})
+}
+
+func (s *realmAliasService) uploadChannelExchange(ctx context.Context, serverID string, typ control.TicketType, payload any) (contract.UploadChannelResult, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return contract.UploadChannelResult{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, typ, payload)
+	if err != nil {
+		return contract.UploadChannelResult{}, err
+	}
+	var remote control.UploadChannelResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return contract.UploadChannelResult{}, err
+	}
+	return contract.UploadChannelResult{ChannelID: remote.ChannelID, Alias: remote.Alias, Slug: remote.Slug, State: remote.State, UploadRepoID: remote.UploadRepoID, RecipientDeliveries: remote.RecipientDeliveries}, nil
+}
+
+func uploadChannelDeclarationToControl(declaration contract.UploadChannelDeclaration) control.UploadChannelDeclaration {
+	return control.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...)}
+}
+
+func uploadChannelSummaryFromControl(channel control.UploadChannelSummary) contract.UploadChannelSummary {
+	return contract.UploadChannelSummary{
+		ChannelID: channel.ChannelID, AuthorityRepoID: channel.AuthorityRepoID, UploadRepoID: channel.UploadRepoID,
+		Alias: channel.Alias, Slug: channel.Slug, State: channel.State,
+		Recipients: append([]string(nil), channel.Recipients...), UpdatedAt: channel.UpdatedAt,
+	}
+}
+
 func publicShareSummaryFromControl(share control.PublicShareSummary) contract.PublicShareSummary {
 	objects := make([]contract.PublicShareObject, 0, len(share.Objects))
 	for _, object := range share.Objects {

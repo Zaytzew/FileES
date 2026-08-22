@@ -105,8 +105,9 @@ autoryzuje. Jawne „Wyślij kod” aktywuje pięciominutową epokę OTP po stro
 authority; pięć błędnych prób zamyka epokę, a resend nie rotuje kodu ani TTL.
 Po poprawnej weryfikacji `filees-links` wydaje podpisany URL ważny dokładnie do
 końca tej epoki. Nie używa cookies, localStorage ani JavaScriptu, poza formularzem przyjęcia:
-jeden inline skrypt zahashowany w CSP pokazuje oczekiwanie od „Wyślij” do
-potwierdzenia i blokuje drugie submit. Listing i OTP zostają bez skryptu.
+jeden inline skrypt zahashowany w CSP obsługuje pole drag-and-drop, pokazuje
+oczekiwanie od „Wyślij” do potwierdzenia i blokuje drugie submit. Listing i OTP
+zostają bez skryptu.
 `filees-mail
 public-loop` jest odizolowanym dzieckiem authority i jako jedyny z tej pary
 ładuje sekret SMTP; trwały outbox przeżywa restart obu procesów. Authority

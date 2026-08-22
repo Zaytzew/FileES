@@ -89,15 +89,15 @@ func TestUploadGetRequiresInvitationAndHidesIdentity(t *testing.T) {
 	if !strings.Contains(body, `type="file"`) || !strings.Contains(body, `name="file"`) || !strings.Contains(body, "Wyślij") {
 		t.Fatalf("form missing:\n%s", body)
 	}
-	if !strings.Contains(body, `id="upload-form"`) || !strings.Contains(body, "Wysyłanie pliku") || !strings.Contains(body, "Nie zamykaj karty") {
-		t.Fatalf("busy state missing:\n%s", body)
+	if !strings.Contains(body, `id="upload-form"`) || !strings.Contains(body, `id="upload-drop"`) || !strings.Contains(body, "Upuść plik") || !strings.Contains(body, "Wysyłanie pliku") || !strings.Contains(body, "Nie zamykaj karty") {
+		t.Fatalf("drop field missing:\n%s", body)
 	}
 	csp := ok.Header().Get("Content-Security-Policy")
-	if strings.Contains(csp, "unsafe-inline") || !strings.Contains(csp, "script-src 'sha256-"+uploadBusyScriptHash()+"'") {
+	if strings.Contains(csp, "unsafe-inline") || !strings.Contains(csp, "script-src 'sha256-"+uploadFormScriptHash()+"'") {
 		t.Fatalf("csp=%s", csp)
 	}
 	script := between(body, "<script>", "</script>")
-	if script != uploadBusyJS {
+	if script != uploadFormJS {
 		t.Fatalf("rendered script diverged from CSP hash input:\n%s", script)
 	}
 	sum := sha256.Sum256([]byte(script))

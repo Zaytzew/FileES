@@ -724,6 +724,9 @@ func TestWindowsSettingsDialogBuildsActionFirstWizard(t *testing.T) {
 	if len(wizard.Recoveries) != 1 || wizard.Recoveries[0].OperationID != "op-1" || !wizard.Recoveries[0].CanDownload {
 		t.Fatalf("recoveries=%#v", wizard.Recoveries)
 	}
+	if !contains(script, "@recoveries") || !contains(script, "showRecoveries") {
+		t.Error("recoveries must stay reachable from the server picker")
+	}
 }
 
 // capturedScript returns the argument every dialog method passes to
@@ -806,6 +809,12 @@ func TestSettingsDialogScriptCallsShowGridInCommandMode(t *testing.T) {
 	}
 	if !strings.Contains(script, "showGrid $d.Title") {
 		t.Fatal("expected command-mode showGrid invocation")
+	}
+	if !strings.Contains(script, "for($i=0;$i-lt $g.Columns.Count;$i++)") || !strings.Contains(script, "$g.Columns[$i].Visible=$false") {
+		t.Fatal("ID column must be hidden by column index, not the PS string indexer")
+	}
+	if !strings.Contains(script, "@('Działanie')") || strings.Contains(script, "@('ID','Działanie')") {
+		t.Fatal("action grid must show only the Polish label")
 	}
 }
 

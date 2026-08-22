@@ -136,12 +136,12 @@ var specs = []Spec{
 	{"SHARE-1002", "public_share.rejected", SevError, HintRequireAction, nil, "Public share mutation was rejected", "Serwer odrzucił zmianę udostępnienia"},
 	{"SHARE-2001", "public_share.forbidden", SevError, HintNone, nil, "Public share action is forbidden", "Brak uprawnień do udostępnień publicznych"},
 
-	{"SHOUT-1001", "shout.nothing_to_publish", SevError, HintRequireAction, nil, "No pending changes to publish", "Brak oczekujących zmian do opublikowania"},
-	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Release comment is invalid", "Opis wydania jest nieprawidłowy"},
-	{"SHOUT-1002", "shout.read_only", SevError, HintNone, nil, "Repository is read-only", "Repozytorium jest dostępne tylko do odczytu"},
-	{"SHOUT-1003", "shout.publish_failed", SevError, HintRequireAction, []string{"detail"}, "Release publication failed", "Nie udało się opublikować wydania"},
-	{"SHOUT-1004", "shout.list_failed", SevError, HintRetryLocal, nil, "Release notice list failed", "Nie udało się pobrać komunikatów o wydaniach"},
-	{"SHOUT-1005", "shout.ack_failed", SevError, HintRetryLocal, nil, "Release notice acknowledgement failed", "Nie udało się potwierdzić komunikatu o wydaniu"},
+	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish", "Nie ma nic do wysłania — folder jest już zgodny z serwerem"},
+	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid", "Komentarz wydania nie może być pusty, dłuższy niż 500 znaków ani zawierać znaków sterujących"},
+	{"SHOUT-1002", "shout.read_only", SevError, HintNone, nil, "Repository is read-only", "To repozytorium jest tylko do odczytu"},
+	{"SHOUT-1003", "shout.publish_failed", SevError, HintRequireAction, []string{"detail"}, "Shouting commit failed", "Nie udało się zapisać wydania na serwerze"},
+	{"SHOUT-1004", "shout.list_failed", SevError, HintRetryLocal, nil, "Notice list failed", "Nie udało się odczytać listy wydań"},
+	{"SHOUT-1005", "shout.ack_failed", SevError, HintRetryLocal, nil, "Notice acknowledgement failed", "Nie udało się potwierdzić wydania"},
 
 	{"SYSTEM-0001", "system.lifecycle_unavailable", SevError, HintNone, nil, "Process lifecycle is not available", "Restart i zamknięcie są teraz niedostępne"},
 

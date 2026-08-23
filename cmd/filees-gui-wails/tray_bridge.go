@@ -73,6 +73,13 @@ func lockNoun(count int) string {
 func configureWailsTray(host *application.App, window *application.WebviewWindow, service *GUIService) {
 	systemTray := host.SystemTray.New()
 	icons := guitray.PlatformIcons()
+	// Do not let the Wails fallback flash or persist while the first daemon
+	// projection is still in flight. The projection will replace this with the
+	// corresponding FileES status overlay as soon as it arrives.
+	if icon := icons[guiapp.IconDisconnected]; len(icon) > 0 {
+		host.SetIcon(icon)
+		systemTray.SetIcon(icon)
+	}
 
 	showWindow := func() {
 		window.Show()

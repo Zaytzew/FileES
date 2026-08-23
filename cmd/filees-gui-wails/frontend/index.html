@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title>FileES</title>
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="FileES">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>FileES</strong><small>workspace fabric</small></span>
+      </a>
+      <div class="topbar-actions">
+        <span class="beta-pill">Wails 3 · beta</span>
+        <div id="connection" class="connection is-offline">
+          <span class="connection-dot"></span>
+          <span class="connection-label">Łączenie…</span>
+        </div>
+        <button id="refresh" class="icon-button" title="Odśwież projekcję" aria-label="Odśwież projekcję">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <section id="top" class="hero">
+      <div>
+        <p class="eyebrow">Stan z demona · projekcja IPC</p>
+        <h1>Twoje pliki pracują<br><span>we właściwym rytmie.</span></h1>
+        <p id="hero-copy" class="hero-copy">Czekam na pierwszy spójny obraz stanu FileES.</p>
+      </div>
+      <div class="pulse-card" aria-hidden="true">
+        <div class="pulse-orbit orbit-a"></div>
+        <div class="pulse-orbit orbit-b"></div>
+        <div id="pulse-core" class="pulse-core"><span></span></div>
+        <div class="pulse-caption"><b id="pulse-value">—</b><small>repozytoria</small></div>
+      </div>
+    </section>
+
+    <section id="offline" class="offline-card" hidden>
+      <div class="offline-symbol">↯</div>
+      <div>
+        <h2>Demon jest poza zasięgiem</h2>
+        <p>Pokazujemy ostatni znany obraz, jeśli istnieje. Wails nie zgaduje stanu i nie zagląda do katalogów.</p>
+      </div>
+      <button id="reconnect" class="primary-button">Połącz ponownie</button>
+    </section>
+
+    <section class="metrics" aria-label="Podsumowanie">
+      <article><small>Serwery</small><strong id="metric-servers">—</strong><span id="metric-servers-note">aktywacje</span></article>
+      <article><small>Repozytoria</small><strong id="metric-repos">—</strong><span id="metric-repos-note">w projekcji</span></article>
+      <article><small>Do wysłania</small><strong id="metric-pending">—</strong><span id="metric-pending-note">zmienionych plików</span></article>
+      <article><small>Uwagi</small><strong id="metric-attention">—</strong><span id="metric-attention-note">konflikty i komunikaty</span></article>
+    </section>
+
+    <section class="content-grid">
+      <div class="main-column">
+        <div class="section-heading">
+          <div><p class="eyebrow">Przestrzenie</p><h2>Repozytoria</h2></div>
+          <span id="last-refresh" class="timestamp">Jeszcze nie odświeżono</span>
+        </div>
+        <div id="repositories" class="repo-list">
+          <div class="empty-state"><span>◌</span><p>Czekam na projekcję repozytoriów.</p></div>
+        </div>
+      </div>
+
+      <aside class="side-column">
+        <section class="side-card">
+          <div class="section-heading compact"><div><p class="eyebrow">Węzły</p><h2>Serwery</h2></div></div>
+          <div id="servers" class="server-list"><p class="muted">Brak danych.</p></div>
+        </section>
+        <section class="side-card">
+          <div class="section-heading compact"><div><p class="eyebrow">Sygnały</p><h2>Ostatnia aktywność</h2></div></div>
+          <div id="activity" class="activity-list"><p class="muted">Brak aktywności.</p></div>
+        </section>
+      </aside>
+    </section>
+
+    <footer>
+      <span>Renderer WebView nie jest źródłem prawdy.</span>
+      <span id="revision">projekcja #0</span>
+    </footer>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

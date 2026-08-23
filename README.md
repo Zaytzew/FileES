@@ -447,6 +447,7 @@ Systemowe powiadomienia są wtórne wobec stanu w menu. MVP pokazuje je dla nowy
 ```text
 cmd/filees/              daemon, CLI i composition root klienta
 cmd/filees-gui/          composition root i lifecycle warstwy prezentacyjnej
+cmd/filees-gui-wails/    eksperymentalny renderer WebView tej samej projekcji IPC
 internal/gui/            model, akcje, tray, platforma i powiadomienia
 pkg/contract/v1/         kontrakt IPC GUI/CLI <-> daemon
 pkg/ipcclient,ipcserver/ transport lokalnego control plane
@@ -478,6 +479,14 @@ internal/release*/       koperty, podpisy i publikacja artefaktów
 ```
 
 Wybraną biblioteką jest `fyne.io/systray`, izolowane jako adapter w `internal/gui/tray`. Jej API nie może przenikać do logiki aplikacji ani kontraktu. MVP obejmuje Linux (SNI; GNOME wymaga rozszerzenia AppIndicator/SNI) oraz Windows 10+. Szczegółowe decyzje platformowe znajdują się w `gui-assumptions.md`.
+
+Równolegle istnieje niewydawany fork `cmd/filees-gui-wails`, przypięty do
+Wails `v3.0.0-beta.6`. Nie wnosi drugiego modelu klienta: uruchamia ten sam
+`internal/gui/app`, komunikuje się wyłącznie przez `pkg/ipcclient`, a WebView
+renderuje otrzymaną projekcję i zwraca intencje. Pierwszy pion ma osobny EXE,
+statyczny frontend bez Node/Vite oraz tylko `Snapshot`, `Refresh` i
+`Reconnect`. Kryteria eksperymentu opisuje
+[`concepts/WAILS_GUI_FORK.md`](concepts/WAILS_GUI_FORK.md).
 
 ### Etapowanie implementacji
 

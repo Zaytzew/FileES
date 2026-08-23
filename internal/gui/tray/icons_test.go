@@ -9,12 +9,16 @@ import (
 )
 
 func TestPlatformIconsContainsEveryState(t *testing.T) {
-	icons := PlatformIcons()
-	for _, state := range []app.IconState{
-		app.IconActive, app.IconBusy, app.IconOffline, app.IconError, app.IconDisconnected,
+	for name, icons := range map[string]IconSet{
+		"native": PlatformIcons(),
+		"wails":  WailsPlatformIcons(),
 	} {
-		if len(icons[state]) == 0 {
-			t.Errorf("missing embedded icon for %q", state)
+		for _, state := range []app.IconState{
+			app.IconActive, app.IconBusy, app.IconOffline, app.IconError, app.IconDisconnected,
+		} {
+			if len(icons[state]) == 0 {
+				t.Errorf("%s: missing embedded icon for %q", name, state)
+			}
 		}
 	}
 }

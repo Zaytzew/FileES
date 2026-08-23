@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 
 	"filees/pkg/ipcclient"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -36,7 +37,7 @@ func main() {
 
 	daemon := ipcclient.New(*socket, "filees-gui-wails")
 	gui := newGUIService(daemon)
-	actionController := configureActions(gui, daemon, reservationAdapter{client: daemon}, newActionPlatform())
+	restartRequested := make(chan struct{}, 1)
 
 	host := application.New(application.Options{
 		Name:        "FileES Wails",
@@ -54,6 +55,17 @@ func main() {
 		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
 		Linux:   application.LinuxOptions{DisableQuitOnLastWindowClosed: true},
 	})
+	actionController := configureActions(
+		gui, daemon, reservationAdapter{client: daemon}, stackLifecycleAdapter{client: daemon}, newActionPlatform(),
+		func() {
+			select {
+			case restartRequested <- struct{}{}:
+			default:
+			}
+			host.Quit()
+		},
+		host.Quit,
+	)
 
 	gui.attachEmitter(host.Event)
 	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
@@ -82,4 +94,27 @@ func main() {
 	if err := host.Run(); err != nil {
 		log.Fatal(err)
 	}
+	select {
+	case <-restartRequested:
+		if err := restartCurrentProcess(os.Args); err != nil {
+			log.Printf("filees-gui-wails: restart: %v", err)
+		}
+	default:
+	}
+}
+
+func restartCurrentProcess(argv []string) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	args := []string(nil)
+	if len(argv) > 1 {
+		args = append(args, argv[1:]...)
+	}
+	command := exec.Command(executable, args...)
+	if err := command.Start(); err != nil {
+		return err
+	}
+	return command.Process.Release()
 }

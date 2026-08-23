@@ -18,7 +18,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, backend platform.Backend) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, backend platform.Backend, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -33,9 +33,44 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		Notifier:     actionNotifier{service: service},
 		Locker:       locker,
 		Reservations: reservations,
+		Stack:        stack,
 		Reconnect:    service.runner.Reconnect,
 		Refresh:      service.runner.Refresh,
+		Restart:      restart,
+		Shutdown:     shutdown,
 	})
+}
+
+type systemLifecycleClient interface {
+	SystemRestart(context.Context) (*contract.SystemLifecycleResult, error)
+	SystemShutdown(context.Context) (*contract.SystemLifecycleResult, error)
+}
+
+type stackLifecycleAdapter struct {
+	client systemLifecycleClient
+}
+
+func (adapter stackLifecycleAdapter) RestartFileES(ctx context.Context) error {
+	result, err := adapter.client.SystemRestart(ctx)
+	return validateSystemLifecycleResult(result, "restart", err)
+}
+
+func (adapter stackLifecycleAdapter) ShutdownFileES(ctx context.Context) error {
+	result, err := adapter.client.SystemShutdown(ctx)
+	return validateSystemLifecycleResult(result, "shutdown", err)
+}
+
+func validateSystemLifecycleResult(result *contract.SystemLifecycleResult, expected string, err error) error {
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty lifecycle result")
+	}
+	if result.Action != expected {
+		return errors.New("daemon returned an unexpected lifecycle action")
+	}
+	return nil
 }
 
 type reservationClient interface {

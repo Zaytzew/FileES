@@ -929,6 +929,29 @@ func TestWindowsGeneratedScriptsAreValidPowerShell(t *testing.T) {
 	}
 }
 
+func TestWindowsConfirmHonoursLabelsAndDefaultsToCancellation(t *testing.T) {
+	runner := &fakeWindowsRunner{output: func(context.Context, string, []string) ([]byte, error) {
+		return []byte("no\r\n"), nil
+	}}
+	backend := newTestWindowsBackend(runner, time.Now)
+	confirmed, err := backend.Confirm(context.Background(), ConfirmRequest{
+		Title: "Zamknij FileES", Text: "Daemon i GUI zostaną zamknięte.",
+		ConfirmText: "Zamknij FileES", CancelText: "Anuluj",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if confirmed {
+		t.Fatal("cancel answer accepted as confirmation")
+	}
+	script := capturedScript(t, runner)
+	for _, wanted := range []string{"Zamknij FileES", "Anuluj", "$f.AcceptButton=$cancel", "$f.CancelButton=$cancel", "$cancel.Select()"} {
+		if !strings.Contains(script, wanted) {
+			t.Errorf("confirm script missing %q", wanted)
+		}
+	}
+}
+
 // Placeholder and Default were one field, and it quietly did the wrong thing
 // for half its callers: the hint was written into the box as content, so
 // "Kod OTP" or "filees-invite:v1:…" arrived as the answer when the user just

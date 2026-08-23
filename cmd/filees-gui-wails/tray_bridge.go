@@ -5,14 +5,17 @@ import (
 
 	guiapp "filees/internal/gui/app"
 	guitray "filees/internal/gui/tray"
+	contract "filees/pkg/contract/v1"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 type wailsTrayProjection struct {
-	Icon    guiapp.IconState
-	Status  string
-	Tooltip string
+	Icon        guiapp.IconState
+	Status      string
+	Tooltip     string
+	CanRestart  bool
+	CanShutdown bool
 }
 
 func projectWailsTray(snapshot Snapshot) wailsTrayProjection {
@@ -37,7 +40,20 @@ func projectWailsTray(snapshot Snapshot) wailsTrayProjection {
 		}
 	}
 	status := fmt.Sprintf("%s · %d repo · %s", state, len(snapshot.Repositories), lockStatus)
-	return wailsTrayProjection{Icon: icon, Status: status, Tooltip: "FileES — " + status}
+	return wailsTrayProjection{
+		Icon: icon, Status: status, Tooltip: "FileES — " + status,
+		CanRestart:  snapshot.Connected && !snapshot.Stale && hasCapability(snapshot, contract.CapSystemRestart),
+		CanShutdown: snapshot.Connected && !snapshot.Stale && hasCapability(snapshot, contract.CapSystemShutdown),
+	}
+}
+
+func hasCapability(snapshot Snapshot, capability string) bool {
+	for _, item := range snapshot.Capabilities {
+		if item == capability {
+			return true
+		}
+	}
+	return false
 }
 
 func lockNoun(count int) string {
@@ -74,13 +90,21 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	menu.Add("Pokaż panel").OnClick(func(_ *application.Context) { showWindow() })
 	menu.Add("Odśwież stan").OnClick(func(_ *application.Context) { service.Refresh() })
 	menu.AddSeparator()
-	menu.Add("Zakończ renderer").OnClick(func(_ *application.Context) { host.Quit() })
+	fileESMenu := menu.AddSubmenu("FileES")
+	restartItem := fileESMenu.Add("Uruchom FileES ponownie…").OnClick(func(_ *application.Context) {
+		service.Trigger(ActionRequest{Kind: string(guitray.IntentRestartFileES)})
+	})
+	shutdownItem := fileESMenu.Add("Zakończ…").OnClick(func(_ *application.Context) {
+		service.Trigger(ActionRequest{Kind: string(guitray.IntentShutdownFileES)})
+	})
 	systemTray.SetMenu(menu)
 	systemTray.OnClick(showWindow)
 
 	service.attachSnapshotObserver(func(snapshot Snapshot) {
 		projection := projectWailsTray(snapshot)
 		statusItem.SetLabel(projection.Status)
+		restartItem.SetHidden(!projection.CanRestart)
+		shutdownItem.SetHidden(!projection.CanShutdown)
 		systemTray.SetTooltip(projection.Tooltip)
 		if icon := icons[projection.Icon]; len(icon) > 0 {
 			systemTray.SetIcon(icon)

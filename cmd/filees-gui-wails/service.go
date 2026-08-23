@@ -281,7 +281,12 @@ func (service *GUIService) emitActionFeedback(feedback ActionFeedback) {
 }
 
 func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, bool) {
-	if request.Kind == string(tray.IntentReleaseReservation) {
+	switch request.Kind {
+	case string(tray.IntentRestartFileES):
+		return tray.Intent{Kind: tray.IntentRestartFileES}, vm.CanRestartFileES()
+	case string(tray.IntentShutdownFileES):
+		return tray.Intent{Kind: tray.IntentShutdownFileES}, vm.CanShutdownFileES()
+	case string(tray.IntentReleaseReservation):
 		reservation, ok := projectedReservation(vm, request.ReservationID)
 		allowed := ok && reservation.CanRelease && vm.CanReleaseReservations() && viewHasServer(vm, reservation.ServerID)
 		return tray.Intent{Kind: tray.IntentReleaseReservation, ReservationID: request.ReservationID}, allowed

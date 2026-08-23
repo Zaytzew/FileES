@@ -77,6 +77,8 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 				contract.CapRepoLock:               true,
 				contract.CapRepoReservationList:    true,
 				contract.CapRepoReservationRelease: true,
+				contract.CapSystemRestart:          true,
+				contract.CapSystemShutdown:         true,
 			},
 			Servers: []guiapp.ServerViewModel{{ID: "server-1", RealmID: "realm-1", RealmAlias: "acme"}},
 			Repos: []guiapp.RepoViewModel{{
@@ -104,8 +106,42 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 	if intent := <-actions; intent.Kind != tray.IntentReleaseReservation || intent.ReservationID != "opaque-row" {
 		t.Fatalf("reservation intent = %+v", intent)
 	}
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentRestartFileES)})
+	if !accepted.Accepted {
+		t.Fatalf("restart rejected: %+v", accepted)
+	}
+	if intent := <-actions; intent.Kind != tray.IntentRestartFileES {
+		t.Fatalf("restart intent = %+v", intent)
+	}
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentShutdownFileES)})
+	if !accepted.Accepted {
+		t.Fatalf("shutdown rejected: %+v", accepted)
+	}
+	if intent := <-actions; intent.Kind != tray.IntentShutdownFileES {
+		t.Fatalf("shutdown intent = %+v", intent)
+	}
 	if result := service.Trigger(ActionRequest{Kind: "delete_repository", RepoID: "repo-1"}); result.Accepted || result.Code != "action_unavailable" {
 		t.Fatalf("unexpected action accepted: %+v", result)
+	}
+}
+
+func TestTriggerRejectsLifecycleWithoutFreshCapability(t *testing.T) {
+	actions := make(chan tray.Intent, 1)
+	service := &GUIService{
+		actions: actions,
+		view: guiapp.ViewModel{
+			Connected:    true,
+			Stale:        true,
+			Capabilities: map[string]bool{contract.CapSystemShutdown: true},
+		},
+	}
+	if result := service.Trigger(ActionRequest{Kind: string(tray.IntentShutdownFileES)}); result.Accepted || result.Code != "action_unavailable" {
+		t.Fatalf("stale shutdown accepted: %+v", result)
+	}
+	service.view.Stale = false
+	service.view.Capabilities = map[string]bool{}
+	if result := service.Trigger(ActionRequest{Kind: string(tray.IntentShutdownFileES)}); result.Accepted || result.Code != "action_unavailable" {
+		t.Fatalf("uncapable shutdown accepted: %+v", result)
 	}
 }
 

@@ -244,7 +244,9 @@ $("#reservations").addEventListener("click", (event) => {
 });
 $("#window-minimise").addEventListener("click", () => Window.Minimise());
 $("#window-maximise").addEventListener("click", () => Window.ToggleMaximise());
-$("#window-close").addEventListener("click", () => Window.Close());
+// Closing the panel is a presentation gesture.  Stack shutdown remains the
+// explicit, confirmed FileES lifecycle action in the tray.
+$("#window-close").addEventListener("click", () => Window.Hide());
 $("#titlebar").addEventListener("dblclick", (event) => {
   if (!event.target.closest(".topbar-actions")) Window.ToggleMaximise();
 });

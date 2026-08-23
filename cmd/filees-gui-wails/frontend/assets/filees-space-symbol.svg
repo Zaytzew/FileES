@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 278 210"
+     role="img"
+     aria-labelledby="title desc">
+  <title id="title">filees:space symbol</title>
+  <desc id="desc">Stacked file and folder symbol in navy and orange.</desc>
+  
+<g id="folder-symbol">
+  <polygon points="70.000,10.000 218.000,10.000 268.000,58.000 268.000,152.000 249.000,152.000 249.000,67.000 210.000,29.000 70.000,29.000" fill="#FF6A00"/>
+  <polygon points="38.000,45.000 176.000,45.000 236.000,103.000 236.000,177.000 217.000,177.000 217.000,112.000 168.000,64.000 38.000,64.000" fill="#0B1D3A"/>
+  <path d="M 10.000,80.000 H 73.000 Q 81.000,80.000 88.000,87.000 L 95.000,94.000 H 174.000 L 200.000,120.000 V 200.000 H 10.000 Z" fill="#0B1D3A"/>
+</g>
+</svg>

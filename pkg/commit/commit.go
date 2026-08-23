@@ -26,6 +26,11 @@ import (
 	"filees/pkg/watcher"
 )
 
+// DefaultConnectivityJournalDelay keeps self-healing transport blips out of
+// the user-facing structured journal. Connectivity state and IPC events still
+// change immediately, so tray and panel icons remain sensitive throughout.
+const DefaultConnectivityJournalDelay = 45 * time.Second
+
 // SizeTier mapuje górną granicę rozmiaru batcha na minimalny odstęp między commitami.
 // Tiery powinny być posortowane rosnąco według MaxBytes.
 // MaxBytes == 0 oznacza catch-all (pasuje do każdego rozmiaru).
@@ -128,15 +133,18 @@ type Service struct {
 	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
 	// that actually publishes; last_seen then jumps to that revision so this
 	// installation does not badge its own shout.
-	shoutComment     string
-	shoutUsed        bool
-	publishRevision  int64
+	shoutComment    string
+	shoutUsed       bool
+	publishRevision int64
 
 	// offline state — guarded by offMu (accessed from multiple goroutines)
-	offMu     sync.Mutex
-	offline   bool
-	nextRetry time.Time
-	backoff   time.Duration
+	offMu                    sync.Mutex
+	offline                  bool
+	nextRetry                time.Time
+	backoff                  time.Duration
+	offlineJournalTimer      *time.Timer
+	offlineJournalGeneration uint64
+	connectivityJournalDelay time.Duration // tests may shorten; <=0 uses the default
 
 	cacheResumed    atomic.Int64
 	alreadyAccepted atomic.Int64
@@ -179,17 +187,25 @@ func (s *Service) goOffline() {
 	s.offline = true
 	s.backoff = nextBackoff(s.backoff)
 	s.nextRetry = time.Now().Add(s.backoff)
+	var journalGeneration uint64
+	if wasOnline {
+		s.offlineJournalGeneration++
+		journalGeneration = s.offlineJournalGeneration
+		if s.offlineJournalTimer != nil {
+			s.offlineJournalTimer.Stop()
+		}
+		delay := s.connectivityJournalDelay
+		if delay <= 0 {
+			delay = DefaultConnectivityJournalDelay
+		}
+		s.offlineJournalTimer = time.AfterFunc(delay, func() {
+			s.recordSustainedOffline(journalGeneration)
+		})
+	}
 	s.offMu.Unlock()
 
 	if wasOnline {
 		s.Logger.Warnf("offline: network unreachable — queuing changes locally")
-		s.ErrSink.Emit(errmap.Entry{
-			Code:     errmap.CodeNetUnreachable,
-			Key:      "net.unreachable",
-			Severity: errmap.SevWarn,
-			Hint:     errmap.HintRetryBackoff,
-			Msg:      "Network unreachable — queuing changes locally",
-		})
 		if s.OnConnectivity != nil {
 			go s.OnConnectivity("offline")
 		}
@@ -202,6 +218,11 @@ func (s *Service) goOnline() {
 	wasOffline := s.offline
 	s.offline = false
 	s.backoff = 0
+	s.offlineJournalGeneration++
+	if s.offlineJournalTimer != nil {
+		s.offlineJournalTimer.Stop()
+		s.offlineJournalTimer = nil
+	}
 	s.offMu.Unlock()
 
 	if wasOffline {
@@ -211,6 +232,34 @@ func (s *Service) goOnline() {
 		}
 		s.emit(contract.EvOnlineRestored, nil)
 	}
+}
+
+func (s *Service) recordSustainedOffline(generation uint64) {
+	s.offMu.Lock()
+	if !s.offline || generation != s.offlineJournalGeneration {
+		s.offMu.Unlock()
+		return
+	}
+	s.offlineJournalTimer = nil
+	s.offMu.Unlock()
+
+	s.ErrSink.Emit(errmap.Entry{
+		Code:     errmap.CodeNetUnreachable,
+		Key:      "net.unreachable",
+		Severity: errmap.SevWarn,
+		Hint:     errmap.HintRetryBackoff,
+		Msg:      "Network unreachable — queuing changes locally",
+	})
+}
+
+func (s *Service) cancelConnectivityJournal() {
+	s.offMu.Lock()
+	s.offlineJournalGeneration++
+	if s.offlineJournalTimer != nil {
+		s.offlineJournalTimer.Stop()
+		s.offlineJournalTimer = nil
+	}
+	s.offMu.Unlock()
 }
 
 // emit publishes an IPC event if the Emit callback is wired.
@@ -248,6 +297,7 @@ func nextBackoff(cur time.Duration) time.Duration {
 
 // Run consumes watcher events and periodically performs commits.
 func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watcher.Event) {
+	defer s.cancelConnectivityJournal()
 	s.repoID = repoID
 	s.wc = wc
 	s.reconcileShouts(ctx, wc)
@@ -349,7 +399,12 @@ func (s *Service) acceptEvent(ev watcher.Event) {
 // talk log. tryCommit used to Warnf only, which never reached `filees log`.
 func (s *Service) recordCommitFailure(what string, err error) {
 	entry := errmap.Classify(err)
-	s.ErrSink.Emit(entry)
+	// Network faults are journaled once by the sustained-offline timer. The
+	// immediate failure path still logs technically and updates connectivity,
+	// but must not bypass the 45-second UX grace window.
+	if !entry.IsNetwork() {
+		s.ErrSink.Emit(entry)
+	}
 	s.Logger.Warnf("%s [%s]: %v", what, entry.Code, err)
 }
 
@@ -1033,7 +1088,6 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	if err != nil {
 		ts := time.Now()
 		entry := errmap.Classify(err)
-		s.ErrSink.EmitAt(ts, entry)
 		if client.IsNetworkError(err) {
 			// Transient: the same batch will be retried once connectivity
 			// returns, so the activity feed should keep showing it as queued.
@@ -1042,6 +1096,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			}
 			s.goOffline()
 		} else {
+			s.ErrSink.EmitAt(ts, entry)
 			// Not a connectivity problem: retrying the identical batch will
 			// fail identically. Surface it as failed with a link to the
 			// error.list entry instead of leaving it looking merely queued.

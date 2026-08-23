@@ -288,7 +288,9 @@ Menu tray zawiera:
   repozytorium, przez ten sam mechanizm co `filees-rotate`),
 - jedno globalne podmenu **Dziennik**, łączące aktywność i błędy newest-first;
   tray pokazuje maksymalnie 12 zagregowanych wpisów, a **Otwórz log…** otwiera
-  pełny dostępny snapshot w natywnym oknie; błędy są jawnie wyróżnione,
+  pełny dostępny snapshot w natywnym oknie; podgląd tłumaczy czas na
+  „przed chwilą”, „N minut temu”, godzinę, „wczoraj” lub „N dni temu”, a
+  pełny widok używa `dd:mm:yy hh:mm`; błędy są jawnie wyróżnione,
 - „Połącz ponownie” przy niedostępnym daemonie,
 - placeholder „Aktualizacja klienta — w przygotowaniu”, gdy nie ma
   zareklamowanego wydania,

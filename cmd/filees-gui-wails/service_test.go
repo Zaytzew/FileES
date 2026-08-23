@@ -45,6 +45,25 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	}
 }
 
+func TestProjectViewModelBuildsSharedJournalWithTranslatedAndExactTime(t *testing.T) {
+	now := time.Date(2026, 8, 23, 14, 0, 0, 0, time.Local)
+	vm := guiapp.ViewModel{
+		Repos: []guiapp.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty"}},
+		Activity: []guiapp.ActivityViewModel{{
+			RepoID: "docs", Path: "plan.dwg", Kind: "modified", Stage: "published",
+			Revision: 8, UpdatedAt: now.Add(-4 * time.Minute).Format(time.RFC3339),
+		}},
+	}
+	got := projectViewModelAt(vm, now)
+	if len(got.Journal) != 1 {
+		t.Fatalf("journal=%#v", got.Journal)
+	}
+	entry := got.Journal[0]
+	if entry.RelativeTime != "4 minuty temu" || entry.ExactTime == "" || entry.Repository != "Dokumenty" || !strings.Contains(entry.Summary, "plan.dwg") {
+		t.Fatalf("journal entry=%#v", entry)
+	}
+}
+
 type recordingEmitter struct {
 	name string
 	data Snapshot

@@ -12,6 +12,7 @@ export {
     ActionRequest,
     ActivityProjection,
     ErrorProjection,
+    JournalProjection,
     NoticeProjection,
     RepoProjection,
     ReservationProjection,

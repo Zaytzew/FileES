@@ -3,6 +3,7 @@ package journal
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"filees/internal/gui/app"
 )
@@ -26,6 +27,55 @@ func TestBuildMergesErrorsAndAggregatesPublishedRevisionNewestFirst(t *testing.T
 	}
 	if got[1].Summary != "Dokumenty — publikacja: 2 elementy · r7" || got[1].Details != "a.txt\nb.txt" {
 		t.Fatalf("aggregate=%#v", got[1])
+	}
+}
+
+func TestBuildCollapsesConnectivityNoiseWithoutTouchingOtherErrors(t *testing.T) {
+	now := time.Date(2026, 8, 23, 14, 0, 0, 0, time.Local)
+	vm := app.ViewModel{
+		Repos: []app.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty"}},
+		Errors: []app.ErrorViewModel{
+			{ID: "net-1", RepoID: "docs", Timestamp: "2026-08-23T10:00:00Z", Code: "NET-4007", Severity: "WARN"},
+			{ID: "net-2", RepoID: "docs", Timestamp: "2026-08-23T11:00:00Z", Code: "NET-4007", Severity: "WARN"},
+			{ID: "svn", RepoID: "docs", Timestamp: "2026-08-23T12:00:00Z", Code: "SVN-1", Severity: "ERROR", Message: "odmowa"},
+		},
+	}
+	got := BuildAt(vm, now)
+	if len(got) != 2 {
+		t.Fatalf("entries=%#v", got)
+	}
+	var connection Entry
+	for _, entry := range got {
+		if strings.HasPrefix(entry.ID, "connectivity:") {
+			connection = entry
+		}
+	}
+	if connection.ID == "" || connection.Emphasized || !strings.Contains(connection.Summary, "2 zdarzenia") {
+		t.Fatalf("connectivity entry=%#v", connection)
+	}
+}
+
+func TestJournalTimestampPresentation(t *testing.T) {
+	now := time.Date(2026, 8, 23, 14, 0, 0, 0, time.Local)
+	tests := []struct {
+		value string
+		want  string
+	}{
+		{now.Add(-30 * time.Second).Format(time.RFC3339), "przed chwilą"},
+		{now.Add(-time.Minute).Format(time.RFC3339), "minutę temu"},
+		{now.Add(-4 * time.Minute).Format(time.RFC3339), "4 minuty temu"},
+		{now.Add(-9 * time.Minute).Format(time.RFC3339), "9 minut temu"},
+		{now.Add(-20 * time.Minute).Format(time.RFC3339), "13:40"},
+		{now.AddDate(0, 0, -1).Format(time.RFC3339), "wczoraj"},
+		{now.AddDate(0, 0, -3).Format(time.RFC3339), "3 dni temu"},
+	}
+	for _, test := range tests {
+		if got := RelativeTimestamp(test.value, now); got != test.want {
+			t.Errorf("RelativeTimestamp(%q)=%q, want %q", test.value, got, test.want)
+		}
+	}
+	if got := ExactTimestamp("2026-08-23T12:34:56Z"); got != time.Date(2026, 8, 23, 12, 34, 56, 0, time.UTC).Local().Format("02:01:06 15:04") {
+		t.Fatalf("ExactTimestamp=%q", got)
 	}
 }
 

@@ -14,16 +14,27 @@ import (
 
 const TrayLimit = 12
 
+const connectivityErrorCode = "NET-4007"
+
 type Entry struct {
-	ID         string
-	Timestamp  string
-	Repo       string
-	Summary    string
-	Details    string
-	Severity   string
-	Emphasized bool
+	ID           string
+	Timestamp    string
+	Repo         string
+	Summary      string
+	Details      string
+	Severity     string
+	Emphasized   bool
+	RelativeTime string
+	ExactTime    string
 
 	time time.Time
+}
+
+type connectivityGroup struct {
+	repoID, repo string
+	latest       app.ErrorViewModel
+	time         time.Time
+	count        int
 }
 
 type activityGroup struct {
@@ -38,9 +49,30 @@ type activityGroup struct {
 // revision form one entry. In-flight paths share a repo/stage entry. Failed
 // activity carrying an ErrorID is folded into that structured error.
 func Build(vm app.ViewModel) []Entry {
+	return BuildAt(vm, time.Now())
+}
+
+// BuildAt is the deterministic form used by renderers and tests. Repeated
+// connectivity warnings are one incident in the user journal; the raw
+// errors.jsonl remains untouched for technical diagnostics.
+func BuildAt(vm app.ViewModel, now time.Time) []Entry {
 	names := repositoryNames(vm)
 	errorsByID := make(map[string]app.ErrorViewModel, len(vm.Errors))
+	connectivity := make(map[string]*connectivityGroup)
 	for _, record := range vm.Errors {
+		if record.Code == connectivityErrorCode {
+			group := connectivity[record.RepoID]
+			when := parseTime(record.Timestamp)
+			if group == nil {
+				group = &connectivityGroup{repoID: record.RepoID, repo: repoName(names, record.RepoID)}
+				connectivity[record.RepoID] = group
+			}
+			group.count++
+			if when.After(group.time) || group.latest.Timestamp == "" {
+				group.latest, group.time = record, when
+			}
+			continue
+		}
 		errorsByID[record.ID] = record
 	}
 
@@ -72,9 +104,15 @@ func Build(vm app.ViewModel) []Entry {
 		entries = append(entries, activityEntry("activity:"+key, group))
 	}
 	for _, record := range vm.Errors {
+		if record.Code == connectivityErrorCode {
+			continue
+		}
 		if !mergedErrors[record.ID] {
 			entries = append(entries, errorEntry(record, repoName(names, record.RepoID), nil))
 		}
+	}
+	for _, group := range connectivity {
+		entries = append(entries, connectivityEntry(group))
 	}
 	for _, notice := range vm.Notices {
 		when := parseTime(notice.CreatedAt)
@@ -95,7 +133,78 @@ func Build(vm app.ViewModel) []Entry {
 		}
 		return entries[i].ID < entries[j].ID
 	})
+	for i := range entries {
+		entries[i].RelativeTime = RelativeTimestamp(entries[i].Timestamp, now)
+		entries[i].ExactTime = ExactTimestamp(entries[i].Timestamp)
+	}
 	return entries
+}
+
+func connectivityEntry(group *connectivityGroup) Entry {
+	summary := fmt.Sprintf("Łączność · %s — brak połączenia z serwerem", group.repo)
+	if group.count > 1 {
+		summary += fmt.Sprintf(" · %d %s", group.count, plural(group.count, "zdarzenie", "zdarzenia", "zdarzeń"))
+	}
+	return Entry{
+		ID: "connectivity:" + group.repoID, Timestamp: group.latest.Timestamp, Repo: group.repo,
+		Summary:  summary,
+		Details:  "FileES zachował zmiany lokalnie i automatycznie ponawiał połączenie. Surowe próby pozostają w logu diagnostycznym.",
+		Severity: group.latest.Severity, Emphasized: false, time: group.time,
+	}
+}
+
+// RelativeTimestamp renders compact, calm time labels for journal previews.
+func RelativeTimestamp(value string, now time.Time) string {
+	parsed := parseTime(value)
+	if parsed.IsZero() {
+		return value
+	}
+	localNow, localThen := now.Local(), parsed.Local()
+	delta := localNow.Sub(localThen)
+	if delta < time.Minute {
+		return "przed chwilą"
+	}
+	if delta < 10*time.Minute {
+		minutes := int(delta / time.Minute)
+		if minutes == 1 {
+			return "minutę temu"
+		}
+		return fmt.Sprintf("%d %s temu", minutes, plural(minutes, "minutę", "minuty", "minut"))
+	}
+	if sameDate(localThen, localNow) {
+		return localThen.Format("15:04")
+	}
+	days := calendarDaysBetween(localThen, localNow)
+	if days == 1 {
+		return "wczoraj"
+	}
+	return fmt.Sprintf("%d %s temu", days, plural(days, "dzień", "dni", "dni"))
+}
+
+// ExactTimestamp is used by the expanded journal. The colon-separated date
+// follows the accepted FileES UX contract literally: dd:mm:yy hh:mm.
+func ExactTimestamp(value string) string {
+	parsed := parseTime(value)
+	if parsed.IsZero() {
+		return value
+	}
+	return parsed.Local().Format("02:01:06 15:04")
+}
+
+func sameDate(left, right time.Time) bool {
+	ly, lm, ld := left.Date()
+	ry, rm, rd := right.Date()
+	return ly == ry && lm == rm && ld == rd
+}
+
+func calendarDaysBetween(then, now time.Time) int {
+	start := time.Date(then.Year(), then.Month(), then.Day(), 0, 0, 0, 0, then.Location())
+	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	days := int(end.Sub(start).Hours() / 24)
+	if days < 1 {
+		return 1
+	}
+	return days
 }
 
 func repositoryNames(vm app.ViewModel) map[string]string {

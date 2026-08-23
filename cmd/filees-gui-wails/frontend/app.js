@@ -157,22 +157,24 @@ function renderReservations(snapshot) {
   }).join("");
 }
 
-function renderActivity(snapshot) {
+function renderJournal(snapshot) {
+  const entries = snapshot.journal || [];
   const root = $("#activity");
-  const errors = (snapshot.errors || []).slice(0, 3).map((item) => ({
-    title: item.message || item.code, detail: item.hint || item.repo_id || "Komunikat demona", error: true,
-  }));
-  const activity = (snapshot.activity || []).slice(0, Math.max(0, 6 - errors.length)).map((item) => ({
-    title: item.path || item.repo_id, detail: `${item.kind || "zmiana"} · ${item.stage || "wykryto"}`, error: Boolean(item.error_id),
-  }));
-  const items = [...errors, ...activity];
-  if (!items.length) {
+  if (!entries.length) {
     root.innerHTML = '<p class="muted">Brak nowych sygnałów.</p>';
-    return;
+  } else {
+    root.innerHTML = entries.slice(0, 6).map((item) => `<article class="activity-row ${item.emphasized ? "is-error" : ""}">
+      <span class="activity-dot"></span><div><strong title="${escapeHTML(item.summary)}">${escapeHTML(item.summary)}</strong>
+      <p>${escapeHTML(item.repository || "FileES")}</p><time datetime="${escapeHTML(item.exact_time)}">${escapeHTML(item.relative_time)}</time></div>
+    </article>`).join("");
   }
-  root.innerHTML = items.map((item) => `<article class="activity-row ${item.error ? "is-error" : ""}">
-    <span class="activity-dot"></span><div><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(item.detail)}</p></div>
-  </article>`).join("");
+
+  const full = $("#journal");
+  full.innerHTML = entries.length ? entries.map((item) => `<article class="journal-row ${item.emphasized ? "is-error" : ""}">
+    <time>${escapeHTML(item.exact_time)}</time>
+    <span class="journal-repo">${escapeHTML(item.repository || "FileES")}</span>
+    <div class="journal-copy"><strong>${escapeHTML(item.summary)}</strong>${item.details ? `<p>${escapeHTML(item.details)}</p>` : ""}</div>
+  </article>`).join("") : '<p class="muted">Brak wpisów.</p>';
 }
 
 function render(snapshot) {
@@ -182,7 +184,7 @@ function render(snapshot) {
   renderRepositories(snapshot);
   renderServers(snapshot);
   renderReservations(snapshot);
-  renderActivity(snapshot);
+  renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `projekcja #${snapshot.revision || 0}`;
 }
@@ -234,6 +236,17 @@ Events.On("filees:snapshot", (event) => render(event?.data ?? event));
 Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
 $("#refresh").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Refresh));
 $("#reconnect").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Reconnect));
+$("#open-journal").addEventListener("click", () => {
+  $("#journal-overlay").hidden = false;
+  $("#close-journal").focus();
+});
+$("#close-journal").addEventListener("click", () => { $("#journal-overlay").hidden = true; });
+$("#journal-overlay").addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) event.currentTarget.hidden = true;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("#journal-overlay").hidden) $("#journal-overlay").hidden = true;
+});
 $("#repositories").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);

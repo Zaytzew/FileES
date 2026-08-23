@@ -5,10 +5,13 @@ package notifications
 import (
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
 )
+
+const ConnectionGrace = 45 * time.Second
 
 // Policy remembers the last presentation snapshot. Observe must be called by
 // one owner (the app OnChange callback).
@@ -17,6 +20,20 @@ type Policy struct {
 	observedConnection bool
 	previous           app.ViewModel
 	suppressConnection atomic.Bool
+	now                func() time.Time
+	disconnectedAt     time.Time
+	disconnectReported bool
+}
+
+// SetClock is intended for deterministic transition tests. Production uses
+// time.Now and keeps Policy's zero value ready to use.
+func (p *Policy) SetClock(now func() time.Time) { p.now = now }
+
+func (p *Policy) currentTime() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
 }
 
 // SuppressConnectionTransitions mutes the expected brief disconnect while
@@ -47,17 +64,29 @@ func (p *Policy) Observe(next app.ViewModel) []platform.Notification {
 	previous := p.previous
 	p.previous = next
 	var result []platform.Notification
-	if previous.Connected != next.Connected && !p.suppressConnection.Load() {
+	if p.suppressConnection.Load() {
+		p.disconnectedAt = time.Time{}
+		p.disconnectReported = false
+	} else if !next.Connected && p.observedConnection {
+		if previous.Connected || p.disconnectedAt.IsZero() {
+			p.disconnectedAt = p.currentTime()
+			p.disconnectReported = false
+		}
+		if !p.disconnectReported && p.currentTime().Sub(p.disconnectedAt) >= ConnectionGrace {
+			result = append(result, platform.Notification{ID: "daemon.disconnected", Group: "daemon.connection", Title: "Brak połączenia z FileES", Body: "GUI ponawia połączenie z daemonem", Urgency: platform.UrgencyNormal})
+			p.disconnectReported = true
+		}
+	} else if next.Connected {
 		// The daemon can legitimately need a moment longer than the tray
 		// process after FileES is restarted. Treat that first handshake as
 		// startup, not a connection recovery worthy of a desktop toast.
 		if !p.observedConnection {
-			p.observedConnection = next.Connected
-		} else if next.Connected {
+			p.observedConnection = true
+		} else if p.disconnectReported {
 			result = append(result, platform.Notification{ID: "daemon.connected", Group: "daemon.connection", Title: "FileES połączony", Body: "Połączenie z daemonem zostało przywrócone", Urgency: platform.UrgencyLow})
-		} else {
-			result = append(result, platform.Notification{ID: "daemon.disconnected", Group: "daemon.connection", Title: "Brak połączenia z FileES", Body: "GUI ponawia połączenie z daemonem", Urgency: platform.UrgencyNormal})
 		}
+		p.disconnectedAt = time.Time{}
+		p.disconnectReported = false
 	}
 	oldRepos := make(map[string]app.RepoDisplayState, len(previous.Repos))
 	for _, repo := range previous.Repos {

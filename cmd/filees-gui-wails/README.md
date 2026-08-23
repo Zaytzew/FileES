@@ -22,6 +22,15 @@ Na Windows okno jest bez natywnej ramki (`Frameless`) i ma własny pasek z
 przeciąganiem oraz kontrolkami okna. CSS ukrywa scrollbar WebView, ale nie
 wyłącza przewijania kółkiem, touchpadem ani klawiaturą.
 
+Pełna projekcja zawiera także aktywne rezerwacje plikowe. Renderer dostaje
+opaque identyfikator wiersza, opis i capability zwolnienia, ale nigdy token
+fencingowy SVN. Przycisk `Zwolnij` wraca do wspólnego kontrolera, który po
+potwierdzeniu ponownie rozwiązuje identyfikator i przekazuje token demonowi.
+
+Proces tworzy własny tray Wails z ikoną bieżącego stanu, liczbą repozytoriów i
+blokad. Zamknięcie okna ukrywa je do traya; proces kończy dopiero jawna pozycja
+`Zakończ renderer`.
+
 Wymagania:
 
 - Go 1.25 lub nowszy;

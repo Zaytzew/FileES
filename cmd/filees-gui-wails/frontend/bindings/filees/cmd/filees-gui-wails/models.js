@@ -54,12 +54,19 @@ export class ActionRequest {
              */
             this["kind"] = "";
         }
-        if (!("repo_id" in $$source)) {
+        if (/** @type {any} */(false)) {
             /**
              * @member
-             * @type {string}
+             * @type {string | undefined}
              */
-            this["repo_id"] = "";
+            this["repo_id"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["reservation_id"] = undefined;
         }
 
         Object.assign(this, $$source);
@@ -433,6 +440,97 @@ export class RepoProjection {
     }
 }
 
+export class ReservationProjection {
+    /**
+     * Creates a new ReservationProjection instance.
+     * @param {Partial<ReservationProjection>} [$$source = {}] - The source object to create the ReservationProjection.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("server_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["server_id"] = "";
+        }
+        if (!("repo_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["repo_id"] = "";
+        }
+        if (!("repository" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["repository"] = "";
+        }
+        if (!("path" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["path"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["owner_label"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["created_at"] = undefined;
+        }
+        if (!("can_release" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_release"] = false;
+        }
+        if (!("local_changes" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["local_changes"] = false;
+        }
+        if (!("active_passport" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["active_passport"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ReservationProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ReservationProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ReservationProjection(/** @type {Partial<ReservationProjection>} */($$parsedSource));
+    }
+}
+
 export class ServerProjection {
     /**
      * Creates a new ServerProjection instance.
@@ -607,6 +705,13 @@ export class Snapshot {
              */
             this["repositories"] = [];
         }
+        if (!("reservations" in $$source)) {
+            /**
+             * @member
+             * @type {ReservationProjection[]}
+             */
+            this["reservations"] = [];
+        }
         if (!("errors" in $$source)) {
             /**
              * @member
@@ -652,6 +757,7 @@ export class Snapshot {
         const $$createField11_0 = $$createType8;
         const $$createField12_0 = $$createType10;
         const $$createField13_0 = $$createType12;
+        const $$createField14_0 = $$createType14;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("capabilities" in $$parsedSource) {
             $$parsedSource["capabilities"] = $$createField7_0($$parsedSource["capabilities"]);
@@ -662,17 +768,20 @@ export class Snapshot {
         if ("repositories" in $$parsedSource) {
             $$parsedSource["repositories"] = $$createField9_0($$parsedSource["repositories"]);
         }
+        if ("reservations" in $$parsedSource) {
+            $$parsedSource["reservations"] = $$createField10_0($$parsedSource["reservations"]);
+        }
         if ("errors" in $$parsedSource) {
-            $$parsedSource["errors"] = $$createField10_0($$parsedSource["errors"]);
+            $$parsedSource["errors"] = $$createField11_0($$parsedSource["errors"]);
         }
         if ("activity" in $$parsedSource) {
-            $$parsedSource["activity"] = $$createField11_0($$parsedSource["activity"]);
+            $$parsedSource["activity"] = $$createField12_0($$parsedSource["activity"]);
         }
         if ("notices" in $$parsedSource) {
-            $$parsedSource["notices"] = $$createField12_0($$parsedSource["notices"]);
+            $$parsedSource["notices"] = $$createField13_0($$parsedSource["notices"]);
         }
         if ("update" in $$parsedSource) {
-            $$parsedSource["update"] = $$createField13_0($$parsedSource["update"]);
+            $$parsedSource["update"] = $$createField14_0($$parsedSource["update"]);
         }
         return new Snapshot(/** @type {Partial<Snapshot>} */($$parsedSource));
     }
@@ -740,11 +849,13 @@ const $$createType1 = ServerProjection.createFrom;
 const $$createType2 = $Create.Array($$createType1);
 const $$createType3 = RepoProjection.createFrom;
 const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = ErrorProjection.createFrom;
+const $$createType5 = ReservationProjection.createFrom;
 const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = ActivityProjection.createFrom;
+const $$createType7 = ErrorProjection.createFrom;
 const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = NoticeProjection.createFrom;
+const $$createType9 = ActivityProjection.createFrom;
 const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = UpdateProjection.createFrom;
-const $$createType12 = $Create.Nullable($$createType11);
+const $$createType11 = NoticeProjection.createFrom;
+const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = UpdateProjection.createFrom;
+const $$createType14 = $Create.Nullable($$createType13);

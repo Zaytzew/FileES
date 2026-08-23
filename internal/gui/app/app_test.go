@@ -19,6 +19,7 @@ type fakeDaemon struct {
 	repoList     func(ctx context.Context) (*contract.RepoListResult, error)
 	repoStatus   func(ctx context.Context, id string) (*contract.RepoStatus, error)
 	errorList    func(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error)
+	reservations func(ctx context.Context, serverID string) (*contract.RepoReservationListResult, error)
 	lock         func(ctx context.Context, id string, paths []string) (string, error)
 	unlock       func(ctx context.Context, id string, paths []string) (string, error)
 	subscribe    func(ctx context.Context) (<-chan contract.Event, error)
@@ -91,7 +92,14 @@ func (f *fakeDaemon) Unlock(ctx context.Context, id string, paths []string) (str
 	}
 	return fn(ctx, id, paths)
 }
-func (f *fakeDaemon) RepoReservationList(context.Context, string) (*contract.RepoReservationListResult, error) {
+
+func (f *fakeDaemon) RepoReservationList(ctx context.Context, serverID string) (*contract.RepoReservationListResult, error) {
+	f.mu.Lock()
+	fn := f.reservations
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, serverID)
+	}
 	return &contract.RepoReservationListResult{}, nil
 }
 func (f *fakeDaemon) RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error {
@@ -508,6 +516,37 @@ func TestAppMultipleRepos(t *testing.T) {
 	// b is offline → icon should be at least offline.
 	if vm.Icon == IconActive {
 		t.Fatalf("icon should not be active when a repo is offline")
+	}
+}
+
+func TestAppProjectsAuthoritativeReservationRowsAlongsideCounts(t *testing.T) {
+	d := &fakeDaemon{
+		systemStatus: func(context.Context) (*contract.SystemStatusResult, error) {
+			return &contract.SystemStatusResult{State: "running", Activations: []contract.ActivationStatus{{ServerID: "office", DisplayName: "Biuro"}}}, nil
+		},
+		repoList: func(context.Context) (*contract.RepoListResult, error) {
+			return &contract.RepoListResult{Repos: []contract.RepoSummary{{ID: "docs", ServerID: "office", LocalPath: "/wc/docs", Attached: true}}}, nil
+		},
+		repoStatus: func(context.Context, string) (*contract.RepoStatus, error) {
+			return &contract.RepoStatus{RepoID: "docs", ServerID: "office", State: contract.StateActive, Connectivity: contract.ConnOnline}, nil
+		},
+		reservations: func(_ context.Context, serverID string) (*contract.RepoReservationListResult, error) {
+			return &contract.RepoReservationListResult{ServerID: serverID, Reservations: []contract.Reservation{{
+				RepoID: "docs", WorkingCopy: "/wc/docs", Path: "plan.dwg", Token: "opaque-token", CanRelease: true,
+			}}}, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
+
+	vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return vm.Connected && len(vm.Reservations) == 1 && len(vm.Repos) == 1 && vm.Repos[0].ReservationCount == 1
+	})
+	reservation := vm.Reservations[0]
+	if reservation.ID == "" || reservation.ServerID != "office" || reservation.Token != "opaque-token" || !reservation.CanRelease {
+		t.Fatalf("reservation = %+v", reservation)
 	}
 }
 

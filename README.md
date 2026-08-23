@@ -487,8 +487,10 @@ renderuje otrzymaną projekcję i zwraca intencje. Pierwszy pion ma osobny EXE,
 statyczny frontend bez Node/Vite oraz `Snapshot`, `Refresh` i `Reconnect`.
 Pierwszy pion akcyjny dodaje `Otwórz`, `Zablokuj` i `Zwolnij` przez ten sam
 `internal/gui/actions` co Fyne; JavaScript nie woła IPC. Okno Windows jest
-bezramkowe, a ukrycie scrollbara WebView nie wyłącza przewijania. Kryteria
-eksperymentu opisuje
+bezramkowe, a ukrycie scrollbara WebView nie wyłącza przewijania. Aktywne
+locki są częścią projekcji; inline zwolnienie przekazuje tylko opaque ID, a
+token fencingowy pozostaje w Go. Minimalny tray Wails utrzymuje proces po
+ukryciu okna i pokazuje stan oraz liczbę repozytoriów i blokad. Kryteria eksperymentu opisuje
 [`concepts/WAILS_GUI_FORK.md`](concepts/WAILS_GUI_FORK.md).
 
 ### Etapowanie implementacji

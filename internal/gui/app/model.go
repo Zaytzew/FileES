@@ -154,6 +154,7 @@ type ViewModel struct {
 	Capabilities map[string]bool
 	Repos        []RepoViewModel
 	Servers      []ServerViewModel
+	Reservations []Reservation
 	Recoveries   []RecoveryViewModel
 	Errors       []ErrorViewModel
 	Activity     []ActivityViewModel

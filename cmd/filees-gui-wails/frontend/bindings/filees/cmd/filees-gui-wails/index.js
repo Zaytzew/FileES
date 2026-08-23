@@ -14,6 +14,7 @@ export {
     ErrorProjection,
     NoticeProjection,
     RepoProjection,
+    ReservationProjection,
     ServerProjection,
     Snapshot,
     UpdateProjection

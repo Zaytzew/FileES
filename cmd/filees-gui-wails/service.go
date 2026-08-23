@@ -30,23 +30,25 @@ type GUIService struct {
 	runner   *guiapp.App
 	emitter  snapshotEmitter
 	actions  chan<- tray.Intent
+	observer func(Snapshot)
 }
 
 type Snapshot struct {
-	Revision     uint64               `json:"revision"`
-	Connected    bool                 `json:"connected"`
-	Stale        bool                 `json:"stale"`
-	DaemonState  string               `json:"daemon_state"`
-	UptimeSec    int64                `json:"uptime_sec"`
-	LastRefresh  string               `json:"last_refresh,omitempty"`
-	IconState    string               `json:"icon_state"`
-	Capabilities []string             `json:"capabilities"`
-	Servers      []ServerProjection   `json:"servers"`
-	Repositories []RepoProjection     `json:"repositories"`
-	Errors       []ErrorProjection    `json:"errors"`
-	Activity     []ActivityProjection `json:"activity"`
-	Notices      []NoticeProjection   `json:"notices"`
-	Update       *UpdateProjection    `json:"update,omitempty"`
+	Revision     uint64                  `json:"revision"`
+	Connected    bool                    `json:"connected"`
+	Stale        bool                    `json:"stale"`
+	DaemonState  string                  `json:"daemon_state"`
+	UptimeSec    int64                   `json:"uptime_sec"`
+	LastRefresh  string                  `json:"last_refresh,omitempty"`
+	IconState    string                  `json:"icon_state"`
+	Capabilities []string                `json:"capabilities"`
+	Servers      []ServerProjection      `json:"servers"`
+	Repositories []RepoProjection        `json:"repositories"`
+	Reservations []ReservationProjection `json:"reservations"`
+	Errors       []ErrorProjection       `json:"errors"`
+	Activity     []ActivityProjection    `json:"activity"`
+	Notices      []NoticeProjection      `json:"notices"`
+	Update       *UpdateProjection       `json:"update,omitempty"`
 }
 
 type ServerProjection struct {
@@ -87,9 +89,23 @@ type RepoProjection struct {
 	CanUnlock        bool   `json:"can_unlock"`
 }
 
+type ReservationProjection struct {
+	ID             string `json:"id"`
+	ServerID       string `json:"server_id"`
+	RepoID         string `json:"repo_id"`
+	Repository     string `json:"repository"`
+	Path           string `json:"path"`
+	OwnerLabel     string `json:"owner_label,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+	CanRelease     bool   `json:"can_release"`
+	LocalChanges   bool   `json:"local_changes"`
+	ActivePassport bool   `json:"active_passport"`
+}
+
 type ActionRequest struct {
-	Kind   string `json:"kind"`
-	RepoID string `json:"repo_id"`
+	Kind          string `json:"kind"`
+	RepoID        string `json:"repo_id,omitempty"`
+	ReservationID string `json:"reservation_id,omitempty"`
 }
 
 type ActionAcceptance struct {
@@ -170,6 +186,16 @@ func (service *GUIService) attachActions(actions chan<- tray.Intent) {
 	service.mu.Unlock()
 }
 
+func (service *GUIService) attachSnapshotObserver(observer func(Snapshot)) {
+	service.mu.Lock()
+	service.observer = observer
+	current := service.snapshot
+	service.mu.Unlock()
+	if observer != nil {
+		observer(current)
+	}
+}
+
 func (service *GUIService) run(ctx context.Context) {
 	service.runner.Run(ctx)
 }
@@ -188,6 +214,7 @@ func (service *GUIService) Snapshot() Snapshot {
 func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	request.Kind = strings.TrimSpace(request.Kind)
 	request.RepoID = strings.TrimSpace(request.RepoID)
+	request.ReservationID = strings.TrimSpace(request.ReservationID)
 
 	service.mu.RLock()
 	vm := service.view
@@ -227,10 +254,14 @@ func (service *GUIService) onChange(vm guiapp.ViewModel) {
 	service.snapshot = next
 	service.view = vm
 	emitter := service.emitter
+	observer := service.observer
 	service.mu.Unlock()
 
 	if emitter != nil {
 		emitter.Emit(snapshotEvent, next)
+	}
+	if observer != nil {
+		observer(next)
 	}
 }
 
@@ -250,6 +281,11 @@ func (service *GUIService) emitActionFeedback(feedback ActionFeedback) {
 }
 
 func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, bool) {
+	if request.Kind == string(tray.IntentReleaseReservation) {
+		reservation, ok := projectedReservation(vm, request.ReservationID)
+		allowed := ok && reservation.CanRelease && vm.CanReleaseReservations() && viewHasServer(vm, reservation.ServerID)
+		return tray.Intent{Kind: tray.IntentReleaseReservation, ReservationID: request.ReservationID}, allowed
+	}
 	repo, ok := projectedRepo(vm, request.RepoID)
 	if !ok {
 		return tray.Intent{}, false
@@ -266,6 +302,24 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	default:
 		return tray.Intent{}, false
 	}
+}
+
+func projectedReservation(vm guiapp.ViewModel, reservationID string) (guiapp.Reservation, bool) {
+	for _, reservation := range vm.Reservations {
+		if reservation.ID == reservationID {
+			return reservation, true
+		}
+	}
+	return guiapp.Reservation{}, false
+}
+
+func viewHasServer(vm guiapp.ViewModel, serverID string) bool {
+	for _, server := range vm.Servers {
+		if server.ID == serverID {
+			return true
+		}
+	}
+	return false
 }
 
 func projectedRepo(vm guiapp.ViewModel, repoID string) (guiapp.RepoViewModel, bool) {
@@ -296,6 +350,7 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 		Capabilities: make([]string, 0, len(vm.Capabilities)),
 		Servers:      make([]ServerProjection, 0, len(vm.Servers)),
 		Repositories: make([]RepoProjection, 0, len(vm.Repos)),
+		Reservations: make([]ReservationProjection, 0, len(vm.Reservations)),
 		Errors:       make([]ErrorProjection, 0, len(vm.Errors)),
 		Activity:     make([]ActivityProjection, 0, len(vm.Activity)),
 		Notices:      make([]NoticeProjection, 0, len(vm.Notices)),
@@ -338,6 +393,24 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
 			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock,
+		})
+	}
+	for _, reservation := range vm.Reservations {
+		repository := reservation.RepoID
+		for _, repo := range vm.Repos {
+			if repo.ID == reservation.RepoID && repo.ServerID == reservation.ServerID {
+				if strings.TrimSpace(repo.DisplayName) != "" {
+					repository = repo.DisplayName
+				}
+				break
+			}
+		}
+		result.Reservations = append(result.Reservations, ReservationProjection{
+			ID: reservation.ID, ServerID: reservation.ServerID, RepoID: reservation.RepoID,
+			Repository: repository, Path: reservation.Path, OwnerLabel: reservation.OwnerLabel,
+			CreatedAt:    reservation.CreatedAt,
+			CanRelease:   vm.CanReleaseReservations() && reservation.CanRelease,
+			LocalChanges: reservation.LocalChanges, ActivePassport: reservation.ActivePassport,
 		})
 	}
 	for _, item := range vm.Errors {

@@ -71,7 +71,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	menu := host.NewMenu()
 	statusItem := menu.Add("FileES · uruchamianie").SetEnabled(false)
 	menu.AddSeparator()
-	menu.Add("Pokaż FileES").OnClick(func(_ *application.Context) { showWindow() })
+	menu.Add("Pokaż panel").OnClick(func(_ *application.Context) { showWindow() })
 	menu.Add("Odśwież stan").OnClick(func(_ *application.Context) { service.Refresh() })
 	menu.AddSeparator()
 	menu.Add("Zakończ renderer").OnClick(func(_ *application.Context) { host.Quit() })

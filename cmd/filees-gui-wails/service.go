@@ -385,7 +385,12 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		allowed := ok && reservation.CanRelease && vm.CanReleaseReservations() && viewHasServer(vm, reservation.ServerID)
 		return tray.Intent{Kind: tray.IntentReleaseReservation, ReservationID: request.ReservationID}, allowed
 	case string(tray.IntentSettings):
-		return tray.Intent{Kind: tray.IntentSettings, ServerID: request.ServerID}, viewHasServer(vm, request.ServerID)
+		intent := tray.Intent{Kind: tray.IntentSettings, ServerID: request.ServerID, RepoID: request.RepoID}
+		if request.RepoID == "" {
+			return intent, viewHasServer(vm, request.ServerID)
+		}
+		repo, ok := projectedRepo(vm, request.RepoID)
+		return intent, ok && repo.ServerID == request.ServerID && viewHasServer(vm, request.ServerID)
 	}
 	repo, ok := projectedRepo(vm, request.RepoID)
 	if !ok {

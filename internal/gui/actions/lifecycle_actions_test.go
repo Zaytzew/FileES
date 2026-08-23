@@ -90,6 +90,28 @@ func TestControllerLocalDetachUsesOneConfirmationAndDistinctCommand(t *testing.T
 	}
 }
 
+func TestControllerFencesDetachUntilRepositoryProjectionChanges(t *testing.T) {
+	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
+	lifecycle := newRecordingActionLifecycle()
+	platformFake := &platformtest.Fake{
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := lifecycleView(contract.CapRepoDetach)
+	intents, cancel := setup(actions.Config{
+		ViewModel: viewCopy(view), Prompter: platformFake, Notifier: platformFake,
+		RepositoryDetacher: detacher, ActionLifecycle: lifecycle,
+	})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentDetachRepository, ServerID: "office", RepoID: "repo-1"})
+	started := awaitCh(t, lifecycle.started, "detach action")
+	if started.ServerID != "office" || started.RepoID != "repo-1" || !started.ExpectedRepoDetached || started.ExpectedRepoDeleted {
+		t.Fatalf("detach pending action = %+v", started)
+	}
+	if awaited := awaitCh(t, lifecycle.awaited, "detach projection fence"); awaited != started.ID {
+		t.Fatalf("awaited id=%q, want %q", awaited, started.ID)
+	}
+}
+
 func TestControllerPermanentDeleteRequiresTwoSeparateConfirmations(t *testing.T) {
 	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
 	var mu sync.Mutex

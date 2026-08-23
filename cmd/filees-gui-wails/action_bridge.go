@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
+	"time"
 
 	"filees/internal/gui/actions"
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
+	"filees/public-shares/gate"
+	"github.com/google/uuid"
 )
 
 type actionRunner interface {
@@ -18,29 +22,34 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, backend platform.Backend, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, repositoryAttacher actions.RepositoryAttacher, repositoryDetacher actions.RepositoryDetacher, backend platform.Backend, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
 	intents := make(chan tray.Intent, 32)
 	service.attachActions(intents)
 	return actions.New(actions.Config{
-		Intents:         intents,
-		ViewModel:       service.viewModel,
-		Opener:          backend,
-		Picker:          backend,
-		Prompter:        backend,
-		Notifier:        actionNotifier{service: service},
-		Locker:          locker,
-		Reservations:    reservations,
-		SettingsBrowser: settings,
-		SessionTimeouts: sessionTimeouts,
-		ActionLifecycle: service.runner,
-		Stack:           stack,
-		Reconnect:       service.runner.Reconnect,
-		Refresh:         service.runner.Refresh,
-		Restart:         restart,
-		Shutdown:        shutdown,
+		Intents:            intents,
+		ViewModel:          service.viewModel,
+		Opener:             backend,
+		Picker:             backend,
+		FolderPicker:       backend,
+		Prompter:           backend,
+		Notifier:           actionNotifier{service: service},
+		Locker:             locker,
+		Reservations:       reservations,
+		SettingsBrowser:    settings,
+		SessionTimeouts:    sessionTimeouts,
+		PublicShareBrowser: publicShareBrowser,
+		PublicShares:       publicShares,
+		RepositoryAttacher: repositoryAttacher,
+		RepositoryDetacher: repositoryDetacher,
+		ActionLifecycle:    service.runner,
+		Stack:              stack,
+		Reconnect:          service.runner.Reconnect,
+		Refresh:            service.runner.Refresh,
+		Restart:            restart,
+		Shutdown:           shutdown,
 	})
 }
 
@@ -59,6 +68,182 @@ func (adapter sessionTimeoutAdapter) SetSessionTimeout(ctx context.Context, serv
 		return 0, errors.New("daemon returned an invalid session timeout")
 	}
 	return result.Minutes, nil
+}
+
+type publicShareClient interface {
+	PublicShareList(context.Context, string, string) (*contract.PublicShareListResult, error)
+	PublicShareCreate(context.Context, contract.PublicShareCreatePayload) (*contract.PublicShareResult, error)
+	PublicShareUpdate(context.Context, contract.PublicShareUpdatePayload) (*contract.PublicShareResult, error)
+	PublicShareRevoke(context.Context, contract.PublicShareChannelPayload) (*contract.PublicShareResult, error)
+	PublicShareDelete(context.Context, contract.PublicShareChannelPayload) (*contract.PublicShareResult, error)
+}
+
+type publicShareAdapter struct{ client publicShareClient }
+
+func (adapter publicShareAdapter) ListPublicShares(ctx context.Context, serverID, repoID string) ([]actions.PublicShareSummary, error) {
+	result, err := adapter.client.PublicShareList(ctx, serverID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty public share list")
+	}
+	shares := make([]actions.PublicShareSummary, 0, len(result.Shares))
+	for _, share := range result.Shares {
+		row := actions.PublicShareSummary{ChannelID: share.ChannelID, Alias: share.Alias, Slug: share.Slug, State: share.State, SourceRoot: share.SourceRoot, UpdatedAt: share.UpdatedAt, Recipients: append([]string(nil), share.Recipients...), PasswordProtected: share.PasswordProtected, DoNotFollow: share.DoNotFollow}
+		for _, object := range share.Objects {
+			row.Objects = append(row.Objects, actions.PublicShareObject{PublicID: object.PublicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
+		}
+		shares = append(shares, row)
+	}
+	return shares, nil
+}
+
+func (adapter publicShareAdapter) CreatePublicShare(ctx context.Context, serverID string, declaration actions.PublicShareDeclaration) error {
+	remote, err := publicShareDeclarationToContract(declaration)
+	if err != nil {
+		return err
+	}
+	result, err := adapter.client.PublicShareCreate(ctx, contract.PublicShareCreatePayload{ServerID: serverID, PublicShareDeclaration: remote})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID == "" || result.State != "active" {
+		return errors.New("daemon returned an invalid public share result")
+	}
+	return nil
+}
+
+func (adapter publicShareAdapter) UpdatePublicShare(ctx context.Context, serverID, channelID string, declaration actions.PublicShareDeclaration) error {
+	remote, err := publicShareDeclarationToContract(declaration)
+	if err != nil {
+		return err
+	}
+	result, err := adapter.client.PublicShareUpdate(ctx, contract.PublicShareUpdatePayload{ServerID: serverID, ChannelID: channelID, KeepPassword: declaration.KeepPassword, PublicShareDeclaration: remote})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "active" {
+		return errors.New("daemon returned an invalid public share update result")
+	}
+	return nil
+}
+
+func (adapter publicShareAdapter) RevokePublicShare(ctx context.Context, serverID, repoID, channelID string) error {
+	result, err := adapter.client.PublicShareRevoke(ctx, contract.PublicShareChannelPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "revoked" {
+		return errors.New("daemon returned an invalid public share revoke result")
+	}
+	return nil
+}
+
+func (adapter publicShareAdapter) DeletePublicShare(ctx context.Context, serverID, repoID, channelID string) error {
+	result, err := adapter.client.PublicShareDelete(ctx, contract.PublicShareChannelPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "deleted" {
+		return errors.New("daemon returned an invalid public share delete result")
+	}
+	return nil
+}
+
+func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration) (contract.PublicShareDeclaration, error) {
+	passwordHash := ""
+	if len(declaration.Password) > 0 {
+		var err error
+		passwordHash, err = gate.HashPassword(string(declaration.Password), nil)
+		if err != nil {
+			return contract.PublicShareDeclaration{}, err
+		}
+	}
+	objects := make([]contract.PublicShareObject, 0, len(declaration.Objects))
+	for _, object := range declaration.Objects {
+		publicID := object.PublicID
+		if publicID == "" {
+			publicID = strings.ReplaceAll(uuid.NewString(), "-", "")
+		}
+		objects = append(objects, contract.PublicShareObject{PublicID: publicID, RepoPath: object.RepoPath, DisplayName: object.DisplayName, Size: object.Size})
+	}
+	return contract.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: passwordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}, nil
+}
+
+type repositoryDetachClient interface {
+	RepoDetach(context.Context, string, string) (*contract.RepoLifecycleResult, error)
+	RepoDelete(context.Context, string, string) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryAttachClient interface {
+	RepoAttachIntent(context.Context, contract.RepoAttachIntentPayload) (*contract.RepoLifecycleResult, error)
+	RepoAttachApprove(context.Context, contract.RepoAttachApprovePayload) (*contract.RepoLifecycleResult, error)
+	RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryAttachAdapter struct{ client repositoryAttachClient }
+
+func (adapter repositoryAttachAdapter) AttachRepository(ctx context.Context, serverID, repoID, localPath string) (string, error) {
+	intent, err := adapter.client.RepoAttachIntent(ctx, contract.RepoAttachIntentPayload{ServerID: serverID, RepoID: repoID, LocalPath: localPath})
+	if err != nil {
+		return "", err
+	}
+	if intent == nil || intent.OperationID == "" {
+		return "", errors.New("daemon returned an empty repository attachment intent")
+	}
+	approved, err := adapter.client.RepoAttachApprove(ctx, contract.RepoAttachApprovePayload{OperationID: intent.OperationID, ServerID: serverID, RepoID: repoID})
+	if err != nil {
+		return "", err
+	}
+	if approved == nil || approved.OperationID != intent.OperationID {
+		return "", errors.New("daemon returned an invalid repository attachment approval")
+	}
+	return approved.OperationID, nil
+}
+
+func (adapter repositoryAttachAdapter) AttachmentStatus(ctx context.Context, operationID string) (state, lastError string, err error) {
+	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
+	if err != nil {
+		return "", "", err
+	}
+	if result == nil {
+		return "", "", errors.New("daemon returned an empty repository attachment operation")
+	}
+	return result.State, result.LastError, nil
+}
+
+type repositoryDetachAdapter struct{ client repositoryDetachClient }
+
+func (adapter repositoryDetachAdapter) DetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) error {
+	operationCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer cancel()
+	var (
+		result *contract.RepoLifecycleResult
+		err    error
+	)
+	if deleteRepository {
+		result, err = adapter.client.RepoDelete(operationCtx, serverID, repoID)
+	} else {
+		result, err = adapter.client.RepoDetach(operationCtx, serverID, repoID)
+	}
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty repository detach result")
+	}
+	expectedState := "detached"
+	if deleteRepository {
+		expectedState = "deleted"
+	}
+	if result.State != expectedState {
+		if result.LastError != "" {
+			return errors.New(result.LastError)
+		}
+		return errors.New("daemon did not complete repository detach")
+	}
+	return nil
 }
 
 type systemLifecycleClient interface {

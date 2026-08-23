@@ -186,6 +186,13 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 	if intent := <-actions; intent.Kind != tray.IntentSettings || intent.ServerID != "server-1" {
 		t.Fatalf("settings intent = %+v", intent)
 	}
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentSettings), ServerID: "server-1", RepoID: "repo-1"})
+	if !accepted.Accepted {
+		t.Fatalf("repository settings rejected: %+v", accepted)
+	}
+	if intent := <-actions; intent.Kind != tray.IntentSettings || intent.ServerID != "server-1" || intent.RepoID != "repo-1" {
+		t.Fatalf("repository settings intent = %+v", intent)
+	}
 	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentRestartFileES)})
 	if !accepted.Accepted {
 		t.Fatalf("restart rejected: %+v", accepted)

@@ -193,6 +193,9 @@ function renderRepo(repo) {
     repo.can_open ? '<button class="repo-action" data-action="open_folder" title="Otwórz lokalny folder">Otwórz</button>' : "",
     repo.can_lock ? '<button class="repo-action mutate" data-action="lock" title="Wybierz i zablokuj pliki">Zablokuj</button>' : "",
     repo.can_unlock ? '<button class="repo-action mutate" data-action="unlock" title="Wybierz i zwolnij blokady">Zwolnij</button>' : "",
+    `<button class="repo-settings" data-action="settings" title="Działania dla folderu" aria-label="Działania dla folderu ${escapeHTML(repo.display_name || repo.id)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
+    </button>`,
   ].join("");
   return `<article class="repo-row" data-repo-id="${escapeHTML(repo.id)}">
     <div class="repo-title"><span class="repo-icon">▰</span><div class="repo-name">
@@ -277,35 +280,6 @@ function renderActions(snapshot) {
   }).join("");
 }
 
-function updateCycleCountdown() {
-  const node = $("#cycle-countdown");
-  if (!currentSnapshot || !node) return;
-  if (!currentSnapshot.connected) {
-    node.textContent = "Harmonogram wstrzymany";
-    node.classList.remove("is-running");
-    return;
-  }
-  if (currentSnapshot.cycle_running) {
-    node.textContent = "Sprawdzanie teraz";
-    node.classList.add("is-running");
-    return;
-  }
-  node.classList.remove("is-running");
-  const next = new Date(currentSnapshot.next_cycle_at || "");
-  if (Number.isNaN(next.getTime())) {
-    node.textContent = "Harmonogram niedostępny";
-    return;
-  }
-  const seconds = Math.max(0, Math.ceil((next.getTime() - Date.now()) / 1000));
-  if (seconds < 60) {
-    node.textContent = seconds === 0 ? "Kolejne sprawdzenie za chwilę" : `Kolejne sprawdzenie za ${seconds} s`;
-    return;
-  }
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  node.textContent = `Kolejne sprawdzenie za ${minutes}:${String(rest).padStart(2, "0")}`;
-}
-
 function renderReservations(snapshot) {
   const card = $("#reservations-card");
   const root = $("#reservations");
@@ -367,7 +341,6 @@ function render(snapshot) {
   renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;
-  updateCycleCountdown();
   scheduleWindowFit();
 }
 
@@ -477,5 +450,3 @@ try {
 } catch (error) {
   console.error("Nie udało się pobrać projekcji FileES", error);
 }
-
-window.setInterval(updateCycleCountdown, 1000);

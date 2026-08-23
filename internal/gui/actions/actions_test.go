@@ -1495,6 +1495,22 @@ func TestControllerSettingsFromFileESMenuListsEveryServer(t *testing.T) {
 	}
 }
 
+func TestControllerRepositorySettingsFocusesOneValidatedFolder(t *testing.T) {
+	platformFake := &platformtest.Fake{}
+	view := lifecycleView(contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete, contract.CapRepoDetach, contract.CapRepoDelete)
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office", RepoID: "repo-1"})
+	deadline := time.Now().Add(time.Second)
+	for len(platformFake.Snapshot().SettingsRequests) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	requests := platformFake.Snapshot().SettingsRequests
+	if len(requests) != 1 || requests[0].FocusRepoID != "repo-1" || len(requests[0].Servers) != 1 || len(requests[0].Servers[0].Folders) != 1 || requests[0].Servers[0].Folders[0].ID != "repo-1" {
+		t.Fatalf("focused repository settings = %#v", requests)
+	}
+}
+
 func TestControllerConnectsSelectedRealmRepositoriesToFoldersSequentially(t *testing.T) {
 	attacher := &fakeRepositoryAttacher{calls: make(chan attachCall, 2)}
 	paths := []string{filepath.Join(t.TempDir(), "docs"), filepath.Join(t.TempDir(), "cad")}

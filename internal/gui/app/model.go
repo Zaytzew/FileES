@@ -71,6 +71,9 @@ type PendingAction struct {
 	Phase                     string
 	StartedAt                 time.Time
 	ExpectedSessionTimeoutMin int
+	ExpectedRepoAttached      bool
+	ExpectedRepoDetached      bool
+	ExpectedRepoDeleted       bool
 	ReservationDelta          int
 	BaselineReservations      int
 	BaselineReservationsKnown bool

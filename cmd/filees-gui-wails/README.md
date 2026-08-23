@@ -52,9 +52,10 @@ Kolory panelu dziedziczą jasny lub ciemny motyw systemowy przez
 frontendu, nie assetem Wails ani zewnętrznym GIF-em.
 
 Daemon projektuje dla każdego repozytorium własny harmonogram pracy:
-`cycle_id`, fazę oraz czas ostatniego i następnego ticka. Wails agreguje
-najbliższy termin do licznika „Kolejne sprawdzenie…”, ale nie używa zegara jako
-dowodu zakończenia działania. Lock, unlock i zwolnienie rezerwacji tworzą
+`cycle_id`, fazę oraz czas ostatniego i następnego ticka. Wails zachowuje ten
+zegar na potrzeby diagnostyki i prowadzenia badge, ale nie pokazuje użytkownikowi
+jawnego odliczania ani nie używa czasu jako dowodu zakończenia działania. Lock,
+unlock i zwolnienie rezerwacji tworzą
 badge w wspólnym modelu GUI. Po sukcesie badge przechodzi w „Potwierdzanie
 aktualnego stanu” i znika dopiero po pełnym snapshotcie, którego pobieranie
 zaczęło się po zakończeniu operacji. Refresh sprzed operacji ani częściowy
@@ -76,6 +77,17 @@ woła IPC. Pierwszą aktywną mutacją jest limit czasu transferu. Po wyborze wr
 ona do wspólnego kontrolera, używa natywnego promptu i adaptera IPC, a badge
 znika dopiero wtedy, gdy pełny snapshot pokaże żądaną liczbę minut. Pozostałe
 ustawienia są na tym etapie informacyjne i nie mają martwych przycisków.
+
+Trybik w każdym wierszu folderu otwiera trzecie, pojedyncze okno
+`Działania folderu FileES` pod `/repository.html`. Żądanie wspólnego kontrolera
+jest ograniczone do jednej pary `server_id` + `repo_id`; `RepositoryService`
+ponownie odrzuca obcy kontekst i akcję nieobecną w projekcji. Okno obsługuje
+połączenie nieprzypiętego folderu, odpięcie lokalne, trwałe usunięcie oraz
+pełną listę udziałów publicznych. Pickery, hasła i potwierdzenia destrukcyjne
+pozostają po stronie wspólnego kontrolera i natywnej platformy. Attach,
+detach i delete utrzymują badge do pełnego snapshotu pokazującego odpowiednio
+folder przypięty, odpięty albo repozytorium nieobecne. Lista udziałów po każdej
+mutacji jest ponownie pobierana przez IPC przed kolejnym pokazaniem okna.
 
 Wymagania:
 

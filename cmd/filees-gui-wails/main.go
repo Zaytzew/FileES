@@ -36,7 +36,7 @@ func main() {
 
 	daemon := ipcclient.New(*socket, "filees-gui-wails")
 	gui := newGUIService(daemon)
-	actionController := configureActions(gui, daemon, newActionPlatform())
+	actionController := configureActions(gui, daemon, reservationAdapter{client: daemon}, newActionPlatform())
 
 	host := application.New(application.Options{
 		Name:        "FileES Wails",
@@ -49,8 +49,10 @@ func main() {
 			DisableLogging: true,
 		},
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
+		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
+		Linux:   application.LinuxOptions{DisableQuitOnLastWindowClosed: true},
 	})
 
 	gui.attachEmitter(host.Event)
@@ -61,7 +63,7 @@ func main() {
 		}
 	})
 
-	host.Window.NewWithOptions(application.WebviewWindowOptions{
+	mainWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "filees-main",
 		Title:           "FileES — Wails renderer",
 		URL:             "/",
@@ -75,6 +77,7 @@ func main() {
 			NonClientRegionSupport: true,
 		},
 	})
+	configureWailsTray(host, mainWindow, gui)
 
 	if err := host.Run(); err != nil {
 		log.Fatal(err)

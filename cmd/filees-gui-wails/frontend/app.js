@@ -41,6 +41,13 @@ function dateTime(value) {
   return `Stan z ${date.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
 }
 
+function shortDateTime(value) {
+  if (!value) return "czas nieznany";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
 function renderConnection(snapshot) {
   const node = $("#connection");
   const label = node.querySelector(".connection-label");
@@ -120,6 +127,36 @@ function renderServers(snapshot) {
   </article>`).join("");
 }
 
+function renderReservations(snapshot) {
+  const card = $("#reservations-card");
+  const root = $("#reservations");
+  const reservations = snapshot.reservations || [];
+  const inventoryUnknown = Boolean(snapshot.connected) && (snapshot.servers || []).some((server) => !server.reservations_known);
+  card.hidden = reservations.length === 0 && !inventoryUnknown;
+  $("#reservations-count").textContent = inventoryUnknown ? "?" : reservations.length;
+  if (!reservations.length) {
+    root.innerHTML = inventoryUnknown ? '<p class="muted">Lista blokad jest chwilowo niedostępna.</p>' : "";
+    return;
+  }
+  root.innerHTML = reservations.map((reservation) => {
+    const flags = [
+      reservation.active_passport ? '<span class="lock-flag passport">paszport</span>' : "",
+      reservation.local_changes ? '<span class="lock-flag risk">zmiany lokalne</span>' : "",
+    ].join("");
+    const action = reservation.can_release
+      ? '<button class="reservation-action" data-action="release_reservation">Zwolnij</button>'
+      : '<span class="lock-owner">cudza</span>';
+    return `<article class="reservation-row" data-reservation-id="${escapeHTML(reservation.id)}">
+      <div class="reservation-main">
+        <strong title="${escapeHTML(reservation.path)}">${escapeHTML(reservation.path || "plik")}</strong>
+        <p>${escapeHTML(reservation.repository || reservation.repo_id)} · ${escapeHTML(reservation.owner_label || "właściciel nieustawiony")}</p>
+        <div class="lock-flags">${flags}<span>${escapeHTML(shortDateTime(reservation.created_at))}</span></div>
+      </div>
+      ${action}
+    </article>`;
+  }).join("");
+}
+
 function renderActivity(snapshot) {
   const root = $("#activity");
   const errors = (snapshot.errors || []).slice(0, 3).map((item) => ({
@@ -144,6 +181,7 @@ function render(snapshot) {
   renderMetrics(snapshot);
   renderRepositories(snapshot);
   renderServers(snapshot);
+  renderReservations(snapshot);
   renderActivity(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `projekcja #${snapshot.revision || 0}`;
@@ -163,11 +201,16 @@ function showToast(feedback) {
 }
 
 async function triggerAction(button) {
-  const row = button.closest("[data-repo-id]");
-  if (!row) return;
+  const repoRow = button.closest("[data-repo-id]");
+  const reservationRow = button.closest("[data-reservation-id]");
+  if (!repoRow && !reservationRow) return;
   button.disabled = true;
   try {
-    const result = await GUIService.Trigger({ kind: button.dataset.action, repo_id: row.dataset.repoId });
+    const result = await GUIService.Trigger({
+      kind: button.dataset.action,
+      repo_id: repoRow?.dataset.repoId || "",
+      reservation_id: reservationRow?.dataset.reservationId || "",
+    });
     if (!result.accepted) {
       showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
     }
@@ -192,6 +235,10 @@ Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
 $("#refresh").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Refresh));
 $("#reconnect").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Reconnect));
 $("#repositories").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action]");
+  if (button) triggerAction(button);
+});
+$("#reservations").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);
 });

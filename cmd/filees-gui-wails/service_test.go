@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,12 +74,18 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 		view: guiapp.ViewModel{
 			Connected: true,
 			Capabilities: map[string]bool{
-				contract.CapRepoLock: true,
+				contract.CapRepoLock:               true,
+				contract.CapRepoReservationList:    true,
+				contract.CapRepoReservationRelease: true,
 			},
 			Servers: []guiapp.ServerViewModel{{ID: "server-1", RealmID: "realm-1", RealmAlias: "acme"}},
 			Repos: []guiapp.RepoViewModel{{
 				ID: "repo-1", ServerID: "server-1", Attached: true,
 				Access: contract.AccessReadWrite, LocalPath: `E:\Projekt`,
+			}},
+			Reservations: []guiapp.Reservation{{
+				ID: "opaque-row", ServerID: "server-1", RepoID: "repo-1",
+				Path: "plan.dwg", Token: "secret-fencing-token", CanRelease: true,
 			}},
 		},
 	}
@@ -89,7 +97,40 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 	if intent := <-actions; intent.Kind != tray.IntentLock || intent.RepoID != "repo-1" {
 		t.Fatalf("intent = %+v", intent)
 	}
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentReleaseReservation), ReservationID: "opaque-row"})
+	if !accepted.Accepted {
+		t.Fatalf("reservation release rejected: %+v", accepted)
+	}
+	if intent := <-actions; intent.Kind != tray.IntentReleaseReservation || intent.ReservationID != "opaque-row" {
+		t.Fatalf("reservation intent = %+v", intent)
+	}
 	if result := service.Trigger(ActionRequest{Kind: "delete_repository", RepoID: "repo-1"}); result.Accepted || result.Code != "action_unavailable" {
 		t.Fatalf("unexpected action accepted: %+v", result)
+	}
+}
+
+func TestReservationProjectionNeverExposesFencingToken(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoReservationList: true, contract.CapRepoReservationRelease: true,
+		},
+		Servers: []guiapp.ServerViewModel{{ID: "server-1"}},
+		Repos:   []guiapp.RepoViewModel{{ID: "repo-1", ServerID: "server-1", DisplayName: "Rysunki"}},
+		Reservations: []guiapp.Reservation{{
+			ID: "safe-row-id", ServerID: "server-1", RepoID: "repo-1", Path: "plan.dwg",
+			Token: "never-send-this-token", OwnerLabel: "acme", CanRelease: true,
+		}},
+	}
+	snapshot := projectViewModel(vm)
+	if len(snapshot.Reservations) != 1 || snapshot.Reservations[0].ID != "safe-row-id" || !snapshot.Reservations[0].CanRelease {
+		t.Fatalf("reservation projection = %+v", snapshot.Reservations)
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "never-send-this-token") || strings.Contains(string(encoded), "token") {
+		t.Fatalf("fencing token leaked into renderer JSON: %s", encoded)
 	}
 }

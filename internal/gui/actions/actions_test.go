@@ -1125,6 +1125,42 @@ func TestControllerReservationsConfirmsRiskAndTokenFencesRelease(t *testing.T) {
 	}
 }
 
+func TestControllerInlineReservationReleaseResolvesOpaqueIDAndRefreshes(t *testing.T) {
+	reservation := app.Reservation{
+		ID: "safe-row-id", ServerID: "office", RepoID: "docs", WorkingCopy: "/wc/docs",
+		Path: "plan.dwg", Token: "opaque-lock-token", CanRelease: true, ActivePassport: true,
+	}
+	manager := newFakeReservations(nil)
+	refreshCh := make(chan struct{}, 1)
+	fake := &platformtest.Fake{ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+		if request.Title != "Zwolnij rezerwację" || !strings.Contains(request.Text, "aktywny paszport") {
+			t.Fatalf("confirmation=%+v", request)
+		}
+		return true, nil
+	}}
+	vm := &vmStore{}
+	vm.Store(app.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoReservationList: true, contract.CapRepoReservationRelease: true,
+		},
+		Servers:      []app.ServerViewModel{{ID: "office", Repos: []app.RepoViewModel{{ID: "docs", DisplayName: "Dokumenty"}}}},
+		Reservations: []app.Reservation{reservation},
+	})
+	intents, cancel := setup(actions.Config{
+		ViewModel: vm.Load, Prompter: fake, Notifier: fake, Reservations: manager,
+		Refresh: func() { refreshCh <- struct{}{} },
+	})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentReleaseReservation, ReservationID: reservation.ID})
+	call := awaitCh(t, manager.release, "inline reservation release")
+	if call.payload.ServerID != "office" || call.payload.RepoID != "docs" || call.payload.Path != "plan.dwg" || call.payload.ExpectedToken != reservation.Token || !call.payload.ConfirmRisk {
+		t.Fatalf("release payload=%+v", call.payload)
+	}
+	awaitCh(t, refreshCh, "post-release refresh")
+}
+
 func TestControllerReservationsReleaseAllSkipsForeignLocks(t *testing.T) {
 	first := app.Reservation{RepoID: "docs", WorkingCopy: "/wc/docs", Path: "own-a.dwg", Token: "token-a", CanRelease: true}
 	foreign := app.Reservation{RepoID: "docs", WorkingCopy: "/wc/docs", Path: "foreign.dwg", Token: "token-foreign", CanRelease: false}

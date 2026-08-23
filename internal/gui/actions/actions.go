@@ -372,6 +372,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startLockUnlock(ctx, intent.RepoID, true)
 	case tray.IntentUnlock:
 		c.startLockUnlock(ctx, intent.RepoID, false)
+	case tray.IntentReleaseReservation:
+		c.startReservationRelease(ctx, intent.ReservationID)
 	case tray.IntentReconnect:
 		if c.cfg.Reconnect != nil {
 			c.cfg.Reconnect()
@@ -2739,6 +2741,82 @@ func (c *Controller) startReservations(ctx context.Context) {
 		defer c.endOperation("reservations")
 		c.handleReservations(ctx)
 	}()
+}
+
+func (c *Controller) startReservationRelease(ctx context.Context, reservationID string) {
+	if strings.TrimSpace(reservationID) == "" || c.cfg.Reservations == nil || c.cfg.Prompter == nil || !c.beginOperation("release-reservation:"+reservationID) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation("release-reservation:" + reservationID)
+		c.handleReservationRelease(ctx, reservationID)
+	}()
+}
+
+func (c *Controller) handleReservationRelease(ctx context.Context, reservationID string) {
+	vm := c.cfg.ViewModel()
+	reservation, ok := findReservation(vm, reservationID)
+	if !ok || !reservation.CanRelease || !vm.CanReleaseReservations() || !viewHasServer(vm, reservation.ServerID) {
+		return
+	}
+
+	server, ok := findServer(vm, reservation.ServerID)
+	if !ok {
+		return
+	}
+	risk := reservation.LocalChanges || reservation.ActivePassport
+	text := fmt.Sprintf("%s\nKopia robocza: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), reservationWorkingCopyAlias(server, reservation))
+	if risk {
+		text += "\n\nTen folder ma lokalne zmiany lub aktywny paszport edycji. Otwarte programy mogą mieć niezapisane dane; FileES nie bada uchwytów otwartych przez edytory. Kontynuować świadomie?"
+	}
+	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Zwolnij rezerwację", Text: text, ConfirmText: "Zwolnij", CancelText: "Anuluj"})
+	if err != nil || !confirmed || ctx.Err() != nil {
+		return
+	}
+
+	// Resolve the opaque row again after the prompt. The ID contains the lock
+	// generation, while ExpectedToken remains entirely inside Go and fences
+	// the daemon operation against a newer lock on the same path.
+	vm = c.cfg.ViewModel()
+	reservation, ok = findReservation(vm, reservationID)
+	if !ok || !reservation.CanRelease || !vm.CanReleaseReservations() || !viewHasServer(vm, reservation.ServerID) {
+		return
+	}
+	risk = reservation.LocalChanges || reservation.ActivePassport
+	err = c.cfg.Reservations.ReleaseReservation(ctx, app.ReservationReleaseRequest{
+		ServerID: reservation.ServerID, RepoID: reservation.RepoID, Path: reservation.Path,
+		ExpectedToken: reservation.Token, ConfirmRisk: risk,
+	})
+	if err != nil {
+		if ctx.Err() == nil {
+			c.notify(ctx, platform.Notification{ID: "release_reservation." + reservation.ServerID, Group: "release_reservation." + reservation.ServerID, Title: "Nie można zwolnić rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
+		}
+		return
+	}
+	c.notify(ctx, platform.Notification{ID: "release_reservation." + reservation.ServerID, Group: "release_reservation." + reservation.ServerID, Title: "Zwolniono rezerwację", Body: reservationDisplayPath(reservation.WorkingCopy, reservation.Path), Urgency: platform.UrgencyLow})
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
+}
+
+func findReservation(vm app.ViewModel, reservationID string) (app.Reservation, bool) {
+	for _, reservation := range vm.Reservations {
+		if reservation.ID == reservationID {
+			return reservation, true
+		}
+	}
+	return app.Reservation{}, false
+}
+
+func findServer(vm app.ViewModel, serverID string) (app.ServerViewModel, bool) {
+	for _, server := range vm.Servers {
+		if server.ID == serverID {
+			return server, true
+		}
+	}
+	return app.ServerViewModel{}, false
 }
 
 func (c *Controller) beginOperation(key string) bool {

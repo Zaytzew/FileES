@@ -22,6 +22,7 @@ type appState struct {
 	activity          []ActivityViewModel
 	reservations      map[string]int
 	repoReservations  map[string]int
+	reservationItems  []Reservation
 	reservationsKnown bool
 	notices           []NoticeViewModel
 	refreshed         time.Time
@@ -54,7 +55,7 @@ func (s appState) applyConnected(caps []string) appState {
 // applyFullSnapshot atomically replaces all authoritative daemon/repository
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
-func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationsKnown bool, notices []contract.Notice, refreshed time.Time) appState {
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationItems []Reservation, reservationsKnown bool, notices []contract.Notice, refreshed time.Time) appState {
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -81,6 +82,7 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	for key, count := range repoReservationCounts {
 		s.repoReservations[key] = count
 	}
+	s.reservationItems = append([]Reservation(nil), reservationItems...)
 	s.reservationsKnown = reservationsKnown
 	s.notices = make([]NoticeViewModel, 0, len(notices))
 	for _, notice := range notices {
@@ -221,6 +223,7 @@ func (s appState) viewModel() ViewModel {
 		Capabilities: caps,
 		Repos:        repos,
 		Servers:      servers,
+		Reservations: append([]Reservation(nil), s.reservationItems...),
 		Errors:       append([]ErrorViewModel(nil), s.errors...),
 		Activity:     append([]ActivityViewModel(nil), s.activity...),
 		Notices:      append([]NoticeViewModel(nil), s.notices...),

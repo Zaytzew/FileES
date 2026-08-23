@@ -147,6 +147,7 @@ type msgFullSnapshot struct {
 	activity              []contract.ActivityRecord
 	reservationCounts     map[string]int
 	repoReservationCounts map[string]int
+	reservations          []Reservation
 	reservationsKnown     bool
 	notices               []contract.Notice
 	refreshed             time.Time
@@ -289,6 +290,7 @@ func (a *App) loop(ctx context.Context) {
 			}
 			reservationCounts := make(map[string]int)
 			repoReservationCounts := make(map[string]int)
+			reservations := make([]Reservation, 0)
 			reservationsKnown := false
 			if includeReservations {
 				reservationsKnown = true
@@ -304,7 +306,11 @@ func (a *App) loop(ctx context.Context) {
 					reservationCounts[activation.ServerID] = len(result.Reservations)
 					for _, reservation := range result.Reservations {
 						repoReservationCounts[reservationKey(activation.ServerID, reservation.RepoID)]++
+						reservations = append(reservations, projectReservation(activation.ServerID, reservation))
 					}
+				}
+				if !reservationsKnown {
+					reservations = nil
 				}
 			}
 			var notices []contract.Notice
@@ -324,7 +330,8 @@ func (a *App) loop(ctx context.Context) {
 				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos,
 					statuses: statuses, errors: errors, activity: activityRecords,
 					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
-					reservationsKnown: reservationsKnown, notices: notices, refreshed: a.cfg.Clock.Now()})
+					reservations: reservations, reservationsKnown: reservationsKnown,
+					notices: notices, refreshed: a.cfg.Clock.Now()})
 			}
 		}()
 	}
@@ -485,7 +492,7 @@ func (a *App) loop(ctx context.Context) {
 				if msg.gen != connectGen || currentSesCtx == nil {
 					break
 				}
-				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservationsKnown, msg.notices, msg.refreshed)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.reservationsKnown, msg.notices, msg.refreshed)
 				a.cfg.Backoff.Reset()
 				notify()
 				finishRefresh()

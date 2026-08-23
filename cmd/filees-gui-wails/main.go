@@ -39,6 +39,7 @@ func main() {
 	gui := newGUIService(daemon)
 	settings := newSettingsService()
 	repository := newRepositoryService()
+	prompts := newPromptService()
 	restartRequested := make(chan struct{}, 1)
 
 	host := application.New(application.Options{
@@ -48,6 +49,7 @@ func main() {
 			application.NewService(gui),
 			application.NewService(settings),
 			application.NewService(repository),
+			application.NewService(prompts),
 		},
 		Assets: application.AssetOptions{
 			Handler:        application.BundledAssetFileServer(frontend),
@@ -62,6 +64,7 @@ func main() {
 	gui.attachEmitter(host.Event)
 	settings.attachEmitter(host.Event)
 	repository.attachEmitter(host.Event)
+	prompts.attachEmitter(host.Event)
 
 	mainWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "filees-main",
@@ -107,6 +110,13 @@ func main() {
 			NonClientRegionSupport: true,
 		},
 	})
+	promptWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name: "filees-prompt", Title: "FileES", URL: "/prompt.html",
+		Width: 640, Height: 430, MinWidth: 520, MinHeight: 340,
+		Frameless: true, Hidden: true, AlwaysOnTop: true, DisableResize: true,
+		DevToolsEnabled: *devtools,
+		Windows:         application.WindowsWindow{NonClientRegionSupport: true},
+	})
 	settings.attachPresentation(func() {
 		settingsWindow.Show()
 		settingsWindow.Center()
@@ -125,11 +135,20 @@ func main() {
 		event.Cancel()
 		repository.Cancel()
 	})
+	prompts.attachPresentation(func() {
+		promptWindow.Show()
+		promptWindow.Center()
+		promptWindow.Focus()
+	}, func() { promptWindow.Hide() })
+	promptWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		prompts.Cancel()
+	})
 
 	actionController := configureActions(
 		gui, daemon, reservationAdapter{client: daemon}, stackLifecycleAdapter{client: daemon},
 		settingsBrowserRouter{server: settingsBrowserAdapter{service: settings}, repository: repositorySettingsBrowserAdapter{service: repository}},
-		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, recoveryDownloadAdapter{client: daemon}, newActionPlatform(),
+		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, recoveryDownloadAdapter{client: daemon}, newActionPlatform(), prompts,
 		func() {
 			select {
 			case restartRequested <- struct{}{}:

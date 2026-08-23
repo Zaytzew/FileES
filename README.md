@@ -484,8 +484,11 @@ Równolegle istnieje niewydawany fork `cmd/filees-gui-wails`, przypięty do
 Wails `v3.0.0-beta.6`. Nie wnosi drugiego modelu klienta: uruchamia ten sam
 `internal/gui/app`, komunikuje się wyłącznie przez `pkg/ipcclient`, a WebView
 renderuje otrzymaną projekcję i zwraca intencje. Pierwszy pion ma osobny EXE,
-statyczny frontend bez Node/Vite oraz tylko `Snapshot`, `Refresh` i
-`Reconnect`. Kryteria eksperymentu opisuje
+statyczny frontend bez Node/Vite oraz `Snapshot`, `Refresh` i `Reconnect`.
+Pierwszy pion akcyjny dodaje `Otwórz`, `Zablokuj` i `Zwolnij` przez ten sam
+`internal/gui/actions` co Fyne; JavaScript nie woła IPC. Okno Windows jest
+bezramkowe, a ukrycie scrollbara WebView nie wyłącza przewijania. Kryteria
+eksperymentu opisuje
 [`concepts/WAILS_GUI_FORK.md`](concepts/WAILS_GUI_FORK.md).
 
 ### Etapowanie implementacji

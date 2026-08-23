@@ -45,5 +45,19 @@ export function Snapshot() {
     }));
 }
 
+/**
+ * Trigger translates a closed set of browser gestures into the same intents
+ * consumed by the Fyne composition root. Acceptance means queued, never that
+ * the operation succeeded; the controller and daemon still decide the result.
+ * @param {$models.ActionRequest} request
+ * @returns {$CancellablePromise<$models.ActionAcceptance>}
+ */
+export function Trigger(request) {
+    return $Call.ByID(2848325702, request).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType1($result);
+    }));
+}
+
 // Private type creation functions
 const $$createType0 = $models.Snapshot.createFrom;
+const $$createType1 = $models.ActionAcceptance.createFrom;

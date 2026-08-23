@@ -6,6 +6,76 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "/wails/runtime.js";
 
+export class ActionAcceptance {
+    /**
+     * Creates a new ActionAcceptance instance.
+     * @param {Partial<ActionAcceptance>} [$$source = {}] - The source object to create the ActionAcceptance.
+     */
+    constructor($$source = {}) {
+        if (!("accepted" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["accepted"] = false;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["code"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ActionAcceptance instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ActionAcceptance}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ActionAcceptance(/** @type {Partial<ActionAcceptance>} */($$parsedSource));
+    }
+}
+
+export class ActionRequest {
+    /**
+     * Creates a new ActionRequest instance.
+     * @param {Partial<ActionRequest>} [$$source = {}] - The source object to create the ActionRequest.
+     */
+    constructor($$source = {}) {
+        if (!("kind" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["kind"] = "";
+        }
+        if (!("repo_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["repo_id"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ActionRequest instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ActionRequest}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ActionRequest(/** @type {Partial<ActionRequest>} */($$parsedSource));
+    }
+}
+
 export class ActivityProjection {
     /**
      * Creates a new ActivityProjection instance.
@@ -326,6 +396,27 @@ export class RepoProjection {
              * @type {number}
              */
             this["reservation_count"] = 0;
+        }
+        if (!("can_open" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_open"] = false;
+        }
+        if (!("can_lock" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_lock"] = false;
+        }
+        if (!("can_unlock" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_unlock"] = false;
         }
 
         Object.assign(this, $$source);

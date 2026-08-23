@@ -1,4 +1,4 @@
-import { Events } from "/wails/runtime.js";
+import { Events, Window } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -13,6 +13,12 @@ const stateLabels = {
   active: "Aktywne", busy: "Praca", initializing: "Start", baselining: "Baza",
   paused: "Pauza", stopping: "Stop", offline: "Offline", attention: "Uwaga",
   unattached: "Bez kopii", disabled: "Wyłączone", revoked: "Cofnięte", unknown: "Nieznane",
+};
+
+const actionErrors = {
+  actions_unavailable: "Akcje systemowe są niedostępne w tym buildzie.",
+  action_unavailable: "Ta akcja nie jest już dostępna. Stan repozytorium mógł się zmienić.",
+  action_queue_busy: "Kolejka intencji GUI jest zajęta. Spróbuj ponownie.",
 };
 
 function bytes(value) {
@@ -83,7 +89,12 @@ function renderRepositories(snapshot) {
     const revision = repo.attached ? `r${repo.local_revision || 0} / r${repo.head_revision || 0}` : "projekcja zdalna";
     const pending = repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian";
     const source = repo.local_path || repo.url || repo.id;
-    return `<article class="repo-row">
+    const actions = [
+      repo.can_open ? '<button class="repo-action" data-action="open_folder" title="Otwórz lokalny folder">Otwórz</button>' : "",
+      repo.can_lock ? '<button class="repo-action mutate" data-action="lock" title="Wybierz i zablokuj pliki">Zablokuj</button>' : "",
+      repo.can_unlock ? '<button class="repo-action mutate" data-action="unlock" title="Wybierz i zwolnij blokady">Zwolnij</button>' : "",
+    ].join("");
+    return `<article class="repo-row" data-repo-id="${escapeHTML(repo.id)}">
       <div class="repo-title"><span class="repo-icon">▰</span><div class="repo-name">
         <strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong>
         <small title="${escapeHTML(source)}">${escapeHTML(source)}</small>
@@ -91,6 +102,7 @@ function renderRepositories(snapshot) {
       <div class="repo-meta"><small>Rewizja</small><span>${escapeHTML(revision)}</span></div>
       <div class="repo-meta"><small>Kolejka</small><span>${escapeHTML(pending)}</span></div>
       <span class="state-pill ${escapeHTML(state)}">${escapeHTML(stateLabels[state] || state)}</span>
+      <div class="repo-actions">${actions}</div>
     </article>`;
   }).join("");
 }
@@ -137,6 +149,35 @@ function render(snapshot) {
   $("#revision").textContent = `projekcja #${snapshot.revision || 0}`;
 }
 
+function showToast(feedback) {
+  const root = $("#toasts");
+  const toast = document.createElement("article");
+  const level = feedback?.level || "normal";
+  toast.className = `toast ${level === "critical" ? "critical" : level === "normal" ? "normal" : "low"}`;
+  toast.innerHTML = `<strong>${escapeHTML(feedback?.title || "FileES")}</strong>${feedback?.message ? `<span>${escapeHTML(feedback.message)}</span>` : ""}`;
+  root.appendChild(toast);
+  window.setTimeout(() => {
+    toast.classList.add("is-leaving");
+    window.setTimeout(() => toast.remove(), 220);
+  }, level === "critical" ? 8000 : 4800);
+}
+
+async function triggerAction(button) {
+  const row = button.closest("[data-repo-id]");
+  if (!row) return;
+  button.disabled = true;
+  try {
+    const result = await GUIService.Trigger({ kind: button.dataset.action, repo_id: row.dataset.repoId });
+    if (!result.accepted) {
+      showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
+    }
+  } catch (error) {
+    showToast({ level: "critical", title: "Nie udało się przekazać intencji", message: error?.message || String(error) });
+  } finally {
+    window.setTimeout(() => { button.disabled = false; }, 450);
+  }
+}
+
 async function invoke(button, action) {
   button.disabled = true;
   try {
@@ -147,8 +188,19 @@ async function invoke(button, action) {
 }
 
 Events.On("filees:snapshot", (event) => render(event?.data ?? event));
+Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
 $("#refresh").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Refresh));
 $("#reconnect").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Reconnect));
+$("#repositories").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action]");
+  if (button) triggerAction(button);
+});
+$("#window-minimise").addEventListener("click", () => Window.Minimise());
+$("#window-maximise").addEventListener("click", () => Window.ToggleMaximise());
+$("#window-close").addEventListener("click", () => Window.Close());
+$("#titlebar").addEventListener("dblclick", (event) => {
+  if (!event.target.closest(".topbar-actions")) Window.ToggleMaximise();
+});
 
 try {
   render(await GUIService.Snapshot());

@@ -48,6 +48,19 @@ type PromptAcceptance struct {
 	Code     string `json:"code,omitempty"`
 }
 
+// PromptBridge is the deliberately small Wails binding surface. PromptService
+// itself also implements platform.Prompter; registering that implementation as
+// a browser service makes beta Wails inspect methods that are Go-only.
+type PromptBridge struct{ service *PromptService }
+
+func newPromptBridge(service *PromptService) *PromptBridge { return &PromptBridge{service: service} }
+
+func (bridge *PromptBridge) Snapshot() PromptSnapshot { return bridge.service.Snapshot() }
+func (bridge *PromptBridge) Resolve(choice PromptChoice) PromptAcceptance {
+	return bridge.service.Resolve(choice)
+}
+func (bridge *PromptBridge) Cancel() { bridge.service.Cancel() }
+
 func newPromptService() *PromptService { return &PromptService{} }
 
 func (service *PromptService) attachEmitter(emitter snapshotEmitter) {

@@ -27,8 +27,15 @@ func TestPromptNamedBindingsMatchFrontend(t *testing.T) {
 		}
 		t.Logf("%s=%d", name, method.ID)
 	}
-	if bindings.Get(&application.CallOptions{MethodName: "filees/cmd/filees-gui-wails.PromptBridge.Resolve"}).ID != 3660384409 {
-		t.Fatal("PromptBridge.Resolve binding ID changed; regenerate promptservice.js")
+	// UWAGA: ID liczone jest ze skrotu pelnej nazwy metody, a ta zawiera
+	// sciezke pakietu. Pod "go test" pakiet nazywa sie
+	// filees/cmd/filees-gui-wails, ale w zbudowanym pliku wykonywalnym jest
+	// to po prostu "main" - wiec ID sa tu INNE niz te, ktorych uzywa
+	// dzialajaca aplikacja. Nie wolno pinowac tutejszej wartosci jako
+	// oczekiwanej dla frontendu; frontend musi miec ID z kontekstu budowania
+	// (patrz TestPromptFrontendIncludesServiceBinding).
+	if bindings.Get(&application.CallOptions{MethodName: "filees/cmd/filees-gui-wails.PromptBridge.Resolve"}) == nil {
+		t.Fatal("PromptBridge.Resolve nie jest zwiazane")
 	}
 }
 
@@ -38,7 +45,7 @@ func TestPromptFrontendIncludesServiceBinding(t *testing.T) {
 		t.Fatalf("prompt binding missing from frontend index: %v", err)
 	}
 	module, err := frontend.ReadFile("frontend/bindings/filees/cmd/filees-gui-wails/promptservice.js")
-	if err != nil || !strings.Contains(string(module), "ByID(3660384409") {
+	if err != nil || !strings.Contains(string(module), "ByID(2590249023") {
 		t.Fatalf("prompt service module is incomplete: %v", err)
 	}
 }

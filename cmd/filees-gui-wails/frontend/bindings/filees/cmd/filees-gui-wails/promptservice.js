@@ -4,13 +4,13 @@
 import { Call as $Call } from "/wails/runtime.js";
 
 export function Snapshot() {
-    return $Call.ByID(1755424007);
+    return $Call.ByID(2105785425);
 }
 
 export function Resolve(choice) {
-    return $Call.ByID(3660384409, choice);
+    return $Call.ByID(2590249023, choice);
 }
 
 export function Cancel() {
-    return $Call.ByID(3669365241);
+    return $Call.ByID(1442486127);
 }

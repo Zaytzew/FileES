@@ -22,6 +22,13 @@ Na Windows okno jest bez natywnej ramki (`Frameless`) i ma własny pasek z
 przeciąganiem oraz kontrolkami okna. CSS ukrywa scrollbar WebView, ale nie
 wyłącza przewijania kółkiem, touchpadem ani klawiaturą.
 
+Po otrzymaniu projekcji renderer mierzy naturalną szerokość nazw i całych
+zestawów akcji. Początkowe okno tylko rośnie do rozmiaru potrzebnego panelom,
+nie przekraczając obszaru roboczego bieżącego monitora i nie ingerując w stan
+zmaksymalizowany. Ręczne zmniejszenie wyłącza dalsze automatyczne rozszerzanie;
+gdy ekran jest za mały, poziomy overflow pozostaje ograniczony do listy
+folderów zamiast ucinać przyciski pod ramką serwera.
+
 Pełna projekcja zawiera także aktywne rezerwacje plikowe. Renderer dostaje
 opaque identyfikator wiersza, opis i capability zwolnienia, ale nigdy token
 fencingowy SVN. Przycisk `Zwolnij` wraca do wspólnego kontrolera, który po

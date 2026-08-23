@@ -527,6 +527,7 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 		if repo.PendingLocalPath != "" {
 			state.SetPendingLocalPath(repo.PendingLocalPath)
 		}
+		state.SetDeletionMetadata(repo.ServerDeleted, repo.LocalCleanupPending, repo.RetainUntil, repo.RecoveryOperationID, repo.RecoveryAvailable, repo.RecoveryPending, repo.CleanupError)
 		state.SetEditingPolicy(repo.EditingPolicy)
 	}
 	s.mu.Lock()
@@ -565,6 +566,11 @@ type ProjectedRepo struct {
 	EditingPolicy                       string
 	Attached                            bool
 	PendingLocalPath                    string
+	ServerDeleted, LocalCleanupPending  bool
+	RetainUntil, RecoveryOperationID    string
+	RecoveryAvailable                   bool
+	RecoveryPending                     bool
+	CleanupError                        string
 }
 
 // NewRepoEvent builds an event envelope for the given repo.

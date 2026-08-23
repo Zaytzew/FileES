@@ -96,6 +96,44 @@ func TestDaemonProvisionerCompletesDetachAfterRemovingMetadata(t *testing.T) {
 	}
 }
 
+func TestDaemonProvisionerCleanupRetryDoesNotWaitForRecovery(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	root := filepath.Join(t.TempDir(), "wc")
+	if err := os.MkdirAll(filepath.Join(root, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record, _, err := local.EnsureConfiguredAttached("office", repoID, "svn+ssh://example/"+repoID, "rw", root, "Docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err := local.BeginDetach("office", repoID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err = local.MarkServerDeleted(deleting.OperationID, time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.RecordDetachError(record.OperationID, errors.New("recovery ticket unsupported")); err != nil {
+		t.Fatal(err)
+	}
+
+	provisioner := newDaemonProvisioner(local, nil, nil)
+	provisioner.retryLocalCleanup(t.Context(), record.OperationID)
+
+	got, ok := local.Get(record.OperationID)
+	if !ok || got.State != localrepo.StateDeleting || !got.LocalCleanupCompleted || got.RecoveryPrepared {
+		t.Fatalf("cleanup-only retry crossed a server boundary: %+v", got)
+	}
+	if _, err := os.Lstat(filepath.Join(root, ".svn")); !os.IsNotExist(err) {
+		t.Fatalf("working-copy metadata survived cleanup retry: %v", err)
+	}
+}
+
 func TestDaemonProvisionerRestoresActiveAttachmentWithoutNetwork(t *testing.T) {
 	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {
@@ -193,6 +231,37 @@ func TestDaemonProvisionerReconcilesRepositoryCreatedBoundary(t *testing.T) {
 	got, ok := local.Get(opID)
 	if !ok || got.State != localrepo.StateRepositoryCreated || got.RepoID != repoID || got.RepoURL != repoURL || got.Access != "rw" {
 		t.Fatalf("reconciled local boundary=%+v found=%v", got, ok)
+	}
+}
+
+func TestDaemonProvisionerDoesNotRollDeletionBackToCreateBoundary(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opID, repoID := uuid.NewString(), uuid.NewString()
+	record, err := local.BeginCreateOperation(opID, "spot", "Archive", filepath.Join(t.TempDir(), "wc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoURL := "svn+ssh://_filees-data@example/" + repoID
+	if _, err := local.MarkRepositoryCreated(opID, repoID, repoURL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.MarkAttached(opID, repoID); err != nil {
+		t.Fatal(err)
+	}
+	deleting, err := local.BeginDetach("spot", repoID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := newDaemonProvisioner(local, nil, nil)
+	if err := p.reconcileLocalBoundary(provisioning.Operation{OperationID: opID, RepoID: repoID, RepoURL: repoURL, State: provisioning.StateActive}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := local.Get(record.OperationID)
+	if got.State != localrepo.StateDeleting || got.DetachOperationID != deleting.DetachOperationID {
+		t.Fatalf("deletion rolled backward: %+v", got)
 	}
 }
 

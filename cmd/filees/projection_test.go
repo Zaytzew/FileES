@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"filees/pkg/clientview"
 	"filees/pkg/config"
@@ -13,6 +14,40 @@ import (
 	"filees/pkg/localrepo"
 	"filees/pkg/reposupervisor"
 )
+
+func TestSyncProjectionKnowledgeKeepsDeletedRepositoryThroughRetention(t *testing.T) {
+	serverID := "office"
+	repoID := "00000000-0000-0000-0000-000000000099"
+	lifecycle, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, _, err := lifecycle.EnsureConfiguredAttached(serverID, repoID, "svn+ssh://_filees-data@example/"+repoID, "rw", filepath.Join(t.TempDir(), "Archiwum"), "Archiwum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err := lifecycle.BeginDetach(serverID, repoID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	if _, err := lifecycle.MarkServerDeleted(record.OperationID, deadline); err != nil {
+		t.Fatal(err)
+	}
+	kit := filepath.Join(t.TempDir(), "archive.fkr")
+	if _, err := lifecycle.MarkRecoveryPrepared(record.OperationID, kit); err != nil {
+		t.Fatal(err)
+	}
+	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	state := server.RegisterProjectedRepo(repoID, "stale", "", serverID, "", "active", false)
+	view := clientview.View{RealmID: "00000000-0000-0000-0000-000000000001"}
+	syncProjectionKnowledge(server, serverID, view, nil, lifecycle)
+
+	summary := state.Summary()
+	if !summary.ServerDeleted || !summary.LocalCleanupPending || !summary.RecoveryAvailable || summary.RetainUntil != deadline || summary.RecoveryOperationID != deleting.DetachOperationID || summary.LocalPath != record.LocalPath || summary.DisplayName != "Archiwum" {
+		t.Fatalf("deleted projection=%+v", summary)
+	}
+}
 
 type projectionStop func()
 

@@ -64,6 +64,14 @@ type Record struct {
 	RelocationAdoptExisting bool   `json:"relocation_adopt_existing,omitempty"`
 	DetachOperationID       string `json:"detach_operation_id,omitempty"`
 	DeleteRepository        bool   `json:"delete_repository,omitempty"`
+	// ServerDeleteCompleted is the durable semantic boundary between the
+	// remote deletion and best-effort removal of local working-copy metadata.
+	// Once set, retries must never issue DELETE_REPOSITORY again.
+	ServerDeleteCompleted bool   `json:"server_delete_completed,omitempty"`
+	RetainUntil           string `json:"retain_until,omitempty"`
+	RecoveryPrepared      bool   `json:"recovery_prepared,omitempty"`
+	RecoveryKitPath       string `json:"recovery_kit_path,omitempty"`
+	LocalCleanupCompleted bool   `json:"local_cleanup_completed,omitempty"`
 	// ReconcileOperationID is minted fresh by BeginReconcile and reused
 	// across daemon restarts so the orchestration's own staging (named
 	// after this ID, mirroring CreateFSFS's operationID convention) is
@@ -119,6 +127,20 @@ func Open(path string) (*Store, error) {
 		return nil, errors.New("local repository lifecycle schema is invalid")
 	}
 	for _, record := range doc.Records {
+		// Historical StateDeleted records predate the three explicit receipts.
+		// They could only be reached after both remote deletion and local
+		// metadata removal, but no recoverable archive was issued. Migrate them
+		// in memory as an already-expired capability; current in-progress
+		// deletions still have to prove every boundary independently.
+		if record.State == StateDeleted {
+			if !record.ServerDeleteCompleted {
+				record.ServerDeleteCompleted = true
+				record.RetainUntil = record.UpdatedAt.UTC().Format(time.RFC3339Nano)
+				record.RecoveryPrepared = true
+				record.RecoveryKitPath = ""
+			}
+			record.LocalCleanupCompleted = true
+		}
 		if err := validate(record); err != nil {
 			return nil, err
 		}
@@ -507,6 +529,11 @@ func (s *Store) BeginDetach(serverID, repoID string, deleteRepository bool) (Rec
 	record.State = targetState
 	record.DetachOperationID = uuid.NewString()
 	record.DeleteRepository = deleteRepository
+	record.ServerDeleteCompleted = false
+	record.RetainUntil = ""
+	record.RecoveryPrepared = false
+	record.RecoveryKitPath = ""
+	record.LocalCleanupCompleted = false
 	record.LastError = ""
 	record.UpdatedAt = s.now().UTC()
 	if err := validate(record); err != nil {
@@ -518,6 +545,69 @@ func (s *Store) BeginDetach(serverID, repoID string, deleteRepository bool) (Rec
 		return Record{}, err
 	}
 	return record, nil
+}
+
+// MarkServerDeleted records the server-authoritative result before any local
+// metadata is touched. It is idempotent so a daemon restart can safely resume
+// cleanup without replaying the destructive server request.
+func (s *Store) MarkServerDeleted(operationID, retainUntil string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateDeleting || !record.DeleteRepository {
+			return errors.New("repository deletion is not in progress")
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(retainUntil))
+		if err != nil {
+			return errors.New("repository deletion retention deadline is invalid")
+		}
+		canonical := parsed.UTC().Format(time.RFC3339Nano)
+		if record.ServerDeleteCompleted {
+			if record.RetainUntil != canonical {
+				return errors.New("repository deletion retention conflicts with prior receipt")
+			}
+			return nil
+		}
+		record.ServerDeleteCompleted = true
+		record.RetainUntil = canonical
+		record.LastError = ""
+		return nil
+	})
+}
+
+// MarkRecoveryPrepared binds the deleted repository to its local recovery
+// capability. An empty kit path is valid when server retention is disabled
+// and therefore no archive exists.
+func (s *Store) MarkRecoveryPrepared(operationID, kitPath string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateDeleting || !record.ServerDeleteCompleted {
+			return errors.New("server repository deletion is not complete")
+		}
+		if kitPath != "" && !filepath.IsAbs(kitPath) {
+			return errors.New("repository recovery kit path must be absolute")
+		}
+		if record.RecoveryPrepared {
+			if record.RecoveryKitPath != kitPath {
+				return errors.New("repository recovery capability conflicts with prior receipt")
+			}
+			return nil
+		}
+		record.RecoveryPrepared = true
+		record.RecoveryKitPath = filepath.Clean(kitPath)
+		if kitPath == "" {
+			record.RecoveryKitPath = ""
+		}
+		record.LastError = ""
+		return nil
+	})
+}
+
+func (s *Store) MarkLocalCleanupCompleted(operationID string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State != StateDeleting || !record.ServerDeleteCompleted {
+			return errors.New("server repository deletion is not complete")
+		}
+		record.LocalCleanupCompleted = true
+		return nil
+	})
 }
 
 func (s *Store) CompleteDetach(operationID string) (Record, error) {
@@ -655,6 +745,25 @@ func validate(r Record) error {
 		}
 	} else if r.DetachOperationID != "" || r.DeleteRepository {
 		return errors.New("repository detach metadata exists outside detach")
+	}
+	if r.ServerDeleteCompleted {
+		if !r.DeleteRepository || (r.State != StateDeleting && r.State != StateDeleted) {
+			return errors.New("server deletion receipt exists outside repository deletion")
+		}
+		if _, err := time.Parse(time.RFC3339Nano, r.RetainUntil); err != nil {
+			return errors.New("repository deletion retention deadline is invalid")
+		}
+	} else if r.RetainUntil != "" || r.RecoveryPrepared || r.RecoveryKitPath != "" {
+		return errors.New("repository recovery metadata exists before server deletion")
+	}
+	if r.RecoveryPrepared && r.RecoveryKitPath != "" && !filepath.IsAbs(r.RecoveryKitPath) {
+		return errors.New("repository recovery kit path must be absolute")
+	}
+	if r.LocalCleanupCompleted && (!r.ServerDeleteCompleted || !r.DeleteRepository || (r.State != StateDeleting && r.State != StateDeleted)) {
+		return errors.New("local deletion cleanup receipt exists outside repository deletion")
+	}
+	if r.State == StateDeleted && (!r.ServerDeleteCompleted || !r.RecoveryPrepared || !r.LocalCleanupCompleted) {
+		return errors.New("completed repository deletion is missing a durable boundary")
 	}
 	if r.CreatedAt.IsZero() || r.UpdatedAt.Before(r.CreatedAt) {
 		return errors.New("local repository lifecycle timestamps are invalid")

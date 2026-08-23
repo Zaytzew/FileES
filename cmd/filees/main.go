@@ -183,6 +183,8 @@ func runDaemon() {
 	ipc.SetActivitySource(activityJournal)
 	provisionedAttachments := make(chan provisionedAttachment, 16)
 	provisioner := newDaemonProvisioner(lifecycleStore, provisioningStore, profiles)
+	recoveryRegistry := recoverykit.Registry{Root: filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recovery")}
+	provisioner.recoveryRegistry = recoveryRegistry
 	provisioner.attachments = provisionedAttachments
 	go provisioner.Run(ctx)
 	realmAliases := &realmAliasService{provisioner: provisioner, cache: make(map[string]ownerLabelCache)}
@@ -202,7 +204,6 @@ func runDaemon() {
 		case <-ctx.Done():
 		}
 	}})
-	recoveryRegistry := recoverykit.Registry{Root: filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "recovery")}
 	ipc.SetRealmRemovalService(realmRemovalClientService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), registry: recoveryRegistry})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
 		provisioner.AddProfile(profile)

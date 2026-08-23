@@ -2,6 +2,7 @@ package main
 
 import (
 	"sort"
+	"time"
 
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
@@ -103,6 +104,36 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	for _, key := range unprojectedLocalKeys(serverID, view, attachments) {
 		repo := attachments[key].config
 		projected = append(projected, ipcserver.ProjectedRepo{ID: key.RepoID, DisplayName: repo.ID, URL: repo.RepoURL, Access: repo.Access, State: "active", Attached: true})
+	}
+	known := make(map[string]bool, len(projected))
+	for _, repo := range projected {
+		known[repo.ID] = true
+	}
+	if lifecycle != nil {
+		now := time.Now().UTC()
+		for _, record := range lifecycle.List() {
+			if record.ServerID != serverID || !record.ServerDeleteCompleted || known[record.RepoID] {
+				continue
+			}
+			retainUntil, retainErr := time.Parse(time.RFC3339Nano, record.RetainUntil)
+			cleanupPending := record.State == localrepo.StateDeleting && !record.LocalCleanupCompleted
+			if !cleanupPending && (retainErr != nil || !now.Before(retainUntil)) {
+				continue
+			}
+			name := record.DisplayName
+			if name == "" {
+				name = record.RepoID
+			}
+			projected = append(projected, ipcserver.ProjectedRepo{
+				ID: record.RepoID, DisplayName: name, State: "deleted", OwnerRealmID: view.RealmID,
+				Attached: false, PendingLocalPath: record.LocalPath, ServerDeleted: true,
+				LocalCleanupPending: cleanupPending, RetainUntil: record.RetainUntil,
+				RecoveryOperationID: record.DetachOperationID,
+				RecoveryAvailable:   record.RecoveryPrepared && record.RecoveryKitPath != "" && retainErr == nil && now.Before(retainUntil),
+				RecoveryPending:     !record.RecoveryPrepared && retainErr == nil && now.Before(retainUntil),
+				CleanupError:        record.LastError,
+			})
+		}
 	}
 	ipc.ReconcileProjectedRepos(serverID, projected)
 	ready, pending := repositoryReadiness(serverID, view, attachments)

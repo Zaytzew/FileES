@@ -333,6 +333,17 @@ Odłączenie ma dwa rozłączne kontrakty:
   `results_root/deleted-repositories`; wynik workera zawiera dokładny
   `retain_until`. Dla `X=0` usuwa FSFS natychmiast bez tworzenia dumpa.
 
+  Sukces serwera, wydanie capability archiwum oraz lokalne usunięcie metadanych
+  WC są trzema niezależnymi, trwałymi granicami. Po sukcesie
+  `DELETE_REPOSITORY` daemon zapisuje `retain_until`, a następnie niezależnie
+  próbuje wydać kluczowany pakiet `.fkr` i usunąć `.svn`/`.filees`. Starszy
+  worker bez ticketu recovery nie blokuje lokalnego cleanupu, a blokada
+  `wc.db` nie jest raportowana jako porażka serwera. Repo pozostaje w projekcji
+  jako usunięte, z osobnym stanem oczekiwania obu skutków; tylko lokalny cleanup
+  jest automatycznie ponawiany bez ruchu sieciowego. Przy dodatniej retencji
+  panel pokazuje osobną grupę archiwów, odliczanie do zera i akcję pobrania;
+  przy retencji zero nie pokazuje martwej akcji.
+
 Repozytorium `attachment_policy=required` nie udostępnia żadnej z tych akcji.
 Lifecycle jest trwały i wznawialny po restarcie.
 

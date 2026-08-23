@@ -1,13 +1,118 @@
 package localrepo
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+func TestDeletionPersistsServerBoundaryRecoveryAndLocalCleanupSeparately(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wc := filepath.Join(t.TempDir(), "wc")
+	repoID := uuid.NewString()
+	record, _, err := store.EnsureConfiguredAttached("spot", repoID, "svn+ssh://_filees-client@example/"+repoID, "rw", wc, "Archiwum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err := store.BeginDetach("spot", repoID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().UTC().Add(30 * 24 * time.Hour).Format(time.RFC3339Nano)
+	deleting, err = store.MarkServerDeleted(deleting.OperationID, deadline)
+	if err != nil || !deleting.ServerDeleteCompleted || deleting.State != StateDeleting {
+		t.Fatalf("server boundary=%+v err=%v", deleting, err)
+	}
+	kit := filepath.Join(t.TempDir(), "recovery.fkr")
+	deleting, err = store.MarkRecoveryPrepared(deleting.OperationID, kit)
+	if err != nil || !deleting.RecoveryPrepared || deleting.RecoveryKitPath != kit {
+		t.Fatalf("recovery boundary=%+v err=%v", deleting, err)
+	}
+	if _, err := store.RecordDetachError(record.OperationID, errors.New("wc.db is in use")); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.Get(record.OperationID)
+	if !ok || !persisted.ServerDeleteCompleted || !persisted.RecoveryPrepared || persisted.LastError == "" || persisted.State != StateDeleting {
+		t.Fatalf("persisted cleanup-pending deletion=%+v", persisted)
+	}
+	if _, err := reopened.MarkLocalCleanupCompleted(record.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := reopened.CompleteDetach(record.OperationID)
+	if err != nil || completed.State != StateDeleted || completed.RetainUntil == "" || completed.RecoveryKitPath != kit {
+		t.Fatalf("completed=%+v err=%v", completed, err)
+	}
+}
+
+func TestOpenMigratesHistoricalDeletedTombstone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, _, err := store.EnsureConfiguredAttached("spot", "repo-old", "svn+ssh://example/repo-old", "rw", filepath.Join(t.TempDir(), "wc"), "Old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BeginDetach("spot", "repo-old", true); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	if _, err := store.MarkServerDeleted(record.OperationID, deadline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkRecoveryPrepared(record.OperationID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkLocalCleanupCompleted(record.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteDetach(record.OperationID); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old document
+	if err := json.Unmarshal(raw, &old); err != nil {
+		t.Fatal(err)
+	}
+	old.Records[0].ServerDeleteCompleted = false
+	old.Records[0].RetainUntil = ""
+	old.Records[0].RecoveryPrepared = false
+	old.Records[0].LocalCleanupCompleted = false
+	raw, err = json.Marshal(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrated, ok := reopened.Get(record.OperationID)
+	if !ok || !migrated.ServerDeleteCompleted || !migrated.RecoveryPrepared || !migrated.LocalCleanupCompleted || migrated.RecoveryKitPath != "" {
+		t.Fatalf("historical tombstone was not migrated: %+v", migrated)
+	}
+}
 
 func TestStorePersistsCreateAndAttachIntents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lifecycle.json")
@@ -380,6 +485,16 @@ func TestStoreDeletionRetryKeepsSameDurableOperation(t *testing.T) {
 	retry, err := store.BeginDetach("primary", "repo-1", true)
 	if err != nil || retry.DetachOperationID != deleting.DetachOperationID {
 		t.Fatalf("retry=%+v err=%v", retry, err)
+	}
+	deadline := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	if _, err := store.MarkServerDeleted(record.OperationID, deadline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkRecoveryPrepared(record.OperationID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkLocalCleanupCompleted(record.OperationID); err != nil {
+		t.Fatal(err)
 	}
 	completed, err := store.CompleteDetach(record.OperationID)
 	if err != nil || completed.State != StateDeleted || !completed.DeleteRepository {

@@ -3,6 +3,7 @@ package ipcserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -15,6 +16,8 @@ type lifecycleStub struct {
 	deleteRepository                                                                                            bool
 	statusResult                                                                                                contract.RepoLifecycleResult
 	statusErr                                                                                                   error
+	detachResult                                                                                                contract.RepoLifecycleResult
+	detachErr                                                                                                   error
 }
 
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
@@ -48,11 +51,46 @@ func (stub *lifecycleStub) BeginAttach(serverID, repoID, localPath string, requi
 func (stub *lifecycleStub) BeginDetach(_ context.Context, serverID, repoID string, deleteRepository bool) (contract.RepoLifecycleResult, error) {
 	stub.detachCalls++
 	stub.deleteRepository = deleteRepository
+	if stub.detachResult.OperationID != "" || stub.detachErr != nil {
+		return stub.detachResult, stub.detachErr
+	}
 	state := "detached"
 	if deleteRepository {
 		state = "deleted"
 	}
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, State: state}, nil
+}
+
+func TestDeleteReturnsSuccessAfterDurableServerBoundary(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{
+		detachResult: contract.RepoLifecycleResult{
+			OperationID: "op", ServerID: "office", RepoID: "repo-1", State: "deleting",
+			ServerDeleteCompleted: true, LocalCleanupCompleted: true,
+			RetainUntil: "2026-09-22T17:38:06Z", LastError: "recovery ticket unsupported",
+		},
+		detachErr: errors.New("recovery ticket unsupported"),
+	}
+	server.SetRepositoryLifecycleService(stub)
+	server.RegisterActivation(contract.ActivationStatus{
+		ServerID: "office", ClientRole: contract.ClientRoleNormal, RealmID: "realm-1",
+		CanCreateRepositories: true,
+	})
+	server.RegisterRepoAccess("repo-1", "svn://example/repo-1", "/wc/repo-1", "office", "rw")
+	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn://example/repo-1", "office", "rw", "active", "realm-1", "optional", true)
+
+	request := lifecycleRequest(contract.CmdRepoDelete, contract.RepoDetachPayload{ServerID: "office", RepoID: "repo-1"})
+	response := server.dispatch(request)
+	if response.Status != contract.StatusOK {
+		t.Fatalf("durable server deletion reported as failure: %+v", response.Error)
+	}
+	var result contract.RepoLifecycleResult
+	if err := contract.DecodeResult(response.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.ServerDeleteCompleted || !result.LocalCleanupCompleted || result.State != "deleting" {
+		t.Fatalf("result lost pending recovery state: %+v", result)
+	}
 }
 
 func (stub *lifecycleStub) Status(operationID string) (contract.RepoLifecycleResult, error) {

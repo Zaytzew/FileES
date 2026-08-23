@@ -20,18 +20,25 @@ import (
 type RepoState struct {
 	mu sync.RWMutex
 
-	server           *Server // for auto-emitting state-change events
-	id               string
-	url              string
-	localPath        string
-	serverID         string
-	access           string
-	displayName      string
-	attached         bool
-	ownerRealmID     string
-	attachmentPolicy string
-	editingPolicy    string
-	projectedState   string
+	server              *Server // for auto-emitting state-change events
+	id                  string
+	url                 string
+	localPath           string
+	serverID            string
+	access              string
+	displayName         string
+	attached            bool
+	ownerRealmID        string
+	attachmentPolicy    string
+	editingPolicy       string
+	projectedState      string
+	serverDeleted       bool
+	localCleanupPending bool
+	retainUntil         string
+	recoveryOperationID string
+	recoveryAvailable   bool
+	recoveryPending     bool
+	cleanupError        string
 
 	state        string // contract.State*
 	connectivity string // contract.Conn*
@@ -120,6 +127,18 @@ func (rs *RepoState) SetPendingLocalPath(localPath string) {
 		return
 	}
 	rs.localPath = localPath
+}
+
+func (rs *RepoState) SetDeletionMetadata(serverDeleted, cleanupPending bool, retainUntil, recoveryOperationID string, recoveryAvailable, recoveryPending bool, cleanupError string) {
+	rs.mu.Lock()
+	rs.serverDeleted = serverDeleted
+	rs.localCleanupPending = cleanupPending
+	rs.retainUntil = retainUntil
+	rs.recoveryOperationID = recoveryOperationID
+	rs.recoveryAvailable = recoveryAvailable
+	rs.recoveryPending = recoveryPending
+	rs.cleanupError = cleanupError
+	rs.mu.Unlock()
 }
 
 func (rs *RepoState) markDetached() {
@@ -460,6 +479,9 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 		State:            rs.state,
 		OwnerRealmID:     rs.ownerRealmID,
 		AttachmentPolicy: rs.attachmentPolicy,
+		ServerDeleted:    rs.serverDeleted, LocalCleanupPending: rs.localCleanupPending,
+		RetainUntil: rs.retainUntil, RecoveryOperationID: rs.recoveryOperationID,
+		RecoveryAvailable: rs.recoveryAvailable, RecoveryPending: rs.recoveryPending, CleanupError: rs.cleanupError,
 	}
 }
 

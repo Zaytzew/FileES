@@ -86,7 +86,11 @@ połączenie nieprzypiętego folderu, odpięcie lokalne, trwałe usunięcie oraz
 pełną listę udziałów publicznych. Pickery, hasła i potwierdzenia destrukcyjne
 pozostają po stronie wspólnego kontrolera i natywnej platformy. Attach,
 detach i delete utrzymują badge do pełnego snapshotu pokazującego odpowiednio
-folder przypięty, odpięty albo repozytorium nieobecne. Lista udziałów po każdej
+folder przypięty, odpięty albo repozytorium w trwałym stanie
+`server_deleted`. Usunięte repo pozostaje do końca retencji w osobnej grupie
+„Usunięte · archiwa”; renderer odlicza lokalnie przekazany przez daemon
+`retain_until`, pokazuje niezależny stan czyszczenia `.svn` i oferuje
+„Pobierz archiwum” wyłącznie przy wydanej capability recovery. Lista udziałów po każdej
 mutacji jest ponownie pobierana przez IPC przed kolejnym pokazaniem okna.
 
 Wymagania:

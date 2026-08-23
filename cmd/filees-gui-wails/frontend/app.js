@@ -13,6 +13,7 @@ const stateLabels = {
   active: "Aktywne", busy: "Praca", initializing: "Start", baselining: "Baza",
   paused: "Pauza", stopping: "Stop", offline: "Offline", attention: "Uwaga",
   unattached: "Bez kopii", disabled: "Wyłączone", revoked: "Cofnięte", unknown: "Nieznane",
+  deleted: "Archiwum",
 };
 
 const actionErrors = {
@@ -184,16 +185,40 @@ function plural(value, one, few, many) {
   return mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14) ? few : many;
 }
 
+function retentionCountdown(value) {
+  const deadline = Date.parse(value || "");
+  if (!Number.isFinite(deadline)) return "termin nieznany";
+  let seconds = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
+  if (seconds <= 0) return "wygasło";
+  const days = Math.floor(seconds / 86400); seconds %= 86400;
+  const hours = Math.floor(seconds / 3600); seconds %= 3600;
+  const minutes = Math.floor(seconds / 60); seconds %= 60;
+  const clock = [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+  return days ? `${days} ${plural(days, "dzień", "dni", "dni")} ${clock}` : clock;
+}
+
+function updateRetentionCountdowns() {
+  document.querySelectorAll("[data-retain-until]").forEach((node) => {
+    node.textContent = retentionCountdown(node.dataset.retainUntil);
+  });
+}
+
 function renderRepo(repo) {
   const state = repo.display_state || "unknown";
-  const revision = repo.attached ? `r${repo.local_revision || 0} / r${repo.head_revision || 0}` : "zdalny";
-  const pending = repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian";
+  const deleted = Boolean(repo.server_deleted);
+  const revision = deleted
+    ? `<span data-retain-until="${escapeHTML(repo.retain_until)}">${escapeHTML(retentionCountdown(repo.retain_until))}</span>`
+    : escapeHTML(repo.attached ? `r${repo.local_revision || 0} / r${repo.head_revision || 0}` : "zdalny");
+  const pending = deleted
+    ? (repo.recovery_pending && repo.local_cleanup_pending ? "archiwum i czyszczenie czekają" : repo.recovery_pending ? "wydanie archiwum czeka" : repo.local_cleanup_pending ? "czyszczenie lokalne czeka" : "folder odłączony")
+    : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");
   const source = repo.local_path || repo.url || repo.id;
   const actions = [
     repo.can_open ? '<button class="repo-action" data-action="open_folder" title="Otwórz lokalny folder">Otwórz</button>' : "",
+    repo.recovery_available ? '<button class="repo-action mutate" data-action="download_recovery" title="Pobierz archiwum usuniętego repozytorium">Pobierz archiwum</button>' : "",
     repo.can_lock ? '<button class="repo-action mutate" data-action="lock" title="Wybierz i zablokuj pliki">Zablokuj</button>' : "",
     repo.can_unlock ? '<button class="repo-action mutate" data-action="unlock" title="Wybierz i zwolnij blokady">Zwolnij</button>' : "",
-    `<button class="repo-settings" data-action="settings" title="Działania dla folderu" aria-label="Działania dla folderu ${escapeHTML(repo.display_name || repo.id)}">
+    deleted ? "" : `<button class="repo-settings" data-action="settings" title="Działania dla folderu" aria-label="Działania dla folderu ${escapeHTML(repo.display_name || repo.id)}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
     </button>`,
   ].join("");
@@ -202,8 +227,8 @@ function renderRepo(repo) {
       <strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong>
       <small title="${escapeHTML(source)}">${escapeHTML(source)}</small>
     </div></div>
-    <div class="repo-meta"><small>Rewizja</small><span>${escapeHTML(revision)}</span></div>
-    <div class="repo-meta"><small>Kolejka</small><span>${escapeHTML(pending)}</span></div>
+    <div class="repo-meta"><small>${deleted ? "Czas na pobranie" : "Rewizja"}</small><span>${revision}</span></div>
+    <div class="repo-meta"><small>${deleted ? "Stan lokalny" : "Kolejka"}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
     <span class="state-pill ${escapeHTML(state)}">${escapeHTML(stateLabels[state] || state)}</span>
     <div class="repo-actions">${actions}</div>
   </article>`;
@@ -235,9 +260,11 @@ function renderRepositories(snapshot) {
   root.innerHTML = servers.map((server) => {
     const serverRepos = repos.filter((repo) => repo.server_id === server.id);
     if (!serverRepos.length) return "";
-    const owned = serverRepos.filter((repo) => repo.ownership === "owned");
-    const guest = serverRepos.filter((repo) => repo.ownership === "guest");
-    const unclassified = serverRepos.filter((repo) => !["owned", "guest"].includes(repo.ownership));
+    const deleted = serverRepos.filter((repo) => repo.server_deleted);
+    const activeRepos = serverRepos.filter((repo) => !repo.server_deleted);
+    const owned = activeRepos.filter((repo) => repo.ownership === "owned");
+    const guest = activeRepos.filter((repo) => repo.ownership === "guest");
+    const unclassified = activeRepos.filter((repo) => !["owned", "guest"].includes(repo.ownership));
     const context = server.realm_alias || server.address || server.id;
     return `<article class="server-panel" data-server-id="${escapeHTML(server.id)}">
       <header class="server-header">
@@ -256,6 +283,7 @@ function renderRepositories(snapshot) {
         ${renderRepoGroup("Własne", owned, "owned")}
         ${renderRepoGroup("Gościnne · udostępnione przez inne zespoły", guest, "guest")}
         ${renderRepoGroup("Pozostałe", unclassified, "unclassified")}
+        ${renderRepoGroup("Usunięte · archiwa", deleted, "deleted")}
       </div>
     </article>`;
   }).join("");
@@ -342,7 +370,10 @@ function render(snapshot) {
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;
   scheduleWindowFit();
+  updateRetentionCountdowns();
 }
+
+window.setInterval(updateRetentionCountdowns, 1000);
 
 function showToast(feedback) {
   const root = $("#toasts");

@@ -69,3 +69,26 @@ func TestDraftMustBeFinalizedWithMatchingManifest(t *testing.T) {
 		t.Fatal("foreign manifest finalized recovery kit")
 	}
 }
+
+func TestUnboundDraftBindsRealmOnlyAtFinalize(t *testing.T) {
+	operationID, realmID := uuid.NewString(), uuid.NewString()
+	address := "filees.example.net:22"
+	draft, publicKey, err := CreateUnboundDraft(address, knownHostLine(address, testRecoverySigner(t).PublicKey()), operationID)
+	if err != nil || publicKey == "" || draft.RealmID != "" {
+		t.Fatalf("draft=%+v key=%q err=%v", draft, publicKey, err)
+	}
+	path := filepath.Join(t.TempDir(), "pending.fkr")
+	if err := Store(path, draft); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadDraft(path)
+	if err != nil || loaded.RealmID != "" || loaded.PublicKey != publicKey {
+		t.Fatalf("loaded=%+v err=%v", loaded, err)
+	}
+	now := time.Now().UTC()
+	manifest := repoworker.RecoveryManifest{Schema: repoworker.RecoveryManifestSchema, OperationID: operationID, RealmID: realmID, CreatedAt: now, DownloadUntil: now.Add(time.Hour), AdminGraceUntil: now.Add(time.Hour)}
+	final, err := Finalize(loaded, manifest)
+	if err != nil || final.RealmID != realmID || final.Validate(now) != nil {
+		t.Fatalf("final=%+v err=%v", final, err)
+	}
+}

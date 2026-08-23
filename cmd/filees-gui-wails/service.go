@@ -75,29 +75,36 @@ type ServerProjection struct {
 }
 
 type RepoProjection struct {
-	ID               string          `json:"id"`
-	ServerID         string          `json:"server_id"`
-	DisplayName      string          `json:"display_name"`
-	LocalPath        string          `json:"local_path,omitempty"`
-	URL              string          `json:"url,omitempty"`
-	Attached         bool            `json:"attached"`
-	Access           string          `json:"access"`
-	Ownership        string          `json:"ownership"`
-	AttachmentPolicy string          `json:"attachment_policy"`
-	State            string          `json:"state"`
-	DisplayState     string          `json:"display_state"`
-	Connectivity     string          `json:"connectivity"`
-	LocalRevision    int64           `json:"local_revision"`
-	HeadRevision     int64           `json:"head_revision"`
-	PendingFiles     int             `json:"pending_files"`
-	PendingBytes     int64           `json:"pending_bytes"`
-	Conflicts        int             `json:"conflicts"`
-	CurrentOperation string          `json:"current_operation,omitempty"`
-	ReservationCount int             `json:"reservation_count"`
-	CanOpen          bool            `json:"can_open"`
-	CanLock          bool            `json:"can_lock"`
-	CanUnlock        bool            `json:"can_unlock"`
-	Cycle            CycleProjection `json:"cycle"`
+	ID                  string          `json:"id"`
+	ServerID            string          `json:"server_id"`
+	DisplayName         string          `json:"display_name"`
+	LocalPath           string          `json:"local_path,omitempty"`
+	URL                 string          `json:"url,omitempty"`
+	Attached            bool            `json:"attached"`
+	Access              string          `json:"access"`
+	Ownership           string          `json:"ownership"`
+	AttachmentPolicy    string          `json:"attachment_policy"`
+	State               string          `json:"state"`
+	DisplayState        string          `json:"display_state"`
+	Connectivity        string          `json:"connectivity"`
+	LocalRevision       int64           `json:"local_revision"`
+	HeadRevision        int64           `json:"head_revision"`
+	PendingFiles        int             `json:"pending_files"`
+	PendingBytes        int64           `json:"pending_bytes"`
+	Conflicts           int             `json:"conflicts"`
+	CurrentOperation    string          `json:"current_operation,omitempty"`
+	ReservationCount    int             `json:"reservation_count"`
+	CanOpen             bool            `json:"can_open"`
+	CanLock             bool            `json:"can_lock"`
+	CanUnlock           bool            `json:"can_unlock"`
+	Cycle               CycleProjection `json:"cycle"`
+	ServerDeleted       bool            `json:"server_deleted,omitempty"`
+	LocalCleanupPending bool            `json:"local_cleanup_pending,omitempty"`
+	RetainUntil         string          `json:"retain_until,omitempty"`
+	RecoveryOperationID string          `json:"recovery_operation_id,omitempty"`
+	RecoveryAvailable   bool            `json:"recovery_available,omitempty"`
+	RecoveryPending     bool            `json:"recovery_pending,omitempty"`
+	CleanupError        string          `json:"cleanup_error,omitempty"`
 }
 
 type CycleProjection struct {
@@ -397,6 +404,9 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		return tray.Intent{}, false
 	}
 	switch request.Kind {
+	case string(tray.IntentDownloadRecovery):
+		allowed := repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != ""
+		return tray.Intent{Kind: tray.IntentDownloadRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed
 	case string(tray.IntentOpenFolder):
 		return tray.Intent{Kind: tray.IntentOpenFolder, RepoID: repo.ID}, repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
 	case string(tray.IntentLock):
@@ -517,7 +527,10 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
 			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock,
-			Cycle: CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
+			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
+			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
+			RetainUntil: repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
+			RecoveryAvailable: repo.RecoveryAvailable, RecoveryPending: repo.RecoveryPending, CleanupError: repo.CleanupError,
 		})
 		if repo.Cycle.Phase == contract.CycleRunning {
 			result.CycleRunning = true

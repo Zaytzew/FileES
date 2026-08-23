@@ -25,12 +25,17 @@ const Schema = "filees.control/v1"
 type TicketType string
 
 const (
-	TicketCreateRepository   TicketType = "CREATE_REPOSITORY"
-	TicketInitialCommit      TicketType = "INITIAL_COMMIT"
-	TicketStoragePreflight   TicketType = "STORAGE_PREFLIGHT"
-	TicketDeleteRepository   TicketType = "DELETE_REPOSITORY"
-	TicketClaimRealmAlias    TicketType = "CLAIM_REALM_ALIAS"
-	TicketResolveOwnerLabels TicketType = "RESOLVE_OWNER_LABELS"
+	TicketCreateRepository TicketType = "CREATE_REPOSITORY"
+	TicketInitialCommit    TicketType = "INITIAL_COMMIT"
+	TicketStoragePreflight TicketType = "STORAGE_PREFLIGHT"
+	TicketDeleteRepository TicketType = "DELETE_REPOSITORY"
+	// TicketPrepareRepositoryRecovery publishes a capability for an already
+	// completed DELETE_REPOSITORY operation. Keeping it separate lets older
+	// deletion receipts (and retries after a client crash) acquire recovery
+	// access without replaying the destructive request.
+	TicketPrepareRepositoryRecovery TicketType = "PREPARE_REPOSITORY_RECOVERY"
+	TicketClaimRealmAlias           TicketType = "CLAIM_REALM_ALIAS"
+	TicketResolveOwnerLabels        TicketType = "RESOLVE_OWNER_LABELS"
 	// TicketClientDeactivate lets an authenticated installation permanently remove
 	// itself from a server. The server derives the target client from the SSH
 	// session; the ticket carries no target ID beyond the required session
@@ -133,6 +138,13 @@ type DeleteRepositoryPayload struct {
 type DeleteRepositoryResult struct {
 	RepoID      string `json:"repo_id"`
 	RetainUntil string `json:"retain_until"`
+}
+type PrepareRepositoryRecoveryPayload struct {
+	RepoID            string `json:"repo_id"`
+	RecoveryPublicKey string `json:"recovery_public_key"`
+}
+type PrepareRepositoryRecoveryResult struct {
+	Manifest RealmRecoveryManifest `json:"manifest"`
 }
 type StoragePreflightPayload struct {
 	ContentBytes int64 `json:"content_bytes"`
@@ -497,6 +509,17 @@ func (t Ticket) Validate() error {
 		if err := validateUUID("DELETE_REPOSITORY payload.repo_id", p.RepoID); err != nil {
 			return err
 		}
+	case TicketPrepareRepositoryRecovery:
+		var p PrepareRepositoryRecoveryPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("PREPARE_REPOSITORY_RECOVERY payload: %w", err)
+		}
+		if err := validateUUID("PREPARE_REPOSITORY_RECOVERY payload.repo_id", p.RepoID); err != nil {
+			return err
+		}
+		if err := validateRecoveryPublicKey(p.RecoveryPublicKey); err != nil {
+			return fmt.Errorf("PREPARE_REPOSITORY_RECOVERY recovery_public_key: %w", err)
+		}
 	case TicketMobilePairing:
 		var p MobilePairingPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -740,7 +763,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketSetRepositoryEditingPolicy {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketSetRepositoryEditingPolicy {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -803,6 +826,14 @@ func validateSuccessPayload(r Result) error {
 		}
 		if _, err := time.Parse(time.RFC3339Nano, result.RetainUntil); err != nil {
 			return fmt.Errorf("invalid DELETE_REPOSITORY retain_until: %w", err)
+		}
+	case TicketPrepareRepositoryRecovery:
+		var result PrepareRepositoryRecoveryResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("PREPARE_REPOSITORY_RECOVERY result: %w", err)
+		}
+		if err := validateRealmRecoveryManifest(result.Manifest); err != nil {
+			return err
 		}
 	case TicketMobilePairing:
 		var result MobilePairingResult

@@ -726,6 +726,34 @@ export class RepoProjection {
              */
             this["can_unlock"] = false;
         }
+        if (/** @type {any} */(false)) {
+            /** @member @type {boolean | undefined} */
+            this["server_deleted"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /** @member @type {boolean | undefined} */
+            this["local_cleanup_pending"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /** @member @type {string | undefined} */
+            this["retain_until"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /** @member @type {string | undefined} */
+            this["recovery_operation_id"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /** @member @type {boolean | undefined} */
+            this["recovery_available"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /** @member @type {boolean | undefined} */
+            this["recovery_pending"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /** @member @type {string | undefined} */
+            this["cleanup_error"] = undefined;
+        }
         if (!("cycle" in $$source)) {
             /**
              * @member

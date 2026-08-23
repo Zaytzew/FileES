@@ -119,8 +119,15 @@ func serveRecovery(config serverconfig.Config, operationID string, stdin io.Read
 		fmt.Fprintln(stderr, "filees recovery: archive not found")
 		return ExitUnavailable
 	}
-	deleteOperationID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(operationID+":"+archive.RepoID+":delete")).String()
+	// Ordinary repository deletion uses the manifest operation directly.
+	// Realm removal predates that capability and derives one delete operation
+	// per repository; retain the fallback for its multi-archive manifests.
+	deleteOperationID := operationID
 	file, err := repoworker.OpenDeletionRecoveryArchive(effectiveDeletionArchiveRoot(config), deleteOperationID, *archive)
+	if err != nil {
+		deleteOperationID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(operationID+":"+archive.RepoID+":delete")).String()
+		file, err = repoworker.OpenDeletionRecoveryArchive(effectiveDeletionArchiveRoot(config), deleteOperationID, *archive)
+	}
 	if err != nil {
 		report(stderr, "filees recovery archive", err)
 		return ExitData

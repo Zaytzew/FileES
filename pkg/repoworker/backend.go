@@ -49,6 +49,46 @@ type deleteBackendRecord struct {
 	RetainUntil string `json:"retain_until,omitempty"`
 }
 
+// DeletedRepositoryReceipt proves that one authenticated realm completed the
+// exact destructive operation whose retained dump is about to be exposed.
+type DeletedRepositoryReceipt struct {
+	OperationID string
+	RealmID     string
+	RepoID      string
+	RetainUntil time.Time
+}
+
+func (b *DurableBackend) DeletedRepository(operationID, realmID, repoID string) (DeletedRepositoryReceipt, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !filepath.IsAbs(b.Root) {
+		return DeletedRepositoryReceipt{}, errors.New("repository backend is incomplete")
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return DeletedRepositoryReceipt{}, err
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return DeletedRepositoryReceipt{}, err
+	}
+	if _, err := uuid.Parse(repoID); err != nil {
+		return DeletedRepositoryReceipt{}, err
+	}
+	path := filepath.Join(b.Root, "delete-"+operationID+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return DeletedRepositoryReceipt{}, err
+	}
+	var record deleteBackendRecord
+	if err := json.Unmarshal(raw, &record); err != nil || record.OperationID != operationID || record.RealmID != realmID || record.RepoID != repoID || record.Stage != "deleted" {
+		return DeletedRepositoryReceipt{}, errors.New("repository deletion receipt is unavailable")
+	}
+	retainUntil, err := time.Parse(time.RFC3339Nano, record.RetainUntil)
+	if err != nil {
+		return DeletedRepositoryReceipt{}, errors.New("repository deletion receipt is invalid")
+	}
+	return DeletedRepositoryReceipt{OperationID: operationID, RealmID: realmID, RepoID: repoID, RetainUntil: retainUntil}, nil
+}
+
 func (b *DurableBackend) Create(ctx context.Context, op, realm, name string) (Repository, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

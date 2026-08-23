@@ -400,6 +400,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startJournal(ctx)
 	case tray.IntentRecoveries:
 		c.startRecoverySettings(ctx)
+	case tray.IntentDownloadRecovery:
+		c.startRecoveryDownload(ctx, intent.RecoveryOperationID)
 	case tray.IntentReservations:
 		c.startReservations(ctx)
 	case tray.IntentCreateRepository:
@@ -1239,7 +1241,7 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		if err := c.cfg.RepositoryDetacher.DetachRepository(ctx, serverID, repoID, deleteRepository); err != nil {
 			c.finishProjectedAction(actionID)
 			if ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: "Nie udało się odłączyć repozytorium", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: "Działanie wymaga dokończenia", Body: actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			}
 			return
 		}

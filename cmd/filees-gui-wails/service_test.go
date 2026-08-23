@@ -67,6 +67,29 @@ func TestProjectViewModelClassifiesOwnershipWithoutExposingRealmIDs(t *testing.T
 	}
 }
 
+func TestDeletedRepositoryProjectsRetentionAndRecoveryIntent(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Servers: []guiapp.ServerViewModel{{ID: "spot"}},
+		Repos: []guiapp.RepoViewModel{{
+			ID: "gone", ServerID: "spot", DisplayName: "Archiwum", State: "deleted",
+			ServerDeleted: true, LocalCleanupPending: true,
+			RetainUntil: "2026-09-22T12:00:00Z", RecoveryOperationID: "delete-op", RecoveryAvailable: true,
+		}},
+	}
+	projected := projectViewModel(vm)
+	if len(projected.Repositories) != 1 {
+		t.Fatalf("repositories=%#v", projected.Repositories)
+	}
+	repo := projected.Repositories[0]
+	if repo.DisplayState != "deleted" || !repo.ServerDeleted || !repo.LocalCleanupPending || !repo.RecoveryAvailable || repo.RecoveryOperationID != "delete-op" {
+		t.Fatalf("deleted projection=%+v", repo)
+	}
+	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentDownloadRecovery), RepoID: "gone"})
+	if !allowed || intent.Kind != tray.IntentDownloadRecovery || intent.RecoveryOperationID != "delete-op" || intent.ServerID != "spot" {
+		t.Fatalf("recovery intent=%+v allowed=%v", intent, allowed)
+	}
+}
+
 func TestProjectViewModelBuildsSharedJournalWithTranslatedAndExactTime(t *testing.T) {
 	now := time.Date(2026, 8, 23, 14, 0, 0, 0, time.Local)
 	vm := guiapp.ViewModel{

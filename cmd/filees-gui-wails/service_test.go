@@ -45,6 +45,28 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	}
 }
 
+func TestProjectViewModelClassifiesOwnershipWithoutExposingRealmIDs(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Servers: []guiapp.ServerViewModel{{ID: "server", RealmID: "realm-local"}},
+		Repos: []guiapp.RepoViewModel{
+			{ID: "own", ServerID: "server", OwnerRealmID: "realm-local"},
+			{ID: "guest", ServerID: "server", OwnerRealmID: "realm-foreign"},
+			{ID: "unknown", ServerID: "server"},
+		},
+	}
+	got := projectViewModel(vm)
+	if got.Repositories[0].Ownership != "owned" || got.Repositories[1].Ownership != "guest" || got.Repositories[2].Ownership != "unclassified" {
+		t.Fatalf("ownership projection = %#v", got.Repositories)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "realm-local") || strings.Contains(string(encoded), "realm-foreign") {
+		t.Fatalf("raw realm IDs leaked into renderer JSON: %s", encoded)
+	}
+}
+
 func TestProjectViewModelBuildsSharedJournalWithTranslatedAndExactTime(t *testing.T) {
 	now := time.Date(2026, 8, 23, 14, 0, 0, 0, time.Local)
 	vm := guiapp.ViewModel{

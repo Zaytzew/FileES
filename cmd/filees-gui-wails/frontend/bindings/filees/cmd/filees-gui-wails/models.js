@@ -404,6 +404,13 @@ export class RepoProjection {
              */
             this["access"] = "";
         }
+        if (!("ownership" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["ownership"] = "";
+        }
         if (!("attachment_policy" in $$source)) {
             /**
              * @member

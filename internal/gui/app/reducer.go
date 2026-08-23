@@ -15,7 +15,8 @@ type appState struct {
 	caps              map[string]bool
 	summaries         map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
 	snapshots         map[string]contract.RepoStatus  // from repo.status; carries live state
-	order             []string                        // repoID insertion order from repo.list
+	order             []string                        // stable repoID first-seen order
+	serverOrder       []string                        // stable serverID first-seen order
 	lastSeq           int64                           // last event sequence number received
 	system            contract.SystemStatusResult
 	errors            []ErrorViewModel
@@ -63,6 +64,7 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	}
 	s.snapshots = next
 	s.system = system
+	s = s.rememberServerOrder(system, repos, statuses)
 	s.errors = make([]ErrorViewModel, 0, len(records))
 	for _, record := range records {
 		s.errors = append(s.errors, ErrorViewModel{
@@ -124,16 +126,46 @@ func (s appState) applyStale() appState {
 	return s
 }
 
-// applyRepoList sets the canonical repository order and initialises missing summary entries.
+// applyRepoList replaces the current repository inventory while preserving the
+// first-seen presentation slot of every repository. A temporarily absent repo
+// is not rendered, but keeps its rank if a later snapshot brings it back.
 func (s appState) applyRepoList(repos []contract.RepoSummary) appState {
 	newSummaries := make(map[string]contract.RepoSummary, len(repos))
-	order := make([]string, 0, len(repos))
+	known := make(map[string]bool, len(s.order)+len(repos))
+	for _, id := range s.order {
+		known[id] = true
+	}
 	for _, r := range repos {
 		newSummaries[r.ID] = r
-		order = append(order, r.ID)
+		if !known[r.ID] {
+			s.order = append(s.order, r.ID)
+			known[r.ID] = true
+		}
 	}
 	s.summaries = newSummaries
-	s.order = order
+	return s
+}
+
+func (s appState) rememberServerOrder(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus) appState {
+	known := make(map[string]bool, len(s.serverOrder)+len(system.Activations)+len(repos)+len(statuses))
+	for _, id := range s.serverOrder {
+		known[id] = true
+	}
+	remember := func(id string) {
+		if id != "" && !known[id] {
+			s.serverOrder = append(s.serverOrder, id)
+			known[id] = true
+		}
+	}
+	for _, activation := range system.Activations {
+		remember(activation.ServerID)
+	}
+	for _, repo := range repos {
+		remember(repo.ServerID)
+	}
+	for _, status := range statuses {
+		remember(status.ServerID)
+	}
 	return s
 }
 
@@ -171,12 +203,19 @@ func (s appState) applyEvent(ev contract.Event) (appState, bool, string) {
 func (s appState) viewModel() ViewModel {
 	repos := make([]RepoViewModel, 0, len(s.order))
 	for _, id := range s.order {
-		sum := s.summaries[id]
+		sum, present := s.summaries[id]
+		if !present {
+			continue
+		}
 		snap := s.snapshots[id]
+		serverID := snap.ServerID
+		if serverID == "" {
+			serverID = sum.ServerID
+		}
 		repos = append(repos, RepoViewModel{
 			ID:               id,
 			DisplayName:      sum.DisplayName,
-			ServerID:         snap.ServerID,
+			ServerID:         serverID,
 			Attached:         sum.Attached,
 			Access:           snap.Access,
 			OwnerRealmID:     snap.OwnerRealmID,
@@ -195,20 +234,39 @@ func (s appState) viewModel() ViewModel {
 			ReservationCount: s.repoReservations[reservationKey(sum.ServerID, sum.ID)],
 		})
 	}
-	servers := make([]ServerViewModel, 0, len(s.system.Activations))
-	byServer := make(map[string]int, len(s.system.Activations))
+	serverByID := make(map[string]ServerViewModel, len(s.system.Activations))
 	for _, activation := range s.system.Activations {
-		byServer[activation.ServerID] = len(servers)
-		servers = append(servers, ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, RealmAlias: activation.RealmAlias, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, SessionTimeoutMin: activation.SessionTimeoutMin, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.reservationsKnown})
+		serverByID[activation.ServerID] = ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, RealmAlias: activation.RealmAlias, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, SessionTimeoutMin: activation.SessionTimeoutMin, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.reservationsKnown}
 	}
 	for _, repo := range repos {
-		index, ok := byServer[repo.ServerID]
+		server, ok := serverByID[repo.ServerID]
 		if !ok {
-			byServer[repo.ServerID] = len(servers)
-			servers = append(servers, ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID, ReservationCount: s.reservations[repo.ServerID], ReservationsKnown: s.reservationsKnown})
-			index = len(servers) - 1
+			server = ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID, ReservationCount: s.reservations[repo.ServerID], ReservationsKnown: s.reservationsKnown}
 		}
-		servers[index].Repos = append(servers[index].Repos, repo)
+		server.Repos = append(server.Repos, repo)
+		serverByID[repo.ServerID] = server
+	}
+	servers := make([]ServerViewModel, 0, len(serverByID))
+	appended := make(map[string]bool, len(serverByID))
+	for _, id := range s.serverOrder {
+		if server, present := serverByID[id]; present {
+			servers = append(servers, server)
+			appended[id] = true
+		}
+	}
+	// Keep viewModel useful in focused reducer tests and for any future partial
+	// state construction that did not pass through applyFullSnapshot.
+	for _, activation := range s.system.Activations {
+		if !appended[activation.ServerID] {
+			servers = append(servers, serverByID[activation.ServerID])
+			appended[activation.ServerID] = true
+		}
+	}
+	for _, repo := range repos {
+		if !appended[repo.ServerID] {
+			servers = append(servers, serverByID[repo.ServerID])
+			appended[repo.ServerID] = true
+		}
 	}
 	caps := make(map[string]bool, len(s.caps))
 	for k, v := range s.caps {

@@ -75,6 +75,7 @@ type RepoProjection struct {
 	URL              string `json:"url,omitempty"`
 	Attached         bool   `json:"attached"`
 	Access           string `json:"access"`
+	Ownership        string `json:"ownership"`
 	AttachmentPolicy string `json:"attachment_policy"`
 	State            string `json:"state"`
 	DisplayState     string `json:"display_state"`
@@ -399,6 +400,10 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			SessionTimeoutMinutes: server.SessionTimeoutMin,
 		})
 	}
+	serversByID := make(map[string]guiapp.ServerViewModel, len(vm.Servers))
+	for _, server := range vm.Servers {
+		serversByID[server.ID] = server
+	}
 	for _, repo := range vm.Repos {
 		operation := ""
 		if repo.CurrentOp != nil {
@@ -407,10 +412,18 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		canOpen := repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
 		canLock := vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
 		canUnlock := vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
+		ownership := "unclassified"
+		if server, ok := serversByID[repo.ServerID]; ok && server.RealmID != "" && repo.OwnerRealmID != "" {
+			if server.Owns(repo) {
+				ownership = "owned"
+			} else {
+				ownership = "guest"
+			}
+		}
 		result.Repositories = append(result.Repositories, RepoProjection{
 			ID: repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,
 			LocalPath: repo.LocalPath, URL: repo.URL, Attached: repo.Attached,
-			Access: repo.Access, AttachmentPolicy: repo.AttachmentPolicy,
+			Access: repo.Access, Ownership: ownership, AttachmentPolicy: repo.AttachmentPolicy,
 			State: repo.State, DisplayState: string(repo.DisplayState()), Connectivity: repo.Connectivity,
 			LocalRevision: repo.LocalRev, HeadRevision: repo.HeadRev,
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted,

@@ -33,6 +33,17 @@ Przycisk `Dziennik` rozwija w panelu tę samą chronologię, którą Fyne buduje
 repozytorium. Nowy błąd łączności trafia do dziennika dopiero po 45 sekundach
 trwałej awarii; wcześniej wystarcza natychmiastowa ikona stanu.
 
+Foldery zachowują slot pierwszego wykrycia pomiędzy kolejnymi snapshotami;
+chwilowe zniknięcie nie usuwa zapamiętanej pozycji, ale nie zostawia pustego
+wiersza. Ta sama reguła stabilizuje kolejność serwerów we wszystkich
+rendererach wspólnego modelu. Wails grupuje foldery pod nagłówkiem serwera, a
+wewnątrz rozdziela własne, gościnne i niezaklasyfikowane. WebView dostaje tylko
+bezpieczną etykietę własności, nigdy surowy identyfikator realmu.
+
+Kolory panelu dziedziczą jasny lub ciemny motyw systemowy przez
+`prefers-color-scheme`. Radar w bannerze jest animacją CSS należącą do tego
+frontendu, nie assetem Wails ani zewnętrznym GIF-em.
+
 Proces tworzy własny tray Wails z ikoną bieżącego stanu, liczbą repozytoriów i
 blokad. Pozycja `Pokaż panel` przywraca okno, a jego zamknięcie ukrywa je do
 traya. Podmenu `FileES` zawiera kontrolowany restart oraz `Zakończ…`. Obie

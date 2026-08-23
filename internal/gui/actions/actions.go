@@ -310,6 +310,13 @@ type Config struct {
 	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
 	// after a successful mutation whose result changes tray eligibility.
 	Refresh func()
+	// ActionLifecycle keeps renderer badges alive until a full daemon snapshot
+	// started after a successful mutation has been applied. Nil preserves the
+	// legacy fire-and-refresh behaviour used by renderers without badges.
+	ActionLifecycle interface {
+		AwaitActionProjection(string)
+		FinishAction(string)
+	}
 	// PrepareRestart suppresses the intentional daemon disconnect before a
 	// user-confirmed restart request reaches IPC. AbortRestart restores normal
 	// notifications if that request is rejected.
@@ -369,11 +376,11 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	case tray.IntentOpenFolder:
 		c.startOpenFolder(ctx, intent.RepoID)
 	case tray.IntentLock:
-		c.startLockUnlock(ctx, intent.RepoID, true)
+		c.startLockUnlock(ctx, intent.RepoID, true, intent.ActionID)
 	case tray.IntentUnlock:
-		c.startLockUnlock(ctx, intent.RepoID, false)
+		c.startLockUnlock(ctx, intent.RepoID, false, intent.ActionID)
 	case tray.IntentReleaseReservation:
-		c.startReservationRelease(ctx, intent.ReservationID)
+		c.startReservationRelease(ctx, intent.ReservationID, intent.ActionID)
 	case tray.IntentReconnect:
 		if c.cfg.Reconnect != nil {
 			c.cfg.Reconnect()
@@ -2710,16 +2717,21 @@ func (c *Controller) startOpenFolder(ctx context.Context, repoID string) {
 	}()
 }
 
-func (c *Controller) startLockUnlock(ctx context.Context, repoID string, lock bool) {
+func (c *Controller) startLockUnlock(ctx context.Context, repoID string, lock bool, actionID string) {
 	key := "mutate:" + repoID
 	if repoID == "" || !c.beginOperation(key) {
+		c.finishProjectedAction(actionID)
 		return
 	}
 	c.tasks.Add(1)
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation(key)
-		c.handleLockUnlock(ctx, repoID, lock)
+		if c.handleLockUnlock(ctx, repoID, lock) {
+			c.awaitProjectedAction(actionID)
+		} else {
+			c.finishProjectedAction(actionID)
+		}
 	}()
 }
 
@@ -2735,28 +2747,33 @@ func (c *Controller) startReservations(ctx context.Context) {
 	}()
 }
 
-func (c *Controller) startReservationRelease(ctx context.Context, reservationID string) {
+func (c *Controller) startReservationRelease(ctx context.Context, reservationID, actionID string) {
 	if strings.TrimSpace(reservationID) == "" || c.cfg.Reservations == nil || c.cfg.Prompter == nil || !c.beginOperation("release-reservation:"+reservationID) {
+		c.finishProjectedAction(actionID)
 		return
 	}
 	c.tasks.Add(1)
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation("release-reservation:" + reservationID)
-		c.handleReservationRelease(ctx, reservationID)
+		if c.handleReservationRelease(ctx, reservationID) {
+			c.awaitProjectedAction(actionID)
+		} else {
+			c.finishProjectedAction(actionID)
+		}
 	}()
 }
 
-func (c *Controller) handleReservationRelease(ctx context.Context, reservationID string) {
+func (c *Controller) handleReservationRelease(ctx context.Context, reservationID string) bool {
 	vm := c.cfg.ViewModel()
 	reservation, ok := findReservation(vm, reservationID)
 	if !ok || !reservation.CanRelease || !vm.CanReleaseReservations() || !viewHasServer(vm, reservation.ServerID) {
-		return
+		return false
 	}
 
 	server, ok := findServer(vm, reservation.ServerID)
 	if !ok {
-		return
+		return false
 	}
 	risk := reservation.LocalChanges || reservation.ActivePassport
 	text := fmt.Sprintf("%s\nKopia robocza: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), reservationWorkingCopyAlias(server, reservation))
@@ -2765,7 +2782,7 @@ func (c *Controller) handleReservationRelease(ctx context.Context, reservationID
 	}
 	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Zwolnij rezerwację", Text: text, ConfirmText: "Zwolnij", CancelText: "Anuluj"})
 	if err != nil || !confirmed || ctx.Err() != nil {
-		return
+		return false
 	}
 
 	// Resolve the opaque row again after the prompt. The ID contains the lock
@@ -2774,7 +2791,7 @@ func (c *Controller) handleReservationRelease(ctx context.Context, reservationID
 	vm = c.cfg.ViewModel()
 	reservation, ok = findReservation(vm, reservationID)
 	if !ok || !reservation.CanRelease || !vm.CanReleaseReservations() || !viewHasServer(vm, reservation.ServerID) {
-		return
+		return false
 	}
 	risk = reservation.LocalChanges || reservation.ActivePassport
 	err = c.cfg.Reservations.ReleaseReservation(ctx, app.ReservationReleaseRequest{
@@ -2785,12 +2802,10 @@ func (c *Controller) handleReservationRelease(ctx context.Context, reservationID
 		if ctx.Err() == nil {
 			c.notify(ctx, platform.Notification{ID: "release_reservation." + reservation.ServerID, Group: "release_reservation." + reservation.ServerID, Title: "Nie można zwolnić rezerwacji", Body: err.Error(), Urgency: platform.UrgencyNormal})
 		}
-		return
+		return false
 	}
 	c.notify(ctx, platform.Notification{ID: "release_reservation." + reservation.ServerID, Group: "release_reservation." + reservation.ServerID, Title: "Zwolniono rezerwację", Body: reservationDisplayPath(reservation.WorkingCopy, reservation.Path), Urgency: platform.UrgencyLow})
-	if c.cfg.Refresh != nil {
-		c.cfg.Refresh()
-	}
+	return true
 }
 
 func findReservation(vm app.ViewModel, reservationID string) (app.Reservation, bool) {
@@ -2847,17 +2862,17 @@ func (c *Controller) handleOpenFolder(ctx context.Context, repoID string) {
 	}
 }
 
-func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock bool) {
+func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock bool) bool {
 	vm := c.cfg.ViewModel()
 	if !canMutate(vm, lock) {
-		return
+		return false
 	}
 	repo, ok := findRepo(vm, repoID)
 	if !ok || repo.LocalPath == "" || !repo.CanWrite() {
-		return
+		return false
 	}
 	if !lock && repo.ReservationCount == 0 {
-		return
+		return false
 	}
 
 	var opName, pickerTitle, successNoun string
@@ -2875,7 +2890,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 	})
 	if err != nil {
 		if ctx.Err() != nil {
-			return
+			return false
 		}
 		c.notify(ctx, platform.Notification{
 			ID:      opName + "." + repoID,
@@ -2884,21 +2899,21 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 			Body:    err.Error(),
 			Urgency: platform.UrgencyNormal,
 		})
-		return
+		return false
 	}
 	if result.Cancelled || len(result.Paths) == 0 {
-		return
+		return false
 	}
 
 	// Re-check the full mutable state: the daemon or repository configuration
 	// may have changed while the native picker was open.
 	vm = c.cfg.ViewModel()
 	if !canMutate(vm, lock) {
-		return
+		return false
 	}
 	currentRepo, ok := findRepo(vm, repoID)
 	if !ok || !currentRepo.CanWrite() || currentRepo.LocalPath == "" || filepath.Clean(currentRepo.LocalPath) != filepath.Clean(repo.LocalPath) {
-		return
+		return false
 	}
 	paths, err := platform.ValidatePickedPaths(currentRepo.LocalPath, result.Paths)
 	if err != nil || len(paths) == 0 {
@@ -2911,7 +2926,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 				Urgency: platform.UrgencyNormal,
 			})
 		}
-		return
+		return false
 	}
 
 	var opErr error
@@ -2921,7 +2936,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		_, opErr = c.cfg.Locker.Unlock(ctx, repoID, paths)
 	}
 	if ctx.Err() != nil {
-		return
+		return false
 	}
 	if opErr != nil {
 		title, body, urgency := operationErrorPresentation(opName, opErr)
@@ -2932,7 +2947,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 			Body:    body,
 			Urgency: urgency,
 		})
-		return
+		return false
 	}
 	c.notify(ctx, platform.Notification{
 		ID:      opName + "." + repoID,
@@ -2941,9 +2956,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		Body:    lockNotificationPaths(repo.LocalPath, paths),
 		Urgency: platform.UrgencyLow,
 	})
-	if c.cfg.Refresh != nil {
-		c.cfg.Refresh()
-	}
+	return true
 }
 
 func lockNotificationPaths(workingCopy string, paths []string) string {
@@ -3047,6 +3060,22 @@ func (c *Controller) handleReservations(ctx context.Context) {
 				c.cfg.Refresh()
 			}
 		}
+	}
+}
+
+func (c *Controller) awaitProjectedAction(actionID string) {
+	if actionID != "" && c.cfg.ActionLifecycle != nil {
+		c.cfg.ActionLifecycle.AwaitActionProjection(actionID)
+		return
+	}
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
+}
+
+func (c *Controller) finishProjectedAction(actionID string) {
+	if actionID != "" && c.cfg.ActionLifecycle != nil {
+		c.cfg.ActionLifecycle.FinishAction(actionID)
 	}
 }
 

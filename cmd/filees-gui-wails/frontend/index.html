@@ -67,8 +67,12 @@
       <div class="main-column">
         <div class="section-heading">
           <div><p class="eyebrow">Twoje pliki</p><h2>Foldery</h2></div>
-          <span id="last-refresh" class="timestamp">Jeszcze nie odświeżono</span>
+          <div class="projection-timing">
+            <span id="cycle-countdown" class="cycle-countdown">Harmonogram uruchamia się</span>
+            <span id="last-refresh" class="timestamp">Jeszcze nie odświeżono</span>
+          </div>
         </div>
+        <div id="action-status" class="action-status" hidden></div>
         <div id="repositories" class="server-panels">
           <div class="empty-state"><span>◌</span><p>Czekam na listę folderów.</p></div>
         </div>

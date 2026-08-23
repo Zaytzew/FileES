@@ -103,6 +103,7 @@ type Service struct {
 	OnLastSync         func(time.Time)
 	OnConflicts        func(int)
 	OnCurrentOperation func(*string)
+	OnCycle            func(contract.CycleStatus)
 	// BeginPublish verifies edit-passport fencing and freezes lock mutation until
 	// the returned release function is called after the publication attempt.
 	BeginPublish func(context.Context, []string) (func(), error)
@@ -340,6 +341,23 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	}
 	ticker := time.NewTicker(window)
 	defer ticker.Stop()
+	cycleID := uint64(0)
+	lastTick := time.Time{}
+	projectCycle := func(phase string, next time.Time) {
+		if s.OnCycle == nil {
+			return
+		}
+		status := contract.CycleStatus{ID: cycleID, Phase: phase}
+		if !lastTick.IsZero() {
+			status.LastTickAt = lastTick.UTC().Format(time.RFC3339Nano)
+		}
+		if !next.IsZero() {
+			status.NextTickAt = next.UTC().Format(time.RFC3339Nano)
+		}
+		s.OnCycle(status)
+	}
+	projectCycle(contract.CycleWaiting, time.Now().Add(window))
+	defer projectCycle(contract.CycleStopped, time.Time{})
 
 	if s.Rules.PollInterval > 0 {
 		go s.runPoller(ctx, wc)
@@ -374,16 +392,21 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				}
 				s.saveCache()
 			}
-		case <-ticker.C:
+		case tickAt := <-ticker.C:
+			cycleID++
+			lastTick = tickAt
+			projectCycle(contract.CycleRunning, time.Time{})
 			if s.isOfflineBackoff() {
 				lg.Debugf("offline: skipping commit tick (backoff active)")
 				s.saveCache()
+				projectCycle(contract.CycleWaiting, tickAt.Add(window))
 				continue
 			}
 			if err := s.tryCommit(ctx, wc); err != nil {
 				s.recordCommitFailure("commit attempt failed", err)
 			}
 			s.saveCache()
+			projectCycle(contract.CycleWaiting, tickAt.Add(window))
 		}
 	}
 }

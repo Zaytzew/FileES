@@ -153,6 +153,55 @@ export class ActivityProjection {
     }
 }
 
+export class CycleProjection {
+    /**
+     * Creates a new CycleProjection instance.
+     * @param {Partial<CycleProjection>} [$$source = {}] - The source object to create the CycleProjection.
+     */
+    constructor($$source = {}) {
+        if (!("cycle_id" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["cycle_id"] = 0;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["phase"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["last_tick_at"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["next_tick_at"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CycleProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {CycleProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new CycleProjection(/** @type {Partial<CycleProjection>} */($$parsedSource));
+    }
+}
+
 export class ErrorProjection {
     /**
      * Creates a new ErrorProjection instance.
@@ -349,6 +398,76 @@ export class NoticeProjection {
     }
 }
 
+export class PendingActionProjection {
+    /**
+     * Creates a new PendingActionProjection instance.
+     * @param {Partial<PendingActionProjection>} [$$source = {}] - The source object to create the PendingActionProjection.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("kind" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["kind"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["repo_id"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["server_id"] = undefined;
+        }
+        if (!("label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["label"] = "";
+        }
+        if (!("phase" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["phase"] = "";
+        }
+        if (!("started_at" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["started_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PendingActionProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PendingActionProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PendingActionProjection(/** @type {Partial<PendingActionProjection>} */($$parsedSource));
+    }
+}
+
 export class RepoProjection {
     /**
      * Creates a new RepoProjection instance.
@@ -509,6 +628,13 @@ export class RepoProjection {
              */
             this["can_unlock"] = false;
         }
+        if (!("cycle" in $$source)) {
+            /**
+             * @member
+             * @type {CycleProjection}
+             */
+            this["cycle"] = (new CycleProjection());
+        }
 
         Object.assign(this, $$source);
     }
@@ -519,7 +645,11 @@ export class RepoProjection {
      * @returns {RepoProjection}
      */
     static createFrom($$source = {}) {
+        const $$createField22_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("cycle" in $$parsedSource) {
+            $$parsedSource["cycle"] = $$createField22_0($$parsedSource["cycle"]);
+        }
         return new RepoProjection(/** @type {Partial<RepoProjection>} */($$parsedSource));
     }
 }
@@ -817,6 +947,27 @@ export class Snapshot {
              */
             this["journal"] = [];
         }
+        if (!("pending_actions" in $$source)) {
+            /**
+             * @member
+             * @type {PendingActionProjection[]}
+             */
+            this["pending_actions"] = [];
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["next_cycle_at"] = undefined;
+        }
+        if (!("cycle_running" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["cycle_running"] = false;
+        }
         if (!("notices" in $$source)) {
             /**
              * @member
@@ -841,15 +992,16 @@ export class Snapshot {
      * @returns {Snapshot}
      */
     static createFrom($$source = {}) {
-        const $$createField7_0 = $$createType0;
-        const $$createField8_0 = $$createType2;
-        const $$createField9_0 = $$createType4;
-        const $$createField10_0 = $$createType6;
-        const $$createField11_0 = $$createType8;
-        const $$createField12_0 = $$createType10;
-        const $$createField13_0 = $$createType12;
-        const $$createField14_0 = $$createType14;
-        const $$createField15_0 = $$createType16;
+        const $$createField7_0 = $$createType1;
+        const $$createField8_0 = $$createType3;
+        const $$createField9_0 = $$createType5;
+        const $$createField10_0 = $$createType7;
+        const $$createField11_0 = $$createType9;
+        const $$createField12_0 = $$createType11;
+        const $$createField13_0 = $$createType13;
+        const $$createField14_0 = $$createType15;
+        const $$createField17_0 = $$createType17;
+        const $$createField18_0 = $$createType19;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("capabilities" in $$parsedSource) {
             $$parsedSource["capabilities"] = $$createField7_0($$parsedSource["capabilities"]);
@@ -872,11 +1024,14 @@ export class Snapshot {
         if ("journal" in $$parsedSource) {
             $$parsedSource["journal"] = $$createField13_0($$parsedSource["journal"]);
         }
+        if ("pending_actions" in $$parsedSource) {
+            $$parsedSource["pending_actions"] = $$createField14_0($$parsedSource["pending_actions"]);
+        }
         if ("notices" in $$parsedSource) {
-            $$parsedSource["notices"] = $$createField14_0($$parsedSource["notices"]);
+            $$parsedSource["notices"] = $$createField17_0($$parsedSource["notices"]);
         }
         if ("update" in $$parsedSource) {
-            $$parsedSource["update"] = $$createField15_0($$parsedSource["update"]);
+            $$parsedSource["update"] = $$createField18_0($$parsedSource["update"]);
         }
         return new Snapshot(/** @type {Partial<Snapshot>} */($$parsedSource));
     }
@@ -939,20 +1094,23 @@ export class UpdateProjection {
 }
 
 // Private type creation functions
-const $$createType0 = $Create.Array($Create.Any);
-const $$createType1 = ServerProjection.createFrom;
-const $$createType2 = $Create.Array($$createType1);
-const $$createType3 = RepoProjection.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = ReservationProjection.createFrom;
-const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = ErrorProjection.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = ActivityProjection.createFrom;
-const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = JournalProjection.createFrom;
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = NoticeProjection.createFrom;
-const $$createType14 = $Create.Array($$createType13);
-const $$createType15 = UpdateProjection.createFrom;
-const $$createType16 = $Create.Nullable($$createType15);
+const $$createType0 = CycleProjection.createFrom;
+const $$createType1 = $Create.Array($Create.Any);
+const $$createType2 = ServerProjection.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = RepoProjection.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = ReservationProjection.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = ErrorProjection.createFrom;
+const $$createType9 = $Create.Array($$createType8);
+const $$createType10 = ActivityProjection.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = JournalProjection.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = PendingActionProjection.createFrom;
+const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = NoticeProjection.createFrom;
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = UpdateProjection.createFrom;
+const $$createType19 = $Create.Nullable($$createType18);

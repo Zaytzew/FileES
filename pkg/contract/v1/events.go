@@ -4,6 +4,7 @@ package contract
 // Clients must handle unknown event types by ignoring them (§13).
 const (
 	EvRepoStateChanged    = "repo.state_changed"
+	EvRepoCycleChanged    = "repo.cycle_changed"
 	EvSyncStarted         = "sync.started"
 	EvSyncProgress        = "sync.progress"
 	EvSyncCompleted       = "sync.completed"

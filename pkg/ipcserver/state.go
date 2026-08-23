@@ -39,6 +39,7 @@ type RepoState struct {
 	conflicts    int
 	lastSyncAt   time.Time
 	currentOp    *string
+	cycle        contract.CycleStatus
 
 	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
 	lockFn               func(ctx context.Context, paths []string) (string, error)
@@ -201,6 +202,20 @@ func (rs *RepoState) SetCurrentOp(op *string) {
 		rs.currentOp = &value
 	}
 	rs.mu.Unlock()
+}
+
+// SetCycle records the daemon-owned runtime cadence and emits an invalidation
+// event so subscribers can refresh it without inventing a local scheduler.
+func (rs *RepoState) SetCycle(cycle contract.CycleStatus) {
+	rs.mu.Lock()
+	changed := rs.cycle != cycle
+	rs.cycle = cycle
+	srv := rs.server
+	id := rs.id
+	rs.mu.Unlock()
+	if changed && srv != nil {
+		srv.Emit(srv.NewRepoEvent(id, contract.EvRepoCycleChanged, cycle))
+	}
 }
 
 // SetPublishFunc wires the shouting-commit publisher for this working copy.
@@ -380,6 +395,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	headRev := rs.headRev
 	conflicts := rs.conflicts
 	lastSync := rs.lastSyncAt
+	cycle := rs.cycle
 	var currentOp *string
 	if rs.currentOp != nil {
 		value := *rs.currentOp
@@ -420,6 +436,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		Pending:          pending,
 		Conflicts:        conflicts,
 		CurrentOperation: currentOp,
+		Cycle:            cycle,
 		Recovery:         recovery,
 	}
 	if !lastSync.IsZero() {

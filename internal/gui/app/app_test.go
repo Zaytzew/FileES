@@ -333,6 +333,47 @@ func TestReducerServerSlotsRemainStableAcrossSnapshots(t *testing.T) {
 	}
 }
 
+func TestReducerProjectsPendingActionUntilExplicitFenceCompletion(t *testing.T) {
+	started := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	s := newAppState().startPendingAction(PendingAction{ID: "lock:1", Kind: "lock", RepoID: "docs", Label: "Zakładanie blokady", StartedAt: started})
+	vm := s.viewModel()
+	if len(vm.PendingActions) != 1 || vm.PendingActions[0].Phase != ActionRunning {
+		t.Fatalf("started action = %#v", vm.PendingActions)
+	}
+	s = s.awaitPendingAction("lock:1")
+	if got := s.viewModel().PendingActions[0].Phase; got != ActionAwaitingProjection {
+		t.Fatalf("awaiting phase = %q", got)
+	}
+	s = s.finishPendingActions([]string{"lock:1"})
+	if got := s.viewModel().PendingActions; len(got) != 0 {
+		t.Fatalf("completed action still projected = %#v", got)
+	}
+}
+
+func TestReducerActionFenceRequiresAuthoritativeExpectedReservationChange(t *testing.T) {
+	action := PendingAction{ID: "lock:1", Kind: "lock", RepoID: "docs", ServerID: "spot", ReservationDelta: 1, BaselineReservations: 2, BaselineReservationsKnown: true}
+	s := newAppState().startPendingAction(action).awaitPendingAction(action.ID)
+	s.repoReservations[reservationKey("spot", "docs")] = 3
+	var waiting []string
+	s, waiting = s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 1 || len(s.pendingActions) != 1 {
+		t.Fatalf("unknown inventory crossed fence: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+
+	s.reservationsKnown = true
+	s.repoReservations[reservationKey("spot", "docs")] = 2
+	s, waiting = s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 1 || len(s.pendingActions) != 1 {
+		t.Fatalf("unchanged inventory crossed fence: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+
+	s.repoReservations[reservationKey("spot", "docs")] = 3
+	s, waiting = s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 0 || len(s.pendingActions) != 0 || len(s.pendingActionOrder) != 0 {
+		t.Fatalf("confirmed inventory did not finish action: waiting=%v pending=%v order=%v", waiting, s.pendingActions, s.pendingActionOrder)
+	}
+}
+
 func TestReducerApplySnapshot(t *testing.T) {
 	s := newAppState().applyRepoList([]contract.RepoSummary{{ID: "a"}})
 	snap := contract.RepoStatus{RepoID: "a", State: contract.StateActive, Connectivity: contract.ConnOnline, LocalRevision: 42}
@@ -996,6 +1037,57 @@ func TestAppPeriodicRefreshDetectsFailureWithoutEventCapability(t *testing.T) {
 	mu.Unlock()
 	clock.Advance(time.Second)
 	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return !vm.Connected && vm.Stale })
+}
+
+func TestActionBadgeWaitsForPostActionFullSnapshot(t *testing.T) {
+	refreshStarted := make(chan struct{}, 1)
+	releaseRefresh := make(chan struct{})
+	var calls int
+	var mu sync.Mutex
+	d := &fakeDaemon{
+		repoList: func(ctx context.Context) (*contract.RepoListResult, error) {
+			mu.Lock()
+			calls++
+			call := calls
+			mu.Unlock()
+			if call > 1 {
+				select {
+				case refreshStarted <- struct{}{}:
+				default:
+				}
+				select {
+				case <-releaseRefresh:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return &contract.RepoListResult{}, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	application := startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && !vm.Stale })
+
+	action := PendingAction{ID: "lock:1", Kind: "lock", Label: "Zakładanie blokady", StartedAt: time.Now()}
+	if !application.StartAction(action) {
+		t.Fatal("action start was not queued")
+	}
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return len(vm.PendingActions) == 1 && vm.PendingActions[0].Phase == ActionRunning
+	})
+	application.AwaitActionProjection(action.ID)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return len(vm.PendingActions) == 1 && vm.PendingActions[0].Phase == ActionAwaitingProjection
+	})
+	select {
+	case <-refreshStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("post-action refresh did not start")
+	}
+	close(releaseRefresh)
+	vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool { return vm.Connected && len(vm.PendingActions) == 0 })
 }
 
 func TestAppIgnoresLateSnapshotFromOldGeneration(t *testing.T) {

@@ -21,6 +21,8 @@ const actionErrors = {
   action_queue_busy: "Kolejka intencji GUI jest zajęta. Spróbuj ponownie.",
 };
 
+let currentSnapshot = null;
+
 function bytes(value) {
   const amount = Number(value || 0);
   if (amount < 1024) return `${amount} B`;
@@ -161,6 +163,54 @@ function renderRepositories(snapshot) {
   }).join("");
 }
 
+function renderActions(snapshot) {
+  const root = $("#action-status");
+  const actions = snapshot.pending_actions || [];
+  root.hidden = actions.length === 0;
+  root.innerHTML = actions.map((action) => {
+    const repo = (snapshot.repositories || []).find((item) => item.id === action.repo_id);
+    const scope = repo?.display_name || action.repo_id || "FileES";
+    const detail = !snapshot.connected
+      ? "Oczekiwanie na połączenie"
+      : action.phase === "awaiting_projection"
+      ? "Potwierdzanie aktualnego stanu"
+      : "Wykonywanie działania";
+    return `<article class="action-badge">
+      <span class="action-spinner" aria-hidden="true"></span>
+      <div><strong>${escapeHTML(action.label || "Działanie FileES")}</strong><small>${escapeHTML(scope)} · ${escapeHTML(detail)}</small></div>
+    </article>`;
+  }).join("");
+}
+
+function updateCycleCountdown() {
+  const node = $("#cycle-countdown");
+  if (!currentSnapshot || !node) return;
+  if (!currentSnapshot.connected) {
+    node.textContent = "Harmonogram wstrzymany";
+    node.classList.remove("is-running");
+    return;
+  }
+  if (currentSnapshot.cycle_running) {
+    node.textContent = "Sprawdzanie teraz";
+    node.classList.add("is-running");
+    return;
+  }
+  node.classList.remove("is-running");
+  const next = new Date(currentSnapshot.next_cycle_at || "");
+  if (Number.isNaN(next.getTime())) {
+    node.textContent = "Harmonogram niedostępny";
+    return;
+  }
+  const seconds = Math.max(0, Math.ceil((next.getTime() - Date.now()) / 1000));
+  if (seconds < 60) {
+    node.textContent = seconds === 0 ? "Kolejne sprawdzenie za chwilę" : `Kolejne sprawdzenie za ${seconds} s`;
+    return;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  node.textContent = `Kolejne sprawdzenie za ${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
 function renderReservations(snapshot) {
   const card = $("#reservations-card");
   const root = $("#reservations");
@@ -213,13 +263,16 @@ function renderJournal(snapshot) {
 
 function render(snapshot) {
   if (!snapshot) return;
+  currentSnapshot = snapshot;
   renderConnection(snapshot);
   renderMetrics(snapshot);
   renderRepositories(snapshot);
+  renderActions(snapshot);
   renderReservations(snapshot);
   renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;
+  updateCycleCountdown();
 }
 
 function showToast(feedback) {
@@ -302,3 +355,5 @@ try {
 } catch (error) {
   console.error("Nie udało się pobrać projekcji FileES", error);
 }
+
+window.setInterval(updateCycleCountdown, 1000);

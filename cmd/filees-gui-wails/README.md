@@ -44,6 +44,17 @@ Kolory panelu dziedziczą jasny lub ciemny motyw systemowy przez
 `prefers-color-scheme`. Radar w bannerze jest animacją CSS należącą do tego
 frontendu, nie assetem Wails ani zewnętrznym GIF-em.
 
+Daemon projektuje dla każdego repozytorium własny harmonogram pracy:
+`cycle_id`, fazę oraz czas ostatniego i następnego ticka. Wails agreguje
+najbliższy termin do licznika „Kolejne sprawdzenie…”, ale nie używa zegara jako
+dowodu zakończenia działania. Lock, unlock i zwolnienie rezerwacji tworzą
+badge w wspólnym modelu GUI. Po sukcesie badge przechodzi w „Potwierdzanie
+aktualnego stanu” i znika dopiero po pełnym snapshotcie, którego pobieranie
+zaczęło się po zakończeniu operacji. Refresh sprzed operacji ani częściowy
+event repozytorium nie może przedwcześnie skasować badge. Dla obecnych mutacji
+lock badge wymaga dodatkowo znanej, autorytatywnej listy rezerwacji oraz zmiany
+licznika we właściwym kierunku względem stanu sprzed gestu.
+
 Proces tworzy własny tray Wails z ikoną bieżącego stanu, liczbą repozytoriów i
 blokad. Pozycja `Pokaż panel` przywraca okno, a jego zamknięcie ukrywa je do
 traya. Podmenu `FileES` zawiera kontrolowany restart oraz `Zakończ…`. Obie

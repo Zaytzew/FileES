@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/journal"
 	"filees/internal/gui/tray"
+	contract "filees/pkg/contract/v1"
 )
 
 const (
@@ -25,32 +28,36 @@ type snapshotEmitter interface {
 // internal/gui/app reconstructs the authoritative presentation from IPC and
 // this service only publishes an immutable browser-friendly projection.
 type GUIService struct {
-	mu       sync.RWMutex
-	snapshot Snapshot
-	view     guiapp.ViewModel
-	runner   *guiapp.App
-	emitter  snapshotEmitter
-	actions  chan<- tray.Intent
-	observer func(Snapshot)
+	mu        sync.RWMutex
+	snapshot  Snapshot
+	view      guiapp.ViewModel
+	runner    *guiapp.App
+	emitter   snapshotEmitter
+	actions   chan<- tray.Intent
+	actionSeq atomic.Uint64
+	observer  func(Snapshot)
 }
 
 type Snapshot struct {
-	Revision     uint64                  `json:"revision"`
-	Connected    bool                    `json:"connected"`
-	Stale        bool                    `json:"stale"`
-	DaemonState  string                  `json:"daemon_state"`
-	UptimeSec    int64                   `json:"uptime_sec"`
-	LastRefresh  string                  `json:"last_refresh,omitempty"`
-	IconState    string                  `json:"icon_state"`
-	Capabilities []string                `json:"capabilities"`
-	Servers      []ServerProjection      `json:"servers"`
-	Repositories []RepoProjection        `json:"repositories"`
-	Reservations []ReservationProjection `json:"reservations"`
-	Errors       []ErrorProjection       `json:"errors"`
-	Activity     []ActivityProjection    `json:"activity"`
-	Journal      []JournalProjection     `json:"journal"`
-	Notices      []NoticeProjection      `json:"notices"`
-	Update       *UpdateProjection       `json:"update,omitempty"`
+	Revision       uint64                    `json:"revision"`
+	Connected      bool                      `json:"connected"`
+	Stale          bool                      `json:"stale"`
+	DaemonState    string                    `json:"daemon_state"`
+	UptimeSec      int64                     `json:"uptime_sec"`
+	LastRefresh    string                    `json:"last_refresh,omitempty"`
+	IconState      string                    `json:"icon_state"`
+	Capabilities   []string                  `json:"capabilities"`
+	Servers        []ServerProjection        `json:"servers"`
+	Repositories   []RepoProjection          `json:"repositories"`
+	Reservations   []ReservationProjection   `json:"reservations"`
+	Errors         []ErrorProjection         `json:"errors"`
+	Activity       []ActivityProjection      `json:"activity"`
+	Journal        []JournalProjection       `json:"journal"`
+	PendingActions []PendingActionProjection `json:"pending_actions"`
+	NextCycleAt    string                    `json:"next_cycle_at,omitempty"`
+	CycleRunning   bool                      `json:"cycle_running"`
+	Notices        []NoticeProjection        `json:"notices"`
+	Update         *UpdateProjection         `json:"update,omitempty"`
 }
 
 type ServerProjection struct {
@@ -68,28 +75,46 @@ type ServerProjection struct {
 }
 
 type RepoProjection struct {
-	ID               string `json:"id"`
-	ServerID         string `json:"server_id"`
-	DisplayName      string `json:"display_name"`
-	LocalPath        string `json:"local_path,omitempty"`
-	URL              string `json:"url,omitempty"`
-	Attached         bool   `json:"attached"`
-	Access           string `json:"access"`
-	Ownership        string `json:"ownership"`
-	AttachmentPolicy string `json:"attachment_policy"`
-	State            string `json:"state"`
-	DisplayState     string `json:"display_state"`
-	Connectivity     string `json:"connectivity"`
-	LocalRevision    int64  `json:"local_revision"`
-	HeadRevision     int64  `json:"head_revision"`
-	PendingFiles     int    `json:"pending_files"`
-	PendingBytes     int64  `json:"pending_bytes"`
-	Conflicts        int    `json:"conflicts"`
-	CurrentOperation string `json:"current_operation,omitempty"`
-	ReservationCount int    `json:"reservation_count"`
-	CanOpen          bool   `json:"can_open"`
-	CanLock          bool   `json:"can_lock"`
-	CanUnlock        bool   `json:"can_unlock"`
+	ID               string          `json:"id"`
+	ServerID         string          `json:"server_id"`
+	DisplayName      string          `json:"display_name"`
+	LocalPath        string          `json:"local_path,omitempty"`
+	URL              string          `json:"url,omitempty"`
+	Attached         bool            `json:"attached"`
+	Access           string          `json:"access"`
+	Ownership        string          `json:"ownership"`
+	AttachmentPolicy string          `json:"attachment_policy"`
+	State            string          `json:"state"`
+	DisplayState     string          `json:"display_state"`
+	Connectivity     string          `json:"connectivity"`
+	LocalRevision    int64           `json:"local_revision"`
+	HeadRevision     int64           `json:"head_revision"`
+	PendingFiles     int             `json:"pending_files"`
+	PendingBytes     int64           `json:"pending_bytes"`
+	Conflicts        int             `json:"conflicts"`
+	CurrentOperation string          `json:"current_operation,omitempty"`
+	ReservationCount int             `json:"reservation_count"`
+	CanOpen          bool            `json:"can_open"`
+	CanLock          bool            `json:"can_lock"`
+	CanUnlock        bool            `json:"can_unlock"`
+	Cycle            CycleProjection `json:"cycle"`
+}
+
+type CycleProjection struct {
+	ID         uint64 `json:"cycle_id"`
+	Phase      string `json:"phase,omitempty"`
+	LastTickAt string `json:"last_tick_at,omitempty"`
+	NextTickAt string `json:"next_tick_at,omitempty"`
+}
+
+type PendingActionProjection struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	RepoID    string `json:"repo_id,omitempty"`
+	ServerID  string `json:"server_id,omitempty"`
+	Label     string `json:"label"`
+	Phase     string `json:"phase"`
+	StartedAt string `json:"started_at"`
 }
 
 type ReservationProjection struct {
@@ -242,12 +267,64 @@ func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	if !allowed {
 		return ActionAcceptance{Code: "action_unavailable"}
 	}
+	tracked := pendingActionFor(vm, request, service.actionSeq.Add(1))
+	if tracked.ID != "" && service.runner != nil {
+		if !service.runner.StartAction(tracked) {
+			return ActionAcceptance{Code: "action_queue_busy"}
+		}
+		intent.ActionID = tracked.ID
+	}
 	select {
 	case actions <- intent:
 		return ActionAcceptance{Accepted: true}
 	default:
+		if tracked.ID != "" && service.runner != nil {
+			service.runner.FinishAction(tracked.ID)
+		}
 		return ActionAcceptance{Code: "action_queue_busy"}
 	}
+}
+
+func pendingActionFor(vm guiapp.ViewModel, request ActionRequest, sequence uint64) guiapp.PendingAction {
+	action := guiapp.PendingAction{Kind: request.Kind, StartedAt: time.Now()}
+	switch request.Kind {
+	case string(tray.IntentLock):
+		action.Label = "Zakładanie blokady"
+		action.RepoID = request.RepoID
+		action.ReservationDelta = 1
+	case string(tray.IntentUnlock):
+		action.Label = "Zwalnianie blokady"
+		action.RepoID = request.RepoID
+		action.ReservationDelta = -1
+	case string(tray.IntentReleaseReservation):
+		action.Label = "Zwalnianie blokady"
+		action.ReservationDelta = -1
+		if reservation, ok := projectedReservation(vm, request.ReservationID); ok {
+			action.RepoID = reservation.RepoID
+			action.ServerID = reservation.ServerID
+		}
+	default:
+		return guiapp.PendingAction{}
+	}
+	if action.ServerID == "" && action.RepoID != "" {
+		if repo, ok := projectedRepo(vm, action.RepoID); ok {
+			action.ServerID = repo.ServerID
+			action.BaselineReservations = repo.ReservationCount
+		}
+	}
+	if action.RepoID != "" && action.BaselineReservations == 0 {
+		if repo, ok := projectedRepo(vm, action.RepoID); ok {
+			action.BaselineReservations = repo.ReservationCount
+		}
+	}
+	for _, server := range vm.Servers {
+		if server.ID == action.ServerID {
+			action.BaselineReservationsKnown = server.ReservationsKnown
+			break
+		}
+	}
+	action.ID = request.Kind + ":" + fmt.Sprint(sequence)
+	return action
 }
 
 // Refresh is a presentation intent: ask the shared IPC model to fetch a fresh
@@ -366,19 +443,20 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 
 func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	result := Snapshot{
-		Connected:    vm.Connected,
-		Stale:        vm.Stale,
-		DaemonState:  vm.DaemonState,
-		UptimeSec:    vm.UptimeSec,
-		IconState:    string(vm.Icon),
-		Capabilities: make([]string, 0, len(vm.Capabilities)),
-		Servers:      make([]ServerProjection, 0, len(vm.Servers)),
-		Repositories: make([]RepoProjection, 0, len(vm.Repos)),
-		Reservations: make([]ReservationProjection, 0, len(vm.Reservations)),
-		Errors:       make([]ErrorProjection, 0, len(vm.Errors)),
-		Activity:     make([]ActivityProjection, 0, len(vm.Activity)),
-		Journal:      []JournalProjection{},
-		Notices:      make([]NoticeProjection, 0, len(vm.Notices)),
+		Connected:      vm.Connected,
+		Stale:          vm.Stale,
+		DaemonState:    vm.DaemonState,
+		UptimeSec:      vm.UptimeSec,
+		IconState:      string(vm.Icon),
+		Capabilities:   make([]string, 0, len(vm.Capabilities)),
+		Servers:        make([]ServerProjection, 0, len(vm.Servers)),
+		Repositories:   make([]RepoProjection, 0, len(vm.Repos)),
+		Reservations:   make([]ReservationProjection, 0, len(vm.Reservations)),
+		Errors:         make([]ErrorProjection, 0, len(vm.Errors)),
+		Activity:       make([]ActivityProjection, 0, len(vm.Activity)),
+		Journal:        []JournalProjection{},
+		PendingActions: make([]PendingActionProjection, 0, len(vm.PendingActions)),
+		Notices:        make([]NoticeProjection, 0, len(vm.Notices)),
 	}
 	if !vm.LastRefresh.IsZero() {
 		result.LastRefresh = vm.LastRefresh.Format(time.RFC3339)
@@ -430,6 +508,22 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
 			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock,
+			Cycle: CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
+		})
+		if repo.Cycle.Phase == contract.CycleRunning {
+			result.CycleRunning = true
+		}
+		if next, err := time.Parse(time.RFC3339Nano, repo.Cycle.NextTickAt); err == nil {
+			current, currentErr := time.Parse(time.RFC3339Nano, result.NextCycleAt)
+			if currentErr != nil || next.Before(current) {
+				result.NextCycleAt = next.Format(time.RFC3339Nano)
+			}
+		}
+	}
+	for _, action := range vm.PendingActions {
+		result.PendingActions = append(result.PendingActions, PendingActionProjection{
+			ID: action.ID, Kind: action.Kind, RepoID: action.RepoID, ServerID: action.ServerID,
+			Label: action.Label, Phase: action.Phase, StartedAt: action.StartedAt.Format(time.RFC3339Nano),
 		})
 	}
 	for _, reservation := range vm.Reservations {

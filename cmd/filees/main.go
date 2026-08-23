@@ -249,9 +249,25 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
-	update := func() {
+	cycleID := uint64(0)
+	projectCycle := func(phase string, tickAt, next time.Time) {
+		cycle := contract.CycleStatus{ID: cycleID, Phase: phase}
+		if !tickAt.IsZero() {
+			cycle.LastTickAt = tickAt.UTC().Format(time.RFC3339Nano)
+		}
+		if !next.IsZero() {
+			cycle.NextTickAt = next.UTC().Format(time.RFC3339Nano)
+		}
+		rs.SetCycle(cycle)
+	}
+	update := func(tickAt time.Time) {
+		cycleID++
+		projectCycle(contract.CycleRunning, tickAt, time.Time{})
 		rs.SetCurrentOp(stringPtr("update"))
-		defer rs.SetCurrentOp(nil)
+		defer func() {
+			rs.SetCurrentOp(nil)
+			projectCycle(contract.CycleWaiting, tickAt, tickAt.Add(interval))
+		}()
 		out, err := cli.Update(ctx, repo.LocalPath)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -267,16 +283,17 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 		scanShoutsAfterUpdate(ctx, cli, repo, rs, lg)
 	}
 	rs.SetState(contract.StateActive)
-	update()
+	update(time.Now())
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	defer func() { projectCycle(contract.CycleStopped, time.Now(), time.Time{}) }()
 	for {
 		select {
 		case <-ctx.Done():
 			rs.SetState(contract.StateStopping)
 			return
-		case <-ticker.C:
-			update()
+		case tickAt := <-ticker.C:
+			update(tickAt)
 		}
 	}
 }
@@ -331,6 +348,7 @@ func wireRepoStatus(svc *commit.Service, rs *ipcserver.RepoState) {
 	svc.OnLastSync = rs.SetLastSyncAt
 	svc.OnConflicts = rs.SetConflicts
 	svc.OnCurrentOperation = rs.SetCurrentOp
+	svc.OnCycle = rs.SetCycle
 	rs.SetRecoveryStatsFunc(func() contract.RecoveryStats {
 		stats := svc.RecoveryStats()
 		return contract.RecoveryStats{CacheResumed: stats.CacheResumed, AlreadyAccepted: stats.AlreadyAccepted, CommitBatches: stats.CommitBatches}

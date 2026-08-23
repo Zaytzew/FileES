@@ -86,6 +86,38 @@ func TestProjectViewModelBuildsSharedJournalWithTranslatedAndExactTime(t *testin
 	}
 }
 
+func TestProjectViewModelCarriesDaemonCycleAndPendingAction(t *testing.T) {
+	started := time.Date(2026, 8, 23, 14, 0, 0, 0, time.UTC)
+	earlier := started.Add(20 * time.Second).Format(time.RFC3339Nano)
+	later := started.Add(40 * time.Second).Format(time.RFC3339Nano)
+	vm := guiapp.ViewModel{
+		Repos: []guiapp.RepoViewModel{
+			{ID: "docs", Cycle: contract.CycleStatus{ID: 7, Phase: contract.CycleWaiting, NextTickAt: later}},
+			{ID: "drawings", Cycle: contract.CycleStatus{ID: 9, Phase: contract.CycleRunning}},
+			{ID: "archive", Cycle: contract.CycleStatus{ID: 3, Phase: contract.CycleWaiting, NextTickAt: earlier}},
+		},
+		PendingActions: []guiapp.PendingAction{{ID: "lock:1", Kind: "lock", RepoID: "docs", Label: "Zakładanie blokady", Phase: guiapp.ActionAwaitingProjection, StartedAt: started}},
+	}
+	got := projectViewModelAt(vm, started)
+	if got.NextCycleAt != earlier || !got.CycleRunning || got.Repositories[0].Cycle.ID != 7 {
+		t.Fatalf("cycle projection = %#v", got)
+	}
+	if len(got.PendingActions) != 1 || got.PendingActions[0].Phase != guiapp.ActionAwaitingProjection || got.PendingActions[0].StartedAt == "" {
+		t.Fatalf("pending action projection = %#v", got.PendingActions)
+	}
+}
+
+func TestPendingActionForTracksOnlyMutationsThatNeedProjectionBarrier(t *testing.T) {
+	vm := guiapp.ViewModel{Repos: []guiapp.RepoViewModel{{ID: "docs", ServerID: "spot", ReservationCount: 2}}, Servers: []guiapp.ServerViewModel{{ID: "spot", ReservationsKnown: true}}}
+	tracked := pendingActionFor(vm, ActionRequest{Kind: string(tray.IntentLock), RepoID: "docs"}, 12)
+	if tracked.ID != "lock:12" || tracked.RepoID != "docs" || tracked.ServerID != "spot" || tracked.Label == "" || tracked.ReservationDelta != 1 || tracked.BaselineReservations != 2 || !tracked.BaselineReservationsKnown {
+		t.Fatalf("tracked action = %#v", tracked)
+	}
+	if got := pendingActionFor(vm, ActionRequest{Kind: string(tray.IntentOpenFolder), RepoID: "docs"}, 13); got.ID != "" {
+		t.Fatalf("presentation-only action was tracked = %#v", got)
+	}
+}
+
 type recordingEmitter struct {
 	name string
 	data Snapshot

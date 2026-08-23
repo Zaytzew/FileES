@@ -98,11 +98,22 @@ h1 span { color: transparent; background: linear-gradient(90deg, var(--teal), #d
 .section-heading .eyebrow { margin-bottom: 5px; }
 .section-heading.compact { margin-bottom: 15px; }
 .timestamp { color: var(--muted); font-size: 10px; }
+.projection-timing { display: grid; justify-items: end; gap: 5px; }
+.cycle-countdown { color: var(--teal); font-size: 9px; font-weight: 750; letter-spacing: .04em; }
+.cycle-countdown.is-running { color: #c8beff; }
 .count-badge { min-width: 29px; padding: 5px 9px; border: 1px solid rgba(157,140,255,.24); border-radius: 999px; color: #c8beff; background: rgba(157,140,255,.09); text-align: center; font-size: 10px; font-weight: 800; }
 .text-button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; color: #abb3c3; background: rgba(255,255,255,.025); font-size: 9px; font-weight: 800; cursor: pointer; }
 .text-button:hover { border-color: rgba(101,240,206,.28); color: var(--teal); background: rgba(101,240,206,.07); }
 
 .server-panels { display: grid; gap: 17px; }
+.action-status { display: flex; flex-wrap: wrap; gap: 9px; margin: 0 0 14px; }
+.action-status[hidden] { display: none; }
+.action-badge { display: flex; align-items: center; gap: 11px; min-width: 245px; padding: 11px 13px; border: 1px solid rgba(157,140,255,.22); border-radius: 12px; background: linear-gradient(100deg, rgba(157,140,255,.095), rgba(101,240,206,.045)); }
+.action-badge div { min-width: 0; }
+.action-badge strong, .action-badge small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action-badge strong { font-size: 11px; }
+.action-badge small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.action-spinner { width: 18px; height: 18px; flex: 0 0 auto; border: 2px solid rgba(157,140,255,.22); border-top-color: var(--teal); border-radius: 50%; animation: spin .8s linear infinite; }
 .server-panel { overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.018); }
 .server-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 82px; padding: 17px 19px; border-bottom: 1px solid var(--line); background: linear-gradient(105deg, rgba(101,240,206,.075), rgba(157,140,255,.035) 58%, transparent); }
 .server-identity { min-width: 0; display: flex; align-items: center; gap: 12px; }

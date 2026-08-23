@@ -668,7 +668,25 @@ func (b *WindowsBackend) Confirm(ctx context.Context, request ConfirmRequest) (b
 	if err != nil {
 		return false, NewUnavailable("confirm_dialog", err)
 	}
-	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;" + foregroundOwnerPrelude + "$r=[System.Windows.Forms.MessageBox]::Show($owner," + psString(request.Text) + "," + psString(request.Title) + ",'YesNo','Question');if($r-eq'Yes'){'yes'}else{'no'}"
+	confirmText := strings.TrimSpace(request.ConfirmText)
+	if confirmText == "" {
+		confirmText = "Potwierdź"
+	}
+	cancelText := strings.TrimSpace(request.CancelText)
+	if cancelText == "" {
+		cancelText = "Anuluj"
+	}
+	// A stock MessageBox cannot honour ConfirmText/CancelText.  Use the same
+	// short-lived WinForms boundary as the richer dialogs so destructive
+	// actions can name their effect and always expose a literal, default-safe
+	// cancellation path.  The answer remains a single line on stdout.
+	script := dpiAwarenessPrelude + "Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;" +
+		"$f=New-Object Windows.Forms.Form;$f.Text=" + psString(request.Title) + ";$f.Width=680;$f.Height=285;$f.StartPosition='CenterScreen';$f.FormBorderStyle='FixedDialog';$f.MaximizeBox=$false;$f.MinimizeBox=$false;$f.ShowInTaskbar=$false;" +
+		"$l=New-Object Windows.Forms.Label;$l.Text=" + psString(request.Text) + ";$l.Left=20;$l.Top=20;$l.Width=625;$l.Height=155;$l.Font=New-Object Drawing.Font('Segoe UI',10);$f.Controls.Add($l);" +
+		"$ok=New-Object Windows.Forms.Button;$ok.Text=" + psString(confirmText) + ";$ok.Left=405;$ok.Top=195;$ok.Width=115;$ok.Height=32;$ok.DialogResult='OK';$f.Controls.Add($ok);" +
+		"$cancel=New-Object Windows.Forms.Button;$cancel.Text=" + psString(cancelText) + ";$cancel.Left=530;$cancel.Top=195;$cancel.Width=115;$cancel.Height=32;$cancel.DialogResult='Cancel';$f.Controls.Add($cancel);" +
+		"$f.AcceptButton=$cancel;$f.CancelButton=$cancel;" + foregroundPrelude +
+		"$cancel.Select();$d=$f.ShowDialog();if($d-eq'OK'){'yes'}else{'no'}"
 	output, err := b.runner.Output(ctx, command, "-NoProfile", "-NonInteractive", "-Sta", "-WindowStyle", "Hidden", "-Command", script)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {

@@ -29,7 +29,9 @@ potwierdzeniu ponownie rozwiązuje identyfikator i przekazuje token demonowi.
 
 Proces tworzy własny tray Wails z ikoną bieżącego stanu, liczbą repozytoriów i
 blokad. Pozycja `Pokaż panel` przywraca okno, a jego zamknięcie ukrywa je do
-traya; proces kończy dopiero jawna pozycja `Zakończ renderer`.
+traya. Podmenu `FileES` zawiera kontrolowany restart oraz `Zakończ…`. Obie
+akcje przechodzą przez wspólny kontroler i IPC demona, wymagają potwierdzenia
+z możliwością `Anuluj` i dotyczą pary daemon + GUI, a nie samego renderera.
 
 Wymagania:
 
@@ -47,5 +49,5 @@ wails3 generate bindings -b -d cmd/filees-gui-wails/frontend/bindings ./cmd/file
 Build testowy na Windows:
 
 ```powershell
-go build -tags production -o tmp/filees-gui-wails.exe ./cmd/filees-gui-wails
+go build -tags production -ldflags '-H=windowsgui' -o tmp/filees-gui-wails.exe ./cmd/filees-gui-wails
 ```

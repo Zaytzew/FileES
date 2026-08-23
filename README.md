@@ -490,7 +490,10 @@ Pierwszy pion akcyjny dodaje `Otwórz`, `Zablokuj` i `Zwolnij` przez ten sam
 bezramkowe, a ukrycie scrollbara WebView nie wyłącza przewijania. Aktywne
 locki są częścią projekcji; inline zwolnienie przekazuje tylko opaque ID, a
 token fencingowy pozostaje w Go. Minimalny tray Wails utrzymuje proces po
-ukryciu okna i pokazuje stan oraz liczbę repozytoriów i blokad. Kryteria eksperymentu opisuje
+ukryciu okna i pokazuje stan oraz liczbę repozytoriów i blokad. Podmenu
+`FileES` przekazuje restart i zakończenie całej pary daemon + GUI do wspólnego
+kontrolera; nie istnieje już lokalna akcja kończąca wyłącznie renderer.
+Kryteria eksperymentu opisuje
 [`concepts/WAILS_GUI_FORK.md`](concepts/WAILS_GUI_FORK.md).
 
 ### Etapowanie implementacji

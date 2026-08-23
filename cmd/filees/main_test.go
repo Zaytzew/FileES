@@ -145,7 +145,7 @@ func TestReadOnlyRepoNeverCreatesWatcherOrCommitQueue(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("read-only loop did not stop")
 	}
-	if snap := rs.Snapshot(); snap.Access != contract.AccessReadOnly || snap.State != contract.StateStopping {
+	if snap := rs.Snapshot(); snap.Access != contract.AccessReadOnly || snap.State != contract.StateStopping || snap.Cycle.Phase != contract.CycleStopped || snap.Cycle.ID < 2 || snap.Cycle.NextTickAt != "" {
 		t.Fatalf("snapshot=%+v", snap)
 	}
 }

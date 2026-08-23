@@ -95,7 +95,7 @@ func TestRegisterRepoAccessUsesWorkingCopyNameUntilProjectionArrives(t *testing.
 }
 
 func TestRecoveryStatsSnapshotReadsWiredFuncLive(t *testing.T) {
-	rs := New(t.TempDir() + "/daemon.sock").RegisterRepoAccess("repo", "svn+ssh://host/repo", t.TempDir(), "server", contract.AccessReadWrite)
+	rs := New(t.TempDir()+"/daemon.sock").RegisterRepoAccess("repo", "svn+ssh://host/repo", t.TempDir(), "server", contract.AccessReadWrite)
 	if snap := rs.Snapshot(); snap.Recovery != (contract.RecoveryStats{}) {
 		t.Fatalf("recovery stats before wiring = %#v, want zero value", snap.Recovery)
 	}
@@ -115,6 +115,15 @@ func TestRecoveryStatsSnapshotReadsWiredFuncLive(t *testing.T) {
 	rs.SetRecoveryStatsFunc(func() contract.RecoveryStats { return contract.RecoveryStats{CacheResumed: 9} })
 	if snap := rs.Snapshot(); snap.Recovery.CacheResumed != 9 {
 		t.Fatalf("recovery stats did not update after rewiring: %#v", snap.Recovery)
+	}
+}
+
+func TestCycleSnapshotReadsDaemonOwnedSchedule(t *testing.T) {
+	rs := New(t.TempDir()+"/daemon.sock").RegisterRepoAccess("repo", "svn+ssh://host/repo", t.TempDir(), "server", contract.AccessReadWrite)
+	want := contract.CycleStatus{ID: 4, Phase: contract.CycleWaiting, LastTickAt: "2026-08-23T12:00:00Z", NextTickAt: "2026-08-23T12:05:00Z"}
+	rs.SetCycle(want)
+	if got := rs.Snapshot().Cycle; got != want {
+		t.Fatalf("cycle = %#v, want %#v", got, want)
 	}
 }
 

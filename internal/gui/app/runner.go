@@ -103,6 +103,32 @@ func (a *App) Refresh() {
 	}
 }
 
+// StartAction projects a user gesture immediately. The action remains visible
+// until FinishAction cancels/fails it or AwaitActionProjection fences it to a
+// full snapshot started after the daemon accepted the mutation.
+func (a *App) StartAction(action PendingAction) bool {
+	select {
+	case a.msgCh <- msgActionStart{action: action}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) AwaitActionProjection(id string) {
+	select {
+	case a.msgCh <- msgActionAwait{id: id}:
+	default:
+	}
+}
+
+func (a *App) FinishAction(id string) {
+	select {
+	case a.msgCh <- msgActionFinish{id: id}:
+	default:
+	}
+}
+
 // New creates an App. cfg.Client must be non-nil.
 func New(cfg Config) *App {
 	if cfg.Clock == nil {
@@ -138,6 +164,9 @@ type msgReconnect struct{ gen int }
 type msgManualReconnect struct{}
 type msgPeriodic struct{}
 type msgRefreshNow struct{}
+type msgActionStart struct{ action PendingAction }
+type msgActionAwait struct{ id string }
+type msgActionFinish struct{ id string }
 type msgFullSnapshot struct {
 	gen                   int
 	system                contract.SystemStatusResult
@@ -151,6 +180,7 @@ type msgFullSnapshot struct {
 	reservationsKnown     bool
 	notices               []contract.Notice
 	refreshed             time.Time
+	actionFences          []string
 }
 type msgPartialSnapshots struct {
 	gen      int
@@ -168,6 +198,9 @@ func (msgReconnect) sealed()        {}
 func (msgManualReconnect) sealed()  {}
 func (msgPeriodic) sealed()         {}
 func (msgRefreshNow) sealed()       {}
+func (msgActionStart) sealed()      {}
+func (msgActionAwait) sealed()      {}
+func (msgActionFinish) sealed()     {}
 func (msgFullSnapshot) sealed()     {}
 func (msgPartialSnapshots) sealed() {}
 func (msgEvent) sealed()            {}
@@ -186,9 +219,11 @@ func (a *App) loop(ctx context.Context) {
 		periodicTimer  clockTimer
 		debounceTimer  clockTimer
 
-		refreshInFlight bool
-		fullPending     bool
-		dirtyRepos      = make(map[string]bool)
+		refreshInFlight      bool
+		fullPending          bool
+		dirtyRepos           = make(map[string]bool)
+		actionFencesPending  = make(map[string]bool)
+		actionFencesInFlight []string
 	)
 
 	send := func(m appMsg) {
@@ -244,6 +279,12 @@ func (a *App) loop(ctx context.Context) {
 		includeActivity := state.caps[contract.CapRepoActivity]
 		includeReservations := state.caps[contract.CapRepoReservationList]
 		includeNotices := state.caps[contract.CapNoticeList]
+		fences := make([]string, 0, len(actionFencesPending))
+		for id := range actionFencesPending {
+			fences = append(fences, id)
+		}
+		actionFencesPending = make(map[string]bool)
+		actionFencesInFlight = fences
 
 		go func() {
 			system, err := a.cfg.Client.SystemStatus(sesCtx)
@@ -331,7 +372,7 @@ func (a *App) loop(ctx context.Context) {
 					statuses: statuses, errors: errors, activity: activityRecords,
 					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
 					reservations: reservations, reservationsKnown: reservationsKnown,
-					notices: notices, refreshed: a.cfg.Clock.Now()})
+					notices: notices, refreshed: a.cfg.Clock.Now(), actionFences: fences})
 			}
 		}()
 	}
@@ -367,6 +408,7 @@ func (a *App) loop(ctx context.Context) {
 
 	finishRefresh = func() {
 		refreshInFlight = false
+		actionFencesInFlight = nil
 		if fullPending {
 			launchFullRefresh()
 			return
@@ -441,6 +483,10 @@ func (a *App) loop(ctx context.Context) {
 		case raw := <-a.msgCh:
 			switch msg := raw.(type) {
 			case msgManualReconnect:
+				for _, id := range actionFencesInFlight {
+					actionFencesPending[id] = true
+				}
+				actionFencesInFlight = nil
 				stopTimer(&reconnectTimer)
 				if currentCancel != nil {
 					currentCancel()
@@ -476,6 +522,10 @@ func (a *App) loop(ctx context.Context) {
 				if currentCancel != nil {
 					currentCancel()
 				}
+				for _, id := range actionFencesInFlight {
+					actionFencesPending[id] = true
+				}
+				actionFencesInFlight = nil
 				currentCancel = nil
 				currentSesCtx = nil
 				refreshInFlight = false
@@ -493,6 +543,11 @@ func (a *App) loop(ctx context.Context) {
 					break
 				}
 				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.reservationsKnown, msg.notices, msg.refreshed)
+				var waiting []string
+				state, waiting = state.confirmPendingActions(msg.actionFences)
+				for _, id := range waiting {
+					actionFencesPending[id] = true
+				}
 				a.cfg.Backoff.Reset()
 				notify()
 				finishRefresh()
@@ -550,6 +605,23 @@ func (a *App) loop(ctx context.Context) {
 
 			case msgRefreshNow:
 				launchFullRefresh()
+
+			case msgActionStart:
+				state = state.startPendingAction(msg.action)
+				notify()
+
+			case msgActionAwait:
+				if _, exists := state.pendingActions[msg.id]; exists {
+					state = state.awaitPendingAction(msg.id)
+					actionFencesPending[msg.id] = true
+					notify()
+					launchFullRefresh()
+				}
+
+			case msgActionFinish:
+				state = state.finishPendingActions([]string{msg.id})
+				delete(actionFencesPending, msg.id)
+				notify()
 			}
 		}
 	}

@@ -25,19 +25,20 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 	intents := make(chan tray.Intent, 32)
 	service.attachActions(intents)
 	return actions.New(actions.Config{
-		Intents:      intents,
-		ViewModel:    service.viewModel,
-		Opener:       backend,
-		Picker:       backend,
-		Prompter:     backend,
-		Notifier:     actionNotifier{service: service},
-		Locker:       locker,
-		Reservations: reservations,
-		Stack:        stack,
-		Reconnect:    service.runner.Reconnect,
-		Refresh:      service.runner.Refresh,
-		Restart:      restart,
-		Shutdown:     shutdown,
+		Intents:         intents,
+		ViewModel:       service.viewModel,
+		Opener:          backend,
+		Picker:          backend,
+		Prompter:        backend,
+		Notifier:        actionNotifier{service: service},
+		Locker:          locker,
+		Reservations:    reservations,
+		ActionLifecycle: service.runner,
+		Stack:           stack,
+		Reconnect:       service.runner.Reconnect,
+		Refresh:         service.runner.Refresh,
+		Restart:         restart,
+		Shutdown:        shutdown,
 	})
 }
 

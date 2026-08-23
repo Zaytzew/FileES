@@ -59,7 +59,26 @@ type RepoViewModel struct {
 	LastSyncAt       string
 	CurrentOp        *string
 	ReservationCount int
+	Cycle            contract.CycleStatus
 }
+
+type PendingAction struct {
+	ID                        string
+	Kind                      string
+	RepoID                    string
+	ServerID                  string
+	Label                     string
+	Phase                     string
+	StartedAt                 time.Time
+	ReservationDelta          int
+	BaselineReservations      int
+	BaselineReservationsKnown bool
+}
+
+const (
+	ActionRunning            = "running"
+	ActionAwaitingProjection = "awaiting_projection"
+)
 
 type ServerViewModel struct {
 	ID                    string
@@ -146,21 +165,22 @@ func (update *UpdateViewModel) Available() bool {
 // ViewModel is the complete read-only presentation model consumed by the tray adapter.
 // It is replaced atomically on every state change; the tray layer must not mutate it.
 type ViewModel struct {
-	Connected    bool
-	Stale        bool // true: data predates last disconnect; display but mark stale
-	DaemonState  string
-	UptimeSec    int64
-	LastRefresh  time.Time
-	Capabilities map[string]bool
-	Repos        []RepoViewModel
-	Servers      []ServerViewModel
-	Reservations []Reservation
-	Recoveries   []RecoveryViewModel
-	Errors       []ErrorViewModel
-	Activity     []ActivityViewModel
-	Notices      []NoticeViewModel
-	Update       *UpdateViewModel
-	Icon         IconState
+	Connected      bool
+	Stale          bool // true: data predates last disconnect; display but mark stale
+	DaemonState    string
+	UptimeSec      int64
+	LastRefresh    time.Time
+	Capabilities   map[string]bool
+	Repos          []RepoViewModel
+	Servers        []ServerViewModel
+	Reservations   []Reservation
+	Recoveries     []RecoveryViewModel
+	Errors         []ErrorViewModel
+	Activity       []ActivityViewModel
+	Notices        []NoticeViewModel
+	PendingActions []PendingAction
+	Update         *UpdateViewModel
+	Icon           IconState
 }
 
 func (vm ViewModel) CanPlanUpdate() bool {

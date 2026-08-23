@@ -33,6 +33,7 @@ const (
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.
 type Intent struct {
+	ActionID      string
 	Kind          IntentKind
 	NoticeID      string
 	RepoID        string

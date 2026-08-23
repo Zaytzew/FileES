@@ -10,23 +10,25 @@ import (
 // All methods are pure — they return a new appState and have no side effects.
 // Only the event loop goroutine accesses appState; no locking needed.
 type appState struct {
-	connected         bool
-	stale             bool
-	caps              map[string]bool
-	summaries         map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
-	snapshots         map[string]contract.RepoStatus  // from repo.status; carries live state
-	order             []string                        // stable repoID first-seen order
-	serverOrder       []string                        // stable serverID first-seen order
-	lastSeq           int64                           // last event sequence number received
-	system            contract.SystemStatusResult
-	errors            []ErrorViewModel
-	activity          []ActivityViewModel
-	reservations      map[string]int
-	repoReservations  map[string]int
-	reservationItems  []Reservation
-	reservationsKnown bool
-	notices           []NoticeViewModel
-	refreshed         time.Time
+	connected          bool
+	stale              bool
+	caps               map[string]bool
+	summaries          map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
+	snapshots          map[string]contract.RepoStatus  // from repo.status; carries live state
+	order              []string                        // stable repoID first-seen order
+	serverOrder        []string                        // stable serverID first-seen order
+	lastSeq            int64                           // last event sequence number received
+	system             contract.SystemStatusResult
+	errors             []ErrorViewModel
+	activity           []ActivityViewModel
+	reservations       map[string]int
+	repoReservations   map[string]int
+	reservationItems   []Reservation
+	reservationsKnown  bool
+	notices            []NoticeViewModel
+	pendingActions     map[string]PendingAction
+	pendingActionOrder []string
+	refreshed          time.Time
 }
 
 func newAppState() appState {
@@ -36,6 +38,7 @@ func newAppState() appState {
 		snapshots:        make(map[string]contract.RepoStatus),
 		reservations:     make(map[string]int),
 		repoReservations: make(map[string]int),
+		pendingActions:   make(map[string]PendingAction),
 	}
 }
 
@@ -232,6 +235,7 @@ func (s appState) viewModel() ViewModel {
 			LastSyncAt:       snap.LastSyncAt,
 			CurrentOp:        snap.CurrentOperation,
 			ReservationCount: s.repoReservations[reservationKey(sum.ServerID, sum.ID)],
+			Cycle:            snap.Cycle,
 		})
 	}
 	serverByID := make(map[string]ServerViewModel, len(s.system.Activations))
@@ -273,18 +277,19 @@ func (s appState) viewModel() ViewModel {
 		caps[k] = v
 	}
 	vm := ViewModel{
-		Connected:    s.connected,
-		Stale:        s.stale,
-		DaemonState:  s.system.State,
-		UptimeSec:    s.system.UptimeSec,
-		LastRefresh:  s.refreshed,
-		Capabilities: caps,
-		Repos:        repos,
-		Servers:      servers,
-		Reservations: append([]Reservation(nil), s.reservationItems...),
-		Errors:       append([]ErrorViewModel(nil), s.errors...),
-		Activity:     append([]ActivityViewModel(nil), s.activity...),
-		Notices:      append([]NoticeViewModel(nil), s.notices...),
+		Connected:      s.connected,
+		Stale:          s.stale,
+		DaemonState:    s.system.State,
+		UptimeSec:      s.system.UptimeSec,
+		LastRefresh:    s.refreshed,
+		Capabilities:   caps,
+		Repos:          repos,
+		Servers:        servers,
+		Reservations:   append([]Reservation(nil), s.reservationItems...),
+		Errors:         append([]ErrorViewModel(nil), s.errors...),
+		Activity:       append([]ActivityViewModel(nil), s.activity...),
+		Notices:        append([]NoticeViewModel(nil), s.notices...),
+		PendingActions: s.projectPendingActions(),
 	}
 	now := time.Now().UTC()
 	for _, recovery := range s.system.Recoveries {
@@ -309,6 +314,101 @@ func (s appState) viewModel() ViewModel {
 		vm.Icon = aggregateIcon(s.connected, repos, len(s.notices))
 	}
 	return vm
+}
+
+func (s appState) startPendingAction(action PendingAction) appState {
+	if action.ID == "" {
+		return s
+	}
+	next := make(map[string]PendingAction, len(s.pendingActions)+1)
+	for id, pending := range s.pendingActions {
+		next[id] = pending
+	}
+	if _, exists := next[action.ID]; !exists {
+		s.pendingActionOrder = append(s.pendingActionOrder, action.ID)
+	}
+	action.Phase = ActionRunning
+	next[action.ID] = action
+	s.pendingActions = next
+	return s
+}
+
+func (s appState) awaitPendingAction(id string) appState {
+	action, exists := s.pendingActions[id]
+	if !exists {
+		return s
+	}
+	next := make(map[string]PendingAction, len(s.pendingActions))
+	for key, pending := range s.pendingActions {
+		next[key] = pending
+	}
+	action.Phase = ActionAwaitingProjection
+	next[id] = action
+	s.pendingActions = next
+	return s
+}
+
+func (s appState) finishPendingActions(ids []string) appState {
+	if len(ids) == 0 || len(s.pendingActions) == 0 {
+		return s
+	}
+	next := make(map[string]PendingAction, len(s.pendingActions))
+	for id, pending := range s.pendingActions {
+		next[id] = pending
+	}
+	removed := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		delete(next, id)
+		removed[id] = true
+	}
+	s.pendingActions = next
+	order := make([]string, 0, len(s.pendingActionOrder))
+	for _, id := range s.pendingActionOrder {
+		if !removed[id] {
+			order = append(order, id)
+		}
+	}
+	s.pendingActionOrder = order
+	return s
+}
+
+// confirmPendingActions applies the post-action observation barrier. Lock
+// mutations are complete for presentation only when the authoritative
+// reservation inventory is known and moved in the expected direction.
+func (s appState) confirmPendingActions(ids []string) (appState, []string) {
+	confirmed := make([]string, 0, len(ids))
+	waiting := make([]string, 0)
+	for _, id := range ids {
+		action, exists := s.pendingActions[id]
+		if !exists {
+			continue
+		}
+		if action.ReservationDelta == 0 {
+			confirmed = append(confirmed, id)
+			continue
+		}
+		if !s.reservationsKnown {
+			waiting = append(waiting, id)
+			continue
+		}
+		current := s.repoReservations[reservationKey(action.ServerID, action.RepoID)]
+		if !action.BaselineReservationsKnown || (action.ReservationDelta > 0 && current > action.BaselineReservations) || (action.ReservationDelta < 0 && current < action.BaselineReservations) {
+			confirmed = append(confirmed, id)
+		} else {
+			waiting = append(waiting, id)
+		}
+	}
+	return s.finishPendingActions(confirmed), waiting
+}
+
+func (s appState) projectPendingActions() []PendingAction {
+	actions := make([]PendingAction, 0, len(s.pendingActions))
+	for _, id := range s.pendingActionOrder {
+		if action, exists := s.pendingActions[id]; exists {
+			actions = append(actions, action)
+		}
+	}
+	return actions
 }
 
 func reservationKey(serverID, repoID string) string { return serverID + "\x00" + repoID }

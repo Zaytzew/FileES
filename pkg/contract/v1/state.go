@@ -51,13 +51,13 @@ const (
 )
 
 type RepoStatus struct {
-	RepoID           string        `json:"repo_id"`
-	ServerID         string        `json:"server_id"`
-	DisplayName      string        `json:"display_name"`
-	Attached         bool          `json:"attached"`
-	Access           string        `json:"access"`
-	OwnerRealmID     string        `json:"owner_realm_id,omitempty"`
-	AttachmentPolicy string        `json:"attachment_policy"`
+	RepoID           string `json:"repo_id"`
+	ServerID         string `json:"server_id"`
+	DisplayName      string `json:"display_name"`
+	Attached         bool   `json:"attached"`
+	Access           string `json:"access"`
+	OwnerRealmID     string `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy string `json:"attachment_policy"`
 	// EditingPolicy is empty for the default and "lock_required" when this
 	// repository works through edit passports. Every client needs it, not just
 	// the owner: without it a read-only file is unexplained, which is exactly
@@ -71,7 +71,24 @@ type RepoStatus struct {
 	Conflicts        int           `json:"conflicts"`
 	LastSyncAt       string        `json:"last_sync_at,omitempty"` // RFC3339; empty if never synced
 	CurrentOperation *string       `json:"current_operation"`      // null or short description
+	Cycle            CycleStatus   `json:"cycle"`
 	Recovery         RecoveryStats `json:"recovery"`
+}
+
+const (
+	CycleWaiting = "waiting"
+	CycleRunning = "running"
+	CycleStopped = "stopped"
+)
+
+// CycleStatus is the daemon-owned schedule of one repository runtime. The GUI
+// may turn NextTickAt into a countdown, but must not treat elapsed wall time as
+// proof that an action's effect is already present in a snapshot.
+type CycleStatus struct {
+	ID         uint64 `json:"cycle_id"`
+	Phase      string `json:"phase,omitempty"`
+	LastTickAt string `json:"last_tick_at,omitempty"`
+	NextTickAt string `json:"next_tick_at,omitempty"`
 }
 
 // RecoveryStats is a point-in-time diagnostic snapshot of the commit

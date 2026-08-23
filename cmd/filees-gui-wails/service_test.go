@@ -179,6 +179,13 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 	if intent := <-actions; intent.Kind != tray.IntentReleaseReservation || intent.ReservationID != "opaque-row" {
 		t.Fatalf("reservation intent = %+v", intent)
 	}
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentSettings), ServerID: "server-1"})
+	if !accepted.Accepted {
+		t.Fatalf("settings rejected: %+v", accepted)
+	}
+	if intent := <-actions; intent.Kind != tray.IntentSettings || intent.ServerID != "server-1" {
+		t.Fatalf("settings intent = %+v", intent)
+	}
 	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentRestartFileES)})
 	if !accepted.Accepted {
 		t.Fatalf("restart rejected: %+v", accepted)

@@ -374,6 +374,23 @@ func TestReducerActionFenceRequiresAuthoritativeExpectedReservationChange(t *tes
 	}
 }
 
+func TestReducerActionFenceRequiresProjectedSessionTimeout(t *testing.T) {
+	action := PendingAction{ID: "session_timeout:1", Kind: "session_timeout", ServerID: "spot", ExpectedSessionTimeoutMin: 90}
+	s := newAppState().startPendingAction(action).awaitPendingAction(action.ID)
+	s.system = contract.SystemStatusResult{Activations: []contract.ActivationStatus{{ServerID: "spot", SessionTimeoutMin: 30}}}
+
+	s, waiting := s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 1 || len(s.pendingActions) != 1 {
+		t.Fatalf("old timeout crossed fence: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+
+	s.system = contract.SystemStatusResult{Activations: []contract.ActivationStatus{{ServerID: "spot", SessionTimeoutMin: 90}}}
+	s, waiting = s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 0 || len(s.pendingActions) != 0 {
+		t.Fatalf("projected timeout did not finish action: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+}
+
 func TestReducerApplySnapshot(t *testing.T) {
 	s := newAppState().applyRepoList([]contract.RepoSummary{{ID: "a"}})
 	snap := contract.RepoStatus{RepoID: "a", State: contract.StateActive, Connectivity: contract.ConnOnline, LocalRevision: 42}

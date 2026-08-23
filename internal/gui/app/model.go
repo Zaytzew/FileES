@@ -70,6 +70,7 @@ type PendingAction struct {
 	Label                     string
 	Phase                     string
 	StartedAt                 time.Time
+	ExpectedSessionTimeoutMin int
 	ReservationDelta          int
 	BaselineReservations      int
 	BaselineReservationsKnown bool

@@ -133,6 +133,7 @@ type ReservationProjection struct {
 type ActionRequest struct {
 	Kind          string `json:"kind"`
 	RepoID        string `json:"repo_id,omitempty"`
+	ServerID      string `json:"server_id,omitempty"`
 	ReservationID string `json:"reservation_id,omitempty"`
 }
 
@@ -254,6 +255,7 @@ func (service *GUIService) Snapshot() Snapshot {
 func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	request.Kind = strings.TrimSpace(request.Kind)
 	request.RepoID = strings.TrimSpace(request.RepoID)
+	request.ServerID = strings.TrimSpace(request.ServerID)
 	request.ReservationID = strings.TrimSpace(request.ReservationID)
 
 	service.mu.RLock()
@@ -382,6 +384,8 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		reservation, ok := projectedReservation(vm, request.ReservationID)
 		allowed := ok && reservation.CanRelease && vm.CanReleaseReservations() && viewHasServer(vm, reservation.ServerID)
 		return tray.Intent{Kind: tray.IntentReleaseReservation, ReservationID: request.ReservationID}, allowed
+	case string(tray.IntentSettings):
+		return tray.Intent{Kind: tray.IntentSettings, ServerID: request.ServerID}, viewHasServer(vm, request.ServerID)
 	}
 	repo, ok := projectedRepo(vm, request.RepoID)
 	if !ok {

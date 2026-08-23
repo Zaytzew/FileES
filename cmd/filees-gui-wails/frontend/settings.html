@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title>Ustawienia FileES</title>
+  <link rel="stylesheet" href="./settings.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <main class="settings-shell">
+    <header id="settings-titlebar" class="settings-titlebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><div><strong>Ustawienia FileES</strong><small id="window-context">serwer</small></div></div>
+      <div class="window-controls">
+        <button id="settings-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj">—</button>
+        <button id="settings-close" class="window-button close" title="Zamknij ustawienia" aria-label="Zamknij ustawienia">×</button>
+      </div>
+    </header>
+
+    <section class="settings-hero">
+      <div><p class="eyebrow">Serwer FileES</p><h1 id="server-name">Wybierz serwer</h1><p id="settings-copy">Czekam na spójny model ustawień.</p></div>
+      <span id="realm-badge" class="realm-badge">—</span>
+    </section>
+
+    <section class="server-facts" aria-label="Informacje o serwerze">
+      <article><small>Adres</small><strong id="server-address">—</strong></article>
+      <article><small>Strefa</small><strong id="server-realm">—</strong></article>
+      <article><small>ID klienta</small><strong id="server-client">—</strong></article>
+    </section>
+
+    <section class="setting-card">
+      <div class="setting-copy"><p class="eyebrow">Transfer</p><h2>Limit czasu wysyłki i pobierania</h2><p>Jak długo FileES może czekać na zakończenie pojedynczego transferu. Dla dużych plików i wolnych łączy wartość może być większa.</p></div>
+      <div class="setting-value"><strong id="timeout-value">—</strong><span>min</span><button id="change-timeout" type="button">Zmień</button></div>
+    </section>
+
+    <section class="folders-card">
+      <header><div><p class="eyebrow">Ten serwer</p><h2>Foldery</h2></div><span id="folder-count">0</span></header>
+      <div id="settings-folders" class="folder-list"><p class="empty">Brak folderów do pokazania.</p></div>
+    </section>
+
+    <footer><span>Stan i dostępne działania pochodzą z demona FileES.</span><button id="settings-done" type="button">Gotowe</button></footer>
+  </main>
+  <div id="settings-toasts" class="toast-stack" aria-live="polite"></div>
+  <script type="module" src="./settings.js"></script>
+</body>
+</html>

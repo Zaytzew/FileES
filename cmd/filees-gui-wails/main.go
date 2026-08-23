@@ -37,6 +37,7 @@ func main() {
 
 	daemon := ipcclient.New(*socket, "filees-gui-wails")
 	gui := newGUIService(daemon)
+	settings := newSettingsService()
 	restartRequested := make(chan struct{}, 1)
 
 	host := application.New(application.Options{
@@ -44,6 +45,7 @@ func main() {
 		Description: "Eksperymentalny renderer IPC FileES",
 		Services: []application.Service{
 			application.NewService(gui),
+			application.NewService(settings),
 		},
 		Assets: application.AssetOptions{
 			Handler:        application.BundledAssetFileServer(frontend),
@@ -55,25 +57,8 @@ func main() {
 		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
 		Linux:   application.LinuxOptions{DisableQuitOnLastWindowClosed: true},
 	})
-	actionController := configureActions(
-		gui, daemon, reservationAdapter{client: daemon}, stackLifecycleAdapter{client: daemon}, newActionPlatform(),
-		func() {
-			select {
-			case restartRequested <- struct{}{}:
-			default:
-			}
-			host.Quit()
-		},
-		host.Quit,
-	)
-
 	gui.attachEmitter(host.Event)
-	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
-		go gui.run(host.Context())
-		if actionController != nil {
-			go actionController.Run(host.Context())
-		}
-	})
+	settings.attachEmitter(host.Event)
 
 	mainWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "filees-main",
@@ -88,6 +73,50 @@ func main() {
 		Windows: application.WindowsWindow{
 			NonClientRegionSupport: true,
 		},
+	})
+	settingsWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:            "filees-settings",
+		Title:           "Ustawienia FileES",
+		URL:             "/settings.html",
+		Width:           940,
+		Height:          720,
+		MinWidth:        760,
+		MinHeight:       560,
+		Frameless:       true,
+		Hidden:          true,
+		DevToolsEnabled: *devtools,
+		Windows: application.WindowsWindow{
+			NonClientRegionSupport: true,
+		},
+	})
+	settings.attachPresentation(func() {
+		settingsWindow.Show()
+		settingsWindow.Center()
+		settingsWindow.Focus()
+	}, func() { settingsWindow.Hide() })
+	settingsWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		settings.Cancel()
+	})
+
+	actionController := configureActions(
+		gui, daemon, reservationAdapter{client: daemon}, stackLifecycleAdapter{client: daemon},
+		settingsBrowserAdapter{service: settings}, sessionTimeoutAdapter{client: daemon}, newActionPlatform(),
+		func() {
+			select {
+			case restartRequested <- struct{}{}:
+			default:
+			}
+			host.Quit()
+		},
+		host.Quit,
+	)
+
+	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
+		go gui.run(host.Context())
+		if actionController != nil {
+			go actionController.Run(host.Context())
+		}
 	})
 	configureWailsTray(host, mainWindow, gui)
 

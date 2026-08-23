@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"filees/internal/gui/app"
@@ -310,10 +311,11 @@ type Config struct {
 	// Refresh obtains a fresh daemon snapshot without reconnecting. It is used
 	// after a successful mutation whose result changes tray eligibility.
 	Refresh func()
-	// ActionLifecycle keeps renderer badges alive until a full daemon snapshot
-	// started after a successful mutation has been applied. Nil preserves the
-	// legacy fire-and-refresh behaviour used by renderers without badges.
+	// ActionLifecycle starts renderer badges with a mutation and keeps them alive
+	// until a subsequent full daemon snapshot projects the expected effect. Nil
+	// preserves the legacy fire-and-refresh behaviour used without badges.
 	ActionLifecycle interface {
+		StartAction(app.PendingAction) bool
 		AwaitActionProjection(string)
 		FinishAction(string)
 	}
@@ -342,6 +344,7 @@ type Controller struct {
 	operations   map[string]struct{}
 	pendingMu    sync.Mutex
 	pending      map[string]pendingAttachment
+	actionSeq    atomic.Uint64
 	tasks        sync.WaitGroup
 }
 
@@ -1836,15 +1839,20 @@ func (c *Controller) startSetSessionTimeout(ctx context.Context, serverID string
 			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nieprawidłowy limit", Text: "Podaj liczbę minut od 1 do 1440."})
 			return
 		}
+		actionID := c.startProjectedAction(app.PendingAction{
+			Kind:                      string(platform.SettingsDialogSessionTimeout),
+			ServerID:                  serverID,
+			Label:                     "Zapisywanie limitu czasu",
+			ExpectedSessionTimeoutMin: minutes,
+		})
 		saved, setErr := c.cfg.SessionTimeouts.SetSessionTimeout(ctx, serverID, minutes)
 		if setErr != nil {
+			c.finishProjectedAction(actionID)
 			title, body, urgency := operationErrorPresentation("limit czasu wysyłki", setErr)
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: urgency})
 			return
 		}
-		if c.cfg.Refresh != nil {
-			c.cfg.Refresh()
-		}
+		c.awaitProjectedAction(actionID)
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Zapisano limit czasu", Body: "FileES będzie czekał do " + strconv.Itoa(saved) + " min na jedno wysłanie lub pobranie.", Urgency: platform.UrgencyNormal})
 	}()
 }
@@ -3071,6 +3079,18 @@ func (c *Controller) awaitProjectedAction(actionID string) {
 	if c.cfg.Refresh != nil {
 		c.cfg.Refresh()
 	}
+}
+
+func (c *Controller) startProjectedAction(action app.PendingAction) string {
+	if c.cfg.ActionLifecycle == nil {
+		return ""
+	}
+	action.ID = action.Kind + ":" + strconv.FormatUint(c.actionSeq.Add(1), 10)
+	action.StartedAt = time.Now()
+	if !c.cfg.ActionLifecycle.StartAction(action) {
+		return ""
+	}
+	return action.ID
 }
 
 func (c *Controller) finishProjectedAction(actionID string) {

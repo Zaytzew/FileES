@@ -18,7 +18,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, backend platform.Backend, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, backend platform.Backend, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -33,6 +33,8 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		Notifier:        actionNotifier{service: service},
 		Locker:          locker,
 		Reservations:    reservations,
+		SettingsBrowser: settings,
+		SessionTimeouts: sessionTimeouts,
 		ActionLifecycle: service.runner,
 		Stack:           stack,
 		Reconnect:       service.runner.Reconnect,
@@ -40,6 +42,23 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		Restart:         restart,
 		Shutdown:        shutdown,
 	})
+}
+
+type sessionTimeoutClient interface {
+	ServerSetSessionTimeout(context.Context, contract.ServerSetSessionTimeoutPayload) (*contract.ServerSetSessionTimeoutResult, error)
+}
+
+type sessionTimeoutAdapter struct{ client sessionTimeoutClient }
+
+func (adapter sessionTimeoutAdapter) SetSessionTimeout(ctx context.Context, serverID string, minutes int) (int, error) {
+	result, err := adapter.client.ServerSetSessionTimeout(ctx, contract.ServerSetSessionTimeoutPayload{ServerID: serverID, Minutes: minutes})
+	if err != nil {
+		return 0, err
+	}
+	if result == nil || result.Minutes != minutes {
+		return 0, errors.New("daemon returned an invalid session timeout")
+	}
+	return result.Minutes, nil
 }
 
 type systemLifecycleClient interface {

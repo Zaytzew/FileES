@@ -372,15 +372,30 @@ func (s appState) finishPendingActions(ids []string) appState {
 	return s
 }
 
-// confirmPendingActions applies the post-action observation barrier. Lock
-// mutations are complete for presentation only when the authoritative
-// reservation inventory is known and moved in the expected direction.
+// confirmPendingActions applies the post-action observation barrier. A mutation
+// is complete for presentation only when the authoritative projection shows its
+// expected effect (currently the exact session timeout or reservation delta).
 func (s appState) confirmPendingActions(ids []string) (appState, []string) {
 	confirmed := make([]string, 0, len(ids))
 	waiting := make([]string, 0)
 	for _, id := range ids {
 		action, exists := s.pendingActions[id]
 		if !exists {
+			continue
+		}
+		if action.ExpectedSessionTimeoutMin > 0 {
+			matched := false
+			for _, activation := range s.system.Activations {
+				if activation.ServerID == action.ServerID && activation.SessionTimeoutMin == action.ExpectedSessionTimeoutMin {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				confirmed = append(confirmed, id)
+			} else {
+				waiting = append(waiting, id)
+			}
 			continue
 		}
 		if action.ReservationDelta == 0 {

@@ -66,6 +66,13 @@ export class ActionRequest {
              * @member
              * @type {string | undefined}
              */
+            this["server_id"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
             this["reservation_id"] = undefined;
         }
 
@@ -843,6 +850,273 @@ export class ServerProjection {
     }
 }
 
+export class SettingsAcceptance {
+    /**
+     * Creates a new SettingsAcceptance instance.
+     * @param {Partial<SettingsAcceptance>} [$$source = {}] - The source object to create the SettingsAcceptance.
+     */
+    constructor($$source = {}) {
+        if (!("accepted" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["accepted"] = false;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["code"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SettingsAcceptance instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {SettingsAcceptance}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new SettingsAcceptance(/** @type {Partial<SettingsAcceptance>} */($$parsedSource));
+    }
+}
+
+export class SettingsChoice {
+    /**
+     * Creates a new SettingsChoice instance.
+     * @param {Partial<SettingsChoice>} [$$source = {}] - The source object to create the SettingsChoice.
+     */
+    constructor($$source = {}) {
+        if (!("action" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["action"] = "";
+        }
+        if (!("server_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["server_id"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SettingsChoice instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {SettingsChoice}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new SettingsChoice(/** @type {Partial<SettingsChoice>} */($$parsedSource));
+    }
+}
+
+export class SettingsFolderProjection {
+    /**
+     * Creates a new SettingsFolderProjection instance.
+     * @param {Partial<SettingsFolderProjection>} [$$source = {}] - The source object to create the SettingsFolderProjection.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("local_path" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["local_path"] = "";
+        }
+        if (!("state" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["state"] = "";
+        }
+        if (!("access" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["access"] = "";
+        }
+        if (!("editing" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["editing"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SettingsFolderProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {SettingsFolderProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new SettingsFolderProjection(/** @type {Partial<SettingsFolderProjection>} */($$parsedSource));
+    }
+}
+
+export class SettingsServerProjection {
+    /**
+     * Creates a new SettingsServerProjection instance.
+     * @param {Partial<SettingsServerProjection>} [$$source = {}] - The source object to create the SettingsServerProjection.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("address" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["address"] = "";
+        }
+        if (!("realm" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["realm"] = "";
+        }
+        if (!("client_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["client_id"] = "";
+        }
+        if (!("session_timeout_min" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["session_timeout_min"] = 0;
+        }
+        if (!("can_set_session_timeout" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_set_session_timeout"] = false;
+        }
+        if (!("folders" in $$source)) {
+            /**
+             * @member
+             * @type {SettingsFolderProjection[]}
+             */
+            this["folders"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SettingsServerProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {SettingsServerProjection}
+     */
+    static createFrom($$source = {}) {
+        const $$createField7_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("folders" in $$parsedSource) {
+            $$parsedSource["folders"] = $$createField7_0($$parsedSource["folders"]);
+        }
+        return new SettingsServerProjection(/** @type {Partial<SettingsServerProjection>} */($$parsedSource));
+    }
+}
+
+export class SettingsSnapshot {
+    /**
+     * Creates a new SettingsSnapshot instance.
+     * @param {Partial<SettingsSnapshot>} [$$source = {}] - The source object to create the SettingsSnapshot.
+     */
+    constructor($$source = {}) {
+        if (!("revision" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["revision"] = 0;
+        }
+        if (!("title" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["title"] = "";
+        }
+        if (!("text" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["text"] = "";
+        }
+        if (!("server" in $$source)) {
+            /**
+             * @member
+             * @type {SettingsServerProjection}
+             */
+            this["server"] = (new SettingsServerProjection());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SettingsSnapshot instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {SettingsSnapshot}
+     */
+    static createFrom($$source = {}) {
+        const $$createField3_0 = $$createType3;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("server" in $$parsedSource) {
+            $$parsedSource["server"] = $$createField3_0($$parsedSource["server"]);
+        }
+        return new SettingsSnapshot(/** @type {Partial<SettingsSnapshot>} */($$parsedSource));
+    }
+}
+
 export class Snapshot {
     /**
      * Creates a new Snapshot instance.
@@ -992,16 +1266,16 @@ export class Snapshot {
      * @returns {Snapshot}
      */
     static createFrom($$source = {}) {
-        const $$createField7_0 = $$createType1;
-        const $$createField8_0 = $$createType3;
-        const $$createField9_0 = $$createType5;
-        const $$createField10_0 = $$createType7;
-        const $$createField11_0 = $$createType9;
-        const $$createField12_0 = $$createType11;
-        const $$createField13_0 = $$createType13;
-        const $$createField14_0 = $$createType15;
-        const $$createField17_0 = $$createType17;
-        const $$createField18_0 = $$createType19;
+        const $$createField7_0 = $$createType4;
+        const $$createField8_0 = $$createType6;
+        const $$createField9_0 = $$createType8;
+        const $$createField10_0 = $$createType10;
+        const $$createField11_0 = $$createType12;
+        const $$createField12_0 = $$createType14;
+        const $$createField13_0 = $$createType16;
+        const $$createField14_0 = $$createType18;
+        const $$createField17_0 = $$createType20;
+        const $$createField18_0 = $$createType22;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("capabilities" in $$parsedSource) {
             $$parsedSource["capabilities"] = $$createField7_0($$parsedSource["capabilities"]);
@@ -1095,22 +1369,25 @@ export class UpdateProjection {
 
 // Private type creation functions
 const $$createType0 = CycleProjection.createFrom;
-const $$createType1 = $Create.Array($Create.Any);
-const $$createType2 = ServerProjection.createFrom;
-const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = RepoProjection.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = ReservationProjection.createFrom;
-const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = ErrorProjection.createFrom;
-const $$createType9 = $Create.Array($$createType8);
-const $$createType10 = ActivityProjection.createFrom;
-const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = JournalProjection.createFrom;
-const $$createType13 = $Create.Array($$createType12);
-const $$createType14 = PendingActionProjection.createFrom;
-const $$createType15 = $Create.Array($$createType14);
-const $$createType16 = NoticeProjection.createFrom;
-const $$createType17 = $Create.Array($$createType16);
-const $$createType18 = UpdateProjection.createFrom;
-const $$createType19 = $Create.Nullable($$createType18);
+const $$createType1 = SettingsFolderProjection.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = SettingsServerProjection.createFrom;
+const $$createType4 = $Create.Array($Create.Any);
+const $$createType5 = ServerProjection.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = RepoProjection.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = ReservationProjection.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = ErrorProjection.createFrom;
+const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = ActivityProjection.createFrom;
+const $$createType14 = $Create.Array($$createType13);
+const $$createType15 = JournalProjection.createFrom;
+const $$createType16 = $Create.Array($$createType15);
+const $$createType17 = PendingActionProjection.createFrom;
+const $$createType18 = $Create.Array($$createType17);
+const $$createType19 = NoticeProjection.createFrom;
+const $$createType20 = $Create.Array($$createType19);
+const $$createType21 = UpdateProjection.createFrom;
+const $$createType22 = $Create.Nullable($$createType21);

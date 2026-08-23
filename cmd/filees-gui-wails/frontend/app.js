@@ -236,10 +236,15 @@ function renderRepositories(snapshot) {
     const guest = serverRepos.filter((repo) => repo.ownership === "guest");
     const unclassified = serverRepos.filter((repo) => !["owned", "guest"].includes(repo.ownership));
     const context = server.realm_alias || server.address || server.id;
-    return `<article class="server-panel">
+    return `<article class="server-panel" data-server-id="${escapeHTML(server.id)}">
       <header class="server-header">
         <div class="server-identity"><span class="server-mark" aria-hidden="true"></span><div>
-          <h3>${escapeHTML(server.display_name || server.id)}</h3>
+          <div class="server-title-line">
+            <h3>${escapeHTML(server.display_name || server.id)}</h3>
+            <button class="server-settings" type="button" data-action="settings" title="Ustawienia serwera" aria-label="Ustawienia serwera ${escapeHTML(server.display_name || server.id)}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
+            </button>
+          </div>
           <p title="${escapeHTML(context)}">${escapeHTML(context)}</p>
         </div></div>
         <span class="server-total">${serverRepos.length} ${plural(serverRepos.length, "folder", "foldery", "folderów")}</span>
@@ -382,12 +387,14 @@ function showToast(feedback) {
 async function triggerAction(button) {
   const repoRow = button.closest("[data-repo-id]");
   const reservationRow = button.closest("[data-reservation-id]");
-  if (!repoRow && !reservationRow) return;
+  const serverPanel = button.closest("[data-server-id]");
+  if (!repoRow && !reservationRow && !serverPanel) return;
   button.disabled = true;
   try {
     const result = await GUIService.Trigger({
       kind: button.dataset.action,
       repo_id: repoRow?.dataset.repoId || "",
+      server_id: serverPanel?.dataset.serverId || "",
       reservation_id: reservationRow?.dataset.reservationId || "",
     });
     if (!result.accepted) {

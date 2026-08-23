@@ -68,6 +68,15 @@ traya. Podmenu `FileES` zawiera kontrolowany restart oraz `Zakończ…`. Obie
 akcje przechodzą przez wspólny kontroler i IPC demona, wymagają potwierdzenia
 z możliwością `Anuluj` i dotyczą pary daemon + GUI, a nie samego renderera.
 
+Trybik w nagłówku każdego panelu serwera otwiera pojedyncze, niezależne okno
+`Ustawienia FileES` już w kontekście jego `server_id`. Kolejne otwarcie zmienia
+kontekst istniejącego okna zamiast mnożyć WebView. `SettingsService` projektuje
+gotowy model serwera i folderów; JavaScript nie wylicza capabilities ani nie
+woła IPC. Pierwszą aktywną mutacją jest limit czasu transferu. Po wyborze wraca
+ona do wspólnego kontrolera, używa natywnego promptu i adaptera IPC, a badge
+znika dopiero wtedy, gdy pełny snapshot pokaże żądaną liczbę minut. Pozostałe
+ustawienia są na tym etapie informacyjne i nie mają martwych przycisków.
+
 Wymagania:
 
 - Go 1.25 lub nowszy;

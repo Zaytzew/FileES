@@ -34,32 +34,40 @@ const (
 	RepoDisplayUnattached   RepoDisplayState = "unattached"
 	RepoDisplayDisabled     RepoDisplayState = "disabled"
 	RepoDisplayRevoked      RepoDisplayState = "revoked"
+	RepoDisplayDeleted      RepoDisplayState = "deleted"
 	RepoDisplayUnknown      RepoDisplayState = "unknown"
 )
 
 // RepoViewModel is the read-only presentation model for one repository.
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
-	ID               string
-	DisplayName      string
-	ServerID         string
-	Attached         bool
-	Access           string
-	OwnerRealmID     string
-	AttachmentPolicy string
-	EditingPolicy    string
-	URL              string
-	LocalPath        string
-	State            string
-	Connectivity     string
-	LocalRev         int64
-	HeadRev          int64
-	Pending          contract.PendingStats
-	Conflicts        int
-	LastSyncAt       string
-	CurrentOp        *string
-	ReservationCount int
-	Cycle            contract.CycleStatus
+	ID                  string
+	DisplayName         string
+	ServerID            string
+	Attached            bool
+	Access              string
+	OwnerRealmID        string
+	AttachmentPolicy    string
+	EditingPolicy       string
+	URL                 string
+	LocalPath           string
+	State               string
+	Connectivity        string
+	LocalRev            int64
+	HeadRev             int64
+	Pending             contract.PendingStats
+	Conflicts           int
+	LastSyncAt          string
+	CurrentOp           *string
+	ReservationCount    int
+	Cycle               contract.CycleStatus
+	ServerDeleted       bool
+	LocalCleanupPending bool
+	RetainUntil         string
+	RecoveryOperationID string
+	RecoveryAvailable   bool
+	RecoveryPending     bool
+	CleanupError        string
 }
 
 type PendingAction struct {
@@ -318,6 +326,8 @@ func (r RepoViewModel) DisplayState() RepoDisplayState {
 		return RepoDisplayDisabled
 	case contract.StateRevoked:
 		return RepoDisplayRevoked
+	case "deleted":
+		return RepoDisplayDeleted
 	default:
 		return RepoDisplayUnknown
 	}

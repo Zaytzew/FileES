@@ -277,6 +277,26 @@ func TestRealmRemovalContractCarriesNoTargetScope(t *testing.T) {
 	}
 }
 
+func TestRepositoryRecoveryContractBindsCompletedDeleteOperation(t *testing.T) {
+	operationID, requestID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	key := recoveryPublicKey(t)
+	if _, err := NewTicket(operationID, requestID, TicketPrepareRepositoryRecovery, "client-a", PrepareRepositoryRecoveryPayload{RepoID: repoID, RecoveryPublicKey: key}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	manifest := RealmRecoveryManifest{
+		Schema: "filees.realm-recovery-manifest/v1", OperationID: operationID, RealmID: uuid.NewString(),
+		CreatedAt: now, DownloadUntil: now.Add(time.Hour), AdminGraceUntil: now.Add(time.Hour),
+		Archives: []RealmRecoveryArchive{{ArchiveID: uuid.NewString(), RepoID: repoID, SHA256: strings.Repeat("a", 64), Size: 123}},
+	}
+	if _, err := NewSuccessResult(operationID, requestID, TicketPrepareRepositoryRecovery, PrepareRepositoryRecoveryResult{Manifest: manifest}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTicket(operationID, requestID, TicketPrepareRepositoryRecovery, "client-a", PrepareRepositoryRecoveryPayload{RepoID: repoID, RecoveryPublicKey: "ssh-rsa invalid"}, time.Now()); err == nil {
+		t.Fatal("invalid repository recovery key accepted")
+	}
+}
+
 func TestRealmRemovalRequestRejectsForgedScope(t *testing.T) {
 	ticket, err := NewTicket(uuid.NewString(), uuid.NewString(), TicketRealmRemoveRequest, "client-a", RealmRemoveRequestPayload{NotificationEmail: "user@example.net", RecoveryPublicKey: recoveryPublicKey(t)}, time.Now())
 	if err != nil {

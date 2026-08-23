@@ -20,6 +20,7 @@ import (
 	"filees/pkg/controlclient"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
+	"filees/pkg/recoverykit"
 	"filees/pkg/talk"
 )
 
@@ -32,6 +33,7 @@ type daemonProvisioner struct {
 	queue            chan string
 	attachments      chan<- provisionedAttachment
 	newAttachmentSVN func(clientprofile.Profile, string) attachmentSVN
+	recoveryRegistry recoverykit.Registry
 }
 
 type attachmentSVN interface {
@@ -92,6 +94,8 @@ func (p *daemonProvisioner) Enqueue(operationID string) {
 }
 
 func (p *daemonProvisioner) Run(ctx context.Context) {
+	cleanupRetry := time.NewTicker(30 * time.Second)
+	defer cleanupRetry.Stop()
 	provisionedActive := make(map[string]struct{})
 	if operations, err := p.provisioning.List(); err != nil {
 		talk.With("provisioning").Errorf("restore operations: %v", err)
@@ -102,6 +106,16 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 				continue
 			}
 			if operation.State == provisioning.StateActive {
+				if record, ok := p.local.Get(operation.OperationID); ok {
+					switch record.State {
+					case localrepo.StateRelocating, localrepo.StateReconciling, localrepo.StateDetaching, localrepo.StateDeleting, localrepo.StateDetached, localrepo.StateDeleted:
+						// The provisioning journal describes how this repository was
+						// created, while the local lifecycle contains a newer intent.
+						// Let the second pass resume or honour that intent instead of
+						// publishing and then suppressing the stale active attachment.
+						continue
+					}
+				}
 				provisionedActive[operation.OperationID] = struct{}{}
 				p.publishAttachment(ctx, operation)
 			} else {
@@ -138,6 +152,12 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-cleanupRetry.C:
+			for _, record := range p.local.List() {
+				if record.State == localrepo.StateDeleting && record.ServerDeleteCompleted && !record.LocalCleanupCompleted {
+					p.retryLocalCleanup(ctx, record.OperationID)
+				}
+			}
 		case operationID := <-p.queue:
 			p.runOne(ctx, operationID)
 		}
@@ -243,6 +263,15 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 func (p *daemonProvisioner) reconcileLocalBoundary(operation provisioning.Operation) error {
 	if operation.RepoID == "" {
 		return nil
+	}
+	if record, ok := p.local.Get(operation.OperationID); ok && record.RepoID == operation.RepoID {
+		switch record.State {
+		case localrepo.StateRelocating, localrepo.StateReconciling, localrepo.StateDetaching, localrepo.StateDeleting, localrepo.StateDetached, localrepo.StateDeleted:
+			// The provisioning journal proves the older create/initial-import
+			// boundary. A later local lifecycle must never be rolled backward to
+			// repository_created/attached during startup reconciliation.
+			return nil
+		}
 	}
 	if _, err := p.local.MarkRepositoryCreated(operation.OperationID, operation.RepoID, operation.RepoURL); err != nil {
 		record, ok := p.local.Get(operation.OperationID)
@@ -360,24 +389,105 @@ func (p *daemonProvisioner) runDetach(ctx context.Context, record localrepo.Reco
 	if err := p.quiesceAttachment(ctx, current); err != nil {
 		return current, err
 	}
-	if current.State == localrepo.StateDeleting {
-		if err := p.deleteServerRepository(ctx, current, profile); err != nil {
+	if current.State == localrepo.StateDeleting && !current.ServerDeleteCompleted {
+		deleted, err := p.deleteServerRepository(ctx, current, profile)
+		if err != nil {
+			return current, err
+		}
+		current, err = p.local.MarkServerDeleted(current.OperationID, deleted.RetainUntil)
+		if err != nil {
 			return current, err
 		}
 	}
-	if err := stripWorkingCopyMetadata(current.LocalPath, current.DetachOperationID); err != nil {
-		return current, err
+	if current.State == localrepo.StateDetaching {
+		if err := stripWorkingCopyMetadataWithRetry(ctx, current.LocalPath, current.DetachOperationID); err != nil {
+			return current, err
+		}
+		return p.local.CompleteDetach(current.OperationID)
 	}
-	return p.local.CompleteDetach(current.OperationID)
+
+	// Server deletion, archive issuance and local WC cleanup are separate
+	// durable boundaries. A server that has not yet learned the recovery
+	// ticket must not prevent FileES from removing an already-deleted WC's
+	// administrative metadata, and a locked wc.db must not replay either
+	// server-side operation.
+	var pending []error
+	if !current.LocalCleanupCompleted {
+		if err := stripWorkingCopyMetadataWithRetry(ctx, current.LocalPath, current.DetachOperationID); err != nil {
+			pending = append(pending, err)
+		} else {
+			var err error
+			current, err = p.local.MarkLocalCleanupCompleted(current.OperationID)
+			if err != nil {
+				pending = append(pending, err)
+			}
+		}
+	}
+	if !current.RecoveryPrepared {
+		retainUntil, err := time.Parse(time.RFC3339Nano, current.RetainUntil)
+		if err == nil && !time.Now().UTC().Before(retainUntil) {
+			current, err = p.local.MarkRecoveryPrepared(current.OperationID, "")
+			if err != nil {
+				pending = append(pending, err)
+			}
+		} else {
+			kitPath, prepareErr := p.prepareRepositoryRecovery(ctx, current, profile)
+			if prepareErr != nil {
+				pending = append(pending, fmt.Errorf("prepare repository archive download: %w", prepareErr))
+			} else {
+				current, err = p.local.MarkRecoveryPrepared(current.OperationID, kitPath)
+				if err != nil {
+					pending = append(pending, err)
+				}
+			}
+		}
+	}
+	if current.RecoveryPrepared && current.LocalCleanupCompleted {
+		completed, err := p.local.CompleteDetach(current.OperationID)
+		if err != nil {
+			pending = append(pending, err)
+		} else {
+			current = completed
+		}
+	}
+	return current, errors.Join(pending...)
 }
 
-func (p *daemonProvisioner) deleteServerRepository(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) error {
+// retryLocalCleanup advances only the client-side deletion boundary. It is
+// deliberately network-free: periodic retries must not spam an older worker
+// with an unsupported recovery ticket or replay DELETE_REPOSITORY.
+func (p *daemonProvisioner) retryLocalCleanup(ctx context.Context, operationID string) {
+	p.detachMu.Lock()
+	defer p.detachMu.Unlock()
+
+	current, ok := p.local.Get(operationID)
+	if !ok || current.State != localrepo.StateDeleting || !current.ServerDeleteCompleted || current.LocalCleanupCompleted {
+		return
+	}
+	if err := stripWorkingCopyMetadataWithRetry(ctx, current.LocalPath, current.DetachOperationID); err != nil {
+		_, _ = p.local.RecordDetachError(operationID, err)
+		talk.With("detach:"+operationID).Warnf("local cleanup retry failed: %v", err)
+		return
+	}
+	updated, err := p.local.MarkLocalCleanupCompleted(operationID)
+	if err != nil {
+		talk.With("detach:"+operationID).Warnf("persist local cleanup receipt: %v", err)
+		return
+	}
+	if updated.RecoveryPrepared {
+		if _, err := p.local.CompleteDetach(operationID); err != nil {
+			talk.With("detach:"+operationID).Warnf("complete repository deletion: %v", err)
+		}
+	}
+}
+
+func (p *daemonProvisioner) deleteServerRepository(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) (control.DeleteRepositoryResult, error) {
 	transport, err := controlclient.New(controlclient.Config{
 		Address: profile.Address, Port: profile.SSHPort, IdentityFile: profile.IdentityFile,
 		KnownHosts: profile.KnownHosts, Timeout: 45 * time.Minute,
 	})
 	if err != nil {
-		return err
+		return control.DeleteRepositoryResult{}, err
 	}
 	requestID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(record.DetachOperationID+":delete-repository")).String()
 	ticket, err := control.NewTicket(
@@ -385,19 +495,112 @@ func (p *daemonProvisioner) deleteServerRepository(ctx context.Context, record l
 		profile.ClientID, control.DeleteRepositoryPayload{RepoID: record.RepoID}, time.Now(),
 	)
 	if err != nil {
-		return err
+		return control.DeleteRepositoryResult{}, err
 	}
 	result, err := transport.Exchange(ctx, ticket)
 	if err != nil {
-		return err
+		return control.DeleteRepositoryResult{}, err
 	}
 	if result.Status != control.ResultOK {
 		if result.Error == nil {
-			return errors.New("server rejected repository deletion")
+			return control.DeleteRepositoryResult{}, errors.New("server rejected repository deletion")
 		}
-		return fmt.Errorf("%s: %s", result.Error.Code, result.Error.Message)
+		return control.DeleteRepositoryResult{}, fmt.Errorf("%s: %s", result.Error.Code, result.Error.Message)
 	}
-	return nil
+	var deleted control.DeleteRepositoryResult
+	if err := control.DecodeResultPayload(result.Result, &deleted); err != nil {
+		return control.DeleteRepositoryResult{}, err
+	}
+	return deleted, nil
+}
+
+func (p *daemonProvisioner) prepareRepositoryRecovery(ctx context.Context, record localrepo.Record, profile clientprofile.Profile) (string, error) {
+	knownHostRaw, err := os.ReadFile(profile.KnownHosts)
+	if err != nil || len(knownHostRaw) > 16<<10 {
+		return "", errors.New("pinned server host key cannot be read")
+	}
+	if !filepath.IsAbs(p.recoveryRegistry.Root) {
+		return "", errors.New("repository recovery registry is unavailable")
+	}
+	kitPath := filepath.Join(p.recoveryRegistry.Root, "filees-recovery-"+record.ServerID+"-"+record.DetachOperationID+".fkr")
+	draft, err := recoverykit.LoadDraft(kitPath)
+	if errors.Is(err, os.ErrNotExist) {
+		var publicKey string
+		draft, publicKey, err = recoverykit.CreateUnboundDraft(recoveryProfileAddress(profile), strings.TrimSpace(string(knownHostRaw)), record.DetachOperationID)
+		if err == nil {
+			draft.PublicKey = strings.TrimSpace(publicKey)
+			err = recoverykit.Store(kitPath, draft)
+		}
+	} else if err == nil && (draft.OperationID != record.DetachOperationID || draft.ServerAddress != recoveryProfileAddress(profile)) {
+		err = errors.New("pending repository recovery kit does not match deletion operation")
+	}
+	if err != nil {
+		return "", err
+	}
+	transport, err := realmRemovalTransport(profile)
+	if err != nil {
+		return "", err
+	}
+	requestID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(record.DetachOperationID+":prepare-repository-recovery")).String()
+	ticket, err := control.NewTicket(record.DetachOperationID, requestID, control.TicketPrepareRepositoryRecovery, profile.ClientID, control.PrepareRepositoryRecoveryPayload{RepoID: record.RepoID, RecoveryPublicKey: strings.TrimSpace(draft.PublicKey)}, time.Now())
+	if err != nil {
+		return "", err
+	}
+	response, err := transport.Exchange(ctx, ticket)
+	if err != nil {
+		return "", err
+	}
+	if response.Status != control.ResultOK {
+		return "", controlResultError(response)
+	}
+	var result control.PrepareRepositoryRecoveryResult
+	if err := control.DecodeResultPayload(response.Result, &result); err != nil {
+		return "", err
+	}
+	manifest := recoveryManifestFromControl(result.Manifest)
+	if len(manifest.Archives) == 0 {
+		_ = os.Remove(kitPath)
+		return "", nil
+	}
+	finalKit, err := recoverykit.Finalize(draft, manifest)
+	if err != nil {
+		return "", err
+	}
+	if err := recoverykit.Store(kitPath, finalKit); err != nil {
+		return "", err
+	}
+	if err := p.recoveryRegistry.Put(recoverykit.RegistryEntry{
+		Schema: recoverykit.RegistrySchema, OperationID: record.DetachOperationID,
+		ServerID: record.ServerID, ServerName: profile.DisplayName, KitPath: kitPath,
+		ArchiveCount: len(manifest.Archives), DownloadUntil: manifest.DownloadUntil,
+		AdminGraceUntil: manifest.AdminGraceUntil,
+	}); err != nil {
+		return "", err
+	}
+	return kitPath, nil
+}
+
+func stripWorkingCopyMetadataWithRetry(ctx context.Context, root, operationID string) error {
+	var err error
+	for _, delay := range []time.Duration{0, 250 * time.Millisecond, 750 * time.Millisecond} {
+		if delay > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		err = stripWorkingCopyMetadata(root, operationID)
+		if err == nil {
+			return nil
+		}
+	}
+	detail := err.Error()
+	lower := strings.ToLower(detail)
+	if strings.Contains(lower, "used by another process") || strings.Contains(lower, "being used by another process") {
+		detail += "; close Explorer/TortoiseSVN windows using this folder — FileES will retry automatically"
+	}
+	return fmt.Errorf("server repository deleted; local working-copy metadata cleanup is pending: %s", detail)
 }
 
 func stripWorkingCopyMetadata(root, operationID string) error {
@@ -406,6 +609,12 @@ func stripWorkingCopyMetadata(root, operationID string) error {
 		return errors.New("repository detach operation ID must be UUID")
 	}
 	info, err := os.Lstat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		// The user may have removed or moved the local folder while the daemon
+		// was offline. There is no metadata left at the path FileES owns, so the
+		// local detach boundary is already satisfied.
+		return nil
+	}
 	if err != nil {
 		return err
 	}

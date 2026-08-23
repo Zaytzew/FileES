@@ -683,13 +683,18 @@ type RepoLifecycleStatusPayload struct {
 }
 
 type RepoLifecycleResult struct {
-	OperationID      string `json:"operation_id"`
-	ServerID         string `json:"server_id"`
-	RepoID           string `json:"repo_id,omitempty"`
-	LocalPath        string `json:"local_path"`
-	PendingLocalPath string `json:"pending_local_path,omitempty"`
-	State            string `json:"state"`
-	LastError        string `json:"last_error,omitempty"`
+	OperationID           string `json:"operation_id"`
+	ServerID              string `json:"server_id"`
+	RepoID                string `json:"repo_id,omitempty"`
+	LocalPath             string `json:"local_path"`
+	PendingLocalPath      string `json:"pending_local_path,omitempty"`
+	State                 string `json:"state"`
+	LastError             string `json:"last_error,omitempty"`
+	ServerDeleteCompleted bool   `json:"server_delete_completed,omitempty"`
+	RetainUntil           string `json:"retain_until,omitempty"`
+	RecoveryPrepared      bool   `json:"recovery_prepared,omitempty"`
+	RecoveryKitPath       string `json:"recovery_kit_path,omitempty"`
+	LocalCleanupCompleted bool   `json:"local_cleanup_completed,omitempty"`
 }
 
 type RepoActivityPayload struct {
@@ -718,16 +723,23 @@ type RepoListResult struct {
 
 // RepoSummary is a minimal descriptor used in RepoListResult.
 type RepoSummary struct {
-	ID               string `json:"id"`
-	ServerID         string `json:"server_id"`
-	DisplayName      string `json:"display_name"`
-	Attached         bool   `json:"attached"`
-	Access           string `json:"access"`
-	URL              string `json:"url"`
-	LocalPath        string `json:"local_path"`
-	State            string `json:"state"`
-	OwnerRealmID     string `json:"owner_realm_id,omitempty"`
-	AttachmentPolicy string `json:"attachment_policy"`
+	ID                  string `json:"id"`
+	ServerID            string `json:"server_id"`
+	DisplayName         string `json:"display_name"`
+	Attached            bool   `json:"attached"`
+	Access              string `json:"access"`
+	URL                 string `json:"url"`
+	LocalPath           string `json:"local_path"`
+	State               string `json:"state"`
+	OwnerRealmID        string `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy    string `json:"attachment_policy"`
+	ServerDeleted       bool   `json:"server_deleted,omitempty"`
+	LocalCleanupPending bool   `json:"local_cleanup_pending,omitempty"`
+	RetainUntil         string `json:"retain_until,omitempty"`
+	RecoveryOperationID string `json:"recovery_operation_id,omitempty"`
+	RecoveryAvailable   bool   `json:"recovery_available,omitempty"`
+	RecoveryPending     bool   `json:"recovery_pending,omitempty"`
+	CleanupError        string `json:"cleanup_error,omitempty"`
 }
 
 // RepoPublishPayload is the required comment for a shouting commit.

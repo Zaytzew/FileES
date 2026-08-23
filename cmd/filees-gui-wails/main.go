@@ -129,7 +129,7 @@ func main() {
 	actionController := configureActions(
 		gui, daemon, reservationAdapter{client: daemon}, stackLifecycleAdapter{client: daemon},
 		settingsBrowserRouter{server: settingsBrowserAdapter{service: settings}, repository: repositorySettingsBrowserAdapter{service: repository}},
-		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, newActionPlatform(),
+		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, recoveryDownloadAdapter{client: daemon}, newActionPlatform(),
 		func() {
 			select {
 			case restartRequested <- struct{}{}:

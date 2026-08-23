@@ -15,6 +15,7 @@ const (
 	IntentServerInfo         IntentKind = "server_info"
 	IntentSettings           IntentKind = "settings"
 	IntentRecoveries         IntentKind = "recoveries"
+	IntentDownloadRecovery   IntentKind = "download_recovery"
 	IntentJournal            IntentKind = "journal"
 	IntentReservations       IntentKind = "reservations"
 	IntentCreateRepository   IntentKind = "create_repository"
@@ -33,10 +34,11 @@ const (
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.
 type Intent struct {
-	ActionID      string
-	Kind          IntentKind
-	NoticeID      string
-	RepoID        string
-	ServerID      string
-	ReservationID string
+	ActionID            string
+	Kind                IntentKind
+	NoticeID            string
+	RepoID              string
+	ServerID            string
+	ReservationID       string
+	RecoveryOperationID string
 }

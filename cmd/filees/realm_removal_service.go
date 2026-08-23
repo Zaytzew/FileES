@@ -204,7 +204,7 @@ func recoveryProfileAddress(profile clientprofile.Profile) string {
 
 func controlResultError(result control.Result) error {
 	if result.Error == nil {
-		return errors.New("server rejected realm removal")
+		return errors.New("server rejected control request")
 	}
 	return fmt.Errorf("%s: %s", result.Error.Code, result.Error.Message)
 }

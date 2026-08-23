@@ -220,7 +220,7 @@ func (service repositoryLifecycleService) allRootsExcept(operationID string) []s
 }
 
 func lifecycleResult(record localrepo.Record) contract.RepoLifecycleResult {
-	return contract.RepoLifecycleResult{OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State), LastError: record.LastError}
+	return contract.RepoLifecycleResult{OperationID: record.OperationID, ServerID: record.ServerID, RepoID: record.RepoID, LocalPath: record.LocalPath, PendingLocalPath: record.PendingLocalPath, State: string(record.State), LastError: record.LastError, ServerDeleteCompleted: record.ServerDeleteCompleted, RetainUntil: record.RetainUntil, RecoveryPrepared: record.RecoveryPrepared, RecoveryKitPath: record.RecoveryKitPath, LocalCleanupCompleted: record.LocalCleanupCompleted}
 }
 
 func reconcileConfiguredRepositoryLifecycle(store *localrepo.Store, repositories []config.Repo) ([]config.Repo, error) {

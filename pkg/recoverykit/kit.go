@@ -44,14 +44,27 @@ func Create(address, knownHost string, manifest repoworker.RecoveryManifest) (Ki
 }
 
 func CreateDraft(address, knownHost, operationID, realmID string) (Kit, string, error) {
+	return createDraft(address, knownHost, operationID, realmID)
+}
+
+// CreateUnboundDraft is used when the authenticated realm identity is known
+// only to the server. Finalize binds the returned private capability to the
+// realm carried by the signed transport result.
+func CreateUnboundDraft(address, knownHost, operationID string) (Kit, string, error) {
+	return createDraft(address, knownHost, operationID, "")
+}
+
+func createDraft(address, knownHost, operationID, realmID string) (Kit, string, error) {
 	if address == "" || knownHost == "" {
 		return Kit{}, "", errors.New("recovery kit endpoint is incomplete")
 	}
 	if _, err := uuid.Parse(operationID); err != nil {
 		return Kit{}, "", errors.New("recovery kit operation_id must be UUID")
 	}
-	if _, err := uuid.Parse(realmID); err != nil {
-		return Kit{}, "", errors.New("recovery kit realm_id must be UUID")
+	if realmID != "" {
+		if _, err := uuid.Parse(realmID); err != nil {
+			return Kit{}, "", errors.New("recovery kit realm_id must be UUID")
+		}
 	}
 	pub, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -74,9 +87,10 @@ func Finalize(kit Kit, manifest repoworker.RecoveryManifest) (Kit, error) {
 	if err := kit.validateIdentity(); err != nil {
 		return Kit{}, err
 	}
-	if err := manifest.Validate(); err != nil || manifest.OperationID != kit.OperationID || manifest.RealmID != kit.RealmID {
+	if err := manifest.Validate(); err != nil || manifest.OperationID != kit.OperationID || (kit.RealmID != "" && manifest.RealmID != kit.RealmID) {
 		return Kit{}, errors.New("recovery manifest does not match kit identity")
 	}
+	kit.RealmID = manifest.RealmID
 	kit.Manifest = manifest
 	return kit, nil
 }
@@ -92,14 +106,16 @@ func (k Kit) Validate(now time.Time) error {
 }
 
 func (k Kit) validateIdentity() error {
-	if k.Schema != Schema || k.OperationID == "" || k.RealmID == "" || k.ServerAddress == "" || k.KnownHost == "" || k.PrivateKey == "" || k.PublicKey == "" {
+	if k.Schema != Schema || k.OperationID == "" || k.ServerAddress == "" || k.KnownHost == "" || k.PrivateKey == "" || k.PublicKey == "" {
 		return errors.New("recovery kit is incomplete")
 	}
 	if _, err := uuid.Parse(k.OperationID); err != nil {
 		return err
 	}
-	if _, err := uuid.Parse(k.RealmID); err != nil {
-		return err
+	if k.RealmID != "" {
+		if _, err := uuid.Parse(k.RealmID); err != nil {
+			return err
+		}
 	}
 	if err := validateRecoveryEndpoint(k.ServerAddress, k.KnownHost); err != nil {
 		return err

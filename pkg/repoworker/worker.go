@@ -93,6 +93,10 @@ type RealmRemovalService interface {
 	Confirm(context.Context, Session, string, string) (RealmRemovalRecord, RecoveryManifest, error)
 }
 
+type RepositoryRecoveryService interface {
+	Prepare(context.Context, Session, string, string, string) (RecoveryManifest, error)
+}
+
 var ErrPublicShareRejected = errors.New("public share request rejected")
 
 type PublicShareService interface {
@@ -113,6 +117,7 @@ type Worker struct {
 	Aliases              RealmAliasStore
 	ClientDetacher       ClientDetacher
 	RealmRemoval         RealmRemovalService
+	RepositoryRecovery   RepositoryRecoveryService
 	DumpLoader           DumpLoader
 	Grants               RealmGrantAuthority
 	Branding             RealmPublicBrandingAuthority
@@ -134,10 +139,10 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketGetRealmPublicBranding && ticket.Type != control.TicketSetRealmPublicBranding && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketListUploadChannels && ticket.Type != control.TicketCreateUploadChannel && ticket.Type != control.TicketUpdateUploadChannel && ticket.Type != control.TicketRevokeUploadChannel && ticket.Type != control.TicketDeleteUploadChannel && ticket.Type != control.TicketSetRepositoryEditingPolicy {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketPrepareRepositoryRecovery && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketGetRealmPublicBranding && ticket.Type != control.TicketSetRealmPublicBranding && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketListUploadChannels && ticket.Type != control.TicketCreateUploadChannel && ticket.Type != control.TicketUpdateUploadChannel && ticket.Type != control.TicketRevokeUploadChannel && ticket.Type != control.TicketDeleteUploadChannel && ticket.Type != control.TicketSetRepositoryEditingPolicy {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
-	if ticket.Type == control.TicketDeleteRepository && !session.CanCreateRepositories {
+	if (ticket.Type == control.TicketDeleteRepository || ticket.Type == control.TicketPrepareRepositoryRecovery) && !session.CanCreateRepositories {
 		return w.failure(ticket, "DELETE_REPOSITORY_FORBIDDEN", "authenticated session cannot delete repositories")
 	}
 	if (ticket.Type == control.TicketStoragePreflight || ticket.Type == control.TicketCreateRepository) && !session.CanCreateRepositories {
@@ -217,6 +222,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.Type == control.TicketDeleteRepository {
 		return w.deleteRepository(ctx, session, ticket)
 	}
+	if ticket.Type == control.TicketPrepareRepositoryRecovery {
+		return w.prepareRepositoryRecovery(ctx, session, ticket)
+	}
 	if ticket.Type == control.TicketLoadRepositoryDump {
 		return w.loadRepositoryDump(ctx, session, ticket)
 	}
@@ -251,6 +259,25 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 		return control.Result{}, fmt.Errorf("backend returned incomplete repository")
 	}
 	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.CreateRepositoryResult{RepoID: repo.RepoID, RepoURL: repo.URL}, w.now())
+	if err == nil {
+		err = w.Store.Save(result)
+	}
+	return result, err
+}
+
+func (w *Worker) prepareRepositoryRecovery(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
+	if w.RepositoryRecovery == nil {
+		return w.failure(ticket, "REPOSITORY_RECOVERY_UNAVAILABLE", "repository recovery is unavailable")
+	}
+	var payload control.PrepareRepositoryRecoveryPayload
+	if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+		return control.Result{}, err
+	}
+	manifest, err := w.RepositoryRecovery.Prepare(ctx, session, ticket.OperationID, payload.RepoID, payload.RecoveryPublicKey)
+	if err != nil {
+		return w.retryable(ticket, "REPOSITORY_RECOVERY_RETRY", err.Error())
+	}
+	result, err := control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.PrepareRepositoryRecoveryResult{Manifest: controlRecoveryManifest(manifest)}, w.now())
 	if err == nil {
 		err = w.Store.Save(result)
 	}

@@ -236,6 +236,9 @@ func (s appState) viewModel() ViewModel {
 			CurrentOp:        snap.CurrentOperation,
 			ReservationCount: s.repoReservations[reservationKey(sum.ServerID, sum.ID)],
 			Cycle:            snap.Cycle,
+			ServerDeleted:    sum.ServerDeleted, LocalCleanupPending: sum.LocalCleanupPending,
+			RetainUntil: sum.RetainUntil, RecoveryOperationID: sum.RecoveryOperationID,
+			RecoveryAvailable: sum.RecoveryAvailable, RecoveryPending: sum.RecoveryPending, CleanupError: sum.CleanupError,
 		})
 	}
 	serverByID := make(map[string]ServerViewModel, len(s.system.Activations))
@@ -400,7 +403,7 @@ func (s appState) confirmPendingActions(ids []string) (appState, []string) {
 		}
 		if action.ExpectedRepoDeleted {
 			summary, exists := s.summaries[action.RepoID]
-			if !exists || summary.ServerID != action.ServerID {
+			if !exists || summary.ServerID != action.ServerID || summary.ServerDeleted {
 				confirmed = append(confirmed, id)
 			} else {
 				waiting = append(waiting, id)

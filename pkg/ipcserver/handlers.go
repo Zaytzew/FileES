@@ -844,6 +844,13 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 	defer cancel()
 	result, err := service.BeginDetach(ctx, payload.ServerID, payload.RepoID, deleteRepository)
 	if err != nil {
+		if deleteRepository && result.ServerDeleteCompleted {
+			// DELETE_REPOSITORY crossed its authoritative durable boundary.
+			// Recovery issuance and local metadata cleanup are projected as
+			// independent pending effects; neither turns the destructive server
+			// action into a false failure for the caller.
+			return contract.OKResponse(req.RequestID, result)
+		}
 		return contract.ErrResponse(req.RequestID, "REPO-2012", "ERROR", "REQUIRE_ACTION", "repo.detach_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)

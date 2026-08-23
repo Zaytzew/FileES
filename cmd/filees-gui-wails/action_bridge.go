@@ -22,7 +22,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, repositoryAttacher actions.RepositoryAttacher, repositoryDetacher actions.RepositoryDetacher, backend platform.Backend, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, repositoryAttacher actions.RepositoryAttacher, repositoryDetacher actions.RepositoryDetacher, recoveryDownloader actions.RecoveryDownloader, backend platform.Backend, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -44,6 +44,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		PublicShares:       publicShares,
 		RepositoryAttacher: repositoryAttacher,
 		RepositoryDetacher: repositoryDetacher,
+		RecoveryDownloader: recoveryDownloader,
 		ActionLifecycle:    service.runner,
 		Stack:              stack,
 		Reconnect:          service.runner.Reconnect,
@@ -51,6 +52,23 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		Restart:            restart,
 		Shutdown:           shutdown,
 	})
+}
+
+type recoveryDownloadClient interface {
+	RecoveryDownload(context.Context, contract.RecoveryDownloadPayload) (*contract.RecoveryDownloadResult, error)
+}
+
+type recoveryDownloadAdapter struct{ client recoveryDownloadClient }
+
+func (adapter recoveryDownloadAdapter) DownloadRecovery(ctx context.Context, operationID, outputRoot string) ([]string, error) {
+	result, err := adapter.client.RecoveryDownload(ctx, contract.RecoveryDownloadPayload{OperationID: operationID, OutputRoot: outputRoot})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.OperationID != operationID {
+		return nil, errors.New("daemon returned an invalid recovery download result")
+	}
+	return result.Paths, nil
 }
 
 type sessionTimeoutClient interface {
@@ -233,11 +251,16 @@ func (adapter repositoryDetachAdapter) DetachRepository(ctx context.Context, ser
 	if result == nil {
 		return errors.New("daemon returned an empty repository detach result")
 	}
-	expectedState := "detached"
 	if deleteRepository {
-		expectedState = "deleted"
+		if result.ServerDeleteCompleted || result.State == "deleted" {
+			return nil
+		}
+		if result.LastError != "" {
+			return errors.New(result.LastError)
+		}
+		return errors.New("daemon did not confirm server repository deletion")
 	}
-	if result.State != expectedState {
+	if result.State != "detached" {
 		if result.LastError != "" {
 			return errors.New(result.LastError)
 		}

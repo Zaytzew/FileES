@@ -28,8 +28,8 @@ fencingowy SVN. Przycisk `Zwolnij` wraca do wspólnego kontrolera, który po
 potwierdzeniu ponownie rozwiązuje identyfikator i przekazuje token demonowi.
 
 Proces tworzy własny tray Wails z ikoną bieżącego stanu, liczbą repozytoriów i
-blokad. Zamknięcie okna ukrywa je do traya; proces kończy dopiero jawna pozycja
-`Zakończ renderer`.
+blokad. Pozycja `Pokaż panel` przywraca okno, a jego zamknięcie ukrywa je do
+traya; proces kończy dopiero jawna pozycja `Zakończ renderer`.
 
 Wymagania:
 

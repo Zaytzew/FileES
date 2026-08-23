@@ -216,7 +216,8 @@ function renderRepo(repo) {
   const pending = deleted
     ? (repo.recovery_pending && repo.local_cleanup_pending ? "archiwum i czyszczenie czekają" : repo.recovery_pending ? "wydanie archiwum czeka" : repo.local_cleanup_pending ? "czyszczenie lokalne czeka" : "folder odłączony")
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");
-  const source = repo.local_path || repo.url || repo.id;
+  // Transport URLs are daemon internals, not useful (or safe) UI labels.
+  const source = repo.local_path || (repo.attached ? "Folder FileES" : "Folder zdalny");
   const actions = [
     repo.can_open ? '<button class="repo-action" data-action="open_folder" title="Otwórz lokalny folder">Otwórz</button>' : "",
     repo.recovery_available ? '<button class="repo-action mutate" data-action="download_recovery" title="Pobierz archiwum usuniętego repozytorium">Pobierz archiwum</button>' : "",
@@ -227,7 +228,7 @@ function renderRepo(repo) {
     </button>`,
   ].join("");
   return `<article class="repo-row" data-repo-id="${escapeHTML(repo.id)}">
-    <div class="repo-title"><span class="repo-icon">▰</span><div class="repo-name">
+    <div class="repo-title"><span class="repo-icon" aria-hidden="true"></span><div class="repo-name">
       <strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong>
       <small title="${escapeHTML(source)}">${escapeHTML(source)}</small>
     </div></div>

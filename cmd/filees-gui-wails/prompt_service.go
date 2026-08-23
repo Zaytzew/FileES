@@ -143,7 +143,10 @@ func (service *PromptService) present(ctx context.Context, snapshot PromptSnapsh
 	hide := service.hide
 	service.mu.Unlock()
 	if hide != nil {
-		hide()
+		// Window operations may synchronise with the WebView thread that is
+		// currently returning Resolve(). Never hold the controller flow on that
+		// presentation round-trip; the browser also hides itself after acceptance.
+		go hide()
 	}
 	return choice, err
 }

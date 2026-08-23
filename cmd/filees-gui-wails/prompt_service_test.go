@@ -23,7 +23,9 @@ func TestPromptFrontendIncludesServiceBinding(t *testing.T) {
 func TestPromptServiceReturnsBrowserChoice(t *testing.T) {
 	service := newPromptService()
 	shown := make(chan struct{}, 1)
-	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	hideBlocked := make(chan struct{})
+	service.attachPresentation(func() { shown <- struct{}{} }, func() { <-hideBlocked })
+	defer close(hideBlocked)
 	result := make(chan platform.PromptTextResult, 1)
 	go func() {
 		got, _ := service.PromptText(context.Background(), platform.PromptTextRequest{Title: "Limit", Default: "30"})

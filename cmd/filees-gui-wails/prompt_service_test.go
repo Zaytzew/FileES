@@ -2,11 +2,23 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"filees/internal/gui/platform"
 )
+
+func TestPromptFrontendIncludesServiceBinding(t *testing.T) {
+	index, err := frontend.ReadFile("frontend/bindings/filees/cmd/filees-gui-wails/index.js")
+	if err != nil || !strings.Contains(string(index), "PromptService") {
+		t.Fatalf("prompt binding missing from frontend index: %v", err)
+	}
+	module, err := frontend.ReadFile("frontend/bindings/filees/cmd/filees-gui-wails/promptservice.js")
+	if err != nil || !strings.Contains(string(module), ".PromptService.Resolve") {
+		t.Fatalf("prompt service module is incomplete: %v", err)
+	}
+}
 
 func TestPromptServiceReturnsBrowserChoice(t *testing.T) {
 	service := newPromptService()

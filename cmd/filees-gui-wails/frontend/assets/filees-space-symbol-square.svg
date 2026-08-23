@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" role="img" aria-labelledby="title desc">
+  <title id="title">filees:space square symbol</title>
+  <desc id="desc">Square navy icon with white and orange stacked folder motif.</desc>
+  <rect width="300" height="300" rx="42" fill="#0B1D3A"/>
+  <g id="folder-symbol">
+    <polygon points="87.2,54 223.36,54 269.36,98.16 269.36,184.64 251.88,184.64 251.88,106.44 216,71.48 87.2,71.48" fill="#FF6A00"/>
+    <polygon points="57.76,86.2 184.72,86.2 239.92,139.56 239.92,207.64 222.44,207.64 222.44,147.84 177.36,103.68 57.76,103.68" fill="#FFFFFF"/>
+    <path d="M32 118.4h57.96q7.36 0 13.8 6.44l6.44 6.44h72.68l23.92 23.92v73.6H32Z" fill="#FFFFFF"/>
+  </g>
+</svg>

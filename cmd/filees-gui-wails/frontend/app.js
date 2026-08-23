@@ -38,13 +38,17 @@ function recordNumber(value, key) {
 
 function prepareRepositoryWidths() {
   const rows = [...document.querySelectorAll(".repo-row")];
-  rows.forEach((row) => {
+  // Every row in every server panel must use the same first-column width.
+  // Per-row sizing made revision, queue, state and action cells visibly drift
+  // as repository names changed between daemon ticks.
+  const compactMinimum = window.innerWidth <= 800 ? 210 : window.innerWidth <= 900 ? 220 : 250;
+  const naturalTitleWidth = rows.reduce((largest, row) => {
     const name = row.querySelector(".repo-name strong");
-    if (!name) return;
-    // The path may be arbitrarily long and remains intentionally elided.  The
-    // human-facing name gets a useful (but bounded) natural-width allowance.
-    const titleWidth = Math.max(190, Math.min(360, Math.ceil(name.scrollWidth) + 47));
-    row.style.setProperty("--repo-title-min", `${titleWidth}px`);
+    return Math.max(largest, name ? Math.ceil(name.scrollWidth) + 58 : 0);
+  }, compactMinimum);
+  const titleWidth = Math.max(compactMinimum, Math.min(390, naturalTitleWidth));
+  document.querySelectorAll(".server-folders").forEach((panel) => {
+    panel.style.setProperty("--repo-title-min", `${titleWidth}px`);
   });
   return rows;
 }
@@ -227,8 +231,8 @@ function renderRepo(repo) {
       <strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong>
       <small title="${escapeHTML(source)}">${escapeHTML(source)}</small>
     </div></div>
-    <div class="repo-meta"><small>${deleted ? "Czas na pobranie" : "Rewizja"}</small><span>${revision}</span></div>
-    <div class="repo-meta"><small>${deleted ? "Stan lokalny" : "Kolejka"}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
+    <div class="repo-meta repo-revision"><small>${deleted ? "Czas na pobranie" : "Rewizja"}</small><span>${revision}</span></div>
+    <div class="repo-meta repo-queue"><small>${deleted ? "Stan lokalny" : "Kolejka"}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
     <span class="state-pill ${escapeHTML(state)}">${escapeHTML(stateLabels[state] || state)}</span>
     <div class="repo-actions">${actions}</div>
   </article>`;
@@ -280,6 +284,7 @@ function renderRepositories(snapshot) {
         <span class="server-total">${serverRepos.length} ${plural(serverRepos.length, "folder", "foldery", "folderów")}</span>
       </header>
       <div class="server-folders">
+        <div class="repo-columns" aria-hidden="true"><span>Folder</span><span class="column-revision">Rewizja</span><span class="column-queue">Kolejka</span><span>Stan</span><span>Akcje</span></div>
         ${renderRepoGroup("Własne", owned, "owned")}
         ${renderRepoGroup("Gościnne · udostępnione przez inne zespoły", guest, "guest")}
         ${renderRepoGroup("Pozostałe", unclassified, "unclassified")}

@@ -5,6 +5,13 @@ const $ = (selector) => document.querySelector(selector);
 let snapshot = null;
 let resolving = false;
 
+function setBusy(busy) {
+  resolving = busy;
+  $("#prompt-confirm").disabled = busy;
+  $("#prompt-cancel").disabled = busy;
+  $("#prompt-close").disabled = busy;
+}
+
 function render(next) {
   if (!next?.revision) return;
   snapshot = next;
@@ -31,15 +38,15 @@ function render(next) {
 
 async function resolve(confirmed) {
   if (!snapshot || resolving) return;
-  resolving = true;
-  $("#prompt-confirm").disabled = true;
-  $("#prompt-cancel").disabled = true;
+  setBusy(true);
   try {
     const result = await PromptService.Resolve({revision: snapshot.revision, confirmed, value: $("#prompt-value").value});
-    if (!result.accepted) resolving = false;
+    if (!result.accepted) throw new Error(result.code || "dialog_rejected");
+    await Window.Hide();
   } catch (error) {
     console.error("Nie udało się zamknąć dialogu FileES", error);
-    resolving = false;
+    $("#prompt-mode").textContent = "Nie udało się przekazać decyzji · spróbuj ponownie";
+    setBusy(false);
   }
 }
 

@@ -22,6 +22,96 @@ const actionErrors = {
 };
 
 let currentSnapshot = null;
+const initialWindowWidth = 1180;
+const autoFit = {
+  enabled: true,
+  appliedWidth: initialWindowWidth,
+  running: false,
+  queued: false,
+  suppressResizeUntil: 0,
+};
+
+function recordNumber(value, key) {
+  return Number(value?.[key] ?? value?.[key.toLowerCase()] ?? 0);
+}
+
+function prepareRepositoryWidths() {
+  const rows = [...document.querySelectorAll(".repo-row")];
+  rows.forEach((row) => {
+    const name = row.querySelector(".repo-name strong");
+    if (!name) return;
+    // The path may be arbitrarily long and remains intentionally elided.  The
+    // human-facing name gets a useful (but bounded) natural-width allowance.
+    const titleWidth = Math.max(190, Math.min(360, Math.ceil(name.scrollWidth) + 47));
+    row.style.setProperty("--repo-title-min", `${titleWidth}px`);
+  });
+  return rows;
+}
+
+function repositoryOverflow(rows) {
+  const rowOverflow = rows.reduce((largest, row) => Math.max(largest, row.scrollWidth - row.clientWidth), 0);
+  const panelOverflow = [...document.querySelectorAll(".server-folders")]
+    .reduce((largest, panel) => Math.max(largest, panel.scrollWidth - panel.clientWidth), 0);
+  return Math.max(rowOverflow, panelOverflow);
+}
+
+function scheduleWindowFit() {
+  if (!autoFit.enabled || autoFit.queued) return;
+  autoFit.queued = true;
+  window.requestAnimationFrame(() => {
+    autoFit.queued = false;
+    fitWindowToRepositories();
+  });
+}
+
+async function fitWindowToRepositories() {
+  if (!autoFit.enabled || autoFit.running) return;
+  const rows = prepareRepositoryWidths();
+  if (!rows.length) return;
+  const overflow = repositoryOverflow(rows);
+  if (overflow <= 2) return;
+
+  autoFit.running = true;
+  let resized = false;
+  try {
+    const [maximised, fullscreen, size, screen, position] = await Promise.all([
+      Window.IsMaximised(), Window.IsFullscreen(), Window.Size(), Window.GetScreen(), Window.RelativePosition(),
+    ]);
+    if (maximised || fullscreen) return;
+
+    const currentWidth = recordNumber(size, "Width");
+    const currentHeight = recordNumber(size, "Height");
+    const workWidth = recordNumber(screen?.WorkArea, "Width");
+    const maxWidth = Math.max(currentWidth, workWidth - 24);
+    if (!currentWidth || !currentHeight || currentWidth >= maxWidth - 2) return;
+
+    // The repository column receives roughly two thirds of additional window
+    // width while the activity column is visible.  A bounded iterative pass
+    // accounts for both that grid ratio and different platform decorations.
+    const targetWidth = Math.min(maxWidth, currentWidth + Math.max(24, Math.ceil(overflow * 1.6) + 12));
+    if (targetWidth <= currentWidth + 2) return;
+
+    autoFit.suppressResizeUntil = Date.now() + 700;
+    autoFit.appliedWidth = Math.max(autoFit.appliedWidth, targetWidth);
+    await Window.SetSize(targetWidth, currentHeight);
+    resized = true;
+
+    // Growing preserves the upper-left corner.  Keep the new right edge in
+    // the current monitor's work area without disturbing a safely placed
+    // window.
+    const x = recordNumber(position, "X");
+    const y = recordNumber(position, "Y");
+    const maxX = Math.max(0, workWidth - targetWidth);
+    if (x > maxX) await Window.SetRelativePosition(maxX, Math.max(0, y));
+  } catch (error) {
+    console.warn("Nie udało się dopasować szerokości panelu FileES", error);
+  } finally {
+    autoFit.running = false;
+    // One more layout pass makes the measurement exact after the CSS grid has
+    // redistributed the newly available width.
+    if (resized) window.setTimeout(scheduleWindowFit, 80);
+  }
+}
 
 function bytes(value) {
   const amount = Number(value || 0);
@@ -273,6 +363,7 @@ function render(snapshot) {
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;
   updateCycleCountdown();
+  scheduleWindowFit();
 }
 
 function showToast(feedback) {
@@ -348,6 +439,25 @@ $("#window-maximise").addEventListener("click", () => Window.ToggleMaximise());
 $("#window-close").addEventListener("click", () => Window.Hide());
 $("#titlebar").addEventListener("dblclick", (event) => {
   if (!event.target.closest(".topbar-actions")) Window.ToggleMaximise();
+});
+
+let manualResizeTimer = 0;
+window.addEventListener("resize", () => {
+  window.clearTimeout(manualResizeTimer);
+  manualResizeTimer = window.setTimeout(async () => {
+    if (Date.now() < autoFit.suppressResizeUntil) return;
+    try {
+      if (await Window.IsMaximised() || await Window.IsFullscreen()) return;
+      const size = await Window.Size();
+      const width = recordNumber(size, "Width");
+      // A deliberate user shrink wins over automatic content fitting.  A
+      // later enlargement remains eligible for future content-driven growth.
+      if (width + 8 < autoFit.appliedWidth) autoFit.enabled = false;
+      else autoFit.appliedWidth = Math.max(autoFit.appliedWidth, width);
+    } catch (error) {
+      console.debug("Nie udało się rozpoznać ręcznej zmiany rozmiaru", error);
+    }
+  }, 180);
 });
 
 try {

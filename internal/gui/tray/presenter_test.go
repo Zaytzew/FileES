@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -200,7 +201,7 @@ func TestBuildMenuOffersLocateWhenWorkingCopyIsMissing(t *testing.T) {
 		LocalPath: `D:\PROJEKTY\DOCS`, State: contract.StateInteractionRequired, CurrentOp: &missing,
 	}
 	menu := BuildMenu(withServer(app.ViewModel{
-		Connected: true,
+		Connected:    true,
 		Capabilities: map[string]bool{contract.CapRepoLocate: true},
 		Repos:        []app.RepoViewModel{repo},
 	}))
@@ -231,7 +232,7 @@ func TestBuildMenuShowsCombinedJournalWithOpenAction(t *testing.T) {
 	if journal.Title != "Dziennik · ⚠ 1" || len(journal.Children) != 4 {
 		t.Fatalf("journal=%+v", journal)
 	}
-	if journal.Children[0].Enabled || journal.Children[0].Title != "⚠ BŁĄD · Dokumenty — [LOCK-1] Plik jest zablokowany" || journal.Children[0].Tooltip != "Wymagane działanie użytkownika" {
+	if journal.Children[0].Enabled || !strings.HasSuffix(journal.Children[0].Title, " · ⚠ BŁĄD · Dokumenty — [LOCK-1] Plik jest zablokowany") || journal.Children[0].Tooltip != "Wymagane działanie użytkownika" {
 		t.Fatalf("error row=%+v", journal.Children[0])
 	}
 	open := findItem(t, journal.Children, "journal.open")
@@ -248,7 +249,7 @@ func TestBuildMenuLimitsJournalPreviewToTwelveEntries(t *testing.T) {
 	menu := BuildMenu(app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoActivity: true}, Activity: activity})
 	journal := findItem(t, menu.Items, "journal")
 	// 12 informational rows, one separator and the full-journal action.
-	if len(journal.Children) != 14 || journal.Children[0].Title != "docs / plik — opublikowano · r13" || journal.Children[11].Title != "docs / plik — opublikowano · r2" {
+	if len(journal.Children) != 14 || !strings.HasSuffix(journal.Children[0].Title, " · docs / plik — opublikowano · r13") || !strings.HasSuffix(journal.Children[11].Title, " · docs / plik — opublikowano · r2") {
 		t.Fatalf("limited journal=%+v", journal.Children)
 	}
 }

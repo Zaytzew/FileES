@@ -223,6 +223,83 @@ export class ErrorProjection {
     }
 }
 
+export class JournalProjection {
+    /**
+     * Creates a new JournalProjection instance.
+     * @param {Partial<JournalProjection>} [$$source = {}] - The source object to create the JournalProjection.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("relative_time" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["relative_time"] = "";
+        }
+        if (!("exact_time" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["exact_time"] = "";
+        }
+        if (!("repository" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["repository"] = "";
+        }
+        if (!("summary" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["summary"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["details"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["severity"] = undefined;
+        }
+        if (!("emphasized" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["emphasized"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new JournalProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {JournalProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new JournalProjection(/** @type {Partial<JournalProjection>} */($$parsedSource));
+    }
+}
+
 export class NoticeProjection {
     /**
      * Creates a new NoticeProjection instance.
@@ -726,6 +803,13 @@ export class Snapshot {
              */
             this["activity"] = [];
         }
+        if (!("journal" in $$source)) {
+            /**
+             * @member
+             * @type {JournalProjection[]}
+             */
+            this["journal"] = [];
+        }
         if (!("notices" in $$source)) {
             /**
              * @member
@@ -758,6 +842,7 @@ export class Snapshot {
         const $$createField12_0 = $$createType10;
         const $$createField13_0 = $$createType12;
         const $$createField14_0 = $$createType14;
+        const $$createField15_0 = $$createType16;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("capabilities" in $$parsedSource) {
             $$parsedSource["capabilities"] = $$createField7_0($$parsedSource["capabilities"]);
@@ -777,11 +862,14 @@ export class Snapshot {
         if ("activity" in $$parsedSource) {
             $$parsedSource["activity"] = $$createField12_0($$parsedSource["activity"]);
         }
+        if ("journal" in $$parsedSource) {
+            $$parsedSource["journal"] = $$createField13_0($$parsedSource["journal"]);
+        }
         if ("notices" in $$parsedSource) {
-            $$parsedSource["notices"] = $$createField13_0($$parsedSource["notices"]);
+            $$parsedSource["notices"] = $$createField14_0($$parsedSource["notices"]);
         }
         if ("update" in $$parsedSource) {
-            $$parsedSource["update"] = $$createField14_0($$parsedSource["update"]);
+            $$parsedSource["update"] = $$createField15_0($$parsedSource["update"]);
         }
         return new Snapshot(/** @type {Partial<Snapshot>} */($$parsedSource));
     }
@@ -855,7 +943,9 @@ const $$createType7 = ErrorProjection.createFrom;
 const $$createType8 = $Create.Array($$createType7);
 const $$createType9 = ActivityProjection.createFrom;
 const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = NoticeProjection.createFrom;
+const $$createType11 = JournalProjection.createFrom;
 const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = UpdateProjection.createFrom;
-const $$createType14 = $Create.Nullable($$createType13);
+const $$createType13 = NoticeProjection.createFrom;
+const $$createType14 = $Create.Array($$createType13);
+const $$createType15 = UpdateProjection.createFrom;
+const $$createType16 = $Create.Nullable($$createType15);

@@ -55,7 +55,11 @@ func journalMenu(vm app.ViewModel) MenuItemModel {
 	}
 	children := make([]MenuItemModel, 0, len(visible)+2)
 	for index, entry := range visible {
-		item := disabledItem(fmt.Sprintf("journal.%d.%s", index, entry.ID), entry.Summary)
+		title := entry.Summary
+		if entry.RelativeTime != "" {
+			title = entry.RelativeTime + " · " + title
+		}
+		item := disabledItem(fmt.Sprintf("journal.%d.%s", index, entry.ID), title)
 		item.Tooltip = entry.Details
 		children = append(children, item)
 	}

@@ -146,8 +146,8 @@ listy:
 
 ```
 ▶ Dziennik · ⚠ 1
-    ⚠ BŁĄD · Dokumenty — [LOCK-2001] Plik jest zablokowany
-    Dokumenty / projekt.dwg — opublikowano · r1042
+    przed chwilą · ⚠ BŁĄD · Dokumenty — [LOCK-2001] Plik jest zablokowany
+    4 minuty temu · Dokumenty / projekt.dwg — opublikowano · r1042
     Otwórz log…
 ```
 
@@ -155,7 +155,11 @@ Tray pokazuje maksymalnie 12 zagregowanych wpisów. Wiele ścieżek tej samej
 rewizji lub etapu może zostać złączonych, a nieudana aktywność nie dubluje
 powiązanego błędu. Wpisy są informacyjne; tooltip zawiera szczegóły lub
 wskazówkę. **Otwórz log…** pokazuje cały dostępny snapshot w natywnym oknie.
-Na Windows błędy są dodatkowo pogrubione i ciemnoczerwone.
+Lista używa czasu względnego („przed chwilą”, minuty, godzina, „wczoraj”, dni),
+a pełny widok dokładnego `dd:mm:yy hh:mm`. Na Windows błędy są dodatkowo
+pogrubione i ciemnoczerwone. Powtarzane `NET-4007` jednego repozytorium są
+jednym incydentem; awaria naprawiona automatycznie przed upływem 45 sekund
+pozostaje wyłącznie w ikonie stanu i surowym logu diagnostycznym.
 
 ### Akcje globalne
 

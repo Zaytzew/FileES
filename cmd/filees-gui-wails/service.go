@@ -8,6 +8,7 @@ import (
 	"time"
 
 	guiapp "filees/internal/gui/app"
+	"filees/internal/gui/journal"
 	"filees/internal/gui/tray"
 )
 
@@ -47,6 +48,7 @@ type Snapshot struct {
 	Reservations []ReservationProjection `json:"reservations"`
 	Errors       []ErrorProjection       `json:"errors"`
 	Activity     []ActivityProjection    `json:"activity"`
+	Journal      []JournalProjection     `json:"journal"`
 	Notices      []NoticeProjection      `json:"notices"`
 	Update       *UpdateProjection       `json:"update,omitempty"`
 }
@@ -139,6 +141,17 @@ type ActivityProjection struct {
 	ErrorID  string `json:"error_id,omitempty"`
 }
 
+type JournalProjection struct {
+	ID           string `json:"id"`
+	RelativeTime string `json:"relative_time"`
+	ExactTime    string `json:"exact_time"`
+	Repository   string `json:"repository"`
+	Summary      string `json:"summary"`
+	Details      string `json:"details,omitempty"`
+	Severity     string `json:"severity,omitempty"`
+	Emphasized   bool   `json:"emphasized"`
+}
+
 type NoticeProjection struct {
 	ID        string `json:"id"`
 	RepoID    string `json:"repo_id,omitempty"`
@@ -164,6 +177,7 @@ func newGUIService(client guiapp.DaemonClient) *GUIService {
 			Repositories: []RepoProjection{},
 			Errors:       []ErrorProjection{},
 			Activity:     []ActivityProjection{},
+			Journal:      []JournalProjection{},
 			Notices:      []NoticeProjection{},
 		},
 	}
@@ -346,6 +360,10 @@ func serverAllowsLock(vm guiapp.ViewModel, serverID string) bool {
 }
 
 func projectViewModel(vm guiapp.ViewModel) Snapshot {
+	return projectViewModelAt(vm, time.Now())
+}
+
+func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	result := Snapshot{
 		Connected:    vm.Connected,
 		Stale:        vm.Stale,
@@ -358,6 +376,7 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 		Reservations: make([]ReservationProjection, 0, len(vm.Reservations)),
 		Errors:       make([]ErrorProjection, 0, len(vm.Errors)),
 		Activity:     make([]ActivityProjection, 0, len(vm.Activity)),
+		Journal:      []JournalProjection{},
 		Notices:      make([]NoticeProjection, 0, len(vm.Notices)),
 	}
 	if !vm.LastRefresh.IsZero() {
@@ -428,6 +447,13 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 		result.Activity = append(result.Activity, ActivityProjection{
 			RepoID: item.RepoID, Path: item.Path, Kind: item.Kind, Stage: item.Stage,
 			Updated: item.UpdatedAt, Revision: item.Revision, ErrorID: item.ErrorID,
+		})
+	}
+	for _, entry := range journal.BuildAt(vm, now) {
+		result.Journal = append(result.Journal, JournalProjection{
+			ID: entry.ID, RelativeTime: entry.RelativeTime, ExactTime: entry.ExactTime,
+			Repository: entry.Repo, Summary: entry.Summary, Details: entry.Details,
+			Severity: entry.Severity, Emphasized: entry.Emphasized,
 		})
 	}
 	for _, item := range vm.Notices {

@@ -428,7 +428,7 @@ func (c *Controller) startJournal(ctx context.Context) {
 	rows := make([]platform.JournalDialogRow, 0, len(entries))
 	for _, entry := range entries {
 		rows = append(rows, platform.JournalDialogRow{
-			Timestamp:  journalTimestamp(entry.Timestamp),
+			Timestamp:  entry.ExactTime,
 			Repository: entry.Repo,
 			Summary:    entry.Summary,
 			Details:    entry.Details,
@@ -449,14 +449,6 @@ func (c *Controller) startJournal(ctx context.Context) {
 			c.notify(ctx, platform.Notification{ID: "journal", Group: "journal", Title: "Nie udało się otworzyć dziennika", Body: err.Error(), Urgency: platform.UrgencyCritical})
 		}
 	}()
-}
-
-func journalTimestamp(value string) string {
-	parsed, err := time.Parse(time.RFC3339Nano, value)
-	if err != nil {
-		return value
-	}
-	return parsed.Local().Format("2006-01-02 15:04:05")
 }
 
 func (c *Controller) startSettings(ctx context.Context, serverID string) {

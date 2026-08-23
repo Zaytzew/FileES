@@ -27,6 +27,12 @@ opaque identyfikator wiersza, opis i capability zwolnienia, ale nigdy token
 fencingowy SVN. Przycisk `Zwolnij` wraca do wspólnego kontrolera, który po
 potwierdzeniu ponownie rozwiązuje identyfikator i przekazuje token demonowi.
 
+Przycisk `Dziennik` rozwija w panelu tę samą chronologię, którą Fyne buduje w
+`internal/gui/journal`. Skrót używa czasu względnego, pełny widok dokładnego
+`dd:mm:yy hh:mm`, a powtarzane historyczne `NET-4007` są scalone per
+repozytorium. Nowy błąd łączności trafia do dziennika dopiero po 45 sekundach
+trwałej awarii; wcześniej wystarcza natychmiastowa ikona stanu.
+
 Proces tworzy własny tray Wails z ikoną bieżącego stanu, liczbą repozytoriów i
 blokad. Pozycja `Pokaż panel` przywraca okno, a jego zamknięcie ukrywa je do
 traya. Podmenu `FileES` zawiera kontrolowany restart oraz `Zakończ…`. Obie

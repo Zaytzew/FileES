@@ -475,6 +475,97 @@ export class PendingActionProjection {
     }
 }
 
+export class PublicShareProjection {
+    /**
+     * Creates a new PublicShareProjection instance.
+     * @param {Partial<PublicShareProjection>} [$$source = {}] - The source object to create the PublicShareProjection.
+     */
+    constructor($$source = {}) {
+        if (!("channel_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["channel_id"] = "";
+        }
+        if (!("address" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["address"] = "";
+        }
+        if (!("state" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["state"] = "";
+        }
+        if (!("source_root" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["source_root"] = "";
+        }
+        if (!("recipients" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["recipients"] = "";
+        }
+        if (!("password" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["password"] = "";
+        }
+        if (!("revision" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["revision"] = "";
+        }
+        if (!("can_edit" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_edit"] = false;
+        }
+        if (!("can_revoke" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_revoke"] = false;
+        }
+        if (!("can_delete" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_delete"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PublicShareProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PublicShareProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PublicShareProjection(/** @type {Partial<PublicShareProjection>} */($$parsedSource));
+    }
+}
+
 export class RepoProjection {
     /**
      * Creates a new RepoProjection instance.
@@ -658,6 +749,319 @@ export class RepoProjection {
             $$parsedSource["cycle"] = $$createField22_0($$parsedSource["cycle"]);
         }
         return new RepoProjection(/** @type {Partial<RepoProjection>} */($$parsedSource));
+    }
+}
+
+export class RepositoryAcceptance {
+    /**
+     * Creates a new RepositoryAcceptance instance.
+     * @param {Partial<RepositoryAcceptance>} [$$source = {}] - The source object to create the RepositoryAcceptance.
+     */
+    constructor($$source = {}) {
+        if (!("accepted" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["accepted"] = false;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["code"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RepositoryAcceptance instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {RepositoryAcceptance}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new RepositoryAcceptance(/** @type {Partial<RepositoryAcceptance>} */($$parsedSource));
+    }
+}
+
+export class RepositoryActionProjection {
+    /**
+     * Creates a new RepositoryActionProjection instance.
+     * @param {Partial<RepositoryActionProjection>} [$$source = {}] - The source object to create the RepositoryActionProjection.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["label"] = "";
+        }
+        if (!("description" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["description"] = "";
+        }
+        if (!("tone" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["tone"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RepositoryActionProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {RepositoryActionProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new RepositoryActionProjection(/** @type {Partial<RepositoryActionProjection>} */($$parsedSource));
+    }
+}
+
+export class RepositoryChoice {
+    /**
+     * Creates a new RepositoryChoice instance.
+     * @param {Partial<RepositoryChoice>} [$$source = {}] - The source object to create the RepositoryChoice.
+     */
+    constructor($$source = {}) {
+        if (!("action" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["action"] = "";
+        }
+        if (!("server_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["server_id"] = "";
+        }
+        if (!("repo_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["repo_id"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["channel_id"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RepositoryChoice instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {RepositoryChoice}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new RepositoryChoice(/** @type {Partial<RepositoryChoice>} */($$parsedSource));
+    }
+}
+
+export class RepositoryContextProjection {
+    /**
+     * Creates a new RepositoryContextProjection instance.
+     * @param {Partial<RepositoryContextProjection>} [$$source = {}] - The source object to create the RepositoryContextProjection.
+     */
+    constructor($$source = {}) {
+        if (!("server_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["server_id"] = "";
+        }
+        if (!("server_name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["server_name"] = "";
+        }
+        if (!("address" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["address"] = "";
+        }
+        if (!("realm" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["realm"] = "";
+        }
+        if (!("repo_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["repo_id"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("local_path" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["local_path"] = "";
+        }
+        if (!("state" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["state"] = "";
+        }
+        if (!("access" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["access"] = "";
+        }
+        if (!("editing" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["editing"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RepositoryContextProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {RepositoryContextProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new RepositoryContextProjection(/** @type {Partial<RepositoryContextProjection>} */($$parsedSource));
+    }
+}
+
+export class RepositorySnapshot {
+    /**
+     * Creates a new RepositorySnapshot instance.
+     * @param {Partial<RepositorySnapshot>} [$$source = {}] - The source object to create the RepositorySnapshot.
+     */
+    constructor($$source = {}) {
+        if (!("revision" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["revision"] = 0;
+        }
+        if (!("mode" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["mode"] = "";
+        }
+        if (!("title" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["title"] = "";
+        }
+        if (!("text" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["text"] = "";
+        }
+        if (!("busy" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["busy"] = false;
+        }
+        if (!("context" in $$source)) {
+            /**
+             * @member
+             * @type {RepositoryContextProjection}
+             */
+            this["context"] = (new RepositoryContextProjection());
+        }
+        if (!("actions" in $$source)) {
+            /**
+             * @member
+             * @type {RepositoryActionProjection[]}
+             */
+            this["actions"] = [];
+        }
+        if (!("shares" in $$source)) {
+            /**
+             * @member
+             * @type {PublicShareProjection[]}
+             */
+            this["shares"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RepositorySnapshot instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {RepositorySnapshot}
+     */
+    static createFrom($$source = {}) {
+        const $$createField5_0 = $$createType1;
+        const $$createField6_0 = $$createType3;
+        const $$createField7_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("context" in $$parsedSource) {
+            $$parsedSource["context"] = $$createField5_0($$parsedSource["context"]);
+        }
+        if ("actions" in $$parsedSource) {
+            $$parsedSource["actions"] = $$createField6_0($$parsedSource["actions"]);
+        }
+        if ("shares" in $$parsedSource) {
+            $$parsedSource["shares"] = $$createField7_0($$parsedSource["shares"]);
+        }
+        return new RepositorySnapshot(/** @type {Partial<RepositorySnapshot>} */($$parsedSource));
     }
 }
 
@@ -1055,7 +1459,7 @@ export class SettingsServerProjection {
      * @returns {SettingsServerProjection}
      */
     static createFrom($$source = {}) {
-        const $$createField7_0 = $$createType2;
+        const $$createField7_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("folders" in $$parsedSource) {
             $$parsedSource["folders"] = $$createField7_0($$parsedSource["folders"]);
@@ -1108,7 +1512,7 @@ export class SettingsSnapshot {
      * @returns {SettingsSnapshot}
      */
     static createFrom($$source = {}) {
-        const $$createField3_0 = $$createType3;
+        const $$createField3_0 = $$createType8;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("server" in $$parsedSource) {
             $$parsedSource["server"] = $$createField3_0($$parsedSource["server"]);
@@ -1266,16 +1670,16 @@ export class Snapshot {
      * @returns {Snapshot}
      */
     static createFrom($$source = {}) {
-        const $$createField7_0 = $$createType4;
-        const $$createField8_0 = $$createType6;
-        const $$createField9_0 = $$createType8;
-        const $$createField10_0 = $$createType10;
-        const $$createField11_0 = $$createType12;
-        const $$createField12_0 = $$createType14;
-        const $$createField13_0 = $$createType16;
-        const $$createField14_0 = $$createType18;
-        const $$createField17_0 = $$createType20;
-        const $$createField18_0 = $$createType22;
+        const $$createField7_0 = $$createType9;
+        const $$createField8_0 = $$createType11;
+        const $$createField9_0 = $$createType13;
+        const $$createField10_0 = $$createType15;
+        const $$createField11_0 = $$createType17;
+        const $$createField12_0 = $$createType19;
+        const $$createField13_0 = $$createType21;
+        const $$createField14_0 = $$createType23;
+        const $$createField17_0 = $$createType25;
+        const $$createField18_0 = $$createType27;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("capabilities" in $$parsedSource) {
             $$parsedSource["capabilities"] = $$createField7_0($$parsedSource["capabilities"]);
@@ -1369,25 +1773,30 @@ export class UpdateProjection {
 
 // Private type creation functions
 const $$createType0 = CycleProjection.createFrom;
-const $$createType1 = SettingsFolderProjection.createFrom;
-const $$createType2 = $Create.Array($$createType1);
-const $$createType3 = SettingsServerProjection.createFrom;
-const $$createType4 = $Create.Array($Create.Any);
-const $$createType5 = ServerProjection.createFrom;
-const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = RepoProjection.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = ReservationProjection.createFrom;
-const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = ErrorProjection.createFrom;
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = ActivityProjection.createFrom;
-const $$createType14 = $Create.Array($$createType13);
-const $$createType15 = JournalProjection.createFrom;
-const $$createType16 = $Create.Array($$createType15);
-const $$createType17 = PendingActionProjection.createFrom;
-const $$createType18 = $Create.Array($$createType17);
-const $$createType19 = NoticeProjection.createFrom;
-const $$createType20 = $Create.Array($$createType19);
-const $$createType21 = UpdateProjection.createFrom;
-const $$createType22 = $Create.Nullable($$createType21);
+const $$createType1 = RepositoryContextProjection.createFrom;
+const $$createType2 = RepositoryActionProjection.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = PublicShareProjection.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = SettingsFolderProjection.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = SettingsServerProjection.createFrom;
+const $$createType9 = $Create.Array($Create.Any);
+const $$createType10 = ServerProjection.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = RepoProjection.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = ReservationProjection.createFrom;
+const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = ErrorProjection.createFrom;
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = ActivityProjection.createFrom;
+const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = JournalProjection.createFrom;
+const $$createType21 = $Create.Array($$createType20);
+const $$createType22 = PendingActionProjection.createFrom;
+const $$createType23 = $Create.Array($$createType22);
+const $$createType24 = NoticeProjection.createFrom;
+const $$createType25 = $Create.Array($$createType24);
+const $$createType26 = UpdateProjection.createFrom;
+const $$createType27 = $Create.Nullable($$createType26);

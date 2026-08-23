@@ -395,7 +395,7 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	case tray.IntentServerInfo:
 		c.startServerInfo(ctx, intent.ServerID)
 	case tray.IntentSettings:
-		c.startSettings(ctx, intent.ServerID)
+		c.startSettings(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentJournal:
 		c.startJournal(ctx)
 	case tray.IntentRecoveries:
@@ -461,15 +461,18 @@ func (c *Controller) startJournal(ctx context.Context) {
 	}()
 }
 
-func (c *Controller) startSettings(ctx context.Context, serverID string) {
+func (c *Controller) startSettings(ctx context.Context, serverID, repoID string) {
 	vm := c.cfg.ViewModel()
-	request, ok := c.settingsDialogRequest(vm, serverID)
+	request, ok := c.settingsDialogRequest(vm, serverID, repoID)
 	if !ok {
 		return
 	}
 	key := "settings"
 	if serverID != "" {
 		key = "settings:" + serverID
+	}
+	if repoID != "" {
+		key += ":" + repoID
 	}
 	c.showSettings(ctx, key, request)
 }
@@ -506,7 +509,7 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			// its de-duplication key now so the connect flow can reopen the
 			// refreshed repository list after the last picker.
 			c.endOperation(operationKey)
-			c.startConnectRepositories(ctx, result.ServerID, result.RepoIDs)
+			c.startConnectRepositories(ctx, result.ServerID, result.RepoIDs, request.FocusRepoID == "")
 		case platform.SettingsDialogLocateFolder:
 			c.endOperation(operationKey)
 			c.startLocateRepository(ctx, result.ServerID, result.RepoID)
@@ -655,7 +658,7 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 	}()
 }
 
-func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID string) (platform.SettingsDialogRequest, bool) {
+func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID, repoID string) (platform.SettingsDialogRequest, bool) {
 	request := platform.SettingsDialogRequest{Title: "Ustawienia FileES", Text: "Wybierz serwer, potem działanie."}
 	for _, server := range vm.Servers {
 		if serverID != "" && server.ID != serverID {
@@ -673,10 +676,29 @@ func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID string) (p
 				request.Text += " Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
 			}
 		}
+		if repoID != "" {
+			var focused *platform.SettingsFolder
+			for i := range row.Folders {
+				if row.Folders[i].ID == repoID {
+					folder := row.Folders[i]
+					focused = &folder
+					break
+				}
+			}
+			if focused == nil {
+				continue
+			}
+			row.Folders = []platform.SettingsFolder{*focused}
+			request.FocusRepoID = repoID
+			request.Title = "Folder — " + focused.Name
+			request.Text = "Działania dotyczą wyłącznie tego folderu."
+		}
 		request.Servers = append(request.Servers, row)
 	}
-	if rec, ok := recoverySettingsDialogRequest(vm); ok {
-		request.Recoveries = rec.Recoveries
+	if repoID == "" {
+		if rec, ok := recoverySettingsDialogRequest(vm); ok {
+			request.Recoveries = rec.Recoveries
+		}
 	}
 	if len(request.Servers) == 0 && len(request.Recoveries) == 0 {
 		return platform.SettingsDialogRequest{}, false
@@ -887,7 +909,7 @@ func (c *Controller) awaitLocateOutcome(ctx context.Context, key, name, operatio
 	}
 }
 
-func (c *Controller) startConnectRepositories(ctx context.Context, serverID string, repoIDs []string) {
+func (c *Controller) startConnectRepositories(ctx context.Context, serverID string, repoIDs []string, reopenSettings bool) {
 	key := "connect-repositories:" + serverID
 	if serverID == "" || len(repoIDs) == 0 || c.cfg.RepositoryAttacher == nil || c.cfg.FolderPicker == nil || !c.beginOperation(key) {
 		return
@@ -901,7 +923,9 @@ func (c *Controller) startConnectRepositories(ctx context.Context, serverID stri
 				if c.cfg.Refresh != nil {
 					c.cfg.Refresh()
 				}
-				c.startSettings(ctx, serverID)
+				if reopenSettings {
+					c.startSettings(ctx, serverID, "")
+				}
 			}
 		}()
 
@@ -936,21 +960,29 @@ func (c *Controller) startConnectRepositories(ctx context.Context, serverID stri
 			if _, ok := attachableRepository(c.cfg.ViewModel(), serverID, repoID); !ok {
 				continue
 			}
+			actionID := c.startProjectedAction(app.PendingAction{
+				Kind: string(platform.SettingsDialogConnectRepos), ServerID: serverID, RepoID: repoID,
+				Label: "Łączenie folderu", ExpectedRepoAttached: true,
+			})
 			operationID, err := c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, repoID, filepath.Clean(picked.Path))
 			if err != nil {
+				c.finishProjectedAction(actionID)
 				_, body, _ := operationErrorPresentation("połączenie repozytorium", err)
 				c.reportActionError(ctx, key, "Nie można połączyć repozytorium", name+" — "+body)
 				continue
 			}
 			c.setPendingAttachment(serverID, repoID, filepath.Clean(picked.Path), operationID)
+			c.awaitProjectedAction(actionID)
 			c.notify(ctx, platform.Notification{ID: "repository-attach." + repoID, Group: "repository-attach." + repoID, Title: "Rozpoczęto pierwszy checkout", Body: name + " — " + filepath.Clean(picked.Path), Urgency: platform.UrgencyNormal})
 			c.tasks.Add(1)
-			go func(serverID, repoID, name, operationID string) {
+			go func(serverID, repoID, name, operationID, actionID, localPath string) {
 				defer c.tasks.Done()
 				defer c.showProgress(ctx, "Pierwszy checkout", name+" — trwa pobieranie…")()
-				c.awaitAttachmentOutcome(ctx, serverID, repoID, name, operationID)
-				c.awaitRepositorySettled(ctx, picked.Path)
-			}(serverID, repoID, name, operationID)
+				if !c.awaitAttachmentOutcome(ctx, serverID, repoID, name, operationID) {
+					c.finishProjectedAction(actionID)
+				}
+				c.awaitRepositorySettled(ctx, localPath)
+			}(serverID, repoID, name, operationID, actionID, filepath.Clean(picked.Path))
 		}
 	}()
 }
@@ -1194,12 +1226,24 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		} else if !latest.CanDetachRepository() || current.AttachmentPolicy == "required" {
 			return
 		}
+		kind := string(tray.IntentDetachRepository)
+		label := "Odłączanie folderu"
+		if deleteRepository {
+			kind = string(tray.IntentDeleteRepository)
+			label = "Usuwanie repozytorium"
+		}
+		actionID := c.startProjectedAction(app.PendingAction{
+			Kind: kind, ServerID: serverID, RepoID: repoID, Label: label,
+			ExpectedRepoDetached: !deleteRepository, ExpectedRepoDeleted: deleteRepository,
+		})
 		if err := c.cfg.RepositoryDetacher.DetachRepository(ctx, serverID, repoID, deleteRepository); err != nil {
+			c.finishProjectedAction(actionID)
 			if ctx.Err() == nil {
 				c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: "Nie udało się odłączyć repozytorium", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			}
 			return
 		}
+		c.awaitProjectedAction(actionID)
 		title := "Folder odłączony od FileES"
 		if deleteRepository {
 			title = "Repozytorium trwale odłączone"
@@ -1369,7 +1413,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				c.reportActionError(ctx, key, "Nie udało się pobrać udostępnień", err.Error())
 				return
 			}
-			request := platform.PublicShareDialogRequest{Title: "Udostępnienia publiczne — „" + repo.DisplayName + "”", Text: "Kanał otwarty może być chroniony hasłem; kanał zamknięty wysyła odbiorcom osobne zaproszenia i pięciominutowe kody OTP."}
+			request := platform.PublicShareDialogRequest{Title: "Udostępnienia publiczne — „" + repo.DisplayName + "”", Text: "Kanał otwarty może być chroniony hasłem; kanał zamknięty wysyła odbiorcom osobne zaproszenia i pięciominutowe kody OTP.", ServerID: serverID, RepoID: repoID, RepositoryName: repo.DisplayName}
 			known := make(map[string]PublicShareSummary, len(shares))
 			for _, share := range shares {
 				known[share.ChannelID] = share
@@ -2196,7 +2240,7 @@ func (c *Controller) repositoryBusy(target string) bool {
 	return true
 }
 
-func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoID, displayName, operationID string) {
+func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoID, displayName, operationID string) bool {
 	interval, timeout := c.cfg.CreationStatusPollInterval, c.cfg.CreationStatusPollTimeout
 	if interval <= 0 {
 		interval = creationStatusPollInterval
@@ -2215,7 +2259,7 @@ func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoI
 				body += ": " + lastStatusError.Error()
 			}
 			c.notify(ctx, platform.Notification{ID: "repository-attach." + repoID, Group: "repository-attach." + repoID, Title: "Status połączenia repozytorium jest nieznany", Body: body, Urgency: platform.UrgencyCritical})
-			return
+			return false
 		}
 		if delay > remaining {
 			delay = remaining
@@ -2229,13 +2273,13 @@ func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoI
 				default:
 				}
 			}
-			return
+			return false
 		case <-timer.C:
 		}
 		state, lastError, err := c.cfg.RepositoryAttacher.AttachmentStatus(ctx, operationID)
 		if err != nil {
 			if ctx.Err() != nil {
-				return
+				return false
 			}
 			lastStatusError = err
 			delay *= 2
@@ -2254,13 +2298,13 @@ func (c *Controller) awaitAttachmentOutcome(ctx context.Context, serverID, repoI
 				body += " — " + lastError
 			}
 			c.notify(ctx, platform.Notification{ID: "repository-attach." + repoID, Group: "repository-attach." + repoID, Title: "Pierwszy checkout nie powiódł się", Body: body, Urgency: platform.UrgencyCritical})
-			return
+			return false
 		case "attached":
 			c.notify(ctx, platform.Notification{ID: "repository-attach." + repoID, Group: "repository-attach." + repoID, Title: "Repozytorium połączone", Body: displayName, Urgency: platform.UrgencyNormal})
 			if c.cfg.Refresh != nil {
 				c.cfg.Refresh()
 			}
-			return
+			return true
 		}
 	}
 }

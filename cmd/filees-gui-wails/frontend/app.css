@@ -99,8 +99,6 @@ h1 span { color: transparent; background: linear-gradient(90deg, var(--teal), #d
 .section-heading.compact { margin-bottom: 15px; }
 .timestamp { color: var(--muted); font-size: 10px; }
 .projection-timing { display: grid; justify-items: end; gap: 5px; }
-.cycle-countdown { color: var(--teal); font-size: 9px; font-weight: 750; letter-spacing: .04em; }
-.cycle-countdown.is-running { color: #c8beff; }
 .count-badge { min-width: 29px; padding: 5px 9px; border: 1px solid rgba(157,140,255,.24); border-radius: 999px; color: #c8beff; background: rgba(157,140,255,.09); text-align: center; font-size: 10px; font-weight: 800; }
 .text-button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; color: #abb3c3; background: rgba(255,255,255,.025); font-size: 9px; font-weight: 800; cursor: pointer; }
 .text-button:hover { border-color: rgba(101,240,206,.28); color: var(--teal); background: rgba(101,240,206,.07); }
@@ -154,6 +152,10 @@ h1 span { color: transparent; background: linear-gradient(90deg, var(--teal), #d
 .repo-action:hover { border-color: rgba(101,240,206,.27); color: var(--teal); background: rgba(101,240,206,.07); }
 .repo-action.mutate:hover { border-color: rgba(157,140,255,.3); color: #c8beff; background: rgba(157,140,255,.08); }
 .repo-action:disabled { opacity: .35; cursor: wait; }
+.repo-settings { width: 29px; height: 29px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--soft-text); background: rgba(255,255,255,.025); cursor: pointer; transition: .16s ease; }
+.repo-settings:hover { border-color: rgba(101,240,206,.28); color: var(--teal); background: rgba(101,240,206,.07); }
+.repo-settings:disabled { opacity: .35; cursor: wait; }
+.repo-settings svg { width: 14px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
 
 .activity-list, .reservation-list { display: grid; gap: 8px; }
 .activity-row { padding: 12px 13px; border-radius: 12px; background: rgba(255,255,255,.025); }

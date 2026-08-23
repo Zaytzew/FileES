@@ -113,9 +113,12 @@ type PublicShareBrowser interface {
 }
 
 type PublicShareDialogRequest struct {
-	Title  string
-	Text   string
-	Shares []PublicShareSummary
+	Title          string
+	Text           string
+	ServerID       string
+	RepoID         string
+	RepositoryName string
+	Shares         []PublicShareSummary
 }
 
 type PublicShareSummary struct {
@@ -214,10 +217,13 @@ type RealmVisibilityDialogResult struct {
 }
 
 type SettingsDialogRequest struct {
-	Title      string
-	Text       string
-	Servers    []SettingsServer
-	Recoveries []SettingsRecovery
+	Title string
+	Text  string
+	// FocusRepoID asks contextual renderers to present actions for one
+	// already-validated folder. Other renderers may use the filtered list.
+	FocusRepoID string
+	Servers     []SettingsServer
+	Recoveries  []SettingsRecovery
 }
 
 type SettingsServer struct {

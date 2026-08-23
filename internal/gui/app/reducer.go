@@ -374,7 +374,7 @@ func (s appState) finishPendingActions(ids []string) appState {
 
 // confirmPendingActions applies the post-action observation barrier. A mutation
 // is complete for presentation only when the authoritative projection shows its
-// expected effect (currently the exact session timeout or reservation delta).
+// expected effect (timeout, repository lifecycle state or reservation delta).
 func (s appState) confirmPendingActions(ids []string) (appState, []string) {
 	confirmed := make([]string, 0, len(ids))
 	waiting := make([]string, 0)
@@ -392,6 +392,33 @@ func (s appState) confirmPendingActions(ids []string) (appState, []string) {
 				}
 			}
 			if matched {
+				confirmed = append(confirmed, id)
+			} else {
+				waiting = append(waiting, id)
+			}
+			continue
+		}
+		if action.ExpectedRepoDeleted {
+			summary, exists := s.summaries[action.RepoID]
+			if !exists || summary.ServerID != action.ServerID {
+				confirmed = append(confirmed, id)
+			} else {
+				waiting = append(waiting, id)
+			}
+			continue
+		}
+		if action.ExpectedRepoAttached {
+			summary, exists := s.summaries[action.RepoID]
+			if exists && summary.ServerID == action.ServerID && summary.Attached {
+				confirmed = append(confirmed, id)
+			} else {
+				waiting = append(waiting, id)
+			}
+			continue
+		}
+		if action.ExpectedRepoDetached {
+			summary, exists := s.summaries[action.RepoID]
+			if exists && summary.ServerID == action.ServerID && !summary.Attached {
 				confirmed = append(confirmed, id)
 			} else {
 				waiting = append(waiting, id)

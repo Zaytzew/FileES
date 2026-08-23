@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title>Działania folderu FileES</title>
+  <link rel="stylesheet" href="./repository.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <main class="repository-shell">
+    <header id="repository-titlebar" class="repository-titlebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><div><strong>FileES</strong><small id="window-context">działania folderu</small></div></div>
+      <div class="window-controls">
+        <button id="repository-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj">—</button>
+        <button id="repository-close" class="window-button close" title="Zamknij okno" aria-label="Zamknij okno">×</button>
+      </div>
+    </header>
+
+    <section class="repository-hero">
+      <div><p id="scope-label" class="eyebrow">Folder</p><h1 id="repository-name">Wybierz folder</h1><p id="repository-copy">Czekam na spójny model działań.</p></div>
+      <button id="back-to-actions" class="quiet-button" type="button" hidden>Zamknij udostępnienia</button>
+    </section>
+
+    <section id="repository-facts" class="repository-facts" aria-label="Informacje o folderze">
+      <article><small>Serwer</small><strong id="repository-server">—</strong></article>
+      <article><small>Stan</small><strong id="repository-state">—</strong></article>
+      <article><small>Dostęp</small><strong id="repository-access">—</strong></article>
+      <article><small>Edycja</small><strong id="repository-editing">—</strong></article>
+    </section>
+
+    <section id="actions-view" class="content-card">
+      <header><div><p class="eyebrow">Ten folder</p><h2>Dostępne działania</h2></div></header>
+      <div id="repository-actions" class="action-list"></div>
+    </section>
+
+    <section id="shares-view" class="content-card" hidden>
+      <header class="shares-header"><div><p class="eyebrow">Dystrybucja</p><h2>Udostępnienia publiczne</h2></div><button id="create-share" class="primary-button" type="button">Nowe udostępnienie</button></header>
+      <div id="public-shares" class="share-list"></div>
+    </section>
+
+    <footer><span>FileES pokazuje tylko działania dozwolone przez aktualny stan demona.</span><button id="repository-done" type="button">Gotowe</button></footer>
+  </main>
+  <div id="repository-toasts" class="toast-stack" aria-live="polite"></div>
+  <script type="module" src="./repository.js"></script>
+</body>
+</html>

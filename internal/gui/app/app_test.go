@@ -391,6 +391,47 @@ func TestReducerActionFenceRequiresProjectedSessionTimeout(t *testing.T) {
 	}
 }
 
+func TestReducerActionFenceRequiresProjectedRepositoryLifecycle(t *testing.T) {
+	attach := PendingAction{ID: "attach:1", Kind: "connect_repositories", ServerID: "spot", RepoID: "docs", ExpectedRepoAttached: true}
+	s := newAppState().applyRepoList([]contract.RepoSummary{{ID: "docs", ServerID: "spot", Attached: false}})
+	s = s.startPendingAction(attach).awaitPendingAction(attach.ID)
+	s, waiting := s.confirmPendingActions([]string{attach.ID})
+	if len(waiting) != 1 {
+		t.Fatalf("unattached repository crossed attach fence: waiting=%v", waiting)
+	}
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "docs", ServerID: "spot", Attached: true}})
+	s, waiting = s.confirmPendingActions([]string{attach.ID})
+	if len(waiting) != 0 || len(s.pendingActions) != 0 {
+		t.Fatalf("attached repository did not finish action: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+
+	detach := PendingAction{ID: "detach:1", Kind: "detach_repository", ServerID: "spot", RepoID: "docs", ExpectedRepoDetached: true}
+	s = newAppState().applyRepoList([]contract.RepoSummary{{ID: "docs", ServerID: "spot", Attached: true}})
+	s = s.startPendingAction(detach).awaitPendingAction(detach.ID)
+
+	s, waiting = s.confirmPendingActions([]string{detach.ID})
+	if len(waiting) != 1 || len(s.pendingActions) != 1 {
+		t.Fatalf("attached repository crossed detach fence: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "docs", ServerID: "spot", Attached: false}})
+	s, waiting = s.confirmPendingActions([]string{detach.ID})
+	if len(waiting) != 0 || len(s.pendingActions) != 0 {
+		t.Fatalf("detached repository did not finish action: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+
+	remove := PendingAction{ID: "delete:1", Kind: "delete_repository", ServerID: "spot", RepoID: "docs", ExpectedRepoDeleted: true}
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "docs", ServerID: "spot", Attached: false}}).startPendingAction(remove).awaitPendingAction(remove.ID)
+	s, waiting = s.confirmPendingActions([]string{remove.ID})
+	if len(waiting) != 1 {
+		t.Fatalf("present repository crossed delete fence: waiting=%v", waiting)
+	}
+	s = s.applyRepoList(nil)
+	s, waiting = s.confirmPendingActions([]string{remove.ID})
+	if len(waiting) != 0 || len(s.pendingActions) != 0 {
+		t.Fatalf("removed repository did not finish action: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+}
+
 func TestReducerApplySnapshot(t *testing.T) {
 	s := newAppState().applyRepoList([]contract.RepoSummary{{ID: "a"}})
 	snap := contract.RepoStatus{RepoID: "a", State: contract.StateActive, Connectivity: contract.ConnOnline, LocalRevision: 42}

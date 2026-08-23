@@ -11,7 +11,7 @@
   <div class="ambient ambient-a"></div>
   <div class="ambient ambient-b"></div>
   <main class="shell">
-    <header class="topbar">
+    <header id="titlebar" class="topbar">
       <a class="brand" href="#top" aria-label="FileES">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span><strong>FileES</strong><small>workspace fabric</small></span>
@@ -25,6 +25,11 @@
         <button id="refresh" class="icon-button" title="Odśwież projekcję" aria-label="Odśwież projekcję">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
         </button>
+        <div class="window-controls" aria-label="Sterowanie oknem">
+          <button id="window-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj"><span>—</span></button>
+          <button id="window-maximise" class="window-button" title="Maksymalizuj lub przywróć" aria-label="Maksymalizuj lub przywróć"><span>□</span></button>
+          <button id="window-close" class="window-button close" title="Zamknij renderer" aria-label="Zamknij renderer"><span>×</span></button>
+        </div>
       </div>
     </header>
 
@@ -86,6 +91,7 @@
       <span id="revision">projekcja #0</span>
     </footer>
   </main>
+  <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

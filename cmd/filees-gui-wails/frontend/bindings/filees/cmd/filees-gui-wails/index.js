@@ -8,6 +8,8 @@ export {
 };
 
 export {
+    ActionAcceptance,
+    ActionRequest,
     ActivityProjection,
     ErrorProjection,
     NoticeProjection,

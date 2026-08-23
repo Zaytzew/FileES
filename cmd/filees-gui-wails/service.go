@@ -3,13 +3,18 @@ package main
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	guiapp "filees/internal/gui/app"
+	"filees/internal/gui/tray"
 )
 
-const snapshotEvent = "filees:snapshot"
+const (
+	snapshotEvent       = "filees:snapshot"
+	actionFeedbackEvent = "filees:action-feedback"
+)
 
 type snapshotEmitter interface {
 	Emit(name string, data ...any) bool
@@ -21,8 +26,10 @@ type snapshotEmitter interface {
 type GUIService struct {
 	mu       sync.RWMutex
 	snapshot Snapshot
+	view     guiapp.ViewModel
 	runner   *guiapp.App
 	emitter  snapshotEmitter
+	actions  chan<- tray.Intent
 }
 
 type Snapshot struct {
@@ -75,6 +82,25 @@ type RepoProjection struct {
 	Conflicts        int    `json:"conflicts"`
 	CurrentOperation string `json:"current_operation,omitempty"`
 	ReservationCount int    `json:"reservation_count"`
+	CanOpen          bool   `json:"can_open"`
+	CanLock          bool   `json:"can_lock"`
+	CanUnlock        bool   `json:"can_unlock"`
+}
+
+type ActionRequest struct {
+	Kind   string `json:"kind"`
+	RepoID string `json:"repo_id"`
+}
+
+type ActionAcceptance struct {
+	Accepted bool   `json:"accepted"`
+	Code     string `json:"code,omitempty"`
+}
+
+type ActionFeedback struct {
+	Level   string `json:"level"`
+	Title   string `json:"title"`
+	Message string `json:"message,omitempty"`
 }
 
 type ErrorProjection struct {
@@ -138,6 +164,12 @@ func (service *GUIService) attachEmitter(emitter snapshotEmitter) {
 	service.mu.Unlock()
 }
 
+func (service *GUIService) attachActions(actions chan<- tray.Intent) {
+	service.mu.Lock()
+	service.actions = actions
+	service.mu.Unlock()
+}
+
 func (service *GUIService) run(ctx context.Context) {
 	service.runner.Run(ctx)
 }
@@ -148,6 +180,32 @@ func (service *GUIService) Snapshot() Snapshot {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
 	return service.snapshot
+}
+
+// Trigger translates a closed set of browser gestures into the same intents
+// consumed by the Fyne composition root. Acceptance means queued, never that
+// the operation succeeded; the controller and daemon still decide the result.
+func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
+	request.Kind = strings.TrimSpace(request.Kind)
+	request.RepoID = strings.TrimSpace(request.RepoID)
+
+	service.mu.RLock()
+	vm := service.view
+	actions := service.actions
+	service.mu.RUnlock()
+	if actions == nil {
+		return ActionAcceptance{Code: "actions_unavailable"}
+	}
+	intent, allowed := translateAction(vm, request)
+	if !allowed {
+		return ActionAcceptance{Code: "action_unavailable"}
+	}
+	select {
+	case actions <- intent:
+		return ActionAcceptance{Accepted: true}
+	default:
+		return ActionAcceptance{Code: "action_queue_busy"}
+	}
 }
 
 // Refresh is a presentation intent: ask the shared IPC model to fetch a fresh
@@ -167,12 +225,65 @@ func (service *GUIService) onChange(vm guiapp.ViewModel) {
 	service.mu.Lock()
 	next.Revision = service.snapshot.Revision + 1
 	service.snapshot = next
+	service.view = vm
 	emitter := service.emitter
 	service.mu.Unlock()
 
 	if emitter != nil {
 		emitter.Emit(snapshotEvent, next)
 	}
+}
+
+func (service *GUIService) viewModel() guiapp.ViewModel {
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+	return service.view
+}
+
+func (service *GUIService) emitActionFeedback(feedback ActionFeedback) {
+	service.mu.RLock()
+	emitter := service.emitter
+	service.mu.RUnlock()
+	if emitter != nil {
+		emitter.Emit(actionFeedbackEvent, feedback)
+	}
+}
+
+func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, bool) {
+	repo, ok := projectedRepo(vm, request.RepoID)
+	if !ok {
+		return tray.Intent{}, false
+	}
+	switch request.Kind {
+	case string(tray.IntentOpenFolder):
+		return tray.Intent{Kind: tray.IntentOpenFolder, RepoID: repo.ID}, repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
+	case string(tray.IntentLock):
+		allowed := vm.CanMutateLock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && serverAllowsLock(vm, repo.ServerID)
+		return tray.Intent{Kind: tray.IntentLock, RepoID: repo.ID}, allowed
+	case string(tray.IntentUnlock):
+		allowed := vm.CanMutateUnlock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && repo.ReservationCount > 0
+		return tray.Intent{Kind: tray.IntentUnlock, RepoID: repo.ID}, allowed
+	default:
+		return tray.Intent{}, false
+	}
+}
+
+func projectedRepo(vm guiapp.ViewModel, repoID string) (guiapp.RepoViewModel, bool) {
+	for _, repo := range vm.Repos {
+		if repo.ID == repoID {
+			return repo, true
+		}
+	}
+	return guiapp.RepoViewModel{}, false
+}
+
+func serverAllowsLock(vm guiapp.ViewModel, serverID string) bool {
+	for _, server := range vm.Servers {
+		if server.ID == serverID {
+			return server.RealmID == "" || server.RealmAlias != ""
+		}
+	}
+	return true
 }
 
 func projectViewModel(vm guiapp.ViewModel) Snapshot {
@@ -214,6 +325,9 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 		if repo.CurrentOp != nil {
 			operation = *repo.CurrentOp
 		}
+		canOpen := repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
+		canLock := vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
+		canUnlock := vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
 		result.Repositories = append(result.Repositories, RepoProjection{
 			ID: repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,
 			LocalPath: repo.LocalPath, URL: repo.URL, Attached: repo.Attached,
@@ -223,6 +337,7 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
+			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock,
 		})
 	}
 	for _, item := range vm.Errors {

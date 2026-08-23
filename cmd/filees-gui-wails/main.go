@@ -36,6 +36,7 @@ func main() {
 
 	daemon := ipcclient.New(*socket, "filees-gui-wails")
 	gui := newGUIService(daemon)
+	actionController := configureActions(gui, daemon, newActionPlatform())
 
 	host := application.New(application.Options{
 		Name:        "FileES Wails",
@@ -55,6 +56,9 @@ func main() {
 	gui.attachEmitter(host.Event)
 	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
 		go gui.run(host.Context())
+		if actionController != nil {
+			go actionController.Run(host.Context())
+		}
 	})
 
 	host.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -65,7 +69,11 @@ func main() {
 		Height:          780,
 		MinWidth:        820,
 		MinHeight:       620,
+		Frameless:       true,
 		DevToolsEnabled: *devtools,
+		Windows: application.WindowsWindow{
+			NonClientRegionSupport: true,
+		},
 	})
 
 	if err := host.Run(); err != nil {

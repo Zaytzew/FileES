@@ -10,10 +10,17 @@ WebView/CSS -> GUIService -> internal/gui/app -> pkg/ipcclient -> daemon
 ```
 
 Pierwszy pion renderuje pełną projekcję stanu, reaguje na zdarzenia IPC oraz
-przekazuje dwie techniczne intencje: `Refresh` i `Reconnect`. Następne akcje
-powinny być dokładane wyłącznie jako tłumaczenie gestu WebView na istniejące
-komendy IPC. Frontend jest celowo bez Node/Vite, aby test UX nie uzależniał
-na starcie repozytorium od drugiego toolchainu.
+przekazuje techniczne intencje `Refresh` i `Reconnect`. Pierwszy pion akcyjny
+udostępnia `Otwórz`, `Zablokuj` i `Zwolnij` tylko wtedy, gdy bieżąca projekcja
+repozytorium na to pozwala. `GUIService.Trigger` tłumaczy gest WebView na
+zamknięty zbiór istniejących intencji, a wspólny `internal/gui/actions`
+ponownie sprawdza stan i jako jedyny woła IPC. Frontend jest celowo bez
+Node/Vite, aby test UX nie uzależniał na starcie repozytorium od drugiego
+toolchainu.
+
+Na Windows okno jest bez natywnej ramki (`Frameless`) i ma własny pasek z
+przeciąganiem oraz kontrolkami okna. CSS ukrywa scrollbar WebView, ale nie
+wyłącza przewijania kółkiem, touchpadem ani klawiaturą.
 
 Wymagania:
 

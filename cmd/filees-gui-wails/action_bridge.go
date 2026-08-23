@@ -22,7 +22,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, repositoryAttacher actions.RepositoryAttacher, repositoryDetacher actions.RepositoryDetacher, recoveryDownloader actions.RecoveryDownloader, backend platform.Backend, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, repositoryAttacher actions.RepositoryAttacher, repositoryDetacher actions.RepositoryDetacher, recoveryDownloader actions.RecoveryDownloader, backend platform.Backend, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -34,7 +34,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		Opener:             backend,
 		Picker:             backend,
 		FolderPicker:       backend,
-		Prompter:           backend,
+		Prompter:           prompter,
 		Notifier:           actionNotifier{service: service},
 		Locker:             locker,
 		Reservations:       reservations,

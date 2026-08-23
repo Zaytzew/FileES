@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="color-scheme" content="dark light">
+  <title>FileES</title><link rel="stylesheet" href="./prompt.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <main class="prompt-shell">
+    <header id="prompt-titlebar" class="titlebar">
+      <img src="./assets/filees-space-horizontal.svg" alt="filees:space">
+      <button id="prompt-close" type="button" title="Anuluj" aria-label="Anuluj">×</button>
+    </header>
+    <form id="prompt-form" class="prompt-card">
+      <div class="signal" aria-hidden="true"><span></span></div>
+      <p id="prompt-mode" class="eyebrow">Decyzja FileES</p>
+      <h1 id="prompt-title">FileES</h1>
+      <p id="prompt-text" class="prompt-text"></p>
+      <label id="input-wrap" class="input-wrap" hidden>
+        <span>Wartość</span><input id="prompt-value" autocomplete="off">
+      </label>
+      <div class="actions">
+        <button id="prompt-cancel" class="quiet" type="button">Anuluj</button>
+        <button id="prompt-confirm" class="primary" type="submit">Dalej</button>
+      </div>
+    </form>
+  </main>
+  <script type="module" src="./prompt.js"></script>
+</body>
+</html>

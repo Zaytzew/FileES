@@ -453,7 +453,12 @@ window.addEventListener("resize", () => {
       // A deliberate user shrink wins over automatic content fitting.  A
       // later enlargement remains eligible for future content-driven growth.
       if (width + 8 < autoFit.appliedWidth) autoFit.enabled = false;
-      else autoFit.appliedWidth = Math.max(autoFit.appliedWidth, width);
+      else {
+        const resumed = !autoFit.enabled;
+        autoFit.enabled = true;
+        autoFit.appliedWidth = Math.max(autoFit.appliedWidth, width);
+        if (resumed) scheduleWindowFit();
+      }
     } catch (error) {
       console.debug("Nie udało się rozpoznać ręcznej zmiany rozmiaru", error);
     }

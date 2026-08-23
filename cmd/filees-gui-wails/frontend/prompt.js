@@ -45,7 +45,8 @@ async function resolve(confirmed) {
     await Window.Hide();
   } catch (error) {
     console.error("Nie udało się zamknąć dialogu FileES", error);
-    $("#prompt-mode").textContent = "Nie udało się przekazać decyzji · spróbuj ponownie";
+    const reason = error?.message || String(error);
+    $("#prompt-mode").textContent = `Nie udało się przekazać decyzji · ${reason}`;
     setBusy(false);
   }
 }

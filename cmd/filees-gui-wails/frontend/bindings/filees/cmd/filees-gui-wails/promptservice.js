@@ -4,13 +4,13 @@
 import { Call as $Call } from "/wails/runtime.js";
 
 export function Snapshot() {
-    return $Call.ByName("filees/cmd/filees-gui-wails.PromptService.Snapshot");
+    return $Call.ByID(1592837381);
 }
 
 export function Resolve(choice) {
-    return $Call.ByName("filees/cmd/filees-gui-wails.PromptService.Resolve", choice);
+    return $Call.ByID(993017819, choice);
 }
 
 export function Cancel() {
-    return $Call.ByName("filees/cmd/filees-gui-wails.PromptService.Cancel");
+    return $Call.ByID(3691687939);
 }

@@ -80,51 +80,85 @@ function renderMetrics(snapshot) {
   $("#metric-attention").textContent = attention;
   $("#pulse-value").textContent = repos.length;
   $("#hero-copy").textContent = snapshot.connected
-    ? `Demon publikuje spójny obraz ${repos.length} repozytoriów. Ten ekran tylko go renderuje i przekazuje intencje przez IPC.`
-    : "Brak połączenia z demonem. Renderer zachowuje ostatnią projekcję i nie próbuje odtwarzać prawdy z dysku.";
+    ? `FileES opiekuje się ${repos.length} ${plural(repos.length, "folderem", "folderami", "folderami")} na ${snapshot.servers?.length || 0} ${plural(snapshot.servers?.length || 0, "serwerze", "serwerach", "serwerach")}. Zmiany i działania pojawiają się tutaj na bieżąco.`
+    : "Połączenie jest chwilowo niedostępne. Panel zachowuje ostatni znany stan i odświeży się automatycznie.";
+}
+
+function plural(value, one, few, many) {
+  const number = Math.abs(Number(value || 0));
+  if (number === 1) return one;
+  const mod10 = number % 10;
+  const mod100 = number % 100;
+  return mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14) ? few : many;
+}
+
+function renderRepo(repo) {
+  const state = repo.display_state || "unknown";
+  const revision = repo.attached ? `r${repo.local_revision || 0} / r${repo.head_revision || 0}` : "zdalny";
+  const pending = repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian";
+  const source = repo.local_path || repo.url || repo.id;
+  const actions = [
+    repo.can_open ? '<button class="repo-action" data-action="open_folder" title="Otwórz lokalny folder">Otwórz</button>' : "",
+    repo.can_lock ? '<button class="repo-action mutate" data-action="lock" title="Wybierz i zablokuj pliki">Zablokuj</button>' : "",
+    repo.can_unlock ? '<button class="repo-action mutate" data-action="unlock" title="Wybierz i zwolnij blokady">Zwolnij</button>' : "",
+  ].join("");
+  return `<article class="repo-row" data-repo-id="${escapeHTML(repo.id)}">
+    <div class="repo-title"><span class="repo-icon">▰</span><div class="repo-name">
+      <strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong>
+      <small title="${escapeHTML(source)}">${escapeHTML(source)}</small>
+    </div></div>
+    <div class="repo-meta"><small>Rewizja</small><span>${escapeHTML(revision)}</span></div>
+    <div class="repo-meta"><small>Kolejka</small><span>${escapeHTML(pending)}</span></div>
+    <span class="state-pill ${escapeHTML(state)}">${escapeHTML(stateLabels[state] || state)}</span>
+    <div class="repo-actions">${actions}</div>
+  </article>`;
+}
+
+function renderRepoGroup(label, repos, className = "") {
+  if (!repos.length) return "";
+  return `<section class="realm-group ${escapeHTML(className)}">
+    <div class="realm-divider"><span>${escapeHTML(label)}</span><b>${repos.length}</b></div>
+    <div class="repo-list">${repos.map(renderRepo).join("")}</div>
+  </section>`;
 }
 
 function renderRepositories(snapshot) {
   const root = $("#repositories");
   const repos = snapshot.repositories || [];
   if (!repos.length) {
-    root.innerHTML = '<div class="empty-state"><span>◌</span><p>W projekcji nie ma jeszcze repozytoriów.</p></div>';
+    root.innerHTML = '<div class="empty-state"><span>◌</span><p>Nie ma jeszcze folderów do pokazania.</p></div>';
     return;
   }
-  root.innerHTML = repos.map((repo) => {
-    const state = repo.display_state || "unknown";
-    const revision = repo.attached ? `r${repo.local_revision || 0} / r${repo.head_revision || 0}` : "projekcja zdalna";
-    const pending = repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian";
-    const source = repo.local_path || repo.url || repo.id;
-    const actions = [
-      repo.can_open ? '<button class="repo-action" data-action="open_folder" title="Otwórz lokalny folder">Otwórz</button>' : "",
-      repo.can_lock ? '<button class="repo-action mutate" data-action="lock" title="Wybierz i zablokuj pliki">Zablokuj</button>' : "",
-      repo.can_unlock ? '<button class="repo-action mutate" data-action="unlock" title="Wybierz i zwolnij blokady">Zwolnij</button>' : "",
-    ].join("");
-    return `<article class="repo-row" data-repo-id="${escapeHTML(repo.id)}">
-      <div class="repo-title"><span class="repo-icon">▰</span><div class="repo-name">
-        <strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong>
-        <small title="${escapeHTML(source)}">${escapeHTML(source)}</small>
-      </div></div>
-      <div class="repo-meta"><small>Rewizja</small><span>${escapeHTML(revision)}</span></div>
-      <div class="repo-meta"><small>Kolejka</small><span>${escapeHTML(pending)}</span></div>
-      <span class="state-pill ${escapeHTML(state)}">${escapeHTML(stateLabels[state] || state)}</span>
-      <div class="repo-actions">${actions}</div>
+  const servers = [...(snapshot.servers || [])];
+  const known = new Set(servers.map((server) => server.id));
+  repos.forEach((repo) => {
+    if (!known.has(repo.server_id)) {
+      servers.push({ id: repo.server_id, display_name: repo.server_id, address: "" });
+      known.add(repo.server_id);
+    }
+  });
+  root.innerHTML = servers.map((server) => {
+    const serverRepos = repos.filter((repo) => repo.server_id === server.id);
+    if (!serverRepos.length) return "";
+    const owned = serverRepos.filter((repo) => repo.ownership === "owned");
+    const guest = serverRepos.filter((repo) => repo.ownership === "guest");
+    const unclassified = serverRepos.filter((repo) => !["owned", "guest"].includes(repo.ownership));
+    const context = server.realm_alias || server.address || server.id;
+    return `<article class="server-panel">
+      <header class="server-header">
+        <div class="server-identity"><span class="server-mark" aria-hidden="true"></span><div>
+          <h3>${escapeHTML(server.display_name || server.id)}</h3>
+          <p title="${escapeHTML(context)}">${escapeHTML(context)}</p>
+        </div></div>
+        <span class="server-total">${serverRepos.length} ${plural(serverRepos.length, "folder", "foldery", "folderów")}</span>
+      </header>
+      <div class="server-folders">
+        ${renderRepoGroup("Własne", owned, "owned")}
+        ${renderRepoGroup("Gościnne · udostępnione przez inne zespoły", guest, "guest")}
+        ${renderRepoGroup("Pozostałe", unclassified, "unclassified")}
+      </div>
     </article>`;
   }).join("");
-}
-
-function renderServers(snapshot) {
-  const root = $("#servers");
-  const servers = snapshot.servers || [];
-  if (!servers.length) {
-    root.innerHTML = '<p class="muted">Brak aktywnych serwerów.</p>';
-    return;
-  }
-  root.innerHTML = servers.map((server) => `<article class="server-row">
-    <header><strong>${escapeHTML(server.display_name || server.id)}</strong><span class="server-count">${Number(server.repository_count || 0)} repo</span></header>
-    <p title="${escapeHTML(server.address)}">${escapeHTML(server.realm_alias || server.address || server.id)}</p>
-  </article>`).join("");
 }
 
 function renderReservations(snapshot) {
@@ -182,11 +216,10 @@ function render(snapshot) {
   renderConnection(snapshot);
   renderMetrics(snapshot);
   renderRepositories(snapshot);
-  renderServers(snapshot);
   renderReservations(snapshot);
   renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
-  $("#revision").textContent = `projekcja #${snapshot.revision || 0}`;
+  $("#revision").textContent = `stan #${snapshot.revision || 0}`;
 }
 
 function showToast(feedback) {

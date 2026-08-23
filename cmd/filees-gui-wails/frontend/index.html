@@ -35,7 +35,7 @@
 
     <section id="top" class="hero">
       <div>
-        <p class="eyebrow">Stan z demona · projekcja IPC</p>
+        <p class="eyebrow">FileES · Twoje pliki</p>
         <h1>Twoje pliki pracują<br><span>we właściwym rytmie.</span></h1>
         <p id="hero-copy" class="hero-copy">Czekam na pierwszy spójny obraz stanu FileES.</p>
       </div>
@@ -51,7 +51,7 @@
       <div class="offline-symbol">↯</div>
       <div>
         <h2>Demon jest poza zasięgiem</h2>
-        <p>Pokazujemy ostatni znany obraz, jeśli istnieje. Wails nie zgaduje stanu i nie zagląda do katalogów.</p>
+        <p>Pokazujemy ostatni znany stan. Po odzyskaniu połączenia panel odświeży się automatycznie.</p>
       </div>
       <button id="reconnect" class="primary-button">Połącz ponownie</button>
     </section>
@@ -66,19 +66,15 @@
     <section class="content-grid">
       <div class="main-column">
         <div class="section-heading">
-          <div><p class="eyebrow">Przestrzenie</p><h2>Repozytoria</h2></div>
+          <div><p class="eyebrow">Twoje pliki</p><h2>Foldery</h2></div>
           <span id="last-refresh" class="timestamp">Jeszcze nie odświeżono</span>
         </div>
-        <div id="repositories" class="repo-list">
-          <div class="empty-state"><span>◌</span><p>Czekam na projekcję repozytoriów.</p></div>
+        <div id="repositories" class="server-panels">
+          <div class="empty-state"><span>◌</span><p>Czekam na listę folderów.</p></div>
         </div>
       </div>
 
       <aside class="side-column">
-        <section class="side-card">
-          <div class="section-heading compact"><div><p class="eyebrow">Węzły</p><h2>Serwery</h2></div></div>
-          <div id="servers" class="server-list"><p class="muted">Brak danych.</p></div>
-        </section>
         <section id="reservations-card" class="side-card" hidden>
           <div class="section-heading compact">
             <div><p class="eyebrow">Edycja</p><h2>Aktywne blokady</h2></div>
@@ -97,8 +93,8 @@
     </section>
 
     <footer>
-      <span>Renderer WebView nie jest źródłem prawdy.</span>
-      <span id="revision">projekcja #0</span>
+      <span>FileES pilnuje zmian w Twoich folderach.</span>
+      <span id="revision">stan #0</span>
     </footer>
   </main>
   <div id="journal-overlay" class="journal-overlay" hidden>

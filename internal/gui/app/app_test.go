@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -285,6 +286,50 @@ func TestReducerApplyRepoList(t *testing.T) {
 	}
 	if s.summaries["a"].URL != "svn://x/a" {
 		t.Fatalf("summary a = %v", s.summaries["a"])
+	}
+}
+
+func TestReducerRepoSlotsRemainStableAcrossSnapshots(t *testing.T) {
+	s := newAppState().applyRepoList([]contract.RepoSummary{{ID: "a"}, {ID: "b"}})
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "b"}, {ID: "a"}, {ID: "c"}})
+	if got := repoIDs(s.viewModel().Repos); !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
+		t.Fatalf("reordered slots = %v", got)
+	}
+
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "b"}, {ID: "c"}})
+	if got := repoIDs(s.viewModel().Repos); !reflect.DeepEqual(got, []string{"b", "c"}) {
+		t.Fatalf("absent repository left a visible slot = %v", got)
+	}
+
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "c"}, {ID: "a"}, {ID: "b"}})
+	if got := repoIDs(s.viewModel().Repos); !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
+		t.Fatalf("returning repository lost its first-seen slot = %v", got)
+	}
+}
+
+func repoIDs(repos []RepoViewModel) []string {
+	ids := make([]string, len(repos))
+	for i, repo := range repos {
+		ids[i] = repo.ID
+	}
+	return ids
+}
+
+func TestReducerServerSlotsRemainStableAcrossSnapshots(t *testing.T) {
+	s := newAppState()
+	first := contract.SystemStatusResult{Activations: []contract.ActivationStatus{{ServerID: "spot"}, {ServerID: "manual"}}}
+	s.system = first
+	s = s.rememberServerOrder(first, nil, nil)
+	second := contract.SystemStatusResult{Activations: []contract.ActivationStatus{{ServerID: "manual"}, {ServerID: "spot"}, {ServerID: "cloud"}}}
+	s.system = second
+	s = s.rememberServerOrder(second, nil, nil)
+	servers := s.viewModel().Servers
+	got := make([]string, len(servers))
+	for i, server := range servers {
+		got[i] = server.ID
+	}
+	if !reflect.DeepEqual(got, []string{"spot", "manual", "cloud"}) {
+		t.Fatalf("reordered server slots = %v", got)
 	}
 }
 

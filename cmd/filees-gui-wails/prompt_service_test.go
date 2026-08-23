@@ -13,13 +13,13 @@ import (
 func TestPromptNamedBindingsMatchFrontend(t *testing.T) {
 	_ = application.New(application.Options{})
 	bindings := application.NewBindings(nil, nil)
-	if err := bindings.Add(application.NewService(newPromptService())); err != nil {
+	if err := bindings.Add(application.NewService(newPromptBridge(newPromptService()))); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{
-		"filees/cmd/filees-gui-wails.PromptService.Snapshot",
-		"filees/cmd/filees-gui-wails.PromptService.Resolve",
-		"filees/cmd/filees-gui-wails.PromptService.Cancel",
+		"filees/cmd/filees-gui-wails.PromptBridge.Snapshot",
+		"filees/cmd/filees-gui-wails.PromptBridge.Resolve",
+		"filees/cmd/filees-gui-wails.PromptBridge.Cancel",
 	} {
 		method := bindings.Get(&application.CallOptions{MethodName: name})
 		if method == nil {
@@ -27,8 +27,8 @@ func TestPromptNamedBindingsMatchFrontend(t *testing.T) {
 		}
 		t.Logf("%s=%d", name, method.ID)
 	}
-	if bindings.Get(&application.CallOptions{MethodName: "filees/cmd/filees-gui-wails.PromptService.Resolve"}).ID != 993017819 {
-		t.Fatal("PromptService.Resolve binding ID changed; regenerate promptservice.js")
+	if bindings.Get(&application.CallOptions{MethodName: "filees/cmd/filees-gui-wails.PromptBridge.Resolve"}).ID != 3660384409 {
+		t.Fatal("PromptBridge.Resolve binding ID changed; regenerate promptservice.js")
 	}
 }
 
@@ -38,7 +38,7 @@ func TestPromptFrontendIncludesServiceBinding(t *testing.T) {
 		t.Fatalf("prompt binding missing from frontend index: %v", err)
 	}
 	module, err := frontend.ReadFile("frontend/bindings/filees/cmd/filees-gui-wails/promptservice.js")
-	if err != nil || !strings.Contains(string(module), "ByID(993017819") {
+	if err != nil || !strings.Contains(string(module), "ByID(3660384409") {
 		t.Fatalf("prompt service module is incomplete: %v", err)
 	}
 }

@@ -40,6 +40,7 @@ func main() {
 	settings := newSettingsService()
 	repository := newRepositoryService()
 	prompts := newPromptService()
+	promptBridge := newPromptBridge(prompts)
 	restartRequested := make(chan struct{}, 1)
 
 	host := application.New(application.Options{
@@ -49,7 +50,7 @@ func main() {
 			application.NewService(gui),
 			application.NewService(settings),
 			application.NewService(repository),
-			application.NewService(prompts),
+			application.NewService(promptBridge),
 		},
 		Assets: application.AssetOptions{
 			Handler:        application.BundledAssetFileServer(frontend),

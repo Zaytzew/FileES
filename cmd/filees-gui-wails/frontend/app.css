@@ -188,3 +188,16 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
   .journal-list { background:rgba(11,29,58,.035); } .journal-row { border-color:rgba(11,29,58,.075); background:rgba(11,29,58,.025); } .journal-row:hover { background:rgba(11,29,58,.045); } footer { color:#68778a; }
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
+
+/* Nazwy plików bywają jednym ciągiem bez spacji (np. Drzwi_PORTA_..._DWG.dwg)
+   i bez tego wychodzą poza kartę - widoczne w Sygnałach i w Dzienniku.
+   min-width:0 jest konieczne, bo elementy siatki/flexa domyślnie nie kurczą
+   się poniżej rozmiaru treści i samo łamanie by nie zadziałało. */
+.activity-row,
+.activity-row *,
+.journal-row,
+.journal-row * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}

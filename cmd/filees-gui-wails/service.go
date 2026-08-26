@@ -392,6 +392,10 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		return tray.Intent{Kind: tray.IntentRestartFileES}, vm.CanRestartFileES()
 	case string(tray.IntentShutdownFileES):
 		return tray.Intent{Kind: tray.IntentShutdownFileES}, vm.CanShutdownFileES()
+	case string(tray.IntentUpdatePlan):
+		return tray.Intent{Kind: tray.IntentUpdatePlan}, vm.CanPlanUpdate()
+	case string(tray.IntentUpdateApply):
+		return tray.Intent{Kind: tray.IntentUpdateApply}, vm.CanApplyUpdate()
 	case string(tray.IntentReleaseReservation):
 		reservation, ok := projectedReservation(vm, request.ReservationID)
 		allowed := ok && reservation.CanRelease && vm.CanReleaseReservations() && viewHasServer(vm, reservation.ServerID)

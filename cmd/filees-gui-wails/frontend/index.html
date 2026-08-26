@@ -79,6 +79,17 @@
       </div>
 
       <aside class="side-column">
+        <section id="update-card" class="side-card" hidden>
+          <div class="section-heading compact">
+            <div><p class="eyebrow">Wydanie</p><h2>Dostępna aktualizacja</h2></div>
+            <span id="update-version" class="count-badge">—</span>
+          </div>
+          <p id="update-summary" class="update-summary"></p>
+          <div id="update-actions" class="update-actions" data-global-action="update">
+            <button type="button" data-action="update_plan">Pokaż plan</button>
+            <button class="primary" type="button" data-action="update_apply">Zaktualizuj</button>
+          </div>
+        </section>
         <section id="reservations-card" class="side-card" hidden>
           <div class="section-heading compact">
             <div><p class="eyebrow">Edycja</p><h2>Aktywne blokady</h2></div>

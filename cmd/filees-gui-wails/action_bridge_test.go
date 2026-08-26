@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"filees/internal/gui/actions"
+	"filees/internal/gui/platform"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -46,6 +47,53 @@ type dumpLoadClientStub struct {
 	serverID, repoID string
 	applyIgnore      bool
 }
+
+type serverDetachClientStub struct{ serverID string }
+
+func (stub *serverDetachClientStub) ServerDetach(_ context.Context, serverID string) (*contract.ServerDetachResult, error) {
+	stub.serverID = serverID
+	return &contract.ServerDetachResult{ServerID: serverID}, nil
+}
+
+type realmRemovalClientStub struct {
+	begin   contract.RealmRemoveBeginPayload
+	confirm contract.RealmRemoveConfirmPayload
+}
+
+func (stub *realmRemovalClientStub) RealmRemoveBegin(_ context.Context, payload contract.RealmRemoveBeginPayload) (*contract.RealmRemoveBeginResult, error) {
+	stub.begin = payload
+	return &contract.RealmRemoveBeginResult{OperationID: "operation-1", RecoveryKitPath: "/tmp/recovery.fkr", ActiveClientCount: 2, OwnedRepositoryCount: 3, ForeignGrantCount: 4}, nil
+}
+func (stub *realmRemovalClientStub) RealmRemoveConfirm(_ context.Context, payload contract.RealmRemoveConfirmPayload) (*contract.RealmRemoveConfirmResult, error) {
+	stub.confirm = payload
+	return &contract.RealmRemoveConfirmResult{RecoveryKitPath: payload.RecoveryKitPath, ArchiveCount: 3, ErasureRequested: true, ErasureMaxDays: 30}, nil
+}
+
+type consentPrompterStub struct {
+	answers []bool
+	calls   []platform.ConfirmRequest
+}
+
+type updateClientStub struct{ applied bool }
+
+func (*updateClientStub) UpdatePlan(context.Context) (*contract.UpdatePlanResult, error) {
+	return &contract.UpdatePlanResult{CurrentVersion: "602", AvailableVersion: "603", ReleaseID: "r603", RestartRequired: true, Changes: []contract.UpdateChange{{Action: "update", Path: "/usr/local/bin/filees", Detail: "sha256"}}}, nil
+}
+func (stub *updateClientStub) UpdateApply(context.Context) (*contract.UpdateApplyResult, error) {
+	stub.applied = true
+	return &contract.UpdateApplyResult{InstalledVersion: "603", RestartRequired: true}, nil
+}
+
+func (stub *consentPrompterStub) Confirm(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+	stub.calls = append(stub.calls, request)
+	answer := stub.answers[0]
+	stub.answers = stub.answers[1:]
+	return answer, nil
+}
+func (*consentPrompterStub) PromptText(context.Context, platform.PromptTextRequest) (platform.PromptTextResult, error) {
+	return platform.PromptTextResult{Cancelled: true}, nil
+}
+func (*consentPrompterStub) ShowInfo(context.Context, platform.InfoRequest) error { return nil }
 
 func (stub *dumpLoadClientStub) RepoLoadDump(_ context.Context, serverID, repoID string, applyIgnore bool, keep *int) (*contract.RepoLifecycleResult, error) {
 	stub.serverID, stub.repoID, stub.applyIgnore = serverID, repoID, applyIgnore
@@ -145,6 +193,49 @@ func TestRepositoryDumpLoaderUsesFullHistoryAndIgnorePolicy(t *testing.T) {
 	}
 	if client.serverID != "spot" || client.repoID != "docs" || !client.applyIgnore {
 		t.Fatalf("LoadDump() client=%+v", client)
+	}
+}
+
+func TestServerAndRealmLifecycleAdaptersTranslateIPC(t *testing.T) {
+	detachClient := &serverDetachClientStub{}
+	if err := (serverDetachAdapter{client: detachClient}).DetachServer(t.Context(), "spot"); err != nil || detachClient.serverID != "spot" {
+		t.Fatalf("DetachServer() server=%q err=%v", detachClient.serverID, err)
+	}
+	removeClient := &realmRemovalClientStub{}
+	adapter := realmRemovalAdapter{client: removeClient}
+	begin, err := adapter.BeginRealmRemoval(t.Context(), actions.RealmRemovalBeginRequest{ServerID: "spot", NotificationEmail: "a@example.net", RecoveryDirectory: "/tmp", ErasureRequested: true})
+	if err != nil || begin.OperationID != "operation-1" || removeClient.begin.ServerID != "spot" || !removeClient.begin.ErasureRequested {
+		t.Fatalf("BeginRealmRemoval() result=%+v payload=%+v err=%v", begin, removeClient.begin, err)
+	}
+	confirmed, err := adapter.ConfirmRealmRemoval(t.Context(), "spot", begin.OperationID, []byte("123456"), begin.RecoveryKitPath)
+	if err != nil || confirmed.ArchiveCount != 3 || removeClient.confirm.OperationID != "operation-1" || string(removeClient.confirm.OTP) != "123456" {
+		t.Fatalf("ConfirmRealmRemoval() result=%+v payload=%+v err=%v", confirmed, removeClient.confirm, err)
+	}
+}
+
+func TestConsentPromptAdapterKeepsRequiredAndOptionalDecisionsSeparate(t *testing.T) {
+	prompter := &consentPrompterStub{answers: []bool{true, false}}
+	result, err := (consentPromptAdapter{prompter: prompter}).ConfirmConsent(t.Context(), platform.ConsentRequest{Title: "Retencja", Text: "Polityka", RequiredText: "Rozumiem", OptionalText: "Usuń wszystko"})
+	if err != nil || result.Cancelled || !result.Required || result.Optional || len(prompter.calls) != 2 {
+		t.Fatalf("ConfirmConsent() result=%+v calls=%+v err=%v", result, prompter.calls, err)
+	}
+	cancelled := &consentPrompterStub{answers: []bool{false}}
+	result, err = (consentPromptAdapter{prompter: cancelled}).ConfirmConsent(t.Context(), platform.ConsentRequest{})
+	if err != nil || !result.Cancelled || len(cancelled.calls) != 1 {
+		t.Fatalf("required refusal result=%+v calls=%d err=%v", result, len(cancelled.calls), err)
+	}
+}
+
+func TestUpdateAdapterProjectsPlanAndApplyResult(t *testing.T) {
+	client := &updateClientStub{}
+	adapter := updateAdapter{client: client}
+	plan, err := adapter.UpdatePlan(t.Context())
+	if err != nil || plan.AvailableVersion != "603" || plan.ReleaseID != "r603" || len(plan.Changes) != 1 || plan.Changes[0].Path != "/usr/local/bin/filees" {
+		t.Fatalf("UpdatePlan() = %+v, %v", plan, err)
+	}
+	result, err := adapter.UpdateApply(t.Context())
+	if err != nil || !client.applied || result.InstalledVersion != "603" || !result.RestartRequired {
+		t.Fatalf("UpdateApply() = %+v applied=%v err=%v", result, client.applied, err)
 	}
 }
 

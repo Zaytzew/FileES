@@ -118,7 +118,7 @@ func TestSettingsServiceProjectsOnlyAuthorisedServerActions(t *testing.T) {
 		t.Fatal("settings window was not shown")
 	}
 	actions := service.Snapshot().Server.Actions
-	if len(actions) != 2 || actions[0].ID != "realm_visibility" || actions[1].ID != "add_folder" {
+	if len(actions) != 4 || actions[0].ID != "realm_visibility" || actions[1].ID != "add_folder" || actions[2].ID != "detach_server" || actions[3].ID != "remove_realm" {
 		t.Fatalf("server actions = %+v", actions)
 	}
 	if got := service.Choose(SettingsChoice{Action: "realm_branding", ServerID: "spot"}); got.Accepted || got.Code != "settings_action_unavailable" {

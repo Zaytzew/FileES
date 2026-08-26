@@ -72,19 +72,30 @@ type blockingCommitRunner struct {
 	release chan struct{}
 }
 
+type contextCommitRunner struct{ entered chan struct{} }
+
+func (f *contextCommitRunner) Run(ctx context.Context, _ string, _ string, _ <-chan watcher.Event) {
+	close(f.entered)
+	<-ctx.Done()
+}
+
 func (f *blockingCommitRunner) Run(context.Context, string, string, <-chan watcher.Event) {
 	close(f.entered)
 	<-f.release
 }
 
 func TestReadWritePipelineOwnsWatcherCommitterAndStateOrder(t *testing.T) {
+	wc := t.TempDir()
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	server := ipcserver.New(t.TempDir() + "/sock")
-	state := server.RegisterRepoAccess("docs", "svn+ssh://_filees-client@example/docs", t.TempDir(), "office", contract.AccessReadWrite)
+	state := server.RegisterRepoAccess("docs", "svn+ssh://_filees-client@example/docs", wc, "office", contract.AccessReadWrite)
 	source := &fakeEventSource{started: make(chan struct{}), events: make(chan watcher.Event)}
 	runner := &blockingCommitRunner{entered: make(chan struct{}), release: make(chan struct{})}
 	done := make(chan error, 1)
 	go func() {
-		done <- runReadWritePipeline(t.Context(), config.Repo{ID: "docs", LocalPath: t.TempDir()}, state, source, runner)
+		done <- runReadWritePipeline(t.Context(), config.Repo{ID: "docs", LocalPath: wc}, state, source, runner)
 	}()
 	select {
 	case <-source.started:
@@ -110,6 +121,45 @@ func TestReadWritePipelineOwnsWatcherCommitterAndStateOrder(t *testing.T) {
 	}
 	if got := state.Snapshot().State; got != contract.StateStopping {
 		t.Fatalf("state=%s", got)
+	}
+}
+
+func TestReadWritePipelineStopsAndRequestsLocateWhenWorkingCopyMoves(t *testing.T) {
+	parent := t.TempDir()
+	wc := filepath.Join(parent, "documents")
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	state := ipcserver.New(t.TempDir()+"/sock").RegisterRepoAccess("docs", "svn+ssh://example/docs", wc, "office", contract.AccessReadWrite)
+	source := &fakeEventSource{started: make(chan struct{}), events: make(chan watcher.Event)}
+	runner := &contextCommitRunner{entered: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		done <- runReadWritePipeline(t.Context(), config.Repo{ID: "docs", LocalPath: wc}, state, source, runner)
+	}()
+	select {
+	case <-runner.entered:
+	case <-time.After(time.Second):
+		t.Fatal("pipeline did not start")
+	}
+	moved := filepath.Join(parent, "documents-moved")
+	if err := os.Rename(wc, moved); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipeline did not stop after working copy moved")
+	}
+	if _, err := os.Stat(wc); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("abandoned working-copy root was recreated: %v", err)
+	}
+	snapshot := state.Snapshot()
+	if snapshot.State != contract.StateInteractionRequired || snapshot.CurrentOperation == nil || *snapshot.CurrentOperation != "working_copy_missing" {
+		t.Fatalf("moved working copy snapshot=%+v", snapshot)
 	}
 }
 

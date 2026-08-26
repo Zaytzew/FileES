@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -103,6 +104,9 @@ func TestWireRepoStatusConnectsCommitServiceToPublicSnapshot(t *testing.T) {
 
 func TestReadOnlyRepoNeverCreatesWatcherOrCommitQueue(t *testing.T) {
 	wc := t.TempDir()
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	fileesDir := filepath.Join(wc, ".filees")
 	if err := os.MkdirAll(filepath.Join(fileesDir, "state"), 0o755); err != nil {
 		t.Fatal(err)
@@ -147,5 +151,41 @@ func TestReadOnlyRepoNeverCreatesWatcherOrCommitQueue(t *testing.T) {
 	}
 	if snap := rs.Snapshot(); snap.Access != contract.AccessReadOnly || snap.State != contract.StateStopping || snap.Cycle.Phase != contract.CycleStopped || snap.Cycle.ID < 2 || snap.Cycle.NextTickAt != "" {
 		t.Fatalf("snapshot=%+v", snap)
+	}
+}
+
+func TestReadOnlyRepoRequestsLocateAfterWorkingCopyMoves(t *testing.T) {
+	parent := t.TempDir()
+	wc := filepath.Join(parent, "archive")
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rs := ipcserver.New(t.TempDir()+"/filees.sock").RegisterRepoAccess("archive", "svn+ssh://example/archive", wc, "office", contract.AccessReadOnly)
+	fake := &updateOnlyClient{called: make(chan struct{}, 2)}
+	done := make(chan struct{})
+	go func() {
+		runReadOnlyRepo(t.Context(), config.Repo{ID: "archive", LocalPath: wc, PollInterval: time.Hour}, rs, fake, talk.With("test-readonly-move"))
+		close(done)
+	}()
+	select {
+	case <-fake.called:
+	case <-time.After(time.Second):
+		t.Fatal("initial update not called")
+	}
+	moved := filepath.Join(parent, "archive-moved")
+	if err := os.Rename(wc, moved); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("read-only pipeline did not notice moved working copy")
+	}
+	if _, err := os.Stat(wc); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("read-only pipeline recreated abandoned working-copy root: %v", err)
+	}
+	snapshot := rs.Snapshot()
+	if snapshot.State != contract.StateInteractionRequired || snapshot.CurrentOperation == nil || *snapshot.CurrentOperation != "working_copy_missing" {
+		t.Fatalf("moved read-only working copy snapshot=%+v", snapshot)
 	}
 }

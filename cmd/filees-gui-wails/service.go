@@ -388,6 +388,8 @@ func (service *GUIService) emitActionFeedback(feedback ActionFeedback) {
 
 func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, bool) {
 	switch request.Kind {
+	case string(tray.IntentActivate):
+		return tray.Intent{Kind: tray.IntentActivate}, true
 	case string(tray.IntentRestartFileES):
 		return tray.Intent{Kind: tray.IntentRestartFileES}, vm.CanRestartFileES()
 	case string(tray.IntentShutdownFileES):

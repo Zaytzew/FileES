@@ -184,6 +184,7 @@ function renderMetrics(snapshot) {
   $("#metric-pending-note").textContent = pending ? `${bytes(pendingBytes)} oczekuje` : "kolejka jest pusta";
   $("#metric-attention").textContent = attention;
   $("#pulse-value").textContent = repos.length;
+  $("#pulse-label").textContent = plural(repos.length, "repozytorium", "repozytoria", "repozytoriów");
   $("#hero-copy").textContent = snapshot.connected
     ? `FileES opiekuje się ${repos.length} ${plural(repos.length, "folderem", "folderami", "folderami")} na ${snapshot.servers?.length || 0} ${plural(snapshot.servers?.length || 0, "serwerze", "serwerach", "serwerach")}. Zmiany i działania pojawiają się tutaj na bieżąco.`
     : "Połączenie jest chwilowo niedostępne. Panel zachowuje ostatni znany stan i odświeży się automatycznie.";
@@ -478,6 +479,7 @@ async function invoke(button, action) {
 
 Events.On("filees:snapshot", (event) => render(event?.data ?? event));
 Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
+$("#activate").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#refresh").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Refresh));
 $("#reconnect").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Reconnect));
 $("#open-journal").addEventListener("click", () => {

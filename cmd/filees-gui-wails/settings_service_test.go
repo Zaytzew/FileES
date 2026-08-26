@@ -136,3 +136,10 @@ func TestSettingsServiceProjectsOnlyAuthorisedServerActions(t *testing.T) {
 		t.Fatal("settings browser did not return")
 	}
 }
+
+func TestSettingsServiceProjectsAliasAndMobilePairing(t *testing.T) {
+	snapshot, ok := projectSettingsRequest(platform.SettingsDialogRequest{Servers: []platform.SettingsServer{{ID: "spot", CanClaimRealmAlias: true, CanPairMobile: true}}})
+	if !ok || len(snapshot.Server.Actions) != 4 || snapshot.Server.Actions[0].ID != "realm_alias" || snapshot.Server.Actions[1].ID != "pair_mobile" {
+		t.Fatalf("alias/mobile actions = ok %v actions %+v", ok, snapshot.Server.Actions)
+	}
+}

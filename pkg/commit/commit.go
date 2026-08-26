@@ -90,7 +90,10 @@ type Service struct {
 	OwnerRealmID string
 	UUID         string       // stable client UUID (persisted in .filees/state/client.uuid)
 	ErrSink      *errmap.Sink // optional; structured error log (JSON Lines)
-	Activity     interface {
+	// RequireSVNMetadata prevents daemon housekeeping from recreating an old
+	// working-copy root after the user moves it elsewhere.
+	RequireSVNMetadata bool
+	Activity           interface {
 		Record(activity.Entry) error
 		Forget(repoID, path string) error
 	}
@@ -301,6 +304,10 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	defer s.cancelConnectivityJournal()
 	s.repoID = repoID
 	s.wc = wc
+	if !s.workingCopyAvailable(wc) {
+		s.Logger.Warnf("working copy metadata disappeared at %s", wc)
+		return
+	}
 	s.reconcileShouts(ctx, wc)
 	lg := s.Logger
 	if s.Rules.NewLatency <= 0 {
@@ -328,8 +335,15 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	s.staging = st
 
 	s.cachePath = filepath.Join(wc, ".filees", "commit_cache", "cache.json")
-	if err := os.MkdirAll(filepath.Dir(s.cachePath), 0o755); err != nil {
-		lg.Warnf("commit cache dir: %v — cache disabled", err)
+	cacheDir := filepath.Dir(s.cachePath)
+	var cacheDirErr error
+	if s.RequireSVNMetadata {
+		_, cacheDirErr = os.Stat(cacheDir)
+	} else {
+		cacheDirErr = os.MkdirAll(cacheDir, 0o755)
+	}
+	if cacheDirErr != nil {
+		lg.Warnf("commit cache dir: %v — cache disabled", cacheDirErr)
 		s.cachePath = ""
 	} else {
 		s.loadCache()
@@ -366,6 +380,10 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	for {
 		select {
 		case <-ctx.Done():
+			if !s.workingCopyAvailable(wc) {
+				lg.Infof("commit service stop: working copy moved")
+				return
+			}
 			// The watcher closes its channel after its final state save. Consume
 			// everything it emitted before beginning the bounded shutdown drain.
 			for ev := range events {
@@ -376,8 +394,16 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 			return
 		case ev, ok := <-events:
 			if !ok {
+				if !s.workingCopyAvailable(wc) {
+					lg.Infof("commit service stop: working copy moved")
+					return
+				}
 				s.shutdownDrain(wc)
 				lg.Infof("commit service stop")
+				return
+			}
+			if !s.workingCopyAvailable(wc) {
+				lg.Infof("commit service stop: working copy moved")
 				return
 			}
 			s.acceptEvent(ev)
@@ -393,6 +419,10 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				s.saveCache()
 			}
 		case tickAt := <-ticker.C:
+			if !s.workingCopyAvailable(wc) {
+				lg.Infof("commit service stop: working copy moved")
+				return
+			}
 			cycleID++
 			lastTick = tickAt
 			projectCycle(contract.CycleRunning, time.Time{})
@@ -473,6 +503,9 @@ func (s *Service) forgetActivity(rel string) {
 }
 
 func (s *Service) shutdownDrain(wc string) {
+	if !s.workingCopyAvailable(wc) {
+		return
+	}
 	s.saveCache()
 	drainCtx, cancel := context.WithTimeout(context.Background(), s.Rules.ShutdownTimeout)
 	s.drain(drainCtx, wc)
@@ -483,6 +516,9 @@ func (s *Service) shutdownDrain(wc string) {
 // runPoller periodically checks whether the server has new commits and triggers svn update.
 func (s *Service) runPoller(ctx context.Context, wc string) {
 	headRevPath := filepath.Join(wc, ".filees", "state", "head.rev")
+	if !s.workingCopyAvailable(wc) {
+		return
+	}
 	// Establish the revision baseline immediately. Without this, a fresh WC
 	// that is already at HEAD reports revision 0 through IPC until the first
 	// poll interval elapses (and historically never wrote head.rev at all).
@@ -494,6 +530,9 @@ func (s *Service) runPoller(ctx context.Context, wc string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if !s.workingCopyAvailable(wc) {
+				return
+			}
 			if s.isOfflineBackoff() {
 				s.Logger.Debugf("poll: offline — skipping")
 				continue
@@ -524,7 +563,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	s.goOnline()
 
 	if headRev <= localRev {
-		if err := atomicWriteString(headRevPath, fmt.Sprintf("%d\n", localRev)); err != nil {
+		if err := s.writeStateString(headRevPath, fmt.Sprintf("%d\n", localRev)); err != nil {
 			s.Logger.Warnf("poll: persist local revision: %v", err)
 		}
 		if s.OnHeadRevision != nil {
@@ -567,7 +606,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
 	s.reconcileShouts(ctx, wc)
-	_ = atomicWriteString(headRevPath, fmt.Sprintf("%d\n", headRev))
+	_ = s.writeStateString(headRevPath, fmt.Sprintf("%d\n", headRev))
 	if s.OnHeadRevision != nil {
 		s.OnHeadRevision(headRev)
 	}
@@ -704,6 +743,9 @@ func (s *Service) tryCommit(ctx context.Context, wc string) error {
 }
 
 func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) error {
+	if !s.workingCopyAvailable(wc) {
+		return errors.New("working copy metadata is missing")
+	}
 	s.mu.Lock()
 	// snapshot and filter by latency & max batch
 	now := time.Now()
@@ -1023,7 +1065,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	doneOperation := s.setOperation("commit")
 	defer doneOperation()
 	busy := filepath.Join(wc, ".filees", "state", "commit.busy")
-	if err := atomicWriteString(busy, fmt.Sprintf("ts_start=%d\npid=%d\nrepo=%s\n", time.Now().Unix(), os.Getpid(), s.RepoURL)); err == nil {
+	if err := s.writeStateString(busy, fmt.Sprintf("ts_start=%d\npid=%d\nrepo=%s\n", time.Now().Unix(), os.Getpid(), s.RepoURL)); err == nil {
 		defer os.Remove(busy)
 	}
 
@@ -1164,7 +1206,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			}
 		}
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
-		_ = atomicWriteString(head, strconv.FormatInt(confirmedRevision, 10)+"\n")
+		_ = s.writeStateString(head, strconv.FormatInt(confirmedRevision, 10)+"\n")
 		if s.OnHeadRevision != nil {
 			s.OnHeadRevision(confirmedRevision)
 		}
@@ -1482,7 +1524,7 @@ func (s *Service) loadCache() {
 }
 
 func (s *Service) saveCache() {
-	if s.cachePath == "" {
+	if s.cachePath == "" || !s.workingCopyAvailable(s.wc) {
 		return
 	}
 
@@ -1501,9 +1543,33 @@ func (s *Service) saveCache() {
 	}
 	s.mu.Unlock()
 
-	if err := atomicWriteJSONSlice(s.cachePath, entries); err != nil {
+	var err error
+	if s.RequireSVNMetadata {
+		err = atomicWriteJSONSliceInExistingDir(s.cachePath, entries)
+	} else {
+		err = atomicWriteJSONSlice(s.cachePath, entries)
+	}
+	if err != nil {
 		s.Logger.Warnf("commit cache: save failed: %v", err)
 	}
+}
+
+func (s *Service) workingCopyAvailable(wc string) bool {
+	if !s.RequireSVNMetadata {
+		return true
+	}
+	info, err := os.Stat(filepath.Join(wc, ".svn"))
+	return err == nil && info.IsDir()
+}
+
+func (s *Service) writeStateString(path, data string) error {
+	if !s.workingCopyAvailable(s.wc) {
+		return errors.New("working copy metadata is missing")
+	}
+	if s.RequireSVNMetadata {
+		return atomicWriteStringInExistingDir(path, data)
+	}
+	return atomicWriteString(path, data)
 }
 
 // atomicWriteJSONSlice writes v to path through a randomly named temporary file
@@ -1514,6 +1580,11 @@ func atomicWriteJSONSlice(path string, v any) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	return atomicWriteJSONSliceInExistingDir(path, v)
+}
+
+func atomicWriteJSONSliceInExistingDir(path string, v any) error {
+	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".filees-cache-*.tmp")
 	if err != nil {
 		return err
@@ -1560,6 +1631,11 @@ func atomicWriteString(path string, data string) error {
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return err
 	}
+	return atomicWriteStringInExistingDir(path, data)
+}
+
+func atomicWriteStringInExistingDir(path string, data string) error {
+	d := filepath.Dir(path)
 	f, err := os.CreateTemp(d, ".filees-state-*.tmp")
 	if err != nil {
 		return err

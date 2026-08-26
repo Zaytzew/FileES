@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 )
@@ -103,7 +104,82 @@ func (s SVNLookSource) Tree(ctx context.Context, repoID, sourceRoot string, revi
 			return nil, errors.New("svnlook tree contains more than 4096 files")
 		}
 	}
+	if err := s.populateSizes(ctx, repository, revision, objects); err != nil {
+		return nil, err
+	}
 	return objects, nil
+}
+
+// populateSizes uses svnlook's repository-native filesize operation so the
+// listing and later download describe exactly the same immutable revision.
+// A small worker pool avoids serial process latency without allowing a large
+// share to create an unbounded number of svnlook children.
+func (s SVNLookSource) populateSizes(ctx context.Context, repository string, revision int64, objects []TreeObject) error {
+	if len(objects) == 0 {
+		return nil
+	}
+	workers := 8
+	if len(objects) < workers {
+		workers = len(objects)
+	}
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	jobs := make(chan int)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				size, err := s.fileSize(workCtx, repository, objects[index].RepoPath, revision)
+				if err != nil {
+					select {
+					case errCh <- err:
+						cancel()
+					default:
+					}
+					return
+				}
+				objects[index].Size = &size
+			}
+		}()
+	}
+	for index := range objects {
+		select {
+		case jobs <- index:
+		case <-workCtx.Done():
+			break
+		}
+		if workCtx.Err() != nil {
+			break
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return err
+	default:
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s SVNLookSource) fileSize(ctx context.Context, repository, repoPath string, revision int64) (int64, error) {
+	command := s.command(ctx, "filesize", "-r", strconv.FormatInt(revision, 10), repository, repoPath)
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &limitedWriter{Writer: &stdout, Remaining: 128}, &limitedWriter{Writer: &stderr, Remaining: 4096}
+	if err := command.Run(); err != nil {
+		return 0, fmt.Errorf("svnlook filesize %s: %w: %s", repoPath, err, strings.TrimSpace(stderr.String()))
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(stdout.String()), 10, 64)
+	if err != nil || size < 0 {
+		return 0, fmt.Errorf("svnlook filesize %s returned an invalid size", repoPath)
+	}
+	return size, nil
 }
 
 func (s SVNLookSource) command(ctx context.Context, args ...string) *exec.Cmd {

@@ -926,6 +926,57 @@ func TestActivityForgottenWhenAddedFileVanishesBeforePublishWithoutDeleteEvent(t
 	}
 }
 
+func TestCommitServiceDoesNotRecreateMovedWorkingCopy(t *testing.T) {
+	parent := t.TempDir()
+	wc := filepath.Join(parent, "documents")
+	cacheDir := filepath.Join(wc, ".filees", "commit_cache")
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(wc, "draft.txt")
+	if err := os.WriteFile(path, []byte("draft"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan watcher.Event, 1)
+	service := &Service{Rules: Rules{Window: time.Hour}, RequireSVNMetadata: true}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		service.Run(ctx, "docs", wc, events)
+		close(done)
+	}()
+	events <- watcher.Event{Path: path, Rel: "draft.txt", Type: watcher.EntryFile, Op: watcher.Added}
+	cachePath := filepath.Join(cacheDir, "cache.json")
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := os.Stat(cachePath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("commit service did not persist initial cache")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	moved := filepath.Join(parent, "documents-moved")
+	if err := os.Rename(wc, moved); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("commit service did not stop")
+	}
+	if _, err := os.Stat(wc); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("commit service recreated abandoned working-copy root: %v", err)
+	}
+}
+
 // TestAtomicWritesDoNotFollowPredictableSymlinks is the regression test for the
 // audit's Finding D. The old helpers built their temporary file as
 // path + ".tmp" and opened it with os.Create/os.WriteFile, both of which follow

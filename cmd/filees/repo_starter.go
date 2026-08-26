@@ -64,7 +64,7 @@ func openRepoErrorSink(path, scope string) (*errmap.Sink, error) {
 }
 
 func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules, gate runtime.Gate, mutex runtime.RepoMutex, clientUUID string, sink *errmap.Sink, ipc *ipcserver.Server, state *ipcserver.RepoState, passports *passport.Manager, activityJournal *activity.Journal) *commit.Service {
-	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, RealmID: repo.RealmID, OwnerRealmID: repo.OwnerRealmID, UUID: clientUUID, ErrSink: sink, Activity: activityJournal}
+	service := &commit.Service{Cli: svn, Rules: rules, HostGate: gate, RepoMtx: mutex, Logger: talk.With("commit:" + repo.ID), RepoURL: repo.RepoURL, RealmID: repo.RealmID, OwnerRealmID: repo.OwnerRealmID, UUID: clientUUID, ErrSink: sink, Activity: activityJournal, RequireSVNMetadata: true}
 	if ipc != nil {
 		service.Emit = func(eventType string, payload any) { ipc.Emit(ipc.NewRepoEvent(repo.ID, eventType, payload)) }
 	}
@@ -106,11 +106,60 @@ func runReadWritePipeline(ctx context.Context, repo config.Repo, state *ipcserve
 	if state == nil || source == nil || committer == nil {
 		return errors.New("read-write pipeline is incomplete")
 	}
+	if !workingCopyMetadataAvailable(repo.LocalPath) {
+		markWorkingCopyMissing(state)
+		return nil
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	lost := make(chan struct{}, 1)
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				if workingCopyMetadataAvailable(repo.LocalPath) {
+					continue
+				}
+				lost <- struct{}{}
+				cancel()
+				return
+			}
+		}
+	}()
 	state.SetState(contract.StateActive)
-	events := source.Start(ctx)
-	committer.Run(ctx, repo.ID, repo.LocalPath, events)
+	events := source.Start(runCtx)
+	committer.Run(runCtx, repo.ID, repo.LocalPath, events)
+	cancel()
+	missing := !workingCopyMetadataAvailable(repo.LocalPath)
+	select {
+	case <-lost:
+		missing = true
+	default:
+	}
+	if missing {
+		markWorkingCopyMissing(state)
+		return nil
+	}
 	state.SetState(contract.StateStopping)
 	return nil
+}
+
+func markWorkingCopyMissing(state *ipcserver.RepoState) {
+	state.SetLockFuncs(nil, nil)
+	state.SetReservationFuncs(nil, nil)
+	state.SetPublishFunc(nil)
+	state.SetNoticeFuncs(nil, nil)
+	state.SetCurrentOp(stringPtr("working_copy_missing"))
+	state.SetState(contract.StateInteractionRequired)
+}
+
+func workingCopyMetadataAvailable(wc string) bool {
+	info, err := os.Stat(filepath.Join(wc, ".svn"))
+	return err == nil && info.IsDir()
 }
 
 func buildWatcherOptions(repo config.Repo, manifest, busyPath string) (watcher.Options, time.Duration) {
@@ -123,7 +172,7 @@ func buildWatcherOptions(repo config.Repo, manifest, busyPath string) (watcher.O
 	if scan <= 0 {
 		scan = window / 2
 	}
-	return watcher.Options{WC: repo.LocalPath, StatePath: manifest, ScanPeriod: scan, BusyPath: busyPath, BusyTTL: 10 * time.Minute, TicketsPoll: 12 * time.Second, DeletedDebounce: publishLatency, LogScope: "watch:" + repo.ID, UseMD5: true, ChanSize: 1024}, publishLatency
+	return watcher.Options{WC: repo.LocalPath, StatePath: manifest, ScanPeriod: scan, BusyPath: busyPath, BusyTTL: 10 * time.Minute, TicketsPoll: 12 * time.Second, DeletedDebounce: publishLatency, LogScope: "watch:" + repo.ID, UseMD5: true, ChanSize: 1024, RequireSVNMetadata: true}, publishLatency
 }
 
 func buildCommitRules(repo config.Repo, publishLatency time.Duration) commit.Rules {
@@ -227,7 +276,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	logger := talk.With("repo:" + repo.ID)
 	stateDir := filepath.Join(wc, ".filees", "state")
 	logsDir := filepath.Join(wc, ".filees", "logs")
-	for _, dir := range []string{stateDir, filepath.Join(wc, ".filees", "tickets"), filepath.Join(wc, ".filees", "locks", "global"), filepath.Join(wc, ".filees", "locks", "repo"), logsDir} {
+	for _, dir := range []string{stateDir, filepath.Join(wc, ".filees", "commit_cache"), filepath.Join(wc, ".filees", "passports"), filepath.Join(wc, ".filees", "tickets"), filepath.Join(wc, ".filees", "locks", "global"), filepath.Join(wc, ".filees", "locks", "repo"), logsDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("init directory %s: %w", dir, err)
 		}
@@ -254,7 +303,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	var passports *passportSession
 	if repo.EditPassports {
 		var err error
-		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, passport.SVNBackend{Client: svn, WC: wc}, passport.Config{TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace})
+		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, passport.SVNBackend{Client: svn, WC: wc}, passport.Config{TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc})
 		if err != nil {
 			return nil, err
 		}

@@ -180,7 +180,8 @@ func newWebFixture(t *testing.T, configure func(*manifest.Share)) webFixture {
 		t.Fatal(err)
 	}
 	otp := &recipientotp.Service{Root: t.TempDir(), Key: []byte(strings.Repeat("o", 32)), Channels: store, Outbox: repoworker.PublicShareOutbox{Root: t.TempDir(), Now: func() time.Time { return *clock }}, Now: func() time.Time { return *clock }}
-	source := &webSource{head: 5, values: map[int64]string{5: "revision five payload"}, trees: map[int64][]authority.TreeObject{5: {{RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt budowlany.pdf"}}}}
+	payloadSize := int64(len("revision five payload"))
+	source := &webSource{head: 5, values: map[int64]string{5: "revision five payload"}, trees: map[int64][]authority.TreeObject{5: {{RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt budowlany.pdf", Size: &payloadSize}}}}
 	resolver := authority.Resolver{Channels: store, Source: source, FrostKey: []byte(strings.Repeat("f", 32)), StagingRoot: t.TempDir(), MaxLeafSize: 1 << 20, RecipientOTP: otp}
 	cacheStore := &cache.Store{Config: cache.Config{Root: t.TempDir(), TTL: 12 * time.Hour, MaxSize: 1024 * 1024}}
 	handler := Handler{Backend: resolver, Cache: cacheStore, VisitKey: []byte(strings.Repeat("v", 32)), Now: func() time.Time { return *clock }}
@@ -220,6 +221,9 @@ func TestOpenShareListingCacheAndRange(t *testing.T) {
 	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") || strings.Contains(listing.Body.String(), "wydanie/projekt.pdf") {
 		t.Fatalf("listing status=%d body=%s", listing.Code, listing.Body.String())
 	}
+	if !strings.Contains(listing.Body.String(), "21 B") {
+		t.Fatalf("listing does not show authoritative file size: %s", listing.Body.String())
+	}
 	if !strings.Contains(listing.Body.String(), "wizyta zamrożona na r5") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) || !strings.Contains(listing.Body.String(), "Sprawdź najnowsze wydanie") {
 		t.Fatalf("listing does not explain the frozen visit or link to latest: %s", listing.Body.String())
 	}
@@ -246,7 +250,8 @@ func TestFollowingShareDerivesObjectMapFromEachVisitRevision(t *testing.T) {
 
 	f.source.head = 6
 	f.source.values[6] = "new payload"
-	f.source.trees[6] = []authority.TreeObject{{RepoPath: "wydanie/nowy.txt", DisplayName: "nowy.txt"}}
+	newSize := int64(len("new payload"))
+	f.source.trees[6] = []authority.TreeObject{{RepoPath: "wydanie/nowy.txt", DisplayName: "nowy.txt", Size: &newSize}}
 	newVisit := visitFromRedirect(t, perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil))
 	listing := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?v="+url.QueryEscape(newVisit), "", nil)
 	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), "nowy.txt") || strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") {
@@ -256,7 +261,7 @@ func TestFollowingShareDerivesObjectMapFromEachVisitRevision(t *testing.T) {
 		t.Fatalf("r6 listing does not identify its snapshot and canonical entry: %s", listing.Body.String())
 	}
 	projection, err := f.handler.Backend.(authority.Resolver).InspectAt(context.Background(), "atmprojekt", "przetarg-2026", 6)
-	if err != nil || len(projection.Objects) != 1 || projection.Objects[0].PublicID == "" {
+	if err != nil || len(projection.Objects) != 1 || projection.Objects[0].PublicID == "" || projection.Objects[0].Size == nil || *projection.Objects[0].Size != newSize {
 		t.Fatalf("r6 projection = %+v, %v", projection, err)
 	}
 	newID := projection.Objects[0].PublicID

@@ -14,11 +14,12 @@
   <div class="ambient ambient-b"></div>
   <main class="shell">
     <header id="titlebar" class="topbar">
-      <a class="brand" href="#top" aria-label="FileES">
+      <a class="brand filees-wordmark-surface" href="#top" aria-label="FileES">
         <img class="brand-mark" src="./assets/filees-space-horizontal.svg" alt="filees:space">
       </a>
       <div class="topbar-actions">
         <span class="beta-pill">Wersja testowa</span>
+        <button id="activate" class="topbar-add-button" type="button" data-global-action="activation" data-action="activate">Dodaj serwer</button>
         <div id="connection" class="connection is-offline">
           <span class="connection-dot"></span>
           <span class="connection-label">Łączenie…</span>
@@ -44,7 +45,7 @@
         <div class="pulse-orbit orbit-a"></div>
         <div class="pulse-orbit orbit-b"></div>
         <div id="pulse-core" class="pulse-core"><span></span></div>
-        <div class="pulse-caption"><b id="pulse-value">—</b><small>repozytoria</small></div>
+        <div class="pulse-caption"><b id="pulse-value">—</b><small id="pulse-label">repozytoriów</small></div>
       </div>
     </section>
 

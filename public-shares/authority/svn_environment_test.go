@@ -57,7 +57,8 @@ func TestSVNLookTreeEnumeratesExactSourceRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []TreeObject{{RepoPath: "folder/a.txt", DisplayName: "a.txt"}, {RepoPath: "folder/nested/b.txt", DisplayName: "nested/b.txt"}}
+	one := int64(1)
+	want := []TreeObject{{RepoPath: "folder/a.txt", DisplayName: "a.txt", Size: &one}, {RepoPath: "folder/nested/b.txt", DisplayName: "nested/b.txt", Size: &one}}
 	if !reflect.DeepEqual(objects, want) {
 		t.Fatalf("tree = %#v, want %#v", objects, want)
 	}

@@ -42,6 +42,10 @@ type TreeSource interface {
 type TreeObject struct {
 	RepoPath    string
 	DisplayName string
+	// Size is read from the same immutable repository revision as RepoPath.
+	// A nil value is reserved for TreeSource implementations that cannot
+	// provide an authoritative size.
+	Size *int64
 }
 
 type Resolver struct {
@@ -335,9 +339,10 @@ func (r Resolver) objectsAt(ctx context.Context, record channel.Record, revision
 		object := known[leaf.RepoPath]
 		object.RepoPath = leaf.RepoPath
 		object.DisplayName = leaf.DisplayName
-		// A size captured by the desktop at CREATE/UPDATE is not authoritative
-		// for another revision.  Unknown is preferable to a stale value.
-		object.Size = nil
+		// Never reuse the size captured by the desktop at CREATE/UPDATE for a
+		// different revision. The tree source may, however, provide the exact
+		// size from the same immutable revision it just enumerated.
+		object.Size = leaf.Size
 		if object.PublicID == "" {
 			object.PublicID = r.derivedPublicID(record.ChannelID, leaf.RepoPath)
 		}

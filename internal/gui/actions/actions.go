@@ -533,6 +533,10 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startSetRealmVisibility(ctx, result.ServerID)
 		case platform.SettingsDialogRealmBranding:
 			c.startSetRealmBranding(ctx, result.ServerID)
+		case platform.SettingsDialogRealmAlias:
+			c.startRealmAlias(ctx, result.ServerID)
+		case platform.SettingsDialogPairMobile:
+			c.startPairMobileDevice(ctx, result.ServerID)
 		case platform.SettingsDialogSessionTimeout:
 			c.startSetSessionTimeout(ctx, result.ServerID)
 		case platform.SettingsDialogDetachServer:
@@ -731,7 +735,7 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 	if minutes <= 0 {
 		minutes = 30
 	}
-	row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanSetRealmBranding: vm.CanSetRealmBranding() && strings.TrimSpace(server.RealmAlias) != "", CanSetSessionTimeout: vm.CanSetSessionTimeout(), SessionTimeoutMin: minutes, CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
+	row := platform.SettingsServer{ID: server.ID, Name: name, Address: address, Realm: realm, ClientID: clientID, CanSetRealmVisibility: vm.CanSetRealmVisibility() && strings.TrimSpace(server.RealmAlias) != "", CanSetRealmBranding: vm.CanSetRealmBranding() && strings.TrimSpace(server.RealmAlias) != "", CanClaimRealmAlias: server.NeedsRealmAliasClaim() && vm.CanClaimRealmAlias(), CanPairMobile: vm.Connected && !vm.Stale, CanSetSessionTimeout: vm.CanSetSessionTimeout(), SessionTimeoutMin: minutes, CanAddFolder: vm.Connected && !vm.Stale && server.CanOfferRepositoryCreation()}
 	hadPending := false
 	for _, repo := range server.Repos {
 		repoName := repo.DisplayName

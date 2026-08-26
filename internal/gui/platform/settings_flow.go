@@ -19,6 +19,8 @@ var settingsActionCatalog = []settingsActionSpec{
 	{SettingsDialogSessionTimeout, "session_timeout", "session_timeout", "Limit czasu wysyłki i pobierania…", false, false},
 	{SettingsDialogRealmVisibility, "realm_visibility", "realm_visibility", "Widoczność mojej strefy", false, false},
 	{SettingsDialogRealmBranding, "realm_branding", "realm_branding", "Wygląd udziałów publicznych", false, false},
+	{SettingsDialogRealmAlias, "realm_alias", "realm_alias", "Ustaw stały alias", false, false},
+	{SettingsDialogPairMobile, "pair_mobile", "pair_mobile", "Sparuj urządzenie mobilne", false, false},
 	{SettingsDialogAddFolder, "add_folder", "add", "Dodaj folder do FileES", false, false},
 	{SettingsDialogConnectRepos, "connect_repositories", "connect", "Połącz z istniejącymi udziałami strefy", true, true},
 	{SettingsDialogLocateFolder, "locate_folder", "locate", "Wskaż przeniesioną kopię roboczą", true, false},
@@ -102,6 +104,10 @@ func serverAllowsSettingsAction(server SettingsServer, spec settingsActionSpec) 
 		return server.CanSetRealmVisibility
 	case SettingsDialogRealmBranding:
 		return server.CanSetRealmBranding
+	case SettingsDialogRealmAlias:
+		return server.CanClaimRealmAlias
+	case SettingsDialogPairMobile:
+		return server.CanPairMobile
 	case SettingsDialogAddFolder:
 		return server.CanAddFolder
 	case SettingsDialogDetachServer, SettingsDialogRemoveRealm:
@@ -167,6 +173,10 @@ func settingsActionFromID(id string) SettingsDialogAction {
 		return SettingsDialogRealmVisibility
 	case "realm_branding":
 		return SettingsDialogRealmBranding
+	case "realm_alias":
+		return SettingsDialogRealmAlias
+	case "pair_mobile":
+		return SettingsDialogPairMobile
 	case "session_timeout":
 		return SettingsDialogSessionTimeout
 	case "detach_server", "deactivate", "Dezaktywuj klienta":

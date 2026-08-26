@@ -30,6 +30,8 @@ button:focus-visible,a:focus-visible { outline:3px solid color-mix(in srgb,var(-
 }
 .topbar-actions { --wails-draggable:no-drag; display:flex; align-items:center; gap:10px; }
 .beta-pill { padding:8px 11px; border:1px solid rgba(255,106,0,.25); border-radius:999px; color:#ffb077; background:rgba(255,106,0,.08); font-size:11px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; }
+.topbar-add-button { min-height:38px; padding:8px 13px; border:1px solid rgba(255,106,0,.3); border-radius:10px; color:#ffad70; background:rgba(255,106,0,.075); font-size:12px; font-weight:800; cursor:pointer; }
+.topbar-add-button:hover { border-color:rgba(255,106,0,.5); background:rgba(255,106,0,.14); }.topbar-add-button:disabled { opacity:.45; cursor:wait; }
 .connection { display:flex; align-items:center; gap:8px; min-height:38px; padding:7px 12px; border:1px solid var(--line); border-radius:999px; background:rgba(255,255,255,.03); color:var(--muted); font-size:13px; }
 .connection-dot { width:8px; height:8px; border-radius:50%; background:var(--red); box-shadow:0 0 0 4px rgba(255,123,132,.09); }
 .connection.is-online .connection-dot { background:var(--teal); box-shadow:0 0 0 4px rgba(99,217,189,.09),0 0 16px rgba(99,217,189,.42); }

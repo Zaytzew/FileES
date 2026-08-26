@@ -13,6 +13,37 @@ import (
 
 var errPartitioned = errors.New("network partition")
 
+func TestPassportStoreDoesNotRecreateMovedWorkingCopy(t *testing.T) {
+	parent := t.TempDir()
+	wc := filepath.Join(parent, "documents")
+	storeDir := filepath.Join(wc, ".filees", "passports")
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(storeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	backend := newFakeBackend()
+	manager, err := Open(filepath.Join(storeDir, "passports.json"), "instance", backend, Config{WorkingCopy: wc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(wc, "draft.txt")
+	if _, _, err := manager.Acquire(context.Background(), []string{path}, ""); err != nil {
+		t.Fatal(err)
+	}
+	moved := filepath.Join(parent, "documents-moved")
+	if err := os.Rename(wc, moved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Release(context.Background(), []string{path}); err == nil {
+		t.Fatal("passport persistence unexpectedly succeeded without working copy metadata")
+	}
+	if _, err := os.Stat(wc); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("passport manager recreated abandoned working-copy root: %v", err)
+	}
+}
+
 type fakeBackend struct {
 	locks                    map[string]*Lock
 	unlockErrors             map[string]error

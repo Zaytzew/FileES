@@ -408,11 +408,22 @@ function render(snapshot) {
   renderActions(snapshot);
   renderReservations(snapshot);
   renderShouts(snapshot);
+	renderUpdate(snapshot);
   renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;
   if (repositoriesChanged) scheduleWindowFit();
   updateRetentionCountdowns();
+}
+
+function renderUpdate(snapshot) {
+	const card = $("#update-card");
+	const update = snapshot.update;
+	const available = Boolean(update?.available_version) && update.state !== "current";
+	card.hidden = !available;
+	if (!available) return;
+	$("#update-version").textContent = update.available_version;
+	$("#update-summary").textContent = update.summary || `Zainstalowana wersja: ${update.current_version || "nieznana"}.`;
 }
 
 window.setInterval(updateRetentionCountdowns, 1000);
@@ -435,7 +446,8 @@ async function triggerAction(button) {
   const reservationRow = button.closest("[data-reservation-id]");
   const noticeRow = button.closest("[data-notice-id]");
   const serverPanel = button.closest("[data-server-id]");
-  if (!repoRow && !reservationRow && !noticeRow && !serverPanel) return;
+	const globalAction = button.closest("[data-global-action]");
+	if (!repoRow && !reservationRow && !noticeRow && !serverPanel && !globalAction) return;
   button.disabled = true;
   try {
     const result = await GUIService.Trigger({
@@ -490,6 +502,10 @@ $("#reservations").addEventListener("click", (event) => {
 $("#shouts").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);
+});
+$("#update-actions").addEventListener("click", (event) => {
+	const button = event.target.closest("[data-action]");
+	if (button) triggerAction(button);
 });
 $("#window-minimise").addEventListener("click", () => Window.Minimise());
 $("#window-maximise").addEventListener("click", () => Window.ToggleMaximise());

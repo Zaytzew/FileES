@@ -58,6 +58,7 @@ h1 { margin-bottom: 10px; font-size: clamp(32px,5vw,49px); line-height: 1; lette
 .setting-value button:disabled { opacity: .35; cursor: not-allowed; }
 .server-actions-card { padding: 20px 22px; }.server-actions-card > header { margin-bottom: 13px; }.server-actions-card h2 { margin: 0; font-size: 18px; }
 .server-action-list { display: grid; gap: 8px; }.server-action { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: rgba(255,255,255,.026); text-align: left; cursor: pointer; }.server-action span,.server-action strong,.server-action small { display: block; }.server-action small { margin-top: 4px; color: var(--muted); font-size: 11px; }.server-action i { color: var(--muted); font-size: 20px; font-style: normal; }.server-action:hover { border-color: rgba(101,240,206,.28); background: rgba(101,240,206,.06); }.server-action:disabled { opacity: .38; cursor: wait; }
+.server-action.warning:hover { border-color: rgba(244,199,109,.32); background: rgba(244,199,109,.06); }.server-action.danger:hover { border-color: rgba(255,123,132,.34); background: rgba(255,123,132,.07); }
 .folders-card { overflow: hidden; }
 .folders-card > header { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px 14px; border-bottom: 1px solid var(--line); }
 .folders-card h2 { margin: 0; }

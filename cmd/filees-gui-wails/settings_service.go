@@ -248,6 +248,10 @@ func projectSettingsRequest(request platform.SettingsDialogRequest) (SettingsSna
 	if server.CanAddFolder {
 		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogAddFolder), Label: "Dodaj folder do FileES", Description: "Utwórz repozytorium z wybranego lokalnego folderu.", Tone: "primary"})
 	}
+	projection.Server.Actions = append(projection.Server.Actions,
+		SettingsActionProjection{ID: string(platform.SettingsDialogDetachServer), Label: "Dezaktywuj tego klienta", Description: "Odłącz wyłącznie tę instalację; inne klienty i dane strefy pozostaną aktywne.", Tone: "warning"},
+		SettingsActionProjection{ID: string(platform.SettingsDialogRemoveRealm), Label: "Usuń mój udział z serwera", Description: "Usuń repozytoria strefy, cofnij granty i przygotuj pakiet odzyskiwania.", Tone: "danger"},
+	)
 	for _, folder := range server.Folders {
 		projection.Server.Folders = append(projection.Server.Folders, SettingsFolderProjection{
 			ID: folder.ID, Name: folder.Name, LocalPath: folder.LocalPath,

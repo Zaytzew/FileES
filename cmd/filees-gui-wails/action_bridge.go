@@ -23,7 +23,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, recoveryDownloader actions.RecoveryDownloader, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, updater actions.Updater, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -43,6 +43,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		FolderPicker:         folderPicker,
 		Prompter:             prompter,
 		Notifier:             actionNotifier{service: service},
+		Updater:              updater,
 		Locker:               locker,
 		Reservations:         reservations,
 		Shouts:               shouts,
@@ -61,7 +62,10 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		RepositoryLocator:    repositoryLocator,
 		RepositoryDetacher:   repositoryDetacher,
 		RepositoryDumpLoader: repositoryDumpLoader,
+		ServerDetacher:       serverDetacher,
+		RealmRemover:         realmRemover,
 		RecoveryDownloader:   recoveryDownloader,
+		ConsentPrompter:      consentPrompter,
 		ActionLifecycle:      service.runner,
 		Stack:                stack,
 		Reconnect:            service.runner.Reconnect,
@@ -69,6 +73,69 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		Restart:              restart,
 		Shutdown:             shutdown,
 	})
+}
+
+// consentPromptAdapter keeps the irreversible realm-removal consent inside
+// the Wails prompt cascade. The required retention acknowledgement and the
+// optional erasure request are deliberately separate decisions.
+type consentPromptAdapter struct{ prompter platform.Prompter }
+
+func (adapter consentPromptAdapter) ConfirmConsent(ctx context.Context, request platform.ConsentRequest) (platform.ConsentResult, error) {
+	if adapter.prompter == nil {
+		return platform.ConsentResult{Cancelled: true}, nil
+	}
+	required, err := adapter.prompter.Confirm(ctx, platform.ConfirmRequest{
+		Title: request.Title, Text: request.Text + "\n\n" + request.RequiredText,
+		ConfirmText: "Rozumiem retencję", CancelText: "Anuluj",
+	})
+	if err != nil || !required {
+		return platform.ConsentResult{Cancelled: true}, err
+	}
+	optional, err := adapter.prompter.Confirm(ctx, platform.ConfirmRequest{
+		Title: "Dodatkowe żądanie usunięcia", Text: request.OptionalText,
+		ConfirmText: "Składam żądanie", CancelText: "Bez dodatkowego żądania",
+	})
+	if err != nil {
+		return platform.ConsentResult{Cancelled: true}, err
+	}
+	return platform.ConsentResult{Required: true, Optional: optional}, nil
+}
+
+type updateClient interface {
+	UpdatePlan(context.Context) (*contract.UpdatePlanResult, error)
+	UpdateApply(context.Context) (*contract.UpdateApplyResult, error)
+}
+
+type updateAdapter struct{ client updateClient }
+
+func (adapter updateAdapter) UpdatePlan(ctx context.Context) (*actions.UpdatePlan, error) {
+	result, err := adapter.client.UpdatePlan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty update plan")
+	}
+	plan := &actions.UpdatePlan{
+		CurrentVersion: result.CurrentVersion, AvailableVersion: result.AvailableVersion,
+		ReleaseID: result.ReleaseID, RestartRequired: result.RestartRequired,
+		Changes: make([]actions.UpdateChange, len(result.Changes)),
+	}
+	for index, change := range result.Changes {
+		plan.Changes[index] = actions.UpdateChange{Action: change.Action, Path: change.Path, Detail: change.Detail}
+	}
+	return plan, nil
+}
+
+func (adapter updateAdapter) UpdateApply(ctx context.Context) (*actions.UpdateResult, error) {
+	result, err := adapter.client.UpdateApply(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty update result")
+	}
+	return &actions.UpdateResult{InstalledVersion: result.InstalledVersion, RestartRequired: result.RestartRequired}, nil
 }
 
 type realmGrantClient interface {
@@ -492,6 +559,64 @@ func (adapter repositoryDumpLoadAdapter) LoadDump(ctx context.Context, serverID,
 		return errors.New("daemon returned an empty repository dump-load result")
 	}
 	return nil
+}
+
+type serverDetachClient interface {
+	ServerDetach(context.Context, string) (*contract.ServerDetachResult, error)
+}
+
+type serverDetachAdapter struct{ client serverDetachClient }
+
+func (adapter serverDetachAdapter) DetachServer(ctx context.Context, serverID string) error {
+	result, err := adapter.client.ServerDetach(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ServerID != serverID {
+		return errors.New("daemon did not complete server detach")
+	}
+	return nil
+}
+
+type realmRemovalClient interface {
+	RealmRemoveBegin(context.Context, contract.RealmRemoveBeginPayload) (*contract.RealmRemoveBeginResult, error)
+	RealmRemoveConfirm(context.Context, contract.RealmRemoveConfirmPayload) (*contract.RealmRemoveConfirmResult, error)
+}
+
+type realmRemovalAdapter struct{ client realmRemovalClient }
+
+func (adapter realmRemovalAdapter) BeginRealmRemoval(ctx context.Context, request actions.RealmRemovalBeginRequest) (actions.RealmRemovalBeginResult, error) {
+	result, err := adapter.client.RealmRemoveBegin(ctx, contract.RealmRemoveBeginPayload{
+		ServerID: request.ServerID, NotificationEmail: request.NotificationEmail,
+		RecoveryDirectory: request.RecoveryDirectory, ErasureRequested: request.ErasureRequested,
+	})
+	if err != nil {
+		return actions.RealmRemovalBeginResult{}, err
+	}
+	if result == nil {
+		return actions.RealmRemovalBeginResult{}, errors.New("daemon returned an empty realm removal request")
+	}
+	return actions.RealmRemovalBeginResult{
+		OperationID: result.OperationID, RecoveryKitPath: result.RecoveryKitPath, ExpiresAt: result.ExpiresAt,
+		ActiveClientCount: result.ActiveClientCount, OwnedRepositoryCount: result.OwnedRepositoryCount, ForeignGrantCount: result.ForeignGrantCount,
+	}, nil
+}
+
+func (adapter realmRemovalAdapter) ConfirmRealmRemoval(ctx context.Context, serverID, operationID string, otp []byte, kitPath string) (actions.RealmRemovalConfirmResult, error) {
+	result, err := adapter.client.RealmRemoveConfirm(ctx, contract.RealmRemoveConfirmPayload{
+		ServerID: serverID, OperationID: operationID, RecoveryKitPath: kitPath, OTP: contract.Secret(otp),
+	})
+	if err != nil {
+		return actions.RealmRemovalConfirmResult{}, err
+	}
+	if result == nil {
+		return actions.RealmRemovalConfirmResult{}, errors.New("daemon returned an empty realm removal confirmation")
+	}
+	return actions.RealmRemovalConfirmResult{
+		RecoveryKitPath: result.RecoveryKitPath, ArchiveCount: result.ArchiveCount,
+		DownloadUntil: result.DownloadUntil, AdminGraceUntil: result.AdminGraceUntil,
+		ErasureRequested: result.ErasureRequested, ErasureMaxDays: result.ErasureMaxDays,
+	}, nil
 }
 
 type repositoryAttachClient interface {

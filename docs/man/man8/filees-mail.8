@@ -62,6 +62,10 @@ accepted
 or nothing pending
 .It 75
 temporary SMTP failure; retry
+.It 69
+permanent SMTP failure; the job is marked failed, not retried
+.It 65
+message render failure; the job is marked failed, not retried
 .It 64, 78, 70
 usage, configuration or internal error
 .El

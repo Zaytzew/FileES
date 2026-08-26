@@ -6,9 +6,57 @@
 .Nd execute one authenticated FileES server action and exit
 .Sh SYNOPSIS
 .Nm
+.Cm deploy
+.Nm
+.Cm repository-control
+.Ar client-id
+.Nm
+.Cm whale-v1
+.Nm
+.Cm upload-reap
+.Nm
+.Cm mobile-onboard
+.Nm
+.Cm mobile-proof
+.Ar operation-id client-id
+.Nm
+.Cm mobile-finish
+.Ar operation-id client-id
 .Sh DESCRIPTION
 .Nm
-is exec'd once per authenticated deploy or control-plane ticket.
+is exec'd once per authenticated deploy or control-plane ticket, dispatching
+on its first argument to one of six subcommands.
+.Bl -tag -width "repository-control"
+.It Cm deploy
+default path, also reached with no subcommand at all; reads a tunnel
+session from stdin and runs the desktop/server bootstrap deploy.
+.It Cm repository-control
+reads one signed control/v1 ticket from stdin scoped to
+.Ar client-id
+and mutates canonical service-repository records, data repositories,
+grants, editing policy or Public Shares channel state, as described below.
+.It Cm whale-v1
+serves one framed Whale PUT window, status or commit request, as
+described below.
+.It Cm upload-reap
+the operator cron exception described below.
+.It Cm mobile-onboard
+reads a JSON push payload from stdin and stages a mobile client's
+activation grant; exec'd by
+.Xr filees-entry 8 Ns 's
+mobile push branch.
+.It Cm mobile-proof
+records that a freshly generated mobile installation key proved
+possession by connecting; exec'd by
+.Xr filees-mobile-v1 8 Ns 's
+proof branch.
+.It Cm mobile-finish
+completes a mobile onboarding operation for
+.Ar client-id ;
+exec'd by
+.Xr filees-mobile-v1 8 Ns 's
+finish branch.
+.El
 It is
 .Sy root : wheel
 mode 0555 and has no resident service.
@@ -74,5 +122,6 @@ can also read the job directory.
 .Sh SEE ALSO
 .Xr filees-client-entry 8 ,
 .Xr filees-entry 8 ,
+.Xr filees-mobile-v1 8 ,
 .Xr filees-service-wc-corrector 8 ,
 .Xr filees.conf 5

@@ -491,23 +491,34 @@ internal/serverinstall/  rdzeń manifestowego instalatora serwera
 internal/release*/       koperty, podpisy i publikacja artefaktów
 ```
 
-Wybraną biblioteką jest `fyne.io/systray`, izolowane jako adapter w `internal/gui/tray`. Jej API nie może przenikać do logiki aplikacji ani kontraktu. MVP obejmuje Linux (SNI; GNOME wymaga rozszerzenia AppIndicator/SNI) oraz Windows 10+. Szczegółowe decyzje platformowe znajdują się w `gui-assumptions.md`.
+Biblioteką traya jest `fyne.io/systray`, izolowane jako adapter w `internal/gui/tray`. Jej API nie może przenikać do logiki aplikacji ani kontraktu. MVP obejmuje Linux (SNI; GNOME wymaga rozszerzenia AppIndicator/SNI) oraz Windows 10+. Szczegółowe decyzje platformowe znajdują się w `gui-assumptions.md`. **`cmd/filees-gui` (ten Fyne+zenity/yad/WinForms renderer) jest deprecated** — decyzja poniżej — i dostaje już tylko poprawki blokujące, nie nowe funkcje.
 
-Równolegle istnieje niewydawany fork `cmd/filees-gui-wails`, przypięty do
-Wails `v3.0.0-beta.6`. Nie wnosi drugiego modelu klienta: uruchamia ten sam
-`internal/gui/app`, komunikuje się wyłącznie przez `pkg/ipcclient`, a WebView
-renderuje otrzymaną projekcję i zwraca intencje. Pierwszy pion ma osobny EXE,
-statyczny frontend bez Node/Vite oraz `Snapshot`, `Refresh` i `Reconnect`.
-Pierwszy pion akcyjny dodaje `Otwórz`, `Zablokuj` i `Zwolnij` przez ten sam
-`internal/gui/actions` co Fyne; JavaScript nie woła IPC. Okno Windows jest
-bezramkowe, a ukrycie scrollbara WebView nie wyłącza przewijania. Aktywne
-locki są częścią projekcji; inline zwolnienie przekazuje tylko opaque ID, a
-token fencingowy pozostaje w Go. Minimalny tray Wails utrzymuje proces po
-ukryciu okna i pokazuje stan oraz liczbę repozytoriów i blokad. Podmenu
-`FileES` przekazuje restart i zakończenie całej pary daemon + GUI do wspólnego
-kontrolera; nie istnieje już lokalna akcja kończąca wyłącznie renderer.
-Kryteria eksperymentu opisuje
-[`concepts/WAILS_GUI_FORK.md`](concepts/WAILS_GUI_FORK.md).
+**Docelowym GUI jest `cmd/filees-gui-wails`**, przypięty do Wails
+`v3.0.0-beta.6`. Decyzja zapadła 2026-08-26 (r603): to, co zaczęło się jako
+eksperyment WebView, dało na tyle bezprecedensową poprawę UX — pełne, trwałe
+okno zamiast serii natywnych dialogów, spójny layout i motyw na Windows i
+Linux, żywa projekcja bez ręcznego odświeżania — że inna decyzja nie była
+realna. Dotąd nie natrafiliśmy na żadną blokującą słabość samego Wails w
+becie; błędy zamknięte po drodze (np. bindings promptów niosące
+identyfikatory z `go test` zamiast z buildu) były naszymi własnymi pomyłkami,
+nie ograniczeniem frameworka. Przed formalnym cięciem starego stosu stoi
+jeszcze uporządkowanie UI, który narósł dość spontanicznie w tygodniu
+r576–r603 — porządkowanie, nie rewolucja — oraz zamknięcie luk parytetu
+(pełne menu administracyjne, single-instance, lokalny PIN). Warunki cięcia
+Fyne+zenity/yad i szczegóły architektury: `concepts/WAILS_GUI_FORK.md` §0 i §7.
+
+Wails nie wnosi drugiego modelu klienta: uruchamia ten sam `internal/gui/app`,
+komunikuje się wyłącznie przez `pkg/ipcclient`, a WebView renderuje otrzymaną
+projekcję i zwraca intencje. Ma osobny EXE, statyczny frontend bez Node/Vite
+oraz `Snapshot`, `Refresh` i `Reconnect`. Akcje `Otwórz`, `Zablokuj` i
+`Zwolnij` idą przez ten sam `internal/gui/actions` co Fyne; JavaScript nie
+woła IPC. Okno Windows jest bezramkowe, a ukrycie scrollbara WebView nie
+wyłącza przewijania. Aktywne locki są częścią projekcji; inline zwolnienie
+przekazuje tylko opaque ID, a token fencingowy pozostaje w Go. Tray Wails
+utrzymuje proces po ukryciu okna i pokazuje stan oraz liczbę repozytoriów i
+blokad. Podmenu `FileES` przekazuje restart i zakończenie całej pary daemon +
+GUI do wspólnego kontrolera; nie istnieje już lokalna akcja kończąca
+wyłącznie renderer.
 
 ### Etapowanie implementacji
 

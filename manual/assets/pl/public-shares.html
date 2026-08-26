@@ -77,8 +77,8 @@
 
 <h2 id="ps-map">5.3 To nie jest żywe lustro</h2>
 <div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Zaimplementowany kontrakt, nie defekt.</span></div>
-<p>Udział wymienia pliki zmapowane przy utworzeniu albo ostatniej aktualizacji kanału. Plik dodany później do folderu jest niewidoczny. Usunięty zostaje na liście. Zmiana nazwy zostawia starą. <em>Treść</em> już zmapowanych plików śledzi najnowszą rewizję, chyba że zamrozisz jedną.</p>
-<p>Pusty folder jest legalnym placeholderem. Późniejsze pliki wymagają jawnej aktualizacji kanału. Dlatego kopia pulpitu mówi, że udział nie jest żywym lustrem folderu. Dwa zegary (<code>object_map</code> i rewizja) są w <a href="operations.html#ops-ps-map">Eksploatacji</a>.</p>
+<p>Kanał bez zamrożonej rewizji podąża za HEAD, ale nie na żywo: każda <em>nowa</em> wizyta pod kanonicznym adresem przelicza listę plików z aktualnego drzewa SVN, więc dodany plik się pojawia, usunięty znika, a zmiana nazwy jest widoczna pod nową nazwą. To, co „nie jest żywe”, to już wydana wizyta — link z tokenem <code>?v=…</code> zamraża się na rewizji, jaką HEAD miał w chwili tamtej wizyty, i nie dogania późniejszych zmian nawet gdy ten sam plik się zmieni. Kanał z jawnie ustawioną, dodatnią rewizją zamraża każdą wizytę na tym jednym zrzucie na stałe, niezależnie od HEAD.</p>
+<p>Pusty folder jest legalnym placeholderem. Dlatego kopia pulpitu mówi, że udział nie jest żywym lustrem folderu — to opis wizyty, nie kanału śledzącego HEAD. Dwa zegary (<code>object_map</code> i rewizja) są w <a href="operations.html#ops-ps-map">Eksploatacji</a>.</p>
 
 <h2 id="ps-access">5.4 Otwarty albo zamknięty</h2>
 <p><strong>Kanał otwarty.</strong> Każdy, kto ma adres. Możesz ustawić wspólne hasło. Po haśle odwiedzający dostaje dwunastogodzinny podpisany link. Ekran hasła pokazuje Twój znak; nie pokazuje aliasu ani slugu.</p>

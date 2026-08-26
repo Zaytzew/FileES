@@ -9,6 +9,8 @@
 
 `filees-gui` to ikona w zasobniku systemowym (tray), która pozwala obserwować stan synchronizacji i wykonywać podstawowe operacje — bez otwierania terminala. Demon `filees` odpowiada za całą synchronizację i działa niezależnie; zamknięcie GUI nie zatrzymuje ani nie zakłóca synchronizacji.
 
+> **W przygotowaniu:** nowy klient pulpitowy oparty na Wails (pełne okno WebView zamiast zasobnika i natywnych dialogów zenity/yad) jest w trakcie budowy jako docelowy następca opisanego tu GUI (`concepts/WAILS_GUI_FORK.md`). Wciąż niewydany — ten dokument opisuje to, co faktycznie instalujesz i uruchamiasz dzisiaj.
+
 ---
 
 ## Wymagania

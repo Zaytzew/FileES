@@ -315,14 +315,14 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 <p>Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the path, alias, slug or reason. <code>robots.txt</code> is static <code>Disallow: /</code>.</p>
 
 <h2 id="ops-ps-map">object_map versus revision</h2>
-<div class="section-meta"><span class="status status-verified">Verified</span><span>Documented after the 2026-08-14 live observation; this is the implemented contract, not a defect.</span></div>
-<p>Two clocks exist:</p>
+<div class="section-meta"><span class="status status-verified">Verified</span><span>The 2026-08-14 model was transitional; composition has been derived since r601 (see the update below).</span></div>
+<p>Two clocks exist, both derived at every fresh visit for a channel with no <code>do-not-follow</code>:</p>
 <ul>
-<li><strong>Revision</strong> is chosen at each visit. If the channel has no <code>do-not-follow</code>, authority reads HEAD and freezes that revision for the visit. Mapped file <em>contents</em> therefore follow HEAD.</li>
-<li><strong>Composition</strong> is the <code>object_map</code> written at <code>CREATE</code> or <code>UPDATE</code>. Listing and download iterate only that map. A file added to the folder later is invisible; a removed file stays listed; a rename keeps the old name.</li>
+<li><strong>Revision</strong> is chosen at each visit: authority reads HEAD and freezes that revision for this one visit (the <code>?v=…</code> token).</li>
+<li><strong>Composition</strong> is derived from the live SVN tree under the channel's scope, at exactly that same just-frozen revision — not from an <code>object_map</code> written at <code>CREATE</code>/<code>UPDATE</code>. A file added to the folder later appears on the next fresh visit; a removed file disappears; a rename shows under its new name.</li>
 </ul>
-<p>An empty selected folder is a legal placeholder. Later files require an explicit channel update. That is why the desktop copy says the share is not a live mirror of the folder.</p>
-<div class="note">Changing composition to a derived tree walk would require deterministic <code>public_id</code> values (for example HMAC of path and a channel secret) so mailed links survive a new file. That decision has not been taken. Until then the concept's “refreshes by itself” sentence applies only to the content of already mapped leaves.</div>
+<p>What is frozen is a specific, already-issued visit: a URL carrying <code>?v=…</code> does not catch up with later changes, even to the same file. A channel with an explicit, positive revision (<code>do-not-follow</code>) freezes every visit to that one snapshot permanently, regardless of HEAD. An empty selected folder is a legal placeholder. That is why the desktop copy says the share is not a live mirror of the folder — that describes a visit, not a channel following HEAD.</p>
+<div class="note">Deterministic <code>public_id</code> is implemented: <code>Resolver.derivedPublicID</code> (<code>public-shares/authority/resolver.go</code>) computes an HMAC-SHA256 of the channel secret (<code>FrostKey</code>) over <code>channel_id</code> and the repo path, truncated to 128 bits. A path already present in the manifest from <code>CREATE</code>/<code>UPDATE</code> keeps its original, previously distributed identifier; only a path new to that channel gets an HMAC-derived one — revision-independent, so stable across later visits too.</div>
 
 <h2 id="ops-ps-access">Open channel, password and recipient OTP</h2>
 <p><strong>Open channel.</strong> Optional Argon2id password. A successful gate issues a twelve-hour signed visit URL. Password verification is globally serialised to one in-flight Argon2. The password screen shows the FileES mark, the owner logo and the owner accent; it does not show alias, slug or explanatory text.</p>
@@ -453,6 +453,7 @@ Match all</code></pre>
 <tr><td><code>repositories.results_root</code></td><td>Absolute root for durable repository-operation records; it is separate from FSFS data storage.</td></tr>
 <tr><td><code>repositories.url_prefix</code></td><td>Canonical public repository URL prefix. It must use the restricted <code>svn+ssh://_filees-data@host/</code> form, with no explicit port.</td></tr>
 <tr><td><code>repositories.deletion_archive_root</code></td><td>Optional absolute archive location for verified deletion dumps. If omitted, it is under <code>results_root</code>.</td></tr>
+<tr><td><code>repositories.whale_root</code></td><td>Optional absolute root for Whale transport operational payloads (spool, journal), separate from <code>results_root</code>. If omitted, defaults to <code>results_root/whale</code>.</td></tr>
 <tr><td><code>operation_ttl</code></td><td>Lifetime of each onboarding operation, e.g. <code>30m</code></td></tr>
 <tr><td><code>otp_attempts</code></td><td>Maximum wrong OTP attempts before exhaustion</td></tr>
 <tr><td><code>reverse_port_first</code></td><td>First (or only) permitted reverse tunnel port</td></tr>

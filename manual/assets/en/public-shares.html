@@ -77,8 +77,8 @@
 
 <h2 id="ps-map">5.3 Not a live mirror</h2>
 <div class="section-meta"><span class="status status-verified">Verified</span><span>Implemented contract, not a defect.</span></div>
-<p>The share lists the files that were mapped when you created or last updated the channel. A file added to the folder later is invisible. A removed file stays on the list. A rename keeps the old name. The <em>contents</em> of already mapped files follow the latest revision unless you froze one.</p>
-<p>An empty folder is a legal placeholder. Later files need an explicit update of the channel. That is why the desktop copy says the share is not a live mirror of the folder. The two clocks (<code>object_map</code> versus revision) are in <a href="operations.html#ops-ps-map">Operations</a>.</p>
+<p>A channel with no frozen revision follows HEAD, but not live: every <em>new</em> visit to the canonical address re-derives the file listing from the current SVN tree, so a file added later appears, a removed one disappears, and a rename shows under its new name. What is not live is an already-issued visit — a link carrying a <code>?v=…</code> token freezes to whatever HEAD was at that visit, and does not catch up with later changes even to the same file. A channel with an explicit, positive revision freezes every visit to that one snapshot permanently, regardless of HEAD.</p>
+<p>An empty folder is a legal placeholder. That is why the desktop copy says the share is not a live mirror of the folder — that describes a visit, not a channel following HEAD. The two clocks (<code>object_map</code> versus revision) are in <a href="operations.html#ops-ps-map">Operations</a>.</p>
 
 <h2 id="ps-access">5.4 Open or closed</h2>
 <p><strong>Open channel.</strong> Anyone with the address. You may set a shared password. After the password the visitor gets a twelve-hour signed link. The password screen shows your mark; it does not show the alias or the slug.</p>

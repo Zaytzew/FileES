@@ -315,14 +315,14 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 <p>Nieznane, cofnięte i usunięte adresy dzielą jedno obrandowane HTTP 404, które nie odbija ścieżki, aliasu, slugu ani powodu. <code>robots.txt</code> to statyczne <code>Disallow: /</code>.</p>
 
 <h2 id="ops-ps-map">object_map a rewizja</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Zapisane po obserwacji z 2026-08-14; to jest zaimplementowany kontrakt, nie defekt.</span></div>
-<p>Są dwa zegary:</p>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Model z 2026-08-14 był przejściowy; skład jest wyprowadzany od r601 (patrz aktualizacja niżej).</span></div>
+<p>Są dwa zegary, oba wyprowadzane przy każdej nowej wizycie dla kanału bez <code>do-not-follow</code>:</p>
 <ul>
-<li><strong>Rewizja</strong> jest wybierana przy każdej wizycie. Gdy kanał nie ma <code>do-not-follow</code>, authority czyta HEAD i zamraża tę rewizję na wizytę. <em>Treść</em> zmapowanych plików śledzi więc HEAD.</li>
-<li><strong>Skład</strong> to <code>object_map</code> zapisana przy <code>CREATE</code> albo <code>UPDATE</code>. Listing i pobieranie iterują wyłącznie po tej mapie. Plik dodany później do folderu jest niewidoczny; usunięty zostaje na liście; zmiana nazwy zostawia starą.</li>
+<li><strong>Rewizja</strong> jest wybierana przy każdej wizycie: authority czyta HEAD i zamraża tę rewizję na tę jedną wizytę (token <code>?v=…</code>).</li>
+<li><strong>Skład</strong> jest wyprowadzany z żywego drzewa SVN pod zakresem kanału, dokładnie z tej samej, właśnie zamrożonej rewizji — nie z <code>object_map</code> zapisanej przy <code>CREATE</code>/<code>UPDATE</code>. Plik dodany później do folderu pojawia się w kolejnej nowej wizycie; usunięty znika; zmiana nazwy jest widoczna pod nową nazwą.</li>
 </ul>
-<p>Pusty wybrany folder jest legalnym placeholderem. Późniejsze pliki wymagają jawnej aktualizacji kanału. Dlatego kopia pulpitu mówi, że udział nie jest żywym lustrem folderu.</p>
-<div class="note">Zmiana składu na wyprowadzane przejście drzewa wymagałaby deterministycznych <code>public_id</code> (na przykład HMAC ścieżki i sekretu kanału), żeby rozesłane mailem linki przeżyły nowy plik. Tej decyzji nie podjęto. Do tego czasu zdanie koncepcji o „odświeżaniu samym” dotyczy wyłącznie treści już zmapowanych liści.</div>
+<p>To, co jest zamrożone, to konkretna, już wydana wizyta: raz wygenerowany URL z <code>?v=…</code> nie dogania późniejszych zmian, nawet tego samego pliku. Kanał z jawną, dodatnią rewizją (<code>do-not-follow</code>) zamraża każdą wizytę na tym jednym zrzucie na stałe, niezależnie od HEAD. Pusty wybrany folder jest legalnym placeholderem. Dlatego kopia pulpitu mówi, że udział nie jest żywym lustrem folderu — to opis wizyty, nie kanału śledzącego HEAD.</p>
+<div class="note">Deterministyczny <code>public_id</code> jest zaimplementowany: <code>Resolver.derivedPublicID</code> (<code>public-shares/authority/resolver.go</code>) liczy HMAC-SHA256 sekretu kanału (<code>FrostKey</code>) po <code>channel_id</code> i ścieżce repo, obcięty do 128 bitów. Ścieżka już obecna w manifeście z <code>CREATE</code>/<code>UPDATE</code> zachowuje swój oryginalny, wcześniej rozesłany identyfikator; dopiero ścieżka nowa dla danego kanału dostaje identyfikator wyprowadzony HMAC-iem — rewizjoniezależny, więc też stabilny w kolejnych wizytach.</div>
 
 <h2 id="ops-ps-access">Kanał otwarty, hasło i OTP odbiorcy</h2>
 <p><strong>Kanał otwarty.</strong> Opcjonalne hasło Argon2id. Udane przejście bramki wydaje dwunastogodzinny podpisany URL wizyty. Weryfikacja hasła jest zserializowana globalnie do jednej równoległej operacji Argon2. Ekran hasła pokazuje znak FileES, logo właściciela i kolor wiodący; nie pokazuje aliasu, slugu ani tekstu objaśniającego.</p>
@@ -453,6 +453,7 @@ Match all</code></pre>
 <tr><td><code>repositories.results_root</code></td><td>Bezwzględny korzeń trwałych rekordów operacji na repozytoriach; jest oddzielony od magazynu danych FSFS.</td></tr>
 <tr><td><code>repositories.url_prefix</code></td><td>Kanoniczny publiczny prefiks URL repozytorium. Musi używać ograniczonej formy <code>svn+ssh://_filees-data@host/</code>, bez jawnego portu.</td></tr>
 <tr><td><code>repositories.deletion_archive_root</code></td><td>Opcjonalna bezwzględna lokalizacja archiwum zweryfikowanych zrzutów usunięcia. Jeśli pominięta, jest pod <code>results_root</code>.</td></tr>
+<tr><td><code>repositories.whale_root</code></td><td>Opcjonalny bezwzględny korzeń operacyjnych ładunków transportu Whale (spool, journal), oddzielony od <code>results_root</code>. Jeśli pominięty, domyślnie <code>results_root/whale</code>.</td></tr>
 <tr><td><code>operation_ttl</code></td><td>Czas życia każdej operacji onboardingu, np. <code>30m</code></td></tr>
 <tr><td><code>otp_attempts</code></td><td>Maksymalna liczba błędnych prób OTP przed wyczerpaniem</td></tr>
 <tr><td><code>reverse_port_first</code></td><td>Pierwszy (albo jedyny) dozwolony port tunelu zwrotnego</td></tr>

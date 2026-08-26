@@ -120,6 +120,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <p>Changing the policy is a migration, not a local preference. Files held by someone else are left alone and retried later. A guest with read-write access still uses <strong>Wypożycz do edycji</strong>; autolock is only for the owner realm. Per-path ownership and <strong>Poproś o zwolnienie</strong> are not in this version.</p>
 <h2 id="ch2-gui">2.6 GUI Tray</h2><div class="section-meta"><span class="status status-verified">Verified</span><span>GUI is a separate binary over contract/v1; Windows join, selective attach, working-copy recovery and journal were accepted on a live installation.</span></div>
 <p><code>filees-gui</code> is a separate process. It only talks to the daemon. Closing the tray does not stop synchronisation. Why that split exists is in <a href="operations.html#ops-gui">Operations</a> and <a href="security.html#ch5-gui">GUI boundary</a>.</p>
+<div class="note"><strong>In progress:</strong> a new Wails-based desktop client (a full WebView window instead of a tray-plus-native-dialogs surface) will eventually replace the Fyne + <code>zenity</code>/<code>yad</code> tray described here. It is still under development and unreleased — the description below remains what you actually install and run today.</div>
 <h4>Icon states (priority order)</h4>
 <div class="table-wrap"><table>
 <tr><th>Icon</th><th>State</th><th>Condition</th></tr>

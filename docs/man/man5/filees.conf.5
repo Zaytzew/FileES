@@ -60,6 +60,13 @@ Explicit
 deletes FSFS immediately and writes no dump.
 .It Ic repositories.recovery_admin_contact
 Mailbox used for data-erasure notices.
+.It Ic repositories.whale_root
+Absolute root for Whale transport operational payloads (spool, journal),
+kept separate from the small repository-control journal under
+.Ic repositories.results_root .
+Optional; a non-absolute value is rejected.
+Omitted defaults to
+.Pa results_root Ns Sy /whale .
 .It Ic public_shares
 Optional distribution channel.
 Disabled by default.

@@ -97,6 +97,7 @@ type RepoProjection struct {
 	CanOpen             bool            `json:"can_open"`
 	CanLock             bool            `json:"can_lock"`
 	CanUnlock           bool            `json:"can_unlock"`
+	CanPublish          bool            `json:"can_publish"`
 	Cycle               CycleProjection `json:"cycle"`
 	ServerDeleted       bool            `json:"server_deleted,omitempty"`
 	LocalCleanupPending bool            `json:"local_cleanup_pending,omitempty"`
@@ -142,6 +143,7 @@ type ActionRequest struct {
 	RepoID        string `json:"repo_id,omitempty"`
 	ServerID      string `json:"server_id,omitempty"`
 	ReservationID string `json:"reservation_id,omitempty"`
+	NoticeID      string `json:"notice_id,omitempty"`
 }
 
 type ActionAcceptance struct {
@@ -173,6 +175,7 @@ type ActivityProjection struct {
 	Updated  string `json:"updated_at"`
 	Revision int64  `json:"revision,omitempty"`
 	ErrorID  string `json:"error_id,omitempty"`
+	Size     *int64 `json:"size,omitempty"`
 }
 
 type JournalProjection struct {
@@ -191,6 +194,7 @@ type NoticeProjection struct {
 	RepoID    string `json:"repo_id,omitempty"`
 	Title     string `json:"title"`
 	CreatedAt string `json:"created_at"`
+	CanAck    bool   `json:"can_ack"`
 }
 
 type UpdateProjection struct {
@@ -264,6 +268,7 @@ func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	request.RepoID = strings.TrimSpace(request.RepoID)
 	request.ServerID = strings.TrimSpace(request.ServerID)
 	request.ReservationID = strings.TrimSpace(request.ReservationID)
+	request.NoticeID = strings.TrimSpace(request.NoticeID)
 
 	service.mu.RLock()
 	vm := service.view
@@ -391,6 +396,9 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		reservation, ok := projectedReservation(vm, request.ReservationID)
 		allowed := ok && reservation.CanRelease && vm.CanReleaseReservations() && viewHasServer(vm, reservation.ServerID)
 		return tray.Intent{Kind: tray.IntentReleaseReservation, ReservationID: request.ReservationID}, allowed
+	case string(tray.IntentAckNotice):
+		allowed := vm.Connected && !vm.Stale && vm.CanAckNotices() && projectedNotice(vm, request.NoticeID)
+		return tray.Intent{Kind: tray.IntentAckNotice, NoticeID: request.NoticeID}, allowed
 	case string(tray.IntentSettings):
 		intent := tray.Intent{Kind: tray.IntentSettings, ServerID: request.ServerID, RepoID: request.RepoID}
 		if request.RepoID == "" {
@@ -415,9 +423,21 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentUnlock):
 		allowed := vm.CanMutateUnlock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && repo.ReservationCount > 0
 		return tray.Intent{Kind: tray.IntentUnlock, RepoID: repo.ID}, allowed
+	case string(tray.IntentPublish):
+		allowed := vm.Connected && !vm.Stale && vm.CanPublish() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != ""
+		return tray.Intent{Kind: tray.IntentPublish, RepoID: repo.ID}, allowed
 	default:
 		return tray.Intent{}, false
 	}
+}
+
+func projectedNotice(vm guiapp.ViewModel, noticeID string) bool {
+	for _, notice := range vm.Notices {
+		if notice.ID == noticeID {
+			return true
+		}
+	}
+	return false
 }
 
 func projectedReservation(vm guiapp.ViewModel, reservationID string) (guiapp.Reservation, bool) {
@@ -509,6 +529,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		canOpen := repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
 		canLock := vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
 		canUnlock := vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
+		canPublish := vm.Connected && !vm.Stale && vm.CanPublish() && canOpen && repo.CanWrite()
 		ownership := "unclassified"
 		if server, ok := serversByID[repo.ServerID]; ok && server.RealmID != "" && repo.OwnerRealmID != "" {
 			if server.Owns(repo) {
@@ -526,7 +547,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
-			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock,
+			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish,
 			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
 			RetainUntil: repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
@@ -575,7 +596,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	for _, item := range vm.Activity {
 		result.Activity = append(result.Activity, ActivityProjection{
 			RepoID: item.RepoID, Path: item.Path, Kind: item.Kind, Stage: item.Stage,
-			Updated: item.UpdatedAt, Revision: item.Revision, ErrorID: item.ErrorID,
+			Updated: item.UpdatedAt, Revision: item.Revision, ErrorID: item.ErrorID, Size: item.Size,
 		})
 	}
 	for _, entry := range journal.BuildAt(vm, now) {
@@ -588,6 +609,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	for _, item := range vm.Notices {
 		result.Notices = append(result.Notices, NoticeProjection{
 			ID: item.ID, RepoID: item.RepoID, Title: item.Title, CreatedAt: item.CreatedAt,
+			CanAck: vm.Connected && !vm.Stale && vm.CanAckNotices(),
 		})
 	}
 	if vm.Update != nil {

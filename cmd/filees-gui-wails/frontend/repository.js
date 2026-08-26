@@ -40,25 +40,65 @@ function shareCard(share) {
   </article>`;
 }
 
+function grantAccess(grant) {
+  if (!String(grant.state || "").toLowerCase().startsWith("active") && !String(grant.state || "").toLowerCase().startsWith("aktyw")) return "brak dostępu";
+  if (grant.access === "rw") return "odczyt i zapis";
+  if (grant.access === "r") return "tylko odczyt";
+  return grant.access || "brak dostępu";
+}
+
+function grantCard(grant) {
+  const controls = [
+    grant.can_read ? `<button type="button" data-grant-action="grant_read" data-realm-id="${escapeHTML(grant.realm_id)}">Tylko odczyt</button>` : "",
+    grant.can_write ? `<button type="button" data-grant-action="grant_write" data-realm-id="${escapeHTML(grant.realm_id)}">Odczyt i zapis</button>` : "",
+    grant.can_revoke ? `<button class="danger" type="button" data-grant-action="revoke" data-realm-id="${escapeHTML(grant.realm_id)}">Cofnij</button>` : "",
+  ].join("");
+  return `<article class="grant-row">
+    <div class="grant-main"><span class="share-dot ${grant.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(grant.alias || "Strefa FileES")}</strong><small>Odbiorca widoczny w katalogu stref</small></div></div>
+    <div class="share-fact"><small>Aktualne uprawnienie</small><span>${escapeHTML(grantAccess(grant))}</span></div>
+    <div class="grant-controls">${controls}</div>
+  </article>`;
+}
+
+function uploadCard(channel) {
+	const controls = [
+		channel.can_edit ? `<button type="button" data-upload-action="edit" data-channel-id="${escapeHTML(channel.channel_id)}">Edytuj</button>` : "",
+		channel.can_revoke ? `<button type="button" data-upload-action="revoke" data-channel-id="${escapeHTML(channel.channel_id)}">Cofnij</button>` : "",
+		channel.can_delete ? `<button class="danger" type="button" data-upload-action="delete" data-channel-id="${escapeHTML(channel.channel_id)}">Usuń</button>` : "",
+	].join("");
+	return `<article class="share-row upload-row">
+		<div class="share-main"><span class="share-dot ${channel.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(channel.address || channel.channel_id)}</strong><small>zamknięta półka przyjęcia</small></div></div>
+		<div class="share-fact"><small>Stan</small><span>${escapeHTML(channel.state || "nieznany")}</span></div>
+		<div class="share-fact"><small>Wnoszący</small><span title="${escapeHTML(channel.recipients)}">${escapeHTML(channel.recipients || "brak")}</span></div>
+		<div class="share-controls">${controls}</div>
+	</article>`;
+}
+
 function render(snapshot) {
   if (!snapshot?.revision || !snapshot.context?.repo_id) return;
   const contextChanged = currentSnapshot?.revision !== snapshot.revision;
   currentSnapshot = snapshot;
   const context = snapshot.context;
   const sharesMode = snapshot.mode === "shares";
+	const grantsMode = snapshot.mode === "grants";
+	const uploadsMode = snapshot.mode === "uploads";
+	const detailMode = sharesMode || grantsMode || uploadsMode;
 
   $("#window-context").textContent = context.name || context.repo_id;
-  $("#scope-label").textContent = sharesMode ? "Folder · udostępnienia" : "Folder FileES";
+	$("#scope-label").textContent = sharesMode ? "Folder · udostępnienia" : grantsMode ? "Folder · uprawnienia gości" : uploadsMode ? "Folder · półki przyjęcia" : "Folder FileES";
   $("#repository-name").textContent = context.name || context.repo_id;
   $("#repository-copy").textContent = snapshot.text || "Działania dla tego folderu.";
   $("#repository-server").textContent = context.server_name || context.server_id;
   $("#repository-state").textContent = context.state || "—";
   $("#repository-access").textContent = context.access || "—";
   $("#repository-editing").textContent = context.editing || "—";
-  $("#repository-facts").hidden = sharesMode;
-  $("#actions-view").hidden = sharesMode;
+	$("#repository-facts").hidden = detailMode;
+	$("#actions-view").hidden = detailMode;
   $("#shares-view").hidden = !sharesMode;
-  $("#back-to-actions").hidden = !sharesMode;
+	$("#grants-view").hidden = !grantsMode;
+	$("#uploads-view").hidden = !uploadsMode;
+	$("#back-to-actions").hidden = !detailMode;
+	$("#back-to-actions").textContent = sharesMode ? "Zamknij udostępnienia" : grantsMode ? "Zamknij uprawnienia" : "Zamknij półki";
 
   if (!sharesMode) {
     const actions = snapshot.actions || [];
@@ -72,7 +112,48 @@ function render(snapshot) {
       : '<p class="empty">Ten folder nie ma jeszcze publicznych udostępnień.</p>';
     $("#create-share").disabled = Boolean(snapshot.busy);
   }
+	if (grantsMode) {
+		const grants = snapshot.grants || [];
+		$("#realm-grants").innerHTML = grants.length
+			? grants.map(grantCard).join("")
+			: '<p class="empty">Brak widocznych stref, którym można nadać dostęp.</p>';
+	}
+	if (uploadsMode) {
+		const channels = snapshot.uploads || [];
+		$("#upload-channels").innerHTML = channels.length
+			? channels.map(uploadCard).join("")
+			: '<p class="empty">Ten folder nie ma jeszcze półek przyjęcia.</p>';
+		$("#create-upload").disabled = Boolean(snapshot.busy);
+	}
   if (contextChanged) window.requestAnimationFrame(() => window.scrollTo(0, 0));
+}
+
+async function chooseGrant(action, realmID, button) {
+	if (!currentSnapshot?.context?.repo_id) return;
+	button.disabled = true;
+	try {
+		const choice = contextChoice(action);
+		choice.realm_id = realmID;
+		const result = await RepositoryService.ChooseGrant(choice);
+		if (!result.accepted) showToast("Działanie niedostępne", result.code || "Katalog odbiorców mógł się zmienić.");
+	} catch (error) {
+		showToast("Nie udało się przekazać intencji", error?.message || String(error));
+	} finally {
+		window.setTimeout(() => { button.disabled = false; }, 450);
+	}
+}
+
+async function chooseUpload(action, channelID, button) {
+	if (!currentSnapshot?.context?.repo_id) return;
+	button.disabled = true;
+	try {
+		const result = await RepositoryService.ChooseUpload(contextChoice(action, channelID));
+		if (!result.accepted) showToast("Działanie niedostępne", result.code || "Lista półek mogła się zmienić.");
+	} catch (error) {
+		showToast("Nie udało się przekazać intencji", error?.message || String(error));
+	} finally {
+		window.setTimeout(() => { button.disabled = false; }, 450);
+	}
 }
 
 function contextChoice(action, channelID = "") {
@@ -129,6 +210,15 @@ $("#public-shares").addEventListener("click", (event) => {
   if (button) chooseShare(button.dataset.shareAction, button.dataset.channelId || "", button);
 });
 $("#create-share").addEventListener("click", (event) => chooseShare("create", "", event.currentTarget));
+$("#realm-grants").addEventListener("click", (event) => {
+	const button = event.target.closest("[data-grant-action]");
+	if (button) chooseGrant(button.dataset.grantAction, button.dataset.realmId || "", button);
+});
+$("#upload-channels").addEventListener("click", (event) => {
+	const button = event.target.closest("[data-upload-action]");
+	if (button) chooseUpload(button.dataset.uploadAction, button.dataset.channelId || "", button);
+});
+$("#create-upload").addEventListener("click", (event) => chooseUpload("create", "", event.currentTarget));
 $("#repository-close").addEventListener("click", closeRepository);
 $("#repository-done").addEventListener("click", closeRepository);
 $("#back-to-actions").addEventListener("click", closeRepository);

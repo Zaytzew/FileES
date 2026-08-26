@@ -14,7 +14,8 @@ func TestJournalSurvivesRestartAndCollapsesPipelineStages(t *testing.T) {
 	}
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 	j.now = func() time.Time { return now }
-	if err := j.Record(Entry{RepoID: "docs", Path: "report.pdf", Kind: Added, Stage: Detected}); err != nil {
+	size := int64(1536)
+	if err := j.Record(Entry{RepoID: "docs", Path: "report.pdf", Kind: Added, Stage: Detected, Size: &size}); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Minute)
@@ -27,7 +28,7 @@ func TestJournalSurvivesRestartAndCollapsesPipelineStages(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries := reopened.List()
-	if len(entries) != 1 || entries[0].Kind != Added || entries[0].Stage != Published || entries[0].Revision != 18 || !entries[0].DetectedAt.Equal(now.Add(-time.Minute)) {
+	if len(entries) != 1 || entries[0].Kind != Added || entries[0].Stage != Published || entries[0].Revision != 18 || !entries[0].DetectedAt.Equal(now.Add(-time.Minute)) || entries[0].Size == nil || *entries[0].Size != size {
 		t.Fatalf("entries=%+v", entries)
 	}
 }

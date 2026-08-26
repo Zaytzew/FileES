@@ -34,6 +34,9 @@ function render(snapshot) {
   $("#timeout-value").textContent = server.session_timeout_min || 30;
   $("#change-timeout").disabled = !server.can_set_session_timeout;
   $("#change-timeout").title = server.can_set_session_timeout ? "Zmień limit czasu" : "Ta wersja serwera nie udostępnia tej zmiany";
+	const actions = server.actions || [];
+	$("#server-actions-card").hidden = actions.length === 0;
+	$("#server-actions").innerHTML = actions.map((action) => `<button class="server-action ${escapeHTML(action.tone)}" type="button" data-server-action="${escapeHTML(action.id)}"><span><strong>${escapeHTML(action.label)}</strong><small>${escapeHTML(action.description)}</small></span><i aria-hidden="true">›</i></button>`).join("");
 
   const folders = server.folders || [];
   $("#folder-count").textContent = folders.length;
@@ -45,6 +48,19 @@ function render(snapshot) {
     <div class="folder-fact editing"><small>Edycja</small><span>${escapeHTML(folder.editing || "nieznana")}</span></div>
   </article>`).join("") : '<p class="empty">Brak folderów do pokazania.</p>';
   if (contextChanged) window.requestAnimationFrame(() => window.scrollTo(0, 0));
+}
+
+async function chooseServerAction(action, button) {
+	if (!currentSnapshot?.server?.id) return;
+	button.disabled = true;
+	try {
+		const result = await SettingsService.Choose({ action, server_id: currentSnapshot.server.id });
+		if (!result.accepted) showToast("Działanie niedostępne", result.code || "Stan ustawień mógł się zmienić.");
+	} catch (error) {
+		showToast("Nie udało się przekazać intencji", error?.message || String(error));
+	} finally {
+		window.setTimeout(() => { button.disabled = false; }, 400);
+	}
 }
 
 async function chooseTimeout() {
@@ -72,6 +88,10 @@ async function closeSettings() {
 
 Events.On("filees:settings-snapshot", (event) => render(event?.data ?? event));
 $("#change-timeout").addEventListener("click", chooseTimeout);
+$("#server-actions").addEventListener("click", (event) => {
+	const button = event.target.closest("[data-server-action]");
+	if (button) chooseServerAction(button.dataset.serverAction, button);
+});
 $("#settings-close").addEventListener("click", closeSettings);
 $("#settings-done").addEventListener("click", closeSettings);
 $("#settings-minimise").addEventListener("click", () => Window.Minimise());

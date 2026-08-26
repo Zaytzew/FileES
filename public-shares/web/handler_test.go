@@ -220,6 +220,9 @@ func TestOpenShareListingCacheAndRange(t *testing.T) {
 	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") || strings.Contains(listing.Body.String(), "wydanie/projekt.pdf") {
 		t.Fatalf("listing status=%d body=%s", listing.Code, listing.Body.String())
 	}
+	if !strings.Contains(listing.Body.String(), "wizyta zamrożona na r5") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) || !strings.Contains(listing.Body.String(), "Sprawdź najnowsze wydanie") {
+		t.Fatalf("listing does not explain the frozen visit or link to latest: %s", listing.Body.String())
+	}
 	if listing.Header().Get("Content-Security-Policy") == "" || listing.Header().Get("Referrer-Policy") != "no-referrer" {
 		t.Fatalf("security headers missing: %v", listing.Header())
 	}
@@ -248,6 +251,9 @@ func TestFollowingShareDerivesObjectMapFromEachVisitRevision(t *testing.T) {
 	listing := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?v="+url.QueryEscape(newVisit), "", nil)
 	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), "nowy.txt") || strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") {
 		t.Fatalf("following listing did not track r6: status=%d body=%s", listing.Code, listing.Body.String())
+	}
+	if !strings.Contains(listing.Body.String(), "wizyta zamrożona na r6") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) {
+		t.Fatalf("r6 listing does not identify its snapshot and canonical entry: %s", listing.Body.String())
 	}
 	projection, err := f.handler.Backend.(authority.Resolver).InspectAt(context.Background(), "atmprojekt", "przetarg-2026", 6)
 	if err != nil || len(projection.Objects) != 1 || projection.Objects[0].PublicID == "" {

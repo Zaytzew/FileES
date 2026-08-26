@@ -5,6 +5,8 @@ const $ = (selector) => document.querySelector(selector);
 let snapshot = null;
 let resolving = false;
 
+const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
 function setBusy(busy) {
   resolving = busy;
   $("#prompt-confirm").disabled = busy;
@@ -36,15 +38,37 @@ function render(next) {
   else window.setTimeout(() => $("#prompt-confirm").focus(), 80);
 }
 
+async function revealFollowingPrompt(resolvedRevision) {
+  // Resolve() wakes the Go controller before its RPC response necessarily
+  // reaches this WebView. The controller may therefore publish the following
+  // prompt while this page is still completing the previous submit. Events are
+  // only a wake-up hint; Snapshot is the authoritative hand-off.
+  for (const delay of [0, 25, 75, 150, 300]) {
+    if (delay) await wait(delay);
+    let next = snapshot?.revision > resolvedRevision ? snapshot : null;
+    if (!next) {
+      try { next = await PromptService.Snapshot(); }
+      catch (error) { console.error("Nie udało się odświeżyć kolejnego dialogu FileES", error); }
+    }
+    if (next?.revision > resolvedRevision) {
+      if (snapshot?.revision !== next.revision) render(next);
+      await Promise.allSettled([Window.Show(), Window.Focus()]);
+      return;
+    }
+  }
+}
+
 async function resolve(confirmed) {
   if (!snapshot || resolving) return;
+  const resolvedRevision = snapshot.revision;
   setBusy(true);
   try {
-    const result = await PromptService.Resolve({revision: snapshot.revision, confirmed, value: $("#prompt-value").value});
+    const result = await PromptService.Resolve({revision: resolvedRevision, confirmed, value: $("#prompt-value").value});
     if (!result.accepted) throw new Error(result.code || "dialog_rejected");
     // The Go prompt service owns window visibility. A flow may publish the
     // next prompt immediately after Resolve(); hiding here could overtake that
     // Show() and strand the flow in an invisible window.
+    void revealFollowingPrompt(resolvedRevision);
   } catch (error) {
     console.error("Nie udało się zamknąć dialogu FileES", error);
     const reason = error?.message || String(error);

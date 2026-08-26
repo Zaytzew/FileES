@@ -42,6 +42,7 @@ type Entry struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 	Revision   int64     `json:"revision,omitempty"`
 	ErrorID    string    `json:"error_id,omitempty"`
+	Size       *int64    `json:"size,omitempty"`
 }
 
 type document struct {
@@ -99,6 +100,9 @@ func (j *Journal) Record(entry Entry) error {
 		}
 		if entry.Kind == "" {
 			entry.Kind = old.Kind
+		}
+		if entry.Size == nil {
+			entry.Size = old.Size
 		}
 	}
 	if entry.DetectedAt.IsZero() {
@@ -220,6 +224,9 @@ func validate(entry Entry) error {
 	}
 	if entry.DetectedAt.IsZero() || entry.UpdatedAt.Before(entry.DetectedAt) {
 		return errors.New("activity timestamps are invalid")
+	}
+	if entry.Size != nil && *entry.Size < 0 {
+		return errors.New("activity size is invalid")
 	}
 	return nil
 }

@@ -148,6 +148,7 @@ type ErrorViewModel struct {
 type ActivityViewModel struct {
 	RepoID, Path, Kind, Stage, UpdatedAt, ErrorID string
 	Revision                                      int64
+	Size                                          *int64
 }
 
 type NoticeViewModel struct {

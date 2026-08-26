@@ -133,7 +133,7 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .repo-settings:hover { border-color:rgba(255,106,0,.31); color:#ffae72; background:rgba(255,106,0,.08); }
 .repo-settings:disabled { opacity:.35; cursor:wait; } .repo-settings svg { width:17px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
 
-.activity-list,.reservation-list { display:grid; gap:9px; }
+.activity-list,.reservation-list,.shout-list { display:grid; gap:9px; }
 .activity-row { display:grid; grid-template-columns:8px minmax(0,1fr); gap:11px; padding:13px 14px; border-radius:13px; background:rgba(255,255,255,.028); }
 .activity-row strong { font-size:13px; line-height:1.35; } .activity-row p { margin:6px 0 0; overflow:hidden; color:var(--muted); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
 .activity-dot { width:8px; height:8px; margin-top:5px; border-radius:50%; background:var(--violet); box-shadow:0 0 12px rgba(154,167,232,.48); }
@@ -146,6 +146,11 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .lock-flag.risk { border-color:rgba(244,199,109,.25); color:var(--amber); background:rgba(244,199,109,.08); } .lock-flag.passport { border-color:rgba(154,167,232,.25); color:#d1d7ff; background:rgba(154,167,232,.1); }
 .reservation-action { min-height:34px; padding:7px 10px; border:1px solid rgba(154,167,232,.25); border-radius:9px; color:#d1d7ff; background:rgba(154,167,232,.09); font-size:11px; font-weight:800; cursor:pointer; }
 .reservation-action:hover { border-color:rgba(255,106,0,.32); color:#ffae72; background:rgba(255,106,0,.08); } .reservation-action:disabled { opacity:.35; cursor:wait; }
+.shout-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:11px; padding:13px 14px; border:1px solid rgba(255,106,0,.16); border-radius:13px; background:rgba(255,106,0,.045); }
+.shout-main { min-width:0; } .shout-main>strong { display:block; overflow-wrap:anywhere; color:#f1f4fa; font-size:13px; line-height:1.35; }
+.shout-main>p { margin:6px 0 0; overflow:hidden; color:var(--muted); font-size:12px; text-overflow:ellipsis; white-space:nowrap; } .shout-main>time { display:block; margin-top:5px; color:#8190a4; font-size:11px; }
+.shout-action { min-height:34px; padding:7px 10px; border:1px solid rgba(255,106,0,.28); border-radius:9px; color:#ffae72; background:rgba(255,106,0,.08); font-size:11px; font-weight:800; cursor:pointer; }
+.shout-action:hover { border-color:rgba(154,167,232,.34); color:#d1d7ff; background:rgba(154,167,232,.1); } .shout-action:disabled { opacity:.35; cursor:wait; }
 .lock-owner { color:#8190a4; font-size:10px; font-weight:750; letter-spacing:.07em; text-transform:uppercase; }
 .muted { margin:0; color:var(--muted); font-size:12px; line-height:1.5; }
 .empty-state { min-height:220px; display:grid; place-items:center; align-content:center; gap:9px; color:var(--muted); text-align:center; }
@@ -190,7 +195,7 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
   :root:not([data-system-theme="dark"]) .window-button { color:#526275; } :root:not([data-system-theme="dark"]) .window-button:hover { color:var(--text); background:rgba(11,29,58,.07); } :root:not([data-system-theme="dark"]) .pulse-caption { background:rgba(255,255,255,.92); }
   :root:not([data-system-theme="dark"]) .server-panel { background:rgba(255,255,255,.4); } :root:not([data-system-theme="dark"]) .server-header { background:linear-gradient(105deg,color-mix(in srgb,var(--realm-accent) 11%,transparent),rgba(18,100,163,.035) 58%,transparent); }
   :root:not([data-system-theme="dark"]) .repo-row:hover { border-color:rgba(11,29,58,.12); background:rgba(255,255,255,.7); } :root:not([data-system-theme="dark"]) .realm-divider::after { background:rgba(11,29,58,.09); } :root:not([data-system-theme="dark"]) .realm-divider b { color:#68778a; background:rgba(11,29,58,.05); }
-  :root:not([data-system-theme="dark"]) .reservation-main>strong,:root:not([data-system-theme="dark"]) .journal-copy strong,:root:not([data-system-theme="dark"]) .toast strong { color:var(--text); } :root:not([data-system-theme="dark"]) .toast { background:rgba(255,255,255,.97); box-shadow:0 18px 50px rgba(47,65,79,.24); }
+  :root:not([data-system-theme="dark"]) .reservation-main>strong,:root:not([data-system-theme="dark"]) .shout-main>strong,:root:not([data-system-theme="dark"]) .journal-copy strong,:root:not([data-system-theme="dark"]) .toast strong { color:var(--text); } :root:not([data-system-theme="dark"]) .toast { background:rgba(255,255,255,.97); box-shadow:0 18px 50px rgba(47,65,79,.24); }
   :root:not([data-system-theme="dark"]) .journal-overlay { background:rgba(218,226,232,.78); } :root:not([data-system-theme="dark"]) .journal-dialog { background:rgba(255,255,255,.98); box-shadow:0 30px 100px rgba(47,65,79,.28); }
   :root:not([data-system-theme="dark"]) .journal-list { background:rgba(11,29,58,.035); } :root:not([data-system-theme="dark"]) .journal-row { border-color:rgba(11,29,58,.075); background:rgba(11,29,58,.025); } :root:not([data-system-theme="dark"]) .journal-row:hover { background:rgba(11,29,58,.045); } :root:not([data-system-theme="dark"]) footer { color:#68778a; }
 }

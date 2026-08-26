@@ -100,3 +100,39 @@ func TestSettingsServiceRejectsUnscopedMultiServerWizard(t *testing.T) {
 		t.Fatalf("multi-server request = result %+v err %v snapshot %+v", result, err, service.Snapshot())
 	}
 }
+
+func TestSettingsServiceProjectsOnlyAuthorisedServerActions(t *testing.T) {
+	service := newSettingsService()
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	resultCh := make(chan platform.SettingsDialogResult, 1)
+	go func() {
+		result, _ := (settingsBrowserAdapter{service: service}).ShowSettings(context.Background(), platform.SettingsDialogRequest{Servers: []platform.SettingsServer{{
+			ID: "spot", CanSetRealmVisibility: true, CanSetRealmBranding: false, CanAddFolder: true,
+		}}})
+		resultCh <- result
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("settings window was not shown")
+	}
+	actions := service.Snapshot().Server.Actions
+	if len(actions) != 2 || actions[0].ID != "realm_visibility" || actions[1].ID != "add_folder" {
+		t.Fatalf("server actions = %+v", actions)
+	}
+	if got := service.Choose(SettingsChoice{Action: "realm_branding", ServerID: "spot"}); got.Accepted || got.Code != "settings_action_unavailable" {
+		t.Fatalf("unavailable branding accepted: %+v", got)
+	}
+	if got := service.Choose(SettingsChoice{Action: "add_folder", ServerID: "spot"}); !got.Accepted {
+		t.Fatalf("add folder rejected: %+v", got)
+	}
+	select {
+	case result := <-resultCh:
+		if result.Action != platform.SettingsDialogAddFolder || result.ServerID != "spot" {
+			t.Fatalf("server action result = %+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("settings browser did not return")
+	}
+}

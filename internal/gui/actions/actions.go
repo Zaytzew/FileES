@@ -1462,7 +1462,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				}
 				declaration, accepted := c.collectPublicShareDeclaration(ctx, repo, current)
 				if !accepted {
-					continue
+					return
 				}
 				if current == nil {
 					err = c.cfg.PublicShares.CreatePublicShare(ctx, serverID, declaration)
@@ -1645,7 +1645,11 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 		initialDir = filepath.Join(repo.LocalPath, filepath.FromSlash(current.SourceRoot))
 	}
 	picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz folder udostępnienia", InitialDir: initialDir})
-	if err != nil || picked.Cancelled {
+	if err != nil {
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie udało się otworzyć wyboru folderu", Text: err.Error()})
+		return PublicShareDeclaration{}, false
+	}
+	if picked.Cancelled {
 		return PublicShareDeclaration{}, false
 	}
 	objects, sourceRoot, err := publicShareObjects(repo.LocalPath, picked.Path, current)

@@ -153,4 +153,9 @@ func TestPromptFrontendLeavesVisibilityToPromptService(t *testing.T) {
 	if strings.Contains(string(source), "Window.Hide()") {
 		t.Fatal("prompt frontend must not race the service by hiding the shared window")
 	}
+	for _, wanted := range []string{"revealFollowingPrompt", "PromptService.Snapshot()", "Window.Show()", "Window.Focus()"} {
+		if !strings.Contains(string(source), wanted) {
+			t.Fatalf("prompt frontend is missing resilient hand-off %q", wanted)
+		}
+	}
 }

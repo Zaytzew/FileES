@@ -710,6 +710,7 @@ type ActivityRecord struct {
 	UpdatedAt  string `json:"updated_at"`
 	Revision   int64  `json:"revision,omitempty"`
 	ErrorID    string `json:"error_id,omitempty"`
+	Size       *int64 `json:"size,omitempty"`
 }
 
 type RepoActivityResult struct {

@@ -69,6 +69,49 @@ func TestControllerPublicShareListFailureUsesForegroundModal(t *testing.T) {
 	}
 }
 
+func TestControllerReportsAlreadyOpenPublicShareFlow(t *testing.T) {
+	opened := make(chan struct{}, 1)
+	release := make(chan struct{})
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogPublicShares, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		PublicSharesFunc: func(context.Context, platform.PublicShareDialogRequest) (platform.PublicShareDialogResult, error) {
+			select {
+			case opened <- struct{}{}:
+			default:
+			}
+			<-release
+			return platform.PublicShareDialogResult{Action: platform.PublicShareDialogClose}, nil
+		},
+	}
+	view := lifecycleView(contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, PublicShareBrowser: platformFake, FolderPicker: platformFake, Prompter: platformFake, PublicShares: failingPublicShares{}, Notifier: platformFake})
+	defer func() {
+		close(release)
+		cancel()
+	}()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office", RepoID: "repo-1"})
+	select {
+	case <-opened:
+	case <-time.After(time.Second):
+		t.Fatal("public share browser did not open")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office", RepoID: "repo-1"})
+		time.Sleep(5 * time.Millisecond)
+		for _, notification := range platformFake.Snapshot().Notifications {
+			if notification.Title == "Udostępnienia są już otwarte" {
+				return
+			}
+		}
+	}
+	t.Fatalf("repeated action failed silently: %+v", platformFake.Snapshot().Notifications)
+}
+
 func TestControllerBrandingReadFailureUsesForegroundModal(t *testing.T) {
 	platformFake := &platformtest.Fake{SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
 		return platform.SettingsDialogResult{Action: platform.SettingsDialogRealmBranding, ServerID: "office"}, nil

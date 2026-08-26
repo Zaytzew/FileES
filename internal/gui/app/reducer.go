@@ -341,6 +341,14 @@ func (s appState) awaitPendingAction(id string) appState {
 	if !exists {
 		return s
 	}
+	// A successful lock mutation cannot be fenced against an inventory that
+	// was already unavailable before the operation began.  The daemon call is
+	// still authoritative for success/failure; only the optional presentation
+	// confirmation is skipped.  Otherwise the spinner can wait forever for a
+	// reservation snapshot the daemon has explicitly reported as unknown.
+	if action.ReservationDelta != 0 && !action.BaselineReservationsKnown {
+		return s.finishPendingActions([]string{id})
+	}
 	next := make(map[string]PendingAction, len(s.pendingActions))
 	for key, pending := range s.pendingActions {
 		next[key] = pending

@@ -57,6 +57,55 @@ func (s SVNLookSource) Cat(ctx context.Context, repoID, repoPath string, revisio
 	return nil
 }
 
+// Tree enumerates regular repository leaves below sourceRoot at one immutable
+// revision. svnlook's --full-paths format marks directories with a trailing
+// slash, so no working copy and no repository credential is involved.
+func (s SVNLookSource) Tree(ctx context.Context, repoID, sourceRoot string, revision int64) ([]TreeObject, error) {
+	repository, err := s.repositoryPath(repoID)
+	if err != nil {
+		return nil, err
+	}
+	if revision < 1 || (sourceRoot != "." && !canonicalRepoPath(sourceRoot)) {
+		return nil, errors.New("svnlook tree request is invalid")
+	}
+	args := []string{"tree", "--full-paths", "-r", strconv.FormatInt(revision, 10), repository}
+	if sourceRoot != "." {
+		args = append(args, sourceRoot)
+	}
+	command := s.command(ctx, args...)
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &limitedWriter{Writer: &stderr, Remaining: 4096}
+	if err := command.Run(); err != nil {
+		return nil, fmt.Errorf("svnlook tree: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	if stdout.Len() > 4<<20 {
+		return nil, errors.New("svnlook tree output exceeds limit")
+	}
+	prefix := ""
+	if sourceRoot != "." {
+		prefix = strings.TrimSuffix(sourceRoot, "/") + "/"
+	}
+	objects := make([]TreeObject, 0)
+	for _, line := range strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n") {
+		repoPath := strings.TrimSuffix(line, "\r")
+		if repoPath == "" || strings.HasSuffix(repoPath, "/") {
+			continue
+		}
+		if !canonicalRepoPath(repoPath) || (prefix != "" && !strings.HasPrefix(repoPath, prefix)) {
+			return nil, errors.New("svnlook tree returned a path outside source root")
+		}
+		displayName := repoPath
+		if prefix != "" {
+			displayName = strings.TrimPrefix(repoPath, prefix)
+		}
+		objects = append(objects, TreeObject{RepoPath: repoPath, DisplayName: displayName})
+		if len(objects) > 4096 {
+			return nil, errors.New("svnlook tree contains more than 4096 files")
+		}
+	}
+	return objects, nil
+}
+
 func (s SVNLookSource) command(ctx context.Context, args ...string) *exec.Cmd {
 	command := exec.CommandContext(ctx, s.SVNLook, args...)
 	command.Env = svnLookEnvironment(os.Environ())

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync"
+	"time"
 
 	"filees/internal/gui/platform"
 )
@@ -10,14 +11,15 @@ import (
 const promptSnapshotEvent = "filees:prompt-snapshot"
 
 type PromptService struct {
-	gate     sync.Mutex
-	mu       sync.RWMutex
-	snapshot PromptSnapshot
-	emitter  snapshotEmitter
-	show     func()
-	hide     func()
-	active   *promptSession
-	revision uint64
+	gate         sync.Mutex
+	presentation sync.Mutex
+	mu           sync.RWMutex
+	snapshot     PromptSnapshot
+	emitter      snapshotEmitter
+	show         func()
+	hide         func()
+	active       *promptSession
+	revision     uint64
 }
 
 type promptSession struct {
@@ -140,7 +142,9 @@ func (service *PromptService) present(ctx context.Context, snapshot PromptSnapsh
 		emitter.Emit(promptSnapshotEvent, snapshot)
 	}
 	if show != nil {
+		service.presentation.Lock()
 		show()
+		service.presentation.Unlock()
 	}
 	var choice PromptChoice
 	var err error
@@ -156,10 +160,21 @@ func (service *PromptService) present(ctx context.Context, snapshot PromptSnapsh
 	hide := service.hide
 	service.mu.Unlock()
 	if hide != nil {
-		// Window operations may synchronise with the WebView thread that is
-		// currently returning Resolve(). Never hold the controller flow on that
-		// presentation round-trip; the browser also hides itself after acceptance.
-		go hide()
+		// A controller flow may immediately open another prompt.  Hiding this
+		// revision synchronously (or from an unguarded goroutine) can then race
+		// with Show() for the following revision and leave the flow waiting in an
+		// invisible window.  Give the caller a short hand-off window and hide only
+		// if no subsequent prompt has taken ownership of the shared window.
+		time.AfterFunc(120*time.Millisecond, func() {
+			service.presentation.Lock()
+			defer service.presentation.Unlock()
+			service.mu.RLock()
+			unchanged := service.snapshot.Revision == snapshot.Revision && service.active == nil
+			service.mu.RUnlock()
+			if unchanged {
+				hide()
+			}
+		})
 	}
 	return choice, err
 }

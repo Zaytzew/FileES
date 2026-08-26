@@ -613,6 +613,11 @@ func (a *App) loop(ctx context.Context) {
 			case msgActionAwait:
 				if _, exists := state.pendingActions[msg.id]; exists {
 					state = state.awaitPendingAction(msg.id)
+					if _, stillPending := state.pendingActions[msg.id]; !stillPending {
+						delete(actionFencesPending, msg.id)
+						notify()
+						break
+					}
 					actionFencesPending[msg.id] = true
 					notify()
 					launchFullRefresh()

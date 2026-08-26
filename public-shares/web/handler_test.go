@@ -134,6 +134,7 @@ func (a *webAuthority) ActiveRealmBranding(owner string) (realmbranding.Branding
 type webSource struct {
 	head   int64
 	values map[int64]string
+	trees  map[int64][]authority.TreeObject
 }
 
 func (s *webSource) Head(context.Context, string) (int64, error) { return s.head, nil }
@@ -145,6 +146,13 @@ func (s *webSource) Cat(_ context.Context, _, _ string, revision int64, dst io.W
 	_, err := io.WriteString(dst, value)
 	return err
 }
+func (s *webSource) Tree(_ context.Context, _, _ string, revision int64) ([]authority.TreeObject, error) {
+	objects, ok := s.trees[revision]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return append([]authority.TreeObject(nil), objects...), nil
+}
 
 type webFixture struct {
 	handler          Handler
@@ -153,6 +161,7 @@ type webFixture struct {
 	owner, channelID string
 	deliveries       []channel.Delivery
 	now              *time.Time
+	source           *webSource
 }
 
 func newWebFixture(t *testing.T, configure func(*manifest.Share)) webFixture {
@@ -171,10 +180,11 @@ func newWebFixture(t *testing.T, configure func(*manifest.Share)) webFixture {
 		t.Fatal(err)
 	}
 	otp := &recipientotp.Service{Root: t.TempDir(), Key: []byte(strings.Repeat("o", 32)), Channels: store, Outbox: repoworker.PublicShareOutbox{Root: t.TempDir(), Now: func() time.Time { return *clock }}, Now: func() time.Time { return *clock }}
-	resolver := authority.Resolver{Channels: store, Source: &webSource{head: 5, values: map[int64]string{5: "revision five payload"}}, FrostKey: []byte(strings.Repeat("f", 32)), StagingRoot: t.TempDir(), MaxLeafSize: 1 << 20, RecipientOTP: otp}
+	source := &webSource{head: 5, values: map[int64]string{5: "revision five payload"}, trees: map[int64][]authority.TreeObject{5: {{RepoPath: "wydanie/projekt.pdf", DisplayName: "Projekt budowlany.pdf"}}}}
+	resolver := authority.Resolver{Channels: store, Source: source, FrostKey: []byte(strings.Repeat("f", 32)), StagingRoot: t.TempDir(), MaxLeafSize: 1 << 20, RecipientOTP: otp}
 	cacheStore := &cache.Store{Config: cache.Config{Root: t.TempDir(), TTL: 12 * time.Hour, MaxSize: 1024 * 1024}}
 	handler := Handler{Backend: resolver, Cache: cacheStore, VisitKey: []byte(strings.Repeat("v", 32)), Now: func() time.Time { return *clock }}
-	return webFixture{handler: handler, store: store, share: share, owner: owner, channelID: channelID, deliveries: deliveries, now: clock}
+	return webFixture{handler: handler, store: store, share: share, owner: owner, channelID: channelID, deliveries: deliveries, now: clock, source: source}
 }
 
 func perform(handler http.Handler, method, target, body string, headers map[string]string) *httptest.ResponseRecorder {
@@ -224,6 +234,46 @@ func TestOpenShareListingCacheAndRange(t *testing.T) {
 	}
 	if response.Header().Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(response.Header().Get("Content-Disposition"), "attachment") {
 		t.Fatalf("unsafe attachment headers: %v", response.Header())
+	}
+}
+
+func TestFollowingShareDerivesObjectMapFromEachVisitRevision(t *testing.T) {
+	f := newWebFixture(t, nil)
+	oldVisit := visitFromRedirect(t, perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil))
+
+	f.source.head = 6
+	f.source.values[6] = "new payload"
+	f.source.trees[6] = []authority.TreeObject{{RepoPath: "wydanie/nowy.txt", DisplayName: "nowy.txt"}}
+	newVisit := visitFromRedirect(t, perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil))
+	listing := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?v="+url.QueryEscape(newVisit), "", nil)
+	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), "nowy.txt") || strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") {
+		t.Fatalf("following listing did not track r6: status=%d body=%s", listing.Code, listing.Body.String())
+	}
+	projection, err := f.handler.Backend.(authority.Resolver).InspectAt(context.Background(), "atmprojekt", "przetarg-2026", 6)
+	if err != nil || len(projection.Objects) != 1 || projection.Objects[0].PublicID == "" {
+		t.Fatalf("r6 projection = %+v, %v", projection, err)
+	}
+	newID := projection.Objects[0].PublicID
+	getURL := "https://example.test/atmprojekt/przetarg-2026/get/" + newID + "?v=" + url.QueryEscape(newVisit)
+	if prepared := perform(f.handler, http.MethodGet, getURL, "", nil); prepared.Code != http.StatusSeeOther {
+		t.Fatalf("new r6 object did not prepare: status=%d body=%s", prepared.Code, prepared.Body.String())
+	}
+	fileURL := "https://example.test/atmprojekt/przetarg-2026/file/" + newID + "?v=" + url.QueryEscape(newVisit)
+	if downloaded := perform(f.handler, http.MethodGet, fileURL, "", nil); downloaded.Code != http.StatusOK || downloaded.Body.String() != "new payload" {
+		t.Fatalf("new r6 object did not download: status=%d body=%q", downloaded.Code, downloaded.Body.String())
+	}
+	removedURL := "https://example.test/atmprojekt/przetarg-2026/get/7f3a1c9e2b4d6a80?v=" + url.QueryEscape(newVisit)
+	if removed := perform(f.handler, http.MethodGet, removedURL, "", nil); removed.Code != http.StatusNotFound {
+		t.Fatalf("removed r5 object survived in r6: status=%d", removed.Code)
+	}
+
+	oldListing := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?v="+url.QueryEscape(oldVisit), "", nil)
+	if oldListing.Code != http.StatusOK || !strings.Contains(oldListing.Body.String(), "Projekt budowlany.pdf") || strings.Contains(oldListing.Body.String(), "nowy.txt") {
+		t.Fatalf("existing visit did not retain r5: status=%d body=%s", oldListing.Code, oldListing.Body.String())
+	}
+	oldFileURL := "https://example.test/atmprojekt/przetarg-2026/file/7f3a1c9e2b4d6a80?v=" + url.QueryEscape(oldVisit)
+	if downloaded := perform(f.handler, http.MethodGet, oldFileURL, "", nil); downloaded.Code != http.StatusOK || downloaded.Body.String() != "revision five payload" {
+		t.Fatalf("old visit lost frozen r5 object: status=%d body=%q", downloaded.Code, downloaded.Body.String())
 	}
 }
 

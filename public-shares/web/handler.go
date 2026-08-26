@@ -137,6 +137,11 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 			h.notFound(w)
 			return
 		}
+		projection, err = h.inspectAt(request.Context(), alias, channelSlug, claims.Revision, projection)
+		if err != nil || projection.ChannelID != claims.ChannelID || !subjectStillAuthorized(claims.Subject, projection) {
+			h.notFound(w)
+			return
+		}
 		h.renderListingWithInvitation(w, projection, claims, encoded, invitation, request.URL.Query().Get("notice") == "select")
 		return
 	}
@@ -555,7 +560,24 @@ func (h Handler) currentVisit(request *http.Request, alias, channelSlug string) 
 		return channel.Projection{}, visit{}, "", false
 	}
 	claims, err := h.verifyVisit(encoded, projection)
-	return projection, claims, encoded, err == nil
+	if err != nil {
+		return channel.Projection{}, visit{}, "", false
+	}
+	projection, err = h.inspectAt(request.Context(), alias, channelSlug, claims.Revision, projection)
+	if err != nil || projection.ChannelID != claims.ChannelID || !subjectStillAuthorized(claims.Subject, projection) {
+		return channel.Projection{}, visit{}, "", false
+	}
+	return projection, claims, encoded, true
+}
+
+func (h Handler) inspectAt(ctx context.Context, alias, channelSlug string, revision int64, fallback channel.Projection) (channel.Projection, error) {
+	inspector, ok := h.Backend.(interface {
+		InspectAt(context.Context, string, string, int64) (channel.Projection, error)
+	})
+	if !ok {
+		return fallback, nil
+	}
+	return inspector.InspectAt(ctx, alias, channelSlug, revision)
 }
 
 func (h Handler) signVisit(claims visit) (string, error) {

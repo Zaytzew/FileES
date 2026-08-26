@@ -23,6 +23,7 @@ const actionErrors = {
 };
 
 let currentSnapshot = null;
+const renderedHTML = new WeakMap();
 const initialWindowWidth = 1180;
 const autoFit = {
   enabled: true,
@@ -31,6 +32,13 @@ const autoFit = {
   queued: false,
   suppressResizeUntil: 0,
 };
+
+function replaceHTMLIfChanged(node, html) {
+  if (renderedHTML.get(node) === html) return false;
+  renderedHTML.set(node, html);
+  node.innerHTML = html;
+  return true;
+}
 
 function recordNumber(value, key) {
   return Number(value?.[key] ?? value?.[key.toLowerCase()] ?? 0);
@@ -211,7 +219,7 @@ function renderRepo(repo) {
   const state = repo.display_state || "unknown";
   const deleted = Boolean(repo.server_deleted);
   const revision = deleted
-    ? `<span data-retain-until="${escapeHTML(repo.retain_until)}">${escapeHTML(retentionCountdown(repo.retain_until))}</span>`
+    ? `<span data-retain-until="${escapeHTML(repo.retain_until)}"></span>`
     : escapeHTML(repo.attached ? `r${repo.local_revision || 0} / r${repo.head_revision || 0}` : "zdalny");
   const pending = deleted
     ? (repo.recovery_pending && repo.local_cleanup_pending ? "archiwum i czyszczenie czekają" : repo.recovery_pending ? "wydanie archiwum czeka" : repo.local_cleanup_pending ? "czyszczenie lokalne czeka" : "folder odłączony")
@@ -251,8 +259,7 @@ function renderRepositories(snapshot) {
   const root = $("#repositories");
   const repos = snapshot.repositories || [];
   if (!repos.length) {
-    root.innerHTML = '<div class="empty-state"><span>◌</span><p>Nie ma jeszcze folderów do pokazania.</p></div>';
-    return;
+    return replaceHTMLIfChanged(root, '<div class="empty-state"><span>◌</span><p>Nie ma jeszcze folderów do pokazania.</p></div>');
   }
   const servers = [...(snapshot.servers || [])];
   const known = new Set(servers.map((server) => server.id));
@@ -262,7 +269,7 @@ function renderRepositories(snapshot) {
       known.add(repo.server_id);
     }
   });
-  root.innerHTML = servers.map((server) => {
+  const html = servers.map((server) => {
     const serverRepos = repos.filter((repo) => repo.server_id === server.id);
     if (!serverRepos.length) return "";
     const deleted = serverRepos.filter((repo) => repo.server_deleted);
@@ -293,13 +300,14 @@ function renderRepositories(snapshot) {
       </div>
     </article>`;
   }).join("");
+  return replaceHTMLIfChanged(root, html);
 }
 
 function renderActions(snapshot) {
   const root = $("#action-status");
   const actions = snapshot.pending_actions || [];
   root.hidden = actions.length === 0;
-  root.innerHTML = actions.map((action) => {
+  const html = actions.map((action) => {
     const repo = (snapshot.repositories || []).find((item) => item.id === action.repo_id);
     const scope = repo?.display_name || action.repo_id || "FileES";
     const detail = !snapshot.connected
@@ -312,6 +320,7 @@ function renderActions(snapshot) {
       <div><strong>${escapeHTML(action.label || "Działanie FileES")}</strong><small>${escapeHTML(scope)} · ${escapeHTML(detail)}</small></div>
     </article>`;
   }).join("");
+  replaceHTMLIfChanged(root, html);
 }
 
 function renderReservations(snapshot) {
@@ -322,10 +331,10 @@ function renderReservations(snapshot) {
   card.hidden = reservations.length === 0 && !inventoryUnknown;
   $("#reservations-count").textContent = inventoryUnknown ? "?" : reservations.length;
   if (!reservations.length) {
-    root.innerHTML = inventoryUnknown ? '<p class="muted">Lista blokad jest chwilowo niedostępna.</p>' : "";
+    replaceHTMLIfChanged(root, inventoryUnknown ? '<p class="muted">Lista blokad jest chwilowo niedostępna.</p>' : "");
     return;
   }
-  root.innerHTML = reservations.map((reservation) => {
+  const html = reservations.map((reservation) => {
     const flags = [
       reservation.active_passport ? '<span class="lock-flag passport">paszport</span>' : "",
       reservation.local_changes ? '<span class="lock-flag risk">zmiany lokalne</span>' : "",
@@ -342,26 +351,27 @@ function renderReservations(snapshot) {
       ${action}
     </article>`;
   }).join("");
+  replaceHTMLIfChanged(root, html);
 }
 
 function renderJournal(snapshot) {
   const entries = snapshot.journal || [];
   const root = $("#activity");
   if (!entries.length) {
-    root.innerHTML = '<p class="muted">Brak nowych sygnałów.</p>';
+    replaceHTMLIfChanged(root, '<p class="muted">Brak nowych sygnałów.</p>');
   } else {
-    root.innerHTML = entries.slice(0, 6).map((item) => `<article class="activity-row ${item.emphasized ? "is-error" : ""}">
+    replaceHTMLIfChanged(root, entries.slice(0, 6).map((item) => `<article class="activity-row ${item.emphasized ? "is-error" : ""}">
       <span class="activity-dot"></span><div><strong title="${escapeHTML(item.summary)}">${escapeHTML(item.summary)}</strong>
       <p>${escapeHTML(item.repository || "FileES")}</p><time datetime="${escapeHTML(item.exact_time)}">${escapeHTML(item.relative_time)}</time></div>
-    </article>`).join("");
+    </article>`).join(""));
   }
 
   const full = $("#journal");
-  full.innerHTML = entries.length ? entries.map((item) => `<article class="journal-row ${item.emphasized ? "is-error" : ""}">
+  replaceHTMLIfChanged(full, entries.length ? entries.map((item) => `<article class="journal-row ${item.emphasized ? "is-error" : ""}">
     <time>${escapeHTML(item.exact_time)}</time>
     <span class="journal-repo">${escapeHTML(item.repository || "FileES")}</span>
     <div class="journal-copy"><strong>${escapeHTML(item.summary)}</strong>${item.details ? `<p>${escapeHTML(item.details)}</p>` : ""}</div>
-  </article>`).join("") : '<p class="muted">Brak wpisów.</p>';
+  </article>`).join("") : '<p class="muted">Brak wpisów.</p>');
 }
 
 function render(snapshot) {
@@ -369,13 +379,13 @@ function render(snapshot) {
   currentSnapshot = snapshot;
   renderConnection(snapshot);
   renderMetrics(snapshot);
-  renderRepositories(snapshot);
+  const repositoriesChanged = renderRepositories(snapshot);
   renderActions(snapshot);
   renderReservations(snapshot);
   renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;
-  scheduleWindowFit();
+  if (repositoriesChanged) scheduleWindowFit();
   updateRetentionCountdowns();
 }
 

@@ -1,12 +1,10 @@
+@import url("./theme.css");
+
 :root {
-  color-scheme: dark light;
   font-family: Inter, "Segoe UI Variable", "Segoe UI", sans-serif;
-  --background: #07101d; --panel: rgba(14,25,41,.84); --line: rgba(218,226,238,.12);
-  --text: #eef2f8; --soft-text: #c4cad7; --muted: #9aa8ba; --teal: #63d9bd;
-  --violet: #9aa7e8; --orange:#ff6a00; --amber: #f4c76d; --red: #ff7b84; --shadow: 0 28px 90px rgba(0,0,0,.38);
-}
-@media (prefers-color-scheme: light) {
-  :root { --background: #eef3f5; --panel: rgba(255,255,255,.82); --line: rgba(28,42,54,.1); --text: #17202c; --soft-text: #435064; --muted: #798596; --shadow: 0 24px 70px rgba(44,65,74,.16); }
+  --background: var(--theme-background); --panel: var(--theme-panel); --line: var(--theme-line);
+  --text: var(--theme-text); --soft-text: var(--theme-soft-text); --muted: var(--theme-muted); --teal: var(--theme-teal);
+  --violet: var(--theme-violet); --orange:#ff6a00; --amber: var(--theme-amber); --red: var(--theme-red); --shadow: var(--theme-shadow);
 }
 * { box-sizing: border-box; }
 html { min-height: 100%; scrollbar-width: none; }
@@ -55,3 +53,10 @@ footer { display: flex; align-items: center; justify-content: space-between; gap
 .toast { padding: 14px 16px; border: 1px solid rgba(255,123,132,.2); border-radius: 12px; background: rgba(18,23,31,.96); box-shadow: var(--shadow); }.toast strong,.toast span { display: block; }.toast strong { font-size: 10px; }.toast span { margin-top: 5px; color: #aeb6c5; font-size: 9px; }
 [hidden] { display: none !important; }
 @media (max-width: 850px) { .share-row { grid-template-columns: minmax(170px,1fr) minmax(80px,.4fr) auto; }.share-fact:nth-of-type(2),.share-fact:nth-of-type(3) { display: none; } }
+@media (prefers-color-scheme: light) {
+  :root:not([data-system-theme="dark"]) .ambient { opacity:.08; }
+  :root:not([data-system-theme="dark"]) .window-button,:root:not([data-system-theme="dark"]) .action-row,:root:not([data-system-theme="dark"]) .primary-button,:root:not([data-system-theme="dark"]) .quiet-button,:root:not([data-system-theme="dark"]) .share-controls button,:root:not([data-system-theme="dark"]) footer button,:root:not([data-system-theme="dark"]) .share-row { background:rgba(11,29,58,.025); }
+  :root:not([data-system-theme="dark"]) .window-button:hover { background:rgba(11,29,58,.07); }
+  :root:not([data-system-theme="dark"]) .toast { background:rgba(255,255,255,.97); box-shadow:0 18px 50px rgba(47,65,79,.22); }
+  :root:not([data-system-theme="dark"]) .toast span { color:var(--muted); }
+}

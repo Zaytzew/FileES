@@ -374,6 +374,15 @@ func TestReducerActionFenceRequiresAuthoritativeExpectedReservationChange(t *tes
 	}
 }
 
+func TestReducerFinishesSuccessfulLockWhenInventoryWasAlreadyUnknown(t *testing.T) {
+	action := PendingAction{ID: "lock:unknown", Kind: "lock", RepoID: "docs", ServerID: "spot", ReservationDelta: 1, BaselineReservationsKnown: false}
+	s := newAppState().startPendingAction(action)
+	s = s.awaitPendingAction(action.ID)
+	if len(s.pendingActions) != 0 || len(s.pendingActionOrder) != 0 {
+		t.Fatalf("unverifiable successful lock retained spinner: pending=%v order=%v", s.pendingActions, s.pendingActionOrder)
+	}
+}
+
 func TestReducerActionFenceRequiresProjectedSessionTimeout(t *testing.T) {
 	action := PendingAction{ID: "session_timeout:1", Kind: "session_timeout", ServerID: "spot", ExpectedSessionTimeoutMin: 90}
 	s := newAppState().startPendingAction(action).awaitPendingAction(action.ID)

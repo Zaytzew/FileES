@@ -100,7 +100,7 @@ func run(ctx context.Context, configPath string) error {
 		Root: filepath.Join(stateRoot, "recipient-otp"), Key: config.PublicShareFrostKey, Channels: channels,
 		Outbox: repoworker.PublicShareOutbox{Root: filepath.Join(stateRoot, "outbox")},
 	}
-	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: r.Root}, FrostKey: config.PublicShareFrostKey, StagingRoot: stagingRoot, MaxLeafSize: config.PublicShares.EffectiveMaxLeafSize(), RecipientOTP: otp}
+	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: r.Root}, Trees: authority.NewTreeCache(256), FrostKey: config.PublicShareFrostKey, StagingRoot: stagingRoot, MaxLeafSize: config.PublicShares.EffectiveMaxLeafSize(), RecipientOTP: otp}
 	server := &http.Server{Handler: backchannel.Server{Authority: resolver, FetchSlots: make(chan struct{}, 2)}, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 0, IdleTimeout: 30 * time.Second}
 	serveDone := make(chan error, 1)
 	go func() { serveDone <- server.Serve(listener) }()

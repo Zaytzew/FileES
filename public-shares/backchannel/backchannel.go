@@ -42,6 +42,11 @@ type addressRequest struct {
 	Slug     string `json:"slug"`
 }
 
+type revisionAddressRequest struct {
+	addressRequest
+	Revision int64 `json:"revision"`
+}
+
 type objectRequest struct {
 	Protocol string                  `json:"protocol"`
 	Object   authority.ObjectRequest `json:"object"`
@@ -88,6 +93,21 @@ func (s Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		result, err := s.Authority.Inspect(input.Alias, input.Slug)
+		if err != nil {
+			notFound(w)
+			return
+		}
+		writeJSON(w, result)
+	case "/v1/inspect-at":
+		var input revisionAddressRequest
+		inspector, ok := s.Authority.(interface {
+			InspectAt(context.Context, string, string, int64) (channel.Projection, error)
+		})
+		if !ok || decode(request, &input) != nil || input.Protocol != Protocol || input.Revision < 1 {
+			notFound(w)
+			return
+		}
+		result, err := inspector.InspectAt(request.Context(), input.Alias, input.Slug, input.Revision)
 		if err != nil {
 			notFound(w)
 			return
@@ -189,6 +209,16 @@ func (c Client) Inspect(alias, slug string) (channel.Projection, error) {
 	err := c.callJSON(context.Background(), "/v1/inspect", addressRequest{Protocol: Protocol, Alias: alias, Slug: slug}, &result)
 	if err == nil && (result.Validate() != nil || result.Alias != alias || result.Slug != slug) {
 		err = errors.New("public share backchannel projection is invalid")
+	}
+	return result, err
+}
+
+func (c Client) InspectAt(ctx context.Context, alias, slug string, revision int64) (channel.Projection, error) {
+	var result channel.Projection
+	input := revisionAddressRequest{addressRequest: addressRequest{Protocol: Protocol, Alias: alias, Slug: slug}, Revision: revision}
+	err := c.callJSON(ctx, "/v1/inspect-at", input, &result)
+	if err == nil && (result.Validate() != nil || result.Alias != alias || result.Slug != slug) {
+		err = errors.New("public share backchannel revision projection is invalid")
 	}
 	return result, err
 }

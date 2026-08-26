@@ -42,7 +42,9 @@ async function resolve(confirmed) {
   try {
     const result = await PromptService.Resolve({revision: snapshot.revision, confirmed, value: $("#prompt-value").value});
     if (!result.accepted) throw new Error(result.code || "dialog_rejected");
-    await Window.Hide();
+    // The Go prompt service owns window visibility. A flow may publish the
+    // next prompt immediately after Resolve(); hiding here could overtake that
+    // Show() and strand the flow in an invisible window.
   } catch (error) {
     console.error("Nie udało się zamknąć dialogu FileES", error);
     const reason = error?.message || String(error);

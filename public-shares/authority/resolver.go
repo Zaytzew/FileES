@@ -31,9 +31,23 @@ type Source interface {
 	Cat(context.Context, string, string, int64, io.Writer) error
 }
 
+// TreeSource enumerates the canonical leaves below one repository root at an
+// exact revision.  It is deliberately separate from Source so older test and
+// embedding implementations keep the static object-map behaviour; the
+// production SVNLookSource implements it.
+type TreeSource interface {
+	Tree(context.Context, string, string, int64) ([]TreeObject, error)
+}
+
+type TreeObject struct {
+	RepoPath    string
+	DisplayName string
+}
+
 type Resolver struct {
 	Channels     *channel.Store
 	Source       Source
+	Trees        *TreeCache
 	FrostKey     []byte
 	StagingRoot  string
 	MaxLeafSize  int64
@@ -107,6 +121,28 @@ func (r Resolver) Inspect(alias, channelSlug string) (channel.Projection, error)
 	return projection, nil
 }
 
+// InspectAt returns the current channel policy with its object map derived
+// from the exact revision frozen into a visit.  Policy remains live (revoke,
+// ACL and branding changes apply immediately), while the listing and bytes
+// are guaranteed to describe the same immutable SVN revision.
+func (r Resolver) InspectAt(ctx context.Context, alias, channelSlug string, revision int64) (channel.Projection, error) {
+	if err := r.validate(); err != nil {
+		return channel.Projection{}, err
+	}
+	record, err := r.Channels.ResolveAddress(alias, channelSlug)
+	if err != nil || r.revalidate(record) != nil || revision < 1 {
+		return channel.Projection{}, ErrNotFound
+	}
+	if record.Manifest.DoNotFollow != nil && *record.Manifest.DoNotFollow != revision {
+		return channel.Projection{}, ErrNotFound
+	}
+	head, err := r.Source.Head(ctx, record.Manifest.RepoID)
+	if err != nil || revision > head {
+		return channel.Projection{}, ErrNotFound
+	}
+	return r.projectionAt(ctx, record, revision)
+}
+
 func (r Resolver) InspectUpload(alias, channelSlug string) (channel.UploadProjection, error) {
 	if r.Channels == nil || r.Channels.Authority == nil {
 		return channel.UploadProjection{}, ErrNotFound
@@ -141,10 +177,6 @@ func (r Resolver) Enter(ctx context.Context, alias, channelSlug string) (Entry, 
 	if err != nil || r.revalidate(record) != nil {
 		return Entry{}, ErrNotFound
 	}
-	projection, err := r.Channels.Projection(record.ChannelID)
-	if err != nil {
-		return Entry{}, ErrNotFound
-	}
 	head, err := r.Source.Head(ctx, record.Manifest.RepoID)
 	if err != nil || head < 1 {
 		return Entry{}, ErrNotFound
@@ -156,14 +188,18 @@ func (r Resolver) Enter(ctx context.Context, alias, channelSlug string) (Entry, 
 			return Entry{}, ErrNotFound
 		}
 	}
+	projection, err := r.projectionAt(ctx, record, revision)
+	if err != nil {
+		return Entry{}, ErrNotFound
+	}
 	return Entry{Projection: projection, Revision: revision, FrostProof: r.proof(record, revision)}, nil
 }
 
-func (r Resolver) Check(_ context.Context, request ObjectRequest) (ObjectPermit, error) {
+func (r Resolver) Check(ctx context.Context, request ObjectRequest) (ObjectPermit, error) {
 	if err := r.validate(); err != nil {
 		return ObjectPermit{}, err
 	}
-	_, object, permit, err := r.resolveObject(request)
+	_, object, permit, err := r.resolveObject(ctx, request)
 	if err != nil {
 		return ObjectPermit{}, ErrNotFound
 	}
@@ -178,7 +214,7 @@ func (r Resolver) Fetch(ctx context.Context, request ObjectRequest) (FetchedLeaf
 	if err := r.validate(); err != nil {
 		return FetchedLeaf{}, err
 	}
-	record, object, permit, err := r.resolveObject(request)
+	record, object, permit, err := r.resolveObject(ctx, request)
 	if err != nil {
 		return FetchedLeaf{}, ErrNotFound
 	}
@@ -226,7 +262,7 @@ func (r Resolver) Fetch(ctx context.Context, request ObjectRequest) (FetchedLeaf
 	return FetchedLeaf{ObjectPermit: permit, Size: info.Size(), MD5: hex.EncodeToString(hash.Sum(nil)), Body: &removeOnClose{File: body, path: path}}, nil
 }
 
-func (r Resolver) resolveObject(request ObjectRequest) (channel.Record, manifest.Object, ObjectPermit, error) {
+func (r Resolver) resolveObject(ctx context.Context, request ObjectRequest) (channel.Record, manifest.Object, ObjectPermit, error) {
 	if request.Revision < 1 || request.PublicID == "" || request.FrostProof == "" {
 		return channel.Record{}, manifest.Object{}, ObjectPermit{}, ErrNotFound
 	}
@@ -240,7 +276,11 @@ func (r Resolver) resolveObject(request ObjectRequest) (channel.Record, manifest
 	if record.Manifest.DoNotFollow != nil && *record.Manifest.DoNotFollow != request.Revision {
 		return channel.Record{}, manifest.Object{}, ObjectPermit{}, ErrNotFound
 	}
-	for _, object := range record.Manifest.Objects {
+	objects, err := r.objectsAt(ctx, record, request.Revision)
+	if err != nil {
+		return channel.Record{}, manifest.Object{}, ObjectPermit{}, ErrNotFound
+	}
+	for _, object := range objects {
 		if object.PublicID != request.PublicID {
 			continue
 		}
@@ -248,6 +288,75 @@ func (r Resolver) resolveObject(request ObjectRequest) (channel.Record, manifest
 		return record, object, ObjectPermit{CacheKey: hex.EncodeToString(digest[:]), Revision: request.Revision}, nil
 	}
 	return channel.Record{}, manifest.Object{}, ObjectPermit{}, ErrNotFound
+}
+
+func (r Resolver) projectionAt(ctx context.Context, record channel.Record, revision int64) (channel.Projection, error) {
+	projection, err := r.Channels.Projection(record.ChannelID)
+	if err != nil {
+		return channel.Projection{}, err
+	}
+	objects, err := r.objectsAt(ctx, record, revision)
+	if err != nil {
+		return channel.Projection{}, err
+	}
+	projection.Objects = make([]channel.PublicObject, 0, len(objects))
+	for _, object := range objects {
+		projection.Objects = append(projection.Objects, channel.PublicObject{PublicID: object.PublicID, DisplayName: object.DisplayName, Size: object.Size})
+	}
+	if err := projection.Validate(); err != nil {
+		return channel.Projection{}, err
+	}
+	return projection, nil
+}
+
+func (r Resolver) objectsAt(ctx context.Context, record channel.Record, revision int64) ([]manifest.Object, error) {
+	trees, ok := r.Source.(TreeSource)
+	if !ok {
+		return append([]manifest.Object(nil), record.Manifest.Objects...), nil
+	}
+	key := treeCacheKey{repoID: record.Manifest.RepoID, sourceRoot: record.Manifest.SourceRoot, revision: revision}
+	leaves, cached := r.Trees.get(key)
+	var err error
+	if !cached {
+		leaves, err = trees.Tree(ctx, record.Manifest.RepoID, record.Manifest.SourceRoot, revision)
+		if err == nil {
+			r.Trees.put(key, leaves)
+		}
+	}
+	if err != nil || len(leaves) > 4096 {
+		return nil, ErrNotFound
+	}
+	known := make(map[string]manifest.Object, len(record.Manifest.Objects))
+	for _, object := range record.Manifest.Objects {
+		known[object.RepoPath] = object
+	}
+	objects := make([]manifest.Object, 0, len(leaves))
+	for _, leaf := range leaves {
+		object := known[leaf.RepoPath]
+		object.RepoPath = leaf.RepoPath
+		object.DisplayName = leaf.DisplayName
+		// A size captured by the desktop at CREATE/UPDATE is not authoritative
+		// for another revision.  Unknown is preferable to a stale value.
+		object.Size = nil
+		if object.PublicID == "" {
+			object.PublicID = r.derivedPublicID(record.ChannelID, leaf.RepoPath)
+		}
+		objects = append(objects, object)
+	}
+	declaration := *record.Manifest
+	declaration.Objects = objects
+	if err := declaration.Validate(); err != nil {
+		return nil, err
+	}
+	return objects, nil
+}
+
+func (r Resolver) derivedPublicID(channelID, repoPath string) string {
+	mac := hmac.New(sha256.New, r.FrostKey)
+	fmt.Fprintf(mac, "filees public object v1\x00%s\x00%s", channelID, repoPath)
+	// 128 opaque bits keep URLs compact and match the identifiers already
+	// generated by desktop clients, while the HMAC keeps repo paths secret.
+	return hex.EncodeToString(mac.Sum(nil)[:16])
 }
 
 func (r Resolver) revalidate(record channel.Record) error {

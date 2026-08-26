@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
+	"strings"
+	"time"
 
 	"filees/pkg/ipcclient"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -15,9 +19,9 @@ import (
 
 var version = "dev"
 
-// The complete frontend is embedded in the experimental executable.  There is
-// intentionally no Node/Vite build step in this first fork: CSS and browser
-// modules are enough to test the renderer without introducing another toolchain.
+// The complete frontend is embedded in the client executable. There is no
+// Node/Vite build step: CSS and browser modules keep the shipping client
+// independent of a second build toolchain.
 //
 //go:embed frontend
 var frontend embed.FS
@@ -45,7 +49,7 @@ func main() {
 
 	host := application.New(application.Options{
 		Name:        "FileES Wails",
-		Description: "Eksperymentalny renderer IPC FileES",
+		Description: "Klient FileES z interfejsem Wails",
 		Services: []application.Service{
 			application.NewService(gui),
 			application.NewService(settings),
@@ -62,51 +66,60 @@ func main() {
 		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
 		Linux:   application.LinuxOptions{DisableQuitOnLastWindowClosed: true},
 	})
+	darkTheme := systemPrefersDark(host.Env.IsDarkMode())
+	themeJS := systemThemeScript(darkTheme)
+	themeBackground := systemThemeBackground(darkTheme)
 	gui.attachEmitter(host.Event)
 	settings.attachEmitter(host.Event)
 	repository.attachEmitter(host.Event)
 	prompts.attachEmitter(host.Event)
 
 	mainWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:            "filees-main",
-		Title:           "FileES — Wails renderer",
-		URL:             "/",
-		Width:           1180,
-		Height:          780,
-		MinWidth:        820,
-		MinHeight:       620,
-		Frameless:       true,
-		DevToolsEnabled: *devtools,
+		Name:             "filees-main",
+		Title:            "FileES",
+		URL:              "/",
+		Width:            1180,
+		Height:           780,
+		MinWidth:         820,
+		MinHeight:        620,
+		Frameless:        true,
+		JS:               themeJS,
+		BackgroundColour: themeBackground,
+		DevToolsEnabled:  *devtools,
 		Windows: application.WindowsWindow{
 			NonClientRegionSupport: true,
 		},
 	})
 	settingsWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:            "filees-settings",
-		Title:           "Ustawienia FileES",
-		URL:             "/settings.html",
-		Width:           940,
-		Height:          720,
-		MinWidth:        760,
-		MinHeight:       560,
-		Frameless:       true,
-		Hidden:          true,
-		DevToolsEnabled: *devtools,
+		Name:             "filees-settings",
+		Title:            "Ustawienia FileES",
+		URL:              "/settings.html",
+		Width:            940,
+		Height:           720,
+		MinWidth:         760,
+		MinHeight:        560,
+		Frameless:        true,
+		Hidden:           true,
+		JS:               themeJS,
+		BackgroundColour: themeBackground,
+		DevToolsEnabled:  *devtools,
 		Windows: application.WindowsWindow{
 			NonClientRegionSupport: true,
 		},
 	})
 	repositoryWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:            "filees-repository",
-		Title:           "Działania folderu FileES",
-		URL:             "/repository.html",
-		Width:           1040,
-		Height:          720,
-		MinWidth:        780,
-		MinHeight:       560,
-		Frameless:       true,
-		Hidden:          true,
-		DevToolsEnabled: *devtools,
+		Name:             "filees-repository",
+		Title:            "Działania folderu FileES",
+		URL:              "/repository.html",
+		Width:            1040,
+		Height:           720,
+		MinWidth:         780,
+		MinHeight:        560,
+		Frameless:        true,
+		Hidden:           true,
+		JS:               themeJS,
+		BackgroundColour: themeBackground,
+		DevToolsEnabled:  *devtools,
 		Windows: application.WindowsWindow{
 			NonClientRegionSupport: true,
 		},
@@ -115,6 +128,7 @@ func main() {
 		Name: "filees-prompt", Title: "FileES", URL: "/prompt.html",
 		Width: 640, Height: 430, MinWidth: 520, MinHeight: 340,
 		Frameless: true, Hidden: true, AlwaysOnTop: true, DisableResize: true,
+		JS: themeJS, BackgroundColour: themeBackground,
 		DevToolsEnabled: *devtools,
 		Windows:         application.WindowsWindow{NonClientRegionSupport: true},
 	})
@@ -166,6 +180,10 @@ func main() {
 			go actionController.Run(host.Context())
 		}
 	})
+	host.Event.OnApplicationEvent(events.Common.ThemeChanged, func(event *application.ApplicationEvent) {
+		dark := systemPrefersDark(event.Context().IsDarkMode())
+		applySystemTheme(dark, mainWindow, settingsWindow, repositoryWindow, promptWindow)
+	})
 	configureWailsTray(host, mainWindow, gui)
 
 	if err := host.Run(); err != nil {
@@ -177,6 +195,44 @@ func main() {
 			log.Printf("filees-gui-wails: restart: %v", err)
 		}
 	default:
+	}
+}
+
+func systemPrefersDark(wailsDark bool) bool {
+	if wailsDark || runtime.GOOS != "linux" {
+		return wailsDark
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "gsettings", "get", "org.gnome.desktop.interface", "color-scheme").Output()
+	return err == nil && linuxColorSchemeIsDark(string(output))
+}
+
+func linuxColorSchemeIsDark(value string) bool {
+	return strings.EqualFold(strings.Trim(strings.TrimSpace(value), "'\""), "prefer-dark")
+}
+
+func systemThemeScript(dark bool) string {
+	theme := "light"
+	if dark {
+		theme = "dark"
+	}
+	return fmt.Sprintf(`document.documentElement.dataset.systemTheme=%q;`, theme)
+}
+
+func systemThemeBackground(dark bool) application.RGBA {
+	if dark {
+		return application.NewRGB(0x07, 0x10, 0x1d)
+	}
+	return application.NewRGB(0xed, 0xf2, 0xf6)
+}
+
+func applySystemTheme(dark bool, windows ...*application.WebviewWindow) {
+	script := systemThemeScript(dark)
+	background := systemThemeBackground(dark)
+	for _, window := range windows {
+		window.SetBackgroundColour(background)
+		window.ExecJS(script)
 	}
 }
 

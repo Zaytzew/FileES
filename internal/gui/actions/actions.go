@@ -1396,7 +1396,11 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 
 func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repoID string) {
 	key := "public-shares." + serverID + "." + repoID
-	if serverID == "" || repoID == "" || c.cfg.PublicShares == nil || c.cfg.PublicShareBrowser == nil || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+	if serverID == "" || repoID == "" || c.cfg.PublicShares == nil || c.cfg.PublicShareBrowser == nil || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil {
+		return
+	}
+	if !c.beginOperation(key) {
+		c.notify(ctx, platform.Notification{ID: key + ".busy", Group: key, Title: "Udostępnienia są już otwarte", Body: "Dokończ lub anuluj rozpoczęte ustawianie adresu publicznego.", Urgency: platform.UrgencyNormal})
 		return
 	}
 	c.tasks.Add(1)

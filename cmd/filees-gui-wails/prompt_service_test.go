@@ -82,3 +82,75 @@ func TestPromptServiceReturnsBrowserChoice(t *testing.T) {
 		t.Fatal("prompt did not resolve")
 	}
 }
+
+func TestPromptServiceDoesNotHideFollowingPrompt(t *testing.T) {
+	service := newPromptService()
+	shown := make(chan struct{}, 2)
+	hidden := make(chan struct{}, 2)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() { hidden <- struct{}{} })
+
+	firstResult := make(chan platform.PromptTextResult, 1)
+	go func() {
+		got, _ := service.PromptText(context.Background(), platform.PromptTextRequest{Title: "Adres"})
+		firstResult <- got
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("first prompt window was not shown")
+	}
+	first := service.Snapshot()
+	if accepted := service.Resolve(PromptChoice{Revision: first.Revision, Confirmed: true, Value: "publiczny-adres"}); !accepted.Accepted {
+		t.Fatalf("first choice rejected: %+v", accepted)
+	}
+	select {
+	case <-firstResult:
+	case <-time.After(time.Second):
+		t.Fatal("first prompt did not resolve")
+	}
+
+	secondResult := make(chan platform.PromptTextResult, 1)
+	go func() {
+		got, _ := service.PromptText(context.Background(), platform.PromptTextRequest{Title: "Odbiorcy"})
+		secondResult <- got
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("following prompt window was not shown")
+	}
+	second := service.Snapshot()
+	if second.Revision == first.Revision || second.Title != "Odbiorcy" {
+		t.Fatalf("following projection was not published: %+v", second)
+	}
+	select {
+	case <-hidden:
+		t.Fatal("completion of the first prompt hid the following prompt")
+	case <-time.After(180 * time.Millisecond):
+	}
+
+	service.Cancel()
+	select {
+	case got := <-secondResult:
+		if !got.Cancelled {
+			t.Fatalf("cancel result = %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("following prompt did not cancel")
+	}
+	select {
+	case <-hidden:
+	case <-time.After(time.Second):
+		t.Fatal("final prompt window was not hidden")
+	}
+}
+
+func TestPromptFrontendLeavesVisibilityToPromptService(t *testing.T) {
+	source, err := frontend.ReadFile("frontend/prompt.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(source), "Window.Hide()") {
+		t.Fatal("prompt frontend must not race the service by hiding the shared window")
+	}
+}

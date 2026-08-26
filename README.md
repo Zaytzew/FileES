@@ -460,7 +460,7 @@ Systemowe powiadomienia są wtórne wobec stanu w menu. MVP pokazuje je dla nowy
 ```text
 cmd/filees/              daemon, CLI i composition root klienta
 cmd/filees-gui/          composition root i lifecycle warstwy prezentacyjnej
-cmd/filees-gui-wails/    eksperymentalny renderer WebView tej samej projekcji IPC
+cmd/filees-gui-wails/    docelowy klient Wails/WebView tej samej projekcji IPC
 internal/gui/            model, akcje, tray, platforma i powiadomienia
 pkg/contract/v1/         kontrakt IPC GUI/CLI <-> daemon
 pkg/ipcclient,ipcserver/ transport lokalnego control plane

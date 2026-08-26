@@ -37,6 +37,19 @@ export function ChooseAction(choice) {
 }
 
 /**
+ * ChooseGrant returns an action only for a recipient projected by the current
+ * grant directory. Realm identifiers stay opaque and are never accepted from
+ * an older or foreign repository session.
+ * @param {$models.RepositoryChoice} choice
+ * @returns {$CancellablePromise<$models.RepositoryAcceptance>}
+ */
+export function ChooseGrant(choice) {
+    return $Call.ByID(1416988886, choice).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * ChooseShare returns an action only for a channel present in the current
  * authoritative list. Create is the sole channel-less operation.
  * @param {$models.RepositoryChoice} choice
@@ -44,6 +57,18 @@ export function ChooseAction(choice) {
  */
 export function ChooseShare(choice) {
     return $Call.ByID(1684290107, choice).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
+ * ChooseUpload returns an action only for a shelf present in the current
+ * authoritative channel list. Create is the sole channel-less operation.
+ * @param {$models.RepositoryChoice} choice
+ * @returns {$CancellablePromise<$models.RepositoryAcceptance>}
+ */
+export function ChooseUpload(choice) {
+    return $Call.ByID(1155137217, choice).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType0($result);
     }));
 }

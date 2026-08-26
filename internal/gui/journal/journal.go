@@ -181,14 +181,14 @@ func RelativeTimestamp(value string, now time.Time) string {
 	return fmt.Sprintf("%d %s temu", days, plural(days, "dzień", "dni", "dni"))
 }
 
-// ExactTimestamp is used by the expanded journal. The colon-separated date
-// follows the accepted FileES UX contract literally: dd:mm:yy hh:mm.
+// ExactTimestamp is used by the expanded journal. A four-digit year keeps
+// archival entries unambiguous.
 func ExactTimestamp(value string) string {
 	parsed := parseTime(value)
 	if parsed.IsZero() {
 		return value
 	}
-	return parsed.Local().Format("02:01:06 15:04")
+	return parsed.Local().Format("02:01:2006 15:04")
 }
 
 func sameDate(left, right time.Time) bool {
@@ -317,11 +317,27 @@ func activityDetails(items []app.ActivityViewModel) string {
 		path := strings.TrimSpace(item.Path)
 		if path != "" && !seen[path] {
 			seen[path] = true
+			if item.Size != nil {
+				path += " · " + formatBytes(*item.Size)
+			}
 			paths = append(paths, path)
 		}
 	}
 	sort.Strings(paths)
 	return strings.Join(paths, "\n")
+}
+
+func formatBytes(value int64) string {
+	const unit = 1024
+	if value < unit {
+		return fmt.Sprintf("%d B", value)
+	}
+	divisor, exponent := int64(unit), 0
+	for scaled := value / unit; scaled >= unit; scaled /= unit {
+		divisor *= unit
+		exponent++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(value)/float64(divisor), "KMGTPE"[exponent])
 }
 
 func singleActivityLabel(record app.ActivityViewModel) string {

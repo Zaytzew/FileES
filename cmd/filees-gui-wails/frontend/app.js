@@ -231,6 +231,7 @@ function renderRepo(repo) {
     repo.recovery_available ? '<button class="repo-action mutate" data-action="download_recovery" title="Pobierz archiwum usuniętego repozytorium">Pobierz archiwum</button>' : "",
     repo.can_lock ? '<button class="repo-action mutate" data-action="lock" title="Wybierz i zablokuj pliki">Zablokuj</button>' : "",
     repo.can_unlock ? '<button class="repo-action mutate" data-action="unlock" title="Wybierz i zwolnij blokady">Zwolnij</button>' : "",
+    repo.can_publish ? '<button class="repo-action mutate" data-action="publish" title="Zapisz zmiany i ogłoś wydanie zespołowi">Opublikuj</button>' : "",
     deleted ? "" : `<button class="repo-settings" data-action="settings" title="Działania dla folderu" aria-label="Działania dla folderu ${escapeHTML(repo.display_name || repo.id)}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
     </button>`,
@@ -354,6 +355,30 @@ function renderReservations(snapshot) {
   replaceHTMLIfChanged(root, html);
 }
 
+function renderShouts(snapshot) {
+  const card = $("#shouts-card");
+  const root = $("#shouts");
+  const notices = snapshot.notices || [];
+  card.hidden = notices.length === 0;
+  $("#shouts-count").textContent = notices.length;
+  if (!notices.length) {
+    replaceHTMLIfChanged(root, "");
+    return;
+  }
+  const repositories = new Map((snapshot.repositories || []).map((repo) => [repo.id, repo.display_name || repo.id]));
+  const html = notices.map((notice) => {
+    const repository = repositories.get(notice.repo_id) || notice.repo_id || "FileES";
+    const action = notice.can_ack
+      ? '<button class="shout-action" data-action="ack_notice">Przeczytane</button>'
+      : "";
+    return `<article class="shout-row" data-notice-id="${escapeHTML(notice.id)}">
+      <div class="shout-main"><strong>${escapeHTML(notice.title || "Nowe wydanie")}</strong>
+      <p>${escapeHTML(repository)}</p><time>${escapeHTML(shortDateTime(notice.created_at))}</time></div>${action}
+    </article>`;
+  }).join("");
+  replaceHTMLIfChanged(root, html);
+}
+
 function renderJournal(snapshot) {
   const entries = snapshot.journal || [];
   const root = $("#activity");
@@ -382,6 +407,7 @@ function render(snapshot) {
   const repositoriesChanged = renderRepositories(snapshot);
   renderActions(snapshot);
   renderReservations(snapshot);
+  renderShouts(snapshot);
   renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;
@@ -407,8 +433,9 @@ function showToast(feedback) {
 async function triggerAction(button) {
   const repoRow = button.closest("[data-repo-id]");
   const reservationRow = button.closest("[data-reservation-id]");
+  const noticeRow = button.closest("[data-notice-id]");
   const serverPanel = button.closest("[data-server-id]");
-  if (!repoRow && !reservationRow && !serverPanel) return;
+  if (!repoRow && !reservationRow && !noticeRow && !serverPanel) return;
   button.disabled = true;
   try {
     const result = await GUIService.Trigger({
@@ -416,6 +443,7 @@ async function triggerAction(button) {
       repo_id: repoRow?.dataset.repoId || "",
       server_id: serverPanel?.dataset.serverId || "",
       reservation_id: reservationRow?.dataset.reservationId || "",
+      notice_id: noticeRow?.dataset.noticeId || "",
     });
     if (!result.accepted) {
       showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
@@ -456,6 +484,10 @@ $("#repositories").addEventListener("click", (event) => {
   if (button) triggerAction(button);
 });
 $("#reservations").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action]");
+  if (button) triggerAction(button);
+});
+$("#shouts").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);
 });

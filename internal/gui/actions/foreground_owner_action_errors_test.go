@@ -112,6 +112,34 @@ func TestControllerReportsAlreadyOpenPublicShareFlow(t *testing.T) {
 	t.Fatalf("repeated action failed silently: %+v", platformFake.Snapshot().Notifications)
 }
 
+func TestControllerPublicShareFolderPickerFailureIsVisibleAndDoesNotLoop(t *testing.T) {
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogPublicShares, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		PublicSharesFunc: func(context.Context, platform.PublicShareDialogRequest) (platform.PublicShareDialogResult, error) {
+			return platform.PublicShareDialogResult{Action: platform.PublicShareDialogCreate}, nil
+		},
+		PickFolderFunc: func(context.Context, platform.PickFolderRequest) (platform.PickFolderResult, error) {
+			return platform.PickFolderResult{}, errors.New("native folder dialog failed")
+		},
+	}
+	view := lifecycleView(contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, PublicShareBrowser: platformFake, FolderPicker: platformFake, Prompter: platformFake, PublicShares: failingPublicShares{}, Notifier: platformFake})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	waitForInfoRequest(t, platformFake)
+	time.Sleep(20 * time.Millisecond)
+	snapshot := platformFake.Snapshot()
+	if len(snapshot.InfoRequests) != 1 || snapshot.InfoRequests[0].Title != "Nie udało się otworzyć wyboru folderu" || !strings.Contains(snapshot.InfoRequests[0].Text, "native folder dialog failed") {
+		t.Fatalf("folder picker error = %+v", snapshot.InfoRequests)
+	}
+	if len(snapshot.PublicShareRequests) != 1 || len(snapshot.FolderRequests) != 1 {
+		t.Fatalf("flow looped: share windows=%d folder pickers=%d", len(snapshot.PublicShareRequests), len(snapshot.FolderRequests))
+	}
+}
+
 func TestControllerBrandingReadFailureUsesForegroundModal(t *testing.T) {
 	platformFake := &platformtest.Fake{SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
 		return platform.SettingsDialogResult{Action: platform.SettingsDialogRealmBranding, ServerID: "office"}, nil

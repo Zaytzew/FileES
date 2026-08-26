@@ -875,7 +875,7 @@ func (s *Server) handleRepoActivity(req contract.Request) contract.Response {
 	}
 	result := make([]contract.ActivityRecord, len(entries))
 	for i, entry := range entries {
-		result[i] = contract.ActivityRecord{RepoID: entry.RepoID, Path: entry.Path, Kind: string(entry.Kind), Stage: string(entry.Stage), DetectedAt: entry.DetectedAt.Format(time.RFC3339Nano), UpdatedAt: entry.UpdatedAt.Format(time.RFC3339Nano), Revision: entry.Revision, ErrorID: entry.ErrorID}
+		result[i] = contract.ActivityRecord{RepoID: entry.RepoID, Path: entry.Path, Kind: string(entry.Kind), Stage: string(entry.Stage), DetectedAt: entry.DetectedAt.Format(time.RFC3339Nano), UpdatedAt: entry.UpdatedAt.Format(time.RFC3339Nano), Revision: entry.Revision, ErrorID: entry.ErrorID, Size: entry.Size}
 	}
 	return contract.OKResponse(req.RequestID, contract.RepoActivityResult{Entries: result})
 }

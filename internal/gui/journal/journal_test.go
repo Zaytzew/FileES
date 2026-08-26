@@ -74,8 +74,17 @@ func TestJournalTimestampPresentation(t *testing.T) {
 			t.Errorf("RelativeTimestamp(%q)=%q, want %q", test.value, got, test.want)
 		}
 	}
-	if got := ExactTimestamp("2026-08-23T12:34:56Z"); got != time.Date(2026, 8, 23, 12, 34, 56, 0, time.UTC).Local().Format("02:01:06 15:04") {
+	if got := ExactTimestamp("2026-08-23T12:34:56Z"); got != time.Date(2026, 8, 23, 12, 34, 56, 0, time.UTC).Local().Format("02:01:2006 15:04") {
 		t.Fatalf("ExactTimestamp=%q", got)
+	}
+}
+
+func TestJournalDetailsIncludeKnownObjectSizes(t *testing.T) {
+	size := int64(1536)
+	vm := app.ViewModel{Activity: []app.ActivityViewModel{{RepoID: "repo", Path: "audio/test.wav", Kind: "added", Stage: "published", Revision: 8, UpdatedAt: "2026-08-26T07:44:56Z", Size: &size}}}
+	entries := Build(vm)
+	if len(entries) != 1 || entries[0].Details != "audio/test.wav · 1.5 KiB" {
+		t.Fatalf("entries=%#v", entries)
 	}
 }
 

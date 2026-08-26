@@ -502,7 +502,9 @@ func readRevFile(path string) int64 {
 
 // cacheEntry mirrors the minimal shape of commit_cache/cache.json entries.
 type cacheEntry struct {
-	Op string `json:"op"`
+	Abs   string `json:"abs"`
+	IsDir bool   `json:"is_dir,omitempty"`
+	Op    string `json:"op"`
 }
 
 // readPendingStats counts added/modified/deleted entries in cache.json.
@@ -524,6 +526,11 @@ func readPendingStats(path string) contract.PendingStats {
 			ps.Modified++
 		case "deleted":
 			ps.Deleted++
+		}
+		if e.Op != "deleted" && !e.IsDir && filepath.IsAbs(e.Abs) {
+			if info, err := os.Stat(e.Abs); err == nil && info.Mode().IsRegular() {
+				ps.TotalBytes += info.Size()
+			}
 		}
 	}
 	return ps

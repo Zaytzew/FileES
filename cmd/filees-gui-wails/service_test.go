@@ -18,7 +18,7 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	vm := guiapp.ViewModel{
 		Connected: true, DaemonState: "running", UptimeSec: 42,
 		LastRefresh: refreshed, Icon: guiapp.IconBusy,
-		Capabilities: map[string]bool{"repo.status": true, "ignored": false, "repo.list": true},
+		Capabilities: map[string]bool{"repo.status": true, "ignored": false, "repo.list": true, contract.CapRepoPublish: true, contract.CapNoticeAck: true},
 		Repos: []guiapp.RepoViewModel{{
 			ID: "repo-1", ServerID: "server-1", DisplayName: "Projekt",
 			LocalPath: `E:\Projekt`, Attached: true, Access: contract.AccessReadWrite,
@@ -27,21 +27,25 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 			Pending: contract.PendingStats{Added: 1, Modified: 2, Deleted: 3, TotalBytes: 4096},
 		}},
 		Servers: []guiapp.ServerViewModel{{ID: "server-1", DisplayName: "Spot"}},
+		Notices: []guiapp.NoticeViewModel{{ID: "notice-1", RepoID: "repo-1", Title: "Wydanie r8", CreatedAt: refreshed.Format(time.RFC3339)}},
 	}
 
 	got := projectViewModel(vm)
 	if !got.Connected || got.IconState != "busy" || got.LastRefresh != "2026-08-23T10:00:00Z" {
 		t.Fatalf("unexpected top-level projection: %+v", got)
 	}
-	if !reflect.DeepEqual(got.Capabilities, []string{"repo.list", "repo.status"}) {
+	if !reflect.DeepEqual(got.Capabilities, []string{"notice.ack", "repo.list", "repo.publish", "repo.status"}) {
 		t.Fatalf("capabilities = %#v", got.Capabilities)
 	}
 	if len(got.Repositories) != 1 {
 		t.Fatalf("repositories = %#v", got.Repositories)
 	}
 	repo := got.Repositories[0]
-	if repo.PendingFiles != 6 || repo.PendingBytes != 4096 || repo.CurrentOperation != "commit" || repo.DisplayState != "busy" {
+	if repo.PendingFiles != 6 || repo.PendingBytes != 4096 || repo.CurrentOperation != "commit" || repo.DisplayState != "busy" || !repo.CanPublish {
 		t.Fatalf("repository projection = %+v", repo)
+	}
+	if len(got.Notices) != 1 || !got.Notices[0].CanAck || got.Notices[0].Title != "Wydanie r8" {
+		t.Fatalf("shout projection = %+v", got.Notices)
 	}
 }
 
@@ -173,6 +177,8 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 				contract.CapRepoLock:               true,
 				contract.CapRepoReservationList:    true,
 				contract.CapRepoReservationRelease: true,
+				contract.CapRepoPublish:            true,
+				contract.CapNoticeAck:              true,
 				contract.CapSystemRestart:          true,
 				contract.CapSystemShutdown:         true,
 			},
@@ -185,6 +191,7 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 				ID: "opaque-row", ServerID: "server-1", RepoID: "repo-1",
 				Path: "plan.dwg", Token: "secret-fencing-token", CanRelease: true,
 			}},
+			Notices: []guiapp.NoticeViewModel{{ID: "notice-1", RepoID: "repo-1", Title: "Wydanie r8"}},
 		},
 	}
 
@@ -194,6 +201,20 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 	}
 	if intent := <-actions; intent.Kind != tray.IntentLock || intent.RepoID != "repo-1" {
 		t.Fatalf("intent = %+v", intent)
+	}
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentPublish), RepoID: "repo-1"})
+	if !accepted.Accepted {
+		t.Fatalf("publish rejected: %+v", accepted)
+	}
+	if intent := <-actions; intent.Kind != tray.IntentPublish || intent.RepoID != "repo-1" {
+		t.Fatalf("publish intent = %+v", intent)
+	}
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentAckNotice), NoticeID: "notice-1"})
+	if !accepted.Accepted {
+		t.Fatalf("notice ack rejected: %+v", accepted)
+	}
+	if intent := <-actions; intent.Kind != tray.IntentAckNotice || intent.NoticeID != "notice-1" {
+		t.Fatalf("notice intent = %+v", intent)
 	}
 	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentReleaseReservation), ReservationID: "opaque-row"})
 	if !accepted.Accepted {

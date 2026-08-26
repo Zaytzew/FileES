@@ -45,7 +45,15 @@ type SettingsServerProjection struct {
 	ClientID             string                     `json:"client_id"`
 	SessionTimeoutMin    int                        `json:"session_timeout_min"`
 	CanSetSessionTimeout bool                       `json:"can_set_session_timeout"`
+	Actions              []SettingsActionProjection `json:"actions"`
 	Folders              []SettingsFolderProjection `json:"folders"`
+}
+
+type SettingsActionProjection struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Tone        string `json:"tone"`
 }
 
 type SettingsFolderProjection struct {
@@ -111,7 +119,16 @@ func (service *SettingsService) Choose(choice SettingsChoice) SettingsAcceptance
 		service.mu.Unlock()
 		return SettingsAcceptance{Code: "settings_context_changed"}
 	}
-	if choice.Action != string(platform.SettingsDialogSessionTimeout) || !snapshot.Server.CanSetSessionTimeout {
+	allowed := choice.Action == string(platform.SettingsDialogSessionTimeout) && snapshot.Server.CanSetSessionTimeout
+	if !allowed {
+		for _, action := range snapshot.Server.Actions {
+			if action.ID == choice.Action {
+				allowed = true
+				break
+			}
+		}
+	}
+	if !allowed {
 		service.mu.Unlock()
 		return SettingsAcceptance{Code: "settings_action_unavailable"}
 	}
@@ -122,7 +139,7 @@ func (service *SettingsService) Choose(choice SettingsChoice) SettingsAcceptance
 	session.resolved = true
 	service.mu.Unlock()
 
-	result := platform.SettingsDialogResult{Action: platform.SettingsDialogSessionTimeout, ServerID: choice.ServerID}
+	result := platform.SettingsDialogResult{Action: platform.SettingsDialogAction(choice.Action), ServerID: choice.ServerID}
 	session.result <- result
 	if hide != nil {
 		hide()
@@ -218,8 +235,18 @@ func projectSettingsRequest(request platform.SettingsDialogRequest) (SettingsSna
 		Server: SettingsServerProjection{
 			ID: server.ID, Name: server.Name, Address: server.Address, Realm: server.Realm, ClientID: server.ClientID,
 			SessionTimeoutMin: server.SessionTimeoutMin, CanSetSessionTimeout: server.CanSetSessionTimeout,
+			Actions: []SettingsActionProjection{},
 			Folders: make([]SettingsFolderProjection, 0, len(server.Folders)),
 		},
+	}
+	if server.CanSetRealmVisibility {
+		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogRealmVisibility), Label: "Widoczność strefy", Description: "Zdecyduj, czy inni właściciele mogą wskazać tę strefę jako odbiorcę grantu.", Tone: "primary"})
+	}
+	if server.CanSetRealmBranding {
+		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogRealmBranding), Label: "Wygląd udziałów publicznych", Description: "Ustaw nazwę, kolory i znak prezentowany odbiorcom linków.", Tone: "primary"})
+	}
+	if server.CanAddFolder {
+		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogAddFolder), Label: "Dodaj folder do FileES", Description: "Utwórz repozytorium z wybranego lokalnego folderu.", Tone: "primary"})
 	}
 	for _, folder := range server.Folders {
 		projection.Server.Folders = append(projection.Server.Folders, SettingsFolderProjection{

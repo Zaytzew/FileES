@@ -22,7 +22,11 @@ export {
     JournalProjection,
     NoticeProjection,
     PendingActionProjection,
+    PromptAcceptance,
+    PromptChoice,
+    PromptSnapshot,
     PublicShareProjection,
+	RealmGrantProjection,
     RepoProjection,
     RepositoryAcceptance,
     RepositoryActionProjection,
@@ -32,10 +36,12 @@ export {
     ReservationProjection,
     ServerProjection,
     SettingsAcceptance,
+	SettingsActionProjection,
     SettingsChoice,
     SettingsFolderProjection,
     SettingsServerProjection,
     SettingsSnapshot,
     Snapshot,
-    UpdateProjection
+    UpdateProjection,
+    UploadChannelProjection
 } from "./models.js";

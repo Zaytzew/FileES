@@ -11,6 +11,7 @@ import (
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/realmbranding"
 	"filees/public-shares/gate"
 	"github.com/google/uuid"
 )
@@ -22,36 +23,182 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, repositoryAttacher actions.RepositoryAttacher, repositoryDetacher actions.RepositoryDetacher, recoveryDownloader actions.RecoveryDownloader, backend platform.Backend, prompter platform.Prompter, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, recoveryDownloader actions.RecoveryDownloader, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
+	}
+	if folderPicker == nil {
+		folderPicker = backend
+	}
+	if filePicker == nil {
+		filePicker = backend
 	}
 	intents := make(chan tray.Intent, 32)
 	service.attachActions(intents)
 	return actions.New(actions.Config{
-		Intents:            intents,
-		ViewModel:          service.viewModel,
-		Opener:             backend,
-		Picker:             backend,
-		FolderPicker:       backend,
-		Prompter:           prompter,
-		Notifier:           actionNotifier{service: service},
-		Locker:             locker,
-		Reservations:       reservations,
-		SettingsBrowser:    settings,
-		SessionTimeouts:    sessionTimeouts,
-		PublicShareBrowser: publicShareBrowser,
-		PublicShares:       publicShares,
-		RepositoryAttacher: repositoryAttacher,
-		RepositoryDetacher: repositoryDetacher,
-		RecoveryDownloader: recoveryDownloader,
-		ActionLifecycle:    service.runner,
-		Stack:              stack,
-		Reconnect:          service.runner.Reconnect,
-		Refresh:            service.runner.Refresh,
-		Restart:            restart,
-		Shutdown:           shutdown,
+		Intents:              intents,
+		ViewModel:            service.viewModel,
+		Opener:               backend,
+		Picker:               filePicker,
+		FolderPicker:         folderPicker,
+		Prompter:             prompter,
+		Notifier:             actionNotifier{service: service},
+		Locker:               locker,
+		Reservations:         reservations,
+		Shouts:               shouts,
+		Notices:              notices,
+		RealmGrants:          realmGrants,
+		RealmGrantBrowser:    realmGrantBrowser,
+		RealmBranding:        realmBranding,
+		SettingsBrowser:      settings,
+		SessionTimeouts:      sessionTimeouts,
+		PublicShareBrowser:   publicShareBrowser,
+		PublicShares:         publicShares,
+		UploadChannelBrowser: uploadChannelBrowser,
+		UploadChannels:       uploadChannels,
+		RepositoryAttacher:   repositoryAttacher,
+		RepositoryCreator:    repositoryCreator,
+		RepositoryLocator:    repositoryLocator,
+		RepositoryDetacher:   repositoryDetacher,
+		RepositoryDumpLoader: repositoryDumpLoader,
+		RecoveryDownloader:   recoveryDownloader,
+		ActionLifecycle:      service.runner,
+		Stack:                stack,
+		Reconnect:            service.runner.Reconnect,
+		Refresh:              service.runner.Refresh,
+		Restart:              restart,
+		Shutdown:             shutdown,
 	})
+}
+
+type realmGrantClient interface {
+	RealmGrantRecipients(context.Context, string, string) (*contract.RealmGrantRecipientsResult, error)
+	RealmSetVisibility(context.Context, string, string) (*contract.RealmSetVisibilityResult, error)
+	RepoGrantAccess(context.Context, contract.RepoGrantAccessPayload) (*contract.RealmGrantResult, error)
+	RepoRevokeAccess(context.Context, contract.RepoRevokeAccessPayload) (*contract.RealmGrantResult, error)
+	RepoSetEditingPolicy(context.Context, contract.RepoSetEditingPolicyPayload) (*contract.RepoSetEditingPolicyResult, error)
+}
+
+type realmGrantAdapter struct{ client realmGrantClient }
+
+type realmBrandingClient interface {
+	RealmPublicBranding(context.Context, string) (*contract.RealmPublicBrandingResult, error)
+	RealmSetPublicBranding(context.Context, string, realmbranding.Branding) (*contract.RealmPublicBrandingResult, error)
+}
+
+type realmBrandingAdapter struct{ client realmBrandingClient }
+
+func (adapter realmBrandingAdapter) PublicBranding(ctx context.Context, serverID string) (realmbranding.Branding, error) {
+	result, err := adapter.client.RealmPublicBranding(ctx, serverID)
+	if err != nil {
+		return realmbranding.Branding{}, err
+	}
+	if result == nil {
+		return realmbranding.Branding{}, errors.New("daemon returned empty realm branding")
+	}
+	return realmbranding.Normalize(result.Branding)
+}
+
+func (adapter realmBrandingAdapter) SetPublicBranding(ctx context.Context, serverID string, branding realmbranding.Branding) (realmbranding.Branding, error) {
+	result, err := adapter.client.RealmSetPublicBranding(ctx, serverID, branding)
+	if err != nil {
+		return realmbranding.Branding{}, err
+	}
+	if result == nil {
+		return realmbranding.Branding{}, errors.New("daemon returned empty realm branding")
+	}
+	return realmbranding.Normalize(result.Branding)
+}
+
+func (adapter realmGrantAdapter) ListRecipients(ctx context.Context, serverID, repoID string) ([]actions.RealmGrantRecipient, error) {
+	result, err := adapter.client.RealmGrantRecipients(ctx, serverID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty realm directory")
+	}
+	recipients := make([]actions.RealmGrantRecipient, 0, len(result.Recipients))
+	for _, recipient := range result.Recipients {
+		recipients = append(recipients, actions.RealmGrantRecipient{RealmID: recipient.RealmID, Alias: recipient.Alias, Access: recipient.Access, State: recipient.State})
+	}
+	return recipients, nil
+}
+
+func (adapter realmGrantAdapter) SetVisibility(ctx context.Context, serverID, visibility string) error {
+	result, err := adapter.client.RealmSetVisibility(ctx, serverID, visibility)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.Visibility != visibility {
+		return errors.New("daemon returned an invalid realm visibility result")
+	}
+	return nil
+}
+
+func (adapter realmGrantAdapter) Grant(ctx context.Context, serverID, repoID, recipientRealmID, access string) error {
+	result, err := adapter.client.RepoGrantAccess(ctx, contract.RepoGrantAccessPayload{ServerID: serverID, RepoID: repoID, RecipientRealmID: recipientRealmID, Access: access})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.RepoID != repoID || result.RecipientRealmID != recipientRealmID || result.Access != access || result.State != "active" {
+		return errors.New("daemon returned an invalid realm grant result")
+	}
+	return nil
+}
+
+func (adapter realmGrantAdapter) Revoke(ctx context.Context, serverID, repoID, recipientRealmID string) error {
+	result, err := adapter.client.RepoRevokeAccess(ctx, contract.RepoRevokeAccessPayload{ServerID: serverID, RepoID: repoID, RecipientRealmID: recipientRealmID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.RepoID != repoID || result.RecipientRealmID != recipientRealmID || result.State != "revoked" {
+		return errors.New("daemon returned an invalid realm grant revoke result")
+	}
+	return nil
+}
+
+func (adapter realmGrantAdapter) SetEditingPolicy(ctx context.Context, serverID, repoID string, lockRequired bool) (bool, error) {
+	policy := contract.EditingFree
+	if lockRequired {
+		policy = contract.EditingLockRequired
+	}
+	result, err := adapter.client.RepoSetEditingPolicy(ctx, contract.RepoSetEditingPolicyPayload{ServerID: serverID, RepoID: repoID, Policy: policy})
+	if err != nil {
+		return false, err
+	}
+	if result == nil || result.RepoID != repoID {
+		return false, errors.New("daemon returned an invalid editing policy result")
+	}
+	return result.Policy == contract.EditingLockRequired, nil
+}
+
+type shoutClient interface {
+	RepoPublish(context.Context, string, string) (*contract.RepoPublishResult, error)
+	NoticeAck(context.Context, string) error
+}
+
+type shoutAdapter struct{ client shoutClient }
+
+func (adapter shoutAdapter) Publish(ctx context.Context, repoID, comment string) (int64, error) {
+	if adapter.client == nil {
+		return 0, errors.New("shout publish is unavailable")
+	}
+	result, err := adapter.client.RepoPublish(ctx, repoID, comment)
+	if err != nil {
+		return 0, err
+	}
+	if result == nil {
+		return 0, errors.New("daemon returned an empty publish result")
+	}
+	return result.Revision, nil
+}
+
+func (adapter shoutAdapter) AckNotice(ctx context.Context, noticeID string) error {
+	if adapter.client == nil {
+		return errors.New("shout ack is unavailable")
+	}
+	return adapter.client.NoticeAck(ctx, noticeID)
 }
 
 type recoveryDownloadClient interface {
@@ -169,6 +316,82 @@ func (adapter publicShareAdapter) DeletePublicShare(ctx context.Context, serverI
 	return nil
 }
 
+type uploadChannelClient interface {
+	UploadChannelList(context.Context, string, string) (*contract.UploadChannelListResult, error)
+	UploadChannelCreate(context.Context, contract.UploadChannelCreatePayload) (*contract.UploadChannelResult, error)
+	UploadChannelUpdate(context.Context, contract.UploadChannelUpdatePayload) (*contract.UploadChannelResult, error)
+	UploadChannelRevoke(context.Context, contract.UploadChannelChannelPayload) (*contract.UploadChannelResult, error)
+	UploadChannelDelete(context.Context, contract.UploadChannelChannelPayload) (*contract.UploadChannelResult, error)
+}
+
+type uploadChannelAdapter struct{ client uploadChannelClient }
+
+func (adapter uploadChannelAdapter) ListUploadChannels(ctx context.Context, serverID, repoID string) ([]actions.UploadChannelSummary, error) {
+	result, err := adapter.client.UploadChannelList(ctx, serverID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("daemon returned an empty upload channel list")
+	}
+	channels := make([]actions.UploadChannelSummary, 0, len(result.Channels))
+	for _, channel := range result.Channels {
+		channels = append(channels, actions.UploadChannelSummary{
+			ChannelID: channel.ChannelID, Alias: channel.Alias, Slug: channel.Slug, State: channel.State,
+			UploadRepoID: channel.UploadRepoID, UpdatedAt: channel.UpdatedAt, Recipients: append([]string(nil), channel.Recipients...),
+		})
+	}
+	return channels, nil
+}
+
+func (adapter uploadChannelAdapter) CreateUploadChannel(ctx context.Context, serverID string, declaration actions.UploadChannelDeclaration) error {
+	result, err := adapter.client.UploadChannelCreate(ctx, contract.UploadChannelCreatePayload{ServerID: serverID, UploadChannelDeclaration: uploadChannelDeclarationToContract(declaration)})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID == "" || result.State != "active" {
+		return errors.New("daemon returned an invalid upload channel result")
+	}
+	return nil
+}
+
+func (adapter uploadChannelAdapter) UpdateUploadChannel(ctx context.Context, serverID, channelID string, declaration actions.UploadChannelDeclaration) error {
+	result, err := adapter.client.UploadChannelUpdate(ctx, contract.UploadChannelUpdatePayload{ServerID: serverID, ChannelID: channelID, UploadChannelDeclaration: uploadChannelDeclarationToContract(declaration)})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "active" {
+		return errors.New("daemon returned an invalid upload channel update result")
+	}
+	return nil
+}
+
+func (adapter uploadChannelAdapter) RevokeUploadChannel(ctx context.Context, serverID, repoID, channelID string) error {
+	result, err := adapter.client.UploadChannelRevoke(ctx, contract.UploadChannelChannelPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "revoked" {
+		return errors.New("daemon returned an invalid upload channel revoke result")
+	}
+	return nil
+}
+
+func (adapter uploadChannelAdapter) DeleteUploadChannel(ctx context.Context, serverID, repoID, channelID string) error {
+	result, err := adapter.client.UploadChannelDelete(ctx, contract.UploadChannelChannelPayload{ServerID: serverID, RepoID: repoID, ChannelID: channelID})
+	if err != nil {
+		return err
+	}
+	if result == nil || result.ChannelID != channelID || result.State != "deleted" {
+		return errors.New("daemon returned an invalid upload channel delete result")
+	}
+	return nil
+}
+
+func uploadChannelDeclarationToContract(declaration actions.UploadChannelDeclaration) contract.UploadChannelDeclaration {
+	return contract.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...)}
+}
+
 func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration) (contract.PublicShareDeclaration, error) {
 	passwordHash := ""
 	if len(declaration.Password) > 0 {
@@ -192,6 +415,83 @@ func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration
 type repositoryDetachClient interface {
 	RepoDetach(context.Context, string, string) (*contract.RepoLifecycleResult, error)
 	RepoDelete(context.Context, string, string) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryCreateClient interface {
+	RepoCreateRequest(context.Context, contract.RepoCreateRequestPayload) (*contract.RepoLifecycleResult, error)
+	RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryCreateAdapter struct{ client repositoryCreateClient }
+
+func (adapter repositoryCreateAdapter) CreateRepository(ctx context.Context, serverID, displayName, localPath string) (string, error) {
+	result, err := adapter.client.RepoCreateRequest(ctx, contract.RepoCreateRequestPayload{ServerID: serverID, DisplayName: displayName, LocalPath: localPath})
+	if err != nil {
+		return "", err
+	}
+	if result == nil || result.OperationID == "" {
+		return "", errors.New("daemon returned an empty repository operation")
+	}
+	return result.OperationID, nil
+}
+
+func (adapter repositoryCreateAdapter) CreationStatus(ctx context.Context, operationID string) (state, lastError string, err error) {
+	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
+	if err != nil {
+		return "", "", err
+	}
+	if result == nil {
+		return "", "", errors.New("daemon returned an empty repository operation")
+	}
+	return result.State, result.LastError, nil
+}
+
+type repositoryLocateClient interface {
+	RepoLocate(context.Context, contract.RepoLocatePayload) (*contract.RepoLifecycleResult, error)
+	RepoLifecycleStatus(context.Context, string) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryLocateAdapter struct{ client repositoryLocateClient }
+
+func (adapter repositoryLocateAdapter) LocateRepository(ctx context.Context, serverID, repoID, existingLocalPath string) (string, error) {
+	result, err := adapter.client.RepoLocate(ctx, contract.RepoLocatePayload{ServerID: serverID, RepoID: repoID, ExistingLocalPath: existingLocalPath})
+	if err != nil {
+		return "", err
+	}
+	if result == nil || result.OperationID == "" {
+		return "", errors.New("daemon returned an empty repository locate operation")
+	}
+	return result.OperationID, nil
+}
+
+func (adapter repositoryLocateAdapter) LocateStatus(ctx context.Context, operationID string) (string, string, error) {
+	result, err := adapter.client.RepoLifecycleStatus(ctx, operationID)
+	if err != nil {
+		return "", "", err
+	}
+	if result == nil {
+		return "", "", errors.New("daemon returned an empty repository operation")
+	}
+	return result.State, result.LastError, nil
+}
+
+type repositoryDumpLoadClient interface {
+	RepoLoadDump(context.Context, string, string, bool, *int) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryDumpLoadAdapter struct{ client repositoryDumpLoadClient }
+
+func (adapter repositoryDumpLoadAdapter) LoadDump(ctx context.Context, serverID, repoID string) error {
+	operationCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer cancel()
+	result, err := adapter.client.RepoLoadDump(operationCtx, serverID, repoID, true, nil)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty repository dump-load result")
+	}
+	return nil
 }
 
 type repositoryAttachClient interface {

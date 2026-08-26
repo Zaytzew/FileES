@@ -444,7 +444,14 @@ func (s *Service) recordActivity(rel string, op watcher.OpType, stage activity.S
 	case watcher.Renamed:
 		kind = activity.Renamed
 	}
-	if err := s.Activity.Record(activity.Entry{RepoID: s.repoID, Path: filepath.ToSlash(rel), Kind: kind, Stage: stage, Revision: revision, ErrorID: errorID}); err != nil {
+	var size *int64
+	if op != watcher.Deleted && s.wc != "" {
+		if info, err := os.Stat(filepath.Join(s.wc, filepath.FromSlash(rel))); err == nil && info.Mode().IsRegular() {
+			value := info.Size()
+			size = &value
+		}
+	}
+	if err := s.Activity.Record(activity.Entry{RepoID: s.repoID, Path: filepath.ToSlash(rel), Kind: kind, Stage: stage, Revision: revision, ErrorID: errorID, Size: size}); err != nil {
 		s.Logger.Warnf("activity journal: %v", err)
 		return
 	}

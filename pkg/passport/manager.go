@@ -108,6 +108,9 @@ type Config struct {
 	MaxSession        time.Duration
 	CloseGrace        time.Duration
 	Now               func() time.Time
+	// WorkingCopy, when set by the daemon, makes passport persistence fail
+	// closed after that SVN working copy is moved.
+	WorkingCopy string
 }
 
 func (c Config) withDefaults() Config {
@@ -628,7 +631,18 @@ func (m *Manager) load() error {
 }
 
 func (m *Manager) saveLocked() error {
-	if err := os.MkdirAll(filepath.Dir(m.storePath), 0o700); err != nil {
+	dir := filepath.Dir(m.storePath)
+	if m.cfg.WorkingCopy != "" {
+		info, err := os.Stat(filepath.Join(m.cfg.WorkingCopy, ".svn"))
+		if err != nil || !info.IsDir() {
+			return errors.New("passport: working copy metadata is missing")
+		}
+		// The daemon creates the store directory before opening Manager. Do not
+		// recreate it if the WC moves between the check above and CreateTemp.
+		if _, err := os.Stat(dir); err != nil {
+			return err
+		}
+	} else if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	list := make([]Passport, 0, len(m.passports))
@@ -641,7 +655,7 @@ func (m *Manager) saveLocked() error {
 		return err
 	}
 	b = append(b, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(m.storePath), ".passports-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".passports-*.tmp")
 	if err != nil {
 		return err
 	}
@@ -665,5 +679,5 @@ func (m *Manager) saveLocked() error {
 	if err := os.Rename(name, m.storePath); err != nil {
 		return err
 	}
-	return durable.SyncDirectory(filepath.Dir(m.storePath))
+	return durable.SyncDirectory(dir)
 }

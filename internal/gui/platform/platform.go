@@ -230,6 +230,8 @@ type SettingsServer struct {
 	ID, Name, Address, Realm, ClientID string
 	CanSetRealmVisibility              bool
 	CanSetRealmBranding                bool
+	CanClaimRealmAlias                 bool
+	CanPairMobile                      bool
 	// CanAddFolder mirrors startCreateRepository's own guard
 	// (server.CanOfferRepositoryCreation(), e.g. false for a read-only
 	// client role such as an audit-only client) -- add_folder used to be
@@ -290,6 +292,8 @@ const (
 	SettingsDialogUploadChannels   SettingsDialogAction = "upload_channels"
 	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
 	SettingsDialogRealmBranding    SettingsDialogAction = "realm_branding"
+	SettingsDialogRealmAlias       SettingsDialogAction = "realm_alias"
+	SettingsDialogPairMobile       SettingsDialogAction = "pair_mobile"
 	SettingsDialogSessionTimeout   SettingsDialogAction = "session_timeout"
 	SettingsDialogDetachServer     SettingsDialogAction = "detach_server"
 	SettingsDialogRemoveRealm      SettingsDialogAction = "remove_realm"

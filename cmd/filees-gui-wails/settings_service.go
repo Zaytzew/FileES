@@ -245,6 +245,12 @@ func projectSettingsRequest(request platform.SettingsDialogRequest) (SettingsSna
 	if server.CanSetRealmBranding {
 		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogRealmBranding), Label: "Wygląd udziałów publicznych", Description: "Ustaw nazwę, kolory i znak prezentowany odbiorcom linków.", Tone: "primary"})
 	}
+	if server.CanClaimRealmAlias {
+		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogRealmAlias), Label: "Ustaw stały alias", Description: "Nadaj strefie niezmienny pseudonim używany przy blokadach i współdzieleniu.", Tone: "primary"})
+	}
+	if server.CanPairMobile {
+		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogPairMobile), Label: "Sparuj urządzenie mobilne", Description: "Wygeneruj bezpieczny kod QR dla aplikacji FileES na telefonie.", Tone: "primary"})
+	}
 	if server.CanAddFolder {
 		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogAddFolder), Label: "Dodaj folder do FileES", Description: "Utwórz repozytorium z wybranego lokalnego folderu.", Tone: "primary"})
 	}

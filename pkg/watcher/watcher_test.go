@@ -73,6 +73,45 @@ func TestScannerClosesEventsAfterWorkersStop(t *testing.T) {
 	}
 }
 
+func TestScannerDoesNotRecreateMovedWorkingCopy(t *testing.T) {
+	parent := t.TempDir()
+	wc := filepath.Join(parent, "documents")
+	stateDir := filepath.Join(wc, ".filees", "state")
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(stateDir, "manifest.json")
+	scanner, err := NewScanner(Options{WC: wc, StatePath: manifest, ScanPeriod: 5 * time.Millisecond, RequireSVNMetadata: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	events := scanner.Start(ctx)
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := os.Stat(manifest); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("scanner did not create its initial manifest")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	moved := filepath.Join(parent, "documents-moved")
+	if err := os.Rename(wc, moved); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	for range events {
+	}
+	if _, err := os.Stat(wc); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("scanner recreated abandoned working-copy root: %v", err)
+	}
+}
+
 // TestAtomicWriteJSONDoesNotFollowPredictableSymlink is the watcher half of the
 // audit's Finding D regression coverage; see pkg/commit's equivalent for the
 // full attack description.

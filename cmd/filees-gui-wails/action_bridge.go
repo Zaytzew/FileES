@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,6 +15,7 @@ import (
 	"filees/internal/gui/platform"
 	"filees/internal/gui/tray"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/localpin"
 	"filees/pkg/realmbranding"
 	"filees/public-shares/gate"
 	"github.com/google/uuid"
@@ -23,7 +28,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, updater actions.Updater, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -44,10 +49,14 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		Prompter:             prompter,
 		Notifier:             actionNotifier{service: service},
 		Updater:              updater,
+		Activator:            activator,
+		PinStore:             pinStore,
+		MobilePairer:         mobilePairer,
 		Locker:               locker,
 		Reservations:         reservations,
 		Shouts:               shouts,
 		Notices:              notices,
+		RealmAliases:         realmAliases,
 		RealmGrants:          realmGrants,
 		RealmGrantBrowser:    realmGrantBrowser,
 		RealmBranding:        realmBranding,
@@ -106,6 +115,74 @@ type updateClient interface {
 	UpdateApply(context.Context) (*contract.UpdateApplyResult, error)
 }
 
+type mobilePairingClient interface {
+	MobilePairingBegin(context.Context, string) (*contract.MobilePairingBeginResult, error)
+}
+
+type mobilePairingAdapter struct {
+	client     mobilePairingClient
+	helperPath func() (string, error)
+}
+
+func defaultPairingHelperPath() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	name := "filees-pair-gui"
+	if filepath.Ext(executable) == ".exe" {
+		name += ".exe"
+	}
+	return filepath.Join(filepath.Dir(executable), name), nil
+}
+
+func (adapter mobilePairingAdapter) Launch(ctx context.Context, serverID string) error {
+	result, err := adapter.client.MobilePairingBegin(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return errors.New("daemon returned an empty mobile pairing result")
+	}
+	resolve := adapter.helperPath
+	if resolve == nil {
+		resolve = defaultPairingHelperPath
+	}
+	helperPath, err := resolve()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(struct {
+		Address       string `json:"address"`
+		HostPublicKey string `json:"host_public_key"`
+		Token         string `json:"token"`
+		ExpiresAt     string `json:"expires_at"`
+	}{Address: result.Address, HostPublicKey: result.HostPublicKey, Token: result.Token, ExpiresAt: result.ExpiresAt})
+	if err != nil {
+		return err
+	}
+	defer clear(payload)
+	command := exec.CommandContext(ctx, helperPath)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		return err
+	}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	if _, err := stdin.Write(payload); err != nil {
+		_ = stdin.Close()
+		_ = command.Wait()
+		return err
+	}
+	if err := stdin.Close(); err != nil {
+		_ = command.Wait()
+		return err
+	}
+	go func() { _ = command.Wait() }()
+	return nil
+}
+
 type updateAdapter struct{ client updateClient }
 
 func (adapter updateAdapter) UpdatePlan(ctx context.Context) (*actions.UpdatePlan, error) {
@@ -144,6 +221,23 @@ type realmGrantClient interface {
 	RepoGrantAccess(context.Context, contract.RepoGrantAccessPayload) (*contract.RealmGrantResult, error)
 	RepoRevokeAccess(context.Context, contract.RepoRevokeAccessPayload) (*contract.RealmGrantResult, error)
 	RepoSetEditingPolicy(context.Context, contract.RepoSetEditingPolicyPayload) (*contract.RepoSetEditingPolicyResult, error)
+}
+
+type realmAliasClient interface {
+	RealmAliasClaim(context.Context, string, string) (*contract.RealmAliasClaimResult, error)
+}
+
+type realmAliasAdapter struct{ client realmAliasClient }
+
+func (adapter realmAliasAdapter) ClaimAlias(ctx context.Context, serverID, alias string) error {
+	result, err := adapter.client.RealmAliasClaim(ctx, serverID, alias)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.Alias == "" {
+		return errors.New("daemon returned an empty realm alias")
+	}
+	return nil
 }
 
 type realmGrantAdapter struct{ client realmGrantClient }

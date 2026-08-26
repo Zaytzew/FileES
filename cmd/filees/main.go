@@ -246,6 +246,10 @@ func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supe
 }
 
 func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, lg talk.Logger) {
+	if !workingCopyMetadataAvailable(repo.LocalPath) {
+		markWorkingCopyMissing(rs)
+		return
+	}
 	interval := repo.PollInterval
 	if interval <= 0 {
 		interval = 30 * time.Second
@@ -261,7 +265,11 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 		}
 		rs.SetCycle(cycle)
 	}
-	update := func(tickAt time.Time) {
+	update := func(tickAt time.Time) bool {
+		if !workingCopyMetadataAvailable(repo.LocalPath) {
+			markWorkingCopyMissing(rs)
+			return false
+		}
 		cycleID++
 		projectCycle(contract.CycleRunning, tickAt, time.Time{})
 		rs.SetCurrentOp(stringPtr("update"))
@@ -276,25 +284,37 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 				rs.SetConnectivity(contract.ConnOffline)
 				rs.SetState(contract.StateOffline)
 			}
-			return
+			return true
 		}
 		rs.SetConnectivity(contract.ConnOnline)
 		rs.SetState(contract.StateActive)
 		rs.SetLastSyncAt(time.Now())
 		scanShoutsAfterUpdate(ctx, cli, repo, rs, lg)
+		return true
 	}
 	rs.SetState(contract.StateActive)
-	update(time.Now())
+	if !update(time.Now()) {
+		return
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	presenceTicker := time.NewTicker(250 * time.Millisecond)
+	defer presenceTicker.Stop()
 	defer func() { projectCycle(contract.CycleStopped, time.Now(), time.Time{}) }()
 	for {
 		select {
 		case <-ctx.Done():
 			rs.SetState(contract.StateStopping)
 			return
+		case <-presenceTicker.C:
+			if !workingCopyMetadataAvailable(repo.LocalPath) {
+				markWorkingCopyMissing(rs)
+				return
+			}
 		case tickAt := <-ticker.C:
-			update(tickAt)
+			if !update(tickAt) {
+				return
+			}
 		}
 	}
 }

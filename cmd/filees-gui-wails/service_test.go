@@ -195,7 +195,14 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 		},
 	}
 
-	accepted := service.Trigger(ActionRequest{Kind: string(tray.IntentLock), RepoID: "repo-1"})
+	accepted := service.Trigger(ActionRequest{Kind: string(tray.IntentActivate)})
+	if !accepted.Accepted {
+		t.Fatalf("activation rejected: %+v", accepted)
+	}
+	if intent := <-actions; intent.Kind != tray.IntentActivate {
+		t.Fatalf("activation intent = %+v", intent)
+	}
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentLock), RepoID: "repo-1"})
 	if !accepted.Accepted {
 		t.Fatalf("lock rejected: %+v", accepted)
 	}

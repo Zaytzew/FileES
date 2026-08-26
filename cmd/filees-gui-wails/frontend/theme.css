@@ -50,3 +50,11 @@
   --theme-focus: #4ea7e0;
   --theme-shadow: 0 24px 80px rgba(0, 0, 0, .38);
 }
+
+/* The horizontal asset uses white lettering with orange accents. Give it a
+   navy surface in light mode and let it sit directly on dark backgrounds. */
+.filees-wordmark-surface { background:#0b1d3a; }
+:root[data-system-theme="dark"] .filees-wordmark-surface { background:transparent; }
+@media (prefers-color-scheme:dark) {
+  :root:not([data-system-theme="light"]) .filees-wordmark-surface { background:transparent; }
+}

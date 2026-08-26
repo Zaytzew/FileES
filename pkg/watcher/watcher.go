@@ -69,6 +69,9 @@ type Options struct {
 
 	// Event channel buffer size
 	ChanSize int // default 1024
+	// RequireSVNMetadata prevents daemon housekeeping from recreating an old
+	// working-copy root after the user moves it elsewhere.
+	RequireSVNMetadata bool
 }
 
 // Scanner performs shell-first periodic scans
@@ -89,6 +92,7 @@ type Scanner struct {
 	md5BudgetBytes   int64
 	md5BudgetFrac    float64
 	chanSize         int
+	requireSVNMetadata bool
 
 	// dynamic
 	mu           sync.Mutex
@@ -191,6 +195,7 @@ func NewScanner(opts Options) (*Scanner, error) {
 		md5BudgetBytes: opts.MD5BudgetBytes,
 		md5BudgetFrac:  opts.MD5BudgetFrac,
 		chanSize:      opts.ChanSize,
+		requireSVNMetadata: opts.RequireSVNMetadata,
 		cur:          make(index),
 		missingSince: make(map[string]time.Time),
 		ignorePath:   ignorePath,
@@ -258,6 +263,7 @@ func (s *Scanner) LoadState(path string) error {
 
 // SaveState writes the current map as a sorted list to path (atomically)
 func (s *Scanner) SaveState(path string) error {
+	if !s.workingCopyAvailable() { return errors.New("watcher: working copy metadata is missing") }
 	s.mu.Lock(); defer s.mu.Unlock()
 	list := make([]diskEntry, 0, len(s.cur))
 	for rel, m := range s.cur {
@@ -266,7 +272,7 @@ func (s *Scanner) SaveState(path string) error {
 		list = append(list, de)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Path < list[j].Path })
-	if err := atomicWriteJSON(path, list); err != nil { return err }
+	if err := s.writeJSON(path, list); err != nil { return err }
 	return nil
 }
 
@@ -295,6 +301,7 @@ func (s *Scanner) loop(ctx context.Context, out chan<- Event) {
 }
 
 func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
+	if !s.workingCopyAvailable() { return }
 	start := time.Now()
 	var aCnt, mCnt, dCnt, igCnt, md5Done, md5Skipped int
 	var backlogLen int
@@ -308,10 +315,10 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, /*emit=*/false, out, busy)
 
 		// write tmp
-		_ = atomicWriteJSON(tmpPath, toDiskList(mp))
+		_ = s.writeJSON(tmpPath, toDiskList(mp))
 
 		// auto-promote: baseline is complete after the first successful scan
-		_ = os.MkdirAll(filepath.Dir(s.statePath), 0o755)
+		if !s.requireSVNMetadata { _ = os.MkdirAll(filepath.Dir(s.statePath), 0o755) }
 		if err := os.Rename(tmpPath, s.statePath); err == nil {
 			_ = s.LoadState(s.statePath)
 			s.mode = modeActive
@@ -677,6 +684,7 @@ func (s *Scanner) loadBacklog() error {
 }
 
 func (s *Scanner) saveBacklog() error {
+	if !s.workingCopyAvailable() { return errors.New("watcher: working copy metadata is missing") }
 	// backlogSaveMu serialises concurrent calls (scanner + worker both call this).
 	// Snapshot is taken inside the write lock so the last caller always writes the
 	// freshest state — no older snapshot can overwrite a newer one.
@@ -686,7 +694,20 @@ func (s *Scanner) saveBacklog() error {
 	snap := make([]backlogItem, len(s.backlog))
 	copy(snap, s.backlog)
 	s.mu.Unlock()
-	return atomicWriteJSON(s.backlogPath, snap)
+	return s.writeJSON(s.backlogPath, snap)
+}
+
+func (s *Scanner) workingCopyAvailable() bool {
+	if !s.requireSVNMetadata { return true }
+	info, err := os.Stat(filepath.Join(s.wc, ".svn"))
+	return err == nil && info.IsDir()
+}
+
+func (s *Scanner) writeJSON(path string, value any) error {
+	if !s.requireSVNMetadata { return atomicWriteJSON(path, value) }
+	// startReadWrite creates these directories before scanning. If the WC was
+	// moved after the metadata check, CreateTemp fails instead of recreating it.
+	return atomicWriteJSONInExistingDir(path, value)
 }
 
 // runBacklogWorker processes large-file MD5 entries in the background.
@@ -869,6 +890,11 @@ func toDiskList(m index) []diskEntry {
 func atomicWriteJSON(path string, v any) error {
 	d := filepath.Dir(path)
 	if err := os.MkdirAll(d, 0o755); err != nil { return err }
+	return atomicWriteJSONInExistingDir(path, v)
+}
+
+func atomicWriteJSONInExistingDir(path string, v any) error {
+	d := filepath.Dir(path)
 	f, err := os.CreateTemp(d, ".filees-state-*.tmp")
 	if err != nil { return err }
 	tmp := f.Name()

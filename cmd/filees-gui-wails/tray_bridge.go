@@ -96,6 +96,9 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	menu.AddSeparator()
 	menu.Add("Pokaż panel").OnClick(func(_ *application.Context) { showWindow() })
 	menu.Add("Odśwież stan").OnClick(func(_ *application.Context) { service.Refresh() })
+	menu.Add("Aktywuj klienta na nowym serwerze…").OnClick(func(_ *application.Context) {
+		service.Trigger(ActionRequest{Kind: string(guitray.IntentActivate)})
+	})
 	menu.AddSeparator()
 	fileESMenu := menu.AddSubmenu("FileES")
 	restartItem := fileESMenu.Add("Uruchom FileES ponownie…").OnClick(func(_ *application.Context) {

@@ -76,6 +76,20 @@ type consentPrompterStub struct {
 
 type updateClientStub struct{ applied bool }
 
+type realmAliasClientStub struct{ serverID, alias string }
+
+func (stub *realmAliasClientStub) RealmAliasClaim(_ context.Context, serverID, alias string) (*contract.RealmAliasClaimResult, error) {
+	stub.serverID, stub.alias = serverID, alias
+	return &contract.RealmAliasClaimResult{Alias: alias}, nil
+}
+
+type mobilePairingClientStub struct{ serverID string }
+
+func (stub *mobilePairingClientStub) MobilePairingBegin(_ context.Context, serverID string) (*contract.MobilePairingBeginResult, error) {
+	stub.serverID = serverID
+	return &contract.MobilePairingBeginResult{Address: "spot:2223", HostPublicKey: "ssh-ed25519 AAAA", Token: "secret", ExpiresAt: "tomorrow"}, nil
+}
+
 func (*updateClientStub) UpdatePlan(context.Context) (*contract.UpdatePlanResult, error) {
 	return &contract.UpdatePlanResult{CurrentVersion: "602", AvailableVersion: "603", ReleaseID: "r603", RestartRequired: true, Changes: []contract.UpdateChange{{Action: "update", Path: "/usr/local/bin/filees", Detail: "sha256"}}}, nil
 }
@@ -236,6 +250,19 @@ func TestUpdateAdapterProjectsPlanAndApplyResult(t *testing.T) {
 	result, err := adapter.UpdateApply(t.Context())
 	if err != nil || !client.applied || result.InstalledVersion != "603" || !result.RestartRequired {
 		t.Fatalf("UpdateApply() = %+v applied=%v err=%v", result, client.applied, err)
+	}
+}
+
+func TestAliasAndMobilePairingAdaptersUseSelectedServer(t *testing.T) {
+	aliasClient := &realmAliasClientStub{}
+	if err := (realmAliasAdapter{client: aliasClient}).ClaimAlias(t.Context(), "spot", "acme"); err != nil || aliasClient.serverID != "spot" || aliasClient.alias != "acme" {
+		t.Fatalf("ClaimAlias() client=%+v err=%v", aliasClient, err)
+	}
+	pairClient := &mobilePairingClientStub{}
+	want := errors.New("helper unavailable")
+	err := (mobilePairingAdapter{client: pairClient, helperPath: func() (string, error) { return "", want }}).Launch(t.Context(), "spot")
+	if !errors.Is(err, want) || pairClient.serverID != "spot" {
+		t.Fatalf("Launch() server=%q err=%v", pairClient.serverID, err)
 	}
 }
 

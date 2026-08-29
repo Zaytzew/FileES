@@ -179,6 +179,8 @@ type msgFullSnapshot struct {
 	reservations          []Reservation
 	reservationsKnown     bool
 	notices               []contract.Notice
+	publicShares          []contract.PublicShareSummary
+	publicSharesKnown     bool
 	refreshed             time.Time
 	actionFences          []string
 }
@@ -279,6 +281,7 @@ func (a *App) loop(ctx context.Context) {
 		includeActivity := state.caps[contract.CapRepoActivity]
 		includeReservations := state.caps[contract.CapRepoReservationList]
 		includeNotices := state.caps[contract.CapNoticeList]
+		includePublicShares := state.caps[contract.CapRepoPublicShareList]
 		fences := make([]string, 0, len(actionFencesPending))
 		for id := range actionFencesPending {
 			fences = append(fences, id)
@@ -367,12 +370,29 @@ func (a *App) loop(ctx context.Context) {
 					notices = result.Notices
 				}
 			}
+			var publicShares []contract.PublicShareSummary
+			publicSharesKnown := false
+			if includePublicShares {
+				if client, ok := a.cfg.Client.(interface {
+					PublicShareListAll(context.Context) (*contract.PublicShareListResult, error)
+				}); ok {
+					// The aggregate command was added after the per-repository
+					// capability. Older daemons legitimately advertise the latter
+					// but reject list-all, so this supplemental presenter must not
+					// tear down an otherwise healthy GUI session.
+					if result, err := client.PublicShareListAll(sesCtx); err == nil {
+						publicShares = result.Shares
+						publicSharesKnown = true
+					}
+				}
+			}
 			if sesCtx.Err() == nil {
 				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos,
 					statuses: statuses, errors: errors, activity: activityRecords,
 					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
 					reservations: reservations, reservationsKnown: reservationsKnown,
-					notices: notices, refreshed: a.cfg.Clock.Now(), actionFences: fences})
+					notices: notices, publicShares: publicShares, publicSharesKnown: publicSharesKnown,
+					refreshed: a.cfg.Clock.Now(), actionFences: fences})
 			}
 		}()
 	}
@@ -542,7 +562,7 @@ func (a *App) loop(ctx context.Context) {
 				if msg.gen != connectGen || currentSesCtx == nil {
 					break
 				}
-				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.reservationsKnown, msg.notices, msg.refreshed)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.reservationsKnown, msg.notices, msg.publicShares, msg.publicSharesKnown, msg.refreshed)
 				var waiting []string
 				state, waiting = state.confirmPendingActions(msg.actionFences)
 				for _, id := range waiting {

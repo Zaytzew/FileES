@@ -161,6 +161,14 @@ type NoticeViewModel struct {
 	Acked                        bool
 }
 
+type PublicShareViewModel struct {
+	ChannelID, ServerID, RepoID, RepoDisplayName string
+	Alias, Slug, State, SourceRoot, UpdatedAt    string
+	RecipientCount, ObjectCount                  int
+	PasswordProtected                            bool
+	FollowHead                                   bool
+}
+
 type UpdateViewModel struct {
 	State            string
 	CurrentVersion   string
@@ -184,22 +192,24 @@ func (update *UpdateViewModel) Available() bool {
 // ViewModel is the complete read-only presentation model consumed by the tray adapter.
 // It is replaced atomically on every state change; the tray layer must not mutate it.
 type ViewModel struct {
-	Connected      bool
-	Stale          bool // true: data predates last disconnect; display but mark stale
-	DaemonState    string
-	UptimeSec      int64
-	LastRefresh    time.Time
-	Capabilities   map[string]bool
-	Repos          []RepoViewModel
-	Servers        []ServerViewModel
-	Reservations   []Reservation
-	Recoveries     []RecoveryViewModel
-	Errors         []ErrorViewModel
-	Activity       []ActivityViewModel
-	Notices        []NoticeViewModel
-	PendingActions []PendingAction
-	Update         *UpdateViewModel
-	Icon           IconState
+	Connected         bool
+	Stale             bool // true: data predates last disconnect; display but mark stale
+	DaemonState       string
+	UptimeSec         int64
+	LastRefresh       time.Time
+	Capabilities      map[string]bool
+	Repos             []RepoViewModel
+	Servers           []ServerViewModel
+	Reservations      []Reservation
+	Recoveries        []RecoveryViewModel
+	Errors            []ErrorViewModel
+	Activity          []ActivityViewModel
+	Notices           []NoticeViewModel
+	PublicShares      []PublicShareViewModel
+	PublicSharesKnown bool
+	PendingActions    []PendingAction
+	Update            *UpdateViewModel
+	Icon              IconState
 }
 
 func (vm ViewModel) CanPlanUpdate() bool {

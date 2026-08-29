@@ -76,6 +76,15 @@ w oknie szczegółów. Nowy wpis odebrany podczas bieżącej sesji wywołuje te�
 powiadomienie systemowe; pierwszy snapshot po starcie jest tylko punktem
 odniesienia i nie odtwarza historycznych dymków.
 
+Panel główny zawiera także agregowaną kartę udziałów publicznych ze wszystkich
+własnych repozytoriów. Dane pochodzą z bufora demona przez jedno
+`repo.public_share_list_all`; błąd tej opcjonalnej projekcji nie rozłącza GUI
+ani nie usuwa ostatniej poprawnej listy. Kliknięcie udziału otwiera istniejące
+okno repozytorium z fokusem na kanał. Cofnięcie pojedyncze i zbiorcze jest
+ponownie walidowane w Go; paczka jest zawsze ograniczona do jednego serwera i
+raportuje sukces częściowy. Ponieważ kanał nie wygasa sam, karta pokazuje
+„bezterminowo · wizyta 12 h”, a nie fikcyjny TTL kanału.
+
 Trybik w nagłówku każdego panelu serwera otwiera pojedyncze, niezależne okno
 `Ustawienia FileES` już w kontekście jego `server_id`. Kolejne otwarcie zmienia
 kontekst istniejącego okna zamiast mnożyć WebView. `SettingsService` projektuje

@@ -43,6 +43,7 @@ h2 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
 .primary-button { border-color: rgba(255,106,0,.28); color: #ff9a52; background: rgba(255,106,0,.08); }.primary-button:hover,.quiet-button:hover,footer button:hover { border-color: rgba(255,106,0,.36); color: #ff9a52; }
 .share-list { display: grid; gap: 9px; }
 .share-row { min-width: 0; display: grid; grid-template-columns: minmax(190px,1.2fr) minmax(88px,.45fr) minmax(130px,.65fr) minmax(70px,.38fr) auto; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.022); }
+.share-row.is-focused { border-color:rgba(255,106,0,.58); background:rgba(255,106,0,.07); box-shadow:0 0 0 1px rgba(255,106,0,.08),0 0 24px rgba(255,106,0,.09); }
 .share-row.upload-row { grid-template-columns: minmax(210px,1.1fr) minmax(90px,.4fr) minmax(160px,.75fr) auto; }
 .share-main { min-width: 0; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 10px; }.share-main strong,.share-main small,.share-fact span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.share-main strong { font-size: 11px; }.share-main small { margin-top: 5px; color: var(--muted); font-size: 8px; }
 .share-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }.share-dot.active { background: var(--teal); box-shadow: 0 0 12px rgba(101,240,206,.45); }

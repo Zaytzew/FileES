@@ -428,6 +428,12 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startPublish(ctx, intent.RepoID)
 	case tray.IntentAckNotice:
 		c.startAckNotice(ctx, intent.NoticeID)
+	case tray.IntentManagePublicShares:
+		c.startManagePublicShares(ctx, intent.ServerID, intent.RepoID, intent.ChannelID, true)
+	case tray.IntentRevokePublicShare:
+		c.startRevokePublicShare(ctx, intent.ServerID, intent.RepoID, intent.ChannelID)
+	case tray.IntentRevokePublicShares:
+		c.startRevokePublicShares(ctx, intent.ServerID, intent.ChannelIDs)
 	case tray.IntentLocateFolder:
 		c.startLocateRepository(ctx, intent.ServerID, intent.RepoID)
 	}
@@ -528,7 +534,7 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		case platform.SettingsDialogEditingPolicy:
 			c.startSetEditingPolicy(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogPublicShares:
-			c.startManagePublicShares(ctx, result.ServerID, result.RepoID)
+			c.startManagePublicShares(ctx, result.ServerID, result.RepoID, "", false)
 		case platform.SettingsDialogUploadChannels:
 			c.startManageUploadChannels(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogRealmVisibility:
@@ -1400,7 +1406,7 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 	}()
 }
 
-func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repoID string) {
+func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repoID, focusChannelID string, direct bool) {
 	key := "public-shares." + serverID + "." + repoID
 	if serverID == "" || repoID == "" || c.cfg.PublicShares == nil || c.cfg.PublicShareBrowser == nil || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil {
 		return
@@ -1420,12 +1426,16 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienia publiczne są niedostępne", Body: "Kanałami może zarządzać właściciel repozytorium na kliencie z pełną obsługą udostępnień.", Urgency: platform.UrgencyCritical})
 				return
 			}
+			if direct && !projectedPublicShareExists(vm, serverID, repoID, focusChannelID) {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienie nie jest już dostępne", Body: "Lista udziałów zmieniła się przed otwarciem.", Urgency: platform.UrgencyNormal})
+				return
+			}
 			shares, err := c.cfg.PublicShares.ListPublicShares(ctx, serverID, repoID)
 			if err != nil {
 				c.reportActionError(ctx, key, "Nie udało się pobrać udostępnień", err.Error())
 				return
 			}
-			request := platform.PublicShareDialogRequest{Title: "Udostępnienia publiczne — „" + repo.DisplayName + "”", Text: "Kanał otwarty może być chroniony hasłem; kanał zamknięty wysyła odbiorcom osobne zaproszenia i pięciominutowe kody OTP.", ServerID: serverID, RepoID: repoID, RepositoryName: repo.DisplayName}
+			request := platform.PublicShareDialogRequest{Title: "Udostępnienia publiczne — „" + repo.DisplayName + "”", Text: "Kanał otwarty może być chroniony hasłem; kanał zamknięty wysyła odbiorcom osobne zaproszenia i pięciominutowe kody OTP.", ServerID: serverID, RepoID: repoID, RepositoryName: repo.DisplayName, FocusChannelID: focusChannelID, DirectEntry: direct}
 			known := make(map[string]PublicShareSummary, len(shares))
 			for _, share := range shares {
 				known[share.ChannelID] = share
@@ -1442,6 +1452,12 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 					recipients = strings.Join(share.Recipients, ", ")
 				}
 				request.Shares = append(request.Shares, platform.PublicShareSummary{ChannelID: share.ChannelID, Address: share.Alias + "/" + share.Slug, State: publicShareStateLabel(share.State), SourceRoot: share.SourceRoot, Recipients: recipients, Password: password, Revision: revision})
+			}
+			if direct {
+				if _, ok := known[focusChannelID]; !ok {
+					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienie nie jest już dostępne", Body: "Demon nie zwrócił wskazanego udziału.", Urgency: platform.UrgencyNormal})
+					return
+				}
 			}
 			choice, err := c.cfg.PublicShareBrowser.ShowPublicShares(ctx, request)
 			if err != nil {
@@ -1500,6 +1516,109 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 			}
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienie zostało zaktualizowane", Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
 		}
+	}()
+}
+
+func (c *Controller) startRevokePublicShare(ctx context.Context, serverID, repoID, channelID string) {
+	key := "public-share-revoke." + serverID + "." + channelID
+	vm := c.cfg.ViewModel()
+	if _, ok := managedPublicShareRepository(vm, serverID, repoID); !ok || !vm.CanManagePublicShares() || c.cfg.PublicShares == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	found := false
+	for _, share := range vm.PublicShares {
+		if share.ServerID == serverID && share.RepoID == repoID && share.ChannelID == channelID && share.State == "active" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		c.endOperation(key)
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Cofnij udostępnienie", Text: "Adres przestanie wydawać pliki, ale pozostanie zarezerwowany i widoczny w historii.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
+		if err != nil || !confirmed {
+			return
+		}
+		vm := c.cfg.ViewModel()
+		valid := false
+		for _, share := range vm.PublicShares {
+			if share.ServerID == serverID && share.RepoID == repoID && share.ChannelID == channelID && share.State == "active" {
+				valid = true
+				break
+			}
+		}
+		if !valid || !vm.CanManagePublicShares() {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienie nie jest już aktywne", Body: "Lista udziałów zmieniła się przed potwierdzeniem.", Urgency: platform.UrgencyNormal})
+			return
+		}
+		if err := c.cfg.PublicShares.RevokePublicShare(ctx, serverID, repoID, channelID); err != nil {
+			c.reportActionError(ctx, key, "Nie udało się cofnąć udostępnienia", err.Error())
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienie zostało cofnięte", Urgency: platform.UrgencyNormal})
+	}()
+}
+
+func (c *Controller) startRevokePublicShares(ctx context.Context, serverID string, channelIDs []string) {
+	channelIDs = uniqueNonEmptyStrings(channelIDs)
+	key := "public-shares-revoke." + serverID
+	vm := c.cfg.ViewModel()
+	targets, valid := activeProjectedPublicShares(vm, serverID, channelIDs)
+	if !valid || !vm.CanManagePublicShares() || c.cfg.PublicShares == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	for _, target := range targets {
+		if _, ok := managedPublicShareRepository(vm, target.ServerID, target.RepoID); !ok {
+			c.endOperation(key)
+			return
+		}
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			Title:       "Cofnij udostępnienia",
+			Text:        fmt.Sprintf("Wybrane adresy (%d) przestaną wydawać pliki. Każdy pozostanie zarezerwowany i widoczny w historii.", len(channelIDs)),
+			ConfirmText: "Cofnij zaznaczone", CancelText: "Anuluj",
+		})
+		if err != nil || !confirmed {
+			return
+		}
+		vm := c.cfg.ViewModel()
+		targets, valid := activeProjectedPublicShares(vm, serverID, channelIDs)
+		if !valid || !vm.CanManagePublicShares() {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Lista udostępnień uległa zmianie", Body: "Odśwież panel i wybierz aktywne udostępnienia ponownie.", Urgency: platform.UrgencyNormal})
+			return
+		}
+		for _, target := range targets {
+			if _, ok := managedPublicShareRepository(vm, target.ServerID, target.RepoID); !ok {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Lista udostępnień uległa zmianie", Body: "Uprawnienia do jednego z repozytoriów nie są już aktualne.", Urgency: platform.UrgencyNormal})
+				return
+			}
+		}
+		succeeded := 0
+		failed := make([]string, 0)
+		for _, target := range targets {
+			if err := c.cfg.PublicShares.RevokePublicShare(ctx, target.ServerID, target.RepoID, target.ChannelID); err != nil {
+				failed = append(failed, firstNonBlank(target.Alias+"/"+target.Slug, target.ChannelID))
+				continue
+			}
+			succeeded++
+		}
+		if succeeded > 0 && c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+		if len(failed) > 0 {
+			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Część udostępnień nie została cofnięta", Body: fmt.Sprintf("Cofnięto %d z %d. Niepowodzenia: %s", succeeded, len(targets), strings.Join(failed, ", ")), Urgency: platform.UrgencyCritical})
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Udostępnienia zostały cofnięte", Body: fmt.Sprintf("Cofnięto %d adresów.", succeeded), Urgency: platform.UrgencyNormal})
 	}()
 }
 
@@ -1678,6 +1797,65 @@ func managedPublicShareRepository(vm app.ViewModel, serverID, repoID string) (ap
 		}
 	}
 	return app.RepoViewModel{}, false
+}
+
+func projectedPublicShareExists(vm app.ViewModel, serverID, repoID, channelID string) bool {
+	if strings.TrimSpace(channelID) == "" || !vm.PublicSharesKnown {
+		return false
+	}
+	for _, share := range vm.PublicShares {
+		if share.ServerID == serverID && share.RepoID == repoID && share.ChannelID == channelID {
+			return true
+		}
+	}
+	return false
+}
+
+func activeProjectedPublicShares(vm app.ViewModel, serverID string, channelIDs []string) ([]app.PublicShareViewModel, bool) {
+	if serverID == "" || len(channelIDs) == 0 || !vm.PublicSharesKnown {
+		return nil, false
+	}
+	byID := make(map[string]app.PublicShareViewModel, len(vm.PublicShares))
+	for _, share := range vm.PublicShares {
+		if share.ServerID == serverID && share.State == "active" {
+			byID[share.ChannelID] = share
+		}
+	}
+	targets := make([]app.PublicShareViewModel, 0, len(channelIDs))
+	for _, channelID := range channelIDs {
+		share, ok := byID[channelID]
+		if !ok {
+			return nil, false
+		}
+		targets = append(targets, share)
+	}
+	return targets, true
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" && value != "/" {
+			return value
+		}
+	}
+	return ""
 }
 
 func publicShareStateLabel(state string) string {

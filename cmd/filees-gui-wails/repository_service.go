@@ -65,16 +65,17 @@ type settingsBrowserRouter struct {
 }
 
 type RepositorySnapshot struct {
-	Revision uint64                       `json:"revision"`
-	Mode     string                       `json:"mode"`
-	Title    string                       `json:"title"`
-	Text     string                       `json:"text"`
-	Busy     bool                         `json:"busy"`
-	Context  RepositoryContextProjection  `json:"context"`
-	Actions  []RepositoryActionProjection `json:"actions"`
-	Shares   []PublicShareProjection      `json:"shares"`
-	Grants   []RealmGrantProjection       `json:"grants"`
-	Uploads  []UploadChannelProjection    `json:"uploads"`
+	Revision       uint64                       `json:"revision"`
+	Mode           string                       `json:"mode"`
+	Title          string                       `json:"title"`
+	Text           string                       `json:"text"`
+	Busy           bool                         `json:"busy"`
+	Context        RepositoryContextProjection  `json:"context"`
+	Actions        []RepositoryActionProjection `json:"actions"`
+	Shares         []PublicShareProjection      `json:"shares"`
+	Grants         []RealmGrantProjection       `json:"grants"`
+	Uploads        []UploadChannelProjection    `json:"uploads"`
+	FocusChannelID string                       `json:"focus_channel_id,omitempty"`
 }
 
 type RepositoryContextProjection struct {
@@ -445,6 +446,9 @@ func (service *RepositoryService) showPublicShares(ctx context.Context, request 
 	session := &repositorySharesSession{result: make(chan platform.PublicShareDialogResult, 1)}
 
 	service.mu.Lock()
+	if request.DirectEntry {
+		service.pendingShares = repositoryContextKey(request.ServerID, request.RepoID)
+	}
 	if service.pendingShares != repositoryContextKey(request.ServerID, request.RepoID) {
 		service.mu.Unlock()
 		return platform.PublicShareDialogResult{Action: platform.PublicShareDialogClose}, nil
@@ -679,8 +683,9 @@ func projectPublicShares(request platform.PublicShareDialogRequest) (RepositoryS
 	}
 	snapshot := RepositorySnapshot{
 		Mode: "shares", Title: request.Title, Text: request.Text,
-		Context: RepositoryContextProjection{ServerID: request.ServerID, RepoID: request.RepoID, Name: request.RepositoryName},
-		Actions: []RepositoryActionProjection{}, Shares: make([]PublicShareProjection, 0, len(request.Shares)), Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{},
+		FocusChannelID: request.FocusChannelID,
+		Context:        RepositoryContextProjection{ServerID: request.ServerID, RepoID: request.RepoID, Name: request.RepositoryName},
+		Actions:        []RepositoryActionProjection{}, Shares: make([]PublicShareProjection, 0, len(request.Shares)), Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{},
 	}
 	for _, share := range request.Shares {
 		active := strings.EqualFold(strings.TrimSpace(share.State), "aktywne") || strings.EqualFold(strings.TrimSpace(share.State), "active")

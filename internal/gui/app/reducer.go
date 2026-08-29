@@ -26,6 +26,8 @@ type appState struct {
 	reservationItems   []Reservation
 	reservationsKnown  bool
 	notices            []NoticeViewModel
+	publicShares       []PublicShareViewModel
+	publicSharesKnown  bool
 	pendingActions     map[string]PendingAction
 	pendingActionOrder []string
 	refreshed          time.Time
@@ -53,13 +55,17 @@ func (s appState) applyConnected(caps []string) appState {
 		capMap[c] = true
 	}
 	s.caps = capMap
+	if !capMap[contract.CapRepoPublicShareList] {
+		s.publicShares = nil
+		s.publicSharesKnown = false
+	}
 	return s
 }
 
 // applyFullSnapshot atomically replaces all authoritative daemon/repository
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
-func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationItems []Reservation, reservationsKnown bool, notices []contract.Notice, refreshed time.Time) appState {
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationItems []Reservation, reservationsKnown bool, notices []contract.Notice, publicShares []contract.PublicShareSummary, publicSharesKnown bool, refreshed time.Time) appState {
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -95,6 +101,19 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 			ID: notice.ID, RepoID: notice.RepoID, Revision: notice.Revision,
 			Title: notice.Title, CreatedAt: notice.CreatedAt, Acked: notice.Acked,
 		})
+	}
+	if publicSharesKnown {
+		s.publicShares = make([]PublicShareViewModel, 0, len(publicShares))
+		for _, share := range publicShares {
+			s.publicShares = append(s.publicShares, PublicShareViewModel{
+				ChannelID: share.ChannelID, ServerID: share.ServerID, RepoID: share.RepoID,
+				RepoDisplayName: share.RepoDisplayName, Alias: share.Alias, Slug: share.Slug,
+				State: share.State, SourceRoot: share.SourceRoot, UpdatedAt: share.UpdatedAt,
+				RecipientCount: len(share.Recipients), ObjectCount: len(share.Objects),
+				PasswordProtected: share.PasswordProtected, FollowHead: share.DoNotFollow == nil,
+			})
+		}
+		s.publicSharesKnown = true
 	}
 	s.refreshed = refreshed
 	s.stale = false
@@ -198,6 +217,9 @@ func (s appState) applyEvent(ev contract.Event) (appState, bool, string) {
 	if ev.Type == contract.EvNoticeCreated {
 		return s, true, ""
 	}
+	if ev.Type == contract.EvPublicSharesChanged {
+		return s, true, ""
+	}
 	return s, false, ev.RepoID
 }
 
@@ -283,19 +305,21 @@ func (s appState) viewModel() ViewModel {
 		caps[k] = v
 	}
 	vm := ViewModel{
-		Connected:      s.connected,
-		Stale:          s.stale,
-		DaemonState:    s.system.State,
-		UptimeSec:      s.system.UptimeSec,
-		LastRefresh:    s.refreshed,
-		Capabilities:   caps,
-		Repos:          repos,
-		Servers:        servers,
-		Reservations:   append([]Reservation(nil), s.reservationItems...),
-		Errors:         append([]ErrorViewModel(nil), s.errors...),
-		Activity:       append([]ActivityViewModel(nil), s.activity...),
-		Notices:        append([]NoticeViewModel(nil), s.notices...),
-		PendingActions: s.projectPendingActions(),
+		Connected:         s.connected,
+		Stale:             s.stale,
+		DaemonState:       s.system.State,
+		UptimeSec:         s.system.UptimeSec,
+		LastRefresh:       s.refreshed,
+		Capabilities:      caps,
+		Repos:             repos,
+		Servers:           servers,
+		Reservations:      append([]Reservation(nil), s.reservationItems...),
+		Errors:            append([]ErrorViewModel(nil), s.errors...),
+		Activity:          append([]ActivityViewModel(nil), s.activity...),
+		Notices:           append([]NoticeViewModel(nil), s.notices...),
+		PublicShares:      append([]PublicShareViewModel(nil), s.publicShares...),
+		PublicSharesKnown: s.publicSharesKnown,
+		PendingActions:    s.projectPendingActions(),
 	}
 	now := time.Now().UTC()
 	for _, recovery := range s.system.Recoveries {

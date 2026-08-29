@@ -50,6 +50,54 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	}
 }
 
+func TestProjectViewModelBuildsAggregatePublicShareCardAndClosedSetIntents(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoPublicShareList: true, contract.CapRepoPublicShareCreate: true,
+			contract.CapRepoPublicShareUpdate: true, contract.CapRepoPublicShareRevoke: true,
+			contract.CapRepoPublicShareDelete: true,
+		},
+		Servers:           []guiapp.ServerViewModel{{ID: "spot", DisplayName: "Spot"}},
+		Repos:             []guiapp.RepoViewModel{{ID: "docs", ServerID: "spot", DisplayName: "Dokumenty"}},
+		PublicSharesKnown: true,
+		PublicShares: []guiapp.PublicShareViewModel{
+			{ChannelID: "old", ServerID: "spot", RepoID: "docs", Alias: "acme", Slug: "old", State: "revoked", UpdatedAt: "2026-08-29T09:00:00Z"},
+			{ChannelID: "live", ServerID: "spot", RepoID: "docs", RepoDisplayName: "Dokumenty", Alias: "acme", Slug: "release", State: "active", UpdatedAt: "2026-08-29T08:00:00Z", RecipientCount: 2, ObjectCount: 7, PasswordProtected: true, FollowHead: true},
+		},
+	}
+
+	got := projectViewModel(vm)
+	if !got.PublicSharesKnown || len(got.PublicShares) != 2 || got.PublicShares[0].ChannelID != "live" {
+		t.Fatalf("public share projection = %#v", got.PublicShares)
+	}
+	live := got.PublicShares[0]
+	if live.Address != "acme/release" || live.Repository != "Dokumenty" || !live.CanOpen || !live.CanRevoke || !live.FollowHead || live.ObjectCount != 7 {
+		t.Fatalf("active share projection = %#v", live)
+	}
+	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentManagePublicShares), ServerID: "spot", RepoID: "docs", ChannelID: "live"})
+	if !allowed || intent.Kind != tray.IntentManagePublicShares || intent.ChannelID != "live" {
+		t.Fatalf("manage intent = %#v allowed=%v", intent, allowed)
+	}
+	intent, allowed = translateAction(vm, ActionRequest{Kind: string(tray.IntentRevokePublicShare), ServerID: "spot", RepoID: "docs", ChannelID: "live"})
+	if !allowed || intent.Kind != tray.IntentRevokePublicShare || intent.ChannelID != "live" {
+		t.Fatalf("revoke intent = %#v allowed=%v", intent, allowed)
+	}
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentRevokePublicShare), ServerID: "spot", RepoID: "docs", ChannelID: "old"}); allowed {
+		t.Fatal("revoked public share accepted another revoke")
+	}
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentManagePublicShares), ServerID: "spot", RepoID: "docs", ChannelID: "forged"}); allowed {
+		t.Fatal("unprojected public share accepted")
+	}
+	intent, allowed = translateAction(vm, ActionRequest{Kind: string(tray.IntentRevokePublicShares), ServerID: "spot", ChannelIDs: []string{"live", "live"}})
+	if !allowed || intent.Kind != tray.IntentRevokePublicShares || !reflect.DeepEqual(intent.ChannelIDs, []string{"live"}) {
+		t.Fatalf("bulk revoke intent = %#v allowed=%v", intent, allowed)
+	}
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentRevokePublicShares), ServerID: "spot", ChannelIDs: []string{"live", "old"}}); allowed {
+		t.Fatal("bulk revoke accepted inactive share")
+	}
+}
+
 func TestProjectViewModelClassifiesOwnershipWithoutExposingRealmIDs(t *testing.T) {
 	vm := guiapp.ViewModel{
 		Servers: []guiapp.ServerViewModel{{ID: "server", RealmID: "realm-local"}},

@@ -39,25 +39,27 @@ type GUIService struct {
 }
 
 type Snapshot struct {
-	Revision       uint64                    `json:"revision"`
-	Connected      bool                      `json:"connected"`
-	Stale          bool                      `json:"stale"`
-	DaemonState    string                    `json:"daemon_state"`
-	UptimeSec      int64                     `json:"uptime_sec"`
-	LastRefresh    string                    `json:"last_refresh,omitempty"`
-	IconState      string                    `json:"icon_state"`
-	Capabilities   []string                  `json:"capabilities"`
-	Servers        []ServerProjection        `json:"servers"`
-	Repositories   []RepoProjection          `json:"repositories"`
-	Reservations   []ReservationProjection   `json:"reservations"`
-	Errors         []ErrorProjection         `json:"errors"`
-	Activity       []ActivityProjection      `json:"activity"`
-	Journal        []JournalProjection       `json:"journal"`
-	PendingActions []PendingActionProjection `json:"pending_actions"`
-	NextCycleAt    string                    `json:"next_cycle_at,omitempty"`
-	CycleRunning   bool                      `json:"cycle_running"`
-	Notices        []NoticeProjection        `json:"notices"`
-	Update         *UpdateProjection         `json:"update,omitempty"`
+	Revision          uint64                           `json:"revision"`
+	Connected         bool                             `json:"connected"`
+	Stale             bool                             `json:"stale"`
+	DaemonState       string                           `json:"daemon_state"`
+	UptimeSec         int64                            `json:"uptime_sec"`
+	LastRefresh       string                           `json:"last_refresh,omitempty"`
+	IconState         string                           `json:"icon_state"`
+	Capabilities      []string                         `json:"capabilities"`
+	Servers           []ServerProjection               `json:"servers"`
+	Repositories      []RepoProjection                 `json:"repositories"`
+	Reservations      []ReservationProjection          `json:"reservations"`
+	Errors            []ErrorProjection                `json:"errors"`
+	Activity          []ActivityProjection             `json:"activity"`
+	Journal           []JournalProjection              `json:"journal"`
+	PendingActions    []PendingActionProjection        `json:"pending_actions"`
+	NextCycleAt       string                           `json:"next_cycle_at,omitempty"`
+	CycleRunning      bool                             `json:"cycle_running"`
+	Notices           []NoticeProjection               `json:"notices"`
+	PublicShares      []DashboardPublicShareProjection `json:"public_shares"`
+	PublicSharesKnown bool                             `json:"public_shares_known"`
+	Update            *UpdateProjection                `json:"update,omitempty"`
 }
 
 type ServerProjection struct {
@@ -142,11 +144,13 @@ type ReservationProjection struct {
 }
 
 type ActionRequest struct {
-	Kind          string `json:"kind"`
-	RepoID        string `json:"repo_id,omitempty"`
-	ServerID      string `json:"server_id,omitempty"`
-	ReservationID string `json:"reservation_id,omitempty"`
-	NoticeID      string `json:"notice_id,omitempty"`
+	Kind          string   `json:"kind"`
+	RepoID        string   `json:"repo_id,omitempty"`
+	ServerID      string   `json:"server_id,omitempty"`
+	ReservationID string   `json:"reservation_id,omitempty"`
+	NoticeID      string   `json:"notice_id,omitempty"`
+	ChannelID     string   `json:"channel_id,omitempty"`
+	ChannelIDs    []string `json:"channel_ids,omitempty"`
 }
 
 type ActionAcceptance struct {
@@ -202,6 +206,23 @@ type NoticeProjection struct {
 	CanAck    bool   `json:"can_ack"`
 }
 
+type DashboardPublicShareProjection struct {
+	ChannelID         string `json:"channel_id"`
+	ServerID          string `json:"server_id"`
+	RepoID            string `json:"repo_id"`
+	Repository        string `json:"repository"`
+	Address           string `json:"address"`
+	State             string `json:"state"`
+	SourceRoot        string `json:"source_root,omitempty"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
+	RecipientCount    int    `json:"recipient_count"`
+	ObjectCount       int    `json:"object_count"`
+	PasswordProtected bool   `json:"password_protected"`
+	FollowHead        bool   `json:"follow_head"`
+	CanOpen           bool   `json:"can_open"`
+	CanRevoke         bool   `json:"can_revoke"`
+}
+
 type UpdateProjection struct {
 	State            string `json:"state"`
 	CurrentVersion   string `json:"current_version"`
@@ -222,6 +243,7 @@ func newGUIService(client guiapp.DaemonClient) *GUIService {
 			Activity:     []ActivityProjection{},
 			Journal:      []JournalProjection{},
 			Notices:      []NoticeProjection{},
+			PublicShares: []DashboardPublicShareProjection{},
 		},
 	}
 	service.runner = guiapp.New(guiapp.Config{
@@ -274,6 +296,8 @@ func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	request.ServerID = strings.TrimSpace(request.ServerID)
 	request.ReservationID = strings.TrimSpace(request.ReservationID)
 	request.NoticeID = strings.TrimSpace(request.NoticeID)
+	request.ChannelID = strings.TrimSpace(request.ChannelID)
+	request.ChannelIDs = cleanUniqueStrings(request.ChannelIDs)
 
 	service.mu.RLock()
 	vm := service.view
@@ -415,6 +439,30 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentAckNotice):
 		allowed := vm.Connected && !vm.Stale && vm.CanAckNotices() && projectedNotice(vm, request.NoticeID)
 		return tray.Intent{Kind: tray.IntentAckNotice, NoticeID: request.NoticeID}, allowed
+	case string(tray.IntentManagePublicShares), string(tray.IntentRevokePublicShare):
+		share, ok := projectedPublicShare(vm, request.ServerID, request.RepoID, request.ChannelID)
+		if !ok || !vm.CanManagePublicShares() {
+			return tray.Intent{}, false
+		}
+		kind := tray.IntentManagePublicShares
+		allowed := true
+		if request.Kind == string(tray.IntentRevokePublicShare) {
+			kind = tray.IntentRevokePublicShare
+			allowed = strings.EqualFold(strings.TrimSpace(share.State), "active")
+		}
+		return tray.Intent{Kind: kind, ServerID: share.ServerID, RepoID: share.RepoID, ChannelID: share.ChannelID}, allowed
+	case string(tray.IntentRevokePublicShares):
+		channelIDs := cleanUniqueStrings(request.ChannelIDs)
+		if !vm.CanManagePublicShares() || request.ServerID == "" || len(channelIDs) == 0 {
+			return tray.Intent{}, false
+		}
+		for _, channelID := range channelIDs {
+			share, ok := projectedPublicShareByChannel(vm, channelID)
+			if !ok || share.ServerID != request.ServerID || !strings.EqualFold(strings.TrimSpace(share.State), "active") {
+				return tray.Intent{}, false
+			}
+		}
+		return tray.Intent{Kind: tray.IntentRevokePublicShares, ServerID: request.ServerID, ChannelIDs: channelIDs}, true
 	case string(tray.IntentSettings):
 		intent := tray.Intent{Kind: tray.IntentSettings, ServerID: request.ServerID, RepoID: request.RepoID}
 		if request.RepoID == "" {
@@ -457,6 +505,41 @@ func projectedNotice(vm guiapp.ViewModel, noticeID string) bool {
 		}
 	}
 	return false
+}
+
+func projectedPublicShare(vm guiapp.ViewModel, serverID, repoID, channelID string) (guiapp.PublicShareViewModel, bool) {
+	for _, share := range vm.PublicShares {
+		if share.ServerID == serverID && share.RepoID == repoID && share.ChannelID == channelID {
+			return share, true
+		}
+	}
+	return guiapp.PublicShareViewModel{}, false
+}
+
+func projectedPublicShareByChannel(vm guiapp.ViewModel, channelID string) (guiapp.PublicShareViewModel, bool) {
+	for _, share := range vm.PublicShares {
+		if share.ChannelID == channelID && channelID != "" {
+			return share, true
+		}
+	}
+	return guiapp.PublicShareViewModel{}, false
+}
+
+func cleanUniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func projectedReservation(vm guiapp.ViewModel, reservationID string) (guiapp.Reservation, bool) {
@@ -634,6 +717,33 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			CanAck: !item.Acked && vm.Connected && !vm.Stale && vm.CanAckNotices(),
 		})
 	}
+	result.PublicSharesKnown = vm.PublicSharesKnown
+	for _, item := range vm.PublicShares {
+		address := strings.Trim(strings.TrimSpace(item.Alias)+"/"+strings.Trim(strings.TrimSpace(item.Slug), "/"), "/")
+		canOpen := vm.CanManagePublicShares() && projectedRepoBelongsToServer(vm, item.RepoID, item.ServerID)
+		result.PublicShares = append(result.PublicShares, DashboardPublicShareProjection{
+			ChannelID: item.ChannelID, ServerID: item.ServerID, RepoID: item.RepoID,
+			Repository: firstNonBlank(item.RepoDisplayName, item.RepoID), Address: address,
+			State: item.State, SourceRoot: item.SourceRoot, UpdatedAt: item.UpdatedAt,
+			RecipientCount: item.RecipientCount, ObjectCount: item.ObjectCount,
+			PasswordProtected: item.PasswordProtected, FollowHead: item.FollowHead,
+			CanOpen: canOpen, CanRevoke: canOpen && strings.EqualFold(strings.TrimSpace(item.State), "active"),
+		})
+	}
+	sort.SliceStable(result.PublicShares, func(i, j int) bool {
+		left, right := result.PublicShares[i], result.PublicShares[j]
+		if left.ServerID != right.ServerID {
+			return serverProjectionOrder(result.Servers, left.ServerID) < serverProjectionOrder(result.Servers, right.ServerID)
+		}
+		leftActive, rightActive := strings.EqualFold(left.State, "active"), strings.EqualFold(right.State, "active")
+		if leftActive != rightActive {
+			return leftActive
+		}
+		if left.UpdatedAt != right.UpdatedAt {
+			return left.UpdatedAt > right.UpdatedAt
+		}
+		return left.ChannelID < right.ChannelID
+	})
 	if vm.Update != nil {
 		result.Update = &UpdateProjection{
 			State: vm.Update.State, CurrentVersion: vm.Update.CurrentVersion,
@@ -642,4 +752,31 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		}
 	}
 	return result
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func projectedRepoBelongsToServer(vm guiapp.ViewModel, repoID, serverID string) bool {
+	for _, repo := range vm.Repos {
+		if repo.ID == repoID && repo.ServerID == serverID && !repo.ServerDeleted {
+			return true
+		}
+	}
+	return false
+}
+
+func serverProjectionOrder(servers []ServerProjection, serverID string) int {
+	for index, server := range servers {
+		if server.ID == serverID {
+			return index
+		}
+	}
+	return len(servers)
 }

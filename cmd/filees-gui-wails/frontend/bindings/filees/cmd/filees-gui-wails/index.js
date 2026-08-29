@@ -20,6 +20,7 @@ export {
     ActionRequest,
     ActivityProjection,
     CycleProjection,
+    DashboardPublicShareProjection,
     ErrorProjection,
     JournalProjection,
     NoticeProjection,

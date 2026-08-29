@@ -82,6 +82,20 @@ export class ActionRequest {
              */
             this["notice_id"] = undefined;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["channel_id"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string[] | undefined}
+             */
+            this["channel_ids"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }
@@ -367,6 +381,37 @@ export class JournalProjection {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new JournalProjection(/** @type {Partial<JournalProjection>} */($$parsedSource));
+    }
+}
+
+export class DashboardPublicShareProjection {
+    /**
+     * Creates a new DashboardPublicShareProjection instance.
+     * @param {Partial<DashboardPublicShareProjection>} [$$source = {}] - The source object to create the DashboardPublicShareProjection.
+     */
+    constructor($$source = {}) {
+        for (const field of ["channel_id", "server_id", "repo_id", "repository", "address", "state"]) {
+            if (!(field in $$source)) this[field] = "";
+        }
+        for (const field of ["source_root", "updated_at"]) {
+            if (/** @type {any} */(false)) this[field] = undefined;
+        }
+        for (const field of ["recipient_count", "object_count"]) {
+            if (!(field in $$source)) this[field] = 0;
+        }
+        for (const field of ["password_protected", "follow_head", "can_open", "can_revoke"]) {
+            if (!(field in $$source)) this[field] = false;
+        }
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * @param {any} [$$source = {}]
+     * @returns {DashboardPublicShareProjection}
+     */
+    static createFrom($$source = {}) {
+        const $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DashboardPublicShareProjection(/** @type {Partial<DashboardPublicShareProjection>} */($$parsedSource));
     }
 }
 
@@ -1367,6 +1412,13 @@ export class RepositorySnapshot {
              */
             this["busy"] = false;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["focus_channel_id"] = undefined;
+        }
         if (!("context" in $$source)) {
             /**
              * @member
@@ -1983,6 +2035,20 @@ export class Snapshot {
              */
             this["notices"] = [];
         }
+        if (!("public_shares" in $$source)) {
+            /**
+             * @member
+             * @type {DashboardPublicShareProjection[]}
+             */
+            this["public_shares"] = [];
+        }
+        if (!("public_shares_known" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["public_shares_known"] = false;
+        }
         if (/** @type {any} */(false)) {
             /**
              * @member
@@ -2009,7 +2075,8 @@ export class Snapshot {
         const $$createField13_0 = $$createType21;
         const $$createField14_0 = $$createType23;
         const $$createField17_0 = $$createType25;
-        const $$createField18_0 = $$createType27;
+        const $$createField18_0 = $$createType35;
+        const $$createField19_0 = $$createType27;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("capabilities" in $$parsedSource) {
             $$parsedSource["capabilities"] = $$createField7_0($$parsedSource["capabilities"]);
@@ -2038,8 +2105,11 @@ export class Snapshot {
         if ("notices" in $$parsedSource) {
             $$parsedSource["notices"] = $$createField17_0($$parsedSource["notices"]);
         }
+        if ("public_shares" in $$parsedSource) {
+            $$parsedSource["public_shares"] = $$createField18_0($$parsedSource["public_shares"]);
+        }
         if ("update" in $$parsedSource) {
-            $$parsedSource["update"] = $$createField18_0($$parsedSource["update"]);
+            $$parsedSource["update"] = $$createField19_0($$parsedSource["update"]);
         }
         return new Snapshot(/** @type {Partial<Snapshot>} */($$parsedSource));
     }
@@ -2134,3 +2204,5 @@ const $$createType30 = UploadChannelProjection.createFrom;
 const $$createType31 = $Create.Array($$createType30);
 const $$createType32 = SettingsActionProjection.createFrom;
 const $$createType33 = $Create.Array($$createType32);
+const $$createType34 = DashboardPublicShareProjection.createFrom;
+const $$createType35 = $Create.Array($$createType34);

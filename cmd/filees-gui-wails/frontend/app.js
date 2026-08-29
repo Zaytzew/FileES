@@ -26,6 +26,8 @@ let currentSnapshot = null;
 let selectedAnnouncementID = "";
 let announcementAckPending = "";
 let announcementReturnFocus = null;
+const selectedPublicShares = new Set();
+let selectedPublicShareServer = "";
 const renderedHTML = new WeakMap();
 const expandedServers = new Set();
 const initialWindowWidth = 1180;
@@ -430,6 +432,66 @@ function renderReservations(snapshot) {
   replaceHTMLIfChanged(root, html);
 }
 
+function publicShareState(state) {
+  if (state === "active") return "Aktywne";
+  if (state === "revoked") return "Cofnięte";
+  if (state === "deleted") return "Usunięte";
+  return state || "Nieznane";
+}
+
+function renderPublicShares(snapshot) {
+  const card = $("#public-shares-card");
+  const root = $("#public-shares");
+  const shares = snapshot.public_shares || [];
+  card.hidden = !snapshot.public_shares_known || shares.length === 0;
+  if (card.hidden) {
+    replaceHTMLIfChanged(root, "");
+    return;
+  }
+  const active = shares.filter((share) => share.state === "active").length;
+  $("#public-shares-count").textContent = active === shares.length ? active : `${active}/${shares.length}`;
+  const servers = new Map((snapshot.servers || []).map((server) => [server.id, server.display_name || server.realm_alias || server.id]));
+  const activeShares = new Map(shares.filter((share) => share.can_revoke).map((share) => [share.channel_id, share]));
+  for (const channelID of selectedPublicShares) {
+    const share = activeShares.get(channelID);
+    if (!share || (selectedPublicShareServer && share.server_id !== selectedPublicShareServer)) selectedPublicShares.delete(channelID);
+  }
+  if (!selectedPublicShares.size) selectedPublicShareServer = "";
+  const activeByServer = new Map();
+  for (const share of activeShares.values()) {
+    if (!activeByServer.has(share.server_id)) activeByServer.set(share.server_id, []);
+    activeByServer.get(share.server_id).push(share.channel_id);
+  }
+  const bulk = selectedPublicShares.size
+    ? `<div class="dashboard-share-bulk"><span>${selectedPublicShares.size} ${plural(selectedPublicShares.size, "wybrane", "wybrane", "wybranych")}</span><button type="button" data-share-bulk>Cofnij zaznaczone</button></div>`
+    : "";
+  let previousServer = "";
+  const rows = shares.map((share) => {
+    const serverChannels = activeByServer.get(share.server_id) || [];
+    const serverHeader = share.server_id !== previousServer
+      ? `<div class="dashboard-share-group" data-server-id="${escapeHTML(share.server_id)}"><span>${escapeHTML(servers.get(share.server_id) || share.server_id || "Serwer FileES")}</span>${serverChannels.length ? `<button type="button" data-share-revoke-all data-channel-ids="${escapeHTML(serverChannels.join(","))}">Cofnij aktywne</button>` : ""}</div>`
+      : "";
+    previousServer = share.server_id;
+    const activeShare = share.state === "active";
+    const scope = share.follow_head ? "śledzi HEAD" : "zamrożone";
+    const audience = share.recipient_count
+      ? `${share.recipient_count} ${plural(share.recipient_count, "odbiorca", "odbiorców", "odbiorców")}`
+      : "kanał otwarty";
+    const objects = `${share.object_count} ${plural(share.object_count, "plik", "pliki", "plików")}`;
+    const manage = share.can_open
+      ? `<button class="dashboard-share-open" type="button" data-action="manage_public_shares" aria-label="Otwórz udostępnienie ${escapeHTML(share.address)}">
+          <span class="dashboard-share-dot ${activeShare ? "active" : ""}" aria-hidden="true"></span>
+          <span class="dashboard-share-copy"><strong>${escapeHTML(share.address || "Udostępnienie")}</strong><small>${escapeHTML(share.repository)} · ${escapeHTML(objects)} · ${escapeHTML(scope)}</small><time>${escapeHTML(shortDateTime(share.updated_at))}</time></span>
+        </button>`
+      : `<div class="dashboard-share-open is-disabled"><span class="dashboard-share-dot ${activeShare ? "active" : ""}" aria-hidden="true"></span><span class="dashboard-share-copy"><strong>${escapeHTML(share.address || "Udostępnienie")}</strong><small>${escapeHTML(share.repository)} · ${escapeHTML(objects)} · ${escapeHTML(scope)}</small><time>${escapeHTML(shortDateTime(share.updated_at))}</time></span></div>`;
+    const revoke = share.can_revoke ? '<button class="dashboard-share-revoke" type="button" data-action="revoke_public_share">Cofnij</button>' : "";
+    return `${serverHeader}<article class="dashboard-share-row ${activeShare ? "is-active" : "is-inactive"}" data-server-id="${escapeHTML(share.server_id)}" data-repo-id="${escapeHTML(share.repo_id)}" data-channel-id="${escapeHTML(share.channel_id)}">
+      <label class="dashboard-share-select" title="Dodaj do operacji zbiorczej">${share.can_revoke ? `<input type="checkbox" data-share-select ${selectedPublicShares.has(share.channel_id) ? "checked" : ""}><span aria-hidden="true"></span>` : ""}</label>${manage}<div class="dashboard-share-policy"><span>${escapeHTML(publicShareState(share.state))} · ${escapeHTML(audience)}</span><small>bezterminowo · wizyta 12 h</small></div>${revoke}
+    </article>`;
+  }).join("");
+  replaceHTMLIfChanged(root, bulk + rows);
+}
+
 function renderShouts(snapshot) {
   const card = $("#shouts-card");
   const root = $("#shouts");
@@ -571,6 +633,7 @@ function render(snapshot) {
   const repositoriesChanged = renderRepositories(snapshot);
   renderActions(snapshot);
   renderReservations(snapshot);
+  renderPublicShares(snapshot);
   renderShouts(snapshot);
 	renderUpdate(snapshot);
   renderJournal(snapshot);
@@ -609,6 +672,7 @@ async function triggerAction(button) {
   const repoRow = button.closest("[data-repo-id]");
   const reservationRow = button.closest("[data-reservation-id]");
   const noticeRow = button.closest("[data-notice-id]");
+	const publicShareRow = button.closest("[data-channel-id]");
   const serverPanel = button.closest("[data-server-id]");
 	const globalAction = button.closest("[data-global-action]");
 	if (!repoRow && !reservationRow && !noticeRow && !serverPanel && !globalAction) return;
@@ -620,10 +684,31 @@ async function triggerAction(button) {
       server_id: serverPanel?.dataset.serverId || "",
       reservation_id: reservationRow?.dataset.reservationId || "",
       notice_id: noticeRow?.dataset.noticeId || "",
+		channel_id: publicShareRow?.dataset.channelId || "",
     });
     if (!result.accepted) {
       showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
     }
+  } catch (error) {
+    showToast({ level: "critical", title: "Nie udało się przekazać intencji", message: error?.message || String(error) });
+  } finally {
+    window.setTimeout(() => { button.disabled = false; }, 450);
+  }
+}
+
+async function triggerBulkPublicShares(button, serverID, channelIDs) {
+  const cleanIDs = [...new Set(channelIDs.filter(Boolean))];
+  if (!serverID || !cleanIDs.length) return;
+  button.disabled = true;
+  try {
+    const result = await GUIService.Trigger({ kind: "revoke_public_shares", server_id: serverID, channel_ids: cleanIDs });
+    if (!result.accepted) {
+      showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
+      return;
+    }
+    selectedPublicShares.clear();
+    selectedPublicShareServer = "";
+    renderPublicShares(currentSnapshot);
   } catch (error) {
     showToast({ level: "critical", title: "Nie udało się przekazać intencji", message: error?.message || String(error) });
   } finally {
@@ -687,6 +772,36 @@ $("#repositories").addEventListener("keydown", (event) => {
 $("#reservations").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);
+});
+$("#public-shares").addEventListener("click", (event) => {
+  const all = event.target.closest("[data-share-revoke-all]");
+  if (all) {
+    triggerBulkPublicShares(all, all.closest("[data-server-id]")?.dataset.serverId || "", (all.dataset.channelIds || "").split(","));
+    return;
+  }
+  const bulk = event.target.closest("[data-share-bulk]");
+  if (bulk) {
+    triggerBulkPublicShares(bulk, selectedPublicShareServer, [...selectedPublicShares]);
+    return;
+  }
+  const button = event.target.closest("[data-action]");
+  if (button) triggerAction(button);
+});
+$("#public-shares").addEventListener("change", (event) => {
+  const checkbox = event.target.closest("[data-share-select]");
+  if (!checkbox) return;
+  const row = checkbox.closest("[data-channel-id]");
+  const channelID = row?.dataset.channelId || "";
+  const serverID = row?.dataset.serverId || "";
+  if (checkbox.checked) {
+    if (selectedPublicShareServer && selectedPublicShareServer !== serverID) selectedPublicShares.clear();
+    selectedPublicShareServer = serverID;
+    selectedPublicShares.add(channelID);
+  } else {
+    selectedPublicShares.delete(channelID);
+    if (!selectedPublicShares.size) selectedPublicShareServer = "";
+  }
+  renderPublicShares(currentSnapshot);
 });
 $("#shouts").addEventListener("click", (event) => {
   const button = event.target.closest("[data-notice-id]");

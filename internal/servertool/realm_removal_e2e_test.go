@@ -360,6 +360,11 @@ func (f *realmRemovalE2EFixture) assertRecoveryAndErasure(t *testing.T, operatio
 		"repositories": map[string]any{
 			"root": f.repositoriesRoot, "results_root": f.resultsRoot,
 			"deletion_archive_root": f.archiveRoot,
+			"url_prefix":            "svn+ssh://_filees-data@filees.test/",
+		},
+		"invitation": map[string]any{
+			"server_id": "realm-removal-e2e-test", "server_address": "realm-e2e.test:2222",
+			"known_host": "[realm-e2e.test]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		},
 		"smtp": map[string]any{
 			"address": "127.0.0.1:2525", "client_name": "realm-e2e.test",

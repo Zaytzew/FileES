@@ -47,6 +47,7 @@ func TestS1FilesystemWorkflow(t *testing.T) {
   "otp_attempts":3,
   "reverse_port_first":42000,
   "reverse_port_last":42010,
+  "repositories":{"url_prefix":"svn+ssh://_filees-data@filees.test/"},
 	  "invitation":{"server_id":"office","server_address":"filees.test:2222","known_host":"[filees.test]:2222 ` + workerPublic + `"},
   "smtp":{"address":"127.0.0.1:2525","client_name":"filees.test","from":"filees@example.test","message_id_domain":"filees.test","tls":"none"}
 }`

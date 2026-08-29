@@ -80,7 +80,7 @@ const (
 	CmdConflictDecide = "conflict.decide" // submit user decision
 
 	// Notices (outbound notifications)
-	CmdNoticeList = "notice.list" // list active notices
+	CmdNoticeList = "notice.list" // list unread and recent acknowledged notices
 	CmdNoticeAck  = "notice.ack"  // mark notice as acknowledged
 
 	// Structured error log
@@ -783,6 +783,7 @@ type NoticeAckPayload struct {
 type Notice struct {
 	ID        string `json:"id"`
 	RepoID    string `json:"repo_id,omitempty"`
+	Revision  int64  `json:"revision,omitempty"`
 	CreatedAt string `json:"created_at"`
 	Title     string `json:"title"`
 	Body      string `json:"body,omitempty"`

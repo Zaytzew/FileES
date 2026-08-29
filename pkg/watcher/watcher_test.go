@@ -73,6 +73,25 @@ func TestScannerClosesEventsAfterWorkersStop(t *testing.T) {
 	}
 }
 
+func TestWorkingCopySizeComesFromBufferedManifest(t *testing.T) {
+	wc := t.TempDir()
+	stateDir := filepath.Join(wc, ".filees", "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(stateDir, "manifest.json")
+	if err := os.WriteFile(manifest, []byte(`[{"path":"one.bin","mtime":1,"size":12},{"path":"dir/","mtime":1},{"path":"dir/two.bin","mtime":1,"size":30}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := NewScanner(Options{WC: wc, StatePath: manifest, ScanPeriod: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size, known := scanner.WorkingCopySize(); !known || size != 42 {
+		t.Fatalf("buffered working-copy size = %d known=%v", size, known)
+	}
+}
+
 func TestScannerDoesNotRecreateMovedWorkingCopy(t *testing.T) {
 	parent := t.TempDir()
 	wc := filepath.Join(parent, "documents")

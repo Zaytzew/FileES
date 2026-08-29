@@ -224,7 +224,7 @@ func TestOpenShareListingCacheAndRange(t *testing.T) {
 	if !strings.Contains(listing.Body.String(), "21 B") {
 		t.Fatalf("listing does not show authoritative file size: %s", listing.Body.String())
 	}
-	if !strings.Contains(listing.Body.String(), "wizyta zamrożona na r5") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) || !strings.Contains(listing.Body.String(), "Sprawdź najnowsze wydanie") {
+	if !strings.Contains(listing.Body.String(), "stan 14.11.2023") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) || !strings.Contains(listing.Body.String(), "Sprawdź najnowsze wydanie") {
 		t.Fatalf("listing does not explain the frozen visit or link to latest: %s", listing.Body.String())
 	}
 	if listing.Header().Get("Content-Security-Policy") == "" || listing.Header().Get("Referrer-Policy") != "no-referrer" {
@@ -257,7 +257,7 @@ func TestFollowingShareDerivesObjectMapFromEachVisitRevision(t *testing.T) {
 	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), "nowy.txt") || strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") {
 		t.Fatalf("following listing did not track r6: status=%d body=%s", listing.Code, listing.Body.String())
 	}
-	if !strings.Contains(listing.Body.String(), "wizyta zamrożona na r6") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) {
+	if !strings.Contains(listing.Body.String(), "stan 14.11.2023") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) {
 		t.Fatalf("r6 listing does not identify its snapshot and canonical entry: %s", listing.Body.String())
 	}
 	projection, err := f.handler.Backend.(authority.Resolver).InspectAt(context.Background(), "atmprojekt", "przetarg-2026", 6)
@@ -476,10 +476,35 @@ func TestEmptyListingExplainsPlaceholder(t *testing.T) {
 	}
 }
 
-func TestListingCountUsesPolishPluralForm(t *testing.T) {
-	for count, want := range map[int]string{0: "0 plików", 1: "1 plik", 2: "2 pliki", 5: "5 plików", 12: "12 plików", 22: "22 pliki"} {
-		if got := formatListingCount(count); got != want {
-			t.Errorf("count %d = %q, want %q", count, got, want)
+func TestListingTotalSizeUsesKnownObjectSizes(t *testing.T) {
+	oneKiB, halfKiB := int64(1024), int64(512)
+	if got := formatListingTotalSize([]channel.PublicObject{{Size: &oneKiB}, {Size: &halfKiB}}); got != "1.5 KB" {
+		t.Fatalf("total size = %q", got)
+	}
+	if got := formatListingTotalSize([]channel.PublicObject{{Size: &oneKiB}, {}}); got != "co najmniej 1.0 KB" {
+		t.Fatalf("partial total size = %q", got)
+	}
+}
+
+func TestListingCleanupKeepsBrandAndColumnSemanticsConsistent(t *testing.T) {
+	size := int64(1536)
+	recorder := httptest.NewRecorder()
+	Handler{}.renderListing(recorder, channel.Projection{
+		Alias: "acme", Slug: "projekt", UpdatedAt: time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC),
+		Objects: []channel.PublicObject{{PublicID: "object", DisplayName: "Dokumenty/plan.pdf", Size: &size}},
+	}, visit{Revision: 7}, "visit", false)
+	body := recorder.Body.String()
+	for _, wanted := range []string{`class="brand-wordmark"`, `aria-label="filees:space"`, "Monochrome stacked file and folder symbol", "1.5 KB", "stan 27.08.2026"} {
+		if !strings.Contains(body, wanted) {
+			t.Fatalf("listing does not contain %q", wanted)
 		}
+	}
+	for _, unwanted := range []string{`<span>acme</span>`, "wizyta zamrożona", ".columns span:nth-child(3){text-align:right}"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("listing retained obsolete fragment %q", unwanted)
+		}
+	}
+	if !strings.Contains(body, ".columns span:last-child{text-align:center}") {
+		t.Fatal("download column heading is not aligned with its controls")
 	}
 }

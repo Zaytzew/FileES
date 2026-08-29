@@ -329,6 +329,8 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	if err != nil {
 		return nil, err
 	}
+	runtimeRepo.state.SetWorkingCopySizeFunc(scanner.WorkingCopySize)
+	sizeFuncWired := true
 	rules := buildCommitRules(repo, latency)
 	sink, err := openRepoErrorSink(filepath.Join(logsDir, "errors.jsonl"), "commit:"+repo.ID)
 	if err != nil {
@@ -342,9 +344,12 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	runtimeRepo.state.SetPublishFunc(func(ctx context.Context, comment string) (int64, error) {
 		return service.RequestPublish(ctx, wc, comment)
 	})
-	runtimeRepo.state.SetNoticeFuncs(service.OpenNotices, service.AckNotice)
+	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	lockFuncsWired := true
 	defer func() {
+		if sizeFuncWired {
+			runtimeRepo.state.SetWorkingCopySizeFunc(nil)
+		}
 		if lockFuncsWired {
 			runtimeRepo.state.SetLockFuncs(nil, nil)
 			runtimeRepo.state.SetReservationFuncs(nil, nil)
@@ -356,6 +361,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		return runReadWritePipeline(runCtx, repo, runtimeRepo.state, scanner, service)
 	}, func(cleanupCtx context.Context) error {
 		var first error
+		runtimeRepo.state.SetWorkingCopySizeFunc(nil)
 		runtimeRepo.state.SetLockFuncs(nil, nil)
 		runtimeRepo.state.SetReservationFuncs(nil, nil)
 		runtimeRepo.state.SetPublishFunc(nil)
@@ -376,6 +382,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	cleanupPID = false
 	rollbackPassport = false
 	lockFuncsWired = false
+	sizeFuncWired = false
 	_ = desired
 	return instance, nil
 }
@@ -688,7 +695,7 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	wireRepoReservationFuncs(runtime.state, svn, runtime.config.LocalPath, nil)
 	wc := runtime.config.LocalPath
 	runtime.state.SetNoticeFuncs(
-		func() ([]contract.Notice, error) { return shout.OpenNotices(wc) },
+		func() ([]contract.Notice, error) { return shout.RecentNotices(wc, 20) },
 		func(id string) error { return shout.Ack(wc, id) },
 	)
 	stateDir := filepath.Join(runtime.config.LocalPath, ".filees", "state")

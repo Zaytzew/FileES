@@ -14,7 +14,7 @@ func TestPlatformIconsContainsEveryState(t *testing.T) {
 		"wails":  WailsPlatformIcons(),
 	} {
 		for _, state := range []app.IconState{
-			app.IconActive, app.IconBusy, app.IconOffline, app.IconError, app.IconDisconnected,
+			app.IconActive, app.IconBusy, app.IconOffline, app.IconError, app.IconShout, app.IconDisconnected,
 		} {
 			if len(icons[state]) == 0 {
 				t.Errorf("%s: missing embedded icon for %q", name, state)

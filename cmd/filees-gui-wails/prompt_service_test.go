@@ -58,7 +58,7 @@ func TestPromptServiceReturnsBrowserChoice(t *testing.T) {
 	defer close(hideBlocked)
 	result := make(chan platform.PromptTextResult, 1)
 	go func() {
-		got, _ := service.PromptText(context.Background(), platform.PromptTextRequest{Title: "Limit", Default: "30"})
+		got, _ := service.PromptText(context.Background(), platform.PromptTextRequest{Title: "Limit", Label: "Minuty", Default: "30"})
 		result <- got
 	}()
 	select {
@@ -67,7 +67,7 @@ func TestPromptServiceReturnsBrowserChoice(t *testing.T) {
 		t.Fatal("prompt window was not shown")
 	}
 	snapshot := service.Snapshot()
-	if snapshot.Mode != "text" || snapshot.Default != "30" || snapshot.Revision == 0 {
+	if snapshot.Mode != "text" || snapshot.Label != "Minuty" || snapshot.Default != "30" || snapshot.Revision == 0 {
 		t.Fatalf("unexpected projection: %+v", snapshot)
 	}
 	if accepted := service.Resolve(PromptChoice{Revision: snapshot.Revision, Confirmed: true, Value: "90"}); !accepted.Accepted {
@@ -80,6 +80,43 @@ func TestPromptServiceReturnsBrowserChoice(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("prompt did not resolve")
+	}
+}
+
+func TestPromptServiceReturnsValidatedSelectChoice(t *testing.T) {
+	service := newPromptService()
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	result := make(chan PromptSelectResult, 1)
+	go func() {
+		got, _ := service.SelectOne(context.Background(), PromptSelectRequest{
+			Title: "Sparuj urządzenie mobilne", Label: "Serwer", Default: "spot",
+			Options: []PromptOption{{Value: "spot", Label: "Spot"}, {Value: "archive", Label: "Archiwum"}},
+		})
+		result <- got
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("select prompt window was not shown")
+	}
+	snapshot := service.Snapshot()
+	if snapshot.Mode != "select" || snapshot.Label != "Serwer" || snapshot.Default != "spot" || len(snapshot.Options) != 2 {
+		t.Fatalf("unexpected select projection: %+v", snapshot)
+	}
+	if accepted := service.Resolve(PromptChoice{Revision: snapshot.Revision, Confirmed: true, Value: "missing"}); accepted.Accepted || accepted.Code != "prompt_invalid_choice" {
+		t.Fatalf("invalid choice accepted: %+v", accepted)
+	}
+	if accepted := service.Resolve(PromptChoice{Revision: snapshot.Revision, Confirmed: true, Value: "archive"}); !accepted.Accepted {
+		t.Fatalf("valid choice rejected: %+v", accepted)
+	}
+	select {
+	case got := <-result:
+		if got.Cancelled || got.Value != "archive" {
+			t.Fatalf("unexpected select result: %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("select prompt did not resolve")
 	}
 }
 
@@ -153,7 +190,7 @@ func TestPromptFrontendLeavesVisibilityToPromptService(t *testing.T) {
 	if strings.Contains(string(source), "Window.Hide()") {
 		t.Fatal("prompt frontend must not race the service by hiding the shared window")
 	}
-	for _, wanted := range []string{"revealFollowingPrompt", "PromptService.Snapshot()", "Window.Show()", "Window.Focus()"} {
+	for _, wanted := range []string{"revealFollowingPrompt", "PromptService.Snapshot()", "Window.Show()", "Window.Focus()", `next.mode === "select"`, `$("#prompt-select").value`} {
 		if !strings.Contains(string(source), wanted) {
 			t.Fatalf("prompt frontend is missing resilient hand-off %q", wanted)
 		}

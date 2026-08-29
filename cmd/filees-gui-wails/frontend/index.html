@@ -19,12 +19,14 @@
       </a>
       <div class="topbar-actions">
         <span class="beta-pill">Wersja testowa</span>
-        <button id="activate" class="topbar-add-button" type="button" data-global-action="activation" data-action="activate">Dodaj serwer</button>
-        <div id="connection" class="connection is-offline">
-          <span class="connection-dot"></span>
-          <span class="connection-label">Łączenie…</span>
-        </div>
-        <button id="refresh" class="icon-button" title="Odśwież projekcję" aria-label="Odśwież projekcję">
+        <button id="activate" class="icon-button hint-button topbar-primary" type="button" data-global-action="activation" data-action="activate" data-hint="Dodaj serwer" aria-label="Dodaj serwer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button id="pair-mobile" class="icon-button hint-button pair-button" type="button" data-global-action="pairing" data-action="pair_mobile_device" data-hint="Sparuj urządzenie" aria-label="Sparuj urządzenie mobilne">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M10 5.5h4M11 18.5h2"/></svg>
+          <span>Paruj</span>
+        </button>
+        <button id="refresh" class="icon-button hint-button" title="Odśwież projekcję" data-hint="Odśwież" aria-label="Odśwież projekcję">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
         </button>
         <div class="window-controls" aria-label="Sterowanie oknem">
@@ -41,10 +43,11 @@
         <h1>Twoje pliki pracują<br><span>we właściwym rytmie.</span></h1>
         <p id="hero-copy" class="hero-copy">Czekam na pierwszy spójny obraz stanu FileES.</p>
       </div>
-      <div class="pulse-card" aria-hidden="true">
+      <div id="pulse-card" class="pulse-card" role="status" aria-live="polite" title="Stan FileES">
         <div class="pulse-orbit orbit-a"></div>
         <div class="pulse-orbit orbit-b"></div>
-        <div id="pulse-core" class="pulse-core"><span></span></div>
+        <div id="pulse-inner-ring" class="pulse-orbit orbit-c"></div>
+        <div id="pulse-core" class="pulse-core is-offline"><span></span></div>
         <div class="pulse-caption"><b id="pulse-value">—</b><small id="pulse-label">repozytoriów</small></div>
       </div>
     </section>
@@ -68,7 +71,7 @@
     <section class="content-grid">
       <div class="main-column">
         <div class="section-heading">
-          <div><p class="eyebrow">Twoje pliki</p><h2>Foldery</h2></div>
+          <div><p class="eyebrow">Twoje pliki</p><h2>Serwery</h2></div>
           <div class="projection-timing">
             <span id="last-refresh" class="timestamp">Jeszcze nie odświeżono</span>
           </div>
@@ -98,9 +101,9 @@
           </div>
           <div id="reservations" class="reservation-list"></div>
         </section>
-        <section id="shouts-card" class="side-card" hidden>
+        <section id="shouts-card" class="side-card" aria-live="assertive" hidden>
           <div class="section-heading compact">
-            <div><p class="eyebrow">Wydania</p><h2>Ostatnie /shouts/</h2></div>
+            <div><p class="eyebrow">Ważne</p><h2>Ostatnie ogłoszenia</h2></div>
             <span id="shouts-count" class="count-badge">0</span>
           </div>
           <div id="shouts" class="shout-list"></div>
@@ -120,6 +123,30 @@
       <span id="revision">stan #0</span>
     </footer>
   </main>
+  <div id="announcement-overlay" class="announcement-overlay" hidden>
+    <section class="announcement-dialog" role="dialog" aria-modal="true" aria-labelledby="announcement-title" aria-describedby="announcement-copy">
+      <header>
+        <span class="announcement-dialog-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 11v2a2 2 0 0 0 2 2h2l4 4V5L7 9H5a2 2 0 0 0-2 2Z"/><path d="M15 8a5 5 0 0 1 0 8M18 5a9 9 0 0 1 0 14"/></svg>
+        </span>
+        <div><p class="eyebrow">Wymaga uwagi</p><h2 id="announcement-title">Ogłoszenie</h2></div>
+        <button id="close-announcement" class="journal-close" type="button" title="Zamknij ogłoszenie" aria-label="Zamknij ogłoszenie">×</button>
+      </header>
+      <p id="announcement-copy" class="announcement-copy"></p>
+      <div class="announcement-meta">
+        <span id="announcement-repository"></span>
+        <span id="announcement-revision"></span>
+        <span id="announcement-time"></span>
+      </div>
+      <footer>
+        <span id="announcement-status" class="announcement-status"></span>
+        <div class="announcement-buttons">
+          <button id="dismiss-announcement" type="button">Zamknij</button>
+          <button id="ack-announcement" class="primary" type="button">Potwierdź odczyt</button>
+        </div>
+      </footer>
+    </section>
+  </div>
   <div id="journal-overlay" class="journal-overlay" hidden>
     <section class="journal-dialog" role="dialog" aria-modal="true" aria-labelledby="journal-title">
       <header>

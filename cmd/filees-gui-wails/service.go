@@ -75,37 +75,39 @@ type ServerProjection struct {
 }
 
 type RepoProjection struct {
-	ID                  string          `json:"id"`
-	ServerID            string          `json:"server_id"`
-	DisplayName         string          `json:"display_name"`
-	LocalPath           string          `json:"local_path,omitempty"`
-	URL                 string          `json:"url,omitempty"`
-	Attached            bool            `json:"attached"`
-	Access              string          `json:"access"`
-	Ownership           string          `json:"ownership"`
-	AttachmentPolicy    string          `json:"attachment_policy"`
-	State               string          `json:"state"`
-	DisplayState        string          `json:"display_state"`
-	Connectivity        string          `json:"connectivity"`
-	LocalRevision       int64           `json:"local_revision"`
-	HeadRevision        int64           `json:"head_revision"`
-	PendingFiles        int             `json:"pending_files"`
-	PendingBytes        int64           `json:"pending_bytes"`
-	Conflicts           int             `json:"conflicts"`
-	CurrentOperation    string          `json:"current_operation,omitempty"`
-	ReservationCount    int             `json:"reservation_count"`
-	CanOpen             bool            `json:"can_open"`
-	CanLock             bool            `json:"can_lock"`
-	CanUnlock           bool            `json:"can_unlock"`
-	CanPublish          bool            `json:"can_publish"`
-	Cycle               CycleProjection `json:"cycle"`
-	ServerDeleted       bool            `json:"server_deleted,omitempty"`
-	LocalCleanupPending bool            `json:"local_cleanup_pending,omitempty"`
-	RetainUntil         string          `json:"retain_until,omitempty"`
-	RecoveryOperationID string          `json:"recovery_operation_id,omitempty"`
-	RecoveryAvailable   bool            `json:"recovery_available,omitempty"`
-	RecoveryPending     bool            `json:"recovery_pending,omitempty"`
-	CleanupError        string          `json:"cleanup_error,omitempty"`
+	ID                   string          `json:"id"`
+	ServerID             string          `json:"server_id"`
+	DisplayName          string          `json:"display_name"`
+	LocalPath            string          `json:"local_path,omitempty"`
+	URL                  string          `json:"url,omitempty"`
+	Attached             bool            `json:"attached"`
+	Access               string          `json:"access"`
+	Ownership            string          `json:"ownership"`
+	AttachmentPolicy     string          `json:"attachment_policy"`
+	State                string          `json:"state"`
+	DisplayState         string          `json:"display_state"`
+	Connectivity         string          `json:"connectivity"`
+	LocalRevision        int64           `json:"local_revision"`
+	HeadRevision         int64           `json:"head_revision"`
+	WorkingCopyBytes     int64           `json:"working_copy_bytes,omitempty"`
+	WorkingCopySizeKnown bool            `json:"working_copy_size_known,omitempty"`
+	PendingFiles         int             `json:"pending_files"`
+	PendingBytes         int64           `json:"pending_bytes"`
+	Conflicts            int             `json:"conflicts"`
+	CurrentOperation     string          `json:"current_operation,omitempty"`
+	ReservationCount     int             `json:"reservation_count"`
+	CanOpen              bool            `json:"can_open"`
+	CanLock              bool            `json:"can_lock"`
+	CanUnlock            bool            `json:"can_unlock"`
+	CanPublish           bool            `json:"can_publish"`
+	Cycle                CycleProjection `json:"cycle"`
+	ServerDeleted        bool            `json:"server_deleted,omitempty"`
+	LocalCleanupPending  bool            `json:"local_cleanup_pending,omitempty"`
+	RetainUntil          string          `json:"retain_until,omitempty"`
+	RecoveryOperationID  string          `json:"recovery_operation_id,omitempty"`
+	RecoveryAvailable    bool            `json:"recovery_available,omitempty"`
+	RecoveryPending      bool            `json:"recovery_pending,omitempty"`
+	CleanupError         string          `json:"cleanup_error,omitempty"`
 }
 
 type CycleProjection struct {
@@ -192,8 +194,10 @@ type JournalProjection struct {
 type NoticeProjection struct {
 	ID        string `json:"id"`
 	RepoID    string `json:"repo_id,omitempty"`
+	Revision  int64  `json:"revision,omitempty"`
 	Title     string `json:"title"`
 	CreatedAt string `json:"created_at"`
+	Acked     bool   `json:"acked"`
 	CanAck    bool   `json:"can_ack"`
 }
 
@@ -390,6 +394,11 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	switch request.Kind {
 	case string(tray.IntentActivate):
 		return tray.Intent{Kind: tray.IntentActivate}, true
+	case string(tray.IntentPairMobileDevice):
+		if !vm.CanPairMobile() || len(vm.Servers) == 0 {
+			return tray.Intent{}, false
+		}
+		return tray.Intent{Kind: tray.IntentPairMobileDevice, ServerID: vm.Servers[0].ID}, true
 	case string(tray.IntentRestartFileES):
 		return tray.Intent{Kind: tray.IntentRestartFileES}, vm.CanRestartFileES()
 	case string(tray.IntentShutdownFileES):
@@ -423,6 +432,9 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		return tray.Intent{Kind: tray.IntentDownloadRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed
 	case string(tray.IntentOpenFolder):
 		return tray.Intent{Kind: tray.IntentOpenFolder, RepoID: repo.ID}, repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
+	case string(tray.IntentAttachRepository):
+		allowed := !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
+		return tray.Intent{Kind: tray.IntentAttachRepository, RepoID: repo.ID, ServerID: repo.ServerID}, allowed
 	case string(tray.IntentLock):
 		allowed := vm.CanMutateLock() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != "" && serverAllowsLock(vm, repo.ServerID)
 		return tray.Intent{Kind: tray.IntentLock, RepoID: repo.ID}, allowed
@@ -439,7 +451,7 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 
 func projectedNotice(vm guiapp.ViewModel, noticeID string) bool {
 	for _, notice := range vm.Notices {
-		if notice.ID == noticeID {
+		if notice.ID == noticeID && !notice.Acked {
 			return true
 		}
 	}
@@ -550,6 +562,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			Access: repo.Access, Ownership: ownership, AttachmentPolicy: repo.AttachmentPolicy,
 			State: repo.State, DisplayState: string(repo.DisplayState()), Connectivity: repo.Connectivity,
 			LocalRevision: repo.LocalRev, HeadRevision: repo.HeadRev,
+			WorkingCopyBytes: repo.WorkingCopyBytes, WorkingCopySizeKnown: repo.WorkingCopySizeKnown,
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
@@ -614,8 +627,9 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	}
 	for _, item := range vm.Notices {
 		result.Notices = append(result.Notices, NoticeProjection{
-			ID: item.ID, RepoID: item.RepoID, Title: item.Title, CreatedAt: item.CreatedAt,
-			CanAck: vm.Connected && !vm.Stale && vm.CanAckNotices(),
+			ID: item.ID, RepoID: item.RepoID, Revision: item.Revision,
+			Title: item.Title, CreatedAt: item.CreatedAt, Acked: item.Acked,
+			CanAck: !item.Acked && vm.Connected && !vm.Stale && vm.CanAckNotices(),
 		})
 	}
 	if vm.Update != nil {

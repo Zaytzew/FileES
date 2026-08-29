@@ -3,6 +3,7 @@ package ipcserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	contract "filees/pkg/contract/v1"
@@ -22,6 +23,36 @@ func TestRepoPublishRequiresCommentAndPendingChanges(t *testing.T) {
 	})
 	if resp.Status != contract.StatusError || resp.Error == nil || resp.Error.MessageKey != "shout.nothing_to_publish" {
 		t.Fatalf("response=%#v", resp)
+	}
+}
+
+func TestNoticeListSortsNewestFirstAndReadHistoryCannotEvictUnread(t *testing.T) {
+	server := New(t.TempDir())
+	rs := server.RegisterRepo("docs", "svn://example/docs", t.TempDir())
+	rs.SetNoticeFuncs(func() ([]contract.Notice, error) {
+		items := []contract.Notice{{ID: "unread-old", Revision: 1, CreatedAt: "2026-08-17T00:00:00Z"}}
+		for i := 0; i < 55; i++ {
+			items = append(items, contract.Notice{ID: fmt.Sprintf("read-%02d", i), Revision: int64(i + 2), CreatedAt: fmt.Sprintf("2026-08-18T00:%02d:00Z", i), Acked: true})
+		}
+		items = append(items, contract.Notice{ID: "unread-new", Revision: 100, CreatedAt: "2026-08-19T00:00:00Z"})
+		return items, nil
+	}, nil)
+	response := server.handleNoticeList(contract.Request{RequestID: "history", Payload: []byte(`{}`)})
+	var result contract.NoticeListResult
+	if response.Status != contract.StatusOK || contract.DecodeResult(response.Result, &result) != nil {
+		t.Fatalf("response=%#v", response)
+	}
+	if len(result.Notices) != 52 || result.Notices[0].ID != "unread-new" || result.Notices[len(result.Notices)-1].ID != "unread-old" {
+		t.Fatalf("notices=%#v", result.Notices)
+	}
+	acknowledged := 0
+	for _, notice := range result.Notices {
+		if notice.Acked {
+			acknowledged++
+		}
+	}
+	if acknowledged != 50 {
+		t.Fatalf("acknowledged=%d notices=%#v", acknowledged, result.Notices)
 	}
 }
 

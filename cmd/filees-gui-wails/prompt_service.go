@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,15 +29,33 @@ type promptSession struct {
 }
 
 type PromptSnapshot struct {
-	Revision    uint64 `json:"revision"`
-	Mode        string `json:"mode"`
-	Title       string `json:"title"`
-	Text        string `json:"text"`
-	Default     string `json:"default,omitempty"`
-	Placeholder string `json:"placeholder,omitempty"`
-	Secret      bool   `json:"secret,omitempty"`
-	ConfirmText string `json:"confirm_text"`
-	CancelText  string `json:"cancel_text,omitempty"`
+	Revision    uint64         `json:"revision"`
+	Mode        string         `json:"mode"`
+	Title       string         `json:"title"`
+	Text        string         `json:"text"`
+	Label       string         `json:"label,omitempty"`
+	Options     []PromptOption `json:"options,omitempty"`
+	Default     string         `json:"default,omitempty"`
+	Placeholder string         `json:"placeholder,omitempty"`
+	Secret      bool           `json:"secret,omitempty"`
+	ConfirmText string         `json:"confirm_text"`
+	CancelText  string         `json:"cancel_text,omitempty"`
+}
+
+type PromptOption struct {
+	Value  string `json:"value"`
+	Label  string `json:"label"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type PromptSelectRequest struct {
+	Title, Text, Label, Default string
+	Options                     []PromptOption
+}
+
+type PromptSelectResult struct {
+	Value     string
+	Cancelled bool
 }
 
 type PromptChoice struct {
@@ -94,6 +113,10 @@ func (service *PromptService) Resolve(choice PromptChoice) PromptAcceptance {
 		service.mu.Unlock()
 		return PromptAcceptance{Code: "prompt_busy"}
 	}
+	if choice.Confirmed && service.snapshot.Mode == "select" && !promptOptionExists(service.snapshot.Options, choice.Value) {
+		service.mu.Unlock()
+		return PromptAcceptance{Code: "prompt_invalid_choice"}
+	}
 	session.resolved = true
 	service.mu.Unlock()
 	session.result <- choice
@@ -108,8 +131,24 @@ func (service *PromptService) Cancel() {
 }
 
 func (service *PromptService) PromptText(ctx context.Context, request platform.PromptTextRequest) (platform.PromptTextResult, error) {
-	choice, err := service.present(ctx, PromptSnapshot{Mode: "text", Title: request.Title, Text: request.Text, Default: request.Default, Placeholder: request.Placeholder, Secret: request.Secret, ConfirmText: "Zatwierdź", CancelText: "Anuluj"})
+	choice, err := service.present(ctx, PromptSnapshot{Mode: "text", Title: request.Title, Text: request.Text, Label: request.Label, Default: request.Default, Placeholder: request.Placeholder, Secret: request.Secret, ConfirmText: "Zatwierdź", CancelText: "Anuluj"})
 	return platform.PromptTextResult{Value: choice.Value, Cancelled: !choice.Confirmed}, err
+}
+
+func (service *PromptService) SelectOne(ctx context.Context, request PromptSelectRequest) (PromptSelectResult, error) {
+	options := cleanPromptOptions(request.Options)
+	if len(options) == 0 {
+		return PromptSelectResult{Cancelled: true}, nil
+	}
+	defaultValue := request.Default
+	if !promptOptionExists(options, defaultValue) {
+		defaultValue = options[0].Value
+	}
+	choice, err := service.present(ctx, PromptSnapshot{
+		Mode: "select", Title: request.Title, Text: request.Text, Label: request.Label,
+		Options: options, Default: defaultValue, ConfirmText: "Dalej", CancelText: "Anuluj",
+	})
+	return PromptSelectResult{Value: choice.Value, Cancelled: !choice.Confirmed}, err
 }
 
 func (service *PromptService) Confirm(ctx context.Context, request platform.ConfirmRequest) (bool, error) {
@@ -177,6 +216,35 @@ func (service *PromptService) present(ctx context.Context, snapshot PromptSnapsh
 		})
 	}
 	return choice, err
+}
+
+func cleanPromptOptions(options []PromptOption) []PromptOption {
+	result := make([]PromptOption, 0, len(options))
+	seen := make(map[string]bool, len(options))
+	for _, option := range options {
+		option.Value = strings.TrimSpace(option.Value)
+		option.Label = strings.TrimSpace(option.Label)
+		option.Detail = strings.TrimSpace(option.Detail)
+		if option.Value == "" || seen[option.Value] {
+			continue
+		}
+		if option.Label == "" {
+			option.Label = option.Value
+		}
+		seen[option.Value] = true
+		result = append(result, option)
+	}
+	return result
+}
+
+func promptOptionExists(options []PromptOption, value string) bool {
+	value = strings.TrimSpace(value)
+	for _, option := range options {
+		if option.Value == value {
+			return true
+		}
+	}
+	return false
 }
 
 var _ platform.Prompter = (*PromptService)(nil)

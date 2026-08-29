@@ -25,12 +25,14 @@ import (
 // --- Public API ---
 
 type EntryType string
+
 const (
 	EntryFile EntryType = "file"
 	EntryDir  EntryType = "dir"
 )
 
 type OpType int
+
 const (
 	Added OpType = iota
 	Modified
@@ -51,21 +53,21 @@ type Event struct {
 // Options control scanner behaviour
 // Times/intervals default to sane values if zero.
 type Options struct {
-	WC              string        // ABS root of working copy (must exist)
-	StatePath       string        // .filees/state/manifest.json
-	ScanPeriod      time.Duration // typical: commit window / 2 (default 15s)
-	BusyPath        string        // .filees/state/commit.busy
-	BusyTTL         time.Duration // default 10m (stale busy ignore)
-	TicketsPoll     time.Duration // poll tickets-only while busy (default 12s)
-	DeletedDebounce time.Duration // emit FileDeleted after this absence (default 10m)
+	WC              string         // ABS root of working copy (must exist)
+	StatePath       string         // .filees/state/manifest.json
+	ScanPeriod      time.Duration  // typical: commit window / 2 (default 15s)
+	BusyPath        string         // .filees/state/commit.busy
+	BusyTTL         time.Duration  // default 10m (stale busy ignore)
+	TicketsPoll     time.Duration  // poll tickets-only while busy (default 12s)
+	DeletedDebounce time.Duration  // emit FileDeleted after this absence (default 10m)
 	IgnoreRegex     *regexp.Regexp // optional global regex (extra filter)
 	LogScope        string
 
 	// MD5 / hashing heuristics
-	UseMD5           bool          // default true (tri-state semantics)
-	MD5PerFileCutoff int64         // bytes; default 64*MiB
-	MD5BudgetBytes   int64         // per scan; default 256*MiB
-	MD5BudgetFrac    float64       // fraction of ScanPeriod time; default 0.30
+	UseMD5           bool    // default true (tri-state semantics)
+	MD5PerFileCutoff int64   // bytes; default 64*MiB
+	MD5BudgetBytes   int64   // per scan; default 256*MiB
+	MD5BudgetFrac    float64 // fraction of ScanPeriod time; default 0.30
 
 	// Event channel buffer size
 	ChanSize int // default 1024
@@ -87,22 +89,24 @@ type Scanner struct {
 	debounceD  time.Duration
 	lg         talk.Logger
 
-	useMD5           bool
-	md5Cutoff        int64
-	md5BudgetBytes   int64
-	md5BudgetFrac    float64
-	chanSize         int
+	useMD5             bool
+	md5Cutoff          int64
+	md5BudgetBytes     int64
+	md5BudgetFrac      float64
+	chanSize           int
 	requireSVNMetadata bool
 
 	// dynamic
 	mu           sync.Mutex
-	cur          index              // current manifest snapshot (ACTIVE) or building (BASELINING)
+	cur          index // current manifest snapshot (ACTIVE) or building (BASELINING)
+	totalBytes   int64 // files represented by cur; excludes .svn and private .filees state
+	sizeKnown    bool  // true after a manifest load or one complete tree scan
 	missingSince map[string]time.Time
 
 	// ignores (hot-reload user cfg)
-	ignorePath   string    // .filees/user_ignore.cfg
+	ignorePath   string // .filees/user_ignore.cfg
 	ignoreMTime  time.Time
-	builtinGlobs []glob    // hardcoded defaults (office temps, OS noise, VCS dirs)
+	builtinGlobs []glob // hardcoded defaults (office temps, OS noise, VCS dirs)
 	hardGlobs    []glob
 	softGlobs    []glob
 	igRegex      *regexp.Regexp
@@ -126,6 +130,7 @@ type pendingMD5Entry struct {
 }
 
 type mode int
+
 const (
 	modeBaselining mode = iota
 	modeActive
@@ -162,19 +167,42 @@ type backlogItem struct {
 // --- construction ---
 
 func NewScanner(opts Options) (*Scanner, error) {
-	if opts.WC == "" { return nil, errors.New("watcher: Options.WC is empty") }
+	if opts.WC == "" {
+		return nil, errors.New("watcher: Options.WC is empty")
+	}
 	fi, err := os.Stat(opts.WC)
-	if err != nil || !fi.IsDir() { return nil, errors.New("watcher: WC missing or not a directory") }
+	if err != nil || !fi.IsDir() {
+		return nil, errors.New("watcher: WC missing or not a directory")
+	}
 
-	if opts.ScanPeriod <= 0 { opts.ScanPeriod = 15 * time.Second }
-	if opts.BusyTTL <= 0 { opts.BusyTTL = 10 * time.Minute }
-	if opts.TicketsPoll <= 0 { opts.TicketsPoll = 12 * time.Second }
-	if opts.DeletedDebounce <= 0 { opts.DeletedDebounce = 10 * time.Minute }
-	if opts.ChanSize <= 0 { opts.ChanSize = 1024 }
-	if opts.MD5PerFileCutoff <= 0 { opts.MD5PerFileCutoff = 64 * 1024 * 1024 }
-	if opts.MD5BudgetBytes <= 0 { opts.MD5BudgetBytes = 256 * 1024 * 1024 }
-	if opts.MD5BudgetFrac <= 0 { opts.MD5BudgetFrac = 0.30 }
-	if opts.UseMD5 == false { /* explicit */ } else { opts.UseMD5 = true }
+	if opts.ScanPeriod <= 0 {
+		opts.ScanPeriod = 15 * time.Second
+	}
+	if opts.BusyTTL <= 0 {
+		opts.BusyTTL = 10 * time.Minute
+	}
+	if opts.TicketsPoll <= 0 {
+		opts.TicketsPoll = 12 * time.Second
+	}
+	if opts.DeletedDebounce <= 0 {
+		opts.DeletedDebounce = 10 * time.Minute
+	}
+	if opts.ChanSize <= 0 {
+		opts.ChanSize = 1024
+	}
+	if opts.MD5PerFileCutoff <= 0 {
+		opts.MD5PerFileCutoff = 64 * 1024 * 1024
+	}
+	if opts.MD5BudgetBytes <= 0 {
+		opts.MD5BudgetBytes = 256 * 1024 * 1024
+	}
+	if opts.MD5BudgetFrac <= 0 {
+		opts.MD5BudgetFrac = 0.30
+	}
+	if opts.UseMD5 == false { /* explicit */
+	} else {
+		opts.UseMD5 = true
+	}
 
 	wc := filepath.Clean(opts.WC)
 	stateDir := filepath.Join(wc, ".filees", "state")
@@ -182,27 +210,27 @@ func NewScanner(opts Options) (*Scanner, error) {
 	backlogPath := filepath.Join(stateDir, "md5.backlog.json")
 
 	s := Scanner{
-		wc:            wc,
-		statePath:     opts.StatePath,
-		period:        opts.ScanPeriod,
-		busyPath:      coalesce(opts.BusyPath, filepath.Join(stateDir, "commit.busy")),
-		busyTTL:       opts.BusyTTL,
-		ticketsInt:    opts.TicketsPoll,
-		debounceD:     opts.DeletedDebounce,
-		lg:            talk.With(opts.LogScope),
-		useMD5:        opts.UseMD5,
-		md5Cutoff:     opts.MD5PerFileCutoff,
-		md5BudgetBytes: opts.MD5BudgetBytes,
-		md5BudgetFrac:  opts.MD5BudgetFrac,
-		chanSize:      opts.ChanSize,
+		wc:                 wc,
+		statePath:          opts.StatePath,
+		period:             opts.ScanPeriod,
+		busyPath:           coalesce(opts.BusyPath, filepath.Join(stateDir, "commit.busy")),
+		busyTTL:            opts.BusyTTL,
+		ticketsInt:         opts.TicketsPoll,
+		debounceD:          opts.DeletedDebounce,
+		lg:                 talk.With(opts.LogScope),
+		useMD5:             opts.UseMD5,
+		md5Cutoff:          opts.MD5PerFileCutoff,
+		md5BudgetBytes:     opts.MD5BudgetBytes,
+		md5BudgetFrac:      opts.MD5BudgetFrac,
+		chanSize:           opts.ChanSize,
 		requireSVNMetadata: opts.RequireSVNMetadata,
-		cur:          make(index),
-		missingSince: make(map[string]time.Time),
-		ignorePath:   ignorePath,
-		backlogPath:  backlogPath,
-		pendingMD5:   make(map[string]pendingMD5Entry),
-		igRegex:      opts.IgnoreRegex,
-		mode:         modeBaselining,
+		cur:                make(index),
+		missingSince:       make(map[string]time.Time),
+		ignorePath:         ignorePath,
+		backlogPath:        backlogPath,
+		pendingMD5:         make(map[string]pendingMD5Entry),
+		igRegex:            opts.IgnoreRegex,
+		mode:               modeBaselining,
 	}
 
 	// try load state to determine mode
@@ -245,34 +273,60 @@ func (s *Scanner) Start(ctx context.Context) <-chan Event {
 
 // LoadState reads manifest.json (list) and builds in-memory map
 func (s *Scanner) LoadState(path string) error {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	f, err := os.Open(path)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer f.Close()
 	dec := json.NewDecoder(bufio.NewReader(f))
 	var list []diskEntry
-	if err := dec.Decode(&list); err != nil { return err }
+	if err := dec.Decode(&list); err != nil {
+		return err
+	}
 	m := make(index, len(list))
 	for _, e := range list {
 		isDir := strings.HasSuffix(e.Path, "/")
 		m[e.Path] = meta{MtimeSec: e.Mtime, Size: e.Size, MD5: e.MD5, IsDir: isDir}
 	}
 	s.cur = m
+	s.totalBytes = indexBytes(m)
+	s.sizeKnown = true
 	return nil
+}
+
+// WorkingCopySize returns the size already held by the watcher's in-memory
+// manifest. It never walks the filesystem and deliberately follows the same
+// ignore/private-state rules as change detection.
+func (s *Scanner) WorkingCopySize() (int64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.totalBytes, s.sizeKnown
 }
 
 // SaveState writes the current map as a sorted list to path (atomically)
 func (s *Scanner) SaveState(path string) error {
-	if !s.workingCopyAvailable() { return errors.New("watcher: working copy metadata is missing") }
-	s.mu.Lock(); defer s.mu.Unlock()
+	if !s.workingCopyAvailable() {
+		return errors.New("watcher: working copy metadata is missing")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	list := make([]diskEntry, 0, len(s.cur))
 	for rel, m := range s.cur {
 		de := diskEntry{Path: rel, Mtime: m.MtimeSec}
-		if !m.IsDir { de.Size = m.Size; if m.MD5 != "" { de.MD5 = m.MD5 } }
+		if !m.IsDir {
+			de.Size = m.Size
+			if m.MD5 != "" {
+				de.MD5 = m.MD5
+			}
+		}
 		list = append(list, de)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Path < list[j].Path })
-	if err := s.writeJSON(path, list); err != nil { return err }
+	if err := s.writeJSON(path, list); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -292,7 +346,9 @@ func (s *Scanner) loop(ctx context.Context, out chan<- Event) {
 			// after the last periodic scan must still reach commit service before
 			// the event channel is closed and drained.
 			s.scanCycle(context.Background(), out)
-			if s.statePath != "" { _ = s.SaveState(s.statePath) }
+			if s.statePath != "" {
+				_ = s.SaveState(s.statePath)
+			}
 			return
 		case <-ticker.C:
 			s.scanCycle(ctx, out)
@@ -301,7 +357,9 @@ func (s *Scanner) loop(ctx context.Context, out chan<- Event) {
 }
 
 func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
-	if !s.workingCopyAvailable() { return }
+	if !s.workingCopyAvailable() {
+		return
+	}
 	start := time.Now()
 	var aCnt, mCnt, dCnt, igCnt, md5Done, md5Skipped int
 	var backlogLen int
@@ -312,13 +370,15 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		_ = s.reloadIgnores()
 		stateDir := filepath.Dir(s.statePath)
 		tmpPath := filepath.Join(stateDir, "manifest.tmp")
-		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, /*emit=*/false, out, busy)
+		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped /*emit=*/, false, out, busy)
 
 		// write tmp
 		_ = s.writeJSON(tmpPath, toDiskList(mp))
 
 		// auto-promote: baseline is complete after the first successful scan
-		if !s.requireSVNMetadata { _ = os.MkdirAll(filepath.Dir(s.statePath), 0o755) }
+		if !s.requireSVNMetadata {
+			_ = os.MkdirAll(filepath.Dir(s.statePath), 0o755)
+		}
 		if err := os.Rename(tmpPath, s.statePath); err == nil {
 			_ = s.LoadState(s.statePath)
 			s.mode = modeActive
@@ -337,7 +397,7 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 			}
 		}
 		_ = s.reloadIgnores()
-		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, /*emit=*/true, out, false)
+		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped /*emit=*/, true, out, false)
 		// Swap in-memory state; apply worker MD5s that arrived during the scan walk.
 		// backlogLen is snapped here so the log read doesn't race with the worker.
 		s.mu.Lock()
@@ -350,6 +410,8 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		}
 		backlogLen = len(s.backlog)
 		s.cur = mp
+		s.totalBytes = indexBytes(mp)
+		s.sizeKnown = true
 		s.mu.Unlock()
 		// persist backlog best-effort
 		_ = s.saveBacklog()
@@ -366,6 +428,15 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 	}
 }
 
+func indexBytes(entries index) int64 {
+	var total int64
+	for _, entry := range entries {
+		if !entry.IsDir && entry.Size > 0 {
+			total += entry.Size
+		}
+	}
+	return total
+}
 
 // scanTree walks the WC and returns a fresh index. If emit==true, it emits events based on diff vs current state.
 func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done, md5Skipped *int, emit bool, out chan<- Event, ticketsOnly bool) index {
@@ -373,7 +444,9 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 	deleted := make(map[string]meta)
 
 	s.mu.Lock()
-	for rel, m := range s.cur { deleted[rel] = m }
+	for rel, m := range s.cur {
+		deleted[rel] = m
+	}
 	s.mu.Unlock()
 
 	md5BytesBudget := s.md5BudgetBytes
@@ -389,7 +462,10 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 	var newFiles []pendingAdd
 
 	walkFn := func(path string, d fs.DirEntry, err error) error {
-		if err != nil { s.lg.Warnf("walk error: %s: %v", path, err); return nil }
+		if err != nil {
+			s.lg.Warnf("walk error: %s: %v", path, err)
+			return nil
+		}
 		// ignore any symlink (file or dir) — FS-0201: symlinks not supported
 		if d.Type()&os.ModeSymlink != 0 {
 			*igCnt++
@@ -399,13 +475,20 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 
 		name := d.Name()
 		if d.IsDir() {
-			if name == ".svn" { return fs.SkipDir }
+			if name == ".svn" {
+				return fs.SkipDir
+			}
 			// reconciliation conflict saves — never commit
-			if strings.HasPrefix(name, "!kolizje") { *igCnt++; return fs.SkipDir }
+			if strings.HasPrefix(name, "!kolizje") {
+				*igCnt++
+				return fs.SkipDir
+			}
 		}
 
 		rel := s.toRelPOSIX(path)
-		if rel == "" { return nil }
+		if rel == "" {
+			return nil
+		}
 
 		// .filees is private runtime state, except for outgoing tickets which
 		// intentionally participate in synchronization. Never let commit cache,
@@ -417,20 +500,35 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 		}
 		isTicket := rel == ".filees/tickets" || strings.HasPrefix(rel, ".filees/tickets/")
 		if strings.HasPrefix(rel, ".filees/") && !isTicket {
-			if d.IsDir() { return fs.SkipDir }
-			*igCnt++; return nil
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			*igCnt++
+			return nil
 		}
 
 		// user ignores (hard first)
-		if s.isIgnored(rel, d.IsDir()) { *igCnt++; if d.IsDir() { return fs.SkipDir }; return nil }
+		if s.isIgnored(rel, d.IsDir()) {
+			*igCnt++
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 
 		// gather info
-		info, ierr := d.Info(); if ierr != nil { s.lg.Warnf("stat error: %s: %v", path, ierr); return nil }
+		info, ierr := d.Info()
+		if ierr != nil {
+			s.lg.Warnf("stat error: %s: %v", path, ierr)
+			return nil
+		}
 		isDir := info.IsDir()
 
 		// record into curr snapshot
-		m := meta{ MtimeSec: info.ModTime().Unix(), IsDir: isDir }
-		if !isDir { m.Size = info.Size() }
+		m := meta{MtimeSec: info.ModTime().Unix(), IsDir: isDir}
+		if !isDir {
+			m.Size = info.Size()
+		}
 		curr[rel] = m
 
 		old, had := deleted[rel] // use the locked snapshot; don't read s.cur without mu
@@ -441,7 +539,9 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 				// compute MD5 for rename detection (best-effort, within budget)
 				if s.useMD5 && !isDir && m.Size <= s.md5Cutoff && md5BytesBudget > 0 && time.Now().Before(budgetDeadline) {
 					if sum, readB, herr := md5FileBudgeted(path, md5BytesBudget); herr == nil {
-						m.MD5 = sum; md5BytesBudget -= readB; *md5Done++
+						m.MD5 = sum
+						md5BytesBudget -= readB
+						*md5Done++
 						curr[rel] = m
 					}
 				}
@@ -451,7 +551,9 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 					// A path returning during deletion debounce must be announced
 					// again. Its earlier Added event may already have been cancelled
 					// by the commit layer when the path disappeared.
-					if !isDir { m.MD5 = old.MD5 }
+					if !isDir {
+						m.MD5 = old.MD5
+					}
 					curr[rel] = m
 					out <- Event{Path: pathAbs(path), Rel: rel, Type: pickType(isDir), Op: Added}
 					*aCnt++
@@ -466,14 +568,21 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 							if m.Size <= s.md5Cutoff && md5BytesBudget > 0 && time.Now().Before(budgetDeadline) {
 								sum, readB, herr := md5FileBudgeted(path, md5BytesBudget)
 								if herr == nil {
-									m.MD5 = sum; md5BytesBudget -= readB; *md5Done++
+									m.MD5 = sum
+									md5BytesBudget -= readB
+									*md5Done++
 									// suppress event if content unchanged (same hash)
-									if old.MD5 == "" || m.MD5 != old.MD5 { changed = true }
+									if old.MD5 == "" || m.MD5 != old.MD5 {
+										changed = true
+									}
 								} else {
-									*md5Skipped++; changed = true
+									*md5Skipped++
+									changed = true
 								}
 							} else {
-								s.enqueueBacklog(rel, m.Size, m.MtimeSec); *md5Skipped++; changed = true
+								s.enqueueBacklog(rel, m.Size, m.MtimeSec)
+								*md5Skipped++
+								changed = true
 							}
 						} else {
 							changed = true
@@ -483,7 +592,10 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 					}
 					curr[rel] = m // update curr with any newly computed or preserved MD5
 				}
-				if changed { out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Modified}; *mCnt++ }
+				if changed {
+					out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Modified}
+					*mCnt++
+				}
 				delete(deleted, rel)
 				delete(s.missingSince, rel) // file is present — reset debounce timer
 			}
@@ -491,9 +603,17 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 			// baselining: pre-fill MD5 under budget
 			if !isDir && s.useMD5 && m.Size <= s.md5Cutoff && md5BytesBudget > 0 && time.Now().Before(budgetDeadline) {
 				sum, readB, herr := md5FileBudgeted(path, md5BytesBudget)
-				if herr == nil { m.MD5 = sum; md5BytesBudget -= readB; *md5Done++ } else { *md5Skipped++ }
+				if herr == nil {
+					m.MD5 = sum
+					md5BytesBudget -= readB
+					*md5Done++
+				} else {
+					*md5Skipped++
+				}
 				curr[rel] = m
-			} else if !isDir && s.useMD5 && m.Size > s.md5Cutoff { s.enqueueBacklog(rel, m.Size, m.MtimeSec) }
+			} else if !isDir && s.useMD5 && m.Size > s.md5Cutoff {
+				s.enqueueBacklog(rel, m.Size, m.MtimeSec)
+			}
 		}
 		return nil
 	}
@@ -560,10 +680,16 @@ func (s *Scanner) scanTicketsOnly(out chan<- Event) {
 	cur := s.cur
 	s.mu.Unlock()
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil { return nil }
-		if d.IsDir() { return nil }
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
 		rel := s.toRelPOSIX(path)
-		if rel == "" { return nil }
+		if rel == "" {
+			return nil
+		}
 		if _, seen := cur[rel]; !seen {
 			out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Added}
 		}
@@ -577,7 +703,9 @@ type glob struct{ raw string }
 
 func (g glob) match(rel string, isDir bool) bool {
 	p := g.raw
-	if len(p) > 0 && p[0] == '!' { p = p[1:] }
+	if len(p) > 0 && p[0] == '!' {
+		p = p[1:]
+	}
 	if !strings.Contains(p, "**") {
 		ok, _ := filepath.Match(fromPOSIX(p), fromPOSIX(rel))
 		return ok
@@ -590,7 +718,9 @@ func (g glob) match(rel string, isDir bool) bool {
 // Examples: "**/*.blend" matches any .blend at any depth;
 // "src/**/*.blend" matches any .blend under src/.
 func matchDoublestar(pattern, rel string) bool {
-	if pattern == "**" { return true }
+	if pattern == "**" {
+		return true
+	}
 
 	idx := strings.Index(pattern, "**/")
 	if idx < 0 {
@@ -599,50 +729,81 @@ func matchDoublestar(pattern, rel string) bool {
 		return strings.HasPrefix(rel, prefix)
 	}
 
-	prefix := pattern[:idx]      // e.g. "src/" or ""
-	suffix := pattern[idx+3:]    // e.g. "*.blend" or "file.txt"
+	prefix := pattern[:idx]   // e.g. "src/" or ""
+	suffix := pattern[idx+3:] // e.g. "*.blend" or "file.txt"
 
 	if prefix != "" {
-		if !strings.HasPrefix(rel, prefix) { return false }
+		if !strings.HasPrefix(rel, prefix) {
+			return false
+		}
 		rel = rel[len(prefix):]
 	}
 
 	// match suffix against every trailing sub-path of rel
 	for {
 		ok, _ := filepath.Match(fromPOSIX(suffix), fromPOSIX(rel))
-		if ok { return true }
+		if ok {
+			return true
+		}
 		i := strings.Index(rel, "/")
-		if i < 0 { break }
+		if i < 0 {
+			break
+		}
 		rel = rel[i+1:]
 	}
 	return false
 }
 
 func (s *Scanner) isIgnored(rel string, isDir bool) bool {
-	if s.igRegex != nil && s.igRegex.MatchString(rel) { return true }
-	for _, g := range s.builtinGlobs { if g.match(rel, isDir) { return true } }
-	for _, g := range s.hardGlobs    { if g.match(rel, isDir) { return true } }
-	for _, g := range s.softGlobs    { if g.match(rel, isDir) { return true } }
+	if s.igRegex != nil && s.igRegex.MatchString(rel) {
+		return true
+	}
+	for _, g := range s.builtinGlobs {
+		if g.match(rel, isDir) {
+			return true
+		}
+	}
+	for _, g := range s.hardGlobs {
+		if g.match(rel, isDir) {
+			return true
+		}
+	}
+	for _, g := range s.softGlobs {
+		if g.match(rel, isDir) {
+			return true
+		}
+	}
 	return false
 }
 
-
 func (s *Scanner) reloadIgnores() error {
 	fi, err := os.Stat(s.ignorePath)
-	if err != nil { return nil }
-	if !fi.ModTime().After(s.ignoreMTime) { return nil }
+	if err != nil {
+		return nil
+	}
+	if !fi.ModTime().After(s.ignoreMTime) {
+		return nil
+	}
 	f, err := os.Open(s.ignorePath)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer f.Close()
-	s.hardGlobs = nil; s.softGlobs = nil
+	s.hardGlobs = nil
+	s.softGlobs = nil
 	s.ignoreMTime = fi.ModTime()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") { continue }
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
 		// normalize to POSIX
 		line = toPOSIX(line)
-		if strings.HasPrefix(line, "!") { s.hardGlobs = append(s.hardGlobs, glob{raw: line}); continue }
+		if strings.HasPrefix(line, "!") {
+			s.hardGlobs = append(s.hardGlobs, glob{raw: line})
+			continue
+		}
 		s.softGlobs = append(s.softGlobs, glob{raw: line})
 	}
 	return nil
@@ -664,19 +825,27 @@ func (s *Scanner) enqueueBacklog(rel string, size int64, mtime int64) {
 		}
 	}
 	s.backlog = append(s.backlog, backlogItem{Rel: rel, Size: size, Mtime: mtime, QueuedAt: time.Now().Unix()})
-	if len(s.backlog) > 1000 { s.backlog = s.backlog[len(s.backlog)-1000:] }
+	if len(s.backlog) > 1000 {
+		s.backlog = s.backlog[len(s.backlog)-1000:]
+	}
 }
 
 func (s *Scanner) loadBacklog() error {
 	f, err := os.Open(s.backlogPath)
-	if err != nil { return nil }
+	if err != nil {
+		return nil
+	}
 	defer f.Close()
 	dec := json.NewDecoder(bufio.NewReader(f))
 	var list []backlogItem
-	if err := dec.Decode(&list); err != nil { return nil }
+	if err := dec.Decode(&list); err != nil {
+		return nil
+	}
 	// prioritize: newer mtime first; then bigger files
 	sort.Slice(list, func(i, j int) bool {
-		if list[i].Mtime == list[j].Mtime { return list[i].Size > list[j].Size }
+		if list[i].Mtime == list[j].Mtime {
+			return list[i].Size > list[j].Size
+		}
 		return list[i].Mtime > list[j].Mtime
 	})
 	s.backlog = list
@@ -684,7 +853,9 @@ func (s *Scanner) loadBacklog() error {
 }
 
 func (s *Scanner) saveBacklog() error {
-	if !s.workingCopyAvailable() { return errors.New("watcher: working copy metadata is missing") }
+	if !s.workingCopyAvailable() {
+		return errors.New("watcher: working copy metadata is missing")
+	}
 	// backlogSaveMu serialises concurrent calls (scanner + worker both call this).
 	// Snapshot is taken inside the write lock so the last caller always writes the
 	// freshest state — no older snapshot can overwrite a newer one.
@@ -698,13 +869,17 @@ func (s *Scanner) saveBacklog() error {
 }
 
 func (s *Scanner) workingCopyAvailable() bool {
-	if !s.requireSVNMetadata { return true }
+	if !s.requireSVNMetadata {
+		return true
+	}
 	info, err := os.Stat(filepath.Join(s.wc, ".svn"))
 	return err == nil && info.IsDir()
 }
 
 func (s *Scanner) writeJSON(path string, value any) error {
-	if !s.requireSVNMetadata { return atomicWriteJSON(path, value) }
+	if !s.requireSVNMetadata {
+		return atomicWriteJSON(path, value)
+	}
 	// startReadWrite creates these directories before scanning. If the WC was
 	// moved after the metadata check, CreateTemp fails instead of recreating it.
 	return atomicWriteJSONInExistingDir(path, value)
@@ -729,12 +904,17 @@ func (s *Scanner) runBacklogWorker(ctx context.Context) {
 // file is still stable, computes its MD5, then updates s.cur and removes the entry.
 func (s *Scanner) processOneBacklogItem(ctx context.Context) {
 	s.mu.Lock()
-	if len(s.backlog) == 0 { s.mu.Unlock(); return }
+	if len(s.backlog) == 0 {
+		s.mu.Unlock()
+		return
+	}
 
 	// Pick smallest file — fastest to hash; also most likely a rename candidate
 	idx := 0
 	for i := 1; i < len(s.backlog); i++ {
-		if s.backlog[i].Size < s.backlog[idx].Size { idx = i }
+		if s.backlog[i].Size < s.backlog[idx].Size {
+			idx = i
+		}
 	}
 	item := s.backlog[idx]
 	s.mu.Unlock()
@@ -802,7 +982,9 @@ func md5FileBudgeted(path string, budget int64) (string, int64, error) {
 
 func md5FileBudgetedContext(ctx context.Context, path string, budget int64) (string, int64, error) {
 	f, err := os.Open(normalizeForOpen(path))
-	if err != nil { return "", 0, err }
+	if err != nil {
+		return "", 0, err
+	}
 	defer f.Close()
 	h := md5.New()
 	var copied int64
@@ -812,12 +994,18 @@ func md5FileBudgetedContext(ctx context.Context, path string, budget int64) (str
 			return "", copied, err
 		}
 		n := int64(len(buf))
-		if n > budget { n = budget }
+		if n > budget {
+			n = budget
+		}
 		m, er := io.CopyN(h, f, n)
 		copied += m
 		budget -= m
-		if er == io.EOF { break }
-		if er != nil { return "", copied, er }
+		if er == io.EOF {
+			break
+		}
+		if er != nil {
+			return "", copied, er
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), copied, nil
 }
@@ -827,25 +1015,41 @@ func md5FileBudgetedContext(ctx context.Context, path string, budget int64) (str
 func (s *Scanner) toRelPOSIX(abs string) string {
 	abs = pathAbs(abs)
 	rel, err := filepath.Rel(s.wc, abs)
-	if err != nil { return "" }
-	if strings.HasPrefix(rel, "..") { return "" }
+	if err != nil {
+		return ""
+	}
+	if strings.HasPrefix(rel, "..") {
+		return ""
+	}
 	return toPOSIX(rel)
 }
 
-func toPOSIX(p string) string { return filepath.ToSlash(p) }
+func toPOSIX(p string) string   { return filepath.ToSlash(p) }
 func fromPOSIX(p string) string { return filepath.FromSlash(p) }
 
 func infoType(d fs.DirEntry) fs.FileMode { return d.Type() & os.ModeType }
 
-func pickType(isDir bool) EntryType { if isDir { return EntryDir }; return EntryFile }
+func pickType(isDir bool) EntryType {
+	if isDir {
+		return EntryDir
+	}
+	return EntryFile
+}
 
-func isDebug() bool { return strings.Contains(strings.ToLower(os.Getenv("FILEES_LOG")), "debug") || strings.Contains(strings.ToLower(os.Getenv("FILEES_LOG")), "trace") }
+func isDebug() bool {
+	return strings.Contains(strings.ToLower(os.Getenv("FILEES_LOG")), "debug") || strings.Contains(strings.ToLower(os.Getenv("FILEES_LOG")), "trace")
+}
 
 func (s *Scanner) isBusy() bool {
 	fi, err := os.Stat(s.busyPath)
-	if err != nil { return false }
+	if err != nil {
+		return false
+	}
 	// stale?
-	if time.Since(fi.ModTime()) > s.busyTTL { s.lg.Warnf("commit.busy stale — ignoring"); return false }
+	if time.Since(fi.ModTime()) > s.busyTTL {
+		s.lg.Warnf("commit.busy stale — ignoring")
+		return false
+	}
 	return true
 }
 
@@ -858,20 +1062,25 @@ func pathAbs(p string) string {
 }
 
 func normalizeForOpen(p string) string {
-    ap := pathAbs(p)
-    if runtime.GOOS == "windows" {
-        if !strings.HasPrefix(ap, `\\?\`) && len(ap) >= 260 {
-            ap = `\\?\` + ap
-        }
-    }
-    return ap
+	ap := pathAbs(p)
+	if runtime.GOOS == "windows" {
+		if !strings.HasPrefix(ap, `\\?\`) && len(ap) >= 260 {
+			ap = `\\?\` + ap
+		}
+	}
+	return ap
 }
 
 func toDiskList(m index) []diskEntry {
 	list := make([]diskEntry, 0, len(m))
 	for rel, mm := range m {
 		de := diskEntry{Path: rel, Mtime: mm.MtimeSec}
-		if !mm.IsDir { de.Size = mm.Size; if mm.MD5 != "" { de.MD5 = mm.MD5 } }
+		if !mm.IsDir {
+			de.Size = mm.Size
+			if mm.MD5 != "" {
+				de.MD5 = mm.MD5
+			}
+		}
 		list = append(list, de)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Path < list[j].Path })
@@ -889,27 +1098,47 @@ func toDiskList(m index) []diskEntry {
 // destination itself needs no separate guard.
 func atomicWriteJSON(path string, v any) error {
 	d := filepath.Dir(path)
-	if err := os.MkdirAll(d, 0o755); err != nil { return err }
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		return err
+	}
 	return atomicWriteJSONInExistingDir(path, v)
 }
 
 func atomicWriteJSONInExistingDir(path string, v any) error {
 	d := filepath.Dir(path)
 	f, err := os.CreateTemp(d, ".filees-state-*.tmp")
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	tmp := f.Name()
 	defer os.Remove(tmp)
 	// os.CreateTemp opens 0600; keep the mode this state file always had so the
 	// only behavioural change here is the symlink fix.
-	if err := f.Chmod(0o644); err != nil { f.Close(); return err }
+	if err := f.Chmod(0o644); err != nil {
+		f.Close()
+		return err
+	}
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil { f.Close(); return err }
-	if err := f.Sync(); err != nil { f.Close(); return err }
-	if err := f.Close(); err != nil { return err }
+	if err := enc.Encode(v); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
 	return os.Rename(tmp, path)
 }
 
-func coalesce(s string, def string) string { if s != "" { return s }; return def }
+func coalesce(s string, def string) string {
+	if s != "" {
+		return s
+	}
+	return def
+}
 
 func (s *Scanner) exists(p string) bool { _, err := os.Stat(p); return err == nil }

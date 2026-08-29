@@ -91,10 +91,10 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	s.reservationsKnown = reservationsKnown
 	s.notices = make([]NoticeViewModel, 0, len(notices))
 	for _, notice := range notices {
-		if notice.Acked {
-			continue
-		}
-		s.notices = append(s.notices, NoticeViewModel{ID: notice.ID, RepoID: notice.RepoID, Title: notice.Title, CreatedAt: notice.CreatedAt})
+		s.notices = append(s.notices, NoticeViewModel{
+			ID: notice.ID, RepoID: notice.RepoID, Revision: notice.Revision,
+			Title: notice.Title, CreatedAt: notice.CreatedAt, Acked: notice.Acked,
+		})
 	}
 	s.refreshed = refreshed
 	s.stale = false
@@ -216,27 +216,29 @@ func (s appState) viewModel() ViewModel {
 			serverID = sum.ServerID
 		}
 		repos = append(repos, RepoViewModel{
-			ID:               id,
-			DisplayName:      sum.DisplayName,
-			ServerID:         serverID,
-			Attached:         sum.Attached,
-			Access:           snap.Access,
-			OwnerRealmID:     snap.OwnerRealmID,
-			AttachmentPolicy: snap.AttachmentPolicy,
-			EditingPolicy:    snap.EditingPolicy,
-			URL:              sum.URL,
-			LocalPath:        sum.LocalPath,
-			State:            snap.State,
-			Connectivity:     snap.Connectivity,
-			LocalRev:         snap.LocalRevision,
-			HeadRev:          snap.HeadRevision,
-			Pending:          snap.Pending,
-			Conflicts:        snap.Conflicts,
-			LastSyncAt:       snap.LastSyncAt,
-			CurrentOp:        snap.CurrentOperation,
-			ReservationCount: s.repoReservations[reservationKey(sum.ServerID, sum.ID)],
-			Cycle:            snap.Cycle,
-			ServerDeleted:    sum.ServerDeleted, LocalCleanupPending: sum.LocalCleanupPending,
+			ID:                   id,
+			DisplayName:          sum.DisplayName,
+			ServerID:             serverID,
+			Attached:             sum.Attached,
+			Access:               snap.Access,
+			OwnerRealmID:         snap.OwnerRealmID,
+			AttachmentPolicy:     snap.AttachmentPolicy,
+			EditingPolicy:        snap.EditingPolicy,
+			URL:                  sum.URL,
+			LocalPath:            sum.LocalPath,
+			State:                snap.State,
+			Connectivity:         snap.Connectivity,
+			LocalRev:             snap.LocalRevision,
+			HeadRev:              snap.HeadRevision,
+			WorkingCopyBytes:     snap.WorkingCopyBytes,
+			WorkingCopySizeKnown: snap.WorkingCopySizeKnown,
+			Pending:              snap.Pending,
+			Conflicts:            snap.Conflicts,
+			LastSyncAt:           snap.LastSyncAt,
+			CurrentOp:            snap.CurrentOperation,
+			ReservationCount:     s.repoReservations[reservationKey(sum.ServerID, sum.ID)],
+			Cycle:                snap.Cycle,
+			ServerDeleted:        sum.ServerDeleted, LocalCleanupPending: sum.LocalCleanupPending,
 			RetainUntil: sum.RetainUntil, RecoveryOperationID: sum.RecoveryOperationID,
 			RecoveryAvailable: sum.RecoveryAvailable, RecoveryPending: sum.RecoveryPending, CleanupError: sum.CleanupError,
 		})
@@ -314,7 +316,13 @@ func (s appState) viewModel() ViewModel {
 	if s.connected && s.stale {
 		vm.Icon = IconBusy
 	} else {
-		vm.Icon = aggregateIcon(s.connected, repos, len(s.notices))
+		unread := 0
+		for _, notice := range s.notices {
+			if !notice.Acked {
+				unread++
+			}
+		}
+		vm.Icon = aggregateIcon(s.connected, repos, unread)
 	}
 	return vm
 }

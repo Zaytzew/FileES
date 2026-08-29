@@ -1427,6 +1427,7 @@ func (s *Server) handleRepoPublish(req contract.Request) contract.Response {
 }
 
 func (s *Server) handleNoticeList(req contract.Request) contract.Response {
+	const acknowledgedLimit = 50
 	s.mu.RLock()
 	repos := make([]*RepoState, 0, len(s.repos))
 	for _, rs := range s.repos {
@@ -1446,10 +1447,25 @@ func (s *Server) handleNoticeList(req contract.Request) contract.Response {
 	}
 	sort.SliceStable(notices, func(i, j int) bool {
 		if notices[i].CreatedAt == notices[j].CreatedAt {
-			return notices[i].ID < notices[j].ID
+			if notices[i].Revision == notices[j].Revision {
+				return notices[i].ID > notices[j].ID
+			}
+			return notices[i].Revision > notices[j].Revision
 		}
-		return notices[i].CreatedAt < notices[j].CreatedAt
+		return notices[i].CreatedAt > notices[j].CreatedAt
 	})
+	recent := notices[:0]
+	acknowledged := 0
+	for _, notice := range notices {
+		if notice.Acked {
+			if acknowledged >= acknowledgedLimit {
+				continue
+			}
+			acknowledged++
+		}
+		recent = append(recent, notice)
+	}
+	notices = recent
 	return contract.OKResponse(req.RequestID, contract.NoticeListResult{Notices: notices})
 }
 

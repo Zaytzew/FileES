@@ -19,6 +19,7 @@ const (
 	IntentJournal            IntentKind = "journal"
 	IntentReservations       IntentKind = "reservations"
 	IntentCreateRepository   IntentKind = "create_repository"
+	IntentAttachRepository   IntentKind = "attach_repository"
 	IntentPairMobileDevice   IntentKind = "pair_mobile_device"
 	IntentUpdatePlan         IntentKind = "update_plan"
 	IntentUpdateApply        IntentKind = "update_apply"

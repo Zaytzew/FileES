@@ -15,6 +15,7 @@ const (
 	IconBusy         IconState = "busy"
 	IconOffline      IconState = "offline"
 	IconError        IconState = "error"
+	IconShout        IconState = "shout"
 	IconDisconnected IconState = "disconnected"
 )
 
@@ -41,33 +42,35 @@ const (
 // RepoViewModel is the read-only presentation model for one repository.
 // Constructed from RepoSummary (URL, LocalPath) + RepoStatus (live state).
 type RepoViewModel struct {
-	ID                  string
-	DisplayName         string
-	ServerID            string
-	Attached            bool
-	Access              string
-	OwnerRealmID        string
-	AttachmentPolicy    string
-	EditingPolicy       string
-	URL                 string
-	LocalPath           string
-	State               string
-	Connectivity        string
-	LocalRev            int64
-	HeadRev             int64
-	Pending             contract.PendingStats
-	Conflicts           int
-	LastSyncAt          string
-	CurrentOp           *string
-	ReservationCount    int
-	Cycle               contract.CycleStatus
-	ServerDeleted       bool
-	LocalCleanupPending bool
-	RetainUntil         string
-	RecoveryOperationID string
-	RecoveryAvailable   bool
-	RecoveryPending     bool
-	CleanupError        string
+	ID                   string
+	DisplayName          string
+	ServerID             string
+	Attached             bool
+	Access               string
+	OwnerRealmID         string
+	AttachmentPolicy     string
+	EditingPolicy        string
+	URL                  string
+	LocalPath            string
+	State                string
+	Connectivity         string
+	LocalRev             int64
+	HeadRev              int64
+	WorkingCopyBytes     int64
+	WorkingCopySizeKnown bool
+	Pending              contract.PendingStats
+	Conflicts            int
+	LastSyncAt           string
+	CurrentOp            *string
+	ReservationCount     int
+	Cycle                contract.CycleStatus
+	ServerDeleted        bool
+	LocalCleanupPending  bool
+	RetainUntil          string
+	RecoveryOperationID  string
+	RecoveryAvailable    bool
+	RecoveryPending      bool
+	CleanupError         string
 }
 
 type PendingAction struct {
@@ -153,6 +156,8 @@ type ActivityViewModel struct {
 
 type NoticeViewModel struct {
 	ID, RepoID, Title, CreatedAt string
+	Revision                     int64
+	Acked                        bool
 }
 
 type UpdateViewModel struct {
@@ -276,6 +281,9 @@ func (vm ViewModel) CanSetRealmBranding() bool {
 func (vm ViewModel) CanSetSessionTimeout() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerSetSessionTimeout)
 }
+func (vm ViewModel) CanPairMobile() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapMobilePairingBegin)
+}
 func (vm ViewModel) CanDetachServer() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapServerDetach)
 }
@@ -345,7 +353,7 @@ func aggregateIcon(connected bool, repos []RepoViewModel, notices int) IconState
 		return IconDisconnected
 	}
 	if notices > 0 {
-		return IconError
+		return IconShout
 	}
 	best := IconActive
 	for _, r := range repos {

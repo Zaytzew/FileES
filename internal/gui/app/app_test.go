@@ -489,6 +489,32 @@ func TestAggregateIconActiveWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestAggregateIconAnnouncementOverridesRepositoryState(t *testing.T) {
+	repos := []RepoViewModel{{State: contract.StateDegraded, Conflicts: 1}}
+	if got := aggregateIcon(true, repos, 1); got != IconShout {
+		t.Fatalf("got %q, want %q", got, IconShout)
+	}
+	if got := aggregateIcon(false, repos, 1); got != IconDisconnected {
+		t.Fatalf("disconnected got %q, want %q", got, IconDisconnected)
+	}
+}
+
+func TestReducerKeepsReadAnnouncementHistoryButOnlyUnreadRaisesAlarm(t *testing.T) {
+	s := newAppState().applyConnected(contract.AllCapabilities)
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, true, []contract.Notice{
+		{ID: "read", Revision: 7, Title: "przeczytane", Acked: true},
+		{ID: "unread", Revision: 8, Title: "nowe"},
+	}, time.Now())
+	vm := s.viewModel()
+	if len(vm.Notices) != 2 || !vm.Notices[0].Acked || vm.Notices[0].Revision != 7 || vm.Icon != IconShout {
+		t.Fatalf("view model=%+v", vm)
+	}
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, true, []contract.Notice{{ID: "read", Acked: true}}, time.Now())
+	if vm = s.viewModel(); len(vm.Notices) != 1 || vm.Icon == IconShout {
+		t.Fatalf("read-only view model=%+v", vm)
+	}
+}
+
 func TestAggregateIconPriority(t *testing.T) {
 	cases := []struct {
 		repos []RepoViewModel

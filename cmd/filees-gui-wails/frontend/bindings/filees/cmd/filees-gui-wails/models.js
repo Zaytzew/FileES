@@ -390,6 +390,13 @@ export class NoticeProjection {
              */
             this["repo_id"] = undefined;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["revision"] = undefined;
+        }
         if (!("title" in $$source)) {
             /**
              * @member
@@ -403,6 +410,13 @@ export class NoticeProjection {
              * @type {string}
              */
             this["created_at"] = "";
+        }
+        if (!("acked" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["acked"] = false;
         }
         if (!("can_ack" in $$source)) {
             /**
@@ -573,6 +587,20 @@ export class PromptChoice {
     }
 }
 
+export class PromptOption {
+    constructor($$source = {}) {
+        if (!("value" in $$source)) this["value"] = "";
+        if (!("label" in $$source)) this["label"] = "";
+        if (/** @type {any} */(false)) this["detail"] = undefined;
+        Object.assign(this, $$source);
+    }
+
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PromptOption($$parsedSource);
+    }
+}
+
 export class PromptSnapshot {
     /**
      * Creates a new PromptSnapshot instance.
@@ -606,6 +634,20 @@ export class PromptSnapshot {
              * @type {string}
              */
             this["text"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["label"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {PromptOption[] | undefined}
+             */
+            this["options"] = undefined;
         }
         if (/** @type {any} */(false)) {
             /**
@@ -851,6 +893,20 @@ export class RepoProjection {
              * @type {number}
              */
             this["head_revision"] = 0;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["working_copy_bytes"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {boolean | undefined}
+             */
+            this["working_copy_size_known"] = undefined;
         }
         if (!("pending_files" in $$source)) {
             /**
@@ -1661,69 +1717,6 @@ export class SettingsActionProjection {
     }
 }
 
-export class SettingsFolderProjection {
-    /**
-     * Creates a new SettingsFolderProjection instance.
-     * @param {Partial<SettingsFolderProjection>} [$$source = {}] - The source object to create the SettingsFolderProjection.
-     */
-    constructor($$source = {}) {
-        if (!("id" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["id"] = "";
-        }
-        if (!("name" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["name"] = "";
-        }
-        if (!("local_path" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["local_path"] = "";
-        }
-        if (!("state" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["state"] = "";
-        }
-        if (!("access" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["access"] = "";
-        }
-        if (!("editing" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["editing"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new SettingsFolderProjection instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {SettingsFolderProjection}
-     */
-    static createFrom($$source = {}) {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new SettingsFolderProjection(/** @type {Partial<SettingsFolderProjection>} */($$parsedSource));
-    }
-}
-
 export class SettingsServerProjection {
     /**
      * Creates a new SettingsServerProjection instance.
@@ -1779,13 +1772,6 @@ export class SettingsServerProjection {
              */
             this["can_set_session_timeout"] = false;
         }
-        if (!("folders" in $$source)) {
-            /**
-             * @member
-             * @type {SettingsFolderProjection[]}
-             */
-            this["folders"] = [];
-        }
 		if (!("actions" in $$source)) {
 			/**
 			 * @member
@@ -1803,12 +1789,8 @@ export class SettingsServerProjection {
      * @returns {SettingsServerProjection}
      */
     static createFrom($$source = {}) {
-        const $$createField7_0 = $$createType7;
 		const $$createActions = $$createType33;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("folders" in $$parsedSource) {
-            $$parsedSource["folders"] = $$createField7_0($$parsedSource["folders"]);
-        }
 		if ("actions" in $$parsedSource) {
 			$$parsedSource["actions"] = $$createActions($$parsedSource["actions"]);
 		}
@@ -2126,8 +2108,6 @@ const $$createType2 = RepositoryActionProjection.createFrom;
 const $$createType3 = $Create.Array($$createType2);
 const $$createType4 = PublicShareProjection.createFrom;
 const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = SettingsFolderProjection.createFrom;
-const $$createType7 = $Create.Array($$createType6);
 const $$createType8 = SettingsServerProjection.createFrom;
 const $$createType9 = $Create.Array($Create.Any);
 const $$createType10 = ServerProjection.createFrom;

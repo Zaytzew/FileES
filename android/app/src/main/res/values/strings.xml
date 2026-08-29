@@ -76,6 +76,7 @@
     <string name="error_host_key">Klucz serwera nie zgadza się z tym z parowania.</string>
     <string name="error_missing_port">W adresie z parowania brakuje portu (oczekiwane host:port).</string>
     <string name="settings_server">Serwer z parowania: %1$s</string>
+    <string name="main_server_address">Serwer: %1$s</string>
     <string name="status_camera_permission_denied">Brak zgody na kamerę — użyj pola wklejania danych parowania.</string>
     <string name="status_scan_cancelled">Skanowanie anulowane.</string>
     <string name="scan_qr_prompt">Umieść kod QR w kwadracie</string>

@@ -108,7 +108,17 @@ class MainActivity : AppCompatActivity() {
             ""
         }
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
-            if (client == null) activate(address, hostKey) else scanWatchedFolders()
+            if (client == null) {
+                activate(address, hostKey)
+            } else {
+                // activate() already ran successfully in an earlier
+                // onResume() this process; showPaired(true) fired then, but
+                // nothing re-asserts it on a later resume (e.g. back from
+                // Settings) since scanWatchedFolders() only drives the
+                // background upload watch, never the paired UI state.
+                showPaired(true)
+                scanWatchedFolders()
+            }
         } else {
             showPaired(false)
         }

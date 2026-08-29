@@ -26,26 +26,27 @@ type Server struct {
 	startTime time.Time
 	lg        talk.Logger
 
-	mu             sync.RWMutex
-	repos          map[string]*RepoState // keyed by repo ID
-	activations    map[string]contract.ActivationStatus
-	activation     ActivationService
-	realmAlias     RealmAliasService
-	realmGrants    RealmGrantService
-	realmBranding  RealmPublicBrandingService
-	editingPolicy  EditingPolicyService
-	publicShares   PublicShareService
-	uploadChannels UploadChannelService
-	ownerLabels    OwnerLabelResolver
-	lifecycle      RepositoryLifecycleService
-	mobilePair     MobilePairingService
-	serverDetach   ServerDetachService
-	sessionTimeout SessionTimeoutService
-	realmRemoval   RealmRemovalService
-	updates        UpdateService
-	whales         WhaleService
-	activity       ActivitySource
-	lifecycleFn    SystemLifecycleService
+	mu                   sync.RWMutex
+	repos                map[string]*RepoState // keyed by repo ID
+	activations          map[string]contract.ActivationStatus
+	activation           ActivationService
+	realmAlias           RealmAliasService
+	realmGrants          RealmGrantService
+	realmBranding        RealmPublicBrandingService
+	editingPolicy        EditingPolicyService
+	publicShares         PublicShareService
+	publicShareAggregate PublicShareSource
+	uploadChannels       UploadChannelService
+	ownerLabels          OwnerLabelResolver
+	lifecycle            RepositoryLifecycleService
+	mobilePair           MobilePairingService
+	serverDetach         ServerDetachService
+	sessionTimeout       SessionTimeoutService
+	realmRemoval         RealmRemovalService
+	updates              UpdateService
+	whales               WhaleService
+	activity             ActivitySource
+	lifecycleFn          SystemLifecycleService
 
 	connsMu  sync.Mutex
 	conns    map[net.Conn]struct{}
@@ -170,6 +171,26 @@ func (s *Server) SetActivitySource(source ActivitySource) {
 	s.mu.Lock()
 	s.activity = source
 	s.mu.Unlock()
+}
+
+// PublicShareSource answers the cached, cross-repo aggregate of every public
+// share the daemon has discovered across all activated servers. The daemon
+// (cmd/filees) refreshes it as each server's projection updates; ipcserver
+// only pulls from it, the same split used for ActivitySource above.
+type PublicShareSource interface {
+	List() []contract.PublicShareSummary
+}
+
+func (s *Server) SetPublicShareSource(source PublicShareSource) {
+	s.mu.Lock()
+	s.publicShareAggregate = source
+	s.mu.Unlock()
+}
+
+func (s *Server) publicShareSource() PublicShareSource {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.publicShareAggregate
 }
 
 func (s *Server) activitySource() ActivitySource {

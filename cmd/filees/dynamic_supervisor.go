@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"filees/pkg/activity"
@@ -27,6 +28,55 @@ type projectionUpdate struct {
 	view                                     clientview.View
 }
 
+// publicShareLister is the narrow slice of realmAliasService this file needs:
+// one control-plane exchange per owned repo, unrelated to the GUI/IPC
+// contract types it also happens to return.
+type publicShareLister interface {
+	ListPublicShares(ctx context.Context, serverID, repoID string) ([]contract.PublicShareSummary, error)
+}
+
+// publicShareCacheSetter is the write side of publicShareCache.
+type publicShareCacheSetter interface {
+	Set(serverID string, shares []contract.PublicShareSummary)
+}
+
+// refreshPublicShares aggregates every publicly-shared channel this realm
+// owns on serverID and republishes the result into cache, then notifies any
+// listening GUI. It runs off the same cadence as the server's projection
+// sync (clientview.Monitor's configured interval) — piggybacked onto an
+// already-throttled, already-scheduled poll instead of a new ticker, so it
+// never adds SSH control-plane load beyond what that interval already
+// budgets for. Called from a bounded-lifetime goroutine (see updates
+// handling below), never from the supervisor's own select loop, since each
+// owned repo costs one blocking SSH exchange.
+func refreshPublicShares(ctx context.Context, lister publicShareLister, cache publicShareCacheSetter, ipc *ipcserver.Server, serverID string, view clientview.View) {
+	if lister == nil || cache == nil || view.RealmID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	shares := make([]contract.PublicShareSummary, 0, len(view.Repositories))
+	for _, repo := range view.Repositories {
+		if repo.OwnerRealmID != view.RealmID || repo.State != "active" {
+			continue
+		}
+		listed, err := lister.ListPublicShares(ctx, serverID, repo.RepoID)
+		if err != nil {
+			talk.With("public-shares:"+serverID).Warnf("aggregate listing failed for repo %s: %v", repo.RepoID, err)
+			continue
+		}
+		for _, share := range listed {
+			share.ServerID = serverID
+			share.RepoDisplayName = repo.DisplayName
+			shares = append(shares, share)
+		}
+	}
+	cache.Set(serverID, shares)
+	if ipc != nil {
+		ipc.Emit(contract.NewEvent("", 0, contract.EvPublicSharesChanged, "", nil))
+	}
+}
+
 type serviceProjectionUpdater struct {
 	client client.Client
 	url    string
@@ -42,7 +92,7 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 	return updater.client.Checkout(ctx, updater.url, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
 	timeouts := make(map[string]time.Duration, len(profiles))
@@ -76,6 +126,8 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	updates := make(chan projectionUpdate, 16)
 	monitored := make(map[string]bool)
 	currentViews := make(map[string]clientview.View)
+	var sharesRefreshMu sync.Mutex
+	sharesRefreshing := make(map[string]bool)
 	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval, timeout time.Duration) error {
 		if timeout <= 0 {
 			timeout = clientprofile.DefaultSessionTimeout
@@ -189,6 +241,25 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: sessionTimeoutMinutes(update.serverID, runtimes)})
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes, lifecycle); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
+			}
+			if shareLister != nil && shareCache != nil {
+				sharesRefreshMu.Lock()
+				busy := sharesRefreshing[update.serverID]
+				if !busy {
+					sharesRefreshing[update.serverID] = true
+				}
+				sharesRefreshMu.Unlock()
+				if !busy {
+					serverID, view := update.serverID, update.view
+					go func() {
+						defer func() {
+							sharesRefreshMu.Lock()
+							delete(sharesRefreshing, serverID)
+							sharesRefreshMu.Unlock()
+						}()
+						refreshPublicShares(ctx, shareLister, shareCache, ipc, serverID, view)
+					}()
+				}
 			}
 		case attachment := <-attachmentEvents:
 			repo := attachment.Repo

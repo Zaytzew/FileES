@@ -188,6 +188,8 @@ func runDaemon() {
 	provisioner.attachments = provisionedAttachments
 	go provisioner.Run(ctx)
 	realmAliases := &realmAliasService{provisioner: provisioner, cache: make(map[string]ownerLabelCache)}
+	shareCache := newPublicShareCache()
+	ipc.SetPublicShareSource(shareCache)
 	ipc.SetRealmAliasService(realmAliases)
 	ipc.SetRealmGrantService(realmAliases)
 	ipc.SetRealmPublicBrandingService(realmAliases)
@@ -219,7 +221,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, ipc, lifecycleStore, gate, mtx, activityJournal, realmAliases.ProjectAlias); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, ipc, lifecycleStore, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	if lifecycle.action.Load() == daemonActionRestart {

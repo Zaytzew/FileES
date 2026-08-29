@@ -471,6 +471,17 @@ func (c *Client) PublicShareList(ctx context.Context, serverID, repoID string) (
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+// PublicShareListAll returns the daemon's cached, cross-repo aggregate of
+// every owned public share across every activated server.
+func (c *Client) PublicShareListAll(ctx context.Context) (*contract.PublicShareListResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoPublicShareListAll, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.PublicShareListResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) PublicShareCreate(ctx context.Context, payload contract.PublicShareCreatePayload) (*contract.PublicShareResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoPublicShareCreate, payload.RepoID, payload)
 	if err != nil {

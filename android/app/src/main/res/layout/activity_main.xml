@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -15,11 +16,49 @@
             android:layout_height="wrap_content"
             android:background="@color/filees_navy"
             android:minHeight="?attr/actionBarSize"
+            app:logo="@drawable/ic_folder"
+            app:logoDescription="@string/app_name"
             app:title="@string/app_name"
             app:titleTextColor="@color/filees_white"
             app:navigationIconTint="@color/filees_white"
             app:subtitleTextColor="@color/filees_white"
             app:itemIconTint="@color/filees_white" />
+
+        <LinearLayout
+            android:id="@+id/barServerAddress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/filees_navy_container"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <!-- concepts/ANDROID_BRAND_ALIGNMENT_CONCEPT.md §5: purely
+                 decorative "breathing" pulse (MainActivity#startPulse),
+                 not wired to any connectivity state - Android has none to
+                 wire it to (§0). -->
+            <ImageView
+                android:id="@+id/pulseDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="@null"
+                android:src="@drawable/pulse_dot" />
+
+            <TextView
+                android:id="@+id/textServerAddress"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/filees_white"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                tools:text="Serwer: 192.168.1.5:2222" />
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/panelUnpaired"

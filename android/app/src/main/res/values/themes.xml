@@ -1,12 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- concepts/ANDROID_BRAND_ALIGNMENT_CONCEPT.md §1: the previous theme
+         only set colorPrimary/colorPrimaryContainer/colorOnPrimary. Every
+         Material3 component reads color roles in matched pairs
+         (containerX + onContainerX); leaving onPrimaryContainer at its
+         Material3 default while forcing colorPrimaryContainer to a dark
+         navy broke contrast wherever a component uses that pair (the FAB's
+         default style, notably). Fixing the one pair that's provably wrong
+         and hoping the rest are fine was rejected in favor of defining the
+         whole primary+secondary family explicitly, at once. -->
     <style name="Theme.Filees" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/filees_navy</item>
         <item name="android:navigationBarColor">@color/filees_navy</item>
         <item name="android:windowLightStatusBar">false</item>
+
         <item name="colorPrimary">@color/filees_navy</item>
-        <item name="colorPrimaryContainer">@color/filees_navy</item>
         <item name="colorOnPrimary">@color/filees_white</item>
+        <item name="colorPrimaryContainer">@color/filees_navy_container</item>
+        <item name="colorOnPrimaryContainer">@color/filees_white</item>
+
+        <item name="colorSecondary">@color/filees_orange</item>
+        <item name="colorOnSecondary">@color/filees_white</item>
+        <item name="colorSecondaryContainer">@color/filees_orange_container</item>
+        <item name="colorOnSecondaryContainer">@color/filees_navy</item>
+
         <item name="actionMenuTextColor">@color/filees_white</item>
     </style>
 </resources>

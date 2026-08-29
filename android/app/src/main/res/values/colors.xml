@@ -3,4 +3,14 @@
     <color name="filees_navy">#0B1D3A</color>
     <color name="filees_orange">#FF6A00</color>
     <color name="filees_white">#FFFFFF</color>
+
+    <!-- Material3 container tones for filees_navy/filees_orange. Not a
+         literal Wails port, just softer surfaces for the "container" role
+         so the FAB/secondary cards read as a step down from full-strength
+         primary/secondary, not identical to them. Contrast is guaranteed
+         by construction, not tuned by eye: the navy container stays dark
+         enough for white text, the orange container stays light enough for
+         navy text. -->
+    <color name="filees_navy_container">#14294D</color>
+    <color name="filees_orange_container">#FFDCC2</color>
 </resources>

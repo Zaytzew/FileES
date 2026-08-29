@@ -1,6 +1,8 @@
 package net.filees.mobile
 
 import android.Manifest
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -14,6 +16,7 @@ import android.provider.MediaStore
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.webkit.MimeTypeMap
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private val browseAdapter = BrowseAdapter(onOpen = { openRow(it) }, onDownload = { downloadRow(it) })
 
     private val prefs by lazy { getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE) }
+    private var pulseAnimator: ObjectAnimator? = null
 
     private val pickFilesLauncher = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         enqueueWalked(uris.map { DocumentWalk.single(contentResolver, it) })
@@ -87,14 +91,22 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        startPulse()
+
         selectedRepoId = prefs.getString(FileesSession.PREF_REPO_ID, null)
         showPaired(false)
     }
 
     override fun onResume() {
         super.onResume()
+        pulseAnimator?.resume()
         val address = prefs.getString(FileesSession.PREF_ADDRESS, null)
         val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null)
+        binding.textServerAddress.text = if (!address.isNullOrBlank()) {
+            getString(R.string.main_server_address, address)
+        } else {
+            ""
+        }
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
             if (client == null) activate(address, hostKey) else scanWatchedFolders()
         } else {
@@ -122,8 +134,35 @@ class MainActivity : AppCompatActivity() {
         return super.onOptionsItemSelected(item)
     }
 
+    // concepts/ANDROID_BRAND_ALIGNMENT_CONCEPT.md §5: purely decorative
+    // "breathing" pulse on the brand dot next to the server address — same
+    // 1.35s cadence as Wails's .pulse-core.is-offline animation, but this
+    // one carries no meaning: Android has no connectivity state to show
+    // (§0), so it never changes color or stops for anything other than the
+    // activity going to background.
+    private fun startPulse() {
+        pulseAnimator = ObjectAnimator.ofFloat(binding.pulseDot, View.ALPHA, 1f, 0.35f).apply {
+            duration = 1350
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        pulseAnimator?.pause()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        pulseAnimator?.cancel()
+    }
+
     private fun showPaired(paired: Boolean) {
         binding.panelUnpaired.visibility = if (paired) View.GONE else View.VISIBLE
+        binding.barServerAddress.visibility = if (paired) View.VISIBLE else View.GONE
         binding.recyclerBrowse.visibility = if (paired) View.VISIBLE else View.GONE
         binding.buttonAdd.visibility = if (paired && !selectedRepoId.isNullOrBlank()) View.VISIBLE else View.GONE
         supportActionBar?.setDisplayHomeAsUpEnabled(paired && selectedRepoId != null)

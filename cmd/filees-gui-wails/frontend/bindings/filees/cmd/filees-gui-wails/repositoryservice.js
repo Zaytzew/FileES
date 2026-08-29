@@ -50,6 +50,18 @@ export function ChooseGrant(choice) {
 }
 
 /**
+ * ChooseQuarantine returns fetch or hide only for an item in the current
+ * waiting-room projection. Closing is Cancel, not this method.
+ * @param {$models.RepositoryChoice} choice
+ * @returns {$CancellablePromise<$models.RepositoryAcceptance>}
+ */
+export function ChooseQuarantine(choice) {
+    return $Call.ByID(3515690080, choice).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+/**
  * ChooseShare returns an action only for a channel present in the current
  * authoritative list. Create is the sole channel-less operation.
  * @param {$models.RepositoryChoice} choice

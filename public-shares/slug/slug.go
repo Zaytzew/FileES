@@ -20,6 +20,10 @@ const (
 	// and pasted into mail, so they stay short enough to survive that.
 	MinLen = 3
 	MaxLen = 64
+	// Quarantine is reserved so a public share cannot occupy the name of the
+	// owner-only reject store. The listing itself is a daemon projection, not
+	// a public path.
+	Quarantine = "kwarantanna"
 )
 
 // reserved holds slug values that would collide with routing below the channel
@@ -29,6 +33,7 @@ var reserved = map[string]struct{}{
 	"get": {}, "file": {}, "up": {}, "api": {}, "static": {}, "assets": {},
 	"health": {}, "status": {}, "robots.txt": {}, "favicon.ico": {},
 	"admin": {}, "internal": {}, "public": {},
+	Quarantine: {},
 }
 
 var (

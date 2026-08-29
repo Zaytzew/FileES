@@ -136,6 +136,8 @@ func folderAllowsSettingsAction(folder SettingsFolder, action SettingsDialogActi
 		return folder.CanManagePublicShares
 	case SettingsDialogUploadChannels:
 		return folder.CanManageUploadChannels
+	case SettingsDialogQuarantine:
+		return folder.CanReviewQuarantine
 	case SettingsDialogDetachFolder:
 		return folder.CanDetach
 	case SettingsDialogDeleteRepo:

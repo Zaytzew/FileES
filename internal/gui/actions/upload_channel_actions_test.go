@@ -20,8 +20,8 @@ type recordingUploadChannels struct {
 	creates []actions.UploadChannelDeclaration
 }
 
-func (r *recordingUploadChannels) ListUploadChannels(context.Context, string, string) ([]actions.UploadChannelSummary, error) {
-	return nil, nil
+func (r *recordingUploadChannels) ListUploadChannels(context.Context, string, string) (actions.UploadChannelList, error) {
+	return actions.UploadChannelList{}, nil
 }
 func (r *recordingUploadChannels) CreateUploadChannel(_ context.Context, _ string, declaration actions.UploadChannelDeclaration) error {
 	r.mu.Lock()
@@ -194,8 +194,8 @@ func TestControllerCreateUploadShelfRejectsEmptyRecipients(t *testing.T) {
 
 type failingUploadChannels struct{ err error }
 
-func (f failingUploadChannels) ListUploadChannels(context.Context, string, string) ([]actions.UploadChannelSummary, error) {
-	return nil, f.err
+func (f failingUploadChannels) ListUploadChannels(context.Context, string, string) (actions.UploadChannelList, error) {
+	return actions.UploadChannelList{}, f.err
 }
 func (failingUploadChannels) CreateUploadChannel(context.Context, string, actions.UploadChannelDeclaration) error {
 	return nil

@@ -66,6 +66,9 @@ const (
 	CmdRepoUploadChannelUpdate = "repo.upload_channel_update" // update recipients of one owned active shelf
 	CmdRepoUploadChannelRevoke = "repo.upload_channel_revoke" // revoke intake while retaining the channel record
 	CmdRepoUploadChannelDelete = "repo.upload_channel_delete" // delete policy while retaining the address tombstone
+	CmdRepoQuarantineList      = "repo.quarantine_list"       // owner listing of AV rejects
+	CmdRepoQuarantineHide      = "repo.quarantine_hide"       // hide one reject in the manifest
+	CmdRepoQuarantineFetch     = "repo.quarantine_fetch"      // copy payload from the waiting room
 	CmdRepoDetach              = "repo.detach"                // detach one local working copy, preserving user data
 	CmdRepoDelete              = "repo.delete"                // delete an owned server repository, then detach locally
 	CmdRepoLifecycleStatus     = "repo.lifecycle_status"      // poll outcome of a create/attach/relocate operation by ID
@@ -146,6 +149,9 @@ const (
 	CapRepoUploadChannelUpdate = "repo.upload_channel_update"
 	CapRepoUploadChannelRevoke = "repo.upload_channel_revoke"
 	CapRepoUploadChannelDelete = "repo.upload_channel_delete"
+	CapRepoQuarantineList      = "repo.quarantine_list"
+	CapRepoQuarantineHide      = "repo.quarantine_hide"
+	CapRepoQuarantineFetch     = "repo.quarantine_fetch"
 	CapRepoDetach              = "repo.detach"
 	CapRepoDelete              = "repo.delete"
 	CapRepoLifecycleStatus     = "repo.lifecycle_status"
@@ -669,16 +675,57 @@ type UploadChannelSummary struct {
 }
 
 type UploadChannelListResult struct {
-	Channels []UploadChannelSummary `json:"channels"`
+	Channels             []UploadChannelSummary `json:"channels"`
+	QuarantineAlias      string                 `json:"quarantine_alias,omitempty"`
+	QuarantineSlug       string                 `json:"quarantine_slug,omitempty"`
+	QuarantineInvitation string                 `json:"quarantine_invitation,omitempty"`
 }
 
 type UploadChannelResult struct {
-	ChannelID           string `json:"channel_id"`
-	Alias               string `json:"alias"`
-	Slug                string `json:"slug"`
-	State               string `json:"state"`
-	UploadRepoID        string `json:"upload_repo_id,omitempty"`
-	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
+	ChannelID            string `json:"channel_id"`
+	Alias                string `json:"alias"`
+	Slug                 string `json:"slug"`
+	State                string `json:"state"`
+	UploadRepoID         string `json:"upload_repo_id,omitempty"`
+	RecipientDeliveries  int    `json:"recipient_deliveries,omitempty"`
+	QuarantineAlias      string `json:"quarantine_alias,omitempty"`
+	QuarantineSlug       string `json:"quarantine_slug,omitempty"`
+	QuarantineInvitation string `json:"quarantine_invitation,omitempty"`
+}
+
+type QuarantineListPayload struct {
+	ServerID string `json:"server_id"`
+}
+type QuarantineItemPayload struct {
+	ServerID string `json:"server_id"`
+	UploadID string `json:"upload_id"`
+}
+type QuarantineItem struct {
+	UploadID       string `json:"upload_id"`
+	OriginalName   string `json:"original_name"`
+	Size           int64  `json:"size"`
+	AVVerdict      string `json:"av_verdict,omitempty"`
+	ReceivedAt     string `json:"received_at"`
+	RemainingHours int    `json:"remaining_hours"`
+}
+type QuarantinePurged struct {
+	UploadID     string `json:"upload_id"`
+	OriginalName string `json:"original_name"`
+	PurgedAt     string `json:"purged_at"`
+}
+type QuarantineListResult struct {
+	Items   []QuarantineItem   `json:"items"`
+	Purged  []QuarantinePurged `json:"purged,omitempty"`
+	Message string             `json:"message,omitempty"`
+}
+type QuarantineHideResult struct {
+	UploadID string `json:"upload_id"`
+}
+type QuarantineFetchResult struct {
+	UploadID       string `json:"upload_id"`
+	OriginalName   string `json:"original_name"`
+	Payload        []byte `json:"payload"`
+	RemainingHours int    `json:"remaining_hours"`
 }
 
 type SystemLifecycleResult struct {

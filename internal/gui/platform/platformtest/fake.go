@@ -22,6 +22,7 @@ type Fake struct {
 	RealmGrantsFunc     func(context.Context, platform.RealmGrantDialogRequest) (platform.RealmGrantDialogResult, error)
 	PublicSharesFunc    func(context.Context, platform.PublicShareDialogRequest) (platform.PublicShareDialogResult, error)
 	UploadChannelsFunc  func(context.Context, platform.UploadChannelDialogRequest) (platform.UploadChannelDialogResult, error)
+	QuarantineFunc      func(context.Context, platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error)
 	RealmVisibilityFunc func(context.Context, platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error)
 	NotifyFunc          func(context.Context, platform.Notification) error
 	AutostartStatusFunc func(context.Context, platform.AutostartSpec) (platform.AutostartState, error)
@@ -41,6 +42,7 @@ type Fake struct {
 	RealmGrantRequests      []platform.RealmGrantDialogRequest
 	PublicShareRequests     []platform.PublicShareDialogRequest
 	UploadChannelRequests   []platform.UploadChannelDialogRequest
+	QuarantineRequests      []platform.QuarantineDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec
@@ -111,6 +113,17 @@ func (f *Fake) ShowUploadChannels(ctx context.Context, request platform.UploadCh
 		return fn(ctx, request)
 	}
 	return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}, nil
+}
+
+func (f *Fake) ShowQuarantine(ctx context.Context, request platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error) {
+	f.mu.Lock()
+	f.QuarantineRequests = append(f.QuarantineRequests, request)
+	fn := f.QuarantineFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, request)
+	}
+	return platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}, nil
 }
 
 func (f *Fake) ShowRealmVisibility(ctx context.Context, request platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error) {
@@ -256,6 +269,7 @@ func (f *Fake) Snapshot() Snapshot {
 		RealmGrantRequests:      append([]platform.RealmGrantDialogRequest(nil), f.RealmGrantRequests...),
 		PublicShareRequests:     append([]platform.PublicShareDialogRequest(nil), f.PublicShareRequests...),
 		UploadChannelRequests:   append([]platform.UploadChannelDialogRequest(nil), f.UploadChannelRequests...),
+		QuarantineRequests:      append([]platform.QuarantineDialogRequest(nil), f.QuarantineRequests...),
 		RealmVisibilityRequests: append([]platform.RealmVisibilityDialogRequest(nil), f.RealmVisibilityRequests...),
 		Notifications:           append([]platform.Notification(nil), f.Notifications...),
 		StatusRequests:          append([]platform.AutostartSpec(nil), f.StatusRequests...),
@@ -277,6 +291,7 @@ type Snapshot struct {
 	RealmGrantRequests      []platform.RealmGrantDialogRequest
 	PublicShareRequests     []platform.PublicShareDialogRequest
 	UploadChannelRequests   []platform.UploadChannelDialogRequest
+	QuarantineRequests      []platform.QuarantineDialogRequest
 	RealmVisibilityRequests []platform.RealmVisibilityDialogRequest
 	Notifications           []platform.Notification
 	StatusRequests          []platform.AutostartSpec

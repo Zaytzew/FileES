@@ -289,24 +289,24 @@ func publicShareDeclarationToControl(declaration contract.PublicShareDeclaration
 	return control.PublicShareDeclaration{RepoID: declaration.RepoID, SourceRoot: declaration.SourceRoot, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...), PasswordHash: declaration.PasswordHash, DoNotFollow: declaration.DoNotFollow, Objects: objects}
 }
 
-func (s *realmAliasService) ListUploadChannels(ctx context.Context, serverID, repoID string) ([]contract.UploadChannelSummary, error) {
+func (s *realmAliasService) ListUploadChannels(ctx context.Context, serverID, repoID string) (contract.UploadChannelListResult, error) {
 	profile, ok := s.provisioner.Profile(serverID)
 	if !ok {
-		return nil, fmt.Errorf("no activated profile for server %q", serverID)
+		return contract.UploadChannelListResult{}, fmt.Errorf("no activated profile for server %q", serverID)
 	}
 	result, err := s.exchange(ctx, profile, control.TicketListUploadChannels, control.ListUploadChannelsPayload{AuthorityRepoID: repoID})
 	if err != nil {
-		return nil, err
+		return contract.UploadChannelListResult{}, err
 	}
 	var payload control.ListUploadChannelsResult
 	if err := control.DecodeResultPayload(result.Result, &payload); err != nil {
-		return nil, err
+		return contract.UploadChannelListResult{}, err
 	}
 	channels := make([]contract.UploadChannelSummary, 0, len(payload.Channels))
 	for _, channel := range payload.Channels {
 		channels = append(channels, uploadChannelSummaryFromControl(channel))
 	}
-	return channels, nil
+	return contract.UploadChannelListResult{Channels: channels, QuarantineAlias: payload.QuarantineAlias, QuarantineSlug: payload.QuarantineSlug, QuarantineInvitation: payload.QuarantineInvitation}, nil
 }
 
 func (s *realmAliasService) CreateUploadChannel(ctx context.Context, serverID string, declaration contract.UploadChannelDeclaration) (contract.UploadChannelResult, error) {
@@ -325,6 +325,61 @@ func (s *realmAliasService) DeleteUploadChannel(ctx context.Context, serverID, c
 	return s.uploadChannelExchange(ctx, serverID, control.TicketDeleteUploadChannel, control.DeleteUploadChannelPayload{ChannelID: channelID})
 }
 
+func (s *realmAliasService) ListQuarantine(ctx context.Context, serverID string) (contract.QuarantineListResult, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return contract.QuarantineListResult{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketListQuarantine, control.ListQuarantinePayload{})
+	if err != nil {
+		return contract.QuarantineListResult{}, err
+	}
+	var remote control.ListQuarantineResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return contract.QuarantineListResult{}, err
+	}
+	out := contract.QuarantineListResult{Message: remote.Message, Items: make([]contract.QuarantineItem, 0, len(remote.Items))}
+	for _, item := range remote.Items {
+		out.Items = append(out.Items, contract.QuarantineItem(item))
+	}
+	for _, item := range remote.Purged {
+		out.Purged = append(out.Purged, contract.QuarantinePurged(item))
+	}
+	return out, nil
+}
+
+func (s *realmAliasService) HideQuarantine(ctx context.Context, serverID, uploadID string) (contract.QuarantineHideResult, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return contract.QuarantineHideResult{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketHideQuarantine, control.HideQuarantinePayload{UploadID: uploadID})
+	if err != nil {
+		return contract.QuarantineHideResult{}, err
+	}
+	var remote control.HideQuarantineResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return contract.QuarantineHideResult{}, err
+	}
+	return contract.QuarantineHideResult{UploadID: remote.UploadID}, nil
+}
+
+func (s *realmAliasService) FetchQuarantine(ctx context.Context, serverID, uploadID string) (contract.QuarantineFetchResult, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return contract.QuarantineFetchResult{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, control.TicketFetchQuarantine, control.FetchQuarantinePayload{UploadID: uploadID})
+	if err != nil {
+		return contract.QuarantineFetchResult{}, err
+	}
+	var remote control.FetchQuarantineResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return contract.QuarantineFetchResult{}, err
+	}
+	return contract.QuarantineFetchResult{UploadID: remote.UploadID, OriginalName: remote.OriginalName, Payload: remote.Payload, RemainingHours: remote.RemainingHours}, nil
+}
+
 func (s *realmAliasService) uploadChannelExchange(ctx context.Context, serverID string, typ control.TicketType, payload any) (contract.UploadChannelResult, error) {
 	profile, ok := s.provisioner.Profile(serverID)
 	if !ok {
@@ -338,7 +393,7 @@ func (s *realmAliasService) uploadChannelExchange(ctx context.Context, serverID 
 	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
 		return contract.UploadChannelResult{}, err
 	}
-	return contract.UploadChannelResult{ChannelID: remote.ChannelID, Alias: remote.Alias, Slug: remote.Slug, State: remote.State, UploadRepoID: remote.UploadRepoID, RecipientDeliveries: remote.RecipientDeliveries}, nil
+	return contract.UploadChannelResult{ChannelID: remote.ChannelID, Alias: remote.Alias, Slug: remote.Slug, State: remote.State, UploadRepoID: remote.UploadRepoID, RecipientDeliveries: remote.RecipientDeliveries, QuarantineAlias: remote.QuarantineAlias, QuarantineSlug: remote.QuarantineSlug, QuarantineInvitation: remote.QuarantineInvitation}, nil
 }
 
 func uploadChannelDeclarationToControl(declaration contract.UploadChannelDeclaration) control.UploadChannelDeclaration {

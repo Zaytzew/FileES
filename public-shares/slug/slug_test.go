@@ -55,6 +55,7 @@ func TestNormalizeRejects(t *testing.T) {
 		"slash":         {"wydanie/pierwsze", ErrCharset},
 		"space inside":  {"wydanie pierwsze", ErrCharset},
 		"reserved":      {"file", ErrReserved},
+		"quarantine":    {"kwarantanna", ErrReserved},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

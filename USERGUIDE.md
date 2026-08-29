@@ -341,7 +341,10 @@ osobne zaproszenie i kładzie plik przeglądarką. Nie ma trybu anonimowego.
 
 Po utworzeniu FileES pyta o lokalny folder na czyste przyjęcia. Zaakceptowane
 pliki lądują w zwykłym repozytorium półki; odrzut AV trafia do **Kwarantanny**
-realmu, nie do repozytorium projektu.
+realmu, nie do repozytorium projektu. Kwarantanna jest listą w oknie FileES
+(projekcja demona, bez przeglądarki WWW): **Pobierz** zapisuje kopię na dysk
+i mówi, ile godzin zostanie reszta, **Odrzuć** ukrywa pozycję w manifeście,
+a zamknięcie okna nic nie kasuje. Po 48 godzinach serwer sam usuwa plik.
 
 Publiczny formularz nie pokazuje aliasu, slugu ani adresów. Przy włączonym
 kodzie z poczty najpierw jest bramka (e-mail i kod), potem pole pliku.

@@ -12,9 +12,9 @@ type uploadChannelStub struct {
 	declaration                         contract.UploadChannelDeclaration
 }
 
-func (s *uploadChannelStub) ListUploadChannels(_ context.Context, serverID, repoID string) ([]contract.UploadChannelSummary, error) {
+func (s *uploadChannelStub) ListUploadChannels(_ context.Context, serverID, repoID string) (contract.UploadChannelListResult, error) {
 	s.action, s.serverID, s.repoID = "list", serverID, repoID
-	return []contract.UploadChannelSummary{{ChannelID: "channel-1", AuthorityRepoID: repoID, UploadRepoID: "upload-1", Alias: "acme", Slug: "oferta-a", State: "active", Recipients: []string{"a@example.com"}}}, nil
+	return contract.UploadChannelListResult{Channels: []contract.UploadChannelSummary{{ChannelID: "channel-1", AuthorityRepoID: repoID, UploadRepoID: "upload-1", Alias: "acme", Slug: "oferta-a", State: "active", Recipients: []string{"a@example.com"}}}, QuarantineAlias: "acme", QuarantineSlug: "kwarantanna", QuarantineInvitation: "invite"}, nil
 }
 func (s *uploadChannelStub) CreateUploadChannel(_ context.Context, serverID string, declaration contract.UploadChannelDeclaration) (contract.UploadChannelResult, error) {
 	s.action, s.serverID, s.repoID, s.declaration = "create", serverID, declaration.AuthorityRepoID, declaration
@@ -32,10 +32,19 @@ func (s *uploadChannelStub) DeleteUploadChannel(_ context.Context, serverID, cha
 	s.action, s.serverID, s.channelID = "delete", serverID, channelID
 	return contract.UploadChannelResult{ChannelID: channelID, State: "deleted"}, nil
 }
+func (s *uploadChannelStub) ListQuarantine(context.Context, string) (contract.QuarantineListResult, error) {
+	return contract.QuarantineListResult{}, nil
+}
+func (s *uploadChannelStub) HideQuarantine(context.Context, string, string) (contract.QuarantineHideResult, error) {
+	return contract.QuarantineHideResult{}, nil
+}
+func (s *uploadChannelStub) FetchQuarantine(context.Context, string, string) (contract.QuarantineFetchResult, error) {
+	return contract.QuarantineFetchResult{}, nil
+}
 
 func TestUploadChannelCapabilitiesAreAdvertisedOnlyWhenWired(t *testing.T) {
 	server := New("unused")
-	capabilities := []string{contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete}
+	capabilities := []string{contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete, contract.CapRepoQuarantineList, contract.CapRepoQuarantineHide, contract.CapRepoQuarantineFetch}
 	for _, capability := range capabilities {
 		if containsCapability(server.capabilities(), capability) {
 			t.Fatalf("unwired capability advertised: %s", capability)

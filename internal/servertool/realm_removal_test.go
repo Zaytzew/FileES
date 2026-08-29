@@ -131,7 +131,7 @@ func TestRealmRemovalAdmissionBlocksPostCrashMutations(t *testing.T) {
 		control.TicketListGrantRecipients, control.TicketCreatePublicShare, control.TicketUpdatePublicShare,
 		control.TicketRevokePublicShare, control.TicketDeletePublicShare,
 		control.TicketListUploadChannels, control.TicketCreateUploadChannel, control.TicketUpdateUploadChannel,
-		control.TicketRevokeUploadChannel, control.TicketDeleteUploadChannel,
+		control.TicketRevokeUploadChannel, control.TicketDeleteUploadChannel, control.TicketListQuarantine, control.TicketHideQuarantine, control.TicketFetchQuarantine,
 	} {
 		if err := admission.Admit(session, control.Ticket{Type: typ, OperationID: uuid.NewString()}); err == nil {
 			t.Fatalf("fenced realm admitted %s", typ)

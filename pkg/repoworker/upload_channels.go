@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"filees/internal/uploadworker"
 	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
 	"filees/pkg/onboarding"
@@ -66,7 +67,10 @@ func (o UploadChannelOutbox) DeliverUploadTokens(_ context.Context, record chann
 }
 
 type UploadChannelService interface {
-	List(context.Context, string, string) ([]control.UploadChannelSummary, error)
+	List(context.Context, string, string) (control.ListUploadChannelsResult, error)
+	ListQuarantine(context.Context, string) (control.ListQuarantineResult, error)
+	HideQuarantine(context.Context, string, string) (control.HideQuarantineResult, error)
+	FetchQuarantine(context.Context, string, string) (control.FetchQuarantineResult, error)
 	Create(context.Context, string, string, control.UploadChannelDeclaration) (control.UploadChannelResult, error)
 	Update(context.Context, string, string, string, control.UploadChannelDeclaration) (control.UploadChannelResult, error)
 	Revoke(context.Context, string, string) (control.UploadChannelResult, error)
@@ -77,29 +81,85 @@ type ChannelUploadService struct {
 	Channels  *channel.Store
 	Backend   Backend
 	Deliverer UploadTokenDeliverer
+	TrashRoot string
 }
 
-func (s ChannelUploadService) List(_ context.Context, ownerRealm, authorityRepoID string) ([]control.UploadChannelSummary, error) {
+func (s ChannelUploadService) List(_ context.Context, ownerRealm, authorityRepoID string) (control.ListUploadChannelsResult, error) {
 	if s.Channels == nil {
-		return nil, errors.New("upload channel store is unavailable")
+		return control.ListUploadChannelsResult{}, errors.New("upload channel store is unavailable")
 	}
 	records, err := s.Channels.ListOwnedUploads(ownerRealm, authorityRepoID)
 	if err != nil {
-		return nil, classifyUploadError(err)
+		return control.ListUploadChannelsResult{}, classifyUploadError(err)
 	}
-	result := make([]control.UploadChannelSummary, 0, len(records))
+	listed := control.ListUploadChannelsResult{Channels: make([]control.UploadChannelSummary, 0, len(records))}
 	for _, record := range records {
 		if record.Manifest == nil {
-			return nil, errors.New("upload channel record is incomplete")
+			return control.ListUploadChannelsResult{}, errors.New("upload channel record is incomplete")
 		}
-		result = append(result, control.UploadChannelSummary{
+		listed.Channels = append(listed.Channels, control.UploadChannelSummary{
 			ChannelID: record.ChannelID, AuthorityRepoID: record.Manifest.AuthorityRepoID, UploadRepoID: record.Manifest.UploadRepoID,
 			Alias: record.Alias, Slug: record.Slug, Kind: manifest.NormalizeKind(record.Manifest.Kind), State: record.State, Recipients: append([]string(nil), record.Manifest.Recipients...),
 			RequireOTP: record.Manifest.RequireOTP, CollisionPolicy: string(record.Manifest.CollisionPolicy),
 			UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}
-	return result, nil
+	return listed, nil
+}
+
+func (s ChannelUploadService) waiting() uploadworker.Reaper {
+	return uploadworker.Reaper{TrashRoot: s.TrashRoot}
+}
+
+func (s ChannelUploadService) ListQuarantine(_ context.Context, ownerRealm string) (control.ListQuarantineResult, error) {
+	if s.TrashRoot == "" {
+		return control.ListQuarantineResult{}, nil
+	}
+	list, err := s.waiting().ListWaiting(ownerRealm, time.Now().UTC())
+	if err != nil {
+		return control.ListQuarantineResult{}, err
+	}
+	out := control.ListQuarantineResult{Items: make([]control.QuarantineItem, 0, len(list.Entries))}
+	for _, item := range list.Entries {
+		out.Items = append(out.Items, control.QuarantineItem{
+			UploadID: item.UploadID, OriginalName: item.OriginalName, Size: item.Size,
+			AVVerdict: item.AVVerdict, ReceivedAt: item.ReceivedAt.UTC().Format(time.RFC3339Nano),
+			RemainingHours: item.RemainingHours,
+		})
+	}
+	for _, item := range list.Purged {
+		out.Purged = append(out.Purged, control.QuarantinePurged{
+			UploadID: item.UploadID, OriginalName: item.OriginalName, PurgedAt: item.PurgedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	if n := len(list.Purged); n == 1 {
+		out.Message = "Usunięto z kwarantanny 1 plik po 48 godzinach."
+	} else if n > 1 {
+		word := "plików"
+		if n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20) {
+			word = "pliki"
+		}
+		out.Message = fmt.Sprintf("Usunięto z kwarantanny %d %s po 48 godzinach.", n, word)
+	}
+	return out, nil
+}
+
+func (s ChannelUploadService) HideQuarantine(_ context.Context, _, uploadID string) (control.HideQuarantineResult, error) {
+	if err := s.waiting().HideWaiting(uploadID, time.Now().UTC()); err != nil {
+		return control.HideQuarantineResult{}, err
+	}
+	return control.HideQuarantineResult{UploadID: uploadID}, nil
+}
+
+func (s ChannelUploadService) FetchQuarantine(_ context.Context, _, uploadID string) (control.FetchQuarantineResult, error) {
+	idx, payload, hours, err := s.waiting().FetchWaiting(uploadID, time.Now().UTC())
+	if err != nil {
+		return control.FetchQuarantineResult{}, err
+	}
+	if len(payload) > 64<<20 {
+		return control.FetchQuarantineResult{}, errors.New("quarantine payload exceeds 64 MiB")
+	}
+	return control.FetchQuarantineResult{UploadID: idx.UploadID, OriginalName: idx.OriginalName, Payload: payload, RemainingHours: hours}, nil
 }
 
 func (s ChannelUploadService) Create(ctx context.Context, operationID, ownerRealm string, declaration control.UploadChannelDeclaration) (control.UploadChannelResult, error) {
@@ -257,16 +317,16 @@ func classifyUploadError(err error) error {
 }
 
 func trashOperationID(realmID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("filees.upload-trash:"+realmID)).String()
+	return channel.TrashOperationID(realmID)
 }
 
 func UploadTrashRepositoryID(realmID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(trashOperationID(realmID))).String()
+	return channel.TrashRepositoryID(realmID)
 }
 
 func isUploadChannelTicket(typ control.TicketType) bool {
 	switch typ {
-	case control.TicketListUploadChannels, control.TicketCreateUploadChannel, control.TicketUpdateUploadChannel, control.TicketRevokeUploadChannel, control.TicketDeleteUploadChannel:
+	case control.TicketListUploadChannels, control.TicketCreateUploadChannel, control.TicketUpdateUploadChannel, control.TicketRevokeUploadChannel, control.TicketDeleteUploadChannel, control.TicketListQuarantine, control.TicketHideQuarantine, control.TicketFetchQuarantine:
 		return true
 	default:
 		return false
@@ -285,9 +345,7 @@ func (w *Worker) uploadChannel(ctx context.Context, session Session, ticket cont
 		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
 			return control.Result{}, err
 		}
-		var channels []control.UploadChannelSummary
-		channels, err = w.UploadChannels.List(ctx, session.RealmID, payload.AuthorityRepoID)
-		response = control.ListUploadChannelsResult{Channels: channels}
+		response, err = w.UploadChannels.List(ctx, session.RealmID, payload.AuthorityRepoID)
 	case control.TicketCreateUploadChannel:
 		var payload control.CreateUploadChannelPayload
 		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
@@ -312,6 +370,20 @@ func (w *Worker) uploadChannel(ctx context.Context, session Session, ticket cont
 			return control.Result{}, err
 		}
 		response, err = w.UploadChannels.Delete(ctx, session.RealmID, payload.ChannelID)
+	case control.TicketListQuarantine:
+		response, err = w.UploadChannels.ListQuarantine(ctx, session.RealmID)
+	case control.TicketHideQuarantine:
+		var payload control.HideQuarantinePayload
+		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+			return control.Result{}, err
+		}
+		response, err = w.UploadChannels.HideQuarantine(ctx, session.RealmID, payload.UploadID)
+	case control.TicketFetchQuarantine:
+		var payload control.FetchQuarantinePayload
+		if err := control.DecodePayload(ticket.Payload, &payload); err != nil {
+			return control.Result{}, err
+		}
+		response, err = w.UploadChannels.FetchQuarantine(ctx, session.RealmID, payload.UploadID)
 	default:
 		return control.Result{}, errors.New("unsupported upload channel ticket")
 	}

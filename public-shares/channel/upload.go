@@ -24,6 +24,14 @@ const (
 	TrashRepoName      = "filees-upload-trash"
 )
 
+func TrashOperationID(realmID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("filees.upload-trash:"+realmID)).String()
+}
+
+func TrashRepositoryID(realmID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(TrashOperationID(realmID))).String()
+}
+
 // UploadRecord is the authoritative upload-channel lifecycle. It lives beside
 // public-share records so both machines share slug/address tombstones without
 // sharing a manifest type.

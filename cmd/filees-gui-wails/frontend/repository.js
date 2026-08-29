@@ -74,6 +74,19 @@ function uploadCard(channel) {
 	</article>`;
 }
 
+function quarantineCard(item) {
+	const verdict = item.av_verdict || "odrzut antywirusa";
+	return `<article class="share-row">
+		<div class="share-main"><span class="share-dot" aria-hidden="true"></span><div><strong>${escapeHTML(item.original_name || item.upload_id)}</strong><small>${escapeHTML(verdict)}</small></div></div>
+		<div class="share-fact"><small>Rozmiar</small><span>${escapeHTML(item.size_label || ((item.size || 0) + " B"))}</span></div>
+		<div class="share-fact"><small>TTL</small><span>jeszcze ${escapeHTML(String(item.remaining_hours ?? 0))} godz.</span></div>
+		<div class="share-controls">
+			<button type="button" data-quarantine-action="fetch" data-upload-id="${escapeHTML(item.upload_id)}">Pobierz</button>
+			<button class="danger" type="button" data-quarantine-action="hide" data-upload-id="${escapeHTML(item.upload_id)}">Odrzuć</button>
+		</div>
+	</article>`;
+}
+
 function render(snapshot) {
   if (!snapshot?.revision || !snapshot.context?.repo_id) return;
   const contextChanged = currentSnapshot?.revision !== snapshot.revision;
@@ -82,10 +95,11 @@ function render(snapshot) {
   const sharesMode = snapshot.mode === "shares";
 	const grantsMode = snapshot.mode === "grants";
 	const uploadsMode = snapshot.mode === "uploads";
-	const detailMode = sharesMode || grantsMode || uploadsMode;
+	const quarantineMode = snapshot.mode === "quarantine";
+	const detailMode = sharesMode || grantsMode || uploadsMode || quarantineMode;
 
   $("#window-context").textContent = context.name || context.repo_id;
-	$("#scope-label").textContent = sharesMode ? "Folder · udostępnienia" : grantsMode ? "Folder · uprawnienia gości" : uploadsMode ? "Folder · półki przyjęcia" : "Folder FileES";
+	$("#scope-label").textContent = sharesMode ? "Folder · udostępnienia" : grantsMode ? "Folder · uprawnienia gości" : uploadsMode ? "Folder · półki przyjęcia" : quarantineMode ? "Folder · kwarantanna" : "Folder FileES";
   $("#repository-name").textContent = context.name || context.repo_id;
   $("#repository-copy").textContent = snapshot.text || "Działania dla tego folderu.";
   $("#repository-server").textContent = context.server_name || context.server_id;
@@ -97,8 +111,9 @@ function render(snapshot) {
   $("#shares-view").hidden = !sharesMode;
 	$("#grants-view").hidden = !grantsMode;
 	$("#uploads-view").hidden = !uploadsMode;
+	$("#quarantine-view").hidden = !quarantineMode;
 	$("#back-to-actions").hidden = !detailMode;
-	$("#back-to-actions").textContent = sharesMode ? "Zamknij udostępnienia" : grantsMode ? "Zamknij uprawnienia" : "Zamknij półki";
+	$("#back-to-actions").textContent = sharesMode ? "Zamknij udostępnienia" : grantsMode ? "Zamknij uprawnienia" : uploadsMode ? "Zamknij półki" : quarantineMode ? "Zamknij kwarantannę" : "Zamknij";
 
   if (!sharesMode) {
     const actions = snapshot.actions || [];
@@ -124,6 +139,12 @@ function render(snapshot) {
 			? channels.map(uploadCard).join("")
 			: '<p class="empty">Ten folder nie ma jeszcze półek przyjęcia.</p>';
 		$("#create-upload").disabled = Boolean(snapshot.busy);
+	}
+	if (quarantineMode) {
+		const items = snapshot.quarantine || [];
+		$("#quarantine-items").innerHTML = items.length
+			? items.map(quarantineCard).join("")
+			: '<p class="empty">Poczekalnia jest pusta. Odrzuty znikają same po 48 godzinach.</p>';
 	}
   if (contextChanged) window.requestAnimationFrame(() => window.scrollTo(0, 0));
   if (contextChanged && sharesMode && snapshot.focus_channel_id) window.requestAnimationFrame(() => {
@@ -154,6 +175,21 @@ async function chooseUpload(action, channelID, button) {
 	try {
 		const result = await RepositoryService.ChooseUpload(contextChoice(action, channelID));
 		if (!result.accepted) showToast("Działanie niedostępne", result.code || "Lista półek mogła się zmienić.");
+	} catch (error) {
+		showToast("Nie udało się przekazać intencji", error?.message || String(error));
+	} finally {
+		window.setTimeout(() => { button.disabled = false; }, 450);
+	}
+}
+
+async function chooseQuarantine(action, uploadID, button) {
+	if (!currentSnapshot?.context?.repo_id) return;
+	button.disabled = true;
+	try {
+		const choice = contextChoice(action);
+		choice.upload_id = uploadID;
+		const result = await RepositoryService.ChooseQuarantine(choice);
+		if (!result.accepted) showToast("Działanie niedostępne", result.code || "Lista kwarantanny mogła się zmienić.");
 	} catch (error) {
 		showToast("Nie udało się przekazać intencji", error?.message || String(error));
 	} finally {
@@ -224,6 +260,10 @@ $("#upload-channels").addEventListener("click", (event) => {
 	if (button) chooseUpload(button.dataset.uploadAction, button.dataset.channelId || "", button);
 });
 $("#create-upload").addEventListener("click", (event) => chooseUpload("create", "", event.currentTarget));
+$("#quarantine-items").addEventListener("click", (event) => {
+	const button = event.target.closest("[data-quarantine-action]");
+	if (button) chooseQuarantine(button.dataset.quarantineAction, button.dataset.uploadId || "", button);
+});
 $("#repository-close").addEventListener("click", closeRepository);
 $("#repository-done").addEventListener("click", closeRepository);
 $("#back-to-actions").addEventListener("click", closeRepository);

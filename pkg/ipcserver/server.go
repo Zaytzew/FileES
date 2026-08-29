@@ -96,11 +96,14 @@ type PublicShareService interface {
 }
 
 type UploadChannelService interface {
-	ListUploadChannels(context.Context, string, string) ([]contract.UploadChannelSummary, error)
+	ListUploadChannels(context.Context, string, string) (contract.UploadChannelListResult, error)
 	CreateUploadChannel(context.Context, string, contract.UploadChannelDeclaration) (contract.UploadChannelResult, error)
 	UpdateUploadChannel(context.Context, string, string, contract.UploadChannelDeclaration) (contract.UploadChannelResult, error)
 	RevokeUploadChannel(context.Context, string, string) (contract.UploadChannelResult, error)
 	DeleteUploadChannel(context.Context, string, string) (contract.UploadChannelResult, error)
+	ListQuarantine(context.Context, string) (contract.QuarantineListResult, error)
+	HideQuarantine(context.Context, string, string) (contract.QuarantineHideResult, error)
+	FetchQuarantine(context.Context, string, string) (contract.QuarantineFetchResult, error)
 }
 
 // OwnerLabelResolver converts opaque SVN client IDs to server-owned display
@@ -223,7 +226,7 @@ func (s *Server) capabilities() []string {
 		caps = append(caps, contract.CapRepoPublicShareList, contract.CapRepoPublicShareCreate, contract.CapRepoPublicShareUpdate, contract.CapRepoPublicShareRevoke, contract.CapRepoPublicShareDelete)
 	}
 	if s.uploadChannelService() != nil {
-		caps = append(caps, contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete)
+		caps = append(caps, contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete, contract.CapRepoQuarantineList, contract.CapRepoQuarantineHide, contract.CapRepoQuarantineFetch)
 	}
 	if s.editingPolicyService() != nil {
 		caps = append(caps, contract.CapRepoSetEditingPolicy)

@@ -182,12 +182,39 @@ type UploadChannelDeclaration struct {
 	RequireOTP                  bool
 }
 
+type UploadChannelList struct {
+	Channels []UploadChannelSummary
+}
+
 type UploadChannelManager interface {
-	ListUploadChannels(context.Context, string, string) ([]UploadChannelSummary, error)
+	ListUploadChannels(context.Context, string, string) (UploadChannelList, error)
 	CreateUploadChannel(context.Context, string, UploadChannelDeclaration) error
 	UpdateUploadChannel(context.Context, string, string, UploadChannelDeclaration) error
 	RevokeUploadChannel(context.Context, string, string, string) error
 	DeleteUploadChannel(context.Context, string, string, string) error
+}
+
+type QuarantineItem struct {
+	UploadID, OriginalName, AVVerdict, ReceivedAt string
+	Size                                          int64
+	RemainingHours                                int
+}
+
+type QuarantineList struct {
+	Items   []QuarantineItem
+	Message string
+}
+
+type QuarantineFetch struct {
+	UploadID, OriginalName string
+	Payload                []byte
+	RemainingHours         int
+}
+
+type QuarantineManager interface {
+	ListQuarantine(context.Context, string) (QuarantineList, error)
+	HideQuarantine(context.Context, string, string) error
+	FetchQuarantine(context.Context, string, string) (QuarantineFetch, error)
 }
 
 type RealmRemovalBeginRequest struct {
@@ -293,6 +320,7 @@ type Config struct {
 	SessionTimeouts      SessionTimeoutManager
 	PublicShares         PublicShareManager
 	UploadChannels       UploadChannelManager
+	Quarantine           QuarantineManager
 	Shouts               ShoutPublisher
 	Notices              NoticeAcker
 	ReservationBrowser   platform.ReservationBrowser
@@ -301,6 +329,7 @@ type Config struct {
 	RealmGrantBrowser    platform.RealmGrantBrowser
 	PublicShareBrowser   platform.PublicShareBrowser
 	UploadChannelBrowser platform.UploadChannelBrowser
+	QuarantineBrowser    platform.QuarantineBrowser
 	ConsentPrompter      platform.ConsentPrompter
 	// Progress renders the "still working" window for operations that keep
 	// running after their dialog closes. nil → the window is simply skipped;
@@ -537,6 +566,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startManagePublicShares(ctx, result.ServerID, result.RepoID, "", false)
 		case platform.SettingsDialogUploadChannels:
 			c.startManageUploadChannels(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogQuarantine:
+			c.startReviewQuarantine(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogRealmVisibility:
 			c.startSetRealmVisibility(ctx, result.ServerID)
 		case platform.SettingsDialogRealmBranding:
@@ -679,7 +710,7 @@ func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID, repoID st
 			continue
 		}
 		pending := c.pendingAttachments(vm, server.ID)
-		row, hadPending := settingsServerRow(vm, server, pending)
+		row, hadPending := settingsServerRow(vm, server, pending, c.cfg.QuarantineBrowser != nil)
 		if hadPending {
 			request.Text = "Wybierz serwer, potem działanie. Pierwszy checkout trwa w tle; wiersz „łączenie…” odświeży się po potwierdzeniu przez demona."
 		}
@@ -720,7 +751,7 @@ func (c *Controller) settingsDialogRequest(vm app.ViewModel, serverID, repoID st
 	return request, true
 }
 
-func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map[string]pendingAttachment) (platform.SettingsServer, bool) {
+func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map[string]pendingAttachment, quarantineBrowser bool) (platform.SettingsServer, bool) {
 	name := server.DisplayName
 	if strings.TrimSpace(name) == "" {
 		name = server.ID
@@ -785,6 +816,7 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanManageGrants:         vm.CanManageRealmGrants() && ownedAndCreatable,
 			CanManagePublicShares:   vm.CanManagePublicShares() && ownedAndCreatable,
 			CanManageUploadChannels: vm.CanManageUploadChannels() && ownedAndCreatable,
+			CanReviewQuarantine:     quarantineBrowser && vm.CanReviewQuarantine() && server.Owns(repo) && repo.Purpose == "upload_trash",
 			CanConnect:              !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
 			CanLocate:               repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
 			CanDetach:               repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
@@ -1638,14 +1670,14 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Półki przyjęcia są niedostępne", Body: "Półkę może wystawić właściciel repozytorium na kliencie z pełną obsługą przyjęcia.", Urgency: platform.UrgencyCritical})
 				return
 			}
-			channels, err := c.cfg.UploadChannels.ListUploadChannels(ctx, serverID, repoID)
+			listed, err := c.cfg.UploadChannels.ListUploadChannels(ctx, serverID, repoID)
 			if err != nil {
 				c.reportActionError(ctx, key, "Nie udało się pobrać półek przyjęcia", err.Error())
 				return
 			}
-			request := platform.UploadChannelDialogRequest{Title: "Półki przyjęcia — „" + repo.DisplayName + "”", Text: "Półka jest zawsze zamknięta: wnoszący dostają osobne zaproszenia i kładą plik przeglądarką. Domyślnie to zwykła półka, bez preselekcji."}
-			known := make(map[string]UploadChannelSummary, len(channels))
-			for _, channel := range channels {
+			request := platform.UploadChannelDialogRequest{Title: "Półki przyjęcia — „" + repo.DisplayName + "”", Text: "Półka jest zawsze zamknięta: wnoszący dostają osobne zaproszenia i kładą plik przeglądarką. Domyślnie to zwykła półka, bez preselekcji. Odrzuty AV oglądasz z folderu Kwarantanna, w projekcji FileES."}
+			known := make(map[string]UploadChannelSummary, len(listed.Channels))
+			for _, channel := range listed.Channels {
 				known[channel.ChannelID] = channel
 				request.Channels = append(request.Channels, platform.UploadChannelSummary{ChannelID: channel.ChannelID, Address: channel.Alias + "/" + channel.Slug, State: publicShareStateLabel(channel.State), Recipients: strings.Join(channel.Recipients, ", "), RequireOTP: channel.RequireOTP})
 			}
@@ -1715,12 +1747,12 @@ func (c *Controller) offerUploadShelfFolder(ctx context.Context, serverID, autho
 	if c.cfg.FolderPicker == nil || c.cfg.RepositoryAttacher == nil || c.cfg.UploadChannels == nil {
 		return
 	}
-	channels, err := c.cfg.UploadChannels.ListUploadChannels(ctx, serverID, authorityRepoID)
+	listed, err := c.cfg.UploadChannels.ListUploadChannels(ctx, serverID, authorityRepoID)
 	if err != nil {
 		return
 	}
 	var uploadRepoID string
-	for _, channel := range channels {
+	for _, channel := range listed.Channels {
 		if channel.Slug == slug && channel.UploadRepoID != "" && channel.State == "active" {
 			uploadRepoID = channel.UploadRepoID
 			break
@@ -1748,6 +1780,142 @@ func (c *Controller) offerUploadShelfFolder(ctx context.Context, serverID, autho
 		}
 	}
 	_, _ = c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, uploadRepoID, filepath.Clean(picked.Path))
+}
+
+func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID string) {
+	key := "quarantine." + serverID + "." + repoID
+	if serverID == "" || repoID == "" || c.cfg.Quarantine == nil || c.cfg.QuarantineBrowser == nil || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil {
+		return
+	}
+	if !c.beginOperation(key) {
+		c.notify(ctx, platform.Notification{ID: key + ".busy", Group: key, Title: "Kwarantanna jest już otwarta", Body: "Dokończ przegląd albo zamknij okno.", Urgency: platform.UrgencyNormal})
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		announcedPurge := false
+		for ctx.Err() == nil {
+			vm := c.cfg.ViewModel()
+			repo, ok := managedQuarantineRepository(vm, serverID, repoID)
+			if !ok {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Kwarantanna jest niedostępna", Body: "Przegląd odrzutów AV jest tylko dla właściciela i tylko z projekcji FileES.", Urgency: platform.UrgencyCritical})
+				return
+			}
+			listed, err := c.cfg.Quarantine.ListQuarantine(ctx, serverID)
+			if err != nil {
+				c.reportActionError(ctx, key, "Nie udało się pobrać kwarantanny", err.Error())
+				return
+			}
+			text := "Odrzuty antywirusa z półek przyjęcia. Pobierz kopię na dysk albo ukryj pozycję. Zamknięcie okna nic nie kasuje. Po 48 godzinach serwer sam usuwa plik."
+			if listed.Message != "" {
+				text = listed.Message + " " + text
+				if !announcedPurge {
+					c.notify(ctx, platform.Notification{ID: key + ".purged", Group: key, Title: "Kwarantanna po TTL", Body: listed.Message, Urgency: platform.UrgencyNormal})
+					announcedPurge = true
+				}
+			}
+			request := platform.QuarantineDialogRequest{Title: "Kwarantanna — „" + repo.DisplayName + "”", Text: text, ServerID: serverID, RepoID: repoID}
+			known := make(map[string]QuarantineItem, len(listed.Items))
+			for _, item := range listed.Items {
+				known[item.UploadID] = item
+				request.Items = append(request.Items, platform.QuarantineItem{
+					UploadID: item.UploadID, OriginalName: item.OriginalName, Size: item.Size,
+					AVVerdict: item.AVVerdict, RemainingHours: item.RemainingHours,
+				})
+			}
+			choice, err := c.cfg.QuarantineBrowser.ShowQuarantine(ctx, request)
+			if err != nil {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się otworzyć kwarantanny", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				return
+			}
+			if choice.Action == platform.QuarantineDialogClose {
+				return
+			}
+			current, exists := known[choice.UploadID]
+			if !exists {
+				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nieprawidłowa pozycja", Body: "Wybrany plik nie pochodzi z aktualnej listy.", Urgency: platform.UrgencyCritical})
+				return
+			}
+			switch choice.Action {
+			case platform.QuarantineDialogHide:
+				if err := c.cfg.Quarantine.HideQuarantine(ctx, serverID, current.UploadID); err != nil {
+					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się ukryć pliku", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				}
+			case platform.QuarantineDialogFetch:
+				if err := c.saveQuarantinePayload(ctx, key, serverID, current); err != nil {
+					c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się pobrać pliku", Body: err.Error(), Urgency: platform.UrgencyCritical})
+				}
+			default:
+				return
+			}
+		}
+	}()
+}
+
+func (c *Controller) saveQuarantinePayload(ctx context.Context, key, serverID string, item QuarantineItem) error {
+	fetched, err := c.cfg.Quarantine.FetchQuarantine(ctx, serverID, item.UploadID)
+	if err != nil {
+		return err
+	}
+	picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz folder na kopię z kwarantanny"})
+	if err != nil {
+		return err
+	}
+	if picked.Cancelled || strings.TrimSpace(picked.Path) == "" || !filepath.IsAbs(picked.Path) {
+		return nil
+	}
+	name := quarantineFileName(fetched.OriginalName)
+	if name == "plik" {
+		name = quarantineFileName(item.OriginalName)
+	}
+	root := filepath.Clean(picked.Path)
+	dest := filepath.Join(root, name)
+	if rel, relErr := filepath.Rel(root, dest); relErr != nil || strings.HasPrefix(rel, "..") {
+		return errors.New("nazwa pliku jest nieprawidłowa")
+	}
+	if _, statErr := os.Stat(dest); statErr == nil {
+		ok, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Plik już istnieje", Text: "Czy zastąpić „" + name + "” w wybranym folderze?", ConfirmText: "Zastąp", CancelText: "Anuluj"})
+		if confirmErr != nil || !ok {
+			return nil
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	if err := os.WriteFile(dest, fetched.Payload, 0600); err != nil {
+		return err
+	}
+	hours := fetched.RemainingHours
+	if hours == 0 {
+		hours = item.RemainingHours
+	}
+	c.notify(ctx, platform.Notification{
+		ID: key + ".saved", Group: key, Title: "Zapisano plik z kwarantanny",
+		Body: name + ". Reszta zostanie tu jeszcze przez " + remainingHoursPhrase(hours) + ".", Urgency: platform.UrgencyNormal,
+	})
+	return nil
+}
+
+func quarantineFileName(original string) string {
+	name := filepath.Base(strings.ReplaceAll(strings.TrimSpace(original), "\\", "/"))
+	if name == "" || name == "." || name == ".." {
+		return "plik"
+	}
+	return name
+}
+
+func remainingHoursPhrase(n int) string {
+	switch {
+	case n <= 0:
+		return "mniej niż godzinę"
+	case n == 1:
+		return "1 godzinę"
+	case n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20):
+		return fmt.Sprintf("%d godziny", n)
+	default:
+		return fmt.Sprintf("%d godzin", n)
+	}
 }
 
 func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo app.RepoViewModel, current *UploadChannelSummary) (UploadChannelDeclaration, bool) {
@@ -1797,6 +1965,14 @@ func managedPublicShareRepository(vm app.ViewModel, serverID, repoID string) (ap
 		}
 	}
 	return app.RepoViewModel{}, false
+}
+
+func managedQuarantineRepository(vm app.ViewModel, serverID, repoID string) (app.RepoViewModel, bool) {
+	repo, ok := managedPublicShareRepository(vm, serverID, repoID)
+	if !ok || repo.Purpose != "upload_trash" || !vm.CanReviewQuarantine() {
+		return app.RepoViewModel{}, false
+	}
+	return repo, true
 }
 
 func projectedPublicShareExists(vm app.ViewModel, serverID, repoID, channelID string) bool {

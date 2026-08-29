@@ -108,7 +108,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	}
 	var uploadChannels repoworker.UploadChannelService
 	if publicShareChannels != nil {
-		uploadChannels = repoworker.ChannelUploadService{Channels: publicShareChannels, Backend: backend, Deliverer: repoworker.UploadChannelOutbox{Root: filepath.Join(config.PublicShares.EffectiveStateRoot(r.ResultsRoot), "upload-outbox")}}
+		uploadChannels = repoworker.ChannelUploadService{Channels: publicShareChannels, Backend: backend, Deliverer: repoworker.UploadChannelOutbox{Root: filepath.Join(config.PublicShares.EffectiveStateRoot(r.ResultsRoot), "upload-outbox")}, TrashRoot: config.Upload.EffectiveTrashRoot(r.ResultsRoot)}
 	}
 	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, Branding: publisher, EditingPolicies: publisher, PublicShares: publicShares, UploadChannels: uploadChannels, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RepositoryRecovery: repositoryRecovery, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
 	dispatcher := repoworker.Dispatcher{

@@ -78,6 +78,9 @@ const (
 	TicketUpdateUploadChannel    TicketType = "UPDATE_UPLOAD_CHANNEL"
 	TicketRevokeUploadChannel    TicketType = "REVOKE_UPLOAD_CHANNEL"
 	TicketDeleteUploadChannel    TicketType = "DELETE_UPLOAD_CHANNEL"
+	TicketListQuarantine         TicketType = "LIST_QUARANTINE"
+	TicketHideQuarantine         TicketType = "HIDE_QUARANTINE"
+	TicketFetchQuarantine        TicketType = "FETCH_QUARANTINE"
 	// payload carries no realm: the worker derives the owner from the
 	// authenticated session, and a realm grant - including rw - never
 	// satisfies ownership of a repository-wide policy.
@@ -330,19 +333,60 @@ type UploadChannelSummary struct {
 }
 
 type ListUploadChannelsResult struct {
-	Channels []UploadChannelSummary `json:"channels"`
+	Channels             []UploadChannelSummary `json:"channels"`
+	QuarantineAlias      string                 `json:"quarantine_alias,omitempty"`
+	QuarantineSlug       string                 `json:"quarantine_slug,omitempty"`
+	QuarantineInvitation string                 `json:"quarantine_invitation,omitempty"`
 }
 
 type UploadChannelResult struct {
-	ChannelID           string `json:"channel_id"`
-	Alias               string `json:"alias"`
-	Slug                string `json:"slug"`
-	State               string `json:"state"`
-	UploadRepoID        string `json:"upload_repo_id"`
-	UploadRepoURL       string `json:"upload_repo_url,omitempty"`
-	TrashRepoID         string `json:"trash_repo_id,omitempty"`
-	TrashRepoURL        string `json:"trash_repo_url,omitempty"`
-	RecipientDeliveries int    `json:"recipient_deliveries,omitempty"`
+	ChannelID            string `json:"channel_id"`
+	Alias                string `json:"alias"`
+	Slug                 string `json:"slug"`
+	State                string `json:"state"`
+	UploadRepoID         string `json:"upload_repo_id"`
+	UploadRepoURL        string `json:"upload_repo_url,omitempty"`
+	TrashRepoID          string `json:"trash_repo_id,omitempty"`
+	TrashRepoURL         string `json:"trash_repo_url,omitempty"`
+	RecipientDeliveries  int    `json:"recipient_deliveries,omitempty"`
+	QuarantineAlias      string `json:"quarantine_alias,omitempty"`
+	QuarantineSlug       string `json:"quarantine_slug,omitempty"`
+	QuarantineInvitation string `json:"quarantine_invitation,omitempty"`
+}
+
+type ListQuarantinePayload struct{}
+type HideQuarantinePayload struct {
+	UploadID string `json:"upload_id"`
+}
+type FetchQuarantinePayload struct {
+	UploadID string `json:"upload_id"`
+}
+type QuarantineItem struct {
+	UploadID       string `json:"upload_id"`
+	OriginalName   string `json:"original_name"`
+	Size           int64  `json:"size"`
+	AVVerdict      string `json:"av_verdict,omitempty"`
+	ReceivedAt     string `json:"received_at"`
+	RemainingHours int    `json:"remaining_hours"`
+}
+type QuarantinePurged struct {
+	UploadID     string `json:"upload_id"`
+	OriginalName string `json:"original_name"`
+	PurgedAt     string `json:"purged_at"`
+}
+type ListQuarantineResult struct {
+	Items   []QuarantineItem   `json:"items"`
+	Purged  []QuarantinePurged `json:"purged,omitempty"`
+	Message string             `json:"message,omitempty"`
+}
+type HideQuarantineResult struct {
+	UploadID string `json:"upload_id"`
+}
+type FetchQuarantineResult struct {
+	UploadID       string `json:"upload_id"`
+	OriginalName   string `json:"original_name"`
+	Payload        []byte `json:"payload"`
+	RemainingHours int    `json:"remaining_hours"`
 }
 
 type ClientDeactivatePayload struct{}
@@ -711,6 +755,27 @@ func (t Ticket) Validate() error {
 		if err := validateUUID("DELETE_UPLOAD_CHANNEL payload.channel_id", p.ChannelID); err != nil {
 			return err
 		}
+	case TicketListQuarantine:
+		var p ListQuarantinePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("LIST_QUARANTINE payload: %w", err)
+		}
+	case TicketHideQuarantine:
+		var p HideQuarantinePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("HIDE_QUARANTINE payload: %w", err)
+		}
+		if err := validateUUID("HIDE_QUARANTINE payload.upload_id", p.UploadID); err != nil {
+			return err
+		}
+	case TicketFetchQuarantine:
+		var p FetchQuarantinePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("FETCH_QUARANTINE payload: %w", err)
+		}
+		if err := validateUUID("FETCH_QUARANTINE payload.upload_id", p.UploadID); err != nil {
+			return err
+		}
 	case TicketClientDeactivate:
 		var p ClientDeactivatePayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -765,7 +830,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketSetRepositoryEditingPolicy {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketSetRepositoryEditingPolicy {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -1055,6 +1120,41 @@ func validateSuccessPayload(r Result) error {
 			if err := validateUUID("upload channel result.upload_repo_id", result.UploadRepoID); err != nil {
 				return err
 			}
+		}
+	case TicketListQuarantine:
+		var result ListQuarantineResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("LIST_QUARANTINE result: %w", err)
+		}
+		if len(result.Items) > 4096 || len(result.Purged) > 4096 {
+			return errors.New("LIST_QUARANTINE result is too large")
+		}
+		for _, item := range result.Items {
+			if err := validateUUID("quarantine item.upload_id", item.UploadID); err != nil {
+				return err
+			}
+			if item.OriginalName == "" || item.RemainingHours < 0 {
+				return errors.New("quarantine item is invalid")
+			}
+		}
+	case TicketHideQuarantine:
+		var result HideQuarantineResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("HIDE_QUARANTINE result: %w", err)
+		}
+		if err := validateUUID("HIDE_QUARANTINE result.upload_id", result.UploadID); err != nil {
+			return err
+		}
+	case TicketFetchQuarantine:
+		var result FetchQuarantineResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("FETCH_QUARANTINE result: %w", err)
+		}
+		if err := validateUUID("FETCH_QUARANTINE result.upload_id", result.UploadID); err != nil {
+			return err
+		}
+		if result.OriginalName == "" || len(result.Payload) > 64<<20 || result.RemainingHours < 0 {
+			return errors.New("FETCH_QUARANTINE result is invalid")
 		}
 	case TicketCreatePublicShare, TicketUpdatePublicShare, TicketRevokePublicShare, TicketDeletePublicShare:
 		var result PublicShareResult

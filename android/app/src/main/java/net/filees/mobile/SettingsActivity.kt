@@ -250,6 +250,14 @@ class SettingsActivity : AppCompatActivity() {
             label.text = uri.lastPathSegment ?: uri.toString()
             val remove = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
             remove.text = getString(R.string.action_remove_watched)
+            // Default outlined-button style uses ?attr/colorPrimary (brand
+            // navy) for text/stroke - invisible against this app's dark
+            // navy background. See Widget.Filees.Button.OutlinedButton in
+            // themes.xml for the XML-side fix; this one is built in code.
+            val accent = ContextCompat.getColor(this, R.color.filees_orange)
+            remove.setTextColor(accent)
+            remove.strokeColor = android.content.res.ColorStateList.valueOf(accent)
+            remove.rippleColor = android.content.res.ColorStateList.valueOf(accent)
             remove.setOnClickListener {
                 watched.remove(uri)
                 renderWatched()

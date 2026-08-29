@@ -26,4 +26,26 @@
 
         <item name="actionMenuTextColor">@color/filees_white</item>
     </style>
+
+    <!-- Widget.Material3.Button.{TextButton,OutlinedButton} default to
+         ?attr/colorPrimary for their text/stroke color. That's correct for
+         a light Material3 surface, but here colorPrimary IS the brand navy
+         that also colors this app's dark background/toolbar - so on any
+         TextButton/OutlinedButton the text renders navy-on-near-navy,
+         effectively invisible. Same bug class as the FAB fix above, this
+         time on the foreground role instead of a container pair. Fixed by
+         giving these two roles their own styles instead of widening
+         colorPrimary's job further. -->
+    <style name="Widget.Filees.Button.TextButton" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/filees_orange</item>
+        <item name="rippleColor">@color/filees_orange</item>
+        <item name="iconTint">@color/filees_orange</item>
+    </style>
+
+    <style name="Widget.Filees.Button.OutlinedButton" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textColor">@color/filees_orange</item>
+        <item name="strokeColor">@color/filees_orange</item>
+        <item name="rippleColor">@color/filees_orange</item>
+        <item name="iconTint">@color/filees_orange</item>
+    </style>
 </resources>

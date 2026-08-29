@@ -426,6 +426,13 @@ func newS3WorkerFixture(t *testing.T, email string) s3WorkerFixture {
 			"repository_name": "filees-service", "client_entry_path": activationConfig.ClientEntryPath,
 			"svn_binary": svnBinary, "svnserve_binary": svnserveBinary,
 		},
+		"repositories": map[string]any{
+			"url_prefix": "svn+ssh://_filees-data@filees.test/",
+		},
+		"invitation": map[string]any{
+			"server_id": "s3-worker-test", "server_address": "filees.test:2222",
+			"known_host": "[filees.test]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		},
 		"smtp": map[string]any{"address": "127.0.0.1:2525", "client_name": "filees.test", "from": "filees@example.test", "message_id_domain": "filees.test", "tls": "none"},
 	}
 	rawConfig, _ := json.Marshal(config)

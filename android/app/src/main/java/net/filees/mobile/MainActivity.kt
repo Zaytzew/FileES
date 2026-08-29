@@ -265,6 +265,7 @@ class MainActivity : AppCompatActivity() {
             browsePrefix = ""
             browseAdapter.submit(shareRows(selectableShares))
             binding.toolbar.title = null
+            binding.toolbar.subtitle = null
             binding.brandLockup.visibility = View.VISIBLE
             binding.buttonAdd.visibility = View.GONE
             supportActionBar?.setDisplayHomeAsUpEnabled(false)
@@ -509,7 +510,17 @@ class MainActivity : AppCompatActivity() {
     private fun setBusy(busy: Boolean, message: String) {
         binding.overlayBusy.visibility = if (busy) View.VISIBLE else View.GONE
         if (message.isNotBlank()) binding.textBusy.text = message
-        if (!busy) {
+        // toolbar.subtitle occupies the same Toolbar-managed slot as
+        // brandLockup (§4's wordmark ImageView) - Toolbar lays out its own
+        // title/subtitle text independently of arbitrary child views, the
+        // same class of clash app:logo had with app:title. Every current
+        // caller only reaches this with a non-empty message from inside a
+        // repository (brandLockup already GONE there), but gate on the
+        // view directly instead of trusting that to stay true: an error
+        // that happens to fire while still on the top-level share list
+        // (confirmed live - "Nie udało się odświeżyć" overlapping the
+        // wordmark) must not resurrect the subtitle there.
+        if (!busy && binding.brandLockup.visibility != View.VISIBLE) {
             binding.toolbar.subtitle = message
         }
     }

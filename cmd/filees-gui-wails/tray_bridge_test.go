@@ -16,7 +16,7 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 		Repositories: []RepoProjection{{ID: "one"}, {ID: "two"}},
 		Reservations: []ReservationProjection{{ID: "lock"}},
 	})
-	if projection.Icon != guiapp.IconActive || projection.Status != "Połączono · 2 repo · 1 blokada" || projection.Tooltip == "" {
+	if projection.Icon != guiapp.IconActive || projection.Status != "Połączono · 2 repozytoria · 1 blokada" || projection.Tooltip == "" {
 		t.Fatalf("projection = %+v", projection)
 	}
 	if !projection.CanRestart || !projection.CanShutdown {
@@ -24,12 +24,12 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 	}
 
 	disconnected := projectWailsTray(Snapshot{})
-	if disconnected.Icon != guiapp.IconDisconnected || disconnected.Status != "Rozłączono · 0 repo · 0 blokad" {
+	if disconnected.Icon != guiapp.IconDisconnected || disconnected.Status != "Rozłączono · 0 repozytoriów · 0 blokad" {
 		t.Fatalf("disconnected = %+v", disconnected)
 	}
 
 	unknown := projectWailsTray(Snapshot{Connected: true, Servers: []ServerProjection{{ID: "server"}}})
-	if unknown.Status != "Połączono · 0 repo · ? blokad" {
+	if unknown.Status != "Połączono · 0 repozytoriów · ? blokad" {
 		t.Fatalf("unknown reservations = %+v", unknown)
 	}
 
@@ -39,6 +39,15 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 	})
 	if stale.CanRestart || stale.CanShutdown {
 		t.Fatalf("stale lifecycle available: %+v", stale)
+	}
+}
+
+func TestRepositoryNoun(t *testing.T) {
+	cases := map[int]string{0: "repozytoriów", 1: "repozytorium", 2: "repozytoria", 4: "repozytoria", 5: "repozytoriów", 12: "repozytoriów", 14: "repozytoriów", 22: "repozytoria", 25: "repozytoriów"}
+	for count, want := range cases {
+		if got := repositoryNoun(count); got != want {
+			t.Errorf("repositoryNoun(%d)=%q, want %q", count, got, want)
+		}
 	}
 }
 

@@ -16,8 +16,6 @@
             android:layout_height="wrap_content"
             android:background="@color/filees_navy"
             android:minHeight="?attr/actionBarSize"
-            app:logo="@drawable/ic_folder"
-            app:logoDescription="@string/app_name"
             app:title="@string/app_name"
             app:titleTextColor="@color/filees_white"
             app:navigationIconTint="@color/filees_white"

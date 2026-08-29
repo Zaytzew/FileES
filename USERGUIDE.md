@@ -326,6 +326,31 @@ nie może zostać przejęty przez późniejszy kanał.
 
 ---
 
+## Półki przyjęcia
+
+**Półki przyjęcia** są akcją wyłącznie właściciela repozytorium projektu.
+Półka jest zawsze zamknięta: lista wnoszących nie może być pusta, każdy dostaje
+osobne zaproszenie i kładzie plik przeglądarką. Nie ma trybu anonimowego.
+
+1. Wpisz końcówkę publicznego adresu (`slug`): 3–64 małe litery, cyfry lub
+   pojedyncze myślniki.
+2. Podaj adresy e-mail wnoszących, oddzielone przecinkiem lub średnikiem.
+3. Potwierdź **Kod z poczty**, jeśli wnoszący ma przed wysłaniem wpisać
+   skrzynkę z zaproszenia i jednorazowy kod (osiem cyfr, pięć minut). Bez
+   tej opcji sam link z tokenem wystarcza do wniesienia.
+
+Po utworzeniu FileES pyta o lokalny folder na czyste przyjęcia. Zaakceptowane
+pliki lądują w zwykłym repozytorium półki; odrzut AV trafia do **Kwarantanny**
+realmu, nie do repozytorium projektu.
+
+Publiczny formularz nie pokazuje aliasu, slugu ani adresów. Przy włączonym
+kodzie z poczty najpierw jest bramka (e-mail i kod), potem pole pliku.
+Nieprawidłowe zaproszenie i brak zaproszenia na kanale bez kodu dają to samo
+404. Na kanale z kodem dowolny niepusty token pokazuje tę samą bramkę — strona
+nie potwierdza, czy skrzynka jest na liście.
+
+---
+
 ## Blokowanie i odblokowanie plików
 
 `Zablokuj pliki…` i `Odblokuj pliki…` są dostępne w podmenu repozytorium,

@@ -177,7 +177,7 @@ func RenderPublicShareMail(job PublicShareMailJob, from, domain, baseURL string)
 	body := fmt.Sprintf("Pliki udostępnione w FileES są dostępne pod adresem:\r\n\r\n%s\r\n\r\nNa stronie poproś o jednorazowy kod dostępu.\r\n", base.String())
 	if kind == PublicShareMailOTP {
 		subject = "FileES - kod dostępu"
-		body = fmt.Sprintf("Kod dostępu do udostępnionych plików:\r\n\r\n%s\r\n\r\nKod wygasa o %s.\r\n", job.Code, job.ExpiresAt.Local().Format("15:04:05 MST"))
+		body = fmt.Sprintf("Jednorazowy kod FileES:\r\n\r\n%s\r\n\r\nKod wygasa o %s.\r\n", job.Code, job.ExpiresAt.Local().Format("15:04:05 MST"))
 	}
 	message := fmt.Sprintf("From: FileES <%s>\r\nTo: <%s>\r\nDate: %s\r\nMessage-ID: <%s@%s>\r\nSubject: %s\r\nAuto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n%s", canonicalFrom, job.DeliveryAddress, job.CreatedAt.UTC().Format("Mon, 02 Jan 2006 15:04:05 -0700"), job.MessageID, strings.ToLower(domain), subject, body)
 	return []byte(message), nil

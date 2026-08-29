@@ -141,6 +141,24 @@ func TestUploadChannelDeliveryRetryKeepsTokenAndRepos(t *testing.T) {
 	}
 }
 
+func TestUploadChannelCreatePersistsRequireOTP(t *testing.T) {
+	owner, authority := uuid.NewString(), uuid.NewString()
+	store := uploadStore(t, owner, authority)
+	service := ChannelUploadService{Channels: store, Backend: &uploadBackend{}, Deliverer: &uploadDeliverer{}}
+	created, err := service.Create(context.Background(), uuid.NewString(), owner, control.UploadChannelDeclaration{AuthorityRepoID: authority, Slug: "oferta-a", Recipients: []string{"a@example.com"}, RequireOTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := service.List(context.Background(), owner, authority)
+	if err != nil || len(listed) != 1 || !listed[0].RequireOTP {
+		t.Fatalf("listed=%+v err=%v", listed, err)
+	}
+	projection, err := store.UploadProjection(created.ChannelID)
+	if err != nil || !projection.RequireOTP {
+		t.Fatalf("projection=%+v err=%v", projection, err)
+	}
+}
+
 func TestUploadChannelUpdateRejectsKindChange(t *testing.T) {
 	owner, authority := uuid.NewString(), uuid.NewString()
 	service := ChannelUploadService{Channels: uploadStore(t, owner, authority), Backend: &uploadBackend{}, Deliverer: &uploadDeliverer{}}

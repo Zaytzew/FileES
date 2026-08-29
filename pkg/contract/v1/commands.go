@@ -623,13 +623,14 @@ type PublicShareResult struct {
 }
 
 // UploadChannelDeclaration is the owner-supplied shelf body. Kind is omitted:
-// the daemon and server treat absence as shelf. RequireOTP is omitted and stays
-// false; the public form is fail-closed when it is set.
+// the daemon and server treat absence as shelf. RequireOTP asks the contributor
+// for a mailbox and a one-time mail code before the file form.
 type UploadChannelDeclaration struct {
 	AuthorityRepoID string   `json:"authority_repo_id"`
 	Slug            string   `json:"slug"`
 	Kind            string   `json:"kind,omitempty"`
 	Recipients      []string `json:"recipients"`
+	RequireOTP      bool     `json:"require_otp,omitempty"`
 }
 
 type UploadChannelListPayload struct {
@@ -663,6 +664,7 @@ type UploadChannelSummary struct {
 	Kind            string   `json:"kind,omitempty"`
 	State           string   `json:"state"`
 	Recipients      []string `json:"recipients"`
+	RequireOTP      bool     `json:"require_otp,omitempty"`
 	UpdatedAt       string   `json:"updated_at"`
 }
 

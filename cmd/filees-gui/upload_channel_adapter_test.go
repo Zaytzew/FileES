@@ -37,7 +37,19 @@ func TestUploadChannelAdapterCreateIsShelfWithoutOTP(t *testing.T) {
 	if err := adapter.CreateUploadChannel(context.Background(), "office", actions.UploadChannelDeclaration{AuthorityRepoID: repoID, Slug: "oferta-a", Recipients: []string{"a@example.com"}}); err != nil {
 		t.Fatal(err)
 	}
-	if stub.last.AuthorityRepoID != repoID || stub.last.Slug != "oferta-a" || len(stub.last.Recipients) != 1 {
+	if stub.last.AuthorityRepoID != repoID || stub.last.Slug != "oferta-a" || len(stub.last.Recipients) != 1 || stub.last.RequireOTP {
+		t.Fatalf("payload=%+v", stub.last)
+	}
+}
+
+func TestUploadChannelAdapterCreatePassesRequireOTP(t *testing.T) {
+	stub := &uploadChannelClientStub{}
+	adapter := uploadChannelAdapter{client: stub}
+	repoID := uuid.NewString()
+	if err := adapter.CreateUploadChannel(context.Background(), "office", actions.UploadChannelDeclaration{AuthorityRepoID: repoID, Slug: "oferta-a", Recipients: []string{"a@example.com"}, RequireOTP: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !stub.last.RequireOTP {
 		t.Fatalf("payload=%+v", stub.last)
 	}
 }

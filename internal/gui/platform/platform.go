@@ -155,6 +155,7 @@ type UploadChannelDialogRequest struct {
 
 type UploadChannelSummary struct {
 	ChannelID, Address, State, Recipients string
+	RequireOTP                            bool
 }
 
 type UploadChannelDialogAction string

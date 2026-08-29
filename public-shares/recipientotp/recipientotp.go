@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"filees/internal/durable"
+	"filees/pkg/onboarding"
 	"filees/pkg/repoworker"
 	"filees/public-shares/channel"
 	"github.com/google/uuid"
@@ -35,6 +36,11 @@ type Request struct {
 	Alias      string `json:"alias"`
 	Slug       string `json:"slug"`
 	Invitation string `json:"invitation"`
+	// Email is required for upload-channel OTP: the public projection never
+	// carries mailboxes, so the contributor types the address that received
+	// the invitation. Download shares leave it empty and keep matching on
+	// the invitation alone.
+	Email string `json:"email,omitempty"`
 }
 
 type VerifyRequest struct {
@@ -141,8 +147,14 @@ func (s Service) recipient(request Request) (channel.Record, channel.RecipientCr
 		return channel.Record{}, channel.RecipientCredential{}, "", ErrDenied
 	}
 	record, err := s.Channels.ResolveAddress(request.Alias, request.Slug)
+	uploadOnly := false
 	if err != nil {
-		return channel.Record{}, channel.RecipientCredential{}, "", ErrDenied
+		upload, uploadErr := s.Channels.ResolveUploadAddress(request.Alias, request.Slug)
+		if uploadErr != nil {
+			return channel.Record{}, channel.RecipientCredential{}, "", ErrDenied
+		}
+		uploadOnly = true
+		record = channel.Record{ChannelID: upload.ChannelID, Alias: upload.Alias, Slug: upload.Slug, Recipients: upload.Recipients}
 	}
 	digestRaw := sha256.Sum256([]byte(request.Invitation))
 	digest := hex.EncodeToString(digestRaw[:])
@@ -155,7 +167,18 @@ func (s Service) recipient(request Request) (channel.Record, channel.RecipientCr
 	if matched < 0 {
 		return channel.Record{}, channel.RecipientCredential{}, "", ErrDenied
 	}
-	return record, record.Recipients[matched], digest, nil
+	credential := record.Recipients[matched]
+	if uploadOnly || request.Email != "" {
+		typed, typedErr := onboarding.CanonicalEmail(request.Email)
+		want, wantErr := onboarding.CanonicalEmail(credential.Email)
+		if typedErr != nil || wantErr != nil {
+			return channel.Record{}, channel.RecipientCredential{}, "", ErrDenied
+		}
+		if subtle.ConstantTimeCompare([]byte(strings.ToLower(typed)), []byte(strings.ToLower(want))) != 1 {
+			return channel.Record{}, channel.RecipientCredential{}, "", ErrDenied
+		}
+	}
+	return record, credential, digest, nil
 }
 
 func (s Service) code(current state) string {

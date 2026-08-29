@@ -173,11 +173,13 @@ type PublicShareManager interface {
 type UploadChannelSummary struct {
 	ChannelID, Alias, Slug, State, UploadRepoID, UpdatedAt string
 	Recipients                                             []string
+	RequireOTP                                             bool
 }
 
 type UploadChannelDeclaration struct {
 	AuthorityRepoID, Slug, Kind string
 	Recipients                  []string
+	RequireOTP                  bool
 }
 
 type UploadChannelManager interface {
@@ -1526,7 +1528,7 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 			known := make(map[string]UploadChannelSummary, len(channels))
 			for _, channel := range channels {
 				known[channel.ChannelID] = channel
-				request.Channels = append(request.Channels, platform.UploadChannelSummary{ChannelID: channel.ChannelID, Address: channel.Alias + "/" + channel.Slug, State: publicShareStateLabel(channel.State), Recipients: strings.Join(channel.Recipients, ", ")})
+				request.Channels = append(request.Channels, platform.UploadChannelSummary{ChannelID: channel.ChannelID, Address: channel.Alias + "/" + channel.Slug, State: publicShareStateLabel(channel.State), Recipients: strings.Join(channel.Recipients, ", "), RequireOTP: channel.RequireOTP})
 			}
 			choice, err := c.cfg.UploadChannelBrowser.ShowUploadChannels(ctx, request)
 			if err != nil {
@@ -1653,6 +1655,14 @@ func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo a
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Potrzeba wnoszącego", Text: "Półka przyjęcia wymaga co najmniej jednego adresu. Anonimowe wniesienie nie istnieje."})
 		return UploadChannelDeclaration{}, false
 	}
+	otp, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		Title: "Kod z poczty", Text: "Czy wnoszący ma podać jednorazowy kod z poczty przed wysłaniem pliku?",
+		ConfirmText: "Tak", CancelText: "Nie",
+	})
+	if confirmErr != nil {
+		return UploadChannelDeclaration{}, false
+	}
+	declaration.RequireOTP = otp
 	return declaration, true
 }
 

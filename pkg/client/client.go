@@ -128,6 +128,17 @@ func buildSSHCommand(identityFile, knownHosts string, port int, connectHost ...s
 		"-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
 		"-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + knownHosts,
 		"-o", "HostKeyAlgorithms=ssh-ed25519", "-i", identityFile,
+		// Without these, a tunnel whose peer vanished (relay reset, dead
+		// route) can sit in a blocking read for the full operation timeout
+		// (default 30 min, client.Options.Timeout) before anything notices —
+		// the "monitor żywotności" gap tracked in UNFINISHED_WORK.md. Three
+		// missed probes at 15s bound detection to roughly 45-60s; a live
+		// tunnel just answers the probes and never notices. OpenSSH reports
+		// "Timeout, server ... not responding." on the tunnel's own stderr,
+		// which svn+ssh folds into the local svn process's captured stderr
+		// (same mechanism as the ToSlash comment above, observed there with
+		// host-key errors) — errmap.Classify recognizes it.
+		"-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
 	}
 	if port > 0 {
 		args = append(args, "-p", strconv.Itoa(port))

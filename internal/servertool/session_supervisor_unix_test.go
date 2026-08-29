@@ -63,6 +63,51 @@ func TestSessionSupervisorTerminatesChildOnRevoke(t *testing.T) {
 	}
 }
 
+// TestSessionSupervisorReportsRevokeOnStderr guards the "ciche zabicie
+// sesji" fix (UNFINISHED_WORK.md): a revoked session must not just vanish —
+// it must write a marker errmap.Classify can recognize (FILEES-SESSION-ENDED)
+// on the same stderr the connecting client's own svn process captures, so
+// the client can tell "you were revoked" apart from an ordinary dropped
+// connection instead of guessing from elapsed time.
+func TestSessionSupervisorReportsRevokeOnStderr(t *testing.T) {
+	if runtime.GOOS == "openbsd" {
+		t.Skip("native supervisor behavior is covered by the OpenBSD audit-lab acceptance test")
+	}
+	manager, config, grant, lease := newSupervisorTestSession(t)
+	t.Cleanup(func() { _ = lease.Close() })
+	originalStarter := startSessionChild
+	t.Cleanup(func() { startSessionChild = originalStarter })
+	startSessionChild = sessionSupervisorTestChild
+
+	input, keepInputOpen := io.Pipe()
+	defer keepInputOpen.Close()
+	var stderr bytes.Buffer
+	type result struct {
+		exitCode int
+		err      error
+	}
+	done := make(chan result, 1)
+	go func() {
+		exitCode, err := runSVNSessionSupervisor(config, grant.ClientID, manager, lease, input, io.Discard, &stderr)
+		done <- result{exitCode: exitCode, err: err}
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if _, err := manager.Revoke(context.Background(), grant.ClientID, "supervisor stderr marker test"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("supervisor returned error after revoke: %v", got.err)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("supervisor did not end after revoke")
+	}
+	if !strings.Contains(stderr.String(), "FILEES-SESSION-ENDED: revoked") {
+		t.Fatalf("stderr = %q, want it to contain the FILEES-SESSION-ENDED marker", stderr.String())
+	}
+}
+
 func TestWhaleSessionSupervisorUsesSameRevokeFence(t *testing.T) {
 	if runtime.GOOS == "openbsd" {
 		t.Skip("native supervisor behavior is covered by the OpenBSD audit-lab acceptance test")

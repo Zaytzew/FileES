@@ -21,6 +21,7 @@ import (
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/deploy"
+	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/provisioning"
@@ -247,7 +248,22 @@ func reconcileProjectedView(ctx context.Context, supervisor *reposupervisor.Supe
 	return nil
 }
 
-func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, lg talk.Logger) {
+// recordSyncFailure classifies and journals a sync-path failure the same way
+// commit.Service.recordCommitFailure does: network faults are deferred to the
+// connectivity signal (rs.SetConnectivity/sustained-offline handling)
+// instead of duplicating it in errors.jsonl, but every other classified
+// fault — including the new connection-dropped and session-ended keys —
+// reaches errors.jsonl/filees log immediately. A nil sink is safe (errmap.Sink
+// treats Emit as a no-op).
+func recordSyncFailure(sink *errmap.Sink, lg talk.Logger, what string, err error) {
+	entry := errmap.Classify(err)
+	if !entry.IsNetwork() {
+		sink.Emit(entry)
+	}
+	lg.Warnf("%s [%s]: %v", what, entry.Code, err)
+}
+
+func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoState, cli client.Client, sink *errmap.Sink, lg talk.Logger) {
 	if !workingCopyMetadataAvailable(repo.LocalPath) {
 		markWorkingCopyMissing(rs)
 		return
@@ -282,7 +298,10 @@ func runReadOnlyRepo(ctx context.Context, repo config.Repo, rs *ipcserver.RepoSt
 		out, err := cli.Update(ctx, repo.LocalPath)
 		if err != nil {
 			if ctx.Err() == nil {
-				lg.Warnf("svn update failed: %v %s", err, out)
+				recordSyncFailure(sink, lg, "svn update failed", err)
+				if strings.TrimSpace(out) != "" {
+					lg.Warnf("svn update output: %s", out)
+				}
 				rs.SetConnectivity(contract.ConnOffline)
 				rs.SetState(contract.StateOffline)
 			}

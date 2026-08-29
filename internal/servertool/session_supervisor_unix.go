@@ -194,6 +194,7 @@ func runSessionSupervisor(config serverconfig.Config, clientID, childRoot string
 		return 0, err
 	}
 	if !manager.SessionAllowed(lease.Metadata.OperationID, clientID) {
+		reportSessionEnded(stderr, "not-allowed")
 		_ = terminateSessionChild(cmd.Process.Pid, nil)
 		_ = cmd.Wait()
 		closeSessionPipes(gateWrite, childInWrite, childOutRead, childErrRead)
@@ -254,6 +255,37 @@ func sessionSupervisorProfile(config serverconfig.Config, lease *activation.Sess
 	}}
 }
 
+// syncWriter serializes concurrent writers onto one io.Writer. relaySession
+// needs it because the child-stderr relay goroutine and reportSessionEnded
+// both write to the same stderr from different goroutines.
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (s *syncWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
+}
+
+// reportSessionEnded writes a marker to the supervisor's own stderr right
+// before it kills the session child for an authorization reason (as opposed
+// to the child crashing or the connection dying on its own). This process is
+// itself the SSH forced command, so this stderr is the connecting client's
+// tunnel stderr; pkg/client folds it into the local svn process's captured
+// stderr the same way it already does for ssh's own diagnostics (see the
+// ToSlash comment in pkg/client/client.go), and errmap.Classify recognizes
+// the "FILEES-SESSION-ENDED" marker (case-insensitive) to tell this apart
+// from an ordinary dropped connection — see UNFINISHED_WORK.md's "ciche
+// zabicie sesji" gap. reason is server-side-only detail (grep-able in raw
+// logs); the classified entry it produces client-side deliberately does not
+// repeat it, since SessionAllowed's own contract treats every non-live state
+// as one fail-closed result, not a diagnosis.
+func reportSessionEnded(stderr io.Writer, reason string) {
+	report(stderr, "filees-client-entry session", fmt.Errorf("FILEES-SESSION-ENDED: %s", reason))
+}
+
 func relaySession(cmd *exec.Cmd, manager *activation.Manager, lease *activation.SessionLease, stdin io.Reader, stdout, stderr io.Writer, childIn *os.File, childOut, childErr *os.File) (int, error) {
 	if stdin == nil {
 		stdin = strings.NewReader("")
@@ -264,6 +296,12 @@ func relaySession(cmd *exec.Cmd, manager *activation.Manager, lease *activation.
 	if stderr == nil {
 		stderr = io.Discard
 	}
+	// reportSessionEnded below writes to stderr from this goroutine while the
+	// io.Copy below concurrently relays the child's own stderr into the same
+	// writer — an unsynchronized io.Writer (a bytes.Buffer, notably) is not
+	// safe for that. Every write to stderr for the rest of this function goes
+	// through this one serializing wrapper.
+	stderr = &syncWriter{w: stderr}
 	var outputs sync.WaitGroup
 	outputs.Add(2)
 	go func() {
@@ -302,6 +340,7 @@ func relaySession(cmd *exec.Cmd, manager *activation.Manager, lease *activation.
 				return 0, fmt.Errorf("poll session revoke lease: %w", err)
 			}
 			if revoked {
+				reportSessionEnded(stderr, "revoked")
 				closeInput(stdin, childIn)
 				waitErr := terminateSessionChild(cmd.Process.Pid, wait)
 				outputs.Wait()
@@ -309,6 +348,7 @@ func relaySession(cmd *exec.Cmd, manager *activation.Manager, lease *activation.
 			}
 		case <-poll.C:
 			if !manager.SessionAllowed(lease.Metadata.OperationID, lease.Metadata.ClientID) {
+				reportSessionEnded(stderr, "not-allowed")
 				closeInput(stdin, childIn)
 				waitErr := terminateSessionChild(cmd.Process.Pid, wait)
 				outputs.Wait()

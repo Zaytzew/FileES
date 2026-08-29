@@ -147,6 +147,9 @@ type RepositorySummary struct {
 	DisplayName string `json:"display_name"`
 	Access      string `json:"access"`
 	State       string `json:"state"`
+	// Purpose mirrors clientview.Repository.Purpose ("" | "upload_shelf" |
+	// "upload_trash"); empty means an ordinary repository.
+	Purpose string `json:"purpose,omitempty"`
 }
 
 // ListRepositoriesResult is the installation's current realm projection.

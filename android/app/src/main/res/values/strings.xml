@@ -2,6 +2,10 @@
 <resources>
     <string name="app_name">FileES</string>
 
+    <string name="section_repositories">Repozytoria</string>
+    <string name="section_upload_shelves">Półki przyjęcia</string>
+    <string name="section_upload_trash">Kwarantanna</string>
+
     <string name="section_activation">Parowanie</string>
     <string name="hint_pairing_payload">Dane parowania (wklej JSON zamiast skanować QR)</string>
     <string name="action_scan_qr">Skanuj QR i sparuj z desktopem</string>

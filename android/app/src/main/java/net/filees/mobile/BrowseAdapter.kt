@@ -11,7 +11,7 @@ import com.google.android.material.button.MaterialButton
 class BrowseAdapter(
     private val onOpen: (BrowseRow) -> Unit,
     private val onDownload: (BrowseRow) -> Unit,
-) : RecyclerView.Adapter<BrowseAdapter.Holder>() {
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private var rows: List<BrowseRow> = emptyList()
 
@@ -20,16 +20,33 @@ class BrowseAdapter(
         notifyDataSetChanged()
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_browse, parent, false)
-        return Holder(view)
+    override fun getItemViewType(position: Int): Int =
+        if (rows[position].sectionHeader != null) VIEW_TYPE_HEADER else VIEW_TYPE_ITEM
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return if (viewType == VIEW_TYPE_HEADER) {
+            HeaderHolder(inflater.inflate(R.layout.item_browse_header, parent, false))
+        } else {
+            Holder(inflater.inflate(R.layout.item_browse, parent, false))
+        }
     }
 
-    override fun onBindViewHolder(holder: Holder, position: Int) {
-        holder.bind(rows[position], onOpen, onDownload)
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        when (holder) {
+            is HeaderHolder -> holder.bind(rows[position])
+            is Holder -> holder.bind(rows[position], onOpen, onDownload)
+        }
     }
 
     override fun getItemCount(): Int = rows.size
+
+    class HeaderHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val label: TextView = itemView.findViewById(R.id.textSectionHeader)
+        fun bind(row: BrowseRow) {
+            label.text = row.sectionHeader
+        }
+    }
 
     class Holder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val icon: ImageView = itemView.findViewById(R.id.imageBrowseIcon)
@@ -52,5 +69,10 @@ class BrowseAdapter(
                 itemView.setOnClickListener { onDownload(row) }
             }
         }
+    }
+
+    companion object {
+        private const val VIEW_TYPE_ITEM = 0
+        private const val VIEW_TYPE_HEADER = 1
     }
 }

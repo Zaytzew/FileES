@@ -471,6 +471,7 @@ func (adapter uploadChannelAdapter) ListUploadChannels(ctx context.Context, serv
 		channels = append(channels, actions.UploadChannelSummary{
 			ChannelID: channel.ChannelID, Alias: channel.Alias, Slug: channel.Slug, State: channel.State,
 			UploadRepoID: channel.UploadRepoID, UpdatedAt: channel.UpdatedAt, Recipients: append([]string(nil), channel.Recipients...),
+			RequireOTP: channel.RequireOTP,
 		})
 	}
 	return channels, nil
@@ -521,7 +522,7 @@ func (adapter uploadChannelAdapter) DeleteUploadChannel(ctx context.Context, ser
 }
 
 func uploadChannelDeclarationToContract(declaration actions.UploadChannelDeclaration) contract.UploadChannelDeclaration {
-	return contract.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...)}
+	return contract.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...), RequireOTP: declaration.RequireOTP}
 }
 
 func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration) (contract.PublicShareDeclaration, error) {

@@ -98,6 +98,59 @@ func TestControllerCreateUploadShelfCollectsSlugAndRecipientsWithoutOTP(t *testi
 			t.Fatalf("shelf create prompted for OTP: %+v", prompt)
 		}
 	}
+	if created[0].RequireOTP {
+		t.Fatal("default Confirm must leave RequireOTP off")
+	}
+}
+
+func TestControllerCreateUploadShelfCollectsOTPWhenConfirmed(t *testing.T) {
+	manager := &recordingUploadChannels{}
+	dialogs := 0
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogUploadChannels, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		UploadChannelsFunc: func(context.Context, platform.UploadChannelDialogRequest) (platform.UploadChannelDialogResult, error) {
+			dialogs++
+			if dialogs == 1 {
+				return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogCreate}, nil
+			}
+			return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}, nil
+		},
+		PromptTextFunc: func(_ context.Context, request platform.PromptTextRequest) (platform.PromptTextResult, error) {
+			switch request.Title {
+			case "Adres półki":
+				return platform.PromptTextResult{Value: "oferta-a"}, nil
+			case "Wnoszący":
+				return platform.PromptTextResult{Value: "a@example.com"}, nil
+			default:
+				t.Fatalf("unexpected prompt %q", request.Title)
+				return platform.PromptTextResult{}, nil
+			}
+		},
+		ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+			if request.Title != "Kod z poczty" {
+				t.Fatalf("unexpected confirm %q", request.Title)
+			}
+			return true, nil
+		},
+	}
+	view := lifecycleView(uploadChannelCaps()...)
+	intents, cancel := setup(actions.Config{
+		ViewModel: viewCopy(view), SettingsBrowser: platformFake, UploadChannelBrowser: platformFake,
+		Prompter: platformFake, UploadChannels: manager, Notifier: platformFake,
+	})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	deadline := time.Now().Add(2 * time.Second)
+	for len(manager.created()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	created := manager.created()
+	if len(created) != 1 || !created[0].RequireOTP || created[0].Slug != "oferta-a" {
+		t.Fatalf("created=%+v", created)
+	}
 }
 
 func TestControllerCreateUploadShelfRejectsEmptyRecipients(t *testing.T) {

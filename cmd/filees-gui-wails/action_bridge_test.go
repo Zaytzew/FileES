@@ -238,8 +238,8 @@ func TestUploadChannelAdapterTranslatesDeclarations(t *testing.T) {
 	if err != nil || len(channels) != 1 || channels[0].Slug != "inbox" || len(channels[0].Recipients) != 1 {
 		t.Fatalf("ListUploadChannels() = %+v, %v", channels, err)
 	}
-	declaration := actions.UploadChannelDeclaration{AuthorityRepoID: "docs", Slug: "drop", Recipients: []string{"a@example.net"}}
-	if err := adapter.CreateUploadChannel(t.Context(), "spot", declaration); err != nil || client.created.AuthorityRepoID != "docs" || client.created.Slug != "drop" {
+	declaration := actions.UploadChannelDeclaration{AuthorityRepoID: "docs", Slug: "drop", Recipients: []string{"a@example.net"}, RequireOTP: true}
+	if err := adapter.CreateUploadChannel(t.Context(), "spot", declaration); err != nil || client.created.AuthorityRepoID != "docs" || client.created.Slug != "drop" || !client.created.RequireOTP {
 		t.Fatalf("CreateUploadChannel() payload=%+v err=%v", client.created, err)
 	}
 	if err := adapter.UpdateUploadChannel(t.Context(), "spot", "channel-1", declaration); err != nil || client.updated.ChannelID != "channel-1" {

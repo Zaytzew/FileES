@@ -342,14 +342,14 @@ func (s *realmAliasService) uploadChannelExchange(ctx context.Context, serverID 
 }
 
 func uploadChannelDeclarationToControl(declaration contract.UploadChannelDeclaration) control.UploadChannelDeclaration {
-	return control.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...)}
+	return control.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...), RequireOTP: declaration.RequireOTP}
 }
 
 func uploadChannelSummaryFromControl(channel control.UploadChannelSummary) contract.UploadChannelSummary {
 	return contract.UploadChannelSummary{
 		ChannelID: channel.ChannelID, AuthorityRepoID: channel.AuthorityRepoID, UploadRepoID: channel.UploadRepoID,
 		Alias: channel.Alias, Slug: channel.Slug, Kind: channel.Kind, State: channel.State,
-		Recipients: append([]string(nil), channel.Recipients...), UpdatedAt: channel.UpdatedAt,
+		Recipients: append([]string(nil), channel.Recipients...), RequireOTP: channel.RequireOTP, UpdatedAt: channel.UpdatedAt,
 	}
 }
 

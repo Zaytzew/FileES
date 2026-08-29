@@ -125,6 +125,7 @@ type UploadChannelProjection struct {
 	Address    string `json:"address"`
 	State      string `json:"state"`
 	Recipients string `json:"recipients"`
+	RequireOTP bool   `json:"require_otp,omitempty"`
 	CanEdit    bool   `json:"can_edit"`
 	CanRevoke  bool   `json:"can_revoke"`
 	CanDelete  bool   `json:"can_delete"`
@@ -731,7 +732,7 @@ func projectUploadChannels(request platform.UploadChannelDialogRequest, contextP
 		active := strings.EqualFold(strings.TrimSpace(channel.State), "aktywne") || strings.EqualFold(strings.TrimSpace(channel.State), "active")
 		snapshot.Uploads = append(snapshot.Uploads, UploadChannelProjection{
 			ChannelID: channelID, Address: channel.Address, State: channel.State, Recipients: channel.Recipients,
-			CanEdit: active, CanRevoke: active, CanDelete: true,
+			RequireOTP: channel.RequireOTP, CanEdit: active, CanRevoke: active, CanDelete: true,
 		})
 	}
 	return snapshot, true

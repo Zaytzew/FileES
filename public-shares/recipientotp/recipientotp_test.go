@@ -141,6 +141,67 @@ func TestRemovedRecipientIsRejectedImmediately(t *testing.T) {
 	}
 }
 
+func newUploadOTPFixture(t *testing.T) fixture {
+	t.Helper()
+	now := time.Unix(1800000000, 0).UTC()
+	owner, repo := uuid.NewString(), uuid.NewString()
+	root := t.TempDir()
+	store := &channel.Store{
+		Root: root, Authority: testAuthority{owner: owner, repo: repo},
+		TokenKey: []byte(strings.Repeat("i", 32)), Now: func() time.Time { return now },
+	}
+	declaration := manifest.Upload{
+		OwnerRealm: owner, AuthorityRepoID: repo, UploadRepoID: uuid.NewString(),
+		Slug: "oferta-a", Recipients: []string{"recipient@example.test"}, RequireOTP: true,
+		CollisionPolicy: manifest.CollisionDeny,
+	}
+	_, deliveries, err := store.CreateUpload(uuid.NewString(), owner, declaration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outbox := repoworker.PublicShareOutbox{Root: filepath.Join(root, "outbox"), Now: func() time.Time { return now }}
+	service := Service{
+		Root: filepath.Join(root, "recipient-otp"), Key: []byte(strings.Repeat("o", 32)),
+		Channels: store, Outbox: outbox, Now: func() time.Time { return now },
+	}
+	return fixture{service: service, store: store, invitation: deliveries[0].Token, owner: owner, now: &now}
+}
+
+func TestUploadOTPRequiresMatchingTypedAddress(t *testing.T) {
+	f := newUploadOTPFixture(t)
+	base := Request{Alias: "realm", Slug: "oferta-a", Invitation: f.invitation}
+	if err := f.service.RequestCode(base); !errors.Is(err, ErrDenied) {
+		t.Fatalf("upload OTP without address: %v", err)
+	}
+	if err := f.service.RequestCode(Request{Alias: base.Alias, Slug: base.Slug, Invitation: base.Invitation, Email: "other@example.test"}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("mismatched address: %v", err)
+	}
+	if job, ok, err := f.service.Outbox.Claim(*f.now, time.Minute); ok {
+		t.Fatalf("denied request queued mail: %+v %v", job, err)
+	}
+	if err := f.service.RequestCode(Request{Alias: base.Alias, Slug: base.Slug, Invitation: base.Invitation, Email: "Recipient@example.test"}); err != nil {
+		t.Fatal(err)
+	}
+	job, ok, err := f.service.Outbox.Claim(*f.now, time.Minute)
+	if err != nil || !ok || job.Code == "" || job.DeliveryAddress != "recipient@example.test" {
+		t.Fatalf("upload OTP mail=%+v %v %v", job, ok, err)
+	}
+	if _, err := f.service.Verify(VerifyRequest{Request: Request{Alias: base.Alias, Slug: base.Slug, Invitation: base.Invitation, Email: "Recipient@example.test"}, Code: job.Code}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDownloadOTPIgnoresEmptyEmailAndRejectsMismatch(t *testing.T) {
+	f := newFixture(t)
+	request := Request{Alias: "realm", Slug: "files", Invitation: f.invitation}
+	if err := f.service.RequestCode(request); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.RequestCode(Request{Alias: request.Alias, Slug: request.Slug, Invitation: request.Invitation, Email: "other@example.test"}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("download mismatch: %v", err)
+	}
+}
+
 func (f fixture) storeID(t *testing.T) string {
 	t.Helper()
 	records, err := f.store.ListOwned(f.owner, f.share.RepoID)

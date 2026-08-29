@@ -67,7 +67,7 @@ function uploadCard(channel) {
 		channel.can_delete ? `<button class="danger" type="button" data-upload-action="delete" data-channel-id="${escapeHTML(channel.channel_id)}">Usuń</button>` : "",
 	].join("");
 	return `<article class="share-row upload-row">
-		<div class="share-main"><span class="share-dot ${channel.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(channel.address || channel.channel_id)}</strong><small>zamknięta półka przyjęcia</small></div></div>
+		<div class="share-main"><span class="share-dot ${channel.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(channel.address || channel.channel_id)}</strong><small>${channel.require_otp ? "zamknięta półka · kod z poczty" : "zamknięta półka przyjęcia"}</small></div></div>
 		<div class="share-fact"><small>Stan</small><span>${escapeHTML(channel.state || "nieznany")}</span></div>
 		<div class="share-fact"><small>Wnoszący</small><span title="${escapeHTML(channel.recipients)}">${escapeHTML(channel.recipients || "brak")}</span></div>
 		<div class="share-controls">${controls}</div>

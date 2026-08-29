@@ -485,6 +485,132 @@ export class NoticeProjection {
     }
 }
 
+export class PairingAcceptance {
+    /**
+     * Creates a new PairingAcceptance instance.
+     * @param {Partial<PairingAcceptance>} [$$source = {}] - The source object to create the PairingAcceptance.
+     */
+    constructor($$source = {}) {
+        if (!("accepted" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["accepted"] = false;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["code"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PairingAcceptance instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PairingAcceptance}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PairingAcceptance(/** @type {Partial<PairingAcceptance>} */($$parsedSource));
+    }
+}
+
+export class PairingClose {
+    /**
+     * Creates a new PairingClose instance.
+     * @param {Partial<PairingClose>} [$$source = {}] - The source object to create the PairingClose.
+     */
+    constructor($$source = {}) {
+        if (!("revision" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["revision"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PairingClose instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PairingClose}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PairingClose(/** @type {Partial<PairingClose>} */($$parsedSource));
+    }
+}
+
+export class PairingSnapshot {
+    /**
+     * Creates a new PairingSnapshot instance.
+     * @param {Partial<PairingSnapshot>} [$$source = {}] - The source object to create the PairingSnapshot.
+     */
+    constructor($$source = {}) {
+        if (!("revision" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["revision"] = 0;
+        }
+        if (!("active" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["active"] = false;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["address"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["qr_data_url"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["expires_at"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["display_until"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PairingSnapshot instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PairingSnapshot}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PairingSnapshot(/** @type {Partial<PairingSnapshot>} */($$parsedSource));
+    }
+}
+
 export class PendingActionProjection {
     /**
      * Creates a new PendingActionProjection instance.
@@ -633,16 +759,44 @@ export class PromptChoice {
 }
 
 export class PromptOption {
+    /**
+     * Creates a new PromptOption instance.
+     * @param {Partial<PromptOption>} [$$source = {}] - The source object to create the PromptOption.
+     */
     constructor($$source = {}) {
-        if (!("value" in $$source)) this["value"] = "";
-        if (!("label" in $$source)) this["label"] = "";
-        if (/** @type {any} */(false)) this["detail"] = undefined;
+        if (!("value" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["value"] = "";
+        }
+        if (!("label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["label"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["detail"] = undefined;
+        }
+
         Object.assign(this, $$source);
     }
 
+    /**
+     * Creates a new PromptOption instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PromptOption}
+     */
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new PromptOption($$parsedSource);
+        return new PromptOption(/** @type {Partial<PromptOption>} */($$parsedSource));
     }
 }
 
@@ -739,7 +893,11 @@ export class PromptSnapshot {
      * @returns {PromptSnapshot}
      */
     static createFrom($$source = {}) {
+        const $$createField5_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("options" in $$parsedSource) {
+            $$parsedSource["options"] = $$createField5_0($$parsedSource["options"]);
+        }
         return new PromptSnapshot(/** @type {Partial<PromptSnapshot>} */($$parsedSource));
     }
 }
@@ -832,6 +990,139 @@ export class PublicShareProjection {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new PublicShareProjection(/** @type {Partial<PublicShareProjection>} */($$parsedSource));
+    }
+}
+
+export class QuarantineItemProjection {
+    /**
+     * Creates a new QuarantineItemProjection instance.
+     * @param {Partial<QuarantineItemProjection>} [$$source = {}] - The source object to create the QuarantineItemProjection.
+     */
+    constructor($$source = {}) {
+        if (!("upload_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["upload_id"] = "";
+        }
+        if (!("original_name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["original_name"] = "";
+        }
+        if (!("size" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["size"] = 0;
+        }
+        if (!("size_label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["size_label"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["av_verdict"] = undefined;
+        }
+        if (!("remaining_hours" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["remaining_hours"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuarantineItemProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {QuarantineItemProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuarantineItemProjection(/** @type {Partial<QuarantineItemProjection>} */($$parsedSource));
+    }
+}
+
+export class RealmGrantProjection {
+    /**
+     * Creates a new RealmGrantProjection instance.
+     * @param {Partial<RealmGrantProjection>} [$$source = {}] - The source object to create the RealmGrantProjection.
+     */
+    constructor($$source = {}) {
+        if (!("realm_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["realm_id"] = "";
+        }
+        if (!("alias" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["alias"] = "";
+        }
+        if (!("access" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["access"] = "";
+        }
+        if (!("state" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["state"] = "";
+        }
+        if (!("can_read" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_read"] = false;
+        }
+        if (!("can_write" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_write"] = false;
+        }
+        if (!("can_revoke" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_revoke"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RealmGrantProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {RealmGrantProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new RealmGrantProjection(/** @type {Partial<RealmGrantProjection>} */($$parsedSource));
     }
 }
 
@@ -1072,6 +1363,13 @@ export class RepoProjection {
              */
             this["cleanup_error"] = undefined;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["purpose"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }
@@ -1082,10 +1380,10 @@ export class RepoProjection {
      * @returns {RepoProjection}
      */
     static createFrom($$source = {}) {
-        const $$createField23_0 = $$createType0;
+        const $$createField25_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("cycle" in $$parsedSource) {
-            $$parsedSource["cycle"] = $$createField23_0($$parsedSource["cycle"]);
+            $$parsedSource["cycle"] = $$createField25_0($$parsedSource["cycle"]);
         }
         return new RepoProjection(/** @type {Partial<RepoProjection>} */($$parsedSource));
     }
@@ -1216,6 +1514,13 @@ export class RepositoryChoice {
              */
             this["realm_id"] = undefined;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["upload_id"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }
@@ -1228,55 +1533,6 @@ export class RepositoryChoice {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new RepositoryChoice(/** @type {Partial<RepositoryChoice>} */($$parsedSource));
-    }
-}
-
-export class RealmGrantProjection {
-    /**
-     * Creates a new RealmGrantProjection instance.
-     * @param {Partial<RealmGrantProjection>} [$$source = {}] - The source object to create a RealmGrantProjection.
-     */
-    constructor($$source = {}) {
-        for (const field of ["realm_id", "alias", "access", "state"]) {
-            if (!(field in $$source)) this[field] = "";
-        }
-        for (const field of ["can_read", "can_write", "can_revoke"]) {
-            if (!(field in $$source)) this[field] = false;
-        }
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * @param {any} [$$source = {}]
-     * @returns {RealmGrantProjection}
-     */
-    static createFrom($$source = {}) {
-        const $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new RealmGrantProjection(/** @type {Partial<RealmGrantProjection>} */($$parsedSource));
-    }
-}
-
-export class UploadChannelProjection {
-    /**
-     * @param {Partial<UploadChannelProjection>} [$$source = {}]
-     */
-    constructor($$source = {}) {
-        for (const field of ["channel_id", "address", "state", "recipients"]) {
-            if (!(field in $$source)) this[field] = "";
-        }
-        for (const field of ["can_edit", "can_revoke", "can_delete"]) {
-            if (!(field in $$source)) this[field] = false;
-        }
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * @param {any} [$$source = {}]
-     * @returns {UploadChannelProjection}
-     */
-    static createFrom($$source = {}) {
-        const $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new UploadChannelProjection(/** @type {Partial<UploadChannelProjection>} */($$parsedSource));
     }
 }
 
@@ -1454,6 +1710,13 @@ export class RepositorySnapshot {
              */
             this["uploads"] = [];
         }
+        if (!("quarantine" in $$source)) {
+            /**
+             * @member
+             * @type {QuarantineItemProjection[]}
+             */
+            this["quarantine"] = [];
+        }
 
         Object.assign(this, $$source);
     }
@@ -1464,11 +1727,12 @@ export class RepositorySnapshot {
      * @returns {RepositorySnapshot}
      */
     static createFrom($$source = {}) {
-        const $$createField5_0 = $$createType1;
-        const $$createField6_0 = $$createType3;
-        const $$createField7_0 = $$createType5;
-        const $$createField8_0 = $$createType29;
-        const $$createField9_0 = $$createType31;
+        const $$createField5_0 = $$createType3;
+        const $$createField6_0 = $$createType5;
+        const $$createField7_0 = $$createType7;
+        const $$createField8_0 = $$createType9;
+        const $$createField9_0 = $$createType11;
+        const $$createField10_0 = $$createType13;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("context" in $$parsedSource) {
             $$parsedSource["context"] = $$createField5_0($$parsedSource["context"]);
@@ -1484,6 +1748,9 @@ export class RepositorySnapshot {
         }
         if ("uploads" in $$parsedSource) {
             $$parsedSource["uploads"] = $$createField9_0($$parsedSource["uploads"]);
+        }
+        if ("quarantine" in $$parsedSource) {
+            $$parsedSource["quarantine"] = $$createField10_0($$parsedSource["quarantine"]);
         }
         return new RepositorySnapshot(/** @type {Partial<RepositorySnapshot>} */($$parsedSource));
     }
@@ -1713,6 +1980,55 @@ export class SettingsAcceptance {
     }
 }
 
+export class SettingsActionProjection {
+    /**
+     * Creates a new SettingsActionProjection instance.
+     * @param {Partial<SettingsActionProjection>} [$$source = {}] - The source object to create the SettingsActionProjection.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["label"] = "";
+        }
+        if (!("description" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["description"] = "";
+        }
+        if (!("tone" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["tone"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SettingsActionProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {SettingsActionProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new SettingsActionProjection(/** @type {Partial<SettingsActionProjection>} */($$parsedSource));
+    }
+}
+
 export class SettingsChoice {
     /**
      * Creates a new SettingsChoice instance.
@@ -1745,27 +2061,6 @@ export class SettingsChoice {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new SettingsChoice(/** @type {Partial<SettingsChoice>} */($$parsedSource));
-    }
-}
-
-export class SettingsActionProjection {
-    /**
-     * @param {Partial<SettingsActionProjection>} [$$source = {}]
-     */
-    constructor($$source = {}) {
-        for (const field of ["id", "label", "description", "tone"]) {
-            if (!(field in $$source)) this[field] = "";
-        }
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * @param {any} [$$source = {}]
-     * @returns {SettingsActionProjection}
-     */
-    static createFrom($$source = {}) {
-        const $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new SettingsActionProjection(/** @type {Partial<SettingsActionProjection>} */($$parsedSource));
     }
 }
 
@@ -1824,13 +2119,13 @@ export class SettingsServerProjection {
              */
             this["can_set_session_timeout"] = false;
         }
-		if (!("actions" in $$source)) {
-			/**
-			 * @member
-			 * @type {SettingsActionProjection[]}
-			 */
-			this["actions"] = [];
-		}
+        if (!("actions" in $$source)) {
+            /**
+             * @member
+             * @type {SettingsActionProjection[]}
+             */
+            this["actions"] = [];
+        }
 
         Object.assign(this, $$source);
     }
@@ -1841,11 +2136,11 @@ export class SettingsServerProjection {
      * @returns {SettingsServerProjection}
      */
     static createFrom($$source = {}) {
-		const $$createActions = $$createType33;
+        const $$createField7_0 = $$createType15;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-		if ("actions" in $$parsedSource) {
-			$$parsedSource["actions"] = $$createActions($$parsedSource["actions"]);
-		}
+        if ("actions" in $$parsedSource) {
+            $$parsedSource["actions"] = $$createField7_0($$parsedSource["actions"]);
+        }
         return new SettingsServerProjection(/** @type {Partial<SettingsServerProjection>} */($$parsedSource));
     }
 }
@@ -1894,7 +2189,7 @@ export class SettingsSnapshot {
      * @returns {SettingsSnapshot}
      */
     static createFrom($$source = {}) {
-        const $$createField3_0 = $$createType8;
+        const $$createField3_0 = $$createType16;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("server" in $$parsedSource) {
             $$parsedSource["server"] = $$createField3_0($$parsedSource["server"]);
@@ -2066,17 +2361,17 @@ export class Snapshot {
      * @returns {Snapshot}
      */
     static createFrom($$source = {}) {
-        const $$createField7_0 = $$createType9;
-        const $$createField8_0 = $$createType11;
-        const $$createField9_0 = $$createType13;
-        const $$createField10_0 = $$createType15;
-        const $$createField11_0 = $$createType17;
-        const $$createField12_0 = $$createType19;
-        const $$createField13_0 = $$createType21;
-        const $$createField14_0 = $$createType23;
-        const $$createField17_0 = $$createType25;
+        const $$createField7_0 = $$createType17;
+        const $$createField8_0 = $$createType19;
+        const $$createField9_0 = $$createType21;
+        const $$createField10_0 = $$createType23;
+        const $$createField11_0 = $$createType25;
+        const $$createField12_0 = $$createType27;
+        const $$createField13_0 = $$createType29;
+        const $$createField14_0 = $$createType31;
+        const $$createField17_0 = $$createType33;
         const $$createField18_0 = $$createType35;
-        const $$createField19_0 = $$createType27;
+        const $$createField19_0 = $$createType37;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("capabilities" in $$parsedSource) {
             $$parsedSource["capabilities"] = $$createField7_0($$parsedSource["capabilities"]);
@@ -2171,38 +2466,119 @@ export class UpdateProjection {
     }
 }
 
+export class UploadChannelProjection {
+    /**
+     * Creates a new UploadChannelProjection instance.
+     * @param {Partial<UploadChannelProjection>} [$$source = {}] - The source object to create the UploadChannelProjection.
+     */
+    constructor($$source = {}) {
+        if (!("channel_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["channel_id"] = "";
+        }
+        if (!("address" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["address"] = "";
+        }
+        if (!("state" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["state"] = "";
+        }
+        if (!("recipients" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["recipients"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {boolean | undefined}
+             */
+            this["require_otp"] = undefined;
+        }
+        if (!("can_edit" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_edit"] = false;
+        }
+        if (!("can_revoke" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_revoke"] = false;
+        }
+        if (!("can_delete" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_delete"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UploadChannelProjection instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {UploadChannelProjection}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new UploadChannelProjection(/** @type {Partial<UploadChannelProjection>} */($$parsedSource));
+    }
+}
+
 // Private type creation functions
-const $$createType0 = CycleProjection.createFrom;
-const $$createType1 = RepositoryContextProjection.createFrom;
-const $$createType2 = RepositoryActionProjection.createFrom;
-const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = PublicShareProjection.createFrom;
+const $$createType0 = PromptOption.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = CycleProjection.createFrom;
+const $$createType3 = RepositoryContextProjection.createFrom;
+const $$createType4 = RepositoryActionProjection.createFrom;
 const $$createType5 = $Create.Array($$createType4);
-const $$createType8 = SettingsServerProjection.createFrom;
-const $$createType9 = $Create.Array($Create.Any);
-const $$createType10 = ServerProjection.createFrom;
+const $$createType6 = PublicShareProjection.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = RealmGrantProjection.createFrom;
+const $$createType9 = $Create.Array($$createType8);
+const $$createType10 = UploadChannelProjection.createFrom;
 const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = RepoProjection.createFrom;
+const $$createType12 = QuarantineItemProjection.createFrom;
 const $$createType13 = $Create.Array($$createType12);
-const $$createType14 = ReservationProjection.createFrom;
+const $$createType14 = SettingsActionProjection.createFrom;
 const $$createType15 = $Create.Array($$createType14);
-const $$createType16 = ErrorProjection.createFrom;
-const $$createType17 = $Create.Array($$createType16);
-const $$createType18 = ActivityProjection.createFrom;
+const $$createType16 = SettingsServerProjection.createFrom;
+const $$createType17 = $Create.Array($Create.Any);
+const $$createType18 = ServerProjection.createFrom;
 const $$createType19 = $Create.Array($$createType18);
-const $$createType20 = JournalProjection.createFrom;
+const $$createType20 = RepoProjection.createFrom;
 const $$createType21 = $Create.Array($$createType20);
-const $$createType22 = PendingActionProjection.createFrom;
+const $$createType22 = ReservationProjection.createFrom;
 const $$createType23 = $Create.Array($$createType22);
-const $$createType24 = NoticeProjection.createFrom;
+const $$createType24 = ErrorProjection.createFrom;
 const $$createType25 = $Create.Array($$createType24);
-const $$createType26 = UpdateProjection.createFrom;
-const $$createType27 = $Create.Nullable($$createType26);
-const $$createType28 = RealmGrantProjection.createFrom;
+const $$createType26 = ActivityProjection.createFrom;
+const $$createType27 = $Create.Array($$createType26);
+const $$createType28 = JournalProjection.createFrom;
 const $$createType29 = $Create.Array($$createType28);
-const $$createType30 = UploadChannelProjection.createFrom;
+const $$createType30 = PendingActionProjection.createFrom;
 const $$createType31 = $Create.Array($$createType30);
-const $$createType32 = SettingsActionProjection.createFrom;
+const $$createType32 = NoticeProjection.createFrom;
 const $$createType33 = $Create.Array($$createType32);
 const $$createType34 = DashboardPublicShareProjection.createFrom;
 const $$createType35 = $Create.Array($$createType34);
+const $$createType36 = UpdateProjection.createFrom;
+const $$createType37 = $Create.Nullable($$createType36);

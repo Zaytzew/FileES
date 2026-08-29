@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/url"
@@ -16,7 +15,6 @@ import (
 
 	"filees/pkg/avscan"
 	"filees/pkg/namingpolicy"
-	"filees/pkg/repoworker"
 	"filees/public-shares/channel"
 	"filees/public-shares/intake"
 )
@@ -25,6 +23,7 @@ var (
 	ErrIncomplete = errors.New("upload reap is incomplete")
 	ErrCollision  = errors.New("upload name already exists")
 	ErrRejected   = errors.New("upload rejected by antivirus")
+	ErrNotFound   = errors.New("quarantine item not found")
 )
 
 type Publisher struct {
@@ -52,6 +51,9 @@ type Result struct {
 func (r Reaper) Reap(ctx context.Context) (Result, error) {
 	if !filepath.IsAbs(r.Intake.Root) || r.Channels == nil || !filepath.IsAbs(r.ReposRoot) || !filepath.IsAbs(r.TrashRoot) || r.Scanner == nil || !filepath.IsAbs(r.Publisher.SVNMucc) || !filepath.IsAbs(r.Publisher.SVNLook) {
 		return Result{}, ErrIncomplete
+	}
+	if err := r.PurgeExpired(ctx, r.now()); err != nil {
+		return Result{}, err
 	}
 	jobs, err := r.Intake.ListReady()
 	if err != nil {
@@ -140,20 +142,15 @@ func (r Reaper) reject(ctx context.Context, job intake.Record, record channel.Up
 	if err := copyFile(payload, filepath.Join(waiting, "payload")); err != nil {
 		return err
 	}
-	index := map[string]any{
-		"upload_id": job.UploadID, "original_name": job.OriginalName, "size": job.Size,
-		"sha256": job.SHA256, "av_verdict": detail, "recipient_token": job.TokenSHA256,
-		"received_at": job.ReceivedAt.UTC().Format(time.RFC3339Nano),
-	}
-	raw, err := json.MarshalIndent(index, "", "  ")
-	if err != nil {
+	indexPath := filepath.Join(waiting, indexName)
+	if err := writeIndex(indexPath, Index{
+		UploadID: job.UploadID, OwnerRealm: record.OwnerRealm, OriginalName: job.OriginalName, Size: job.Size,
+		SHA256: job.SHA256, AVVerdict: detail, RecipientToken: job.TokenSHA256,
+		ReceivedAt: job.ReceivedAt.UTC(),
+	}); err != nil {
 		return err
 	}
-	indexPath := filepath.Join(waiting, "index.json")
-	if err := os.WriteFile(indexPath, append(raw, '\n'), 0600); err != nil {
-		return err
-	}
-	trashRepo := filepath.Join(r.ReposRoot, repoworker.UploadTrashRepositoryID(record.OwnerRealm))
+	trashRepo := filepath.Join(r.ReposRoot, channel.TrashRepositoryID(record.OwnerRealm))
 	return r.putTree(ctx, trashRepo, indexPath, rel+"/index.json", "filees: reject upload "+job.UploadID)
 }
 

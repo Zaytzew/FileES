@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -19,16 +20,18 @@ type RepositoryService struct {
 	emitter  snapshotEmitter
 	show     func()
 	hide     func()
-	settings *repositorySettingsSession
-	shares   *repositorySharesSession
-	grants   *repositoryGrantsSession
-	uploads  *repositoryUploadsSession
+	settings   *repositorySettingsSession
+	shares     *repositorySharesSession
+	grants     *repositoryGrantsSession
+	uploads    *repositoryUploadsSession
+	quarantine *repositoryQuarantineSession
 	// pendingShares binds a controller continuation to the exact repository
 	// action that requested it. A newer gear click clears the continuation.
-	pendingShares  string
-	pendingGrants  string
-	pendingUploads string
-	revision       uint64
+	pendingShares     string
+	pendingGrants     string
+	pendingUploads    string
+	pendingQuarantine string
+	revision          uint64
 }
 
 type repositorySettingsSession struct {
@@ -51,6 +54,11 @@ type repositoryUploadsSession struct {
 	resolved bool
 }
 
+type repositoryQuarantineSession struct {
+	result   chan platform.QuarantineDialogResult
+	resolved bool
+}
+
 type repositorySettingsBrowserAdapter struct{ service *RepositoryService }
 type repositoryPublicShareBrowserAdapter struct{ service *RepositoryService }
 type repositoryRealmGrantBrowserAdapter struct {
@@ -58,6 +66,7 @@ type repositoryRealmGrantBrowserAdapter struct {
 	fallback platform.RealmGrantBrowser
 }
 type repositoryUploadChannelBrowserAdapter struct{ service *RepositoryService }
+type repositoryQuarantineBrowserAdapter struct{ service *RepositoryService }
 
 type settingsBrowserRouter struct {
 	server     settingsBrowserAdapter
@@ -75,6 +84,7 @@ type RepositorySnapshot struct {
 	Shares         []PublicShareProjection      `json:"shares"`
 	Grants         []RealmGrantProjection       `json:"grants"`
 	Uploads        []UploadChannelProjection    `json:"uploads"`
+	Quarantine     []QuarantineItemProjection   `json:"quarantine"`
 	FocusChannelID string                       `json:"focus_channel_id,omitempty"`
 }
 
@@ -132,12 +142,22 @@ type UploadChannelProjection struct {
 	CanDelete  bool   `json:"can_delete"`
 }
 
+type QuarantineItemProjection struct {
+	UploadID       string `json:"upload_id"`
+	OriginalName   string `json:"original_name"`
+	Size           int64  `json:"size"`
+	SizeLabel      string `json:"size_label"`
+	AVVerdict      string `json:"av_verdict,omitempty"`
+	RemainingHours int    `json:"remaining_hours"`
+}
+
 type RepositoryChoice struct {
 	Action    string `json:"action"`
 	ServerID  string `json:"server_id"`
 	RepoID    string `json:"repo_id"`
 	ChannelID string `json:"channel_id,omitempty"`
 	RealmID   string `json:"realm_id,omitempty"`
+	UploadID  string `json:"upload_id,omitempty"`
 }
 
 type RepositoryAcceptance struct {
@@ -150,7 +170,7 @@ func newRepositoryService() *RepositoryService {
 }
 
 func emptyRepositorySnapshot() RepositorySnapshot {
-	return RepositorySnapshot{Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{}}
+	return RepositorySnapshot{Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{}, Quarantine: []QuarantineItemProjection{}}
 }
 
 func (service *RepositoryService) attachEmitter(emitter snapshotEmitter) {
@@ -202,6 +222,8 @@ func (service *RepositoryService) ChooseAction(choice RepositoryChoice) Reposito
 		service.pendingGrants = repositoryContextKey(choice.ServerID, choice.RepoID)
 	} else if action.ID == string(platform.SettingsDialogUploadChannels) {
 		service.pendingUploads = repositoryContextKey(choice.ServerID, choice.RepoID)
+	} else if action.ID == string(platform.SettingsDialogQuarantine) {
+		service.pendingQuarantine = repositoryContextKey(choice.ServerID, choice.RepoID)
 	}
 	hide := service.hide
 	service.mu.Unlock()
@@ -247,6 +269,42 @@ func (service *RepositoryService) ChooseUpload(choice RepositoryChoice) Reposito
 	service.mu.Unlock()
 
 	session.result <- platform.UploadChannelDialogResult{Action: action, ChannelID: choice.ChannelID}
+	if hide != nil {
+		hide()
+	}
+	return RepositoryAcceptance{Accepted: true}
+}
+
+// ChooseQuarantine returns fetch or hide only for an item in the current
+// waiting-room projection. Closing is Cancel, not this method.
+func (service *RepositoryService) ChooseQuarantine(choice RepositoryChoice) RepositoryAcceptance {
+	choice = trimRepositoryChoice(choice)
+	service.mu.Lock()
+	session := service.quarantine
+	snapshot := service.snapshot
+	if session == nil {
+		service.mu.Unlock()
+		return RepositoryAcceptance{Code: "quarantine_inactive"}
+	}
+	if !sameRepositoryContext(snapshot, choice) {
+		service.mu.Unlock()
+		return RepositoryAcceptance{Code: "repository_context_changed"}
+	}
+	if session.resolved {
+		service.mu.Unlock()
+		return RepositoryAcceptance{Code: "repository_choice_busy"}
+	}
+	action := platform.QuarantineDialogAction(choice.Action)
+	if !quarantineChoiceAllowed(snapshot.Quarantine, action, choice.UploadID) {
+		service.mu.Unlock()
+		return RepositoryAcceptance{Code: "quarantine_action_unavailable"}
+	}
+	session.resolved = true
+	service.pendingQuarantine = repositoryContextKey(choice.ServerID, choice.RepoID)
+	hide := service.hide
+	service.mu.Unlock()
+
+	session.result <- platform.QuarantineDialogResult{Action: action, UploadID: choice.UploadID}
 	if hide != nil {
 		hide()
 	}
@@ -333,11 +391,13 @@ func (service *RepositoryService) Cancel() {
 	shares := service.shares
 	grants := service.grants
 	uploads := service.uploads
+	quarantine := service.quarantine
 	hide := service.hide
 	resolveSettings := settings != nil && !settings.resolved
 	resolveShares := shares != nil && !shares.resolved
 	resolveGrants := grants != nil && !grants.resolved
 	resolveUploads := uploads != nil && !uploads.resolved
+	resolveQuarantine := quarantine != nil && !quarantine.resolved
 	if resolveSettings {
 		settings.resolved = true
 	}
@@ -350,9 +410,13 @@ func (service *RepositoryService) Cancel() {
 	if resolveUploads {
 		uploads.resolved = true
 	}
+	if resolveQuarantine {
+		quarantine.resolved = true
+	}
 	service.pendingShares = ""
 	service.pendingGrants = ""
 	service.pendingUploads = ""
+	service.pendingQuarantine = ""
 	service.mu.Unlock()
 	if resolveSettings {
 		settings.result <- platform.SettingsDialogResult{Action: platform.SettingsDialogClose}
@@ -365,6 +429,9 @@ func (service *RepositoryService) Cancel() {
 	}
 	if resolveUploads {
 		uploads.result <- platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}
+	}
+	if resolveQuarantine {
+		quarantine.result <- platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}
 	}
 	if hide != nil {
 		hide()
@@ -401,6 +468,10 @@ func (adapter repositoryUploadChannelBrowserAdapter) ShowUploadChannels(ctx cont
 	return adapter.service.showUploadChannels(ctx, request)
 }
 
+func (adapter repositoryQuarantineBrowserAdapter) ShowQuarantine(ctx context.Context, request platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error) {
+	return adapter.service.showQuarantine(ctx, request)
+}
+
 func (service *RepositoryService) showSettings(ctx context.Context, request platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
 	projection, ok := projectRepositorySettings(request)
 	if !ok {
@@ -409,7 +480,7 @@ func (service *RepositoryService) showSettings(ctx context.Context, request plat
 	session := &repositorySettingsSession{result: make(chan platform.SettingsDialogResult, 1)}
 
 	service.mu.Lock()
-	previousSettings, previousShares, previousGrants, previousUploads := service.settings, service.shares, service.grants, service.uploads
+	previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine := service.settings, service.shares, service.grants, service.uploads, service.quarantine
 	service.revision++
 	projection.Revision = service.revision
 	service.snapshot = projection
@@ -417,12 +488,14 @@ func (service *RepositoryService) showSettings(ctx context.Context, request plat
 	service.shares = nil
 	service.grants = nil
 	service.uploads = nil
+	service.quarantine = nil
 	service.pendingShares = ""
 	service.pendingGrants = ""
 	service.pendingUploads = ""
+	service.pendingQuarantine = ""
 	emitter, show := service.emitter, service.show
 	service.mu.Unlock()
-	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads)
+	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine)
 	emitRepositorySnapshot(emitter, projection)
 	if show != nil {
 		show()
@@ -453,7 +526,7 @@ func (service *RepositoryService) showPublicShares(ctx context.Context, request 
 		service.mu.Unlock()
 		return platform.PublicShareDialogResult{Action: platform.PublicShareDialogClose}, nil
 	}
-	previousSettings, previousShares, previousGrants, previousUploads := service.settings, service.shares, service.grants, service.uploads
+	previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine := service.settings, service.shares, service.grants, service.uploads, service.quarantine
 	service.revision++
 	projection.Revision = service.revision
 	service.snapshot = projection
@@ -461,10 +534,11 @@ func (service *RepositoryService) showPublicShares(ctx context.Context, request 
 	service.shares = session
 	service.grants = nil
 	service.uploads = nil
+	service.quarantine = nil
 	service.pendingShares = ""
 	emitter, show := service.emitter, service.show
 	service.mu.Unlock()
-	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads)
+	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine)
 	emitRepositorySnapshot(emitter, projection)
 	if show != nil {
 		show()
@@ -495,7 +569,7 @@ func (service *RepositoryService) showRealmGrants(ctx context.Context, request p
 		return platform.RealmGrantDialogResult{Action: platform.RealmGrantDialogClose}, nil
 	}
 	session := &repositoryGrantsSession{result: make(chan platform.RealmGrantDialogResult, 1)}
-	previousSettings, previousShares, previousGrants, previousUploads := service.settings, service.shares, service.grants, service.uploads
+	previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine := service.settings, service.shares, service.grants, service.uploads, service.quarantine
 	service.revision++
 	projection.Revision = service.revision
 	service.snapshot = projection
@@ -503,10 +577,11 @@ func (service *RepositoryService) showRealmGrants(ctx context.Context, request p
 	service.shares = nil
 	service.grants = session
 	service.uploads = nil
+	service.quarantine = nil
 	service.pendingGrants = ""
 	emitter, show := service.emitter, service.show
 	service.mu.Unlock()
-	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads)
+	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine)
 	emitRepositorySnapshot(emitter, projection)
 	if show != nil {
 		show()
@@ -537,7 +612,7 @@ func (service *RepositoryService) showUploadChannels(ctx context.Context, reques
 		return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}, nil
 	}
 	session := &repositoryUploadsSession{result: make(chan platform.UploadChannelDialogResult, 1)}
-	previousSettings, previousShares, previousGrants, previousUploads := service.settings, service.shares, service.grants, service.uploads
+	previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine := service.settings, service.shares, service.grants, service.uploads, service.quarantine
 	service.revision++
 	projection.Revision = service.revision
 	service.snapshot = projection
@@ -545,10 +620,11 @@ func (service *RepositoryService) showUploadChannels(ctx context.Context, reques
 	service.shares = nil
 	service.grants = nil
 	service.uploads = session
+	service.quarantine = nil
 	service.pendingUploads = ""
 	emitter, show := service.emitter, service.show
 	service.mu.Unlock()
-	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads)
+	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine)
 	emitRepositorySnapshot(emitter, projection)
 	if show != nil {
 		show()
@@ -561,6 +637,49 @@ func (service *RepositoryService) showUploadChannels(ctx context.Context, reques
 	case <-ctx.Done():
 		service.finishUploads(session)
 		return platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}, ctx.Err()
+	}
+}
+
+func (service *RepositoryService) showQuarantine(ctx context.Context, request platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error) {
+	service.mu.Lock()
+	contextProjection := service.snapshot.Context
+	pending := service.pendingQuarantine
+	if pending == "" || pending != repositoryContextKey(contextProjection.ServerID, contextProjection.RepoID) {
+		service.mu.Unlock()
+		return platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}, nil
+	}
+	projection, ok := projectQuarantine(request, contextProjection)
+	if !ok {
+		service.pendingQuarantine = ""
+		service.mu.Unlock()
+		return platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}, nil
+	}
+	session := &repositoryQuarantineSession{result: make(chan platform.QuarantineDialogResult, 1)}
+	previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine := service.settings, service.shares, service.grants, service.uploads, service.quarantine
+	service.revision++
+	projection.Revision = service.revision
+	service.snapshot = projection
+	service.settings = nil
+	service.shares = nil
+	service.grants = nil
+	service.uploads = nil
+	service.quarantine = session
+	service.pendingQuarantine = ""
+	emitter, show := service.emitter, service.show
+	service.mu.Unlock()
+	closePreviousRepositorySessions(previousSettings, previousShares, previousGrants, previousUploads, previousQuarantine)
+	emitRepositorySnapshot(emitter, projection)
+	if show != nil {
+		show()
+	}
+
+	select {
+	case result := <-session.result:
+		service.finishQuarantine(session)
+		return result, nil
+	case <-ctx.Done():
+		service.finishQuarantine(session)
+		return platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}, ctx.Err()
 	}
 }
 
@@ -620,6 +739,20 @@ func (service *RepositoryService) finishUploads(session *repositoryUploadsSessio
 	}
 }
 
+func (service *RepositoryService) finishQuarantine(session *repositoryQuarantineSession) {
+	service.mu.Lock()
+	if service.quarantine != session {
+		service.mu.Unlock()
+		return
+	}
+	service.quarantine = nil
+	hide := service.hide
+	service.mu.Unlock()
+	if hide != nil {
+		hide()
+	}
+}
+
 func projectRepositorySettings(request platform.SettingsDialogRequest) (RepositorySnapshot, bool) {
 	if request.FocusRepoID == "" || len(request.Servers) != 1 {
 		return RepositorySnapshot{}, false
@@ -649,6 +782,9 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 	}
 	if folder.CanManageUploadChannels {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogUploadChannels), Label: "Półki przyjęcia", Description: "Przyjmuj pliki do repozytorium przez zamknięty kanał przeglądarkowy.", Tone: "primary"})
+	}
+	if folder.CanReviewQuarantine {
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogQuarantine), Label: "Przegląd kwarantanny", Description: "Lista odrzutów AV w projekcji FileES, bez przeglądarki WWW.", Tone: "primary"})
 	}
 	if folder.CanSetEditingPolicy {
 		label := "Włącz wypożyczanie plików"
@@ -727,7 +863,7 @@ func projectUploadChannels(request platform.UploadChannelDialogRequest, contextP
 	}
 	snapshot := RepositorySnapshot{
 		Mode: "uploads", Title: request.Title, Text: request.Text, Context: contextProjection,
-		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: make([]UploadChannelProjection, 0, len(request.Channels)),
+		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: make([]UploadChannelProjection, 0, len(request.Channels)), Quarantine: []QuarantineItemProjection{},
 	}
 	for _, channel := range request.Channels {
 		channelID := strings.TrimSpace(channel.ChannelID)
@@ -743,7 +879,44 @@ func projectUploadChannels(request platform.UploadChannelDialogRequest, contextP
 	return snapshot, true
 }
 
-func closePreviousRepositorySessions(settings *repositorySettingsSession, shares *repositorySharesSession, grants *repositoryGrantsSession, uploads *repositoryUploadsSession) {
+func projectQuarantine(request platform.QuarantineDialogRequest, contextProjection RepositoryContextProjection) (RepositorySnapshot, bool) {
+	if strings.TrimSpace(contextProjection.ServerID) == "" || strings.TrimSpace(contextProjection.RepoID) == "" {
+		return RepositorySnapshot{}, false
+	}
+	snapshot := RepositorySnapshot{
+		Mode: "quarantine", Title: request.Title, Text: request.Text, Context: contextProjection,
+		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{},
+		Quarantine: make([]QuarantineItemProjection, 0, len(request.Items)),
+	}
+	for _, item := range request.Items {
+		uploadID := strings.TrimSpace(item.UploadID)
+		if uploadID == "" {
+			continue
+		}
+		name := strings.TrimSpace(item.OriginalName)
+		if name == "" {
+			name = uploadID
+		}
+		snapshot.Quarantine = append(snapshot.Quarantine, QuarantineItemProjection{
+			UploadID: uploadID, OriginalName: name, Size: item.Size, SizeLabel: quarantineSizeLabel(item.Size),
+			AVVerdict: item.AVVerdict, RemainingHours: item.RemainingHours,
+		})
+	}
+	return snapshot, true
+}
+
+func quarantineSizeLabel(n int64) string {
+	switch {
+	case n < 1024:
+		return fmt.Sprintf("%d B", n)
+	case n < 1024*1024:
+		return fmt.Sprintf("%d KB", (n+1023)/1024)
+	default:
+		return fmt.Sprintf("%d MB", (n+1024*1024-1)/(1024*1024))
+	}
+}
+
+func closePreviousRepositorySessions(settings *repositorySettingsSession, shares *repositorySharesSession, grants *repositoryGrantsSession, uploads *repositoryUploadsSession, quarantine *repositoryQuarantineSession) {
 	if settings != nil && !settings.resolved {
 		settings.resolved = true
 		settings.result <- platform.SettingsDialogResult{Action: platform.SettingsDialogClose}
@@ -760,6 +933,10 @@ func closePreviousRepositorySessions(settings *repositorySettingsSession, shares
 		uploads.resolved = true
 		uploads.result <- platform.UploadChannelDialogResult{Action: platform.UploadChannelDialogClose}
 	}
+	if quarantine != nil && !quarantine.resolved {
+		quarantine.resolved = true
+		quarantine.result <- platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}
+	}
 }
 
 func emitRepositorySnapshot(emitter snapshotEmitter, snapshot RepositorySnapshot) {
@@ -774,7 +951,20 @@ func trimRepositoryChoice(choice RepositoryChoice) RepositoryChoice {
 	choice.RepoID = strings.TrimSpace(choice.RepoID)
 	choice.ChannelID = strings.TrimSpace(choice.ChannelID)
 	choice.RealmID = strings.TrimSpace(choice.RealmID)
+	choice.UploadID = strings.TrimSpace(choice.UploadID)
 	return choice
+}
+
+func quarantineChoiceAllowed(items []QuarantineItemProjection, action platform.QuarantineDialogAction, uploadID string) bool {
+	if uploadID == "" || (action != platform.QuarantineDialogFetch && action != platform.QuarantineDialogHide) {
+		return false
+	}
+	for _, item := range items {
+		if item.UploadID == uploadID {
+			return true
+		}
+	}
+	return false
 }
 
 func grantChoiceAllowed(grants []RealmGrantProjection, action platform.RealmGrantDialogAction, realmID string) bool {

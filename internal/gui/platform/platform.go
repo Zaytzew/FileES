@@ -175,6 +175,37 @@ type UploadChannelDialogResult struct {
 	ChannelID string
 }
 
+// QuarantineBrowser renders the owner's AV-reject waiting room as a daemon
+// projection. Fetch copies bytes locally; hide only drops the row from the
+// manifest. Closing is silent: no download, no hide.
+type QuarantineBrowser interface {
+	ShowQuarantine(context.Context, QuarantineDialogRequest) (QuarantineDialogResult, error)
+}
+
+type QuarantineDialogRequest struct {
+	Title, Text, ServerID, RepoID string
+	Items                         []QuarantineItem
+}
+
+type QuarantineItem struct {
+	UploadID, OriginalName, AVVerdict string
+	Size                              int64
+	RemainingHours                    int
+}
+
+type QuarantineDialogAction string
+
+const (
+	QuarantineDialogClose QuarantineDialogAction = "close"
+	QuarantineDialogFetch QuarantineDialogAction = "fetch"
+	QuarantineDialogHide  QuarantineDialogAction = "hide"
+)
+
+type QuarantineDialogResult struct {
+	Action   QuarantineDialogAction
+	UploadID string
+}
+
 type RealmGrantDialogRequest struct {
 	Title      string
 	Text       string
@@ -268,6 +299,7 @@ type SettingsFolder struct {
 	LockRequired            bool // current policy, for the action's confirmation text
 	CanManagePublicShares   bool
 	CanManageUploadChannels bool
+	CanReviewQuarantine     bool
 	CanConnect              bool // connect selected unattached repository
 	CanLocate               bool // adopt an existing moved working copy
 	CanDetach               bool // detach_folder (non-destructive)
@@ -293,6 +325,7 @@ const (
 	SettingsDialogEditingPolicy    SettingsDialogAction = "editing_policy"
 	SettingsDialogPublicShares     SettingsDialogAction = "public_shares"
 	SettingsDialogUploadChannels   SettingsDialogAction = "upload_channels"
+	SettingsDialogQuarantine       SettingsDialogAction = "quarantine"
 	SettingsDialogRealmVisibility  SettingsDialogAction = "realm_visibility"
 	SettingsDialogRealmBranding    SettingsDialogAction = "realm_branding"
 	SettingsDialogRealmAlias       SettingsDialogAction = "realm_alias"

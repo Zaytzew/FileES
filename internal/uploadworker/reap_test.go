@@ -12,7 +12,6 @@ import (
 
 	"filees/pkg/avscan"
 	"filees/pkg/realmbranding"
-	"filees/pkg/repoworker"
 	"filees/public-shares/channel"
 	"filees/public-shares/intake"
 	"filees/public-shares/manifest"
@@ -102,7 +101,7 @@ func TestReapInfectedGoesToTrashWaitingRoom(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(*calls, "\n")
-	if !strings.Contains(joined, "index.json") || !strings.Contains(joined, repoworker.UploadTrashRepositoryID(reaper.mustOwner(t, job.ChannelID))) {
+	if !strings.Contains(joined, "index.json") || !strings.Contains(joined, channel.TrashRepositoryID(reaper.mustOwner(t, job.ChannelID))) {
 		t.Fatalf("trash publish:\n%s", joined)
 	}
 }

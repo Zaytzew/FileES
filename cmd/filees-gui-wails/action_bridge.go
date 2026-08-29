@@ -28,7 +28,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -66,6 +66,8 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		PublicShares:         publicShares,
 		UploadChannelBrowser: uploadChannelBrowser,
 		UploadChannels:       uploadChannels,
+		QuarantineBrowser:    quarantineBrowser,
+		Quarantine:           quarantine,
 		RepositoryAttacher:   repositoryAttacher,
 		RepositoryCreator:    repositoryCreator,
 		RepositoryLocator:    repositoryLocator,
@@ -580,23 +582,23 @@ type uploadChannelClient interface {
 
 type uploadChannelAdapter struct{ client uploadChannelClient }
 
-func (adapter uploadChannelAdapter) ListUploadChannels(ctx context.Context, serverID, repoID string) ([]actions.UploadChannelSummary, error) {
+func (adapter uploadChannelAdapter) ListUploadChannels(ctx context.Context, serverID, repoID string) (actions.UploadChannelList, error) {
 	result, err := adapter.client.UploadChannelList(ctx, serverID, repoID)
 	if err != nil {
-		return nil, err
+		return actions.UploadChannelList{}, err
 	}
 	if result == nil {
-		return nil, errors.New("daemon returned an empty upload channel list")
+		return actions.UploadChannelList{}, errors.New("daemon returned an empty upload channel list")
 	}
-	channels := make([]actions.UploadChannelSummary, 0, len(result.Channels))
+	listed := actions.UploadChannelList{Channels: make([]actions.UploadChannelSummary, 0, len(result.Channels))}
 	for _, channel := range result.Channels {
-		channels = append(channels, actions.UploadChannelSummary{
+		listed.Channels = append(listed.Channels, actions.UploadChannelSummary{
 			ChannelID: channel.ChannelID, Alias: channel.Alias, Slug: channel.Slug, State: channel.State,
 			UploadRepoID: channel.UploadRepoID, UpdatedAt: channel.UpdatedAt, Recipients: append([]string(nil), channel.Recipients...),
 			RequireOTP: channel.RequireOTP,
 		})
 	}
-	return channels, nil
+	return listed, nil
 }
 
 func (adapter uploadChannelAdapter) CreateUploadChannel(ctx context.Context, serverID string, declaration actions.UploadChannelDeclaration) error {
@@ -641,6 +643,54 @@ func (adapter uploadChannelAdapter) DeleteUploadChannel(ctx context.Context, ser
 		return errors.New("daemon returned an invalid upload channel delete result")
 	}
 	return nil
+}
+
+type quarantineClient interface {
+	QuarantineList(context.Context, string) (*contract.QuarantineListResult, error)
+	QuarantineHide(context.Context, string, string) (*contract.QuarantineHideResult, error)
+	QuarantineFetch(context.Context, string, string) (*contract.QuarantineFetchResult, error)
+}
+
+type quarantineAdapter struct{ client quarantineClient }
+
+func (adapter quarantineAdapter) ListQuarantine(ctx context.Context, serverID string) (actions.QuarantineList, error) {
+	result, err := adapter.client.QuarantineList(ctx, serverID)
+	if err != nil {
+		return actions.QuarantineList{}, err
+	}
+	if result == nil {
+		return actions.QuarantineList{}, errors.New("daemon returned an empty quarantine list")
+	}
+	listed := actions.QuarantineList{Message: result.Message, Items: make([]actions.QuarantineItem, 0, len(result.Items))}
+	for _, item := range result.Items {
+		listed.Items = append(listed.Items, actions.QuarantineItem{
+			UploadID: item.UploadID, OriginalName: item.OriginalName, AVVerdict: item.AVVerdict,
+			ReceivedAt: item.ReceivedAt, Size: item.Size, RemainingHours: item.RemainingHours,
+		})
+	}
+	return listed, nil
+}
+
+func (adapter quarantineAdapter) HideQuarantine(ctx context.Context, serverID, uploadID string) error {
+	result, err := adapter.client.QuarantineHide(ctx, serverID, uploadID)
+	if err != nil {
+		return err
+	}
+	if result == nil || result.UploadID != uploadID {
+		return errors.New("daemon returned an invalid quarantine hide result")
+	}
+	return nil
+}
+
+func (adapter quarantineAdapter) FetchQuarantine(ctx context.Context, serverID, uploadID string) (actions.QuarantineFetch, error) {
+	result, err := adapter.client.QuarantineFetch(ctx, serverID, uploadID)
+	if err != nil {
+		return actions.QuarantineFetch{}, err
+	}
+	if result == nil || result.UploadID != uploadID {
+		return actions.QuarantineFetch{}, errors.New("daemon returned an invalid quarantine fetch result")
+	}
+	return actions.QuarantineFetch{UploadID: result.UploadID, OriginalName: result.OriginalName, Payload: result.Payload, RemainingHours: result.RemainingHours}, nil
 }
 
 func uploadChannelDeclarationToContract(declaration actions.UploadChannelDeclaration) contract.UploadChannelDeclaration {

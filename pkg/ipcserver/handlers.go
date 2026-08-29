@@ -110,6 +110,12 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleUploadChannel(req, "revoke")
 	case contract.CmdRepoUploadChannelDelete:
 		return s.handleUploadChannel(req, "delete")
+	case contract.CmdRepoQuarantineList:
+		return s.handleQuarantine(req, "list")
+	case contract.CmdRepoQuarantineHide:
+		return s.handleQuarantine(req, "hide")
+	case contract.CmdRepoQuarantineFetch:
+		return s.handleQuarantine(req, "fetch")
 	case contract.CmdRepoDetach:
 		return s.handleRepoDetach(req, false)
 	case contract.CmdRepoDelete:
@@ -767,12 +773,12 @@ func (s *Server) handleUploadChannel(req contract.Request, action string) contra
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if action == "list" {
-		channels, err := service.ListUploadChannels(ctx, serverID, repoID)
+		list, err := service.ListUploadChannels(ctx, serverID, repoID)
 		if err != nil {
 			talk.With("upload-channels:"+serverID).Warnf("channel listing failed: %v", err)
 			return contract.ErrResponse(req.RequestID, "UPLOAD-1001", "ERROR", "RETRY", "upload_channel.list_failed", nil)
 		}
-		return contract.OKResponse(req.RequestID, contract.UploadChannelListResult{Channels: channels})
+		return contract.OKResponse(req.RequestID, list)
 	}
 	var (
 		result contract.UploadChannelResult
@@ -793,6 +799,65 @@ func (s *Server) handleUploadChannel(req contract.Request, action string) contra
 		return contract.ErrResponse(req.RequestID, "UPLOAD-1002", "ERROR", "REQUIRE_ACTION", "upload_channel.rejected", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleQuarantine(req contract.Request, action string) contract.Response {
+	service := s.uploadChannelService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "UPLOAD-1000", "ERROR", "NONE", "upload_channel.unavailable", nil)
+	}
+	var serverID, uploadID string
+	switch action {
+	case "list":
+		var payload contract.QuarantineListPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID = payload.ServerID
+	case "hide", "fetch":
+		var payload contract.QuarantineItemPayload
+		if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+		serverID, uploadID = payload.ServerID, payload.UploadID
+		if strings.TrimSpace(uploadID) == "" {
+			return protoErr(req.RequestID, "proto.invalid_payload", nil)
+		}
+	default:
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	if strings.TrimSpace(serverID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	s.mu.RLock()
+	activation, ok := s.activations[serverID]
+	s.mu.RUnlock()
+	if !ok || activation.ClientRole == contract.ClientRoleReadOnly || !activation.CanCreateRepositories || activation.RealmID == "" {
+		return contract.ErrResponse(req.RequestID, "UPLOAD-2001", "ERROR", "NONE", "upload_channel.forbidden", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	switch action {
+	case "list":
+		result, err := service.ListQuarantine(ctx, serverID)
+		if err != nil {
+			return contract.ErrResponse(req.RequestID, "UPLOAD-1001", "ERROR", "RETRY", "upload_channel.list_failed", nil)
+		}
+		return contract.OKResponse(req.RequestID, result)
+	case "hide":
+		result, err := service.HideQuarantine(ctx, serverID, uploadID)
+		if err != nil {
+			return contract.ErrResponse(req.RequestID, "UPLOAD-1002", "ERROR", "REQUIRE_ACTION", "upload_channel.rejected", nil)
+		}
+		return contract.OKResponse(req.RequestID, result)
+	case "fetch":
+		result, err := service.FetchQuarantine(ctx, serverID, uploadID)
+		if err != nil {
+			return contract.ErrResponse(req.RequestID, "UPLOAD-1002", "ERROR", "REQUIRE_ACTION", "upload_channel.rejected", nil)
+		}
+		return contract.OKResponse(req.RequestID, result)
+	}
+	return protoErr(req.RequestID, "proto.invalid_payload", nil)
 }
 
 func (s *Server) handleRepoReservationRelease(req contract.Request) contract.Response {

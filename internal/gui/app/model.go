@@ -283,6 +283,9 @@ func (vm ViewModel) CanManagePublicShares() bool {
 func (vm ViewModel) CanManageUploadChannels() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoUploadChannelList) && vm.HasCap(contract.CapRepoUploadChannelCreate) && vm.HasCap(contract.CapRepoUploadChannelUpdate) && vm.HasCap(contract.CapRepoUploadChannelRevoke) && vm.HasCap(contract.CapRepoUploadChannelDelete)
 }
+func (vm ViewModel) CanReviewQuarantine() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoQuarantineList) && vm.HasCap(contract.CapRepoQuarantineHide) && vm.HasCap(contract.CapRepoQuarantineFetch)
+}
 func (vm ViewModel) CanSetRealmVisibility() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRealmSetVisibility)
 }

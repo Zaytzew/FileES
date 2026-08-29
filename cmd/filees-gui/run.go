@@ -458,23 +458,23 @@ type uploadChannelClient interface {
 
 type uploadChannelAdapter struct{ client uploadChannelClient }
 
-func (adapter uploadChannelAdapter) ListUploadChannels(ctx context.Context, serverID, repoID string) ([]actions.UploadChannelSummary, error) {
+func (adapter uploadChannelAdapter) ListUploadChannels(ctx context.Context, serverID, repoID string) (actions.UploadChannelList, error) {
 	result, err := adapter.client.UploadChannelList(ctx, serverID, repoID)
 	if err != nil {
-		return nil, err
+		return actions.UploadChannelList{}, err
 	}
 	if result == nil {
-		return nil, errors.New("daemon returned an empty upload channel list")
+		return actions.UploadChannelList{}, errors.New("daemon returned an empty upload channel list")
 	}
-	channels := make([]actions.UploadChannelSummary, 0, len(result.Channels))
+	listed := actions.UploadChannelList{Channels: make([]actions.UploadChannelSummary, 0, len(result.Channels))}
 	for _, channel := range result.Channels {
-		channels = append(channels, actions.UploadChannelSummary{
+		listed.Channels = append(listed.Channels, actions.UploadChannelSummary{
 			ChannelID: channel.ChannelID, Alias: channel.Alias, Slug: channel.Slug, State: channel.State,
 			UploadRepoID: channel.UploadRepoID, UpdatedAt: channel.UpdatedAt, Recipients: append([]string(nil), channel.Recipients...),
 			RequireOTP: channel.RequireOTP,
 		})
 	}
-	return channels, nil
+	return listed, nil
 }
 
 func (adapter uploadChannelAdapter) CreateUploadChannel(ctx context.Context, serverID string, declaration actions.UploadChannelDeclaration) error {

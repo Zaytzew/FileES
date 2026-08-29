@@ -88,8 +88,11 @@ func TestUploadChannelCreateProvisionsDistinctReposAndSharedTrash(t *testing.T) 
 		t.Fatalf("results %+v %+v", first, second)
 	}
 	listed, err := service.List(context.Background(), owner, authority)
-	if err != nil || len(listed) != 2 || listed[0].Kind != "shelf" || listed[1].Kind != "shelf" {
+	if err != nil || len(listed.Channels) != 2 || listed.Channels[0].Kind != "shelf" || listed.Channels[1].Kind != "shelf" {
 		t.Fatalf("listed=%+v err=%v", listed, err)
+	}
+	if listed.QuarantineSlug != "" || listed.QuarantineInvitation != "" {
+		t.Fatalf("public quarantine invite leaked: %+v", listed)
 	}
 	if len(backend.purposes) < 4 || backend.purposes[0] != clientview.PurposeUploadTrash || backend.purposes[1] != clientview.PurposeUploadShelf {
 		t.Fatalf("purposes=%v", backend.purposes)
@@ -150,7 +153,7 @@ func TestUploadChannelCreatePersistsRequireOTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	listed, err := service.List(context.Background(), owner, authority)
-	if err != nil || len(listed) != 1 || !listed[0].RequireOTP {
+	if err != nil || len(listed.Channels) != 1 || !listed.Channels[0].RequireOTP {
 		t.Fatalf("listed=%+v err=%v", listed, err)
 	}
 	projection, err := store.UploadProjection(created.ChannelID)

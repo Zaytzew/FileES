@@ -304,6 +304,49 @@ func TestRepositoryServiceValidatesUploadChannelChoices(t *testing.T) {
 	}
 }
 
+func TestRepositoryServiceValidatesQuarantineChoices(t *testing.T) {
+	service := newRepositoryService()
+	service.snapshot.Context = RepositoryContextProjection{ServerID: "spot", RepoID: "trash", Name: "Kwarantanna"}
+	service.pendingQuarantine = repositoryContextKey("spot", "trash")
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	resultCh := make(chan platform.QuarantineDialogResult, 1)
+	go func() {
+		result, _ := (repositoryQuarantineBrowserAdapter{service: service}).ShowQuarantine(context.Background(), platform.QuarantineDialogRequest{
+			Title: "Kwarantanna", Items: []platform.QuarantineItem{
+				{UploadID: "u1", OriginalName: "wirus.exe", Size: 12, RemainingHours: 40, AVVerdict: "Eicar"},
+			},
+		})
+		resultCh <- result
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("quarantine window was not shown")
+	}
+	snapshot := service.Snapshot()
+	if snapshot.Mode != "quarantine" || len(snapshot.Quarantine) != 1 || snapshot.Quarantine[0].SizeLabel == "" {
+		t.Fatalf("quarantine projection = %+v", snapshot)
+	}
+	if got := service.ChooseQuarantine(RepositoryChoice{Action: "fetch", ServerID: "spot", RepoID: "docs", UploadID: "u1"}); got.Accepted || got.Code != "repository_context_changed" {
+		t.Fatalf("foreign quarantine context accepted: %+v", got)
+	}
+	if got := service.ChooseQuarantine(RepositoryChoice{Action: "fetch", ServerID: "spot", RepoID: "trash", UploadID: "missing"}); got.Accepted || got.Code != "quarantine_action_unavailable" {
+		t.Fatalf("missing quarantine fetch accepted: %+v", got)
+	}
+	if got := service.ChooseQuarantine(RepositoryChoice{Action: "hide", ServerID: "spot", RepoID: "trash", UploadID: "u1"}); !got.Accepted {
+		t.Fatalf("quarantine hide rejected: %+v", got)
+	}
+	select {
+	case result := <-resultCh:
+		if result.Action != platform.QuarantineDialogHide || result.UploadID != "u1" {
+			t.Fatalf("quarantine result = %+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("quarantine browser did not return")
+	}
+}
+
 func TestRepositoryServiceReturnsSingleRepoForConnect(t *testing.T) {
 	service := newRepositoryService()
 	shown := make(chan struct{}, 1)

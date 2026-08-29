@@ -518,6 +518,33 @@ func (c *Client) PublicShareDelete(ctx context.Context, payload contract.PublicS
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) QuarantineList(ctx context.Context, serverID string) (*contract.QuarantineListResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoQuarantineList, "", contract.QuarantineListPayload{ServerID: serverID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.QuarantineListResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) QuarantineHide(ctx context.Context, serverID, uploadID string) (*contract.QuarantineHideResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoQuarantineHide, "", contract.QuarantineItemPayload{ServerID: serverID, UploadID: uploadID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.QuarantineHideResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
+func (c *Client) QuarantineFetch(ctx context.Context, serverID, uploadID string) (*contract.QuarantineFetchResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoQuarantineFetch, "", contract.QuarantineItemPayload{ServerID: serverID, UploadID: uploadID})
+	if err != nil {
+		return nil, err
+	}
+	var result contract.QuarantineFetchResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) UploadChannelList(ctx context.Context, serverID, repoID string) (*contract.UploadChannelListResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoUploadChannelList, repoID, contract.UploadChannelListPayload{ServerID: serverID, RepoID: repoID})
 	if err != nil {

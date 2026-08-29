@@ -49,6 +49,25 @@ func (stub *uploadChannelClientStub) UploadChannelDelete(_ context.Context, payl
 	return &contract.UploadChannelResult{ChannelID: payload.ChannelID, State: "deleted"}, nil
 }
 
+type quarantineClientStub struct {
+	listed  string
+	hidden  string
+	fetched string
+}
+
+func (stub *quarantineClientStub) QuarantineList(_ context.Context, serverID string) (*contract.QuarantineListResult, error) {
+	stub.listed = serverID
+	return &contract.QuarantineListResult{Message: "Usunięto z kwarantanny 1 plik po 48 godzinach.", Items: []contract.QuarantineItem{{UploadID: "u1", OriginalName: "wirus.exe", Size: 12, RemainingHours: 40}}}, nil
+}
+func (stub *quarantineClientStub) QuarantineHide(_ context.Context, serverID, uploadID string) (*contract.QuarantineHideResult, error) {
+	stub.hidden = serverID + "/" + uploadID
+	return &contract.QuarantineHideResult{UploadID: uploadID}, nil
+}
+func (stub *quarantineClientStub) QuarantineFetch(_ context.Context, serverID, uploadID string) (*contract.QuarantineFetchResult, error) {
+	stub.fetched = serverID + "/" + uploadID
+	return &contract.QuarantineFetchResult{UploadID: uploadID, OriginalName: "wirus.exe", Payload: []byte("x"), RemainingHours: 40}, nil
+}
+
 type dumpLoadClientStub struct {
 	serverID, repoID string
 	applyIgnore      bool
@@ -231,12 +250,28 @@ func TestRealmGrantAdapterTranslatesEditingPolicy(t *testing.T) {
 	}
 }
 
+func TestQuarantineAdapterTranslatesIPC(t *testing.T) {
+	client := &quarantineClientStub{}
+	adapter := quarantineAdapter{client: client}
+	listed, err := adapter.ListQuarantine(t.Context(), "spot")
+	if err != nil || listed.Message == "" || len(listed.Items) != 1 || listed.Items[0].UploadID != "u1" || client.listed != "spot" {
+		t.Fatalf("ListQuarantine() = %+v client=%+v err=%v", listed, client, err)
+	}
+	if err := adapter.HideQuarantine(t.Context(), "spot", "u1"); err != nil || client.hidden != "spot/u1" {
+		t.Fatalf("HideQuarantine() client=%+v err=%v", client, err)
+	}
+	fetched, err := adapter.FetchQuarantine(t.Context(), "spot", "u1")
+	if err != nil || fetched.OriginalName != "wirus.exe" || string(fetched.Payload) != "x" || fetched.RemainingHours != 40 || client.fetched != "spot/u1" {
+		t.Fatalf("FetchQuarantine() = %+v client=%+v err=%v", fetched, client, err)
+	}
+}
+
 func TestUploadChannelAdapterTranslatesDeclarations(t *testing.T) {
 	client := &uploadChannelClientStub{}
 	adapter := uploadChannelAdapter{client: client}
-	channels, err := adapter.ListUploadChannels(t.Context(), "spot", "docs")
-	if err != nil || len(channels) != 1 || channels[0].Slug != "inbox" || len(channels[0].Recipients) != 1 {
-		t.Fatalf("ListUploadChannels() = %+v, %v", channels, err)
+	listed, err := adapter.ListUploadChannels(t.Context(), "spot", "docs")
+	if err != nil || len(listed.Channels) != 1 || listed.Channels[0].Slug != "inbox" || len(listed.Channels[0].Recipients) != 1 {
+		t.Fatalf("ListUploadChannels() = %+v, %v", listed, err)
 	}
 	declaration := actions.UploadChannelDeclaration{AuthorityRepoID: "docs", Slug: "drop", Recipients: []string{"a@example.net"}, RequireOTP: true}
 	if err := adapter.CreateUploadChannel(t.Context(), "spot", declaration); err != nil || client.created.AuthorityRepoID != "docs" || client.created.Slug != "drop" || !client.created.RequireOTP {

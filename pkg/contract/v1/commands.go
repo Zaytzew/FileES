@@ -60,6 +60,7 @@ const (
 	CmdRepoPublicShareUpdate   = "repo.public_share_update"   // update one owned active channel
 	CmdRepoPublicShareRevoke   = "repo.public_share_revoke"   // revoke access while retaining the channel record
 	CmdRepoPublicShareDelete   = "repo.public_share_delete"   // delete policy while retaining the address tombstone
+	CmdRepoPublicShareListAll  = "repo.public_share_list_all" // cached cross-repo aggregate of owned public shares (all servers)
 	CmdRepoUploadChannelList   = "repo.upload_channel_list"   // list owned upload shelves for one authority repo
 	CmdRepoUploadChannelCreate = "repo.upload_channel_create" // create an owned closed upload shelf
 	CmdRepoUploadChannelUpdate = "repo.upload_channel_update" // update recipients of one owned active shelf
@@ -595,7 +596,9 @@ type PublicShareChannelPayload struct {
 
 type PublicShareSummary struct {
 	ChannelID         string              `json:"channel_id"`
+	ServerID          string              `json:"server_id,omitempty"`
 	RepoID            string              `json:"repo_id"`
+	RepoDisplayName   string              `json:"repo_display_name,omitempty"`
 	Alias             string              `json:"alias"`
 	Slug              string              `json:"slug"`
 	State             string              `json:"state"`

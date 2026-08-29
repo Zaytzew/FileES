@@ -98,6 +98,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handlePublicShare(req, "revoke")
 	case contract.CmdRepoPublicShareDelete:
 		return s.handlePublicShare(req, "delete")
+	case contract.CmdRepoPublicShareListAll:
+		return s.handlePublicShareListAll(req)
 	case contract.CmdRepoUploadChannelList:
 		return s.handleUploadChannel(req, "list")
 	case contract.CmdRepoUploadChannelCreate:
@@ -696,6 +698,19 @@ func (s *Server) handlePublicShare(req contract.Request, action string) contract
 		return contract.ErrResponse(req.RequestID, "SHARE-1002", "ERROR", "REQUIRE_ACTION", "public_share.rejected", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
+}
+
+// handlePublicShareListAll implements repo.public_share_list_all: the cached,
+// cross-repo aggregate of every owned public share across every activated
+// server, so the GUI can render a single panel without opening
+// repository.html per repo. Backed by PublicShareSource (cmd/filees keeps it
+// warm as each server's projection refreshes); this handler only reads it.
+func (s *Server) handlePublicShareListAll(req contract.Request) contract.Response {
+	source := s.publicShareSource()
+	if source == nil {
+		return contract.ErrResponse(req.RequestID, "SHARE-0002", "ERROR", "RETRY", "public_share.list_all_unavailable", nil)
+	}
+	return contract.OKResponse(req.RequestID, contract.PublicShareListResult{Shares: source.List()})
 }
 
 func (s *Server) handleUploadChannel(req contract.Request, action string) contract.Response {

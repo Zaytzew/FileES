@@ -302,6 +302,56 @@ func TestMobileEntryServesListRepositories(t *testing.T) {
 	}
 }
 
+// TestMobileEntryForwardsRepositoryPurpose guards the whole
+// clientview.Repository.Purpose -> RepositoryGrant -> RepositorySummary
+// wire chain: an upload shelf must reach the client tagged as such, so it
+// can be grouped apart from ordinary repositories instead of listed mixed
+// in - the desktop projection already makes the same distinction (r613).
+func TestMobileEntryForwardsRepositoryPurpose(t *testing.T) {
+	f := newMobileWorkerFixture(t)
+	clientID, repoID := uuid.NewString(), uuid.NewString()
+	shelf := mobileGrantedRepository(repoID, "rw")
+	shelf.Purpose = clientview.PurposeUploadShelf
+	writeMobileClientView(t, f.serviceWC, clientID, f.realmID, 3, []clientview.Repository{shelf})
+
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpListRepositories, v1.ListRepositoriesPayload{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	header, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdin bytes.Buffer
+	if err := v1.WriteFrame(&stdin, v1.RequestMagic, header, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runMobileEntry(f.configPath, filepath.Join(t.TempDir(), "ledger"), []string{"op-1", clientID}, mobileOperationalGetenv, &stdin, &stdout, &stderr, mobileNeverExec(t))
+	if code != ExitOK {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	respHeader, _, err := v1.ReadFrame(&stdout, v1.ResponseMagic, v1.MaxHeaderBytes)
+	if err != nil {
+		t.Fatalf("read response frame: %v", err)
+	}
+	resp, err := v1.ParseResponse(respHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != v1.StatusOK {
+		t.Fatalf("status = %v, error = %+v", resp.Status, resp.Error)
+	}
+	var result v1.ListRepositoriesResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Repositories) != 1 || result.Repositories[0].Purpose != clientview.PurposeUploadShelf {
+		t.Fatalf("projection = %+v", result)
+	}
+}
+
 func TestMobileEntryRejectsUngrantedClient(t *testing.T) {
 	f := newMobileWorkerFixture(t)
 	clientID, repoID := uuid.NewString(), uuid.NewString()

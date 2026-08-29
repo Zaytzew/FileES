@@ -34,7 +34,7 @@ func (f fakeAuthority) List(context.Context, string) (Projection, error) {
 		RealmAlias: "acme",
 		Generation: f.gen,
 		Repositories: []RepositoryGrant{{
-			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: f.access, State: "active",
+			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: f.access, State: "active", Purpose: "upload_shelf",
 		}},
 	}, nil
 }
@@ -111,7 +111,7 @@ func TestListRepositoriesReturnsProjection(t *testing.T) {
 		t.Fatalf("projection = %+v", res)
 	}
 	got := res.Repositories[0]
-	if got.RepoID != "repo-1" || got.DisplayName != "JANCZEWICE" || got.Access != "rw" || got.State != "active" {
+	if got.RepoID != "repo-1" || got.DisplayName != "JANCZEWICE" || got.Access != "rw" || got.State != "active" || got.Purpose != "upload_shelf" {
 		t.Fatalf("share = %+v", got)
 	}
 }

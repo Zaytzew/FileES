@@ -31,6 +31,11 @@ type RepositoryGrant struct {
 	DisplayName string
 	Access      string
 	State       string
+	// Purpose mirrors clientview.Repository.Purpose ("" | "upload_shelf" |
+	// "upload_trash"). Forwarded so the client can group upload shelves
+	// apart from ordinary repositories instead of listing them mixed
+	// together, the same distinction the desktop projection already makes.
+	Purpose string
 }
 
 // Projection is the authenticated installation's current realm view.
@@ -113,6 +118,7 @@ func (b Browser) ListRepositories(ctx context.Context, clientID string) (v1.List
 			DisplayName: repo.DisplayName,
 			Access:      repo.Access,
 			State:       repo.State,
+			Purpose:     repo.Purpose,
 		})
 	}
 	res := v1.ListRepositoriesResult{

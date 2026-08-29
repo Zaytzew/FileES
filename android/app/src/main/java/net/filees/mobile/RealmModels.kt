@@ -7,9 +7,15 @@ data class RealmShare(
     val displayName: String,
     val access: String,
     val state: String,
+    // Mirrors clientview.Repository.Purpose ("" | "upload_shelf" |
+    // "upload_trash"); empty means an ordinary repository.
+    val purpose: String = "",
 ) {
     val selectable: Boolean
         get() = (state == "active" || state == "initializing") && (access == "r" || access == "rw")
+
+    val isUploadShelf: Boolean
+        get() = purpose == "upload_shelf"
 }
 
 data class RealmProjection(
@@ -32,6 +38,7 @@ data class RealmProjection(
                             displayName = item.optString("display_name"),
                             access = item.optString("access"),
                             state = item.optString("state"),
+                            purpose = item.optString("purpose"),
                         )
                     )
                 }
@@ -58,6 +65,10 @@ data class BrowseRow(
     val size: Long,
     val repoId: String = "",
     val share: Boolean = false,
+    // Non-null marks this row as a section separator (e.g. "Półki
+    // przyjęcia") instead of a browsable entry - BrowseAdapter renders it
+    // with a distinct header layout and skips onOpen/onDownload wiring.
+    val sectionHeader: String? = null,
 )
 
 object ManifestBrowse {

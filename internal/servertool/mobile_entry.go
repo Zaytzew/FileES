@@ -89,6 +89,7 @@ func (a clientviewMobileAuthority) List(_ context.Context, clientID string) (mob
 			DisplayName: repo.DisplayName,
 			Access:      repo.Access,
 			State:       repo.State,
+			Purpose:     repo.Purpose,
 		})
 	}
 	return mobileworker.Projection{

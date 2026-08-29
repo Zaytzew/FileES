@@ -263,21 +263,50 @@ class MainActivity : AppCompatActivity() {
         if (selectedRepoId == null) {
             selectedShareName = ""
             browsePrefix = ""
-            browseAdapter.submit(
-                selectableShares.map { share ->
-                    BrowseRow(share.displayName, "", directory = true, size = 0, repoId = share.repoId, share = true)
-                },
-            )
-            binding.toolbar.title = getString(R.string.app_name)
+            browseAdapter.submit(shareRows(selectableShares))
+            binding.toolbar.title = null
+            binding.brandLockup.visibility = View.VISIBLE
             binding.buttonAdd.visibility = View.GONE
             supportActionBar?.setDisplayHomeAsUpEnabled(false)
             return
         }
+        binding.brandLockup.visibility = View.GONE
         binding.buttonAdd.visibility = View.VISIBLE
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         binding.toolbar.title = if (browsePrefix.isEmpty()) selectedShareName else browsePrefix.substringAfterLast('/')
         val rows = ManifestBrowse.children(manifestEntries, browsePrefix)
         browseAdapter.submit(rows)
+    }
+
+    // Groups the top-level share list by purpose (ordinary repositories,
+    // upload shelves, quarantine) instead of listing every kind mixed
+    // together - the desktop projection already makes this distinction
+    // (concepts/WAILS_UI_CLEANUP_CONCEPT.md §E2). A section header is only
+    // inserted when more than one group is actually present, so a realm
+    // with no upload shelves at all renders exactly as before.
+    private fun shareRows(shares: List<RealmShare>): List<BrowseRow> {
+        val groups = shares.groupBy { it.purpose }
+        if (groups.size <= 1) {
+            return shares.map { share -> shareRow(share) }
+        }
+        val order = listOf("", "upload_shelf", "upload_trash")
+        val rows = mutableListOf<BrowseRow>()
+        for (purpose in order + (groups.keys - order.toSet())) {
+            val members = groups[purpose] ?: continue
+            rows.add(BrowseRow("", "", directory = false, size = 0, sectionHeader = sectionLabel(purpose)))
+            members.forEach { rows.add(shareRow(it)) }
+        }
+        return rows
+    }
+
+    private fun shareRow(share: RealmShare): BrowseRow =
+        BrowseRow(share.displayName, "", directory = true, size = 0, repoId = share.repoId, share = true)
+
+    private fun sectionLabel(purpose: String): String = when (purpose) {
+        "upload_shelf" -> getString(R.string.section_upload_shelves)
+        "upload_trash" -> getString(R.string.section_upload_trash)
+        "" -> getString(R.string.section_repositories)
+        else -> purpose
     }
 
     private fun openRow(row: BrowseRow) {

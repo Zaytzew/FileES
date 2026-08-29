@@ -152,6 +152,40 @@ func TestRepositoryServiceRejectsStalePublicShareContinuation(t *testing.T) {
 	}
 }
 
+func TestRepositoryServiceAllowsValidatedDirectPublicShareEntry(t *testing.T) {
+	service := newRepositoryService()
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	request := platform.PublicShareDialogRequest{
+		Title: "Udostępnienia", ServerID: "spot", RepoID: "docs", RepositoryName: "Dokumenty",
+		FocusChannelID: "active", DirectEntry: true,
+		Shares: []platform.PublicShareSummary{{ChannelID: "active", Address: "acme/docs", State: "aktywne"}},
+	}
+	resultCh := make(chan platform.PublicShareDialogResult, 1)
+	go func() {
+		result, _ := (repositoryPublicShareBrowserAdapter{service: service}).ShowPublicShares(context.Background(), request)
+		resultCh <- result
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("direct public shares window was not shown")
+	}
+	snapshot := service.Snapshot()
+	if snapshot.Mode != "shares" || snapshot.FocusChannelID != "active" || snapshot.Context.ServerID != "spot" || snapshot.Context.RepoID != "docs" {
+		t.Fatalf("direct public shares snapshot = %+v", snapshot)
+	}
+	service.Cancel()
+	select {
+	case result := <-resultCh:
+		if result.Action != platform.PublicShareDialogClose {
+			t.Fatalf("direct public shares result = %+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("direct public shares browser did not return")
+	}
+}
+
 func TestRepositoryServiceBindsRealmGrantChoicesToCurrentFolder(t *testing.T) {
 	service := newRepositoryService()
 	shown := make(chan struct{}, 2)

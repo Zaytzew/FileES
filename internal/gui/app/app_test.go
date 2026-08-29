@@ -21,6 +21,7 @@ type fakeDaemon struct {
 	repoStatus   func(ctx context.Context, id string) (*contract.RepoStatus, error)
 	errorList    func(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error)
 	reservations func(ctx context.Context, serverID string) (*contract.RepoReservationListResult, error)
+	publicShares func(ctx context.Context) (*contract.PublicShareListResult, error)
 	lock         func(ctx context.Context, id string, paths []string) (string, error)
 	unlock       func(ctx context.Context, id string, paths []string) (string, error)
 	subscribe    func(ctx context.Context) (<-chan contract.Event, error)
@@ -105,6 +106,15 @@ func (f *fakeDaemon) RepoReservationList(ctx context.Context, serverID string) (
 }
 func (f *fakeDaemon) RepoReservationRelease(context.Context, contract.RepoReservationReleasePayload) error {
 	return nil
+}
+func (f *fakeDaemon) PublicShareListAll(ctx context.Context) (*contract.PublicShareListResult, error) {
+	f.mu.Lock()
+	fn := f.publicShares
+	f.mu.Unlock()
+	if fn == nil {
+		return &contract.PublicShareListResult{}, nil
+	}
+	return fn(ctx)
 }
 func (f *fakeDaemon) RealmAliasClaim(context.Context, string, string) (*contract.RealmAliasClaimResult, error) {
 	return &contract.RealmAliasClaimResult{Alias: "test"}, nil
@@ -475,6 +485,13 @@ func TestReducerApplyEventGap(t *testing.T) {
 	}
 }
 
+func TestReducerPublicSharesChangedRequestsAggregateRefresh(t *testing.T) {
+	_, resync, dirty := newAppState().applyEvent(contract.Event{Sequence: 1, Type: contract.EvPublicSharesChanged, RepoID: "docs"})
+	if !resync || dirty != "" {
+		t.Fatalf("public shares event: resync=%v dirty=%q", resync, dirty)
+	}
+}
+
 // --- icon aggregation unit tests ---
 
 func TestAggregateIconDisconnected(t *testing.T) {
@@ -504,14 +521,47 @@ func TestReducerKeepsReadAnnouncementHistoryButOnlyUnreadRaisesAlarm(t *testing.
 	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, true, []contract.Notice{
 		{ID: "read", Revision: 7, Title: "przeczytane", Acked: true},
 		{ID: "unread", Revision: 8, Title: "nowe"},
-	}, time.Now())
+	}, nil, false, time.Now())
 	vm := s.viewModel()
 	if len(vm.Notices) != 2 || !vm.Notices[0].Acked || vm.Notices[0].Revision != 7 || vm.Icon != IconShout {
 		t.Fatalf("view model=%+v", vm)
 	}
-	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, true, []contract.Notice{{ID: "read", Acked: true}}, time.Now())
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, true, []contract.Notice{{ID: "read", Acked: true}}, nil, false, time.Now())
 	if vm = s.viewModel(); len(vm.Notices) != 1 || vm.Icon == IconShout {
 		t.Fatalf("read-only view model=%+v", vm)
+	}
+}
+
+func TestReducerProjectsAggregatePublicSharesWithoutLeakingObjectDetails(t *testing.T) {
+	revision := int64(17)
+	s := newAppState().applyConnected(contract.AllCapabilities)
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, true, nil, []contract.PublicShareSummary{{
+		ChannelID: "channel-1", ServerID: "spot", RepoID: "docs", RepoDisplayName: "Dokumenty",
+		Alias: "acme", Slug: "wydanie", State: "active", SourceRoot: "release", UpdatedAt: "2026-08-29T08:00:00Z",
+		Recipients: []string{"one@example.test", "two@example.test"}, PasswordProtected: true, DoNotFollow: &revision,
+		Objects: []contract.PublicShareObject{{PublicID: "object-1"}, {PublicID: "object-2"}},
+	}}, true, time.Now())
+
+	vm := s.viewModel()
+	if !vm.PublicSharesKnown || len(vm.PublicShares) != 1 {
+		t.Fatalf("public shares = known %v rows %#v", vm.PublicSharesKnown, vm.PublicShares)
+	}
+	share := vm.PublicShares[0]
+	if share.ChannelID != "channel-1" || share.RepoDisplayName != "Dokumenty" || share.RecipientCount != 2 || share.ObjectCount != 2 || !share.PasswordProtected || share.FollowHead {
+		t.Fatalf("public share = %#v", share)
+	}
+}
+
+func TestReducerKeepsLastKnownPublicSharesAcrossSupplementalRefreshFailure(t *testing.T) {
+	s := newAppState().applyConnected([]string{contract.CapRepoPublicShareList})
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, true, nil, []contract.PublicShareSummary{{ChannelID: "known", ServerID: "spot", RepoID: "docs"}}, true, time.Now())
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, true, nil, nil, false, time.Now())
+	if vm := s.viewModel(); !vm.PublicSharesKnown || len(vm.PublicShares) != 1 || vm.PublicShares[0].ChannelID != "known" {
+		t.Fatalf("last known public shares were discarded: %#v", vm.PublicShares)
+	}
+	s = s.applyConnected(nil)
+	if vm := s.viewModel(); vm.PublicSharesKnown || len(vm.PublicShares) != 0 {
+		t.Fatalf("unsupported daemon retained aggregate public shares: %#v", vm.PublicShares)
 	}
 }
 
@@ -660,6 +710,52 @@ func TestAppFullRefreshIncludesStructuredErrorsAndTimestamp(t *testing.T) {
 		Code: "NET-4007", Severity: "WARN", Hint: "retry", Message: "offline"}
 	if vm.Errors[0] != want {
 		t.Fatalf("error view model = %#v, want %#v", vm.Errors[0], want)
+	}
+}
+
+func TestAppFullRefreshIncludesAggregatePublicShares(t *testing.T) {
+	d := &fakeDaemon{
+		hello: func(context.Context) (*contract.HelloResult, error) {
+			return &contract.HelloResult{DaemonVersion: "test", ProtocolVersions: []string{contract.Protocol}, Capabilities: []string{contract.CapRepoPublicShareList}}, nil
+		},
+		publicShares: func(context.Context) (*contract.PublicShareListResult, error) {
+			return &contract.PublicShareListResult{Shares: []contract.PublicShareSummary{{
+				ChannelID: "share-1", ServerID: "spot", RepoID: "docs", Alias: "acme", Slug: "release", State: "active",
+			}}}, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
+
+	vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return vm.Connected && !vm.Stale && vm.PublicSharesKnown && len(vm.PublicShares) == 1
+	})
+	if vm.PublicShares[0].ChannelID != "share-1" || vm.PublicShares[0].ServerID != "spot" {
+		t.Fatalf("public share = %#v", vm.PublicShares[0])
+	}
+}
+
+func TestAppKeepsHealthySessionWhenOlderDaemonRejectsAggregatePublicShares(t *testing.T) {
+	d := &fakeDaemon{
+		hello: func(context.Context) (*contract.HelloResult, error) {
+			return &contract.HelloResult{DaemonVersion: "test", ProtocolVersions: []string{contract.Protocol}, Capabilities: []string{contract.CapRepoPublicShareList}}, nil
+		},
+		publicShares: func(context.Context) (*contract.PublicShareListResult, error) {
+			return nil, errors.New("unknown command repo.public_share_list_all")
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
+
+	vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return vm.Connected && !vm.Stale && vm.DaemonState == "running"
+	})
+	if vm.PublicSharesKnown || len(vm.PublicShares) != 0 {
+		t.Fatalf("unsupported aggregate should stay unknown: known %v rows %#v", vm.PublicSharesKnown, vm.PublicShares)
 	}
 }
 

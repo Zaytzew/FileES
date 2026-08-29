@@ -30,6 +30,9 @@ const (
 	IntentShutdownFileES     IntentKind = "shutdown_filees"
 	IntentPublish            IntentKind = "publish"
 	IntentAckNotice          IntentKind = "ack_notice"
+	IntentManagePublicShares IntentKind = "manage_public_shares"
+	IntentRevokePublicShare  IntentKind = "revoke_public_share"
+	IntentRevokePublicShares IntentKind = "revoke_public_shares"
 	IntentLocateFolder       IntentKind = "locate_folder"
 )
 
@@ -42,4 +45,6 @@ type Intent struct {
 	ServerID            string
 	ReservationID       string
 	RecoveryOperationID string
+	ChannelID           string
+	ChannelIDs          []string
 }

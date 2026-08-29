@@ -31,7 +31,7 @@ function shareCard(share) {
     share.can_revoke ? `<button type="button" data-share-action="revoke" data-channel-id="${escapeHTML(share.channel_id)}">Cofnij</button>` : "",
     share.can_delete ? `<button class="danger" type="button" data-share-action="delete" data-channel-id="${escapeHTML(share.channel_id)}">Usuń</button>` : "",
   ].join("");
-  return `<article class="share-row">
+  return `<article class="share-row ${share.channel_id === currentSnapshot?.focus_channel_id ? "is-focused" : ""}" data-share-channel-id="${escapeHTML(share.channel_id)}">
     <div class="share-main"><span class="share-dot ${share.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(share.address || share.channel_id)}</strong><small>${escapeHTML(share.source_root || "całe repozytorium")}</small></div></div>
     <div class="share-fact"><small>Stan</small><span>${escapeHTML(share.state || "nieznany")}</span></div>
     <div class="share-fact"><small>Odbiorcy</small><span title="${escapeHTML(share.recipients)}">${escapeHTML(share.recipients || "kanał otwarty")}</span></div>
@@ -126,6 +126,11 @@ function render(snapshot) {
 		$("#create-upload").disabled = Boolean(snapshot.busy);
 	}
   if (contextChanged) window.requestAnimationFrame(() => window.scrollTo(0, 0));
+  if (contextChanged && sharesMode && snapshot.focus_channel_id) window.requestAnimationFrame(() => {
+    const focused = document.querySelector(`[data-share-channel-id="${CSS.escape(snapshot.focus_channel_id)}"]`);
+    focused?.scrollIntoView({ block: "center", behavior: "smooth" });
+    focused?.querySelector("button")?.focus();
+  });
 }
 
 async function chooseGrant(action, realmID, button) {

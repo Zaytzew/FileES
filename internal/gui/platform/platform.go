@@ -118,6 +118,8 @@ type PublicShareDialogRequest struct {
 	ServerID       string
 	RepoID         string
 	RepositoryName string
+	FocusChannelID string
+	DirectEntry    bool
 	Shares         []PublicShareSummary
 }
 

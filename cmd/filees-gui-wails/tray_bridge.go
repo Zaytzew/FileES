@@ -43,7 +43,8 @@ func projectWailsTray(snapshot Snapshot) wailsTrayProjection {
 			}
 		}
 	}
-	status := fmt.Sprintf("%s · %d repo · %s", state, len(snapshot.Repositories), lockStatus)
+	repositories := len(snapshot.Repositories)
+	status := fmt.Sprintf("%s · %d %s · %s", state, repositories, repositoryNoun(repositories), lockStatus)
 	unread := 0
 	for _, notice := range snapshot.Notices {
 		if !notice.Acked {
@@ -94,6 +95,18 @@ func announcementNoun(count int) string {
 		return "ogłoszenia"
 	}
 	return "ogłoszeń"
+}
+
+func repositoryNoun(count int) string {
+	if count == 1 {
+		return "repozytorium"
+	}
+	lastTwo := count % 100
+	last := count % 10
+	if (lastTwo < 12 || lastTwo > 14) && last >= 2 && last <= 4 {
+		return "repozytoria"
+	}
+	return "repozytoriów"
 }
 
 type announcementAlertPolicy struct {

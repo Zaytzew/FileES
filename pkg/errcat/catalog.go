@@ -3,7 +3,9 @@ package errcat
 const (
 	CodeUnknown     Code = "SYNC-0000"
 	CodeNet         Code = "NET-4007"
+	CodeConnDropped Code = "NET-4008"
 	CodeAuth        Code = "AUTH-4102"
+	CodeSessionEnd  Code = "AUTH-4103"
 	CodeLockHeld    Code = "LOCK-2001"
 	CodeLockPath    Code = "LOCK-2002"
 	CodeCommitFail  Code = "COMMIT-3100"
@@ -14,7 +16,9 @@ const (
 
 	KeyUnknown                Key = "sync.unknown"
 	KeyNetUnreachable         Key = "net.unreachable"
+	KeyConnectionDropped      Key = "net.connection_dropped"
 	KeyAuthFailed             Key = "auth.failed"
+	KeySessionEnded           Key = "auth.session_ended"
 	KeyLockHeldByOther        Key = "lock.held_by_other"
 	KeyLockOperation          Key = "lock.operation_failed"
 	KeyLockInvalidPath        Key = "lock.invalid_path"
@@ -74,7 +78,20 @@ var specs = []Spec{
 	// Runtime classification (errmap.Classify). These are log/journal
 	// events, not necessarily IPC responses.
 	{CodeNet, KeyNetUnreachable, SevWarn, HintRetryBackoff, nil, "Network unreachable — retrying with backoff", "Brak połączenia z siecią"},
+	// Deliberately NOT classified as IsNetwork(): a connection that was live
+	// and then died mid-operation (SSH keepalive fired) deserves the prompt
+	// notice this key exists for, not the sustained-offline grace window
+	// that suppresses generic net.unreachable noise on a routine poll.
+	{CodeConnDropped, KeyConnectionDropped, SevWarn, HintRetryBackoff, nil, "Connection dropped mid-operation (SSH keepalive timeout)", "Połączenie zostało przerwane w trakcie operacji"},
 	{CodeAuth, KeyAuthFailed, SevError, HintAdminOnly, nil, "Authentication failed — check credentials", "Uwierzytelnienie nie powiodło się"},
+	// The server ended this session (activation check failed or the lease
+	// was revoked) and said so on the tunnel's stderr instead of just
+	// dropping the connection — see session_supervisor_unix.go's
+	// FILEES-SESSION-ENDED marker. Deliberately does not name a specific
+	// cause: SessionAllowed's own doc comment treats every non-live state as
+	// one fail-closed result, and this key must not claim more certainty
+	// than the server itself has.
+	{CodeSessionEnd, KeySessionEnded, SevWarn, HintRetryLocal, nil, "Server ended this session (authorization check failed or lease revoked)", "Serwer zakończył tę sesję — spróbuj ponownie za chwilę"},
 	{CodeLockHeld, KeyLockHeldByOther, SevError, HintRequireAction, []string{"path", "holder", "until"}, "File locked by another user", "Plik jest w tej chwili wypożyczony przez kogoś innego"},
 	{CodeLockHeld, KeyLockOperation, SevError, HintRequireAction, []string{"detail"}, "Lock operation failed", "Daemon nie wykonał operacji na plikach"},
 	{CodeLockPath, KeyLockInvalidPath, SevError, HintRequireAction, nil, "Path is outside the working copy", "Wybrana ścieżka nie należy do repozytorium"},
@@ -132,6 +149,7 @@ var specs = []Spec{
 	{"POLICY-2002", "repo.editing_policy_failed", SevError, HintRetry, nil, "Editing policy change failed", "Zmiana polityki blokad nie powiodła się"},
 
 	{"SHARE-0001", "public_share.unavailable", SevError, HintRetry, nil, "Public share service is not available", "Udostępnienia publiczne są teraz niedostępne"},
+	{"SHARE-0002", "public_share.list_all_unavailable", SevError, HintRetry, nil, "Public share aggregate is not available", "Zbiorcza lista udostępnień jest teraz niedostępna"},
 	{"SHARE-1001", "public_share.list_failed", SevError, HintRetry, nil, "Public share list failed", "Nie udało się pobrać udostępnień"},
 	{"SHARE-1002", "public_share.rejected", SevError, HintRequireAction, nil, "Public share mutation was rejected", "Serwer odrzucił zmianę udostępnienia"},
 	{"SHARE-2001", "public_share.forbidden", SevError, HintNone, nil, "Public share action is forbidden", "Brak uprawnień do udostępnień publicznych"},

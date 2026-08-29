@@ -234,7 +234,7 @@ func (s *passportSession) stop() {
 	s.err = s.manager.ReleaseAll(ctx)
 }
 
-func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, logger talk.Logger) {
+func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, sink *errmap.Sink, logger talk.Logger) {
 	if _, err := os.Stat(filepath.Join(wc, ".svn")); err != nil {
 		return
 	}
@@ -253,7 +253,10 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 	out, err := svn.Update(ctx, wc)
 	service.ReconcileUpdateConflicts(ctx, wc, out)
 	if err != nil {
-		logger.Warnf("svn update failed: %v %s", err, out)
+		recordSyncFailure(sink, logger, "svn update failed (startup recovery)", err)
+		if strings.TrimSpace(out) != "" {
+			logger.Warnf("svn update output: %s", out)
+		}
 	}
 }
 
@@ -338,7 +341,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		sink = nil
 	}
 	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
-	recoverReadWriteWorkingCopy(ctx, svn, wc, service, logger)
+	recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger)
 	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	wireRepoLockFuncs(runtimeRepo.state, svn, wc, manager)
 	runtimeRepo.state.SetPublishFunc(func(ctx context.Context, comment string) (int64, error) {
@@ -706,8 +709,17 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
 		return nil, err
 	}
+	logsDir := filepath.Join(wc, ".filees", "logs")
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		return nil, err
+	}
+	sink, err := openRepoErrorSink(filepath.Join(logsDir, "errors.jsonl"), "sync:"+runtime.config.ID)
+	if err != nil {
+		talk.With("readonly:"+desired.Key.String()).Warnf("structured errors disabled: %v", err)
+		sink = nil
+	}
 	return reposupervisor.StartManaged(lifecycle, func(ctx context.Context) error {
-		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, talk.With("readonly:"+desired.Key.String()))
+		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, talk.With("readonly:"+desired.Key.String()))
 		return nil
 	}, func(context.Context) error {
 		runtime.state.SetReservationFuncs(nil, nil)

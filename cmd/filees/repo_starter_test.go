@@ -403,7 +403,7 @@ func TestReadWriteRecoveryDefersUpdateForMissingPathsOrStatusFailure(t *testing.
 		if err := os.Mkdir(filepath.Join(wc, ".svn"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, talk.With("test-recovery"))
+		recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, nil, talk.With("test-recovery"))
 		if fake.cleanup != 1 || fake.status != 1 || fake.update != 0 {
 			t.Fatalf("calls cleanup=%d status=%d update=%d", fake.cleanup, fake.status, fake.update)
 		}
@@ -416,7 +416,7 @@ func TestReadWriteRecoveryUpdatesCleanWorkingCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &recoveryClient{}
-	recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, talk.With("test-recovery"))
+	recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, nil, talk.With("test-recovery"))
 	if fake.cleanup != 1 || fake.status != 1 || fake.update != 1 {
 		t.Fatalf("calls cleanup=%d status=%d update=%d", fake.cleanup, fake.status, fake.update)
 	}

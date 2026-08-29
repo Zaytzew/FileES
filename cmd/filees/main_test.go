@@ -118,7 +118,7 @@ func TestReadOnlyRepoNeverCreatesWatcherOrCommitQueue(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runReadOnlyRepo(ctx, config.Repo{ID: "archive", LocalPath: wc, PollInterval: 10 * time.Millisecond}, rs, fake, talk.With("test-readonly"))
+		runReadOnlyRepo(ctx, config.Repo{ID: "archive", LocalPath: wc, PollInterval: 10 * time.Millisecond}, rs, fake, nil, talk.With("test-readonly"))
 	}()
 
 	select {
@@ -164,7 +164,7 @@ func TestReadOnlyRepoRequestsLocateAfterWorkingCopyMoves(t *testing.T) {
 	fake := &updateOnlyClient{called: make(chan struct{}, 2)}
 	done := make(chan struct{})
 	go func() {
-		runReadOnlyRepo(t.Context(), config.Repo{ID: "archive", LocalPath: wc, PollInterval: time.Hour}, rs, fake, talk.With("test-readonly-move"))
+		runReadOnlyRepo(t.Context(), config.Repo{ID: "archive", LocalPath: wc, PollInterval: time.Hour}, rs, fake, nil, talk.With("test-readonly-move"))
 		close(done)
 	}()
 	select {

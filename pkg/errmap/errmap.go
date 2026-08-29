@@ -88,6 +88,10 @@ func Classify(err error) Entry {
 		return entryFrom(errcat.KeyMobileTreeNotIngested, msg)
 	case containsAny(low, mobileOpNeedles):
 		return entryFrom(errcat.KeyMobileOpNotOnServer, msg)
+	case containsAny(low, sessionEndedNeedles):
+		return entryFrom(errcat.KeySessionEnded, msg)
+	case containsAny(low, connDroppedNeedles):
+		return entryFrom(errcat.KeyConnectionDropped, msg)
 	case containsAny(low, netNeedles):
 		return entryFrom(errcat.KeyNetUnreachable, msg)
 	case containsAny(low, authNeedles):
@@ -125,6 +129,21 @@ var (
 		"name or service not known", "temporary failure in name resolution",
 		"e170013", "e730047",
 		"anulowana/przekroczono czas", // timeout wrapper from client.go
+	}
+	// connDroppedNeedles matches OpenSSH's own ServerAlive-timeout message
+	// (pkg/client's ssh -o ServerAliveInterval/ServerAliveCountMax), folded
+	// into the local svn process's captured stderr. A live connection that
+	// died mid-operation, not a connection that never came up.
+	connDroppedNeedles = []string{
+		"not responding", // OpenSSH: "Timeout, server ... not responding."
+	}
+	// sessionEndedNeedles matches the marker session_supervisor_unix.go
+	// writes to its own stderr — which is the tunnel's stderr from the
+	// connecting client's point of view — right before it kills a session
+	// whose authorization check failed or whose lease was revoked, instead
+	// of just silently dropping the connection.
+	sessionEndedNeedles = []string{
+		"filees-session-ended",
 	}
 	authNeedles = []string{
 		"authorization failed", "authentication failed",

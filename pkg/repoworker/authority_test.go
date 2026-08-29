@@ -38,10 +38,10 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 	p := ServicePublisher{ServiceWC: root, DataAuthzFile: authz, Runner: run}
 	repo := uuid.NewString()
 	url := "svn+ssh://_filees-client@example/repos/" + repo
-	if e := p.Publish(context.Background(), repo, realm, "Docs", url); e != nil {
+	if e := p.Publish(context.Background(), repo, realm, "Docs", url, ""); e != nil {
 		t.Fatal(e)
 	}
-	if e := p.Publish(context.Background(), repo, realm, "Docs", url); e != nil {
+	if e := p.Publish(context.Background(), repo, realm, "Docs", url, ""); e != nil {
 		t.Fatal(e)
 	}
 	owner, _ := clientview.Load(filepath.Join(root, "clients", ownerClient, "view.json"))
@@ -177,7 +177,7 @@ func TestTransferOwnerMovesRepositoryAndRegeneratesAuthz(t *testing.T) {
 	p := ServicePublisher{ServiceWC: root, DataAuthzFile: authz, Runner: run}
 	repo := uuid.NewString()
 	url := "svn+ssh://_filees-client@example/repos/" + repo
-	if e := p.Publish(context.Background(), repo, oldRealm, "Docs", url); e != nil {
+	if e := p.Publish(context.Background(), repo, oldRealm, "Docs", url, ""); e != nil {
 		t.Fatal(e)
 	}
 	if e := p.Activate(context.Background(), repo, oldRealm); e != nil {
@@ -235,7 +235,7 @@ func TestDeleteWithdrawsProjectionAndAuthorityAndLeavesTombstone(t *testing.T) {
 	publisher := ServicePublisher{ServiceWC: root, DataAuthzFile: authz, Runner: runner}
 	repoID := uuid.NewString()
 	url := "svn+ssh://_filees-client@example/repos/" + repoID
-	if err := publisher.Publish(context.Background(), repoID, realm, "Docs", url); err != nil {
+	if err := publisher.Publish(context.Background(), repoID, realm, "Docs", url, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := publisher.Activate(context.Background(), repoID, realm); err != nil {
@@ -270,7 +270,7 @@ func TestDeleteWithdrawsProjectionAndAuthorityAndLeavesTombstone(t *testing.T) {
 	if err := json.Unmarshal(recordRaw, &record); err != nil || record.State != "deleted" {
 		t.Fatalf("canonical tombstone=%+v err=%v", record, err)
 	}
-	if err := publisher.Publish(context.Background(), repoID, realm, "Docs", url); err == nil {
+	if err := publisher.Publish(context.Background(), repoID, realm, "Docs", url, ""); err == nil {
 		t.Fatal("deleted repository was republished")
 	}
 	if err := publisher.TransferOwner(context.Background(), repoID, uuid.NewString()); err == nil {

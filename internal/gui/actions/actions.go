@@ -176,8 +176,8 @@ type UploadChannelSummary struct {
 }
 
 type UploadChannelDeclaration struct {
-	AuthorityRepoID, Slug string
-	Recipients            []string
+	AuthorityRepoID, Slug, Kind string
+	Recipients                  []string
 }
 
 type UploadChannelManager interface {
@@ -1557,6 +1557,9 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				}
 				if current == nil {
 					err = c.cfg.UploadChannels.CreateUploadChannel(ctx, serverID, declaration)
+					if err == nil {
+						c.offerUploadShelfFolder(ctx, serverID, repo.ID, declaration.Slug)
+					}
 				} else {
 					err = c.cfg.UploadChannels.UpdateUploadChannel(ctx, serverID, current.ChannelID, declaration)
 				}
@@ -1585,6 +1588,45 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Półka została zaktualizowana", Body: repo.DisplayName, Urgency: platform.UrgencyNormal})
 		}
 	}()
+}
+
+func (c *Controller) offerUploadShelfFolder(ctx context.Context, serverID, authorityRepoID, slug string) {
+	if c.cfg.FolderPicker == nil || c.cfg.RepositoryAttacher == nil || c.cfg.UploadChannels == nil {
+		return
+	}
+	channels, err := c.cfg.UploadChannels.ListUploadChannels(ctx, serverID, authorityRepoID)
+	if err != nil {
+		return
+	}
+	var uploadRepoID string
+	for _, channel := range channels {
+		if channel.Slug == slug && channel.UploadRepoID != "" && channel.State == "active" {
+			uploadRepoID = channel.UploadRepoID
+			break
+		}
+	}
+	if uploadRepoID == "" {
+		return
+	}
+	picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz folder na przyjęte pliki półki „" + slug + "”"})
+	if err != nil || picked.Cancelled || strings.TrimSpace(picked.Path) == "" || !filepath.IsAbs(picked.Path) {
+		return
+	}
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := attachableRepository(c.cfg.ViewModel(), serverID, uploadRepoID); ok {
+			_, _ = c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, uploadRepoID, filepath.Clean(picked.Path))
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+	}
+	_, _ = c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, uploadRepoID, filepath.Clean(picked.Path))
 }
 
 func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo app.RepoViewModel, current *UploadChannelSummary) (UploadChannelDeclaration, bool) {

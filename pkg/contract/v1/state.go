@@ -75,7 +75,16 @@ type RepoStatus struct {
 	CurrentOperation     *string       `json:"current_operation"`      // null or short description
 	Cycle                CycleStatus   `json:"cycle"`
 	Recovery             RecoveryStats `json:"recovery"`
+	// Purpose is empty for a normal share. upload_shelf is the Upload Channel
+	// delivery repository; upload_trash is the realm-wide reject quarantine.
+	Purpose string `json:"purpose,omitempty"`
 }
+
+const (
+	RepoPurposeNone        = ""
+	RepoPurposeUploadShelf = "upload_shelf"
+	RepoPurposeUploadTrash = "upload_trash"
+)
 
 const (
 	CycleWaiting = "waiting"

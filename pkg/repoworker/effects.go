@@ -13,7 +13,7 @@ import (
 )
 
 type AuthorityPublisher interface {
-	Publish(context.Context, string, string, string, string) error
+	Publish(context.Context, string, string, string, string, string) error
 	Delete(context.Context, string, string) error
 }
 
@@ -70,8 +70,8 @@ func (e ServerEffects) CreateFSFS(ctx context.Context, repoID, operationID strin
 	}
 	return syncDirectory(e.RepositoriesRoot)
 }
-func (e ServerEffects) PublishAuthority(ctx context.Context, repoID, realmID, name, url string) error {
-	return e.Authority.Publish(ctx, repoID, realmID, name, url)
+func (e ServerEffects) PublishAuthority(ctx context.Context, repoID, realmID, name, url, purpose string) error {
+	return e.Authority.Publish(ctx, repoID, realmID, name, url, purpose)
 }
 func (e ServerEffects) RollbackCreate(ctx context.Context, repoID, realmID string) error {
 	if !filepath.IsAbs(e.RepositoriesRoot) || e.Authority == nil {

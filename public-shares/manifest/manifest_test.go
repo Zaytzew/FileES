@@ -68,6 +68,21 @@ func TestUploadRejectsAuthorityEqualToUploadRepo(t *testing.T) {
 	}
 }
 
+func TestUploadKindDefaultsToShelfAndRejectsUnknown(t *testing.T) {
+	if err := validUpload().Validate(); err != nil {
+		t.Fatal(err)
+	}
+	u := validUpload()
+	u.Kind = KindSlots
+	if err := u.Validate(); err != nil {
+		t.Fatalf("slots: %v", err)
+	}
+	u.Kind = "dropper"
+	if err := u.Validate(); !errors.Is(err, ErrKind) {
+		t.Fatalf("got %v, want ErrKind", err)
+	}
+}
+
 func TestUploadRejectsUnknownCollisionPolicy(t *testing.T) {
 	u := validUpload()
 	u.CollisionPolicy = "overwrite"

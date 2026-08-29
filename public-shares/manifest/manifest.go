@@ -94,6 +94,10 @@ type Upload struct {
 
 	Slug string `json:"slug"`
 
+	// Kind is shelf (default) or slots. Absence reads as shelf. UPDATE must
+	// not change it; a different kind is a new channel.
+	Kind string `json:"kind,omitempty"`
+
 	// Recipients is mandatory. An anonymous upload does not exist in this
 	// model: there is no mode, configuration or exception that permits it.
 	Recipients []string `json:"recipients"`
@@ -110,7 +114,20 @@ var (
 	ErrSameRepo        = errors.New("authority repository and upload repository must differ")
 	ErrDuplicateObject = errors.New("duplicate public_id in object map")
 	ErrClosedPassword  = errors.New("closed channel must not carry a shared password")
+	ErrKind            = errors.New("upload channel kind must be shelf or slots")
 )
+
+const (
+	KindShelf = "shelf"
+	KindSlots = "slots"
+)
+
+func NormalizeKind(kind string) string {
+	if kind == "" {
+		return KindShelf
+	}
+	return kind
+}
 
 // Validate reports whether the share declaration is internally consistent.
 func (s Share) Validate() error {
@@ -237,6 +254,11 @@ func (u Upload) Validate() error {
 	}
 	if !u.CollisionPolicy.valid() {
 		return fmt.Errorf("collision_policy: unsupported value %q", u.CollisionPolicy)
+	}
+	switch NormalizeKind(u.Kind) {
+	case KindShelf, KindSlots:
+	default:
+		return ErrKind
 	}
 	return nil
 }

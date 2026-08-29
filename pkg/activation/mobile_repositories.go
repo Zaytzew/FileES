@@ -32,6 +32,7 @@ type canonicalRepositoryRecord struct {
 	State         string    `json:"state"`
 	CreatedAt     time.Time `json:"created_at"`
 	EditingPolicy string    `json:"editing_policy,omitempty"`
+	Purpose       string    `json:"purpose,omitempty"`
 }
 
 // mobileRepositoryEntries builds the "repositories" array for a freshly
@@ -58,6 +59,9 @@ func (m *Manager) mobileRepositoryEntries(record Record) ([]any, error) {
 			continue
 		}
 		if canonical.RepoID != grant.RepoID {
+			continue
+		}
+		if canonical.Purpose != "" {
 			continue
 		}
 		// editing_policy is deliberately absent: the mobile channel is

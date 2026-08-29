@@ -99,7 +99,7 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 				state = contract.StateInitializing
 			}
 		}
-		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: state, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, EditingPolicy: repo.EditingPolicy, Attached: attached, PendingLocalPath: pendingPath})
+		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: state, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, EditingPolicy: repo.EditingPolicy, Purpose: repo.Purpose, Attached: attached, PendingLocalPath: pendingPath})
 	}
 	for _, key := range unprojectedLocalKeys(serverID, view, attachments) {
 		repo := attachments[key].config

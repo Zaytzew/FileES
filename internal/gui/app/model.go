@@ -50,6 +50,7 @@ type RepoViewModel struct {
 	OwnerRealmID         string
 	AttachmentPolicy     string
 	EditingPolicy        string
+	Purpose              string
 	URL                  string
 	LocalPath            string
 	State                string

@@ -62,7 +62,7 @@ func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 	writeCanonicalRealmClient(otherRealm, "other", "hidden", otherClient)
 	repoID := uuid.NewString()
 	url := "svn+ssh://_filees-client@example/repos/" + repoID
-	if err := p.Publish(context.Background(), repoID, ownerRealm, "Docs", url); err != nil {
+	if err := p.Publish(context.Background(), repoID, ownerRealm, "Docs", url, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.Activate(context.Background(), repoID, ownerRealm); err != nil {
@@ -203,6 +203,47 @@ func TestRealmDirectoryListingRequiresExplicitAliasAndVisibility(t *testing.T) {
 // they are per-client and are carried over from the previous projection -
 // and mixing the two rules is the exact mistake that would let a stale view
 // pin a repository to a policy its owner already changed.
+func TestProjectedRepositoriesCopiesPurposeAndOmitsItFromMobile(t *testing.T) {
+	realmID := uuid.NewString()
+	shelfID := uuid.NewString()
+	docsID := uuid.NewString()
+	records := map[string]repositoryRecord{
+		docsID: {
+			Schema: RepositorySchema, RepoID: docsID, OwnerRealmID: realmID,
+			DisplayName: "Docs", URL: "svn+ssh://_filees-client@example.net/" + docsID, State: "active",
+		},
+		shelfID: {
+			Schema: RepositorySchema, RepoID: shelfID, OwnerRealmID: realmID,
+			DisplayName: "Półka oferta-a", URL: "svn+ssh://_filees-client@example.net/" + shelfID,
+			State: "active", Purpose: clientview.PurposeUploadShelf,
+		},
+	}
+	desktop := projectedRepositories(records, nil, realmID, "normal", "desktop", nil)
+	if len(desktop) != 2 {
+		t.Fatalf("desktop projected %d", len(desktop))
+	}
+	found := false
+	for _, repo := range desktop {
+		if repo.RepoID == shelfID {
+			found = true
+			if repo.Purpose != clientview.PurposeUploadShelf {
+				t.Fatalf("purpose=%q", repo.Purpose)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("desktop projection omitted the shelf")
+	}
+	previous := []clientview.Repository{
+		{RepoID: docsID, DisplayName: "Docs", URL: records[docsID].URL, Access: "rw", State: "active", OwnerRealmID: realmID, AttachmentPolicy: "optional"},
+		{RepoID: shelfID, DisplayName: "Półka oferta-a", URL: records[shelfID].URL, Access: "rw", State: "active", OwnerRealmID: realmID, AttachmentPolicy: "optional", Purpose: clientview.PurposeUploadShelf},
+	}
+	mobile := projectedRepositories(records, nil, realmID, "normal", "mobile", previous)
+	if len(mobile) != 1 || mobile[0].RepoID != docsID {
+		t.Fatalf("mobile=%+v", mobile)
+	}
+}
+
 func TestProjectedRepositoriesSourcesEditingPolicyFromRecordNotPreviousView(t *testing.T) {
 	realmID := uuid.NewString()
 	repoID := uuid.NewString()

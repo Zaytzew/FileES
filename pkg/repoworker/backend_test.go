@@ -26,7 +26,7 @@ type effects struct {
 }
 
 func (e *effects) CreateFSFS(context.Context, string, string) error { e.fsfs++; return nil }
-func (e *effects) PublishAuthority(context.Context, string, string, string, string) error {
+func (e *effects) PublishAuthority(context.Context, string, string, string, string, string) error {
 	e.publish++
 	if e.failPublish {
 		return errors.New("crash boundary")

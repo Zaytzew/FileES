@@ -12,7 +12,7 @@ import (
 
 type publisher struct{ calls, deletes int }
 
-func (p *publisher) Publish(context.Context, string, string, string, string) error {
+func (p *publisher) Publish(context.Context, string, string, string, string, string) error {
 	p.calls++
 	return nil
 }

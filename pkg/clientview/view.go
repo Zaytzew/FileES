@@ -80,6 +80,20 @@ type Repository struct {
 	// way AttachmentPolicy is — that one is a per-client grant, this one is
 	// a property of the repository itself.
 	EditingPolicy string `json:"editing_policy,omitempty"`
+	// Purpose is empty for an ordinary project repository. Upload Channel
+	// stamps upload_shelf on the delivery repo and upload_trash on the
+	// realm-wide reject quarantine. Absence keeps old projections readable.
+	Purpose string `json:"purpose,omitempty"`
+}
+
+const (
+	PurposeNone        = ""
+	PurposeUploadShelf = "upload_shelf"
+	PurposeUploadTrash = "upload_trash"
+)
+
+func ValidPurpose(purpose string) bool {
+	return purpose == PurposeNone || purpose == PurposeUploadShelf || purpose == PurposeUploadTrash
 }
 
 // RequiresLock reports whether editing this repository goes through the edit
@@ -187,6 +201,9 @@ func (v View) Validate() error {
 		// seeing it here means an unnormalised value escaped a writer.
 		if repo.EditingPolicy != EditingFree && repo.EditingPolicy != EditingLockRequired {
 			return fmt.Errorf("repositories[%d].editing_policy is invalid", i)
+		}
+		if !ValidPurpose(repo.Purpose) {
+			return fmt.Errorf("repositories[%d].purpose is invalid", i)
 		}
 	}
 	return nil

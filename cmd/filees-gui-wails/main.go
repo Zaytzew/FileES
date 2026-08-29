@@ -54,6 +54,7 @@ func main() {
 	repository := newRepositoryService()
 	prompts := newPromptService()
 	promptBridge := newPromptBridge(prompts)
+	pairing := newPairingService()
 	restartRequested := make(chan struct{}, 1)
 
 	host := application.New(application.Options{
@@ -64,6 +65,7 @@ func main() {
 			application.NewService(settings),
 			application.NewService(repository),
 			application.NewService(promptBridge),
+			application.NewService(newPairingBridge(pairing)),
 		},
 		Assets: application.AssetOptions{
 			Handler:        application.BundledAssetFileServer(frontend),
@@ -82,6 +84,7 @@ func main() {
 	settings.attachEmitter(host.Event)
 	repository.attachEmitter(host.Event)
 	prompts.attachEmitter(host.Event)
+	pairing.attachEmitter(host.Event)
 
 	mainWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "filees-main",
@@ -141,6 +144,14 @@ func main() {
 		DevToolsEnabled: *devtools,
 		Windows:         application.WindowsWindow{NonClientRegionSupport: true},
 	})
+	pairingWindow := host.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name: "filees-pairing", Title: "Sparuj urządzenie mobilne — FileES", URL: "/pairing.html",
+		Width: 520, Height: 620, MinWidth: 480, MinHeight: 560,
+		Frameless: true, Hidden: true, AlwaysOnTop: true, DisableResize: true,
+		JS: themeJS, BackgroundColour: themeBackground,
+		DevToolsEnabled: *devtools,
+		Windows:         application.WindowsWindow{NonClientRegionSupport: true},
+	})
 	settings.attachPresentation(func() {
 		settingsWindow.Show()
 		settingsWindow.Center()
@@ -168,13 +179,22 @@ func main() {
 		event.Cancel()
 		prompts.Cancel()
 	})
+	pairing.attachPresentation(func() {
+		pairingWindow.Show()
+		pairingWindow.Center()
+		pairingWindow.Focus()
+	}, func() { pairingWindow.Hide() })
+	pairingWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		pairing.Cancel()
+	})
 
 	nativePicker := newWailsFolderPicker(host.Dialog)
 	shouts := shoutAdapter{client: daemon}
 	realmGrants := realmGrantAdapter{client: daemon}
 	actionPlatform := newActionPlatform()
 	actionController := configureActions(
-		gui, daemon, reservationAdapter{client: daemon}, stackLifecycleAdapter{client: daemon}, updateAdapter{client: daemon}, clientactivation.New(daemon, *activationRoot), pinStore, mobilePairingAdapter{client: daemon}, shouts, shouts, realmAliasAdapter{client: daemon}, realmGrants, repositoryRealmGrantBrowserAdapter{service: repository, fallback: actionPlatform}, realmBrandingAdapter{client: daemon},
+		gui, daemon, reservationAdapter{client: daemon}, stackLifecycleAdapter{client: daemon}, updateAdapter{client: daemon}, clientactivation.New(daemon, *activationRoot), pinStore, mobilePairingAdapter{client: daemon, pinStore: pinStore, prompter: prompts, presenter: pairing, servers: func() []PromptOption { return pairingServerOptions(gui.Snapshot()) }}, shouts, shouts, realmAliasAdapter{client: daemon}, realmGrants, repositoryRealmGrantBrowserAdapter{service: repository, fallback: actionPlatform}, realmBrandingAdapter{client: daemon},
 		settingsBrowserRouter{server: settingsBrowserAdapter{service: settings}, repository: repositorySettingsBrowserAdapter{service: repository}},
 		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryUploadChannelBrowserAdapter{service: repository}, uploadChannelAdapter{client: daemon}, repositoryCreateAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryLocateAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, repositoryDumpLoadAdapter{client: daemon}, serverDetachAdapter{client: daemon}, realmRemovalAdapter{client: daemon}, recoveryDownloadAdapter{client: daemon}, consentPromptAdapter{prompter: prompts}, actionPlatform, nativePicker, nativePicker, prompts,
 		func() {
@@ -195,9 +215,9 @@ func main() {
 	})
 	host.Event.OnApplicationEvent(events.Common.ThemeChanged, func(event *application.ApplicationEvent) {
 		dark := systemPrefersDark(event.Context().IsDarkMode())
-		applySystemTheme(dark, mainWindow, settingsWindow, repositoryWindow, promptWindow)
+		applySystemTheme(dark, mainWindow, settingsWindow, repositoryWindow, promptWindow, pairingWindow)
 	})
-	configureWailsTray(host, mainWindow, gui)
+	configureWailsTray(host, mainWindow, gui, actionPlatform)
 
 	if err := host.Run(); err != nil {
 		log.Fatal(err)
@@ -247,20 +267,4 @@ func applySystemTheme(dark bool, windows ...*application.WebviewWindow) {
 		window.SetBackgroundColour(background)
 		window.ExecJS(script)
 	}
-}
-
-func restartCurrentProcess(argv []string) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	args := []string(nil)
-	if len(argv) > 1 {
-		args = append(args, argv[1:]...)
-	}
-	command := exec.Command(executable, args...)
-	if err := command.Start(); err != nil {
-		return err
-	}
-	return command.Process.Release()
 }

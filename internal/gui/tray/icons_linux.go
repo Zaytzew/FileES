@@ -17,6 +17,8 @@ var (
 	linuxOffline []byte
 	//go:embed assets/linux/error.png
 	linuxError []byte
+	//go:embed assets/linux/shout.png
+	linuxShout []byte
 	//go:embed assets/linux/disconnected.png
 	linuxDisconnected []byte
 )
@@ -28,6 +30,7 @@ func PlatformIcons() IconSet {
 		app.IconBusy:         linuxBusy,
 		app.IconOffline:      linuxOffline,
 		app.IconError:        linuxError,
+		app.IconShout:        linuxShout,
 		app.IconDisconnected: linuxDisconnected,
 	}
 }

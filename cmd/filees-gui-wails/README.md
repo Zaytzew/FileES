@@ -68,6 +68,14 @@ traya. Podmenu `FileES` zawiera kontrolowany restart oraz `Zakończ…`. Obie
 akcje przechodzą przez wspólny kontroler i IPC demona, wymagają potwierdzenia
 z możliwością `Anuluj` i dotyczą pary daemon + GUI, a nie samego renderera.
 
+Shouting commity są prezentowane użytkownikowi jako „ogłoszenia”. Wszystkie
+nieprzeczytane i ograniczona historia przeczytanych trafiają do karty
+„Ostatnie ogłoszenia”. Nieprzeczytany wpis pulsuje całą kartą na czerwono,
+ustawia czerwoną ikonę tray z megafonem i wymaga jawnego „Potwierdź odczyt”
+w oknie szczegółów. Nowy wpis odebrany podczas bieżącej sesji wywołuje też
+powiadomienie systemowe; pierwszy snapshot po starcie jest tylko punktem
+odniesienia i nie odtwarza historycznych dymków.
+
 Trybik w nagłówku każdego panelu serwera otwiera pojedyncze, niezależne okno
 `Ustawienia FileES` już w kontekście jego `server_id`. Kolejne otwarcie zmienia
 kontekst istniejącego okna zamiast mnożyć WebView. `SettingsService` projektuje

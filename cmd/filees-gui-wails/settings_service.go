@@ -46,7 +46,6 @@ type SettingsServerProjection struct {
 	SessionTimeoutMin    int                        `json:"session_timeout_min"`
 	CanSetSessionTimeout bool                       `json:"can_set_session_timeout"`
 	Actions              []SettingsActionProjection `json:"actions"`
-	Folders              []SettingsFolderProjection `json:"folders"`
 }
 
 type SettingsActionProjection struct {
@@ -54,15 +53,6 @@ type SettingsActionProjection struct {
 	Label       string `json:"label"`
 	Description string `json:"description"`
 	Tone        string `json:"tone"`
-}
-
-type SettingsFolderProjection struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	LocalPath string `json:"local_path"`
-	State     string `json:"state"`
-	Access    string `json:"access"`
-	Editing   string `json:"editing"`
 }
 
 type SettingsChoice struct {
@@ -76,7 +66,7 @@ type SettingsAcceptance struct {
 }
 
 func newSettingsService() *SettingsService {
-	return &SettingsService{snapshot: SettingsSnapshot{Server: SettingsServerProjection{Folders: []SettingsFolderProjection{}}}}
+	return &SettingsService{snapshot: SettingsSnapshot{Server: SettingsServerProjection{Actions: []SettingsActionProjection{}}}}
 }
 
 func (service *SettingsService) attachEmitter(emitter snapshotEmitter) {
@@ -225,10 +215,12 @@ func (service *SettingsService) finishSession(session *settingsSession) {
 }
 
 func projectSettingsRequest(request platform.SettingsDialogRequest) (SettingsSnapshot, bool) {
-	if len(request.Servers) != 1 {
+	wizard := platform.BuildSettingsWizard(request)
+	if len(request.Servers) != 1 || len(wizard.Servers) != 1 {
 		return SettingsSnapshot{}, false
 	}
 	server := request.Servers[0]
+	wizardServer := wizard.Servers[0]
 	projection := SettingsSnapshot{
 		Title: request.Title,
 		Text:  request.Text,
@@ -236,33 +228,63 @@ func projectSettingsRequest(request platform.SettingsDialogRequest) (SettingsSna
 			ID: server.ID, Name: server.Name, Address: server.Address, Realm: server.Realm, ClientID: server.ClientID,
 			SessionTimeoutMin: server.SessionTimeoutMin, CanSetSessionTimeout: server.CanSetSessionTimeout,
 			Actions: []SettingsActionProjection{},
-			Folders: make([]SettingsFolderProjection, 0, len(server.Folders)),
 		},
 	}
-	if server.CanSetRealmVisibility {
-		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogRealmVisibility), Label: "Widoczność strefy", Description: "Zdecyduj, czy inni właściciele mogą wskazać tę strefę jako odbiorcę grantu.", Tone: "primary"})
-	}
-	if server.CanSetRealmBranding {
-		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogRealmBranding), Label: "Wygląd udziałów publicznych", Description: "Ustaw nazwę, kolory i znak prezentowany odbiorcom linków.", Tone: "primary"})
-	}
-	if server.CanClaimRealmAlias {
-		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogRealmAlias), Label: "Ustaw stały alias", Description: "Nadaj strefie niezmienny pseudonim używany przy blokadach i współdzieleniu.", Tone: "primary"})
-	}
-	if server.CanPairMobile {
-		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogPairMobile), Label: "Sparuj urządzenie mobilne", Description: "Wygeneruj bezpieczny kod QR dla aplikacji FileES na telefonie.", Tone: "primary"})
-	}
-	if server.CanAddFolder {
-		projection.Server.Actions = append(projection.Server.Actions, SettingsActionProjection{ID: string(platform.SettingsDialogAddFolder), Label: "Dodaj folder do FileES", Description: "Utwórz repozytorium z wybranego lokalnego folderu.", Tone: "primary"})
-	}
-	projection.Server.Actions = append(projection.Server.Actions,
-		SettingsActionProjection{ID: string(platform.SettingsDialogDetachServer), Label: "Dezaktywuj tego klienta", Description: "Odłącz wyłącznie tę instalację; inne klienty i dane strefy pozostaną aktywne.", Tone: "warning"},
-		SettingsActionProjection{ID: string(platform.SettingsDialogRemoveRealm), Label: "Usuń mój udział z serwera", Description: "Usuń repozytoria strefy, cofnij granty i przygotuj pakiet odzyskiwania.", Tone: "danger"},
-	)
-	for _, folder := range server.Folders {
-		projection.Server.Folders = append(projection.Server.Folders, SettingsFolderProjection{
-			ID: folder.ID, Name: folder.Name, LocalPath: folder.LocalPath,
-			State: folder.State, Access: folder.Access, Editing: folder.Editing,
-		})
+	for _, action := range wizardServer.Actions {
+		if action.ID == string(platform.SettingsDialogSessionTimeout) || action.ID == string(platform.SettingsDialogPairMobile) || action.NeedsFolder {
+			continue
+		}
+		projection.Server.Actions = append(projection.Server.Actions, projectSettingsAction(action))
 	}
 	return projection, strings.TrimSpace(projection.Server.ID) != ""
+}
+
+func projectSettingsAction(action platform.SettingsWizardAction) SettingsActionProjection {
+	projection := SettingsActionProjection{ID: action.ID, Label: action.Label, Description: settingsActionDescription(action.Action), Tone: "primary"}
+	switch action.Action {
+	case platform.SettingsDialogDetachFolder, platform.SettingsDialogDetachServer:
+		projection.Tone = "warning"
+	case platform.SettingsDialogDeleteRepo, platform.SettingsDialogRemoveRealm:
+		projection.Tone = "danger"
+	}
+	return projection
+}
+
+func settingsActionDescription(action platform.SettingsDialogAction) string {
+	switch action {
+	case platform.SettingsDialogRealmVisibility:
+		return "Zdecyduj, czy inne strefy mogą wskazać tę strefę jako odbiorcę grantu."
+	case platform.SettingsDialogRealmBranding:
+		return "Ustaw nazwę, kolory i znak prezentowany odbiorcom linków."
+	case platform.SettingsDialogRealmAlias:
+		return "Nadaj strefie niezmienny pseudonim używany przy blokadach i współdzieleniu."
+	case platform.SettingsDialogPairMobile:
+		return "Wygeneruj bezpieczny kod QR dla aplikacji FileES na telefonie."
+	case platform.SettingsDialogAddFolder:
+		return "Utwórz repozytorium z wybranego lokalnego folderu."
+	case platform.SettingsDialogConnectRepos:
+		return "Połącz tę instalację z istniejącym repozytorium strefy."
+	case platform.SettingsDialogLocateFolder:
+		return "Wskaż przeniesioną kopię roboczą zawierającą pasujące .svn."
+	case platform.SettingsDialogManageGrants:
+		return "Nadaj lub cofnij dostęp innych stref do tego repozytorium."
+	case platform.SettingsDialogEditingPolicy:
+		return "Wybierz edycję swobodną albo wymagającą wypożyczenia pliku."
+	case platform.SettingsDialogPublicShares:
+		return "Twórz i zarządzaj publicznymi adresami do pobierania."
+	case platform.SettingsDialogUploadChannels:
+		return "Zarządzaj półkami, na które odbiorcy mogą przesyłać pliki."
+	case platform.SettingsDialogDetachFolder:
+		return "Usuń lokalne powiązanie bez kasowania repozytorium na serwerze."
+	case platform.SettingsDialogDeleteRepo:
+		return "Odłącz i usuń repozytorium zgodnie z polityką retencji."
+	case platform.SettingsDialogLoadDump:
+		return "Odtwórz zawartość repozytorium z archiwum SVN."
+	case platform.SettingsDialogDetachServer:
+		return "Odłącz wyłącznie tę instalację; dane strefy pozostaną aktywne."
+	case platform.SettingsDialogRemoveRealm:
+		return "Usuń repozytoria strefy, cofnij granty i przygotuj odzyskiwanie."
+	default:
+		return "Wykonaj działanie w aktualnym kontekście FileES."
+	}
 }

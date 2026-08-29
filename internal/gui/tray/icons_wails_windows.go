@@ -20,6 +20,8 @@ var (
 	wailsWindowsOffline []byte
 	//go:embed assets/linux/error.png
 	wailsWindowsError []byte
+	//go:embed assets/linux/shout.png
+	wailsWindowsShout []byte
 	//go:embed assets/linux/disconnected.png
 	wailsWindowsDisconnected []byte
 )
@@ -32,6 +34,7 @@ func WailsPlatformIcons() IconSet {
 		app.IconBusy:         wailsWindowsBusy,
 		app.IconOffline:      wailsWindowsOffline,
 		app.IconError:        wailsWindowsError,
+		app.IconShout:        wailsWindowsShout,
 		app.IconDisconnected: wailsWindowsDisconnected,
 	}
 }

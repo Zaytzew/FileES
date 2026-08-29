@@ -24,10 +24,11 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 			LocalPath: `E:\Projekt`, Attached: true, Access: contract.AccessReadWrite,
 			State: contract.StateActive, Connectivity: contract.ConnOnline,
 			LocalRev: 7, HeadRev: 8, CurrentOp: &operation,
+			WorkingCopyBytes: 8192, WorkingCopySizeKnown: true,
 			Pending: contract.PendingStats{Added: 1, Modified: 2, Deleted: 3, TotalBytes: 4096},
 		}},
 		Servers: []guiapp.ServerViewModel{{ID: "server-1", DisplayName: "Spot"}},
-		Notices: []guiapp.NoticeViewModel{{ID: "notice-1", RepoID: "repo-1", Title: "Wydanie r8", CreatedAt: refreshed.Format(time.RFC3339)}},
+		Notices: []guiapp.NoticeViewModel{{ID: "notice-1", RepoID: "repo-1", Revision: 8, Title: "Wydanie r8", CreatedAt: refreshed.Format(time.RFC3339)}},
 	}
 
 	got := projectViewModel(vm)
@@ -41,10 +42,10 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 		t.Fatalf("repositories = %#v", got.Repositories)
 	}
 	repo := got.Repositories[0]
-	if repo.PendingFiles != 6 || repo.PendingBytes != 4096 || repo.CurrentOperation != "commit" || repo.DisplayState != "busy" || !repo.CanPublish {
+	if repo.PendingFiles != 6 || repo.PendingBytes != 4096 || repo.WorkingCopyBytes != 8192 || !repo.WorkingCopySizeKnown || repo.CurrentOperation != "commit" || repo.DisplayState != "busy" || !repo.CanPublish {
 		t.Fatalf("repository projection = %+v", repo)
 	}
-	if len(got.Notices) != 1 || !got.Notices[0].CanAck || got.Notices[0].Title != "Wydanie r8" {
+	if len(got.Notices) != 1 || !got.Notices[0].CanAck || got.Notices[0].Revision != 8 || got.Notices[0].Title != "Wydanie r8" {
 		t.Fatalf("shout projection = %+v", got.Notices)
 	}
 }
@@ -91,6 +92,45 @@ func TestDeletedRepositoryProjectsRetentionAndRecoveryIntent(t *testing.T) {
 	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentDownloadRecovery), RepoID: "gone"})
 	if !allowed || intent.Kind != tray.IntentDownloadRecovery || intent.RecoveryOperationID != "delete-op" || intent.ServerID != "spot" {
 		t.Fatalf("recovery intent=%+v allowed=%v", intent, allowed)
+	}
+}
+
+func TestGlobalPairingIntentUsesActiveProjectionAsPlaceholder(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected:    true,
+		Capabilities: map[string]bool{contract.CapMobilePairingBegin: true},
+		Servers:      []guiapp.ServerViewModel{{ID: "spot"}, {ID: "archive"}},
+	}
+	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentPairMobileDevice)})
+	if !allowed || intent.Kind != tray.IntentPairMobileDevice || intent.ServerID != "spot" {
+		t.Fatalf("pairing intent=%+v allowed=%v", intent, allowed)
+	}
+	vm.Stale = true
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentPairMobileDevice)}); allowed {
+		t.Fatal("stale projection allowed mobile pairing")
+	}
+}
+
+func TestUnattachedStatePillTranslatesToDirectAttach(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoAttachIntent:  true,
+			contract.CapRepoAttachApprove: true,
+		},
+		Servers: []guiapp.ServerViewModel{{ID: "spot"}},
+		Repos: []guiapp.RepoViewModel{{
+			ID: "docs", ServerID: "spot", State: contract.StateUnattached,
+		}},
+	}
+	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentAttachRepository), RepoID: "docs"})
+	if !allowed || intent.Kind != tray.IntentAttachRepository || intent.RepoID != "docs" || intent.ServerID != "spot" {
+		t.Fatalf("attach intent=%+v allowed=%v", intent, allowed)
+	}
+	vm.Repos[0].Attached = true
+	vm.Repos[0].LocalPath = "/wc/docs"
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentAttachRepository), RepoID: "docs"}); allowed {
+		t.Fatal("attached repository accepted direct attach")
 	}
 }
 
@@ -222,6 +262,11 @@ func TestTriggerTranslatesOnlyEligibleClosedSetActions(t *testing.T) {
 	}
 	if intent := <-actions; intent.Kind != tray.IntentAckNotice || intent.NoticeID != "notice-1" {
 		t.Fatalf("notice intent = %+v", intent)
+	}
+	service.view.Notices[0].Acked = true
+	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentAckNotice), NoticeID: "notice-1"})
+	if accepted.Accepted {
+		t.Fatalf("acknowledged notice accepted again: %+v", accepted)
 	}
 	accepted = service.Trigger(ActionRequest{Kind: string(tray.IntentReleaseReservation), ReservationID: "opaque-row"})
 	if !accepted.Accepted {

@@ -37,16 +37,6 @@ function render(snapshot) {
 	const actions = server.actions || [];
 	$("#server-actions-card").hidden = actions.length === 0;
 	$("#server-actions").innerHTML = actions.map((action) => `<button class="server-action ${escapeHTML(action.tone)}" type="button" data-server-action="${escapeHTML(action.id)}"><span><strong>${escapeHTML(action.label)}</strong><small>${escapeHTML(action.description)}</small></span><i aria-hidden="true">›</i></button>`).join("");
-
-  const folders = server.folders || [];
-  $("#folder-count").textContent = folders.length;
-  $("#settings-folders").innerHTML = folders.length ? folders.map((folder) => `<article class="folder-row">
-    <span class="folder-icon" aria-hidden="true">▰</span>
-    <div class="folder-name"><strong title="${escapeHTML(folder.name)}">${escapeHTML(folder.name || folder.id)}</strong><small title="${escapeHTML(folder.local_path)}">${escapeHTML(folder.local_path || "brak lokalnego folderu")}</small></div>
-    <div class="folder-fact"><small>Stan</small><span>${escapeHTML(folder.state || "nieznany")}</span></div>
-    <div class="folder-fact"><small>Dostęp</small><span>${escapeHTML(folder.access || "nieznany")}</span></div>
-    <div class="folder-fact editing"><small>Edycja</small><span>${escapeHTML(folder.editing || "nieznana")}</span></div>
-  </article>`).join("") : '<p class="empty">Brak folderów do pokazania.</p>';
   if (contextChanged) window.requestAnimationFrame(() => window.scrollTo(0, 0));
 }
 

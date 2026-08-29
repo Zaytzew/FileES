@@ -23,7 +23,11 @@ const actionErrors = {
 };
 
 let currentSnapshot = null;
+let selectedAnnouncementID = "";
+let announcementAckPending = "";
+let announcementReturnFocus = null;
 const renderedHTML = new WeakMap();
+const expandedServers = new Set();
 const initialWindowWidth = 1180;
 const autoFit = {
   enabled: true,
@@ -44,19 +48,48 @@ function recordNumber(value, key) {
   return Number(value?.[key] ?? value?.[key.toLowerCase()] ?? 0);
 }
 
+function renderedTextWidth(node) {
+  if (!node) return 0;
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const width = range.getBoundingClientRect().width;
+  range.detach?.();
+  return width;
+}
+
 function prepareRepositoryWidths() {
   const rows = [...document.querySelectorAll(".repo-row")];
-  // Every row in every server panel must use the same first-column width.
-  // Per-row sizing made revision, queue, state and action cells visibly drift
-  // as repository names changed between daemon ticks.
-  const compactMinimum = window.innerWidth <= 800 ? 210 : window.innerWidth <= 900 ? 220 : 250;
-  const naturalTitleWidth = rows.reduce((largest, row) => {
-    const name = row.querySelector(".repo-name strong");
-    return Math.max(largest, name ? Math.ceil(name.scrollWidth) + 58 : 0);
-  }, compactMinimum);
-  const titleWidth = Math.max(compactMinimum, Math.min(390, naturalTitleWidth));
+  const compactMinimum = window.innerWidth <= 800 ? 220 : window.innerWidth <= 900 ? 230 : 240;
   document.querySelectorAll(".server-folders").forEach((panel) => {
+    const panelRows = [...panel.querySelectorAll(".repo-row")];
+    const titleWidth = panelRows.reduce((largest, row) => {
+      const open = row.querySelector(".repo-open");
+      const name = row.querySelector(".repo-name strong");
+      // Only the user-facing folder name defines the identity column. The
+      // secondary absolute path is allowed to ellipsise inside that width;
+      // treating it as a minimum used to push the realm counter and size
+      // column outside an otherwise wide enough full-screen panel.
+      // A block's scrollWidth includes the grid width assigned during the
+      // previous pass. Feeding it back into --repo-title-min made the panel
+      // grow on every daemon snapshot. A DOM range measures only the rendered
+      // glyphs, so identical repository names now produce a stable minimum.
+      const nameWidth = renderedTextWidth(name);
+      const natural = (open?.getBoundingClientRect().width || 0) + nameWidth + 9;
+      return Math.max(largest, Math.ceil(natural));
+    }, compactMinimum);
+    const actionsWidth = panelRows.reduce((largest, row) => {
+      const tools = row.querySelector(".repo-tools");
+      if (!tools) return largest;
+      const buttons = [...tools.children];
+      const natural = buttons.reduce((total, button) => total + button.getBoundingClientRect().width, 0)
+        + Math.max(0, buttons.length - 1) * 5;
+      return Math.max(largest, Math.ceil(natural));
+    }, 0);
+    // Folder names are identifiers, not prose. Keep them whole and let this
+    // surface scroll if necessary; only the subordinate path may ellipsise.
+    // Actions reserve only buttons that exist in this server panel.
     panel.style.setProperty("--repo-title-min", `${titleWidth}px`);
+    panel.style.setProperty("--repo-actions-column", `${Math.max(44, actionsWidth)}px`);
   });
   return rows;
 }
@@ -150,25 +183,25 @@ function shortDateTime(value) {
   if (!value) return "czas nieznany";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function renderConnection(snapshot) {
-  const node = $("#connection");
-  const label = node.querySelector(".connection-label");
-  node.className = "connection";
+  const core = $("#pulse-core");
+  core.className = "pulse-core";
+  let connectionLabel = "Demon jest rozłączony";
   if (snapshot.connected && !snapshot.stale) {
-    node.classList.add("is-online");
-    label.textContent = "Połączono";
+    core.classList.add("is-online");
+    connectionLabel = "Połączenie z demonem jest aktywne";
   } else if (snapshot.connected) {
-    node.classList.add("is-stale");
-    label.textContent = "Odświeżanie";
+    core.classList.add("is-stale");
+    connectionLabel = "Demon odświeża projekcję";
   } else {
-    node.classList.add("is-offline");
-    label.textContent = "Rozłączono";
+    core.classList.add("is-offline");
   }
   $("#offline").hidden = Boolean(snapshot.connected);
-  $("#pulse-core").classList.toggle("is-error", !snapshot.connected || snapshot.icon_state === "error");
+  $("#pulse-card").dataset.connection = snapshot.connected && !snapshot.stale ? "online" : snapshot.connected ? "stale" : "offline";
+  $("#pulse-card").dataset.connectionLabel = connectionLabel;
 }
 
 function renderMetrics(snapshot) {
@@ -176,7 +209,8 @@ function renderMetrics(snapshot) {
   const pending = repos.reduce((sum, repo) => sum + Number(repo.pending_files || 0), 0);
   const pendingBytes = repos.reduce((sum, repo) => sum + Number(repo.pending_bytes || 0), 0);
   const conflicts = repos.reduce((sum, repo) => sum + Number(repo.conflicts || 0), 0);
-  const attention = conflicts + (snapshot.notices?.length || 0) + (snapshot.errors?.length || 0);
+  const unreadAnnouncements = (snapshot.notices || []).filter((notice) => !notice.acked).length;
+  const attention = conflicts + unreadAnnouncements + (snapshot.errors?.length || 0);
 
   $("#metric-servers").textContent = snapshot.servers?.length ?? 0;
   $("#metric-repos").textContent = repos.length;
@@ -185,8 +219,13 @@ function renderMetrics(snapshot) {
   $("#metric-attention").textContent = attention;
   $("#pulse-value").textContent = repos.length;
   $("#pulse-label").textContent = plural(repos.length, "repozytorium", "repozytoria", "repozytoriów");
+  $("#pulse-card").classList.toggle("has-attention", attention > 0);
+  const connectionLabel = $("#pulse-card").dataset.connectionLabel || "Stan połączenia nieznany";
+  $("#pulse-card").title = attention > 0
+    ? `${connectionLabel}. ${attention} ${plural(attention, "uwaga", "uwagi", "uwag")} do sprawdzenia.`
+    : `${connectionLabel}. Repozytoria nie wymagają uwagi.`;
   $("#hero-copy").textContent = snapshot.connected
-    ? `FileES opiekuje się ${repos.length} ${plural(repos.length, "folderem", "folderami", "folderami")} na ${snapshot.servers?.length || 0} ${plural(snapshot.servers?.length || 0, "serwerze", "serwerach", "serwerach")}. Zmiany i działania pojawiają się tutaj na bieżąco.`
+    ? "Zmiany i działania pojawiają się tutaj na bieżąco."
     : "Połączenie jest chwilowo niedostępne. Panel zachowuje ostatni znany stan i odświeży się automatycznie.";
 }
 
@@ -216,36 +255,58 @@ function updateRetentionCountdowns() {
   });
 }
 
+const repoIcons = {
+  lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+  unlock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M9 10V7a4 4 0 0 1 7.5-2"/></svg>',
+  publish: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11v2a2 2 0 0 0 2 2h2l4 4V5L7 9H5a2 2 0 0 0-2 2Z"/><path d="M15 8a5 5 0 0 1 0 8M18 5a9 9 0 0 1 0 14"/></svg>',
+  recovery: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 5 3 3v2H7v-2l3-3-1-5M12 13v8"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>',
+};
+
+function repoAction(action, label, icon, extraClass = "") {
+  return `<button class="repo-icon-action hint-button ${extraClass}" type="button" data-action="${escapeHTML(action)}" data-hint="${escapeHTML(label)}" aria-label="${escapeHTML(label)}">${icon}</button>`;
+}
+
 function renderRepo(repo) {
   const state = repo.display_state || "unknown";
   const deleted = Boolean(repo.server_deleted);
-  const revision = deleted
-    ? `<span data-retain-until="${escapeHTML(repo.retain_until)}"></span>`
-    : escapeHTML(repo.attached ? `r${repo.local_revision || 0} / r${repo.head_revision || 0}` : "zdalny");
   const pending = deleted
     ? (repo.recovery_pending && repo.local_cleanup_pending ? "archiwum i czyszczenie czekają" : repo.recovery_pending ? "wydanie archiwum czeka" : repo.local_cleanup_pending ? "czyszczenie lokalne czeka" : "folder odłączony")
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");
-  // Transport URLs are daemon internals, not useful (or safe) UI labels.
   const source = repo.local_path || (repo.attached ? "Folder FileES" : "Folder zdalny");
   const actions = [
-    repo.can_open ? '<button class="repo-action" data-action="open_folder" title="Otwórz lokalny folder">Otwórz</button>' : "",
-    repo.recovery_available ? '<button class="repo-action mutate" data-action="download_recovery" title="Pobierz archiwum usuniętego repozytorium">Pobierz archiwum</button>' : "",
-    repo.can_lock ? '<button class="repo-action mutate" data-action="lock" title="Wybierz i zablokuj pliki">Zablokuj</button>' : "",
-    repo.can_unlock ? '<button class="repo-action mutate" data-action="unlock" title="Wybierz i zwolnij blokady">Zwolnij</button>' : "",
-    repo.can_publish ? '<button class="repo-action mutate" data-action="publish" title="Zapisz zmiany i ogłoś wydanie zespołowi">Opublikuj</button>' : "",
-    deleted ? "" : `<button class="repo-settings" data-action="settings" title="Działania dla folderu" aria-label="Działania dla folderu ${escapeHTML(repo.display_name || repo.id)}">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
-    </button>`,
+    !deleted && !repo.attached ? repoAction("attach_repository", "Połącz z lokalnym folderem", repoIcons.pin, "attach") : "",
+    repo.recovery_available ? repoAction("download_recovery", "Pobierz archiwum", repoIcons.recovery, "recovery") : "",
+    repo.can_lock ? repoAction("lock", "Zablokuj pliki", repoIcons.lock, "mutate") : "",
+    repo.can_unlock ? repoAction("unlock", "Zwolnij blokady", repoIcons.unlock, "mutate") : "",
+    repo.can_publish ? repoAction("publish", "Opublikuj zmiany", repoIcons.publish, "publish") : "",
   ].join("");
+  const stateLabel = stateLabels[state] || state;
+  const disconnected = repo.connectivity !== "online" || ["offline", "unattached", "disabled", "revoked", "unknown"].includes(state);
+  const stateOverlay = disconnected
+    ? '<span class="repo-state-overlay" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M5.2 10.8 3.8 12.2a2 2 0 0 1-2.8-2.8l2.1-2.1M10.8 5.2l1.4-1.4A2 2 0 0 1 15 6.6l-2.1 2.1"/></svg></span>'
+    : state === "attention"
+      ? '<span class="repo-state-overlay is-attention" aria-hidden="true">!</span>'
+      : state === "busy"
+        ? '<span class="repo-state-overlay is-busy" aria-hidden="true"></span>'
+        : "";
+  const iconContents = `<span class="repo-icon" aria-hidden="true">${stateOverlay}</span>`;
+  const open = repo.can_open
+    ? `<button class="repo-open hint-button state-${escapeHTML(state)}" type="button" data-action="open_folder" data-hint="Otwórz folder · ${escapeHTML(stateLabel)}" aria-label="Otwórz folder · ${escapeHTML(stateLabel)}">${iconContents}</button>`
+    : `<span class="repo-open is-disabled state-${escapeHTML(state)}" title="${escapeHTML(stateLabel)}" aria-label="${escapeHTML(stateLabel)}">${iconContents}</span>`;
+  const settings = deleted ? "" : repoAction("settings", "Ustawienia folderu", repoIcons.settings, "repo-settings");
+  const size = repo.attached && repo.working_copy_size_known && Number.isFinite(Number(repo.working_copy_bytes ?? 0))
+    ? bytes(repo.working_copy_bytes ?? 0)
+    : "—";
   return `<article class="repo-row" data-repo-id="${escapeHTML(repo.id)}">
-    <div class="repo-title"><span class="repo-icon" aria-hidden="true"></span><div class="repo-name">
-      <strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong>
-      <small title="${escapeHTML(source)}">${escapeHTML(source)}</small>
-    </div></div>
-    <div class="repo-meta repo-revision"><small>${deleted ? "Czas na pobranie" : "Rewizja"}</small><span>${revision}</span></div>
+    <div class="repo-title">
+      ${open}
+      <div class="repo-name"><strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small></div>
+    </div>
     <div class="repo-meta repo-queue"><small>${deleted ? "Stan lokalny" : "Kolejka"}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
-    <span class="state-pill ${escapeHTML(state)}">${escapeHTML(stateLabels[state] || state)}</span>
-    <div class="repo-actions">${actions}</div>
+    <div class="repo-tools">${settings}${actions}</div>
+    <div class="repo-meta repo-size"><small>Rozmiar</small><span>${escapeHTML(size)}</span></div>
   </article>`;
 }
 
@@ -260,10 +321,10 @@ function renderRepoGroup(label, repos, className = "") {
 function renderRepositories(snapshot) {
   const root = $("#repositories");
   const repos = snapshot.repositories || [];
-  if (!repos.length) {
+  const servers = [...(snapshot.servers || [])];
+  if (!servers.length && !repos.length) {
     return replaceHTMLIfChanged(root, '<div class="empty-state"><span>◌</span><p>Nie ma jeszcze folderów do pokazania.</p></div>');
   }
-  const servers = [...(snapshot.servers || [])];
   const known = new Set(servers.map((server) => server.id));
   repos.forEach((repo) => {
     if (!known.has(repo.server_id)) {
@@ -273,15 +334,19 @@ function renderRepositories(snapshot) {
   });
   const html = servers.map((server) => {
     const serverRepos = repos.filter((repo) => repo.server_id === server.id);
-    if (!serverRepos.length) return "";
     const deleted = serverRepos.filter((repo) => repo.server_deleted);
-    const activeRepos = serverRepos.filter((repo) => !repo.server_deleted);
-    const owned = activeRepos.filter((repo) => repo.ownership === "owned");
-    const guest = activeRepos.filter((repo) => repo.ownership === "guest");
-    const unclassified = activeRepos.filter((repo) => !["owned", "guest"].includes(repo.ownership));
+    const attached = serverRepos.filter((repo) => !repo.server_deleted && repo.attached);
+    const remote = serverRepos.filter((repo) => !repo.server_deleted && !repo.attached);
+    const owned = attached.filter((repo) => repo.ownership === "owned");
+    const guest = attached.filter((repo) => repo.ownership === "guest");
+    const unclassified = attached.filter((repo) => !["owned", "guest"].includes(repo.ownership));
     const context = server.realm_alias || server.address || server.id;
-    return `<article class="server-panel" data-server-id="${escapeHTML(server.id)}">
-      <header class="server-header">
+    const expanded = expandedServers.has(server.id);
+    const attention = serverRepos.some((repo) => repo.display_state === "attention" || Number(repo.conflicts || 0) > 0)
+      || (snapshot.errors || []).some((error) => serverRepos.some((repo) => repo.id === error.repo_id))
+      || (snapshot.notices || []).some((notice) => !notice.acked && serverRepos.some((repo) => repo.id === notice.repo_id));
+    return `<article class="server-panel ${attention ? "has-attention" : ""}" data-server-id="${escapeHTML(server.id)}">
+      <header class="server-header" data-toggle-server="${escapeHTML(server.id)}" tabindex="0" role="button" aria-expanded="${expanded}" aria-controls="server-folders-${escapeHTML(server.id)}">
         <div class="server-identity"><span class="server-mark" aria-hidden="true"></span><div>
           <div class="server-title-line">
             <h3>${escapeHTML(server.display_name || server.id)}</h3>
@@ -291,14 +356,15 @@ function renderRepositories(snapshot) {
           </div>
           <p title="${escapeHTML(context)}">${escapeHTML(context)}</p>
         </div></div>
-        <span class="server-total">${serverRepos.length} ${plural(serverRepos.length, "folder", "foldery", "folderów")}</span>
+        <div class="server-summary"><span class="server-total">${serverRepos.length} ${plural(serverRepos.length, "folder", "foldery", "folderów")}</span><span class="server-chevron" aria-hidden="true">⌄</span></div>
       </header>
-      <div class="server-folders">
-        <div class="repo-columns" aria-hidden="true"><span>Folder</span><span class="column-revision">Rewizja</span><span class="column-queue">Kolejka</span><span>Stan</span><span>Akcje</span></div>
-        ${renderRepoGroup("Własne", owned, "owned")}
-        ${renderRepoGroup("Gościnne · udostępnione przez inne zespoły", guest, "guest")}
-        ${renderRepoGroup("Pozostałe", unclassified, "unclassified")}
-        ${renderRepoGroup("Usunięte · archiwa", deleted, "deleted")}
+      <div id="server-folders-${escapeHTML(server.id)}" class="server-folders" ${expanded ? "" : "hidden"}>
+        ${serverRepos.length ? `<div class="repo-columns" aria-hidden="true"><span>Folder</span><span class="column-queue">Kolejka</span><span>Akcje</span><span>Rozmiar</span></div>
+          ${renderRepoGroup("Własne", owned, "owned")}
+          ${renderRepoGroup("Gościnne · udostępnione przez inne zespoły", guest, "guest")}
+          ${renderRepoGroup("Pozostałe", unclassified, "unclassified")}
+          ${renderRepoGroup("Usunięte · archiwa", deleted, "deleted")}
+          ${renderRepoGroup("Zdalne", remote, "remote")}` : '<p class="server-empty">Ten serwer nie udostępnia jeszcze żadnego folderu.</p>'}
       </div>
     </article>`;
   }).join("");
@@ -360,24 +426,110 @@ function renderShouts(snapshot) {
   const card = $("#shouts-card");
   const root = $("#shouts");
   const notices = snapshot.notices || [];
+  const unread = notices.filter((notice) => !notice.acked).length;
   card.hidden = notices.length === 0;
-  $("#shouts-count").textContent = notices.length;
+  card.classList.toggle("has-unread", unread > 0);
+  $("#shouts-count").textContent = unread
+    ? `${unread} ${plural(unread, "ogłoszenie", "ogłoszenia", "ogłoszeń")} do przejrzenia`
+    : "przeczytane";
   if (!notices.length) {
     replaceHTMLIfChanged(root, "");
+    renderAnnouncementDialog(snapshot);
     return;
   }
   const repositories = new Map((snapshot.repositories || []).map((repo) => [repo.id, repo.display_name || repo.id]));
-  const html = notices.map((notice) => {
+  const html = notices.slice(0, 5).map((notice) => {
     const repository = repositories.get(notice.repo_id) || notice.repo_id || "FileES";
-    const action = notice.can_ack
-      ? '<button class="shout-action" data-action="ack_notice">Przeczytane</button>'
-      : "";
-    return `<article class="shout-row" data-notice-id="${escapeHTML(notice.id)}">
-      <div class="shout-main"><strong>${escapeHTML(notice.title || "Nowe wydanie")}</strong>
-      <p>${escapeHTML(repository)}</p><time>${escapeHTML(shortDateTime(notice.created_at))}</time></div>${action}
-    </article>`;
+    const revision = Number(notice.revision || 0) > 0 ? ` · r${Number(notice.revision)}` : "";
+    const state = notice.acked ? "Przeczytane" : "Do przejrzenia";
+    return `<button class="shout-row ${notice.acked ? "is-read" : "is-unread"}" type="button" data-notice-id="${escapeHTML(notice.id)}" aria-label="Otwórz ogłoszenie: ${escapeHTML(notice.title)}">
+      <span class="shout-symbol" aria-hidden="true">${repoIcons.publish}</span>
+      <span class="shout-main"><strong>${escapeHTML(notice.title || "Ogłoszenie")}</strong>
+      <span>${escapeHTML(repository + revision)}</span><time>odebrano ${escapeHTML(shortDateTime(notice.created_at))}</time></span>
+      <span class="shout-state">${state}</span>
+    </button>`;
   }).join("");
   replaceHTMLIfChanged(root, html);
+  renderAnnouncementDialog(snapshot);
+}
+
+function announcementScope(snapshot, notice) {
+  const repo = (snapshot.repositories || []).find((item) => item.id === notice.repo_id);
+  const server = (snapshot.servers || []).find((item) => item.id === repo?.server_id);
+  const repository = repo?.display_name || notice.repo_id || "FileES";
+  const serverName = server?.display_name || server?.realm_alias || server?.id || "";
+  return serverName ? `${serverName} · ${repository}` : repository;
+}
+
+function closeAnnouncement() {
+  $("#announcement-overlay").hidden = true;
+  selectedAnnouncementID = "";
+  announcementAckPending = "";
+  const target = announcementReturnFocus;
+  announcementReturnFocus = null;
+  if (target?.isConnected) target.focus();
+}
+
+function openAnnouncement(noticeID, focusOrigin = null) {
+  const notice = (currentSnapshot?.notices || []).find((item) => item.id === noticeID);
+  if (!notice) return;
+  selectedAnnouncementID = noticeID;
+  announcementReturnFocus = focusOrigin;
+  renderAnnouncementDialog(currentSnapshot);
+  $("#announcement-overlay").hidden = false;
+  (notice.can_ack ? $("#ack-announcement") : $("#close-announcement")).focus();
+}
+
+function openNewestUnreadAnnouncement() {
+  const notices = currentSnapshot?.notices || [];
+  const notice = notices.find((item) => !item.acked) || notices[0];
+  if (notice) openAnnouncement(notice.id);
+}
+
+function renderAnnouncementDialog(snapshot) {
+  if (!selectedAnnouncementID) return;
+  const notice = (snapshot.notices || []).find((item) => item.id === selectedAnnouncementID);
+  if (!notice || (announcementAckPending === notice.id && notice.acked)) {
+    closeAnnouncement();
+    return;
+  }
+  $("#announcement-copy").textContent = notice.title || "Ogłoszenie";
+  $("#announcement-repository").textContent = announcementScope(snapshot, notice);
+  const revision = $("#announcement-revision");
+  revision.hidden = !(Number(notice.revision || 0) > 0);
+  revision.textContent = revision.hidden ? "" : `rewizja r${Number(notice.revision)}`;
+  $("#announcement-time").textContent = `odebrano ${shortDateTime(notice.created_at)}`;
+  $("#announcement-status").textContent = notice.acked ? "Odczyt potwierdzony" : "Ogłoszenie wymaga potwierdzenia odczytu";
+  $(".announcement-dialog .eyebrow").textContent = notice.acked ? "Przeczytane" : "Wymaga uwagi";
+  const ack = $("#ack-announcement");
+  ack.hidden = !notice.can_ack;
+  ack.disabled = announcementAckPending === notice.id;
+  ack.textContent = ack.disabled ? "Potwierdzanie…" : "Potwierdź odczyt";
+}
+
+async function acknowledgeAnnouncement() {
+  const notice = (currentSnapshot?.notices || []).find((item) => item.id === selectedAnnouncementID);
+  if (!notice?.can_ack || announcementAckPending) return;
+  announcementAckPending = notice.id;
+  renderAnnouncementDialog(currentSnapshot);
+  try {
+    const result = await GUIService.Trigger({ kind: "ack_notice", notice_id: notice.id });
+    if (!result.accepted) {
+      announcementAckPending = "";
+      renderAnnouncementDialog(currentSnapshot);
+      showToast({ level: "normal", title: "Nie można potwierdzić odczytu", message: actionErrors[result.code] || result.code });
+      return;
+    }
+    window.setTimeout(() => {
+      if (announcementAckPending !== notice.id) return;
+      announcementAckPending = "";
+      renderAnnouncementDialog(currentSnapshot);
+    }, 8000);
+  } catch (error) {
+    announcementAckPending = "";
+    renderAnnouncementDialog(currentSnapshot);
+    showToast({ level: "critical", title: "Nie udało się potwierdzić odczytu", message: error?.message || String(error) });
+  }
 }
 
 function renderJournal(snapshot) {
@@ -403,6 +555,9 @@ function renderJournal(snapshot) {
 function render(snapshot) {
   if (!snapshot) return;
   currentSnapshot = snapshot;
+  const pairButton = $("#pair-mobile");
+  const capabilities = new Set(snapshot.capabilities || []);
+  pairButton.disabled = !snapshot.connected || snapshot.stale || !(snapshot.servers || []).length || !capabilities.has("mobile_pairing.begin");
   renderConnection(snapshot);
   renderMetrics(snapshot);
   const repositoriesChanged = renderRepositories(snapshot);
@@ -479,7 +634,9 @@ async function invoke(button, action) {
 
 Events.On("filees:snapshot", (event) => render(event?.data ?? event));
 Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
+Events.On("filees:open-announcement", openNewestUnreadAnnouncement);
 $("#activate").addEventListener("click", (event) => triggerAction(event.currentTarget));
+$("#pair-mobile").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#refresh").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Refresh));
 $("#reconnect").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Reconnect));
 $("#open-journal").addEventListener("click", () => {
@@ -491,19 +648,47 @@ $("#journal-overlay").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) event.currentTarget.hidden = true;
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("#journal-overlay").hidden) $("#journal-overlay").hidden = true;
+  if (event.key !== "Escape") return;
+  if (!$("#announcement-overlay").hidden) {
+    closeAnnouncement();
+    return;
+  }
+  if (!$("#journal-overlay").hidden) $("#journal-overlay").hidden = true;
 });
 $("#repositories").addEventListener("click", (event) => {
+  const toggle = event.target.closest("[data-toggle-server]");
+  if (toggle && !event.target.closest("button")) {
+    const serverID = toggle.dataset.toggleServer;
+    if (expandedServers.has(serverID)) expandedServers.delete(serverID);
+    else expandedServers.add(serverID);
+    if (renderRepositories(currentSnapshot)) scheduleWindowFit();
+    return;
+  }
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);
+});
+$("#repositories").addEventListener("keydown", (event) => {
+  const toggle = event.target.closest("[data-toggle-server]");
+  if (!toggle || !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  const serverID = toggle.dataset.toggleServer;
+  if (expandedServers.has(serverID)) expandedServers.delete(serverID);
+  else expandedServers.add(serverID);
+  if (renderRepositories(currentSnapshot)) scheduleWindowFit();
 });
 $("#reservations").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);
 });
 $("#shouts").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-action]");
-  if (button) triggerAction(button);
+  const button = event.target.closest("[data-notice-id]");
+  if (button) openAnnouncement(button.dataset.noticeId, button);
+});
+$("#close-announcement").addEventListener("click", closeAnnouncement);
+$("#dismiss-announcement").addEventListener("click", closeAnnouncement);
+$("#ack-announcement").addEventListener("click", acknowledgeAnnouncement);
+$("#announcement-overlay").addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) closeAnnouncement();
 });
 $("#update-actions").addEventListener("click", (event) => {
 	const button = event.target.closest("[data-action]");

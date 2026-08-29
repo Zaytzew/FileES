@@ -118,6 +118,25 @@ func TestRecoveryStatsSnapshotReadsWiredFuncLive(t *testing.T) {
 	}
 }
 
+func TestWorkingCopySizeSnapshotReadsBufferedWatcherValue(t *testing.T) {
+	rs := New(t.TempDir()+"/daemon.sock").RegisterRepoAccess("repo", "svn+ssh://host/repo", t.TempDir(), "server", contract.AccessReadWrite)
+	if snap := rs.Snapshot(); snap.WorkingCopySizeKnown || snap.WorkingCopyBytes != 0 {
+		t.Fatalf("working-copy size before wiring = %d/%v", snap.WorkingCopyBytes, snap.WorkingCopySizeKnown)
+	}
+	calls := 0
+	rs.SetWorkingCopySizeFunc(func() (int64, bool) {
+		calls++
+		return 12345, true
+	})
+	snap := rs.Snapshot()
+	if !snap.WorkingCopySizeKnown || snap.WorkingCopyBytes != 12345 {
+		t.Fatalf("working-copy size = %d/%v", snap.WorkingCopyBytes, snap.WorkingCopySizeKnown)
+	}
+	if calls != 1 {
+		t.Fatalf("working-copy size callback called %d times, want once", calls)
+	}
+}
+
 func TestCycleSnapshotReadsDaemonOwnedSchedule(t *testing.T) {
 	rs := New(t.TempDir()+"/daemon.sock").RegisterRepoAccess("repo", "svn+ssh://host/repo", t.TempDir(), "server", contract.AccessReadWrite)
 	want := contract.CycleStatus{ID: 4, Phase: contract.CycleWaiting, LastTickAt: "2026-08-23T12:00:00Z", NextTickAt: "2026-08-23T12:05:00Z"}

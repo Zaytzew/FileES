@@ -76,8 +76,54 @@ func TestLastSeenAndInbox(t *testing.T) {
 	if err != nil || len(open) != 0 {
 		t.Fatalf("acked still open: %#v", open)
 	}
+	recent, err := RecentNotices(wc, 20)
+	if err != nil || len(recent) != 1 || !recent[0].Acked || recent[0].Revision != 18 {
+		t.Fatalf("recent history=%#v err=%v", recent, err)
+	}
 	if _, err := os.Stat(filepath.Join(wc, ".filees", "state", inboxName)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRecentNoticesBoundsReadHistoryButKeepsEveryUnread(t *testing.T) {
+	wc := t.TempDir()
+	records := make([]Record, 0, 9)
+	for i := 1; i <= 7; i++ {
+		records = append(records, Record{ID: NoticeID("docs", int64(i)), RepoID: "docs", Revision: int64(i), Title: "read", CreatedAt: time.Date(2026, 8, 17, 12, i, 0, 0, time.UTC).Format(time.RFC3339), Acked: true})
+	}
+	records = append(records,
+		Record{ID: NoticeID("docs", 8), RepoID: "docs", Revision: 8, Title: "unread-8", CreatedAt: "2026-08-17T13:08:00Z"},
+		Record{ID: NoticeID("docs", 9), RepoID: "docs", Revision: 9, Title: "unread-9", CreatedAt: "2026-08-17T13:09:00Z"},
+	)
+	if err := SaveInbox(wc, records); err != nil {
+		t.Fatal(err)
+	}
+	recent, err := RecentNotices(wc, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 5 {
+		t.Fatalf("recent=%#v", recent)
+	}
+	if recent[0].Revision != 5 || recent[2].Revision != 7 || recent[3].Revision != 8 || recent[3].Acked || recent[4].Revision != 9 || recent[4].Acked {
+		t.Fatalf("wrong bounded history=%#v", recent)
+	}
+	withoutHistory, err := RecentNotices(wc, 0)
+	if err != nil || len(withoutHistory) != 2 || withoutHistory[0].Revision != 8 || withoutHistory[1].Revision != 9 {
+		t.Fatalf("unread-only recent=%#v err=%v", withoutHistory, err)
+	}
+}
+
+func TestPruneAcknowledgedNeverDropsUnread(t *testing.T) {
+	inbox := []Record{
+		{ID: "read-old", Acked: true},
+		{ID: "unread-old"},
+		{ID: "read-new", Acked: true},
+		{ID: "unread-new"},
+	}
+	got := pruneAcknowledged(inbox, 1)
+	if len(got) != 3 || got[0].ID != "unread-old" || got[1].ID != "read-new" || got[2].ID != "unread-new" {
+		t.Fatalf("pruned=%#v", got)
 	}
 }
 

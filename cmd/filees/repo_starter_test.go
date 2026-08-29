@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
 	"errors"
 	"fmt"
 	"os"
@@ -352,7 +353,49 @@ func (f *recoveryClient) Status(context.Context, string, []string) ([]client.Sta
 	f.status++
 	return f.entries, f.statusErr
 }
-func (f *recoveryClient) Update(context.Context, string) (string, error) { f.update++; return "", nil }
+func (f *recoveryClient) Update(context.Context, string) (string, error)  { f.update++; return "", nil }
+func (f *recoveryClient) Revision(context.Context, string) (int64, error) { return 0, nil }
+
+func TestReadWriteStarterKeepsWorkingCopySizeProjectionUntilStop(t *testing.T) {
+	wc := t.TempDir()
+	stateDir := filepath.Join(wc, ".filees", "state")
+	if err := os.MkdirAll(filepath.Join(wc, ".svn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, 42)
+	path := filepath.Join(wc, "one.bin")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := md5.Sum(data)
+	manifest := fmt.Sprintf(`[{"path":".","mtime":0},{"path":"one.bin","mtime":%d,"size":42,"md5":"%x"},{"path":".filees/tickets","mtime":0}]`, info.ModTime().Unix(), digest)
+	if err := os.WriteFile(filepath.Join(stateDir, "manifest.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := ipcserver.New(t.TempDir() + "/sock")
+	state := server.RegisterRepoAccess("docs", "svn+ssh://example/docs", wc, "office", contract.AccessReadWrite)
+	repo := config.Repo{ID: "docs", RepoURL: "svn+ssh://example/docs", LocalPath: wc, Access: contract.AccessReadWrite, WatchInterval: time.Hour, PollInterval: time.Hour}
+	instance, err := startReadWrite(t.Context(), repoRuntime{config: repo, state: state}, &recoveryClient{}, reposupervisor.Desired{Key: reposupervisor.Key{ServerID: "office", RepoID: "docs"}}, readWriteDependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot := state.Snapshot(); !snapshot.WorkingCopySizeKnown || snapshot.WorkingCopyBytes != 42 {
+		t.Fatalf("live working-copy size = %d known=%v", snapshot.WorkingCopyBytes, snapshot.WorkingCopySizeKnown)
+	}
+	if err := instance.Stop(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot := state.Snapshot(); snapshot.WorkingCopySizeKnown {
+		t.Fatalf("stopped repository retained working-copy size callback: %+v", snapshot)
+	}
+}
 
 func TestReadWriteRecoveryDefersUpdateForMissingPathsOrStatusFailure(t *testing.T) {
 	for _, fake := range []*recoveryClient{{entries: []client.StatusEntry{{Path: "gone", Item: "missing"}}}, {statusErr: errors.New("status failed")}} {

@@ -19,11 +19,15 @@ function render(next) {
   snapshot = next;
   resolving = false;
   const inputMode = next.mode === "text";
+  const selectMode = next.mode === "select";
   const infoMode = next.mode === "info";
-  $("#prompt-mode").textContent = inputMode ? "Wprowadź dane" : infoMode ? "Informacja FileES" : "Potwierdź działanie";
+  $("#prompt-mode").textContent = inputMode ? "Wprowadź dane" : selectMode ? "Wybierz serwer" : infoMode ? "Informacja FileES" : "Potwierdź działanie";
   $("#prompt-title").textContent = next.title || "FileES";
   $("#prompt-text").textContent = next.text || "";
+  $("#prompt-label").textContent = next.label || "Wartość";
   $("#input-wrap").hidden = !inputMode;
+  $("#prompt-select-label").textContent = next.label || "Serwer";
+  $("#select-wrap").hidden = !selectMode;
   $("#prompt-cancel").hidden = infoMode;
   $("#prompt-cancel").textContent = next.cancel_text || "Anuluj";
   $("#prompt-confirm").textContent = next.confirm_text || "Dalej";
@@ -33,8 +37,17 @@ function render(next) {
   input.type = next.secret ? "password" : "text";
   input.placeholder = next.placeholder || "";
   input.value = next.default || "";
+  const select = $("#prompt-select");
+  select.replaceChildren(...(next.options || []).map((option) => {
+    const node = document.createElement("option");
+    node.value = option.value;
+    node.textContent = option.detail && option.detail !== option.label ? `${option.label} — ${option.detail}` : option.label;
+    return node;
+  }));
+  if (selectMode && next.default) select.value = next.default;
   document.title = next.title ? `${next.title} — FileES` : "FileES";
   if (inputMode) window.setTimeout(() => { input.focus(); input.select(); }, 80);
+  else if (selectMode) window.setTimeout(() => select.focus(), 80);
   else window.setTimeout(() => $("#prompt-confirm").focus(), 80);
 }
 
@@ -63,7 +76,8 @@ async function resolve(confirmed) {
   const resolvedRevision = snapshot.revision;
   setBusy(true);
   try {
-    const result = await PromptService.Resolve({revision: resolvedRevision, confirmed, value: $("#prompt-value").value});
+    const value = snapshot.mode === "select" ? $("#prompt-select").value : $("#prompt-value").value;
+    const result = await PromptService.Resolve({revision: resolvedRevision, confirmed, value});
     if (!result.accepted) throw new Error(result.code || "dialog_rejected");
     // The Go prompt service owns window visibility. A flow may publish the
     // next prompt immediately after Resolve(); hiding here could overtake that

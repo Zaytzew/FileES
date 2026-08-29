@@ -695,6 +695,15 @@ func (s *Service) OpenNotices() ([]contract.Notice, error) {
 	return shout.OpenNotices(s.wc)
 }
 
+// RecentNotices includes a bounded acknowledged tail for presentation while
+// preserving every unread announcement.
+func (s *Service) RecentNotices() ([]contract.Notice, error) {
+	if s.wc == "" {
+		return nil, nil
+	}
+	return shout.RecentNotices(s.wc, 20)
+}
+
 func (s *Service) AckNotice(id string) error {
 	if s.wc == "" {
 		return nil

@@ -17,6 +17,8 @@ var (
 	windowsOffline []byte
 	//go:embed assets/windows/error.ico
 	windowsError []byte
+	//go:embed assets/windows/shout.ico
+	windowsShout []byte
 	//go:embed assets/windows/disconnected.ico
 	windowsDisconnected []byte
 )
@@ -28,6 +30,7 @@ func PlatformIcons() IconSet {
 		app.IconBusy:         windowsBusy,
 		app.IconOffline:      windowsOffline,
 		app.IconError:        windowsError,
+		app.IconShout:        windowsShout,
 		app.IconDisconnected: windowsDisconnected,
 	}
 }

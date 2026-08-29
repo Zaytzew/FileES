@@ -36,6 +36,10 @@ var (
 
 const maxCommentRunes = 500
 
+// acknowledgedHistoryLimit bounds durable read history without ever dropping
+// an announcement that still requires an explicit acknowledgement.
+const acknowledgedHistoryLimit = 50
+
 // Format builds the svn:log message for a shouting commit.
 func Format(comment string) string {
 	return Marker + " " + strings.TrimSpace(comment)
@@ -193,7 +197,7 @@ func Ack(wc, noticeID string) error {
 	if !changed {
 		return nil
 	}
-	return SaveInbox(wc, inbox)
+	return SaveInbox(wc, pruneAcknowledged(inbox, acknowledgedHistoryLimit))
 }
 
 // OpenNotices returns unacked records as contract notices, newest last.
@@ -210,12 +214,69 @@ func OpenNotices(wc string) ([]contract.Notice, error) {
 		out = append(out, contract.Notice{
 			ID:        rec.ID,
 			RepoID:    rec.RepoID,
+			Revision:  rec.Revision,
 			CreatedAt: rec.CreatedAt,
 			Title:     rec.Title,
 			Acked:     false,
 		})
 	}
 	return out, nil
+}
+
+// RecentNotices returns every unread announcement and a bounded tail of the
+// acknowledged history. The daemon performs the final cross-repository sort
+// and limit; this function deliberately never lets read history evict unread
+// records.
+func RecentNotices(wc string, acknowledgedLimit int) ([]contract.Notice, error) {
+	inbox, err := LoadInbox(wc)
+	if err != nil {
+		return nil, err
+	}
+	if acknowledgedLimit < 0 {
+		acknowledgedLimit = 0
+	}
+	keepAcknowledged := make(map[int]bool, acknowledgedLimit)
+	for i, kept := len(inbox)-1, 0; i >= 0 && kept < acknowledgedLimit; i-- {
+		if inbox[i].Acked {
+			keepAcknowledged[i] = true
+			kept++
+		}
+	}
+	out := make([]contract.Notice, 0, len(inbox))
+	for i, rec := range inbox {
+		if rec.Acked && !keepAcknowledged[i] {
+			continue
+		}
+		out = append(out, contract.Notice{
+			ID: rec.ID, RepoID: rec.RepoID, Revision: rec.Revision,
+			CreatedAt: rec.CreatedAt, Title: rec.Title, Acked: rec.Acked,
+		})
+	}
+	return out, nil
+}
+
+func pruneAcknowledged(inbox []Record, limit int) []Record {
+	if limit < 0 {
+		limit = 0
+	}
+	keep := make([]bool, len(inbox))
+	for i, kept := len(inbox)-1, 0; i >= 0; i-- {
+		if !inbox[i].Acked {
+			keep[i] = true
+			continue
+		}
+		if kept < limit {
+			keep[i] = true
+			kept++
+		}
+	}
+	result := make([]Record, 0, len(inbox))
+	for i := range inbox {
+		if keep[i] {
+			result = append(result, inbox[i])
+		}
+	}
+	return result
 }
 
 // LogEntry is one svn log message (no changed-paths).

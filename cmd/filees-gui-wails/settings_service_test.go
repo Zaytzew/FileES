@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestSettingsServiceProjectsScopedServerAndReturnsValidatedChoice(t *testing
 		t.Fatal("settings window was not shown")
 	}
 	snapshot := service.Snapshot()
-	if snapshot.Revision != 1 || snapshot.Server.ID != "spot" || len(snapshot.Server.Folders) != 1 || !snapshot.Server.CanSetSessionTimeout {
+	if snapshot.Revision != 1 || snapshot.Server.ID != "spot" || !snapshot.Server.CanSetSessionTimeout {
 		t.Fatalf("settings snapshot = %+v", snapshot)
 	}
 	if got := service.Choose(SettingsChoice{Action: "session_timeout", ServerID: "other"}); got.Accepted || got.Code != "settings_context_changed" {
@@ -137,9 +138,13 @@ func TestSettingsServiceProjectsOnlyAuthorisedServerActions(t *testing.T) {
 	}
 }
 
-func TestSettingsServiceProjectsAliasAndMobilePairing(t *testing.T) {
+func TestSettingsServiceKeepsPairingOutOfServerWindow(t *testing.T) {
 	snapshot, ok := projectSettingsRequest(platform.SettingsDialogRequest{Servers: []platform.SettingsServer{{ID: "spot", CanClaimRealmAlias: true, CanPairMobile: true}}})
-	if !ok || len(snapshot.Server.Actions) != 4 || snapshot.Server.Actions[0].ID != "realm_alias" || snapshot.Server.Actions[1].ID != "pair_mobile" {
+	if !ok || len(snapshot.Server.Actions) != 3 || snapshot.Server.Actions[0].ID != "realm_alias" || snapshot.Server.Actions[1].ID != "detach_server" || snapshot.Server.Actions[2].ID != "remove_realm" {
 		t.Fatalf("alias/mobile actions = ok %v actions %+v", ok, snapshot.Server.Actions)
+	}
+	html, err := frontend.ReadFile("frontend/settings.html")
+	if err != nil || strings.Contains(string(html), "settings-folders") || strings.Contains(string(html), ">Foldery<") {
+		t.Fatalf("server settings still duplicate folders: %v", err)
 	}
 }

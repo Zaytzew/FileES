@@ -223,11 +223,9 @@ type NoticeAcker interface {
 	AckNotice(ctx context.Context, noticeID string) error
 }
 
-// MobilePairingLauncher fetches a mobile pairing token from the daemon and
-// hands it to the separate pairing-helper process, which renders it as a QR
-// code and handles its own PIN gate and UI - unlike RepositoryCreator, no
-// polling/outcome-tracking is needed here: the helper process is itself the
-// long-running, user-facing surface.
+// MobilePairingLauncher owns the complete protected presentation of a mobile
+// pairing token. Implementations may use the legacy helper or a native desktop
+// window; the shared controller deliberately does not handle the secret.
 type MobilePairingLauncher interface {
 	Launch(ctx context.Context, serverID string) error
 }
@@ -406,6 +404,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startReservations(ctx)
 	case tray.IntentCreateRepository:
 		c.startCreateRepository(ctx, intent.ServerID)
+	case tray.IntentAttachRepository:
+		c.startConnectRepositories(ctx, intent.ServerID, []string{intent.RepoID}, false)
 	case tray.IntentPairMobileDevice:
 		c.startPairMobileDevice(ctx, intent.ServerID)
 	case tray.IntentUpdatePlan:
@@ -2157,12 +2157,10 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 	}()
 }
 
-// startPairMobileDevice fetches a pairing token via MobilePairer and hands
-// off to the separate pairing-helper process. Unlike repository creation,
-// there is no daemon-side lifecycle to poll afterward: the helper process
-// itself owns the rest of the user-facing flow (PIN gate, QR rendering,
-// success/expiry), so this only reports whether the helper could be
-// launched at all.
+// startPairMobileDevice delegates the protected PIN/token/QR flow to the
+// selected desktop implementation. Unlike repository creation, there is no
+// daemon-side lifecycle to poll afterward; Launch owns the user-facing window
+// until it closes or the token expires.
 func (c *Controller) startPairMobileDevice(ctx context.Context, serverID string) {
 	key := "pair-mobile:" + serverID
 	if serverID == "" || c.cfg.MobilePairer == nil || !c.beginOperation(key) {

@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"fmt"
 	"strings"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	"filees/pkg/realmbranding"
 	"filees/public-shares/gate"
 	"github.com/google/uuid"
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 type actionRunner interface {
@@ -119,24 +119,28 @@ type mobilePairingClient interface {
 	MobilePairingBegin(context.Context, string) (*contract.MobilePairingBeginResult, error)
 }
 
-type mobilePairingAdapter struct {
-	client     mobilePairingClient
-	helperPath func() (string, error)
-}
+const mobilePairingQRSize = 240
 
-func defaultPairingHelperPath() (string, error) {
-	executable, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	name := "filees-pair-gui"
-	if filepath.Ext(executable) == ".exe" {
-		name += ".exe"
-	}
-	return filepath.Join(filepath.Dir(executable), name), nil
+type mobilePairingAdapter struct {
+	client    mobilePairingClient
+	pinStore  *localpin.Store
+	prompter  platform.Prompter
+	presenter pairingPresenter
+	servers   func() []PromptOption
 }
 
 func (adapter mobilePairingAdapter) Launch(ctx context.Context, serverID string) error {
+	if adapter.client == nil || adapter.pinStore == nil || adapter.prompter == nil || adapter.presenter == nil {
+		return errors.New("natywne parowanie mobilne nie jest dostępne")
+	}
+	authorized, err := adapter.authorize(ctx)
+	if err != nil || !authorized {
+		return err
+	}
+	serverID, selected, err := adapter.selectServer(ctx, serverID)
+	if err != nil || !selected {
+		return err
+	}
 	result, err := adapter.client.MobilePairingBegin(ctx, serverID)
 	if err != nil {
 		return err
@@ -144,43 +148,132 @@ func (adapter mobilePairingAdapter) Launch(ctx context.Context, serverID string)
 	if result == nil {
 		return errors.New("daemon returned an empty mobile pairing result")
 	}
-	resolve := adapter.helperPath
-	if resolve == nil {
-		resolve = defaultPairingHelperPath
-	}
-	helperPath, err := resolve()
+	expiresAt, err := time.Parse(time.RFC3339Nano, result.ExpiresAt)
 	if err != nil {
-		return err
+		return fmt.Errorf("nieprawidłowy termin ważności kodu parowania: %w", err)
 	}
-	payload, err := json.Marshal(struct {
-		Address       string `json:"address"`
-		HostPublicKey string `json:"host_public_key"`
-		Token         string `json:"token"`
-		ExpiresAt     string `json:"expires_at"`
-	}{Address: result.Address, HostPublicKey: result.HostPublicKey, Token: result.Token, ExpiresAt: result.ExpiresAt})
+	payload, err := mobilePairingPayloadJSON(result)
 	if err != nil {
 		return err
 	}
 	defer clear(payload)
-	command := exec.CommandContext(ctx, helperPath)
-	stdin, err := command.StdinPipe()
+	png, err := qrcode.Encode(string(payload), qrcode.Medium, mobilePairingQRSize)
 	if err != nil {
-		return err
+		return fmt.Errorf("wygeneruj kod QR parowania: %w", err)
 	}
-	if err := command.Start(); err != nil {
-		return err
+	defer clear(png)
+	return adapter.presenter.Present(ctx, pairingPresentation{
+		Address: result.Address, ExpiresAt: expiresAt,
+		QRDataURL: "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
+	})
+}
+
+type pairingServerSelector interface {
+	SelectOne(context.Context, PromptSelectRequest) (PromptSelectResult, error)
+}
+
+func (adapter mobilePairingAdapter) selectServer(ctx context.Context, defaultServerID string) (string, bool, error) {
+	selector, ok := adapter.prompter.(pairingServerSelector)
+	if !ok {
+		return "", false, errors.New("wybór serwera parowania nie jest dostępny")
 	}
-	if _, err := stdin.Write(payload); err != nil {
-		_ = stdin.Close()
-		_ = command.Wait()
-		return err
+	var options []PromptOption
+	if adapter.servers != nil {
+		options = adapter.servers()
 	}
-	if err := stdin.Close(); err != nil {
-		_ = command.Wait()
-		return err
+	if len(cleanPromptOptions(options)) == 0 && strings.TrimSpace(defaultServerID) != "" {
+		options = []PromptOption{{Value: defaultServerID, Label: defaultServerID}}
 	}
-	go func() { _ = command.Wait() }()
-	return nil
+	choice, err := selector.SelectOne(ctx, PromptSelectRequest{
+		Title: "Sparuj urządzenie mobilne",
+		Text:  "Wybierz serwer, dla którego ma zostać utworzony tymczasowy kod QR:",
+		Label: "Serwer", Default: defaultServerID, Options: options,
+	})
+	if err != nil || choice.Cancelled {
+		return "", false, err
+	}
+	serverID := strings.TrimSpace(choice.Value)
+	if !promptOptionExists(cleanPromptOptions(options), serverID) {
+		return "", false, errors.New("wybrany serwer parowania nie jest już dostępny")
+	}
+	return serverID, true, nil
+}
+
+func pairingServerOptions(snapshot Snapshot) []PromptOption {
+	options := make([]PromptOption, 0, len(snapshot.Servers))
+	for _, server := range snapshot.Servers {
+		serverID := strings.TrimSpace(server.ID)
+		if serverID == "" {
+			continue
+		}
+		label := strings.TrimSpace(server.DisplayName)
+		if label == "" {
+			label = strings.TrimSpace(server.Address)
+		}
+		if label == "" {
+			label = serverID
+		}
+		options = append(options, PromptOption{Value: serverID, Label: label, Detail: strings.TrimSpace(server.Address)})
+	}
+	return cleanPromptOptions(options)
+}
+
+func (adapter mobilePairingAdapter) authorize(ctx context.Context) (bool, error) {
+	configured, err := adapter.pinStore.IsConfigured()
+	if err != nil {
+		return false, fmt.Errorf("odczytaj lokalny PIN: %w", err)
+	}
+	if !configured {
+		prompted, promptErr := adapter.prompter.PromptText(ctx, platform.PromptTextRequest{
+			Title: "Zabezpiecz parowanie", Text: "Ustaw lokalny PIN chroniący wyświetlanie kodów parowania:", Label: "PIN", Secret: true,
+		})
+		if promptErr != nil || prompted.Cancelled {
+			return false, promptErr
+		}
+		pin := []byte(prompted.Value)
+		defer clear(pin)
+		if len(pin) == 0 {
+			return false, errors.New("PIN nie może być pusty")
+		}
+		if err := adapter.pinStore.Setup(pin); err != nil {
+			return false, fmt.Errorf("zapisz lokalny PIN: %w", err)
+		}
+		return true, nil
+	}
+
+	text := "Podaj lokalny PIN, aby wyświetlić kod parowania:"
+	for {
+		prompted, promptErr := adapter.prompter.PromptText(ctx, platform.PromptTextRequest{
+			Title: "Sparuj urządzenie mobilne", Text: text, Label: "PIN", Secret: true,
+		})
+		if promptErr != nil || prompted.Cancelled {
+			return false, promptErr
+		}
+		pin := []byte(prompted.Value)
+		ok, locked, verifyErr := adapter.pinStore.Verify(pin)
+		clear(pin)
+		if verifyErr != nil {
+			return false, fmt.Errorf("zweryfikuj lokalny PIN: %w", verifyErr)
+		}
+		if locked {
+			return false, errors.New("PIN został zablokowany po zbyt wielu błędnych próbach")
+		}
+		if ok {
+			return true, nil
+		}
+		text = "Nieprawidłowy PIN. Spróbuj ponownie:"
+	}
+}
+
+func mobilePairingPayloadJSON(result *contract.MobilePairingBeginResult) ([]byte, error) {
+	if result == nil || strings.TrimSpace(result.Address) == "" || strings.TrimSpace(result.HostPublicKey) == "" || strings.TrimSpace(result.Token) == "" {
+		return nil, errors.New("daemon returned an incomplete mobile pairing result")
+	}
+	return json.Marshal(struct {
+		Address       string `json:"address"`
+		HostPublicKey string `json:"host_public_key"`
+		Token         string `json:"token"`
+	}{Address: result.Address, HostPublicKey: result.HostPublicKey, Token: result.Token})
 }
 
 type updateAdapter struct{ client updateClient }

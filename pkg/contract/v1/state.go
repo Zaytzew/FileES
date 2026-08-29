@@ -62,17 +62,19 @@ type RepoStatus struct {
 	// repository works through edit passports. Every client needs it, not just
 	// the owner: without it a read-only file is unexplained, which is exactly
 	// the silent state the concept requires the UI to replace with a reason.
-	EditingPolicy    string        `json:"editing_policy,omitempty"`
-	State            string        `json:"state"`        // one of the State* constants
-	Connectivity     string        `json:"connectivity"` // ConnOnline | ConnOffline
-	LocalRevision    int64         `json:"local_revision"`
-	HeadRevision     int64         `json:"head_revision"`
-	Pending          PendingStats  `json:"pending"`
-	Conflicts        int           `json:"conflicts"`
-	LastSyncAt       string        `json:"last_sync_at,omitempty"` // RFC3339; empty if never synced
-	CurrentOperation *string       `json:"current_operation"`      // null or short description
-	Cycle            CycleStatus   `json:"cycle"`
-	Recovery         RecoveryStats `json:"recovery"`
+	EditingPolicy        string        `json:"editing_policy,omitempty"`
+	State                string        `json:"state"`        // one of the State* constants
+	Connectivity         string        `json:"connectivity"` // ConnOnline | ConnOffline
+	LocalRevision        int64         `json:"local_revision"`
+	HeadRevision         int64         `json:"head_revision"`
+	WorkingCopyBytes     int64         `json:"working_copy_bytes,omitempty"`
+	WorkingCopySizeKnown bool          `json:"working_copy_size_known,omitempty"`
+	Pending              PendingStats  `json:"pending"`
+	Conflicts            int           `json:"conflicts"`
+	LastSyncAt           string        `json:"last_sync_at,omitempty"` // RFC3339; empty if never synced
+	CurrentOperation     *string       `json:"current_operation"`      // null or short description
+	Cycle                CycleStatus   `json:"cycle"`
+	Recovery             RecoveryStats `json:"recovery"`
 }
 
 const (

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#edf2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#07101d" media="(prefers-color-scheme: dark)">
+  <title>Sparuj urządzenie mobilne — FileES</title><link rel="stylesheet" href="./pairing.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <main class="pairing-shell">
+    <header id="pairing-titlebar" class="titlebar">
+      <img class="filees-wordmark-surface" src="./assets/filees-space-horizontal.svg" alt="filees:space">
+      <button id="pairing-close" type="button" title="Zamknij" aria-label="Zamknij">×</button>
+    </header>
+    <section class="pairing-card">
+      <p class="eyebrow">Aplikacja mobilna</p>
+      <h1>Zeskanuj kod QR</h1>
+      <p class="intro">Otwórz FileES na telefonie i wybierz parowanie urządzenia. Kod jest jednorazowy.</p>
+      <div class="qr-frame" aria-live="polite">
+        <img id="pairing-qr" alt="Kod QR do sparowania aplikacji mobilnej FileES">
+      </div>
+      <div class="pairing-meta">
+        <div><span>Serwer</span><strong id="pairing-address">—</strong></div>
+        <div><span>Widoczny jeszcze</span><strong id="pairing-countdown">—</strong></div>
+      </div>
+      <p class="security-note">Kod zawiera krótkotrwałe poświadczenie. Nie wysyłaj jego obrazu innym osobom.</p>
+      <div class="actions"><button id="pairing-done" class="primary" type="button">Gotowe</button></div>
+    </section>
+  </main>
+  <script type="module" src="./pairing.js"></script>
+</body>
+</html>

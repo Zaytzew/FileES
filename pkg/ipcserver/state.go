@@ -54,6 +54,7 @@ type RepoState struct {
 	reservationListFn    func(ctx context.Context) ([]contract.Reservation, error)
 	reservationReleaseFn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error
 	recoveryStatsFn      func() contract.RecoveryStats
+	workingCopySizeFn    func() (int64, bool)
 	publishFn            func(ctx context.Context, comment string) (int64, error)
 	noticeListFn         func() ([]contract.Notice, error)
 	noticeAckFn          func(id string) error
@@ -310,6 +311,14 @@ func (rs *RepoState) SetRecoveryStatsFunc(fn func() contract.RecoveryStats) {
 	rs.mu.Unlock()
 }
 
+// SetWorkingCopySizeFunc wires the watcher's buffered manifest total into the
+// status projection. The callback must not walk the filesystem.
+func (rs *RepoState) SetWorkingCopySizeFunc(fn func() (int64, bool)) {
+	rs.mu.Lock()
+	rs.workingCopySizeFn = fn
+	rs.mu.Unlock()
+}
+
 // SetLockFuncs wires the SVN lock and unlock operations into this RepoState.
 // Both funcs receive absolute file paths; they handle WC-relative conversion internally.
 func (rs *RepoState) SetLockFuncs(
@@ -422,11 +431,16 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	}
 	wc := rs.localPath
 	recoveryStatsFn := rs.recoveryStatsFn
+	workingCopySizeFn := rs.workingCopySizeFn
 	rs.mu.RUnlock()
 
 	var recovery contract.RecoveryStats
 	if recoveryStatsFn != nil {
 		recovery = recoveryStatsFn()
+	}
+	workingCopyBytes, workingCopySizeKnown := int64(0), false
+	if workingCopySizeFn != nil {
+		workingCopyBytes, workingCopySizeKnown = workingCopySizeFn()
 	}
 
 	localRev := int64(0)
@@ -440,23 +454,25 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	}
 
 	snap := contract.RepoStatus{
-		RepoID:           rs.id,
-		ServerID:         rs.serverID,
-		DisplayName:      displayName,
-		Attached:         attached,
-		Access:           access,
-		OwnerRealmID:     ownerRealmID,
-		AttachmentPolicy: attachmentPolicy,
-		EditingPolicy:    editingPolicy,
-		State:            state,
-		Connectivity:     conn,
-		LocalRevision:    localRev,
-		HeadRevision:     headRev,
-		Pending:          pending,
-		Conflicts:        conflicts,
-		CurrentOperation: currentOp,
-		Cycle:            cycle,
-		Recovery:         recovery,
+		RepoID:               rs.id,
+		ServerID:             rs.serverID,
+		DisplayName:          displayName,
+		Attached:             attached,
+		Access:               access,
+		OwnerRealmID:         ownerRealmID,
+		AttachmentPolicy:     attachmentPolicy,
+		EditingPolicy:        editingPolicy,
+		State:                state,
+		Connectivity:         conn,
+		LocalRevision:        localRev,
+		HeadRevision:         headRev,
+		WorkingCopyBytes:     workingCopyBytes,
+		WorkingCopySizeKnown: workingCopySizeKnown,
+		Pending:              pending,
+		Conflicts:            conflicts,
+		CurrentOperation:     currentOp,
+		Cycle:                cycle,
+		Recovery:             recovery,
 	}
 	if !lastSync.IsZero() {
 		snap.LastSyncAt = lastSync.UTC().Format(time.RFC3339)

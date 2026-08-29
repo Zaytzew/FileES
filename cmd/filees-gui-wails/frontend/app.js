@@ -334,9 +334,15 @@ function renderRepositories(snapshot) {
   });
   const html = servers.map((server) => {
     const serverRepos = repos.filter((repo) => repo.server_id === server.id);
+    const isShelf = (repo) => repo.purpose === "upload_shelf";
+    const isTrash = (repo) => repo.purpose === "upload_trash";
     const deleted = serverRepos.filter((repo) => repo.server_deleted);
-    const attached = serverRepos.filter((repo) => !repo.server_deleted && repo.attached);
-    const remote = serverRepos.filter((repo) => !repo.server_deleted && !repo.attached);
+    const live = serverRepos.filter((repo) => !repo.server_deleted);
+    const shelves = live.filter(isShelf);
+    const trash = live.filter(isTrash);
+    const rest = live.filter((repo) => !isShelf(repo) && !isTrash(repo));
+    const attached = rest.filter((repo) => repo.attached);
+    const remote = rest.filter((repo) => !repo.attached);
     const owned = attached.filter((repo) => repo.ownership === "owned");
     const guest = attached.filter((repo) => repo.ownership === "guest");
     const unclassified = attached.filter((repo) => !["owned", "guest"].includes(repo.ownership));
@@ -362,6 +368,8 @@ function renderRepositories(snapshot) {
         ${serverRepos.length ? `<div class="repo-columns" aria-hidden="true"><span>Folder</span><span class="column-queue">Kolejka</span><span>Akcje</span><span>Rozmiar</span></div>
           ${renderRepoGroup("Własne", owned, "owned")}
           ${renderRepoGroup("Gościnne · udostępnione przez inne zespoły", guest, "guest")}
+          ${renderRepoGroup("Półki przyjęcia", shelves, "upload-shelf")}
+          ${renderRepoGroup("Odrzuty przyjęcia", trash, "upload-trash")}
           ${renderRepoGroup("Pozostałe", unclassified, "unclassified")}
           ${renderRepoGroup("Usunięte · archiwa", deleted, "deleted")}
           ${renderRepoGroup("Zdalne", remote, "remote")}` : '<p class="server-empty">Ten serwer nie udostępnia jeszcze żadnego folderu.</p>'}

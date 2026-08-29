@@ -294,6 +294,7 @@ type PublicShareResult struct {
 type UploadChannelDeclaration struct {
 	AuthorityRepoID string   `json:"authority_repo_id"`
 	Slug            string   `json:"slug"`
+	Kind            string   `json:"kind,omitempty"`
 	Recipients      []string `json:"recipients"`
 	RequireOTP      bool     `json:"require_otp,omitempty"`
 	CollisionPolicy string   `json:"collision_policy,omitempty"`
@@ -320,6 +321,7 @@ type UploadChannelSummary struct {
 	UploadRepoID    string   `json:"upload_repo_id"`
 	Alias           string   `json:"alias"`
 	Slug            string   `json:"slug"`
+	Kind            string   `json:"kind,omitempty"`
 	State           string   `json:"state"`
 	Recipients      []string `json:"recipients"`
 	RequireOTP      bool     `json:"require_otp,omitempty"`

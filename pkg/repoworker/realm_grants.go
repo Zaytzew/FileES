@@ -558,6 +558,9 @@ func projectedRepositories(repositories map[string]repositoryRecord, grants map[
 			metadataDigest = existing.MetadataDigest
 		}
 		if kind == "mobile" {
+			if repo.Purpose != "" {
+				continue
+			}
 			requested, ok := allowedMobile[repo.RepoID]
 			if !ok {
 				continue
@@ -576,7 +579,7 @@ func projectedRepositories(repositories map[string]repositoryRecord, grants map[
 		// property of the repository, so the record is the only truth and a
 		// stale projection must not be able to keep a repository on an old
 		// policy.
-		result = append(result, clientview.Repository{RepoID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: attachmentPolicy, MetadataDigest: metadataDigest, EditingPolicy: repo.EditingPolicy})
+		result = append(result, clientview.Repository{RepoID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: access, State: repo.State, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: attachmentPolicy, MetadataDigest: metadataDigest, EditingPolicy: repo.EditingPolicy, Purpose: repo.Purpose})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].RepoID < result[j].RepoID })
 	return result

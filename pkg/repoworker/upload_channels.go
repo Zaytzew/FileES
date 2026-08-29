@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
 	"filees/pkg/onboarding"
 	"filees/public-shares/channel"
@@ -93,7 +94,7 @@ func (s ChannelUploadService) List(_ context.Context, ownerRealm, authorityRepoI
 		}
 		result = append(result, control.UploadChannelSummary{
 			ChannelID: record.ChannelID, AuthorityRepoID: record.Manifest.AuthorityRepoID, UploadRepoID: record.Manifest.UploadRepoID,
-			Alias: record.Alias, Slug: record.Slug, State: record.State, Recipients: append([]string(nil), record.Manifest.Recipients...),
+			Alias: record.Alias, Slug: record.Slug, Kind: manifest.NormalizeKind(record.Manifest.Kind), State: record.State, Recipients: append([]string(nil), record.Manifest.Recipients...),
 			RequireOTP: record.Manifest.RequireOTP, CollisionPolicy: string(record.Manifest.CollisionPolicy),
 			UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		})
@@ -124,11 +125,11 @@ func (s ChannelUploadService) Create(ctx context.Context, operationID, ownerReal
 	if err := s.Channels.ReserveAddress(operationID, ownerRealm, alias, declaration.Slug); err != nil {
 		return control.UploadChannelResult{}, classifyUploadError(err)
 	}
-	trash, err := s.Backend.Create(ctx, trashOperationID(ownerRealm), ownerRealm, channel.TrashRepoName)
+	trash, err := s.provision(ctx, trashOperationID(ownerRealm), ownerRealm, "Odrzuty przyjęcia", clientview.PurposeUploadTrash)
 	if err != nil {
 		return control.UploadChannelResult{}, err
 	}
-	upload, err := s.Backend.Create(ctx, operationID, ownerRealm, "upload-"+declaration.Slug)
+	upload, err := s.provision(ctx, operationID, ownerRealm, "Półka "+declaration.Slug, clientview.PurposeUploadShelf)
 	if err != nil {
 		return control.UploadChannelResult{}, err
 	}
@@ -164,6 +165,11 @@ func (s ChannelUploadService) Update(ctx context.Context, operationID, ownerReal
 	}
 	declaration.AuthorityRepoID = current.Manifest.AuthorityRepoID
 	declaration.Slug = current.Manifest.Slug
+	currentKind := manifest.NormalizeKind(current.Manifest.Kind)
+	if declaration.Kind != "" && manifest.NormalizeKind(declaration.Kind) != currentKind {
+		return control.UploadChannelResult{}, fmt.Errorf("%w: %v", ErrUploadChannelRejected, manifest.ErrKind)
+	}
+	declaration.Kind = currentKind
 	if declaration.CollisionPolicy == "" {
 		declaration.CollisionPolicy = string(manifest.CollisionDeny)
 	}
@@ -210,11 +216,26 @@ func toUploadManifest(ownerRealm, uploadRepoID string, declaration control.Uploa
 	if policy == "" {
 		policy = manifest.CollisionDeny
 	}
+	kind := manifest.NormalizeKind(declaration.Kind)
+	if kind == "" {
+		kind = manifest.KindShelf
+	}
 	return manifest.Upload{
 		OwnerRealm: ownerRealm, AuthorityRepoID: declaration.AuthorityRepoID, UploadRepoID: uploadRepoID,
-		Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...),
+		Slug: declaration.Slug, Kind: kind, Recipients: append([]string(nil), declaration.Recipients...),
 		RequireOTP: declaration.RequireOTP, CollisionPolicy: policy,
 	}
+}
+
+type purposeCreator interface {
+	CreateWithPurpose(context.Context, string, string, string, string) (Repository, error)
+}
+
+func (s ChannelUploadService) provision(ctx context.Context, op, realm, name, purpose string) (Repository, error) {
+	if creator, ok := s.Backend.(purposeCreator); ok {
+		return creator.CreateWithPurpose(ctx, op, realm, name, purpose)
+	}
+	return s.Backend.Create(ctx, op, realm, name)
 }
 
 func uploadResult(record channel.UploadRecord, uploadURL string, trash Repository, deliveries int) control.UploadChannelResult {

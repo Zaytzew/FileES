@@ -224,6 +224,7 @@ func (s appState) viewModel() ViewModel {
 			OwnerRealmID:         snap.OwnerRealmID,
 			AttachmentPolicy:     snap.AttachmentPolicy,
 			EditingPolicy:        snap.EditingPolicy,
+			Purpose:              firstNonEmpty(snap.Purpose, sum.Purpose),
 			URL:                  sum.URL,
 			LocalPath:            sum.LocalPath,
 			State:                snap.State,
@@ -325,6 +326,15 @@ func (s appState) viewModel() ViewModel {
 		vm.Icon = aggregateIcon(s.connected, repos, unread)
 	}
 	return vm
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s appState) startPendingAction(action PendingAction) appState {

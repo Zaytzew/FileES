@@ -7,27 +7,35 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
 	"filees/public-shares/channel"
 	"github.com/google/uuid"
 )
 
 type uploadBackend struct {
-	byOp    map[string]Repository
-	creates []string
+	byOp     map[string]Repository
+	creates  []string
+	purposes []string
 }
 
-func (b *uploadBackend) Create(_ context.Context, op, _, name string) (Repository, error) {
+func (b *uploadBackend) Create(ctx context.Context, op, realm, name string) (Repository, error) {
+	return b.CreateWithPurpose(ctx, op, realm, name, "")
+}
+
+func (b *uploadBackend) CreateWithPurpose(_ context.Context, op, _, name, purpose string) (Repository, error) {
 	if b.byOp == nil {
 		b.byOp = map[string]Repository{}
 	}
 	if repo, ok := b.byOp[op]; ok {
 		b.creates = append(b.creates, name)
+		b.purposes = append(b.purposes, purpose)
 		return repo, nil
 	}
 	repo := Repository{RepoID: uuid.NewSHA1(uuid.NameSpaceOID, []byte(op)).String(), URL: "svn+ssh://example/" + op}
 	b.byOp[op] = repo
 	b.creates = append(b.creates, name)
+	b.purposes = append(b.purposes, purpose)
 	return repo, nil
 }
 
@@ -79,6 +87,13 @@ func TestUploadChannelCreateProvisionsDistinctReposAndSharedTrash(t *testing.T) 
 	if first.State != channel.StateActive || second.Slug != "oferta-b" {
 		t.Fatalf("results %+v %+v", first, second)
 	}
+	listed, err := service.List(context.Background(), owner, authority)
+	if err != nil || len(listed) != 2 || listed[0].Kind != "shelf" || listed[1].Kind != "shelf" {
+		t.Fatalf("listed=%+v err=%v", listed, err)
+	}
+	if len(backend.purposes) < 4 || backend.purposes[0] != clientview.PurposeUploadTrash || backend.purposes[1] != clientview.PurposeUploadShelf {
+		t.Fatalf("purposes=%v", backend.purposes)
+	}
 }
 
 func TestUploadChannelCreateRejectsGuestAndAnonymous(t *testing.T) {
@@ -123,6 +138,18 @@ func TestUploadChannelDeliveryRetryKeepsTokenAndRepos(t *testing.T) {
 	}
 	if result.UploadRepoID == "" || result.RecipientDeliveries != 1 {
 		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestUploadChannelUpdateRejectsKindChange(t *testing.T) {
+	owner, authority := uuid.NewString(), uuid.NewString()
+	service := ChannelUploadService{Channels: uploadStore(t, owner, authority), Backend: &uploadBackend{}, Deliverer: &uploadDeliverer{}}
+	created, err := service.Create(context.Background(), uuid.NewString(), owner, control.UploadChannelDeclaration{AuthorityRepoID: authority, Slug: "oferta-a", Recipients: []string{"a@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Update(context.Background(), uuid.NewString(), owner, created.ChannelID, control.UploadChannelDeclaration{Recipients: []string{"a@example.com"}, Kind: "slots"}); !errors.Is(err, ErrUploadChannelRejected) {
+		t.Fatalf("kind change: %v", err)
 	}
 }
 

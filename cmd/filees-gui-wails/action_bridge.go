@@ -643,7 +643,7 @@ func (adapter uploadChannelAdapter) DeleteUploadChannel(ctx context.Context, ser
 }
 
 func uploadChannelDeclarationToContract(declaration actions.UploadChannelDeclaration) contract.UploadChannelDeclaration {
-	return contract.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Recipients: append([]string(nil), declaration.Recipients...)}
+	return contract.UploadChannelDeclaration{AuthorityRepoID: declaration.AuthorityRepoID, Slug: declaration.Slug, Kind: declaration.Kind, Recipients: append([]string(nil), declaration.Recipients...)}
 }
 
 func publicShareDeclarationToContract(declaration actions.PublicShareDeclaration) (contract.PublicShareDeclaration, error) {

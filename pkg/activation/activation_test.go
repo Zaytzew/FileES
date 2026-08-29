@@ -191,7 +191,7 @@ func TestLaterActivationInheritsCanonicalRealmGrant(t *testing.T) {
 	repoID := uuid.NewString()
 	url := "svn+ssh://_filees-client@example/repos/" + repoID
 	publisher := repoworker.ServicePublisher{ServiceWC: config.ServiceWorkingCopy, DataAuthzFile: config.DataAuthzFile, Runner: repoworker.SVNPublishRunner{SVN: config.SVNBinary, WorkingCopy: config.ServiceWorkingCopy}}
-	if err := publisher.Publish(context.Background(), repoID, ownerRealm, "Shared", url); err != nil {
+	if err := publisher.Publish(context.Background(), repoID, ownerRealm, "Shared", url, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := publisher.Activate(context.Background(), repoID, ownerRealm); err != nil {

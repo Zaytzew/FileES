@@ -108,6 +108,7 @@ type RepoProjection struct {
 	RecoveryAvailable    bool            `json:"recovery_available,omitempty"`
 	RecoveryPending      bool            `json:"recovery_pending,omitempty"`
 	CleanupError         string          `json:"cleanup_error,omitempty"`
+	Purpose              string          `json:"purpose,omitempty"`
 }
 
 type CycleProjection struct {
@@ -571,6 +572,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
 			RetainUntil: repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
 			RecoveryAvailable: repo.RecoveryAvailable, RecoveryPending: repo.RecoveryPending, CleanupError: repo.CleanupError,
+			Purpose: repo.Purpose,
 		})
 		if repo.Cycle.Phase == contract.CycleRunning {
 			result.CycleRunning = true

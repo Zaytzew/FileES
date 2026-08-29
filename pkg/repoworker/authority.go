@@ -56,6 +56,7 @@ type repositoryRecord struct {
 	// value means EditingFree and must never be serialised — see
 	// clientview.Repository.EditingPolicy for why that rule is load-bearing.
 	EditingPolicy string `json:"editing_policy,omitempty"`
+	Purpose       string `json:"purpose,omitempty"`
 }
 
 type PublishRunner interface {
@@ -136,7 +137,7 @@ func (p ServicePublisher) SnapshotRealmScope(realmID string) (RealmRemovalScope,
 	return scope, validateScope(scope)
 }
 
-func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, url string) error {
+func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, url, purpose string) error {
 	if !filepath.IsAbs(p.ServiceWC) || !filepath.IsAbs(p.DataAuthzFile) || p.Runner == nil {
 		return errors.New("authority publisher is incomplete")
 	}
@@ -148,16 +149,28 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 	if err != nil {
 		return err
 	}
-	record := repositoryRecord{Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realmID, DisplayName: name, URL: url, State: "initializing", CreatedAt: now}
+	if !clientview.ValidPurpose(purpose) {
+		return errors.New("canonical repository purpose is invalid")
+	}
+	record := repositoryRecord{Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realmID, DisplayName: name, URL: url, State: "initializing", CreatedAt: now, Purpose: purpose}
 	if raw, err := os.ReadFile(repoPath); err == nil {
 		var old repositoryRecord
 		if json.Unmarshal(raw, &old) != nil || old.RepoID != repoID || old.OwnerRealmID != realmID || old.DisplayName != name || old.URL != url {
 			return errors.New("canonical repository record conflicts")
 		}
+		if purpose != "" && old.Purpose != "" && old.Purpose != purpose {
+			return errors.New("canonical repository purpose conflicts")
+		}
+		if purpose == "" {
+			purpose = old.Purpose
+		}
 		if old.State == "deleted" {
 			return errors.New("deleted repository cannot be republished")
 		}
 		record = old
+		if purpose != "" {
+			record.Purpose = purpose
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	} else if err := atomicJSON(repoPath, record); err != nil {
@@ -201,7 +214,7 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		// record is either the freshly minted one or the re-read existing one,
 		// so a republish of a repository that already carries a policy keeps
 		// it instead of silently projecting the default.
-		view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: name, URL: url, Access: "rw", State: "initializing", OwnerRealmID: realmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy})
+		view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: name, URL: url, Access: "rw", State: "initializing", OwnerRealmID: realmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose})
 		sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
 		if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
 			return err
@@ -283,11 +296,12 @@ func (p ServicePublisher) Activate(ctx context.Context, repoID, realmID string) 
 				projected.State = "active"
 				updated = true
 			}
-			if projected.DisplayName != record.DisplayName || projected.URL != record.URL || projected.OwnerRealmID != record.OwnerRealmID || projected.EditingPolicy != record.EditingPolicy {
+			if projected.DisplayName != record.DisplayName || projected.URL != record.URL || projected.OwnerRealmID != record.OwnerRealmID || projected.EditingPolicy != record.EditingPolicy || projected.Purpose != record.Purpose {
 				projected.DisplayName = record.DisplayName
 				projected.URL = record.URL
 				projected.OwnerRealmID = record.OwnerRealmID
 				projected.EditingPolicy = record.EditingPolicy
+				projected.Purpose = record.Purpose
 				updated = true
 			}
 		}
@@ -546,7 +560,7 @@ func (p ServicePublisher) TransferOwner(ctx context.Context, repoID, newRealmID 
 				}
 			}
 			if !found {
-				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: "rw", State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy})
+				view.Repositories = append(view.Repositories, clientview.Repository{RepoID: repoID, DisplayName: record.DisplayName, URL: record.URL, Access: "rw", State: record.State, OwnerRealmID: newRealmID, AttachmentPolicy: "optional", EditingPolicy: record.EditingPolicy, Purpose: record.Purpose})
 				sort.Slice(view.Repositories, func(i, j int) bool { return view.Repositories[i].RepoID < view.Repositories[j].RepoID })
 			}
 		default:

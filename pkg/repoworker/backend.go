@@ -17,7 +17,7 @@ import (
 
 type Effects interface {
 	CreateFSFS(context.Context, string, string) error
-	PublishAuthority(context.Context, string, string, string, string) error
+	PublishAuthority(context.Context, string, string, string, string, string) error
 	RollbackCreate(context.Context, string, string) error
 	// AuthorizeDelete is a side-effect-free ownership boundary. It must run
 	// before PrepareDelete installs a commit-blocking hook in the FSFS tree.
@@ -34,6 +34,7 @@ type backendRecord struct {
 	RepoID      string `json:"repo_id"`
 	URL         string `json:"url"`
 	Stage       string `json:"stage"`
+	Purpose     string `json:"purpose,omitempty"`
 }
 type DurableBackend struct {
 	Root, URLPrefix string
@@ -90,6 +91,10 @@ func (b *DurableBackend) DeletedRepository(operationID, realmID, repoID string) 
 }
 
 func (b *DurableBackend) Create(ctx context.Context, op, realm, name string) (Repository, error) {
+	return b.CreateWithPurpose(ctx, op, realm, name, "")
+}
+
+func (b *DurableBackend) CreateWithPurpose(ctx context.Context, op, realm, name, purpose string) (Repository, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if !filepath.IsAbs(b.Root) || b.Effects == nil {
@@ -114,10 +119,16 @@ func (b *DurableBackend) Create(ctx context.Context, op, realm, name string) (Re
 		if r.RealmID != realm || r.Name != name {
 			return Repository{}, errors.New("operation parameters conflict")
 		}
+		if purpose != "" {
+			if r.Purpose != "" && r.Purpose != purpose {
+				return Repository{}, errors.New("operation purpose conflicts")
+			}
+			r.Purpose = purpose
+		}
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return Repository{}, e
 	} else {
-		r = backendRecord{OperationID: op, RealmID: realm, Name: name, RepoID: uuid.NewSHA1(uuid.NameSpaceOID, []byte(op)).String(), Stage: "allocated"}
+		r = backendRecord{OperationID: op, RealmID: realm, Name: name, RepoID: uuid.NewSHA1(uuid.NameSpaceOID, []byte(op)).String(), Stage: "allocated", Purpose: purpose}
 		r.URL, e = repositoryURL(b.URLPrefix, r.RepoID)
 		if e != nil {
 			return Repository{}, e
@@ -142,7 +153,7 @@ func (b *DurableBackend) Create(ctx context.Context, op, realm, name string) (Re
 		}
 	}
 	if r.Stage == "fsfs_created" {
-		if e = b.Effects.PublishAuthority(ctx, r.RepoID, r.RealmID, r.Name, r.URL); e != nil {
+		if e = b.Effects.PublishAuthority(ctx, r.RepoID, r.RealmID, r.Name, r.URL, r.Purpose); e != nil {
 			publishErr := e
 			r.Stage = "rollback_pending"
 			if e = b.save(p, r); e != nil {

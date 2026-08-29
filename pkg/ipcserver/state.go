@@ -31,6 +31,7 @@ type RepoState struct {
 	ownerRealmID        string
 	attachmentPolicy    string
 	editingPolicy       string
+	purpose             string
 	projectedState      string
 	serverDeleted       bool
 	localCleanupPending bool
@@ -82,6 +83,12 @@ func (rs *RepoState) SetProjection(url, access string) {
 func (rs *RepoState) SetEditingPolicy(policy string) {
 	rs.mu.Lock()
 	rs.editingPolicy = policy
+	rs.mu.Unlock()
+}
+
+func (rs *RepoState) SetPurpose(purpose string) {
+	rs.mu.Lock()
+	rs.purpose = purpose
 	rs.mu.Unlock()
 }
 
@@ -420,6 +427,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	ownerRealmID := rs.ownerRealmID
 	attachmentPolicy := rs.attachmentPolicy
 	editingPolicy := rs.editingPolicy
+	purpose := rs.purpose
 	headRev := rs.headRev
 	conflicts := rs.conflicts
 	lastSync := rs.lastSyncAt
@@ -473,6 +481,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		CurrentOperation:     currentOp,
 		Cycle:                cycle,
 		Recovery:             recovery,
+		Purpose:              purpose,
 	}
 	if !lastSync.IsZero() {
 		snap.LastSyncAt = lastSync.UTC().Format(time.RFC3339)
@@ -498,6 +507,7 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 		ServerDeleted:    rs.serverDeleted, LocalCleanupPending: rs.localCleanupPending,
 		RetainUntil: rs.retainUntil, RecoveryOperationID: rs.recoveryOperationID,
 		RecoveryAvailable: rs.recoveryAvailable, RecoveryPending: rs.recoveryPending, CleanupError: rs.cleanupError,
+		Purpose: rs.purpose,
 	}
 }
 

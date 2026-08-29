@@ -61,7 +61,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonChangeUploadTarget"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.Filees.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/action_change_upload_target" />
@@ -126,7 +126,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonPairPasted"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            style="@style/Widget.Filees.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -134,7 +134,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/buttonScanQr"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.Filees.Button.TextButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/action_scan_qr" />

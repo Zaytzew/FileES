@@ -21,38 +21,34 @@
             app:subtitleTextColor="@color/filees_white"
             app:itemIconTint="@color/filees_white">
 
-            <!-- Custom brand lockup (symbol + wordtext) instead of
-                 app:logo/app:title: MaterialToolbar did not render
+            <!-- Real wordmark (branded-assets/filees-space-svg-pack/
+                 filees-space-monochrome.svg, recolored white — the toolbar
+                 background is always filees_navy in this app, regardless of
+                 system day/night, so the "inverted" monochrome variant is
+                 the only one ever needed here, not a light/dark switch) in
+                 place of app:logo/app:title: MaterialToolbar did not render
                  app:logo at all (concepts/ANDROID_BRAND_ALIGNMENT_CONCEPT.md
                  §4), and a plain child view sidesteps guessing why rather
                  than fighting Toolbar's own title-layout algorithm for
-                 space. Shown only on the top-level share list
+                 space. Shipped as density-bucketed PNGs
+                 (drawable-{m,h,x,xx,xxx}hdpi/wordmark_white.png), not a
+                 hand-transcribed vector: the wordmark's typography is
+                 dozens of curves per letter, too easy to get subtly wrong
+                 by hand with no way to render and check here — rasterizing
+                 the real SVG and inspecting the PNG is the reliable path.
+                 Shown only on the top-level share list
                  (MainActivity#renderList toggles this against the native
                  toolbar.title, which takes over — folder name, back arrow —
                  once a repository is open, so the two never compete for
                  the same space. -->
-            <LinearLayout
+            <ImageView
                 android:id="@+id/brandLockup"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_height="24dp"
                 android:layout_gravity="start|center_vertical"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <ImageView
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_folder" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:text="@string/app_name"
-                    android:textAppearance="?attr/textAppearanceTitleLarge"
-                    android:textColor="@color/filees_white" />
-            </LinearLayout>
+                android:adjustViewBounds="true"
+                android:contentDescription="@string/app_name"
+                android:src="@drawable/wordmark_white" />
         </com.google.android.material.appbar.MaterialToolbar>
 
         <LinearLayout

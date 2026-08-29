@@ -125,7 +125,7 @@ func (s ChannelUploadService) Create(ctx context.Context, operationID, ownerReal
 	if err := s.Channels.ReserveAddress(operationID, ownerRealm, alias, declaration.Slug); err != nil {
 		return control.UploadChannelResult{}, classifyUploadError(err)
 	}
-	trash, err := s.provision(ctx, trashOperationID(ownerRealm), ownerRealm, "Podejrzane przyjęcia", clientview.PurposeUploadTrash)
+	trash, err := s.provision(ctx, trashOperationID(ownerRealm), ownerRealm, "Kwarantanna", clientview.PurposeUploadTrash)
 	if err != nil {
 		return control.UploadChannelResult{}, err
 	}

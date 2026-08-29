@@ -369,7 +369,7 @@ function renderRepositories(snapshot) {
           ${renderRepoGroup("Własne", owned, "owned")}
           ${renderRepoGroup("Gościnne · udostępnione przez inne zespoły", guest, "guest")}
           ${renderRepoGroup("Półki przyjęcia", shelves, "upload-shelf")}
-          ${renderRepoGroup("Podejrzane", trash, "upload-trash")}
+          ${renderRepoGroup("Kwarantanna", trash, "upload-trash")}
           ${renderRepoGroup("Pozostałe", unclassified, "unclassified")}
           ${renderRepoGroup("Usunięte · archiwa", deleted, "deleted")}
           ${renderRepoGroup("Zdalne", remote, "remote")}` : '<p class="server-empty">Ten serwer nie udostępnia jeszcze żadnego folderu.</p>'}

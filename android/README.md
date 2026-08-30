@@ -36,19 +36,19 @@ module filees-androidbind
 
 go 1.25.0
 
-replace filees => /home/acme/Filees-Android
+replace filees => $HOME/Filees-Android
 EOF
 go mod edit -require=filees@v0.0.0-00010101000000-000000000000
 go get -tool golang.org/x/mobile/cmd/gobind@latest
 go get -tool golang.org/x/mobile/cmd/gomobile@latest
 
 # rebuild
-export ANDROID_HOME=/home/acme/Android/Sdk
-export ANDROID_NDK_HOME=/home/acme/Android/Sdk/ndk/27.2.12479018
+export ANDROID_HOME=$HOME/Android/Sdk
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/27.2.12479018
 export GOFLAGS=-buildvcs=false
 cd ~/androidbind-smoke
 gomobile bind -target=android -androidapi 24 -o filees-androidbind.aar filees/pkg/mobileclient/androidbind
-cp filees-androidbind.aar /home/acme/Filees-Android/android/app/libs/
+cp filees-androidbind.aar $HOME/Filees-Android/android/app/libs/
 ```
 
 ## Building

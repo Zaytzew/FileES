@@ -3057,7 +3057,7 @@ func (c *Controller) claimRealmAlias(ctx context.Context, serverID string) bool 
 	}
 	for {
 		alias, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
-			Title: "Alias FileES", Text: "Wybierz stały alias widoczny przy blokadach i przyszłych operacjach między użytkownikami.", Placeholder: "np. acme-k",
+			Title: "Alias FileES", Text: "Wybierz stały alias widoczny przy blokadach i przyszłych operacjach między użytkownikami.", Placeholder: "np. jan-k",
 		})
 		if err != nil || alias.Cancelled || strings.TrimSpace(alias.Value) == "" {
 			return false

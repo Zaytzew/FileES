@@ -96,6 +96,8 @@ func Classify(err error) Entry {
 		return entryFrom(errcat.KeyNetUnreachable, msg)
 	case containsAny(low, authNeedles):
 		return entryFrom(errcat.KeyAuthFailed, msg)
+	case containsAny(low, workingCopyBusyNeedles):
+		return entryFrom(errcat.KeyWorkingCopyBusy, msg)
 	case containsAny(low, lockNeedles):
 		return entryFrom(errcat.KeyLockHeldByOther, msg)
 	case containsAny(low, outdatedNeedles):
@@ -153,6 +155,13 @@ var (
 	lockNeedles = []string{
 		"is already locked", "locked by",
 		"e200015",
+	}
+	// SVN uses "locked" both for a repository file lock and for its own
+	// local working-copy administration lock. The latter is a transient local
+	// process collision (commonly two daemons), never another user's passport.
+	workingCopyBusyNeedles = []string{
+		"e155004",
+		"working copy locked",
 	}
 	outdatedNeedles = []string{
 		"out of date", "e160028", "needs to be updated",

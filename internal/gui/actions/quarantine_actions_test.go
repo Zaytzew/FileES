@@ -181,8 +181,12 @@ func TestControllerDirectQuarantineIntentCloseIsSilent(t *testing.T) {
 	for time.Now().Before(deadline) && len(platformFake.Snapshot().QuarantineRequests) == 0 {
 		time.Sleep(time.Millisecond)
 	}
-	if len(platformFake.Snapshot().QuarantineRequests) == 0 {
+	snapshot := platformFake.Snapshot()
+	if len(snapshot.QuarantineRequests) == 0 {
 		t.Fatal("quarantine window was not shown")
+	}
+	if !snapshot.QuarantineRequests[0].DirectEntry {
+		t.Fatal("direct quarantine intent was not marked as direct entry")
 	}
 	time.Sleep(30 * time.Millisecond)
 	manager.mu.Lock()

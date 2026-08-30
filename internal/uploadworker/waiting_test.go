@@ -49,6 +49,25 @@ func TestWaitingListHidesAndPurgesAfterTTL(t *testing.T) {
 	}
 }
 
+func TestSeedRejectAppearsOnOwnerList(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	owner := uuid.NewString()
+	reaper := Reaper{TrashRoot: root}
+	idx, err := reaper.SeedReject(owner, "eicar.com", now)
+	if err != nil || idx.OwnerRealm != owner || idx.AVVerdict == "" || idx.Size == 0 {
+		t.Fatalf("seed idx=%+v err=%v", idx, err)
+	}
+	list, err := reaper.ListWaiting(owner, now)
+	if err != nil || len(list.Entries) != 1 || list.Entries[0].UploadID != idx.UploadID || list.Entries[0].RemainingHours != 48 {
+		t.Fatalf("list=%+v err=%v", list, err)
+	}
+	_, raw, hours, err := reaper.FetchWaiting(idx.UploadID, now)
+	if err != nil || hours != 48 || len(raw) == 0 {
+		t.Fatalf("fetch raw=%d hours=%d err=%v", len(raw), hours, err)
+	}
+}
+
 func TestFetchWaitingReturnsPayloadAndRemainingHours(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)

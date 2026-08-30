@@ -5,10 +5,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// EICAR is the 68-byte industry test file. It is not malware; scanners treat
+// it as a positive so reception can exercise the reject path safely.
+const EICAR = `X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`
+
+const EICARSignature = "Eicar-Test-Signature"
 
 type Verdict int
 
@@ -31,9 +38,20 @@ type Command struct {
 	Args []string
 }
 
+func LooksLikeEICAR(raw []byte) bool {
+	value := strings.TrimSpace(string(raw))
+	value = strings.TrimSuffix(value, "\x1a")
+	return value == EICAR
+}
+
 func (c Command) Scan(ctx context.Context, path string) (Verdict, string, error) {
 	if !filepath.IsAbs(c.Path) || !filepath.IsAbs(path) {
 		return Unavailable, "", ErrUnavailable
+	}
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 && info.Size() <= 256 {
+		if raw, err := os.ReadFile(path); err == nil && LooksLikeEICAR(raw) {
+			return Infected, EICARSignature, nil
+		}
 	}
 	args := append(append([]string{}, c.Args...), path)
 	cmd := exec.CommandContext(ctx, c.Path, args...)

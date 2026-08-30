@@ -64,7 +64,7 @@
 <div class="manual-content">
 <h1 id="ch4">Administration</h1>
 <div class="chapter-content">
-<p>An administrator is still a user. This page is what you do: invite someone, take a machine off the server, finish a stuck job, decide that a repository generation should change. The schemas, exit codes and state machines live in Tech <a href="operations.html">Operations</a>. Desktop clicks for the same realm live in the <a href="user-guide.html#ch2-gui">tray howto</a>.</p>
+<p>This page covers the administrator's typical tasks: inviting a new person, taking an installation off the server, finishing an interrupted operation, deciding that a repository generation should change. The schemas, exit codes and state machines live in Tech <a href="operations.html">Operations</a>. Desktop clicks for the same realm live in the <a href="user-guide.html#ch2-gui">tray howto</a>.</p>
 <p>On OpenBSD run these commands as <code>_filees-state</code>, for example <code>doas -u _filees-state …</code>. Creating a ticket as root leaves a file the set-id onboarding entry cannot read.</p>
 
 <h2 id="ch4-admin">4.1 Invite and revoke</h2>
@@ -79,7 +79,7 @@ filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-lin
 filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;</code></pre>
 <ul>
 <li>Without <code>--join-realm-alias</code> the invitation opens a <strong>new</strong> realm. The new desktop is asked once for an immutable alias.</li>
-<li>With the flag the invitation joins an <strong>existing</strong> realm. The person at the desk cannot pick or rename that realm.</li>
+<li>With the flag the invitation joins an <strong>existing</strong> realm. The person joining cannot pick or rename that realm.</li>
 <li><code>resend</code> is for a failed first mail. It does not change the recipient or the TTL.</li>
 <li>A ticket with the wrong policy is revoked, not edited.</li>
 <li><code>client revoke</code> takes one installation off the server. Grants and folders of the realm stay.</li>
@@ -96,7 +96,7 @@ doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid
 
 <h2 id="ch4-audit">4.3 Where to look</h2>
 <div class="section-meta"><span class="status status-implemented">Implemented</span></div>
-<p>On the desk: <strong>Dziennik</strong> in the tray, or <code>filees log 50</code>. That is the structured error list for this installation.</p>
+<p>On the user's computer: <strong>Dziennik</strong> in the tray, or <code>filees log 50</code>. That is the structured error list for this installation.</p>
 <p>On the server the onboarding audit is one JSON file per event under <code>/var/filees/onboarding/audit/</code>. The schema and event names are in <a href="operations.html#ops-audit">Operations</a>.</p>
 
 <h2 id="ch4-mail">4.4 When mail does not arrive</h2>
@@ -105,12 +105,12 @@ doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid
 <pre><code>doas -u _filees-state filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;</code></pre>
 <p>If a later one-shot send failed temporarily:</p>
 <pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
-<p>Exit code 75 means try again later; the code in the letter is still valid. Exit 0 means the smarthost accepted the message. A permanent failure needs a new ticket or a look at the relay. The outbox state machine is in <a href="operations.html#ops-mail">Operations</a>.</p>
+<p>Exit code 75 means try again later; the code in the letter is still valid. Exit 0 means the smarthost accepted the message. A permanent failure needs a new ticket or a check of the mail relay. The outbox state machine is in <a href="operations.html#ops-mail">Operations</a>.</p>
 
 <h2 id="ch4-recovery">4.5 Recover and move storage</h2>
 <div class="section-meta"><span class="status status-verified">Verified</span></div>
 <h4>Interrupted invitation or realm removal</h4>
-<p>Same command as §4.2: <code>filees-operation recover</code>. After realm-removal OTP, if the host died once every client key was already revoked, only this command can finish the job.</p>
+<p>Same command as §4.2: <code>filees-operation recover</code>. If the host was unexpectedly stopped after the realm-removal OTP was sent, once every client key was already revoked, only this command can finish the operation.</p>
 <h4>Close a data-erasure request</h4>
 <p>After a realm removal the owner may have asked for data erasure. The server does not claim to wipe backups by itself. When you have checked retention:</p>
 <pre><code>doas -u _filees-state filees-admin erasure complete \
@@ -147,7 +147,7 @@ done</code></pre>
 <li>Keep the old root read-only until backups and the check are done. Rollback is the old path, while the window is still open.</li>
 </ol>
 <div class="warn"><strong>Never merge two live roots and never move the filesystem while clients are connected.</strong> Copy and verify first, then one configuration switch.</div>
-<h4>On the desk after a hard stop</h4>
+<h4>On the user's computer after a hard stop</h4>
 <p>The desktop daemon reconciles by itself on the next start. A moved folder is <strong>Wskaż kopię</strong>, not a new checkout. Files in <code>!kolizje/</code> are your local versions from a server-wins conflict — review them by hand. See <a href="user-guide.html#ch2-trouble">troubleshooting</a>. Claim-file shapes and projection rebuild are in <a href="operations.html#ops-recovery">Operations</a>.</p>
 
 <h2 id="ch4-monitoring">4.6 Daily checks</h2>
@@ -162,7 +162,7 @@ done</code></pre>
 
 <h2 id="ch4-rotate">4.7 When to rotate a repository</h2>
 <div class="section-meta"><span class="status status-implemented">Implemented</span><span>Explicit generation change; not scheduled.</span></div>
-<p>Depth of an append-only FileES repository does not, by itself, make it slow. Rotate when you need retention or tiering — Subversion has no <code>obliterate</code>. Running it is a decision, not a timer. Existing working copies do not survive a generation change; every desk must attach again.</p>
+<p>Depth of an append-only FileES repository does not, by itself, make it slow. Rotate when you need retention or tiering — Subversion has no <code>obliterate</code>. Running it is a decision, not a timer. Existing working copies do not survive a generation change; every installation must attach again.</p>
 <pre><code>filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
 filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
 filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>

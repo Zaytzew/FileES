@@ -52,7 +52,7 @@
 </div>
 <ol>
 <li><a href="#ps-model">What this is</a></li>
-<li><a href="#ps-url">The address you hand over</a></li>
+<li><a href="#ps-url">The share address</a></li>
 <li><a href="#ps-map">Not a live mirror</a></li>
 <li><a href="#ps-access">Open or closed</a></li>
 <li><a href="#ps-desktop">From the desktop</a></li>
@@ -62,15 +62,15 @@
 <div class="manual-content">
 <h1 id="ch-ps">Public shares</h1>
 <div class="chapter-content">
-<p>Hand a packet to someone who will never install FileES. This is not a second way to write into your folders. Trust zones, the object map and the OTP protocol are in Tech <a href="operations.html#ops-ps-model">Operations</a>.</p>
+<p>Share files with someone who will never install FileES. This is not a second way to write into your folders. Trust zones, the object map and the OTP protocol are in Tech <a href="operations.html#ops-ps-model">Operations</a>.</p>
 
 <h2 id="ps-model">5.1 What this is</h2>
 <div class="section-meta"><span class="status status-verified">Verified live</span></div>
-<p>A public share is a read-only landing page on the same HTTPS origin as this manual. The visitor never receives write credentials. Upload Channel — if it arrives — is a different product and must not share this process or these secrets.</p>
+<p>A public share is a read-only landing page at the same HTTPS address as this manual. The visitor never receives write credentials. Upload Channel is a separate product — for receiving files from someone outside, not for distributing them — and does not share this process or these secrets with a public share.</p>
 <p>The page uses no JavaScript, no cookies and no third-party resources. Branding is the <code>filees:space</code> system plus the owner logo and accent already stored on the server.</p>
 <p>Why the public process never talks to Subversion itself is in <a href="operations.html#ops-ps-model">Operations</a>.</p>
 
-<h2 id="ps-url">5.2 The address you hand over</h2>
+<h2 id="ps-url">5.2 The share address</h2>
 <p>The public address is always:</p>
 <pre><code>https://&lt;server-domain&gt;/&lt;realm-alias&gt;/&lt;slug&gt;</code></pre>
 <p>Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the path or the reason. The allowlist that also serves this manual is in <a href="operations.html#ops-ps-url">Operations</a> and in <a href="operations.html#ops-htdocs">Operations</a>.</p>
@@ -94,7 +94,7 @@
 <li>A recipient list makes a closed channel. An empty list makes an open channel, optionally with a password. The password is never stored in the clear.</li>
 <li>Empty revision follows the latest. A positive revision freezes that snapshot.</li>
 </ul>
-<p>After admission the visitor sees a collapsed-by-default details tree: name, type icon, size, download. They may take one file, one folder or the whole share as a bounded ZIP. This version has no thumbnails.</p>
+<p>After opening the share, the visitor sees a collapsed-by-default details tree: name, type icon, size, download. They may take one file, one folder or the whole share as a bounded ZIP. This version has no thumbnails.</p>
 
 <h2 id="ps-ops">5.6 Turning it on</h2>
 <p>Public shares are installed disabled. After you have edited <code>server.json</code> and <code>public-links.json</code>, start authority before links, then reload <code>httpd</code>. The exact commands, health rule and man pages are in <a href="operations.html#ops-ps-ops">Operations</a>.</p>

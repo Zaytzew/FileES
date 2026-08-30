@@ -46,8 +46,8 @@
 </nav>
 <section class="hero">
 <p class="eyebrow">FileES / publiczny podręcznik</p>
-<h1>Dwie książki, jeden origin</h1>
-<p class="hero-copy">FileES trzyma katalogi w zgodzie i pozwala oddać paczkę komuś, kto nigdy nie zainstaluje klienta. Ten zestaw HTML jest publicznym podręcznikiem. To dwa piony, nie jedna zmieszana powieść: <strong>User</strong> to jak z tym żyć, <strong>Tech</strong> to jak to jest zbudowane. Administrator też jest użytkownikiem. OpenBSD <code>mandoc</code> zostaje przy Tech.</p>
+<h1>Podręcznik FileES: User i Tech</h1>
+<p class="hero-copy">FileES synchronizuje katalogi ze zdalnym repozytorium i pozwala udostępnić pliki osobie, która nigdy nie zainstaluje klienta. Ten zestaw stron HTML jest publicznym podręcznikiem systemu, podzielonym na dwa działy: <strong>User</strong> opisuje codzienną obsługę — co kliknąć i po co, <strong>Tech</strong> opisuje architekturę i kontrakty systemu. Administracja korzysta przede wszystkim z części User. Strony podręcznika OpenBSD (<code>mandoc</code>) należą do części Tech.</p>
 <div class="meta-strip">
 <span><strong>Wersja</strong> 0.1.0</span>
 <span><strong>Data</strong> 2026-08-15</span>
@@ -55,7 +55,7 @@
 <span><strong>Serwer</strong> OpenBSD 7.9 · podpisane r543 na produkcji</span>
 <span><strong>Klient</strong> pulpit Linux i Windows · Android (przetestowany)</span>
 </div>
-<div class="canonical-note"><strong>Języki:</strong> to jest wydanie polskie. Wydanie angielskie jest w <a href="../en/index.html" hreflang="en">assets/en/</a>. GUI pulpitu pozostaje wyłącznie polskie; nazwy na drucie i w <code>mandoc</code> zostają po angielsku — zobacz <a href="user-guide.html#ch2-glossary">słownik terminologii GUI</a>.</div>
+<div class="canonical-note"><strong>Języki:</strong> to jest wydanie polskie. Wydanie angielskie jest w <a href="../en/index.html" hreflang="en">assets/en/</a>. GUI pulpitu pozostaje wyłącznie polskie; nazwy protokołu i strony <code>mandoc</code> zostają po angielsku — zobacz <a href="user-guide.html#ch2-glossary">słownik terminologii GUI</a>.</div>
 </section>
 <section aria-label="Legenda dojrzałości" class="maturity-legend">
 <div class="legend-item"><span class="status status-verified">Zweryfikowane</span><p>Zachowanie jest zaimplementowane i pokryte testem natywnym, integracyjnym, regresyjnym, chaosowym albo żywym odbiorem produkcyjnym.</p></div>
@@ -85,27 +85,27 @@
 </nav>
 <div class="manual-content">
 <h1>Jak czytać ten podręcznik</h1>
-<p>Host już serwuje strony. Książki są rozdzielone: strony User to howto, Tech <a href="operations.html">Eksploatacja</a> trzyma mięso, które siedziało obok nich. Stare adresy rozdziałów zostają, żeby nie ruszać linków ani allowlisty.</p>
+<p>Host już serwuje te strony. Treść jest rozdzielona: strony User to instrukcje obsługi, a Tech <a href="operations.html">Eksploatacja</a> zawiera szczegóły, które wcześniej sąsiadowały z nimi na tych samych stronach. Stare adresy rozdziałów zostają, żeby nie zepsuć linków ani allowlisty.</p>
 <div class="lang-choice">
 <a class="lang-card" href="#user">
 <span class="lang-kicker">User</span>
 <strong>Instrukcja i howto</strong>
-<p>Co się gotuje i po co. Pulpit, udziały, zapraszanie ludzi, odzyskiwanie. Administrator też jest użytkownikiem.</p>
+<p>Co system robi i po co. Pulpit, udziały, zapraszanie ludzi, odzyskiwanie danych.</p>
 </a>
 <a class="lang-card" href="#tech">
 <span class="lang-kicker">Tech</span>
-<strong>Mięso</strong>
-<p>Protokoły, sztafeta ticketów, pledge/unveil, wymagania, mandoc.</p>
+<strong>Architektura i kontrakty</strong>
+<p>Protokoły, przepływ ticketów, pledge/unveil, wymagania, mandoc.</p>
 </a>
 </div>
-<p>Dawny pojedynczy <code>manual-filees.html</code> jest stubem. Każda strona trzyma system wizualny <code>filees:space</code> i nie ma zależności sieciowych. FileES jest wersją roboczą. Znacznik dojrzałości nie jest wydaniem produktu.</p>
+<p>Dawny pojedynczy <code>manual-filees.html</code> pozostaje wyłącznie przekierowaniem. Każda strona trzyma system wizualny <code>filees:space</code> i nie ma zależności sieciowych. FileES jest wersją roboczą. Znacznik dojrzałości nie jest wydaniem produktu.</p>
 <h2 id="user">User</h2>
-<p>Tu zaczynasz, jeśli siedzisz przy biurku albo prowadzisz strefę. Ton: co kliknąć, co się dzieje, po co FileES w ogóle. Nazwy na drucie zostają po angielsku; pulpit mówi potocznie (<em>strefa</em> to realm).</p>
+<p>Tu zaczynasz jako użytkownik pulpitu albo administrator strefy. Ton: co kliknąć, co się wtedy dzieje, po co dana funkcja istnieje. Techniczne nazwy protokołu zostają po angielsku; pulpit mówi potocznym językiem (<em>strefa</em> to realm).</p>
 <ul>
 <li><a href="user-guide.html">Howto pulpitu</a> — instalacja klienta, pierwszy folder, Ustawienia, blokady, Dziennik.</li>
-<li><a href="android.html">Klient Android</a> — parowanie QR, przegląd udziałów, wrzutka do <code>mobile-uploads/</code>.</li>
-<li><a href="public-shares.html">Udziały publiczne</a> — oddaj paczkę komuś, kto nigdy nie zainstaluje FileES.</li>
-<li><a href="administration.html">Administracja</a> — zaproszenie, cofnięcie, odzyskanie, rotacja. Nadal użytkownik, tylko z większą wiązką kluczy.</li>
+<li><a href="android.html">Klient Android</a> — parowanie QR, przegląd udziałów, wysyłanie plików do <code>mobile-uploads/</code>.</li>
+<li><a href="public-shares.html">Udziały publiczne</a> — udostępnij pliki komuś, kto nigdy nie zainstaluje FileES.</li>
+<li><a href="administration.html">Administracja</a> — zaproszenie, cofnięcie, odzyskanie, rotacja repozytorium.</li>
 </ul>
 <h2 id="tech">Tech</h2>
 <p>Tu zaczynasz, jeśli implementujesz, audytujesz albo wdrażasz. Ton: kontrakty, odrzucone alternatywy i to, co musi zostać prawdą.</p>
@@ -128,7 +128,7 @@
 <tr><td>Udziały publiczne</td><td><span class="status status-verified">Zweryfikowane</span> żywy HTTPS, OTP, branding, ZIP; mapa obiektów jest snapshotem</td></tr>
 <tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Zweryfikowane</span> podpisane r543 (alpha) na produkcyjnym OpenBSD</td></tr>
 <tr><td>MSI / usługa Windows</td><td><span class="status status-implemented">Zaimplementowane</span> MSI tylko dla GUI; demon jest osobną binarką</td></tr>
-<tr><td>Kanał przyjęcia (Upload Channel)</td><td><span class="status status-designed">Zaprojektowane</span> następny pełny pion produktowy</td></tr>
+<tr><td>Kanał przyjęcia (Upload Channel)</td><td><span class="status status-implemented">Zaimplementowane</span> półka przyjęcia działa w produkcji od r601 (utworzenie, wysyłka, lista, cofnięcie); OTP wnoszącego i kwarantanna AV (48h) gotowe w źródłach, czekają na kolejne wydanie podpisanego <code>FILEES-BIN</code>; <code>slots</code>/DROPPER świadomie wyłączone</td></tr>
 </table></div>
 <p>Na hoście serwera strony Tech idą w parze z:</p>
 <pre><code>man filees

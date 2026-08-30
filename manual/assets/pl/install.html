@@ -64,12 +64,12 @@
 <h1 id="ch3">Rozdział 3: Instalacja i wdrożenie serwera</h1><div class="chapter-content">
 <p>Ten rozdział jest ścieżką Tech: czego potrzebujesz, dwa skrypty instalatora i <code>filees-install</code>. Fragmenty sshd, tabela pól <code>server.json</code>, regeneracja kluczy i drzewo htdocs są w <a href="operations.html">Eksploatacji</a>.</p>
 <h2 id="ch3-prereq">3.1 Wymagania wstępne</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Produkcyjny host OpenBSD 7.9 <code>spot.example.net</code> jest na podpisanym wydaniu r543 (kanał alpha).</span></div>
-<p>Narzędzia serwera FileES celują w <strong>OpenBSD 7.9/amd64</strong> jako platformę główną i referencyjną pod względem bezpieczeństwa. Bundel serwera Linux/amd64 da się też zbudować; hartowanie zależne od dystrybucji pozostaje obowiązkiem administratora, bo Linux nie zapewnia tego samego kontraktu <code>pledge</code>/<code>unveil</code>. FileES nie dodaje żadnego nasłuchu sieciowego: systemowy <code>sshd</code> jest jedynym punktem sterowania i danych. Udziały publiczne, gdy są włączone, serwuje istniejący na hoście <code>httpd</code> (albo równoważny terminator TLS) przez FastCGI — FileES nadal sam nie kończy TLS.</p>
+<p>Narzędzia serwera FileES celują w <strong>OpenBSD 7.9/amd64</strong> jako platformę główną i referencyjną pod względem bezpieczeństwa. Bundle serwera Linux/amd64 da się też zbudować; hartowanie zależne od dystrybucji pozostaje obowiązkiem administratora, bo Linux nie zapewnia tego samego kontraktu <code>pledge</code>/<code>unveil</code>. FileES nie dodaje żadnego nasłuchu sieciowego: systemowy <code>sshd</code> jest jedynym punktem sterowania i danych. Udziały publiczne, gdy są włączone, serwuje istniejący na hoście <code>httpd</code> (albo równoważny terminator TLS) przez FastCGI — FileES nadal sam nie kończy TLS.</p>
 <p>Zależności zewnętrzne:</p>
 <ul>
 <li><strong>Serwer SVN</strong> — <code>svnserve</code>, instalowany i konfigurowany niezależnie. To jedyna wspierana ścieżka dostępu: FileES sięga do niego jako <code>svnserve</code> w trybie tunelu przez SSH. Apache/<code>mod_dav_svn</code> nie jest celem FileES i nigdy nie był testowany.</li>
 <li><strong>Smarthost SMTP</strong> — do dostarczania OTP; FileES nie uruchamia MTA. Wspierany jest wyłącznie przekaźnik w stylu submission (<code>host:port</code>).</li>
-<li><strong>Go 1.25+</strong> — potrzebny wyłącznie do budowania ze źródeł. Dostarczane są wstępnie zbudowane bundel.</li>
+<li><strong>Go 1.25+</strong> — potrzebny wyłącznie do budowania ze źródeł. Dostarczane są wstępnie zbudowane bundle.</li>
 </ul>
 <p>Konta, które instalator ma utworzyć na OpenBSD:</p>
 <div class="table-wrap"><table>

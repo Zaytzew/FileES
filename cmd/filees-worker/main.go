@@ -15,6 +15,8 @@ func main() {
 			os.Exit(servertool.RunWhaleWorker(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 		case "upload-reap":
 			os.Exit(servertool.RunUploadReap(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "upload-seed-reject":
+			os.Exit(servertool.RunUploadSeedReject(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 		case "mobile-onboard":
 			os.Exit(servertool.RunMobileOnboardWorker(os.Stdin, os.Stdout, os.Stderr))
 		case "mobile-proof":

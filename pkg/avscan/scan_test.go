@@ -3,6 +3,8 @@ package avscan
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -25,5 +27,35 @@ func TestCommandWithoutAbsolutePathIsUnavailable(t *testing.T) {
 	_, _, err := (Command{Path: "clamscan"}).Scan(context.Background(), "/tmp/x")
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestCommandTreatsEICARAsInfectedEvenWhenHelperExitsZero(t *testing.T) {
+	helper := "/usr/bin/true"
+	if _, err := os.Stat(helper); err != nil {
+		t.Skip("no /usr/bin/true")
+	}
+	path := filepath.Join(t.TempDir(), "eicar.com")
+	if err := os.WriteFile(path, []byte(EICAR), 0600); err != nil {
+		t.Fatal(err)
+	}
+	verdict, detail, err := (Command{Path: helper}).Scan(context.Background(), path)
+	if err != nil || verdict != Infected || detail != EICARSignature {
+		t.Fatalf("verdict=%v detail=%q err=%v", verdict, detail, err)
+	}
+}
+
+func TestCommandLeavesNonEICARToHelperExit(t *testing.T) {
+	helper := "/usr/bin/true"
+	if _, err := os.Stat(helper); err != nil {
+		t.Skip("no /usr/bin/true")
+	}
+	path := filepath.Join(t.TempDir(), "ok.pdf")
+	if err := os.WriteFile(path, []byte("ok"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	verdict, _, err := (Command{Path: helper}).Scan(context.Background(), path)
+	if err != nil || verdict != Clean {
+		t.Fatalf("verdict=%v err=%v", verdict, err)
 	}
 }

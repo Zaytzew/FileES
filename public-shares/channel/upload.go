@@ -174,6 +174,37 @@ func (s *Store) UpdateUpload(operationID, requesterRealm, channelID string, decl
 	return record, deliveries, nil
 }
 
+func (s *Store) OwnerRealmForAlias(alias string) (string, error) {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return "", ErrNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := os.ReadDir(filepath.Join(s.Root, "addresses", alias))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(s.Root, "addresses", alias, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var reservation slugReservation
+		if json.Unmarshal(raw, &reservation) != nil || reservation.OwnerRealm == "" || reservation.Alias != alias {
+			continue
+		}
+		return reservation.OwnerRealm, nil
+	}
+	return "", ErrNotFound
+}
+
 func (s *Store) ListOwnedUploads(requesterRealm, authorityRepoID string) ([]UploadRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

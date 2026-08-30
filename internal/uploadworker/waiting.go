@@ -2,11 +2,16 @@ package uploadworker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"time"
+
+	"filees/pkg/avscan"
+	"github.com/google/uuid"
 )
 
 type PurgedItem struct {
@@ -49,6 +54,41 @@ func (r Reaper) ListWaiting(ownerRealm string, now time.Time) (WaitingList, erro
 	}
 	list.Purged = purged
 	return list, nil
+}
+
+func (r Reaper) SeedReject(ownerRealm, originalName string, now time.Time) (Index, error) {
+	if !filepath.IsAbs(r.TrashRoot) || ownerRealm == "" {
+		return Index{}, ErrIncomplete
+	}
+	if now.IsZero() {
+		now = r.now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	name := filepath.Base(filepath.ToSlash(originalName))
+	if name == "" || name == "." || name == ".." {
+		name = "eicar.com"
+	}
+	payload := []byte(avscan.EICAR)
+	sum := sha256.Sum256(payload)
+	id := uuid.NewString()
+	rel := "seed/" + now.Format("2006-01-02") + "/" + id
+	dir := filepath.Join(r.TrashRoot, filepath.FromSlash(rel))
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return Index{}, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, payloadName), payload, 0600); err != nil {
+		return Index{}, err
+	}
+	idx := Index{
+		UploadID: id, OwnerRealm: ownerRealm, OriginalName: name, Size: int64(len(payload)),
+		SHA256: hex.EncodeToString(sum[:]), AVVerdict: avscan.EICARSignature, ReceivedAt: now,
+	}
+	if err := writeIndex(filepath.Join(dir, indexName), idx); err != nil {
+		return Index{}, err
+	}
+	idx.RelPath = rel
+	return idx, nil
 }
 
 func (r Reaper) HideWaiting(uploadID string, now time.Time) error {
@@ -186,5 +226,3 @@ func splitLines(raw []byte) [][]byte {
 	}
 	return lines
 }
-
-

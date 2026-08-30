@@ -27,6 +27,20 @@ func uploadFixture(t *testing.T) (*Store, manifest.Upload, string) {
 	return store, declaration, owner
 }
 
+func TestOwnerRealmForAliasReadsReservation(t *testing.T) {
+	store, declaration, owner := uploadFixture(t)
+	if _, _, err := store.CreateUpload(uuid.NewString(), owner, declaration); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.OwnerRealmForAlias("atmprojekt")
+	if err != nil || got != owner {
+		t.Fatalf("owner=%q err=%v", got, err)
+	}
+	if _, err := store.OwnerRealmForAlias("missing"); err != ErrNotFound {
+		t.Fatalf("missing alias err=%v", err)
+	}
+}
+
 func TestCreateUploadIssuesOpaqueTokenAndSharesSlugSpace(t *testing.T) {
 	store, declaration, owner := uploadFixture(t)
 	channelID := uuid.NewString()

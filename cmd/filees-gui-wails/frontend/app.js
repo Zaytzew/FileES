@@ -30,6 +30,7 @@ const selectedPublicShares = new Set();
 let selectedPublicShareServer = "";
 const renderedHTML = new WeakMap();
 const expandedServers = new Set();
+const seenServers = new Set();
 const initialWindowWidth = 1180;
 const autoFit = {
   enabled: true,
@@ -211,6 +212,10 @@ function renderMetrics(snapshot) {
   const pending = repos.reduce((sum, repo) => sum + Number(repo.pending_files || 0), 0);
   const pendingBytes = repos.reduce((sum, repo) => sum + Number(repo.pending_bytes || 0), 0);
   const conflicts = repos.reduce((sum, repo) => sum + Number(repo.conflicts || 0), 0);
+  const reservations = snapshot.reservations || [];
+  const reservationsKnown = !(snapshot.connected && (snapshot.servers || []).some((server) => !server.reservations_known));
+  const publicShares = snapshot.public_shares || [];
+  const activePublicShares = publicShares.filter((share) => share.state === "active").length;
   const unreadAnnouncements = (snapshot.notices || []).filter((notice) => !notice.acked).length;
   const attention = conflicts + unreadAnnouncements + (snapshot.errors?.length || 0);
 
@@ -218,6 +223,14 @@ function renderMetrics(snapshot) {
   $("#metric-repos").textContent = repos.length;
   $("#metric-pending").textContent = pending;
   $("#metric-pending-note").textContent = pending ? `${bytes(pendingBytes)} oczekuje` : "kolejka jest pusta";
+  $("#metric-reservations").textContent = reservationsKnown ? reservations.length : "?";
+  $("#metric-reservations-note").textContent = reservationsKnown
+    ? plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad")
+    : "lista niedostępna";
+  $("#metric-public-shares").textContent = snapshot.public_shares_known ? activePublicShares : "?";
+  $("#metric-public-shares-note").textContent = snapshot.public_shares_known
+    ? plural(activePublicShares, "aktywny link", "aktywne linki", "aktywnych linków")
+    : "lista niedostępna";
   $("#metric-attention").textContent = attention;
   $("#pulse-value").textContent = repos.length;
   $("#pulse-label").textContent = plural(repos.length, "repozytorium", "repozytoria", "repozytoriów");
@@ -333,6 +346,11 @@ function renderRepositories(snapshot) {
       servers.push({ id: repo.server_id, display_name: repo.server_id, address: "" });
       known.add(repo.server_id);
     }
+  });
+  servers.forEach((server) => {
+    if (seenServers.has(server.id)) return;
+    seenServers.add(server.id);
+    expandedServers.add(server.id);
   });
   const html = servers.map((server) => {
     const serverRepos = repos.filter((repo) => repo.server_id === server.id);
@@ -732,6 +750,19 @@ $("#activate").addEventListener("click", (event) => triggerAction(event.currentT
 $("#pair-mobile").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#refresh").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Refresh));
 $("#reconnect").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Reconnect));
+$(".side-column").addEventListener("click", (event) => {
+  const toggle = event.target.closest("[data-toggle-card]");
+  if (!toggle) return;
+  const body = document.getElementById(toggle.dataset.toggleCard);
+  if (!body) return;
+  const expanded = toggle.getAttribute("aria-expanded") === "true";
+  body.hidden = expanded;
+  toggle.setAttribute("aria-expanded", String(!expanded));
+  const action = expanded ? "Rozwiń" : "Zwiń";
+  const subject = toggle.getAttribute("aria-label")?.replace(/^(Zwiń|Rozwiń)\s+/u, "") || "panel";
+  toggle.title = `${action} ${subject}`;
+  toggle.setAttribute("aria-label", `${action} ${subject}`);
+});
 $("#open-journal").addEventListener("click", () => {
   $("#journal-overlay").hidden = false;
   $("#close-journal").focus();

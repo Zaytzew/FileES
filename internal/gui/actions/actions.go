@@ -466,7 +466,7 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 	case tray.IntentLocateFolder:
 		c.startLocateRepository(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentReviewQuarantine:
-		c.startReviewQuarantine(ctx, intent.ServerID, intent.RepoID)
+		c.startReviewQuarantine(ctx, intent.ServerID, intent.RepoID, true)
 	}
 }
 
@@ -569,7 +569,7 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 		case platform.SettingsDialogUploadChannels:
 			c.startManageUploadChannels(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogQuarantine:
-			c.startReviewQuarantine(ctx, result.ServerID, result.RepoID)
+			c.startReviewQuarantine(ctx, result.ServerID, result.RepoID, false)
 		case platform.SettingsDialogRealmVisibility:
 			c.startSetRealmVisibility(ctx, result.ServerID)
 		case platform.SettingsDialogRealmBranding:
@@ -1784,7 +1784,7 @@ func (c *Controller) offerUploadShelfFolder(ctx context.Context, serverID, autho
 	_, _ = c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, uploadRepoID, filepath.Clean(picked.Path))
 }
 
-func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID string) {
+func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID string, direct bool) {
 	key := "quarantine." + serverID + "." + repoID
 	if serverID == "" || repoID == "" || c.cfg.Quarantine == nil || c.cfg.QuarantineBrowser == nil || c.cfg.FolderPicker == nil || c.cfg.Prompter == nil {
 		return
@@ -1818,7 +1818,7 @@ func (c *Controller) startReviewQuarantine(ctx context.Context, serverID, repoID
 					announcedPurge = true
 				}
 			}
-			request := platform.QuarantineDialogRequest{Title: "Kwarantanna — „" + repo.DisplayName + "”", Text: text, ServerID: serverID, RepoID: repoID}
+			request := platform.QuarantineDialogRequest{Title: "Kwarantanna — „" + repo.DisplayName + "”", Text: text, ServerID: serverID, RepoID: repoID, RepositoryName: repo.DisplayName, DirectEntry: direct}
 			known := make(map[string]QuarantineItem, len(listed.Items))
 			for _, item := range listed.Items {
 				known[item.UploadID] = item

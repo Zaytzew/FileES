@@ -15,11 +15,11 @@ const repositorySnapshotEvent = "filees:repository-snapshot"
 // It receives already-authorised models from the shared controller and returns
 // only opaque IDs plus closed action enums. It never calls daemon IPC.
 type RepositoryService struct {
-	mu       sync.RWMutex
-	snapshot RepositorySnapshot
-	emitter  snapshotEmitter
-	show     func()
-	hide     func()
+	mu         sync.RWMutex
+	snapshot   RepositorySnapshot
+	emitter    snapshotEmitter
+	show       func()
+	hide       func()
 	settings   *repositorySettingsSession
 	shares     *repositorySharesSession
 	grants     *repositoryGrantsSession
@@ -642,6 +642,10 @@ func (service *RepositoryService) showUploadChannels(ctx context.Context, reques
 
 func (service *RepositoryService) showQuarantine(ctx context.Context, request platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error) {
 	service.mu.Lock()
+	if request.DirectEntry {
+		service.pendingQuarantine = repositoryContextKey(request.ServerID, request.RepoID)
+		service.snapshot.Context = RepositoryContextProjection{ServerID: request.ServerID, RepoID: request.RepoID, Name: request.RepositoryName}
+	}
 	contextProjection := service.snapshot.Context
 	pending := service.pendingQuarantine
 	if pending == "" || pending != repositoryContextKey(contextProjection.ServerID, contextProjection.RepoID) {

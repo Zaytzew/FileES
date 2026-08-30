@@ -347,6 +347,33 @@ func TestRepositoryServiceValidatesQuarantineChoices(t *testing.T) {
 	}
 }
 
+func TestRepositoryServiceAllowsDirectQuarantineEntry(t *testing.T) {
+	service := newRepositoryService()
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	resultCh := make(chan platform.QuarantineDialogResult, 1)
+	go func() {
+		result, _ := (repositoryQuarantineBrowserAdapter{service: service}).ShowQuarantine(context.Background(), platform.QuarantineDialogRequest{
+			Title: "Kwarantanna", ServerID: "spot", RepoID: "trash", RepositoryName: "Odrzuty", DirectEntry: true,
+		})
+		resultCh <- result
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("direct quarantine window was not shown")
+	}
+	if snapshot := service.Snapshot(); snapshot.Mode != "quarantine" || snapshot.Context.ServerID != "spot" || snapshot.Context.RepoID != "trash" || snapshot.Context.Name != "Odrzuty" {
+		t.Fatalf("direct quarantine projection = %+v", snapshot)
+	}
+	service.Cancel()
+	select {
+	case <-resultCh:
+	case <-time.After(time.Second):
+		t.Fatal("direct quarantine browser did not close")
+	}
+}
+
 func TestRepositoryServiceReturnsSingleRepoForConnect(t *testing.T) {
 	service := newRepositoryService()
 	shown := make(chan struct{}, 1)

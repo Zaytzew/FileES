@@ -610,16 +610,20 @@ func (s *Server) NewRepoEvent(repoID, evType string, payload any) contract.Event
 // Cancelling ctx closes the listener and every active request or event-stream
 // connection so clients can immediately enter their reconnect flow.
 func (s *Server) Start(ctx context.Context) error {
-	_ = os.Remove(s.sockPath)
 	if err := os.MkdirAll(filepath.Dir(s.sockPath), 0o700); err != nil {
 		return err
 	}
 
-	ln, err := net.Listen("unix", s.sockPath)
+	ln, err := listenUnixSocket(s.sockPath)
 	if err != nil {
 		return err
 	}
 	_ = os.Chmod(s.sockPath, 0o600) // restrict to owner
+	ownedSocket, err := os.Stat(s.sockPath)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
 
 	s.lg.Infof("listening on %s", s.sockPath)
 
@@ -627,11 +631,55 @@ func (s *Server) Start(ctx context.Context) error {
 		<-ctx.Done()
 		_ = ln.Close()
 		s.closeConnections()
-		_ = os.Remove(s.sockPath)
+		removeSocketIfOwned(s.sockPath, ownedSocket)
 	}()
 
 	go s.acceptLoop(ln)
 	return nil
+}
+
+// listenUnixSocket preserves a live daemon and removes only a stale Unix
+// socket. Blindly unlinking before Listen lets a second daemon bind the same
+// pathname while the first one keeps an orphaned listener alive.
+func listenUnixSocket(path string) (net.Listener, error) {
+	ln, err := net.Listen("unix", path)
+	if err == nil {
+		disableUnlinkOnClose(ln)
+		return ln, nil
+	}
+	info, statErr := os.Lstat(path)
+	if statErr != nil || info.Mode()&os.ModeSocket == 0 {
+		return nil, err
+	}
+	conn, dialErr := net.DialTimeout("unix", path, 250*time.Millisecond)
+	if dialErr == nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("filees daemon is already listening on %s", path)
+	}
+	if removeErr := os.Remove(path); removeErr != nil {
+		return nil, fmt.Errorf("remove stale IPC socket: %w", removeErr)
+	}
+	ln, err = net.Listen("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	disableUnlinkOnClose(ln)
+	return ln, nil
+}
+
+func disableUnlinkOnClose(listener net.Listener) {
+	if unix, ok := listener.(*net.UnixListener); ok {
+		unix.SetUnlinkOnClose(false)
+	}
+}
+
+// removeSocketIfOwned prevents an older daemon from unlinking a replacement
+// socket that was bound after its own pathname disappeared.
+func removeSocketIfOwned(path string, owned os.FileInfo) {
+	current, err := os.Stat(path)
+	if err == nil && os.SameFile(owned, current) {
+		_ = os.Remove(path)
+	}
 }
 
 func (s *Server) acceptLoop(ln net.Listener) {

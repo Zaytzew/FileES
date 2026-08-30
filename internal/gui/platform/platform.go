@@ -184,7 +184,9 @@ type QuarantineBrowser interface {
 
 type QuarantineDialogRequest struct {
 	Title, Text, ServerID, RepoID string
+	RepositoryName                string
 	Items                         []QuarantineItem
+	DirectEntry                   bool
 }
 
 type QuarantineItem struct {

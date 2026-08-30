@@ -1,4 +1,4 @@
-.Dd August 20, 2026
+.Dd August 30, 2026
 .Dt FILEES-WORKER 8
 .Os
 .Sh NAME
@@ -15,6 +15,9 @@
 .Nm
 .Cm upload-reap
 .Nm
+.Cm upload-seed-reject
+.Fl alias Ar realm-alias
+.Nm
 .Cm mobile-onboard
 .Nm
 .Cm mobile-proof
@@ -25,7 +28,7 @@
 .Sh DESCRIPTION
 .Nm
 is exec'd once per authenticated deploy or control-plane ticket, dispatching
-on its first argument to one of six subcommands.
+on its first argument to one of seven subcommands.
 .Bl -tag -width "repository-control"
 .It Cm deploy
 default path, also reached with no subcommand at all; reads a tunnel
@@ -40,6 +43,15 @@ serves one framed Whale PUT window, status or commit request, as
 described below.
 .It Cm upload-reap
 the operator cron exception described below.
+.It Cm upload-seed-reject
+plants one harmless EICAR reject in the waiting room of
+.Ar realm-alias
+so the owner can receive the quarantine projection without a real
+infected upload.
+Run as
+.Sy _filees-state ,
+same as
+.Cm upload-reap .
 .It Cm mobile-onboard
 reads a JSON push payload from stdin and stages a mobile client's
 activation grant; exec'd by
@@ -119,6 +131,21 @@ does that,
 does not unless
 .Sy _clamav
 can also read the job directory.
+.Pp
+.Nm
+.Cm upload-seed-reject
+.Fl alias Ar alias
+plants one EICAR test file in
+.Ic trash_root
+for that realm's waiting room so the owner can receive the quarantine
+projection without a live infected upload.
+It does not run
+.Ic av_command
+and does not commit into
+.Ic trash_repo ;
+the owner list reads the waiting-room filesystem.
+.Ic upload-reap
+also treats the EICAR test file as infected even when the helper exits 0.
 .Sh SEE ALSO
 .Xr filees-client-entry 8 ,
 .Xr filees-entry 8 ,

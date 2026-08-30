@@ -804,7 +804,7 @@ func (s *Server) handleUploadChannel(req contract.Request, action string) contra
 func (s *Server) handleQuarantine(req contract.Request, action string) contract.Response {
 	service := s.uploadChannelService()
 	if service == nil {
-		return contract.ErrResponse(req.RequestID, "UPLOAD-1000", "ERROR", "NONE", "upload_channel.unavailable", nil)
+		return contract.ErrResponse(req.RequestID, "UPLOAD-0001", "ERROR", "RETRY", "upload_channel.unavailable", nil)
 	}
 	var serverID, uploadID string
 	switch action {

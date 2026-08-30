@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="branded-assets/filees-space-svg-pack/filees-space-horizontal.svg" alt="FileES" width="360">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branded-assets/filees-space-svg-pack/filees-space-monochrome-white.svg">
+    <img src="branded-assets/filees-space-svg-pack/filees-space-monochrome.svg" alt="FileES" width="360">
+  </picture>
 </p>
 
 # FileES

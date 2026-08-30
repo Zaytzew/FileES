@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="branded-assets/filees-space-svg-pack/filees-space-horizontal.svg" alt="FileES" width="360">
+</p>
+
 # FileES
 
 *English | [Polski](README.pl.md)*

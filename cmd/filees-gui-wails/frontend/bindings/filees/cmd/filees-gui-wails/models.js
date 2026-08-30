@@ -1307,6 +1307,13 @@ export class RepoProjection {
              */
             this["can_publish"] = false;
         }
+        if (!("can_review_quarantine" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_review_quarantine"] = false;
+        }
         if (!("cycle" in $$source)) {
             /**
              * @member

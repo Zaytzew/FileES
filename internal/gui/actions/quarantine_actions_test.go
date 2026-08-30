@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,14 +77,13 @@ func TestControllerQuarantineHideIsSilentAndLeavesBytes(t *testing.T) {
 	manager := &recordingQuarantine{list: actions.QuarantineList{Items: []actions.QuarantineItem{{
 		UploadID: "u1", OriginalName: "wirus.exe", Size: 12, RemainingHours: 40, AVVerdict: "Eicar",
 	}}}}
-	dialogs := 0
+	var dialogs atomic.Int32
 	platformFake := &platformtest.Fake{
 		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
 			return platform.SettingsDialogResult{Action: platform.SettingsDialogQuarantine, ServerID: "office", RepoID: "trash-1"}, nil
 		},
 		QuarantineFunc: func(context.Context, platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error) {
-			dialogs++
-			if dialogs == 1 {
+			if dialogs.Add(1) == 1 {
 				return platform.QuarantineDialogResult{Action: platform.QuarantineDialogHide, UploadID: "u1"}, nil
 			}
 			return platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}, nil
@@ -100,7 +100,7 @@ func TestControllerQuarantineHideIsSilentAndLeavesBytes(t *testing.T) {
 		manager.mu.Lock()
 		hidden := len(manager.hidden)
 		manager.mu.Unlock()
-		if hidden == 1 && dialogs >= 2 {
+		if hidden == 1 && dialogs.Load() >= 2 {
 			break
 		}
 		time.Sleep(time.Millisecond)
@@ -164,22 +164,19 @@ func TestControllerQuarantineFetchWritesCopyAndReportsRemainingHours(t *testing.
 	}
 }
 
-func TestControllerQuarantineCloseIsSilent(t *testing.T) {
+func TestControllerDirectQuarantineIntentCloseIsSilent(t *testing.T) {
 	manager := &recordingQuarantine{list: actions.QuarantineList{Items: []actions.QuarantineItem{{UploadID: "u1", OriginalName: "a.bin", RemainingHours: 10}}}}
 	platformFake := &platformtest.Fake{
-		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
-			return platform.SettingsDialogResult{Action: platform.SettingsDialogQuarantine, ServerID: "office", RepoID: "trash-1"}, nil
-		},
 		QuarantineFunc: func(context.Context, platform.QuarantineDialogRequest) (platform.QuarantineDialogResult, error) {
 			return platform.QuarantineDialogResult{Action: platform.QuarantineDialogClose}, nil
 		},
 	}
 	intents, cancel := setup(actions.Config{
-		ViewModel: viewCopy(quarantineView()), SettingsBrowser: platformFake, QuarantineBrowser: platformFake,
+		ViewModel: viewCopy(quarantineView()), QuarantineBrowser: platformFake,
 		FolderPicker: platformFake, Prompter: platformFake, Quarantine: manager, Notifier: platformFake,
 	})
 	defer cancel()
-	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	send(t, intents, tray.Intent{Kind: tray.IntentReviewQuarantine, ServerID: "office", RepoID: "trash-1"})
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) && len(platformFake.Snapshot().QuarantineRequests) == 0 {
 		time.Sleep(time.Millisecond)

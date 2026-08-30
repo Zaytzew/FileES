@@ -465,6 +465,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startRevokePublicShares(ctx, intent.ServerID, intent.ChannelIDs)
 	case tray.IntentLocateFolder:
 		c.startLocateRepository(ctx, intent.ServerID, intent.RepoID)
+	case tray.IntentReviewQuarantine:
+		c.startReviewQuarantine(ctx, intent.ServerID, intent.RepoID)
 	}
 }
 

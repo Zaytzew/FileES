@@ -9,6 +9,7 @@ import (
 
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/tray"
+	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -117,6 +118,38 @@ func TestProjectViewModelClassifiesOwnershipWithoutExposingRealmIDs(t *testing.T
 	}
 	if strings.Contains(string(encoded), "realm-local") || strings.Contains(string(encoded), "realm-foreign") {
 		t.Fatalf("raw realm IDs leaked into renderer JSON: %s", encoded)
+	}
+}
+
+func TestQuarantineProjectionAndDirectIntentRemainOwnerScoped(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapRepoQuarantineList: true, contract.CapRepoQuarantineHide: true, contract.CapRepoQuarantineFetch: true,
+		},
+		Servers: []guiapp.ServerViewModel{{ID: "spot", RealmID: "realm-own"}},
+		Repos: []guiapp.RepoViewModel{
+			{ID: "own-trash", ServerID: "spot", OwnerRealmID: "realm-own", Purpose: clientview.PurposeUploadTrash},
+			{ID: "guest-trash", ServerID: "spot", OwnerRealmID: "realm-guest", Purpose: clientview.PurposeUploadTrash},
+			{ID: "ordinary", ServerID: "spot", OwnerRealmID: "realm-own"},
+		},
+	}
+	projected := projectViewModel(vm)
+	if !projected.Repositories[0].CanReviewQuarantine || projected.Repositories[1].CanReviewQuarantine || projected.Repositories[2].CanReviewQuarantine {
+		t.Fatalf("quarantine action projection = %+v", projected.Repositories)
+	}
+	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentReviewQuarantine), RepoID: "own-trash"})
+	if !allowed || intent.Kind != tray.IntentReviewQuarantine || intent.ServerID != "spot" || intent.RepoID != "own-trash" {
+		t.Fatalf("direct quarantine intent = %+v allowed=%v", intent, allowed)
+	}
+	for _, repoID := range []string{"guest-trash", "ordinary"} {
+		if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentReviewQuarantine), RepoID: repoID}); allowed {
+			t.Fatalf("direct quarantine intent accepted %s", repoID)
+		}
+	}
+	delete(vm.Capabilities, contract.CapRepoQuarantineFetch)
+	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentReviewQuarantine), RepoID: "own-trash"}); allowed {
+		t.Fatal("direct quarantine intent accepted an incomplete capability set")
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/journal"
 	"filees/internal/gui/tray"
+	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -102,6 +103,7 @@ type RepoProjection struct {
 	CanLock              bool            `json:"can_lock"`
 	CanUnlock            bool            `json:"can_unlock"`
 	CanPublish           bool            `json:"can_publish"`
+	CanReviewQuarantine  bool            `json:"can_review_quarantine"`
 	Cycle                CycleProjection `json:"cycle"`
 	ServerDeleted        bool            `json:"server_deleted,omitempty"`
 	LocalCleanupPending  bool            `json:"local_cleanup_pending,omitempty"`
@@ -493,6 +495,9 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentPublish):
 		allowed := vm.Connected && !vm.Stale && vm.CanPublish() && repo.Attached && repo.CanWrite() && strings.TrimSpace(repo.LocalPath) != ""
 		return tray.Intent{Kind: tray.IntentPublish, RepoID: repo.ID}, allowed
+	case string(tray.IntentReviewQuarantine):
+		allowed := vm.CanReviewQuarantine() && repo.Purpose == clientview.PurposeUploadTrash && serverOwnsRepo(vm, repo)
+		return tray.Intent{Kind: tray.IntentReviewQuarantine, RepoID: repo.ID, ServerID: repo.ServerID}, allowed
 	default:
 		return tray.Intent{}, false
 	}
@@ -555,6 +560,15 @@ func viewHasServer(vm guiapp.ViewModel, serverID string) bool {
 	for _, server := range vm.Servers {
 		if server.ID == serverID {
 			return true
+		}
+	}
+	return false
+}
+
+func serverOwnsRepo(vm guiapp.ViewModel, repo guiapp.RepoViewModel) bool {
+	for _, server := range vm.Servers {
+		if server.ID == repo.ServerID {
+			return server.Owns(repo)
 		}
 	}
 	return false
@@ -632,10 +646,12 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		canLock := vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
 		canUnlock := vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
 		canPublish := vm.Connected && !vm.Stale && vm.CanPublish() && canOpen && repo.CanWrite()
+		canReviewQuarantine := false
 		ownership := "unclassified"
 		if server, ok := serversByID[repo.ServerID]; ok && server.RealmID != "" && repo.OwnerRealmID != "" {
 			if server.Owns(repo) {
 				ownership = "owned"
+				canReviewQuarantine = vm.CanReviewQuarantine() && repo.Purpose == clientview.PurposeUploadTrash
 			} else {
 				ownership = "guest"
 			}
@@ -650,7 +666,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
-			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish,
+			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
 			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
 			RetainUntil: repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,

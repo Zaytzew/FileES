@@ -34,6 +34,7 @@ const (
 	IntentRevokePublicShare  IntentKind = "revoke_public_share"
 	IntentRevokePublicShares IntentKind = "revoke_public_shares"
 	IntentLocateFolder       IntentKind = "locate_folder"
+	IntentReviewQuarantine   IntentKind = "review_quarantine"
 )
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.

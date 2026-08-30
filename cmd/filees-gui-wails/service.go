@@ -61,6 +61,7 @@ type Snapshot struct {
 	PublicShares      []DashboardPublicShareProjection `json:"public_shares"`
 	PublicSharesKnown bool                             `json:"public_shares_known"`
 	Update            *UpdateProjection                `json:"update,omitempty"`
+	ClientVersion     string                           `json:"client_version"`
 }
 
 type ServerProjection struct {
@@ -236,16 +237,17 @@ type UpdateProjection struct {
 func newGUIService(client guiapp.DaemonClient) *GUIService {
 	service := &GUIService{
 		snapshot: Snapshot{
-			Stale:        true,
-			IconState:    string(guiapp.IconDisconnected),
-			Capabilities: []string{},
-			Servers:      []ServerProjection{},
-			Repositories: []RepoProjection{},
-			Errors:       []ErrorProjection{},
-			Activity:     []ActivityProjection{},
-			Journal:      []JournalProjection{},
-			Notices:      []NoticeProjection{},
-			PublicShares: []DashboardPublicShareProjection{},
+			Stale:         true,
+			IconState:     string(guiapp.IconDisconnected),
+			Capabilities:  []string{},
+			Servers:       []ServerProjection{},
+			Repositories:  []RepoProjection{},
+			Errors:        []ErrorProjection{},
+			Activity:      []ActivityProjection{},
+			Journal:       []JournalProjection{},
+			Notices:       []NoticeProjection{},
+			PublicShares:  []DashboardPublicShareProjection{},
+			ClientVersion: version,
 		},
 	}
 	service.runner = guiapp.New(guiapp.Config{
@@ -612,6 +614,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		Journal:        []JournalProjection{},
 		PendingActions: make([]PendingActionProjection, 0, len(vm.PendingActions)),
 		Notices:        make([]NoticeProjection, 0, len(vm.Notices)),
+		ClientVersion:  version,
 	}
 	if !vm.LastRefresh.IsZero() {
 		result.LastRefresh = vm.LastRefresh.Format(time.RFC3339)

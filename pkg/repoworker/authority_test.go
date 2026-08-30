@@ -74,6 +74,66 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestServicePublisherRepairsLegacyRepositoryPurpose(t *testing.T) {
+	root := t.TempDir()
+	realmID, clientID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	url := "svn+ssh://_filees-client@example/repos/" + repoID
+	viewPath := filepath.Join(root, "clients", clientID, "view.json")
+	view := clientview.View{
+		Schema: clientview.Schema, ClientID: clientID, RealmID: realmID,
+		Generation: 4, GeneratedAt: time.Now(), ClientRole: "normal",
+		Capabilities: &clientview.Capabilities{CanCreateRepositories: true},
+		Repositories: []clientview.Repository{{
+			RepoID: repoID, DisplayName: "filees-upload-trash", URL: url,
+			Access: "rw", State: "active", OwnerRealmID: realmID, AttachmentPolicy: "optional",
+		}}, ActiveOperations: []json.RawMessage{},
+	}
+	if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(filepath.Join(root, "admin", "clients", clientID+".json"), map[string]any{"schema": "filees.client-instance/v1", "client_id": clientID, "realm_id": realmID, "state": "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(filepath.Join(root, "admin", "realms", realmID+".json"), realmRecord{Schema: "filees.realm/v1", RealmID: realmID, State: "active", CreatedAt: time.Now(), Alias: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	repoPath, err := repositoryRecordPath(root, repoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicJSON(repoPath, repositoryRecord{
+		Schema: RepositorySchema, RepoID: repoID, OwnerRealmID: realmID,
+		DisplayName: "filees-upload-trash", URL: url, State: "active", CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &publishRunner{}
+	publisher := ServicePublisher{ServiceWC: root, DataAuthzFile: filepath.Join(t.TempDir(), "data.authz"), Runner: runner}
+	if err := publisher.Publish(context.Background(), repoID, realmID, "filees-upload-trash", url, clientview.PurposeUploadTrash); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := clientview.Load(viewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var canonical repositoryRecord
+	raw, err := os.ReadFile(repoPath)
+	if err != nil || json.Unmarshal(raw, &canonical) != nil {
+		t.Fatalf("read canonical record: %v", err)
+	}
+	if canonical.Purpose != clientview.PurposeUploadTrash || got.Repositories[0].Purpose != clientview.PurposeUploadTrash || got.Generation != 5 {
+		t.Fatalf("canonical purpose=%q projection=%+v generation=%d", canonical.Purpose, got.Repositories[0], got.Generation)
+	}
+	if err := publisher.Publish(context.Background(), repoID, realmID, "filees-upload-trash", url, clientview.PurposeUploadTrash); err != nil {
+		t.Fatal(err)
+	}
+	again, err := clientview.Load(viewPath)
+	if err != nil || again.Generation != 5 {
+		t.Fatalf("idempotent repair generation=%d err=%v", again.Generation, err)
+	}
+}
+
 func TestServicePublisherActivateHealsProjectionFromCanonicalRecord(t *testing.T) {
 	root := t.TempDir()
 	realm, clientID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()

@@ -2358,6 +2358,13 @@ export class Snapshot {
              */
             this["update"] = undefined;
         }
+        if (!("client_version" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["client_version"] = "";
+        }
 
         Object.assign(this, $$source);
     }

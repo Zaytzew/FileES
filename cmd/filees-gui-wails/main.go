@@ -20,7 +20,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
-var version = "dev"
+var version = "0.1.0"
 
 // The complete frontend is embedded in the client executable. There is no
 // Node/Vite build step: CSS and browser modules keep the shipping client

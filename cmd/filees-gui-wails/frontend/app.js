@@ -645,6 +645,11 @@ function renderJournal(snapshot) {
 function render(snapshot) {
   if (!snapshot) return;
   currentSnapshot = snapshot;
+  const clientVersion = String(snapshot.client_version || "").trim();
+  const versionBadge = $("#client-version");
+  versionBadge.textContent = clientVersion || "—";
+  versionBadge.title = clientVersion ? `Wersja klienta FileES ${clientVersion}` : "Wersja klienta FileES jest nieznana";
+  renderVersionDialog(snapshot);
   const pairButton = $("#pair-mobile");
   const capabilities = new Set(snapshot.capabilities || []);
   pairButton.disabled = !snapshot.connected || snapshot.stale || !(snapshot.servers || []).length || !capabilities.has("mobile_pairing.begin");
@@ -661,6 +666,35 @@ function render(snapshot) {
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;
   if (repositoriesChanged) scheduleWindowFit();
   updateRetentionCountdowns();
+}
+
+function renderVersionDialog(snapshot) {
+  const clientVersion = String(snapshot?.client_version || "").trim();
+  const update = snapshot?.update;
+  const currentRelease = String(update?.current_version || "").trim();
+  const availableRelease = String(update?.available_version || "").trim();
+  const available = Boolean(availableRelease) && update?.state !== "current";
+  $("#version-client").textContent = clientVersion || "nieznana";
+  $("#version-release").textContent = currentRelease || "nieznane";
+  if (!update) {
+    $("#version-status").textContent = "Demon nie udostępnił jeszcze informacji o kanale aktualizacji.";
+  } else if (available) {
+    $("#version-status").textContent = update.summary || `Dostępne jest wydanie ${availableRelease}. Zainstalowane wydanie: ${currentRelease || "nieznane"}.`;
+  } else {
+    $("#version-status").textContent = update.summary || "Masz aktualne wydanie z wybranego kanału aktualizacji.";
+  }
+  $("#version-update-actions").hidden = !available;
+}
+
+function openVersionDialog() {
+  renderVersionDialog(currentSnapshot);
+  $("#version-overlay").hidden = false;
+  $("#close-version").focus();
+}
+
+function closeVersionDialog() {
+  $("#version-overlay").hidden = true;
+  $("#client-version").focus();
 }
 
 function renderUpdate(snapshot) {
@@ -779,6 +813,10 @@ document.addEventListener("keydown", (event) => {
     closeAnnouncement();
     return;
   }
+  if (!$("#version-overlay").hidden) {
+    closeVersionDialog();
+    return;
+  }
   if (!$("#journal-overlay").hidden) $("#journal-overlay").hidden = true;
 });
 $("#repositories").addEventListener("click", (event) => {
@@ -845,6 +883,16 @@ $("#dismiss-announcement").addEventListener("click", closeAnnouncement);
 $("#ack-announcement").addEventListener("click", acknowledgeAnnouncement);
 $("#announcement-overlay").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) closeAnnouncement();
+});
+$("#client-version").addEventListener("click", openVersionDialog);
+$("#close-version").addEventListener("click", closeVersionDialog);
+$("#dismiss-version").addEventListener("click", closeVersionDialog);
+$("#version-overlay").addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) closeVersionDialog();
+});
+$("#version-update-actions").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action]");
+  if (button) triggerAction(button);
 });
 $("#update-actions").addEventListener("click", (event) => {
 	const button = event.target.closest("[data-action]");

@@ -1,5 +1,14 @@
 # FileES GUI — checklista odbioru natywnego
 
+**Dotyczy `cmd/filees-gui` (Fyne+zenity/yad na Linuksie, WinForms/PowerShell
+na Windows), deprecated od decyzji r603 — `concepts/WAILS_GUI_FORK.md` §0.**
+Wciąż jedyny wydawany klient, więc ta checklista pozostaje aktualna do
+odbioru każdego wydania, ale dotyczy dialogów natywnych (Zenity/KDialog,
+WinForms picker), których `cmd/filees-gui-wails` w ogóle nie ma. Nie
+rozszerzać tej listy o punkty Wails — warunki, po których `packaging/`
+przestawia się na Wails i ta checklista dostaje odpowiednik, są w
+`concepts/WAILS_GUI_FORK.md` §7.
+
 Automatyczne testy potwierdzają kontrakt, lifecycle, reconnect, bundle i metadane. Poniższe punkty wymagają uruchomienia artefaktu w rzeczywistej sesji graficznej przed wydaniem.
 
 ## Linux

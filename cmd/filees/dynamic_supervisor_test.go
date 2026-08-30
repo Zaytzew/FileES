@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"filees/pkg/client"
 	"filees/pkg/clientview"
@@ -113,4 +114,55 @@ func TestRefreshPublicSharesNoopsWithoutRealmID(t *testing.T) {
 	if len(lister.calls) != 0 {
 		t.Fatalf("expected no calls for a view without a RealmID, got %v", lister.calls)
 	}
+}
+
+type blockingPublicShareLister struct {
+	calls   chan string
+	release chan struct{}
+}
+
+func (lister *blockingPublicShareLister) ListPublicShares(_ context.Context, serverID, repoID string) ([]contract.PublicShareSummary, error) {
+	lister.calls <- serverID + "/" + repoID
+	<-lister.release
+	return []contract.PublicShareSummary{{ChannelID: "ch-" + repoID}}, nil
+}
+
+func TestPublicShareRefreshCoordinatorRerunsMutationArrivingDuringRefresh(t *testing.T) {
+	realmID := "11111111-1111-1111-1111-111111111111"
+	view := func(repoID string) clientview.View {
+		return clientview.View{RealmID: realmID, Repositories: []clientview.Repository{{RepoID: repoID, DisplayName: repoID, OwnerRealmID: realmID, State: "active"}}}
+	}
+	lister := &blockingPublicShareLister{calls: make(chan string, 3), release: make(chan struct{})}
+	cache := newPublicShareCache()
+	coordinator := newPublicShareRefreshCoordinator(t.Context(), lister, cache, nil)
+	coordinator.Schedule("srv-1", view("before-mutation"))
+	select {
+	case call := <-lister.calls:
+		if call != "srv-1/before-mutation" {
+			t.Fatalf("first call = %q", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("initial cached-view refresh did not start")
+	}
+
+	coordinator.Schedule("srv-1", view("after-mutation"))
+	close(lister.release)
+	select {
+	case call := <-lister.calls:
+		if call != "srv-1/after-mutation" {
+			t.Fatalf("rerun call = %q", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("mutation refresh was dropped while the initial refresh was running")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		shares := cache.List()
+		if len(shares) == 1 && shares[0].ChannelID == "ch-after-mutation" {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("final cache = %+v", cache.List())
 }

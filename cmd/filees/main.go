@@ -135,6 +135,7 @@ func runDaemon() {
 	}
 	profileEvents := make(chan clientprofile.Profile, 8)
 	timeoutEvents := make(chan clientprofile.Profile, 8)
+	publicShareEvents := make(chan string, 16)
 
 	gate := runtime.NewHostGate(3)
 	mtx := runtime.NewRepoMutex()
@@ -195,7 +196,12 @@ func runDaemon() {
 	ipc.SetRealmGrantService(realmAliases)
 	ipc.SetRealmPublicBrandingService(realmAliases)
 	ipc.SetEditingPolicyService(realmAliases)
-	ipc.SetPublicShareService(realmAliases)
+	ipc.SetPublicShareService(refreshingPublicShareService{delegate: realmAliases, changed: func(serverID string) {
+		select {
+		case publicShareEvents <- serverID:
+		case <-ctx.Done():
+		}
+	}})
 	ipc.SetUploadChannelService(realmAliases)
 	ipc.SetOwnerLabelResolver(realmAliases)
 	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue})
@@ -222,7 +228,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, ipc, lifecycleStore, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	if lifecycle.action.Load() == daemonActionRestart {

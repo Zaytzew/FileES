@@ -40,6 +40,60 @@ type publicShareCacheSetter interface {
 	Set(serverID string, shares []contract.PublicShareSummary)
 }
 
+// publicShareRefreshCoordinator serialises aggregate refreshes per server.
+// A mutation arriving while a refresh is already in flight is remembered and
+// causes one more pass with the newest view; dropping that signal could leave
+// the dashboard stale until an unrelated projection generation changes.
+type publicShareRefreshCoordinator struct {
+	ctx    context.Context
+	lister publicShareLister
+	cache  publicShareCacheSetter
+	ipc    *ipcserver.Server
+
+	mu      sync.Mutex
+	running map[string]bool
+	pending map[string]clientview.View
+}
+
+func newPublicShareRefreshCoordinator(ctx context.Context, lister publicShareLister, cache publicShareCacheSetter, ipc *ipcserver.Server) *publicShareRefreshCoordinator {
+	return &publicShareRefreshCoordinator{
+		ctx: ctx, lister: lister, cache: cache, ipc: ipc,
+		running: make(map[string]bool), pending: make(map[string]clientview.View),
+	}
+}
+
+func (coordinator *publicShareRefreshCoordinator) Schedule(serverID string, view clientview.View) {
+	if coordinator == nil || coordinator.lister == nil || coordinator.cache == nil || serverID == "" || view.RealmID == "" {
+		return
+	}
+	coordinator.mu.Lock()
+	if coordinator.running[serverID] {
+		coordinator.pending[serverID] = view
+		coordinator.mu.Unlock()
+		return
+	}
+	coordinator.running[serverID] = true
+	coordinator.mu.Unlock()
+	go coordinator.run(serverID, view)
+}
+
+func (coordinator *publicShareRefreshCoordinator) run(serverID string, view clientview.View) {
+	for {
+		refreshPublicShares(coordinator.ctx, coordinator.lister, coordinator.cache, coordinator.ipc, serverID, view)
+		coordinator.mu.Lock()
+		next, rerun := coordinator.pending[serverID]
+		if rerun {
+			delete(coordinator.pending, serverID)
+			coordinator.mu.Unlock()
+			view = next
+			continue
+		}
+		delete(coordinator.running, serverID)
+		coordinator.mu.Unlock()
+		return
+	}
+}
+
 // refreshPublicShares aggregates every publicly-shared channel this realm
 // owns on serverID and republishes the result into cache, then notifies any
 // listening GUI. It runs off the same cadence as the server's projection
@@ -92,7 +146,7 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 	return updater.client.Checkout(ctx, updater.url, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
 	timeouts := make(map[string]time.Duration, len(profiles))
@@ -126,8 +180,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	updates := make(chan projectionUpdate, 16)
 	monitored := make(map[string]bool)
 	currentViews := make(map[string]clientview.View)
-	var sharesRefreshMu sync.Mutex
-	sharesRefreshing := make(map[string]bool)
+	shareRefreshes := newPublicShareRefreshCoordinator(ctx, shareLister, shareCache, ipc)
 	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval, timeout time.Duration) error {
 		if timeout <= 0 {
 			timeout = clientprofile.DefaultSessionTimeout
@@ -144,6 +197,10 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if err := reconcileProjectedView(ctx, supervisor, ipc, serverID, cached, runtimes, lifecycle); err != nil {
 				return fmt.Errorf("apply cached projection: %w", err)
 			}
+			// Monitor emits only a newer generation. Seed the aggregate from the
+			// already-validated cache as well, otherwise a quiet server leaves E1
+			// empty for the daemon's entire lifetime.
+			shareRefreshes.Schedule(serverID, cached)
 		}
 		monitored[serverID] = true
 		clientRole := "normal"
@@ -242,24 +299,10 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes, lifecycle); err != nil && ctx.Err() == nil {
 				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
 			}
-			if shareLister != nil && shareCache != nil {
-				sharesRefreshMu.Lock()
-				busy := sharesRefreshing[update.serverID]
-				if !busy {
-					sharesRefreshing[update.serverID] = true
-				}
-				sharesRefreshMu.Unlock()
-				if !busy {
-					serverID, view := update.serverID, update.view
-					go func() {
-						defer func() {
-							sharesRefreshMu.Lock()
-							delete(sharesRefreshing, serverID)
-							sharesRefreshMu.Unlock()
-						}()
-						refreshPublicShares(ctx, shareLister, shareCache, ipc, serverID, view)
-					}()
-				}
+			shareRefreshes.Schedule(update.serverID, update.view)
+		case serverID := <-publicShareEvents:
+			if view, ok := currentViews[serverID]; ok {
+				shareRefreshes.Schedule(serverID, view)
 			}
 		case attachment := <-attachmentEvents:
 			repo := attachment.Repo

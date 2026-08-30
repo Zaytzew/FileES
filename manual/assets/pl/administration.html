@@ -64,7 +64,7 @@
 <div class="manual-content">
 <h1 id="ch4">Administracja</h1>
 <div class="chapter-content">
-<p>Administrator też jest użytkownikiem. Ta strona mówi, co zrobić: zaprosić kogoś, zdjąć maszynę z serwera, dokończyć zawieszoną robotę, zdecydować, że generacja repozytorium ma się zmienić. Schematy, kody wyjścia i maszyny stanów są w Tech <a href="operations.html">Eksploatacja</a>. Kliknięcia pulpitu dla tej samej strefy są w <a href="user-guide.html#ch2-gui">howto zasobnika</a>.</p>
+<p>Ta strona opisuje typowe zadania administratora: zaproszenie nowej osoby, usunięcie instalacji z serwera, dokończenie przerwanej operacji, decyzję o zmianie generacji repozytorium. Schematy, kody wyjścia i maszyny stanów są w części Tech, w <a href="operations.html">Eksploatacji</a>. Odpowiadające im czynności na pulpicie dla tej samej strefy są opisane w <a href="user-guide.html#ch2-gui">howto zasobnika</a>.</p>
 <p>Na OpenBSD te polecenia uruchamiaj jako <code>_filees-state</code>, na przykład <code>doas -u _filees-state …</code>. Ticket utworzony jako root zostawia plik, którego wejście onboardingu z set-id nie potrafi odczytać.</p>
 
 <h2 id="ch4-admin">4.1 Zaproszenie i odwołanie</h2>
@@ -79,7 +79,7 @@ filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-lin
 filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;</code></pre>
 <ul>
 <li>Bez <code>--join-realm-alias</code> zaproszenie otwiera <strong>nową</strong> strefę. Nowy pulpit raz pyta o niezmienny alias.</li>
-<li>Z flagą zaproszenie dołącza do <strong>istniejącej</strong> strefy. Osoba przy biurku nie wybiera tej strefy i nie zmienia jej nazwy.</li>
+<li>Z flagą zaproszenie dołącza do <strong>istniejącej</strong> strefy. Osoba dołączająca nie wybiera tej strefy i nie zmienia jej nazwy.</li>
 <li><code>resend</code> jest na nieudany pierwszy list. Nie zmienia odbiorcy ani TTL.</li>
 <li>Ticket z błędną polityką odwołujesz, a nie edytujesz.</li>
 <li><code>client revoke</code> zdejmuje z serwera jedną instalację. Granty i foldery strefy zostają.</li>
@@ -96,21 +96,21 @@ doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid
 
 <h2 id="ch4-audit">4.3 Gdzie patrzeć</h2>
 <div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
-<p>Przy biurku: <strong>Dziennik</strong> w zasobniku albo <code>filees log 50</code>. To strukturalna lista błędów tej instalacji.</p>
+<p>Na komputerze użytkownika: <strong>Dziennik</strong> w zasobniku albo <code>filees log 50</code>. To strukturalna lista błędów tej instalacji.</p>
 <p>Na serwerze audyt onboardingu to jeden plik JSON na zdarzenie w <code>/var/filees/onboarding/audit/</code>. Schemat i nazwy zdarzeń są w <a href="operations.html#ops-audit">Eksploatacji</a>.</p>
 
 <h2 id="ch4-mail">4.4 Gdy poczta nie dochodzi</h2>
 <div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
 <p>Zaproszenie, OTP i poczta usunięcia strefy idą przez outbox serwera. Jeśli pierwszy list w ogóle nie doszedł:</p>
 <pre><code>doas -u _filees-state filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;</code></pre>
-<p>Jeśli późniejsze jednorazowe wysłanie padło tymczasowo:</p>
+<p>Jeśli późniejsza pojedyncza próba wysyłki zakończyła się tymczasowym błędem:</p>
 <pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
-<p>Kod wyjścia 75 oznacza: spróbuj później; kod w liście nadal jest ważny. Exit 0 oznacza, że smarthost przyjął wiadomość. Trwała awaria wymaga nowego ticketu albo spojrzenia na przekaźnik. Maszyna stanów outboxu jest w <a href="operations.html#ops-mail">Eksploatacji</a>.</p>
+<p>Kod wyjścia 75 oznacza: spróbuj później; kod w liście nadal jest ważny. Exit 0 oznacza, że smarthost przyjął wiadomość. Trwała awaria wymaga nowego ticketu albo sprawdzenia przekaźnika pocztowego. Maszyna stanów outboxu jest w <a href="operations.html#ops-mail">Eksploatacji</a>.</p>
 
 <h2 id="ch4-recovery">4.5 Odtwarzanie i przeniesienie składowania</h2>
 <div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
 <h4>Przerwane zaproszenie albo usunięcie strefy</h4>
-<p>To samo polecenie co w §4.2: <code>filees-operation recover</code>. Po OTP usunięcia strefy, jeśli host padł, gdy wszystkie klucze klientów były już odwołane, tylko to polecenie dokończy robotę.</p>
+<p>To samo polecenie co w §4.2: <code>filees-operation recover</code>. Jeśli host został nieoczekiwanie zatrzymany po wysłaniu OTP usunięcia strefy, gdy wszystkie klucze klientów były już odwołane, tylko to polecenie dokończy operację.</p>
 <h4>Zamknięcie żądania wymazania danych</h4>
 <p>Po usunięciu strefy właściciel mógł poprosić o wymazanie danych. Serwer nie twierdzi, że sam czyści kopie zapasowe. Gdy sprawdzisz retencję:</p>
 <pre><code>doas -u _filees-state filees-admin erasure complete \
@@ -143,11 +143,11 @@ for repo in /srv/filees/repositories/*; do
 done</code></pre>
 <ol start="4">
 <li>W <code>/etc/filees/server.json</code> zmień wyłącznie <code>repositories.root</code>.</li>
-<li>Zanim wpuścisz zapis, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną akcję FileES. Nie ma demona FileES do restartu; worker czyta plik przy żądaniu. Okno i tak jest potrzebne, żeby nic nie wylądowało w starym korzeniu.</li>
+<li>Zanim ponownie zezwolisz na zapis, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną akcję FileES. Nie ma demona FileES do restartu; worker czyta plik przy żądaniu. Okno i tak jest potrzebne, żeby nic nie wylądowało w starym korzeniu.</li>
 <li>Stary korzeń zostaw tylko do odczytu, aż skończą się kopie i odbiór. Wycofanie to stara ścieżka, dopóki okno jeszcze trwa.</li>
 </ol>
 <div class="warn"><strong>Nigdy nie scalaj dwóch żywych korzeni i nie przenoś systemu plików, gdy klienci są podłączeni.</strong> Najpierw kopiuj i weryfikuj, potem jedno przełączenie konfiguracji.</div>
-<h4>Przy biurku po twardym zatrzymaniu</h4>
+<h4>Na komputerze użytkownika po twardym zatrzymaniu</h4>
 <p>Demon pulpitu uzgadnia się sam przy następnym starcie. Przeniesiony folder to <strong>Wskaż kopię</strong>, nie nowy checkout. Pliki w <code>!kolizje/</code> to Twoje lokalne wersje z kolizji, w której wygrał serwer — przeglądasz je ręcznie. Zobacz <a href="user-guide.html#ch2-trouble">rozwiązywanie problemów</a>. Kształty plików claim i odbudowa projekcji są w <a href="operations.html#ops-recovery">Eksploatacji</a>.</p>
 
 <h2 id="ch4-monitoring">4.6 Codzienne sprawdzenia</h2>
@@ -162,7 +162,7 @@ done</code></pre>
 
 <h2 id="ch4-rotate">4.7 Kiedy rotować repozytorium</h2>
 <div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Jawna zmiana generacji; bez harmonogramu.</span></div>
-<p>Głębokość wyłącznie dołączającego repozytorium FileES sama z siebie go nie spowalnia. Rotuj, gdy potrzebujesz retencji albo warstwowania — Subversion nie ma <code>obliterate</code>. Uruchomienie jest decyzją, nie zegarem. Istniejące kopie robocze nie przeżywają zmiany generacji; każde biurko musi podłączyć się od nowa.</p>
+<p>Głębokość wyłącznie dołączającego repozytorium FileES sama z siebie go nie spowalnia. Rotuj, gdy potrzebujesz retencji albo warstwowania — Subversion nie ma <code>obliterate</code>. Uruchomienie jest decyzją, nie zegarem. Istniejące kopie robocze nie przeżywają zmiany generacji; każda instalacja pulpitu musi podłączyć się od nowa.</p>
 <pre><code>filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
 filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
 filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>

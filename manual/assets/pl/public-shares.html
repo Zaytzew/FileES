@@ -52,7 +52,7 @@
 </div>
 <ol>
 <li><a href="#ps-model">Co to jest</a></li>
-<li><a href="#ps-url">Adres, który oddajesz</a></li>
+<li><a href="#ps-url">Adres udziału</a></li>
 <li><a href="#ps-map">To nie jest żywe lustro</a></li>
 <li><a href="#ps-access">Otwarty albo zamknięty</a></li>
 <li><a href="#ps-desktop">Z pulpitu</a></li>
@@ -62,15 +62,15 @@
 <div class="manual-content">
 <h1 id="ch-ps">Udziały publiczne</h1>
 <div class="chapter-content">
-<p>Oddajesz paczkę komuś, kto nigdy nie zainstaluje FileES. To nie jest druga droga zapisu do Twoich folderów. Strefy zaufania, mapa obiektów i protokół OTP są w Tech <a href="operations.html#ops-ps-model">Eksploatacja</a>.</p>
+<p>Udostępniasz pliki osobie, która nigdy nie zainstaluje FileES. To nie jest druga droga zapisu do Twoich folderów. Strefy zaufania, mapa obiektów i protokół OTP są opisane w części Tech, w <a href="operations.html#ops-ps-model">Eksploatacji</a>.</p>
 
 <h2 id="ps-model">5.1 Co to jest</h2>
 <div class="section-meta"><span class="status status-verified">Zweryfikowane na żywo</span></div>
-<p>Udział publiczny to strona tylko do odczytu na tym samym originie HTTPS co ten podręcznik. Odwiedzający nigdy nie dostaje poświadczeń zapisu. Kanał przyjęcia — jeśli powstanie — to inny produkt i nie może dzielić tego procesu ani tych sekretów.</p>
+<p>Udział publiczny to strona tylko do odczytu, dostępna pod tym samym adresem HTTPS co ten podręcznik. Odwiedzający nigdy nie dostaje poświadczeń zapisu. Kanał przyjęcia (Upload Channel) to osobny produkt — służy do przyjmowania plików od kogoś z zewnątrz, nie do ich udostępniania — i nie dzieli tego procesu ani tych sekretów z udziałem publicznym.</p>
 <p>Strona nie używa JavaScriptu, ciasteczek ani zasobów z zewnątrz. Branding to system <code>filees:space</code> plus logo i kolor wiodący właściciela już zapisane na serwerze.</p>
 <p>Dlaczego proces publiczny sam nie rozmawia z Subversion, jest w <a href="operations.html#ops-ps-model">Eksploatacji</a>.</p>
 
-<h2 id="ps-url">5.2 Adres, który oddajesz</h2>
+<h2 id="ps-url">5.2 Adres udziału</h2>
 <p>Publiczny adres jest zawsze:</p>
 <pre><code>https://&lt;domena-serwera&gt;/&lt;alias-strefy&gt;/&lt;slug&gt;</code></pre>
 <p>Nieznane, cofnięte i usunięte adresy dzielą jedno obrandowane HTTP 404, które nie odbija ścieżki ani powodu. Allowlista, która serwuje też ten podręcznik, jest w <a href="operations.html#ops-ps-url">Eksploatacji</a> i w <a href="operations.html#ops-htdocs">Eksploatacji</a>.</p>
@@ -94,7 +94,7 @@
 <li>Lista odbiorców robi kanał zamknięty. Pusta lista — otwarty, opcjonalnie z hasłem. Hasło nie jest przechowywane jawnym tekstem.</li>
 <li>Pusta rewizja śledzi najnowszą. Dodatnia zamraża ten zrzut.</li>
 </ul>
-<p>Po wpuszczeniu odwiedzający widzi domyślnie zwinięte drzewo w stylu „Szczegóły”: nazwa, ikona typu, rozmiar, pobranie. Może wziąć jeden plik, jeden folder albo cały udział jako ograniczony ZIP. W tej wersji nie ma miniaturek.</p>
+<p>Po otwarciu udziału odwiedzający widzi domyślnie zwinięte drzewo w stylu „Szczegóły”: nazwa, ikona typu, rozmiar, pobranie. Może wziąć jeden plik, jeden folder albo cały udział jako ograniczony ZIP. W tej wersji nie ma miniaturek.</p>
 
 <h2 id="ps-ops">5.6 Włączenie</h2>
 <p>Udziały publiczne instaluje się wyłączone. Po edycji <code>server.json</code> i <code>public-links.json</code> uruchom authority przed links, potem przeładuj <code>httpd</code>. Dokładne polecenia, reguła zdrowia i strony man są w <a href="operations.html#ops-ps-ops">Eksploatacji</a>.</p>

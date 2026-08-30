@@ -56,6 +56,7 @@
 <li><a href="#and-browse">Przeglądanie i pobieranie</a></li>
 <li><a href="#and-send">Wysyłka</a></li>
 <li><a href="#and-pack">Duży folder</a></li>
+<li><a href="#and-track">Śledzone foldery</a></li>
 <li><a href="#and-not">Czego telefon nie robi</a></li>
 </ol>
 </nav>
@@ -65,7 +66,7 @@
 <p>Telefon jest urządzeniem capture i podglądu, nie stacją edycyjną. Czyta udział jak publiczny listing. Pisze wyłącznie do <code>mobile-uploads/</code>. Reszta drzewa zostaje read-only. Szczegóły protokołu są w Tech <a href="man-pages.html#filees-mobile-v1"><code>filees-mobile-v1</code></a> i w <code>concepts/TREE_INGEST_CONCEPT.md</code>.</p>
 
 <h2 id="and-what">Co to jest</h2>
-<div class="section-meta"><span class="status status-verified">Przetestowane na żywo</span><span>2026-08-16 na <code>spot</code>: parowanie QR, listing udziałów, pobranie, wrzutka 198 plików jednym commitem, drzewo widoczne na pulpicie.</span></div>
+<div class="section-meta"><span class="status status-verified">Przetestowane na żywo</span><span>2026-08-16 na <code>spot</code>: parowanie QR, listing udziałów, pobranie, wysłanie 198 plików jednym commitem, drzewo widoczne na pulpicie.</span></div>
 <p>Aplikacja nie zakłada repozytoriów i nie pyta o UUID. Po sparowaniu pokazuje te same udziały, które ma pulpit w projekcji strefy. Wejście w udział to lista folderów i plików z rozmiarami po ludzku. Ikona startowa to znak <code>f:s</code>; w liście folderów — kwadratowy symbol filees:space.</p>
 
 <h2 id="and-pair">Sparowanie</h2>
@@ -79,17 +80,20 @@
 <p><strong>Dodaj</strong> oferuje pliki albo cały folder. Cel to zawsze <code>mobile-uploads/…</code> we wskazanym udziale. Mała liczba plików idzie po kolei, ze spinnerem <code>3 / 7</code>. Istniejąca ścieżka w <code>mobile-uploads/</code> o tej samej treści jest pomijana; inna treść to nowa rewizja, bez pytania o konflikt.</p>
 
 <h2 id="and-pack">Duży folder</h2>
-<p>Od ośmiu plików telefon najpierw liczy mięso (<code>198 plików, 14 MB</code>), pakuje folder do jednego zipa (to opakowanie na drucie, nie plik w udziale) i wysyła jednym połączeniem. Worker na serwerze sprawdza sha256 z nagłówkiem, rozpakowuje i robi <em>jeden</em> commit. Wewnętrzny <code>.zip</code>, który sam jest Twoim dokumentem, zostaje plikiem — serwer nie wchodzi w niego drugi raz.</p>
-<p>To leczy lawinę małych plików (setki handshake’ów), nie wieloryba gigabajtów. Limit czasu długiej sesji to osobna sprawa pulpitu.</p>
+<p>Od ośmiu plików telefon najpierw sumuje ich liczbę i rozmiar (<code>198 plików, 14 MB</code>), pakuje folder do jednego pliku ZIP (to tylko opakowanie transportowe, nie plik w udziale) i wysyła go jednym połączeniem. Worker na serwerze sprawdza sumę SHA-256 z nagłówka, rozpakowuje zawartość i wykonuje <em>jeden</em> commit. Jeśli sam wysyłany plik jest archiwum <code>.zip</code> będącym Twoim dokumentem, zostaje zapisany jako zwykły plik — serwer nie rozpakowuje go po raz drugi.</p>
+<p>Ten mechanizm ogranicza koszt wysyłania dużej liczby małych plików naraz; nie zmienia sposobu obsługi pojedynczych bardzo dużych plików. Limit czasu długiej sesji to osobna sprawa pulpitu.</p>
+
+<h2 id="and-track">Śledzone foldery</h2>
+<div class="section-meta"><span class="status status-verified">Zweryfikowane na żywo</span><span>2026-08-29: naprawiony realny błąd, przez który wysyłka w tle cicho nic nie robiła, jeśli akurat żadne repozytorium nie było otwarte w przeglądarce udziału.</span></div>
+<p>W Ustawieniach wybierasz folder na telefonie oraz cel wysyłki (repozytorium/udział). Aplikacja sprawdza folder co około pięć minut i wysyła nowe pliki automatycznie — cel wysyłki jest teraz niezależny od tego, które repozytorium akurat przeglądasz. Gdy włączasz śledzenie folderu, który już ma zawartość, aplikacja pyta, czy wysłać ją całą, czy tylko pliki dodane od teraz. Każda udana wysyłka w tle kończy się powiadomieniem systemowym.</p>
 
 <h2 id="and-not">Czego telefon nie robi</h2>
 <ul>
 <li>nie edytuje ani nie kasuje plików poza <code>mobile-uploads/</code>;</li>
 <li>nie zakłada udziałów i nie przyjmuje ręcznego UUID;</li>
-<li>nie pokazuje kolejki uploadów — spinner, potem sukces albo błąd;</li>
-<li>śledzenie folderu (wrzutka co ok. 5 minut) jest w Ustawieniach; na żywo jeszcze nie było pełnego odbioru.</li>
+<li>nie pokazuje kolejki uploadów — spinner, potem sukces albo błąd.</li>
 </ul>
-<p>Serwer musi znać <code>UPLOAD_TREE</code> (podpisane wydanie z ingestem, na <code>spot</code> od r543). Starszy <code>filees-mobile-v1</code> zamyka sesję statusem 70. Telefon pokazuje, że serwer nie zna operacji albo paczki jeszcze nie przyjmuje — nie udaje sukcesu.</p>
+<p>Serwer musi obsługiwać <code>UPLOAD_TREE</code> (podpisane wydanie z tą funkcją, na <code>spot</code> od r543). Starszy <code>filees-mobile-v1</code> zamyka sesję statusem 70. W takim przypadku telefon pokazuje, że serwer nie obsługuje tej operacji albo jeszcze nie przyjmuje przesyłek zbiorczych — aplikacja nie zgłasza fałszywego sukcesu.</p>
 </div>
 <nav class="page-nav">
 <a href="user-guide.html">← Pulpit</a>

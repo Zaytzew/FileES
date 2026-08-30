@@ -56,6 +56,7 @@
 <li><a href="#and-browse">Browse and download</a></li>
 <li><a href="#and-send">Send</a></li>
 <li><a href="#and-pack">Large folder</a></li>
+<li><a href="#and-track">Tracked folders</a></li>
 <li><a href="#and-not">What the phone does not do</a></li>
 </ol>
 </nav>
@@ -79,17 +80,20 @@
 <p><strong>Add</strong> offers files or a whole folder. The destination is always <code>mobile-uploads/…</code> in the chosen share. A small set goes one by one, with a <code>3 / 7</code> spinner. An existing path under <code>mobile-uploads/</code> with the same content is skipped; different content is a new revision, with no conflict prompt.</p>
 
 <h2 id="and-pack">Large folder</h2>
-<p>From eight files up the phone first counts the load (<code>198 files, 14 MB</code>), packs the folder into one zip (wire packaging, not a file in the share) and sends it in one connection. The server worker checks the header sha256, unpacks, and makes <em>one</em> commit. A nested <code>.zip</code> that is itself your document stays a file — the worker does not open it again.</p>
-<p>This cures a swarm of small files (hundreds of handshakes), not a gigabyte whale. Long-session time limits are a separate desktop concern.</p>
+<p>From eight files up, the phone first totals their count and size (<code>198 files, 14 MB</code>), packs the folder into one zip (transport packaging only, not a file in the share) and sends it in one connection. The server worker checks the header sha256, unpacks the contents, and makes <em>one</em> commit. If the file you send is itself a <code>.zip</code> archive that is your document, it is stored as a regular file — the server does not unpack it a second time.</p>
+<p>This reduces the overhead of sending many small files at once; it does not change how a single very large file is handled. Long-session time limits are a separate desktop concern.</p>
+
+<h2 id="and-track">Tracked folders</h2>
+<div class="section-meta"><span class="status status-verified">Live-verified</span><span>2026-08-29: fixed a real bug where background sending silently did nothing unless a repository happened to be open in the share browser.</span></div>
+<p>In Settings you pick a folder on the phone and a send destination (repository/share). The app checks the folder roughly every five minutes and sends new files automatically — the send destination is now independent of whichever repository you happen to be browsing. When you turn on tracking for a folder that already has content, the app asks whether to send all of it or only files added from now on. Every successful background send ends with a system notification.</p>
 
 <h2 id="and-not">What the phone does not do</h2>
 <ul>
 <li>it does not edit or delete objects outside <code>mobile-uploads/</code>;</li>
 <li>it does not create shares and does not take a typed UUID;</li>
-<li>it does not show an upload queue — a spinner, then success or an error;</li>
-<li>watched folders (about every five minutes) live in Settings; they have not had a full live acceptance yet.</li>
+<li>it does not show an upload queue — a spinner, then success or an error.</li>
 </ul>
-<p>The server must know <code>UPLOAD_TREE</code> (the signed ingest release; on <code>spot</code> from r543). An older <code>filees-mobile-v1</code> exits status 70. The phone reports that the server does not know the operation or will not ingest the pack — it does not pretend success.</p>
+<p>The server must support <code>UPLOAD_TREE</code> (the signed release with this feature; on <code>spot</code> from r543). An older <code>filees-mobile-v1</code> exits status 70. In that case the phone reports that the server does not support the operation or is not yet accepting bulk uploads — the app does not report a false success.</p>
 </div>
 <nav class="page-nav">
 <a href="user-guide.html">← Desktop</a>

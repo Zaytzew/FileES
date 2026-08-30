@@ -46,8 +46,8 @@
 </nav>
 <section class="hero">
 <p class="eyebrow">FileES / public manual</p>
-<h1>Two books, one origin</h1>
-<p class="hero-copy">FileES keeps folders in step and lets you hand a packet to someone who will never install the client. This HTML set is the public manual. It is two pillars, not one mixed novel: <strong>User</strong> is how to live with it, <strong>Tech</strong> is how it is built. An administrator is a user. OpenBSD <code>mandoc</code> stays with Tech.</p>
+<h1>FileES Manual: User and Tech</h1>
+<p class="hero-copy">FileES synchronises folders with a remote repository and lets you share files with someone who will never install the client. This HTML set is the public manual for the system, split into two parts: <strong>User</strong> covers everyday use — what to click and why, <strong>Tech</strong> covers the architecture and contracts of the system. Administration mostly uses the User part. The OpenBSD manual pages (<code>mandoc</code>) belong to Tech.</p>
 <div class="meta-strip">
 <span><strong>Version</strong> 0.1.0</span>
 <span><strong>Date</strong> 2026-08-15</span>
@@ -85,27 +85,27 @@
 </nav>
 <div class="manual-content">
 <h1>How to read this manual</h1>
-<p>The host already serves the pages. The books are split: User pages are howto, Tech <a href="operations.html">Operations</a> holds the meat that used to sit beside them. Old chapter URLs stay put so links and the static allowlist do not move.</p>
+<p>The host already serves these pages. The content is split: User pages are howto guides, and Tech <a href="operations.html">Operations</a> holds the detail that used to sit alongside them on the same pages. Old chapter URLs stay put so links and the static allowlist do not move.</p>
 <div class="lang-choice">
 <a class="lang-card" href="#user">
 <span class="lang-kicker">User</span>
 <strong>Instruction and howto</strong>
-<p>What is cooking and why. Desktop, shares, inviting people, recovery. An administrator is a user.</p>
+<p>What the system does and why. Desktop, shares, inviting people, data recovery.</p>
 </a>
 <a class="lang-card" href="#tech">
 <span class="lang-kicker">Tech</span>
-<strong>The meat</strong>
+<strong>Architecture and contracts</strong>
 <p>Protocols, ticket relay, pledge/unveil, requirements, mandoc.</p>
 </a>
 </div>
 <p>The previous single-file <code>manual-filees.html</code> is a stub. Each page keeps the <code>filees:space</code> visual system and has no network dependencies. FileES is a work-in-progress. A maturity badge is not a product release.</p>
 <h2 id="user">User</h2>
-<p>Start here if you sit at a desk or run a realm. The tone is: what to click, what happens, why FileES bothers. Wire names stay English; the desktop speaks everyday Polish (<em>strefa</em> is a realm).</p>
+<p>Start here if you use the desktop client or run a realm. The tone is: what to click, what happens, why the feature exists. Protocol-level names stay English; the desktop speaks everyday Polish (<em>strefa</em> is a realm).</p>
 <ul>
 <li><a href="user-guide.html">Desktop howto</a> — install the client, first folder, Settings, locks, journal.</li>
 <li><a href="android.html">Android client</a> — QR pairing, share listing, send into <code>mobile-uploads/</code>.</li>
-<li><a href="public-shares.html">Public shares</a> — hand a packet to someone who will never install FileES.</li>
-<li><a href="administration.html">Administration</a> — invite, revoke, recover, rotate. Still a user, with more keys.</li>
+<li><a href="public-shares.html">Public shares</a> — share files with someone who will never install FileES.</li>
+<li><a href="administration.html">Administration</a> — invite, revoke, recover, rotate a repository.</li>
 </ul>
 <h2 id="tech">Tech</h2>
 <p>Start here if you implement, audit or deploy. The tone is contracts, rejected alternatives and what must stay true.</p>
@@ -128,7 +128,7 @@
 <tr><td>Public Shares</td><td><span class="status status-verified">Verified</span> live HTTPS endpoint, OTP, branding, ZIP; object map is a snapshot</td></tr>
 <tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified</span> signed r543 (alpha) on production OpenBSD</td></tr>
 <tr><td>Windows MSI / service packaging</td><td><span class="status status-implemented">Implemented</span> GUI MSI only; daemon is a separate binary</td></tr>
-<tr><td>Upload Channel</td><td><span class="status status-designed">Designed</span> next full product vertical</td></tr>
+<tr><td>Upload Channel</td><td><span class="status status-implemented">Implemented</span> the upload shelf has been live in production since r601 (create, upload, list, revoke); uploader OTP and AV quarantine (48h) are complete in source, awaiting the next signed <code>FILEES-BIN</code> release; <code>slots</code>/DROPPER remain deliberately off</td></tr>
 </table></div>
 <p>On the server host the Tech pages pair with:</p>
 <pre><code>man filees

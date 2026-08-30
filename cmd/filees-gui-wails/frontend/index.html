@@ -65,6 +65,8 @@
       <article><small>Serwery</small><strong id="metric-servers">—</strong><span id="metric-servers-note">aktywacje</span></article>
       <article><small>Repozytoria</small><strong id="metric-repos">—</strong><span id="metric-repos-note">w projekcji</span></article>
       <article><small>Do wysłania</small><strong id="metric-pending">—</strong><span id="metric-pending-note">zmienionych plików</span></article>
+      <article><small>Wypożyczenia</small><strong id="metric-reservations">—</strong><span id="metric-reservations-note">aktywne blokady</span></article>
+      <article><small>Udostępnienia</small><strong id="metric-public-shares">—</strong><span id="metric-public-shares-note">aktywne linki</span></article>
       <article><small>Uwagi</small><strong id="metric-attention">—</strong><span id="metric-attention-note">konflikty i komunikaty</span></article>
     </section>
 
@@ -86,41 +88,43 @@
         <section id="public-shares-card" class="side-card" hidden>
           <div class="section-heading compact">
             <div><p class="eyebrow">Dostęp z zewnątrz</p><h2>Udostępnienia publiczne</h2></div>
-            <span id="public-shares-count" class="count-badge">0</span>
+            <div class="side-card-controls"><span id="public-shares-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="public-shares-body" aria-expanded="true" aria-controls="public-shares-body" title="Zwiń udostępnienia" aria-label="Zwiń udostępnienia"><span aria-hidden="true">⌄</span></button></div>
           </div>
-          <div id="public-shares" class="dashboard-share-list"></div>
+          <div id="public-shares-body" class="side-card-body"><div id="public-shares" class="dashboard-share-list"></div></div>
         </section>
         <section id="update-card" class="side-card" hidden>
           <div class="section-heading compact">
             <div><p class="eyebrow">Wydanie</p><h2>Dostępna aktualizacja</h2></div>
-            <span id="update-version" class="count-badge">—</span>
+            <div class="side-card-controls"><span id="update-version" class="count-badge">—</span><button class="side-card-toggle" type="button" data-toggle-card="update-body" aria-expanded="true" aria-controls="update-body" title="Zwiń aktualizację" aria-label="Zwiń aktualizację"><span aria-hidden="true">⌄</span></button></div>
           </div>
-          <p id="update-summary" class="update-summary"></p>
-          <div id="update-actions" class="update-actions" data-global-action="update">
-            <button type="button" data-action="update_plan">Pokaż plan</button>
-            <button class="primary" type="button" data-action="update_apply">Zaktualizuj</button>
+          <div id="update-body" class="side-card-body">
+            <p id="update-summary" class="update-summary"></p>
+            <div id="update-actions" class="update-actions" data-global-action="update">
+              <button type="button" data-action="update_plan">Pokaż plan</button>
+              <button class="primary" type="button" data-action="update_apply">Zaktualizuj</button>
+            </div>
           </div>
         </section>
         <section id="reservations-card" class="side-card" hidden>
           <div class="section-heading compact">
             <div><p class="eyebrow">Edycja</p><h2>Aktywne blokady</h2></div>
-            <span id="reservations-count" class="count-badge">0</span>
+            <div class="side-card-controls"><span id="reservations-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="reservations-body" aria-expanded="true" aria-controls="reservations-body" title="Zwiń blokady" aria-label="Zwiń blokady"><span aria-hidden="true">⌄</span></button></div>
           </div>
-          <div id="reservations" class="reservation-list"></div>
+          <div id="reservations-body" class="side-card-body"><div id="reservations" class="reservation-list"></div></div>
         </section>
         <section id="shouts-card" class="side-card" aria-live="assertive" hidden>
           <div class="section-heading compact">
             <div><p class="eyebrow">Ważne</p><h2>Ostatnie ogłoszenia</h2></div>
-            <span id="shouts-count" class="count-badge">0</span>
+            <div class="side-card-controls"><span id="shouts-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="shouts-body" aria-expanded="true" aria-controls="shouts-body" title="Zwiń ogłoszenia" aria-label="Zwiń ogłoszenia"><span aria-hidden="true">⌄</span></button></div>
           </div>
-          <div id="shouts" class="shout-list"></div>
+          <div id="shouts-body" class="side-card-body"><div id="shouts" class="shout-list"></div></div>
         </section>
-        <section class="side-card">
+        <section id="activity-card" class="side-card">
           <div class="section-heading compact">
             <div><p class="eyebrow">Sygnały</p><h2>Ostatnia aktywność</h2></div>
-            <button id="open-journal" class="text-button" type="button">Dziennik</button>
+            <div class="side-card-controls"><button id="open-journal" class="text-button" type="button">Dziennik</button><button class="side-card-toggle" type="button" data-toggle-card="activity-body" aria-expanded="true" aria-controls="activity-body" title="Zwiń aktywność" aria-label="Zwiń aktywność"><span aria-hidden="true">⌄</span></button></div>
           </div>
-          <div id="activity" class="activity-list"><p class="muted">Brak aktywności.</p></div>
+          <div id="activity-body" class="side-card-body"><div id="activity" class="activity-list"><p class="muted">Brak aktywności.</p></div></div>
         </section>
       </aside>
     </section>

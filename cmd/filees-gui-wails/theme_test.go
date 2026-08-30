@@ -115,3 +115,46 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 		t.Fatal("radar is missing the broad rotating inner ring")
 	}
 }
+
+func TestDashboardStartsServersExpandedAndProjectsLocksAndShares(t *testing.T) {
+	index, err := frontend.ReadFile("frontend/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script, err := frontend.ReadFile("frontend/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles, err := frontend.ReadFile("frontend/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wanted := range []string{`id="metric-reservations"`, `id="metric-public-shares"`, "Wypożyczenia", "Udostępnienia"} {
+		if !strings.Contains(string(index), wanted) {
+			t.Fatalf("dashboard metrics are missing %q", wanted)
+		}
+	}
+	for _, wanted := range []string{`data-toggle-card="public-shares-body"`, `data-toggle-card="update-body"`, `data-toggle-card="reservations-body"`, `data-toggle-card="shouts-body"`, `data-toggle-card="activity-body"`, `aria-expanded="true"`} {
+		if !strings.Contains(string(index), wanted) {
+			t.Fatalf("expandable side cards are missing %q", wanted)
+		}
+	}
+	for _, wanted := range []string{"seenServers", "expandedServers.add(server.id)", `share.state === "active"`, `!server.reservations_known`, "snapshot.public_shares_known"} {
+		if !strings.Contains(string(script), wanted) {
+			t.Fatalf("dashboard projection is missing %q", wanted)
+		}
+	}
+	for _, wanted := range []string{`closest("[data-toggle-card]")`, `body.hidden = expanded`, `toggle.setAttribute("aria-expanded", String(!expanded))`} {
+		if !strings.Contains(string(script), wanted) {
+			t.Fatalf("side-card toggle behaviour is missing %q", wanted)
+		}
+	}
+	for _, wanted := range []string{"repeat(6,minmax(0,1fr))", "repeat(6,minmax(180px,1fr))", "scroll-snap-type:x proximity"} {
+		if !strings.Contains(string(styles), wanted) {
+			t.Fatalf("six-field metric carousel is missing %q", wanted)
+		}
+	}
+	if !strings.Contains(string(styles), `.side-card-body[hidden]`) || !strings.Contains(string(styles), `.side-card-toggle[aria-expanded="false"]`) {
+		t.Fatal("side-card collapsed styles are missing")
+	}
+}

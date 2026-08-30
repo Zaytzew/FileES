@@ -170,6 +170,11 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		record = old
 		if purpose != "" {
 			record.Purpose = purpose
+			if old.Purpose == "" {
+				if err := atomicJSON(repoPath, record); err != nil {
+					return err
+				}
+			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -197,10 +202,25 @@ func (p ServicePublisher) Publish(ctx context.Context, repoID, realmID, name, ur
 		}
 		grantees = append(grantees, view.ClientID)
 		found := false
-		for _, r := range view.Repositories {
+		for index := range view.Repositories {
+			r := &view.Repositories[index]
 			if r.RepoID == repoID {
 				if r.URL != url || r.OwnerRealmID != realmID || r.Access != "rw" {
 					return errors.New("repository projection conflicts")
+				}
+				if record.Purpose != "" {
+					if r.Purpose != "" && r.Purpose != record.Purpose {
+						return errors.New("repository projection purpose conflicts")
+					}
+					if r.Purpose == "" {
+						r.Purpose = record.Purpose
+						view.Generation++
+						view.GeneratedAt = now
+						if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {
+							return err
+						}
+						changed = append(changed, viewPath)
+					}
 				}
 				found = true
 				break

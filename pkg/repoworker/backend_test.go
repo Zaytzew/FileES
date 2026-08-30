@@ -13,25 +13,73 @@ import (
 )
 
 type effects struct {
-	fsfs, publish int
-	authorize     int
-	failAuthorize bool
-	failPublish   bool
-	rollback      int
-	failRollback  bool
-	failPrepare   bool
-	failArchive   bool
-	restore       int
-	deleteSteps   []string
+	fsfs, publish   int
+	publishPurposes []string
+	authorize       int
+	failAuthorize   bool
+	failPublish     bool
+	rollback        int
+	failRollback    bool
+	failPrepare     bool
+	failArchive     bool
+	restore         int
+	deleteSteps     []string
 }
 
 func (e *effects) CreateFSFS(context.Context, string, string) error { e.fsfs++; return nil }
-func (e *effects) PublishAuthority(context.Context, string, string, string, string, string) error {
+func (e *effects) PublishAuthority(_ context.Context, _, _, _, _, purpose string) error {
 	e.publish++
+	e.publishPurposes = append(e.publishPurposes, purpose)
 	if e.failPublish {
 		return errors.New("crash boundary")
 	}
 	return nil
+}
+
+func TestDurableBackendRepairsLegacyUploadTrashPurpose(t *testing.T) {
+	fx := &effects{}
+	backend := &DurableBackend{Root: t.TempDir(), URLPrefix: "svn+ssh://_filees-client@example/repos/", Effects: fx}
+	realmID := uuid.NewString()
+	operationID := trashOperationID(realmID)
+
+	legacy, err := backend.Create(context.Background(), operationID, realmID, "filees-upload-trash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.RepoID != UploadTrashRepositoryID(realmID) || fx.publish != 1 || fx.publishPurposes[0] != "" {
+		t.Fatalf("legacy repo=%+v publishes=%d purposes=%v", legacy, fx.publish, fx.publishPurposes)
+	}
+
+	fx.failPublish = true
+	if err := backend.RepairLegacyUploadTrashPurposes(context.Background()); err == nil {
+		t.Fatal("failed authority repair was accepted")
+	}
+	var record backendRecord
+	raw, err := os.ReadFile(filepath.Join(backend.Root, operationID+".json"))
+	if err != nil || json.Unmarshal(raw, &record) != nil {
+		t.Fatalf("read legacy record: %v", err)
+	}
+	if record.Purpose != "" {
+		t.Fatalf("failed repair persisted purpose=%q", record.Purpose)
+	}
+
+	fx.failPublish = false
+	if err := backend.RepairLegacyUploadTrashPurposes(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(filepath.Join(backend.Root, operationID+".json"))
+	if err != nil || json.Unmarshal(raw, &record) != nil {
+		t.Fatalf("read repaired record: %v", err)
+	}
+	if record.Purpose != "upload_trash" || fx.publish != 3 || fx.publishPurposes[2] != "upload_trash" {
+		t.Fatalf("repaired record=%+v publishes=%d purposes=%v", record, fx.publish, fx.publishPurposes)
+	}
+	if err := backend.RepairLegacyUploadTrashPurposes(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fx.publish != 3 {
+		t.Fatalf("idempotent repair republished authority: %d", fx.publish)
+	}
 }
 func (e *effects) RollbackCreate(context.Context, string, string) error {
 	e.rollback++

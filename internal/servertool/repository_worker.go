@@ -121,6 +121,9 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 			if err := backend.ReapFailedCreates(ctx); err != nil {
 				return err
 			}
+			if err := backend.RepairLegacyUploadTrashPurposes(ctx); err != nil {
+				return err
+			}
 			if err := backend.ReapUncommittedDeletes(ctx); err != nil {
 				return err
 			}

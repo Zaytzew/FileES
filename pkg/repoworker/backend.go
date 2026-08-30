@@ -10,9 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"filees/pkg/repositoryurl"
 	"time"
+
+	"filees/pkg/clientview"
+	"filees/pkg/repositoryurl"
 )
 
 type Effects interface {
@@ -111,6 +112,7 @@ func (b *DurableBackend) CreateWithPurpose(ctx context.Context, op, realm, name,
 	}
 	p := filepath.Join(b.Root, op+".json")
 	r := backendRecord{}
+	repairPublishedPurpose := false
 	raw, e := os.ReadFile(p)
 	if e == nil {
 		if e = json.Unmarshal(raw, &r); e != nil {
@@ -123,7 +125,10 @@ func (b *DurableBackend) CreateWithPurpose(ctx context.Context, op, realm, name,
 			if r.Purpose != "" && r.Purpose != purpose {
 				return Repository{}, errors.New("operation purpose conflicts")
 			}
-			r.Purpose = purpose
+			if r.Purpose == "" {
+				r.Purpose = purpose
+				repairPublishedPurpose = r.Stage == "published"
+			}
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return Repository{}, e
@@ -142,6 +147,21 @@ func (b *DurableBackend) CreateWithPurpose(ctx context.Context, op, realm, name,
 			return Repository{}, fmt.Errorf("resume failed repository rollback: %w", e)
 		}
 		return Repository{}, errors.New("previous repository creation was rolled back; submit a new create request")
+	}
+	// Purpose was added after upload-trash repositories already existed in
+	// production. A completed durable record used to return immediately here,
+	// leaving both the backend record and the canonical client projection on
+	// the legacy empty value forever. Republish first and persist second: if
+	// persistence fails, the next invocation safely repeats the idempotent
+	// authority publication instead of recording a migration that did not
+	// reach clients.
+	if repairPublishedPurpose {
+		if e = b.Effects.PublishAuthority(ctx, r.RepoID, r.RealmID, r.Name, r.URL, r.Purpose); e != nil {
+			return Repository{}, fmt.Errorf("repair repository purpose: %w", e)
+		}
+		if e = b.save(p, r); e != nil {
+			return Repository{}, e
+		}
 	}
 	if r.Stage == "allocated" {
 		if e = b.Effects.CreateFSFS(ctx, r.RepoID, r.OperationID); e != nil {
@@ -173,6 +193,62 @@ func (b *DurableBackend) CreateWithPurpose(ctx context.Context, op, realm, name,
 		return Repository{}, errors.New("invalid repository backend stage")
 	}
 	return Repository{RepoID: r.RepoID, URL: r.URL}, nil
+}
+
+// RepairLegacyUploadTrashPurposes upgrades deterministic upload-trash
+// repositories created before repository purpose became canonical state.
+// It deliberately considers only completed records whose operation and repo
+// IDs both match the realm-derived trash identities; ordinary repositories
+// with an empty purpose are never guessed from their display name.
+func (b *DurableBackend) RepairLegacyUploadTrashPurposes(ctx context.Context) error {
+	var candidates []backendRecord
+	if err := func() error {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if !filepath.IsAbs(b.Root) || b.Effects == nil {
+			return errors.New("repository backend is incomplete")
+		}
+		entries, err := os.ReadDir(b.Root)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), "delete-") || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+			operationID := strings.TrimSuffix(entry.Name(), ".json")
+			if _, err := uuid.Parse(operationID); err != nil {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(b.Root, entry.Name()))
+			if err != nil {
+				return err
+			}
+			var record backendRecord
+			if err := json.Unmarshal(raw, &record); err != nil {
+				return err
+			}
+			if record.OperationID != operationID || record.Stage != "published" || record.Purpose != "" {
+				continue
+			}
+			if record.OperationID != trashOperationID(record.RealmID) || record.RepoID != UploadTrashRepositoryID(record.RealmID) {
+				continue
+			}
+			candidates = append(candidates, record)
+		}
+		return nil
+	}(); err != nil {
+		return err
+	}
+	for _, record := range candidates {
+		if _, err := b.CreateWithPurpose(ctx, record.OperationID, record.RealmID, record.Name, clientview.PurposeUploadTrash); err != nil {
+			return fmt.Errorf("repair legacy upload-trash repository %s: %w", record.RepoID, err)
+		}
+	}
+	return nil
 }
 
 // ValidateURLPrefix rejects a repository URL prefix that could never appear

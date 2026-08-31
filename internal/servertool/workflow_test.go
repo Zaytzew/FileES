@@ -319,6 +319,8 @@ func TestAdminUsageRefusalsAlwaysExplainThemselves(t *testing.T) {
 		{"client", "revoke-realm"},
 		{"repo", "transfer-owner"},
 		{"repo", "transfer-owner", "-repo-id", "only-one-of-two"},
+		{"repo", "check-state", "extra"},
+		{"repo", "prune", "extra"},
 		{"erasure", "complete"},
 		{"nonsense", "command"},
 	} {

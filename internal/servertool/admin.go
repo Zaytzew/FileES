@@ -2,9 +2,11 @@ package servertool
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -50,7 +52,7 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner | erasure complete | version")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner|check-state|prune | erasure complete | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
@@ -267,6 +269,77 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			return ExitTempFail
 		}
 		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-client-result/v1", "status": "transferred", "repo_id": *repoID, "realm_id": *realmID}); err != nil {
+			return ExitSoftware
+		}
+		return ExitOK
+	case "repo check-state":
+		flags := flag.NewFlagSet("repo check-state", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		realmID := flags.String("realm-id", "", "limit to one realm UUID (optional)")
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
+			return adminUsage(stderr, flags, "[--realm-id UUID]")
+		}
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-check-state", areas: onboarding.AreaOperations, needRepoResults: true, needRepositoryData: true})
+		if err != nil {
+			report(stderr, "filees-admin config", err)
+			return ExitConfig
+		}
+		records, err := scanBackendRecords(config.Repositories.ResultsRoot, config.Repositories.Root, *realmID, time.Now())
+		if err != nil {
+			report(stderr, "filees-admin repo check-state", err)
+			return ExitTempFail
+		}
+		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-repo-check-state/v1", "status": "ok", "records": records}); err != nil {
+			return ExitSoftware
+		}
+		return ExitOK
+	case "repo prune":
+		flags := flag.NewFlagSet("repo prune", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		realmID := flags.String("realm-id", "", "limit to one realm UUID (optional)")
+		olderThan := flags.Duration("older-than", time.Hour, "only prune records at least this old, to never race a live in-progress attempt")
+		apply := flags.Bool("apply", false, "actually delete; without this flag, lists what would be pruned and changes nothing")
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
+			return adminUsage(stderr, flags, "[--realm-id UUID] [--older-than 1h] [--apply]")
+		}
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-prune", areas: onboarding.AreaOperations, write: true, needRepoResults: true, needRepositoryData: true})
+		if err != nil {
+			report(stderr, "filees-admin config", err)
+			return ExitConfig
+		}
+		now := time.Now()
+		records, err := scanBackendRecords(config.Repositories.ResultsRoot, config.Repositories.Root, *realmID, now)
+		if err != nil {
+			report(stderr, "filees-admin repo prune", err)
+			return ExitTempFail
+		}
+		var candidates, needsAttention []backendRecordReport
+		for _, record := range records {
+			if !record.Prunable {
+				needsAttention = append(needsAttention, record)
+				continue
+			}
+			if time.Duration(record.AgeSeconds)*time.Second < *olderThan {
+				needsAttention = append(needsAttention, record)
+				continue
+			}
+			candidates = append(candidates, record)
+		}
+		if !*apply {
+			if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-repo-prune/v1", "status": "dry_run", "would_remove": candidates, "needs_attention": needsAttention}); err != nil {
+				return ExitSoftware
+			}
+			return ExitOK
+		}
+		var removed []backendRecordReport
+		for _, record := range candidates {
+			if err := os.Remove(record.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				report(stderr, "filees-admin repo prune remove "+record.OperationID, err)
+				return ExitTempFail
+			}
+			removed = append(removed, record)
+		}
+		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-repo-prune/v1", "status": "pruned", "removed": removed, "needs_attention": needsAttention}); err != nil {
 			return ExitSoftware
 		}
 		return ExitOK

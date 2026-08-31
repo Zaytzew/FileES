@@ -89,10 +89,11 @@ Trybik w nagłówku każdego panelu serwera otwiera pojedyncze, niezależne okno
 `Ustawienia FileES` już w kontekście jego `server_id`. Kolejne otwarcie zmienia
 kontekst istniejącego okna zamiast mnożyć WebView. `SettingsService` projektuje
 gotowy model serwera i folderów; JavaScript nie wylicza capabilities ani nie
-woła IPC. Pierwszą aktywną mutacją jest limit czasu transferu. Po wyborze wraca
-ona do wspólnego kontrolera, używa natywnego promptu i adaptera IPC, a badge
-znika dopiero wtedy, gdy pełny snapshot pokaże żądaną liczbę minut. Pozostałe
-ustawienia są na tym etapie informacyjne i nie mają martwych przycisków.
+woła IPC. Limit czasu transferu wraca do wspólnego kontrolera, używa natywnego
+promptu i adaptera IPC, a badge znika dopiero wtedy, gdy pełny snapshot pokaże
+żądaną liczbę minut. Dostępne capability otwierają także akcje widoczności
+strefy, dodania folderu, odłączenia serwera i usunięcia strefy; brak capability
+nie tworzy martwego przycisku.
 
 Trybik w każdym wierszu folderu otwiera trzecie, pojedyncze okno
 `Działania folderu FileES` pod `/repository.html`. Żądanie wspólnego kontrolera

@@ -49,7 +49,23 @@ func TestBuildMenuClientGroupGatesRestartAndShutdown(t *testing.T) {
 	}
 }
 
-func TestBuildMenuDoesNotOfferRealmAliasForRealmWithRepositories(t *testing.T) {
+// TestBuildMenuOffersRealmAliasWheneverUnsetRegardlessOfRepositories used to
+// assert the opposite for a realm that already has repositories, on the
+// theory that a missing alias at that point must be stale/lagging
+// projection data rather than a real gap. That is not a safe assumption: a
+// realm can accumulate repositories without ever claiming an alias (alias
+// only gates locks/shared operations, never repository creation), and a
+// live incident confirmed a real, non-stale case of exactly that -
+// cloud.atmprojekt.pl 2026-08-31, a server-side bug broke every worker
+// session including alias claim; repository creation later succeeded once
+// fixed, but the realm never got a chance to claim an alias, and the old
+// gate then hid the recovery action entirely. Claiming is immutable
+// server-side once set (pkg/repoworker/realm_alias.go's Claim rejects a
+// different alias with ErrAliasImmutable and treats a repeat of the same
+// one as a harmless no-op), so offering the action whenever RealmAlias==""
+// costs nothing worse than a clean rejection in the case this used to guard
+// against.
+func TestBuildMenuOffersRealmAliasWheneverUnsetRegardlessOfRepositories(t *testing.T) {
 	vm := app.ViewModel{
 		Connected:    true,
 		Capabilities: map[string]bool{contract.CapRealmAliasClaim: true},
@@ -59,14 +75,14 @@ func TestBuildMenuDoesNotOfferRealmAliasForRealmWithRepositories(t *testing.T) {
 		}},
 	}
 	server := findItem(t, BuildMenu(vm).Items, "server.manual")
-	if hasItem(server.Children, "server.manual.realm_alias") {
-		t.Fatalf("alias claim offered for established realm repositories: %+v", server.Children)
+	if !hasItem(server.Children, "server.manual.realm_alias") {
+		t.Fatalf("alias claim missing for a realm with repositories but no alias: %+v", server.Children)
 	}
 
-	vm.Servers[0].Repos = nil
+	vm.Servers[0].RealmAlias = "acme"
 	server = findItem(t, BuildMenu(vm).Items, "server.manual")
-	if !hasItem(server.Children, "server.manual.realm_alias") {
-		t.Fatalf("alias recovery missing for a fresh empty realm: %+v", server.Children)
+	if hasItem(server.Children, "server.manual.realm_alias") {
+		t.Fatalf("alias claim offered for a realm that already has one: %+v", server.Children)
 	}
 }
 

@@ -81,6 +81,12 @@ const (
 	TicketListQuarantine         TicketType = "LIST_QUARANTINE"
 	TicketHideQuarantine         TicketType = "HIDE_QUARANTINE"
 	TicketFetchQuarantine        TicketType = "FETCH_QUARANTINE"
+	// Lock release requests are ephemeral domain records tied to one SVN lock
+	// token. The authenticated session supplies the actor; payloads never name
+	// a requester or holder.
+	TicketRequestLockRelease TicketType = "REQUEST_LOCK_RELEASE"
+	TicketDismissLockRelease TicketType = "DISMISS_LOCK_RELEASE"
+	TicketAcceptLockRelease  TicketType = "ACCEPT_LOCK_RELEASE"
 	// payload carries no realm: the worker derives the owner from the
 	// authenticated session, and a realm grant - including rw - never
 	// satisfies ownership of a repository-wide policy.
@@ -230,6 +236,28 @@ type SetRepositoryEditingPolicyPayload struct {
 type SetRepositoryEditingPolicyResult struct {
 	RepoID string `json:"repo_id"`
 	Policy string `json:"policy"`
+}
+
+type RequestLockReleasePayload struct {
+	RepoID         string `json:"repo_id"`
+	Path           string `json:"path"`
+	ObservedLockID string `json:"observed_lock_id"`
+}
+
+type DecideLockReleasePayload struct {
+	RequestID string `json:"request_id"`
+}
+
+// LockReleaseResult intentionally omits both client identities. They are
+// session-derived server state and are exposed, with human labels, only by the
+// appropriate client-view projections.
+type LockReleaseResult struct {
+	RequestID      string `json:"request_id"`
+	RepoID         string `json:"repo_id"`
+	Path           string `json:"path"`
+	ObservedLockID string `json:"observed_lock_id"`
+	State          string `json:"state"`
+	ExpiresAt      string `json:"expires_at"`
 }
 
 type PublicShareObject struct {
@@ -666,6 +694,28 @@ func (t Ticket) Validate() error {
 		if p.Policy != "" && p.Policy != "free" && p.Policy != "lock_required" {
 			return errors.New("SET_REPOSITORY_EDITING_POLICY policy must be free or lock_required")
 		}
+	case TicketRequestLockRelease:
+		var p RequestLockReleasePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("REQUEST_LOCK_RELEASE payload: %w", err)
+		}
+		if err := validateUUID("REQUEST_LOCK_RELEASE payload.repo_id", p.RepoID); err != nil {
+			return err
+		}
+		if err := validateLockReleasePath(p.Path); err != nil {
+			return err
+		}
+		if err := validateObservedLockID(p.ObservedLockID); err != nil {
+			return err
+		}
+	case TicketDismissLockRelease, TicketAcceptLockRelease:
+		var p DecideLockReleasePayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return fmt.Errorf("lock release decision payload: %w", err)
+		}
+		if err := validateUUID("lock release decision payload.request_id", p.RequestID); err != nil {
+			return err
+		}
 	case TicketListPublicShares:
 		var p ListPublicSharesPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -830,7 +880,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketSetRepositoryEditingPolicy {
+	if r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketSetRepositoryEditingPolicy && r.Type != TicketRequestLockRelease && r.Type != TicketDismissLockRelease && r.Type != TicketAcceptLockRelease {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -1018,6 +1068,29 @@ func validateSuccessPayload(r Result) error {
 		// the default is the empty string and never the "free" alias.
 		if result.Policy != "" && result.Policy != "lock_required" {
 			return errors.New("SET_REPOSITORY_EDITING_POLICY result policy is invalid")
+		}
+	case TicketRequestLockRelease, TicketDismissLockRelease, TicketAcceptLockRelease:
+		var result LockReleaseResult
+		if err := decodeStrict(r.Result, &result); err != nil {
+			return fmt.Errorf("lock release result: %w", err)
+		}
+		if err := validateUUID("lock release result.request_id", result.RequestID); err != nil {
+			return err
+		}
+		if err := validateUUID("lock release result.repo_id", result.RepoID); err != nil {
+			return err
+		}
+		if err := validateLockReleasePath(result.Path); err != nil {
+			return err
+		}
+		if err := validateObservedLockID(result.ObservedLockID); err != nil {
+			return err
+		}
+		if !validLockReleaseState(result.State) {
+			return errors.New("lock release result state is invalid")
+		}
+		if _, err := time.Parse(time.RFC3339Nano, result.ExpiresAt); err != nil {
+			return fmt.Errorf("invalid lock release result expiry: %w", err)
 		}
 	case TicketListPublicShares:
 		var result ListPublicSharesResult
@@ -1389,6 +1462,32 @@ func validatePublicSharePath(field, value string) error {
 		}
 	}
 	return nil
+}
+
+func validateLockReleasePath(value string) error {
+	if err := validatePublicSharePath("lock release path", value); err != nil {
+		return err
+	}
+	if len(value) > 4096 || strings.ContainsAny(value, "\r\n") {
+		return errors.New("lock release path is too long or contains a line break")
+	}
+	return nil
+}
+
+func validateObservedLockID(value string) error {
+	if value == "" || len(value) > 2048 || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\x00\r\n") {
+		return errors.New("observed_lock_id is invalid")
+	}
+	return nil
+}
+
+func validLockReleaseState(value string) bool {
+	switch value {
+	case "pending", "dismissed", "accepted", "lock_gone", "expired", "stale":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateUUID(field, value string) error {

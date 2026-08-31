@@ -107,6 +107,20 @@ type PublicShareService interface {
 	Delete(context.Context, string, string) (control.PublicShareResult, error)
 }
 
+type LockReleaseStore interface {
+	Request(LockReleaseRequest) (LockReleaseRecord, bool, error)
+	Get(string) (LockReleaseRecord, error)
+	Respond(string, string, LockReleaseState) (LockReleaseRecord, error)
+	Reconcile(string, *LockReleaseObservation) (LockReleaseRecord, error)
+}
+
+// LockReleaseAuthority resolves exactly one path against the live SVN lock
+// table. Implementations receive a validated repository UUID and canonical
+// repository-relative path; a nil observation means there is no live lock.
+type LockReleaseAuthority interface {
+	InspectLock(context.Context, string, string) (*LockReleaseObservation, error)
+}
+
 type Worker struct {
 	Backend              Backend
 	Activator            RepositoryActivator
@@ -124,6 +138,8 @@ type Worker struct {
 	EditingPolicies      RepositoryEditingPolicyAuthority
 	PublicShares         PublicShareService
 	UploadChannels       UploadChannelService
+	LockReleases         LockReleaseStore
+	LockAuthority        LockReleaseAuthority
 	RecoveryAdminContact string
 	DataErasureMaxDays   int
 	Now                  func() time.Time
@@ -139,7 +155,7 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketPrepareRepositoryRecovery && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketGetRealmPublicBranding && ticket.Type != control.TicketSetRealmPublicBranding && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketListUploadChannels && ticket.Type != control.TicketCreateUploadChannel && ticket.Type != control.TicketUpdateUploadChannel && ticket.Type != control.TicketRevokeUploadChannel && ticket.Type != control.TicketDeleteUploadChannel && ticket.Type != control.TicketListQuarantine && ticket.Type != control.TicketHideQuarantine && ticket.Type != control.TicketFetchQuarantine && ticket.Type != control.TicketSetRepositoryEditingPolicy {
+	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketPrepareRepositoryRecovery && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketGetRealmPublicBranding && ticket.Type != control.TicketSetRealmPublicBranding && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketListUploadChannels && ticket.Type != control.TicketCreateUploadChannel && ticket.Type != control.TicketUpdateUploadChannel && ticket.Type != control.TicketRevokeUploadChannel && ticket.Type != control.TicketDeleteUploadChannel && ticket.Type != control.TicketListQuarantine && ticket.Type != control.TicketHideQuarantine && ticket.Type != control.TicketFetchQuarantine && ticket.Type != control.TicketSetRepositoryEditingPolicy && ticket.Type != control.TicketRequestLockRelease && ticket.Type != control.TicketDismissLockRelease && ticket.Type != control.TicketAcceptLockRelease {
 		return control.Result{}, errors.New("unsupported repository worker ticket")
 	}
 	if (ticket.Type == control.TicketDeleteRepository || ticket.Type == control.TicketPrepareRepositoryRecovery) && !session.CanCreateRepositories {
@@ -186,6 +202,9 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	// record, not an operation whose result must stay bound to one request.
 	if ticket.Type == control.TicketSetRepositoryEditingPolicy {
 		return w.setRepositoryEditingPolicy(ctx, session, ticket)
+	}
+	if ticket.Type == control.TicketRequestLockRelease || ticket.Type == control.TicketDismissLockRelease || ticket.Type == control.TicketAcceptLockRelease {
+		return w.lockRelease(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketClientDeactivate {
 		return w.detachClient(ctx, session, ticket)

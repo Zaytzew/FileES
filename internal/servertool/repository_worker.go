@@ -51,6 +51,8 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	}
 	capacity := repoworker.FilesystemCapacity{Root: r.Root}
 	reservations := &repoworker.FileReservationLedger{Root: filepath.Join(r.ResultsRoot, "reservations"), Capacity: capacity}
+	lockReleases := &repoworker.FileLockReleaseStore{Root: filepath.Join(r.ResultsRoot, "lock-release-requests")}
+	lockAuthority := repoworker.SVNAdminLockAuthority{SVNAdmin: r.SVNAdminBinary, RepositoriesRoot: r.Root}
 	onboardingFiles, err := onboarding.OpenPrepared(config.Root, config.Onboarding, onboarding.Access{Areas: onboarding.AreaOperations | onboarding.AreaAudit, NeedOTP: true})
 	if err != nil {
 		report(stderr, "repository worker onboarding", err)
@@ -110,7 +112,7 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 	if publicShareChannels != nil {
 		uploadChannels = repoworker.ChannelUploadService{Channels: publicShareChannels, Backend: backend, Deliverer: repoworker.UploadChannelOutbox{Root: filepath.Join(config.PublicShares.EffectiveStateRoot(r.ResultsRoot), "upload-outbox")}, TrashRoot: config.Upload.EffectiveTrashRoot(r.ResultsRoot)}
 	}
-	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, Branding: publisher, EditingPolicies: publisher, PublicShares: publicShares, UploadChannels: uploadChannels, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RepositoryRecovery: repositoryRecovery, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
+	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, Branding: publisher, EditingPolicies: publisher, PublicShares: publicShares, UploadChannels: uploadChannels, LockReleases: lockReleases, LockAuthority: lockAuthority, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RepositoryRecovery: repositoryRecovery, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
 	dispatcher := repoworker.Dispatcher{
 		Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy},
 		Admission: realmRemovalAdmission{Fences: activationManager},

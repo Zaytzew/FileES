@@ -9,7 +9,7 @@ import (
 )
 
 func (w *Worker) lockRelease(ctx context.Context, session Session, ticket control.Ticket) (control.Result, error) {
-	if w.LockReleases == nil || w.LockAuthority == nil {
+	if w.LockReleases == nil || w.LockAuthority == nil || w.LockProjector == nil {
 		return w.retryable(ticket, "LOCK_RELEASE_UNAVAILABLE", "lock release requests are unavailable")
 	}
 	if ticket.Type == control.TicketRequestLockRelease {
@@ -44,6 +44,9 @@ func (w *Worker) requestLockRelease(ctx context.Context, session Session, ticket
 	if err != nil {
 		return w.retryable(ticket, "LOCK_RELEASE_REJECTED", err.Error())
 	}
+	if err := w.LockProjector.PublishLockRelease(ctx, record); err != nil {
+		return w.retryable(ticket, "LOCK_RELEASE_PROJECTION_FAILED", "lock release request could not be projected")
+	}
 	return w.lockReleaseSuccess(ticket, record)
 }
 
@@ -71,6 +74,9 @@ func (w *Worker) decideLockRelease(ctx context.Context, session Session, ticket 
 		return w.retryable(ticket, "LOCK_RELEASE_REJECTED", err.Error())
 	}
 	if record.State != LockReleasePending {
+		if err := w.LockProjector.PublishLockRelease(ctx, record); err != nil {
+			return w.retryable(ticket, "LOCK_RELEASE_PROJECTION_FAILED", "lock release state could not be projected")
+		}
 		return w.lockReleaseSuccess(ticket, record)
 	}
 	next := LockReleaseDismissed
@@ -86,6 +92,9 @@ func (w *Worker) decideLockRelease(ctx context.Context, session Session, ticket 
 	}
 	if err != nil {
 		return w.retryable(ticket, "LOCK_RELEASE_REJECTED", err.Error())
+	}
+	if err := w.LockProjector.PublishLockRelease(ctx, record); err != nil {
+		return w.retryable(ticket, "LOCK_RELEASE_PROJECTION_FAILED", "lock release response could not be projected")
 	}
 	return w.lockReleaseSuccess(ticket, record)
 }

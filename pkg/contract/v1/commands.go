@@ -40,43 +40,46 @@ const (
 	CmdMobilePairingBegin = "mobile_pairing.begin"
 
 	// Repos
-	CmdRepoList                = "repo.list"                  // list all configured repos
-	CmdRepoStatus              = "repo.status"                // snapshot of one repo
-	CmdRepoPause               = "repo.pause"                 // suspend automatic operations
-	CmdRepoResume              = "repo.resume"                // resume after pause
-	CmdRepoSyncNow             = "repo.sync_now"              // request immediate poll/update
-	CmdRepoPublish             = "repo.publish"               // request immediate commit of pending changes
-	CmdRepoCreateRequest       = "repo.create_request"        // persist intent; server work is a later stage
-	CmdRepoAttachIntent        = "repo.attach_intent"         // persist local path choice; no checkout yet
-	CmdRepoAttachApprove       = "repo.attach_approve"        // approve the persisted intent and start checkout
-	CmdRepoRelocate            = "repo.relocate"              // approve relocation of an attached working copy
-	CmdRepoLocate              = "repo.locate"                // rebind an attachment to an existing moved working copy
-	CmdRepoLoadDump            = "repo.load_dump"             // load a user-supplied dump into a fresh, single-carrier-commit repo
-	CmdRepoGrantAccess         = "repo.grant_access"          // grant r/rw access to a visible foreign realm
-	CmdRepoRevokeAccess        = "repo.revoke_access"         // revoke a realm grant without deleting local data
-	CmdRepoSetEditingPolicy    = "repo.set_editing_policy"    // owner-only: switch a repository between free and lock_required editing
-	CmdRepoPublicShareList     = "repo.public_share_list"     // list owned public distribution channels
-	CmdRepoPublicShareCreate   = "repo.public_share_create"   // create an owned public distribution channel
-	CmdRepoPublicShareUpdate   = "repo.public_share_update"   // update one owned active channel
-	CmdRepoPublicShareRevoke   = "repo.public_share_revoke"   // revoke access while retaining the channel record
-	CmdRepoPublicShareDelete   = "repo.public_share_delete"   // delete policy while retaining the address tombstone
-	CmdRepoPublicShareListAll  = "repo.public_share_list_all" // cached cross-repo aggregate of owned public shares (all servers)
-	CmdRepoUploadChannelList   = "repo.upload_channel_list"   // list owned upload shelves for one authority repo
-	CmdRepoUploadChannelCreate = "repo.upload_channel_create" // create an owned closed upload shelf
-	CmdRepoUploadChannelUpdate = "repo.upload_channel_update" // update recipients of one owned active shelf
-	CmdRepoUploadChannelRevoke = "repo.upload_channel_revoke" // revoke intake while retaining the channel record
-	CmdRepoUploadChannelDelete = "repo.upload_channel_delete" // delete policy while retaining the address tombstone
-	CmdRepoQuarantineList      = "repo.quarantine_list"       // owner listing of AV rejects
-	CmdRepoQuarantineHide      = "repo.quarantine_hide"       // hide one reject in the manifest
-	CmdRepoQuarantineFetch     = "repo.quarantine_fetch"      // copy payload from the waiting room
-	CmdRepoDetach              = "repo.detach"                // detach one local working copy, preserving user data
-	CmdRepoDelete              = "repo.delete"                // delete an owned server repository, then detach locally
-	CmdRepoLifecycleStatus     = "repo.lifecycle_status"      // poll outcome of a create/attach/relocate operation by ID
-	CmdRepoActivity            = "repo.activity"              // global recent synchronization activity snapshot
-	CmdRepoLock                = "repo.lock"                  // acquire SVN lock on one or more paths
-	CmdRepoUnlock              = "repo.unlock"                // release SVN lock on one or more paths
-	CmdRepoReservationList     = "repo.reservation_list"      // list live locks in this client's working copies for one server
-	CmdRepoReservationRelease  = "repo.reservation_release"   // safely release one listed lock
+	CmdRepoList                = "repo.list"                    // list all configured repos
+	CmdRepoStatus              = "repo.status"                  // snapshot of one repo
+	CmdRepoPause               = "repo.pause"                   // suspend automatic operations
+	CmdRepoResume              = "repo.resume"                  // resume after pause
+	CmdRepoSyncNow             = "repo.sync_now"                // request immediate poll/update
+	CmdRepoPublish             = "repo.publish"                 // request immediate commit of pending changes
+	CmdRepoCreateRequest       = "repo.create_request"          // persist intent; server work is a later stage
+	CmdRepoAttachIntent        = "repo.attach_intent"           // persist local path choice; no checkout yet
+	CmdRepoAttachApprove       = "repo.attach_approve"          // approve the persisted intent and start checkout
+	CmdRepoRelocate            = "repo.relocate"                // approve relocation of an attached working copy
+	CmdRepoLocate              = "repo.locate"                  // rebind an attachment to an existing moved working copy
+	CmdRepoLoadDump            = "repo.load_dump"               // load a user-supplied dump into a fresh, single-carrier-commit repo
+	CmdRepoGrantAccess         = "repo.grant_access"            // grant r/rw access to a visible foreign realm
+	CmdRepoRevokeAccess        = "repo.revoke_access"           // revoke a realm grant without deleting local data
+	CmdRepoSetEditingPolicy    = "repo.set_editing_policy"      // owner-only: switch a repository between free and lock_required editing
+	CmdRepoPublicShareList     = "repo.public_share_list"       // list owned public distribution channels
+	CmdRepoPublicShareCreate   = "repo.public_share_create"     // create an owned public distribution channel
+	CmdRepoPublicShareUpdate   = "repo.public_share_update"     // update one owned active channel
+	CmdRepoPublicShareRevoke   = "repo.public_share_revoke"     // revoke access while retaining the channel record
+	CmdRepoPublicShareDelete   = "repo.public_share_delete"     // delete policy while retaining the address tombstone
+	CmdRepoPublicShareListAll  = "repo.public_share_list_all"   // cached cross-repo aggregate of owned public shares (all servers)
+	CmdRepoUploadChannelList   = "repo.upload_channel_list"     // list owned upload shelves for one authority repo
+	CmdRepoUploadChannelCreate = "repo.upload_channel_create"   // create an owned closed upload shelf
+	CmdRepoUploadChannelUpdate = "repo.upload_channel_update"   // update recipients of one owned active shelf
+	CmdRepoUploadChannelRevoke = "repo.upload_channel_revoke"   // revoke intake while retaining the channel record
+	CmdRepoUploadChannelDelete = "repo.upload_channel_delete"   // delete policy while retaining the address tombstone
+	CmdRepoQuarantineList      = "repo.quarantine_list"         // owner listing of AV rejects
+	CmdRepoQuarantineHide      = "repo.quarantine_hide"         // hide one reject in the manifest
+	CmdRepoQuarantineFetch     = "repo.quarantine_fetch"        // copy payload from the waiting room
+	CmdRepoDetach              = "repo.detach"                  // detach one local working copy, preserving user data
+	CmdRepoDelete              = "repo.delete"                  // delete an owned server repository, then detach locally
+	CmdRepoLifecycleStatus     = "repo.lifecycle_status"        // poll outcome of a create/attach/relocate operation by ID
+	CmdRepoActivity            = "repo.activity"                // global recent synchronization activity snapshot
+	CmdRepoLock                = "repo.lock"                    // acquire SVN lock on one or more paths
+	CmdRepoUnlock              = "repo.unlock"                  // release SVN lock on one or more paths
+	CmdRepoReservationList     = "repo.reservation_list"        // list live locks in this client's working copies for one server
+	CmdRepoReservationRelease  = "repo.reservation_release"     // safely release one listed lock
+	CmdLockReleaseRequest      = "lock.release-request"         // ask the holder of one observed SVN lock to release it
+	CmdLockReleaseDismiss      = "lock.release-request-dismiss" // holder acknowledges without releasing the lock
+	CmdLockReleaseAccept       = "lock.release-request-accept"  // holder accepts, then the daemon releases the fenced lock
 
 	// Conflicts and user decisions
 	CmdConflictList   = "conflict.list"   // list pending conflicts / interactions
@@ -114,6 +117,9 @@ const (
 	CapRepoUnlock              = "repo.unlock"
 	CapRepoReservationList     = "repo.reservation_list"
 	CapRepoReservationRelease  = "repo.reservation_release"
+	CapLockReleaseRequest      = "lock.release-request"
+	CapLockReleaseDismiss      = "lock.release-request-dismiss"
+	CapLockReleaseAccept       = "lock.release-request-accept"
 	CapErrorList               = "error.list"
 	CapActivationBegin         = "activation.begin"
 	CapActivationFinish        = "activation.finish"
@@ -225,12 +231,13 @@ type HelloResult struct {
 
 // SystemStatusResult is the result for CmdSystemStatus.
 type SystemStatusResult struct {
-	State       string             `json:"state"` // "running" | "stopping"
-	UptimeSec   int64              `json:"uptime_sec"`
-	Repos       int                `json:"repos"`
-	Activations []ActivationStatus `json:"activations"`
-	Recoveries  []RecoveryStatus   `json:"recoveries,omitempty"`
-	Update      *UpdateStatus      `json:"update,omitempty"`
+	State               string               `json:"state"` // "running" | "stopping"
+	UptimeSec           int64                `json:"uptime_sec"`
+	Repos               int                  `json:"repos"`
+	Activations         []ActivationStatus   `json:"activations"`
+	LockReleaseRequests []LockReleaseRequest `json:"lock_release_requests,omitempty"`
+	Recoveries          []RecoveryStatus     `json:"recoveries,omitempty"`
+	Update              *UpdateStatus        `json:"update,omitempty"`
 }
 
 type RecoveryStatus struct {
@@ -932,6 +939,35 @@ type RepoReservationReleasePayload struct {
 	Path          string `json:"path"`
 	ExpectedToken string `json:"expected_token"`
 	ConfirmRisk   bool   `json:"confirm_risk,omitempty"`
+}
+
+// LockReleaseRequest is the daemon-to-GUI projection of one server-owned
+// request. ObservedLockID remains opaque and is returned unchanged to the
+// server; Role determines which actions this client may present.
+type LockReleaseRequest struct {
+	RequestID              string `json:"request_id"`
+	ServerID               string `json:"server_id"`
+	RepoID                 string `json:"repo_id"`
+	Path                   string `json:"path"`
+	ObservedLockID         string `json:"observed_lock_id"`
+	Role                   string `json:"role"`
+	CounterpartyRealmAlias string `json:"counterparty_realm_alias,omitempty"`
+	State                  string `json:"state"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
+	ExpiresAt              string `json:"expires_at"`
+}
+
+type LockReleaseRequestPayload struct {
+	ServerID       string `json:"server_id"`
+	RepoID         string `json:"repo_id"`
+	Path           string `json:"path"`
+	ObservedLockID string `json:"observed_lock_id"`
+}
+
+type LockReleaseDecisionPayload struct {
+	ServerID  string `json:"server_id"`
+	RequestID string `json:"request_id"`
 }
 
 type WhaleIdentity struct {

@@ -675,6 +675,27 @@ func (c *Client) RepoReservationRelease(ctx context.Context, payload contract.Re
 	return contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) LockReleaseRequest(ctx context.Context, payload contract.LockReleaseRequestPayload) (*contract.LockReleaseRequest, error) {
+	return c.lockRelease(ctx, contract.CmdLockReleaseRequest, payload.RepoID, payload)
+}
+
+func (c *Client) LockReleaseDismiss(ctx context.Context, payload contract.LockReleaseDecisionPayload) (*contract.LockReleaseRequest, error) {
+	return c.lockRelease(ctx, contract.CmdLockReleaseDismiss, "", payload)
+}
+
+func (c *Client) LockReleaseAccept(ctx context.Context, payload contract.LockReleaseDecisionPayload) (*contract.LockReleaseRequest, error) {
+	return c.lockRelease(ctx, contract.CmdLockReleaseAccept, "", payload)
+}
+
+func (c *Client) lockRelease(ctx context.Context, command, repoID string, payload any) (*contract.LockReleaseRequest, error) {
+	resp, err := c.do(ctx, command, repoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.LockReleaseRequest
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) WhaleList(ctx context.Context) (*contract.WhaleListResult, error) {
 	resp, err := c.do(ctx, contract.CmdWhaleList, "", struct{}{})
 	if err != nil {

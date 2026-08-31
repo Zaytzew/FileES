@@ -21,6 +21,7 @@ const (
 	EvWhaleChanged        = "whale.changed"
 	EvActivityChanged     = "activity.changed"
 	EvPublicSharesChanged = "public_shares.changed"
+	EvLockReleaseChanged  = "lock_release.changed"
 )
 
 // RepoStateChangedPayload is the payload for EvRepoStateChanged.

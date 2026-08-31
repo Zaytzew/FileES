@@ -451,6 +451,40 @@ func (s *realmAliasService) realmGrantExchange(ctx context.Context, serverID str
 	return contract.RealmGrantResult{RepoID: remote.RepoID, RecipientRealmID: remote.RecipientRealmID, Access: remote.Access, State: remote.State}, nil
 }
 
+func (s *realmAliasService) Request(ctx context.Context, payload contract.LockReleaseRequestPayload) (contract.LockReleaseRequest, error) {
+	return s.lockReleaseExchange(ctx, payload.ServerID, control.TicketRequestLockRelease, control.RequestLockReleasePayload{
+		RepoID: payload.RepoID, Path: payload.Path, ObservedLockID: payload.ObservedLockID,
+	}, "requester")
+}
+
+func (s *realmAliasService) Dismiss(ctx context.Context, payload contract.LockReleaseDecisionPayload) (contract.LockReleaseRequest, error) {
+	return s.lockReleaseExchange(ctx, payload.ServerID, control.TicketDismissLockRelease, control.DecideLockReleasePayload{RequestID: payload.RequestID}, "holder")
+}
+
+func (s *realmAliasService) Accept(ctx context.Context, payload contract.LockReleaseDecisionPayload) (contract.LockReleaseRequest, error) {
+	return s.lockReleaseExchange(ctx, payload.ServerID, control.TicketAcceptLockRelease, control.DecideLockReleasePayload{RequestID: payload.RequestID}, "holder")
+}
+
+func (s *realmAliasService) lockReleaseExchange(ctx context.Context, serverID string, typ control.TicketType, payload any, role string) (contract.LockReleaseRequest, error) {
+	profile, ok := s.provisioner.Profile(serverID)
+	if !ok {
+		return contract.LockReleaseRequest{}, fmt.Errorf("no activated profile for server %q", serverID)
+	}
+	result, err := s.exchange(ctx, profile, typ, payload)
+	if err != nil {
+		return contract.LockReleaseRequest{}, err
+	}
+	var remote control.LockReleaseResult
+	if err := control.DecodeResultPayload(result.Result, &remote); err != nil {
+		return contract.LockReleaseRequest{}, err
+	}
+	return contract.LockReleaseRequest{
+		RequestID: remote.RequestID, ServerID: serverID, RepoID: remote.RepoID,
+		Path: remote.Path, ObservedLockID: remote.ObservedLockID, Role: role,
+		State: remote.State, ExpiresAt: remote.ExpiresAt,
+	}, nil
+}
+
 func (s *realmAliasService) exchange(ctx context.Context, profile clientprofile.Profile, typ control.TicketType, payload any) (control.Result, error) {
 	transport, err := controlclient.New(controlclient.Config{
 		Address: profile.Address, Port: profile.SSHPort, IdentityFile: profile.IdentityFile,

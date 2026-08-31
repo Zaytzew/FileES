@@ -84,6 +84,7 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	if ipc == nil {
 		return
 	}
+	ipc.SetLockReleaseProjection(serverID, projectLockReleaseRequests(serverID, view.LockReleaseRequests))
 	pendingCreates := pendingRepositoryCreations(serverID, lifecycle)
 	projected := make([]ipcserver.ProjectedRepo, 0, len(view.Repositories))
 	for _, repo := range view.Repositories {
@@ -138,6 +139,21 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	ipc.ReconcileProjectedRepos(serverID, projected)
 	ready, pending := repositoryReadiness(serverID, view, attachments)
 	ipc.SetActivationRepositoryReadiness(serverID, ready, pending)
+}
+
+func projectLockReleaseRequests(serverID string, requests []clientview.LockReleaseRequest) []contract.LockReleaseRequest {
+	projected := make([]contract.LockReleaseRequest, 0, len(requests))
+	for _, request := range requests {
+		projected = append(projected, contract.LockReleaseRequest{
+			RequestID: request.RequestID, ServerID: serverID, RepoID: request.RepoID,
+			Path: request.Path, ObservedLockID: request.ObservedLockID, Role: request.Role,
+			CounterpartyRealmAlias: request.CounterpartyRealmAlias, State: request.State,
+			CreatedAt: request.CreatedAt.UTC().Format(time.RFC3339Nano),
+			UpdatedAt: request.UpdatedAt.UTC().Format(time.RFC3339Nano),
+			ExpiresAt: request.ExpiresAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	return projected
 }
 
 func pendingRepositoryCreations(serverID string, lifecycle *localrepo.Store) map[string]localrepo.Record {

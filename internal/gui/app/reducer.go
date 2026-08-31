@@ -10,27 +10,28 @@ import (
 // All methods are pure — they return a new appState and have no side effects.
 // Only the event loop goroutine accesses appState; no locking needed.
 type appState struct {
-	connected          bool
-	stale              bool
-	caps               map[string]bool
-	summaries          map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
-	snapshots          map[string]contract.RepoStatus  // from repo.status; carries live state
-	order              []string                        // stable repoID first-seen order
-	serverOrder        []string                        // stable serverID first-seen order
-	lastSeq            int64                           // last event sequence number received
-	system             contract.SystemStatusResult
-	errors             []ErrorViewModel
-	activity           []ActivityViewModel
-	reservations       map[string]int
-	repoReservations   map[string]int
-	reservationItems   []Reservation
-	reservationsKnown  bool
-	notices            []NoticeViewModel
-	publicShares       []PublicShareViewModel
-	publicSharesKnown  bool
-	pendingActions     map[string]PendingAction
-	pendingActionOrder []string
-	refreshed          time.Time
+	connected           bool
+	stale               bool
+	caps                map[string]bool
+	summaries           map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
+	snapshots           map[string]contract.RepoStatus  // from repo.status; carries live state
+	order               []string                        // stable repoID first-seen order
+	serverOrder         []string                        // stable serverID first-seen order
+	lastSeq             int64                           // last event sequence number received
+	system              contract.SystemStatusResult
+	errors              []ErrorViewModel
+	activity            []ActivityViewModel
+	reservations        map[string]int
+	repoReservations    map[string]int
+	reservationItems    []Reservation
+	lockReleaseRequests []LockReleaseRequest
+	reservationsKnown   bool
+	notices             []NoticeViewModel
+	publicShares        []PublicShareViewModel
+	publicSharesKnown   bool
+	pendingActions      map[string]PendingAction
+	pendingActionOrder  []string
+	refreshed           time.Time
 }
 
 func newAppState() appState {
@@ -59,6 +60,9 @@ func (s appState) applyConnected(caps []string) appState {
 		s.publicShares = nil
 		s.publicSharesKnown = false
 	}
+	if !capMap[contract.CapLockReleaseRequest] {
+		s.lockReleaseRequests = nil
+	}
 	return s
 }
 
@@ -73,6 +77,10 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	}
 	s.snapshots = next
 	s.system = system
+	s.lockReleaseRequests = make([]LockReleaseRequest, 0, len(system.LockReleaseRequests))
+	for _, request := range system.LockReleaseRequests {
+		s.lockReleaseRequests = append(s.lockReleaseRequests, projectLockReleaseRequest(request))
+	}
 	s = s.rememberServerOrder(system, repos, statuses)
 	s.errors = make([]ErrorViewModel, 0, len(records))
 	for _, record := range records {
@@ -308,21 +316,22 @@ func (s appState) viewModel() ViewModel {
 		caps[k] = v
 	}
 	vm := ViewModel{
-		Connected:         s.connected,
-		Stale:             s.stale,
-		DaemonState:       s.system.State,
-		UptimeSec:         s.system.UptimeSec,
-		LastRefresh:       s.refreshed,
-		Capabilities:      caps,
-		Repos:             repos,
-		Servers:           servers,
-		Reservations:      append([]Reservation(nil), s.reservationItems...),
-		Errors:            append([]ErrorViewModel(nil), s.errors...),
-		Activity:          append([]ActivityViewModel(nil), s.activity...),
-		Notices:           append([]NoticeViewModel(nil), s.notices...),
-		PublicShares:      append([]PublicShareViewModel(nil), s.publicShares...),
-		PublicSharesKnown: s.publicSharesKnown,
-		PendingActions:    s.projectPendingActions(),
+		Connected:           s.connected,
+		Stale:               s.stale,
+		DaemonState:         s.system.State,
+		UptimeSec:           s.system.UptimeSec,
+		LastRefresh:         s.refreshed,
+		Capabilities:        caps,
+		Repos:               repos,
+		Servers:             servers,
+		Reservations:        append([]Reservation(nil), s.reservationItems...),
+		LockReleaseRequests: append([]LockReleaseRequest(nil), s.lockReleaseRequests...),
+		Errors:              append([]ErrorViewModel(nil), s.errors...),
+		Activity:            append([]ActivityViewModel(nil), s.activity...),
+		Notices:             append([]NoticeViewModel(nil), s.notices...),
+		PublicShares:        append([]PublicShareViewModel(nil), s.publicShares...),
+		PublicSharesKnown:   s.publicSharesKnown,
+		PendingActions:      s.projectPendingActions(),
 	}
 	now := time.Now().UTC()
 	for _, recovery := range s.system.Recoveries {

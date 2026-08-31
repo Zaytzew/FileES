@@ -40,28 +40,29 @@ type GUIService struct {
 }
 
 type Snapshot struct {
-	Revision          uint64                           `json:"revision"`
-	Connected         bool                             `json:"connected"`
-	Stale             bool                             `json:"stale"`
-	DaemonState       string                           `json:"daemon_state"`
-	UptimeSec         int64                            `json:"uptime_sec"`
-	LastRefresh       string                           `json:"last_refresh,omitempty"`
-	IconState         string                           `json:"icon_state"`
-	Capabilities      []string                         `json:"capabilities"`
-	Servers           []ServerProjection               `json:"servers"`
-	Repositories      []RepoProjection                 `json:"repositories"`
-	Reservations      []ReservationProjection          `json:"reservations"`
-	Errors            []ErrorProjection                `json:"errors"`
-	Activity          []ActivityProjection             `json:"activity"`
-	Journal           []JournalProjection              `json:"journal"`
-	PendingActions    []PendingActionProjection        `json:"pending_actions"`
-	NextCycleAt       string                           `json:"next_cycle_at,omitempty"`
-	CycleRunning      bool                             `json:"cycle_running"`
-	Notices           []NoticeProjection               `json:"notices"`
-	PublicShares      []DashboardPublicShareProjection `json:"public_shares"`
-	PublicSharesKnown bool                             `json:"public_shares_known"`
-	Update            *UpdateProjection                `json:"update,omitempty"`
-	ClientVersion     string                           `json:"client_version"`
+	Revision            uint64                           `json:"revision"`
+	Connected           bool                             `json:"connected"`
+	Stale               bool                             `json:"stale"`
+	DaemonState         string                           `json:"daemon_state"`
+	UptimeSec           int64                            `json:"uptime_sec"`
+	LastRefresh         string                           `json:"last_refresh,omitempty"`
+	IconState           string                           `json:"icon_state"`
+	Capabilities        []string                         `json:"capabilities"`
+	Servers             []ServerProjection               `json:"servers"`
+	Repositories        []RepoProjection                 `json:"repositories"`
+	Reservations        []ReservationProjection          `json:"reservations"`
+	LockReleaseRequests []LockReleaseProjection          `json:"lock_release_requests"`
+	Errors              []ErrorProjection                `json:"errors"`
+	Activity            []ActivityProjection             `json:"activity"`
+	Journal             []JournalProjection              `json:"journal"`
+	PendingActions      []PendingActionProjection        `json:"pending_actions"`
+	NextCycleAt         string                           `json:"next_cycle_at,omitempty"`
+	CycleRunning        bool                             `json:"cycle_running"`
+	Notices             []NoticeProjection               `json:"notices"`
+	PublicShares        []DashboardPublicShareProjection `json:"public_shares"`
+	PublicSharesKnown   bool                             `json:"public_shares_known"`
+	Update              *UpdateProjection                `json:"update,omitempty"`
+	ClientVersion       string                           `json:"client_version"`
 }
 
 type ServerProjection struct {
@@ -134,26 +135,46 @@ type PendingActionProjection struct {
 }
 
 type ReservationProjection struct {
-	ID             string `json:"id"`
-	ServerID       string `json:"server_id"`
-	RepoID         string `json:"repo_id"`
-	Repository     string `json:"repository"`
-	Path           string `json:"path"`
-	OwnerLabel     string `json:"owner_label,omitempty"`
-	CreatedAt      string `json:"created_at,omitempty"`
-	CanRelease     bool   `json:"can_release"`
-	LocalChanges   bool   `json:"local_changes"`
-	ActivePassport bool   `json:"active_passport"`
+	ID                   string `json:"id"`
+	ServerID             string `json:"server_id"`
+	RepoID               string `json:"repo_id"`
+	Repository           string `json:"repository"`
+	Path                 string `json:"path"`
+	OwnerLabel           string `json:"owner_label,omitempty"`
+	CreatedAt            string `json:"created_at,omitempty"`
+	CanRelease           bool   `json:"can_release"`
+	LocalChanges         bool   `json:"local_changes"`
+	ActivePassport       bool   `json:"active_passport"`
+	LockReleaseRequestID string `json:"lock_release_request_id,omitempty"`
+	LockReleaseState     string `json:"lock_release_state,omitempty"`
+	CanRequestRelease    bool   `json:"can_request_release"`
+}
+
+type LockReleaseProjection struct {
+	ID                     string `json:"id"`
+	ServerID               string `json:"server_id"`
+	RepoID                 string `json:"repo_id"`
+	Repository             string `json:"repository"`
+	Path                   string `json:"path"`
+	Role                   string `json:"role"`
+	CounterpartyRealmAlias string `json:"counterparty_realm_alias,omitempty"`
+	State                  string `json:"state"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
+	ExpiresAt              string `json:"expires_at"`
+	CanDismiss             bool   `json:"can_dismiss"`
+	CanAccept              bool   `json:"can_accept"`
 }
 
 type ActionRequest struct {
-	Kind          string   `json:"kind"`
-	RepoID        string   `json:"repo_id,omitempty"`
-	ServerID      string   `json:"server_id,omitempty"`
-	ReservationID string   `json:"reservation_id,omitempty"`
-	NoticeID      string   `json:"notice_id,omitempty"`
-	ChannelID     string   `json:"channel_id,omitempty"`
-	ChannelIDs    []string `json:"channel_ids,omitempty"`
+	Kind                 string   `json:"kind"`
+	RepoID               string   `json:"repo_id,omitempty"`
+	ServerID             string   `json:"server_id,omitempty"`
+	ReservationID        string   `json:"reservation_id,omitempty"`
+	LockReleaseRequestID string   `json:"lock_release_request_id,omitempty"`
+	NoticeID             string   `json:"notice_id,omitempty"`
+	ChannelID            string   `json:"channel_id,omitempty"`
+	ChannelIDs           []string `json:"channel_ids,omitempty"`
 }
 
 type ActionAcceptance struct {
@@ -237,17 +258,19 @@ type UpdateProjection struct {
 func newGUIService(client guiapp.DaemonClient) *GUIService {
 	service := &GUIService{
 		snapshot: Snapshot{
-			Stale:         true,
-			IconState:     string(guiapp.IconDisconnected),
-			Capabilities:  []string{},
-			Servers:       []ServerProjection{},
-			Repositories:  []RepoProjection{},
-			Errors:        []ErrorProjection{},
-			Activity:      []ActivityProjection{},
-			Journal:       []JournalProjection{},
-			Notices:       []NoticeProjection{},
-			PublicShares:  []DashboardPublicShareProjection{},
-			ClientVersion: version,
+			Stale:               true,
+			IconState:           string(guiapp.IconDisconnected),
+			Capabilities:        []string{},
+			Servers:             []ServerProjection{},
+			Repositories:        []RepoProjection{},
+			Reservations:        []ReservationProjection{},
+			LockReleaseRequests: []LockReleaseProjection{},
+			Errors:              []ErrorProjection{},
+			Activity:            []ActivityProjection{},
+			Journal:             []JournalProjection{},
+			Notices:             []NoticeProjection{},
+			PublicShares:        []DashboardPublicShareProjection{},
+			ClientVersion:       version,
 		},
 	}
 	service.runner = guiapp.New(guiapp.Config{
@@ -299,6 +322,7 @@ func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	request.RepoID = strings.TrimSpace(request.RepoID)
 	request.ServerID = strings.TrimSpace(request.ServerID)
 	request.ReservationID = strings.TrimSpace(request.ReservationID)
+	request.LockReleaseRequestID = strings.TrimSpace(request.LockReleaseRequestID)
 	request.NoticeID = strings.TrimSpace(request.NoticeID)
 	request.ChannelID = strings.TrimSpace(request.ChannelID)
 	request.ChannelIDs = cleanUniqueStrings(request.ChannelIDs)
@@ -600,21 +624,22 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 
 func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	result := Snapshot{
-		Connected:      vm.Connected,
-		Stale:          vm.Stale,
-		DaemonState:    vm.DaemonState,
-		UptimeSec:      vm.UptimeSec,
-		IconState:      string(vm.Icon),
-		Capabilities:   make([]string, 0, len(vm.Capabilities)),
-		Servers:        make([]ServerProjection, 0, len(vm.Servers)),
-		Repositories:   make([]RepoProjection, 0, len(vm.Repos)),
-		Reservations:   make([]ReservationProjection, 0, len(vm.Reservations)),
-		Errors:         make([]ErrorProjection, 0, len(vm.Errors)),
-		Activity:       make([]ActivityProjection, 0, len(vm.Activity)),
-		Journal:        []JournalProjection{},
-		PendingActions: make([]PendingActionProjection, 0, len(vm.PendingActions)),
-		Notices:        make([]NoticeProjection, 0, len(vm.Notices)),
-		ClientVersion:  version,
+		Connected:           vm.Connected,
+		Stale:               vm.Stale,
+		DaemonState:         vm.DaemonState,
+		UptimeSec:           vm.UptimeSec,
+		IconState:           string(vm.Icon),
+		Capabilities:        make([]string, 0, len(vm.Capabilities)),
+		Servers:             make([]ServerProjection, 0, len(vm.Servers)),
+		Repositories:        make([]RepoProjection, 0, len(vm.Repos)),
+		Reservations:        make([]ReservationProjection, 0, len(vm.Reservations)),
+		LockReleaseRequests: make([]LockReleaseProjection, 0, len(vm.LockReleaseRequests)),
+		Errors:              make([]ErrorProjection, 0, len(vm.Errors)),
+		Activity:            make([]ActivityProjection, 0, len(vm.Activity)),
+		Journal:             []JournalProjection{},
+		PendingActions:      make([]PendingActionProjection, 0, len(vm.PendingActions)),
+		Notices:             make([]NoticeProjection, 0, len(vm.Notices)),
+		ClientVersion:       version,
 	}
 	if !vm.LastRefresh.IsZero() {
 		result.LastRefresh = vm.LastRefresh.Format(time.RFC3339)
@@ -639,6 +664,24 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	serversByID := make(map[string]guiapp.ServerViewModel, len(vm.Servers))
 	for _, server := range vm.Servers {
 		serversByID[server.ID] = server
+	}
+	repoNames := make(map[string]string, len(vm.Repos))
+	for _, repo := range vm.Repos {
+		repoNames[repo.ServerID+"\x00"+repo.ID] = firstNonBlank(repo.DisplayName, repo.ID)
+	}
+	requesterByLock := make(map[string]guiapp.LockReleaseRequest)
+	for _, request := range vm.LockReleaseRequests {
+		if request.Role == "requester" {
+			requesterByLock[lockReleaseKey(request.ServerID, request.RepoID, request.Path, request.ObservedLockID)] = request
+		}
+		result.LockReleaseRequests = append(result.LockReleaseRequests, LockReleaseProjection{
+			ID: request.ID, ServerID: request.ServerID, RepoID: request.RepoID,
+			Repository: firstNonBlank(repoNames[request.ServerID+"\x00"+request.RepoID], request.RepoID),
+			Path:       request.Path, Role: request.Role, CounterpartyRealmAlias: request.CounterpartyRealmAlias,
+			State: request.State, CreatedAt: request.CreatedAt, UpdatedAt: request.UpdatedAt, ExpiresAt: request.ExpiresAt,
+			CanDismiss: request.Role == "holder" && request.State == "pending" && vm.CanDismissLockRelease(),
+			CanAccept:  request.Role == "holder" && request.State == "pending" && vm.CanAcceptLockRelease(),
+		})
 	}
 	for _, repo := range vm.Repos {
 		operation := ""
@@ -702,12 +745,15 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 				break
 			}
 		}
+		request, hasRequest := requesterByLock[lockReleaseKey(reservation.ServerID, reservation.RepoID, reservation.Path, reservation.Token)]
+		canRequest := !reservation.CanRelease && vm.CanRequestLockRelease() && (!hasRequest || request.State == "expired")
 		result.Reservations = append(result.Reservations, ReservationProjection{
 			ID: reservation.ID, ServerID: reservation.ServerID, RepoID: reservation.RepoID,
 			Repository: repository, Path: reservation.Path, OwnerLabel: reservation.OwnerLabel,
 			CreatedAt:    reservation.CreatedAt,
 			CanRelease:   vm.CanReleaseReservations() && reservation.CanRelease,
 			LocalChanges: reservation.LocalChanges, ActivePassport: reservation.ActivePassport,
+			LockReleaseRequestID: request.ID, LockReleaseState: request.State, CanRequestRelease: canRequest,
 		})
 	}
 	for _, item := range vm.Errors {
@@ -771,6 +817,10 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		}
 	}
 	return result
+}
+
+func lockReleaseKey(serverID, repoID, path, token string) string {
+	return serverID + "\x00" + repoID + "\x00" + path + "\x00" + token
 }
 
 func firstNonBlank(values ...string) string {

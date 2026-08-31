@@ -492,6 +492,13 @@ func TestReducerPublicSharesChangedRequestsAggregateRefresh(t *testing.T) {
 	}
 }
 
+func TestReducerLockReleaseChangedRequestsSystemRefresh(t *testing.T) {
+	_, resync, dirty := newAppState().applyEvent(contract.Event{Sequence: 1, Type: contract.EvLockReleaseChanged})
+	if !resync || dirty != "" {
+		t.Fatalf("lock release event resync=%v dirty=%q", resync, dirty)
+	}
+}
+
 // --- icon aggregation unit tests ---
 
 func TestAggregateIconDisconnected(t *testing.T) {

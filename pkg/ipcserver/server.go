@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,8 @@ type Server struct {
 	publicShareAggregate PublicShareSource
 	uploadChannels       UploadChannelService
 	ownerLabels          OwnerLabelResolver
+	lockReleases         LockReleaseService
+	lockReleaseRequests  map[string][]contract.LockReleaseRequest
 	lifecycle            RepositoryLifecycleService
 	mobilePair           MobilePairingService
 	serverDetach         ServerDetachService
@@ -110,6 +113,15 @@ type UploadChannelService interface {
 // aliases. It is deliberately absent from GUI-facing contracts.
 type OwnerLabelResolver interface {
 	Resolve(context.Context, string, []string) (map[string]string, error)
+}
+
+// LockReleaseService crosses the authenticated server control plane. The
+// projected records themselves are cached by Server from clientview, so list
+// rendering remains available while the remote worker is temporarily offline.
+type LockReleaseService interface {
+	Request(context.Context, contract.LockReleaseRequestPayload) (contract.LockReleaseRequest, error)
+	Dismiss(context.Context, contract.LockReleaseDecisionPayload) (contract.LockReleaseRequest, error)
+	Accept(context.Context, contract.LockReleaseDecisionPayload) (contract.LockReleaseRequest, error)
 }
 
 type RepositoryLifecycleService interface {
@@ -227,6 +239,9 @@ func (s *Server) capabilities() []string {
 	}
 	if s.uploadChannelService() != nil {
 		caps = append(caps, contract.CapRepoUploadChannelList, contract.CapRepoUploadChannelCreate, contract.CapRepoUploadChannelUpdate, contract.CapRepoUploadChannelRevoke, contract.CapRepoUploadChannelDelete, contract.CapRepoQuarantineList, contract.CapRepoQuarantineHide, contract.CapRepoQuarantineFetch)
+	}
+	if s.lockReleaseService() != nil {
+		caps = append(caps, contract.CapLockReleaseRequest, contract.CapLockReleaseDismiss, contract.CapLockReleaseAccept)
 	}
 	if s.editingPolicyService() != nil {
 		caps = append(caps, contract.CapRepoSetEditingPolicy)
@@ -417,6 +432,65 @@ func (s *Server) SetOwnerLabelResolver(resolver OwnerLabelResolver) {
 	s.mu.Unlock()
 }
 
+func (s *Server) SetLockReleaseService(service LockReleaseService) {
+	s.mu.Lock()
+	s.lockReleases = service
+	s.mu.Unlock()
+}
+
+func (s *Server) lockReleaseService() LockReleaseService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lockReleases
+}
+
+// SetLockReleaseProjection replaces one activation's private slice with the
+// latest validated clientview generation. It never contacts the server.
+func (s *Server) SetLockReleaseProjection(serverID string, requests []contract.LockReleaseRequest) {
+	cloned := append([]contract.LockReleaseRequest(nil), requests...)
+	s.mu.Lock()
+	if s.lockReleaseRequests == nil {
+		s.lockReleaseRequests = make(map[string][]contract.LockReleaseRequest)
+	}
+	current := s.lockReleaseRequests[serverID]
+	changed := !sameLockReleaseProjection(current, cloned)
+	if changed {
+		s.lockReleaseRequests[serverID] = cloned
+	}
+	s.mu.Unlock()
+	if changed {
+		s.Emit(contract.NewEvent("", 0, contract.EvLockReleaseChanged, "", nil))
+	}
+}
+
+func sameLockReleaseProjection(left, right []contract.LockReleaseRequest) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) allLockReleaseRequests() []contract.LockReleaseRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var requests []contract.LockReleaseRequest
+	for _, projected := range s.lockReleaseRequests {
+		requests = append(requests, projected...)
+	}
+	sort.Slice(requests, func(i, j int) bool {
+		if requests[i].UpdatedAt != requests[j].UpdatedAt {
+			return requests[i].UpdatedAt > requests[j].UpdatedAt
+		}
+		return requests[i].RequestID < requests[j].RequestID
+	})
+	return requests
+}
+
 func (s *Server) ownerLabelResolver() OwnerLabelResolver {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -432,13 +506,14 @@ func (s *Server) activationService() ActivationService {
 // New creates a Server that will listen on sockPath.
 func New(sockPath string) *Server {
 	return &Server{
-		sockPath:    sockPath,
-		startTime:   time.Now(),
-		lg:          talk.With("ipc"),
-		repos:       make(map[string]*RepoState),
-		activations: make(map[string]contract.ActivationStatus),
-		subs:        make(map[chan contract.Event]struct{}),
-		conns:       make(map[net.Conn]struct{}),
+		sockPath:            sockPath,
+		startTime:           time.Now(),
+		lg:                  talk.With("ipc"),
+		repos:               make(map[string]*RepoState),
+		activations:         make(map[string]contract.ActivationStatus),
+		lockReleaseRequests: make(map[string][]contract.LockReleaseRequest),
+		subs:                make(map[chan contract.Event]struct{}),
+		conns:               make(map[net.Conn]struct{}),
 	}
 }
 
@@ -454,6 +529,7 @@ func (s *Server) RegisterActivation(status contract.ActivationStatus) {
 func (s *Server) RemoveServer(serverID string) {
 	s.mu.Lock()
 	delete(s.activations, serverID)
+	delete(s.lockReleaseRequests, serverID)
 	for id, repo := range s.repos {
 		if repo.ServerID() == serverID {
 			delete(s.repos, id)

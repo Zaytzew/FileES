@@ -220,6 +220,9 @@ func (s appState) applyEvent(ev contract.Event) (appState, bool, string) {
 	if ev.Type == contract.EvPublicSharesChanged {
 		return s, true, ""
 	}
+	if ev.Type == contract.EvLockReleaseChanged {
+		return s, true, ""
+	}
 	return s, false, ev.RepoID
 }
 

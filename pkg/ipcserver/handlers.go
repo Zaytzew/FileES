@@ -132,6 +132,12 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoReservationList(req)
 	case contract.CmdRepoReservationRelease:
 		return s.handleRepoReservationRelease(req)
+	case contract.CmdLockReleaseRequest:
+		return s.handleLockReleaseRequest(req)
+	case contract.CmdLockReleaseDismiss:
+		return s.handleLockReleaseDecision(req, false)
+	case contract.CmdLockReleaseAccept:
+		return s.handleLockReleaseDecision(req, true)
 	case contract.CmdRepoPublish:
 		return s.handleRepoPublish(req)
 	case contract.CmdNoticeList:
@@ -880,6 +886,105 @@ func (s *Server) handleRepoReservationRelease(req contract.Request) contract.Res
 	return contract.OKResponse(req.RequestID, contract.LockResult{Output: "released"})
 }
 
+func (s *Server) handleLockReleaseRequest(req contract.Request) contract.Response {
+	service := s.lockReleaseService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "LOCK-2201", "ERROR", "RETRY", "lock_release.unavailable", nil)
+	}
+	var payload contract.LockReleaseRequestPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" || strings.TrimSpace(payload.RepoID) == "" || !validReservationPath(payload.Path) || strings.TrimSpace(payload.ObservedLockID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	repo := s.repoByID(payload.RepoID)
+	if repo == nil || repo.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	rows, err := repo.ListReservations(ctx)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "LOCK-2202", "ERROR", "RETRY", "lock_release.inspection_failed", nil)
+	}
+	observed := false
+	for _, row := range rows {
+		if row.Path == payload.Path && row.Token == payload.ObservedLockID && !row.CanRelease {
+			observed = true
+			break
+		}
+	}
+	if !observed {
+		return contract.ErrResponse(req.RequestID, "LOCK-2203", "ERROR", "REQUIRE_ACTION", "lock_release.stale", nil)
+	}
+	result, err := service.Request(ctx, payload)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "LOCK-2204", "ERROR", "RETRY", "lock_release.request_failed", map[string]string{"detail": err.Error()})
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleLockReleaseDecision(req contract.Request, accept bool) contract.Response {
+	service := s.lockReleaseService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "LOCK-2201", "ERROR", "RETRY", "lock_release.unavailable", nil)
+	}
+	var payload contract.LockReleaseDecisionPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" || strings.TrimSpace(payload.RequestID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	projected, ok := s.projectedLockRelease(payload.ServerID, payload.RequestID)
+	if !ok || projected.Role != "holder" || projected.State != "pending" {
+		return contract.ErrResponse(req.RequestID, "LOCK-2205", "ERROR", "REQUIRE_ACTION", "lock_release.not_pending", nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	var result contract.LockReleaseRequest
+	var err error
+	if !accept {
+		result, err = service.Dismiss(ctx, payload)
+	} else {
+		repo := s.repoByID(projected.RepoID)
+		if repo == nil || repo.ServerID() != payload.ServerID {
+			return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+		}
+		rows, listErr := repo.ListReservations(ctx)
+		if listErr != nil || !containsReleasableReservation(rows, projected.Path, projected.ObservedLockID) {
+			return contract.ErrResponse(req.RequestID, "LOCK-2203", "ERROR", "REQUIRE_ACTION", "lock_release.stale", nil)
+		}
+		result, err = service.Accept(ctx, payload)
+		if err == nil && result.State == "accepted" {
+			err = repo.ReleaseReservation(ctx, projected.Path, projected.ObservedLockID, true)
+		}
+	}
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "LOCK-2206", "ERROR", "REQUIRE_ACTION", "lock_release.decision_failed", map[string]string{"detail": err.Error()})
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) projectedLockRelease(serverID, requestID string) (contract.LockReleaseRequest, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, request := range s.lockReleaseRequests[serverID] {
+		if request.RequestID == requestID {
+			return request, true
+		}
+	}
+	return contract.LockReleaseRequest{}, false
+}
+
+func containsReleasableReservation(rows []contract.Reservation, path, token string) bool {
+	for _, row := range rows {
+		if row.Path == path && row.Token == token && row.CanRelease {
+			return true
+		}
+	}
+	return false
+}
+
+func validReservationPath(value string) bool {
+	return value != "" && !filepath.IsAbs(value) && value != "." && filepath.Clean(value) == value && !strings.HasPrefix(value, ".."+string(filepath.Separator)) && value != ".."
+}
+
 func (s *Server) handleSystemLifecycle(req contract.Request, restart bool) contract.Response {
 	if s.systemLifecycleService() == nil {
 		return contract.ErrResponse(req.RequestID, "SYSTEM-0001", "ERROR", "NONE", "system.lifecycle_unavailable", nil)
@@ -1244,10 +1349,11 @@ func (s *Server) handleHello(req contract.Request) contract.Response {
 // handleSystemStatus implements system.status.
 func (s *Server) handleSystemStatus(req contract.Request) contract.Response {
 	result := contract.SystemStatusResult{
-		State:       "running",
-		UptimeSec:   s.uptime(),
-		Repos:       len(s.allRepos()),
-		Activations: s.allActivations(),
+		State:               "running",
+		UptimeSec:           s.uptime(),
+		Repos:               len(s.allRepos()),
+		Activations:         s.allActivations(),
+		LockReleaseRequests: s.allLockReleaseRequests(),
 	}
 	if service := s.realmRemovalService(); service != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

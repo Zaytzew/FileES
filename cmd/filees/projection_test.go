@@ -15,6 +15,23 @@ import (
 	"filees/pkg/reposupervisor"
 )
 
+func TestProjectLockReleaseRequestsPreservesPrivateRoleAndFencingToken(t *testing.T) {
+	now := time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC)
+	projected := projectLockReleaseRequests("office", []clientview.LockReleaseRequest{{
+		RequestID: "11111111-1111-4111-8111-111111111111",
+		RepoID:    "22222222-2222-4222-8222-222222222222", Path: "plans/a.dwg",
+		ObservedLockID: "opaque-token", Role: "holder", CounterpartyRealmAlias: "studio",
+		State: "pending", CreatedAt: now, UpdatedAt: now.Add(time.Minute), ExpiresAt: now.Add(3 * time.Hour),
+	}})
+	if len(projected) != 1 {
+		t.Fatalf("projected=%+v", projected)
+	}
+	got := projected[0]
+	if got.ServerID != "office" || got.Role != "holder" || got.ObservedLockID != "opaque-token" || got.CounterpartyRealmAlias != "studio" || got.UpdatedAt != "2026-08-31T10:01:00Z" {
+		t.Fatalf("projection lost lock release identity: %+v", got)
+	}
+}
+
 func TestSyncProjectionKnowledgeKeepsDeletedRepositoryThroughRetention(t *testing.T) {
 	serverID := "office"
 	repoID := "00000000-0000-0000-0000-000000000099"

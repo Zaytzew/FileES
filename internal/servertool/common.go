@@ -165,6 +165,15 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 			obsandbox.Path{Label: "session-root", Name: sessionRoot, Perms: "rwc"},
 		)
 		if activationConfig.DataAuthzFile != "" {
+			// Grant-authority publication replaces data_authz_file atomically:
+			// it creates a temporary sibling, renames it over the configured
+			// file, and fsyncs the containing directory.  Unveiling only the
+			// final file works while it is read, but makes the atomic writer
+			// fail with a misleading ENOENT (typically "mkdir /var") when the
+			// authz file lives outside Activation.Root.
+			if atomicFileParentNeedsOwnUnveil(activationConfig.Root, activationConfig.DataAuthzFile) {
+				paths = append(paths, obsandbox.Path{Label: "data-authz-parent", Name: filepath.Dir(activationConfig.DataAuthzFile), Perms: "rwc"})
+			}
 			paths = append(paths, obsandbox.Path{Label: "data-authz", Name: activationConfig.DataAuthzFile, Perms: "rwc"})
 		}
 	}
@@ -232,6 +241,18 @@ func deletionArchiveNeedsOwnUnveil(resultsRoot, archiveRoot string) bool {
 		return true
 	}
 	return archiveRoot != resultsRoot && !strings.HasPrefix(archiveRoot, resultsRoot+string(filepath.Separator))
+}
+
+func atomicFileParentNeedsOwnUnveil(coveredRoot, path string) bool {
+	if path == "" {
+		return false
+	}
+	coveredRoot = filepath.Clean(coveredRoot)
+	parent := filepath.Clean(filepath.Dir(path))
+	if coveredRoot == "" || coveredRoot == "." {
+		return true
+	}
+	return parent != coveredRoot && !strings.HasPrefix(parent, coveredRoot+string(filepath.Separator))
 }
 
 var (

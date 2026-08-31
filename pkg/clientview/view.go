@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,17 +23,18 @@ import (
 const Schema = "filees.client-view/v1"
 
 type View struct {
-	Schema               string            `json:"schema"`
-	ClientID             string            `json:"client_id"`
-	RealmID              string            `json:"realm_id"`
-	RealmAlias           string            `json:"realm_alias,omitempty"`
-	Generation           int64             `json:"generation"`
-	GeneratedAt          time.Time         `json:"generated_at"`
-	MinimumClientVersion string            `json:"minimum_client_version,omitempty"`
-	ClientRole           string            `json:"client_role"`
-	Capabilities         *Capabilities     `json:"capabilities,omitempty"`
-	Repositories         []Repository      `json:"repositories"`
-	ActiveOperations     []json.RawMessage `json:"active_operations"`
+	Schema               string               `json:"schema"`
+	ClientID             string               `json:"client_id"`
+	RealmID              string               `json:"realm_id"`
+	RealmAlias           string               `json:"realm_alias,omitempty"`
+	Generation           int64                `json:"generation"`
+	GeneratedAt          time.Time            `json:"generated_at"`
+	MinimumClientVersion string               `json:"minimum_client_version,omitempty"`
+	ClientRole           string               `json:"client_role"`
+	Capabilities         *Capabilities        `json:"capabilities,omitempty"`
+	Repositories         []Repository         `json:"repositories"`
+	LockReleaseRequests  []LockReleaseRequest `json:"lock_release_requests,omitempty"`
+	ActiveOperations     []json.RawMessage    `json:"active_operations"`
 }
 
 type Capabilities struct {
@@ -84,6 +86,19 @@ type Repository struct {
 	// stamps upload_shelf on the delivery repo and upload_trash on the
 	// realm-wide reject quarantine. Absence keeps old projections readable.
 	Purpose string `json:"purpose,omitempty"`
+}
+
+type LockReleaseRequest struct {
+	RequestID              string    `json:"request_id"`
+	RepoID                 string    `json:"repo_id"`
+	Path                   string    `json:"path"`
+	ObservedLockID         string    `json:"observed_lock_id"`
+	Role                   string    `json:"role"` // requester or holder in this projection
+	CounterpartyRealmAlias string    `json:"counterparty_realm_alias,omitempty"`
+	State                  string    `json:"state"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+	ExpiresAt              time.Time `json:"expires_at"`
 }
 
 const (
@@ -204,6 +219,42 @@ func (v View) Validate() error {
 		}
 		if !ValidPurpose(repo.Purpose) {
 			return fmt.Errorf("repositories[%d].purpose is invalid", i)
+		}
+	}
+	requestIDs := make(map[string]struct{}, len(v.LockReleaseRequests))
+	for i, request := range v.LockReleaseRequests {
+		if _, err := uuid.Parse(request.RequestID); err != nil {
+			return fmt.Errorf("lock_release_requests[%d].request_id must be UUID", i)
+		}
+		if _, duplicate := requestIDs[request.RequestID]; duplicate {
+			return fmt.Errorf("lock_release_requests[%d].request_id is duplicated", i)
+		}
+		requestIDs[request.RequestID] = struct{}{}
+		if _, exists := seen[request.RepoID]; !exists {
+			return fmt.Errorf("lock_release_requests[%d].repo_id is not projected", i)
+		}
+		if request.Path == "" || len(request.Path) > 4096 || request.Path != strings.TrimSpace(request.Path) || strings.HasPrefix(request.Path, "/") || strings.ContainsAny(request.Path, "\\\x00\r\n") || path.Clean(request.Path) != request.Path || request.Path == "." || strings.HasPrefix(request.Path, "../") {
+			return fmt.Errorf("lock_release_requests[%d].path is invalid", i)
+		}
+		if request.ObservedLockID == "" || len(request.ObservedLockID) > 2048 || request.ObservedLockID != strings.TrimSpace(request.ObservedLockID) || strings.ContainsAny(request.ObservedLockID, "\x00\r\n") {
+			return fmt.Errorf("lock_release_requests[%d].observed_lock_id is invalid", i)
+		}
+		if request.Role != "requester" && request.Role != "holder" {
+			return fmt.Errorf("lock_release_requests[%d].role is invalid", i)
+		}
+		if request.CounterpartyRealmAlias != "" {
+			canonical, err := realmalias.Normalize(request.CounterpartyRealmAlias)
+			if err != nil || canonical != request.CounterpartyRealmAlias {
+				return fmt.Errorf("lock_release_requests[%d].counterparty_realm_alias is invalid", i)
+			}
+		}
+		switch request.State {
+		case "pending", "dismissed", "accepted", "lock_gone", "expired", "stale":
+		default:
+			return fmt.Errorf("lock_release_requests[%d].state is invalid", i)
+		}
+		if request.CreatedAt.IsZero() || request.UpdatedAt.Before(request.CreatedAt) || !request.ExpiresAt.After(request.CreatedAt) {
+			return fmt.Errorf("lock_release_requests[%d] timestamps are invalid", i)
 		}
 	}
 	return nil

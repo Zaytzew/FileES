@@ -17,6 +17,16 @@ type fakeLockReleaseAuthority struct {
 	path        string
 }
 
+type fakeLockReleaseProjector struct {
+	records []LockReleaseRecord
+	err     error
+}
+
+func (p *fakeLockReleaseProjector) PublishLockRelease(_ context.Context, record LockReleaseRecord) error {
+	p.records = append(p.records, record)
+	return p.err
+}
+
 func (a *fakeLockReleaseAuthority) InspectLock(_ context.Context, repoID, path string) (*LockReleaseObservation, error) {
 	a.repoID, a.path = repoID, path
 	if a.observation == nil {
@@ -29,6 +39,7 @@ func (a *fakeLockReleaseAuthority) InspectLock(_ context.Context, repoID, path s
 type lockReleaseWorkerFixture struct {
 	worker              *Worker
 	authority           *fakeLockReleaseAuthority
+	projector           *fakeLockReleaseProjector
 	requester, holder   Session
 	repoID, path, token string
 }
@@ -41,9 +52,10 @@ func newLockReleaseWorkerFixture(t *testing.T) lockReleaseWorkerFixture {
 	holder := Session{ClientID: uuid.NewString(), RealmID: uuid.NewString(), Repositories: []clientview.Repository{repo}}
 	token := "opaquelocktoken:" + uuid.NewString()
 	authority := &fakeLockReleaseAuthority{observation: &LockReleaseObservation{ObservedLockID: token, HolderClientID: holder.ClientID, HolderRealmID: holder.RealmID}}
+	projector := &fakeLockReleaseProjector{}
 	store := &FileLockReleaseStore{Root: t.TempDir(), TTL: 3 * time.Hour}
 	return lockReleaseWorkerFixture{
-		worker: &Worker{LockReleases: store, LockAuthority: authority}, authority: authority,
+		worker: &Worker{LockReleases: store, LockAuthority: authority, LockProjector: projector}, authority: authority, projector: projector,
 		requester: requester, holder: holder, repoID: repoID, path: "projekty/model.dwg", token: token,
 	}
 }

@@ -121,6 +121,10 @@ type LockReleaseAuthority interface {
 	InspectLock(context.Context, string, string) (*LockReleaseObservation, error)
 }
 
+type LockReleaseProjector interface {
+	PublishLockRelease(context.Context, LockReleaseRecord) error
+}
+
 type Worker struct {
 	Backend              Backend
 	Activator            RepositoryActivator
@@ -140,6 +144,7 @@ type Worker struct {
 	UploadChannels       UploadChannelService
 	LockReleases         LockReleaseStore
 	LockAuthority        LockReleaseAuthority
+	LockProjector        LockReleaseProjector
 	RecoveryAdminContact string
 	DataErasureMaxDays   int
 	Now                  func() time.Time

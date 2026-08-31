@@ -6,10 +6,65 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func fixture() View {
 	return View{Schema: Schema, ClientID: "e71ecd0b-bd99-489d-b822-41b01bd91346", RealmID: "7b807185-aa75-4169-8a65-705c7cbab176", Generation: 1, GeneratedAt: time.Date(2026, 7, 19, 1, 0, 0, 0, time.UTC), ClientRole: "normal", Repositories: []Repository{{RepoID: "5103f16d-7a22-4631-a4f2-765b437201ef", DisplayName: "Dokumenty", URL: "svn+ssh://_filees-client@example.net/repositories/docs", Access: "rw", State: "active"}}, ActiveOperations: []json.RawMessage{}}
+}
+
+func TestLockReleaseProjectionValidatesBothRolesAndRoundTrips(t *testing.T) {
+	view := fixture()
+	now := time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC)
+	view.LockReleaseRequests = []LockReleaseRequest{{
+		RequestID: uuid.NewString(), RepoID: view.Repositories[0].RepoID,
+		Path: "projekty/model.dwg", ObservedLockID: "opaquelocktoken:" + uuid.NewString(),
+		Role: "requester", CounterpartyRealmAlias: "projektanci", State: "pending",
+		CreatedAt: now, UpdatedAt: now, ExpiresAt: now.Add(3 * time.Hour),
+	}}
+	if err := view.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(bytes.NewReader(raw))
+	if err != nil || len(decoded.LockReleaseRequests) != 1 || decoded.LockReleaseRequests[0].Role != "requester" {
+		t.Fatalf("round trip = %+v err=%v", decoded.LockReleaseRequests, err)
+	}
+	view.LockReleaseRequests[0].Role = "holder"
+	if err := view.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLockReleaseProjectionFailsClosed(t *testing.T) {
+	view := fixture()
+	now := time.Now().UTC()
+	base := LockReleaseRequest{
+		RequestID: uuid.NewString(), RepoID: view.Repositories[0].RepoID, Path: "file.txt",
+		ObservedLockID: "opaquelocktoken:" + uuid.NewString(), Role: "requester", State: "pending",
+		CreatedAt: now, UpdatedAt: now, ExpiresAt: now.Add(time.Hour),
+	}
+	for name, mutate := range map[string]func(*LockReleaseRequest){
+		"unknown repository": func(r *LockReleaseRequest) { r.RepoID = uuid.NewString() },
+		"escaping path":      func(r *LockReleaseRequest) { r.Path = "../secret" },
+		"unknown role":       func(r *LockReleaseRequest) { r.Role = "observer" },
+		"unknown state":      func(r *LockReleaseRequest) { r.State = "chatting" },
+		"invalid alias":      func(r *LockReleaseRequest) { r.CounterpartyRealmAlias = "A/B" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := base
+			mutate(&request)
+			candidate := view
+			candidate.LockReleaseRequests = []LockReleaseRequest{request}
+			if err := candidate.Validate(); err == nil {
+				t.Fatal("invalid lock release projection accepted")
+			}
+		})
+	}
 }
 
 func TestViewAcceptsSeparatedDataRepositoryAccount(t *testing.T) {

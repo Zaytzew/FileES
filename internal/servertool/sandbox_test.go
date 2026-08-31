@@ -135,6 +135,31 @@ func TestWorkerSVNProfileIncludesOnlyExactRuntimeAndTreeParents(t *testing.T) {
 	}
 }
 
+func TestRepositoryInspectionProfileIncludesConfiguredSVNLook(t *testing.T) {
+	access := toolAccess{
+		name: "filees-admin/repo-prune", needRepositoryData: true, needRepoInspection: true, needSVN: true,
+		repositoryRoot: "/srv/data/repositories", repositoryAuthz: "/srv/data/repositories.authz",
+		svnAdminBinary: "/usr/local/bin/svnadmin", svnLookBinary: "/opt/subversion/bin/svnlook",
+	}
+	config := activation.Config{
+		ServiceWorkingCopy: "/srv/filees/service-wc", ServiceRepository: "/srv/filees/service-repo",
+		SVNBinary: "/usr/local/bin/svn",
+	}
+	profile := repositoryProfile("/srv/filees/onboarding", access, config, "/srv/filees/results", "", "")
+	found := false
+	for _, path := range profile.Paths {
+		if path.Label == "svnlook" {
+			found = path.Name == access.svnLookBinary && path.Perms == "rx"
+		}
+	}
+	if !found {
+		t.Fatalf("repository inspection profile omits configured svnlook: %+v", profile.Paths)
+	}
+	if err := obsandbox.Validate(profile); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDataAuthzInsideActivationRootNeedsNoBroaderParentUnveil(t *testing.T) {
 	config := activation.Config{
 		Root:               "/srv/activation",

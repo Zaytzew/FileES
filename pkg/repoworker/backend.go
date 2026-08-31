@@ -28,6 +28,13 @@ type Effects interface {
 	WithdrawAuthority(context.Context, string, string) error
 	ArchiveAndDeleteFSFS(context.Context, string, string) (time.Time, error)
 }
+
+// AbandonedCreateEffects is an optional administrative extension used only
+// by DurableBackend.PruneAbandoned.  Keeping it outside Effects prevents the
+// normal repository worker contract from growing an operator-only action.
+type AbandonedCreateEffects interface {
+	PruneAbandonedCreate(context.Context, string, string, string) error
+}
 type backendRecord struct {
 	OperationID string `json:"operation_id"`
 	RealmID     string `json:"realm_id"`
@@ -193,6 +200,59 @@ func (b *DurableBackend) CreateWithPurpose(ctx context.Context, op, realm, name,
 		return Repository{}, errors.New("invalid repository backend stage")
 	}
 	return Repository{RepoID: r.RepoID, URL: r.URL}, nil
+}
+
+// PruneAbandoned completes an operator-authorized cleanup of an initial
+// repository creation which was independently proven to contain no revisions.
+// The prune_pending stage is persisted before authority or FSFS is touched.
+// It distinguishes this recovery path from an ordinary repository deletion
+// whose canonical tombstone may temporarily coexist with an r0 FSFS tree.
+func (b *DurableBackend) PruneAbandoned(ctx context.Context, operationID, realmID, repoID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !filepath.IsAbs(b.Root) || b.Effects == nil {
+		return errors.New("repository backend is incomplete")
+	}
+	if _, err := uuid.Parse(operationID); err != nil {
+		return err
+	}
+	if _, err := uuid.Parse(realmID); err != nil {
+		return err
+	}
+	if _, err := uuid.Parse(repoID); err != nil {
+		return err
+	}
+	pruner, ok := b.Effects.(AbandonedCreateEffects)
+	if !ok {
+		return errors.New("repository backend cannot prune abandoned creations")
+	}
+	path := filepath.Join(b.Root, operationID+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var record backendRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return err
+	}
+	if record.OperationID != operationID || record.RealmID != realmID || record.RepoID != repoID {
+		return errors.New("abandoned repository cleanup parameters conflict")
+	}
+	if record.Stage == "published" {
+		record.Stage = "prune_pending"
+		if err := b.save(path, record); err != nil {
+			return err
+		}
+	} else if record.Stage != "prune_pending" {
+		return errors.New("repository creation is not eligible for abandoned cleanup")
+	}
+	if err := pruner.PruneAbandonedCreate(ctx, repoID, realmID, operationID); err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return syncDirectory(b.Root)
 }
 
 // RepairLegacyUploadTrashPurposes upgrades deterministic upload-trash

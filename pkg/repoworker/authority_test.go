@@ -184,6 +184,9 @@ func TestServicePublisherActivateHealsProjectionFromCanonicalRecord(t *testing.T
 	if again.Generation != 6 || runner.calls != 1 {
 		t.Fatalf("idempotent activation republished: generation=%d calls=%d", again.Generation, runner.calls)
 	}
+	if err := publisher.PruneAbandoned(context.Background(), repoID, realm); err == nil {
+		t.Fatal("abandoned cleanup accepted an active repository")
+	}
 }
 
 func TestServicePublisherSnapshotsOwnedAndForeignRealmScope(t *testing.T) {

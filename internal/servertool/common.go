@@ -49,11 +49,13 @@ type toolAccess struct {
 	needActivation     bool
 	needRepoResults    bool
 	needRepositoryData bool
+	needRepoInspection bool
 	needSVN            bool
 	needRealmAlias     bool
 	repositoryRoot     string
 	repositoryAuthz    string
 	svnAdminBinary     string
+	svnLookBinary      string
 }
 
 func (access toolAccess) promises() string {
@@ -100,6 +102,9 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 		access.repositoryRoot = config.Repositories.Root
 		access.repositoryAuthz = config.Repositories.DataAuthzFile
 		access.svnAdminBinary = config.Repositories.SVNAdminBinary
+		if access.needRepoInspection {
+			access.svnLookBinary = config.Repositories.EffectiveSVNLookBinary()
+		}
 	}
 	repositoryAccess := onboarding.Access{Areas: access.areas, NeedOTP: access.needOTP}
 	if err := onboarding.CheckExisting(config.Root, repositoryAccess); err != nil {
@@ -211,6 +216,9 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 			paths = append(paths, obsandbox.Path{Label: "repository-authz-parent", Name: filepath.Dir(access.repositoryAuthz), Perms: "rwc"})
 		}
 		paths = append(paths, obsandbox.Path{Label: "repository-authz", Name: access.repositoryAuthz, Perms: "rwc"})
+		if access.needRepoInspection && access.svnLookBinary != "" {
+			paths = append(paths, obsandbox.Path{Label: "svnlook", Name: access.svnLookBinary, Perms: "rx"})
+		}
 	}
 	if access.needRealmAlias {
 		// Read-only, and deliberately narrower than needSVN's full

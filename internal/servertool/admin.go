@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"filees/internal/durable"
 	"filees/pkg/activation"
 	"filees/pkg/onboarding"
 	"filees/pkg/repoworker"
@@ -279,12 +280,19 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
 			return adminUsage(stderr, flags, "[--realm-id UUID]")
 		}
-		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-check-state", areas: onboarding.AreaOperations, needRepoResults: true, needRepositoryData: true})
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-check-state", areas: onboarding.AreaOperations, needRepoResults: true, needRepositoryData: true, needRepoInspection: true, needSVN: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
 		}
-		records, err := scanBackendRecords(config.Repositories.ResultsRoot, config.Repositories.Root, *realmID, time.Now())
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		var records []backendRecordReport
+		err = withServiceWorkingCopy(ctx, config.Activation, func() error {
+			var scanErr error
+			records, scanErr = scanBackendRecords(ctx, config.Repositories.ResultsRoot, config.Repositories.Root, config.Activation.ServiceWorkingCopy, config.Repositories.EffectiveSVNLookBinary(), *realmID, time.Now())
+			return scanErr
+		})
 		if err != nil {
 			report(stderr, "filees-admin repo check-state", err)
 			return ExitTempFail
@@ -302,28 +310,62 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 {
 			return adminUsage(stderr, flags, "[--realm-id UUID] [--older-than 1h] [--apply]")
 		}
-		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-prune", areas: onboarding.AreaOperations, write: true, needRepoResults: true, needRepositoryData: true})
+		if *olderThan < 0 {
+			fmt.Fprintln(stderr, "filees-admin repo prune: --older-than must not be negative")
+			return ExitUsage
+		}
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-prune", areas: onboarding.AreaOperations, write: true, needRepoResults: true, needRepositoryData: true, needRepoInspection: true, needSVN: true})
 		if err != nil {
 			report(stderr, "filees-admin config", err)
 			return ExitConfig
 		}
-		now := time.Now()
-		records, err := scanBackendRecords(config.Repositories.ResultsRoot, config.Repositories.Root, *realmID, now)
+		var candidates, needsAttention []backendRecordReport
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		err = withServiceWorkingCopy(ctx, config.Activation, func() error {
+			records, scanErr := scanBackendRecords(ctx, config.Repositories.ResultsRoot, config.Repositories.Root, config.Activation.ServiceWorkingCopy, config.Repositories.EffectiveSVNLookBinary(), *realmID, time.Now())
+			if scanErr != nil {
+				return scanErr
+			}
+			for _, record := range records {
+				if !record.Prunable || time.Duration(record.AgeSeconds)*time.Second < *olderThan {
+					needsAttention = append(needsAttention, record)
+					continue
+				}
+				candidates = append(candidates, record)
+			}
+			if !*apply {
+				return nil
+			}
+			r := config.Repositories
+			publisher := repoworker.ServicePublisher{
+				ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: r.DataAuthzFile,
+				Runner: repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy},
+			}
+			effects := repoworker.ServerEffects{
+				RepositoriesRoot: r.Root, SVNAdmin: r.SVNAdminBinary,
+				SVNLook: r.EffectiveSVNLookBinary(), Authority: publisher,
+			}
+			backend := repoworker.DurableBackend{Root: filepath.Join(r.ResultsRoot, "backend"), Effects: effects}
+			for _, record := range candidates {
+				if record.Stage == "published" || record.Stage == "prune_pending" {
+					if err := backend.PruneAbandoned(ctx, record.OperationID, record.RealmID, record.RepoID); err != nil {
+						return fmt.Errorf("prune published repository %s: %w", record.RepoID, err)
+					}
+					continue
+				}
+				if err := os.Remove(record.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return fmt.Errorf("remove backend record %s: %w", record.OperationID, err)
+				}
+				if err := durable.SyncDirectory(filepath.Dir(record.path)); err != nil {
+					return fmt.Errorf("sync backend records after %s: %w", record.OperationID, err)
+				}
+			}
+			return nil
+		})
 		if err != nil {
 			report(stderr, "filees-admin repo prune", err)
 			return ExitTempFail
-		}
-		var candidates, needsAttention []backendRecordReport
-		for _, record := range records {
-			if !record.Prunable {
-				needsAttention = append(needsAttention, record)
-				continue
-			}
-			if time.Duration(record.AgeSeconds)*time.Second < *olderThan {
-				needsAttention = append(needsAttention, record)
-				continue
-			}
-			candidates = append(candidates, record)
 		}
 		if !*apply {
 			if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-repo-prune/v1", "status": "dry_run", "would_remove": candidates, "needs_attention": needsAttention}); err != nil {
@@ -331,15 +373,7 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			}
 			return ExitOK
 		}
-		var removed []backendRecordReport
-		for _, record := range candidates {
-			if err := os.Remove(record.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				report(stderr, "filees-admin repo prune remove "+record.OperationID, err)
-				return ExitTempFail
-			}
-			removed = append(removed, record)
-		}
-		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-repo-prune/v1", "status": "pruned", "removed": removed, "needs_attention": needsAttention}); err != nil {
+		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-repo-prune/v1", "status": "pruned", "removed": candidates, "needs_attention": needsAttention}); err != nil {
 			return ExitSoftware
 		}
 		return ExitOK

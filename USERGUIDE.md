@@ -386,8 +386,9 @@ rezerwacja ma aktywny paszport edycji, pojawia się dodatkowe ostrzeżenie o
 możliwych niezapisanych danych. FileES nie sprawdza, czy edytor ma „otwarty
 plik”, ponieważ nowoczesne edytory często zapisują przez atomową podmianę i
 taki wskaźnik byłby niewiarygodny. Rezerwacja aktywna na innym urządzeniu lub
-należąca do innego użytkownika ma działanie **Poproś o zwolnienie (wkrótce)**;
-nie można jej dziś zwolnić z tego klienta. **Zwolnij wszystko** wymaga jednego
+należąca do innego użytkownika ma działanie **Poproś o zwolnienie**. Requester
+widzi stan prośby, a holder odpowiada **OK** albo **Zwolnij**; druga akcja
+zwalnia dokładnie tę instancję blokady. **Zwolnij wszystko** wymaga jednego
 potwierdzenia i zwalnia wyłącznie moje rezerwacje, każdą z aktualnym tokenem.
 Po zatwierdzeniu daemon ponownie sprawdza blokadę i jej token, więc odświeżony
 lub podmieniony wiersz nie zwolni przypadkowo innej rezerwacji.
@@ -527,8 +528,7 @@ katalogu pod starą nazwą; nie jest on prawidłową WC i nie zostanie uruchomio
 - **Aktywacja powiadomień**: powiadomienia są informacyjne; kliknięcie nie otwiera jeszcze katalogu ani szczegółów błędu. Nie wykonuje też żadnej operacji mutującej.
 - **MSI Windows**: kompletny pakiet daemon+Wails i updater Windows pozostają
   zadaniem wydaniowym; stare MSI GUI-only nie jest bieżącym klientem.
-- **„Poproś o zwolnienie”**: cudza blokada ma świadomy placeholder. Pełny pion
-  żądania, odpowiedzi właściciela i projekcji zwrotnej jest następny do
-  implementacji.
+- **„Poproś o zwolnienie”**: przepływ prośby i odpowiedzi działa; automatyczne
+  `svn up` + przejęcie locka u requestera oraz GC wymagają jeszcze domknięcia.
 - **Wstrzymanie / Sync now**: funkcje nieobecne w bieżącym kontrakcie daemona;
   pojawią się po dodaniu odpowiednich capabilities.

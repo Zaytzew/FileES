@@ -8,8 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"mime/multipart"
 	"net/textproto"
+	"strconv"
 	"strings"
 
 	"filees/pkg/realmbranding"
@@ -193,6 +197,34 @@ func wrapMailBase64(raw []byte) string {
 	return wrapped.String()
 }
 
+// logoDisplaySize fixes the logo's on-screen height and derives a
+// proportional width from its actual pixel dimensions, so a wide wordmark
+// (an operator's own brand, unlike the square filees:space default) isn't
+// squashed into a hardcoded square. Width is capped so an extreme aspect
+// ratio can't blow out the card's ~432px content area. Falls back to a
+// square 32x32 if the already-Normalize-validated image somehow fails to
+// decode here - display-only best effort, not a validation gate.
+func logoDisplaySize(branding realmbranding.Branding) (width, height int) {
+	const displayHeight = 32
+	const maxDisplayWidth = 160
+	raw, err := base64.StdEncoding.DecodeString(branding.LogoBase64)
+	if err != nil {
+		return displayHeight, displayHeight
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil || config.Width < 1 || config.Height < 1 {
+		return displayHeight, displayHeight
+	}
+	scaled := displayHeight * config.Width / config.Height
+	if scaled < 1 {
+		scaled = 1
+	}
+	if scaled > maxDisplayWidth {
+		scaled = maxDisplayWidth
+	}
+	return scaled, displayHeight
+}
+
 // renderMailHTML is deliberately table-based with only inline style=""
 // attributes - no <style> block, no CSS classes, no shadows/gradients/custom
 // fonts. Those are the constructs most likely to be stripped or mangled by
@@ -203,7 +235,9 @@ func renderMailHTML(intro, code, footer string, branding realmbranding.Branding)
 	accent := branding.LeadingColor
 	logoImg := ""
 	if branding.LogoBase64 != "" {
-		logoImg = `<img src="cid:` + logoContentID + `" width="32" height="32" alt="FileES" style="display:block;border:0;">`
+		width, height := logoDisplaySize(branding)
+		logoImg = `<img src="cid:` + logoContentID + `" width="` + strconv.Itoa(width) + `" height="` + strconv.Itoa(height) +
+			`" alt="FileES" style="display:block;border:0;">`
 	}
 	var b strings.Builder
 	b.WriteString("<!doctype html>\r\n")

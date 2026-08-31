@@ -38,11 +38,11 @@ Target UX: a tray automaton that invisibly keeps files synchronized with the ser
 - **[USERGUIDE.md](USERGUIDE.md)** — a shorter user guide.
 - **[manual-filees.html](manual-filees.html)** — a redirect stub to `manual/`, kept so old links don't die.
 
-**Desktop GUI:** `cmd/filees-gui` (Fyne + zenity/yad on Linux, WinForms on
-Windows) is **deprecated** and receives only blocking bug fixes. The target,
-actively developed client is `cmd/filees-gui-wails` (Wails/WebView) — the
-full rationale and the conditions for retiring the old stack are in the
-[GUI Tray](#gui-tray) section below and in `concepts/WAILS_GUI_FORK.md`.
+**Desktop GUI:** `cmd/filees-gui-wails` (Wails/WebView) is the current and
+only actively developed desktop client. The old `cmd/filees-gui`
+(Fyne+zenity/yad on Linux, WinForms/PowerShell on Windows) is
+**deprecated / abandoned** and retained only as deployment history pending
+mechanical removal. It is not a supported alternative or a parity target.
 
 The current desktop client supports, on Windows, fully joining another
 installation to an existing realm, listing every realm repository in
@@ -510,23 +510,28 @@ internal/serverinstall/  core of the manifest-based server installer
 internal/release*/       envelopes, signatures and artifact publishing
 ```
 
-The tray library is `fyne.io/systray`, isolated as an adapter in `internal/gui/tray`. Its API must not leak into application logic or the contract. MVP covers Linux (SNI; GNOME requires the AppIndicator/SNI extension) and Windows 10+. Detailed platform decisions live in `gui-assumptions.md`. **`cmd/filees-gui` (this Fyne+zenity/yad/WinForms renderer) is deprecated** — decision below — and now receives only blocking bug fixes, no new features.
+The historical tray renderer used `fyne.io/systray`, isolated as an adapter
+in `internal/gui/tray`. `cmd/filees-gui` and its Fyne+zenity/yad/WinForms
+surface are **deprecated / abandoned**. The code remains temporarily for
+migration and packaging cleanup; no new product behaviour belongs there.
 
-**The target GUI is `cmd/filees-gui-wails`**, pinned to Wails
+**The current GUI is `cmd/filees-gui-wails`**, pinned to Wails
 `v3.0.0-beta.6`. The decision was made 2026-08-26 (r603): what started as a
 WebView experiment produced such an unprecedented UX improvement — a full,
 persistent window instead of a series of native dialogs, a consistent
 layout and theme on Windows and Linux, a live projection with no manual
-refresh — that any other decision was not realistic. So far we have not
+refresh — that any other decision was not realistic. Since then it has
+passed live Linux acceptance and taken over the panel, tray, single-instance,
+local PIN, native notifications, repository lifecycle, public shares, upload
+shelves, quarantine, updates, mobile pairing and announcements. So far we have not
 run into any blocking weakness of Wails itself in beta; the bugs closed
 along the way (e.g. prompt bindings carrying identifiers from `go test`
 instead of from the build) were our own mistakes, not a framework
-limitation. Before formally cutting the old stack, what remains is
-tidying up the UI, which grew fairly spontaneously during the r576–r603
-week — tidying, not a rewrite — and closing parity gaps (a full admin tray
-menu, single-instance, a local PIN). The conditions for cutting
-Fyne+zenity/yad and the architecture details: `concepts/WAILS_GUI_FORK.md`
-§0 and §7.
+limitation. The only large missing day-to-day desktop function is requesting
+release of a lock held by another user or device; the current row is an
+explicit placeholder for `concepts/LOCK_RELEASE_REQUEST_CONCEPT_V2.md`.
+Architecture and the legacy-renderer status are in
+`concepts/WAILS_GUI_FORK.md` §0, §4 and §7.
 
 Wails does not introduce a second client model: it runs the same
 `internal/gui/app`, talks exclusively through `pkg/ipcclient`, and the
@@ -542,7 +547,11 @@ state plus repository and lock counts. The `FileES` submenu routes restart
 and shutdown of the whole daemon+GUI pair to a shared controller; there is
 no longer a local action that ends only the renderer.
 
-### Implementation staging
+### Historical implementation staging of `cmd/filees-gui`
+
+The following stages document how the abandoned renderer established the
+shared `internal/gui/app`, `internal/gui/actions` and platform boundaries.
+They are historical evidence, not the current desktop roadmap.
 
 1. **Tray-less core** — `internal/gui/app`, the `DaemonClient` interface, a single state loop, init, reconnect, resync, debounce, plus an architectural and a unit test with no GUI.
 2. **Tray adapter** — `internal/gui/tray` on `fyne.io/systray`, five icons, a menu rendered from a `ViewModel`, and user intents with no direct IPC access.

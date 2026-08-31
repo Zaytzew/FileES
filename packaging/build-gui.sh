@@ -1,11 +1,11 @@
 #!/bin/sh
 set -eu
 
-# DEPRECATED TARGET: this script packages cmd/filees-gui (Fyne+zenity/yad on
-# Linux, WinForms/PowerShell on Windows), deprecated since r603 in favor of
-# cmd/filees-gui-wails. Still the only shipped client, so still built here -
-# do not repoint this script at Wails until concepts/WAILS_GUI_FORK.md §7's
-# conditions are met (that section is where this switch actually happens).
+# ABANDONED LEGACY TARGET: this script packages cmd/filees-gui
+# (Fyne+zenity/yad on Linux, WinForms/PowerShell on Windows). It is retained
+# temporarily for reproducibility and must not be used as the FileES desktop
+# release path. Current packaging has to build cmd/filees-gui-wails; replacing
+# this script is explicit packaging debt tracked in concepts/WAILS_GUI_FORK.md.
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 dist=${DIST:-"$root/dist"}

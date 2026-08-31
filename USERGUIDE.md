@@ -1,15 +1,22 @@
 # FileES GUI — podręcznik użytkownika
 
 **Wersja:** 0.1.0  
-**Dotyczy:** `filees-gui` (aplikacja tray); daemon `filees` opisany jest osobno w README.md. Pełna instrukcja systemu jest dwujęzyczna: `manual/index.html` to przełącznik PL/EN, rozdziały są w `manual/assets/pl/` i `manual/assets/en/`. Na `manual.filees.space` htdocs to kopia `svn://cloud.atmprojekt.pl/SYNCSHARE/manual`. Strony `mandoc` serwera są w `docs/man/` (angielski).
+**Dotyczy:** `filees-gui-wails` 0.1.0; daemon `filees` opisany jest osobno w README.md. Pełna instrukcja systemu jest dwujęzyczna: `manual/index.html` to przełącznik PL/EN, rozdziały są w `manual/assets/pl/` i `manual/assets/en/`. Na `manual.filees.space` htdocs to kopia `svn://cloud.atmprojekt.pl/SYNCSHARE/manual`. Strony `mandoc` serwera są w `docs/man/` (angielski).
 
 ---
 
 ## Czym jest FileES GUI
 
-`filees-gui` to ikona w zasobniku systemowym (tray), która pozwala obserwować stan synchronizacji i wykonywać podstawowe operacje — bez otwierania terminala. Demon `filees` odpowiada za całą synchronizację i działa niezależnie; zamknięcie GUI nie zatrzymuje ani nie zakłóca synchronizacji.
+`filees-gui-wails` to pełny panel desktopowy z własnym trayem. Pokazuje żywą
+projekcję serwerów, repozytoriów, kolejki, blokad, ogłoszeń, udziałów
+publicznych, kwarantanny i aktualizacji oraz prowadzi wszystkie operacje bez
+otwierania terminala. Demon `filees` pozostaje źródłem prawdy i odpowiada za
+synchronizację. Zamknięcie okna chowa je do traya; dopiero jawne **Zakończ
+FileES** zatrzymuje całą parę.
 
-> **W przygotowaniu:** nowy klient pulpitowy oparty na Wails (pełne okno WebView zamiast zasobnika i natywnych dialogów zenity/yad) jest w trakcie budowy jako docelowy następca opisanego tu GUI (`concepts/WAILS_GUI_FORK.md`). Wciąż niewydany — ten dokument opisuje to, co faktycznie instalujesz i uruchamiasz dzisiaj.
+Stary `cmd/filees-gui` oparty na Fyne+zenity/yad/WinForms jest
+**deprecated / abandoned**. Jego obecność w źródłach i starym packagingu jest
+historią wdrożenia, nie alternatywną instrukcją użytkownika.
 
 ---
 
@@ -17,43 +24,42 @@
 
 ### Linux
 - Pulpit z obsługą SNI (GNOME wymaga rozszerzenia **AppIndicator/KStatusNotifierItem**; KDE, XFCE, MATE działają bez dodatków)
-- `zenity` lub `kdialog` — do wyboru plików przy operacjach blokowania
-- `yad` — do okna „Ustawienia…” i dialogów dostępu/widoczności strefy
+- GTK4 i WebKitGTK 6.0 dla bieżącego buildu Wails
 - `xdg-open` — do otwierania katalogów
 - `notify-send` — opcjonalnie, do powiadomień systemowych; brak narzędzia nie zatrzymuje GUI
 
 ### Windows
-- Windows 10 lub nowszy
+- Windows 11 z WebView2 Runtime
 - PowerShell — do wyboru plików i powiadomień toast
-- instalacja MSI — wymagana do poprawnej rejestracji AUMID i podpisanych powiadomień toast; sam `filees-gui.exe` może działać jako tray, ale bez gwarancji powiadomień
+- docelowo kompletne MSI klienta; bieżące źródła Wails są gotowe, a przepięcie
+  oficjalnego packagingu Windows pozostaje osobnym zadaniem wydaniowym
 
 ---
 
 ## Instalacja
 
-### Linux (bundle z `build-gui.sh`)
+### Linux
 
-```bash
-# rozpakować bundle filees-gui-linux-amd64/
-chmod +x install-user.sh
-./install-user.sh                   # instaluje do ~/.local/
-ENABLE_AUTOSTART=1 ./install-user.sh  # instaluje + włącza autostart
-```
+Bieżący klient alfa jest budowany z `cmd/filees-gui-wails` i instalowany jako
+para z demonem. Stary `packaging/build-gui.sh` nadal buduje porzucony renderer
+Fyne i nie jest źródłem aktualnego wydania. Podpisany updater Linux jest
+dostępny z popupu wersji w panelu Wails.
 
-Skrypt kopiuje binary do `~/.local/bin/`, ikonę do `~/.local/share/icons/` i plik desktop do `~/.local/share/applications/`.
+### Windows
 
-### Windows (MSI)
-
-Uruchomić `build-msi.ps1` w PowerShellu na maszynie z WiX Toolset (`wix`; sprawdzone z WiX v7), następnie zainstalować wygenerowany `.msi`. Instalacja jest per-user — nie wymaga uprawnień administratora. Skrót w menu Start ma ustawiony atrybut `System.AppUserModel.ID`, który umożliwia powiadomienia toast. Przy pierwszym użyciu WiX v7 trzeba jednorazowo zaakceptować jego EULA: `wix eula accept wix7`.
+Docelowy artefakt to per-user MSI zawierające demon i Wails, bez UAC. Obecne
+`packaging/windows/` opisuje jeszcze stary, niekompletny artefakt GUI-only i
+nie jest wydaniem Wails; plan migracji jest w
+`concepts/WINDOWS_CLIENT_MSI_ALPHA_CONCEPT.md`.
 
 ---
 
 ## Uruchamianie
 
 ```bash
-filees-gui                           # łączy z domyślnym socketem daemona
-filees-gui --socket /ścieżka/daemon.sock  # niestandardowy socket
-filees-gui --version                 # pokazuje wersję GUI i kończy działanie
+filees-gui-wails                           # łączy z domyślnym socketem demona
+filees-gui-wails --socket /ścieżka/daemon.sock  # niestandardowy socket
+filees-gui-wails --version                 # pokazuje wersję GUI i kończy działanie
 ```
 
 GUI można uruchomić przed daemonem — będzie czekać na połączenie z narastającym interwałem (1 s → 2 s → 5 s → 10 s → 30 s).
@@ -64,29 +70,11 @@ GUI chroni się przed wielokrotnym uruchomieniem w obrębie sesji użytkownika. 
 
 ## Autostart
 
-Autostart uruchamia GUI po zalogowaniu użytkownika i jest niezależny od daemona.
-
-```bash
-filees-gui --autostart enable    # włącz autostart
-filees-gui --autostart disable   # wyłącz autostart
-filees-gui --autostart status    # sprawdź bieżący stan
-```
-
-Przykładowy wynik `status`:
-
-```
-autostart: enabled (/home/user/.config/autostart/filees-gui.desktop)
-autostart: enabled-stale (/home/user/.config/autostart/filees-gui.desktop)
-autostart: disabled (/home/user/.config/autostart/filees-gui.desktop)
-```
-
-- `enabled` — wpis uruchamia bieżący executable z aktualnymi argumentami;
-- `enabled-stale` — wpis istnieje, ale wskazuje inną ścieżkę lub argumenty; napraw go poleceniem `filees-gui --autostart enable` uruchomionym z docelowej instalacji;
-- `disabled` — autostart jest wyłączony.
-
-Na Linuksie autostart tworzy plik `.desktop` w `~/.config/autostart/`. Na Windows zapisuje wpis w `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-
-> Przed odinstalowaniem MSI na Windows należy wyłączyć autostart poleceniem `--autostart disable`. Instalator nie usuwa wpisu rejestru automatycznie.
+Autostart jest własnością instalatora bieżącego klienta, nie osobnym trybem
+Wails. Na Linuksie uruchamia parę demon+GUI w sesji użytkownika. Docelowy MSI
+Windows ma instalować i usuwać wpis autostartu razem z kompletnym klientem.
+Polecenia `filees-gui --autostart ...` należały do porzuconego renderera i nie
+są instrukcją dla `filees-gui-wails`.
 
 ---
 
@@ -153,10 +141,10 @@ listy:
     Otwórz log…
 ```
 
-Tray pokazuje maksymalnie 12 zagregowanych wpisów. Wiele ścieżek tej samej
+Panel pokazuje najnowsze zagregowane wpisy. Wiele ścieżek tej samej
 rewizji lub etapu może zostać złączonych, a nieudana aktywność nie dubluje
 powiązanego błędu. Wpisy są informacyjne; tooltip zawiera szczegóły lub
-wskazówkę. **Otwórz log…** pokazuje cały dostępny snapshot w natywnym oknie.
+wskazówkę. **Dziennik** otwiera cały dostępny snapshot w oknie Wails.
 Lista używa czasu względnego („przed chwilą”, minuty, godzina, „wczoraj”, dni),
 a pełny widok dokładnego `dd:mm:yy hh:mm`. Na Windows błędy są dodatkowo
 pogrubione i ciemnoczerwone. Powtarzane `NET-4007` jednego repozytorium są
@@ -168,15 +156,15 @@ pozostaje wyłącznie w ikonie stanu i surowym logu diagnostycznym.
 ```
 ─────────────────────────
 Połącz ponownie
-Aktualizacja klienta — w przygotowaniu
+Wersja 0.1.0 / aktualizacja klienta
 Uruchom FileES ponownie…
 Zamknij FileES…
 ```
 
 - **Połącz ponownie** — wymusza natychmiastową próbę połączenia z daemonem, pomijając czas oczekiwania backoffu. Działa zarówno przy braku połączenia, jak i w trakcie sesji (resetuje sesję).
-- **Aktualizacja klienta — w przygotowaniu** — nieaktywne miejsce dla przyszłego
-  UX aktualizacji; gdy daemon zgłosi rzeczywiście dostępne, podpisane wydanie,
-  zastępuje je aktywne menu aktualizacji.
+- **Wersja 0.1.0 / aktualizacja klienta** — pastylka wersji otwiera informacje
+  o kliencie i wydaniu dystrybucyjnym. Gdy daemon udostępnia podpisany kanał
+  aktualizacji, to samo okno pokazuje plan oraz akcję aktualizacji.
 - **Uruchom FileES ponownie…** — kontrolowanie opróżnia kolejkę i zatrzymuje
   runtime, po czym uruchamia ponownie daemon i GUI.
 - **Zamknij FileES…** — kontrolowanie zatrzymuje cały stack kliencki: daemon,
@@ -234,7 +222,7 @@ jest traktowany jako sukces.
 
 ## Dodawanie lokalnego folderu jako nowego repozytorium
 
-W podmenu serwera wybierz **Dodaj pierwszy/kolejny folder do FileES…**, wskaż
+W ustawieniach serwera wybierz **Dodaj pierwszy/kolejny folder do FileES…**, wskaż
 istniejący folder i potwierdź jego nazwę. Tworzenie repozytorium oraz pierwszy
 commit działają w tle. Dla dużego folderu może to potrwać kilka minut.
 
@@ -251,7 +239,7 @@ Administrator może wystawić zaproszenie do już istniejącej strefy. Po
 zaproszeniu i OTP klient dziedziczy jej tożsamość oraz prawa, lecz nie pobiera
 automatycznie wszystkich repozytoriów na dysk.
 
-1. Otwórz menu **FileES** i wybierz **Ustawienia…**.
+1. Otwórz trybik wybranego serwera w panelu FileES.
 2. Wskaż serwer, potem działanie **Połącz z lokalnym folderem**.
 3. Dopiero wtedy widać listę udziałów, które da się podłączyć. Na Windows
    można zaznaczyć kilka; na Linuxie każdy udział osobno albo zaznaczenie
@@ -374,7 +362,7 @@ W stanie **Odświeżanie** akcje blokowania i odblokowania są ukryte. Pojawiaj�
 ### Przebieg operacji
 
 1. Kliknąć **Zablokuj pliki…** lub **Odblokuj pliki…** w podmenu repozytorium.
-2. Otworzy się natywny selektor plików — **zenity** (Linux) lub okno Windows Forms (Windows). Można wybrać wiele plików.
+2. Otworzy się systemowy selektor plików. Można wybrać wiele plików.
 3. Selektor ogranicza wybór do katalogu repozytorium; pliki spoza niego są odrzucane.
 4. Po zatwierdzeniu demon wykonuje operację. Wynik pojawi się jako powiadomienie systemowe:
    - sukces: *Zablokowano N plik(ów)* / *Odblokowano N plik(ów)*
@@ -433,7 +421,7 @@ Jeżeli poprawna kopia została przeniesiona:
 
 1. Repozytorium przejdzie do **Wymaga uwagi** z operacją
    `working_copy_missing`; FileES nie utworzy pustego zamiennika.
-2. Otwórz **FileES → Ustawienia…**, wskaż serwer i wybierz **Wskaż przeniesioną kopię roboczą**.
+2. Otwórz ustawienia folderu przy właściwym serwerze i wybierz **Wskaż przeniesioną kopię roboczą**.
 3. Wskaż istniejący root z `.svn`. FileES sprawdzi URL i tożsamość, a następnie
    trwale przepnie lokalną ścieżkę bez checkoutu.
 
@@ -492,42 +480,32 @@ GNOME nie obsługuje SNI natywnie. Zainstaluj rozszerzenie **AppIndicator and KS
 
 ### Brak połączenia — demon działa
 
-Sprawdź, czy `filees-gui` używa właściwego socketu:
+Sprawdź, czy `filees-gui-wails` używa właściwego socketu:
 
 ```bash
-filees-gui --autostart status     # sprawdź, czy wpis jest aktualny (enabled / enabled-stale)
 filees status                     # weryfikuje, czy demon odpowiada
-filees-gui --socket /ścieżka/do/daemon.sock
+filees-gui-wails --socket /ścieżka/do/daemon.sock
 ```
-
-Polecenie `--autostart status` nie wypisuje argumentu socketu; porównuje jednak cały zapisany wpis z oczekiwaną komendą. Wynik `enabled-stale` oznacza, że ścieżka executable lub argumenty wymagają odświeżenia przez ponowne `--autostart enable`.
 
 Domyślna ścieżka socketu: `$XDG_RUNTIME_DIR/filees.sock` lub `~/.filees/daemon.sock`.
 
-### Selektor plików nie otwiera się (Linux)
+### Panel albo okno ustawień nie otwiera się (Linux)
 
-GUI wymaga `zenity` lub `kdialog`. Sprawdź dostępność:
-
-```bash
-which zenity
-which kdialog
-```
-
-Zainstaluj brakujące narzędzie pakietem systemowym (`apt install zenity`, `dnf install zenity`, itp.).
-
-### Okno „Ustawienia…” nie otwiera się (Linux)
-
-To osobne okno (razem z „Widoczność…” i „Dostęp stref…”) wymaga `yad`, nie
-`zenity`. Sprawdź dostępność (`which yad`) i zainstaluj brakujące narzędzie
-pakietem systemowym (`apt install yad`, `dnf install yad`, itp.).
+Sprawdź obecność GTK4 i WebKitGTK 6.0 oraz uruchom GUI z terminala, aby zobaczyć
+błąd inicjalizacji WebView. `yad` i `zenity` należą do porzuconego renderera i
+ich instalowanie nie naprawia klienta Wails.
 
 ### Powiadomienia toast nie pojawiają się (Windows)
 
-Powiadomienia wymagają zarejestrowanego AUMID. Upewnij się, że `filees-gui.exe` był zainstalowany przez MSI (tworzy skrót Start Menu z `System.AppUserModel.ID = ATMProjekt.FileES`). Uruchomienie samego `.exe` bez instalatora nie zarejestruje AUMID i powiadomienia będą pomijane.
+Powiadomienia wymagają zarejestrowanego AUMID. Upewnij się, że klient Wails
+został zainstalowany przez właściwy pakiet, a nie uruchomiony jako luźny EXE.
 
 ### Wiele ikon w trayu
 
-Aktualna wersja blokuje drugą instancję przed utworzeniem ikony. Jeśli mimo to widoczne są dwie ikony, jedna może pochodzić ze starszej wersji GUI albo z innej sesji użytkownika. Zakończ stary proces `filees-gui` z poziomu jego sesji lub menedżera procesów, sprawdź wersję poleceniem `filees-gui --version` i uruchom ponownie bieżącą instalację.
+Aktualna wersja blokuje drugą instancję przed utworzeniem ikony. Jeśli mimo to
+widoczne są dwie ikony, jedna może pochodzić z porzuconego `filees-gui` albo z
+innej sesji użytkownika. Zakończ stary proces, sprawdź wersję poleceniem
+`filees-gui-wails --version` i uruchom ponownie bieżącą instalację.
 
 ### „Widoczność…” nie jest dostępna albo folder pokazuje „brak aliasu”
 
@@ -547,7 +525,10 @@ katalogu pod starą nazwą; nie jest on prawidłową WC i nie zostanie uruchomio
 ## Znane ograniczenia wersji 0.1.0
 
 - **Aktywacja powiadomień**: powiadomienia są informacyjne; kliknięcie nie otwiera jeszcze katalogu ani szczegółów błędu. Nie wykonuje też żadnej operacji mutującej.
-- **MSI Windows**: przed odinstalowaniem należy wykonać `filees-gui --autostart disable`; automatyczne usunięcie utworzonej przez aplikację wartości `HKCU\...\Run` pozostaje otwartą bramką instalatora.
-- **Odbiór natywny**: build MSI oraz instalacja i deinstalacja per-user zostały ręcznie potwierdzone na Windows 11. Każde kolejne wydanie nadal wymaga testów install/upgrade/uninstall na Windows 10/11.
+- **MSI Windows**: kompletny pakiet daemon+Wails i updater Windows pozostają
+  zadaniem wydaniowym; stare MSI GUI-only nie jest bieżącym klientem.
+- **„Poproś o zwolnienie”**: cudza blokada ma świadomy placeholder. Pełny pion
+  żądania, odpowiedzi właściciela i projekcji zwrotnej jest następny do
+  implementacji.
 - **Wstrzymanie / Sync now**: funkcje nieobecne w bieżącym kontrakcie daemona;
   pojawią się po dodaniu odpowiednich capabilities.

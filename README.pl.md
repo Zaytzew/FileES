@@ -42,11 +42,11 @@ Docelowy UX: automat w trayu, który niewidocznie utrzymuje pliki zsynchronizowa
 - **[USERGUIDE.md](USERGUIDE.md)** — krótszy przewodnik użytkownika.
 - **[manual-filees.html](manual-filees.html)** — tylko przekierowanie do `manual/`, żeby stare odnośniki nie umarły.
 
-**GUI desktopowe:** `cmd/filees-gui` (Fyne + zenity/yad na Linuksie, WinForms
-na Windows) jest **deprecated** i dostaje wyłącznie poprawki blokujące.
-Docelowym, aktywnie rozwijanym klientem jest `cmd/filees-gui-wails` (Wails/
-WebView) — pełne uzasadnienie decyzji i warunki wycofania starego stosu w
-sekcji [GUI Tray](#gui-tray) niżej oraz w `concepts/WAILS_GUI_FORK.md`.
+**GUI desktopowe:** `cmd/filees-gui-wails` (Wails/WebView) jest bieżącym i
+jedynym aktywnie rozwijanym klientem desktopowym. Stary `cmd/filees-gui`
+(Fyne+zenity/yad na Linuksie, WinForms/PowerShell na Windows) ma status
+**deprecated / abandoned** i pozostaje wyłącznie historią wdrożenia do
+mechanicznego usunięcia. Nie jest wspieraną alternatywą ani wzorcem parytetu.
 
 Aktualny klient desktopowy obsługuje na Windows pełne dołączenie kolejnej
 instalacji do istniejącego realmu, listę wszystkich repozytoriów realmu w
@@ -508,21 +508,28 @@ internal/serverinstall/  rdzeń manifestowego instalatora serwera
 internal/release*/       koperty, podpisy i publikacja artefaktów
 ```
 
-Biblioteką traya jest `fyne.io/systray`, izolowane jako adapter w `internal/gui/tray`. Jej API nie może przenikać do logiki aplikacji ani kontraktu. MVP obejmuje Linux (SNI; GNOME wymaga rozszerzenia AppIndicator/SNI) oraz Windows 10+. Szczegółowe decyzje platformowe znajdują się w `gui-assumptions.md`. **`cmd/filees-gui` (ten Fyne+zenity/yad/WinForms renderer) jest deprecated** — decyzja poniżej — i dostaje już tylko poprawki blokujące, nie nowe funkcje.
+Historyczny renderer traya używał `fyne.io/systray`, izolowanego jako adapter
+w `internal/gui/tray`. `cmd/filees-gui` i jego powierzchnia
+Fyne+zenity/yad/WinForms są **deprecated / abandoned**. Kod pozostaje
+tymczasowo do migracji i sprzątnięcia packagingu; nie trafiają tam nowe
+funkcje produktu.
 
-**Docelowym GUI jest `cmd/filees-gui-wails`**, przypięty do Wails
+**Bieżącym GUI jest `cmd/filees-gui-wails`**, przypięty do Wails
 `v3.0.0-beta.6`. Decyzja zapadła 2026-08-26 (r603): to, co zaczęło się jako
 eksperyment WebView, dało na tyle bezprecedensową poprawę UX — pełne, trwałe
 okno zamiast serii natywnych dialogów, spójny layout i motyw na Windows i
 Linux, żywa projekcja bez ręcznego odświeżania — że inna decyzja nie była
-realna. Dotąd nie natrafiliśmy na żadną blokującą słabość samego Wails w
+realna. Od tego czasu przeszedł żywy odbiór na Linuksie i przejął panel, tray,
+single-instance, lokalny PIN, powiadomienia, lifecycle repozytoriów, udziały
+publiczne, półki przyjęcia, kwarantannę, aktualizacje, parowanie mobilne i
+ogłoszenia. Dotąd nie natrafiliśmy na żadną blokującą słabość samego Wails w
 becie; błędy zamknięte po drodze (np. bindings promptów niosące
 identyfikatory z `go test` zamiast z buildu) były naszymi własnymi pomyłkami,
-nie ograniczeniem frameworka. Przed formalnym cięciem starego stosu stoi
-jeszcze uporządkowanie UI, który narósł dość spontanicznie w tygodniu
-r576–r603 — porządkowanie, nie rewolucja — oraz zamknięcie luk parytetu
-(pełne menu administracyjne, single-instance, lokalny PIN). Warunki cięcia
-Fyne+zenity/yad i szczegóły architektury: `concepts/WAILS_GUI_FORK.md` §0 i §7.
+nie ograniczeniem frameworka. Jedyną dużą brakującą funkcją codziennego GUI
+jest prośba o zwolnienie locka należącego do innego użytkownika lub urządzenia;
+obecny wiersz jest świadomym placeholderem dla
+`concepts/LOCK_RELEASE_REQUEST_CONCEPT_V2.md`. Architektura i status starego
+renderera: `concepts/WAILS_GUI_FORK.md` §0, §4 i §7.
 
 Wails nie wnosi drugiego modelu klienta: uruchamia ten sam `internal/gui/app`,
 komunikuje się wyłącznie przez `pkg/ipcclient`, a WebView renderuje otrzymaną
@@ -537,7 +544,11 @@ blokad. Podmenu `FileES` przekazuje restart i zakończenie całej pary daemon +
 GUI do wspólnego kontrolera; nie istnieje już lokalna akcja kończąca
 wyłącznie renderer.
 
-### Etapowanie implementacji
+### Historyczne etapy implementacji `cmd/filees-gui`
+
+Poniższe etapy dokumentują, jak porzucony renderer ustanowił współdzielone
+granice `internal/gui/app`, `internal/gui/actions` i adapterów platformowych.
+To zapis historyczny, nie bieżąca mapa rozwoju desktopu.
 
 1. **Rdzeń bez tray** — `internal/gui/app`, interfejs `DaemonClient`, pojedyncza pętla stanu, init, reconnect, resync, debounce oraz test architektoniczny i jednostkowy bez GUI.
 2. **Adapter tray** — `internal/gui/tray` na `fyne.io/systray`, pięć ikon, menu renderowane z `ViewModel` oraz intencje użytkownika bez bezpośredniego dostępu do IPC.

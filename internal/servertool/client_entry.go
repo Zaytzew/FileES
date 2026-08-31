@@ -96,7 +96,19 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 			obsandbox.Path{Label: "service-repository-control", Name: config.Activation.ServiceRepository, Perms: "rwc"},
 			obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
 		)
-		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-worker", Name: repositoryWorkerPath, Perms: "rx"}, obsandbox.Path{Label: "service-wc", Name: config.Activation.ServiceWorkingCopy, Perms: "rwc"}, obsandbox.Path{Label: "repository-root", Name: r.Root, Perms: "rwc"}, obsandbox.Path{Label: "repository-results", Name: r.ResultsRoot, Perms: "rwc"}, obsandbox.Path{Label: "data-authz", Name: r.DataAuthzFile, Perms: "rwc"}, obsandbox.Path{Label: "svnadmin", Name: r.SVNAdminBinary, Perms: "rx"}, obsandbox.Path{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"})
+		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-worker", Name: repositoryWorkerPath, Perms: "rx"}, obsandbox.Path{Label: "service-wc", Name: config.Activation.ServiceWorkingCopy, Perms: "rwc"}, obsandbox.Path{Label: "repository-root", Name: r.Root, Perms: "rwc"}, obsandbox.Path{Label: "repository-results", Name: r.ResultsRoot, Perms: "rwc"}, obsandbox.Path{Label: "svnadmin", Name: r.SVNAdminBinary, Perms: "rx"}, obsandbox.Path{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"})
+			// Same atomic-write requirement as the activation path's data-authz
+			// (see atomicFileParentNeedsOwnUnveil): the canonical rebuild creates
+			// a temp sibling, renames it over the target and fsyncs the parent
+			// directory. Unveiling only the exact file works while activation.root
+			// happens to be its parent (the default layout) but silently fails
+			// with a misleading ENOENT once an operator moves data_authz_file
+			// outside that tree, exactly like the activation-flow bug this
+			// mirrors.
+			if atomicFileParentNeedsOwnUnveil(config.Activation.Root, r.DataAuthzFile) {
+				profile.Paths = append(profile.Paths, obsandbox.Path{Label: "data-authz-parent", Name: filepath.Dir(r.DataAuthzFile), Perms: "rwc"})
+			}
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "data-authz", Name: r.DataAuthzFile, Perms: "rwc"})
 		// LOAD_REPOSITORY_DUMP's DumpLoadService shells out to svnlook
 		// (always) and svndumpfilter (only when applying the ignore
 		// policy); both must be unveiled up front like svnadmin/svn since

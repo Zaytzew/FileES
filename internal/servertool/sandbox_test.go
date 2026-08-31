@@ -149,3 +149,59 @@ func TestDataAuthzInsideActivationRootNeedsNoBroaderParentUnveil(t *testing.T) {
 		}
 	}
 }
+
+// TestActivationKeyFilesOutsideRootNeedOwnParentUnveil is the same
+// missing-parent-unveil class the r665 data-authz fix covered
+// (reports/CUSTOM_DATA_AUTHZ_UNVEIL_BLOCKS_ACTIVATION_2026-08-31.md), found
+// during the same live audit for authorized_keys_file/authz_file: both are
+// independently configurable absolute paths (not required to live under
+// activation.root), and renderAccessLocked replaces both by temp-sibling-
+// then-rename. The default layout (both inside Root) never triggered this,
+// same as data-authz before it moved.
+func TestActivationKeyFilesOutsideRootNeedOwnParentUnveil(t *testing.T) {
+	config := activation.Config{
+		Root:               "/srv/activation",
+		AuthorizedKeysFile: "/srv/keys/authorized_keys",
+		AuthzFile:          "/srv/authz-store/service.authz",
+	}
+	profile := repositoryProfile("/srv/filees", toolAccess{name: "worker", needActivation: true}, config, "", "", "")
+	wanted := map[string]obsandbox.Path{
+		"client-authorized-keys-parent": {Label: "client-authorized-keys-parent", Name: "/srv/keys", Perms: "rwc"},
+		"service-authz-parent":          {Label: "service-authz-parent", Name: "/srv/authz-store", Perms: "rwc"},
+	}
+	for _, path := range profile.Paths {
+		if expected, ok := wanted[path.Label]; ok {
+			if path != expected {
+				t.Fatalf("path %s = %+v, want %+v", path.Label, path, expected)
+			}
+			delete(wanted, path.Label)
+		}
+	}
+	if len(wanted) != 0 {
+		t.Fatalf("external key files did not widen sandbox: missing %+v", wanted)
+	}
+}
+
+// TestRepositoryAuthzOutsideRepositoryRootNeedsOwnParentUnveil covers the
+// third instance of the same bug class, in the needRepositoryData branch
+// used by filees-operation recover (needRepositoryData+needSVN). The
+// default layout (data_authz_file inside repositories.root's sibling
+// activation tree) coincidentally works; an operator-relocated
+// data_authz_file outside repositories.root does not without this.
+func TestRepositoryAuthzOutsideRepositoryRootNeedsOwnParentUnveil(t *testing.T) {
+	access := toolAccess{name: "worker", needRepositoryData: true, repositoryRoot: "/srv/repositories", repositoryAuthz: "/srv/external-authz/repositories.authz", svnAdminBinary: "/usr/local/bin/svnadmin"}
+	profile := repositoryProfile("/srv/filees", access, activation.Config{}, "", "", "")
+	found := false
+	for _, path := range profile.Paths {
+		if path.Label == "repository-authz-parent" {
+			found = true
+			want := obsandbox.Path{Label: "repository-authz-parent", Name: "/srv/external-authz", Perms: "rwc"}
+			if path != want {
+				t.Fatalf("repository-authz-parent = %+v, want %+v", path, want)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("external repository data_authz_file did not widen sandbox with repository-authz-parent")
+	}
+}

@@ -24,6 +24,47 @@ type effects struct {
 	failArchive     bool
 	restore         int
 	deleteSteps     []string
+	prune           int
+	failPrune       bool
+}
+
+func (e *effects) PruneAbandonedCreate(context.Context, string, string, string) error {
+	e.prune++
+	if e.failPrune {
+		return errors.New("prune boundary")
+	}
+	return nil
+}
+
+func TestDurableBackendPersistsAbandonedPruneBoundaryAndRetries(t *testing.T) {
+	fx := &effects{failPrune: true}
+	backend := &DurableBackend{Root: t.TempDir(), Effects: fx}
+	operationID, realmID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	path := filepath.Join(backend.Root, operationID+".json")
+	record := backendRecord{OperationID: operationID, RealmID: realmID, RepoID: repoID, Name: "ghost", Stage: "published"}
+	if err := backend.save(path, record); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.PruneAbandoned(context.Background(), operationID, realmID, repoID); err == nil || !strings.Contains(err.Error(), "prune boundary") {
+		t.Fatalf("first prune error=%v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(raw, &record) != nil {
+		t.Fatalf("read pending prune: %v", err)
+	}
+	if record.Stage != "prune_pending" {
+		t.Fatalf("interrupted prune stage=%q", record.Stage)
+	}
+	fx.failPrune = false
+	if err := backend.PruneAbandoned(context.Background(), operationID, realmID, repoID); err != nil {
+		t.Fatal(err)
+	}
+	if fx.prune != 2 {
+		t.Fatalf("prune effects=%d, want retry", fx.prune)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("completed prune record still exists: %v", err)
+	}
 }
 
 func (e *effects) CreateFSFS(context.Context, string, string) error { e.fsfs++; return nil }

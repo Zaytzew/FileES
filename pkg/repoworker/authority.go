@@ -410,6 +410,24 @@ func (p ServicePublisher) Delete(ctx context.Context, repoID, realmID string) er
 	return p.Runner.Publish(ctx, changed, "filees: delete repository "+repoID)
 }
 
+// PruneAbandoned withdraws authority for a repository creation which reached
+// the durable service projection but never completed its initial import.  It
+// is deliberately narrower than Delete: the administrative caller must first
+// prove that the physical repository is empty, and this final authority
+// boundary still refuses anything except an initializing record.  A deleted
+// record is accepted to make recovery after a crash between authority
+// publication and physical cleanup idempotent.
+func (p ServicePublisher) PruneAbandoned(ctx context.Context, repoID, realmID string) error {
+	_, record, err := p.authorizeDelete(repoID, realmID)
+	if err != nil {
+		return err
+	}
+	if record.State != "initializing" && record.State != "deleted" {
+		return fmt.Errorf("repository state %q is not an abandoned initial creation", record.State)
+	}
+	return p.Delete(ctx, repoID, realmID)
+}
+
 // AuthorizeDelete reads only the canonical service projection. DurableBackend
 // calls it before touching the FSFS repository; Delete calls the same helper
 // again as a defence-in-depth check at the authority publication boundary.

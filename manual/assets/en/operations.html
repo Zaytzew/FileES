@@ -59,14 +59,13 @@
 <li><a href="#ops-rotate">filees-rotate</a></li>
 <li><a href="#ops-realm-removal">Realm-removal protocol</a></li>
 <li><a href="#ops-ps-model">Shares trust model</a></li>
-<li><a href="#ops-ps-url">Canonical URL / allowlist</a></li>
+<li><a href="#ops-ps-url">Canonical public share address</a></li>
 <li><a href="#ops-ps-map">object_map vs revision</a></li>
 <li><a href="#ops-ps-access">Open, password, recipient OTP</a></li>
 <li><a href="#ops-ps-ops">Shares server operations</a></li>
 <li><a href="#ops-sshd">sshd Match User</a></li>
 <li><a href="#ops-serverjson">server.json</a></li>
 <li><a href="#ops-keys">Key generation</a></li>
-<li><a href="#ops-htdocs">Publishing this HTML set</a></li>
 <li><a href="#ops-config">Client config.json</a></li>
 <li><a href="#ops-provision">Provisioning tickets</a></li>
 <li><a href="#ops-passports">Passport internals</a></li>
@@ -308,10 +307,9 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 </div>
 </div>
 
-<h2 id="ops-ps-url">Canonical URL and static allowlist</h2>
+<h2 id="ops-ps-url">Canonical public share address</h2>
 <p>The public address is always:</p>
 <pre><code>https://&lt;server-domain&gt;/&lt;realm-alias&gt;/&lt;slug&gt;</code></pre>
-<p>Static document-root paths are an explicit allowlist: <code>/</code>, <code>/index.html</code>, <code>/favicon.ico</code>, <code>/robots.txt</code>, <code>/.well-known/acme-challenge/*</code> and <code>/assets/*</code>. The HTML manual lives in that last prefix. Everything else is a virtual FileES location. Adding a realm must not create a directory and must not reload <code>httpd</code>. Publishing a new manual page is only a new file under <code>/assets/</code>. See <a href="#ops-htdocs">publishing this HTML set</a>.</p>
 <p>Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the path, alias, slug or reason. <code>robots.txt</code> is static <code>Disallow: /</code>.</p>
 
 <h2 id="ops-ps-map">object_map versus revision</h2>
@@ -493,23 +491,6 @@ doas -u _filees-state filees-admin ticket list
 doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
 doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
 doas -u _filees-state filees-mail send</code></pre>
-
-<h2 id="ops-htdocs">Publishing the HTML manual</h2>
-<div class="section-meta"><span class="status status-implemented">Implemented layout</span><span>Uses the existing <code>/assets/*</code> allowlist. Document root is a working copy of <code>^/manual</code>.</span></div>
-<p>On <code>manual.filees.space</code> the document root and Public Shares share one <code>server</code> block. <code>httpd</code> first matches the static allowlist, then sends every other path to <code>filees-links</code>. The multi-page manual therefore cannot occupy sibling URLs such as <code>/architecture.html</code>. Those would miss the allowlist and become branded FastCGI 404s.</p>
-<p>The Subversion subtree <code>svn://cloud.atmprojekt.pl/SYNCSHARE/manual</code> <em>is</em> the document-root image. Check it out in place and publish with <code>svn update</code>:</p>
-<pre><code>doas svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs
-doas svn update /var/www/htdocs</code></pre>
-<pre><code>/var/www/htdocs/               ← working copy of ^/manual
-├── .svn/                      ← not on the static allowlist; FastCGI 404
-├── index.html
-├── favicon.ico
-├── robots.txt
-└── assets/
-    ├── css/manual.css
-    ├── en/*.html              ← User + Tech, including operations.html
-    └── pl/*.html</code></pre>
-<p>Do not check the tree out as <code>/var/www/htdocs/manual</code> — that would make <code>/manual/index.html</code> a virtual FileES path. Do not run <code>rcctl reload httpd</code>. Ignore <code>.well-known</code> in that working copy so ACME stays local. The process graph is in <a href="architecture.html#server-graph">the server dependency graph</a>.</p>
 
 <h2 id="ops-config">Client <code>config.json</code> reference</h2>
 <p>The daemon still reads <code>config.json</code>. Everyday Settings do not replace this contract. User howto is in <a href="user-guide.html#ch2-config">§2.2</a>.</p>

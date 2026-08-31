@@ -1,13 +1,14 @@
 <!DOCTYPE html>
+
 <html lang="pl">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Administracja — podręcznik FileES User</title>
-<link rel="alternate" hreflang="en" href="../en/administration.html"/>
-<link rel="alternate" hreflang="pl" href="administration.html"/>
-<link rel="stylesheet" href="../css/manual.css"/>
-<link rel="icon" href="../../favicon.ico"/>
+<title>Administracja — podręcznik FileES</title>
+<link href="../en/administration.html" hreflang="en" rel="alternate"/>
+<link href="administration.html" hreflang="pl" rel="alternate"/>
+<link href="../css/manual.css" rel="stylesheet"/>
+<link href="../../favicon.ico" rel="icon"/>
 </head>
 <body>
 <main class="sheet">
@@ -19,35 +20,34 @@
 <span class="brand-subtitle">dokumentacja systemu FileES</span>
 </div>
 </div>
-<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
-<nav class="lang-switch" aria-label="Język">
-<a href="../../index.html" class="lang-home">filees:space</a>
-<a href="../en/administration.html" lang="en" hreflang="en">EN</a>
-<a href="administration.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+<nav aria-label="Język" class="lang-switch">
+<a class="lang-home" href="../../index.html">filees:space</a>
+<a href="../en/administration.html" hreflang="en" lang="en">EN</a>
+<a aria-current="true" class="is-current" href="administration.html" hreflang="pl" lang="pl">PL</a>
 </nav>
 </header>
-<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<nav aria-label="Rozdziały podręcznika" class="site-nav">
 <a href="index.html">Przegląd</a>
-<span class="nav-group" aria-label="User">
-<span class="nav-pillar">User</span>
+<span aria-label="Obsługa" class="nav-group">
+<span class="nav-pillar">Obsługa</span>
 <a href="user-guide.html">Pulpit</a>
 <a href="android.html">Android</a>
 <a href="public-shares.html">Udziały</a>
-<a href="administration.html" class="is-current">Administracja</a>
+<a class="is-current" href="administration.html">Administracja</a>
 </span>
-<span class="nav-group" aria-label="Tech">
-<span class="nav-pillar">Tech</span>
+<span aria-label="Technika" class="nav-group">
+<span class="nav-pillar">Technika</span>
 <a href="architecture.html">Architektura</a>
 <a href="install.html">Instalacja</a>
 <a href="operations.html">Eksploatacja</a>
 <a href="security.html">Bezpieczeństwo</a>
-<a href="man-pages.html">Man</a>
+<a href="man-pages.html">Polecenia</a>
 </span>
 </nav>
 <div class="manual-layout">
 <nav aria-label="Na tej stronie" id="toc">
 <div class="toc-head">
-<span class="toc-kicker">filees:space / ta strona</span>
+<span class="toc-kicker">filees:space / podręcznik</span>
 <h2>Na tej stronie</h2>
 </div>
 <ol>
@@ -64,11 +64,9 @@
 <div class="manual-content">
 <h1 id="ch4">Administracja</h1>
 <div class="chapter-content">
-<p>Ta strona opisuje typowe zadania administratora: zaproszenie nowej osoby, usunięcie instalacji z serwera, dokończenie przerwanej operacji, decyzję o zmianie generacji repozytorium. Schematy, kody wyjścia i maszyny stanów są w części Tech, w <a href="operations.html">Eksploatacji</a>. Odpowiadające im czynności na pulpicie dla tej samej strefy są opisane w <a href="user-guide.html#ch2-gui">howto zasobnika</a>.</p>
-<p>Na OpenBSD te polecenia uruchamiaj jako <code>_filees-state</code>, na przykład <code>doas -u _filees-state …</code>. Ticket utworzony jako root zostawia plik, którego wejście onboardingu z set-id nie potrafi odczytać.</p>
-
+<p>Ten rozdział opisuje typowe zadania administratora: zapraszanie nowych użytkowników, odwoływanie instalacji, dokańczanie operacji przerwanych awarią, odtwarzanie oraz zmianę generacji repozytorium. Szczegółowe formaty danych, kody wyjścia i maszyny stanów opisuje <a href="operations.html">Eksploatacja</a>. Czynności dostępne z programu na komputerze opisuje <a href="user-guide.html#ch2-gui">przewodnik użytkownika</a>.</p>
+<p>Na OpenBSD polecenia administracyjne uruchamiaj jako użytkownik _filees-state, na przykład przez doas -u _filees-state. Zlecenie utworzone przez użytkownika root pozostawi plik należący do użytkownika root, którego program aktywacyjny działający z set-id celowo nie odczyta.</p>
 <h2 id="ch4-admin">4.1 Zaproszenie i odwołanie</h2>
-<div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Istnieją ticket, inspekcja i fail-closed odwołanie klienta.</span></div>
 <pre><code>filees-admin ticket create &lt;mailbox&gt; [--join-realm-alias &lt;alias&gt;] [--ttl 24h]
 filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;
 filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
@@ -80,37 +78,29 @@ filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_
 <ul>
 <li>Bez <code>--join-realm-alias</code> zaproszenie otwiera <strong>nową</strong> strefę. Nowy pulpit raz pyta o niezmienny alias.</li>
 <li>Z flagą zaproszenie dołącza do <strong>istniejącej</strong> strefy. Osoba dołączająca nie wybiera tej strefy i nie zmienia jej nazwy.</li>
-<li><code>resend</code> jest na nieudany pierwszy list. Nie zmienia odbiorcy ani TTL.</li>
-<li>Ticket z błędną polityką odwołujesz, a nie edytujesz.</li>
-<li><code>client revoke</code> zdejmuje z serwera jedną instalację. Granty i foldery strefy zostają.</li>
-<li><code>client revoke-realm</code> zdejmuje w jednym wywołaniu każdą instalację tej strefy.</li>
-<li><code>repo transfer-owner</code> zmienia, kto jest właścicielem repozytorium. Istniejące granty poprzedniego właściciela zostają jak były.</li>
+<li>ticket resend służy do ponowienia wysyłki pierwszej wiadomości po błędzie dostawy. Nie zmienia odbiorcy ani czasu ważności.</li>
+<li>Zlecenia z błędnymi parametrami nie edytuj. Odwołaj je i utwórz nowe.</li>
+<li>client revoke odwołuje jedną instalację. Uprawnienia i foldery należące do strefy pozostają bez zmian.</li>
+<li>client revoke-realm odwołuje wszystkie instalacje należące do danej strefy.</li>
+<li>repo transfer-owner zmienia właściciela repozytorium. Uprawnienia nadane wcześniej przez poprzedniego właściciela pozostają bez zmian.</li>
 </ul>
-<p>Tworzenie folderu, granty, udziały publiczne, load-dump i usunięcie udziału FileES to akcje właściciela na pulpicie, nie dodatkowe czasowniki <code>filees-admin</code>. Kody wyjścia, nazwy plików ticketów i sekwencja odwołania są w <a href="operations.html#ops-admin">Eksploatacji</a>. Flagi i przykłady: <a href="man-pages.html">filees-admin(8)</a>.</p>
-
+<p>Tworzenie folderu, uprawnienia, udziały publiczne, wczytanie zrzutu i usunięcie udziału FileES to akcje właściciela na pulpicie, nie dodatkowe czasowniki <code>filees-admin</code>. Kody wyjścia, nazwy plików zleceń i sekwencja odwołania są w <a href="operations.html#ops-admin">Eksploatacji</a>. Flagi i przykłady: <a href="man-pages.html">filees-admin(8)</a>.</p>
 <h2 id="ch4-operation">4.2 Po awarii</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odtwarzanie jest idempotentne i bezpieczne do ponowienia.</span></div>
 <pre><code>doas -u _filees-state filees-operation recover
 doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
-<p>Uruchom <code>recover</code> po nieoczekiwanym zatrzymaniu: dokańcza niedopisane zaproszenie, wygasza niedokończony onboarding po TTL i wznawia potwierdzone usunięcie strefy, którego żaden klient już nie dokończy. Aktywni klienci nie są wygaszani. Bezpieczne do ponowienia. Jak wygląda plik claim, jest w <a href="operations.html#ops-operation">Eksploatacji</a>.</p>
-
+<p>Po nieoczekiwanym zatrzymaniu uruchom filees-operation recover. Polecenie domyka przerwane zaproszenia, wygasza niedokończone aktywacje po upływie czasu ważności i wznawia potwierdzone usuwanie strefy, którego klient nie może już dokończyć. Aktywne instalacje nie są wygaszane. Operację można bezpiecznie powtarzać. Format plików przejęcia opisuje część „Eksploatacja”.</p>
 <h2 id="ch4-audit">4.3 Gdzie patrzeć</h2>
-<div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <p>Na komputerze użytkownika: <strong>Dziennik</strong> w zasobniku albo <code>filees log 50</code>. To strukturalna lista błędów tej instalacji.</p>
-<p>Na serwerze audyt onboardingu to jeden plik JSON na zdarzenie w <code>/var/filees/onboarding/audit/</code>. Schemat i nazwy zdarzeń są w <a href="operations.html#ops-audit">Eksploatacji</a>.</p>
-
+<p>Na serwerze dziennik aktywacji klienta to jeden plik JSON na zdarzenie w <code>/var/filees/onboarding/audit/</code>. Schemat i nazwy zdarzeń są w <a href="operations.html#ops-audit">Eksploatacji</a>.</p>
 <h2 id="ch4-mail">4.4 Gdy poczta nie dochodzi</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
-<p>Zaproszenie, OTP i poczta usunięcia strefy idą przez outbox serwera. Jeśli pierwszy list w ogóle nie doszedł:</p>
+<p>Zaproszenia, kody OTP i wiadomości związane z usuwaniem strefy przechodzą przez trwałą kolejkę poczty wychodzącej serwera. Jeżeli pierwsza wiadomość nie dotarła:</p>
 <pre><code>doas -u _filees-state filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;</code></pre>
 <p>Jeśli późniejsza pojedyncza próba wysyłki zakończyła się tymczasowym błędem:</p>
 <pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
-<p>Kod wyjścia 75 oznacza: spróbuj później; kod w liście nadal jest ważny. Exit 0 oznacza, że smarthost przyjął wiadomość. Trwała awaria wymaga nowego ticketu albo sprawdzenia przekaźnika pocztowego. Maszyna stanów outboxu jest w <a href="operations.html#ops-mail">Eksploatacji</a>.</p>
-
+<p>Kod wyjścia 75 oznacza błąd tymczasowy; kod zawarty w wiadomości pozostaje ważny. Kod 0 oznacza, że przekaźnik SMTP przyjął wiadomość. Przy błędzie trwałym utwórz nowe zlecenie albo sprawdź konfigurację przekaźnika pocztowego. Stany kolejki opisuje część „Eksploatacja”.</p>
 <h2 id="ch4-recovery">4.5 Odtwarzanie i przeniesienie składowania</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
 <h4>Przerwane zaproszenie albo usunięcie strefy</h4>
-<p>To samo polecenie co w §4.2: <code>filees-operation recover</code>. Jeśli host został nieoczekiwanie zatrzymany po wysłaniu OTP usunięcia strefy, gdy wszystkie klucze klientów były już odwołane, tylko to polecenie dokończy operację.</p>
+<p>To samo polecenie co w §4.2: <code>filees-operation recover</code>. Jeśli serwer został nieoczekiwanie zatrzymany po wysłaniu OTP usunięcia strefy, gdy wszystkie klucze klientów były już odwołane, tylko to polecenie dokończy operację.</p>
 <h4>Zamknięcie żądania wymazania danych</h4>
 <p>Po usunięciu strefy właściciel mógł poprosić o wymazanie danych. Serwer nie twierdzi, że sam czyści kopie zapasowe. Gdy sprawdzisz retencję:</p>
 <pre><code>doas -u _filees-state filees-admin erasure complete \
@@ -123,9 +113,9 @@ doas -u _filees-state filees-admin erasure complete \
 <h4>Przeniesienie korzenia składowania repozytoriów danych</h4>
 <p><code>repositories.root</code> jest wybranym przez administratora korzeniem FSFS; <code>/var/filees/repositories</code> to tylko domyślna wartość. To przeniesienie utrzymaniowe, nie zmiana ustawienia na żywo.</p>
 <ol>
-<li>Wyłączne okno. Zatrzymaj każdy pulpit FileES, który może tu pisać. Nie twórz ani nie usuwaj repozytoriów. Czekaj, aż nie będzie <code>svnserve -t</code>, <code>filees-worker</code> ani <code>filees-client-entry</code> dla tej instalacji.</li>
+<li>Zaplanuj wyłączne okno serwisowe. Zatrzymaj wszystkie instalacje FileES, które mogą zapisywać do tych repozytoriów, i nie twórz ani nie usuwaj repozytoriów. Poczekaj, aż zakończą się procesy svnserve -t, filees-worker i filees-client-entry związane z tą instalacją.</li>
 <li>Zweryfikuj źródło: <code>svnadmin verify</code> na każdym bezpośrednim dziecku. Błędy najpierw napraw.</li>
-<li>Utwórz miejsce docelowe zapisywalne wyłącznie dla <code>_filees-state</code>, kopiuj jako root, zweryfikuj kopię:</li>
+<li>Utwórz katalog docelowy zapisywalny wyłącznie dla _filees-state. Dane skopiuj jako użytkownik root, a następnie zweryfikuj kopię:</li>
 </ol>
 <pre><code>doas install -d -o _filees-state -g _filees-state -m 0750 /srv/filees
 doas install -d -o _filees-state -g _filees-state -m 0700 /srv/filees/repositories
@@ -143,15 +133,13 @@ for repo in /srv/filees/repositories/*; do
 done</code></pre>
 <ol start="4">
 <li>W <code>/etc/filees/server.json</code> zmień wyłącznie <code>repositories.root</code>.</li>
-<li>Zanim ponownie zezwolisz na zapis, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną akcję FileES. Nie ma demona FileES do restartu; worker czyta plik przy żądaniu. Okno i tak jest potrzebne, żeby nic nie wylądowało w starym korzeniu.</li>
+<li>Zanim ponownie zezwolisz na zapis, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną akcję FileES. Nie ma demona FileES do restartu; proces wykonawczy czyta plik przy żądaniu. Okno i tak jest potrzebne, żeby nic nie wylądowało w starym korzeniu.</li>
 <li>Stary korzeń zostaw tylko do odczytu, aż skończą się kopie i odbiór. Wycofanie to stara ścieżka, dopóki okno jeszcze trwa.</li>
 </ol>
 <div class="warn"><strong>Nigdy nie scalaj dwóch żywych korzeni i nie przenoś systemu plików, gdy klienci są podłączeni.</strong> Najpierw kopiuj i weryfikuj, potem jedno przełączenie konfiguracji.</div>
 <h4>Na komputerze użytkownika po twardym zatrzymaniu</h4>
-<p>Demon pulpitu uzgadnia się sam przy następnym starcie. Przeniesiony folder to <strong>Wskaż kopię</strong>, nie nowy checkout. Pliki w <code>!kolizje/</code> to Twoje lokalne wersje z kolizji, w której wygrał serwer — przeglądasz je ręcznie. Zobacz <a href="user-guide.html#ch2-trouble">rozwiązywanie problemów</a>. Kształty plików claim i odbudowa projekcji są w <a href="operations.html#ops-recovery">Eksploatacji</a>.</p>
-
+<p>Po ponownym uruchomieniu demon sam uzgadnia stan. Jeżeli folder został przeniesiony, użyj polecenia Wskaż kopię, zamiast pobierać nową kopię roboczą. Pliki w !kolizje/ są zachowanymi lokalnymi wersjami z konfliktów, w których przyjęto wersję serwera; trzeba je przejrzeć ręcznie. Format plików przejęcia i sposób odbudowy projekcji opisuje część „Eksploatacja”.</p>
 <h2 id="ch4-monitoring">4.6 Codzienne sprawdzenia</h2>
-<div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <div class="table-wrap"><table>
 <tr><th>Zajrzyj tu</th><th>Czego się dowiesz</th></tr>
 <tr><td><code>filees status</code></td><td>Każdy folder, czy jest sieć, czekająca praca, rewizja lokalna i HEAD</td></tr>
@@ -159,30 +147,26 @@ done</code></pre>
 <tr><td>GUI <strong>Dziennik</strong></td><td>Ten sam zrzut, od najnowszego, w zasobniku albo w pełnym oknie</td></tr>
 </table></div>
 <p>Ścieżki serwera i <code>make verify</code> są w <a href="operations.html#ops-monitoring">Eksploatacji</a>.</p>
-
 <h2 id="ch4-rotate">4.7 Kiedy rotować repozytorium</h2>
-<div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Jawna zmiana generacji; bez harmonogramu.</span></div>
 <p>Głębokość wyłącznie dołączającego repozytorium FileES sama z siebie go nie spowalnia. Rotuj, gdy potrzebujesz retencji albo warstwowania — Subversion nie ma <code>obliterate</code>. Uruchomienie jest decyzją, nie zegarem. Istniejące kopie robocze nie przeżywają zmiany generacji; każda instalacja pulpitu musi podłączyć się od nowa.</p>
 <pre><code>filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
 filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
 filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
-<p>Najpierw dry-run. Zamiana, odmowa przy lockach i wycofanie są w <a href="operations.html#ops-rotate">Eksploatacji</a> i <a href="man-pages.html">filees-rotate(8)</a>.</p>
-
+<p>Najpierw próba bez zmian. Zamiana, odmowa przy blokadach i wycofanie są w <a href="operations.html#ops-rotate">Eksploatacji</a> i <a href="man-pages.html">filees-rotate(8)</a>.</p>
 <h2 id="ch4-realm-removal">4.8 Usunięcie udziału FileES</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
-<p>To nie jest dezaktywacja jednej maszyny. Odbiera każdy grant strefy, usuwa własne repozytoria strefy i odwołuje wszystkie jej instalacje. Sekwencji pulpitu nie da się skrócić: ostrzeżenie, zgoda, adres powiadomień, katalog na pakiet <code>.fkr</code>, potem OTP. Pakiet jest zapisywany <em>przed</em> nieodwracalnym krokiem. <strong>Zachowaj go — bez niego nie da się pobrać archiwów.</strong> Tabela kliknięć jest w <a href="user-guide.html#ch2-gui">§2.6</a>.</p>
+<p>Usunięcie udziału FileES nie jest dezaktywacją jednego komputera. Operacja odbiera wszystkie uprawnienia strefy, usuwa jej własne repozytoria i odwołuje wszystkie instalacje. Program kolejno wymaga potwierdzenia ostrzeżenia, adresu do powiadomień, katalogu na pakiet .fkr oraz kodu OTP. Pakiet .fkr jest zapisywany przed krokiem nieodwracalnym; trzeba go zachować, ponieważ bez niego nie można pobrać archiwów odzyskiwania.</p>
 <p>Na maszynie, na której nie ma już FileES:</p>
 <pre><code>filees recovery download --kit FILE.fkr --output DIR</code></pre>
-<p>Dodatnia retencja daje jeden zweryfikowany dump na każde własne repozytorium. Retencja zero nie zapisuje dumpa i nie wolno go obiecywać. Stany, dwa okna czasu i protokół <code>list</code>/<code>get</code> są w <a href="operations.html#ops-realm-removal">Eksploatacji</a>.</p>
+<p>Dodatnia retencja przewiduje jeden zrzut na każde własne repozytorium. Retencja zero nie zapisuje zrzutu i nie wolno go obiecywać. Stany, dwa okna czasu i protokół <code>list</code>/<code>get</code> są w <a href="operations.html#ops-realm-removal">Eksploatacji</a>.</p>
 <div class="note"><strong>To nie to samo co §4.5.</strong> §4.5 to przerwana robota albo przeniesienie składowania na żywym serwerze. Ta sekcja to pobranie danych po tym, jak strefa zdecydowała odejść.</div>
 </div>
 <nav class="page-nav">
 <a href="public-shares.html">← Udziały</a>
-<a href="operations.html">Tech: Eksploatacja →</a>
+<a href="operations.html">część techniczna: Eksploatacja →</a>
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-15 · źródło r523</span></footer>
+<footer class="manual-footer">FileES</footer>
 </main>
 </body>
 </html>

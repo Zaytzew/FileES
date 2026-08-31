@@ -65,8 +65,6 @@
 <li><a href="#filees-links"><code>filees-links</code></a> — public FastCGI surface for FileES shares</li>
 <li><a href="#filees-mobile-v1"><code>filees-mobile-v1</code></a> — FileES mobile protocol entry</li>
 <li><a href="#filees-recovery-entry"><code>filees-recovery-entry</code></a> — serve FileES realm-removal archives for one operation</li>
-<li><a href="#man-style">Style</a></li>
-<li><a href="#man-install">Installation</a></li>
 </ol></nav><div class="manual-content">
 <h1>CLI extract from mandoc</h1>
 <p>This is the Tech extract of the OpenBSD <code>mandoc</code> sources in <code>docs/man</code>. Each server command is here by <strong>role</strong>, <strong>invocation</strong>, <strong>flags</strong> and <strong>examples</strong>. English is canonical: that is what the binaries accept. The desktop <code>filees</code> client CLI has no mandoc page yet — see the User <a href="user-guide.html#ch2-cli">desktop howto</a>.</p>
@@ -407,15 +405,6 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 list &lt;operation_id&gt;
 get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 </article>
-<h2 id="man-style">Style</h2>
-<p>Sources live in <code>docs/man/man5</code>, <code>docs/man/man7</code> and <code>docs/man/man8</code>. They use mdoc macros. English is canonical. Section 8 is used for every server command, including forced-command dispatchers.</p>
-<pre><code>mandoc -T lint docs/man/man8/filees-admin.8
-man -l docs/man/man7/filees.7</code></pre>
-<h2 id="man-install">Installation</h2>
-<p><code>packaging/build-server.sh</code> copies the pages into the bundle as <code>share/man/manN/</code>. <code>install-server.sh</code> installs them under <code>$PREFIX/man</code> (default <code>/usr/local/man</code>).</p>
-<pre><code>man filees
-man 5 filees.conf
-man 8 filees-admin</code></pre>
 
 <nav class="page-nav"><a href="security.html">← Security</a><span></span></nav>
 </div></div>

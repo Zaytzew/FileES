@@ -213,13 +213,13 @@
 <path class="svg-arrow-dashed" d="M1060 99 H1100 V179 H1060"></path>
 
 <rect class="svg-zone" height="280" rx="14" width="1140" x="20" y="320"></rect>
-<text class="svg-zone-label" x="42" y="348">SYSTEM HTTPD — Public Shares + this HTML manual</text>
+<text class="svg-zone-label" x="42" y="348">SYSTEM HTTPD — Public Shares</text>
 <rect class="svg-node-authority" height="50" rx="8" width="160" x="40" y="370"></rect>
 <text class="svg-text" text-anchor="middle" x="120" y="400">httpd</text>
 <rect class="svg-node-derived" height="70" rx="8" width="220" x="250" y="360"></rect>
-<text class="svg-small" text-anchor="middle" x="360" y="384">static allowlist</text>
-<text class="svg-small" text-anchor="middle" x="360" y="402">/ /index.html /favicon.ico</text>
-<text class="svg-small" text-anchor="middle" x="360" y="418">/assets/*  /robots.txt</text>
+<text class="svg-small" text-anchor="middle" x="360" y="384">server static assets</text>
+<text class="svg-small" text-anchor="middle" x="360" y="402">outside FileES scope</text>
+<text class="svg-small" text-anchor="middle" x="360" y="418"></text>
 <rect class="svg-node-transient" height="70" rx="8" width="220" x="520" y="360"></rect>
 <text class="svg-small" text-anchor="middle" x="630" y="384">filees-links</text>
 <text class="svg-small" text-anchor="middle" x="630" y="402">FastCGI · _filees-links</text>
@@ -231,13 +231,9 @@
 <path class="svg-arrow" d="M200 395 H250"></path>
 <path class="svg-arrow-orange" d="M200 395 V450 H520"></path>
 <path class="svg-arrow" d="M740 395 H790"></path>
-<rect class="svg-node" height="50" rx="8" width="220" x="250" y="470"></rect>
-<text class="svg-small" text-anchor="middle" x="360" y="490">^/manual = htdocs</text>
-<text class="svg-small" text-anchor="middle" x="360" y="506">svn up · no httpd reload</text>
 <rect class="svg-node-transient" height="50" rx="8" width="220" x="790" y="470"></rect>
 <text class="svg-small" text-anchor="middle" x="900" y="490">filees-mail public-loop</text>
 <text class="svg-small" text-anchor="middle" x="900" y="506">SMTP secret, child only</text>
-<path class="svg-arrow-dashed" d="M360 430 V470"></path>
 <path class="svg-arrow" d="M900 430 V470"></path>
 <text class="svg-small" x="42" y="560">Operator tools (filees-admin, filees-operation, filees-install, filees-rotate) run as _filees-state and are not listeners.</text>
 <text class="svg-small" x="42" y="580">filees-service-wc-corrector is setuid-root, ownership only, invoked by client-entry before control-plane tickets.</text>

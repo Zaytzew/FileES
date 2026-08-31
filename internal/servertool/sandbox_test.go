@@ -1,6 +1,7 @@
 package servertool
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -142,18 +143,25 @@ func TestRepositoryInspectionProfileIncludesConfiguredSVNLook(t *testing.T) {
 		svnAdminBinary: "/usr/local/bin/svnadmin", svnLookBinary: "/opt/subversion/bin/svnlook",
 	}
 	config := activation.Config{
+		Root:               "/srv/filees/activation",
 		ServiceWorkingCopy: "/srv/filees/service-wc", ServiceRepository: "/srv/filees/service-repo",
 		SVNBinary: "/usr/local/bin/svn",
 	}
 	profile := repositoryProfile("/srv/filees/onboarding", access, config, "/srv/filees/results", "", "")
-	found := false
+	found, foundLock := false, false
 	for _, path := range profile.Paths {
 		if path.Label == "svnlook" {
 			found = path.Name == access.svnLookBinary && path.Perms == "rx"
 		}
+		if path.Label == "service-working-copy-lock" {
+			foundLock = path.Name == filepath.Join(config.Root, ".service-wc.lock") && path.Perms == "rwc"
+		}
 	}
 	if !found {
 		t.Fatalf("repository inspection profile omits configured svnlook: %+v", profile.Paths)
+	}
+	if !foundLock {
+		t.Fatalf("repository inspection profile omits service-WC lock: %+v", profile.Paths)
 	}
 	if err := obsandbox.Validate(profile); err != nil {
 		t.Fatal(err)

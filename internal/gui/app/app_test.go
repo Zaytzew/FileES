@@ -499,6 +499,23 @@ func TestReducerLockReleaseChangedRequestsSystemRefresh(t *testing.T) {
 	}
 }
 
+func TestReducerProjectsLockReleaseRecordWithoutLosingFence(t *testing.T) {
+	system := contract.SystemStatusResult{LockReleaseRequests: []contract.LockReleaseRequest{{
+		RequestID: "request-1", ServerID: "office", RepoID: "docs", Path: "plans/a.dwg",
+		ObservedLockID: "opaque-token", Role: "requester", CounterpartyRealmAlias: "studio",
+		State: "pending", CreatedAt: "2026-08-31T10:00:00Z", UpdatedAt: "2026-08-31T10:00:00Z", ExpiresAt: "2026-08-31T13:00:00Z",
+	}}}
+	s := newAppState().applyFullSnapshot(system, nil, nil, nil, nil, nil, nil, nil, true, nil, nil, false, time.Now())
+	vm := s.viewModel()
+	if len(vm.LockReleaseRequests) != 1 {
+		t.Fatalf("requests=%+v", vm.LockReleaseRequests)
+	}
+	got := vm.LockReleaseRequests[0]
+	if got.ID != "request-1" || got.ObservedLockID != "opaque-token" || got.Role != "requester" || got.CounterpartyRealmAlias != "studio" {
+		t.Fatalf("projected request=%+v", got)
+	}
+}
+
 // --- icon aggregation unit tests ---
 
 func TestAggregateIconDisconnected(t *testing.T) {

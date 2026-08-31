@@ -434,3 +434,32 @@ func TestReservationProjectionNeverExposesFencingToken(t *testing.T) {
 		t.Fatalf("fencing token leaked into renderer JSON: %s", encoded)
 	}
 }
+
+func TestLockReleaseProjectionLinksForeignReservationWithoutExposingToken(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapLockReleaseRequest: true, contract.CapLockReleaseDismiss: true, contract.CapLockReleaseAccept: true,
+		},
+		Repos:        []guiapp.RepoViewModel{{ID: "docs", ServerID: "spot", DisplayName: "Rysunki"}},
+		Reservations: []guiapp.Reservation{{ID: "safe-row", ServerID: "spot", RepoID: "docs", Path: "plans/a.dwg", Token: "opaque-token", CanRelease: false}},
+		LockReleaseRequests: []guiapp.LockReleaseRequest{{
+			ID: "request-1", ServerID: "spot", RepoID: "docs", Path: "plans/a.dwg", ObservedLockID: "opaque-token",
+			Role: "requester", CounterpartyRealmAlias: "studio", State: "pending",
+		}},
+	}
+	snapshot := projectViewModel(vm)
+	if len(snapshot.Reservations) != 1 || snapshot.Reservations[0].LockReleaseRequestID != "request-1" || snapshot.Reservations[0].LockReleaseState != "pending" || snapshot.Reservations[0].CanRequestRelease {
+		t.Fatalf("reservation request projection=%+v", snapshot.Reservations)
+	}
+	if len(snapshot.LockReleaseRequests) != 1 || snapshot.LockReleaseRequests[0].Repository != "Rysunki" {
+		t.Fatalf("request projection=%+v", snapshot.LockReleaseRequests)
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "opaque-token") || strings.Contains(string(encoded), "ObservedLockID") {
+		t.Fatalf("fencing token escaped into Wails JSON: %s", encoded)
+	}
+}

@@ -192,24 +192,25 @@ func (update *UpdateViewModel) Available() bool {
 // ViewModel is the complete read-only presentation model consumed by the tray adapter.
 // It is replaced atomically on every state change; the tray layer must not mutate it.
 type ViewModel struct {
-	Connected         bool
-	Stale             bool // true: data predates last disconnect; display but mark stale
-	DaemonState       string
-	UptimeSec         int64
-	LastRefresh       time.Time
-	Capabilities      map[string]bool
-	Repos             []RepoViewModel
-	Servers           []ServerViewModel
-	Reservations      []Reservation
-	Recoveries        []RecoveryViewModel
-	Errors            []ErrorViewModel
-	Activity          []ActivityViewModel
-	Notices           []NoticeViewModel
-	PublicShares      []PublicShareViewModel
-	PublicSharesKnown bool
-	PendingActions    []PendingAction
-	Update            *UpdateViewModel
-	Icon              IconState
+	Connected           bool
+	Stale               bool // true: data predates last disconnect; display but mark stale
+	DaemonState         string
+	UptimeSec           int64
+	LastRefresh         time.Time
+	Capabilities        map[string]bool
+	Repos               []RepoViewModel
+	Servers             []ServerViewModel
+	Reservations        []Reservation
+	LockReleaseRequests []LockReleaseRequest
+	Recoveries          []RecoveryViewModel
+	Errors              []ErrorViewModel
+	Activity            []ActivityViewModel
+	Notices             []NoticeViewModel
+	PublicShares        []PublicShareViewModel
+	PublicSharesKnown   bool
+	PendingActions      []PendingAction
+	Update              *UpdateViewModel
+	Icon                IconState
 }
 
 func (vm ViewModel) CanPlanUpdate() bool {
@@ -238,6 +239,18 @@ func (vm ViewModel) SupportsReservationListing() bool {
 }
 func (vm ViewModel) CanListReservations() bool {
 	return vm.Connected && !vm.Stale && vm.SupportsReservationListing()
+}
+
+func (vm ViewModel) CanRequestLockRelease() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapLockReleaseRequest)
+}
+
+func (vm ViewModel) CanDismissLockRelease() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapLockReleaseDismiss)
+}
+
+func (vm ViewModel) CanAcceptLockRelease() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapLockReleaseAccept)
 }
 func (vm ViewModel) CanBrowseReservations() bool {
 	if !vm.CanListReservations() {

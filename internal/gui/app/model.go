@@ -128,13 +128,25 @@ func (server ServerViewModel) Owns(repo RepoViewModel) bool {
 	return server.RealmID != "" && repo.OwnerRealmID == server.RealmID
 }
 
-// NeedsRealmAliasClaim keeps the recovery action scoped to a fresh, empty
-// realm. Once the server projects any repository, realm membership is already
-// established and a folder/client must not be invited to rename that realm.
-// A missing RealmAlias in that state is stale/incomplete projection data, not
-// an alias-creation task for the user.
+// NeedsRealmAliasClaim reports whether this realm has no alias yet.
+//
+// This used to also require len(server.Repos) == 0, on the theory that once
+// the server projects any repository, realm membership is already
+// established and a missing RealmAlias in that state must be stale/lagging
+// projection data rather than a real gap - offering to "claim" it again
+// risked inviting a rename. That is not actually a risk:
+// pkg/repoworker/realm_alias.go's Claim is immutable once set (a different
+// alias than the one already on record fails closed with
+// ErrAliasImmutable/REALM_ALIAS_REJECTED; the same alias is a harmless
+// no-op that still runs the view.json repair pass), so re-offering the
+// action on a realm that already has an alias costs nothing worse than a
+// clean rejection. Gating it away, however, left a real activation that
+// failed after creating repositories but before a successful alias claim
+// (confirmed live: a server-side bug briefly broke every worker session
+// including alias claim, cloud.atmprojekt.pl 2026-08-31) with no way to
+// reach the action at all - the exact user this exists for.
 func (server ServerViewModel) NeedsRealmAliasClaim() bool {
-	return server.RealmID != "" && server.RealmAlias == "" && len(server.Repos) == 0
+	return server.RealmID != "" && server.RealmAlias == ""
 }
 
 // ErrorViewModel is a presentation-safe structured daemon error. Details are

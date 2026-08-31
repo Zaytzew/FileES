@@ -388,7 +388,13 @@ func TestControllerOpensCombinedJournalWithEmphasizedErrors(t *testing.T) {
 	}
 }
 
-func TestControllerRejectsAliasIntentForRealmWithRepositories(t *testing.T) {
+// TestControllerOffersAliasIntentForRealmWithRepositoriesButNoAlias used to
+// assert the opposite. See the matching comment on
+// TestBuildMenuOffersRealmAliasWheneverUnsetRegardlessOfRepositories in
+// internal/gui/tray/presenter_test.go for why that assumption (repositories
+// existing implies an alias must already be set) does not hold and left a
+// real, live-confirmed incident with no recovery path.
+func TestControllerOffersAliasIntentForRealmWithRepositoriesButNoAlias(t *testing.T) {
 	fake := &platformtest.Fake{}
 	aliases := &fakeRealmAliases{aliases: make(chan string, 1)}
 	vm := app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRealmAliasClaim: true}, Servers: []app.ServerViewModel{{
@@ -398,8 +404,8 @@ func TestControllerRejectsAliasIntentForRealmWithRepositories(t *testing.T) {
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentSetRealmAlias, ServerID: "manual"})
 	time.Sleep(20 * time.Millisecond)
-	if requests := fake.Snapshot().PromptRequests; len(requests) != 0 {
-		t.Fatalf("alias prompt shown for established realm: %+v", requests)
+	if requests := fake.Snapshot().PromptRequests; len(requests) != 1 {
+		t.Fatalf("alias prompt not shown for a realm with repositories but no alias: %+v", requests)
 	}
 }
 

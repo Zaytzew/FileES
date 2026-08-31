@@ -427,9 +427,9 @@ są lokalne zmiany lub blokada odpowiada aktywnemu paszportowi edycji, dialog
 wyraźnie ostrzega o niezapisanych danych i wymaga świadomego potwierdzenia.
 GUI nie próbuje wykrywać uchwytów edytora: wiele programów zapisuje atomową
 podmianą pliku, więc taki test byłby pozornym zabezpieczeniem. Rezerwacja
-związana z paszportem aktywnym na innym urządzeniu jest tylko informacyjna: w
-kolumnie działania ma placeholder **Poproś o zwolnienie (wkrótce)** i nie może
-zostać zwolniona z tego klienta. Przycisk **Zwolnij wszystko** obejmuje
+związana z paszportem aktywnym na innym urządzeniu ma akcję **Poproś o
+zwolnienie**. Prośba jest przypięta do tokenu tej blokady; requester widzi jej
+stan, a holder dostaje `[OK] [Zwolnij]`. Przycisk **Zwolnij wszystko** obejmuje
 wyłącznie rezerwacje możliwe do zwolnienia przez ten klient, wymaga jednego
 potwierdzenia i wykonuje każdą operację z jej tokenem. Żądanie pojedynczego
 zwolnienia również zawiera token z listy; daemon odczytuje stan ponownie i
@@ -525,9 +525,9 @@ publiczne, półki przyjęcia, kwarantannę, aktualizacje, parowanie mobilne i
 ogłoszenia. Dotąd nie natrafiliśmy na żadną blokującą słabość samego Wails w
 becie; błędy zamknięte po drodze (np. bindings promptów niosące
 identyfikatory z `go test` zamiast z buildu) były naszymi własnymi pomyłkami,
-nie ograniczeniem frameworka. Jedyną dużą brakującą funkcją codziennego GUI
-jest prośba o zwolnienie locka należącego do innego użytkownika lub urządzenia;
-obecny wiersz jest świadomym placeholderem dla
+nie ograniczeniem frameworka. Interaktywny pion prośby o zwolnienie locka jest
+już obecny; do domknięcia pozostają automatyczne `svn up` + lock u requestera,
+rekonsyliacja/GC i żywy test dwóch klientów opisane w
 `concepts/LOCK_RELEASE_REQUEST_CONCEPT_V2.md`. Architektura i status starego
 renderera: `concepts/WAILS_GUI_FORK.md` §0, §4 i §7.
 

@@ -428,8 +428,8 @@ passport, the dialog explicitly warns about unsaved data and requires a
 deliberate confirmation. The GUI makes no attempt to detect editor handles:
 many programs save via an atomic file swap, so such a check would be only
 apparent protection. A reservation tied to a passport active on another
-device is informational only: its action column shows a **Request release
-(coming soon)** placeholder and it cannot be released from this client. The
+device exposes **Request release**. The request is tied to that lock token;
+the requester sees its state and the holder gets `[OK] [Release]`. The
 **Release all** button covers only reservations this client can release,
 requires one confirmation, and executes each operation with its own token.
 A single-release request also carries a token from the list; the daemon
@@ -527,9 +527,9 @@ shelves, quarantine, updates, mobile pairing and announcements. So far we have n
 run into any blocking weakness of Wails itself in beta; the bugs closed
 along the way (e.g. prompt bindings carrying identifiers from `go test`
 instead of from the build) were our own mistakes, not a framework
-limitation. The only large missing day-to-day desktop function is requesting
-release of a lock held by another user or device; the current row is an
-explicit placeholder for `concepts/LOCK_RELEASE_REQUEST_CONCEPT_V2.md`.
+limitation. The interactive lock-release request vertical is implemented;
+requester-side automatic `svn up` + lock, reconciliation/GC and a live
+two-client test remain in `concepts/LOCK_RELEASE_REQUEST_CONCEPT_V2.md`.
 Architecture and the legacy-renderer status are in
 `concepts/WAILS_GUI_FORK.md` §0, §4 and §7.
 

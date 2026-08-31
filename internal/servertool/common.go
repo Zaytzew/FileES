@@ -237,6 +237,11 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 	}
 	if access.needSVN {
 		paths = append(paths,
+			// Every service-WC operation is serialized by
+			// withServiceWorkingCopy, including read-oriented admin commands.
+			// The lock lives in activation.root, outside a custom service-WC
+			// tree, so unveiling only the WC otherwise fails with EACCES.
+			obsandbox.Path{Label: "service-working-copy-lock", Name: filepath.Join(activationConfig.Root, ".service-wc.lock"), Perms: "rwc"},
 			// The ports client canonicalizes and enumerates the parents before
 			// entering each configured tree. Reveal names at those two levels,
 			// while retaining write/create rights only on the exact WC and repo.

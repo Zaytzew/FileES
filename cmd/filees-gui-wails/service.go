@@ -464,6 +464,22 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		reservation, ok := projectedReservation(vm, request.ReservationID)
 		allowed := ok && reservation.CanRelease && vm.CanReleaseReservations() && viewHasServer(vm, reservation.ServerID)
 		return tray.Intent{Kind: tray.IntentReleaseReservation, ReservationID: request.ReservationID}, allowed
+	case string(tray.IntentRequestLockRelease):
+		reservation, ok := projectedReservation(vm, request.ReservationID)
+		allowed := ok && !reservation.CanRelease && vm.CanRequestLockRelease() && !hasProjectedLockRelease(vm, reservation)
+		return tray.Intent{Kind: tray.IntentRequestLockRelease, ReservationID: request.ReservationID}, allowed
+	case string(tray.IntentDismissLockRelease), string(tray.IntentAcceptLockRelease):
+		projected, ok := projectedLockRelease(vm, request.LockReleaseRequestID)
+		if !ok || projected.Role != "holder" || projected.State != "pending" {
+			return tray.Intent{}, false
+		}
+		kind := tray.IntentDismissLockRelease
+		allowed := vm.CanDismissLockRelease()
+		if request.Kind == string(tray.IntentAcceptLockRelease) {
+			kind = tray.IntentAcceptLockRelease
+			allowed = vm.CanAcceptLockRelease()
+		}
+		return tray.Intent{Kind: kind, LockReleaseRequestID: request.LockReleaseRequestID}, allowed
 	case string(tray.IntentAckNotice):
 		allowed := vm.Connected && !vm.Stale && vm.CanAckNotices() && projectedNotice(vm, request.NoticeID)
 		return tray.Intent{Kind: tray.IntentAckNotice, NoticeID: request.NoticeID}, allowed
@@ -580,6 +596,24 @@ func projectedReservation(vm guiapp.ViewModel, reservationID string) (guiapp.Res
 		}
 	}
 	return guiapp.Reservation{}, false
+}
+
+func projectedLockRelease(vm guiapp.ViewModel, requestID string) (guiapp.LockReleaseRequest, bool) {
+	for _, request := range vm.LockReleaseRequests {
+		if request.ID == requestID {
+			return request, true
+		}
+	}
+	return guiapp.LockReleaseRequest{}, false
+}
+
+func hasProjectedLockRelease(vm guiapp.ViewModel, reservation guiapp.Reservation) bool {
+	for _, request := range vm.LockReleaseRequests {
+		if request.Role == "requester" && request.ServerID == reservation.ServerID && request.RepoID == reservation.RepoID && request.Path == reservation.Path && request.ObservedLockID == reservation.Token && request.State != "expired" {
+			return true
+		}
+	}
+	return false
 }
 
 func viewHasServer(vm guiapp.ViewModel, serverID string) bool {

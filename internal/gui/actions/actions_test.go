@@ -120,6 +120,29 @@ type fakeReservations struct {
 	release chan reservationCall
 }
 
+type lockReleaseCall struct {
+	action string
+	create app.LockReleaseCreateRequest
+	decide app.LockReleaseDecisionRequest
+}
+
+type fakeLockReleases struct{ calls chan lockReleaseCall }
+
+func (fake *fakeLockReleases) RequestLockRelease(_ context.Context, request app.LockReleaseCreateRequest) error {
+	fake.calls <- lockReleaseCall{action: "request", create: request}
+	return nil
+}
+
+func (fake *fakeLockReleases) DismissLockRelease(_ context.Context, request app.LockReleaseDecisionRequest) error {
+	fake.calls <- lockReleaseCall{action: "dismiss", decide: request}
+	return nil
+}
+
+func (fake *fakeLockReleases) AcceptLockRelease(_ context.Context, request app.LockReleaseDecisionRequest) error {
+	fake.calls <- lockReleaseCall{action: "accept", decide: request}
+	return nil
+}
+
 func newFakeReservations(items []app.Reservation) *fakeReservations {
 	return &fakeReservations{items: items, listCh: make(chan string, 4), release: make(chan reservationCall, 8)}
 }
@@ -1159,6 +1182,53 @@ func TestControllerInlineReservationReleaseResolvesOpaqueIDAndRefreshes(t *testi
 		t.Fatalf("release payload=%+v", call.payload)
 	}
 	awaitCh(t, refreshCh, "post-release refresh")
+}
+
+func TestControllerRequestsForeignLockUsingGoOnlyFence(t *testing.T) {
+	reservation := app.Reservation{ID: "safe-row", ServerID: "office", RepoID: "docs", Path: "plan.dwg", Token: "opaque-token", OwnerLabel: "studio"}
+	manager := &fakeLockReleases{calls: make(chan lockReleaseCall, 1)}
+	refreshCh := make(chan struct{}, 1)
+	prompter := &platformtest.Fake{ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+		if request.Title != "Poproś o zwolnienie blokady" || !strings.Contains(request.Text, "studio") || !strings.Contains(request.Text, "plan.dwg") {
+			t.Fatalf("confirmation=%+v", request)
+		}
+		return true, nil
+	}}
+	vm := &vmStore{}
+	vm.Store(app.ViewModel{
+		Connected: true, Capabilities: map[string]bool{contract.CapLockReleaseRequest: true},
+		Reservations: []app.Reservation{reservation},
+	})
+	intents, cancel := setup(actions.Config{ViewModel: vm.Load, Prompter: prompter, Notifier: prompter, LockReleases: manager, Refresh: func() { refreshCh <- struct{}{} }})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentRequestLockRelease, ReservationID: reservation.ID})
+	call := awaitCh(t, manager.calls, "lock release request")
+	if call.action != "request" || call.create.ServerID != "office" || call.create.RepoID != "docs" || call.create.Path != "plan.dwg" || call.create.ObservedLockID != "opaque-token" {
+		t.Fatalf("call=%+v", call)
+	}
+	awaitCh(t, refreshCh, "post-request refresh")
+}
+
+func TestControllerAcceptsProjectedLockReleaseAfterNativeConfirmation(t *testing.T) {
+	manager := &fakeLockReleases{calls: make(chan lockReleaseCall, 1)}
+	prompter := &platformtest.Fake{ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+		if request.Title != "Zwolnij blokadę" || !strings.Contains(request.Text, "projektanci") || !strings.Contains(request.Text, "plan.dwg") {
+			t.Fatalf("confirmation=%+v", request)
+		}
+		return true, nil
+	}}
+	vm := &vmStore{}
+	vm.Store(app.ViewModel{
+		Connected: true, Capabilities: map[string]bool{contract.CapLockReleaseAccept: true},
+		LockReleaseRequests: []app.LockReleaseRequest{{ID: "request-1", ServerID: "office", RepoID: "docs", Path: "plan.dwg", Role: "holder", CounterpartyRealmAlias: "projektanci", State: "pending"}},
+	})
+	intents, cancel := setup(actions.Config{ViewModel: vm.Load, Prompter: prompter, Notifier: prompter, LockReleases: manager})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentAcceptLockRelease, LockReleaseRequestID: "request-1"})
+	call := awaitCh(t, manager.calls, "lock release accept")
+	if call.action != "accept" || call.decide.ServerID != "office" || call.decide.RequestID != "request-1" {
+		t.Fatalf("call=%+v", call)
+	}
 }
 
 func TestControllerReservationsReleaseAllSkipsForeignLocks(t *testing.T) {

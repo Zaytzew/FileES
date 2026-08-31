@@ -179,6 +179,11 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .lock-flag.risk { border-color:rgba(244,199,109,.25); color:var(--amber); background:rgba(244,199,109,.08); } .lock-flag.passport { border-color:rgba(154,167,232,.25); color:#d1d7ff; background:rgba(154,167,232,.1); }
 .reservation-action { min-height:34px; padding:7px 10px; border:1px solid rgba(154,167,232,.25); border-radius:9px; color:#d1d7ff; background:rgba(154,167,232,.09); font-size:11px; font-weight:800; cursor:pointer; }
 .reservation-action:hover { border-color:rgba(255,106,0,.32); color:#ffae72; background:rgba(255,106,0,.08); } .reservation-action:disabled { opacity:.35; cursor:wait; }
+.lock-release-request { border-color:rgba(255,106,0,.34); background:linear-gradient(110deg,rgba(255,106,0,.1),rgba(154,167,232,.05)); }
+.reservation-request-actions { display:flex; align-items:center; gap:7px; }
+.reservation-action.secondary { color:#aab4c6; background:rgba(154,167,232,.04); }
+.lock-flag.request { border-color:rgba(255,106,0,.28); color:#ffae72; background:rgba(255,106,0,.08); }
+.lock-owner.waiting { color:#ffae72; }
 .dashboard-share-list { display:grid; gap:9px; }
 .dashboard-share-group { display:flex; align-items:center; gap:9px; margin-top:5px; color:#8794a7; font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
 .dashboard-share-group::after { order:1; content:""; height:1px; flex:1; background:var(--line); }

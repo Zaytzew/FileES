@@ -1,13 +1,14 @@
 <!DOCTYPE html>
+
 <html lang="pl">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Eksploatacja — podręcznik FileES Tech</title>
-<link rel="alternate" hreflang="en" href="../en/operations.html"/>
-<link rel="alternate" hreflang="pl" href="operations.html"/>
-<link rel="stylesheet" href="../css/manual.css"/>
-<link rel="icon" href="../../favicon.ico"/>
+<title>Eksploatacja — podręcznik FileES</title>
+<link href="../en/operations.html" hreflang="en" rel="alternate"/>
+<link href="operations.html" hreflang="pl" rel="alternate"/>
+<link href="../css/manual.css" rel="stylesheet"/>
+<link href="../../favicon.ico" rel="icon"/>
 </head>
 <body>
 <main class="sheet">
@@ -19,113 +20,110 @@
 <span class="brand-subtitle">dokumentacja systemu FileES</span>
 </div>
 </div>
-<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
-<nav class="lang-switch" aria-label="Język">
-<a href="../../index.html" class="lang-home">filees:space</a>
-<a href="../en/operations.html" lang="en" hreflang="en">EN</a>
-<a href="operations.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+<nav aria-label="Język" class="lang-switch">
+<a class="lang-home" href="../../index.html">filees:space</a>
+<a href="../en/operations.html" hreflang="en" lang="en">EN</a>
+<a aria-current="true" class="is-current" href="operations.html" hreflang="pl" lang="pl">PL</a>
 </nav>
 </header>
-<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<nav aria-label="Rozdziały podręcznika" class="site-nav">
 <a href="index.html">Przegląd</a>
-<span class="nav-group" aria-label="User">
-<span class="nav-pillar">User</span>
+<span aria-label="Obsługa" class="nav-group">
+<span class="nav-pillar">Obsługa</span>
 <a href="user-guide.html">Pulpit</a>
 <a href="android.html">Android</a>
 <a href="public-shares.html">Udziały</a>
 <a href="administration.html">Administracja</a>
 </span>
-<span class="nav-group" aria-label="Tech">
-<span class="nav-pillar">Tech</span>
+<span aria-label="Technika" class="nav-group">
+<span class="nav-pillar">Technika</span>
 <a href="architecture.html">Architektura</a>
 <a href="install.html">Instalacja</a>
-<a href="operations.html" class="is-current">Eksploatacja</a>
+<a class="is-current" href="operations.html">Eksploatacja</a>
 <a href="security.html">Bezpieczeństwo</a>
-<a href="man-pages.html">Man</a>
+<a href="man-pages.html">Polecenia</a>
 </span></nav>
 <div class="manual-layout">
 <nav aria-label="Na tej stronie" id="toc">
 <div class="toc-head">
-<span class="toc-kicker">filees:space / ta strona</span>
+<span class="toc-kicker">filees:space / podręcznik</span>
 <h2>Na tej stronie</h2>
 </div>
 <ol>
 <li><a href="#ops-admin">filees-admin</a></li>
 <li><a href="#ops-operation">filees-operation</a></li>
-<li><a href="#ops-audit">Dziennik audytu</a></li>
-<li><a href="#ops-mail">Outbox pocztowy</a></li>
+<li><a href="#ops-audit">Dziennik zdarzeń</a></li>
+<li><a href="#ops-mail">Kolejka poczty wychodzącej</a></li>
 <li><a href="#ops-recovery">Protokół odtwarzania</a></li>
 <li><a href="#ops-monitoring">Źródła monitoringu</a></li>
 <li><a href="#ops-rotate">filees-rotate</a></li>
 <li><a href="#ops-realm-removal">Protokół usunięcia strefy</a></li>
 <li><a href="#ops-ps-model">Model zaufania udziałów</a></li>
-<li><a href="#ops-ps-url">Kanoniczny URL / allowlista</a></li>
+<li><a href="#ops-ps-url">Kanoniczny adres udziału publicznego</a></li>
 <li><a href="#ops-ps-map">object_map a rewizja</a></li>
 <li><a href="#ops-ps-access">Otwarty kanał, hasło, OTP</a></li>
 <li><a href="#ops-ps-ops">Eksploatacja udziałów</a></li>
-<li><a href="#ops-sshd">sshd Match User</a></li>
+<li><a href="#ops-sshd">Reguły Match User w sshd</a></li>
 <li><a href="#ops-serverjson">server.json</a></li>
 <li><a href="#ops-keys">Generowanie kluczy</a></li>
-<li><a href="#ops-htdocs">Publikacja tego zestawu HTML</a></li>
 <li><a href="#ops-config">config.json klienta</a></li>
-<li><a href="#ops-provision">Tickety provisioningu</a></li>
+<li><a href="#ops-provision">Przygotowanie repozytorium</a></li>
 <li><a href="#ops-passports">Wnętrze paszportów</a></li>
 <li><a href="#ops-gui">Sekwencja IPC GUI</a></li>
 <li><a href="#ops-update">Koperta podpisanej aktualizacji</a></li>
 </ol>
 </nav>
 <div class="manual-content">
-<div id="ch4-admin" hidden></div>
-<div id="ch4-operation" hidden></div>
-<div id="ch4-audit" hidden></div>
-<div id="ch4-mail" hidden></div>
-<div id="ch4-recovery" hidden></div>
-<div id="ch4-monitoring" hidden></div>
-<div id="ch4-rotate" hidden></div>
-<div id="ch4-realm-removal" hidden></div>
-<div id="ps-model" hidden></div>
-<div id="ps-url" hidden></div>
-<div id="ps-map" hidden></div>
-<div id="ps-access" hidden></div>
-<div id="ps-ops" hidden></div>
-<div id="ch3-sshd" hidden></div>
-<div id="ch3-serverjson" hidden></div>
-<div id="ch3-keys" hidden></div>
-<div id="ch3-manual-htdocs" hidden></div>
-<h1 id="ops">Tech: eksploatacja i kontrakty</h1>
+<div hidden="" id="ch4-admin"></div>
+<div hidden="" id="ch4-operation"></div>
+<div hidden="" id="ch4-audit"></div>
+<div hidden="" id="ch4-mail"></div>
+<div hidden="" id="ch4-recovery"></div>
+<div hidden="" id="ch4-monitoring"></div>
+<div hidden="" id="ch4-rotate"></div>
+<div hidden="" id="ch4-realm-removal"></div>
+<div hidden="" id="ps-model"></div>
+<div hidden="" id="ps-url"></div>
+<div hidden="" id="ps-map"></div>
+<div hidden="" id="ps-access"></div>
+<div hidden="" id="ps-ops"></div>
+<div hidden="" id="ch3-sshd"></div>
+<div hidden="" id="ch3-serverjson"></div>
+<div hidden="" id="ch3-keys"></div>
+<div hidden="" id="ch3-manual-htdocs"></div>
+<h1 id="ops">Eksploatacja i kontrakty</h1>
 <div class="chapter-content">
-<p>Ta strona zawiera treść techniczną, która wcześniej sąsiadowała z howto User. Polecenia zaproszenia, Ustawienia i widok odbiorcy zostają na stronach User. Poniżej są schematy, maszyny stanów, odrzucone alternatywy i kontrakty wdrożenia.</p>
-<div class="note"><strong>Stare URL-e zostają.</strong> <code>administration.html#ch4-admin</code> i pozostałe kotwice rozdziałów nadal otwierają howto. Te same identyfikatory są powtórzone tutaj, żeby czytelnik Tech lądował na kontrakcie.</div>
-<h2 id="ops-admin">filees-admin — kody wyjścia i pliki ticketów</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span class="status status-planned">Szersze polecenia planowane</span><span>Istnieją ticket, inspekcja operacji i fail-closed odwołanie klienta.</span></div>
+<p>Ta część zawiera szczegóły techniczne potrzebne przy instalacji, eksploatacji, odtwarzaniu i diagnostyce FileES. Czynności wykonywane z programu na komputerze opisano w przewodniku użytkownika i w rozdziale administracyjnym.</p>
+<h2 id="ops-admin">filees-admin — kody wyjścia i pliki zleceń</h2>
 <p><code>filees-admin</code> jest administracyjnym narzędziem wiersza poleceń. Musi być uruchamiane jako <code>_filees-state</code> (np. przez <code>doas -u _filees-state</code>), żeby spełnić swój profil <code>pledge</code>/<code>unveil</code>. Zapisuje strukturalny JSON na stdout, a diagnostykę na stderr. Kody wyjścia są z zakresu <code>sysexits</code>:</p>
 <div class="table-wrap"><table>
 <tr><th>Kod wyjścia</th><th>Stała</th><th>Znaczenie</th></tr>
 <tr><td>0</td><td><code>ExitOK</code></td><td>Sukces</td></tr>
 <tr><td>64</td><td><code>ExitUsage</code></td><td>Błędne argumenty</td></tr>
 <tr><td>65</td><td><code>ExitData</code></td><td>Błąd danych wejściowych</td></tr>
-<tr><td>69</td><td><code>ExitUnavailable</code></td><td>Zasób niedostępny (ticket zajęty, port wyczerpany)</td></tr>
+<tr><td>69</td><td><code>ExitUnavailable</code></td><td>Zasób niedostępny (zlecenie zajęte, port wyczerpany)</td></tr>
 <tr><td>70</td><td><code>ExitSoftware</code></td><td>Wewnętrzny błąd logiki</td></tr>
 <tr><td>75</td><td><code>ExitTempFail</code></td><td>Tymczasowa awaria (spróbuj później; używane przez filees-mail przy SMTP 4xx)</td></tr>
 <tr><td>78</td><td><code>ExitConfig</code></td><td>Błąd konfiguracji</td></tr>
 </table></div>
-<h4>Zarządzanie ticketami</h4>
+<h4>Zarządzanie zleceniami</h4>
 <pre><code>filees-admin ticket create &lt;mailbox&gt; [--join-realm-alias &lt;alias&gt;] [--ttl 24h]
 filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;
 filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
 filees-admin ticket list</code></pre>
-<p>Ticket to jednorazowe upoważnienie administratora na jedno zaproszenie e-mail. Musi zostać utworzony z efektywnym użytkownikiem <code>_filees-state</code>; utworzenie go jako root daje prywatny plik należący do roota, którego wejście onboardingu z set-id celowo nie potrafi odczytać. Bez <code>--join-realm-alias</code> upoważnia do utworzenia nowej strefy. Z flagą serwer od razu rozwiązuje niezmienny alias i zapisuje zatwierdzony ID istniejącej strefy w polityce ticketu; klient nigdy tego ID nie przesyła. Nieużywany ticket z błędną polityką odwołaj, zamiast go edytować. Plik ticketu jest nazwany <code>sha256(canonical_email)</code>, więc nazwa nie ujawnia adresu. <code>create</code> zapisuje ticket z TTL i od razu wysyła zaproszenie; <code>resend</code> zastępuje nieudane capability dostawy nowym, bez zmiany odbiorcy ani TTL; <code>revoke</code> je usuwa. Gdy nieprzezroczyste capability zaproszenia zostanie przejęte przez <code>filees-onboard take</code>, ticket fizycznie znika i zastępuje go bundle operacji.</p>
+<p><strong>Zlecenie</strong> jest jednorazowym upoważnieniem administratora do wysłania jednego zaproszenia. Tworzy się je jako użytkownik <code>_filees-state</code>; utworzenie go jako <code>root</code> pozostawi plik należący do użytkownika root, którego program aktywacyjny działający z <code>set-id</code> celowo nie odczyta. Bez <code>--join-realm-alias</code> zaproszenie służy do utworzenia nowej strefy. Z tą flagą serwer zapisuje identyfikator istniejącej strefy na podstawie jej niezmiennego aliasu; klient nie podaje tego identyfikatora. Niewykorzystane zlecenie z błędną polityką należy odwołać, a nie edytować. Nazwa pliku jest skrótem SHA-256 kanonicznego adresu poczty, więc nie ujawnia adresu.</p>
 <h4>Inspekcja operacji</h4>
 <pre><code>filees-admin operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
-<p>Pokazuje bieżący stan i ślad audytu operacji onboardingu. Jeśli operacja jest w stanie <code>awaiting_tunnel</code> po upływie TTL, OTP jest wyczerpany albo wygasły, a rekord można posprzątać przez <code>filees-operation recover</code>.</p>
+<p>Pokazuje bieżący stan i ślad zdarzeń operacji aktywacji klienta. Jeśli operacja jest w stanie <code>awaiting_tunnel</code> po upływie TTL, OTP jest wyczerpany albo wygasły, a rekord można posprzątać przez <code>filees-operation recover</code>.</p>
 <h4>Odwołanie klienta</h4>
 <pre><code>filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "one-line reason"</code></pre>
-<p>Odwołanie najpierw zapisuje trwały rekord <code>revoking</code> i usuwa klienta z wygenerowanego dostępu runtime SSH/SVN. Dopiero potem zatwierdza rekord odwołanego klienta i zdarzenie audytu w repozytorium usługowym. Identyczne ponowienie jest idempotentne; inny powód jest odrzucany.</p>
+<p>Odwołanie najpierw zapisuje trwały rekord <code>revoking</code> i usuwa klienta z wygenerowanego dostępu SSH/SVN. Dopiero potem zatwierdza rekord odwołanego klienta i zdarzenie dziennika w repozytorium usługowym. Identyczne ponowienie jest idempotentne; inny powód jest odrzucany.</p>
 <h4>Odwołanie strefy i przeniesienie własności repozytorium</h4>
 <pre><code>filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-line reason"
 filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;</code></pre>
-<p><code>client revoke-realm</code> odwołuje w jednym wywołaniu każdą instalację należącą do danej strefy i zgłasza dotknięte <code>client_id</code>; używa tej samej sekwencji fail-closed <code>revoking</code>, a potem zatwierdzenia, co odwołanie pojedynczego klienta. <code>repo transfer-owner</code> zmienia <code>owner_realm_id</code> repozytorium i regeneruje data-authz przez <code>repoworker.ServicePublisher</code>; nie zmienia istniejących grantów wydanych przez poprzedniego właściciela.</p>
+<p><code>client revoke-realm</code> odwołuje w jednym wywołaniu każdą instalację należącą do danej strefy i zgłasza dotknięte <code>client_id</code>; używa tej samej sekwencji z bezpieczną odmową <code>revoking</code>, a potem zatwierdzenia, co odwołanie pojedynczego klienta. <code>repo transfer-owner</code> zmienia <code>owner_realm_id</code> repozytorium i regeneruje data-authz przez <code>repoworker.ServicePublisher</code>; nie zmienia istniejących uprawnień wydanych przez poprzedniego właściciela.</p>
 <h4>Polecenia, które pozostają poza tym narzędziem</h4>
-<p>Tworzenie i podłączanie repozytoriów, granty, udziały publiczne, load-dump i usunięcie strefy to operacje właściciela na pulpitowej płaszczyźnie sterowania, a nie dodatkowe czasowniki <code>filees-admin</code>. Poniższa szersza konsola jest nadal wyspecyfikowana i niezaimplementowana:</p>
+<p>Tworzenie i podłączanie repozytoriów, uprawnienia, udziały publiczne, wczytanie zrzutu i usunięcie strefy to operacje właściciela na warstwie sterującej programu na komputerze, a nie dodatkowe czasowniki <code>filees-admin</code>. Poniższa szersza konsola jest nadal wyspecyfikowana i niezaimplementowana:</p>
 <pre><code>filees-admin realm create|inspect|list|disable
 filees-admin client inspect|list|disable
 filees-admin repo inspect|list|disable|reconcile
@@ -134,19 +132,17 @@ filees-admin invitation create|revoke|inspect
 filees-admin operation inspect|abort|retry
 filees-admin audit list|verify
 filees-admin projection rebuild|verify</code></pre>
-
-<h2 id="ops-operation">filees-operation — formy claim</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odtwarzanie claimów, wygaszanie niedokończonych operacji i sprzątanie aktywacji są idempotentne.</span></div>
+<h2 id="ops-operation">filees-operation — pliki przejęcia</h2>
 <pre><code>filees-operation recover
 filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
-<p><code>filees-operation recover</code> skanuje katalog operacji w poszukiwaniu plików claim (<code>.claim-*.json</code>) i je dokańcza. Claim może mieć dwie formy:</p>
+<p><code>filees-operation recover</code> skanuje katalog operacji w poszukiwaniu plików przejęcia (<code>.claim-*.json</code>) i je dokańcza. Przejęcie może mieć dwie formy:</p>
 <ul>
-<li><strong>Claim-as-ticket</strong> — ticket został przemianowany na <code>.claim-&lt;req_id&gt;.json</code>, ale nie zastąpiony jeszcze bundlem. Odtwarzanie generuje bundle i wykonuje końcowe przemianowanie.</li>
-<li><strong>Claim-as-bundle</strong> — bundle został zapisany w pliku claim, ale końcowe przemianowanie na <code>&lt;req_id&gt;.json</code> nie doszło do skutku. Odtwarzanie wykonuje wyłącznie rename.</li>
+<li><strong>przejęcie zlecenia</strong> — zlecenie zostało przemianowane na <code>.claim-&lt;req_id&gt;.json</code>, ale nie zostało jeszcze zastąpione pakietem. Odtwarzanie generuje pakiet i wykonuje końcową zmianę nazwy.</li>
+<li><strong>przejęcie pakietu</strong> — pakiet został zapisany w pliku przejęcia, ale końcową zmianę nazwy na <code>&lt;req_id&gt;.json</code> nie doszło do skutku. Odtwarzanie wykonuje wyłącznie zmianę nazwy.</li>
 </ul>
-<p>Odtwarzanie wygasza też niedokończone operacje, których TTL upłynął, redaguje ich OTP i adres dostawy, usuwa wygasłe przygotowane klucze z wygenerowanego dostępu SSH/SVN oraz wznawia potwierdzone dzienniki usunięcia strefy po odwołaniu wszystkich poświadczeń klientów. Aktywni klienci nie są wygaszani przez TTL onboardingu. Odtwarzanie jest idempotentne i bezpieczne po nieoczekiwanej awarii systemu. Na OpenBSD musi działać jako prywatny właściciel stanu: <code>doas -u _filees-state filees-operation recover</code>.</p>
-
-<h2 id="ops-audit">Schemat dziennika audytu</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Istnieją audyt onboardingu i strukturalne logi błędów klienta.</span></div>
-<p>Serwerowy dziennik audytu jest przechowywany jako osobne pliki JSON w podkatalogu <code>audit/</code> korzenia stanu (<code>/var/filees/onboarding/audit/</code>). Każdy plik zdarzenia ma nazwę <code>&lt;timestamp&gt;-&lt;object_type&gt;-&lt;event_type&gt;.json</code> i jest zgodny ze schematem <code>filees.onboarding-audit/v1</code>:</p>
+<p>Odtwarzanie wygasza też niedokończone operacje, których TTL upłynął, redaguje ich OTP i adres dostawy, usuwa wygasłe przygotowane klucze z wygenerowanego dostępu SSH/SVN oraz wznawia potwierdzone dzienniki usunięcia strefy po odwołaniu wszystkich poświadczeń klientów. Aktywni klienci nie są wygaszani przez TTL aktywacji klienta. Odtwarzanie jest idempotentne i bezpieczne po nieoczekiwanej awarii systemu. Na OpenBSD musi działać jako prywatny właściciel stanu: <code>doas -u _filees-state filees-operation recover</code>.</p>
+<h2 id="ops-audit">Schemat dziennika zdarzeń</h2>
+<p>Serwerowy dziennik zdarzeń jest przechowywany jako osobne pliki JSON w podkatalogu <code>audit/</code> korzenia stanu (<code>/var/filees/onboarding/audit/</code>). Każdy plik zdarzenia ma nazwę <code>&lt;timestamp&gt;-&lt;object_type&gt;-&lt;event_type&gt;.json</code> i jest zgodny ze schematem <code>filees.onboarding-audit/v1</code>:</p>
 <pre><code>{
   "schema":       "filees.onboarding-audit/v1",
   "event":        "tunnel_session_started",
@@ -156,33 +152,31 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
   "operation_id": "&lt;operation_id&gt;",
   "at":           "2026-07-16T09:15:02Z"
 }</code></pre>
-<p>Sam bundle operacji zawiera wbudowaną tablicę audytu (<code>Audit []AuditEvent</code>) z pełną historią tej operacji. Historia SVN repozytorium usługowego daje dodatkową, niezależną warstwę dowodową dla zdarzeń audytu tego repozytorium.</p>
-<p>Rejestrowane typy zdarzeń audytu onboardingu to m.in.: <code>ticket_created</code>, <code>ticket_revoked</code>, <code>operation_claimed</code>, <code>otp_attempt_failed</code>, <code>otp_verified</code>, <code>otp_exhausted</code>, <code>tunnel_session_started</code>, <code>helper_announced</code>, <code>helper_verified</code>, <code>identity_generated</code>, <code>access_staged</code>, <code>possession_verified</code> i <code>client_activated</code>. Repozytorium usługowe niezależnie zapisuje zdarzenia <code>client_activated</code> i <code>client_revoked</code>.</p>
+<p>Sam pakiet operacji zawiera wbudowaną tablicę zdarzeń (<code>Audit []AuditEvent</code>) z pełną historią tej operacji. Historia SVN repozytorium usługowego daje dodatkową, niezależną warstwę dowodową dla dziennika zdarzeń tego repozytorium.</p>
+<p>Rejestrowane typy dziennika zdarzeń aktywacji klienta to m.in.: <code>ticket_created</code>, <code>ticket_revoked</code>, <code>operation_claimed</code>, <code>otp_attempt_failed</code>, <code>otp_verified</code>, <code>otp_exhausted</code>, <code>tunnel_session_started</code>, <code>helper_announced</code>, <code>helper_verified</code>, <code>identity_generated</code>, <code>access_staged</code>, <code>possession_verified</code> i <code>client_activated</code>. Repozytorium usługowe niezależnie zapisuje zdarzenia <code>client_activated</code> i <code>client_revoked</code>.</p>
 <p>Kliencki dziennik błędów jest w <code>&lt;wc&gt;/.filees/logs/errors.jsonl</code> jako JSON Lines:</p>
 <pre><code>{"ts":"2026-07-16T10:00:00Z","scope":"commit:projectA","code":"NET-4007",
  "severity":"WARN","hint":"RETRY_BACKOFF","msg":"Network unreachable — retrying"}</code></pre>
 <p>Najnowsze wpisy można obejrzeć poleceniem:</p>
 <pre><code>filees log 50</code></pre>
-
-<h2 id="ops-mail">Maszyna stanów outboxu</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Jednorazowy outbox SMTP, składanie publicznego bootstrapu, redakcja i semantyka ponowień.</span></div>
-<p>Publicznym wymuszonym poleceniem SSH jest <code>filees-bootstrap-entry</code>. Atomowo tworzy albo wznawia operację onboardingu, a potem wywołuje dokładnie jedną próbę <code>filees-mail send</code>. Uwierzytelnieni workerzy płaszczyzny sterowania używają tego samego jednorazowego triggera dla poczty onboardingu, usunięcia strefy i wymazania danych. Udziały publiczne dodatkowo potrzebują dostawy wywołanej nieuwierzytelnionym żądaniem przeglądarki: <code>filees-public-authority</code> nadzoruje więc izolowane dziecko <code>filees-mail public-loop</code>. Dziecko odpytuje wyłącznie trwały outbox udziałów publicznych, samo ładuje sekret SMTP i jest wymaganą częścią zdrowia authority; proces authority nigdy tego sekretu nie otrzymuje. Przy sygnale stopu usługi authority zamyka serwer, kończy dziecko pocztowe i czeka na nie przed wyjściem, więc restart rc.d nie może zostawić osieroconego pollera.</p>
-<p>Maszyna stanów dostawy outboxu:</p>
+<h2 id="ops-mail">Maszyna stanów kolejki poczty wychodzącej</h2>
+<p>Publicznym wymuszonym poleceniem SSH jest <code>filees-bootstrap-entry</code>. Atomowo tworzy albo wznawia operację aktywacji klienta, a następnie wykonuje dokładnie jedną próbę <code>filees-mail send</code>. Uwierzytelnione procesy wykonawcze warstwy sterującej używają tego samego mechanizmu do wysyłania poczty związanej z aktywacją klienta, usunięciem strefy i wymazaniem danych. Udziały publiczne wymagają dodatkowo wysyłki wyzwalanej żądaniem z przeglądarki, dlatego <code>filees-public-authority</code> nadzoruje osobny proces <code>filees-mail public-loop</code>. Proces potomny odczytuje wyłącznie trwałą kolejkę poczty udziałów publicznych i sam wczytuje sekret SMTP; proces autoryzujący nie otrzymuje tego sekretu. Przy zatrzymaniu usługi proces autoryzujący kończy obsługę HTTP, zatrzymuje proces pocztowy i czeka na jego zakończenie, dzięki czemu restart przez <code>rc.d</code> nie pozostawia osieroconego procesu.</p>
+<p>Maszyna stanów dostawy kolejki poczty wychodzącej:</p>
 <pre><code>pending  -&gt;  sending  -&gt;  queued    (250 after DATA; OTP and address redacted)
                       -&gt;  pending   (4xx temporary failure; OTP preserved)
                       -&gt;  failed    (5xx permanent failure; OTP redacted)</code></pre>
-<p>Przestarzały wpis <code>sending</code> (z poprzedniej próby, która zakończyła się niepowodzeniem bez zapisania wyniku) jest przejmowany z nowym ID próby przed ponowieniem. Stabilny nagłówek <code>Message-ID</code> (wyprowadzony z <code>CreatedAt</code>, nie z <code>time.Now()</code>) czyni ponowienie bezpiecznym, gdy smarthost przyjął wiadomość, ale odpowiedź zaginęła.</p>
+<p>Przestarzały wpis <code>sending</code> (z poprzedniej próby, która zakończyła się niepowodzeniem bez zapisania wyniku) jest przejmowany z nowym ID próby przed ponowieniem. Stabilny nagłówek <code>Message-ID</code> (wyprowadzony z <code>CreatedAt</code>, nie z <code>time.Now()</code>) czyni ponowienie bezpiecznym, gdy przekaźnik SMTP przyjął wiadomość, ale odpowiedź zaginęła.</p>
 <p>Ponowienie po tymczasowej awarii:</p>
 <pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
-<p>Kod wyjścia 75 (<code>ExitTempFail</code>) oznacza, że smarthost zwrócił 4xx; OTP jest zachowany i polecenie można ponowić. Kod wyjścia 0 oznacza przyjęcie wiadomości (stan <code>queued</code>). Trwała awaria (5xx) ustawia stan na <code>failed</code> i redaguje OTP; potrzebna jest interwencja ręczna.</p>
-
-<h2 id="ops-recovery">Protokół odtwarzania</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odtwarzanie claimów na serwerze i uzgadnianie po restarcie klienta są pokryte wstrzykiwaniem błędów.</span></div>
-<h4>Przerwany claim onboardingu</h4>
+<p>Kod wyjścia 75 (<code>ExitTempFail</code>) oznacza, że przekaźnik SMTP zwrócił 4xx; OTP jest zachowany i polecenie można ponowić. Kod wyjścia 0 oznacza przyjęcie wiadomości (stan <code>queued</code>). Trwała awaria (5xx) ustawia stan na <code>failed</code> i redaguje OTP; potrzebna jest interwencja ręczna.</p>
+<h2 id="ops-recovery">Protokół odtwarzania</h2>
+<h4>Przerwany przejęcie aktywacji klienta</h4>
 <pre><code>doas -u _filees-state filees-operation recover</code></pre>
 <p>Polecenie dokańcza każdy plik <code>.claim-*</code>, wygasza niedokończone operacje po TTL, redaguje ich materiał OTP i usuwa wygasłe przygotowanie aktywacji. Aktywni klienci pozostają aktywni. Bezpieczne do wielokrotnego uruchamiania.</p>
 <h4>Usunięcie strefy po odwołaniu klientów</h4>
-<p>Potwierdzony dziennik usunięcia strefy należy do serwera. Jeśli awaria nastąpi po <code>revoke_all_clients</code>, nie zostaje żadne poświadczenie klienta, którym można wznowić żądanie. To samo jawne polecenie <code>filees-operation recover</code> wylicza stany <code>deleting</code>, <code>recovery_ready</code> i <code>revoke_all_clients</code> pod blokadą workera repozytoriów i domyka ich idempotentne granice. To akcja administracyjna / startowa, nie odpytywanie ani usługa cykliczna.</p>
+<p>Potwierdzony dziennik usunięcia strefy należy do serwera. Jeśli awaria nastąpi po <code>revoke_all_clients</code>, nie zostaje żadne poświadczenie klienta, którym można wznowić żądanie. To samo jawne polecenie <code>filees-operation recover</code> wylicza stany <code>deleting</code>, <code>recovery_ready</code> i <code>revoke_all_clients</code> pod blokadą procesu wykonawczego repozytoriów i domyka ich idempotentne granice. To akcja administracyjna / startowa, nie odpytywanie ani usługa cykliczna.</p>
 <h4>Zamknięcie retencji wymazania danych</h4>
-<p>Opcjonalne żądanie wymazania danych powstaje dopiero po potwierdzeniu OTP usunięcia strefy. Po usunięciu aktywnych repozytoriów, grantów i aktywacji klientów czeka w <code>awaiting_backup_retention</code>. Serwer nie twierdzi, że automatycznie czyści kopie zapasowe. Gdy operator zweryfikuje wynik retencji, zamknij je jawnie:</p>
+<p>Opcjonalne żądanie wymazania danych powstaje dopiero po potwierdzeniu OTP usunięcia strefy. Po usunięciu aktywnych repozytoriów, uprawnień i aktywacji klientów czeka w <code>awaiting_backup_retention</code>. Serwer nie twierdzi, że automatycznie czyści kopie zapasowe. Gdy operator zweryfikuje wynik retencji, zamknij je jawnie:</p>
 <pre><code>doas -u _filees-state filees-admin erasure complete \
   --operation-id &lt;realm_removal_uuid&gt;
 
@@ -216,48 +210,46 @@ for repo in /srv/filees/repositories/*; do
 done</code></pre>
 <ol start="4">
 <li>W <code>/etc/filees/server.json</code> zmień wyłącznie <code>repositories.root</code> na nową ścieżkę bezwzględną. <code>results_root</code> i <code>deletion_archive_root</code> zostaw bez zmian, chyba że świadomie migrujesz je jako osobne magazyny stanu.</li>
-<li>Zanim znów wpuścisz klientów, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną operację FileES. Krótkożyjący worker serwera czyta <code>server.json</code> przy każdym żądaniu, więc nie ma demona do restartu; granica serwisowa nadal jest wymagana, żeby zapisy nie wylądowały w starym korzeniu podczas przełączenia.</li>
+<li>Zanim znów wpuścisz klientów, przetestuj jeden dostęp SVN tylko do odczytu i jedną kontrolowaną operację FileES. Krótkożyjący proces wykonawczy serwera czyta <code>server.json</code> przy każdym żądaniu, więc nie ma demona do restartu; granica serwisowa nadal jest wymagana, żeby zapisy nie wylądowały w starym korzeniu podczas przełączenia.</li>
 <li>Stary korzeń zostaw nietknięty i tylko do odczytu, aż kopie zapasowe i odbiór się skończą. Wycofanie to po prostu przywrócenie starej wartości <code>repositories.root</code>, dopóki okno serwisowe jeszcze trwa. Starą kopię usuń dopiero w ramach osobno zatwierdzonej polityki retencji.</li>
 </ol>
 <div class="warn"><strong>Nigdy nie scalaj dwóch żywych korzeni i nie używaj przeniesienia systemu plików, gdy klienci są podłączeni.</strong> UUID repozytorium, hooki i metadane FSFS muszą iść razem. Najpierw kopiuj i weryfikuj, potem wykonaj jedno przełączenie konfiguracji; to zostawia dostępne wycofanie.</div>
 <h4>Odtwarzanie klienta po SIGKILL lub zaniku zasilania</h4>
 <p>Demon klienta odtwarza się automatycznie przy następnym starcie:</p>
 <ol>
-<li>Ładuje pełny cache stagingu z <code>cache.json</code>.</li>
+<li>Ładuje pełny pamięć podręczna przygotowania z <code>cache.json</code>.</li>
 <li>Uruchamia <code>svn cleanup</code> oraz (gdy nie ma wpisów <code>missing</code>) <code>svn update</code>.</li>
-<li>Ponownie klasyfikuje każdy wpis cache według <code>svn status</code>; wpisy już oznaczone <code>normal</code> (przyjęte przez serwer) są odrzucane bez ponownego commitu.</li>
+<li>Ponownie klasyfikuje każdy wpis pamięć podręczna według <code>svn status</code>; wpisy już oznaczone <code>normal</code> (przyjęte przez serwer) są odrzucane bez ponownego zatwierdzenia.</li>
 <li>Publikuje pozostałe wpisy w ograniczonych partiach.</li>
 </ol>
-<p>To idempotentne uzgadnianie zweryfikowano w testach wstrzykiwania błędów (r91–r92), w których serwer przyjął commit, ale proces demona został zabity, zanim zdążył zaktualizować metadane kopii roboczej i wyczyścić cache. Restart poprawnie opublikował wyłącznie brakujący pozostały wpis.</p>
+<p>To idempotentne uzgadnianie. Restart poprawnie opublikował wyłącznie brakujący pozostały wpis.</p>
 <h4>Przeniesiony lub brakujący korzeń kopii roboczej</h4>
-<p>Start waliduje korzeń jako granicę tożsamości, zanim utworzy metadane FileES albo uruchomi watcher. Brak <code>.svn</code>, niezgodny URL repozytorium albo niekompatybilny znacznik tożsamości dają <code>interaction_required / working_copy_missing</code>; demon zostawia tę ścieżkę nietkniętą i uruchamia tylko lekki monitor odtwarzania. Jeśli oryginalna kopia robocza wróci pod tę samą ścieżkę, normalny potok wznawia się automatycznie. Jeśli została przeniesiona, użyj w Ustawieniach <strong>Wskaż kopię</strong>: <code>repo.locate</code> weryfikuje istniejący korzeń i trwale wiąże podłączenie bez checkoutu. Lokalne modyfikacje są zachowane. Na Windows aktywny korzeń jest zwykle chroniony przed pozapasmowym rename/delete przez uchwyt katalogu bez współdzielenia usuwania, ale ta ochrona kończy się z konieczności, gdy FileES jest zatrzymany.</p>
+<p>Start waliduje korzeń jako granicę tożsamości, zanim utworzy metadane FileES albo uruchomi moduł obserwujący. Brak <code>.svn</code>, niezgodny URL repozytorium albo niekompatybilny znacznik tożsamości dają <code>interaction_required / working_copy_missing</code>; demon zostawia tę ścieżkę nietkniętą i uruchamia tylko lekki monitor odtwarzania. Jeśli oryginalna kopia robocza wróci pod tę samą ścieżkę, normalny potok wznawia się automatycznie. Jeśli została przeniesiona, użyj w Ustawieniach <strong>Wskaż kopię</strong>: <code>repo.locate</code> weryfikuje istniejący korzeń i trwale wiąże podłączenie bez pobrania kopii roboczej. Lokalne modyfikacje są zachowane. Na Windows aktywny korzeń jest zwykle chroniony przed pozapasmowym zmianą nazwy lub usunięciem przez uchwyt katalogu bez współdzielenia usuwania, ale ta ochrona kończy się z konieczności, gdy FileES jest zatrzymany.</p>
 <h4>Kopie kolizji</h4>
-<p>Pliki w <code>!kolizje/</code> to zachowane wersje lokalne sprzed rozstrzygnięcia kolizji na korzyść serwera. Każdy podkatalog ma znacznik czasu (<code>YYYY.MM.DD@HH.MM_lokalne</code>) i zawiera treść plików oraz sidecar JSON <code>.meta</code> z oryginalną ścieżką, rozmiarem i znacznikiem czasu. Można je oglądać i scalać ręcznie. Katalog jest ignorowany przez skaner i nigdy nie jest commitowany.</p>
+<p>Pliki w <code>!kolizje/</code> to zachowane wersje lokalne sprzed rozstrzygnięcia kolizji na korzyść serwera. Każdy podkatalog ma znacznik czasu (<code>YYYY.MM.DD@HH.MM_lokalne</code>) i zawiera treść plików oraz sidecar JSON <code>.meta</code> z oryginalną ścieżką, rozmiarem i znacznikiem czasu. Można je oglądać i scalać ręcznie. Katalog jest ignorowany przez skaner i nigdy nie jest zatwierdzony.</p>
 <h4>Osierocony paszport po utracie sieci</h4>
-<p>Jeśli demon traci łączność sieciową, trzymając paszport, nie publikuje zmian po wygaśnięciu lokalnego TTL. Po ponownym połączeniu menedżer paszportów sprawdza rzeczywisty lock na serwerze: jeśli token nadal się zgadza, heartbeat wraca; jeśli token został zastąpiony (force-lock albo wygaśnięcie po stronie serwera), paszport jest oznaczany jako <code>lost</code>. Plik wraca do trybu tylko do odczytu; nie ma automatycznego force-lock ani commitu.</p>
+<p>Jeśli demon traci łączność sieciową, trzymając paszport, nie publikuje zmian po wygaśnięciu lokalnego TTL. Po ponownym połączeniu menedżer paszportów sprawdza rzeczywisty blokada na serwerze: jeśli token nadal się zgadza, heartbeat wraca; jeśli token został zastąpiony (force-blokada albo wygaśnięcie po stronie serwera), paszport jest oznaczany jako <code>lost</code>. Plik wraca do trybu tylko do odczytu; nie ma automatycznego force-blokada ani zatwierdzenia.</p>
 <h4>Odbudowa projekcji repozytorium usługowego</h4>
 <p>Poddrzewo <code>clients/</code> repozytorium usługowego to dane pochodne. Nie ma jeszcze ogólnego polecenia administratora do pełnej deterministycznej odbudowy:</p>
 <pre><code>filees-admin projection rebuild   # jeszcze niezaimplementowane</code></pre>
-<p>Kanoniczny model grantów jest zaimplementowany mimo braku tego szerokiego polecenia. Aktywacja zapisuje pierwszy widok klienta w tej samej rewizji SVN co kanoniczny rekord klienta; dołączenie do istniejącej strefy dziedziczy alias strefy. Odbudowa grant-authority regeneruje repozytoria i uzgadnia alias dla aktywnych widoków klientów. Pasujące, idempotentne <code>realm.alias_claim</code> jest też ograniczoną operacją naprawy starszych widoków, które pominęły <code>realm_alias</code>. Nigdy nie edytuj ręcznie lokalnego cache <code>view.json</code> klienta: to projekcja należąca do serwera i następna aktualizacja ją zastąpi.</p>
-
-<h2 id="ops-monitoring">Źródła monitoringu</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Bieżąca diagnostyka i liczniki odtwarzania; szersze metryki pozostają poza kontraktem.</span></div>
-<p>FileES nie udostępnia jeszcze endpointu metryk. Do monitorowania służą następujące źródła:</p>
+<p>Kanoniczny model uprawnień działa niezależnie od szerokiej konsoli administracyjnej. Aktywacja zapisuje pierwszy widok klienta w tej samej rewizji SVN co jego kanoniczny rekord; dołączenie do istniejącej strefy dziedziczy jej alias. Odbudowa mechanizmu uprawnień ponownie generuje projekcje repozytoriów i uzupełnia alias w aktywnych widokach klientów. Operacja <code>realm.alias_claim</code> może również naprawić starszy widok pozbawiony <code>realm_alias</code>. Nie edytuj ręcznie lokalnego <code>view.json</code>: jest to projekcja należąca do serwera i zostanie zastąpiona przy następnej aktualizacji.</p>
+<h2 id="ops-monitoring">Źródła monitoringu</h2>
+<p>FileES nie udostępnia jeszcze punktu dostępu metryk. Do monitorowania służą następujące źródła:</p>
 <div class="table-wrap"><table>
 <tr><th>Źródło</th><th>Zawartość</th></tr>
 <tr><td><code>.filees/logs/errors.jsonl</code></td><td>Strukturalny dziennik błędów; kody, ważność, wskazówki, znaczniki czasu. Odpytuj standardowymi narzędziami JSON.</td></tr>
 <tr><td><code>filees status</code></td><td>Żywy zrzut stanów wszystkich repozytoriów, łączności, liczb oczekujących oraz rewizji lokalnych/HEAD</td></tr>
 <tr><td><code>filees log N</code></td><td>Ostatnie N wpisów dziennika błędów, od najnowszego</td></tr>
 <tr><td>GUI <strong>Dziennik</strong> / <code>repo.activity</code> + <code>error.list</code></td><td>Połączony zrzut aktywności i błędów od najnowszego; do 12 zagregowanych wierszy w zasobniku i pełny dostępny zrzut w natywnym oknie</td></tr>
-<tr><td><code>/var/filees/onboarding/operations/</code></td><td>Pliki bundle operacji; pole stanu oglądaj przez <code>jq</code></td></tr>
-<tr><td><code>/var/filees/onboarding/audit/</code></td><td>Zdarzenia audytu ze znacznikiem czasu</td></tr>
-<tr><td><code>/var/filees/activation/records/</code></td><td>Rekordy aktywacji: staged, active, revoking, revoked i expired</td></tr>
+<tr><td><code>/var/filees/onboarding/operations/</code></td><td>Pakiety operacji; pole stanu można odczytać przez jq</td></tr>
+<tr><td><code>/var/filees/onboarding/audit/</code></td><td>Zdarzenia ze znacznikiem czasu</td></tr>
+<tr><td><code>/var/filees/activation/records/</code></td><td>Rekordy aktywacji w stanach <code>staged</code>, <code>active</code>, <code>revoking</code>, <code>revoked</code> i <code>expired</code></td></tr>
 <tr><td><code>/var/filees/activation/authorized_keys</code></td><td>Wygenerowany bieżący dostęp klucza instalacji; nigdy nie edytuj ręcznie</td></tr>
-<tr><td><code>commit.Service.RecoveryStats()</code></td><td>Udostępniane przez IPC jako pole <code>recovery</code> w <code>repo.status</code> (pokazywane przez <code>filees status</code>, gdy niezerowe, r405): wznowione wpisy cache, wpisy pominięte jako już przyjęte, wykonane partie</td></tr>
+<tr><td><code>commit.Service.RecoveryStats()</code></td><td>Udostępniane przez IPC jako pole <code>recovery</code> w <code>repo.status</code>: liczba wznowionych wpisów, wpisów pominiętych jako już przyjęte oraz wykonanych partii.</td></tr>
 </table></div>
-<p>Dla CI albo automatycznych sprawdzeń <code>make verify</code> uruchamia <code>go test ./...</code> (w tym detektor wyścigów dla kluczowych pakietów), <code>go vet ./...</code> oraz lokalny test dymny odtwarzania SVN (<code>scripts/svn-recovery-smoke.sh</code>), który tworzy tymczasowe repozytorium <code>svnadmin</code> i nie wymaga dostępu do sieci.</p>
 
-<h2 id="ops-rotate">Wnętrze filees-rotate</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Jawna zmiana generacji, przetestowana end-to-end na prawdziwym repozytorium FSFS; świadomie nieplanowana — uruchomienie jest decyzją eksploatacyjną.</span></div>
-<p><code>filees-rotate</code> wykonuje <strong>jawną zmianę generacji</strong> gorącego repozytorium: nowa generacja dostaje <em>nowy UUID</em> i zaczyna od r1 = kompletnego dumpa starego HEAD (w tym wersjonowanych właściwości takich jak <code>svn:needs-lock</code>), dziedziczy <code>conf/</code> i <code>hooks/</code> jawnie i jest weryfikowana (<code>svnadmin verify</code> plus porównanie drzewa) przed atomową zamianą. Stara generacja staje się zamrożonym, zablokowanym na commity archiwum FSFS z manifestem historii i <code>meta.json</code> zapisującym zmianę UUID — to sygnał do ponownego zaopatrzenia klientów, bo istniejące kopie robocze z założenia nie przeżywają zmiany generacji.</p>
+<h2 id="ops-rotate">Wnętrze filees-rotate</h2>
+<p><code>filees-rotate</code> jawnie zmienia generację aktywnego repozytorium. Nowa generacja otrzymuje nowy UUID i zaczyna od rewizji 1 zawierającej pełny zrzut poprzedniego <code>HEAD</code>, wraz z właściwościami wersjonowanymi, takimi jak <code>svn:needs-lock</code>. Konfiguracja i skrypty przechwytujące są kopiowane jawnie, a nowe repozytorium jest sprawdzane przez <code>svnadmin verify</code> i porównanie drzew przed atomową zamianą. Stara generacja staje się zamrożonym archiwum FSFS, w którym zapis zatwierdzeń jest zablokowany. Zmiana UUID wymaga utworzenia nowych kopii roboczych klientów.</p>
 <pre><code># Oceń wyłącznie wyzwalacze (rozmiar po pack albo wiek svn:date r1):
 filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
 # Rotuj, gdy odpali się wyzwalacz; progi są konfigurowalne i walidowane:
@@ -265,81 +257,71 @@ filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
 # Ograniczony dump zapasowy ostatnich N rewizji przed HEAD (nigdy
 # druga pełna kopia historii; kanoniczne jest zamrożone archiwum FSFS):
 filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
-<p>Kontrakt bezpieczeństwa: flock wyklucza równoległe uruchomienia; repo i archiwum muszą dzielić system plików (zamiana to rename); commity blokuje na czas trwania tymczasowy hook <code>pre-commit</code>; rotacja <em>odmawia</em> działania, gdy istnieją aktywne locki (żywe paszporty edycji), chyba że jawnie podano <code>-break-locks</code>; każda awaria przed zamianą przywraca repozytorium w stanie zastanym.</p>
-<div class="warn"><strong>Kiedy w ogóle rotować:</strong> dla profilu FileES wyłącznie dołączającego głębokość repozytorium nie psuje wydajności, a binarne delty FSFS plus rep-sharing sprawiają, że wzrost śledzi dane <em>unikalne</em>, nie liczbę rewizji. Rotacja opłaca się wyłącznie jako narzędzie retencji i warstwowania (SVN nie ma <code>obliterate</code>) — zobacz werdykt w <code>concepts/SVN_ROTATOR_CONCEPT_V2.md</code> §7, zanim cokolwiek zaplanujesz.</div>
-
-<h2 id="ops-realm-removal">Protokół usunięcia strefy</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Dziennik, OTP, executor, manifest odtwarzania, rejestr kluczy, transport SSH odtwarzania, przepływ GUI z generowaniem zestawu odtwarzania oraz żądanie wymazania danych są zaimplementowane i ćwiczone end-to-end na referencyjnej VM: wiele aktywacji, własne i obce granty, retencja 0 i &gt;0, sprawdzenia niezmienników (reports/REALM_REMOVAL_RECOVERY_E2E_2026-08-01.md).</span></div>
-<p>Usunięcie udziału FileES jest w zakresie strefy i nieodwracalne dla żywego dostępu. To nie to samo co deaktywacja jednej instalacji — zobacz tabelę w <a href="user-guide.html#ch2-gui">§2.6</a>. Kontrakt projektu jest w <code>concepts/REALM_DETACH_AND_ERASURE_CONCEPT.md</code>.</p>
+<p>Zasady bezpieczeństwa: <code>flock</code> wyklucza równoległe uruchomienia; aktywne repozytorium i archiwum muszą znajdować się na tym samym systemie plików, aby podmiana mogła użyć atomowej zmiany nazwy; na czas operacji zatwierdzenia blokuje tymczasowy skrypt <code>pre-commit</code>. Rotacja odmawia działania przy aktywnych blokadach, chyba że administrator jawnie poda <code>-break-locks</code>. Każda awaria przed podmianą pozostawia dotychczasowe repozytorium aktywne.</p>
+<div class="warn">Rotacja ma sens jako narzędzie retencji i warstwowania danych. W profilu FileES, w którym historia jest głównie dopisywana, sama liczba rewizji nie jest powodem do rotacji: FSFS korzysta z delt binarnych i współdzielenia reprezentacji, więc wzrost zajętości zależy przede wszystkim od ilości nowych danych.</div>
+<h2 id="ops-realm-removal">Protokół usunięcia strefy</h2>
+<p>Usunięcie udziału FileES dotyczy całej strefy i nieodwracalnie odbiera bieżący dostęp. Nie jest tym samym co dezaktywacja jednej instalacji; różnicę pokazuje tabela w §2.6.</p>
 <h4>Wyprowadzenie zakresu</h4>
-<p>Worker wyprowadza docelową strefę wyłącznie z uwierzytelnionej sesji. Żaden ładunek klienta nie nazywa strefy, repozytorium ani innej instalacji. Z kanonicznej kopii roboczej usługowej serwer robi snapshot: każdej aktywnej instalacji tej strefy, każdego repozytorium, którego <code>owner_realm_id</code> to ta strefa (te są usuwane), oraz każdego obcego repozytorium, do którego strefa ma grant (grant jest wycofywany, repozytorium właściciela nietknięte). Wyprowadzenie zakresu jest fail-closed: nieczytelna projekcja klienta przerywa żądanie, zamiast po cichu je zwężać.</p>
+<p>Proces wykonawczy ustala docelową strefę wyłącznie na podstawie uwierzytelnionej sesji. Żądanie klienta nie wskazuje strefy, repozytorium ani innej instalacji. Na podstawie kanonicznej kopii roboczej repozytorium usługowego serwer ustala wszystkie aktywne instalacje tej strefy, repozytoria będące jej własnością oraz uprawnienia do repozytoriów należących do innych stref. Repozytoria własne są usuwane, a uprawnienia do cudzych repozytoriów cofane bez naruszania danych właściciela. Jeżeli projekcji klienta nie da się poprawnie odczytać, operacja jest odrzucana zamiast wykonywać się na niepełnym zakresie.</p>
 <h4>Stany</h4>
 <pre><code>awaiting_confirmation --OTP--&gt; deleting --&gt; recovery_ready
                                     --&gt; revoke_all_clients --&gt; completed
        |
        +--&gt; expired      (TTL elapsed, or attempts exhausted)</code></pre>
-<p>OTP jest pepperowany i przechowywany wyłącznie jako skrót, porównywany w stałym czasie, jednorazowy, ograniczony liczbą prób i związany TTL. Niepowodzenie potwierdzenia zostawia granty, repozytoria i poświadczenia nietknięte. Odwołanie instalacji strefy jest świadomie <em>ostatnią</em> granicą: do tego momentu przerwaną operację może jeszcze wznowić uwierzytelniony klient tej samej strefy, a wznowienie nigdy nie poszerza snapshotu ani nie produkuje drugiego dumpa.</p>
-<div class="note"><strong>Dostawa poczty:</strong> OTP potwierdzenia jest kolejkowany w trwałym outboxie i wysyłany przez <code>filees-mail</code>. Trigger, który opróżnia ten outbox natychmiast po akcji płaszczyzny sterowania, działa w procesie rodzica po zrzuceniu uprawnień <code>proc</code>/<code>exec</code> i nie próbuje ponownie narzucić zablokowanego <code>unveil</code> — naprawione i pokryte testem regresji natywnie na OpenBSD 7.9 (dawniej ustalenie B w <code>reports/CODE_REVIEW_POST_AUDIT_r280_r318_2026-07-29.md</code>, zamknięte według <code>todo-control/plan/EXECUTION_ORDER.md</code> §1). Brakującą pocztę OTP nadal należy traktować jako problem dostawy do zbadania, a nie ponawiać w milczeniu w nieskończoność.</div>
+<p>Kod OTP jest przechowywany wyłącznie w postaci skrótu z dodatkowym sekretem serwera, porównywany w stałym czasie, jednorazowy, ograniczony liczbą prób i czasem ważności. Nieudane potwierdzenie nie zmienia uprawnień, repozytoriów ani poświadczeń. Odwołanie instalacji strefy następuje na końcu: do tego momentu przerwaną operację może wznowić uwierzytelniony klient tej samej strefy, bez rozszerzania wcześniej ustalonego zakresu ani tworzenia drugiego zrzutu.</p>
+<div class="note">Kod OTP potwierdzający operację trafia do trwałej kolejki poczty wychodzącej i jest wysyłany przez filees-mail. Brak wiadomości OTP należy traktować jako błąd dostawy do zbadania, a nie jako powód do nieskończonego ponawiania wysyłki.</div>
 <h4>Archiwa odtwarzania</h4>
-<p>Przy dodatniej retencji usunięcie produkuje jeden zweryfikowany dump SVN na każde własne repozytorium, każdy ze skrótem SHA-256, oraz manifest je opisujący. Manifest jest neutralny wobec capability: <code>archive_id</code> jest nieprzezroczystym UUID i nigdy nie jest interpretowany jako ścieżka systemu plików. Obowiązują dwa niezależne okna — <code>download_until</code>, po którym archiwów nie da się już pobrać, oraz <code>admin_grace_until</code>, po którym samo pokwitowanie jest sprzątane. Retencja zero oznacza, że dump w ogóle nie jest zapisywany, a interfejs nie może obiecywać odtwarzalnych danych w takim przypadku.</p>
-<p>Dostęp do tych archiwów jest jedynym przeznaczeniem konta <code>_filees-recovery</code>. Klient przedstawia klucz odtwarzania Ed25519 per operacja; osobny helper <code>filees-recovery-authorize</code> — świadomie oddzielony od wejścia sesji, żeby wyszukiwanie klucza i usługa sesji były odrębnymi plikami wykonywalnymi — odszukuje go w rejestrze kluczy, odmawia po upływie <code>download_until</code> i emituje linię authorized-keys z <code>restrict</code>, której wymuszone polecenie jest związane z tym jednym ID operacji. Serwowany protokół to dokładnie dwa czasowniki:</p>
+<p>Przy dodatniej retencji usunięcie produkuje jeden zweryfikowany zrzut SVN na każde własne repozytorium, każdy ze skrótem SHA-256, oraz manifest je opisujący. Manifest nie interpretuje identyfikatora archiwum jako uprawnienia ani ścieżki: <code>archive_id</code> jest nieprzezroczystym UUID i nigdy nie jest interpretowany jako ścieżka systemu plików. Obowiązują dwa niezależne okna — <code>download_until</code>, po którym archiwów nie da się już pobrać, oraz <code>admin_grace_until</code>, po którym samo pokwitowanie jest sprzątane. Retencja zero oznacza, że zrzut w ogóle nie jest zapisywany, a interfejs nie może obiecywać odtwarzalnych danych w takim przypadku.</p>
+<p>Konto <code>_filees-recovery</code> służy wyłącznie do pobierania archiwów po usunięciu strefy. Klient przedstawia klucz odtwarzania Ed25519 przypisany do jednej operacji. Program <code>filees-recovery-authorize</code> odszukuje go w rejestrze, odmawia dostępu po upływie <code>download_until</code> i zwraca ograniczony wpis <code>authorized_keys</code> związany wyłącznie z identyfikatorem tej operacji. Protokół sesji udostępnia dokładnie dwa czasowniki:</p>
 <pre><code>list &lt;operation_id&gt;
 get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
-<p>Wejście działa tylko do odczytu (<code>stdio rpath</code>) i nigdy nie widzi klucza prywatnego. Klucz odtwarzania nie daje dostępu SVN, powłoki, ponownego onboardingu ani dostępu do żadnej innej operacji albo repozytorium.</p>
+<p>Wejście działa tylko do odczytu (<code>stdio rpath</code>) i nigdy nie widzi klucza prywatnego. Klucz odtwarzania nie daje dostępu SVN, powłoki, ponownej aktywacji klienta ani dostępu do żadnej innej operacji albo repozytorium.</p>
 <div class="note"><strong>Nie mylić z <a href="#ch4-recovery">§4.5 Odtwarzanie</a></strong>, które dotyczy odtwarzania uszkodzonego repozytorium SVN na działającym serwerze. Ta sekcja dotyczy pobierania danych po tym, jak strefa świadomie usunęła swój udział.</div>
-
 <h2 id="ops-ps-model">Model zaufania udziałów publicznych</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane na żywo</span><span>Kanoniczny endpoint HTTPS, FastCGI links, uniksowy backchannel i izolacja authority odebrane na OpenBSD.</span></div>
-<p>Udziały publiczne to kanał dystrybucji, nie druga ścieżka zapisu. Kanał przyjęcia (Upload Channel) jest osobnym pionem i nie może współdzielić tego procesu ani tych poświadczeń.</p>
+<p>Udziały publiczne służą wyłącznie do dystrybucji danych i nie tworzą drugiej ścieżki zapisu. Kanał przyjmowania plików jest odrębnym mechanizmem i nie współdzieli z udziałami publicznymi procesu ani poświadczeń.</p>
 <p>Trzy procesy, trzej właściciele:</p>
 <div class="table-wrap"><table>
 <tr><th>Proces</th><th>Właściciel</th><th>Może widzieć</th><th>Nie wolno mu widzieć</th></tr>
-<tr><td><code>filees-links</code></td><td><code>_filees-links</code></td><td>żądanie publiczne, token wizyty, prywatny cache</td><td>poświadczeń SVN, sekretu SMTP, adresów odbiorców</td></tr>
+<tr><td><code>filees-links</code></td><td><code>_filees-links</code></td><td>żądanie publiczne, token wizyty, prywatna pamięć podręczna</td><td>poświadczeń SVN, sekretu SMTP, adresów odbiorców</td></tr>
 <tr><td><code>filees-public-authority</code></td><td><code>_filees-state</code></td><td>rekordy kanałów, <code>svnlook</code>, skróty OTP</td><td>hasła SMTP (trzyma je wyłącznie dziecko pocztowe)</td></tr>
-<tr><td><code>filees-mail public-loop</code></td><td>dziecko authority</td><td>sekret SMTP i outbox udziałów publicznych</td><td>strumienia żądań HTTP</td></tr>
+<tr><td><code>filees-mail public-loop</code></td><td>proces potomny programu autoryzującego</td><td>sekret SMTP i kolejka poczty wychodzącej udziałów publicznych</td><td>strumienia żądań HTTP</td></tr>
 </table></div>
-<p>TLS należy do <code>relayd</code>/<code>httpd</code>. FileES nigdy nie osadza stosu TLS. Publiczny HTML nie używa JavaScriptu, ciasteczek ani zasobów zewnętrznych. Branding to system <code>filees:space</code> plus kolor wiodący i logo właściciela już zapisane na serwerze.</p>
+<p>TLS obsługują <code>relayd</code> i <code>httpd</code>; FileES nie zawiera własnego stosu TLS. Publiczne strony HTML nie używają JavaScriptu, ciasteczek ani zasobów zewnętrznych. Identyfikacja wizualna obejmuje wygląd FileES oraz zapisane na serwerze logo i kolor właściciela.</p>
 <div class="decision">
 <div class="decision-head">Uzasadnienie / pchnięcie z authority, nigdy pobranie ze strefy publicznej</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">Proces publiczny prosi o <code>(kanał, public_id, rewizja)</code>; authority rozwiązuje mapę i pcha liść.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">Proces publiczny prosi o <code>(kanał, public_id, rewizja)</code>; proces autoryzujący rozwiązuje mapę i przekazuje wskazany obiekt.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Strefa publiczna zostaje bez poświadczeń, a kosztowny <code>svnlook</code> zostaje na koncie stanu.</div>
 <div class="decision-label">Odrzucone</div><div class="decision-value">Materializacja opublikowanego drzewa; dawanie linksowi kopii roboczej repozytorium serwisowego; osadzanie TLS.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Backchannel i prywatny cache są obowiązkowe przy dużych binariach.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Backchannel i prywatna pamięć podręczna są obowiązkowe przy dużych binariach.</div>
 </div>
 </div>
-
-<h2 id="ops-ps-url">Kanoniczny URL i allowlista statyczna</h2>
+<h2 id="ops-ps-url">Kanoniczny adres udziału publicznego</h2>
 <p>Publiczny adres jest zawsze:</p>
 <pre><code>https://&lt;domena-serwera&gt;/&lt;alias-strefy&gt;/&lt;slug&gt;</code></pre>
-<p>Statyczne ścieżki document root to jawna allowlista: <code>/</code>, <code>/index.html</code>, <code>/favicon.ico</code>, <code>/robots.txt</code>, <code>/.well-known/acme-challenge/*</code> i <code>/assets/*</code>. Podręcznik HTML mieszka w tym ostatnim prefiksie (<code>/assets/en/…</code> i <code>/assets/pl/…</code>). Wszystko inne jest wirtualną lokalizacją FileES. Dodanie strefy nie może tworzyć katalogu ani przeładowywać <code>httpd</code>. Nowa strona podręcznika to tylko nowy plik pod <code>/assets/</code>. Zobacz <a href="#ops-htdocs">publikację tego zestawu HTML</a>.</p>
-<p>Nieznane, cofnięte i usunięte adresy dzielą jedno obrandowane HTTP 404, które nie odbija ścieżki, aliasu, slugu ani powodu. <code>robots.txt</code> to statyczne <code>Disallow: /</code>.</p>
-
+<p>Nieznane, cofnięte i usunięte adresy zwracają tę samą stronę HTTP 404 z identyfikacją wizualną, bez ujawniania żądanej ścieżki, aliasu, nazwy udziału ani przyczyny. <code>robots.txt</code> zawiera <code>Disallow: /</code>.</p>
 <h2 id="ops-ps-map">object_map a rewizja</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Model z 2026-08-14 był przejściowy; skład jest wyprowadzany od r601 (patrz aktualizacja niżej).</span></div>
-<p>Są dwa zegary, oba wyprowadzane przy każdej nowej wizycie dla kanału bez <code>do-not-follow</code>:</p>
+<p>Dla kanału śledzącego bieżący stan repozytorium obowiązują dwa niezależne elementy: rewizja wybrana dla danej wizyty oraz skład plików odczytany z tej samej rewizji.</p>
 <ul>
-<li><strong>Rewizja</strong> jest wybierana przy każdej wizycie: authority czyta HEAD i zamraża tę rewizję na tę jedną wizytę (token <code>?v=…</code>).</li>
+<li><strong>Rewizja</strong> jest wybierana przy każdej wizycie: proces autoryzujący odczytuje HEAD i zamraża tę rewizję na tę jedną wizytę (token <code>?v=…</code>).</li>
 <li><strong>Skład</strong> jest wyprowadzany z żywego drzewa SVN pod zakresem kanału, dokładnie z tej samej, właśnie zamrożonej rewizji — nie z <code>object_map</code> zapisanej przy <code>CREATE</code>/<code>UPDATE</code>. Plik dodany później do folderu pojawia się w kolejnej nowej wizycie; usunięty znika; zmiana nazwy jest widoczna pod nową nazwą.</li>
 </ul>
-<p>To, co jest zamrożone, to konkretna, już wydana wizyta: raz wygenerowany URL z <code>?v=…</code> nie dogania późniejszych zmian, nawet tego samego pliku. Kanał z jawną, dodatnią rewizją (<code>do-not-follow</code>) zamraża każdą wizytę na tym jednym zrzucie na stałe, niezależnie od HEAD. Pusty wybrany folder jest legalnym placeholderem. Dlatego kopia pulpitu mówi, że udział nie jest żywym lustrem folderu — to opis wizyty, nie kanału śledzącego HEAD.</p>
+<p>Zamrożona jest konkretna, już wydana wizyta. Raz wygenerowany adres z <code>?v=…</code> nie śledzi późniejszych zmian, nawet tego samego pliku. Kanał z jawnie wskazaną rewizją (<code>do-not-follow</code>) zawsze używa tego samego obrazu, niezależnie od późniejszego <code>HEAD</code>. Pusty wybrany folder jest dozwolony. Udział nie jest więc żywym lustrem folderu: każda wizyta wskazuje konkretny obraz danych.</p>
 <div class="note">Deterministyczny <code>public_id</code> jest zaimplementowany: <code>Resolver.derivedPublicID</code> (<code>public-shares/authority/resolver.go</code>) liczy HMAC-SHA256 sekretu kanału (<code>FrostKey</code>) po <code>channel_id</code> i ścieżce repo, obcięty do 128 bitów. Ścieżka już obecna w manifeście z <code>CREATE</code>/<code>UPDATE</code> zachowuje swój oryginalny, wcześniej rozesłany identyfikator; dopiero ścieżka nowa dla danego kanału dostaje identyfikator wyprowadzony HMAC-iem — rewizjoniezależny, więc też stabilny w kolejnych wizytach.</div>
-
 <h2 id="ops-ps-access">Kanał otwarty, hasło i OTP odbiorcy</h2>
-<p><strong>Kanał otwarty.</strong> Opcjonalne hasło Argon2id. Udane przejście bramki wydaje dwunastogodzinny podpisany URL wizyty. Weryfikacja hasła jest zserializowana globalnie do jednej równoległej operacji Argon2. Ekran hasła pokazuje znak FileES, logo właściciela i kolor wiodący; nie pokazuje aliasu, slugu ani tekstu objaśniającego.</p>
-<p><strong>Kanał zamknięty.</strong> Każdy odbiorca dostaje identyfikator zaproszenia w URL (<code>?invite=</code>; stare <code>?token=</code> działa jako alias). Identyfikator nie jest bearerem. Strona wejściowa jest bramką: odbiorca prosi o kod, authority wysyła ośmiocyfrowy OTP z pięciominutową epoką, pięcioma próbami i cooldownem ponowienia. Ponowienie w aktywnej epoce nie rotuje kodu ani nie wydłuża TTL. Po poprawnym OTP proces publiczny dostaje wyłącznie skrót zaproszenia, UUID epoki i bezwzględny termin, po czym wydaje podpisany URL, który jest bearerem dokładnie do tego terminu. Skopiowanie URL przenosi pozostałe okno. Po wygaśnięciu ten sam URL zaproszenia wraca do bramki. Po cofnięciu jest 404.</p>
-<p>Publiczna projekcja nigdy nie zawiera adresów e-mail. Hasła i kody OTP w postaci jawnej są hashowane, zanim przekroczą IPC albo stan control-plane w SVN.</p>
-
+<p><strong>Kanał otwarty.</strong> Może być dodatkowo chroniony hasłem Argon2id. Po poprawnym przejściu bramki serwer wydaje podpisany adres wizyty ważny przez 12 godzin. Weryfikacja hasła jest celowo ograniczona do jednej równoległej operacji Argon2. Ekran hasła pokazuje znak FileES, logo właściciela i kolor wiodący, ale nie ujawnia aliasu, nazwy udziału ani dodatkowych informacji.</p>
+<p><strong>Kanał zamknięty.</strong> Każdy odbiorca otrzymuje identyfikator zaproszenia w adresie <code>?invite=</code>; starsza postać <code>?token=</code> pozostaje aliasem. Sam identyfikator zaproszenia nie daje dostępu do danych. Odbiorca żąda kodu, a serwer wysyła ośmiocyfrowy OTP ważny przez 5 minut i maksymalnie 5 prób. Ponowienie wysyłki w tej samej epoce nie zmienia kodu ani czasu ważności i podlega minimalnemu odstępowi między próbami. Po poprawnym OTP proces publiczny otrzymuje wyłącznie skrót zaproszenia, identyfikator epoki i termin ważności, po czym wydaje podpisany adres dostępu ważny do tego terminu. Skopiowanie tego adresu przenosi pozostały czas dostępu. Po wygaśnięciu ten sam adres zaproszenia wraca do bramki; po cofnięciu zwraca 404.</p>
+<p>Publiczna projekcja nigdy nie zawiera adresów poczty. Hasła i kody OTP są przekształcane do postaci skrótu przed przekroczeniem granicy IPC lub zapisaniem w stanie warstwy sterującej w SVN.</p>
 <h2 id="ops-ps-ops">Eksploatacja serwera udziałów</h2>
 <p>Udziały publiczne instaluje się wyłączone. Po edycji <code>server.json</code> i <code>public-links.json</code>:</p>
-<pre><code># scalić openbsd/public-links.httpd.conf do bloku originu
+<pre><code># scalić openbsd/public-links.httpd.conf do bloku serwera źródłowego
 doas rcctl enable filees_public_authority filees_links
 doas rcctl start filees_public_authority
 doas rcctl start filees_links
 doas rcctl check filees_public_authority filees_links
 doas httpd -n &amp;&amp; doas rcctl reload httpd</code></pre>
-<p>Uruchom authority przed links. Authority jest niezdrowe, gdy umrze jego dziecko pocztowe; sygnał stopu zamyka HTTP, kończy dziecko i czeka, więc <code>rcctl restart</code> nie może zostawić osieroconego pollera. Zobacz <a href="man-pages.html">filees-public-authority(8)</a> i <a href="man-pages.html">filees-links(8)</a>.</p>
-
-<h2 id="ops-sshd">OpenBSD sshd Match User</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD</span><span>Trzy konta protokołu, wymuszone polecenia i polityka forwardingu zweryfikowane natywnie.</span></div>
+<p>Uruchom <code>filees-public-authority</code> przed <code>filees-links</code>. Jeżeli proces pocztowy nadzorowany przez <code>filees-public-authority</code> zakończy działanie, cały proces autoryzujący jest uznawany za niesprawny. Przy zatrzymaniu usługi kończy obsługę HTTP, zatrzymuje proces pocztowy i czeka na jego zakończenie, dzięki czemu <code>rcctl restart</code> nie pozostawia osieroconego procesu. Szczegóły poleceń: <code>filees-public-authority(8)</code> i <code>filees-links(8)</code>.</p>
+<h2 id="ops-sshd">Reguły Match User w sshd na OpenBSD</h2>
 <p>Efektywne bloki <code>Match User</code> nakładane przez <code>install-ssh.sh</code> to:</p>
 <pre><code>Match User _filees-onboard
     AuthenticationMethods publickey
@@ -395,9 +377,8 @@ Match User _filees-client
 
 Match all</code></pre>
 <p>Wartownik <code>Match all</code> jest wymagany przed każdą dyrektywą <code>Include</code> w głównym <code>sshd_config</code>, żeby bloki match nie wyciekały do dołączanych plików. Instalator obsługuje to automatycznie.</p>
-<div class="note"><strong>Stały port:</strong> port tunelu zwrotnego to jedna statyczna wartość (<code>127.0.0.1:42000</code> domyślnie; konfigurowalne jako <code>reverse_port_first</code>/<code>reverse_port_last</code> w <code>server.json</code>). To szereguje rzadkie wdrożenia. Bazowy <code>sshd_config</code> nie potrafi uzależnić <code>PermitListen</code> od wyniku BSD Auth, więc dynamiczny port per operacja wymagałby własnego listenera, którego FileES świadomie unika.</div>
-
-<h2 id="ops-serverjson">Referencja server.json</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Kontrakt konfiguracji używany przez bieżące narzędzia serwera.</span></div>
+<div class="note"><strong>Stały port:</strong> port tunelu zwrotnego to jedna statyczna wartość (<code>127.0.0.1:42000</code> domyślnie; konfigurowalne jako <code>reverse_port_first</code>/<code>reverse_port_last</code> w <code>server.json</code>). To szereguje rzadkie wdrożenia. Bazowy <code>sshd_config</code> nie potrafi uzależnić <code>PermitListen</code> od wyniku BSD Auth, więc dynamiczny port przypisany do jednej operacji wymagałby własnego proces nasłuchującya, którego FileES świadomie unika.</div>
+<h2 id="ops-serverjson">Referencja server.json</h2>
 <p>Po uruchomieniu instalatora edytuj <code>/etc/filees/server.json</code>:</p>
 <pre><code>{
   "schema": "filees.server-toolchain/v1",
@@ -444,29 +425,28 @@ Match all</code></pre>
 <div class="table-wrap"><table>
 <tr><th>Pole</th><th>Opis</th></tr>
 <tr><td><code>schema</code></td><td>Musi być <code>filees.server-toolchain/v1</code></td></tr>
-<tr><td><code>root</code></td><td>Ścieżka bezwzględna do prywatnego katalogu stanu (bilety, operacje, audyt)</td></tr>
-<tr><td><code>otp_pepper_file</code></td><td>Ścieżka bezwzględna do pliku z co najmniej 32 bajtami sekretnego peppera zakodowanego w base64</td></tr>
+<tr><td><code>root</code></td><td>Ścieżka bezwzględna do prywatnego katalogu stanu (zlecenia, operacje, dziennik zdarzeń)</td></tr>
+<tr><td><code>otp_pepper_file</code></td><td>Ścieżka bezwzględna do pliku z co najmniej 32 bajtami sekretnego sekretu zakodowanego w base64</td></tr>
 <tr><td><code>worker_private_key_file</code></td><td>Ścieżka bezwzględna do prywatnego klucza Ed25519 używanego przez <code>filees-worker</code> (tryb 0600)</td></tr>
 <tr><td><code>worker_public_key_file</code></td><td>Ścieżka bezwzględna do odpowiadającego klucza publicznego w formacie authorized_keys</td></tr>
-<tr><td><code>activation</code></td><td>Bezwzględne prywatne ścieżki runtime, repozytorium usług/WC, nazwa repozytorium i stałe ścieżki wykonywalne client-entry/SVN</td></tr>
+<tr><td><code>activation</code></td><td>Bezwzględne prywatne ścieżki danych roboczych, repozytorium usług/WC, nazwa repozytorium i stałe ścieżki do programów client-entry/SVN</td></tr>
 <tr><td><code>repositories.root</code></td><td>Bezwzględny korzeń repozytoriów danych nazwanych UUID; w razie potrzeby użyj dedykowanego montowania magazynu. Domyślnie <code>/var/filees/repositories</code>.</td></tr>
 <tr><td><code>repositories.results_root</code></td><td>Bezwzględny korzeń trwałych rekordów operacji na repozytoriach; jest oddzielony od magazynu danych FSFS.</td></tr>
 <tr><td><code>repositories.url_prefix</code></td><td>Kanoniczny publiczny prefiks URL repozytorium. Musi używać ograniczonej formy <code>svn+ssh://_filees-data@host/</code>, bez jawnego portu.</td></tr>
 <tr><td><code>repositories.deletion_archive_root</code></td><td>Opcjonalna bezwzględna lokalizacja archiwum zweryfikowanych zrzutów usunięcia. Jeśli pominięta, jest pod <code>results_root</code>.</td></tr>
-<tr><td><code>repositories.whale_root</code></td><td>Opcjonalny bezwzględny korzeń operacyjnych ładunków transportu Whale (spool, journal), oddzielony od <code>results_root</code>. Jeśli pominięty, domyślnie <code>results_root/whale</code>.</td></tr>
-<tr><td><code>operation_ttl</code></td><td>Czas życia każdej operacji onboardingu, np. <code>30m</code></td></tr>
+<tr><td><code>repositories.whale_root</code></td><td>Opcjonalny bezwzględny korzeń operacyjnych danych roboczych transportu Whale (kolejka robocza i dziennik), oddzielony od <code>results_root</code>. Jeśli pominięty, domyślnie <code>results_root/whale</code>.</td></tr>
+<tr><td><code>operation_ttl</code></td><td>Czas życia każdej operacji aktywacji klienta, np. <code>30m</code></td></tr>
 <tr><td><code>otp_attempts</code></td><td>Maksymalna liczba błędnych prób OTP przed wyczerpaniem</td></tr>
 <tr><td><code>reverse_port_first</code></td><td>Pierwszy (albo jedyny) dozwolony port tunelu zwrotnego</td></tr>
 <tr><td><code>reverse_port_last</code></td><td>Ostatni dozwolony port (ta sama wartość co pierwsze pole dla jednego stałego portu)</td></tr>
-<tr><td><code>smtp.address</code></td><td>Adres smarthosta jako <code>host:port</code></td></tr>
-<tr><td><code>smtp.tls</code></td><td><code>starttls</code>, <code>implicit</code> albo <code>none</code> (none tylko na loopback)</td></tr>
+<tr><td><code>smtp.address</code></td><td>Adres przekaźnika SMTP w postaci host:port</td></tr>
+<tr><td><code>smtp.tls</code></td><td><code>starttls</code>, <code>implicit</code> albo <code>none</code> (none tylko na interfejsie lokalnym)</td></tr>
 <tr><td><code>smtp.username</code></td><td>Nazwa użytkownika SMTP AUTH; zostaw puste dla przekaźnika bez uwierzytelnienia</td></tr>
 <tr><td><code>smtp.password_file</code></td><td>Ścieżka bezwzględna do pliku z hasłem SMTP (tryb 0600); wymagana, gdy ustawiono <code>username</code></td></tr>
 </table></div>
-<p>Dla pliku konfiguracyjnego zalecany jest tryb 0600; loader wymaga zwykłego pliku niezapisywalnego przez grupę ani innych. Wszystkie wartości ścieżek muszą być bezwzględne. Po edycji zweryfikuj niesekretną ścieżkę polecenia:</p>
+<p>Dla pliku konfiguracyjnego zalecany jest tryb 0600; program wczytujący wymaga zwykłego pliku niezapisywalnego przez grupę ani innych. Wszystkie wartości ścieżek muszą być bezwzględne. Po edycji zweryfikuj niesekretną ścieżkę polecenia:</p>
 <pre><code>doas -u _filees-state filees-admin -config /etc/filees/server.json ticket list</code></pre>
-
-<h2 id="ops-keys">Generowanie kluczy</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Generowanie klucza workera i rejestracja klucza instalacyjnego są zaimplementowane; dystrybucja pinu na produkcji pozostaje sprawą wdrożenia.</span></div>
+<h2 id="ops-keys">Generowanie kluczy</h2>
 <p>Instalator generuje wszystkie wymagane klucze automatycznie. Jeśli trzeba je wygenerować ponownie:</p>
 <pre><code># Regenerate OTP pepper (invalidates all pending OTPs)
 umask 077
@@ -476,16 +456,16 @@ openssl rand -base64 32 &gt; /etc/filees/otp.pepper
 umask 077
 ssh-keygen -q -t ed25519 -N '' -C filees-worker-v1 \
   -f /etc/filees/worker_ed25519</code></pre>
-<div class="warn">Ponowne wygenerowanie peppera OTP unieważnia wszystkie zaległe OTP. Każdy klient w środku onboardingu będzie potrzebował nowego biletu. Ponowne wygenerowanie pary kluczy workera wymaga zaktualizowania przypiętego klucza publicznego na wszystkich klientach przed następną próbą wdrożenia.</div>
+<div class="warn">Ponowne wygenerowanie sekretu OTP unieważnia wszystkie zaległe OTP. Każdy klient w środku aktywacji klienta będzie potrzebował nowego biletu. Ponowne wygenerowanie pary kluczy procesu wykonawczego wymaga zaktualizowania przypiętego klucza publicznego na wszystkich klientach przed następną próbą wdrożenia.</div>
 <h4>Konfiguracja repozytorium usług</h4>
 <p>Skrypt integracji OpenBSD wykonuje zaimplementowaną konfigurację aktywacji:</p>
 <ol>
 <li>Tworzy <code>/var/filees/service-repo</code> i początkową ścieżkę <code>/proof</code>.</li>
-<li>Checkoutuje <code>/var/filees/service-wc</code> do commitów aktywacji i odwołania.</li>
+<li>Pobiera kopię roboczą <code>/var/filees/service-wc</code> do zatwierdzeń aktywacji i odwołania.</li>
 <li>Podłącza svnserve do <code>/var/filees/activation/service.authz</code>; menedżer aktywacji atomowo regeneruje authz i authorized keys.</li>
-<li>Commituje <code>format.json</code>, strefę, klienta, projekcję i audyt przy pierwszym udanym dowodzie posiadania.</li>
+<li>zatwierdza <code>format.json</code>, strefę, klienta, projekcję i dziennik zdarzeń przy pierwszym udanym dowodzie posiadania.</li>
 </ol>
-<p>To jest ukończony pion aktywacji. Ogólne tworzenie repozytoriów danych, preflight magazynu, granty i orkiestracja <code>INITIAL_COMMIT</code> są teraz też podłączone do workera płaszczyzny sterowania po stronie serwera (<code>pkg/repoworker</code>, wysyłany przez tę samą sesję SSH z wymuszonym poleceniem) i zweryfikowane end-to-end, w tym ścieżka odmowy <code>STORAGE_INSUFFICIENT</code> na fizycznie ograniczonym systemie plików — zobacz maszynę stanów provisioningu w §2.3.</p>
+<p>Aktywacja klienta obejmuje również tworzenie repozytoriów danych, sprawdzenie dostępnego miejsca, nadawanie uprawnień i wykonanie <code>INITIAL_COMMIT</code> przez uwierzytelniony proces wykonawczy po stronie serwera. Brak miejsca jest zwracany jako <code>STORAGE_INSUFFICIENT</code> wraz z wymaganą i dostępną pojemnością; stan operacji można następnie sprawdzić przez <code>repo.lifecycle_status</code>.</p>
 <h4>Uruchamianie poleceń administracyjnych</h4>
 <p>Polecenia administracyjne i jednorazowe polecenia serwera, które czytają albo mutują prywatny stan, uruchamia się jako <code>_filees-state</code>:</p>
 <pre><code>doas -u _filees-state filees-admin ticket create user@example.com
@@ -493,26 +473,8 @@ doas -u _filees-state filees-admin ticket list
 doas -u _filees-state filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
 doas -u _filees-state filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "lost device"
 doas -u _filees-state filees-mail send</code></pre>
-
-<h2 id="ops-htdocs">Publikacja podręcznika HTML</h2>
-<div class="section-meta"><span class="status status-implemented">Zaimplementowany układ</span><span>Używa istniejącej allowlisty <code>/assets/*</code>. Document root to kopia robocza <code>^/manual</code>.</span></div>
-<p>Na <code>manual.filees.space</code> document root i Udziały publiczne dzielą jeden blok <code>server</code>. <code>httpd</code> najpierw dopasowuje statyczną allowlistę, potem resztę ścieżek wysyła do <code>filees-links</code>. Wielostronicowy podręcznik nie może więc zajmować sąsiednich URL-i w rodzaju <code>/architecture.html</code>. Te ominęłyby allowlistę i stałyby się obrandowanymi 404 FastCGI.</p>
-<p>Poddrzewo Subversion <code>svn://cloud.atmprojekt.pl/SYNCSHARE/manual</code> <em>jest</em> obrazem document root. Checkoutuj je w miejscu i publikuj przez <code>svn update</code>:</p>
-<pre><code>doas svn checkout svn://cloud.atmprojekt.pl/SYNCSHARE/manual /var/www/htdocs
-doas svn update /var/www/htdocs</code></pre>
-<pre><code>/var/www/htdocs/               ← kopia robocza ^/manual
-├── .svn/                      ← nie na statycznej allowliście; FastCGI 404
-├── index.html
-├── favicon.ico
-├── robots.txt
-└── assets/
-    ├── css/manual.css
-    ├── en/*.html              ← User + Tech, w tym operations.html
-    └── pl/*.html</code></pre>
-<p>Nie checkoutuj drzewa jako <code>/var/www/htdocs/manual</code> — wtedy <code>/manual/index.html</code> stałaby się wirtualną ścieżką FileES. Nie uruchamiaj <code>rcctl reload httpd</code>. Ignoruj <code>.well-known</code> w tej kopii roboczej, żeby ACME zostało lokalne. Graf procesów jest w <a href="architecture.html#server-graph">wykresie zależności serwera</a>.</p>
-
 <h2 id="ops-config">Referencja <code>config.json</code> klienta</h2>
-<p>Demon nadal czyta <code>config.json</code>. Codzienne Ustawienia nie zastępują tego kontraktu. Howto User jest w <a href="user-guide.html#ch2-config">§2.2</a>.</p>
+<p>Demon nadal czyta <code>config.json</code>. Codzienne Ustawienia nie zastępują tego kontraktu. instrukcja użytkownika jest w <a href="user-guide.html#ch2-config">§2.2</a>.</p>
 <pre><code>{
   "transport": {
     "identity_file": "/home/user/.local/share/filees/identity/id_ed25519",
@@ -561,44 +523,43 @@ doas svn update /var/www/htdocs</code></pre>
 <tr><th>Pole</th><th>Opis</th></tr>
 <tr><td><code>id</code></td><td>Unikalny identyfikator repozytorium (używany w logach i ścieżkach stanu)</td></tr>
 <tr><td><code>transport.identity_file</code></td><td>Bezwzględna ścieżka do klucza Ed25519 instalacji utworzonego przy aktywacji</td></tr>
-<tr><td><code>transport.known_hosts</code></td><td>Bezwzględna ścieżka do pliku przypiętego klucza hosta usługi</td></tr>
+<tr><td><code>transport.known_hosts</code></td><td>Bezwzględna ścieżka do pliku przypiętego klucza serwera usługi</td></tr>
 <tr><td><code>update.enabled</code></td><td>Włącza podpisany aktualizator pulpitu; domyślnie wyłączony</td></tr>
-<tr><td><code>update.repo_url</code></td><td>URL repozytorium wydań przez SVN, SVN+SSH albo HTTPS, bez hasła, query ani fragmentu</td></tr>
+<tr><td><code>update.repo_url</code></td><td>URL repozytorium wydań przez SVN, SVN+SSH albo HTTPS, bez hasła, parametrów zapytania ani fragmentu adresu</td></tr>
 <tr><td><code>update.channel</code></td><td>Identyfikator kanału wydań; domyślnie <code>stable</code></td></tr>
 <tr><td><code>update.component</code></td><td>Musi być <code>desktop</code> dla tego klienta</td></tr>
 <tr><td><code>update.platform</code></td><td>Musi odpowiadać bieżącemu <code>GOOS-GOARCH</code>; domyślnie ta wartość</td></tr>
-<tr><td><code>update.state_path</code></td><td>Bezwzględna prywatna ścieżka trwałego stanu high-water chroniącego przed rollbackiem</td></tr>
-<tr><td><code>update.stage_root</code></td><td>Bezwzględny prywatny katalog używany do stagingu zweryfikowanego bundla</td></tr>
+<tr><td><code>update.state_path</code></td><td>Bezwzględna prywatna ścieżka trwałego stanu znacznika najwyższej zainstalowanej wersji chroniącego przed wycofaniem</td></tr>
+<tr><td><code>update.stage_root</code></td><td>Bezwzględny prywatny katalog używany do przygotowania zweryfikowanego pakietu</td></tr>
 <tr><td><code>repo_url</code></td><td>Ograniczony URL <code>svn+ssh://_filees-client@host/...</code>; inne transporty są odrzucane</td></tr>
 <tr><td><code>local_path</code></td><td>Bezwzględna ścieżka kopii roboczej. Nie może nachodzić na inne skonfigurowane korzenie.</td></tr>
-<tr><td><code>commit_interval</code></td><td>Bazowe okno commita, np. <code>1m</code>, <code>30s</code></td></tr>
+<tr><td><code>commit_interval</code></td><td>Bazowe okno zatwierdzenia, np. <code>1m</code>, <code>30s</code></td></tr>
 <tr><td><code>watch_interval</code></td><td>Interwał skanowania systemu plików</td></tr>
 <tr><td><code>poll_interval</code></td><td>Jak często sprawdzać HEAD serwera i pobierać aktualizacje (domyślnie <code>30s</code>)</td></tr>
-<tr><td><code>max_batch_files</code></td><td>Maksimum plików na commit (katalogi dodane jako rodzice nie liczą się)</td></tr>
-<tr><td><code>max_batch_mib</code></td><td>Docelowy maksymalny rozmiar commita; pojedynczy zbyt duży plik dostaje własną partię</td></tr>
-<tr><td><code>backlog_flush_mib</code></td><td>Wymuś publikację, gdy suma w stagingu przekroczy tę wartość (musi być ≥ <code>max_batch_mib</code>)</td></tr>
+<tr><td><code>max_batch_files</code></td><td>Maksimum plików na zatwierdzenie (katalogi dodane jako rodzice nie liczą się)</td></tr>
+<tr><td><code>max_batch_mib</code></td><td>Docelowy maksymalny rozmiar zatwierdzenia; pojedynczy zbyt duży plik dostaje własną partię</td></tr>
+<tr><td><code>backlog_flush_mib</code></td><td>Wymuś publikację, gdy suma oczekujących danych przekroczy tę wartość (musi być ≥ <code>max_batch_mib</code>)</td></tr>
 <tr><td><code>shutdown_commit_timeout</code></td><td>Maksymalny czas opróżniania przy kontrolowanym zamknięciu (domyślnie <code>10m</code>)</td></tr>
-<tr><td><code>lock_first</code></td><td>Próbuj <code>svn lock</code> przed każdym commitem (wzajemnie wyklucza się z <code>edit_passports</code>)</td></tr>
-<tr><td><code>edit_passports</code></td><td>Przełącznik wyłącznie legacy/deweloperski dla ręcznie skonfigurowanego repozytorium. Repozytoria projektowane przez serwer go ignorują i używają kanonicznej, wspólnej dla repozytorium <code>editing_policy</code> (zobacz sekcję 2.5).</td></tr>
-<tr><td><code>commit_tiers</code></td><td>Interwały zależne od rozmiaru; ostatni wpis z <code>max_mb: 0</code> jest zbiorczy</td></tr>
-<tr><td><code>shout_patterns</code></td><td>Lista wyrażeń regularnych; pasujące pliki generują ticket powiadomienia</td></tr>
+<tr><td><code>lock_first</code></td><td>Próbuj <code>svn lock</code> przed każdym zatwierdzeniem (wzajemnie wyklucza się z <code>edit_passports</code>)</td></tr>
+<tr><td><code>edit_passports</code></td><td>Przełącznik wyłącznie zgodności wstecznej i testów dla ręcznie skonfigurowanego repozytorium. Repozytoria projektowane przez serwer go ignorują i używają kanonicznej, wspólnej dla repozytorium <code>editing_policy</code> (zobacz sekcję 2.5).</td></tr>
+<tr><td><code>commit_tiers</code></td><td>Odstępy zależne od rozmiaru; ostatni wpis z <code>max_mb: 0</code> jest zbiorczy</td></tr>
+<tr><td><code>shout_patterns</code></td><td>Lista wyrażeń regularnych; pasujące pliki generują powiadomienie</td></tr>
 </table></div>
 <p>Wszystkie czasy używają formatu Go: <code>30s</code>, <code>5m</code>, <code>1h30m</code>. Każde <code>local_path</code> musi być bezwzględne i bez nachodzenia. Walidacja rozwiązuje symlinki na istniejących katalogach i przerywa start demona, zanim powstanie jakikolwiek stan.</p>
-<h2 id="ops-provision">Tickety provisioningu</h2>
-<p>Akcja pulpitu to „dodaj folder”. Trwałe granice to te trzy tickety. Howto User jest w <a href="user-guide.html#ch2-firstrun">§2.3</a>.</p>
+<h2 id="ops-provision">Przygotowanie repozytorium</h2>
+<p>Akcja pulpitu to „dodaj folder”. Trwałe granice to te trzy zlecenia. instrukcja użytkownika jest w <a href="user-guide.html#ch2-firstrun">§2.3</a>.</p>
 <h4>Dodawanie lokalnego katalogu</h4>
-<p>Lokalna maszyna stanów provisioningu prowadzi poniższy proces repozytorium danych wobec uwierzytelnionego workera repozytoriów po stronie serwera (<code>pkg/repoworker</code>), który jest połączony i zweryfikowany od końca do końca — w tym ścieżka odmowy:</p>
+<p>Lokalna maszyna stanów przygotowania repozytorium prowadzi trzy trwałe etapy wobec uwierzytelnionego procesu wykonawczego po stronie serwera:</p>
 <ol>
-<li><strong><code>STORAGE_PREFLIGHT</code></strong> — klient wysyła uwierzytelniony ticket z całkowitym rozmiarem lokalnego snapshotu; worker sprawdza go względem wolnej pojemności fizycznego systemu plików (opcjonalnie przez rejestr rezerwacji uwzględniający inne operacje w locie) i odmawia z <code>STORAGE_INSUFFICIENT</code> (dokładna liczba wymaganych/dostępnych bajtów, przedstawiona w jednostkach czytelnych dla człowieka), jeśli nie ma miejsca.</li>
-<li><strong><code>CREATE_REPOSITORY</code></strong> — klient wysyła uwierzytelniony ticket do workera serwera, który tworzy repozytorium danych SVN, ustawia grant właściciela i ACL oraz zwraca kanoniczne <code>repo_id</code> i <code>repo_url</code>.</li>
-<li><strong><code>INITIAL_COMMIT</code></strong> — klient robi checkout pustego korzenia repozytorium do lokalnego katalogu, wykonuje kontrolowane <code>svn add</code> z poszanowaniem wzorców ignorowania, publikuje początkowy snapshot w ograniczonych partiach, potwierdza <code>INITIAL_COMMIT</code> i dopiero wtedy uruchamia zwykły potok synchronizacji.</li>
+<li><strong><code>STORAGE_PREFLIGHT</code></strong> — klient wysyła uwierzytelniony zlecenie z całkowitym rozmiarem danych lokalnych; proces wykonawczy sprawdza go względem wolnej pojemności fizycznego systemu plików (opcjonalnie przez rejestr rezerwacji uwzględniający inne trwające operacje) i odmawia z <code>STORAGE_INSUFFICIENT</code> (dokładna liczba wymaganych/dostępnych bajtów, przedstawiona w jednostkach czytelnych dla człowieka), jeśli nie ma miejsca.</li>
+<li><strong><code>CREATE_REPOSITORY</code></strong> — klient wysyła uwierzytelniony zlecenie do procesu wykonawczego serwera, który tworzy repozytorium danych SVN, ustawia uprawnienia właściciela i ACL oraz zwraca kanoniczne <code>repo_id</code> i <code>repo_url</code>.</li>
+<li><strong><code>INITIAL_COMMIT</code></strong> — klient robi pobranie kopii roboczej pustego korzenia repozytorium do lokalnego katalogu, wykonuje kontrolowane <code>svn add</code> z poszanowaniem wzorców ignorowania, publikuje początkowy obraz stanu w ograniczonych partiach, potwierdza <code>INITIAL_COMMIT</code> i dopiero wtedy uruchamia zwykły potok synchronizacji.</li>
 </ol>
-<p>Lokalna maszyna stanów zachowuje <code>operation_id</code> przy ponowieniu, a każdy typ ticketu jest po stronie workera idempotentny (powtórzone żądanie z tym samym <code>operation_id</code> odtwarza trwały wynik zamiast wykonywać operację ponownie). Po udanym utworzeniu repozytorium klient trwale zapisuje zwróconą tożsamość repozytorium, zanim rozpocznie import, więc restart albo ponowienie wznawia ten import zamiast tworzyć zduplikowane repozytorium na serwerze. Awaria na którejkolwiek z tych trzech trwałych granic jest zgłaszana z powrotem do GUI przez odpytywanie <code>repo.lifecycle_status</code>, a nie zostawiana w milczeniu.</p>
-
+<p>Lokalna maszyna stanów zachowuje <code>operation_id</code> przy ponowieniu, a każdy typ zlecenia jest po stronie procesu wykonawczego idempotentny (powtórzone żądanie z tym samym <code>operation_id</code> odtwarza trwały wynik zamiast wykonywać operację ponownie). Po udanym utworzeniu repozytorium klient trwale zapisuje zwróconą tożsamość repozytorium, zanim rozpocznie import, więc restart albo ponowienie wznawia ten import zamiast tworzyć zduplikowane repozytorium na serwerze. Awaria na którejkolwiek z tych trzech trwałych granic jest zgłaszana z powrotem do GUI przez odpytywanie <code>repo.lifecycle_status</code>, a nie zostawiana w milczeniu.</p>
 <h2 id="ops-passports">Wnętrze paszportów</h2>
-<p>Co klika właściciel, jest w <a href="user-guide.html#ch2-passports">§2.5</a>. Decyzja opt-in, migracja <code>svn:needs-lock</code> i czasy należą tutaj.</p>
+<p>Co klika właściciel, jest w <a href="user-guide.html#ch2-passports">§2.5</a>. Dlaczego mechanizm jest opcjonalny, migracja <code>svn:needs-lock</code> i czasy należą tutaj.</p>
 <div class="decision">
-<div class="decision-head">Uzasadnienie / polityka repozytorium pozostaje opt-in</div>
+<div class="decision-head">Uzasadnienie / polityka repozytorium pozostaje opcjonalny</div>
 <div class="decision-grid">
 <div class="decision-label">Decyzja</div><div class="decision-value">Jawne blokowanie per plik włącza się tylko tam, gdzie typ dokumentu i przepływ pracy uzasadniają tarcie.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Zwykła synchronizacja ma pozostać cicha; blokowanie pesymistyczne jest polityką, a nie uniwersalną cechą FileES.</div>
@@ -610,52 +571,49 @@ doas svn update /var/www/htdocs</code></pre>
 <ul>
 <li>Wszystkie istniejące zwykłe pliki są przy pierwszym starcie migrowane tak, by niosły <code>svn:needs-lock</code> (demon odmawia rozpoczęcia migracji, jeśli kopia robocza ma lokalne zmiany treści, usunięcia albo brakujące pliki).</li>
 <li>Plik bez aktywnego paszportu jest lokalnie tylko do odczytu. Dla repozytorium, którego strefa właściciela <strong>nie</strong> jest własną strefą tego klienta, staje się zapisywalny dopiero po udanym wywołaniu <code>repo.lock</code> / <code>filees lock</code>, w tym po akcji <strong>Zablokuj pliki…</strong> w podmenu repozytorium w zasobniku.</li>
-<li><strong>Autolock (strefa właściciela):</strong> dla repozytorium, które należy do własnej strefy tego klienta, ręczna akcja blokady nie jest w ogóle potrzebna. Zaraz po każdym <code>svn up</code> demon natychmiast czyni własne pliki tylko do odczytu lokalnie zapisywalnymi — zanim zostanie nabyta prawdziwa blokada SVN. Prawdziwa blokada jest żądana dopiero w momencie następnej próby commita tej ścieżki: jeśli repozytorium jest rzeczywiście wolne (albo blokadę trzyma już inna instancja tej samej własnej strefy, co jest przejmowane automatycznie, bez okna z pytaniem), commit przechodzi; jeśli blokadę trzyma już <em>inna</em> strefa, commit jest wstrzymywany, a zmiana zostaje w stagingu do późniejszego ponowienia — nigdy nie jest kradziona i lokalna edycja nigdy nie ginie.</li>
-<li>Nowe pliki nie wymagają paszportu przed pierwszą publikacją; demon nadaje <code>svn:needs-lock</code> przed commitem.</li>
-<li>Committy używają <code>svn commit --no-unlock</code>, żeby SVN nie omijał okresu close-grace.</li>
-<li>Po potwierdzonym commicie demon czeka przez okres close-grace (<code>edit_passport_close_grace</code>, domyślnie 5 min), zanim odblokuje plik i przywróci go do tylko do odczytu.</li>
+<li><strong>Autolock (strefa właściciela):</strong> dla repozytorium, które należy do własnej strefy tego klienta, ręczna akcja blokady nie jest w ogóle potrzebna. Zaraz po każdym <code>svn up</code> demon natychmiast czyni własne pliki tylko do odczytu lokalnie zapisywalnymi — zanim zostanie nabyta prawdziwa blokada SVN. Prawdziwa blokada jest żądana dopiero w momencie następnej próby zatwierdzenia tej ścieżki: jeśli repozytorium jest rzeczywiście wolne (albo blokadę trzyma już inna instancja tej samej własnej strefy, co jest przejmowane automatycznie, bez okna z pytaniem), zatwierdzenie przechodzi; jeśli blokadę trzyma już <em>inna</em> strefa, zatwierdzenie jest wstrzymywane, a zmiana pozostaje w kolejce oczekujących zmian do późniejszego ponowienia — nigdy nie jest kradziona i lokalna edycja nigdy nie ginie.</li>
+<li>Nowe pliki nie wymagają paszportu przed pierwszą publikacją; demon nadaje <code>svn:needs-lock</code> przed zatwierdzeniem.</li>
+<li>Zatwierdzenia używają <code>svn commit --no-unlock</code>, żeby SVN nie omijał okresu karencji po zatwierdzeniu.</li>
+<li>Po potwierdzonym zatwierdzeniu demon czeka przez okres karencji po zatwierdzeniu (<code>edit_passport_close_grace</code>, domyślnie 5 min), zanim odblokuje plik i przywróci go do tylko do odczytu.</li>
 <li>Widoczna na serwerze blokada SVN i jej token są autorytatywne między klientami. Konkurencyjny klient dostaje alias posiadacza i czas wygaśnięcia; zwolnienie i przejęcie ponownie odczytują i ogrodzają token, więc nieaktualny wiersz UI nie może zwolnić innej blokady.</li>
 </ul>
-<p>Zmiana polityki to migracja, nie lokalna preferencja. Włączenie stosuje i commituje <code>svn:needs-lock</code> na istniejących zwykłych plikach wersjonowanych. Wyłączenie usuwa tę właściwość i zwalnia paszporty należące do wywołującego. Ścieżki aktualnie trzymane przez innego właściciela zostają nietknięte i są ponawiane później, zamiast być kradzione. Projekcja mobilna celowo nie otrzymuje <code>editing_policy</code>.</p>
-<div class="note"><strong>Zakres autolock (V1):</strong> strefą właściciela repozytorium jest ta, która je utworzyła (<code>OwnerRealmID</code>) — ta sama tożsamość strefy opisana w <a href="security.html#ch5-identity">modelu grantów</a>. Udostępnianie repozytoriów między strefami jest tam zaimplementowane: właściciel może nadać innej strefie dostęp <code>r</code> albo <code>rw</code> do repozytorium. Sam autolock pozostaje ściśle ograniczony do strefy właściciela (<code>pkg/commit</code> uruchamia cichą ścieżkę nabycia/ponownego zablokowania tylko gdy <code>RealmID == OwnerRealmID</code>); strefa mająca wyłącznie nadany udział <code>rw</code> używa ręcznej ścieżki „Wypożycz do edycji” (§2.6) jak każdy inny użytkownik niebędący właścicielem. Uogólnienie priorytetu autolock na własność per ścieżka dla repozytoriów zapisywalnych przez wiele stref pozostaje osobnym, jeszcze niezaimplementowanym rozszerzeniem (<code>concepts/AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md</code>).</div>
+<p>Zmiana polityki to migracja, nie lokalna preferencja. Włączenie stosuje i zatwierdza <code>svn:needs-lock</code> na istniejących zwykłych plikach wersjonowanych. Wyłączenie usuwa tę właściwość i zwalnia paszporty należące do wywołującego. Ścieżki aktualnie trzymane przez innego właściciela zostają nietknięte i są ponawiane później, zamiast być kradzione. Projekcja mobilna celowo nie otrzymuje <code>editing_policy</code>.</p>
+<div class="note">Zakres autolock (V1): strefą właściciela repozytorium jest ta, która je utworzyła ( OwnerRealmID) — ta sama tożsamość strefy opisana w modelu uprawnień. Udostępnianie repozytoriów między strefami jest tam zaimplementowane: właściciel może nadać innej strefie dostęp r albo rw do repozytorium. Sam autolock pozostaje ściśle ograniczony do strefy właściciela ( pkg/zatwierdzenie uruchamia cichą ścieżkę nabycia/ponownego zablokowania tylko gdy RealmID == OwnerRealmID); strefa mająca wyłącznie nadany udział rw używa ręcznej ścieżki „Wypożycz do edycji” (§2.6) jak każdy inny użytkownik niebędący właścicielem.</div>
 <p>Parametry czasowe paszportów:</p>
 <div class="table-wrap"><table>
 <tr><th>Parametr</th><th>Domyślnie</th><th>Znaczenie</th></tr>
 <tr><td><code>edit_passport_heartbeat</code></td><td>5 min</td><td>Jak często demon odnawia token</td></tr>
-<tr><td><code>edit_passport_ttl</code></td><td>15 min</td><td>Ważność pojedynczego odnowienia; heartbeat musi być krótszy</td></tr>
-<tr><td><code>edit_passport_max_session</code></td><td>24 h</td><td>Twardy limit sesji; nie da się go przedłużyć heartbeatami</td></tr>
-<tr><td><code>edit_passport_close_grace</code></td><td>5 min</td><td>Okres ciszy po potwierdzonym commicie przed odblokowaniem</td></tr>
+<tr><td><code>edit_passport_ttl</code></td><td>15 min</td><td>Ważność pojedynczego odnowienia; odstęp między sygnałami podtrzymania musi być krótszy</td></tr>
+<tr><td><code>edit_passport_max_session</code></td><td>24 h</td><td>Twardy limit sesji; nie da się go przedłużyć sygnałami podtrzymania</td></tr>
+<tr><td><code>edit_passport_close_grace</code></td><td>5 min</td><td>Okres ciszy po potwierdzonym zatwierdzeniu przed odblokowaniem</td></tr>
 </table></div>
-
 <h2 id="ops-gui">Sekwencja IPC GUI</h2>
 <p>Co kliknąć, jest w <a href="user-guide.html#ch2-gui">§2.6</a>. GUI zostaje cienkim klientem; to jest kontrakt, którego używa.</p>
 <div class="decision">
-<div class="decision-head">Uzasadnienie / zintegrowany demon, osobna binarka menu</div>
+<div class="decision-head">Uzasadnienie / zintegrowany demon, osobna plik wykonywalny menu</div>
 <div class="decision-grid">
 <div class="decision-label">Decyzja</div><div class="decision-value">Demon jest właścicielem całego potoku operacyjnego potrzebnego do wiarygodnego UX; menu zasobnika pozostaje wymiennym klientem.</div>
-<div class="decision-label">Dlaczego</div><div class="decision-value">Commit, aktualizacja, cache, odzyskiwanie i polityka muszą współpracować w jednym właścicielu runtime, a prezentacja ma inny cykl życia i inną granicę zaufania.</div>
+<div class="decision-label">Dlaczego</div><div class="decision-value">zatwierdzenie, aktualizacja, pamięć podręczna, odzyskiwanie i polityka muszą współpracować w jednym właścicielu środowisko uruchomieniowe, a prezentacja ma inny cykl życia i inną granicę zaufania.</div>
 <div class="decision-label">Odrzucone</div><div class="decision-value">Osadzanie silnika synchronizacji w GUI; zatrzymywanie synchronizacji przy wyjściu z zasobnika; dzielenie dojrzałych operacji na usługi tylko po to, by zmniejszyć rozmiar pliku.</div>
 <div class="decision-label">Koszt</div><div class="decision-value">Demon jest wewnętrznie obszerny, a późniejsze wydzielenie musi iść za skończonymi odpowiedzialnościami, a nie za presją estetyczną.</div>
 </div>
 </div>
 <h4>Sekwencja inicjalizacji</h4>
 <ol>
-<li>Wyślij <code>system.hello</code>, zapisz capabilities.</li>
-<li>Wyślij <code>events.subscribe</code> (jeśli capability jest obecna) <em>przed</em> pobraniem snapshotów.</li>
+<li>Wyślij <code>system.hello</code>, zapisz uprawnienia.</li>
+<li>Wyślij <code>events.subscribe</code> (jeśli uprawnienie jest dostępne) <em>przed</em> pobraniem obrazów stanu.</li>
 <li>Pobierz <code>system.status</code>, <code>repo.list</code> oraz <code>repo.status</code> dla każdego repozytorium.</li>
 <li>Przy ponownym połączeniu, luce sekwencji albo nieznanym zdarzeniu: wykonaj pełną resynchronizację.</li>
 </ol>
-<p>Zdarzenia są sygnałami unieważnienia cache. GUI nigdy nie buduje stanu wyłącznie przez stosowanie zdarzeń; każde zdarzenie wyzwala świeże pobranie <code>repo.status</code>. Akcje mutujące (lock/unlock) są pokazywane tylko wtedy, gdy demon zgłasza je jako capabilities, a stan połączenia to <code>Connected</code> (nie <code>Stale</code>).</p>
-
+<p>Zdarzenia są sygnałami unieważnienia pamięci podręcznej. GUI nigdy nie buduje stanu wyłącznie przez stosowanie zdarzeń; każde zdarzenie wyzwala świeże pobranie <code>repo.status</code>. Akcje mutujące (blokada/unlock) są pokazywane tylko wtedy, gdy demon zgłasza je jako uprawnienia, a stan połączenia to <code>Connected</code> (nie <code>Stale</code>).</p>
 <h2 id="ops-update">Koperta podpisanej aktualizacji pulpitu</h2>
 <p>Przepływ zasobnika jest w <a href="user-guide.html#ch2-update">§2.7</a>.</p>
-<p>Podpisana koperta wydania v2 wiąże identyfikator wydania, monotoniczne <code>sequence</code>, <code>security_epoch</code>, czas wygaśnięcia, komponent i platformę z osobno podpisanym manifestem artefaktu. Klient weryfikuje format signify wewnętrznie standardowym Ed25519, a następnie sprawdza dokładny rozmiar bundla i SHA-256 przed rozpakowaniem. Jego prywatny, zsynchronizowany przez fsync stan high-water odrzuca rollback sekwencji, rollback epoki bezpieczeństwa oraz inne wydanie ponownie używające tej samej sekwencji.</p>
-
+<p>Podpisana koperta wydania v2 wiąże identyfikator wydania, monotoniczne <code>sequence</code>, <code>security_epoch</code>, czas wygaśnięcia, komponent i platformę z osobno podpisanym manifestem artefaktu. Klient weryfikuje format signify wewnętrznie standardowym Ed25519, a następnie sprawdza dokładny rozmiar pakietu i SHA-256 przed rozpakowaniem. Jego prywatny, zsynchronizowany przez fsync stan znacznika najwyższej zainstalowanej wersji odrzuca wycofanie sekwencji, wycofanie epoki bezpieczeństwa oraz inne wydanie ponownie używające tej samej sekwencji.</p>
 </div>
 <nav class="page-nav"><a href="install.html">← Instalacja</a><a href="security.html">Bezpieczeństwo →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-15 · źródło r523</span></footer>
+<footer class="manual-footer">FileES</footer>
 </main>
 </body>
 </html>

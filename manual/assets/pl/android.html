@@ -1,13 +1,14 @@
 <!DOCTYPE html>
+
 <html lang="pl">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Klient Android — podręcznik FileES User</title>
-<link rel="alternate" hreflang="en" href="../en/android.html"/>
-<link rel="alternate" hreflang="pl" href="android.html"/>
-<link rel="stylesheet" href="../css/manual.css"/>
-<link rel="icon" href="../../favicon.ico"/>
+<title>Klient Android — podręcznik FileES</title>
+<link href="../en/android.html" hreflang="en" rel="alternate"/>
+<link href="android.html" hreflang="pl" rel="alternate"/>
+<link href="../css/manual.css" rel="stylesheet"/>
+<link href="../../favicon.ico" rel="icon"/>
 </head>
 <body>
 <main class="sheet">
@@ -19,35 +20,34 @@
 <span class="brand-subtitle">dokumentacja systemu FileES</span>
 </div>
 </div>
-<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
-<nav class="lang-switch" aria-label="Język">
-<a href="../../index.html" class="lang-home">filees:space</a>
-<a href="../en/android.html" lang="en" hreflang="en">EN</a>
-<a href="android.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+<nav aria-label="Język" class="lang-switch">
+<a class="lang-home" href="../../index.html">filees:space</a>
+<a href="../en/android.html" hreflang="en" lang="en">EN</a>
+<a aria-current="true" class="is-current" href="android.html" hreflang="pl" lang="pl">PL</a>
 </nav>
 </header>
-<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<nav aria-label="Rozdziały podręcznika" class="site-nav">
 <a href="index.html">Przegląd</a>
-<span class="nav-group" aria-label="User">
-<span class="nav-pillar">User</span>
+<span aria-label="Obsługa" class="nav-group">
+<span class="nav-pillar">Obsługa</span>
 <a href="user-guide.html">Pulpit</a>
-<a href="android.html" class="is-current">Android</a>
+<a class="is-current" href="android.html">Android</a>
 <a href="public-shares.html">Udziały</a>
 <a href="administration.html">Administracja</a>
 </span>
-<span class="nav-group" aria-label="Tech">
-<span class="nav-pillar">Tech</span>
+<span aria-label="Technika" class="nav-group">
+<span class="nav-pillar">Technika</span>
 <a href="architecture.html">Architektura</a>
 <a href="install.html">Instalacja</a>
 <a href="operations.html">Eksploatacja</a>
 <a href="security.html">Bezpieczeństwo</a>
-<a href="man-pages.html">Man</a>
+<a href="man-pages.html">Polecenia</a>
 </span>
 </nav>
 <div class="manual-layout">
 <nav aria-label="Na tej stronie" id="toc">
 <div class="toc-head">
-<span class="toc-kicker">filees:space / ta strona</span>
+<span class="toc-kicker">filees:space / podręcznik</span>
 <h2>Na tej stronie</h2>
 </div>
 <ol>
@@ -63,37 +63,28 @@
 <div class="manual-content">
 <h1 id="ch-and">Klient Android</h1>
 <div class="chapter-content">
-<p>Telefon jest urządzeniem capture i podglądu, nie stacją edycyjną. Czyta udział jak publiczny listing. Pisze wyłącznie do <code>mobile-uploads/</code>. Reszta drzewa zostaje read-only. Szczegóły protokołu są w Tech <a href="man-pages.html#filees-mobile-v1"><code>filees-mobile-v1</code></a> i w <code>concepts/TREE_INGEST_CONCEPT.md</code>.</p>
-
+<p>Telefon służy do podglądu i zbierania plików, nie do pracy edycyjnej. Udział pokazuje jako zwykłą listę folderów i plików. Zapisuje wyłącznie do <code>mobile-uploads/</code>; pozostała część drzewa jest tylko do odczytu. Szczegóły protokołu opisuje <a href="man-pages.html#filees-mobile-v1"><code>filees-mobile-v1</code></a>.</p>
 <h2 id="and-what">Co to jest</h2>
-<div class="section-meta"><span class="status status-verified">Przetestowane na żywo</span><span>2026-08-16 na <code>spot</code>: parowanie QR, listing udziałów, pobranie, wysłanie 198 plików jednym commitem, drzewo widoczne na pulpicie.</span></div>
 <p>Aplikacja nie zakłada repozytoriów i nie pyta o UUID. Po sparowaniu pokazuje te same udziały, które ma pulpit w projekcji strefy. Wejście w udział to lista folderów i plików z rozmiarami po ludzku. Ikona startowa to znak <code>f:s</code>; w liście folderów — kwadratowy symbol filees:space.</p>
-
 <h2 id="and-pair">Sparowanie</h2>
-<p>Na już aktywowanym pulpicie: zasobnik → serwer → <strong>Sparuj urządzenie mobilne…</strong>. Otwiera się lokalna strona z PIN i kodem QR (pięć minut). Telefon skanuje QR. Po udanym parowaniu przycisk skanowania znika z ekranu głównego; parowanie awaryjne zostaje w Ustawieniach (trybik).</p>
-<p>Telefon dziedziczy listę udziałów tego pulpitu. Nie tworzy nowej strefy. Jak wystawić QR z pulpitu, jest w <a href="user-guide.html#ch2-gui">przewodniku pulpitu</a>.</p>
-
+<p>Na aktywnym komputerze wybierz w zasobniku: serwer → Sparuj urządzenie mobilne… Otworzy się lokalna strona zabezpieczona kodem PIN z kodem QR ważnym przez pięć minut. Zeskanuj go telefonem. Po udanym sparowaniu przycisk skanowania znika z ekranu głównego; ponowne parowanie jest dostępne w Ustawieniach.</p>
+<p>Telefon otrzymuje listę udziałów dostępną na parującym komputerze. Nie tworzy nowej strefy. Sposób wyświetlenia kodu QR opisuje przewodnik użytkownika.</p>
 <h2 id="and-browse">Przeglądanie i pobieranie</h2>
-<p>Strzałka wstecz wraca w drzewie (pasek jest pod belką statusu, nie pod nią). Plik ma <strong>Pobierz</strong> i ląduje w pobranych systemu. Pobrany i wyedytowany na telefonie plik nie wraca na starą ścieżkę — jeśli go wyślesz, idzie do <code>mobile-uploads/</code> jako nowy obiekt.</p>
-
+<p>Strzałka wstecz cofa o jeden poziom drzewa. Polecenie Pobierz zapisuje plik w systemowym katalogu Pobrane. Plik zmieniony na telefonie nie wraca automatycznie na pierwotną ścieżkę; po wysłaniu trafia do mobile-uploads/ jako nowy obiekt.</p>
 <h2 id="and-send">Wysyłka</h2>
-<p><strong>Dodaj</strong> oferuje pliki albo cały folder. Cel to zawsze <code>mobile-uploads/…</code> we wskazanym udziale. Mała liczba plików idzie po kolei, ze spinnerem <code>3 / 7</code>. Istniejąca ścieżka w <code>mobile-uploads/</code> o tej samej treści jest pomijana; inna treść to nowa rewizja, bez pytania o konflikt.</p>
-
+<p>Polecenie Dodaj pozwala wybrać pliki albo cały folder. Dane są zawsze zapisywane pod mobile-uploads/ w wybranym udziale. Przy niewielkiej liczbie plików aplikacja wysyła je kolejno i pokazuje postęp. Jeżeli pod tą samą ścieżką jest już plik o identycznej treści, zostaje pominięty; inna treść tworzy nową rewizję bez dodatkowego pytania.</p>
 <h2 id="and-pack">Duży folder</h2>
-<p>Od ośmiu plików telefon najpierw sumuje ich liczbę i rozmiar (<code>198 plików, 14 MB</code>), pakuje folder do jednego pliku ZIP (to tylko opakowanie transportowe, nie plik w udziale) i wysyła go jednym połączeniem. Worker na serwerze sprawdza sumę SHA-256 z nagłówka, rozpakowuje zawartość i wykonuje <em>jeden</em> commit. Jeśli sam wysyłany plik jest archiwum <code>.zip</code> będącym Twoim dokumentem, zostaje zapisany jako zwykły plik — serwer nie rozpakowuje go po raz drugi.</p>
+<p>Od ośmiu plików telefon najpierw oblicza ich liczbę i łączny rozmiar, a następnie pakuje folder do jednego pliku ZIP. Archiwum jest wyłącznie opakowaniem transportowym i nie pojawia się w udziale. Serwer sprawdza sumę SHA-256, rozpakowuje zawartość i zapisuje całość jako jedno zatwierdzenie w SVN. Jeżeli wysyłanym dokumentem jest zwykły plik <code>.zip</code>, pozostaje zwykłym plikiem i nie jest rozpakowywany ponownie.</p>
 <p>Ten mechanizm ogranicza koszt wysyłania dużej liczby małych plików naraz; nie zmienia sposobu obsługi pojedynczych bardzo dużych plików. Limit czasu długiej sesji to osobna sprawa pulpitu.</p>
-
 <h2 id="and-track">Śledzone foldery</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane na żywo</span><span>2026-08-29: naprawiony realny błąd, przez który wysyłka w tle cicho nic nie robiła, jeśli akurat żadne repozytorium nie było otwarte w przeglądarce udziału.</span></div>
 <p>W Ustawieniach wybierasz folder na telefonie oraz cel wysyłki (repozytorium/udział). Aplikacja sprawdza folder co około pięć minut i wysyła nowe pliki automatycznie — cel wysyłki jest teraz niezależny od tego, które repozytorium akurat przeglądasz. Gdy włączasz śledzenie folderu, który już ma zawartość, aplikacja pyta, czy wysłać ją całą, czy tylko pliki dodane od teraz. Każda udana wysyłka w tle kończy się powiadomieniem systemowym.</p>
-
 <h2 id="and-not">Czego telefon nie robi</h2>
 <ul>
 <li>nie edytuje ani nie kasuje plików poza <code>mobile-uploads/</code>;</li>
 <li>nie zakłada udziałów i nie przyjmuje ręcznego UUID;</li>
-<li>nie pokazuje kolejki uploadów — spinner, potem sukces albo błąd.</li>
+<li>nie prowadzi osobnego widoku kolejki wysyłania; pokazuje postęp, a następnie wynik operacji.</li>
 </ul>
-<p>Serwer musi obsługiwać <code>UPLOAD_TREE</code> (podpisane wydanie z tą funkcją, na <code>spot</code> od r543). Starszy <code>filees-mobile-v1</code> zamyka sesję statusem 70. W takim przypadku telefon pokazuje, że serwer nie obsługuje tej operacji albo jeszcze nie przyjmuje przesyłek zbiorczych — aplikacja nie zgłasza fałszywego sukcesu.</p>
+<p>Serwer musi obsługiwać operację <code>UPLOAD_TREE</code>. Jeżeli jej nie obsługuje, <code>filees-mobile-v1</code> kończy sesję kodem 70, a telefon informuje, że wysyłanie całych drzew nie jest dostępne. Operacja nie jest wtedy zgłaszana jako zakończona pomyślnie.</p>
 </div>
 <nav class="page-nav">
 <a href="user-guide.html">← Pulpit</a>
@@ -101,7 +92,7 @@
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-16 · źródło r543</span></footer>
+<footer class="manual-footer">FileES</footer>
 </main>
 </body>
 </html>

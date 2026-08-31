@@ -57,7 +57,6 @@
 <li><a href="#ch3-serverjson">server.json</a></li>
 <li><a href="#ch3-keys">Key generation</a></li>
 <li><a href="#ch3-managed">filees-install / FILEES-BIN</a></li>
-<li><a href="#ch3-manual-htdocs">HTML manual on the public origin</a></li>
 </ol>
 </nav>
 <div class="manual-content">
@@ -148,10 +147,6 @@ filees-install -purge -wipe-state</code></pre>
 <li><strong>Sandbox profile by run class</strong>: file-only runs (check, dry-run, upgrade, rollback) execute under a full two-pass <code>unveil</code> with pledge reduced to file promises. System runs (first install, purge, upgrades touching the sshd fragment) skip <code>unveil</code> — its state is inherited by exec'd children, which would blind <code>useradd</code>/<code>rcctl</code>/<code>sshd&nbsp;-t</code> — and keep <code>proc exec</code> only until the system phase ends.</li>
 <li><strong>Purge honours ownership</strong>: only users recorded as created by this installer are removed; a rollback that restores an sshd fragment prints a warning to reload sshd manually instead of exec'ing under the reduced pledge.</li>
 </ul>
-<div class="note">Design and review history: <code>concepts/SERVER_INSTALL_CONCEPT.md</code>, <code>concepts/SERVER_INSTALL_CODE_REVIEW.md</code> and its corrections document.</div>
-<h2 id="ch3-manual-htdocs">3.7 Publishing the HTML manual on the public origin</h2>
-<div class="section-meta"><span class="status status-implemented">Implemented layout</span></div>
-<p>The document root is a working copy of <code>^/manual</code>. Publish with <code>svn update</code>. Do not put a chapter next to <code>index.html</code> — that misses the static allowlist. The tree and first-time checkout are in <a href="operations.html#ops-htdocs">Operations</a>.</p>
 </div>
 <nav class="page-nav"><a href="architecture.html">← Architecture</a><a href="operations.html">Operations →</a></nav>
 </div>

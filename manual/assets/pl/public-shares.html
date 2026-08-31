@@ -1,13 +1,14 @@
 <!DOCTYPE html>
+
 <html lang="pl">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Udziały publiczne — podręcznik FileES User</title>
-<link rel="alternate" hreflang="en" href="../en/public-shares.html"/>
-<link rel="alternate" hreflang="pl" href="public-shares.html"/>
-<link rel="stylesheet" href="../css/manual.css"/>
-<link rel="icon" href="../../favicon.ico"/>
+<title>Udziały publiczne — podręcznik FileES</title>
+<link href="../en/public-shares.html" hreflang="en" rel="alternate"/>
+<link href="public-shares.html" hreflang="pl" rel="alternate"/>
+<link href="../css/manual.css" rel="stylesheet"/>
+<link href="../../favicon.ico" rel="icon"/>
 </head>
 <body>
 <main class="sheet">
@@ -19,35 +20,34 @@
 <span class="brand-subtitle">dokumentacja systemu FileES</span>
 </div>
 </div>
-<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
-<nav class="lang-switch" aria-label="Język">
-<a href="../../index.html" class="lang-home">filees:space</a>
-<a href="../en/public-shares.html" lang="en" hreflang="en">EN</a>
-<a href="public-shares.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+<nav aria-label="Język" class="lang-switch">
+<a class="lang-home" href="../../index.html">filees:space</a>
+<a href="../en/public-shares.html" hreflang="en" lang="en">EN</a>
+<a aria-current="true" class="is-current" href="public-shares.html" hreflang="pl" lang="pl">PL</a>
 </nav>
 </header>
-<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<nav aria-label="Rozdziały podręcznika" class="site-nav">
 <a href="index.html">Przegląd</a>
-<span class="nav-group" aria-label="User">
-<span class="nav-pillar">User</span>
+<span aria-label="Obsługa" class="nav-group">
+<span class="nav-pillar">Obsługa</span>
 <a href="user-guide.html">Pulpit</a>
 <a href="android.html">Android</a>
-<a href="public-shares.html" class="is-current">Udziały</a>
+<a class="is-current" href="public-shares.html">Udziały</a>
 <a href="administration.html">Administracja</a>
 </span>
-<span class="nav-group" aria-label="Tech">
-<span class="nav-pillar">Tech</span>
+<span aria-label="Technika" class="nav-group">
+<span class="nav-pillar">Technika</span>
 <a href="architecture.html">Architektura</a>
 <a href="install.html">Instalacja</a>
 <a href="operations.html">Eksploatacja</a>
 <a href="security.html">Bezpieczeństwo</a>
-<a href="man-pages.html">Man</a>
+<a href="man-pages.html">Polecenia</a>
 </span>
 </nav>
 <div class="manual-layout">
 <nav aria-label="Na tej stronie" id="toc">
 <div class="toc-head">
-<span class="toc-kicker">filees:space / ta strona</span>
+<span class="toc-kicker">filees:space / podręcznik</span>
 <h2>Na tej stronie</h2>
 </div>
 <ol>
@@ -62,42 +62,34 @@
 <div class="manual-content">
 <h1 id="ch-ps">Udziały publiczne</h1>
 <div class="chapter-content">
-<p>Udostępniasz pliki osobie, która nigdy nie zainstaluje FileES. To nie jest druga droga zapisu do Twoich folderów. Strefy zaufania, mapa obiektów i protokół OTP są opisane w części Tech, w <a href="operations.html#ops-ps-model">Eksploatacji</a>.</p>
-
+<p>Udział publiczny pozwala udostępnić pliki osobie, która nie ma zainstalowanego FileES. Jest wyłącznie kanałem odczytu i nie daje dodatkowej drogi zapisu do repozytorium. Szczegóły modelu zaufania, mapy obiektów i OTP opisuje część „Eksploatacja”.</p>
 <h2 id="ps-model">5.1 Co to jest</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane na żywo</span></div>
-<p>Udział publiczny to strona tylko do odczytu, dostępna pod tym samym adresem HTTPS co ten podręcznik. Odwiedzający nigdy nie dostaje poświadczeń zapisu. Kanał przyjęcia (Upload Channel) to osobny produkt — służy do przyjmowania plików od kogoś z zewnątrz, nie do ich udostępniania — i nie dzieli tego procesu ani tych sekretów z udziałem publicznym.</p>
-<p>Strona nie używa JavaScriptu, ciasteczek ani zasobów z zewnątrz. Branding to system <code>filees:space</code> plus logo i kolor wiodący właściciela już zapisane na serwerze.</p>
-<p>Dlaczego proces publiczny sam nie rozmawia z Subversion, jest w <a href="operations.html#ops-ps-model">Eksploatacji</a>.</p>
-
+<p>Udział publiczny jest stroną tylko do odczytu, dostępną przez publiczny adres HTTPS serwera FileES. Odbiorca nigdy nie otrzymuje danych uwierzytelniających pozwalających na zapis. Kanał przyjmowania plików jest osobną funkcją: służy do odbierania danych od osób z zewnątrz i nie współdzieli z udziałami publicznymi mechanizmu autoryzacji ani sekretów.</p>
+<p>Strona nie używa JavaScriptu, plików cookie ani zasobów zewnętrznych. Wygląd udziału korzysta z identyfikacji filees:space oraz logo i koloru właściciela zapisanych na serwerze.</p>
+<p>Podział odpowiedzialności między proces publiczny a Subversion opisuje część „Eksploatacja”.</p>
 <h2 id="ps-url">5.2 Adres udziału</h2>
 <p>Publiczny adres jest zawsze:</p>
 <pre><code>https://&lt;domena-serwera&gt;/&lt;alias-strefy&gt;/&lt;slug&gt;</code></pre>
-<p>Nieznane, cofnięte i usunięte adresy dzielą jedno obrandowane HTTP 404, które nie odbija ścieżki ani powodu. Allowlista, która serwuje też ten podręcznik, jest w <a href="operations.html#ops-ps-url">Eksploatacji</a> i w <a href="operations.html#ops-htdocs">Eksploatacji</a>.</p>
-
+<p>Nieznane, cofnięte i usunięte adresy zwracają ten sam komunikat HTTP 404, bez ujawniania żądanej ścieżki ani przyczyny.</p>
 <h2 id="ps-map">5.3 To nie jest żywe lustro</h2>
-<div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Zaimplementowany kontrakt, nie defekt.</span></div>
 <p>Kanał bez zamrożonej rewizji podąża za HEAD, ale nie na żywo: każda <em>nowa</em> wizyta pod kanonicznym adresem przelicza listę plików z aktualnego drzewa SVN, więc dodany plik się pojawia, usunięty znika, a zmiana nazwy jest widoczna pod nową nazwą. To, co „nie jest żywe”, to już wydana wizyta — link z tokenem <code>?v=…</code> zamraża się na rewizji, jaką HEAD miał w chwili tamtej wizyty, i nie dogania późniejszych zmian nawet gdy ten sam plik się zmieni. Kanał z jawnie ustawioną, dodatnią rewizją zamraża każdą wizytę na tym jednym zrzucie na stałe, niezależnie od HEAD.</p>
-<p>Pusty folder jest legalnym placeholderem. Dlatego kopia pulpitu mówi, że udział nie jest żywym lustrem folderu — to opis wizyty, nie kanału śledzącego HEAD. Dwa zegary (<code>object_map</code> i rewizja) są w <a href="operations.html#ops-ps-map">Eksploatacji</a>.</p>
-
+<p>Pusty folder może pozostać w mapie udziału. Udział nie jest więc bezpośrednim, ciągle aktualizowanym lustrem folderu: konkretna wizyta korzysta z określonego obrazu danych. Zależność między object_map a rewizją opisuje część „Eksploatacja”.</p>
 <h2 id="ps-access">5.4 Otwarty albo zamknięty</h2>
 <p><strong>Kanał otwarty.</strong> Każdy, kto ma adres. Możesz ustawić wspólne hasło. Po haśle odwiedzający dostaje dwunastogodzinny podpisany link. Ekran hasła pokazuje Twój znak; nie pokazuje aliasu ani slugu.</p>
 <p><strong>Kanał zamknięty.</strong> Każdy odbiorca dostaje własne zaproszenie w URL. Sam link nie wystarcza. Prosi o kod, dostaje ośmiocyfrowy OTP pocztą, wpisuje go na tej samej stronie i dostaje podpisany link ważny do wygaśnięcia tego kodu. Skopiowanie podpisanego linku w tym oknie przenosi pozostały dostęp. Po wygaśnięciu URL zaproszenia wraca do bramki. Po cofnięciu jest 404.</p>
 <p>Publiczna strona nigdy nie pokazuje adresów e-mail. Jak działają skróty, epoki i tokeny wizyty, jest w <a href="operations.html#ops-ps-access">Eksploatacji</a>.</p>
-
 <h2 id="ps-desktop">5.5 Z pulpitu</h2>
-<p><strong>Udostępnienia publiczne</strong> pojawiają się wyłącznie u kanonicznego właściciela i tylko wtedy, gdy demon reklamuje pełny zestaw list / create / update / revoke / delete. Utworzenie i edycja wymagają podłączonej kopii roboczej.</p>
+<p><strong>Udostępnienia publiczne</strong> pojawiają się wyłącznie u kanonicznego właściciela i tylko wtedy, gdy demon reklamuje pełny zestaw list / create / update / revoke / usunięcie. Utworzenie i edycja wymagają podłączonej kopii roboczej.</p>
 <ul>
 <li>Wybierz korzeń kopii albo dowolny folder pod nim.</li>
-<li>Najwyżej 4096 zwykłych plików. <code>.svn</code> i <code>.filees</code> są pomijane. Symlinki są odrzucane.</li>
+<li>Najwyżej 4096 zwykłych plików. <code>.svn</code> i <code>.filees</code> są pomijane. Dowiązania symboliczne są odrzucane.</li>
 <li>Cofnięcie zatrzymuje wydawanie i zostawia rekord. Usunięcie zostawia nagrobek adresu.</li>
 <li>Lista odbiorców robi kanał zamknięty. Pusta lista — otwarty, opcjonalnie z hasłem. Hasło nie jest przechowywane jawnym tekstem.</li>
 <li>Pusta rewizja śledzi najnowszą. Dodatnia zamraża ten zrzut.</li>
 </ul>
 <p>Po otwarciu udziału odwiedzający widzi domyślnie zwinięte drzewo w stylu „Szczegóły”: nazwa, ikona typu, rozmiar, pobranie. Może wziąć jeden plik, jeden folder albo cały udział jako ograniczony ZIP. W tej wersji nie ma miniaturek.</p>
-
 <h2 id="ps-ops">5.6 Włączenie</h2>
-<p>Udziały publiczne instaluje się wyłączone. Po edycji <code>server.json</code> i <code>public-links.json</code> uruchom authority przed links, potem przeładuj <code>httpd</code>. Dokładne polecenia, reguła zdrowia i strony man są w <a href="operations.html#ops-ps-ops">Eksploatacji</a>.</p>
+<p>Udziały publiczne są domyślnie wyłączone. Po skonfigurowaniu server.json i public-links.json uruchom filees-public-authority przed filees-links, a następnie przeładuj httpd. Dokładne polecenia uruchomieniowe i sposób sprawdzania działania opisuje część „Eksploatacja”.</p>
 </div>
 <nav class="page-nav">
 <a href="user-guide.html">← Pulpit</a>
@@ -105,7 +97,7 @@
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-15 · źródło r523</span></footer>
+<footer class="manual-footer">FileES</footer>
 </main>
 </body>
 </html>

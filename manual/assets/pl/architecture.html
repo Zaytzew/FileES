@@ -1,13 +1,14 @@
 <!DOCTYPE html>
+
 <html lang="pl">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>1. Architektura — Podręcznik FileES</title>
-<link rel="alternate" hreflang="en" href="../en/architecture.html"/>
-<link rel="alternate" hreflang="pl" href="architecture.html"/>
-<link rel="stylesheet" href="../css/manual.css"/>
-<link rel="icon" href="../../favicon.ico"/>
+<link href="../en/architecture.html" hreflang="en" rel="alternate"/>
+<link href="architecture.html" hreflang="pl" rel="alternate"/>
+<link href="../css/manual.css" rel="stylesheet"/>
+<link href="../../favicon.ico" rel="icon"/>
 </head>
 <body>
 <main class="sheet">
@@ -19,46 +20,45 @@
 <span class="brand-subtitle">dokumentacja systemu FileES</span>
 </div>
 </div>
-<div class="masthead-meta">osobne strony · zewnętrzny CSS · bez zależności sieciowych</div>
-<nav class="lang-switch" aria-label="Język">
-<a href="../../index.html" class="lang-home">filees:space</a>
-<a href="../en/architecture.html" lang="en" hreflang="en">EN</a>
-<a href="architecture.html" class="is-current" lang="pl" hreflang="pl" aria-current="true">PL</a>
+<nav aria-label="Język" class="lang-switch">
+<a class="lang-home" href="../../index.html">filees:space</a>
+<a href="../en/architecture.html" hreflang="en" lang="en">EN</a>
+<a aria-current="true" class="is-current" href="architecture.html" hreflang="pl" lang="pl">PL</a>
 </nav>
 </header>
-<nav class="site-nav" aria-label="Rozdziały podręcznika">
+<nav aria-label="Rozdziały podręcznika" class="site-nav">
 <a href="index.html">Przegląd</a>
-<span class="nav-group" aria-label="User">
-<span class="nav-pillar">User</span>
+<span aria-label="Obsługa" class="nav-group">
+<span class="nav-pillar">Obsługa</span>
 <a href="user-guide.html">Pulpit</a>
 <a href="android.html">Android</a>
 <a href="public-shares.html">Udziały</a>
 <a href="administration.html">Administracja</a>
 </span>
-<span class="nav-group" aria-label="Tech">
-<span class="nav-pillar">Tech</span>
-<a href="architecture.html" class="is-current">Architektura</a>
+<span aria-label="Technika" class="nav-group">
+<span class="nav-pillar">Technika</span>
+<a class="is-current" href="architecture.html">Architektura</a>
 <a href="install.html">Instalacja</a>
 <a href="operations.html">Eksploatacja</a>
 <a href="security.html">Bezpieczeństwo</a>
-<a href="man-pages.html">Man</a>
+<a href="man-pages.html">Polecenia</a>
 </span>
 </nav>
 <div class="manual-layout">
 <nav aria-label="Spis treści strony" id="toc">
 <div class="toc-head">
-<span class="toc-kicker">filees:space / ta strona</span>
+<span class="toc-kicker">filees:space / podręcznik</span>
 <h2>Na tej stronie</h2>
 </div>
 <ol>
 <li><a href="#ch1-overview">Przegląd protokołu</a></li>
 <li><a href="#system-topology">Topologia systemu</a></li>
 <li><a href="#server-graph">Graf zależności serwera</a></li>
-<li><a href="#truth-map">Mapa prawdy i artefaktów</a></li>
-<li><a href="#onboarding-lifecycle">Cykl onboardingu</a></li>
+<li><a href="#truth-map">Źródła prawdy i dane pochodne</a></li>
+<li><a href="#onboarding-lifecycle">Cykl aktywacji klienta</a></li>
 <li><a href="#ch1-client-arch">Architektura klienta</a></li>
 <li><a href="#ch1-states">Stany operacji</a></li>
-<li><a href="#ch1-bundle">Bundle i protokół systemu plików</a></li>
+<li><a href="#ch1-bundle">Pakiet operacji i protokół systemu plików</a></li>
 <li><a href="#ch1-otp">Mechanizm OTP</a></li>
 <li><a href="#ch1-ssh">Transport SSH</a></li>
 <li><a href="#ch1-sandbox">Piaskownica pledge / unveil</a></li>
@@ -67,21 +67,21 @@
 </nav>
 <div class="manual-content">
 <h1 id="ch1">Rozdział 1: Mechanika i architektura</h1><div class="chapter-content">
-<h2 id="ch1-overview">1.1 Przegląd protokołu</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Aktualny kontrakt architektoniczny oraz przetestowane fundamenty klienta i serwera.</span></div><div class="note"><strong>Reguła podręcznika:</strong> istotne wybory architektoniczne są zapisane wraz z odrzuconymi alternatywami i kosztem. To część specyfikacji, nie komentarz historyczny.</div>
-<p>FileES jest demonem synchronizacji plików, który utrzymuje lokalne katalogi robocze w zgodności ze zdalnym repozytorium SVN. SVN jest tu używany wyłącznie jako warstwa transportu i magazynu — semantyka kontroli wersji jest drugorzędna. Docelowe doświadczenie użytkownika to cicha ikona w zasobniku, która utrzymuje pliki zsynchronizowane, bez potrzeby wiedzieć, że w tle działa SVN.</p>
+<h2 id="ch1-overview">1.1 Przegląd protokołu</h2><div class="note"><strong>Reguła podręcznika:</strong> istotne wybory architektoniczne są zapisane wraz z odrzuconymi alternatywami i kosztem. To część specyfikacji, nie komentarz historyczny.</div>
+<p>FileES jest demonem synchronizacji plików, który utrzymuje lokalne katalogi robocze w zgodności ze zdalnym repozytorium SVN. SVN pełni rolę warstwy transportu i trwałego magazynu; użytkownik nie musi korzystać z pojęć kontroli wersji. Z jego perspektywy FileES ma po prostu utrzymywać pliki w synchronizacji.</p>
 <p>System jest zaprojektowany wokół następujących zasad:</p>
 <ul>
-<li><strong>Zbieżność, nie dziennikowanie.</strong> Okresowy skaner rejestruje stan końcowy między tyknięciami. Kilka operacji na systemie plików między dwoma skanami może zwinąć się do jednego commita SVN.</li>
-<li><strong>Bez utraty danych.</strong> Mapa stagingu commita jest zapisywana atomowo na dysk po każdym zdarzeniu. Jeśli demon umrze między przyjęciem commita przez serwer a aktualizacją metadanych kopii roboczej, następny restart uzgadnia stan, odpytując status SVN i pomijając już przyjęte wpisy.</li>
+<li><strong>Zbieżność, nie dziennikowanie.</strong> Okresowy skaner rejestruje stan końcowy między tyknięciami. Kilka operacji na systemie plików wykonanych między dwoma skanami może zostać ujętych w jednym zatwierdzeniu SVN.</li>
+<li><strong>Bez utraty danych.</strong> Stan oczekujących zatwierdzeń jest zapisywana atomowo na dysk po każdym zdarzeniu. Jeśli demon umrze między przyjęciem zatwierdzenia przez serwer a aktualizacją metadanych kopii roboczej, następny restart uzgadnia stan, odpytując status SVN i pomijając już przyjęte wpisy.</li>
 <li><strong>HEAD wygrywa.</strong> Konflikty są rozwiązywane przez zachowanie wersji serwera. Lokalna wersja konfliktowa jest zachowywana w katalogu ze znacznikiem czasu <code>!kolizje/</code> zanim zostanie wywołane <code>svn resolve --accept theirs-full</code>.</li>
-<li><strong>Wdrożenie push.</strong> Tożsamość klienta (para kluczy Ed25519) jest wystawiana przez serwer przez odwrotny tunel SSH inicjowany przez klienta. Serwer nigdy nie przechowuje klucza prywatnego.</li>
+<li><strong>Aktywacja inicjowana przez klienta.</strong> Tożsamość klienta (para kluczy Ed25519) jest wystawiana przez serwer przez odwrotny tunel SSH inicjowany przez klienta. Serwer nigdy nie przechowuje klucza prywatnego.</li>
 </ul><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / zbieżność zamiast dziennikowania zdarzeń</div>
 <div class="decision-grid">
 <div class="decision-label">Decyzja</div><div class="decision-value">Okresowy skaner rejestruje obserwowalny stan końcowy na granicach skanów.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">FileES synchronizuje zbieżność treści; nie musi odtwarzać każdego gestu użytkownika ani wywołania systemowego na systemie plików.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">Użycie inotify/fsnotify jako źródła prawdy; utrzymywanie trwałego dziennika operacji.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Kilka operacji między skanami może zwinąć się do jednego commita albo do no-op.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Kilka operacji między skanami może zwinąć się do jednego zatwierdzenia albo do operacją pustą.</div>
 </div>
 </div>
 <h3 id="system-topology">Topologia systemu</h3>
@@ -111,35 +111,35 @@
 <marker id="arrowOrangeA" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#FF6A00"></path></marker>
 <marker id="arrowMutedA" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"></path></marker>
 </defs>
-<rect class="svg-zone" height="525" rx="14" width="590" x="20" y="40"></rect><text class="svg-zone-label" x="42" y="70">CLIENT HOST</text>
-<rect class="svg-zone" height="525" rx="14" width="525" x="635" y="40"></rect><text class="svg-zone-label" x="657" y="70">OPENBSD SERVER</text>
-<rect class="svg-node" height="58" rx="8" width="145" x="65" y="115"></rect><text class="svg-text" text-anchor="middle" x="137" y="140">User</text><text class="svg-small" text-anchor="middle" x="137" y="158">intent only</text>
-<rect class="svg-node-derived" height="78" rx="8" width="160" x="255" y="105"></rect><text class="svg-text" text-anchor="middle" x="335" y="135">GUI / CLI</text><text class="svg-small" text-anchor="middle" x="335" y="155">thin local clients</text>
-<rect class="svg-node-authority" height="98" rx="8" width="125" x="455" y="95"></rect><text class="svg-text" text-anchor="middle" x="517" y="127">Client</text><text class="svg-text" text-anchor="middle" x="517" y="147">daemon</text><text class="svg-small" text-anchor="middle" x="517" y="170">runtime owner</text>
+<rect class="svg-zone" height="525" rx="14" width="590" x="20" y="40"></rect><text class="svg-zone-label" x="42" y="70">KOMPUTER KLIENTA</text>
+<rect class="svg-zone" height="525" rx="14" width="525" x="635" y="40"></rect><text class="svg-zone-label" x="657" y="70">SERWER OPENBSD</text>
+<rect class="svg-node" height="58" rx="8" width="145" x="65" y="115"></rect><text class="svg-text" text-anchor="middle" x="137" y="140">Użytkownik</text><text class="svg-small" text-anchor="middle" x="137" y="158">tylko zamiar operacji</text>
+<rect class="svg-node-derived" height="78" rx="8" width="160" x="255" y="105"></rect><text class="svg-text" text-anchor="middle" x="335" y="135">GUI / CLI</text><text class="svg-small" text-anchor="middle" x="335" y="155">cienkie klienty lokalne</text>
+<rect class="svg-node-authority" height="98" rx="8" width="125" x="455" y="95"></rect><text class="svg-text" text-anchor="middle" x="517" y="127">Klient</text><text class="svg-text" text-anchor="middle" x="517" y="147">demon</text><text class="svg-small" text-anchor="middle" x="517" y="170">właściciel procesu</text>
 <path class="svg-arrow" d="M210 144 H255"></path><path class="svg-arrow" d="M415 144 H455"></path>
-<rect class="svg-node-authority" height="78" rx="8" width="180" x="700" y="95"></rect><text class="svg-text" text-anchor="middle" x="790" y="125">Data repositories</text><text class="svg-small" text-anchor="middle" x="790" y="147">SVN content truth</text>
+<rect class="svg-node-authority" height="78" rx="8" width="180" x="700" y="95"></rect><text class="svg-text" text-anchor="middle" x="790" y="125">Repozytoria danych</text><text class="svg-small" text-anchor="middle" x="790" y="147">SVN jako źródło prawdy o danych</text>
 <path class="svg-arrow" d="M580 127 H700"></path><path class="svg-arrow" d="M700 160 H580"></path>
-<rect class="svg-node-derived" height="78" rx="8" width="170" x="940" y="95"></rect><text class="svg-text" text-anchor="middle" x="1025" y="125">Client projection</text><text class="svg-small" text-anchor="middle" x="1025" y="147">read-only control view</text>
+<rect class="svg-node-derived" height="78" rx="8" width="170" x="940" y="95"></rect><text class="svg-text" text-anchor="middle" x="1025" y="125">Projekcja klienta</text><text class="svg-small" text-anchor="middle" x="1025" y="147">widok sterujący tylko do odczytu</text>
 <path class="svg-arrow-dashed" d="M940 145 H610 Q590 145 580 170"></path>
-<rect class="svg-node" height="68" rx="8" width="145" x="75" y="300"></rect><text class="svg-text" text-anchor="middle" x="147" y="328">Onboarding</text><text class="svg-small" text-anchor="middle" x="147" y="348">request + OTP</text>
-<rect class="svg-node" height="68" rx="8" width="150" x="290" y="300"></rect><text class="svg-text" text-anchor="middle" x="365" y="328">Reverse helper</text><text class="svg-small" text-anchor="middle" x="365" y="348">loopback only</text>
+<rect class="svg-node" height="68" rx="8" width="145" x="75" y="300"></rect><text class="svg-text" text-anchor="middle" x="147" y="328">Aktywacja klienta</text><text class="svg-small" text-anchor="middle" x="147" y="348">żądanie + OTP</text>
+<rect class="svg-node" height="68" rx="8" width="150" x="290" y="300"></rect><text class="svg-text" text-anchor="middle" x="365" y="328">Program tunelu zwrotnego</text><text class="svg-small" text-anchor="middle" x="365" y="348">tylko lokalnie</text>
 <path class="svg-arrow" d="M220 334 H290"></path>
-<rect class="svg-node" height="68" rx="8" width="150" x="680" y="270"></rect><text class="svg-text" text-anchor="middle" x="755" y="298">System sshd</text><text class="svg-small" text-anchor="middle" x="755" y="318">only endpoint</text>
-<rect class="svg-node-transient" height="98" rx="8" width="190" x="870" y="255"></rect><text class="svg-text" text-anchor="middle" x="965" y="286">Short-lived tools</text><text class="svg-small" text-anchor="middle" x="965" y="308">entry · worker · mail</text><text class="svg-small" text-anchor="middle" x="965" y="328">one action, then exit</text>
+<rect class="svg-node" height="68" rx="8" width="150" x="680" y="270"></rect><text class="svg-text" text-anchor="middle" x="755" y="298">Systemowy sshd</text><text class="svg-small" text-anchor="middle" x="755" y="318">jedyny punkt dostępu</text>
+<rect class="svg-node-transient" height="98" rx="8" width="190" x="870" y="255"></rect><text class="svg-text" text-anchor="middle" x="965" y="286">Narzędzia krótkotrwałe</text><text class="svg-small" text-anchor="middle" x="965" y="308">wejście · proces wykonawczy · poczta</text><text class="svg-small" text-anchor="middle" x="965" y="328">jedna operacja, potem zakończenie</text>
 <path class="svg-arrow-orange" d="M440 334 H635 Q655 334 680 304"></path><path class="svg-arrow-orange" d="M830 304 H870"></path>
-<rect class="svg-node-transient" height="78" rx="8" width="190" x="680" y="430"></rect><text class="svg-text" text-anchor="middle" x="775" y="459">Operation bundle</text><text class="svg-small" text-anchor="middle" x="775" y="481">crash-visible workflow</text>
-<rect class="svg-node" height="78" rx="8" width="170" x="920" y="430"></rect><text class="svg-text" text-anchor="middle" x="1005" y="459">Service projector</text><text class="svg-small" text-anchor="middle" x="1005" y="481">exclusive writer</text>
+<rect class="svg-node-transient" height="78" rx="8" width="190" x="680" y="430"></rect><text class="svg-text" text-anchor="middle" x="775" y="459">Pakiet operacji</text><text class="svg-small" text-anchor="middle" x="775" y="481">stan widoczny po awarii</text>
+<rect class="svg-node" height="78" rx="8" width="170" x="920" y="430"></rect><text class="svg-text" text-anchor="middle" x="1005" y="459">Generator projekcji usługowej</text><text class="svg-small" text-anchor="middle" x="1005" y="481">jedyny proces zapisujący</text>
 <path class="svg-arrow" d="M965 353 V400 Q965 420 870 455"></path><path class="svg-arrow" d="M870 469 H920"></path>
-<rect class="svg-node-authority" height="38" rx="8" width="170" x="920" y="515"></rect><text class="svg-text" text-anchor="middle" x="1005" y="540">Service repository</text>
+<rect class="svg-node-authority" height="38" rx="8" width="170" x="920" y="515"></rect><text class="svg-text" text-anchor="middle" x="1005" y="540">Repozytorium usługowe</text>
 <path class="svg-arrow-orange" d="M1005 508 V515"></path><path class="svg-arrow-orange" d="M1088 515 V205 Q1088 185 1055 173"></path>
 </svg>
 </div>
 <div class="figure-legend"><span class="authority">autorytatywny trwały stan</span><span class="derived">stan pochodny / tylko do odczytu</span><span class="transient">przejściowy artefakt widoczny po awarii</span></div>
 </figure>
 <h3 id="server-graph">Graf zależności serwera</h3>
-<p>Na OpenBSD jedynymi długożyjącymi procesami od strony FileES są systemowy <code>sshd</code>, systemowy <code>httpd</code> oraz dwa opcjonalne demony udziałów publicznych. Wszystko inne to krótkotrwałe forced command albo jednorazowe narzędzie operatora. Strzałki oznaczają zależności wykonania albo gniazd, nie importy pakietów.</p>
+<p>Na OpenBSD długo działają wyłącznie systemowe <code>sshd</code> i <code>httpd</code> oraz, opcjonalnie, dwa procesy obsługujące udziały publiczne. Pozostałe elementy FileES są krótkotrwałymi wymuszonymi poleceniami SSH albo jednorazowymi narzędziami administratora. Strzałki na diagramie oznaczają zależności wykonania lub komunikacji przez gniazda, a nie zależności między pakietami kodu.</p>
 <figure class="system-figure">
-<figcaption><span class="figure-kicker">Wykres S</span>Konta, binarki i gniazda OpenBSD</figcaption>
+<figcaption><span class="figure-kicker">Wykres S</span>Konta, pliki wykonywalne i gniazda OpenBSD</figcaption>
 <div class="diagram-scroll">
 <svg aria-label="OpenBSD server dependency graph" class="diagram-e" role="img" viewbox="0 0 1180 620"><style>
 .svg-zone { fill:#FFFFFF; stroke:#D9DEE7; stroke-width:1.5; }
@@ -160,7 +160,7 @@
 <marker id="arrowMutedE" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"></path></marker>
 </defs>
 <rect class="svg-zone" height="280" rx="14" width="1140" x="20" y="20"></rect>
-<text class="svg-zone-label" x="42" y="48">SYSTEM SSHD — only privileged FileES endpoint</text>
+<text class="svg-zone-label" x="42" y="48">SYSTEMOWY SSHD — jedyny uprzywilejowany punkt dostępu FileES</text>
 <rect class="svg-node-authority" height="50" rx="8" width="160" x="40" y="70"></rect>
 <text class="svg-text" text-anchor="middle" x="120" y="100">sshd</text>
 <rect class="svg-node" height="44" rx="8" width="150" x="240" y="64"></rect>
@@ -168,7 +168,7 @@
 <text class="svg-small" text-anchor="middle" x="315" y="98">bootstrap-entry</text>
 <rect class="svg-node" height="44" rx="8" width="150" x="240" y="118"></rect>
 <text class="svg-small" text-anchor="middle" x="315" y="136">_filees-tunnel</text>
-<text class="svg-small" text-anchor="middle" x="315" y="152">entry + login_-filees</text>
+<text class="svg-small" text-anchor="middle" x="315" y="152">wejście + login_-filees</text>
 <rect class="svg-node" height="44" rx="8" width="150" x="240" y="172"></rect>
 <text class="svg-small" text-anchor="middle" x="315" y="190">_filees-client</text>
 <text class="svg-small" text-anchor="middle" x="315" y="206">client-entry</text>
@@ -180,16 +180,16 @@
 <path class="svg-arrow" d="M200 95 V194 H240"></path>
 <path class="svg-arrow" d="M200 95 V248 H240"></path>
 <rect class="svg-node-transient" height="44" rx="8" width="170" x="430" y="64"></rect>
-<text class="svg-small" text-anchor="middle" x="515" y="82">onboard take</text>
-<text class="svg-small" text-anchor="middle" x="515" y="98">+ one mail send</text>
+<text class="svg-small" text-anchor="middle" x="515" y="82">przejęcie aktywacji</text>
+<text class="svg-small" text-anchor="middle" x="515" y="98">+ jedna próba wysłania poczty</text>
 <rect class="svg-node-transient" height="44" rx="8" width="170" x="430" y="118"></rect>
 <text class="svg-small" text-anchor="middle" x="515" y="136">filees-worker</text>
-<text class="svg-small" text-anchor="middle" x="515" y="152">one action, then exit</text>
+<text class="svg-small" text-anchor="middle" x="515" y="152">jedna operacja, potem zakończenie</text>
 <rect class="svg-node-transient" height="44" rx="8" width="170" x="430" y="172"></rect>
-<text class="svg-small" text-anchor="middle" x="515" y="190">wc-corrector then</text>
-<text class="svg-small" text-anchor="middle" x="515" y="206">worker or svnserve -t</text>
+<text class="svg-small" text-anchor="middle" x="515" y="190">wc-corrector, potem</text>
+<text class="svg-small" text-anchor="middle" x="515" y="206">proces wykonawczy lub svnserve -t</text>
 <rect class="svg-node-authority" height="44" rx="8" width="170" x="430" y="226"></rect>
-<text class="svg-small" text-anchor="middle" x="515" y="244">data FSFS</text>
+<text class="svg-small" text-anchor="middle" x="515" y="244">dane FSFS</text>
 <text class="svg-small" text-anchor="middle" x="515" y="260">svn+ssh://_filees-data@</text>
 <path class="svg-arrow-orange" d="M390 86 H430"></path>
 <path class="svg-arrow-orange" d="M390 140 H430"></path>
@@ -200,52 +200,47 @@
 <text class="svg-small" text-anchor="middle" x="730" y="124">mobile-v1</text>
 <rect class="svg-node" height="44" rx="8" width="160" x="650" y="150"></rect>
 <text class="svg-small" text-anchor="middle" x="730" y="168">_filees-recovery</text>
-<text class="svg-small" text-anchor="middle" x="730" y="184">authorize + entry</text>
+<text class="svg-small" text-anchor="middle" x="730" y="184">autoryzacja + wejście</text>
 <rect class="svg-node-authority" height="58" rx="8" width="200" x="860" y="70"></rect>
 <text class="svg-text" text-anchor="middle" x="960" y="94">service-repo / WC</text>
-<text class="svg-small" text-anchor="middle" x="960" y="112">_filees-state owner</text>
+<text class="svg-small" text-anchor="middle" x="960" y="112">właściciel: _filees-state</text>
 <rect class="svg-node-derived" height="58" rx="8" width="200" x="860" y="150"></rect>
 <text class="svg-text" text-anchor="middle" x="960" y="174">view.json / authz</text>
-<text class="svg-small" text-anchor="middle" x="960" y="192">generated projection</text>
+<text class="svg-small" text-anchor="middle" x="960" y="192">wygenerowana projekcja</text>
 <path class="svg-arrow" d="M200 95 H210 V112 H650"></path>
 <path class="svg-arrow" d="M210 172 H650"></path>
 <path class="svg-arrow-dashed" d="M600 140 H860"></path>
 <path class="svg-arrow-dashed" d="M1060 99 H1100 V179 H1060"></path>
-
 <rect class="svg-zone" height="280" rx="14" width="1140" x="20" y="320"></rect>
-<text class="svg-zone-label" x="42" y="348">SYSTEM HTTPD — Public Shares + this HTML manual</text>
+<text class="svg-zone-label" x="42" y="348">SYSTEMOWY HTTPD — udziały publiczne</text>
 <rect class="svg-node-authority" height="50" rx="8" width="160" x="40" y="370"></rect>
 <text class="svg-text" text-anchor="middle" x="120" y="400">httpd</text>
 <rect class="svg-node-derived" height="70" rx="8" width="220" x="250" y="360"></rect>
-<text class="svg-small" text-anchor="middle" x="360" y="384">static allowlist</text>
-<text class="svg-small" text-anchor="middle" x="360" y="402">/ /index.html /favicon.ico</text>
-<text class="svg-small" text-anchor="middle" x="360" y="418">/assets/*  /robots.txt</text>
+<text class="svg-small" text-anchor="middle" x="360" y="384">zasoby statyczne serwera</text>
+<text class="svg-small" text-anchor="middle" x="360" y="402">poza obsługą FileES</text>
+<text class="svg-small" text-anchor="middle" x="360" y="418"></text>
 <rect class="svg-node-transient" height="70" rx="8" width="220" x="520" y="360"></rect>
 <text class="svg-small" text-anchor="middle" x="630" y="384">filees-links</text>
 <text class="svg-small" text-anchor="middle" x="630" y="402">FastCGI · _filees-links</text>
-<text class="svg-small" text-anchor="middle" x="630" y="418">no SVN credentials</text>
+<text class="svg-small" text-anchor="middle" x="630" y="418">bez danych uwierzytelniających SVN</text>
 <rect class="svg-node-authority" height="70" rx="8" width="220" x="790" y="360"></rect>
 <text class="svg-small" text-anchor="middle" x="900" y="384">filees-public-authority</text>
-<text class="svg-small" text-anchor="middle" x="900" y="402">unix backchannel</text>
-<text class="svg-small" text-anchor="middle" x="900" y="418">svnlook + OTP hashes</text>
+<text class="svg-small" text-anchor="middle" x="900" y="402">lokalny kanał uniksowy</text>
+<text class="svg-small" text-anchor="middle" x="900" y="418">svnlook + skróty OTP</text>
 <path class="svg-arrow" d="M200 395 H250"></path>
 <path class="svg-arrow-orange" d="M200 395 V450 H520"></path>
 <path class="svg-arrow" d="M740 395 H790"></path>
-<rect class="svg-node" height="50" rx="8" width="220" x="250" y="470"></rect>
-<text class="svg-small" text-anchor="middle" x="360" y="490">^/manual = htdocs</text>
-<text class="svg-small" text-anchor="middle" x="360" y="506">svn up · no httpd reload</text>
 <rect class="svg-node-transient" height="50" rx="8" width="220" x="790" y="470"></rect>
 <text class="svg-small" text-anchor="middle" x="900" y="490">filees-mail public-loop</text>
-<text class="svg-small" text-anchor="middle" x="900" y="506">SMTP secret, child only</text>
-<path class="svg-arrow-dashed" d="M360 430 V470"></path>
+<text class="svg-small" text-anchor="middle" x="900" y="506">sekret SMTP tylko w procesie potomnym</text>
 <path class="svg-arrow" d="M900 430 V470"></path>
-<text class="svg-small" x="42" y="560">Operator tools (filees-admin, filees-operation, filees-install, filees-rotate) run as _filees-state and are not listeners.</text>
-<text class="svg-small" x="42" y="580">filees-service-wc-corrector is setuid-root, ownership only, invoked by client-entry before control-plane tickets.</text>
+<text class="svg-small" x="42" y="560">Narzędzia administratora (filees-admin, filees-operation, filees-install, filees-rotate) działają jako _filees-state i nie nasłuchują sieci.</text>
+<text class="svg-small" x="42" y="580">filees-service-wc-corrector działa z setuid root wyłącznie do naprawy właściciela; client-entry uruchamia go przed zleceniami warstwy sterującej.</text>
 </svg>
 </div>
 <div class="figure-legend"><span class="authority">demon systemowy lub kanoniczny magazyn</span><span class="derived">widok statyczny / wygenerowany</span><span class="transient">krótkotrwałe narzędzie lub izolowane dziecko</span></div>
 </figure>
-<h3 id="truth-map">Mapa prawdy i artefaktów</h3>
+<h3 id="truth-map">Źródła prawdy i dane pochodne</h3>
 <p>FileES ma kilka jawnych stanów, ale każdy stan ma jednego właściciela. Widoki pochodne można odrzucić i odbudować; sekrety nigdy nie trafiają do SVN.</p>
 <figure class="system-figure">
 <figcaption><span class="figure-kicker">Wykres B</span>Źródła prawdy płaszczyzny danych i płaszczyzny sterowania</figcaption>
@@ -272,32 +267,32 @@
 <marker id="arrowOrangeB" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#FF6A00"></path></marker>
 <marker id="arrowMutedB" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"></path></marker>
 </defs>
-<text class="svg-zone-label" x="25" y="35">DATA PLANE</text>
-<rect class="svg-node-authority" height="70" rx="8" width="175" x="25" y="60"></rect><text class="svg-text" text-anchor="middle" x="112" y="89">Local filesystem</text><text class="svg-small" text-anchor="middle" x="112" y="110">current local content</text>
-<rect class="svg-node-derived" height="70" rx="8" width="170" x="245" y="60"></rect><text class="svg-text" text-anchor="middle" x="330" y="89">Watcher snapshot</text><text class="svg-small" text-anchor="middle" x="330" y="110">manifest + MD5 backlog</text>
-<rect class="svg-node-transient" height="70" rx="8" width="170" x="460" y="60"></rect><text class="svg-text" text-anchor="middle" x="545" y="89">Commit cache</text><text class="svg-small" text-anchor="middle" x="545" y="110">durable pending intent</text>
-<rect class="svg-node" height="70" rx="8" width="150" x="675" y="60"></rect><text class="svg-text" text-anchor="middle" x="750" y="89">Planner</text><text class="svg-small" text-anchor="middle" x="750" y="110">bounded batches</text>
-<rect class="svg-node" height="70" rx="8" width="150" x="870" y="60"></rect><text class="svg-text" text-anchor="middle" x="945" y="89">Committer</text><text class="svg-small" text-anchor="middle" x="945" y="110">publish + reconcile</text>
-<rect class="svg-node-authority" height="70" rx="8" width="100" x="1055" y="60"></rect><text class="svg-text" text-anchor="middle" x="1105" y="89">SVN</text><text class="svg-small" text-anchor="middle" x="1105" y="110">data truth</text>
+<text class="svg-zone-label" x="25" y="35">WARSTWA DANYCH</text>
+<rect class="svg-node-authority" height="70" rx="8" width="175" x="25" y="60"></rect><text class="svg-text" text-anchor="middle" x="112" y="89">Lokalny system plików</text><text class="svg-small" text-anchor="middle" x="112" y="110">bieżąca zawartość lokalna</text>
+<rect class="svg-node-derived" height="70" rx="8" width="170" x="245" y="60"></rect><text class="svg-text" text-anchor="middle" x="330" y="89">obserwacja i obraz stanu</text><text class="svg-small" text-anchor="middle" x="330" y="110">manifest + kolejka MD5</text>
+<rect class="svg-node-transient" height="70" rx="8" width="170" x="460" y="60"></rect><text class="svg-text" text-anchor="middle" x="545" y="89">stan oczekujących zatwierdzeń</text><text class="svg-small" text-anchor="middle" x="545" y="110">trwały stan oczekujących zmian</text>
+<rect class="svg-node" height="70" rx="8" width="150" x="675" y="60"></rect><text class="svg-text" text-anchor="middle" x="750" y="89">Planista</text><text class="svg-small" text-anchor="middle" x="750" y="110">ograniczone partie</text>
+<rect class="svg-node" height="70" rx="8" width="150" x="870" y="60"></rect><text class="svg-text" text-anchor="middle" x="945" y="89">Proces zatwierdzający</text><text class="svg-small" text-anchor="middle" x="945" y="110">publikacja + uzgodnienie</text>
+<rect class="svg-node-authority" height="70" rx="8" width="100" x="1055" y="60"></rect><text class="svg-text" text-anchor="middle" x="1105" y="89">SVN</text><text class="svg-small" text-anchor="middle" x="1105" y="110">źródło prawdy o danych</text>
 <path class="svg-arrow" d="M200 95 H245"></path><path class="svg-arrow" d="M415 95 H460"></path><path class="svg-arrow" d="M630 95 H675"></path><path class="svg-arrow" d="M825 95 H870"></path><path class="svg-arrow-orange" d="M1020 95 H1055"></path>
-<text class="svg-zone-label" x="25" y="230">CONTROL PLANE</text>
-<rect class="svg-node" height="70" rx="8" width="175" x="25" y="255"></rect><text class="svg-text" text-anchor="middle" x="112" y="284">Authenticated request</text><text class="svg-small" text-anchor="middle" x="112" y="305">actor derived from key</text>
-<rect class="svg-node-transient" height="70" rx="8" width="170" x="245" y="255"></rect><text class="svg-text" text-anchor="middle" x="330" y="284">Operation bundle</text><text class="svg-small" text-anchor="middle" x="330" y="305">idempotent saga state</text>
-<rect class="svg-node" height="70" rx="8" width="170" x="460" y="255"></rect><text class="svg-text" text-anchor="middle" x="545" y="284">Projector</text><text class="svg-small" text-anchor="middle" x="545" y="305">validates + commits</text>
-<rect class="svg-node-authority" height="70" rx="8" width="180" x="675" y="255"></rect><text class="svg-text" text-anchor="middle" x="765" y="284">admin/ canonical state</text><text class="svg-small" text-anchor="middle" x="765" y="305">service repository</text>
-<rect class="svg-node-derived" height="70" rx="8" width="180" x="900" y="255"></rect><text class="svg-text" text-anchor="middle" x="990" y="284">clients/&lt;id&gt; projection</text><text class="svg-small" text-anchor="middle" x="990" y="305">minimal read-only view</text>
+<text class="svg-zone-label" x="25" y="230">WARSTWA STERUJĄCA</text>
+<rect class="svg-node" height="70" rx="8" width="175" x="25" y="255"></rect><text class="svg-text" text-anchor="middle" x="112" y="284">Uwierzytelnione żądanie</text><text class="svg-small" text-anchor="middle" x="112" y="305">tożsamość wynikająca z klucza</text>
+<rect class="svg-node-transient" height="70" rx="8" width="170" x="245" y="255"></rect><text class="svg-text" text-anchor="middle" x="330" y="284">Pakiet operacji</text><text class="svg-small" text-anchor="middle" x="330" y="305">trwały stan operacji</text>
+<rect class="svg-node" height="70" rx="8" width="170" x="460" y="255"></rect><text class="svg-text" text-anchor="middle" x="545" y="284">Generator projekcji</text><text class="svg-small" text-anchor="middle" x="545" y="305">waliduje + zatwierdza</text>
+<rect class="svg-node-authority" height="70" rx="8" width="180" x="675" y="255"></rect><text class="svg-text" text-anchor="middle" x="765" y="284">kanoniczny stan admin/</text><text class="svg-small" text-anchor="middle" x="765" y="305">repozytorium usługowe</text>
+<rect class="svg-node-derived" height="70" rx="8" width="180" x="900" y="255"></rect><text class="svg-text" text-anchor="middle" x="990" y="284">projekcja clients/&lt;id&gt;</text><text class="svg-small" text-anchor="middle" x="990" y="305">minimalny widok tylko do odczytu</text>
 <path class="svg-arrow" d="M200 290 H245"></path><path class="svg-arrow" d="M415 290 H460"></path><path class="svg-arrow-orange" d="M630 290 H675"></path><path class="svg-arrow-dashed" d="M855 290 H900"></path>
-<rect class="svg-node-derived" height="58" rx="8" width="180" x="900" y="365"></rect><text class="svg-text" text-anchor="middle" x="990" y="389">Local attachment map</text><text class="svg-small" text-anchor="middle" x="990" y="408">repo_id → local_path</text>
+<rect class="svg-node-derived" height="58" rx="8" width="180" x="900" y="365"></rect><text class="svg-text" text-anchor="middle" x="990" y="389">Lokalna mapa podłączeń</text><text class="svg-small" text-anchor="middle" x="990" y="408">repo_id → local_path</text>
 <path class="svg-arrow-dashed" d="M990 325 V365"></path>
-<text class="svg-small" x="25" y="458">Never in SVN: private client keys · OTP plaintext after delivery · e-mail addresses after redaction</text><text class="svg-small" x="25" y="478">server private keys · local absolute paths</text>
+<text class="svg-small" x="25" y="458">Nigdy w SVN: prywatne klucze klientów · jawne OTP po wysłaniu · adresy poczty po usunięciu</text><text class="svg-small" x="25" y="478">prywatne klucze serwera · bezwzględne ścieżki lokalne</text>
 </svg>
 </div>
-<div class="figure-legend"><span class="authority">autorytatywny trwały stan</span><span class="derived">widok pochodny lub lokalny dla maszyny</span><span class="transient">trwały artefakt workflow, nie prawda domenowa</span></div>
+<div class="figure-legend"><span class="authority">autorytatywny trwały stan</span><span class="derived">widok pochodny lub lokalny dla maszyny</span><span class="transient">trwały artefakt przebieg operacji, nie prawda domenowa</span></div>
 </figure>
-<h3 id="onboarding-lifecycle">Cykl onboardingu</h3>
-<p>Zweryfikowany pion aktywacji dochodzi do <code>active</code>. Każda granica jest utrwalana przed następnym efektem zewnętrznym, co pozwala na wygaśnięcie albo odtwarzanie fail-closed bez wnioskowania o ukrytym stanie procesu.</p>
+<h3 id="onboarding-lifecycle">Cykl aktywacji klienta</h3>
+<p>Zweryfikowany pion aktywacji dochodzi do <code>active</code>. Każda granica jest utrwalana przed następnym efektem zewnętrznym, co pozwala na wygaśnięcie albo odtwarzanie z bezpieczną odmową bez wnioskowania o ukrytym stanie procesu.</p>
 <figure class="system-figure">
-<figcaption><span class="figure-kicker">Wykres C</span>Stany onboardingu widoczne po awarii aż do active</figcaption>
+<figcaption><span class="figure-kicker">Wykres C</span>Stany aktywacji klienta widoczne po awarii aż do active</figcaption>
 <div class="diagram-scroll">
 <svg aria-label="Onboarding lifecycle" class="diagram-c" role="img" viewbox="0 0 1320 260"><style>
 .svg-zone { fill:#FFFFFF; stroke:#D9DEE7; stroke-width:1.5; }
@@ -319,32 +314,32 @@
 <marker id="arrowC" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0B1D3A"></path></marker>
 <marker id="arrowOrangeC" markerheight="7" markerwidth="7" orient="auto-start-reverse" refx="9" refy="5" viewbox="0 0 10 10"><path d="M 0 0 L 10 5 L 0 10 z" fill="#FF6A00"></path></marker>
 </defs>
-<rect class="svg-node" height="68" rx="8" width="120" x="20" y="80"></rect><text class="svg-text" text-anchor="middle" x="80" y="108">Admin ticket</text><text class="svg-small" text-anchor="middle" x="80" y="130">verified</text>
-<rect class="svg-node-transient" height="68" rx="8" width="120" x="175" y="80"></rect><text class="svg-text" text-anchor="middle" x="235" y="108">Claim</text><text class="svg-small" text-anchor="middle" x="235" y="130">verified</text>
-<rect class="svg-node-transient" height="68" rx="8" width="135" x="330" y="80"></rect><text class="svg-text" text-anchor="middle" x="397" y="108">Operation bundle</text><text class="svg-small" text-anchor="middle" x="397" y="130">verified</text>
-<rect class="svg-node" height="68" rx="8" width="125" x="500" y="80"></rect><text class="svg-text" text-anchor="middle" x="562" y="108">OTP + tunnel</text><text class="svg-small" text-anchor="middle" x="562" y="130">verified</text>
-<rect class="svg-node" height="68" rx="8" width="135" x="660" y="80"></rect><text class="svg-text" text-anchor="middle" x="727" y="108">Pinned helper</text><text class="svg-small" text-anchor="middle" x="727" y="130">verified</text>
-<rect class="svg-node-authority" height="88" rx="8" width="155" x="830" y="70"></rect><text class="svg-text" text-anchor="middle" x="907" y="103">identity_generated</text><text class="svg-small" text-anchor="middle" x="907" y="127">verified</text>
-<rect class="svg-node-authority" height="68" rx="8" width="135" x="1020" y="80"></rect><text class="svg-text" text-anchor="middle" x="1087" y="108">access_staged</text><text class="svg-small" text-anchor="middle" x="1087" y="130">verified</text>
-<rect class="svg-node-authority" height="68" rx="8" width="110" x="1190" y="80"></rect><text class="svg-text" text-anchor="middle" x="1245" y="105">possession</text><text class="svg-text" text-anchor="middle" x="1245" y="123">verified</text><text class="svg-small" text-anchor="middle" x="1245" y="141">verified</text>
+<rect class="svg-node" height="68" rx="8" width="120" x="20" y="80"></rect><text class="svg-text" text-anchor="middle" x="80" y="108">Zlecenie administratora</text><text class="svg-small" text-anchor="middle" x="80" y="130">potwierdzone</text>
+<rect class="svg-node-transient" height="68" rx="8" width="120" x="175" y="80"></rect><text class="svg-text" text-anchor="middle" x="235" y="108">przejęcie</text><text class="svg-small" text-anchor="middle" x="235" y="130">potwierdzone</text>
+<rect class="svg-node-transient" height="68" rx="8" width="135" x="330" y="80"></rect><text class="svg-text" text-anchor="middle" x="397" y="108">Pakiet operacji</text><text class="svg-small" text-anchor="middle" x="397" y="130">potwierdzone</text>
+<rect class="svg-node" height="68" rx="8" width="125" x="500" y="80"></rect><text class="svg-text" text-anchor="middle" x="562" y="108">OTP + tunel</text><text class="svg-small" text-anchor="middle" x="562" y="130">potwierdzone</text>
+<rect class="svg-node" height="68" rx="8" width="135" x="660" y="80"></rect><text class="svg-text" text-anchor="middle" x="727" y="108">Przypięty klucz programu pomocniczego</text><text class="svg-small" text-anchor="middle" x="727" y="130">potwierdzone</text>
+<rect class="svg-node-authority" height="88" rx="8" width="155" x="830" y="70"></rect><text class="svg-text" text-anchor="middle" x="907" y="103">tożsamość wygenerowana</text><text class="svg-small" text-anchor="middle" x="907" y="127">potwierdzone</text>
+<rect class="svg-node-authority" height="68" rx="8" width="135" x="1020" y="80"></rect><text class="svg-text" text-anchor="middle" x="1087" y="108">dostęp przygotowany</text><text class="svg-small" text-anchor="middle" x="1087" y="130">potwierdzone</text>
+<rect class="svg-node-authority" height="68" rx="8" width="110" x="1190" y="80"></rect><text class="svg-text" text-anchor="middle" x="1245" y="105">dowód posiadania</text><text class="svg-text" text-anchor="middle" x="1245" y="123">potwierdzone</text><text class="svg-small" text-anchor="middle" x="1245" y="141">potwierdzone</text>
 <path class="svg-arrow" d="M140 114 H175"></path><path class="svg-arrow" d="M295 114 H330"></path><path class="svg-arrow" d="M465 114 H500"></path><path class="svg-arrow" d="M625 114 H660"></path><path class="svg-arrow-orange" d="M795 114 H830"></path><path class="svg-arrow" d="M985 114 H1020"></path><path class="svg-arrow" d="M1155 114 H1190"></path>
-<path class="svg-arrow" d="M1245 148 V195 H1120"></path><rect class="svg-node-authority" height="58" rx="8" width="150" x="970" y="175"></rect><text class="svg-text" text-anchor="middle" x="1045" y="199">active + first view</text><text class="svg-small" text-anchor="middle" x="1045" y="218">verified</text>
+<path class="svg-arrow" d="M1245 148 V195 H1120"></path><rect class="svg-node-authority" height="58" rx="8" width="150" x="970" y="175"></rect><text class="svg-text" text-anchor="middle" x="1045" y="199">stan aktywny + pierwszy widok</text><text class="svg-small" text-anchor="middle" x="1045" y="218">potwierdzone</text>
 </svg>
 </div>
 </figure>
 <div class="design-boundary"><strong>Reguła odczytu:</strong> węzeł diagramu opisuje właścicielstwo albo kontrakt, niekoniecznie proces, który pozostaje rezydentny. Na serwerze większość węzłów to krótkotrwałe polecenia nad plikami i systemowym <code>sshd</code>.</div>
-<h2 id="ch1-client-arch">1.2 Architektura klienta</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Mechanika klienta, odtwarzanie i granice IPC są pokryte testami integracyjnymi i chaosowymi.</span></div>
+<h2 id="ch1-client-arch">1.2 Architektura klienta</h2>
 <h3>Mapa modułów</h3>
 <div class="table-wrap"><table class="field-table">
 <tr><th>Obszar</th><th>Moduły</th><th>Odpowiedzialność</th></tr>
 <tr><td>Prezentacja pulpitu</td><td><code>cmd/filees-gui</code>, <code>internal/gui/*</code></td><td>Model widoku, akcje, zasobnik, natywne dialogi i powiadomienia; bez właścicielstwa SVN ani silnika.</td></tr>
-<tr><td>Granica lokalna</td><td><code>pkg/contract/v1</code>, <code>pkg/ipcclient</code>, <code>pkg/ipcserver</code></td><td>Protokół GUI/CLI do demona z bramkowaniem po zdolnościach (capability) przez lokalne gniazdo domeny Uniksa (AF_UNIX, w tym Windows).</td></tr>
+<tr><td>Granica lokalna</td><td><code>pkg/contract/v1</code>, <code>pkg/ipcclient</code>, <code>pkg/ipcserver</code></td><td>Protokół GUI/CLI do demona z bramkowaniem po uprawnieniach przez lokalne gniazdo domeny Uniksa (AF_UNIX, w tym Windows).</td></tr>
 <tr><td>Cykl życia klienta</td><td><code>cmd/filees</code>, <code>pkg/clientview</code>, <code>pkg/localrepo</code>, <code>pkg/provisioning</code>, <code>pkg/reposupervisor</code></td><td>Projekcja, trwały stan podłączenia, operacje create/attach/import oraz dynamiczne środowiska uruchomieniowe repozytoriów.</td></tr>
 <tr><td>Silnik repozytorium</td><td><code>pkg/watcher</code>, <code>pkg/commit</code>, <code>pkg/passport</code>, <code>pkg/client</code></td><td>Skanowanie, update/publish, dzierżawy edycji i jedyna granica CLI SVN.</td></tr>
-<tr><td>Język błędów i wydania</td><td><code>pkg/errcat</code>, <code>pkg/errmap</code>, <code>pkg/shout</code></td><td>Wspólny katalog kodów i komunikatów, klasyfikacja diagnostyki oraz marker wydania w <code>svn:log</code> z lokalnym inboxem.</td></tr>
-<tr><td>Autorytet serwera</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Uwierzytelnione tickety, kanoniczne rekordy repozytorium/grant/polityki oraz workery forced-command. Nie ma rezydentnego demona serwera FileES.</td></tr>
+<tr><td>Język błędów i wydania</td><td><code>pkg/errcat</code>, <code>pkg/errmap</code>, <code>pkg/shout</code></td><td>Wspólny katalog kodów i komunikatów, klasyfikacja diagnostyki oraz marker wydania w <code>svn:log</code> z lokalnym lokalną skrzynką zdarzeń.</td></tr>
+<tr><td>Autorytet serwera</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Uwierzytelnione zlecenia, kanoniczne rekordy repozytorium/uprawnienie/polityki oraz procesy wykonawcze wymuszone polecenie. Nie ma rezydentnego demona serwera FileES.</td></tr>
 <tr><td>Aktywacja i widok usługowy</td><td><code>pkg/onboarding</code>, <code>pkg/activation</code></td><td>Tożsamość instalacji, autoryzowane dołączenie do strefy i projekcja repozytorium usługowego specyficzna dla klienta.</td></tr>
-<tr><td>Inne granice zaufania</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Dostęp mobilny: odczyt udziału, zapis wyłącznie pod <code>mobile-uploads/</code> (inna treść na tej samej ścieżce to nowa rewizja), publiczna dystrybucja odczytu oddzielona od poświadczeń zapisu pulpitu oraz mały helper setuid, który naprawia wyłącznie właścicielstwo usługowej WC.</td></tr>
+<tr><td>Inne granice zaufania</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Dostęp mobilny: odczyt udziału, zapis wyłącznie pod <code>mobile-uploads/</code> (inna treść na tej samej ścieżce to nowa rewizja), publiczna dystrybucja odczytu oddzielona od poświadczeń zapisu pulpitu oraz mały program pomocniczy setuid, który naprawia wyłącznie właścicielstwo usługowej WC.</td></tr>
 <tr><td>Wydanie / instalacja</td><td><code>internal/clientupdate</code>, <code>internal/serverinstall</code>, <code>internal/release*</code></td><td>Podpisane aktualizacje pulpitu, instalacja serwera sterowana manifestem i koperty wydań.</td></tr>
 </table></div>
 <p>Dla każdego skonfigurowanego repozytorium demon uruchamia niezależny potok:</p>
@@ -354,19 +349,19 @@
                                      |
                               Reconciliation</code></pre>
 <h4>Skaner (<code>pkg/watcher</code>)</h4>
-<p>Okresowo obchodzi drzewo kopii roboczej i porównuje bieżący stan z manifestem zapisanym w <code>.filees/state/manifest.json</code>. Wykrywanie zmian używa mtime, rozmiaru i skrótu MD5. Pliki poniżej 64 MiB są hashowane w linii w ramach budżetu na skan; większe pliki są kolejkowane w trwałym backlogu MD5, przetwarzane po jednym przez workera w tle, który zawsze wybiera najmniejszy oczekujący plik. To umożliwia wykrywanie zmian nazw nawet dla dużych plików.</p>
-<p>Zdarzenia usunięcia są tłumione (debounce) przez 5 minut (równo z opóźnieniem nowego pliku), żeby plik usunięty i natychmiast utworzony ponownie nie wyprodukował fałszywego commita usunięcia. Podczas aktywnego commita (flaga <code>commit.busy</code>) skaner przełącza się w tryb lekki i obserwuje wyłącznie <code>.filees/tickets/</code>.</p><div class="decision">
+<p>Okresowo obchodzi drzewo kopii roboczej i porównuje bieżący stan z manifestem zapisanym w <code>.filees/state/manifest.json</code>. Wykrywanie zmian używa mtime, rozmiaru i skrótu MD5. Pliki poniżej 64 MiB są hashowane w linii w ramach budżetu na skan; większe pliki są kolejkowane w trwałym kolejce MD5, przetwarzane po jednym przez proces w tle, który zawsze wybiera najmniejszy oczekujący plik. To umożliwia wykrywanie zmian nazw nawet dla dużych plików.</p>
+<p>Zdarzenia usunięcia są łączone przez krótki czas przez 5 minut (równo z opóźnieniem nowego pliku), żeby plik usunięty i natychmiast utworzony ponownie nie wyprodukował fałszywego zatwierdzenia usunięcia. Podczas aktywnego zatwierdzenia (flaga <code>commit.busy</code>) skaner przełącza się w tryb lekki i obserwuje wyłącznie <code>.filees/tickets/</code>.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / okresowy skaner zamiast zależności od zdarzeń OS</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">Manifest i trwały backlog MD5 są autorytatywne dla wykrywania zmian.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">Manifest i trwała kolejka MD5 są autorytatywne dla wykrywania zmian.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Pominięte zdarzenie jądra, przestój demona albo specyficzne dla platformy zachowanie watchera nie może na stałe ukryć zmiany.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">Traktowanie natywnych strumieni powiadomień systemu plików jako kompletnej i trwałej historii.</div>
 <div class="decision-label">Koszt</div><div class="decision-value">Opóźnienie wykrycia jest ograniczone przez <code>watch_interval</code>, a skanowanie zużywa przewidywalne I/O.</div>
 </div>
 </div>
-<h4>Usługa commita (<code>pkg/commit</code>)</h4>
-<p>Scala zdarzenia skanera per ścieżka i przy każdym tyknięciu commita produkuje batche ograniczone przez <code>max_batch_files</code> (domyślnie 100) oraz <code>max_batch_mib</code> (domyślnie 512 MiB). Pojedynczy plik większy niż limit MiB dostaje własny batch, żeby nie zagłodził kolejki. Jeśli suma bajtów w stagingu osiągnie <code>backlog_flush_mib</code> (domyślnie 1024 MiB) i przynajmniej jeden wpis jest poza oknem opóźnienia nowego pliku, wymuszany jest flush bez czekania na regularny interwał.</p>
-<p>Przed każdą operacją SVN każda ścieżka jest ponownie klasyfikowana przez <code>svn status --xml --verbose</code>, żeby potwierdzić jej rzeczywisty stan w kopii roboczej. Puste commity są zabronione.</p>
+<h4>Usługa zatwierdzenia (<code>pkg/commit</code>)</h4>
+<p>Scala zdarzenia skanera dla każdej ścieżki i przy każdym cyklu zatwierdzania tworzy partie ograniczone przez <code>max_batch_files</code> (domyślnie 100) oraz <code>max_batch_mib</code> (domyślnie 512 MiB). Pojedynczy plik większy niż limit MiB dostaje własną partię, żeby nie zagłodził kolejki. Jeśli suma bajtów oczekujących danych osiągnie <code>backlog_flush_mib</code> (domyślnie 1024 MiB) i przynajmniej jeden wpis jest poza oknem opóźnienia nowego pliku, wymuszane jest zatwierdzenie bez czekania na regularny interwał.</p>
+<p>Przed każdą operacją SVN każda ścieżka jest ponownie klasyfikowana przez <code>svn status --xml --verbose</code>, żeby potwierdzić jej rzeczywisty stan w kopii roboczej. Puste zatwierdzenia są zabronione.</p>
 <p>Reguły scalania zdarzeń:</p>
 <div class="table-wrap"><table>
 <tr><th>Sekwencja</th><th>Wynik</th></tr>
@@ -377,9 +372,9 @@
 </table></div><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / planner planuje; committer publikuje</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">Wybór batchy i publikacja pozostają osobnymi odpowiedzialnościami nawet wtedy, gdy obie rosną pod testami chaosowymi.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">Wybór partii i publikacja pozostają osobnymi odpowiedzialnościami nawet wtedy, gdy obie rosną pod testami chaosowymi.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Planowanie odpowiada za porządek, rozmiar i reguły zagłodzenia. Publikacja odpowiada za efekty SVN, potwierdzenie i uzgadnianie.</div>
-<div class="decision-label">Odrzucono</div><div class="decision-value">Dzielenie według liczby linii; pozwolenie publisherowi wymyślać politykę batchowania; wyciąganie fragmentów bez skończonego kontraktu.</div>
+<div class="decision-label">Odrzucono</div><div class="decision-value">Dzielenie według liczby linii; pozwolenie publisherowi wymyślać politykę partiowania; wyciąganie fragmentów bez skończonego kontraktu.</div>
 <div class="decision-label">Koszt</div><div class="decision-value">Planner i committer mogą pozostać duże, ponieważ obsługa awarii pogłębia ich odpowiedzialność, nie poszerzając jej.</div>
 </div>
 </div>
@@ -394,29 +389,29 @@
 </div>
 </div>
 <h4>Serwer IPC (<code>pkg/ipcserver</code>) i klient (<code>pkg/ipcclient</code>)</h4>
-<p>Demon udostępnia gniazdo domeny Uniksa pod <code>\$XDG_RUNTIME_DIR/filees.sock</code> (zapasowo: <code>~/.filees/daemon.sock</code>). Protokół to <code>filees.contract/v1</code> — wersjonowane JSON Lines, jeden obiekt na linię. Zwykłe żądania są request/response; <code>events.subscribe</code> przełącza połączenie na strumień push z serwera. Aktualnie zaimplementowane polecenia obejmują <code>system.hello</code>, <code>system.status</code>, <code>system.restart</code>, <code>system.shutdown</code>, polecenia podpisanej aktualizacji, aktywacji i parowania mobilnego, polecenia cyklu życia repozytorium (<code>repo.create_request</code>, <code>repo.attach_intent</code>, <code>repo.attach_approve</code>, <code>repo.relocate</code>, <code>repo.locate</code>, <code>repo.load_dump</code>, odłączenie i usunięcie, <code>repo.lifecycle_status</code>), polecenia grantów/uprawnień stref (<code>repo.grant_access</code>, <code>repo.revoke_access</code>, <code>realm.alias_claim</code>, <code>realm.grant_recipients</code>, <code>realm.set_visibility</code>, <code>realm.remove_begin</code>, <code>realm.remove_confirm</code>), <code>repo.activity</code>, <code>repo.lock</code>, <code>repo.unlock</code>, <code>repo.reservation_list</code>, <code>repo.reservation_release</code>, <code>repo.publish</code>, <code>notice.list</code>, <code>notice.ack</code>, <code>error.list</code> oraz <code>events.subscribe</code>. Polecenia są ogłaszane indywidualnie jako zdolności (capability); klient nie może wnioskować o dostępności z tej listy. <code>repo.pause</code>, <code>repo.sync_now</code> i decyzje konfliktów pozostają zadeklarowane w kontrakcie, ale niepodłączone.</p><div class="decision">
+<p>Demon udostępnia gniazdo domeny Uniksa pod <code>\$XDG_RUNTIME_DIR/filees.sock</code> (zapasowo: <code>~/.filees/daemon.sock</code>). Protokół to <code>filees.contract/v1</code> — wersjonowane JSON Lines, jeden obiekt na linię. Zwykłe żądania mają charakter żądanie–odpowiedź; <code>events.subscribe</code> przełącza połączenie na strumień zdarzeń wysyłanych przez serwer. Aktualnie zaimplementowane polecenia obejmują <code>system.hello</code>, <code>system.status</code>, <code>system.restart</code>, <code>system.shutdown</code>, polecenia podpisanej aktualizacji, aktywacji i parowania mobilnego, polecenia cyklu życia repozytorium (<code>repo.create_request</code>, <code>repo.attach_intent</code>, <code>repo.attach_approve</code>, <code>repo.relocate</code>, <code>repo.locate</code>, <code>repo.load_dump</code>, odłączenie i usunięcie, <code>repo.lifecycle_status</code>), polecenia uprawnień/uprawnień stref (<code>repo.grant_access</code>, <code>repo.revoke_access</code>, <code>realm.alias_claim</code>, <code>realm.grant_recipients</code>, <code>realm.set_visibility</code>, <code>realm.remove_begin</code>, <code>realm.remove_confirm</code>), <code>repo.activity</code>, <code>repo.lock</code>, <code>repo.unlock</code>, <code>repo.reservation_list</code>, <code>repo.reservation_release</code>, <code>repo.publish</code>, <code>notice.list</code>, <code>notice.ack</code>, <code>error.list</code> oraz <code>events.subscribe</code>. Polecenia są ogłaszane indywidualnie jako uprawnienia; klient nie może wnioskować o dostępności z tej listy. <code>repo.pause</code>, <code>repo.sync_now</code> i decyzje konfliktów pozostają zadeklarowane w kontrakcie, ale niepodłączone.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / zdarzenia unieważniają snapshoty</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">Zdarzenia GUI są sygnałem do ponownego pobrania snapshotów należących do demona, nie drugą maszyną stanów.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">Zdarzenia GUI są sygnałem do ponownego pobrania obrazów stanu należących do demona, nie drugą maszyną stanów.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Utracone zdarzenie, ponowne połączenie albo luka wersji nie mogą sprawić, że GUI trwale rozjedzie się z prawdą demona.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">Budowanie trwałego stanu GUI wyłącznie przez odtwarzanie strumienia zdarzeń; pozwalanie GUI inspekcjonować <code>.filees</code> albo uruchamiać SVN.</div>
 <div class="decision-label">Koszt</div><div class="decision-value">GUI wykonuje dodatkowe odczyty statusu po zdarzeniach i pozostaje celowo zależne od kontraktu demona.</div>
 </div>
 </div>
-<h4>Bramki runtime (<code>pkg/runtime</code>)</h4>
-<p><strong>HostGate</strong> ogranicza liczbę równoczesnych commitów we wszystkich instancjach demona na hoście (blokady oparte na katalogach). <strong>RepoMutex</strong> wymusza najwyżej jeden commit naraz na repozytorium. Oba używają atomowych operacji katalogowych z PID, znacznikiem czasu utworzenia i unikalnym tokenem właściciela. Na Linux/POSIX (korekta S3) plik właściciela niesie zarządzany przez OS <code>flock</code>, żeby recykling PID nie dawał fałszywego wyniku „blokada nadal trzymana”.</p>
-<h2 id="ch1-states">1.3 Stany operacji</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Przejścia onboardingu przez active, ścieżki wygaśnięcia i odwołania są zaimplementowane i przetestowane.</span></div>
-<p>Operacje onboardingu (z <code>pkg/onboarding/types.go</code>) przechodzą przez następujące stany:</p>
+<h4>Bramki środowisko uruchomieniowe (<code>pkg/runtime</code>)</h4>
+<p><strong>HostGate</strong> ogranicza liczbę równoczesnych zatwierdzeń we wszystkich instancjach demona na komputerze (blokady oparte na katalogach). <strong>RepoMutex</strong> wymusza najwyżej jedno zatwierdzenie naraz na repozytorium. Oba używają atomowych operacji katalogowych z PID, znacznikiem czasu utworzenia i unikalnym tokenem właściciela. Na Linux/POSIX plik właściciela niesie zarządzany przez OS <code>flock</code>, żeby recykling PID nie dawał fałszywego wyniku „blokada nadal trzymana”.</p>
+<h2 id="ch1-states">1.3 Stany operacji</h2>
+<p>Operacje aktywacji klienta (z <code>pkg/onboarding/types.go</code>) przechodzą przez następujące stany:</p>
 <div class="table-wrap"><table>
 <tr><th>Stała stanu</th><th>Wartość łańcuchowa</th><th>Znaczenie</th></tr>
-<tr><td><code>OperationAwaitingTunnel</code></td><td><code>awaiting_tunnel</code></td><td>Ticket przejęty; oczekiwanie na OTP i tunel odwrotny</td></tr>
-<tr><td><code>OperationTunnelAuthorized</code></td><td><code>tunnel_authorized</code></td><td>BSD Auth zwalidował OTP; forward jeszcze nie nawiązany</td></tr>
-<tr><td><code>OperationTunnelStarted</code></td><td><code>tunnel_started</code></td><td>filees-entry potwierdził port odwrotny; worker zaraz wystartuje</td></tr>
-<tr><td><code>OperationHelperAnnounced</code></td><td><code>helper_announced</code></td><td>Worker spiął helper klienta</td></tr>
-<tr><td><code>OperationIdentityGenerated</code></td><td><code>identity_generated</code></td><td>Para kluczy Ed25519 wygenerowana na kliencie; klucz publiczny zapisany w bundlu</td></tr>
-<tr><td><code>OperationAccessStaged</code></td><td><code>access_staged</code></td><td>Klucz publiczny instalacji jest obecny w wygenerowanej autoryzacji runtime SSH/SVN</td></tr>
-<tr><td><code>OperationPossessionProved</code></td><td><code>possession_verified</code></td><td>Systemowy sshd uwierzytelnił klucz instalacji, a forced command serwera zapisał pasujące pokwitowanie</td></tr>
-<tr><td><code>OperationActive</code></td><td><code>active</code></td><td>Rekord klienta i pierwsza projekcja zostały zcommitowane do repozytorium usługowego</td></tr>
+<tr><td><code>OperationAwaitingTunnel</code></td><td><code>awaiting_tunnel</code></td><td>zlecenie przejęte; oczekiwanie na OTP i tunel odwrotny</td></tr>
+<tr><td><code>OperationTunnelAuthorized</code></td><td><code>tunnel_authorized</code></td><td>BSD Auth zwalidował OTP; przekierowanie jeszcze nie nawiązane</td></tr>
+<tr><td><code>OperationTunnelStarted</code></td><td><code>tunnel_started</code></td><td>filees-entry potwierdził port odwrotny; proces wykonawczy zaraz się uruchomi</td></tr>
+<tr><td><code>OperationHelperAnnounced</code></td><td><code>helper_announced</code></td><td>proces wykonawczy spiął program pomocniczy klienta</td></tr>
+<tr><td><code>OperationIdentityGenerated</code></td><td><code>identity_generated</code></td><td>Para kluczy Ed25519 wygenerowana na kliencie; klucz publiczny zapisany w pakiecie</td></tr>
+<tr><td><code>OperationAccessStaged</code></td><td><code>access_staged</code></td><td>Klucz publiczny instalacji jest obecny w wygenerowanej autoryzacji dostęp SSH/SVN</td></tr>
+<tr><td><code>OperationPossessionProved</code></td><td><code>possession_verified</code></td><td>Systemowy sshd uwierzytelnił klucz instalacji, a wymuszone polecenie serwera zapisał pasujące pokwitowanie</td></tr>
+<tr><td><code>OperationActive</code></td><td><code>active</code></td><td>Rekord klienta i pierwsza projekcja zostały zatwierdzone do repozytorium usługowego</td></tr>
 <tr><td><code>OperationOTPExhausted</code></td><td><code>otp_exhausted</code></td><td>Zbyt wiele błędnych prób OTP</td></tr>
 <tr><td><code>OperationExpired</code></td><td><code>expired</code></td><td>Upłynął TTL operacji</td></tr>
 </table></div>
@@ -432,15 +427,15 @@
   -&gt; initial_commit_failed -&gt; initial_commit_in_progress
   -&gt; initial_snapshot_published
   -&gt; active</code></pre>
-<p>Terminus <code>storage_preflight_failed</code> (np. odmowa workera <code>STORAGE_INSUFFICIENT</code>, gdy fizyczny system plików nie ma miejsca) jest trwały, ale sam z siebie nie samonaprawia się: GUI odpytuje <code>repo.lifecycle_status</code> po <code>operation_id</code> i pokazuje wynik jako drugie powiadomienie, ponieważ repozytorium, które nigdy nie dochodzi do <code>active</code>, nigdy nie dostaje zarejestrowanego <code>repo_id</code> i jest więc niewidoczne dla <code>repo.list</code>/<code>error.list</code>.</p>
-<p>Między <code>repository_ready</code> a <code>active</code> projekcja serwera może już zawierać repozytorium, podczas gdy jego potencjalnie duży <code>INITIAL_COMMIT</code> nadal trwa. Demon nakłada trwałe lokalne zgłoszenie cyklu życia na tę projekcję: Ustawienia pokazują wybraną ścieżkę i <strong>trwa import początkowy</strong>, a nie fałszywe <strong>nie podłączone lokalnie</strong>. Wiersz pozostaje niemodyfikowalny i żadne środowisko uruchomieniowe kopii roboczej nie startuje, zanim początkowy commit się powiedzie.</p>
-<h2 id="ch1-bundle">1.4 Układ bundla i protokół systemu plików</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Atomowe ścieżki claim/commit i odtwarzania przetestowane natywnie na OpenBSD.</span></div>
-<p>Strona serwera używa protokołu opartego na systemie plików, bez ukrytej bazy danych i bez demona w tle. Pojedynczy zcommitowany plik JSON <code>filees.onboarding-bundle/v4</code> jest atomowym rekordem operacji onboardingu. Zawiera trzy pod-obiekty: <code>Operation</code>, <code>Outbox</code> (stan dostawy zachowany, OTP i adres zredagowane po terminalnej dostawie) oraz <code>Audit</code> (historia tylko-dopisująca). Jedno <code>rename(2)</code> publikuje wszystkie trzy atomowo.</p><div class="decision">
+<p>Terminus <code>storage_preflight_failed</code> (np. odmowa procesu wykonawczego <code>STORAGE_INSUFFICIENT</code>, gdy fizyczny system plików nie ma miejsca) jest trwały, ale sam z siebie nie samonaprawia się: GUI odpytuje <code>repo.lifecycle_status</code> po <code>operation_id</code> i pokazuje wynik jako drugie powiadomienie, ponieważ repozytorium, które nigdy nie dochodzi do <code>active</code>, nigdy nie dostaje zarejestrowanego <code>repo_id</code> i jest więc niewidoczne dla <code>repo.list</code>/<code>error.list</code>.</p>
+<p>Między <code>repository_ready</code> a <code>active</code> projekcja serwera może już zawierać repozytorium, podczas gdy jego potencjalnie duży <code>INITIAL_COMMIT</code> nadal trwa. Demon nakłada trwałe lokalne zgłoszenie cyklu życia na tę projekcję: Ustawienia pokazują wybraną ścieżkę i <strong>trwa import początkowy</strong>, a nie fałszywe <strong>nie podłączone lokalnie</strong>. Wiersz pozostaje niemodyfikowalny i żadne środowisko uruchomieniowe kopii roboczej nie startuje, zanim początkowe zatwierdzenie się powiedzie.</p>
+<h2 id="ch1-bundle">1.4 Układ pakietu i protokół systemu plików</h2>
+<p>Strona serwera używa protokołu opartego na systemie plików, bez ukrytej bazy danych i bez demona w tle. Pojedynczy zatwierdzony plik JSON <code>filees.onboarding-bundle/v4</code> jest atomowym rekordem operacji aktywacji klienta. Zawiera trzy podobiekty: <code>Operation</code>, <code>Outbox</code> (stan dostawy zachowany, OTP i adres zredagowane po terminalnej dostawie) oraz <code>Audit</code> (historia tylko-dopisująca). Jedno <code>rename(2)</code> publikuje wszystkie trzy atomowo.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / protokół systemu plików zamiast ukrytej usługi transakcyjnej</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">Jeden wersjonowany bundle i atomowy rename publikują operację, outbox i audyt razem.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">Jeden wersjonowany pakiet i atomowa zmiana nazwy publikują operację, kolejkę poczty wychodzącej i audyt razem.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Dokładny punkt awarii pozostaje widoczny i można go zbadać albo dokończyć zwykłymi narzędziami systemowymi.</div>
-<div class="decision-label">Odrzucono</div><div class="decision-value">Prywatna baza danych jako jedyne źródło prawdy workflow; rezydentne demony serwera FileES; nieprzejrzyste dzienniki odtwarzania.</div>
+<div class="decision-label">Odrzucono</div><div class="decision-value">Prywatna baza danych jako jedyne źródło prawdy przebiegu operacji; rezydentne demony serwera FileES; nieprzejrzyste dzienniki odtwarzania.</div>
 <div class="decision-label">Koszt</div><div class="decision-value">Efekty między zasobami nadal wymagają kroków idempotentnych i uzgadniania; trwałość systemu plików wymaga jawnego <code>fsync</code>.</div>
 </div>
 </div>
@@ -474,46 +469,46 @@
     ├── logs/
     │   └── errors.jsonl               (structured error log, JSON Lines)
     └── locks/                         (HostGate and RepoMutex dirs)</code></pre>
-<h2 id="ch1-otp">1.5 Mechanizm OTP</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Przechowywanie OTP, limity prób, redakcja i przekazanie do BSD Auth zaimplementowane.</span></div>
-<p>Hasło jednorazowe do autoryzacji tunelu ma 120 bitów entropii zakodowane jako Base32 w formacie <code>LLLLLLLL-SSSSSSSSSSSSSSSS</code>. 40-bitowy prefiks to <em>lokator</em>, który identyfikuje bundle operacji bez ujawniania ID operacji. Pełna wartość jest weryfikowana jako HMAC-SHA-256 względem prywatnego peppera po stronie serwera (minimum 256 bitów) przechowywanego pod ścieżką daną przez <code>otp_pepper_file</code> w <code>server.json</code>.</p>
-<p>Każda błędna próba atomowo zmniejsza licznik zapisany w bundlu. Przy wygaśnięciu, wyczerpaniu OTP albo udanym użyciu hash i lokator są usuwane z bundla. OTP w postaci jawnej istnieje tylko we wpisie oczekującej poczty outbox aż do przyjęcia listu przez smarthost (<code>250</code> po DATA), po czym adres dostawy i OTP są atomowo redagowane.</p>
-<h2 id="ch1-ssh">1.6 Transport SSH: entry → worker → helper</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane do active</span><span>Pełna ścieżka revoke/reactivate, systemowy sshd, forced commands i svnserve w trybie tunelu przeszły natywnie na OpenBSD.</span></div>
+<h2 id="ch1-otp">1.5 Mechanizm OTP</h2>
+<p>Hasło jednorazowe do autoryzacji tunelu ma 120 bitów entropii zakodowane jako Base32 w formacie <code>LLLLLLLL-SSSSSSSSSSSSSSSS</code>. 40-bitowy prefiks to <em>lokator</em>, który identyfikuje pakiet operacji bez ujawniania ID operacji. Pełna wartość jest weryfikowana jako HMAC-SHA-256 względem prywatnego peppera po stronie serwera (minimum 256 bitów) przechowywanego pod ścieżką daną przez <code>otp_pepper_file</code> w <code>server.json</code>.</p>
+<p>Każda błędna próba atomowo zmniejsza licznik zapisany w pakiecie. Przy wygaśnięciu, wyczerpaniu OTP albo udanym użyciu hash i lokator są usuwane z pakietu. OTP w postaci jawnej istnieje tylko w oczekującym wpisie kolejki poczty wychodzącej aż do przyjęcia listu przez smarthost (<code>250</code> po DATA), po czym adres dostawy i OTP są atomowo redagowane.</p>
+<h2 id="ch1-ssh">1.6 Transport SSH: entry → proces wykonawczy → program pomocniczy</h2>
 <p>FileES używa systemowego <code>sshd</code> jako jedynego punktu końcowego sieci. Na serwerze tworzone są trzy osobne konta protokołu:</p>
 <div class="table-wrap"><table>
-<tr><th>Konto</th><th>Metoda uwierzytelnienia</th><th>Forced command</th><th>Przekierowanie</th></tr>
+<tr><th>Konto</th><th>Metoda uwierzytelnienia</th><th>wymuszone polecenie</th><th>Przekierowanie</th></tr>
 <tr><td><code>_filees-onboard</code></td><td>Klucz publiczny (skompilowany bootstrap Ed25519)</td><td><code>filees-bootstrap-entry</code></td><td>Brak (<code>DisableForwarding yes</code>)</td></tr>
 <tr><td><code>_filees-tunnel</code></td><td><code>keyboard-interactive:bsdauth</code> przez styl <code>login_-filees</code></td><td><code>filees-entry</code></td><td>Zdalne TCP wyłącznie na <code>127.0.0.1:42000</code></td></tr>
 <tr><td><code>_filees-client</code></td><td>Klucz publiczny Ed25519 per instalacja</td><td>Per klucz <code>filees-client-entry &lt;operation_id&gt; &lt;client_id&gt;</code></td><td>Brak (<code>DisableForwarding yes</code>)</td></tr>
 <tr><td><code>_filees-data</code></td><td>Ten sam klucz per instalacja, serwowany przez <code>AuthorizedKeysCommand</code></td><td>Per klucz <code>filees-client-entry</code>, który serwuje <code>svnserve -t</code> zakorzenione w repozytoriach danych zamiast repozytorium usługowego</td><td>Brak (<code>DisableForwarding yes</code>)</td></tr>
-<tr><td><code>_filees-recovery</code></td><td>Klucz publiczny Ed25519 odtwarzania per operacja, rozwiązywany przez osobny helper <code>filees-recovery-authorize</code></td><td><code>filees-recovery-entry serve &lt;operation_id&gt;</code></td><td>Brak (<code>DisableForwarding yes</code>)</td></tr>
+<tr><td><code>_filees-recovery</code></td><td>Klucz publiczny Ed25519 odtwarzania per operacja, rozwiązywany przez osobny program pomocniczy <code>filees-recovery-authorize</code></td><td><code>filees-recovery-entry serve &lt;operation_id&gt;</code></td><td>Brak (<code>DisableForwarding yes</code>)</td></tr>
 </table></div>
-<p>Ostatnie konto istnieje wyłącznie po to, żeby strefa, która usunęła swój udział FileES, mogła nadal pobrać własne archiwa. Jest opisane w <a href="administration.html#ch4-realm-removal">§4.8</a>; klucz, który przyjmuje, jest zdolnością (capability) związaną z dokładnie jedną operacją usunięcia i nie jest poświadczeniem klienta.</p><div class="decision">
+<p>Ostatnie konto istnieje wyłącznie po to, żeby strefa, która usunęła swój udział FileES, mogła nadal pobrać własne archiwa. Jest opisane w <a href="administration.html#ch4-realm-removal">§4.8</a>; klucz, który przyjmuje, jest zdolnością (uprawnienie) związaną z dokładnie jedną operacją usunięcia i nie jest poświadczeniem klienta.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / systemowy sshd jako jedyny punkt końcowy sieci</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">OpenSSH zapewnia uwierzytelnianie, forced commands, politykę przekierowań, limity i dojrzałą integrację z platformą.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">OpenSSH zapewnia uwierzytelnianie, wymuszone polecenies, politykę przekierowań, limity i dojrzałą integrację z platformą.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">FileES potrzebuje wąskiego, uwierzytelnionego wyzwalacza, nie ogólnego serwera aplikacyjnego.</div>
-<div class="decision-label">Odrzucono</div><div class="decision-value">Własny listener TLS, API REST/gRPC, prywatny serwer SSH, usługa <code>inetd</code> albo długożyjący demon gniazda.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Bazowy OpenSSH nie potrafi wyrazić każdej dynamicznej polityki, więc rzadkie wdrożenia używają jednego stałego portu loopback i serializacji.</div>
+<div class="decision-label">Odrzucono</div><div class="decision-value">Własny proces nasłuchujący TLS, API REST/gRPC, prywatny serwer SSH, usługa <code>inetd</code> albo długożyjący demon gniazda.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Bazowy OpenSSH nie potrafi wyrazić każdej dynamicznej polityki, więc rzadkie wdrożenia używają jednego stałego portu interfejsie lokalnym i serializacji.</div>
 </div>
 </div>
-<p>Przepływ wdrożenia push i aktywacji:</p>
+<p>Przebieg aktywacji inicjowanej przez klienta:</p>
 <ol>
-<li><strong>Wejście A — żądanie onboardingu.</strong> Klient łączy się SSH ze skompilowanym kluczem bootstrap Ed25519 do <code>_filees-onboard</code>. Ograniczony <code>filees-bootstrap-entry</code> czyta jedną wersjonowaną ramkę <code>filees.onboard-request/v1</code>, wykonuje atomowe przejęcie onboardingu, a następnie wykonuje dokładnie jedno wysłanie SMTP z outboxa. Połączenie się zamyka; żaden demon poczty FileES nie pozostaje uruchomiony.</li>
+<li><strong>Wejście A — żądanie aktywacji klienta.</strong> Klient łączy się SSH ze skompilowanym kluczem bootstrap Ed25519 do <code>_filees-onboard</code>. Ograniczony <code>filees-bootstrap-entry</code> czyta jedną wersjonowaną ramkę <code>filees.onboard-request/v1</code>, wykonuje atomowe przejęcie aktywacji klienta, a następnie wykonuje dokładnie jedno wysłanie SMTP z outboxa. Połączenie się zamyka; żaden demon poczty FileES nie pozostaje uruchomiony.</li>
 <li><strong>Wejście B — OTP i tunel odwrotny.</strong> Po otrzymaniu OTP e-mailem klient uruchamia:<br/>
 <pre><code>ssh -F /dev/null -l _filees-tunnel -T \
   -R 127.0.0.1:42000:127.0.0.1:&lt;local-helper-port&gt; \
   &lt;server&gt; "filees tunnel-v1"</code></pre>
-    OTP jest podawane przez platformowy askpass (<code>SSH_ASKPASS_REQUIRE=force</code>; POSIX FIFO, named pipe w Windows). BSD Auth waliduje OTP, czytając styl <code>login_-filees</code>, i atomowo przesuwa bundle do <code>tunnel_authorized</code>. <code>filees-entry</code> potwierdza, że <code>SSH_ORIGINAL_COMMAND</code> to dokładnie <code>filees tunnel-v1</code>, przejmuje grant tunelu (przesuwając do <code>tunnel_started</code>), następnie <code>exec</code>uje <code>filees-worker deploy</code>.</li>
-<li><strong>Worker — generowanie tożsamości.</strong> <code>filees-worker</code> łączy się przez tunel odwrotny z helperem po stronie klienta, używając spiętego klucza workera Ed25519. Helper przyjmuje wyłącznie <code>filees-deploy/v1</code>. Dla <code>generate_identity</code> klient generuje parę kluczy Ed25519 lokalnie; z powrotem do workera wracają tylko klucz publiczny i odcisk. Klucz prywatny nigdy nie opuszcza maszyny klienta.</li>
-<li><strong>Staging dostępu i dowód posiadania.</strong> Worker ustawia ograniczoną linię w <code>/var/filees/activation/authorized_keys</code> oraz authz SVN tylko do odczytu. Następnie prosi ten sam helper o wykonanie <code>prove_service_access</code>. Klient otwiera nowe połączenie SSH jako <code>_filees-client</code> z prywatnym kluczem instalacji i stałym poleceniem <code>svnserve -t</code>. Po uwierzytelnieniu klucza przez systemowy sshd <code>filees-client-entry</code> zapisuje pokwitowanie po stronie serwera i execuje skonfigurowany <code>svnserve</code>. Sama odpowiedź helpera nigdy nie jest przyjmowana jako dowód.</li>
-<li><strong>Publikacja aktywacji.</strong> Po walidacji pokwitowania worker commituje format usługowy, strefę, rekord klienta, pierwszy widok klienta i zdarzenie audytu w jednej rewizji SVN, następnie przesuwa operację do <code>active</code>. Aktywny klucz zachowuje dostęp tylko do odczytu wyłącznie do własnego poddrzewa klienta.</li>
+    OTP jest podawane przez platformowy askpass (<code>SSH_ASKPASS_REQUIRE=force</code>; POSIX FIFO, potok nazwany w Windows). BSD Auth waliduje OTP, czytając styl <code>login_-filees</code>, i atomowo przesuwa pakiet do <code>tunnel_authorized</code>. <code>filees-entry</code> potwierdza, że <code>SSH_ORIGINAL_COMMAND</code> to dokładnie <code>filees tunnel-v1</code>, przejmuje uprawnienie tunelu (przesuwając do <code>tunnel_started</code>), następnie <code>exec</code>uje <code>filees-worker deploy</code>.</li>
+<li><strong>proces wykonawczy — generowanie tożsamości.</strong> <code>filees-worker</code> łączy się przez tunel odwrotny z programem pomocniczym po stronie klienta, używając spiętego klucza procesu wykonawczego Ed25519. Program pomocniczy przyjmuje wyłącznie <code>filees-deploy/v1</code>. Dla <code>generate_identity</code> klient generuje parę kluczy Ed25519 lokalnie; z powrotem do procesu wykonawczego wracają tylko klucz publiczny i odcisk. Klucz prywatny nigdy nie opuszcza maszyny klienta.</li>
+<li><strong>przygotowanie dostępu i dowód posiadania.</strong> proces wykonawczy ustawia ograniczoną linię w <code>/var/filees/activation/authorized_keys</code> oraz authz SVN tylko do odczytu. Następnie prosi ten sam program pomocniczy o wykonanie <code>prove_service_access</code>. Klient otwiera nowe połączenie SSH jako <code>_filees-client</code> z prywatnym kluczem instalacji i stałym poleceniem <code>svnserve -t</code>. Po uwierzytelnieniu klucza przez systemowy sshd <code>filees-client-entry</code> zapisuje pokwitowanie po stronie serwera i execuje skonfigurowany <code>svnserve</code>. Sama odpowiedź programu pomocniczego nigdy nie jest przyjmowana jako dowód.</li>
+<li><strong>Publikacja aktywacji.</strong> Po walidacji pokwitowania proces wykonawczy zatwierdza format usługowy, strefę, rekord klienta, pierwszy widok klienta i zdarzenie audytu w jednej rewizji SVN, następnie przesuwa operację do <code>active</code>. Aktywny klucz zachowuje dostęp tylko do odczytu wyłącznie do własnego poddrzewa klienta.</li>
 </ol>
-<p>Helper po stronie klienta to minimalny serwer SSH nasłuchujący wyłącznie na loopback z efemerycznym kluczem hosta. Odmawia shella, PTY, podsystemów, żądań globalnych i każdego polecenia innego niż <code>filees-deploy/v1</code>. Odpowiedzi są ograniczone rozmiarem do 64 KiB przy użyciu <code>io.LimitReader</code> przed dekodowaniem (utwardzenie S3).</p>
+<p>program pomocniczy po stronie klienta to minimalny serwer SSH nasłuchujący wyłącznie na interfejsie lokalnym z efemerycznym kluczem serwera. Odmawia powłoki, PTY, podsystemów, żądań globalnych i każdego polecenia innego niż <code>filees-deploy/v1</code>. Odpowiedzi są ograniczone rozmiarem do 64 KiB przy użyciu <code>io.LimitReader</code> przed dekodowaniem.</p>
 <h4>Uwierzytelniona płaszczyzna sterowania</h4>
-<p>Gdy klient jest aktywny, dociera do serwera przez to samo konto <code>_filees-client</code> z <code>SSH_ORIGINAL_COMMAND</code> ustawionym na <code>filees control-v1</code>. <code>filees-client-entry</code> uruchamia wtedy <code>filees-worker repository-control &lt;client_id&gt;</code> i przekazuje jedną wersjonowaną ramkę ticketu. Worker serializuje każde żądanie sterowania za pojedynczą blokadą pliku, więc żądania z różnych sesji nigdy się nie przeplatają.</p>
-<p>Tożsamość i autorytet zawsze pochodzą z sesji forced-command, nigdy z ciała ticketu: worker rozwiązuje <code>client_id</code> z wiązania polecenia per-klucz, a strefę z projekcji po stronie serwera. Aktualnie przyjmowana rodzina ticketów to:</p>
+<p>Gdy klient jest aktywny, dociera do serwera przez to samo konto <code>_filees-client</code> z <code>SSH_ORIGINAL_COMMAND</code> ustawionym na <code>filees control-v1</code>. <code>filees-client-entry</code> uruchamia wtedy <code>filees-worker repository-control &lt;client_id&gt;</code> i przekazuje jedną wersjonowaną ramkę zlecenia. Proces wykonawczy serializuje każde żądanie sterowania za pojedynczą blokadą pliku, więc żądania z różnych sesji nigdy się nie przeplatają.</p>
+<p>Tożsamość i autorytet zawsze pochodzą z sesji wymuszone polecenie, nigdy z ciała zlecenia: proces wykonawczy rozwiązuje <code>client_id</code> z wiązania polecenia przypisanym do klucza, a strefę z projekcji po stronie serwera. Aktualnie przyjmowana rodzina zleceń to:</p>
 <div class="table-wrap"><table>
-<tr><th>Ticket</th><th>Cel</th><th>Wymagany autorytet</th></tr>
+<tr><th>zlecenie</th><th>Cel</th><th>Wymagany autorytet</th></tr>
 <tr><td><code>STORAGE_PREFLIGHT</code></td><td>Sprawdzenie pojemności przed importem</td><td>Klient tworzący repozytorium</td></tr>
 <tr><td><code>CREATE_REPOSITORY</code></td><td>Utworzenie repozytorium danych należącego do strefy sesji</td><td>Klient tworzący repozytorium</td></tr>
 <tr><td><code>INITIAL_COMMIT</code></td><td>Aktywacja świeżo zaimportowanego repozytorium</td><td>Strefa-właściciel tego repozytorium</td></tr>
@@ -524,9 +519,9 @@
 <tr><td><code>CLIENT_DEACTIVATE</code></td><td>Dezaktywacja tej jednej instalacji na serwerze</td><td>Sama uwierzytelniona instalacja</td></tr>
 <tr><td><code>REALM_REMOVE_REQUEST</code> / <code>REALM_REMOVE_CONFIRM</code></td><td>Usunięcie całego udziału FileES strefy, bramkowane OTP wysłanym pocztą</td><td>Dowolny aktywny klient strefy plus dowód OTP</td></tr>
 </table></div>
-<p>Każdy ticket jest idempotentny względem <code>operation_id</code>: powtórzenie żądania odtwarza zapisany trwały wynik zamiast ponownie wykonywać efekt. Związanie tego samego <code>operation_id</code> z innym <code>request_id</code> jest odrzucane.</p>
-<h2 id="ch1-sandbox">1.7 Model piaskownicy pledge / unveil</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD</span><span>Profile pledge/unveil per-polecenie oraz granica exec dyspozytora/workera przetestowane natywnie.</span></div>
-<p>Na OpenBSD każde narzędzie po stronie serwera wywołuje <code>pledge(2)</code> i <code>unveil(2)</code> z minimalnymi profilami per-polecenie. Przepływ procesu to:</p>
+<p>każde zlecenie jest idempotentny względem <code>operation_id</code>: powtórzenie żądania odtwarza zapisany trwały wynik zamiast ponownie wykonywać efekt. Związanie tego samego <code>operation_id</code> z innym <code>request_id</code> jest odrzucane.</p>
+<h2 id="ch1-sandbox">1.7 Model piaskownicy pledge / unveil</h2>
+<p>Na OpenBSD każde narzędzie po stronie serwera wywołuje <code>pledge(2)</code> i <code>unveil(2)</code> z minimalnymi profilami dla każdego polecenia. Przepływ procesu to:</p>
 <pre><code>parse argv / verb
   -&gt; pledge("stdio rpath wpath unveil")   # bootstrap
   -&gt; load and canonicalise config
@@ -540,30 +535,30 @@
 <div class="decision-label">Decyzja</div><div class="decision-value">Każde krótkotrwałe narzędzie i czasownik dostaje wyłącznie swoje dokładne ścieżki i obietnice wywołań systemowych.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">Kompromitacja albo błąd programistyczny powinny pozostać ograniczone funkcją, do której procesu uruchomiono.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">Szeroki wspólny profil demona; konfigurowalne łańcuchy obietnic; nadawanie zdolności na hipotetyczną przyszłą pracę.</div>
-<div class="decision-label">Koszt</div><div class="decision-value">Profile wymagają testów natywnych i mogą ujawnić minima specyficzne dla runtime, takie jak dostęp loadera albo startowy <code>setrlimit</code>.</div>
+<div class="decision-label">Koszt</div><div class="decision-value">Profile wymagają testów natywnych i mogą ujawnić minima specyficzne dla środowisko uruchomieniowe, takie jak dostęp loadera albo startowy <code>setrlimit</code>.</div>
 </div>
 </div>
-<p>Macierz obietnic i ścieżek per-narzędzie:</p>
+<p>Macierz obietnic i ścieżek dla każdego narzędzia:</p>
 <div class="table-wrap"><table>
-<tr><th>Narzędzie / czasownik</th><th>Obietnice runtime</th><th>Odsłonięte obszary</th></tr>
-<tr><td><code>filees-admin ticket list</code></td><td><code>stdio rpath wpath flock</code></td><td>tickets (r), lock (rw)</td></tr>
-<tr><td><code>filees-admin ticket create/revoke</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>tickets+audit (rwc), lock (rw)</td></tr>
-<tr><td><code>filees-admin operation inspect</code></td><td><code>stdio rpath wpath flock</code></td><td>operations (r), lock (rw)</td></tr>
-<tr><td><code>filees-onboard take</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>tickets+operations+audit (rwc), lock (rw)</td></tr>
-<tr><td><code>filees-operation recover</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>wszystkie obszary sterowania, stan aktywacji, wyniki/dane repozytoriów, dokładna WC/repozytorium usługowe oraz stałe binarki SVN</td></tr>
-<tr><td><code>filees-mail send</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>operations (rwc), lock (rw), /etc/resolv.conf, /etc/hosts (r)</td></tr>
-<tr><td><code>filees-mail public-loop</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>outbox udziałów publicznych i stan OTP odbiorcy (rwc), /etc/resolv.conf, /etc/hosts (r); sekret SMTP jest ładowany przed unveil</td></tr>
+<tr><th>Narzędzie / czasownik</th><th>Obietnice środowiska uruchomieniowego</th><th>Odsłonięte obszary</th></tr>
+<tr><td><code>filees-admin ticket list</code></td><td><code>stdio rpath wpath flock</code></td><td>tickets (r), blokada (rw)</td></tr>
+<tr><td><code>filees-admin ticket create/revoke</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>tickets+audit (rwc), blokada (rw)</td></tr>
+<tr><td><code>filees-admin operation inspect</code></td><td><code>stdio rpath wpath flock</code></td><td>operations (r), blokada (rw)</td></tr>
+<tr><td><code>filees-onboard take</code></td><td><code>stdio rpath wpath cpath fattr flock</code></td><td>tickets+operations+audit (rwc), blokada (rw)</td></tr>
+<tr><td><code>filees-operation recover</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>wszystkie obszary sterowania, stan aktywacji, wyniki/dane repozytoriów, dokładna WC/repozytorium usługowe oraz stałe pliki wykonywalne SVN</td></tr>
+<tr><td><code>filees-mail send</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>operations (rwc), blokada (rw), /etc/resolv.conf, /etc/hosts (r)</td></tr>
+<tr><td><code>filees-mail public-loop</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>kolejka poczty wychodzącej udziałów publicznych i stan OTP odbiorcy (rwc), /etc/resolv.conf, /etc/hosts (r); sekret SMTP jest ładowany przed unveil</td></tr>
 <tr><td><code>filees-admin erasure complete</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns</code></td><td>operations+audit, dziennik wymazywania danych, konfiguracja SMTP i pliki resolwera</td></tr>
-<tr><td><code>filees-entry</code></td><td><code>stdio proc exec</code></td><td>stały obraz workera i loader runtime</td></tr>
-<tr><td><code>filees-worker deploy</code></td><td><code>stdio rpath wpath cpath fattr flock inet proc exec</code></td><td>operations, klucz workera, root aktywacji, WC/repozytorium usługowe i stała binarka SVN</td></tr>
-<tr><td><code>filees-client-entry</code> (tryb SVN)</td><td><code>stdio rpath wpath cpath fattr flock dpath proc exec</code></td><td>root pokwitowań aktywacji, repozytorium usługowe, authz i stała binarka svnserve; <code>dpath</code> wyłącznie do utworzenia prywatnego FIFO odwołania sesji</td></tr>
-<tr><td><code>filees-client-entry</code> (tryb sterowania)</td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec</code></td><td>jak wyżej plus root/wyniki repozytoriów, authz danych, WC usługowa, root onboardingu, pepper OTP oraz stałe obrazy workera i poczty</td></tr>
+<tr><td><code>filees-entry</code></td><td><code>stdio proc exec</code></td><td>stały obraz procesu wykonawczego i program ładujący środowiska uruchomieniowego</td></tr>
+<tr><td><code>filees-worker deploy</code></td><td><code>stdio rpath wpath cpath fattr flock inet proc exec</code></td><td>operations, klucz procesu wykonawczego, katalog główny aktywacji, WC/repozytorium usługowe i stały plik wykonywalny SVN</td></tr>
+<tr><td><code>filees-client-entry</code> (tryb SVN)</td><td><code>stdio rpath wpath cpath fattr flock dpath proc exec</code></td><td>katalog główny pokwitowań aktywacji, repozytorium usługowe, authz i stały plik wykonywalny svnserve; <code>dpath</code> wyłącznie do utworzenia prywatnego FIFO służącego do odwołania sesji</td></tr>
+<tr><td><code>filees-client-entry</code> (tryb sterowania)</td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec</code></td><td>jak wyżej plus katalog wyników repozytoriów, authz danych, WC usługowa, katalog główny aktywacji klienta, pepper OTP oraz stałe obrazy procesu wykonawczego i poczty</td></tr>
 <tr><td><code>filees-worker repository-control</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec unveil</code></td><td>dziedziczy zablokowaną tablicę entry; nie ma własnej tablicy</td></tr>
-<tr><td><code>filees-recovery-entry authorize|serve</code></td><td><code>stdio rpath</code></td><td>konfiguracja serwera (r), root wyników repozytoriów (r), root archiwum usunięć (r) — tylko odczyt przez cały czas</td></tr>
-<tr><td><code>filees-admin client revoke</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>root aktywacji, WC/repozytorium usługowe i stała binarka SVN</td></tr>
-<tr><td><code>login_-filees</code> (styl BSD Auth)</td><td><code>stdio rpath wpath cpath flock</code></td><td>root operacji, plik peppera</td></tr>
+<tr><td><code>filees-recovery-entry authorize|serve</code></td><td><code>stdio rpath</code></td><td>konfiguracja serwera (r), katalog główny wyników repozytoriów (r), katalog główny archiwum usunięć (r) — tylko odczyt przez cały czas</td></tr>
+<tr><td><code>filees-admin client revoke</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>katalog główny aktywacji, WC/repozytorium usługowe i stały plik wykonywalny SVN</td></tr>
+<tr><td><code>login_-filees</code> (styl BSD Auth)</td><td><code>stdio rpath wpath cpath flock</code></td><td>katalog główny operacji, plik peppera</td></tr>
 </table></div>
-<div class="note"><strong>Kluczowy niezmiennik:</strong> profile pledge i unveil są zamknięte w kodzie. Tylko dyspozytor, worker aktywacji, client entry i administracyjne revoke zachowują wąsko wymaganą granicę <code>proc exec</code> dla stałego pliku wykonywalnego; żadna obietnica ani ścieżka wykonywalna nie pochodzi z żądania sieciowego.</div>
+<div class="note"><strong>Kluczowy niezmiennik:</strong> profile pledge i unveil są zamknięte w kodzie. Tylko dyspozytor, proces wykonawczy aktywacji, client entry i administracyjne revoke zachowują wąsko wymaganą granicę <code>proc exec</code> dla stałego pliku wykonywalnego; żadna obietnica ani ścieżka wykonywalna nie pochodzi z żądania sieciowego.</div>
 <h4>Dwie dyscypliny exec</h4>
 <p>Tablica <code>unveil(2)</code> przeżywa <code>execve</code> i po zablokowaniu przez <code>unveil(NULL, NULL)</code> nigdy nie może być zastąpiona ani rozszerzona — nawet przez dziecko, które chce węższą. Dyspozytor musi więc z góry wybrać jedną z dwóch dyscyplin, a wybór określa, czym mogą być jego dzieci:</p>
 <div class="table-wrap"><table>
@@ -571,9 +566,9 @@
 <tr><td>Dziecko wstępnie odsłonięte</td><td><code>obsandbox.ApplyForExec</code></td><td>Rodzic buduje i blokuje tablicę; dziecko <em>nie</em> może samo wywołać <code>unveil</code> i zamiast tego otwiera przygotowane uchwyty (<code>onboarding.OpenPrepared</code>). Używane przez <code>filees-client-entry</code> → <code>filees-worker</code>.</td></tr>
 <tr><td>Dziecko z własną piaskownicą</td><td><code>obsandbox.PledgeForExec</code></td><td>Rodzic ogranicza wyłącznie obietnice i zostawia tablicę otwartą, żeby dziecko mogło zainstalować i zablokować własny, węższy profil. Używane przez <code>filees-bootstrap-entry</code> → <code>filees-onboard</code>, <code>filees-mail</code>.</td></tr>
 </table></div>
-<p>Zmieszanie obu — exec narzędzia z własną piaskownicą z dyspozytora, który już zablokował tablicę — kończy się na pierwszym wywołaniu <code>unveil</code> dziecka błędem <code>EPERM</code>, i to wyłącznie na OpenBSD, bo gdzie indziej piaskownica jest no-op. Każdy nowy proces-dziecko po stronie serwera musi być sklasyfikowany względem tej tabeli zanim zostanie podłączony.</p>
-<p>Binarka <code>filees-entry</code> jest setuid na <code>_filees-state</code>. <code>filees-worker</code> ma tryb <code>0555</code> i dziedziczy efektywny UID przez <code>exec</code>. Ten podział jest wymagany, ponieważ OpenBSD odmawia wykonania obrazu setuid/setgid, gdy ustawione są <code>execpromises</code>.</p>
-<h2 id="ch1-service-repo">1.8 Repozytorium usługowe</h2><div class="section-meta"><span class="status status-verified">Płaszczyzna sterowania aktywacją i grantami zaimplementowana</span><span>Projekcja aktywacji klienta, ACL tylko do odczytu oraz kanoniczny magazyn grantów/uprawnień stref są zaimplementowane i pokryte E2E Linux/OpenBSD (§4.4 EXECUTION_ORDER.md / reports/REALM_GRANTS_E2E_2026-08-01.md).</span></div>
+<p>Zmieszanie obu — exec narzędzia z własną piaskownicą z dyspozytora, który już zablokował tablicę — kończy się na pierwszym wywołaniu <code>unveil</code> dziecka błędem <code>EPERM</code>, i to wyłącznie na OpenBSD, bo gdzie indziej piaskownica jest operacją pustą. Każdy nowy proces-dziecko po stronie serwera musi być sklasyfikowany względem tej tabeli zanim zostanie podłączony.</p>
+<p>plik wykonywalny <code>filees-entry</code> jest setuid na <code>_filees-state</code>. <code>filees-worker</code> ma tryb <code>0555</code> i dziedziczy efektywny UID przez <code>exec</code>. Ten podział jest wymagany, ponieważ OpenBSD odmawia wykonania obrazu setuid/setgid, gdy ustawione są <code>execpromises</code>.</p>
+<h2 id="ch1-service-repo">1.8 Repozytorium usługowe</h2>
 <p>Repozytorium usługowe (nazywane też repozytorium technicznym) jest prywatnym repozytorium SVN, które działa jako wersjonowana płaszczyzna sterowania. <em>Nie</em> przechowuje synchronizowanych plików użytkownika. Każdy monitorowany katalog ma własne, osobne repozytorium danych.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / repozytorium usługowe SVN jako wersjonowana płaszczyzna sterowania</div>
 <div class="decision-grid">
@@ -587,8 +582,8 @@
 <ul>
 <li>Strefy i ich niezmienne identyfikatory</li>
 <li>Instancje klientów, <code>client_id</code>, klucze publiczne, odciski</li>
-<li>Właścicielstwo repozytoriów i kanoniczne granty/uprawnienia strefa→repozytorium</li>
-<li>Widoki tylko do odczytu per-klient</li>
+<li>Właścicielstwo repozytoriów i kanoniczne uprawnienia/uprawnienia strefa→repozytorium</li>
+<li>Widoki tylko do odczytu dla klienta</li>
 <li>Zdarzenia audytu aktywacji i odwołania</li>
 <li>Wersja formatu usługowego</li>
 </ul>
@@ -604,12 +599,12 @@
 └── clients/
     └── &lt;client_id&gt;/
         └── view.json</code></pre>
-<p>Menedżer aktywacji i uwierzytelniony worker repozytoriów są ograniczonymi pisarzami w tym pionie. Każdy aktywny klient ma dostęp SVN tylko do odczytu do własnego poddrzewa <code>/clients/&lt;client_id&gt;/</code> i nie ma wglądu w <code>admin/</code> ani innych klientów. Jeden commit SVN publikuje rekord klienta, strefę jeśli nowa, projekcję i zdarzenie audytu atomowo. Klient dołączający do istniejącej strefy dziedziczy niezmienny alias tej strefy w pierwszym widoku. Właścicielstwo repozytoriów (<code>admin/repositories/</code>) i kanoniczne granty/uprawnienia strefa→repozytorium (<code>admin/grants/</code>, zob. <a href="security.html#ch5-identity">tożsamość i model grantów</a>) są zaimplementowane; każda zmiana grant/revoke i widoczności regeneruje <code>view.json</code> dotkniętych klientów oraz authz po stronie serwera w tej samej operacji workera. Przebudowa grantów uzgadnia też kanoniczny alias strefy, a idempotentne pasujące zajęcie aliasu naprawia starsze widoki, które go pomijały. Szersza konsola administracyjna poza <code>filees-admin</code> (§4.1) pozostaje osobną, późniejszą koncepcją (signed-ticket V3, priorytet 8 w <code>VERTICALS.md</code>).</p>
+<p>Menedżer aktywacji i uwierzytelniony proces wykonawczy repozytoriów są ograniczonymi pisarzami w tym pionie. Każdy aktywny klient ma dostęp SVN tylko do odczytu do własnego poddrzewa /clients/&lt;client_id&gt;/ i nie ma wglądu w admin/ ani innych klientów. jedno zatwierdzenie SVN publikuje rekord klienta, strefę jeśli nowa, projekcję i zdarzenie audytu atomowo. Klient dołączający do istniejącej strefy dziedziczy niezmienny alias tej strefy w pierwszym widoku. Właścicielstwo repozytoriów ( admin/repositories/ ) i kanoniczne uprawnienia/uprawnienia strefa→repozytorium ( admin/grants/ , zob. tożsamość i model uprawnień ) są zaimplementowane; każda zmiana uprawnienie/revoke i widoczności regeneruje view.json dotkniętych klientów oraz authz po stronie serwera w tej samej operacji procesu wykonawczego. Przebudowa uprawnień uzgadnia też kanoniczny alias strefy, a idempotentne pasujące zajęcie aliasu naprawia starsze widoki, które go pomijały. Szersza konsola administracyjna poza filees-admin (§4.1) pozostaje osobną, późniejszą koncepcją (signed-zlecenie V3, priorytet 8 w ).</p>
 </div>
-<nav class="page-nav"><a href="administration.html">← User: Administracja</a><a href="install.html">Instalacja →</a></nav>
+<nav class="page-nav"><a href="administration.html">← część użytkowa: Administracja</a><a href="install.html">Instalacja →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>system wizualny filees:space · granat / pomarańcz / papier</span><span>Wydanie polskie · 2026-08-15 · źródło r523</span></footer>
+<footer class="manual-footer">FileES</footer>
 </main>
 </body>
 </html>

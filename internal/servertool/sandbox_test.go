@@ -106,11 +106,14 @@ func TestWorkerSVNProfileIncludesOnlyExactRuntimeAndTreeParents(t *testing.T) {
 	}
 	config := activation.Config{
 		Root: "/srv/activation", AuthorizedKeysFile: "/srv/activation/authorized_keys", AuthzFile: "/srv/activation/authz",
+		DataAuthzFile:      "/srv/data-authority/repositories.authz",
 		ServiceWorkingCopy: "/srv/svn/service-wc", ServiceRepository: "/srv/svn/service-repo",
 		SVNBinary: "/usr/local/bin/svn", SVNServeBinary: "/usr/local/bin/svnserve",
 	}
-	profile := repositoryProfile("/srv/filees", toolAccess{name: "worker", needSVN: true}, config, "", "", "")
+	profile := repositoryProfile("/srv/filees", access, config, "", "", "")
 	wanted := map[string]obsandbox.Path{
+		"data-authz-parent":           {Label: "data-authz-parent", Name: "/srv/data-authority", Perms: "rwc"},
+		"data-authz":                  {Label: "data-authz", Name: config.DataAuthzFile, Perms: "rwc"},
 		"service-working-copy-parent": {Label: "service-working-copy-parent", Name: "/srv/svn", Perms: "r"},
 		"service-repository-parent":   {Label: "service-repository-parent", Name: "/srv/svn", Perms: "r"},
 		"service-working-copy":        {Label: "service-working-copy", Name: config.ServiceWorkingCopy, Perms: "rwc"},
@@ -129,5 +132,20 @@ func TestWorkerSVNProfileIncludesOnlyExactRuntimeAndTreeParents(t *testing.T) {
 	}
 	if len(wanted) != 0 {
 		t.Fatalf("SVN sandbox profile missing paths: %+v", wanted)
+	}
+}
+
+func TestDataAuthzInsideActivationRootNeedsNoBroaderParentUnveil(t *testing.T) {
+	config := activation.Config{
+		Root:               "/srv/activation",
+		AuthorizedKeysFile: "/srv/activation/authorized_keys",
+		AuthzFile:          "/srv/activation/service.authz",
+		DataAuthzFile:      "/srv/activation/repositories.authz",
+	}
+	profile := repositoryProfile("/srv/filees", toolAccess{name: "worker", needActivation: true}, config, "", "", "")
+	for _, path := range profile.Paths {
+		if path.Label == "data-authz-parent" {
+			t.Fatalf("default data authz path unexpectedly widened sandbox: %+v", path)
+		}
 	}
 }

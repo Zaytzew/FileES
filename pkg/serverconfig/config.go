@@ -407,9 +407,24 @@ func load(path string, secrets Secrets) (Config, error) {
 	if strings.TrimSpace(file.Repositories.RecoveryAdminContact) == "" {
 		file.Repositories.RecoveryAdminContact = file.SMTP.From
 	}
-	operatorBranding, err := resolveOperatorBranding(file.OperatorBranding)
-	if err != nil {
-		return Config{}, fmt.Errorf("operator_branding: %w", err)
+	// Gated the same way as the SMTP password/CA above: onboarding.RenderMail
+	// (internal/servertool/mail.go) is OperatorBranding's only reader, and
+	// resolving it means reading logo_file off disk. Doing that
+	// unconditionally for every tool that loads server.json broke every
+	// sandboxed session that re-loads config after unveil is already locked
+	// (filees-client-entry's ClientControlCommand child, filees-worker
+	// deploy, ...) with a misleading ENOENT on an operator's logo_file none
+	// of those profiles have any reason to unveil - confirmed live on
+	// cloud.atmprojekt.pl: repository creation and realm-alias claim both
+	// failed with "operator_branding: logo_file: lstat ...: no such file or
+	// directory" the moment a custom logo_file was configured, in sessions
+	// that never touch mail at all.
+	var operatorBranding realmbranding.Branding
+	if secrets&SecretSMTP != 0 {
+		operatorBranding, err = resolveOperatorBranding(file.OperatorBranding)
+		if err != nil {
+			return Config{}, fmt.Errorf("operator_branding: %w", err)
+		}
 	}
 	config := Config{
 		Path: path, Root: filepath.Clean(file.Root), OTPPepperFile: file.OTPPepperFile, SMTPFrom: from,

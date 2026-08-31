@@ -84,7 +84,7 @@ func deliverPendingMail(files *onboarding.Files, config serverconfig.Config, std
 		report(stderr, "filees-mail claim", err)
 		return ExitTempFail
 	}
-	message, err := onboarding.RenderMail(job, config.SMTPFrom, config.MessageIDDomain)
+	message, err := onboarding.RenderMail(job, config.SMTPFrom, config.MessageIDDomain, config.OperatorBranding)
 	if err != nil {
 		_ = files.MarkOutboxFailed(job.Entry.MessageID, job.Entry.AttemptID, err.Error(), true)
 		report(stderr, "filees-mail render", err)

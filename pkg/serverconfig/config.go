@@ -18,6 +18,7 @@ import (
 
 	"filees/pkg/activation"
 	"filees/pkg/onboarding"
+	"filees/pkg/realmbranding"
 	"filees/pkg/repositoryurl"
 	"filees/pkg/smtpsubmit"
 	"golang.org/x/crypto/ssh"
@@ -26,21 +27,34 @@ import (
 const Schema = "filees.server-toolchain/v1"
 
 type File struct {
-	Schema               string           `json:"schema"`
-	Root                 string           `json:"root"`
-	OTPPepperFile        string           `json:"otp_pepper_file"`
-	OperationTTL         string           `json:"operation_ttl"`
-	OTPAttempts          int              `json:"otp_attempts"`
-	ReversePortFirst     uint16           `json:"reverse_port_first"`
-	ReversePortLast      uint16           `json:"reverse_port_last"`
-	WorkerPrivateKeyFile string           `json:"worker_private_key_file,omitempty"`
-	WorkerPublicKeyFile  string           `json:"worker_public_key_file,omitempty"`
-	Activation           ActivationFile   `json:"activation,omitempty"`
-	Repositories         RepositoryFile   `json:"repositories,omitempty"`
-	Invitation           InvitationFile   `json:"invitation,omitempty"`
-	SMTP                 SMTPFile         `json:"smtp"`
-	PublicShares         PublicSharesFile `json:"public_shares,omitempty"`
-	Upload               UploadFile       `json:"upload,omitempty"`
+	Schema               string               `json:"schema"`
+	Root                 string               `json:"root"`
+	OTPPepperFile        string               `json:"otp_pepper_file"`
+	OperationTTL         string               `json:"operation_ttl"`
+	OTPAttempts          int                  `json:"otp_attempts"`
+	ReversePortFirst     uint16               `json:"reverse_port_first"`
+	ReversePortLast      uint16               `json:"reverse_port_last"`
+	WorkerPrivateKeyFile string               `json:"worker_private_key_file,omitempty"`
+	WorkerPublicKeyFile  string               `json:"worker_public_key_file,omitempty"`
+	Activation           ActivationFile       `json:"activation,omitempty"`
+	Repositories         RepositoryFile       `json:"repositories,omitempty"`
+	Invitation           InvitationFile       `json:"invitation,omitempty"`
+	SMTP                 SMTPFile             `json:"smtp"`
+	PublicShares         PublicSharesFile     `json:"public_shares,omitempty"`
+	Upload               UploadFile           `json:"upload,omitempty"`
+	OperatorBranding     OperatorBrandingFile `json:"operator_branding,omitempty"`
+}
+
+// OperatorBrandingFile is the server-wide identity used where a message
+// cannot yet carry any one realm's own branding (onboarding mail is sent
+// before a device has a realm relationship at all, and one server can host
+// many realms with different individual brands). LeadingColor/LogoFile
+// mirror realmbranding.Branding's two properties; when LogoFile is empty
+// this falls back to the filees:space mark and product accent color
+// (onboarding.DefaultBranding), not to "no logo".
+type OperatorBrandingFile struct {
+	LeadingColor string `json:"leading_color,omitempty"`
+	LogoFile     string `json:"logo_file,omitempty"`
 }
 
 type UploadFile struct {
@@ -189,6 +203,7 @@ type Config struct {
 	PublicShares         PublicSharesFile
 	PublicShareFrostKey  []byte
 	Upload               UploadFile
+	OperatorBranding     realmbranding.Branding
 }
 
 type Secrets uint8
@@ -392,6 +407,10 @@ func load(path string, secrets Secrets) (Config, error) {
 	if strings.TrimSpace(file.Repositories.RecoveryAdminContact) == "" {
 		file.Repositories.RecoveryAdminContact = file.SMTP.From
 	}
+	operatorBranding, err := resolveOperatorBranding(file.OperatorBranding)
+	if err != nil {
+		return Config{}, fmt.Errorf("operator_branding: %w", err)
+	}
 	config := Config{
 		Path: path, Root: filepath.Clean(file.Root), OTPPepperFile: file.OTPPepperFile, SMTPFrom: from,
 		MessageIDDomain:  strings.ToLower(strings.TrimSpace(file.SMTP.MessageIDDomain)),
@@ -400,11 +419,12 @@ func load(path string, secrets Secrets) (Config, error) {
 		WorkerPublicKeyFile: file.WorkerPublicKeyFile, WorkerPublicKey: workerPublicKey,
 		Invitation:   file.Invitation,
 		PublicShares: file.PublicShares, PublicShareFrostKey: publicShareFrostKey,
-		Upload:       file.Upload,
-		Activation:   activationConfig,
-		Repositories: file.Repositories,
-		Onboarding:   onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
-		SMTP:         smtpsubmit.Config{Address: file.SMTP.Address, ServerName: file.SMTP.ServerName, ClientName: file.SMTP.ClientName, Username: file.SMTP.Username, Password: password, TLSMode: smtpsubmit.TLSMode(file.SMTP.TLS), RootCAs: pool, ConnectTimeout: connectTimeout, CommandTimeout: commandTimeout},
+		Upload:           file.Upload,
+		OperatorBranding: operatorBranding,
+		Activation:       activationConfig,
+		Repositories:     file.Repositories,
+		Onboarding:       onboarding.Options{OTPPepper: pepper, OperationTTL: ttl, OTPAttempts: file.OTPAttempts, ReversePortFirst: file.ReversePortFirst, ReversePortLast: file.ReversePortLast},
+		SMTP:             smtpsubmit.Config{Address: file.SMTP.Address, ServerName: file.SMTP.ServerName, ClientName: file.SMTP.ClientName, Username: file.SMTP.Username, Password: password, TLSMode: smtpsubmit.TLSMode(file.SMTP.TLS), RootCAs: pool, ConnectTimeout: connectTimeout, CommandTimeout: commandTimeout},
 	}
 	if config.Repositories.EffectiveDeletionRetentionDays() < 0 {
 		return Config{}, errors.New("repositories deletion_retention_days cannot be negative")
@@ -440,6 +460,46 @@ func load(path string, secrets Secrets) (Config, error) {
 		return Config{}, err
 	}
 	return config, nil
+}
+
+// resolveOperatorBranding reads and validates the operator's server-wide
+// logo/color, falling back per-property to the filees:space default: no
+// logo_file means the product mark, not "no logo"; no leading_color means
+// the product accent color (realmbranding.Normalize's own default).
+func resolveOperatorBranding(file OperatorBrandingFile) (realmbranding.Branding, error) {
+	if file.LogoFile == "" {
+		branding := onboarding.DefaultBranding()
+		if file.LeadingColor != "" {
+			branding.LeadingColor = file.LeadingColor
+		}
+		return realmbranding.Normalize(branding)
+	}
+	if !filepath.IsAbs(file.LogoFile) {
+		return realmbranding.Branding{}, errors.New("logo_file must be absolute")
+	}
+	if err := requireRegularNotWritable(file.LogoFile); err != nil {
+		return realmbranding.Branding{}, fmt.Errorf("logo_file: %w", err)
+	}
+	mediaType, err := operatorLogoMediaType(file.LogoFile)
+	if err != nil {
+		return realmbranding.Branding{}, err
+	}
+	raw, err := os.ReadFile(file.LogoFile)
+	if err != nil {
+		return realmbranding.Branding{}, fmt.Errorf("logo_file: %w", err)
+	}
+	return realmbranding.FromBytes(file.LeadingColor, mediaType, raw)
+}
+
+func operatorLogoMediaType(path string) (string, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png":
+		return "image/png", nil
+	case ".jpg", ".jpeg":
+		return "image/jpeg", nil
+	default:
+		return "", errors.New("logo_file must be .png, .jpg or .jpeg")
+	}
 }
 
 func (p PublicSharesFile) EffectiveStateRoot(resultsRoot string) string {

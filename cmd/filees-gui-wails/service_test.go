@@ -463,3 +463,26 @@ func TestLockReleaseProjectionLinksForeignReservationWithoutExposingToken(t *tes
 		t.Fatalf("fencing token escaped into Wails JSON: %s", encoded)
 	}
 }
+
+func TestTranslateLockReleaseActionsRevalidatesRoleAndFence(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Capabilities: map[string]bool{
+			contract.CapLockReleaseRequest: true, contract.CapLockReleaseDismiss: true, contract.CapLockReleaseAccept: true,
+		},
+		Reservations:        []guiapp.Reservation{{ID: "safe-row", ServerID: "spot", RepoID: "docs", Path: "a.dwg", Token: "token"}},
+		LockReleaseRequests: []guiapp.LockReleaseRequest{{ID: "holder-request", ServerID: "spot", RepoID: "docs", Path: "b.dwg", Role: "holder", State: "pending"}},
+	}
+	intent, ok := translateAction(vm, ActionRequest{Kind: string(tray.IntentRequestLockRelease), ReservationID: "safe-row"})
+	if !ok || intent.Kind != tray.IntentRequestLockRelease || intent.ReservationID != "safe-row" {
+		t.Fatalf("request intent=%+v ok=%v", intent, ok)
+	}
+	intent, ok = translateAction(vm, ActionRequest{Kind: string(tray.IntentAcceptLockRelease), LockReleaseRequestID: "holder-request"})
+	if !ok || intent.Kind != tray.IntentAcceptLockRelease || intent.LockReleaseRequestID != "holder-request" {
+		t.Fatalf("accept intent=%+v ok=%v", intent, ok)
+	}
+	vm.LockReleaseRequests[0].Role = "requester"
+	if _, ok := translateAction(vm, ActionRequest{Kind: string(tray.IntentDismissLockRelease), LockReleaseRequestID: "holder-request"}); ok {
+		t.Fatal("requester projection was allowed to answer holder request")
+	}
+}

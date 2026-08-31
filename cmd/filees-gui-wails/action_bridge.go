@@ -28,7 +28,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, lockReleases actions.LockReleaseManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -54,6 +54,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		MobilePairer:         mobilePairer,
 		Locker:               locker,
 		Reservations:         reservations,
+		LockReleases:         lockReleases,
 		Shouts:               shouts,
 		Notices:              notices,
 		RealmAliases:         realmAliases,
@@ -998,6 +999,41 @@ func (adapter reservationAdapter) ReleaseReservation(ctx context.Context, reques
 		ServerID: request.ServerID, RepoID: request.RepoID, Path: request.Path,
 		ExpectedToken: request.ExpectedToken, ConfirmRisk: request.ConfirmRisk,
 	})
+}
+
+type lockReleaseClient interface {
+	LockReleaseRequest(context.Context, contract.LockReleaseRequestPayload) (*contract.LockReleaseRequest, error)
+	LockReleaseDismiss(context.Context, contract.LockReleaseDecisionPayload) (*contract.LockReleaseRequest, error)
+	LockReleaseAccept(context.Context, contract.LockReleaseDecisionPayload) (*contract.LockReleaseRequest, error)
+}
+
+type lockReleaseAdapter struct{ client lockReleaseClient }
+
+func (adapter lockReleaseAdapter) RequestLockRelease(ctx context.Context, request guiapp.LockReleaseCreateRequest) error {
+	result, err := adapter.client.LockReleaseRequest(ctx, contract.LockReleaseRequestPayload{
+		ServerID: request.ServerID, RepoID: request.RepoID, Path: request.Path, ObservedLockID: request.ObservedLockID,
+	})
+	return validateLockReleaseResult(result, err)
+}
+
+func (adapter lockReleaseAdapter) DismissLockRelease(ctx context.Context, request guiapp.LockReleaseDecisionRequest) error {
+	result, err := adapter.client.LockReleaseDismiss(ctx, contract.LockReleaseDecisionPayload{ServerID: request.ServerID, RequestID: request.RequestID})
+	return validateLockReleaseResult(result, err)
+}
+
+func (adapter lockReleaseAdapter) AcceptLockRelease(ctx context.Context, request guiapp.LockReleaseDecisionRequest) error {
+	result, err := adapter.client.LockReleaseAccept(ctx, contract.LockReleaseDecisionPayload{ServerID: request.ServerID, RequestID: request.RequestID})
+	return validateLockReleaseResult(result, err)
+}
+
+func validateLockReleaseResult(result *contract.LockReleaseRequest, err error) error {
+	if err != nil {
+		return err
+	}
+	if result == nil || strings.TrimSpace(result.RequestID) == "" || strings.TrimSpace(result.State) == "" {
+		return errors.New("daemon returned an empty lock release result")
+	}
+	return nil
 }
 
 // actionNotifier keeps action feedback in the same Wails surface. It carries

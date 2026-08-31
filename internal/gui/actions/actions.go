@@ -56,6 +56,12 @@ type ReservationManager interface {
 	ReleaseReservation(context.Context, app.ReservationReleaseRequest) error
 }
 
+type LockReleaseManager interface {
+	RequestLockRelease(context.Context, app.LockReleaseCreateRequest) error
+	DismissLockRelease(context.Context, app.LockReleaseDecisionRequest) error
+	AcceptLockRelease(context.Context, app.LockReleaseDecisionRequest) error
+}
+
 type RealmAliasManager interface {
 	ClaimAlias(context.Context, string, string) error
 }
@@ -314,6 +320,7 @@ type Config struct {
 	Notifier             platform.Notifier // nil → notifications silently dropped
 	Locker               LockUnlocker
 	Reservations         ReservationManager
+	LockReleases         LockReleaseManager
 	RealmAliases         RealmAliasManager
 	RealmGrants          RealmGrantManager
 	RealmBranding        RealmBrandingManager
@@ -413,6 +420,12 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startLockUnlock(ctx, intent.RepoID, false, intent.ActionID)
 	case tray.IntentReleaseReservation:
 		c.startReservationRelease(ctx, intent.ReservationID, intent.ActionID)
+	case tray.IntentRequestLockRelease:
+		c.startLockReleaseRequest(ctx, intent.ReservationID)
+	case tray.IntentDismissLockRelease:
+		c.startLockReleaseDecision(ctx, intent.LockReleaseRequestID, false)
+	case tray.IntentAcceptLockRelease:
+		c.startLockReleaseDecision(ctx, intent.LockReleaseRequestID, true)
 	case tray.IntentReconnect:
 		if c.cfg.Reconnect != nil {
 			c.cfg.Reconnect()
@@ -3287,6 +3300,127 @@ func findReservation(vm app.ViewModel, reservationID string) (app.Reservation, b
 		}
 	}
 	return app.Reservation{}, false
+}
+
+func (c *Controller) startLockReleaseRequest(ctx context.Context, reservationID string) {
+	key := "request-lock-release:" + reservationID
+	if strings.TrimSpace(reservationID) == "" || c.cfg.LockReleases == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		reservation, ok := findReservation(vm, reservationID)
+		if !ok || reservation.CanRelease || !vm.CanRequestLockRelease() || hasActiveLockReleaseRequest(vm, reservation) {
+			return
+		}
+		owner := strings.TrimSpace(reservation.OwnerLabel)
+		if owner == "" {
+			owner = "posiadacz blokady"
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			Title:       "Poproś o zwolnienie blokady",
+			Text:        fmt.Sprintf("%s używa pliku %s. Wysłać prośbę o zwolnienie tej blokady?", owner, reservation.Path),
+			ConfirmText: "Wyślij prośbę", CancelText: "Anuluj",
+		})
+		if err != nil || !confirmed || ctx.Err() != nil {
+			return
+		}
+		vm = c.cfg.ViewModel()
+		reservation, ok = findReservation(vm, reservationID)
+		if !ok || reservation.CanRelease || !vm.CanRequestLockRelease() || hasActiveLockReleaseRequest(vm, reservation) {
+			return
+		}
+		err = c.cfg.LockReleases.RequestLockRelease(ctx, app.LockReleaseCreateRequest{
+			ServerID: reservation.ServerID, RepoID: reservation.RepoID, Path: reservation.Path, ObservedLockID: reservation.Token,
+		})
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: "lock_release.request." + reservation.ID, Group: "lock_release", Title: "Nie wysłano prośby", Body: err.Error(), Urgency: platform.UrgencyNormal})
+			return
+		}
+		c.notify(ctx, platform.Notification{ID: "lock_release.request." + reservation.ID, Group: "lock_release", Title: "Prośba została wysłana", Body: reservation.Path, Urgency: platform.UrgencyLow})
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+	}()
+}
+
+func (c *Controller) startLockReleaseDecision(ctx context.Context, requestID string, accept bool) {
+	key := "decide-lock-release:" + requestID
+	if strings.TrimSpace(requestID) == "" || c.cfg.LockReleases == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		request, ok := findLockReleaseRequest(vm, requestID)
+		if !ok || request.Role != "holder" || request.State != "pending" || (accept && !vm.CanAcceptLockRelease()) || (!accept && !vm.CanDismissLockRelease()) {
+			return
+		}
+		if accept {
+			if c.cfg.Prompter == nil {
+				return
+			}
+			requester := strings.TrimSpace(request.CounterpartyRealmAlias)
+			if requester == "" {
+				requester = "Druga osoba"
+			}
+			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+				Title:       "Zwolnij blokadę",
+				Text:        fmt.Sprintf("%s prosi o plik %s. Zwolnić tę blokadę?", requester, request.Path),
+				ConfirmText: "Zwolnij", CancelText: "Anuluj",
+			})
+			if err != nil || !confirmed || ctx.Err() != nil {
+				return
+			}
+			vm = c.cfg.ViewModel()
+			request, ok = findLockReleaseRequest(vm, requestID)
+			if !ok || request.Role != "holder" || request.State != "pending" || !vm.CanAcceptLockRelease() {
+				return
+			}
+		}
+		decision := app.LockReleaseDecisionRequest{ServerID: request.ServerID, RequestID: request.ID}
+		var err error
+		if accept {
+			err = c.cfg.LockReleases.AcceptLockRelease(ctx, decision)
+		} else {
+			err = c.cfg.LockReleases.DismissLockRelease(ctx, decision)
+		}
+		if err != nil {
+			c.notify(ctx, platform.Notification{ID: "lock_release.decision." + request.ID, Group: "lock_release", Title: "Nie zapisano odpowiedzi", Body: err.Error(), Urgency: platform.UrgencyNormal})
+			return
+		}
+		title := "Prośba została zamknięta"
+		if accept {
+			title = "Blokada została zwolniona"
+		}
+		c.notify(ctx, platform.Notification{ID: "lock_release.decision." + request.ID, Group: "lock_release", Title: title, Body: request.Path, Urgency: platform.UrgencyLow})
+		if c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+	}()
+}
+
+func hasActiveLockReleaseRequest(vm app.ViewModel, reservation app.Reservation) bool {
+	for _, request := range vm.LockReleaseRequests {
+		if request.Role == "requester" && request.ServerID == reservation.ServerID && request.RepoID == reservation.RepoID && request.Path == reservation.Path && request.ObservedLockID == reservation.Token && request.State != "expired" {
+			return true
+		}
+	}
+	return false
+}
+
+func findLockReleaseRequest(vm app.ViewModel, requestID string) (app.LockReleaseRequest, bool) {
+	for _, request := range vm.LockReleaseRequests {
+		if request.ID == requestID {
+			return request, true
+		}
+	}
+	return app.LockReleaseRequest{}, false
 }
 
 func findServer(vm app.ViewModel, serverID string) (app.ServerViewModel, bool) {

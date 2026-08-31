@@ -425,21 +425,36 @@ function renderReservations(snapshot) {
   const card = $("#reservations-card");
   const root = $("#reservations");
   const reservations = snapshot.reservations || [];
+	const holderRequests = (snapshot.lock_release_requests || []).filter((request) => request.role === "holder" && request.state === "pending");
   const inventoryUnknown = Boolean(snapshot.connected) && (snapshot.servers || []).some((server) => !server.reservations_known);
-  card.hidden = reservations.length === 0 && !inventoryUnknown;
+	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !inventoryUnknown;
   $("#reservations-count").textContent = inventoryUnknown ? "?" : reservations.length;
-  if (!reservations.length) {
+	if (!reservations.length && !holderRequests.length) {
     replaceHTMLIfChanged(root, inventoryUnknown ? '<p class="muted">Lista blokad jest chwilowo niedostępna.</p>' : "");
     return;
   }
-  const html = reservations.map((reservation) => {
+	const requestsHTML = holderRequests.map((request) => `<article class="reservation-row lock-release-request" data-lock-release-request-id="${escapeHTML(request.id)}">
+		<div class="reservation-main">
+			<strong title="${escapeHTML(request.path)}">Prośba o ${escapeHTML(request.path || "plik")}</strong>
+			<p>${escapeHTML(request.counterparty_realm_alias || "Inna osoba")} · ${escapeHTML(request.repository || request.repo_id)}</p>
+			<div class="lock-flags"><span class="lock-flag request">prośba o zwolnienie</span><span>${escapeHTML(shortDateTime(request.created_at))}</span></div>
+		</div>
+		<div class="reservation-request-actions">
+			${request.can_dismiss ? '<button class="reservation-action secondary" data-action="dismiss_lock_release">OK</button>' : ""}
+			${request.can_accept ? '<button class="reservation-action" data-action="accept_lock_release">Zwolnij</button>' : ""}
+		</div>
+	</article>`).join("");
+	const reservationsHTML = reservations.map((reservation) => {
     const flags = [
       reservation.active_passport ? '<span class="lock-flag passport">paszport</span>' : "",
       reservation.local_changes ? '<span class="lock-flag risk">zmiany lokalne</span>' : "",
     ].join("");
-    const action = reservation.can_release
-      ? '<button class="reservation-action" data-action="release_reservation">Zwolnij</button>'
-      : '<span class="lock-owner">cudza</span>';
+		let action = '<span class="lock-owner">cudza</span>';
+		if (reservation.can_release) action = '<button class="reservation-action" data-action="release_reservation">Zwolnij</button>';
+		else if (reservation.can_request_release) action = '<button class="reservation-action" data-action="request_lock_release">Poproś o zwolnienie</button>';
+		else if (reservation.lock_release_state === "pending") action = '<span class="lock-owner waiting">prośba wysłana</span>';
+		else if (reservation.lock_release_state === "dismissed") action = '<span class="lock-owner">pozostawiono</span>';
+		else if (reservation.lock_release_state === "accepted") action = '<span class="lock-owner waiting">zwalnianie…</span>';
     return `<article class="reservation-row" data-reservation-id="${escapeHTML(reservation.id)}">
       <div class="reservation-main">
         <strong title="${escapeHTML(reservation.path)}">${escapeHTML(reservation.path || "plik")}</strong>
@@ -448,8 +463,8 @@ function renderReservations(snapshot) {
       </div>
       ${action}
     </article>`;
-  }).join("");
-  replaceHTMLIfChanged(root, html);
+	}).join("");
+	replaceHTMLIfChanged(root, requestsHTML + reservationsHTML);
 }
 
 function publicShareState(state) {
@@ -725,11 +740,12 @@ function showToast(feedback) {
 async function triggerAction(button) {
   const repoRow = button.closest("[data-repo-id]");
   const reservationRow = button.closest("[data-reservation-id]");
+	const lockReleaseRow = button.closest("[data-lock-release-request-id]");
   const noticeRow = button.closest("[data-notice-id]");
 	const publicShareRow = button.closest("[data-channel-id]");
   const serverPanel = button.closest("[data-server-id]");
 	const globalAction = button.closest("[data-global-action]");
-	if (!repoRow && !reservationRow && !noticeRow && !serverPanel && !globalAction) return;
+	if (!repoRow && !reservationRow && !lockReleaseRow && !noticeRow && !serverPanel && !globalAction) return;
   button.disabled = true;
   try {
     const result = await GUIService.Trigger({
@@ -737,6 +753,7 @@ async function triggerAction(button) {
       repo_id: repoRow?.dataset.repoId || "",
       server_id: serverPanel?.dataset.serverId || "",
       reservation_id: reservationRow?.dataset.reservationId || "",
+		lock_release_request_id: lockReleaseRow?.dataset.lockReleaseRequestId || "",
       notice_id: noticeRow?.dataset.noticeId || "",
 		channel_id: publicShareRow?.dataset.channelId || "",
     });

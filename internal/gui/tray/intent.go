@@ -9,6 +9,9 @@ const (
 	IntentLock               IntentKind = "lock"
 	IntentUnlock             IntentKind = "unlock"
 	IntentReleaseReservation IntentKind = "release_reservation"
+	IntentRequestLockRelease IntentKind = "request_lock_release"
+	IntentDismissLockRelease IntentKind = "dismiss_lock_release"
+	IntentAcceptLockRelease  IntentKind = "accept_lock_release"
 	IntentReconnect          IntentKind = "reconnect"
 	IntentActivate           IntentKind = "activate"
 	IntentSetRealmAlias      IntentKind = "set_realm_alias"
@@ -39,13 +42,14 @@ const (
 
 // Intent contains no engine object and is safe to pass across the GUI boundary.
 type Intent struct {
-	ActionID            string
-	Kind                IntentKind
-	NoticeID            string
-	RepoID              string
-	ServerID            string
-	ReservationID       string
-	RecoveryOperationID string
-	ChannelID           string
-	ChannelIDs          []string
+	ActionID             string
+	Kind                 IntentKind
+	NoticeID             string
+	RepoID               string
+	ServerID             string
+	ReservationID        string
+	LockReleaseRequestID string
+	RecoveryOperationID  string
+	ChannelID            string
+	ChannelIDs           []string
 }

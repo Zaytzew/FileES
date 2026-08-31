@@ -158,9 +158,20 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		if sessionRoot == "" {
 			sessionRoot = filepath.Join(activationConfig.Root, "sessions")
 		}
+		paths = append(paths, obsandbox.Path{Label: "activation", Name: activationConfig.Root, Perms: "rwc"})
+		// Same atomic-write requirement as data-authz below: renderAccessLocked
+		// replaces both files by temp-sibling-then-rename. Unveiling only the
+		// exact file works while Activation.Root happens to be its parent (the
+		// default layout) but silently fails with a misleading ENOENT once
+		// either is configured outside that tree.
+		if atomicFileParentNeedsOwnUnveil(activationConfig.Root, activationConfig.AuthorizedKeysFile) {
+			paths = append(paths, obsandbox.Path{Label: "client-authorized-keys-parent", Name: filepath.Dir(activationConfig.AuthorizedKeysFile), Perms: "rwc"})
+		}
+		paths = append(paths, obsandbox.Path{Label: "client-authorized-keys", Name: activationConfig.AuthorizedKeysFile, Perms: "rwc"})
+		if atomicFileParentNeedsOwnUnveil(activationConfig.Root, activationConfig.AuthzFile) {
+			paths = append(paths, obsandbox.Path{Label: "service-authz-parent", Name: filepath.Dir(activationConfig.AuthzFile), Perms: "rwc"})
+		}
 		paths = append(paths,
-			obsandbox.Path{Label: "activation", Name: activationConfig.Root, Perms: "rwc"},
-			obsandbox.Path{Label: "client-authorized-keys", Name: activationConfig.AuthorizedKeysFile, Perms: "rwc"},
 			obsandbox.Path{Label: "service-authz", Name: activationConfig.AuthzFile, Perms: "rwc"},
 			obsandbox.Path{Label: "session-root", Name: sessionRoot, Perms: "rwc"},
 		)
@@ -190,9 +201,16 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		paths = append(paths,
 			obsandbox.Path{Label: "repositories-parent", Name: filepath.Dir(access.repositoryRoot), Perms: "r"},
 			obsandbox.Path{Label: "repositories", Name: access.repositoryRoot, Perms: "rwc"},
-			obsandbox.Path{Label: "repository-authz", Name: access.repositoryAuthz, Perms: "rwc"},
 			obsandbox.Path{Label: "svnadmin", Name: access.svnAdminBinary, Perms: "rx"},
 		)
+		// Same atomic-write requirement as the two data-authz cases above:
+		// unveiling only the exact file breaks the temp-sibling-then-rename
+		// writer once repositories.data_authz_file is configured outside
+		// repositories.root (the tree this profile otherwise unveils).
+		if atomicFileParentNeedsOwnUnveil(access.repositoryRoot, access.repositoryAuthz) {
+			paths = append(paths, obsandbox.Path{Label: "repository-authz-parent", Name: filepath.Dir(access.repositoryAuthz), Perms: "rwc"})
+		}
+		paths = append(paths, obsandbox.Path{Label: "repository-authz", Name: access.repositoryAuthz, Perms: "rwc"})
 	}
 	if access.needRealmAlias {
 		// Read-only, and deliberately narrower than needSVN's full

@@ -56,7 +56,7 @@
       <div class="offline-symbol">↯</div>
       <div>
         <h2>Demon jest poza zasięgiem</h2>
-        <p>Pokazujemy ostatni znany stan. Po odzyskaniu połączenia panel odświeży się automatycznie.</p>
+        <p id="offline-copy">Nie można teraz zweryfikować projekcji. Po odzyskaniu połączenia panel odświeży się automatycznie.</p>
       </div>
       <button id="reconnect" class="primary-button">Połącz ponownie</button>
     </section>
@@ -75,6 +75,7 @@
         <div class="section-heading">
           <div><p class="eyebrow">Twoje pliki</p><h2>Serwery</h2></div>
           <div class="projection-timing">
+            <strong id="projection-freshness" class="projection-freshness is-unverified">Projekcja lokalna niezweryfikowana</strong>
             <span id="last-refresh" class="timestamp">Jeszcze nie odświeżono</span>
           </div>
         </div>

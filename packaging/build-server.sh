@@ -80,7 +80,7 @@ if [ -n "${FILEES_RELEASE_PUBKEY:-}" ]; then
 	release_ldflags="-X main.injectedServerReleasePublicKeyB64=$release_pubkey_b64"
 fi
 
-for command in filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail filees-ssh-auth filees-entry filees-worker filees-service-wc-corrector filees-client-entry filees-mobile-v1 filees-recovery-entry filees-public-authority filees-links filees-install filees-rotate; do
+for command in filees-admin filees-onboard filees-bootstrap-entry filees-operation filees-mail filees-ssh-auth filees-entry filees-worker filees-service-wc-corrector filees-client-entry filees-mobile-v1 filees-recovery-entry filees-public-authority filees-links filees-install filees-rotate filees-serving-state; do
 	(
 		cd "$root"
 		command_ldflags="-X filees/internal/servertool.adminVersion=$version"

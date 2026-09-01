@@ -42,10 +42,17 @@ const reservationWorkerMaxRequest = 4 << 10
 // reservationWorkerPromises: this worker only reads the target repository
 // (svn info never mutates it) and writes its own artifact directory —
 // unlike whaleWorkerPromises/svnExecPromises it needs no wpath/cpath/fattr
-// on the repository root itself, only on its own state directory.
+// on the repository root itself, only on its own state directory. It keeps
+// "exec" in its own runtime promises (unlike a worker that never spawns a
+// further child) because queryLiveLocks execs svn itself.
+// reservationWorkerBootstrapPromises/reservationWorkerRuntimePromises
+// deliberately mirror workerPromises/svnPromises (common.go): prot_exec is
+// never part of this process's own active promises, only of svnExecPromises
+// — the ceiling handed to svn itself when it is exec'd. filees-worker's own
+// proven-working repository-control path follows exactly this shape.
 const (
-	reservationWorkerBootstrapPromises = "stdio rpath wpath cpath flock proc exec prot_exec unveil"
-	reservationWorkerExecPromises      = "stdio rpath wpath cpath flock proc prot_exec"
+	reservationWorkerBootstrapPromises = "stdio rpath wpath cpath fattr flock proc exec"
+	reservationWorkerRuntimePromises   = "stdio rpath wpath cpath fattr flock proc exec"
 )
 
 // RunReservationProjectionWorker is cmd/filees-serving-state's entrypoint.
@@ -89,7 +96,7 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		report(stderr, "serving-state artifact directory", err)
 		return ExitConfig
 	}
-	if err := sandboxApplyForExec(reservationWorkerProfile(config, configPath, stateRoot), reservationWorkerExecPromises); err != nil {
+	if err := sandboxApplyForExec(reservationWorkerProfile(), svnExecPromises); err != nil {
 		report(stderr, "serving-state sandbox", err)
 		return ExitSoftware
 	}
@@ -145,24 +152,23 @@ func authorizeReservationRequest(serviceWC, clientID, repoID string) error {
 	return errReservationAccessDenied
 }
 
-func reservationWorkerProfile(config serverconfig.Config, configPath, stateRoot string) obsandbox.Profile {
-	r := config.Repositories
-	return obsandbox.Profile{Name: "filees-serving-state", Promises: reservationWorkerExecPromises, Paths: []obsandbox.Path{
-		{Label: "server-config", Name: configPath, Perms: "r"},
-		{Label: "service-working-copy-parent", Name: filepath.Dir(config.Activation.ServiceWorkingCopy), Perms: "r"},
-		{Label: "service-working-copy", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},
-		{Label: "repository-root-parent", Name: filepath.Dir(r.Root), Perms: "r"},
-		{Label: "repository-root", Name: r.Root, Perms: "r"},
-		{Label: "reservation-projection", Name: stateRoot, Perms: "rwc"},
-		{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"},
-		{Label: "null-device", Name: "/dev/null", Perms: "rw"},
-		{Label: "random", Name: "/dev/urandom", Perms: "r"},
-		{Label: "loader", Name: "/usr/libexec/ld.so", Perms: "rx"},
-		{Label: "loader-hints", Name: "/var/run/ld.so.hints", Perms: "r"},
-		{Label: "system-libraries", Name: "/usr/lib", Perms: "r"},
-		{Label: "local-libraries", Name: "/usr/local/lib", Perms: "r"},
-		{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
-	}}
+// reservationWorkerProfile deliberately unveils nothing of its own.
+// filees-client-entry (internal/servertool/client_entry.go's
+// ClientReservationCommand branch) already unveiled everything this worker
+// needs — server config, service working copy, repository root, the svn
+// binary, its own artifact directory — before exec'ing this binary.
+// OpenBSD's unveil(2) restrictions are inherited across exec and, once the
+// parent has locked its table (unveil(NULL,NULL), done by
+// obsandbox.ApplyForExec), a child process can no longer call unveil()
+// itself at all — not even to redeclare an already-visible path with
+// identical permissions. That call fails with EPERM ("unveil ...: operation
+// not permitted"), which is exactly the live failure this profile fixes:
+// the first version of this function tried to re-unveil paths the parent
+// had already granted. This process only needs to narrow its own pledge
+// promises (see runReservationProjectionWorker's ApplyForExec call), never
+// to see anything new.
+func reservationWorkerProfile() obsandbox.Profile {
+	return obsandbox.Profile{Name: "filees-serving-state", Promises: reservationWorkerRuntimePromises}
 }
 
 // refreshReservationProjection is the pure decision logic (fresh vs stale vs

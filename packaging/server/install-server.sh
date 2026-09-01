@@ -29,6 +29,7 @@ install -m 0555 "$bundle/bin/filees-entry" "$prefix/libexec/filees/filees-entry"
 install -m 0555 "$bundle/bin/filees-worker" "$prefix/libexec/filees/filees-worker"
 install -m 0555 "$bundle/bin/filees-service-wc-corrector" "$prefix/libexec/filees/filees-service-wc-corrector"
 install -m 0555 "$bundle/bin/filees-client-entry" "$prefix/libexec/filees/filees-client-entry"
+install -m 0555 "$bundle/bin/filees-serving-state" "$prefix/libexec/filees/filees-serving-state"
 install -m 0555 "$bundle/bin/filees-public-authority" "$prefix/libexec/filees/filees-public-authority"
 install -m 0555 "$bundle/bin/filees-links" "$prefix/libexec/filees/filees-links"
 

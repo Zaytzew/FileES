@@ -2,6 +2,7 @@ package contract
 
 import (
 	"encoding/json"
+	"time"
 
 	"filees/pkg/realmbranding"
 )
@@ -922,10 +923,49 @@ type Reservation struct {
 	ActivePassport bool   `json:"active_passport"`
 }
 
-// RepoReservationListResult is sorted by working copy and path by the daemon.
+// ReservationSourceState classifies one repository's contribution to a
+// RepoReservationListResult. There is no fourth, implicit state: a
+// repository absent from Sources never happened — every repository queried
+// gets exactly one entry.
+type ReservationSourceState string
+
+const (
+	// ReservationSourceFresh: the live refresh from the authoritative
+	// remote server succeeded just now.
+	ReservationSourceFresh ReservationSourceState = "fresh"
+	// ReservationSourceStale: the live refresh failed, but the remote
+	// serving-state worker replayed its last confirmed artifact.
+	ReservationSourceStale ReservationSourceState = "stale"
+	// ReservationSourceUnknown: neither a live answer nor any prior
+	// artifact exists for this repository. Never treat this as a
+	// confirmed zero — no reservation rows for this repo are trustworthy.
+	ReservationSourceUnknown ReservationSourceState = "unknown"
+)
+
+// ReservationSource is one repository's freshness classification within a
+// RepoReservationListResult. AsOf/Generation are only meaningful for Fresh
+// and Stale; both are zero for Unknown — never faked to look otherwise.
+type ReservationSource struct {
+	RepoID     string                 `json:"repo_id"`
+	State      ReservationSourceState `json:"state"`
+	AsOf       time.Time              `json:"as_of,omitempty"`
+	Generation string                 `json:"generation,omitempty"`
+}
+
+// RepoReservationListResult is sorted by working copy and path by the
+// daemon. Reservations is the union of every non-Unknown source's rows;
+// Sources carries one entry per repository queried on this server,
+// regardless of outcome, so a caller can never mistake "some repositories
+// on this server are Unknown" for "the whole server is known and fine" —
+// see concepts/RESERVATION_LISTING_RESILIENCE_CONCEPT.md §1.4. There is
+// deliberately no single aggregate Stale/AsOf/Generation at this level:
+// with more than one repository per server those numbers have no one
+// honest meaning, so callers must read Sources instead of asking this
+// struct to summarize them.
 type RepoReservationListResult struct {
-	ServerID     string        `json:"server_id"`
-	Reservations []Reservation `json:"reservations"`
+	ServerID     string              `json:"server_id"`
+	Reservations []Reservation       `json:"reservations"`
+	Sources      []ReservationSource `json:"sources"`
 }
 
 // RepoReservationReleasePayload identifies a row returned by

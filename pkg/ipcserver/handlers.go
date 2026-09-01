@@ -10,6 +10,7 @@ import (
 	"time"
 
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errcat"
 	"filees/pkg/passport"
 	"filees/pkg/realmbranding"
 	"filees/pkg/shout"
@@ -359,11 +360,37 @@ func (s *Server) handleRepoReservationList(req contract.Request) contract.Respon
 	defer cancel()
 	result := contract.RepoReservationListResult{ServerID: payload.ServerID}
 	for _, repo := range repos {
-		rows, err := repo.ListReservations(ctx)
+		repoID := repo.Summary().ID
+		snap, err := repo.ListReservations(ctx)
 		if err != nil {
-			return contract.ErrResponse(req.RequestID, "LOCK-2101", "ERROR", "RETRY", "reservation.list_failed", map[string]string{"repo_id": repo.Summary().ID, "detail": err.Error()})
+			// A hard error from the wired source itself (transport/protocol
+			// failure) is reported as this one repository's Unknown, never
+			// as a whole-response failure that would hide healthy repos on
+			// the same server — see
+			// concepts/RESERVATION_LISTING_RESILIENCE_CONCEPT.md §1.3a and
+			// §1.4 (one bad repo must not blank the rest).
+			fault := errcat.Of("LOCK-2101", "reservation.list_failed",
+				map[string]string{"repo_id": repoID, "detail": err.Error()}, err)
+			s.lg.Warnf("%s %s (server=%s repo=%s): %v", fault.Code, fault.Key, payload.ServerID, repoID, err)
+			result.Sources = append(result.Sources, contract.ReservationSource{RepoID: repoID, State: contract.ReservationSourceUnknown})
+			continue
 		}
-		result.Reservations = append(result.Reservations, rows...)
+		if snap.Unknown {
+			fault := errcat.Of("LOCK-2101", "reservation.list_failed",
+				map[string]string{"repo_id": repoID, "detail": "no known reservation data for this repository"}, nil)
+			s.lg.Warnf("%s %s (server=%s repo=%s)", fault.Code, fault.Key, payload.ServerID, repoID)
+			result.Sources = append(result.Sources, contract.ReservationSource{RepoID: repoID, State: contract.ReservationSourceUnknown})
+			continue
+		}
+		result.Reservations = append(result.Reservations, snap.Reservations...)
+		state := contract.ReservationSourceFresh
+		if snap.Stale {
+			state = contract.ReservationSourceStale
+			fault := errcat.Of("LOCK-2104", "reservation.projection_stale",
+				map[string]string{"server_id": payload.ServerID, "repo_id": repoID, "detail": "replaying last confirmed projection"}, nil)
+			s.lg.Warnf("%s %s (server=%s repo=%s generation=%s)", fault.Code, fault.Key, payload.ServerID, repoID, snap.Generation)
+		}
+		result.Sources = append(result.Sources, contract.ReservationSource{RepoID: repoID, State: state, AsOf: snap.AsOf, Generation: snap.Generation})
 	}
 	ownerIDs := make([]string, 0, len(result.Reservations))
 	seenOwners := make(map[string]struct{}, len(result.Reservations))
@@ -901,12 +928,12 @@ func (s *Server) handleLockReleaseRequest(req contract.Request) contract.Respons
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	rows, err := repo.ListReservations(ctx)
-	if err != nil {
+	snap, err := repo.ListReservations(ctx)
+	if err != nil || snap.Unknown {
 		return contract.ErrResponse(req.RequestID, "LOCK-2202", "ERROR", "RETRY", "lock_release.inspection_failed", nil)
 	}
 	observed := false
-	for _, row := range rows {
+	for _, row := range snap.Reservations {
 		if row.Path == payload.Path && row.Token == payload.ObservedLockID && !row.CanRelease {
 			observed = true
 			break
@@ -946,8 +973,8 @@ func (s *Server) handleLockReleaseDecision(req contract.Request, accept bool) co
 		if repo == nil || repo.ServerID() != payload.ServerID {
 			return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
 		}
-		rows, listErr := repo.ListReservations(ctx)
-		if listErr != nil || !containsReleasableReservation(rows, projected.Path, projected.ObservedLockID) {
+		snap, listErr := repo.ListReservations(ctx)
+		if listErr != nil || snap.Unknown || !containsReleasableReservation(snap.Reservations, projected.Path, projected.ObservedLockID) {
 			return contract.ErrResponse(req.RequestID, "LOCK-2203", "ERROR", "REQUIRE_ACTION", "lock_release.stale", nil)
 		}
 		result, err = service.Accept(ctx, payload)

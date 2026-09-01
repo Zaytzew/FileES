@@ -184,6 +184,32 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 			t.Fatalf("control code=%d client=%q mail=%v corrector=%d stderr=%s", code, controlClient, mailTriggered, correctorRuns, stderr.String())
 		}
 
+		originalReservation := runReservationWorkerProcess
+		defer func() { runReservationWorkerProcess = originalReservation }()
+		reservationClient := ""
+		runReservationWorkerProcess = func(id string, _ io.Reader, _ io.Writer, _ io.Writer) error { reservationClient = id; return nil }
+		getenv = func(name string) string {
+			if name == "SSH_ORIGINAL_COMMAND" {
+				return ClientReservationCommand
+			}
+			return ""
+		}
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitOK || reservationClient != grant.ClientID {
+			t.Fatalf("reservation code=%d client=%q stderr=%s", code, reservationClient, stderr.String())
+		}
+		reservationErr := errors.New("test reservation worker failure")
+		runReservationWorkerProcess = func(string, io.Reader, io.Writer, io.Writer) error { return reservationErr }
+		if code := runClientEntry(configPath, []string{grant.OperationID, grant.ClientID}, strings.NewReader(""), io.Discard, &stderr, getenv, supervise, supervise); code != ExitSoftware {
+			t.Fatalf("reservation worker failure code=%d, want=%d", code, ExitSoftware)
+		}
+		runReservationWorkerProcess = func(id string, _ io.Reader, _ io.Writer, _ io.Writer) error { reservationClient = id; return nil }
+		getenv = func(name string) string {
+			if name == "SSH_ORIGINAL_COMMAND" {
+				return ClientControlCommand
+			}
+			return ""
+		}
+
 		// Ownership correction is a hard gate. A control worker must never touch
 		// the service WC after the privileged repair failed, and the auxiliary
 		// mail pass must not run without a durable control result.

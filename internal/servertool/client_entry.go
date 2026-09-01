@@ -14,12 +14,14 @@ import (
 )
 
 const (
-	ClientSVNCommand       = "svnserve -t"
-	ClientControlCommand   = "filees control-v1"
-	ClientWhaleCommand     = "filees whale-v1"
-	repositoryWorkerPath   = "/usr/local/libexec/filees/filees-worker"
-	ownershipCorrectorPath = "/usr/local/libexec/filees/filees-service-wc-corrector"
-	clientEntryPromises    = writePromises + " proc exec"
+	ClientSVNCommand         = "svnserve -t"
+	ClientControlCommand     = "filees control-v1"
+	ClientWhaleCommand       = "filees whale-v1"
+	ClientReservationCommand = "filees reservation-v1"
+	repositoryWorkerPath     = "/usr/local/libexec/filees/filees-worker"
+	reservationWorkerPath    = "/usr/local/libexec/filees/filees-serving-state"
+	ownershipCorrectorPath   = "/usr/local/libexec/filees/filees-service-wc-corrector"
+	clientEntryPromises      = writePromises + " proc exec"
 	// dpath is needed only while the SVN branch's ClaimSession creates its
 	// private revoke FIFO with mkfifo(2). The later supervisor profile drops
 	// it before relaying the client session.
@@ -36,7 +38,7 @@ type clientSessionSupervisor func(serverconfig.Config, string, *activation.Manag
 
 func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string, superviseSVN, superviseWhale clientSessionSupervisor) int {
 	originalCommand := getenv("SSH_ORIGINAL_COMMAND")
-	if len(args) != 2 || (originalCommand != ClientSVNCommand && originalCommand != deploy.ServiceProofCommand && originalCommand != ClientControlCommand && originalCommand != ClientWhaleCommand) {
+	if len(args) != 2 || (originalCommand != ClientSVNCommand && originalCommand != deploy.ServiceProofCommand && originalCommand != ClientControlCommand && originalCommand != ClientWhaleCommand && originalCommand != ClientReservationCommand) {
 		fmt.Fprintln(stderr, "filees-client-entry: rejected command")
 		return ExitUnavailable
 	}
@@ -97,18 +99,18 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 			obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
 		)
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "repository-worker", Name: repositoryWorkerPath, Perms: "rx"}, obsandbox.Path{Label: "service-wc", Name: config.Activation.ServiceWorkingCopy, Perms: "rwc"}, obsandbox.Path{Label: "repository-root", Name: r.Root, Perms: "rwc"}, obsandbox.Path{Label: "repository-results", Name: r.ResultsRoot, Perms: "rwc"}, obsandbox.Path{Label: "svnadmin", Name: r.SVNAdminBinary, Perms: "rx"}, obsandbox.Path{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"})
-			// Same atomic-write requirement as the activation path's data-authz
-			// (see atomicFileParentNeedsOwnUnveil): the canonical rebuild creates
-			// a temp sibling, renames it over the target and fsyncs the parent
-			// directory. Unveiling only the exact file works while activation.root
-			// happens to be its parent (the default layout) but silently fails
-			// with a misleading ENOENT once an operator moves data_authz_file
-			// outside that tree, exactly like the activation-flow bug this
-			// mirrors.
-			if atomicFileParentNeedsOwnUnveil(config.Activation.Root, r.DataAuthzFile) {
-				profile.Paths = append(profile.Paths, obsandbox.Path{Label: "data-authz-parent", Name: filepath.Dir(r.DataAuthzFile), Perms: "rwc"})
-			}
-			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "data-authz", Name: r.DataAuthzFile, Perms: "rwc"})
+		// Same atomic-write requirement as the activation path's data-authz
+		// (see atomicFileParentNeedsOwnUnveil): the canonical rebuild creates
+		// a temp sibling, renames it over the target and fsyncs the parent
+		// directory. Unveiling only the exact file works while activation.root
+		// happens to be its parent (the default layout) but silently fails
+		// with a misleading ENOENT once an operator moves data_authz_file
+		// outside that tree, exactly like the activation-flow bug this
+		// mirrors.
+		if atomicFileParentNeedsOwnUnveil(config.Activation.Root, r.DataAuthzFile) {
+			profile.Paths = append(profile.Paths, obsandbox.Path{Label: "data-authz-parent", Name: filepath.Dir(r.DataAuthzFile), Perms: "rwc"})
+		}
+		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "data-authz", Name: r.DataAuthzFile, Perms: "rwc"})
 		// LOAD_REPOSITORY_DUMP's DumpLoadService shells out to svnlook
 		// (always) and svndumpfilter (only when applying the ignore
 		// policy); both must be unveiled up front like svnadmin/svn since
@@ -135,6 +137,28 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		// authenticated control-plane channel instead of filees-admin.
 		profile.Paths = append(profile.Paths, obsandbox.Path{Label: "onboarding-root", Name: config.Root, Perms: "rwc"}, obsandbox.Path{Label: "otp-pepper", Name: config.OTPPepperFile, Perms: "r"})
 		childPromises = workerPromises + " dns unveil"
+	}
+	if originalCommand == ClientReservationCommand {
+		r := config.Repositories
+		// filees-serving-state calls its own sandboxApplyForExec after this
+		// exec; OpenBSD carries this process's locked unveil table across
+		// exec and only lets the child narrow it further, never widen it
+		// (same constraint as the ClientControlCommand branch above), so
+		// every path reservationWorkerProfile unveils must already be
+		// unveiled here first, with at least as wide a permission.
+		stateRoot := filepath.Join(r.ResultsRoot, "reservation-projection")
+		profile.Paths = append(profile.Paths,
+			obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"},
+			obsandbox.Path{Label: "service-wc-parent", Name: filepath.Dir(config.Activation.ServiceWorkingCopy), Perms: "r"},
+			obsandbox.Path{Label: "service-wc", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},
+			obsandbox.Path{Label: "repository-root-parent", Name: filepath.Dir(r.Root), Perms: "r"},
+			obsandbox.Path{Label: "repository-root", Name: r.Root, Perms: "r"},
+			obsandbox.Path{Label: "reservation-projection", Name: stateRoot, Perms: "rwc"},
+			obsandbox.Path{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"},
+			obsandbox.Path{Label: "reservation-worker", Name: reservationWorkerPath, Perms: "rx"},
+			obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
+		)
+		childPromises = reservationWorkerBootstrapPromises
 	}
 	manager, err := activation.New(config.Activation, nil)
 	if err != nil {
@@ -194,6 +218,13 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		}
 		return ExitOK
 	}
+	if originalCommand == ClientReservationCommand {
+		if err := runReservationWorkerProcess(args[1], stdin, stdout, stderr); err != nil {
+			report(stderr, "filees-client-entry reservation", err)
+			return ExitSoftware
+		}
+		return ExitOK
+	}
 	return ExitUnavailable
 }
 
@@ -218,6 +249,12 @@ func clientChildPromises(originalCommand string) string {
 var runRepositoryWorkerProcess = func(tempRoot, svnBinDir, clientID string, stdin io.Reader, stdout, stderr io.Writer) error {
 	command := exec.Command(repositoryWorkerPath, "repository-control", clientID)
 	command.Env = []string{"TMPDIR=" + tempRoot, "PATH=" + svnBinDir}
+	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
+	return command.Run()
+}
+
+var runReservationWorkerProcess = func(clientID string, stdin io.Reader, stdout, stderr io.Writer) error {
+	command := exec.Command(reservationWorkerPath, clientID)
 	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
 	return command.Run()
 }

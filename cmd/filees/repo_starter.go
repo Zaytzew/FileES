@@ -344,6 +344,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger)
 	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	wireRepoLockFuncs(runtimeRepo.state, svn, wc, manager)
+	logger.Infof("reservation/lock listing wired (read-write)")
 	runtimeRepo.state.SetPublishFunc(func(ctx context.Context, comment string) (int64, error) {
 		return service.RequestPublish(ctx, wc, comment)
 	})
@@ -358,6 +359,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			runtimeRepo.state.SetReservationFuncs(nil, nil)
 			runtimeRepo.state.SetPublishFunc(nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)
+			logger.Infof("reservation/lock listing unwired (instance setup unwound)")
 		}
 	}()
 	instance, err := reposupervisor.StartManaged(ctx, func(runCtx context.Context) error {
@@ -369,6 +371,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		runtimeRepo.state.SetReservationFuncs(nil, nil)
 		runtimeRepo.state.SetPublishFunc(nil)
 		runtimeRepo.state.SetNoticeFuncs(nil, nil)
+		logger.Infof("reservation/lock listing unwired (instance stopping)")
 		if passports != nil {
 			if err := passports.Stop(cleanupCtx); err != nil {
 				first = err
@@ -426,7 +429,16 @@ func wireRepoReservationFuncs(state *ipcserver.RepoState, svn client.Client, wc 
 		state.SetReservationFuncs(nil, nil)
 		return
 	}
-	list := func(ctx context.Context) ([]contract.Reservation, error) {
+	// rawList is the historical, directly-querying-SVN-over-SSH shape.
+	// TODO(reservation-resilience): the two-track scheduler that replaces
+	// this with a call to the remote serving-state worker
+	// (pkg/reservation/v1) is Codex's pion — see
+	// concepts/RESERVATION_SERVER_EMISSION_WORKPLAN.md and
+	// concepts/fixture_plan.md r680. This wrapper only adapts the return
+	// shape to ipcserver.ReservationSnapshot so the package still compiles
+	// against the new signature; it makes no freshness claim beyond what
+	// SVN itself just answered (Stale/Unknown always false here).
+	rawList := func(ctx context.Context) ([]contract.Reservation, error) {
 		entries, err := lister.ListLocks(ctx, wc)
 		if err != nil {
 			return nil, err
@@ -466,8 +478,15 @@ func wireRepoReservationFuncs(state *ipcserver.RepoState, svn client.Client, wc 
 		}
 		return rows, nil
 	}
+	list := func(ctx context.Context) (ipcserver.ReservationSnapshot, error) {
+		rows, err := rawList(ctx)
+		if err != nil {
+			return ipcserver.ReservationSnapshot{}, err
+		}
+		return ipcserver.ReservationSnapshot{Reservations: rows}, nil
+	}
 	release := func(ctx context.Context, relativePath, expectedToken string, confirmRisk bool) error {
-		rows, err := list(ctx)
+		rows, err := rawList(ctx)
 		if err != nil {
 			return err
 		}
@@ -693,9 +712,11 @@ func (s *daemonRepoStarter) startConfigured(lifecycle context.Context, runtime r
 }
 
 func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
+	logger := talk.With("readonly:" + desired.Key.String())
 	// Read-only attachments contribute to the server-menu inventory as well,
 	// but intentionally receive no release callback.
 	wireRepoReservationFuncs(runtime.state, svn, runtime.config.LocalPath, nil)
+	logger.Infof("reservation listing wired (read-only)")
 	wc := runtime.config.LocalPath
 	runtime.state.SetNoticeFuncs(
 		func() ([]contract.Notice, error) { return shout.RecentNotices(wc, 20) },
@@ -715,15 +736,16 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	}
 	sink, err := openRepoErrorSink(filepath.Join(logsDir, "errors.jsonl"), "sync:"+runtime.config.ID)
 	if err != nil {
-		talk.With("readonly:"+desired.Key.String()).Warnf("structured errors disabled: %v", err)
+		logger.Warnf("structured errors disabled: %v", err)
 		sink = nil
 	}
 	return reposupervisor.StartManaged(lifecycle, func(ctx context.Context) error {
-		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, talk.With("readonly:"+desired.Key.String()))
+		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, logger)
 		return nil
 	}, func(context.Context) error {
 		runtime.state.SetReservationFuncs(nil, nil)
 		runtime.state.SetNoticeFuncs(nil, nil)
+		logger.Infof("reservation listing unwired (instance stopping)")
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}

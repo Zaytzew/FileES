@@ -661,6 +661,17 @@ func (s *Server) MarkRepoDetached(serverID, repoID string) {
 	s.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
 }
 
+// RepoState returns the already-registered state for one server-scoped
+// repository. It is used by daemon-side projection adapters after an
+// authoritative ReconcileProjectedRepos pass; it never creates knowledge.
+func (s *Server) RepoState(serverID, repoID string) *RepoState {
+	repo := s.repoByID(repoID)
+	if repo == nil || repo.ServerID() != serverID {
+		return nil
+	}
+	return repo
+}
+
 type ProjectedRepo struct {
 	ID, DisplayName, URL, Access, State string
 	OwnerRealmID, AttachmentPolicy      string

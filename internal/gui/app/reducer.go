@@ -26,6 +26,7 @@ type appState struct {
 	reservationItems        []Reservation
 	lockReleaseRequests     []LockReleaseRequest
 	serverReservationsKnown map[string]bool
+	reservationSources      map[string][]contract.ReservationSource
 	notices                 []NoticeViewModel
 	publicShares            []PublicShareViewModel
 	publicSharesKnown       bool
@@ -42,6 +43,7 @@ func newAppState() appState {
 		reservations:            make(map[string]int),
 		repoReservations:        make(map[string]int),
 		serverReservationsKnown: make(map[string]bool),
+		reservationSources:      make(map[string][]contract.ReservationSource),
 		pendingActions:          make(map[string]PendingAction),
 	}
 }
@@ -70,7 +72,7 @@ func (s appState) applyConnected(caps []string) appState {
 // applyFullSnapshot atomically replaces all authoritative daemon/repository
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
-func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationItems []Reservation, serverReservationsKnown map[string]bool, notices []contract.Notice, publicShares []contract.PublicShareSummary, publicSharesKnown bool, refreshed time.Time) appState {
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationItems []Reservation, serverReservationsKnown map[string]bool, reservationSources map[string][]contract.ReservationSource, notices []contract.Notice, publicShares []contract.PublicShareSummary, publicSharesKnown bool, refreshed time.Time) appState {
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -107,6 +109,7 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 	for serverID, known := range serverReservationsKnown {
 		s.serverReservationsKnown[serverID] = known
 	}
+	s.reservationSources = cloneReservationSources(reservationSources)
 	s.notices = make([]NoticeViewModel, 0, len(notices))
 	for _, notice := range notices {
 		s.notices = append(s.notices, NoticeViewModel{
@@ -283,12 +286,14 @@ func (s appState) viewModel() ViewModel {
 	}
 	serverByID := make(map[string]ServerViewModel, len(s.system.Activations))
 	for _, activation := range s.system.Activations {
-		serverByID[activation.ServerID] = ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, RealmAlias: activation.RealmAlias, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, SessionTimeoutMin: activation.SessionTimeoutMin, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.serverReservationsKnown[activation.ServerID]}
+		projection, asOf := aggregateReservationProjection(s.reservationSources[activation.ServerID], s.serverReservationsKnown[activation.ServerID])
+		serverByID[activation.ServerID] = ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, RealmAlias: activation.RealmAlias, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, SessionTimeoutMin: activation.SessionTimeoutMin, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.serverReservationsKnown[activation.ServerID], ReservationProjection: projection, ReservationAsOf: asOf}
 	}
 	for _, repo := range repos {
 		server, ok := serverByID[repo.ServerID]
 		if !ok {
-			server = ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID, ReservationCount: s.reservations[repo.ServerID], ReservationsKnown: s.serverReservationsKnown[repo.ServerID]}
+			projection, asOf := aggregateReservationProjection(s.reservationSources[repo.ServerID], s.serverReservationsKnown[repo.ServerID])
+			server = ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID, ReservationCount: s.reservations[repo.ServerID], ReservationsKnown: s.serverReservationsKnown[repo.ServerID], ReservationProjection: projection, ReservationAsOf: asOf}
 		}
 		server.Repos = append(server.Repos, repo)
 		serverByID[repo.ServerID] = server
@@ -366,6 +371,43 @@ func (s appState) viewModel() ViewModel {
 		vm.Icon = aggregateIcon(s.connected, repos, unread)
 	}
 	return vm
+}
+
+func cloneReservationSources(source map[string][]contract.ReservationSource) map[string][]contract.ReservationSource {
+	result := make(map[string][]contract.ReservationSource, len(source))
+	for serverID, rows := range source {
+		result[serverID] = append([]contract.ReservationSource(nil), rows...)
+	}
+	return result
+}
+
+func aggregateReservationProjection(sources []contract.ReservationSource, known bool) (string, string) {
+	if !known {
+		return string(contract.ReservationSourceUnknown), ""
+	}
+	state := contract.ReservationSourceFresh
+	var oldest time.Time
+	for _, source := range sources {
+		switch source.State {
+		case contract.ReservationSourceUnknown:
+			state = contract.ReservationSourceUnknown
+		case contract.ReservationSourceOffline:
+			if state != contract.ReservationSourceUnknown {
+				state = contract.ReservationSourceOffline
+			}
+		case contract.ReservationSourceStale:
+			if state == contract.ReservationSourceFresh {
+				state = contract.ReservationSourceStale
+			}
+		}
+		if !source.AsOf.IsZero() && (oldest.IsZero() || source.AsOf.Before(oldest)) {
+			oldest = source.AsOf
+		}
+	}
+	if oldest.IsZero() {
+		return string(state), ""
+	}
+	return string(state), oldest.UTC().Format(time.RFC3339Nano)
 }
 
 func firstNonEmpty(values ...string) string {

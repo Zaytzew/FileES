@@ -11,6 +11,7 @@ import (
 
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/journal"
+	"filees/internal/gui/projectionmirror"
 	"filees/internal/gui/tray"
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
@@ -76,6 +77,8 @@ type ServerProjection struct {
 	PendingRequiredRepos  int    `json:"pending_required_repos"`
 	ReservationCount      int    `json:"reservation_count"`
 	ReservationsKnown     bool   `json:"reservations_known"`
+	ReservationProjection string `json:"reservation_projection"`
+	ReservationAsOf       string `json:"reservation_as_of,omitempty"`
 	SessionTimeoutMinutes int    `json:"session_timeout_minutes"`
 }
 
@@ -256,6 +259,10 @@ type UpdateProjection struct {
 }
 
 func newGUIService(client guiapp.DaemonClient) *GUIService {
+	return newGUIServiceWithProjection(client, nil, nil)
+}
+
+func newGUIServiceWithProjection(client guiapp.DaemonClient, mirror *projectionmirror.Store, offlineActivations []contract.ActivationStatus) *GUIService {
 	service := &GUIService{
 		snapshot: Snapshot{
 			Stale:               true,
@@ -274,8 +281,8 @@ func newGUIService(client guiapp.DaemonClient) *GUIService {
 		},
 	}
 	service.runner = guiapp.New(guiapp.Config{
-		Client:   client,
-		OnChange: service.onChange,
+		Client: client, OnChange: service.onChange,
+		Mirror: mirror, OfflineActivations: offlineActivations,
 	})
 	return service
 }
@@ -692,6 +699,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			RepositoryCount: len(server.Repos), RepositoriesReady: server.RepositoriesReady,
 			PendingRequiredRepos: server.PendingRequiredRepos,
 			ReservationCount:     server.ReservationCount, ReservationsKnown: server.ReservationsKnown,
+			ReservationProjection: server.ReservationProjection, ReservationAsOf: server.ReservationAsOf,
 			SessionTimeoutMinutes: server.SessionTimeoutMin,
 		})
 	}

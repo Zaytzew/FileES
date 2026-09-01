@@ -150,7 +150,7 @@ func runReadWritePipeline(ctx context.Context, repo config.Repo, state *ipcserve
 
 func markWorkingCopyMissing(state *ipcserver.RepoState) {
 	state.SetLockFuncs(nil, nil)
-	state.SetReservationFuncs(nil, nil)
+	state.SetReservationReleaseFunc(nil)
 	state.SetPublishFunc(nil)
 	state.SetNoticeFuncs(nil, nil)
 	state.SetCurrentOp(stringPtr("working_copy_missing"))
@@ -264,10 +264,11 @@ type svnFactory func(config.Repo) client.Client
 type readWriteFactory func(context.Context, repoRuntime, client.Client, reposupervisor.Desired) (reposupervisor.Instance, error)
 
 type readWriteDependencies struct {
-	gate     runtime.Gate
-	mutex    runtime.RepoMutex
-	ipc      *ipcserver.Server
-	activity *activity.Journal
+	gate         runtime.Gate
+	mutex        runtime.RepoMutex
+	ipc          *ipcserver.Server
+	activity     *activity.Journal
+	reservations *reservationProjectionCoordinator
 }
 
 func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired, deps readWriteDependencies) (reposupervisor.Instance, error) {
@@ -343,10 +344,21 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
 	recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger)
 	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
-	wireRepoLockFuncs(runtimeRepo.state, svn, wc, manager)
+	if deps.reservations != nil {
+		deps.reservations.AttachLocal(desired.Key, svn, wc, manager)
+	}
+	wireRepoLockFuncs(runtimeRepo.state, svn, wc, manager, func() {
+		if deps.reservations != nil {
+			deps.reservations.Schedule(desired.Key.ServerID)
+		}
+	})
 	logger.Infof("reservation/lock listing wired (read-write)")
 	runtimeRepo.state.SetPublishFunc(func(ctx context.Context, comment string) (int64, error) {
-		return service.RequestPublish(ctx, wc, comment)
+		revision, err := service.RequestPublish(ctx, wc, comment)
+		if err == nil && deps.reservations != nil {
+			deps.reservations.Schedule(desired.Key.ServerID)
+		}
+		return revision, err
 	})
 	runtimeRepo.state.SetNoticeFuncs(service.RecentNotices, service.AckNotice)
 	lockFuncsWired := true
@@ -356,7 +368,10 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		}
 		if lockFuncsWired {
 			runtimeRepo.state.SetLockFuncs(nil, nil)
-			runtimeRepo.state.SetReservationFuncs(nil, nil)
+			runtimeRepo.state.SetReservationReleaseFunc(nil)
+			if deps.reservations != nil {
+				deps.reservations.DetachLocal(desired.Key)
+			}
 			runtimeRepo.state.SetPublishFunc(nil)
 			runtimeRepo.state.SetNoticeFuncs(nil, nil)
 			logger.Infof("reservation/lock listing unwired (instance setup unwound)")
@@ -368,7 +383,10 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		var first error
 		runtimeRepo.state.SetWorkingCopySizeFunc(nil)
 		runtimeRepo.state.SetLockFuncs(nil, nil)
-		runtimeRepo.state.SetReservationFuncs(nil, nil)
+		runtimeRepo.state.SetReservationReleaseFunc(nil)
+		if deps.reservations != nil {
+			deps.reservations.DetachLocal(desired.Key)
+		}
 		runtimeRepo.state.SetPublishFunc(nil)
 		runtimeRepo.state.SetNoticeFuncs(nil, nil)
 		logger.Infof("reservation/lock listing unwired (instance stopping)")
@@ -393,8 +411,8 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	return instance, nil
 }
 
-func wireRepoLockFuncs(state *ipcserver.RepoState, svn client.Client, wc string, manager *passport.Manager) {
-	wireRepoReservationFuncs(state, svn, wc, manager)
+func wireRepoLockFuncs(state *ipcserver.RepoState, svn client.Client, wc string, manager *passport.Manager, changed func()) {
+	wireRepoReservationReleaseFunc(state, svn, wc, manager, changed)
 	if manager != nil {
 		state.SetLockFuncs(
 			func(ctx context.Context, paths []string) (string, error) {
@@ -403,18 +421,35 @@ func wireRepoLockFuncs(state *ipcserver.RepoState, svn client.Client, wc string,
 				// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §3.2), never a
 				// silent same-realm takeover.
 				_, out, err := manager.Acquire(ctx, paths, "")
+				if err == nil && changed != nil {
+					changed()
+				}
 				return out, err
 			},
-			manager.Release,
+			func(ctx context.Context, paths []string) (string, error) {
+				out, err := manager.Release(ctx, paths)
+				if err == nil && changed != nil {
+					changed()
+				}
+				return out, err
+			},
 		)
 		return
 	}
 	state.SetLockFuncs(
 		func(ctx context.Context, paths []string) (string, error) {
-			return svn.Lock(ctx, wc, paths)
+			out, err := svn.Lock(ctx, wc, paths)
+			if err == nil && changed != nil {
+				changed()
+			}
+			return out, err
 		},
 		func(ctx context.Context, paths []string) (string, error) {
-			return svn.Unlock(ctx, wc, paths)
+			out, err := svn.Unlock(ctx, wc, paths)
+			if err == nil && changed != nil {
+				changed()
+			}
+			return out, err
 		},
 	)
 }
@@ -424,9 +459,21 @@ func wireRepoLockFuncs(state *ipcserver.RepoState, svn client.Client, wc string,
 // returned by the immediately preceding list, and a passport-backed lock can
 // only be released by the local passport manager that owns it.
 func wireRepoReservationFuncs(state *ipcserver.RepoState, svn client.Client, wc string, manager *passport.Manager) {
+	wireRepoReservationFuncsInternal(state, svn, wc, manager, true, nil)
+}
+
+func wireRepoReservationReleaseFunc(state *ipcserver.RepoState, svn client.Client, wc string, manager *passport.Manager, changed func()) {
+	wireRepoReservationFuncsInternal(state, svn, wc, manager, false, changed)
+}
+
+func wireRepoReservationFuncsInternal(state *ipcserver.RepoState, svn client.Client, wc string, manager *passport.Manager, wireList bool, changed func()) {
 	lister, ok := svn.(client.LockLister)
 	if !ok || lister == nil {
-		state.SetReservationFuncs(nil, nil)
+		if wireList {
+			state.SetReservationFuncs(nil, nil)
+		} else {
+			state.SetReservationReleaseFunc(nil)
+		}
 		return
 	}
 	// rawList is the historical, directly-querying-SVN-over-SSH shape.
@@ -512,12 +559,22 @@ func wireRepoReservationFuncs(state *ipcserver.RepoState, svn client.Client, wc 
 		}
 		if manager != nil {
 			_, err := manager.Release(ctx, []string{absolute})
+			if err == nil && changed != nil {
+				changed()
+			}
 			return err
 		}
 		_, err = svn.Unlock(ctx, wc, []string{absolute})
+		if err == nil && changed != nil {
+			changed()
+		}
 		return err
 	}
-	state.SetReservationFuncs(list, release)
+	if wireList {
+		state.SetReservationFuncs(list, release)
+	} else {
+		state.SetReservationReleaseFunc(release)
+	}
 }
 
 func reservationHasLocalChanges(entry client.LockEntry) bool {
@@ -533,6 +590,7 @@ type daemonRepoStarter struct {
 	newSVN         svnFactory
 	startReadWrite readWriteFactory
 	retryInterval  time.Duration
+	reservations   *reservationProjectionCoordinator
 }
 
 func (s *daemonRepoStarter) Start(startCtx context.Context, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
@@ -715,8 +773,10 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 	logger := talk.With("readonly:" + desired.Key.String())
 	// Read-only attachments contribute to the server-menu inventory as well,
 	// but intentionally receive no release callback.
-	wireRepoReservationFuncs(runtime.state, svn, runtime.config.LocalPath, nil)
-	logger.Infof("reservation listing wired (read-only)")
+	if s.reservations != nil {
+		s.reservations.AttachLocal(desired.Key, svn, runtime.config.LocalPath, nil)
+	}
+	logger.Infof("reservation local overlay wired (read-only)")
 	wc := runtime.config.LocalPath
 	runtime.state.SetNoticeFuncs(
 		func() ([]contract.Notice, error) { return shout.RecentNotices(wc, 20) },
@@ -743,7 +803,10 @@ func (s *daemonRepoStarter) startReadOnly(lifecycle context.Context, runtime rep
 		runReadOnlyRepo(ctx, runtime.config, runtime.state, svn, sink, logger)
 		return nil
 	}, func(context.Context) error {
-		runtime.state.SetReservationFuncs(nil, nil)
+		runtime.state.SetReservationReleaseFunc(nil)
+		if s.reservations != nil {
+			s.reservations.DetachLocal(desired.Key)
+		}
 		runtime.state.SetNoticeFuncs(nil, nil)
 		logger.Infof("reservation listing unwired (instance stopping)")
 		if err := os.Remove(pidPath); err != nil && !errors.Is(err, os.ErrNotExist) {

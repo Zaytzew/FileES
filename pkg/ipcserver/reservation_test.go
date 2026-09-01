@@ -128,6 +128,22 @@ func TestReservationListRelaysStaleClassificationFromSource(t *testing.T) {
 	}
 }
 
+func TestReservationListRelaysDesktopOfflineMirrorState(t *testing.T) {
+	server := New("unused")
+	repo := server.RegisterRepoAccess("docs", "svn+ssh://host/docs", "/work/docs", "office", contract.AccessReadWrite)
+	asOf := time.Now().UTC().Add(-time.Minute)
+	repo.SetReservationFuncs(func(context.Context) (ReservationSnapshot, error) {
+		return ReservationSnapshot{Offline: true, AsOf: asOf, Generation: "5", Reservations: []contract.Reservation{{RepoID: "docs", Path: "a"}}}, nil
+	}, nil)
+	response := server.dispatch(lifecycleRequest(contract.CmdRepoReservationList, contract.RepoReservationListPayload{ServerID: "office"}))
+	var result contract.RepoReservationListResult
+	decodeIPCResult(t, response, &result)
+	source := sourceFor(t, result, "docs")
+	if source.State != contract.ReservationSourceOffline || source.Generation != "5" || !source.AsOf.Equal(asOf) {
+		t.Fatalf("source=%+v", source)
+	}
+}
+
 func TestReservationListUnknownSourceReportsAsUnknownNotFalseZero(t *testing.T) {
 	server := New("unused")
 	repo := server.RegisterRepoAccess("docs", "svn+ssh://host/docs", "/work/docs", "office", contract.AccessReadWrite)

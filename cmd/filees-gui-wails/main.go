@@ -8,12 +8,15 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"filees/internal/gui/clientactivation"
+	"filees/internal/gui/projectionmirror"
 	"filees/pkg/clientprofile"
+	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcclient"
 	"filees/pkg/localpin"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -44,12 +47,39 @@ func main() {
 	}
 
 	daemon := ipcclient.New(*socket, "filees-gui-wails")
+	mirror, mirrorErr := projectionmirror.Open(filepath.Join(filepath.Dir(*activationRoot), "projection-mirror"))
+	if mirrorErr != nil {
+		log.Printf("filees-gui-wails: projection mirror unavailable: %v", mirrorErr)
+		mirror = nil
+	}
+	profiles, profileErr := clientprofile.List(*activationRoot)
+	if profileErr != nil {
+		log.Printf("filees-gui-wails: offline activation projection unavailable: %v", profileErr)
+	}
+	offlineActivations := make([]contract.ActivationStatus, 0, len(profiles))
+	activeServerIDs := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		displayName := profile.DisplayName
+		if strings.TrimSpace(displayName) == "" {
+			displayName = profile.ServerID
+		}
+		offlineActivations = append(offlineActivations, contract.ActivationStatus{
+			ServerID: profile.ServerID, DisplayName: displayName, Address: profile.Address,
+			ClientID: profile.ClientID, SSHPort: profile.SSHPort,
+		})
+		activeServerIDs = append(activeServerIDs, profile.ServerID)
+	}
+	if mirror != nil {
+		if _, err := mirror.Prune(activeServerIDs); err != nil {
+			log.Printf("filees-gui-wails: projection mirror prune: %v", err)
+		}
+	}
 	pinStore, pinErr := localpin.Open(localpin.DefaultRoot())
 	if pinErr != nil {
 		log.Printf("filees-gui-wails: local PIN store unavailable: %v", pinErr)
 		pinStore = nil
 	}
-	gui := newGUIService(daemon)
+	gui := newGUIServiceWithProjection(daemon, mirror, offlineActivations)
 	settings := newSettingsService()
 	repository := newRepositoryService()
 	prompts := newPromptService()

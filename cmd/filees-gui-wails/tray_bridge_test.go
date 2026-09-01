@@ -42,6 +42,23 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 		t.Fatalf("partial reservations = %+v", partial)
 	}
 
+	offlineProjection := projectWailsTray(Snapshot{
+		Connected:    true,
+		Servers:      []ServerProjection{{ID: "spot", ReservationsKnown: true, ReservationProjection: string(contract.ReservationSourceOffline)}},
+		Reservations: []ReservationProjection{{ID: "lock"}},
+	})
+	if offlineProjection.Status != "Połączono · 0 repozytoriów · 1 blokada (1 z lustra)" {
+		t.Fatalf("offline reservations = %+v", offlineProjection)
+	}
+
+	staleProjection := projectWailsTray(Snapshot{
+		Connected: true,
+		Servers:   []ServerProjection{{ID: "spot", ReservationsKnown: true, ReservationProjection: string(contract.ReservationSourceStale)}},
+	})
+	if staleProjection.Status != "Połączono · 0 repozytoriów · 0 blokad (1 wcześniejsza emisja)" {
+		t.Fatalf("stale reservations = %+v", staleProjection)
+	}
+
 	stale := projectWailsTray(Snapshot{
 		Connected: true, Stale: true,
 		Capabilities: []string{contract.CapSystemRestart, contract.CapSystemShutdown},

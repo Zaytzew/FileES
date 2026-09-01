@@ -147,6 +147,8 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 }
 
 func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
+	reservationRefreshes := newReservationProjectionCoordinator(ctx, ipc)
+	defer reservationRefreshes.Close()
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
 	timeouts := make(map[string]time.Duration, len(profiles))
@@ -162,14 +164,14 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		runtimes[key] = repoRuntime{config: repo, state: state}
 		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID, SessionTimeout: repo.SessionTimeout})
 	}
-	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc, activity: activityJournal}
+	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc, activity: activityJournal, reservations: reservationRefreshes}
 	starter := &daemonRepoStarter{daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
 		timeout := repo.SessionTimeout
 		if timeout <= 0 {
 			timeout = clientprofile.DefaultSessionTimeout
 		}
 		return client.New(client.Options{SvnPath: "svn", Timeout: timeout, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts, SSHHostName: repo.SSHHostName, SSHPort: repo.SSHPort})
-	}}
+	}, reservations: reservationRefreshes}
 	starter.startReadWrite = func(lifecycle context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
 		return startReadWrite(lifecycle, runtimeRepo, svn, desired, deps)
 	}
@@ -197,6 +199,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if err := reconcileProjectedView(ctx, supervisor, ipc, serverID, cached, runtimes, lifecycle); err != nil {
 				return fmt.Errorf("apply cached projection: %w", err)
 			}
+			reservationRefreshes.UpdateView(serverID, cached)
 			// Monitor emits only a newer generation. Seed the aggregate from the
 			// already-validated cache as well, otherwise a quiet server leaves E1
 			// empty for the daemon's entire lifetime.
@@ -243,6 +246,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		return nil
 	}
 	startProfile := func(profile clientprofile.Profile) error {
+		reservationRefreshes.UpdateProfile(profile)
 		return startMonitor(profile.ServerID, profile.ServerID, profile.Address, profile.ClientID, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval, profile.SVNTimeout())
 	}
 	for _, profile := range profiles {
@@ -282,6 +286,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				talk.With("projection:"+profile.ServerID).Errorf("start activated profile: %v", err)
 			}
 		case profile := <-timeoutEvents:
+			reservationRefreshes.UpdateProfile(profile)
 			stampSessionTimeout(runtimes, profile.ServerID, profile.SVNTimeout())
 			if view, ok := currentViews[profile.ServerID]; ok {
 				if err := reconcileProjectedView(ctx, supervisor, ipc, profile.ServerID, view, runtimes, lifecycle); err != nil && ctx.Err() == nil {
@@ -296,9 +301,13 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				realmAlias = projectRealmAlias(update.serverID, update.view.RealmID, realmAlias)
 			}
 			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: sessionTimeoutMinutes(update.serverID, runtimes)})
-			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes, lifecycle); err != nil && ctx.Err() == nil {
-				talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
+			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes, lifecycle); err != nil {
+				if ctx.Err() == nil {
+					talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)
+				}
+				continue
 			}
+			reservationRefreshes.UpdateView(update.serverID, update.view)
 			shareRefreshes.Schedule(update.serverID, update.view)
 		case serverID := <-publicShareEvents:
 			if view, ok := currentViews[serverID]; ok {
@@ -321,6 +330,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 						}
 					} else if hasView {
 						syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes, lifecycle)
+						reservationRefreshes.UpdateView(repo.ServerID, view)
 					} else {
 						ipc.MarkRepoDetached(repo.ServerID, repo.ID)
 					}
@@ -363,6 +373,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				talk.With("projection:"+repo.ServerID).Errorf("attach repository %s: %v", repo.ID, err)
 			}
 			syncProjectionKnowledge(ipc, repo.ServerID, view, runtimes, lifecycle)
+			reservationRefreshes.UpdateView(repo.ServerID, view)
 		}
 	}
 }

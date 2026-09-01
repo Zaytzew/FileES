@@ -111,6 +111,8 @@ type ServerViewModel struct {
 	SessionTimeoutMin     int
 	ReservationCount      int
 	ReservationsKnown     bool
+	ReservationProjection string
+	ReservationAsOf       string
 	Repos                 []RepoViewModel
 }
 

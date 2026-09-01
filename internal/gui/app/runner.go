@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
+	"filees/internal/gui/projectionmirror"
 	contract "filees/pkg/contract/v1"
 )
 
@@ -69,10 +71,12 @@ type Config struct {
 	OnChange func(ViewModel) // called from event loop on every state change
 
 	// Overridable for tests.
-	Clock    Clock
-	Backoff  BackoffSequence
-	Debounce time.Duration // event coalescing window; default 150ms
-	Periodic time.Duration // full refresh interval; default 30s; negative disables it
+	Clock              Clock
+	Backoff            BackoffSequence
+	Debounce           time.Duration // event coalescing window; default 150ms
+	Periodic           time.Duration // full refresh interval; default 30s; negative disables it
+	Mirror             *projectionmirror.Store
+	OfflineActivations []contract.ActivationStatus
 }
 
 // App is the GUI presentation model. Call Run to start the event loop.
@@ -146,6 +150,61 @@ func New(cfg Config) *App {
 	return &App{cfg: cfg, msgCh: make(chan appMsg, 64)}
 }
 
+func (a *App) saveReservationMirror(serverID string, result contract.RepoReservationListResult) {
+	if a.cfg.Mirror == nil || serverID == "" {
+		return
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return
+	}
+	_ = a.cfg.Mirror.Save(serverID, a.cfg.Clock.Now(), raw)
+}
+
+// loadOfflineMirrors seeds only presentation data that can be honestly
+// reconstructed without the daemon. Global Connected remains false, so the
+// reducer and frontend classify every restored server as unverified rather
+// than claiming the remote endpoint itself is offline.
+func (a *App) loadOfflineMirrors(state appState) appState {
+	if a.cfg.Mirror == nil || len(a.cfg.OfflineActivations) == 0 {
+		return state
+	}
+	state.system.Activations = append([]contract.ActivationStatus(nil), a.cfg.OfflineActivations...)
+	state.serverOrder = make([]string, 0, len(a.cfg.OfflineActivations))
+	for _, activation := range a.cfg.OfflineActivations {
+		state.serverOrder = append(state.serverOrder, activation.ServerID)
+		entry, ok, err := a.cfg.Mirror.Load(activation.ServerID)
+		if err != nil || !ok {
+			state.serverReservationsKnown[activation.ServerID] = false
+			continue
+		}
+		var result contract.RepoReservationListResult
+		if err := json.Unmarshal(entry.Payload, &result); err != nil || result.ServerID != activation.ServerID {
+			state.serverReservationsKnown[activation.ServerID] = false
+			continue
+		}
+		known := true
+		for _, source := range result.Sources {
+			if source.State == contract.ReservationSourceUnknown {
+				known = false
+			}
+		}
+		state.serverReservationsKnown[activation.ServerID] = known
+		state.reservationSources[activation.ServerID] = append([]contract.ReservationSource(nil), result.Sources...)
+		state.reservations[activation.ServerID] = len(result.Reservations)
+		for _, reservation := range result.Reservations {
+			state.repoReservations[reservationKey(activation.ServerID, reservation.RepoID)]++
+			state.reservationItems = append(state.reservationItems, projectReservation(activation.ServerID, reservation))
+		}
+		if entry.ReceivedAt.After(state.refreshed) {
+			state.refreshed = entry.ReceivedAt
+		}
+	}
+	state.connected = false
+	state.stale = true
+	return state
+}
+
 // Run starts the event loop. Blocks until ctx is cancelled. Safe to call once.
 func (a *App) Run(ctx context.Context) {
 	a.once.Do(func() { a.loop(ctx) })
@@ -178,6 +237,7 @@ type msgFullSnapshot struct {
 	repoReservationCounts   map[string]int
 	reservations            []Reservation
 	serverReservationsKnown map[string]bool
+	reservationSources      map[string][]contract.ReservationSource
 	notices                 []contract.Notice
 	publicShares            []contract.PublicShareSummary
 	publicSharesKnown       bool
@@ -212,6 +272,7 @@ func (msgFlushDirty) sealed()       {}
 
 func (a *App) loop(ctx context.Context) {
 	state := newAppState()
+	state = a.loadOfflineMirrors(state)
 
 	var (
 		connectGen     int
@@ -239,6 +300,9 @@ func (a *App) loop(ctx context.Context) {
 		if a.cfg.OnChange != nil {
 			a.cfg.OnChange(state.viewModel())
 		}
+	}
+	if len(state.system.Activations) > 0 {
+		notify()
 	}
 
 	stopTimer := func(timer *clockTimer) {
@@ -336,6 +400,7 @@ func (a *App) loop(ctx context.Context) {
 			repoReservationCounts := make(map[string]int)
 			reservations := make([]Reservation, 0)
 			serverReservationsKnown := make(map[string]bool, len(system.Activations))
+			reservationSources := make(map[string][]contract.ReservationSource, len(system.Activations))
 			if includeReservations {
 				for _, activation := range system.Activations {
 					result, err := a.cfg.Client.RepoReservationList(sesCtx, activation.ServerID)
@@ -346,7 +411,15 @@ func (a *App) loop(ctx context.Context) {
 						serverReservationsKnown[activation.ServerID] = false
 						continue
 					}
-					serverReservationsKnown[activation.ServerID] = true
+					known := true
+					for _, source := range result.Sources {
+						if source.State == contract.ReservationSourceUnknown {
+							known = false
+						}
+					}
+					serverReservationsKnown[activation.ServerID] = known
+					reservationSources[activation.ServerID] = append([]contract.ReservationSource(nil), result.Sources...)
+					a.saveReservationMirror(activation.ServerID, *result)
 					reservationCounts[activation.ServerID] = len(result.Reservations)
 					for _, reservation := range result.Reservations {
 						repoReservationCounts[reservationKey(activation.ServerID, reservation.RepoID)]++
@@ -388,7 +461,8 @@ func (a *App) loop(ctx context.Context) {
 					statuses: statuses, errors: errors, activity: activityRecords,
 					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
 					reservations: reservations, serverReservationsKnown: serverReservationsKnown,
-					notices: notices, publicShares: publicShares, publicSharesKnown: publicSharesKnown,
+					reservationSources: reservationSources,
+					notices:            notices, publicShares: publicShares, publicSharesKnown: publicSharesKnown,
 					refreshed: a.cfg.Clock.Now(), actionFences: fences})
 			}
 		}()
@@ -559,7 +633,7 @@ func (a *App) loop(ctx context.Context) {
 				if msg.gen != connectGen || currentSesCtx == nil {
 					break
 				}
-				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.serverReservationsKnown, msg.notices, msg.publicShares, msg.publicSharesKnown, msg.refreshed)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.serverReservationsKnown, msg.reservationSources, msg.notices, msg.publicShares, msg.publicSharesKnown, msg.refreshed)
 				var waiting []string
 				state, waiting = state.confirmPendingActions(msg.actionFences)
 				for _, id := range waiting {

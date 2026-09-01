@@ -270,7 +270,7 @@ func TestRepoLockFunctionsUseSVNOrEditPassportManager(t *testing.T) {
 	state := server.RegisterRepoAccess("docs", "svn+ssh://example/docs", t.TempDir(), "office", contract.AccessReadWrite)
 	wcRoot := filepath.Join(t.TempDir(), "wc", "docs")
 	plain := &lockClient{}
-	wireRepoLockFuncs(state, plain, wcRoot, nil)
+	wireRepoLockFuncs(state, plain, wcRoot, nil, nil)
 	plainPath := filepath.Join(wcRoot, "a")
 	if out, err := state.Lock(t.Context(), []string{plainPath}); err != nil || out != "locked" {
 		t.Fatalf("plain lock out=%q err=%v", out, err)
@@ -287,7 +287,7 @@ func TestRepoLockFunctionsUseSVNOrEditPassportManager(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wireRepoLockFuncs(state, nil, wcRoot, manager)
+	wireRepoLockFuncs(state, nil, wcRoot, manager, nil)
 	path := filepath.Join(wcRoot, "edited.dwg")
 	if _, err := state.Lock(t.Context(), []string{path}); err != nil {
 		t.Fatal(err)

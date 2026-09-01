@@ -7,7 +7,15 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 )
+
+// runDeadline bounds one refresh callback. It is a backstop, not a transport
+// timeout: the transport owns its own, shorter limit. Without it a callback
+// that never returns pins its server's entry in the map forever, and because
+// Schedule only raises pending for an entry that is already present, that
+// server's lane never runs again until the daemon restarts.
+const runDeadline = 3 * time.Minute
 
 // RefreshFunc performs one state refresh for serverID. The function owns the
 // result, including publishing a successful emission or recording a failed
@@ -25,6 +33,9 @@ type Scheduler struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	refresh RefreshFunc
+
+	// runTimeout bounds a single callback; tests shorten it.
+	runTimeout time.Duration
 
 	mu      sync.Mutex
 	closed  bool
@@ -44,10 +55,11 @@ func New(parent context.Context, refresh RefreshFunc) *Scheduler {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	return &Scheduler{
-		ctx:     ctx,
-		cancel:  cancel,
-		refresh: refresh,
-		servers: make(map[string]*serverState),
+		ctx:        ctx,
+		cancel:     cancel,
+		refresh:    refresh,
+		runTimeout: runDeadline,
+		servers:    make(map[string]*serverState),
 	}
 }
 
@@ -79,7 +91,7 @@ func (s *Scheduler) run(serverID string, state *serverState) {
 	defer s.workers.Done()
 	for {
 		if s.ctx.Err() == nil {
-			s.refresh(s.ctx, serverID)
+			s.runOnce(serverID)
 		}
 
 		s.mu.Lock()
@@ -93,6 +105,18 @@ func (s *Scheduler) run(serverID string, state *serverState) {
 		state.pending = false
 		s.mu.Unlock()
 	}
+}
+
+// runOnce invokes the callback under its own deadline so a stuck refresh
+// releases the server's slot instead of disabling the lane permanently.
+func (s *Scheduler) runOnce(serverID string) {
+	timeout := s.runTimeout
+	if timeout <= 0 {
+		timeout = runDeadline
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	defer cancel()
+	s.refresh(ctx, serverID)
 }
 
 // Close rejects new triggers, cancels in-flight callbacks, and waits for all

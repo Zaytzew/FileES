@@ -10,38 +10,39 @@ import (
 // All methods are pure — they return a new appState and have no side effects.
 // Only the event loop goroutine accesses appState; no locking needed.
 type appState struct {
-	connected           bool
-	stale               bool
-	caps                map[string]bool
-	summaries           map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
-	snapshots           map[string]contract.RepoStatus  // from repo.status; carries live state
-	order               []string                        // stable repoID first-seen order
-	serverOrder         []string                        // stable serverID first-seen order
-	lastSeq             int64                           // last event sequence number received
-	system              contract.SystemStatusResult
-	errors              []ErrorViewModel
-	activity            []ActivityViewModel
-	reservations        map[string]int
-	repoReservations    map[string]int
-	reservationItems    []Reservation
-	lockReleaseRequests []LockReleaseRequest
-	reservationsKnown   bool
-	notices             []NoticeViewModel
-	publicShares        []PublicShareViewModel
-	publicSharesKnown   bool
-	pendingActions      map[string]PendingAction
-	pendingActionOrder  []string
-	refreshed           time.Time
+	connected               bool
+	stale                   bool
+	caps                    map[string]bool
+	summaries               map[string]contract.RepoSummary // from repo.list; carries URL + LocalPath
+	snapshots               map[string]contract.RepoStatus  // from repo.status; carries live state
+	order                   []string                        // stable repoID first-seen order
+	serverOrder             []string                        // stable serverID first-seen order
+	lastSeq                 int64                           // last event sequence number received
+	system                  contract.SystemStatusResult
+	errors                  []ErrorViewModel
+	activity                []ActivityViewModel
+	reservations            map[string]int
+	repoReservations        map[string]int
+	reservationItems        []Reservation
+	lockReleaseRequests     []LockReleaseRequest
+	serverReservationsKnown map[string]bool
+	notices                 []NoticeViewModel
+	publicShares            []PublicShareViewModel
+	publicSharesKnown       bool
+	pendingActions          map[string]PendingAction
+	pendingActionOrder      []string
+	refreshed               time.Time
 }
 
 func newAppState() appState {
 	return appState{
-		caps:             make(map[string]bool),
-		summaries:        make(map[string]contract.RepoSummary),
-		snapshots:        make(map[string]contract.RepoStatus),
-		reservations:     make(map[string]int),
-		repoReservations: make(map[string]int),
-		pendingActions:   make(map[string]PendingAction),
+		caps:                    make(map[string]bool),
+		summaries:               make(map[string]contract.RepoSummary),
+		snapshots:               make(map[string]contract.RepoStatus),
+		reservations:            make(map[string]int),
+		repoReservations:        make(map[string]int),
+		serverReservationsKnown: make(map[string]bool),
+		pendingActions:          make(map[string]PendingAction),
 	}
 }
 
@@ -69,7 +70,7 @@ func (s appState) applyConnected(caps []string) appState {
 // applyFullSnapshot atomically replaces all authoritative daemon/repository
 // data and marks it fresh. Removed repositories and their old snapshots are
 // pruned as part of the replacement.
-func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationItems []Reservation, reservationsKnown bool, notices []contract.Notice, publicShares []contract.PublicShareSummary, publicSharesKnown bool, refreshed time.Time) appState {
+func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []contract.RepoSummary, statuses []contract.RepoStatus, records []contract.ErrorRecord, activityRecords []contract.ActivityRecord, reservationCounts, repoReservationCounts map[string]int, reservationItems []Reservation, serverReservationsKnown map[string]bool, notices []contract.Notice, publicShares []contract.PublicShareSummary, publicSharesKnown bool, refreshed time.Time) appState {
 	s = s.applyRepoList(repos)
 	next := make(map[string]contract.RepoStatus, len(statuses))
 	for _, status := range statuses {
@@ -102,7 +103,10 @@ func (s appState) applyFullSnapshot(system contract.SystemStatusResult, repos []
 		s.repoReservations[key] = count
 	}
 	s.reservationItems = append([]Reservation(nil), reservationItems...)
-	s.reservationsKnown = reservationsKnown
+	s.serverReservationsKnown = make(map[string]bool, len(serverReservationsKnown))
+	for serverID, known := range serverReservationsKnown {
+		s.serverReservationsKnown[serverID] = known
+	}
 	s.notices = make([]NoticeViewModel, 0, len(notices))
 	for _, notice := range notices {
 		s.notices = append(s.notices, NoticeViewModel{
@@ -279,12 +283,12 @@ func (s appState) viewModel() ViewModel {
 	}
 	serverByID := make(map[string]ServerViewModel, len(s.system.Activations))
 	for _, activation := range s.system.Activations {
-		serverByID[activation.ServerID] = ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, RealmAlias: activation.RealmAlias, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, SessionTimeoutMin: activation.SessionTimeoutMin, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.reservationsKnown}
+		serverByID[activation.ServerID] = ServerViewModel{ID: activation.ServerID, DisplayName: activation.DisplayName, ClientRole: activation.ClientRole, RealmID: activation.RealmID, RealmAlias: activation.RealmAlias, Address: activation.Address, ClientID: activation.ClientID, SSHPort: activation.SSHPort, CanCreateRepositories: activation.CanCreateRepositories, RepositoriesReady: activation.RepositoriesReady, PendingRequiredRepos: activation.PendingRequiredRepos, SessionTimeoutMin: activation.SessionTimeoutMin, ReservationCount: s.reservations[activation.ServerID], ReservationsKnown: s.serverReservationsKnown[activation.ServerID]}
 	}
 	for _, repo := range repos {
 		server, ok := serverByID[repo.ServerID]
 		if !ok {
-			server = ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID, ReservationCount: s.reservations[repo.ServerID], ReservationsKnown: s.reservationsKnown}
+			server = ServerViewModel{ID: repo.ServerID, DisplayName: repo.ServerID, ReservationCount: s.reservations[repo.ServerID], ReservationsKnown: s.serverReservationsKnown[repo.ServerID]}
 		}
 		server.Repos = append(server.Repos, repo)
 		serverByID[repo.ServerID] = server
@@ -494,7 +498,7 @@ func (s appState) confirmPendingActions(ids []string) (appState, []string) {
 			confirmed = append(confirmed, id)
 			continue
 		}
-		if !s.reservationsKnown {
+		if !s.serverReservationsKnown[action.ServerID] {
 			waiting = append(waiting, id)
 			continue
 		}

@@ -35,13 +35,18 @@ func projectWailsTray(snapshot Snapshot) wailsTrayProjection {
 	}
 	locks := len(snapshot.Reservations)
 	lockStatus := fmt.Sprintf("%d %s", locks, lockNoun(locks))
+	unavailableServers := 0
 	if snapshot.Connected {
 		for _, server := range snapshot.Servers {
 			if !server.ReservationsKnown {
-				lockStatus = "? blokad"
-				break
+				unavailableServers++
 			}
 		}
+		if unavailableServers > 0 {
+			lockStatus = fmt.Sprintf("%d+? blokad (%d bez emisji)", locks, unavailableServers)
+		}
+	} else {
+		lockStatus += " (stan niezweryfikowany)"
 	}
 	repositories := len(snapshot.Repositories)
 	status := fmt.Sprintf("%s · %d %s · %s", state, repositories, repositoryNoun(repositories), lockStatus)

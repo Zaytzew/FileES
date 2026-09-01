@@ -24,13 +24,22 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 	}
 
 	disconnected := projectWailsTray(Snapshot{})
-	if disconnected.Icon != guiapp.IconDisconnected || disconnected.Status != "Rozłączono · 0 repozytoriów · 0 blokad" {
+	if disconnected.Icon != guiapp.IconDisconnected || disconnected.Status != "Rozłączono · 0 repozytoriów · 0 blokad (stan niezweryfikowany)" {
 		t.Fatalf("disconnected = %+v", disconnected)
 	}
 
 	unknown := projectWailsTray(Snapshot{Connected: true, Servers: []ServerProjection{{ID: "server"}}})
-	if unknown.Status != "Połączono · 0 repozytoriów · ? blokad" {
+	if unknown.Status != "Połączono · 0 repozytoriów · 0+? blokad (1 bez emisji)" {
 		t.Fatalf("unknown reservations = %+v", unknown)
+	}
+
+	partial := projectWailsTray(Snapshot{
+		Connected:    true,
+		Servers:      []ServerProjection{{ID: "spot", ReservationsKnown: true}, {ID: "cloud"}},
+		Reservations: []ReservationProjection{{ID: "lock"}},
+	})
+	if partial.Status != "Połączono · 0 repozytoriów · 1+? blokad (1 bez emisji)" {
+		t.Fatalf("partial reservations = %+v", partial)
 	}
 
 	stale := projectWailsTray(Snapshot{

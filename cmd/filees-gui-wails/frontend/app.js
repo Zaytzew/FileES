@@ -213,7 +213,7 @@ function renderMetrics(snapshot) {
   const pendingBytes = repos.reduce((sum, repo) => sum + Number(repo.pending_bytes || 0), 0);
   const conflicts = repos.reduce((sum, repo) => sum + Number(repo.conflicts || 0), 0);
   const reservations = snapshot.reservations || [];
-  const reservationsKnown = !(snapshot.connected && (snapshot.servers || []).some((server) => !server.reservations_known));
+  const reservationState = reservationProjectionState(snapshot);
   const publicShares = snapshot.public_shares || [];
   const activePublicShares = publicShares.filter((share) => share.state === "active").length;
   const unreadAnnouncements = (snapshot.notices || []).filter((notice) => !notice.acked).length;
@@ -223,10 +223,14 @@ function renderMetrics(snapshot) {
   $("#metric-repos").textContent = repos.length;
   $("#metric-pending").textContent = pending;
   $("#metric-pending-note").textContent = pending ? `${bytes(pendingBytes)} oczekuje` : "kolejka jest pusta";
-  $("#metric-reservations").textContent = reservationsKnown ? reservations.length : "?";
-  $("#metric-reservations-note").textContent = reservationsKnown
-    ? plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad")
-    : "lista niedostępna";
+  $("#metric-reservations").textContent = reservationState.daemonOffline
+    ? reservations.length
+    : reservationState.partial ? `${reservations.length}+?` : reservations.length;
+  $("#metric-reservations-note").textContent = reservationState.daemonOffline
+    ? "ostatni znany stan · demon offline"
+    : reservationState.partial
+    ? `co najmniej ${reservations.length} ${plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad")} · ${reservationState.unavailable.length} bez emisji`
+    : plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad");
   $("#metric-public-shares").textContent = snapshot.public_shares_known ? activePublicShares : "?";
   $("#metric-public-shares-note").textContent = snapshot.public_shares_known
     ? plural(activePublicShares, "aktywny link", "aktywne linki", "aktywnych linków")
@@ -242,6 +246,16 @@ function renderMetrics(snapshot) {
   $("#hero-copy").textContent = snapshot.connected
     ? "Zmiany i działania pojawiają się tutaj na bieżąco."
     : "Połączenie jest chwilowo niedostępne. Panel zachowuje ostatni znany stan i odświeży się automatycznie.";
+}
+
+function reservationProjectionState(snapshot) {
+  const servers = snapshot.servers || [];
+  const unavailable = snapshot.connected ? servers.filter((server) => !server.reservations_known) : [];
+  return {
+    daemonOffline: !snapshot.connected,
+    partial: Boolean(snapshot.connected) && unavailable.length > 0,
+    unavailable,
+  };
 }
 
 function plural(value, one, few, many) {
@@ -426,11 +440,16 @@ function renderReservations(snapshot) {
   const root = $("#reservations");
   const reservations = snapshot.reservations || [];
 	const holderRequests = (snapshot.lock_release_requests || []).filter((request) => request.role === "holder" && request.state === "pending");
-  const inventoryUnknown = Boolean(snapshot.connected) && (snapshot.servers || []).some((server) => !server.reservations_known);
-	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !inventoryUnknown;
-  $("#reservations-count").textContent = inventoryUnknown ? "?" : reservations.length;
+  const reservationState = reservationProjectionState(snapshot);
+	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !reservationState.partial;
+  $("#reservations-count").textContent = reservationState.partial ? `${reservations.length}+?` : reservations.length;
+	const availabilityHTML = reservationState.partial
+		? `<p class="muted">Częściowa lista — brak aktualnej emisji: ${reservationState.unavailable.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`
+		: reservationState.daemonOffline && (reservations.length || holderRequests.length)
+		? '<p class="muted">Demon jest offline — pokazano ostatni znany stan.</p>'
+		: "";
 	if (!reservations.length && !holderRequests.length) {
-    replaceHTMLIfChanged(root, inventoryUnknown ? '<p class="muted">Lista blokad jest chwilowo niedostępna.</p>' : "");
+    replaceHTMLIfChanged(root, availabilityHTML);
     return;
   }
 	const requestsHTML = holderRequests.map((request) => `<article class="reservation-row lock-release-request" data-lock-release-request-id="${escapeHTML(request.id)}">
@@ -464,7 +483,7 @@ function renderReservations(snapshot) {
       ${action}
     </article>`;
 	}).join("");
-	replaceHTMLIfChanged(root, requestsHTML + reservationsHTML);
+	replaceHTMLIfChanged(root, availabilityHTML + requestsHTML + reservationsHTML);
 }
 
 function publicShareState(state) {

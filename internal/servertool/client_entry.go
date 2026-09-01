@@ -144,8 +144,8 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		// exec; OpenBSD carries this process's locked unveil table across
 		// exec and only lets the child narrow it further, never widen it
 		// (same constraint as the ClientControlCommand branch above), so
-		// every path reservationWorkerProfile unveils must already be
-		// unveiled here first, with at least as wide a permission.
+		// every path filees-serving-state (or svn, which it execs in turn)
+		// will ever touch must already be unveiled here first.
 		stateRoot := filepath.Join(r.ResultsRoot, "reservation-projection")
 		profile.Paths = append(profile.Paths,
 			obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"},
@@ -157,8 +157,21 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 			obsandbox.Path{Label: "svn", Name: config.Activation.SVNBinary, Perms: "rx"},
 			obsandbox.Path{Label: "reservation-worker", Name: reservationWorkerPath, Perms: "rx"},
 			obsandbox.Path{Label: "svn-system-config", Name: "/etc/subversion", Perms: "r"},
+			// os/exec defaults a child's Stdin to /dev/null when the parent
+			// does not set one explicitly (queryLiveLocks never sets Stdin
+			// on the svn subprocess it starts).
+			obsandbox.Path{Label: "null-device", Name: "/dev/null", Perms: "rw"},
 		)
-		childPromises = reservationWorkerBootstrapPromises
+		// The exec-promises ceiling granted to filees-serving-state must
+		// already contain everything it will later hand down to svn via
+		// svnExecPromises (common.go) — prot_exec in particular, which
+		// filees-serving-state itself never pledges to directly. workerPromises
+		// is reused verbatim (matching ClientControlCommand's own grant to
+		// filees-worker) rather than a hand-assembled minimal set: pledge(2)'s
+		// exec-promises validation rejected a smaller, seemingly-equivalent
+		// set built from scratch for reasons that were not fully isolated —
+		// see concepts/RESERVATION_SERVER_EMISSION_WORKPLAN.md.
+		childPromises = workerPromises + " dns unveil prot_exec"
 	}
 	manager, err := activation.New(config.Activation, nil)
 	if err != nil {

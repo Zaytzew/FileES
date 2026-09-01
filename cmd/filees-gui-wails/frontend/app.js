@@ -191,18 +191,29 @@ function shortDateTime(value) {
 
 function renderConnection(snapshot) {
   const core = $("#pulse-core");
+  const freshness = $("#projection-freshness");
   core.className = "pulse-core";
+  freshness.className = "projection-freshness";
   let connectionLabel = "Demon jest rozłączony";
   if (snapshot.connected && !snapshot.stale) {
     core.classList.add("is-online");
+    freshness.classList.add("is-current");
+    freshness.textContent = "Projekcja lokalna bieżąca";
     connectionLabel = "Połączenie z demonem jest aktywne";
   } else if (snapshot.connected) {
     core.classList.add("is-stale");
+    freshness.classList.add("is-refreshing");
+    freshness.textContent = "Projekcja lokalna jest weryfikowana";
     connectionLabel = "Demon odświeża projekcję";
   } else {
     core.classList.add("is-offline");
+    freshness.classList.add("is-unverified");
+    freshness.textContent = "Projekcja lokalna niezweryfikowana";
   }
   $("#offline").hidden = Boolean(snapshot.connected);
+  $("#offline-copy").textContent = snapshot.last_refresh
+    ? `Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}. Jej bieżącego stanu nie można zweryfikować; po odzyskaniu połączenia panel odświeży się automatycznie.`
+    : "Nie ma jeszcze zapisanej pełnej projekcji. Po odzyskaniu połączenia panel odświeży się automatycznie.";
   $("#pulse-card").dataset.connection = snapshot.connected && !snapshot.stale ? "online" : snapshot.connected ? "stale" : "offline";
   $("#pulse-card").dataset.connectionLabel = connectionLabel;
 }
@@ -232,20 +243,30 @@ function renderMetrics(snapshot) {
     ? `co najmniej ${reservations.length} ${plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad")} · ${reservationState.unavailable.length} bez emisji`
     : plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad");
   $("#metric-public-shares").textContent = snapshot.public_shares_known ? activePublicShares : "?";
-  $("#metric-public-shares-note").textContent = snapshot.public_shares_known
-    ? plural(activePublicShares, "aktywny link", "aktywne linki", "aktywnych linków")
-    : "lista niedostępna";
+  $("#metric-public-shares-note").textContent = reservationState.daemonOffline && snapshot.public_shares_known
+    ? "ostatni znany stan · demon offline"
+    : snapshot.public_shares_known
+      ? plural(activePublicShares, "aktywny link", "aktywne linki", "aktywnych linków")
+      : "lista niedostępna";
   $("#metric-attention").textContent = attention;
   $("#pulse-value").textContent = repos.length;
   $("#pulse-label").textContent = plural(repos.length, "repozytorium", "repozytoria", "repozytoriów");
   $("#pulse-card").classList.toggle("has-attention", attention > 0);
   const connectionLabel = $("#pulse-card").dataset.connectionLabel || "Stan połączenia nieznany";
-  $("#pulse-card").title = attention > 0
-    ? `${connectionLabel}. ${attention} ${plural(attention, "uwaga", "uwagi", "uwag")} do sprawdzenia.`
-    : `${connectionLabel}. Repozytoria nie wymagają uwagi.`;
+  if (!snapshot.connected) {
+    $("#pulse-card").title = `${connectionLabel}. Projekcja jest niezweryfikowana.`;
+  } else if (snapshot.stale) {
+    $("#pulse-card").title = `${connectionLabel}. Dane nie są jeszcze bieżące.`;
+  } else {
+    $("#pulse-card").title = attention > 0
+      ? `${connectionLabel}. ${attention} ${plural(attention, "uwaga", "uwagi", "uwag")} do sprawdzenia.`
+      : `${connectionLabel}. Repozytoria nie wymagają uwagi.`;
+  }
   $("#hero-copy").textContent = snapshot.connected
     ? "Zmiany i działania pojawiają się tutaj na bieżąco."
-    : "Połączenie jest chwilowo niedostępne. Panel zachowuje ostatni znany stan i odświeży się automatycznie.";
+    : snapshot.last_refresh
+      ? "Połączenie jest chwilowo niedostępne. Panel zachowuje ostatni znany stan i odświeży się automatycznie."
+      : "Połączenie jest chwilowo niedostępne. Brak zapisanej projekcji; panel odświeży się automatycznie.";
 }
 
 function reservationProjectionState(snapshot) {

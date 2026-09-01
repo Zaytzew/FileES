@@ -271,11 +271,15 @@ function renderMetrics(snapshot) {
 
 function reservationProjectionState(snapshot) {
   const servers = snapshot.servers || [];
-  const unavailable = snapshot.connected ? servers.filter((server) => !server.reservations_known) : [];
+  const unavailable = snapshot.connected ? servers.filter((server) => !server.reservations_known || server.reservation_projection === "unknown") : [];
+  const offline = snapshot.connected ? servers.filter((server) => server.reservation_projection === "offline") : [];
+  const stale = snapshot.connected ? servers.filter((server) => server.reservation_projection === "stale") : [];
   return {
     daemonOffline: !snapshot.connected,
     partial: Boolean(snapshot.connected) && unavailable.length > 0,
     unavailable,
+    offline,
+    stale,
   };
 }
 
@@ -462,12 +466,18 @@ function renderReservations(snapshot) {
   const reservations = snapshot.reservations || [];
 	const holderRequests = (snapshot.lock_release_requests || []).filter((request) => request.role === "holder" && request.state === "pending");
   const reservationState = reservationProjectionState(snapshot);
-	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !reservationState.partial;
+	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !reservationState.partial && !reservationState.daemonOffline && reservationState.offline.length === 0 && reservationState.stale.length === 0;
   $("#reservations-count").textContent = reservationState.partial ? `${reservations.length}+?` : reservations.length;
 	const availabilityHTML = reservationState.partial
 		? `<p class="muted">Częściowa lista — brak aktualnej emisji: ${reservationState.unavailable.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`
 		: reservationState.daemonOffline && (reservations.length || holderRequests.length)
 		? '<p class="muted">Demon jest offline — pokazano ostatni znany stan.</p>'
+		: reservationState.daemonOffline
+		? '<p class="muted">Demon jest offline — projekcja blokad jest niezweryfikowana.</p>'
+		: reservationState.offline.length
+		? `<p class="muted">Lokalne lustro — tor stanowy offline: ${reservationState.offline.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`
+		: reservationState.stale.length
+		? `<p class="muted">Serwer zwrócił wcześniejszą emisję: ${reservationState.stale.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`
 		: "";
 	if (!reservations.length && !holderRequests.length) {
     replaceHTMLIfChanged(root, availabilityHTML);

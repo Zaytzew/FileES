@@ -109,7 +109,6 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 		rs.currentOp = nil
 		rs.lockFn = nil
 		rs.unlockFn = nil
-		rs.reservationListFn = nil
 		rs.reservationReleaseFn = nil
 	}
 	if projectedState != "active" {
@@ -156,7 +155,6 @@ func (rs *RepoState) markDetached() {
 	rs.currentOp = nil
 	rs.lockFn = nil
 	rs.unlockFn = nil
-	rs.reservationListFn = nil
 	rs.reservationReleaseFn = nil
 	if rs.attachmentPolicy == "required" {
 		rs.state = contract.StatePolicyPending
@@ -339,14 +337,19 @@ func (rs *RepoState) SetLockFuncs(
 }
 
 // ReservationSnapshot is what a wired listing function returns. It carries
-// whatever freshness classification the source already made — fresh, a
-// replayed stale artifact, or a total unknown (see
+// whatever freshness classification applies — fresh, a replayed remote stale
+// artifact, an offline local mirror, or a total unknown (see
 // pkg/reservation/v1.Result, the wire shape the remote serving-state worker
 // answers with) — verbatim. RepoState and the IPC handler built on top of
 // it never invent their own freshness judgement; they only relay one.
 type ReservationSnapshot struct {
 	Reservations []contract.Reservation
 	Stale        bool
+	// Offline means Reservations came from the desktop client's last local
+	// mirror because the independent state SSH lane could not reach the
+	// server. It is distinct from Stale, which is explicitly classified by
+	// the remote serving-state worker itself.
+	Offline bool
 	// Unknown means the source has neither fresh data nor any prior
 	// artifact to fall back to. Reservations must be empty; callers must
 	// never treat Unknown as a confirmed zero.
@@ -368,6 +371,23 @@ func (rs *RepoState) SetReservationFuncs(
 	rs.mu.Unlock()
 }
 
+// SetReservationListFunc replaces only the presentation source. The source
+// remains valid for a projected repository without a local working copy;
+// attaching and detaching a WC must not make a server-owned lock disappear.
+func (rs *RepoState) SetReservationListFunc(fn func(ctx context.Context) (ReservationSnapshot, error)) {
+	rs.mu.Lock()
+	rs.reservationListFn = fn
+	rs.mu.Unlock()
+}
+
+// SetReservationReleaseFunc replaces only the local mutation callback. It is
+// cleared on detach while the server-owned listing callback remains wired.
+func (rs *RepoState) SetReservationReleaseFunc(fn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error) {
+	rs.mu.Lock()
+	rs.reservationReleaseFn = fn
+	rs.mu.Unlock()
+}
+
 // ListReservations returns the last data known for this one attached
 // working copy, exactly as its wired source classified it. An unwired or
 // detached repo reports ReservationSnapshot{Unknown: true}, never a silent
@@ -375,9 +395,8 @@ func (rs *RepoState) SetReservationFuncs(
 func (rs *RepoState) ListReservations(ctx context.Context) (ReservationSnapshot, error) {
 	rs.mu.RLock()
 	fn := rs.reservationListFn
-	attached := rs.attached
 	rs.mu.RUnlock()
-	if !attached || fn == nil {
+	if fn == nil {
 		return ReservationSnapshot{Unknown: true}, nil
 	}
 	return fn(ctx)

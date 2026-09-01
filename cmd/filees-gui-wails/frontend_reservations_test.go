@@ -9,8 +9,11 @@ func TestFrontendKeepsHealthyReservationRowsWhenAnotherServerIsUnavailable(t *te
 	script := embeddedFrontendFile(t, "frontend/app.js")
 	for _, wanted := range []string{
 		"function reservationProjectionState(snapshot)",
-		"servers.filter((server) => !server.reservations_known)",
+		"!server.reservations_known || server.reservation_projection === \"unknown\"",
+		"server.reservation_projection === \"offline\"",
+		"server.reservation_projection === \"stale\"",
 		"Częściowa lista — brak aktualnej emisji:",
+		"Lokalne lustro — tor stanowy offline:",
 		"availabilityHTML + requestsHTML + reservationsHTML",
 		"ostatni znany stan · demon offline",
 	} {

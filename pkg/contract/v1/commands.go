@@ -924,8 +924,8 @@ type Reservation struct {
 }
 
 // ReservationSourceState classifies one repository's contribution to a
-// RepoReservationListResult. There is no fourth, implicit state: a
-// repository absent from Sources never happened — every repository queried
+// RepoReservationListResult. The closed set is fresh/stale/offline/unknown;
+// a repository absent from Sources never happened — every repository queried
 // gets exactly one entry.
 type ReservationSourceState string
 
@@ -936,6 +936,10 @@ const (
 	// ReservationSourceStale: the live refresh failed, but the remote
 	// serving-state worker replayed its last confirmed artifact.
 	ReservationSourceStale ReservationSourceState = "stale"
+	// ReservationSourceOffline: the desktop daemon could not reach this
+	// server's state lane and is replaying its local mirror of an earlier,
+	// server-confirmed emission.
+	ReservationSourceOffline ReservationSourceState = "offline"
 	// ReservationSourceUnknown: neither a live answer nor any prior
 	// artifact exists for this repository. Never treat this as a
 	// confirmed zero — no reservation rows for this repo are trustworthy.
@@ -943,8 +947,9 @@ const (
 )
 
 // ReservationSource is one repository's freshness classification within a
-// RepoReservationListResult. AsOf/Generation are only meaningful for Fresh
-// and Stale; both are zero for Unknown — never faked to look otherwise.
+// RepoReservationListResult. AsOf/Generation are meaningful for Fresh,
+// Stale and Offline; both are zero for Unknown — never faked to look
+// otherwise.
 type ReservationSource struct {
 	RepoID     string                 `json:"repo_id"`
 	State      ReservationSourceState `json:"state"`

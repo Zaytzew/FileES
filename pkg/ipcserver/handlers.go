@@ -376,15 +376,14 @@ func (s *Server) handleRepoReservationList(req contract.Request) contract.Respon
 			continue
 		}
 		if snap.Unknown {
-			fault := errcat.Of("LOCK-2101", "reservation.list_failed",
-				map[string]string{"repo_id": repoID, "detail": "no known reservation data for this repository"}, nil)
-			s.lg.Warnf("%s %s (server=%s repo=%s)", fault.Code, fault.Key, payload.ServerID, repoID)
 			result.Sources = append(result.Sources, contract.ReservationSource{RepoID: repoID, State: contract.ReservationSourceUnknown})
 			continue
 		}
 		result.Reservations = append(result.Reservations, snap.Reservations...)
 		state := contract.ReservationSourceFresh
-		if snap.Stale {
+		if snap.Offline {
+			state = contract.ReservationSourceOffline
+		} else if snap.Stale {
 			state = contract.ReservationSourceStale
 			fault := errcat.Of("LOCK-2104", "reservation.projection_stale",
 				map[string]string{"server_id": payload.ServerID, "repo_id": repoID, "detail": "replaying last confirmed projection"}, nil)

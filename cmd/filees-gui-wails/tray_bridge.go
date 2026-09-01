@@ -36,14 +36,25 @@ func projectWailsTray(snapshot Snapshot) wailsTrayProjection {
 	locks := len(snapshot.Reservations)
 	lockStatus := fmt.Sprintf("%d %s", locks, lockNoun(locks))
 	unavailableServers := 0
+	offlineServers := 0
+	staleServers := 0
 	if snapshot.Connected {
 		for _, server := range snapshot.Servers {
-			if !server.ReservationsKnown {
+			switch {
+			case !server.ReservationsKnown || server.ReservationProjection == string(contract.ReservationSourceUnknown):
 				unavailableServers++
+			case server.ReservationProjection == string(contract.ReservationSourceOffline):
+				offlineServers++
+			case server.ReservationProjection == string(contract.ReservationSourceStale):
+				staleServers++
 			}
 		}
 		if unavailableServers > 0 {
 			lockStatus = fmt.Sprintf("%d+? blokad (%d bez emisji)", locks, unavailableServers)
+		} else if offlineServers > 0 {
+			lockStatus = fmt.Sprintf("%d %s (%d z lustra)", locks, lockNoun(locks), offlineServers)
+		} else if staleServers > 0 {
+			lockStatus = fmt.Sprintf("%d %s (%d wcześniejsza emisja)", locks, lockNoun(locks), staleServers)
 		}
 	} else {
 		lockStatus += " (stan niezweryfikowany)"

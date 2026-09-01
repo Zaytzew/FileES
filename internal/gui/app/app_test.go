@@ -2,14 +2,57 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
+	"filees/internal/gui/projectionmirror"
 	contract "filees/pkg/contract/v1"
 )
+
+func TestOfflineMirrorRestoresReservationsAsUnverified(t *testing.T) {
+	store, err := projectionmirror.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	asOf := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	result := contract.RepoReservationListResult{
+		ServerID:     "spot",
+		Reservations: []contract.Reservation{{RepoID: "docs", Path: "plan.dwg", Token: "token"}},
+		Sources:      []contract.ReservationSource{{RepoID: "docs", State: contract.ReservationSourceFresh, AsOf: asOf, Generation: "8"}},
+	}
+	raw, _ := json.Marshal(result)
+	if err := store.Save("spot", asOf.Add(time.Minute), raw); err != nil {
+		t.Fatal(err)
+	}
+	application := New(Config{Mirror: store, OfflineActivations: []contract.ActivationStatus{{ServerID: "spot", DisplayName: "Spot"}}})
+	state := application.loadOfflineMirrors(newAppState())
+	vm := state.viewModel()
+	if vm.Connected || !vm.Stale || len(vm.Reservations) != 1 || len(vm.Servers) != 1 {
+		t.Fatalf("offline mirror view=%+v", vm)
+	}
+	if !vm.Servers[0].ReservationsKnown || vm.Servers[0].ReservationProjection != string(contract.ReservationSourceFresh) || vm.Servers[0].ReservationAsOf == "" {
+		t.Fatalf("offline server=%+v", vm.Servers[0])
+	}
+}
+
+func TestAggregateReservationProjectionPreservesOfflineAndUnknown(t *testing.T) {
+	asOf := time.Now().UTC()
+	state, stamp := aggregateReservationProjection([]contract.ReservationSource{
+		{RepoID: "a", State: contract.ReservationSourceFresh, AsOf: asOf},
+		{RepoID: "b", State: contract.ReservationSourceOffline, AsOf: asOf.Add(-time.Minute)},
+	}, true)
+	if state != string(contract.ReservationSourceOffline) || stamp == "" {
+		t.Fatalf("offline aggregate state=%q as_of=%q", state, stamp)
+	}
+	state, _ = aggregateReservationProjection(nil, false)
+	if state != string(contract.ReservationSourceUnknown) {
+		t.Fatalf("unknown aggregate=%q", state)
+	}
+}
 
 // --- fake implementations ---
 
@@ -505,7 +548,7 @@ func TestReducerProjectsLockReleaseRecordWithoutLosingFence(t *testing.T) {
 		ObservedLockID: "opaque-token", Role: "requester", CounterpartyRealmAlias: "studio",
 		State: "pending", CreatedAt: "2026-08-31T10:00:00Z", UpdatedAt: "2026-08-31T10:00:00Z", ExpiresAt: "2026-08-31T13:00:00Z",
 	}}}
-	s := newAppState().applyFullSnapshot(system, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, false, time.Now())
+	s := newAppState().applyFullSnapshot(system, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, false, time.Now())
 	vm := s.viewModel()
 	if len(vm.LockReleaseRequests) != 1 {
 		t.Fatalf("requests=%+v", vm.LockReleaseRequests)
@@ -542,7 +585,7 @@ func TestAggregateIconAnnouncementOverridesRepositoryState(t *testing.T) {
 
 func TestReducerKeepsReadAnnouncementHistoryButOnlyUnreadRaisesAlarm(t *testing.T) {
 	s := newAppState().applyConnected(contract.AllCapabilities)
-	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, []contract.Notice{
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, []contract.Notice{
 		{ID: "read", Revision: 7, Title: "przeczytane", Acked: true},
 		{ID: "unread", Revision: 8, Title: "nowe"},
 	}, nil, false, time.Now())
@@ -550,7 +593,7 @@ func TestReducerKeepsReadAnnouncementHistoryButOnlyUnreadRaisesAlarm(t *testing.
 	if len(vm.Notices) != 2 || !vm.Notices[0].Acked || vm.Notices[0].Revision != 7 || vm.Icon != IconShout {
 		t.Fatalf("view model=%+v", vm)
 	}
-	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, []contract.Notice{{ID: "read", Acked: true}}, nil, false, time.Now())
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, []contract.Notice{{ID: "read", Acked: true}}, nil, false, time.Now())
 	if vm = s.viewModel(); len(vm.Notices) != 1 || vm.Icon == IconShout {
 		t.Fatalf("read-only view model=%+v", vm)
 	}
@@ -559,7 +602,7 @@ func TestReducerKeepsReadAnnouncementHistoryButOnlyUnreadRaisesAlarm(t *testing.
 func TestReducerProjectsAggregatePublicSharesWithoutLeakingObjectDetails(t *testing.T) {
 	revision := int64(17)
 	s := newAppState().applyConnected(contract.AllCapabilities)
-	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, []contract.PublicShareSummary{{
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, []contract.PublicShareSummary{{
 		ChannelID: "channel-1", ServerID: "spot", RepoID: "docs", RepoDisplayName: "Dokumenty",
 		Alias: "acme", Slug: "wydanie", State: "active", SourceRoot: "release", UpdatedAt: "2026-08-29T08:00:00Z",
 		Recipients: []string{"one@example.test", "two@example.test"}, PasswordProtected: true, DoNotFollow: &revision,
@@ -578,8 +621,8 @@ func TestReducerProjectsAggregatePublicSharesWithoutLeakingObjectDetails(t *test
 
 func TestReducerKeepsLastKnownPublicSharesAcrossSupplementalRefreshFailure(t *testing.T) {
 	s := newAppState().applyConnected([]string{contract.CapRepoPublicShareList})
-	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, []contract.PublicShareSummary{{ChannelID: "known", ServerID: "spot", RepoID: "docs"}}, true, time.Now())
-	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, false, time.Now())
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, []contract.PublicShareSummary{{ChannelID: "known", ServerID: "spot", RepoID: "docs"}}, true, time.Now())
+	s = s.applyFullSnapshot(contract.SystemStatusResult{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, false, time.Now())
 	if vm := s.viewModel(); !vm.PublicSharesKnown || len(vm.PublicShares) != 1 || vm.PublicShares[0].ChannelID != "known" {
 		t.Fatalf("last known public shares were discarded: %#v", vm.PublicShares)
 	}

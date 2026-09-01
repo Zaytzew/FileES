@@ -130,6 +130,14 @@
       "group": "wheel"
     },
     {
+      "source": "bin/filees-serving-state",
+      "target": "{libexec_dir}/filees/filees-serving-state",
+      "kind": "binary",
+      "mode": "0555",
+      "owner": "root",
+      "group": "wheel"
+    },
+    {
       "source": "bin/filees-ssh-auth",
       "target": "/usr/libexec/auth/login_-filees",
       "kind": "binary",

@@ -1047,7 +1047,16 @@ func (s *Scanner) isBusy() bool {
 	}
 	// stale?
 	if time.Since(fi.ModTime()) > s.busyTTL {
-		s.lg.Warnf("commit.busy stale — ignoring")
+		// Remove it, do not merely ignore it. A marker left behind by a
+		// killed commit outlives the process that wrote it, and every later
+		// scan re-detects the same file: one working copy produced this
+		// warning every ~15s for nine days. Removing it makes the warning
+		// fire once, which is what it is worth.
+		if err := os.Remove(s.busyPath); err != nil && !os.IsNotExist(err) {
+			s.lg.Warnf("commit.busy stale — ignoring (removal failed: %v)", err)
+			return false
+		}
+		s.lg.Warnf("commit.busy stale — removed")
 		return false
 	}
 	return true

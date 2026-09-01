@@ -209,6 +209,10 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 		}
 	}
 	sort.Strings(repoIDs)
+	skipped := len(view.Repositories) - len(repoIDs)
+	fetched, failed := 0, 0
+	var firstErr error
+	var firstErrRepo string
 	for _, repoID := range repoIDs {
 		result, fetchErr := fetcher.Fetch(ctx, repoID)
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repoID}
@@ -222,11 +226,30 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 		}
 		coordinator.mu.Unlock()
 		if fetchErr != nil {
-			talk.With("reservation-projection:"+serverID).Warnf("repo %s state refresh failed: %v", repoID, fetchErr)
+			failed++
+			if firstErr == nil {
+				firstErr, firstErrRepo = fetchErr, repoID
+			}
+		} else {
+			fetched++
 		}
 		if ctx.Err() != nil {
 			return
 		}
+	}
+	// One line per cycle, not one per repository. Two problems motivated
+	// this. A successful cycle used to leave no trace at all, so "the lane
+	// works" and "the lane is wedged" looked identical from the log and had
+	// to be told apart by reading code. And a server without the worker
+	// emitted one warning per repository per cycle, which buried everything
+	// else: twelve repositories produced a warning every few seconds.
+	lg := talk.With("reservation-projection:" + serverID)
+	switch {
+	case failed == 0 && fetched > 0:
+		lg.Infof("state refreshed: %d ok, %d not active", fetched, skipped)
+	case failed > 0:
+		lg.Warnf("state refresh: %d ok, %d failed, %d not active; first failure repo %s: %v",
+			fetched, failed, skipped, firstErrRepo, firstErr)
 	}
 	if coordinator.ipc != nil {
 		coordinator.ipc.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))

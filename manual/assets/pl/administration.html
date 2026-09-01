@@ -74,7 +74,9 @@ filees-admin ticket list
 filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
 filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "one-line reason"
 filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-line reason"
-filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;</code></pre>
+filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;
+filees-admin repo check-state [--realm-id &lt;realm_uuid&gt;]
+filees-admin repo prune [--realm-id &lt;realm_uuid&gt;] [--older-than 1h] [--apply]</code></pre>
 <ul>
 <li>Bez <code>--join-realm-alias</code> zaproszenie otwiera <strong>nową</strong> strefę. Nowy pulpit raz pyta o niezmienny alias.</li>
 <li>Z flagą zaproszenie dołącza do <strong>istniejącej</strong> strefy. Osoba dołączająca nie wybiera tej strefy i nie zmienia jej nazwy.</li>
@@ -85,6 +87,18 @@ filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_
 <li>repo transfer-owner zmienia właściciela repozytorium. Uprawnienia nadane wcześniej przez poprzedniego właściciela pozostają bez zmian.</li>
 </ul>
 <p>Tworzenie folderu, uprawnienia, udziały publiczne, wczytanie zrzutu i usunięcie udziału FileES to akcje właściciela na pulpicie, nie dodatkowe czasowniki <code>filees-admin</code>. Kody wyjścia, nazwy plików zleceń i sekwencja odwołania są w <a href="operations.html#ops-admin">Eksploatacji</a>. Flagi i przykłady: <a href="man-pages.html">filees-admin(8)</a>.</p>
+<h3>Porzucona próba utworzenia repozytorium</h3>
+<p>Gdy przerwany pierwszy import pozostawi w projekcji dodatkowy, zdalny folder, najpierw wykonaj wyłącznie inspekcję. Polecenia uruchamiaj jako <code>_filees-state</code>:</p>
+<pre><code>doas -u _filees-state filees-admin repo check-state --realm-id &lt;realm_uuid&gt;
+
+# dry-run — niczego nie zmienia:
+doas -u _filees-state filees-admin repo prune \
+  --realm-id &lt;realm_uuid&gt; --older-than 1h
+
+# zastosuj dopiero po sprawdzeniu would_remove i needs_attention:
+doas -u _filees-state filees-admin repo prune \
+  --realm-id &lt;realm_uuid&gt; --older-than 1h --apply</code></pre>
+<p>Kandydat musi mieć <code>prunable:true</code>, kanoniczny stan <code>initializing</code>, brak stagingu oraz nieobecny FSFS albo dokładnie r0. Aktywne repozytorium, repozytorium od r1 wzwyż i zwykły tombstone usunięcia nie zostaną automatycznie usunięte. Przed skutkiem narzędzie blokuje commity i ponownie sprawdza HEAD. Po <code>--apply</code> powtórz <code>repo check-state</code> i sprawdź projekcję klienta.</p>
 <h2 id="ch4-operation">4.2 Po awarii</h2>
 <pre><code>doas -u _filees-state filees-operation recover
 doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>

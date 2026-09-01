@@ -74,11 +74,11 @@
 <article class="cli-tool" id="filees-admin">
 <span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>
 <h2>filees-admin(8)</h2>
-<p class="cli-nd">zaproszenia administracyjne, odwołanie i zamknięcie wymazania</p>
+<p class="cli-nd">zaproszenia administracyjne, odwołanie, naprawa repozytoriów i zamknięcie wymazania</p>
 <h3>Rola</h3>
 <p><code>filees-admin</code> służy administratorowi do obsługi zaproszeń aktywacyjnych oraz niewielkiego zestawu operacji administracyjnych. Dane wynikowe zapisuje jako JSON na standardowe wyjście, a komunikaty diagnostyczne na standardowe wyjście błędów. Polecenie należy uruchamiać jako użytkownik <code>_filees-state</code>. Utworzenie zlecenia jako <code>root</code> pozostawi plik należący do użytkownika root, którego program aktywacyjny działający z <code>set-id</code> celowo nie odczyta.</p>
 <p>version odpowiada, zanim otwarta zostanie konfiguracja, więc nieaktualną plik wykonywalny można rozpoznać nawet wtedy, gdy server.json budzi podejrzenia.</p>
-<p>Utworzenie repozytorium, uprawnienia, udziały publiczne i usunięcie strefy to operacje warstwa sterująca pulpitu, a nie dodatkowe czasowniki filees-admin.</p>
+<p>Zwykłe tworzenie repozytorium, uprawnienia, udziały publiczne i usunięcie strefy są operacjami warstwy sterującej pulpitu. <code>repo check-state</code> i <code>repo prune</code> są wyjątkowymi narzędziami odtwarzania stanu operatorskiego, a nie alternatywnym interfejsem zarządzania repozytoriami.</p>
 <h3>Wywołanie</h3>
 <pre><code>filees-admin [-config path] ticket create mailbox [--ttl duration] [--join-realm-alias alias]
 filees-admin [-config path] ticket resend --ticket-id uuid
@@ -88,6 +88,8 @@ filees-admin [-config path] operation inspect --operation-id uuid
 filees-admin [-config path] client revoke --client-id uuid [--reason text]
 filees-admin [-config path] client revoke-realm --realm-id uuid [--reason text]
 filees-admin [-config path] repo transfer-owner --repo-id uuid --realm-id uuid
+filees-admin [-config path] repo check-state [--realm-id uuid]
+filees-admin [-config path] repo prune [--realm-id uuid] [--older-than duration] [--apply]
 filees-admin [-config path] erasure complete --operation-id uuid [--partially-retained]
 filees-admin version</code></pre>
 <h3>Flagi i czasowniki</h3>
@@ -100,6 +102,8 @@ filees-admin version</code></pre>
 <tr><td><code>client revoke</code></td><td>Zapisuje trwały rekord odwołania, usuwa wygenerowany dostęp SSH/SVN i zatwierdza odwołanie klienta. Identyczne ponowienie jest bezpieczne; próba z innym powodem jest odrzucana.</td></tr>
 <tr><td><code>client revoke-realm</code></td><td>Odwołuje wszystkie instalacje należące do tej samej strefy.</td></tr>
 <tr><td><code>repo transfer-owner</code></td><td>Zmienia owner_realm_id i ponownie generuje data-authz. Istniejące uprawnienia nadane przez poprzedniego właściciela pozostają bez zmian.</td></tr>
+<tr><td><code>repo check-state</code></td><td>Porównuje trwałe rekordy tworzenia z kanonicznym stanem, FSFS/stagingiem i najmłodszą rewizją. Pomija zwykłe aktywne repozytoria i niczego nie usuwa. Opcjonalne <code>--realm-id</code> ogranicza raport JSON do jednej strefy.</td></tr>
+<tr><td><code>repo prune</code></td><td>Bez <code>--apply</code> wykonuje dry-run. Domyślne <code>--older-than 1h</code> chroni świeżą próbę. Z <code>--apply</code> usuwa wyłącznie opublikowane, nadal inicjalizowane r0 oznaczone <code>prunable</code>; przed skutkiem zapisuje <code>prune_pending</code>, blokuje commity i ponownie sprawdza HEAD.</td></tr>
 <tr><td><code>erasure complete</code></td><td>Zamyka żądanie wymazania danych po sprawdzeniu przez operatora zasad retencji kopii zapasowych. Flaga --partially-retained zapisuje, że polityka nadal wymaga zachowania części kopii.</td></tr>
 </table></div>
 <h3>Przykłady</h3>
@@ -108,6 +112,10 @@ filees-admin version</code></pre>
 <p>Zezwól na dołączenie kolejnego komputera do istniejącej strefy:</p>
 <pre><code>$ doas -u _filees-state filees-admin ticket create user@example.com \
     --join-realm-alias acme --ttl 24h</code></pre>
+<p>Sprawdź, wykonaj dry-run i usuń puste porzucone tworzenie dla jednej strefy:</p>
+<pre><code>$ doas -u _filees-state filees-admin repo check-state --realm-id UUID
+$ doas -u _filees-state filees-admin repo prune --realm-id UUID --older-than 1h
+$ doas -u _filees-state filees-admin repo prune --realm-id UUID --older-than 1h --apply</code></pre>
 </article>
 <article class="cli-tool" id="filees-operation">
 <span class="cli-kind">Polecenie operatora — wpisywane w powłoce</span>

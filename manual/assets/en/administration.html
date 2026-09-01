@@ -76,7 +76,9 @@ filees-admin ticket list
 filees-admin operation inspect --operation-id &lt;operation_uuid&gt;
 filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "one-line reason"
 filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-line reason"
-filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;</code></pre>
+filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;
+filees-admin repo check-state [--realm-id &lt;realm_uuid&gt;]
+filees-admin repo prune [--realm-id &lt;realm_uuid&gt;] [--older-than 1h] [--apply]</code></pre>
 <ul>
 <li>Without <code>--join-realm-alias</code> the invitation opens a <strong>new</strong> realm. The new desktop is asked once for an immutable alias.</li>
 <li>With the flag the invitation joins an <strong>existing</strong> realm. The person joining cannot pick or rename that realm.</li>
@@ -87,6 +89,18 @@ filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_
 <li><code>repo transfer-owner</code> changes who owns a repository. Existing grants issued by the previous owner are left as they are.</li>
 </ul>
 <p>Creating a folder, grants, public shares, load-dump and removing the FileES share are owner actions on the desktop, not extra <code>filees-admin</code> verbs. Exit codes, ticket file names and the fail-closed revoke sequence are in <a href="operations.html#ops-admin">Operations</a>. Flags and examples: <a href="man-pages.html">filees-admin(8)</a>.</p>
+<h3>Abandoned repository creation</h3>
+<p>If an interrupted initial import leaves an extra remote folder in client projections, inspect it before changing anything. Run the commands as <code>_filees-state</code>:</p>
+<pre><code>doas -u _filees-state filees-admin repo check-state --realm-id &lt;realm_uuid&gt;
+
+# dry run — changes nothing:
+doas -u _filees-state filees-admin repo prune \
+  --realm-id &lt;realm_uuid&gt; --older-than 1h
+
+# apply only after reviewing would_remove and needs_attention:
+doas -u _filees-state filees-admin repo prune \
+  --realm-id &lt;realm_uuid&gt; --older-than 1h --apply</code></pre>
+<p>A candidate must report <code>prunable:true</code>, canonical state <code>initializing</code>, no staging tree, and either no FSFS or exactly r0. Active repositories, repositories at r1 or later, and ordinary deletion tombstones are not removed automatically. The tool blocks commits and checks HEAD again before making the change. After <code>--apply</code>, repeat <code>repo check-state</code> and verify the client projection.</p>
 
 <h2 id="ch4-operation">4.2 After a crash</h2>
 <div class="section-meta"><span class="status status-verified">Verified</span><span>Recovery is idempotent and safe to repeat.</span></div>

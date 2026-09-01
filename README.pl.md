@@ -71,6 +71,24 @@ Neutralny gate jakości dla CI to `make verify`: pełne testy Go, wybrane testy 
 - Dostęp przez systemowy `sshd` do tunelowego `svnserve -t`; nasłuchujący
   `svnserve --daemon` nie jest obsługiwany
 
+### Inspekcja i naprawa stanu po stronie serwera
+
+Na OpenBSD polecenia administracyjne uruchamiaj jako `_filees-state`.
+Porzucone próby utworzenia repozytorium można najpierw sprawdzić bez zmian,
+potem wykonać dry-run i dopiero jawne zastosowanie:
+
+```sh
+doas -u _filees-state filees-admin repo check-state [--realm-id UUID]
+doas -u _filees-state filees-admin repo prune [--realm-id UUID] --older-than 1h
+doas -u _filees-state filees-admin repo prune [--realm-id UUID] --older-than 1h --apply
+```
+
+Prune dopuszcza wyłącznie stare, opublikowane, lecz nigdy nieaktywowane
+repozytoria, których FSFS nie istnieje albo nadal ma dokładnie r0. Przed
+usunięciem blokuje commity i ponownie sprawdza HEAD. Repozytoria aktywne,
+inicjalizowane od r1 wzwyż oraz zwykłe tombstone’y usunięcia są chronione.
+Pełny kontrakt opisuje `filees-admin(8)`.
+
 ---
 
 ## Budowanie

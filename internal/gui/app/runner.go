@@ -168,21 +168,21 @@ type msgActionStart struct{ action PendingAction }
 type msgActionAwait struct{ id string }
 type msgActionFinish struct{ id string }
 type msgFullSnapshot struct {
-	gen                   int
-	system                contract.SystemStatusResult
-	summaries             []contract.RepoSummary
-	statuses              []contract.RepoStatus
-	errors                []contract.ErrorRecord
-	activity              []contract.ActivityRecord
-	reservationCounts     map[string]int
-	repoReservationCounts map[string]int
-	reservations          []Reservation
-	reservationsKnown     bool
-	notices               []contract.Notice
-	publicShares          []contract.PublicShareSummary
-	publicSharesKnown     bool
-	refreshed             time.Time
-	actionFences          []string
+	gen                     int
+	system                  contract.SystemStatusResult
+	summaries               []contract.RepoSummary
+	statuses                []contract.RepoStatus
+	errors                  []contract.ErrorRecord
+	activity                []contract.ActivityRecord
+	reservationCounts       map[string]int
+	repoReservationCounts   map[string]int
+	reservations            []Reservation
+	serverReservationsKnown map[string]bool
+	notices                 []contract.Notice
+	publicShares            []contract.PublicShareSummary
+	publicSharesKnown       bool
+	refreshed               time.Time
+	actionFences            []string
 }
 type msgPartialSnapshots struct {
 	gen      int
@@ -335,26 +335,23 @@ func (a *App) loop(ctx context.Context) {
 			reservationCounts := make(map[string]int)
 			repoReservationCounts := make(map[string]int)
 			reservations := make([]Reservation, 0)
-			reservationsKnown := false
+			serverReservationsKnown := make(map[string]bool, len(system.Activations))
 			if includeReservations {
-				reservationsKnown = true
 				for _, activation := range system.Activations {
 					result, err := a.cfg.Client.RepoReservationList(sesCtx, activation.ServerID)
 					if err != nil {
 						// The inventory is supplemental presentation data. A
 						// temporary failure must not take down the primary GUI
 						// session; keep the header action safely disabled instead.
-						reservationsKnown = false
-						break
+						serverReservationsKnown[activation.ServerID] = false
+						continue
 					}
+					serverReservationsKnown[activation.ServerID] = true
 					reservationCounts[activation.ServerID] = len(result.Reservations)
 					for _, reservation := range result.Reservations {
 						repoReservationCounts[reservationKey(activation.ServerID, reservation.RepoID)]++
 						reservations = append(reservations, projectReservation(activation.ServerID, reservation))
 					}
-				}
-				if !reservationsKnown {
-					reservations = nil
 				}
 			}
 			var notices []contract.Notice
@@ -390,7 +387,7 @@ func (a *App) loop(ctx context.Context) {
 				send(msgFullSnapshot{gen: gen, system: *system, summaries: list.Repos,
 					statuses: statuses, errors: errors, activity: activityRecords,
 					reservationCounts: reservationCounts, repoReservationCounts: repoReservationCounts,
-					reservations: reservations, reservationsKnown: reservationsKnown,
+					reservations: reservations, serverReservationsKnown: serverReservationsKnown,
 					notices: notices, publicShares: publicShares, publicSharesKnown: publicSharesKnown,
 					refreshed: a.cfg.Clock.Now(), actionFences: fences})
 			}
@@ -562,7 +559,7 @@ func (a *App) loop(ctx context.Context) {
 				if msg.gen != connectGen || currentSesCtx == nil {
 					break
 				}
-				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.reservationsKnown, msg.notices, msg.publicShares, msg.publicSharesKnown, msg.refreshed)
+				state = state.applyFullSnapshot(msg.system, msg.summaries, msg.statuses, msg.errors, msg.activity, msg.reservationCounts, msg.repoReservationCounts, msg.reservations, msg.serverReservationsKnown, msg.notices, msg.publicShares, msg.publicSharesKnown, msg.refreshed)
 				var waiting []string
 				state, waiting = state.confirmPendingActions(msg.actionFences)
 				for _, id := range waiting {

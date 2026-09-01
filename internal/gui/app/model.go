@@ -270,7 +270,7 @@ func (vm ViewModel) CanBrowseReservations() bool {
 	}
 	for _, server := range vm.Servers {
 		if !server.ReservationsKnown {
-			return false
+			continue
 		}
 		if server.ReservationCount > 0 {
 			return true

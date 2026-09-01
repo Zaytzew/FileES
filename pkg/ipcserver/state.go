@@ -52,7 +52,7 @@ type RepoState struct {
 	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
 	lockFn               func(ctx context.Context, paths []string) (string, error)
 	unlockFn             func(ctx context.Context, paths []string) (string, error)
-	reservationListFn    func(ctx context.Context) ([]contract.Reservation, error)
+	reservationListFn    func(ctx context.Context) (ReservationSnapshot, error)
 	reservationReleaseFn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error
 	recoveryStatsFn      func() contract.RecoveryStats
 	workingCopySizeFn    func() (int64, bool)
@@ -338,11 +338,28 @@ func (rs *RepoState) SetLockFuncs(
 	rs.mu.Unlock()
 }
 
+// ReservationSnapshot is what a wired listing function returns. It carries
+// whatever freshness classification the source already made — fresh, a
+// replayed stale artifact, or a total unknown (see
+// pkg/reservation/v1.Result, the wire shape the remote serving-state worker
+// answers with) — verbatim. RepoState and the IPC handler built on top of
+// it never invent their own freshness judgement; they only relay one.
+type ReservationSnapshot struct {
+	Reservations []contract.Reservation
+	Stale        bool
+	// Unknown means the source has neither fresh data nor any prior
+	// artifact to fall back to. Reservations must be empty; callers must
+	// never treat Unknown as a confirmed zero.
+	Unknown    bool
+	AsOf       time.Time
+	Generation string
+}
+
 // SetReservationFuncs wires the server-menu reservation inventory to this
 // working copy.  The list callback may be present on read-only attachments;
 // the release callback is deliberately nil there.
 func (rs *RepoState) SetReservationFuncs(
-	listFn func(ctx context.Context) ([]contract.Reservation, error),
+	listFn func(ctx context.Context) (ReservationSnapshot, error),
 	releaseFn func(ctx context.Context, path, expectedToken string, confirmRisk bool) error,
 ) {
 	rs.mu.Lock()
@@ -351,14 +368,17 @@ func (rs *RepoState) SetReservationFuncs(
 	rs.mu.Unlock()
 }
 
-// ListReservations returns live lock data for this one attached working copy.
-func (rs *RepoState) ListReservations(ctx context.Context) ([]contract.Reservation, error) {
+// ListReservations returns the last data known for this one attached
+// working copy, exactly as its wired source classified it. An unwired or
+// detached repo reports ReservationSnapshot{Unknown: true}, never a silent
+// empty-but-confirmed list.
+func (rs *RepoState) ListReservations(ctx context.Context) (ReservationSnapshot, error) {
 	rs.mu.RLock()
 	fn := rs.reservationListFn
 	attached := rs.attached
 	rs.mu.RUnlock()
 	if !attached || fn == nil {
-		return nil, nil
+		return ReservationSnapshot{Unknown: true}, nil
 	}
 	return fn(ctx)
 }

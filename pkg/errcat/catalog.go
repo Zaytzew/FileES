@@ -136,6 +136,9 @@ var specs = []Spec{
 	{"LOCK-2101", "reservation.list_failed", SevError, HintRetry, []string{"repo_id", "detail"}, "Reservation list failed", "Nie udało się pobrać listy rezerwacji"},
 	{"LOCK-2102", "reservation.invalid_path", SevError, HintNone, nil, "Reservation path is invalid", "Ścieżka rezerwacji jest nieprawidłowa"},
 	{"LOCK-2103", "reservation.release_failed", SevError, HintRequireAction, []string{"detail"}, "Reservation release failed", "Nie udało się zwolnić rezerwacji"},
+	{"LOCK-2104", "reservation.projection_stale", SevWarn, HintRetryBackoff, []string{"server_id", "repo_id", "detail"}, "Reservation refresh failed; serving last known projection", "Odświeżenie rezerwacji nie powiodło się — pokazuję ostatnią znaną projekcję"},
+	{"LOCK-2105", "reservation.projection_corrupt", SevError, HintNone, []string{"server_id", "detail"}, "Reservation projection artifact is corrupt or unreadable", "Zapisana projekcja rezerwacji jest uszkodzona lub nieczytelna"},
+	{"LOCK-2106", "reservation.projection_write_failed", SevWarn, HintNone, []string{"server_id", "detail"}, "Reservation projection could not be persisted", "Nie udało się zapisać projekcji rezerwacji na dysku"},
 
 	{"GRANT-0001", "realm.grants_unavailable", SevError, HintRetry, nil, "Grant service is not available", "Usługa uprawnień strefy jest niedostępna"},
 	{"GRANT-1001", "realm.grant_recipients_unavailable", SevError, HintRetry, nil, "Grant recipient list failed", "Nie udało się pobrać listy odbiorców"},

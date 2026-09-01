@@ -699,15 +699,15 @@ func TestLegacyRawLocksStayReleasableAfterThePolicyIsEnabled(t *testing.T) {
 	}}
 
 	wireRepoReservationFuncs(state, svn, wc, manager)
-	rows, err := state.ListReservations(t.Context())
+	snap, err := state.ListReservations(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("rows=%+v", rows)
+	if len(snap.Reservations) != 2 {
+		t.Fatalf("rows=%+v", snap.Reservations)
 	}
 	byPath := map[string]contract.Reservation{}
-	for _, row := range rows {
+	for _, row := range snap.Reservations {
 		byPath[row.Path] = row
 	}
 	if !byPath["legacy.bin"].CanRelease {

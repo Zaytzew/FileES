@@ -57,8 +57,8 @@ func TestLockReleaseRequestRequiresCurrentlyObservedForeignToken(t *testing.T) {
 	service := &lockReleaseServiceStub{}
 	server.SetLockReleaseService(service)
 	repo := server.RegisterRepoAccess("docs", "svn+ssh://host/docs", "/work/docs", "office", contract.AccessReadWrite)
-	repo.SetReservationFuncs(func(context.Context) ([]contract.Reservation, error) {
-		return []contract.Reservation{{RepoID: "docs", Path: "plans/a.dwg", Token: "opaque-token", CanRelease: false}}, nil
+	repo.SetReservationFuncs(func(context.Context) (ReservationSnapshot, error) {
+		return ReservationSnapshot{Reservations: []contract.Reservation{{RepoID: "docs", Path: "plans/a.dwg", Token: "opaque-token", CanRelease: false}}}, nil
 	}, nil)
 	payload := contract.LockReleaseRequestPayload{ServerID: "office", RepoID: "docs", Path: "plans/a.dwg", ObservedLockID: "opaque-token"}
 	response := server.dispatch(lifecycleRequest(contract.CmdLockReleaseRequest, payload))
@@ -78,8 +78,8 @@ func TestLockReleaseRequestDoesNotAskCurrentHolder(t *testing.T) {
 	service := &lockReleaseServiceStub{}
 	server.SetLockReleaseService(service)
 	repo := server.RegisterRepoAccess("docs", "svn+ssh://host/docs", "/work/docs", "office", contract.AccessReadWrite)
-	repo.SetReservationFuncs(func(context.Context) ([]contract.Reservation, error) {
-		return []contract.Reservation{{RepoID: "docs", Path: "a.txt", Token: "mine", CanRelease: true}}, nil
+	repo.SetReservationFuncs(func(context.Context) (ReservationSnapshot, error) {
+		return ReservationSnapshot{Reservations: []contract.Reservation{{RepoID: "docs", Path: "a.txt", Token: "mine", CanRelease: true}}}, nil
 	}, nil)
 	response := server.dispatch(lifecycleRequest(contract.CmdLockReleaseRequest, contract.LockReleaseRequestPayload{ServerID: "office", RepoID: "docs", Path: "a.txt", ObservedLockID: "mine"}))
 	if response.Status == contract.StatusOK || service.requested.ServerID != "" {
@@ -92,8 +92,8 @@ func TestLockReleaseAcceptChecksProjectionAndReleasesExactTokenAfterConsent(t *t
 	service := &lockReleaseServiceStub{}
 	server.SetLockReleaseService(service)
 	repo := server.RegisterRepoAccess("docs", "svn+ssh://host/docs", "/work/docs", "office", contract.AccessReadWrite)
-	repo.SetReservationFuncs(func(context.Context) ([]contract.Reservation, error) {
-		return []contract.Reservation{{RepoID: "docs", Path: "plans/a.dwg", Token: "opaque-token", CanRelease: true}}, nil
+	repo.SetReservationFuncs(func(context.Context) (ReservationSnapshot, error) {
+		return ReservationSnapshot{Reservations: []contract.Reservation{{RepoID: "docs", Path: "plans/a.dwg", Token: "opaque-token", CanRelease: true}}}, nil
 	}, func(_ context.Context, path, token string, confirmRisk bool) error {
 		if service.action != "accept" {
 			return errors.New("unlock ran before remote consent")

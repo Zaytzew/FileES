@@ -673,11 +673,17 @@ func TestEditingPolicyMigrationRecordsOptInSoRollbackCanTell(t *testing.T) {
 
 type reservationClient struct {
 	client.Client
-	entries []client.LockEntry
+	entries  []client.LockEntry
+	unlocked [][]string
 }
 
 func (c *reservationClient) ListLocks(context.Context, string) ([]client.LockEntry, error) {
 	return c.entries, nil
+}
+
+func (c *reservationClient) Unlock(_ context.Context, _ string, paths []string) (string, error) {
+	c.unlocked = append(c.unlocked, append([]string(nil), paths...))
+	return "unlocked", nil
 }
 
 // A lock taken while the repository was free carries no passport metadata, and
@@ -715,5 +721,14 @@ func TestLegacyRawLocksStayReleasableAfterThePolicyIsEnabled(t *testing.T) {
 	}
 	if byPath["held.bin"].CanRelease {
 		t.Fatal("another client's live passport hold was offered for release")
+	}
+	if err := state.ReleaseReservation(t.Context(), "legacy.bin", "tok-legacy", false); err != nil {
+		t.Fatalf("release legacy raw lock: %v", err)
+	}
+	if len(svn.unlocked) != 1 || len(svn.unlocked[0]) != 1 || svn.unlocked[0][0] != filepath.Join(wc, "legacy.bin") {
+		t.Fatalf("legacy raw lock did not use SVN unlock: %#v", svn.unlocked)
+	}
+	if err := state.ReleaseReservation(t.Context(), "held.bin", "tok-held", true); err == nil {
+		t.Fatal("another client's passport lock was released")
 	}
 }

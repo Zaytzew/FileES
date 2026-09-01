@@ -557,7 +557,7 @@ func wireRepoReservationFuncsInternal(state *ipcserver.RepoState, svn client.Cli
 		if rel, err := filepath.Rel(wc, absolute); err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
 			return errors.New("reservation path is outside its working copy")
 		}
-		if manager != nil {
+		if manager != nil && row.ActivePassport {
 			_, err := manager.Release(ctx, []string{absolute})
 			if err == nil && changed != nil {
 				changed()

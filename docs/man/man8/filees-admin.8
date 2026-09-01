@@ -1,9 +1,9 @@
-.Dd August 14, 2026
+.Dd August 31, 2026
 .Dt FILEES-ADMIN 8
 .Os
 .Sh NAME
 .Nm filees-admin
-.Nd FileES administrative tickets, revocation and erasure closure
+.Nd FileES administrative tickets, revocation, repository repair and erasure closure
 .Sh SYNOPSIS
 .Nm
 .Op Fl config Ar path
@@ -35,6 +35,16 @@
 .Cm repo transfer-owner Fl -repo-id Ar uuid Fl -realm-id Ar uuid
 .Nm
 .Op Fl config Ar path
+.Cm repo check-state
+.Op Fl -realm-id Ar uuid
+.Nm
+.Op Fl config Ar path
+.Cm repo prune
+.Op Fl -realm-id Ar uuid
+.Op Fl -older-than Ar duration
+.Op Fl -apply
+.Nm
+.Op Fl config Ar path
 .Cm erasure complete Fl -operation-id Ar uuid
 .Op Fl -partially-retained
 .Nm
@@ -56,10 +66,14 @@ identified even when
 .Pa server.json
 is suspect.
 .Pp
-Repository create, grants, public shares and realm removal are desktop
-control-plane operations, not extra
-.Nm
-verbs.
+Normal repository create, grants, public shares and realm removal are desktop
+control-plane operations.
+The
+.Cm repo check-state
+and
+.Cm repo prune
+verbs are exceptional operator recovery tools for abandoned repository
+creation state, not an alternate repository-management interface.
 .Sh COMMANDS
 .Bl -tag -width Ds
 .It Cm ticket create
@@ -97,6 +111,38 @@ Change
 .Ic owner_realm_id
 and regenerate data-authz.
 Existing grants issued by the previous owner are not touched.
+.It Cm repo check-state
+Read repository-creation backend records and correlate them with canonical
+authority, FSFS/staging presence and, for a possible abandoned initial
+creation,
+.Xr svnlook 1
+youngest revision.
+Normal active repositories are omitted.
+The optional
+.Fl -realm-id
+limits the JSON report to one realm.
+This command does not remove repositories.
+.It Cm repo prune
+Report the same abandoned-creation candidates as
+.Cm repo check-state .
+Without
+.Fl -apply
+it is a dry run and changes nothing.
+.Fl -older-than
+defaults to 1h and prevents a recent creation attempt from being selected.
+With
+.Fl -apply ,
+only records marked
+.Ic prunable
+and old enough are removed.
+For a published candidate the canonical state must be
+.Ic initializing ,
+there must be no staging tree, and FSFS must be absent or exactly r0.
+Before removal the command durably records
+.Ic prune_pending ,
+blocks commits and checks the youngest revision again.
+An active repository, an initializing repository at r1 or later, and an
+ordinary deletion tombstone are never removed by this path.
 .It Cm erasure complete
 Close a data-erasure request after the operator has verified backup
 retention.
@@ -134,6 +180,15 @@ Authorise another desktop in an existing realm:
 .Bd -literal -offset indent
 $ doas -u _filees-state filees-admin ticket create user@example.com \e
     --join-realm-alias acme --ttl 24h
+.Ed
+.Pp
+Inspect and then remove abandoned empty initial creations for one realm:
+.Bd -literal -offset indent
+$ doas -u _filees-state filees-admin repo check-state --realm-id UUID
+$ doas -u _filees-state filees-admin repo prune --realm-id UUID \e
+    --older-than 1h
+$ doas -u _filees-state filees-admin repo prune --realm-id UUID \e
+    --older-than 1h --apply
 .Ed
 .Sh SEE ALSO
 .Xr filees 7 ,

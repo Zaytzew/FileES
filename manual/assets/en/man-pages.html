@@ -74,11 +74,11 @@
 <article class="cli-tool" id="filees-admin">
 <span class="cli-kind">Operator command — typed at a prompt</span>
 <h2>filees-admin(8)</h2>
-<p class="cli-nd">FileES administrative tickets, revocation and erasure closure</p>
+<p class="cli-nd">FileES administrative tickets, revocation, repository repair and erasure closure</p>
 <h3>Role</h3>
 <p>filees-admin is the operator command for onboarding tickets and a small set of fail-closed administrative actions. It writes structured JSON to standard output and diagnostics to standard error. It must run with effective user _filees-state . Creating a ticket as root produces a root-owned mode 0600 file that the set-id onboarding entry intentionally cannot read.</p>
 <p>version is answered before the configuration is opened, so a stale binary can be identified even when server.json is suspect.</p>
-<p>Repository create, grants, public shares and realm removal are desktop control-plane operations, not extra filees-admin verbs.</p>
+<p>Normal repository create, grants, public shares and realm removal are desktop control-plane operations. <code>repo check-state</code> and <code>repo prune</code> are exceptional operator recovery tools, not an alternate repository-management interface.</p>
 <h3>Invocation</h3>
 <pre><code>filees-admin [-config path] ticket create mailbox [--ttl duration] [--join-realm-alias alias]
 filees-admin [-config path] ticket resend --ticket-id uuid
@@ -88,6 +88,8 @@ filees-admin [-config path] operation inspect --operation-id uuid
 filees-admin [-config path] client revoke --client-id uuid [--reason text]
 filees-admin [-config path] client revoke-realm --realm-id uuid [--reason text]
 filees-admin [-config path] repo transfer-owner --repo-id uuid --realm-id uuid
+filees-admin [-config path] repo check-state [--realm-id uuid]
+filees-admin [-config path] repo prune [--realm-id uuid] [--older-than duration] [--apply]
 filees-admin [-config path] erasure complete --operation-id uuid [--partially-retained]
 filees-admin version</code></pre>
 <h3>Flags and verbs</h3>
@@ -100,6 +102,8 @@ filees-admin version</code></pre>
 <tr><td><code>client revoke</code></td><td>Write a durable revoking record, drop generated SSH/SVN access, then commit the revoked client. An identical retry is idempotent; a different reason is rejected.</td></tr>
 <tr><td><code>client revoke-realm</code></td><td>Revoke every installation of a realm with the same sequence.</td></tr>
 <tr><td><code>repo transfer-owner</code></td><td>Change owner_realm_id and regenerate data-authz. Existing grants issued by the previous owner are not touched.</td></tr>
+<tr><td><code>repo check-state</code></td><td>Correlate durable creation records with canonical state, FSFS/staging and youngest revision. Normal active repositories are omitted and nothing is removed. Optional <code>--realm-id</code> limits the JSON report to one realm.</td></tr>
+<tr><td><code>repo prune</code></td><td>Dry-run unless <code>--apply</code> is present. The default <code>--older-than 1h</code> protects fresh attempts. Apply removes only published, still-initializing r0 records marked <code>prunable</code>; it persists <code>prune_pending</code>, blocks commits and verifies HEAD again before changing authority or storage.</td></tr>
 <tr><td><code>erasure complete</code></td><td>Close a data-erasure request after the operator has verified backup retention. --partially-retained records that policy still requires some copies.</td></tr>
 </table></div>
 <h3>Examples</h3>
@@ -108,6 +112,10 @@ filees-admin version</code></pre>
 <p>Authorise another desktop in an existing realm:</p>
 <pre><code>$ doas -u _filees-state filees-admin ticket create user@example.com \
     --join-realm-alias acme --ttl 24h</code></pre>
+<p>Inspect, dry-run and remove empty abandoned creations for one realm:</p>
+<pre><code>$ doas -u _filees-state filees-admin repo check-state --realm-id UUID
+$ doas -u _filees-state filees-admin repo prune --realm-id UUID --older-than 1h
+$ doas -u _filees-state filees-admin repo prune --realm-id UUID --older-than 1h --apply</code></pre>
 </article>
 <article class="cli-tool" id="filees-operation">
 <span class="cli-kind">Operator command — typed at a prompt</span>

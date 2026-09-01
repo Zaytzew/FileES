@@ -46,6 +46,41 @@ The server resolves the alias before issuing the invitation and stores the
 approved realm ID in ticket policy. The client never supplies an existing
 realm ID. A ticket created without `--join-realm-alias` authorizes a new realm;
 revoke an incorrectly created unused ticket instead of trying to edit it.
+
+### Abandoned repository-creation cleanup
+
+An activation or first-import failure can exceptionally leave a durable
+repository record that was published to client views but never became active.
+Inspect these records before changing anything:
+
+```text
+doas -u _filees-state filees-admin repo check-state
+doas -u _filees-state filees-admin repo check-state --realm-id <uuid>
+```
+
+`check-state` correlates the backend record, canonical authority state,
+FSFS/staging presence and `svnlook youngest`. A normal active repository is
+omitted. A published candidate is marked `prunable:true` only when its
+canonical state is `initializing`, no staging tree exists, and FSFS is absent
+or exactly r0.
+
+Always inspect the dry run before applying it:
+
+```text
+doas -u _filees-state filees-admin repo prune \
+  --realm-id <uuid> --older-than 1h
+doas -u _filees-state filees-admin repo prune \
+  --realm-id <uuid> --older-than 1h --apply
+```
+
+`--older-than` defaults to one hour. `--apply` durably records
+`prune_pending`, installs a commit blocker, verifies HEAD again, then removes
+the abandoned repository from canonical projections/data-authz, deletes the
+empty FSFS and finally removes its backend record. An interruption is
+retryable. Active repositories, initializing repositories at r1 or later,
+ordinary deletion tombstones, staging trees and uncertain states are never
+removed automatically; they appear under `needs_attention` instead.
+
 The generic installer deliberately does not create an `rc.d`/systemd service
 and does not modify `sshd_config`. On OpenBSD, the separate
 `openbsd/install-ssh.sh` step creates the two protocol accounts, installs the

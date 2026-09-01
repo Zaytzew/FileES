@@ -557,6 +557,7 @@
 <tr><td><code>filees-worker repository-control</code></td><td><code>stdio rpath wpath cpath fattr flock inet dns proc exec unveil</code></td><td>inherits the entry's locked table; no table of its own</td></tr>
 <tr><td><code>filees-recovery-entry authorize|serve</code></td><td><code>stdio rpath</code></td><td>server config (r), repository results root (r), deletion archive root (r) — read-only throughout</td></tr>
 <tr><td><code>filees-admin client revoke</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>activation root, service WC/repository and fixed SVN binary</td></tr>
+<tr><td><code>filees-admin repo check-state/prune</code></td><td><code>stdio rpath wpath cpath fattr flock proc exec</code></td><td>repository results/data, data-authz, service WC/repository, exact SVN and svnlook binaries, plus <code>activation.root/.service-wc.lock</code>; apply writes only through the bounded prune path</td></tr>
 <tr><td><code>login_-filees</code> (BSD Auth style)</td><td><code>stdio rpath wpath cpath flock</code></td><td>operation root, pepper file</td></tr>
 </table></div>
 <div class="note"><strong>Key invariant:</strong> pledge and unveil profiles are closed in code. Only the dispatcher, activation worker, client entry and administrative revoke retain the narrowly required <code>proc exec</code> boundary for a fixed executable; no promise or executable path is supplied by a network request.</div>

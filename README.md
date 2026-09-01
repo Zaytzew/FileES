@@ -67,6 +67,24 @@ The neutral CI quality gate is `make verify`: the full Go test suite, selected r
 - Access through the system `sshd` to tunneled `svnserve -t`; a listening
   `svnserve --daemon` is not supported
 
+### Server-side recovery inspection
+
+On OpenBSD, run administrative commands as `_filees-state`. Abandoned
+repository creations can be inspected without changing state, followed by an
+explicit dry run and apply:
+
+```sh
+doas -u _filees-state filees-admin repo check-state [--realm-id UUID]
+doas -u _filees-state filees-admin repo prune [--realm-id UUID] --older-than 1h
+doas -u _filees-state filees-admin repo prune [--realm-id UUID] --older-than 1h --apply
+```
+
+The prune path accepts only old, published-but-never-activated repositories
+whose FSFS is absent or still exactly at r0. It blocks commits and verifies
+HEAD again before removing authority, storage and durable backend state.
+Active repositories, initial creations at r1 or later, and ordinary deletion
+tombstones are protected. See `filees-admin(8)` for the complete contract.
+
 ---
 
 ## Building

@@ -34,6 +34,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 		}
 		return
 	}
+	permitRepeatedSandbox(t)
 	root := os.Getenv("FILEES_CLIENT_ENTRY_ROOT")
 	if root == "" {
 		root = t.TempDir()

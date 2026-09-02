@@ -34,6 +34,7 @@ func TestRealmRemovalDestructiveE2E(t *testing.T) {
 	if isolateSandboxingTest(t, "TestRealmRemovalDestructiveE2E") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	for _, retentionDays := range []int{0, 2} {
 		retentionDays := retentionDays
 		t.Run("retention_"+strconv.Itoa(retentionDays), func(t *testing.T) {
@@ -93,7 +94,7 @@ func newRealmRemovalE2EFixture(t *testing.T, retentionDays int) realmRemovalE2EF
 		return path
 	}
 	f := realmRemovalE2EFixture{
-		root: t.TempDir(), svn: find("svn"), svnadmin: find("svnadmin"),
+		root: sandboxTempDir(t), svn: find("svn"), svnadmin: find("svnadmin"),
 		now: time.Now().UTC().Truncate(time.Second), retentionDays: retentionDays,
 		targetRealm: uuid.NewString(), otherRealm: uuid.NewString(),
 	}

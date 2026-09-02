@@ -27,7 +27,7 @@ func writeRepoPruneFixtureConfig(t *testing.T) (configPath, resultsRoot, reposit
 	t.Helper()
 	tools := requireSVN(t, "svn", "svnadmin", "svnserve", "svnlook")
 	svn, svnadmin, svnserve, svnlook := tools[0], tools[1], tools[2], tools[3]
-	base := t.TempDir()
+	base := sandboxTempDir(t)
 	root := filepath.Join(base, "service")
 	if err := onboarding.Initialize(root); err != nil {
 		t.Fatal(err)
@@ -137,6 +137,7 @@ func TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords(t *testing.T) {
 	if isolateSandboxingTest(t, "TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	configPath, resultsRoot, repositoriesRoot := writeRepoPruneFixtureConfig(t)
 	realmID := "8f14e45f-ceea-467e-adde-3fb5787cd831"
 	published := "11111111-1111-4111-8111-111111111111"
@@ -229,6 +230,7 @@ func TestRepoPruneRespectsOlderThan(t *testing.T) {
 	if isolateSandboxingTest(t, "TestRepoPruneRespectsOlderThan") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	configPath, resultsRoot, _ := writeRepoPruneFixtureConfig(t)
 	realmID := "8f14e45f-ceea-467e-adde-3fb5787cd831"
 	fresh := "55555555-5555-4555-8555-555555555555"
@@ -254,6 +256,7 @@ func TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository(t *testing.T
 	if isolateSandboxingTest(t, "TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	configPath, resultsRoot, repositoriesRoot := writeRepoPruneFixtureConfig(t)
 	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation)
 	if err != nil {

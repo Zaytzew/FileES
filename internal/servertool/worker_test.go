@@ -215,6 +215,7 @@ func TestS4RecoverAfterPowerLoss(t *testing.T) {
 	if isolateSandboxingTest(t, "TestS4RecoverAfterPowerLoss") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	configPath := os.Getenv("FILEES_S4_POWER_LOSS_RECOVER")
 	if configPath == "" {
 		return

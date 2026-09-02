@@ -115,13 +115,22 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		report(stderr, "serving-state request parse", err)
 		return ExitData
 	}
-	if err := authorizeReservationRequest(config.Activation.ServiceWorkingCopy, clientID, req.RepoID); err != nil {
+	view, err := authorizedClientView(config.Activation.ServiceWorkingCopy, clientID, req.RepoID)
+	if err != nil {
 		report(stderr, "serving-state authorization", err)
 		return ExitSoftware
 	}
 
 	store := reservationprojection.NewStore(stateRoot)
 	result := refreshReservationProjection(context.Background(), store, config.Activation.SVNBinary, r.Root, req.RepoID)
+	// The view was loaded to authorize this request, so saying when the server
+	// last produced it costs nothing and tells the client the one thing it
+	// cannot work out locally.
+	result.ViewGeneration = view.Generation
+	if !view.GeneratedAt.IsZero() {
+		produced := view.GeneratedAt
+		result.ViewGeneratedAt = &produced
+	}
 	payload, err := json.Marshal(result)
 	if err != nil {
 		report(stderr, "serving-state result encode", err)
@@ -140,16 +149,24 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 // activation/repository workers, never by this one), so this is a read-only
 // check against already-decided access, not a second access-control model.
 func authorizeReservationRequest(serviceWC, clientID, repoID string) error {
+	_, err := authorizedClientView(serviceWC, clientID, repoID)
+	return err
+}
+
+// authorizedClientView performs the same check and hands back the view it had
+// to read, so the caller can report when the server last produced it without a
+// second read of the same file.
+func authorizedClientView(serviceWC, clientID, repoID string) (clientview.View, error) {
 	view, err := clientview.Load(filepath.Join(serviceWC, "clients", clientID, "view.json"))
 	if err != nil || view.ClientID != clientID {
-		return errReservationAccessDenied
+		return clientview.View{}, errReservationAccessDenied
 	}
 	for _, repository := range view.Repositories {
 		if repository.RepoID == repoID && repository.State == "active" {
-			return nil
+			return view, nil
 		}
 	}
-	return errReservationAccessDenied
+	return clientview.View{}, errReservationAccessDenied
 }
 
 // reservationWorkerProfile deliberately unveils nothing of its own.

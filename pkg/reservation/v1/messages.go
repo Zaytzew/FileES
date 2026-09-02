@@ -90,6 +90,28 @@ type Result struct {
 	// point of this worker existing is that this must never again be
 	// silently discarded).
 	Detail string `json:"detail,omitempty"`
+
+	// The next two answer a question the client cannot answer for itself:
+	// whether this server is still producing its view, as opposed to being
+	// quiet. Both look identical from the client - the fetch succeeds, the
+	// generation does not move, only the age grows - so no local threshold can
+	// separate them. Measured on `manual` 2026-09-02: every lane accepted the
+	// client, the sync reported no error, and the view had not been produced
+	// since 23 August.
+	//
+	// They ride this result rather than a mechanism of their own because this
+	// worker already loads the view to authorize the request, so the fact is
+	// in hand and costs nothing. A second lane carrying the same fact would
+	// drift from this one silently, which is the failure the matrix calls M8.
+	//
+	// A pointer, unlike AsOf above, and deliberately: omitempty does not omit
+	// a zero time.Time, so a value type would put year one on the wire and a
+	// consumer could not tell "the server did not say" from "the server said
+	// never". This field exists precisely to make that distinction, so it has
+	// to be able to be absent. AsOf keeps its existing shape; changing it is a
+	// wider contract change than this one.
+	ViewGeneration  int64      `json:"view_generation,omitempty"`
+	ViewGeneratedAt *time.Time `json:"view_generated_at,omitempty"`
 }
 
 // decodeExactlyOne decodes exactly one JSON value from raw into v and

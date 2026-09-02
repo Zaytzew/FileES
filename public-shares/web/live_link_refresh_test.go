@@ -253,3 +253,51 @@ func TestVisitLifetimeIsOneHour(t *testing.T) {
 		t.Fatalf("the session ceiling is one hour by decision; got %s", visitLifetime)
 	}
 }
+
+// The countdown must not be the reason this page starts executing scripts.
+//
+// The listing is the most exposed surface in the product: public, unauthenticated
+// and rendering names that came from somewhere else. It runs under
+// default-src 'none' with no script-src, and a live counter is not worth
+// trading that for. A CSS animation gives the same reading for nothing, because
+// the stylesheet is already pinned by hash and already built per request.
+func TestSessionCountdownRunsWithoutScript(t *testing.T) {
+	f := newWebFixture(t, nil)
+	claims := visit{Subject: "password:abc", ExpiresAt: f.now.Add(30 * time.Minute).Unix()}
+
+	css, bar := f.handler.sessionCountdownCSS(claims)
+	if !bar || css == "" {
+		t.Fatal("a gated session with time left should get a countdown")
+	}
+	if !strings.Contains(css, "animation:filees-session 1800s") {
+		t.Fatalf("the animation must last exactly as long as the session has left: %s", css)
+	}
+	if !strings.Contains(css, "scaleX(0.5000)") {
+		t.Fatalf("the bar must start at the fraction of the session that remains: %s", css)
+	}
+	if !strings.Contains(css, "prefers-reduced-motion") {
+		t.Fatalf("a draining bar must respect a reader who asked for less motion: %s", css)
+	}
+
+	// An open link renews itself, so there is nothing to count down.
+	if _, open := f.handler.sessionCountdownCSS(visit{Subject: "open", ExpiresAt: claims.ExpiresAt}); open {
+		t.Fatal("an open link must not display a countdown it will not honour")
+	}
+}
+
+// The rendered page must carry the animation and still refuse scripts.
+func TestListingKeepsScriptsOutWhileCountingDown(t *testing.T) {
+	f := newWebFixture(t, nil)
+	visit := visitFromRedirect(t, perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil))
+	listing := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?v="+url.QueryEscape(visit), "", nil)
+	if listing.Code != http.StatusOK {
+		t.Fatalf("listing status=%d", listing.Code)
+	}
+	policy := listing.Header().Get("Content-Security-Policy")
+	if !strings.Contains(policy, "default-src 'none'") || strings.Contains(policy, "script-src") {
+		t.Fatalf("the listing must keep refusing scripts: %s", policy)
+	}
+	if strings.Contains(listing.Body.String(), "<script") {
+		t.Fatalf("the listing must contain no script at all: %s", listing.Body.String())
+	}
+}

@@ -2,6 +2,7 @@ package clientprofile
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -82,4 +83,18 @@ func isReservedDeviceName(name string) bool {
 	}
 	_, reserved := reservedDeviceNames[strings.ToUpper(stem)]
 	return reserved
+}
+
+// ServerDir is the directory holding one server's client state.
+//
+// It exists because the join was written out at six call sites and only one of
+// them learned about encoding, which is how activation got past mkdir and then
+// failed opening known_hosts under the name that could not exist. A rule
+// applied at some call sites and not others is not a rule.
+func ServerDir(root, serverID string) (string, error) {
+	name, err := StateDirName(serverID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Clean(root), name), nil
 }

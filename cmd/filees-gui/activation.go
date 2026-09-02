@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"filees/internal/gui/actions"
+	"filees/pkg/clientprofile"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/deploy"
 	"filees/pkg/onboarding"
@@ -49,7 +50,7 @@ func (a clientActivator) Begin(parent context.Context, wire string) (actions.Act
 	if err != nil {
 		return actions.ActivationTarget{}, err
 	}
-	profile := deploy.ServerProfile{ID: invitation.ServerID, Address: invitation.ServerAddress, KnownHostsPath: filepath.Join(filepath.Clean(a.root), invitation.ServerID, "known_hosts")}
+	profile := deploy.ServerProfile{ID: invitation.ServerID, Address: invitation.ServerAddress, KnownHostsPath: a.knownHostsPath(invitation.ServerID)}
 	if err := a.validate(profile); err != nil {
 		return actions.ActivationTarget{}, err
 	}
@@ -63,7 +64,7 @@ func (a clientActivator) Begin(parent context.Context, wire string) (actions.Act
 }
 
 func (a clientActivator) Finish(parent context.Context, target actions.ActivationTarget, otp []byte) error {
-	profile := deploy.ServerProfile{ID: target.ServerID, Address: target.Address, KnownHostsPath: filepath.Join(filepath.Clean(a.root), target.ServerID, "known_hosts")}
+	profile := deploy.ServerProfile{ID: target.ServerID, Address: target.Address, KnownHostsPath: a.knownHostsPath(target.ServerID)}
 	if err := a.validate(profile); err != nil {
 		return err
 	}
@@ -76,7 +77,7 @@ func (a clientActivator) Finish(parent context.Context, target actions.Activatio
 }
 
 func (a clientActivator) Resume(parent context.Context, target actions.ActivationTarget) error {
-	profile := deploy.ServerProfile{ID: target.ServerID, Address: target.Address, KnownHostsPath: filepath.Join(filepath.Clean(a.root), target.ServerID, "known_hosts")}
+	profile := deploy.ServerProfile{ID: target.ServerID, Address: target.Address, KnownHostsPath: a.knownHostsPath(target.ServerID)}
 	if err := a.validate(profile); err != nil {
 		return err
 	}
@@ -91,4 +92,16 @@ func (a clientActivator) validate(profile deploy.ServerProfile) error {
 		return errors.New("profil aktywacji nie jest skonfigurowany")
 	}
 	return nil
+}
+
+// knownHostsPath resolves through clientprofile.ServerDir so this deprecated
+// renderer agrees with the directory deploy actually creates. It is abandoned
+// in favour of Wails, but a path that cannot exist is not the failure anyone
+// should meet here either.
+func (a clientActivator) knownHostsPath(serverID string) string {
+	dir, err := clientprofile.ServerDir(a.root, serverID)
+	if err != nil {
+		return filepath.Join(filepath.Clean(a.root), serverID, "known_hosts")
+	}
+	return filepath.Join(dir, "known_hosts")
 }

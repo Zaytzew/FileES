@@ -545,6 +545,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		return fmt.Errorf("remove committed transaction journal: %w", err)
 	}
 	fmt.Fprintf(r.Out, "[UP] installed release=%s files=%d\n", m.ReleaseID, len(staged))
+	reportResidentServices(r.Out, m.Files)
 	return nil
 }
 

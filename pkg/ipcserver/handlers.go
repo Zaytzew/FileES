@@ -230,7 +230,13 @@ func (s *Server) handleRecoveryDownload(req contract.Request) contract.Response 
 	defer cancel()
 	result, err := service.Download(ctx, payload)
 	if err != nil {
-		return contract.ErrResponse(req.RequestID, "RECOVERY-1001", "ERROR", "REQUIRE_ACTION", "recovery.download_failed", nil)
+		// The cause used to be dropped here: not logged, and nil details on
+		// the envelope. The user got "Pobranie archiwum nie powiodlo sie"
+		// while the daemon log, the error journal and the lifecycle record
+		// all stayed empty, so the failure could not be diagnosed at all -
+		// twice it sent an investigation to the server, which was healthy.
+		s.lg.Warnf("RECOVERY-1001 recovery.download_failed (operation=%s): %v", payload.OperationID, err)
+		return contract.ErrResponse(req.RequestID, "RECOVERY-1001", "ERROR", "REQUIRE_ACTION", "recovery.download_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

@@ -301,3 +301,40 @@ func TestListingKeepsScriptsOutWhileCountingDown(t *testing.T) {
 		t.Fatalf("the listing must contain no script at all: %s", listing.Body.String())
 	}
 }
+
+// "Download everything" is the third object path and it was left behind when
+// the single-file routes learned to refresh. That is a worse shape of the same
+// bug than the original: the visitor can download any one file, proving the
+// content is reachable, and the button above them still answers 404.
+func TestBundleSurvivesAManifestEditMidVisit(t *testing.T) {
+	f := newWebFixture(t, nil)
+	// The base fixture leaves the bundle limits at zero, which disables the
+	// route entirely - without these the test would 404 before reaching the
+	// code it exists to check.
+	f.handler.MaxBundleFiles = 10
+	f.handler.MaxBundleSize = 1 << 20
+	visit := visitFromRedirect(t, perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil))
+
+	edited := f.share
+	edited.Objects = []manifest.Object{{
+		PublicID:    "7f3a1c9e2b4d6a80",
+		RepoPath:    "wydanie/projekt.pdf",
+		DisplayName: "Projekt budowlany (po korekcie).pdf",
+	}}
+	if _, _, err := f.store.Update(uuid.NewString(), f.owner, f.channelID, edited); err != nil {
+		t.Fatal(err)
+	}
+
+	bundle := perform(f.handler, http.MethodPost,
+		"https://example.test/atmprojekt/przetarg-2026/bundle?v="+url.QueryEscape(visit),
+		"all=1", map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	if bundle.Code != http.StatusOK {
+		t.Fatalf("downloading everything must not fail where downloading each file works; status=%d", bundle.Code)
+	}
+	if bundle.Header().Get("Content-Type") != "application/zip" {
+		t.Fatalf("content type = %q", bundle.Header().Get("Content-Type"))
+	}
+	if bundle.Body.Len() == 0 {
+		t.Fatal("the archive is empty")
+	}
+}

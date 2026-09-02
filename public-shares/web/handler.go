@@ -453,8 +453,29 @@ func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, cha
 	}
 	leaves, err := h.prepareBundle(request.Context(), claims, objects)
 	if err != nil {
-		h.notFound(w)
-		return
+		// The third object path, and the one I missed when the single-file
+		// routes learned this. Downloading one file worked while "download
+		// everything" still answered 404, which is a worse shape of the same
+		// bug: the visitor can prove the content is reachable and the button
+		// above it still fails.
+		freshProjection, freshClaims, _, refreshed := h.refreshVisit(request.Context(), alias, channelSlug, claims)
+		if !refreshed {
+			h.notFound(w)
+			return
+		}
+		// Re-select against the refreshed projection: a bundle assembled from
+		// the old listing would carry objects the share no longer publishes.
+		objects, archiveName, selected = selectBundleObjects(freshProjection, request.PostForm)
+		if !selected || len(objects) < 1 || len(objects) > h.MaxBundleFiles {
+			h.notFound(w)
+			return
+		}
+		claims = freshClaims
+		leaves, err = h.prepareBundle(request.Context(), claims, objects)
+		if err != nil {
+			h.notFound(w)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", contentDisposition(archiveName+".zip"))

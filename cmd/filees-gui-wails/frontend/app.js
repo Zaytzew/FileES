@@ -206,11 +206,21 @@ function shortDateTime(value) {
 function staleViewServers(snapshot) {
   const servers = snapshot.servers || [];
   return servers
-    .filter((server) => Number(server.view_sync_failures || 0) > 0 || String(server.view_sync_error || "") !== "")
+    .filter((server) => {
+      if (Number(server.view_sync_failures || 0) > 0) return true;
+      if (String(server.view_sync_error || "") !== "") return true;
+      // Never fetched in this run. The daemon starts from a cached view, so
+      // without this a freshly started client renders a ten-day-old projection
+      // as current until the first sync happens to fail - which is the same
+      // untruth this replaced, moved to startup. Absent is not the same as
+      // fine, and only the daemon can tell us which.
+      return String(server.view_synced_at || "") === "";
+    })
     .map((server) => ({
       name: server.display_name || server.id,
       since: server.view_generated_at || server.view_synced_at || "",
       reason: String(server.view_sync_error || ""),
+      unverified: String(server.view_synced_at || "") === "" && Number(server.view_sync_failures || 0) === 0,
     }));
 }
 
@@ -245,10 +255,20 @@ function renderConnection(snapshot) {
     const first = stale[0];
     const age = ageInWords(first.since);
     const rest = stale.length > 1 ? ` (+${stale.length - 1})` : "";
-    freshness.textContent = age
-      ? `Dane z „${first.name}" ${age} — serwer nie odpowiada${rest}`
-      : `Dane z „${first.name}" niepotwierdzone — serwer nie odpowiada${rest}`;
-    connectionLabel = first.reason ? `${first.name}: ${first.reason}` : "Serwer nie odpowiada";
+    // "Not yet checked" and "checked and refused" are different states and the
+    // reader acts differently on them: the first usually resolves itself in
+    // seconds, the second will not resolve at all.
+    if (first.unverified) {
+      freshness.textContent = age
+        ? `Dane z „${first.name}" ${age} — jeszcze niesprawdzone${rest}`
+        : `Dane z „${first.name}" jeszcze niesprawdzone${rest}`;
+      connectionLabel = "Pierwsze sprawdzenie w toku";
+    } else {
+      freshness.textContent = age
+        ? `Dane z „${first.name}" ${age} — serwer nie odpowiada${rest}`
+        : `Dane z „${first.name}" niepotwierdzone — serwer nie odpowiada${rest}`;
+      connectionLabel = first.reason ? `${first.name}: ${first.reason}` : "Serwer nie odpowiada";
+    }
   } else if (snapshot.stale) {
     core.classList.add("is-stale");
     freshness.classList.add("is-refreshing");

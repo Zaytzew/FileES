@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"net/http"
 	"net/url"
@@ -174,5 +175,45 @@ func TestExpiredVisitOnAPasswordLinkAsksAgain(t *testing.T) {
 	response := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "password") {
 		t.Fatalf("a password link must ask before it shows anything: status=%d", response.Code)
+	}
+}
+
+// The lifetime is a session, and a refresh must not renew it.
+//
+// Once expiry falls through to a fresh entry, the lifetime stops governing
+// content freshness and governs only how long one password entry or one OTP
+// exchange stays good for. If refreshing the snapshot also pushed the expiry
+// out, a gated share would never close for a visitor who keeps clicking, and
+// the capability that grants it lives in the URL - it survives in history,
+// bookmarks and anything pasted into a chat.
+func TestRefreshDoesNotExtendTheSession(t *testing.T) {
+	f := newWebFixture(t, nil)
+	visit := visitFromRedirect(t, perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil))
+	projection, err := f.handler.Backend.Inspect("atmprojekt", "przetarg-2026")
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued, err := f.handler.verifyVisit(visit, projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Halfway through the session, with something for the refresh to act on.
+	*f.now = f.now.Add(visitLifetime / 2)
+	edited := f.share
+	edited.Objects = []manifest.Object{{PublicID: "7f3a1c9e2b4d6a80", RepoPath: "wydanie/projekt.pdf", DisplayName: "Po korekcie.pdf"}}
+	if _, _, err := f.store.Update(uuid.NewString(), f.owner, f.channelID, edited); err != nil {
+		t.Fatal(err)
+	}
+
+	_, after, _, ok := f.handler.refreshVisit(context.Background(), "atmprojekt", "przetarg-2026", issued)
+	if !ok {
+		t.Fatal("the refresh under test did not happen")
+	}
+	if after.FrostProof == issued.FrostProof {
+		t.Fatal("the refresh did not actually renew the snapshot, so the deadline check below proves nothing")
+	}
+	if after.ExpiresAt != issued.ExpiresAt {
+		t.Fatalf("a refresh must not move the session deadline: issued=%d after=%d", issued.ExpiresAt, after.ExpiresAt)
 	}
 }

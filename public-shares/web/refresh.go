@@ -54,7 +54,13 @@ func (h Handler) refreshVisit(ctx context.Context, alias, channelSlug string, cl
 	refreshed := claims
 	refreshed.Revision = entry.Revision
 	refreshed.FrostProof = entry.FrostProof
-	refreshed.ExpiresAt = h.now().Add(visitLifetime).Unix()
+	// ExpiresAt is deliberately carried over rather than extended. A refresh
+	// concerns the snapshot, not the session, and those are now different
+	// things: the lifetime is what a visitor gets for entering a password or
+	// exchanging an OTP once. Renewing it here would turn every listing render
+	// into a session extension, so a gated share would stay open indefinitely
+	// for anyone who keeps clicking - and the capability travels in the URL,
+	// where it outlives the tab in history, bookmarks and pasted links.
 	encoded, err := h.signVisit(refreshed)
 	if err != nil {
 		return channel.Projection{}, visit{}, "", false

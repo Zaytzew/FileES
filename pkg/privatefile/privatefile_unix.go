@@ -53,6 +53,18 @@ func Verify(path string) error {
 	if !ok {
 		return fmt.Errorf("%w: %s exposes no ownership information", ErrNotPrivate, path)
 	}
+	// The mode check above is the guarantee: with no group or other bits, only
+	// the owner and root can read the path. The ownership check adds "and that
+	// owner is me", which is meaningful for a client tool running as the user
+	// but not for root, who can read everything regardless.
+	//
+	// Demanding it of root broke real administration: filees-admin run the
+	// normal way refused to start against a service directory owned by
+	// _filees-state, reporting the directory as not private when it was
+	// perfectly private. Measured live on 2026-09-02.
+	if effectiveUID() == 0 {
+		return nil
+	}
 	if int(stat.Uid) != effectiveUID() {
 		return fmt.Errorf("%w: %s is owned by uid %d", ErrNotPrivate, path, stat.Uid)
 	}

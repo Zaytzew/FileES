@@ -239,6 +239,12 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		views := clientview.Monitor(ctx, updater, clientview.MonitorConfig{Sync: sync, Interval: interval, OnError: func(err error) {
 			freshness.Failed(serverID, err)
 			talk.With("projection:"+serverID).Warnf("sync failed: %v", err)
+		}, OnSync: func(view clientview.View) {
+			// Every successful sync, not only one that brought a new
+			// generation: a quiet server that changes nothing must not look
+			// like a server that has stopped answering.
+			freshness.Synced(serverID, view)
+			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
 		}})
 		go func() {
 			for view := range views {

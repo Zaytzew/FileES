@@ -833,12 +833,12 @@ type listingPage struct {
 	// be a threat the page cannot carry out.
 	SessionDeadline string
 	// SessionBar is set when the countdown bar has somewhere to run.
-	SessionBar bool
-	BrandSymbol, BrandWordmark                 template.HTML
-	DownloadIcon, ArchiveIcon                  template.HTML
-	CSS                                        template.CSS
-	OwnerLogo                                  template.URL
-	HasOwnerLogo                               bool
+	SessionBar                 bool
+	BrandSymbol, BrandWordmark template.HTML
+	DownloadIcon, ArchiveIcon  template.HTML
+	CSS                        template.CSS
+	OwnerLogo                  template.URL
+	HasOwnerLogo               bool
 }
 
 type listingDirectory struct {

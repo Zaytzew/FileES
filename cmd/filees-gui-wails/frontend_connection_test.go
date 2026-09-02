@@ -24,6 +24,11 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 		// the old measurement and the test would go green again.
 		`const stale = snapshot.connected ? staleViewServers(snapshot) : [];`,
 		`view_sync_failures`,
+		// A server the daemon has not fetched from yet is not the same as one it
+		// fetched from successfully. Without this the header calls a cached
+		// ten-day-old projection current until the first sync happens to fail.
+		`return String(server.view_synced_at || "") === "";`,
+		`jeszcze niesprawdzone`,
 		`Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}`,
 		`Nie ma jeszcze zapisanej pełnej projekcji`,
 		`Brak zapisanej projekcji; panel odświeży się automatycznie.`,

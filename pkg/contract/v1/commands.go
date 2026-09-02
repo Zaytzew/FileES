@@ -321,6 +321,17 @@ type ActivationStatus struct {
 	ViewSyncedAt     string `json:"view_synced_at,omitempty"`
 	ViewSyncError    string `json:"view_sync_error,omitempty"`
 	ViewSyncFailures int    `json:"view_sync_failures,omitempty"`
+
+	// What the server itself says about producing this client's view, as
+	// opposed to what we managed to fetch. The two answer different questions
+	// and the difference between them is the diagnosis: equal generations mean
+	// we are current with the producer, a higher server generation means we
+	// are behind, and both old means the server has stopped producing.
+	//
+	// Only the last of those is invisible from the client alone, which is why
+	// it has to be asked for rather than inferred from age.
+	ServerViewGeneration int64  `json:"server_view_generation,omitempty"`
+	ServerViewProducedAt string `json:"server_view_produced_at,omitempty"`
 }
 
 type ServerSetSessionTimeoutPayload struct {

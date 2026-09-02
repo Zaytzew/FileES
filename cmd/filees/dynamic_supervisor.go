@@ -147,7 +147,26 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 }
 
 func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
+	// One recorder for every server this supervisor watches: the view lane is
+	// per server and so is its age.
+	freshness := newViewFreshness(nil)
+	// One publisher per server, registered when its monitor starts, so any
+	// source of freshness can push the snapshot without rebuilding the record.
+	freshnessPublishers := map[string]func(){}
+	var freshnessMu sync.Mutex
 	reservationRefreshes := newReservationProjectionCoordinator(ctx, ipc)
+	// The state lane already talks to the server on a rhythm driven by real
+	// work, so what the server says about producing our view arrives with it
+	// rather than on a schedule of its own.
+	reservationRefreshes.onServerViewProduced = func(serverID string, generation int64, producedAt time.Time) {
+		freshness.Produced(serverID, generation, producedAt)
+		freshnessMu.Lock()
+		publish := freshnessPublishers[serverID]
+		freshnessMu.Unlock()
+		if publish != nil {
+			publish()
+		}
+	}
 	defer reservationRefreshes.Close()
 	runtimes := make(map[reposupervisor.Key]repoRuntime, len(repos))
 	byServer := make(map[string][]reposupervisor.Desired)
@@ -182,9 +201,6 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	updates := make(chan projectionUpdate, 16)
 	monitored := make(map[string]bool)
 	currentViews := make(map[string]clientview.View)
-	// One recorder for every server this supervisor watches: the view lane is
-	// per server and so is its age.
-	freshness := newViewFreshness(nil)
 	shareRefreshes := newPublicShareRefreshCoordinator(ctx, shareLister, shareCache, ipc)
 	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval, timeout time.Duration) error {
 		if timeout <= 0 {
@@ -243,6 +259,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		publishFreshness := func() {
 			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
 		}
+		freshnessMu.Lock()
+		freshnessPublishers[serverID] = publishFreshness
+		freshnessMu.Unlock()
 		views := clientview.Monitor(ctx, updater, clientview.MonitorConfig{Sync: sync, Interval: interval, OnError: func(err error) {
 			freshness.Failed(serverID, err)
 			publishFreshness()

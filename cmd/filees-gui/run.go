@@ -194,7 +194,18 @@ type realmRemovalClient interface {
 	RecoveryDownload(context.Context, contract.RecoveryDownloadPayload) (*contract.RecoveryDownloadResult, error)
 }
 
+// recoveryDownloadTimeout bounds a whole archive transfer, not one request.
+const recoveryDownloadTimeout = 2 * time.Hour
+
 func (adapter realmRemovalAdapter) DownloadRecovery(ctx context.Context, operationID, outputRoot string) ([]string, error) {
+	// The IPC client applies its own 10s deadline to the whole exchange when
+	// the caller supplies none, and that deadline covers the response body.
+	// A recovery archive is a repository dump - the one measured here was
+	// 859 MB - so the call could never finish and always surfaced as
+	// "i/o timeout" with nothing logged anywhere. Give it a bound that fits
+	// the work rather than the conversation.
+	ctx, cancel := context.WithTimeout(ctx, recoveryDownloadTimeout)
+	defer cancel()
 	result, err := adapter.client.RecoveryDownload(ctx, contract.RecoveryDownloadPayload{OperationID: operationID, OutputRoot: outputRoot})
 	if err != nil {
 		return nil, err

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	rootversion "filees"
 	"filees/internal/gui/clientactivation"
 	"filees/internal/gui/projectionmirror"
 	"filees/pkg/clientprofile"
@@ -23,7 +24,17 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
-var version = "0.1.0"
+// version may be overridden by the trusted build pipeline through -ldflags
+// -X. Native development builds fall back to the root VERSION embedded by
+// the filees package instead of carrying a second hard-coded version.
+var version string
+
+func clientVersion() string {
+	if candidate := strings.TrimSpace(version); candidate != "" {
+		return candidate
+	}
+	return rootversion.Version()
+}
 
 // The complete frontend is embedded in the client executable. There is no
 // Node/Vite build step: CSS and browser modules keep the shipping client
@@ -42,7 +53,7 @@ func main() {
 		os.Exit(2)
 	}
 	if *showVersion {
-		fmt.Fprintln(os.Stdout, version)
+		fmt.Fprintln(os.Stdout, clientVersion())
 		return
 	}
 

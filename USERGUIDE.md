@@ -1,7 +1,7 @@
 # FileES GUI — podręcznik użytkownika
 
-**Wersja:** 0.1.0  
-**Dotyczy:** `filees-gui-wails` 0.1.0; daemon `filees` opisany jest osobno w README.md. Pełna instrukcja systemu jest dwujęzyczna: `manual/index.html` to przełącznik PL/EN, rozdziały są w `manual/assets/pl/` i `manual/assets/en/`. Na `manual.filees.space` htdocs to kopia `svn://cloud.atmprojekt.pl/SYNCSHARE/manual`. Strony `mandoc` serwera są w `docs/man/` (angielski).
+**Wersja:** 0.1.15  
+**Dotyczy:** `filees-gui-wails` 0.1.15; daemon `filees` opisany jest osobno w README.md. Pełna instrukcja systemu jest dwujęzyczna: `manual/index.html` to przełącznik PL/EN, rozdziały są w `manual/assets/pl/` i `manual/assets/en/`. Na `manual.filees.space` htdocs to kopia `svn://cloud.atmprojekt.pl/SYNCSHARE/manual`. Strony `mandoc` serwera są w `docs/man/` (angielski).
 
 ---
 
@@ -156,15 +156,16 @@ pozostaje wyłącznie w ikonie stanu i surowym logu diagnostycznym.
 ```
 ─────────────────────────
 Połącz ponownie
-Wersja 0.1.0 / aktualizacja klienta
+Wersja 0.1.15 / aktualizacja klienta
 Uruchom FileES ponownie…
 Zamknij FileES…
 ```
 
 - **Połącz ponownie** — wymusza natychmiastową próbę połączenia z daemonem, pomijając czas oczekiwania backoffu. Działa zarówno przy braku połączenia, jak i w trakcie sesji (resetuje sesję).
-- **Wersja 0.1.0 / aktualizacja klienta** — pastylka wersji otwiera informacje
-  o kliencie i wydaniu dystrybucyjnym. Gdy daemon udostępnia podpisany kanał
-  aktualizacji, to samo okno pokazuje plan oraz akcję aktualizacji.
+- **Wersja 0.1.15 / aktualizacja klienta** — pastylka wersji otwiera informacje
+  o kliencie, wydaniu dystrybucyjnym i kanale aktualizacji. Bieżący kanał
+  rozwojowy to `alpha`. Gdy daemon udostępnia podpisany plan, to samo okno
+  pozwala go wyświetlić i uruchomić aktualizację.
 - **Uruchom FileES ponownie…** — kontrolowanie opróżnia kolejkę i zatrzymuje
   runtime, po czym uruchamia ponownie daemon i GUI.
 - **Zamknij FileES…** — kontrolowanie zatrzymuje cały stack kliencki: daemon,
@@ -523,7 +524,7 @@ katalogu pod starą nazwą; nie jest on prawidłową WC i nie zostanie uruchomio
 
 ---
 
-## Znane ograniczenia wersji 0.1.0
+## Znane ograniczenia wersji 0.1.15
 
 - **Aktywacja powiadomień**: powiadomienia są informacyjne; kliknięcie nie otwiera jeszcze katalogu ani szczegółów błędu. Nie wykonuje też żadnej operacji mutującej.
 - **MSI Windows**: kompletny pakiet daemon+Wails i updater Windows pozostają

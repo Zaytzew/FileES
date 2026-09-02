@@ -185,6 +185,7 @@ type PublicShareViewModel struct {
 
 type UpdateViewModel struct {
 	State            string
+	Channel          string
 	CurrentVersion   string
 	AvailableVersion string
 	ReleaseID        string

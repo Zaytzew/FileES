@@ -2437,6 +2437,13 @@ export class UpdateProjection {
              */
             this["state"] = "";
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["channel"] = undefined;
+        }
         if (!("current_version" in $$source)) {
             /**
              * @member

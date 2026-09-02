@@ -2,26 +2,33 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
+	rootversion "filees"
 	guiapp "filees/internal/gui/app"
 )
 
 func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
-	if version != "0.1.0" {
-		t.Fatalf("initial Wails client version = %q", version)
+	if got := clientVersion(); got != rootversion.Version() {
+		t.Fatalf("client version = %q, embedded = %q", got, rootversion.Version())
 	}
 	snapshot := projectViewModel(guiapp.ViewModel{})
-	if snapshot.ClientVersion != version {
-		t.Fatalf("projected client version = %q, want %q", snapshot.ClientVersion, version)
+	if snapshot.ClientVersion != clientVersion() {
+		t.Fatalf("projected client version = %q, want %q", snapshot.ClientVersion, clientVersion())
 	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(payload), `"client_version":"0.1.0"`) {
+	wantVersionJSON := fmt.Sprintf(`"client_version":%q`, rootversion.Version())
+	if !strings.Contains(string(payload), wantVersionJSON) {
 		t.Fatalf("snapshot JSON does not expose client version: %s", payload)
+	}
+	updateSnapshot := projectViewModel(guiapp.ViewModel{Update: &guiapp.UpdateViewModel{State: "current", Channel: "alpha", CurrentVersion: "r688"}})
+	if updateSnapshot.Update == nil || updateSnapshot.Update.Channel != "alpha" {
+		t.Fatalf("projected update channel = %+v", updateSnapshot.Update)
 	}
 
 	markup := embeddedFrontendFile(t, "frontend/index.html")
@@ -36,10 +43,18 @@ func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
 	if strings.Contains(markup, "Wersja testowa") {
 		t.Fatal("legacy test-version label remains in the header")
 	}
-	for _, required := range []string{`id="version-overlay"`, `id="version-client"`, `id="version-release"`, `id="version-update-actions"`} {
+	for _, required := range []string{`id="version-overlay"`, `id="version-client"`, `id="version-channel"`, `id="version-release"`, `id="version-update-actions"`} {
 		if !strings.Contains(markup, required) {
 			t.Fatalf("version popup markup does not contain %s", required)
 		}
+	}
+	for _, required := range []string{`update?.channel`, `$("#version-channel").textContent`, `channel || "nieustalony"`} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("version popup does not render update channel via %s", required)
+		}
+	}
+	if !strings.Contains(models, `this["channel"]`) {
+		t.Fatal("generated UpdateProjection model does not carry channel")
 	}
 	for _, required := range []string{`function openVersionDialog()`, `renderVersionDialog(snapshot)`, `$("#client-version").addEventListener("click", openVersionDialog)`, `data-action="update_plan"`, `data-action="update_apply"`} {
 		if !strings.Contains(script, required) && !strings.Contains(markup, required) {

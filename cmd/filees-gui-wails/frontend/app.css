@@ -262,7 +262,7 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 .version-dialog { width:min(560px,calc(100vw - 76px)); overflow:hidden; border:1px solid rgba(255,106,0,.34); border-radius:21px; background:rgba(12,23,38,.98); box-shadow:0 30px 100px rgba(0,0,0,.66),0 0 46px rgba(255,106,0,.09); }
 .version-dialog>header { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:25px 26px 18px; }
 .version-dialog h2 { margin:0; font-size:25px; }
-.version-details { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:4px 26px 19px; }
+.version-details { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; padding:4px 26px 19px; }
 .version-details article { padding:16px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.027); }
 .version-details small,.version-details strong { display:block; }
 .version-details small { color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }

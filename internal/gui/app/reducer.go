@@ -354,7 +354,7 @@ func (s appState) viewModel() ViewModel {
 	}
 	if update := s.system.Update; update != nil {
 		vm.Update = &UpdateViewModel{
-			State: update.State, CurrentVersion: update.CurrentVersion,
+			State: update.State, Channel: update.Channel, CurrentVersion: update.CurrentVersion,
 			AvailableVersion: update.AvailableVersion, ReleaseID: update.ReleaseID,
 			Summary: update.Summary, RestartRequired: update.RestartRequired,
 		}

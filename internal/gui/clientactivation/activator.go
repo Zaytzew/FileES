@@ -76,7 +76,13 @@ func (activator *Activator) Finish(parent context.Context, target actions.Activa
 	if err := activator.validate(target.ServerID, target.Address); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(parent, 45*time.Second)
+	// The client deadline has to cover the same work the daemon is doing, and
+	// that work reaches a remote server, deploys a worker and checks out a
+	// working copy. At forty-five seconds the read deadline expired first and the
+	// user got "i/o timeout" on a socket instead of anything about activation -
+	// while the daemon carried on. Same shape as the recovery download before
+	// r695: a budget set from hope rather than from the operation.
+	ctx, cancel := context.WithTimeout(parent, activationStepDeadline)
 	defer cancel()
 	secret := append(contract.Secret(nil), otp...)
 	defer clear(secret)
@@ -91,7 +97,13 @@ func (activator *Activator) Resume(parent context.Context, target actions.Activa
 	if err := activator.validate(target.ServerID, target.Address); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(parent, 45*time.Second)
+	// The client deadline has to cover the same work the daemon is doing, and
+	// that work reaches a remote server, deploys a worker and checks out a
+	// working copy. At forty-five seconds the read deadline expired first and the
+	// user got "i/o timeout" on a socket instead of anything about activation -
+	// while the daemon carried on. Same shape as the recovery download before
+	// r695: a budget set from hope rather than from the operation.
+	ctx, cancel := context.WithTimeout(parent, activationStepDeadline)
 	defer cancel()
 	_, err := activator.client.ActivationResume(ctx, contract.ActivationResumePayload{
 		ServerID: target.ServerID, ServerAddress: target.Address,
@@ -125,3 +137,10 @@ func (activator *Activator) validate(serverID, address string) error {
 	}
 	return nil
 }
+
+// activationStepDeadline matches pkg/ipcserver's activationDeadline. It is not
+// imported from there on purpose - the client bound must be at least the
+// daemon's, so that a timeout is reported as whatever actually went wrong
+// rather than as a socket read expiring first, and a constant that can drift
+// is easier to notice than a shared one that silently changes both ends.
+const activationStepDeadline = 30 * time.Minute

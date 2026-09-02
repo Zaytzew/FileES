@@ -62,9 +62,11 @@ usermod -G "$client_access_group" _filees-data
 usermod -G "$client_access_group" _filees-mobile
 # filees-recovery-entry is installed 4550 root-of-state:_filees-recovery, so
 # only members of that group may execute it - and nobody was ever added, not
-# even the one account meant to run it. Every recovery download therefore died
+# even the one account meant to run it. On spot the account had ended up with
+# a primary gid that had no /etc/group entry at all, so -G could not work
+# either. Every recovery download therefore died
 # as "cannot execute - Permission denied" (exit 126) on every installation.
-usermod -G _filees-recovery _filees-recovery
+usermod -g _filees-recovery _filees-recovery
 unset password_hash
 # Reinstall the administrative tools here as well so the complete two-stage
 # bootstrap establishes explicit OpenBSD ownership for every adopted target.

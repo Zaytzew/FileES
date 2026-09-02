@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+
+	"filees/pkg/clientprofile"
 	"strings"
 	"time"
 
@@ -98,8 +100,20 @@ func (activator *Activator) Resume(parent context.Context, target actions.Activa
 	return err
 }
 
+// knownHostsPath goes through clientprofile.ServerDir so the pinned host key
+// is looked for under the same name the state directory was created with. Both
+// were built from the raw ID here, which worked until an ID contained
+// something the filesystem reserves.
 func (activator *Activator) knownHostsPath(serverID string) string {
-	return filepath.Join(activator.root, serverID, "known_hosts")
+	dir, err := clientprofile.ServerDir(activator.root, serverID)
+	if err != nil {
+		// validate() rejects an unusable ID before anything reaches this, so a
+		// failure here would be a programming error rather than a bad input.
+		// Returning the raw join keeps the caller's error message about the
+		// path it could not open, which is the useful one.
+		return filepath.Join(activator.root, serverID, "known_hosts")
+	}
+	return filepath.Join(dir, "known_hosts")
 }
 
 func (activator *Activator) validate(serverID, address string) error {

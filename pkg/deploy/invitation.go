@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"filees/pkg/clientprofile"
+
 	"filees/pkg/onboarding"
 	"filees/pkg/privatefile"
 
@@ -25,7 +27,14 @@ func BeginInvitation(ctx context.Context, baseRoot, wire string) (OnboardPasspor
 	if err != nil {
 		return OnboardPassport{}, ServerProfile{}, err
 	}
-	profile := ServerProfile{ID: invitation.ServerID, Address: invitation.ServerAddress, KnownHostsPath: filepath.Join(filepath.Clean(baseRoot), invitation.ServerID, "known_hosts")}
+	// Through ServerDir, not a raw join: profileStateRoot below creates the
+	// directory under the encoded name, and building this path from the ID
+	// itself pointed at a directory that could not exist.
+	serverDir, err := clientprofile.ServerDir(baseRoot, invitation.ServerID)
+	if err != nil {
+		return OnboardPassport{}, ServerProfile{}, err
+	}
+	profile := ServerProfile{ID: invitation.ServerID, Address: invitation.ServerAddress, KnownHostsPath: filepath.Join(serverDir, "known_hosts")}
 	root, err := profileStateRoot(baseRoot, profile)
 	if err != nil {
 		return OnboardPassport{}, ServerProfile{}, err

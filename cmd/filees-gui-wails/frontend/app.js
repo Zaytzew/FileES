@@ -224,6 +224,33 @@ function staleViewServers(snapshot) {
     }));
 }
 
+// abandonedServers are the ones the daemon can reach and which have stopped
+// publishing for us. This is the case no local measurement can see: fetching
+// succeeds, the generation never moves, and only the age grows, so a quiet
+// server and an abandoned one are identical from here. The server itself
+// reports when it last produced our view, and that report is the only evidence
+// there is.
+//
+// Reported as a fact rather than judged. How long is too long depends on the
+// server and belongs to the person reading, not to a threshold invented here.
+function unproducedServers(snapshot) {
+  const servers = snapshot.servers || [];
+  return servers
+    .filter((server) => {
+      if (String(server.server_view_produced_at || "") === "") return false;
+      if (Number(server.view_sync_failures || 0) > 0) return false;
+      const produced = Date.parse(server.server_view_produced_at);
+      if (!Number.isFinite(produced)) return false;
+      // A day is not a policy about health; it is the point past which a human
+      // wants to be told the number instead of being left to assume freshness.
+      return Date.now() - produced > 24 * 3600 * 1000;
+    })
+    .map((server) => ({
+      name: server.display_name || server.id,
+      since: server.server_view_produced_at,
+    }));
+}
+
 function ageInWords(value) {
   const at = Date.parse(value || "");
   if (!Number.isFinite(at)) return "";
@@ -243,6 +270,7 @@ function renderConnection(snapshot) {
   freshness.className = "projection-freshness";
   let connectionLabel = "Demon jest rozłączony";
   const stale = snapshot.connected ? staleViewServers(snapshot) : [];
+  const unproduced = snapshot.connected ? unproducedServers(snapshot) : [];
   if (!snapshot.connected) {
     core.classList.add("is-offline");
     freshness.classList.add("is-unverified");
@@ -269,6 +297,16 @@ function renderConnection(snapshot) {
         : `Dane z „${first.name}" niepotwierdzone — serwer nie odpowiada${rest}`;
       connectionLabel = first.reason ? `${first.name}: ${first.reason}` : "Serwer nie odpowiada";
     }
+  } else if (unproduced.length > 0) {
+    // Fetching works, so this is not a connection problem and must not be
+    // worded as one. The server is answering and telling us it has published
+    // nothing for us since then.
+    core.classList.add("is-stale");
+    freshness.classList.add("is-unverified");
+    const first = unproduced[0];
+    const rest = unproduced.length > 1 ? ` (+${unproduced.length - 1})` : "";
+    freshness.textContent = `„${first.name}" nie publikuje danych ${ageInWords(first.since)}${rest}`;
+    connectionLabel = "Serwer odpowiada, ale nie wydaje nowej projekcji";
   } else if (snapshot.stale) {
     core.classList.add("is-stale");
     freshness.classList.add("is-refreshing");

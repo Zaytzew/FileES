@@ -110,6 +110,28 @@ Właściciel podpisuje i promuje kanał (`release-sign-and-publish.sh`,
 Dopóki to nie nastąpi, **kod w źródłach nikogo nie chroni** — wydanie
 niepodpisane nie jest wdrożeniem.
 
+## Końce linii wpływają na powtarzalność
+
+Źródła trzymają LF. Plik przepisany na CRLF zmienia bajty **surowych literałów
+Go** — szablonów HTML, CSS, tekstów — więc binarka wychodzi inna, a manifest
+niesie skróty. Wydanie zbudowane ze źródeł z CRLF **nie odtworzy się** z tych
+samych źródeł po normalizacji.
+
+Wydanie `r727` jest takim przypadkiem: cztery szablony w
+`public-shares/web/handler.go` miały wtedy CRLF. Działa poprawnie i zostaje
+podpisane, ale nie da się go przebudować bajt w bajt.
+
+Przed budowaniem warto sprawdzić, czy nic się nie przestawiło:
+
+```bash
+gofmt -l ./cmd ./pkg ./internal ./public-shares
+file $(svn status -q | sed 's/^M *//') | grep CRLF
+```
+
+Edytując pliki skryptem, zapisuj **bajty**, nie tryb tekstowy — na Windows
+`io.open(...,'w')` w Pythonie przepisze cały plik na CRLF, nie tylko zmienione
+wiersze.
+
 ## Znany brak
 
 `build-server.sh` wstrzykuje klucz tylko wtedy, gdy `FILEES_RELEASE_PUBKEY` jest

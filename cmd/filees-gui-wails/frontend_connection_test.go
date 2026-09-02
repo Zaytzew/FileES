@@ -29,6 +29,12 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 		// ten-day-old projection current until the first sync happens to fail.
 		`return String(server.view_synced_at || "") === "";`,
 		`jeszcze niesprawdzone`,
+		// The case no local measurement can see: the daemon reaches the server,
+		// the fetch succeeds, and the server itself reports it has published
+		// nothing for us. Without reading server_view_produced_at the header
+		// calls that healthy, which is what it did over a ten-day-old view.
+		`server_view_produced_at`,
+		`nie publikuje danych`,
 		`Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}`,
 		`Nie ma jeszcze zapisanej pełnej projekcji`,
 		`Brak zapisanej projekcji; panel odświeży się automatycznie.`,

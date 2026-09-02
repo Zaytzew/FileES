@@ -1,6 +1,11 @@
 package v1
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+	"time"
+)
 
 const repoID = "f5d5bfee-62f4-5b9c-b26f-8d4c424fb8f0"
 
@@ -98,5 +103,44 @@ func TestParseResultRequiresRepoID(t *testing.T) {
 	raw := []byte(`{"schema":"` + Schema + `"}`)
 	if _, err := ParseResult(raw); err == nil {
 		t.Fatal("expected missing repo id to be rejected")
+	}
+}
+
+// The client cannot tell a quiet server from one that has stopped producing
+// its view: both give a successful fetch and an unchanged generation, and only
+// the age grows. So the answer has to come from the server, and it travels
+// here rather than on a lane of its own.
+func TestResultCarriesWhenTheServerLastProducedTheView(t *testing.T) {
+	produced := time.Date(2026, 8, 23, 17, 38, 6, 0, time.UTC)
+	result := Result{
+		Schema: Schema, RepoID: "8e2d00e8-0190-5471-a2af-814399471f13",
+		ViewGeneration: 14, ViewGeneratedAt: &produced,
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Result
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.ViewGeneration != 14 {
+		t.Fatalf("view generation must survive the wire, got %d", decoded.ViewGeneration)
+	}
+	if decoded.ViewGeneratedAt == nil || !decoded.ViewGeneratedAt.Equal(produced) {
+		t.Fatalf("view production time must survive the wire, got %s", decoded.ViewGeneratedAt)
+	}
+}
+
+// A server that has not published anything for this client must not be
+// indistinguishable from one that simply omitted the field, so absence is
+// encoded as absence rather than as a zero time.
+func TestUnpublishedViewIsOmittedRatherThanZeroed(t *testing.T) {
+	raw, err := json.Marshal(Result{Schema: Schema, RepoID: "8e2d00e8-0190-5471-a2af-814399471f13"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("view_generated_at")) {
+		t.Fatalf("an unset production time must not appear on the wire: %s", raw)
 	}
 }

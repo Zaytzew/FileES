@@ -212,6 +212,9 @@ func TestS4PowerLossWorkerChild(t *testing.T) {
 }
 
 func TestS4RecoverAfterPowerLoss(t *testing.T) {
+	if isolateSandboxingTest(t, "TestS4RecoverAfterPowerLoss") {
+		return
+	}
 	configPath := os.Getenv("FILEES_S4_POWER_LOSS_RECOVER")
 	if configPath == "" {
 		return

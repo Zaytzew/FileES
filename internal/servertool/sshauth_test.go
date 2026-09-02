@@ -11,6 +11,9 @@ import (
 type authBuffer struct{ bytes.Buffer }
 
 func TestBSDAuthChallengeIsEnumerationFree(t *testing.T) {
+	if isolateSandboxingTest(t, "TestBSDAuthChallengeIsEnumerationFree") {
+		return
+	}
 	auth := &authBuffer{}
 	if code := RunSSHAuth([]string{"-v", "auth_type=auth-ssh", "-s", "challenge", "--", "_filees-tunnel", "filees-tunnel"}, auth, &bytes.Buffer{}); code != ExitOK {
 		t.Fatalf("challenge exit=%d", code)
@@ -22,6 +25,9 @@ func TestBSDAuthChallengeIsEnumerationFree(t *testing.T) {
 }
 
 func TestBSDAuthRejectsWrongPrincipalAndMalformedResponse(t *testing.T) {
+	if isolateSandboxingTest(t, "TestBSDAuthRejectsWrongPrincipalAndMalformedResponse") {
+		return
+	}
 	for _, test := range []struct {
 		args []string
 		wire string
@@ -57,6 +63,9 @@ func TestBSDResponseParserIsBoundedAndExact(t *testing.T) {
 }
 
 func TestEntryRejectsAllNonProtocolCommandsBeforeFilesystemAccess(t *testing.T) {
+	if isolateSandboxingTest(t, "TestEntryRejectsAllNonProtocolCommandsBeforeFilesystemAccess") {
+		return
+	}
 	tests := []string{"", "uname -a", "scp -t /tmp/x", "/usr/libexec/sftp-server", "filees tunnel-v1 extra"}
 	for _, command := range tests {
 		env := func(name string) string {

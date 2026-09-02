@@ -23,6 +23,9 @@ import (
 )
 
 func TestS1FilesystemWorkflow(t *testing.T) {
+	if isolateSandboxingTest(t, "TestS1FilesystemWorkflow") {
+		return
+	}
 	root := filepath.Join(t.TempDir(), "service")
 	if err := onboarding.Initialize(root); err != nil {
 		t.Fatal(err)

@@ -69,6 +69,9 @@ func writeCanonicalRepositoryFixture(t *testing.T, serviceWC, svnBinary, repoID 
 // missing repair, and the record it repairs is also brought up to the current
 // field shape on the way through.
 func TestRepoActivateRepairsAStalledInitializingRepository(t *testing.T) {
+	if isolateSandboxingTest(t, "TestRepoActivateRepairsAStalledInitializingRepository") {
+		return
+	}
 	configPath, _, repositoriesRoot := writeRepoPruneFixtureConfig(t)
 	serviceWC, svnBinary := activateFixturePaths(t, configPath)
 	realmID := "5b2b2595-312c-4e8f-9407-148e2a174033"
@@ -133,6 +136,9 @@ func TestRepoActivateRepairsAStalledInitializingRepository(t *testing.T) {
 // stall being repaired, and one the client reports as a transport error with no
 // hint that the repository never existed.
 func TestRepoActivateRefusesARecordWithNoBackend(t *testing.T) {
+	if isolateSandboxingTest(t, "TestRepoActivateRefusesARecordWithNoBackend") {
+		return
+	}
 	configPath, _, _ := writeRepoPruneFixtureConfig(t)
 	serviceWC, svnBinary := activateFixturePaths(t, configPath)
 	realmID := "5b2b2595-312c-4e8f-9407-148e2a174033"
@@ -169,6 +175,9 @@ func TestRepoActivateRefusesARecordWithNoBackend(t *testing.T) {
 // activated another realm's repository would be a privilege escalation with an
 // audit trail that says "activated".
 func TestRepoActivateRefusesAForeignRealm(t *testing.T) {
+	if isolateSandboxingTest(t, "TestRepoActivateRefusesAForeignRealm") {
+		return
+	}
 	configPath, _, repositoriesRoot := writeRepoPruneFixtureConfig(t)
 	serviceWC, svnBinary := activateFixturePaths(t, configPath)
 	repoID := "a53c17e1-5f6a-5591-bd0b-17820c4344b2"

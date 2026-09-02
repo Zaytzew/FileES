@@ -134,6 +134,9 @@ func writeBackendRecordFixture(t *testing.T, resultsRoot, operationID, realmID, 
 // FSFS content and are prunable; "fsfs_created" has a real, unpublished FSFS
 // directory behind it and must never be silently deleted with --apply.
 func TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords(t *testing.T) {
+	if isolateSandboxingTest(t, "TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords") {
+		return
+	}
 	configPath, resultsRoot, repositoriesRoot := writeRepoPruneFixtureConfig(t)
 	realmID := "8f14e45f-ceea-467e-adde-3fb5787cd831"
 	published := "11111111-1111-4111-8111-111111111111"
@@ -223,6 +226,9 @@ func TestRepoCheckStateAndPruneOnlyTouchBookkeepingOnlyRecords(t *testing.T) {
 // otherwise qualify - it might just be a live STORAGE_PREFLIGHT/
 // CREATE_REPOSITORY exchange that has not reached "published" yet.
 func TestRepoPruneRespectsOlderThan(t *testing.T) {
+	if isolateSandboxingTest(t, "TestRepoPruneRespectsOlderThan") {
+		return
+	}
 	configPath, resultsRoot, _ := writeRepoPruneFixtureConfig(t)
 	realmID := "8f14e45f-ceea-467e-adde-3fb5787cd831"
 	fresh := "55555555-5555-4555-8555-555555555555"
@@ -245,6 +251,9 @@ func TestRepoPruneRespectsOlderThan(t *testing.T) {
 // even one committed revision, and an ordinary deletion tombstone are all
 // preserved. Only a durable prune_pending marker may resume from deleted.
 func TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository(t *testing.T) {
+	if isolateSandboxingTest(t, "TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository") {
+		return
+	}
 	configPath, resultsRoot, repositoriesRoot := writeRepoPruneFixtureConfig(t)
 	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretActivation)
 	if err != nil {

@@ -53,7 +53,7 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner|check-state|prune | erasure complete | version")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|prune | erasure complete | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
@@ -270,6 +270,81 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			return ExitTempFail
 		}
 		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-client-result/v1", "status": "transferred", "repo_id": *repoID, "realm_id": *realmID}); err != nil {
+			return ExitSoftware
+		}
+		return ExitOK
+	case "repo activate":
+		// Repair path for a repository whose CREATE_REPOSITORY succeeded and
+		// whose initial import reached the backend, but whose INITIAL_COMMIT
+		// control ticket never landed, so ServicePublisher.Activate never ran.
+		// The canonical record then stays "initializing" forever: clients keep
+		// projecting it as not-yet-ready and refuse to attach, while the FSFS
+		// repository itself is perfectly usable and may already carry commits.
+		// Resuming from the client is only possible while its local
+		// provisioning operation survives; once that file is gone the stall is
+		// unrecoverable without this command. Measured live on spot for
+		// ARCHIWUM, stuck 18 days with 93 revisions and an active mobile
+		// writer.
+		//
+		// Activate itself supplies the safety: it refuses any state other than
+		// "initializing" or "active", so this cannot resurrect a tombstone, and
+		// it is idempotent, so a repeat run is harmless.
+		flags := flag.NewFlagSet("repo activate", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		repoID := flags.String("repo-id", "", "repository UUID")
+		realmID := flags.String("realm-id", "", "owner realm UUID")
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *repoID == "" || *realmID == "" {
+			return adminUsage(stderr, flags, "--repo-id UUID --realm-id UUID")
+		}
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-activate", areas: onboarding.AreaOperations, write: true, needRepositoryData: true, needSVN: true})
+		if err != nil {
+			report(stderr, "filees-admin config", err)
+			return ExitConfig
+		}
+		// Publishing "ready" for a repository with no backend would hand every
+		// client a URL that cannot be checked out, which is a worse failure
+		// than the stall being repaired.
+		present, err := pathExists(filepath.Join(config.Repositories.Root, *repoID))
+		if err != nil {
+			report(stderr, "filees-admin repo activate", err)
+			return ExitTempFail
+		}
+		if !present {
+			report(stderr, "filees-admin repo activate", errors.New("repository backend is absent; refusing to activate a record with no FSFS repository"))
+			return ExitConfig
+		}
+		runner := repoworker.SVNPublishRunner{SVN: config.Activation.SVNBinary, WorkingCopy: config.Activation.ServiceWorkingCopy}
+		publisher := repoworker.ServicePublisher{ServiceWC: config.Activation.ServiceWorkingCopy, DataAuthzFile: config.Repositories.DataAuthzFile, Runner: runner}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		var healed []string
+		if err := withServiceWorkingCopy(ctx, config.Activation, func() error {
+			// Complete the record before emitting it. A record written by an
+			// older build may lack fields clientview now validates, and an
+			// invalid entry makes the client reject the entire view - every
+			// repository vanishes, not just this one.
+			recordPath, filled, err := publisher.CompleteCanonicalRecord(*repoID, config.Repositories.URLPrefix)
+			if err != nil {
+				return err
+			}
+			healed = filled
+			// Activate publishes the record only when it changes State, so a
+			// record that was already active would otherwise keep the repair
+			// in the working copy and never commit it.
+			if len(healed) > 0 {
+				if err := runner.Publish(ctx, []string{recordPath}, "filees: complete repository record "+*repoID); err != nil {
+					return err
+				}
+			}
+			return publisher.Activate(ctx, *repoID, *realmID)
+		}); err != nil {
+			report(stderr, "filees-admin repo activate", err)
+			return ExitTempFail
+		}
+		if healed == nil {
+			healed = []string{}
+		}
+		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-client-result/v1", "status": "activated", "repo_id": *repoID, "realm_id": *realmID, "healed_fields": healed}); err != nil {
 			return ExitSoftware
 		}
 		return ExitOK

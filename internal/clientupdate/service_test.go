@@ -45,9 +45,9 @@ func resolvedRelease(sequence uint64, releaseID, version string) *releaseenvelop
 func TestServiceStatusPlanApplyAndPersistAntiRollback(t *testing.T) {
 	installer := &installerStub{}
 	store := StateStore{Path: filepath.Join(t.TempDir(), "update.json")}
-	service := &Service{Resolver: resolverStub{resolved: resolvedRelease(2, "r2", "1.1")}, Installer: installer, State: store, ChannelPath: "channels/stable.v2.json", Component: "desktop", Platform: "linux-amd64", CurrentVersion: "1.0"}
+	service := &Service{Resolver: resolverStub{resolved: resolvedRelease(2, "r2", "1.1")}, Installer: installer, State: store, Channel: "alpha", ChannelPath: "channels/alpha.v2.json", Component: "desktop", Platform: "linux-amd64", CurrentVersion: "1.0"}
 	status, err := service.Status(context.Background())
-	if err != nil || status.State != "available" || status.AvailableVersion != "1.1" {
+	if err != nil || status.State != "available" || status.Channel != "alpha" || status.AvailableVersion != "1.1" {
 		t.Fatalf("status = %+v, %v", status, err)
 	}
 	plan, err := service.Plan(context.Background())

@@ -736,15 +736,17 @@ function render(snapshot) {
 function renderVersionDialog(snapshot) {
   const clientVersion = String(snapshot?.client_version || "").trim();
   const update = snapshot?.update;
+  const channel = String(update?.channel || "").trim();
   const currentRelease = String(update?.current_version || "").trim();
   const availableRelease = String(update?.available_version || "").trim();
   const available = Boolean(availableRelease) && update?.state !== "current";
   $("#version-client").textContent = clientVersion || "nieznana";
-  $("#version-release").textContent = currentRelease || "nieznane";
+  $("#version-channel").textContent = channel || "nieustalony";
+  $("#version-release").textContent = currentRelease || "nieustalone";
   if (!update) {
     $("#version-status").textContent = "Demon nie udostępnił jeszcze informacji o kanale aktualizacji.";
   } else if (available) {
-    $("#version-status").textContent = update.summary || `Dostępne jest wydanie ${availableRelease}. Zainstalowane wydanie: ${currentRelease || "nieznane"}.`;
+    $("#version-status").textContent = update.summary || `Dostępne jest wydanie ${availableRelease}. Zainstalowane wydanie: ${currentRelease || "nieustalone"}.`;
   } else {
     $("#version-status").textContent = update.summary || "Masz aktualne wydanie z wybranego kanału aktualizacji.";
   }

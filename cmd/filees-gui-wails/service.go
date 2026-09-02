@@ -252,6 +252,7 @@ type DashboardPublicShareProjection struct {
 
 type UpdateProjection struct {
 	State            string `json:"state"`
+	Channel          string `json:"channel,omitempty"`
 	CurrentVersion   string `json:"current_version"`
 	AvailableVersion string `json:"available_version,omitempty"`
 	Summary          string `json:"summary,omitempty"`
@@ -277,7 +278,7 @@ func newGUIServiceWithProjection(client guiapp.DaemonClient, mirror *projectionm
 			Journal:             []JournalProjection{},
 			Notices:             []NoticeProjection{},
 			PublicShares:        []DashboardPublicShareProjection{},
-			ClientVersion:       version,
+			ClientVersion:       clientVersion(),
 		},
 	}
 	service.runner = guiapp.New(guiapp.Config{
@@ -680,7 +681,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		Journal:             []JournalProjection{},
 		PendingActions:      make([]PendingActionProjection, 0, len(vm.PendingActions)),
 		Notices:             make([]NoticeProjection, 0, len(vm.Notices)),
-		ClientVersion:       version,
+		ClientVersion:       clientVersion(),
 	}
 	if !vm.LastRefresh.IsZero() {
 		result.LastRefresh = vm.LastRefresh.Format(time.RFC3339)
@@ -853,7 +854,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	})
 	if vm.Update != nil {
 		result.Update = &UpdateProjection{
-			State: vm.Update.State, CurrentVersion: vm.Update.CurrentVersion,
+			State: vm.Update.State, Channel: vm.Update.Channel, CurrentVersion: vm.Update.CurrentVersion,
 			AvailableVersion: vm.Update.AvailableVersion, Summary: vm.Update.Summary,
 			RestartRequired: vm.Update.RestartRequired,
 		}

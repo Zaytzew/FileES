@@ -59,7 +59,7 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, c
 	}
 	service := &clientupdate.Service{
 		Resolver: resolver, Installer: installer, State: clientupdate.StateStore{Path: update.StatePath},
-		ChannelPath: "channels/" + update.Channel + ".v2.json", Component: update.Component,
+		Channel: update.Channel, ChannelPath: "channels/" + update.Channel + ".v2.json", Component: update.Component,
 		Platform: update.Platform, CurrentVersion: currentVersion,
 	}
 	ipc.SetUpdateService(service)

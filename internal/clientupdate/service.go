@@ -23,6 +23,7 @@ type Service struct {
 	Resolver       Resolver
 	Installer      Installer
 	State          StateStore
+	Channel        string
 	ChannelPath    string
 	Component      string
 	Platform       string
@@ -40,7 +41,7 @@ func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, erro
 	}
 	current := service.currentVersion(state)
 	status := contract.UpdateStatus{
-		State: "current", CurrentVersion: current, ReleaseID: resolved.Envelope.ReleaseID,
+		State: "current", Channel: service.Channel, CurrentVersion: current, ReleaseID: resolved.Envelope.ReleaseID,
 		Summary: fmt.Sprintf("Podpisane wydanie %s, sequence %d", resolved.SigningKeyID, resolved.Envelope.Sequence),
 	}
 	if resolved.Manifest.Version != current {

@@ -1,5 +1,11 @@
 # FileES release publishing
 
+> **Komendy krok po kroku:** `HOWTO-BUILD-SERVER-BUNDLE.md`. Przykłady poniżej
+> pokazują klucz pod `$HOME/.signify/filees-release.pub` — to ścieżka z maszyny
+> **podpisującej**. Na hoście budującym klucz publiczny bierze się z kopii
+> roboczej `FILEES-BIN/FILEESrelease.pub`; klucze w `cmd/*/assets/release.pub`
+> są zaślepkami i build je odrzuca.
+
 Publikacja rozdziela maszynę budującą od maszyny podpisującej. Prywatny klucz
 release nie może znajdować się na build hoście, VM testowej ani w repozytorium.
 

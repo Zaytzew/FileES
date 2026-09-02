@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+
+	"filees/pkg/clientprofile"
 	"strconv"
 	"strings"
 )
@@ -26,7 +28,11 @@ func profileStateRoot(base string, profile ServerProfile) (string, error) {
 	if !filepath.IsAbs(base) {
 		return "", errors.New("server state root must be absolute")
 	}
-	root := filepath.Join(filepath.Clean(base), profile.ID)
+	name, err := clientprofile.StateDirName(profile.ID)
+	if err != nil {
+		return "", err
+	}
+	root := filepath.Join(filepath.Clean(base), name)
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return "", fmt.Errorf("create server state root: %w", err)
 	}

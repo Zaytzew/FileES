@@ -385,24 +385,41 @@ func aggregateReservationProjection(sources []contract.ReservationSource, known 
 	if !known {
 		return string(contract.ReservationSourceUnknown), ""
 	}
+	// A source is "unknown" both when the server could not answer for it and
+	// when it was never asked at all: the coordinator only queries
+	// repositories in state "active" (cmd/filees/reservation_projection.go).
+	// Letting one unknown decide the whole server therefore marked every
+	// server as having no current emission for as long as it held a single
+	// inactive repository - permanently, on any real installation, while
+	// emissions were in fact arriving. The wire contract deliberately carries
+	// no server-level aggregate for exactly this reason; this function is the
+	// one place that reintroduces one, so it must do so honestly.
+	//
+	// Unknown therefore wins only when nothing at all could be obtained. When
+	// at least one source answered, the server does have an emission and the
+	// aggregate is the worst of the answered ones; partial coverage is
+	// reported separately by the caller.
 	state := contract.ReservationSourceFresh
+	answered := false
 	var oldest time.Time
 	for _, source := range sources {
 		switch source.State {
 		case contract.ReservationSourceUnknown:
-			state = contract.ReservationSourceUnknown
+			continue
 		case contract.ReservationSourceOffline:
-			if state != contract.ReservationSourceUnknown {
-				state = contract.ReservationSourceOffline
-			}
+			state = contract.ReservationSourceOffline
 		case contract.ReservationSourceStale:
 			if state == contract.ReservationSourceFresh {
 				state = contract.ReservationSourceStale
 			}
 		}
+		answered = true
 		if !source.AsOf.IsZero() && (oldest.IsZero() || source.AsOf.Before(oldest)) {
 			oldest = source.AsOf
 		}
+	}
+	if !answered {
+		return string(contract.ReservationSourceUnknown), ""
 	}
 	if oldest.IsZero() {
 		return string(state), ""

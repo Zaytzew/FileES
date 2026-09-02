@@ -79,6 +79,12 @@ type ServerProjection struct {
 	ReservationsKnown     bool   `json:"reservations_known"`
 	ReservationProjection string `json:"reservation_projection"`
 	ReservationAsOf       string `json:"reservation_as_of,omitempty"`
+	// The view lane, beside the reservation emission rather than merged into
+	// it: the same server can be fresh on one and refused on the other.
+	ViewGeneratedAt       string `json:"view_generated_at,omitempty"`
+	ViewSyncedAt          string `json:"view_synced_at,omitempty"`
+	ViewSyncError         string `json:"view_sync_error,omitempty"`
+	ViewSyncFailures      int    `json:"view_sync_failures,omitempty"`
 	SessionTimeoutMinutes int    `json:"session_timeout_minutes"`
 }
 
@@ -701,6 +707,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingRequiredRepos: server.PendingRequiredRepos,
 			ReservationCount:     server.ReservationCount, ReservationsKnown: server.ReservationsKnown,
 			ReservationProjection: server.ReservationProjection, ReservationAsOf: server.ReservationAsOf,
+			ViewGeneratedAt: server.ViewGeneratedAt, ViewSyncedAt: server.ViewSyncedAt, ViewSyncError: server.ViewSyncError, ViewSyncFailures: server.ViewSyncFailures,
 			SessionTimeoutMinutes: server.SessionTimeoutMin,
 		})
 	}

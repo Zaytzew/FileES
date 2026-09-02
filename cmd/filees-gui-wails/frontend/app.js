@@ -189,26 +189,76 @@ function shortDateTime(value) {
   return date.toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+// dataAge answers the question the header used to answer with the wrong
+// measurement: how old is what we are showing, per server.
+//
+// The daemon link and the projection are two different facts, and the header
+// used to report the first while naming the second. On 2026-09-02 every
+// repository on `manual` rendered as current while its view had been refused
+// for ten days - the interface was telling the truth about a connection nobody
+// had asked about.
+//
+// The reservation emission is not consulted here on purpose. It answers its
+// own question honestly and is already rendered in the reservations panel, but
+// the same server can be fresh there and refused here because the two travel
+// different SSH commands. Reading one as the other is the mistake this
+// replaces, only inverted.
+function staleViewServers(snapshot) {
+  const servers = snapshot.servers || [];
+  return servers
+    .filter((server) => Number(server.view_sync_failures || 0) > 0 || String(server.view_sync_error || "") !== "")
+    .map((server) => ({
+      name: server.display_name || server.id,
+      since: server.view_generated_at || server.view_synced_at || "",
+      reason: String(server.view_sync_error || ""),
+    }));
+}
+
+function ageInWords(value) {
+  const at = Date.parse(value || "");
+  if (!Number.isFinite(at)) return "";
+  const minutes = Math.floor((Date.now() - at) / 60000);
+  if (minutes < 2) return "sprzed chwili";
+  if (minutes < 90) return `sprzed ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 36) return `sprzed ${hours} ${plural(hours, "godziny", "godzin", "godzin")}`;
+  const days = Math.floor(hours / 24);
+  return `sprzed ${days} ${plural(days, "dnia", "dni", "dni")}`;
+}
+
 function renderConnection(snapshot) {
   const core = $("#pulse-core");
   const freshness = $("#projection-freshness");
   core.className = "pulse-core";
   freshness.className = "projection-freshness";
   let connectionLabel = "Demon jest rozłączony";
-  if (snapshot.connected && !snapshot.stale) {
-    core.classList.add("is-online");
-    freshness.classList.add("is-current");
-    freshness.textContent = "Projekcja lokalna bieżąca";
-    connectionLabel = "Połączenie z demonem jest aktywne";
-  } else if (snapshot.connected) {
-    core.classList.add("is-stale");
-    freshness.classList.add("is-refreshing");
-    freshness.textContent = "Projekcja lokalna jest weryfikowana";
-    connectionLabel = "Demon odświeża projekcję";
-  } else {
+  const stale = snapshot.connected ? staleViewServers(snapshot) : [];
+  if (!snapshot.connected) {
     core.classList.add("is-offline");
     freshness.classList.add("is-unverified");
-    freshness.textContent = "Projekcja lokalna niezweryfikowana";
+    freshness.textContent = "Demon niedostępny — dane niepotwierdzone";
+  } else if (stale.length > 0) {
+    // Named, not counted. "One server is stale" sends the reader hunting; the
+    // name and the age let them decide whether it matters to them.
+    core.classList.add("is-stale");
+    freshness.classList.add("is-unverified");
+    const first = stale[0];
+    const age = ageInWords(first.since);
+    const rest = stale.length > 1 ? ` (+${stale.length - 1})` : "";
+    freshness.textContent = age
+      ? `Dane z „${first.name}" ${age} — serwer nie odpowiada${rest}`
+      : `Dane z „${first.name}" niepotwierdzone — serwer nie odpowiada${rest}`;
+    connectionLabel = first.reason ? `${first.name}: ${first.reason}` : "Serwer nie odpowiada";
+  } else if (snapshot.stale) {
+    core.classList.add("is-stale");
+    freshness.classList.add("is-refreshing");
+    freshness.textContent = "Aktualizowanie danych";
+    connectionLabel = "Demon odświeża projekcję";
+  } else {
+    core.classList.add("is-online");
+    freshness.classList.add("is-current");
+    freshness.textContent = "Stan danych: aktualny";
+    connectionLabel = "Połączenie z demonem jest aktywne";
   }
   $("#offline").hidden = Boolean(snapshot.connected);
   $("#offline-copy").textContent = snapshot.last_refresh

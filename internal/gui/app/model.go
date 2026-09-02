@@ -111,6 +111,15 @@ type ServerViewModel struct {
 	SessionTimeoutMin     int
 	ReservationCount      int
 	ReservationsKnown     bool
+	// The view lane, kept apart from the reservation emission above because
+	// the two answer different questions and the same server can be healthy on
+	// one and refused on the other. Zero values mean "not measured", which a
+	// presentation layer must not read as "measured and fine".
+	ViewGeneration        int64
+	ViewGeneratedAt       string
+	ViewSyncedAt          string
+	ViewSyncError         string
+	ViewSyncFailures      int
 	ReservationProjection string
 	ReservationAsOf       string
 	Repos                 []RepoViewModel

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"filees/internal/gui/actions"
 	contract "filees/pkg/contract/v1"
@@ -67,5 +68,16 @@ func TestActivatorUsesInvitationAndOneStateRootForEveryPhase(t *testing.T) {
 	pending, err := activator.Pending(t.Context())
 	if err != nil || len(pending) != 1 || pending[0] != (actions.ActivationTarget{ServerID: "spot", Address: "spot:2223"}) || client.pending.StateRoot != root {
 		t.Fatalf("Pending()=%+v payload=%+v err=%v", pending, client.pending, err)
+	}
+}
+
+// The client must not give up before the daemon does. When it did, the user
+// got "receive: read unix @->...daemon.sock: i/o timeout" - a socket error
+// about the wrong layer entirely - while the daemon was still deploying. The
+// forty-five seconds it allowed had to cover an OTP exchange, a reverse
+// tunnel, a worker deploy and a working-copy checkout on a remote server.
+func TestActivationStepsAllowTheDaemonToFinish(t *testing.T) {
+	if activationStepDeadline < 30*time.Minute {
+		t.Fatalf("the client deadline must be at least the daemon's, got %s", activationStepDeadline)
 	}
 }

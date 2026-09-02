@@ -1326,7 +1326,13 @@ func (s *Server) handleActivationFinish(req contract.Request) contract.Response 
 		return protoErr(req.RequestID, "proto.invalid_payload", nil)
 	}
 	defer clear(payload.OTP)
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	// Activation finish is not one request: it exchanges the OTP, brings up the
+	// reverse tunnel, deploys the worker and checks out the service working copy
+	// over SVN. Forty-five seconds was a wish rather than a measurement, and on a
+	// cold server or a slow link it expired mid-deploy - the same defect
+	// RecoveryDownload carried until r695, where a ten-second budget was given to
+	// an 859 MB transfer.
+	ctx, cancel := context.WithTimeout(context.Background(), activationDeadline)
 	defer cancel()
 	result, err := service.Finish(ctx, payload)
 	if err != nil {
@@ -1364,7 +1370,7 @@ func (s *Server) handleActivationResume(req contract.Request) contract.Response 
 	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
 		return protoErr(req.RequestID, "proto.invalid_payload", nil)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), activationDeadline)
 	defer cancel()
 	result, err := service.Resume(ctx, payload)
 	if err != nil {
@@ -1757,3 +1763,10 @@ func (s *Server) resolveHolderLabel(ctx context.Context, serverID, holder string
 	}
 	return labels[holder]
 }
+
+// activationDeadline bounds one activation step. It is generous on purpose:
+// finishing an activation reaches a remote server, deploys a worker and checks
+// out a working copy, and none of that is predictable from here. A deadline
+// exists so a wedged step cannot hold the daemon indefinitely, not to declare
+// how fast a server ought to be.
+const activationDeadline = 30 * time.Minute

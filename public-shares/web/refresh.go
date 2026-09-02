@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"filees/public-shares/channel"
@@ -92,3 +93,7 @@ func (h Handler) explainWithdrawnObject(w http.ResponseWriter, request *http.Req
 	}
 	h.renderListingNotice(w, freshProjection, freshClaims, freshEncoded, "", false, withdrawnObjectNotice)
 }
+
+// errVisitExpired marks a visit that verified correctly and simply ran out of
+// time, so callers can tell it apart from one that failed to verify at all.
+var errVisitExpired = errors.New("visit capability has expired")

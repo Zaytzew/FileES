@@ -142,6 +142,15 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 			h.notFound(w)
 			return
 		}
+		// A link that follows HEAD shows the state at the moment it is opened,
+		// so a returning visitor gets the current revision rather than the one
+		// their cookie was minted at. Refusing here would be the wrong answer to
+		// a stale snapshot, and rendering the stale one is what leaves a correct
+		// listing whose files are all gone. If the refresh cannot be made the
+		// frozen render still stands.
+		if freshProjection, freshClaims, freshEncoded, refreshed := h.refreshVisit(request.Context(), alias, channelSlug, claims); refreshed {
+			projection, claims, encoded = freshProjection, freshClaims, freshEncoded
+		}
 		h.renderListingWithInvitation(w, projection, claims, encoded, invitation, request.URL.Query().Get("notice") == "select")
 		return
 	}
@@ -241,15 +250,34 @@ func (h Handler) recipientEntry(w http.ResponseWriter, request *http.Request, en
 
 func (h Handler) prepare(w http.ResponseWriter, request *http.Request, alias, channelSlug, publicID string) {
 	projection, claims, encoded, ok := h.currentVisit(request, alias, channelSlug)
-	if !ok || !hasPublicObject(projection, publicID) {
+	if !ok {
 		h.notFound(w)
+		return
+	}
+	// This is the path a click actually takes, so it carries the same two
+	// answers as the direct file route: a stale snapshot is refreshed and
+	// retried, a withdrawn object is explained.
+	if !hasPublicObject(projection, publicID) {
+		h.explainWithdrawnObject(w, request, alias, channelSlug, claims, publicID)
 		return
 	}
 	objectRequest := authority.ObjectRequest{ChannelID: claims.ChannelID, PublicID: publicID, Revision: claims.Revision, FrostProof: claims.FrostProof}
 	permit, err := h.Backend.Check(request.Context(), objectRequest)
 	if err != nil {
-		h.notFound(w)
-		return
+		freshProjection, freshClaims, freshEncoded, refreshed := h.refreshVisit(request.Context(), alias, channelSlug, claims)
+		switch {
+		case refreshed && hasPublicObject(freshProjection, publicID):
+			objectRequest = authority.ObjectRequest{ChannelID: freshClaims.ChannelID, PublicID: publicID, Revision: freshClaims.Revision, FrostProof: freshClaims.FrostProof}
+			claims, encoded = freshClaims, freshEncoded
+			permit, err = h.Backend.Check(request.Context(), objectRequest)
+		case refreshed:
+			h.renderListingNotice(w, freshProjection, freshClaims, freshEncoded, "", false, withdrawnObjectNotice)
+			return
+		}
+		if err != nil {
+			h.notFound(w)
+			return
+		}
 	}
 	if h.Cache != nil {
 		if hit, _, err := h.Cache.Open(permit.CacheKey, h.now()); err == nil {
@@ -267,15 +295,35 @@ func (h Handler) prepare(w http.ResponseWriter, request *http.Request, alias, ch
 
 func (h Handler) file(w http.ResponseWriter, request *http.Request, alias, channelSlug, publicID string) {
 	projection, claims, _, ok := h.currentVisit(request, alias, channelSlug)
-	if !ok || !hasPublicObject(projection, publicID) {
+	if !ok {
 		h.notFound(w)
+		return
+	}
+	if !hasPublicObject(projection, publicID) {
+		h.explainWithdrawnObject(w, request, alias, channelSlug, claims, publicID)
 		return
 	}
 	objectRequest := authority.ObjectRequest{ChannelID: claims.ChannelID, PublicID: publicID, Revision: claims.Revision, FrostProof: claims.FrostProof}
 	permit, err := h.Backend.Check(request.Context(), objectRequest)
 	if err != nil {
-		h.notFound(w)
-		return
+		// Exactly one retry, and only after a refresh that re-checked the
+		// subject: any edit to the channel record invalidates the proof this
+		// request carries, including edits that grant and revoke nothing.
+		freshProjection, freshClaims, freshEncoded, refreshed := h.refreshVisit(request.Context(), alias, channelSlug, claims)
+		switch {
+		case refreshed && hasPublicObject(freshProjection, publicID):
+			// Still published: this was only a stale snapshot, so serve it
+			// without bothering the visitor about bookkeeping they did not do.
+			objectRequest = authority.ObjectRequest{ChannelID: freshClaims.ChannelID, PublicID: publicID, Revision: freshClaims.Revision, FrostProof: freshClaims.FrostProof}
+			permit, err = h.Backend.Check(request.Context(), objectRequest)
+		case refreshed:
+			h.renderListingNotice(w, freshProjection, freshClaims, freshEncoded, "", false, withdrawnObjectNotice)
+			return
+		}
+		if err != nil {
+			h.notFound(w)
+			return
+		}
 	}
 	name := permit.DisplayName
 	if h.Cache != nil {
@@ -676,6 +724,14 @@ func (h Handler) renderListing(w http.ResponseWriter, projection channel.Project
 }
 
 func (h Handler) renderListingWithInvitation(w http.ResponseWriter, projection channel.Projection, claims visit, encoded, invitation string, selectionNotice bool) {
+	h.renderListingNotice(w, projection, claims, encoded, invitation, selectionNotice, "")
+}
+
+// renderListingNotice renders the listing and, when the visitor arrived here
+// because what they clicked is gone, says so above it. Silently showing a
+// different listing would leave them hunting for a file that is no longer
+// shared.
+func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.Projection, claims visit, encoded, invitation string, selectionNotice bool, changeNotice string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	branding, err := realmbranding.Normalize(projection.Branding)
@@ -702,6 +758,7 @@ func (h Handler) renderListingWithInvitation(w http.ResponseWriter, projection c
 		Bundles:         bundles,
 		BundleURL:       visitURL(fmt.Sprintf("/%s/%s/bundle", url.PathEscape(projection.Alias), url.PathEscape(projection.Slug)), encoded, invitation),
 		SelectionNotice: selectionNotice,
+		ChangeNotice:    changeNotice,
 		BrandSymbol:     brandSymbol,
 		BrandWordmark:   brandWordmark,
 		DownloadIcon:    listingIcon("download"),
@@ -721,6 +778,9 @@ type listingPage struct {
 	StateDate, TotalSize, BundleURL, LatestURL string
 	Tree                                       listingDirectory
 	Bundles, SelectionNotice                   bool
+	// ChangeNotice explains, in one sentence, why the listing the visitor is
+	// looking at is not the one they clicked from. Empty for an ordinary render.
+	ChangeNotice string
 	BrandSymbol, BrandWordmark                 template.HTML
 	DownloadIcon, ArchiveIcon                  template.HTML
 	CSS                                        template.CSS
@@ -1176,7 +1236,7 @@ var listingTemplate = template.Must(template.New("listing").Parse(`<!doctype htm
 {{if eq .Count 0}}
 <div class="empty"><span class="empty-icon" aria-hidden="true"></span><strong>Ten folder jest jeszcze pusty</strong><p>Właściciel może dodać tu pliki później.</p></div>
 {{else}}
-{{if .Bundles}}<form method="post" action="{{.BundleURL}}"><div class="toolbar"><button class="bundle-button" type="submit"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz zaznaczone</button><button class="bundle-button primary" type="submit" name="all" value="1"><span class="button-icon" aria-hidden="true">{{.ArchiveIcon}}</span>Pobierz całość</button></div>{{if .SelectionNotice}}<div class="notice" role="status">Najpierw zaznacz przynajmniej jeden plik.</div>{{end}}{{end}}
+{{if .ChangeNotice}}<div class="notice" role="status">{{.ChangeNotice}}</div>{{end}}{{if .Bundles}}<form method="post" action="{{.BundleURL}}"><div class="toolbar"><button class="bundle-button" type="submit"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz zaznaczone</button><button class="bundle-button primary" type="submit" name="all" value="1"><span class="button-icon" aria-hidden="true">{{.ArchiveIcon}}</span>Pobierz całość</button></div>{{if .SelectionNotice}}<div class="notice" role="status">Najpierw zaznacz przynajmniej jeden plik.</div>{{end}}{{end}}
 <div class="columns" role="row"><span aria-hidden="true"></span><span>Nazwa</span><span>Typ</span><span>Rozmiar</span><span>Pobierz</span></div>
 <div class="tree">{{range .Tree.Directories}}{{template "directory" .}}{{end}}{{range .Tree.Files}}{{template "file" .}}{{end}}</div>
 {{if .Bundles}}</form>{{end}}

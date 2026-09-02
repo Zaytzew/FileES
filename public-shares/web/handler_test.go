@@ -273,18 +273,38 @@ func TestFollowingShareDerivesObjectMapFromEachVisitRevision(t *testing.T) {
 	if downloaded := perform(f.handler, http.MethodGet, fileURL, "", nil); downloaded.Code != http.StatusOK || downloaded.Body.String() != "new payload" {
 		t.Fatalf("new r6 object did not download: status=%d body=%q", downloaded.Code, downloaded.Body.String())
 	}
+	// A withdrawn object is no longer a bare refusal: the visitor is told what
+	// happened and handed the current listing, because a 404 cannot be told
+	// apart from a broken link.
 	removedURL := "https://example.test/atmprojekt/przetarg-2026/get/7f3a1c9e2b4d6a80?v=" + url.QueryEscape(newVisit)
-	if removed := perform(f.handler, http.MethodGet, removedURL, "", nil); removed.Code != http.StatusNotFound {
-		t.Fatalf("removed r5 object survived in r6: status=%d", removed.Code)
+	removed := perform(f.handler, http.MethodGet, removedURL, "", nil)
+	if removed.Code != http.StatusOK || !strings.Contains(removed.Body.String(), "nie jest już częścią tego udostępnienia") {
+		t.Fatalf("removed r5 object should explain itself: status=%d body=%s", removed.Code, removed.Body.String())
+	}
+	if strings.Contains(removed.Body.String(), "Projekt budowlany.pdf") {
+		t.Fatalf("the withdrawn object must not still be offered: %s", removed.Body.String())
 	}
 
+	// Contract change, decided by the owner: a link that follows HEAD is live,
+	// so a returning visitor gets the current revision rather than the one
+	// their cookie was minted at. The frozen snapshot is what a release link
+	// (DoNotFollow) is for, and TestPinnedShareDoesNotFollowHead holds that
+	// line. Before this, an outstanding visit kept serving its own revision for
+	// twelve hours, which is what made "follow HEAD" mean "follow HEAD once".
 	oldListing := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?v="+url.QueryEscape(oldVisit), "", nil)
-	if oldListing.Code != http.StatusOK || !strings.Contains(oldListing.Body.String(), "Projekt budowlany.pdf") || strings.Contains(oldListing.Body.String(), "nowy.txt") {
-		t.Fatalf("existing visit did not retain r5: status=%d body=%s", oldListing.Code, oldListing.Body.String())
+	if oldListing.Code != http.StatusOK || !strings.Contains(oldListing.Body.String(), "nowy.txt") || strings.Contains(oldListing.Body.String(), "Projekt budowlany.pdf") {
+		t.Fatalf("a live link must advance an existing visit to the current revision: status=%d body=%s", oldListing.Code, oldListing.Body.String())
 	}
-	oldFileURL := "https://example.test/atmprojekt/przetarg-2026/file/7f3a1c9e2b4d6a80?v=" + url.QueryEscape(oldVisit)
-	if downloaded := perform(f.handler, http.MethodGet, oldFileURL, "", nil); downloaded.Code != http.StatusOK || downloaded.Body.String() != "revision five payload" {
-		t.Fatalf("old visit lost frozen r5 object: status=%d body=%q", downloaded.Code, downloaded.Body.String())
+	// The old visit names a revision where this object did not exist, so the
+	// handler advances it and redirects with one that can fetch - rather than
+	// serving bytes under a visit whose claims no longer describe them.
+	oldFileURL := "https://example.test/atmprojekt/przetarg-2026/file/" + newID + "?v=" + url.QueryEscape(oldVisit)
+	advanced := perform(f.handler, http.MethodGet, oldFileURL, "", nil)
+	if advanced.Code != http.StatusSeeOther {
+		t.Fatalf("an outstanding visit must be advanced, not refused: status=%d body=%s", advanced.Code, advanced.Body.String())
+	}
+	if downloaded := perform(f.handler, http.MethodGet, "https://example.test"+advanced.Header().Get("Location"), "", nil); downloaded.Code != http.StatusOK || downloaded.Body.String() != "new payload" {
+		t.Fatalf("the advanced visit must serve the current object: status=%d body=%q", downloaded.Code, downloaded.Body.String())
 	}
 }
 

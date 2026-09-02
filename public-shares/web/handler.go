@@ -36,7 +36,14 @@ import (
 	"filees/public-shares/recipientotp"
 )
 
-const visitLifetime = 12 * time.Hour
+// visitLifetime is a session, not a freshness window. Since expiry falls
+// through to a fresh entry, an open link no longer depends on it at all: what
+// it governs is how long one password entry or one OTP exchange keeps working.
+// The capability is a bearer token carried in the URL, where it outlives the
+// tab in history, bookmarks and pasted links, so the owner set the ceiling at
+// an hour. Nothing about content freshness argues for more, and the exposure
+// argues for less.
+const visitLifetime = time.Hour
 
 // A valid verifier may use up to 128 MiB. Public request concurrency must not
 // become memory concurrency; rate limiting remains the fronting HTTP server's
@@ -788,6 +795,7 @@ func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.P
 		BundleURL:       visitURL(fmt.Sprintf("/%s/%s/bundle", url.PathEscape(projection.Alias), url.PathEscape(projection.Slug)), encoded, invitation),
 		SelectionNotice: selectionNotice,
 		ChangeNotice:    changeNotice,
+		SessionDeadline: h.sessionDeadline(claims),
 		BrandSymbol:     brandSymbol,
 		BrandWordmark:   brandWordmark,
 		DownloadIcon:    listingIcon("download"),
@@ -810,6 +818,10 @@ type listingPage struct {
 	// ChangeNotice explains, in one sentence, why the listing the visitor is
 	// looking at is not the one they clicked from. Empty for an ordinary render.
 	ChangeNotice string
+	// SessionDeadline is shown only where expiry actually ends access, which is
+	// a gated link. On an open one the visit renews itself and a countdown would
+	// be a threat the page cannot carry out.
+	SessionDeadline string
 	BrandSymbol, BrandWordmark                 template.HTML
 	DownloadIcon, ArchiveIcon                  template.HTML
 	CSS                                        template.CSS
@@ -1265,7 +1277,7 @@ var listingTemplate = template.Must(template.New("listing").Parse(`<!doctype htm
 {{if eq .Count 0}}
 <div class="empty"><span class="empty-icon" aria-hidden="true"></span><strong>Ten folder jest jeszcze pusty</strong><p>Właściciel może dodać tu pliki później.</p></div>
 {{else}}
-{{if .ChangeNotice}}<div class="notice" role="status">{{.ChangeNotice}}</div>{{end}}{{if .Bundles}}<form method="post" action="{{.BundleURL}}"><div class="toolbar"><button class="bundle-button" type="submit"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz zaznaczone</button><button class="bundle-button primary" type="submit" name="all" value="1"><span class="button-icon" aria-hidden="true">{{.ArchiveIcon}}</span>Pobierz całość</button></div>{{if .SelectionNotice}}<div class="notice" role="status">Najpierw zaznacz przynajmniej jeden plik.</div>{{end}}{{end}}
+{{if .SessionDeadline}}<div class="notice" role="status">{{.SessionDeadline}}</div>{{end}}{{if .ChangeNotice}}<div class="notice" role="status">{{.ChangeNotice}}</div>{{end}}{{if .Bundles}}<form method="post" action="{{.BundleURL}}"><div class="toolbar"><button class="bundle-button" type="submit"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz zaznaczone</button><button class="bundle-button primary" type="submit" name="all" value="1"><span class="button-icon" aria-hidden="true">{{.ArchiveIcon}}</span>Pobierz całość</button></div>{{if .SelectionNotice}}<div class="notice" role="status">Najpierw zaznacz przynajmniej jeden plik.</div>{{end}}{{end}}
 <div class="columns" role="row"><span aria-hidden="true"></span><span>Nazwa</span><span>Typ</span><span>Rozmiar</span><span>Pobierz</span></div>
 <div class="tree">{{range .Tree.Directories}}{{template "directory" .}}{{end}}{{range .Tree.Files}}{{template "file" .}}{{end}}</div>
 {{if .Bundles}}</form>{{end}}

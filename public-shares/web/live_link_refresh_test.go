@@ -217,3 +217,39 @@ func TestRefreshDoesNotExtendTheSession(t *testing.T) {
 		t.Fatalf("a refresh must not move the session deadline: issued=%d after=%d", issued.ExpiresAt, after.ExpiresAt)
 	}
 }
+
+// The deadline is shown where it is real and nowhere else.
+//
+// Behind a password the visitor will genuinely lose access and is the one who
+// pays for it, so they get to see the clock. On an open link the visit renews
+// itself, and announcing an expiry the page will not enforce would be a threat
+// it cannot carry out - the kind of warning that teaches people to ignore
+// warnings.
+func TestSessionDeadlineIsShownOnlyWhereExpiryEndsAccess(t *testing.T) {
+	f := newWebFixture(t, nil)
+	deadline := f.now.Add(47 * time.Minute).Unix()
+
+	if notice := f.handler.sessionDeadline(visit{Subject: "open", ExpiresAt: deadline}); notice != "" {
+		t.Fatalf("an open link must not announce a deadline it will not enforce, got %q", notice)
+	}
+	gated := f.handler.sessionDeadline(visit{Subject: "password:abc", ExpiresAt: deadline})
+	if !strings.Contains(gated, "47 min") {
+		t.Fatalf("a gated visitor should see how long is left, got %q", gated)
+	}
+	recipient := f.handler.sessionDeadline(visit{Subject: "recipient:abc:1", ExpiresAt: deadline})
+	if recipient == "" {
+		t.Fatal("an OTP recipient loses access on expiry too and should see it")
+	}
+	if past := f.handler.sessionDeadline(visit{Subject: "password:abc", ExpiresAt: f.now.Add(-time.Minute).Unix()}); past != "" {
+		t.Fatalf("an already-expired visit has nothing to count down, got %q", past)
+	}
+}
+
+// The ceiling the owner set. Stated as a test because the constant governs a
+// bearer token that lives in a URL, and a later change to it should be a
+// decision rather than an edit.
+func TestVisitLifetimeIsOneHour(t *testing.T) {
+	if visitLifetime != time.Hour {
+		t.Fatalf("the session ceiling is one hour by decision; got %s", visitLifetime)
+	}
+}

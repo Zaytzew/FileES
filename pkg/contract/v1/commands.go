@@ -305,6 +305,22 @@ type ActivationStatus struct {
 	// SessionTimeoutMin is how long one send or fetch may run on this
 	// server, in minutes. Zero means the default (30).
 	SessionTimeoutMin int `json:"session_timeout_min,omitempty"`
+
+	// The next five describe the projection lane for this server, and only
+	// that lane. They answer "how old is what we are showing", which nothing
+	// answered before: the interface had the GUI-to-daemon link and called it
+	// the projection, so a view frozen for ten days rendered as current.
+	//
+	// They are deliberately not a health verdict. The reservation emission
+	// answers its own question per repository and the same server can be fresh
+	// there while refused here, because the two lanes are different SSH
+	// commands - so a presentation layer must read both rather than collapse
+	// them into one lamp.
+	ViewGeneration   int64  `json:"view_generation,omitempty"`
+	ViewGeneratedAt  string `json:"view_generated_at,omitempty"`
+	ViewSyncedAt     string `json:"view_synced_at,omitempty"`
+	ViewSyncError    string `json:"view_sync_error,omitempty"`
+	ViewSyncFailures int    `json:"view_sync_failures,omitempty"`
 }
 
 type ServerSetSessionTimeoutPayload struct {

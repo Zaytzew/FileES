@@ -182,6 +182,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	updates := make(chan projectionUpdate, 16)
 	monitored := make(map[string]bool)
 	currentViews := make(map[string]clientview.View)
+	// One recorder for every server this supervisor watches: the view lane is
+	// per server and so is its age.
+	freshness := newViewFreshness(nil)
 	shareRefreshes := newPublicShareRefreshCoordinator(ctx, shareLister, shareCache, ipc)
 	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval, timeout time.Duration) error {
 		if timeout <= 0 {
@@ -227,13 +230,16 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		if projectRealmAlias != nil {
 			realmAlias = projectRealmAlias(serverID, realmID, realmAlias)
 		}
-		ipc.RegisterActivation(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)})
+		ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
 		svn := client.New(client.Options{SvnPath: "svn", Timeout: timeout, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort})
 		var updater clientview.Updater = svn
 		if serviceURL != "" {
 			updater = serviceProjectionUpdater{client: svn, url: serviceURL}
 		}
-		views := clientview.Monitor(ctx, updater, clientview.MonitorConfig{Sync: sync, Interval: interval, OnError: func(err error) { talk.With("projection:"+serverID).Warnf("sync failed: %v", err) }})
+		views := clientview.Monitor(ctx, updater, clientview.MonitorConfig{Sync: sync, Interval: interval, OnError: func(err error) {
+			freshness.Failed(serverID, err)
+			talk.With("projection:"+serverID).Warnf("sync failed: %v", err)
+		}})
 		go func() {
 			for view := range views {
 				select {
@@ -295,12 +301,13 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			}
 		case update := <-updates:
 			currentViews[update.serverID] = update.view
+			freshness.Synced(update.serverID, update.view)
 			ready, pendingRequired := repositoryReadiness(update.serverID, update.view, runtimes)
 			realmAlias := update.view.RealmAlias
 			if projectRealmAlias != nil {
 				realmAlias = projectRealmAlias(update.serverID, update.view.RealmID, realmAlias)
 			}
-			ipc.RegisterActivation(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: sessionTimeoutMinutes(update.serverID, runtimes)})
+			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: update.serverID, DisplayName: update.displayName, ClientRole: update.view.ClientRole, RealmID: update.view.RealmID, RealmAlias: realmAlias, Address: update.address, ClientID: update.clientID, SSHPort: update.sshPort, CanCreateRepositories: update.view.CanCreateRepositories(), RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: sessionTimeoutMinutes(update.serverID, runtimes)}))
 			if err := reconcileProjectedView(ctx, supervisor, ipc, update.serverID, update.view, runtimes, lifecycle); err != nil {
 				if ctx.Err() == nil {
 					talk.With("projection:"+update.serverID).Errorf("reconcile generation %d: %v", update.view.Generation, err)

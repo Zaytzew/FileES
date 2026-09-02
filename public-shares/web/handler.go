@@ -779,6 +779,15 @@ func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.P
 		ownerInk = branding.LeadingColor
 	}
 	css := listingCSS + listingCSSOverrides + brandCSSOverrides + iconColorCSS + ":root{--owner-accent:" + branding.LeadingColor + ";--owner-ink:" + ownerInk + "}"
+	// The countdown is a CSS animation, not a script. The listing runs under
+	// default-src 'none' with no script-src, and it is the most exposed page in
+	// the product, so a live counter must not be the reason to start executing
+	// code there. The stylesheet is already hash-pinned and already built per
+	// request, so the remaining time can be baked straight into it: the bar
+	// starts at the fraction of the session that is left and empties exactly
+	// when the capability does.
+	sessionCSS, sessionBar := h.sessionCountdownCSS(claims)
+	css += sessionCSS
 	digest := sha256.Sum256([]byte(css))
 	cssHash := base64.StdEncoding.EncodeToString(digest[:])
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'sha256-"+cssHash+"'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
@@ -796,6 +805,7 @@ func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.P
 		SelectionNotice: selectionNotice,
 		ChangeNotice:    changeNotice,
 		SessionDeadline: h.sessionDeadline(claims),
+		SessionBar:      sessionBar,
 		BrandSymbol:     brandSymbol,
 		BrandWordmark:   brandWordmark,
 		DownloadIcon:    listingIcon("download"),
@@ -822,6 +832,8 @@ type listingPage struct {
 	// a gated link. On an open one the visit renews itself and a countdown would
 	// be a threat the page cannot carry out.
 	SessionDeadline string
+	// SessionBar is set when the countdown bar has somewhere to run.
+	SessionBar bool
 	BrandSymbol, BrandWordmark                 template.HTML
 	DownloadIcon, ArchiveIcon                  template.HTML
 	CSS                                        template.CSS
@@ -1277,7 +1289,7 @@ var listingTemplate = template.Must(template.New("listing").Parse(`<!doctype htm
 {{if eq .Count 0}}
 <div class="empty"><span class="empty-icon" aria-hidden="true"></span><strong>Ten folder jest jeszcze pusty</strong><p>Właściciel może dodać tu pliki później.</p></div>
 {{else}}
-{{if .SessionDeadline}}<div class="notice" role="status">{{.SessionDeadline}}</div>{{end}}{{if .ChangeNotice}}<div class="notice" role="status">{{.ChangeNotice}}</div>{{end}}{{if .Bundles}}<form method="post" action="{{.BundleURL}}"><div class="toolbar"><button class="bundle-button" type="submit"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz zaznaczone</button><button class="bundle-button primary" type="submit" name="all" value="1"><span class="button-icon" aria-hidden="true">{{.ArchiveIcon}}</span>Pobierz całość</button></div>{{if .SelectionNotice}}<div class="notice" role="status">Najpierw zaznacz przynajmniej jeden plik.</div>{{end}}{{end}}
+{{if .SessionDeadline}}<div class="notice" role="status">{{.SessionDeadline}}{{if .SessionBar}}<span class="session-track" aria-hidden="true"><span class="session-fill"></span></span>{{end}}</div>{{end}}{{if .ChangeNotice}}<div class="notice" role="status">{{.ChangeNotice}}</div>{{end}}{{if .Bundles}}<form method="post" action="{{.BundleURL}}"><div class="toolbar"><button class="bundle-button" type="submit"><span class="button-icon" aria-hidden="true">{{.DownloadIcon}}</span>Pobierz zaznaczone</button><button class="bundle-button primary" type="submit" name="all" value="1"><span class="button-icon" aria-hidden="true">{{.ArchiveIcon}}</span>Pobierz całość</button></div>{{if .SelectionNotice}}<div class="notice" role="status">Najpierw zaznacz przynajmniej jeden plik.</div>{{end}}{{end}}
 <div class="columns" role="row"><span aria-hidden="true"></span><span>Nazwa</span><span>Typ</span><span>Rozmiar</span><span>Pobierz</span></div>
 <div class="tree">{{range .Tree.Directories}}{{template "directory" .}}{{end}}{{range .Tree.Files}}{{template "file" .}}{{end}}</div>
 {{if .Bundles}}</form>{{end}}

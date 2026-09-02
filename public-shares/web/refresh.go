@@ -133,3 +133,38 @@ func (h Handler) sessionDeadline(claims visit) string {
 	}
 	return fmt.Sprintf("Dostęp wygasa za %d min. Potem trzeba będzie potwierdzić uprawnienie ponownie.", minutes)
 }
+
+// sessionCountdownCSS renders the depleting bar for a gated session and
+// reports whether there is a bar to render.
+//
+// Everything the animation needs is known at render: the deadline is in the
+// capability and the stylesheet is built per request and pinned by hash, so
+// the duration and the starting fraction are baked in. Nothing recomputes
+// client-side, which is the point - the page has no script-src and this must
+// not become the reason to give it one.
+//
+// The bar is a second reading of the same fact the sentence already states, so
+// it is aria-hidden: a screen reader gets the minutes, not a silently draining
+// decoration.
+func (h Handler) sessionCountdownCSS(claims visit) (string, bool) {
+	if h.sessionDeadline(claims) == "" {
+		return "", false
+	}
+	remaining := time.Unix(claims.ExpiresAt, 0).Sub(h.now())
+	if remaining <= 0 {
+		return "", false
+	}
+	fraction := float64(remaining) / float64(visitLifetime)
+	if fraction > 1 {
+		// A capability minted before the ceiling was lowered would otherwise
+		// start the bar past full.
+		fraction = 1
+	}
+	return fmt.Sprintf(
+		".session-track{display:block;height:4px;margin-top:.5rem;border-radius:2px;background:rgba(11,29,58,.12);overflow:hidden}"+
+			".session-fill{display:block;height:100%%;background:var(--owner-accent);transform-origin:left center;transform:scaleX(%.4f);animation:filees-session %ds linear forwards}"+
+			"@keyframes filees-session{to{transform:scaleX(0)}}"+
+			"@media (prefers-reduced-motion:reduce){.session-fill{animation:none}}",
+		fraction, int(remaining.Seconds()),
+	), true
+}

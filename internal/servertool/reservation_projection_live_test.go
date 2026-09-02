@@ -17,14 +17,8 @@ import (
 // manually before this test existed, then pinned here so it cannot regress
 // silently).
 func TestQueryLiveLocksAgainstARealRepository(t *testing.T) {
-	svnadmin, err := exec.LookPath("svnadmin")
-	if err != nil {
-		t.Skip("svnadmin not available in this environment")
-	}
-	svn, err := exec.LookPath("svn")
-	if err != nil {
-		t.Skip("svn not available in this environment")
-	}
+	tools := requireSVN(t, "svnadmin", "svn")
+	svnadmin, svn := tools[0], tools[1]
 
 	root := t.TempDir()
 	// A space in the path exercises url.URL-based file:// construction —

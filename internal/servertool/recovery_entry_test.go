@@ -27,10 +27,7 @@ type recoveryEntryFixture struct {
 
 func newRecoveryEntryFixture(t *testing.T) recoveryEntryFixture {
 	t.Helper()
-	svnadmin, err := exec.LookPath("svnadmin")
-	if err != nil {
-		t.Skip("svnadmin unavailable")
-	}
+	svnadmin := requireSVN(t, "svnadmin")[0]
 	root := t.TempDir()
 	results := filepath.Join(root, "results")
 	repositories := filepath.Join(root, "repositories")

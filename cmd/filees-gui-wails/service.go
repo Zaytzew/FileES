@@ -81,10 +81,13 @@ type ServerProjection struct {
 	ReservationAsOf       string `json:"reservation_as_of,omitempty"`
 	// The view lane, beside the reservation emission rather than merged into
 	// it: the same server can be fresh on one and refused on the other.
-	ViewGeneratedAt       string `json:"view_generated_at,omitempty"`
-	ViewSyncedAt          string `json:"view_synced_at,omitempty"`
-	ViewSyncError         string `json:"view_sync_error,omitempty"`
-	ViewSyncFailures      int    `json:"view_sync_failures,omitempty"`
+	ViewGeneratedAt  string `json:"view_generated_at,omitempty"`
+	ViewSyncedAt     string `json:"view_synced_at,omitempty"`
+	ViewSyncError    string `json:"view_sync_error,omitempty"`
+	ViewSyncFailures int    `json:"view_sync_failures,omitempty"`
+	// What the server says about its own publishing, as opposed to our
+	// fetching. Only this separates a quiet server from an abandoned one.
+	ServerViewProducedAt  string `json:"server_view_produced_at,omitempty"`
 	SessionTimeoutMinutes int    `json:"session_timeout_minutes"`
 }
 
@@ -707,7 +710,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingRequiredRepos: server.PendingRequiredRepos,
 			ReservationCount:     server.ReservationCount, ReservationsKnown: server.ReservationsKnown,
 			ReservationProjection: server.ReservationProjection, ReservationAsOf: server.ReservationAsOf,
-			ViewGeneratedAt: server.ViewGeneratedAt, ViewSyncedAt: server.ViewSyncedAt, ViewSyncError: server.ViewSyncError, ViewSyncFailures: server.ViewSyncFailures,
+			ViewGeneratedAt: server.ViewGeneratedAt, ViewSyncedAt: server.ViewSyncedAt, ViewSyncError: server.ViewSyncError, ViewSyncFailures: server.ViewSyncFailures, ServerViewProducedAt: server.ServerViewProducedAt,
 			SessionTimeoutMinutes: server.SessionTimeoutMin,
 		})
 	}

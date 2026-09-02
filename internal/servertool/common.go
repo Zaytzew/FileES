@@ -50,12 +50,16 @@ type toolAccess struct {
 	needRepoResults    bool
 	needRepositoryData bool
 	needRepoInspection bool
-	needSVN            bool
-	needRealmAlias     bool
-	repositoryRoot     string
-	repositoryAuthz    string
-	svnAdminBinary     string
-	svnLookBinary      string
+	// needRotationArchive unveils the directory a rotated generation is frozen
+	// into. Only repo rotate asks for it: no other command may write there.
+	needRotationArchive bool
+	needSVN             bool
+	needRealmAlias      bool
+	repositoryRoot      string
+	repositoryAuthz     string
+	svnAdminBinary      string
+	svnLookBinary       string
+	rotationArchiveRoot string
 }
 
 func (access toolAccess) promises() string {
@@ -113,6 +117,9 @@ func openFiles(configPath string, access toolAccess) (*onboarding.Files, serverc
 	publicShareStateRoot := ""
 	if config.PublicShares.Enabled {
 		publicShareStateRoot = config.PublicShares.EffectiveStateRoot(config.Repositories.ResultsRoot)
+	}
+	if access.needRotationArchive {
+		access.rotationArchiveRoot = config.Repositories.RotationArchiveRoot
 	}
 	profile := repositoryProfile(config.Root, access, config.Activation, config.Repositories.ResultsRoot, config.Repositories.DeletionArchiveRoot, publicShareStateRoot)
 	var sandboxErr error
@@ -197,6 +204,12 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		paths = append(paths, obsandbox.Path{Label: "repository-results", Name: repositoryResultsRoot, Perms: "rwc"})
 		if deletionArchiveNeedsOwnUnveil(repositoryResultsRoot, deletionArchiveRoot) {
 			paths = append(paths, obsandbox.Path{Label: "repository-deletion-archive", Name: deletionArchiveRoot, Perms: "rwc"})
+		}
+		// The rotation archive holds the frozen generation and, inside it, the
+		// work directory the swap builds - internal/svnrotate puts that there
+		// deliberately, because the rename across the two would hit EXDEV.
+		if access.rotationArchiveRoot != "" {
+			paths = append(paths, obsandbox.Path{Label: "repository-rotation-archive", Name: access.rotationArchiveRoot, Perms: "rwc"})
 		}
 		if deletionArchiveNeedsOwnUnveil(repositoryResultsRoot, publicShareStateRoot) {
 			paths = append(paths, obsandbox.Path{Label: "public-share-state", Name: publicShareStateRoot, Perms: "rwc"})

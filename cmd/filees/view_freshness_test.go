@@ -88,3 +88,42 @@ func TestUnknownServerLeavesTheRecordEmpty(t *testing.T) {
 		t.Fatalf("an unmeasured server must not look measured: %+v", status)
 	}
 }
+
+// What the server says about producing the view is a different fact from
+// whether we could fetch it, and merging them would lose the only case neither
+// can see alone. manual on 2026-09-02 fetched successfully every time and, by
+// the server's own report, had not produced since 23 August.
+func TestProductionIsRecordedApartFromFetching(t *testing.T) {
+	fetched := time.Date(2026, 9, 2, 21, 0, 0, 0, time.UTC)
+	produced := time.Date(2026, 8, 23, 17, 38, 6, 0, time.UTC)
+	f := newViewFreshness(fixedClock(fetched))
+
+	f.Synced("manual", clientview.View{Generation: 14, GeneratedAt: produced})
+	f.Produced("manual", 14, produced)
+
+	status := f.Apply(contract.ActivationStatus{ServerID: "manual"})
+	if status.ViewSyncError != "" || status.ViewSyncFailures != 0 {
+		t.Fatalf("fetching was fine and must be reported as such: %+v", status)
+	}
+	if status.ViewSyncedAt != fetched.Format(time.RFC3339Nano) {
+		t.Fatalf("view_synced_at = %q", status.ViewSyncedAt)
+	}
+	if status.ServerViewProducedAt != produced.Format(time.RFC3339Nano) {
+		t.Fatalf("the server's own production time must survive: %q", status.ServerViewProducedAt)
+	}
+	if status.ServerViewGeneration != 14 {
+		t.Fatalf("server view generation = %d", status.ServerViewGeneration)
+	}
+}
+
+// A server that has never answered about production must not look like one
+// that answered "never": absent stays absent, so a presentation layer can tell
+// "not asked yet" from "asked and told".
+func TestUnreportedProductionStaysAbsent(t *testing.T) {
+	f := newViewFreshness(fixedClock(time.Now()))
+	f.Synced("spot", clientview.View{Generation: 26, GeneratedAt: time.Now()})
+	status := f.Apply(contract.ActivationStatus{ServerID: "spot"})
+	if status.ServerViewProducedAt != "" || status.ServerViewGeneration != 0 {
+		t.Fatalf("production nobody reported must not be invented: %+v", status)
+	}
+}

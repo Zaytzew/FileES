@@ -38,6 +38,11 @@ type serverViewFreshness struct {
 	syncedAt    time.Time
 	lastError   string
 	failures    int
+	// What the server reported about its own production, which is a different
+	// fact from anything above: those describe our fetching, this describes
+	// the producer.
+	producedGeneration int64
+	producedAt         time.Time
 }
 
 func newViewFreshness(now func() time.Time) *viewFreshness {
@@ -86,6 +91,21 @@ func (f *viewFreshness) Failed(serverID string, err error) {
 	state.lastError = strings.TrimSpace(err.Error())
 }
 
+// Produced records what the server said about publishing this client's view.
+//
+// It is deliberately not merged with Synced. A successful fetch says we could
+// reach the server; this says the server is still producing for us. On 2026-09-02
+// manual answered yes to the first and, by its own report, had not produced
+// since 23 August - and no amount of local measurement could have told them
+// apart, because a quiet server and an abandoned one fetch identically.
+func (f *viewFreshness) Produced(serverID string, generation int64, at time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	state := f.entry(serverID)
+	state.producedGeneration = generation
+	state.producedAt = at
+}
+
 // Apply fills the freshness fields of one activation record.
 func (f *viewFreshness) Apply(status contract.ActivationStatus) contract.ActivationStatus {
 	f.mu.Lock()
@@ -103,5 +123,9 @@ func (f *viewFreshness) Apply(status contract.ActivationStatus) contract.Activat
 	}
 	status.ViewSyncError = state.lastError
 	status.ViewSyncFailures = state.failures
+	status.ServerViewGeneration = state.producedGeneration
+	if !state.producedAt.IsZero() {
+		status.ServerViewProducedAt = state.producedAt.UTC().Format(time.RFC3339Nano)
+	}
 	return status
 }

@@ -30,6 +30,11 @@ type reservationProjectionCoordinator struct {
 	ipc       *ipcserver.Server
 	scheduler *projectionrefresh.Scheduler
 	newClient func(clientprofile.Profile) (reservationFetcher, error)
+	// onServerViewProduced carries what the server said about publishing this
+	// client's view. It rides the reservation fetch rather than a request of
+	// its own: the query attaches to work already happening, which is what
+	// keeps the session count where the server hardening expects it.
+	onServerViewProduced func(serverID string, generation int64, producedAt time.Time)
 
 	mu       sync.RWMutex
 	profiles map[string]clientprofile.Profile
@@ -225,6 +230,11 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 			coordinator.results[key] = cachedReservationResult{result: result, present: true}
 		}
 		coordinator.mu.Unlock()
+		// Every repository on one server shares that server's client view, so
+		// the first answer settles it for the whole refresh.
+		if fetchErr == nil && coordinator.onServerViewProduced != nil && result.ViewGeneratedAt != nil {
+			coordinator.onServerViewProduced(serverID, result.ViewGeneration, *result.ViewGeneratedAt)
+		}
 		if fetchErr != nil {
 			failed++
 			if firstErr == nil {

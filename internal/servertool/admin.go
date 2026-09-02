@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"filees/internal/durable"
+	"filees/internal/svnrotate"
 	"filees/pkg/activation"
 	"filees/pkg/onboarding"
 	"filees/pkg/repoworker"
@@ -53,7 +54,7 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|prune | erasure complete | version")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|prune|rotate | erasure complete | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
@@ -376,6 +377,87 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			return ExitSoftware
 		}
 		return ExitOK
+	case "repo rotate":
+		// Rotation was its own binary, filees-rotate, which took absolute
+		// paths from argv and applied no pledge or unveil at all - the only
+		// server executable without a sandbox, running as root and able to
+		// break live locks. Here it inherits the per-command profile every
+		// other administrative operation already gets, and its paths come from
+		// the server's own configuration rather than the command line.
+		//
+		// The cost is deliberate and was accepted with the decision in
+		// concepts/BINARY_COMPETENCE_AXES.md: this cannot rotate a repository
+		// outside the configured tree. Rotation is an administrative action on
+		// this server's repositories, and taking the path from argv is what
+		// made the sandbox impossible to express.
+		flags := flag.NewFlagSet("repo rotate", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		repoID := flags.String("repo-id", "", "repository UUID to rotate")
+		size := flags.String("size", "25GiB", "rotate when the packed repository reaches this size")
+		ageDays := flags.Int("age-days", 365, "rotate when the oldest revision is older than this many days")
+		force := flags.Bool("force", false, "rotate regardless of the size and age triggers")
+		dryRun := flags.Bool("dry-run", false, "evaluate the triggers and print the decision without rotating")
+		breakLocks := flags.Bool("break-locks", false, "proceed despite active locks; this destroys live edit passports")
+		dumpDepth := flags.Int("dump-depth", 0, "additionally archive a gzip dump of the last N revisions before HEAD (0 = none)")
+		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || strings.TrimSpace(*repoID) == "" {
+			return adminUsage(stderr, flags, "--repo-id UUID [--size 25GiB] [--age-days 365] [--force] [--dry-run] [--break-locks] [--dump-depth N]")
+		}
+		if _, err := uuid.Parse(strings.TrimSpace(*repoID)); err != nil {
+			fmt.Fprintln(stderr, "filees-admin repo rotate: --repo-id must be a UUID")
+			return ExitUsage
+		}
+		threshold, err := svnrotate.ParseSize(*size)
+		if err != nil {
+			report(stderr, "filees-admin repo rotate", err)
+			return ExitUsage
+		}
+		if *ageDays <= 0 {
+			fmt.Fprintln(stderr, "filees-admin repo rotate: --age-days must be positive")
+			return ExitUsage
+		}
+		_, config, err := openFiles(path, toolAccess{name: "filees-admin/repo-rotate", areas: onboarding.AreaOperations, write: true, needRepositoryData: true, needRepoInspection: true, needSVN: true, needRotationArchive: true})
+		if err != nil {
+			report(stderr, "filees-admin config", err)
+			return ExitConfig
+		}
+		if strings.TrimSpace(config.Repositories.RotationArchiveRoot) == "" {
+			fmt.Fprintln(stderr, "filees-admin repo rotate: repositories.rotation_archive_root is not configured")
+			return ExitConfig
+		}
+		rotateCfg := svnrotate.Config{
+			RepoPath:      filepath.Join(config.Repositories.Root, strings.TrimSpace(*repoID)),
+			ArchiveDir:    config.Repositories.RotationArchiveRoot,
+			SizeThreshold: threshold,
+			MaxAge:        time.Duration(*ageDays) * 24 * time.Hour,
+			BreakLocks:    *breakLocks,
+			DumpDepth:     *dumpDepth,
+		}
+		due, reason, err := svnrotate.ShouldRotate(rotateCfg, stderr)
+		if err != nil {
+			report(stderr, "filees-admin repo rotate", err)
+			return ExitData
+		}
+		if !due && !*force {
+			if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-client-result/v1", "status": "not_due", "repo_id": strings.TrimSpace(*repoID), "reason": reason}); err != nil {
+				return ExitSoftware
+			}
+			return ExitOK
+		}
+		if *dryRun {
+			if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-client-result/v1", "status": "would_rotate", "repo_id": strings.TrimSpace(*repoID), "reason": reason}); err != nil {
+				return ExitSoftware
+			}
+			return ExitOK
+		}
+		if err := svnrotate.Rotate(rotateCfg, reason, stderr); err != nil {
+			report(stderr, "filees-admin repo rotate", err)
+			return ExitSoftware
+		}
+		if err := writeJSON(stdout, map[string]any{"schema": "filees.admin-client-result/v1", "status": "rotated", "repo_id": strings.TrimSpace(*repoID), "reason": reason}); err != nil {
+			return ExitSoftware
+		}
+		return ExitOK
+
 	case "repo prune":
 		flags := flag.NewFlagSet("repo prune", flag.ContinueOnError)
 		flags.SetOutput(stderr)

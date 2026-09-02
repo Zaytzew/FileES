@@ -1,12 +1,15 @@
 package web
 
 import (
+	"crypto/rand"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"filees/public-shares/authority"
+	"filees/public-shares/gate"
 	"filees/public-shares/manifest"
 
 	"github.com/google/uuid"
@@ -124,5 +127,52 @@ func TestPinnedShareDoesNotFollowHead(t *testing.T) {
 	}
 	if !strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") {
 		t.Fatalf("a pinned release must keep serving its own revision: %s", listing.Body.String())
+	}
+}
+
+// An expired visit on an open link is not a refusal. The visitor is holding the
+// URL the redirect handed them, and their entitlement has not changed - only
+// the clock moved. Before this, that URL died after the lifetime while the same
+// link without the parameter kept working, which is a dead end nobody can
+// diagnose from the outside.
+func TestExpiredVisitOnAnOpenLinkStartsAFreshOne(t *testing.T) {
+	f := newWebFixture(t, nil)
+	visit := visitFromRedirect(t, perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil))
+
+	*f.now = f.now.Add(visitLifetime + time.Hour)
+
+	response := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?v="+url.QueryEscape(visit), "", nil)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("an expired visit on an open link should start a fresh one, not refuse; status=%d", response.Code)
+	}
+	fresh := visitFromRedirect(t, response)
+	if fresh == visit {
+		t.Fatal("the fresh visit must not be the expired one")
+	}
+	listing := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026?v="+url.QueryEscape(fresh), "", nil)
+	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") {
+		t.Fatalf("the fresh visit must render the listing: status=%d", listing.Code)
+	}
+}
+
+// The same expiry on a gated link must meet the gate again. Falling through is
+// what makes that automatic: nothing is known about this visitor any more, so
+// the channel gets to ask. A password link that let an expired capability back
+// in would be worse than one that refuses.
+func TestExpiredVisitOnAPasswordLinkAsksAgain(t *testing.T) {
+	f := newWebFixture(t, nil)
+	hash, err := gate.HashPassword("otwiera-sezam", rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guarded := f.share
+	guarded.Password = hash
+	if _, _, err := f.store.Update(uuid.NewString(), f.owner, f.channelID, guarded); err != nil {
+		t.Fatalf("put a password on the channel: %v", err)
+	}
+
+	response := perform(f.handler, http.MethodGet, "https://example.test/atmprojekt/przetarg-2026", "", nil)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "password") {
+		t.Fatalf("a password link must ask before it shows anything: status=%d", response.Code)
 	}
 }

@@ -129,12 +129,24 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 	if encoded := request.URL.Query().Get("v"); encoded != "" {
 		projection, err := h.Backend.Inspect(alias, channelSlug)
 		claims, err2 := h.verifyVisit(encoded, projection)
-		if err != nil || err2 != nil {
+		// An expired visit is not a refusal on a link the holder may still
+		// open: falling through starts a fresh one exactly as arriving without
+		// a capability does, so a gated channel still meets its gate and an
+		// open one simply gets the current state. Without this the URL the
+		// redirect handed the visitor dies after the lifetime while the same
+		// link without the parameter keeps working, which is a dead end they
+		// cannot diagnose.
+		expired := errors.Is(err2, errVisitExpired)
+		if (err != nil || err2 != nil) && !(err == nil && expired) {
 			if err == nil && len(projection.Recipients) > 0 && invitation != "" {
 				h.renderRecipient(w, projection, invitation, false, false)
 				return
 			}
 			h.notFound(w)
+			return
+		}
+		if expired {
+			h.freshEntry(w, request, alias, channelSlug, invitation)
 			return
 		}
 		projection, err = h.inspectAt(request.Context(), alias, channelSlug, claims.Revision, projection)
@@ -154,6 +166,16 @@ func (h Handler) entry(w http.ResponseWriter, request *http.Request, alias, chan
 		h.renderListingWithInvitation(w, projection, claims, encoded, invitation, request.URL.Query().Get("notice") == "select")
 		return
 	}
+	h.freshEntry(w, request, alias, channelSlug, invitation)
+}
+
+// freshEntry is arrival without a usable capability: the visitor is sent
+// through whatever gate the channel has and leaves with a visit for the
+// current revision. It is reached both by opening the canonical link and by
+// returning with one that has expired, because those are the same situation -
+// nothing is known about this visitor yet, and the channel decides what to ask
+// of them.
+func (h Handler) freshEntry(w http.ResponseWriter, request *http.Request, alias, channelSlug, invitation string) {
 	entry, err := h.Backend.Enter(request.Context(), alias, channelSlug)
 	if err != nil {
 		h.uploadEntry(w, request, alias, channelSlug)
@@ -664,8 +686,15 @@ func (h Handler) verifyVisit(encoded string, projection channel.Projection) (vis
 		return visit{}, errors.New("visit capability claims are invalid")
 	}
 	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) || claims.Version != 1 || claims.ChannelID != projection.ChannelID || claims.Revision < 1 || claims.FrostProof == "" || h.now().Unix() >= claims.ExpiresAt {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) || claims.Version != 1 || claims.ChannelID != projection.ChannelID || claims.Revision < 1 || claims.FrostProof == "" {
 		return visit{}, errors.New("visit capability claims are invalid")
+	}
+	// Expiry is reported apart from forgery on purpose. A signature that does
+	// not verify is an attack or a corrupted link and must stay a refusal; a
+	// visit that merely ran out of time says nothing about the holder's
+	// entitlement, and the caller can start a fresh one for them.
+	if h.now().Unix() >= claims.ExpiresAt {
+		return visit{}, errVisitExpired
 	}
 	if !subjectStillAuthorized(claims.Subject, projection) {
 		return visit{}, errors.New("visit capability policy is no longer active")

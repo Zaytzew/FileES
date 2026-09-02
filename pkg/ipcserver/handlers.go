@@ -1302,6 +1302,11 @@ func (s *Server) handleActivationBegin(req contract.Request) contract.Response {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	// Logged on entry, not only on failure. A step that reaches a remote server
+	// can legitimately take minutes, and with nothing written until it ends the
+	// daemon is indistinguishable from a daemon doing nothing at all - which is
+	// exactly how it looked while a user waited after pasting an OTP.
+	s.lg.Infof("activation begin: server=%s address=%s", payload.ServerID, payload.ServerAddress)
 	result, err := service.Begin(ctx, payload)
 	if err != nil {
 		s.lg.Warnf("activation begin (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
@@ -1334,6 +1339,7 @@ func (s *Server) handleActivationFinish(req contract.Request) contract.Response 
 	// an 859 MB transfer.
 	ctx, cancel := context.WithTimeout(context.Background(), activationDeadline)
 	defer cancel()
+	s.lg.Infof("activation finish: server=%s address=%s", payload.ServerID, payload.ServerAddress)
 	result, err := service.Finish(ctx, payload)
 	if err != nil {
 		s.lg.Warnf("activation finish (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
@@ -1372,6 +1378,7 @@ func (s *Server) handleActivationResume(req contract.Request) contract.Response 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), activationDeadline)
 	defer cancel()
+	s.lg.Infof("activation resume: server=%s address=%s", payload.ServerID, payload.ServerAddress)
 	result, err := service.Resume(ctx, payload)
 	if err != nil {
 		s.lg.Warnf("activation resume (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
@@ -1770,3 +1777,10 @@ func (s *Server) resolveHolderLabel(ctx context.Context, serverID, holder string
 // exists so a wedged step cannot hold the daemon indefinitely, not to declare
 // how fast a server ought to be.
 const activationDeadline = 30 * time.Minute
+
+//
+// Thirty minutes is only bearable because the step is logged when it starts.
+// A long deadline with no sign of life is worse than a short one: the user
+// cannot tell work from a hang, and waits out the whole budget before being
+// told anything. If the entry log above is ever removed, this number has to
+// come down with it.

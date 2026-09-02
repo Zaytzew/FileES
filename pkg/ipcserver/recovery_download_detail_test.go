@@ -33,7 +33,11 @@ func TestRecoveryDownloadFailureCarriesItsCause(t *testing.T) {
 	server := New(t.TempDir() + "/daemon.sock")
 	server.SetRealmRemovalService(failingRecoveryService{err: errors.New("archive missing on server")})
 
-	payload, err := json.Marshal(contract.RecoveryDownloadPayload{OperationID: "op-1", OutputRoot: `C:\out`})
+	// t.TempDir rather than a literal: an absolute path on one platform is not
+	// one on another, and hardcoding C:\out made this pass on Windows while
+	// failing the payload validation on OpenBSD long before it reached the
+	// handler it exists to guard.
+	payload, err := json.Marshal(contract.RecoveryDownloadPayload{OperationID: "op-1", OutputRoot: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}

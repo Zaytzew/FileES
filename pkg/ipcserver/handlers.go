@@ -1305,7 +1305,12 @@ func (s *Server) handleActivationBegin(req contract.Request) contract.Response {
 	result, err := service.Begin(ctx, payload)
 	if err != nil {
 		s.lg.Warnf("activation begin (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
-		return contract.ErrResponse(req.RequestID, "ACTIVATION-1001", "ERROR", "RETRY", "activation.begin_failed", nil)
+		// The reason reaches the person who can act on it. Activation is the
+		// first thing a new user does and the last place to hand them a
+		// sentence with no cause: without this the daemon knows the address was
+		// unreachable, or the invitation was spent, and the interface says only
+		// that it could not start. Same defect as RECOVERY-1001 before r696.
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-1001", "ERROR", "RETRY", "activation.begin_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1326,7 +1331,7 @@ func (s *Server) handleActivationFinish(req contract.Request) contract.Response 
 	result, err := service.Finish(ctx, payload)
 	if err != nil {
 		s.lg.Warnf("activation finish (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
-		return contract.ErrResponse(req.RequestID, "ACTIVATION-1002", "ERROR", "RETRY", "activation.finish_failed", nil)
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-1002", "ERROR", "RETRY", "activation.finish_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }
@@ -1364,7 +1369,7 @@ func (s *Server) handleActivationResume(req contract.Request) contract.Response 
 	result, err := service.Resume(ctx, payload)
 	if err != nil {
 		s.lg.Warnf("activation resume (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
-		return contract.ErrResponse(req.RequestID, "ACTIVATION-1004", "ERROR", "RETRY", "activation.resume_failed", nil)
+		return contract.ErrResponse(req.RequestID, "ACTIVATION-1004", "ERROR", "RETRY", "activation.resume_failed", map[string]string{"detail": err.Error()})
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

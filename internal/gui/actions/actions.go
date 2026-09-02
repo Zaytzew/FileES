@@ -3118,13 +3118,17 @@ func (c *Controller) offerLocalPinSetup(ctx context.Context) {
 	_ = c.cfg.PinStore.Setup(pin)
 }
 
+// activationFailure renders through actionErrorBody, not err.Error(). A
+// structured IPC error stringifies as "[ACTIVATION-1001] activation.begin_failed",
+// so this path was showing wire identifiers and skipping both the catalogue
+// sentence and the reason the daemon sends.
 func (c *Controller) activationFailure(ctx context.Context, err error) {
 	if err == nil || ctx.Err() != nil {
 		return
 	}
-	c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Aktywacja FileES nie powiodła się", Body: err.Error(), Urgency: platform.UrgencyCritical})
+	c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Aktywacja FileES nie powiodła się", Body: actionErrorBody(err), Urgency: platform.UrgencyCritical})
 	if c.cfg.Prompter != nil {
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Aktywacja FileES nie powiodła się", Text: err.Error()})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Aktywacja FileES nie powiodła się", Text: actionErrorBody(err)})
 	}
 }
 

@@ -3889,6 +3889,16 @@ func actionErrorBody(err error) string {
 	if detailed := detailedMessageLabel(key, details); detailed != "" {
 		return detailed
 	}
+	// The catalog sentence names the class of failure, not the instance. The
+	// daemon already carries the instance in Details, and dropping it here is
+	// what made several failures unreadable: "Pobranie archiwum nie powiodlo
+	// sie" said the same thing whether the dispatcher could not be executed,
+	// the output file already existed, or the archive was gone. Only keys
+	// without their own template reach this point, so appending the detail
+	// cannot override a purpose-written sentence.
+	if detail := strings.TrimSpace(details["detail"]); detail != "" {
+		return messageLabel(key) + "\n\n" + detail
+	}
 	return messageLabel(key)
 }
 

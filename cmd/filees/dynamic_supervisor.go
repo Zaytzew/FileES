@@ -236,15 +236,23 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		if serviceURL != "" {
 			updater = serviceProjectionUpdater{client: svn, url: serviceURL}
 		}
+		// Recording a sync outcome is useless unless it reaches the snapshot,
+		// and only this closure does that. Both handlers below must call it:
+		// an unpublished failure is exactly the log-line-and-nothing-else that
+		// left a ten-day-old projection looking current.
+		publishFreshness := func() {
+			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
+		}
 		views := clientview.Monitor(ctx, updater, clientview.MonitorConfig{Sync: sync, Interval: interval, OnError: func(err error) {
 			freshness.Failed(serverID, err)
+			publishFreshness()
 			talk.With("projection:"+serverID).Warnf("sync failed: %v", err)
 		}, OnSync: func(view clientview.View) {
 			// Every successful sync, not only one that brought a new
 			// generation: a quiet server that changes nothing must not look
 			// like a server that has stopped answering.
 			freshness.Synced(serverID, view)
-			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
+			publishFreshness()
 		}})
 		go func() {
 			for view := range views {

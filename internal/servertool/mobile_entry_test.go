@@ -256,6 +256,9 @@ func TestMobileEntryServesRefreshOverRealDispatcher(t *testing.T) {
 }
 
 func TestMobileEntryServesListRepositories(t *testing.T) {
+	if isolateSandboxingTest(t, "TestMobileEntryServesListRepositories") {
+		return
+	}
 	f := newMobileWorkerFixture(t)
 	clientID, repoID := uuid.NewString(), uuid.NewString()
 	writeMobileClientView(t, f.serviceWC, clientID, f.realmID, 3, []clientview.Repository{mobileGrantedRepository(repoID, "rw")})
@@ -308,6 +311,9 @@ func TestMobileEntryServesListRepositories(t *testing.T) {
 // can be grouped apart from ordinary repositories instead of listed mixed
 // in - the desktop projection already makes the same distinction (r613).
 func TestMobileEntryForwardsRepositoryPurpose(t *testing.T) {
+	if isolateSandboxingTest(t, "TestMobileEntryForwardsRepositoryPurpose") {
+		return
+	}
 	f := newMobileWorkerFixture(t)
 	clientID, repoID := uuid.NewString(), uuid.NewString()
 	shelf := mobileGrantedRepository(repoID, "rw")
@@ -353,6 +359,9 @@ func TestMobileEntryForwardsRepositoryPurpose(t *testing.T) {
 }
 
 func TestMobileEntryRejectsUngrantedClient(t *testing.T) {
+	if isolateSandboxingTest(t, "TestMobileEntryRejectsUngrantedClient") {
+		return
+	}
 	f := newMobileWorkerFixture(t)
 	clientID, repoID := uuid.NewString(), uuid.NewString()
 	newMobileSeededRepoAt(t, filepath.Join(f.repositoriesRoot, repoID))

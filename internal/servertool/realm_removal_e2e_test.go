@@ -31,6 +31,9 @@ import (
 // t.TempDir so the same binary can run natively on OpenBSD without touching an
 // installed FileES instance.
 func TestRealmRemovalDestructiveE2E(t *testing.T) {
+	if isolateSandboxingTest(t, "TestRealmRemovalDestructiveE2E") {
+		return
+	}
 	for _, retentionDays := range []int{0, 2} {
 		retentionDays := retentionDays
 		t.Run("retention_"+strconv.Itoa(retentionDays), func(t *testing.T) {

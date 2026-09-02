@@ -3,7 +3,9 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"time"
 
 	"filees/public-shares/channel"
 )
@@ -103,3 +105,31 @@ func (h Handler) explainWithdrawnObject(w http.ResponseWriter, request *http.Req
 // errVisitExpired marks a visit that verified correctly and simply ran out of
 // time, so callers can tell it apart from one that failed to verify at all.
 var errVisitExpired = errors.New("visit capability has expired")
+
+// sessionDeadline renders how long a gated visitor keeps access, and stays
+// silent otherwise.
+//
+// On an open link expiry falls through to a fresh entry, so nothing ends and
+// announcing a deadline would be a threat the page will not carry out. Behind
+// a password or an OTP the deadline is real, and it is the visitor's to see:
+// they are the one who will lose a half-finished download to it.
+//
+// The figure is computed at render, which is honest without a ticking clock -
+// the listing page runs under default-src 'none' with no script-src at all, so
+// a live counter would mean opening script execution on the most exposed
+// surface in the product. That is a decision of its own, not a detail of this
+// one.
+func (h Handler) sessionDeadline(claims visit) string {
+	if claims.Subject == "" || claims.Subject == "open" || claims.ExpiresAt == 0 {
+		return ""
+	}
+	remaining := time.Unix(claims.ExpiresAt, 0).Sub(h.now())
+	if remaining <= 0 {
+		return ""
+	}
+	minutes := int(remaining.Round(time.Minute) / time.Minute)
+	if minutes < 1 {
+		return "Dostęp wygasa lada chwila. Po wygaśnięciu trzeba będzie wpisać hasło ponownie."
+	}
+	return fmt.Sprintf("Dostęp wygasa za %d min. Potem trzeba będzie potwierdzić uprawnienie ponownie.", minutes)
+}

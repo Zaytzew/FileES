@@ -49,10 +49,7 @@ func TestPublicSharesDestructiveE2E(t *testing.T) {
 	}
 	repoPath := filepath.Join(f.repositoriesRoot, repository.RepoID)
 	realmRemovalE2ERun(t, f.svn, "import", "--non-interactive", "--no-auth-cache", "-m", "public share leaf", source, "file://"+repoPath+"/data/project.pdf")
-	svnlook, err := exec.LookPath("svnlook")
-	if err != nil {
-		t.Skip("svnlook unavailable")
-	}
+	svnlook := requireSVN(t, "svnlook")[0]
 	svnlook, _ = filepath.Abs(svnlook)
 	headBefore := youngestRevision(t, svnlook, repoPath)
 

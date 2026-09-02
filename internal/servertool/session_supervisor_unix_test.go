@@ -276,18 +276,8 @@ func sessionExitTestChild(_ serverconfig.Config, _ string, _ string, _ string, g
 
 func newSupervisorTestSession(t *testing.T) (*activation.Manager, serverconfig.Config, onboarding.ActivationGrant, *activation.SessionLease) {
 	t.Helper()
-	svn, err := exec.LookPath("svn")
-	if err != nil {
-		t.Skip("svn unavailable")
-	}
-	svnadmin, err := exec.LookPath("svnadmin")
-	if err != nil {
-		t.Skip("svnadmin unavailable")
-	}
-	svnserve, err := exec.LookPath("svnserve")
-	if err != nil {
-		t.Skip("svnserve unavailable")
-	}
+	tools := requireSVN(t, "svn", "svnadmin", "svnserve")
+	svn, svnadmin, svnserve := tools[0], tools[1], tools[2]
 	root := t.TempDir()
 	repository, wc := filepath.Join(root, "repository"), filepath.Join(root, "wc")
 	runSupervisorCommand(t, svnadmin, "create", repository)

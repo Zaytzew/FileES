@@ -68,10 +68,7 @@ func TestRealmRecoveryPublisherBindsExactArchivesIdempotently(t *testing.T) {
 	operationID, realmID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	deleteOperationID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(operationID+":"+repoID+":delete")).String()
 	created := time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)
-	svnadmin, err := exec.LookPath("svnadmin")
-	if err != nil {
-		t.Skip("svnadmin unavailable")
-	}
+	svnadmin := requireSVN(t, "svnadmin")[0]
 	if err := os.MkdirAll(repositoriesRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}

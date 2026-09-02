@@ -37,18 +37,8 @@ type mobileWorkerFixture struct {
 // concepts/FILEES_ANDROID_CLIENT_CONCEPT_V2.md SS4.2).
 func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 	t.Helper()
-	svnBinary, err := exec.LookPath("svn")
-	if err != nil {
-		t.Skip("svn unavailable")
-	}
-	svnadminBinary, err := exec.LookPath("svnadmin")
-	if err != nil {
-		t.Skip("svnadmin unavailable")
-	}
-	svnserveBinary, err := exec.LookPath("svnserve")
-	if err != nil {
-		t.Skip("svnserve unavailable")
-	}
+	tools := requireSVN(t, "svn", "svnadmin", "svnserve")
+	svnBinary, svnadminBinary, svnserveBinary := tools[0], tools[1], tools[2]
 
 	base := t.TempDir()
 	root := filepath.Join(base, "onboarding")

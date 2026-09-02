@@ -25,22 +25,8 @@ import (
 // for openFiles(needRepositoryData: true, needRepoResults: true) to succeed.
 func writeRepoPruneFixtureConfig(t *testing.T) (configPath, resultsRoot, repositoriesRoot string) {
 	t.Helper()
-	svn, err := exec.LookPath("svn")
-	if err != nil {
-		t.Skip("svn unavailable")
-	}
-	svnadmin, err := exec.LookPath("svnadmin")
-	if err != nil {
-		t.Skip("svnadmin unavailable")
-	}
-	svnserve, err := exec.LookPath("svnserve")
-	if err != nil {
-		t.Skip("svnserve unavailable")
-	}
-	svnlook, err := exec.LookPath("svnlook")
-	if err != nil {
-		t.Skip("svnlook unavailable")
-	}
+	tools := requireSVN(t, "svn", "svnadmin", "svnserve", "svnlook")
+	svn, svnadmin, svnserve, svnlook := tools[0], tools[1], tools[2], tools[3]
 	base := t.TempDir()
 	root := filepath.Join(base, "service")
 	if err := onboarding.Initialize(root); err != nil {

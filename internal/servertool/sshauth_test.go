@@ -14,6 +14,7 @@ func TestBSDAuthChallengeIsEnumerationFree(t *testing.T) {
 	if isolateSandboxingTest(t, "TestBSDAuthChallengeIsEnumerationFree") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	auth := &authBuffer{}
 	if code := RunSSHAuth([]string{"-v", "auth_type=auth-ssh", "-s", "challenge", "--", "_filees-tunnel", "filees-tunnel"}, auth, &bytes.Buffer{}); code != ExitOK {
 		t.Fatalf("challenge exit=%d", code)
@@ -28,6 +29,7 @@ func TestBSDAuthRejectsWrongPrincipalAndMalformedResponse(t *testing.T) {
 	if isolateSandboxingTest(t, "TestBSDAuthRejectsWrongPrincipalAndMalformedResponse") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	for _, test := range []struct {
 		args []string
 		wire string
@@ -66,6 +68,7 @@ func TestEntryRejectsAllNonProtocolCommandsBeforeFilesystemAccess(t *testing.T) 
 	if isolateSandboxingTest(t, "TestEntryRejectsAllNonProtocolCommandsBeforeFilesystemAccess") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	tests := []string{"", "uname -a", "scp -t /tmp/x", "/usr/libexec/sftp-server", "filees tunnel-v1 extra"}
 	for _, command := range tests {
 		env := func(name string) string {

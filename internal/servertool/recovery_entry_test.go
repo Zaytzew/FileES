@@ -94,6 +94,7 @@ func TestRecoveryEntryAuthorizesBoundKeyAndStreamsExactArchive(t *testing.T) {
 	if isolateSandboxingTest(t, "TestRecoveryEntryAuthorizesBoundKeyAndStreamsExactArchive") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	f := newRecoveryEntryFixture(t)
 	keyFields := strings.Fields(f.publicKey)
 	var authorized, stderr bytes.Buffer
@@ -125,6 +126,7 @@ func TestRecoveryEntryRejectsExpiredAndUnboundCapabilities(t *testing.T) {
 	if isolateSandboxingTest(t, "TestRecoveryEntryRejectsExpiredAndUnboundCapabilities") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	f := newRecoveryEntryFixture(t)
 	keyFields := strings.Fields(f.publicKey)
 	var stdout, stderr bytes.Buffer

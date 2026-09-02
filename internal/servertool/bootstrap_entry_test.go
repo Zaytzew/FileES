@@ -12,6 +12,7 @@ func TestBootstrapEntryRunsOnboardThenOneMailSubmission(t *testing.T) {
 	if isolateSandboxingTest(t, "TestBootstrapEntryRunsOnboardThenOneMailSubmission") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	if bootstrapEntryPromises != "stdio rpath proc exec" {
 		t.Fatalf("bootstrap entry promises = %q", bootstrapEntryPromises)
 	}
@@ -40,6 +41,7 @@ func TestBootstrapEntryDoesNotSendMailWhenOnboardFails(t *testing.T) {
 	if isolateSandboxingTest(t, "TestBootstrapEntryDoesNotSendMailWhenOnboardFails") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	original := runBootstrapChild
 	originalPledge := bootstrapPledge
 	defer func() { runBootstrapChild, bootstrapPledge = original, originalPledge }()

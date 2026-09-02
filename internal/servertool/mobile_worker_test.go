@@ -40,7 +40,7 @@ func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 	tools := requireSVN(t, "svn", "svnadmin", "svnserve")
 	svnBinary, svnadminBinary, svnserveBinary := tools[0], tools[1], tools[2]
 
-	base := t.TempDir()
+	base := sandboxTempDir(t)
 	root := filepath.Join(base, "onboarding")
 	if err := onboarding.Initialize(root); err != nil {
 		t.Fatal(err)

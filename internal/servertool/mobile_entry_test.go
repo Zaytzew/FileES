@@ -259,6 +259,7 @@ func TestMobileEntryServesListRepositories(t *testing.T) {
 	if isolateSandboxingTest(t, "TestMobileEntryServesListRepositories") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	f := newMobileWorkerFixture(t)
 	clientID, repoID := uuid.NewString(), uuid.NewString()
 	writeMobileClientView(t, f.serviceWC, clientID, f.realmID, 3, []clientview.Repository{mobileGrantedRepository(repoID, "rw")})
@@ -314,6 +315,7 @@ func TestMobileEntryForwardsRepositoryPurpose(t *testing.T) {
 	if isolateSandboxingTest(t, "TestMobileEntryForwardsRepositoryPurpose") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	f := newMobileWorkerFixture(t)
 	clientID, repoID := uuid.NewString(), uuid.NewString()
 	shelf := mobileGrantedRepository(repoID, "rw")
@@ -362,6 +364,7 @@ func TestMobileEntryRejectsUngrantedClient(t *testing.T) {
 	if isolateSandboxingTest(t, "TestMobileEntryRejectsUngrantedClient") {
 		return
 	}
+	permitRepeatedSandbox(t)
 	f := newMobileWorkerFixture(t)
 	clientID, repoID := uuid.NewString(), uuid.NewString()
 	newMobileSeededRepoAt(t, filepath.Join(f.repositoriesRoot, repoID))

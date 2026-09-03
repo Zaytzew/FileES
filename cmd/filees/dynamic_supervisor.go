@@ -171,6 +171,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	// The state lane already talks to the server on a rhythm driven by real
 	// work, so what the server says about producing our view arrives with it
 	// rather than on a schedule of its own.
+	reservationRefreshes.onDetached = func(serverID string, detached bool) {
+		freshness.Detached(serverID, detached)
+	}
 	reservationRefreshes.onServerViewProduced = func(serverID string, generation int64, producedAt time.Time) {
 		freshness.Produced(serverID, generation, producedAt)
 		freshnessMu.Lock()

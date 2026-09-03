@@ -203,6 +203,15 @@ function shortDateTime(value) {
 // the same server can be fresh there and refused here because the two travel
 // different SSH commands. Reading one as the other is the mistake this
 // replaces, only inverted.
+// detachedServers are the ones that refused this client outright: it is no
+// longer one of theirs. The daemon establishes this by being told so, which is
+// the only way to know it - a refusal and an outage look identical from here.
+function detachedServers(snapshot) {
+  return (snapshot.servers || [])
+    .filter((server) => server.detached === true)
+    .map((server) => server.display_name || server.id);
+}
+
 function staleViewServers(snapshot) {
   const servers = snapshot.servers || [];
   return servers
@@ -289,11 +298,25 @@ function renderConnection(snapshot) {
   core.className = "pulse-core";
   freshness.className = "projection-freshness";
   let connectionLabel = "Demon jest rozłączony";
+  const detached = snapshot.connected ? detachedServers(snapshot) : [];
   const stale = snapshot.connected ? staleViewServers(snapshot) : [];
   if (!snapshot.connected) {
     core.classList.add("is-offline");
     freshness.classList.add("is-unverified");
     freshness.textContent = "Demon niedostępny — dane niepotwierdzone";
+  } else if (detached.length > 0) {
+    // Before staleness, because a detached client is also out of date and
+    // would otherwise be described as a server that will not answer. It
+    // answers perfectly; it refuses us, usually because somebody deactivated
+    // this client here on purpose. Saying "nie odpowiada" sends the reader to
+    // check a network that is fine and to doubt a server doing exactly what it
+    // was told.
+    core.classList.add("is-stale");
+    freshness.classList.add("is-unverified");
+    const first = detached[0];
+    const rest = detached.length > 1 ? ` (+${detached.length - 1})` : "";
+    freshness.textContent = `Ten klient jest odłączony od „${first}" — wymagana ponowna aktywacja${rest}`;
+    connectionLabel = `${first}: klient odłączony`;
   } else if (stale.length > 0) {
     // Named, not counted. "One server is stale" sends the reader hunting; the
     // name and the age let them decide whether it matters to them.

@@ -35,6 +35,12 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 		// the client cannot tell "nothing changed" from "something changed and
 		// was not published". A number nobody can act on is not a trust signal.
 		`server_view_produced_at`,
+		// A detached client is refused, not unheard. It is tested before
+		// staleness because it is also out of date, and would otherwise be
+		// described as a server that will not answer - which sends the reader
+		// to check a network that is fine.
+		`server.detached === true`,
+		`wymagana ponowna aktywacja`,
 		`Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}`,
 		`Nie ma jeszcze zapisanej pełnej projekcji`,
 		`Brak zapisanej projekcji; panel odświeży się automatycznie.`,

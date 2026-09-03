@@ -115,10 +115,14 @@ type ServerViewModel struct {
 	// the two answer different questions and the same server can be healthy on
 	// one and refused on the other. Zero values mean "not measured", which a
 	// presentation layer must not read as "measured and fine".
-	ViewGeneration   int64
-	ViewGeneratedAt  string
-	ViewSyncedAt     string
-	ViewSyncError    string
+	ViewGeneration  int64
+	ViewGeneratedAt string
+	ViewSyncedAt    string
+	ViewSyncError   string
+	// Detached: this server refused us; the client is no longer one of its
+	// own. Kept apart from the freshness fields because those describe keeping
+	// up with a server that still knows us.
+	Detached         bool
 	ViewSyncFailures int
 	// The server's own report about publishing for us: the only evidence that
 	// separates a quiet server from an abandoned one.

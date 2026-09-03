@@ -43,6 +43,11 @@ type serverViewFreshness struct {
 	// the producer.
 	producedGeneration int64
 	producedAt         time.Time
+	// detached is set when a server refuses this client outright. It is not a
+	// failure count: failures describe how well we keep up with a server that
+	// still knows us, this says the relationship is over until the client is
+	// activated again.
+	detached bool
 }
 
 func newViewFreshness(now func() time.Time) *viewFreshness {
@@ -123,9 +128,20 @@ func (f *viewFreshness) Apply(status contract.ActivationStatus) contract.Activat
 	}
 	status.ViewSyncError = state.lastError
 	status.ViewSyncFailures = state.failures
+	status.Detached = state.detached
 	status.ServerViewGeneration = state.producedGeneration
 	if !state.producedAt.IsZero() {
 		status.ServerViewProducedAt = state.producedAt.UTC().Format(time.RFC3339Nano)
 	}
 	return status
+}
+
+// Detached records that a server has refused this client, and forgetting it is
+// as important as setting it: a client activated again must stop being shown as
+// detached without waiting for a restart, which is how the realm alias behaved
+// before r774 and is not a mistake worth repeating.
+func (f *viewFreshness) Detached(serverID string, detached bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.entry(serverID).detached = detached
 }

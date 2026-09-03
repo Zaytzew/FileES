@@ -320,6 +320,23 @@ func (s appState) viewModel() ViewModel {
 			appended[repo.ServerID] = true
 		}
 	}
+	// A detached server leaves the view entirely, and so do its repositories.
+	//
+	// Detaching is something the owner does deliberately, confirming three
+	// times, and afterwards there is nothing to be done about it from here.
+	// Keeping the server on screen is therefore not information; it is the name
+	// of a server somebody has just cut ties with, next to the names of its
+	// repositories, sitting where anyone can read them. The owner named the
+	// case plainly: a server whose subject matter he would rather not have on
+	// display with people around. That makes this an exposure rather than
+	// untidiness, and only absence fixes it.
+	//
+	// A "recently detached" panel with a lifetime of about forty-eight hours is
+	// the agreed way back to this information for whoever wants it. It is not
+	// built yet, and it must not be approximated by leaving everything visible
+	// in the meantime.
+	servers = withoutDetached(servers)
+	repos = reposOfListedServers(repos, servers)
 	caps := make(map[string]bool, len(s.caps))
 	for k, v := range s.caps {
 		caps[k] = v
@@ -582,3 +599,33 @@ func (s appState) projectPendingActions() []PendingAction {
 }
 
 func reservationKey(serverID, repoID string) string { return serverID + "\x00" + repoID }
+
+func withoutDetached(servers []ServerViewModel) []ServerViewModel {
+	kept := make([]ServerViewModel, 0, len(servers))
+	for _, server := range servers {
+		if server.Detached {
+			continue
+		}
+		kept = append(kept, server)
+	}
+	return kept
+}
+
+// reposOfListedServers drops the repositories of servers that are no longer
+// listed. Without it the server heading disappears while its folders remain in
+// every count and every flat list - which would expose exactly what removing
+// the server was meant to withhold, and confuse the totals besides.
+func reposOfListedServers(repos []RepoViewModel, servers []ServerViewModel) []RepoViewModel {
+	listed := make(map[string]bool, len(servers))
+	for _, server := range servers {
+		listed[server.ID] = true
+	}
+	kept := make([]RepoViewModel, 0, len(repos))
+	for _, repo := range repos {
+		if repo.ServerID != "" && !listed[repo.ServerID] {
+			continue
+		}
+		kept = append(kept, repo)
+	}
+	return kept
+}

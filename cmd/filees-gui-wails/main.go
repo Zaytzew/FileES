@@ -20,6 +20,7 @@ import (
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcclient"
 	"filees/pkg/localpin"
+	"filees/pkg/opjournal"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
@@ -235,7 +236,12 @@ func main() {
 	realmGrants := realmGrantAdapter{client: daemon}
 	actionPlatform := newActionPlatform()
 	actionController := configureActions(
-		gui, daemon, reservationAdapter{client: daemon}, lockReleaseAdapter{client: daemon}, stackLifecycleAdapter{client: daemon}, updateAdapter{client: daemon}, clientactivation.New(daemon, *activationRoot), pinStore, mobilePairingAdapter{client: daemon, pinStore: pinStore, prompter: prompts, presenter: pairing, servers: func() []PromptOption { return pairingServerOptions(gui.Snapshot()) }}, shouts, shouts, realmAliasAdapter{client: daemon}, realmGrants, repositoryRealmGrantBrowserAdapter{service: repository, fallback: actionPlatform}, realmBrandingAdapter{client: daemon},
+		gui, daemon, reservationAdapter{client: daemon}, lockReleaseAdapter{client: daemon}, stackLifecycleAdapter{client: daemon}, updateAdapter{client: daemon}, clientactivation.New(daemon, *activationRoot).WithFailureReporter(func(step string, err error) {
+			// The interface records only what the daemon cannot: that the call
+			// to it did not come back. Wired here because internal/gui must not
+			// reach the engine, and the operational log is an engine concern.
+			opjournal.RecordFailure("activation", "Interfejs nie doczekał się odpowiedzi demona podczas aktywacji ("+step+")", err)
+		}), pinStore, mobilePairingAdapter{client: daemon, pinStore: pinStore, prompter: prompts, presenter: pairing, servers: func() []PromptOption { return pairingServerOptions(gui.Snapshot()) }}, shouts, shouts, realmAliasAdapter{client: daemon}, realmGrants, repositoryRealmGrantBrowserAdapter{service: repository, fallback: actionPlatform}, realmBrandingAdapter{client: daemon},
 		settingsBrowserRouter{server: settingsBrowserAdapter{service: settings}, repository: repositorySettingsBrowserAdapter{service: repository}},
 		sessionTimeoutAdapter{client: daemon}, repositoryPublicShareBrowserAdapter{service: repository}, publicShareAdapter{client: daemon}, repositoryUploadChannelBrowserAdapter{service: repository}, uploadChannelAdapter{client: daemon}, repositoryQuarantineBrowserAdapter{service: repository}, quarantineAdapter{client: daemon}, repositoryCreateAdapter{client: daemon}, repositoryAttachAdapter{client: daemon}, repositoryLocateAdapter{client: daemon}, repositoryDetachAdapter{client: daemon}, repositoryDumpLoadAdapter{client: daemon}, serverDetachAdapter{client: daemon}, realmRemovalAdapter{client: daemon}, recoveryDownloadAdapter{client: daemon}, consentPromptAdapter{prompter: prompts}, actionPlatform, nativePicker, nativePicker, prompts,
 		func() {

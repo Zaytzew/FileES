@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 
 	"filees/pkg/clientprofile"
-	"filees/pkg/errmap"
-	"filees/pkg/opjournal"
 	"strings"
 	"time"
 
@@ -28,10 +26,25 @@ type Client interface {
 type Activator struct {
 	client Client
 	root   string
+	// report records a failure of the call to the daemon. It is injected by
+	// the composition root rather than written here: internal/gui must not
+	// reach the engine - watcher, commit, client, ipcserver, errmap - and the
+	// operational log is an engine concern. Writing it directly held that
+	// boundary open from r768 until the architecture test was run again, which
+	// took twenty revisions because I kept running a narrow selection of tests.
+	// A nil reporter simply records nothing.
+	report func(step string, err error)
 }
 
 func New(client Client, root string) *Activator {
 	return &Activator{client: client, root: filepath.Clean(root)}
+}
+
+// WithFailureReporter wires the activator to record failed daemon calls. Only
+// the composition root knows where such a record belongs.
+func (activator *Activator) WithFailureReporter(report func(step string, err error)) *Activator {
+	activator.report = report
+	return activator
 }
 
 func (activator *Activator) Pending(parent context.Context) ([]actions.ActivationTarget, error) {
@@ -98,31 +111,25 @@ func (activator *Activator) Finish(parent context.Context, target actions.Activa
 	// the user was shown ("i/o timeout") described neither. Nothing about
 	// activation reached any log from here, so there was no way afterwards to
 	// tell which of the two had spoken.
-	journalActivationFailure(target.ServerID, "finish", err)
+	activator.reportFailure("finish", err)
 	return err
 }
 
-// journalActivationFailure appends one line to the daemon's operational log.
+// reportFailure records the one failure the daemon cannot: that the call to it
+// did not come back.
 //
-// Best effort by construction: a log that can fail an activation would be
-// worse than the silence it replaces. It writes nothing on success, because
-// the daemon already records that with the timing and the resulting state, and
+// Measured 2026-09-03 - the daemon was mid-activation and held the real cause,
+// this side gave up on the socket read, and the sentence the user saw ("i/o
+// timeout") described neither. Nothing about activation reached any log from
+// here, so afterwards there was no telling which of the two had spoken.
+//
+// Success stays the daemon's to report, with its timing and resulting state:
 // two records of one event invite the reader to trust the wrong one.
-func journalActivationFailure(serverID, step string, err error) {
-	if err == nil {
+func (activator *Activator) reportFailure(step string, err error) {
+	if err == nil || activator.report == nil {
 		return
 	}
-	sink, openErr := opjournal.Open("activation:" + serverID)
-	if openErr != nil || sink == nil {
-		return
-	}
-	sink.Emit(errmap.Entry{
-		Code:     errmap.CodeNetUnreachable,
-		Severity: errmap.SevError,
-		Hint:     errmap.HintRetryLocal,
-		Msg:      "Interfejs nie doczekał się odpowiedzi demona podczas aktywacji (" + step + ")",
-		Details:  err.Error(),
-	})
+	activator.report(step, err)
 }
 
 func (activator *Activator) Resume(parent context.Context, target actions.ActivationTarget) error {

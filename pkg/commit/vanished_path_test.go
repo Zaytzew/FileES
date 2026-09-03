@@ -80,3 +80,27 @@ func TestAlreadyVersionedClutterStopsBeingPublished(t *testing.T) {
 		t.Fatalf("only the drawing may be published; got %v", kept)
 	}
 }
+
+// A rename whose destination never arrived is not a rename. Word saves by
+// writing a temporary file, deleting the original and renaming over it, which
+// the watcher reasonably reads as a rename; if the document moves again before
+// the commit runs, the destination is gone and svn commit fails the whole batch
+// on a path it never knew.
+//
+// Measured 2026-09-03 at 17:18 on live work, minutes after the same shape was
+// fixed for plain additions in r779 and left unfixed on this branch.
+func TestARenameWithNoDestinationIsDropped(t *testing.T) {
+	wc := t.TempDir()
+	if err := os.WriteFile(filepath.Join(wc, "arrived.docx"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The source of a real rename is meant to be gone, so it can never be
+	// checked for existence - only the destination can.
+	if got := existingPaths(wc, []string{"arrived.docx"}); len(got) != 1 {
+		t.Fatalf("a destination that arrived must be committed: %v", got)
+	}
+	if got := existingPaths(wc, []string{"01_EDITABLES/ST-00.01_Wymagania-ogolne.docx"}); len(got) != 0 {
+		t.Fatalf("a destination that never arrived must not: %v", got)
+	}
+}

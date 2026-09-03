@@ -1018,7 +1018,27 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	commitPaths = append(commitPaths, publishable(wc, addPaths)...)
 	commitPaths = append(commitPaths, publishable(wc, modifiedPaths)...)
 	commitPaths = append(commitPaths, delPaths...)
+	// Renames get the same question, asked the right way round. The source is
+	// meant to be gone - that is what a rename is - so it cannot be checked for
+	// existence; the destination must be there, and if it is not then nothing
+	// arrived and this is not a rename at all.
+	//
+	// Word saves a document by writing a temporary file, deleting the original
+	// and renaming over it, which the watcher reasonably reads as a rename. If
+	// the document moves again before the commit runs, the destination is gone
+	// and svn commit fails the whole batch on a path it never knew - which is
+	// what happened to ST-00.01_Wymagania-ogolne.docx at 17:18 on 2026-09-03,
+	// minutes after the same shape was fixed for plain additions in r779 and
+	// left unfixed here.
+	//
+	// Dropping the pair rather than half of it: the next scan sees whatever is
+	// actually on disk, and a genuine disappearance becomes a deletion once
+	// DeletedDebounce is satisfied. Committing a half-rename would invent a
+	// history nobody performed.
 	for _, it := range renamedItems {
+		if len(existingPaths(wc, []string{it.Rel})) == 0 {
+			continue
+		}
 		commitPaths = append(commitPaths, it.OldRel, it.Rel)
 	}
 	// svn add --parents schedules missing ancestors, but svn commit does not

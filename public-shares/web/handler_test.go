@@ -224,7 +224,7 @@ func TestOpenShareListingCacheAndRange(t *testing.T) {
 	if !strings.Contains(listing.Body.String(), "21 B") {
 		t.Fatalf("listing does not show authoritative file size: %s", listing.Body.String())
 	}
-	if !strings.Contains(listing.Body.String(), "stan 14.11.2023") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) || !strings.Contains(listing.Body.String(), "Sprawdź najnowsze wydanie") {
+	if !strings.Contains(listing.Body.String(), "opublikowano 14.11.2023") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) || !strings.Contains(listing.Body.String(), "Sprawdź najnowsze wydanie") {
 		t.Fatalf("listing does not explain the frozen visit or link to latest: %s", listing.Body.String())
 	}
 	if listing.Header().Get("Content-Security-Policy") == "" || listing.Header().Get("Referrer-Policy") != "no-referrer" {
@@ -257,7 +257,7 @@ func TestFollowingShareDerivesObjectMapFromEachVisitRevision(t *testing.T) {
 	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), "nowy.txt") || strings.Contains(listing.Body.String(), "Projekt budowlany.pdf") {
 		t.Fatalf("following listing did not track r6: status=%d body=%s", listing.Code, listing.Body.String())
 	}
-	if !strings.Contains(listing.Body.String(), "stan 14.11.2023") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) {
+	if !strings.Contains(listing.Body.String(), "opublikowano 14.11.2023") || !strings.Contains(listing.Body.String(), `href="/atmprojekt/przetarg-2026"`) {
 		t.Fatalf("r6 listing does not identify its snapshot and canonical entry: %s", listing.Body.String())
 	}
 	projection, err := f.handler.Backend.(authority.Resolver).InspectAt(context.Background(), "atmprojekt", "przetarg-2026", 6)
@@ -514,7 +514,7 @@ func TestListingCleanupKeepsBrandAndColumnSemanticsConsistent(t *testing.T) {
 		Objects: []channel.PublicObject{{PublicID: "object", DisplayName: "Dokumenty/plan.pdf", Size: &size}},
 	}, visit{Revision: 7}, "visit", false)
 	body := recorder.Body.String()
-	for _, wanted := range []string{`class="brand-wordmark"`, `aria-label="filees:space"`, "Monochrome stacked file and folder symbol", "1.5 KB", "stan 27.08.2026"} {
+	for _, wanted := range []string{`class="brand-wordmark"`, `aria-label="filees:space"`, "Monochrome stacked file and folder symbol", "1.5 KB", "opublikowano 27.08.2026"} {
 		if !strings.Contains(body, wanted) {
 			t.Fatalf("listing does not contain %q", wanted)
 		}

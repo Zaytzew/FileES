@@ -129,7 +129,7 @@ func TestLinuxShowJournalUsesCombinedTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := strings.Join(runner.Calls()[0].args, "\n")
-	for _, wanted := range []string{"--list", "--column=Czas", "--column=Repozytorium", "⚠ BŁĄD · odmowa", "Wymagane działanie"} {
+	for _, wanted := range []string{"--list", "--column=Czas", "--column=Zakres", "⚠ BŁĄD · odmowa", "Wymagane działanie"} {
 		if !strings.Contains(args, wanted) {
 			t.Errorf("journal args missing %q: %s", wanted, args)
 		}
@@ -157,7 +157,7 @@ func TestLinuxShowSettingsAsksForServerBeforeFolders(t *testing.T) {
 			t.Errorf("server picker missing %q: %s", wanted, args)
 		}
 	}
-	if strings.Contains(args, "Dokumenty") || strings.Contains(args, "/wc/docs") || strings.Contains(args, "--column=Repozytorium") {
+	if strings.Contains(args, "Dokumenty") || strings.Contains(args, "/wc/docs") || strings.Contains(args, "--column=Zakres") {
 		t.Fatalf("first settings view still lists shares: %s", args)
 	}
 }
@@ -301,7 +301,7 @@ func TestLinuxShowSettingsPicksShareOnlyAfterFolderScopedAction(t *testing.T) {
 			}
 			return []byte("manage_grants|\n"), nil
 		case 3:
-			if !strings.Contains(joined, "Dokumenty") || !strings.Contains(joined, "--column=Repozytorium") {
+			if !strings.Contains(joined, "Dokumenty") || !strings.Contains(joined, "--column=Zakres") {
 				t.Fatalf("folder step = %s", joined)
 			}
 			return []byte("docs|\n"), nil
@@ -394,7 +394,7 @@ func TestLinuxSettingsOffersAddFolderOnlyWhenServerAllowsRepositoryCreation(t *t
 				if has != test.can {
 					t.Errorf("add_folder present=%v want=%v args=%v", has, test.can, args)
 				}
-				if strings.Contains(strings.Join(args, "\n"), "--column=Repozytorium") {
+				if strings.Contains(strings.Join(args, "\n"), "--column=Zakres") {
 					t.Error("add_folder asked for a share")
 				}
 				return nil, fakeExitError(1)

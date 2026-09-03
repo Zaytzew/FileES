@@ -61,12 +61,26 @@ func RunOpenSSHTunnel(ctx context.Context, spec TunnelSpec, otp []byte) error {
 	if err != nil {
 		return err
 	}
-	// Closing the handle is also what releases a serveOTPOnce still blocked in
-	// ConnectNamedPipe, so it must happen before waiting on writerDone.
+	// CancelIoEx first, then the handle. Closing a handle does not abort a
+	// synchronous ConnectNamedPipe already pending on it: the close waits for
+	// that operation, the operation waits for a client, and neither ever
+	// arrives. This function then outlived its own context, because a context
+	// can cancel the ssh child but nothing in it reaches a thread parked in a
+	// Windows syscall.
+	//
+	// Measured on 2026-09-03. ssh failed to connect and exited 255 in under a
+	// second - correctly, and without ever asking askpass for the secret, so
+	// nobody connected to the pipe. The activation then sat past its
+	// ten-minute deadline with no ssh process, no error and no log line, and
+	// the interface eventually reported a socket read timing out, which
+	// described nothing that had happened.
 	pipeClosed := false
 	closePipe := func() {
 		if !pipeClosed {
 			pipeClosed = true
+			// Aborts the pending ConnectNamedPipe with ERROR_OPERATION_ABORTED,
+			// which is what actually releases serveOTPOnce before the close.
+			_ = windows.CancelIoEx(pipe, nil)
 			_ = windows.CloseHandle(pipe)
 		}
 	}

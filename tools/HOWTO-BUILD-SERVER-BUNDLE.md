@@ -88,8 +88,13 @@ svn status releases/r$REV
 Sprawdź, czy w `bin/` jest **każde** binarium, którego oczekujesz. Binarka
 obecna w payloadzie, ale nieobecna w `packaging/server/openbsd-binary-policy.json`,
 **znika z manifestu bez ostrzeżenia** — tak `filees-serving-state` nie
-zainstalował się mimo obecności w wydaniu, aż do r688. Liczba wpisów manifestu
-i liczba plików muszą się zgadzać.
+zainstalował się mimo obecności w wydaniu, aż do r688.
+
+**Wpisów manifestu jest o jeden więcej niż plików i tak ma być.**
+`filees-ssh-auth` instaluje się dwa razy: pod własną nazwą i jako
+`/usr/libexec/auth/login_-filees` — helper klasy logowania BSD, setuid `4550`,
+grupa `auth`. Jeden plik, dwa cele. Wzorzec na dziś to **17 plików, 18 wpisów**;
+sprawdzaj proporcję względem poprzedniego wydania, nie równość.
 
 ## Commit
 

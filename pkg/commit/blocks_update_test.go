@@ -7,8 +7,16 @@ import (
 	"filees/pkg/client"
 )
 
-func missing(wc string, parts ...string) client.StatusEntry {
-	return client.StatusEntry{Path: filepath.Join(append([]string{wc}, parts...)...), Item: "missing"}
+// missing builds an entry the way svn status actually delivers one.
+//
+// StatusEntry.Path is relative to the working copy, because parseStatusXML
+// relativises it. The first version of these tests used absolute paths, so they
+// passed against a BlocksUpdate that relativised a second time and classified
+// every real entry as unclassifiable - the fix shipped, changed nothing, and
+// the owner's working copies went on deferring. A test has to be given the
+// shape the code under test is really handed.
+func missing(parts ...string) client.StatusEntry {
+	return client.StatusEntry{Path: filepath.Join(parts...), Item: "missing"}
 }
 
 // The deadlock this exists to break, in one test.
@@ -21,8 +29,8 @@ func missing(wc string, parts ...string) client.StatusEntry {
 func TestIgnoredLockFilesDoNotHoldTheUpdateLaneShut(t *testing.T) {
 	wc := filepath.Join(t.TempDir(), "GWIAZDZISTA2")
 	entries := []client.StatusEntry{
-		missing(wc, "OPRACOWANIE-TEREN", "GWDZ_schody-zewnetrzne.dwl"),
-		missing(wc, "OPRACOWANIE-TEREN", "GWDZ_schody-zewnetrzne.dwl2"),
+		missing("OPRACOWANIE-TEREN", "GWDZ_schody-zewnetrzne.dwl"),
+		missing("OPRACOWANIE-TEREN", "GWDZ_schody-zewnetrzne.dwl2"),
 	}
 	if BlocksUpdate(wc, entries) {
 		t.Error("an update is deferred over files FileES does not manage; nothing will ever publish their removal")
@@ -34,8 +42,8 @@ func TestIgnoredLockFilesDoNotHoldTheUpdateLaneShut(t *testing.T) {
 func TestARealPendingDeletionStillDefersTheUpdate(t *testing.T) {
 	wc := filepath.Join(t.TempDir(), "GWIAZDZISTA2")
 	entries := []client.StatusEntry{
-		missing(wc, "OPRACOWANIE-TEREN", "GWDZ_schody-zewnetrzne.dwl"),
-		missing(wc, "OPRACOWANIE-TEREN", "rzut-parteru.dwg"),
+		missing("OPRACOWANIE-TEREN", "GWDZ_schody-zewnetrzne.dwl"),
+		missing("OPRACOWANIE-TEREN", "rzut-parteru.dwg"),
 	}
 	if !BlocksUpdate(wc, entries) {
 		t.Error("a drawing the owner deleted was not treated as blocking; the update would bring it back under him")
@@ -45,8 +53,8 @@ func TestARealPendingDeletionStillDefersTheUpdate(t *testing.T) {
 func TestNothingMissingNeverBlocks(t *testing.T) {
 	wc := t.TempDir()
 	entries := []client.StatusEntry{
-		{Path: filepath.Join(wc, "rzut-parteru.dwg"), Item: "modified"},
-		{Path: filepath.Join(wc, "nowy.pdf"), Item: "unversioned"},
+		{Path: "rzut-parteru.dwg", Item: "modified"},
+		{Path: "nowy.pdf", Item: "unversioned"},
 	}
 	if BlocksUpdate(wc, entries) {
 		t.Error("a working copy with no removals was treated as blocking")

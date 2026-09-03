@@ -1,4 +1,4 @@
-.PHONY: test race vet test-recovery verify
+.PHONY: test race vet test-recovery verify pair
 
 test:
 	go test ./...
@@ -13,3 +13,9 @@ test-recovery:
 	./scripts/svn-recovery-smoke.sh
 
 verify: test race vet test-recovery
+
+# The desktop pair, stamped with VERSION + the working-copy revision. Built by
+# hand in every session until now, which is why the client called itself
+# 0.1.15 from July onwards regardless of what was in it.
+pair:
+	./packaging/build-pair.sh

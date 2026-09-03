@@ -172,7 +172,16 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .repo-meta span { overflow:hidden; font-size:13px; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .repo-size { justify-items:end; padding-right:39px; text-align:right; }
 
-.activity-list,.reservation-list,.shout-list { display:grid; gap:9px; }
+.activity-list,.reservation-list,.shout-list,.detached-list { display:grid; gap:9px; }
+/* Deliberately quiet. A detachment is finished business, not an alarm: it gets
+   a muted card rather than the accent a reservation or a shout carries. */
+.detached-row { padding:13px 14px; border:1px solid rgba(255,255,255,.06); border-radius:13px; background:rgba(255,255,255,.022); }
+.detached-head { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; gap:11px; }
+.detached-head>strong { overflow:hidden; font-size:13px; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
+.detached-head>time { color:#8190a4; font-size:11px; white-space:nowrap; }
+.detached-note { margin:6px 0 0; color:var(--muted); font-size:12px; }
+.detached-paths { margin:8px 0 0; padding:0; list-style:none; display:grid; gap:4px; }
+.detached-paths li { overflow:hidden; color:#8190a4; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
 .activity-row { display:grid; grid-template-columns:8px minmax(0,1fr); gap:11px; padding:13px 14px; border-radius:13px; background:rgba(255,255,255,.028); }
 .activity-row strong { font-size:13px; line-height:1.35; } .activity-row p { margin:6px 0 0; overflow:hidden; color:var(--muted); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
 .activity-dot { width:8px; height:8px; margin-top:5px; border-radius:50%; background:var(--violet); box-shadow:0 0 12px rgba(154,167,232,.48); }

@@ -127,6 +127,9 @@ func BuildAt(vm app.ViewModel, now time.Time) []Entry {
 			time:       when,
 		})
 	}
+	for _, record := range vm.Detachments {
+		entries = append(entries, detachmentEntry(record))
+	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		if !entries[i].time.Equal(entries[j].time) {
 			return entries[i].time.After(entries[j].time)
@@ -138,6 +141,39 @@ func BuildAt(vm app.ViewModel, now time.Time) []Entry {
 		entries[i].ExactTime = ExactTimestamp(entries[i].Timestamp)
 	}
 	return entries
+}
+
+// detachmentEntry is the one place a detached server is named on purpose.
+//
+// The journal is a chronology somebody chooses to read, not a badge standing
+// over the projection, which is why an entry here was agreed while a banner
+// was refused. What r789 established is that a detachment is a decision rather
+// than news; a decision still belongs in the record of what happened.
+//
+// The two causes get different sentences because their cures are opposite. A
+// self-detachment is finished business and says so. A revoked client has
+// something left to do, and the entry must not imply that the moment shown is
+// when the server decided - only when this client found out.
+func detachmentEntry(record app.DetachmentViewModel) Entry {
+	when := parseTime(record.At)
+	entry := Entry{
+		ID:        "detachment:" + record.ServerID,
+		Timestamp: record.At,
+		Severity:  "notice",
+		time:      when,
+	}
+	if record.SelfDetached() {
+		entry.Summary = fmt.Sprintf("Odłączono od serwera „%s”", record.Name())
+		entry.Details = "Serwer unieważnił klucz tej instalacji, a lokalny profil został usunięty."
+	} else {
+		entry.Summary = fmt.Sprintf("Serwer „%s” odłączył tego klienta", record.Name())
+		entry.Details = "Zauważone o tej godzinie; wymagana ponowna aktywacja klienta."
+	}
+	if count := len(record.WorkingCopies); count > 0 {
+		entry.Details += fmt.Sprintf(" Pliki zostały na dysku — %d %s.",
+			count, plural(count, "folder", "foldery", "folderów"))
+	}
+	return entry
 }
 
 func connectivityEntry(group *connectivityGroup) Entry {

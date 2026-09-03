@@ -122,6 +122,22 @@ func (coordinator *reservationProjectionCoordinator) UpdateProfile(profile clien
 	coordinator.scheduler.Schedule(profile.ServerID)
 }
 
+// Profile returns the transport parameters known for serverID.
+//
+// The names live here because this is where they were last seen. A caller
+// reacting to a detachment cannot go to the profile store for them: for a
+// self-detachment the credentials have already been removed, and for a revoked
+// client the server has stopped answering the question.
+func (coordinator *reservationProjectionCoordinator) Profile(serverID string) (clientprofile.Profile, bool) {
+	if coordinator == nil {
+		return clientprofile.Profile{}, false
+	}
+	coordinator.mu.RLock()
+	defer coordinator.mu.RUnlock()
+	profile, ok := coordinator.profiles[serverID]
+	return profile, ok
+}
+
 func (coordinator *reservationProjectionCoordinator) periodic(serverID string) {
 	for {
 		coordinator.mu.RLock()

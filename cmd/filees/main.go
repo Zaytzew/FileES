@@ -21,6 +21,7 @@ import (
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/deploy"
+	"filees/pkg/detachment"
 	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
@@ -167,6 +168,16 @@ func runDaemon() {
 		lg.Errorf("repository lifecycle: %v", err)
 		os.Exit(1)
 	}
+	// The record of relationships that ended, beside the store of the ones
+	// that exist. A failure here must not stop the daemon: nothing else
+	// depends on it, and a client that refuses to start because it cannot
+	// write a chronology is a worse outcome than a missing chronology.
+	detachmentStore, err := detachment.Open(defaultDetachmentPath())
+	if err != nil {
+		lg.Warnf("server detachments: %v — recently detached servers will not be listed", err)
+		detachmentStore = nil
+	}
+	ipc.SetDetachmentSource(detachmentSource{store: detachmentStore})
 	repos, err = reconcileConfiguredRepositoryLifecycle(lifecycleStore, repos)
 	if err != nil {
 		lg.Errorf("repository lifecycle migration: %v", err)
@@ -207,7 +218,7 @@ func runDaemon() {
 	ipc.SetLockReleaseService(realmAliases)
 	ipc.SetRepositoryLifecycleService(repositoryLifecycleService{store: lifecycleStore, provisioning: provisioningStore, clientID: provisioner.ClientID, onCreate: provisioner.Enqueue, onAttach: func(request attachmentRequest) { provisioner.Enqueue(request.OperationID) }, onRelocate: provisioner.Enqueue, onDetach: provisioner.Detach, onLoadDump: provisioner.Enqueue})
 	ipc.SetMobilePairingService(mobilePairingService{provisioner: provisioner})
-	ipc.SetServerDetachService(serverDetachService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot()})
+	ipc.SetServerDetachService(serverDetachService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), detachments: detachmentStore})
 	ipc.SetSessionTimeoutService(sessionTimeoutService{root: clientprofile.DefaultRoot(), provisioner: provisioner, onChange: func(profile clientprofile.Profile) {
 		select {
 		case timeoutEvents <- profile:
@@ -229,7 +240,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	if lifecycle.action.Load() == daemonActionRestart {

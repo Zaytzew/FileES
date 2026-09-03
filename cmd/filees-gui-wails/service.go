@@ -60,6 +60,7 @@ type Snapshot struct {
 	NextCycleAt         string                           `json:"next_cycle_at,omitempty"`
 	CycleRunning        bool                             `json:"cycle_running"`
 	Notices             []NoticeProjection               `json:"notices"`
+	Detachments         []DetachmentProjection           `json:"detachments"`
 	PublicShares        []DashboardPublicShareProjection `json:"public_shares"`
 	PublicSharesKnown   bool                             `json:"public_shares_known"`
 	Update              *UpdateProjection                `json:"update,omitempty"`
@@ -233,6 +234,30 @@ type JournalProjection struct {
 	Emphasized   bool   `json:"emphasized"`
 }
 
+// DetachmentProjection is one ended relationship, ready to render.
+//
+// Everything the panel needs is decided here, in Go: the relative time, the
+// sentence, whether re-activation is what is left to do. The panel is a
+// presenter and a collector of intentions - it holds no knowledge of its own
+// and computes nothing, so a lifetime measured in the frontend, or a wording
+// chosen there, would be the panel deciding something it cannot check.
+type DetachmentProjection struct {
+	ServerID     string `json:"server_id"`
+	Name         string `json:"name"`
+	Address      string `json:"address,omitempty"`
+	Cause        string `json:"cause"`
+	RelativeTime string `json:"relative_time"`
+	ExactTime    string `json:"exact_time"`
+	Summary      string `json:"summary"`
+	// NeedsReactivation is true only when the server revoked this client.
+	// A self-detachment is finished; nothing is left to do about it.
+	NeedsReactivation bool `json:"needs_reactivation"`
+	// WorkingCopies are the local paths whose files stayed on this disk.
+	// Revealed by the panel only after a deliberate click: leaving them on
+	// screen is the exposure r790 removed, and a heading does not fix it.
+	WorkingCopies []string `json:"working_copies,omitempty"`
+}
+
 type NoticeProjection struct {
 	ID        string `json:"id"`
 	RepoID    string `json:"repo_id,omitempty"`
@@ -287,6 +312,7 @@ func newGUIServiceWithProjection(client guiapp.DaemonClient, mirror *projectionm
 			Activity:            []ActivityProjection{},
 			Journal:             []JournalProjection{},
 			Notices:             []NoticeProjection{},
+			Detachments:         []DetachmentProjection{},
 			PublicShares:        []DashboardPublicShareProjection{},
 			ClientVersion:       clientVersion(),
 		},
@@ -691,6 +717,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		Journal:             []JournalProjection{},
 		PendingActions:      make([]PendingActionProjection, 0, len(vm.PendingActions)),
 		Notices:             make([]NoticeProjection, 0, len(vm.Notices)),
+		Detachments:         make([]DetachmentProjection, 0, len(vm.Detachments)),
 		ClientVersion:       clientVersion(),
 	}
 	if !vm.LastRefresh.IsZero() {
@@ -834,6 +861,23 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			ID: item.ID, RepoID: item.RepoID, Revision: item.Revision,
 			Title: item.Title, CreatedAt: item.CreatedAt, Acked: item.Acked,
 			CanAck: !item.Acked && vm.Connected && !vm.Stale && vm.CanAckNotices(),
+		})
+	}
+	for _, item := range vm.Detachments {
+		// The panel describes how things stand, so a server that is back
+		// belongs in the projection rather than in a list of endings. The
+		// journal keeps the entry; see DetachmentViewModel.Current.
+		if !item.Current() {
+			continue
+		}
+		summary := fmt.Sprintf("Odłączono od „%s”", item.Name())
+		if !item.SelfDetached() {
+			summary = fmt.Sprintf("„%s” odłączył tego klienta", item.Name())
+		}
+		result.Detachments = append(result.Detachments, DetachmentProjection{
+			ServerID: item.ServerID, Name: item.Name(), Address: item.Address, Cause: item.Cause,
+			RelativeTime: journal.RelativeTimestamp(item.At, now), ExactTime: journal.ExactTimestamp(item.At),
+			Summary: summary, NeedsReactivation: !item.SelfDetached(), WorkingCopies: item.WorkingCopies,
 		})
 	}
 	result.PublicSharesKnown = vm.PublicSharesKnown

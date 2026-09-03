@@ -9,6 +9,7 @@ import (
 	"filees/pkg/clientprofile"
 	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
+	"filees/pkg/detachment"
 	"filees/pkg/localrepo"
 
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ type serverDetachService struct {
 	local       *localrepo.Store
 	provisioner *daemonProvisioner
 	profileRoot string
+	detachments *detachment.Store
 }
 
 func (s serverDetachService) Detach(ctx context.Context, serverID string) error {
@@ -31,6 +33,12 @@ func (s serverDetachService) Detach(ctx context.Context, serverID string) error 
 	if !ok {
 		return errors.New("activated client profile is unavailable")
 	}
+	// Read what the reader will want to know before any of it goes away. The
+	// loop below walks every attached record through BeginDetach and the tail
+	// of this function removes the profile, so by the time this has succeeded
+	// there is no name and no path left to look up.
+	name, address := profile.DisplayName, profile.Address
+	workingCopies := workingCopiesOf(s.local, serverID)
 	for _, record := range s.local.List() {
 		if record.ServerID != serverID {
 			continue
@@ -73,5 +81,15 @@ func (s serverDetachService) Detach(ctx context.Context, serverID string) error 
 		return fmt.Errorf("remove local credentials after server revoke: %w", err)
 	}
 	s.provisioner.RemoveProfile(serverID)
+	// Recorded last, and deliberately not allowed to fail the detachment. The
+	// server has revoked the key and the credentials are gone; reporting an
+	// error now would tell the owner that an irreversible thing which did
+	// happen did not, and he would try it again.
+	if s.detachments != nil {
+		_ = s.detachments.Record(detachment.Record{
+			ServerID: serverID, DisplayName: name, Address: address,
+			Cause: detachment.CauseSelf, At: time.Now(), WorkingCopies: workingCopies,
+		})
+	}
 	return nil
 }

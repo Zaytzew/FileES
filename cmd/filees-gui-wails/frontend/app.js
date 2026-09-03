@@ -203,8 +203,7 @@ function shortDateTime(value) {
 // the same server can be fresh there and refused here because the two travel
 // different SSH commands. Reading one as the other is the mistake this
 // replaces, only inverted.
-// detachedServers are the ones that refused this client outright: it is no
-// longer one of theirs. Deliberately NOT rendered in the connection header.
+// A detached server is deliberately NOT rendered in the connection header.
 //
 // A detachment is something the owner did on purpose, confirming three times,
 // and a banner naming the server afterwards is neither news nor help: nothing
@@ -213,15 +212,10 @@ function shortDateTime(value) {
 // repositories staying on screen after someone deliberately cut ties with it is
 // an exposure, not an untidiness, and no wording fixes that.
 //
-// The agreed shape is a journal entry when it happens, and a separate
-// "recently detached" panel that forgets after about 48 hours. Both need the
-// detachment to carry a moment rather than be a flag, which is why this stays
-// unused until that exists.
-function detachedServers(snapshot) {
-  return (snapshot.servers || [])
-    .filter((server) => server.detached === true)
-    .map((server) => server.display_name || server.id);
-}
+// snapshot.servers never carries a detached server any more: the reducer
+// removes it and its repositories entirely. What arrives instead is
+// snapshot.detachments, which is the moment rather than the flag, and it is
+// rendered only in the collapsed card below and in the journal.
 
 function staleViewServers(snapshot) {
   const servers = snapshot.servers || [];
@@ -824,6 +818,43 @@ async function acknowledgeAnnouncement() {
   }
 }
 
+// renderDetached shows relationships that have ended, for about forty-eight
+// hours after they do.
+//
+// Every judgement here was made in Go and arrives finished: the sentence, the
+// relative time, whether anything is left to do. This function decides nothing
+// and remembers nothing - it has no way to check any of it, and a panel that
+// answers a question it cannot ask is a panel that lies. Note in particular
+// that the lifetime is not applied here: the daemon owns it, and a second
+// opinion about time in the frontend would disagree with the first the moment
+// either was wrong.
+function renderDetached(snapshot) {
+  const records = snapshot.detachments || [];
+  const card = $("#detached-card");
+  card.hidden = records.length === 0;
+  $("#detached-count").textContent = String(records.length);
+  if (!records.length) {
+    replaceHTMLIfChanged($("#detached"), "");
+    return;
+  }
+  replaceHTMLIfChanged($("#detached"), records.map((item) => {
+    const paths = item.working_copies || [];
+    // The folders are the answer to the only question left: the files stayed
+    // on this disk, and this is where they are.
+    const folders = paths.length
+      ? `<ul class="detached-paths">${paths.map((path) => `<li title="${escapeHTML(path)}">${escapeHTML(path)}</li>`).join("")}</ul>`
+      : "";
+    const note = item.needs_reactivation
+      ? '<p class="detached-note">Wymagana ponowna aktywacja klienta.</p>'
+      : "";
+    return `<article class="detached-row">
+      <div class="detached-head"><strong>${escapeHTML(item.summary)}</strong>
+      <time datetime="${escapeHTML(item.exact_time)}">${escapeHTML(item.relative_time)}</time></div>
+      ${note}${folders}
+    </article>`;
+  }).join(""));
+}
+
 function renderJournal(snapshot) {
   const entries = snapshot.journal || [];
   const root = $("#activity");
@@ -863,6 +894,7 @@ function render(snapshot) {
   renderPublicShares(snapshot);
   renderShouts(snapshot);
 	renderUpdate(snapshot);
+  renderDetached(snapshot);
   renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
   $("#revision").textContent = `stan #${snapshot.revision || 0}`;

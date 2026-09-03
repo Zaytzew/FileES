@@ -15,6 +15,7 @@ import (
 	"filees/pkg/clientview"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/detachment"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/reposupervisor"
@@ -159,7 +160,7 @@ func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy
 	return updater.client.Cleanup(ctx, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
 	// One recorder for every server this supervisor watches: the view lane is
 	// per server and so is its age.
 	freshness := newViewFreshness(nil)
@@ -173,6 +174,31 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	// rather than on a schedule of its own.
 	reservationRefreshes.onDetached = func(serverID string, detached bool) {
 		freshness.Detached(serverID, detached)
+		// The durable half. freshness.Detached is a flag describing the server
+		// right now and dies with the process; this is the moment, and it has
+		// to outlive a daemon restart or a forty-eight hour lifetime measured
+		// from it is not a lifetime at all.
+		//
+		// Both edges are handled here rather than in the coordinator: this is
+		// the only place that can see the local working copies as well, and
+		// where those files are is what the reader will actually want.
+		if detachments == nil {
+			return
+		}
+		if !detached {
+			// Only a genuinely successful refresh reaches this edge, which is
+			// the one piece of evidence that the client is one of the
+			// server's own again. A transient failure never gets here, so it
+			// cannot quietly erase a detachment that still stands.
+			_, _ = detachments.Reattached(serverID, time.Now())
+			return
+		}
+		profile, _ := reservationRefreshes.Profile(serverID)
+		_, _ = detachments.RecordFirstNoticed(detachment.Record{
+			ServerID: serverID, DisplayName: profile.DisplayName, Address: profile.Address,
+			Cause: detachment.CauseRevoked, At: time.Now(),
+			WorkingCopies: workingCopiesOf(lifecycle, serverID),
+		})
 	}
 	reservationRefreshes.onServerViewProduced = func(serverID string, generation int64, producedAt time.Time) {
 		freshness.Produced(serverID, generation, producedAt)

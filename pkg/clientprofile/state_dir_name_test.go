@@ -20,7 +20,7 @@ func TestIdentifiersTheFilesystemReservesAreEncoded(t *testing.T) {
 	if name == "atmprojekt:filees" {
 		t.Fatal("a colon must not reach the filesystem; it is reserved on Windows")
 	}
-	if name != "atmprojekt%3Afilees" {
+	if name != "atmprojekt+3Afilees" {
 		t.Fatalf("name = %q", name)
 	}
 
@@ -46,14 +46,14 @@ func TestExistingIdentifiersAreUnchanged(t *testing.T) {
 }
 
 // Two servers must never share a directory. Without encoding the percent sign
-// the identifier "a%3Ab" and the identifier "a:b" would collide, and the
+// the identifier "a+3Ab" and the identifier "a:b" would collide, and the
 // second one to activate would silently adopt the first one's keys and cache.
 func TestEncodingIsInjective(t *testing.T) {
 	colon, err := StateDirName("a:b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	literal, err := StateDirName("a%3Ab")
+	literal, err := StateDirName("a+3Ab")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestEncodingDoesNotDependOnTheHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "atmprojekt%3Afilees" {
+	if name != "atmprojekt+3Afilees" {
 		t.Fatalf("on %s the name came out as %q", runtime.GOOS, name)
 	}
 }

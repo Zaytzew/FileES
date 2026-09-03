@@ -100,7 +100,18 @@ func (service daemonActivationService) finalize(ctx context.Context, payload con
 }
 
 func prepareActivatedClientProfile(ctx context.Context, payload contract.ActivationFinishPayload) (clientprofile.Profile, error) {
-	root := filepath.Join(filepath.Clean(payload.StateRoot), payload.ServerID)
+	// Through ServerDir, like every other path built from a server ID since
+	// r742. This was the one site left joining the ID raw, and it is the last
+	// step of activation, so the failure it produced was the most expensive
+	// shape available: the tunnel writes the identity into the encoded
+	// directory, this looked for it in the unencoded one, found nothing, and
+	// reported active_profile_pending - a state that returns no error, logs
+	// nothing and shows nothing. Measured against cloud, whose server ID is
+	// "atmprojekt:filees": on Windows that colon cannot even name a directory.
+	root, err := clientprofile.ServerDir(payload.StateRoot, payload.ServerID)
+	if err != nil {
+		return clientprofile.Profile{}, err
+	}
 	identityRoot := filepath.Join(root, "identity")
 	identity, err := deploy.LoadActiveIdentity(identityRoot)
 	if err != nil {

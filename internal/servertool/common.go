@@ -53,13 +53,20 @@ type toolAccess struct {
 	// needRotationArchive unveils the directory a rotated generation is frozen
 	// into. Only repo rotate asks for it: no other command may write there.
 	needRotationArchive bool
-	needSVN             bool
-	needRealmAlias      bool
-	repositoryRoot      string
-	repositoryAuthz     string
-	svnAdminBinary      string
-	svnLookBinary       string
-	rotationArchiveRoot string
+	// needPublicShareState unveils the channel records, and nothing else -
+	// notably not the whole results root that needRepoResults would grant.
+	// publicShareStateWrite decides whether that unveil is readable or
+	// writable, because listing what is published and withdrawing it are
+	// different powers and the operator's read path must not carry the second.
+	needPublicShareState  bool
+	publicShareStateWrite bool
+	needSVN               bool
+	needRealmAlias        bool
+	repositoryRoot        string
+	repositoryAuthz       string
+	svnAdminBinary        string
+	svnLookBinary         string
+	rotationArchiveRoot   string
 }
 
 func (access toolAccess) promises() string {
@@ -214,6 +221,13 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		if deletionArchiveNeedsOwnUnveil(repositoryResultsRoot, publicShareStateRoot) {
 			paths = append(paths, obsandbox.Path{Label: "public-share-state", Name: publicShareStateRoot, Perms: "rwc"})
 		}
+	}
+	if access.needPublicShareState && publicShareStateRoot != "" {
+		perms := "r"
+		if access.publicShareStateWrite {
+			perms = "rwc"
+		}
+		paths = append(paths, obsandbox.Path{Label: "public-share-state", Name: publicShareStateRoot, Perms: perms})
 	}
 	if access.needRepositoryData && access.repositoryRoot != "" {
 		paths = append(paths,

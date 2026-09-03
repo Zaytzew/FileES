@@ -340,6 +340,34 @@ func (s *Store) Revoke(requesterRealm, channelID string) (Record, error) {
 func (s *Store) Delete(requesterRealm, channelID string) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.deleteLocked(channelID, func(record Record) error {
+		if record.Manifest.OwnerRealm != requesterRealm {
+			return ErrForbidden
+		}
+		return nil
+	})
+}
+
+// DeleteAsOperator withdraws a channel on the authority of holding the machine
+// rather than of owning the realm.
+//
+// The operator of a server must be able to take a published link down: an
+// abusive share, one published by mistake, one a court order names. Routing
+// that through Delete would mean naming a realm they may not own, so the check
+// is replaced rather than bypassed - the caller has already been constrained by
+// the file permissions on Root and by the sandbox of the calling command.
+//
+// It withdraws and cannot publish or amend. That asymmetry is deliberate:
+// taking something down is recoverable by republishing from the client that
+// owns it, while an operator able to alter what a realm publishes could change
+// what recipients receive without the owner ever seeing it.
+func (s *Store) DeleteAsOperator(channelID string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deleteLocked(channelID, func(Record) error { return nil })
+}
+
+func (s *Store) deleteLocked(channelID string, permitted func(Record) error) (Record, error) {
 	record, err := s.load(channelID)
 	if err != nil {
 		return Record{}, err
@@ -353,8 +381,8 @@ func (s *Store) Delete(requesterRealm, channelID string) (Record, error) {
 		}
 		return Record{}, ErrForbidden
 	}
-	if record.Manifest.OwnerRealm != requesterRealm {
-		return Record{}, ErrForbidden
+	if err := permitted(record); err != nil {
+		return Record{}, err
 	}
 	now := s.now()
 	record.State, record.UpdatedAt, record.DeletedAt = StateDeleted, now, &now
@@ -808,3 +836,49 @@ func atomicJSON(path string, mode os.FileMode, value any) error {
 }
 
 func (r Record) String() string { return fmt.Sprintf("%s/%s (%s)", r.Alias, r.ChannelID, r.State) }
+
+// ListAll returns every channel record on this server, newest first.
+//
+// It takes no requester and consults no RepositoryAuthority, which is the whole
+// difference from ListOwned. That method answers "what may this realm see",
+// which is the right question for a client and the wrong one for the operator
+// of the machine: an operator holding the disk has no realm to authorise
+// against, and asking them to name one they may not own is asking them to
+// guess. Access control here is the file permissions on Root and the sandbox
+// of the calling command.
+//
+// Deleted records are omitted - the files linger for the audit trail and are
+// not shares any more. Revoked ones are kept and marked, because "this alias
+// used to exist and was withdrawn" is exactly the answer a 404 poses.
+func (s *Store) ListAll() ([]Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := os.ReadDir(filepath.Join(s.Root, "channels"))
+	if errors.Is(err, os.ErrNotExist) {
+		return []Record{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Record, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		record, err := s.loadPath(filepath.Join(s.Root, "channels", entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		if record.State == StateDeleted {
+			continue
+		}
+		result = append(result, record)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].UpdatedAt.Equal(result[j].UpdatedAt) {
+			return result[i].ChannelID < result[j].ChannelID
+		}
+		return result[i].UpdatedAt.After(result[j].UpdatedAt)
+	})
+	return result, nil
+}

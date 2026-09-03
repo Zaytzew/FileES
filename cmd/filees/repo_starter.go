@@ -288,6 +288,15 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	if err := hideFileesDir(filepath.Join(wc, ".filees")); err != nil {
 		logger.Warnf("hide .filees directory: %v", err)
 	}
+	// The folder gets the FileES icon in Explorer, so the owner can tell which
+	// of his project directories are being kept and which are not without
+	// opening anything. Best effort in both halves: a repository that syncs
+	// perfectly must never fail to start because a decoration did.
+	if iconPath, err := managedFolderIconPath(); err != nil {
+		logger.Warnf("prepare folder icon: %v", err)
+	} else if err := markManagedFolder(wc, iconPath); err != nil {
+		logger.Warnf("mark managed folder: %v", err)
+	}
 	manifest := filepath.Join(stateDir, "manifest.json")
 	tmpManifest := filepath.Join(stateDir, "manifest.tmp")
 	baselineOK := filepath.Join(stateDir, "baseline.ok")

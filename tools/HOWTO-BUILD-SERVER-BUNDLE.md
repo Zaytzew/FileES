@@ -91,10 +91,27 @@ obecna w payloadzie, ale nieobecna w `packaging/server/openbsd-binary-policy.jso
 zainstalował się mimo obecności w wydaniu, aż do r688.
 
 **Wpisów manifestu jest o jeden więcej niż plików i tak ma być.**
-`filees-ssh-auth` instaluje się dwa razy: pod własną nazwą i jako
-`/usr/libexec/auth/login_-filees` — helper klasy logowania BSD, setuid `4550`,
-grupa `auth`. Jeden plik, dwa cele. Wzorzec na dziś to **17 plików, 18 wpisów**;
-sprawdzaj proporcję względem poprzedniego wydania, nie równość.
+`bin/filees-recovery-entry` ma **dwa cele instalacji**: `filees-recovery-entry`
+z setuid `4550` oraz `filees-recovery-authorize` z `0555`. Jedna binarka, dwie
+tożsamości o różnym uprzywilejowaniu — i dlatego w logu instalacji ten sam
+`sha256` pojawia się dwa razy pod dwiema nazwami.
+
+`filees-ssh-auth` też instaluje się pod inną nazwą niż własna
+(`/usr/libexec/auth/login_-filees`, setuid `4550`, grupa `auth`), ale **tylko
+raz** — to zmiana nazwy, nie duplikacja.
+
+Wzorzec na dziś: **17 plików, 18 wpisów**. Sprawdzaj proporcję względem
+poprzedniego wydania, nie równość, a rozbieżność licz tak:
+
+```bash
+python -c "
+import json,io,collections
+m=json.load(io.open('releases/r<ID>/openbsd-amd64/manifest.json',encoding='utf-8'))
+c=collections.Counter(f['source'] for f in m['files'])
+print('celow',len(m['files']),'zrodel',len(c))
+print([s for s,n in c.items() if n>1])
+"
+```
 
 ## Commit
 

@@ -34,6 +34,18 @@ var BuiltinIgnorePatterns = []string{
 	// working on binary files, so CAD is the flagship case and this list had
 	// nothing for it - only office and developer clutter.
 	"**/*.dwl", "**/*.dwl2", "**/*.sv$", "**/*.ac$",
+	// Office backups and autorecovery. The owner files are already caught by
+	// ~$*, but these are not, and they behave the same way: written by the
+	// application, appearing and vanishing around a save, never authored by
+	// anyone. wbk is a Word backup copy, asd its autorecovery, xlk an Excel
+	// backup, laccdb an Access lock.
+	//
+	// Excel's extensionless temporary saves - eight random characters with no
+	// suffix - are deliberately NOT matched. No pattern for them can be
+	// written that does not also swallow real files, and in this product a
+	// too-eager rule does not create clutter, it silently stops versioning
+	// someone's work.
+	"**/*.wbk", "**/*.asd", "**/*.xlk", "**/*.laccdb",
 }
 
 // IsBuiltinIgnored reports whether rel (a slash-separated path relative to a

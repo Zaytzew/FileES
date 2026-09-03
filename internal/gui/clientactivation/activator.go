@@ -138,9 +138,14 @@ func (activator *Activator) validate(serverID, address string) error {
 	return nil
 }
 
-// activationStepDeadline matches pkg/ipcserver's activationDeadline. It is not
-// imported from there on purpose - the client bound must be at least the
-// daemon's, so that a timeout is reported as whatever actually went wrong
-// rather than as a socket read expiring first, and a constant that can drift
-// is easier to notice than a shared one that silently changes both ends.
+// activationStepDeadline covers pkg/ipcserver's activationDeadline with room to
+// spare. It is not imported from there on purpose - the client bound must be at
+// least the daemon's, so a timeout is reported as whatever actually went wrong
+// rather than as a socket read expiring first, and a constant that can drift is
+// easier to notice than a shared one that silently changes both ends.
+//
+// The daemon's bound came down to ten minutes once activation began reporting
+// its own progress. This stays where it is: being generous costs nothing here,
+// because the daemon now answers first with a real cause, and the only job left
+// for this number is to not expire before it does.
 const activationStepDeadline = 30 * time.Minute

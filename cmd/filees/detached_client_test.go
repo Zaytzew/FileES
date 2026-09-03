@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"testing"
+
+	"filees/pkg/reposupervisor"
 )
 
 // The server's refusal is precise; what was missing is that it is terminal. It
@@ -53,5 +55,42 @@ func TestReactivationClearsTheState(t *testing.T) {
 	coordinator.forgetDetached("manual")
 	if !coordinator.markDetached("manual") {
 		t.Fatal("after a successful refresh a later detachment must be announced again")
+	}
+}
+
+// Offline and detached are different facts and must stay different fields.
+// Offline says the server could not be reached; detached says it was reached
+// and refused us. They ask for opposite responses - wait for the network,
+// versus activate this client again - so folding one into the other sends the
+// reader to fix something that is not broken.
+func TestDetachedIsNotFiledAsOffline(t *testing.T) {
+	coordinator := &reservationProjectionCoordinator{
+		results: map[reposupervisor.Key]cachedReservationResult{},
+	}
+	key := reposupervisor.Key{ServerID: "manual", RepoID: "bbbddef3"}
+
+	refusal := errors.New("filees-client-entry proof: proof does not match one live staged or active client")
+	cached := coordinator.results[key]
+	if isDetachedClient(refusal) {
+		cached.detached = true
+	} else {
+		cached.offline = true
+	}
+	coordinator.results[key] = cached
+
+	if got := coordinator.results[key]; !got.detached || got.offline {
+		t.Fatalf("a revoked client is detached and not offline: %+v", got)
+	}
+
+	// A genuine transport failure keeps the old meaning.
+	unreachable := errors.New("dial tcp 10.0.1.1:2222: connect: connection refused")
+	other := cachedReservationResult{}
+	if isDetachedClient(unreachable) {
+		other.detached = true
+	} else {
+		other.offline = true
+	}
+	if !other.offline || other.detached {
+		t.Fatalf("an unreachable server is offline and not detached: %+v", other)
 	}
 }

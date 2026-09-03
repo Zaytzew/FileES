@@ -53,9 +53,14 @@ type reservationFetcher interface {
 }
 
 type cachedReservationResult struct {
-	result  reservationv1.Result
-	offline bool
-	present bool
+	result reservationv1.Result
+	// offline means the server could not be reached. detached means it was
+	// reached and refused us: this client is no longer one of its own. They
+	// call for opposite responses - wait, versus activate again - so they are
+	// two fields and never one.
+	offline  bool
+	detached bool
+	present  bool
 }
 
 type reservationLocalOverlay struct {
@@ -228,7 +233,11 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 		coordinator.mu.Lock()
 		if fetchErr != nil {
 			cached := coordinator.results[key]
-			cached.offline = true
+			if isDetachedClient(fetchErr) {
+				cached.detached = true
+			} else {
+				cached.offline = true
+			}
 			coordinator.results[key] = cached
 		} else {
 			coordinator.results[key] = cachedReservationResult{result: result, present: true}
@@ -354,7 +363,7 @@ func (coordinator *reservationProjectionCoordinator) snapshot(ctx context.Contex
 		return ipcserver.ReservationSnapshot{}, err
 	}
 	return ipcserver.ReservationSnapshot{
-		Reservations: rows, Stale: cached.result.Stale, Offline: cached.offline,
+		Reservations: rows, Stale: cached.result.Stale, Offline: cached.offline, Detached: cached.detached,
 		AsOf: cached.result.AsOf, Generation: cached.result.Generation,
 	}, nil
 }

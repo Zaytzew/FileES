@@ -104,20 +104,32 @@ func TestWorkingCopiesAreTheFoldersLeftOnThisDisk(t *testing.T) {
 			t.Fatalf("complete detach %s: %v", repoID, err)
 		}
 	}
-	attach("manual", "willa", `C:\Projekty\Willa`)
-	attach("manual", "biurowiec", `C:\Projekty\Biurowiec`)
+	// Built from t.TempDir rather than written as literals. localrepo rejects
+	// a path that is not absolute, and "C:\Projekty\Willa" is absolute only on
+	// Windows - so hard-coded Windows paths make a test that passes on the
+	// author's machine and fails everywhere else. Caught on the OpenBSD VM,
+	// which is the same defect this project already carries in the Wails
+	// picker tests and which I had just finished writing down.
+	projects := t.TempDir()
+	willa := filepath.Join(projects, "Willa")
+	biurowiec := filepath.Join(projects, "Biurowiec")
+	stare := filepath.Join(projects, "Stare")
+	obce := filepath.Join(projects, "Obce")
+
+	attach("manual", "willa", willa)
+	attach("manual", "biurowiec", biurowiec)
 	finish("manual", "biurowiec", false)
 	// A deleted repository has no working copy any more; offering the path
 	// would send someone to an empty place.
-	attach("manual", "stare", `C:\Projekty\Stare`)
+	attach("manual", "stare", stare)
 	finish("manual", "stare", true)
-	attach("spot", "obce", `C:\Projekty\Obce`)
+	attach("spot", "obce", obce)
 
 	got := workingCopiesOf(store, "manual")
 	if len(got) != 2 {
 		t.Fatalf("working copies = %v, want the two that still exist", got)
 	}
-	for _, unwanted := range []string{`C:\Projekty\Stare`, `C:\Projekty\Obce`} {
+	for _, unwanted := range []string{stare, obce} {
 		for _, path := range got {
 			if path == unwanted {
 				t.Errorf("working copies include %s", unwanted)

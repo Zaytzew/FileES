@@ -6,8 +6,6 @@ import (
 	"path"
 	"sort"
 	"strings"
-
-	"filees/internal/serverinstall/manifest"
 )
 
 // residentServices maps a shipped binary to the rc.d service that runs it.
@@ -35,10 +33,21 @@ var residentServices = map[string]string{
 var restartOrder = []string{"filees_public_authority", "filees_links"}
 
 // residentServicesNeedingRestart returns the rc.d services whose binary this
-// install replaced, in the order they should be restarted.
-func residentServicesNeedingRestart(files []manifest.File) []string {
+// install actually replaced, in the order they should be restarted.
+//
+// It takes the plan rather than the manifest deliberately. Both resident
+// binaries appear in every manifest, so reporting from there would print the
+// same three lines after every upgrade including the ones that changed neither
+// - and a notice that appears unconditionally is read as decoration by the time
+// it carries something. Only ADD and UPDATE mean the running image is now stale;
+// UNCHANGED leaves it current, and METADATA rewrites ownership or mode without
+// touching the bytes the process is executing.
+func residentServicesNeedingRestart(files []FilePlan) []string {
 	needed := map[string]bool{}
 	for _, file := range files {
+		if file.Action != "ADD" && file.Action != "UPDATE" {
+			continue
+		}
 		if service, ok := residentServices[path.Base(strings.ReplaceAll(file.Target, `\`, "/"))]; ok {
 			needed[service] = true
 		}
@@ -68,7 +77,7 @@ func residentServicesNeedingRestart(files []manifest.File) []string {
 // download in flight, an upload being received - and an install is not the
 // place to decide that for someone. The command is printed in full so finishing
 // costs a paste rather than a search through documentation.
-func reportResidentServices(out io.Writer, files []manifest.File) {
+func reportResidentServices(out io.Writer, files []FilePlan) {
 	services := residentServicesNeedingRestart(files)
 	if len(services) == 0 || out == nil {
 		return

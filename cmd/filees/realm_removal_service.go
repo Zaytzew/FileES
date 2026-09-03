@@ -78,7 +78,11 @@ func (s realmRemovalClientService) Begin(ctx context.Context, serverID, realmID 
 	if err != nil {
 		return contract.RealmRemoveBeginResult{}, err
 	}
-	kitPath := filepath.Join(filepath.Clean(payload.RecoveryDirectory), "filees-recovery-"+serverID+"-"+operationID+".fkr")
+	segment, err := serverPathSegment(serverID)
+	if err != nil {
+		return contract.RealmRemoveBeginResult{}, err
+	}
+	kitPath := filepath.Join(filepath.Clean(payload.RecoveryDirectory), "filees-recovery-"+segment+"-"+operationID+".fkr")
 	if err := recoverykit.Store(kitPath, kit); err != nil {
 		return contract.RealmRemoveBeginResult{}, fmt.Errorf("store pending recovery kit: %w", err)
 	}

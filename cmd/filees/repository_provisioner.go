@@ -522,7 +522,11 @@ func (p *daemonProvisioner) prepareRepositoryRecovery(ctx context.Context, recor
 	if !filepath.IsAbs(p.recoveryRegistry.Root) {
 		return "", errors.New("repository recovery registry is unavailable")
 	}
-	kitPath := filepath.Join(p.recoveryRegistry.Root, "filees-recovery-"+record.ServerID+"-"+record.DetachOperationID+".fkr")
+	segment, err := serverPathSegment(record.ServerID)
+	if err != nil {
+		return "", err
+	}
+	kitPath := filepath.Join(p.recoveryRegistry.Root, "filees-recovery-"+segment+"-"+record.DetachOperationID+".fkr")
 	draft, err := recoverykit.LoadDraft(kitPath)
 	if errors.Is(err, os.ErrNotExist) {
 		var publicKey string

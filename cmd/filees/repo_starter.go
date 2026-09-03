@@ -351,6 +351,18 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		sink = nil
 	}
 	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
+	// Checkpoint the watcher's manifest whenever a batch reaches the server.
+	//
+	// It was otherwise written only when the scan loop shut down cleanly, so
+	// every hard stop - and on Windows every stop is hard, there being no
+	// SIGTERM to deliver - threw away the record of everything published since
+	// the last one. The next start then compared the working copy against a
+	// stale picture and reported the difference as new work.
+	service.OnBatchPublished = func() {
+		if err := scanner.SaveState(manifest); err != nil {
+			logger.Warnf("checkpoint watcher manifest: %v", err)
+		}
+	}
 	recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger)
 	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	if deps.reservations != nil {

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -39,6 +40,41 @@ func (s SVNLookSource) Head(ctx context.Context, repoID string) (int64, error) {
 		return 0, errors.New("svnlook youngest returned an invalid revision")
 	}
 	return revision, nil
+}
+
+// RevisionDate reports when a revision was committed.
+//
+// The listing header used to date a share by when it was defined, which for a
+// link following HEAD meant a listing current to the minute under a date weeks
+// old. This is the fact that header wanted, and it costs one more svnlook
+// subcommand in a type that already runs three.
+//
+// svnlook prints "2026-08-14 09:12:33 +0200 (czw, 14 sie 2026)". Only the
+// leading timestamp is parsed: the parenthesised part is localised by the
+// server's own locale and would make this depend on it.
+func (s SVNLookSource) RevisionDate(ctx context.Context, repoID string, revision int64) (time.Time, error) {
+	repository, err := s.repositoryPath(repoID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if revision < 1 {
+		return time.Time{}, errors.New("svnlook date requires a positive revision")
+	}
+	command := s.command(ctx, "date", "-r", strconv.FormatInt(revision, 10), repository)
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &limitedWriter{Writer: &stderr, Remaining: 4096}
+	if err := command.Run(); err != nil {
+		return time.Time{}, fmt.Errorf("svnlook date: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	raw := strings.TrimSpace(stdout.String())
+	if index := strings.Index(raw, " ("); index > 0 {
+		raw = raw[:index]
+	}
+	at, err := time.Parse("2006-01-02 15:04:05 -0700", strings.TrimSpace(raw))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("svnlook date returned an unparsable timestamp: %w", err)
+	}
+	return at.UTC(), nil
 }
 
 func (s SVNLookSource) Cat(ctx context.Context, repoID, repoPath string, revision int64, dst io.Writer) error {

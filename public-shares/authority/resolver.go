@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"filees/public-shares/channel"
 	"filees/public-shares/manifest"
@@ -37,6 +38,14 @@ type Source interface {
 // production SVNLookSource implements it.
 type TreeSource interface {
 	Tree(context.Context, string, string, int64) ([]TreeObject, error)
+}
+
+// DateSource reports when a revision was committed. Separate from Source for
+// the same reason TreeSource is: an implementation that cannot answer keeps
+// working and the date is simply absent, rather than every embedding and test
+// source having to grow a method it has no way to satisfy.
+type DateSource interface {
+	RevisionDate(context.Context, string, int64) (time.Time, error)
 }
 
 type TreeObject struct {
@@ -195,6 +204,15 @@ func (r Resolver) Enter(ctx context.Context, alias, channelSlug string) (Entry, 
 	projection, err := r.projectionAt(ctx, record, revision)
 	if err != nil {
 		return Entry{}, ErrNotFound
+	}
+	// Best effort: a source that cannot date a revision leaves the field zero
+	// and the listing simply omits it. Failing the whole resolution because a
+	// decorative date is unavailable would trade a working share for a nicer
+	// header.
+	if dater, ok := r.Source.(DateSource); ok {
+		if at, err := dater.RevisionDate(ctx, record.Manifest.RepoID, revision); err == nil {
+			projection.RevisionAt = at
+		}
 	}
 	return Entry{Projection: projection, Revision: revision, FrostProof: r.proof(record, revision)}, nil
 }

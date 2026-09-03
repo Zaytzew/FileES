@@ -20,6 +20,20 @@ var BuiltinIgnorePatterns = []string{
 	"**/.vscode", "**/.idea", "**/*.swp", "**/*.swo",
 	"**/node_modules", "**/__pycache__", "**/*.o", "**/*.pyc",
 	"**/.git",
+	// CAD churn. dwl and dwl2 are AutoCAD's lock files: they exist only while
+	// a drawing is open, name whoever opened it, and are deleted on close.
+	// Versioning them is worse than pointless - they are a cruder answer to
+	// the question FileES reservations already answer, and their appearing and
+	// vanishing is exactly the churn that puts a path into a commit batch and
+	// then removes it before the commit runs.
+	//
+	// sv$ and ac$ are autosave and temporary drawings, transient by design.
+	//
+	// Measured on 2026-09-03 in a live project: an open drawing kept dwl and
+	// dwl2 cycling through the watcher for hours. FileES exists for teams
+	// working on binary files, so CAD is the flagship case and this list had
+	// nothing for it - only office and developer clutter.
+	"**/*.dwl", "**/*.dwl2", "**/*.sv$", "**/*.ac$",
 }
 
 // IsBuiltinIgnored reports whether rel (a slash-separated path relative to a

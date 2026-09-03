@@ -72,9 +72,22 @@ func Load(path string) (Runtime, error) {
 	if !filepath.IsAbs(path) {
 		return Runtime{}, errors.New("public links config path must be absolute")
 	}
+	// Three different failures used to leave here as one sentence, and the one
+	// they all named was the least likely of the three. On 2026-09-03 the
+	// service could not traverse /etc/filees at all - the directory's group had
+	// been changed from _filees-public to wheel - and it reported that the
+	// config was writable by group or others. The mode was fine. Acting on the
+	// message meant loosening permissions on a file that needed none of it,
+	// while the actual cause went unexamined for hours.
 	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0022 != 0 {
-		return Runtime{}, errors.New("public links config must be a regular file not writable by group or others")
+	if err != nil {
+		return Runtime{}, fmt.Errorf("public links config is unreachable: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return Runtime{}, fmt.Errorf("public links config %s is not a regular file", path)
+	}
+	if info.Mode().Perm()&0022 != 0 {
+		return Runtime{}, fmt.Errorf("public links config %s is mode %04o and must not be writable by group or others", path, info.Mode().Perm())
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {

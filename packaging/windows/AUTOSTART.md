@@ -45,13 +45,11 @@ który poddałby się po N próbach, zostawiłby pracę właściciela bez opieki
 **po cichu** — czyli dokładnie ten kształt awarii, przeciwko któremu ten
 produkt istnieje.
 
-Zatrzymanie demona odbywa się dziś przez `Stop-Process`, czyli twardo. Windows
-nie ma odpowiednika SIGTERM do dostarczenia, a `filees` nie ma podkomendy
-wyłączającej — jedyna łagodna droga to `system.shutdown` po IPC, którą umie
-interfejs. **To ma znaczenie:** manifest obserwatora zapisuje się wyłącznie
-przy łagodnym zamknięciu, więc każde twarde ubicie kosztuje ponowne wykrycie
-całego drzewa przy starcie. Opisane szerzej w `messages-to-brothers/claude.md`,
-wpis z nocy 2026-09-03.
+Nadzorca zatrzymuje demona tylko pośrednio — sam go nie ubija. Do zatrzymania
+z zewnątrz służy `filees shutdown` (r812), które przechodzi po IPC i daje
+demonowi domknąć cykl skanowania. Windows nie ma SIGTERM do dostarczenia, więc
+**to jest jedyna łagodna droga z wiersza poleceń**; `Stop-Process` nią nie jest
+i kosztuje manifest obserwatora. Kolejność przy podmianie binarek niżej.
 
 ## Kolejność przy podmianie binarek
 

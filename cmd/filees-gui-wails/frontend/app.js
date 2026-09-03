@@ -204,8 +204,19 @@ function shortDateTime(value) {
 // different SSH commands. Reading one as the other is the mistake this
 // replaces, only inverted.
 // detachedServers are the ones that refused this client outright: it is no
-// longer one of theirs. The daemon establishes this by being told so, which is
-// the only way to know it - a refusal and an outage look identical from here.
+// longer one of theirs. Deliberately NOT rendered in the connection header.
+//
+// A detachment is something the owner did on purpose, confirming three times,
+// and a banner naming the server afterwards is neither news nor help: nothing
+// about re-activation can be done from the client, so the sentence is pure
+// clutter. It can be worse than clutter - the name of a server and of its
+// repositories staying on screen after someone deliberately cut ties with it is
+// an exposure, not an untidiness, and no wording fixes that.
+//
+// The agreed shape is a journal entry when it happens, and a separate
+// "recently detached" panel that forgets after about 48 hours. Both need the
+// detachment to carry a moment rather than be a flag, which is why this stays
+// unused until that exists.
 function detachedServers(snapshot) {
   return (snapshot.servers || [])
     .filter((server) => server.detached === true)
@@ -298,25 +309,11 @@ function renderConnection(snapshot) {
   core.className = "pulse-core";
   freshness.className = "projection-freshness";
   let connectionLabel = "Demon jest rozłączony";
-  const detached = snapshot.connected ? detachedServers(snapshot) : [];
   const stale = snapshot.connected ? staleViewServers(snapshot) : [];
   if (!snapshot.connected) {
     core.classList.add("is-offline");
     freshness.classList.add("is-unverified");
     freshness.textContent = "Demon niedostępny — dane niepotwierdzone";
-  } else if (detached.length > 0) {
-    // Before staleness, because a detached client is also out of date and
-    // would otherwise be described as a server that will not answer. It
-    // answers perfectly; it refuses us, usually because somebody deactivated
-    // this client here on purpose. Saying "nie odpowiada" sends the reader to
-    // check a network that is fine and to doubt a server doing exactly what it
-    // was told.
-    core.classList.add("is-stale");
-    freshness.classList.add("is-unverified");
-    const first = detached[0];
-    const rest = detached.length > 1 ? ` (+${detached.length - 1})` : "";
-    freshness.textContent = `Ten klient jest odłączony od „${first}" — wymagana ponowna aktywacja${rest}`;
-    connectionLabel = `${first}: klient odłączony`;
   } else if (stale.length > 0) {
     // Named, not counted. "One server is stale" sends the reader hunting; the
     // name and the age let them decide whether it matters to them.

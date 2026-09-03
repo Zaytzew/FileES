@@ -84,6 +84,7 @@ type ServerProjection struct {
 	ViewGeneratedAt  string `json:"view_generated_at,omitempty"`
 	ViewSyncedAt     string `json:"view_synced_at,omitempty"`
 	ViewSyncError    string `json:"view_sync_error,omitempty"`
+	Detached         bool   `json:"detached,omitempty"`
 	ViewSyncFailures int    `json:"view_sync_failures,omitempty"`
 	// What the server says about its own publishing, as opposed to our
 	// fetching. Only this separates a quiet server from an abandoned one.
@@ -710,7 +711,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingRequiredRepos: server.PendingRequiredRepos,
 			ReservationCount:     server.ReservationCount, ReservationsKnown: server.ReservationsKnown,
 			ReservationProjection: server.ReservationProjection, ReservationAsOf: server.ReservationAsOf,
-			ViewGeneratedAt: server.ViewGeneratedAt, ViewSyncedAt: server.ViewSyncedAt, ViewSyncError: server.ViewSyncError, ViewSyncFailures: server.ViewSyncFailures, ServerViewProducedAt: server.ServerViewProducedAt,
+			ViewGeneratedAt: server.ViewGeneratedAt, ViewSyncedAt: server.ViewSyncedAt, ViewSyncError: server.ViewSyncError, ViewSyncFailures: server.ViewSyncFailures, ServerViewProducedAt: server.ServerViewProducedAt, Detached: server.Detached,
 			SessionTimeoutMinutes: server.SessionTimeoutMin,
 		})
 	}

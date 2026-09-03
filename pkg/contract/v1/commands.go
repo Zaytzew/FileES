@@ -332,6 +332,17 @@ type ActivationStatus struct {
 	// it has to be asked for rather than inferred from age.
 	ServerViewGeneration int64  `json:"server_view_generation,omitempty"`
 	ServerViewProducedAt string `json:"server_view_produced_at,omitempty"`
+
+	// Detached means this server has refused this client: it is no longer one
+	// of its own, normally because somebody deactivated it here on purpose.
+	//
+	// It is not a freshness field and not a failure count. Those describe how
+	// well we are keeping up with a server that still knows us; this says the
+	// relationship is over until the client is activated again. Presenting it
+	// as a stale or unreachable server sends the reader to wait for something
+	// that will never arrive, and to doubt a server that is working exactly as
+	// instructed.
+	Detached bool `json:"detached,omitempty"`
 }
 
 type ServerSetSessionTimeoutPayload struct {

@@ -36,6 +36,10 @@ type reservationProjectionCoordinator struct {
 	// its own: the query attaches to work already happening, which is what
 	// keeps the session count where the server hardening expects it.
 	onServerViewProduced func(serverID string, generation int64, producedAt time.Time)
+	// onDetached carries the one fact no local measurement can produce: the
+	// server was reached and refused this client. It rides the same fetch,
+	// like onServerViewProduced, rather than asking a question of its own.
+	onDetached func(serverID string, detached bool)
 
 	mu       sync.RWMutex
 	profiles map[string]clientprofile.Profile
@@ -269,6 +273,9 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	lg := talk.With("reservation-projection:" + serverID)
 	switch {
 	case failed == 0 && fetched > 0:
+		if coordinator.onDetached != nil {
+			coordinator.onDetached(serverID, false)
+		}
 		coordinator.forgetDetached(serverID)
 		lg.Infof("state refreshed: %d ok, %d not active", fetched, skipped)
 	case failed > 0 && isDetachedClient(firstErr):
@@ -284,6 +291,9 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 		// simply start working again, and a loop that had given up would need
 		// someone to notice and restart the daemon - which is the shape of
 		// defect this replaces, not an improvement on it.
+		if coordinator.onDetached != nil {
+			coordinator.onDetached(serverID, true)
+		}
 		if coordinator.markDetached(serverID) {
 			lg.Warnf("ten klient został odłączony od serwera i nie ma tu już uprawnień; "+
 				"projekcja pozostanie nieaktualna do czasu ponownej aktywacji (%v)", firstErr)

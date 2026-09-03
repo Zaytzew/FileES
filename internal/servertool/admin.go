@@ -149,12 +149,22 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			return adminError(stderr, err)
 		}
 		return writeAdminEmpty(stdout, uuid.NewString())
-	// The operator can read what this server publishes and withdraw it, and
-	// cannot publish or amend. Publishing belongs to the realm that owns the
-	// repository; an operator able to alter a share could change what
-	// recipients receive without the owner ever seeing it. Withdrawal is the
-	// half that must not require the owner, because an abusive or mistaken
-	// link has to come down from the machine that serves it.
+	// Read and delete, never edit. The case that sets the shape is a foreign
+	// realm abusing this server: the operator has to be able to pull down a
+	// link serving fraud, and the owner of that link will never consent, so
+	// withdrawal cannot require them.
+	//
+	// The same case draws the other boundary. Acting on someone else's realm,
+	// an operator who could amend a share would be able to change what its
+	// recipients receive with the owner neither consenting nor seeing it. With
+	// a single realm - own repository, own clients, own server - the two powers
+	// look nearly alike and the restriction reads as excess caution. Under
+	// guest activation they are plainly different, and that is the case the
+	// design answers to.
+	//
+	// So: holding the machine authorises reading and withdrawing, holding the
+	// realm authorises publishing and amending. Two sources, not one with an
+	// exception.
 	case "share list":
 		return runShareList(path, args, stdout, stderr)
 	case "share delete":

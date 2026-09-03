@@ -91,3 +91,32 @@ func (w appendWriter) Write(p []byte) (int, error) {
 	defer file.Close()
 	return file.Write(p)
 }
+
+// RecordFailure appends one failure under scope.
+//
+// It exists so a caller can write to the operational log without naming
+// errmap. internal/gui must not import engine packages - watcher, commit,
+// client, ipcserver, errmap - and an interface package that made every writer
+// import the error catalogue would have quietly forced that boundary open. It
+// did: the activation journal added in r768 imported errmap from
+// internal/gui/clientactivation and stood for twenty revisions before the
+// architecture test was run again.
+//
+// Best effort and silent by design. A log that can fail the thing it describes
+// is worse than the silence it replaces.
+func RecordFailure(scope, message string, cause error) {
+	if cause == nil {
+		return
+	}
+	sink, err := Open(scope)
+	if err != nil || sink == nil {
+		return
+	}
+	sink.Emit(errmap.Entry{
+		Code:     errmap.CodeNetUnreachable,
+		Severity: errmap.SevError,
+		Hint:     errmap.HintRetryLocal,
+		Msg:      message,
+		Details:  cause.Error(),
+	})
+}

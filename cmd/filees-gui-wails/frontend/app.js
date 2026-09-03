@@ -241,9 +241,16 @@ function unproducedServers(snapshot) {
       if (Number(server.view_sync_failures || 0) > 0) return false;
       const produced = Date.parse(server.server_view_produced_at);
       if (!Number.isFinite(produced)) return false;
-      // A day is not a policy about health; it is the point past which a human
-      // wants to be told the number instead of being left to assume freshness.
-      return Date.now() - produced > 24 * 3600 * 1000;
+      // Thirty days, not one. The server publishes only when something
+      // changes - an activation, a pairing, a grant - and never on a timer, so
+      // an old timestamp means nothing changed, which is the ordinary state of
+      // a project between phases. Below a month, silence is indistinguishable
+      // from a quiet week and saying anything is a false alarm.
+      //
+      // A server that has actually stopped answering shows up as a failed
+      // sync, which is a different branch with its own wording. Silence alone
+      // is never evidence of a fault.
+      return Date.now() - produced > 30 * 24 * 3600 * 1000;
     })
     .map((server) => ({
       name: server.display_name || server.id,
@@ -298,15 +305,15 @@ function renderConnection(snapshot) {
       connectionLabel = first.reason ? `${first.name}: ${first.reason}` : "Serwer nie odpowiada";
     }
   } else if (unproduced.length > 0) {
-    // Fetching works, so this is not a connection problem and must not be
-    // worded as one. The server is answering and telling us it has published
-    // nothing for us since then.
-    core.classList.add("is-stale");
-    freshness.classList.add("is-unverified");
+    // Stated, not warned about. Fetching works and the server has simply had
+    // nothing to publish, so the data on screen is not stale - it is exactly
+    // right, and the previous wording ("nie publikuje danych") called a
+    // correct picture doubtful. No is-stale, no is-unverified: those belong to
+    // the branches above, where something really is unknown.
     const first = unproduced[0];
     const rest = unproduced.length > 1 ? ` (+${unproduced.length - 1})` : "";
-    freshness.textContent = `„${first.name}" nie publikuje danych ${ageInWords(first.since)}${rest}`;
-    connectionLabel = "Serwer odpowiada, ale nie wydaje nowej projekcji";
+    freshness.textContent = `„${first.name}" — bez zmian ${ageInWords(first.since)}${rest}`;
+    connectionLabel = "Serwer odpowiada; od tego czasu nic się nie zmieniło";
   } else if (snapshot.stale) {
     core.classList.add("is-stale");
     freshness.classList.add("is-refreshing");

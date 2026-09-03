@@ -993,9 +993,29 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 
 	// Rebuild from the filtered operation lists. Never retain a path merely
 	// because it appeared in the pre-filter snapshot.
+	//
+	// Additions and modifications are re-checked for existence here, at the
+	// last moment before the commit, because the snapshot they come from can
+	// be minutes old. The watcher is deliberately slow to believe a file is
+	// gone - DeletedDebounce withholds a deletion for ten minutes so a
+	// transient absence is not committed as one - and that caution is only
+	// half a guarantee: it stops a vanished file being reported as deleted
+	// while doing nothing to stop the stale "it changed" record from being
+	// acted on. Between the second minute and the tenth, the batch carries a
+	// path the watcher already suspects is gone.
+	//
+	// Measured 2026-09-03 on live work: a released PDF was seen once at
+	// 14:53:22, removed, and the commit two minutes later failed the whole
+	// batch with E200009 "is not under version control". The path stayed in
+	// the cache and every retry failed the same way, holding 32 MB of real
+	// drawings behind one file that no longer existed.
+	//
+	// Deletions are deliberately not filtered: not existing is the whole point
+	// of them, and dropping them here would silently stop FileES from ever
+	// publishing a removal.
 	commitPaths = commitPaths[:0]
-	commitPaths = append(commitPaths, addPaths...)
-	commitPaths = append(commitPaths, modifiedPaths...)
+	commitPaths = append(commitPaths, existingPaths(wc, addPaths)...)
+	commitPaths = append(commitPaths, existingPaths(wc, modifiedPaths)...)
 	commitPaths = append(commitPaths, delPaths...)
 	for _, it := range renamedItems {
 		commitPaths = append(commitPaths, it.OldRel, it.Rel)
@@ -1293,6 +1313,22 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		s.OnPathsRemoved(removed)
 	}
 	return nil
+}
+
+// existingPaths keeps the paths still present on disk, whatever their kind.
+//
+// Deliberately Lstat and deliberately not IsRegular, unlike regularPaths just
+// below: a directory or a symlink that is still there belongs in the commit,
+// and only genuine disappearance is grounds for dropping a path. One file that
+// went away must cost that file, never the batch it happened to travel in.
+func existingPaths(wc string, paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if _, err := os.Lstat(filepath.Join(wc, filepath.FromSlash(p))); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func regularPaths(wc string, paths []string) []string {

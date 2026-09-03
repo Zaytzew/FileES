@@ -246,7 +246,7 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 		logger.Warnf("svn status before update failed: %v — update deferred", err)
 		return
 	}
-	if client.HasMissingPaths(status) {
+	if commit.BlocksUpdate(wc, status) {
 		logger.Infof("svn update deferred: working copy contains local removals")
 		return
 	}

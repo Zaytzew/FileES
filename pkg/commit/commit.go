@@ -578,7 +578,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 		s.Logger.Warnf("poll: svn status before update failed: %v — update deferred", err)
 		return
 	}
-	if client.HasMissingPaths(status) {
+	if BlocksUpdate(wc, status) {
 		s.Logger.Infof("poll: update deferred while working copy contains local removals")
 		return
 	}
@@ -1334,6 +1334,47 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		s.OnPathsRemoved(removed)
 	}
 	return nil
+}
+
+// BlocksUpdate reports whether a working copy holds removals that svn update
+// must not run over.
+//
+// It is not simply "are any paths missing", and the difference deadlocked two
+// of the owner's live repositories for a day. The guard exists to protect a
+// deletion the owner has made and FileES has not published yet: updating then
+// would resurrect the file underneath him. A path FileES does not manage is
+// never that deletion.
+//
+// The trap is specific and worth spelling out. Adding a pattern to the built-in
+// ignores makes the scanner stop looking at those files - including at their
+// disappearance - so nothing is ever reported for them again. Files already
+// under version control when the pattern shipped keep being versioned, and svn
+// keeps calling them missing the moment they go. Measured 2026-09-03: AutoCAD's
+// .dwl and .dwl2 locks, committed at r16 minutes before r778 ignored them,
+// vanished when the drawings were closed and left `svn status` permanently
+// showing removals nobody could publish. Every poll deferred the update, so two
+// working copies stopped receiving anything from the server at all - silently,
+// in a product whose whole purpose is that they do not.
+//
+// Cleaning those paths out of the repository is a separate decision and stays
+// the owner's. This only stops them holding the update lane shut.
+func BlocksUpdate(wc string, entries []client.StatusEntry) bool {
+	for _, entry := range entries {
+		if entry.Item != "missing" {
+			continue
+		}
+		rel, err := filepath.Rel(wc, entry.Path)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			// Outside the working copy, or unrelatable: treat it as blocking
+			// rather than guess. Failing towards the old behaviour keeps a
+			// path we cannot classify on the safe side.
+			return true
+		}
+		if !filepolicy.IsBuiltinIgnored(filepath.ToSlash(rel)) {
+			return true
+		}
+	}
+	return false
 }
 
 // publishable drops what must never reach a commit: paths that have gone away,

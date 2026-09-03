@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-
-	"filees/internal/serverinstall/manifest"
 )
 
 // The install replaces the binary and the running service keeps the image it
@@ -16,10 +14,10 @@ import (
 // looked broken when only a restart was missing.
 func TestInstallSaysWhichServicesStillRunTheOldRelease(t *testing.T) {
 	var out bytes.Buffer
-	reportResidentServices(&out, []manifest.File{
-		{Target: "/usr/local/libexec/filees/filees-links"},
-		{Target: "/usr/local/libexec/filees/filees-public-authority"},
-		{Target: "/usr/local/libexec/filees/filees-worker"},
+	reportResidentServices(&out, []FilePlan{
+		{Target: "/usr/local/libexec/filees/filees-links", Action: "UPDATE"},
+		{Target: "/usr/local/libexec/filees/filees-public-authority", Action: "UPDATE"},
+		{Target: "/usr/local/libexec/filees/filees-worker", Action: "UPDATE"},
 	})
 
 	report := out.String()
@@ -37,9 +35,9 @@ func TestInstallSaysWhichServicesStillRunTheOldRelease(t *testing.T) {
 // The frontend talks to the authority over a backchannel socket, so restarting
 // the authority second leaves it pointed at nothing for the gap.
 func TestTheAuthorityIsRestartedBeforeTheFrontend(t *testing.T) {
-	services := residentServicesNeedingRestart([]manifest.File{
-		{Target: "/usr/local/libexec/filees/filees-links"},
-		{Target: "/usr/local/libexec/filees/filees-public-authority"},
+	services := residentServicesNeedingRestart([]FilePlan{
+		{Target: "/usr/local/libexec/filees/filees-links", Action: "UPDATE"},
+		{Target: "/usr/local/libexec/filees/filees-public-authority", Action: "ADD"},
 	})
 	if len(services) != 2 || services[0] != "filees_public_authority" || services[1] != "filees_links" {
 		t.Fatalf("order = %v; the authority has to come up first", services)
@@ -50,9 +48,9 @@ func TestTheAuthorityIsRestartedBeforeTheFrontend(t *testing.T) {
 // every upgrade regardless would be ignored by the time it mattered.
 func TestNothingIsSaidWhenNoServiceIsAffected(t *testing.T) {
 	var out bytes.Buffer
-	reportResidentServices(&out, []manifest.File{
-		{Target: "/usr/local/libexec/filees/filees-worker"},
-		{Target: "/usr/local/libexec/filees/filees-serving-state"},
+	reportResidentServices(&out, []FilePlan{
+		{Target: "/usr/local/libexec/filees/filees-worker", Action: "UPDATE"},
+		{Target: "/usr/local/libexec/filees/filees-serving-state", Action: "UPDATE"},
 	})
 	if out.Len() != 0 {
 		t.Fatalf("nothing resident was replaced, so there is nothing to say: %s", out.String())
@@ -65,8 +63,25 @@ func TestAnUnorderedServiceIsStillReported(t *testing.T) {
 	residentServices["filees-future"] = "filees_future"
 	defer delete(residentServices, "filees-future")
 
-	services := residentServicesNeedingRestart([]manifest.File{{Target: "/usr/local/libexec/filees/filees-future"}})
+	services := residentServicesNeedingRestart([]FilePlan{{Target: "/usr/local/libexec/filees/filees-future", Action: "UPDATE"}})
 	if len(services) != 1 || services[0] != "filees_future" {
 		t.Fatalf("services = %v", services)
+	}
+}
+
+// Both resident binaries are in every manifest, so an upgrade that leaves them
+// byte-identical must say nothing. This is the case that decides whether the
+// notice is worth reading: printed after every install it becomes decoration,
+// and the one time it carries something it has already been tuned out.
+func TestAnUnchangedServiceIsNotReported(t *testing.T) {
+	var out bytes.Buffer
+	reportResidentServices(&out, []FilePlan{
+		{Target: "/usr/local/libexec/filees/filees-links", Action: "UNCHANGED"},
+		// METADATA rewrites ownership or mode; the running image keeps
+		// executing the same bytes, so nothing needs restarting.
+		{Target: "/usr/local/libexec/filees/filees-public-authority", Action: "METADATA"},
+	})
+	if out.Len() != 0 {
+		t.Fatalf("neither binary changed, so there is nothing to restart: %s", out.String())
 	}
 }

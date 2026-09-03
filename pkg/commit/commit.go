@@ -20,6 +20,7 @@ import (
 	"filees/pkg/client"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/errmap"
+	"filees/pkg/filepolicy"
 	"filees/pkg/runtime"
 	"filees/pkg/shout"
 	"filees/pkg/talk"
@@ -1014,8 +1015,8 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	// of them, and dropping them here would silently stop FileES from ever
 	// publishing a removal.
 	commitPaths = commitPaths[:0]
-	commitPaths = append(commitPaths, existingPaths(wc, addPaths)...)
-	commitPaths = append(commitPaths, existingPaths(wc, modifiedPaths)...)
+	commitPaths = append(commitPaths, publishable(wc, addPaths)...)
+	commitPaths = append(commitPaths, publishable(wc, modifiedPaths)...)
 	commitPaths = append(commitPaths, delPaths...)
 	for _, it := range renamedItems {
 		commitPaths = append(commitPaths, it.OldRel, it.Rel)
@@ -1313,6 +1314,31 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		s.OnPathsRemoved(removed)
 	}
 	return nil
+}
+
+// publishable drops what must never reach a commit: paths that have gone away,
+// and paths the built-in policy ignores.
+//
+// The second half exists because ignoring was only ever applied when a file
+// was first taken in. A file already under version control kept being
+// published on every change, so the patterns did nothing for any working copy
+// that already contained the clutter - which is every working copy that
+// predates them.
+//
+// Measured 2026-09-03: .dwl and .dwl2, AutoCAD's lock files, were committed at
+// r16 by this very client minutes after the patterns shipped. They stay in the
+// repository at whatever revision last carried them - freezing them is the
+// client's business, removing them is the owner's - but nothing new is
+// published for them again.
+func publishable(wc string, paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range existingPaths(wc, paths) {
+		if filepolicy.IsBuiltinIgnored(p) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // existingPaths keeps the paths still present on disk, whatever their kind.

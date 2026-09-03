@@ -154,12 +154,24 @@ func Open(path string) (*Store, error) {
 	// re-activated - dropping it from the panel it was written for. One line
 	// here rather than a schema bump, since the two spellings mean the same
 	// thing and the file rewrites itself on the next change anyway.
+	migrated := false
 	for i, rec := range doc.Records {
 		if rec.ReattachedAt != nil && rec.ReattachedAt.IsZero() {
 			doc.Records[i].ReattachedAt = nil
+			migrated = true
 		}
 	}
 	s.records = doc.Records
+	if migrated {
+		// Rewritten now rather than whenever something else happens to change.
+		// In memory the record is already right, so waiting would cost nothing
+		// functionally - but it would leave that date sitting on disk for days,
+		// in the one file somebody opens precisely because they want to know
+		// what actually happened. Best effort: a store that cannot be rewritten
+		// is still correct to read, and refusing to open it would take the
+		// panel down over a cosmetic repair.
+		_ = s.persistLocked()
+	}
 	return s, nil
 }
 

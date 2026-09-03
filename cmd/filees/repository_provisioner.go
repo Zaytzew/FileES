@@ -102,6 +102,23 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 	} else {
 		for _, operation := range operations {
 			if err := p.reconcileLocalBoundary(operation); err != nil {
+				// An operation with no local lifecycle record at all is
+				// orphaned, not broken: the repository finished its life and
+				// its record went, while the provisioning journal entry that
+				// describes how it was created stayed behind. There is nothing
+				// to reconcile it with and nothing anybody can do about it.
+				//
+				// It was reported as an error on every single start, forever,
+				// on the owner's machine - the same shape as A11 in the seam
+				// register: a terminal condition landing in a branch that
+				// repeats. A permanent false alarm at startup is worse than
+				// silence, because it teaches the reader to skip the place
+				// where the real failures appear.
+				if errors.Is(err, os.ErrNotExist) {
+					talk.With("provisioning:"+operation.OperationID).Infof(
+						"wpis w dzienniku provisioningu nie ma odpowiednika w cyklu życia — repozytorium już nie istnieje, pomijam")
+					continue
+				}
 				talk.With("provisioning:"+operation.OperationID).Errorf("reconcile local lifecycle: %v", err)
 				continue
 			}

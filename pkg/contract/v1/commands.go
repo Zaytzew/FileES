@@ -236,9 +236,47 @@ type SystemStatusResult struct {
 	UptimeSec           int64                `json:"uptime_sec"`
 	Repos               int                  `json:"repos"`
 	Activations         []ActivationStatus   `json:"activations"`
+	// Detachments are the relationships that ended, beside the ones that
+	// exist. They are a separate list rather than a flag on an activation
+	// because after a detachment there is no activation left to carry it:
+	// detaching removes the client profile, and a revoked client loses its
+	// server view. A flag can only describe something still present.
+	Detachments         []Detachment         `json:"detachments,omitempty"`
 	LockReleaseRequests []LockReleaseRequest `json:"lock_release_requests,omitempty"`
 	Recoveries          []RecoveryStatus     `json:"recoveries,omitempty"`
 	Update              *UpdateStatus        `json:"update,omitempty"`
+}
+
+// Detachment reports one ended relationship with a server, carrying the
+// moment it ended rather than the fact that it has.
+//
+// Everything here is what the client knew at that moment, copied in then. The
+// server's own names are unreachable afterwards by definition, so a reader
+// given only an ID would be looking at a UID next to a date - which is exactly
+// the failure recorded as A12 in the seam register.
+type Detachment struct {
+	ServerID    string `json:"server_id"`
+	DisplayName string `json:"display_name,omitempty"`
+	Address     string `json:"address,omitempty"`
+	// Cause is "self" when the owner detached here, "revoked" when the server
+	// refused this client. They reach the same end state by opposite routes
+	// and need opposite cures - one is finished, the other needs the client
+	// activated again - so the reader must never be told the wrong one.
+	Cause string `json:"cause"`
+	// At is RFC3339. For "revoked" it is when the daemon first noticed, never
+	// when the decision was made on the server, and the wording that reaches
+	// the reader must not claim more precision than that.
+	At string `json:"at"`
+	// WorkingCopies are the local paths that belonged to this server. The
+	// files stay on this disk after a detachment, and where they are is the
+	// only question left with a useful answer.
+	WorkingCopies []string `json:"working_copies,omitempty"`
+	// ReattachedAt is set, in RFC3339, once the client is one of this server's
+	// own again. The record is kept rather than dropped because its two
+	// readers want opposite things: a panel describing how things stand must
+	// not list a server that is back, while a chronology of what happened must
+	// not delete an entry because circumstances later changed.
+	ReattachedAt string `json:"reattached_at,omitempty"`
 }
 
 type RecoveryStatus struct {

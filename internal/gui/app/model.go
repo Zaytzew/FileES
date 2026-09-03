@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"time"
 
 	contract "filees/pkg/contract/v1"
@@ -191,6 +192,46 @@ type NoticeViewModel struct {
 	Acked                        bool
 }
 
+// DetachmentViewModel is a relationship with a server that has ended, carried
+// with the moment it ended rather than as a flag.
+//
+// It is a list of its own and never a field on ServerViewModel, because after
+// a detachment there is no server view model to hang it on: r790 removes a
+// detached server and its repositories from the projection entirely, and a
+// self-detachment removes the client profile that produced the activation.
+type DetachmentViewModel struct {
+	ServerID, DisplayName, Address string
+	// Cause is "self" or "revoked". Presentation must keep them apart: one is
+	// finished business, the other needs the client activated again.
+	Cause string
+	// ReattachedAt is set once the client is one of this server's own again.
+	ReattachedAt string
+	// At is RFC3339, and for "revoked" it is when the daemon noticed.
+	At string
+	// WorkingCopies are the local paths whose files are still on this disk.
+	WorkingCopies []string
+}
+
+// SelfDetached reports whether the owner did this himself.
+func (d DetachmentViewModel) SelfDetached() bool { return d.Cause == "self" }
+
+// Current reports whether this detachment still describes how things stand.
+//
+// The "recently detached" panel shows only current ones, because a server that
+// is back belongs in the projection rather than in a list of endings. The
+// journal shows every one of them, because the detachment happened and a later
+// re-activation does not un-happen it.
+func (d DetachmentViewModel) Current() bool { return d.ReattachedAt == "" }
+
+// Name is what to show. A record that lost its display name still identifies
+// its server rather than rendering as nothing.
+func (d DetachmentViewModel) Name() string {
+	if name := strings.TrimSpace(d.DisplayName); name != "" {
+		return name
+	}
+	return d.ServerID
+}
+
 type PublicShareViewModel struct {
 	ChannelID, ServerID, RepoID, RepoDisplayName string
 	Alias, Slug, State, SourceRoot, UpdatedAt    string
@@ -237,6 +278,7 @@ type ViewModel struct {
 	Errors              []ErrorViewModel
 	Activity            []ActivityViewModel
 	Notices             []NoticeViewModel
+	Detachments         []DetachmentViewModel
 	PublicShares        []PublicShareViewModel
 	PublicSharesKnown   bool
 	PendingActions      []PendingAction

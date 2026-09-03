@@ -49,6 +49,7 @@ type Server struct {
 	updates              UpdateService
 	whales               WhaleService
 	activity             ActivitySource
+	detachments          DetachmentSource
 	lifecycleFn          SystemLifecycleService
 
 	connsMu  sync.Mutex
@@ -186,6 +187,30 @@ func (s *Server) SetActivitySource(source ActivitySource) {
 	s.mu.Lock()
 	s.activity = source
 	s.mu.Unlock()
+}
+
+// DetachmentSource answers which relationships with servers have recently
+// ended. The daemon (cmd/filees) owns the durable record and applies its own
+// expiry; ipcserver only pulls, the same split used for ActivitySource.
+//
+// It is a source rather than a service on purpose: there is no command here
+// and no capability to advertise. A detachment is something the reader is told
+// about, never something acted on from this side - the way back is to activate
+// the client again, which is its own command already.
+type DetachmentSource interface {
+	List() []contract.Detachment
+}
+
+func (s *Server) SetDetachmentSource(source DetachmentSource) {
+	s.mu.Lock()
+	s.detachments = source
+	s.mu.Unlock()
+}
+
+func (s *Server) detachmentSource() DetachmentSource {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.detachments
 }
 
 // PublicShareSource answers the cached, cross-repo aggregate of every public

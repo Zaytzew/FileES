@@ -359,6 +359,16 @@ func (s appState) viewModel() ViewModel {
 		PublicSharesKnown:   s.publicSharesKnown,
 		PendingActions:      s.projectPendingActions(),
 	}
+	// Detachments pass through unfiltered. The daemon owns the lifetime and
+	// has already applied it; recomputing it here would put a second opinion
+	// about time into the presentation layer, and the two would disagree the
+	// moment one of them was wrong.
+	for _, record := range s.system.Detachments {
+		vm.Detachments = append(vm.Detachments, DetachmentViewModel{
+			ServerID: record.ServerID, DisplayName: record.DisplayName, Address: record.Address,
+			Cause: record.Cause, At: record.At, ReattachedAt: record.ReattachedAt, WorkingCopies: record.WorkingCopies,
+		})
+	}
 	now := time.Now().UTC()
 	for _, recovery := range s.system.Recoveries {
 		downloadUntil, _ := time.Parse(time.RFC3339Nano, recovery.DownloadUntil)

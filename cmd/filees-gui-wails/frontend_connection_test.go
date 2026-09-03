@@ -29,13 +29,12 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 		// ten-day-old projection current until the first sync happens to fail.
 		`return String(server.view_synced_at || "") === "";`,
 		`jeszcze niesprawdzone`,
-		// The one fact no local measurement can see: when the server itself
-		// last published for us. It is read, and it is stated rather than
-		// warned about - the server publishes only on change and never on a
-		// timer, so an old timestamp means nothing happened, and the data on
-		// screen is exactly right rather than doubtful.
+		// server_view_produced_at is still read and still carried, but the
+		// header must not render it: we only reach the header after a
+		// successful fetch, so the server has just confirmed it is fine, and
+		// the client cannot tell "nothing changed" from "something changed and
+		// was not published". A number nobody can act on is not a trust signal.
 		`server_view_produced_at`,
-		`bez zmian`,
 		`Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}`,
 		`Nie ma jeszcze zapisanej pełnej projekcji`,
 		`Brak zapisanej projekcji; panel odświeży się automatycznie.`,
@@ -46,6 +45,16 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 			t.Fatalf("frontend connection renderer is missing %q", wanted)
 		}
 	}
+	// The header must not warn about a server that simply had nothing to
+	// publish. Both the old wording and its replacement were wrong in the same
+	// place: they put an unactionable fact where the reader looks to decide
+	// whether to trust the screen.
+	for _, forbidden := range []string{"nie publikuje danych", "bez zmian"} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("connection header still renders %q", forbidden)
+		}
+	}
+
 	// The sentence that made this necessary. It claimed the projection was
 	// current while measuring the GUI-to-daemon link, so on 2026-09-02 every
 	// repository on a server whose view had been refused for ten days rendered

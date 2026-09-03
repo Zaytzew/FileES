@@ -232,7 +232,20 @@ function staleViewServers(snapshot) {
 // there is.
 //
 // Reported as a fact rather than judged. How long is too long depends on the
-// server and belongs to the person reading, not to a threshold invented here.
+// unproducedServers reports which servers have published nothing for a long
+// while. It is deliberately NOT used by the connection header.
+//
+// The header answers one question - can I trust what I am looking at - and
+// this fact cannot help answer it. We reach that header only after a
+// successful fetch, so the server has just told us it is fine; and the client
+// cannot tell "nothing changed" from "something changed and was not
+// published", because it does not know what happens on the server. A number
+// nobody can act on does not belong in a trust signal, and dressed as a
+// warning it teaches people to ignore the header that will one day carry
+// something true.
+//
+// It stays because the age of the last change is honest information about a
+// realm's activity, and a details view is where such information belongs.
 function unproducedServers(snapshot) {
   const servers = snapshot.servers || [];
   return servers
@@ -277,7 +290,6 @@ function renderConnection(snapshot) {
   freshness.className = "projection-freshness";
   let connectionLabel = "Demon jest rozłączony";
   const stale = snapshot.connected ? staleViewServers(snapshot) : [];
-  const unproduced = snapshot.connected ? unproducedServers(snapshot) : [];
   if (!snapshot.connected) {
     core.classList.add("is-offline");
     freshness.classList.add("is-unverified");
@@ -304,16 +316,6 @@ function renderConnection(snapshot) {
         : `Dane z „${first.name}" niepotwierdzone — serwer nie odpowiada${rest}`;
       connectionLabel = first.reason ? `${first.name}: ${first.reason}` : "Serwer nie odpowiada";
     }
-  } else if (unproduced.length > 0) {
-    // Stated, not warned about. Fetching works and the server has simply had
-    // nothing to publish, so the data on screen is not stale - it is exactly
-    // right, and the previous wording ("nie publikuje danych") called a
-    // correct picture doubtful. No is-stale, no is-unverified: those belong to
-    // the branches above, where something really is unknown.
-    const first = unproduced[0];
-    const rest = unproduced.length > 1 ? ` (+${unproduced.length - 1})` : "";
-    freshness.textContent = `„${first.name}" — bez zmian ${ageInWords(first.since)}${rest}`;
-    connectionLabel = "Serwer odpowiada; od tego czasu nic się nie zmieniło";
   } else if (snapshot.stale) {
     core.classList.add("is-stale");
     freshness.classList.add("is-refreshing");

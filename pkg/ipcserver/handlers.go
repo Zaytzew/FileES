@@ -1340,11 +1340,20 @@ func (s *Server) handleActivationFinish(req contract.Request) contract.Response 
 	ctx, cancel := context.WithTimeout(context.Background(), activationDeadline)
 	defer cancel()
 	s.lg.Infof("activation finish: server=%s address=%s", payload.ServerID, payload.ServerAddress)
+	started := time.Now()
 	result, err := service.Finish(ctx, payload)
 	if err != nil {
-		s.lg.Warnf("activation finish (server=%s address=%s): %v", payload.ServerID, payload.ServerAddress, err)
+		s.lg.Warnf("activation finish failed after %s (server=%s address=%s): %v", time.Since(started).Round(time.Second), payload.ServerID, payload.ServerAddress, err)
 		return contract.ErrResponse(req.RequestID, "ACTIVATION-1002", "ERROR", "RETRY", "activation.finish_failed", map[string]string{"detail": err.Error()})
 	}
+	// Logged on success too. Silence used to mean either "still running" or
+	// "finished, nothing to report", and telling those apart cost a quarter of
+	// an hour of measurement on 2026-09-03 - process lists, netstat, the
+	// server's own records - to establish something one line would have said.
+	// The state matters as much as the timing: active_profile_pending is a
+	// success that leaves the daemon without a usable profile, and it used to
+	// reach nobody at all.
+	s.lg.Infof("activation finish ok after %s: server=%s state=%s", time.Since(started).Round(time.Second), payload.ServerID, result.State)
 	return contract.OKResponse(req.RequestID, result)
 }
 
@@ -1771,12 +1780,24 @@ func (s *Server) resolveHolderLabel(ctx context.Context, serverID, holder string
 	return labels[holder]
 }
 
-// activationDeadline bounds one activation step. It is generous on purpose:
-// finishing an activation reaches a remote server, deploys a worker and checks
-// out a working copy, and none of that is predictable from here. A deadline
-// exists so a wedged step cannot hold the daemon indefinitely, not to declare
-// how fast a server ought to be.
-const activationDeadline = 30 * time.Minute
+// activationDeadline bounds one activation step.
+//
+// It has been 45 seconds and it has been thirty minutes, and both were wrong in
+// the same way: a number chosen instead of a measurement. Forty-five seconds
+// expired mid-deploy on a cold server. Thirty minutes meant that on 2026-09-03 a
+// wedged activation was indistinguishable from a working one for a quarter of an
+// hour, while the daemon held everything it knew and said none of it.
+//
+// Ten minutes, because a deadline is the wrong instrument for "is this making
+// progress" and must not be the only one. What makes a shorter bound safe is the
+// step logging below: slow is now distinguishable from stuck without waiting for
+// the timer, so the deadline only has to be longer than a healthy activation
+// rather than longer than any imaginable one.
+//
+// It also stays well inside the server's operation_ttl, so a client that gives
+// up leaves an operation the server still holds - which is what makes resuming
+// possible instead of forcing a fresh ticket.
+const activationDeadline = 10 * time.Minute
 
 //
 // Thirty minutes is only bearable because the step is logged when it starts.

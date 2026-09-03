@@ -83,6 +83,8 @@ func main() {
 			os.Exit(cmdUnlock(os.Args[2:]))
 		case "log":
 			os.Exit(cmdLog(os.Args[2:]))
+		case "shutdown":
+			os.Exit(cmdShutdown(os.Args[2:]))
 		case "activate-begin":
 			os.Exit(cmdActivateBegin(os.Args[2:]))
 		case "activate-finish":
@@ -442,6 +444,8 @@ commands:
   lock      lock file(s) in SVN repository
   unlock    release SVN lock on file(s)
   log [N]   show last N error log entries (default 20)
+  shutdown  ask the running daemon to stop cleanly
+            (a kill loses the watcher manifest; Windows has no SIGTERM)
   activate-begin   create/resume a server-scoped onboarding passport
   activate-finish  read one OTP from stdin and run activation
   activate-resume  resume an OTP-authorized activation with reconnect key

@@ -86,11 +86,16 @@ type Record struct {
 	// happen; deleting the entry because circumstances later changed would
 	// make the record edit itself, which is the one thing a record must never
 	// do.
-	ReattachedAt time.Time `json:"reattached_at,omitempty"`
+	//
+	// A pointer, not a zero time: encoding/json ignores omitempty on a struct,
+	// so a plain time.Time wrote "0001-01-01T00:00:00Z" into every record that
+	// had never been re-activated - a date that is not a date, in a file whose
+	// whole job is to be believed.
+	ReattachedAt *time.Time `json:"reattached_at,omitempty"`
 }
 
 // Current reports whether this detachment still describes the present.
-func (r Record) Current() bool { return r.ReattachedAt.IsZero() }
+func (r Record) Current() bool { return r.ReattachedAt == nil }
 
 // Name is what a reader should be shown. A record that lost its display name
 // still identifies its server rather than rendering as nothing.
@@ -139,6 +144,20 @@ func Open(path string) (*Store, error) {
 	}
 	if doc.Schema != Schema {
 		return nil, errors.New("unexpected server detachment schema")
+	}
+	// A zero reattachment date is not a reattachment.
+	//
+	// Records written before ReattachedAt became a pointer carry
+	// "0001-01-01T00:00:00Z", because encoding/json ignores omitempty on a
+	// struct. Decoded into a pointer that parses to a perfectly valid non-nil
+	// zero time, and every one of those records would read as already
+	// re-activated - dropping it from the panel it was written for. One line
+	// here rather than a schema bump, since the two spellings mean the same
+	// thing and the file rewrites itself on the next change anyway.
+	for i, rec := range doc.Records {
+		if rec.ReattachedAt != nil && rec.ReattachedAt.IsZero() {
+			doc.Records[i].ReattachedAt = nil
+		}
 	}
 	s.records = doc.Records
 	return s, nil
@@ -225,8 +244,9 @@ func (s *Store) Reattached(serverID string, at time.Time) (bool, error) {
 	}
 	changed := false
 	for i, existing := range s.records {
-		if existing.ServerID == serverID && existing.ReattachedAt.IsZero() {
-			s.records[i].ReattachedAt = at.UTC()
+		if existing.ServerID == serverID && existing.Current() {
+			marked := at.UTC()
+			s.records[i].ReattachedAt = &marked
 			changed = true
 		}
 	}

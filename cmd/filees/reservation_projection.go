@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +41,9 @@ type reservationProjectionCoordinator struct {
 	profiles map[string]clientprofile.Profile
 	views    map[string]clientview.View
 	results  map[reposupervisor.Key]cachedReservationResult
+	// detached remembers which servers have told us this client is no longer
+	// one of theirs, so the fact is stated once instead of every cycle.
+	detached map[string]bool
 	overlays map[reposupervisor.Key]reservationLocalOverlay
 	started  map[string]bool
 }
@@ -256,14 +260,70 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	lg := talk.With("reservation-projection:" + serverID)
 	switch {
 	case failed == 0 && fetched > 0:
+		coordinator.forgetDetached(serverID)
 		lg.Infof("state refreshed: %d ok, %d not active", fetched, skipped)
+	case failed > 0 && isDetachedClient(firstErr):
+		// Said once, not every minute. This is not a transport fault and no
+		// amount of waiting mends it: the server revoked this client, which is
+		// exactly what deactivating it was meant to do. Reported as the same
+		// kind of warning as a dropped connection, it produced 234 identical
+		// lines in one afternoon and told the owner his server was
+		// unavailable when it was working perfectly and following his own
+		// instruction.
+		//
+		// The cycle deliberately keeps running. Re-activating the client must
+		// simply start working again, and a loop that had given up would need
+		// someone to notice and restart the daemon - which is the shape of
+		// defect this replaces, not an improvement on it.
+		if coordinator.markDetached(serverID) {
+			lg.Warnf("ten klient został odłączony od serwera i nie ma tu już uprawnień; "+
+				"projekcja pozostanie nieaktualna do czasu ponownej aktywacji (%v)", firstErr)
+		}
 	case failed > 0:
+		coordinator.forgetDetached(serverID)
 		lg.Warnf("state refresh: %d ok, %d failed, %d not active; first failure repo %s: %v",
 			fetched, failed, skipped, firstErrRepo, firstErr)
 	}
 	if coordinator.ipc != nil {
 		coordinator.ipc.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
 	}
+}
+
+// isDetachedClient reports whether the server refused us because this client
+// is no longer one of its own.
+//
+// The sentence comes from pkg/activation and is precise; what was missing is
+// that it is terminal. It entered the same branch as a dropped connection,
+// which carries a retry policy, so the daemon knocked once a minute forever
+// while the interface called the server unavailable.
+func isDetachedClient(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "proof does not match one live staged or active client")
+}
+
+// markDetached records the state and reports whether this is the first time,
+// which is the only time it should be said.
+func (coordinator *reservationProjectionCoordinator) markDetached(serverID string) bool {
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	if coordinator.detached == nil {
+		coordinator.detached = map[string]bool{}
+	}
+	if coordinator.detached[serverID] {
+		return false
+	}
+	coordinator.detached[serverID] = true
+	return true
+}
+
+// forgetDetached clears the state so a re-activated client is announced again
+// if it is ever detached a second time.
+func (coordinator *reservationProjectionCoordinator) forgetDetached(serverID string) {
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	delete(coordinator.detached, serverID)
 }
 
 func (coordinator *reservationProjectionCoordinator) markServerOffline(serverID string, view clientview.View, cause error) {

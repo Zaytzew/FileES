@@ -52,3 +52,29 @@ interfejs. **To ma znaczenie:** manifest obserwatora zapisuje się wyłącznie
 przy łagodnym zamknięciu, więc każde twarde ubicie kosztuje ponowne wykrycie
 całego drzewa przy starcie. Opisane szerzej w `messages-to-brothers/claude.md`,
 wpis z nocy 2026-09-03.
+
+## Kolejność przy podmianie binarek
+
+Nadzorca wskrzesza demona w ciągu piętnastu sekund, więc samo `filees shutdown`
+nie wystarczy — demon wróci, zanim zdążysz podmienić plik.
+
+```powershell
+# 1. zatrzymaj nadzorcę (inaczej wskrzesi demona w trakcie podmiany)
+Stop-ScheduledTask -TaskName FileES
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
+  Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*start-filees.ps1*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+
+# 2. zatrzymaj demona ŁAGODNIE — inaczej tracisz manifest obserwatora
+& "$env:LOCALAPPDATA\Programs\FileES\filees.exe" shutdown
+
+# 3. podmień binarki, 4. wystartuj zadanie
+Start-ScheduledTask -TaskName FileES
+```
+
+**Dlaczego krok drugi nie jest kosmetyką.** Manifest obserwatora zapisuje się
+przy zamknięciu cyklu skanowania i — od r807 — po każdej potwierdzonej
+publikacji. `Stop-Process` nie daje ani jednego, ani drugiego. Zmierzone
+2026-09-04: manifesty stały na 15:21 przez kilkanaście restartów; po jednym
+`filees shutdown` dostały datę bieżącą, a kolejny start nie wykrył **żadnej**
+zmiany — czyli fantomowa kolejka, o którą pytał właściciel, zniknęła.

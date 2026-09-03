@@ -511,7 +511,16 @@ func resolveOperatorBranding(file OperatorBrandingFile) (realmbranding.Branding,
 	if err != nil {
 		return realmbranding.Branding{}, fmt.Errorf("logo_file: %w", err)
 	}
-	return realmbranding.FromBytes(file.LeadingColor, mediaType, raw)
+	// PrepareLogo, not FromBytes. An administrator putting a PNG in
+	// /etc/filees is doing the same thing as an owner picking one in the
+	// interface, and the interface has always scaled what it was given while
+	// this path only measured it. The same image was accepted from a client
+	// and refused from the configuration, with a message that named neither
+	// the limit nor the existence of a path that would have fitted it.
+	//
+	// An image already small enough passes through untouched, so nothing that
+	// worked before behaves differently.
+	return realmbranding.PrepareLogo(file.LeadingColor, mediaType, raw)
 }
 
 func operatorLogoMediaType(path string) (string, error) {

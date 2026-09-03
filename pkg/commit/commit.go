@@ -1363,11 +1363,24 @@ func BlocksUpdate(wc string, entries []client.StatusEntry) bool {
 		if entry.Item != "missing" {
 			continue
 		}
-		rel, err := filepath.Rel(wc, entry.Path)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			// Outside the working copy, or unrelatable: treat it as blocking
-			// rather than guess. Failing towards the old behaviour keeps a
-			// path we cannot classify on the safe side.
+		// StatusEntry.Path is already relative to the working copy -
+		// parseStatusXML relativises it - and only stays absolute when that
+		// fails. Relativising a second time turns every ordinary entry into
+		// nonsense, which is exactly what the first version of this did: every
+		// path became unclassifiable, the safe branch fired, and the guard went
+		// on deferring precisely as before while looking fixed.
+		rel := entry.Path
+		if filepath.IsAbs(rel) {
+			relative, err := filepath.Rel(wc, rel)
+			if err != nil {
+				// Unrelatable: treat it as blocking rather than guess. Failing
+				// towards the older behaviour keeps anything we cannot classify
+				// on the safe side of a decision about the owner's files.
+				return true
+			}
+			rel = relative
+		}
+		if strings.HasPrefix(rel, "..") {
 			return true
 		}
 		if !filepolicy.IsBuiltinIgnored(filepath.ToSlash(rel)) {

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -59,9 +60,19 @@ func Normalize(value Branding) (Branding, error) {
 	if value.LogoMediaType != "image/png" && value.LogoMediaType != "image/jpeg" {
 		return Branding{}, errors.New("logo must be PNG or JPEG")
 	}
+	// Three causes, three sentences. They were one - "logo content is invalid
+	// or too large" - which named no limit and left the reader unable to tell
+	// a corrupt file from an oversized one, or to know how much smaller it
+	// would have to be.
 	raw, err := base64.StdEncoding.Strict().DecodeString(value.LogoBase64)
-	if err != nil || len(raw) == 0 || len(raw) > MaxLogoBytes {
-		return Branding{}, errors.New("logo content is invalid or too large")
+	if err != nil {
+		return Branding{}, errors.New("logo content is not valid base64")
+	}
+	if len(raw) == 0 {
+		return Branding{}, errors.New("logo content is empty")
+	}
+	if len(raw) > MaxLogoBytes {
+		return Branding{}, fmt.Errorf("logo is %d bytes and the limit is %d; supply a smaller image, or set it from the client, which scales one for you", len(raw), MaxLogoBytes)
 	}
 	config, format, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil || config.Width < 1 || config.Height < 1 || config.Width > MaxLogoDimension || config.Height > MaxLogoDimension || config.Width*config.Height > MaxLogoPixels {

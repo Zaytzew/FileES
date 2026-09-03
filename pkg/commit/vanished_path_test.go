@@ -24,7 +24,7 @@ func TestAVanishedPathCostsOnlyItself(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	kept := existingPaths(wc, []string{"rysunek.dwg", "01_WYDANIE/znikniety.pdf", "zestawienie.pdf", "01_WYDANIE"})
+	kept := publishable(wc, []string{"rysunek.dwg", "01_WYDANIE/znikniety.pdf", "zestawienie.pdf", "01_WYDANIE"})
 	if len(kept) != 3 {
 		t.Fatalf("kept = %v", kept)
 	}
@@ -50,4 +50,33 @@ func contains(paths []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// Ignoring used to apply only when a file was first taken in, so a file already
+// under version control kept being published on every change and the patterns
+// did nothing for any working copy that already contained the clutter.
+//
+// Measured 2026-09-03: .dwl and .dwl2 were committed at r16 by this very client
+// minutes after the patterns shipped, because AutoCAD had them open and SVN
+// already tracked them.
+func TestAlreadyVersionedClutterStopsBeingPublished(t *testing.T) {
+	wc := t.TempDir()
+	for _, name := range []string{
+		"LLW_zestawienie-stolarki.dwg",
+		"LLW_zestawienie-stolarki.dwl",
+		"LLW_zestawienie-stolarki.dwl2",
+	} {
+		if err := os.WriteFile(filepath.Join(wc, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	kept := publishable(wc, []string{
+		"LLW_zestawienie-stolarki.dwg",
+		"LLW_zestawienie-stolarki.dwl",
+		"LLW_zestawienie-stolarki.dwl2",
+	})
+	if len(kept) != 1 || kept[0] != "LLW_zestawienie-stolarki.dwg" {
+		t.Fatalf("only the drawing may be published; got %v", kept)
+	}
 }

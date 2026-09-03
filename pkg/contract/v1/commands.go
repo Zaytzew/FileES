@@ -952,7 +952,8 @@ type Reservation struct {
 }
 
 // ReservationSourceState classifies one repository's contribution to a
-// RepoReservationListResult. The closed set is fresh/stale/offline/unknown;
+// RepoReservationListResult. The closed set is
+// fresh/stale/offline/detached/unknown;
 // a repository absent from Sources never happened — every repository queried
 // gets exactly one entry.
 type ReservationSourceState string
@@ -968,6 +969,18 @@ const (
 	// server's state lane and is replaying its local mirror of an earlier,
 	// server-confirmed emission.
 	ReservationSourceOffline ReservationSourceState = "offline"
+	// ReservationSourceDetached: the server was reached and refused us. This
+	// client is no longer one of its own - normally because someone
+	// deactivated it, which is a thing the owner does on purpose - so the
+	// mirror being replayed will never be refreshed again from here.
+	//
+	// Deliberately not Offline. Offline says "could not reach this server",
+	// and reporting a revocation that way tells the reader to wait for a
+	// network that is already working. The two need opposite responses: wait,
+	// versus activate this client again. Measured 2026-09-03, when a
+	// deactivation the owner had asked for surfaced as an unavailable server
+	// and the daemon knocked 234 times.
+	ReservationSourceDetached ReservationSourceState = "detached"
 	// ReservationSourceUnknown: neither a live answer nor any prior
 	// artifact exists for this repository. Never treat this as a
 	// confirmed zero — no reservation rows for this repo are trustworthy.

@@ -350,6 +350,13 @@ type ReservationSnapshot struct {
 	// server. It is distinct from Stale, which is explicitly classified by
 	// the remote serving-state worker itself.
 	Offline bool
+	// Detached means the server was reached and refused this client: it is no
+	// longer one of its own, normally because someone deactivated it. Kept
+	// apart from Offline because the two ask for opposite responses - wait for
+	// the network, versus activate this client again - and reporting a
+	// revocation as unreachability sends the reader to fix something that is
+	// not broken.
+	Detached bool
 	// Unknown means the source has neither fresh data nor any prior
 	// artifact to fall back to. Reservations must be empty; callers must
 	// never treat Unknown as a confirmed zero.

@@ -387,7 +387,12 @@ func (s *Server) handleRepoReservationList(req contract.Request) contract.Respon
 		}
 		result.Reservations = append(result.Reservations, snap.Reservations...)
 		state := contract.ReservationSourceFresh
-		if snap.Offline {
+		if snap.Detached {
+			// Before Offline, because a detached client is also unreachable in
+			// every practical sense and would otherwise be reported as merely
+			// out of touch - which is the misreading this exists to prevent.
+			state = contract.ReservationSourceDetached
+		} else if snap.Offline {
 			state = contract.ReservationSourceOffline
 		} else if snap.Stale {
 			state = contract.ReservationSourceStale

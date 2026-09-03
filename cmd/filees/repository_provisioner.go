@@ -621,6 +621,10 @@ func stripWorkingCopyMetadata(root, operationID string) error {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !filepath.IsAbs(root) || root == string(filepath.Separator) {
 		return errors.New("working copy root must be an absolute real directory")
 	}
+	// The folder stops being one of ours here, so it stops looking like one.
+	// Best effort: the detach boundary is the metadata below, and a shell
+	// decoration that outlives it is untidy, not unsafe.
+	_ = unmarkManagedFolder(root)
 	entries := []string{".svn", ".filees"}
 	// Validate the complete mutation set before removing either metadata tree.
 	// A hostile replacement of .filees must not leave a half-detached WC where

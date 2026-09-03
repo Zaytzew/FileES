@@ -211,6 +211,17 @@ func TestAZeroReattachmentDateFromAnOlderRecordIsNotAReattachment(t *testing.T) 
 	if !got[0].Current() {
 		t.Error("a zero date was read as a reattachment; the record would vanish from the panel")
 	}
+	// And the file stops carrying it, rather than waiting for some unrelated
+	// change to rewrite it. In memory the record is already right; on disk the
+	// date would otherwise sit there for days, in the file somebody opens
+	// precisely because they want to know what happened.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read store: %v", err)
+	}
+	if strings.Contains(string(raw), "0001-01-01") {
+		t.Errorf("the zero date survived on disk:\n%s", raw)
+	}
 }
 
 func TestNewestFirst(t *testing.T) {

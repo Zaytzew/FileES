@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 
 	"filees/pkg/clientprofile"
+	"filees/pkg/errmap"
+	"filees/pkg/opjournal"
 	"strings"
 	"time"
 
@@ -90,7 +92,37 @@ func (activator *Activator) Finish(parent context.Context, target actions.Activa
 		ServerID: target.ServerID, ServerAddress: target.Address,
 		KnownHostsPath: activator.knownHostsPath(target.ServerID), StateRoot: activator.root, OTP: secret,
 	})
+	// The interface records only what the daemon cannot: that this call itself
+	// failed. Measured on 2026-09-03 - the daemon was mid-activation and had
+	// the real cause, this side gave up on the socket read, and the sentence
+	// the user was shown ("i/o timeout") described neither. Nothing about
+	// activation reached any log from here, so there was no way afterwards to
+	// tell which of the two had spoken.
+	journalActivationFailure(target.ServerID, "finish", err)
 	return err
+}
+
+// journalActivationFailure appends one line to the daemon's operational log.
+//
+// Best effort by construction: a log that can fail an activation would be
+// worse than the silence it replaces. It writes nothing on success, because
+// the daemon already records that with the timing and the resulting state, and
+// two records of one event invite the reader to trust the wrong one.
+func journalActivationFailure(serverID, step string, err error) {
+	if err == nil {
+		return
+	}
+	sink, openErr := opjournal.Open("activation:" + serverID)
+	if openErr != nil || sink == nil {
+		return
+	}
+	sink.Emit(errmap.Entry{
+		Code:     errmap.CodeNetUnreachable,
+		Severity: errmap.SevError,
+		Hint:     errmap.HintRetryLocal,
+		Msg:      "Interfejs nie doczekał się odpowiedzi demona podczas aktywacji (" + step + ")",
+		Details:  err.Error(),
+	})
 }
 
 func (activator *Activator) Resume(parent context.Context, target actions.ActivationTarget) error {

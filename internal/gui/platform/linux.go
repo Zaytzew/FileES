@@ -494,7 +494,7 @@ func (b *LinuxBackend) pickSettingsFolders(ctx context.Context, command string, 
 	args := []string{
 		"--list", mode, "--title=Ustawienia FileES",
 		"--text=" + text, "--width=900", "--height=480",
-		"--column=", "--column=ID", "--column=Repozytorium", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp", "--column=Edycja",
+		"--column=", "--column=ID", "--column=Zakres", "--column=Ścieżka lokalna", "--column=Stan", "--column=Dostęp", "--column=Edycja",
 		"--hide-column=2", "--print-column=2", "--separator=\n", "--ok-label=" + okLabel, "--cancel-label=Anuluj",
 	}
 	for _, folder := range action.Folders {
@@ -563,7 +563,7 @@ func (b *LinuxBackend) ShowJournal(ctx context.Context, request JournalDialogReq
 	args := []string{
 		"--list", "--title=" + request.Title, "--text=" + request.Text,
 		"--width=1240", "--height=680", "--button=Zamknij:0",
-		"--column=Czas", "--column=Repozytorium", "--column=Wpis", "--column=Szczegóły",
+		"--column=Czas", "--column=Zakres", "--column=Wpis", "--column=Szczegóły",
 	}
 	for _, row := range request.Rows {
 		args = append(args, row.Timestamp, row.Repository, row.Summary, row.Details)

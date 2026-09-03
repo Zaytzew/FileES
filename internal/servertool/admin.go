@@ -54,7 +54,7 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|prune|rotate | erasure complete | version")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|prune|rotate | erasure complete | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
@@ -149,6 +149,16 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 			return adminError(stderr, err)
 		}
 		return writeAdminEmpty(stdout, uuid.NewString())
+	// The operator can read what this server publishes and withdraw it, and
+	// cannot publish or amend. Publishing belongs to the realm that owns the
+	// repository; an operator able to alter a share could change what
+	// recipients receive without the owner ever seeing it. Withdrawal is the
+	// half that must not require the owner, because an abusive or mistaken
+	// link has to come down from the machine that serves it.
+	case "share list":
+		return runShareList(path, args, stdout, stderr)
+	case "share delete":
+		return runShareDelete(path, args, stdout, stderr)
 	case "ticket list":
 		if len(args) != 2 {
 			fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket list")

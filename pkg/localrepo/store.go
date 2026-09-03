@@ -165,7 +165,36 @@ func (s *Store) BeginAttach(serverID, repoID, localPath string, required bool) (
 	if required {
 		state = StatePolicyPending
 	}
-	return s.begin(Record{ServerID: serverID, RepoID: repoID, LocalPath: localPath, State: state})
+	// The folder's own name is kept from the start, which is the only moment it
+	// is certainly available.
+	//
+	// BeginCreate has always recorded one; BeginAttach - the path taken when a
+	// folder already on disk is adopted - recorded nothing, so the record knew
+	// the repository only by UUID. That is invisible while the server's view
+	// carries the name, and it is the case that reached the owner: after the
+	// repository was deleted the view stopped carrying it, and his interface
+	// showed a bare UID exactly where he had to decide whether to download the
+	// archive. A record whose whole purpose is to outlive the server's
+	// knowledge should not depend on the server for what to call itself.
+	return s.begin(Record{
+		ServerID: serverID, RepoID: repoID, LocalPath: localPath,
+		DisplayName: folderName(localPath), State: state,
+	})
+}
+
+// folderName is the presentable name of a working copy, or empty when the path
+// carries none. It never invents one: an unnamable path leaves DisplayName
+// unset so the reader falls back deliberately rather than on a guess.
+func folderName(localPath string) string {
+	trimmed := strings.TrimSpace(localPath)
+	if trimmed == "" {
+		return ""
+	}
+	base := filepath.Base(filepath.Clean(trimmed))
+	if base == "." || base == string(filepath.Separator) || base == filepath.VolumeName(trimmed)+string(filepath.Separator) {
+		return ""
+	}
+	return base
 }
 
 // EnsureConfiguredAttached imports a legacy/static config entry into the

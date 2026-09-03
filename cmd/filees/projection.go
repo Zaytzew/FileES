@@ -1,7 +1,9 @@
 package main
 
 import (
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"filees/pkg/clientview"
@@ -121,10 +123,7 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 			if !cleanupPending && (retainErr != nil || !now.Before(retainUntil)) {
 				continue
 			}
-			name := record.DisplayName
-			if name == "" {
-				name = record.RepoID
-			}
+			name := deletedRepositoryName(record)
 			projected = append(projected, ipcserver.ProjectedRepo{
 				ID: record.RepoID, DisplayName: name, State: "deleted", OwnerRealmID: view.RealmID,
 				Attached: false, PendingLocalPath: record.LocalPath, ServerDeleted: true,
@@ -181,4 +180,33 @@ func repositoryReadiness(serverID string, view clientview.View, attachments map[
 		}
 	}
 	return pending == 0, pending
+}
+
+// deletedRepositoryName is what to call a repository the server no longer
+// carries.
+//
+// A12 in the seam register, from the owner's own screen: a row reading
+// 5362797d-fed3-5aff-b6bd-640702a8bc4b, offering nothing, sitting exactly where
+// he had to decide whether to download its archive. The name came from the
+// server's view while the repository lived; once deleted the view stops
+// carrying it, and the client had nothing of its own to fall back on.
+//
+// It did, though. The folder is right there in the same record - D:\AKTUALNE in
+// his case - and its own name is what the interface shows for every other
+// repository anyway. A record created by BeginCreate carries a display name; one
+// created by BeginAttach, which is how a folder already on disk is adopted, does
+// not, and that is the case that reached him.
+//
+// The UID stays as the last resort. A row that identifies nothing is still
+// better than a row that names the wrong thing.
+func deletedRepositoryName(record localrepo.Record) string {
+	if name := strings.TrimSpace(record.DisplayName); name != "" {
+		return name
+	}
+	if path := strings.TrimSpace(record.LocalPath); path != "" {
+		if base := filepath.Base(filepath.Clean(path)); base != "." && base != string(filepath.Separator) {
+			return base
+		}
+	}
+	return record.RepoID
 }

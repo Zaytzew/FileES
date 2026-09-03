@@ -816,7 +816,7 @@ func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.P
 	data := listingPage{
 		Alias:           projection.Alias,
 		Slug:            projection.Slug,
-		PublishedDate:   formatListingDate(projection.UpdatedAt),
+		PublishedDate:   formatListingDate(publishedAt(projection)),
 		LatestURL:       latestURL(projection.Alias, projection.Slug, invitation),
 		Count:           len(projection.Objects),
 		TotalSize:       formatListingTotalSize(projection.Objects),
@@ -841,11 +841,11 @@ func (h Handler) renderListingNotice(w http.ResponseWriter, projection channel.P
 }
 
 type listingPage struct {
-	Alias, Slug                                string
-	Count                                      int
+	Alias, Slug                                    string
+	Count                                          int
 	PublishedDate, TotalSize, BundleURL, LatestURL string
-	Tree                                       listingDirectory
-	Bundles, SelectionNotice                   bool
+	Tree                                           listingDirectory
+	Bundles, SelectionNotice                       bool
 	// ChangeNotice explains, in one sentence, why the listing the visitor is
 	// looking at is not the one they clicked from. Empty for an ordinary render.
 	ChangeNotice string
@@ -1061,6 +1061,21 @@ func formatListingSize(size int64) string {
 		precision = 0
 	}
 	return strconv.FormatFloat(value, 'f', precision, 64) + " " + unit
+}
+
+// publishedAt picks the date the header should carry.
+//
+// RevisionAt is when the content being served was committed and is what a
+// visitor is reading the header for. UpdatedAt is when the share was defined,
+// which is the right answer only when nothing better is known - an older
+// authority, or a source that cannot date a revision. Preferring the share
+// definition when both exist would reproduce the defect this replaced: a
+// listing current to the minute under a date weeks old.
+func publishedAt(projection channel.Projection) time.Time {
+	if !projection.RevisionAt.IsZero() {
+		return projection.RevisionAt
+	}
+	return projection.UpdatedAt
 }
 
 func formatListingDate(value time.Time) string {

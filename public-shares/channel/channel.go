@@ -98,6 +98,14 @@ type Projection struct {
 	Objects      []PublicObject         `json:"objects"`
 	Branding     realmbranding.Branding `json:"branding"`
 	UpdatedAt    time.Time              `json:"updated_at"`
+	// RevisionAt is when the repository revision being served was committed,
+	// which is a different fact from UpdatedAt and the one a visitor is
+	// actually reading. UpdatedAt moves when the share is defined, redefined,
+	// revoked or deleted, and never when the content changes - so a link
+	// following HEAD showed a listing current to the minute under a date weeks
+	// old. Absent when the source cannot report it, so a presentation layer can
+	// tell "not known" from "not published since".
+	RevisionAt time.Time `json:"revision_at,omitempty"`
 }
 
 type Delivery struct {

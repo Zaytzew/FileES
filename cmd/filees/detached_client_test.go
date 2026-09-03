@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"filees/pkg/clientview"
 	"filees/pkg/reposupervisor"
 )
 
@@ -92,5 +93,23 @@ func TestDetachedIsNotFiledAsOffline(t *testing.T) {
 	}
 	if !other.offline || other.detached {
 		t.Fatalf("an unreachable server is offline and not detached: %+v", other)
+	}
+}
+
+// The wrapper must satisfy clientview.Cleaner, or the release of a locked
+// service working copy silently never runs.
+//
+// It did not, and the r786 fix went to production without ever executing:
+// serviceProjectionUpdater exposed only Update, the type assertion inside
+// clientview.Sync failed, and the lock reappeared every cycle while the
+// interface reported the server as unreachable. An optional interface is only
+// optional for implementations that genuinely cannot satisfy it.
+func TestTheServiceUpdaterCanReleaseALock(t *testing.T) {
+	var updater any = serviceProjectionUpdater{}
+	if _, ok := updater.(clientview.Cleaner); !ok {
+		t.Fatal("serviceProjectionUpdater must satisfy clientview.Cleaner")
+	}
+	if _, ok := updater.(clientview.Updater); !ok {
+		t.Fatal("serviceProjectionUpdater must still satisfy clientview.Updater")
 	}
 }

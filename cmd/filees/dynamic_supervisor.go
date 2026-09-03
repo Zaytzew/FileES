@@ -146,6 +146,19 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 	return updater.client.Checkout(ctx, updater.url, workingCopy)
 }
 
+// Cleanup satisfies clientview.Cleaner so a service working copy left locked by
+// an interrupted operation can be released and the sync retried.
+//
+// Without it the wrapper exposed only Update, the type assertion in
+// clientview.Sync failed silently, and the release added in r786 never ran once
+// in production - the lock simply reappeared every cycle and the interface went
+// on reporting the server as unreachable. An optional interface is only
+// optional for implementations that genuinely cannot satisfy it; this one wraps
+// a client that has always had Cleanup.
+func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy string) (string, error) {
+	return updater.client.Cleanup(ctx, workingCopy)
+}
+
 func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
 	// One recorder for every server this supervisor watches: the view lane is
 	// per server and so is its age.

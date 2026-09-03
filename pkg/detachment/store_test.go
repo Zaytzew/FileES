@@ -1,7 +1,9 @@
 package detachment
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -130,7 +132,7 @@ func TestReattachingMarksTheRecordAndDoesNotDeleteIt(t *testing.T) {
 	if got[0].Current() {
 		t.Error("the record is still current although the client is back")
 	}
-	if !got[0].ReattachedAt.Equal(back) {
+	if got[0].ReattachedAt == nil || !got[0].ReattachedAt.Equal(back) {
 		t.Errorf("ReattachedAt = %v, want %v", got[0].ReattachedAt, back)
 	}
 	if !got[0].At.Equal(at) {
@@ -156,6 +158,58 @@ func TestDetachingAgainAfterReattachingIsCurrentOnceMore(t *testing.T) {
 	got := store.ListAt(second.Add(time.Minute))
 	if len(got) != 1 || !got[0].Current() || !got[0].At.Equal(second) {
 		t.Fatalf("record = %+v, want one current detachment at the later moment", got)
+	}
+}
+
+// The file is the artefact somebody will eventually open to work out what
+// happened, so it must not contain fields that read like answers and are not.
+//
+// Caught on the owner's live machine within a minute of the first real record:
+// encoding/json ignores omitempty on a struct, so a plain time.Time wrote
+// "reattached_at": "0001-01-01T00:00:00Z" into a record whose client had never
+// been re-activated - a date that is not a date, in the one place that exists
+// to be believed.
+func TestANeverReattachedRecordWritesNoReattachmentDate(t *testing.T) {
+	store, path := openTemp(t)
+	at := time.Date(2026, 9, 3, 17, 40, 0, 0, time.UTC)
+	if err := store.Record(Record{ServerID: "manual", Cause: CauseRevoked, At: at}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read store: %v", err)
+	}
+	if strings.Contains(string(raw), "reattached_at") {
+		t.Errorf("the record carries a reattachment date it never had:\n%s", raw)
+	}
+	if strings.Contains(string(raw), "0001-01-01") {
+		t.Errorf("the record carries a zero time as though it were a moment:\n%s", raw)
+	}
+}
+
+// A record written before ReattachedAt became a pointer is still current.
+//
+// The owner's live file already held one when this was found. Read literally,
+// its zero date decodes to a valid non-nil time and the record would count as
+// re-activated - quietly removing the only detachment he had, from the panel
+// built to show it.
+func TestAZeroReattachmentDateFromAnOlderRecordIsNotAReattachment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "detachments.json")
+	legacy := `{"schema":"` + Schema + `","records":[{"server_id":"manual","display_name":"manual",` +
+		`"cause":"revoked","at":"2026-09-03T19:54:51Z","reattached_at":"0001-01-01T00:00:00Z"}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	got := store.ListAt(time.Date(2026, 9, 3, 20, 0, 0, 0, time.UTC))
+	if len(got) != 1 {
+		t.Fatalf("ListAt = %d records, want 1", len(got))
+	}
+	if !got[0].Current() {
+		t.Error("a zero date was read as a reattachment; the record would vanish from the panel")
 	}
 }
 

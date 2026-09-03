@@ -135,11 +135,18 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 	dec := json.NewDecoder(io.LimitReader(f, 1<<20))
 	dec.DisallowUnknownFields()
 	var doc document
-	if err := dec.Decode(&doc); err != nil {
+	err = dec.Decode(&doc)
+	// Closed here rather than deferred, because the migration below rewrites
+	// this exact path and Windows refuses to rename over a file that is still
+	// open. A deferred close made the repair fail silently - the error was
+	// ignored on purpose, so the only symptom was the old date staying put.
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
 		return nil, err
 	}
 	if doc.Schema != Schema {

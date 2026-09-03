@@ -40,7 +40,7 @@ func TestTheProfilePathIsTheOneActivationWroteTo(t *testing.T) {
 	if strings.Contains(readErr.Error(), serverID) {
 		t.Fatalf("the unencoded server ID reached the filesystem: %v", readErr)
 	}
-	if !strings.Contains(filepath.ToSlash(written), "%3A") {
+	if !strings.Contains(filepath.ToSlash(written), "+3A") {
 		t.Fatalf("this test proves nothing unless the ID is actually encoded: %q", written)
 	}
 }

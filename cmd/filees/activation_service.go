@@ -11,6 +11,7 @@ import (
 
 	"filees/pkg/client"
 	"filees/pkg/clientprofile"
+	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/deploy"
 	"filees/pkg/talk"
@@ -94,7 +95,19 @@ func (service daemonActivationService) finalize(ctx context.Context, payload con
 		state = "active_profile_pending"
 	}
 	if service.onActive != nil {
-		service.onActive(contract.ActivationStatus{ServerID: passport.ServerID, DisplayName: passport.ServerID, ClientRole: "normal", Address: payload.ServerAddress, ClientID: clientProfile.ClientID, SSHPort: clientProfile.SSHPort, SessionTimeoutMin: int(clientProfile.SVNTimeout() / time.Minute)})
+		status := contract.ActivationStatus{ServerID: passport.ServerID, DisplayName: passport.ServerID, ClientRole: "normal", Address: payload.ServerAddress, ClientID: clientProfile.ClientID, SSHPort: clientProfile.SSHPort, SessionTimeoutMin: int(clientProfile.SVNTimeout() / time.Minute)}
+		// The realm and its grants come from the server's projection, and by
+		// now the checkout above has fetched it - so read it rather than
+		// registering a server the interface cannot act on.
+		//
+		// Without this a fresh activation showed "alias nieustawiony" and
+		// offered nothing but deactivation, while the projection on disk
+		// already named the realm and granted repository creation. Nothing
+		// corrected it later either: clientview.Monitor emits on change, and a
+		// projection read once and unchanged never fires again, so the blank
+		// registration survived until the daemon happened to restart. Same
+		// shape as the freshness defect fixed in r733, one field over.
+		service.onActive(withProjectedRealm(status, clientProfile))
 	}
 	return contract.ActivationCommandResult{ServerID: passport.ServerID, State: state}, nil
 }
@@ -151,4 +164,25 @@ func prepareActivatedClientProfile(ctx context.Context, payload contract.Activat
 		return profile, err
 	}
 	return profile, nil
+}
+
+// withProjectedRealm fills the realm facts from the freshly checked-out view.
+//
+// Best effort: an activation that succeeded must not be reported as failed
+// because its projection could not be read a moment later. What is missing
+// then is exactly what was missing before - the interface shows the server
+// without its realm until the next projection arrives - so this can only
+// improve on the previous behaviour, never worsen it.
+func withProjectedRealm(status contract.ActivationStatus, profile clientprofile.Profile) contract.ActivationStatus {
+	view, err := clientview.Load(filepath.Join(profile.ServiceWC, profile.RelativeViewPath))
+	if err != nil {
+		return status
+	}
+	status.RealmID = view.RealmID
+	status.RealmAlias = view.RealmAlias
+	status.CanCreateRepositories = view.CanCreateRepositories()
+	if role := strings.TrimSpace(view.ClientRole); role != "" {
+		status.ClientRole = role
+	}
+	return status
 }

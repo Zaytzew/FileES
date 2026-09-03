@@ -63,8 +63,13 @@ Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
   Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*start-filees.ps1*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
-# 2. zatrzymaj demona ŁAGODNIE — inaczej tracisz manifest obserwatora
-& "$env:LOCALAPPDATA\Programs\FileES\filees.exe" shutdown
+# 2. zatrzymaj demona ŁAGODNIE — inaczej tracisz manifest obserwatora.
+#    UWAGA: wołaj ŚWIEŻO ZBUDOWANĄ binarkę, nie zainstalowaną. To wywołanie
+#    po IPC, więc wyda je dowolny klient — a zainstalowana może być starsza
+#    niż sama podkomenda i wtedy cicho nic nie zrobi. Sprawdzone na sobie:
+#    stara binarka odpowiedziała "unknown command", demon został, a podmiana
+#    pliku padła na "plik w użyciu" i wdrożenie wyglądało na udane.
+& "E:\!!!_COOPERATE\FILEES\dist\filees.exe" shutdown
 
 # 3. podmień binarki, 4. wystartuj zadanie
 Start-ScheduledTask -TaskName FileES

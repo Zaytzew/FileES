@@ -16,7 +16,7 @@ import (
 func TestDispatcherResolvesAuthorityFromView(t *testing.T) {
 	root := t.TempDir()
 	clientID, realm := uuid.NewString(), uuid.NewString()
-	v := clientview.View{Schema: clientview.Schema, ClientID: clientID, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
+	v := clientview.View{Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
 	if _, e := clientview.StoreIfNewer(filepath.Join(root, "clients", clientID, "view.json"), v); e != nil {
 		t.Fatal(e)
 	}

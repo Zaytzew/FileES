@@ -1,5 +1,6 @@
 {
-  "schema": "filees.server-toolchain/v1",
+  "schema": "filees.server-toolchain/v2",
+  "display_name": "Serwer projektowy",
   "root": "/var/filees/onboarding",
   "otp_pepper_file": "/etc/filees/otp.pepper",
   "worker_private_key_file": "/etc/filees/worker_ed25519",

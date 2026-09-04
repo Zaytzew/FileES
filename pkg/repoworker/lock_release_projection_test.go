@@ -15,7 +15,7 @@ func writeLockReleaseProjectionView(t *testing.T, root, clientID, realmID, alias
 	t.Helper()
 	viewPath := filepath.Join(root, "clients", clientID, "view.json")
 	view := clientview.View{
-		Schema: clientview.Schema, ClientID: clientID, RealmID: realmID, RealmAlias: alias,
+		Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realmID, RealmAlias: alias,
 		Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal",
 		Repositories: []clientview.Repository{{
 			RepoID: repoID, DisplayName: "Projekt", URL: "svn+ssh://_filees-client@example.net/" + repoID,

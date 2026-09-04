@@ -29,7 +29,7 @@ func TestOperatorBrandingOnlyResolvesForSMTPTools(t *testing.T) {
 	svnBinary, svnserveBinary, svnadminBinary := "/bin/sh", "/bin/sh", "/bin/sh"
 	activationRoot := filepath.Join(root, "activation")
 	file := map[string]any{
-		"schema": Schema, "root": filepath.Join(root, "onboarding"), "otp_pepper_file": pepperFile,
+		"schema": Schema, "display_name": "Serwer testowy", "root": filepath.Join(root, "onboarding"), "otp_pepper_file": pepperFile,
 		"operation_ttl": "30m", "otp_attempts": 5, "reverse_port_first": 42000, "reverse_port_last": 42000,
 		"activation": map[string]any{
 			"root": activationRoot, "authorized_keys_file": filepath.Join(activationRoot, "authorized_keys"),
@@ -60,8 +60,12 @@ func TestOperatorBrandingOnlyResolvesForSMTPTools(t *testing.T) {
 	if err := os.WriteFile(configPath, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadFor(configPath, 0); err != nil {
+	config, err := LoadFor(configPath, 0)
+	if err != nil {
 		t.Fatalf("config load without SecretSMTP must not touch operator_branding.logo_file: %v", err)
+	}
+	if config.ServerDisplayName != "Serwer testowy" || config.Activation.ServerDisplayName != config.ServerDisplayName {
+		t.Fatalf("server display name was not propagated: config=%q activation=%q", config.ServerDisplayName, config.Activation.ServerDisplayName)
 	}
 	if _, err := LoadFor(configPath, SecretSMTP); err == nil {
 		t.Fatal("config load with SecretSMTP silently accepted a missing operator_branding.logo_file")

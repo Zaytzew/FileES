@@ -27,6 +27,14 @@ disabled-by-default Public Shares services:
 
 Run `install-server.sh` as the target system administrator, edit
 `/etc/filees/server.json`, and keep both configuration and OTP pepper private.
+Schema `filees.server-toolchain/v2` requires a top-level `display_name`: the
+human-facing server name projected to every client. `invitation.server_id` is
+immutable technical identity and must never be renamed to change the UI.
+After changing `display_name`, run
+`doas -u _filees-state filees-operation recover`; it advances all active
+`view.json` files to `filees.client-view/v2`, increments their generations and
+publishes them in one service-repository commit. This is an intentional hard
+contract cut: deploy a matching client before publishing v2 projections.
 Run state-mutating administrative commands with effective user
 `_filees-state` (for example through a narrow `doas` rule); running
 `filees-admin ticket create` as root would create a root-owned `0600` ticket
@@ -134,7 +142,8 @@ The installer generates a server-local Ed25519 worker key. Distribute only its
 public `.pub` file to the client policy which starts the loopback helper; the
 private key remains mode 0600 under `/etc/filees`.
 
-An existing S2 `server.json` must be extended with absolute
+An existing S2 `server.json` must be changed to schema v2, given a top-level
+`display_name`, and extended with absolute
 `worker_private_key_file` and `worker_public_key_file` paths before enabling
 S3, and with an `invitation` profile containing the stable server ID, public
 SSH endpoint and verified ED25519 `known_host` line. Re-running the generic

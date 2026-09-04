@@ -284,7 +284,8 @@ func newSupervisorTestSession(t *testing.T) (*activation.Manager, serverconfig.C
 	runSupervisorCommand(t, svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "init proof", "file://"+repository+"/proof")
 	runSupervisorCommand(t, svn, "checkout", "--non-interactive", "--no-auth-cache", "file://"+repository, wc)
 	activationConfig := activation.Config{
-		Root: filepath.Join(root, "activation"), SessionRoot: filepath.Join(root, "sessions"),
+		ServerDisplayName: "Serwer testowy",
+		Root:              filepath.Join(root, "activation"), SessionRoot: filepath.Join(root, "sessions"),
 		AuthorizedKeysFile: filepath.Join(root, "authorized_keys"), AuthzFile: filepath.Join(root, "authz"),
 		ServiceWorkingCopy: wc, ServiceRepository: repository, RepositoryName: "filees-service",
 		ClientEntryPath: os.Args[0], SVNBinary: svn, SVNServeBinary: svnserve,

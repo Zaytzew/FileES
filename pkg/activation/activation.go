@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/clientview"
 	"filees/pkg/onboarding"
 	"filees/pkg/realmbranding"
 	"filees/pkg/repoworker"
@@ -29,12 +30,13 @@ const (
 	FormatSchema  = "filees.service-repository/v1"
 	RealmSchema   = "filees.realm/v1"
 	ClientSchema  = "filees.client-instance/v1"
-	ViewSchema    = "filees.client-view/v1"
+	ViewSchema    = clientview.Schema
 	AuditSchema   = "filees.service-audit/v1"
 )
 
 type Config struct {
-	Root string
+	Root              string
+	ServerDisplayName string
 	// SessionRoot is private runtime state for per-SSH-session leases. It
 	// must be outside every SVN working copy and repository. Empty is kept
 	// only as a migration fallback to Root/sessions for installations created
@@ -135,6 +137,9 @@ func NewUnderServiceWorkingCopyLock(config Config, runner CommandRunner) (*Manag
 }
 
 func New(config Config, runner CommandRunner) (*Manager, error) {
+	if err := clientview.ValidateServerDisplayName(config.ServerDisplayName); err != nil {
+		return nil, fmt.Errorf("activation server_display_name: %w", err)
+	}
 	for label, path := range map[string]string{
 		"root": config.Root, "authorized_keys_file": config.AuthorizedKeysFile,
 		"authz_file": config.AuthzFile, "service_working_copy": config.ServiceWorkingCopy,
@@ -584,6 +589,89 @@ func (m *Manager) withServiceWorkingCopy(ctx context.Context, fn func() error) e
 	})
 }
 
+// ReconcileServerDisplayName advances every active client projection to the
+// current view contract and operator-configured server label. One server-side
+// technical commit makes the change atomic for all clients. Older clients are
+// intentionally not supported after this contract cut.
+func (m *Manager) ReconcileServerDisplayName(ctx context.Context) (int, error) {
+	updated := 0
+	err := m.withServiceWorkingCopy(ctx, func() error {
+		return withFileLock(filepath.Join(m.config.Root, ".activation.lock"), func() error {
+			records, err := m.recordsLocked()
+			if err != nil {
+				return err
+			}
+			now := m.now().UTC()
+			paths := make([]string, 0, len(records))
+			for _, record := range records {
+				if record.State != "active" {
+					continue
+				}
+				viewPath := filepath.Join(m.config.ServiceWorkingCopy, "clients", record.ClientID, "view.json")
+				view, changed, err := loadViewForServerDisplayNameUpgrade(viewPath, m.config.ServerDisplayName)
+				if err != nil {
+					m.rollbackServicePaths(paths...)
+					return fmt.Errorf("reconcile server display name for client %s: %w", record.ClientID, err)
+				}
+				if !changed {
+					continue
+				}
+				view.Generation++
+				view.GeneratedAt = now
+				if err := view.Validate(); err != nil {
+					m.rollbackServicePaths(paths...)
+					return fmt.Errorf("reconcile server display name for client %s: %w", record.ClientID, err)
+				}
+				if err := atomicWriteJSON(viewPath, view, 0o600); err != nil {
+					m.rollbackServicePaths(paths...)
+					return err
+				}
+				paths = append(paths, viewPath)
+			}
+			if len(paths) == 0 {
+				return nil
+			}
+			commitArgs := []string{"commit", "--depth", "empty", "--non-interactive", "--no-auth-cache", "-m", "filees: publish server display name"}
+			commitArgs = append(commitArgs, m.serviceCommitTargets(ctx, paths...)...)
+			if output, err := m.runner.Output(ctx, m.config.SVNBinary, commitArgs...); err != nil {
+				m.rollbackServicePaths(paths...)
+				return fmt.Errorf("svn commit server display name: %w: %s", err, sanitizeOutput(output))
+			}
+			updated = len(paths)
+			return nil
+		})
+	})
+	if err != nil {
+		return 0, err
+	}
+	return updated, nil
+}
+
+func loadViewForServerDisplayNameUpgrade(viewPath, displayName string) (clientview.View, bool, error) {
+	f, err := os.Open(viewPath)
+	if err != nil {
+		return clientview.View{}, false, err
+	}
+	defer f.Close()
+	decoder := json.NewDecoder(io.LimitReader(f, 1<<20))
+	decoder.DisallowUnknownFields()
+	var view clientview.View
+	if err := decoder.Decode(&view); err != nil {
+		return clientview.View{}, false, fmt.Errorf("decode client view: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return clientview.View{}, false, errors.New("client view contains trailing data")
+	}
+	const previousSchema = "filees.client-view/v1"
+	if view.Schema != previousSchema && view.Schema != clientview.Schema {
+		return clientview.View{}, false, fmt.Errorf("unsupported client view schema %q", view.Schema)
+	}
+	changed := view.Schema != clientview.Schema || view.ServerDisplayName != displayName
+	view.Schema = clientview.Schema
+	view.ServerDisplayName = displayName
+	return view, changed, nil
+}
+
 func (m *Manager) rebuildDataAuthority(ctx context.Context) error {
 	if m.config.DataAuthzFile == "" {
 		return nil
@@ -670,7 +758,8 @@ func (m *Manager) publishServiceFiles(ctx context.Context, record Record, activa
 	}
 	view := map[string]any{
 		"schema": ViewSchema, "client_id": record.ClientID, "realm_id": record.RealmID,
-		"generation": 1, "generated_at": activatedAt, "client_role": "normal",
+		"server_display_name": m.config.ServerDisplayName,
+		"generation":          1, "generated_at": activatedAt, "client_role": "normal",
 		"capabilities": map[string]any{"can_create_repositories": true},
 		"repositories": repositories, "active_operations": []any{},
 	}

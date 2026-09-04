@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,7 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 		t.Fatalf("revision=%d err=%v", revision, err)
 	}
 	view, err := clientview.Load(filepath.Join(config.ServiceWorkingCopy, "clients", grant.ClientID, "view.json"))
-	if err != nil || !view.CanCreateRepositories() || view.Capabilities == nil {
+	if err != nil || !view.CanCreateRepositories() || view.Capabilities == nil || view.ServerDisplayName != config.ServerDisplayName {
 		t.Fatalf("activation view capabilities=%+v err=%v", view.Capabilities, err)
 	}
 	again, err := manager.Publish(context.Background(), grant)
@@ -105,6 +106,74 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	authz, _ := os.ReadFile(config.AuthzFile)
 	if strings.Contains(string(authz), "[/clients/"+grant.ClientID+"]") || !strings.Contains(string(authz), "[/clients/"+second.ClientID+"]") {
 		t.Fatalf("revoked/active authz=%s", authz)
+	}
+}
+
+func TestReconcileServerDisplayNameCutsLegacyViewsOverInOnePass(t *testing.T) {
+	manager, config := newActivationTestManager(t)
+	grants := []onboarding.ActivationGrant{
+		testActivationGrant(t, time.Now().Add(time.Hour)),
+		testActivationGrant(t, time.Now().Add(time.Hour)),
+	}
+	viewPaths := make([]string, 0, len(grants))
+	expectedGenerations := make(map[string]int64, len(grants))
+	for _, grant := range grants {
+		if err := manager.Stage(grant); err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.RecordProof(grant.OperationID, grant.ClientID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := manager.Publish(context.Background(), grant); err != nil {
+			t.Fatal(err)
+		}
+		viewPath := filepath.Join(config.ServiceWorkingCopy, "clients", grant.ClientID, "view.json")
+		raw, err := os.ReadFile(viewPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var legacy map[string]any
+		if err := json.Unmarshal(raw, &legacy); err != nil {
+			t.Fatal(err)
+		}
+		legacy["schema"] = "filees.client-view/v1"
+		delete(legacy, "server_display_name")
+		raw, err = json.MarshalIndent(legacy, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(viewPath, append(raw, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		viewPaths = append(viewPaths, viewPath)
+		expectedGenerations[viewPath] = int64(legacy["generation"].(float64)) + 1
+	}
+	commit := []string{"commit", "--non-interactive", "--no-auth-cache", "-m", "legacy fixture"}
+	runActivationCommand(t, config.SVNBinary, append(commit, viewPaths...)...)
+
+	manager.config.ServerDisplayName = "Cloud ATM Projekt"
+	updated, err := manager.ReconcileServerDisplayName(context.Background())
+	if err != nil || updated != 2 {
+		t.Fatalf("updated=%d err=%v", updated, err)
+	}
+	var committedRevision string
+	for _, viewPath := range viewPaths {
+		view, err := clientview.Load(viewPath)
+		if err != nil || view.Schema != clientview.Schema || view.ServerDisplayName != "Cloud ATM Projekt" || view.Generation != expectedGenerations[viewPath] {
+			t.Fatalf("reconciled view=%+v err=%v", view, err)
+		}
+		output, err := exec.Command(config.SVNBinary, "info", "--show-item", "last-changed-revision", viewPath).CombinedOutput()
+		if err != nil {
+			t.Fatalf("svn info: %v: %s", err, output)
+		}
+		revision := strings.TrimSpace(string(output))
+		if committedRevision != "" && revision != committedRevision {
+			t.Fatalf("views were not published atomically: revisions %s and %s", committedRevision, revision)
+		}
+		committedRevision = revision
+	}
+	if updated, err := manager.ReconcileServerDisplayName(context.Background()); err != nil || updated != 0 {
+		t.Fatalf("idempotent updated=%d err=%v", updated, err)
 	}
 }
 
@@ -545,7 +614,8 @@ func newActivationTestManager(t *testing.T) (*Manager, Config) {
 	runActivationCommand(t, svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "init proof", "file://"+repository+"/proof")
 	runActivationCommand(t, svn, "checkout", "--non-interactive", "--no-auth-cache", "file://"+repository, wc)
 	config := Config{
-		Root: filepath.Join(root, "activation"), AuthorizedKeysFile: filepath.Join(root, "authorized_keys"),
+		ServerDisplayName: "Serwer testowy",
+		Root:              filepath.Join(root, "activation"), AuthorizedKeysFile: filepath.Join(root, "authorized_keys"),
 		AuthzFile: filepath.Join(root, "authz"), DataAuthzFile: filepath.Join(root, "data.authz"), ServiceWorkingCopy: wc, ServiceRepository: repository,
 		RepositoryName: "filees-service", ClientEntryPath: "/usr/local/libexec/filees/filees-client-entry",
 		SVNBinary: svn, SVNServeBinary: svnserve,

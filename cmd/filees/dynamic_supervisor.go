@@ -29,6 +29,13 @@ type projectionUpdate struct {
 	view                                     clientview.View
 }
 
+func projectedServerDisplayName(beforeProjection string, view clientview.View) string {
+	if view.ServerDisplayName != "" {
+		return view.ServerDisplayName
+	}
+	return beforeProjection
+}
+
 // publicShareLister is the narrow slice of realmAliasService this file needs:
 // one control-plane exchange per owned repo, unrelated to the GUI/IPC
 // contract types it also happens to return.
@@ -272,7 +279,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	monitored := make(map[string]bool)
 	currentViews := make(map[string]clientview.View)
 	shareRefreshes := newPublicShareRefreshCoordinator(ctx, shareLister, shareCache, ipc)
-	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval, timeout time.Duration, resumeCached bool) error {
+	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, syncConfig clientview.SyncConfig, interval, timeout time.Duration, resumeCached bool) error {
 		if timeout <= 0 {
 			timeout = clientprofile.DefaultSessionTimeout
 		}
@@ -283,10 +290,25 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		monitorMu.Lock()
 		monitorCancels[serverID] = cancelMonitor
 		monitorMu.Unlock()
-		cached, exists, err := clientview.CachedOrNone(sync.CachePath)
+		cached, exists, err := clientview.CachedOrNone(syncConfig.CachePath)
 		if err != nil {
 			cancelMonitor()
 			return fmt.Errorf("load cached projection: %w", err)
+		}
+		currentDisplayName := displayName
+		if exists {
+			currentDisplayName = projectedServerDisplayName(currentDisplayName, cached)
+		}
+		var displayNameMu sync.RWMutex
+		setDisplayName := func(view clientview.View) {
+			displayNameMu.Lock()
+			currentDisplayName = projectedServerDisplayName(currentDisplayName, view)
+			displayNameMu.Unlock()
+		}
+		displayNameNow := func() string {
+			displayNameMu.RLock()
+			defer displayNameMu.RUnlock()
+			return currentDisplayName
 		}
 		if exists {
 			currentViews[serverID] = cached
@@ -334,7 +356,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		if projectRealmAlias != nil {
 			realmAlias = projectRealmAlias(serverID, realmID, realmAlias)
 		}
-		ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
+		ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayNameNow(), ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
 		svn := client.New(client.Options{SvnPath: "svn", Timeout: timeout, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort})
 		var updater clientview.Updater = svn
 		if serviceURL != "" {
@@ -345,12 +367,12 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		// an unpublished failure is exactly the log-line-and-nothing-else that
 		// left a ten-day-old projection looking current.
 		publishFreshness := func() {
-			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayName, ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
+			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayNameNow(), ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
 		}
 		freshnessMu.Lock()
 		freshnessPublishers[serverID] = publishFreshness
 		freshnessMu.Unlock()
-		views := clientview.Monitor(monitorCtx, updater, clientview.MonitorConfig{Sync: sync, Interval: interval, OnError: func(err error) {
+		views := clientview.Monitor(monitorCtx, updater, clientview.MonitorConfig{Sync: syncConfig, Interval: interval, OnError: func(err error) {
 			if isDetachedClient(err) {
 				// The view and reservation commands use the same client proof.
 				// One authoritative refusal ends both retry loops; activation is
@@ -365,6 +387,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			// Every successful sync, not only one that brought a new
 			// generation: a quiet server that changes nothing must not look
 			// like a server that has stopped answering.
+			setDisplayName(view)
 			freshness.Synced(serverID, view)
 			publishFreshness()
 			select {
@@ -375,7 +398,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		go func() {
 			for view := range views {
 				select {
-				case updates <- projectionUpdate{serverID: serverID, displayName: displayName, address: address, clientID: clientID, sshPort: sshPort, view: view}:
+				case updates <- projectionUpdate{serverID: serverID, displayName: displayNameNow(), address: address, clientID: clientID, sshPort: sshPort, view: view}:
 				case <-ctx.Done():
 					return
 				}
@@ -397,7 +420,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			monitored[profile.ServerID] = false
 		}
 		reservationRefreshes.UpdateProfile(profile)
-		return startMonitor(profile.ServerID, profile.ServerID, profile.Address, profile.ClientID, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval, profile.SVNTimeout(), resumeCached)
+		return startMonitor(profile.ServerID, profile.DisplayName, profile.Address, profile.ClientID, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval, profile.SVNTimeout(), resumeCached)
 	}
 	for _, profile := range profiles {
 		if err := startProfile(profile, false); err != nil {

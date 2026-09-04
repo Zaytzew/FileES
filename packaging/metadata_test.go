@@ -477,7 +477,7 @@ func TestServerBundleContainsControlAndPublicShareTools(t *testing.T) {
 	if err := json.Unmarshal(configRaw, &config); err != nil {
 		t.Fatalf("invalid server example config: %v", err)
 	}
-	if config["schema"] != "filees.server-toolchain/v1" || config["root"] != "/var/filees/onboarding" {
+	if config["schema"] != "filees.server-toolchain/v2" || config["display_name"] == "" || config["root"] != "/var/filees/onboarding" {
 		t.Fatalf("unexpected server config identity: %#v", config)
 	}
 	activationConfig, ok := config["activation"].(map[string]any)

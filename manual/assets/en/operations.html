@@ -404,7 +404,8 @@ Match all</code></pre>
 <h2 id="ops-serverjson">server.json reference</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span>Configuration contract used by the current server tools.</span></div>
 <p>After running the installer, edit <code>/etc/filees/server.json</code>:</p>
 <pre><code>{
-  "schema": "filees.server-toolchain/v1",
+  "schema": "filees.server-toolchain/v2",
+  "display_name": "Project server",
   "root": "/var/filees/onboarding",
   "otp_pepper_file": "/etc/filees/otp.pepper",
   "worker_private_key_file": "/etc/filees/worker_ed25519",
@@ -447,7 +448,8 @@ Match all</code></pre>
 }</code></pre>
 <div class="table-wrap"><table>
 <tr><th>Field</th><th>Description</th></tr>
-<tr><td><code>schema</code></td><td>Must be <code>filees.server-toolchain/v1</code></td></tr>
+<tr><td><code>schema</code></td><td>Must be <code>filees.server-toolchain/v2</code></td></tr>
+<tr><td><code>display_name</code></td><td>Required human-facing server name (up to 80 Unicode characters). It can change without altering immutable <code>invitation.server_id</code>; after a change run <code>doas -u _filees-state filees-operation recover</code> to publish new client-view generations.</td></tr>
 <tr><td><code>root</code></td><td>Absolute path to the private state directory (tickets, operations, audit)</td></tr>
 <tr><td><code>otp_pepper_file</code></td><td>Absolute path to file containing at least 32 bytes of base64-encoded secret pepper</td></tr>
 <tr><td><code>worker_private_key_file</code></td><td>Absolute path to Ed25519 private key used by <code>filees-worker</code> (mode 0600)</td></tr>

@@ -57,7 +57,7 @@ func TestRealmAliasesClaimSkipsForeignClientViews(t *testing.T) {
 		}
 	}
 	writeView := func(clientID, realmID string) {
-		view := clientview.View{Schema: clientview.Schema, ClientID: clientID, RealmID: realmID, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
+		view := clientview.View{Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realmID, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
 		if _, err := clientview.StoreIfNewer(filepath.Join(root, "clients", clientID, "view.json"), view); err != nil {
 			t.Fatal(err)
 		}

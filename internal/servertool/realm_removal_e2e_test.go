@@ -109,7 +109,8 @@ func newRealmRemovalE2EFixture(t *testing.T, retentionDays int) realmRemovalE2EF
 	f.resultsRoot = filepath.Join(f.root, "results")
 	f.archiveRoot = filepath.Join(f.resultsRoot, "deleted-repositories")
 	f.activationConfig = activation.Config{
-		Root: filepath.Join(f.root, "activation"), SessionRoot: filepath.Join(f.root, "sessions"),
+		ServerDisplayName: "Serwer testowy",
+		Root:              filepath.Join(f.root, "activation"), SessionRoot: filepath.Join(f.root, "sessions"),
 		AuthorizedKeysFile: filepath.Join(f.root, "authorized_keys"), AuthzFile: filepath.Join(f.root, "service.authz"),
 		DataAuthzFile:      filepath.Join(f.root, "repositories.authz"),
 		ServiceWorkingCopy: serviceWC, ServiceRepository: serviceRepository, RepositoryName: "filees-service",
@@ -358,7 +359,7 @@ func (f *realmRemovalE2EFixture) assertRecoveryAndErasure(t *testing.T, operatio
 	request := "get " + operationID + " " + archive.ArchiveID + "\n"
 	configPath := filepath.Join(f.root, "recovery-server.json")
 	config := map[string]any{
-		"schema": serverconfig.Schema, "root": filepath.Join(f.root, "onboarding"),
+		"schema": serverconfig.Schema, "display_name": "Serwer testowy", "root": filepath.Join(f.root, "onboarding"),
 		"otp_pepper_file": filepath.Join(f.root, "pepper"), "operation_ttl": "30m",
 		"otp_attempts": 3, "reverse_port_first": 42000, "reverse_port_last": 42000,
 		"repositories": map[string]any{

@@ -47,6 +47,14 @@ func (fake *fakeRepositoryDumpLoader) LoadDump(_ context.Context, serverID, repo
 	return nil
 }
 
+type recoveryDismissCall struct{ serverID, repoID, operationID string }
+type fakeRecoveryDismisser struct{ calls chan recoveryDismissCall }
+
+func (fake *fakeRecoveryDismisser) DismissRecovery(_ context.Context, serverID, repoID, operationID string) error {
+	fake.calls <- recoveryDismissCall{serverID: serverID, repoID: repoID, operationID: operationID}
+	return nil
+}
+
 type fakeStackLifecycle struct {
 	restarts  chan struct{}
 	shutdowns chan struct{}
@@ -99,6 +107,35 @@ func TestControllerLocalDetachUsesOneConfirmationAndDistinctCommand(t *testing.T
 	}
 	if confirmations := platformFake.Snapshot().ConfirmRequests; len(confirmations) != 1 {
 		t.Fatalf("local detach confirmations=%d, want 1", len(confirmations))
+	}
+}
+
+func TestControllerDismissesRecoveryLocallyWithRetentionWarningAndFence(t *testing.T) {
+	dismisser := &fakeRecoveryDismisser{calls: make(chan recoveryDismissCall, 1)}
+	lifecycle := newRecordingActionLifecycle()
+	platformFake := &platformtest.Fake{ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil }}
+	view := lifecycleView(contract.CapRepoRecoveryDismiss)
+	view.Repos[0].Attached = false
+	view.Repos[0].ServerDeleted = true
+	view.Repos[0].State = "deleted"
+	view.Repos[0].RecoveryAvailable = true
+	view.Repos[0].RecoveryOperationID = "delete-op"
+	view.Repos[0].RetainUntil = "2026-09-18T18:00:00Z"
+	view.Servers[0].Repos[0] = view.Repos[0]
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), Prompter: platformFake, Notifier: platformFake, RecoveryDismisser: dismisser, ActionLifecycle: lifecycle})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentDismissRecovery, ServerID: "office", RepoID: "repo-1", RecoveryOperationID: "delete-op"})
+	call := awaitCh(t, dismisser.calls, "recovery dismiss")
+	if call.serverID != "office" || call.repoID != "repo-1" || call.operationID != "delete-op" {
+		t.Fatalf("dismiss call=%+v", call)
+	}
+	confirmations := platformFake.Snapshot().ConfirmRequests
+	if len(confirmations) != 1 || !strings.Contains(confirmations[0].Text, "Serwer nie usunie teraz danych") || confirmations[0].ConfirmText != "Usuń z listy" {
+		t.Fatalf("dismiss confirmation=%+v", confirmations)
+	}
+	started := awaitCh(t, lifecycle.started, "dismiss action")
+	if !started.ExpectedRecoveryDismissed || started.RepoID != "repo-1" || started.ServerID != "office" {
+		t.Fatalf("dismiss pending action=%+v", started)
 	}
 }
 

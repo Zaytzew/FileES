@@ -91,6 +91,7 @@ type PendingAction struct {
 	ExpectedRepoAttached      bool
 	ExpectedRepoDetached      bool
 	ExpectedRepoDeleted       bool
+	ExpectedRecoveryDismissed bool
 	// ExpectedLifecycleOperationID fences a repair against daemon projection:
 	// the spinner remains until this exact stuck operation is no longer exposed.
 	ExpectedLifecycleOperationID string
@@ -354,6 +355,9 @@ func (vm ViewModel) CanDetachRepository() bool {
 }
 func (vm ViewModel) CanDeleteRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoDelete)
+}
+func (vm ViewModel) CanDismissRecovery() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoRecoveryDismiss)
 }
 func (vm ViewModel) CanAttachRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoAttachIntent) && vm.HasCap(contract.CapRepoAttachApprove)

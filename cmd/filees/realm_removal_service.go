@@ -38,6 +38,9 @@ func (s realmRemovalClientService) List(ctx context.Context) ([]contract.Recover
 	}
 	result := make([]contract.RecoveryStatus, 0, len(entries))
 	for _, entry := range entries {
+		if repositoryRecoveryDismissed(s.local.List(), entry.OperationID) {
+			continue
+		}
 		result = append(result, contract.RecoveryStatus{
 			OperationID: entry.OperationID, ServerID: entry.ServerID, ServerName: entry.ServerName,
 			KitPath: entry.KitPath, AdminContact: entry.AdminContact, ArchiveCount: entry.ArchiveCount,
@@ -48,6 +51,9 @@ func (s realmRemovalClientService) List(ctx context.Context) ([]contract.Recover
 }
 
 func (s realmRemovalClientService) Download(ctx context.Context, payload contract.RecoveryDownloadPayload) (contract.RecoveryDownloadResult, error) {
+	if repositoryRecoveryDismissed(s.local.List(), payload.OperationID) {
+		return contract.RecoveryDownloadResult{}, os.ErrNotExist
+	}
 	now := time.Now().UTC()
 	entry, err := s.registry.Find(payload.OperationID, now)
 	if err != nil {
@@ -62,6 +68,15 @@ func (s realmRemovalClientService) Download(ctx context.Context, payload contrac
 		return contract.RecoveryDownloadResult{}, err
 	}
 	return contract.RecoveryDownloadResult{OperationID: payload.OperationID, Paths: paths}, nil
+}
+
+func repositoryRecoveryDismissed(records []localrepo.Record, operationID string) bool {
+	for _, record := range records {
+		if record.DetachOperationID == operationID && record.RecoveryDismissed {
+			return true
+		}
+	}
+	return false
 }
 
 func (s realmRemovalClientService) Begin(ctx context.Context, serverID, realmID string, payload contract.RealmRemoveBeginPayload) (contract.RealmRemoveBeginResult, error) {

@@ -83,6 +83,17 @@ func (service repositoryLifecycleService) BeginDelete(ctx context.Context, serve
 	return service.finishDetach(ctx, record, err)
 }
 
+func (service repositoryLifecycleService) DismissRecovery(serverID, repoID, operationID string) (contract.RepoRecoveryDismissResult, error) {
+	record, err := service.store.DismissRecovery(serverID, repoID, operationID)
+	if err != nil {
+		return contract.RepoRecoveryDismissResult{}, err
+	}
+	return contract.RepoRecoveryDismissResult{
+		OperationID: operationID, ServerID: serverID, RepoID: repoID, Dismissed: true,
+		LocalCleanupPending: record.State == localrepo.StateDeleting && !record.LocalCleanupCompleted,
+	}, nil
+}
+
 func (service repositoryLifecycleService) finishDetach(ctx context.Context, record localrepo.Record, err error) (contract.RepoLifecycleResult, error) {
 	if err != nil {
 		return contract.RepoLifecycleResult{}, err

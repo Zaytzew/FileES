@@ -72,6 +72,7 @@ const (
 	CmdRepoQuarantineFetch     = "repo.quarantine_fetch"        // copy payload from the waiting room
 	CmdRepoDetach              = "repo.detach"                  // detach one local working copy, preserving user data
 	CmdRepoDelete              = "repo.delete"                  // delete an owned server repository; detach and clean a local WC when present
+	CmdRepoRecoveryDismiss     = "repo.recovery_dismiss"        // hide one retained recovery archive on this client; server retention is unchanged
 	CmdRepoLifecycleStatus     = "repo.lifecycle_status"        // poll outcome of a create/attach/relocate operation by ID
 	CmdRepoLifecycleRepair     = "repo.lifecycle_repair"        // retry or locally abandon one stuck durable operation
 	CmdRepoActivity            = "repo.activity"                // global recent synchronization activity snapshot
@@ -162,6 +163,7 @@ const (
 	CapRepoQuarantineFetch     = "repo.quarantine_fetch"
 	CapRepoDetach              = "repo.detach"
 	CapRepoDelete              = "repo.delete"
+	CapRepoRecoveryDismiss     = "repo.recovery_dismiss"
 	CapRepoLifecycleStatus     = "repo.lifecycle_status"
 	CapRepoLifecycleRepair     = "repo.lifecycle_repair"
 	CapRepoActivity            = "repo.activity"
@@ -217,6 +219,7 @@ var AllCapabilities = []string{
 	CapRepoLoadDump,
 	CapRepoDetach,
 	CapRepoDelete,
+	CapRepoRecoveryDismiss,
 	CapRepoLifecycleStatus,
 	CapRepoLifecycleRepair,
 	CapRepoPublish,
@@ -829,6 +832,24 @@ type RepoLifecycleRepairPayload struct {
 	ServerID    string `json:"server_id"`
 	RepoID      string `json:"repo_id"`
 	Strategy    string `json:"strategy"` // retry | abandon
+}
+
+// RepoRecoveryDismissPayload identifies a repository-deletion recovery
+// capability already projected by the daemon. Dismissal is local-only: the
+// server archive keeps its configured retention and remains available to the
+// server administrator under that policy.
+type RepoRecoveryDismissPayload struct {
+	OperationID string `json:"operation_id"`
+	ServerID    string `json:"server_id"`
+	RepoID      string `json:"repo_id"`
+}
+
+type RepoRecoveryDismissResult struct {
+	OperationID         string `json:"operation_id"`
+	ServerID            string `json:"server_id"`
+	RepoID              string `json:"repo_id"`
+	Dismissed           bool   `json:"dismissed"`
+	LocalCleanupPending bool   `json:"local_cleanup_pending,omitempty"`
 }
 
 type RepoLifecycleResult struct {

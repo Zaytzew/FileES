@@ -475,6 +475,20 @@ func TestReducerActionFenceRequiresAuthoritativeExpectedReservationChange(t *tes
 	}
 }
 
+func TestReducerRecoveryDismissFenceWaitsForCapabilityToDisappear(t *testing.T) {
+	action := PendingAction{ID: "dismiss:1", Kind: "dismiss_recovery", ServerID: "spot", RepoID: "archive", ExpectedRecoveryDismissed: true}
+	s := newAppState().applyRepoList([]contract.RepoSummary{{ID: "archive", ServerID: "spot", ServerDeleted: true, RecoveryAvailable: true}}).startPendingAction(action).awaitPendingAction(action.ID)
+	s, waiting := s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 1 || len(s.viewModel().PendingActions) != 1 {
+		t.Fatalf("dismissal confirmed before projection changed: waiting=%v", waiting)
+	}
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "archive", ServerID: "spot", ServerDeleted: true}})
+	s, waiting = s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 0 || len(s.viewModel().PendingActions) != 0 {
+		t.Fatalf("dismissal fence not released: waiting=%v", waiting)
+	}
+}
+
 func TestReducerFinishesSuccessfulLockWhenInventoryWasAlreadyUnknown(t *testing.T) {
 	action := PendingAction{ID: "lock:unknown", Kind: "lock", RepoID: "docs", ServerID: "spot", ReservationDelta: 1, BaselineReservationsKnown: false}
 	s := newAppState().startPendingAction(action)

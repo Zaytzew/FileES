@@ -134,6 +134,12 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 			}
 			retainUntil, retainErr := time.Parse(time.RFC3339Nano, record.RetainUntil)
 			cleanupPending := record.State == localrepo.StateDeleting && !record.LocalCleanupCompleted
+			// A dismissal is client-local acknowledgement only. Keep projecting
+			// unfinished local cleanup, but otherwise do not resurrect the archive
+			// from the durable lifecycle record on the next server tick.
+			if record.RecoveryDismissed && !cleanupPending {
+				continue
+			}
 			if !cleanupPending && (retainErr != nil || !now.Before(retainUntil)) {
 				continue
 			}
@@ -143,8 +149,8 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 				Attached: false, PendingLocalPath: record.LocalPath, ServerDeleted: true,
 				LocalCleanupPending: cleanupPending, RetainUntil: record.RetainUntil,
 				RecoveryOperationID: record.DetachOperationID,
-				RecoveryAvailable:   record.RecoveryPrepared && record.RecoveryKitPath != "" && retainErr == nil && now.Before(retainUntil),
-				RecoveryPending:     !record.RecoveryPrepared && retainErr == nil && now.Before(retainUntil),
+				RecoveryAvailable:   !record.RecoveryDismissed && record.RecoveryPrepared && record.RecoveryKitPath != "" && retainErr == nil && now.Before(retainUntil),
+				RecoveryPending:     !record.RecoveryDismissed && !record.RecoveryPrepared && retainErr == nil && now.Before(retainUntil),
 				CleanupError:        record.LastError,
 			}
 			if repair, ok := repairs[record.RepoID]; ok {

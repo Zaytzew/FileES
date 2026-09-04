@@ -188,6 +188,7 @@ func TestQuarantineProjectionAndDirectIntentRemainOwnerScoped(t *testing.T) {
 
 func TestDeletedRepositoryProjectsRetentionAndRecoveryIntent(t *testing.T) {
 	vm := guiapp.ViewModel{
+		Connected: true, Capabilities: map[string]bool{contract.CapRepoRecoveryDismiss: true},
 		Servers: []guiapp.ServerViewModel{{ID: "spot"}},
 		Repos: []guiapp.RepoViewModel{{
 			ID: "gone", ServerID: "spot", DisplayName: "Archiwum", State: "deleted",
@@ -200,12 +201,16 @@ func TestDeletedRepositoryProjectsRetentionAndRecoveryIntent(t *testing.T) {
 		t.Fatalf("repositories=%#v", projected.Repositories)
 	}
 	repo := projected.Repositories[0]
-	if repo.DisplayState != "deleted" || !repo.ServerDeleted || !repo.LocalCleanupPending || !repo.RecoveryAvailable || repo.RecoveryOperationID != "delete-op" {
+	if repo.DisplayState != "deleted" || !repo.ServerDeleted || !repo.LocalCleanupPending || !repo.RecoveryAvailable || !repo.CanDismissRecovery || repo.RecoveryOperationID != "delete-op" {
 		t.Fatalf("deleted projection=%+v", repo)
 	}
 	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentDownloadRecovery), RepoID: "gone"})
 	if !allowed || intent.Kind != tray.IntentDownloadRecovery || intent.RecoveryOperationID != "delete-op" || intent.ServerID != "spot" {
 		t.Fatalf("recovery intent=%+v allowed=%v", intent, allowed)
+	}
+	dismiss, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentDismissRecovery), RepoID: "gone"})
+	if !allowed || dismiss.Kind != tray.IntentDismissRecovery || dismiss.RecoveryOperationID != "delete-op" || dismiss.ServerID != "spot" {
+		t.Fatalf("dismiss intent=%+v allowed=%v", dismiss, allowed)
 	}
 }
 

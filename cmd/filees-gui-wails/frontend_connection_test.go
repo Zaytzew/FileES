@@ -63,7 +63,7 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 
 func TestGeneratedDashboardBindingsMatchProjectionBoundary(t *testing.T) {
 	bindings := embeddedFrontendFile(t, "frontend/bindings/filees/cmd/filees-gui-wails/models.js")
-	for _, wanted := range []string{"export class FreshnessProjection", "export class ReservationAvailabilityProjection", "export class ServerReferenceProjection", `this["can_attach"]`, `this["projection"]`, `this["reservation_status"]`} {
+	for _, wanted := range []string{"export class FreshnessProjection", "export class ReservationAvailabilityProjection", "export class ServerReferenceProjection", `this["can_attach"]`, `this["health"]`, `this["projection"]`, `this["reservation_status"]`} {
 		if !strings.Contains(bindings, wanted) {
 			t.Fatalf("generated dashboard bindings are missing %q", wanted)
 		}

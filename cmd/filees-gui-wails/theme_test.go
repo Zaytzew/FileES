@@ -111,6 +111,19 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 			t.Fatalf("cleanup styles are missing %q", wanted)
 		}
 	}
+	for _, wanted := range []string{"serverHealthPresentation(server.health)", "health-current", "health-unavailable"} {
+		if !strings.Contains(string(script), wanted) {
+			t.Fatalf("per-server health rendering is missing %q", wanted)
+		}
+	}
+	for _, wanted := range []string{".server-mark.health-current", ".server-mark.health-unavailable"} {
+		if !strings.Contains(string(styles), wanted) {
+			t.Fatalf("per-server health styling is missing %q", wanted)
+		}
+	}
+	if strings.Contains(string(styles), ".server-panel.has-attention .server-mark") {
+		t.Fatal("repository attention still overrides the server health indicator")
+	}
 	if !strings.Contains(string(styles), ".orbit-c { inset:58px; border-width:8px;") || !strings.Contains(string(styles), "animation:spin 7.5s linear infinite") {
 		t.Fatal("radar is missing the broad rotating inner ring")
 	}

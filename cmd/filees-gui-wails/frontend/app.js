@@ -419,6 +419,16 @@ function renderRepoGroup(label, repos, className = "") {
   </section>`;
 }
 
+function serverHealthPresentation(value) {
+  switch (value) {
+    case "current": return { className: "health-current", label: "Połączenie z serwerem działa" };
+    case "refreshing": return { className: "health-refreshing", label: "Sprawdzanie stanu serwera" };
+    case "server_unavailable": return { className: "health-unavailable", label: "Serwer nie odpowiada" };
+    case "daemon_offline": return { className: "health-unavailable", label: "Demon FileES jest rozłączony" };
+    default: return { className: "health-unverified", label: "Stan serwera jeszcze niepotwierdzony" };
+  }
+}
+
 function renderRepositories(snapshot) {
   const root = $("#repositories");
   const repos = snapshot.repositories || [];
@@ -454,12 +464,13 @@ function renderRepositories(snapshot) {
     const unclassified = attached.filter((repo) => !["owned", "guest"].includes(repo.ownership));
     const context = server.realm_alias || server.address || server.id;
     const expanded = expandedServers.has(server.id);
+    const health = serverHealthPresentation(server.health);
     const attention = serverRepos.some((repo) => repo.display_state === "attention" || Number(repo.conflicts || 0) > 0)
       || (snapshot.errors || []).some((error) => serverRepos.some((repo) => repo.id === error.repo_id))
       || (snapshot.notices || []).some((notice) => !notice.acked && serverRepos.some((repo) => repo.id === notice.repo_id));
     return `<article class="server-panel ${attention ? "has-attention" : ""}" data-server-id="${escapeHTML(server.id)}">
       <header class="server-header" data-toggle-server="${escapeHTML(server.id)}" tabindex="0" role="button" aria-expanded="${expanded}" aria-controls="server-folders-${escapeHTML(server.id)}">
-        <div class="server-identity"><span class="server-mark" aria-hidden="true"></span><div>
+        <div class="server-identity"><span class="server-mark ${health.className}" role="img" aria-label="${escapeHTML(health.label)}" title="${escapeHTML(health.label)}"></span><div>
           <div class="server-title-line">
             <h3>${escapeHTML(server.display_name || server.id)}</h3>
             <button class="server-settings" type="button" data-action="settings" title="Ustawienia serwera" aria-label="Ustawienia serwera ${escapeHTML(server.display_name || server.id)}">

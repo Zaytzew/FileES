@@ -151,7 +151,7 @@ transport belongs to the client installation, not to a single repository:
 | `id`               | Unique repo identifier (used in logs and state paths) |
 | `transport.identity_file` | Absolute path to the Ed25519 key created during activation |
 | `transport.known_hosts` | Absolute path to the pinned service host key |
-| `update.enabled` | Enables the signed client updater; disabled by default |
+| `update.enabled` | Overrides the distribution updater; `false` is an explicit opt-out |
 | `update.repo_url` | URL of the SVN/HTTPS release repository, without password, query or fragment |
 | `update.channel` | Release channel, defaults to `stable` |
 | `update.state_path` | Private, absolute path to the durable high-water mark file |
@@ -463,9 +463,11 @@ the server reconciles.
 
 ### Signed desktop client updates
 
-The updater is opt-in and fail-closed. A production build must embed a
-release public key and its `key_id`; configuration cannot swap the key nor
-disable signature checks. The daemon advertises `update.status`,
+The updater is enabled by the distribution and fail-closed. A production build
+embeds the public release repository, channel, public key and its `key_id`;
+configuration cannot swap the key nor disable signature checks. An explicit
+`update.enabled:false` is the user opt-out; an absent section uses the
+distribution channel. The daemon advertises `update.status`,
 `update.plan` and `update.apply` only once a complete update service is
 registered.
 
@@ -474,15 +476,19 @@ A verified v2 envelope binds `release_id`, a monotonic `sequence` and
 manifest. The client checks the OpenBSD signify format internally via
 Ed25519, then the bundle's exact size and SHA-256. A durable high-water
 mark blocks downgrades, lowering the security epoch, and forking the same
-sequence.
+sequence. It compares the actual running binary with the manifest, while the
+persisted version remains security history; reinstalling an older MSI can
+therefore self-repair without lowering the high-water mark.
 
-The GUI shows an "Update available" badge. "Show what will change…" is a
+The GUI checks automatically and shows an "Update available" badge. "Show what will change…" is a
 dry run, and "Update and restart…" re-resolves the signed release, shows a
 native confirmation, and runs the existing installer. Linux preserves
 configuration and disables restart/autostart inside the script; on
 success, the GUI requests a restart of the whole stack, exits, releases the
 single-instance lock, and only then launches the new binary. The
-publishing procedure: `tools/RELEASE_PUBLISHING.md`.
+publishing procedure: `tools/RELEASE_PUBLISHING.md`. One Windows manifest
+contains both the updater bundle and the MSI; the updater selects only the
+artifact whose kind is `bundle`.
 
 ### Notifications
 

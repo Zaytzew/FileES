@@ -47,11 +47,34 @@ func TestTheClientUpdatesTheDirectoryItRunsFrom(t *testing.T) {
 // refused loudly rather than updating this one from somebody else's bundle.
 func TestAMismatchedUpdatePlatformIsRefused(t *testing.T) {
 	update := config.UpdateConfig{Platform: "linux-amd64", Channel: "alpha", Component: "desktop-client"}
-	err := configureClientUpdate(nil, &update, "0.1.15")
+	err := configureClientUpdate(nil, &update, true, "0.1.15")
 	if err == nil {
 		t.Fatal("a linux-amd64 update configuration was accepted by a windows client")
 	}
 	if !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("error = %v; the reason must name the mismatch", err)
+	}
+}
+
+func TestDistributionUpdateDefaultsAndExplicitOptOut(t *testing.T) {
+	previousRepo, previousChannel := injectedClientReleaseRepoURL, injectedClientReleaseChannel
+	defer func() { injectedClientReleaseRepoURL, injectedClientReleaseChannel = previousRepo, previousChannel }()
+	injectedClientReleaseRepoURL = "svn://cloud.atmprojekt.pl/FILEES-BIN/"
+	injectedClientReleaseChannel = "alpha"
+	update, err := distributionClientUpdateConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if update == nil || update.RepoURL != "svn://cloud.atmprojekt.pl/FILEES-BIN" || update.Channel != "alpha" || update.Component != config.DesktopUpdateComponent || !filepath.IsAbs(update.StatePath) || !filepath.IsAbs(update.StageRoot) {
+		t.Fatalf("distribution update = %+v", update)
+	}
+	// A user-owned explicit enabled:false is represented by nil plus true and
+	// must win over the build default.
+	if err := configureClientUpdate(nil, nil, true, "0.1.15"); err != nil {
+		t.Fatalf("explicit opt-out failed: %v", err)
+	}
+	injectedClientReleaseChannel = ""
+	if _, err := distributionClientUpdateConfig(); err == nil {
+		t.Fatal("half-configured distribution defaults were accepted")
 	}
 }

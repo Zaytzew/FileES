@@ -46,6 +46,26 @@ base_version=$(sed -n '1p' "$root/VERSION")
 # the running client reports; base.NNN is what Windows installers can order.
 client_version="$base_version.$revision"
 stamp="$base_version+r$revision"
+release_ldflags=""
+
+# A distribution build contains public routing and verification material, not
+# credentials. All four values are atomic: a binary that knows a channel but
+# cannot authenticate it (or vice versa) is not an auto-updating build.
+if [ -n "${FILEES_RELEASE_PUBKEY:-}" ] || [ -n "${FILEES_RELEASE_KEY_ID:-}" ] || \
+	[ -n "${FILEES_RELEASE_REPO_URL:-}" ] || [ -n "${FILEES_RELEASE_CHANNEL:-}" ]; then
+	[ -n "${FILEES_RELEASE_PUBKEY:-}" ] && [ -n "${FILEES_RELEASE_KEY_ID:-}" ] && \
+		[ -n "${FILEES_RELEASE_REPO_URL:-}" ] && [ -n "${FILEES_RELEASE_CHANNEL:-}" ] || \
+		die "FILEES_RELEASE_PUBKEY, FILEES_RELEASE_KEY_ID, FILEES_RELEASE_REPO_URL and FILEES_RELEASE_CHANNEL must be set together"
+	[ -f "$FILEES_RELEASE_PUBKEY" ] || die "release public key not found: $FILEES_RELEASE_PUBKEY"
+	case "$FILEES_RELEASE_KEY_ID" in [!A-Za-z0-9]*|*[!A-Za-z0-9._-]*|'') die "invalid FILEES_RELEASE_KEY_ID" ;; esac
+	case "$FILEES_RELEASE_CHANNEL" in [!A-Za-z0-9]*|*[!A-Za-z0-9._-]*|'') die "invalid FILEES_RELEASE_CHANNEL" ;; esac
+	case "$FILEES_RELEASE_REPO_URL" in *[[:space:]]*|'') die "invalid FILEES_RELEASE_REPO_URL" ;; esac
+	case "$FILEES_RELEASE_REPO_URL" in svn://*|svn+ssh://*|https://*) ;; *) die "FILEES_RELEASE_REPO_URL must use svn, svn+ssh or https" ;; esac
+	grep -Eq 'PLACEHOLDER|xxxx' "$FILEES_RELEASE_PUBKEY" && die "refusing placeholder release public key"
+	release_pubkey_b64=$(base64 <"$FILEES_RELEASE_PUBKEY" | tr -d '\r\n')
+	[ -n "$release_pubkey_b64" ] || die "release public key is empty"
+	release_ldflags="-X main.injectedClientReleasePublicKeyB64=$release_pubkey_b64 -X main.injectedClientReleaseKeyID=$FILEES_RELEASE_KEY_ID -X main.injectedClientReleaseRepoURL=$FILEES_RELEASE_REPO_URL -X main.injectedClientReleaseChannel=$FILEES_RELEASE_CHANNEL"
+fi
 
 rm -rf "$out"
 mkdir -p "$out/bin" "$out/autostart"
@@ -55,7 +75,7 @@ cd "$root"
 # convention that drops the dev server and devtools, and the daemon is a console
 # program that must keep its console for `filees status` and friends.
 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
-	-ldflags "-X main.version=$stamp" \
+	-ldflags "-X main.version=$stamp $release_ldflags" \
 	-o "$out/bin/$daemon" ./cmd/filees
 GOOS=$goos GOARCH=$goarch go build -tags production -trimpath -buildvcs=false \
 	-ldflags "-H=windowsgui -X main.version=$stamp" \

@@ -15,6 +15,8 @@ const embeddedClientReleaseKeyID = "release-2026-a"
 // public (never secret) key avoids whitespace/newline ambiguity in argv.
 var injectedClientReleasePublicKeyB64 string
 var injectedClientReleaseKeyID string
+var injectedClientReleaseRepoURL string
+var injectedClientReleaseChannel string
 
 //go:embed assets/release.pub
 var embeddedClientReleasePublicKey []byte

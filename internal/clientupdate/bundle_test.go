@@ -125,6 +125,23 @@ func TestBundleStagerRejectsHashSizeAndMultipleBundles(t *testing.T) {
 	}
 }
 
+func TestBundleStagerIgnoresInstallerArtifactInTheSameRelease(t *testing.T) {
+	bundle := makeBundle(t, tarEntry{name: "VERSION", typeflag: tar.TypeReg, data: "1.1\n"})
+	resolved := stagedRelease(bundle)
+	resolved.Manifest.Artifacts = append(resolved.Manifest.Artifacts, releaseenvelope.Artifact{
+		Source: "filees-1.1.msi", SHA256: strings.Repeat("0", 64), Size: 999, Kind: "installer",
+	})
+	path := "releases/r1/desktop/linux-amd64/client.tar.gz"
+	staged, err := (BundleStager{Fetcher: artifactFetcher{path: bundle}, Root: t.TempDir()}).Stage(context.Background(), resolved)
+	if err != nil {
+		t.Fatalf("installer metadata changed the updater bundle selection: %v", err)
+	}
+	defer staged.Remove()
+	if _, err := os.Stat(filepath.Join(staged.Root, "VERSION")); err != nil {
+		t.Fatalf("selected bundle was not extracted: %v", err)
+	}
+}
+
 func TestExtractorRejectsTraversalLinksDuplicatesAndExpansionLimits(t *testing.T) {
 	cases := []struct {
 		name    string

@@ -44,15 +44,16 @@ Dalej: otwórz interfejs i aktywuj klienta na swoim serwerze.
 
 Są dwie drogi i **obie prowadzą do tego samego katalogu**:
 
-1. **Kanał** — klient sam pyta `FILEES-BIN` o nowe wydanie na swoim kanale,
-   sprawdza podpis i podmienia binarki na miejscu. Wymaga wpisu `update` w
-   `config.json`; bez niego klient się nie aktualizuje i nic o tym nie mówi.
+1. **Kanał** — klient sam pyta `FILEES-BIN` o nowe wydanie na swoim kanale i
+   sprawdza podpis. GUI pokazuje dostępną wersję; instalację potwierdzasz
+   przyciskiem. Kanał i publiczny klucz są częścią buildu dystrybucyjnego,
+   więc nie wymagają dopisywania sekretów ani ustawień do `config.json`.
 2. **Nowy MSI** — instalacja na wierzchu poprzedniej, przez `MajorUpgrade`.
 
-Warto wiedzieć o jednym skutku ubocznym: jeśli aktualizacja przyszła kanałem, a
-potem uruchomisz **Napraw** z listy programów, wrócisz do wersji z MSI. To nie
-jest wada — instalator odtwarza to, co sam przyniósł. Po prostu wtedy zainstaluj
-nowszy MSI albo pozwól kanałowi zadziałać ponownie.
+Jawne `"update":{"enabled":false}` pozostaje opt-out. Jeśli aktualizacja
+przyszła kanałem, a potem uruchomisz **Napraw** z listy programów, wrócisz do
+wersji z MSI. Klient rozpozna faktycznie uruchomioną starszą wersję i ponownie
+zaproponuje bieżące wydanie bez obniżania zabezpieczenia przed rollbackiem.
 
 ## Odinstalowanie
 
@@ -66,16 +67,13 @@ samego siebie.
 ## Dla budującego
 
 ```sh
-# 1. przygotuj wydanie (buduje parę, składa bundel, stage'uje w FILEES-BIN)
+# przygotuj wydanie (buduje parę, bundel i MSI, stage'uje je w FILEES-BIN)
 RELEASE_ID=rNNN SEQUENCE=NNN KEY_ID=<klucz> \
   FILEES_BIN_WC=/ścieżka/do/FILEES-BIN \
   tools/prepare-client-release-windows.sh
-
-# 2. zbuduj MSI z TEGO SAMEGO bundla
-powershell -File packaging/windows/build-msi.ps1 -BundleDir dist/client-windows-amd64
 ```
 
-MSI powstaje z bundla, a nie z osobnej kompilacji — inaczej instalator i kanał
+MSI i bundel powstają z tego samego stagingu i są opisane jednym manifestem — inaczej instalator i kanał
 rozjechałyby się, a pierwszym objawem byłaby aktualizacja zgłaszająca zmianę
 tam, gdzie nic się nie zmieniło.
 GUI w bundlu jest wariantem produkcyjnym `windowsgui`; autostart nie powinien

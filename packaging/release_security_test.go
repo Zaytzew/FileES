@@ -114,14 +114,15 @@ func TestServerBuildRejectsWrongTargetArtifacts(t *testing.T) {
 }
 
 func TestClientBuildInjectsOnlyPublicReleaseTrust(t *testing.T) {
-	raw, err := os.ReadFile("build-gui.sh")
+	raw, err := os.ReadFile("build-client-bundle.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	script := string(raw)
 	for _, required := range []string{
 		"FILEES_RELEASE_PUBKEY", "FILEES_RELEASE_KEY_ID", "injectedClientReleasePublicKeyB64",
-		"injectedClientReleaseKeyID", "base64", "refusing placeholder release public key",
+		"injectedClientReleaseKeyID", "FILEES_RELEASE_REPO_URL", "FILEES_RELEASE_CHANNEL",
+		"injectedClientReleaseRepoURL", "injectedClientReleaseChannel", "base64", "refusing placeholder release public key",
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("client build missing release trust control %q", required)

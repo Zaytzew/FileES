@@ -41,30 +41,57 @@ type GUIService struct {
 }
 
 type Snapshot struct {
-	Revision            uint64                           `json:"revision"`
-	Connected           bool                             `json:"connected"`
-	Stale               bool                             `json:"stale"`
-	DaemonState         string                           `json:"daemon_state"`
-	UptimeSec           int64                            `json:"uptime_sec"`
-	LastRefresh         string                           `json:"last_refresh,omitempty"`
-	IconState           string                           `json:"icon_state"`
-	Capabilities        []string                         `json:"capabilities"`
-	Servers             []ServerProjection               `json:"servers"`
-	Repositories        []RepoProjection                 `json:"repositories"`
-	Reservations        []ReservationProjection          `json:"reservations"`
-	LockReleaseRequests []LockReleaseProjection          `json:"lock_release_requests"`
-	Errors              []ErrorProjection                `json:"errors"`
-	Activity            []ActivityProjection             `json:"activity"`
-	Journal             []JournalProjection              `json:"journal"`
-	PendingActions      []PendingActionProjection        `json:"pending_actions"`
-	NextCycleAt         string                           `json:"next_cycle_at,omitempty"`
-	CycleRunning        bool                             `json:"cycle_running"`
-	Notices             []NoticeProjection               `json:"notices"`
-	Detachments         []DetachmentProjection           `json:"detachments"`
-	PublicShares        []DashboardPublicShareProjection `json:"public_shares"`
-	PublicSharesKnown   bool                             `json:"public_shares_known"`
-	Update              *UpdateProjection                `json:"update,omitempty"`
-	ClientVersion       string                           `json:"client_version"`
+	Revision            uint64                            `json:"revision"`
+	Connected           bool                              `json:"connected"`
+	Stale               bool                              `json:"stale"`
+	DaemonState         string                            `json:"daemon_state"`
+	UptimeSec           int64                             `json:"uptime_sec"`
+	LastRefresh         string                            `json:"last_refresh,omitempty"`
+	IconState           string                            `json:"icon_state"`
+	Capabilities        []string                          `json:"capabilities"`
+	Servers             []ServerProjection                `json:"servers"`
+	Repositories        []RepoProjection                  `json:"repositories"`
+	Reservations        []ReservationProjection           `json:"reservations"`
+	LockReleaseRequests []LockReleaseProjection           `json:"lock_release_requests"`
+	Errors              []ErrorProjection                 `json:"errors"`
+	Activity            []ActivityProjection              `json:"activity"`
+	Journal             []JournalProjection               `json:"journal"`
+	PendingActions      []PendingActionProjection         `json:"pending_actions"`
+	NextCycleAt         string                            `json:"next_cycle_at,omitempty"`
+	CycleRunning        bool                              `json:"cycle_running"`
+	Notices             []NoticeProjection                `json:"notices"`
+	Detachments         []DetachmentProjection            `json:"detachments"`
+	PublicShares        []DashboardPublicShareProjection  `json:"public_shares"`
+	PublicSharesKnown   bool                              `json:"public_shares_known"`
+	Update              *UpdateProjection                 `json:"update,omitempty"`
+	ClientVersion       string                            `json:"client_version"`
+	Projection          FreshnessProjection               `json:"projection"`
+	ReservationStatus   ReservationAvailabilityProjection `json:"reservation_status"`
+}
+
+// FreshnessProjection is the single presentation verdict for the daemon and
+// server-view lane. The browser may translate it into copy and colour, but it
+// must not reconstruct truth from transport counters or timestamps.
+type FreshnessProjection struct {
+	State             string `json:"state"`
+	ServerName        string `json:"server_name,omitempty"`
+	Since             string `json:"since,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+	AdditionalServers int    `json:"additional_servers,omitempty"`
+}
+
+type ServerReferenceProjection struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+}
+
+// ReservationAvailabilityProjection keeps a partially answered inventory
+// honest without forcing the renderer to infer availability from source rows.
+type ReservationAvailabilityProjection struct {
+	State       string                      `json:"state"`
+	Unavailable []ServerReferenceProjection `json:"unavailable"`
+	Offline     []ServerReferenceProjection `json:"offline"`
+	Stale       []ServerReferenceProjection `json:"stale"`
 }
 
 type ServerProjection struct {
@@ -77,19 +104,6 @@ type ServerProjection struct {
 	RepositoriesReady     bool   `json:"repositories_ready"`
 	PendingRequiredRepos  int    `json:"pending_required_repos"`
 	ReservationCount      int    `json:"reservation_count"`
-	ReservationsKnown     bool   `json:"reservations_known"`
-	ReservationProjection string `json:"reservation_projection"`
-	ReservationAsOf       string `json:"reservation_as_of,omitempty"`
-	// The view lane, beside the reservation emission rather than merged into
-	// it: the same server can be fresh on one and refused on the other.
-	ViewGeneratedAt  string `json:"view_generated_at,omitempty"`
-	ViewSyncedAt     string `json:"view_synced_at,omitempty"`
-	ViewSyncError    string `json:"view_sync_error,omitempty"`
-	Detached         bool   `json:"detached,omitempty"`
-	ViewSyncFailures int    `json:"view_sync_failures,omitempty"`
-	// What the server says about its own publishing, as opposed to our
-	// fetching. Only this separates a quiet server from an abandoned one.
-	ServerViewProducedAt  string `json:"server_view_produced_at,omitempty"`
 	SessionTimeoutMinutes int    `json:"session_timeout_minutes"`
 }
 
@@ -115,6 +129,7 @@ type RepoProjection struct {
 	Conflicts            int             `json:"conflicts"`
 	CurrentOperation     string          `json:"current_operation,omitempty"`
 	ReservationCount     int             `json:"reservation_count"`
+	CanAttach            bool            `json:"can_attach"`
 	CanOpen              bool            `json:"can_open"`
 	CanLock              bool            `json:"can_lock"`
 	CanUnlock            bool            `json:"can_unlock"`
@@ -719,6 +734,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		Notices:             make([]NoticeProjection, 0, len(vm.Notices)),
 		Detachments:         make([]DetachmentProjection, 0, len(vm.Detachments)),
 		ClientVersion:       clientVersion(),
+		Projection:          projectFreshness(vm),
+		ReservationStatus:   projectReservationAvailability(vm),
 	}
 	if !vm.LastRefresh.IsZero() {
 		result.LastRefresh = vm.LastRefresh.Format(time.RFC3339)
@@ -735,10 +752,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			ID: server.ID, DisplayName: server.DisplayName, Address: server.Address,
 			ClientRole: server.ClientRole, RealmAlias: server.RealmAlias,
 			RepositoryCount: len(server.Repos), RepositoriesReady: server.RepositoriesReady,
-			PendingRequiredRepos: server.PendingRequiredRepos,
-			ReservationCount:     server.ReservationCount, ReservationsKnown: server.ReservationsKnown,
-			ReservationProjection: server.ReservationProjection, ReservationAsOf: server.ReservationAsOf,
-			ViewGeneratedAt: server.ViewGeneratedAt, ViewSyncedAt: server.ViewSyncedAt, ViewSyncError: server.ViewSyncError, ViewSyncFailures: server.ViewSyncFailures, ServerViewProducedAt: server.ServerViewProducedAt, Detached: server.Detached,
+			PendingRequiredRepos:  server.PendingRequiredRepos,
+			ReservationCount:      server.ReservationCount,
 			SessionTimeoutMinutes: server.SessionTimeoutMin,
 		})
 	}
@@ -770,6 +785,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			operation = *repo.CurrentOp
 		}
 		canOpen := repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
+		canAttach := !repo.Attached && repo.DisplayState() == guiapp.RepoDisplayUnattached && vm.CanAttachRepository()
 		canLock := vm.CanMutateLock() && canOpen && repo.CanWrite() && serverAllowsLock(vm, repo.ServerID)
 		canUnlock := vm.CanMutateUnlock() && canOpen && repo.CanWrite() && repo.ReservationCount > 0
 		canPublish := vm.Connected && !vm.Stale && vm.CanPublish() && canOpen && repo.CanWrite()
@@ -793,7 +809,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
-			CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
+			CanAttach: canAttach, CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
 			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
 			RetainUntil: repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
@@ -913,6 +929,69 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			AvailableVersion: vm.Update.AvailableVersion, Summary: vm.Update.Summary,
 			RestartRequired: vm.Update.RestartRequired,
 		}
+	}
+	return result
+}
+
+func projectFreshness(vm guiapp.ViewModel) FreshnessProjection {
+	if !vm.Connected {
+		return FreshnessProjection{State: "daemon_offline"}
+	}
+	type candidate struct {
+		server     guiapp.ServerViewModel
+		unverified bool
+	}
+	stale := make([]candidate, 0)
+	for _, server := range vm.Servers {
+		unverified := strings.TrimSpace(server.ViewSyncedAt) == "" && server.ViewSyncFailures == 0 && strings.TrimSpace(server.ViewSyncError) == ""
+		if unverified || server.ViewSyncFailures > 0 || strings.TrimSpace(server.ViewSyncError) != "" {
+			stale = append(stale, candidate{server: server, unverified: unverified})
+		}
+	}
+	if len(stale) > 0 {
+		first := stale[0]
+		state := "server_unavailable"
+		if first.unverified {
+			state = "server_unverified"
+		}
+		return FreshnessProjection{
+			State:             state,
+			ServerName:        firstNonBlank(first.server.DisplayName, first.server.ID),
+			Since:             firstNonBlank(first.server.ViewGeneratedAt, first.server.ViewSyncedAt),
+			Reason:            first.server.ViewSyncError,
+			AdditionalServers: len(stale) - 1,
+		}
+	}
+	if vm.Stale {
+		return FreshnessProjection{State: "refreshing"}
+	}
+	return FreshnessProjection{State: "current"}
+}
+
+func projectReservationAvailability(vm guiapp.ViewModel) ReservationAvailabilityProjection {
+	result := ReservationAvailabilityProjection{
+		State:       "complete",
+		Unavailable: []ServerReferenceProjection{},
+		Offline:     []ServerReferenceProjection{},
+		Stale:       []ServerReferenceProjection{},
+	}
+	if !vm.Connected {
+		result.State = "daemon_offline"
+		return result
+	}
+	for _, server := range vm.Servers {
+		ref := ServerReferenceProjection{ID: server.ID, DisplayName: firstNonBlank(server.DisplayName, server.ID)}
+		switch {
+		case !server.ReservationsKnown || server.ReservationProjection == string(contract.ReservationSourceUnknown):
+			result.Unavailable = append(result.Unavailable, ref)
+		case server.ReservationProjection == string(contract.ReservationSourceOffline):
+			result.Offline = append(result.Offline, ref)
+		case server.ReservationProjection == string(contract.ReservationSourceStale):
+			result.Stale = append(result.Stale, ref)
+		}
+	}
+	if len(result.Unavailable) > 0 {
+		result.State = "partial"
 	}
 	return result
 }

@@ -1279,6 +1279,13 @@ export class RepoProjection {
              */
             this["reservation_count"] = 0;
         }
+        if (!("can_attach" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["can_attach"] = false;
+        }
         if (!("can_open" in $$source)) {
             /**
              * @member
@@ -1393,6 +1400,30 @@ export class RepoProjection {
             $$parsedSource["cycle"] = $$createField25_0($$parsedSource["cycle"]);
         }
         return new RepoProjection(/** @type {Partial<RepoProjection>} */($$parsedSource));
+    }
+}
+
+export class ReservationAvailabilityProjection {
+    /**
+     * Creates a new ReservationAvailabilityProjection instance.
+     * @param {Partial<ReservationAvailabilityProjection>} [$$source = {}] - The source object to create the ReservationAvailabilityProjection.
+     */
+    constructor($$source = {}) {
+        if (!("state" in $$source)) this["state"] = "";
+        if (!("unavailable" in $$source)) this["unavailable"] = [];
+        if (!("offline" in $$source)) this["offline"] = [];
+        if (!("stale" in $$source)) this["stale"] = [];
+        Object.assign(this, $$source);
+    }
+
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        for (const field of ["unavailable", "offline", "stale"]) {
+            if (field in $$parsedSource) {
+                $$parsedSource[field] = ($$parsedSource[field] || []).map((value) => ServerReferenceProjection.createFrom(value));
+            }
+        }
+        return new ReservationAvailabilityProjection(/** @type {Partial<ReservationAvailabilityProjection>} */($$parsedSource));
     }
 }
 
@@ -1923,13 +1954,6 @@ export class ServerProjection {
              */
             this["reservation_count"] = 0;
         }
-        if (!("reservations_known" in $$source)) {
-            /**
-             * @member
-             * @type {boolean}
-             */
-            this["reservations_known"] = false;
-        }
         if (!("session_timeout_minutes" in $$source)) {
             /**
              * @member
@@ -1949,6 +1973,39 @@ export class ServerProjection {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new ServerProjection(/** @type {Partial<ServerProjection>} */($$parsedSource));
+    }
+}
+
+export class ServerReferenceProjection {
+    /**
+     * Creates a new ServerReferenceProjection instance.
+     * @param {Partial<ServerReferenceProjection>} [$$source = {}] - The source object to create the ServerReferenceProjection.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) this["id"] = "";
+        if (!("display_name" in $$source)) this["display_name"] = "";
+        Object.assign(this, $$source);
+    }
+
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ServerReferenceProjection(/** @type {Partial<ServerReferenceProjection>} */($$parsedSource));
+    }
+}
+
+export class FreshnessProjection {
+    /**
+     * Creates a new FreshnessProjection instance.
+     * @param {Partial<FreshnessProjection>} [$$source = {}] - The source object to create the FreshnessProjection.
+     */
+    constructor($$source = {}) {
+        if (!("state" in $$source)) this["state"] = "";
+        Object.assign(this, $$source);
+    }
+
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new FreshnessProjection(/** @type {Partial<FreshnessProjection>} */($$parsedSource));
     }
 }
 
@@ -2365,6 +2422,20 @@ export class Snapshot {
              */
             this["client_version"] = "";
         }
+        if (!("projection" in $$source)) {
+            /**
+             * @member
+             * @type {FreshnessProjection}
+             */
+            this["projection"] = (new FreshnessProjection());
+        }
+        if (!("reservation_status" in $$source)) {
+            /**
+             * @member
+             * @type {ReservationAvailabilityProjection}
+             */
+            this["reservation_status"] = (new ReservationAvailabilityProjection());
+        }
 
         Object.assign(this, $$source);
     }
@@ -2419,6 +2490,12 @@ export class Snapshot {
         }
         if ("update" in $$parsedSource) {
             $$parsedSource["update"] = $$createField19_0($$parsedSource["update"]);
+        }
+        if ("projection" in $$parsedSource) {
+            $$parsedSource["projection"] = FreshnessProjection.createFrom($$parsedSource["projection"]);
+        }
+        if ("reservation_status" in $$parsedSource) {
+            $$parsedSource["reservation_status"] = ReservationAvailabilityProjection.createFrom($$parsedSource["reservation_status"]);
         }
         return new Snapshot(/** @type {Partial<Snapshot>} */($$parsedSource));
     }

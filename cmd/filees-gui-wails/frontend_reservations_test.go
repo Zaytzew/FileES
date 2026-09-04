@@ -8,10 +8,8 @@ import (
 func TestFrontendKeepsHealthyReservationRowsWhenAnotherServerIsUnavailable(t *testing.T) {
 	script := embeddedFrontendFile(t, "frontend/app.js")
 	for _, wanted := range []string{
-		"function reservationProjectionState(snapshot)",
-		"!server.reservations_known || server.reservation_projection === \"unknown\"",
-		"server.reservation_projection === \"offline\"",
-		"server.reservation_projection === \"stale\"",
+		`snapshot.reservation_status || { state: "daemon_offline", unavailable: [], offline: [], stale: [] }`,
+		`reservationState.state === "partial"`,
 		"Częściowa lista — brak aktualnej emisji:",
 		"Lokalne lustro — tor stanowy offline:",
 		"availabilityHTML + requestsHTML + reservationsHTML",
@@ -22,6 +20,9 @@ func TestFrontendKeepsHealthyReservationRowsWhenAnotherServerIsUnavailable(t *te
 		}
 	}
 	for _, forbidden := range []string{
+		"function reservationProjectionState(snapshot)",
+		"server.reservations_known",
+		"server.reservation_projection",
 		"const reservationsKnown = !(snapshot.connected",
 		"reservations = nil",
 		"Lista blokad jest chwilowo niedostępna.",

@@ -1,5 +1,7 @@
 // Package archtest enforces the GUI import boundary defined in gui-assumptions.md:
-// internal/gui/ must not import engine packages (watcher, commit, client, ipcserver, errmap).
+// internal/gui/ must not import engine packages, and each executable composition
+// root may wire the IPC/presentation adapters but may not directly reach into the
+// daemon engine.
 package archtest
 
 import (
@@ -43,6 +45,32 @@ func TestGUIDoesNotImportEnginePackages(t *testing.T) {
 	for _, pkg := range forbiddenPkgs {
 		if seen[pkg] {
 			t.Errorf("internal/gui imports forbidden engine package: %s", pkg)
+		}
+	}
+}
+
+func TestWailsCompositionDoesNotDirectlyImportDaemonEngine(t *testing.T) {
+	root := moduleRoot(t)
+	if _, err := os.Stat(filepath.Join(root, "cmd", "filees-gui-wails")); err != nil {
+		t.Skip("Wails composition root is not present")
+	}
+	cmd := exec.Command("go", "list", "-buildvcs=false", "-f", `{{join .Imports "\n"}}`, "filees/cmd/filees-gui-wails")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list Wails imports: %v", err)
+	}
+	imports := "\n" + strings.TrimSpace(string(out)) + "\n"
+	forbidden := append([]string{
+		"filees/pkg/control/v1",
+		"filees/pkg/repoworker",
+		"filees/pkg/localrepo",
+		"filees/internal/servertool",
+		"filees/internal/obsandbox",
+	}, forbiddenPkgs...)
+	for _, pkg := range forbidden {
+		if strings.Contains(imports, "\n"+pkg+"\n") {
+			t.Errorf("Wails composition directly imports daemon engine package: %s", pkg)
 		}
 	}
 }

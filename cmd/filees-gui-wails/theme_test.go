@@ -97,7 +97,7 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 	if strings.Contains(string(script), "state-pill") || strings.Contains(string(styles), ".repo-actions") {
 		t.Fatal("obsolete state pill or leading action column survived folder-row cleanup")
 	}
-	if !strings.Contains(string(script), `!deleted && !repo.attached`) || !strings.Contains(string(styles), "padding-right:39px") {
+	if !strings.Contains(string(script), `repo.can_attach`) || !strings.Contains(string(styles), "padding-right:39px") {
 		t.Fatal("remote pin or one-slot size inset is missing")
 	}
 	if !strings.Contains(string(script), `.repo-name strong`) || !strings.Contains(string(script), "tools.children") || !strings.Contains(string(script), "document.createRange()") {
@@ -139,7 +139,7 @@ func TestDashboardStartsServersExpandedAndProjectsLocksAndShares(t *testing.T) {
 			t.Fatalf("expandable side cards are missing %q", wanted)
 		}
 	}
-	for _, wanted := range []string{"seenServers", "expandedServers.add(server.id)", `share.state === "active"`, `!server.reservations_known`, "snapshot.public_shares_known"} {
+	for _, wanted := range []string{"seenServers", "expandedServers.add(server.id)", `share.state === "active"`, "snapshot.reservation_status", "snapshot.public_shares_known"} {
 		if !strings.Contains(string(script), wanted) {
 			t.Fatalf("dashboard projection is missing %q", wanted)
 		}

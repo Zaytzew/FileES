@@ -39,6 +39,30 @@ func TestOfflineMirrorRestoresReservationsAsUnverified(t *testing.T) {
 	}
 }
 
+func TestOfflineMirrorKeepsAnsweredInventoryKnownWithUnknownSource(t *testing.T) {
+	store, err := projectionmirror.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	asOf := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	result := contract.RepoReservationListResult{
+		ServerID: "spot",
+		Sources: []contract.ReservationSource{
+			{RepoID: "inactive", State: contract.ReservationSourceUnknown},
+			{RepoID: "docs", State: contract.ReservationSourceFresh, AsOf: asOf, Generation: "8"},
+		},
+	}
+	raw, _ := json.Marshal(result)
+	if err := store.Save("spot", asOf.Add(time.Minute), raw); err != nil {
+		t.Fatal(err)
+	}
+	application := New(Config{Mirror: store, OfflineActivations: []contract.ActivationStatus{{ServerID: "spot", DisplayName: "Spot"}}})
+	vm := application.loadOfflineMirrors(newAppState()).viewModel()
+	if len(vm.Servers) != 1 || !vm.Servers[0].ReservationsKnown || vm.Servers[0].ReservationProjection != string(contract.ReservationSourceFresh) {
+		t.Fatalf("answered mirror was collapsed to unknown: %+v", vm.Servers)
+	}
+}
+
 func TestAggregateReservationProjectionPreservesOfflineAndUnknown(t *testing.T) {
 	asOf := time.Now().UTC()
 	state, stamp := aggregateReservationProjection([]contract.ReservationSource{
@@ -63,6 +87,8 @@ type fakeDaemon struct {
 	repoList     func(ctx context.Context) (*contract.RepoListResult, error)
 	repoStatus   func(ctx context.Context, id string) (*contract.RepoStatus, error)
 	errorList    func(ctx context.Context, pl contract.ErrorListPayload) (*contract.ErrorListResult, error)
+	activity     func(ctx context.Context, limit int) (*contract.RepoActivityResult, error)
+	notices      func(ctx context.Context) (*contract.NoticeListResult, error)
 	reservations func(ctx context.Context, serverID string) (*contract.RepoReservationListResult, error)
 	publicShares func(ctx context.Context) (*contract.PublicShareListResult, error)
 	lock         func(ctx context.Context, id string, paths []string) (string, error)
@@ -118,6 +144,24 @@ func (f *fakeDaemon) ErrorList(ctx context.Context, pl contract.ErrorListPayload
 		return &contract.ErrorListResult{}, nil
 	}
 	return fn(ctx, pl)
+}
+func (f *fakeDaemon) RepoActivity(ctx context.Context, limit int) (*contract.RepoActivityResult, error) {
+	f.mu.Lock()
+	fn := f.activity
+	f.mu.Unlock()
+	if fn == nil {
+		return &contract.RepoActivityResult{}, nil
+	}
+	return fn(ctx, limit)
+}
+func (f *fakeDaemon) NoticeList(ctx context.Context) (*contract.NoticeListResult, error) {
+	f.mu.Lock()
+	fn := f.notices
+	f.mu.Unlock()
+	if fn == nil {
+		return &contract.NoticeListResult{}, nil
+	}
+	return fn(ctx)
 }
 func (f *fakeDaemon) Lock(ctx context.Context, id string, paths []string) (string, error) {
 	f.mu.Lock()
@@ -935,6 +979,31 @@ func TestAppKeepsHealthyServerReservationsWhenAnotherServerFails(t *testing.T) {
 	}
 	if !vm.CanBrowseReservations() {
 		t.Fatal("healthy server reservation became unavailable globally")
+	}
+}
+
+func TestAppKeepsAnsweredReservationInventoryKnownWithUnknownSource(t *testing.T) {
+	d := &fakeDaemon{
+		systemStatus: func(context.Context) (*contract.SystemStatusResult, error) {
+			return &contract.SystemStatusResult{State: "running", Activations: []contract.ActivationStatus{{ServerID: "spot", DisplayName: "spot"}}}, nil
+		},
+		reservations: func(_ context.Context, serverID string) (*contract.RepoReservationListResult, error) {
+			return &contract.RepoReservationListResult{ServerID: serverID, Sources: []contract.ReservationSource{
+				{RepoID: "inactive", State: contract.ReservationSourceUnknown},
+				{RepoID: "docs", State: contract.ReservationSourceFresh, AsOf: time.Now().UTC()},
+			}}, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	vc := newVMCollector()
+	startApp(ctx, d, vc, newFakeClock(), &fakeBackoff{steps: []time.Duration{time.Hour}})
+
+	vm := vc.waitFor(t, 3*time.Second, func(vm ViewModel) bool {
+		return vm.Connected && len(vm.Servers) == 1
+	})
+	if !vm.Servers[0].ReservationsKnown || vm.Servers[0].ReservationProjection != string(contract.ReservationSourceFresh) {
+		t.Fatalf("answered inventory was collapsed to unknown: %+v", vm.Servers[0])
 	}
 }
 

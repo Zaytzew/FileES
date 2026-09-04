@@ -203,6 +203,23 @@ func (fakeDaemon) RepoStatus(context.Context, string) (*contract.RepoStatus, err
 func (fakeDaemon) ErrorList(context.Context, contract.ErrorListPayload) (*contract.ErrorListResult, error) {
 	return &contract.ErrorListResult{}, nil
 }
+
+// The projection surface grows: RepoActivity, NoticeList and PublicShareListAll
+// were added to app.DaemonClient after this double was written, and the double
+// stopped satisfying it. Empty answers rather than omitted methods - a fake that
+// does not compile takes the whole suite down with it, and this one did.
+func (fakeDaemon) RepoActivity(context.Context, int) (*contract.RepoActivityResult, error) {
+	return &contract.RepoActivityResult{}, nil
+}
+
+func (fakeDaemon) NoticeList(context.Context) (*contract.NoticeListResult, error) {
+	return &contract.NoticeListResult{}, nil
+}
+
+func (fakeDaemon) PublicShareListAll(context.Context) (*contract.PublicShareListResult, error) {
+	return &contract.PublicShareListResult{}, nil
+}
+
 func (fakeDaemon) Lock(context.Context, string, []string) (string, error)   { return "", nil }
 func (fakeDaemon) Unlock(context.Context, string, []string) (string, error) { return "", nil }
 func (fakeDaemon) RepoReservationList(context.Context, string) (*contract.RepoReservationListResult, error) {

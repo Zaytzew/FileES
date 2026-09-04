@@ -3,6 +3,9 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"syscall"
 	"unsafe"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -25,27 +28,37 @@ import (
 // Done from here rather than by patching Wails: NativeWindow() hands out the
 // HWND for exactly this kind of platform detail, so nothing has to be forked and
 // nothing breaks when the dependency moves.
-func applySmallWindowIcon(window *application.WebviewWindow, iconPNG []byte) {
+// applySmallWindowIcon returns what happened, and the caller says it out loud.
+//
+// The first version swallowed every failure on the grounds that an icon is not
+// worth breaking a window over - which is true, and which made it fail in
+// silence. It did nothing at all on the owner's machine and nothing anywhere
+// reported why; the only symptom was the same blank glyph it was written to
+// remove. Not fatal and not silent are different decisions, and this project
+// has paid for confusing them more than once.
+func applySmallWindowIcon(window *application.WebviewWindow, iconPNG []byte) error {
 	if window == nil || len(iconPNG) == 0 {
-		return
+		return errors.New("no window or no icon")
 	}
 	handle := window.NativeWindow()
 	if handle == nil {
-		return
+		return errors.New("the window has no native handle yet")
 	}
-	icon := createSmallIcon(iconPNG)
-	if icon == 0 {
-		return
+	icon, err := createSmallIcon(iconPNG)
+	if err != nil {
+		return err
 	}
-	// Best effort throughout. An interface that refused to open because a
-	// decoration could not be applied would be a far worse trade than an
-	// Alt-Tab entry with the default glyph.
-	_, _, _ = procSendMessageW.Call(uintptr(handle), wmSetIcon, iconSmall, uintptr(icon))
+	if _, _, callErr := procSendMessageW.Call(uintptr(handle), wmSetIcon, iconSmall, uintptr(icon)); callErr != nil {
+		if errno, ok := callErr.(syscall.Errno); !ok || errno != 0 {
+			return fmt.Errorf("WM_SETICON: %w", callErr)
+		}
+	}
+	return nil
 }
 
 const (
-	wmSetIcon = 0x0080
-	iconSmall = 0
+	wmSetIcon  = 0x0080
+	iconSmall  = 0
 	smCXSMICON = 49
 	smCYSMICON = 50
 	// LR_DEFAULTCOLOR. The size is given explicitly below, so no size flags.
@@ -64,13 +77,13 @@ var (
 // The size is asked for rather than assumed: it is 16 logical pixels at 100%
 // and larger on a scaled display, and handing Windows a mismatched bitmap gets
 // a blurred one back.
-func createSmallIcon(iconPNG []byte) windows.Handle {
+func createSmallIcon(iconPNG []byte) (windows.Handle, error) {
 	width, _, _ := procGetSystemMetrics.Call(smCXSMICON)
 	height, _, _ := procGetSystemMetrics.Call(smCYSMICON)
 	if width == 0 || height == 0 {
-		return 0
+		return 0, errors.New("the system reports no small-icon size")
 	}
-	icon, _, _ := procCreateIconFromResEx.Call(
+	icon, _, callErr := procCreateIconFromResEx.Call(
 		uintptr(unsafe.Pointer(&iconPNG[0])),
 		uintptr(len(iconPNG)),
 		1, // fIcon: an icon rather than a cursor
@@ -79,5 +92,8 @@ func createSmallIcon(iconPNG []byte) windows.Handle {
 		height,
 		lrDefaultColor,
 	)
-	return windows.Handle(icon)
+	if icon == 0 {
+		return 0, fmt.Errorf("CreateIconFromResourceEx at %dx%d: %w", width, height, callErr)
+	}
+	return windows.Handle(icon), nil
 }

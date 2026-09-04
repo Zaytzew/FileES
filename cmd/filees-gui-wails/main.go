@@ -75,6 +75,13 @@ func main() {
 		return
 	}
 
+	// Before anything takes the single-instance lock: a restart starts its
+	// replacement while it is still running, and the replacement must not
+	// mistake it for a second click on the shortcut.
+	if err := awaitReplacedInstance(); err != nil {
+		opjournal.RecordFailure("interface", "Restart klienta nie doczekał się końca poprzedniej instancji", err)
+	}
+
 	daemon := ipcclient.New(*socket, "filees-gui-wails")
 	mirror, mirrorErr := projectionmirror.Open(filepath.Join(filepath.Dir(*activationRoot), "projection-mirror"))
 	if mirrorErr != nil {
@@ -120,6 +127,9 @@ func main() {
 		Name:        "FileES Wails",
 		Description: "Klient FileES z interfejsem Wails",
 		Icon:        appIcon,
+		// One interface per login session. A second launch raises the running
+		// panel instead of starting a client that shows nothing.
+		SingleInstance: singleInstanceOptions(),
 		Services: []application.Service{
 			application.NewService(gui),
 			application.NewService(settings),
@@ -276,7 +286,12 @@ func main() {
 		// Applied here rather than beside the window's construction, because
 		// the native handle does not exist until the application has started
 		// and the call would silently do nothing.
-		applySmallWindowIcon(mainWindow, appIcon)
+		// Recorded rather than printed: the interface's stderr goes nowhere in a
+		// desktop install, which is how an activation once stalled for twenty
+		// minutes with the reason known and written to nothing.
+		if err := applySmallWindowIcon(mainWindow, appIcon); err != nil {
+			opjournal.RecordFailure("interface", "Okno nie dostało małej ikony (Alt-Tab, pasek tytułu)", err)
+		}
 		go gui.run(host.Context())
 		if actionController != nil {
 			go actionController.Run(host.Context())
@@ -285,6 +300,11 @@ func main() {
 	host.Event.OnApplicationEvent(events.Common.ThemeChanged, func(event *application.ApplicationEvent) {
 		dark := systemPrefersDark(event.Context().IsDarkMode())
 		applySystemTheme(dark, mainWindow, settingsWindow, repositoryWindow, promptWindow, pairingWindow)
+	})
+	setMainPanelRaiser(func() {
+		mainWindow.Show()
+		mainWindow.UnMinimise()
+		mainWindow.Focus()
 	})
 	configureWailsTray(host, mainWindow, gui, actionPlatform)
 

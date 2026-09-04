@@ -136,6 +136,16 @@ func runDaemon() {
 		lg.Errorf("client profiles: %v", err)
 		os.Exit(1)
 	}
+	detachmentStore, err := detachment.Open(defaultDetachmentPath())
+	if err != nil {
+		lg.Warnf("server detachments: %v — recently detached servers will not be listed", err)
+		detachmentStore = nil
+	}
+	profiles, forgetFailures := forgetDetachedProfiles(clientprofile.DefaultRoot(), profiles, detachmentStore)
+	for _, forgetErr := range forgetFailures {
+		lg.Warnf("server detachments: %v", forgetErr)
+	}
+	clientView = withoutDetachedClientView(clientView, detachmentStore)
 	profileEvents := make(chan clientprofile.Profile, 8)
 	timeoutEvents := make(chan clientprofile.Profile, 8)
 	publicShareEvents := make(chan string, 16)
@@ -174,11 +184,6 @@ func runDaemon() {
 	// that exist. A failure here must not stop the daemon: nothing else
 	// depends on it, and a client that refuses to start because it cannot
 	// write a chronology is a worse outcome than a missing chronology.
-	detachmentStore, err := detachment.Open(defaultDetachmentPath())
-	if err != nil {
-		lg.Warnf("server detachments: %v — recently detached servers will not be listed", err)
-		detachmentStore = nil
-	}
 	ipc.SetDetachmentSource(detachmentSource{store: detachmentStore})
 	repos, err = reconcileConfiguredRepositoryLifecycle(lifecycleStore, repos)
 	if err != nil {
@@ -202,6 +207,13 @@ func runDaemon() {
 	provisioner.recoveryRegistry = recoveryRegistry
 	provisioner.attachments = provisionedAttachments
 	go provisioner.Run(ctx)
+	forgetProfile := func(serverID string) {
+		if err := clientprofile.Remove(clientprofile.DefaultRoot(), serverID); err != nil {
+			lg.Warnf("forget revoked server %s: %v", serverID, err)
+		}
+		provisioner.RemoveProfile(serverID)
+		whaleManager.RemoveProfile(serverID)
+	}
 	realmAliases := &realmAliasService{provisioner: provisioner, cache: make(map[string]ownerLabelCache)}
 	shareCache := newPublicShareCache()
 	ipc.SetPublicShareSource(shareCache)
@@ -229,6 +241,14 @@ func runDaemon() {
 	}})
 	ipc.SetRealmRemovalService(realmRemovalClientService{local: lifecycleStore, provisioner: provisioner, profileRoot: clientprofile.DefaultRoot(), registry: recoveryRegistry})
 	ipc.SetActivationService(daemonActivationService{onActive: ipc.RegisterActivation, onProfile: func(profile clientprofile.Profile) {
+		// Activation has already succeeded at authority before a profile reaches
+		// this callback. It is therefore positive evidence of a new relationship,
+		// not a cached profile that the older detachment record may suppress.
+		if detachmentStore != nil {
+			if _, err := detachmentStore.Reattached(profile.ServerID, time.Now()); err != nil {
+				lg.Warnf("mark server %s reattached: %v", profile.ServerID, err)
+			}
+		}
 		provisioner.AddProfile(profile)
 		whaleManager.AddProfile(profile)
 		select {
@@ -242,7 +262,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	if lifecycle.action.Load() == daemonActionRestart {

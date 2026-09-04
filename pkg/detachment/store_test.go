@@ -112,9 +112,15 @@ func TestReattachingMarksTheRecordAndDoesNotDeleteIt(t *testing.T) {
 	if err := store.Record(Record{ServerID: "manual", Cause: CauseRevoked, At: at}); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
+	if !store.Current("manual") {
+		t.Fatal("fresh detachment is not reported as current")
+	}
 	changed, err := store.Reattached("manual", back)
 	if err != nil || !changed {
 		t.Fatalf("Reattached = %v, %v; want true, nil", changed, err)
+	}
+	if store.Current("manual") {
+		t.Fatal("superseded detachment is still reported as current")
 	}
 	// It fires on every successful cycle, so it must be idempotent and must
 	// not keep rewriting the file.

@@ -51,13 +51,14 @@ type PurgeOptions struct {
 }
 
 type Plan struct {
-	ReleaseID      string
-	SVNRevision    string
-	CurrentRelease string
-	FirstInstall   bool
-	Files          []FilePlan
-	ConfigIssues   []ConfigIssue
-	Orphans        []OrphanPlan
+	ReleaseID        string
+	SVNRevision      string
+	CurrentRelease   string
+	FirstInstall     bool
+	Files            []FilePlan
+	ConfigMigrations []ConfigMigration
+	ConfigIssues     []ConfigIssue
+	Orphans          []OrphanPlan
 }
 
 type FilePlan struct {
@@ -331,6 +332,10 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	if err := r.checkFreshness(m, st, opts); err != nil {
 		return err
 	}
+	configMigration, err := r.planServerConfigMigration(m)
+	if err != nil {
+		return err
+	}
 	base, err := r.baseUnveils()
 	if err != nil {
 		return err
@@ -344,6 +349,9 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	plan, err := r.BuildPlan(m, st)
 	if err != nil {
 		return err
+	}
+	if configMigration != nil {
+		plan.ConfigMigrations = append(plan.ConfigMigrations, *configMigration)
 	}
 	r.PrintPlan(plan)
 	return nil
@@ -377,6 +385,10 @@ func (r *Runner) Adopt(ctx context.Context, opts Options) error {
 	if err := r.checkFreshness(m, st, opts); err != nil {
 		return err
 	}
+	configMigration, err := r.planServerConfigMigration(m)
+	if err != nil {
+		return err
+	}
 	base, err := r.baseUnveils()
 	if err != nil {
 		return err
@@ -391,6 +403,9 @@ func (r *Runner) Adopt(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if configMigration != nil {
+		plan.ConfigMigrations = append(plan.ConfigMigrations, *configMigration)
+	}
 	r.PrintPlan(plan)
 	var problems []string
 	for _, file := range plan.Files {
@@ -402,6 +417,9 @@ func (r *Runner) Adopt(ctx context.Context, opts Options) error {
 		if issue.Severity == "FAIL" {
 			problems = append(problems, fmt.Sprintf("%s: %s", issue.Path, issue.Message))
 		}
+	}
+	for _, migration := range plan.ConfigMigrations {
+		problems = append(problems, fmt.Sprintf("%s requires config migration %s -> %s", migration.Path, migration.FromSchema, migration.ToSchema))
 	}
 	if len(problems) != 0 {
 		return fmt.Errorf("cannot adopt release %s: local installation does not exactly match signed baseline: %s",
@@ -459,11 +477,41 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		return err
 	}
 
+	configMigration, err := r.planServerConfigMigration(m)
+	if err != nil {
+		return err
+	}
+
 	var staged []StagedFile
+	var stageRoot string
 	if !opts.DryRun {
-		staged, _, err = r.stageFiles(ctx, m)
+		staged, stageRoot, err = r.stageFiles(ctx, m)
 		if err != nil {
 			return err
+		}
+		if configMigration != nil {
+			migrationStage := filepath.Join(stageRoot, "config-migrations", "server.json")
+			if err := os.MkdirAll(filepath.Dir(migrationStage), 0o700); err != nil {
+				return err
+			}
+			if err := os.WriteFile(migrationStage, configMigration.Data, 0o600); err != nil {
+				return err
+			}
+			info, err := os.Lstat(configMigration.Path)
+			if err != nil {
+				return err
+			}
+			ownership, err := r.ownershipManager().Stat(configMigration.Path)
+			if err != nil {
+				return fmt.Errorf("stat ownership %s: %w", configMigration.Path, err)
+			}
+			// Deliberately last. Once the schema changes, every request-spawned
+			// binary already has the matching generation on disk.
+			staged = append(staged, StagedFile{
+				Target: configMigration.Path, StagePath: migrationStage,
+				Mode:      info.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky),
+				Ownership: ownership,
+			})
 		}
 	}
 
@@ -482,7 +530,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		if err != nil {
 			return err
 		}
-		if err := r.applyUnveils(append(base, r.manifestUnveils(m, !opts.DryRun)...)); err != nil {
+		if err := r.applyUnveils(append(base, r.manifestUnveils(m, !opts.DryRun, configMigration)...)); err != nil {
 			return err
 		}
 		if opts.DryRun {
@@ -495,6 +543,9 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	plan, err := r.BuildPlan(m, st)
 	if err != nil {
 		return err
+	}
+	if configMigration != nil {
+		plan.ConfigMigrations = append(plan.ConfigMigrations, *configMigration)
 	}
 	r.PrintPlan(plan)
 	if opts.DryRun {
@@ -852,6 +903,9 @@ func (r *Runner) PrintPlan(plan *Plan) {
 	}
 	for _, issue := range plan.ConfigIssues {
 		fmt.Fprintf(r.Out, "CONFIG %s %s %s\n", issue.Severity, issue.Path, issue.Message)
+	}
+	for _, migration := range plan.ConfigMigrations {
+		fmt.Fprintf(r.Out, "CONFIG MIGRATE %s %s -> %s add=%s\n", migration.Path, migration.FromSchema, migration.ToSchema, strings.Join(migration.Added, ","))
 	}
 	for _, o := range plan.Orphans {
 		if o.Reason != "" {

@@ -4,8 +4,6 @@ package clientupdate
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -148,31 +146,4 @@ func validateLinuxBundle(root string) error {
 		return errors.New("bundle install-user.sh is not executable")
 	}
 	return nil
-}
-
-func compareFile(source, target string) (string, error) {
-	sourceDigest, err := localFileSHA256(source)
-	if err != nil {
-		return "", err
-	}
-	targetDigest, err := localFileSHA256(target)
-	if errors.Is(err, os.ErrNotExist) {
-		return "add", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if sourceDigest == targetDigest {
-		return "unchanged", nil
-	}
-	return "update", nil
-}
-
-func localFileSHA256(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	digest := sha256.Sum256(data)
-	return hex.EncodeToString(digest[:]), nil
 }

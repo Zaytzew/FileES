@@ -31,6 +31,30 @@ func TestProjectedServerDisplayNameNeverFallsBackAfterAuthoritySpeaks(t *testing
 	}
 }
 
+func TestInvalidProjectionCacheCannotPreventMonitorBootstrap(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "cache", "view.json")
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, []byte(`{"schema":"filees.client-view/v1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cache, err := loadMonitorCache(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cache.exists || cache.rejected == nil {
+		t.Fatalf("invalid cache restored: %+v", cache)
+	}
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Fatalf("invalid cache still blocks first sync: %v", err)
+	}
+	if _, _, err := clientview.CachedOrNone(cachePath); err != nil {
+		t.Fatalf("monitor cannot proceed with empty cache: %v", err)
+	}
+}
+
 func (svn *projectionSVN) Checkout(_ context.Context, url, wc string) (string, error) {
 	svn.checkouts++
 	svn.url, svn.wc = url, wc

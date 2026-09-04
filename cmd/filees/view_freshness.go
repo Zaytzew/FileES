@@ -143,5 +143,13 @@ func (f *viewFreshness) Apply(status contract.ActivationStatus) contract.Activat
 func (f *viewFreshness) Detached(serverID string, detached bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.entry(serverID).detached = detached
+	state := f.entry(serverID)
+	state.detached = detached
+	if detached {
+		// A terminal relationship state supersedes transport diagnostics. The
+		// user already has the actionable answer (activate again), while keeping
+		// the proof refusal beside it would present one fact as two problems.
+		state.lastError = ""
+		state.failures = 0
+	}
 }

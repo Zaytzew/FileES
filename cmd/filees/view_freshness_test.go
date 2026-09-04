@@ -127,3 +127,17 @@ func TestUnreportedProductionStaysAbsent(t *testing.T) {
 		t.Fatalf("production nobody reported must not be invented: %+v", status)
 	}
 }
+
+func TestDetachedSupersedesRepeatedTransportFailure(t *testing.T) {
+	f := newViewFreshness(fixedClock(time.Now()))
+	f.Failed("manual", errors.New("proof does not match one live staged or active client"))
+	f.Detached("manual", true)
+
+	status := f.Apply(contract.ActivationStatus{ServerID: "manual"})
+	if !status.Detached {
+		t.Fatal("the authoritative detachment must reach the projection")
+	}
+	if status.ViewSyncError != "" || status.ViewSyncFailures != 0 {
+		t.Fatalf("detached is one terminal fact, not a transport error too: %+v", status)
+	}
+}

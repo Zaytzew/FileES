@@ -125,6 +125,32 @@ func TestDetachLocalStopsWithoutAuthoritativeProjection(t *testing.T) {
 	}
 }
 
+func TestSuspendStopsOneServerAndPreservesGenerationForActivation(t *testing.T) {
+	var log []string
+	supervisor, _ := New(fakeStarter{&log}, nil)
+	office := Desired{Key: Key{"office", "repo"}, Access: "rw", State: "active", URL: "one"}
+	other := Desired{Key: Key{"other", "repo"}, Access: "r", State: "active", URL: "two"}
+	if err := supervisor.Apply(t.Context(), "office", 4, []Desired{office}); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Apply(t.Context(), "other", 2, []Desired{other}); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.SuspendServer(t.Context(), "office"); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.ApplyLocalAttachment(t.Context(), "office", 4, []Desired{office}, nil); err != nil {
+		t.Fatalf("activation could not resume the cached generation: %v", err)
+	}
+	want := []string{
+		"start:office/repo:rw", "start:other/repo:r",
+		"stop:office/repo:rw", "start:office/repo:rw",
+	}
+	if !reflect.DeepEqual(log, want) {
+		t.Fatalf("suspension crossed server boundary or lost generation: log=%v want=%v", log, want)
+	}
+}
+
 // The passport manager is constructed once, when the pipeline starts, so a
 // repository whose owner turns locking on while its URL and access stay put
 // must still be torn down and rebuilt. Without EditingPolicy in the restart

@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
 	"filees/pkg/reposupervisor"
+	reservationv1 "filees/pkg/reservation/v1"
 )
 
 // The server's refusal is precise; what was missing is that it is terminal. It
@@ -56,6 +61,60 @@ func TestReactivationClearsTheState(t *testing.T) {
 	coordinator.forgetDetached("manual")
 	if !coordinator.markDetached("manual") {
 		t.Fatal("after a successful refresh a later detachment must be announced again")
+	}
+}
+
+type countingDetachedFetcher struct{ calls atomic.Int32 }
+
+func (fetcher *countingDetachedFetcher) Fetch(context.Context, string) (reservationv1.Result, error) {
+	fetcher.calls.Add(1)
+	return reservationv1.Result{}, errors.New("filees-client-entry proof: proof does not match one live staged or active client")
+}
+
+func TestDetachedCredentialStopsPeriodicTransportUntilActivation(t *testing.T) {
+	coordinator := newReservationProjectionCoordinator(t.Context(), nil)
+	t.Cleanup(coordinator.Close)
+	fetcher := &countingDetachedFetcher{}
+	coordinator.newClient = func(clientprofile.Profile) (reservationFetcher, error) { return fetcher, nil }
+	profile := clientprofile.Profile{ServerID: "manual", PollInterval: 10 * time.Millisecond}
+	view := clientview.View{Repositories: []clientview.Repository{
+		{RepoID: "one", State: "active"},
+		{RepoID: "two", State: "active"},
+	}}
+	coordinator.UpdateProfile(profile)
+	coordinator.UpdateView("manual", view)
+
+	deadline := time.Now().Add(time.Second)
+	for fetcher.calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := fetcher.calls.Load(); got != 1 {
+		t.Fatalf("one proof refusal must stop the whole server cycle, calls=%d", got)
+	}
+	coordinator.mu.RLock()
+	for _, repoID := range []string{"one", "two"} {
+		state := coordinator.results[reposupervisor.Key{ServerID: "manual", RepoID: repoID}]
+		if !state.detached || state.offline {
+			coordinator.mu.RUnlock()
+			t.Fatalf("repository %s did not inherit the server detachment: %+v", repoID, state)
+		}
+	}
+	coordinator.mu.RUnlock()
+	time.Sleep(60 * time.Millisecond)
+	if got := fetcher.calls.Load(); got != 1 {
+		t.Fatalf("periodic ticks reopened transport for a detached credential, calls=%d", got)
+	}
+
+	if !coordinator.Resume("manual") {
+		t.Fatal("an explicit activation must resume the paused transport")
+	}
+	coordinator.Schedule("manual")
+	deadline = time.Now().Add(time.Second)
+	for fetcher.calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := fetcher.calls.Load(); got != 2 {
+		t.Fatalf("replacement activation did not get one validation attempt, calls=%d", got)
 	}
 }
 

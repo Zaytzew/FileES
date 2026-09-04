@@ -24,11 +24,41 @@ func TestLinuxColorSchemeIsDark(t *testing.T) {
 }
 
 func TestSystemThemeScript(t *testing.T) {
-	if got := systemThemeScript(true); got != `document.documentElement.dataset.systemTheme="dark";` {
+	if got := systemThemeScript(true); got != `window.fileesApplySystemTheme?window.fileesApplySystemTheme("dark"):document.documentElement.dataset.systemTheme="dark";` {
 		t.Fatalf("dark script = %q", got)
 	}
-	if got := systemThemeScript(false); got != `document.documentElement.dataset.systemTheme="light";` {
+	if got := systemThemeScript(false); got != `window.fileesApplySystemTheme?window.fileesApplySystemTheme("light"):document.documentElement.dataset.systemTheme="light";` {
 		t.Fatalf("light script = %q", got)
+	}
+}
+
+func TestDashboardCanForceDarkThemeWithoutChangingDaemonState(t *testing.T) {
+	index, err := frontend.ReadFile("frontend/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script, err := frontend.ReadFile("frontend/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	preference, err := frontend.ReadFile("frontend/theme-preference.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wanted := range []string{`id="theme-switch"`, `data-theme-preference="dark"`, `data-theme-preference="light"`, `data-theme-preference="system"`, `data-hint="Noc"`, `data-hint="Dzień"`, `data-hint="Auto"`} {
+		if !strings.Contains(string(index), wanted) {
+			t.Fatalf("theme switch is missing %q", wanted)
+		}
+	}
+	for _, wanted := range []string{"initializeTheme()", "setThemePreference(button.dataset.themePreference)", `filees:theme-changed`} {
+		if !strings.Contains(string(script), wanted) {
+			t.Fatalf("dashboard theme switch is not wired: %q", wanted)
+		}
+	}
+	for _, wanted := range []string{`filees.theme-preference`, `preference === "dark" || preference === "light"`, `localStorage.setItem`, `localStorage.removeItem`, `BroadcastChannel`, `window.fileesApplySystemTheme`} {
+		if !strings.Contains(string(preference), wanted) {
+			t.Fatalf("shared theme preference is missing %q", wanted)
+		}
 	}
 }
 
@@ -49,6 +79,22 @@ func TestEveryHorizontalWordmarkUsesThemeSurface(t *testing.T) {
 	}
 	if !strings.Contains(string(css), `:root[data-system-theme="dark"] .filees-wordmark-surface { background:transparent; }`) {
 		t.Fatal("dark-mode wordmark surface rule is missing")
+	}
+}
+
+func TestDarkThemeUsesSubtleProductTintInsteadOfHardWhite(t *testing.T) {
+	css, err := frontend.ReadFile("frontend/theme.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wanted := range []string{
+		`--theme-text: color-mix(in srgb, #edf2f8 89%, #ff6a00);`,
+		`--theme-soft-text: color-mix(in srgb, #c1cad8 91%, #ff6a00);`,
+		`--theme-muted: color-mix(in srgb, #a0adbf 93%, #ff6a00);`,
+	} {
+		if strings.Count(string(css), wanted) != 2 {
+			t.Fatalf("dark palette does not consistently use %q", wanted)
+		}
 	}
 }
 

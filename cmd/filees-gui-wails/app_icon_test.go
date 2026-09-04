@@ -63,29 +63,32 @@ func TestTheIconIsHandedToTheApplication(t *testing.T) {
 	}
 }
 
-// The small icon has to be applied too, and after the application has started.
+// The small icon has to be applied, and only once the window exists.
 //
 // Wails sets only ICON_BIG - windowsWebviewWindow.setIcon sends WM_SETICON with
 // ICON_BIG and nothing else - so Alt-Tab and the title bar fall back to the
 // default glyph. Measured after the first fix: WM_GETICON returned a handle for
-// ICON_BIG and zero for ICON_SMALL, which is half a fix, and the missing half is
-// the one somebody sees while holding Alt-Tab.
+// ICON_BIG and zero for ICON_SMALL.
 //
-// The placement matters as much as the call: the native window handle does not
-// exist until the application has started, so applying it beside the window's
-// construction would compile, run, and do nothing.
-func TestTheSmallWindowIconIsAppliedAfterStartup(t *testing.T) {
-	raw, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(raw)
+// The placement matters as much as the call, and the first placement was wrong.
+// Applied at ApplicationStarted, it reported - once it was made to report at all
+// - "the window has no native handle yet": the application starts before any
+// window is realised. WindowRuntimeReady is the first moment there is an HWND to
+// send the message to, so that is what this guards.
+func TestTheSmallWindowIconWaitsForTheWindowNotTheApplication(t *testing.T) {
+	source := readMainSource(t)
 	if !strings.Contains(source, "applySmallWindowIcon(mainWindow, appIcon)") {
 		t.Fatal("nothing applies the small window icon; Alt-Tab would show the default glyph")
 	}
-	started := strings.Index(source, "events.Common.ApplicationStarted")
+	hook := strings.Index(source, "events.Common.WindowRuntimeReady")
 	applied := strings.Index(source, "applySmallWindowIcon(mainWindow, appIcon)")
-	if started < 0 || applied < started {
-		t.Error("the small icon is applied before the application has started, when there is no native window handle yet")
+	if hook < 0 {
+		t.Fatal("the small icon is not applied from a window event; at application start there is no native handle and the call does nothing")
+	}
+	if applied < hook {
+		t.Error("the small icon is applied before the window is ready, which is where it silently did nothing before")
+	}
+	if !strings.Contains(source, "opjournal.RecordFailure(\"interface\"") {
+		t.Error("a failure to set the icon would be silent again")
 	}
 }

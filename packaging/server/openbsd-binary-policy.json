@@ -1,5 +1,18 @@
 {
   "platform": "openbsd-amd64",
+  "configs": [
+    {
+      "name": "server",
+      "path": "/etc/filees/server.json",
+      "default_changed": [
+        {
+          "key": "schema",
+          "old": "filees.server-toolchain/v1",
+          "new": "filees.server-toolchain/v2"
+        }
+      ]
+    }
+  ],
   "files": [
     {
       "source": "bin/filees-admin",

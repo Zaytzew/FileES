@@ -167,7 +167,7 @@ func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy
 	return updater.client.Cleanup(ctx, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
 	// One recorder for every server this supervisor watches: the view lane is
 	// per server and so is its age.
 	freshness := newViewFreshness(nil)
@@ -214,6 +214,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		// the only place that can see the local working copies as well, and
 		// where those files are is what the reader will actually want.
 		if detachments == nil {
+			if detached && forgetProfile != nil {
+				forgetProfile(serverID)
+			}
 			return
 		}
 		if !detached {
@@ -230,6 +233,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			Cause: detachment.CauseRevoked, At: time.Now(),
 			WorkingCopies: workingCopiesOf(lifecycle, serverID),
 		})
+		if forgetProfile != nil {
+			forgetProfile(serverID)
+		}
 	}
 	reservationRefreshes.onServerViewProduced = func(serverID string, generation int64, producedAt time.Time) {
 		freshness.Produced(serverID, generation, producedAt)
@@ -438,6 +444,12 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 	sort.Strings(servers)
 	for _, serverID := range servers {
+		// Keep the dormant runtimes so an explicit activation can reconcile and
+		// resume the existing working copies, but never start their transports
+		// merely because local lifecycle records survived a daemon restart.
+		if !serverMayStart(serverID, detachments) {
+			continue
+		}
 		if monitored[serverID] {
 			continue
 		}

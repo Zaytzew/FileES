@@ -300,6 +300,19 @@ func (s appState) viewModel() ViewModel {
 		server.Repos = append(server.Repos, repo)
 		serverByID[repo.ServerID] = server
 	}
+	// A current detachment is authoritative even when an old repository
+	// summary survives locally. In particular, the summary must not synthesize
+	// a fallback server after the activation/profile has already disappeared.
+	// Reattached records remain historical and therefore do not hide anything.
+	for _, record := range s.system.Detachments {
+		if record.ServerID == "" || record.ReattachedAt != "" {
+			continue
+		}
+		if server, present := serverByID[record.ServerID]; present {
+			server.Detached = true
+			serverByID[record.ServerID] = server
+		}
+	}
 	servers := make([]ServerViewModel, 0, len(serverByID))
 	appended := make(map[string]bool, len(serverByID))
 	for _, id := range s.serverOrder {

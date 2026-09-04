@@ -30,6 +30,20 @@ type actorExchange struct {
 
 type cancelExchange struct{ started chan struct{} }
 
+func TestRemoveProfileRevokesFutureTransport(t *testing.T) {
+	manager, err := NewManager(t.TempDir(), []clientprofile.Profile{{ServerID: "manual"}, {ServerID: "spot"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.RemoveProfile("manual")
+	if _, err := manager.profile("manual"); err == nil {
+		t.Fatal("removed server profile still authorizes Whale transport")
+	}
+	if _, err := manager.profile("spot"); err != nil {
+		t.Fatalf("unrelated profile was removed: %v", err)
+	}
+}
+
 func (e *cancelExchange) Do(ctx context.Context, _ whale.Request, _ io.Reader, _ ...io.Writer) (whale.Response, error) {
 	select {
 	case <-e.started:

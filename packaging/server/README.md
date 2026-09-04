@@ -200,6 +200,20 @@ zarządzanego pliku dokładnie odpowiadają manifestowi. Następne upgrade’y n
 wykonywać przez `filees-install --dry-run`, a potem `--apply`; trwały journal
 zapewnia pełne odtworzenie pre-image po przerwanym apply.
 
+Zmiana generacji `/etc/filees/server.json` jest własnością instalera, nie
+procesów runtime. Manifest deklaruje przejście schematu w `configs[].default_changed`;
+`check` i `dry-run` pokazują `CONFIG MIGRATE`, a `apply` zapisuje przekształcony
+config jako ostatni element tej samej transakcji co binaria. Backup, journal,
+rollback, tryb i ownership obejmują również config. Runtime pozostaje ścisły i
+nie implementuje zgodności ze starą generacją.
+
+Pierwsze wdrożenie tej zdolności ma granicę bootstrapu: instalator już
+uruchomiony z poprzedniego release'u nie zaczyna wykonywać kodu binarium, którym
+właśnie zastąpił sam siebie. Na hostach, które dostały już serwerowe binaria v2
+przez starszy updater, należy najpierw dostarczyć nowy podpisany
+`filees-install`, a dopiero jego procesem wykonać właściwy `apply`. Kolejne
+zmiany generacji nie wymagają tej jednorazowej operacji.
+
 On an already integrated OpenBSD host, `install-server.sh` alone is not a safe
 complete upgrade. The generic installer writes ordinary `0755` modes, while
 `openbsd/install-ssh.sh` assigns the required set-id ownership and modes to the

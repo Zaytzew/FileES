@@ -122,6 +122,15 @@ func (m *Manager) AddProfile(profile clientprofile.Profile) {
 	m.mu.Unlock()
 }
 
+// RemoveProfile revokes the manager's ability to start new transfers for a
+// server whose client relationship ended. Existing operations retain their
+// durable records but cannot obtain transport credentials after this point.
+func (m *Manager) RemoveProfile(serverID string) {
+	m.mu.Lock()
+	delete(m.profiles, serverID)
+	m.mu.Unlock()
+}
+
 func (m *Manager) BeginPut(ctx context.Context, serverID, logicalRepoID, logicalPath, sourcePath string) (Operation, error) {
 	if _, err := uuid.Parse(logicalRepoID); err != nil {
 		return Operation{}, errors.New("logical repository ID must be UUID")

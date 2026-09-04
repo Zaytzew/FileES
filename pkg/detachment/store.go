@@ -296,6 +296,25 @@ func (s *Store) ListAt(now time.Time) []Record {
 	return s.listLocked(now)
 }
 
+// Current reports whether serverID has a detachment which has not been
+// superseded by a successful re-activation. It is intentionally independent
+// of the panel's 48-hour visibility window: callers use it during daemon
+// bootstrap to make sure credentials which should have been deleted after a
+// revocation cannot resurrect a polling loop after restart.
+func (s *Store) Current(serverID string) bool {
+	if s == nil || strings.TrimSpace(serverID) == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rec := range s.records {
+		if rec.ServerID == serverID && rec.Current() {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) listLocked(now time.Time) []Record {
 	kept := make([]Record, 0, len(s.records))
 	for _, rec := range s.records {

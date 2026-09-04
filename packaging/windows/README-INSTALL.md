@@ -79,5 +79,10 @@ MSI powstaje z bundla, a nie z osobnej kompilacji — inaczej instalator i kana�
 rozjechałyby się, a pierwszym objawem byłaby aktualizacja zgłaszająca zmianę
 tam, gdzie nic się nie zmieniło.
 
+Bundle zachowuje czytelną wersję `major.minor.patch.revision`. Windows
+Installer porównuje tylko trzy pola, dlatego `MajorUpgrade` dostaje
+`major.minor.revision`; pełna wersja pozostaje w nazwie MSI i rejestrze. Rewizja
+musi mieścić się w zakresie pola build MSI (`0..65535`).
+
 Wymaga **WiX Toolset v4** (`dotnet tool install --global wix`), a to wymaga
 .NET SDK. Sam runtime nie wystarczy.

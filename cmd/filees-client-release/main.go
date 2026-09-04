@@ -26,11 +26,12 @@ import (
 	"time"
 
 	"filees/internal/releaseenvelope"
+	"filees/pkg/config"
 )
 
 func main() {
 	bundle := flag.String("bundle", "", "path to the client bundle tar.gz")
-	component := flag.String("component", "desktop-client", "component name")
+	component := flag.String("component", config.DesktopUpdateComponent, "component name")
 	platform := flag.String("platform", "", "target platform, e.g. windows-amd64")
 	releaseID := flag.String("release-id", "", "release identifier, e.g. r819")
 	version := flag.String("version", "", "client version this bundle installs")
@@ -109,7 +110,7 @@ func run(bundlePath, component, platform, releaseID, version, keyID, expires,
 	if _, err := time.Parse(time.RFC3339, expiry); err != nil {
 		return fmt.Errorf("expires must be RFC3339: %w", err)
 	}
-	components, err := mergedComponents(mergeChannel, component, platform, releaseID)
+	components, err := mergedComponents(mergeChannel, component, platform, releaseID, sequence, securityEpoch, keyID)
 	if err != nil {
 		return err
 	}
@@ -147,14 +148,17 @@ func run(bundlePath, component, platform, releaseID, version, keyID, expires,
 	return nil
 }
 
-// mergedComponents keeps every other platform already in the channel.
+// mergedComponents keeps every other platform already assembled for this
+// exact release.
 //
-// The envelope is a channel-level document covering every platform at once, so
-// regenerating it from one build would silently drop the others - a Windows
-// release that stops Linux clients updating, discovered by a Linux user. The
-// component for this platform replaces its own entry and nothing else moves.
-func mergedComponents(existingPath, component, platform, releaseID string) ([]releaseenvelope.Component, error) {
-	manifestPath := path.Join("releases", releaseID, platform, "manifest.json")
+// The envelope is a release-level document covering every platform at once.
+// An entry from an older channel cannot be carried verbatim: the resolver
+// requires every referenced manifest to repeat this envelope's release ID,
+// sequence, epoch and key ID. Combining platforms therefore happens against a
+// candidate for the same release; an older live channel is only safe when it
+// contains no other platform that would need carrying.
+func mergedComponents(existingPath, component, platform, releaseID string, sequence, securityEpoch uint64, keyID string) ([]releaseenvelope.Component, error) {
+	manifestPath := path.Join("releases", releaseID, component, platform, "manifest.json")
 	components := []releaseenvelope.Component{{Name: component, Platform: platform, Manifest: manifestPath}}
 	if existingPath == "" {
 		return components, nil
@@ -172,6 +176,16 @@ func mergedComponents(existingPath, component, platform, releaseID string) ([]re
 	previous, err := releaseenvelope.ParseEnvelope(raw, time.Time{})
 	if err != nil {
 		return nil, fmt.Errorf("the channel being merged is not a valid envelope: %w", err)
+	}
+	if previous.ReleaseID != releaseID || previous.Sequence != sequence ||
+		previous.SecurityEpoch != securityEpoch || previous.KeyID != keyID {
+		for _, existing := range previous.Components {
+			if existing.Name != component || existing.Platform != platform {
+				return nil, fmt.Errorf("cannot carry %s/%s from release %s into %s: every component manifest must match the new envelope identity", existing.Name, existing.Platform, previous.ReleaseID, releaseID)
+			}
+		}
+		// Replacing the only matching platform needs no carried entry.
+		return components, nil
 	}
 	for _, existing := range previous.Components {
 		if existing.Name == component && existing.Platform == platform {

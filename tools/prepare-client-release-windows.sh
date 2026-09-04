@@ -19,7 +19,7 @@ SECURITY_EPOCH="${SECURITY_EPOCH:-1}"
 CHANNEL="${CHANNEL:-alpha}"
 KEY_ID="${KEY_ID:-}"
 PLATFORM=windows-amd64
-COMPONENT=desktop-client
+COMPONENT=desktop
 
 die() {
 	echo "filees-prepare-client-release: $*" >&2
@@ -48,7 +48,7 @@ esac
 cd "$FILEES_BIN_WC"
 [ -z "$(svn status)" ] || die "FILEES-BIN WC has local or unversioned changes"
 svn update --quiet
-release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/$PLATFORM"
+release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/$COMPONENT/$PLATFORM"
 [ ! -e "$release_root" ] || die "release already exists: $release_root"
 
 cd "$root"
@@ -85,9 +85,10 @@ mkdir -p "$release_root"
 bundle="$release_root/filees-client-$PLATFORM.tar.gz"
 go run ./cmd/filees-release-bundle -source "$staging" -output "$bundle"
 
-# The channel envelope covers every platform at once, so the one already
-# published is merged rather than replaced - otherwise shipping Windows would
-# stop Linux clients updating, and a Linux user would find out.
+# The channel envelope covers every platform at once. The producer may retain
+# another platform only when it already belongs to this exact release identity;
+# passing the live channel here therefore fails closed if publishing Windows
+# alone would strand an older Linux manifest under the new envelope.
 merge=""
 if [ -f "$FILEES_BIN_WC/channels/$CHANNEL.v2.json" ]; then
 	merge="$FILEES_BIN_WC/channels/$CHANNEL.v2.json"
@@ -103,13 +104,13 @@ go run ./cmd/filees-client-release \
 	-security-epoch "$SECURITY_EPOCH" \
 	-key-id "$KEY_ID" \
 	-release-root "$release_root" \
-	-channel-out "$FILEES_BIN_WC/releases/$RELEASE_ID/$CHANNEL.v2.json" \
+	-channel-out "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json" \
 	${merge:+-merge-channel "$merge"}
 
 echo
 echo "prepared client release $RELEASE_ID ($client_version) from source SVN r$source_revision"
 echo "review, then svn add/commit only releases/$RELEASE_ID"
 echo "on the signing machine, sign and promote:"
-echo "  releases/$RELEASE_ID/$PLATFORM/manifest.json      -> manifest.json.sig"
-echo "  releases/$RELEASE_ID/$CHANNEL.v2.json             -> channels/$CHANNEL.v2.json (+ .sig)"
+echo "  releases/$RELEASE_ID/$COMPONENT/$PLATFORM/manifest.json -> manifest.json.sig"
+echo "  releases/$RELEASE_ID/channel.v2.json                    -> channels/$CHANNEL.v2.json (+ .sig)"
 echo "do not change channels/ on this host"

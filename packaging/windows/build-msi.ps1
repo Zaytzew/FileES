@@ -33,20 +33,29 @@ foreach ($required in @("bin\filees.exe", "bin\filees-gui-wails.exe",
     }
 }
 
-# Windows installer versions are four numeric fields and nothing else, so the
-# version the client reports - 0.1.15+r819 - cannot be used as it stands. The
-# revision becomes the fourth field, which keeps the ordering MajorUpgrade needs
-# and stays readable: 0.1.15.819 is r819 and says so.
+# Windows Installer compares only three fields: major.minor.build. A fourth
+# field is accepted by some tooling but ignored by MSI, so 0.1.15.819 and
+# 0.1.15.825 would not order as upgrades. The bundle keeps the readable four
+# fields; MSI maps its globally increasing SVN revision into the build field.
 #
 # The bundle's VERSION already carries that form, written by the release script,
-# so this reads it rather than deriving it a second way. Two derivations of one
-# number is how an installer comes to disagree with the thing it installs.
-$productVersion = (Get-Content (Join-Path $bundle "VERSION") -Raw).Trim()
-if ($productVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') {
-    throw "bundle VERSION '$productVersion' is not major.minor.patch.revision, which Windows installers require"
+# so this maps that value rather than reconstructing a revision from the source
+# tree. Two independent sources are how an installer comes to disagree with the
+# thing it installs.
+$bundleVersion = (Get-Content (Join-Path $bundle "VERSION") -Raw).Trim()
+if ($bundleVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+    throw "bundle VERSION '$bundleVersion' is not major.minor.patch.revision"
 }
+$versionParts = $bundleVersion.Split('.')
+$major = [uint32]$versionParts[0]
+$minor = [uint32]$versionParts[1]
+$revision = [uint32]$versionParts[3]
+if ($major -gt 255 -or $minor -gt 255 -or $revision -gt 65535) {
+    throw "bundle VERSION '$bundleVersion' cannot be represented as an MSI major.minor.build version"
+}
+$msiVersion = "$major.$minor.$revision"
 if ($Output -eq "") {
-    $Output = Join-Path (Split-Path -Parent $bundle) "filees-$productVersion.msi"
+    $Output = Join-Path (Split-Path -Parent $bundle) "filees-$bundleVersion.msi"
 }
 
 # WiX reads every payload from one directory, so the bundle's layout is
@@ -66,7 +75,8 @@ try {
         -arch x64 `
         -ext WixToolset.UI.wixext `
         -d "SourceDir=$staging" `
-        -d "ProductVersion=$productVersion" `
+        -d "ProductVersion=$msiVersion" `
+        -d "BundleVersion=$bundleVersion" `
         -out $Output
     if ($LASTEXITCODE -ne 0) {
         throw "WiX build failed with exit code $LASTEXITCODE"

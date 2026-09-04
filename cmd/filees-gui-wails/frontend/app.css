@@ -66,8 +66,10 @@ h1 span { color:transparent; background:linear-gradient(90deg,var(--filees-orang
 .pulse-core.is-offline { animation:alarm-pulse 1.35s ease-in-out infinite; }
 .pulse-caption { position:absolute; right:-5px; bottom:17px; display:grid; min-width:90px; padding:11px 14px; border:1px solid var(--line); border-radius:13px; background:rgba(12,24,39,.9); box-shadow:var(--shadow); }
 .pulse-caption b { font-size:20px; } .pulse-caption small { color:var(--muted); font-size:11px; letter-spacing:.07em; text-transform:uppercase; }
-.pulse-card.has-attention .pulse-caption { border-color:rgba(255,123,132,.42); background:color-mix(in srgb,var(--panel-solid) 88%,rgba(255,123,132,.22)); box-shadow:0 0 28px rgba(255,123,132,.18); }
-.pulse-card.has-attention .pulse-caption b,.pulse-card.has-attention .pulse-caption small { color:var(--red); }
+.pulse-card[data-connection="online"] .pulse-caption { border-color:rgba(99,217,189,.42); background:color-mix(in srgb,var(--panel-solid) 88%,rgba(99,217,189,.18)); box-shadow:0 0 28px rgba(99,217,189,.16); }
+.pulse-card[data-connection="online"] .pulse-caption b,.pulse-card[data-connection="online"] .pulse-caption small { color:var(--teal); }
+.pulse-card[data-connection="stale"] .pulse-caption { border-color:rgba(244,199,109,.42); background:color-mix(in srgb,var(--panel-solid) 88%,rgba(244,199,109,.18)); box-shadow:0 0 28px rgba(244,199,109,.16); }
+.pulse-card[data-connection="stale"] .pulse-caption b,.pulse-card[data-connection="stale"] .pulse-caption small { color:var(--amber); }
 .pulse-card[data-connection="offline"] .pulse-caption { border-color:rgba(255,123,132,.48); background:color-mix(in srgb,var(--panel-solid) 86%,rgba(255,123,132,.24)); box-shadow:0 0 30px rgba(255,123,132,.2); }
 .pulse-card[data-connection="offline"] .pulse-caption b,.pulse-card[data-connection="offline"] .pulse-caption small { color:var(--red); }
 

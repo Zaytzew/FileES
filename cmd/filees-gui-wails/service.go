@@ -15,6 +15,7 @@ import (
 	"filees/internal/gui/tray"
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/realmbranding"
 )
 
 const (
@@ -30,14 +31,19 @@ type snapshotEmitter interface {
 // internal/gui/app reconstructs the authoritative presentation from IPC and
 // this service only publishes an immutable browser-friendly projection.
 type GUIService struct {
-	mu        sync.RWMutex
-	snapshot  Snapshot
-	view      guiapp.ViewModel
-	runner    *guiapp.App
-	emitter   snapshotEmitter
-	actions   chan<- tray.Intent
-	actionSeq atomic.Uint64
-	observer  func(Snapshot)
+	mu                  sync.RWMutex
+	snapshot            Snapshot
+	view                guiapp.ViewModel
+	runner              *guiapp.App
+	emitter             snapshotEmitter
+	actions             chan<- tray.Intent
+	actionSeq           atomic.Uint64
+	observer            func(Snapshot)
+	branding            realmBrandingClient
+	brandingByRealm     map[string]string
+	brandingRequested   map[string]bool
+	brandingKeyByServer map[string]string
+	ctx                 context.Context
 }
 
 type Snapshot struct {
@@ -100,6 +106,7 @@ type ServerProjection struct {
 	Address               string `json:"address"`
 	ClientRole            string `json:"client_role"`
 	RealmAlias            string `json:"realm_alias,omitempty"`
+	AccentColor           string `json:"accent_color,omitempty"`
 	Health                string `json:"health"`
 	RepositoryCount       int    `json:"repository_count"`
 	RepositoriesReady     bool   `json:"repositories_ready"`
@@ -316,6 +323,9 @@ func newGUIService(client guiapp.DaemonClient) *GUIService {
 
 func newGUIServiceWithProjection(client guiapp.DaemonClient, mirror *projectionmirror.Store, offlineActivations []contract.ActivationStatus) *GUIService {
 	service := &GUIService{
+		brandingByRealm:     make(map[string]string),
+		brandingRequested:   make(map[string]bool),
+		brandingKeyByServer: make(map[string]string),
 		snapshot: Snapshot{
 			Stale:               true,
 			IconState:           string(guiapp.IconDisconnected),
@@ -332,6 +342,9 @@ func newGUIServiceWithProjection(client guiapp.DaemonClient, mirror *projectionm
 			PublicShares:        []DashboardPublicShareProjection{},
 			ClientVersion:       clientVersion(),
 		},
+	}
+	if branding, ok := client.(realmBrandingClient); ok {
+		service.branding = branding
 	}
 	service.runner = guiapp.New(guiapp.Config{
 		Client: client, OnChange: service.onChange,
@@ -363,6 +376,9 @@ func (service *GUIService) attachSnapshotObserver(observer func(Snapshot)) {
 }
 
 func (service *GUIService) run(ctx context.Context) {
+	service.mu.Lock()
+	service.ctx = ctx
+	service.mu.Unlock()
 	service.runner.Run(ctx)
 }
 
@@ -473,18 +489,124 @@ func (service *GUIService) onChange(vm guiapp.ViewModel) {
 	next := projectViewModel(vm)
 
 	service.mu.Lock()
+	requests := service.applyRealmBrandingLocked(vm, &next)
 	next.Revision = service.snapshot.Revision + 1
 	service.snapshot = next
 	service.view = vm
 	emitter := service.emitter
 	observer := service.observer
 	service.mu.Unlock()
+	for _, request := range requests {
+		go service.loadRealmBranding(request)
+	}
 
 	if emitter != nil {
 		emitter.Emit(snapshotEvent, next)
 	}
 	if observer != nil {
 		observer(next)
+	}
+}
+
+type realmBrandingRequest struct {
+	serverID string
+	key      string
+}
+
+// applyRealmBrandingLocked joins two IPC answers in the Go projection: the
+// ordinary status snapshot names the active realm, while the public-branding
+// command supplies its presentation colour. The browser receives only the
+// resulting #RRGGBB value and never invents a colour from a server name.
+func (service *GUIService) applyRealmBrandingLocked(vm guiapp.ViewModel, snapshot *Snapshot) []realmBrandingRequest {
+	var requests []realmBrandingRequest
+	servers := make(map[string]guiapp.ServerViewModel, len(vm.Servers))
+	for _, server := range vm.Servers {
+		servers[server.ID] = server
+	}
+	for i := range snapshot.Servers {
+		server, ok := servers[snapshot.Servers[i].ID]
+		if !ok || strings.TrimSpace(server.RealmID) == "" {
+			continue
+		}
+		key := server.ID + "\x00" + server.RealmID
+		service.brandingKeyByServer[server.ID] = key
+		if accent := service.brandingByRealm[key]; accent != "" {
+			snapshot.Servers[i].AccentColor = accent
+			continue
+		}
+		if vm.Connected && !vm.Stale && service.branding != nil && !service.brandingRequested[key] {
+			service.brandingRequested[key] = true
+			requests = append(requests, realmBrandingRequest{serverID: server.ID, key: key})
+		}
+	}
+	return requests
+}
+
+func (service *GUIService) loadRealmBranding(request realmBrandingRequest) {
+	service.mu.RLock()
+	ctx := service.ctx
+	branding := service.branding
+	service.mu.RUnlock()
+	if ctx == nil || branding == nil {
+		return
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	result, err := branding.RealmPublicBranding(requestCtx, request.serverID)
+	if err != nil || result == nil {
+		return
+	}
+	normalized, err := realmbranding.Normalize(result.Branding)
+	if err != nil {
+		return
+	}
+	service.rememberRealmBranding(request.serverID, request.key, normalized.LeadingColor)
+}
+
+func (service *GUIService) rememberRealmBranding(serverID, key, accent string) {
+	normalized, err := realmbranding.Normalize(realmbranding.Branding{LeadingColor: accent})
+	if err != nil {
+		return
+	}
+	accent = normalized.LeadingColor
+	service.mu.Lock()
+	if service.brandingKeyByServer[serverID] != key {
+		service.mu.Unlock()
+		return
+	}
+	service.brandingByRealm[key] = accent
+	next := service.snapshot
+	next.Servers = append([]ServerProjection(nil), service.snapshot.Servers...)
+	changed := false
+	for i := range next.Servers {
+		if next.Servers[i].ID == serverID && next.Servers[i].AccentColor != accent {
+			next.Servers[i].AccentColor = accent
+			changed = true
+		}
+	}
+	if !changed {
+		service.mu.Unlock()
+		return
+	}
+	next.Revision++
+	service.snapshot = next
+	emitter := service.emitter
+	observer := service.observer
+	service.mu.Unlock()
+	if emitter != nil {
+		emitter.Emit(snapshotEvent, next)
+	}
+	if observer != nil {
+		observer(next)
+	}
+}
+
+func (service *GUIService) rememberCurrentRealmBranding(serverID, accent string) {
+	service.mu.RLock()
+	key := service.brandingKeyByServer[serverID]
+	service.mu.RUnlock()
+	if key != "" {
+		service.rememberRealmBranding(serverID, key, accent)
 	}
 }
 

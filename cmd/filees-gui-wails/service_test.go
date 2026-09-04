@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -11,7 +12,18 @@ import (
 	"filees/internal/gui/tray"
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/realmbranding"
 )
+
+type brandingClientStub struct{}
+
+func (brandingClientStub) RealmPublicBranding(context.Context, string) (*contract.RealmPublicBrandingResult, error) {
+	return &contract.RealmPublicBrandingResult{Branding: realmbranding.Default()}, nil
+}
+
+func (brandingClientStub) RealmSetPublicBranding(_ context.Context, _ string, branding realmbranding.Branding) (*contract.RealmPublicBrandingResult, error) {
+	return &contract.RealmPublicBrandingResult{Branding: branding}, nil
+}
 
 func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	operation := "commit"
@@ -341,6 +353,41 @@ func TestOnChangeStoresAndEmitsSameRevision(t *testing.T) {
 	got := service.Snapshot()
 	if got.Revision != 1 || emitter.name != snapshotEvent || emitter.data.Revision != got.Revision {
 		t.Fatalf("snapshot=%+v event=%q/%+v", got, emitter.name, emitter.data)
+	}
+}
+
+func TestRealmBrandingIsProjectedByRealmAndRequestedOnlyOnce(t *testing.T) {
+	service := &GUIService{
+		branding:            brandingClientStub{},
+		brandingByRealm:     make(map[string]string),
+		brandingRequested:   make(map[string]bool),
+		brandingKeyByServer: make(map[string]string),
+	}
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Servers: []guiapp.ServerViewModel{{
+			ID: "cloud", RealmID: "realm-atmprojekt", DisplayName: "cloud.atmprojekt.pl",
+		}},
+	}
+	first := projectViewModel(vm)
+	requests := service.applyRealmBrandingLocked(vm, &first)
+	if len(requests) != 1 || requests[0].serverID != "cloud" || first.Servers[0].AccentColor != "" {
+		t.Fatalf("first branding projection=%+v requests=%+v", first.Servers, requests)
+	}
+	service.brandingByRealm[requests[0].key] = "#2D5A3D"
+	second := projectViewModel(vm)
+	requests = service.applyRealmBrandingLocked(vm, &second)
+	if len(requests) != 0 || second.Servers[0].AccentColor != "#2D5A3D" {
+		t.Fatalf("cached branding projection=%+v requests=%+v", second.Servers, requests)
+	}
+
+	// The same server ID joined to another realm must not inherit the previous
+	// realm's colour while the new authoritative value is being requested.
+	vm.Servers[0].RealmID = "realm-other"
+	third := projectViewModel(vm)
+	requests = service.applyRealmBrandingLocked(vm, &third)
+	if len(requests) != 1 || third.Servers[0].AccentColor != "" {
+		t.Fatalf("changed realm inherited stale branding: %+v requests=%+v", third.Servers, requests)
 	}
 }
 

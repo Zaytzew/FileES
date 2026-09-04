@@ -52,6 +52,16 @@ func TestEveryHorizontalWordmarkUsesThemeSurface(t *testing.T) {
 	}
 }
 
+func TestServerProjectionBindingCarriesRealmAccent(t *testing.T) {
+	binding, err := frontend.ReadFile("frontend/bindings/filees/cmd/filees-gui-wails/models.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(binding), `this["accent_color"] = undefined`) {
+		t.Fatal("generated server projection binding omits the realm accent")
+	}
+}
+
 func TestRadarRepositoryLabelUsesPolishPlural(t *testing.T) {
 	data, err := frontend.ReadFile("frontend/app.js")
 	if err != nil {
@@ -116,6 +126,11 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 			t.Fatalf("per-server health rendering is missing %q", wanted)
 		}
 	}
+	for _, wanted := range []string{"server.accent_color", "--realm-accent:${escapeHTML(accent)}", `/^#[0-9a-f]{6}$/i`} {
+		if !strings.Contains(string(script), wanted) {
+			t.Fatalf("per-realm branding rendering is missing %q", wanted)
+		}
+	}
 	for _, wanted := range []string{".server-mark.health-current", ".server-mark.health-unavailable"} {
 		if !strings.Contains(string(styles), wanted) {
 			t.Fatalf("per-server health styling is missing %q", wanted)
@@ -123,6 +138,14 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 	}
 	if strings.Contains(string(styles), ".server-panel.has-attention .server-mark") {
 		t.Fatal("repository attention still overrides the server health indicator")
+	}
+	if strings.Contains(string(script), `classList.toggle("has-attention"`) || strings.Contains(string(styles), ".pulse-card.has-attention") {
+		t.Fatal("historical attention still overrides the aggregate health flag")
+	}
+	for _, wanted := range []string{`.pulse-card[data-connection="online"] .pulse-caption`, `.pulse-card[data-connection="stale"] .pulse-caption`} {
+		if !strings.Contains(string(styles), wanted) {
+			t.Fatalf("aggregate health flag styling is missing %q", wanted)
+		}
 	}
 	if !strings.Contains(string(styles), ".orbit-c { inset:58px; border-width:8px;") || !strings.Contains(string(styles), "animation:spin 7.5s linear infinite") {
 		t.Fatal("radar is missing the broad rotating inner ring")

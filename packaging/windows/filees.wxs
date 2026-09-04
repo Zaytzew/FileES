@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The FileES desktop client for Windows: the daemon, the interface and the
+  autostart that keeps the daemon alive.
+
+  This replaces filees-gui.wxs, which packaged the abandoned Fyne client and
+  did not ship the daemon at all - so the installer produced something that
+  could not sync anything.
+
+  Three decisions worth stating, because each looks like a detail:
+
+  perUser scope and %LOCALAPPDATA%\Programs\FileES. No administrator, nothing
+  in Program Files, and it is where the owner's existing hand-made installation
+  already lives, so this can take it over without moving a thing.
+
+  A shortcut in the Startup folder rather than a scheduled task. A task needs a
+  custom action to register and another to remove, and the only thing it added
+  over a shortcut was restart-on-failure - which the supervisor already does,
+  and does better, because it watches the daemon rather than the launcher.
+  Declarative here, and uninstall removes it without any code of ours running.
+
+  config.json is deliberately absent. It is the owner's production
+  configuration; an installer that wrote it would eventually overwrite it. The
+  supervisor seeds one on first run instead, where the user's own paths are
+  actually known.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+      Name="FileES"
+      Manufacturer="ATM Projekt"
+      Version="$(var.ProductVersion)"
+      UpgradeCode="9E4A1F52-8C1D-4E63-9F0A-6B7D2C5A81E4"
+      Scope="perUser">
+    <!-- An upgrade replaces the binaries in place. The self-update channel
+         does the same thing between releases; both are expected, and a repair
+         restores whatever this package carried, which is the honest behaviour
+         for an installer that does not own the update lane. -->
+    <MajorUpgrade DowngradeErrorMessage="Nowsza wersja FileES jest już zainstalowana." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="FileES" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="FileES" />
+    </StandardDirectory>
+    <StandardDirectory Id="StartupFolder" />
+
+    <Icon Id="FileESIcon" SourceFile="$(var.SourceDir)\filees-folder.ico" />
+    <Property Id="ARPPRODUCTICON" Value="FileESIcon" />
+
+    <Component Id="FileESDaemon" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESDaemonExe" Source="$(var.SourceDir)\filees.exe" KeyPath="yes" />
+    </Component>
+
+    <Component Id="FileESInterface" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESInterfaceExe" Source="$(var.SourceDir)\filees-gui-wails.exe" KeyPath="yes">
+        <Shortcut Id="FileESStartMenuShortcut"
+                  Directory="ApplicationProgramsFolder"
+                  Name="FileES"
+                  Description="Pilnuje Twoich plików"
+                  Icon="FileESIcon"
+                  Advertise="yes" />
+      </File>
+    </Component>
+
+    <!-- The supervisor and the windowless launcher. The launcher is what the
+         Startup shortcut points at: Task Scheduler and a plain shortcut both
+         leave a console window when they run powershell.exe directly, because
+         the console host is created before -WindowStyle can hide it. -->
+    <Component Id="FileESSupervisor" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESSupervisorScript" Source="$(var.SourceDir)\start-filees.ps1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="FileESLauncher" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESLauncherScript" Source="$(var.SourceDir)\start-filees.vbs" KeyPath="yes">
+        <Shortcut Id="FileESStartupShortcut"
+                  Directory="StartupFolder"
+                  Name="FileES"
+                  Description="Uruchamia demona FileES i interfejs przy logowaniu"
+                  Icon="FileESIcon"
+                  Advertise="no"
+                  Target="[SystemFolder]wscript.exe"
+                  Arguments="&quot;[INSTALLFOLDER]start-filees.vbs&quot;"
+                  WorkingDirectory="INSTALLFOLDER" />
+      </File>
+    </Component>
+
+    <Component Id="FileESFolderIcon" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="FileESFolderIconFile" Source="$(var.SourceDir)\filees-folder.ico" KeyPath="yes" />
+    </Component>
+
+    <Component Id="FileESRegistry" Directory="INSTALLFOLDER" Guid="*">
+      <RegistryValue
+          Root="HKCU"
+          Key="Software\ATMProjekt\FileES"
+          Name="InstalledVersion"
+          Type="string"
+          Value="$(var.ProductVersion)"
+          KeyPath="yes" />
+    </Component>
+
+    <!-- Removed on uninstall because they are ours and nothing else writes
+         them. The owner's working copies and his configuration are not listed
+         anywhere here and are never touched. -->
+    <Component Id="FileESLogs" Directory="INSTALLFOLDER" Guid="*">
+      <RemoveFile Id="RemoveDaemonLogs" Directory="INSTALLFOLDER" Name="logs\*" On="uninstall" />
+      <RegistryValue
+          Root="HKCU"
+          Key="Software\ATMProjekt\FileES"
+          Name="LogsManaged"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+    </Component>
+
+    <Feature Id="ProductFeature" Title="FileES" Level="1">
+      <ComponentRef Id="FileESDaemon" />
+      <ComponentRef Id="FileESInterface" />
+      <ComponentRef Id="FileESSupervisor" />
+      <ComponentRef Id="FileESLauncher" />
+      <ComponentRef Id="FileESFolderIcon" />
+      <ComponentRef Id="FileESRegistry" />
+      <ComponentRef Id="FileESLogs" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\License.rtf" />
+  </Package>
+</Wix>

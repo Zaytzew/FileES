@@ -40,7 +40,7 @@ func lockedFixture(t *testing.T) (*lockedUpdater, SyncConfig) {
 	if err := os.MkdirAll(wc, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	view := `{"schema":"filees.client-view/v1","client_id":"399c0801-46d2-4190-bd70-15a9bf6cfa00",` +
+	view := `{"schema":"filees.client-view/v2","server_display_name":"Serwer testowy","client_id":"399c0801-46d2-4190-bd70-15a9bf6cfa00",` +
 		`"realm_id":"a72d443d-342b-4ed8-9412-925247dbd4c5","generation":3,` +
 		`"generated_at":"2026-09-03T16:47:00Z","client_role":"normal",` +
 		`"repositories":[],"active_operations":[]}`

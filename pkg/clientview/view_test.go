@@ -11,7 +11,21 @@ import (
 )
 
 func fixture() View {
-	return View{Schema: Schema, ClientID: "e71ecd0b-bd99-489d-b822-41b01bd91346", RealmID: "7b807185-aa75-4169-8a65-705c7cbab176", Generation: 1, GeneratedAt: time.Date(2026, 7, 19, 1, 0, 0, 0, time.UTC), ClientRole: "normal", Repositories: []Repository{{RepoID: "5103f16d-7a22-4631-a4f2-765b437201ef", DisplayName: "Dokumenty", URL: "svn+ssh://_filees-client@example.net/repositories/docs", Access: "rw", State: "active"}}, ActiveOperations: []json.RawMessage{}}
+	return View{Schema: Schema, ServerDisplayName: "Serwer testowy", ClientID: "e71ecd0b-bd99-489d-b822-41b01bd91346", RealmID: "7b807185-aa75-4169-8a65-705c7cbab176", Generation: 1, GeneratedAt: time.Date(2026, 7, 19, 1, 0, 0, 0, time.UTC), ClientRole: "normal", Repositories: []Repository{{RepoID: "5103f16d-7a22-4631-a4f2-765b437201ef", DisplayName: "Dokumenty", URL: "svn+ssh://_filees-client@example.net/repositories/docs", Access: "rw", State: "active"}}, ActiveOperations: []json.RawMessage{}}
+}
+
+func TestServerDisplayNameIsRequiredAndHumanFacing(t *testing.T) {
+	view := fixture()
+	for _, invalid := range []string{"", " cloud", "cloud ", "cloud\nprod", string(make([]rune, MaxServerDisplayNameRunes+1))} {
+		view.ServerDisplayName = invalid
+		if err := view.Validate(); err == nil {
+			t.Fatalf("invalid server display name %q accepted", invalid)
+		}
+	}
+	view.ServerDisplayName = "Chmura ATM Projekt — Warszawa"
+	if err := view.Validate(); err != nil {
+		t.Fatalf("valid Unicode server display name rejected: %v", err)
+	}
 }
 
 func TestLockReleaseProjectionValidatesBothRolesAndRoundTrips(t *testing.T) {

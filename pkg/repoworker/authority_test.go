@@ -20,7 +20,7 @@ func TestServicePublisherProjectsOnlyOwnerRealmAndIsIdempotent(t *testing.T) {
 	realm, other := uuid.NewString(), uuid.NewString()
 	ownerClient, otherClient := uuid.NewString(), uuid.NewString()
 	writeView := func(client, realm string) {
-		v := clientview.View{Schema: clientview.Schema, ClientID: client, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
+		v := clientview.View{Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: client, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
 		if _, e := clientview.StoreIfNewer(filepath.Join(root, "clients", client, "view.json"), v); e != nil {
 			t.Fatal(e)
 		}
@@ -80,7 +80,7 @@ func TestServicePublisherRepairsLegacyRepositoryPurpose(t *testing.T) {
 	url := "svn+ssh://_filees-client@example/repos/" + repoID
 	viewPath := filepath.Join(root, "clients", clientID, "view.json")
 	view := clientview.View{
-		Schema: clientview.Schema, ClientID: clientID, RealmID: realmID,
+		Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realmID,
 		Generation: 4, GeneratedAt: time.Now(), ClientRole: "normal",
 		Capabilities: &clientview.Capabilities{CanCreateRepositories: true},
 		Repositories: []clientview.Repository{{
@@ -139,7 +139,7 @@ func TestServicePublisherActivateHealsProjectionFromCanonicalRecord(t *testing.T
 	realm, clientID, repoID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	viewPath := filepath.Join(root, "clients", clientID, "view.json")
 	view := clientview.View{
-		Schema: clientview.Schema, ClientID: clientID, RealmID: realm,
+		Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realm,
 		Generation: 5, GeneratedAt: time.Now(), ClientRole: "normal",
 		Capabilities: &clientview.Capabilities{CanCreateRepositories: true},
 		Repositories: []clientview.Repository{{
@@ -222,7 +222,7 @@ func TestTransferOwnerMovesRepositoryAndRegeneratesAuthz(t *testing.T) {
 	oldRealm, newRealm := uuid.NewString(), uuid.NewString()
 	oldClient, newClient := uuid.NewString(), uuid.NewString()
 	writeView := func(client, realm string) {
-		v := clientview.View{Schema: clientview.Schema, ClientID: client, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
+		v := clientview.View{Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: client, RealmID: realm, Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
 		if _, e := clientview.StoreIfNewer(filepath.Join(root, "clients", client, "view.json"), v); e != nil {
 			t.Fatal(e)
 		}
@@ -279,7 +279,7 @@ func TestDeleteWithdrawsProjectionAndAuthorityAndLeavesTombstone(t *testing.T) {
 	realm, clientID := uuid.NewString(), uuid.NewString()
 	viewPath := filepath.Join(root, "clients", clientID, "view.json")
 	view := clientview.View{
-		Schema: clientview.Schema, ClientID: clientID, RealmID: realm,
+		Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realm,
 		Generation: 1, GeneratedAt: time.Now(), ClientRole: "normal",
 		Capabilities: &clientview.Capabilities{CanCreateRepositories: true},
 		Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{},

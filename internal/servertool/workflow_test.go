@@ -43,7 +43,8 @@ func TestS1FilesystemWorkflow(t *testing.T) {
 		t.Fatal("write worker public key")
 	}
 	configJSON := `{
-  "schema":"filees.server-toolchain/v1",
+  "schema":"filees.server-toolchain/v2",
+  "display_name":"Serwer testowy",
   "root":` + quote(root) + `,
   "otp_pepper_file":` + quote(pepperPath) + `,
   "worker_public_key_file":` + quote(workerPublicPath) + `,

@@ -54,7 +54,7 @@ func TestWhaleWorkerNativeSandboxPublishesAcrossSessions(t *testing.T) {
 	runWhaleNativeCommand(t, svnadmin, "create", repository)
 
 	view := clientview.View{
-		Schema: clientview.Schema, ClientID: clientID, RealmID: realmID, Generation: 1,
+		Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realmID, Generation: 1,
 		GeneratedAt: time.Now().UTC(), ClientRole: "normal", ActiveOperations: []json.RawMessage{},
 		Repositories: []clientview.Repository{{RepoID: repoID, DisplayName: "Whale native", URL: "svn+ssh://_filees-data@filees.test/" + repoID, Access: "rw", State: "active", OwnerRealmID: realmID}},
 	}
@@ -68,7 +68,7 @@ func TestWhaleWorkerNativeSandboxPublishesAcrossSessions(t *testing.T) {
 
 	configPath := filepath.Join(root, "server.json")
 	config := serverconfig.File{
-		Schema: serverconfig.Schema, Root: filepath.Join(root, "onboarding"), OTPPepperFile: filepath.Join(root, "pepper"),
+		Schema: serverconfig.Schema, DisplayName: "Serwer testowy", Root: filepath.Join(root, "onboarding"), OTPPepperFile: filepath.Join(root, "pepper"),
 		OperationTTL: "30m", OTPAttempts: 3, ReversePortFirst: 42000, ReversePortLast: 42000,
 		Activation: serverconfig.ActivationFile{
 			Root: filepath.Join(root, "activation"), SessionRoot: filepath.Join(root, "sessions"),
@@ -219,7 +219,7 @@ func TestWhaleSSHFixtureSetup(t *testing.T) {
 	}
 	runWhaleNativeCommand(t, svnadmin, "create", repository)
 	realmID := uuid.NewString()
-	view := clientview.View{Schema: clientview.Schema, ClientID: clientID, RealmID: realmID, Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", ActiveOperations: []json.RawMessage{}, Repositories: []clientview.Repository{{RepoID: repoID, DisplayName: "SSH E2E", URL: "svn+ssh://_filees-data@filees.test/" + repoID, Access: "rw", State: "active", OwnerRealmID: realmID}}}
+	view := clientview.View{Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realmID, Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", ActiveOperations: []json.RawMessage{}, Repositories: []clientview.Repository{{RepoID: repoID, DisplayName: "SSH E2E", URL: "svn+ssh://_filees-data@filees.test/" + repoID, Access: "rw", State: "active", OwnerRealmID: realmID}}}
 	viewRaw, err := json.Marshal(view)
 	if err != nil {
 		t.Fatal(err)
@@ -229,7 +229,7 @@ func TestWhaleSSHFixtureSetup(t *testing.T) {
 	}
 	testBinary, _ := filepath.Abs(os.Args[0])
 	config := serverconfig.File{
-		Schema: serverconfig.Schema, Root: filepath.Join(root, "onboarding"), OTPPepperFile: filepath.Join(root, "pepper"), OperationTTL: "30m", OTPAttempts: 3, ReversePortFirst: 42000, ReversePortLast: 42000,
+		Schema: serverconfig.Schema, DisplayName: "Serwer testowy", Root: filepath.Join(root, "onboarding"), OTPPepperFile: filepath.Join(root, "pepper"), OperationTTL: "30m", OTPAttempts: 3, ReversePortFirst: 42000, ReversePortLast: 42000,
 		Activation:   serverconfig.ActivationFile{Root: filepath.Join(root, "activation"), SessionRoot: filepath.Join(root, "sessions"), AuthorizedKeysFile: filepath.Join(root, "activation", "authorized_keys"), AuthzFile: filepath.Join(root, "activation", "service.authz"), ServiceWorkingCopy: serviceWC, ServiceRepository: serviceRepository, RepositoryName: "filees-service", ClientEntryPath: testBinary, SVNBinary: svn, SVNServeBinary: svnserve},
 		Repositories: serverconfig.RepositoryFile{Root: repositoriesRoot, ResultsRoot: resultsRoot, DataAuthzFile: filepath.Join(root, "activation", "data.authz"), SVNAdminBinary: svnadmin, SVNLookBinary: svnlook, URLPrefix: "svn+ssh://_filees-data@filees.test/", DeletionArchiveRoot: filepath.Join(root, "deleted"), RecoveryAdminContact: "admin@example.test"},
 		Invitation:   serverconfig.InvitationFile{ServerID: "whale-ssh-e2e", ServerAddress: "127.0.0.1", KnownHost: "[filees.test]:22 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},

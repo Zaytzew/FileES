@@ -387,7 +387,8 @@ Match all</code></pre>
 <h2 id="ops-serverjson">Referencja server.json</h2>
 <p>Po uruchomieniu instalatora edytuj <code>/etc/filees/server.json</code>:</p>
 <pre><code>{
-  "schema": "filees.server-toolchain/v1",
+  "schema": "filees.server-toolchain/v2",
+  "display_name": "Serwer projektowy",
   "root": "/var/filees/onboarding",
   "otp_pepper_file": "/etc/filees/otp.pepper",
   "worker_private_key_file": "/etc/filees/worker_ed25519",
@@ -430,7 +431,8 @@ Match all</code></pre>
 }</code></pre>
 <div class="table-wrap"><table>
 <tr><th>Pole</th><th>Opis</th></tr>
-<tr><td><code>schema</code></td><td>Musi być <code>filees.server-toolchain/v1</code></td></tr>
+<tr><td><code>schema</code></td><td>Musi być <code>filees.server-toolchain/v2</code></td></tr>
+<tr><td><code>display_name</code></td><td>Wymagana nazwa prezentacyjna serwera (maks. 80 znaków Unicode). Można ją zmieniać bez naruszania niezmiennego <code>invitation.server_id</code>; po zmianie uruchom <code>doas -u _filees-state filees-operation recover</code>, aby opublikować nowe generacje widoków klientów.</td></tr>
 <tr><td><code>root</code></td><td>Ścieżka bezwzględna do prywatnego katalogu stanu (zlecenia, operacje, dziennik zdarzeń)</td></tr>
 <tr><td><code>otp_pepper_file</code></td><td>Ścieżka bezwzględna do pliku z co najmniej 32 bajtami sekretnego sekretu zakodowanego w base64</td></tr>
 <tr><td><code>worker_private_key_file</code></td><td>Ścieżka bezwzględna do prywatnego klucza Ed25519 używanego przez <code>filees-worker</code> (tryb 0600)</td></tr>

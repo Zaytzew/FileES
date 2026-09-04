@@ -352,7 +352,8 @@ func newS3WorkerFixture(t *testing.T, email string) s3WorkerFixture {
 		t.Fatal(err)
 	}
 	activationConfig := activation.Config{
-		Root: activationRoot, AuthorizedKeysFile: authorizedKeysPath,
+		ServerDisplayName: "Serwer testowy",
+		Root:              activationRoot, AuthorizedKeysFile: authorizedKeysPath,
 		AuthzFile: authzPath, ServiceWorkingCopy: serviceWC, ServiceRepository: serviceRepository,
 		RepositoryName: "filees-service", ClientEntryPath: "/usr/local/libexec/filees/filees-client-entry",
 		SVNBinary: svnBinary, SVNServeBinary: svnserveBinary,
@@ -421,7 +422,7 @@ func newS3WorkerFixture(t *testing.T, email string) s3WorkerFixture {
 	}
 	configPath := filepath.Join(base, "server.json")
 	config := map[string]any{
-		"schema": "filees.server-toolchain/v1", "root": root, "otp_pepper_file": pepperPath,
+		"schema": "filees.server-toolchain/v2", "display_name": "Serwer testowy", "root": root, "otp_pepper_file": pepperPath,
 		"worker_private_key_file": workerKeyPath, "worker_public_key_file": workerPublicPath, "operation_ttl": operationTTL.String(), "otp_attempts": 3,
 		"reverse_port_first": port, "reverse_port_last": port,
 		"activation": map[string]any{

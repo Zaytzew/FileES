@@ -52,11 +52,17 @@ func RunOperation(args []string, stdout, stderr io.Writer) int {
 			report(stderr, "filees-operation session lease cleanup", err)
 			return ExitTempFail
 		}
+		serverDisplayNames, err := manager.ReconcileServerDisplayName(context.Background())
+		if err != nil {
+			report(stderr, "filees-operation server display name", err)
+			return ExitTempFail
+		}
 		result := map[string]any{
 			"schema":                          "filees.operation-result/v1",
 			"status":                          "ok",
 			"expired_activations":             expired,
 			"orphaned_session_leases_removed": orphanedSessions,
+			"server_display_names_updated":    serverDisplayNames,
 		}
 		if root := config.Repositories.ResultsRoot; root != "" {
 			err := repoworker.WithFileLock(filepath.Join(root, ".worker.lock"), func() error {

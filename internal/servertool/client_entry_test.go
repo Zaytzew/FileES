@@ -45,7 +45,8 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 	}
 	activationRoot := filepath.Join(root, "activation")
 	config := activation.Config{
-		Root: activationRoot, AuthorizedKeysFile: filepath.Join(activationRoot, "authorized_keys"),
+		ServerDisplayName: "Serwer testowy",
+		Root:              activationRoot, AuthorizedKeysFile: filepath.Join(activationRoot, "authorized_keys"),
 		AuthzFile: filepath.Join(activationRoot, "authz"), ServiceWorkingCopy: filepath.Join(root, "wc"),
 		ServiceRepository: filepath.Join(root, "repository"), RepositoryName: "filees-service",
 		ClientEntryPath: "/usr/local/libexec/filees/filees-client-entry", SVNBinary: trueBinary, SVNServeBinary: trueBinary,
@@ -72,7 +73,7 @@ func TestClientEntrySeparatesProofFromForcedSVNCommand(t *testing.T) {
 	}
 	configPath := filepath.Join(root, "server.json")
 	file := map[string]any{
-		"schema": serverconfig.Schema, "root": filepath.Join(root, "onboarding"), "otp_pepper_file": filepath.Join(root, "pepper"),
+		"schema": serverconfig.Schema, "display_name": "Serwer testowy", "root": filepath.Join(root, "onboarding"), "otp_pepper_file": filepath.Join(root, "pepper"),
 		"operation_ttl": "30m", "otp_attempts": 3, "reverse_port_first": 42000, "reverse_port_last": 42000,
 		"activation": map[string]any{
 			"root": config.Root, "authorized_keys_file": config.AuthorizedKeysFile, "authz_file": config.AuthzFile,

@@ -63,6 +63,27 @@ func TestProjectViewModelKeepsRendererOnPresentationBoundary(t *testing.T) {
 	}
 }
 
+func TestProjectViewModelMarksInitialCommitAsLocalProvisioning(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Servers:   []guiapp.ServerViewModel{{ID: "office", RealmID: "mine"}},
+		Repos: []guiapp.RepoViewModel{{
+			ID: "creating", ServerID: "office", DisplayName: "KRAŃCOWA-PŁOŃSK",
+			LocalPath: `D:\ATMPROJEKT\KRAŃCOWA-PŁOŃSK`, OwnerRealmID: "mine",
+			AttachmentPolicy: "optional", State: contract.StateInitializing,
+		}},
+	}
+
+	got := projectViewModel(vm)
+	if len(got.Repositories) != 1 {
+		t.Fatalf("repositories = %#v", got.Repositories)
+	}
+	repo := got.Repositories[0]
+	if repo.Attached || !repo.LocalProvisioning || repo.DisplayState != "initializing" || repo.CanAttach || repo.CanOpen || repo.CanPublish {
+		t.Fatalf("initial commit projection = %+v", repo)
+	}
+}
+
 func TestProjectViewModelBuildsAggregatePublicShareCardAndClosedSetIntents(t *testing.T) {
 	vm := guiapp.ViewModel{
 		Connected: true,

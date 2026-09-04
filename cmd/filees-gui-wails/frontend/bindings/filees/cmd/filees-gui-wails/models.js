@@ -1174,6 +1174,13 @@ export class RepoProjection {
              */
             this["attached"] = false;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {boolean | undefined}
+             */
+            this["local_provisioning"] = undefined;
+        }
         if (!("access" in $$source)) {
             /**
              * @member

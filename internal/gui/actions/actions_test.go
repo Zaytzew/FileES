@@ -1544,7 +1544,7 @@ func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 		t.Fatalf("unattached repository = %#v", remote)
 	}
 	pending := server.Folders[2]
-	if pending.ID != "import" || pending.LocalPath != "/wc/biblia" || pending.State != "import początkowy w toku" || pending.CanConnect {
+	if pending.ID != "import" || pending.LocalPath != "/wc/biblia" || pending.State != "import początkowy w toku" || pending.CanConnect || pending.CanDelete || pending.CanManageGrants || pending.CanManagePublicShares || pending.CanManageUploadChannels || pending.CanLoadDump {
 		t.Fatalf("pending repository creation = %#v", pending)
 	}
 }

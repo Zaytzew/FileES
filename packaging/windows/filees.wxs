@@ -44,9 +44,8 @@
         <Directory Id="INSTALLFOLDER" Name="FileES" />
       </Directory>
     </StandardDirectory>
-    <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="FileES" />
-    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
     <StandardDirectory Id="StartupFolder" />
 
     <Icon Id="FileESIcon" SourceFile="$(var.SourceDir)\filees-folder.ico" />
@@ -57,13 +56,31 @@
     </Component>
 
     <Component Id="FileESInterface" Directory="INSTALLFOLDER" Guid="*">
+      <!-- Both shortcuts are nested in the File, which is what makes them point
+           at it without an explicit Target, and both are Advertise="no".
+
+           The first attempt advertised the Start Menu entry and buried it in a
+           FileES subfolder. An advertised shortcut stores the installer's icon
+           cache as its target and resolves the real one through MSI when
+           clicked; it works, but Windows 11's Start does not surface it well and
+           the owner could not find the application at all. A single application
+           does not need a folder of its own either - it needs to be in the list
+           under its own name. -->
       <File Id="FileESInterfaceExe" Source="$(var.SourceDir)\filees-gui-wails.exe" KeyPath="yes">
         <Shortcut Id="FileESStartMenuShortcut"
-                  Directory="ApplicationProgramsFolder"
+                  Directory="ProgramMenuFolder"
                   Name="FileES"
                   Description="Pilnuje Twoich plików"
                   Icon="FileESIcon"
-                  Advertise="yes" />
+                  WorkingDirectory="INSTALLFOLDER"
+                  Advertise="no" />
+        <Shortcut Id="FileESDesktopShortcut"
+                  Directory="DesktopFolder"
+                  Name="FileES"
+                  Description="Pilnuje Twoich plików"
+                  Icon="FileESIcon"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Advertise="no" />
       </File>
     </Component>
 

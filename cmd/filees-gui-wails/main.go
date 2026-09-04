@@ -44,6 +44,23 @@ func clientVersion() string {
 //go:embed frontend
 var frontend embed.FS
 
+// appIcon is what Windows shows on the taskbar button and in Alt-Tab.
+//
+// It has to be handed to Wails explicitly because nothing else supplies it.
+// The window code looks for icon resource 3 inside the executable first, and a
+// Go binary carries no icon resource unless one is generated and linked in;
+// only then does it fall back to application.Options.Icon. With neither, the
+// taskbar entry appeared with no icon at all - present, blank, and no error
+// anywhere to say why.
+//
+// Setting the option is the whole fix, and it avoids a generated .syso and the
+// build-time tool that produces one. PNG rather than the .ico beside it:
+// Windows takes icon *resource* bytes here, and an .ico file is a container
+// with a directory in front of the images.
+//
+//go:embed assets/app-icon.png
+var appIcon []byte
+
 func main() {
 	flags := flag.NewFlagSet("filees-gui-wails", flag.ContinueOnError)
 	socket := flags.String("socket", ipcclient.DefaultSocketPath(), "ścieżka do gniazda IPC demona")
@@ -102,6 +119,7 @@ func main() {
 	host := application.New(application.Options{
 		Name:        "FileES Wails",
 		Description: "Klient FileES z interfejsem Wails",
+		Icon:        appIcon,
 		Services: []application.Service{
 			application.NewService(gui),
 			application.NewService(settings),

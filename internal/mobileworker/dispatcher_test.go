@@ -138,7 +138,7 @@ func TestDispatchListRepositories(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.RealmAlias != "acme" || len(res.Repositories) != 1 || res.Repositories[0].DisplayName != "JANCZEWICE" {
+	if res.RealmAlias != "acme" || res.ServerDisplayName != "Serwer testowy" || len(res.Repositories) != 1 || res.Repositories[0].DisplayName != "JANCZEWICE" || res.Repositories[0].Purpose != "upload_shelf" {
 		t.Fatalf("projection = %+v", res)
 	}
 }

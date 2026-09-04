@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -71,34 +72,128 @@ class SettingsActivity : AppCompatActivity() {
         }
         binding.buttonAddWatched.setOnClickListener { addWatchLauncher.launch(null) }
         binding.buttonChangeUploadTarget.setOnClickListener { pickUploadTarget() }
+        binding.buttonUnpair.setOnClickListener { confirmUnpair() }
 
         val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
+        FileesSession.migrate(prefs)
         val address = prefs.getString(FileesSession.PREF_ADDRESS, null)
         val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null)
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
             try {
-                val client = Androidbind.newClient(filesDir.absolutePath, address, FileesSession.MOBILE_USER, hostKey)
+                val client = Androidbind.newClient(
+                    filesDir.absolutePath,
+                    DialAddress.resolve(address),
+                    FileesSession.MOBILE_USER,
+                    hostKey,
+                )
                 binding.textDevicePublicKey.text = client.publicKey()
                 loadUploadRepos(client)
             } catch (_: Exception) {
                 binding.textDevicePublicKey.text = getString(R.string.label_device_public_key)
             }
         }
-        binding.textDetails.text = when {
-            !address.isNullOrBlank() -> getString(R.string.settings_server, address)
-            else -> prefs.getString(FileesSession.PREF_DETAILS, "")
-        }
+        bindServerDetails(prefs)
+        binding.buttonUnpair.visibility = if (FileesSession.current(prefs) == null) View.GONE else View.VISIBLE
+        renderServers()
         renderWatched()
         renderUploadTarget()
     }
 
-    // Upload target list is scoped to "rw" shares only - a read-only grant
-    // cannot receive an upload, listing it would just be a dead end.
+    private fun bindServerDetails(prefs: android.content.SharedPreferences) {
+        val lines = mutableListOf<String>()
+        val label = FileesSession.serverLabel(prefs)
+        if (label.isNotBlank()) lines.add(getString(R.string.settings_server, label))
+        val alias = prefs.getString(FileesSession.PREF_REALM_ALIAS, null)
+        if (!alias.isNullOrBlank()) lines.add(getString(R.string.settings_realm, alias))
+        val generated = prefs.getString(FileesSession.PREF_VIEW_GENERATED_AT, null)
+        if (!generated.isNullOrBlank()) {
+            val day = if (generated.length >= 10) generated.substring(0, 10) else generated
+            lines.add(getString(R.string.settings_view_at, day))
+        }
+        binding.textDetails.text = when {
+            lines.isNotEmpty() -> lines.joinToString("\n")
+            else -> prefs.getString(FileesSession.PREF_DETAILS, "")
+        }
+    }
+
+    private fun renderServers() {
+        binding.listServers.removeAllViews()
+        val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
+        val all = FileesSession.servers(prefs)
+        val currentId = FileesSession.current(prefs)?.id
+        if (all.isEmpty()) {
+            val empty = TextView(this)
+            empty.text = getString(R.string.status_idle)
+            binding.listServers.addView(empty)
+            return
+        }
+        val accent = ContextCompat.getColor(this, R.color.filees_orange)
+        for (server in all) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            val label = TextView(this)
+            label.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            label.text = if (server.id == currentId) {
+                "${server.label()} (${getString(R.string.server_current)})"
+            } else {
+                server.label()
+            }
+            label.setOnClickListener {
+                FileesSession.select(prefs, server.id)
+                finish()
+            }
+            val remove = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+            remove.text = getString(R.string.action_unpair)
+            remove.setTextColor(accent)
+            remove.strokeColor = android.content.res.ColorStateList.valueOf(accent)
+            remove.rippleColor = android.content.res.ColorStateList.valueOf(accent)
+            remove.setOnClickListener {
+                val wasCurrent = server.id == currentId
+                FileesSession.unpairId(prefs, server.id)
+                if (wasCurrent) {
+                    finish()
+                    return@setOnClickListener
+                }
+                bindServerDetails(prefs)
+                binding.buttonUnpair.visibility =
+                    if (FileesSession.current(prefs) == null) View.GONE else View.VISIBLE
+                renderServers()
+                renderUploadTarget()
+            }
+            row.addView(label)
+            row.addView(remove)
+            binding.listServers.addView(row)
+        }
+    }
+
+    private fun confirmUnpair() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_unpair)
+            .setMessage(R.string.confirm_unpair)
+            .setPositiveButton(R.string.action_unpair) { _, _ ->
+                FileesSession.unpair(getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE))
+                finish()
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    // Upload target list is scoped to capturable shares: rw, not the realm
+    // trash. A read-only grant cannot receive an upload; trash is a reject
+    // waiting room, not a camera dump. Shelves stay writable.
     private fun loadUploadRepos(client: Client) {
         Thread {
             try {
                 val projection = RealmProjection.fromJson(client.listRepositoriesJSON())
-                uploadRepos = projection.shares.filter { it.selectable && it.access == "rw" }
+                val capturable = projection.shares.filter { it.canCapture }
+                val prefs = getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE)
+                FileesSession.rememberProjection(prefs, projection)
+                runOnUiThread {
+                    uploadRepos = capturable
+                    renderUploadTarget()
+                    bindServerDetails(prefs)
+                    renderServers()
+                }
             } catch (_: Exception) {
                 // Settings still work without this list; picking a target
                 // just fails over to upload_target_pick_empty until the
@@ -127,10 +222,11 @@ class SettingsActivity : AppCompatActivity() {
             .setTitle(R.string.upload_target_pick_title)
             .setItems(names) { _, index ->
                 val chosen = uploadRepos[index]
-                getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE).edit {
-                    putString(FileesSession.PREF_UPLOAD_REPO_ID, chosen.repoId)
-                    putString(FileesSession.PREF_UPLOAD_REPO_NAME, chosen.displayName)
-                }
+                FileesSession.setUploadTarget(
+                    getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE),
+                    chosen.repoId,
+                    chosen.displayName,
+                )
                 renderUploadTarget()
                 confirmExistingBacklogThen(onPicked)
             }
@@ -294,10 +390,11 @@ class SettingsActivity : AppCompatActivity() {
                     json.getString("host_public_key"),
                     json.getString("token"),
                 )
-                getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE).edit {
-                    putString(FileesSession.PREF_ADDRESS, json.getString("address"))
-                    putString(FileesSession.PREF_HOST_KEY, json.getString("host_public_key"))
-                }
+                FileesSession.putAndSelect(
+                    getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE),
+                    json.getString("address"),
+                    json.getString("host_public_key"),
+                )
                 runOnUiThread { finish() }
             } catch (_: Exception) {
                 // Main screen shows connection errors on resume.

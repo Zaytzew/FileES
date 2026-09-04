@@ -127,11 +127,12 @@ func TestManifestValidation(t *testing.T) {
 
 func TestListRepositoriesResultValidation(t *testing.T) {
 	ok := ListRepositoriesResult{
-		ViewGeneration: 2,
-		RealmID:        uuid.NewString(),
-		RealmAlias:     "acme",
+		ViewGeneration:    2,
+		RealmID:           uuid.NewString(),
+		RealmAlias:        "acme",
+		ServerDisplayName: "Serwer testowy",
 		Repositories: []RepositorySummary{
-			{RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: "rw", State: "active"},
+			{RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: "rw", State: "active", Purpose: "upload_shelf"},
 		},
 	}
 	resp, err := NewSuccess(rid(), OpListRepositories, ok)
@@ -150,6 +151,19 @@ func TestListRepositoriesResultValidation(t *testing.T) {
 
 	if _, err := NewSuccess(rid(), OpListRepositories, ListRepositoriesResult{ViewGeneration: 1, RealmID: uuid.NewString()}); err == nil {
 		t.Fatal("nil repositories should be rejected")
+	}
+
+	named := ok
+	named.ServerDisplayName = " Serwer"
+	if _, err := NewSuccess(rid(), OpListRepositories, named); err == nil {
+		t.Fatal("padded server_display_name should be rejected")
+	}
+	badPurpose := ok
+	badPurpose.Repositories = []RepositorySummary{
+		{RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: "rw", State: "active", Purpose: "nope"},
+	}
+	if _, err := NewSuccess(rid(), OpListRepositories, badPurpose); err == nil {
+		t.Fatal("unknown purpose should be rejected")
 	}
 }
 

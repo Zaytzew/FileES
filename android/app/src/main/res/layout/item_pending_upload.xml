@@ -12,7 +12,16 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
+        android:textColor="@color/filees_white"
         android:textIsSelectable="false" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonRetryUpload"
+        style="@style/Widget.Filees.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/action_retry_upload"
+        android:visibility="gone" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/buttonDiscardUpload"

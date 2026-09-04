@@ -19,6 +19,36 @@ object TreeZip {
         "pdf",
     )
 
+    fun packNamed(files: List<Pair<String, File>>, cacheDir: File, zipName: String): File {
+        cacheDir.mkdirs()
+        val out = File(cacheDir, zipName)
+        try {
+            ZipOutputStream(out.outputStream().buffered()).use { zip ->
+                for ((name, file) in files) {
+                    val bytes = file.readBytes()
+                    val entry = ZipEntry(name)
+                    if (stored(name.substringAfterLast('/'))) {
+                        val crc = CRC32()
+                        crc.update(bytes)
+                        entry.method = ZipEntry.STORED
+                        entry.size = bytes.size.toLong()
+                        entry.compressedSize = bytes.size.toLong()
+                        entry.crc = crc.value
+                    } else {
+                        entry.method = ZipEntry.DEFLATED
+                    }
+                    zip.putNextEntry(entry)
+                    zip.write(bytes)
+                    zip.closeEntry()
+                }
+            }
+        } catch (e: Exception) {
+            out.delete()
+            throw e
+        }
+        return out
+    }
+
     fun pack(resolver: ContentResolver, files: List<WalkedFile>, cacheDir: File): File {
         cacheDir.mkdirs()
         val out = File(cacheDir, "pack-${System.currentTimeMillis()}.zip")

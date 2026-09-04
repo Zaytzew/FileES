@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 
 	v1 "filees/pkg/mobile/v1"
+	"filees/pkg/shout"
 )
 
 // ErrAccessDenied is returned when the authority grants no read access to the
@@ -40,10 +42,12 @@ type RepositoryGrant struct {
 
 // Projection is the authenticated installation's current realm view.
 type Projection struct {
-	RealmID      string
-	RealmAlias   string
-	Generation   int64
-	Repositories []RepositoryGrant
+	RealmID           string
+	RealmAlias        string
+	ServerDisplayName string
+	Generation        int64
+	GeneratedAt       time.Time
+	Repositories      []RepositoryGrant
 }
 
 // Authority resolves repository path, control-plane generation and access for the
@@ -96,6 +100,7 @@ func (b Browser) RefreshManifest(ctx context.Context, clientID string, p v1.Refr
 		RepoRevision:   rev,
 		Complete:       true,
 		Entries:        entries,
+		Shouts:         collectShouts(ctx, b.Reader, view.RepoPath, p.KnownRepoRevision, rev),
 	}
 	if err := manifest.Validate(); err != nil {
 		return v1.RefreshManifestResult{}, err
@@ -105,7 +110,9 @@ func (b Browser) RefreshManifest(ctx context.Context, clientID string, p v1.Refr
 
 // ListRepositories returns the installation's realm projection. The client
 // never invents a repo_id: it picks one of these shares and later operations
-// send that identifier.
+// send that identifier. ServerDisplayName and Purpose come from
+// client-view/v2 so the phone can label the server and group shelves/trash
+// the same way the desktop projection already does.
 func (b Browser) ListRepositories(ctx context.Context, clientID string) (v1.ListRepositoriesResult, error) {
 	proj, err := b.Authority.List(ctx, clientID)
 	if err != nil {
@@ -122,10 +129,15 @@ func (b Browser) ListRepositories(ctx context.Context, clientID string) (v1.List
 		})
 	}
 	res := v1.ListRepositoriesResult{
-		ViewGeneration: proj.Generation,
-		RealmID:        proj.RealmID,
-		RealmAlias:     proj.RealmAlias,
-		Repositories:   repos,
+		ViewGeneration:    proj.Generation,
+		RealmID:           proj.RealmID,
+		RealmAlias:        proj.RealmAlias,
+		ServerDisplayName: proj.ServerDisplayName,
+		Repositories:      repos,
+	}
+	if !proj.GeneratedAt.IsZero() {
+		generated := proj.GeneratedAt.UTC()
+		res.GeneratedAt = &generated
 	}
 	if err := res.Validate(); err != nil {
 		return v1.ListRepositoriesResult{}, err
@@ -152,4 +164,62 @@ func (b Browser) ReadObject(ctx context.Context, clientID string, p v1.ReadObjec
 		return v1.ReadObjectResult{}, err
 	}
 	return v1.ReadObjectResult{Path: p.Path, Size: size, Sha256: sha}, nil
+}
+
+type revisionLogger interface {
+	Log(ctx context.Context, repoPath string, from, to int64) ([]svnLogEntry, error)
+}
+
+const shoutLogWindow = 20
+
+func shoutLogRange(known, head int64) (from, to int64, ok bool) {
+	if head < 1 {
+		return 0, 0, false
+	}
+	if known >= head && known > 0 {
+		return 0, 0, false
+	}
+	to = head
+	from = head - shoutLogWindow + 1
+	if from < 1 {
+		from = 1
+	}
+	if known > 0 && known < head && known+1 > from {
+		from = known + 1
+	}
+	if from > to {
+		return 0, 0, false
+	}
+	return from, to, true
+}
+
+func collectShouts(ctx context.Context, reader Reader, repoPath string, known, head int64) []v1.ShoutNotice {
+	logger, ok := reader.(revisionLogger)
+	if !ok {
+		return nil
+	}
+	from, to, ok := shoutLogRange(known, head)
+	if !ok {
+		return nil
+	}
+	entries, err := logger.Log(ctx, repoPath, from, to)
+	if err != nil {
+		return nil
+	}
+	return shoutsFromLog(entries)
+}
+
+func shoutsFromLog(entries []svnLogEntry) []v1.ShoutNotice {
+	out := make([]v1.ShoutNotice, 0)
+	for _, entry := range entries {
+		comment, ok := shout.Parse(entry.Message)
+		if !ok {
+			continue
+		}
+		out = append(out, v1.ShoutNotice{Revision: entry.Revision, Comment: comment})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

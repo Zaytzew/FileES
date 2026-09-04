@@ -199,6 +199,39 @@ func stderrTail(b []byte) string {
 	return strings.ReplaceAll(s, "\n", " | ")
 }
 
+type svnLogEntry struct {
+	Revision int64
+	Message  string
+}
+
+type xmlLog struct {
+	Entries []struct {
+		Revision int64  `xml:"revision,attr"`
+		Msg      string `xml:"msg"`
+	} `xml:"logentry"`
+}
+
+// Log returns svn:log messages in [from, to], oldest first. Used to surface
+// shouting commits on REFRESH_MANIFEST without a working copy.
+func (r SVNReader) Log(ctx context.Context, repoPath string, from, to int64) ([]svnLogEntry, error) {
+	if from < 1 || to < from {
+		return nil, nil
+	}
+	out, err := output(ctx, r.svn(), "log", "--xml", "-r", fmt.Sprintf("%d:%d", from, to), fileURL(repoPath))
+	if err != nil {
+		return nil, err
+	}
+	var log xmlLog
+	if err := xml.Unmarshal(out, &log); err != nil {
+		return nil, fmt.Errorf("parse svn log xml: %w", err)
+	}
+	entries := make([]svnLogEntry, 0, len(log.Entries))
+	for _, e := range log.Entries {
+		entries = append(entries, svnLogEntry{Revision: e.Revision, Message: e.Msg})
+	}
+	return entries, nil
+}
+
 func fileURL(absPath string) string {
 	u := url.URL{Scheme: "file", Path: filepath.ToSlash(absPath)}
 	return u.String()

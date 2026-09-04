@@ -11,6 +11,9 @@ import (
 	"filees/pkg/client"
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/ipcserver"
+	"filees/pkg/localrepo"
+	"filees/pkg/reposupervisor"
 )
 
 type projectionSVN struct {
@@ -165,4 +168,40 @@ func TestPublicShareRefreshCoordinatorRerunsMutationArrivingDuringRefresh(t *tes
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("final cache = %+v", cache.List())
+}
+
+func TestUnchangedServerGenerationCanPublishLocalLifecycleFailure(t *testing.T) {
+	serverID := "spot"
+	repoID := "00000000-0000-0000-0000-000000000021"
+	view := clientview.View{Generation: 7, Repositories: []clientview.Repository{{
+		RepoID: repoID, DisplayName: "M21 live", URL: "svn+ssh://_filees-data@example/" + repoID,
+		Access: contract.AccessReadWrite, State: contract.StateInitializing,
+	}}}
+	lifecycle, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := lifecycle.BeginCreate(serverID, "M21 live", filepath.Join(t.TempDir(), "M21-live"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.MarkRepositoryCreated(record.OperationID, repoID, view.Repositories[0].URL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.MarkError(record.OperationID, errors.New("initial import failed")); err != nil {
+		t.Fatal(err)
+	}
+
+	ipc := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	state := ipc.RegisterProjectedRepo(repoID, "M21 live", view.Repositories[0].URL, serverID, contract.AccessReadWrite, contract.StateInitializing, false)
+	currentViews := map[string]clientview.View{serverID: view}
+	synced := projectionUpdate{serverID: serverID, view: view}
+	if !syncProjectionOnSuccessfulPoll(ipc, synced, currentViews, map[reposupervisor.Key]repoRuntime{}, lifecycle) {
+		t.Fatal("unchanged successful sync was not recognised as the current generation")
+	}
+
+	summary := state.Summary()
+	if summary.LifecycleOperationID != record.OperationID || !summary.CanRetryLifecycle || !summary.CanAbandonLifecycle || summary.State != contract.StateInteractionRequired {
+		t.Fatalf("unchanged generation did not publish local repair state: %+v", summary)
+	}
 }

@@ -265,6 +265,10 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		return err
 	}
 	updates := make(chan projectionUpdate, 16)
+	// Monitor's output channel carries only changed server generations. Local
+	// durable state can change while that generation stays still, so successful
+	// unchanged polls need a lightweight local-overlay projection as well.
+	syncs := make(chan projectionUpdate, 16)
 	monitored := make(map[string]bool)
 	currentViews := make(map[string]clientview.View)
 	shareRefreshes := newPublicShareRefreshCoordinator(ctx, shareLister, shareCache, ipc)
@@ -363,6 +367,10 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			// like a server that has stopped answering.
 			freshness.Synced(serverID, view)
 			publishFreshness()
+			select {
+			case syncs <- projectionUpdate{serverID: serverID, view: view}:
+			case <-monitorCtx.Done():
+			}
 		}})
 		go func() {
 			for view := range views {
@@ -465,6 +473,11 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			}
 			reservationRefreshes.UpdateView(update.serverID, update.view)
 			shareRefreshes.Schedule(update.serverID, update.view)
+		case synced := <-syncs:
+			// A newer generation is reconciled by the updates lane. For the
+			// generation already held here, recompute only daemon-owned overlays
+			// without inventing a new server generation.
+			syncProjectionOnSuccessfulPoll(ipc, synced, currentViews, runtimes, lifecycle)
 		case serverID := <-publicShareEvents:
 			if view, ok := currentViews[serverID]; ok {
 				shareRefreshes.Schedule(serverID, view)
@@ -532,6 +545,15 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			reservationRefreshes.UpdateView(repo.ServerID, view)
 		}
 	}
+}
+
+func syncProjectionOnSuccessfulPoll(ipc *ipcserver.Server, synced projectionUpdate, currentViews map[string]clientview.View, runtimes map[reposupervisor.Key]repoRuntime, lifecycle *localrepo.Store) bool {
+	current, ok := currentViews[synced.serverID]
+	if !ok || current.Generation != synced.view.Generation {
+		return false
+	}
+	syncProjectionKnowledge(ipc, synced.serverID, synced.view, runtimes, lifecycle)
+	return true
 }
 
 func stampSessionTimeout(runtimes map[reposupervisor.Key]repoRuntime, serverID string, timeout time.Duration) {

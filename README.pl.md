@@ -476,11 +476,13 @@ obniżenie epoki bezpieczeństwa i fork tego samego sequence.
 
 GUI pokazuje badge „Dostępna aktualizacja”. „Pokaż, co ulegnie zmianie…” jest
 dry runem, a „Zaktualizuj i uruchom ponownie…” ponownie rozwiązuje podpisane
-wydanie, wyświetla natywne potwierdzenie i uruchamia istniejący instalator.
-Linux zachowuje konfigurację i wyłącza restart/autostart wewnątrz skryptu;
-po sukcesie GUI żąda restartu całego stacku, kończy pracę, zwalnia blokadę
-single-instance i dopiero wtedy uruchamia nową binarkę. Procedura publikacji:
-`tools/RELEASE_PUBLISHING.md`.
+wydanie, wyświetla natywne potwierdzenie i uruchamia właściwy instalator.
+Linux zachowuje konfigurację i wyłącza restart/autostart wewnątrz skryptu.
+Windows (r819/r821) instaluje daemon, Wails GUI i dwa launchery do katalogu
+uruchomionego `filees.exe`; działające obrazy odsuwa pod nieuruchamialną nazwę,
+a `config.json` pozostawia nietknięty. Po sukcesie GUI żąda restartu całego
+stacku, kończy pracę, zwalnia blokadę single-instance i dopiero wtedy uruchamia
+nową binarkę. Procedura publikacji: `tools/RELEASE_PUBLISHING.md`.
 
 ### Powiadomienia
 

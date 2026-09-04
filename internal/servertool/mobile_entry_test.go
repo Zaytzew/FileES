@@ -66,13 +66,14 @@ func newMobileSeededRepoAt(t *testing.T, repoPath string) {
 func writeMobileClientView(t *testing.T, serviceWC, clientID, realmID string, generation int64, repos []clientview.Repository) {
 	t.Helper()
 	view := clientview.View{
-		Schema:       clientview.Schema,
-		ClientID:     clientID,
-		RealmID:      realmID,
-		Generation:   generation,
-		GeneratedAt:  time.Now().UTC(),
-		ClientRole:   "normal",
-		Repositories: repos,
+		Schema:            clientview.Schema,
+		ServerDisplayName: "Serwer testowy",
+		ClientID:          clientID,
+		RealmID:           realmID,
+		Generation:        generation,
+		GeneratedAt:       time.Now().UTC(),
+		ClientRole:        "normal",
+		Repositories:      repos,
 	}
 	viewPath := filepath.Join(serviceWC, "clients", clientID, "view.json")
 	if _, err := clientview.StoreIfNewer(viewPath, view); err != nil {

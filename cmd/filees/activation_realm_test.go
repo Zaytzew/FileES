@@ -24,7 +24,7 @@ func TestActivationRegistersTheRealmTheServerGranted(t *testing.T) {
 	}
 	// Decode rejects unknown fields, so this has to be a projection the client
 	// would really accept - shaped exactly like the one cloud emitted.
-	view := `{"schema":"filees.client-view/v1","client_id":"399c0801-46d2-4190-bd70-15a9bf6cfa00",` +
+	view := `{"schema":"filees.client-view/v2","server_display_name":"Cloud ATM Projekt","client_id":"399c0801-46d2-4190-bd70-15a9bf6cfa00",` +
 		`"realm_id":"a72d443d-342b-4ed8-9412-925247dbd4c5","realm_alias":"pracownia",` +
 		`"generation":2,"generated_at":"2026-09-03T10:18:00Z","client_role":"normal",` +
 		`"capabilities":{"can_create_repositories":true},"repositories":[],"active_operations":[]}`
@@ -36,6 +36,9 @@ func TestActivationRegistersTheRealmTheServerGranted(t *testing.T) {
 	got := withProjectedRealm(contract.ActivationStatus{ServerID: "atmprojekt:filees", ClientRole: "normal"}, profile)
 	if got.RealmAlias != "pracownia" {
 		t.Fatalf("the realm the server named must reach the interface: %+v", got)
+	}
+	if got.DisplayName != "Cloud ATM Projekt" {
+		t.Fatalf("the server-owned display name must reach the interface: %+v", got)
 	}
 	if got.RealmID == "" {
 		t.Fatalf("realm id = %q", got.RealmID)
@@ -71,7 +74,7 @@ func TestJoiningARealmDoesNotAskForAnAliasItAlreadyHas(t *testing.T) {
 	if err := os.MkdirAll(wc, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	view := `{"schema":"filees.client-view/v1","client_id":"399c0801-46d2-4190-bd70-15a9bf6cfa00","realm_id":"a72d443d-342b-4ed8-9412-925247dbd4c5",` +
+	view := `{"schema":"filees.client-view/v2","server_display_name":"Cloud ATM Projekt","client_id":"399c0801-46d2-4190-bd70-15a9bf6cfa00","realm_id":"a72d443d-342b-4ed8-9412-925247dbd4c5",` +
 		`"realm_alias":"pracownia","generation":2,"generated_at":"2026-09-03T10:18:00Z","client_role":"normal",` +
 		`"capabilities":{"can_create_repositories":true},"repositories":[],"active_operations":[]}`
 	if err := os.WriteFile(filepath.Join(wc, "view.json"), []byte(view), 0o600); err != nil {

@@ -67,7 +67,8 @@ func writeRepoPruneFixtureConfig(t *testing.T) (configPath, resultsRoot, reposit
 	}
 	configPath = filepath.Join(base, "server.json")
 	configJSON := `{
-  "schema":"filees.server-toolchain/v1",
+  "schema":"filees.server-toolchain/v2",
+  "display_name":"Serwer testowy",
   "root":` + quote(root) + `,
   "otp_pepper_file":` + quote(pepperPath) + `,
   "worker_public_key_file":` + quote(workerPublicPath) + `,
@@ -265,7 +266,7 @@ func TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository(t *testing.T
 	realmID, clientID := uuid.NewString(), uuid.NewString()
 	viewPath := filepath.Join(config.Activation.ServiceWorkingCopy, "clients", clientID, "view.json")
 	view := clientview.View{
-		Schema: clientview.Schema, ClientID: clientID, RealmID: realmID,
+		Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realmID,
 		Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal",
 		Capabilities: &clientview.Capabilities{CanCreateRepositories: true},
 		Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{},

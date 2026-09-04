@@ -1,4 +1,4 @@
-.Dd August 14, 2026
+.Dd September 4, 2026
 .Dt FILEES.CONF 5
 .Os
 .Sh NAME
@@ -9,7 +9,7 @@
 The FileES server tools read a single JSON document, by default
 .Pa /etc/filees/server.json .
 The schema name is
-.Cm filees.server-toolchain/v1 .
+.Cm filees.server-toolchain/v2 .
 The file must be a regular file, not group- or other-writable, and every
 path value must be absolute.
 .Pp
@@ -19,7 +19,15 @@ A tool that does not need SMTP does not open the SMTP password file.
 .Bl -tag -width Ds
 .It Ic schema
 Must be
-.Cm filees.server-toolchain/v1 .
+.Cm filees.server-toolchain/v2 .
+.It Ic display_name
+Required human-facing server name, at most 80 Unicode characters.
+Changing it does not change immutable
+.Ic invitation.server_id .
+Run
+.Xr filees-operation 8
+.Cm recover
+to publish the new name to all active client projections.
 .It Ic root
 Private onboarding directory.
 Default layout is

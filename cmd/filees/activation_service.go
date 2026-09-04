@@ -180,6 +180,7 @@ func withProjectedRealm(status contract.ActivationStatus, profile clientprofile.
 	}
 	status.RealmID = view.RealmID
 	status.RealmAlias = view.RealmAlias
+	status.DisplayName = view.ServerDisplayName
 	status.CanCreateRepositories = view.CanCreateRepositories()
 	if role := strings.TrimSpace(view.ClientRole); role != "" {
 		status.ClientRole = role

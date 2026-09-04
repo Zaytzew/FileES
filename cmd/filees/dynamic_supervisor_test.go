@@ -22,6 +22,15 @@ type projectionSVN struct {
 	url, wc            string
 }
 
+func TestProjectedServerDisplayNameNeverFallsBackAfterAuthoritySpeaks(t *testing.T) {
+	if got := projectedServerDisplayName("atmprojekt:filees", clientview.View{ServerDisplayName: "Cloud ATM Projekt"}); got != "Cloud ATM Projekt" {
+		t.Fatalf("projected name=%q", got)
+	}
+	if got := projectedServerDisplayName("Cloud ATM Projekt", clientview.View{}); got != "Cloud ATM Projekt" {
+		t.Fatalf("empty local update reverted authority name to %q", got)
+	}
+}
+
 func (svn *projectionSVN) Checkout(_ context.Context, url, wc string) (string, error) {
 	svn.checkouts++
 	svn.url, svn.wc = url, wc

@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"filees/internal/durable"
 	"filees/pkg/realmalias"
@@ -20,10 +22,13 @@ import (
 	"github.com/google/uuid"
 )
 
-const Schema = "filees.client-view/v1"
+const Schema = "filees.client-view/v2"
+
+const MaxServerDisplayNameRunes = 80
 
 type View struct {
 	Schema               string               `json:"schema"`
+	ServerDisplayName    string               `json:"server_display_name"`
 	ClientID             string               `json:"client_id"`
 	RealmID              string               `json:"realm_id"`
 	RealmAlias           string               `json:"realm_alias,omitempty"`
@@ -35,6 +40,24 @@ type View struct {
 	Repositories         []Repository         `json:"repositories"`
 	LockReleaseRequests  []LockReleaseRequest `json:"lock_release_requests,omitempty"`
 	ActiveOperations     []json.RawMessage    `json:"active_operations"`
+}
+
+// ValidateServerDisplayName guards the human-facing server label carried by
+// every projection. The immutable server_id remains transport identity; this
+// value is presentation and may be changed by the operator.
+func ValidateServerDisplayName(value string) error {
+	if value == "" || strings.TrimSpace(value) != value {
+		return errors.New("must be non-empty and have no surrounding whitespace")
+	}
+	if !utf8.ValidString(value) || utf8.RuneCountInString(value) > MaxServerDisplayNameRunes {
+		return fmt.Errorf("must be valid UTF-8 and at most %d characters", MaxServerDisplayNameRunes)
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return errors.New("must not contain control characters")
+		}
+	}
+	return nil
 }
 
 type Capabilities struct {
@@ -153,6 +176,9 @@ func Decode(r io.Reader) (View, error) {
 func (v View) Validate() error {
 	if v.Schema != Schema {
 		return fmt.Errorf("unsupported client view schema %q", v.Schema)
+	}
+	if err := ValidateServerDisplayName(v.ServerDisplayName); err != nil {
+		return fmt.Errorf("client view server_display_name: %w", err)
 	}
 	if _, err := uuid.Parse(v.ClientID); err != nil {
 		return errors.New("client view client_id must be UUID")

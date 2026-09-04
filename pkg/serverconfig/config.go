@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"filees/pkg/activation"
+	"filees/pkg/clientview"
 	"filees/pkg/onboarding"
 	"filees/pkg/realmbranding"
 	"filees/pkg/repositoryurl"
@@ -24,10 +25,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const Schema = "filees.server-toolchain/v1"
+const Schema = "filees.server-toolchain/v2"
 
 type File struct {
 	Schema               string               `json:"schema"`
+	DisplayName          string               `json:"display_name"`
 	Root                 string               `json:"root"`
 	OTPPepperFile        string               `json:"otp_pepper_file"`
 	OperationTTL         string               `json:"operation_ttl"`
@@ -190,6 +192,8 @@ type SMTPFile struct {
 
 type Config struct {
 	Path                 string
+	ServerID             string
+	ServerDisplayName    string
 	Root                 string
 	OTPPepperFile        string
 	Onboarding           onboarding.Options
@@ -283,8 +287,13 @@ func load(path string, secrets Secrets) (Config, error) {
 	if err := probe.Validate(); err != nil {
 		return Config{}, fmt.Errorf("invitation profile: %w (the invitation block is required; it carries the pinned host key)", err)
 	}
+	serverDisplayName := file.DisplayName
+	if err := clientview.ValidateServerDisplayName(serverDisplayName); err != nil {
+		return Config{}, fmt.Errorf("display_name: %w", err)
+	}
 	activationConfig := activation.Config{
-		Root: file.Activation.Root, SessionRoot: file.Activation.SessionRoot, AuthorizedKeysFile: file.Activation.AuthorizedKeysFile,
+		ServerDisplayName: serverDisplayName,
+		Root:              file.Activation.Root, SessionRoot: file.Activation.SessionRoot, AuthorizedKeysFile: file.Activation.AuthorizedKeysFile,
 		AuthzFile: file.Activation.AuthzFile, DataAuthzFile: file.Repositories.DataAuthzFile, ServiceWorkingCopy: file.Activation.ServiceWorkingCopy,
 		ServiceRepository: file.Activation.ServiceRepository,
 		RepositoryName:    file.Activation.RepositoryName, ClientEntryPath: file.Activation.ClientEntryPath,
@@ -432,7 +441,7 @@ func load(path string, secrets Secrets) (Config, error) {
 		}
 	}
 	config := Config{
-		Path: path, Root: filepath.Clean(file.Root), OTPPepperFile: file.OTPPepperFile, SMTPFrom: from,
+		Path: path, Root: filepath.Clean(file.Root), ServerID: file.Invitation.ServerID, ServerDisplayName: serverDisplayName, OTPPepperFile: file.OTPPepperFile, SMTPFrom: from,
 		MessageIDDomain:  strings.ToLower(strings.TrimSpace(file.SMTP.MessageIDDomain)),
 		SMTPPasswordFile: file.SMTP.PasswordFile, SMTPCAFile: file.SMTP.CAFile,
 		WorkerPrivateKeyFile: file.WorkerPrivateKeyFile, WorkerSigner: workerSigner,

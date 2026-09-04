@@ -83,7 +83,7 @@ func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 
 	configPath := filepath.Join(base, "server.json")
 	config := map[string]any{
-		"schema": "filees.server-toolchain/v1", "root": root, "otp_pepper_file": pepperPath,
+		"schema": "filees.server-toolchain/v2", "display_name": "Serwer testowy", "root": root, "otp_pepper_file": pepperPath,
 		"operation_ttl": "1h", "otp_attempts": 3,
 		"reverse_port_first": 44000, "reverse_port_last": 44000,
 		"activation": map[string]any{
@@ -255,7 +255,8 @@ func activationConfigFor(f mobileWorkerFixture) (activation.Config, error) {
 		return activation.Config{}, err
 	}
 	return activation.Config{
-		Root: activationRoot, AuthorizedKeysFile: filepath.Join(activationRoot, "authorized_keys"),
+		ServerDisplayName: "Serwer testowy",
+		Root:              activationRoot, AuthorizedKeysFile: filepath.Join(activationRoot, "authorized_keys"),
 		AuthzFile: filepath.Join(activationRoot, "service.authz"), ServiceWorkingCopy: f.serviceWC,
 		ServiceRepository: filepath.Join(filepath.Dir(f.configPath), "service-repo"), RepositoryName: "filees-service",
 		ClientEntryPath: "/usr/local/libexec/filees/filees-client-entry", MobileEntryPath: "/usr/local/libexec/filees/filees-mobile-v1",

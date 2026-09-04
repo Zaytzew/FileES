@@ -26,7 +26,7 @@ func writeTestClientView(t *testing.T, serviceWC string, repos []clientview.Repo
 	t.Helper()
 	path := filepath.Join(serviceWC, "clients", testClientID, "view.json")
 	view := clientview.View{
-		Schema: clientview.Schema, ClientID: testClientID, RealmID: "33333333-3333-4333-8333-333333333333",
+		Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: testClientID, RealmID: "33333333-3333-4333-8333-333333333333",
 		Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", Repositories: repos,
 	}
 	if _, err := clientview.StoreIfNewer(path, view); err != nil {

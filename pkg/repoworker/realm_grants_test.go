@@ -52,7 +52,7 @@ func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 		if err := atomicJSON(filepath.Join(root, "admin", "clients", clientID+".json"), client); err != nil {
 			t.Fatal(err)
 		}
-		view := clientview.View{Schema: clientview.Schema, ClientID: clientID, RealmID: realmID, Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
+		view := clientview.View{Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: clientID, RealmID: realmID, Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}
 		if _, err := clientview.StoreIfNewer(filepath.Join(root, "clients", clientID, "view.json"), view); err != nil {
 			t.Fatal(err)
 		}
@@ -322,7 +322,7 @@ func TestSetRepositoryEditingPolicyIsOwnerOnlyAndNormalisesTheDefault(t *testing
 		t.Fatal(err)
 	}
 	ownerView := filepath.Join(root, "clients", ownerClient, "view.json")
-	if _, err := clientview.StoreIfNewer(ownerView, clientview.View{Schema: clientview.Schema, ClientID: ownerClient, RealmID: owner, Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}); err != nil {
+	if _, err := clientview.StoreIfNewer(ownerView, clientview.View{Schema: clientview.Schema, ServerDisplayName: "Serwer testowy", ClientID: ownerClient, RealmID: owner, Generation: 1, GeneratedAt: time.Now().UTC(), ClientRole: "normal", Capabilities: &clientview.Capabilities{CanCreateRepositories: true}, Repositories: []clientview.Repository{}, ActiveOperations: []json.RawMessage{}}); err != nil {
 		t.Fatal(err)
 	}
 	recordPath := filepath.Join(root, "admin", "repositories", repoID+".json")

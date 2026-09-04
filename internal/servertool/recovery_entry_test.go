@@ -69,7 +69,7 @@ func newRecoveryEntryFixture(t *testing.T) recoveryEntryFixture {
 	}
 	configPath := filepath.Join(root, "server.json")
 	config := map[string]any{
-		"schema": serverconfig.Schema, "root": filepath.Join(root, "onboarding"),
+		"schema": serverconfig.Schema, "display_name": "Serwer testowy", "root": filepath.Join(root, "onboarding"),
 		"otp_pepper_file": filepath.Join(root, "pepper"), "operation_ttl": "30m",
 		"otp_attempts": 3, "reverse_port_first": 42000, "reverse_port_last": 42000,
 		"repositories": map[string]any{"root": repositories, "results_root": results, "deletion_archive_root": archives, "url_prefix": "svn+ssh://_filees-data@filees.test/"},
@@ -77,7 +77,7 @@ func newRecoveryEntryFixture(t *testing.T) recoveryEntryFixture {
 			"server_id": "recovery-entry-test", "server_address": "filees.test:2222",
 			"known_host": "[filees.test]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		},
-		"smtp":         map[string]any{"address": "127.0.0.1:2525", "client_name": "filees.test", "from": "filees@example.test", "message_id_domain": "filees.test", "tls": "none"},
+		"smtp": map[string]any{"address": "127.0.0.1:2525", "client_name": "filees.test", "from": "filees@example.test", "message_id_domain": "filees.test", "tls": "none"},
 	}
 	raw, _ := json.Marshal(config)
 	if err := os.WriteFile(configPath, raw, 0o600); err != nil {

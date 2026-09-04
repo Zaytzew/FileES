@@ -73,6 +73,10 @@ type RepoViewModel struct {
 	RecoveryAvailable    bool
 	RecoveryPending      bool
 	CleanupError         string
+	LifecycleOperationID string
+	LifecycleError       string
+	CanRetryLifecycle    bool
+	CanAbandonLifecycle  bool
 }
 
 type PendingAction struct {
@@ -87,9 +91,12 @@ type PendingAction struct {
 	ExpectedRepoAttached      bool
 	ExpectedRepoDetached      bool
 	ExpectedRepoDeleted       bool
-	ReservationDelta          int
-	BaselineReservations      int
-	BaselineReservationsKnown bool
+	// ExpectedLifecycleOperationID fences a repair against daemon projection:
+	// the spinner remains until this exact stuck operation is no longer exposed.
+	ExpectedLifecycleOperationID string
+	ReservationDelta             int
+	BaselineReservations         int
+	BaselineReservationsKnown    bool
 }
 
 const (
@@ -350,6 +357,9 @@ func (vm ViewModel) CanDeleteRepository() bool {
 }
 func (vm ViewModel) CanAttachRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoAttachIntent) && vm.HasCap(contract.CapRepoAttachApprove)
+}
+func (vm ViewModel) CanRepairRepositoryLifecycle() bool {
+	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoLifecycleRepair)
 }
 func (vm ViewModel) CanLocateRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoLocate)

@@ -104,6 +104,18 @@ func TestRepositoryServiceProjectsUploadAndDumpActions(t *testing.T) {
 	}
 }
 
+func TestRepositoryServiceProjectsLifecycleRepairActions(t *testing.T) {
+	snapshot, ok := projectRepositorySettings(platform.SettingsDialogRequest{
+		FocusRepoID: "docs",
+		Servers: []platform.SettingsServer{{ID: "spot", Folders: []platform.SettingsFolder{{
+			ID: "docs", CanRetryLifecycle: true, CanAbandonLifecycle: true,
+		}}}},
+	})
+	if !ok || len(snapshot.Actions) != 2 || snapshot.Actions[0].ID != "retry_lifecycle" || snapshot.Actions[1].ID != "abandon_lifecycle" {
+		t.Fatalf("repair actions = ok %v snapshot %+v", ok, snapshot)
+	}
+}
+
 func TestRepositoryServiceValidatesPublicShareChoices(t *testing.T) {
 	service := newRepositoryService()
 	service.pendingShares = repositoryContextKey("spot", "docs")

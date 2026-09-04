@@ -151,6 +151,38 @@ func TestRepairInitialImportInputKeepsRepositoryAndRequests(t *testing.T) {
 	}
 }
 
+func TestAbandonInitialImportKeepsServerIdentityAndRequestReceipts(t *testing.T) {
+	store := newTestStore(t, filepath.Join(t.TempDir(), "state"))
+	opID, createReq, initialReq := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	_, _ = store.CreateValidated(opID, "client", filepath.Join(t.TempDir(), "repo"), "Repo")
+	_, _ = store.RequestRepository(opID, createReq)
+	repoID := "33333333-3333-4333-8333-333333333333"
+	repoURL := "svn+ssh://_filees-data@example/" + repoID
+	_, _ = store.ApplyRepositoryResult(result(t, opID, createReq, control.TicketCreateRepository, control.CreateRepositoryResult{RepoID: repoID, RepoURL: repoURL}))
+	_, _ = store.StartInitialCommit(opID, initialReq)
+	_, _ = store.FailInitialCommit(opID, initialReq, "INITIAL_IMPORT_FAILED", "bad path")
+
+	abandoned, err := store.AbandonInitialImport(opID, repoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if abandoned.State != StateAbandoned || abandoned.RepoID != repoID || abandoned.RepoURL != repoURL || len(abandoned.Requests) != 2 {
+		t.Fatalf("abandon lost durable server evidence: %+v", abandoned)
+	}
+	if again, err := store.AbandonInitialImport(opID, repoID); err != nil || again.State != StateAbandoned {
+		t.Fatalf("idempotent abandon=%+v err=%v", again, err)
+	}
+}
+
+func TestAbandonInitialImportRefusesUnknownOrActiveServerOutcome(t *testing.T) {
+	store := newTestStore(t, filepath.Join(t.TempDir(), "state"))
+	opID := uuid.NewString()
+	_, _ = store.CreateValidated(opID, "client", filepath.Join(t.TempDir(), "repo"), "Repo")
+	if _, err := store.AbandonInitialImport(opID, uuid.NewString()); err == nil {
+		t.Fatal("unknown server outcome was abandoned")
+	}
+}
+
 func TestStoreRejectsInvalidTransitionsAndCorruptState(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "state")
 	store := newTestStore(t, root)

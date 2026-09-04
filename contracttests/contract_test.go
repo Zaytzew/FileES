@@ -212,6 +212,7 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapRepoDetach:             true,
 		contract.CapRepoDelete:             true,
 		contract.CapRepoLifecycleStatus:    true,
+		contract.CapRepoLifecycleRepair:    true,
 		contract.CapRepoPublish:            true,
 		contract.CapNoticeList:             true,
 		contract.CapNoticeAck:              true,

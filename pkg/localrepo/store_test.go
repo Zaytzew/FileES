@@ -466,6 +466,96 @@ func TestStorePersistsAndCompletesLocalDetach(t *testing.T) {
 	}
 }
 
+func TestRepairRetriesSameDurableRepositoryOperation(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opID, repoID := uuid.NewString(), uuid.NewString()
+	wc := filepath.Join(t.TempDir(), "wc")
+	record, err := store.BeginCreateOperation(opID, "office", "Docs", wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkRepositoryCreated(opID, repoID, "svn+ssh://example/"+repoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkError(opID, errors.New("initial import failed")); err != nil {
+		t.Fatal(err)
+	}
+	retried, err := store.Retry(opID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.OperationID != record.OperationID || retried.RepoID != repoID || retried.LocalPath != wc || retried.State != StateRepositoryCreated || retried.LastError != "" {
+		t.Fatalf("retry changed durable identity: %+v", retried)
+	}
+}
+
+func TestRepairAbandonReleasesAttachIdentityWithoutDeletingData(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	wc := filepath.Join(t.TempDir(), "wc")
+	if err := os.MkdirAll(wc, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	userFile := filepath.Join(wc, "projekt.dwg")
+	if err := os.WriteFile(userFile, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.BeginAttach("office", repoID, wc, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ApproveAttach(record.OperationID, "office", repoID, "svn+ssh://example/"+repoID, "rw"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkError(record.OperationID, errors.New("checkout failed")); err != nil {
+		t.Fatal(err)
+	}
+	abandoned, err := store.Abandon(record.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if abandoned.State != StateAbandoned || abandoned.LastError != "" {
+		t.Fatalf("abandoned=%+v", abandoned)
+	}
+	if raw, err := os.ReadFile(userFile); err != nil || string(raw) != "keep" {
+		t.Fatalf("abandon changed user data: %q, %v", raw, err)
+	}
+	if _, err := store.BeginAttach("office", repoID, wc, false); err != nil {
+		t.Fatalf("abandoned identity still blocks a new operation: %v", err)
+	}
+}
+
+func TestRepairCannotAbandonForwardOnlyDetach(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoID := uuid.NewString()
+	record, _, err := store.EnsureConfiguredAttached("office", repoID, "svn+ssh://example/"+repoID, "rw", filepath.Join(t.TempDir(), "wc"), "Docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BeginDetach("office", repoID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordDetachError(record.OperationID, errors.New("wc.db busy")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Abandon(record.OperationID); err == nil {
+		t.Fatal("forward-only detach was abandoned")
+	}
+	retried, err := store.Retry(record.OperationID)
+	if err != nil || retried.State != StateDetaching || retried.LastError != "" {
+		t.Fatalf("detach retry=%+v err=%v", retried, err)
+	}
+}
+
 func TestStoreDeletionRetryKeepsSameDurableOperation(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

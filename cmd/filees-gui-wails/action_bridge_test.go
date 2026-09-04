@@ -18,6 +18,19 @@ import (
 
 type pendingDeleteClient struct{}
 
+type lifecycleRepairClientStub struct {
+	payload contract.RepoLifecycleRepairPayload
+	result  *contract.RepoLifecycleResult
+}
+
+func (stub *lifecycleRepairClientStub) RepoLifecycleRepair(_ context.Context, payload contract.RepoLifecycleRepairPayload) (*contract.RepoLifecycleResult, error) {
+	stub.payload = payload
+	if stub.result != nil {
+		return stub.result, nil
+	}
+	return &contract.RepoLifecycleResult{OperationID: payload.OperationID, ServerID: payload.ServerID, RepoID: payload.RepoID, State: "repository_created"}, nil
+}
+
 type shoutClientStub struct {
 	repoID, comment, noticeID string
 }
@@ -222,6 +235,21 @@ func TestRepositoryDetachAdapterAcceptsDurableServerDeletion(t *testing.T) {
 	adapter := repositoryDetachAdapter{client: pendingDeleteClient{}}
 	if err := adapter.DetachRepository(t.Context(), "office", "repo-1", true); err != nil {
 		t.Fatalf("durable server deletion rejected while recovery is pending: %v", err)
+	}
+}
+
+func TestRepositoryLifecycleRepairAdapterPreservesFenceAndStrategy(t *testing.T) {
+	client := &lifecycleRepairClientStub{}
+	state, err := (repositoryLifecycleRepairAdapter{client: client}).RepairRepositoryLifecycle(t.Context(), "op-current", "office", "repo-1", "retry")
+	if err != nil || state != "repository_created" {
+		t.Fatalf("repair state=%q err=%v", state, err)
+	}
+	if client.payload.OperationID != "op-current" || client.payload.ServerID != "office" || client.payload.RepoID != "repo-1" || client.payload.Strategy != "retry" {
+		t.Fatalf("repair payload=%+v", client.payload)
+	}
+	client.result = &contract.RepoLifecycleResult{OperationID: "op-stale", ServerID: "office", RepoID: "repo-1", State: "repository_created"}
+	if _, err := (repositoryLifecycleRepairAdapter{client: client}).RepairRepositoryLifecycle(t.Context(), "op-current", "office", "repo-1", "retry"); err == nil {
+		t.Fatal("adapter accepted a result for another durable operation")
 	}
 }
 

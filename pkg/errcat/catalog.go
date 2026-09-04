@@ -190,6 +190,8 @@ var specs = []Spec{
 	{"REPO-2013", "repo.local_cleanup_pending", SevError, HintRetry, nil, "Repository was deleted on the server; local working-copy cleanup is pending", "Repozytorium usunięto z serwera; czyszczenie lokalnych metadanych kopii roboczej oczekuje na ponowienie"},
 	{"REPO-2013", "repo.load_dump_forbidden", SevError, HintNone, nil, "Load-dump is forbidden", "Odtwarzanie z archiwum jest niedozwolone dla tego repozytorium"},
 	{"REPO-2014", "repo.load_dump_failed", SevError, HintRequireAction, nil, "Load-dump failed", "Odtwarzanie z archiwum nie powiodło się"},
+	{"REPO-2015", "repo.lifecycle_repair_forbidden", SevError, HintNone, nil, "Repository lifecycle repair is forbidden for the current durable state", "Tej niedokończonej operacji nie można naprawić w wybrany sposób"},
+	{"REPO-2016", "repo.lifecycle_repair_failed", SevError, HintRequireAction, []string{"detail"}, "Repository lifecycle repair failed", "Nie udało się naprawić niedokończonej operacji na folderze"},
 	{"REPO-3001", "repo.activity_unavailable", SevError, HintNone, nil, "Activity journal is not available", "Dziennik aktywności jest teraz niedostępny"},
 
 	{"MOBILE-0001", "mobile_pairing.unavailable", SevError, HintRetry, nil, "Mobile pairing is not available", "Parowanie urządzenia mobilnego jest teraz niedostępne"},

@@ -24,6 +24,8 @@ var settingsActionCatalog = []settingsActionSpec{
 	{SettingsDialogAddFolder, "add_folder", "add", "Dodaj folder do FileES", false, false},
 	{SettingsDialogConnectRepos, "connect_repositories", "connect", "Połącz z istniejącymi udziałami strefy", true, true},
 	{SettingsDialogLocateFolder, "locate_folder", "locate", "Wskaż przeniesioną kopię roboczą", true, false},
+	{SettingsDialogRetryLifecycle, "retry_lifecycle", "retry_lifecycle", "Ponów niedokończone działanie", true, false},
+	{SettingsDialogAbandonLifecycle, "abandon_lifecycle", "abandon_lifecycle", "Zakończ starą próbę lokalną", true, false},
 	{SettingsDialogManageGrants, "manage_grants", "manage_grants", "Uprawnienia gości", true, false},
 	{SettingsDialogEditingPolicy, "editing_policy", "editing_policy", "Zasady edycji", true, false},
 	{SettingsDialogPublicShares, "public_shares", "public_shares", "Udostępnienia publiczne", true, false},
@@ -144,6 +146,10 @@ func folderAllowsSettingsAction(folder SettingsFolder, action SettingsDialogActi
 		return folder.CanDelete
 	case SettingsDialogLoadDump:
 		return folder.CanLoadDump
+	case SettingsDialogRetryLifecycle:
+		return folder.CanRetryLifecycle
+	case SettingsDialogAbandonLifecycle:
+		return folder.CanAbandonLifecycle
 	default:
 		return false
 	}
@@ -163,6 +169,10 @@ func settingsActionFromID(id string) SettingsDialogAction {
 		return SettingsDialogDeleteRepo
 	case "load_dump", "Odtwórz z archiwum":
 		return SettingsDialogLoadDump
+	case "retry_lifecycle":
+		return SettingsDialogRetryLifecycle
+	case "abandon_lifecycle":
+		return SettingsDialogAbandonLifecycle
 	case "manage_grants":
 		return SettingsDialogManageGrants
 	case "editing_policy":

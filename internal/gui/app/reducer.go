@@ -282,6 +282,8 @@ func (s appState) viewModel() ViewModel {
 			ServerDeleted:        sum.ServerDeleted, LocalCleanupPending: sum.LocalCleanupPending,
 			RetainUntil: sum.RetainUntil, RecoveryOperationID: sum.RecoveryOperationID,
 			RecoveryAvailable: sum.RecoveryAvailable, RecoveryPending: sum.RecoveryPending, CleanupError: sum.CleanupError,
+			LifecycleOperationID: sum.LifecycleOperationID, LifecycleError: sum.LifecycleError,
+			CanRetryLifecycle: sum.CanRetryLifecycle, CanAbandonLifecycle: sum.CanAbandonLifecycle,
 		})
 	}
 	serverByID := make(map[string]ServerViewModel, len(s.system.Activations))
@@ -556,6 +558,21 @@ func (s appState) confirmPendingActions(ids []string) (appState, []string) {
 		if action.ExpectedRepoDeleted {
 			summary, exists := s.summaries[action.RepoID]
 			if !exists || summary.ServerID != action.ServerID || summary.ServerDeleted {
+				confirmed = append(confirmed, id)
+			} else {
+				waiting = append(waiting, id)
+			}
+			continue
+		}
+		if action.ExpectedLifecycleOperationID != "" {
+			summary, exists := s.summaries[action.RepoID]
+			if !exists || summary.ServerID != action.ServerID || summary.LifecycleOperationID != action.ExpectedLifecycleOperationID {
+				confirmed = append(confirmed, id)
+			} else if summary.LifecycleError != "" {
+				// Repair actions enter the reducer only after the daemon has
+				// acknowledged them and cleared the old error behind the exact
+				// operation fence. Seeing an error here therefore means the
+				// resumed worker reached a new actionable failure.
 				confirmed = append(confirmed, id)
 			} else {
 				waiting = append(waiting, id)

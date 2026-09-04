@@ -124,6 +124,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoDetach(req, true)
 	case contract.CmdRepoLifecycleStatus:
 		return s.handleRepoLifecycleStatus(req)
+	case contract.CmdRepoLifecycleRepair:
+		return s.handleRepoLifecycleRepair(req)
 	case contract.CmdErrorList:
 		return s.handleErrorList(req)
 	case contract.CmdRepoLock:
@@ -1209,6 +1211,50 @@ func (s *Server) handleRepoLifecycleStatus(req contract.Request) contract.Respon
 	result, err := service.Status(payload.OperationID)
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "REPO-2008", "ERROR", "NONE", "repo.lifecycle_operation_not_found", nil)
+	}
+	return contract.OKResponse(req.RequestID, result)
+}
+
+func (s *Server) handleRepoLifecycleRepair(req contract.Request) contract.Response {
+	service := s.repositoryLifecycleService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "REPO-0001", "ERROR", "RETRY", "repo.lifecycle_unavailable", nil)
+	}
+	var payload contract.RepoLifecycleRepairPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	payload.OperationID = strings.TrimSpace(payload.OperationID)
+	payload.ServerID = strings.TrimSpace(payload.ServerID)
+	payload.RepoID = strings.TrimSpace(payload.RepoID)
+	payload.Strategy = strings.TrimSpace(payload.Strategy)
+	rs := s.repoByID(payload.RepoID)
+	if rs == nil || rs.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	summary := rs.Summary()
+	if payload.OperationID == "" || payload.OperationID != summary.LifecycleOperationID {
+		return contract.ErrResponse(req.RequestID, "REPO-2008", "ERROR", "NONE", "repo.lifecycle_operation_not_found", nil)
+	}
+	if (payload.Strategy == "retry" && !summary.CanRetryLifecycle) ||
+		(payload.Strategy == "abandon" && !summary.CanAbandonLifecycle) ||
+		(payload.Strategy != "retry" && payload.Strategy != "abandon") {
+		return contract.ErrResponse(req.RequestID, "REPO-2015", "ERROR", "NONE", "repo.lifecycle_repair_forbidden", nil)
+	}
+	// Publish an in-progress fence before the worker can run. A successful
+	// retry keeps this operation ID visible until the durable workflow reaches
+	// its next terminal projection; a synchronous failure restores the prior
+	// repair offer.
+	rs.SetLifecycleRepairMetadata(payload.OperationID, "", false, false)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	result, err := service.Repair(ctx, payload.OperationID, payload.ServerID, payload.RepoID, payload.Strategy)
+	if err != nil {
+		rs.SetLifecycleRepairMetadata(summary.LifecycleOperationID, summary.LifecycleError, summary.CanRetryLifecycle, summary.CanAbandonLifecycle)
+		return contract.ErrResponse(req.RequestID, "REPO-2016", "ERROR", "REQUIRE_ACTION", "repo.lifecycle_repair_failed", map[string]string{"detail": err.Error()})
+	}
+	if payload.Strategy == "abandon" {
+		rs.SetLifecycleRepairMetadata("", "", false, false)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

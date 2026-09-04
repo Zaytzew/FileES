@@ -64,6 +64,25 @@ func TestBuildSettingsWizardConnectListsOnlyConnectableShares(t *testing.T) {
 	}
 }
 
+func TestBuildSettingsWizardOffersOnlyAdvertisedLifecycleRepairs(t *testing.T) {
+	wizard := BuildSettingsWizard(SettingsDialogRequest{Servers: []SettingsServer{{
+		ID: "office",
+		Folders: []SettingsFolder{
+			{ID: "retry", Name: "Retry", CanRetryLifecycle: true},
+			{ID: "abandon", Name: "Abandon", CanAbandonLifecycle: true},
+			{ID: "healthy", Name: "Healthy"},
+		},
+	}}})
+	retry := mustAction(t, wizard.Servers[0], "retry_lifecycle")
+	if len(retry.Folders) != 1 || retry.Folders[0].ID != "retry" {
+		t.Fatalf("retry folders=%+v", retry.Folders)
+	}
+	abandon := mustAction(t, wizard.Servers[0], "abandon_lifecycle")
+	if len(abandon.Folders) != 1 || abandon.Folders[0].ID != "abandon" {
+		t.Fatalf("abandon folders=%+v", abandon.Folders)
+	}
+}
+
 func actionIDs(server SettingsWizardServer) []string {
 	ids := make([]string, 0, len(server.Actions))
 	for _, action := range server.Actions {

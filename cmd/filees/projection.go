@@ -88,6 +88,7 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	}
 	ipc.SetLockReleaseProjection(serverID, projectLockReleaseRequests(serverID, view.LockReleaseRequests))
 	pendingCreates := pendingRepositoryCreations(serverID, lifecycle)
+	repairs := repairableRepositoryLifecycle(serverID, lifecycle)
 	projected := make([]ipcserver.ProjectedRepo, 0, len(view.Repositories))
 	for _, repo := range view.Repositories {
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
@@ -102,7 +103,20 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 				state = contract.StateInitializing
 			}
 		}
-		projected = append(projected, ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: state, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, EditingPolicy: repo.EditingPolicy, Purpose: repo.Purpose, Attached: attached, PendingLocalPath: pendingPath})
+		projectedRepo := ipcserver.ProjectedRepo{ID: repo.RepoID, DisplayName: repo.DisplayName, URL: repo.URL, Access: repo.Access, State: state, OwnerRealmID: repo.OwnerRealmID, AttachmentPolicy: repo.AttachmentPolicy, EditingPolicy: repo.EditingPolicy, Purpose: repo.Purpose, Attached: attached, PendingLocalPath: pendingPath}
+		if repair, ok := repairs[repo.RepoID]; ok {
+			projectedRepo.LifecycleOperationID = repair.record.OperationID
+			projectedRepo.LifecycleError = repair.record.LastError
+			projectedRepo.CanRetryLifecycle = repair.canRetry
+			projectedRepo.CanAbandonLifecycle = repair.canAbandon
+			if !attached {
+				projectedRepo.PendingLocalPath = repair.record.LocalPath
+				if repair.record.LastError != "" {
+					projectedRepo.State = contract.StateInteractionRequired
+				}
+			}
+		}
+		projected = append(projected, projectedRepo)
 	}
 	for _, key := range unprojectedLocalKeys(serverID, view, attachments) {
 		repo := attachments[key].config
@@ -124,7 +138,7 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 				continue
 			}
 			name := deletedRepositoryName(record)
-			projected = append(projected, ipcserver.ProjectedRepo{
+			projectedRepo := ipcserver.ProjectedRepo{
 				ID: record.RepoID, DisplayName: name, State: "deleted", OwnerRealmID: view.RealmID,
 				Attached: false, PendingLocalPath: record.LocalPath, ServerDeleted: true,
 				LocalCleanupPending: cleanupPending, RetainUntil: record.RetainUntil,
@@ -132,7 +146,14 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 				RecoveryAvailable:   record.RecoveryPrepared && record.RecoveryKitPath != "" && retainErr == nil && now.Before(retainUntil),
 				RecoveryPending:     !record.RecoveryPrepared && retainErr == nil && now.Before(retainUntil),
 				CleanupError:        record.LastError,
-			})
+			}
+			if repair, ok := repairs[record.RepoID]; ok {
+				projectedRepo.LifecycleOperationID = repair.record.OperationID
+				projectedRepo.LifecycleError = repair.record.LastError
+				projectedRepo.CanRetryLifecycle = repair.canRetry
+				projectedRepo.CanAbandonLifecycle = repair.canAbandon
+			}
+			projected = append(projected, projectedRepo)
 		}
 	}
 	ipc.ReconcileProjectedRepos(serverID, projected)
@@ -166,6 +187,52 @@ func pendingRepositoryCreations(serverID string, lifecycle *localrepo.Store) map
 		}
 	}
 	return pending
+}
+
+type lifecycleRepairProjection struct {
+	record     localrepo.Record
+	canRetry   bool
+	canAbandon bool
+}
+
+func repairableRepositoryLifecycle(serverID string, lifecycle *localrepo.Store) map[string]lifecycleRepairProjection {
+	result := make(map[string]lifecycleRepairProjection)
+	if lifecycle == nil {
+		return result
+	}
+	for _, record := range lifecycle.List() {
+		if record.ServerID != serverID || record.RepoID == "" {
+			continue
+		}
+		candidate := lifecycleRepairProjection{record: record}
+		switch record.State {
+		case localrepo.StateRepositoryCreated:
+			if record.LastError != "" {
+				candidate.canRetry, candidate.canAbandon = true, true
+			}
+		case localrepo.StateError:
+			if record.LastError == "" {
+				continue
+			}
+			candidate.canRetry = record.RepoURL != "" && (record.Access == "r" || record.Access == "rw")
+			candidate.canAbandon = true
+		case localrepo.StateAttaching:
+			// Kept without actions while an accepted retry is running, so the
+			// GUI's operation fence cannot finish before the worker does.
+		case localrepo.StateDetaching:
+			candidate.canRetry = record.LastError != ""
+		case localrepo.StateDeleting:
+			// runDetach fences the remote mutation with the durable delete
+			// receipt; later retries advance only recovery and local cleanup.
+			candidate.canRetry = record.LastError != ""
+		default:
+			continue
+		}
+		if previous, ok := result[record.RepoID]; !ok || record.UpdatedAt.After(previous.record.UpdatedAt) {
+			result[record.RepoID] = candidate
+		}
+	}
+	return result
 }
 
 func repositoryReadiness(serverID string, view clientview.View, attachments map[reposupervisor.Key]repoRuntime) (bool, int) {

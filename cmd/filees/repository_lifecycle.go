@@ -25,6 +25,7 @@ type repositoryLifecycleService struct {
 	onRelocate    func(string)
 	onDetach      func(context.Context, string) (localrepo.Record, error)
 	onLoadDump    func(string)
+	onRepair      func(context.Context, string, string) (localrepo.Record, error)
 }
 
 func (service repositoryLifecycleService) BeginRelocate(serverID, repoID, newLocalPath string) (contract.RepoLifecycleResult, error) {
@@ -172,6 +173,24 @@ func (service repositoryLifecycleService) Status(operationID string) (contract.R
 	return lifecycleResult(record), nil
 }
 
+func (service repositoryLifecycleService) Repair(ctx context.Context, operationID, serverID, repoID, strategy string) (contract.RepoLifecycleResult, error) {
+	record, ok := service.store.Get(operationID)
+	if !ok {
+		return contract.RepoLifecycleResult{}, os.ErrNotExist
+	}
+	if record.ServerID != serverID || record.RepoID != repoID {
+		return contract.RepoLifecycleResult{}, errors.New("repository lifecycle repair target does not match the durable operation")
+	}
+	if strategy != "retry" && strategy != "abandon" {
+		return contract.RepoLifecycleResult{}, errors.New("repository lifecycle repair strategy is invalid")
+	}
+	if service.onRepair == nil {
+		return contract.RepoLifecycleResult{}, errors.New("repository lifecycle repair executor is unavailable")
+	}
+	record, err := service.onRepair(ctx, operationID, strategy)
+	return lifecycleResult(record), err
+}
+
 func (service repositoryLifecycleService) BeginAttach(serverID, repoID, localPath string, required bool) (contract.RepoLifecycleResult, error) {
 	check, err := provisioning.PreflightLocalPath(localPath, provisioning.LocalPathAttach, service.allRoots())
 	if err != nil {
@@ -196,8 +215,8 @@ func (service repositoryLifecycleService) ApproveAttach(operationID, serverID, r
 }
 
 // allRoots lists local paths that must not be nested inside a new
-// repository's target. A record in StateError never reached a live
-// checkout or attachment — it claims no real resource — so it is excluded;
+// repository's target. Records in StateError or StateAbandoned claim no live
+// checkout or attachment, so they are excluded;
 // otherwise one failed attempt (e.g. a transient STORAGE_INSUFFICIENT that
 // later clears server-side) would permanently block every future attempt at
 // the same path. Genuine leftover Subversion metadata on disk is still
@@ -210,7 +229,7 @@ func (service repositoryLifecycleService) allRootsExcept(operationID string) []s
 	roots := append([]string{}, service.existingRoots...)
 	if service.store != nil {
 		for _, record := range service.store.List() {
-			if record.OperationID == operationID || record.State == localrepo.StateError || record.State == localrepo.StateDetached || record.State == localrepo.StateDeleted {
+			if record.OperationID == operationID || record.State == localrepo.StateError || record.State == localrepo.StateAbandoned || record.State == localrepo.StateDetached || record.State == localrepo.StateDeleted {
 				continue
 			}
 			roots = append(roots, record.LocalPath)

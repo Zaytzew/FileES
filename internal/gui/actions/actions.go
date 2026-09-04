@@ -105,6 +105,10 @@ type RepositoryDetacher interface {
 	DetachRepository(context.Context, string, string, bool) error
 }
 
+type RepositoryLifecycleRepairer interface {
+	RepairRepositoryLifecycle(context.Context, string, string, string, string) (string, error)
+}
+
 // RepositoryDumpLoader triggers LOAD_REPOSITORY_DUMP for a repository whose
 // only history so far is the carrier commit the user just made
 // (LOAD_REPOSITORY_DUMP_CONCEPT.md). No options are exposed here yet - the
@@ -305,6 +309,7 @@ type Config struct {
 	RepositoryAttacher   RepositoryAttacher
 	RepositoryLocator    RepositoryLocator
 	RepositoryDetacher   RepositoryDetacher
+	RepositoryRepairer   RepositoryLifecycleRepairer
 	RepositoryDumpLoader RepositoryDumpLoader
 	ServerDetacher       ServerDetacher
 	RealmRemover         RealmRemover
@@ -573,6 +578,10 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			c.startDetachRepository(ctx, result.ServerID, result.RepoID, true)
 		case platform.SettingsDialogLoadDump:
 			c.startLoadDump(ctx, result.ServerID, result.RepoID)
+		case platform.SettingsDialogRetryLifecycle:
+			c.startRepairRepositoryLifecycle(ctx, result.ServerID, result.RepoID, "retry")
+		case platform.SettingsDialogAbandonLifecycle:
+			c.startRepairRepositoryLifecycle(ctx, result.ServerID, result.RepoID, "abandon")
 		case platform.SettingsDialogManageGrants:
 			c.startManageRealmGrants(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogEditingPolicy:
@@ -837,9 +846,87 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanDetach:               repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
 			CanDelete:               repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
 			CanLoadDump:             repo.Attached && ownedAndCreatable,
+			CanRetryLifecycle:       vm.CanRepairRepositoryLifecycle() && repo.CanRetryLifecycle && repo.LifecycleOperationID != "",
+			CanAbandonLifecycle:     vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
 		})
 	}
 	return row, hadPending
+}
+
+func (c *Controller) startRepairRepositoryLifecycle(ctx context.Context, serverID, repoID, strategy string) {
+	key := "repair-lifecycle:" + serverID + ":" + repoID
+	if serverID == "" || repoID == "" || c.cfg.RepositoryRepairer == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		repo, ok := findRepo(vm, repoID)
+		if !ok || repo.ServerID != serverID || repo.LifecycleOperationID == "" || !vm.CanRepairRepositoryLifecycle() {
+			return
+		}
+		allowed := (strategy == "retry" && repo.CanRetryLifecycle) || (strategy == "abandon" && repo.CanAbandonLifecycle)
+		if !allowed {
+			return
+		}
+		if strategy == "abandon" {
+			if c.cfg.Prompter == nil {
+				return
+			}
+			name := firstNonBlank(repo.DisplayName, repo.ID)
+			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+				Title:       "Zakończ starą próbę lokalną",
+				Text:        name + "\n" + repo.LocalPath + "\n\nFileES zachowa wszystkie pliki i nie zmieni repozytorium na serwerze. Jeśli pozostawiona kopia robocza daje się jednoznacznie potwierdzić, zostanie ponownie przyjęta; w przeciwnym razie repozytorium wróci do stanu gotowego do wskazania lokalizacji.",
+				ConfirmText: "Zakończ próbę", CancelText: "Anuluj",
+			})
+			if err != nil || !confirmed {
+				return
+			}
+		}
+		latest := c.cfg.ViewModel()
+		current, currentOK := findRepo(latest, repoID)
+		if !currentOK || current.ServerID != serverID || current.LifecycleOperationID != repo.LifecycleOperationID || !latest.CanRepairRepositoryLifecycle() {
+			return
+		}
+		if (strategy == "retry" && !current.CanRetryLifecycle) || (strategy == "abandon" && !current.CanAbandonLifecycle) {
+			return
+		}
+		repo = current
+		label := "Ponawianie działania"
+		if strategy == "abandon" {
+			label = "Kończenie starej próby"
+		}
+		state, err := c.cfg.RepositoryRepairer.RepairRepositoryLifecycle(ctx, repo.LifecycleOperationID, serverID, repoID, strategy)
+		if err != nil {
+			c.reportActionError(ctx, key, "Nie udało się naprawić lokalnego stanu folderu", actionErrorBody(err))
+			return
+		}
+		// The daemon has now durably accepted the repair and replaced the old
+		// error projection with an in-progress operation fence. Starting the
+		// presentation barrier here prevents an unchanged pre-request snapshot
+		// from being mistaken for a new asynchronous failure.
+		actionID := c.startProjectedAction(app.PendingAction{
+			Kind: "repair_repository_lifecycle", ServerID: serverID, RepoID: repoID, Label: label,
+			ExpectedLifecycleOperationID: repo.LifecycleOperationID,
+		})
+		c.awaitProjectedAction(actionID)
+		title := "Ponowienie działania uruchomione"
+		body := firstNonBlank(repo.DisplayName, repo.ID)
+		if strategy == "abandon" {
+			title = "Stara próba lokalna zakończona"
+			if state == "attached" {
+				body += " — istniejąca kopia robocza została ponownie przyjęta"
+			} else {
+				body += " — można wskazać lokalizację ponownie"
+			}
+		}
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: platform.UrgencyNormal})
+		if actionID == "" && c.cfg.Refresh != nil {
+			c.cfg.Refresh()
+		}
+	}()
 }
 
 func (c *Controller) startLocateRepository(ctx context.Context, serverID, repoID string) {

@@ -2,6 +2,7 @@ package actions_test
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,17 @@ type fakeRepositoryDetacher struct{ calls chan detachCall }
 func (fake *fakeRepositoryDetacher) DetachRepository(_ context.Context, serverID, repoID string, deleteRepository bool) error {
 	fake.calls <- detachCall{serverID: serverID, repoID: repoID, deleteRepository: deleteRepository}
 	return nil
+}
+
+type repairCall struct {
+	operationID, serverID, repoID, strategy string
+}
+
+type fakeRepositoryLifecycleRepairer struct{ calls chan repairCall }
+
+func (fake *fakeRepositoryLifecycleRepairer) RepairRepositoryLifecycle(_ context.Context, operationID, serverID, repoID, strategy string) (string, error) {
+	fake.calls <- repairCall{operationID: operationID, serverID: serverID, repoID: repoID, strategy: strategy}
+	return "repository_created", nil
 }
 
 type loadDumpCall struct{ serverID, repoID string }
@@ -159,6 +171,64 @@ func TestControllerSettingsRoutesFolderDetachThroughExistingConfirmation(t *test
 	}
 	if len(platformFake.Snapshot().ConfirmRequests) != 1 {
 		t.Fatalf("settings detach bypassed confirmation: %#v", platformFake.Snapshot())
+	}
+}
+
+func TestControllerSettingsRetriesExactProjectedLifecycleOperation(t *testing.T) {
+	repairer := &fakeRepositoryLifecycleRepairer{calls: make(chan repairCall, 1)}
+	lifecycle := newRecordingActionLifecycle()
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogRetryLifecycle, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+	}
+	view := lifecycleView(contract.CapRepoLifecycleRepair)
+	view.Repos[0].LifecycleOperationID = "op-current"
+	view.Repos[0].LifecycleError = "initial import failed"
+	view.Repos[0].CanRetryLifecycle = true
+	view.Servers[0].Repos[0] = view.Repos[0]
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, Prompter: platformFake, RepositoryRepairer: repairer, ActionLifecycle: lifecycle})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	call := awaitCh(t, repairer.calls, "lifecycle retry")
+	if call.operationID != "op-current" || call.serverID != "office" || call.repoID != "repo-1" || call.strategy != "retry" {
+		t.Fatalf("repair call=%+v", call)
+	}
+	started := awaitCh(t, lifecycle.started, "repair action")
+	if started.ExpectedLifecycleOperationID != "op-current" || started.ServerID != "office" || started.RepoID != "repo-1" {
+		t.Fatalf("repair pending action=%+v", started)
+	}
+	if awaited := awaitCh(t, lifecycle.awaited, "repair projection fence"); awaited != started.ID {
+		t.Fatalf("awaited=%q want=%q", awaited, started.ID)
+	}
+	if len(platformFake.Snapshot().ConfirmRequests) != 0 {
+		t.Fatal("safe retry unexpectedly requested destructive confirmation")
+	}
+}
+
+func TestControllerSettingsConfirmsLocalLifecycleAbandon(t *testing.T) {
+	repairer := &fakeRepositoryLifecycleRepairer{calls: make(chan repairCall, 1)}
+	platformFake := &platformtest.Fake{
+		SettingsFunc: func(context.Context, platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
+			return platform.SettingsDialogResult{Action: platform.SettingsDialogAbandonLifecycle, ServerID: "office", RepoID: "repo-1"}, nil
+		},
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := lifecycleView(contract.CapRepoLifecycleRepair)
+	view.Repos[0].LifecycleOperationID = "op-current"
+	view.Repos[0].LifecycleError = "checkout failed"
+	view.Repos[0].CanAbandonLifecycle = true
+	view.Servers[0].Repos[0] = view.Repos[0]
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), SettingsBrowser: platformFake, Prompter: platformFake, RepositoryRepairer: repairer})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
+	call := awaitCh(t, repairer.calls, "lifecycle abandon")
+	if call.operationID != "op-current" || call.strategy != "abandon" {
+		t.Fatalf("repair call=%+v", call)
+	}
+	confirmations := platformFake.Snapshot().ConfirmRequests
+	if len(confirmations) != 1 || !strings.Contains(confirmations[0].Text, "zachowa wszystkie pliki") {
+		t.Fatalf("abandon confirmation=%+v", confirmations)
 	}
 }
 

@@ -20,26 +20,30 @@ import (
 type RepoState struct {
 	mu sync.RWMutex
 
-	server              *Server // for auto-emitting state-change events
-	id                  string
-	url                 string
-	localPath           string
-	serverID            string
-	access              string
-	displayName         string
-	attached            bool
-	ownerRealmID        string
-	attachmentPolicy    string
-	editingPolicy       string
-	purpose             string
-	projectedState      string
-	serverDeleted       bool
-	localCleanupPending bool
-	retainUntil         string
-	recoveryOperationID string
-	recoveryAvailable   bool
-	recoveryPending     bool
-	cleanupError        string
+	server               *Server // for auto-emitting state-change events
+	id                   string
+	url                  string
+	localPath            string
+	serverID             string
+	access               string
+	displayName          string
+	attached             bool
+	ownerRealmID         string
+	attachmentPolicy     string
+	editingPolicy        string
+	purpose              string
+	projectedState       string
+	serverDeleted        bool
+	localCleanupPending  bool
+	retainUntil          string
+	recoveryOperationID  string
+	recoveryAvailable    bool
+	recoveryPending      bool
+	cleanupError         string
+	lifecycleOperationID string
+	lifecycleError       string
+	canRetryLifecycle    bool
+	canAbandonLifecycle  bool
 
 	state        string // contract.State*
 	connectivity string // contract.Conn*
@@ -145,6 +149,15 @@ func (rs *RepoState) SetDeletionMetadata(serverDeleted, cleanupPending bool, ret
 	rs.recoveryAvailable = recoveryAvailable
 	rs.recoveryPending = recoveryPending
 	rs.cleanupError = cleanupError
+	rs.mu.Unlock()
+}
+
+func (rs *RepoState) SetLifecycleRepairMetadata(operationID, lifecycleError string, canRetry, canAbandon bool) {
+	rs.mu.Lock()
+	rs.lifecycleOperationID = operationID
+	rs.lifecycleError = lifecycleError
+	rs.canRetryLifecycle = canRetry
+	rs.canAbandonLifecycle = canAbandon
 	rs.mu.Unlock()
 }
 
@@ -553,7 +566,9 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 		ServerDeleted:    rs.serverDeleted, LocalCleanupPending: rs.localCleanupPending,
 		RetainUntil: rs.retainUntil, RecoveryOperationID: rs.recoveryOperationID,
 		RecoveryAvailable: rs.recoveryAvailable, RecoveryPending: rs.recoveryPending, CleanupError: rs.cleanupError,
-		Purpose: rs.purpose,
+		Purpose:              rs.purpose,
+		LifecycleOperationID: rs.lifecycleOperationID, LifecycleError: rs.lifecycleError,
+		CanRetryLifecycle: rs.canRetryLifecycle, CanAbandonLifecycle: rs.canAbandonLifecycle,
 	}
 }
 

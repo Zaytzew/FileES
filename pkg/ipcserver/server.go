@@ -134,6 +134,7 @@ type RepositoryLifecycleService interface {
 	BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error)
 	BeginDetach(context.Context, string, string, bool) (contract.RepoLifecycleResult, error)
 	Status(operationID string) (contract.RepoLifecycleResult, error)
+	Repair(context.Context, string, string, string, string) (contract.RepoLifecycleResult, error)
 }
 
 type SystemLifecycleService interface {
@@ -653,6 +654,7 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 			state.SetPendingLocalPath(repo.PendingLocalPath)
 		}
 		state.SetDeletionMetadata(repo.ServerDeleted, repo.LocalCleanupPending, repo.RetainUntil, repo.RecoveryOperationID, repo.RecoveryAvailable, repo.RecoveryPending, repo.CleanupError)
+		state.SetLifecycleRepairMetadata(repo.LifecycleOperationID, repo.LifecycleError, repo.CanRetryLifecycle, repo.CanAbandonLifecycle)
 		state.SetEditingPolicy(repo.EditingPolicy)
 		state.SetPurpose(repo.Purpose)
 	}
@@ -698,17 +700,19 @@ func (s *Server) RepoState(serverID, repoID string) *RepoState {
 }
 
 type ProjectedRepo struct {
-	ID, DisplayName, URL, Access, State string
-	OwnerRealmID, AttachmentPolicy      string
-	EditingPolicy                       string
-	Purpose                             string
-	Attached                            bool
-	PendingLocalPath                    string
-	ServerDeleted, LocalCleanupPending  bool
-	RetainUntil, RecoveryOperationID    string
-	RecoveryAvailable                   bool
-	RecoveryPending                     bool
-	CleanupError                        string
+	ID, DisplayName, URL, Access, State    string
+	OwnerRealmID, AttachmentPolicy         string
+	EditingPolicy                          string
+	Purpose                                string
+	Attached                               bool
+	PendingLocalPath                       string
+	ServerDeleted, LocalCleanupPending     bool
+	RetainUntil, RecoveryOperationID       string
+	RecoveryAvailable                      bool
+	RecoveryPending                        bool
+	CleanupError                           string
+	LifecycleOperationID, LifecycleError   string
+	CanRetryLifecycle, CanAbandonLifecycle bool
 }
 
 // NewRepoEvent builds an event envelope for the given repo.

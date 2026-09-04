@@ -30,9 +30,10 @@ func (f fakeAuthority) List(context.Context, string) (Projection, error) {
 		return Projection{}, ErrAccessDenied
 	}
 	return Projection{
-		RealmID:    "5b2b2595-312c-4e8f-9407-148e2a174033",
-		RealmAlias: "acme",
-		Generation: f.gen,
+		RealmID:           "5b2b2595-312c-4e8f-9407-148e2a174033",
+		RealmAlias:        "acme",
+		ServerDisplayName: "Serwer testowy",
+		Generation:        f.gen,
 		Repositories: []RepositoryGrant{{
 			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: f.access, State: "active", Purpose: "upload_shelf",
 		}},
@@ -101,13 +102,38 @@ func newBrowser(repo string, gen int64, access string) Browser {
 	return Browser{Authority: fakeAuthority{repoPath: repo, gen: gen, access: access}, Reader: SVNReader{}}
 }
 
+func TestShoutLogRangeSkipsUnchangedHead(t *testing.T) {
+	if _, _, ok := shoutLogRange(5, 5); ok {
+		t.Fatal("unchanged head should skip the log")
+	}
+	from, to, ok := shoutLogRange(0, 3)
+	if !ok || from != 1 || to != 3 {
+		t.Fatalf("first look = %d:%d ok=%v", from, to, ok)
+	}
+	from, to, ok = shoutLogRange(8, 12)
+	if !ok || from != 9 || to != 12 {
+		t.Fatalf("delta = %d:%d ok=%v", from, to, ok)
+	}
+}
+
+func TestShoutsFromLogKeepsOnlyMarkedCommits(t *testing.T) {
+	got := shoutsFromLog([]svnLogEntry{
+		{Revision: 1, Message: "zwykły commit"},
+		{Revision: 2, Message: "[!shout@#!] wydanie A"},
+		{Revision: 3, Message: "[!shout@#!]"},
+	})
+	if len(got) != 1 || got[0].Revision != 2 || got[0].Comment != "wydanie A" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
 func TestListRepositoriesReturnsProjection(t *testing.T) {
 	b := newBrowser("", 4, "rw")
 	res, err := b.ListRepositories(context.Background(), "client-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ViewGeneration != 4 || res.RealmAlias != "acme" || len(res.Repositories) != 1 {
+	if res.ViewGeneration != 4 || res.RealmAlias != "acme" || res.ServerDisplayName != "Serwer testowy" || len(res.Repositories) != 1 {
 		t.Fatalf("projection = %+v", res)
 	}
 	got := res.Repositories[0]

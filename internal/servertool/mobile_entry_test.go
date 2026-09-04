@@ -298,7 +298,7 @@ func TestMobileEntryServesListRepositories(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.ViewGeneration != 3 || result.RealmID != f.realmID || len(result.Repositories) != 1 {
+	if result.ViewGeneration != 3 || result.RealmID != f.realmID || result.ServerDisplayName != "Serwer testowy" || result.GeneratedAt == nil || result.GeneratedAt.IsZero() || len(result.Repositories) != 1 {
 		t.Fatalf("projection = %+v", result)
 	}
 	got := result.Repositories[0]
@@ -356,7 +356,7 @@ func TestMobileEntryForwardsRepositoryPurpose(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Repositories) != 1 || result.Repositories[0].Purpose != clientview.PurposeUploadShelf {
+	if result.ServerDisplayName != "Serwer testowy" || len(result.Repositories) != 1 || result.Repositories[0].Purpose != clientview.PurposeUploadShelf {
 		t.Fatalf("projection = %+v", result)
 	}
 }

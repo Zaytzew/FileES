@@ -3,10 +3,12 @@ package net.filees.mobile
 import android.Manifest
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.widget.EditText
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -23,6 +25,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidbind.Androidbind
@@ -42,12 +45,17 @@ class MainActivity : AppCompatActivity() {
     private val main = Handler(Looper.getMainLooper())
 
     private var client: Client? = null
+    private var activeAddress: String? = null
     private var selectedRepoId: String? = null
     private var selectedShareName: String = ""
     private var selectableShares: List<RealmShare> = emptyList()
     private var manifestEntries: List<ManifestEntry> = emptyList()
     private var browsePrefix: String = ""
     private val browseAdapter = BrowseAdapter(onOpen = { openRow(it) }, onDownload = { downloadRow(it) })
+    private val pendingAdapter = PendingUploadsAdapter(
+        onDiscard = { discardPending(it) },
+        onRetry = { retryPending(it) },
+    )
 
     private val prefs by lazy { getSharedPreferences(FileesSession.PREFS, MODE_PRIVATE) }
     private var pulseAnimator: ObjectAnimator? = null
@@ -82,8 +90,11 @@ class MainActivity : AppCompatActivity() {
 
         binding.recyclerBrowse.layoutManager = LinearLayoutManager(this)
         binding.recyclerBrowse.adapter = browseAdapter
+        binding.recyclerPending.layoutManager = LinearLayoutManager(this)
+        binding.recyclerPending.adapter = pendingAdapter
         binding.buttonScanQr.setOnClickListener { onScanQrClicked() }
         binding.buttonAdd.setOnClickListener { showAddChooser() }
+        binding.barServerAddress.setOnClickListener { pickServer() }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -93,22 +104,23 @@ class MainActivity : AppCompatActivity() {
 
         startPulse()
 
-        selectedRepoId = prefs.getString(FileesSession.PREF_REPO_ID, null)
+        FileesSession.migrate(prefs)
+        selectedRepoId = FileesSession.current(prefs)?.selectedRepoId?.ifBlank { null }
         showPaired(false)
     }
 
     override fun onResume() {
         super.onResume()
         pulseAnimator?.resume()
+        bindServerLabel()
         val address = prefs.getString(FileesSession.PREF_ADDRESS, null)
         val hostKey = prefs.getString(FileesSession.PREF_HOST_KEY, null)
-        binding.textServerAddress.text = if (!address.isNullOrBlank()) {
-            getString(R.string.main_server_address, address)
-        } else {
-            ""
+        if (address != activeAddress) {
+            client = null
         }
         if (!address.isNullOrBlank() && !hostKey.isNullOrBlank()) {
             if (client == null) {
+                selectedRepoId = FileesSession.current(prefs)?.selectedRepoId?.ifBlank { null }
                 activate(address, hostKey)
             } else {
                 // activate() already ran successfully in an earlier
@@ -118,6 +130,7 @@ class MainActivity : AppCompatActivity() {
                 // background upload watch, never the paired UI state.
                 showPaired(true)
                 scanWatchedFolders()
+                refreshDecisions()
             }
         } else {
             showPaired(false)
@@ -171,11 +184,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPaired(paired: Boolean) {
+        val hasServers = FileesSession.servers(prefs).isNotEmpty()
         binding.panelUnpaired.visibility = if (paired) View.GONE else View.VISIBLE
-        binding.barServerAddress.visibility = if (paired) View.VISIBLE else View.GONE
+        binding.barServerAddress.visibility = if (paired || hasServers) View.VISIBLE else View.GONE
         binding.recyclerBrowse.visibility = if (paired) View.VISIBLE else View.GONE
-        binding.buttonAdd.visibility = if (paired && !selectedRepoId.isNullOrBlank()) View.VISIBLE else View.GONE
+        binding.buttonAdd.visibility = if (paired && canCaptureSelected()) View.VISIBLE else View.GONE
+        if (!paired) bindDecisions(emptyList())
         supportActionBar?.setDisplayHomeAsUpEnabled(paired && selectedRepoId != null)
+        bindServerLabel()
     }
 
     private fun onScanQrClicked() {
@@ -208,10 +224,7 @@ class MainActivity : AppCompatActivity() {
                 val address = json.getString("address")
                 val hostKey = json.getString("host_public_key")
                 Androidbind.pairJSON(filesDir.absolutePath, address, hostKey, json.getString("token"))
-                prefs.edit {
-                    putString(FileesSession.PREF_ADDRESS, address)
-                    putString(FileesSession.PREF_HOST_KEY, hostKey)
-                }
+                FileesSession.putAndSelect(prefs, address, hostKey)
                 main.post { activate(address, hostKey) }
             } catch (e: Exception) {
                 main.post { failBusy(getString(R.string.error_pair), e) }
@@ -227,13 +240,17 @@ class MainActivity : AppCompatActivity() {
                 val newClient = Androidbind.newClient(filesDir.absolutePath, dial, FileesSession.MOBILE_USER, hostKey)
                 main.post {
                     client = newClient
+                    activeAddress = address
                     showPaired(true)
                     setBusy(false, "")
                     loadRealmProjection()
                     scanWatchedFolders()
+                    refreshDecisions()
                 }
             } catch (e: Exception) {
                 main.post {
+                    client = null
+                    activeAddress = null
                     showPaired(false)
                     failBusy(getString(R.string.error_connect), e)
                 }
@@ -247,14 +264,19 @@ class MainActivity : AppCompatActivity() {
             try {
                 val projection = RealmProjection.fromJson(active.listRepositoriesJSON())
                 main.post {
+                    FileesSession.rememberProjection(prefs, projection)
+                    bindServerLabel()
                     selectableShares = projection.shares.filter { it.selectable }
                     if (selectedRepoId != null && selectableShares.none { it.repoId == selectedRepoId }) {
                         selectedRepoId = null
                     }
                     renderList()
+                    refreshDecisions()
                 }
             } catch (e: Exception) {
-                main.post { failBusy(getString(R.string.error_list), e) }
+                main.post {
+                    if (looksRevoked(e)) showRevoked(e) else failBusy(getString(R.string.error_list), e)
+                }
             }
         }
     }
@@ -272,7 +294,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         binding.brandLockup.visibility = View.GONE
-        binding.buttonAdd.visibility = View.VISIBLE
+        binding.buttonAdd.visibility = if (canCaptureSelected()) View.VISIBLE else View.GONE
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         binding.toolbar.title = if (browsePrefix.isEmpty()) selectedShareName else browsePrefix.substringAfterLast('/')
         val rows = ManifestBrowse.children(manifestEntries, browsePrefix)
@@ -314,15 +336,18 @@ class MainActivity : AppCompatActivity() {
         if (row.share) {
             selectedRepoId = row.repoId
             selectedShareName = row.name
-            prefs.edit { putString(FileesSession.PREF_REPO_ID, row.repoId) }
+            FileesSession.setSelectedRepo(prefs, row.repoId)
             browsePrefix = ""
             refreshManifest()
+            refreshDecisions()
             return
         }
         if (row.directory) {
             browsePrefix = row.path
             renderList()
+            return
         }
+        previewRow(row)
     }
 
     private fun goUp(): Boolean {
@@ -333,7 +358,7 @@ class MainActivity : AppCompatActivity() {
             return true
         }
         selectedRepoId = null
-        prefs.edit { remove(FileesSession.PREF_REPO_ID) }
+        FileesSession.setSelectedRepo(prefs, null)
         renderList()
         return true
     }
@@ -344,9 +369,11 @@ class MainActivity : AppCompatActivity() {
         io.execute {
             try {
                 val json = active.refreshJSON(repoId)
+                val shouts = ManifestBrowse.shoutsFrom(json)
                 main.post {
                     manifestEntries = ManifestBrowse.entriesFrom(json)
                     renderList()
+                    showNewShouts(repoId, shouts)
                 }
             } catch (e: Exception) {
                 main.post { failBusy(getString(R.string.error_refresh), e) }
@@ -354,7 +381,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun bindServerLabel() {
+        binding.textServerAddress.text = FileesSession.barLabel(prefs)
+    }
+
+    private fun selectedShare(): RealmShare? =
+        selectableShares.firstOrNull { it.repoId == selectedRepoId }
+
+    // Capture (Dodaj / watched folders) writes mobile-uploads/. Trash is
+    // a reject waiting room: still listed and browsable, never a dump target.
+    private fun canCaptureSelected(): Boolean = selectedShare()?.canCapture == true
+
     private fun showAddChooser() {
+        if (!canCaptureSelected()) return
         AlertDialog.Builder(this)
             .setItems(arrayOf(getString(R.string.action_add_files), getString(R.string.action_add_folder))) { _, which ->
                 if (which == 0) pickFilesLauncher.launch(arrayOf("*/*"))
@@ -364,7 +403,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun enqueueFolder(treeUri: Uri) {
-        if (client == null || selectedRepoId.isNullOrBlank()) return
+        if (client == null || selectedRepoId.isNullOrBlank() || !canCaptureSelected()) return
         setBusy(true, getString(R.string.status_scanning))
         io.execute {
             val files = try {
@@ -393,7 +432,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun enqueueWalked(files: List<WalkedFile>) {
-        if (client == null || selectedRepoId.isNullOrBlank() || files.isEmpty()) return
+        if (client == null || selectedRepoId.isNullOrBlank() || files.isEmpty() || !canCaptureSelected()) return
         val summary = FolderPreflight.of(files)
         setBusy(true, preflightLabel(summary))
         io.execute {
@@ -419,6 +458,7 @@ class MainActivity : AppCompatActivity() {
             main.post {
                 setBusy(false, getString(R.string.status_sent_count, files.size))
                 refreshManifest()
+                refreshDecisions()
             }
         } catch (e: Exception) {
             main.post { failBusy(getString(R.string.error_tree), e) }
@@ -438,36 +478,160 @@ class MainActivity : AppCompatActivity() {
                 }
                 val bytes = contentResolver.openInputStream(file.uri)?.use { it.readBytes() } ?: continue
                 active.enqueueUpload(repoId, UploadPaths.parent(file.relativeDir), file.filename, file.contentType, bytes)
-                UploadDrain.drainOrThrow(active, repoId)
+                val report = UploadDrain.run(active, repoId)
+                if (report.transportError != null) {
+                    throw RuntimeException(report.transportError)
+                }
                 done++
             }
             main.post {
                 setBusy(false, getString(R.string.status_sent_count, done))
                 refreshManifest()
+                refreshDecisions()
             }
         } catch (e: Exception) {
             val sent = done
             main.post {
                 failBusy(getString(R.string.error_send_partial, sent, files.size), e)
                 refreshManifest()
+                refreshDecisions()
             }
         }
     }
 
-    private fun downloadRow(row: BrowseRow) {
+    private fun previewRow(row: BrowseRow) {
         val active = client ?: return
         val repoId = selectedRepoId ?: return
         setBusy(true, getString(R.string.status_downloading))
         io.execute {
             try {
-                val dir = File(cacheDir, "dl").apply { mkdirs() }
-                val dest = File(dir, row.name)
-                active.downloadTo(repoId, row.path, dest.absolutePath)
+                val dest = cachedDownload(active, repoId, row)
+                main.post {
+                    setBusy(false, "")
+                    openCached(dest, row.name)
+                }
+            } catch (e: Exception) {
+                main.post { failBusy(getString(R.string.error_download), e) }
+            }
+        }
+    }
+
+    private fun downloadRow(row: BrowseRow) {
+        if (row.directory) {
+            downloadFolder(row)
+            return
+        }
+        val active = client ?: return
+        val repoId = selectedRepoId ?: return
+        setBusy(true, getString(R.string.status_downloading))
+        io.execute {
+            try {
+                val dest = cachedDownload(active, repoId, row)
                 publishDownload(dest, row.name)
                 main.post { setBusy(false, getString(R.string.status_downloaded, row.name)) }
             } catch (e: Exception) {
                 main.post { failBusy(getString(R.string.error_download), e) }
             }
+        }
+    }
+
+    private fun downloadFolder(row: BrowseRow) {
+        val files = ManifestBrowse.filesUnder(manifestEntries, row.path)
+        if (files.isEmpty()) {
+            setBusy(false, getString(R.string.browse_empty))
+            return
+        }
+        val bytes = files.sumOf { it.size }
+        if (files.size > 200 || bytes > 400L * 1024 * 1024) {
+            AlertDialog.Builder(this)
+                .setMessage(getString(R.string.error_folder_too_big, HumanSize.format(bytes)))
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
+        val start = {
+            pullFolderZip(row, files)
+        }
+        if (files.size >= 40 || bytes >= 40L * 1024 * 1024) {
+            val summary = resources.getQuantityString(
+                R.plurals.status_preflight, files.size, files.size, HumanSize.format(bytes),
+            )
+            AlertDialog.Builder(this)
+                .setTitle(R.string.download_folder_confirm_title)
+                .setMessage(getString(R.string.download_folder_confirm, row.name, summary))
+                .setPositiveButton(R.string.action_download) { _, _ -> start() }
+                .setNegativeButton(R.string.action_cancel, null)
+                .show()
+            return
+        }
+        start()
+    }
+
+    private fun pullFolderZip(row: BrowseRow, files: List<ManifestEntry>) {
+        val active = client ?: return
+        val repoId = selectedRepoId ?: return
+        setBusy(true, getString(R.string.status_downloading_folder, 1, files.size))
+        io.execute {
+            val staged = ArrayList<Pair<String, File>>(files.size)
+            var zip: File? = null
+            try {
+                val dir = File(cacheDir, "dl").apply { mkdirs() }
+                val pfx = if (row.path.isEmpty()) "" else "${row.path}/"
+                for ((index, entry) in files.withIndex()) {
+                    main.post {
+                        setBusy(true, getString(R.string.status_downloading_folder, index + 1, files.size))
+                    }
+                    val relative = if (pfx.isEmpty()) entry.path else entry.path.removePrefix(pfx)
+                    val dest = File(dir, "part-${index}-${relative.substringAfterLast('/')}")
+                    active.downloadTo(repoId, entry.path, dest.absolutePath)
+                    staged.add(relative to dest)
+                }
+                main.post { setBusy(true, getString(R.string.status_packing_download)) }
+                zip = TreeZip.packNamed(staged, dir, "${row.name}.zip")
+                publishDownload(zip, "${row.name}.zip")
+                main.post { setBusy(false, getString(R.string.status_downloaded, "${row.name}.zip")) }
+            } catch (e: Exception) {
+                main.post { failBusy(getString(R.string.error_download), e) }
+            } finally {
+                staged.forEach { it.second.delete() }
+                zip?.delete()
+            }
+        }
+    }
+
+    private fun showNewShouts(repoId: String, shouts: List<Pair<Long, String>>) {
+        val fresh = shouts.filter {
+            !FileesSession.isShoutAcked(prefs, FileesSession.shoutId(repoId, it.first))
+        }
+        if (fresh.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.shouts_title)
+            .setMessage(fresh.joinToString("\n\n") { it.second })
+            .setPositiveButton(R.string.shouts_ack) { _, _ ->
+                FileesSession.ackShouts(prefs, fresh.map { FileesSession.shoutId(repoId, it.first) })
+            }
+            .show()
+    }
+
+    private fun cachedDownload(active: Client, repoId: String, row: BrowseRow): File {
+        val dir = File(cacheDir, "dl").apply { mkdirs() }
+        val dest = File(dir, row.name)
+        active.downloadTo(repoId, row.path, dest.absolutePath)
+        return dest
+    }
+
+    private fun openCached(file: File, name: String) {
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase())
+            ?: "application/octet-stream"
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, mime)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            publishDownload(file, name)
+            binding.toolbar.subtitle = getString(R.string.error_preview)
         }
     }
 
@@ -491,6 +655,156 @@ class MainActivity : AppCompatActivity() {
         file.copyTo(File(publicDir, name), overwrite = true)
     }
 
+    private fun uploadRepoId(): String? =
+        selectedRepoId?.takeIf { canCaptureSelected() }
+            ?: prefs.getString(FileesSession.PREF_UPLOAD_REPO_ID, null)
+
+    private fun refreshDecisions() {
+        val active = client ?: run {
+            bindDecisions(emptyList())
+            return
+        }
+        val repoId = uploadRepoId() ?: run {
+            bindDecisions(emptyList())
+            return
+        }
+        io.execute {
+            try {
+                val items = PendingUpload.listFromJson(active.listUploadsJSON(repoId)).filter { it.needsDecision }
+                main.post { bindDecisions(items) }
+            } catch (_: Exception) {
+                main.post { bindDecisions(emptyList()) }
+            }
+        }
+    }
+
+    private fun bindDecisions(items: List<PendingUpload>) {
+        binding.panelDecisions.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        pendingAdapter.submit(items)
+        if (items.isNotEmpty()) {
+            binding.textDecisionsHeader.text = getString(R.string.status_waiting_decision, items.size)
+        }
+    }
+
+    private fun discardPending(item: PendingUpload) {
+        val active = client ?: return
+        val repoId = uploadRepoId() ?: return
+        io.execute {
+            try {
+                active.discardUpload(repoId, item.id)
+                main.post { refreshDecisions() }
+            } catch (e: Exception) {
+                main.post { failBusy(getString(R.string.error_send), e) }
+            }
+        }
+    }
+
+    private fun retryPending(item: PendingUpload) {
+        if (item.state == "conflict") {
+            val input = EditText(this)
+            input.setText(item.filename)
+            AlertDialog.Builder(this)
+                .setTitle(R.string.action_send_as)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    spoolRetry(item, input.text.toString().trim())
+                }
+                .setNegativeButton(R.string.action_cancel, null)
+                .show()
+            return
+        }
+        spoolRetry(item, item.filename)
+    }
+
+    private fun spoolRetry(item: PendingUpload, filename: String) {
+        val active = client ?: return
+        val repoId = uploadRepoId() ?: return
+        if (filename.isBlank()) return
+        io.execute {
+            try {
+                val payload = File(filesDir, "uploads/$repoId/${item.id}.bin").readBytes()
+                val type = item.contentType.ifBlank { "application/octet-stream" }
+                active.enqueueUpload(repoId, item.parentPath, filename, type, payload)
+                active.discardUpload(repoId, item.id)
+                val report = UploadDrain.run(active, repoId)
+                if (report.transportError != null) {
+                    throw RuntimeException(report.transportError)
+                }
+                main.post {
+                    refreshDecisions()
+                    refreshManifest()
+                }
+            } catch (e: Exception) {
+                main.post { failBusy(getString(R.string.error_send), e) }
+            }
+        }
+    }
+
+    private fun looksRevoked(err: Exception): Boolean {
+        val text = (err.message ?: "").lowercase()
+        return "access denied" in text || "access.denied" in text || "revoked" in text
+    }
+
+    private fun showRevoked(err: Exception) {
+        setBusy(false, "")
+        AlertDialog.Builder(this)
+            .setTitle(R.string.error_connect)
+            .setMessage(getString(R.string.error_revoked) + "\n\n" + (err.message ?: ""))
+            .setPositiveButton(R.string.action_unpair) { _, _ -> unpairNow() }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    private fun pickServer() {
+        val all = FileesSession.servers(prefs)
+        val currentId = FileesSession.current(prefs)?.id
+        val labels = all.map { server ->
+            if (server.id == currentId) "✓ ${server.label()}" else server.label()
+        } + getString(R.string.action_add_server)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_switch_server)
+            .setItems(labels.toTypedArray()) { _, index ->
+                if (index >= all.size) {
+                    onScanQrClicked()
+                    return@setItems
+                }
+                switchTo(all[index])
+            }
+            .show()
+    }
+
+    private fun switchTo(server: PairedServer) {
+        if (FileesSession.current(prefs)?.id == server.id && client != null) return
+        FileesSession.select(prefs, server.id)
+        client = null
+        selectedRepoId = FileesSession.current(prefs)?.selectedRepoId?.ifBlank { null }
+        selectedShareName = ""
+        browsePrefix = ""
+        selectableShares = emptyList()
+        manifestEntries = emptyList()
+        bindDecisions(emptyList())
+        bindServerLabel()
+        activate(server.address, server.hostKey)
+    }
+
+    private fun unpairNow() {
+        FileesSession.unpair(prefs)
+        client = null
+        activeAddress = null
+        selectedRepoId = null
+        selectableShares = emptyList()
+        manifestEntries = emptyList()
+        bindDecisions(emptyList())
+        bindServerLabel()
+        val next = FileesSession.current(prefs)
+        if (next != null) {
+            selectedRepoId = next.selectedRepoId.ifBlank { null }
+            activate(next.address, next.hostKey)
+        } else {
+            showPaired(false)
+        }
+    }
+
     private fun scanWatchedFolders() {
         FileesWatchScheduler.ensure(this)
         if (client == null || selectedRepoId.isNullOrBlank() || watched.uris().isEmpty()) return
@@ -499,6 +813,7 @@ class MainActivity : AppCompatActivity() {
                 FileesWatchTick.run(this)
             } catch (_: Exception) {
             }
+            main.post { refreshDecisions() }
         }
     }
 

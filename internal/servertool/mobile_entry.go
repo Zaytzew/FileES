@@ -93,10 +93,12 @@ func (a clientviewMobileAuthority) List(_ context.Context, clientID string) (mob
 		})
 	}
 	return mobileworker.Projection{
-		RealmID:      view.RealmID,
-		RealmAlias:   view.RealmAlias,
-		Generation:   view.Generation,
-		Repositories: repos,
+		RealmID:           view.RealmID,
+		RealmAlias:        view.RealmAlias,
+		ServerDisplayName: view.ServerDisplayName,
+		Generation:        view.Generation,
+		GeneratedAt:       view.GeneratedAt,
+		Repositories:      repos,
 	}, nil
 }
 

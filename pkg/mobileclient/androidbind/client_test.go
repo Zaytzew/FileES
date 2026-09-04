@@ -32,11 +32,12 @@ func (f fakeAuth) Resolve(context.Context, string, string) (mobileworker.View, e
 
 func (f fakeAuth) List(context.Context, string) (mobileworker.Projection, error) {
 	return mobileworker.Projection{
-		RealmID:    "5b2b2595-312c-4e8f-9407-148e2a174033",
-		RealmAlias: "acme",
-		Generation: f.gen,
+		RealmID:           "5b2b2595-312c-4e8f-9407-148e2a174033",
+		RealmAlias:        "acme",
+		ServerDisplayName: "Serwer testowy",
+		Generation:        f.gen,
 		Repositories: []mobileworker.RepositoryGrant{{
-			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: "rw", State: "active",
+			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: "rw", State: "active", Purpose: "upload_shelf",
 		}},
 	}, nil
 }
@@ -218,7 +219,7 @@ func TestClientEndToEndRefreshAndUpload(t *testing.T) {
 	if err := json.Unmarshal([]byte(listJSON), &projection); err != nil {
 		t.Fatalf("decode projection: %v (json=%s)", err, listJSON)
 	}
-	if projection.RealmAlias != "acme" || len(projection.Repositories) != 1 || projection.Repositories[0].DisplayName != "JANCZEWICE" {
+	if projection.RealmAlias != "acme" || projection.ServerDisplayName != "Serwer testowy" || len(projection.Repositories) != 1 || projection.Repositories[0].DisplayName != "JANCZEWICE" || projection.Repositories[0].Purpose != "upload_shelf" {
 		t.Fatalf("projection = %+v", projection)
 	}
 

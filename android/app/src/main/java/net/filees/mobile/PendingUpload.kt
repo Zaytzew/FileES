@@ -18,6 +18,7 @@ data class PendingUpload(
     val outcome: String,
     val existingSha256: String,
     val lastError: String,
+    val contentType: String,
 ) {
     /** conflict/parked need an explicit user decision -- never auto-resolved
      * (concept doc §6.4, §9.3, §10.2). Only these get a Discard action. */
@@ -39,6 +40,7 @@ data class PendingUpload(
                     outcome = o.optString("outcome"),
                     existingSha256 = o.optString("existing_sha256"),
                     lastError = o.optString("last_error"),
+                    contentType = o.optString("content_type"),
                 )
             }
         }

@@ -13,6 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -25,6 +28,9 @@ const (
 	// TreePackComment marks a zip as FileES wire packaging, not a repo artifact.
 	// The worker unpacks only archives whose comment is this exact string.
 	TreePackComment = "filees.tree/v1"
+	// maxServerDisplayNameRunes matches pkg/clientview.MaxServerDisplayNameRunes.
+	// Duplicated so this wire package does not import the desktop projection.
+	maxServerDisplayNameRunes = 80
 )
 
 // Operation is the mobile verb carried in a request envelope.
@@ -154,11 +160,17 @@ type RepositorySummary struct {
 
 // ListRepositoriesResult is the installation's current realm projection.
 // Repositories may be empty (paired, nothing granted yet) but is never omitted.
+// ServerDisplayName is optional so LIST still works against servers that
+// predate client-view/v2's required label; the phone then falls back to
+// host:port. Desktop-only fields (editing_policy, lock_release_requests,
+// attachment_policy, capabilities) stay off this thinned view.
 type ListRepositoriesResult struct {
-	ViewGeneration int64               `json:"view_generation"`
-	RealmID        string              `json:"realm_id"`
-	RealmAlias     string              `json:"realm_alias,omitempty"`
-	Repositories   []RepositorySummary `json:"repositories"`
+	ViewGeneration    int64               `json:"view_generation"`
+	RealmID           string              `json:"realm_id"`
+	RealmAlias        string              `json:"realm_alias,omitempty"`
+	ServerDisplayName string              `json:"server_display_name,omitempty"`
+	GeneratedAt       *time.Time          `json:"generated_at,omitempty"`
+	Repositories      []RepositorySummary `json:"repositories"`
 }
 
 // RefreshManifestResult is NOT_MODIFIED (Manifest nil) only when both the view
@@ -246,6 +258,17 @@ type Manifest struct {
 	RepoRevision   int64           `json:"repo_revision"`
 	Complete       bool            `json:"complete"`
 	Entries        []ManifestEntry `json:"entries"`
+	// Shouts are svn:log lines marked [!shout@#!] from recent revisions.
+	// Omitted when the worker has none to report. Phone acks locally.
+	Shouts []ShoutNotice `json:"shouts,omitempty"`
+}
+
+// ShoutNotice is one shouting-commit comment the phone can show. Revision
+// is the repository revision that carried it; Comment is the human text
+// after the marker.
+type ShoutNotice struct {
+	Revision int64  `json:"revision"`
+	Comment  string `json:"comment"`
 }
 
 // ManifestEntry is one listing row. ContentHash is optional (nullable): svn list
@@ -531,6 +554,22 @@ func (r ListRepositoriesResult) Validate() error {
 	if strings.ContainsAny(r.RealmAlias, "\x00\r\n\t") {
 		return errors.New("realm_alias contains invalid characters")
 	}
+	if r.ServerDisplayName != "" {
+		if strings.TrimSpace(r.ServerDisplayName) != r.ServerDisplayName {
+			return errors.New("server_display_name has surrounding whitespace")
+		}
+		if !utf8.ValidString(r.ServerDisplayName) || utf8.RuneCountInString(r.ServerDisplayName) > maxServerDisplayNameRunes {
+			return errors.New("server_display_name is invalid")
+		}
+		for _, c := range r.ServerDisplayName {
+			if unicode.IsControl(c) {
+				return errors.New("server_display_name is invalid")
+			}
+		}
+	}
+	if r.GeneratedAt != nil && r.GeneratedAt.IsZero() {
+		return errors.New("generated_at is zero")
+	}
 	if r.Repositories == nil {
 		return errors.New("list repositories result requires repositories")
 	}
@@ -553,6 +592,11 @@ func (r ListRepositoriesResult) Validate() error {
 		case "initializing", "active", "disabled", "revoked":
 		default:
 			return fmt.Errorf("repositories[%d].state is invalid", i)
+		}
+		switch repo.Purpose {
+		case "", "upload_shelf", "upload_trash":
+		default:
+			return fmt.Errorf("repositories[%d].purpose is invalid", i)
 		}
 	}
 	return nil
@@ -593,6 +637,14 @@ func (m Manifest) Validate() error {
 			if err := validateContentHash(*e.ContentHash); err != nil {
 				return fmt.Errorf("entries[%d].content_hash: %w", i, err)
 			}
+		}
+	}
+	for i, s := range m.Shouts {
+		if s.Revision < 1 {
+			return fmt.Errorf("shouts[%d].revision must be positive", i)
+		}
+		if strings.TrimSpace(s.Comment) == "" || strings.ContainsAny(s.Comment, "\x00\r\n") {
+			return fmt.Errorf("shouts[%d].comment is invalid", i)
 		}
 	}
 	return nil

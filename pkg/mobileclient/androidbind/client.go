@@ -83,9 +83,9 @@ func (c *Client) PublicKey() string {
 }
 
 // ListRepositoriesJSON returns the installation's realm projection as JSON
-// (view_generation, realm_alias, repositories[{repo_id, display_name,
-// access, state}]). Mobile never creates repositories: the UI picks one
-// of these shares and later operations send that repo_id.
+// (view_generation, realm_alias, server_display_name, generated_at,
+// repositories[{repo_id, display_name, access, state, purpose}]). Mobile never creates repositories:
+// the UI picks one of these shares and later operations send that repo_id.
 func (c *Client) ListRepositoriesJSON() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
 	defer cancel()
@@ -136,8 +136,7 @@ func (c *Client) DownloadTo(repoID, path, destPath string) error {
 }
 
 // UploadTreeFile sends a zip produced by the Android packer as one UPLOAD_TREE
-// frame. The live worker does not ingest it yet; the error is the proof the
-// phone packed and fired a single session.
+// frame. The worker unpacks a filees.tree/v1 pack under mobile-uploads/.
 func (c *Client) UploadTreeFile(repoID, parentPath string, fileCount int, zipPath string) error {
 	if strings.TrimSpace(zipPath) == "" {
 		return errors.New("androidbind: zip_path is required")
@@ -203,4 +202,11 @@ func (c *Client) ListUploadsJSON(repoID string) (string, error) {
 // half of the conflict/parked decision (concept doc §6.4: "albo odrzuca").
 func (c *Client) DiscardUpload(repoID, id string) error {
 	return c.inner.Store.DiscardUpload(repoID, id)
+}
+
+// RetryUploadAs requeues a conflict/parked candidate under filename
+// (empty keeps the original name) with a new request_id.
+func (c *Client) RetryUploadAs(repoID, id, filename string) error {
+	_, err := c.inner.Store.RetryUploadAs(repoID, id, filename)
+	return err
 }

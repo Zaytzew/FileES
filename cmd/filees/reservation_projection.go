@@ -48,6 +48,10 @@ type reservationProjectionCoordinator struct {
 	// detached remembers which servers have told us this client is no longer
 	// one of theirs, so the fact is stated once instead of every cycle.
 	detached map[string]bool
+	// paused is the transport consequence of detached. A revoked credential is
+	// terminal, not an offline server: periodic ticks remain local and must not
+	// open another SSH session until activation supplies a new profile.
+	paused   map[string]bool
 	overlays map[reposupervisor.Key]reservationLocalOverlay
 	started  map[string]bool
 }
@@ -79,6 +83,8 @@ func newReservationProjectionCoordinator(ctx context.Context, ipc *ipcserver.Ser
 		profiles: make(map[string]clientprofile.Profile),
 		views:    make(map[string]clientview.View),
 		results:  make(map[reposupervisor.Key]cachedReservationResult),
+		detached: make(map[string]bool),
+		paused:   make(map[string]bool),
 		overlays: make(map[reposupervisor.Key]reservationLocalOverlay),
 		started:  make(map[string]bool),
 	}
@@ -104,7 +110,9 @@ func (coordinator *reservationProjectionCoordinator) Close() {
 }
 
 // UpdateProfile installs transport parameters and starts one periodic trigger
-// loop. The loop only schedules work; projectionrefresh owns coalescing.
+// loop. The current view (if any) schedules the immediate refresh; keeping that
+// ordering prevents a fast proof refusal from racing activation's restoration
+// of the local pipelines.
 func (coordinator *reservationProjectionCoordinator) UpdateProfile(profile clientprofile.Profile) {
 	if coordinator == nil || profile.ServerID == "" {
 		return
@@ -119,7 +127,6 @@ func (coordinator *reservationProjectionCoordinator) UpdateProfile(profile clien
 	if start {
 		go coordinator.periodic(profile.ServerID)
 	}
-	coordinator.scheduler.Schedule(profile.ServerID)
 }
 
 // Profile returns the transport parameters known for serverID.
@@ -155,6 +162,31 @@ func (coordinator *reservationProjectionCoordinator) periodic(serverID string) {
 			coordinator.scheduler.Schedule(serverID)
 		}
 	}
+}
+
+// Resume permits transport again after an explicit activation event. It does
+// not clear the projected detached state: only the first successful exchange
+// is evidence that the replacement credential is live.
+func (coordinator *reservationProjectionCoordinator) Resume(serverID string) bool {
+	if coordinator == nil || serverID == "" {
+		return false
+	}
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	if !coordinator.paused[serverID] {
+		return false
+	}
+	delete(coordinator.paused, serverID)
+	return true
+}
+
+func (coordinator *reservationProjectionCoordinator) Paused(serverID string) bool {
+	if coordinator == nil || serverID == "" {
+		return false
+	}
+	coordinator.mu.RLock()
+	defer coordinator.mu.RUnlock()
+	return coordinator.paused[serverID]
 }
 
 // UpdateView publishes the current set of server-owned repositories into the
@@ -218,7 +250,13 @@ func (coordinator *reservationProjectionCoordinator) DetachLocal(key reposupervi
 }
 
 func (coordinator *reservationProjectionCoordinator) Schedule(serverID string) {
-	if coordinator != nil {
+	if coordinator == nil {
+		return
+	}
+	coordinator.mu.RLock()
+	paused := coordinator.paused[serverID]
+	coordinator.mu.RUnlock()
+	if !paused {
 		coordinator.scheduler.Schedule(serverID)
 	}
 }
@@ -227,8 +265,9 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	coordinator.mu.RLock()
 	profile, hasProfile := coordinator.profiles[serverID]
 	view, hasView := coordinator.views[serverID]
+	paused := coordinator.paused[serverID]
 	coordinator.mu.RUnlock()
-	if !hasProfile || !hasView {
+	if !hasProfile || !hasView || paused {
 		return
 	}
 	fetcher, err := coordinator.newClient(profile)
@@ -249,18 +288,22 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	var firstErrRepo string
 	for _, repoID := range repoIDs {
 		result, fetchErr := fetcher.Fetch(ctx, repoID)
+		if isDetachedClient(fetchErr) {
+			failed++
+			firstErr, firstErrRepo = fetchErr, repoID
+			break
+		}
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repoID}
 		coordinator.mu.Lock()
 		if fetchErr != nil {
 			cached := coordinator.results[key]
-			if isDetachedClient(fetchErr) {
-				cached.detached = true
-			} else {
-				cached.offline = true
-			}
+			cached.offline = true
 			coordinator.results[key] = cached
 		} else {
-			coordinator.results[key] = cachedReservationResult{result: result, present: true}
+			// Keep the terminal presentation coherent throughout a validation
+			// pass. One successful repo is not enough to reattach a server whose
+			// remaining repos may still reject the same replacement proof.
+			coordinator.results[key] = cachedReservationResult{result: result, present: true, detached: coordinator.detached[serverID]}
 		}
 		coordinator.mu.Unlock()
 		// Every repository on one server shares that server's client view, so
@@ -295,29 +338,53 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 		coordinator.forgetDetached(serverID)
 		lg.Infof("state refreshed: %d ok, %d not active", fetched, skipped)
 	case failed > 0 && isDetachedClient(firstErr):
-		// Said once, not every minute. This is not a transport fault and no
-		// amount of waiting mends it: the server revoked this client, which is
-		// exactly what deactivating it was meant to do. Reported as the same
-		// kind of warning as a dropped connection, it produced 234 identical
-		// lines in one afternoon and told the owner his server was
-		// unavailable when it was working perfectly and following his own
-		// instruction.
-		//
-		// The cycle deliberately keeps running. Re-activating the client must
-		// simply start working again, and a loop that had given up would need
-		// someone to notice and restart the daemon - which is the shape of
-		// defect this replaces, not an improvement on it.
-		if coordinator.onDetached != nil {
-			coordinator.onDetached(serverID, true)
-		}
-		if coordinator.markDetached(serverID) {
-			lg.Warnf("ten klient został odłączony od serwera i nie ma tu już uprawnień; "+
-				"projekcja pozostanie nieaktualna do czasu ponownej aktywacji (%v)", firstErr)
-		}
+		coordinator.pauseDetached(serverID, view, firstErr)
+		return
 	case failed > 0:
-		coordinator.forgetDetached(serverID)
 		lg.Warnf("state refresh: %d ok, %d failed, %d not active; first failure repo %s: %v",
 			fetched, failed, skipped, firstErrRepo, firstErr)
+	}
+	if coordinator.ipc != nil {
+		coordinator.ipc.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
+	}
+}
+
+// detectDetached is the view lane's entrance to the same terminal state. Both
+// SSH commands authenticate with the same profile, so either authoritative
+// refusal is enough to stop both periodic transports.
+func (coordinator *reservationProjectionCoordinator) detectDetached(serverID string, cause error) {
+	if coordinator == nil || serverID == "" || !isDetachedClient(cause) {
+		return
+	}
+	coordinator.mu.RLock()
+	view := coordinator.views[serverID]
+	coordinator.mu.RUnlock()
+	coordinator.pauseDetached(serverID, view, cause)
+}
+
+// pauseDetached turns one authoritative refusal into a stable local state.
+// Every repository uses the same client credential, therefore the first
+// refusal settles the whole server and further per-repository calls would only
+// repeat a request which cannot succeed.
+func (coordinator *reservationProjectionCoordinator) pauseDetached(serverID string, view clientview.View, cause error) {
+	coordinator.mu.Lock()
+	first := !coordinator.detached[serverID]
+	coordinator.detached[serverID] = true
+	coordinator.paused[serverID] = true
+	for _, repo := range view.Repositories {
+		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
+		cached := coordinator.results[key]
+		cached.detached = true
+		cached.offline = false
+		coordinator.results[key] = cached
+	}
+	coordinator.mu.Unlock()
+	if coordinator.onDetached != nil {
+		coordinator.onDetached(serverID, true)
+	}
+	if first {
+		talk.With("reservation-projection:"+serverID).Warnf("ten klient został odłączony od serwera i nie ma tu już uprawnień; "+
+			"odpytywanie zatrzymano do czasu ponownej aktywacji (%v)", cause)
 	}
 	if coordinator.ipc != nil {
 		coordinator.ipc.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
@@ -359,6 +426,12 @@ func (coordinator *reservationProjectionCoordinator) forgetDetached(serverID str
 	coordinator.mu.Lock()
 	defer coordinator.mu.Unlock()
 	delete(coordinator.detached, serverID)
+	for key, cached := range coordinator.results {
+		if key.ServerID == serverID {
+			cached.detached = false
+			coordinator.results[key] = cached
+		}
+	}
 }
 
 func (coordinator *reservationProjectionCoordinator) markServerOffline(serverID string, view clientview.View, cause error) {
@@ -381,6 +454,9 @@ func (coordinator *reservationProjectionCoordinator) snapshot(ctx context.Contex
 	cached := coordinator.results[key]
 	overlay, attached := coordinator.overlays[key]
 	coordinator.mu.RUnlock()
+	if cached.detached && (!cached.present || cached.result.Unknown) {
+		return ipcserver.ReservationSnapshot{Detached: true}, nil
+	}
 	if !cached.present || cached.result.Unknown {
 		return ipcserver.ReservationSnapshot{Unknown: true}, nil
 	}

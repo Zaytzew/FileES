@@ -110,6 +110,34 @@ func (s *Supervisor) DetachLocal(ctx context.Context, key Key) error {
 	return nil
 }
 
+// SuspendServer stops every local data pipeline for one server without
+// advancing or discarding its authoritative projection generation. It is the
+// runtime counterpart of a revoked client proof: no working copy may keep
+// polling with credentials the server has terminally refused. A later explicit
+// activation can reapply the same cached generation through
+// ApplyLocalAttachment; a normal projection refresh still has to be newer.
+func (s *Supervisor) SuspendServer(ctx context.Context, serverID string) error {
+	serverID = strings.TrimSpace(serverID)
+	if serverID == "" {
+		return errors.New("server ID is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys := s.serverKeys(serverID, nil)
+	for _, key := range keys {
+		item, running := s.live[key]
+		if !running {
+			continue
+		}
+		if err := item.instance.Stop(ctx); err != nil {
+			return fmt.Errorf("suspend repository %s: %w", key, err)
+		}
+		delete(s.live, key)
+		s.emit(Event{Key: key, Action: "stopped", Access: item.desired.Access})
+	}
+	return nil
+}
+
 func (s *Supervisor) applyLocked(ctx context.Context, serverID string, generation int64, desired []Desired, transition func(Desired), localReapply bool) error {
 	serverID = strings.TrimSpace(serverID)
 	if serverID == "" || generation < 1 {

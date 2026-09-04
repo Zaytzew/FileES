@@ -168,12 +168,36 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	// source of freshness can push the snapshot without rebuilding the record.
 	freshnessPublishers := map[string]func(){}
 	var freshnessMu sync.Mutex
+	monitorCancels := map[string]context.CancelFunc{}
+	var monitorMu sync.Mutex
+	stopMonitor := func(serverID string) {
+		monitorMu.Lock()
+		cancel := monitorCancels[serverID]
+		monitorMu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	}
+	detachedEvents := make(chan string, 2*(len(profiles)+1))
 	reservationRefreshes := newReservationProjectionCoordinator(ctx, ipc)
 	// The state lane already talks to the server on a rhythm driven by real
 	// work, so what the server says about producing our view arrives with it
 	// rather than on a schedule of its own.
 	reservationRefreshes.onDetached = func(serverID string, detached bool) {
 		freshness.Detached(serverID, detached)
+		if detached {
+			stopMonitor(serverID)
+			select {
+			case detachedEvents <- serverID:
+			case <-ctx.Done():
+			}
+		}
+		freshnessMu.Lock()
+		publish := freshnessPublishers[serverID]
+		freshnessMu.Unlock()
+		if publish != nil {
+			publish()
+		}
 		// The durable half. freshness.Detached is a flag describing the server
 		// right now and dies with the process; this is the moment, and it has
 		// to outlive a daemon restart or a forty-eight hour lifetime measured
@@ -244,20 +268,38 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	monitored := make(map[string]bool)
 	currentViews := make(map[string]clientview.View)
 	shareRefreshes := newPublicShareRefreshCoordinator(ctx, shareLister, shareCache, ipc)
-	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval, timeout time.Duration) error {
+	startMonitor := func(serverID, displayName, address, clientID, identityFile, knownHosts string, sshPort int, serviceURL string, sync clientview.SyncConfig, interval, timeout time.Duration, resumeCached bool) error {
 		if timeout <= 0 {
 			timeout = clientprofile.DefaultSessionTimeout
 		}
 		if monitored[serverID] {
 			return nil
 		}
+		monitorCtx, cancelMonitor := context.WithCancel(ctx)
+		monitorMu.Lock()
+		monitorCancels[serverID] = cancelMonitor
+		monitorMu.Unlock()
 		cached, exists, err := clientview.CachedOrNone(sync.CachePath)
 		if err != nil {
+			cancelMonitor()
 			return fmt.Errorf("load cached projection: %w", err)
 		}
 		if exists {
 			currentViews[serverID] = cached
-			if err := reconcileProjectedView(ctx, supervisor, ipc, serverID, cached, runtimes, lifecycle); err != nil {
+			if resumeCached {
+				applyRealmOwnership(serverID, cached, runtimes)
+				desired := attachedProjection(serverID, cached, runtimes)
+				if err := supervisor.ApplyLocalAttachment(ctx, serverID, cached.Generation, desired, func(item reposupervisor.Desired) {
+					if runtime, ok := runtimes[item.Key]; ok {
+						runtime.state.SetProjection(item.URL, item.Access)
+					}
+				}); err != nil {
+					cancelMonitor()
+					return fmt.Errorf("resume cached projection: %w", err)
+				}
+				syncProjectionKnowledge(ipc, serverID, cached, runtimes, lifecycle)
+			} else if err := reconcileProjectedView(ctx, supervisor, ipc, serverID, cached, runtimes, lifecycle); err != nil {
+				cancelMonitor()
 				return fmt.Errorf("apply cached projection: %w", err)
 			}
 			reservationRefreshes.UpdateView(serverID, cached)
@@ -304,7 +346,14 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		freshnessMu.Lock()
 		freshnessPublishers[serverID] = publishFreshness
 		freshnessMu.Unlock()
-		views := clientview.Monitor(ctx, updater, clientview.MonitorConfig{Sync: sync, Interval: interval, OnError: func(err error) {
+		views := clientview.Monitor(monitorCtx, updater, clientview.MonitorConfig{Sync: sync, Interval: interval, OnError: func(err error) {
+			if isDetachedClient(err) {
+				// The view and reservation commands use the same client proof.
+				// One authoritative refusal ends both retry loops; activation is
+				// the only event that may resume them.
+				reservationRefreshes.detectDetached(serverID, err)
+				return
+			}
 			freshness.Failed(serverID, err)
 			publishFreshness()
 			talk.With("projection:"+serverID).Warnf("sync failed: %v", err)
@@ -326,17 +375,29 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		}()
 		return nil
 	}
-	startProfile := func(profile clientprofile.Profile) error {
+	startProfile := func(profile clientprofile.Profile, activationEvent bool) error {
+		wasMonitored := monitored[profile.ServerID]
+		if activationEvent {
+			reservationRefreshes.Resume(profile.ServerID)
+		}
+		resumeCached := activationEvent && wasMonitored
+		if resumeCached {
+			// Activation may replace the key and transport paths even when the
+			// previous profile had not yet observed its own revocation. Never
+			// leave a live monitor bound to the old credential.
+			stopMonitor(profile.ServerID)
+			monitored[profile.ServerID] = false
+		}
 		reservationRefreshes.UpdateProfile(profile)
-		return startMonitor(profile.ServerID, profile.ServerID, profile.Address, profile.ClientID, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval, profile.SVNTimeout())
+		return startMonitor(profile.ServerID, profile.ServerID, profile.Address, profile.ClientID, profile.IdentityFile, profile.KnownHosts, profile.SSHPort, profile.ServiceURL, clientview.SyncConfig{WorkingCopy: profile.ServiceWC, RelativeViewPath: profile.RelativeViewPath, CachePath: profile.CachePath}, profile.PollInterval, profile.SVNTimeout(), resumeCached)
 	}
 	for _, profile := range profiles {
-		if err := startProfile(profile); err != nil {
+		if err := startProfile(profile, false); err != nil {
 			talk.With("projection:"+profile.ServerID).Errorf("restore profile: %v", err)
 		}
 	}
 	if projection := activation.Projection; projection != nil && !monitored[activation.ServerID] {
-		if err := startMonitor(activation.ServerID, activation.DisplayName, "", "", activation.IdentityFile, activation.KnownHosts, 0, "", clientview.SyncConfig{WorkingCopy: projection.WorkingCopy, RelativeViewPath: projection.RelativeViewPath, CachePath: projection.CachePath}, projection.Interval, 0); err != nil {
+		if err := startMonitor(activation.ServerID, activation.DisplayName, "", "", activation.IdentityFile, activation.KnownHosts, 0, "", clientview.SyncConfig{WorkingCopy: projection.WorkingCopy, RelativeViewPath: projection.RelativeViewPath, CachePath: projection.CachePath}, projection.Interval, 0, false); err != nil {
 			talk.With("projection:"+activation.ServerID).Errorf("start configured monitor: %v", err)
 		}
 	}
@@ -363,9 +424,21 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			defer cancel()
 			return supervisor.Stop(stopCtx)
 		case profile := <-profileEvents:
-			if err := startProfile(profile); err != nil {
+			if err := startProfile(profile, true); err != nil {
 				talk.With("projection:"+profile.ServerID).Errorf("start activated profile: %v", err)
 			}
+		case serverID := <-detachedEvents:
+			// Activation and suspension are serialized in this loop. If a new
+			// profile won the race, a late event from the old proof must not stop
+			// the replacement pipelines.
+			if !reservationRefreshes.Paused(serverID) {
+				continue
+			}
+			stopCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+			if err := supervisor.SuspendServer(stopCtx, serverID); err != nil {
+				talk.With("projection:"+serverID).Warnf("suspend detached repositories: %v", err)
+			}
+			cancel()
 		case profile := <-timeoutEvents:
 			reservationRefreshes.UpdateProfile(profile)
 			stampSessionTimeout(runtimes, profile.ServerID, profile.SVNTimeout())
@@ -373,6 +446,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				if err := reconcileProjectedView(ctx, supervisor, ipc, profile.ServerID, view, runtimes, lifecycle); err != nil && ctx.Err() == nil {
 					talk.With("projection:"+profile.ServerID).Errorf("apply session timeout: %v", err)
 				}
+				reservationRefreshes.Schedule(profile.ServerID)
 			}
 		case update := <-updates:
 			currentViews[update.serverID] = update.view

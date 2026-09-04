@@ -42,6 +42,17 @@ func TestOpenBSDServerBinaryPolicyMatchesPrivilegeBoundaries(t *testing.T) {
 			t.Errorf("policy %s = %+v, want mode=%s owner=%s group=%s", target, got, expected.Mode, expected.Owner, expected.Group)
 		}
 	}
+	if len(spec.Configs) != 1 {
+		t.Fatalf("server config contracts = %d, want 1", len(spec.Configs))
+	}
+	contract := spec.Configs[0]
+	if contract.Name != "server" || contract.Path != "/etc/filees/server.json" || len(contract.DefaultChanged) != 1 {
+		t.Fatalf("server config contract = %+v", contract)
+	}
+	change := contract.DefaultChanged[0]
+	if change.Key != "schema" || change.Old != "filees.server-toolchain/v1" || change.New != "filees.server-toolchain/v2" {
+		t.Fatalf("server schema change = %+v", change)
+	}
 }
 
 func TestManualHtdocsFitsStaticAllowlist(t *testing.T) {

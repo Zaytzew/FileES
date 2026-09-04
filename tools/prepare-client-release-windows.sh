@@ -59,27 +59,19 @@ base_version=$(sed -n '1p' "$root/VERSION")
 client_version="$base_version.$source_revision"
 
 staging="${DIST:-$root/dist}/client-$PLATFORM"
-rm -rf "$staging"
-mkdir -p "$staging/bin" "$staging/autostart"
 
-GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false \
-	-ldflags "-X main.version=$base_version+r$source_revision" \
-	-o "$staging/bin/filees.exe" ./cmd/filees
-GOOS=windows GOARCH=amd64 go build -tags production -trimpath -buildvcs=false \
-	-ldflags "-H=windowsgui -X main.version=$base_version+r$source_revision" \
-	-o "$staging/bin/filees-gui-wails.exe" ./cmd/filees-gui-wails
-
-cp "$root/packaging/windows/autostart-supervisor.ps1" "$staging/autostart/start-filees.ps1"
-cp "$root/packaging/windows/autostart-launch.vbs" "$staging/autostart/start-filees.vbs"
-printf '%s\n' "$client_version" >"$staging/VERSION"
-
-# SHA256SUMS is how a human tells one bundle from another after the fact. The
-# installer does not read it; a release nobody can identify afterwards is still
-# not a release.
-( cd "$staging" && find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | \
-	while IFS= read -r file; do
-		sha256sum "$file" 2>/dev/null || shasum -a 256 "$file"
-	done >SHA256SUMS )
+# One producer for the bundle layout, shared with a local MSI build.
+#
+# These steps used to live here, which meant the only way to get a bundle was to
+# stage a release into a FILEES-BIN working copy - so installing locally meant
+# assembling one by hand, and a second copy of the layout is exactly the drift
+# the layout test exists to catch.
+#
+# The revision is passed explicitly rather than left to the script's own lookup:
+# a release is built from the revision this script has already checked, not from
+# whatever happens to be checked out by the time the build runs.
+REVISION="$source_revision" PLATFORM="$PLATFORM" \
+	"$root/packaging/build-client-bundle.sh" "$staging" >/dev/null
 
 mkdir -p "$release_root"
 bundle="$release_root/filees-client-$PLATFORM.tar.gz"

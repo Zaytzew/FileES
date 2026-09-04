@@ -19,10 +19,10 @@ import (
 // This checks names rather than behaviour on purpose. Actually building a
 // bundle here would need a cross-compiler and several minutes; the failure
 // worth catching is a path that stopped matching, and a path is a string.
-func TestTheReleaseScriptStagesWhatTheInstallerRequires(t *testing.T) {
-	raw, err := os.ReadFile("../tools/prepare-client-release-windows.sh")
+func TestTheBundleBuilderStagesWhatTheInstallerRequires(t *testing.T) {
+	raw, err := os.ReadFile("build-client-bundle.sh")
 	if err != nil {
-		t.Fatalf("the Windows client release script is missing: %v", err)
+		t.Fatalf("the client bundle builder is missing: %v", err)
 	}
 	script := string(raw)
 
@@ -32,7 +32,7 @@ func TestTheReleaseScriptStagesWhatTheInstallerRequires(t *testing.T) {
 		// than copied, and VERSION is written with printf, so both are matched
 		// by name like the rest.
 		if !strings.Contains(script, required) {
-			t.Errorf("the release script never stages %q, which the installer requires", required)
+			t.Errorf("the bundle builder never stages %q, which the installer requires", required)
 		}
 	}
 }
@@ -40,7 +40,7 @@ func TestTheReleaseScriptStagesWhatTheInstallerRequires(t *testing.T) {
 // And the installer must not require something the script has no way to
 // provide - a requirement nobody produces fails every release, which is the
 // same fault pointing the other way.
-func TestTheInstallerRequiresNothingTheScriptCannotStage(t *testing.T) {
+func TestTheInstallerRequiresNothingTheBuilderCannotStage(t *testing.T) {
 	required := clientupdate.RequiredBundleFiles()
 	if len(required) == 0 {
 		t.Fatal("the installer requires nothing at all; a bundle would be accepted empty")

@@ -84,3 +84,47 @@ func TestServiceDoesNotAdvanceStateWhenInstallerFails(t *testing.T) {
 		t.Fatalf("failed apply advanced state: %+v, %v", state, err)
 	}
 }
+
+func TestBuildStampAndDistributionVersionAreEquivalent(t *testing.T) {
+	installer := &installerStub{}
+	service := &Service{
+		Resolver:  resolverStub{resolved: resolvedRelease(850, "r850", "0.1.15.850")},
+		Installer: installer, State: StateStore{Path: filepath.Join(t.TempDir(), "update.json")},
+		CurrentVersion: "0.1.15+r850",
+	}
+	status, err := service.Status(context.Background())
+	if err != nil || status.State != "current" || status.CurrentVersion != "0.1.15.850" || status.AvailableVersion != "" {
+		t.Fatalf("equivalent version status = %+v, %v", status, err)
+	}
+	result, err := service.Apply(context.Background())
+	if err != nil || installer.applyCalls != 0 || result.InstalledVersion != "0.1.15.850" {
+		t.Fatalf("equivalent version apply = %+v, calls=%d, %v", result, installer.applyCalls, err)
+	}
+}
+
+func TestOldMSIRepairsItselfWithoutLoweringHighWater(t *testing.T) {
+	installer := &installerStub{}
+	store := StateStore{Path: filepath.Join(t.TempDir(), "update.json")}
+	if err := store.Save(State{HighestSequence: 3, SecurityEpoch: 1, ReleaseID: "r3", InstalledVersion: "1.2"}); err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{
+		Resolver:  resolverStub{resolved: resolvedRelease(3, "r3", "1.2")},
+		Installer: installer, State: store, CurrentVersion: "1.0",
+	}
+	status, err := service.Status(context.Background())
+	if err != nil || status.State != "available" || status.CurrentVersion != "1.0" || status.AvailableVersion != "1.2" {
+		t.Fatalf("repaired MSI status = %+v, %v", status, err)
+	}
+	if _, err := service.Apply(context.Background()); err != nil || installer.applyCalls != 1 {
+		t.Fatalf("repair apply calls=%d, err=%v", installer.applyCalls, err)
+	}
+	state, err := store.Load()
+	if err != nil || state.HighestSequence != 3 || state.ReleaseID != "r3" || state.InstalledVersion != "1.2" {
+		t.Fatalf("repair lowered or corrupted high-water: %+v, %v", state, err)
+	}
+	status, err = service.Status(context.Background())
+	if err != nil || status.State != "current" {
+		t.Fatalf("post-repair status = %+v, %v", status, err)
+	}
+}

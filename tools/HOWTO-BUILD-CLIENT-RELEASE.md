@@ -21,10 +21,10 @@ Serwer ma własną, osobną i niezmienioną.
 | droga | kiedy | co robi |
 |---|---|---|
 | kanał | między wydaniami | klient sam pobiera bundel, sprawdza podpis, podmienia binarki w miejscu |
-| MSI | pierwsza instalacja, oraz gdy chcesz jawnie | `MajorUpgrade` kładzie to samo, plus skrót autostartu |
+| MSI | pierwsza instalacja, naprawa i wdrożenie ręczne | `MajorUpgrade` kładzie to samo, plus skrót autostartu |
 
 Obie kończą w `%LOCALAPPDATA%\Programs\FileES`. **MSI powstaje z tego samego
-bundla**, który jedzie kanałem — inaczej instalator i kanał rozjechałyby się, a
+stagingu co bundel i oba są artefaktami jednego podpisanego manifestu** — inaczej instalator i kanał rozjechałyby się, a
 pierwszym objawem byłaby aktualizacja zgłaszająca zmianę tam, gdzie nic się nie
 zmieniło.
 
@@ -45,11 +45,9 @@ istnieje. **Wydanie jest niezmienne** — przebudowa, która po cichu zastępuje
 podpisane, to sposób, w jaki dwie różne binarki zaczynają dzielić jeden
 identyfikator.
 
-Potem MSI, z tego samego bundla:
-
-```powershell
-powershell -File packaging/windows/build-msi.ps1 -BundleDir dist/client-windows-amd64
-```
+Skrypt buduje parę binarek, bundel aktualizatora oraz MSI. Nie istnieje drugi,
+ręczny krok kompilacji instalatora: wynik trafia od razu obok bundla i zostaje
+ujęty w `manifest.json` jako artefakt `kind: installer`.
 
 ## Wersje: trzy postacie tej samej liczby
 
@@ -78,6 +76,11 @@ releases/<RELEASE_ID>/desktop/windows-amd64/manifest.json   ->  manifest.json.si
 releases/<RELEASE_ID>/channel.v2.json                       ->  channels/alpha.v2.json (+ .sig)
 ```
 
+Manifest wiąże sumą i rozmiarem zarówno `filees-client-windows-amd64.tar.gz`,
+jak i `filees-<wersja>.msi`. Aktualizator klienta wybiera tylko artefakt
+`kind: bundle`; MSI jest w tym samym wydaniu dla pobrania i audytu, nie jest
+uruchamiany automatycznie.
+
 Obie muszą być podpisane **tym samym kluczem** — resolver pobiera klucz z
 koperty i weryfikuje nim manifest, więc rozjazd kluczy jest odrzuceniem, nie
 ostrzeżeniem.
@@ -89,9 +92,14 @@ użytkownik Linuksa.
 
 ## Na co klient musi być przygotowany
 
-Bez wpisu `update` w `config.json` klient **nie aktualizuje się i nic o tym nie
-mówi**. To nie jest awaria, którą zobaczysz w interfejsie — po prostu nic się
-nie dzieje.
+Build dystrybucyjny ma zaszyte publiczne: adres `FILEES-BIN`, nazwę kanału i
+klucz weryfikacyjny. Bez wpisu `update` w `config.json` klient automatycznie
+sprawdza podpisany kanał i pokazuje dostępną wersję w GUI. Pobranie planu oraz
+instalacja nadal wymagają świadomej akcji użytkownika.
+
+Jawne `"update":{"enabled":false}` jest opt-out i wyłącza domyślny kanał
+dystrybucyjny. Pełny wpis `enabled:true` zastępuje jego publiczne lokalizacje,
+ale nigdy nie może zastąpić klucza zaufania wkompilowanego w program.
 
 ```json
 "update": {
@@ -150,6 +158,8 @@ wskazując linię, a nie znak.
 
 Klucz publiczny bierz z `FILEES-BIN/FILEESrelease.pub`. **Nie z drzewa źródeł** —
 `cmd/filees/assets/release.pub` to zaślepka, dokładnie jak po stronie serwera.
+Skrypt przekazuje do buildu również publiczny URL repozytorium oraz kanał.
+Klucz prywatny nie jest potrzebny ani do kompilacji, ani do utworzenia MSI.
 
 ## Co się dzieje przy aktualizacji na żywym kliencie
 

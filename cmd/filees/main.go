@@ -161,7 +161,7 @@ func runDaemon() {
 	}
 	lifecycle := &daemonLifecycle{cancel: cancel}
 	ipc.SetSystemLifecycleService(lifecycle)
-	if err := configureClientUpdate(ipc, clientView.Update, version); err != nil {
+	if err := configureClientUpdate(ipc, clientView.Update, clientView.UpdateConfigured, version); err != nil {
 		lg.Errorf("client update: %v", err)
 		os.Exit(1)
 	}

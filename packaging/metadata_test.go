@@ -28,10 +28,10 @@ func TestOpenBSDServerBinaryPolicyMatchesPrivilegeBoundaries(t *testing.T) {
 		byTarget[file.Target] = file
 	}
 	want := map[string]releasepublish.FileSpec{
-		"{libexec_dir}/filees/filees-bootstrap-entry": {Mode: "4511", Owner: "_filees-state", Group: "wheel"},
-		"{libexec_dir}/filees/filees-entry":           {Mode: "4511", Owner: "_filees-state", Group: "wheel"},
-		"{libexec_dir}/filees/filees-client-entry":    {Mode: "4550", Owner: "_filees-state", Group: "_filees-access"},
-		"{libexec_dir}/filees/filees-mobile-v1":       {Mode: "4550", Owner: "_filees-state", Group: "_filees-access"},
+		"{libexec_dir}/filees/filees-bootstrap-entry":      {Mode: "4511", Owner: "_filees-state", Group: "wheel"},
+		"{libexec_dir}/filees/filees-entry":                {Mode: "4511", Owner: "_filees-state", Group: "wheel"},
+		"{libexec_dir}/filees/filees-client-entry":         {Mode: "4550", Owner: "_filees-state", Group: "_filees-access"},
+		"{libexec_dir}/filees/filees-mobile-v1":            {Mode: "4550", Owner: "_filees-state", Group: "_filees-access"},
 		"{libexec_dir}/filees/filees-worker":               {Mode: "0555", Owner: "root", Group: "wheel"},
 		"{libexec_dir}/filees/filees-service-wc-corrector": {Mode: "4550", Owner: "root", Group: "_filees-access"},
 		"/usr/libexec/auth/login_-filees":                  {Mode: "4550", Owner: "_filees-state", Group: "auth"},
@@ -532,8 +532,16 @@ func TestWindowsInstallerCreatesPerUserShortcutWithAUMID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(license), `okre\'9clone`) || strings.Contains(string(license), `okre\'b6lone`) {
-		t.Fatalf("Windows license does not encode Polish ś in CP1250: %q", license)
+	licenseText := string(license)
+	for _, required := range []string{"BSD 2-Clause License", "Copyright (c) 2026, ATM Projekt", "kontakt@atmprojekt.pl", "THIS SOFTWARE IS PROVIDED", `\ansicpg1250`} {
+		if !strings.Contains(licenseText, required) {
+			t.Fatalf("Windows installer does not reproduce the distribution licence marker %q", required)
+		}
+	}
+	for _, forbidden := range []string{"Zaytzew", "Acme Kr"} {
+		if strings.Contains(licenseText, forbidden) {
+			t.Fatalf("Windows installer exposes personal attribution %q", forbidden)
+		}
 	}
 }
 

@@ -48,6 +48,21 @@ func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
 			t.Fatalf("version popup markup does not contain %s", required)
 		}
 	}
+	for _, required := range []string{`assets/atm-projekt.png`, `Odpowiedzialny dostawca`, `FileES jest marką handlową`, `kontakt@atmprojekt.pl`, `BSD 2-Clause`, `Copyright © 2026 ATM Projekt`, `Pełna treść licencji`} {
+		if !strings.Contains(markup, required) {
+			t.Fatalf("version popup does not identify its provider and licence via %q", required)
+		}
+	}
+	for _, forbidden := range []string{`Zaytzew`, `Acme Król`} {
+		if strings.Contains(markup, forbidden) {
+			t.Fatalf("public product description exposes personal attribution %q", forbidden)
+		}
+	}
+	for _, required := range []string{`.product-provider`, `.provider-logo`, `.product-legal`, `.license-copy`, `max-height:calc(100vh - 76px)`} {
+		if !strings.Contains(styles, required) {
+			t.Fatalf("version popup legal/provider styling does not contain %q", required)
+		}
+	}
 	for _, required := range []string{`update?.channel`, `$("#version-channel").textContent`, `channel || "nieustalony"`} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("version popup does not render update channel via %s", required)

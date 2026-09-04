@@ -9,7 +9,7 @@ import (
 	"filees/pkg/ipcserver"
 )
 
-func configureClientUpdate(_ *ipcserver.Server, update *config.UpdateConfig, _ string) error {
+func configureClientUpdate(_ *ipcserver.Server, update *config.UpdateConfig, _ bool, _ string) error {
 	if update != nil {
 		return errors.New("client self-update is not implemented on this platform")
 	}

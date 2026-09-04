@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"unicode"
 
 	"filees/internal/releaseenvelope"
 	contract "filees/pkg/contract/v1"
@@ -30,6 +32,9 @@ type Service struct {
 	CurrentVersion string
 
 	mu sync.Mutex
+	// appliedVersion bridges the short interval after an update replaces the
+	// files but before the supervisor restarts this still-running process.
+	appliedVersion string
 }
 
 func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, error) {
@@ -44,7 +49,7 @@ func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, erro
 		State: "current", Channel: service.Channel, CurrentVersion: current, ReleaseID: resolved.Envelope.ReleaseID,
 		Summary: fmt.Sprintf("Podpisane wydanie %s, sequence %d", resolved.SigningKeyID, resolved.Envelope.Sequence),
 	}
-	if resolved.Manifest.Version != current {
+	if !sameClientVersion(resolved.Manifest.Version, current) {
 		status.State = "available"
 		status.AvailableVersion = resolved.Manifest.Version
 		status.RestartRequired = true
@@ -76,7 +81,7 @@ func (service *Service) Apply(ctx context.Context) (contract.UpdateApplyResult, 
 	if err != nil {
 		return contract.UpdateApplyResult{}, err
 	}
-	if resolved.Manifest.Version == service.currentVersion(state) {
+	if sameClientVersion(resolved.Manifest.Version, service.currentVersion(state)) {
 		return contract.UpdateApplyResult{InstalledVersion: resolved.Manifest.Version}, nil
 	}
 	_, restart, err := service.Installer.Plan(ctx, resolved)
@@ -93,6 +98,7 @@ func (service *Service) Apply(ctx context.Context) (contract.UpdateApplyResult, 
 	if err := service.State.Save(next); err != nil {
 		return contract.UpdateApplyResult{}, fmt.Errorf("persist update high-water mark: %w", err)
 	}
+	service.appliedVersion = resolved.Manifest.Version
 	return contract.UpdateApplyResult{InstalledVersion: resolved.Manifest.Version, RestartRequired: restart}, nil
 }
 
@@ -115,8 +121,38 @@ func (service *Service) resolve(ctx context.Context) (*releaseenvelope.Resolved,
 }
 
 func (service *Service) currentVersion(state State) string {
-	if state.InstalledVersion != "" {
-		return state.InstalledVersion
+	if service.appliedVersion != "" {
+		return canonicalClientVersion(service.appliedVersion)
 	}
-	return service.CurrentVersion
+	// The binary that is actually running wins over persisted history. This is
+	// what lets the updater repair an old MSI installed over a newer channel
+	// release without lowering the anti-rollback high-water mark.
+	if service.CurrentVersion != "" {
+		return canonicalClientVersion(service.CurrentVersion)
+	}
+	if state.InstalledVersion != "" {
+		return canonicalClientVersion(state.InstalledVersion)
+	}
+	return ""
+}
+
+func sameClientVersion(left, right string) bool {
+	return canonicalClientVersion(left) == canonicalClientVersion(right)
+}
+
+// canonicalClientVersion maps the human-facing build stamp 0.1.15+r850 onto
+// the numeric distribution/MSI form 0.1.15.850. Other version schemes remain
+// untouched rather than being guessed at.
+func canonicalClientVersion(value string) string {
+	value = strings.TrimSpace(value)
+	marker := strings.LastIndex(value, "+r")
+	if marker <= 0 || marker+2 == len(value) {
+		return value
+	}
+	for _, character := range value[marker+2:] {
+		if !unicode.IsDigit(character) || character > unicode.MaxASCII {
+			return value
+		}
+	}
+	return value[:marker] + "." + value[marker+2:]
 }

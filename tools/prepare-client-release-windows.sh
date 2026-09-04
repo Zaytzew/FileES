@@ -18,6 +18,8 @@ SEQUENCE="${SEQUENCE:-}"
 SECURITY_EPOCH="${SECURITY_EPOCH:-1}"
 CHANNEL="${CHANNEL:-alpha}"
 KEY_ID="${KEY_ID:-}"
+FILEES_RELEASE_PUBKEY="${FILEES_RELEASE_PUBKEY:-$FILEES_BIN_WC/FILEESrelease.pub}"
+FILEES_RELEASE_REPO_URL="${FILEES_RELEASE_REPO_URL:-svn://cloud.atmprojekt.pl/FILEES-BIN}"
 PLATFORM=windows-amd64
 COMPONENT=desktop
 
@@ -35,6 +37,7 @@ case "$KEY_ID" in *[!A-Za-z0-9._-]*|'') die "KEY_ID must name the key that will 
 [ "$SEQUENCE" -gt 0 ] || die "SEQUENCE must be greater than zero"
 [ -d "$root/.svn" ] || die "source is not an SVN working copy: $root"
 [ -d "$FILEES_BIN_WC/.svn" ] || die "not an SVN working copy: $FILEES_BIN_WC"
+[ -f "$FILEES_RELEASE_PUBKEY" ] || die "release public key not found: $FILEES_RELEASE_PUBKEY"
 
 cd "$root"
 [ -z "$(svn status -q)" ] || die "source WC has versioned changes"
@@ -71,11 +74,25 @@ staging="${DIST:-$root/dist}/client-$PLATFORM"
 # a release is built from the revision this script has already checked, not from
 # whatever happens to be checked out by the time the build runs.
 REVISION="$source_revision" PLATFORM="$PLATFORM" \
+	FILEES_RELEASE_PUBKEY="$FILEES_RELEASE_PUBKEY" \
+	FILEES_RELEASE_KEY_ID="$KEY_ID" \
+	FILEES_RELEASE_REPO_URL="$FILEES_RELEASE_REPO_URL" \
+	FILEES_RELEASE_CHANNEL="$CHANNEL" \
 	"$root/packaging/build-client-bundle.sh" "$staging" >/dev/null
 
 mkdir -p "$release_root"
+cleanup_release() { rm -rf "$release_root"; }
+trap cleanup_release EXIT HUP INT TERM
 bundle="$release_root/filees-client-$PLATFORM.tar.gz"
 go run ./cmd/filees-release-bundle -source "$staging" -output "$bundle"
+installer="$release_root/filees-$client_version.msi"
+command -v powershell.exe >/dev/null 2>&1 || die "powershell.exe is required to build the Windows MSI"
+command -v cygpath >/dev/null 2>&1 || die "cygpath is required to pass build paths to PowerShell"
+powershell.exe -NoProfile -ExecutionPolicy Bypass \
+	-File "$(cygpath -w "$root/packaging/windows/build-msi.ps1")" \
+	-BundleDir "$(cygpath -w "$staging")" \
+	-Output "$(cygpath -w "$installer")" >/dev/null
+[ -f "$installer" ] || die "MSI builder did not create $installer"
 
 # The channel envelope covers every platform at once. The producer may retain
 # another platform only when it already belongs to this exact release identity;
@@ -88,6 +105,7 @@ fi
 
 go run ./cmd/filees-client-release \
 	-bundle "$bundle" \
+	-installer "$installer" \
 	-component "$COMPONENT" \
 	-platform "$PLATFORM" \
 	-release-id "$RELEASE_ID" \
@@ -99,9 +117,12 @@ go run ./cmd/filees-client-release \
 	-channel-out "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json" \
 	${merge:+-merge-channel "$merge"}
 
+trap - EXIT HUP INT TERM
+
 echo
 echo "prepared client release $RELEASE_ID ($client_version) from source SVN r$source_revision"
 echo "review, then svn add/commit only releases/$RELEASE_ID"
+echo "the manifest binds both the self-update bundle and filees-$client_version.msi"
 echo "on the signing machine, sign and promote:"
 echo "  releases/$RELEASE_ID/$COMPONENT/$PLATFORM/manifest.json -> manifest.json.sig"
 echo "  releases/$RELEASE_ID/channel.v2.json                    -> channels/$CHANNEL.v2.json (+ .sig)"

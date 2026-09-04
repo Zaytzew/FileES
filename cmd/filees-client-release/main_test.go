@@ -41,8 +41,11 @@ func TestWindowsProducerAndSignerUseTheConsumerContract(t *testing.T) {
 		"COMPONENT=" + config.DesktopUpdateComponent,
 		`release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/$COMPONENT/$PLATFORM"`,
 		`-channel-out "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json"`,
-		`go build -tags production -trimpath`,
-		`-ldflags "-H=windowsgui -X main.version=`,
+		`FILEES_RELEASE_PUBKEY="$FILEES_RELEASE_PUBKEY"`,
+		`FILEES_RELEASE_REPO_URL="$FILEES_RELEASE_REPO_URL"`,
+		`packaging/build-client-bundle.sh`,
+		`packaging/windows/build-msi.ps1`,
+		`-installer "$installer"`,
 	} {
 		if !strings.Contains(producer, required) {
 			t.Errorf("Windows producer is not bound to %q", required)
@@ -85,13 +88,25 @@ func TestWindowsProducerAndSignerUseTheConsumerContract(t *testing.T) {
 	}
 }
 
+func TestWindowsReleaseWithoutInstallerIsRefused(t *testing.T) {
+	root := t.TempDir()
+	releaseRoot := filepath.Join(root, "releases", "r819", config.DesktopUpdateComponent, "windows-amd64")
+	bundle := stageBundle(t, releaseRoot, "filees-client-windows-amd64.tar.gz", "pretend bundle")
+	err := run(bundle, "", config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
+		releaseRoot, filepath.Join(root, "channel.v2.json"), "", 819, 1)
+	if err == nil || !strings.Contains(err.Error(), "requires the MSI") {
+		t.Fatalf("missing installer = %v", err)
+	}
+}
+
 func TestBothDocumentsAreWrittenAndWouldBeAccepted(t *testing.T) {
 	root := t.TempDir()
 	releaseRoot := filepath.Join(root, "releases", "r819", config.DesktopUpdateComponent, "windows-amd64")
 	bundle := stageBundle(t, releaseRoot, "filees-client-windows-amd64.tar.gz", "pretend bundle")
+	installer := stageBundle(t, releaseRoot, "filees-0.1.15.819.msi", "pretend MSI")
 	channel := filepath.Join(root, "releases", "r819", "channel.v2.json")
 
-	if err := run(bundle, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
+	if err := run(bundle, installer, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
 		releaseRoot, channel, "", 819, 1); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -106,10 +121,10 @@ func TestBothDocumentsAreWrittenAndWouldBeAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the client would refuse the manifest: %v", err)
 	}
-	if len(manifest.Artifacts) != 1 || manifest.Artifacts[0].Source != "filees-client-windows-amd64.tar.gz" {
+	if len(manifest.Artifacts) != 2 || manifest.Artifacts[0].Source != "filees-client-windows-amd64.tar.gz" || manifest.Artifacts[0].Kind != "bundle" || manifest.Artifacts[1].Source != "filees-0.1.15.819.msi" || manifest.Artifacts[1].Kind != "installer" {
 		t.Fatalf("artifacts = %+v", manifest.Artifacts)
 	}
-	if manifest.Artifacts[0].Size != int64(len("pretend bundle")) {
+	if manifest.Artifacts[0].Size != int64(len("pretend bundle")) || manifest.Artifacts[1].Size != int64(len("pretend MSI")) {
 		t.Errorf("size = %d, want %d", manifest.Artifacts[0].Size, len("pretend bundle"))
 	}
 
@@ -163,8 +178,9 @@ func TestPublishingAnotherPlatformInTheSameReleaseKeepsTheOthers(t *testing.T) {
 
 	releaseRoot := filepath.Join(root, "releases", "r819", config.DesktopUpdateComponent, "windows-amd64")
 	bundle := stageBundle(t, releaseRoot, "filees-client-windows-amd64.tar.gz", "pretend bundle")
+	installer := stageBundle(t, releaseRoot, "filees-0.1.15.819.msi", "pretend MSI")
 	channel := filepath.Join(root, "releases", "r819", "channel.v2.json")
-	if err := run(bundle, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
+	if err := run(bundle, installer, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
 		releaseRoot, channel, existing, 819, 1); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -215,8 +231,9 @@ func TestPublishingAReleaseRefusesToCarryAnOlderPlatformsManifest(t *testing.T) 
 
 	releaseRoot := filepath.Join(root, "releases", "r819", config.DesktopUpdateComponent, "windows-amd64")
 	bundle := stageBundle(t, releaseRoot, "filees-client-windows-amd64.tar.gz", "pretend bundle")
+	installer := stageBundle(t, releaseRoot, "filees-0.1.15.819.msi", "pretend MSI")
 	channel := filepath.Join(root, "releases", "r819", "channel.v2.json")
-	err = run(bundle, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
+	err = run(bundle, installer, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
 		releaseRoot, channel, existing, 819, 1)
 	if err == nil || !strings.Contains(err.Error(), "cannot carry desktop/linux-amd64 from release r800 into r819") {
 		t.Fatalf("cross-release merge = %v; want a fail-closed identity error", err)
@@ -232,12 +249,13 @@ func TestAnExistingReleaseIsNeverOverwritten(t *testing.T) {
 	root := t.TempDir()
 	releaseRoot := filepath.Join(root, "releases", "r819", config.DesktopUpdateComponent, "windows-amd64")
 	bundle := stageBundle(t, releaseRoot, "filees-client-windows-amd64.tar.gz", "pretend bundle")
+	installer := stageBundle(t, releaseRoot, "filees-0.1.15.819.msi", "pretend MSI")
 	channel := filepath.Join(root, "releases", "r819", "channel.v2.json")
-	if err := run(bundle, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
+	if err := run(bundle, installer, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
 		releaseRoot, channel, "", 819, 1); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	err := run(bundle, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
+	err := run(bundle, installer, config.DesktopUpdateComponent, "windows-amd64", "r819", "0.1.15.819", "alpha-key", "",
 		releaseRoot, channel, "", 819, 1)
 	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
 		t.Fatalf("second run = %v; a release must not be rewritten", err)

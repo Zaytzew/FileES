@@ -484,6 +484,14 @@ a `config.json` pozostawia nietknięty. Po sukcesie GUI żąda restartu całego
 stacku, kończy pracę, zwalnia blokadę single-instance i dopiero wtedy uruchamia
 nową binarkę. Procedura publikacji: `tools/RELEASE_PUBLISHING.md`.
 
+Windowsowy kandydat powstaje przez `tools/prepare-client-release-windows.sh`.
+Manifest ma kanoniczną ścieżkę
+`releases/<id>/desktop/windows-amd64/manifest.json`, a neutralny wobec kanału
+envelope — `releases/<id>/channel.v2.json`. Wpis innej platformy można dołączyć
+wyłącznie z kandydata o tej samej pełnej tożsamości release'u; kopiowanie wpisu
+ze starego kanału jest odrzucane, ponieważ jego manifest nie przeszedłby
+walidacji envelope–manifest po stronie klienta.
+
 ### Powiadomienia
 
 Systemowe powiadomienia są wtórne wobec stanu w menu. MVP pokazuje je dla nowych błędów, przejścia repozytorium w stan wymagający uwagi, utraty/odzyskania łączności oraz zakończenia operacji istotnej dla użytkownika. Powtarzające się zdarzenia są grupowane i ograniczane czasowo. Powiadomienia pozostają informacyjne; bezpieczna aktywacja po kliknięciu wymaga osobnego odbioru natywnego i nie może wykonywać operacji mutującej.

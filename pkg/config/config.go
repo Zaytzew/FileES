@@ -141,6 +141,11 @@ type UpdateConfig struct {
 	SVNProgram                            string
 }
 
+// DesktopUpdateComponent is the release-envelope component selected by the
+// desktop daemon. Producers must use the same value or the signed release is
+// valid but invisible to every configured desktop client.
+const DesktopUpdateComponent = "desktop"
+
 func LoadClientView(path string) (ClientView, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -219,10 +224,10 @@ func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot
 	}
 	component = strings.TrimSpace(component)
 	if component == "" {
-		component = "desktop"
+		component = DesktopUpdateComponent
 	}
-	if component != "desktop" {
-		return UpdateConfig{}, errors.New("config.update.component: klient desktopowy wymaga wartości desktop")
+	if component != DesktopUpdateComponent {
+		return UpdateConfig{}, fmt.Errorf("config.update.component: klient desktopowy wymaga wartości %s", DesktopUpdateComponent)
 	}
 	platform = strings.TrimSpace(platform)
 	if platform == "" {

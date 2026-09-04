@@ -27,6 +27,24 @@ modyfikowane. `build-gui.sh` tworzy katalog bundla oraz deterministyczny
 ścieżki, uid/gid i czas równe zero, tryby 0755/0644, bez symlinków i plików
 specjalnych.
 
+Kandydat klienta Windows powstaje na hoście budującym bez klucza prywatnego:
+
+```sh
+FILEES_BIN_WC="$HOME/FILEES-BIN" \
+RELEASE_ID=r826 SEQUENCE=826 SECURITY_EPOCH=1 \
+KEY_ID="release-2026-a" CHANNEL=alpha \
+./tools/prepare-client-release-windows.sh
+```
+
+Skrypt buduje dokładnie tę samą parę, którą później konsumują MSI i
+self-update, oraz zapisuje manifest pod
+`releases/<id>/desktop/windows-amd64/manifest.json` i neutralny kandydat jako
+`releases/<id>/channel.v2.json`. Nie podpisuje i nie dotyka `channels/`.
+Jeżeli istniejący kanał v2 zawiera inną platformę ze starszego release'u,
+przygotowanie kończy się odmową. Tego wpisu nie można przepisać: każdy manifest
+musi powtarzać tożsamość nowego envelope. Przed wspólnym kanałem Windows+Linux
+obie platformy trzeba złożyć pod jednym `release_id` i dopiero wtedy podpisać.
+
 Produkcyjny build serwera również przyjmuje wyłącznie publiczny trust root:
 
 ```sh

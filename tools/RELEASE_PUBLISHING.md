@@ -40,6 +40,8 @@ Skrypt buduje dokładnie tę samą parę, którą później konsumują MSI i
 self-update, oraz zapisuje manifest pod
 `releases/<id>/desktop/windows-amd64/manifest.json` i neutralny kandydat jako
 `releases/<id>/channel.v2.json`. Nie podpisuje i nie dotyka `channels/`.
+Wails powstaje z tagiem `production` i subsystemem `windowsgui`, więc binarium
+z kanału nie otwiera okna konsoli przy starcie z nadzorcy.
 Jeżeli istniejący kanał v2 zawiera inną platformę ze starszego release'u,
 przygotowanie kończy się odmową. Tego wpisu nie można przepisać: każdy manifest
 musi powtarzać tożsamość nowego envelope. Przed wspólnym kanałem Windows+Linux

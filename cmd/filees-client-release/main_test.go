@@ -41,6 +41,8 @@ func TestWindowsProducerAndSignerUseTheConsumerContract(t *testing.T) {
 		"COMPONENT=" + config.DesktopUpdateComponent,
 		`release_root="$FILEES_BIN_WC/releases/$RELEASE_ID/$COMPONENT/$PLATFORM"`,
 		`-channel-out "$FILEES_BIN_WC/releases/$RELEASE_ID/channel.v2.json"`,
+		`go build -tags production -trimpath`,
+		`-ldflags "-H=windowsgui -X main.version=`,
 	} {
 		if !strings.Contains(producer, required) {
 			t.Errorf("Windows producer is not bound to %q", required)

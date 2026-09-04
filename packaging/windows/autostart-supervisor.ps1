@@ -22,6 +22,32 @@ function Write-Supervisor($text) {
     Add-Content -Path (Join-Path $logDir 'supervisor.log') -Value $line -Encoding utf8
 }
 
+function Initialize-Configuration {
+    # A fresh install has no config.json, and the daemon refuses to start
+    # without one - config.Load treats a missing file as fatal, and the
+    # transport paths must be absolute. So the first run writes the minimum
+    # that lets the daemon come up and the interface offer activation.
+    #
+    # It is written here rather than by the installer because the content
+    # depends on who is logged in, and an MSI cannot expand a user's home
+    # directory into the body of a file. Written once and never again: after
+    # this it is the owner's production configuration and nothing of ours
+    # touches it.
+    $config = Join-Path $here 'config.json'
+    if (Test-Path $config) { return }
+    $state = Join-Path $env:USERPROFILE '.local\share\filees'
+    $seed = [ordered]@{
+        transport = [ordered]@{
+            identity_file = (Join-Path $state 'identity\id_ed25519')
+            known_hosts   = (Join-Path $state 'known_hosts')
+        }
+        repositories = @()
+    }
+    $json = $seed | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText($config, $json, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Supervisor "wrote the initial configuration"
+}
+
 function Test-DaemonRunning {
     # By image path rather than by name: a hand-built filees-rNNN.exe left over
     # from a session is still a daemon holding the socket, and starting a second
@@ -49,6 +75,8 @@ function Start-Daemon {
         -RedirectStandardError $err -RedirectStandardOutput $out -WindowStyle Hidden
     Write-Supervisor "daemon started"
 }
+
+Initialize-Configuration
 
 if (-not (Test-DaemonRunning)) { Start-Daemon } else { Write-Supervisor "daemon already running" }
 

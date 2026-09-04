@@ -249,6 +249,10 @@ type RecoveryDownloader interface {
 	DownloadRecovery(context.Context, string, string) ([]string, error)
 }
 
+type RecoveryDismisser interface {
+	DismissRecovery(context.Context, string, string, string) error
+}
+
 type StackLifecycle interface {
 	RestartFileES(context.Context) error
 	ShutdownFileES(context.Context) error
@@ -314,6 +318,7 @@ type Config struct {
 	ServerDetacher       ServerDetacher
 	RealmRemover         RealmRemover
 	RecoveryDownloader   RecoveryDownloader
+	RecoveryDismisser    RecoveryDismisser
 	MobilePairer         MobilePairingLauncher
 	// PinStore, if non-nil, offers PIN setup at the end of a successful
 	// activation (see startActivation) - nil means the local-PIN feature is
@@ -449,6 +454,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startRecoverySettings(ctx)
 	case tray.IntentDownloadRecovery:
 		c.startRecoveryDownload(ctx, intent.RecoveryOperationID)
+	case tray.IntentDismissRecovery:
+		c.startRecoveryDismiss(ctx, intent.ServerID, intent.RepoID, intent.RecoveryOperationID)
 	case tray.IntentReservations:
 		c.startReservations(ctx)
 	case tray.IntentCreateRepository:
@@ -652,6 +659,57 @@ func (c *Controller) startRecoveryDownload(ctx context.Context, operationID stri
 			return
 		}
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Archiwa repozytoriów pobrane", Text: strings.Join(paths, "\n")})
+	}()
+}
+
+func (c *Controller) startRecoveryDismiss(ctx context.Context, serverID, repoID, operationID string) {
+	key := "recovery-dismiss:" + operationID
+	if serverID == "" || repoID == "" || operationID == "" || c.cfg.RecoveryDismisser == nil || c.cfg.Prompter == nil || !c.beginOperation(key) {
+		return
+	}
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		defer c.endOperation(key)
+		vm := c.cfg.ViewModel()
+		repo, ok := findRepo(vm, repoID)
+		if !ok || repo.ServerID != serverID || !repo.ServerDeleted || !repo.RecoveryAvailable || repo.RecoveryOperationID != operationID || !vm.CanDismissRecovery() {
+			return
+		}
+		name := firstNonBlank(repo.DisplayName, repo.ID)
+		deadline := strings.TrimSpace(repo.RetainUntil)
+		if parsed, err := time.Parse(time.RFC3339Nano, deadline); err == nil {
+			deadline = parsed.Local().Format("02.01.2006 15:04")
+		}
+		text := "Archiwum „" + name + "” zniknie z tego klienta i nie będzie już dostępne do samodzielnego pobrania tutaj."
+		if deadline != "" {
+			text += "\n\nSerwer nie usunie teraz danych: zachowa je zgodnie ze swoją polityką retencji, obecnie do " + deadline + "."
+		} else {
+			text += "\n\nSerwer nie usunie teraz danych: zachowa je zgodnie ze swoją polityką retencji."
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			Title: "Usuń archiwum z tego klienta", Text: text,
+			ConfirmText: "Usuń z listy", CancelText: "Anuluj",
+		})
+		if err != nil || !confirmed {
+			return
+		}
+		latest := c.cfg.ViewModel()
+		current, ok := findRepo(latest, repoID)
+		if !ok || current.ServerID != serverID || !current.ServerDeleted || !current.RecoveryAvailable || current.RecoveryOperationID != operationID || !latest.CanDismissRecovery() {
+			return
+		}
+		actionID := c.startProjectedAction(app.PendingAction{
+			Kind: string(tray.IntentDismissRecovery), ServerID: serverID, RepoID: repoID,
+			Label: "Usuwanie archiwum z listy", ExpectedRecoveryDismissed: true,
+		})
+		if err := c.cfg.RecoveryDismisser.DismissRecovery(ctx, serverID, repoID, operationID); err != nil {
+			c.finishProjectedAction(actionID)
+			c.reportActionError(ctx, key, "Nie udało się usunąć archiwum z listy", actionErrorBody(err))
+			return
+		}
+		c.awaitProjectedAction(actionID)
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Archiwum usunięte z tego klienta", Body: name + " — retencja serwera pozostaje bez zmian", Urgency: platform.UrgencyNormal})
 	}()
 }
 

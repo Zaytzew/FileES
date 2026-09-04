@@ -19,6 +19,7 @@ const (
 	IntentSettings           IntentKind = "settings"
 	IntentRecoveries         IntentKind = "recoveries"
 	IntentDownloadRecovery   IntentKind = "download_recovery"
+	IntentDismissRecovery    IntentKind = "dismiss_recovery"
 	IntentJournal            IntentKind = "journal"
 	IntentReservations       IntentKind = "reservations"
 	IntentCreateRepository   IntentKind = "create_repository"

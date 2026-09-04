@@ -24,6 +24,10 @@ type lifecycleStub struct {
 	repairOperationID, repairServerID, repairRepoID, repairStrategy                                                                       string
 }
 
+func (stub *lifecycleStub) DismissRecovery(serverID, repoID, operationID string) (contract.RepoRecoveryDismissResult, error) {
+	return contract.RepoRecoveryDismissResult{OperationID: operationID, ServerID: serverID, RepoID: repoID, Dismissed: true}, nil
+}
+
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
 	stub.createCalls++
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, LocalPath: localPath, State: "request_pending"}, nil
@@ -103,6 +107,28 @@ func TestDeleteReturnsSuccessAfterDurableServerBoundary(t *testing.T) {
 	}
 	if !result.ServerDeleteCompleted || !result.LocalCleanupCompleted || result.State != "deleting" {
 		t.Fatalf("result lost pending recovery state: %+v", result)
+	}
+}
+
+func TestRecoveryDismissRemovesCompletedArchiveFromIPCProjection(t *testing.T) {
+	server := New("unused")
+	server.SetRepositoryLifecycleService(&lifecycleStub{})
+	repo := server.RegisterProjectedRepo("repo-1", "Archiwum", "", "office", "", "deleted", false)
+	repo.SetDeletionMetadata(true, false, "2026-09-18T18:00:00Z", "delete-op", true, false, "")
+	payload, err := json.Marshal(contract.RepoRecoveryDismissPayload{OperationID: "delete-op", ServerID: "office", RepoID: "repo-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := server.handleRepoRecoveryDismiss(contract.Request{RequestID: "request", RepoID: "repo-1", Payload: payload})
+	if resp.Status != contract.StatusOK {
+		t.Fatalf("dismiss response=%+v", resp)
+	}
+	var result contract.RepoRecoveryDismissResult
+	if err := contract.DecodeResult(resp.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Dismissed || result.OperationID != "delete-op" || server.RepoState("office", "repo-1") != nil {
+		t.Fatalf("dismiss result=%+v projected=%v", result, server.RepoState("office", "repo-1"))
 	}
 }
 

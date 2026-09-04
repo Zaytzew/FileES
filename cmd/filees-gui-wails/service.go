@@ -150,6 +150,7 @@ type RepoProjection struct {
 	RetainUntil          string          `json:"retain_until,omitempty"`
 	RecoveryOperationID  string          `json:"recovery_operation_id,omitempty"`
 	RecoveryAvailable    bool            `json:"recovery_available,omitempty"`
+	CanDismissRecovery   bool            `json:"can_dismiss_recovery,omitempty"`
 	RecoveryPending      bool            `json:"recovery_pending,omitempty"`
 	CleanupError         string          `json:"cleanup_error,omitempty"`
 	Purpose              string          `json:"purpose,omitempty"`
@@ -706,6 +707,9 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentDownloadRecovery):
 		allowed := repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != ""
 		return tray.Intent{Kind: tray.IntentDownloadRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed
+	case string(tray.IntentDismissRecovery):
+		allowed := vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != ""
+		return tray.Intent{Kind: tray.IntentDismissRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed
 	case string(tray.IntentOpenFolder):
 		return tray.Intent{Kind: tray.IntentOpenFolder, RepoID: repo.ID}, repo.Attached && strings.TrimSpace(repo.LocalPath) != ""
 	case string(tray.IntentAttachRepository):
@@ -938,7 +942,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
 			RetainUntil: repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
-			RecoveryAvailable: repo.RecoveryAvailable, RecoveryPending: repo.RecoveryPending, CleanupError: repo.CleanupError,
+			RecoveryAvailable: repo.RecoveryAvailable, CanDismissRecovery: vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != "", RecoveryPending: repo.RecoveryPending, CleanupError: repo.CleanupError,
 			Purpose: repo.Purpose,
 		})
 		if repo.Cycle.Phase == contract.CycleRunning {

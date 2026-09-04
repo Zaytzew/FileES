@@ -192,6 +192,8 @@ var specs = []Spec{
 	{"REPO-2014", "repo.load_dump_failed", SevError, HintRequireAction, nil, "Load-dump failed", "Odtwarzanie z archiwum nie powiodło się"},
 	{"REPO-2015", "repo.lifecycle_repair_forbidden", SevError, HintNone, nil, "Repository lifecycle repair is forbidden for the current durable state", "Tej niedokończonej operacji nie można naprawić w wybrany sposób"},
 	{"REPO-2016", "repo.lifecycle_repair_failed", SevError, HintRequireAction, []string{"detail"}, "Repository lifecycle repair failed", "Nie udało się naprawić niedokończonej operacji na folderze"},
+	{"REPO-2017", "repo.recovery_dismiss_unavailable", SevError, HintNone, nil, "Recovery archive cannot be dismissed in its current state", "Tego archiwum nie można teraz usunąć z klienta"},
+	{"REPO-2018", "repo.recovery_dismiss_failed", SevError, HintRequireAction, nil, "Recovery archive dismissal failed", "Nie udało się usunąć archiwum z tego klienta"},
 	{"REPO-3001", "repo.activity_unavailable", SevError, HintNone, nil, "Activity journal is not available", "Dziennik aktywności jest teraz niedostępny"},
 
 	{"MOBILE-0001", "mobile_pairing.unavailable", SevError, HintRetry, nil, "Mobile pairing is not available", "Parowanie urządzenia mobilnego jest teraz niedostępne"},

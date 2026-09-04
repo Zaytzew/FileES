@@ -75,7 +75,11 @@ type Record struct {
 	RetainUntil           string `json:"retain_until,omitempty"`
 	RecoveryPrepared      bool   `json:"recovery_prepared,omitempty"`
 	RecoveryKitPath       string `json:"recovery_kit_path,omitempty"`
-	LocalCleanupCompleted bool   `json:"local_cleanup_completed,omitempty"`
+	// RecoveryDismissed is a client-local acknowledgement of a retained
+	// server archive. It removes the capability from local projections without
+	// changing the server's retention deadline or deleting server data.
+	RecoveryDismissed     bool `json:"recovery_dismissed,omitempty"`
+	LocalCleanupCompleted bool `json:"local_cleanup_completed,omitempty"`
 	// ReconcileOperationID is minted fresh by BeginReconcile and reused
 	// across daemon restarts so the orchestration's own staging (named
 	// after this ID, mirroring CreateFSFS's operationID convention) is
@@ -652,6 +656,7 @@ func (s *Store) beginDetachLocked(serverID, repoID string, deleteRepository bool
 	record.RetainUntil = ""
 	record.RecoveryPrepared = false
 	record.RecoveryKitPath = ""
+	record.RecoveryDismissed = false
 	record.LocalCleanupCompleted = false
 	record.LastError = ""
 	record.UpdatedAt = s.now().UTC()
@@ -717,6 +722,48 @@ func (s *Store) MarkRecoveryPrepared(operationID, kitPath string) (Record, error
 		record.LastError = ""
 		return nil
 	})
+}
+
+// DismissRecovery persistently removes one repository recovery capability
+// from this client's presentation. The retained archive is server-owned and
+// deliberately untouched. detachOperationID is the public recovery operation
+// ID carried by IPC; OperationID remains the lifecycle store's private key.
+func (s *Store) DismissRecovery(serverID, repoID, detachOperationID string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var key string
+	var record Record
+	for operationID, candidate := range s.records {
+		if candidate.ServerID == serverID && candidate.RepoID == repoID && candidate.DetachOperationID == detachOperationID {
+			key, record = operationID, candidate
+			break
+		}
+	}
+	if key == "" {
+		return Record{}, os.ErrNotExist
+	}
+	if !record.ServerDeleteCompleted || !record.RecoveryPrepared || record.RecoveryKitPath == "" || (record.State != StateDeleting && record.State != StateDeleted) {
+		return Record{}, errors.New("repository recovery archive is not available")
+	}
+	retainUntil, err := time.Parse(time.RFC3339Nano, record.RetainUntil)
+	if err != nil || !s.now().UTC().Before(retainUntil) {
+		return Record{}, errors.New("repository recovery archive has expired")
+	}
+	if record.RecoveryDismissed {
+		return record, nil
+	}
+	before := record
+	record.RecoveryDismissed = true
+	record.UpdatedAt = s.now().UTC()
+	if err := validate(record); err != nil {
+		return Record{}, err
+	}
+	s.records[key] = record
+	if err := s.persist(); err != nil {
+		s.records[key] = before
+		return Record{}, err
+	}
+	return record, nil
 }
 
 func (s *Store) MarkLocalCleanupCompleted(operationID string) (Record, error) {
@@ -873,8 +920,11 @@ func validate(r Record) error {
 		if _, err := time.Parse(time.RFC3339Nano, r.RetainUntil); err != nil {
 			return errors.New("repository deletion retention deadline is invalid")
 		}
-	} else if r.RetainUntil != "" || r.RecoveryPrepared || r.RecoveryKitPath != "" {
+	} else if r.RetainUntil != "" || r.RecoveryPrepared || r.RecoveryKitPath != "" || r.RecoveryDismissed {
 		return errors.New("repository recovery metadata exists before server deletion")
+	}
+	if r.RecoveryDismissed && (!r.RecoveryPrepared || r.RecoveryKitPath == "") {
+		return errors.New("repository recovery dismissal exists without a local capability")
 	}
 	if r.RecoveryPrepared && r.RecoveryKitPath != "" && !filepath.IsAbs(r.RecoveryKitPath) {
 		return errors.New("repository recovery kit path must be absolute")

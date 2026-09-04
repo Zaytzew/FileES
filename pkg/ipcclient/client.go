@@ -471,6 +471,15 @@ func (c *Client) RepoDelete(ctx context.Context, serverID, repoID string) (*cont
 	return &result, contract.DecodeResult(resp.Result, &result)
 }
 
+func (c *Client) RepoRecoveryDismiss(ctx context.Context, payload contract.RepoRecoveryDismissPayload) (*contract.RepoRecoveryDismissResult, error) {
+	resp, err := c.do(ctx, contract.CmdRepoRecoveryDismiss, payload.RepoID, payload)
+	if err != nil {
+		return nil, err
+	}
+	var result contract.RepoRecoveryDismissResult
+	return &result, contract.DecodeResult(resp.Result, &result)
+}
+
 func (c *Client) PublicShareList(ctx context.Context, serverID, repoID string) (*contract.PublicShareListResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoPublicShareList, repoID, contract.PublicShareListPayload{ServerID: serverID, RepoID: repoID})
 	if err != nil {

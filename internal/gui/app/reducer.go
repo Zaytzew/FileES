@@ -577,6 +577,15 @@ func (s appState) confirmPendingActions(ids []string) (appState, []string) {
 			}
 			continue
 		}
+		if action.ExpectedRecoveryDismissed {
+			summary, exists := s.summaries[action.RepoID]
+			if !exists || summary.ServerID != action.ServerID || (!summary.RecoveryAvailable && !summary.RecoveryPending) {
+				confirmed = append(confirmed, id)
+			} else {
+				waiting = append(waiting, id)
+			}
+			continue
+		}
 		if action.ExpectedLifecycleOperationID != "" {
 			summary, exists := s.summaries[action.RepoID]
 			if !exists || summary.ServerID != action.ServerID || summary.LifecycleOperationID != action.ExpectedLifecycleOperationID {

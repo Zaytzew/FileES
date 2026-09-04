@@ -73,6 +73,45 @@ func TestSyncProjectionKnowledgeKeepsDeletedRepositoryThroughRetention(t *testin
 	}
 }
 
+func TestSyncProjectionKnowledgeDoesNotResurrectDismissedRecovery(t *testing.T) {
+	serverID := "office"
+	repoID := "00000000-0000-0000-0000-000000000098"
+	lifecycle, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, _, err := lifecycle.EnsureConfiguredAttached(serverID, repoID, "svn+ssh://example/"+repoID, "rw", filepath.Join(t.TempDir(), "Archiwum"), "Archiwum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err := lifecycle.BeginDetach(serverID, repoID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	if _, err := lifecycle.MarkServerDeleted(record.OperationID, deadline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.MarkRecoveryPrepared(record.OperationID, filepath.Join(t.TempDir(), "archive.fkr")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.MarkLocalCleanupCompleted(record.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.CompleteDetach(record.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.DismissRecovery(serverID, repoID, deleting.DetachOperationID); err != nil {
+		t.Fatal(err)
+	}
+	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	server.RegisterProjectedRepo(repoID, "stale", "", serverID, "", "deleted", false)
+	syncProjectionKnowledge(server, serverID, clientview.View{RealmID: "realm"}, nil, lifecycle)
+	if got := server.RepoState(serverID, repoID); got != nil {
+		t.Fatalf("dismissed archive returned to projection: %+v", got.Summary())
+	}
+}
+
 type projectionStop func()
 
 func (stop projectionStop) Stop(context.Context) error { stop(); return nil }

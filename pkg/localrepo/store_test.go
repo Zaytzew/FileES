@@ -57,6 +57,48 @@ func TestDeletionPersistsServerBoundaryRecoveryAndLocalCleanupSeparately(t *test
 	}
 }
 
+func TestDismissRecoveryIsDurableAndKeepsServerRetentionReceipt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 4, 18, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	repoID := uuid.NewString()
+	record, _, err := store.EnsureConfiguredAttached("spot", repoID, "svn+ssh://example/"+repoID, "rw", filepath.Join(t.TempDir(), "wc"), "Archiwum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err := store.BeginDetach("spot", repoID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := now.Add(14 * 24 * time.Hour).Format(time.RFC3339Nano)
+	if _, err := store.MarkServerDeleted(record.OperationID, deadline); err != nil {
+		t.Fatal(err)
+	}
+	kit := filepath.Join(t.TempDir(), "recovery.fkr")
+	if _, err := store.MarkRecoveryPrepared(record.OperationID, kit); err != nil {
+		t.Fatal(err)
+	}
+	dismissed, err := store.DismissRecovery("spot", repoID, deleting.DetachOperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dismissed.RecoveryDismissed || dismissed.RetainUntil != deadline || dismissed.RecoveryKitPath != kit {
+		t.Fatalf("dismissed=%+v", dismissed)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reopened.Get(record.OperationID)
+	if !ok || !persisted.RecoveryDismissed || persisted.RetainUntil != deadline {
+		t.Fatalf("persisted dismissal=%+v found=%v", persisted, ok)
+	}
+}
+
 func TestRemoteRepositoryDeletionHasNoFabricatedWorkingCopy(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lifecycle.json")
 	store, err := Open(path)

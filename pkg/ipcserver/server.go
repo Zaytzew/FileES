@@ -134,8 +134,31 @@ type RepositoryLifecycleService interface {
 	BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error)
 	BeginDetach(context.Context, string, string, bool) (contract.RepoLifecycleResult, error)
 	BeginDelete(context.Context, string, string, string) (contract.RepoLifecycleResult, error)
+	DismissRecovery(string, string, string) (contract.RepoRecoveryDismissResult, error)
 	Status(operationID string) (contract.RepoLifecycleResult, error)
 	Repair(context.Context, string, string, string, string) (contract.RepoLifecycleResult, error)
+}
+
+// dismissRecoveryProjection applies the immediate local consequence of a
+// successful repo.recovery_dismiss. A still-running WC cleanup remains
+// visible; a completed deletion disappears without waiting for another
+// server-view tick.
+func (s *Server) dismissRecoveryProjection(serverID, repoID string) {
+	repo := s.repoByID(repoID)
+	if repo == nil || repo.ServerID() != serverID {
+		return
+	}
+	summary := repo.Summary()
+	if summary.LocalCleanupPending {
+		repo.SetDeletionMetadata(true, true, summary.RetainUntil, summary.RecoveryOperationID, false, false, summary.CleanupError)
+	} else {
+		s.mu.Lock()
+		if current := s.repos[repoID]; current == repo {
+			delete(s.repos, repoID)
+		}
+		s.mu.Unlock()
+	}
+	s.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
 }
 
 type SystemLifecycleService interface {

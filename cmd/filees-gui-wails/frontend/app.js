@@ -375,8 +375,11 @@ function repoAction(action, label, icon, extraClass = "") {
 function renderRepo(repo) {
   const state = repo.display_state || "unknown";
   const deleted = Boolean(repo.server_deleted);
+  const localProvisioning = Boolean(repo.local_provisioning);
   const pending = deleted
     ? (repo.recovery_pending && repo.local_cleanup_pending ? "archiwum i czyszczenie czekają" : repo.recovery_pending ? "wydanie archiwum czeka" : repo.local_cleanup_pending ? "czyszczenie lokalne czeka" : "folder odłączony")
+    : localProvisioning
+      ? (state === "attention" ? "import wymaga uwagi" : state === "offline" ? "import wstrzymany — offline" : "pierwsze wysyłanie — trwa")
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");
   const source = repo.local_path || (repo.attached ? "Folder FileES" : "Folder zdalny");
   const actions = [
@@ -393,7 +396,7 @@ function renderRepo(repo) {
     ? '<span class="repo-state-overlay" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M5.2 10.8 3.8 12.2a2 2 0 0 1-2.8-2.8l2.1-2.1M10.8 5.2l1.4-1.4A2 2 0 0 1 15 6.6l-2.1 2.1"/></svg></span>'
     : state === "attention"
       ? '<span class="repo-state-overlay is-attention" aria-hidden="true">!</span>'
-      : state === "busy"
+      : state === "busy" || state === "initializing" || state === "baselining" || localProvisioning
         ? '<span class="repo-state-overlay is-busy" aria-hidden="true"></span>'
         : "";
   const iconContents = `<span class="repo-icon" aria-hidden="true">${stateOverlay}</span>`;
@@ -461,8 +464,11 @@ function renderRepositories(snapshot) {
     const shelves = live.filter(isShelf);
     const trash = live.filter(isTrash);
     const rest = live.filter((repo) => !isShelf(repo) && !isTrash(repo));
-    const attached = rest.filter((repo) => repo.attached);
-    const remote = rest.filter((repo) => !repo.attached);
+    // Initial repository creation owns a local source folder before it can
+    // truthfully claim an attached SVN working copy. Keep that row in its
+    // local realm group while the daemon performs the first commit.
+    const attached = rest.filter((repo) => repo.attached || repo.local_provisioning);
+    const remote = rest.filter((repo) => !repo.attached && !repo.local_provisioning);
     const owned = attached.filter((repo) => repo.ownership === "owned");
     const guest = attached.filter((repo) => repo.ownership === "guest");
     const unclassified = attached.filter((repo) => !["owned", "guest"].includes(repo.ownership));

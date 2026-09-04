@@ -410,6 +410,22 @@ func (vm ViewModel) CanMutateUnlock() bool {
 
 func (r RepoViewModel) CanWrite() bool { return r.Access == contract.AccessReadWrite }
 
+// LocallyProvisioning distinguishes a repository whose server-side creation
+// is still running from a genuinely remote repository. During the initial
+// import Attached is deliberately false (there is no usable SVN working copy
+// yet), but LocalPath remains durable local ownership of the operation.
+func (r RepoViewModel) LocallyProvisioning() bool {
+	if r.Attached || r.ServerDeleted || strings.TrimSpace(r.LocalPath) == "" {
+		return false
+	}
+	switch r.DisplayState() {
+	case RepoDisplayBusy, RepoDisplayInitializing, RepoDisplayBaselining, RepoDisplayAttention, RepoDisplayOffline:
+		return true
+	default:
+		return false
+	}
+}
+
 // NeedsLocate is the missing-WC signal: the attachment is still claimed, the
 // root is gone, and FileES is waiting for the user to point at the moved copy.
 func (r RepoViewModel) NeedsLocate() bool {
@@ -481,7 +497,7 @@ func repoIconState(r RepoViewModel) IconState {
 	// may outlive a failed or abandoned creation attempt. It remains visible
 	// in server authority, but must not keep the whole client permanently in
 	// the busy state.
-	if !r.Attached && r.AttachmentPolicy == "optional" {
+	if !r.Attached && r.AttachmentPolicy == "optional" && !r.LocallyProvisioning() {
 		return IconActive
 	}
 	if r.Conflicts > 0 || r.State == contract.StateDegraded || r.State == contract.StateInteractionRequired {

@@ -104,6 +104,16 @@ func TestRepositoryServiceProjectsUploadAndDumpActions(t *testing.T) {
 	}
 }
 
+func TestRepositoryServiceProjectsDeleteForOwnedRemoteRepository(t *testing.T) {
+	snapshot, ok := projectRepositorySettings(platform.SettingsDialogRequest{
+		FocusRepoID: "remote",
+		Servers:     []platform.SettingsServer{{ID: "spot", Folders: []platform.SettingsFolder{{ID: "remote", Name: "Zdalne archiwum", State: "nieprzypięte lokalnie", CanDelete: true}}}},
+	})
+	if !ok || len(snapshot.Actions) != 1 || snapshot.Actions[0].ID != "delete_repository" || snapshot.Actions[0].Tone != "danger" {
+		t.Fatalf("remote delete action = ok %v snapshot %+v", ok, snapshot)
+	}
+}
+
 func TestRepositoryServiceProjectsLifecycleRepairActions(t *testing.T) {
 	snapshot, ok := projectRepositorySettings(platform.SettingsDialogRequest{
 		FocusRepoID: "docs",

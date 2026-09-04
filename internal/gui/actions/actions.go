@@ -844,7 +844,7 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanConnect:              !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
 			CanLocate:               repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
 			CanDetach:               repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
-			CanDelete:               repo.Attached && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+			CanDelete:               !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
 			CanLoadDump:             repo.Attached && ownedAndCreatable,
 			CanRetryLifecycle:       vm.CanRepairRepositoryLifecycle() && repo.CanRetryLifecycle && repo.LifecycleOperationID != "",
 			CanAbandonLifecycle:     vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
@@ -1322,7 +1322,7 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		defer c.endOperation(key)
 		vm := c.cfg.ViewModel()
 		repo, ok := findRepo(vm, repoID)
-		if !ok || repo.ServerID != serverID || !repo.Attached || !vm.Connected || vm.Stale {
+		if !ok || repo.ServerID != serverID || (!deleteRepository && !repo.Attached) || !vm.Connected || vm.Stale {
 			return
 		}
 		name := repo.DisplayName
@@ -1345,9 +1345,13 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 			if repo.AttachmentPolicy == "required" || !vm.CanDeleteRepository() || !repositoryOwnedByCurrentRealm(vm, repo) {
 				return
 			}
+			location := "Repozytorium zostanie usunięte z serwera. Nie ma przypiętego lokalnego folderu. Historia serwerowa przestanie być dostępna."
+			if repo.Attached {
+				location = fmt.Sprintf("Repozytorium zostanie usunięte z serwera, a folder lokalny odłączony. Dane lokalne w %s pozostaną, ale synchronizacja i historia serwerowa przestaną być dostępne.", repo.LocalPath)
+			}
 			first, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
-				Title:       "Odłącz trwale repozytorium",
-				Text:        fmt.Sprintf("%s\n%s\n\nRepozytorium zostanie usunięte z serwera, a folder lokalny odłączony. Dane lokalne pozostaną, ale synchronizacja i historia serwerowa przestaną być dostępne.", name, repo.LocalPath),
+				Title:       "Usuń repozytorium",
+				Text:        name + "\n\n" + location,
 				ConfirmText: "Przejdź dalej", CancelText: "Anuluj",
 			})
 			if err != nil || !first {
@@ -1364,7 +1368,7 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		}
 		latest := c.cfg.ViewModel()
 		current, ok := findRepo(latest, repoID)
-		if !ok || current.ServerID != serverID || !current.Attached || !latest.Connected || latest.Stale {
+		if !ok || current.ServerID != serverID || (!deleteRepository && !current.Attached) || !latest.Connected || latest.Stale {
 			return
 		}
 		if deleteRepository {

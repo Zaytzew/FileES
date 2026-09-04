@@ -1,5 +1,8 @@
 import { Events, Window } from "/wails/runtime.js";
 import { SettingsService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
+import { initializeTheme } from "./theme-preference.js";
+
+initializeTheme();
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value) => String(value ?? "")

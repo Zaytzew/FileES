@@ -360,7 +360,7 @@ func systemThemeScript(dark bool) string {
 	if dark {
 		theme = "dark"
 	}
-	return fmt.Sprintf(`document.documentElement.dataset.systemTheme=%q;`, theme)
+	return fmt.Sprintf(`window.fileesApplySystemTheme?window.fileesApplySystemTheme(%q):document.documentElement.dataset.systemTheme=%q;`, theme, theme)
 }
 
 func systemThemeBackground(dark bool) application.RGBA {

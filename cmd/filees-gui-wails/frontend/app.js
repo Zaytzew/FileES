@@ -1,5 +1,8 @@
 import { Events, Window } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
+import { initializeTheme, setThemePreference } from "./theme-preference.js";
+
+initializeTheme();
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value) => String(value ?? "")
@@ -951,6 +954,18 @@ Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
 Events.On("filees:open-announcement", openNewestUnreadAnnouncement);
 $("#activate").addEventListener("click", (event) => triggerAction(event.currentTarget));
 $("#pair-mobile").addEventListener("click", (event) => triggerAction(event.currentTarget));
+function updateThemeToggle() {
+  const preference = document.documentElement.dataset.themePreference || "system";
+  document.querySelectorAll("[data-theme-preference]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.themePreference === preference));
+  });
+}
+$("#theme-switch").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-theme-preference]");
+  if (button) setThemePreference(button.dataset.themePreference);
+});
+window.addEventListener("filees:theme-changed", updateThemeToggle);
+updateThemeToggle();
 $("#refresh").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Refresh));
 $("#reconnect").addEventListener("click", (event) => invoke(event.currentTarget, GUIService.Reconnect));
 $(".side-column").addEventListener("click", (event) => {

@@ -271,7 +271,9 @@ function renderConnection(snapshot) {
   $("#offline-copy").textContent = snapshot.last_refresh
     ? `Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}. Jej bieżącego stanu nie można zweryfikować; po odzyskaniu połączenia panel odświeży się automatycznie.`
     : "Nie ma jeszcze zapisanej pełnej projekcji. Po odzyskaniu połączenia panel odświeży się automatycznie.";
-  $("#pulse-card").dataset.connection = snapshot.connected && !snapshot.stale ? "online" : snapshot.connected ? "stale" : "offline";
+  $("#pulse-card").dataset.connection = !snapshot.connected || projection.state === "daemon_offline"
+    ? "offline"
+    : projection.state === "current" ? "online" : "stale";
   $("#pulse-card").dataset.connectionLabel = connectionLabel;
 }
 
@@ -310,7 +312,6 @@ function renderMetrics(snapshot) {
   $("#metric-attention").textContent = attention;
   $("#pulse-value").textContent = repos.length;
   $("#pulse-label").textContent = plural(repos.length, "repozytorium", "repozytoria", "repozytoriów");
-  $("#pulse-card").classList.toggle("has-attention", attention > 0);
   const connectionLabel = $("#pulse-card").dataset.connectionLabel || "Stan połączenia nieznany";
   if (!snapshot.connected) {
     $("#pulse-card").title = `${connectionLabel}. Projekcja jest niezweryfikowana.`;
@@ -468,7 +469,8 @@ function renderRepositories(snapshot) {
     const attention = serverRepos.some((repo) => repo.display_state === "attention" || Number(repo.conflicts || 0) > 0)
       || (snapshot.errors || []).some((error) => serverRepos.some((repo) => repo.id === error.repo_id))
       || (snapshot.notices || []).some((notice) => !notice.acked && serverRepos.some((repo) => repo.id === notice.repo_id));
-    return `<article class="server-panel ${attention ? "has-attention" : ""}" data-server-id="${escapeHTML(server.id)}">
+    const accent = /^#[0-9a-f]{6}$/i.test(server.accent_color || "") ? server.accent_color : "#FF6A00";
+    return `<article class="server-panel ${attention ? "has-attention" : ""}" data-server-id="${escapeHTML(server.id)}" style="--realm-accent:${escapeHTML(accent)}">
       <header class="server-header" data-toggle-server="${escapeHTML(server.id)}" tabindex="0" role="button" aria-expanded="${expanded}" aria-controls="server-folders-${escapeHTML(server.id)}">
         <div class="server-identity"><span class="server-mark ${health.className}" role="img" aria-label="${escapeHTML(health.label)}" title="${escapeHTML(health.label)}"></span><div>
           <div class="server-title-line">

@@ -344,7 +344,10 @@ type realmBrandingClient interface {
 	RealmSetPublicBranding(context.Context, string, realmbranding.Branding) (*contract.RealmPublicBrandingResult, error)
 }
 
-type realmBrandingAdapter struct{ client realmBrandingClient }
+type realmBrandingAdapter struct {
+	client  realmBrandingClient
+	changed func(serverID string, branding realmbranding.Branding)
+}
 
 func (adapter realmBrandingAdapter) PublicBranding(ctx context.Context, serverID string) (realmbranding.Branding, error) {
 	result, err := adapter.client.RealmPublicBranding(ctx, serverID)
@@ -354,7 +357,11 @@ func (adapter realmBrandingAdapter) PublicBranding(ctx context.Context, serverID
 	if result == nil {
 		return realmbranding.Branding{}, errors.New("daemon returned empty realm branding")
 	}
-	return realmbranding.Normalize(result.Branding)
+	branding, err := realmbranding.Normalize(result.Branding)
+	if err == nil && adapter.changed != nil {
+		adapter.changed(serverID, branding)
+	}
+	return branding, err
 }
 
 func (adapter realmBrandingAdapter) SetPublicBranding(ctx context.Context, serverID string, branding realmbranding.Branding) (realmbranding.Branding, error) {
@@ -365,7 +372,11 @@ func (adapter realmBrandingAdapter) SetPublicBranding(ctx context.Context, serve
 	if result == nil {
 		return realmbranding.Branding{}, errors.New("daemon returned empty realm branding")
 	}
-	return realmbranding.Normalize(result.Branding)
+	branding, err = realmbranding.Normalize(result.Branding)
+	if err == nil && adapter.changed != nil {
+		adapter.changed(serverID, branding)
+	}
+	return branding, err
 }
 
 func (adapter realmGrantAdapter) ListRecipients(ctx context.Context, serverID, repoID string) ([]actions.RealmGrantRecipient, error) {

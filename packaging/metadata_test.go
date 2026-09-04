@@ -571,4 +571,7 @@ func TestWindowsMSIBuildScriptUsesWiX4(t *testing.T) {
 	if !strings.Contains(text, "DOTNET_ROOT") {
 		t.Error("MSI build script does not point wix at a per-user dotnet runtime")
 	}
+	if !strings.Contains(text, `$cachedUIExtension`) || !strings.Contains(text, `-ext $uiExtension`) {
+		t.Error("MSI build script does not resolve WiX 5's globally cached UI extension by exact DLL path")
+	}
 }

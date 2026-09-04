@@ -74,6 +74,18 @@ toolset will not load.
     }
 }
 
+# WiX 5 can list a globally cached extension and still fail WIX0144 when
+# `build -ext` receives only its package name. Resolve the exact DLL from the
+# versioned per-user cache instead; this is also the artifact installed by the
+# documented `wix extension add --global .../5.0.2` command. Keep the symbolic
+# name as a fallback for WiX 4 installations whose cache layout differs.
+$wixSemVer = ($wixVersionText.Trim() -split '\+')[0]
+$uiExtension = "WixToolset.UI.wixext"
+$cachedUIExtension = Join-Path $env:USERPROFILE (".wix\extensions\WixToolset.UI.wixext\{0}\wixext{1}\WixToolset.UI.wixext.dll" -f $wixSemVer, $wixMajor)
+if (Test-Path $cachedUIExtension) {
+    $uiExtension = $cachedUIExtension
+}
+
 $bundle = (Resolve-Path $BundleDir).Path
 foreach ($required in @("bin\filees.exe", "bin\filees-gui-wails.exe",
                         "autostart\start-filees.ps1", "autostart\start-filees.vbs", "VERSION")) {
@@ -122,7 +134,7 @@ try {
 
     & $wixCommand build $Wxs `
         -arch x64 `
-        -ext WixToolset.UI.wixext `
+        -ext $uiExtension `
         -d "SourceDir=$staging" `
         -d "ProductVersion=$msiVersion" `
         -d "BundleVersion=$bundleVersion" `

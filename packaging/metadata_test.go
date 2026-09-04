@@ -554,7 +554,7 @@ func TestWindowsMSIBuildScriptUsesWiX4(t *testing.T) {
 	for _, required := range []string{
 		"build $Wxs", "WixToolset.UI.wixext",
 		`SourceDir=$staging`, `ProductVersion=$msiVersion`,
-		`BundleVersion=$bundleVersion`, `VERSION`,
+		`BundleVersion=$bundleVersion`, `-pdbtype none`, `VERSION`,
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("MSI build script missing %q", required)

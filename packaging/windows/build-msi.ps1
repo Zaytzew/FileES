@@ -135,6 +135,7 @@ try {
     & $wixCommand build $Wxs `
         -arch x64 `
         -ext $uiExtension `
+        -pdbtype none `
         -d "SourceDir=$staging" `
         -d "ProductVersion=$msiVersion" `
         -d "BundleVersion=$bundleVersion" `

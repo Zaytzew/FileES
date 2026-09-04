@@ -292,3 +292,23 @@ func localFileSHA256(path string) (string, error) {
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:]), nil
 }
+
+// RequiredBundleFiles lists what a directory-installed bundle must contain,
+// as slash-separated paths relative to its root.
+//
+// Exported so the thing that produces bundles can be checked against the thing
+// that consumes them. The two live in different languages - a shell script
+// assembles the layout, Go validates it - so nothing but a test can keep them
+// agreeing, and the failure they would otherwise produce is invisible until a
+// real update refuses a real release.
+func RequiredBundleFiles() []string {
+	installer := DirectoryInstaller{Paths: DirectoryPaths{InstallDir: string(filepath.Separator) + "unused"}}
+	files := installer.managedFiles()
+	required := make([]string, 0, len(files)+2)
+	required = append(required, "VERSION", "SHA256SUMS")
+	for _, file := range files {
+		required = append(required, file.source)
+	}
+	sort.Strings(required)
+	return required
+}

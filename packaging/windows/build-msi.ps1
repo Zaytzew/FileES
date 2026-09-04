@@ -11,18 +11,41 @@
 param(
     [Parameter(Mandatory = $true)][string]$BundleDir,
     [string]$Output = "",
-    [string]$Wxs = (Join-Path $PSScriptRoot "filees.wxs")
+    [string]$Wxs = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
+# Resolved here rather than as a parameter default: Windows PowerShell 5.1
+# evaluates param() defaults before $PSScriptRoot exists, so the default was an
+# empty path and the script failed on its own first line.
+if ($Wxs -eq "") { $Wxs = Join-Path $PSScriptRoot "filees.wxs" }
+
+# WiX is a dotnet global tool, and finding it is two problems rather than one.
+#
+# The tools directory is often not on PATH in a fresh shell. And on a machine
+# where the SDK was installed per-user - which is the only way to install it
+# without an administrator - wix.exe still resolves its runtime from the
+# machine-wide C:\Program Files\dotnet, finds only the older runtimes there, and
+# refuses to start with a message about a missing framework rather than about
+# where it looked. DOTNET_ROOT is what points it at the right one.
+$found = Get-Command wix -ErrorAction SilentlyContinue
+$wixCommand = if ($found) { $found.Source } else { "" }
+if (-not $wixCommand) {
+    $candidate = Join-Path $env:USERPROFILE ".dotnet\tools\wix.exe"
+    if (Test-Path $candidate) { $wixCommand = $candidate }
+}
+if (-not $wixCommand) {
     throw @"
-WiX Toolset v4 is required and 'wix' is not on PATH.
+WiX Toolset is required and 'wix' was not found.
 Install it with:  dotnet tool install --global wix
-That needs the .NET SDK, which this machine does not have; the runtime alone is
-not enough.
+That needs the .NET SDK. Without an administrator, install the SDK per-user:
+  curl -sSL https://dot.net/v1/dotnet-install.ps1 -o dotnet-install.ps1
+  ./dotnet-install.ps1 -Channel 8.0 -InstallDir "$env:USERPROFILE\.dotnet"
 "@
+}
+if (-not $env:DOTNET_ROOT -and (Test-Path (Join-Path $env:USERPROFILE ".dotnet\dotnet.exe"))) {
+    $env:DOTNET_ROOT = Join-Path $env:USERPROFILE ".dotnet"
 }
 
 $bundle = (Resolve-Path $BundleDir).Path
@@ -71,7 +94,7 @@ try {
     Copy-Item (Join-Path $PSScriptRoot "License.rtf") $staging
     Copy-Item (Join-Path $PSScriptRoot "..\..\cmd\filees\assets\filees-folder.ico") $staging
 
-    & wix build $Wxs `
+    & $wixCommand build $Wxs `
         -arch x64 `
         -ext WixToolset.UI.wixext `
         -d "SourceDir=$staging" `

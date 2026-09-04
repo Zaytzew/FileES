@@ -114,8 +114,39 @@ niż klient nieaktualizowany.
 
 - Go z cross-kompilacją na `windows/amd64` (bez cgo, więc wystarczy sam Go)
 - SVN i kopie robocze obu repozytoriów
-- do MSI: **WiX Toolset v4** (`dotnet tool install --global wix`), a to wymaga
-  **.NET SDK** — sam runtime nie wystarczy i komunikat o tym nie jest oczywisty
+### Łańcuch narzędzi do MSI — cztery pułapki, każda kosztowała czas
+
+**Wersja WiX-a: piątka, nie najnowsza.** WiX **v6 i v7 wymagają akceptacji
+licencji Open Source Maintenance Fee** i odmawiają uruchomienia bez niej
+(`error WIX7015`). To zobowiązanie licencyjne, nie techniczne — decyzja
+właściciela, nie budującego. **WiX v5 jest sprzed tej zmiany, na MIT, i używa
+tego samego schematu `v4`**, więc pliki `.wxs` działają bez zmian.
+
+```powershell
+dotnet tool install --global wix --version "5.*"
+wix extension add --global WixToolset.UI.wixext/5.0.2   # wersję TRZEBA przypiąć
+```
+
+Bez przypięcia rozszerzenie wciągnie się w wersji 7 i WiX v5 odmówi
+(`WIX6101: Could not find expected package root folder wixext5`).
+
+**.NET SDK bez administratora.** `winget install Microsoft.DotNet.SDK.8` żąda
+podniesienia uprawnień i zawiesza się na monicie UAC. Oficjalny skrypt instaluje
+do profilu i **nie wymaga admina**:
+
+```powershell
+Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile dotnet-install.ps1
+./dotnet-install.ps1 -Channel 8.0 -InstallDir "$env:USERPROFILE\.dotnet"
+```
+
+**`DOTNET_ROOT` po instalacji per-user.** `wix.exe` szuka runtime'u w
+systemowym `C:\Program Files\dotnet`, znajduje tam starsze wersje i odmawia
+startu komunikatem o brakującym frameworku — **nie o tym, gdzie szukał**.
+`build-msi.ps1` ustawia `DOTNET_ROOT` sam, jeśli widzi instalację w profilu.
+
+**Strona kodowa.** Polskie znaki w komunikatach MSI wymagają
+`Package/@Codepage="1250"`. Domyślna 1252 ich nie ma i budowa pada z `WIX0311`,
+wskazując linię, a nie znak.
 
 Klucz publiczny bierz z `FILEES-BIN/FILEESrelease.pub`. **Nie z drzewa źródeł** —
 `cmd/filees/assets/release.pub` to zaślepka, dokładnie jak po stronie serwera.

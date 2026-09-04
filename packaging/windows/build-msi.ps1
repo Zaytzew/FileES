@@ -48,6 +48,32 @@ if (-not $env:DOTNET_ROOT -and (Test-Path (Join-Path $env:USERPROFILE ".dotnet\d
     $env:DOTNET_ROOT = Join-Path $env:USERPROFILE ".dotnet"
 }
 
+# The major version is checked because getting it wrong fails in a way that
+# names anything but the cause.
+#
+# WiX 6 and 7 refuse to run until somebody accepts the Open Source Maintenance
+# Fee licence - a commitment for the owner to make, not a build step - and say
+# so with error WIX7015 and a link. WiX 4 and 5 are MIT and read the same v4
+# schema, so the .wxs here needs no change for either. Anything else, and the
+# person building learns about licensing when they wanted an installer.
+$wixVersionText = (& $wixCommand --version 2>&1) -join " "
+if ($wixVersionText -match '^\s*(\d+)\.') {
+    $wixMajor = [int]$Matches[1]
+    if ($wixMajor -lt 4 -or $wixMajor -gt 5) {
+        throw @"
+WiX $wixVersionText is installed; this package builds with WiX 4 or 5.
+WiX 6 and later require accepting the Open Source Maintenance Fee licence,
+which is the owner's decision rather than a build step. Install the last MIT
+release instead:
+  dotnet tool uninstall --global wix
+  dotnet tool install --global wix --version "5.*"
+  wix extension add --global WixToolset.UI.wixext/5.0.2
+The extension version must be pinned too, or it resolves to a major the
+toolset will not load.
+"@
+    }
+}
+
 $bundle = (Resolve-Path $BundleDir).Path
 foreach ($required in @("bin\filees.exe", "bin\filees-gui-wails.exe",
                         "autostart\start-filees.ps1", "autostart\start-filees.vbs", "VERSION")) {

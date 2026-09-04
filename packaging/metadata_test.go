@@ -544,12 +544,31 @@ func TestWindowsMSIBuildScriptUsesWiX4(t *testing.T) {
 	}
 	text := string(data)
 	for _, required := range []string{
-		"WiX Toolset v4", "wix build", "WixToolset.UI.wixext",
+		"build $Wxs", "WixToolset.UI.wixext",
 		`SourceDir=$staging`, `ProductVersion=$msiVersion`,
 		`BundleVersion=$bundleVersion`, `VERSION`,
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("MSI build script missing %q", required)
 		}
+	}
+	// The toolset major version is checked by the script, because getting it
+	// wrong fails in a way that names anything but the cause: WiX 6 and 7
+	// refuse to run until somebody accepts the Open Source Maintenance Fee
+	// licence, and report that instead of anything about the package. WiX 4 and
+	// 5 are MIT and read the same v4 schema, so the .wxs is unaffected either
+	// way - which is exactly why nothing else would notice the difference.
+	if !strings.Contains(text, "WIX7015") && !strings.Contains(text, "Open Source Maintenance Fee") {
+		t.Error("MSI build script does not explain the WiX 6/7 licence refusal, which is what a wrong version actually reports")
+	}
+	if !strings.Contains(text, `$wixMajor -lt 4 -or $wixMajor -gt 5`) {
+		t.Error("MSI build script does not bound the WiX major version it supports")
+	}
+	// wix is a dotnet global tool and is routinely absent from PATH in a fresh
+	// shell, and after a per-user SDK install it resolves its runtime from the
+	// machine-wide directory and refuses to start. Both are handled here rather
+	// than left to whoever runs the build.
+	if !strings.Contains(text, "DOTNET_ROOT") {
+		t.Error("MSI build script does not point wix at a per-user dotnet runtime")
 	}
 }

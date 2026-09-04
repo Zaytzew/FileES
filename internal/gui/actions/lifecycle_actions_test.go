@@ -153,6 +153,33 @@ func TestControllerPermanentDeleteRequiresTwoSeparateConfirmations(t *testing.T)
 	}
 }
 
+func TestControllerDeletesOwnedRemoteRepositoryWithoutLocalAttachment(t *testing.T) {
+	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
+	platformFake := &platformtest.Fake{
+		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+	}
+	view := lifecycleView(contract.CapRepoDelete)
+	view.Repos[0].Attached = false
+	view.Repos[0].LocalPath = ""
+	view.Repos[0].State = contract.StateUnattached
+	view.Servers[0].Repos[0] = view.Repos[0]
+	intents, cancel := setup(actions.Config{
+		ViewModel: viewCopy(view), Prompter: platformFake, Notifier: platformFake,
+		RepositoryDetacher: detacher,
+	})
+	defer cancel()
+
+	send(t, intents, tray.Intent{Kind: tray.IntentDeleteRepository, ServerID: "office", RepoID: "repo-1"})
+	call := awaitCh(t, detacher.calls, "remote repository delete")
+	if !call.deleteRepository || call.serverID != "office" || call.repoID != "repo-1" {
+		t.Fatalf("remote delete call=%+v", call)
+	}
+	confirmations := platformFake.Snapshot().ConfirmRequests
+	if len(confirmations) != 2 || !strings.Contains(confirmations[0].Text, "Nie ma przypiętego lokalnego folderu") || strings.Contains(confirmations[0].Text, "/home/user") {
+		t.Fatalf("remote delete confirmations=%+v", confirmations)
+	}
+}
+
 func TestControllerSettingsRoutesFolderDetachThroughExistingConfirmation(t *testing.T) {
 	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
 	platformFake := &platformtest.Fake{

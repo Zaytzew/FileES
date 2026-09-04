@@ -244,7 +244,9 @@ func (s *Store) beginLocked(record Record) (Record, error) {
 	if record.OperationID == "" {
 		record.OperationID = uuid.NewString()
 	}
-	record.LocalPath = filepath.Clean(record.LocalPath)
+	if strings.TrimSpace(record.LocalPath) != "" {
+		record.LocalPath = filepath.Clean(record.LocalPath)
+	}
 	record.CreatedAt = s.now().UTC()
 	record.UpdatedAt = record.CreatedAt
 	if err := validate(record); err != nil {
@@ -579,8 +581,48 @@ func (s *Store) FailReconcile(operationID string, cause error) (Record, error) {
 }
 
 func (s *Store) BeginDetach(serverID, repoID string, deleteRepository bool) (Record, error) {
+	if deleteRepository {
+		return s.BeginDelete(serverID, repoID, "")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.beginDetachLocked(serverID, repoID, false)
+}
+
+// BeginDelete starts one durable repository deletion whether or not this
+// client currently has a working copy attached. A remote-only deletion has no
+// local path to clean; that absence is explicit state, not a fabricated temp
+// directory. The server deletion receipt and recovery capability still cross
+// exactly the same durable boundaries as an attached deletion.
+func (s *Store) BeginDelete(serverID, repoID, displayName string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, record := range s.records {
+		if record.ServerID != serverID || record.RepoID != repoID || terminal(record.State) {
+			continue
+		}
+		return s.beginDetachLocked(serverID, repoID, true)
+	}
+	now := s.now().UTC()
+	record := Record{
+		OperationID: uuid.NewString(), ServerID: serverID, RepoID: repoID,
+		DisplayName: strings.TrimSpace(displayName), State: StateDeleting,
+		DetachOperationID: uuid.NewString(), DeleteRepository: true,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := validate(record); err != nil {
+		return Record{}, err
+	}
+	s.records[record.OperationID] = record
+	if err := s.persist(); err != nil {
+		delete(s.records, record.OperationID)
+		return Record{}, err
+	}
+	return record, nil
+}
+
+func (s *Store) beginDetachLocked(serverID, repoID string, deleteRepository bool) (Record, error) {
 	var operationID string
 	for id, record := range s.records {
 		if record.ServerID == serverID && record.RepoID == repoID && !terminal(record.State) {
@@ -768,7 +810,8 @@ func validate(r Record) error {
 	if strings.TrimSpace(r.ServerID) == "" || strings.ContainsAny(r.ServerID, "/\\\x00\r\n\t ") {
 		return errors.New("local repository server ID is invalid")
 	}
-	if !filepath.IsAbs(r.LocalPath) || filepath.Clean(r.LocalPath) == string(filepath.Separator) {
+	remoteDelete := strings.TrimSpace(r.LocalPath) == "" && r.DeleteRepository && (r.State == StateDeleting || r.State == StateDeleted)
+	if !remoteDelete && (!filepath.IsAbs(r.LocalPath) || filepath.Clean(r.LocalPath) == string(filepath.Separator)) {
 		return errors.New("local repository path must be an absolute non-root path")
 	}
 	if r.RepoID == "" && r.DisplayName == "" {
@@ -849,6 +892,9 @@ func validate(r Record) error {
 }
 
 func pathsOverlap(a, b string) bool {
+	if strings.TrimSpace(a) == "" || strings.TrimSpace(b) == "" {
+		return false
+	}
 	a = filepath.Clean(a)
 	b = filepath.Clean(b)
 	sep := string(filepath.Separator)

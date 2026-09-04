@@ -31,7 +31,7 @@ var settingsActionCatalog = []settingsActionSpec{
 	{SettingsDialogPublicShares, "public_shares", "public_shares", "Udostępnienia publiczne", true, false},
 	{SettingsDialogUploadChannels, "upload_channels", "upload_channels", "Półki przyjęcia", true, false},
 	{SettingsDialogDetachFolder, "detach_folder", "detach", "Odłącz tylko folder", true, false},
-	{SettingsDialogDeleteRepo, "delete_repository", "delete", "Odłącz trwale repozytorium", true, false},
+	{SettingsDialogDeleteRepo, "delete_repository", "delete", "Usuń repozytorium", true, false},
 	{SettingsDialogLoadDump, "load_dump", "load_dump", "Odtwórz z archiwum", true, false},
 	{SettingsDialogDetachServer, "detach_server", "deactivate", "Dezaktywuj tylko tego klienta", false, false},
 	{SettingsDialogRemoveRealm, "remove_realm", "remove_realm", "Usuń mój udział FileES z serwera", false, false},

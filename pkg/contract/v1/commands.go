@@ -71,7 +71,7 @@ const (
 	CmdRepoQuarantineHide      = "repo.quarantine_hide"         // hide one reject in the manifest
 	CmdRepoQuarantineFetch     = "repo.quarantine_fetch"        // copy payload from the waiting room
 	CmdRepoDetach              = "repo.detach"                  // detach one local working copy, preserving user data
-	CmdRepoDelete              = "repo.delete"                  // delete an owned server repository, then detach locally
+	CmdRepoDelete              = "repo.delete"                  // delete an owned server repository; detach and clean a local WC when present
 	CmdRepoLifecycleStatus     = "repo.lifecycle_status"        // poll outcome of a create/attach/relocate operation by ID
 	CmdRepoLifecycleRepair     = "repo.lifecycle_repair"        // retry or locally abandon one stuck durable operation
 	CmdRepoActivity            = "repo.activity"                // global recent synchronization activity snapshot

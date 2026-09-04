@@ -134,6 +134,28 @@ func TestDaemonProvisionerCleanupRetryDoesNotWaitForRecovery(t *testing.T) {
 	}
 }
 
+func TestDaemonProvisionerRemoteDeleteRecordsEmptyLocalCleanup(t *testing.T) {
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err := local.BeginDelete("spot", "repo-remote", "Zdalne archiwum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err = local.MarkServerDeleted(deleting.OperationID, time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provisioner := newDaemonProvisioner(local, nil, nil)
+	provisioner.retryLocalCleanup(t.Context(), deleting.OperationID)
+
+	got, ok := local.Get(deleting.OperationID)
+	if !ok || !got.LocalCleanupCompleted || got.RecoveryPrepared || got.LocalPath != "" {
+		t.Fatalf("remote cleanup receipt=%+v", got)
+	}
+}
+
 func TestDaemonProvisionerRestoresActiveAttachmentWithoutNetwork(t *testing.T) {
 	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

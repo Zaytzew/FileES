@@ -133,6 +133,7 @@ type RepositoryLifecycleService interface {
 	BeginLocate(serverID, repoID, existingLocalPath string) (contract.RepoLifecycleResult, error)
 	BeginLoadDump(serverID, repoID string, applyIgnorePolicy bool, keepLastRevisions *int) (contract.RepoLifecycleResult, error)
 	BeginDetach(context.Context, string, string, bool) (contract.RepoLifecycleResult, error)
+	BeginDelete(context.Context, string, string, string) (contract.RepoLifecycleResult, error)
 	Status(operationID string) (contract.RepoLifecycleResult, error)
 	Repair(context.Context, string, string, string, string) (contract.RepoLifecycleResult, error)
 }

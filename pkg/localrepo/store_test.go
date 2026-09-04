@@ -57,6 +57,47 @@ func TestDeletionPersistsServerBoundaryRecoveryAndLocalCleanupSeparately(t *test
 	}
 }
 
+func TestRemoteRepositoryDeletionHasNoFabricatedWorkingCopy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, err := store.BeginDelete("spot", "repo-remote", "Zdalne archiwum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleting.State != StateDeleting || deleting.LocalPath != "" || !deleting.DeleteRepository || deleting.LocalCleanupCompleted {
+		t.Fatalf("remote delete intent=%+v", deleting)
+	}
+	if _, err := store.MarkLocalCleanupCompleted(deleting.OperationID); err == nil {
+		t.Fatal("remote cleanup crossed server deletion boundary")
+	}
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleting, ok := reopened.Get(deleting.OperationID)
+	if !ok || deleting.LocalPath != "" || deleting.DisplayName != "Zdalne archiwum" {
+		t.Fatalf("persisted remote delete=%+v found=%v", deleting, ok)
+	}
+	deadline := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	if _, err := reopened.MarkServerDeleted(deleting.OperationID, deadline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.MarkLocalCleanupCompleted(deleting.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.MarkRecoveryPrepared(deleting.OperationID, ""); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := reopened.CompleteDetach(deleting.OperationID)
+	if err != nil || completed.State != StateDeleted || !completed.LocalCleanupCompleted {
+		t.Fatalf("completed remote delete=%+v err=%v", completed, err)
+	}
+}
+
 func TestOpenMigratesHistoricalDeletedTombstone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lifecycle.json")
 	store, err := Open(path)

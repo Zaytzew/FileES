@@ -277,8 +277,10 @@ func TestReservationReleaseRejectsTraversalBeforeCallback(t *testing.T) {
 	repo := server.RegisterRepoAccess("docs", "svn+ssh://host/docs", "/work/docs", "office", contract.AccessReadWrite)
 	called := false
 	repo.SetReservationFuncs(nil, func(context.Context, string, string, bool) error { called = true; return errors.New("unexpected") })
-	response := server.dispatch(lifecycleRequest(contract.CmdRepoReservationRelease, contract.RepoReservationReleasePayload{ServerID: "office", RepoID: "docs", Path: "../elsewhere", ExpectedToken: "opaque"}))
-	if response.Status == contract.StatusOK || called {
-		t.Fatalf("traversal response=%+v called=%v", response, called)
+	for _, invalid := range []string{"../elsewhere", "docs/../elsewhere", "/absolute", "docs\\a.txt", "docs//a.txt", " docs/a.txt"} {
+		response := server.dispatch(lifecycleRequest(contract.CmdRepoReservationRelease, contract.RepoReservationReleasePayload{ServerID: "office", RepoID: "docs", Path: invalid, ExpectedToken: "opaque"}))
+		if response.Status == contract.StatusOK || called {
+			t.Fatalf("invalid path %q response=%+v called=%v", invalid, response, called)
+		}
 	}
 }

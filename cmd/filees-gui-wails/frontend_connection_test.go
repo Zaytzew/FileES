@@ -19,22 +19,10 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 		`freshness.textContent = "Stan danych: aktualny"`,
 		`freshness.textContent = "Aktualizowanie danych"`,
 		`freshness.textContent = "Demon niedostępny — dane niepotwierdzone"`,
-		// The header must consult the per-server view age, not only the link to
-		// the daemon. Without this the strings above can be restored on top of
-		// the old measurement and the test would go green again.
-		`const stale = snapshot.connected ? staleViewServers(snapshot) : [];`,
-		`view_sync_failures`,
-		// A server the daemon has not fetched from yet is not the same as one it
-		// fetched from successfully. Without this the header calls a cached
-		// ten-day-old projection current until the first sync happens to fail.
-		`return String(server.view_synced_at || "") === "";`,
+		`const projection = snapshot.projection || { state: "daemon_offline" };`,
+		`projection.state === "server_unverified"`,
+		`projection.state === "server_unavailable"`,
 		`jeszcze niesprawdzone`,
-		// server_view_produced_at is still read and still carried, but the
-		// header must not render it: we only reach the header after a
-		// successful fetch, so the server has just confirmed it is fine, and
-		// the client cannot tell "nothing changed" from "something changed and
-		// was not published". A number nobody can act on is not a trust signal.
-		`server_view_produced_at`,
 		`Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}`,
 		`Nie ma jeszcze zapisanej pełnej projekcji`,
 		`Brak zapisanej projekcji; panel odświeży się automatycznie.`,
@@ -54,6 +42,11 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 			t.Fatalf("connection header still renders %q", forbidden)
 		}
 	}
+	for _, forbidden := range []string{"staleViewServers", "unproducedServers", "view_sync_failures", "view_sync_error", "view_synced_at", "server_view_produced_at", "30 * 24 * 3600"} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("renderer still derives projection truth from %q", forbidden)
+		}
+	}
 
 	// The sentence that made this necessary. It claimed the projection was
 	// current while measuring the GUI-to-daemon link, so on 2026-09-02 every
@@ -65,5 +58,19 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 	}
 	if !strings.Contains(styles, `.pulse-card[data-connection="offline"] .pulse-caption`) {
 		t.Fatal("offline daemon does not take visual priority on the radar")
+	}
+}
+
+func TestGeneratedDashboardBindingsMatchProjectionBoundary(t *testing.T) {
+	bindings := embeddedFrontendFile(t, "frontend/bindings/filees/cmd/filees-gui-wails/models.js")
+	for _, wanted := range []string{"export class FreshnessProjection", "export class ReservationAvailabilityProjection", "export class ServerReferenceProjection", `this["can_attach"]`, `this["projection"]`, `this["reservation_status"]`} {
+		if !strings.Contains(bindings, wanted) {
+			t.Fatalf("generated dashboard bindings are missing %q", wanted)
+		}
+	}
+	for _, forbidden := range []string{`this["reservations_known"]`, `this["reservation_projection"]`, `this["view_sync_failures"]`} {
+		if strings.Contains(bindings, forbidden) {
+			t.Fatalf("generated dashboard bindings still expose raw state %q", forbidden)
+		}
 	}
 }

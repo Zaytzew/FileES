@@ -217,74 +217,6 @@ function shortDateTime(value) {
 // snapshot.detachments, which is the moment rather than the flag, and it is
 // rendered only in the collapsed card below and in the journal.
 
-function staleViewServers(snapshot) {
-  const servers = snapshot.servers || [];
-  return servers
-    .filter((server) => {
-      if (Number(server.view_sync_failures || 0) > 0) return true;
-      if (String(server.view_sync_error || "") !== "") return true;
-      // Never fetched in this run. The daemon starts from a cached view, so
-      // without this a freshly started client renders a ten-day-old projection
-      // as current until the first sync happens to fail - which is the same
-      // untruth this replaced, moved to startup. Absent is not the same as
-      // fine, and only the daemon can tell us which.
-      return String(server.view_synced_at || "") === "";
-    })
-    .map((server) => ({
-      name: server.display_name || server.id,
-      since: server.view_generated_at || server.view_synced_at || "",
-      reason: String(server.view_sync_error || ""),
-      unverified: String(server.view_synced_at || "") === "" && Number(server.view_sync_failures || 0) === 0,
-    }));
-}
-
-// abandonedServers are the ones the daemon can reach and which have stopped
-// publishing for us. This is the case no local measurement can see: fetching
-// succeeds, the generation never moves, and only the age grows, so a quiet
-// server and an abandoned one are identical from here. The server itself
-// reports when it last produced our view, and that report is the only evidence
-// there is.
-//
-// Reported as a fact rather than judged. How long is too long depends on the
-// unproducedServers reports which servers have published nothing for a long
-// while. It is deliberately NOT used by the connection header.
-//
-// The header answers one question - can I trust what I am looking at - and
-// this fact cannot help answer it. We reach that header only after a
-// successful fetch, so the server has just told us it is fine; and the client
-// cannot tell "nothing changed" from "something changed and was not
-// published", because it does not know what happens on the server. A number
-// nobody can act on does not belong in a trust signal, and dressed as a
-// warning it teaches people to ignore the header that will one day carry
-// something true.
-//
-// It stays because the age of the last change is honest information about a
-// realm's activity, and a details view is where such information belongs.
-function unproducedServers(snapshot) {
-  const servers = snapshot.servers || [];
-  return servers
-    .filter((server) => {
-      if (String(server.server_view_produced_at || "") === "") return false;
-      if (Number(server.view_sync_failures || 0) > 0) return false;
-      const produced = Date.parse(server.server_view_produced_at);
-      if (!Number.isFinite(produced)) return false;
-      // Thirty days, not one. The server publishes only when something
-      // changes - an activation, a pairing, a grant - and never on a timer, so
-      // an old timestamp means nothing changed, which is the ordinary state of
-      // a project between phases. Below a month, silence is indistinguishable
-      // from a quiet week and saying anything is a false alarm.
-      //
-      // A server that has actually stopped answering shows up as a failed
-      // sync, which is a different branch with its own wording. Silence alone
-      // is never evidence of a fault.
-      return Date.now() - produced > 30 * 24 * 3600 * 1000;
-    })
-    .map((server) => ({
-      name: server.display_name || server.id,
-      since: server.server_view_produced_at,
-    }));
-}
-
 function ageInWords(value) {
   const at = Date.parse(value || "");
   if (!Number.isFinite(at)) return "";
@@ -303,34 +235,28 @@ function renderConnection(snapshot) {
   core.className = "pulse-core";
   freshness.className = "projection-freshness";
   let connectionLabel = "Demon jest rozłączony";
-  const stale = snapshot.connected ? staleViewServers(snapshot) : [];
-  if (!snapshot.connected) {
+  const projection = snapshot.projection || { state: "daemon_offline" };
+  if (projection.state === "daemon_offline") {
     core.classList.add("is-offline");
     freshness.classList.add("is-unverified");
     freshness.textContent = "Demon niedostępny — dane niepotwierdzone";
-  } else if (stale.length > 0) {
-    // Named, not counted. "One server is stale" sends the reader hunting; the
-    // name and the age let them decide whether it matters to them.
+  } else if (projection.state === "server_unverified" || projection.state === "server_unavailable") {
     core.classList.add("is-stale");
     freshness.classList.add("is-unverified");
-    const first = stale[0];
-    const age = ageInWords(first.since);
-    const rest = stale.length > 1 ? ` (+${stale.length - 1})` : "";
-    // "Not yet checked" and "checked and refused" are different states and the
-    // reader acts differently on them: the first usually resolves itself in
-    // seconds, the second will not resolve at all.
-    if (first.unverified) {
+    const age = ageInWords(projection.since);
+    const rest = projection.additional_servers > 0 ? ` (+${projection.additional_servers})` : "";
+    if (projection.state === "server_unverified") {
       freshness.textContent = age
-        ? `Dane z „${first.name}" ${age} — jeszcze niesprawdzone${rest}`
-        : `Dane z „${first.name}" jeszcze niesprawdzone${rest}`;
+        ? `Dane z „${projection.server_name}" ${age} — jeszcze niesprawdzone${rest}`
+        : `Dane z „${projection.server_name}" jeszcze niesprawdzone${rest}`;
       connectionLabel = "Pierwsze sprawdzenie w toku";
     } else {
       freshness.textContent = age
-        ? `Dane z „${first.name}" ${age} — serwer nie odpowiada${rest}`
-        : `Dane z „${first.name}" niepotwierdzone — serwer nie odpowiada${rest}`;
-      connectionLabel = first.reason ? `${first.name}: ${first.reason}` : "Serwer nie odpowiada";
+        ? `Dane z „${projection.server_name}" ${age} — serwer nie odpowiada${rest}`
+        : `Dane z „${projection.server_name}" niepotwierdzone — serwer nie odpowiada${rest}`;
+      connectionLabel = projection.reason ? `${projection.server_name}: ${projection.reason}` : "Serwer nie odpowiada";
     }
-  } else if (snapshot.stale) {
+  } else if (projection.state === "refreshing") {
     core.classList.add("is-stale");
     freshness.classList.add("is-refreshing");
     freshness.textContent = "Aktualizowanie danych";
@@ -355,7 +281,9 @@ function renderMetrics(snapshot) {
   const pendingBytes = repos.reduce((sum, repo) => sum + Number(repo.pending_bytes || 0), 0);
   const conflicts = repos.reduce((sum, repo) => sum + Number(repo.conflicts || 0), 0);
   const reservations = snapshot.reservations || [];
-  const reservationState = reservationProjectionState(snapshot);
+  const reservationState = snapshot.reservation_status || { state: "daemon_offline", unavailable: [], offline: [], stale: [] };
+  const reservationsOffline = reservationState.state === "daemon_offline";
+  const reservationsPartial = reservationState.state === "partial";
   const publicShares = snapshot.public_shares || [];
   const activePublicShares = publicShares.filter((share) => share.state === "active").length;
   const unreadAnnouncements = (snapshot.notices || []).filter((notice) => !notice.acked).length;
@@ -365,16 +293,16 @@ function renderMetrics(snapshot) {
   $("#metric-repos").textContent = repos.length;
   $("#metric-pending").textContent = pending;
   $("#metric-pending-note").textContent = pending ? `${bytes(pendingBytes)} oczekuje` : "kolejka jest pusta";
-  $("#metric-reservations").textContent = reservationState.daemonOffline
+  $("#metric-reservations").textContent = reservationsOffline
     ? reservations.length
-    : reservationState.partial ? `${reservations.length}+?` : reservations.length;
-  $("#metric-reservations-note").textContent = reservationState.daemonOffline
+    : reservationsPartial ? `${reservations.length}+?` : reservations.length;
+  $("#metric-reservations-note").textContent = reservationsOffline
     ? "ostatni znany stan · demon offline"
-    : reservationState.partial
+    : reservationsPartial
     ? `co najmniej ${reservations.length} ${plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad")} · ${reservationState.unavailable.length} bez emisji`
     : plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad");
   $("#metric-public-shares").textContent = snapshot.public_shares_known ? activePublicShares : "?";
-  $("#metric-public-shares-note").textContent = reservationState.daemonOffline && snapshot.public_shares_known
+  $("#metric-public-shares-note").textContent = reservationsOffline && snapshot.public_shares_known
     ? "ostatni znany stan · demon offline"
     : snapshot.public_shares_known
       ? plural(activePublicShares, "aktywny link", "aktywne linki", "aktywnych linków")
@@ -398,20 +326,6 @@ function renderMetrics(snapshot) {
     : snapshot.last_refresh
       ? "Połączenie jest chwilowo niedostępne. Panel zachowuje ostatni znany stan i odświeży się automatycznie."
       : "Połączenie jest chwilowo niedostępne. Brak zapisanej projekcji; panel odświeży się automatycznie.";
-}
-
-function reservationProjectionState(snapshot) {
-  const servers = snapshot.servers || [];
-  const unavailable = snapshot.connected ? servers.filter((server) => !server.reservations_known || server.reservation_projection === "unknown") : [];
-  const offline = snapshot.connected ? servers.filter((server) => server.reservation_projection === "offline") : [];
-  const stale = snapshot.connected ? servers.filter((server) => server.reservation_projection === "stale") : [];
-  return {
-    daemonOffline: !snapshot.connected,
-    partial: Boolean(snapshot.connected) && unavailable.length > 0,
-    unavailable,
-    offline,
-    stale,
-  };
 }
 
 function plural(value, one, few, many) {
@@ -462,7 +376,7 @@ function renderRepo(repo) {
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");
   const source = repo.local_path || (repo.attached ? "Folder FileES" : "Folder zdalny");
   const actions = [
-    !deleted && !repo.attached ? repoAction("attach_repository", "Połącz z lokalnym folderem", repoIcons.pin, "attach") : "",
+    repo.can_attach ? repoAction("attach_repository", "Połącz z lokalnym folderem", repoIcons.pin, "attach") : "",
     repo.recovery_available ? repoAction("download_recovery", "Pobierz archiwum", repoIcons.recovery, "recovery") : "",
     repo.can_review_quarantine ? repoAction("review_quarantine", "Przejrzyj kwarantannę", repoIcons.quarantine, "quarantine") : "",
     repo.can_lock ? repoAction("lock", "Zablokuj pliki", repoIcons.lock, "mutate") : "",
@@ -596,14 +510,16 @@ function renderReservations(snapshot) {
   const root = $("#reservations");
   const reservations = snapshot.reservations || [];
 	const holderRequests = (snapshot.lock_release_requests || []).filter((request) => request.role === "holder" && request.state === "pending");
-  const reservationState = reservationProjectionState(snapshot);
-	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !reservationState.partial && !reservationState.daemonOffline && reservationState.offline.length === 0 && reservationState.stale.length === 0;
-  $("#reservations-count").textContent = reservationState.partial ? `${reservations.length}+?` : reservations.length;
-	const availabilityHTML = reservationState.partial
+  const reservationState = snapshot.reservation_status || { state: "daemon_offline", unavailable: [], offline: [], stale: [] };
+  const reservationsOffline = reservationState.state === "daemon_offline";
+  const reservationsPartial = reservationState.state === "partial";
+	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !reservationsPartial && !reservationsOffline && reservationState.offline.length === 0 && reservationState.stale.length === 0;
+  $("#reservations-count").textContent = reservationsPartial ? `${reservations.length}+?` : reservations.length;
+	const availabilityHTML = reservationsPartial
 		? `<p class="muted">Częściowa lista — brak aktualnej emisji: ${reservationState.unavailable.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`
-		: reservationState.daemonOffline && (reservations.length || holderRequests.length)
+		: reservationsOffline && (reservations.length || holderRequests.length)
 		? '<p class="muted">Demon jest offline — pokazano ostatni znany stan.</p>'
-		: reservationState.daemonOffline
+		: reservationsOffline
 		? '<p class="muted">Demon jest offline — projekcja blokad jest niezweryfikowana.</p>'
 		: reservationState.offline.length
 		? `<p class="muted">Lokalne lustro — tor stanowy offline: ${reservationState.offline.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`

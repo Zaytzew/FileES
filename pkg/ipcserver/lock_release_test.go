@@ -73,6 +73,21 @@ func TestLockReleaseRequestRequiresCurrentlyObservedForeignToken(t *testing.T) {
 	}
 }
 
+func TestReservationPathIsCanonicalPOSIXOnEveryHost(t *testing.T) {
+	valid := []string{"a.txt", "plans/a.dwg", "deep/project/model/file.dwg"}
+	for _, value := range valid {
+		if !validReservationPath(value) {
+			t.Errorf("canonical POSIX path rejected: %q", value)
+		}
+	}
+	invalid := []string{"", ".", "..", "../a.txt", "plans/../a.dwg", "/plans/a.dwg", "plans\\a.dwg", "plans//a.dwg", " plans/a.dwg", "plans/a.dwg "}
+	for _, value := range invalid {
+		if validReservationPath(value) {
+			t.Errorf("non-canonical protocol path accepted: %q", value)
+		}
+	}
+}
+
 func TestLockReleaseRequestDoesNotAskCurrentHolder(t *testing.T) {
 	server := New("unused")
 	service := &lockReleaseServiceStub{}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -908,7 +909,7 @@ func (s *Server) handleRepoReservationRelease(req contract.Request) contract.Res
 	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.ServerID) == "" || strings.TrimSpace(payload.RepoID) == "" || strings.TrimSpace(payload.Path) == "" || strings.TrimSpace(payload.ExpectedToken) == "" {
 		return protoErr(req.RequestID, "proto.invalid_payload", nil)
 	}
-	if filepath.IsAbs(payload.Path) || payload.Path == "." || strings.HasPrefix(filepath.Clean(payload.Path), ".."+string(filepath.Separator)) || filepath.Clean(payload.Path) == ".." {
+	if !validReservationPath(payload.Path) {
 		return contract.ErrResponse(req.RequestID, "LOCK-2102", "ERROR", "NONE", "reservation.invalid_path", nil)
 	}
 	repo := s.repoByID(payload.RepoID)
@@ -1019,7 +1020,20 @@ func containsReleasableReservation(rows []contract.Reservation, path, token stri
 }
 
 func validReservationPath(value string) bool {
-	return value != "" && !filepath.IsAbs(value) && value != "." && filepath.Clean(value) == value && !strings.HasPrefix(value, ".."+string(filepath.Separator)) && value != ".."
+	// Reservation paths belong to the wire protocol and to the repository,
+	// not to the host filesystem. They are canonical relative POSIX paths on
+	// Windows and OpenBSD alike. filepath.Clean used here before this change;
+	// it turned forward slashes into backslashes on Windows and rejected every nested
+	// path while accepting some host-shaped paths the protocol does not speak.
+	if value == "" || value != strings.TrimSpace(value) || path.IsAbs(value) || path.Clean(value) != value || strings.ContainsAny(value, "\\\x00\r\n") {
+		return false
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handleSystemLifecycle(req contract.Request, restart bool) contract.Response {

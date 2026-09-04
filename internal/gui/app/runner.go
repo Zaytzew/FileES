@@ -183,13 +183,10 @@ func (a *App) loadOfflineMirrors(state appState) appState {
 			state.serverReservationsKnown[activation.ServerID] = false
 			continue
 		}
-		known := true
-		for _, source := range result.Sources {
-			if source.State == contract.ReservationSourceUnknown {
-				known = false
-			}
-		}
-		state.serverReservationsKnown[activation.ServerID] = known
+		// The list call answered successfully. Individual unknown sources are
+		// preserved below and aggregated separately; they do not erase the fact
+		// that the server inventory itself is known.
+		state.serverReservationsKnown[activation.ServerID] = true
 		state.reservationSources[activation.ServerID] = append([]contract.ReservationSource(nil), result.Sources...)
 		state.reservations[activation.ServerID] = len(result.Reservations)
 		for _, reservation := range result.Reservations {
@@ -385,16 +382,12 @@ func (a *App) loop(ctx context.Context) {
 			}
 			var activityRecords []contract.ActivityRecord
 			if includeActivity {
-				if client, ok := a.cfg.Client.(interface {
-					RepoActivity(context.Context, int) (*contract.RepoActivityResult, error)
-				}); ok {
-					result, err := client.RepoActivity(sesCtx, 20)
-					if err != nil {
-						a.sendSessionFailure(sesCtx, gen, send)
-						return
-					}
-					activityRecords = result.Entries
+				result, err := a.cfg.Client.RepoActivity(sesCtx, 20)
+				if err != nil {
+					a.sendSessionFailure(sesCtx, gen, send)
+					return
 				}
+				activityRecords = result.Entries
 			}
 			reservationCounts := make(map[string]int)
 			repoReservationCounts := make(map[string]int)
@@ -411,13 +404,9 @@ func (a *App) loop(ctx context.Context) {
 						serverReservationsKnown[activation.ServerID] = false
 						continue
 					}
-					known := true
-					for _, source := range result.Sources {
-						if source.State == contract.ReservationSourceUnknown {
-							known = false
-						}
-					}
-					serverReservationsKnown[activation.ServerID] = known
+					// A successful response makes the server inventory known. Source
+					// freshness remains a separate, explicitly projected dimension.
+					serverReservationsKnown[activation.ServerID] = true
 					reservationSources[activation.ServerID] = append([]contract.ReservationSource(nil), result.Sources...)
 					a.saveReservationMirror(activation.ServerID, *result)
 					reservationCounts[activation.ServerID] = len(result.Reservations)
@@ -429,31 +418,23 @@ func (a *App) loop(ctx context.Context) {
 			}
 			var notices []contract.Notice
 			if includeNotices {
-				if client, ok := a.cfg.Client.(interface {
-					NoticeList(context.Context) (*contract.NoticeListResult, error)
-				}); ok {
-					result, err := client.NoticeList(sesCtx)
-					if err != nil {
-						a.sendSessionFailure(sesCtx, gen, send)
-						return
-					}
-					notices = result.Notices
+				result, err := a.cfg.Client.NoticeList(sesCtx)
+				if err != nil {
+					a.sendSessionFailure(sesCtx, gen, send)
+					return
 				}
+				notices = result.Notices
 			}
 			var publicShares []contract.PublicShareSummary
 			publicSharesKnown := false
 			if includePublicShares {
-				if client, ok := a.cfg.Client.(interface {
-					PublicShareListAll(context.Context) (*contract.PublicShareListResult, error)
-				}); ok {
-					// The aggregate command was added after the per-repository
-					// capability. Older daemons legitimately advertise the latter
-					// but reject list-all, so this supplemental presenter must not
-					// tear down an otherwise healthy GUI session.
-					if result, err := client.PublicShareListAll(sesCtx); err == nil {
-						publicShares = result.Shares
-						publicSharesKnown = true
-					}
+				// The aggregate command was added after the per-repository
+				// capability. Older daemons legitimately advertise the latter
+				// but reject list-all, so this supplemental presenter must not
+				// tear down an otherwise healthy GUI session.
+				if result, err := a.cfg.Client.PublicShareListAll(sesCtx); err == nil {
+					publicShares = result.Shares
+					publicSharesKnown = true
 				}
 			}
 			if sesCtx.Err() == nil {

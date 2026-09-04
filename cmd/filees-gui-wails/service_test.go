@@ -205,13 +205,55 @@ func TestUnattachedStatePillTranslatesToDirectAttach(t *testing.T) {
 		}},
 	}
 	intent, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentAttachRepository), RepoID: "docs"})
-	if !allowed || intent.Kind != tray.IntentAttachRepository || intent.RepoID != "docs" || intent.ServerID != "spot" {
+	projected := projectViewModel(vm)
+	if !allowed || !projected.Repositories[0].CanAttach || intent.Kind != tray.IntentAttachRepository || intent.RepoID != "docs" || intent.ServerID != "spot" {
 		t.Fatalf("attach intent=%+v allowed=%v", intent, allowed)
 	}
 	vm.Repos[0].Attached = true
 	vm.Repos[0].LocalPath = "/wc/docs"
+	if projectViewModel(vm).Repositories[0].CanAttach {
+		t.Fatal("attached repository still projects attach action")
+	}
 	if _, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentAttachRepository), RepoID: "docs"}); allowed {
 		t.Fatal("attached repository accepted direct attach")
+	}
+}
+
+func TestProjectViewModelOwnsFreshnessAndReservationVerdicts(t *testing.T) {
+	vm := guiapp.ViewModel{
+		Connected: true,
+		Servers: []guiapp.ServerViewModel{
+			{ID: "manual", DisplayName: "Manual", ViewGeneratedAt: "2026-09-01T10:00:00Z", ReservationsKnown: true, ReservationProjection: string(contract.ReservationSourceFresh)},
+			{ID: "spot", DisplayName: "Spot", ViewSyncFailures: 2, ViewSyncError: "timeout", ViewGeneratedAt: "2026-09-01T11:00:00Z", ReservationsKnown: true, ReservationProjection: string(contract.ReservationSourceUnknown)},
+		},
+	}
+	got := projectViewModel(vm)
+	if got.Projection.State != "server_unverified" || got.Projection.ServerName != "Manual" || got.Projection.AdditionalServers != 1 {
+		t.Fatalf("freshness projection=%+v", got.Projection)
+	}
+	if got.ReservationStatus.State != "partial" || len(got.ReservationStatus.Unavailable) != 1 || got.ReservationStatus.Unavailable[0].ID != "spot" {
+		t.Fatalf("reservation availability=%+v", got.ReservationStatus)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rawField := range []string{"view_sync_failures", "view_sync_error", "view_synced_at", "server_view_produced_at", "reservations_known", "reservation_projection"} {
+		if strings.Contains(string(encoded), rawField) {
+			t.Fatalf("raw state %q leaked past Wails projection: %s", rawField, encoded)
+		}
+	}
+
+	vm.Servers[0].ViewSyncedAt = "2026-09-01T12:00:00Z"
+	got = projectViewModel(vm)
+	if got.Projection.State != "server_unavailable" || got.Projection.ServerName != "Spot" || got.Projection.Reason != "timeout" {
+		t.Fatalf("failed server projection=%+v", got.Projection)
+	}
+
+	vm.Connected = false
+	got = projectViewModel(vm)
+	if got.Projection.State != "daemon_offline" || got.ReservationStatus.State != "daemon_offline" {
+		t.Fatalf("offline projection=%+v reservations=%+v", got.Projection, got.ReservationStatus)
 	}
 }
 

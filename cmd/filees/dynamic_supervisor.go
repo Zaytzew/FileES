@@ -29,6 +29,28 @@ type projectionUpdate struct {
 	view                                     clientview.View
 }
 
+type monitorCacheLoad struct {
+	view     clientview.View
+	exists   bool
+	rejected error
+}
+
+// loadMonitorCache treats an unreadable projection cache as disposable
+// derived state. A hard wire-contract upgrade must still start the monitor so
+// it can fetch the new authoritative view; otherwise the old cache prevents
+// the very sync that would replace it. Failure to remove the cache remains
+// fatal because Sync could not atomically publish over it either.
+func loadMonitorCache(path string) (monitorCacheLoad, error) {
+	view, exists, err := clientview.CachedOrNone(path)
+	if err == nil {
+		return monitorCacheLoad{view: view, exists: exists}, nil
+	}
+	if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+		return monitorCacheLoad{}, fmt.Errorf("discard invalid cached projection after %v: %w", err, removeErr)
+	}
+	return monitorCacheLoad{rejected: err}, nil
+}
+
 func projectedServerDisplayName(beforeProjection string, view clientview.View) string {
 	if view.ServerDisplayName != "" {
 		return view.ServerDisplayName
@@ -296,11 +318,15 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		monitorMu.Lock()
 		monitorCancels[serverID] = cancelMonitor
 		monitorMu.Unlock()
-		cached, exists, err := clientview.CachedOrNone(syncConfig.CachePath)
+		cache, err := loadMonitorCache(syncConfig.CachePath)
 		if err != nil {
 			cancelMonitor()
 			return fmt.Errorf("load cached projection: %w", err)
 		}
+		if cache.rejected != nil {
+			talk.With("projection:"+serverID).Warnf("discard invalid cached projection and fetch current view: %v", cache.rejected)
+		}
+		cached, exists := cache.view, cache.exists
 		currentDisplayName := displayName
 		if exists {
 			currentDisplayName = projectedServerDisplayName(currentDisplayName, cached)

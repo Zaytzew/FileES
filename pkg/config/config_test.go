@@ -107,10 +107,18 @@ func TestLoadClientViewStrictOptionalUpdateConfig(t *testing.T) {
 	if view.Update == nil || view.Update.RepoURL != "https://releases.example/FILEES-BIN" || view.Update.Channel != "stable" || view.Update.Component != "desktop" || view.Update.Platform == "" || view.Update.SVNProgram != "svn" {
 		t.Fatalf("update config = %+v", view.Update)
 	}
+	if !view.UpdateConfigured {
+		t.Fatal("enabled update section was not recorded as an explicit choice")
+	}
 	disabled := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"update":{"enabled":false,"repo_url":"not-used","state_path":"relative","stage_root":"relative"},"repositories":[]}`)
 	view, err = LoadClientView(disabled)
-	if err != nil || view.Update != nil {
+	if err != nil || view.Update != nil || !view.UpdateConfigured {
 		t.Fatalf("disabled update = %+v, %v", view.Update, err)
+	}
+	absent := writeRawConfig(t, `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"repositories":[]}`)
+	view, err = LoadClientView(absent)
+	if err != nil || view.UpdateConfigured {
+		t.Fatalf("absent update section was treated as an explicit choice: %+v, %v", view, err)
 	}
 }
 

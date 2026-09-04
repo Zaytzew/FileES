@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"filees/internal/clientupdate"
 	"filees/internal/releaseenvelope"
 	"filees/internal/serverinstall/svnfetch"
+	"filees/pkg/clientprofile"
 	"filees/pkg/config"
 	"filees/pkg/ipcserver"
 )
@@ -28,7 +30,14 @@ import (
 // FILEES-BIN, resolved and verified exactly as the Linux client does it. Only
 // the installing differs, because the two platforms lay the product out
 // differently, and that difference is the whole of clientupdate.DirectoryInstaller.
-func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, currentVersion string) error {
+func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, explicitlyConfigured bool, currentVersion string) error {
+	if update == nil && !explicitlyConfigured {
+		var err error
+		update, err = distributionClientUpdateConfig()
+		if err != nil {
+			return err
+		}
+	}
 	if update == nil {
 		return nil
 	}
@@ -68,6 +77,26 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, c
 	}
 	ipc.SetUpdateService(service)
 	return nil
+}
+
+// distributionClientUpdateConfig turns immutable build metadata into an
+// opt-out update service. Both values are required together: a half-configured
+// release must fail at startup rather than silently claiming to auto-update.
+func distributionClientUpdateConfig() (*config.UpdateConfig, error) {
+	repoURL := strings.TrimSpace(injectedClientReleaseRepoURL)
+	channel := strings.TrimSpace(injectedClientReleaseChannel)
+	if repoURL == "" && channel == "" {
+		return nil, nil
+	}
+	if repoURL == "" || channel == "" {
+		return nil, errors.New("client update distribution defaults require both repository URL and channel")
+	}
+	root := filepath.Join(filepath.Dir(clientprofile.DefaultRoot()), "update")
+	update, err := config.NewUpdateConfig(repoURL, channel, config.DesktopUpdateComponent, runtime.GOOS+"-"+runtime.GOARCH, filepath.Join(root, "state.json"), filepath.Join(root, "stage"), "svn")
+	if err != nil {
+		return nil, fmt.Errorf("invalid client update distribution defaults: %w", err)
+	}
+	return &update, nil
 }
 
 // clientInstallDirectory is where this daemon is running from.

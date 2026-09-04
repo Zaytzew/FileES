@@ -23,6 +23,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"filees/internal/releaseenvelope"
@@ -31,6 +32,7 @@ import (
 
 func main() {
 	bundle := flag.String("bundle", "", "path to the client bundle tar.gz")
+	installer := flag.String("installer", "", "path to the platform installer, e.g. MSI")
 	component := flag.String("component", config.DesktopUpdateComponent, "component name")
 	platform := flag.String("platform", "", "target platform, e.g. windows-amd64")
 	releaseID := flag.String("release-id", "", "release identifier, e.g. r819")
@@ -46,34 +48,34 @@ func main() {
 
 	if *bundle == "" || *platform == "" || *releaseID == "" || *version == "" || *keyID == "" ||
 		*releaseRoot == "" || *channelOut == "" || *sequence == 0 || flag.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: filees-client-release -bundle FILE.tar.gz -platform windows-amd64 \\")
+		fmt.Fprintln(os.Stderr, "usage: filees-client-release -bundle FILE.tar.gz [-installer FILE.msi] -platform windows-amd64 \\")
 		fmt.Fprintln(os.Stderr, "         -release-id rNNN -version X.Y.Z.N -sequence N -key-id KEY \\")
 		fmt.Fprintln(os.Stderr, "         -release-root DIR -channel-out FILE [-merge-channel FILE]")
 		os.Exit(2)
 	}
-	if err := run(*bundle, *component, *platform, *releaseID, *version, *keyID, *expires,
+	if err := run(*bundle, *installer, *component, *platform, *releaseID, *version, *keyID, *expires,
 		*releaseRoot, *channelOut, *mergeChannel, *sequence, *securityEpoch); err != nil {
 		fmt.Fprintln(os.Stderr, "filees-client-release:", err)
 		os.Exit(1)
 	}
 }
 
-func run(bundlePath, component, platform, releaseID, version, keyID, expires,
+func run(bundlePath, installerPath, component, platform, releaseID, version, keyID, expires,
 	releaseRoot, channelOut, mergeChannel string, sequence, securityEpoch uint64) error {
-
-	data, err := os.ReadFile(bundlePath)
-	if err != nil {
-		return fmt.Errorf("read bundle: %w", err)
+	if platform == "windows-amd64" && strings.TrimSpace(installerPath) == "" {
+		return errors.New("windows-amd64 release requires the MSI installer artifact")
 	}
-	digest := sha256.Sum256(data)
-
-	// The manifest names the artifact relative to its own directory, because
-	// that is how the client resolves it: path.Dir(component.Manifest) joined
-	// with the source. A name with a directory in it would resolve somewhere
-	// nobody staged.
-	source := filepath.Base(bundlePath)
-	if source != path.Base(source) || source == "." || source == ".." {
-		return fmt.Errorf("bundle name %q is not a plain file name", source)
+	bundle, err := artifact(bundlePath, "bundle")
+	if err != nil {
+		return fmt.Errorf("bundle: %w", err)
+	}
+	artifacts := []releaseenvelope.Artifact{bundle}
+	if strings.TrimSpace(installerPath) != "" {
+		installer, err := artifact(installerPath, "installer")
+		if err != nil {
+			return fmt.Errorf("installer: %w", err)
+		}
+		artifacts = append(artifacts, installer)
 	}
 	manifest := releaseenvelope.ArtifactManifest{
 		SchemaVersion: releaseenvelope.SchemaVersion,
@@ -84,12 +86,7 @@ func run(bundlePath, component, platform, releaseID, version, keyID, expires,
 		Component:     component,
 		Platform:      platform,
 		Version:       version,
-		Artifacts: []releaseenvelope.Artifact{{
-			Source: source,
-			SHA256: hex.EncodeToString(digest[:]),
-			Size:   int64(len(data)),
-			Kind:   "bundle",
-		}},
+		Artifacts:     artifacts,
 	}
 	manifestPath := filepath.Join(releaseRoot, "manifest.json")
 	manifestBytes, err := marshal(manifest)
@@ -146,6 +143,21 @@ func run(bundlePath, component, platform, releaseID, version, keyID, expires,
 	fmt.Printf("wrote %s\nwrote %s\n", manifestPath, channelOut)
 	fmt.Printf("sign both on the signing machine, then promote the envelope to channels/\n")
 	return nil
+}
+
+func artifact(filePath, kind string) (releaseenvelope.Artifact, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return releaseenvelope.Artifact{}, err
+	}
+	// Sources are relative to manifest.json. Directory components would let a
+	// producer describe a file outside the immutable platform release root.
+	source := filepath.Base(filePath)
+	if source != path.Base(source) || source == "." || source == ".." {
+		return releaseenvelope.Artifact{}, fmt.Errorf("file name %q is not a plain file name", source)
+	}
+	digest := sha256.Sum256(data)
+	return releaseenvelope.Artifact{Source: source, SHA256: hex.EncodeToString(digest[:]), Size: int64(len(data)), Kind: kind}, nil
 }
 
 // mergedComponents keeps every other platform already assembled for this

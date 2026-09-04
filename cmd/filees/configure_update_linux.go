@@ -16,7 +16,7 @@ import (
 	"filees/pkg/ipcserver"
 )
 
-func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, currentVersion string) error {
+func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, _ bool, currentVersion string) error {
 	if update == nil {
 		return nil
 	}

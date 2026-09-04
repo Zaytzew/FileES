@@ -24,13 +24,13 @@ What you probably want:
 
   tools/prepare-client-release-windows.sh
       One immutable Windows release staged into a FILEES-BIN working copy:
-      builds the pair, assembles the bundle the updater expects, and writes the
-      manifest and channel candidate for the signing machine.
+      builds the pair, updater bundle and MSI, then writes one manifest and
+      the channel candidate for the signing machine.
       Needs RELEASE_ID, SEQUENCE and KEY_ID.
 
   packaging/windows/build-msi.ps1 -BundleDir <bundle>
-      The installer, built from a release bundle so the MSI and the update
-      channel ship identical bytes.
+      Developer-only standalone MSI build from an existing staged bundle.
+      The release procedure above already builds and binds the MSI.
 
 The abandoned path is still reachable on purpose, for reproducing an old build:
 

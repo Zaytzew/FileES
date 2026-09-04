@@ -135,7 +135,9 @@ Envelope klienta ma ścisły schemat i wskazuje manifest każdego
 ```
 
 Manifest v2 musi powtórzyć `release_id`, `sequence`, `security_epoch`, `key_id`,
-`component` i `platform`, podać wersję oraz dokładny rozmiar i SHA-256 bundla.
+`component` i `platform`, podać wersję oraz dokładny rozmiar i SHA-256 każdego
+artefaktu. Dla Windows są to bundel aktualizatora (`kind=bundle`) i MSI
+(`kind=installer`) z tych samych binarek.
 Kanał i manifest są podpisywane oddzielnie tym samym zaufanym kluczem. Nie wolno
 ponownie użyć sequence dla innego release ani go obniżyć; zainstalowany klient
 utrzymuje trwały high-water mark.

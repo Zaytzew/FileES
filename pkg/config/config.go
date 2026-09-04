@@ -33,7 +33,7 @@ type Repo struct {
 	SSHPort         int    `json:"-"`
 	// SessionTimeout is how long one send or fetch may run, copied from the
 	// server profile. Zero means the client default (30m).
-	SessionTimeout time.Duration `json:"-"`
+	SessionTimeout    time.Duration `json:"-"`
 	ServerID          string        `json:"-"`
 	ServerDisplayName string        `json:"-"`
 	ClientRole        string        `json:"-"`
@@ -132,6 +132,7 @@ type ClientView struct {
 	IdentityFile, KnownHosts          string
 	Projection                        *Projection
 	Update                            *UpdateConfig
+	UpdateConfigured                  bool
 	Configured                        bool
 }
 
@@ -195,6 +196,7 @@ func normalizeClientView(file jsonConfig) (ClientView, error) {
 		}
 		view.Projection = &Projection{WorkingCopy: workingCopy, RelativeViewPath: relative, CachePath: cachePath, Interval: interval}
 	}
+	view.UpdateConfigured = file.Update != nil
 	if file.Update != nil && file.Update.Enabled {
 		update, err := normalizeUpdate(file.Update.RepoURL, file.Update.Channel, file.Update.Component, file.Update.Platform, file.Update.StatePath, file.Update.StageRoot, file.Update.SVNProgram)
 		if err != nil {
@@ -203,6 +205,13 @@ func normalizeClientView(file jsonConfig) (ClientView, error) {
 		view.Update = &update
 	}
 	return view, nil
+}
+
+// NewUpdateConfig validates a distribution-provided update channel through the
+// same boundary as a user-provided config.json. Trust still comes exclusively
+// from the public key compiled into the binary; this only supplies locations.
+func NewUpdateConfig(repoURL, channel, component, platform, statePath, stageRoot, svnProgram string) (UpdateConfig, error) {
+	return normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot, svnProgram)
 }
 
 func normalizeUpdate(repoURL, channel, component, platform, statePath, stageRoot, svnProgram string) (UpdateConfig, error) {

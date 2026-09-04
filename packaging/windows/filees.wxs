@@ -30,6 +30,7 @@
       Manufacturer="ATM Projekt"
       Version="$(var.ProductVersion)"
       UpgradeCode="9E4A1F52-8C1D-4E63-9F0A-6B7D2C5A81E4"
+      Codepage="1250"
       Scope="perUser">
     <!-- An upgrade replaces the binaries in place. The self-update channel
          does the same thing between releases; both are expected, and a repair
@@ -75,17 +76,26 @@
     </Component>
 
     <Component Id="FileESLauncher" Directory="INSTALLFOLDER" Guid="*">
-      <File Id="FileESLauncherScript" Source="$(var.SourceDir)\start-filees.vbs" KeyPath="yes">
-        <Shortcut Id="FileESStartupShortcut"
-                  Directory="StartupFolder"
-                  Name="FileES"
-                  Description="Uruchamia demona FileES i interfejs przy logowaniu"
-                  Icon="FileESIcon"
-                  Advertise="no"
-                  Target="[SystemFolder]wscript.exe"
-                  Arguments="&quot;[INSTALLFOLDER]start-filees.vbs&quot;"
-                  WorkingDirectory="INSTALLFOLDER" />
-      </File>
+      <File Id="FileESLauncherScript" Source="$(var.SourceDir)\start-filees.vbs" KeyPath="yes" />
+      <!-- A sibling of the file rather than nested inside it, because a
+           Shortcut under a File implicitly targets that file and WiX refuses an
+           explicit Target there.
+
+           Explicit is what is wanted. A shortcut straight to the .vbs would run
+           through whatever handler the machine has registered for that
+           extension, and hardening guidance routinely remaps .vbs to Notepad -
+           on such a machine the autostart would silently open an editor instead
+           of starting the daemon. Naming wscript leaves nothing to a file
+           association. -->
+      <Shortcut Id="FileESStartupShortcut"
+                Directory="StartupFolder"
+                Name="FileES"
+                Description="Uruchamia demona FileES i interfejs przy logowaniu"
+                Icon="FileESIcon"
+                Advertise="no"
+                Target="[System64Folder]wscript.exe"
+                Arguments="&quot;[INSTALLFOLDER]start-filees.vbs&quot;"
+                WorkingDirectory="INSTALLFOLDER" />
     </Component>
 
     <Component Id="FileESFolderIcon" Directory="INSTALLFOLDER" Guid="*">

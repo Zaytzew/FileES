@@ -127,6 +127,32 @@ func TestDrainPendingParksDestinationGone(t *testing.T) {
 	}
 }
 
+func TestRetryUploadAsMintsNewCandidate(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	item, err := s.EnqueueUpload("repo-1", "photos", "x.bin", "image/jpeg", []byte("data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.State = UploadConflict
+	if err := s.recordUploadOutcome(item); err != nil {
+		t.Fatal(err)
+	}
+	next, err := s.RetryUploadAs("repo-1", item.ID, "y.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Filename != "y.bin" || next.State != UploadPendingCreate || next.ID == item.ID {
+		t.Fatalf("next = %+v", next)
+	}
+	items, err := s.ListUploads("repo-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != next.ID {
+		t.Fatalf("list after retry = %+v", items)
+	}
+}
+
 func TestDiscardUpload(t *testing.T) {
 	c := Client{Store: Store{Root: t.TempDir()}}
 

@@ -16,16 +16,27 @@ data class RealmShare(
 
     val isUploadShelf: Boolean
         get() = purpose == "upload_shelf"
+
+    val isUploadTrash: Boolean
+        get() = purpose == "upload_trash"
+
+    // Capture (Dodaj / śledzone foldery) writes mobile-uploads/. The realm
+    // trash is a reject waiting room, not a camera dump. Shelves stay
+    // writable: the owner may still drop photos into the same delivery repo.
+    val canCapture: Boolean
+        get() = selectable && access == "rw" && !isUploadTrash
 }
 
 data class RealmProjection(
     val realmId: String,
     val realmAlias: String,
+    val serverDisplayName: String,
+    val generatedAt: String,
     val shares: List<RealmShare>,
 ) {
     companion object {
         fun fromJson(json: String): RealmProjection {
-            if (json.isBlank()) return RealmProjection("", "", emptyList())
+            if (json.isBlank()) return RealmProjection("", "", "", "", emptyList())
             val root = JSONObject(json)
             val entries = root.optJSONArray("repositories")
             val shares = mutableListOf<RealmShare>()
@@ -46,6 +57,8 @@ data class RealmProjection(
             return RealmProjection(
                 realmId = root.optString("realm_id"),
                 realmAlias = root.optString("realm_alias"),
+                serverDisplayName = root.optString("server_display_name"),
+                generatedAt = root.optString("generated_at"),
                 shares = shares,
             )
         }
@@ -107,5 +120,30 @@ object ManifestBrowse {
             rows.add(BrowseRow(name, path, directory, if (directory) 0 else entry.size))
         }
         return rows.sortedWith(compareBy({ !it.directory }, { it.name.lowercase() }))
+    }
+
+    fun filesUnder(entries: List<ManifestEntry>, prefix: String): List<ManifestEntry> {
+        val pfx = if (prefix.isEmpty()) "" else "$prefix/"
+        return entries.filter { entry ->
+            entry.kind == "file" && (
+                if (prefix.isEmpty()) true
+                else entry.path.startsWith(pfx)
+                )
+        }
+    }
+
+    fun shoutsFrom(manifestJson: String): List<Pair<Long, String>> {
+        if (manifestJson.isBlank()) return emptyList()
+        val array = JSONObject(manifestJson).optJSONArray("shouts") ?: return emptyList()
+        val out = ArrayList<Pair<Long, String>>(array.length())
+        for (i in 0 until array.length()) {
+            val item = array.getJSONObject(i)
+            val comment = item.optString("comment")
+            val revision = item.optLong("revision")
+            if (comment.isNotBlank() && revision > 0) {
+                out.add(revision to comment)
+            }
+        }
+        return out
     }
 }

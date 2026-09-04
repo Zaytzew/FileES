@@ -33,11 +33,12 @@ func (f fakeAuth) List(context.Context, string) (mobileworker.Projection, error)
 		return mobileworker.Projection{}, mobileworker.ErrAccessDenied
 	}
 	return mobileworker.Projection{
-		RealmID:    "5b2b2595-312c-4e8f-9407-148e2a174033",
-		RealmAlias: "acme",
-		Generation: f.gen,
+		RealmID:           "5b2b2595-312c-4e8f-9407-148e2a174033",
+		RealmAlias:        "acme",
+		ServerDisplayName: "Serwer testowy",
+		Generation:        f.gen,
 		Repositories: []mobileworker.RepositoryGrant{{
-			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: f.access, State: "active",
+			RepoID: "repo-1", DisplayName: "JANCZEWICE", Access: f.access, State: "active", Purpose: "upload_shelf",
 		}},
 	}, nil
 }
@@ -149,7 +150,7 @@ func TestListRepositoriesReturnsProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res == nil || res.RealmAlias != "acme" || len(res.Repositories) != 1 || res.Repositories[0].DisplayName != "JANCZEWICE" {
+	if res == nil || res.RealmAlias != "acme" || res.ServerDisplayName != "Serwer testowy" || len(res.Repositories) != 1 || res.Repositories[0].DisplayName != "JANCZEWICE" || res.Repositories[0].Purpose != "upload_shelf" {
 		t.Fatalf("projection = %+v", res)
 	}
 }

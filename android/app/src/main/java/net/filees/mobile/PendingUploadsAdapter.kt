@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 class PendingUploadsAdapter(
     private val onDiscard: (PendingUpload) -> Unit,
+    private val onRetry: (PendingUpload) -> Unit,
 ) : RecyclerView.Adapter<PendingUploadsAdapter.ViewHolder>() {
 
     private var items: List<PendingUpload> = emptyList()
@@ -23,7 +24,7 @@ class PendingUploadsAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        holder.bind(items[position], onDiscard)
+        holder.bind(items[position], onDiscard, onRetry)
     }
 
     override fun getItemCount(): Int = items.size
@@ -45,10 +46,12 @@ class PendingUploadsAdapter(
 
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val summary: android.widget.TextView = itemView.findViewById(R.id.textUploadSummary)
+        private val retry: com.google.android.material.button.MaterialButton =
+            itemView.findViewById(R.id.buttonRetryUpload)
         private val discard: com.google.android.material.button.MaterialButton =
             itemView.findViewById(R.id.buttonDiscardUpload)
 
-        fun bind(item: PendingUpload, onDiscard: (PendingUpload) -> Unit) {
+        fun bind(item: PendingUpload, onDiscard: (PendingUpload) -> Unit, onRetry: (PendingUpload) -> Unit) {
             val stateLabel = itemView.resources.getIdentifier(
                 "upload_state_" + item.state.replace('-', '_'),
                 "string",
@@ -70,6 +73,11 @@ class PendingUploadsAdapter(
             summary.text = text
             discard.visibility = if (item.needsDecision) View.VISIBLE else View.GONE
             discard.setOnClickListener { onDiscard(item) }
+            retry.visibility = if (item.needsDecision) View.VISIBLE else View.GONE
+            retry.setText(
+                if (item.state == "conflict") R.string.action_send_as else R.string.action_retry_upload,
+            )
+            retry.setOnClickListener { onRetry(item) }
         }
     }
 }

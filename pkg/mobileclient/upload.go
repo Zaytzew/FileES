@@ -189,6 +189,39 @@ func (s Store) recordUploadOutcome(item PendingUpload) error {
 	return nil
 }
 
+// RetryUploadAs turns a conflict/parked candidate into a new pending-create
+// under filename (empty keeps the original name). A new request_id is minted
+// because §6.4 forbids rewriting the parked item; the old spool is discarded
+// only after the new one is durable.
+func (s Store) RetryUploadAs(repoID, id, filename string) (PendingUpload, error) {
+	item, err := s.loadUploadMeta(repoID, id)
+	if err != nil {
+		return PendingUpload{}, err
+	}
+	if item.State != UploadConflict && item.State != UploadParked {
+		return PendingUpload{}, fmt.Errorf("mobileclient: upload %s is %s, not waiting for a decision", id, item.State)
+	}
+	name := strings.TrimSpace(filename)
+	if name == "" {
+		name = item.Filename
+	}
+	if name == "" || strings.ContainsAny(name, "/\\") {
+		return PendingUpload{}, errors.New("mobileclient: filename is invalid")
+	}
+	payload, err := s.loadUploadPayload(repoID, id)
+	if err != nil {
+		return PendingUpload{}, err
+	}
+	next, err := s.EnqueueUpload(repoID, item.ParentPath, name, item.ContentType, payload)
+	if err != nil {
+		return PendingUpload{}, err
+	}
+	if err := s.DiscardUpload(repoID, id); err != nil {
+		return PendingUpload{}, err
+	}
+	return next, nil
+}
+
 // DiscardUpload removes a queued candidate outright — the explicit "reject"
 // half of the conflict/parked decision in §6.4 ("albo odrzuca"). It is a
 // caller decision, never automatic.

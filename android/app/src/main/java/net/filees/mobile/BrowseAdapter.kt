@@ -59,14 +59,15 @@ class BrowseAdapter(
             if (row.directory || row.share) {
                 icon.setImageResource(R.drawable.ic_folder)
                 meta.text = itemView.context.getString(R.string.browse_directory)
-                download.visibility = View.GONE
+                download.visibility = if (row.share) View.GONE else View.VISIBLE
+                download.setOnClickListener { onDownload(row) }
                 itemView.setOnClickListener { onOpen(row) }
             } else {
                 icon.setImageResource(R.drawable.ic_file)
                 meta.text = HumanSize.format(row.size)
                 download.visibility = View.VISIBLE
                 download.setOnClickListener { onDownload(row) }
-                itemView.setOnClickListener { onDownload(row) }
+                itemView.setOnClickListener { onOpen(row) }
             }
         }
     }

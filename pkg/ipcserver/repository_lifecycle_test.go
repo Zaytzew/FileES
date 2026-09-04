@@ -12,15 +12,16 @@ import (
 )
 
 type lifecycleStub struct {
-	createCalls, attachCalls, approveCalls, relocateCalls, locateCalls, loadDumpCalls, detachCalls, statusCalls, repairCalls int
-	deleteRepository                                                                                                         bool
-	statusResult                                                                                                             contract.RepoLifecycleResult
-	statusErr                                                                                                                error
-	detachResult                                                                                                             contract.RepoLifecycleResult
-	detachErr                                                                                                                error
-	repairResult                                                                                                             contract.RepoLifecycleResult
-	repairErr                                                                                                                error
-	repairOperationID, repairServerID, repairRepoID, repairStrategy                                                          string
+	createCalls, attachCalls, approveCalls, relocateCalls, locateCalls, loadDumpCalls, detachCalls, deleteCalls, statusCalls, repairCalls int
+	deleteRepository                                                                                                                      bool
+	deleteDisplayName                                                                                                                     string
+	statusResult                                                                                                                          contract.RepoLifecycleResult
+	statusErr                                                                                                                             error
+	detachResult                                                                                                                          contract.RepoLifecycleResult
+	detachErr                                                                                                                             error
+	repairResult                                                                                                                          contract.RepoLifecycleResult
+	repairErr                                                                                                                             error
+	repairOperationID, repairServerID, repairRepoID, repairStrategy                                                                       string
 }
 
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
@@ -62,6 +63,15 @@ func (stub *lifecycleStub) BeginDetach(_ context.Context, serverID, repoID strin
 		state = "deleted"
 	}
 	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, State: state}, nil
+}
+func (stub *lifecycleStub) BeginDelete(_ context.Context, serverID, repoID, displayName string) (contract.RepoLifecycleResult, error) {
+	stub.deleteCalls++
+	stub.deleteRepository = true
+	stub.deleteDisplayName = displayName
+	if stub.detachResult.OperationID != "" || stub.detachErr != nil {
+		return stub.detachResult, stub.detachErr
+	}
+	return contract.RepoLifecycleResult{OperationID: "op", ServerID: serverID, RepoID: repoID, State: "deleted"}, nil
 }
 
 func TestDeleteReturnsSuccessAfterDurableServerBoundary(t *testing.T) {
@@ -320,8 +330,8 @@ func TestDetachAndDeleteAreDistinctAndRequiredPolicyIsEnforced(t *testing.T) {
 	if response := server.dispatch(deleteRequest); response.Status != contract.StatusOK {
 		t.Fatalf("permanent delete rejected: %+v", response.Error)
 	}
-	if stub.detachCalls != 2 || !stub.deleteRepository {
-		t.Fatalf("permanent delete routed incorrectly: calls=%d delete=%v", stub.detachCalls, stub.deleteRepository)
+	if stub.detachCalls != 1 || stub.deleteCalls != 1 || !stub.deleteRepository || stub.deleteDisplayName != "Docs" {
+		t.Fatalf("permanent delete routed incorrectly: detach=%d delete=%d name=%q", stub.detachCalls, stub.deleteCalls, stub.deleteDisplayName)
 	}
 
 	server.RegisterProjectedRepoPolicy("repo-1", "Docs", "svn://example/repo-1", "office", "rw", "active", "realm-1", "required", true)
@@ -347,7 +357,26 @@ func TestDeleteRequiresAuthenticatedOwningRealm(t *testing.T) {
 	if response := server.dispatch(request); response.Status == contract.StatusOK {
 		t.Fatal("foreign realm deleted repository")
 	}
-	if stub.detachCalls != 0 {
-		t.Fatalf("forbidden delete reached lifecycle service: %d", stub.detachCalls)
+	if stub.deleteCalls != 0 {
+		t.Fatalf("forbidden delete reached lifecycle service: %d", stub.deleteCalls)
+	}
+}
+
+func TestDeleteOwnedRemoteRepositoryDoesNotRequireAttachment(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	server.RegisterActivation(contract.ActivationStatus{
+		ServerID: "office", ClientRole: contract.ClientRoleNormal, RealmID: "realm-1",
+		CanCreateRepositories: true,
+	})
+	server.RegisterProjectedRepoPolicy("repo-1", "Zdalne archiwum", "svn://example/repo-1", "office", "rw", "active", "realm-1", "optional", false)
+
+	request := lifecycleRequest(contract.CmdRepoDelete, contract.RepoDetachPayload{ServerID: "office", RepoID: "repo-1"})
+	if response := server.dispatch(request); response.Status != contract.StatusOK {
+		t.Fatalf("owned remote delete rejected: %+v", response.Error)
+	}
+	if stub.deleteCalls != 1 || stub.detachCalls != 0 || stub.deleteDisplayName != "Zdalne archiwum" {
+		t.Fatalf("remote delete route: delete=%d detach=%d name=%q", stub.deleteCalls, stub.detachCalls, stub.deleteDisplayName)
 	}
 }

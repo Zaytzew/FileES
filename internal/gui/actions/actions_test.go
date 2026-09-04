@@ -1511,12 +1511,12 @@ func TestControllerServerInformationContainsPermissions(t *testing.T) {
 
 func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 	platformFake := &platformtest.Fake{}
-	view := app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoAttachIntent: true, contract.CapRepoAttachApprove: true}, Servers: []app.ServerViewModel{{
+	view := app.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoAttachIntent: true, contract.CapRepoAttachApprove: true, contract.CapRepoDelete: true}, Servers: []app.ServerViewModel{{
 		ID: "office", DisplayName: "Biuro", Address: "filees.example", SSHPort: 2222,
-		RealmID: "realm-1", RealmAlias: "acme", ClientID: "client-1",
+		RealmID: "realm-1", RealmAlias: "acme", ClientID: "client-1", ClientRole: contract.ClientRoleNormal, CanCreateRepositories: true,
 		Repos: []app.RepoViewModel{
 			{ID: "docs", DisplayName: "Dokumenty", Attached: true, LocalPath: "/wc/docs", Access: contract.AccessReadWrite, State: contract.StateActive},
-			{ID: "remote", DisplayName: "Zdalna projekcja", AttachmentPolicy: "optional", State: contract.StateUnattached},
+			{ID: "remote", DisplayName: "Zdalna projekcja", AttachmentPolicy: "optional", State: contract.StateUnattached, OwnerRealmID: "realm-1"},
 			{ID: "import", DisplayName: "Biblia Audio KIDS", LocalPath: "/wc/biblia", Access: contract.AccessReadWrite, AttachmentPolicy: "optional", State: contract.StateInitializing},
 		},
 	}}}
@@ -1540,7 +1540,7 @@ func TestControllerShowsSettingsOverviewForServersAndFolders(t *testing.T) {
 		t.Fatalf("settings folder = %#v", folder)
 	}
 	remote := server.Folders[1]
-	if remote.ID != "remote" || remote.LocalPath != "brak lokalnego folderu" || !remote.CanConnect {
+	if remote.ID != "remote" || remote.LocalPath != "brak lokalnego folderu" || !remote.CanConnect || !remote.CanDelete {
 		t.Fatalf("unattached repository = %#v", remote)
 	}
 	pending := server.Folders[2]

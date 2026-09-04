@@ -525,7 +525,13 @@ func (p *daemonProvisioner) runDetach(ctx context.Context, record localrepo.Reco
 	// server-side operation.
 	var pending []error
 	if !current.LocalCleanupCompleted {
-		if err := stripWorkingCopyMetadataWithRetry(ctx, current.LocalPath, current.DetachOperationID); err != nil {
+		if strings.TrimSpace(current.LocalPath) == "" {
+			var err error
+			current, err = p.local.MarkLocalCleanupCompleted(current.OperationID)
+			if err != nil {
+				pending = append(pending, err)
+			}
+		} else if err := stripWorkingCopyMetadataWithRetry(ctx, current.LocalPath, current.DetachOperationID); err != nil {
 			pending = append(pending, err)
 		} else {
 			var err error
@@ -574,6 +580,19 @@ func (p *daemonProvisioner) retryLocalCleanup(ctx context.Context, operationID s
 
 	current, ok := p.local.Get(operationID)
 	if !ok || current.State != localrepo.StateDeleting || !current.ServerDeleteCompleted || current.LocalCleanupCompleted {
+		return
+	}
+	if strings.TrimSpace(current.LocalPath) == "" {
+		updated, err := p.local.MarkLocalCleanupCompleted(operationID)
+		if err != nil {
+			talk.With("detach:"+operationID).Warnf("persist empty local cleanup receipt: %v", err)
+			return
+		}
+		if updated.RecoveryPrepared {
+			if _, err := p.local.CompleteDetach(operationID); err != nil {
+				talk.With("detach:"+operationID).Warnf("complete remote repository deletion: %v", err)
+			}
+		}
 		return
 	}
 	if err := stripWorkingCopyMetadataWithRetry(ctx, current.LocalPath, current.DetachOperationID); err != nil {

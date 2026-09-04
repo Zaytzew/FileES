@@ -1063,7 +1063,7 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
 	}
 	summary := rs.Summary()
-	if !summary.Attached {
+	if !deleteRepository && !summary.Attached {
 		return contract.ErrResponse(req.RequestID, "REPO-2006", "ERROR", "NONE", "repo.not_attached", nil)
 	}
 	if summary.AttachmentPolicy == "required" {
@@ -1080,7 +1080,13 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
-	result, err := service.BeginDetach(ctx, payload.ServerID, payload.RepoID, deleteRepository)
+	var result contract.RepoLifecycleResult
+	var err error
+	if deleteRepository {
+		result, err = service.BeginDelete(ctx, payload.ServerID, payload.RepoID, summary.DisplayName)
+	} else {
+		result, err = service.BeginDetach(ctx, payload.ServerID, payload.RepoID, false)
+	}
 	if err != nil {
 		if deleteRepository && result.ServerDeleteCompleted {
 			// DELETE_REPOSITORY crossed its authoritative durable boundary.

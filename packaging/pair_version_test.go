@@ -38,7 +38,12 @@ func TestTheDesktopPairStampsAVersionIntoBothBinaries(t *testing.T) {
 			t.Errorf("build-pair.sh does not build %s", pkg)
 			continue
 		}
-		if !strings.Contains(built, "-X main.version=") {
+		versionStamped := strings.Contains(built, "-X main.version=")
+		if pkg == "./cmd/filees-gui-wails" && strings.Contains(built, `-ldflags "$gui_ldflags"`) {
+			versionStamped = strings.Contains(script, `gui_ldflags="-H=windowsgui -X main.version=$version"`) &&
+				strings.Contains(script, `gui_ldflags="-X main.version=$version"`)
+		}
+		if !versionStamped {
 			t.Errorf("build-pair.sh builds %s without stamping a version: %s", pkg, strings.TrimSpace(built))
 		}
 	}
@@ -55,5 +60,11 @@ func TestTheDesktopPairStampsAVersionIntoBothBinaries(t *testing.T) {
 	// a release, so it has to be visible in the version itself.
 	if !strings.Contains(script, `*M*`) {
 		t.Error("build-pair.sh does not mark a build made from a modified working copy")
+	}
+	if !strings.Contains(script, "go build -tags production") {
+		t.Error("build-pair.sh does not build the Wails interface in production mode")
+	}
+	if !strings.Contains(script, `gui_ldflags="-H=windowsgui -X main.version=$version"`) {
+		t.Error("the Windows Wails binary would open a console window")
 	}
 }

@@ -49,14 +49,22 @@ mkdir -p "$dist"
 echo "building the desktop pair as $version"
 
 case "$(uname -s 2>/dev/null || echo unknown)" in
-	MINGW*|MSYS*|CYGWIN*|Windows_NT) daemon="filees.exe"; gui="filees-gui-wails.exe" ;;
-	*) daemon="filees"; gui="filees-gui-wails" ;;
+	MINGW*|MSYS*|CYGWIN*|Windows_NT)
+		daemon="filees.exe"
+		gui="filees-gui-wails.exe"
+		gui_ldflags="-H=windowsgui -X main.version=$version"
+		;;
+	*)
+		daemon="filees"
+		gui="filees-gui-wails"
+		gui_ldflags="-X main.version=$version"
+		;;
 esac
 
 # -buildvcs=false matches every other build path here: the repository is SVN,
 # so Go's own stamping has nothing to read and only slows the build down.
 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$dist/$daemon" ./cmd/filees
-go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$dist/$gui" ./cmd/filees-gui-wails
+go build -tags production -trimpath -buildvcs=false -ldflags "$gui_ldflags" -o "$dist/$gui" ./cmd/filees-gui-wails
 
 echo "$dist/$daemon"
 echo "$dist/$gui"

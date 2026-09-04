@@ -65,8 +65,8 @@ mkdir -p "$staging/bin" "$staging/autostart"
 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false \
 	-ldflags "-X main.version=$base_version+r$source_revision" \
 	-o "$staging/bin/filees.exe" ./cmd/filees
-GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false \
-	-ldflags "-X main.version=$base_version+r$source_revision" \
+GOOS=windows GOARCH=amd64 go build -tags production -trimpath -buildvcs=false \
+	-ldflags "-H=windowsgui -X main.version=$base_version+r$source_revision" \
 	-o "$staging/bin/filees-gui-wails.exe" ./cmd/filees-gui-wails
 
 cp "$root/packaging/windows/autostart-supervisor.ps1" "$staging/autostart/start-filees.ps1"

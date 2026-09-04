@@ -78,6 +78,8 @@ powershell -File packaging/windows/build-msi.ps1 -BundleDir dist/client-windows-
 MSI powstaje z bundla, a nie z osobnej kompilacji — inaczej instalator i kanał
 rozjechałyby się, a pierwszym objawem byłaby aktualizacja zgłaszająca zmianę
 tam, gdzie nic się nie zmieniło.
+GUI w bundlu jest wariantem produkcyjnym `windowsgui`; autostart nie powinien
+otwierać obok panelu czarnego okna konsoli.
 
 Bundle zachowuje czytelną wersję `major.minor.patch.revision`. Windows
 Installer porównuje tylko trzy pola, dlatego `MajorUpgrade` dostaje

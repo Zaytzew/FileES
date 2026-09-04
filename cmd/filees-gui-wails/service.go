@@ -122,6 +122,7 @@ type RepoProjection struct {
 	LocalPath            string          `json:"local_path,omitempty"`
 	URL                  string          `json:"url,omitempty"`
 	Attached             bool            `json:"attached"`
+	LocalProvisioning    bool            `json:"local_provisioning,omitempty"`
 	Access               string          `json:"access"`
 	Ownership            string          `json:"ownership"`
 	AttachmentPolicy     string          `json:"attachment_policy"`
@@ -925,7 +926,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		}
 		result.Repositories = append(result.Repositories, RepoProjection{
 			ID: repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,
-			LocalPath: repo.LocalPath, URL: repo.URL, Attached: repo.Attached,
+			LocalPath: repo.LocalPath, URL: repo.URL, Attached: repo.Attached, LocalProvisioning: repo.LocallyProvisioning(),
 			Access: repo.Access, Ownership: ownership, AttachmentPolicy: repo.AttachmentPolicy,
 			State: repo.State, DisplayState: string(repo.DisplayState()), Connectivity: repo.Connectivity,
 			LocalRevision: repo.LocalRev, HeadRevision: repo.HeadRev,

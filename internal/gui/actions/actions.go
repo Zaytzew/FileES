@@ -822,6 +822,7 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 		}
 		attachmentRequired := repo.AttachmentPolicy == "required"
 		ownedAndCreatable := server.Owns(repo) && server.CanOfferRepositoryCreation()
+		locallyProvisioning := repo.LocallyProvisioning()
 		lockRequired := repo.RequiresLock()
 		// Shown on every client, not only the owner's: this is the sentence
 		// that turns an unexplained read-only file into a stated rule.
@@ -836,16 +837,16 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			// Ownership alone, not ownedAndCreatable: whether a realm may
 			// create new repositories says nothing about its right to set
 			// the working rules of one it already owns.
-			CanSetEditingPolicy:     vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
-			CanManageGrants:         vm.CanManageRealmGrants() && ownedAndCreatable,
-			CanManagePublicShares:   vm.CanManagePublicShares() && ownedAndCreatable,
-			CanManageUploadChannels: vm.CanManageUploadChannels() && ownedAndCreatable,
+			CanSetEditingPolicy:     !locallyProvisioning && vm.CanSetEditingPolicy() && server.Owns(repo) && repo.Attached,
+			CanManageGrants:         !locallyProvisioning && vm.CanManageRealmGrants() && ownedAndCreatable,
+			CanManagePublicShares:   !locallyProvisioning && vm.CanManagePublicShares() && ownedAndCreatable,
+			CanManageUploadChannels: !locallyProvisioning && vm.CanManageUploadChannels() && ownedAndCreatable,
 			CanReviewQuarantine:     quarantineBrowser && vm.CanReviewQuarantine() && server.Owns(repo) && repo.Purpose == "upload_trash",
 			CanConnect:              !connecting && !repo.Attached && repo.DisplayState() == app.RepoDisplayUnattached && vm.CanAttachRepository(),
 			CanLocate:               repo.Attached && repo.DisplayState() == app.RepoDisplayAttention && repo.CurrentOp != nil && *repo.CurrentOp == "working_copy_missing" && vm.CanLocateRepository(),
 			CanDetach:               repo.Attached && !attachmentRequired && vm.CanDetachRepository(),
-			CanDelete:               !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
-			CanLoadDump:             repo.Attached && ownedAndCreatable,
+			CanDelete:               !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
+			CanLoadDump:             !locallyProvisioning && repo.Attached && ownedAndCreatable,
 			CanRetryLifecycle:       vm.CanRepairRepositoryLifecycle() && repo.CanRetryLifecycle && repo.LifecycleOperationID != "",
 			CanAbandonLifecycle:     vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
 		})

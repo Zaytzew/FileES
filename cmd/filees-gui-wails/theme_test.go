@@ -131,6 +131,13 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	models, err := frontend.ReadFile("frontend/bindings/filees/cmd/filees-gui-wails/models.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(models), `this["local_provisioning"]`) {
+		t.Fatal("generated browser model does not carry the local provisioning verdict")
+	}
 	for _, wanted := range []string{`id="pair-mobile"`, `id="pulse-core"`, `id="pulse-inner-ring"`} {
 		if !strings.Contains(string(index), wanted) {
 			t.Fatalf("main panel is missing %q", wanted)
@@ -145,13 +152,18 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 	if strings.Contains(string(index), `id="connection"`) {
 		t.Fatal("separate connection pill survived radar consolidation")
 	}
-	for _, wanted := range []string{"expandedServers", "data-toggle-server", "working_copy_size_known", "repo-icon-action", "Rozmiar", "repo-state-overlay", "Połącz z lokalnym folderem", "<span>Akcje</span>", `renderRepoGroup("Zdalne", remote, "remote")`, `M3 11v2a2 2 0 0 0 2 2h2l4 4V5`} {
+	for _, wanted := range []string{"expandedServers", "data-toggle-server", "working_copy_size_known", "local_provisioning", "pierwsze wysyłanie — trwa", "repo-icon-action", "Rozmiar", "repo-state-overlay", "Połącz z lokalnym folderem", "<span>Akcje</span>", `renderRepoGroup("Zdalne", remote, "remote")`, `M3 11v2a2 2 0 0 0 2 2h2l4 4V5`} {
 		if !strings.Contains(string(script), wanted) {
 			t.Fatalf("cleanup renderer is missing %q", wanted)
 		}
 	}
 	if strings.Contains(string(script), "state-pill") || strings.Contains(string(styles), ".repo-actions") {
 		t.Fatal("obsolete state pill or leading action column survived folder-row cleanup")
+	}
+	if strings.Contains(string(script), "const attached = rest.filter((repo) => repo.attached);") ||
+		!strings.Contains(string(script), "repo.attached || repo.local_provisioning") ||
+		!strings.Contains(string(script), "!repo.attached && !repo.local_provisioning") {
+		t.Fatal("a local initial import can still fall into the remote repository group")
 	}
 	if !strings.Contains(string(script), `repo.can_attach`) || !strings.Contains(string(styles), "padding-right:39px") {
 		t.Fatal("remote pin or one-slot size inset is missing")

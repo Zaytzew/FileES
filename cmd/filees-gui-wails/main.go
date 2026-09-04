@@ -273,6 +273,10 @@ func main() {
 	)
 
 	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
+		// Applied here rather than beside the window's construction, because
+		// the native handle does not exist until the application has started
+		// and the call would silently do nothing.
+		applySmallWindowIcon(mainWindow, appIcon)
 		go gui.run(host.Context())
 		if actionController != nil {
 			go actionController.Run(host.Context())

@@ -62,3 +62,30 @@ func TestTheIconIsHandedToTheApplication(t *testing.T) {
 		t.Error("application.Options carries no Icon; the embedded icon would never reach the window")
 	}
 }
+
+// The small icon has to be applied too, and after the application has started.
+//
+// Wails sets only ICON_BIG - windowsWebviewWindow.setIcon sends WM_SETICON with
+// ICON_BIG and nothing else - so Alt-Tab and the title bar fall back to the
+// default glyph. Measured after the first fix: WM_GETICON returned a handle for
+// ICON_BIG and zero for ICON_SMALL, which is half a fix, and the missing half is
+// the one somebody sees while holding Alt-Tab.
+//
+// The placement matters as much as the call: the native window handle does not
+// exist until the application has started, so applying it beside the window's
+// construction would compile, run, and do nothing.
+func TestTheSmallWindowIconIsAppliedAfterStartup(t *testing.T) {
+	raw, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	if !strings.Contains(source, "applySmallWindowIcon(mainWindow, appIcon)") {
+		t.Fatal("nothing applies the small window icon; Alt-Tab would show the default glyph")
+	}
+	started := strings.Index(source, "events.Common.ApplicationStarted")
+	applied := strings.Index(source, "applySmallWindowIcon(mainWindow, appIcon)")
+	if started < 0 || applied < started {
+		t.Error("the small icon is applied before the application has started, when there is no native window handle yet")
+	}
+}

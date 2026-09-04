@@ -8,7 +8,10 @@ import (
 	contract "filees/pkg/contract/v1"
 )
 
-type deadlineCapturingClient struct{ deadline time.Time; ok bool }
+type deadlineCapturingClient struct {
+	deadline time.Time
+	ok       bool
+}
 
 func (c *deadlineCapturingClient) RecoveryDownload(ctx context.Context, payload contract.RecoveryDownloadPayload) (*contract.RecoveryDownloadResult, error) {
 	c.deadline, c.ok = ctx.Deadline()

@@ -58,9 +58,11 @@ nie wystarczy — demon wróci, zanim zdążysz podmienić plik.
 
 ```powershell
 # 1. zatrzymaj nadzorcę (inaczej wskrzesi demona w trakcie podmiany)
-Stop-ScheduledTask -TaskName FileES
+#    UWAGA na filtr: własna linia poleceń też zawiera "start-filees.ps1",
+#    więc bez -ne $PID zabijasz własną powłokę. Sprawdzone na sobie, kod 255.
+#    Dlatego wzorzec jest na "-File", a nie na samą nazwę skryptu.
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
-  Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*start-filees.ps1*' } |
+  Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*-File*start-filees.ps1*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
 # 2. zatrzymaj demona ŁAGODNIE — inaczej tracisz manifest obserwatora.
@@ -71,8 +73,15 @@ Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
 #    pliku padła na "plik w użyciu" i wdrożenie wyglądało na udane.
 & "E:\!!!_COOPERATE\FILEES\dist\filees.exe" shutdown
 
-# 3. podmień binarki, 4. wystartuj zadanie
-Start-ScheduledTask -TaskName FileES
+# 2b. interfejs trzyma własny plik; jego zatrzymanie nie ma stanu do stracenia
+Get-Process filees-gui-wails -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# 3. podmień binarki, 4. wystartuj nadzorcę
+#    Przez wscript, nie przez powershell wprost - patrz wyżej, konsola.
+#    Zadania harmonogramu tu już nie ma: autostart robi skrót w Startup,
+#    zakładany przez MSI.
+Start-Process "C:\Windows\System32\wscript.exe" `
+  -ArgumentList "`"$env:LOCALAPPDATA\Programs\FileES\start-filees.vbs`""
 ```
 
 **Dlaczego krok drugi nie jest kosmetyką.** Manifest obserwatora zapisuje się

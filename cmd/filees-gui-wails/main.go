@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	rootversion "filees"
@@ -75,7 +76,12 @@ func main() {
 		return
 	}
 
-	// Before anything takes the single-instance lock: a restart starts its
+	// Before anything takes the single-instance lock: if this start turns out
+	// to be a second one, the client already running has to be allowed to come
+	// forward, and only a process that owns the foreground can allow it.
+	allowForegroundHandover()
+
+	// Also before the lock: a restart starts its
 	// replacement while it is still running, and the replacement must not
 	// mistake it for a second click on the shortcut.
 	if err := awaitReplacedInstance(); err != nil {
@@ -283,15 +289,6 @@ func main() {
 	)
 
 	host.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
-		// Applied here rather than beside the window's construction, because
-		// the native handle does not exist until the application has started
-		// and the call would silently do nothing.
-		// Recorded rather than printed: the interface's stderr goes nowhere in a
-		// desktop install, which is how an activation once stalled for twenty
-		// minutes with the reason known and written to nothing.
-		if err := applySmallWindowIcon(mainWindow, appIcon); err != nil {
-			opjournal.RecordFailure("interface", "Okno nie dostało małej ikony (Alt-Tab, pasek tytułu)", err)
-		}
 		go gui.run(host.Context())
 		if actionController != nil {
 			go actionController.Run(host.Context())
@@ -301,6 +298,26 @@ func main() {
 		dark := systemPrefersDark(event.Context().IsDarkMode())
 		applySystemTheme(dark, mainWindow, settingsWindow, repositoryWindow, promptWindow, pairingWindow)
 	})
+	// The small icon waits for the window itself, not for the application.
+	//
+	// It was applied at ApplicationStarted first, and the journal said exactly
+	// what happened: "the window has no native handle yet". The application has
+	// started before any window is realised, so WM_SETICON had nowhere to go and
+	// Alt-Tab kept the default glyph. WindowRuntimeReady is the first moment the
+	// handle is real.
+	//
+	// Recorded rather than printed if it still fails: the interface's stderr
+	// goes nowhere in a desktop install, which is how an activation once stalled
+	// for twenty minutes with the reason known and written to nothing.
+	var smallIconOnce sync.Once
+	mainWindow.RegisterHook(events.Common.WindowRuntimeReady, func(_ *application.WindowEvent) {
+		smallIconOnce.Do(func() {
+			if err := applySmallWindowIcon(mainWindow, appIcon); err != nil {
+				opjournal.RecordFailure("interface", "Okno nie dostało małej ikony (Alt-Tab, pasek tytułu)", err)
+			}
+		})
+	})
+
 	setMainPanelRaiser(func() {
 		mainWindow.Show()
 		mainWindow.UnMinimise()

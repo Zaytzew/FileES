@@ -100,6 +100,7 @@ type ServerProjection struct {
 	Address               string `json:"address"`
 	ClientRole            string `json:"client_role"`
 	RealmAlias            string `json:"realm_alias,omitempty"`
+	Health                string `json:"health"`
 	RepositoryCount       int    `json:"repository_count"`
 	RepositoriesReady     bool   `json:"repositories_ready"`
 	PendingRequiredRepos  int    `json:"pending_required_repos"`
@@ -751,6 +752,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		result.Servers = append(result.Servers, ServerProjection{
 			ID: server.ID, DisplayName: server.DisplayName, Address: server.Address,
 			ClientRole: server.ClientRole, RealmAlias: server.RealmAlias,
+			Health:          projectServerHealth(vm, server),
 			RepositoryCount: len(server.Repos), RepositoriesReady: server.RepositoriesReady,
 			PendingRequiredRepos:  server.PendingRequiredRepos,
 			ReservationCount:      server.ReservationCount,
@@ -931,6 +933,27 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 		}
 	}
 	return result
+}
+
+// projectServerHealth gives the header indicator one narrow meaning: whether
+// this server's view lane is currently verified. Historical repository errors
+// and unread notices belong to their own surfaces and must not turn a healthy
+// connection into a flashing alarm.
+func projectServerHealth(vm guiapp.ViewModel, server guiapp.ServerViewModel) string {
+	if !vm.Connected {
+		return "daemon_offline"
+	}
+	unverified := strings.TrimSpace(server.ViewSyncedAt) == "" && server.ViewSyncFailures == 0 && strings.TrimSpace(server.ViewSyncError) == ""
+	if unverified {
+		return "server_unverified"
+	}
+	if server.ViewSyncFailures > 0 || strings.TrimSpace(server.ViewSyncError) != "" {
+		return "server_unavailable"
+	}
+	if vm.Stale {
+		return "refreshing"
+	}
+	return "current"
 }
 
 func projectFreshness(vm guiapp.ViewModel) FreshnessProjection {

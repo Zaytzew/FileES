@@ -231,6 +231,9 @@ func TestProjectViewModelOwnsFreshnessAndReservationVerdicts(t *testing.T) {
 	if got.Projection.State != "server_unverified" || got.Projection.ServerName != "Manual" || got.Projection.AdditionalServers != 1 {
 		t.Fatalf("freshness projection=%+v", got.Projection)
 	}
+	if got.Servers[0].Health != "server_unverified" || got.Servers[1].Health != "server_unavailable" {
+		t.Fatalf("server health projection=%+v", got.Servers)
+	}
 	if got.ReservationStatus.State != "partial" || len(got.ReservationStatus.Unavailable) != 1 || got.ReservationStatus.Unavailable[0].ID != "spot" {
 		t.Fatalf("reservation availability=%+v", got.ReservationStatus)
 	}
@@ -245,15 +248,26 @@ func TestProjectViewModelOwnsFreshnessAndReservationVerdicts(t *testing.T) {
 	}
 
 	vm.Servers[0].ViewSyncedAt = "2026-09-01T12:00:00Z"
+	vm.Repos = []guiapp.RepoViewModel{{ID: "manual-docs", ServerID: "manual"}}
+	vm.Errors = []guiapp.ErrorViewModel{{RepoID: "manual-docs", Code: "COMMIT-3102"}}
+	vm.Notices = []guiapp.NoticeViewModel{{ID: "old-notice", RepoID: "manual-docs", Acked: false}}
 	got = projectViewModel(vm)
 	if got.Projection.State != "server_unavailable" || got.Projection.ServerName != "Spot" || got.Projection.Reason != "timeout" {
 		t.Fatalf("failed server projection=%+v", got.Projection)
+	}
+	if got.Servers[0].Health != "current" || got.Servers[1].Health != "server_unavailable" {
+		t.Fatalf("historical repo signals changed current/failed server health=%+v", got.Servers)
 	}
 
 	vm.Connected = false
 	got = projectViewModel(vm)
 	if got.Projection.State != "daemon_offline" || got.ReservationStatus.State != "daemon_offline" {
 		t.Fatalf("offline projection=%+v reservations=%+v", got.Projection, got.ReservationStatus)
+	}
+	for _, server := range got.Servers {
+		if server.Health != "daemon_offline" {
+			t.Fatalf("offline server health=%+v", got.Servers)
+		}
 	}
 }
 

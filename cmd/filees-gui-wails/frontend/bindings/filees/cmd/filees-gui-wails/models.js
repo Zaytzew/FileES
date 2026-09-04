@@ -1926,6 +1926,13 @@ export class ServerProjection {
              */
             this["realm_alias"] = undefined;
         }
+        if (!("health" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["health"] = "";
+        }
         if (!("repository_count" in $$source)) {
             /**
              * @member

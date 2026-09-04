@@ -1,8 +1,10 @@
 package shout
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -145,5 +147,58 @@ func TestAdvanceInitializesWithoutScanning(t *testing.T) {
 	}, time.Now())
 	if err != nil || len(added) != 1 || added[0].Revision != 11 {
 		t.Fatalf("advance=%#v err=%v", added, err)
+	}
+}
+
+func TestAdvanceDoesNotSkipUnscannedRevisionsWithoutLogReader(t *testing.T) {
+	wc := t.TempDir()
+	if err := SaveLastSeen(wc, 7); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Advance(wc, "repo", 9, nil, time.Now()); !errors.Is(err, ErrLogReaderMissing) {
+		t.Fatalf("Advance() error = %v, want ErrLogReaderMissing", err)
+	}
+	last, ok, err := LoadLastSeen(wc)
+	if err != nil || !ok || last != 7 {
+		t.Fatalf("last_seen advanced without scan: revision=%d ok=%v err=%v", last, ok, err)
+	}
+}
+
+func TestConcurrentAckAndRememberPreserveBothMutations(t *testing.T) {
+	wc := t.TempDir()
+	if err := SaveInbox(wc, []Record{{
+		ID: NoticeID("docs", 1), RepoID: "docs", Revision: 1,
+		Title: "first", CreatedAt: "2026-09-04T18:00:00Z",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		if err := Ack(wc, NoticeID("docs", 1)); err != nil {
+			t.Errorf("Ack() error = %v", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := Remember(wc, "docs", []LogEntry{{Revision: 2, Message: Format("second")}}, time.Now())
+		if err != nil {
+			t.Errorf("Remember() error = %v", err)
+		}
+	}()
+	close(start)
+	wg.Wait()
+
+	inbox, err := LoadInbox(wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inbox) != 2 || !inbox[0].Acked || inbox[1].Acked || inbox[1].Revision != 2 {
+		t.Fatalf("concurrent mutations lost: %#v", inbox)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"filees/internal/durable"
@@ -32,7 +33,16 @@ var (
 	ErrCommentTooLong    = errors.New("shout comment is too long")
 	ErrNothingToPublish  = errors.New("no pending changes to publish")
 	ErrCommentHasControl = errors.New("shout comment must not contain control characters")
+	ErrLogReaderMissing  = errors.New("shout log reader is unavailable")
 )
+
+// stateMu serializes the read-modify-write transactions performed by the
+// daemon's update loop and IPC acknowledgement handler. File replacement is
+// atomic for readers, but without this lock a concurrent Ack and Remember can
+// both read the old inbox and the later rename can silently discard the other
+// mutation. A working copy has one daemon owner; this lock is therefore the
+// required in-process boundary, not a cross-process ownership mechanism.
+var stateMu sync.Mutex
 
 const maxCommentRunes = 500
 
@@ -89,8 +99,11 @@ func LoadLastSeen(wc string) (int64, bool, error) {
 		return 0, false, err
 	}
 	n, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
-	if err != nil || n < 0 {
+	if err != nil {
 		return 0, false, fmt.Errorf("shout last_seen: %w", err)
+	}
+	if n < 0 {
+		return 0, false, errors.New("shout last_seen: negative revision")
 	}
 	return n, true, nil
 }
@@ -98,6 +111,12 @@ func LoadLastSeen(wc string) (int64, bool, error) {
 // SaveLastSeen persists the high-water mark after a scan or after this
 // client authors a shout.
 func SaveLastSeen(wc string, revision int64) error {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	return saveLastSeen(wc, revision)
+}
+
+func saveLastSeen(wc string, revision int64) error {
 	if revision < 0 {
 		return fmt.Errorf("shout last_seen: negative revision")
 	}
@@ -132,6 +151,12 @@ func LoadInbox(wc string) ([]Record, error) {
 
 // SaveInbox replaces the durable inbox.
 func SaveInbox(wc string, records []Record) error {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	return saveInbox(wc, records)
+}
+
+func saveInbox(wc string, records []Record) error {
 	if records == nil {
 		records = []Record{}
 	}
@@ -146,6 +171,12 @@ func SaveInbox(wc string, records []Record) error {
 // Remember appends shouts that are not already in the inbox. Returns the
 // newly added records (for events).
 func Remember(wc, repoID string, entries []LogEntry, now time.Time) ([]Record, error) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	return remember(wc, repoID, entries, now)
+}
+
+func remember(wc, repoID string, entries []LogEntry, now time.Time) ([]Record, error) {
 	inbox, err := LoadInbox(wc)
 	if err != nil {
 		return nil, err
@@ -175,7 +206,7 @@ func Remember(wc, repoID string, entries []LogEntry, now time.Time) ([]Record, e
 	if len(added) == 0 {
 		return nil, nil
 	}
-	if err := SaveInbox(wc, inbox); err != nil {
+	if err := saveInbox(wc, inbox); err != nil {
 		return nil, err
 	}
 	return added, nil
@@ -183,6 +214,8 @@ func Remember(wc, repoID string, entries []LogEntry, now time.Time) ([]Record, e
 
 // Ack marks a notice acknowledged. Unknown IDs are a no-op.
 func Ack(wc, noticeID string) error {
+	stateMu.Lock()
+	defer stateMu.Unlock()
 	inbox, err := LoadInbox(wc)
 	if err != nil {
 		return err
@@ -197,7 +230,7 @@ func Ack(wc, noticeID string) error {
 	if !changed {
 		return nil
 	}
-	return SaveInbox(wc, pruneAcknowledged(inbox, acknowledgedHistoryLimit))
+	return saveInbox(wc, pruneAcknowledged(inbox, acknowledgedHistoryLimit))
 }
 
 // OpenNotices returns unacked records as contract notices, newest last.
@@ -292,6 +325,8 @@ type FetchLogs func(fromRev, toRev int64) ([]LogEntry, error)
 // moves forward. A missing last_seen is initialized to localRev without
 // scanning history (new installation).
 func Advance(wc, repoID string, localRev int64, fetch FetchLogs, now time.Time) ([]Record, error) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
 	if localRev < 1 {
 		return nil, nil
 	}
@@ -300,23 +335,23 @@ func Advance(wc, repoID string, localRev int64, fetch FetchLogs, now time.Time) 
 		return nil, err
 	}
 	if !ok {
-		return nil, SaveLastSeen(wc, localRev)
+		return nil, saveLastSeen(wc, localRev)
 	}
 	if localRev <= last {
 		return nil, nil
 	}
-	var entries []LogEntry
-	if fetch != nil {
-		entries, err = fetch(last+1, localRev)
-		if err != nil {
-			return nil, err
-		}
+	if fetch == nil {
+		return nil, ErrLogReaderMissing
 	}
-	added, err := Remember(wc, repoID, entries, now)
+	entries, err := fetch(last+1, localRev)
 	if err != nil {
 		return nil, err
 	}
-	if err := SaveLastSeen(wc, localRev); err != nil {
+	added, err := remember(wc, repoID, entries, now)
+	if err != nil {
+		return nil, err
+	}
+	if err := saveLastSeen(wc, localRev); err != nil {
 		return nil, err
 	}
 	return added, nil
@@ -342,6 +377,10 @@ func atomicWrite(path string, data []byte) error {
 	tmp := f.Name()
 	defer os.Remove(tmp)
 	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
 		f.Close()
 		return err
 	}

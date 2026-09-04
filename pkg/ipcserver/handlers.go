@@ -122,6 +122,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoDetach(req, false)
 	case contract.CmdRepoDelete:
 		return s.handleRepoDetach(req, true)
+	case contract.CmdRepoRecoveryDismiss:
+		return s.handleRepoRecoveryDismiss(req)
 	case contract.CmdRepoLifecycleStatus:
 		return s.handleRepoLifecycleStatus(req)
 	case contract.CmdRepoLifecycleRepair:
@@ -155,6 +157,31 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 			"PROTO-0003", "ERROR", "NONE", "proto.unknown_command",
 			map[string]string{"command": req.Command})
 	}
+}
+
+func (s *Server) handleRepoRecoveryDismiss(req contract.Request) contract.Response {
+	service := s.repositoryLifecycleService()
+	if service == nil {
+		return contract.ErrResponse(req.RequestID, "REPO-0001", "ERROR", "RETRY", "repo.lifecycle_unavailable", nil)
+	}
+	var payload contract.RepoRecoveryDismissPayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil || strings.TrimSpace(payload.OperationID) == "" || strings.TrimSpace(payload.ServerID) == "" || strings.TrimSpace(payload.RepoID) == "" {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	rs := s.repoByID(payload.RepoID)
+	if rs == nil || rs.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	summary := rs.Summary()
+	if !summary.ServerDeleted || !summary.RecoveryAvailable || summary.RecoveryOperationID != payload.OperationID {
+		return contract.ErrResponse(req.RequestID, "REPO-2017", "ERROR", "NONE", "repo.recovery_dismiss_unavailable", nil)
+	}
+	result, err := service.DismissRecovery(payload.ServerID, payload.RepoID, payload.OperationID)
+	if err != nil {
+		return contract.ErrResponse(req.RequestID, "REPO-2018", "ERROR", "REQUIRE_ACTION", "repo.recovery_dismiss_failed", nil)
+	}
+	s.dismissRecoveryProjection(payload.ServerID, payload.RepoID)
+	return contract.OKResponse(req.RequestID, result)
 }
 
 func (s *Server) handleWhale(req contract.Request) contract.Response {

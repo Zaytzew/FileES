@@ -1375,6 +1375,13 @@ export class RepoProjection {
              * @member
              * @type {boolean | undefined}
              */
+            this["can_dismiss_recovery"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {boolean | undefined}
+             */
             this["recovery_pending"] = undefined;
         }
         if (/** @type {any} */(false)) {

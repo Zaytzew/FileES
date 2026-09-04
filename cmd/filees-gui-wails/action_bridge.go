@@ -28,7 +28,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, lockReleases actions.LockReleaseManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryRepairer actions.RepositoryLifecycleRepairer, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, lockReleases actions.LockReleaseManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryRepairer actions.RepositoryLifecycleRepairer, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, recoveryDismisser actions.RecoveryDismisser, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -78,6 +78,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		ServerDetacher:       serverDetacher,
 		RealmRemover:         realmRemover,
 		RecoveryDownloader:   recoveryDownloader,
+		RecoveryDismisser:    recoveryDismisser,
 		ConsentPrompter:      consentPrompter,
 		ActionLifecycle:      service.runner,
 		Stack:                stack,
@@ -496,6 +497,20 @@ func (adapter recoveryDownloadAdapter) DownloadRecovery(ctx context.Context, ope
 		return nil, errors.New("daemon returned an invalid recovery download result")
 	}
 	return result.Paths, nil
+}
+
+type recoveryDismissClient interface {
+	RepoRecoveryDismiss(context.Context, contract.RepoRecoveryDismissPayload) (*contract.RepoRecoveryDismissResult, error)
+}
+
+type recoveryDismissAdapter struct{ client recoveryDismissClient }
+
+func (adapter recoveryDismissAdapter) DismissRecovery(ctx context.Context, serverID, repoID, operationID string) error {
+	if adapter.client == nil {
+		return errors.New("recovery dismissal client is unavailable")
+	}
+	_, err := adapter.client.RepoRecoveryDismiss(ctx, contract.RepoRecoveryDismissPayload{OperationID: operationID, ServerID: serverID, RepoID: repoID})
+	return err
 }
 
 type sessionTimeoutClient interface {

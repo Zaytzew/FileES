@@ -73,6 +73,7 @@ const (
 	CmdRepoDetach              = "repo.detach"                  // detach one local working copy, preserving user data
 	CmdRepoDelete              = "repo.delete"                  // delete an owned server repository, then detach locally
 	CmdRepoLifecycleStatus     = "repo.lifecycle_status"        // poll outcome of a create/attach/relocate operation by ID
+	CmdRepoLifecycleRepair     = "repo.lifecycle_repair"        // retry or locally abandon one stuck durable operation
 	CmdRepoActivity            = "repo.activity"                // global recent synchronization activity snapshot
 	CmdRepoLock                = "repo.lock"                    // acquire SVN lock on one or more paths
 	CmdRepoUnlock              = "repo.unlock"                  // release SVN lock on one or more paths
@@ -162,6 +163,7 @@ const (
 	CapRepoDetach              = "repo.detach"
 	CapRepoDelete              = "repo.delete"
 	CapRepoLifecycleStatus     = "repo.lifecycle_status"
+	CapRepoLifecycleRepair     = "repo.lifecycle_repair"
 	CapRepoActivity            = "repo.activity"
 	CapRepoPublish             = "repo.publish"
 	CapNoticeList              = "notice.list"
@@ -216,6 +218,7 @@ var AllCapabilities = []string{
 	CapRepoDetach,
 	CapRepoDelete,
 	CapRepoLifecycleStatus,
+	CapRepoLifecycleRepair,
 	CapRepoPublish,
 	CapNoticeList,
 	CapNoticeAck,
@@ -232,10 +235,10 @@ type HelloResult struct {
 
 // SystemStatusResult is the result for CmdSystemStatus.
 type SystemStatusResult struct {
-	State               string               `json:"state"` // "running" | "stopping"
-	UptimeSec           int64                `json:"uptime_sec"`
-	Repos               int                  `json:"repos"`
-	Activations         []ActivationStatus   `json:"activations"`
+	State       string             `json:"state"` // "running" | "stopping"
+	UptimeSec   int64              `json:"uptime_sec"`
+	Repos       int                `json:"repos"`
+	Activations []ActivationStatus `json:"activations"`
 	// Detachments are the relationships that ended, beside the ones that
 	// exist. They are a separate list rather than a flag on an activation
 	// because after a detachment there is no activation left to carry it:
@@ -821,6 +824,13 @@ type RepoLifecycleStatusPayload struct {
 	OperationID string `json:"operation_id"`
 }
 
+type RepoLifecycleRepairPayload struct {
+	OperationID string `json:"operation_id"`
+	ServerID    string `json:"server_id"`
+	RepoID      string `json:"repo_id"`
+	Strategy    string `json:"strategy"` // retry | abandon
+}
+
 type RepoLifecycleResult struct {
 	OperationID           string `json:"operation_id"`
 	ServerID              string `json:"server_id"`
@@ -863,24 +873,28 @@ type RepoListResult struct {
 
 // RepoSummary is a minimal descriptor used in RepoListResult.
 type RepoSummary struct {
-	ID                  string `json:"id"`
-	ServerID            string `json:"server_id"`
-	DisplayName         string `json:"display_name"`
-	Attached            bool   `json:"attached"`
-	Access              string `json:"access"`
-	URL                 string `json:"url"`
-	LocalPath           string `json:"local_path"`
-	State               string `json:"state"`
-	OwnerRealmID        string `json:"owner_realm_id,omitempty"`
-	AttachmentPolicy    string `json:"attachment_policy"`
-	ServerDeleted       bool   `json:"server_deleted,omitempty"`
-	LocalCleanupPending bool   `json:"local_cleanup_pending,omitempty"`
-	RetainUntil         string `json:"retain_until,omitempty"`
-	RecoveryOperationID string `json:"recovery_operation_id,omitempty"`
-	RecoveryAvailable   bool   `json:"recovery_available,omitempty"`
-	RecoveryPending     bool   `json:"recovery_pending,omitempty"`
-	CleanupError        string `json:"cleanup_error,omitempty"`
-	Purpose             string `json:"purpose,omitempty"`
+	ID                   string `json:"id"`
+	ServerID             string `json:"server_id"`
+	DisplayName          string `json:"display_name"`
+	Attached             bool   `json:"attached"`
+	Access               string `json:"access"`
+	URL                  string `json:"url"`
+	LocalPath            string `json:"local_path"`
+	State                string `json:"state"`
+	OwnerRealmID         string `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy     string `json:"attachment_policy"`
+	ServerDeleted        bool   `json:"server_deleted,omitempty"`
+	LocalCleanupPending  bool   `json:"local_cleanup_pending,omitempty"`
+	RetainUntil          string `json:"retain_until,omitempty"`
+	RecoveryOperationID  string `json:"recovery_operation_id,omitempty"`
+	RecoveryAvailable    bool   `json:"recovery_available,omitempty"`
+	RecoveryPending      bool   `json:"recovery_pending,omitempty"`
+	CleanupError         string `json:"cleanup_error,omitempty"`
+	Purpose              string `json:"purpose,omitempty"`
+	LifecycleOperationID string `json:"lifecycle_operation_id,omitempty"`
+	LifecycleError       string `json:"lifecycle_error,omitempty"`
+	CanRetryLifecycle    bool   `json:"can_retry_lifecycle,omitempty"`
+	CanAbandonLifecycle  bool   `json:"can_abandon_lifecycle,omitempty"`
 }
 
 // RepoPublishPayload is the required comment for a shouting commit.

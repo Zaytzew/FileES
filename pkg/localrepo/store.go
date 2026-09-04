@@ -47,6 +47,10 @@ const (
 	StateDetached    State = "detached"
 	StateDeleted     State = "deleted"
 	StateError       State = "error"
+	// StateAbandoned is a local tombstone for a user-ended create/attach
+	// attempt. It releases the path and repo ID without changing server state
+	// or deleting any user data.
+	StateAbandoned State = "abandoned"
 )
 
 type Record struct {
@@ -214,7 +218,7 @@ func (s *Store) EnsureConfiguredAttached(serverID, repoID, repoURL, access, loca
 			if tombstone.OperationID == "" || existing.UpdatedAt.After(tombstone.UpdatedAt) {
 				tombstone = existing
 			}
-		case StateError:
+		case StateError, StateAbandoned:
 			continue
 		default:
 			return existing, false, nil
@@ -270,7 +274,7 @@ func (s *Store) beginLocked(record Record) (Record, error) {
 }
 
 func terminal(state State) bool {
-	return state == StateError || state == StateDetached || state == StateDeleted
+	return state == StateError || state == StateDetached || state == StateDeleted || state == StateAbandoned
 }
 
 func (s *Store) MarkAttached(operationID, repoID string) (Record, error) {
@@ -323,6 +327,50 @@ func (s *Store) ResumeCreate(operationID string) (Record, error) {
 	})
 }
 
+// Retry clears a durable local failure while preserving the operation and all
+// of its request IDs. The caller must enqueue the same operation afterwards.
+func (s *Store) Retry(operationID string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		switch record.State {
+		case StateRequestPending, StateRepositoryCreated, StateAttaching, StateRelocating, StateReconciling, StateDetaching, StateDeleting:
+			record.LastError = ""
+			return nil
+		case StateError:
+			if record.RepoID == "" || record.RepoURL == "" || (record.Access != "r" && record.Access != "rw") {
+				return errors.New("failed local operation has no resumable repository authority")
+			}
+			record.State, record.LastError = StateAttaching, ""
+			return nil
+		default:
+			return errors.New("local repository operation does not require repair")
+		}
+	})
+}
+
+// Abandon releases only a failed local create/attach attempt. Delete and
+// detach receipts are deliberately excluded: those operations have their own
+// idempotent forward recovery and may have crossed an irreversible boundary.
+func (s *Store) Abandon(operationID string) (Record, error) {
+	return s.update(operationID, func(record *Record) error {
+		if record.State == StateAbandoned {
+			return nil
+		}
+		if record.RepoID == "" {
+			return errors.New("local operation with unknown server outcome cannot be abandoned")
+		}
+		if record.State != StateRepositoryCreated && record.State != StateError {
+			return errors.New("only a failed create or attach operation can be abandoned")
+		}
+		record.State, record.LastError = StateAbandoned, ""
+		record.PendingLocalPath = ""
+		record.RelocationAdoptExisting = false
+		record.ReconcileOperationID = ""
+		record.LoadDumpApplyIgnorePolicy = false
+		record.LoadDumpKeepLastRevisions = nil
+		return nil
+	})
+}
+
 // RepairCreatedRepositoryInput corrects user input that was corrupted before
 // it crossed the daemon IPC boundary. It is intentionally limited to the
 // durable post-CREATE_REPOSITORY/pre-import boundary: the server repository
@@ -340,7 +388,7 @@ func (s *Store) RepairCreatedRepositoryInput(operationID, displayName, localPath
 			return errors.New("repaired repository path must be an absolute non-root path")
 		}
 		for id, existing := range s.records {
-			if id != operationID && existing.State != StateError && existing.State != StateDetached && existing.State != StateDeleted && pathsOverlap(existing.LocalPath, localPath) {
+			if id != operationID && !terminal(existing.State) && pathsOverlap(existing.LocalPath, localPath) {
 				return errors.New("repaired repository path overlaps another FileES repository root")
 			}
 		}
@@ -735,7 +783,7 @@ func validate(r Record) error {
 		}
 	}
 	switch r.State {
-	case StateRequestPending, StateRepositoryCreated, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateReconciling, StateDetaching, StateDeleting, StateDetached, StateDeleted, StateError:
+	case StateRequestPending, StateRepositoryCreated, StateUnattached, StatePolicyPending, StateAttaching, StateAttached, StateRelocating, StateReconciling, StateDetaching, StateDeleting, StateDetached, StateDeleted, StateError, StateAbandoned:
 	default:
 		return errors.New("local repository lifecycle state is invalid")
 	}

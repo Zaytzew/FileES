@@ -101,6 +101,9 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 		talk.With("provisioning").Errorf("restore operations: %v", err)
 	} else {
 		for _, operation := range operations {
+			if operation.State == provisioning.StateAbandoned {
+				continue
+			}
 			if err := p.reconcileLocalBoundary(operation); err != nil {
 				// An operation with no local lifecycle record at all is
 				// orphaned, not broken: the repository finished its life and
@@ -115,7 +118,7 @@ func (p *daemonProvisioner) Run(ctx context.Context) {
 				// silence, because it teaches the reader to skip the place
 				// where the real failures appear.
 				if errors.Is(err, os.ErrNotExist) {
-					talk.With("provisioning:"+operation.OperationID).Infof(
+					talk.With("provisioning:" + operation.OperationID).Infof(
 						"wpis w dzienniku provisioningu nie ma odpowiednika w cyklu życia — repozytorium już nie istnieje, pomijam")
 					continue
 				}
@@ -185,6 +188,9 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 	record, ok := p.local.Get(operationID)
 	if !ok {
 		talk.With("provisioning").Errorf("local lifecycle record %s is missing", operationID)
+		return
+	}
+	if record.State == localrepo.StateAbandoned {
 		return
 	}
 	p.mu.RLock()
@@ -275,6 +281,95 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		return
 	}
 	p.publishAttachment(ctx, operation)
+}
+
+// RepairLifecycle is the daemon-owned exit from a stuck local workflow. Retry
+// requeues the same durable operation. Abandon closes only the local
+// create/attach attempt; if the old working copy can be proven to belong to
+// the same projected repository it is adopted instead of discarded.
+func (p *daemonProvisioner) RepairLifecycle(ctx context.Context, operationID, strategy string) (localrepo.Record, error) {
+	record, ok := p.local.Get(operationID)
+	if !ok {
+		return localrepo.Record{}, os.ErrNotExist
+	}
+	if strategy == "retry" {
+		if record.State == localrepo.StateRepositoryCreated {
+			if p.provisioning == nil {
+				return localrepo.Record{}, errors.New("repository provisioning journal is unavailable")
+			}
+			operation, err := p.provisioning.Get(operationID)
+			if err != nil {
+				return localrepo.Record{}, fmt.Errorf("read repository provisioning journal: %w", err)
+			}
+			if operation.State == provisioning.StateAbandoned {
+				return localrepo.Record{}, errors.New("initial import was already abandoned; finish the local abandonment instead")
+			}
+		}
+		updated, err := p.local.Retry(operationID)
+		if err != nil {
+			return localrepo.Record{}, err
+		}
+		p.Enqueue(operationID)
+		return updated, nil
+	}
+	if strategy != "abandon" {
+		return localrepo.Record{}, errors.New("repository lifecycle repair strategy is invalid")
+	}
+
+	var creationOperation *provisioning.Operation
+	if record.State == localrepo.StateRepositoryCreated {
+		if p.provisioning == nil {
+			return localrepo.Record{}, errors.New("repository provisioning journal is unavailable")
+		}
+		operation, err := p.provisioning.Get(operationID)
+		if err != nil {
+			return localrepo.Record{}, fmt.Errorf("read repository provisioning journal: %w", err)
+		}
+		if operation.RepoID != record.RepoID || operation.RepoURL != record.RepoURL {
+			return localrepo.Record{}, errors.New("repository provisioning journal does not match local lifecycle")
+		}
+		creationOperation = &operation
+	}
+
+	// A matching WC is stronger evidence than the failed workflow state. Keep
+	// it and resume ordinary supervision; local modifications remain untouched.
+	var adoptProfile clientprofile.Profile
+	adoptExisting := false
+	if record.RepoURL != "" {
+		if info, err := os.Stat(filepath.Join(record.LocalPath, ".svn")); err == nil && info.IsDir() {
+			p.mu.RLock()
+			profile, profileOK := p.profiles[record.ServerID]
+			p.mu.RUnlock()
+			if !profileOK || p.newAttachmentSVN == nil {
+				return localrepo.Record{}, errors.New("activated client profile is unavailable for working-copy verification")
+			}
+			svn := p.newAttachmentSVN(profile, operationID)
+			infoText, err := svn.GetInfo(ctx, record.LocalPath)
+			if err != nil {
+				return localrepo.Record{}, fmt.Errorf("verify existing working copy before repair: %w", err)
+			}
+			if infoHasURL(infoText, record.RepoURL) {
+				adoptExisting, adoptProfile = true, profile
+			}
+		}
+	}
+	// Persist the provisioning tombstone only after every fallible external WC
+	// check. From this point a crash is repaired by repeating "abandon": both
+	// store mutations are idempotent and retry is explicitly refused.
+	if creationOperation != nil && creationOperation.State != provisioning.StateAbandoned {
+		if _, err := p.provisioning.AbandonInitialImport(operationID, record.RepoID); err != nil {
+			return localrepo.Record{}, err
+		}
+	}
+	if adoptExisting {
+		updated, err := p.local.MarkAttached(operationID, record.RepoID)
+		if err != nil {
+			return localrepo.Record{}, err
+		}
+		p.publishLocalRecord(ctx, updated, adoptProfile)
+		return updated, nil
+	}
+	return p.local.Abandon(operationID)
 }
 
 func (p *daemonProvisioner) reconcileLocalBoundary(operation provisioning.Operation) error {
@@ -930,7 +1025,7 @@ func discardFailedAttachMetadata(root string) {
 func (p *daemonProvisioner) otherRoots(operationID string) []string {
 	var roots []string
 	for _, record := range p.local.List() {
-		if record.OperationID != operationID && record.State != localrepo.StateDetached && record.State != localrepo.StateDeleted && record.State != localrepo.StateError {
+		if record.OperationID != operationID && record.State != localrepo.StateDetached && record.State != localrepo.StateDeleted && record.State != localrepo.StateError && record.State != localrepo.StateAbandoned {
 			roots = append(roots, record.LocalPath)
 		}
 	}

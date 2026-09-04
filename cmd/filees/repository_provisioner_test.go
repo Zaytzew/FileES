@@ -289,6 +289,150 @@ func TestDaemonProvisionerLeavesFailedRepositoryCreationForExplicitRetry(t *test
 	}
 }
 
+func failedCreationRepairFixture(t *testing.T) (*localrepo.Store, *provisioning.Store, clientprofile.Profile, localrepo.Record) {
+	t.Helper()
+	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := provisioning.NewStore(filepath.Join(t.TempDir(), "provisioning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opID, createID, initialID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	clientID, repoID := uuid.NewString(), uuid.NewString()
+	wc := filepath.Join(t.TempDir(), "wc")
+	record, err := local.BeginCreateOperation(opID, "office", "Docs", wc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.CreateValidated(opID, clientID, wc, "Docs"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.RequestRepository(opID, createID); err != nil {
+		t.Fatal(err)
+	}
+	repoURL := "svn+ssh://_filees-data@example/" + repoID
+	payload, _ := json.Marshal(control.CreateRepositoryResult{RepoID: repoID, RepoURL: repoURL})
+	if _, err := journal.ApplyRepositoryResult(control.Result{Schema: control.Schema, OperationID: opID, RequestID: createID, Type: control.TicketCreateRepository, Status: control.ResultOK, CompletedAt: time.Now().UTC().Format(time.RFC3339Nano), Result: payload}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.StartInitialCommit(opID, initialID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.FailInitialCommit(opID, initialID, "INITIAL_IMPORT_FAILED", "simulated failure"); err != nil {
+		t.Fatal(err)
+	}
+	record, err = local.MarkRepositoryCreated(opID, repoID, repoURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = local.MarkError(opID, errors.New("simulated failure"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return local, journal, clientprofile.Profile{ServerID: "office", ClientID: clientID}, record
+}
+
+func TestRepairLifecycleRetryRequeuesSameCreationOperation(t *testing.T) {
+	local, journal, profile, record := failedCreationRepairFixture(t)
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	retried, err := provisioner.RepairLifecycle(t.Context(), record.OperationID, "retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.OperationID != record.OperationID || retried.RepoID != record.RepoID || retried.LastError != "" || retried.State != localrepo.StateRepositoryCreated {
+		t.Fatalf("retry changed creation identity: %+v", retried)
+	}
+	select {
+	case queued := <-provisioner.queue:
+		if queued != record.OperationID {
+			t.Fatalf("queued operation=%q", queued)
+		}
+	default:
+		t.Fatal("repair did not requeue the durable operation")
+	}
+}
+
+func TestRepairLifecycleAbandonClosesOnlyLocalCreationAttempt(t *testing.T) {
+	local, journal, profile, record := failedCreationRepairFixture(t)
+	if err := os.MkdirAll(record.LocalPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	userFile := filepath.Join(record.LocalPath, "archive.pst")
+	if err := os.WriteFile(userFile, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	abandoned, err := provisioner.RepairLifecycle(t.Context(), record.OperationID, "abandon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if abandoned.State != localrepo.StateAbandoned || abandoned.RepoID != record.RepoID {
+		t.Fatalf("local abandonment=%+v", abandoned)
+	}
+	operation, err := journal.Get(record.OperationID)
+	if err != nil || operation.State != provisioning.StateAbandoned || operation.RepoID != record.RepoID {
+		t.Fatalf("provisioning abandonment=%+v err=%v", operation, err)
+	}
+	if raw, err := os.ReadFile(userFile); err != nil || string(raw) != "keep" {
+		t.Fatalf("abandon changed user file: %q, %v", raw, err)
+	}
+	if roots := provisioner.otherRoots("another-operation"); len(roots) != 0 {
+		t.Fatalf("abandoned local path still blocks a new workflow: %v", roots)
+	}
+}
+
+func TestRepairLifecycleVerifiesWorkingCopyBeforeClosingProvisioning(t *testing.T) {
+	local, journal, _, record := failedCreationRepairFixture(t)
+	if err := os.MkdirAll(filepath.Join(record.LocalPath, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	provisioner := newDaemonProvisioner(local, journal, nil)
+	if _, err := provisioner.RepairLifecycle(t.Context(), record.OperationID, "abandon"); err == nil {
+		t.Fatal("unverifiable working copy was accepted")
+	}
+	operation, err := journal.Get(record.OperationID)
+	if err != nil || operation.State != provisioning.StateInitialCommitFailed {
+		t.Fatalf("failed WC check crossed provisioning boundary: %+v err=%v", operation, err)
+	}
+	persisted, _ := local.Get(record.OperationID)
+	if persisted.State != localrepo.StateRepositoryCreated || persisted.LastError == "" {
+		t.Fatalf("failed WC check changed local lifecycle: %+v", persisted)
+	}
+}
+
+func TestRepairLifecycleAdoptsMatchingWorkingCopy(t *testing.T) {
+	local, journal, profile, record := failedCreationRepairFixture(t)
+	if err := os.MkdirAll(filepath.Join(record.LocalPath, ".svn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stub := &attachmentSVNStub{url: record.RepoURL}
+	provisioner := newDaemonProvisioner(local, journal, []clientprofile.Profile{profile})
+	events := make(chan provisionedAttachment, 1)
+	provisioner.attachments = events
+	provisioner.newAttachmentSVN = func(clientprofile.Profile, string) attachmentSVN { return stub }
+	adopted, err := provisioner.RepairLifecycle(t.Context(), record.OperationID, "abandon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adopted.State != localrepo.StateAttached || adopted.RepoID != record.RepoID {
+		t.Fatalf("adopted=%+v", adopted)
+	}
+	operation, _ := journal.Get(record.OperationID)
+	if operation.State != provisioning.StateAbandoned {
+		t.Fatalf("creation orchestrator can replay after adoption: %+v", operation)
+	}
+	select {
+	case event := <-events:
+		if event.Repo.ID != record.RepoID || event.Repo.LocalPath != record.LocalPath {
+			t.Fatalf("published attachment=%+v", event)
+		}
+	default:
+		t.Fatal("adopted working copy was not published")
+	}
+}
+
 func TestDaemonProvisionerChecksOutApprovedSharedRepository(t *testing.T) {
 	local, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
 	if err != nil {

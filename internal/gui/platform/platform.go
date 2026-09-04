@@ -307,6 +307,8 @@ type SettingsFolder struct {
 	CanDetach               bool // detach_folder (non-destructive)
 	CanDelete               bool // delete_repository
 	CanLoadDump             bool // load_dump
+	CanRetryLifecycle       bool // retry the same durable local operation
+	CanAbandonLifecycle     bool // end only the failed local attempt
 }
 type SettingsRecovery struct {
 	OperationID, ServerName, KitPath, Status string
@@ -323,6 +325,8 @@ const (
 	SettingsDialogDetachFolder     SettingsDialogAction = "detach_folder"
 	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
 	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"
+	SettingsDialogRetryLifecycle   SettingsDialogAction = "retry_lifecycle"
+	SettingsDialogAbandonLifecycle SettingsDialogAction = "abandon_lifecycle"
 	SettingsDialogManageGrants     SettingsDialogAction = "manage_grants"
 	SettingsDialogEditingPolicy    SettingsDialogAction = "editing_policy"
 	SettingsDialogPublicShares     SettingsDialogAction = "public_shares"

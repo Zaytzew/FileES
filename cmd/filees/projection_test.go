@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -55,6 +56,9 @@ func TestSyncProjectionKnowledgeKeepsDeletedRepositoryThroughRetention(t *testin
 	if _, err := lifecycle.MarkRecoveryPrepared(record.OperationID, kit); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := lifecycle.RecordDetachError(record.OperationID, errors.New("wc.db is used by another process")); err != nil {
+		t.Fatal(err)
+	}
 	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
 	state := server.RegisterProjectedRepo(repoID, "stale", "", serverID, "", "active", false)
 	view := clientview.View{RealmID: "00000000-0000-0000-0000-000000000001"}
@@ -63,6 +67,9 @@ func TestSyncProjectionKnowledgeKeepsDeletedRepositoryThroughRetention(t *testin
 	summary := state.Summary()
 	if !summary.ServerDeleted || !summary.LocalCleanupPending || !summary.RecoveryAvailable || summary.RetainUntil != deadline || summary.RecoveryOperationID != deleting.DetachOperationID || summary.LocalPath != record.LocalPath || summary.DisplayName != "Archiwum" {
 		t.Fatalf("deleted projection=%+v", summary)
+	}
+	if summary.LifecycleOperationID != record.OperationID || !summary.CanRetryLifecycle || summary.CanAbandonLifecycle || summary.LifecycleError == "" {
+		t.Fatalf("deleted cleanup repair projection=%+v", summary)
 	}
 }
 
@@ -175,6 +182,54 @@ func TestSyncProjectionKnowledgeKeepsPendingCreationLocalPath(t *testing.T) {
 	summary := state.Summary()
 	if summary.Attached || summary.LocalPath != localPath || summary.State != contract.StateInitializing {
 		t.Fatalf("pending creation summary=%+v", summary)
+	}
+}
+
+func TestSyncProjectionKnowledgePublishesAndClearsLifecycleRepair(t *testing.T) {
+	serverID := "office"
+	repoID := "00000000-0000-0000-0000-000000000011"
+	localPath := filepath.Join(t.TempDir(), "Archiwum")
+	lifecycle, err := localrepo.Open(filepath.Join(t.TempDir(), "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := lifecycle.BeginCreate(serverID, "Archiwum", localPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.MarkRepositoryCreated(record.OperationID, repoID, "svn+ssh://_filees-data@example/"+repoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.MarkError(record.OperationID, errors.New("initial import failed")); err != nil {
+		t.Fatal(err)
+	}
+	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	state := server.RegisterProjectedRepo(repoID, "Archiwum", "svn+ssh://_filees-data@example/"+repoID, serverID, contract.AccessReadWrite, contract.StateInitializing, false)
+	view := clientview.View{Repositories: []clientview.Repository{{RepoID: repoID, DisplayName: "Archiwum", URL: "svn+ssh://_filees-data@example/" + repoID, Access: contract.AccessReadWrite, State: contract.StateInitializing}}}
+	syncProjectionKnowledge(server, serverID, view, nil, lifecycle)
+
+	summary := state.Summary()
+	if summary.LifecycleOperationID != record.OperationID || summary.LifecycleError == "" || !summary.CanRetryLifecycle || !summary.CanAbandonLifecycle || summary.State != contract.StateInteractionRequired {
+		t.Fatalf("repair projection=%+v", summary)
+	}
+	if _, err := lifecycle.Retry(record.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	syncProjectionKnowledge(server, serverID, view, nil, lifecycle)
+	summary = state.Summary()
+	if summary.LifecycleOperationID != record.OperationID || summary.LifecycleError != "" || summary.CanRetryLifecycle || summary.CanAbandonLifecycle {
+		t.Fatalf("running repair lost its operation fence: %+v", summary)
+	}
+	if _, err := lifecycle.MarkError(record.OperationID, errors.New("initial import failed again")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.Abandon(record.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	syncProjectionKnowledge(server, serverID, view, nil, lifecycle)
+	summary = state.Summary()
+	if summary.LifecycleOperationID != "" || summary.LifecycleError != "" || summary.CanRetryLifecycle || summary.CanAbandonLifecycle {
+		t.Fatalf("terminal repair metadata survived: %+v", summary)
 	}
 }
 

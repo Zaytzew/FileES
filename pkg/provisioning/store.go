@@ -34,6 +34,10 @@ const (
 	StateInitialCommitFailed       State = "initial_commit_failed"
 	StateInitialSnapshotPublished  State = "initial_snapshot_published"
 	StateActive                    State = "active"
+	// StateAbandoned means the server repository exists but the user ended
+	// this client's initial-import attempt. It is terminal for the creation
+	// orchestrator; server authority and user files are deliberately untouched.
+	StateAbandoned State = "abandoned"
 )
 
 type RequestStatus string
@@ -141,6 +145,28 @@ func (s *Store) RepairInitialImportInput(operationID, localPath, name string, sn
 		op.LocalPath, op.Name = localPath, name
 		op.SnapshotBytes, op.SnapshotPaths = snapshotBytes, snapshotPaths
 		return nil
+	})
+}
+
+// AbandonInitialImport closes only the local creation workflow after the
+// server repository identity is durable. It cannot abandon a request whose
+// server outcome is still unknown, nor an already active import.
+func (s *Store) AbandonInitialImport(operationID, repoID string) (Operation, error) {
+	repoID = strings.TrimSpace(repoID)
+	return s.mutate(operationID, func(op *Operation) error {
+		if op.State == StateAbandoned && op.RepoID == repoID {
+			return nil
+		}
+		if repoID == "" || op.RepoID != repoID || op.RepoURL == "" {
+			return errors.New("only an identified server repository can abandon initial import")
+		}
+		switch op.State {
+		case StateRepositoryReady, StateInitialCommitInProgress, StateInitialCommitFailed, StateInitialSnapshotPublished:
+			op.State = StateAbandoned
+			return nil
+		default:
+			return errors.New("initial import cannot be abandoned in its current state")
+		}
 	})
 }
 
@@ -528,7 +554,7 @@ func validateOperation(op Operation) error {
 	switch op.State {
 	case StateLocalValidated, StateStoragePreflightRequested, StateStoragePreflightFailed, StateStorageApproved, StateProvisioningRequested, StateRepositoryRequestFailed,
 		StateRepositoryReady, StateInitialCommitInProgress, StateInitialCommitFailed,
-		StateInitialSnapshotPublished, StateActive:
+		StateInitialSnapshotPublished, StateActive, StateAbandoned:
 	default:
 		return fmt.Errorf("unsupported provisioning state %q", op.State)
 	}
@@ -557,7 +583,7 @@ func validateOperation(op Operation) error {
 
 func stateNeedsRepository(state State) bool {
 	switch state {
-	case StateRepositoryReady, StateInitialCommitInProgress, StateInitialCommitFailed, StateInitialSnapshotPublished, StateActive:
+	case StateRepositoryReady, StateInitialCommitInProgress, StateInitialCommitFailed, StateInitialSnapshotPublished, StateActive, StateAbandoned:
 		return true
 	default:
 		return false

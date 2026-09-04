@@ -12,12 +12,15 @@ import (
 )
 
 type lifecycleStub struct {
-	createCalls, attachCalls, approveCalls, relocateCalls, locateCalls, loadDumpCalls, detachCalls, statusCalls int
-	deleteRepository                                                                                            bool
-	statusResult                                                                                                contract.RepoLifecycleResult
-	statusErr                                                                                                   error
-	detachResult                                                                                                contract.RepoLifecycleResult
-	detachErr                                                                                                   error
+	createCalls, attachCalls, approveCalls, relocateCalls, locateCalls, loadDumpCalls, detachCalls, statusCalls, repairCalls int
+	deleteRepository                                                                                                         bool
+	statusResult                                                                                                             contract.RepoLifecycleResult
+	statusErr                                                                                                                error
+	detachResult                                                                                                             contract.RepoLifecycleResult
+	detachErr                                                                                                                error
+	repairResult                                                                                                             contract.RepoLifecycleResult
+	repairErr                                                                                                                error
+	repairOperationID, repairServerID, repairRepoID, repairStrategy                                                          string
 }
 
 func (stub *lifecycleStub) BeginCreate(serverID, displayName, localPath string) (contract.RepoLifecycleResult, error) {
@@ -96,6 +99,15 @@ func TestDeleteReturnsSuccessAfterDurableServerBoundary(t *testing.T) {
 func (stub *lifecycleStub) Status(operationID string) (contract.RepoLifecycleResult, error) {
 	stub.statusCalls++
 	return stub.statusResult, stub.statusErr
+}
+
+func (stub *lifecycleStub) Repair(_ context.Context, operationID, serverID, repoID, strategy string) (contract.RepoLifecycleResult, error) {
+	stub.repairCalls++
+	stub.repairOperationID, stub.repairServerID, stub.repairRepoID, stub.repairStrategy = operationID, serverID, repoID, strategy
+	if stub.repairResult.OperationID != "" || stub.repairErr != nil {
+		return stub.repairResult, stub.repairErr
+	}
+	return contract.RepoLifecycleResult{OperationID: operationID, ServerID: serverID, RepoID: repoID, State: "repository_created"}, nil
 }
 
 func lifecycleRequest(command string, payload any) contract.Request {
@@ -181,6 +193,71 @@ func TestLifecycleStatusRejectsUnknownOperation(t *testing.T) {
 	req := lifecycleRequest(contract.CmdRepoLifecycleStatus, contract.RepoLifecycleStatusPayload{OperationID: "missing"})
 	if response := server.dispatch(req); response.Status == contract.StatusOK {
 		t.Fatal("unknown operation ID accepted")
+	}
+}
+
+func TestLifecycleRepairUsesProjectedOperationFence(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	state := server.RegisterProjectedRepo("repo-1", "Docs", "svn+ssh://example/repo-1", "office", "rw", "interaction_required", false)
+	state.SetLifecycleRepairMetadata("op-current", "initial import failed", true, true)
+
+	stale := lifecycleRequest(contract.CmdRepoLifecycleRepair, contract.RepoLifecycleRepairPayload{OperationID: "op-stale", ServerID: "office", RepoID: "repo-1", Strategy: "retry"})
+	if response := server.dispatch(stale); response.Status == contract.StatusOK {
+		t.Fatal("stale repair operation was accepted")
+	}
+	if stub.repairCalls != 0 {
+		t.Fatalf("stale repair reached service: %d", stub.repairCalls)
+	}
+
+	current := lifecycleRequest(contract.CmdRepoLifecycleRepair, contract.RepoLifecycleRepairPayload{OperationID: "op-current", ServerID: "office", RepoID: "repo-1", Strategy: "retry"})
+	if response := server.dispatch(current); response.Status != contract.StatusOK {
+		t.Fatalf("current repair rejected: %+v", response.Error)
+	}
+	if stub.repairCalls != 1 || stub.repairOperationID != "op-current" || stub.repairServerID != "office" || stub.repairRepoID != "repo-1" || stub.repairStrategy != "retry" {
+		t.Fatalf("repair call lost identity: %+v", stub)
+	}
+	inProgress := state.Summary()
+	if inProgress.LifecycleOperationID != "op-current" || inProgress.LifecycleError != "" || inProgress.CanRetryLifecycle || inProgress.CanAbandonLifecycle {
+		t.Fatalf("accepted retry did not enter projected operation fence: %+v", inProgress)
+	}
+}
+
+func TestLifecycleRepairOnlyAllowsProjectedStrategies(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{}
+	server.SetRepositoryLifecycleService(stub)
+	state := server.RegisterProjectedRepo("repo-1", "Docs", "svn+ssh://example/repo-1", "office", "rw", "interaction_required", false)
+	state.SetLifecycleRepairMetadata("op-current", "detach failed", true, false)
+
+	abandon := lifecycleRequest(contract.CmdRepoLifecycleRepair, contract.RepoLifecycleRepairPayload{OperationID: "op-current", ServerID: "office", RepoID: "repo-1", Strategy: "abandon"})
+	if response := server.dispatch(abandon); response.Status == contract.StatusOK {
+		t.Fatal("unadvertised abandon strategy was accepted")
+	}
+	if stub.repairCalls != 0 {
+		t.Fatalf("forbidden strategy reached service: %d", stub.repairCalls)
+	}
+}
+
+func TestLifecycleRepairFailurePreservesDiagnosticDetail(t *testing.T) {
+	server := New("unused")
+	stub := &lifecycleStub{repairErr: errors.New("working-copy URL cannot be verified")}
+	server.SetRepositoryLifecycleService(stub)
+	state := server.RegisterProjectedRepo("repo-1", "Docs", "svn+ssh://example/repo-1", "office", "rw", "interaction_required", false)
+	state.SetLifecycleRepairMetadata("op-current", "initial import failed", false, true)
+
+	request := lifecycleRequest(contract.CmdRepoLifecycleRepair, contract.RepoLifecycleRepairPayload{OperationID: "op-current", ServerID: "office", RepoID: "repo-1", Strategy: "abandon"})
+	response := server.dispatch(request)
+	if response.Status != contract.StatusError || response.Error == nil {
+		t.Fatalf("repair failure response=%+v", response)
+	}
+	if response.Error.MessageKey != "repo.lifecycle_repair_failed" || response.Error.Details["detail"] != stub.repairErr.Error() {
+		t.Fatalf("repair diagnostic was lost: %+v", response.Error)
+	}
+	restored := state.Summary()
+	if restored.LifecycleOperationID != "op-current" || restored.LifecycleError != "initial import failed" || restored.CanRetryLifecycle || !restored.CanAbandonLifecycle {
+		t.Fatalf("synchronous failure lost the prior repair offer: %+v", restored)
 	}
 }
 

@@ -28,7 +28,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, lockReleases actions.LockReleaseManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, lockReleases actions.LockReleaseManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryRepairer actions.RepositoryLifecycleRepairer, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -73,6 +73,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		RepositoryCreator:    repositoryCreator,
 		RepositoryLocator:    repositoryLocator,
 		RepositoryDetacher:   repositoryDetacher,
+		RepositoryRepairer:   repositoryRepairer,
 		RepositoryDumpLoader: repositoryDumpLoader,
 		ServerDetacher:       serverDetacher,
 		RealmRemover:         realmRemover,
@@ -907,6 +908,25 @@ func (adapter repositoryAttachAdapter) AttachmentStatus(ctx context.Context, ope
 }
 
 type repositoryDetachAdapter struct{ client repositoryDetachClient }
+
+type repositoryLifecycleRepairClient interface {
+	RepoLifecycleRepair(context.Context, contract.RepoLifecycleRepairPayload) (*contract.RepoLifecycleResult, error)
+}
+
+type repositoryLifecycleRepairAdapter struct {
+	client repositoryLifecycleRepairClient
+}
+
+func (adapter repositoryLifecycleRepairAdapter) RepairRepositoryLifecycle(ctx context.Context, operationID, serverID, repoID, strategy string) (string, error) {
+	result, err := adapter.client.RepoLifecycleRepair(ctx, contract.RepoLifecycleRepairPayload{OperationID: operationID, ServerID: serverID, RepoID: repoID, Strategy: strategy})
+	if err != nil {
+		return "", err
+	}
+	if result == nil || result.OperationID != operationID || result.ServerID != serverID || result.RepoID != repoID {
+		return "", errors.New("daemon returned an invalid repository lifecycle repair result")
+	}
+	return result.State, nil
+}
 
 func (adapter repositoryDetachAdapter) DetachRepository(ctx context.Context, serverID, repoID string, deleteRepository bool) error {
 	operationCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)

@@ -374,7 +374,7 @@ func TestReducerApplyDisconnected(t *testing.T) {
 func TestReducerApplyRepoList(t *testing.T) {
 	s := newAppState()
 	repos := []contract.RepoSummary{
-		{ID: "a", URL: "svn://x/a", LocalPath: "/wc/a", State: contract.StateActive},
+		{ID: "a", URL: "svn://x/a", LocalPath: "/wc/a", State: contract.StateActive, LifecycleOperationID: "op-a", LifecycleError: "stuck", CanRetryLifecycle: true, CanAbandonLifecycle: true},
 		{ID: "b", URL: "svn://x/b", LocalPath: "/wc/b", State: contract.StateInitializing},
 	}
 	s = s.applyRepoList(repos)
@@ -383,6 +383,10 @@ func TestReducerApplyRepoList(t *testing.T) {
 	}
 	if s.summaries["a"].URL != "svn://x/a" {
 		t.Fatalf("summary a = %v", s.summaries["a"])
+	}
+	vm := s.viewModel()
+	if vm.Repos[0].LifecycleOperationID != "op-a" || vm.Repos[0].LifecycleError != "stuck" || !vm.Repos[0].CanRetryLifecycle || !vm.Repos[0].CanAbandonLifecycle {
+		t.Fatalf("repair metadata lost by reducer: %+v", vm.Repos[0])
 	}
 }
 
@@ -535,6 +539,29 @@ func TestReducerActionFenceRequiresProjectedRepositoryLifecycle(t *testing.T) {
 	s, waiting = s.confirmPendingActions([]string{remove.ID})
 	if len(waiting) != 0 || len(s.pendingActions) != 0 {
 		t.Fatalf("removed repository did not finish action: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+}
+
+func TestReducerActionFenceWaitsForLifecycleCompletionOrRenewedFailure(t *testing.T) {
+	action := PendingAction{ID: "repair:1", Kind: "repair_repository_lifecycle", ServerID: "spot", RepoID: "docs", ExpectedLifecycleOperationID: "op-stuck"}
+	s := newAppState().applyRepoList([]contract.RepoSummary{{ID: "docs", ServerID: "spot", LifecycleOperationID: "op-stuck"}})
+	s = s.startPendingAction(action).awaitPendingAction(action.ID)
+	s, waiting := s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 1 || len(s.pendingActions) != 1 {
+		t.Fatalf("in-progress repair crossed fence: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "docs", ServerID: "spot", LifecycleOperationID: "op-stuck", LifecycleError: "failed again", CanRetryLifecycle: true}})
+	s, waiting = s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 0 || len(s.pendingActions) != 0 {
+		t.Fatalf("renewed repair failure kept spinner: waiting=%v pending=%v", waiting, s.pendingActions)
+	}
+
+	action.ID = "repair:2"
+	s = s.startPendingAction(action).awaitPendingAction(action.ID)
+	s = s.applyRepoList([]contract.RepoSummary{{ID: "docs", ServerID: "spot"}})
+	s, waiting = s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 0 || len(s.pendingActions) != 0 {
+		t.Fatalf("cleared repair projection kept spinner: waiting=%v pending=%v", waiting, s.pendingActions)
 	}
 }
 

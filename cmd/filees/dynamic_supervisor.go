@@ -427,7 +427,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		// an unpublished failure is exactly the log-line-and-nothing-else that
 		// left a ten-day-old projection looking current.
 		publishFreshness := func() {
-			ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayNameNow(), ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
+			ipc.SetActivationFreshness(freshness.Apply(contract.ActivationStatus{ServerID: serverID}))
 		}
 		freshnessMu.Lock()
 		freshnessPublishers[serverID] = publishFreshness

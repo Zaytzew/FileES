@@ -327,7 +327,9 @@ type FetchLogs func(fromRev, toRev int64) ([]LogEntry, error)
 func Advance(wc, repoID string, localRev int64, fetch FetchLogs, now time.Time) ([]Record, error) {
 	stateMu.Lock()
 	defer stateMu.Unlock()
-	if localRev < 1 {
+	// r0 is a real baseline for a newly attached empty repository. Skipping
+	// it would silently consume the first incoming shout as initial history.
+	if localRev < 0 {
 		return nil, nil
 	}
 	last, ok, err := LoadLastSeen(wc)

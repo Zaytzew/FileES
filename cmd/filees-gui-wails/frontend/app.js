@@ -652,6 +652,23 @@ function renderPublicShares(snapshot) {
   replaceHTMLIfChanged(root, bulk + rows);
 }
 
+function unreadAnnouncements(snapshot) {
+  return (snapshot?.notices || []).filter((notice) => !notice.acked);
+}
+
+function renderAnnouncementBanner(snapshot) {
+  const unread = unreadAnnouncements(snapshot);
+  const banner = $("#announcement-banner");
+  banner.hidden = unread.length === 0;
+  $("#top").classList.toggle("has-announcements", unread.length > 0);
+  replaceHTMLIfChanged($("#hero-title"), unread.length
+    ? 'Ważne ogłoszenia<br><span>czekają na Twój odczyt.</span>'
+    : 'Twoje pliki pracują<br><span>we właściwym rytmie.</span>');
+  $("#announcement-banner-count").textContent = unread.length
+    ? `${unread.length} ${plural(unread.length, "nieprzeczytane ogłoszenie", "nieprzeczytane ogłoszenia", "nieprzeczytanych ogłoszeń")}`
+    : "";
+}
+
 function renderShouts(snapshot) {
   const card = $("#shouts-card");
   const root = $("#shouts");
@@ -668,7 +685,9 @@ function renderShouts(snapshot) {
     return;
   }
   const repositories = new Map((snapshot.repositories || []).map((repo) => [repo.id, repo.display_name || repo.id]));
-  const html = notices.slice(0, 5).map((notice) => {
+  // Never let recent acknowledged history hide an older unread announcement.
+  const visible = [...unreadAnnouncements(snapshot), ...notices.filter((notice) => notice.acked).slice(0, 5)];
+  const html = visible.map((notice) => {
     const repository = repositories.get(notice.repo_id) || notice.repo_id || "FileES";
     const revision = Number(notice.revision || 0) > 0 ? ` · r${Number(notice.revision)}` : "";
     const state = notice.acked ? "Przeczytane" : "Do przejrzenia";
@@ -698,6 +717,8 @@ function closeAnnouncement() {
   const target = announcementReturnFocus;
   announcementReturnFocus = null;
   if (target?.isConnected) target.focus();
+  else if (!$("#announcement-banner").hidden) $("#open-announcements").focus();
+  else $("#client-version").focus();
 }
 
 function openAnnouncement(noticeID, focusOrigin = null) {
@@ -710,16 +731,33 @@ function openAnnouncement(noticeID, focusOrigin = null) {
   (notice.can_ack ? $("#ack-announcement") : $("#close-announcement")).focus();
 }
 
-function openNewestUnreadAnnouncement() {
+function openNewestUnreadAnnouncement(focusOrigin = null) {
   const notices = currentSnapshot?.notices || [];
   const notice = notices.find((item) => !item.acked) || notices[0];
-  if (notice) openAnnouncement(notice.id);
+  if (notice) openAnnouncement(notice.id, focusOrigin);
+}
+
+function openNextUnreadAnnouncement() {
+  const unread = unreadAnnouncements(currentSnapshot);
+  if (!unread.length) return;
+  const index = unread.findIndex((notice) => notice.id === selectedAnnouncementID);
+  openAnnouncement(unread[(index + 1) % unread.length].id, announcementReturnFocus);
 }
 
 function renderAnnouncementDialog(snapshot) {
   if (!selectedAnnouncementID) return;
   const notice = (snapshot.notices || []).find((item) => item.id === selectedAnnouncementID);
-  if (!notice || (announcementAckPending === notice.id && notice.acked)) {
+  if (notice && announcementAckPending === notice.id && notice.acked) {
+    announcementAckPending = "";
+    const next = unreadAnnouncements(snapshot)[0];
+    if (next) {
+      openAnnouncement(next.id, announcementReturnFocus);
+      return;
+    }
+    closeAnnouncement();
+    return;
+  }
+  if (!notice) {
     closeAnnouncement();
     return;
   }
@@ -729,12 +767,14 @@ function renderAnnouncementDialog(snapshot) {
   revision.hidden = !(Number(notice.revision || 0) > 0);
   revision.textContent = revision.hidden ? "" : `rewizja r${Number(notice.revision)}`;
   $("#announcement-time").textContent = `odebrano ${shortDateTime(notice.created_at)}`;
-  $("#announcement-status").textContent = notice.acked ? "Odczyt potwierdzony" : "Ogłoszenie wymaga potwierdzenia odczytu";
+  const unread = unreadAnnouncements(snapshot);
+  $("#announcement-status").textContent = notice.acked ? "Odczyt potwierdzony" : `Nieprzeczytane: ${unread.length}. Zamknięcie okna nie potwierdza odczytu.`;
+  $("#next-announcement").hidden = unread.length < 2;
   $(".announcement-dialog .eyebrow").textContent = notice.acked ? "Przeczytane" : "Wymaga uwagi";
   const ack = $("#ack-announcement");
   ack.hidden = !notice.can_ack;
   ack.disabled = announcementAckPending === notice.id;
-  ack.textContent = ack.disabled ? "Potwierdzanie…" : "Potwierdź odczyt";
+  ack.textContent = ack.disabled ? "Potwierdzanie…" : "OK · Potwierdź odczyt";
 }
 
 async function acknowledgeAnnouncement() {
@@ -837,6 +877,7 @@ function render(snapshot) {
   renderActions(snapshot);
   renderReservations(snapshot);
   renderPublicShares(snapshot);
+  renderAnnouncementBanner(snapshot);
   renderShouts(snapshot);
 	renderUpdate(snapshot);
   renderDetached(snapshot);
@@ -1061,6 +1102,16 @@ $("#journal-overlay").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) event.currentTarget.hidden = true;
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Tab" && !$("#announcement-overlay").hidden && !$("#deleted-copy-dialog").open) {
+    const buttons = [...document.querySelectorAll("#announcement-overlay button")].filter((button) => !button.hidden && !button.disabled);
+    const first = buttons[0], last = buttons[buttons.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !$("#announcement-overlay").contains(document.activeElement))) {
+      event.preventDefault(); last?.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !$("#announcement-overlay").contains(document.activeElement))) {
+      event.preventDefault(); first?.focus();
+    }
+    return;
+  }
   if (event.key !== "Escape") return;
   if ($("#deleted-copy-dialog").open) return; // native dialog handles Escape
   if (!$("#announcement-overlay").hidden) {
@@ -1145,6 +1196,8 @@ $("#shouts").addEventListener("click", (event) => {
   if (button) openAnnouncement(button.dataset.noticeId, button);
 });
 $("#close-announcement").addEventListener("click", closeAnnouncement);
+$("#open-announcements").addEventListener("click", (event) => openNewestUnreadAnnouncement(event.currentTarget));
+$("#next-announcement").addEventListener("click", openNextUnreadAnnouncement);
 $("#dismiss-announcement").addEventListener("click", closeAnnouncement);
 $("#ack-announcement").addEventListener("click", acknowledgeAnnouncement);
 $("#announcement-overlay").addEventListener("click", (event) => {

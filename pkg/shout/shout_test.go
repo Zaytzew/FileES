@@ -150,6 +150,25 @@ func TestAdvanceInitializesWithoutScanning(t *testing.T) {
 	}
 }
 
+func TestEmptyRepositoryBaselineDoesNotSwallowFirstShout(t *testing.T) {
+	wc := t.TempDir()
+	if added, err := Advance(wc, "repo", 0, nil, time.Now()); err != nil || len(added) != 0 {
+		t.Fatalf("empty baseline: %v, %v", added, err)
+	}
+	if rev, ok, err := LoadLastSeen(wc); err != nil || !ok || rev != 0 {
+		t.Fatalf("missing r0 baseline: %d %v %v", rev, ok, err)
+	}
+	added, err := Advance(wc, "repo", 1, func(from, to int64) ([]LogEntry, error) {
+		if from != 1 || to != 1 {
+			t.Fatalf("range %d:%d", from, to)
+		}
+		return []LogEntry{{Revision: 1, Message: Format("pierwsze ogłoszenie")}}, nil
+	}, time.Now())
+	if err != nil || len(added) != 1 || added[0].Revision != 1 {
+		t.Fatalf("lost first shout: %v, %v", added, err)
+	}
+}
+
 func TestAdvanceDoesNotSkipUnscannedRevisionsWithoutLogReader(t *testing.T) {
 	wc := t.TempDir()
 	if err := SaveLastSeen(wc, 7); err != nil {

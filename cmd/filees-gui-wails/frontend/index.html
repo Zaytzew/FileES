@@ -51,8 +51,12 @@
     <section id="top" class="hero">
       <div>
         <p class="eyebrow">FileES · Twoje pliki</p>
-        <h1>Twoje pliki pracują<br><span>we właściwym rytmie.</span></h1>
+        <h1 id="hero-title">Twoje pliki pracują<br><span>we właściwym rytmie.</span></h1>
         <p id="hero-copy" class="hero-copy">Czekam na pierwszy spójny obraz stanu FileES.</p>
+        <div id="announcement-banner" class="announcement-banner" hidden>
+          <div role="status" aria-live="polite" aria-atomic="true"><strong id="announcement-banner-count"></strong><p>Ogłoszenia pozostają nieprzeczytane do Twojego potwierdzenia.</p></div>
+          <button id="open-announcements" type="button" aria-haspopup="dialog" aria-controls="announcement-overlay">Przeczytaj i potwierdź</button>
+        </div>
       </div>
       <div id="pulse-card" class="pulse-card" role="status" aria-live="polite" title="Stan FileES">
         <div class="pulse-orbit orbit-a"></div>
@@ -235,7 +239,8 @@
         <span id="announcement-status" class="announcement-status"></span>
         <div class="announcement-buttons">
           <button id="dismiss-announcement" type="button">Zamknij</button>
-          <button id="ack-announcement" class="primary" type="button">Potwierdź odczyt</button>
+          <button id="next-announcement" type="button" hidden>Następne nieprzeczytane</button>
+          <button id="ack-announcement" class="primary" type="button">OK · Potwierdź odczyt</button>
         </div>
       </footer>
     </section>

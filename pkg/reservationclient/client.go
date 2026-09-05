@@ -106,6 +106,11 @@ func (c *Client) FetchState(ctx context.Context, repoID string) (reservationv1.R
 	return c.fetch(ctx, repoID, reservationv1.StateSchema)
 }
 
+// FetchServerState reads metadata using the same pinned, one-shot broker.
+func (c *Client) FetchServerState(ctx context.Context) (reservationv1.Result, error) {
+	return c.fetch(ctx, "", reservationv1.StateSchema)
+}
+
 func (c *Client) fetch(ctx context.Context, repoID, schema string) (reservationv1.Result, error) {
 	req := reservationv1.Request{Schema: schema, RepoID: repoID}
 	if err := req.Validate(); err != nil {

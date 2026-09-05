@@ -19,6 +19,7 @@ import (
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
 	"filees/pkg/reposupervisor"
+	"filees/pkg/reservationclient"
 	"filees/pkg/runtime"
 	"filees/pkg/talk"
 )
@@ -214,6 +215,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 	detachedEvents := make(chan string, 2*(len(profiles)+1))
 	reservationRefreshes := newReservationProjectionCoordinator(ctx, ipc)
+	reservationRefreshes.onServerDisplayName = ipc.SetBrokerServerDisplayName
 	repositoryDeletions := make(chan repositoryDeletionUpdate, 16)
 	reservationRefreshes.lifecycle = lifecycle
 	reservationRefreshes.onRepositoryDeleted = func(callCtx context.Context, key reposupervisor.Key) error {
@@ -348,6 +350,11 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			talk.With("projection:"+serverID).Warnf("discard invalid cached projection and fetch current view: %v", cache.rejected)
 		}
 		cached, exists := cache.view, cache.exists
+		if state, ok, err := reservationclient.LoadServerState(reservationclient.ServerStatePath(syncConfig.CachePath), serverID); err != nil {
+			talk.With("state:"+serverID).Warnf("cannot restore broker metadata: %v", err)
+		} else if ok {
+			ipc.SetBrokerServerDisplayName(serverID, state.ServerDisplayName)
+		}
 		currentDisplayName := displayName
 		if exists {
 			currentDisplayName = projectedServerDisplayName(currentDisplayName, cached)

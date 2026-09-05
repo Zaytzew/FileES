@@ -37,6 +37,7 @@ type reservationProjectionCoordinator struct {
 	// its own: the query attaches to work already happening, which is what
 	// keeps the session count where the server hardening expects it.
 	onServerViewProduced func(serverID string, generation int64, producedAt time.Time)
+	onServerDisplayName  func(serverID, displayName string)
 	// onDetached carries the one fact no local measurement can produce: the
 	// server was reached and refused this client. It rides the same fetch,
 	// like onServerViewProduced, rather than asking a question of its own.
@@ -279,6 +280,26 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	if err != nil {
 		coordinator.markServerOffline(serverID, view, err)
 		return
+	}
+	if broker, ok := fetcher.(interface {
+		FetchServerState(context.Context) (reservationv1.Result, error)
+	}); ok {
+		result, stateErr := broker.FetchServerState(ctx)
+		if isDetachedClient(stateErr) {
+			coordinator.pauseDetached(serverID, view, stateErr)
+			return
+		}
+		if stateErr == nil {
+			stateErr = reservationclient.StoreServerState(reservationclient.ServerStatePath(profile.CachePath), serverID, result)
+			if stateErr == nil && coordinator.onServerDisplayName != nil {
+				coordinator.onServerDisplayName(serverID, result.ServerDisplayName)
+			}
+		}
+		if stateErr != nil {
+			// Older brokers reject this selector. Keep the last known label
+			// and continue the unchanged v1 reservation lane.
+			talk.With("state:"+serverID).Warnf("server metadata remains unverified: %v", stateErr)
+		}
 	}
 	repoIDs := make([]string, 0, len(view.Repositories))
 	for _, repo := range view.Repositories {

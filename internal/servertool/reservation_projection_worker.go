@@ -123,7 +123,12 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 	}
 
 	result := reservationv1.Result{Schema: req.Schema, RepoID: req.RepoID, Reservations: []reservationv1.Reservation{}}
-	if deleted {
+	if req.Schema == reservationv1.StateSchema && req.RepoID == "" {
+		// Read current operator settings, not the activation-era label in view.
+		// This broker emits facts; it does not rewrite views or run recovery.
+		result.ServerID = config.ServerID
+		result.ServerDisplayName = config.ServerDisplayName
+	} else if deleted {
 		// Never query FSFS or replay a lock artifact for a withdrawn repository.
 		result.RepositoryState = "deleted"
 	} else {
@@ -172,6 +177,9 @@ func authorizedStateView(serviceWC, clientID string, req reservationv1.Request) 
 		view, err := clientview.Load(filepath.Join(serviceWC, "clients", clientID, "view.json"))
 		if err != nil || view.ClientID != clientID {
 			return clientview.View{}, false, errReservationAccessDenied
+		}
+		if req.RepoID == "" {
+			return view, false, nil
 		}
 		if repoworker.RepositoryDeletedForRealm(serviceWC, req.RepoID, view.RealmID) {
 			return view, true, nil

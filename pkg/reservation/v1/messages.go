@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/clientview"
 	"github.com/google/uuid"
 )
 
@@ -64,6 +65,9 @@ func (r Request) Validate() error {
 	if r.Schema != Schema && r.Schema != StateSchema {
 		return errors.New("reservation request schema mismatch")
 	}
+	if r.Schema == StateSchema && r.RepoID == "" {
+		return nil // authenticated server metadata, independent of repository access
+	}
 	if _, err := uuid.Parse(r.RepoID); err != nil {
 		return errors.New("reservation request repo id must be a UUID")
 	}
@@ -81,6 +85,10 @@ func (r Request) Validate() error {
 //     artifact exists yet; Reservations is always empty and must never be
 //     read as "confirmed zero".
 type Result struct {
+	// Only the v2 server selector (empty RepoID) carries these current
+	// operator-configured facts. They never change invitation identity.
+	ServerID          string `json:"server_id,omitempty"`
+	ServerDisplayName string `json:"server_display_name,omitempty"`
 	// RepositoryState is present only in v2. "deleted" is authoritative
 	// withdrawal from use, not a receipt for physical erasure or local cleanup.
 	RepositoryState string        `json:"repository_state,omitempty"`
@@ -153,8 +161,21 @@ func ParseResult(raw []byte) (Result, error) {
 	if err := decodeExactlyOne(raw, &res); err != nil {
 		return Result{}, err
 	}
-	if (res.Schema != Schema && res.Schema != StateSchema) || res.RepoID == "" {
+	if res.Schema != Schema && res.Schema != StateSchema {
 		return Result{}, errors.New("reservation result schema or repo id missing")
+	}
+	if res.Schema == StateSchema && res.RepoID == "" {
+		if strings.TrimSpace(res.ServerID) == "" || strings.ContainsAny(res.ServerID, "/\\\x00\r\n\t ") ||
+			clientview.ValidateServerDisplayName(res.ServerDisplayName) != nil ||
+			res.RepositoryState != "" || res.Unknown || res.Stale || len(res.Reservations) != 0 ||
+			!res.AsOf.IsZero() || res.Generation != "" || res.Detail != "" ||
+			res.ViewGeneration < 1 || res.ViewGeneratedAt == nil || res.ViewGeneratedAt.IsZero() {
+			return Result{}, errors.New("invalid server metadata state")
+		}
+		return res, nil
+	}
+	if res.RepoID == "" || res.ServerID != "" || res.ServerDisplayName != "" {
+		return Result{}, errors.New("server metadata outside v2 server selector")
 	}
 	if res.Schema == Schema && res.RepositoryState != "" {
 		return Result{}, errors.New("legacy reservation result carries lifecycle state")

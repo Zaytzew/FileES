@@ -102,6 +102,47 @@ func TestBuildStampAndDistributionVersionAreEquivalent(t *testing.T) {
 	}
 }
 
+func TestNewerLocalBuildDoesNotOfferOrApplyOlderChannelRelease(t *testing.T) {
+	installer := &installerStub{}
+	service := &Service{
+		Resolver:  resolverStub{resolved: resolvedRelease(868, "r868", "0.1.15.868")},
+		Installer: installer, State: StateStore{Path: filepath.Join(t.TempDir(), "update.json")},
+		CurrentVersion: "0.1.15+r883",
+	}
+	status, err := service.Status(context.Background())
+	if err != nil || status.State != "current" || status.CurrentVersion != "0.1.15.883" || status.AvailableVersion != "" || status.RestartRequired {
+		t.Fatalf("newer local status = %+v, %v", status, err)
+	}
+	plan, err := service.Plan(context.Background())
+	if err != nil || len(plan.Changes) != 0 || plan.RestartRequired || installer.planCalls != 0 {
+		t.Fatalf("newer local plan = %+v, calls=%d, %v", plan, installer.planCalls, err)
+	}
+	result, err := service.Apply(context.Background())
+	if err != nil || result.InstalledVersion != "0.1.15.883" || result.RestartRequired || installer.applyCalls != 0 {
+		t.Fatalf("newer local apply = %+v, calls=%d, %v", result, installer.applyCalls, err)
+	}
+}
+
+func TestNumericClientVersionComparisonPadsMissingComponents(t *testing.T) {
+	for _, test := range []struct {
+		left, right string
+		want        int
+	}{
+		{left: "1.0", right: "1.0.0", want: 0},
+		{left: "1.0.1", right: "1", want: 1},
+		{left: "0.1.15.9", right: "0.1.15.10", want: -1},
+		{left: "0.01.015.010", right: "0.1.15.10", want: 0},
+	} {
+		got, ok := compareNumericClientVersions(test.left, test.right)
+		if !ok || got != test.want {
+			t.Errorf("compareNumericClientVersions(%q, %q) = %d, %v; want %d, true", test.left, test.right, got, ok, test.want)
+		}
+	}
+	if _, ok := compareNumericClientVersions("alpha", "1.0"); ok {
+		t.Fatal("named client version was treated as numerically comparable")
+	}
+}
+
 func TestOldMSIRepairsItselfWithoutLoweringHighWater(t *testing.T) {
 	installer := &installerStub{}
 	store := StateStore{Path: filepath.Join(t.TempDir(), "update.json")}

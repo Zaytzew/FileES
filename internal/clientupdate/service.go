@@ -49,7 +49,7 @@ func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, erro
 		State: "current", Channel: service.Channel, CurrentVersion: current, ReleaseID: resolved.Envelope.ReleaseID,
 		Summary: fmt.Sprintf("Podpisane wydanie %s, sequence %d", resolved.SigningKeyID, resolved.Envelope.Sequence),
 	}
-	if !sameClientVersion(resolved.Manifest.Version, current) {
+	if clientUpdateAvailable(resolved.Manifest.Version, current) {
 		status.State = "available"
 		status.AvailableVersion = resolved.Manifest.Version
 		status.RestartRequired = true
@@ -64,12 +64,19 @@ func (service *Service) Plan(ctx context.Context) (contract.UpdatePlanResult, er
 	if err != nil {
 		return contract.UpdatePlanResult{}, err
 	}
+	current := service.currentVersion(state)
+	if !clientUpdateAvailable(resolved.Manifest.Version, current) {
+		return contract.UpdatePlanResult{
+			CurrentVersion: current, AvailableVersion: resolved.Manifest.Version,
+			ReleaseID: resolved.Envelope.ReleaseID,
+		}, nil
+	}
 	changes, restart, err := service.Installer.Plan(ctx, resolved)
 	if err != nil {
 		return contract.UpdatePlanResult{}, err
 	}
 	return contract.UpdatePlanResult{
-		CurrentVersion: service.currentVersion(state), AvailableVersion: resolved.Manifest.Version,
+		CurrentVersion: current, AvailableVersion: resolved.Manifest.Version,
 		ReleaseID: resolved.Envelope.ReleaseID, Changes: changes, RestartRequired: restart,
 	}, nil
 }
@@ -81,8 +88,9 @@ func (service *Service) Apply(ctx context.Context) (contract.UpdateApplyResult, 
 	if err != nil {
 		return contract.UpdateApplyResult{}, err
 	}
-	if sameClientVersion(resolved.Manifest.Version, service.currentVersion(state)) {
-		return contract.UpdateApplyResult{InstalledVersion: resolved.Manifest.Version}, nil
+	current := service.currentVersion(state)
+	if !clientUpdateAvailable(resolved.Manifest.Version, current) {
+		return contract.UpdateApplyResult{InstalledVersion: current}, nil
 	}
 	_, restart, err := service.Installer.Plan(ctx, resolved)
 	if err != nil {
@@ -138,6 +146,80 @@ func (service *Service) currentVersion(state State) string {
 
 func sameClientVersion(left, right string) bool {
 	return canonicalClientVersion(left) == canonicalClientVersion(right)
+}
+
+// clientUpdateAvailable keeps a locally newer client from being offered (or
+// applying) an older signed channel release. This matters for acceptance
+// builds made from a revision ahead of the currently promoted bundle: a valid
+// signature authenticates a release, but does not make it newer than the
+// binary which is already running.
+//
+// FileES distribution versions are dot-separated numeric components. Unknown
+// schemes retain the previous mismatch-means-update behaviour instead of being
+// ordered by a guess.
+func clientUpdateAvailable(available, current string) bool {
+	if sameClientVersion(available, current) {
+		return false
+	}
+	comparison, comparable := compareNumericClientVersions(available, current)
+	if !comparable {
+		return true
+	}
+	return comparison > 0
+}
+
+func compareNumericClientVersions(left, right string) (int, bool) {
+	leftParts, leftOK := numericClientVersionParts(left)
+	rightParts, rightOK := numericClientVersionParts(right)
+	if !leftOK || !rightOK {
+		return 0, false
+	}
+	count := len(leftParts)
+	if len(rightParts) > count {
+		count = len(rightParts)
+	}
+	for index := 0; index < count; index++ {
+		leftPart, rightPart := "0", "0"
+		if index < len(leftParts) {
+			leftPart = leftParts[index]
+		}
+		if index < len(rightParts) {
+			rightPart = rightParts[index]
+		}
+		if len(leftPart) < len(rightPart) {
+			return -1, true
+		}
+		if len(leftPart) > len(rightPart) {
+			return 1, true
+		}
+		if leftPart < rightPart {
+			return -1, true
+		}
+		if leftPart > rightPart {
+			return 1, true
+		}
+	}
+	return 0, true
+}
+
+func numericClientVersionParts(value string) ([]string, bool) {
+	parts := strings.Split(canonicalClientVersion(value), ".")
+	for index, part := range parts {
+		if part == "" {
+			return nil, false
+		}
+		for _, character := range part {
+			if !unicode.IsDigit(character) || character > unicode.MaxASCII {
+				return nil, false
+			}
+		}
+		part = strings.TrimLeft(part, "0")
+		if part == "" {
+			part = "0"
+		}
+		parts[index] = part
+	}
+	return parts, true
 }
 
 // canonicalClientVersion maps the human-facing build stamp 0.1.15+r850 onto

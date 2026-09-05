@@ -132,6 +132,51 @@ func TestRecoveryDismissRemovesCompletedArchiveFromIPCProjection(t *testing.T) {
 	}
 }
 
+func TestDetachDeletedCopyRequiresCleanupAndNeverDeletesServer(t *testing.T) {
+	for _, tc := range []struct {
+		name                        string
+		pending, fail, deleteServer bool
+	}{
+		{name: "completed"}, {name: "pending", pending: true}, {name: "persist failure", fail: true}, {name: "delete rejected", deleteServer: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := New("unused")
+			stub := &lifecycleStub{}
+			if tc.fail {
+				stub.detachErr = errors.New("disk full")
+			}
+			s.SetRepositoryLifecycleService(stub)
+			s.ReconcileProjectedRepos("lab", []ProjectedRepo{{ID: "repo", State: "deleted", ServerDeleted: true, LocalCopyPreserved: true, LocalCopyStatus: "changed", LocalCleanupPending: tc.pending}})
+			cmd := contract.CmdRepoDetach
+			if tc.deleteServer {
+				cmd = contract.CmdRepoDelete
+			}
+			response := s.dispatch(lifecycleRequest(cmd, contract.RepoDetachPayload{ServerID: "lab", RepoID: "repo"}))
+			success := !tc.pending && !tc.fail && !tc.deleteServer
+			if (response.Status == contract.StatusOK) != success {
+				t.Fatalf("response=%+v", response)
+			}
+			if (s.RepoState("lab", "repo") == nil) != success {
+				t.Fatal("projection lost before completed dismissal")
+			}
+			if stub.deleteCalls != 0 || stub.deleteRepository {
+				t.Fatal("orphan issued server deletion")
+			}
+			if success {
+				// A refresh may have read the lifecycle before dismissal. Its
+				// late presentation snapshot must not resurrect the row.
+				s.ReconcileProjectedRepos("lab", []ProjectedRepo{{ID: "repo", State: "deleted", ServerDeleted: true, LocalCopyPreserved: true}})
+				if s.RepoState("lab", "repo") != nil {
+					t.Fatal("late snapshot resurrected acknowledged copy")
+				}
+			}
+			if (tc.pending || tc.deleteServer) && stub.detachCalls != 0 {
+				t.Fatal("invalid request crossed guard")
+			}
+		})
+	}
+}
+
 func (stub *lifecycleStub) Status(operationID string) (contract.RepoLifecycleResult, error) {
 	stub.statusCalls++
 	return stub.statusResult, stub.statusErr

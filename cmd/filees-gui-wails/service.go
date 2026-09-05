@@ -117,6 +117,7 @@ type ServerProjection struct {
 }
 
 type RepoProjection struct {
+	CanDetachLocalCopy   bool            `json:"can_detach_local_copy"`
 	ID                   string          `json:"id"`
 	ServerID             string          `json:"server_id"`
 	DisplayName          string          `json:"display_name"`
@@ -710,6 +711,8 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 	case string(tray.IntentDownloadRecovery):
 		allowed := repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != ""
 		return tray.Intent{Kind: tray.IntentDownloadRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed
+	case string(tray.IntentDetachRepository):
+		return tray.Intent{Kind: tray.IntentDetachRepository, RepoID: repo.ID, ServerID: repo.ServerID}, vm.CanDetachDeletedCopy(repo)
 	case string(tray.IntentDismissRecovery):
 		allowed := vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != ""
 		return tray.Intent{Kind: tray.IntentDismissRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed
@@ -933,7 +936,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			}
 		}
 		result.Repositories = append(result.Repositories, RepoProjection{
-			ID: repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,
+			CanDetachLocalCopy: vm.CanDetachDeletedCopy(repo),
+			ID:                 repo.ID, ServerID: repo.ServerID, DisplayName: repo.DisplayName,
 			LocalPath: repo.LocalPath, URL: repo.URL, Attached: repo.Attached, LocalProvisioning: repo.LocallyProvisioning(),
 			Access: repo.Access, Ownership: ownership, AttachmentPolicy: repo.AttachmentPolicy,
 			State: repo.State, DisplayState: string(repo.DisplayState()), Connectivity: repo.Connectivity,

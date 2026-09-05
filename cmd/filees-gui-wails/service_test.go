@@ -214,6 +214,34 @@ func TestDeletedRepositoryProjectsRetentionAndRecoveryIntent(t *testing.T) {
 	}
 }
 
+func TestPreservedCopyDetachCapabilityAndStateGuards(t *testing.T) {
+	vm := guiapp.ViewModel{Connected: true, Capabilities: map[string]bool{contract.CapRepoDetach: true, contract.CapRepoDetachDeletedCopy: true},
+		Repos: []guiapp.RepoViewModel{{ID: "copy", ServerID: "lab", ServerDeleted: true, LocalCopyPreserved: true}}}
+	check := func(want bool) {
+		t.Helper()
+		p := projectViewModel(vm)
+		_, allowed := translateAction(vm, ActionRequest{Kind: string(tray.IntentDetachRepository), RepoID: "copy"})
+		if allowed != want || p.Repositories[0].CanDetachLocalCopy != want {
+			t.Fatalf("guard want=%v projection=%+v allowed=%v", want, p.Repositories[0], allowed)
+		}
+	}
+	check(true)
+	vm.Repos[0].LocalCleanupPending = true
+	check(false)
+	vm.Repos[0].LocalCleanupPending = false
+	vm.Capabilities[contract.CapRepoDetachDeletedCopy] = false
+	check(false)
+	vm.Capabilities[contract.CapRepoDetachDeletedCopy] = true
+	vm.Stale = true
+	check(false)
+	vm.Stale = false
+	vm.Connected = false
+	check(false)
+	vm.Connected = true
+	vm.Repos[0].ServerDeleted = false
+	check(false)
+}
+
 func TestGlobalPairingIntentUsesActiveProjectionAsPlaceholder(t *testing.T) {
 	vm := guiapp.ViewModel{
 		Connected:    true,

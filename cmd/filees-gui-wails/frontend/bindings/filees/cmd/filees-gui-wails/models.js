@@ -1349,6 +1349,10 @@ export class RepoProjection {
              */
             this["local_copy_preserved"] = undefined;
         }
+        if (!("can_detach_local_copy" in $$source)) {
+            /** @type {boolean} */
+            this["can_detach_local_copy"] = false;
+        }
         if (/** @type {any} */(false)) {
             /**
              * @member

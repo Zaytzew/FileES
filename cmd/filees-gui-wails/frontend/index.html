@@ -204,6 +204,18 @@
       </footer>
     </section>
   </div>
+  <dialog id="deleted-copy-dialog" aria-labelledby="deleted-copy-title" aria-describedby="deleted-copy-description">
+    <header><h2 id="deleted-copy-title">Zachowany folder lokalny</h2><button id="close-deleted-copy" type="button" aria-label="Zamknij informację">×</button></header>
+    <p id="deleted-copy-name"></p>
+    <p id="deleted-copy-path"></p>
+    <p id="deleted-copy-description"></p>
+    <p id="deleted-copy-status"></p>
+    <p id="deleted-copy-cleanup"></p>
+    <details id="deleted-copy-diagnostics" hidden><summary>Diagnostyka sprzątania (alpha)</summary><pre id="deleted-copy-error"></pre></details>
+    <p id="deleted-copy-action-help"></p>
+    <footer><button id="dismiss-deleted-copy" type="button">Zamknij</button><button id="detach-deleted-copy" type="button">Odłącz lokalną projekcję</button></footer>
+  </dialog>
+
   <div id="announcement-overlay" class="announcement-overlay" hidden>
     <section class="announcement-dialog" role="dialog" aria-modal="true" aria-labelledby="announcement-title" aria-describedby="announcement-copy">
       <header>

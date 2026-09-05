@@ -79,6 +79,13 @@ func TestRemoteDeletionInspectsTwoRealSVNCopiesWithoutChangingFiles(t *testing.T
 		if !got.LocalCleanupCompleted || !got.RemoteCleanupStarted || got.PreservedCopyStatus != want {
 			t.Fatalf("cleanup receipt: %+v", got)
 		}
+		service := repositoryLifecycleService{store: store, onDetach: func(context.Context, string) (localrepo.Record, error) {
+			t.Fatal("completed orphan called active detach executor")
+			return localrepo.Record{}, nil
+		}}
+		if _, err := service.BeginDetach(t.Context(), "lab", id, false); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, name := range []string{"document.txt", "untracked.txt"} {
 		data, err := os.ReadFile(filepath.Join(b, name))
@@ -96,6 +103,17 @@ func TestRemoteDeletionInspectsTwoRealSVNCopiesWithoutChangingFiles(t *testing.T
 	store, err = localrepo.Open(filepath.Join(root, "lifecycle.json"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	ipc := ipcserver.New(filepath.Join(root, "ipc.sock"))
+	for _, record := range store.List() {
+		if !record.LocalProjectionDismissed || !store.RemoteDeleted(record.ServerID, record.RepoID) {
+			t.Fatal("lost acknowledgement or fence")
+		}
+		stale := clientview.View{Generation: 1, Repositories: []clientview.Repository{{RepoID: record.RepoID, State: "active"}}}
+		syncProjectionKnowledge(ipc, record.ServerID, stale, map[reposupervisor.Key]repoRuntime{}, store)
+		if ipc.RepoState(record.ServerID, record.RepoID) != nil {
+			t.Fatal("stale view resurrected dismissed projection")
+		}
 	}
 	// A completed receipt must not touch a folder handed back to its owner.
 	if err := os.Mkdir(filepath.Join(a, ".svn"), 0700); err != nil {

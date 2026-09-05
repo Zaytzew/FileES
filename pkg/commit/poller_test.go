@@ -44,23 +44,24 @@ func TestConflictCopyRequiresSuccessfulSyncAndClose(t *testing.T) {
 }
 
 type revisionClient struct {
-	remote   int64
-	local    int64
-	update   int
-	resolved []string
-	accept   string
-	status   []client.StatusEntry
+	remote                                    int64
+	local                                     int64
+	update                                    int
+	resolved                                  []string
+	accept                                    string
+	status                                    []client.StatusEntry
+	remoteErr, localErr, updateErr, statusErr error
 }
 
 func (c *revisionClient) Revision(_ context.Context, target string) (int64, error) {
 	if filepath.IsAbs(target) {
-		return c.local, nil
+		return c.local, c.localErr
 	}
-	return c.remote, nil
+	return c.remote, c.remoteErr
 }
 func (c *revisionClient) Update(context.Context, string) (string, error) {
 	c.update++
-	return "", nil
+	return "", c.updateErr
 }
 
 func (*revisionClient) UpdateDepthEmpty(context.Context, string, []string) (string, error) {
@@ -76,7 +77,7 @@ func (*revisionClient) Cleanup(context.Context, string) (string, error) {
 	return "", nil
 }
 func (c *revisionClient) Status(context.Context, string, []string) ([]client.StatusEntry, error) {
-	return c.status, nil
+	return c.status, c.statusErr
 }
 func (*revisionClient) Add(context.Context, string, []string) (string, error) {
 	return "", nil

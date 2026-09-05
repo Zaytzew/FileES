@@ -448,7 +448,7 @@ func (m *Manager) authorize(ctx context.Context, paths []string) error {
 	return nil
 }
 
-// AutoUnlockOwned walks wc for regular, currently read-only files (SVN's own
+// AutoUnlockOwned walks wc for versioned, regular, currently read-only files (SVN's own
 // svn:needs-lock behaviour after checkout/update) and makes each one locally
 // writable, without acquiring the real SVN lock yet, when either nobody
 // holds it or the current holder's metadata already carries the SAME
@@ -465,20 +465,46 @@ func (m *Manager) AutoUnlockOwned(ctx context.Context, wc, realmID string) error
 	if strings.TrimSpace(realmID) == "" {
 		return nil
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	source, ok := m.backend.(interface {
+		NeedsLockPaths(context.Context, string) (map[string]bool, error)
+	})
+	if !ok {
+		return errors.New("autolock local access: backend cannot list needs-lock paths")
+	}
+	candidates, err := source.NeedsLockPaths(ctx, wc)
+	if err != nil {
+		return err
+	}
 	var first error
 	walkErr := filepath.WalkDir(wc, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		if d.IsDir() {
-			if d.Name() == ".svn" {
+			if d.Name() == ".svn" || d.Name() == ".filees" {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.Mode().Perm()&0o200 != 0 {
-			return nil // already writable, or unreadable - nothing to do
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o200 != 0 {
+			return nil // never follow symlinks or change special files
+		}
+		rel, err := filepath.Rel(wc, path)
+		if err != nil {
+			return err
+		}
+		if !candidates[filepath.ToSlash(rel)] {
+			return nil // user-owned RO files are not an autolock barrier
 		}
 		lock, err := m.backend.Inspect(ctx, path)
 		if err != nil {
@@ -493,7 +519,9 @@ func (m *Manager) AutoUnlockOwned(ctx context.Context, wc, realmID string) error
 				return nil // foreign or unrecognized hold - never touched
 			}
 		}
-		_ = os.Chmod(path, info.Mode().Perm()|0o200)
+		if err := os.Chmod(path, info.Mode().Perm()|0o200); err != nil && first == nil {
+			first = err
+		}
 		return nil
 	})
 	if walkErr != nil && first == nil {

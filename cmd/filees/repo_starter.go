@@ -234,9 +234,9 @@ func (s *passportSession) stop() {
 	s.err = s.manager.ReleaseAll(ctx)
 }
 
-func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, sink *errmap.Sink, logger talk.Logger) {
+func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, sink *errmap.Sink, logger talk.Logger) bool {
 	if _, err := os.Stat(filepath.Join(wc, ".svn")); err != nil {
-		return
+		return false
 	}
 	if out, err := svn.Cleanup(ctx, wc); err != nil {
 		logger.Warnf("svn cleanup failed: %v %s", err, out)
@@ -244,11 +244,11 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 	status, err := svn.Status(ctx, wc, nil)
 	if err != nil {
 		logger.Warnf("svn status before update failed: %v — update deferred", err)
-		return
+		return false
 	}
 	if commit.BlocksUpdate(wc, status) {
 		logger.Infof("svn update deferred: working copy contains local removals")
-		return
+		return false
 	}
 	out, err := svn.Update(ctx, wc)
 	service.ReconcileUpdateConflicts(ctx, wc, out)
@@ -257,7 +257,9 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 		if strings.TrimSpace(out) != "" {
 			logger.Warnf("svn update output: %s", out)
 		}
+		return false
 	}
+	return true
 }
 
 type svnFactory func(config.Repo) client.Client
@@ -363,8 +365,13 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			logger.Warnf("checkpoint watcher manifest: %v", err)
 		}
 	}
-	recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger)
+	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger)
 	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
+	if recovered {
+		// Migration may have made files read-only again. Reconcile only after
+		// it finishes, and never after failed or deferred startup recovery.
+		service.ReconcileOwnedAccess(ctx, wc)
+	}
 	if deps.reservations != nil {
 		deps.reservations.AttachLocal(desired.Key, svn, wc, manager)
 	}

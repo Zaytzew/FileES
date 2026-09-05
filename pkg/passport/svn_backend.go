@@ -12,6 +12,27 @@ type SVNBackend struct {
 	WC     string
 }
 
+// NeedsLockPaths returns WC-relative, versioned candidates for local RW.
+func (b SVNBackend) NeedsLockPaths(ctx context.Context, wc string) (map[string]bool, error) {
+	if b.Client == nil {
+		return nil, errors.New("passport SVN backend: nil client")
+	}
+	paths, err := b.Client.PropList(ctx, wc, "svn:needs-lock")
+	if err != nil {
+		return nil, err
+	}
+	appendOnly, err := b.Client.PropList(ctx, wc, AppendOnlyProperty)
+	if err != nil {
+		return nil, err
+	}
+	for path, present := range appendOnly {
+		if present {
+			delete(paths, path)
+		}
+	}
+	return paths, nil
+}
+
 func (b SVNBackend) Inspect(ctx context.Context, path string) (*Lock, error) {
 	if b.Client == nil {
 		return nil, errors.New("passport SVN backend: nil client")

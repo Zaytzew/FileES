@@ -49,6 +49,12 @@ type fakeBackend struct {
 	unlockErrors             map[string]error
 	seq, forceCalls, unlocks int
 	partitioned              bool
+	needsLock                map[string]bool
+	needsLockErr             error
+}
+
+func (b *fakeBackend) NeedsLockPaths(context.Context, string) (map[string]bool, error) {
+	return b.needsLock, b.needsLockErr
 }
 
 func newFakeBackend() *fakeBackend {
@@ -641,6 +647,7 @@ func TestAutoUnlockOwnedChmodsFreeAndSameRealmPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	b.needsLock = map[string]bool{"free.txt": true, "owned-by-me.txt": true, "foreign.txt": true, "unrecognized.txt": true}
 	b.locks[ownedByMe] = &Lock{Token: "t1", Comment: FormatComment(Metadata{PassportID: "p1", InstanceUID: "instance-other", RealmID: "realm-a", IssuedAt: now, ExpiresAt: now.Add(time.Hour), HardExpiresAt: now.Add(2 * time.Hour)})}
 	b.locks[foreignHeld] = &Lock{Token: "t2", Comment: FormatComment(Metadata{PassportID: "p2", InstanceUID: "instance-other", RealmID: "realm-b", IssuedAt: now, ExpiresAt: now.Add(time.Hour), HardExpiresAt: now.Add(2 * time.Hour)})}
 	b.locks[unrecognized] = &Lock{Token: "t3", Comment: "some other application's lock, not FileES"}

@@ -582,6 +582,9 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	s.goOnline()
 
 	if headRev <= localRev {
+		// Lock release does not create a repository revision. Restore the
+		// owner's local RW after quiet-grace even when content is unchanged.
+		s.ReconcileOwnedAccess(ctx, wc)
 		if err := s.writeStateString(headRevPath, fmt.Sprintf("%d\n", localRev)); err != nil {
 			s.Logger.Warnf("poll: persist local revision: %v", err)
 		}
@@ -617,11 +620,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 
 	s.ReconcileUpdateConflicts(ctx, wc, out)
 
-	if s.AutoUnlockOwned != nil && s.RealmID != "" && s.RealmID == s.OwnerRealmID {
-		if err := s.AutoUnlockOwned(ctx, wc, s.RealmID); err != nil {
-			s.Logger.Warnf("poll: autolock unlock-owned failed: %v", err)
-		}
-	}
+	s.ReconcileOwnedAccess(ctx, wc)
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
 	s.reconcileShouts(ctx, wc)
@@ -676,6 +675,18 @@ func (s *Service) addEvent(ev watcher.Event) {
 type pendingEntry struct {
 	item *stageItem
 	ver  uint64
+}
+
+// ReconcileOwnedAccess restores the V1 owner's local edit permission, never
+// a server reservation. Call only after a successful sync/HEAD observation;
+// unknown identity and non-owner grants remain on the manual borrow path.
+func (s *Service) ReconcileOwnedAccess(ctx context.Context, wc string) {
+	if s.AutoUnlockOwned == nil || s.RealmID == "" || s.RealmID != s.OwnerRealmID {
+		return
+	}
+	if err := s.AutoUnlockOwned(ctx, wc, s.RealmID); err != nil {
+		s.Logger.Warnf("autolock local access: %v", err)
+	}
 }
 
 func (s *Service) RequestPublish(ctx context.Context, wc, comment string) (int64, error) {

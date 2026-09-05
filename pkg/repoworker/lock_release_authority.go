@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -20,18 +21,46 @@ type SVNAdminLockAuthority struct {
 }
 
 func (a SVNAdminLockAuthority) InspectLock(ctx context.Context, repoID, relativePath string) (*LockReleaseObservation, error) {
+	entry, err := a.inspectSVNLock(ctx, repoID, relativePath)
+	if err != nil || entry == nil {
+		return nil, err
+	}
+	realmID := ""
+	if metadata, ok := passport.ParseComment(entry.Comment); ok {
+		realmID = metadata.RealmID
+		if realmID != "" {
+			if _, err := uuid.Parse(realmID); err != nil {
+				return nil, errors.New("lock authority returned invalid passport realm")
+			}
+		}
+	}
+	return &LockReleaseObservation{ObservedLockID: entry.Token, HolderClientID: entry.Owner, HolderRealmID: realmID}, nil
+}
+
+func (a SVNAdminLockAuthority) repositoryPath(repoID, relativePath string) (string, error) {
 	if !filepath.IsAbs(a.SVNAdmin) || !filepath.IsAbs(a.RepositoriesRoot) {
-		return nil, errors.New("lock authority paths must be absolute")
+		return "", errors.New("lock authority paths must be absolute")
 	}
 	if _, err := uuid.Parse(repoID); err != nil {
-		return nil, errors.New("lock authority repository ID must be UUID")
+		return "", errors.New("lock authority repository ID must be UUID")
 	}
 	if err := validateLockReleasePath(relativePath); err != nil {
-		return nil, err
+		return "", err
+	}
+	if relativePath == ".." {
+		return "", errors.New("lock authority path must stay inside repository")
 	}
 	repositoryPath := filepath.Join(filepath.Clean(a.RepositoriesRoot), repoID)
 	if rel, err := filepath.Rel(filepath.Clean(a.RepositoriesRoot), repositoryPath); err != nil || rel != repoID {
-		return nil, errors.New("lock authority repository path escapes root")
+		return "", errors.New("lock authority repository path escapes root")
+	}
+	return repositoryPath, nil
+}
+
+func (a SVNAdminLockAuthority) inspectSVNLock(ctx context.Context, repoID, relativePath string) (*svnAdminLock, error) {
+	repositoryPath, err := a.repositoryPath(repoID, relativePath)
+	if err != nil {
+		return nil, err
 	}
 	run := a.Run
 	if run == nil {
@@ -51,20 +80,41 @@ func (a SVNAdminLockAuthority) InspectLock(ctx context.Context, repoID, relative
 	if _, err := uuid.Parse(entry.Owner); err != nil {
 		return nil, errors.New("lock authority returned a non-client owner")
 	}
-	realmID := ""
-	if metadata, ok := passport.ParseComment(entry.Comment); ok {
-		realmID = metadata.RealmID
-		if realmID != "" {
-			if _, err := uuid.Parse(realmID); err != nil {
-				return nil, errors.New("lock authority returned invalid passport realm")
-			}
-		}
+	return entry, nil
+}
+
+// unlockIfCurrent is a mutation primitive, not an authorization decision.
+// Call only after server-side authorization of this exact holder and token.
+// Unlike rmlocks or force unlock, SVN itself checks the token while removing
+// the lock. A concurrent replacement therefore cannot be deleted by a stale
+// caller. Keep hooks enabled and never retry with a newly observed token.
+func (a SVNAdminLockAuthority) unlockIfCurrent(ctx context.Context, repoID, relativePath, holderClientID, token string) error {
+	repositoryPath, err := a.repositoryPath(repoID, relativePath)
+	if err != nil {
+		return err
 	}
-	return &LockReleaseObservation{ObservedLockID: entry.Token, HolderClientID: entry.Owner, HolderRealmID: realmID}, nil
+	if _, err := uuid.Parse(holderClientID); err != nil {
+		return errors.New("lock authority holder must be a client UUID")
+	}
+	if err := validateObservedLockID(token); err != nil {
+		return err
+	}
+	run := a.Run
+	if run == nil {
+		run = runLockAuthorityCommand
+	}
+	if _, err := run(ctx, a.SVNAdmin, "unlock", "--", repositoryPath, "/"+relativePath, holderClientID, token); err != nil {
+		return fmt.Errorf("conditionally release repository lock: %w", err)
+	}
+	return nil
 }
 
 func runLockAuthorityCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
+	command := exec.CommandContext(ctx, name, args...)
+	// lslocks has a human-readable grammar; keep it independent of the
+	// operator's locale rather than attempting to parse translated labels.
+	command.Env = append(os.Environ(), "LC_ALL=C")
+	return command.Output()
 }
 
 type svnAdminLock struct {

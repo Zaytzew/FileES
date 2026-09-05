@@ -92,8 +92,10 @@ type Passport struct {
 
 type Lock struct{ Token, Owner, Comment string }
 
-// Backend is the authoritative lock boundary. force=true is allowed only
-// after Manager has verified that the current FileES passport expired.
+// Backend is the lock boundary. force=true requests replacement after the
+// Manager's passport checks (renewal, expiry or same-realm migration).
+// The legacy SVNBackend uses non-atomic force-lock; ConditionalSVNBackend
+// requires server authorization and conditional release, then a normal lock.
 // Implementations must not call back into Manager methods: backend operations
 // run under Manager's serialized operation boundary by design.
 type Backend interface {

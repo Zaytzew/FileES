@@ -97,7 +97,17 @@ func New(config Config) (*Client, error) {
 // reservationv1.Result's doc comment) — Fetch itself never retries and
 // never invents a fresher answer than the one the worker actually gave.
 func (c *Client) Fetch(ctx context.Context, repoID string) (reservationv1.Result, error) {
-	req := reservationv1.Request{Schema: reservationv1.Schema, RepoID: repoID}
+	return c.fetch(ctx, repoID, reservationv1.Schema)
+}
+
+// FetchState uses the same endpoint and exactly one SSH session, with an
+// explicit v2 contract. An older server's refusal is not deletion evidence.
+func (c *Client) FetchState(ctx context.Context, repoID string) (reservationv1.Result, error) {
+	return c.fetch(ctx, repoID, reservationv1.StateSchema)
+}
+
+func (c *Client) fetch(ctx context.Context, repoID, schema string) (reservationv1.Result, error) {
+	req := reservationv1.Request{Schema: schema, RepoID: repoID}
 	if err := req.Validate(); err != nil {
 		return reservationv1.Result{}, err
 	}
@@ -156,7 +166,7 @@ func (c *Client) Fetch(ctx context.Context, repoID string) (reservationv1.Result
 	if err != nil {
 		return reservationv1.Result{}, fmt.Errorf("parse reservation worker result: %w", err)
 	}
-	if result.RepoID != repoID {
+	if result.RepoID != repoID || result.Schema != schema {
 		return reservationv1.Result{}, errors.New("reservation worker result does not match request")
 	}
 	return result, nil

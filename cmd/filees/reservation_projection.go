@@ -14,6 +14,7 @@ import (
 	"filees/pkg/clientview"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
+	"filees/pkg/localrepo"
 	"filees/pkg/passport"
 	"filees/pkg/reposupervisor"
 	reservationv1 "filees/pkg/reservation/v1"
@@ -39,7 +40,10 @@ type reservationProjectionCoordinator struct {
 	// onDetached carries the one fact no local measurement can produce: the
 	// server was reached and refused this client. It rides the same fetch,
 	// like onServerViewProduced, rather than asking a question of its own.
-	onDetached func(serverID string, detached bool)
+	onDetached          func(serverID string, detached bool)
+	lifecycle           *localrepo.Store
+	onRepositoryDeleted func(context.Context, reposupervisor.Key) error
+	terminalApplied     map[reposupervisor.Key]bool
 
 	mu       sync.RWMutex
 	profiles map[string]clientprofile.Profile
@@ -80,13 +84,14 @@ type reservationLocalOverlay struct {
 func newReservationProjectionCoordinator(ctx context.Context, ipc *ipcserver.Server) *reservationProjectionCoordinator {
 	coordinator := &reservationProjectionCoordinator{
 		ctx: ctx, ipc: ipc,
-		profiles: make(map[string]clientprofile.Profile),
-		views:    make(map[string]clientview.View),
-		results:  make(map[reposupervisor.Key]cachedReservationResult),
-		detached: make(map[string]bool),
-		paused:   make(map[string]bool),
-		overlays: make(map[reposupervisor.Key]reservationLocalOverlay),
-		started:  make(map[string]bool),
+		profiles:        make(map[string]clientprofile.Profile),
+		views:           make(map[string]clientview.View),
+		results:         make(map[reposupervisor.Key]cachedReservationResult),
+		detached:        make(map[string]bool),
+		paused:          make(map[string]bool),
+		overlays:        make(map[reposupervisor.Key]reservationLocalOverlay),
+		started:         make(map[string]bool),
+		terminalApplied: make(map[reposupervisor.Key]bool),
 	}
 	coordinator.newClient = func(profile clientprofile.Profile) (reservationFetcher, error) {
 		timeout := profile.SVNTimeout()
@@ -277,8 +282,62 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	}
 	repoIDs := make([]string, 0, len(view.Repositories))
 	for _, repo := range view.Repositories {
-		if repo.State == "active" {
+		if repo.State == "active" && !coordinator.lifecycle.RemoteDeleted(serverID, repo.RepoID) {
 			repoIDs = append(repoIDs, repo.RepoID)
+		}
+	}
+	// A disappeared repo must still be queried. Its durable local attachment
+	// is only a selector; only the authenticated emitter can settle its fate.
+	if coordinator.lifecycle != nil && coordinator.onRepositoryDeleted != nil {
+		active := make(map[string]bool)
+		for _, id := range repoIDs {
+			active[id] = true
+		}
+		for _, record := range coordinator.lifecycle.List() {
+			if record.ServerID != serverID || record.RepoID == "" || active[record.RepoID] {
+				continue
+			}
+			key := reposupervisor.Key{ServerID: serverID, RepoID: record.RepoID}
+			coordinator.mu.RLock()
+			applied := coordinator.terminalApplied[key]
+			coordinator.mu.RUnlock()
+			if applied {
+				continue
+			}
+			if record.RemoteDeletionObserved {
+				if err := coordinator.onRepositoryDeleted(ctx, key); err == nil {
+					coordinator.markTerminalApplied(key)
+				}
+				continue
+			}
+			switch record.State {
+			case localrepo.StateAttached, localrepo.StateAttaching, localrepo.StateRelocating, localrepo.StateReconciling, localrepo.StateRepositoryCreated, localrepo.StateError:
+			default:
+				continue
+			}
+			stateFetcher, ok := fetcher.(interface {
+				FetchState(context.Context, string) (reservationv1.Result, error)
+			})
+			if !ok {
+				continue
+			}
+			result, err := stateFetcher.FetchState(ctx, record.RepoID)
+			if err != nil {
+				if isDetachedClient(err) {
+					coordinator.pauseDetached(serverID, view, err)
+					return
+				}
+				talk.With("state:"+serverID).Warnf("repository %s lifecycle is unverified: %v", record.RepoID, err)
+				continue
+			}
+			if result.Schema != reservationv1.StateSchema || result.RepoID != record.RepoID || result.RepositoryState != "deleted" || result.Stale || result.Unknown {
+				continue
+			}
+			if err := coordinator.onRepositoryDeleted(ctx, key); err != nil {
+				talk.With("state:"+serverID).Warnf("apply repository %s deletion: %v", record.RepoID, err)
+			} else {
+				coordinator.markTerminalApplied(key)
+			}
 		}
 	}
 	sort.Strings(repoIDs)
@@ -347,6 +406,12 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	if coordinator.ipc != nil {
 		coordinator.ipc.Emit(contract.NewEvent("", 0, contract.EvProjectionChanged, "", nil))
 	}
+}
+
+func (coordinator *reservationProjectionCoordinator) markTerminalApplied(key reposupervisor.Key) {
+	coordinator.mu.Lock()
+	defer coordinator.mu.Unlock()
+	coordinator.terminalApplied[key] = true
 }
 
 // detectDetached is the view lane's entrance to the same terminal state. Both

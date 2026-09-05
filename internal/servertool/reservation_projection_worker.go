@@ -18,6 +18,7 @@ import (
 
 	"filees/internal/obsandbox"
 	"filees/pkg/clientview"
+	"filees/pkg/repoworker"
 	reservationv1 "filees/pkg/reservation/v1"
 	"filees/pkg/reservationprojection"
 	"filees/pkg/serverconfig"
@@ -115,14 +116,24 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		report(stderr, "serving-state request parse", err)
 		return ExitData
 	}
-	view, err := authorizedClientView(config.Activation.ServiceWorkingCopy, clientID, req.RepoID)
+	view, deleted, err := authorizedStateView(config.Activation.ServiceWorkingCopy, clientID, req)
 	if err != nil {
 		report(stderr, "serving-state authorization", err)
 		return ExitSoftware
 	}
 
-	store := reservationprojection.NewStore(stateRoot)
-	result := refreshReservationProjection(context.Background(), store, config.Activation.SVNBinary, r.Root, req.RepoID)
+	result := reservationv1.Result{Schema: req.Schema, RepoID: req.RepoID, Reservations: []reservationv1.Reservation{}}
+	if deleted {
+		// Never query FSFS or replay a lock artifact for a withdrawn repository.
+		result.RepositoryState = "deleted"
+	} else {
+		store := reservationprojection.NewStore(stateRoot)
+		result = refreshReservationProjection(context.Background(), store, config.Activation.SVNBinary, r.Root, req.RepoID)
+		result.Schema = req.Schema
+		if req.Schema == reservationv1.StateSchema {
+			result.RepositoryState = "active"
+		}
+	}
 	// The view was loaded to authorize this request, so saying when the server
 	// last produced it costs nothing and tells the client the one thing it
 	// cannot work out locally.
@@ -151,6 +162,23 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 func authorizeReservationRequest(serviceWC, clientID, repoID string) error {
 	_, err := authorizedClientView(serviceWC, clientID, repoID)
 	return err
+}
+
+func authorizedStateView(serviceWC, clientID string, req reservationv1.Request) (clientview.View, bool, error) {
+	if err := req.Validate(); err != nil {
+		return clientview.View{}, false, errReservationAccessDenied
+	}
+	if req.Schema == reservationv1.StateSchema {
+		view, err := clientview.Load(filepath.Join(serviceWC, "clients", clientID, "view.json"))
+		if err != nil || view.ClientID != clientID {
+			return clientview.View{}, false, errReservationAccessDenied
+		}
+		if repoworker.RepositoryDeletedForRealm(serviceWC, req.RepoID, view.RealmID) {
+			return view, true, nil
+		}
+	}
+	view, err := authorizedClientView(serviceWC, clientID, req.RepoID)
+	return view, false, err
 }
 
 // authorizedClientView performs the same check and hands back the view it had

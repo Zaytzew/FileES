@@ -29,6 +29,11 @@ type projectionUpdate struct {
 	view                                     clientview.View
 }
 
+type repositoryDeletionUpdate struct {
+	key  reposupervisor.Key
+	done chan error
+}
+
 type monitorCacheLoad struct {
 	view     clientview.View
 	exists   bool
@@ -189,7 +194,7 @@ func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy
 	return updater.client.Cleanup(ctx, workingCopy)
 }
 
-func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter) error {
+func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, activation config.ClientView, profiles []clientprofile.Profile, profileEvents <-chan clientprofile.Profile, timeoutEvents <-chan clientprofile.Profile, attachmentEvents <-chan provisionedAttachment, publicShareEvents <-chan string, ipc *ipcserver.Server, lifecycle *localrepo.Store, detachments *detachment.Store, forgetProfile func(string), gate runtime.Gate, mutex runtime.RepoMutex, activityJournal *activity.Journal, projectRealmAlias func(serverID, realmID, projected string) string, shareLister publicShareLister, shareCache publicShareCacheSetter, stopProvisioning func(context.Context, string, string) error) error {
 	// One recorder for every server this supervisor watches: the view lane is
 	// per server and so is its age.
 	freshness := newViewFreshness(nil)
@@ -209,6 +214,22 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 	}
 	detachedEvents := make(chan string, 2*(len(profiles)+1))
 	reservationRefreshes := newReservationProjectionCoordinator(ctx, ipc)
+	repositoryDeletions := make(chan repositoryDeletionUpdate, 16)
+	reservationRefreshes.lifecycle = lifecycle
+	reservationRefreshes.onRepositoryDeleted = func(callCtx context.Context, key reposupervisor.Key) error {
+		event := repositoryDeletionUpdate{key: key, done: make(chan error, 1)}
+		select {
+		case repositoryDeletions <- event:
+		case <-callCtx.Done():
+			return callCtx.Err()
+		}
+		select {
+		case err := <-event.done:
+			return err
+		case <-callCtx.Done():
+			return callCtx.Err()
+		}
+	}
 	// The state lane already talks to the server on a rhythm driven by real
 	// work, so what the server says about producing our view arrives with it
 	// rather than on a schedule of its own.
@@ -496,6 +517,29 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			if err := startProfile(profile, true); err != nil {
 				talk.With("projection:"+profile.ServerID).Errorf("start activated profile: %v", err)
 			}
+		case event := <-repositoryDeletions:
+			err := lifecycle.ObserveRemoteDeletion(event.key.ServerID, event.key.RepoID)
+			if err == nil {
+				// The durable fence wins before cancellation. If stopping fails,
+				// no later projection can restart this runtime; the state lane
+				// retries stopping from the local receipt without another query.
+				delete(runtimes, event.key)
+				stopCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
+				err = supervisor.DetachLocal(stopCtx, event.key)
+				if err == nil && stopProvisioning != nil {
+					err = stopProvisioning(stopCtx, event.key.ServerID, event.key.RepoID)
+				}
+				cancel()
+				if err == nil {
+					err = inspectPreservedCopies(ctx, lifecycle, event.key)
+				}
+				if err == nil {
+					view := currentViews[event.key.ServerID]
+					syncProjectionKnowledge(ipc, event.key.ServerID, view, runtimes, lifecycle)
+					talk.With("state:"+event.key.ServerID).Infof("repository %s withdrawn by server; local files and metadata preserved", event.key.RepoID)
+				}
+			}
+			event.done <- err
 		case serverID := <-detachedEvents:
 			// Activation and suspension are serialized in this loop. If a new
 			// profile won the race, a late event from the old proof must not stop
@@ -546,6 +590,10 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		case attachment := <-attachmentEvents:
 			repo := attachment.Repo
 			key := reposupervisor.Key{ServerID: repo.ServerID, RepoID: repo.ID}
+			if lifecycle.RemoteDeleted(key.ServerID, key.RepoID) && !attachment.Quiesce {
+				// A late provisioning completion cannot defeat a newer receipt.
+				continue
+			}
 			if attachment.Quiesce {
 				old, exists := runtimes[key]
 				view, hasView := currentViews[repo.ServerID]

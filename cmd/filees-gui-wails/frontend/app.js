@@ -378,7 +378,7 @@ function renderRepo(repo) {
   const deleted = Boolean(repo.server_deleted);
   const localProvisioning = Boolean(repo.local_provisioning);
   const pending = deleted
-    ? (repo.recovery_pending && repo.local_cleanup_pending ? "archiwum i czyszczenie czekają" : repo.recovery_pending ? "wydanie archiwum czeka" : repo.local_cleanup_pending ? "czyszczenie lokalne czeka" : "folder odłączony")
+    ? (repo.local_copy_preserved ? (repo.local_copy_status === "clean" ? "usunięte na serwerze · lokalne pliki zachowane" : repo.local_copy_status === "changed" ? "usunięte na serwerze · zachowano niewysłane zmiany" : "usunięte na serwerze · sprawdź zachowany folder") : repo.recovery_pending && repo.local_cleanup_pending ? "archiwum i czyszczenie czekają" : repo.recovery_pending ? "wydanie archiwum czeka" : repo.local_cleanup_pending ? "czyszczenie lokalne czeka" : "folder odłączony")
     : localProvisioning
       ? (state === "attention" ? "import wymaga uwagi" : state === "offline" ? "import wstrzymany — offline" : "pierwsze wysyłanie — trwa")
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");

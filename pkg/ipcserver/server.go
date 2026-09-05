@@ -678,6 +678,10 @@ func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo)
 			state.SetPendingLocalPath(repo.PendingLocalPath)
 		}
 		state.SetDeletionMetadata(repo.ServerDeleted, repo.LocalCleanupPending, repo.RetainUntil, repo.RecoveryOperationID, repo.RecoveryAvailable, repo.RecoveryPending, repo.CleanupError)
+		state.mu.Lock()
+		state.localCopyPreserved = repo.LocalCopyPreserved
+		state.localCopyStatus = repo.LocalCopyStatus
+		state.mu.Unlock()
 		state.SetLifecycleRepairMetadata(repo.LifecycleOperationID, repo.LifecycleError, repo.CanRetryLifecycle, repo.CanAbandonLifecycle)
 		state.SetEditingPolicy(repo.EditingPolicy)
 		state.SetPurpose(repo.Purpose)
@@ -731,6 +735,8 @@ type ProjectedRepo struct {
 	Attached                               bool
 	PendingLocalPath                       string
 	ServerDeleted, LocalCleanupPending     bool
+	LocalCopyPreserved                     bool
+	LocalCopyStatus                        string
 	RetainUntil, RecoveryOperationID       string
 	RecoveryAvailable                      bool
 	RecoveryPending                        bool

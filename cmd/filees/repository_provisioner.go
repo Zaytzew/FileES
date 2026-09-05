@@ -34,6 +34,35 @@ type daemonProvisioner struct {
 	attachments      chan<- provisionedAttachment
 	newAttachmentSVN func(clientprofile.Profile, string) attachmentSVN
 	recoveryRegistry recoverykit.Registry
+	running          map[string]provisionerOperation
+}
+
+type provisionerOperation struct {
+	serverID, repoID string
+	cancel           context.CancelFunc
+	done             chan struct{}
+}
+
+// StopRepository cancels in-flight attach/relocate/reconcile work after the
+// durable terminal fence is written. Queued work rechecks that same fence.
+func (p *daemonProvisioner) StopRepository(ctx context.Context, serverID, repoID string) error {
+	p.mu.Lock()
+	var pending []chan struct{}
+	for _, work := range p.running {
+		if work.serverID == serverID && work.repoID == repoID {
+			work.cancel()
+			pending = append(pending, work.done)
+		}
+	}
+	p.mu.Unlock()
+	for _, done := range pending {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 type attachmentSVN interface {
@@ -190,9 +219,29 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		talk.With("provisioning").Errorf("local lifecycle record %s is missing", operationID)
 		return
 	}
-	if record.State == localrepo.StateAbandoned {
+	if record.State == localrepo.StateAbandoned || record.RemoteDeletionObserved {
 		return
 	}
+	p.mu.Lock()
+	if p.local.RemoteDeleted(record.ServerID, record.RepoID) {
+		p.mu.Unlock()
+		return
+	}
+	workCtx, cancel := context.WithCancel(ctx)
+	work := provisionerOperation{serverID: record.ServerID, repoID: record.RepoID, cancel: cancel, done: make(chan struct{})}
+	if p.running == nil {
+		p.running = make(map[string]provisionerOperation)
+	}
+	p.running[operationID] = work
+	p.mu.Unlock()
+	defer func() {
+		cancel()
+		p.mu.Lock()
+		delete(p.running, operationID)
+		close(work.done)
+		p.mu.Unlock()
+	}()
+	ctx = workCtx
 	p.mu.RLock()
 	profile, ok := p.profiles[record.ServerID]
 	p.mu.RUnlock()
@@ -858,6 +907,9 @@ func (p *daemonProvisioner) runReconcile(ctx context.Context, record localrepo.R
 			p.rollbackReconcile(ctx, record, profile, fmt.Errorf("reconciled checkout is incomplete or modified at %s (%s)", entry.Path, entry.Item))
 			return
 		}
+	}
+	if ctx.Err() != nil || p.local.RemoteDeleted(record.ServerID, record.RepoID) {
+		return
 	}
 	if err := swapReconciledWorkingCopy(record.LocalPath, tempNew, record.ReconcileOperationID); err != nil {
 		p.rollbackReconcile(ctx, record, profile, err)

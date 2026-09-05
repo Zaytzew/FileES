@@ -30,6 +30,7 @@ type Server struct {
 	mu                   sync.RWMutex
 	repos                map[string]*RepoState // keyed by repo ID
 	activations          map[string]contract.ActivationStatus
+	brokerServerNames    map[string]string
 	activation           ActivationService
 	realmAlias           RealmAliasService
 	realmGrants          RealmGrantService
@@ -561,6 +562,7 @@ func New(sockPath string) *Server {
 		lg:                  talk.With("ipc"),
 		repos:               make(map[string]*RepoState),
 		activations:         make(map[string]contract.ActivationStatus),
+		brokerServerNames:   make(map[string]string),
 		lockReleaseRequests: make(map[string][]contract.LockReleaseRequest),
 		subs:                make(map[chan contract.Event]struct{}),
 		conns:               make(map[net.Conn]struct{}),
@@ -569,9 +571,36 @@ func New(sockPath string) *Server {
 
 func (s *Server) RegisterActivation(status contract.ActivationStatus) {
 	s.mu.Lock()
+	if name := s.brokerServerNames[status.ServerID]; name != "" {
+		status.DisplayName = name
+	}
 	s.activations[status.ServerID] = status
-	s.mu.Unlock()
 	s.Emit(contract.NewEvent("", 0, contract.EvActivationChanged, "", status))
+	s.mu.Unlock()
+}
+
+// SetBrokerServerDisplayName installs a validated broker fact as a local
+// presentation overlay. RegisterActivation applies it under the same lock,
+// so a queued older view cannot restore an activation-era nickname.
+func (s *Server) SetBrokerServerDisplayName(serverID, name string) {
+	if serverID == "" || name == "" {
+		return
+	}
+	s.mu.Lock()
+	if s.brokerServerNames[serverID] == name {
+		s.mu.Unlock()
+		return
+	}
+	s.brokerServerNames[serverID] = name
+	status, exists := s.activations[serverID]
+	if exists {
+		status.DisplayName = name
+		s.activations[serverID] = status
+	}
+	if exists {
+		s.Emit(contract.NewEvent("", 0, contract.EvActivationChanged, "", status))
+	}
+	s.mu.Unlock()
 }
 
 // RemoveServer clears one profile's in-memory activation and repositories
@@ -579,6 +608,7 @@ func (s *Server) RegisterActivation(status contract.ActivationStatus) {
 func (s *Server) RemoveServer(serverID string) {
 	s.mu.Lock()
 	delete(s.activations, serverID)
+	delete(s.brokerServerNames, serverID)
 	delete(s.lockReleaseRequests, serverID)
 	for id, repo := range s.repos {
 		if repo.ServerID() == serverID {

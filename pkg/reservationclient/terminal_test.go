@@ -30,3 +30,24 @@ func TestFetchStateUsesExistingPinnedSSHAndStrictV2(t *testing.T) {
 		t.Fatalf("result=%+v err=%v", r, err)
 	}
 }
+
+func TestFetchServerStateUsesPinnedBrokerWithoutRepository(t *testing.T) {
+	host, _ := generateKey(t)
+	signer, private := generateKey(t)
+	now := time.Now().UTC()
+	address := startReservationSSH(t, host, signer.PublicKey(), func(in *bufio.Reader, out *bytes.Buffer) {
+		line, _ := in.ReadBytes('\n')
+		req, err := reservationv1.ParseRequest(bytes.TrimSpace(line))
+		if err != nil || req.Schema != reservationv1.StateSchema || req.RepoID != "" {
+			return
+		}
+		r := reservationv1.Result{Schema: req.Schema, ServerID: "spot", ServerDisplayName: "40rs:filees", ViewGeneration: 26, ViewGeneratedAt: &now}
+		raw, _ := json.Marshal(r)
+		out.Write(append(raw, '\n'))
+	})
+	c := configuredClient(t, address, host.PublicKey(), private)
+	r, err := c.FetchServerState(t.Context())
+	if err != nil || r.ServerID != "spot" || r.ServerDisplayName != "40rs:filees" {
+		t.Fatalf("result=%+v err=%v", r, err)
+	}
+}

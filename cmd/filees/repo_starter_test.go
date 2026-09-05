@@ -343,6 +343,7 @@ type recoveryClient struct {
 	cleanup, status, update int
 	entries                 []client.StatusEntry
 	statusErr               error
+	updateErr               error
 }
 
 func (f *recoveryClient) Cleanup(context.Context, string) (string, error) {
@@ -353,7 +354,10 @@ func (f *recoveryClient) Status(context.Context, string, []string) ([]client.Sta
 	f.status++
 	return f.entries, f.statusErr
 }
-func (f *recoveryClient) Update(context.Context, string) (string, error)  { f.update++; return "", nil }
+func (f *recoveryClient) Update(context.Context, string) (string, error) {
+	f.update++
+	return "", f.updateErr
+}
 func (f *recoveryClient) Revision(context.Context, string) (int64, error) { return 0, nil }
 
 func TestReadWriteStarterKeepsWorkingCopySizeProjectionUntilStop(t *testing.T) {
@@ -403,7 +407,9 @@ func TestReadWriteRecoveryDefersUpdateForMissingPathsOrStatusFailure(t *testing.
 		if err := os.Mkdir(filepath.Join(wc, ".svn"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, nil, talk.With("test-recovery"))
+		if recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, nil, talk.With("test-recovery")) {
+			t.Fatal("deferred recovery must not authorize local RW")
+		}
 		if fake.cleanup != 1 || fake.status != 1 || fake.update != 0 {
 			t.Fatalf("calls cleanup=%d status=%d update=%d", fake.cleanup, fake.status, fake.update)
 		}
@@ -416,7 +422,9 @@ func TestReadWriteRecoveryUpdatesCleanWorkingCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &recoveryClient{}
-	recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, nil, talk.With("test-recovery"))
+	if !recoverReadWriteWorkingCopy(t.Context(), fake, wc, &commit.Service{}, nil, talk.With("test-recovery")) {
+		t.Fatal("successful recovery did not authorize local RW reconciliation")
+	}
 	if fake.cleanup != 1 || fake.status != 1 || fake.update != 1 {
 		t.Fatalf("calls cleanup=%d status=%d update=%d", fake.cleanup, fake.status, fake.update)
 	}

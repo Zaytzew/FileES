@@ -538,12 +538,12 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 				}
 				cancel()
 				if err == nil {
-					err = inspectPreservedCopies(ctx, lifecycle, event.key)
+					err = cleanupRemoteDeletedCopies(ctx, lifecycle, event.key)
 				}
+				view := currentViews[event.key.ServerID]
+				syncProjectionKnowledge(ipc, event.key.ServerID, view, runtimes, lifecycle)
 				if err == nil {
-					view := currentViews[event.key.ServerID]
-					syncProjectionKnowledge(ipc, event.key.ServerID, view, runtimes, lifecycle)
-					talk.With("state:"+event.key.ServerID).Infof("repository %s withdrawn by server; local files and metadata preserved", event.key.RepoID)
+					talk.With("state:"+event.key.ServerID).Infof("repository %s withdrawn by server; local files preserved, metadata removed", event.key.RepoID)
 				}
 			}
 			event.done <- err

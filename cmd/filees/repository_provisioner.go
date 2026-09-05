@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -767,6 +768,9 @@ func (p *daemonProvisioner) prepareRepositoryRecovery(ctx context.Context, recor
 func stripWorkingCopyMetadataWithRetry(ctx context.Context, root, operationID string) error {
 	var err error
 	for _, delay := range []time.Duration{0, 250 * time.Millisecond, 750 * time.Millisecond} {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if delay > 0 {
 			select {
 			case <-ctx.Done():
@@ -784,11 +788,17 @@ func stripWorkingCopyMetadataWithRetry(ctx context.Context, root, operationID st
 	if strings.Contains(lower, "used by another process") || strings.Contains(lower, "being used by another process") {
 		detail += "; close Explorer/TortoiseSVN windows using this folder — FileES will retry automatically"
 	}
-	return fmt.Errorf("server repository deleted; local working-copy metadata cleanup is pending: %s", detail)
+	return fmt.Errorf("local working-copy metadata cleanup is pending: %s", detail)
 }
 
 func stripWorkingCopyMetadata(root, operationID string) error {
 	root = filepath.Clean(root)
+	if !filepath.IsAbs(root) || filepath.Dir(root) == root {
+		return errors.New("refusing metadata cleanup outside a specific working-copy directory")
+	}
+	if userHome, err := os.UserHomeDir(); err == nil && filepath.Clean(userHome) == root {
+		return errors.New("refusing metadata cleanup at the home directory")
+	}
 	if _, err := uuid.Parse(operationID); err != nil {
 		return errors.New("repository detach operation ID must be UUID")
 	}
@@ -805,10 +815,13 @@ func stripWorkingCopyMetadata(root, operationID string) error {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !filepath.IsAbs(root) || root == string(filepath.Separator) {
 		return errors.New("working copy root must be an absolute real directory")
 	}
-	// The folder stops being one of ours here, so it stops looking like one.
-	// Best effort: the detach boundary is the metadata below, and a shell
-	// decoration that outlives it is untidy, not unsafe.
-	_ = unmarkManagedFolder(root)
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	if filepath.Clean(resolved) != root && !(runtime.GOOS == "windows" && strings.EqualFold(filepath.Clean(resolved), root)) {
+		return errors.New("working copy cleanup refuses a symlinked parent")
+	}
 	entries := []string{".svn", ".filees"}
 	// Validate the complete mutation set before removing either metadata tree.
 	// A hostile replacement of .filees must not leave a half-detached WC where
@@ -825,6 +838,9 @@ func stripWorkingCopyMetadata(root, operationID string) error {
 		if !sourceInfo.IsDir() || sourceInfo.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("%s is not a real metadata directory", source)
 		}
+	}
+	if err := unmarkManagedFolder(root); err != nil {
+		return fmt.Errorf("restore ordinary folder icon: %w", err)
 	}
 	for _, entry := range entries {
 		source := filepath.Join(root, entry)

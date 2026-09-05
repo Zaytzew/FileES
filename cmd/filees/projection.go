@@ -137,7 +137,8 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 					ID: record.RepoID, DisplayName: deletedRepositoryName(record),
 					State: "deleted", AttachmentPolicy: "optional", ServerDeleted: true,
 					PendingLocalPath: record.LocalPath, LocalCopyPreserved: true,
-					LocalCopyStatus: record.PreservedCopyStatus,
+					LocalCopyStatus:     record.PreservedCopyStatus,
+					LocalCleanupPending: !record.LocalCleanupCompleted, CleanupError: record.LastError,
 				})
 				known[record.RepoID] = true
 				continue

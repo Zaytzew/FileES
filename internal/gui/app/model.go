@@ -442,7 +442,7 @@ func (r RepoViewModel) NeedsLocate() bool {
 // adapters. Unknown future protocol states degrade to RepoDisplayUnknown.
 func (r RepoViewModel) DisplayState() RepoDisplayState {
 	if r.LocalCopyPreserved {
-		if r.LocalCopyStatus != "clean" {
+		if r.LocalCleanupPending || r.LocalCopyStatus != "clean" {
 			return RepoDisplayAttention
 		}
 		return RepoDisplayDeleted
@@ -505,7 +505,7 @@ func aggregateIcon(connected bool, repos []RepoViewModel, notices int) IconState
 
 func repoIconState(r RepoViewModel) IconState {
 	if r.LocalCopyPreserved {
-		if r.LocalCopyStatus != "clean" {
+		if r.LocalCleanupPending || r.LocalCopyStatus != "clean" {
 			return IconError
 		}
 		return IconActive

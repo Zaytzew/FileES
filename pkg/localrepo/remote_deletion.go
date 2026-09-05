@@ -92,6 +92,9 @@ func (s *Store) RecordPreservedCopyStatus(operationID, status string) error {
 	if !ok || !record.RemoteDeletionObserved {
 		return os.ErrNotExist
 	}
+	if record.RemoteCleanupStarted {
+		return errors.New("inspection is frozen before metadata cleanup")
+	}
 	before := record
 	record.PreservedCopyStatus = status
 	if err := validate(record); err != nil {
@@ -101,6 +104,97 @@ func (s *Store) RecordPreservedCopyStatus(operationID, status string) error {
 	if err := s.persist(); err != nil {
 		s.records[operationID] = before
 		return err
+	}
+	return nil
+}
+
+// BeginRemoteCleanup freezes the pre-cleanup inspection before .svn can go.
+func (s *Store) BeginRemoteCleanup(operationID, status string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.records[operationID]
+	if !ok || !record.RemoteDeletionObserved {
+		return os.ErrNotExist
+	}
+	if record.RemoteCleanupStarted {
+		return nil
+	}
+	before := record
+	record.PreservedCopyStatus = status
+	record.RemoteCleanupStarted = true
+	if err := validate(record); err != nil {
+		return err
+	}
+	s.records[operationID] = record
+	if err := s.persist(); err != nil {
+		s.records[operationID] = before
+		return err
+	}
+	return nil
+}
+
+func (s *Store) RecordRemoteCleanupError(operationID string, cause error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.records[operationID]
+	if !ok || !record.RemoteDeletionObserved || record.LocalCleanupCompleted {
+		return errors.New("remote metadata cleanup is not pending")
+	}
+	before := record
+	record.LastError = cause.Error()
+	s.records[operationID] = record
+	if err := s.persist(); err != nil {
+		s.records[operationID] = before
+		return err
+	}
+	return nil
+}
+
+func (s *Store) CompleteRemoteCleanup(operationID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.records[operationID]
+	if !ok || !record.RemoteDeletionObserved || !record.RemoteCleanupStarted {
+		return errors.New("remote metadata cleanup has not started")
+	}
+	if record.LocalCleanupCompleted {
+		return nil
+	}
+	before := record
+	record.LocalCleanupCompleted = true
+	record.LastError = ""
+	if err := validate(record); err != nil {
+		return err
+	}
+	s.records[operationID] = record
+	if err := s.persist(); err != nil {
+		s.records[operationID] = before
+		return err
+	}
+	return nil
+}
+
+func remoteCleanupOverlaps(record Record, path string) bool {
+	return path != "" && record.RemoteDeletionObserved && !record.LocalCleanupCompleted &&
+		(pathsOverlap(record.LocalPath, path) || (record.PreservedAlternatePath != "" && pathsOverlap(record.PreservedAlternatePath, path)))
+}
+
+// Defend upgrades from an older client which could reuse a detached path
+// before metadata cleanup existed. Never strip another live attachment.
+func (s *Store) CheckRemoteCleanupPaths(operationID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.records[operationID]
+	if !ok || !record.RemoteDeletionObserved {
+		return os.ErrNotExist
+	}
+	for id, other := range s.records {
+		if id == operationID || terminal(other.State) {
+			continue
+		}
+		if remoteCleanupOverlaps(record, other.LocalPath) || remoteCleanupOverlaps(record, other.PendingLocalPath) {
+			return errors.New("metadata cleanup path is owned by another live attachment")
+		}
 	}
 	return nil
 }

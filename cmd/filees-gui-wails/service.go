@@ -47,6 +47,7 @@ type GUIService struct {
 }
 
 type Snapshot struct {
+	trayCauses          []guiapp.IconCause                // local tray only; no new IPC/frontend contract
 	Revision            uint64                            `json:"revision"`
 	Connected           bool                              `json:"connected"`
 	Stale               bool                              `json:"stale"`
@@ -847,6 +848,7 @@ func projectViewModel(vm guiapp.ViewModel) Snapshot {
 
 func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	result := Snapshot{
+		trayCauses:          vm.IconCauses(),
 		Connected:           vm.Connected,
 		Stale:               vm.Stale,
 		DaemonState:         vm.DaemonState,

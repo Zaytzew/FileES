@@ -65,6 +65,7 @@ type PublishRunner interface {
 
 type ServicePublisher struct {
 	ServiceWC, DataAuthzFile string
+	RepositoryHead           func(context.Context, string) (RepositoryRevision, error)
 	Runner                   PublishRunner
 	Now                      func() time.Time
 }

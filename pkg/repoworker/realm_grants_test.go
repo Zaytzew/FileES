@@ -41,6 +41,9 @@ func TestRealmGrantsCanonicalProjectionDirectoryAndRebuild(t *testing.T) {
 	authz := filepath.Join(t.TempDir(), "data.authz")
 	runner := &publishRunner{}
 	p := ServicePublisher{ServiceWC: root, DataAuthzFile: authz, Runner: runner, Now: func() time.Time { return time.Unix(1700000000, 0).UTC() }}
+	p.RepositoryHead = func(context.Context, string) (RepositoryRevision, error) {
+		return RepositoryRevision{Number: 7, UUID: "98a3714e-01b2-4647-a951-f9c0c3c69f3c"}, nil
+	}
 	ownerRealm, recipientRealm, otherRealm := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	ownerClient, recipientClient, otherClient := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	writeCanonicalRealmClient := func(realmID, alias, visibility, clientID string) {

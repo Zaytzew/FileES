@@ -739,7 +739,7 @@ func (s *Service) reconcileShouts(ctx context.Context, wc string) {
 		return
 	}
 	local, err := s.Cli.Revision(ctx, wc)
-	if err != nil || local < 1 {
+	if err != nil || local < 0 {
 		return
 	}
 	var fetch shout.FetchLogs

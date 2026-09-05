@@ -1070,6 +1070,16 @@ func TestRequestPublishWritesShoutMarker(t *testing.T) {
 	}
 }
 
+func TestReadWriteShoutDiscoverySeedsEmptyRepository(t *testing.T) {
+	wc := t.TempDir()
+	service := &Service{Cli: &stagingClient{revision: 0}, repoID: "docs"}
+	service.reconcileShouts(context.Background(), wc)
+	last, ok, err := shout.LoadLastSeen(wc)
+	if err != nil || !ok || last != 0 {
+		t.Fatalf("read-write pipeline skipped r0: %d %v %v", last, ok, err)
+	}
+}
+
 func TestRequestPublishRequiresPendingChanges(t *testing.T) {
 	wc := t.TempDir()
 	service := &Service{Cli: &stagingClient{revision: 3}, staging: map[string]*stageItem{}}

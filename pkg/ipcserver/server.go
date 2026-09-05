@@ -589,6 +589,29 @@ func (s *Server) RegisterActivation(status contract.ActivationStatus) {
 	s.mu.Unlock()
 }
 
+// SetActivationFreshness updates only transport/production observations. A
+// monitor callback must not restore realm rights or readiness captured before
+// the first view arrived. Apply under the activation lock so a concurrent view
+// update cannot be lost to a read-modify-write of the whole record.
+func (s *Server) SetActivationFreshness(observed contract.ActivationStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	status, ok := s.activations[observed.ServerID]
+	if !ok {
+		return
+	}
+	status.ViewGeneration = observed.ViewGeneration
+	status.ViewGeneratedAt = observed.ViewGeneratedAt
+	status.ViewSyncedAt = observed.ViewSyncedAt
+	status.ViewSyncError = observed.ViewSyncError
+	status.ViewSyncFailures = observed.ViewSyncFailures
+	status.ServerViewGeneration = observed.ServerViewGeneration
+	status.ServerViewProducedAt = observed.ServerViewProducedAt
+	status.Detached = observed.Detached
+	s.activations[observed.ServerID] = status
+	s.Emit(contract.NewEvent("", 0, contract.EvActivationChanged, "", status))
+}
+
 // SetBrokerServerDisplayName installs a validated broker fact as a local
 // presentation overlay. RegisterActivation applies it under the same lock,
 // so a queued older view cannot restore an activation-era nickname.

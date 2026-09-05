@@ -21,15 +21,18 @@ import (
 const RealmGrantSchema = "filees.realm-grant/v1"
 
 type RealmGrantRecord struct {
-	Schema           string    `json:"schema"`
-	RepoID           string    `json:"repo_id"`
-	OwnerRealmID     string    `json:"owner_realm_id"`
-	RecipientRealmID string    `json:"recipient_realm_id"`
-	Access           string    `json:"access,omitempty"`
-	State            string    `json:"state"`
-	PathOwnerPolicy  string    `json:"path_owner_policy,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	Schema           string `json:"schema"`
+	RepoID           string `json:"repo_id"`
+	OwnerRealmID     string `json:"owner_realm_id"`
+	RecipientRealmID string `json:"recipient_realm_id"`
+	Access           string `json:"access,omitempty"`
+	State            string `json:"state"`
+	PathOwnerPolicy  string `json:"path_owner_policy,omitempty"`
+	// Regrant never resurrects ownership of objects born before this boundary.
+	PathOwnerCutoffRevision *int64    `json:"path_owner_cutoff_revision,omitempty"`
+	PathOwnerRepositoryUUID string    `json:"path_owner_repository_uuid,omitempty"`
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
 }
 
 type RealmGrantRecipient struct{ RealmID, Alias, Access, State string }
@@ -101,11 +104,42 @@ func (p ServicePublisher) Grant(ctx context.Context, ownerRealmID, recipientReal
 			return RealmGrantRecord{}, errors.New("canonical realm grant conflicts")
 		}
 		record.CreatedAt = old.CreatedAt
+		record.PathOwnerCutoffRevision = old.PathOwnerCutoffRevision
+		record.PathOwnerRepositoryUUID = old.PathOwnerRepositoryUUID
 		if old.State == record.State && old.Access == record.Access && old.PathOwnerPolicy == record.PathOwnerPolicy {
 			return old, nil
 		}
+		if access == "rw" && (old.State != "active" || old.Access != "rw") {
+			if p.RepositoryHead == nil {
+				return RealmGrantRecord{}, errors.New("regrant requires authoritative repository revision")
+			}
+			head, err := p.RepositoryHead(ctx, repoID)
+			if err != nil || head.Number < 0 {
+				return RealmGrantRecord{}, errors.New("cannot establish ownership regrant boundary")
+			}
+			if _, err := uuid.Parse(head.UUID); err != nil {
+				return RealmGrantRecord{}, errors.New("invalid ownership repository incarnation")
+			}
+			if old.PathOwnerCutoffRevision != nil && old.PathOwnerRepositoryUUID == head.UUID && head.Number < *old.PathOwnerCutoffRevision {
+				return RealmGrantRecord{}, errors.New("ownership history moved behind regrant boundary")
+			}
+			record.PathOwnerCutoffRevision = &head.Number
+			record.PathOwnerRepositoryUUID = head.UUID
+		}
 	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return RealmGrantRecord{}, readErr
+	} else if access == "rw" && p.RepositoryHead != nil {
+		// Older records are not silently migrated by a read or an idempotent
+		// grant. A new grant can establish its authoritative start boundary.
+		head, err := p.RepositoryHead(ctx, repoID)
+		if err != nil || head.Number < 0 {
+			return RealmGrantRecord{}, errors.New("cannot establish ownership grant boundary")
+		}
+		if _, err := uuid.Parse(head.UUID); err != nil {
+			return RealmGrantRecord{}, errors.New("invalid ownership repository incarnation")
+		}
+		record.PathOwnerCutoffRevision = &head.Number
+		record.PathOwnerRepositoryUUID = head.UUID
 	}
 	if err := atomicJSON(path, record); err != nil {
 		return RealmGrantRecord{}, err
@@ -622,6 +656,14 @@ func renderCanonicalGrantAuthz(repositories map[string]repositoryRecord, clients
 }
 
 func validateRealmGrantRecord(record RealmGrantRecord) error {
+	if record.PathOwnerRepositoryUUID != "" {
+		if _, err := uuid.Parse(record.PathOwnerRepositoryUUID); err != nil || record.PathOwnerCutoffRevision == nil {
+			return errors.New("realm grant ownership incarnation is invalid")
+		}
+	}
+	if record.PathOwnerCutoffRevision != nil && *record.PathOwnerCutoffRevision < 0 {
+		return errors.New("realm grant ownership cutoff is invalid")
+	}
 	if record.Schema != RealmGrantSchema || record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
 		return errors.New("realm grant record is invalid")
 	}

@@ -21,6 +21,7 @@ func openDetachments(t *testing.T) *detachment.Store {
 func TestTheSourceRendersWhatThePanelWillShow(t *testing.T) {
 	store := openDetachments(t)
 	at := time.Date(2026, 9, 3, 17, 40, 0, 0, time.UTC)
+	store.SetClock(func() time.Time { return at.Add(time.Hour) })
 	if err := store.Record(detachment.Record{
 		ServerID: "manual", DisplayName: "manual", Address: "manual.example",
 		Cause: detachment.CauseSelf, At: at, WorkingCopies: []string{`C:\Projekty\Willa`},

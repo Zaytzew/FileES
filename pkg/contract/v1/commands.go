@@ -164,21 +164,23 @@ const (
 	CapRepoDetach              = "repo.detach"
 	CapRepoDelete              = "repo.delete"
 	CapRepoRecoveryDismiss     = "repo.recovery_dismiss"
-	CapRepoLifecycleStatus     = "repo.lifecycle_status"
-	CapRepoLifecycleRepair     = "repo.lifecycle_repair"
-	CapRepoActivity            = "repo.activity"
-	CapRepoPublish             = "repo.publish"
-	CapNoticeList              = "notice.list"
-	CapNoticeAck               = "notice.ack"
-	CapSystemRestart           = "system.restart"
-	CapSystemShutdown          = "system.shutdown"
-	CapWhaleList               = "whale.list"
-	CapWhaleGet                = "whale.get"
-	CapWhalePutBegin           = "whale.put_begin"
-	CapWhaleGetBegin           = "whale.get_begin"
-	CapWhaleGetConfirm         = "whale.get_confirm"
-	CapWhaleRetry              = "whale.retry"
-	CapWhaleCancel             = "whale.cancel"
+	// Extends repo.detach to a preserved remote-deleted copy, after cleanup.
+	CapRepoDetachDeletedCopy = "repo.detach_deleted_copy"
+	CapRepoLifecycleStatus   = "repo.lifecycle_status"
+	CapRepoLifecycleRepair   = "repo.lifecycle_repair"
+	CapRepoActivity          = "repo.activity"
+	CapRepoPublish           = "repo.publish"
+	CapNoticeList            = "notice.list"
+	CapNoticeAck             = "notice.ack"
+	CapSystemRestart         = "system.restart"
+	CapSystemShutdown        = "system.shutdown"
+	CapWhaleList             = "whale.list"
+	CapWhaleGet              = "whale.get"
+	CapWhalePutBegin         = "whale.put_begin"
+	CapWhaleGetBegin         = "whale.get_begin"
+	CapWhaleGetConfirm       = "whale.get_confirm"
+	CapWhaleRetry            = "whale.retry"
+	CapWhaleCancel           = "whale.cancel"
 
 	// Update capabilities are advertised only after the daemon wires a signed
 	// release checker and transactional platform installer.
@@ -220,6 +222,7 @@ var AllCapabilities = []string{
 	CapRepoDetach,
 	CapRepoDelete,
 	CapRepoRecoveryDismiss,
+	CapRepoDetachDeletedCopy,
 	CapRepoLifecycleStatus,
 	CapRepoLifecycleRepair,
 	CapRepoPublish,

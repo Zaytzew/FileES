@@ -110,6 +110,69 @@ func TestControllerLocalDetachUsesOneConfirmationAndDistinctCommand(t *testing.T
 	}
 }
 
+func TestControllerDetachesPreservedCopyWithConfirmationAndAbsenceFence(t *testing.T) {
+	detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
+	lifecycle := newRecordingActionLifecycle()
+	platformFake := &platformtest.Fake{ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil }}
+	view := lifecycleView(contract.CapRepoDetach, contract.CapRepoDetachDeletedCopy)
+	view.Repos[0].Attached = false
+	view.Repos[0].ServerDeleted = true
+	view.Repos[0].LocalCopyPreserved = true
+	view.Repos[0].State = "deleted"
+	view.Servers[0].Repos[0] = view.Repos[0]
+	intents, cancel := setup(actions.Config{ViewModel: viewCopy(view), Prompter: platformFake, Notifier: platformFake, RepositoryDetacher: detacher, ActionLifecycle: lifecycle})
+	defer cancel()
+	send(t, intents, tray.Intent{Kind: tray.IntentDetachRepository, ServerID: "office", RepoID: "repo-1"})
+	call := awaitCh(t, detacher.calls, "orphan detach")
+	if call.deleteRepository {
+		t.Fatal("server delete requested")
+	}
+	confirmations := platformFake.Snapshot().ConfirmRequests
+	if len(confirmations) != 1 || confirmations[0].Title != "Odłącz lokalną projekcję" || !strings.Contains(confirmations[0].Text, ".svn i .filees") || !strings.Contains(confirmations[0].Text, "pozostaną na dysku") {
+		t.Fatalf("confirmation=%+v", confirmations)
+	}
+	started := awaitCh(t, lifecycle.started, "orphan action")
+	if !started.ExpectedLocalProjectionDismissed || started.ExpectedRepoDetached {
+		t.Fatalf("wrong fence: %+v", started)
+	}
+}
+
+func TestPreservedCopyDetachRechecksAfterConfirmation(t *testing.T) {
+	for _, change := range []string{"cancel", "cleanup pending", "capability removed", "path changed"} {
+		t.Run(change, func(t *testing.T) {
+			detacher := &fakeRepositoryDetacher{calls: make(chan detachCall, 1)}
+			view := lifecycleView(contract.CapRepoDetach, contract.CapRepoDetachDeletedCopy)
+			view.Repos[0].Attached = false
+			view.Repos[0].ServerDeleted = true
+			view.Repos[0].LocalCopyPreserved = true
+			var mu sync.Mutex
+			platformFake := &platformtest.Fake{ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				switch change {
+				case "cancel":
+					return false, nil
+				case "cleanup pending":
+					view.Repos[0].LocalCleanupPending = true
+				case "capability removed":
+					view.Capabilities[contract.CapRepoDetachDeletedCopy] = false
+				case "path changed":
+					view.Repos[0].LocalPath = "/different"
+				}
+				return true, nil
+			}}
+			intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { mu.Lock(); defer mu.Unlock(); return view }, Prompter: platformFake, RepositoryDetacher: detacher})
+			defer cancel()
+			send(t, intents, tray.Intent{Kind: tray.IntentDetachRepository, ServerID: "office", RepoID: "repo-1"})
+			select {
+			case call := <-detacher.calls:
+				t.Fatalf("changed confirmation crossed guard: %+v", call)
+			case <-time.After(60 * time.Millisecond):
+			}
+		})
+	}
+}
+
 func TestControllerDismissesRecoveryLocallyWithRetentionWarningAndFence(t *testing.T) {
 	dismisser := &fakeRecoveryDismisser{calls: make(chan recoveryDismissCall, 1)}
 	lifecycle := newRecordingActionLifecycle()

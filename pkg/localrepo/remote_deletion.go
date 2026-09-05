@@ -83,6 +83,46 @@ func (s *Store) RemoteDeleted(serverID, repoID string) bool {
 	return false
 }
 
+// DismissRemoteDeletedCopy acknowledges all preserved copies only after their
+// metadata cleanup succeeded. Keep the authority fence forever; never touch
+// a folder already returned to its owner, even if it has since been reused.
+func (s *Store) DismissRemoteDeletedCopy(serverID, repoID string) (Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	before := make(map[string]Record)
+	var result Record
+	for id, record := range s.records {
+		if record.ServerID != serverID || record.RepoID != repoID {
+			continue
+		}
+		if !record.RemoteDeletionObserved || !record.LocalCleanupCompleted {
+			return Record{}, errors.New("local projection requires confirmed deletion and completed metadata cleanup")
+		}
+		result = record
+		if !record.LocalProjectionDismissed {
+			before[id] = record
+		}
+	}
+	if result.OperationID == "" {
+		return Record{}, os.ErrNotExist
+	}
+	if len(before) == 0 {
+		return result, nil
+	}
+	for id, record := range before {
+		record.LocalProjectionDismissed = true
+		record.UpdatedAt = s.now().UTC()
+		s.records[id] = record
+	}
+	if err := s.persist(); err != nil {
+		for id, record := range before {
+			s.records[id] = record
+		}
+		return Record{}, err
+	}
+	return s.records[result.OperationID], nil
+}
+
 // RecordPreservedCopyStatus stores a local-only inspection, never server
 // authority. It may not reopen the attachment or touch the working copy.
 func (s *Store) RecordPreservedCopyStatus(operationID, status string) error {

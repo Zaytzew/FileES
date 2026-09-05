@@ -83,9 +83,10 @@ type Record struct {
 	// RemoteDeletionObserved is a terminal receipt from the authenticated
 	// state emitter. StateDetached preserves user files; metadata cleanup has
 	// separate durable receipts and does not claim server archive recovery.
-	RemoteDeletionObserved bool   `json:"remote_deletion_observed,omitempty"`
-	RemoteCleanupStarted   bool   `json:"remote_cleanup_started,omitempty"`
-	PreservedCopyStatus    string `json:"preserved_copy_status,omitempty"`
+	RemoteDeletionObserved   bool   `json:"remote_deletion_observed,omitempty"`
+	RemoteCleanupStarted     bool   `json:"remote_cleanup_started,omitempty"`
+	LocalProjectionDismissed bool   `json:"local_projection_dismissed,omitempty"`
+	PreservedCopyStatus      string `json:"preserved_copy_status,omitempty"`
 	// Keep the second path of an interrupted relocation as evidence, not as
 	// an instruction to resume it or to remove either folder.
 	PreservedAlternatePath string `json:"preserved_alternate_path,omitempty"`
@@ -973,6 +974,9 @@ func validate(r Record) error {
 	}
 	if r.RecoveryPrepared && r.RecoveryKitPath != "" && !filepath.IsAbs(r.RecoveryKitPath) {
 		return errors.New("repository recovery kit path must be absolute")
+	}
+	if r.LocalProjectionDismissed && (!r.RemoteDeletionObserved || !r.LocalCleanupCompleted) {
+		return errors.New("local projection dismissal requires completed remote cleanup")
 	}
 	if r.LocalCleanupCompleted && !r.RemoteDeletionObserved && (!r.ServerDeleteCompleted || !r.DeleteRepository || (r.State != StateDeleting && r.State != StateDeleted)) {
 		return errors.New("local deletion cleanup receipt exists outside repository deletion")

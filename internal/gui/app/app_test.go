@@ -489,6 +489,20 @@ func TestReducerRecoveryDismissFenceWaitsForCapabilityToDisappear(t *testing.T) 
 	}
 }
 
+func TestReducerLocalProjectionDismissWaitsForAbsence(t *testing.T) {
+	action := PendingAction{ID: "dismiss:copy", RepoID: "copy", ServerID: "lab", ExpectedLocalProjectionDismissed: true}
+	s := newAppState().applyRepoList([]contract.RepoSummary{{ID: "copy", ServerID: "lab", ServerDeleted: true, LocalCopyPreserved: true}}).startPendingAction(action).awaitPendingAction(action.ID)
+	s, waiting := s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 1 {
+		t.Fatal("already detached row completed dismissal prematurely")
+	}
+	s = s.applyRepoList(nil)
+	s, waiting = s.confirmPendingActions([]string{action.ID})
+	if len(waiting) != 0 || len(s.viewModel().PendingActions) != 0 {
+		t.Fatal("absent copy did not complete action")
+	}
+}
+
 func TestReducerFinishesSuccessfulLockWhenInventoryWasAlreadyUnknown(t *testing.T) {
 	action := PendingAction{ID: "lock:unknown", Kind: "lock", RepoID: "docs", ServerID: "spot", ReservationDelta: 1, BaselineReservationsKnown: false}
 	s := newAppState().startPendingAction(action)

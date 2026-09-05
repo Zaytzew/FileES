@@ -7,6 +7,67 @@ import (
 	"testing"
 )
 
+func TestDismissRemoteCopyRequiresCleanupAndPersistsFence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _, err := s.EnsureConfiguredAttached("lab", "11111111-1111-4111-8111-111111111111", "svn+ssh://lab/repo", "rw", filepath.Join(t.TempDir(), "wc"), "Docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DismissRemoteDeletedCopy(r.ServerID, r.RepoID); err == nil {
+		t.Fatal("active copy dismissed")
+	}
+	if err := s.ObserveRemoteDeletion(r.ServerID, r.RepoID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DismissRemoteDeletedCopy(r.ServerID, r.RepoID); err == nil {
+		t.Fatal("pending cleanup dismissed")
+	}
+	if err := s.BeginRemoteCleanup(r.OperationID, "changed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteRemoteCleanup(r.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DismissRemoteDeletedCopy("foreign", r.RepoID); err == nil {
+		t.Fatal("wrong server accepted")
+	}
+	s.path = t.TempDir() // existing directory cannot be replaced by the state file
+	if _, err := s.DismissRemoteDeletedCopy(r.ServerID, r.RepoID); err == nil {
+		t.Fatal("persistence failure reported success")
+	}
+	if failed, _ := s.Get(r.OperationID); failed.LocalProjectionDismissed {
+		t.Fatal("failed persist left an in-memory acknowledgement")
+	}
+	s.path = path
+	got, err := s.DismissRemoteDeletedCopy(r.ServerID, r.RepoID)
+	if err != nil || !got.LocalProjectionDismissed || got.RecoveryDismissed {
+		t.Fatalf("dismiss=%+v %v", got, err)
+	}
+	before, _ := os.ReadFile(path)
+	if _, err := s.DismissRemoteDeletedCopy(r.ServerID, r.RepoID); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("idempotent dismissal wrote state")
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, created, err := s.EnsureConfiguredAttached(r.ServerID, r.RepoID, r.RepoURL, r.Access, r.LocalPath, "Docs")
+	if err != nil || created || !got.LocalProjectionDismissed || !s.RemoteDeleted(r.ServerID, r.RepoID) {
+		t.Fatalf("restart lost fence: %+v %v", got, err)
+	}
+	if _, err := s.MarkAttached(r.OperationID, r.RepoID); err == nil {
+		t.Fatal("late worker resurrected dismissed copy")
+	}
+}
+
 func TestRemoteDeletionPersistsWithoutTouchingWorkingCopy(t *testing.T) {
 	root := t.TempDir()
 	wc := filepath.Join(root, "wc")

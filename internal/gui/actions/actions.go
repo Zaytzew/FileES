@@ -1381,7 +1381,8 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		defer c.endOperation(key)
 		vm := c.cfg.ViewModel()
 		repo, ok := findRepo(vm, repoID)
-		if !ok || repo.ServerID != serverID || (!deleteRepository && !repo.Attached) || !vm.Connected || vm.Stale {
+		orphan := repo.ServerDeleted && repo.LocalCopyPreserved
+		if !ok || repo.ServerID != serverID || (!deleteRepository && !repo.Attached && !vm.CanDetachDeletedCopy(repo)) || (deleteRepository && orphan) || !vm.Connected || vm.Stale {
 			return
 		}
 		name := repo.DisplayName
@@ -1392,9 +1393,15 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 			if repo.AttachmentPolicy == "required" || !vm.CanDetachRepository() {
 				return
 			}
+			title := "Odłącz folder od FileES"
+			text := fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie. Metadane .svn i .filees oraz ikona FileES zostaną usunięte.", name, repo.LocalPath)
+			if orphan {
+				title = "Odłącz lokalną projekcję"
+				text = fmt.Sprintf("%s\n%s\n\nRepozytorium zostało już usunięte na serwerze. Sprzątanie .svn i .filees zostało zakończone. Wpis i jego ostrzeżenie znikną z tego klienta. Folder oraz wszystkie zachowane pliki pozostaną na dysku, również niewysłana zawartość. Nie zostanie wykonana żadna operacja na serwerze.", name, repo.LocalPath)
+			}
 			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
-				Title:       "Odłącz folder od FileES",
-				Text:        fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie.", name, repo.LocalPath),
+				Title:       title,
+				Text:        text,
 				ConfirmText: "Odłącz folder", CancelText: "Anuluj",
 			})
 			if err != nil || !confirmed {
@@ -1427,7 +1434,10 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		}
 		latest := c.cfg.ViewModel()
 		current, ok := findRepo(latest, repoID)
-		if !ok || current.ServerID != serverID || (!deleteRepository && !current.Attached) || !latest.Connected || latest.Stale {
+		if !ok || current.ServerID != serverID || (!deleteRepository && !current.Attached && !latest.CanDetachDeletedCopy(current)) || !latest.Connected || latest.Stale {
+			return
+		}
+		if orphan != (current.ServerDeleted && current.LocalCopyPreserved) || current.LocalPath != repo.LocalPath {
 			return
 		}
 		if deleteRepository {
@@ -1445,7 +1455,8 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		}
 		actionID := c.startProjectedAction(app.PendingAction{
 			Kind: kind, ServerID: serverID, RepoID: repoID, Label: label,
-			ExpectedRepoDetached: !deleteRepository, ExpectedRepoDeleted: deleteRepository,
+			ExpectedRepoDetached: !deleteRepository && !orphan, ExpectedRepoDeleted: deleteRepository,
+			ExpectedLocalProjectionDismissed: orphan,
 		})
 		if err := c.cfg.RepositoryDetacher.DetachRepository(ctx, serverID, repoID, deleteRepository); err != nil {
 			c.finishProjectedAction(actionID)

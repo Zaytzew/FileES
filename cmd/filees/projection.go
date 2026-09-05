@@ -132,6 +132,9 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	if lifecycle != nil {
 		now := time.Now().UTC()
 		for _, record := range lifecycle.List() {
+			if record.LocalProjectionDismissed {
+				continue
+			}
 			if record.ServerID == serverID && record.RemoteDeletionObserved && !known[record.RepoID] {
 				projected = append(projected, ipcserver.ProjectedRepo{
 					ID: record.RepoID, DisplayName: deletedRepositoryName(record),

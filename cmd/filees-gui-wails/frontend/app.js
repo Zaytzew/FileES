@@ -26,6 +26,8 @@ const actionErrors = {
 };
 
 let currentSnapshot = null;
+let selectedDeletedCopy = null;
+let deletedCopyReturnFocus = null;
 let selectedAnnouncementID = "";
 let announcementAckPending = "";
 let announcementReturnFocus = null;
@@ -359,6 +361,7 @@ function updateRetentionCountdowns() {
 }
 
 const repoIcons = {
+  info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg>',
   lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
   unlock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M9 10V7a4 4 0 0 1 7.5-2"/></svg>',
   publish: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11v2a2 2 0 0 0 2 2h2l4 4V5L7 9H5a2 2 0 0 0-2 2Z"/><path d="M15 8a5 5 0 0 1 0 8M18 5a9 9 0 0 1 0 14"/></svg>',
@@ -384,6 +387,7 @@ function renderRepo(repo) {
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");
   const source = repo.local_path || (repo.attached ? "Folder FileES" : "Folder zdalny");
   const actions = [
+    deleted && repo.local_copy_preserved ? '<button class="repo-icon-action hint-button" type="button" data-copy-info data-hint="Pełna informacja o zachowanym folderze" aria-label="Pełna informacja o zachowanym folderze" aria-haspopup="dialog" aria-controls="deleted-copy-dialog">' + repoIcons.info + '</button>' : "",
     repo.can_attach ? repoAction("attach_repository", "Połącz z lokalnym folderem", repoIcons.pin, "attach") : "",
     repo.recovery_available ? repoAction("download_recovery", "Pobierz archiwum", repoIcons.recovery, "recovery") : "",
     repo.can_dismiss_recovery ? repoAction("dismiss_recovery", "Usuń archiwum z tego klienta", repoIcons.remove, "recovery-dismiss") : "",
@@ -818,6 +822,7 @@ function renderJournal(snapshot) {
 function render(snapshot) {
   if (!snapshot) return;
   currentSnapshot = snapshot;
+  renderDeletedCopyDialog();
   const clientVersion = String(snapshot.client_version || "").trim();
   const versionBadge = $("#client-version");
   versionBadge.textContent = clientVersion || "—";
@@ -896,6 +901,64 @@ function showToast(feedback) {
     toast.classList.add("is-leaving");
     window.setTimeout(() => toast.remove(), 220);
   }, level === "critical" ? 8000 : 4800);
+}
+
+function deletedCopyRepo() {
+  return (currentSnapshot?.repositories || []).find((repo) =>
+    repo.id === selectedDeletedCopy?.repoID && repo.server_id === selectedDeletedCopy?.serverID && repo.server_deleted && repo.local_copy_preserved);
+}
+
+function renderDeletedCopyDialog() {
+  if (!selectedDeletedCopy) return;
+  const repo = deletedCopyRepo();
+  if (!repo) {
+    $("#deleted-copy-dialog").close();
+    return;
+  }
+  $("#deleted-copy-name").textContent = repo.display_name || repo.id;
+  $("#deleted-copy-path").textContent = repo.local_path || "Brak zapisanej ścieżki";
+  $("#deleted-copy-description").textContent = "Serwer potwierdził usunięcie tego repozytorium. FileES zatrzymał jego lokalną obsługę. Folder i zawartość plików zostały zachowane; nie są już synchronizowane.";
+  $("#deleted-copy-status").textContent = repo.local_copy_status === "clean"
+    ? "Przed sprzątaniem metadanych nie wykryto lokalnych zmian."
+    : repo.local_copy_status === "changed"
+      ? "Przed sprzątaniem wykryto lokalne zmiany lub dodatkowe pliki. Zachowano zawartość plików, także niewysłaną. Usunięcie .svn usuwa bazę i lokalne właściwości SVN; sprawdź zachowany folder przed jego dalszym porządkowaniem."
+      : "Nie udało się w pełni potwierdzić stanu lokalnej kopii przed sprzątaniem. Sprawdź zachowany folder; nie należy zakładać, że wszystkie dane trafiły wcześniej na serwer.";
+  $("#deleted-copy-cleanup").textContent = repo.local_cleanup_pending
+    ? "Sprzątanie .svn i .filees oraz własnej ikony FileES nie jest zakończone. Wpis pozostanie widoczny. FileES ponowi sprzątanie automatycznie; nie ponowi usunięcia na serwerze."
+    : "Sprzątanie zakończone: usunięto .svn i .filees oraz własną dekorację folderu FileES, jeśli była obecna. Pozostał zwykły folder z plikami.";
+  $("#deleted-copy-diagnostics").hidden = !repo.cleanup_error;
+  $("#deleted-copy-error").textContent = repo.cleanup_error || "";
+  $("#detach-deleted-copy").disabled = !repo.can_detach_local_copy;
+  $("#deleted-copy-action-help").textContent = repo.can_detach_local_copy
+    ? "Odłączenie lokalnej projekcji usunie ten wpis i jego ostrzeżenie z klienta. Folder i pliki pozostaną na dysku. Przed wykonaniem zobaczysz potwierdzenie."
+    : repo.local_cleanup_pending
+      ? "Odłączenie wpisu będzie dostępne po zakończeniu sprzątania metadanych."
+      : "Odłączenie wymaga połączenia z aktualnym lokalnym daemonem FileES i jego gotowej projekcji.";
+}
+
+function openDeletedCopyInfo(button) {
+  const row = button.closest("[data-repo-id]");
+  const server = button.closest("[data-server-id]");
+  selectedDeletedCopy = { repoID: row?.dataset.repoId, serverID: server?.dataset.serverId };
+  if (!deletedCopyRepo()) { selectedDeletedCopy = null; return; }
+  deletedCopyReturnFocus = button;
+  renderDeletedCopyDialog();
+  $("#deleted-copy-dialog").showModal();
+  $("#close-deleted-copy").focus();
+}
+
+async function detachDeletedCopy() {
+  const repo = deletedCopyRepo();
+  if (!repo?.can_detach_local_copy) return;
+  // The action controller rechecks the current state before and after its
+  // owned confirmation. This dialog is explanatory, not a second authority.
+  $("#deleted-copy-dialog").close();
+  try {
+    const result = await GUIService.Trigger({ kind: "detach_repository", repo_id: repo.id, server_id: repo.server_id });
+    if (!result.accepted) showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
+  } catch (error) {
+    showToast({ level: "critical", title: "Nie udało się przekazać intencji", message: error?.message || String(error) });
+  }
 }
 
 async function triggerAction(button) {
@@ -999,6 +1062,7 @@ $("#journal-overlay").addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  if ($("#deleted-copy-dialog").open) return; // native dialog handles Escape
   if (!$("#announcement-overlay").hidden) {
     closeAnnouncement();
     return;
@@ -1010,6 +1074,8 @@ document.addEventListener("keydown", (event) => {
   if (!$("#journal-overlay").hidden) $("#journal-overlay").hidden = true;
 });
 $("#repositories").addEventListener("click", (event) => {
+  const info = event.target.closest("[data-copy-info]");
+  if (info) { openDeletedCopyInfo(info); return; }
   const toggle = event.target.closest("[data-toggle-server]");
   if (toggle && !event.target.closest("button")) {
     const serverID = toggle.dataset.toggleServer;
@@ -1022,6 +1088,7 @@ $("#repositories").addEventListener("click", (event) => {
   if (button) triggerAction(button);
 });
 $("#repositories").addEventListener("keydown", (event) => {
+  if (event.target.closest("button")) return;
   const toggle = event.target.closest("[data-toggle-server]");
   if (!toggle || !["Enter", " "].includes(event.key)) return;
   event.preventDefault();
@@ -1029,6 +1096,15 @@ $("#repositories").addEventListener("keydown", (event) => {
   if (expandedServers.has(serverID)) expandedServers.delete(serverID);
   else expandedServers.add(serverID);
   if (renderRepositories(currentSnapshot)) scheduleWindowFit();
+});
+$("#close-deleted-copy").addEventListener("click", () => $("#deleted-copy-dialog").close());
+$("#dismiss-deleted-copy").addEventListener("click", () => $("#deleted-copy-dialog").close());
+$("#detach-deleted-copy").addEventListener("click", detachDeletedCopy);
+$("#deleted-copy-dialog").addEventListener("close", () => {
+  selectedDeletedCopy = null;
+  if (deletedCopyReturnFocus?.isConnected) deletedCopyReturnFocus.focus();
+  else $("#client-version").focus();
+  deletedCopyReturnFocus = null;
 });
 $("#reservations").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");

@@ -23,9 +23,11 @@ import (
 // Server is the IPC contract server. Create with New, register repos with
 // RegisterRepo, then call Start. Safe for concurrent use.
 type Server struct {
-	sockPath  string
-	startTime time.Time
-	lg        talk.Logger
+	projectionMu         sync.Mutex
+	dismissedLocalCopies map[string]bool // runtime fence; durable owner is localrepo
+	sockPath             string
+	startTime            time.Time
+	lg                   talk.Logger
 
 	mu                   sync.RWMutex
 	repos                map[string]*RepoState // keyed by repo ID
@@ -140,11 +142,19 @@ type RepositoryLifecycleService interface {
 	Repair(context.Context, string, string, string, string) (contract.RepoLifecycleResult, error)
 }
 
-// dismissRecoveryProjection applies the immediate local consequence of a
-// successful repo.recovery_dismiss. A still-running WC cleanup remains
+// dismissDeletedProjection applies the immediate local consequence of a
+// successful archive dismissal or completed orphan detach. A pending cleanup remains
 // visible; a completed deletion disappears without waiting for another
 // server-view tick.
-func (s *Server) dismissRecoveryProjection(serverID, repoID string) {
+func (s *Server) dismissDeletedProjection(serverID, repoID string, localCopy bool) {
+	s.projectionMu.Lock()
+	defer s.projectionMu.Unlock()
+	if localCopy {
+		if s.dismissedLocalCopies == nil {
+			s.dismissedLocalCopies = make(map[string]bool)
+		}
+		s.dismissedLocalCopies[serverID+"\x00"+repoID] = true
+	}
 	repo := s.repoByID(repoID)
 	if repo == nil || repo.ServerID() != serverID {
 		return
@@ -700,8 +710,13 @@ func (s *Server) RegisterProjectedRepoPolicy(id, displayName, url, serverID, acc
 // Repositories omitted by the authoritative projection are removed from IPC;
 // this never removes or otherwise mutates their local working copies.
 func (s *Server) ReconcileProjectedRepos(serverID string, repos []ProjectedRepo) {
+	s.projectionMu.Lock()
+	defer s.projectionMu.Unlock()
 	present := make(map[string]struct{}, len(repos))
 	for _, repo := range repos {
+		if s.dismissedLocalCopies[serverID+"\x00"+repo.ID] {
+			continue
+		}
 		present[repo.ID] = struct{}{}
 		state := s.RegisterProjectedRepoPolicy(repo.ID, repo.DisplayName, repo.URL, serverID, repo.Access, repo.State, repo.OwnerRealmID, repo.AttachmentPolicy, repo.Attached)
 		if repo.PendingLocalPath != "" {

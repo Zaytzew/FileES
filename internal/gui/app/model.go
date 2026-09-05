@@ -82,18 +82,19 @@ type RepoViewModel struct {
 }
 
 type PendingAction struct {
-	ID                        string
-	Kind                      string
-	RepoID                    string
-	ServerID                  string
-	Label                     string
-	Phase                     string
-	StartedAt                 time.Time
-	ExpectedSessionTimeoutMin int
-	ExpectedRepoAttached      bool
-	ExpectedRepoDetached      bool
-	ExpectedRepoDeleted       bool
-	ExpectedRecoveryDismissed bool
+	ID                               string
+	Kind                             string
+	RepoID                           string
+	ServerID                         string
+	Label                            string
+	Phase                            string
+	StartedAt                        time.Time
+	ExpectedSessionTimeoutMin        int
+	ExpectedRepoAttached             bool
+	ExpectedRepoDetached             bool
+	ExpectedRepoDeleted              bool
+	ExpectedRecoveryDismissed        bool
+	ExpectedLocalProjectionDismissed bool
 	// ExpectedLifecycleOperationID fences a repair against daemon projection:
 	// the spinner remains until this exact stuck operation is no longer exposed.
 	ExpectedLifecycleOperationID string
@@ -354,6 +355,11 @@ func (vm ViewModel) CanReleaseReservations() bool {
 }
 func (vm ViewModel) CanDetachRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoDetach)
+}
+
+func (vm ViewModel) CanDetachDeletedCopy(repo RepoViewModel) bool {
+	return vm.CanDetachRepository() && vm.HasCap(contract.CapRepoDetachDeletedCopy) &&
+		repo.ServerDeleted && repo.LocalCopyPreserved && !repo.LocalCleanupPending
 }
 func (vm ViewModel) CanDeleteRepository() bool {
 	return vm.Connected && !vm.Stale && vm.HasCap(contract.CapRepoDelete)

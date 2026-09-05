@@ -180,7 +180,7 @@ func (s *Server) handleRepoRecoveryDismiss(req contract.Request) contract.Respon
 	if err != nil {
 		return contract.ErrResponse(req.RequestID, "REPO-2018", "ERROR", "REQUIRE_ACTION", "repo.recovery_dismiss_failed", nil)
 	}
-	s.dismissRecoveryProjection(payload.ServerID, payload.RepoID)
+	s.dismissDeletedProjection(payload.ServerID, payload.RepoID, false)
 	return contract.OKResponse(req.RequestID, result)
 }
 
@@ -1090,7 +1090,11 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
 	}
 	summary := rs.Summary()
-	if !deleteRepository && !summary.Attached {
+	orphan := summary.ServerDeleted && summary.LocalCopyPreserved
+	if orphan && (deleteRepository || summary.LocalCleanupPending) {
+		return contract.ErrResponse(req.RequestID, "REPO-2012", "ERROR", "REQUIRE_ACTION", "repo.detach_failed", nil)
+	}
+	if !deleteRepository && !summary.Attached && !orphan {
 		return contract.ErrResponse(req.RequestID, "REPO-2006", "ERROR", "NONE", "repo.not_attached", nil)
 	}
 	if summary.AttachmentPolicy == "required" {
@@ -1123,6 +1127,9 @@ func (s *Server) handleRepoDetach(req contract.Request, deleteRepository bool) c
 			return contract.OKResponse(req.RequestID, result)
 		}
 		return contract.ErrResponse(req.RequestID, "REPO-2012", "ERROR", "REQUIRE_ACTION", "repo.detach_failed", nil)
+	}
+	if orphan {
+		s.dismissDeletedProjection(payload.ServerID, payload.RepoID, true)
 	}
 	return contract.OKResponse(req.RequestID, result)
 }

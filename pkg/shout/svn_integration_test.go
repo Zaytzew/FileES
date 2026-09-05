@@ -69,12 +69,8 @@ func TestSVNTwoWorkingCopiesExchangeAndAcknowledgeAnnouncement(t *testing.T) {
 	if _, err := cli.Add(ctx, authorWC, []string{document}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cli.Commit(ctx, authorWC, []string{document}, "seed"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := cli.Update(ctx, receiverWC); err != nil {
-		t.Fatal(err)
-	}
+	// Keep the receiver at real r0: its first incoming revision may already
+	// carry an announcement, not an artificial non-shout seed commit.
 
 	logger, ok := cli.(interface {
 		LogMessages(context.Context, string, int64, int64) ([]client.LogMessage, error)
@@ -96,6 +92,9 @@ func TestSVNTwoWorkingCopiesExchangeAndAcknowledgeAnnouncement(t *testing.T) {
 	receiverRevision, err := cli.Revision(ctx, receiverWC)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if receiverRevision != 0 {
+		t.Fatalf("empty checkout revision=%d", receiverRevision)
 	}
 	if added, err := Advance(receiverWC, "docs", receiverRevision, fetch, time.Now()); err != nil || len(added) != 0 {
 		t.Fatalf("receiver baseline added=%#v err=%v", added, err)

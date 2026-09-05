@@ -93,6 +93,9 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	for _, repo := range view.Repositories {
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repo.RepoID}
 		_, attached := attachments[key]
+		if lifecycle.RemoteDeleted(serverID, repo.RepoID) {
+			continue
+		}
 		state := repo.State
 		pendingPath := ""
 		if record, pending := pendingCreates[repo.RepoID]; pending && !attached {
@@ -129,6 +132,16 @@ func syncProjectionKnowledge(ipc *ipcserver.Server, serverID string, view client
 	if lifecycle != nil {
 		now := time.Now().UTC()
 		for _, record := range lifecycle.List() {
+			if record.ServerID == serverID && record.RemoteDeletionObserved && !known[record.RepoID] {
+				projected = append(projected, ipcserver.ProjectedRepo{
+					ID: record.RepoID, DisplayName: deletedRepositoryName(record),
+					State: "deleted", AttachmentPolicy: "optional", ServerDeleted: true,
+					PendingLocalPath: record.LocalPath, LocalCopyPreserved: true,
+					LocalCopyStatus: record.PreservedCopyStatus,
+				})
+				known[record.RepoID] = true
+				continue
+			}
 			if record.ServerID != serverID || !record.ServerDeleteCompleted || known[record.RepoID] {
 				continue
 			}

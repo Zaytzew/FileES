@@ -262,7 +262,7 @@ func runDaemon() {
 	if err := ipc.Start(ctx); err != nil {
 		lg.Warnf("ipc: cannot start contract server: %v — CLI commands will use file fallback", err)
 	}
-	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache); err != nil {
+	if err := runDynamicSupervisedRepositories(ctx, repos, clientView, profiles, profileEvents, timeoutEvents, provisionedAttachments, publicShareEvents, ipc, lifecycleStore, detachmentStore, forgetProfile, gate, mtx, activityJournal, realmAliases.ProjectAlias, realmAliases, shareCache, provisioner.StopRepository); err != nil {
 		lg.Errorf("repository supervisor: %v", err)
 	}
 	if lifecycle.action.Load() == daemonActionRestart {

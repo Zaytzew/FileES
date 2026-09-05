@@ -905,6 +905,8 @@ type RepoSummary struct {
 	OwnerRealmID         string `json:"owner_realm_id,omitempty"`
 	AttachmentPolicy     string `json:"attachment_policy"`
 	ServerDeleted        bool   `json:"server_deleted,omitempty"`
+	LocalCopyPreserved   bool   `json:"local_copy_preserved,omitempty"`
+	LocalCopyStatus      string `json:"local_copy_status,omitempty"`
 	LocalCleanupPending  bool   `json:"local_cleanup_pending,omitempty"`
 	RetainUntil          string `json:"retain_until,omitempty"`
 	RecoveryOperationID  string `json:"recovery_operation_id,omitempty"`

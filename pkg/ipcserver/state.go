@@ -34,6 +34,8 @@ type RepoState struct {
 	purpose              string
 	projectedState       string
 	serverDeleted        bool
+	localCopyPreserved   bool
+	localCopyStatus      string
 	localCleanupPending  bool
 	retainUntil          string
 	recoveryOperationID  string
@@ -564,7 +566,9 @@ func (rs *RepoState) Summary() contract.RepoSummary {
 		OwnerRealmID:     rs.ownerRealmID,
 		AttachmentPolicy: rs.attachmentPolicy,
 		ServerDeleted:    rs.serverDeleted, LocalCleanupPending: rs.localCleanupPending,
-		RetainUntil: rs.retainUntil, RecoveryOperationID: rs.recoveryOperationID,
+		LocalCopyPreserved: rs.localCopyPreserved,
+		LocalCopyStatus:    rs.localCopyStatus,
+		RetainUntil:        rs.retainUntil, RecoveryOperationID: rs.recoveryOperationID,
 		RecoveryAvailable: rs.recoveryAvailable, RecoveryPending: rs.recoveryPending, CleanupError: rs.cleanupError,
 		Purpose:              rs.purpose,
 		LifecycleOperationID: rs.lifecycleOperationID, LifecycleError: rs.lifecycleError,

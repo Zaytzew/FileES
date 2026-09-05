@@ -80,6 +80,14 @@ type Record struct {
 	// changing the server's retention deadline or deleting server data.
 	RecoveryDismissed     bool `json:"recovery_dismissed,omitempty"`
 	LocalCleanupCompleted bool `json:"local_cleanup_completed,omitempty"`
+	// RemoteDeletionObserved is a terminal receipt from the authenticated
+	// state emitter. StateDetached preserves all local files and metadata;
+	// unlike StateDeleted it never claims cleanup or recovery was performed.
+	RemoteDeletionObserved bool   `json:"remote_deletion_observed,omitempty"`
+	PreservedCopyStatus    string `json:"preserved_copy_status,omitempty"`
+	// Keep the second path of an interrupted relocation as evidence, not as
+	// an instruction to resume it or to remove either folder.
+	PreservedAlternatePath string `json:"preserved_alternate_path,omitempty"`
 	// ReconcileOperationID is minted fresh by BeginReconcile and reused
 	// across daemon restarts so the orchestration's own staging (named
 	// after this ID, mirroring CreateFSFS's operationID convention) is
@@ -245,6 +253,11 @@ func (s *Store) begin(record Record) (Record, error) {
 }
 
 func (s *Store) beginLocked(record Record) (Record, error) {
+	for _, existing := range s.records {
+		if existing.ServerID == record.ServerID && existing.RepoID == record.RepoID && existing.RemoteDeletionObserved {
+			return Record{}, errors.New("repository was withdrawn by server authority")
+		}
+	}
 	if record.OperationID == "" {
 		record.OperationID = uuid.NewString()
 	}
@@ -814,6 +827,9 @@ func (s *Store) update(operationID string, mutate func(*Record) error) (Record, 
 		return Record{}, os.ErrNotExist
 	}
 	before := record
+	if record.RemoteDeletionObserved {
+		return Record{}, errors.New("repository was withdrawn by server authority")
+	}
 	if err := mutate(&record); err != nil {
 		return Record{}, err
 	}
@@ -851,6 +867,16 @@ func (s *Store) Get(operationID string) (Record, bool) {
 }
 
 func validate(r Record) error {
+	if r.PreservedAlternatePath != "" && (!r.RemoteDeletionObserved || !filepath.IsAbs(r.PreservedAlternatePath)) {
+		return errors.New("preserved relocation path exists outside remote deletion")
+	}
+	if r.PreservedCopyStatus != "" && (!r.RemoteDeletionObserved ||
+		(r.PreservedCopyStatus != "clean" && r.PreservedCopyStatus != "changed" && r.PreservedCopyStatus != "unknown")) {
+		return errors.New("invalid preserved working-copy status")
+	}
+	if r.RemoteDeletionObserved && (r.State != StateDetached || r.DeleteRepository || r.LocalCleanupCompleted) {
+		return errors.New("remote deletion receipt requires a preserved detached working copy")
+	}
 	if _, err := uuid.Parse(r.OperationID); err != nil {
 		return errors.New("local repository operation ID must be UUID")
 	}

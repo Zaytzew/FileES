@@ -67,6 +67,8 @@ type RepoViewModel struct {
 	ReservationCount     int
 	Cycle                contract.CycleStatus
 	ServerDeleted        bool
+	LocalCopyPreserved   bool
+	LocalCopyStatus      string
 	LocalCleanupPending  bool
 	RetainUntil          string
 	RecoveryOperationID  string
@@ -439,6 +441,12 @@ func (r RepoViewModel) NeedsLocate() bool {
 // DisplayState maps protocol state to the stable vocabulary consumed by UI
 // adapters. Unknown future protocol states degrade to RepoDisplayUnknown.
 func (r RepoViewModel) DisplayState() RepoDisplayState {
+	if r.LocalCopyPreserved {
+		if r.LocalCopyStatus != "clean" {
+			return RepoDisplayAttention
+		}
+		return RepoDisplayDeleted
+	}
 	if r.Conflicts > 0 || r.State == contract.StateDegraded || r.State == contract.StateInteractionRequired {
 		return RepoDisplayAttention
 	}
@@ -496,6 +504,12 @@ func aggregateIcon(connected bool, repos []RepoViewModel, notices int) IconState
 }
 
 func repoIconState(r RepoViewModel) IconState {
+	if r.LocalCopyPreserved {
+		if r.LocalCopyStatus != "clean" {
+			return IconError
+		}
+		return IconActive
+	}
 	// A projected optional repository without a local attachment cannot be
 	// doing work on this machine. In particular, a remote INITIALIZING record
 	// may outlive a failed or abandoned creation attempt. It remains visible

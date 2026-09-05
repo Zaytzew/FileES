@@ -24,6 +24,10 @@ import (
 
 const Schema = "filees.reservation/v1"
 
+// StateSchema explicitly opts into lifecycle facts on the existing state
+// emitter. Legacy reservation requests/responses retain their exact shape.
+const StateSchema = "filees.reservation/v2"
+
 // Reservation is one SVN lock as the server itself knows it — nothing more.
 // Deliberately absent, and never to be added here:
 //
@@ -57,7 +61,7 @@ type Request struct {
 }
 
 func (r Request) Validate() error {
-	if r.Schema != Schema {
+	if r.Schema != Schema && r.Schema != StateSchema {
 		return errors.New("reservation request schema mismatch")
 	}
 	if _, err := uuid.Parse(r.RepoID); err != nil {
@@ -77,13 +81,16 @@ func (r Request) Validate() error {
 //     artifact exists yet; Reservations is always empty and must never be
 //     read as "confirmed zero".
 type Result struct {
-	Schema       string        `json:"schema"`
-	RepoID       string        `json:"repo_id"`
-	Reservations []Reservation `json:"reservations"`
-	Stale        bool          `json:"stale"`
-	Unknown      bool          `json:"unknown"`
-	AsOf         time.Time     `json:"as_of,omitempty"`
-	Generation   string        `json:"generation,omitempty"`
+	// RepositoryState is present only in v2. "deleted" is authoritative
+	// withdrawal from use, not a receipt for physical erasure or local cleanup.
+	RepositoryState string        `json:"repository_state,omitempty"`
+	Schema          string        `json:"schema"`
+	RepoID          string        `json:"repo_id"`
+	Reservations    []Reservation `json:"reservations"`
+	Stale           bool          `json:"stale"`
+	Unknown         bool          `json:"unknown"`
+	AsOf            time.Time     `json:"as_of,omitempty"`
+	Generation      string        `json:"generation,omitempty"`
 	// Detail carries the live-refresh failure's cause when Stale or Unknown
 	// is set, so the daemon can log the real reason (see
 	// concepts/RESERVATION_LISTING_RESILIENCE_CONCEPT.md §1.3a — the whole
@@ -146,8 +153,28 @@ func ParseResult(raw []byte) (Result, error) {
 	if err := decodeExactlyOne(raw, &res); err != nil {
 		return Result{}, err
 	}
-	if res.Schema != Schema || res.RepoID == "" {
+	if (res.Schema != Schema && res.Schema != StateSchema) || res.RepoID == "" {
 		return Result{}, errors.New("reservation result schema or repo id missing")
+	}
+	if res.Schema == Schema && res.RepositoryState != "" {
+		return Result{}, errors.New("legacy reservation result carries lifecycle state")
+	}
+	if res.Schema == StateSchema {
+		if _, err := uuid.Parse(res.RepoID); err != nil {
+			return Result{}, errors.New("state result repo id must be UUID")
+		}
+		switch res.RepositoryState {
+		case "deleted":
+			if res.Unknown || res.Stale || len(res.Reservations) != 0 ||
+				!res.AsOf.IsZero() || res.Generation != "" || res.Detail != "" ||
+				res.ViewGeneration < 1 || res.ViewGeneratedAt == nil || res.ViewGeneratedAt.IsZero() {
+				return Result{}, errors.New("invalid terminal repository state")
+			}
+			return res, nil
+		case "active":
+		default:
+			return Result{}, errors.New("invalid repository state")
+		}
 	}
 	if res.Unknown {
 		if res.Stale || len(res.Reservations) != 0 {

@@ -146,6 +146,8 @@ type RepoProjection struct {
 	CanReviewQuarantine  bool            `json:"can_review_quarantine"`
 	Cycle                CycleProjection `json:"cycle"`
 	ServerDeleted        bool            `json:"server_deleted,omitempty"`
+	LocalCopyPreserved   bool            `json:"local_copy_preserved,omitempty"`
+	LocalCopyStatus      string          `json:"local_copy_status,omitempty"`
 	LocalCleanupPending  bool            `json:"local_cleanup_pending,omitempty"`
 	RetainUntil          string          `json:"retain_until,omitempty"`
 	RecoveryOperationID  string          `json:"recovery_operation_id,omitempty"`
@@ -941,7 +943,9 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			CanAttach: canAttach, CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
 			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,
-			RetainUntil: repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
+			LocalCopyPreserved: repo.LocalCopyPreserved,
+			LocalCopyStatus:    repo.LocalCopyStatus,
+			RetainUntil:        repo.RetainUntil, RecoveryOperationID: repo.RecoveryOperationID,
 			RecoveryAvailable: repo.RecoveryAvailable, CanDismissRecovery: vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != "", RecoveryPending: repo.RecoveryPending, CleanupError: repo.CleanupError,
 			Purpose: repo.Purpose,
 		})

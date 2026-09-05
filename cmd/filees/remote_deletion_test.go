@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -32,14 +33,18 @@ func TestRemoteDeletionInspectsTwoRealSVNCopiesWithoutChangingFiles(t *testing.T
 	repo := filepath.Join(root, "repo")
 	a, b := filepath.Join(root, "A"), filepath.Join(root, "B")
 	run("svnadmin", "create", repo)
-	run("svn", "checkout", "file://"+filepath.ToSlash(repo), a)
+	repoURL := "file://" + filepath.ToSlash(repo)
+	if runtime.GOOS == "windows" {
+		repoURL = "file:///" + filepath.ToSlash(repo)
+	}
+	run("svn", "checkout", repoURL, a)
 	tracked := filepath.Join(a, "document.txt")
 	if err := os.WriteFile(tracked, []byte("committed\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	run("svn", "add", tracked)
 	run("svn", "commit", "-m", "fixture", a)
-	run("svn", "checkout", "file://"+filepath.ToSlash(repo), b)
+	run("svn", "checkout", repoURL, b)
 	for _, wc := range []string{a, b} {
 		if err := os.MkdirAll(filepath.Join(wc, ".filees", "state"), 0700); err != nil {
 			t.Fatal(err)

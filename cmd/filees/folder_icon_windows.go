@@ -121,7 +121,19 @@ func unmarkManagedFolder(root string) error {
 		return errors.New("refusing to modify a volume root")
 	}
 	desktopINI := filepath.Join(root, "desktop.ini")
-	if _, err := os.Lstat(desktopINI); err == nil {
+	if info, err := os.Lstat(desktopINI); err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("folder decoration is not a regular file")
+		}
+		raw, err := os.ReadFile(desktopINI)
+		if err != nil {
+			return err
+		}
+		// Only remove our decoration, never a user's replacement desktop.ini.
+		marker := encodeUTF16LE("InfoTip=" + managedFolderInfoTip + "\r\n")[2:]
+		if !bytes.Contains(raw, marker) {
+			return nil
+		}
 		if err := setFileAttributes(desktopINI, func(attrs uint32) uint32 {
 			return attrs &^ (windows.FILE_ATTRIBUTE_HIDDEN | windows.FILE_ATTRIBUTE_SYSTEM)
 		}); err != nil {

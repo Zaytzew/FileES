@@ -147,6 +147,44 @@ func TestUnmarkingAFolderWeNeverMarkedIsHarmless(t *testing.T) {
 	}
 }
 
+func TestUnmarkPreservesForeignDesktopINI(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "desktop.ini")
+	want := []byte("[.ShellClassInfo]\r\nIconResource=user.ico,0\r\n")
+	if err := os.WriteFile(path, want, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := unmarkManagedFolder(root); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(want) {
+		t.Fatal("foreign decoration removed", err)
+	}
+}
+
+func TestMetadataCleanupAlsoRestoresWindowsFolderIcon(t *testing.T) {
+	root := t.TempDir()
+	icon := filepath.Join(t.TempDir(), "filees.ico")
+	if err := markManagedFolder(root, icon); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".svn", ".filees"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := stripWorkingCopyMetadata(root, "11111111-1111-4111-8111-111111111111"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "desktop.ini")); !os.IsNotExist(err) {
+		t.Fatal("FileES icon remained")
+	}
+	if attrs := attributesOf(t, root); attrs&windows.FILE_ATTRIBUTE_READONLY != 0 {
+		t.Fatal("folder still customized")
+	}
+}
+
 func TestMarkingRefusesRelativePaths(t *testing.T) {
 	if err := markManagedFolder("relative", `C:\icon.ico`); err == nil {
 		t.Error("a relative root was accepted")

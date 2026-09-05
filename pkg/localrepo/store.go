@@ -81,9 +81,10 @@ type Record struct {
 	RecoveryDismissed     bool `json:"recovery_dismissed,omitempty"`
 	LocalCleanupCompleted bool `json:"local_cleanup_completed,omitempty"`
 	// RemoteDeletionObserved is a terminal receipt from the authenticated
-	// state emitter. StateDetached preserves all local files and metadata;
-	// unlike StateDeleted it never claims cleanup or recovery was performed.
+	// state emitter. StateDetached preserves user files; metadata cleanup has
+	// separate durable receipts and does not claim server archive recovery.
 	RemoteDeletionObserved bool   `json:"remote_deletion_observed,omitempty"`
+	RemoteCleanupStarted   bool   `json:"remote_cleanup_started,omitempty"`
 	PreservedCopyStatus    string `json:"preserved_copy_status,omitempty"`
 	// Keep the second path of an interrupted relocation as evidence, not as
 	// an instruction to resume it or to remove either folder.
@@ -270,6 +271,9 @@ func (s *Store) beginLocked(record Record) (Record, error) {
 		return Record{}, err
 	}
 	for _, existing := range s.records {
+		if remoteCleanupOverlaps(existing, record.LocalPath) || remoteCleanupOverlaps(existing, record.PendingLocalPath) {
+			return Record{}, errors.New("local folder still has pending metadata cleanup")
+		}
 		if terminal(existing.State) {
 			// A terminal error claims no live checkout or attachment. Counting
 			// it here would let one failed attempt (e.g. a transient
@@ -473,6 +477,11 @@ func (s *Store) beginRelocation(serverID, repoID, newLocalPath string, adoptExis
 	record := s.records[operationID]
 	if record.State == StateRelocating && record.PendingLocalPath == newLocalPath && record.RelocationAdoptExisting == adoptExisting {
 		return record, nil
+	}
+	for _, existing := range s.records {
+		if remoteCleanupOverlaps(existing, newLocalPath) {
+			return Record{}, errors.New("relocation target has pending metadata cleanup")
+		}
 	}
 	if record.State != StateAttached {
 		return Record{}, errors.New("only an attached repository can be relocated")
@@ -833,6 +842,13 @@ func (s *Store) update(operationID string, mutate func(*Record) error) (Record, 
 	if err := mutate(&record); err != nil {
 		return Record{}, err
 	}
+	if !terminal(record.State) {
+		for _, existing := range s.records {
+			if existing.OperationID != record.OperationID && (remoteCleanupOverlaps(existing, record.LocalPath) || remoteCleanupOverlaps(existing, record.PendingLocalPath)) {
+				return Record{}, errors.New("local folder still has pending metadata cleanup")
+			}
+		}
+	}
 	if record == before {
 		return record, nil
 	}
@@ -874,7 +890,10 @@ func validate(r Record) error {
 		(r.PreservedCopyStatus != "clean" && r.PreservedCopyStatus != "changed" && r.PreservedCopyStatus != "unknown")) {
 		return errors.New("invalid preserved working-copy status")
 	}
-	if r.RemoteDeletionObserved && (r.State != StateDetached || r.DeleteRepository || r.LocalCleanupCompleted) {
+	if r.RemoteCleanupStarted && (!r.RemoteDeletionObserved || r.PreservedCopyStatus == "") {
+		return errors.New("remote cleanup requires a durable local inspection")
+	}
+	if r.RemoteDeletionObserved && (r.State != StateDetached || r.DeleteRepository || (r.LocalCleanupCompleted && !r.RemoteCleanupStarted)) {
 		return errors.New("remote deletion receipt requires a preserved detached working copy")
 	}
 	if _, err := uuid.Parse(r.OperationID); err != nil {
@@ -955,7 +974,7 @@ func validate(r Record) error {
 	if r.RecoveryPrepared && r.RecoveryKitPath != "" && !filepath.IsAbs(r.RecoveryKitPath) {
 		return errors.New("repository recovery kit path must be absolute")
 	}
-	if r.LocalCleanupCompleted && (!r.ServerDeleteCompleted || !r.DeleteRepository || (r.State != StateDeleting && r.State != StateDeleted)) {
+	if r.LocalCleanupCompleted && !r.RemoteDeletionObserved && (!r.ServerDeleteCompleted || !r.DeleteRepository || (r.State != StateDeleting && r.State != StateDeleted)) {
 		return errors.New("local deletion cleanup receipt exists outside repository deletion")
 	}
 	if r.State == StateDeleted && (!r.ServerDeleteCompleted || !r.RecoveryPrepared || !r.LocalCleanupCompleted) {

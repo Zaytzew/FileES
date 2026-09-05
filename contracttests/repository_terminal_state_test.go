@@ -13,6 +13,7 @@ func TestIPCRemoteDeletionPreservesLocalCopyEvidence(t *testing.T) {
 		return contract.OKResponse(req.RequestID, contract.RepoListResult{Repos: []contract.RepoSummary{{
 			ID: "deleted-repo", ServerDeleted: true, LocalPath: "/preserved/docs",
 			LocalCopyPreserved: true, LocalCopyStatus: "changed",
+			LocalCleanupPending: true, CleanupError: "metadata locked",
 		}}})
 	})
 	result, err := ipcclient.New(sock, "clone").RepoList(context.Background())
@@ -25,5 +26,8 @@ func TestIPCRemoteDeletionPreservesLocalCopyEvidence(t *testing.T) {
 	r := result.Repos[0]
 	if !r.ServerDeleted || !r.LocalCopyPreserved || r.LocalCopyStatus != "changed" || r.Attached || r.LocalPath != "/preserved/docs" {
 		t.Fatalf("terminal evidence lost over IPC: %+v", r)
+	}
+	if !r.LocalCleanupPending || r.CleanupError != "metadata locked" {
+		t.Fatalf("cleanup state lost over IPC: %+v", r)
 	}
 }

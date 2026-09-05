@@ -40,6 +40,11 @@ func TestRemoteDeletionInspectsTwoRealSVNCopiesWithoutChangingFiles(t *testing.T
 	run("svn", "add", tracked)
 	run("svn", "commit", "-m", "fixture", a)
 	run("svn", "checkout", "file://"+filepath.ToSlash(repo), b)
+	for _, wc := range []string{a, b} {
+		if err := os.MkdirAll(filepath.Join(wc, ".filees", "state"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, name := range []string{"document.txt", "untracked.txt"} {
 		if err := os.WriteFile(filepath.Join(b, name), []byte("unsent\n"), 0600); err != nil {
 			t.Fatal(err)
@@ -67,6 +72,13 @@ func TestRemoteDeletionInspectsTwoRealSVNCopiesWithoutChangingFiles(t *testing.T
 				t.Fatalf("copy %d status=%s want=%s", i, observed.PreservedCopyStatus, want)
 			}
 		}
+		if err := cleanupRemoteDeletedCopies(t.Context(), store, reposupervisor.Key{ServerID: "lab", RepoID: id}); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := store.Get(r.OperationID)
+		if !got.LocalCleanupCompleted || !got.RemoteCleanupStarted || got.PreservedCopyStatus != want {
+			t.Fatalf("cleanup receipt: %+v", got)
+		}
 	}
 	for _, name := range []string{"document.txt", "untracked.txt"} {
 		data, err := os.ReadFile(filepath.Join(b, name))
@@ -75,9 +87,25 @@ func TestRemoteDeletionInspectsTwoRealSVNCopiesWithoutChangingFiles(t *testing.T
 		}
 	}
 	for _, wc := range []string{a, b} {
-		if _, err := os.Stat(filepath.Join(wc, ".svn", "wc.db")); err != nil {
-			t.Fatal(err)
+		for _, metadata := range []string{".svn", ".filees"} {
+			if _, err := os.Lstat(filepath.Join(wc, metadata)); !os.IsNotExist(err) {
+				t.Fatalf("metadata survived: %s %v", metadata, err)
+			}
 		}
+	}
+	store, err = localrepo.Open(filepath.Join(root, "lifecycle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A completed receipt must not touch a folder handed back to its owner.
+	if err := os.Mkdir(filepath.Join(a, ".svn"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := cleanupRemoteDeletedCopies(t.Context(), store, reposupervisor.Key{ServerID: "lab", RepoID: "11111111-1111-4111-8111-111111111111"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(a, ".svn")); err != nil {
+		t.Fatal("replayed cleanup on already released folder", err)
 	}
 }
 

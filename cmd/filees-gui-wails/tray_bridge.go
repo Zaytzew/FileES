@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"sync"
 
 	guiapp "filees/internal/gui/app"
 	"filees/internal/gui/platform"
@@ -57,7 +59,7 @@ func projectWailsTray(snapshot Snapshot) wailsTrayProjection {
 		status = fmt.Sprintf("%d %s do przejrzenia · %s", unread, announcementNoun(unread), status)
 	}
 	return wailsTrayProjection{
-		Icon: icon, Status: status, Tooltip: "FileES — " + status,
+		Icon: icon, Status: status, Tooltip: trayTooltip(snapshot, status),
 		CanRestart:  snapshot.Connected && !snapshot.Stale && hasCapability(snapshot, contract.CapSystemRestart),
 		CanShutdown: snapshot.Connected && !snapshot.Stale && hasCapability(snapshot, contract.CapSystemShutdown),
 		Unread:      unread,
@@ -205,7 +207,17 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	systemTray.OnClick(showWindow)
 
 	var alerts announcementAlertPolicy
+	var trayMu sync.Mutex
+	var lastRevision uint64
+	lastTooltip := ""
+	tooltipFailureLogged := false
 	service.attachSnapshotObserver(func(snapshot Snapshot) {
+		trayMu.Lock()
+		defer trayMu.Unlock()
+		if snapshot.Revision < lastRevision {
+			return
+		}
+		lastRevision = snapshot.Revision
 		projection := projectWailsTray(snapshot)
 		statusItem.SetLabel(projection.Status)
 		announcementItem.SetHidden(projection.Unread == 0)
@@ -215,6 +227,15 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 		restartItem.SetHidden(!projection.CanRestart)
 		shutdownItem.SetHidden(!projection.CanShutdown)
 		systemTray.SetTooltip(projection.Tooltip)
+		if projection.Tooltip != lastTooltip {
+			if err := publishNativeTrayTooltip(projection.Tooltip); err == nil {
+				lastTooltip = projection.Tooltip
+				tooltipFailureLogged = false
+			} else if !tooltipFailureLogged {
+				log.Printf("tray tooltip is pending native registration: %v", err)
+				tooltipFailureLogged = true
+			}
+		}
 		if icon := icons[projection.Icon]; len(icon) > 0 {
 			systemTray.SetIcon(icon)
 		}

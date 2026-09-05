@@ -53,6 +53,9 @@ func (s serverDetachService) Detach(ctx context.Context, serverID string) error 
 				return fmt.Errorf("detach %s: %w", record.LocalPath, err)
 			}
 		case localrepo.StateDetached, localrepo.StateDeleted:
+			if record.RemoteDeletionObserved && !record.LocalCleanupCompleted {
+				return fmt.Errorf("repository %s still has pending local metadata cleanup", record.LocalPath)
+			}
 			// Already detached records retain their local data but no metadata.
 		default:
 			return fmt.Errorf("repository %s has unfinished lifecycle state %q", record.LocalPath, record.State)

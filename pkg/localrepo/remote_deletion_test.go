@@ -1,6 +1,7 @@
 package localrepo
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,5 +61,68 @@ func TestRemoteDeletionPersistsWithoutTouchingWorkingCopy(t *testing.T) {
 		if err != nil || string(got) != want {
 			t.Fatalf("changed local %s", p)
 		}
+	}
+}
+
+func TestRemoteCleanupReceiptsSurviveRestartAndKeepAuthorityFence(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "state.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _, err := s.EnsureConfiguredAttached("lab", "11111111-1111-4111-8111-111111111111", "svn+ssh://lab/repo", "rw", filepath.Join(root, "wc"), "Docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteRemoteCleanup(r.OperationID); err == nil {
+		t.Fatal("cleanup without authority accepted")
+	}
+	if err := s.ObserveRemoteDeletion(r.ServerID, r.RepoID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteRemoteCleanup(r.OperationID); err == nil {
+		t.Fatal("cleanup without inspection accepted")
+	}
+	if err := s.BeginRemoteCleanup(r.OperationID, "changed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.BeginAttach("lab", "22222222-2222-4222-8222-222222222222", r.LocalPath, false); err == nil {
+		t.Fatal("reused path before cleanup")
+	}
+	if err := s.RecordPreservedCopyStatus(r.OperationID, "unknown"); err == nil {
+		t.Fatal("pre-cleanup evidence overwritten")
+	}
+	if err := s.RecordRemoteCleanupError(r.OperationID, errors.New("locked")); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteRemoteCleanup(r.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(r.OperationID)
+	if !got.LocalCleanupCompleted || !got.RemoteCleanupStarted || got.State != StateDetached || got.PreservedCopyStatus != "changed" || got.LastError != "" {
+		t.Fatal(got)
+	}
+	if _, err := s.MarkAttached(r.OperationID, r.RepoID); err == nil {
+		t.Fatal("cleanup reopened authority")
+	}
+	before, _ := os.ReadFile(path)
+	if err := s.CompleteRemoteCleanup(r.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("replayed cleanup rewrote state")
+	}
+	if _, err := s.BeginAttach("lab", "22222222-2222-4222-8222-222222222222", r.LocalPath, false); err != nil {
+		t.Fatal("completed cleanup did not release path", err)
 	}
 }

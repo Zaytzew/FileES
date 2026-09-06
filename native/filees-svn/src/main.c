@@ -1,242 +1,186 @@
-/* FileES native SVN client. First verb: local metadata-only file move. */
+/* FileES native SVN client. WC-local verbs plus metadata-only move. */
+#include "filees_svn.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <apr_file_info.h>
+
 #include <apr_general.h>
-#include <apr_strings.h>
-#include <svn_client.h>
 #include <svn_cmdline.h>
-#include <svn_dirent_uri.h>
-#include <svn_error.h>
 #include <svn_pools.h>
-#include <svn_props.h>
 #include <svn_version.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
-#define MARKER ".filees-native-probe"
-#define SCHEMA "filees.native-svn/v1"
-
-static svn_error_t *refuse(const char *message)
-{
-    return svn_error_create(SVN_ERR_INCORRECT_PARAMS, NULL, message);
-}
-
-static void json_string(const char *s)
-{
-    const unsigned char *p = (const unsigned char *)(s ? s : "");
-    putchar('"');
-    for (; *p; ++p) {
-        if (*p == '"' || *p == '\\') printf("\\%c", *p);
-        else if (*p < 32) printf("\\u%04x", (unsigned int)*p);
-        else putchar(*p);
-    }
-    putchar('"');
-}
-
-static int failure(svn_error_t *err)
-{
-    svn_error_t *e;
-    char buffer[512];
-    int first = 1;
-    printf("{\"schema\":\"" SCHEMA "\",\"ok\":false,\"errors\":[");
-    for (e = err; e; e = e->child) {
-        if (!first) putchar(',');
-        first = 0;
-        printf("{\"code\":%ld,\"message\":", (long)e->apr_err);
-        json_string(e->message ? e->message : svn_strerror(e->apr_err, buffer, sizeof(buffer)));
-        putchar('}');
-    }
-    puts("]}");
-    svn_error_clear(err);
-    return EXIT_FAILURE;
-}
-
-static int same_ascii(const char *a, size_t n, const char *b)
-{
-    size_t i;
-    if (strlen(b) != n) return 0;
-    for (i = 0; i < n; ++i)
-        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) return 0;
-    return 1;
-}
-
-static int safe_relative(const char *path)
-{
-    const char *p = path, *end;
-    if (!*p || *p == '/' || strchr(p, '\\') || strchr(p, ':')) return 0;
-    do {
-        size_t n;
-        end = strchr(p, '/');
-        n = end ? (size_t)(end - p) : strlen(p);
-        if (!n || same_ascii(p, n, ".") || same_ascii(p, n, "..") ||
-            same_ascii(p, n, ".svn") || same_ascii(p, n, ".filees") ||
-            same_ascii(p, n, MARKER)) return 0;
-        /* Also reject Windows trailing-dot/space aliases on every platform. */
-        if (p[n - 1] == '.' || p[n - 1] == ' ') return 0;
-        p = end ? end + 1 : NULL;
-    } while (p);
-    return 1;
-}
-
-/* Check all existing ancestors without following symlinks. No race guarantee. */
-static svn_error_t *plain_node(const char *path, apr_filetype_e wanted,
-                               svn_boolean_t missing, apr_pool_t *pool)
-{
-    const char *p = path;
-    svn_boolean_t leaf = TRUE;
-    while (*p) {
-        apr_finfo_t info;
-        apr_status_t status = apr_stat(&info, p, APR_FINFO_TYPE | APR_FINFO_LINK, pool);
-        if (leaf && missing) {
-            if (!APR_STATUS_IS_ENOENT(status))
-                return refuse("source must already be absent from disk");
-        } else if (missing && !leaf && APR_STATUS_IS_ENOENT(status)) {
-            /* A file may have moved with its containing directory. Missing
-               source ancestors need no reconstruction; existing ancestors
-               are still checked, and the exact WC root is checked separately. */
-        } else {
-            if (status) return svn_error_wrap_apr(status, "cannot inspect fixture path");
-            if (info.filetype != (leaf ? wanted : APR_DIR))
-                return refuse("non-regular node or symlink in fixture path");
-        }
-        {
-            const char *parent = svn_dirent_dirname(p, pool);
-            if (!strcmp(parent, p)) break;
-            p = parent;
-        }
-        leaf = FALSE;
-    }
-    return SVN_NO_ERROR;
-}
-
-struct observation {
-    const char *path;
-    apr_pool_t *pool;
-    svn_client_status_t *status;
+static const char *const k_verbs[] = {
+    "record-move", "status", "add", "delete", "propget", "propset", "propdel",
+    "cleanup", "revert", "resolve", NULL
 };
 
-static svn_error_t *observe(void *baton, const char *path,
-                            const svn_client_status_t *status, apr_pool_t *pool)
+static void print_ok_version(void)
 {
-    struct observation *o = baton;
-    (void)path;
-    (void)pool;
-    if (!strcmp(status->local_abspath, o->path))
-        o->status = svn_client_status_dup(status, o->pool);
+    const svn_version_t *v = svn_client_version();
+    int i;
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"svn_runtime\":\"%d.%d.%d\","
+           "\"svn_headers\":\"" SVN_VER_NUMBER "\",\"verbs\":[",
+           v->major, v->minor, v->patch);
+    for (i = 0; k_verbs[i]; ++i) {
+        if (i) putchar(',');
+        filees_json_string(k_verbs[i]);
+    }
+    puts("]}");
+}
+
+static svn_error_t *parse_wc_flag(int *i, int argc, const char **argv,
+                                  const char **wc, svn_boolean_t *live)
+{
+    if (*i + 1 >= argc) return filees_refuse("missing working copy path");
+    if (!strcmp(argv[*i], "--wc")) *live = TRUE;
+    else if (!strcmp(argv[*i], "--disposable-wc")) *live = FALSE;
+    else return filees_refuse("expected --wc or --disposable-wc");
+    *wc = argv[++*i];
     return SVN_NO_ERROR;
 }
 
-static svn_error_t *read_status(svn_client_status_t **status, const char *path,
-                                svn_client_ctx_t *ctx, apr_pool_t *pool)
+static svn_error_t *collect_paths(int i, int argc, const char **argv,
+                                  const char **paths, int *n)
 {
-    struct observation o = {path, pool, NULL};
-    svn_opt_revision_t rev;
-    rev.kind = svn_opt_revision_working;
-    SVN_ERR(svn_client_status6(NULL, ctx, path, &rev, svn_depth_empty,
-                              TRUE, FALSE, TRUE, TRUE, TRUE, FALSE,
-                              NULL, observe, &o, pool));
-    if (!o.status) return refuse("SVN did not describe the exact requested path");
-    *status = o.status;
+    if (i < argc && !strcmp(argv[i], "--")) ++i;
+    *n = 0;
+    for (; i < argc; ++i) {
+        if (*n >= FILEES_SVN_MAX_PATHS) return filees_refuse("too many paths");
+        paths[(*n)++] = argv[i];
+    }
     return SVN_NO_ERROR;
 }
 
-static svn_error_t *record_move(const char *wc_arg, const char *old_rel,
-                                const char *new_rel, svn_boolean_t live,
-                                const char **state, apr_pool_t *pool)
+static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
 {
-    const char *wc, *root, *src, *dst, *parent;
-    svn_client_ctx_t *ctx;
-    svn_client_status_t *s, *d, *p;
-    const svn_string_t *special;
-    apr_array_header_t *sources;
-    if (!safe_relative(old_rel) || !safe_relative(new_rel) || !strcmp(old_rel, new_rel))
-        return refuse("expected two distinct canonical relative data paths");
-    if (strstr(wc_arg, "://")) return refuse("repository URLs are not accepted");
-    SVN_ERR(svn_dirent_get_absolute(&wc, svn_dirent_internal_style(wc_arg, pool), pool));
-    SVN_ERR(plain_node(wc, APR_DIR, FALSE, pool));
-    SVN_ERR(plain_node(svn_dirent_join(wc, live ? ".filees" : MARKER, pool),
-                       live ? APR_DIR : APR_REG, FALSE, pool));
-    SVN_ERR(svn_client_create_context2(&ctx, NULL, pool));
-    SVN_ERR(svn_client_get_wc_root(&root, wc, ctx, pool, pool));
-    if (strcmp(root, wc)) return refuse("--disposable-wc must name the exact WC root");
-    src = svn_dirent_join(wc, old_rel, pool);
-    dst = svn_dirent_join(wc, new_rel, pool);
-    parent = svn_dirent_dirname(dst, pool);
-    SVN_ERR(plain_node(src, APR_REG, TRUE, pool));
-    SVN_ERR(plain_node(dst, APR_REG, FALSE, pool));
-    SVN_ERR(svn_client_get_wc_root(&root, src, ctx, pool, pool));
-    if (strcmp(root, wc)) return refuse("source belongs to another WC");
-    SVN_ERR(svn_client_get_wc_root(&root, parent, ctx, pool, pool));
-    if (strcmp(root, wc)) return refuse("destination belongs to another WC");
-    SVN_ERR(read_status(&s, src, ctx, pool));
-    SVN_ERR(read_status(&d, dst, ctx, pool));
-    SVN_ERR(read_status(&p, parent, ctx, pool));
-    /* Reply lost or daemon restarted after scheduling: only the exact SVN
-       move pair proves success. A plain deleted/added pair is NOT enough. */
-    if (live && s->node_status == svn_wc_status_deleted && d->node_status == svn_wc_status_added &&
-        !s->conflicted && !d->conflicted && !s->wc_is_locked && !d->wc_is_locked &&
-        s->moved_to_abspath && d->moved_from_abspath &&
-        !strcmp(s->moved_to_abspath, dst) && !strcmp(d->moved_from_abspath, src)) {
-        *state = "already_scheduled";
+    const char *verb, *wc = NULL;
+    svn_boolean_t live = TRUE, recursive = FALSE, depth_set = FALSE;
+    svn_depth_t depth = svn_depth_empty;
+    const char *accept = NULL, *propname = NULL, *propval = NULL;
+    const char *paths[FILEES_SVN_MAX_PATHS];
+    int n = 0, i;
+    svn_wc_conflict_choice_t choice;
+
+    if (argc < 2) return filees_refuse("usage: filees-svn VERB --wc WC [args]");
+    verb = argv[1];
+    if (!strcmp(verb, "--version") || !strcmp(verb, "verbs")) {
+        print_ok_version();
         return SVN_NO_ERROR;
     }
-    if (!s->versioned || s->kind != svn_node_file || s->node_status != svn_wc_status_missing ||
-        !SVN_IS_VALID_REVNUM(s->revision) || s->copied || s->conflicted || s->switched ||
-        s->file_external || s->wc_is_locked || s->moved_from_abspath || s->moved_to_abspath)
-        return refuse("source is not a plain missing committed file");
-    if (d->versioned || d->node_status != svn_wc_status_unversioned || d->conflicted)
-        return refuse("destination is not an unversioned regular file");
-    if (!p->versioned || p->kind != svn_node_dir || p->copied || p->switched ||
-        p->conflicted || p->wc_is_locked ||
-        (p->node_status != svn_wc_status_normal && p->node_status != svn_wc_status_modified &&
-         p->node_status != svn_wc_status_added))
-        return refuse("destination parent is not a plain versioned directory");
-    SVN_ERR(svn_wc_prop_get2(&special, ctx->wc_ctx, src, SVN_PROP_SPECIAL, pool, pool));
-    if (special) return refuse("source metadata describes a special file, not a regular file");
-    sources = apr_array_make(pool, 1, sizeof(const char *));
-    APR_ARRAY_PUSH(sources, const char *) = src;
-    /* The only mutation: no physical move, no mixed-revision downgrade. */
-    return svn_client_move7(sources, dst, FALSE, FALSE, FALSE, TRUE,
-                            NULL, NULL, NULL, ctx, pool);
+    if (!strcmp(verb, "record-move")) {
+        const char *state = "scheduled";
+        if (argc != 6) return filees_refuse("usage: filees-svn record-move --wc|--disposable-wc WC OLD_REL NEW_REL");
+        if (!strcmp(argv[2], "--wc")) live = TRUE;
+        else if (!strcmp(argv[2], "--disposable-wc")) live = FALSE;
+        else return filees_refuse("usage: filees-svn record-move --wc|--disposable-wc WC OLD_REL NEW_REL");
+        SVN_ERR(filees_record_move(argv[3], argv[4], argv[5], live, &state, pool));
+        printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"state\":\"%s\"}\n", state);
+        return SVN_NO_ERROR;
+    }
+
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--")) {
+            SVN_ERR(collect_paths(i, argc, argv, paths, &n));
+            i = argc;
+            break;
+        }
+        if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
+            SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live));
+            continue;
+        }
+        if (!strcmp(argv[i], "--depth")) {
+            if (i + 1 >= argc) return filees_refuse("missing --depth value");
+            ++i;
+            if (!strcmp(argv[i], "empty")) depth = svn_depth_empty;
+            else if (!strcmp(argv[i], "infinity")) depth = svn_depth_infinity;
+            else return filees_refuse("--depth must be empty or infinity");
+            depth_set = TRUE;
+            continue;
+        }
+        if (!strcmp(argv[i], "--recursive")) {
+            recursive = TRUE;
+            continue;
+        }
+        if (!strcmp(argv[i], "--accept")) {
+            if (i + 1 >= argc) return filees_refuse("missing --accept value");
+            accept = argv[++i];
+            continue;
+        }
+        if (argv[i][0] == '-') return filees_refuse("unknown flag");
+        if (!strcmp(verb, "propset") && !propname) {
+            propname = argv[i];
+            if (i + 1 >= argc) return filees_refuse("propset requires NAME VALUE");
+            propval = argv[++i];
+            continue;
+        }
+        if ((!strcmp(verb, "propget") || !strcmp(verb, "propdel")) && !propname) {
+            propname = argv[i];
+            continue;
+        }
+        SVN_ERR(collect_paths(i, argc, argv, paths, &n));
+        break;
+    }
+    if (!wc) return filees_refuse("missing --wc|--disposable-wc");
+
+    if (!strcmp(verb, "add")) {
+        SVN_ERR(filees_wc_add(wc, live, paths, n, pool));
+    } else if (!strcmp(verb, "delete")) {
+        SVN_ERR(filees_wc_delete(wc, live, paths, n, pool));
+    } else if (!strcmp(verb, "status")) {
+        if (!depth_set) depth = (n == 0) ? svn_depth_infinity : svn_depth_empty;
+        SVN_ERR(filees_wc_status(wc, live, paths, n, depth, pool));
+        return SVN_NO_ERROR;
+    } else if (!strcmp(verb, "propset")) {
+        SVN_ERR(filees_wc_propset(wc, live, propname, propval, paths, n, pool));
+    } else if (!strcmp(verb, "propdel")) {
+        SVN_ERR(filees_wc_propdel(wc, live, propname, paths, n, pool));
+    } else if (!strcmp(verb, "propget")) {
+        SVN_ERR(filees_wc_propget(wc, live, propname, paths, n, recursive, pool));
+        return SVN_NO_ERROR;
+    } else if (!strcmp(verb, "cleanup")) {
+        if (n) return filees_refuse("cleanup takes no paths");
+        SVN_ERR(filees_wc_cleanup(wc, live, pool));
+    } else if (!strcmp(verb, "revert")) {
+        SVN_ERR(filees_wc_revert(wc, live, paths, n, pool));
+    } else if (!strcmp(verb, "resolve")) {
+        if (!accept) return filees_refuse("resolve requires --accept");
+        if (!strcmp(accept, "theirs-full")) choice = svn_wc_conflict_choose_theirs_full;
+        else if (!strcmp(accept, "mine-full")) choice = svn_wc_conflict_choose_mine_full;
+        else return filees_refuse("--accept must be theirs-full or mine-full");
+        SVN_ERR(filees_wc_resolve(wc, live, paths, n, choice, pool));
+    } else {
+        return filees_refuse("unknown verb");
+    }
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true}\n");
+    return SVN_NO_ERROR;
 }
 
 static int run(int argc, const char **argv)
 {
     apr_pool_t *pool;
     svn_error_t *err = NULL;
-    int result = EXIT_SUCCESS;
+    int result = EXIT_SUCCESS, i;
     if (svn_cmdline_init("filees-svn", stderr) != EXIT_SUCCESS) return EXIT_FAILURE;
     pool = svn_pool_create(NULL);
-    if (argc == 2 && !strcmp(argv[1], "--version")) {
-        const svn_version_t *v = svn_client_version();
-        printf("{\"schema\":\"" SCHEMA "\",\"ok\":true,\"svn_runtime\":\"%d.%d.%d\","
-               "\"svn_headers\":\"" SVN_VER_NUMBER "\"}\n", v->major, v->minor, v->patch);
-    } else if (argc == 6 && !strcmp(argv[1], "record-move") &&
-               (!strcmp(argv[2], "--disposable-wc") || !strcmp(argv[2], "--wc"))) {
-        const char *wc = argv[3], *old_rel = argv[4], *new_rel = argv[5];
-        const char *state = "scheduled";
 #ifndef _WIN32
-        err = svn_cmdline_cstring_to_utf8(&wc, argv[3], pool);
-        if (!err) err = svn_cmdline_cstring_to_utf8(&old_rel, argv[4], pool);
-        if (!err) err = svn_cmdline_cstring_to_utf8(&new_rel, argv[5], pool);
-#endif
-        if (!err) err = record_move(wc, old_rel, new_rel, !strcmp(argv[2], "--wc"), &state, pool);
-        if (!err) printf("{\"schema\":\"" SCHEMA "\",\"ok\":true,\"state\":\"%s\"}\n", state);
-    } else {
-        err = refuse("usage: filees-svn record-move --wc|--disposable-wc WC OLD_REL NEW_REL");
+    for (i = 1; i < argc && !err; ++i) {
+        const char *utf8;
+        err = svn_cmdline_cstring_to_utf8(&utf8, argv[i], pool);
+        if (!err) argv[i] = utf8;
     }
-    if (err) result = failure(err);
+#endif
+    if (!err) err = run_verb(argc, argv, pool);
+    if (err) result = filees_failure(err);
     svn_pool_destroy(pool);
     apr_terminate();
     return result;
 }
 
 #ifdef _WIN32
-/* Wide argv avoids the system ANSI code page for Polish/other Unicode paths. */
 int wmain(int argc, wchar_t **wide_argv)
 {
     int i, result = EXIT_FAILURE;

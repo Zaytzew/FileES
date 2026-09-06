@@ -1,10 +1,14 @@
 # FileES native SVN client — Linux alpha integration
 
-This is the first, deliberately narrow verb of a private client built on
-the public Apache SVN 1.14 C API. It is a separate process: the Go daemon
-does not use cgo. Stock SVN CLI still handles every other operation.
-The owner authorized Linux live integration after the isolated r896 probe;
-Windows native acceptance is deferred, not silently inferred from Linux.
+Private client on the public Apache SVN 1.14 C API. Separate process: the
+Go daemon does not use cgo. `filees-svn --version` lists implemented verbs.
+
+Linux daemon still uses the helper only for `record-move`; every other
+operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
+also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,
+resolve) through the helper. RA verbs (checkout, update, commit, lock,
+log, cat) remain on CLI until implemented here. Windows build recipe:
+[WINDOWS.md](WINDOWS.md). Native acceptance on Windows is still deferred.
 
 ## Contract and trust boundary
 
@@ -33,9 +37,11 @@ This process protocol is not the GUI IPC or the final i18n error catalog.
 
 ## Daemon integration and recovery
 
-Only Linux opts in with the absolute `FILEES_NATIVE_SVN` executable path.
-A missing executable while enabled is an error, not feature auto-disable.
-The main repository factory passes the adapter into the existing pipeline.
+Linux and Windows opt in with the absolute `FILEES_NATIVE_SVN` executable
+path. A missing executable while enabled is an error, not feature
+auto-disable. The main repository factory passes the adapter into the
+existing pipeline. Extra WC-local verbs are ignored on Linux even when
+the helper binary contains them.
 
 - The watcher persists Linux device/inode/birth-time identity, accepts only
   unique regular-file matches with one hard link, and detects edited moves
@@ -98,7 +104,7 @@ point and place matching DLLs beside `filees-svn.exe`. Set
 needed, then run `./native/filees-svn` with the same tag and native binary.
 Symlink fixture capability is required. Linux-only integration tests do not
 substitute for Windows Unicode, case-only moves, long paths or DLL testing.
-The current daemon intentionally ignores opt-in on non-Linux platforms.
+The current daemon ignores opt-in on platforms other than Linux and Windows.
 
 ## Rollout and withdrawal
 

@@ -61,3 +61,6 @@ do helpera.
 
 Linux w tej rozbudowie nie uczestniczy: daemon Linuksa nadal używa
 helpera wyłącznie do `record-move`.
+
+Plan sesji bliźniaka (kolejność, zakazy, kryterium):
+[WINDOWS_SESSION.md](WINDOWS_SESSION.md).

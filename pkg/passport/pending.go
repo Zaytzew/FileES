@@ -98,8 +98,10 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		}
 		return nil
 	}
-	if err := checkLive(); err != nil {
-		return p, "", err
+	if i.Stage != "checking" {
+		if err := checkLive(); err != nil {
+			return p, "", err
+		}
 	}
 	var out string
 	if i.Stage == "prepare" {
@@ -137,10 +139,28 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		if err != nil {
 			return p, out, err
 		}
+		i.Stage = "checking"
+		p.Pending = &i
+		m.passports[p.Path] = p
+		m.publishPendingLocked()
 	}
 	// After a restart in locking, never run lock again. Only a WC+server receipt
 	// can resolve a lost reply; neither an absent lock nor a copied comment can.
-	lock, err := b.ConfirmLockIntent(ctx, p.Path, i)
+	var lock *Lock
+	var err error
+	if i.Stage == "checking" {
+		// Also retry this save after an earlier storage failure. No new acquire.
+		if err := m.saveLocked(); err != nil {
+			return p, out, err
+		}
+		var gone bool
+		lock, gone, err = b.ReconcileCompletedLockIntent(ctx, p.Path, i)
+		if err == nil && gone {
+			return p, out, m.retirePending(p, errcat.New(errcat.KeyPassportStale, nil, nil))
+		}
+	} else {
+		lock, err = b.ConfirmLockIntent(ctx, p.Path, i)
+	}
 	if err != nil {
 		return p, out, err
 	}

@@ -23,6 +23,12 @@ func TestPassportStatusAndFaultsCrossRealIPC(t *testing.T) {
 	if err != nil || len(status.PassportIssues) != 1 || status.PassportIssues[0] != issue || status.State != contract.StateInteractionRequired {
 		t.Fatalf("wire=%+v %v", status, err)
 	}
+	issue.Phase = "checking"
+	rs.SetPassportIssues([]contract.PassportIssue{issue})
+	status, err = cli.RepoStatus(t.Context(), summary.ID)
+	if err != nil || len(status.PassportIssues) != 1 || status.PassportIssues[0] != issue || status.State != contract.StateInteractionRequired {
+		t.Fatalf("completion fence lost in IPC: %+v %v", status, err)
+	}
 	failure := fmt.Errorf("wrapped: %w", errcat.New(errcat.KeyPassportUncertain, nil, nil))
 	rs.SetLockFuncs(func(context.Context, []string) (string, error) { return "", failure }, func(context.Context, []string) (string, error) { return "", failure })
 	rs.SetPublishFunc(func(context.Context, string) (int64, error) { return 0, failure })

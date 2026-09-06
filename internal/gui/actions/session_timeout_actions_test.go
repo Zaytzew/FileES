@@ -2,6 +2,7 @@ package actions_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,10 +14,10 @@ import (
 	contract "filees/pkg/contract/v1"
 )
 
-type recordingTimeouts struct{ minutes int }
+type recordingTimeouts struct{ minutes atomic.Int64 }
 
 func (r *recordingTimeouts) SetSessionTimeout(_ context.Context, _ string, minutes int) (int, error) {
-	r.minutes = minutes
+	r.minutes.Store(int64(minutes))
 	return minutes, nil
 }
 
@@ -63,11 +64,11 @@ func TestControllerSetsSessionTimeoutFromPrompt(t *testing.T) {
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentSettings, ServerID: "office"})
 	deadline := time.Now().Add(time.Second)
-	for timeouts.minutes != 90 && time.Now().Before(deadline) {
+	for timeouts.minutes.Load() != 90 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if timeouts.minutes != 90 {
-		t.Fatalf("saved minutes = %d", timeouts.minutes)
+	if timeouts.minutes.Load() != 90 {
+		t.Fatalf("saved minutes = %d", timeouts.minutes.Load())
 	}
 }
 

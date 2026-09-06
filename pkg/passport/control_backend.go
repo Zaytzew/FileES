@@ -35,7 +35,7 @@ type intentBackend interface {
 
 // ControlSVNBackend is the durable Manager integration of conditional prepare.
 // It requires the existing authenticated, pinned controlclient transport.
-// No production starter selects it until its deployment gates are satisfied.
+// Selected by the desktop starter for activated edit-passport repositories.
 type ControlSVNBackend struct {
 	SVNBackend
 	RepoID, ClientID string

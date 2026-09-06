@@ -1731,6 +1731,10 @@ func (s *Server) handleRepoLockUnlock(req contract.Request, lock bool) contract.
 		// details under their own message key rather than flattened into a
 		// sentence the presentation layer would have to parse.
 		var held *passport.HeldByOther
+		var fault errcat.Fault
+		if errors.As(err, &fault) {
+			return contract.ErrResponseFrom(req.RequestID, fault)
+		}
 		if errors.As(err, &held) {
 			details := map[string]string{"path": filepath.Base(held.Path)}
 			if !held.Until.IsZero() {
@@ -1765,6 +1769,10 @@ func (s *Server) handleRepoPublish(req contract.Request) contract.Response {
 	defer cancel()
 	rev, err := rs.Publish(ctx, payload.Comment)
 	if err != nil {
+		var fault errcat.Fault
+		if errors.As(err, &fault) {
+			return contract.ErrResponseFrom(req.RequestID, fault)
+		}
 		if errors.Is(err, shout.ErrNothingToPublish) {
 			return contract.ErrResponse(req.RequestID, "SHOUT-1001", "ERROR", "REQUIRE_ACTION", "shout.nothing_to_publish", nil)
 		}

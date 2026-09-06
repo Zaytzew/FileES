@@ -18,6 +18,7 @@ import (
 	"filees/pkg/detachment"
 	"filees/pkg/ipcserver"
 	"filees/pkg/localrepo"
+	"filees/pkg/passport"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/reservationclient"
 	"filees/pkg/runtime"
@@ -308,6 +309,9 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID, SessionTimeout: repo.SessionTimeout})
 	}
 	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc, activity: activityJournal, reservations: reservationRefreshes}
+	deps.passportBackend = func(repo config.Repo, svn client.Client) (passport.Backend, error) {
+		return newControlPassportBackend(repo, svn, reservationRefreshes.Profile)
+	}
 	starter := &daemonRepoStarter{daemonCtx: ctx, repos: runtimes, newSVN: func(repo config.Repo) client.Client {
 		timeout := repo.SessionTimeout
 		if timeout <= 0 {

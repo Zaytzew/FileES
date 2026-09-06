@@ -111,6 +111,11 @@ func (a SVNAdminLockAuthority) unlockIfCurrent(ctx context.Context, repoID, rela
 
 func runLockAuthorityCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, name, args...)
+	// APR starts hooks with chdir("."). Do not inherit the SSH account's
+	// home (outside the worker's locked unveil table).
+	if len(args) > 2 && args[0] == "unlock" && args[1] == "--" && filepath.IsAbs(args[2]) {
+		command.Dir = args[2]
+	}
 	// lslocks has a human-readable grammar; keep it independent of the
 	// operator's locale rather than attempting to parse translated labels.
 	command.Env = append(os.Environ(), "LC_ALL=C")

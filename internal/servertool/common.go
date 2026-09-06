@@ -31,6 +31,9 @@ const (
 	workerPromises  = writePromises + " inet proc exec"
 	svnPromises     = writePromises + " proc exec"
 	svnExecPromises = "stdio rpath wpath cpath fattr flock proc prot_exec unveil"
+	// Mutation-serving SVN must be able to execute repository lock hooks.
+	// Read-only broker/inspection SVN retains the narrower set above.
+	svnHookExecPromises = svnExecPromises + " exec"
 	// Whale is a long-lived, stateful repository worker. It needs proc/exec to
 	// launch svnlook/svnmucc and must retain prot_exec so the native OpenBSD SVN
 	// binaries can establish their own W^X mappings after exec.
@@ -50,6 +53,7 @@ type toolAccess struct {
 	needRepoResults    bool
 	needRepositoryData bool
 	needRepoInspection bool
+	needLockGuards     bool
 	// needRotationArchive unveils the directory a rotated generation is frozen
 	// into. Only repo rotate asks for it: no other command may write there.
 	needRotationArchive bool
@@ -246,6 +250,9 @@ func repositoryProfile(root string, access toolAccess, activationConfig activati
 		if access.needRepoInspection && access.svnLookBinary != "" {
 			paths = append(paths, obsandbox.Path{Label: "svnlook", Name: access.svnLookBinary, Perms: "rx"})
 		}
+	}
+	if access.needLockGuards {
+		paths = append(paths, obsandbox.Path{Label: "lock-guard-worker", Name: repositoryWorkerPath, Perms: "rx"})
 	}
 	if access.needRealmAlias {
 		// Read-only, and deliberately narrower than needSVN's full

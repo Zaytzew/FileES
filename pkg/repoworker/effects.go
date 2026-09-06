@@ -28,6 +28,7 @@ type AbandonedAuthority interface {
 }
 type ServerEffects struct {
 	SVNAdmin, SVNLook, RepositoriesRoot string
+	LockGuardExecutable                 string // production worker, empty only for legacy callers
 	DataAuthzFile                       string
 	DeletionArchiveRoot                 string
 	DeletionRetentionDays               int
@@ -47,6 +48,9 @@ func (e ServerEffects) CreateFSFS(ctx context.Context, repoID, operationID strin
 	}
 	final := filepath.Join(e.RepositoriesRoot, repoID)
 	if validRepo(final) {
+		if e.LockGuardExecutable != "" {
+			return InstallLockGuards(final, e.LockGuardExecutable)
+		}
 		return nil
 	}
 	stage := filepath.Join(e.RepositoriesRoot, ".creating-"+operationID)
@@ -67,6 +71,11 @@ func (e ServerEffects) CreateFSFS(ctx context.Context, repoID, operationID strin
 	}
 	if err := os.WriteFile(filepath.Join(stage, "conf", "svnserve.conf"), conf, 0600); err != nil {
 		return err
+	}
+	if e.LockGuardExecutable != "" {
+		if err := InstallLockGuards(stage, e.LockGuardExecutable); err != nil {
+			return err
+		}
 	}
 	if err := os.Rename(stage, final); err != nil {
 		if validRepo(final) {

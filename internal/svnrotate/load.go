@@ -135,12 +135,12 @@ func LoadGeneration(cfg LoadConfig, dump io.Reader, reason string, logw io.Write
 		return Meta{}, fmt.Errorf("svnadmin load: %w", err)
 	}
 
-	// 4. Operational configuration: a carrier repo has no meaningful conf/
-	// hooks of its own to inherit (it never had any beyond FileES's own
-	// defaults), so unlike Rotate there is nothing to copy from the old
-	// generation here — newRepo keeps svnadmin create's own conf/, which the
-	// caller overwrites with the canonical data-authz configuration exactly
-	// as it does for any freshly created repository.
+	// 4. Keep operational hook policy (including FileES lock guards) from
+	// the carrier, not the dump. conf/ is still rebuilt by the caller from
+	// canonical authz. copyHooks removes only the temporary commit fence.
+	if err := copyHooks(filepath.Join(cfg.RepoPath, "hooks"), filepath.Join(newRepo, "hooks")); err != nil {
+		return Meta{}, fmt.Errorf("copy carrier hooks: %w", err)
+	}
 
 	// 5. Prove the new generation before touching the hot path.
 	logf("verifying new generation")

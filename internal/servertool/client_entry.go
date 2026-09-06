@@ -247,7 +247,7 @@ func clientChildPromises(originalCommand string) string {
 		// svnserve needs write/create/attribute promises for authenticated data
 		// repositories. Unveil and authz still constrain the exact filesystem
 		// roots and effective per-repository access.
-		return svnExecPromises
+		return svnHookExecPromises
 	}
 	if originalCommand == ClientWhaleCommand {
 		return whaleExecPromises

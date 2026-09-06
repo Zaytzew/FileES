@@ -273,8 +273,8 @@ func TestClientSVNRootIsSeparatedByLoginAccount(t *testing.T) {
 }
 
 func TestClientSVNChildRetainsWritePromises(t *testing.T) {
-	if got := clientChildPromises(ClientSVNCommand); got != svnExecPromises {
-		t.Fatalf("SVN child promises = %q, want %q", got, svnExecPromises)
+	if got := clientChildPromises(ClientSVNCommand); got != svnHookExecPromises {
+		t.Fatalf("SVN child promises = %q, want %q", got, svnHookExecPromises)
 	}
 	if got := clientChildPromises(deploy.ServiceProofCommand); got == svnExecPromises {
 		t.Fatalf("proof child unexpectedly received SVN write promises: %q", got)

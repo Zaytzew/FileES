@@ -29,6 +29,7 @@ func TestServerEffectsCreatesFSFSIdempotently(t *testing.T) {
 	}
 	pub := &publisher{}
 	fx := ServerEffects{SVNAdmin: bin, RepositoriesRoot: filepath.Join(t.TempDir(), "repos"), DataAuthzFile: filepath.Join(t.TempDir(), "authz"), Authority: pub}
+	fx.LockGuardExecutable = os.Args[0]
 	id, op := uuid.NewString(), uuid.NewString()
 	if e = fx.CreateFSFS(context.Background(), id, op); e != nil {
 		t.Fatal(e)
@@ -38,6 +39,15 @@ func TestServerEffectsCreatesFSFSIdempotently(t *testing.T) {
 	}
 	if !validRepo(filepath.Join(fx.RepositoriesRoot, id)) {
 		t.Fatal("FSFS missing")
+	}
+	guards, err := InspectLockGuards(filepath.Join(fx.RepositoriesRoot, id), os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, guard := range guards {
+		if guard.State != "installed" {
+			t.Fatal(guards)
+		}
 	}
 }
 

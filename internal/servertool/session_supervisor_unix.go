@@ -53,7 +53,12 @@ func RunClientSessionChild(args []string, stderr io.Writer) int {
 	}
 	// The child is forked before its parent locks unveil. svnserve therefore
 	// gets a clean table and establishes its existing native profile itself.
-	if err := sandboxPledgeForExec("stdio proc exec", svnExecPromises); err != nil {
+	// Its hook runner uses chdir("."); keep cwd inside its configured tree.
+	if err := os.Chdir(root); err != nil {
+		report(stderr, "filees-client-entry child directory", err)
+		return ExitSoftware
+	}
+	if err := sandboxPledgeForExec("stdio proc exec", svnHookExecPromises); err != nil {
 		report(stderr, "filees-client-entry child sandbox", err)
 		return ExitSoftware
 	}

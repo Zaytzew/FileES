@@ -312,7 +312,7 @@ func copyHooks(srcHooks, dstHooks string) error {
 		return err
 	}
 	for _, e := range entries {
-		if e.IsDir() || !e.Type().IsRegular() {
+		if e.IsDir() || (!e.Type().IsRegular() && e.Type()&os.ModeSymlink == 0) {
 			continue
 		}
 		name := e.Name()
@@ -321,6 +321,18 @@ func copyHooks(srcHooks, dstHooks string) error {
 			continue // the rotation block hook stays out of the new generation
 		case name == "pre-commit"+hookAsideSuffix:
 			name = "pre-commit"
+		}
+		if e.Type()&os.ModeSymlink != 0 {
+			// Preserve hook entrypoints, never follow them into a binary or
+			// silently drop the force guard when replacing a generation.
+			target, err := os.Readlink(filepath.Join(srcHooks, e.Name()))
+			if err != nil {
+				return err
+			}
+			if err := os.Symlink(target, filepath.Join(dstHooks, name)); err != nil {
+				return err
+			}
+			continue
 		}
 		info, err := e.Info()
 		if err != nil {

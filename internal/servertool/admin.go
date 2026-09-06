@@ -54,10 +54,12 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|prune|rotate | erasure complete | version")
+		fmt.Fprintln(stderr, "usage: filees-admin [-config path] ticket create|resend|revoke|list | share list|delete | operation inspect | client revoke|revoke-realm | repo transfer-owner|activate|check-state|lock-guards|prune|rotate | erasure complete | version")
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
+	case "repo lock-guards":
+		return runAdminLockGuards(path, args[2:], stdout, stderr)
 	case "ticket create":
 		flags := flag.NewFlagSet("ticket create", flag.ContinueOnError)
 		flags.SetOutput(stderr)

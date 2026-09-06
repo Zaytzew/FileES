@@ -121,5 +121,6 @@ path-owner broker transport or full group autolock.
 
 The isolated historical result remains in
 the r896 report (implementation notes, not distributed).
+Linux r898 deployment and first real two-realm move are recorded in
+the live report (implementation notes, not distributed).
 API: [Apache SVN move7](https://subversion.apache.org/docs/api/1.14/group__Move.html).
-

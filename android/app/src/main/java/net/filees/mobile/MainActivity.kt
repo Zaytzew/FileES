@@ -373,22 +373,21 @@ class MainActivity : AppCompatActivity() {
         io.execute {
             try {
                 val listing = active.listDirectoryJSON(repoId, browsePrefix, 0, 0)
+                val listed = JSONObject(listing)
+                val listedRev = listed.optLong("repo_revision")
+                val listedGen = listed.optLong("view_generation")
                 var shouts = emptyList<Pair<Long, String>>()
-                var rev = 0L
-                var gen = 0L
                 try {
-                    val json = active.refreshJSON(repoId)
-                    shouts = ManifestBrowse.shoutsFrom(json)
-                    if (json.isNotBlank()) {
-                        rev = JSONObject(json).optLong("repo_revision")
-                        gen = JSONObject(json).optLong("view_generation")
+                    shouts = ManifestBrowse.shoutsFrom(active.refreshJSON(repoId))
+                    if (listedRev > 0) {
+                        shouts = shouts.filter { it.first <= listedRev }
                     }
                 } catch (_: Exception) {
                 }
                 main.post {
                     legacyFullTree = false
-                    browseRevision = if (rev > 0) rev else JSONObject(listing).optLong("repo_revision")
-                    browseGeneration = if (gen > 0) gen else JSONObject(listing).optLong("view_generation")
+                    browseRevision = listedRev
+                    browseGeneration = listedGen
                     manifestEntries = ManifestBrowse.entriesFrom(listing)
                     renderList()
                     showNewShouts(repoId, shouts)
@@ -607,6 +606,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadFolder(row: BrowseRow) {
+        if (legacyFullTree) {
+            confirmDownloadFolder(row, ManifestBrowse.filesUnder(manifestEntries, row.path))
+            return
+        }
         val active = client ?: return
         val repoId = selectedRepoId ?: return
         setBusy(true, getString(R.string.status_scanning))
@@ -616,7 +619,19 @@ class MainActivity : AppCompatActivity() {
                 val files = ManifestBrowse.entriesFrom(json)
                 main.post { confirmDownloadFolder(row, files) }
             } catch (e: Exception) {
-                main.post { failBusy(getString(R.string.error_download), e) }
+                if (!isUnsupported(e)) {
+                    main.post { failBusy(getString(R.string.error_download), e) }
+                    return@execute
+                }
+                try {
+                    val files = ManifestBrowse.filesUnder(
+                        ManifestBrowse.entriesFrom(active.refreshJSON(repoId)),
+                        row.path,
+                    )
+                    main.post { confirmDownloadFolder(row, files) }
+                } catch (e2: Exception) {
+                    main.post { failBusy(getString(R.string.error_download), e2) }
+                }
             }
         }
     }

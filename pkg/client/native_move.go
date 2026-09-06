@@ -50,14 +50,25 @@ func missingPathLockConfirmed(raw, comment string) bool {
 	return (e.WC.Item == "missing" || e.WC.Item == "deleted") && e.WC.Lock != nil && e.Repos.Lock != nil && e.WC.Lock.Token != "" && e.WC.Lock.Token == e.Repos.Lock.Token && e.WC.Lock.Comment == comment && e.Repos.Lock.Comment == comment
 }
 
+const (
+	nativeReceiptLimit  = 64 * 1024
+	nativeListingLimit  = 8 << 20
+	nativePathBatch     = 512 // lockstep with FILEES_SVN_MAX_PATHS; daemon batches are 1000
+)
+
 type nativeOutput struct {
 	buffer    bytes.Buffer // not embedded: io.ReaderFrom must not bypass Write
 	truncated bool
+	max       int
 }
 
 func (b *nativeOutput) Write(p []byte) (int, error) {
 	n := len(p)
-	remaining := 64*1024 - b.buffer.Len()
+	limit := b.max
+	if limit <= 0 {
+		limit = nativeReceiptLimit
+	}
+	remaining := limit - b.buffer.Len()
 	if n > remaining {
 		b.truncated = true
 		p = p[:remaining]

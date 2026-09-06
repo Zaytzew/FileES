@@ -60,7 +60,11 @@ static svn_error_t *collect_status(void *baton, const char *path,
     SVN_ERR(filees_relpath(&rel, b->wc, status->local_abspath, b->pool));
     row = apr_array_push(b->rows);
     row->path = apr_pstrdup(b->pool, rel);
-    row->item = filees_status_kind(status->node_status);
+    /* CLI --xml: item is text when the only change is properties
+       (node_status=modified, text_status=normal, prop_status=modified). */
+    row->item = filees_status_kind(status->node_status == svn_wc_status_modified
+                                       ? status->text_status
+                                       : status->node_status);
     row->props = filees_status_kind(status->prop_status);
     return SVN_NO_ERROR;
 }
@@ -139,6 +143,11 @@ svn_error_t *filees_wc_propdel(const char *wc_arg, svn_boolean_t live,
     return svn_client_propset_local(name, NULL, paths, svn_depth_empty, FALSE, NULL, ctx, pool);
 }
 
+struct prop_row {
+    const char *path;
+    const char *value;
+};
+
 svn_error_t *filees_wc_propget(const char *wc_arg, svn_boolean_t live,
                                const char *name, const char **rels, int n,
                                svn_boolean_t recursive, apr_pool_t *pool)
@@ -147,6 +156,7 @@ svn_error_t *filees_wc_propget(const char *wc_arg, svn_boolean_t live,
     svn_client_ctx_t *ctx;
     svn_opt_revision_t peg, rev;
     svn_depth_t depth = recursive ? svn_depth_infinity : svn_depth_empty;
+    apr_array_header_t *rows;
     int i, t, first = 1;
     const char *targets[FILEES_SVN_MAX_PATHS];
     int nt;
@@ -164,7 +174,7 @@ svn_error_t *filees_wc_propget(const char *wc_arg, svn_boolean_t live,
         for (i = 0; i < nt; ++i)
             targets[i] = APR_ARRAY_IDX(paths, i, const char *);
     }
-    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"targets\":[");
+    rows = apr_array_make(pool, 8, sizeof(struct prop_row));
     for (t = 0; t < nt; ++t) {
         apr_hash_t *props;
         apr_hash_index_t *hi;
@@ -173,16 +183,24 @@ svn_error_t *filees_wc_propget(const char *wc_arg, svn_boolean_t live,
         for (hi = apr_hash_first(pool, props); hi; hi = apr_hash_next(hi)) {
             const char *abspath, *rel;
             svn_string_t *val;
+            struct prop_row *row;
             apr_hash_this(hi, (const void **)&abspath, NULL, (void **)&val);
             SVN_ERR(filees_relpath(&rel, wc, abspath, pool));
-            if (!first) putchar(',');
-            first = 0;
-            printf("{\"path\":");
-            filees_json_string(rel);
-            printf(",\"value\":");
-            filees_json_string(val ? val->data : "");
-            putchar('}');
+            row = apr_array_push(rows);
+            row->path = apr_pstrdup(pool, rel);
+            row->value = apr_pstrdup(pool, val && val->data ? val->data : "");
         }
+    }
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"targets\":[");
+    for (i = 0; i < rows->nelts; ++i) {
+        struct prop_row *row = &APR_ARRAY_IDX(rows, i, struct prop_row);
+        if (!first) putchar(',');
+        first = 0;
+        printf("{\"path\":");
+        filees_json_string(row->path);
+        printf(",\"value\":");
+        filees_json_string(row->value);
+        putchar('}');
     }
     puts("]}");
     return SVN_NO_ERROR;

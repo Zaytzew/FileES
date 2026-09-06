@@ -23,7 +23,8 @@ func (c *execClient) nativeRun(ctx context.Context, wc string, args ...string) (
 	cmd := exec.CommandContext(ctx, c.nativeSVNPath, args...)
 	cmd.Dir = wc
 	cmd.Env = svnProcessEnvironment(os.Environ(), c.sshCommand)
-	var stdout, stderr nativeOutput
+	stdout := nativeOutput{max: nativeListingLimit}
+	stderr := nativeOutput{max: nativeReceiptLimit}
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	if err != nil || stdout.truncated || stderr.truncated {
@@ -63,14 +64,33 @@ func nativeRelatives(root string, paths []string) ([]string, error) {
 	return out, nil
 }
 
+func nativeBatches(paths []string) [][]string {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make([][]string, 0, (len(paths)+nativePathBatch-1)/nativePathBatch)
+	for start := 0; start < len(paths); start += nativePathBatch {
+		end := start + nativePathBatch
+		if end > len(paths) {
+			end = len(paths)
+		}
+		out = append(out, paths[start:end])
+	}
+	return out
+}
+
 func (c *execClient) nativeAdd(ctx context.Context, wc string, paths []string) (string, error) {
 	rels, err := nativeRelatives(wc, paths)
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{"add", "--wc", wc, "--"}, rels...)
-	_, err = c.nativeRun(ctx, wc, args...)
-	return "", err
+	for _, batch := range nativeBatches(rels) {
+		args := append([]string{"add", "--wc", wc, "--"}, batch...)
+		if _, err := c.nativeRun(ctx, wc, args...); err != nil {
+			return "", err
+		}
+	}
+	return "", nil
 }
 
 func (c *execClient) nativeDelete(ctx context.Context, wc string, paths []string) (string, error) {
@@ -78,29 +98,17 @@ func (c *execClient) nativeDelete(ctx context.Context, wc string, paths []string
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{"delete", "--wc", wc, "--"}, rels...)
-	_, err = c.nativeRun(ctx, wc, args...)
-	return "", err
+	for _, batch := range nativeBatches(rels) {
+		args := append([]string{"delete", "--wc", wc, "--"}, batch...)
+		if _, err := c.nativeRun(ctx, wc, args...); err != nil {
+			return "", err
+		}
+	}
+	return "", nil
 }
 
-func (c *execClient) nativeStatus(ctx context.Context, wc string, paths []string) ([]StatusEntry, error) {
-	rels, err := nativeRelatives(wc, paths)
-	if err != nil {
-		return nil, err
-	}
-	args := []string{"status", "--wc", wc}
-	if len(rels) == 0 {
-		args = append(args, "--depth", "infinity")
-	} else {
-		args = append(args, "--depth", "empty", "--")
-		args = append(args, rels...)
-	}
-	raw, err := c.nativeRun(ctx, wc, args...)
-	if err != nil {
-		return nil, err
-	}
+func appendNativeStatus(out []StatusEntry, raw map[string]any) []StatusEntry {
 	entries, _ := raw["entries"].([]any)
-	out := make([]StatusEntry, 0, len(entries))
 	for _, item := range entries {
 		row, _ := item.(map[string]any)
 		path, _ := row["path"].(string)
@@ -113,6 +121,30 @@ func (c *execClient) nativeStatus(ctx context.Context, wc string, paths []string
 			Props: fmt.Sprint(row["props"]),
 		})
 	}
+	return out
+}
+
+func (c *execClient) nativeStatus(ctx context.Context, wc string, paths []string) ([]StatusEntry, error) {
+	rels, err := nativeRelatives(wc, paths)
+	if err != nil {
+		return nil, err
+	}
+	if len(rels) == 0 {
+		raw, err := c.nativeRun(ctx, wc, "status", "--wc", wc, "--depth", "infinity")
+		if err != nil {
+			return nil, err
+		}
+		return appendNativeStatus(nil, raw), nil
+	}
+	var out []StatusEntry
+	for _, batch := range nativeBatches(rels) {
+		args := append([]string{"status", "--wc", wc, "--depth", "empty", "--"}, batch...)
+		raw, err := c.nativeRun(ctx, wc, args...)
+		if err != nil {
+			return nil, err
+		}
+		out = appendNativeStatus(out, raw)
+	}
 	return out, nil
 }
 
@@ -121,9 +153,13 @@ func (c *execClient) nativePropset(ctx context.Context, wc, name, value string, 
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{"propset", "--wc", wc, name, value, "--"}, rels...)
-	_, err = c.nativeRun(ctx, wc, args...)
-	return "", err
+	for _, batch := range nativeBatches(rels) {
+		args := append([]string{"propset", "--wc", wc, name, value, "--"}, batch...)
+		if _, err := c.nativeRun(ctx, wc, args...); err != nil {
+			return "", err
+		}
+	}
+	return "", nil
 }
 
 func (c *execClient) nativePropdel(ctx context.Context, wc, name string, paths []string) (string, error) {
@@ -131,9 +167,13 @@ func (c *execClient) nativePropdel(ctx context.Context, wc, name string, paths [
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{"propdel", "--wc", wc, name, "--"}, rels...)
-	_, err = c.nativeRun(ctx, wc, args...)
-	return "", err
+	for _, batch := range nativeBatches(rels) {
+		args := append([]string{"propdel", "--wc", wc, name, "--"}, batch...)
+		if _, err := c.nativeRun(ctx, wc, args...); err != nil {
+			return "", err
+		}
+	}
+	return "", nil
 }
 
 func (c *execClient) nativePropget(ctx context.Context, wc, name string, paths []string) (string, error) {
@@ -141,12 +181,16 @@ func (c *execClient) nativePropget(ctx context.Context, wc, name string, paths [
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{"propget", "--wc", wc, name, "--"}, rels...)
-	raw, err := c.nativeRun(ctx, wc, args...)
-	if err != nil {
-		return "", err
+	var targets []any
+	for _, batch := range nativeBatches(rels) {
+		args := append([]string{"propget", "--wc", wc, name, "--"}, batch...)
+		raw, err := c.nativeRun(ctx, wc, args...)
+		if err != nil {
+			return "", err
+		}
+		part, _ := raw["targets"].([]any)
+		targets = append(targets, part...)
 	}
-	targets, _ := raw["targets"].([]any)
 	if len(targets) == 0 {
 		return "", nil
 	}
@@ -182,9 +226,13 @@ func (c *execClient) nativeRevert(ctx context.Context, wc string, paths []string
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{"revert", "--wc", wc, "--"}, rels...)
-	_, err = c.nativeRun(ctx, wc, args...)
-	return "", err
+	for _, batch := range nativeBatches(rels) {
+		args := append([]string{"revert", "--wc", wc, "--"}, batch...)
+		if _, err := c.nativeRun(ctx, wc, args...); err != nil {
+			return "", err
+		}
+	}
+	return "", nil
 }
 
 func (c *execClient) nativeResolve(ctx context.Context, wc string, paths []string, accept string) (string, error) {
@@ -192,7 +240,11 @@ func (c *execClient) nativeResolve(ctx context.Context, wc string, paths []strin
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{"resolve", "--wc", wc, "--accept", accept, "--"}, rels...)
-	_, err = c.nativeRun(ctx, wc, args...)
-	return "", err
+	for _, batch := range nativeBatches(rels) {
+		args := append([]string{"resolve", "--wc", wc, "--accept", accept, "--"}, batch...)
+		if _, err := c.nativeRun(ctx, wc, args...); err != nil {
+			return "", err
+		}
+	}
+	return "", nil
 }

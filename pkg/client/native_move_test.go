@@ -16,8 +16,14 @@ func TestNativeOutputIsBoundedWithoutReaderFromBypass(t *testing.T) {
 		t.Fatal("promoted ReaderFrom bypasses bound")
 	}
 	n, err := io.Copy(&b, strings.NewReader(strings.Repeat("x", 100000)))
-	if err != nil || n != 100000 || b.buffer.Len() != 65536 || !b.truncated {
+	if err != nil || n != 100000 || b.buffer.Len() != nativeReceiptLimit || !b.truncated {
 		t.Fatalf("n=%d err=%v size=%d truncated=%v", n, err, b.buffer.Len(), b.truncated)
+	}
+	var listing nativeOutput
+	listing.max = nativeListingLimit
+	n, err = io.Copy(&listing, strings.NewReader(strings.Repeat("y", 200000)))
+	if err != nil || n != 200000 || listing.buffer.Len() != 200000 || listing.truncated {
+		t.Fatalf("listing n=%d err=%v size=%d truncated=%v", n, err, listing.buffer.Len(), listing.truncated)
 	}
 }
 

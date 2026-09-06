@@ -72,3 +72,51 @@ func TestWCLocalAddStatusPropRevertDelete(t *testing.T) {
 	f.jsonCall(t, true, "cleanup", "--disposable-wc", f.wc)
 	f.jsonCall(t, false, "merge", "--disposable-wc", f.wc)
 }
+
+func TestWCLocalPropgetErrorIsSingleJSONDocument(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	write(t, filepath.Join(f.wc, "ghost.txt"), "unversioned\n")
+	out, err := execute(t, f.wc, f.probe, "propget", "--disposable-wc", f.wc, "svn:needs-lock", "--", "ghost.txt")
+	if err == nil {
+		t.Fatalf("unversioned propget succeeded: %s", out)
+	}
+	var raw map[string]any
+	if json.Unmarshal(out, &raw) != nil || raw["schema"] != "filees.native-svn/v1" || raw["ok"] != false {
+		t.Fatalf("expected one error document: %s", out)
+	}
+	if bytes := out; countJSONObjects(string(bytes)) != 1 {
+		t.Fatalf("concatenated JSON: %s", out)
+	}
+}
+
+func TestWCLocalStatusKeepsItemNormalWhenOnlyPropertiesChange(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	f.jsonCall(t, true, "propset", "--disposable-wc", f.wc, "svn:needs-lock", "*", "--", "occupied.txt")
+	st := f.jsonCall(t, true, "status", "--disposable-wc", f.wc, "--", "occupied.txt")
+	entries, _ := st["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("status: %#v", st["entries"])
+	}
+	row := entries[0].(map[string]any)
+	if row["item"] != "normal" || row["props"] != "modified" {
+		t.Fatalf("prop-only status: %#v", row)
+	}
+}
+
+func countJSONObjects(s string) int {
+	n, depth := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			if depth == 0 {
+				n++
+			}
+			depth++
+		case '}':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return n
+}

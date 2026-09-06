@@ -162,9 +162,12 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
 	}
-	if ticket.Type == control.TicketPreparePassportReplacement {
+	if ticket.Type == control.TicketPreparePassportReplacement || ticket.Type == control.TicketCancelPassportPreparation {
 		if w.PassportPreparations == nil {
 			return preparationError(ticket, errcat.KeyPassportUnavailable, w.now())
+		}
+		if ticket.Type == control.TicketCancelPassportPreparation {
+			return w.PassportPreparations.Cancel(ctx, session, ticket)
 		}
 		return w.PassportPreparations.Handle(ctx, session, ticket)
 	}

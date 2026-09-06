@@ -23,10 +23,11 @@ type PassportPreparations struct {
 }
 
 type passportPreparationRecord struct {
-	Schema string          `json:"schema"`
-	Digest string          `json:"digest"`
-	State  string          `json:"state"`
-	Result *control.Result `json:"result,omitempty"`
+	Schema      string          `json:"schema"`
+	Digest      string          `json:"digest"`
+	State       string          `json:"state"`
+	Result      *control.Result `json:"result,omitempty"`
+	PriorResult *control.Result `json:"prior_result,omitempty"`
 }
 
 func preparationDigest(session Session, ticket control.Ticket) string {
@@ -109,11 +110,14 @@ func (s PassportPreparations) Handle(ctx context.Context, session Session, ticke
 				}
 				record.State, record.Result = "finished", &result
 				return atomicJSON(path, record)
-			case "finished":
+			case "finished", "canceled":
 				if record.Result == nil {
 					return errors.New("passport preparation receipt missing")
 				}
 				result = *record.Result
+				if record.State == "canceled" && (result.Error == nil || result.Error.Code != string(errcat.CodePassportAborted) || result.Error.Message != string(errcat.KeyPassportAborted)) {
+					return errors.New("invalid cancellation tombstone")
+				}
 				if err := result.Validate(); err != nil {
 					return err
 				}

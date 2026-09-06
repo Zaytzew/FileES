@@ -19,6 +19,72 @@ import (
 
 type recoveryExchange func(context.Context, control.Ticket) (control.Result, error)
 
+func TestExpiredPrepareCancellationManagerRealSVN(t *testing.T) {
+	f, wc, doc := realReplacementFixture(t)
+	svc := &PassportPreparations{Root: t.TempDir(), Authority: f.authority}
+	var original control.Ticket
+	prepareCalls, cancelCalls := 0, 0
+	x := recoveryExchange(func(ctx context.Context, ticket control.Ticket) (control.Result, error) {
+		r, err := (&Worker{PassportPreparations: svc}).Handle(ctx, f.session, ticket)
+		if err != nil {
+			return r, err
+		}
+		if ticket.Type == control.TicketPreparePassportReplacement {
+			prepareCalls++
+			original = ticket
+			return control.Result{}, errors.New("lost prepare reply")
+		}
+		cancelCalls++
+		if cancelCalls == 1 {
+			return control.Result{}, errors.New("lost cancellation reply")
+		}
+		return r, nil
+	})
+	cli := &recoverySVNClient{replacementSVNClient: &replacementSVNClient{Client: client.New(client.Options{Timeout: 10 * time.Second}), username: f.session.ClientID}}
+	b := passport.ControlSVNBackend{SVNBackend: passport.SVNBackend{Client: cli, WC: wc}, RepoID: f.req.RepoID, ClientID: f.session.ClientID, Transport: x}
+	store, instance := filepath.Join(t.TempDir(), "passports.json"), uuid.NewString()
+	now := time.Now()
+	open := func() *passport.Manager {
+		m, err := passport.Open(store, instance, b, passport.Config{Now: func() time.Time { return now }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	m := open()
+	if _, _, err := m.Acquire(t.Context(), []string{doc}, f.owner); err == nil {
+		t.Fatal("lost prepare acknowledged")
+	}
+	now = m.Snapshot()[0].ExpiresAt
+	replacementCommand(t, "svn", "lock", "--username", f.session.ClientID, "-m", "competitor", doc)
+	before, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+	if err != nil || before == nil {
+		t.Fatal("competitor missing")
+	}
+	if err := m.Heartbeat(t.Context()); err == nil || m.Snapshot()[0].Pending.Stage != "canceling" {
+		t.Fatal("lost cancellation retired intent")
+	}
+	svc = &PassportPreparations{Root: svc.Root, Authority: f.authority}
+	now = now.Add(-time.Hour)
+	m = open()
+	if err := m.Heartbeat(t.Context()); err == nil {
+		t.Fatal("cancellation reported acquisition")
+	}
+	if len(m.Snapshot()) != 0 || len(open().Snapshot()) != 0 || cli.locks != 0 || prepareCalls != 1 || cancelCalls != 2 {
+		t.Fatal("cancellation replayed mutation")
+	}
+	r, err := svc.Handle(t.Context(), f.session, original)
+	requirePreparationCode(t, r, err, errcat.CodePassportAborted)
+	after, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+	if err != nil || after == nil || after.Token != before.Token {
+		t.Fatal("cancellation changed competitor")
+	}
+	data, err := os.ReadFile(doc)
+	if err != nil || string(data) != "local work" {
+		t.Fatal("local bytes changed")
+	}
+}
+
 func TestPassportInterruptedPrepareRetiresTicketRealSVN(t *testing.T) {
 	for _, afterUnlock := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before-unlock", true: "after-unlock"}[afterUnlock], func(t *testing.T) {

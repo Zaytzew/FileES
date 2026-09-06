@@ -69,9 +69,32 @@ type pendingTransport struct {
 	lose         bool
 	afterPrepare func()
 	onReplay     func()
+	cancels      int
+	cancelWire   []byte
+	loseCancel   bool
+	cancelHook   func()
 }
 
 func (x *pendingTransport) Exchange(_ context.Context, ticket control.Ticket) (control.Result, error) {
+	if ticket.Type == control.TicketCancelPassportPreparation {
+		x.cancels++
+		raw, _ := json.Marshal(ticket)
+		if x.cancelWire != nil && string(x.cancelWire) != string(raw) {
+			x.t.Fatal("changed cancellation ticket")
+		}
+		x.cancelWire = raw
+		var p control.CancelPassportPreparationPayload
+		if err := control.DecodePayload(ticket.Payload, &p); err != nil {
+			x.t.Fatal(err)
+		}
+		if x.cancelHook != nil {
+			x.cancelHook()
+		}
+		if x.loseCancel {
+			return control.Result{}, errors.New("lost cancellation")
+		}
+		return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.CancelPassportPreparationResult{PreparationOperationID: p.Preparation.OperationID, PreparationRequestID: p.Preparation.RequestID, State: "canceled"}, time.Now())
+	}
 	x.calls++
 	raw, _ := json.Marshal(ticket)
 	if x.wire != nil {
@@ -265,7 +288,7 @@ func TestPendingLockReplyRecoveryIsReadOnly(t *testing.T) {
 			if (err == nil) != (scenario == "own-receipt") {
 				t.Fatalf("recovery error=%v", err)
 			}
-			if f.cli.locks != 1 || f.transport.calls != 0 || f.cli.unlocks != 0 {
+			if f.cli.locks != 1 || f.transport.calls != 0 || f.transport.cancels != 0 || f.cli.unlocks != 0 {
 				t.Fatal("recovery mutated locks")
 			}
 		})
@@ -383,7 +406,7 @@ func TestPendingDoesNotExtendLifetimeAcrossSlowPrepare(t *testing.T) {
 	if err := m.Heartbeat(t.Context()); err == nil {
 		t.Fatal("expired preparation proceeded to lock")
 	}
-	if f.cli.locks != 1 || m.Snapshot()[0].State != StatePending {
+	if f.cli.locks != 1 || len(m.Snapshot()) != 0 || f.transport.cancels != 1 {
 		t.Fatal("slow reply acquired or activated an expired intent")
 	}
 }

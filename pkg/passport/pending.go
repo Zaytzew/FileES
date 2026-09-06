@@ -81,6 +81,13 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 	if err := b.ValidateLockIntent(p.Path, i); err != nil {
 		return p, "", err
 	}
+	if err := ctx.Err(); err != nil {
+		return p, "", err
+	}
+	now := m.cfg.Now().UTC()
+	if i.Stage == "canceling" || (i.Stage == "prepare" && (!now.Before(i.Metadata.ExpiresAt) || !now.Before(i.Metadata.HardExpiresAt))) {
+		return m.cancelPending(ctx, p)
+	}
 	checkLive := func() error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -103,14 +110,17 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 			if i.Ticket != nil && controlclient.IsAbortedPreparation(err, *i.Ticket) {
 				// No acquire was issued in prepare. The server has durably fenced
 				// this exact ticket, not guessed the outcome of a later SVN lock.
-				delete(m.passports, p.Path)
-				if saveErr := m.saveLocked(); saveErr != nil {
-					m.passports[p.Path] = p
-					return p, "", errors.Join(err, saveErr)
-				}
-				m.publishPendingLocked()
+				return p, "", m.retirePending(p, err)
 			}
 			return p, "", err
+		}
+		// Expiry during control IO must not turn an unsent acquisition into
+		// an uncertain locking record. Fence prepare before forgetting it.
+		if err := ctx.Err(); err != nil {
+			return p, "", err
+		}
+		if err := checkLive(); err != nil {
+			return m.cancelPending(ctx, p)
 		}
 		i.Stage = "locking"
 		p.Pending = &i
@@ -159,4 +169,33 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		}
 	}
 	return confirmed, out, nil
+}
+
+func (m *Manager) retirePending(p Passport, cause error) error {
+	delete(m.passports, p.Path)
+	if err := m.saveLocked(); err != nil {
+		m.passports[p.Path] = p
+		return errors.Join(cause, err)
+	}
+	m.publishPendingLocked()
+	return cause
+}
+
+func (m *Manager) cancelPending(ctx context.Context, p Passport) (Passport, string, error) {
+	i := *p.Pending
+	if i.Stage != "prepare" && i.Stage != "canceling" {
+		return p, "", errcat.New(errcat.KeyPassportUncertain, nil, nil)
+	}
+	i.Stage = "canceling"
+	p.Pending = &i
+	m.passports[p.Path] = p
+	m.publishPendingLocked()
+	// Persist this direction even on a later retry after the clock moved back.
+	if err := m.saveLocked(); err != nil {
+		return p, "", err
+	}
+	if err := m.backend.(intentBackend).CancelLockIntent(ctx, p.Path, i); err != nil {
+		return p, "", err
+	}
+	return p, "", m.retirePending(p, errcat.New(errcat.KeyPassportAborted, nil, nil))
 }

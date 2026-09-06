@@ -183,6 +183,8 @@ type RefreshManifestResult struct {
 type ListDirectoryPayload struct {
 	RepoID string `json:"repo_id"`
 	Path   string `json:"path"`
+	// Revision pins the listing; 0 means HEAD at the worker.
+	Revision int64 `json:"revision,omitempty"`
 }
 
 type ReadObjectPayload struct {
@@ -363,6 +365,9 @@ func (r Request) Validate() error {
 		}
 		if err := validateRelPath("path", p.Path, true); err != nil {
 			return err
+		}
+		if p.Revision < 0 {
+			return errors.New("revision cannot be negative")
 		}
 	case OpReadObject:
 		var p ReadObjectPayload

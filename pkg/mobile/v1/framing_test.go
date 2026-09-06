@@ -63,9 +63,24 @@ func TestFrameRejectsWrongMagic(t *testing.T) {
 
 func TestFrameRejectsOversizedHeader(t *testing.T) {
 	// Header declares a length above the cap.
-	frame := RequestMagic + "\n" + "1000000\n" + strings.Repeat("x", 10)
+	frame := RequestMagic + "\n" + "2000000\n" + strings.Repeat("x", 10)
 	if _, _, err := ReadFrame(strings.NewReader(frame), RequestMagic, MaxHeaderBytes); err == nil {
 		t.Fatal("expected oversized-header rejection")
+	}
+}
+
+func TestFrameRoundTripLargeHeader(t *testing.T) {
+	header := []byte(strings.Repeat("a", 200*1024))
+	var buf bytes.Buffer
+	if err := WriteFrame(&buf, ResponseMagic, header, nil); err != nil {
+		t.Fatalf("WriteFrame 200KiB header: %v", err)
+	}
+	got, _, err := ReadFrame(&buf, ResponseMagic, MaxHeaderBytes)
+	if err != nil {
+		t.Fatalf("ReadFrame 200KiB header: %v", err)
+	}
+	if !bytes.Equal(got, header) {
+		t.Fatalf("header length %d, want %d", len(got), len(header))
 	}
 }
 

@@ -100,6 +100,50 @@ func (r SVNReader) List(ctx context.Context, repoPath string, rev int64) ([]v1.M
 	return entries, nil
 }
 
+// ListImmediate lists only the direct children of dir at rev. dir empty is the
+// repository root. Paths in the result are repo-relative.
+func (r SVNReader) ListImmediate(ctx context.Context, repoPath string, rev int64, dir string) ([]v1.ManifestEntry, error) {
+	target := fileURL(repoPath)
+	dir = strings.Trim(dir, "/")
+	if dir != "" {
+		target = fileURLAt(repoPath, dir)
+	}
+	out, err := output(ctx, r.svn(), "list", "--xml", "-r", strconv.FormatInt(rev, 10), target)
+	if err != nil {
+		return nil, err
+	}
+	var lists xmlLists
+	if err := xml.Unmarshal(out, &lists); err != nil {
+		return nil, fmt.Errorf("parse svn list xml: %w", err)
+	}
+	entries := make([]v1.ManifestEntry, 0, len(lists.List.Entries))
+	for _, e := range lists.List.Entries {
+		name := e.Name
+		if name == "" || name == "." || name == ".." {
+			continue
+		}
+		path := name
+		if dir != "" {
+			path = dir + "/" + name
+		}
+		kind := v1.KindFile
+		if e.Kind == "dir" {
+			kind = v1.KindDirectory
+		}
+		entry := v1.ManifestEntry{
+			Path:                path,
+			Kind:                kind,
+			LastChangedRevision: e.Commit.Revision,
+			ContentHash:         nil,
+		}
+		if e.Size != nil {
+			entry.Size = *e.Size
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
 type xmlInfo struct {
 	Entry struct {
 		Kind string `xml:"kind,attr"`

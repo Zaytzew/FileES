@@ -76,6 +76,84 @@ func (c Client) Refresh(ctx context.Context, repoID string) (*v1.Manifest, error
 	return res.Manifest, nil
 }
 
+const maxListedFiles = 200
+
+// ListDirectory returns immediate children of path at revision, using the
+// local directory cache when generation and revision match.
+func (c Client) ListDirectory(ctx context.Context, repoID, path string, generation, revision int64) (*v1.Manifest, error) {
+	path = strings.Trim(path, "/")
+	if cached, err := c.Store.LoadDirectory(repoID, path, generation, revision); err != nil {
+		return nil, err
+	} else if cached != nil {
+		return cached, nil
+	}
+	req, err := v1.NewRequest(uuid.NewString(), v1.OpListDirectory, v1.ListDirectoryPayload{
+		RepoID: repoID, Path: path, Revision: revision,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, payload, err := c.Transport.Do(ctx, req, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != v1.StatusOK {
+		return nil, respError(resp)
+	}
+	var m v1.Manifest
+	if err := json.Unmarshal(resp.Result, &m); err != nil {
+		return nil, fmt.Errorf("decode list directory result: %w", err)
+	}
+	if len(payload) > 0 && string(payload) != "null" {
+		if err := json.Unmarshal(payload, &m.Entries); err != nil {
+			return nil, fmt.Errorf("decode list directory entries: %w", err)
+		}
+	}
+	if m.Entries == nil {
+		m.Entries = []v1.ManifestEntry{}
+	}
+	if err := m.Validate(); err != nil {
+		return nil, err
+	}
+	if err := c.Store.SaveDirectory(path, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// ListFilesUnder walks LIST_DIRECTORY pages and returns files under path,
+// stopping after maxListedFiles. Used for folder download, not browse.
+func (c Client) ListFilesUnder(ctx context.Context, repoID, path string, generation, revision int64) ([]v1.ManifestEntry, error) {
+	var files []v1.ManifestEntry
+	var walk func(string) error
+	walk = func(dir string) error {
+		m, err := c.ListDirectory(ctx, repoID, dir, generation, revision)
+		if err != nil {
+			return err
+		}
+		for _, e := range m.Entries {
+			if e.Kind == v1.KindFile {
+				files = append(files, e)
+				if len(files) > maxListedFiles {
+					return fmt.Errorf("mobile operation failed: manifest.too_large: folder has more than %d files", maxListedFiles)
+				}
+			}
+		}
+		for _, e := range m.Entries {
+			if e.Kind == v1.KindDirectory {
+				if err := walk(e.Path); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := walk(strings.Trim(path, "/")); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
 // Read fetches one existing object. Append-only does not mean the phone
 // cannot download; it only forbids modifying or deleting the path.
 func (c Client) Read(ctx context.Context, repoID, path string) ([]byte, error) {

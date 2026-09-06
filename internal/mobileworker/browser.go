@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	v1 "filees/pkg/mobile/v1"
@@ -13,6 +14,14 @@ import (
 // ErrAccessDenied is returned when the authority grants no read access to the
 // requested repository for the calling installation.
 var ErrAccessDenied = errors.New("mobile: access denied")
+
+// ErrDirectoryTooLarge is a framed listing refusal, not an SSH exit 70.
+var ErrDirectoryTooLarge = errors.New("mobile: directory listing exceeds limit")
+
+// ErrNotDirectory is returned when LIST_DIRECTORY is aimed at a file.
+var ErrNotDirectory = errors.New("mobile: path is not a directory")
+
+const maxDirectoryEntries = 1024
 
 // View is the resolved authority for one (installation, repository) pair. It is
 // derived server-side from the authenticated session and the grant graph — never
@@ -61,6 +70,8 @@ type Authority interface {
 type Reader interface {
 	Youngest(ctx context.Context, repoPath string) (int64, error)
 	List(ctx context.Context, repoPath string, rev int64) ([]v1.ManifestEntry, error)
+	ListImmediate(ctx context.Context, repoPath string, rev int64, dir string) ([]v1.ManifestEntry, error)
+	Stat(ctx context.Context, repoPath, path string, rev int64) (v1.Kind, bool, error)
 	Cat(ctx context.Context, repoPath, path string, rev int64, w io.Writer) (int64, string, error)
 }
 
@@ -71,9 +82,9 @@ type Browser struct {
 }
 
 // RefreshManifest returns NOT_MODIFIED only when both the control-plane view
-// generation and the repo revision are unchanged; otherwise a full manifest. The
-// two-dimension check is what delivers control-plane changes (grants, shouts)
-// that move the generation without a commit.
+// generation and the repo revision are unchanged; otherwise a freshness
+// manifest (generation, revision, shouts) without a tree listing. Browse
+// uses LIST_DIRECTORY so a CAD repo cannot overflow the mobile frame.
 func (b Browser) RefreshManifest(ctx context.Context, clientID string, p v1.RefreshManifestPayload) (v1.RefreshManifestResult, error) {
 	view, err := b.Authority.Resolve(ctx, clientID, p.RepoID)
 	if err != nil {
@@ -89,23 +100,68 @@ func (b Browser) RefreshManifest(ctx context.Context, clientID string, p v1.Refr
 	if p.KnownViewGeneration == view.Generation && p.KnownRepoRevision == rev {
 		return v1.RefreshManifestResult{NotModified: true}, nil
 	}
-	entries, err := b.Reader.List(ctx, view.RepoPath, rev)
-	if err != nil {
-		return v1.RefreshManifestResult{}, err
-	}
 	manifest := &v1.Manifest{
 		Schema:         v1.ManifestSchema,
 		RepoID:         p.RepoID,
 		ViewGeneration: view.Generation,
 		RepoRevision:   rev,
-		Complete:       true,
-		Entries:        entries,
+		Complete:       false,
 		Shouts:         collectShouts(ctx, b.Reader, view.RepoPath, p.KnownRepoRevision, rev),
 	}
 	if err := manifest.Validate(); err != nil {
 		return v1.RefreshManifestResult{}, err
 	}
 	return v1.RefreshManifestResult{Manifest: manifest}, nil
+}
+
+// ListDirectory returns immediate children of path at a pinned revision.
+func (b Browser) ListDirectory(ctx context.Context, clientID string, p v1.ListDirectoryPayload) (v1.Manifest, error) {
+	view, err := b.Authority.Resolve(ctx, clientID, p.RepoID)
+	if err != nil {
+		return v1.Manifest{}, err
+	}
+	if !view.readable() {
+		return v1.Manifest{}, ErrAccessDenied
+	}
+	rev := p.Revision
+	if rev < 1 {
+		rev, err = b.Reader.Youngest(ctx, view.RepoPath)
+		if err != nil {
+			return v1.Manifest{}, err
+		}
+	}
+	dir := strings.Trim(p.Path, "/")
+	if dir != "" {
+		kind, ok, err := b.Reader.Stat(ctx, view.RepoPath, dir, rev)
+		if err != nil {
+			return v1.Manifest{}, err
+		}
+		if !ok {
+			return v1.Manifest{}, ErrNotDirectory
+		}
+		if kind != v1.KindDirectory {
+			return v1.Manifest{}, ErrNotDirectory
+		}
+	}
+	entries, err := b.Reader.ListImmediate(ctx, view.RepoPath, rev, dir)
+	if err != nil {
+		return v1.Manifest{}, err
+	}
+	if len(entries) > maxDirectoryEntries {
+		return v1.Manifest{}, ErrDirectoryTooLarge
+	}
+	manifest := v1.Manifest{
+		Schema:         v1.ManifestSchema,
+		RepoID:         p.RepoID,
+		ViewGeneration: view.Generation,
+		RepoRevision:   rev,
+		Complete:       false,
+		Entries:        entries,
+	}
+	if err := manifest.Validate(); err != nil {
+		return v1.Manifest{}, err
+	}
+	return manifest, nil
 }
 
 // ListRepositories returns the installation's realm projection. The client

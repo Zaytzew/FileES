@@ -53,6 +53,24 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		}
 		return d.writeOK(out, req, res, nil)
 
+	case v1.OpListDirectory:
+		var p v1.ListDirectoryPayload
+		_ = json.Unmarshal(req.Payload, &p)
+		res, err := d.Browser.ListDirectory(ctx, d.ClientID, p)
+		if err != nil {
+			return d.writeError(out, req, err)
+		}
+		entries := res.Entries
+		res.Entries = nil
+		raw, err := json.Marshal(entries)
+		if err != nil {
+			return d.writeError(out, req, err)
+		}
+		if raw == nil {
+			raw = []byte("[]")
+		}
+		return d.writeOK(out, req, res, raw)
+
 	case v1.OpReadObject:
 		var p v1.ReadObjectPayload
 		_ = json.Unmarshal(req.Payload, &p)
@@ -87,7 +105,6 @@ func (d Dispatcher) Serve(ctx context.Context, in io.Reader, out io.Writer) erro
 		return d.writeOK(out, req, d.status(p.TargetRequestID), nil)
 
 	default:
-		// LIST_DIRECTORY is optional and not yet implemented.
 		body := v1.ErrorBody{Code: "op.unsupported", Message: "operation not supported"}
 		return d.writeErrorBody(out, req, body)
 	}
@@ -104,9 +121,16 @@ func (d Dispatcher) status(targetRequestID string) v1.OperationStatusResult {
 func (d Dispatcher) writeOK(out io.Writer, req v1.Request, result any, payload []byte) error {
 	resp, err := v1.NewSuccess(req.RequestID, req.Operation, result)
 	if err != nil {
-		return err
+		return d.writeErrorBody(out, req, v1.ErrorBody{Code: "worker.failed", Message: "operation failed"})
 	}
-	return writeResponse(out, resp, payload)
+	err = writeResponse(out, resp, payload)
+	if errors.Is(err, errFrameHeaderTooLarge) {
+		return d.writeErrorBody(out, req, v1.ErrorBody{
+			Code:    "manifest.too_large",
+			Message: "repository listing does not fit in one mobile frame",
+		})
+	}
+	return err
 }
 
 // writeError maps an internal error to a domain code, never leaking raw tool text.
@@ -114,6 +138,12 @@ func (d Dispatcher) writeError(out io.Writer, req v1.Request, err error) error {
 	code, msg := "worker.failed", "operation failed"
 	if errors.Is(err, ErrAccessDenied) {
 		code = "access.denied"
+	}
+	if errors.Is(err, ErrDirectoryTooLarge) {
+		code, msg = "manifest.too_large", "directory listing exceeds limit"
+	}
+	if errors.Is(err, ErrNotDirectory) {
+		code, msg = "path.not_directory", "path is not a directory"
 	}
 	if errors.Is(err, errTreePayloadCorrupt) {
 		code, msg = "tree.payload_corrupt", "zip sha256 or size does not match the header"
@@ -129,10 +159,15 @@ func (d Dispatcher) writeErrorBody(out io.Writer, req v1.Request, body v1.ErrorB
 	return writeResponse(out, resp, nil)
 }
 
+var errFrameHeaderTooLarge = errors.New("mobile frame header too large")
+
 func writeResponse(out io.Writer, resp v1.Response, payload []byte) error {
 	header, err := json.Marshal(resp)
 	if err != nil {
 		return err
+	}
+	if len(header) > v1.MaxHeaderBytes {
+		return errFrameHeaderTooLarge
 	}
 	return v1.WriteFrame(out, v1.ResponseMagic, header, payload)
 }

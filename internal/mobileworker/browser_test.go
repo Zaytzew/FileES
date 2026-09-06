@@ -149,7 +149,7 @@ func TestListRepositoriesDeniedWithoutGrant(t *testing.T) {
 	}
 }
 
-func TestRefreshManifestBuildsTree(t *testing.T) {
+func TestRefreshManifestOmitsTree(t *testing.T) {
 	requireSVN(t)
 	repo := newSeededRepo(t)
 	b := newBrowser(repo, 5, "r")
@@ -165,30 +165,52 @@ func TestRefreshManifestBuildsTree(t *testing.T) {
 	if m.ViewGeneration != 5 || m.RepoRevision != 1 {
 		t.Fatalf("view_generation/repo_revision = %d/%d", m.ViewGeneration, m.RepoRevision)
 	}
-	want := map[string]v1.Kind{
-		"docs": v1.KindDirectory, "docs/b.bin": v1.KindFile,
-		"photos": v1.KindDirectory, "photos/2026": v1.KindDirectory,
-		"photos/2026/a.jpg": v1.KindFile, "top.txt": v1.KindFile,
-	}
-	got := map[string]v1.Kind{}
-	for _, e := range m.Entries {
-		got[e.Path] = e.Kind
-		if e.ContentHash != nil {
-			t.Fatalf("content_hash should be nil in a listing, path %q", e.Path)
-		}
-	}
-	for path, kind := range want {
-		if got[path] != kind {
-			t.Fatalf("entry %q = %q, want %q", path, got[path], kind)
-		}
-	}
-	for _, e := range m.Entries {
-		if e.Path == "photos/2026/a.jpg" && e.Size != 5 {
-			t.Fatalf("a.jpg size = %d, want 5", e.Size)
-		}
+	if m.Complete || len(m.Entries) != 0 {
+		t.Fatalf("refresh must not carry a tree listing: complete=%v entries=%d", m.Complete, len(m.Entries))
 	}
 	if err := m.Validate(); err != nil {
 		t.Fatalf("built manifest invalid: %v", err)
+	}
+}
+
+func TestListDirectoryImmediateChildren(t *testing.T) {
+	requireSVN(t)
+	repo := newSeededRepo(t)
+	b := newBrowser(repo, 5, "r")
+
+	root, err := b.ListDirectory(context.Background(), "client-1", v1.ListDirectoryPayload{RepoID: "repo-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]v1.Kind{}
+	for _, e := range root.Entries {
+		got[e.Path] = e.Kind
+	}
+	if got["docs"] != v1.KindDirectory || got["photos"] != v1.KindDirectory || got["top.txt"] != v1.KindFile {
+		t.Fatalf("root listing = %+v", got)
+	}
+	if _, ok := got["photos/2026"]; ok {
+		t.Fatal("root listing must not recurse")
+	}
+
+	photos, err := b.ListDirectory(context.Background(), "client-1", v1.ListDirectoryPayload{RepoID: "repo-1", Path: "photos", Revision: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(photos.Entries) != 1 || photos.Entries[0].Path != "photos/2026" || photos.Entries[0].Kind != v1.KindDirectory {
+		t.Fatalf("photos listing = %+v", photos.Entries)
+	}
+
+	nested, err := b.ListDirectory(context.Background(), "client-1", v1.ListDirectoryPayload{RepoID: "repo-1", Path: "photos/2026", Revision: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nested.Entries) != 1 || nested.Entries[0].Path != "photos/2026/a.jpg" || nested.Entries[0].Size != 5 {
+		t.Fatalf("nested listing = %+v", nested.Entries)
+	}
+
+	if _, err := b.ListDirectory(context.Background(), "client-1", v1.ListDirectoryPayload{RepoID: "repo-1", Path: "top.txt"}); err != ErrNotDirectory {
+		t.Fatalf("listing a file: %v", err)
 	}
 }
 
@@ -232,15 +254,6 @@ func TestRefreshRepoBumpReturnsManifest(t *testing.T) {
 	}
 	if res.Manifest.RepoRevision != 2 {
 		t.Fatalf("repo_revision = %d, want 2", res.Manifest.RepoRevision)
-	}
-	found := false
-	for _, e := range res.Manifest.Entries {
-		if e.Path == "photos/2026/c.jpg" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("new file missing from manifest")
 	}
 }
 
@@ -288,6 +301,9 @@ func TestAccessDenied(t *testing.T) {
 		t.Fatalf("expected ErrAccessDenied, got %v", err)
 	}
 	if _, err := b.ReadObject(context.Background(), "c", v1.ReadObjectPayload{RepoID: "r", Path: "top.txt"}, &bytes.Buffer{}); err != ErrAccessDenied {
+		t.Fatalf("expected ErrAccessDenied, got %v", err)
+	}
+	if _, err := b.ListDirectory(context.Background(), "c", v1.ListDirectoryPayload{RepoID: "r"}); err != ErrAccessDenied {
 		t.Fatalf("expected ErrAccessDenied, got %v", err)
 	}
 }

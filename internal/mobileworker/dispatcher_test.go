@@ -143,13 +143,27 @@ func TestDispatchListRepositories(t *testing.T) {
 	}
 }
 
-func TestDispatchUnsupportedOperation(t *testing.T) {
+func TestDispatchListDirectoryUsesPayload(t *testing.T) {
 	requireSVN(t)
 	d := newDispatcher(t, newSeededRepo(t), "r")
 
-	frame := frameRequest(t, uuid.NewString(), v1.OpListDirectory, v1.ListDirectoryPayload{RepoID: "r", Path: "photos"}, nil)
-	resp, _ := serve(t, d, frame)
-	if resp.Status != v1.StatusError || resp.Error == nil || resp.Error.Code != "op.unsupported" {
-		t.Fatalf("expected op.unsupported error, got %+v", resp)
+	frame := frameRequest(t, uuid.NewString(), v1.OpListDirectory, v1.ListDirectoryPayload{RepoID: "r", Path: ""}, nil)
+	resp, payload := serve(t, d, frame)
+	if resp.Status != v1.StatusOK {
+		t.Fatalf("status = %s, error = %+v", resp.Status, resp.Error)
+	}
+	var meta v1.Manifest
+	if err := json.Unmarshal(resp.Result, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if len(meta.Entries) != 0 {
+		t.Fatalf("entries must travel in the payload, header had %d", len(meta.Entries))
+	}
+	var entries []v1.ManifestEntry
+	if err := json.Unmarshal(payload, &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) < 3 {
+		t.Fatalf("payload entries = %+v", entries)
 	}
 }

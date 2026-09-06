@@ -51,6 +51,9 @@ class MainActivity : AppCompatActivity() {
     private var selectableShares: List<RealmShare> = emptyList()
     private var manifestEntries: List<ManifestEntry> = emptyList()
     private var browsePrefix: String = ""
+    private var browseRevision: Long = 0
+    private var browseGeneration: Long = 0
+    private var legacyFullTree: Boolean = false
     private val browseAdapter = BrowseAdapter(onOpen = { openRow(it) }, onDownload = { downloadRow(it) })
     private val pendingAdapter = PendingUploadsAdapter(
         onDiscard = { discardPending(it) },
@@ -338,13 +341,13 @@ class MainActivity : AppCompatActivity() {
             selectedShareName = row.name
             FileesSession.setSelectedRepo(prefs, row.repoId)
             browsePrefix = ""
-            refreshManifest()
+            refreshAndList()
             refreshDecisions()
             return
         }
         if (row.directory) {
             browsePrefix = row.path
-            renderList()
+            listCurrentDir()
             return
         }
         previewRow(row)
@@ -354,7 +357,7 @@ class MainActivity : AppCompatActivity() {
         if (selectedRepoId == null) return false
         if (browsePrefix.isNotEmpty()) {
             browsePrefix = browsePrefix.substringBeforeLast('/', "")
-            renderList()
+            listCurrentDir()
             return true
         }
         selectedRepoId = null
@@ -363,22 +366,90 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    private fun refreshManifest() {
+    private fun refreshAndList() {
         val active = client ?: return
         val repoId = selectedRepoId ?: return
+        setBusy(true, getString(R.string.status_refreshing))
         io.execute {
             try {
-                val json = active.refreshJSON(repoId)
-                val shouts = ManifestBrowse.shoutsFrom(json)
+                val listing = active.listDirectoryJSON(repoId, browsePrefix, 0, 0)
+                var shouts = emptyList<Pair<Long, String>>()
+                var rev = 0L
+                var gen = 0L
+                try {
+                    val json = active.refreshJSON(repoId)
+                    shouts = ManifestBrowse.shoutsFrom(json)
+                    if (json.isNotBlank()) {
+                        rev = JSONObject(json).optLong("repo_revision")
+                        gen = JSONObject(json).optLong("view_generation")
+                    }
+                } catch (_: Exception) {
+                }
                 main.post {
-                    manifestEntries = ManifestBrowse.entriesFrom(json)
+                    legacyFullTree = false
+                    browseRevision = if (rev > 0) rev else JSONObject(listing).optLong("repo_revision")
+                    browseGeneration = if (gen > 0) gen else JSONObject(listing).optLong("view_generation")
+                    manifestEntries = ManifestBrowse.entriesFrom(listing)
                     renderList()
                     showNewShouts(repoId, shouts)
+                    setBusy(false, "")
+                }
+            } catch (e: Exception) {
+                if (!isUnsupported(e)) {
+                    main.post { failBusy(getString(R.string.error_refresh), e) }
+                    return@execute
+                }
+                try {
+                    val json = active.refreshJSON(repoId)
+                    main.post {
+                        legacyFullTree = true
+                        browseRevision = if (json.isBlank()) 0L else JSONObject(json).optLong("repo_revision")
+                        browseGeneration = if (json.isBlank()) 0L else JSONObject(json).optLong("view_generation")
+                        manifestEntries = ManifestBrowse.entriesFrom(json)
+                        renderList()
+                        showNewShouts(repoId, ManifestBrowse.shoutsFrom(json))
+                        setBusy(false, "")
+                    }
+                } catch (e2: Exception) {
+                    main.post { failBusy(getString(R.string.error_refresh), e2) }
+                }
+            }
+        }
+    }
+
+    private fun listCurrentDir() {
+        if (legacyFullTree) {
+            renderList()
+            return
+        }
+        val active = client ?: return
+        val repoId = selectedRepoId ?: return
+        if (browseRevision < 1) {
+            refreshAndList()
+            return
+        }
+        setBusy(true, getString(R.string.status_refreshing))
+        io.execute {
+            try {
+                val listing = active.listDirectoryJSON(repoId, browsePrefix, browseRevision, browseGeneration)
+                main.post {
+                    manifestEntries = ManifestBrowse.entriesFrom(listing)
+                    renderList()
+                    setBusy(false, "")
                 }
             } catch (e: Exception) {
                 main.post { failBusy(getString(R.string.error_refresh), e) }
             }
         }
+    }
+
+    private fun isUnsupported(e: Exception): Boolean {
+        val text = (e.message ?: "").lowercase()
+        return "op.unsupported" in text || "operation not supported" in text
+    }
+
+    private fun refreshManifest() {
+        refreshAndList()
     }
 
     private fun bindServerLabel() {
@@ -536,13 +607,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadFolder(row: BrowseRow) {
-        val files = ManifestBrowse.filesUnder(manifestEntries, row.path)
+        val active = client ?: return
+        val repoId = selectedRepoId ?: return
+        setBusy(true, getString(R.string.status_scanning))
+        io.execute {
+            try {
+                val json = active.listFilesUnderJSON(repoId, row.path, browseRevision, browseGeneration)
+                val files = ManifestBrowse.entriesFrom(json)
+                main.post { confirmDownloadFolder(row, files) }
+            } catch (e: Exception) {
+                main.post { failBusy(getString(R.string.error_download), e) }
+            }
+        }
+    }
+
+    private fun confirmDownloadFolder(row: BrowseRow, files: List<ManifestEntry>) {
         if (files.isEmpty()) {
             setBusy(false, getString(R.string.browse_empty))
             return
         }
         val bytes = files.sumOf { it.size }
         if (files.size > 200 || bytes > 400L * 1024 * 1024) {
+            setBusy(false, "")
             AlertDialog.Builder(this)
                 .setMessage(getString(R.string.error_folder_too_big, HumanSize.format(bytes)))
                 .setPositiveButton(android.R.string.ok, null)
@@ -780,6 +866,9 @@ class MainActivity : AppCompatActivity() {
         selectedRepoId = FileesSession.current(prefs)?.selectedRepoId?.ifBlank { null }
         selectedShareName = ""
         browsePrefix = ""
+        browseRevision = 0
+        browseGeneration = 0
+        legacyFullTree = false
         selectableShares = emptyList()
         manifestEntries = emptyList()
         bindDecisions(emptyList())
@@ -794,6 +883,9 @@ class MainActivity : AppCompatActivity() {
         selectedRepoId = null
         selectableShares = emptyList()
         manifestEntries = emptyList()
+        browseRevision = 0
+        browseGeneration = 0
+        legacyFullTree = false
         bindDecisions(emptyList())
         bindServerLabel()
         val next = FileesSession.current(prefs)

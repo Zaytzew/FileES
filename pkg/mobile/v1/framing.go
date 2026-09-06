@@ -25,7 +25,10 @@ const (
 
 	// MaxHeaderBytes bounds the header JSON. Payload size limits are per-operation
 	// and enforced by the worker from the header, not here.
-	MaxHeaderBytes = 64 * 1024
+	// REFRESH_MANIFEST still serializes the complete listing into that header,
+	// so a few hundred CAD paths already overflow 64 KiB (measured: KIWERSKA
+	// 58 entries fit, GWIAŹDZISTA 699 and KRAŃCOWA 601 did not).
+	MaxHeaderBytes = 1 << 20
 	maxLineBytes   = 64
 )
 

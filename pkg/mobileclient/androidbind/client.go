@@ -120,6 +120,38 @@ func (c *Client) RefreshJSON(repoID string) (string, error) {
 	return string(raw), nil
 }
 
+// ListDirectoryJSON returns immediate children of path as a manifest JSON
+// (entries in the object, not a recursive tree). revision/generation pin the
+// local directory cache; 0 lets the worker use HEAD.
+func (c *Client) ListDirectoryJSON(repoID, path string, revision, generation int64) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	defer cancel()
+	m, err := c.inner.ListDirectory(ctx, repoID, path, generation, revision)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+// ListFilesUnderJSON walks directory pages and returns {"entries":[files…]}.
+func (c *Client) ListFilesUnderJSON(repoID, path string, revision, generation int64) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
+	defer cancel()
+	files, err := c.inner.ListFilesUnder(ctx, repoID, path, generation, revision)
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(map[string]any{"entries": files})
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
 // DownloadTo writes the object at path into destPath. The phone is allowed
 // to read existing objects; it still cannot modify or delete them.
 func (c *Client) DownloadTo(repoID, path, destPath string) error {

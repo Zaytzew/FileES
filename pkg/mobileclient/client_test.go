@@ -214,18 +214,45 @@ func TestRefreshRepoBumpUpdatesCache(t *testing.T) {
 	if m.RepoRevision != 2 {
 		t.Fatalf("repo_revision = %d, want 2", m.RepoRevision)
 	}
+	cached, _ := c.Store.LoadManifest("repo-1")
+	if cached == nil || cached.RepoRevision != 2 {
+		t.Fatalf("cache not updated: %+v", cached)
+	}
+	listing, err := c.ListDirectory(context.Background(), "repo-1", "photos/2026", m.ViewGeneration, m.RepoRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
 	found := false
-	for _, e := range m.Entries {
+	for _, e := range listing.Entries {
 		if e.Path == "photos/2026/c.jpg" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("new file missing from refreshed manifest")
+		t.Fatal("new file missing from directory listing")
 	}
-	cached, _ := c.Store.LoadManifest("repo-1")
-	if cached == nil || cached.RepoRevision != 2 {
-		t.Fatalf("cache not updated: %+v", cached)
+}
+
+func TestListDirectoryCachesImmediateChildren(t *testing.T) {
+	requireSVN(t)
+	c := newClient(t, newSeededRepo(t), "r")
+	m, err := c.Refresh(context.Background(), "repo-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := c.ListDirectory(context.Background(), "repo-1", "", m.ViewGeneration, m.RepoRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(root.Entries) != 1 || root.Entries[0].Path != "photos" || root.Entries[0].Kind != v1.KindDirectory {
+		t.Fatalf("root entries = %+v", root.Entries)
+	}
+	again, err := c.ListDirectory(context.Background(), "repo-1", "", m.ViewGeneration, m.RepoRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Entries) != len(root.Entries) {
+		t.Fatalf("cached listing size %d, want %d", len(again.Entries), len(root.Entries))
 	}
 }
 

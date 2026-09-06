@@ -5,11 +5,14 @@
 package mobileclient
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"filees/internal/durable"
 	v1 "filees/pkg/mobile/v1"
@@ -69,6 +72,74 @@ func (s Store) SaveManifestIfNewer(m *v1.Manifest) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+const dirListingSchema = "filees.mobile-dir/v1"
+
+type directoryListing struct {
+	Schema         string             `json:"schema"`
+	RepoID         string             `json:"repo_id"`
+	Path           string             `json:"path"`
+	ViewGeneration int64              `json:"view_generation"`
+	RepoRevision   int64              `json:"repo_revision"`
+	Entries        []v1.ManifestEntry `json:"entries"`
+}
+
+func (s Store) dirListingPath(repoID, path string, gen, rev int64) string {
+	sum := sha256.Sum256([]byte(path))
+	return filepath.Join(s.Root, "dir-listings", repoID, strconv.FormatInt(gen, 10), strconv.FormatInt(rev, 10), hex.EncodeToString(sum[:])+".json")
+}
+
+// LoadDirectory returns a cached one-level listing, or (nil, nil) on miss.
+func (s Store) LoadDirectory(repoID, path string, gen, rev int64) (*v1.Manifest, error) {
+	if gen < 1 || rev < 1 {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(s.dirListingPath(repoID, path, gen, rev))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var d directoryListing
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return nil, fmt.Errorf("decode cached directory: %w", err)
+	}
+	if d.Schema != dirListingSchema || d.ViewGeneration != gen || d.RepoRevision != rev {
+		return nil, nil
+	}
+	m := &v1.Manifest{
+		Schema:         v1.ManifestSchema,
+		RepoID:         d.RepoID,
+		ViewGeneration: d.ViewGeneration,
+		RepoRevision:   d.RepoRevision,
+		Complete:       false,
+		Entries:        d.Entries,
+	}
+	if err := m.Validate(); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// SaveDirectory stores one LIST_DIRECTORY page keyed by generation, revision and path.
+func (s Store) SaveDirectory(path string, m *v1.Manifest) error {
+	if m == nil {
+		return errors.New("directory listing is required")
+	}
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	d := directoryListing{
+		Schema:         dirListingSchema,
+		RepoID:         m.RepoID,
+		Path:           path,
+		ViewGeneration: m.ViewGeneration,
+		RepoRevision:   m.RepoRevision,
+		Entries:        m.Entries,
+	}
+	return atomicWriteJSON(s.dirListingPath(m.RepoID, path, m.ViewGeneration, m.RepoRevision), d)
 }
 
 // atomicWriteJSON writes value as indented JSON to path atomically, mode 0600.

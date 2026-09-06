@@ -98,10 +98,17 @@ func (s PassportPreparations) Handle(ctx context.Context, session Session, ticke
 			}
 			switch record.State {
 			case "started":
-				// A crash may have occurred either side of the SVN mutation. Absence
-				// of the old token is not evidence that WE released it. Never replay.
-				result, err = failure(errcat.KeyPassportUncertain)
-				return err
+				// We hold the operation lock: the previous handler has ended, but
+				// its conditional old-token release may or may not have completed.
+				// Never replay it or claim success. Seal a terminal refusal BEFORE
+				// replying so this ticket can never authorize a subsequent acquire.
+				// A surviving svnadmin child can only target the exact OLD token.
+				result, err = failure(errcat.KeyPassportAborted)
+				if err != nil {
+					return err
+				}
+				record.State, record.Result = "finished", &result
+				return atomicJSON(path, record)
 			case "finished":
 				if record.Result == nil {
 					return errors.New("passport preparation receipt missing")

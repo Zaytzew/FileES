@@ -11,11 +11,99 @@ import (
 
 	"filees/pkg/client"
 	control "filees/pkg/control/v1"
+	"filees/pkg/controlclient"
+	"filees/pkg/errcat"
 	"filees/pkg/passport"
 	"github.com/google/uuid"
 )
 
 type recoveryExchange func(context.Context, control.Ticket) (control.Result, error)
+
+func TestPassportInterruptedPrepareRetiresTicketRealSVN(t *testing.T) {
+	for _, afterUnlock := range []bool{false, true} {
+		t.Run(map[bool]string{false: "before-unlock", true: "after-unlock"}[afterUnlock], func(t *testing.T) {
+			f, wc, doc := realReplacementFixture(t)
+			root := t.TempDir()
+			svc := &PassportPreparations{Root: root, Authority: f.authority}
+			actualRun := runLockAuthorityCommand
+			mutations := 0
+			svc.Authority.Locks.Run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if args[0] == "unlock" {
+					if afterUnlock {
+						if _, err := actualRun(ctx, name, args...); err != nil {
+							return nil, err
+						}
+						mutations++
+					}
+					return nil, errors.New("fixture worker interrupted")
+				}
+				return actualRun(ctx, name, args...)
+			}
+			var old control.Ticket
+			dropAbort := true
+			transport := recoveryExchange(func(ctx context.Context, ticket control.Ticket) (control.Result, error) {
+				if old.OperationID == "" {
+					old = ticket
+				}
+				r, err := svc.Handle(ctx, f.session, ticket)
+				if err == nil && r.Error != nil && r.Error.Code == string(errcat.CodePassportAborted) && dropAbort {
+					dropAbort = false
+					return control.Result{}, errors.New("fixture lost terminal receipt")
+				}
+				return r, err
+			})
+			cli := &recoverySVNClient{replacementSVNClient: &replacementSVNClient{Client: client.New(client.Options{Timeout: 10 * time.Second}), username: f.session.ClientID}}
+			backend := passport.ControlSVNBackend{SVNBackend: passport.SVNBackend{Client: cli, WC: wc}, RepoID: f.req.RepoID, ClientID: f.session.ClientID, Transport: transport}
+			store, instance := filepath.Join(t.TempDir(), "passports.json"), uuid.NewString()
+			open := func() *passport.Manager {
+				m, err := passport.Open(store, instance, backend, passport.Config{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return m
+			}
+			m := open()
+			if _, _, err := m.Acquire(t.Context(), []string{doc}, f.owner); err == nil {
+				t.Fatal("interruption acknowledged")
+			}
+			svc = &PassportPreparations{Root: root, Authority: f.authority}
+			m = open()
+			if err := m.Heartbeat(t.Context()); err == nil || len(m.Snapshot()) != 1 {
+				t.Fatal("lost terminal receipt discarded pending")
+			}
+			m = open()
+			if err := m.Heartbeat(t.Context()); !controlclient.IsAbortedPreparation(err, old) {
+				t.Fatalf("terminal receipt: %v", err)
+			}
+			if len(m.Snapshot()) != 0 || len(open().Snapshot()) != 0 || cli.locks != 0 {
+				t.Fatal("retirement acquired or retained intent")
+			}
+			if err := m.Authorize(t.Context(), []string{doc}); err == nil {
+				t.Fatal("retirement granted publication")
+			}
+			if afterUnlock && mutations != 1 {
+				t.Fatal("wrong mutation count")
+			}
+			// A fresh user/pipeline attempt starts with a new inspection and intent.
+			if _, _, err := m.Acquire(t.Context(), []string{doc}, f.owner); err != nil {
+				t.Fatal(err)
+			}
+			before := m.Snapshot()[0].FencingToken
+			for range 3 {
+				r, err := svc.Handle(t.Context(), f.session, old)
+				requirePreparationCode(t, r, err, errcat.CodePassportAborted)
+			}
+			lock, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+			if err != nil || lock == nil || lock.Token != before || cli.locks != 1 || cli.forceCalls != 0 {
+				t.Fatalf("old ticket damaged new lock: %+v %v", lock, err)
+			}
+			data, err := os.ReadFile(doc)
+			if err != nil || string(data) != "local work" {
+				t.Fatalf("local bytes changed: %q %v", data, err)
+			}
+		})
+	}
+}
 
 func (f recoveryExchange) Exchange(ctx context.Context, ticket control.Ticket) (control.Result, error) {
 	return f(ctx, ticket)

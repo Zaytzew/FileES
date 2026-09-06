@@ -214,6 +214,9 @@ func (c *execClient) Checkout(ctx context.Context, repoURL, localPath string) (s
 }
 
 func (c *execClient) Cleanup(ctx context.Context, localPath string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeCleanup(ctx, localPath)
+	}
 	return c.run(ctx, localPath, []string{"cleanup"})
 }
 
@@ -224,6 +227,9 @@ func (c *execClient) Update(ctx context.Context, localPath string) (string, erro
 // Revert removes local scheduling metadata for selected paths. It is kept off
 // the broad Client interface because only restart recovery needs it.
 func (c *execClient) Revert(ctx context.Context, rootDirectory string, paths []string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeRevert(ctx, rootDirectory, paths)
+	}
 	args := append([]string{"revert"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
@@ -234,6 +240,9 @@ func (c *execClient) UpdateDepthEmpty(ctx context.Context, rootDirectory string,
 }
 
 func (c *execClient) Status(ctx context.Context, rootDirectory string, paths []string) ([]StatusEntry, error) {
+	if nativeWCOps(c) {
+		return c.nativeStatus(ctx, rootDirectory, paths)
+	}
 	depth := "empty"
 	if len(paths) == 0 {
 		depth = "infinity"
@@ -287,6 +296,9 @@ func parseStatusXML(output, rootDirectory string) ([]StatusEntry, error) {
 }
 
 func (c *execClient) Add(ctx context.Context, rootDirectory string, paths []string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeAdd(ctx, rootDirectory, paths)
+	}
 	// Keep directory expansion under the commit planner's control. --parents
 	// schedules required ancestors, while --depth empty prevents a directory
 	// from recursively bypassing file-count and byte limits.
@@ -295,6 +307,9 @@ func (c *execClient) Add(ctx context.Context, rootDirectory string, paths []stri
 }
 
 func (c *execClient) Delete(ctx context.Context, rootDirectory string, paths []string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeDelete(ctx, rootDirectory, paths)
+	}
 	args := append([]string{"delete"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
@@ -568,6 +583,9 @@ func parseLockListXML(output, rootDirectory string) ([]LockEntry, error) {
 }
 
 func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string, paths []string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativePropget(ctx, rootDirectory, propName, paths)
+	}
 	args := append([]string{"propget", propName}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
@@ -575,6 +593,9 @@ func (c *execClient) PropGet(ctx context.Context, rootDirectory, propName string
 func (c *execClient) PropSet(ctx context.Context, rootDirectory, propName, value string, paths []string) (string, error) {
 	if len(paths) == 0 {
 		return "", errors.New("svn propset refused: empty path list")
+	}
+	if nativeWCOps(c) {
+		return c.nativePropset(ctx, rootDirectory, propName, value, paths)
 	}
 	args := append([]string{"propset", propName, value}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
@@ -584,11 +605,17 @@ func (c *execClient) PropDel(ctx context.Context, rootDirectory, propName string
 	if len(paths) == 0 {
 		return "", errors.New("svn propdel refused: empty path list")
 	}
+	if nativeWCOps(c) {
+		return c.nativePropdel(ctx, rootDirectory, propName, paths)
+	}
 	args := append([]string{"propdel", propName}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
 func (c *execClient) PropList(ctx context.Context, rootDirectory, propName string) (map[string]bool, error) {
+	if nativeWCOps(c) {
+		return c.nativeProplist(ctx, rootDirectory, propName)
+	}
 	out, err := c.run(ctx, rootDirectory, []string{"propget", "--xml", "--recursive", propName, "."})
 	if err != nil {
 		return nil, err
@@ -628,6 +655,9 @@ func parsePropGetXML(output, rootDirectory string) (map[string]bool, error) {
 }
 
 func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, accept string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeResolve(ctx, wc, paths, accept)
+	}
 	args := append([]string{"resolve", "--accept", accept}, c.pathArgs(wc, paths)...)
 	return c.run(ctx, wc, args)
 }

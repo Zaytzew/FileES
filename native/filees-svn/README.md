@@ -121,5 +121,6 @@ path-owner broker transport or full group autolock.
 
 The isolated historical result remains in
 [the r896 report](../../reports/NATIVE_SVN_PROBE_2026-09-06.md).
+Linux r898 deployment and first real two-realm move are recorded in
+[the live report](../../reports/NATIVE_SVN_LINUX_LIVE_2026-09-06.md).
 API: [Apache SVN move7](https://subversion.apache.org/docs/api/1.14/group__Move.html).
-

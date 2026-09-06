@@ -14,7 +14,8 @@ import (
 )
 
 // LockIntent is persisted inside passports.json BEFORE any network mutation.
-// Ticket and Comment are immutable; prepare advances to locking OR canceling.
+// Ticket and Comment are immutable; prepare advances to locking OR canceling,
+// and a successfully completed acquire advances from locking to checking.
 type LockIntent struct {
 	Stage    string          `json:"stage"`
 	RepoID   string          `json:"repo_id"`
@@ -32,6 +33,7 @@ type intentBackend interface {
 	CancelLockIntent(context.Context, string, LockIntent) error
 	AcquireLockIntent(context.Context, string, LockIntent) (string, error)
 	ConfirmLockIntent(context.Context, string, LockIntent) (*Lock, error)
+	ReconcileCompletedLockIntent(context.Context, string, LockIntent) (*Lock, bool, error)
 }
 
 // ControlSVNBackend is the durable Manager integration of conditional prepare.
@@ -78,7 +80,7 @@ func (b ControlSVNBackend) ValidateLockIntent(path string, i LockIntent) error {
 	if err != nil {
 		return err
 	}
-	if b.Client == nil || i.RepoID != b.RepoID || i.ClientID != b.ClientID || i.Path != rel || (i.Stage != "prepare" && i.Stage != "locking" && i.Stage != "canceling") {
+	if b.Client == nil || i.RepoID != b.RepoID || i.ClientID != b.ClientID || i.Path != rel || (i.Stage != "prepare" && i.Stage != "locking" && i.Stage != "checking" && i.Stage != "canceling") {
 		return errors.New("passport intent binding mismatch")
 	}
 	if _, ok := b.Client.(client.LockReceiptReader); !ok {
@@ -173,4 +175,33 @@ func (b ControlSVNBackend) ConfirmLockIntent(ctx context.Context, path string, i
 		return nil, errcat.New(errcat.KeyPassportUncertain, nil, nil)
 	}
 	return &Lock{Token: proof.Token, Owner: proof.Owner, Comment: proof.Comment}, nil
+}
+
+// The boolean means that a COMPLETED acquisition no longer holds this path.
+// It is never available for an unresolved locking operation.
+func (b ControlSVNBackend) ReconcileCompletedLockIntent(ctx context.Context, path string, i LockIntent) (*Lock, bool, error) {
+	if err := b.ValidateLockIntent(path, i); err != nil {
+		return nil, false, err
+	}
+	if i.Stage != "checking" {
+		return nil, false, errors.New("lock command completion is not durable")
+	}
+	reader, ok := b.Client.(client.LockObservationReader)
+	if !ok {
+		lock, err := b.ConfirmLockIntent(ctx, path, i)
+		return lock, false, err
+	}
+	observation, err := reader.ReadLockObservation(ctx, b.WC, path)
+	if err != nil {
+		return nil, false, err
+	}
+	remote, local := observation.Remote, observation.Local
+	comment := FormatComment(i.Metadata)
+	if remote == nil || remote.Owner != i.ClientID || remote.Comment != comment {
+		return nil, true, nil
+	}
+	if local == nil || remote.Token == "" || local.Token != remote.Token || local.Owner != remote.Owner || local.Comment != comment {
+		return nil, false, errcat.New(errcat.KeyPassportUncertain, nil, nil)
+	}
+	return &Lock{Token: remote.Token, Owner: remote.Owner, Comment: remote.Comment}, false, nil
 }

@@ -19,6 +19,83 @@ import (
 
 type recoveryExchange func(context.Context, control.Ticket) (control.Result, error)
 
+func TestCompletedAcquireObservationRecoveryRealSVN(t *testing.T) {
+	for _, scenario := range []string{"own", "absent", "competitor", "copied-comment"} {
+		t.Run(scenario, func(t *testing.T) {
+			f, wc, doc := realReplacementFixture(t)
+			svc := &PassportPreparations{Root: t.TempDir(), Authority: f.authority}
+			calls := 0
+			x := recoveryExchange(func(ctx context.Context, ticket control.Ticket) (control.Result, error) {
+				calls++
+				return svc.Handle(ctx, f.session, ticket)
+			})
+			cli := &recoverySVNClient{replacementSVNClient: &replacementSVNClient{Client: client.New(client.Options{Timeout: 10 * time.Second}), username: f.session.ClientID}, observationError: errors.New("lost status reply")}
+			b := passport.ControlSVNBackend{SVNBackend: passport.SVNBackend{Client: cli, WC: wc}, RepoID: f.req.RepoID, ClientID: f.session.ClientID, Transport: x}
+			store, instance := filepath.Join(t.TempDir(), "passports.json"), uuid.NewString()
+			open := func() *passport.Manager {
+				m, err := passport.Open(store, instance, b, passport.Config{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return m
+			}
+			m := open()
+			if _, _, err := m.Acquire(t.Context(), []string{doc}, f.owner); err == nil {
+				t.Fatal("lost observation accepted")
+			}
+			pending := m.Snapshot()[0]
+			if pending.Pending.Stage != "checking" {
+				t.Fatal("completion not durable")
+			}
+			lock, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+			if err != nil || lock == nil {
+				t.Fatalf("acquire missing: %+v %v", lock, err)
+			}
+			if scenario != "own" {
+				// Release from the authority: original WC deliberately retains its
+				// obsolete local token. It must not masquerade as the current one.
+				if err := f.authority.Locks.unlockIfCurrent(t.Context(), f.req.RepoID, f.req.Path, lock.Owner, lock.Token); err != nil {
+					t.Fatal(err)
+				}
+				if scenario != "absent" {
+					other := filepath.Join(t.TempDir(), "wc")
+					replacementCommand(t, "svn", "co", "file://"+filepath.Join(f.authority.Locks.RepositoriesRoot, f.req.RepoID), other)
+					owner, comment := uuid.NewString(), "competitor"
+					if scenario == "copied-comment" {
+						owner, comment = f.session.ClientID, lock.Comment
+					}
+					replacementCommand(t, "svn", "lock", "--username", owner, "-m", comment, filepath.Join(other, filepath.FromSlash(f.req.Path)))
+				}
+			}
+			before, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cli.observationError = nil
+			m = open()
+			_, _, err = m.Acquire(t.Context(), []string{doc}, f.owner)
+			if (err == nil) != (scenario == "own") {
+				t.Fatalf("recovery: %v", err)
+			}
+			gone := scenario == "absent" || scenario == "competitor"
+			if (len(m.Snapshot()) == 0) != gone || (len(open().Snapshot()) == 0) != gone {
+				t.Fatal("incorrect durable settlement")
+			}
+			after, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+			if err != nil || (before == nil) != (after == nil) || (before != nil && before.Token != after.Token) || cli.locks != 1 || cli.forceCalls != 0 || calls != 1 {
+				t.Fatal("recovery mutated lock or repeated prepare")
+			}
+			if scenario != "own" && m.Authorize(t.Context(), []string{doc}) == nil {
+				t.Fatal("unproven publish")
+			}
+			data, err := os.ReadFile(doc)
+			if err != nil || string(data) != "local work" {
+				t.Fatal("bytes changed")
+			}
+		})
+	}
+}
+
 func TestExpiredPrepareCancellationManagerRealSVN(t *testing.T) {
 	f, wc, doc := realReplacementFixture(t)
 	svc := &PassportPreparations{Root: t.TempDir(), Authority: f.authority}
@@ -177,8 +254,16 @@ func (f recoveryExchange) Exchange(ctx context.Context, ticket control.Ticket) (
 
 type recoverySVNClient struct {
 	*replacementSVNClient
-	loseReply bool
-	locks     int
+	loseReply        bool
+	locks            int
+	observationError error
+}
+
+func (c *recoverySVNClient) ReadLockObservation(ctx context.Context, wc, path string) (client.LockObservation, error) {
+	if c.observationError != nil {
+		return client.LockObservation{}, c.observationError
+	}
+	return c.Client.(client.LockObservationReader).ReadLockObservation(ctx, wc, path)
 }
 
 func (c *recoverySVNClient) LockWithComment(ctx context.Context, wc string, paths []string, comment string, force bool) (string, error) {

@@ -12,6 +12,8 @@ import (
 
 	"filees/pkg/client"
 	control "filees/pkg/control/v1"
+	"filees/pkg/controlclient"
+	"filees/pkg/errcat"
 	"github.com/google/uuid"
 )
 
@@ -66,6 +68,7 @@ type pendingTransport struct {
 	calls        int
 	lose         bool
 	afterPrepare func()
+	onReplay     func()
 }
 
 func (x *pendingTransport) Exchange(_ context.Context, ticket control.Ticket) (control.Result, error) {
@@ -74,6 +77,9 @@ func (x *pendingTransport) Exchange(_ context.Context, ticket control.Ticket) (c
 	if x.wire != nil {
 		if string(raw) != string(x.wire) {
 			x.t.Fatal("retry minted a different ticket")
+		}
+		if x.onReplay != nil {
+			x.onReplay()
 		}
 		return x.result, nil
 	}
@@ -127,6 +133,63 @@ func (f *pendingFixture) acquire(t *testing.T, m *Manager) Passport {
 		t.Fatal(err)
 	}
 	return ps[0]
+}
+
+func TestAbortedPrepareNeedsDurableLocalRetirement(t *testing.T) {
+	for _, failedSave := range []bool{false, true} {
+		t.Run(map[bool]string{false: "saved", true: "save-failure"}[failedSave], func(t *testing.T) {
+			f := newPendingFixture(t)
+			m := f.open(t)
+			f.acquire(t, m)
+			f.now = f.now.Add(11 * time.Minute)
+			f.transport.lose = true
+			if err := m.Heartbeat(t.Context()); err == nil {
+				t.Fatal("lost prepare acknowledged")
+			}
+			p := m.Snapshot()[0]
+			ticket := *p.Pending.Ticket
+			f.transport.result, _ = control.NewErrorResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.ErrorBody{Code: string(errcat.CodePassportAborted), Message: string(errcat.KeyPassportAborted)}, f.now)
+			m = f.open(t)
+			var projected []PendingStatus
+			m.cfg.OnPending = func(rows []PendingStatus) { projected = rows }
+			m.publishPendingLocked()
+			if failedSave {
+				f.transport.onReplay = func() {
+					f.transport.onReplay = nil
+					if err := os.Remove(f.store); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Mkdir(f.store, 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			err := m.Heartbeat(t.Context())
+			if !controlclient.IsAbortedPreparation(err, ticket) {
+				t.Fatalf("not a terminal receipt: %v", err)
+			}
+			if failedSave {
+				if len(m.Snapshot()) != 1 || len(projected) != 1 {
+					t.Fatal("failed save removed recovery fence")
+				}
+				if err := os.Remove(f.store); err != nil {
+					t.Fatal(err)
+				}
+				if err := m.Heartbeat(t.Context()); !controlclient.IsAbortedPreparation(err, ticket) {
+					t.Fatal(err)
+				}
+			}
+			if len(m.Snapshot()) != 0 || len(projected) != 0 || len(f.open(t).Snapshot()) != 0 {
+				t.Fatal("retirement not durable/projected")
+			}
+			if f.cli.locks != 1 || f.cli.unlocks != 0 {
+				t.Fatal("retirement mutated SVN")
+			}
+			if err := m.Authorize(t.Context(), []string{f.path}); err == nil {
+				t.Fatal("retirement authorized publication")
+			}
+		})
+	}
 }
 
 func TestPendingHeartbeatReplaysExactTicketAfterRestart(t *testing.T) {

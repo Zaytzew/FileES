@@ -43,7 +43,7 @@ func TestControlPassportPreparationContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"prepared", "not-a-lock", "wrong-path", "wrong-token", "wrong-operation", "denied", "uncertain", "unknown", "transport"} {
+	for _, scenario := range []string{"prepared", "not-a-lock", "wrong-path", "wrong-token", "wrong-operation", "denied", "uncertain", "aborted", "unknown", "transport"} {
 		t.Run(scenario, func(t *testing.T) {
 			calls := 0
 			transport := preparationExchange(func(_ context.Context, got control.Ticket) (control.Result, error) {
@@ -55,10 +55,13 @@ func TestControlPassportPreparationContract(t *testing.T) {
 				if scenario == "transport" {
 					return control.Result{}, errors.New("lost SSH reply")
 				}
-				if scenario == "denied" || scenario == "uncertain" || scenario == "unknown" {
+				if scenario == "denied" || scenario == "uncertain" || scenario == "aborted" || scenario == "unknown" {
 					key := errcat.KeyPassportDenied
 					if scenario == "uncertain" {
 						key = errcat.KeyPassportUncertain
+					}
+					if scenario == "aborted" {
+						key = errcat.KeyPassportAborted
 					}
 					spec, _ := errcat.ByKey(key)
 					code, message := string(spec.Code), string(spec.Key)
@@ -91,7 +94,10 @@ func TestControlPassportPreparationContract(t *testing.T) {
 			if calls != 1 {
 				t.Fatalf("automatic mutation retry: %d", calls)
 			}
-			if scenario == "denied" || scenario == "uncertain" {
+			if controlclient.IsAbortedPreparation(err, parsed) != (scenario == "aborted") {
+				t.Fatal("terminal receipt marker mismatch")
+			}
+			if scenario == "denied" || scenario == "uncertain" || scenario == "aborted" {
 				var fault errcat.Fault
 				if !errors.As(err, &fault) {
 					t.Fatalf("not a catalog fault: %v", err)

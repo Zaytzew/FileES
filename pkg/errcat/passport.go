@@ -7,10 +7,12 @@ const (
 	CodePassportUnavailable     Code = "LOCK-2104"
 	CodePassportRequestConflict Code = "LOCK-2105"
 	CodePathOwnerUnavailable    Code = "LOCK-2106"
+	CodePassportAborted         Code = "LOCK-2107"
 	KeyPassportDenied           Key  = "passport.replacement_denied"
 	KeyPassportStale            Key  = "passport.replacement_stale"
 	KeyPassportUncertain        Key  = "passport.replacement_uncertain"
 	KeyPassportUnavailable      Key  = "passport.replacement_unavailable"
 	KeyPassportRequestConflict  Key  = "passport.replacement_request_conflict"
 	KeyPathOwnerUnavailable     Key  = "passport.path_owner_unavailable"
+	KeyPassportAborted          Key  = "passport.preparation_aborted"
 )

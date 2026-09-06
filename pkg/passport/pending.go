@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"filees/pkg/controlclient"
 	"filees/pkg/errcat"
 )
 
@@ -99,6 +100,16 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 			return p, "", err
 		}
 		if err := b.PrepareLockIntent(ctx, p.Path, i); err != nil {
+			if i.Ticket != nil && controlclient.IsAbortedPreparation(err, *i.Ticket) {
+				// No acquire was issued in prepare. The server has durably fenced
+				// this exact ticket, not guessed the outcome of a later SVN lock.
+				delete(m.passports, p.Path)
+				if saveErr := m.saveLocked(); saveErr != nil {
+					m.passports[p.Path] = p
+					return p, "", errors.Join(err, saveErr)
+				}
+				m.publishPendingLocked()
+			}
 			return p, "", err
 		}
 		i.Stage = "locking"

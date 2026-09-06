@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -93,7 +94,7 @@ func TestPassportPreparationCrashFenceAndUnavailableStorage(t *testing.T) {
 					t.Fatal(err)
 				}
 				r, err := svc.Handle(t.Context(), f.session, ticket)
-				requirePreparationCode(t, r, err, errcat.CodePassportUncertain)
+				requirePreparationCode(t, r, err, errcat.CodePassportAborted)
 			case "failure-after-unlock":
 				run := svc.Authority.Locks.Run
 				svc.Authority.Locks.Run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -107,7 +108,7 @@ func TestPassportPreparationCrashFenceAndUnavailableStorage(t *testing.T) {
 					t.Fatal("lost response acknowledged")
 				}
 				r, err := (PassportPreparations{Root: svc.Root, Authority: f.authority}).Handle(t.Context(), f.session, ticket)
-				requirePreparationCode(t, r, err, errcat.CodePassportUncertain)
+				requirePreparationCode(t, r, err, errcat.CodePassportAborted)
 				if f.unlocks != 1 {
 					t.Fatalf("replayed unlock=%d", f.unlocks)
 				}
@@ -132,6 +133,78 @@ func TestPassportPreparationCrashFenceAndUnavailableStorage(t *testing.T) {
 				t.Fatal("mutation without durable admission")
 			}
 		})
+	}
+}
+
+func TestAbortedPreparationIsDurableBoundAndNeverReplayed(t *testing.T) {
+	f := newReplacementFixture(t)
+	svc := PassportPreparations{Root: t.TempDir(), Authority: f.authority}
+	ticket := preparationTicket(t, f)
+	path := filepath.Join(svc.Root, ticket.OperationID+".json")
+	if err := atomicJSON(path, passportPreparationRecord{Schema: "filees.passport-preparation/v1", Digest: preparationDigest(f.session, ticket), State: "started"}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r, err := svc.Handle(t.Context(), f.session, ticket)
+			if err != nil || r.Error == nil || r.Error.Code != string(errcat.CodePassportAborted) {
+				t.Errorf("terminal receipt: %+v %v", r, err)
+			}
+		}()
+	}
+	wg.Wait()
+	var record passportPreparationRecord
+	if err := decodeJSONFile(path, &record); err != nil || record.State != "finished" || record.Result == nil {
+		t.Fatalf("not durable: %+v %v", record, err)
+	}
+	before, _ := os.ReadFile(path)
+	other := ticket
+	other.RequestID = uuid.NewString()
+	r, err := svc.Handle(t.Context(), f.session, other)
+	requirePreparationCode(t, r, err, errcat.CodePassportRequestConflict)
+	r, err = (PassportPreparations{Root: svc.Root, Authority: f.authority}).Handle(t.Context(), f.session, ticket)
+	requirePreparationCode(t, r, err, errcat.CodePassportAborted)
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) || f.unlocks != 0 {
+		t.Fatal("terminal replay rewrote receipt or mutated lock")
+	}
+}
+
+func TestAbortedPreparationCannotAcknowledgeFailedSave(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("permission failure fixture requires non-root")
+	}
+	f := newReplacementFixture(t)
+	svc := PassportPreparations{Root: t.TempDir(), Authority: f.authority}
+	ticket := preparationTicket(t, f)
+	path := filepath.Join(svc.Root, ticket.OperationID+".json")
+	if err := atomicJSON(path, passportPreparationRecord{Schema: "filees.passport-preparation/v1", Digest: preparationDigest(f.session, ticket), State: "started"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WithFileLock(filepath.Join(svc.Root, ticket.OperationID+".lock"), func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(svc.Root, 0500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(svc.Root, 0700)
+	if _, err := svc.Handle(t.Context(), f.session, ticket); err == nil {
+		t.Fatal("failed terminal save acknowledged")
+	}
+	var record passportPreparationRecord
+	if err := decodeJSONFile(path, &record); err != nil || record.State != "started" {
+		t.Fatalf("pending record lost: %+v %v", record, err)
+	}
+	if err := os.Chmod(svc.Root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	r, err := svc.Handle(t.Context(), f.session, ticket)
+	requirePreparationCode(t, r, err, errcat.CodePassportAborted)
+	if f.unlocks != 0 {
+		t.Fatal("retry mutated lock")
 	}
 }
 

@@ -2,6 +2,7 @@ package controlclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -11,6 +12,22 @@ import (
 
 type Exchanger interface {
 	Exchange(context.Context, control.Ticket) (control.Result, error)
+}
+
+// Only a validated, request-bound terminal receipt produces this marker.
+// A transport error (even one carrying the same catalog code) is NOT proof.
+type abortedPreparation struct {
+	cause   error
+	request string
+}
+
+func (e *abortedPreparation) Error() string { return e.cause.Error() }
+func (e *abortedPreparation) Unwrap() error { return e.cause }
+
+func IsAbortedPreparation(err error, ticket control.Ticket) bool {
+	var receipt *abortedPreparation
+	raw, marshalErr := json.Marshal(ticket)
+	return marshalErr == nil && errors.As(err, &receipt) && receipt.request == string(raw)
 }
 
 // PreparePassportReplacement reuses the pinned control-v1 transport. The
@@ -43,7 +60,15 @@ func PreparePassportReplacement(ctx context.Context, transport Exchanger, ticket
 	if result.Status != control.ResultOK {
 		spec, ok := errcat.ByPair(errcat.Code(result.Error.Code), errcat.Key(result.Error.Message))
 		if ok {
-			return errcat.Of(spec.Code, spec.Key, nil, nil)
+			fault := errcat.Of(spec.Code, spec.Key, nil, nil)
+			if spec.Code == errcat.CodePassportAborted && spec.Key == errcat.KeyPassportAborted {
+				raw, err := json.Marshal(ticket)
+				if err != nil {
+					return err
+				}
+				return &abortedPreparation{cause: fault, request: string(raw)}
+			}
+			return fault
 		}
 		// Alpha keeps an unknown response visible instead of hiding catalog gaps.
 		return fmt.Errorf("passport preparation failed: %s: %s", result.Error.Code, result.Error.Message)

@@ -87,6 +87,7 @@ var specs = []Spec{
 	{CodePassportDenied, KeyPassportDenied, SevWarn, HintRequireAction, nil, "Passport replacement is not authorized", "Nie masz uprawnienia do zastąpienia tej rezerwacji"},
 	{CodePassportStale, KeyPassportStale, SevWarn, HintRetryLocal, nil, "Observed reservation is no longer current", "Rezerwacja uległa zmianie — odśwież jej stan"},
 	{CodePassportUncertain, KeyPassportUncertain, SevError, HintRequireAction, nil, "Passport replacement outcome is uncertain; reconcile before continuing", "Wynik zmiany rezerwacji jest niepewny — uzgodnij jej stan przed dalszą pracą"},
+	{CodePassportAborted, KeyPassportAborted, SevWarn, HintRetryLocal, nil, "Interrupted passport preparation was durably closed without granting a new lock", "Przerwane przygotowanie rezerwacji zostało zakończone — ponów próbę, aby sprawdzić aktualny stan"},
 	{CodePassportUnavailable, KeyPassportUnavailable, SevError, HintRetryBackoff, nil, "Passport replacement service is unavailable", "Usługa zmiany rezerwacji jest niedostępna"},
 	{CodePassportRequestConflict, KeyPassportRequestConflict, SevError, HintRequireAction, nil, "Passport operation is bound to another request", "Identyfikator operacji rezerwacji należy do innego żądania"},
 	{CodePathOwnerUnavailable, KeyPathOwnerUnavailable, SevWarn, HintRequireAction, nil, "Authoritative path ownership is unavailable", "Nie można potwierdzić właściciela pliku"},

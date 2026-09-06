@@ -68,3 +68,8 @@ go build -tags production -trimpath -buildvcs=false -ldflags "$gui_ldflags" -o "
 
 echo "$dist/$daemon"
 echo "$dist/$gui"
+
+# Linux alpha opt-in; other platforms keep their existing build dependencies.
+if [ "${FILEES_BUILD_NATIVE_SVN:-0}" = 1 ]; then
+	DIST="$dist" sh "$root/packaging/build-native-svn.sh"
+fi

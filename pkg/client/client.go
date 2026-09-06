@@ -24,6 +24,7 @@ import (
 // Options configures the SVN exec wrapper.
 type Options struct {
 	SvnPath         string        // path to 'svn' binary; default "svn"
+	NativeSVNPath   string        // explicit opt-in absolute path to FileES native client
 	Timeout         time.Duration // per-command timeout; default 30m
 	LogScope        string        // talk scope (e.g. "svn:repoID")
 	SSHIdentityFile string        // absolute installation Ed25519 private key
@@ -62,11 +63,12 @@ type Client interface {
 
 // execClient implements Client by calling the external 'svn' executable.
 type execClient struct {
-	svnPath    string
-	timeout    time.Duration
-	lg         talk.Logger
-	sshCommand string
-	mu         sync.Mutex // serialize SVN calls within process
+	svnPath       string
+	nativeSVNPath string
+	timeout       time.Duration
+	lg            talk.Logger
+	sshCommand    string
+	mu            sync.Mutex // serialize SVN calls within process
 }
 
 // New creates a new SVN CLI client.
@@ -83,7 +85,7 @@ func New(opts Options) Client {
 	if opts.SSHIdentityFile != "" || opts.SSHKnownHosts != "" {
 		sshCommand = buildSSHCommand(opts.SSHIdentityFile, opts.SSHKnownHosts, opts.SSHPort, opts.SSHHostName)
 	}
-	return &execClient{svnPath: p, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
+	return &execClient{svnPath: p, nativeSVNPath: opts.NativeSVNPath, timeout: t, lg: talk.With(opts.LogScope), sshCommand: sshCommand}
 }
 
 func buildSSHCommand(identityFile, knownHosts string, port int, connectHost ...string) string {
@@ -401,7 +403,25 @@ func (c *execClient) LockWithComment(ctx context.Context, rootDirectory string, 
 		args = append(args, "--force")
 	}
 	args = append(args, c.pathArgs(rootDirectory, paths)...)
-	return c.run(ctx, rootDirectory, args)
+	out, err := c.run(ctx, rootDirectory, args)
+	if err != nil && c.MetadataMovesEnabled() && len(paths) == 1 && ctx.Err() == nil {
+		// SVN stores the lock token before chmod'ing svn:needs-lock. A renamed
+		// source is absent, so chmod can fail AFTER the lock succeeded. Prove
+		// both local possession and current server ownership, never force-retry.
+		p := paths[0]
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(rootDirectory, filepath.FromSlash(p))
+		}
+		if _, statErr := os.Lstat(p); errors.Is(statErr, os.ErrNotExist) {
+			proofArgs := append([]string{"status", "--xml", "--verbose", "--show-updates", "--depth", "empty"}, c.pathArgs(rootDirectory, paths)...)
+			proof, proofErr := c.run(ctx, rootDirectory, proofArgs)
+			if proofErr == nil && missingPathLockConfirmed(proof, comment) {
+				c.lg.Infof("native-move source lock confirmed after missing-path chmod failure: %s", p)
+				return out, nil
+			}
+		}
+	}
+	return out, err
 }
 
 func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []string) (string, error) {

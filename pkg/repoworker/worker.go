@@ -12,6 +12,7 @@ import (
 
 	"filees/pkg/clientview"
 	control "filees/pkg/control/v1"
+	"filees/pkg/errcat"
 	"filees/pkg/realmbranding"
 	"github.com/google/uuid"
 )
@@ -126,6 +127,7 @@ type LockReleaseProjector interface {
 }
 
 type Worker struct {
+	PassportPreparations *PassportPreparations
 	Backend              Backend
 	Activator            RepositoryActivator
 	Store                ResultStore
@@ -159,6 +161,12 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
+	}
+	if ticket.Type == control.TicketPreparePassportReplacement {
+		if w.PassportPreparations == nil {
+			return preparationError(ticket, errcat.KeyPassportUnavailable, w.now())
+		}
+		return w.PassportPreparations.Handle(ctx, session, ticket)
 	}
 	if ticket.Type != control.TicketStoragePreflight && ticket.Type != control.TicketCreateRepository && ticket.Type != control.TicketInitialCommit && ticket.Type != control.TicketDeleteRepository && ticket.Type != control.TicketPrepareRepositoryRecovery && ticket.Type != control.TicketMobilePairing && ticket.Type != control.TicketClaimRealmAlias && ticket.Type != control.TicketResolveOwnerLabels && ticket.Type != control.TicketClientDeactivate && ticket.Type != control.TicketRealmRemoveRequest && ticket.Type != control.TicketRealmRemoveConfirm && ticket.Type != control.TicketLoadRepositoryDump && ticket.Type != control.TicketGrantAccess && ticket.Type != control.TicketRevokeAccess && ticket.Type != control.TicketListGrantRecipients && ticket.Type != control.TicketSetRealmVisibility && ticket.Type != control.TicketGetRealmPublicBranding && ticket.Type != control.TicketSetRealmPublicBranding && ticket.Type != control.TicketListPublicShares && ticket.Type != control.TicketCreatePublicShare && ticket.Type != control.TicketUpdatePublicShare && ticket.Type != control.TicketRevokePublicShare && ticket.Type != control.TicketDeletePublicShare && ticket.Type != control.TicketListUploadChannels && ticket.Type != control.TicketCreateUploadChannel && ticket.Type != control.TicketUpdateUploadChannel && ticket.Type != control.TicketRevokeUploadChannel && ticket.Type != control.TicketDeleteUploadChannel && ticket.Type != control.TicketListQuarantine && ticket.Type != control.TicketHideQuarantine && ticket.Type != control.TicketFetchQuarantine && ticket.Type != control.TicketSetRepositoryEditingPolicy && ticket.Type != control.TicketRequestLockRelease && ticket.Type != control.TicketDismissLockRelease && ticket.Type != control.TicketAcceptLockRelease {
 		return control.Result{}, errors.New("unsupported repository worker ticket")

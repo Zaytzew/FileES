@@ -2,6 +2,7 @@ package errmap
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -75,6 +76,14 @@ func (e Entry) IsNetwork() bool { return e.Code == CodeNetUnreachable }
 func Classify(err error) Entry {
 	if err == nil {
 		return Entry{}
+	}
+	// Preserve typed catalog faults before legacy raw-message heuristics.
+	var fault errcat.Fault
+	if errors.As(err, &fault) {
+		if spec, ok := errcat.ByPair(fault.Code, fault.Key); ok {
+			return Entry{Code: spec.Code, Key: spec.Key, Severity: spec.Severity, Hint: spec.Hint, Msg: spec.Diagnostic, Details: err.Error()}
+		}
+		return entryFrom(fault.Key, err.Error())
 	}
 	msg := err.Error()
 	low := strings.ToLower(msg)

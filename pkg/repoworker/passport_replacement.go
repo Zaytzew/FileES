@@ -58,41 +58,8 @@ func (a PassportReplacementAuthority) Prepare(ctx context.Context, session Sessi
 			return ErrPassportReplacementDenied
 		}
 	}
-	if !filepath.IsAbs(a.ServiceWC) || !sessionCanWriteRepository(session, req.RepoID) {
-		return ErrPassportReplacementDenied
-	}
-	requester, err := a.client(session.ClientID)
-	if err != nil || requester.State != "active" || requester.RealmID != session.RealmID {
-		return ErrPassportReplacementDenied
-	}
-	realm, err := readRealmRecord(filepath.Join(a.ServiceWC, "admin", "realms", session.RealmID+".json"))
-	if err != nil || realm.Schema != "filees.realm/v1" || realm.RealmID != session.RealmID || realm.State != "active" {
-		return ErrPassportReplacementDenied
-	}
-	publisher := ServicePublisher{ServiceWC: a.ServiceWC}
-	repo, err := publisher.loadActiveRepository(req.RepoID)
-	if err != nil {
-		return ErrPassportReplacementDenied
-	}
-	// A stale view cannot retain rights after a grant has been revoked.
-	if repo.OwnerRealmID != session.RealmID {
-		if _, err := uuid.Parse(repo.OwnerRealmID); err != nil {
-			return ErrPassportReplacementDenied
-		}
-		ownerRealm, err := readRealmRecord(filepath.Join(a.ServiceWC, "admin", "realms", repo.OwnerRealmID+".json"))
-		if err != nil || ownerRealm.Schema != "filees.realm/v1" || ownerRealm.RealmID != repo.OwnerRealmID || ownerRealm.State != "active" {
-			return ErrPassportReplacementDenied
-		}
-		grantPath, err := realmGrantPath(a.ServiceWC, req.RepoID, session.RealmID)
-		if err != nil {
-			return ErrPassportReplacementDenied
-		}
-		var grant RealmGrantRecord
-		if decodeJSONFile(grantPath, &grant) != nil || validateRealmGrantRecord(grant) != nil ||
-			grant.RepoID != req.RepoID || grant.OwnerRealmID != repo.OwnerRealmID ||
-			grant.RecipientRealmID != session.RealmID || grant.State != "active" || grant.Access != "rw" {
-			return ErrPassportReplacementDenied
-		}
+	if err := a.authorizeRequester(session, req.RepoID); err != nil {
+		return err
 	}
 	lock, err := a.Locks.inspectSVNLock(ctx, req.RepoID, req.Path)
 	if err != nil {
@@ -153,6 +120,46 @@ func (a PassportReplacementAuthority) Prepare(ctx context.Context, session Sessi
 		return err
 	}
 	return a.Locks.unlockIfCurrent(ctx, req.RepoID, req.Path, lock.Owner, req.ObservedToken)
+}
+
+func (a PassportReplacementAuthority) authorizeRequester(session Session, repoID string) error {
+	if !filepath.IsAbs(a.ServiceWC) || !sessionCanWriteRepository(session, repoID) {
+		return ErrPassportReplacementDenied
+	}
+	requester, err := a.client(session.ClientID)
+	if err != nil || requester.State != "active" || requester.RealmID != session.RealmID {
+		return ErrPassportReplacementDenied
+	}
+	realm, err := readRealmRecord(filepath.Join(a.ServiceWC, "admin", "realms", session.RealmID+".json"))
+	if err != nil || realm.Schema != "filees.realm/v1" || realm.RealmID != session.RealmID || realm.State != "active" {
+		return ErrPassportReplacementDenied
+	}
+	publisher := ServicePublisher{ServiceWC: a.ServiceWC}
+	repo, err := publisher.loadActiveRepository(repoID)
+	if err != nil {
+		return ErrPassportReplacementDenied
+	}
+	// A stale view cannot retain rights after a grant has been revoked.
+	if repo.OwnerRealmID != session.RealmID {
+		if _, err := uuid.Parse(repo.OwnerRealmID); err != nil {
+			return ErrPassportReplacementDenied
+		}
+		ownerRealm, err := readRealmRecord(filepath.Join(a.ServiceWC, "admin", "realms", repo.OwnerRealmID+".json"))
+		if err != nil || ownerRealm.Schema != "filees.realm/v1" || ownerRealm.RealmID != repo.OwnerRealmID || ownerRealm.State != "active" {
+			return ErrPassportReplacementDenied
+		}
+		grantPath, err := realmGrantPath(a.ServiceWC, repoID, session.RealmID)
+		if err != nil {
+			return ErrPassportReplacementDenied
+		}
+		var grant RealmGrantRecord
+		if decodeJSONFile(grantPath, &grant) != nil || validateRealmGrantRecord(grant) != nil ||
+			grant.RepoID != repoID || grant.OwnerRealmID != repo.OwnerRealmID ||
+			grant.RecipientRealmID != session.RealmID || grant.State != "active" || grant.Access != "rw" {
+			return ErrPassportReplacementDenied
+		}
+	}
+	return nil
 }
 
 type passportClientIdentity struct {

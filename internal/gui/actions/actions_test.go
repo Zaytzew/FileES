@@ -1856,10 +1856,10 @@ func TestControllerReportsWrongWorkingCopyLocateAsModal(t *testing.T) {
 }
 
 func TestControllerSettingsOpensRecoveriesWhenNoServersRemain(t *testing.T) {
-	var got platform.SettingsDialogRequest
+	received := make(chan platform.SettingsDialogRequest, 1)
 	fake := &platformtest.Fake{
 		SettingsFunc: func(_ context.Context, request platform.SettingsDialogRequest) (platform.SettingsDialogResult, error) {
-			got = request
+			received <- request
 			return platform.SettingsDialogResult{Action: platform.SettingsDialogClose}, nil
 		},
 	}
@@ -1869,9 +1869,11 @@ func TestControllerSettingsOpensRecoveriesWhenNoServersRemain(t *testing.T) {
 	intents, cancel := setup(actions.Config{ViewModel: func() app.ViewModel { return view }, SettingsBrowser: fake})
 	defer cancel()
 	send(t, intents, tray.Intent{Kind: tray.IntentSettings})
-	deadline := time.Now().Add(time.Second)
-	for len(got.Recoveries) == 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
+	var got platform.SettingsDialogRequest
+	select {
+	case got = <-received:
+	case <-time.After(time.Second):
+		t.Fatal("recovery settings were not presented")
 	}
 	if len(got.Servers) != 0 || len(got.Recoveries) != 1 || got.Recoveries[0].OperationID != "op-1" || !got.Recoveries[0].CanDownload {
 		t.Fatalf("settings=%#v", got)

@@ -115,6 +115,11 @@ type Config struct {
 	// WorkingCopy, when set by the daemon, makes passport persistence fail
 	// closed after that SVN working copy is moved.
 	WorkingCopy string
+	// OnPending receives a detached presentation snapshot. Called under the
+	// operation mutex; it MUST NOT call back into Manager or perform network IO.
+	OnPending func([]PendingStatus)
+	// OnError reports heartbeat failures after releasing Manager's mutexes.
+	OnError func(error)
 }
 
 func (c Config) withDefaults() Config {
@@ -160,6 +165,7 @@ func Open(storePath, instanceUID string, backend Backend, cfg Config) (*Manager,
 	if err := m.load(); err != nil {
 		return nil, err
 	}
+	m.publishPendingLocked()
 	return m, nil
 }
 
@@ -408,7 +414,9 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = m.Heartbeat(ctx)
+			if err := m.Heartbeat(ctx); err != nil && m.cfg.OnError != nil {
+				m.cfg.OnError(err)
+			}
 		}
 	}
 }
@@ -482,6 +490,9 @@ func (m *Manager) authorize(ctx context.Context, paths []string) error {
 	now := m.cfg.Now().UTC()
 	for _, path := range cleanPaths(paths) {
 		p, ok := m.passports[path]
+		if ok && p.State == StatePending {
+			return errcat.New(errcat.KeyPassportUncertain, nil, nil)
+		}
 		if !ok || p.State != StateActive || !now.Before(p.ExpiresAt) {
 			return fmt.Errorf("%w: %s", ErrNoPassport, path)
 		}

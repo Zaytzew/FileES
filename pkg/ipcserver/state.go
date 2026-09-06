@@ -47,13 +47,14 @@ type RepoState struct {
 	canRetryLifecycle    bool
 	canAbandonLifecycle  bool
 
-	state        string // contract.State*
-	connectivity string // contract.Conn*
-	headRev      int64  // last HEAD seen by poller; 0 = unknown
-	conflicts    int
-	lastSyncAt   time.Time
-	currentOp    *string
-	cycle        contract.CycleStatus
+	state          string // contract.State*
+	connectivity   string // contract.Conn*
+	headRev        int64  // last HEAD seen by poller; 0 = unknown
+	conflicts      int
+	lastSyncAt     time.Time
+	currentOp      *string
+	cycle          contract.CycleStatus
+	passportIssues []contract.PassportIssue
 
 	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
 	lockFn               func(ctx context.Context, paths []string) (string, error)
@@ -111,6 +112,7 @@ func (rs *RepoState) SetProjectedMetadata(displayName, url, access, projectedSta
 	rs.attachmentPolicy = attachmentPolicy
 	rs.projectedState = projectedState
 	if !attached {
+		rs.passportIssues = nil
 		rs.localPath = ""
 		rs.currentOp = nil
 		rs.lockFn = nil
@@ -481,6 +483,8 @@ func (rs *RepoState) Unlock(ctx context.Context, paths []string) (string, error)
 func (rs *RepoState) Snapshot() contract.RepoStatus {
 	rs.mu.RLock()
 	state := rs.state
+	passportIssues := append([]contract.PassportIssue(nil), rs.passportIssues...)
+	state = passportOverlay(state, passportIssues)
 	conn := rs.connectivity
 	access := rs.access
 	displayName := rs.displayName
@@ -523,6 +527,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	}
 
 	snap := contract.RepoStatus{
+		PassportIssues:       passportIssues,
 		RepoID:               rs.id,
 		ServerID:             rs.serverID,
 		DisplayName:          displayName,

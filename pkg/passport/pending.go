@@ -2,13 +2,60 @@ package passport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"sort"
 	"time"
 
 	"filees/pkg/errcat"
 )
 
 const StatePending = "pending"
+
+// CheckSettledStore fences disabling edit passports while an intent is unresolved.
+// It never deletes the journal or guesses a reservation outcome from policy.
+func CheckSettledStore(path string) error {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var list []Passport
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return err
+	}
+	for _, p := range list {
+		if p.State == StatePending || p.Pending != nil {
+			return errcat.New(errcat.KeyPassportUncertain, nil, nil)
+		}
+	}
+	return nil
+}
+
+// PendingStatus carries no token, ticket or client credentials into the GUI.
+type PendingStatus struct{ ID, Path, Since, Phase string }
+
+func (m *Manager) publishPendingLocked() {
+	if m.cfg.OnPending == nil {
+		return
+	}
+	var pending []PendingStatus
+	for _, p := range m.passports {
+		if p.State != StatePending || p.Pending == nil {
+			continue
+		}
+		id, since := p.PassportID, p.IssuedAt.UTC().Format(time.RFC3339Nano)
+		if ticket := p.Pending.Ticket; ticket != nil {
+			id, since = ticket.OperationID, ticket.CreatedAt
+		}
+		pending = append(pending, PendingStatus{ID: id, Path: p.Pending.Path, Since: since, Phase: p.Pending.Stage})
+	}
+	sort.Slice(pending, func(i, j int) bool { return pending[i].Path < pending[j].Path })
+	m.cfg.OnPending(pending)
+}
 
 // beginPending and resumePending run under Manager's existing opMu and mu.
 func (m *Manager) beginPending(ctx context.Context, path string, meta Metadata, mode string, closeAfter time.Time) (Passport, string, error) {
@@ -18,6 +65,7 @@ func (m *Manager) beginPending(ctx context.Context, path string, meta Metadata, 
 	}
 	p := Passport{Path: path, PassportID: meta.PassportID, InstanceUID: meta.InstanceUID, RealmID: meta.RealmID, IssuedAt: meta.IssuedAt, ExpiresAt: meta.ExpiresAt, HardExpiresAt: meta.HardExpiresAt, CloseAfter: closeAfter, State: StatePending, Pending: &i}
 	m.passports[path] = p
+	m.publishPendingLocked()
 	// On a failed save retain pending in memory. A later retry MUST save again
 	// before prepare; it cannot mint a different request or roll back a maybe-write.
 	return m.resumePending(ctx, p)
@@ -56,6 +104,7 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		i.Stage = "locking"
 		p.Pending = &i
 		m.passports[p.Path] = p
+		m.publishPendingLocked()
 		if err := m.saveLocked(); err != nil {
 			return p, "", err
 		}
@@ -88,5 +137,6 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		m.passports[p.Path] = p // keep the recovery fence until a successful save
 		return p, out, err
 	}
+	m.publishPendingLocked()
 	return confirmed, out, nil
 }

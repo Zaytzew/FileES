@@ -376,6 +376,14 @@ func (s appState) viewModel() ViewModel {
 		PublicSharesKnown:   s.publicSharesKnown,
 		PendingActions:      s.projectPendingActions(),
 	}
+	// Current passport uncertainty uses the existing journal/detail surface.
+	// Rebuild from live snapshots: log retention and historical errors cannot
+	// hide it, and a successful recovery removes it on the next snapshot.
+	for _, repo := range repos {
+		for _, issue := range s.snapshots[repo.ID].PassportIssues {
+			vm.Errors = append(vm.Errors, ErrorViewModel{ID: issue.ID, RepoID: repo.ID, Timestamp: issue.Since, Code: issue.Code, Severity: "ERROR", Hint: "REQUIRE_ACTION", Message: passportIssueMessage(issue)})
+		}
+	}
 	// Detachments pass through unfiltered. The daemon owns the lifetime and
 	// has already applied it; recomputing it here would put a second opinion
 	// about time into the presentation layer, and the two would disagree the

@@ -51,13 +51,15 @@ const (
 )
 
 type RepoStatus struct {
-	RepoID           string `json:"repo_id"`
-	ServerID         string `json:"server_id"`
-	DisplayName      string `json:"display_name"`
-	Attached         bool   `json:"attached"`
-	Access           string `json:"access"`
-	OwnerRealmID     string `json:"owner_realm_id,omitempty"`
-	AttachmentPolicy string `json:"attachment_policy"`
+	// Current local uncertainty, not historical log errors. Empty after recovery.
+	PassportIssues   []PassportIssue `json:"passport_issues,omitempty"`
+	RepoID           string          `json:"repo_id"`
+	ServerID         string          `json:"server_id"`
+	DisplayName      string          `json:"display_name"`
+	Attached         bool            `json:"attached"`
+	Access           string          `json:"access"`
+	OwnerRealmID     string          `json:"owner_realm_id,omitempty"`
+	AttachmentPolicy string          `json:"attachment_policy"`
 	// EditingPolicy is empty for the default and "lock_required" when this
 	// repository works through edit passports. Every client needs it, not just
 	// the owner: without it a read-only file is unexplained, which is exactly
@@ -78,6 +80,15 @@ type RepoStatus struct {
 	// Purpose is empty for a normal share. upload_shelf is the Upload Channel
 	// delivery repository; upload_trash is the realm-wide reject quarantine.
 	Purpose string `json:"purpose,omitempty"`
+}
+
+type PassportIssue struct {
+	ID      string `json:"id"`
+	Path    string `json:"path"`
+	Since   string `json:"since"`
+	Phase   string `json:"phase"`
+	Code    string `json:"code"`
+	Message string `json:"message"` // errcat key, not stderr or a translated sentence
 }
 
 const (

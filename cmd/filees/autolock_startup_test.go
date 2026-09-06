@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -10,13 +11,16 @@ import (
 	"time"
 
 	"filees/pkg/client"
+	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/ipcserver"
+	"filees/pkg/passport"
 	"filees/pkg/reposupervisor"
 	"filees/pkg/talk"
+	"github.com/google/uuid"
 )
 
 func TestReadWriteRecoveryFailureDoesNotAuthorizeLocalRW(t *testing.T) {
@@ -56,6 +60,7 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 		{"owner-after-checkout", "owner", true, true},
 		{"owner-after-migration", "owner", false, true},
 		{"guest-remains-manual", "guest", true, false},
+		{"pending-after-restart", "owner", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -74,10 +79,36 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 			}
 			run("svn", "commit", "-m", "fixture", wc)
 			cli := client.New(client.Options{Timeout: 10 * time.Second})
+			profile := passportFixtureProfile(t, "lab")
+			repoID := uuid.NewString()
 			server := ipcserver.New(filepath.Join(root, "sock"))
-			state := server.RegisterRepoAccess("docs", url, wc, "lab", contract.AccessReadWrite)
-			repo := config.Repo{ID: "docs", RepoURL: url, LocalPath: wc, Access: contract.AccessReadWrite, RealmID: tc.realm, OwnerRealmID: "owner", EditPassports: true, WatchInterval: time.Hour, PollInterval: time.Hour}
-			instance, err := startReadWrite(t.Context(), repoRuntime{config: repo, state: state}, cli, reposupervisor.Desired{Key: reposupervisor.Key{ServerID: "lab", RepoID: "docs"}}, readWriteDependencies{})
+			state := server.RegisterRepoAccess(repoID, url, wc, "lab", contract.AccessReadWrite)
+			repo := config.Repo{ID: repoID, ServerID: "lab", RepoURL: url, LocalPath: wc, Access: contract.AccessReadWrite, RealmID: tc.realm, OwnerRealmID: "owner", EditPassports: true, WatchInterval: time.Hour, PollInterval: time.Hour}
+			var lost *startupLostLockClient
+			if tc.name == "pending-after-restart" {
+				lost = &startupLostLockClient{Client: cli, username: profile.ClientID}
+				cli = lost
+				stateDir := filepath.Join(wc, ".filees", "state")
+				if err := os.MkdirAll(stateDir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				instanceID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
+				backend, err := newControlPassportBackend(repo, cli, func(string) (clientprofile.Profile, bool) { return profile, true })
+				if err != nil {
+					t.Fatal(err)
+				}
+				m, err := passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), instanceID, backend, passport.Config{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := m.Acquire(t.Context(), []string{doc}, ""); err == nil {
+					t.Fatal("lost reply acknowledged")
+				}
+			}
+			deps := readWriteDependencies{passportBackend: func(repo config.Repo, svn client.Client) (passport.Backend, error) {
+				return newControlPassportBackend(repo, svn, func(string) (clientprofile.Profile, bool) { return profile, true })
+			}}
+			instance, err := startReadWrite(t.Context(), repoRuntime{config: repo, state: state}, cli, reposupervisor.Desired{Key: reposupervisor.Key{ServerID: "lab", RepoID: repoID}}, deps)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -93,8 +124,20 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 			if got := info.Mode().Perm()&0200 != 0; got != tc.writable {
 				t.Fatalf("writable=%v, want %v", got, tc.writable)
 			}
-			if lock, err := cli.LockInfo(t.Context(), wc, doc); err != nil || lock != nil {
+			if lock, err := cli.LockInfo(t.Context(), wc, doc); err != nil || (lock != nil) != (lost != nil) {
 				t.Fatalf("startup acquired lock: %+v, %v", lock, err)
+			}
+			if lost != nil {
+				snap := state.Snapshot()
+				if len(snap.PassportIssues) != 1 || snap.State != contract.StateInteractionRequired || lost.locks != 1 {
+					t.Fatalf("starter lost pending: %+v", snap)
+				}
+				if _, err := state.Lock(t.Context(), []string{doc}); err != nil {
+					t.Fatal(err)
+				}
+				if len(state.Snapshot().PassportIssues) != 0 || lost.locks != 1 {
+					t.Fatal("receipt recovery repeated lock or kept issue")
+				}
 			}
 			props, err := cli.PropList(t.Context(), wc, "svn:needs-lock")
 			if err != nil || !props["doc.txt"] {
@@ -105,4 +148,37 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Only file:// fixture authentication and reply loss differ from production;
+// SVN itself writes and verifies the local/repository fencing token.
+type startupLostLockClient struct {
+	client.Client
+	username string
+	locks    int
+}
+
+func (c *startupLostLockClient) LockWithComment(ctx context.Context, wc string, paths []string, comment string, force bool) (string, error) {
+	if force {
+		panic("starter selected force")
+	}
+	c.locks++
+	args := append([]string{"lock", "--username", c.username, "-m", comment, "--"}, paths...)
+	cmd := exec.CommandContext(ctx, "svn", args...)
+	cmd.Dir = wc
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		err = errors.New("fixture lost lock reply")
+	}
+	return string(out), err
+}
+func (c *startupLostLockClient) ConfirmLock(ctx context.Context, wc, path, comment string) (*client.LockInfo, error) {
+	return c.Client.(client.LockReceiptReader).ConfirmLock(ctx, wc, path, comment)
+}
+func (c *startupLostLockClient) Unlock(ctx context.Context, wc string, paths []string) (string, error) {
+	args := append([]string{"unlock", "--username", c.username, "--"}, paths...)
+	cmd := exec.CommandContext(ctx, "svn", args...)
+	cmd.Dir = wc
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }

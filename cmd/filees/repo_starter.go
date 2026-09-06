@@ -17,6 +17,7 @@ import (
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
+	"filees/pkg/errcat"
 	"filees/pkg/errmap"
 	"filees/pkg/ipcserver"
 	"filees/pkg/passport"
@@ -266,11 +267,12 @@ type svnFactory func(config.Repo) client.Client
 type readWriteFactory func(context.Context, repoRuntime, client.Client, reposupervisor.Desired) (reposupervisor.Instance, error)
 
 type readWriteDependencies struct {
-	gate         runtime.Gate
-	mutex        runtime.RepoMutex
-	ipc          *ipcserver.Server
-	activity     *activity.Journal
-	reservations *reservationProjectionCoordinator
+	passportBackend func(config.Repo, client.Client) (passport.Backend, error)
+	gate            runtime.Gate
+	mutex           runtime.RepoMutex
+	ipc             *ipcserver.Server
+	activity        *activity.Journal
+	reservations    *reservationProjectionCoordinator
 }
 
 func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired, deps readWriteDependencies) (reposupervisor.Instance, error) {
@@ -316,9 +318,26 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	clientUUID := loadOrCreateUUID(filepath.Join(stateDir, "client.uuid"))
 	var manager *passport.Manager
 	var passports *passportSession
+	if !repo.EditPassports {
+		if err := passport.CheckSettledStore(filepath.Join(wc, ".filees", "passports", "passports.json")); err != nil {
+			return nil, err
+		}
+		runtimeRepo.state.SetPassportIssues(nil)
+	}
 	if repo.EditPassports {
 		var err error
-		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, passport.SVNBackend{Client: svn, WC: wc}, passport.Config{TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc})
+		if deps.passportBackend == nil {
+			return nil, errcat.New(errcat.KeyPassportUnavailable, nil, nil)
+		}
+		backend, err := deps.passportBackend(repo, svn)
+		if err != nil {
+			return nil, err
+		}
+		passportErrors := errmap.NewSink(repoErrorWriter{path: filepath.Join(logsDir, "errors.jsonl")}, "passport:"+repo.ID)
+		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, backend, passport.Config{TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc, OnPending: passportPendingObserver(runtimeRepo.state, repo), OnError: func(err error) {
+			logger.Warnf("passport heartbeat: %v", err)
+			passportErrors.Emit(errmap.Classify(err))
+		}})
 		if err != nil {
 			return nil, err
 		}

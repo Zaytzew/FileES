@@ -105,8 +105,8 @@ func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
 						var out bytes.Buffer
 						err := dispatcher.Serve(t.Context(), server.Permissions.Extensions["client_id"], channel, &out)
 						n := handled.Add(1)
-						if n == 1 {
-							// Close AFTER durable prepared, before delivering a single response byte.
+						if n == 1 || n == 4 {
+							// Close after durable prepare (1) or cancellation (4).
 							_ = server.Close()
 							return
 						}
@@ -156,6 +156,22 @@ func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
 	if err := controlclient.PreparePassportReplacement(t.Context(), client, wrong); err == nil {
 		t.Fatal("payload client replaced SSH identity")
 	}
+	if err := controlclient.CancelPassportPreparation(t.Context(), client, ticket); err == nil {
+		t.Fatal("lost cancellation reply acknowledged")
+	}
+	if err := controlclient.CancelPassportPreparation(t.Context(), client, ticket); err != nil {
+		t.Fatal(err)
+	}
+	if err := controlclient.PreparePassportReplacement(t.Context(), client, ticket); !controlclient.IsAbortedPreparation(err, ticket) {
+		t.Fatalf("late prepare: %v", err)
+	}
+	if err := controlclient.CancelPassportPreparation(t.Context(), client, wrong); err == nil {
+		t.Fatal("cancellation replaced SSH identity")
+	}
+	after, err = f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+	if err != nil || after == nil || after.Token != before.Token {
+		t.Fatalf("cancellation changed token: %+v %v", after, err)
+	}
 	badHost, _ := preparationSigner(t)
 	badPins := filepath.Join(t.TempDir(), "known_hosts")
 	if err := os.WriteFile(badPins, []byte(knownhosts.Line([]string{listener.Addr().String()}, badHost.PublicKey())+"\n"), 0600); err != nil {
@@ -168,7 +184,7 @@ func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
 	if _, err := badClient.Exchange(t.Context(), ticket); err == nil {
 		t.Fatal("wrong host pin accepted")
 	}
-	if handled.Load() != 3 {
+	if handled.Load() != 7 {
 		t.Fatalf("unexpected dispatch count %d", handled.Load())
 	}
 }

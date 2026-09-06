@@ -14,7 +14,7 @@ import (
 )
 
 // LockIntent is persisted inside passports.json BEFORE any network mutation.
-// Ticket and Comment are immutable; only Stage advances from prepare to locking.
+// Ticket and Comment are immutable; prepare advances to locking OR canceling.
 type LockIntent struct {
 	Stage    string          `json:"stage"`
 	RepoID   string          `json:"repo_id"`
@@ -29,6 +29,7 @@ type intentBackend interface {
 	NewLockIntent(string, Metadata, string, time.Time) (LockIntent, error)
 	ValidateLockIntent(string, LockIntent) error
 	PrepareLockIntent(context.Context, string, LockIntent) error
+	CancelLockIntent(context.Context, string, LockIntent) error
 	AcquireLockIntent(context.Context, string, LockIntent) (string, error)
 	ConfirmLockIntent(context.Context, string, LockIntent) (*Lock, error)
 }
@@ -77,7 +78,7 @@ func (b ControlSVNBackend) ValidateLockIntent(path string, i LockIntent) error {
 	if err != nil {
 		return err
 	}
-	if b.Client == nil || i.RepoID != b.RepoID || i.ClientID != b.ClientID || i.Path != rel || (i.Stage != "prepare" && i.Stage != "locking") {
+	if b.Client == nil || i.RepoID != b.RepoID || i.ClientID != b.ClientID || i.Path != rel || (i.Stage != "prepare" && i.Stage != "locking" && i.Stage != "canceling") {
 		return errors.New("passport intent binding mismatch")
 	}
 	if _, ok := b.Client.(client.LockReceiptReader); !ok {
@@ -124,10 +125,30 @@ func (b ControlSVNBackend) PrepareLockIntent(ctx context.Context, path string, i
 	if err := b.ValidateLockIntent(path, i); err != nil {
 		return err
 	}
+	if i.Stage != "prepare" {
+		return errors.New("passport intent is not preparing")
+	}
 	if i.Ticket == nil {
 		return ctx.Err()
 	}
 	return controlclient.PreparePassportReplacement(ctx, b.Transport, *i.Ticket)
+}
+
+func (b ControlSVNBackend) CancelLockIntent(ctx context.Context, path string, i LockIntent) error {
+	if err := b.ValidateLockIntent(path, i); err != nil {
+		return err
+	}
+	if i.Stage != "canceling" {
+		return errors.New("passport cancellation is not durable")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if i.Ticket == nil {
+		// Fresh acquire: SVN was never issued.
+		return nil
+	}
+	return controlclient.CancelPassportPreparation(ctx, b.Transport, *i.Ticket)
 }
 
 func (b ControlSVNBackend) AcquireLockIntent(ctx context.Context, path string, i LockIntent) (string, error) {

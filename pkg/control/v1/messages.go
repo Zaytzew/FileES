@@ -694,6 +694,15 @@ func (t Ticket) Validate() error {
 		if p.Policy != "" && p.Policy != "free" && p.Policy != "lock_required" {
 			return errors.New("SET_REPOSITORY_EDITING_POLICY policy must be free or lock_required")
 		}
+	case TicketCancelPassportPreparation:
+		var p CancelPassportPreparationPayload
+		if err := decodeStrict(t.Payload, &p); err != nil {
+			return err
+		}
+		if p.Preparation.ClientID != t.ClientID || p.Preparation.OperationID == t.OperationID {
+			return errors.New("cancellation actor or operation mismatch")
+		}
+		return p.Validate()
 	case TicketPreparePassportReplacement:
 		var p PreparePassportReplacementPayload
 		if err := decodeStrict(t.Payload, &p); err != nil {
@@ -886,7 +895,7 @@ func (r Result) Validate() error {
 	if _, err := time.Parse(time.RFC3339Nano, r.CompletedAt); err != nil {
 		return fmt.Errorf("invalid completed_at: %w", err)
 	}
-	if r.Type != TicketPreparePassportReplacement && r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketSetRepositoryEditingPolicy && r.Type != TicketRequestLockRelease && r.Type != TicketDismissLockRelease && r.Type != TicketAcceptLockRelease {
+	if r.Type != TicketCancelPassportPreparation && r.Type != TicketPreparePassportReplacement && r.Type != TicketStoragePreflight && r.Type != TicketCreateRepository && r.Type != TicketInitialCommit && r.Type != TicketDeleteRepository && r.Type != TicketPrepareRepositoryRecovery && r.Type != TicketMobilePairing && r.Type != TicketClaimRealmAlias && r.Type != TicketResolveOwnerLabels && r.Type != TicketClientDeactivate && r.Type != TicketRealmRemoveRequest && r.Type != TicketRealmRemoveConfirm && r.Type != TicketLoadRepositoryDump && r.Type != TicketGrantAccess && r.Type != TicketRevokeAccess && r.Type != TicketListGrantRecipients && r.Type != TicketSetRealmVisibility && r.Type != TicketGetRealmPublicBranding && r.Type != TicketSetRealmPublicBranding && r.Type != TicketListPublicShares && r.Type != TicketCreatePublicShare && r.Type != TicketUpdatePublicShare && r.Type != TicketRevokePublicShare && r.Type != TicketDeletePublicShare && r.Type != TicketListUploadChannels && r.Type != TicketCreateUploadChannel && r.Type != TicketUpdateUploadChannel && r.Type != TicketRevokeUploadChannel && r.Type != TicketDeleteUploadChannel && r.Type != TicketListQuarantine && r.Type != TicketHideQuarantine && r.Type != TicketFetchQuarantine && r.Type != TicketSetRepositoryEditingPolicy && r.Type != TicketRequestLockRelease && r.Type != TicketDismissLockRelease && r.Type != TicketAcceptLockRelease {
 		return fmt.Errorf("unsupported ticket type %q", r.Type)
 	}
 	switch r.Status {
@@ -1077,6 +1086,12 @@ func validateSuccessPayload(r Result) error {
 		}
 	case TicketPreparePassportReplacement:
 		var p PreparePassportReplacementResult
+		if err := decodeStrict(r.Result, &p); err != nil {
+			return err
+		}
+		return p.Validate()
+	case TicketCancelPassportPreparation:
+		var p CancelPassportPreparationResult
 		if err := decodeStrict(r.Result, &p); err != nil {
 			return err
 		}

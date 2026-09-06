@@ -149,6 +149,7 @@ type Service struct {
 	repoID     string // set from Run(); used by emit()
 	wc         string // set from Run(); local shout inbox / last_seen
 	mu         sync.Mutex
+	wcOpMu     sync.Mutex            // serialize publication, poll/update and event merging
 	staging    map[string]*stageItem // rel path -> info
 	cachePath  string                // .filees/commit_cache/cache.json
 	lastShout  time.Time
@@ -190,14 +191,16 @@ func (s *Service) RecoveryStats() RecoveryStats {
 }
 
 type stageItem struct {
-	Rel       string
-	Abs       string
-	OldRel    string // source path for Renamed; empty otherwise
-	IsDir     bool
-	Op        watcher.OpType
-	FirstSeen time.Time // for Added latency; also the Modified debounce ceiling anchor
-	LastSeen  time.Time // most recent write; anchors the Modified debounce quiet period
-	ver       uint64    // incremented on every in-place update
+	Rel            string
+	Abs            string
+	OldRel         string // source path for Renamed; empty otherwise
+	RenameVerified bool
+	MoveScheduled  bool
+	IsDir          bool
+	Op             watcher.OpType
+	FirstSeen      time.Time // for Added latency; also the Modified debounce ceiling anchor
+	LastSeen       time.Time // most recent write; anchors the Modified debounce quiet period
+	ver            uint64    // incremented on every in-place update
 }
 
 type revisionCommitter interface {
@@ -563,6 +566,8 @@ func (s *Service) runPoller(ctx context.Context, wc string) {
 
 // pollOnce checks HEAD revision against local and runs svn update when behind.
 func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
 	headRev, err := s.Cli.Revision(ctx, s.RepoURL)
 	if err != nil {
 		if client.IsNetworkError(err) {
@@ -635,6 +640,8 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 }
 
 func (s *Service) addEvent(ev watcher.Event) {
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
 	if s.OnPathActivity != nil {
 		s.OnPathActivity(ev.Path)
 	}
@@ -642,15 +649,40 @@ func (s *Service) addEvent(ev watcher.Event) {
 	defer s.mu.Unlock()
 	// normalize key = rel posix path
 	key := ev.Rel
+	if s.nativeMover() != nil && ev.Op == watcher.Renamed {
+		if previous := s.staging[ev.OldRel]; previous != nil {
+			switch {
+			case previous.MoveScheduled || previous.Op == watcher.RenameUncertain:
+				ev.Op = watcher.RenameUncertain // never commit half an already scheduled chain
+			case previous.Op == watcher.Added:
+				delete(s.staging, ev.OldRel)
+				// Keep the move until SVN proves the source was unpublished.
+				// An initial import may have committed a stale Added entry.
+			case previous.Op == watcher.Renamed:
+				delete(s.staging, ev.OldRel)
+				ev.OldRel, ev.IdentityVerified = previous.OldRel, previous.RenameVerified && ev.IdentityVerified
+			default:
+				delete(s.staging, ev.OldRel) // earlier modification/deletion travels with the move
+			}
+		}
+	}
 	it, ok := s.staging[key]
 	if !ok {
 		now := time.Now()
-		it = &stageItem{Rel: ev.Rel, Abs: ev.Path, OldRel: ev.OldRel, IsDir: ev.Type == watcher.EntryDir, Op: ev.Op, FirstSeen: now, LastSeen: now}
+		it = &stageItem{Rel: ev.Rel, Abs: ev.Path, OldRel: ev.OldRel, RenameVerified: ev.IdentityVerified, IsDir: ev.Type == watcher.EntryDir, Op: ev.Op, FirstSeen: now, LastSeen: now}
 		s.staging[key] = it
 		return
 	}
 	// merge ops: Added+Modified -> Added, Modified+Added -> Added, Delete overrides, Renamed wins
+	if s.nativeMover() != nil && (it.Op == watcher.Renamed || it.Op == watcher.RenameUncertain) && (ev.Op == watcher.Added || ev.Op == watcher.Deleted) {
+		it.Op = watcher.RenameUncertain
+		it.LastSeen = time.Now()
+		it.ver++
+		return
+	}
 	switch ev.Op {
+	case watcher.RenameUncertain:
+		it.Op = watcher.RenameUncertain
 	case watcher.Deleted:
 		it.Op = watcher.Deleted
 		it.OldRel = ""
@@ -658,12 +690,13 @@ func (s *Service) addEvent(ev watcher.Event) {
 		it.Op = watcher.Added
 		it.OldRel = ""
 	case watcher.Modified:
-		if it.Op != watcher.Added && it.Op != watcher.Deleted {
+		if it.Op != watcher.Added && it.Op != watcher.Deleted && it.Op != watcher.Renamed && it.Op != watcher.RenameUncertain {
 			it.Op = watcher.Modified
 		}
 	case watcher.Renamed:
 		it.Op = watcher.Renamed
 		it.OldRel = ev.OldRel
+		it.RenameVerified = ev.IdentityVerified
 	}
 	// refresh Abs/IsDir if needed
 	it.Abs = ev.Path
@@ -782,10 +815,22 @@ func (s *Service) tryCommit(ctx context.Context, wc string) error {
 }
 
 func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) error {
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
 	if !s.workingCopyAvailable(wc) {
 		return errors.New("working copy metadata is missing")
 	}
 	s.mu.Lock()
+	for _, it := range s.staging {
+		if (it.RenameVerified || it.MoveScheduled) && s.nativeMover() == nil {
+			s.mu.Unlock()
+			return errors.New("native move intent is pending but native SVN is disabled; re-enable it before publication")
+		}
+		if it.Op == watcher.RenameUncertain {
+			s.mu.Unlock()
+			return fmt.Errorf("native rename %q is ambiguous or changed after scheduling; publication held without delete/add fallback", it.Rel)
+		}
+	}
 	// snapshot and filter by latency & max batch
 	now := time.Now()
 	// A large backlog overrides the Modified debounce below, same as it
@@ -805,6 +850,18 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	backlogHigh := s.Rules.BacklogFlushBytes > 0 && stagedBytes >= s.Rules.BacklogFlushBytes
 	pending := make([]pendingEntry, 0, len(s.staging))
 	for key, it := range s.staging {
+		if it.Op == watcher.Deleted && s.nativeMover() != nil {
+			dependent := false
+			for _, move := range s.staging {
+				if move.Op == watcher.Renamed && (move.OldRel == it.Rel || strings.HasPrefix(move.OldRel, it.Rel+"/")) {
+					dependent = true
+					break
+				}
+			}
+			if dependent {
+				continue
+			} // publish file ancestry before deleting its old parent
+		}
 		if it.Op == watcher.Added {
 			if _, err := os.Stat(it.Abs); errors.Is(err, os.ErrNotExist) {
 				// Added and removed before publication is a cancelled addition,
@@ -913,6 +970,45 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	// to Added instead of letting an impossible svn delete block the whole drain.
 	validRenamed := renamedItems[:0]
 	for _, it := range renamedItems {
+		if mover := s.nativeMover(); mover != nil {
+			if !it.RenameVerified {
+				return fmt.Errorf("native rename %s -> %s lacks identity evidence; legacy cached intent requires review", it.OldRel, it.Rel)
+			}
+			if !it.MoveScheduled && (st[it.OldRel] == "" || st[it.OldRel] == "unversioned") && st[it.Rel] == "unversioned" {
+				// Verified physical identity, but no SVN source exists in this WC:
+				// this is the first publication of a renamed, still-new file.
+				s.mu.Lock()
+				it.Op, it.OldRel, it.RenameVerified = watcher.Added, "", false
+				s.mu.Unlock()
+				addPaths = append(addPaths, it.Rel)
+				continue
+			}
+			if st[it.OldRel] != "missing" && st[it.OldRel] != "deleted" {
+				if (st[it.OldRel] == "" || st[it.OldRel] == "unversioned") && (st[it.Rel] == "normal" || st[it.Rel] == "modified") {
+					complete, err := mover.VerifyCommittedMove(ctx, wc, it.OldRel, it.Rel)
+					if err != nil {
+						return fmt.Errorf("native rename commit recovery: %w", err)
+					}
+					if complete {
+						s.Logger.Infof("native-move recovered committed pair: %s -> %s", it.OldRel, it.Rel)
+						if s.OnPathsRemoved != nil {
+							s.OnPathsRemoved([]string{filepath.Join(wc, filepath.FromSlash(it.OldRel))})
+						}
+						s.mu.Lock()
+						it.Op, it.OldRel, it.MoveScheduled = watcher.Modified, "", false
+						s.mu.Unlock()
+						modifiedPaths = append(modifiedPaths, it.Rel)
+						continue
+					}
+				}
+				return fmt.Errorf("native rename %s -> %s has unsupported source status %q; publication held", it.OldRel, it.Rel, st[it.OldRel])
+			}
+			if len(existingPaths(wc, []string{it.Rel})) == 0 {
+				return fmt.Errorf("native rename destination %s disappeared; publication held", it.Rel)
+			}
+			validRenamed = append(validRenamed, it)
+			continue
+		}
 		switch st[it.OldRel] {
 		case "normal", "modified", "missing", "deleted":
 			validRenamed = append(validRenamed, it)
@@ -1181,6 +1277,35 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		}
 	}
 	for _, it := range renamedItems {
+		if mover := s.nativeMover(); mover != nil {
+			if s.cachePath == "" {
+				return errors.New("native rename requires durable commit cache")
+			}
+			if err := s.saveCacheChecked(); err != nil {
+				return fmt.Errorf("persist native rename intent: %w", err)
+			}
+			// New destination directories are added non-recursively, never copied
+			// with their children; the actual file goes only through native move.
+			for _, parent := range parentPaths(it.Rel) {
+				if _, err := s.Cli.Add(ctx, wc, []string{parent}); err != nil {
+					// Add may report already versioned. Verify before continuing.
+					ps, statusErr := s.statusMap(ctx, wc, []string{parent})
+					if statusErr != nil || (ps[parent] != "normal" && ps[parent] != "modified" && ps[parent] != "added") {
+						return fmt.Errorf("native rename parent %s: %w", parent, err)
+					}
+				}
+			}
+			if _, err := mover.RecordMove(ctx, wc, it.OldRel, it.Rel); err != nil {
+				return err
+			}
+			s.mu.Lock()
+			it.MoveScheduled = true
+			s.mu.Unlock()
+			if err := s.saveCacheChecked(); err != nil {
+				return fmt.Errorf("persist scheduled native move: %w", err)
+			}
+			continue // preserve existing properties; never delete/add or reset needs-lock
+		}
 		if out, err := s.Cli.Delete(ctx, wc, []string{it.OldRel}); err != nil {
 			s.Logger.Warnf("svn delete (rename src) %s: %v\n%s", it.OldRel, err, out)
 		}
@@ -1624,13 +1749,15 @@ func (s *Service) makeNotice(wc, title, body string) error {
 
 // cacheEntry is the JSON-serializable form of stageItem.
 type cacheEntry struct {
-	Rel       string    `json:"rel"`
-	Abs       string    `json:"abs"`
-	OldRel    string    `json:"old_rel,omitempty"`
-	IsDir     bool      `json:"is_dir,omitempty"`
-	Op        string    `json:"op"`
-	FirstSeen time.Time `json:"first_seen"`
-	LastSeen  time.Time `json:"last_seen,omitempty"`
+	Rel            string    `json:"rel"`
+	Abs            string    `json:"abs"`
+	OldRel         string    `json:"old_rel,omitempty"`
+	RenameVerified bool      `json:"rename_verified,omitempty"`
+	MoveScheduled  bool      `json:"move_scheduled,omitempty"`
+	IsDir          bool      `json:"is_dir,omitempty"`
+	Op             string    `json:"op"`
+	FirstSeen      time.Time `json:"first_seen"`
+	LastSeen       time.Time `json:"last_seen,omitempty"`
 }
 
 func opName(op watcher.OpType) string {
@@ -1643,6 +1770,8 @@ func opName(op watcher.OpType) string {
 		return "deleted"
 	case watcher.Renamed:
 		return "renamed"
+	case watcher.RenameUncertain:
+		return "rename_uncertain"
 	default:
 		return "modified"
 	}
@@ -1656,6 +1785,8 @@ func opFromName(s string) watcher.OpType {
 		return watcher.Deleted
 	case "renamed":
 		return watcher.Renamed
+	case "rename_uncertain":
+		return watcher.RenameUncertain
 	default:
 		return watcher.Modified
 	}
@@ -1683,13 +1814,15 @@ func (s *Service) loadCache() {
 			lastSeen = e.FirstSeen
 		}
 		s.staging[e.Rel] = &stageItem{
-			Rel:       e.Rel,
-			Abs:       e.Abs,
-			OldRel:    e.OldRel,
-			IsDir:     e.IsDir,
-			Op:        opFromName(e.Op),
-			FirstSeen: e.FirstSeen,
-			LastSeen:  lastSeen,
+			Rel:            e.Rel,
+			Abs:            e.Abs,
+			OldRel:         e.OldRel,
+			RenameVerified: e.RenameVerified,
+			MoveScheduled:  e.MoveScheduled,
+			IsDir:          e.IsDir,
+			Op:             opFromName(e.Op),
+			FirstSeen:      e.FirstSeen,
+			LastSeen:       lastSeen,
 		}
 	}
 	s.mu.Unlock()
@@ -1701,21 +1834,32 @@ func (s *Service) loadCache() {
 }
 
 func (s *Service) saveCache() {
-	if s.cachePath == "" || !s.workingCopyAvailable(s.wc) {
+	if s.cachePath == "" {
 		return
+	}
+	if err := s.saveCacheChecked(); err != nil {
+		s.Logger.Warnf("commit cache: save failed: %v", err)
+	}
+}
+
+func (s *Service) saveCacheChecked() error {
+	if s.cachePath == "" || !s.workingCopyAvailable(s.wc) {
+		return errors.New("commit cache is unavailable")
 	}
 
 	s.mu.Lock()
 	entries := make([]cacheEntry, 0, len(s.staging))
 	for _, it := range s.staging {
 		entries = append(entries, cacheEntry{
-			Rel:       it.Rel,
-			Abs:       it.Abs,
-			OldRel:    it.OldRel,
-			IsDir:     it.IsDir,
-			Op:        opName(it.Op),
-			FirstSeen: it.FirstSeen,
-			LastSeen:  it.LastSeen,
+			Rel:            it.Rel,
+			Abs:            it.Abs,
+			OldRel:         it.OldRel,
+			RenameVerified: it.RenameVerified,
+			MoveScheduled:  it.MoveScheduled,
+			IsDir:          it.IsDir,
+			Op:             opName(it.Op),
+			FirstSeen:      it.FirstSeen,
+			LastSeen:       it.LastSeen,
 		})
 	}
 	s.mu.Unlock()
@@ -1726,9 +1870,14 @@ func (s *Service) saveCache() {
 	} else {
 		err = atomicWriteJSONSlice(s.cachePath, entries)
 	}
-	if err != nil {
-		s.Logger.Warnf("commit cache: save failed: %v", err)
+	return err
+}
+
+func (s *Service) nativeMover() client.MetadataMover {
+	if mover, ok := s.Cli.(client.MetadataMover); ok && mover.MetadataMovesEnabled() {
+		return mover
 	}
+	return nil
 }
 
 func (s *Service) workingCopyAvailable(wc string) bool {

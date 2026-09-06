@@ -37,17 +37,19 @@ const (
 	Added OpType = iota
 	Modified
 	Deleted
-	Renamed // OS-level rename detected via MD5; OldRel = source path
+	Renamed         // OS-level rename detected via MD5; OldRel = source path
+	RenameUncertain // possible move without sufficient identity; publication must wait
 )
 
 // Event sent to commit.Service
 // Path = ABS path (for stat/IO), Rel = POSIX path relative to WC (for SVN)
 type Event struct {
-	Path   string    // absolute path (new location for Renamed)
-	Rel    string    // posix relative path (new location for Renamed)
-	OldRel string    // source path for Renamed; empty otherwise
-	Type   EntryType // file | dir
-	Op     OpType    // Added | Modified | Deleted | Renamed
+	Path             string    // absolute path (new location for Renamed)
+	Rel              string    // posix relative path (new location for Renamed)
+	OldRel           string    // source path for Renamed; empty otherwise
+	Type             EntryType // file | dir
+	Op               OpType    // Added | Modified | Deleted | Renamed
+	IdentityVerified bool      // rename matched a unique stable filesystem identity
 }
 
 // Options control scanner behaviour
@@ -73,7 +75,8 @@ type Options struct {
 	ChanSize int // default 1024
 	// RequireSVNMetadata prevents daemon housekeeping from recreating an old
 	// working-copy root after the user moves it elsewhere.
-	RequireSVNMetadata bool
+	RequireSVNMetadata    bool
+	RequireRenameIdentity bool // live native mode: never derive ancestry from hash alone
 }
 
 // Scanner performs shell-first periodic scans
@@ -89,12 +92,13 @@ type Scanner struct {
 	debounceD  time.Duration
 	lg         talk.Logger
 
-	useMD5             bool
-	md5Cutoff          int64
-	md5BudgetBytes     int64
-	md5BudgetFrac      float64
-	chanSize           int
-	requireSVNMetadata bool
+	useMD5                bool
+	md5Cutoff             int64
+	md5BudgetBytes        int64
+	md5BudgetFrac         float64
+	chanSize              int
+	requireSVNMetadata    bool
+	requireRenameIdentity bool
 
 	// dynamic
 	mu           sync.Mutex
@@ -144,15 +148,17 @@ type meta struct {
 	Size     int64  // files only
 	MD5      string // files only; may be ""
 	IsDir    bool
+	Identity string // Linux dev/inode/birthtime; empty when not provable
 }
 
 // on-disk manifest: list of entries
 // {path, mtime, [size], [md5]}
 type diskEntry struct {
-	Path  string `json:"path"`
-	Mtime int64  `json:"mtime"`
-	Size  int64  `json:"size,omitempty"`
-	MD5   string `json:"md5,omitempty"`
+	Path     string `json:"path"`
+	Mtime    int64  `json:"mtime"`
+	Size     int64  `json:"size,omitempty"`
+	MD5      string `json:"md5,omitempty"`
+	Identity string `json:"identity,omitempty"`
 }
 
 // backlog persistence
@@ -210,27 +216,28 @@ func NewScanner(opts Options) (*Scanner, error) {
 	backlogPath := filepath.Join(stateDir, "md5.backlog.json")
 
 	s := Scanner{
-		wc:                 wc,
-		statePath:          opts.StatePath,
-		period:             opts.ScanPeriod,
-		busyPath:           coalesce(opts.BusyPath, filepath.Join(stateDir, "commit.busy")),
-		busyTTL:            opts.BusyTTL,
-		ticketsInt:         opts.TicketsPoll,
-		debounceD:          opts.DeletedDebounce,
-		lg:                 talk.With(opts.LogScope),
-		useMD5:             opts.UseMD5,
-		md5Cutoff:          opts.MD5PerFileCutoff,
-		md5BudgetBytes:     opts.MD5BudgetBytes,
-		md5BudgetFrac:      opts.MD5BudgetFrac,
-		chanSize:           opts.ChanSize,
-		requireSVNMetadata: opts.RequireSVNMetadata,
-		cur:                make(index),
-		missingSince:       make(map[string]time.Time),
-		ignorePath:         ignorePath,
-		backlogPath:        backlogPath,
-		pendingMD5:         make(map[string]pendingMD5Entry),
-		igRegex:            opts.IgnoreRegex,
-		mode:               modeBaselining,
+		requireRenameIdentity: opts.RequireRenameIdentity,
+		wc:                    wc,
+		statePath:             opts.StatePath,
+		period:                opts.ScanPeriod,
+		busyPath:              coalesce(opts.BusyPath, filepath.Join(stateDir, "commit.busy")),
+		busyTTL:               opts.BusyTTL,
+		ticketsInt:            opts.TicketsPoll,
+		debounceD:             opts.DeletedDebounce,
+		lg:                    talk.With(opts.LogScope),
+		useMD5:                opts.UseMD5,
+		md5Cutoff:             opts.MD5PerFileCutoff,
+		md5BudgetBytes:        opts.MD5BudgetBytes,
+		md5BudgetFrac:         opts.MD5BudgetFrac,
+		chanSize:              opts.ChanSize,
+		requireSVNMetadata:    opts.RequireSVNMetadata,
+		cur:                   make(index),
+		missingSince:          make(map[string]time.Time),
+		ignorePath:            ignorePath,
+		backlogPath:           backlogPath,
+		pendingMD5:            make(map[string]pendingMD5Entry),
+		igRegex:               opts.IgnoreRegex,
+		mode:                  modeBaselining,
 	}
 
 	// try load state to determine mode
@@ -288,7 +295,7 @@ func (s *Scanner) LoadState(path string) error {
 	m := make(index, len(list))
 	for _, e := range list {
 		isDir := strings.HasSuffix(e.Path, "/")
-		m[e.Path] = meta{MtimeSec: e.Mtime, Size: e.Size, MD5: e.MD5, IsDir: isDir}
+		m[e.Path] = meta{MtimeSec: e.Mtime, Size: e.Size, MD5: e.MD5, IsDir: isDir, Identity: e.Identity}
 	}
 	s.cur = m
 	s.totalBytes = indexBytes(m)
@@ -314,7 +321,7 @@ func (s *Scanner) SaveState(path string) error {
 	defer s.mu.Unlock()
 	list := make([]diskEntry, 0, len(s.cur))
 	for rel, m := range s.cur {
-		de := diskEntry{Path: rel, Mtime: m.MtimeSec}
+		de := diskEntry{Path: rel, Mtime: m.MtimeSec, Identity: m.Identity}
 		if !m.IsDir {
 			de.Size = m.Size
 			if m.MD5 != "" {
@@ -528,6 +535,9 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 		m := meta{MtimeSec: info.ModTime().Unix(), IsDir: isDir}
 		if !isDir {
 			m.Size = info.Size()
+			if s.requireRenameIdentity {
+				m.Identity = fileIdentity(path)
+			}
 		}
 		curr[rel] = m
 
@@ -622,21 +632,55 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 
 	// rename detection + Added/Renamed event emission (active mode only)
 	if emit && len(newFiles) > 0 {
-		// index deleted files by MD5 (files only, with known hash)
-		oldByMD5 := make(map[string]string, len(deleted))
-		for oldRel := range deleted {
-			if om := s.cur[oldRel]; om.MD5 != "" && !om.IsDir {
-				oldByMD5[om.MD5] = oldRel
+		// One-to-one matching only. The Linux live path uses stable identity,
+		// including birthtime to avoid treating inode reuse as a rename.
+		oldByMD5, oldByID := map[string][]string{}, map[string][]string{}
+		newByMD5, newByID := map[string]int{}, map[string]int{}
+		for oldRel, om := range deleted {
+			if !om.IsDir && om.MD5 != "" {
+				oldByMD5[om.MD5] = append(oldByMD5[om.MD5], oldRel)
+			}
+			if !om.IsDir && om.Identity != "" {
+				oldByID[om.Identity] = append(oldByID[om.Identity], oldRel)
 			}
 		}
 		for _, nf := range newFiles {
-			if !nf.isDir && nf.m.MD5 != "" {
-				if oldRel, ok := oldByMD5[nf.m.MD5]; ok {
-					out <- Event{Path: nf.absPath, Rel: nf.rel, OldRel: oldRel, Type: EntryFile, Op: Renamed}
+			if !nf.isDir {
+				newByMD5[nf.m.MD5]++
+				newByID[nf.m.Identity]++
+			}
+		}
+		for _, nf := range newFiles {
+			if !nf.isDir {
+				candidates, count := oldByMD5[nf.m.MD5], newByMD5[nf.m.MD5]
+				if s.requireRenameIdentity {
+					candidates, count = oldByID[nf.m.Identity], newByID[nf.m.Identity]
+				}
+				if len(candidates) == 1 && count == 1 {
+					oldRel := candidates[0]
+					out <- Event{Path: nf.absPath, Rel: nf.rel, OldRel: oldRel, Type: EntryFile, Op: Renamed, IdentityVerified: s.requireRenameIdentity}
 					delete(deleted, oldRel)
 					delete(s.missingSince, oldRel)
 					*aCnt++
 					continue
+				}
+				if s.requireRenameIdentity {
+					uncertain := len(candidates) > 0
+					for _, missing := range deleted {
+						if !missing.IsDir && (missing.Identity == "" || nf.m.Identity == "") {
+							uncertain = true
+						}
+					}
+					for _, oldRel := range oldByMD5[nf.m.MD5] {
+						if nf.m.Identity == "" || deleted[oldRel].Identity == "" {
+							uncertain = true
+						}
+					}
+					if uncertain {
+						out <- Event{Path: nf.absPath, Rel: nf.rel, Type: EntryFile, Op: RenameUncertain}
+						*aCnt++
+						continue
+					}
 				}
 			}
 			out <- Event{Path: nf.absPath, Rel: nf.rel, Type: pickType(nf.isDir), Op: Added}
@@ -1083,7 +1127,7 @@ func normalizeForOpen(p string) string {
 func toDiskList(m index) []diskEntry {
 	list := make([]diskEntry, 0, len(m))
 	for rel, mm := range m {
-		de := diskEntry{Path: rel, Mtime: mm.MtimeSec}
+		de := diskEntry{Path: rel, Mtime: mm.MtimeSec, Identity: mm.Identity}
 		if !mm.IsDir {
 			de.Size = mm.Size
 			if mm.MD5 != "" {

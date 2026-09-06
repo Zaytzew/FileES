@@ -313,7 +313,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		if timeout <= 0 {
 			timeout = clientprofile.DefaultSessionTimeout
 		}
-		return client.New(client.Options{SvnPath: "svn", Timeout: timeout, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts, SSHHostName: repo.SSHHostName, SSHPort: repo.SSHPort})
+		return client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: timeout, LogScope: "svn:" + repo.ID, SSHIdentityFile: repo.SSHIdentityFile, SSHKnownHosts: repo.SSHKnownHosts, SSHHostName: repo.SSHHostName, SSHPort: repo.SSHPort})
 	}, reservations: reservationRefreshes}
 	starter.startReadWrite = func(lifecycle context.Context, runtimeRepo repoRuntime, svn client.Client, desired reposupervisor.Desired) (reposupervisor.Instance, error) {
 		return startReadWrite(lifecycle, runtimeRepo, svn, desired, deps)

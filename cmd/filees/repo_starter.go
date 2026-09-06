@@ -172,7 +172,7 @@ func buildWatcherOptions(repo config.Repo, manifest, busyPath string) (watcher.O
 	if scan <= 0 {
 		scan = window / 2
 	}
-	return watcher.Options{WC: repo.LocalPath, StatePath: manifest, ScanPeriod: scan, BusyPath: busyPath, BusyTTL: 10 * time.Minute, TicketsPoll: 12 * time.Second, DeletedDebounce: publishLatency, LogScope: "watch:" + repo.ID, UseMD5: true, ChanSize: 1024, RequireSVNMetadata: true}, publishLatency
+	return watcher.Options{WC: repo.LocalPath, StatePath: manifest, ScanPeriod: scan, BusyPath: busyPath, BusyTTL: 10 * time.Minute, TicketsPoll: 12 * time.Second, DeletedDebounce: publishLatency, LogScope: "watch:" + repo.ID, UseMD5: true, ChanSize: 1024, RequireSVNMetadata: true, RequireRenameIdentity: nativeSVNPath() != ""}, publishLatency
 }
 
 func buildCommitRules(repo config.Repo, publishLatency time.Duration) commit.Rules {

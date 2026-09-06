@@ -309,6 +309,7 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 		byServer[repo.ServerID] = append(byServer[repo.ServerID], reposupervisor.Desired{Key: key, Access: repo.Access, State: "active", URL: repo.RepoURL, DisplayName: repo.ID, SessionTimeout: repo.SessionTimeout})
 	}
 	deps := readWriteDependencies{gate: gate, mutex: mutex, ipc: ipc, activity: activityJournal, reservations: reservationRefreshes}
+	deps.pathOwnership = reservationRefreshes.Ownership
 	deps.passportBackend = func(repo config.Repo, svn client.Client) (passport.Backend, error) {
 		return newControlPassportBackend(repo, svn, reservationRefreshes.Profile)
 	}

@@ -114,8 +114,10 @@ type Service struct {
 	// AutoUnlockOwned grants local RW on this repo's owned, currently
 	// read-only paths right after a successful svn up, without acquiring
 	// the real SVN lock yet (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §3).
-	// Only called when RealmID == OwnerRealmID. May be nil.
-	AutoUnlockOwned func(ctx context.Context, wc, realmID string) error
+	// With PerPathOwnership it also serves guest realms and removes speculative
+	// RW when ownership is unknown; otherwise limited to repo owner. May be nil.
+	AutoUnlockOwned  func(ctx context.Context, wc, realmID string) error
+	PerPathOwnership bool
 	// OnPathActivity resets close-grace after any further watcher activity.
 	OnPathActivity func(string)
 	// OnPathsPublished starts close-grace after a confirmed central commit.
@@ -712,13 +714,17 @@ type pendingEntry struct {
 
 // ReconcileOwnedAccess restores the V1 owner's local edit permission, never
 // a server reservation. Call only after a successful sync/HEAD observation;
-// unknown identity and non-owner grants remain on the manual borrow path.
+// unknown identity cannot grant speculative RW. Per-path ownership includes
+// guest-owned objects; other objects remain on the manual borrow path.
 func (s *Service) ReconcileOwnedAccess(ctx context.Context, wc string) {
-	if s.AutoUnlockOwned == nil || s.RealmID == "" || s.RealmID != s.OwnerRealmID {
+	if s.AutoUnlockOwned == nil || s.RealmID == "" || (!s.PerPathOwnership && s.RealmID != s.OwnerRealmID) {
 		return
 	}
 	if err := s.AutoUnlockOwned(ctx, wc, s.RealmID); err != nil {
 		s.Logger.Warnf("autolock local access: %v", err)
+		if s.ErrSink != nil {
+			s.ErrSink.Emit(errmap.Classify(err))
+		}
 	}
 }
 

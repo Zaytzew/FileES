@@ -123,7 +123,31 @@ func (a PassportReplacementAuthority) Prepare(ctx context.Context, session Sessi
 }
 
 func (a PassportReplacementAuthority) authorizeRequester(session Session, repoID string) error {
-	if !filepath.IsAbs(a.ServiceWC) || !sessionCanWriteRepository(session, repoID) {
+	return a.authorizeAccess(session, repoID, true)
+}
+
+// AuthorizeOwnershipRead is used by the read-only broker under the same
+// authority lock. A stale client view is not sufficient after revocation.
+func (a PassportReplacementAuthority) AuthorizeOwnershipRead(session Session, repoID string) error {
+	return a.authorizeAccess(session, repoID, false)
+}
+
+func (a PassportReplacementAuthority) LockOwnerRealm(clientID string) string {
+	identity, err := a.client(clientID)
+	if err != nil {
+		return ""
+	}
+	return identity.RealmID
+}
+
+func (a PassportReplacementAuthority) authorizeAccess(session Session, repoID string, write bool) error {
+	allowed := false
+	for _, repo := range session.Repositories {
+		if repo.RepoID == repoID && repo.State == "active" && (repo.Access == "rw" || (!write && repo.Access == "r")) {
+			allowed = true
+		}
+	}
+	if !filepath.IsAbs(a.ServiceWC) || !allowed {
 		return ErrPassportReplacementDenied
 	}
 	requester, err := a.client(session.ClientID)
@@ -155,7 +179,7 @@ func (a PassportReplacementAuthority) authorizeRequester(session Session, repoID
 		var grant RealmGrantRecord
 		if decodeJSONFile(grantPath, &grant) != nil || validateRealmGrantRecord(grant) != nil ||
 			grant.RepoID != repoID || grant.OwnerRealmID != repo.OwnerRealmID ||
-			grant.RecipientRealmID != session.RealmID || grant.State != "active" || grant.Access != "rw" {
+			grant.RecipientRealmID != session.RealmID || grant.State != "active" || (grant.Access != "rw" && (write || grant.Access != "r")) {
 			return ErrPassportReplacementDenied
 		}
 	}

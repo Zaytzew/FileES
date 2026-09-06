@@ -21,7 +21,7 @@ import (
 // identity/grant records. It does not mutate authority; broker caches may
 // discard its output and reconstruct it. Callers authorize repo access first
 // and hold the service-WC authority lock across this read and any mutation.
-type SVNPathOwners struct{ SVN, RepositoriesRoot, ServiceWC string }
+type SVNPathOwners struct{ SVN, RepositoriesRoot, ServiceWC, CacheRoot string }
 
 type RepositoryRevision struct {
 	Number int64
@@ -98,6 +98,25 @@ func (s SVNPathOwners) Snapshot(ctx context.Context, repoID string) (pathownersh
 	if err != nil {
 		return pathownership.Snapshot{}, err
 	}
+	snapshot, err := s.history(ctx, repoID, target, head)
+	if err != nil {
+		return pathownership.Snapshot{}, err
+	}
+	return s.resolveOwners(ctx, repoID, repo, head, snapshot)
+}
+
+func (s SVNPathOwners) history(ctx context.Context, repoID, target string, head RepositoryRevision) (pathownership.Snapshot, error) {
+	cachePath := ""
+	if s.CacheRoot != "" {
+		if !filepath.IsAbs(s.CacheRoot) {
+			return pathownership.Snapshot{}, errors.New("ownership cache must be absolute")
+		}
+		cachePath = filepath.Join(s.CacheRoot, repoID+".history.json")
+		var cached pathownership.Snapshot
+		if decodeJSONFile(cachePath, &cached) == nil && cached.RepositoryUUID == head.UUID && cached.Revision == head.Number {
+			return cached, nil // only immutable origins, never operational ownership
+		}
+	}
 	var revisions []pathownership.Revision
 	if head.Number > 0 {
 		raw, err := s.run(ctx, "log", "--xml", "--verbose", "--quiet", "-r", "1:"+strconv.FormatInt(head.Number, 10), target+"@"+strconv.FormatInt(head.Number, 10))
@@ -113,6 +132,16 @@ func (s SVNPathOwners) Snapshot(ctx context.Context, repoID string) (pathownersh
 	if err != nil {
 		return pathownership.Snapshot{}, err
 	}
+	snapshot.RepositoryUUID = head.UUID
+	if cachePath != "" {
+		if err := atomicJSON(cachePath, snapshot); err != nil {
+			return pathownership.Snapshot{}, err
+		}
+	}
+	return snapshot, nil
+}
+
+func (s SVNPathOwners) resolveOwners(ctx context.Context, repoID string, repo repositoryRecord, head RepositoryRevision, snapshot pathownership.Snapshot) (pathownership.Snapshot, error) {
 	owners := map[string]string{}
 	if _, err := uuid.Parse(repo.OwnerRealmID); err != nil {
 		return pathownership.Snapshot{}, ErrPathOwnerUnavailable

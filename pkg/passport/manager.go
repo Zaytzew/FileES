@@ -120,6 +120,10 @@ type Config struct {
 	OnPending func([]PendingStatus)
 	// OnError reports heartbeat failures after releasing Manager's mutexes.
 	OnError func(error)
+	// Ownership comes exclusively from a fresh authenticated broker snapshot.
+	// Nil is retained only for the legacy standalone Manager/test API.
+	// Called under the operation mutex by Acquire; must not reenter Manager.
+	Ownership func(context.Context) (OwnershipView, error)
 }
 
 func (c Config) withDefaults() Config {
@@ -169,15 +173,12 @@ func Open(storePath, instanceUID string, backend Backend, cfg Config) (*Manager,
 	return m, nil
 }
 
-// Acquire acquires an edit passport for each path. realmID, when non-empty,
-// is the caller's own realm: it is stamped onto newly-issued passports for
-// autolock priority, and - critically - it is the ONLY thing that allows a
-// silent takeover of an unexpired lock. A lock is force-taken over without
-// waiting for expiry only when its own metadata already carries the SAME
-// non-empty realm (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §4: migration
-// between one realm's own instances, never a steal from another realm).
-// Passing an empty realmID preserves the original behaviour exactly: no
-// silent takeover, only FileES's own already-expired locks are stolen.
+// Acquire acquires an edit passport for each path. In production, a nonempty
+// realmID requests owner automation: canonical path ownership and lock author
+// must both match before a conditional server preparation may replace a token.
+// An empty realm requests explicit borrowing and never permits migration.
+// The legacy standalone API (nil Ownership) retains its historical rules;
+// production starters always supply Ownership and an intent backend.
 func (m *Manager) Acquire(ctx context.Context, paths []string, realmID string) ([]Passport, string, error) {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
@@ -223,7 +224,25 @@ func (m *Manager) Acquire(ctx context.Context, paths []string, realmID string) (
 				continue
 			}
 			sameRealm := realmID != "" && meta.RealmID == realmID
-			if !sameRealm && now.Before(meta.ExpiresAt) {
+			if m.cfg.Ownership != nil && realmID != "" {
+				// The editable comment is not identity. The broker resolves the
+				// SVN lock author through canonical activation records; prepare
+				// will independently authorize the exact token again server-side.
+				view, err := m.cfg.Ownership(ctx)
+				if err != nil {
+					m.rollback(ctx, newlyAcquired)
+					return nil, strings.Join(outputs, "\n"), err
+				}
+				rel, err := filepath.Rel(m.cfg.WorkingCopy, path)
+				if err != nil {
+					m.rollback(ctx, newlyAcquired)
+					return nil, "", err
+				}
+				rel = filepath.ToSlash(rel)
+				hold := view.Holds[rel]
+				sameRealm = view.Owners[rel] == realmID && hold.RealmID == realmID && hold.Token == info.Token
+			}
+			if !sameRealm && (m.cfg.Ownership != nil || now.Before(meta.ExpiresAt)) {
 				m.rollback(ctx, newlyAcquired)
 				return nil, strings.Join(outputs, "\n"), &HeldByOther{Path: path, Holder: info.Owner, Instance: meta.InstanceUID, Realm: meta.RealmID, Until: meta.ExpiresAt}
 			}
@@ -525,6 +544,9 @@ func (m *Manager) authorize(ctx context.Context, paths []string) error {
 // without yet being covered by a real server-side lock - a deliberate,
 // accepted optimism, never a claim of exclusivity.
 func (m *Manager) AutoUnlockOwned(ctx context.Context, wc, realmID string) error {
+	if m.cfg.Ownership != nil {
+		return m.reconcilePathAccess(ctx, wc, realmID)
+	}
 	if strings.TrimSpace(realmID) == "" {
 		return nil
 	}

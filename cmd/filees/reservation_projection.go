@@ -46,10 +46,11 @@ type reservationProjectionCoordinator struct {
 	onRepositoryDeleted func(context.Context, reposupervisor.Key) error
 	terminalApplied     map[reposupervisor.Key]bool
 
-	mu       sync.RWMutex
-	profiles map[string]clientprofile.Profile
-	views    map[string]clientview.View
-	results  map[reposupervisor.Key]cachedReservationResult
+	mu            sync.RWMutex
+	profiles      map[string]clientprofile.Profile
+	profileEpochs map[string]uint64
+	views         map[string]clientview.View
+	results       map[reposupervisor.Key]cachedReservationResult
 	// detached remembers which servers have told us this client is no longer
 	// one of theirs, so the fact is stated once instead of every cycle.
 	detached map[string]bool
@@ -66,7 +67,9 @@ type reservationFetcher interface {
 }
 
 type cachedReservationResult struct {
-	result reservationv1.Result
+	profileEpoch uint64
+	receivedAt   time.Time
+	result       reservationv1.Result
 	// offline means the server could not be reached. detached means it was
 	// reached and refused us: this client is no longer one of its own. They
 	// call for opposite responses - wait, versus activate again - so they are
@@ -86,6 +89,7 @@ func newReservationProjectionCoordinator(ctx context.Context, ipc *ipcserver.Ser
 	coordinator := &reservationProjectionCoordinator{
 		ctx: ctx, ipc: ipc,
 		profiles:        make(map[string]clientprofile.Profile),
+		profileEpochs:   make(map[string]uint64),
 		views:           make(map[string]clientview.View),
 		results:         make(map[reposupervisor.Key]cachedReservationResult),
 		detached:        make(map[string]bool),
@@ -124,6 +128,15 @@ func (coordinator *reservationProjectionCoordinator) UpdateProfile(profile clien
 		return
 	}
 	coordinator.mu.Lock()
+	old, exists := coordinator.profiles[profile.ServerID]
+	if exists && (old.ClientID != profile.ClientID || old.Address != profile.Address || old.SSHPort != profile.SSHPort || old.IdentityFile != profile.IdentityFile || old.KnownHosts != profile.KnownHosts) {
+		coordinator.profileEpochs[profile.ServerID]++
+		for key := range coordinator.results {
+			if key.ServerID == profile.ServerID {
+				delete(coordinator.results, key)
+			}
+		}
+	}
 	coordinator.profiles[profile.ServerID] = profile
 	start := !coordinator.started[profile.ServerID]
 	if start {
@@ -270,6 +283,7 @@ func (coordinator *reservationProjectionCoordinator) Schedule(serverID string) {
 func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context, serverID string) {
 	coordinator.mu.RLock()
 	profile, hasProfile := coordinator.profiles[serverID]
+	profileEpoch := coordinator.profileEpochs[serverID]
 	view, hasView := coordinator.views[serverID]
 	paused := coordinator.paused[serverID]
 	coordinator.mu.RUnlock()
@@ -367,7 +381,15 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 	var firstErr error
 	var firstErrRepo string
 	for _, repoID := range repoIDs {
-		result, fetchErr := fetcher.Fetch(ctx, repoID)
+		var result reservationv1.Result
+		var fetchErr error
+		if broker, ok := fetcher.(interface {
+			FetchAutolock(context.Context, string) (reservationv1.Result, error)
+		}); ok {
+			result, fetchErr = broker.FetchAutolock(ctx, repoID)
+		} else {
+			result, fetchErr = fetcher.Fetch(ctx, repoID)
+		} // legacy injected transports never confer ownership
 		if isDetachedClient(fetchErr) {
 			failed++
 			firstErr, firstErrRepo = fetchErr, repoID
@@ -375,6 +397,10 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 		}
 		key := reposupervisor.Key{ServerID: serverID, RepoID: repoID}
 		coordinator.mu.Lock()
+		if coordinator.profileEpochs[serverID] != profileEpoch {
+			coordinator.mu.Unlock()
+			return // response belongs to the previous activation/transport
+		}
 		if fetchErr != nil {
 			cached := coordinator.results[key]
 			cached.offline = true
@@ -383,7 +409,7 @@ func (coordinator *reservationProjectionCoordinator) refresh(ctx context.Context
 			// Keep the terminal presentation coherent throughout a validation
 			// pass. One successful repo is not enough to reattach a server whose
 			// remaining repos may still reject the same replacement proof.
-			coordinator.results[key] = cachedReservationResult{result: result, present: true, detached: coordinator.detached[serverID]}
+			coordinator.results[key] = cachedReservationResult{result: result, profileEpoch: profileEpoch, receivedAt: time.Now(), present: true, detached: coordinator.detached[serverID]}
 		}
 		coordinator.mu.Unlock()
 		// Every repository on one server shares that server's client view, so

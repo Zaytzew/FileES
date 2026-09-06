@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"filees/pkg/clientview"
+	"filees/pkg/pathownership"
 	"github.com/google/uuid"
 )
 
@@ -28,6 +29,10 @@ const Schema = "filees.reservation/v1"
 // StateSchema explicitly opts into lifecycle facts on the existing state
 // emitter. Legacy reservation requests/responses retain their exact shape.
 const StateSchema = "filees.reservation/v2"
+
+// AutolockSchema adds authoritative per-object ownership on the same broker
+// request/response, without changing legacy reservation or lifecycle readers.
+const AutolockSchema = "filees.reservation/v3"
 
 // Reservation is one SVN lock as the server itself knows it — nothing more.
 // Deliberately absent, and never to be added here:
@@ -44,11 +49,12 @@ const StateSchema = "filees.reservation/v2"
 // Comment is carried raw (not interpreted here) specifically so the client
 // can run passport.ParseComment itself when building that overlay.
 type Reservation struct {
-	Path      string `json:"path"` // repository-relative, slash-separated
-	Token     string `json:"token"`
-	OwnerID   string `json:"owner_id,omitempty"`
-	Comment   string `json:"comment,omitempty"`
-	CreatedAt string `json:"created_at,omitempty"`
+	OwnerRealmID string `json:"owner_realm_id,omitempty"` // v3 canonical identity, never the editable comment
+	Path         string `json:"path"`                     // repository-relative, slash-separated
+	Token        string `json:"token"`
+	OwnerID      string `json:"owner_id,omitempty"`
+	Comment      string `json:"comment,omitempty"`
+	CreatedAt    string `json:"created_at,omitempty"`
 }
 
 // Request asks the worker for the current reservation projection of one
@@ -62,7 +68,7 @@ type Request struct {
 }
 
 func (r Request) Validate() error {
-	if r.Schema != Schema && r.Schema != StateSchema {
+	if r.Schema != Schema && r.Schema != StateSchema && r.Schema != AutolockSchema {
 		return errors.New("reservation request schema mismatch")
 	}
 	if r.Schema == StateSchema && r.RepoID == "" {
@@ -85,11 +91,13 @@ func (r Request) Validate() error {
 //     artifact exists yet; Reservations is always empty and must never be
 //     read as "confirmed zero".
 type Result struct {
+	PathOwnership   *pathownership.Snapshot `json:"path_ownership,omitempty"`
+	OwnershipDetail string                  `json:"ownership_detail,omitempty"`
 	// Only the v2 server selector (empty RepoID) carries these current
 	// operator-configured facts. They never change invitation identity.
 	ServerID          string `json:"server_id,omitempty"`
 	ServerDisplayName string `json:"server_display_name,omitempty"`
-	// RepositoryState is present only in v2. "deleted" is authoritative
+	// RepositoryState is present in v2/v3. "deleted" is authoritative
 	// withdrawal from use, not a receipt for physical erasure or local cleanup.
 	RepositoryState string        `json:"repository_state,omitempty"`
 	Schema          string        `json:"schema"`
@@ -161,8 +169,11 @@ func ParseResult(raw []byte) (Result, error) {
 	if err := decodeExactlyOne(raw, &res); err != nil {
 		return Result{}, err
 	}
-	if res.Schema != Schema && res.Schema != StateSchema {
+	if res.Schema != Schema && res.Schema != StateSchema && res.Schema != AutolockSchema {
 		return Result{}, errors.New("reservation result schema or repo id missing")
+	}
+	if err := validateOwnership(res); err != nil {
+		return Result{}, err
 	}
 	if res.Schema == StateSchema && res.RepoID == "" {
 		if strings.TrimSpace(res.ServerID) == "" || strings.ContainsAny(res.ServerID, "/\\\x00\r\n\t ") ||
@@ -180,7 +191,7 @@ func ParseResult(raw []byte) (Result, error) {
 	if res.Schema == Schema && res.RepositoryState != "" {
 		return Result{}, errors.New("legacy reservation result carries lifecycle state")
 	}
-	if res.Schema == StateSchema {
+	if res.Schema == StateSchema || res.Schema == AutolockSchema {
 		if _, err := uuid.Parse(res.RepoID); err != nil {
 			return Result{}, errors.New("state result repo id must be UUID")
 		}

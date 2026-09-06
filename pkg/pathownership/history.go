@@ -38,8 +38,9 @@ type Entry struct {
 	OwnerRealmID string `json:"owner_realm_id,omitempty"`
 }
 type Snapshot struct {
-	Revision int64   `json:"revision"`
-	Entries  []Entry `json:"entries"`
+	RepositoryUUID string  `json:"repository_uuid,omitempty"`
+	Revision       int64   `json:"revision"`
+	Entries        []Entry `json:"entries"`
 }
 
 func ParseLog(raw []byte) ([]Revision, error) {

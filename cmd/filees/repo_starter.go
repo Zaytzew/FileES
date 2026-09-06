@@ -73,7 +73,16 @@ func buildCommitService(repo config.Repo, svn client.Client, rules commit.Rules,
 	if passports != nil {
 		beginPublish := passports.BeginPublish
 		isOwner := repo.RealmID != "" && repo.RealmID == repo.OwnerRealmID
-		if isOwner {
+		if passports.PerPathOwnership() {
+			service.PerPathOwnership = true
+			service.AutoUnlockOwned = passports.AutoUnlockOwned
+			beginPublish = func(ctx context.Context, paths []string) (func(), error) {
+				if err := passports.AcquireOwned(ctx, paths, repo.RealmID); err != nil {
+					return func() {}, err
+				}
+				return passports.BeginPublish(ctx, paths)
+			}
+		} else if isOwner {
 			// Real Acquire is deferred to the actual publish attempt
 			// (AUTOLOCK_CREATOR_OWNERSHIP_CONCEPT_V2.md §3): the two calls
 			// are sequential, not nested, so this cannot deadlock against
@@ -268,6 +277,7 @@ type readWriteFactory func(context.Context, repoRuntime, client.Client, reposupe
 
 type readWriteDependencies struct {
 	passportBackend func(config.Repo, client.Client) (passport.Backend, error)
+	pathOwnership   func(context.Context, config.Repo, client.Client) (passport.OwnershipView, error)
 	gate            runtime.Gate
 	mutex           runtime.RepoMutex
 	ipc             *ipcserver.Server
@@ -334,7 +344,13 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			return nil, err
 		}
 		passportErrors := errmap.NewSink(repoErrorWriter{path: filepath.Join(logsDir, "errors.jsonl")}, "passport:"+repo.ID)
-		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, backend, passport.Config{TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc, OnPending: passportPendingObserver(runtimeRepo.state, repo), OnError: func(err error) {
+		ownership := func(context.Context) (passport.OwnershipView, error) {
+			return passport.OwnershipView{}, errcat.New(errcat.KeyPathOwnerUnavailable, nil, nil)
+		}
+		if deps.pathOwnership != nil {
+			ownership = func(ctx context.Context) (passport.OwnershipView, error) { return deps.pathOwnership(ctx, repo, svn) }
+		}
+		manager, err = passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), clientUUID, backend, passport.Config{Ownership: ownership, TTL: repo.EditPassportTTL, HeartbeatInterval: repo.EditPassportHeartbeat, MaxSession: repo.EditPassportMaxSession, CloseGrace: repo.EditPassportCloseGrace, WorkingCopy: wc, OnPending: passportPendingObserver(runtimeRepo.state, repo), OnError: func(err error) {
 			logger.Warnf("passport heartbeat: %v", err)
 			passportErrors.Emit(errmap.Classify(err))
 		}})

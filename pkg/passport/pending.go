@@ -138,5 +138,14 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		return p, out, err
 	}
 	m.publishPendingLocked()
+	if m.cfg.Ownership != nil {
+		// A restarted pending passport may have had speculative RW removed.
+		// Only the durable WC+repository receipt restores it, never a retry.
+		if info, err := os.Lstat(p.Path); err == nil && info.Mode().IsRegular() {
+			if err := os.Chmod(p.Path, info.Mode().Perm()|0200); err != nil {
+				return confirmed, out, err
+			}
+		}
+	}
 	return confirmed, out, nil
 }

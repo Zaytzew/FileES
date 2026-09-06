@@ -77,6 +77,19 @@ func ByPair(code Code, key Key) (Spec, bool) {
 }
 
 var specs = []Spec{
+	// Existing lock-release IPC pairs, now covered by the shared dictionary.
+	{"LOCK-2201", "lock_release.unavailable", SevError, HintRetry, nil, "Lock release service is unavailable", "Usługa próśb o zwolnienie rezerwacji jest niedostępna"},
+	{"LOCK-2202", "lock_release.inspection_failed", SevError, HintRetry, nil, "Could not inspect the current reservation", "Nie udało się odczytać aktualnej rezerwacji"},
+	{"LOCK-2203", "lock_release.stale", SevError, HintRequireAction, nil, "The reservation changed before the request completed", "Rezerwacja uległa zmianie — odśwież jej stan"},
+	{"LOCK-2204", "lock_release.request_failed", SevError, HintRetry, []string{"detail"}, "Could not submit the lock release request", "Nie udało się wysłać prośby o zwolnienie rezerwacji"},
+	{"LOCK-2205", "lock_release.not_pending", SevError, HintRequireAction, nil, "The lock release request is no longer pending", "Ta prośba o zwolnienie rezerwacji nie oczekuje już na odpowiedź"},
+	{"LOCK-2206", "lock_release.decision_failed", SevError, HintRequireAction, []string{"detail"}, "Could not complete the lock release decision", "Nie udało się wykonać decyzji dotyczącej zwolnienia rezerwacji"},
+	{CodePassportDenied, KeyPassportDenied, SevWarn, HintRequireAction, nil, "Passport replacement is not authorized", "Nie masz uprawnienia do zastąpienia tej rezerwacji"},
+	{CodePassportStale, KeyPassportStale, SevWarn, HintRetryLocal, nil, "Observed reservation is no longer current", "Rezerwacja uległa zmianie — odśwież jej stan"},
+	{CodePassportUncertain, KeyPassportUncertain, SevError, HintRequireAction, nil, "Passport replacement outcome is uncertain; reconcile before continuing", "Wynik zmiany rezerwacji jest niepewny — uzgodnij jej stan przed dalszą pracą"},
+	{CodePassportUnavailable, KeyPassportUnavailable, SevError, HintRetryBackoff, nil, "Passport replacement service is unavailable", "Usługa zmiany rezerwacji jest niedostępna"},
+	{CodePassportRequestConflict, KeyPassportRequestConflict, SevError, HintRequireAction, nil, "Passport operation is bound to another request", "Identyfikator operacji rezerwacji należy do innego żądania"},
+	{CodePathOwnerUnavailable, KeyPathOwnerUnavailable, SevWarn, HintRequireAction, nil, "Authoritative path ownership is unavailable", "Nie można potwierdzić właściciela pliku"},
 	// Runtime classification (errmap.Classify). These are log/journal
 	// events, not necessarily IPC responses.
 	{CodeNet, KeyNetUnreachable, SevWarn, HintRetryBackoff, nil, "Network unreachable — retrying with backoff", "Brak połączenia z siecią"},

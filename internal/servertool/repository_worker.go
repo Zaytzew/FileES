@@ -114,6 +114,13 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 		uploadChannels = repoworker.ChannelUploadService{Channels: publicShareChannels, Backend: backend, Deliverer: repoworker.UploadChannelOutbox{Root: filepath.Join(config.PublicShares.EffectiveStateRoot(r.ResultsRoot), "upload-outbox")}, TrashRoot: config.Upload.EffectiveTrashRoot(r.ResultsRoot)}
 	}
 	worker := &repoworker.Worker{Backend: backend, Activator: effects, Capacity: capacity, Reservations: reservations, Store: store, MobilePairing: mobilePairingMinter{onboardingFiles}, Aliases: aliases, Grants: publisher, Branding: publisher, EditingPolicies: publisher, PublicShares: publicShares, UploadChannels: uploadChannels, LockReleases: lockReleases, LockAuthority: lockAuthority, LockProjector: publisher, ClientDetacher: clientDetacher{manager: activationManager}, RealmRemoval: realmRemoval, RepositoryRecovery: repositoryRecovery, RecoveryAdminContact: r.RecoveryAdminContact, DataErasureMaxDays: r.EffectiveDataErasureMaxDays(), DumpLoader: dumpLoader}
+	worker.PassportPreparations = &repoworker.PassportPreparations{
+		Root: filepath.Join(r.ResultsRoot, "passport-preparations"),
+		Authority: repoworker.PassportReplacementAuthority{
+			Locks: lockAuthority, ServiceWC: config.Activation.ServiceWorkingCopy,
+			PathOwners: repoworker.SVNPathOwners{SVN: config.Activation.SVNBinary, RepositoriesRoot: r.Root, ServiceWC: config.Activation.ServiceWorkingCopy},
+		},
+	}
 	dispatcher := repoworker.Dispatcher{
 		Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy},
 		Admission: realmRemovalAdmission{Fences: activationManager},

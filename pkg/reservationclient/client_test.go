@@ -25,6 +25,39 @@ import (
 
 const testRepoID = "f5d5bfee-62f4-5b9c-b26f-8d4c424fb8f0"
 
+func TestFetchAutolockUsesPinnedLaneAndRefusesDowngrade(t *testing.T) {
+	for _, schema := range []string{reservationv1.AutolockSchema, reservationv1.StateSchema} {
+		t.Run(schema, func(t *testing.T) {
+			hostSigner, _ := generateKey(t)
+			clientSigner, clientPrivate := generateKey(t)
+			address := startReservationSSH(t, hostSigner, clientSigner.PublicKey(), func(stdin *bufio.Reader, stdout *bytes.Buffer) {
+				line, _ := stdin.ReadString('\n')
+				req, err := reservationv1.ParseRequest([]byte(line))
+				if err != nil || req.Schema != reservationv1.AutolockSchema || req.RepoID != testRepoID {
+					return
+				}
+				result := reservationv1.Result{Schema: schema, RepoID: req.RepoID, RepositoryState: "active", AsOf: time.Now(), Generation: "1"}
+				if schema == reservationv1.AutolockSchema {
+					result.OwnershipDetail = "legacy grant requires migration"
+				}
+				raw, _ := json.Marshal(result)
+				stdout.Write(append(raw, '\n'))
+			})
+			client := configuredClient(t, address, hostSigner.PublicKey(), clientPrivate)
+			result, err := client.FetchAutolock(t.Context(), testRepoID)
+			if schema != reservationv1.AutolockSchema {
+				if err == nil {
+					t.Fatal("accepted schema downgrade")
+				}
+				return
+			}
+			if err != nil || result.PathOwnership != nil || result.OwnershipDetail == "" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+		})
+	}
+}
+
 func TestFetchParsesAFreshResult(t *testing.T) {
 	hostSigner, _ := generateKey(t)
 	clientSigner, clientPrivate := generateKey(t)

@@ -106,6 +106,10 @@ func (c *Client) FetchState(ctx context.Context, repoID string) (reservationv1.R
 	return c.fetch(ctx, repoID, reservationv1.StateSchema)
 }
 
+func (c *Client) FetchAutolock(ctx context.Context, repoID string) (reservationv1.Result, error) {
+	return c.fetch(ctx, repoID, reservationv1.AutolockSchema)
+}
+
 // FetchServerState reads metadata using the same pinned, one-shot broker.
 func (c *Client) FetchServerState(ctx context.Context) (reservationv1.Result, error) {
 	return c.fetch(ctx, "", reservationv1.StateSchema)

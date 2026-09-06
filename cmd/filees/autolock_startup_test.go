@@ -60,7 +60,7 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 		{"owner-after-checkout", "owner", true, true},
 		{"owner-after-migration", "owner", false, true},
 		{"guest-remains-manual", "guest", true, false},
-		{"pending-after-restart", "owner", true, true},
+		{"pending-after-restart", "owner", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -108,6 +108,17 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 			deps := readWriteDependencies{passportBackend: func(repo config.Repo, svn client.Client) (passport.Backend, error) {
 				return newControlPassportBackend(repo, svn, func(string) (clientprofile.Profile, bool) { return profile, true })
 			}}
+			deps.pathOwnership = func(ctx context.Context, repo config.Repo, cli client.Client) (passport.OwnershipView, error) {
+				v := passport.OwnershipView{Owners: map[string]string{"doc.txt": "owner"}, Holds: map[string]passport.OwnershipHold{}}
+				lock, err := cli.LockInfo(ctx, wc, doc)
+				if err != nil {
+					return v, err
+				}
+				if lock != nil {
+					v.Holds["doc.txt"] = passport.OwnershipHold{Token: lock.Token, RealmID: "owner"}
+				}
+				return v, nil
+			}
 			instance, err := startReadWrite(t.Context(), repoRuntime{config: repo, state: state}, cli, reposupervisor.Desired{Key: reposupervisor.Key{ServerID: "lab", RepoID: repoID}}, deps)
 			if err != nil {
 				t.Fatal(err)
@@ -137,6 +148,10 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 				}
 				if len(state.Snapshot().PassportIssues) != 0 || lost.locks != 1 {
 					t.Fatal("receipt recovery repeated lock or kept issue")
+				}
+				info, err := os.Stat(doc)
+				if err != nil || info.Mode().Perm()&0200 == 0 {
+					t.Fatalf("confirmed passport did not restore RW: %v", err)
 				}
 			}
 			props, err := cli.PropList(t.Context(), wc, "svn:needs-lock")

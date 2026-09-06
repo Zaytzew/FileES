@@ -148,6 +148,7 @@ func runClientEntry(configPath string, args []string, stdin io.Reader, stdout, s
 		// will ever touch must already be unveiled here first.
 		stateRoot := filepath.Join(r.ResultsRoot, "reservation-projection")
 		profile.Paths = append(profile.Paths,
+			obsandbox.Path{Label: "service-working-copy-lock", Name: filepath.Join(config.Activation.Root, ".service-wc.lock"), Perms: "rwc"},
 			obsandbox.Path{Label: "server-config", Name: configPath, Perms: "r"},
 			obsandbox.Path{Label: "service-wc-parent", Name: filepath.Dir(config.Activation.ServiceWorkingCopy), Perms: "r"},
 			obsandbox.Path{Label: "service-wc", Name: config.Activation.ServiceWorkingCopy, Perms: "r"},

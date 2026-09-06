@@ -25,7 +25,7 @@ func TestSVNPathOwnersRenameForkRevokeAndRegrant(t *testing.T) {
 	}
 	f := newReplacementFixture(t)
 	svn, _ := exec.LookPath("svn")
-	source := SVNPathOwners{SVN: svn, RepositoriesRoot: f.authority.Locks.RepositoriesRoot, ServiceWC: f.authority.ServiceWC}
+	source := SVNPathOwners{SVN: svn, RepositoriesRoot: f.authority.Locks.RepositoriesRoot, ServiceWC: f.authority.ServiceWC, CacheRoot: t.TempDir()}
 	repo := filepath.Join(source.RepositoriesRoot, f.req.RepoID)
 	wc := filepath.Join(t.TempDir(), "wc")
 	replacementCommand(t, "svnadmin", "create", repo)

@@ -116,6 +116,23 @@ func runReservationProjectionWorker(configPath string, args []string, in io.Read
 		report(stderr, "serving-state request parse", err)
 		return ExitData
 	}
+	if req.Schema == reservationv1.AutolockSchema {
+		var result reservationv1.Result
+		err := repoworker.WithFileLock(filepath.Join(config.Activation.Root, ".service-wc.lock"), func() error {
+			var err error
+			result, err = refreshAutolockProjection(context.Background(), config, clientID, req, stateRoot)
+			return err
+		})
+		if err != nil {
+			report(stderr, "serving-state autolock", err)
+			return ExitSoftware
+		}
+		if err := json.NewEncoder(out).Encode(result); err != nil {
+			report(stderr, "serving-state result", err)
+			return ExitSoftware
+		}
+		return ExitOK
+	}
 	view, deleted, err := authorizedStateView(config.Activation.ServiceWorkingCopy, clientID, req)
 	if err != nil {
 		report(stderr, "serving-state authorization", err)

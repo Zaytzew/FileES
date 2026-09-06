@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"filees/internal/durable"
+	"filees/pkg/errcat"
 
 	"github.com/google/uuid"
 )
@@ -77,17 +78,18 @@ type Metadata struct {
 }
 
 type Passport struct {
-	Path            string    `json:"path"`
-	PassportID      string    `json:"passport_id"`
-	InstanceUID     string    `json:"instance_uid"`
-	RealmID         string    `json:"realm_id,omitempty"`
-	FencingToken    string    `json:"fencing_token"`
-	IssuedAt        time.Time `json:"issued_at"`
-	LastHeartbeatAt time.Time `json:"last_heartbeat_at"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	HardExpiresAt   time.Time `json:"hard_expires_at"`
-	CloseAfter      time.Time `json:"close_after,omitempty"`
-	State           string    `json:"state"`
+	Path            string      `json:"path"`
+	PassportID      string      `json:"passport_id"`
+	InstanceUID     string      `json:"instance_uid"`
+	RealmID         string      `json:"realm_id,omitempty"`
+	FencingToken    string      `json:"fencing_token"`
+	IssuedAt        time.Time   `json:"issued_at"`
+	LastHeartbeatAt time.Time   `json:"last_heartbeat_at"`
+	ExpiresAt       time.Time   `json:"expires_at"`
+	HardExpiresAt   time.Time   `json:"hard_expires_at"`
+	CloseAfter      time.Time   `json:"close_after,omitempty"`
+	State           string      `json:"state"`
+	Pending         *LockIntent `json:"pending,omitempty"`
 }
 
 type Lock struct{ Token, Owner, Comment string }
@@ -183,6 +185,18 @@ func (m *Manager) Acquire(ctx context.Context, paths []string, realmID string) (
 	var acquired, newlyAcquired []Passport
 	var outputs []string
 	for _, path := range paths {
+		if p, ok := m.passports[path]; ok && p.State == StatePending {
+			if p.RealmID != realmID {
+				return nil, strings.Join(outputs, "\n"), errcat.New(errcat.KeyPassportRequestConflict, nil, nil)
+			}
+			resumed, out, err := m.resumePending(ctx, p)
+			outputs = append(outputs, out)
+			if err != nil {
+				return nil, strings.Join(outputs, "\n"), err
+			}
+			acquired = append(acquired, resumed)
+			continue
+		}
 		info, err := m.backend.Inspect(ctx, path)
 		if err != nil {
 			m.rollback(ctx, newlyAcquired)
@@ -213,6 +227,21 @@ func (m *Manager) Acquire(ctx context.Context, paths []string, realmID string) (
 		meta := Metadata{PassportID: uuid.NewString(), InstanceUID: m.instanceUID, RealmID: realmID, IssuedAt: now, ExpiresAt: minTime(now.Add(m.cfg.TTL), hard), HardExpiresAt: hard}
 		if info != nil {
 			meta.PreviousToken = info.Token
+		}
+		if _, durable := m.backend.(intentBackend); durable {
+			mode := "acquire"
+			if force {
+				mode = "migrate"
+			}
+			p, out, err := m.beginPending(ctx, path, meta, mode, time.Time{})
+			outputs = append(outputs, out)
+			if err != nil {
+				return nil, strings.Join(outputs, "\n"), err
+			}
+			// Each durable success is already saved. A later batch failure leaves
+			// it owned until explicit release/expiry, not a best-effort rollback.
+			acquired = append(acquired, p)
+			continue
 		}
 		lock, out, err := m.backend.Lock(ctx, path, FormatComment(meta), force)
 		outputs = append(outputs, out)
@@ -251,6 +280,9 @@ func (m *Manager) Release(ctx context.Context, paths []string) (string, error) {
 	}
 	for _, path := range cleanPaths(paths) {
 		p, ok := m.passports[path]
+		if ok && p.State == StatePending {
+			return fail(errcat.New(errcat.KeyPassportUncertain, nil, nil))
+		}
 		if !ok || p.State != StateActive {
 			return fail(fmt.Errorf("%w: %s", ErrNoPassport, path))
 		}
@@ -285,6 +317,12 @@ func (m *Manager) Heartbeat(ctx context.Context) error {
 	now := m.cfg.Now().UTC()
 	var first error
 	for path, p := range m.passports {
+		if p.State == StatePending {
+			if _, _, err := m.resumePending(ctx, p); err != nil && first == nil {
+				first = err
+			}
+			continue
+		}
 		if p.State != StateActive {
 			continue
 		}
@@ -332,6 +370,12 @@ func (m *Manager) Heartbeat(ctx context.Context) error {
 		expires := minTime(now.Add(m.cfg.TTL), p.HardExpiresAt)
 		meta := Metadata{PassportID: p.PassportID, InstanceUID: p.InstanceUID, RealmID: p.RealmID, IssuedAt: p.IssuedAt, ExpiresAt: expires, HardExpiresAt: p.HardExpiresAt}
 		meta.PreviousToken = p.FencingToken
+		if _, durable := m.backend.(intentBackend); durable {
+			if _, _, err := m.beginPending(ctx, path, meta, "renew", p.CloseAfter); err != nil && first == nil {
+				first = err
+			}
+			continue
+		}
 		lock, _, err := m.backend.Lock(ctx, path, FormatComment(meta), true)
 		if err != nil {
 			if first == nil {
@@ -376,6 +420,12 @@ func (m *Manager) ReleaseAll(ctx context.Context) error {
 	defer m.mu.Unlock()
 	var first error
 	for path, p := range m.passports {
+		if p.State == StatePending {
+			if first == nil {
+				first = errcat.New(errcat.KeyPassportUncertain, nil, nil)
+			}
+			continue
+		}
 		if p.State != StateActive {
 			continue
 		}
@@ -540,7 +590,7 @@ func (m *Manager) ForgetRemoved(paths []string) {
 	defer m.mu.Unlock()
 	changed := false
 	for _, path := range cleanPaths(paths) {
-		if _, ok := m.passports[path]; ok {
+		if p, ok := m.passports[path]; ok && p.State != StatePending {
 			delete(m.passports, path)
 			changed = true
 		}
@@ -585,6 +635,15 @@ func (m *Manager) Snapshot() []Passport {
 	defer m.mu.Unlock()
 	out := make([]Passport, 0, len(m.passports))
 	for _, p := range m.passports {
+		if p.Pending != nil {
+			intent := *p.Pending
+			if intent.Ticket != nil {
+				ticket := *intent.Ticket
+				ticket.Payload = append(json.RawMessage(nil), ticket.Payload...)
+				intent.Ticket = &ticket
+			}
+			p.Pending = &intent
+		}
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
@@ -652,8 +711,23 @@ func (m *Manager) load() error {
 		return fmt.Errorf("passport store corrupt: %w", err)
 	}
 	for _, p := range list {
-		if p.Path == "" || p.PassportID == "" || p.FencingToken == "" {
+		if p.Pending != nil || p.State == StatePending {
+			backend, ok := m.backend.(intentBackend)
+			if !ok || p.Pending == nil || p.State != StatePending || p.FencingToken != "" {
+				return errors.New("passport pending record requires its durable backend")
+			}
+			meta := p.Pending.Metadata
+			if p.PassportID != meta.PassportID || p.InstanceUID != meta.InstanceUID || p.InstanceUID != m.instanceUID || p.RealmID != meta.RealmID || !p.IssuedAt.Equal(meta.IssuedAt) || !p.ExpiresAt.Equal(meta.ExpiresAt) || !p.HardExpiresAt.Equal(meta.HardExpiresAt) {
+				return errors.New("passport pending metadata mismatch")
+			}
+			if err := backend.ValidateLockIntent(p.Path, *p.Pending); err != nil {
+				return err
+			}
+		} else if p.Path == "" || p.PassportID == "" || p.FencingToken == "" {
 			return errors.New("passport store contains invalid entry")
+		}
+		if _, exists := m.passports[filepath.Clean(p.Path)]; exists {
+			return errors.New("duplicate passport path")
 		}
 		m.passports[filepath.Clean(p.Path)] = p
 	}

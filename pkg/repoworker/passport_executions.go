@@ -98,6 +98,10 @@ func executionMetadata(comment string) (passport.Metadata, error) {
 }
 
 func withExecution(repository, id string, fn func(string) error) error {
+	return withExecutionLocker(repository, id, WithFileLock, fn)
+}
+
+func withExecutionLocker(repository, id string, locker func(string, func() error) error, fn func(string) error) error {
 	if parsed, err := uuid.Parse(id); err != nil || parsed.String() != id {
 		return errors.New("invalid acquisition ID")
 	}
@@ -120,7 +124,7 @@ func withExecution(repository, id string, fn func(string) error) error {
 			return err
 		}
 	}
-	return WithFileLock(filepath.Join(dir, id+".lock"), func() error { return fn(filepath.Join(dir, id+".json")) })
+	return locker(filepath.Join(dir, id+".lock"), func() error { return fn(filepath.Join(dir, id+".json")) })
 }
 
 func privateExecutionFile(path string) error {
@@ -468,6 +472,16 @@ func (s PassportExecutions) ExpirePath(ctx context.Context, repoID, path string)
 // It is an explicit maintenance operation, never an unbounded startup scan.
 func (s PassportExecutions) Reap(ctx context.Context) error {
 	root := filepath.Join(s.Authority.Locks.RepositoriesRoot, ".filees-passport-executions")
+	info, err := os.Lstat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return ctx.Err()
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0077 != 0 {
+		return errors.New("unsafe acquisition registry")
+	}
 	dirs, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -481,6 +495,7 @@ func (s PassportExecutions) Reap(ctx context.Context) error {
 			return errors.Join(append(failures, err)...)
 		}
 		if !dir.IsDir() {
+			failures = append(failures, fmt.Errorf("unexpected acquisition registry entry %s", dir.Name()))
 			continue
 		}
 		if err := s.ReapRepository(ctx, dir.Name()); err != nil {
@@ -514,7 +529,7 @@ func (s PassportExecutions) ReapRepository(ctx context.Context, repoID string) e
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
-		err := withExecution(repo, id, func(file string) error {
+		err := withExecutionLocker(repo, id, TryWithFileLock, func(file string) error {
 			r, err := readExecution(file)
 			if err != nil {
 				return err

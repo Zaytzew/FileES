@@ -157,6 +157,11 @@ func sandboxTempDir(t *testing.T) string {
 			if err != nil {
 				return nil
 			}
+			// Chmod follows symlinks: a repository hook may point at the test
+			// executable outside this scratch tree. Never change its target.
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil
+			}
 			if entry.IsDir() {
 				_ = os.Chmod(path, 0o700)
 			} else {
@@ -167,4 +172,23 @@ func sandboxTempDir(t *testing.T) string {
 		_ = os.RemoveAll(dir)
 	})
 	return dir
+}
+
+func TestSandboxTempDirPreservesSymlinkTargetMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix symlink permissions")
+	}
+	target := filepath.Join(t.TempDir(), "executable")
+	if err := os.WriteFile(target, []byte("fixture"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("cleanup", func(t *testing.T) {
+		if err := os.Symlink(target, filepath.Join(sandboxTempDir(t), "hook")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	info, err := os.Stat(target)
+	if err != nil || info.Mode().Perm() != 0700 {
+		t.Fatalf("target permissions changed: %v %v", info, err)
+	}
 }

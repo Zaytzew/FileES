@@ -1,0 +1,10 @@
+# Install these lines only after an explicit rollout decision, in the
+# _filees-state user's crontab (no username column). Keep existing entries.
+# Cron starts a fresh, bounded process each minute; no resident daemon/PID file.
+# Successful output is suppressed. Errors go to cron mail: verify delivery.
+MAILTO=root
+* * * * * /usr/local/libexec/filees/filees-worker passport-reap -config /etc/filees/server.json >/dev/null
+# Health check also detects missing/stale/running/failed status (>5 minutes).
+# Delay until the regular 45-second pass normally finishes; checking running
+# deliberately fails. External monitoring must also detect a stopped cron.
+*/5 * * * * /bin/sleep 50 && /usr/local/libexec/filees/filees-worker passport-reap -config /etc/filees/server.json --check >/dev/null

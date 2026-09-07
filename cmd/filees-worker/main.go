@@ -12,6 +12,8 @@ func main() {
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "passport-reap":
+			os.Exit(servertool.RunPassportReap(os.Args[2:], os.Stdout, os.Stderr))
 		case "repository-control":
 			os.Exit(servertool.RunRepositoryWorker(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 		case "whale-v1":

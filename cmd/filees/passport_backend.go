@@ -81,5 +81,5 @@ func newControlPassportBackend(repo config.Repo, svn client.Client, profiles pas
 	}
 	transport.clientID = p.ClientID
 	transport.address, transport.port = p.Address, p.SSHPort
-	return passport.ControlSVNBackend{SVNBackend: passport.SVNBackend{Client: svn, WC: repo.LocalPath}, RepoID: repo.ID, ClientID: p.ClientID, Transport: transport}, nil
+	return passport.ControlSVNBackend{FenceAcquisitions: true, SVNBackend: passport.SVNBackend{Client: svn, WC: repo.LocalPath}, RepoID: repo.ID, ClientID: p.ClientID, Transport: transport}, nil
 }

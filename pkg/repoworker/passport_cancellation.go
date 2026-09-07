@@ -38,7 +38,9 @@ func (s PassportPreparations) Cancel(ctx context.Context, session Session, ticke
 		now = s.Authority.Now
 	}
 	failure := func(key errcat.Key) (control.Result, error) { return preparationError(ticket, key, now()) }
-	if err := s.Authority.authorizeRequester(session, p.RepoID); err != nil {
+	// Cancellation cannot mutate SVN or grant access. An active actor can
+	// fence its own bound preparation after the repository grant was revoked.
+	if err := s.Authority.authorizePassportCleanup(session); err != nil {
 		return failure(errcat.KeyPassportDenied)
 	}
 	if !filepath.IsAbs(s.Root) {

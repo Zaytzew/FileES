@@ -65,6 +65,7 @@ func (e *HeldByOther) Is(target error) bool { return target == ErrHeldByOther }
 func (e *HeldByOther) Unwrap() error        { return ErrHeldByOther }
 
 type Metadata struct {
+	AcquisitionID string `json:"acquisition_id,omitempty"`
 	PassportID    string `json:"passport_id"`
 	InstanceUID   string `json:"instance_uid"`
 	PreviousToken string `json:"previous_token,omitempty"`

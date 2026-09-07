@@ -58,6 +58,8 @@ func RunAdmin(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 	switch args[0] + " " + args[1] {
+	case "repo reap-passports":
+		return runAdminReapPassports(path, args[2:], stdout, stderr)
 	case "repo lock-guards":
 		return runAdminLockGuards(path, args[2:], stdout, stderr)
 	case "ticket create":

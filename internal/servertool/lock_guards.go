@@ -6,10 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
 	"filees/pkg/onboarding"
+	"filees/pkg/passport"
 	"filees/pkg/repoworker"
 	"filees/pkg/serverconfig"
 	"github.com/google/uuid"
@@ -21,13 +23,33 @@ func RunLockGuardMode(program string, args []string, out, stderr io.Writer) (boo
 	if name != "pre-lock" && name != "pre-unlock" && !version {
 		return false, 0
 	}
-	if err := sandboxNarrow("stdio"); err != nil {
+	journal := false
+	if name == "pre-lock" && len(args) == 5 && args[4] == "0" {
+		meta, ok := passport.ParseComment(args[3])
+		journal = ok && meta.AcquisitionID != ""
+	}
+	promises := "stdio"
+	if journal {
+		promises = "stdio rpath wpath cpath fattr flock"
+	}
+	if err := sandboxNarrow(promises); err != nil {
 		report(stderr, "lock guard sandbox", err)
 		return true, ExitSoftware
 	}
 	if version {
 		fmt.Fprintln(out, repoworker.LockGuardVersion)
 		return true, ExitOK
+	}
+	if journal {
+		parent := os.Getppid()
+		if err := repoworker.AdmitPassportExecution(args, parent, time.Now().UTC()); err != nil {
+			report(stderr, "lock acquisition admission", err)
+			return true, ExitTempFail
+		}
+		if parent != os.Getppid() {
+			fmt.Fprintln(stderr, "FileES: SVN executor changed during admission")
+			return true, ExitTempFail
+		}
 	}
 	return true, repoworker.RunLockGuard(args, stderr)
 }

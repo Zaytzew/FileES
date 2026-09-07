@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLockGuardOnlyAcceptsOrdinaryFiveArgumentInvocation(t *testing.T) {
@@ -30,6 +31,12 @@ func init() {
 		os.Exit(0)
 	}
 	if name := filepath.Base(os.Args[0]); name == "pre-lock" || name == "pre-unlock" {
+		if name == "pre-lock" && len(os.Args) == 6 && os.Args[5] == "0" {
+			if err := AdmitPassportExecution(os.Args[1:], os.Getppid(), time.Now().UTC()); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
 		os.Exit(RunLockGuard(os.Args[1:], os.Stderr))
 	}
 }

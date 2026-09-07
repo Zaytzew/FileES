@@ -39,7 +39,7 @@ func TestStarterPassportBackendUsesPinnedCurrentProfileWithoutFallback(t *testin
 		t.Fatal(err)
 	}
 	backend, ok := b.(passport.ControlSVNBackend)
-	if !ok || backend.ClientID != p.ClientID || backend.RepoID != repo.ID {
+	if !ok || !backend.FenceAcquisitions || backend.ClientID != p.ClientID || backend.RepoID != repo.ID {
 		t.Fatalf("legacy/wrong backend: %+v", b)
 	}
 	transport := backend.Transport.(passportProfileTransport)

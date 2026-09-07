@@ -122,6 +122,9 @@ func runRepositoryWorker(configPath string, args []string, in io.Reader, out, st
 			PathOwners: repoworker.SVNPathOwners{SVN: config.Activation.SVNBinary, RepositoriesRoot: r.Root, ServiceWC: config.Activation.ServiceWorkingCopy},
 		},
 	}
+	worker.PassportExecutions = &repoworker.PassportExecutions{
+		Authority: worker.PassportPreparations.Authority, GuardExecutable: repositoryWorkerPath,
+	}
 	dispatcher := repoworker.Dispatcher{
 		Worker: worker, Resolver: repoworker.ViewResolver{ServiceWC: config.Activation.ServiceWorkingCopy},
 		Admission: realmRemovalAdmission{Fences: activationManager},

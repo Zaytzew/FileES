@@ -57,6 +57,7 @@ public-shares/
     authority/    frost, bieżąca autoryzacja i dokładny odczyt przez svnlook
     backchannel/  wersjonowany protokół granicy stref
     cache/        prywatny, opcjonalny cache liści z TTL
+    storage/      pojemność filesystemu i klasyfikacja awarii, bez autoryzacji
     web/          bezstanowy listing, attachmenty i formularz przyjęcia
     intake/       kwarantanna publicznej maszyny (losowy upload_id, bez SVN)
     linkservice/  konfiguracja i socket procesu FastCGI
@@ -66,6 +67,19 @@ Kolejne pakiety dochodzą tą samą regułą — nazwa mówi, co robi, a nie z c
 się składa.
 
 ## Stan
+
+M47 (2026-09-07): regresja produkcyjnego storage ponownie otworzyła pion.
+Staging (`server.json`: `public_shares.authority_staging_root`) i cache
+(`public-links.json`: `cache.root`) są niezależnie konfigurowalne. Katalogi
+muszą przetrwać systemowe sprzątanie, być prywatne i wykluczone z backupu.
+Nowy domyślny układ: `/var/filees-downloads/{authority,cache}`; nie wymusza
+tego wolumenu na operatorze. Instalator ma `install.public_downloads_dir`
+dla migracji starych domyślnych ścieżek; niestandardowych nie nadpisuje.
+Zmiana konfiguracji wymaga restartu i nowego unveil. Awaria miejsca lub
+lokalnego stagingu/cache po autoryzacji daje 503/Retry-After, bez prywatnych
+szczegółów. Odmowa nadal jest 404. ZIP strumieniuje wyjście, ale wcześniej
+materializuje liście w cache; limity logiczne nie zastępują kontroli dysku.
+Migracja i bramka wdrożenia: `packaging/server/public-storage-migration.md`.
 
 Kanał dystrybucji jest zaimplementowany pionowo: owner tworzy, aktualizuje,
 odwołuje i usuwa kanał przez control-plane; tożsamość ownera pochodzi z sesji,

@@ -5,6 +5,16 @@ bundle=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 prefix=${PREFIX:-/usr/local}
 sysconfdir=${SYSCONFDIR:-/etc/filees}
 statedir=${STATEDIR:-/var/filees/onboarding}
+public_downloads_dir=${PUBLIC_DOWNLOADS_DIR:-/var/filees-downloads}
+public_authority_staging_root=${PUBLIC_AUTHORITY_STAGING_ROOT:-$public_downloads_dir/authority}
+public_links_cache_root=${PUBLIC_LINKS_CACHE_ROOT:-$public_downloads_dir/cache}
+for public_path in "$public_downloads_dir" "$public_authority_staging_root" "$public_links_cache_root"; do
+	case "$public_path" in
+		/|/tmp|/tmp/*|/var/tmp|/var/tmp/*) echo "Public downloads require dedicated persistent directories" >&2; exit 1 ;;
+		/*) ;;
+		*) echo "Public downloads paths must be absolute" >&2; exit 1 ;;
+	esac
+done
 
 install -d -m 755 "$prefix/sbin" "$prefix/libexec/filees"
 install -d -m 755 "$prefix/man/man5" "$prefix/man/man7" "$prefix/man/man8"
@@ -66,13 +76,18 @@ if [ ! -e "$statedir/.toolchain.lock" ]; then
 fi
 install -d -m 700 /var/filees/activation /var/filees/activation/records /var/filees/activation/proofs /var/filees/sessions
 install -d -m 700 /var/filees/repositories /var/filees/repository-operations
-install -d -m 700 /var/filees/repository-operations/public-shares /var/tmp/filees-public-share-authority /var/tmp/filees-public-shares-cache
+install -d -m 700 /var/filees/repository-operations/public-shares
+install -d -m 755 "$public_downloads_dir"
+install -d -m 700 "$public_authority_staging_root" "$public_links_cache_root"
 install -d -m 750 /var/run/filees /var/www/run/filees
 if [ ! -e /var/filees/activation/repositories.authz ]; then
 	install -m 600 /dev/null /var/filees/activation/repositories.authz
 fi
 
 echo "FileES server tools installed. Edit $sysconfdir/server.json before use."
+echo "Set public_shares.authority_staging_root=$public_authority_staging_root in server.json"
+echo "Set cache.root=$public_links_cache_root in public-links.json; examples are not rewritten."
+echo "Set install.public_downloads_dir=$public_downloads_dir in install.conf; use the same PUBLIC_* settings for install-ssh.sh."
 echo "No daemon or rc.d service was installed."
 echo "Manual pages installed under $prefix/man (man filees, man filees-admin)."
 echo "On OpenBSD, review and run openbsd/install-ssh.sh to enable the system-sshd entries."

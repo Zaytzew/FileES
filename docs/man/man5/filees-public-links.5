@@ -35,13 +35,17 @@ Never expose the authority port on a public interface.
 .It Ic visit_key_file
 HMAC key for signed visit URLs, mode 0600.
 .It Ic cache.root , cache.ttl , cache.max_size
-Private cache under
-.Pa /var/tmp ,
-outside backups.
+Independently configurable absolute private cache directory, mode 0700,
+owned by _filees-links. The example uses
+.Pa /var/filees-downloads/cache .
+Keep the directory on persistent storage outside system temporary cleanup;
+exclude its contents from backups.
 TTL cannot exceed 24 hours.
 The shipped values are 12 hours and 10 GiB.
 .It Ic bundle.max_files , bundle.max_size
 Hard limits for ZIP requests.
+ZIP output is streamed, but all selected leaves first occupy cache space.
+Logical limits do not replace filesystem capacity checks.
 .It Ic intake_root , max_upload_size
 Closed upload-shelf quarantine.
 Must match

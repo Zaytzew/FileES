@@ -20,6 +20,7 @@ func runCheckConfig(cfg *config.Config, out io.Writer) {
 	fmt.Fprintf(out, "sysconf:    %s\n", cfg.SysconfDir)
 	fmt.Fprintf(out, "sshd_conf:  %s\n", cfg.SSHDConfDir)
 	fmt.Fprintf(out, "data_dir:   %s\n", cfg.DataDir)
+	fmt.Fprintf(out, "public_downloads_dir: %s\n", cfg.PublicDownloadsDir)
 	fmt.Fprintf(out, "action:     %s\n", cfg.DefaultAction)
 	fmt.Fprintf(out, "drift:      %s\n", cfg.ConfigDrift)
 	fmt.Fprintf(out, "orphans:    %s\n", cfg.OrphanFiles)

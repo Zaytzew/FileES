@@ -554,7 +554,7 @@ func (p PublicSharesFile) EffectiveAuthorityStagingRoot() string {
 	if p.AuthorityStagingRoot != "" {
 		return filepath.Clean(p.AuthorityStagingRoot)
 	}
-	return "/var/tmp/filees-public-share-authority"
+	return "/var/filees-downloads/authority"
 }
 
 func (p PublicSharesFile) EffectiveMaxLeafSize() int64 {

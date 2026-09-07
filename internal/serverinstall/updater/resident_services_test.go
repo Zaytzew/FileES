@@ -85,3 +85,12 @@ func TestAnUnchangedServiceIsNotReported(t *testing.T) {
 		t.Fatalf("neither binary changed, so there is nothing to restart: %s", out.String())
 	}
 }
+
+func TestStorageMigrationReportsRestartEvenWithUnchangedImages(t *testing.T) {
+	var out bytes.Buffer
+	reportResidentServices(&out, []FilePlan{{Target: "/usr/local/libexec/filees/filees-links", Action: "UNCHANGED"}},
+		ConfigMigration{Directories: []storageDirectory{{Owner: "_filees-links"}, {Owner: "_filees-state"}}})
+	if !strings.Contains(out.String(), "rcctl restart filees_public_authority filees_links") {
+		t.Fatalf("missing ordered config-only restart: %s", out.String())
+	}
+}

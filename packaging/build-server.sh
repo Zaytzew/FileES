@@ -97,6 +97,7 @@ done
 cp "$root/packaging/server/server.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/public-links.example.json" "$tmp/share/filees/"
 cp "$root/packaging/server/install.example.conf" "$tmp/share/filees/"
+cp "$root/packaging/server/public-storage-migration.md" "$tmp/share/filees/"
 cp "$root/packaging/server/openbsd/bootstrap_authorized_keys" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/filees-tunnel.login.conf" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/filees.conf" "$tmp/share/filees/openbsd/"

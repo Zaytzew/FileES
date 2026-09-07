@@ -22,6 +22,7 @@ import (
 	"filees/public-shares/authority"
 	"filees/public-shares/channel"
 	"filees/public-shares/recipientotp"
+	"filees/public-shares/storage"
 )
 
 const Protocol = "filees.public-share-backchannel/v1"
@@ -173,6 +174,10 @@ func (s Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		}
 		leaf, err := s.Authority.Fetch(request.Context(), input.Object)
 		if err != nil {
+			if errors.Is(err, storage.ErrUnavailable) {
+				http.Error(w, "download storage unavailable", http.StatusServiceUnavailable)
+				return
+			}
 			notFound(w)
 			return
 		}
@@ -272,6 +277,9 @@ func (c Client) Fetch(ctx context.Context, object authority.ObjectRequest) (auth
 	}
 	if response.StatusCode != http.StatusOK {
 		response.Body.Close()
+		if response.StatusCode == http.StatusServiceUnavailable {
+			return authority.FetchedLeaf{}, storage.ErrUnavailable
+		}
 		return authority.FetchedLeaf{}, authority.ErrNotFound
 	}
 	size, errSize := strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)

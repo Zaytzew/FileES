@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"filees/pkg/realmbranding"
 	"filees/public-shares/channel"
 	"filees/public-shares/manifest"
+	"filees/public-shares/storage"
 	"github.com/google/uuid"
 )
 
@@ -100,6 +102,63 @@ func TestEntryFrostAndFetchUseOnlyCanonicalMapping(t *testing.T) {
 	source := resolver.Source.(*testSource)
 	if source.lastRepo != share.RepoID || source.lastPath != share.Objects[0].RepoPath {
 		t.Fatalf("source request = repo %q path %q", source.lastRepo, source.lastPath)
+	}
+}
+
+func TestConfiguredStagingFailureAndRecoveryDoNotChangeAuthority(t *testing.T) {
+	r, _, share, id := resolverFixture(t, nil)
+	entry, err := r.Enter(context.Background(), "atmprojekt", share.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ObjectRequest{ChannelID: id, PublicID: share.Objects[0].PublicID, Revision: entry.Revision, FrostProof: entry.FrostProof}
+	parent := t.TempDir()
+	blocked := filepath.Join(parent, "blocked")
+	if err := os.WriteFile(blocked, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r.StagingRoot = filepath.Join(blocked, "stage")
+	if _, err := r.Check(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Fetch(context.Background(), request); !errors.Is(err, storage.ErrUnavailable) {
+		t.Fatalf("staging failure classification: %v", err)
+	}
+	bad := request
+	bad.FrostProof = "invalid"
+	if _, err := r.Fetch(context.Background(), bad); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("leaked storage status: %v", err)
+	}
+	r.StagingRoot = filepath.Join(parent, "custom", "stage")
+	leaf, err := r.Fetch(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(leaf.Body)
+	if err != nil || string(data) != "revision five" {
+		t.Fatalf("recovered body: %q %v", data, err)
+	}
+	if err := leaf.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	files, err := os.ReadDir(r.StagingRoot)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("staging cleanup: %v %v", files, err)
+	}
+}
+
+type failingStagingWriter struct{}
+
+func (failingStagingWriter) Write([]byte) (int, error) { return 0, os.ErrPermission }
+
+func TestBoundedLeafWriterRemembersStorageFailureButNotPolicyLimit(t *testing.T) {
+	w := boundedLeafWriter{Writer: failingStagingWriter{}, Remaining: 10}
+	if _, err := w.Write([]byte("bytes")); !errors.Is(err, os.ErrPermission) || !errors.Is(w.WriteError, os.ErrPermission) {
+		t.Fatal("lost local writer error")
+	}
+	w = boundedLeafWriter{Writer: io.Discard, Remaining: 1}
+	if _, err := w.Write([]byte("bytes")); !errors.Is(err, errLeafTooLarge) || w.WriteError != nil {
+		t.Fatal("policy limit classified as storage failure")
 	}
 }
 

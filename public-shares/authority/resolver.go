@@ -21,6 +21,7 @@ import (
 	"filees/public-shares/channel"
 	"filees/public-shares/manifest"
 	"filees/public-shares/recipientotp"
+	"filees/public-shares/storage"
 )
 
 var ErrNotFound = errors.New("public share resource not found")
@@ -244,41 +245,49 @@ func (r Resolver) Fetch(ctx context.Context, request ObjectRequest) (FetchedLeaf
 		return FetchedLeaf{}, errors.New("public share authority staging root must be absolute")
 	}
 	if err := os.MkdirAll(r.StagingRoot, 0700); err != nil {
-		return FetchedLeaf{}, err
+		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
+	}
+	if object.Size != nil {
+		if err := storage.RequireSpace(r.StagingRoot, *object.Size); err != nil {
+			return FetchedLeaf{}, err
+		}
 	}
 	file, err := os.CreateTemp(r.StagingRoot, ".public-share-leaf-*.tmp")
 	if err != nil {
-		return FetchedLeaf{}, err
+		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	path := file.Name()
 	cleanup := func() { file.Close(); os.Remove(path) }
 	if err := file.Chmod(0600); err != nil {
 		cleanup()
-		return FetchedLeaf{}, err
+		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	hash := md5.New()
 	bounded := &boundedLeafWriter{Writer: io.MultiWriter(file, hash), Remaining: r.MaxLeafSize}
 	if err := r.Source.Cat(ctx, record.Manifest.RepoID, object.RepoPath, request.Revision, bounded); err != nil {
 		cleanup()
+		if bounded.WriteError != nil {
+			return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, bounded.WriteError)
+		}
 		return FetchedLeaf{}, ErrNotFound
 	}
 	if err := file.Sync(); err != nil {
 		cleanup()
-		return FetchedLeaf{}, err
+		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	info, err := file.Stat()
 	if err != nil {
 		cleanup()
-		return FetchedLeaf{}, err
+		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	if err := file.Close(); err != nil {
 		os.Remove(path)
-		return FetchedLeaf{}, err
+		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	body, err := os.Open(path)
 	if err != nil {
 		os.Remove(path)
-		return FetchedLeaf{}, err
+		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	permit.DisplayName = object.DisplayName
 	return FetchedLeaf{ObjectPermit: permit, Size: info.Size(), MD5: hex.EncodeToString(hash.Sum(nil)), Body: &removeOnClose{File: body, path: path}}, nil
@@ -411,7 +420,8 @@ func (r Resolver) validate() error {
 
 type boundedLeafWriter struct {
 	io.Writer
-	Remaining int64
+	Remaining  int64
+	WriteError error // underlying local writer failure, not the leaf policy limit
 }
 
 func (w *boundedLeafWriter) Write(p []byte) (int, error) {
@@ -422,12 +432,16 @@ func (w *boundedLeafWriter) Write(p []byte) (int, error) {
 		written, err := w.Writer.Write(p[:w.Remaining])
 		w.Remaining -= int64(written)
 		if err != nil {
+			w.WriteError = err
 			return written, err
 		}
 		return written, errLeafTooLarge
 	}
 	written, err := w.Writer.Write(p)
 	w.Remaining -= int64(written)
+	if err != nil {
+		w.WriteError = err
+	}
 	return written, err
 }
 

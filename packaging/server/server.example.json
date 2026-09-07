@@ -40,7 +40,7 @@
     "base_url": "https://get.example.net",
     "state_root": "/var/filees/repository-operations/public-shares",
     "frost_key_file": "/etc/filees/public-share-frost.key",
-    "authority_staging_root": "/var/tmp/filees-public-share-authority",
+    "authority_staging_root": "/var/filees-downloads/authority",
     "max_size": 1073741824,
     "max_channels_per_realm": 128,
     "password_required": false,

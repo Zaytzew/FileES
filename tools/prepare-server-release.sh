@@ -48,6 +48,7 @@ bundle="${DIST:-$root/dist}/filees-server-openbsd-amd64"
 mkdir -p "$release_root/bin" "$release_root/examples"
 cp "$bundle"/bin/* "$release_root/bin/"
 cp "$bundle/share/filees/install.example.conf" "$release_root/examples/"
+cp "$bundle/share/filees/public-storage-migration.md" "$release_root/examples/"
 
 cd "$root"
 go run ./cmd/filees-release-manifest \

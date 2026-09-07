@@ -42,8 +42,18 @@ var restartOrder = []string{"filees_public_authority", "filees_links"}
 // it carries something. Only ADD and UPDATE mean the running image is now stale;
 // UNCHANGED leaves it current, and METADATA rewrites ownership or mode without
 // touching the bytes the process is executing.
-func residentServicesNeedingRestart(files []FilePlan) []string {
+func residentServicesNeedingRestart(files []FilePlan, migrations ...ConfigMigration) []string {
 	needed := map[string]bool{}
+	for _, migration := range migrations {
+		for _, dir := range migration.Directories {
+			switch dir.Owner {
+			case "_filees-state":
+				needed["filees_public_authority"] = true
+			case "_filees-links":
+				needed["filees_links"] = true
+			}
+		}
+	}
 	for _, file := range files {
 		if file.Action != "ADD" && file.Action != "UPDATE" {
 			continue
@@ -77,12 +87,12 @@ func residentServicesNeedingRestart(files []FilePlan) []string {
 // download in flight, an upload being received - and an install is not the
 // place to decide that for someone. The command is printed in full so finishing
 // costs a paste rather than a search through documentation.
-func reportResidentServices(out io.Writer, files []FilePlan) {
-	services := residentServicesNeedingRestart(files)
+func reportResidentServices(out io.Writer, files []FilePlan, migrations ...ConfigMigration) {
+	services := residentServicesNeedingRestart(files, migrations...)
 	if len(services) == 0 || out == nil {
 		return
 	}
-	fmt.Fprintf(out, "[UP] resident services still running the previous release: %s\n", strings.Join(services, " "))
-	fmt.Fprintf(out, "[UP] they keep the image they were started with; restart to finish the upgrade:\n")
+	fmt.Fprintf(out, "[UP] resident services still running the previous image or configuration: %s\n", strings.Join(services, " "))
+	fmt.Fprintf(out, "[UP] they keep their startup image, paths and sandbox; restart to finish the upgrade:\n")
 	fmt.Fprintf(out, "[UP]     rcctl restart %s\n", strings.Join(services, " "))
 }

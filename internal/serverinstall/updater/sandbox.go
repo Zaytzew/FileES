@@ -51,7 +51,7 @@ func (r *Runner) baseUnveils() ([]unveilSpec, error) {
 // Uses directory-level granularity only — never per-file — because
 // tempInstallPath creates a sibling temp file whose name is not known until
 // install time, and unveil(2) requires the path to exist.
-func (r *Runner) manifestUnveils(m *manifest.Manifest, write bool, migrations ...*ConfigMigration) []unveilSpec {
+func (r *Runner) manifestUnveils(m *manifest.Manifest, write bool, migrations ...ConfigMigration) []unveilSpec {
 	perm := "r"
 	if write {
 		perm = "rwc"
@@ -69,8 +69,9 @@ func (r *Runner) manifestUnveils(m *manifest.Manifest, write bool, migrations ..
 	}
 	if write {
 		for _, migration := range migrations {
-			if migration != nil {
-				b.add("config_migration_dir", filepath.Dir(migration.Path), "rwc")
+			b.add("config_migration_dir", filepath.Dir(migration.Path), "rwc")
+			for _, dir := range migration.Directories {
+				b.add("public_storage_parent", filepath.Dir(dir.Root), "rwc")
 			}
 		}
 	}

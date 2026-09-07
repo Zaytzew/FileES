@@ -144,8 +144,10 @@ and `_filees-public`, installs disabled `filees_public_authority` and
 - canonical channel state: `_filees-state`, mode `0700`;
 - authority socket directory: `_filees-state:_filees-public`, mode `0750`,
   socket mode `0660`;
-- public cache: `_filees-links`, mode `0700`, under `/var/tmp` and outside
-  backups;
+- authority staging: `_filees-state`, mode `0700`, at configured
+  `public_shares.authority_staging_root` (default `/var/filees-downloads/authority`);
+- public cache: `_filees-links`, mode `0700`, at configured `cache.root`
+  (example `/var/filees-downloads/cache`), outside backups;
 - upload intake: `_filees-links:_filees-public`, mode `0770`, under
   `/var/tmp/filees-upload-intake`; job subdirectories are also `0770` so
   `_filees-state` (in `_filees-public`) can reap them;
@@ -159,6 +161,24 @@ private staging filesystem; omission defaults to 1 GiB.
 TTL cannot exceed 24 hours. The shipped values are 1 GiB per leaf, 10 GiB total
 and 12 hours. Password verification is serialized, identical cache misses are
 coalesced, and the authority runs at most two concurrent `svnlook` fetches.
+
+Both download roots must be on persistent, sufficiently large storage outside
+system temporary-directory cleanup. ZIP output is streamed, but all selected
+leaves are first materialized in cache. Physical free space and the configured
+leaf/cache/ZIP limits are separate constraints. Storage admission uses 64-bit
+sizes and a 16 MiB margin, not a reservation. Storage failures after successful
+authorization return generic HTTP 503 with Retry-After; denials remain 404.
+
+For bootstrap, both shell scripts accept `PUBLIC_DOWNLOADS_DIR`, with optional
+independent `PUBLIC_AUTHORITY_STAGING_ROOT` and `PUBLIC_LINKS_CACHE_ROOT`
+overrides. Use identical settings for both stages and edit the installed JSON
+paths to match before starting services: scripts preserve existing configs and
+do not rewrite example JSON. They are bootstrap scripts, not an upgrade path.
+For upgrades use `install.public_downloads_dir` and the transactional migration.
+See [public-storage-migration.md](public-storage-migration.md), especially the
+two-invocation bridge from an older running installer. Do not restart before
+the migration has completed. The operator excludes staging and cache from
+backups; changing location does not itself enforce that exclusion.
 
 The canonical public URL belongs to the FileES server's existing HTTPS origin:
 `https://<server-domain>/<realm>/<slug>`. Merge the ordered locations from

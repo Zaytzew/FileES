@@ -48,6 +48,7 @@ func TestLoadFullOverride(t *testing.T) {
 		"lock_path = /var/run/custom-filees-install.lock",
 		"[install]",
 		"sbin_dir = /opt/sbin",
+		"public_downloads_dir = /home/_filees",
 		"sshd_conf_dir = /etc/ssh/frag.d",
 		"[policy]",
 		"default_action = apply",
@@ -71,6 +72,9 @@ func TestLoadFullOverride(t *testing.T) {
 	}
 	if cfg.LockPath != "/var/run/custom-filees-install.lock" {
 		t.Fatalf("local lock path: %q", cfg.LockPath)
+	}
+	if cfg.PublicDownloadsDir != "/home/_filees" {
+		t.Fatalf("custom downloads root ignored: %q", cfg.PublicDownloadsDir)
 	}
 	if cfg.DefaultAction != "apply" || cfg.ConfigDrift != "warn" || cfg.OrphanFiles != "remove" {
 		t.Fatalf("policy enums: %q %q %q", cfg.DefaultAction, cfg.ConfigDrift, cfg.OrphanFiles)

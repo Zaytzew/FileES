@@ -82,6 +82,17 @@ See
 .Xr filees-public-authority 8
 and
 .Xr filees-public-links 5 .
+.It Ic public_shares.authority_staging_root
+Absolute private staging directory, independently configurable from the
+frontend cache. Omitted defaults to
+.Pa /var/filees-downloads/authority .
+Use mode 0700, owned by _filees-state, on persistent storage with sufficient
+capacity. Exclude it from backups and external cleanup.
+Changing the path requires restarting filees_public_authority to establish
+a new OpenBSD unveil profile.
+.It Ic public_shares.max_size
+Maximum leaf size in bytes, default 1 GiB. At most two authority fetches run
+concurrently; reserve staging capacity accordingly.
 .It Ic upload
 Optional closed upload-shelf intake.
 .Ic intake_root

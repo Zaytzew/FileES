@@ -332,7 +332,7 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	if err := r.checkFreshness(m, st, opts); err != nil {
 		return err
 	}
-	configMigration, err := r.planServerConfigMigration(m)
+	configMigrations, err := r.planConfigMigrations(m)
 	if err != nil {
 		return err
 	}
@@ -350,9 +350,7 @@ func (r *Runner) Check(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	if configMigration != nil {
-		plan.ConfigMigrations = append(plan.ConfigMigrations, *configMigration)
-	}
+	plan.ConfigMigrations = append(plan.ConfigMigrations, configMigrations...)
 	r.PrintPlan(plan)
 	return nil
 }
@@ -385,7 +383,7 @@ func (r *Runner) Adopt(ctx context.Context, opts Options) error {
 	if err := r.checkFreshness(m, st, opts); err != nil {
 		return err
 	}
-	configMigration, err := r.planServerConfigMigration(m)
+	configMigrations, err := r.planConfigMigrations(m)
 	if err != nil {
 		return err
 	}
@@ -403,9 +401,7 @@ func (r *Runner) Adopt(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	if configMigration != nil {
-		plan.ConfigMigrations = append(plan.ConfigMigrations, *configMigration)
-	}
+	plan.ConfigMigrations = append(plan.ConfigMigrations, configMigrations...)
 	r.PrintPlan(plan)
 	var problems []string
 	for _, file := range plan.Files {
@@ -477,7 +473,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	configMigration, err := r.planServerConfigMigration(m)
+	configMigrations, err := r.planConfigMigrations(m)
 	if err != nil {
 		return err
 	}
@@ -489,8 +485,8 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		if err != nil {
 			return err
 		}
-		if configMigration != nil {
-			migrationStage := filepath.Join(stageRoot, "config-migrations", "server.json")
+		for _, configMigration := range configMigrations {
+			migrationStage := filepath.Join(stageRoot, "config-migrations", filepath.Base(configMigration.Path))
 			if err := os.MkdirAll(filepath.Dir(migrationStage), 0o700); err != nil {
 				return err
 			}
@@ -530,7 +526,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		if err != nil {
 			return err
 		}
-		if err := r.applyUnveils(append(base, r.manifestUnveils(m, !opts.DryRun, configMigration)...)); err != nil {
+		if err := r.applyUnveils(append(base, r.manifestUnveils(m, !opts.DryRun, configMigrations...)...)); err != nil {
 			return err
 		}
 		if opts.DryRun {
@@ -544,14 +540,15 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	if configMigration != nil {
-		plan.ConfigMigrations = append(plan.ConfigMigrations, *configMigration)
-	}
+	plan.ConfigMigrations = append(plan.ConfigMigrations, configMigrations...)
 	r.PrintPlan(plan)
 	if opts.DryRun {
 		return nil
 	}
 	if err := r.confirmConfigDrift(plan, opts); err != nil {
+		return err
+	}
+	if err := r.prepareStorageDirectories(configMigrations); err != nil {
 		return err
 	}
 
@@ -596,7 +593,7 @@ func (r *Runner) Apply(ctx context.Context, opts Options) error {
 		return fmt.Errorf("remove committed transaction journal: %w", err)
 	}
 	fmt.Fprintf(r.Out, "[UP] installed release=%s files=%d\n", m.ReleaseID, len(staged))
-	reportResidentServices(r.Out, plan.Files)
+	reportResidentServices(r.Out, plan.Files, configMigrations...)
 	return nil
 }
 

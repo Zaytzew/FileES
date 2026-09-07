@@ -78,3 +78,12 @@ func TestPublicShareServerBoundaryRequiresHTTPSAndLoopbackOrUnix(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAuthorityStagingRootUsesOperatorPath(t *testing.T) {
+	for _, root := range []string{"/home/_filees/authority", "/srv/private/download-stage"} {
+		config := PublicSharesFile{AuthorityStagingRoot: root}
+		if got := config.EffectiveAuthorityStagingRoot(); got != filepath.Clean(root) {
+			t.Fatalf("custom staging ignored: got %q want %q", got, root)
+		}
+	}
+}

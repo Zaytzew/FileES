@@ -34,6 +34,7 @@ import (
 	"filees/public-shares/gate"
 	"filees/public-shares/intake"
 	"filees/public-shares/recipientotp"
+	"filees/public-shares/storage"
 )
 
 // visitLifetime is a session, not a freshness window. Since expiry falls
@@ -315,7 +316,7 @@ func (h Handler) prepare(w http.ResponseWriter, request *http.Request, alias, ch
 			return
 		}
 		if err := h.fillCache(request.Context(), objectRequest, permit.CacheKey); err != nil {
-			h.notFound(w)
+			h.downloadFailure(w, err)
 			return
 		}
 	}
@@ -359,13 +360,13 @@ func (h Handler) file(w http.ResponseWriter, request *http.Request, alias, chann
 		file, _, err := h.Cache.Open(permit.CacheKey, h.now())
 		if err != nil {
 			if fillErr := h.fillCache(request.Context(), objectRequest, permit.CacheKey); fillErr != nil {
-				h.notFound(w)
+				h.downloadFailure(w, fillErr)
 				return
 			}
 			file, _, err = h.Cache.Open(permit.CacheKey, h.now())
 		}
 		if err != nil {
-			h.notFound(w)
+			h.downloadFailure(w, storage.ErrUnavailable)
 			return
 		}
 		defer file.Close()
@@ -374,7 +375,7 @@ func (h Handler) file(w http.ResponseWriter, request *http.Request, alias, chann
 	}
 	leaf, err := h.Backend.Fetch(request.Context(), objectRequest)
 	if err != nil {
-		h.notFound(w)
+		h.downloadFailure(w, err)
 		return
 	}
 	defer leaf.Body.Close()
@@ -403,7 +404,10 @@ func (h Handler) fillCache(ctx context.Context, request authority.ObjectRequest,
 		if leaf.CacheKey != key {
 			return errors.New("public share fetch changed cache key")
 		}
-		return h.Cache.Put(leaf.CacheKey, leaf.Body, leaf.Size, leaf.MD5, h.now())
+		if err := h.Cache.Put(leaf.CacheKey, leaf.Body, leaf.Size, leaf.MD5, h.now()); err != nil {
+			return fmt.Errorf("%w: cache: %v", storage.ErrUnavailable, err)
+		}
+		return nil
 	}
 	if h.Fetches == nil {
 		return fill()
@@ -453,6 +457,10 @@ func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, cha
 	}
 	leaves, err := h.prepareBundle(request.Context(), claims, objects)
 	if err != nil {
+		if errors.Is(err, storage.ErrUnavailable) {
+			h.downloadFailure(w, err)
+			return
+		}
 		// The third object path, and the one I missed when the single-file
 		// routes learned this. Downloading one file worked while "download
 		// everything" still answered 404, which is a worse shape of the same
@@ -473,7 +481,7 @@ func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, cha
 		claims = freshClaims
 		leaves, err = h.prepareBundle(request.Context(), claims, objects)
 		if err != nil {
-			h.notFound(w)
+			h.downloadFailure(w, err)
 			return
 		}
 	}
@@ -555,7 +563,7 @@ func (h Handler) prepareBundle(ctx context.Context, claims visit, objects []chan
 			file, size, err = h.Cache.Open(permit.CacheKey, h.now())
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: cache: %v", storage.ErrUnavailable, err)
 		}
 		_ = file.Close()
 		if size < 0 || total > h.MaxBundleSize-size {
@@ -1225,6 +1233,18 @@ func securityHeaders(w http.ResponseWriter) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
+}
+
+// Only a storage failure after authorization is distinguishable from 404.
+// Never expose private paths, filesystem details or the wrapped error.
+func (h Handler) downloadFailure(w http.ResponseWriter, err error) {
+	if !errors.Is(err, storage.ErrUnavailable) {
+		h.notFound(w)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", "60")
+	http.Error(w, "Pobieranie chwilowo niedostępne. Spróbuj ponownie później.", http.StatusServiceUnavailable)
 }
 
 func (h Handler) notFound(w http.ResponseWriter) {

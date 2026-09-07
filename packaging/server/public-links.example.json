@@ -12,7 +12,7 @@
   "visit_key_file": "/etc/filees/public-share-visit.key",
   "cache": {
     "enabled": true,
-    "root": "/var/tmp/filees-public-shares-cache",
+    "root": "/var/filees-downloads/cache",
     "ttl": "12h",
     "max_size": 10737418240
   },

@@ -39,6 +39,13 @@ Revoke and delete cut access immediately and drop pending mail.
 They do not yet garbage-collect inactive epoch files; those files contain
 no mailbox and no plaintext code.
 .Sh FILES
+.Pp
+Staging follows
+.Ic public_shares.authority_staging_root
+in server.json. The directory must survive system temporary cleanup.
+Changing or recreating an unveiled root requires a service restart.
+Authorized fetches with unavailable local storage return generic HTTP 503;
+authorization denial remains HTTP 404.
 .Bl -tag -width Ds
 .It Pa /etc/filees/server.json
 Public Shares section.

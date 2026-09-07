@@ -24,11 +24,12 @@ const serverConfigV2FirstSequence uint64 = 855
 // generation is the installer's migration job, not a compatibility path in
 // every server process.
 type ConfigMigration struct {
-	Path       string
-	FromSchema string
-	ToSchema   string
-	Added      []string
-	Data       []byte
+	Path        string
+	FromSchema  string
+	ToSchema    string
+	Added       []string
+	Data        []byte
+	Directories []storageDirectory
 }
 
 // planServerConfigMigration upgrades the configuration expected by the

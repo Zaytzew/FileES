@@ -1,5 +1,5 @@
 // Package cache stores verified Public Shares leaves under an explicitly
-// temporary root. It never decides authority; callers must re-authorize every
+// configured persistent root, with temporary content. It never decides authority; callers must re-authorize every
 // request before using a hit.
 package cache
 
@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"filees/public-shares/storage"
 )
 
 const metadataSchema = "filees.public-share-cache/v1"
@@ -65,8 +67,11 @@ func (s *Store) Put(key string, body io.Reader, size int64, expectedMD5 string, 
 	if err != nil {
 		return err
 	}
-	if used+size > s.Config.MaxSize {
+	if used > s.Config.MaxSize || size > s.Config.MaxSize-used {
 		return errors.New("public share cache capacity exceeded")
+	}
+	if err := storage.RequireSpace(s.Config.Root, size); err != nil {
+		return err
 	}
 	dir := filepath.Dir(s.dataPath(key))
 	if err := os.MkdirAll(dir, 0700); err != nil {

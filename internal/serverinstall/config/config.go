@@ -25,13 +25,14 @@ type Config struct {
 	BackupDir string
 	LockPath  string
 
-	SbinDir      string
-	LibexecDir   string
-	SysconfDir   string
-	SSHDConfDir  string
-	SSHKeysDir   string
-	LoginConfDir string
-	DataDir      string
+	SbinDir            string
+	LibexecDir         string
+	SysconfDir         string
+	SSHDConfDir        string
+	SSHKeysDir         string
+	LoginConfDir       string
+	DataDir            string
+	PublicDownloadsDir string
 
 	DefaultAction   string
 	ConfigDrift     string
@@ -110,28 +111,29 @@ func Load(path string) (*Config, error) {
 
 func defaults(abs string) *Config {
 	return &Config{
-		ConfigPath:      abs,
-		Channel:         "stable",
-		Platform:        runtime.GOOS + "-" + runtime.GOARCH,
-		SVNPath:         "svn",
-		StateDir:        "/var/filees/install-state",
-		StageDir:        "/var/filees/install-stage",
-		BackupDir:       "/var/filees/install-backup",
-		LockPath:        "/var/run/filees-install.lock",
-		SbinDir:         "/usr/local/sbin",
-		LibexecDir:      "/usr/local/libexec",
-		SysconfDir:      "/etc/filees",
-		SSHDConfDir:     "/etc/ssh/sshd_config.d",
-		SSHKeysDir:      "/etc/ssh",
-		LoginConfDir:    "/etc/login.conf.d",
-		DataDir:         "/var/filees",
-		DefaultAction:   "check",
-		ConfigDrift:     "block",
-		OrphanFiles:     "keep",
-		Interactive:     true,
-		RequireHash:     true,
-		VerifySignature: true,
-		SignifyProgram:  "signify",
+		ConfigPath:         abs,
+		Channel:            "stable",
+		Platform:           runtime.GOOS + "-" + runtime.GOARCH,
+		SVNPath:            "svn",
+		StateDir:           "/var/filees/install-state",
+		StageDir:           "/var/filees/install-stage",
+		BackupDir:          "/var/filees/install-backup",
+		LockPath:           "/var/run/filees-install.lock",
+		SbinDir:            "/usr/local/sbin",
+		LibexecDir:         "/usr/local/libexec",
+		SysconfDir:         "/etc/filees",
+		SSHDConfDir:        "/etc/ssh/sshd_config.d",
+		SSHKeysDir:         "/etc/ssh",
+		LoginConfDir:       "/etc/login.conf.d",
+		DataDir:            "/var/filees",
+		PublicDownloadsDir: "/var/filees-downloads",
+		DefaultAction:      "check",
+		ConfigDrift:        "block",
+		OrphanFiles:        "keep",
+		Interactive:        true,
+		RequireHash:        true,
+		VerifySignature:    true,
+		SignifyProgram:     "signify",
 	}
 }
 
@@ -167,6 +169,8 @@ func set(cfg *Config, key, val string, lineNo int) error {
 		cfg.LoginConfDir = val
 	case "install.data_dir":
 		cfg.DataDir = val
+	case "install.public_downloads_dir":
+		cfg.PublicDownloadsDir = val
 	case "policy.default_action":
 		cfg.DefaultAction = strings.ToLower(val)
 	case "policy.config_drift":
@@ -241,7 +245,7 @@ func (cfg *Config) finalize() error {
 	}
 	for _, p := range []*string{&cfg.StateDir, &cfg.StageDir, &cfg.BackupDir, &cfg.LockPath,
 		&cfg.SbinDir, &cfg.LibexecDir, &cfg.SysconfDir,
-		&cfg.SSHDConfDir, &cfg.SSHKeysDir, &cfg.DataDir} {
+		&cfg.SSHDConfDir, &cfg.SSHKeysDir, &cfg.DataDir, &cfg.PublicDownloadsDir} {
 		*p = cleanPath(*p)
 	}
 	return nil

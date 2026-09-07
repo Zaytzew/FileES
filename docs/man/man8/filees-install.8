@@ -49,9 +49,29 @@ A release older than the recorded high-water mark is refused unless
 is also given.
 That flag is a deliberate administrative act, never the ordinary update.
 .Pp
-The running
+Operator configurations are not replaced by examples. Explicit signed
+configuration contracts may trigger journalled, selective migrations of
 .Pa /etc/filees/server.json
-is not overwritten.
+and
+.Pa /etc/filees/public-links.json .
+Unknown fields and custom storage paths are preserved.
+.Pp
+The
+.Ic public_downloads_dir
+key in the
+.Ic install
+section chooses the base for migrating legacy Public Shares temporary roots.
+Default:
+.Pa /var/filees-downloads .
+Authority staging and frontend cache remain independently configurable in
+their JSON files. Apply checks capacity and prepares private directories;
+check and dry-run do not provision them. Existing metadata is not silently
+corrected and old caches are not deleted.
+.Pp
+An older running installer must first update its binary with the existing
+config, then be invoked again after adding the new key. Review the migration
+plan and apply the same signed release before restarting Public Shares.
+The release includes examples/public-storage-migration.md with this bridge.
 .Sh OPTIONS
 .Bl -tag -width Ds
 .It Fl c Ar file

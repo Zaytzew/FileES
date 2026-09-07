@@ -2,6 +2,13 @@
   "platform": "openbsd-amd64",
   "configs": [
     {
+      "name": "public-download-storage",
+      "path": "/etc/filees/server.json",
+      "default_changed": [
+        { "key": "layout", "old": "temporary-storage", "new": "filees.public-download-storage/v1" }
+      ]
+    },
+    {
       "name": "server",
       "path": "/etc/filees/server.json",
       "default_changed": [

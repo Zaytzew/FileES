@@ -1,5 +1,9 @@
 # FileES native SVN client — Linux alpha integration
 
+Documentation reconciliation: 2026-09-07, source r917. Native WC-local
+verbs landed in r911; r913 fixed listing limits, batching and property/status
+results. This describes source capabilities, not a new runtime acceptance.
+
 Private client on the public Apache SVN 1.14 C API. Separate process: the
 Go daemon does not use cgo. `filees-svn --version` lists implemented verbs.
 
@@ -15,8 +19,8 @@ log, cat) remain on CLI until implemented here. Windows build recipe:
 `filees-svn record-move --wc WC OLD_REL NEW_REL` records an already
 physically moved regular file using `svn_client_move7(metadata_only=TRUE)`.
 It does not move user bytes, commit, connect to a server, acquire locks,
-infer identity from content, edit wc.db directly, or provide general SVN
-verbs. The WC root must be exact and contain a regular `.filees` directory.
+infer identity from content, edit wc.db directly, or expose arbitrary SVN
+arguments. Additional bounded WC-local verbs are described above. The WC root must be exact and contain a regular `.filees` directory.
 This is an accidental-use guard, not authentication.
 
 Relative paths must be canonical and inside the WC; symlinks, metadata
@@ -30,9 +34,12 @@ Success JSON schema `filees.native-svn/v1` has `ok:true` and state
 `scheduled`, or `already_scheduled` only for an exact, reciprocal
 SVN moved-from/moved-to pair. Plain delete/add is not accepted as a receipt.
 Failure returns nonzero and `ok:false, errors:[{code,message}]` containing
-Apache/APR numeric errors. The adapter validates receipts, limits output to
-64 KiB per stream and execution to at most 30 seconds. Failures enter the
-existing errmap/log path; unknown cases retain alpha raw diagnostics.
+Apache/APR numeric errors. The adapter validates success receipts and caps execution at 30 seconds.
+Record-move output and stderr are limited to 64 KiB; WC-local JSON stdout
+allows 8 MiB after r913, with path batches of 512. On failure the current
+Go adapter embeds errors[] as text rather than preserving typed SVN/APR
+codes (M46). Structured classification in the existing errcat and retaining
+unknown diagnostics through GUI are still open.
 This process protocol is not the GUI IPC or the final i18n error catalog.
 
 ## Daemon integration and recovery
@@ -122,8 +129,8 @@ guard. Do not use delete/add, revert or cache deletion as a rollback shortcut.
 Remaining gates: sustained Linux workload, abrupt kill during library
 mutation, external-writer races/TOCTOU, unsupported filesystem identity,
 scheduled rename-chain recovery UI, Windows native integration and runtime
-packaging/licensing, oldest supported Linux runtime. This does not finish
-path-owner broker transport or full group autolock.
+packaging/licensing, oldest supported Linux runtime. Broker path-owner transport is implemented separately in r910; its rollout
+and full group autolock remain open.
 
 The isolated historical result remains in
 [the r896 report](../../reports/NATIVE_SVN_PROBE_2026-09-06.md).

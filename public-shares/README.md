@@ -68,7 +68,10 @@ się składa.
 
 ## Stan
 
-M47 (2026-09-07): regresja produkcyjnego storage ponownie otworzyła pion.
+M47 (checkpoint 2026-09-08): regresja storage naprawiona w r922 i odebrana
+na cloud: podpisany kanał alpha FILEES-BIN r59, migracja /home/_filees,
+restart authority/links, rzeczywiste file/Range/ZIP PASS. To nie odbiór
+pozostałych hostów ani test całego dużego udziału.
 Staging (`server.json`: `public_shares.authority_staging_root`) i cache
 (`public-links.json`: `cache.root`) są niezależnie konfigurowalne. Katalogi
 muszą przetrwać systemowe sprzątanie, być prywatne i wykluczone z backupu.
@@ -80,6 +83,15 @@ lokalnego stagingu/cache po autoryzacji daje 503/Retry-After, bez prywatnych
 szczegółów. Odmowa nadal jest 404. ZIP strumieniuje wyjście, ale wcześniej
 materializuje liście w cache; limity logiczne nie zastępują kontroli dysku.
 Migracja i bramka wdrożenia: `packaging/server/public-storage-migration.md`.
+
+M48 pozostaje otwarte: Store.Put sprząta wygasłe wpisy z metadanymi,
+Store.Open usuwa żądany wpis wygasły/uszkodzony; brak cyklicznego Flush.
+TTL (na cloud 12 h) biegnie od zapisu, nie gwarantuje fizycznego usunięcia
+bez ruchu. Sweep pomija dane/tmp bez metadanych; błędy Remove cache nie są
+raportowane. Staging authority usuwa Close/cleanup, ale crash może zostawić
+plik. Nie usuwać korzeni ani obejmować ich systemowym daily. To opis
+aktualnego kodu, nie wdrożonego autonomicznego GC lub zmierzonych zaległości.
+Dowód: `reports/PUBLIC_SHARES_STORAGE_RECOVERY_2026-09-07.md`, sekcja M48.
 
 Kanał dystrybucji jest zaimplementowany pionowo: owner tworzy, aktualizuje,
 odwołuje i usuwa kanał przez control-plane; tożsamość ownera pochodzi z sesji,

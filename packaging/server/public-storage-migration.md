@@ -3,6 +3,13 @@
 This release supplies configurable storage and migration, not an automatic
 service restart. Signing, channel promotion and host rollout are separate.
 
+Cloud checkpoint recorded 2026-09-08: signed r922 / alpha (FILEES-BIN r59),
+both installer passes, `/home/_filees`, authority/links restart and checks,
+two real files, Range and bounded ZIP all passed. Do not repeat this bridge
+on cloud as an unfinished task. This source guide update does not modify
+the immutable r922 release. Evidence:
+[storage recovery report](../../reports/PUBLIC_SHARES_STORAGE_RECOVERY_2026-09-07.md).
+
 ## Configuration contract
 
 - `/etc/filees/install.conf`, section `[install]`: `public_downloads_dir` is
@@ -78,3 +85,19 @@ failures even if space disappears after admission. Valid authorized requests
 receive generic 503/Retry-After for storage failure, without private paths;
 authority denial is still the enumeration-resistant 404. No forced cache
 eviction, automatic backup edits or automatic rcctl restart is introduced.
+
+## Retention boundary — open M48
+
+In r922, `filees-links` sweeps expired metadata-backed cache entries before
+Put and removes the requested expired/corrupt entry on Open. No periodic
+Flush is wired into the service. TTL (12 h on cloud) starts at insertion;
+hits do not renew it, but idle files can remain beyond TTL with no deletion
+deadline. The sweep does not collect orphan data/tmp files without metadata,
+and cache Remove errors are ignored. Authority staging is removed on Close
+or ordinary error cleanup; a process crash can leave files behind.
+
+M47 fixes root lifecycle and capacity checks, not autonomous GC or erasure
+completion. Do not use TTL as evidence that physical bytes are gone. Keep
+roots out of system cleanup; do not delete active transfers by file age.
+Safe orphan detection, periodic cleanup and observable removal failures are
+an open, separately scoped task (M48), not installed cron in this release.

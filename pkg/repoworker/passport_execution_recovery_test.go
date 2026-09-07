@@ -160,3 +160,68 @@ func TestExecutionReapIsolatesCorruptRecordAndRetainsTombstone(t *testing.T) {
 		t.Fatal("lock fence garbage collected")
 	}
 }
+
+func TestExecutionTwoWorkingCopiesServerExpiryTakeover(t *testing.T) {
+	f := newExecutionFixture(t)
+	second := f.session
+	second.ClientID = uuid.NewString()
+	f.client(t, second.ClientID, second.RealmID, "active")
+	wc2 := filepath.Join(t.TempDir(), "wc")
+	replacementCommand(t, "svn", "checkout", "file://"+f.repo, wc2)
+	doc2 := filepath.Join(wc2, filepath.FromSlash(f.req.Path))
+	serverNow := time.Now().UTC()
+	f.svc.Authority.Now = func() time.Time { return serverNow }
+	firstNow, secondNow := serverNow, serverNow
+	open := func(wc string, session Session, now *time.Time) (*passport.Manager, *recoverySVNClient) {
+		t.Helper()
+		cli := &recoverySVNClient{replacementSVNClient: &replacementSVNClient{Client: client.New(client.Options{Timeout: 10 * time.Second}), username: session.ClientID}}
+		x := recoveryExchange(func(ctx context.Context, ticket control.Ticket) (control.Result, error) {
+			return f.svc.Handle(ctx, session, ticket)
+		})
+		backend := passport.ControlSVNBackend{FenceAcquisitions: true, SVNBackend: passport.SVNBackend{Client: cli, WC: wc}, RepoID: f.req.RepoID, ClientID: session.ClientID, Transport: x}
+		m, err := passport.Open(filepath.Join(t.TempDir(), "passports.json"), uuid.NewString(), backend, passport.Config{Now: func() time.Time { return *now }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m, cli
+	}
+	m1, c1 := open(filepath.Dir(filepath.Dir(f.doc)), f.session, &firstNow)
+	m2, c2 := open(wc2, second, &secondNow)
+	first, _, err := m1.Acquire(t.Context(), []string{f.doc}, "")
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first acquire: %+v %v", first, err)
+	}
+	if _, _, err := m2.Acquire(t.Context(), []string{doc2}, ""); err == nil {
+		t.Fatal("unexpired lock taken over")
+	}
+	before, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+	if err != nil || before == nil || before.Token != first[0].FencingToken {
+		t.Fatalf("early contender changed token: %+v %v", before, err)
+	}
+	// No sleep or host clock change: only server authority and the contender
+	// advance. This tests cleanup-on-inspection, not native SVN expiration.
+	serverNow = first[0].ExpiresAt
+	secondNow = serverNow
+	next, _, err := m2.Acquire(t.Context(), []string{doc2}, "")
+	if err != nil || len(next) != 1 || next[0].FencingToken == first[0].FencingToken {
+		t.Fatalf("expired takeover: %+v %v", next, err)
+	}
+	if err := m1.Authorize(t.Context(), []string{f.doc}); !errors.Is(err, passport.ErrPassportLost) {
+		t.Fatalf("old WC retained authority with slow clock: %v", err)
+	}
+	if err := f.svc.ReapRepository(t.Context(), f.req.RepoID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+	if err != nil || after == nil || after.Token != next[0].FencingToken || after.Owner != second.ClientID {
+		t.Fatalf("old execution cleanup damaged successor: %+v %v", after, err)
+	}
+	if c1.forceCalls != 0 || c2.forceCalls != 0 || c1.locks != 1 || c2.locks != 1 {
+		t.Fatalf("unexpected mutations: first=%d second=%d force=%d", c1.locks, c2.locks, c1.forceCalls+c2.forceCalls)
+	}
+	for _, doc := range []string{f.doc, doc2} {
+		if data, err := os.ReadFile(doc); err != nil || string(data) != "local work" {
+			t.Fatalf("changed working bytes: %q %v", data, err)
+		}
+	}
+}

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -43,18 +44,15 @@ func preparationSigner(t *testing.T) (ssh.Signer, string) {
 	return signer, path
 }
 
-func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
-	f, _, doc := realReplacementFixture(t)
-	ticket := preparationTicket(t, f)
-	svc := &PassportPreparations{Root: t.TempDir(), Authority: f.authority}
-	dispatcher := Dispatcher{Worker: &Worker{PassportPreparations: svc}, Resolver: preparationResolver{f.session}, Admission: preparationAdmission{}}
+func passportSSHFixture(t *testing.T, dispatcher Dispatcher, clientID string, dropReply func(int32) bool) (*controlclient.Client, controlclient.Config, *atomic.Int32) {
+	t.Helper()
 	host, _ := preparationSigner(t)
 	identity, identityPath := preparationSigner(t)
 	serverConfig := &ssh.ServerConfig{PublicKeyCallback: func(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 		if meta.User() != controlclient.ServiceUser || !bytes.Equal(key.Marshal(), identity.PublicKey().Marshal()) {
 			return nil, fmt.Errorf("unknown fixture identity")
 		}
-		return &ssh.Permissions{Extensions: map[string]string{"client_id": f.session.ClientID}}, nil
+		return &ssh.Permissions{Extensions: map[string]string{"client_id": clientID}}, nil
 	}}
 	serverConfig.AddHostKey(host)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -105,8 +103,8 @@ func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
 						var out bytes.Buffer
 						err := dispatcher.Serve(t.Context(), server.Permissions.Extensions["client_id"], channel, &out)
 						n := handled.Add(1)
-						if n == 1 || n == 4 {
-							// Close after durable prepare (1) or cancellation (4).
+						if dropReply(n) {
+							// Disconnect only after the worker has returned its durable result.
 							_ = server.Close()
 							return
 						}
@@ -128,10 +126,20 @@ func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
 	t.Cleanup(func() { _ = listener.Close(); wg.Wait() })
 	_, portText, _ := net.SplitHostPort(listener.Addr().String())
 	port, _ := strconv.Atoi(portText)
-	client, err := controlclient.New(controlclient.Config{Address: "127.0.0.1", Port: port, IdentityFile: identityPath, KnownHosts: pins, Timeout: 5 * time.Second})
+	cfg := controlclient.Config{Address: "127.0.0.1", Port: port, IdentityFile: identityPath, KnownHosts: pins, Timeout: 5 * time.Second}
+	client, err := controlclient.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return client, cfg, &handled
+}
+
+func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
+	f, _, doc := realReplacementFixture(t)
+	ticket := preparationTicket(t, f)
+	svc := &PassportPreparations{Root: t.TempDir(), Authority: f.authority}
+	dispatcher := Dispatcher{Worker: &Worker{PassportPreparations: svc}, Resolver: preparationResolver{f.session}, Admission: preparationAdmission{}}
+	client, cfg, handled := passportSSHFixture(t, dispatcher, f.session.ClientID, func(n int32) bool { return n == 1 || n == 4 })
 	if err := controlclient.PreparePassportReplacement(t.Context(), client, ticket); err == nil {
 		t.Fatal("lost SSH reply acknowledged")
 	}
@@ -174,10 +182,11 @@ func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
 	}
 	badHost, _ := preparationSigner(t)
 	badPins := filepath.Join(t.TempDir(), "known_hosts")
-	if err := os.WriteFile(badPins, []byte(knownhosts.Line([]string{listener.Addr().String()}, badHost.PublicKey())+"\n"), 0600); err != nil {
+	if err := os.WriteFile(badPins, []byte(knownhosts.Line([]string{net.JoinHostPort(cfg.Address, strconv.Itoa(cfg.Port))}, badHost.PublicKey())+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	badClient, err := controlclient.New(controlclient.Config{Address: "127.0.0.1", Port: port, IdentityFile: identityPath, KnownHosts: badPins, Timeout: 5 * time.Second})
+	cfg.KnownHosts = badPins
+	badClient, err := controlclient.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,5 +195,61 @@ func TestPassportPreparationPinnedSSHAndLostReply(t *testing.T) {
 	}
 	if handled.Load() != 7 {
 		t.Fatalf("unexpected dispatch count %d", handled.Load())
+	}
+}
+
+func TestPassportExecutionPinnedSSHAndLostReplies(t *testing.T) {
+	f := newExecutionFixture(t)
+	dispatcher := Dispatcher{Worker: &Worker{PassportExecutions: &f.svc}, Resolver: preparationResolver{f.session}, Admission: preparationAdmission{}}
+	client, _, handled := passportSSHFixture(t, dispatcher, f.session.ClientID, func(n int32) bool { return n == 1 || n == 4 })
+	if err := controlclient.PassportExecution(t.Context(), client, f.arm); err == nil {
+		t.Fatal("lost ARM reply acknowledged")
+	}
+	if f.record(t).State != "armed" {
+		t.Fatal("disconnect preceded durable ARM")
+	}
+	if err := controlclient.PassportExecution(t.Context(), client, f.arm); err != nil {
+		t.Fatal(err)
+	}
+	f.lock(t)
+	settle := f.arm
+	settle.Type = control.TicketSettlePassportAcquisition
+	wrong := settle
+	wrong.ClientID = f.guest
+	if err := controlclient.PassportExecution(t.Context(), client, wrong); err == nil {
+		t.Fatal("payload actor replaced authenticated SSH identity")
+	}
+	if f.record(t).State != "started" {
+		t.Fatal("wrong actor changed execution")
+	}
+	if err := controlclient.PassportExecution(t.Context(), client, settle); err == nil {
+		t.Fatal("lost SETTLE reply acknowledged")
+	}
+	if f.record(t).State != "closed" {
+		t.Fatal("disconnect preceded durable SETTLE")
+	}
+	if lock, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path); err != nil || lock != nil {
+		t.Fatalf("SETTLE did not release original token: %+v %v", lock, err)
+	}
+	replacementCommand(t, "svn", "lock", "--username", f.session.ClientID, "-m", "new token after SSH disconnect", f.doc)
+	before, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+	if err != nil || before == nil {
+		t.Fatalf("missing successor: %+v %v", before, err)
+	}
+	if err := controlclient.PassportExecution(t.Context(), client, settle); err != nil {
+		t.Fatal(err)
+	}
+	if err := controlclient.PassportExecution(t.Context(), client, f.arm); err == nil {
+		t.Fatal("closed ARM reopened on reconnect")
+	}
+	after, err := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
+	if err != nil || after == nil || after.Token != before.Token {
+		t.Fatalf("reconnect changed successor token: %+v %v", after, err)
+	}
+	if handled.Load() != 6 {
+		t.Fatalf("unexpected dispatch count %d", handled.Load())
+	}
+	if data, err := os.ReadFile(f.doc); err != nil || string(data) != "local work" {
+		t.Fatalf("changed working bytes: %q %v", data, err)
 	}
 }

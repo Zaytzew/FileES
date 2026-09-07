@@ -25,6 +25,48 @@ disabled-by-default Public Shares services:
   not install that crontab. Run it as `_filees-state` and redirect stdout
   (`>/dev/null`) so an idle minute does not mail `accepted=0`.
 
+## Passport expiry maintenance (M45)
+
+`filees-worker passport-reap -config /etc/filees/server.json` performs one
+server-clock cleanup pass over registered acquisitions, under the existing
+worker/service-WC locks. Run as `_filees-state`, never root. It needs no
+connected client, activation secret, grant lookup or service-WC update.
+It releases only the exact recorded token; ordinary and unregistered legacy
+locks are not globally scanned or force-released. Existing scoped admin
+`repo reap-passports --path ...` remains available for a legacy passport.
+
+The bundle ships `share/filees/openbsd/passport-reap.crontab.example`; initial
+OpenBSD installation copies it to `/etc/examples/filees-passport-reap.crontab`.
+It does **not** enable cron or overwrite a crontab. Binary-only upgrades may
+require copying the example separately. During an explicitly authorized
+rollout, merge its lines into the `_filees-state` crontab, preserving existing
+jobs. The example runs once a minute; errors remain on stderr for cron mail.
+Verify cron and delivery to the chosen MAILTO address.
+The example delays its five-minute health probe by 50 seconds to avoid the
+normal start of the 45-second pass; external probes should likewise run
+between passes because observing running deliberately fails the check.
+
+`passport-reap --check` (after any `-config path`) is a read-only health check:
+nonzero exit for failed/running/missing/corrupt status, clock rollback or a
+completion older than five minutes. State is stored atomically in
+`repositories.results_root/passport-maintenance/status.json`. Also run this
+check from external monitoring: a check in cron alone cannot alert when the
+entire cron service or host stops. No GUI alert is installed by this change.
+
+Each pass has a 45-second context deadline; native command pipe waits are
+bounded after process termination. Busy locks return without queuing; a busy
+record does not block other records. A failed/dead pass is not acknowledged:
+the next invocation resumes from the durable registry. Never delete closed
+records or `.lock` files to clear an alarm. An old binary is not resident:
+the next cron invocation executes the updated worker.
+
+The owner accepted operational expiry at the next successful pass, not a
+strict SVN expiration deadline. During failures an administrator may resolve
+the lock explicitly, or use the existing fork/replace workflow. Automatic
+force, deleting pending records or discarding local changes are not fallbacks.
+Enable the coherent server/broker/hook v2 before the new client, drain old SVN
+sessions and inspect foreign hooks; maintenance does not perform that rollout.
+
 Run `install-server.sh` as the target system administrator, edit
 `/etc/filees/server.json`, and keep both configuration and OTP pepper private.
 Schema `filees.server-toolchain/v2` requires a top-level `display_name`: the

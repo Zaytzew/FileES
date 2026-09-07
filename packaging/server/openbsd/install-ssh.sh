@@ -101,6 +101,8 @@ install -d -o root -g wheel -m 755 /etc/ssh/sshd_config.d
 install -o root -g wheel -m 644 "$bundle/share/filees/openbsd/filees.conf" /etc/ssh/sshd_config.d/filees.conf
 install -o root -g wheel -m 0555 "$bundle/share/filees/openbsd/filees_public_authority" /etc/rc.d/filees_public_authority
 install -o root -g wheel -m 0555 "$bundle/share/filees/openbsd/filees_links" /etc/rc.d/filees_links
+# Example only: do not enable maintenance or rewrite any user's crontab.
+install -o root -g wheel -m 0644 "$bundle/share/filees/openbsd/passport-reap.crontab.example" /etc/examples/filees-passport-reap.crontab
 install -o root -g wheel -m 0644 "$bundle/share/filees/openbsd/public-links.httpd.conf" /etc/examples/filees-public-links.httpd.conf
 
 # The ports build of svnserve probes this fixed SASL configuration directory.

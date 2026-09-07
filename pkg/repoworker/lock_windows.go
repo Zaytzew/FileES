@@ -15,3 +15,9 @@ func WithFileLock(path string, fn func() error) error {
 	defer os.Remove(lock)
 	return fn()
 }
+
+// Scheduled server maintenance is supported only on Unix. Keep the Windows
+// build fail-closed rather than treating a stale marker as a kernel lock.
+func TryWithFileLock(string, func() error) error {
+	return errors.New("scheduled passport maintenance requires Unix file locks")
+}

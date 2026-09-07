@@ -102,6 +102,7 @@ cp "$root/packaging/server/openbsd/filees-tunnel.login.conf" "$tmp/share/filees/
 cp "$root/packaging/server/openbsd/filees.conf" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/filees_public_authority" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/filees_links" "$tmp/share/filees/openbsd/"
+cp "$root/packaging/server/openbsd/passport-reap.crontab.example" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/public-links.httpd.conf" "$tmp/share/filees/openbsd/"
 cp "$root/packaging/server/openbsd/install-ssh.sh" "$tmp/openbsd/"
 cp "$root/packaging/server/install-server.sh" "$tmp/"

@@ -1,4 +1,4 @@
-.Dd August 30, 2026
+.Dd September 7, 2026
 .Dt FILEES-WORKER 8
 .Os
 .Sh NAME
@@ -15,6 +15,10 @@
 .Nm
 .Cm upload-reap
 .Nm
+.Cm passport-reap
+.Op Fl config Ar path
+.Op Fl Fl check
+.Nm
 .Cm upload-seed-reject
 .Fl alias Ar realm-alias
 .Nm
@@ -28,7 +32,7 @@
 .Sh DESCRIPTION
 .Nm
 is exec'd once per authenticated deploy or control-plane ticket, dispatching
-on its first argument to one of seven subcommands.
+on its first argument to a subcommand; maintenance modes are also invoked by cron.
 .Bl -tag -width "repository-control"
 .It Cm deploy
 default path, also reached with no subcommand at all; reads a tunnel
@@ -43,6 +47,15 @@ serves one framed Whale PUT window, status or commit request, as
 described below.
 .It Cm upload-reap
 the operator cron exception described below.
+.It Cm passport-reap
+performs one bounded, server-clock cleanup pass over registered passports,
+without a connected client or service-WC update.
+Run as _filees-state, not root. Busy locks are not queued; errors are reported
+and the next scheduled invocation resumes durable state without force.
+The optional --check reads the last maintenance status and fails for
+missing, running, failed, corrupt or stale (over five minutes) state.
+The package provides an example crontab but does not enable it.
+Expiry is operational, at the next successful pass, not a strict SVN deadline.
 .It Cm upload-seed-reject
 plants one harmless EICAR reject in the waiting room of
 .Ar realm-alias

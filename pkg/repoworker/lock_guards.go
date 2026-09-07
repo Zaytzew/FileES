@@ -15,7 +15,7 @@ import (
 // Ordinary SVN token checks remain authoritative. No stdout: pre-lock stdout
 // would override the lock token. Runs as a mode of the existing Go worker,
 // without a shell, config reads, network, or a second executable dependency.
-const LockGuardVersion = "filees.lock-force-guard/v1"
+const LockGuardVersion = "filees.lock-force-guard/v2"
 
 func RunLockGuard(args []string, stderr io.Writer) int {
 	if len(args) == 5 && args[4] == "0" {

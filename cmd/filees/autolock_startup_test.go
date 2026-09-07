@@ -16,6 +16,7 @@ import (
 	"filees/pkg/commit"
 	"filees/pkg/config"
 	contract "filees/pkg/contract/v1"
+	control "filees/pkg/control/v1"
 	"filees/pkg/ipcserver"
 	"filees/pkg/passport"
 	"filees/pkg/reposupervisor"
@@ -97,6 +98,11 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				// Seed the legacy r917 intent; the NEW starter must still recover
+				// its WC+repo receipt without trying to invent a server journal.
+				legacy := backend.(passport.ControlSVNBackend)
+				legacy.FenceAcquisitions = false
+				backend = legacy
 				m, err := passport.Open(filepath.Join(wc, ".filees", "passports", "passports.json"), instanceID, backend, passport.Config{})
 				if err != nil {
 					t.Fatal(err)
@@ -106,7 +112,24 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 				}
 			}
 			deps := readWriteDependencies{passportBackend: func(repo config.Repo, svn client.Client) (passport.Backend, error) {
-				return newControlPassportBackend(repo, svn, func(string) (clientprofile.Profile, bool) { return profile, true })
+				b, err := newControlPassportBackend(repo, svn, func(string) (clientprofile.Profile, bool) { return profile, true })
+				if err != nil {
+					return nil, err
+				}
+				backend := b.(passport.ControlSVNBackend)
+				// Legacy recovery stays real SVN. Only the new expiry inspection
+				// RPC is a fixture: this test has no activated SSH control server.
+				backend.Transport = passportExchangeFunc(func(_ context.Context, ticket control.Ticket) (control.Result, error) {
+					if ticket.Type != control.TicketExpirePassportPath {
+						return control.Result{}, errors.New("unexpected startup control mutation")
+					}
+					var p control.PassportExecutionPayload
+					if err := control.DecodePayload(ticket.Payload, &p); err != nil {
+						return control.Result{}, err
+					}
+					return control.NewSuccessResult(ticket.OperationID, ticket.RequestID, ticket.Type, control.PassportExecutionResult{RepoID: p.RepoID, Path: p.Path, State: "checked"}, time.Now())
+				})
+				return backend, nil
 			}}
 			deps.pathOwnership = func(ctx context.Context, repo config.Repo, cli client.Client) (passport.OwnershipView, error) {
 				v := passport.OwnershipView{Owners: map[string]string{"doc.txt": "owner"}, Holds: map[string]passport.OwnershipHold{}}

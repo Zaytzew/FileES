@@ -64,6 +64,7 @@ func (m *Manager) beginPending(ctx context.Context, path string, meta Metadata, 
 	if err != nil {
 		return Passport{}, "", err
 	}
+	meta = i.Metadata
 	p := Passport{Path: path, PassportID: meta.PassportID, InstanceUID: meta.InstanceUID, RealmID: meta.RealmID, IssuedAt: meta.IssuedAt, ExpiresAt: meta.ExpiresAt, HardExpiresAt: meta.HardExpiresAt, CloseAfter: closeAfter, State: StatePending, Pending: &i}
 	m.passports[path] = p
 	m.publishPendingLocked()
@@ -84,6 +85,9 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 	if err := ctx.Err(); err != nil {
 		return p, "", err
 	}
+	if i.Stage == "settling" {
+		return m.settlePending(ctx, p)
+	}
 	now := m.cfg.Now().UTC()
 	if i.Stage == "canceling" || (i.Stage == "prepare" && (!now.Before(i.Metadata.ExpiresAt) || !now.Before(i.Metadata.HardExpiresAt))) {
 		return m.cancelPending(ctx, p)
@@ -98,7 +102,7 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		}
 		return nil
 	}
-	if i.Stage != "checking" {
+	if i.Stage != "checking" && !(i.Stage == "locking" && i.Acquisition != nil) {
 		if err := checkLive(); err != nil {
 			return p, "", err
 		}
@@ -162,12 +166,21 @@ func (m *Manager) resumePending(ctx context.Context, p Passport) (Passport, stri
 		lock, err = b.ConfirmLockIntent(ctx, p.Path, i)
 	}
 	if err != nil {
+		if i.Acquisition != nil {
+			return m.settlePending(ctx, p)
+		}
 		return p, out, err
 	}
 	if lock == nil || lock.Token == "" {
+		if i.Acquisition != nil {
+			return m.settlePending(ctx, p)
+		}
 		return p, out, errcat.New(errcat.KeyPassportUncertain, nil, nil)
 	}
 	if err := checkLive(); err != nil {
+		if i.Acquisition != nil {
+			return m.settlePending(ctx, p)
+		}
 		return p, out, err
 	}
 	confirmed := p
@@ -213,6 +226,17 @@ func (m *Manager) cancelPending(ctx context.Context, p Passport) (Passport, stri
 	// Persist this direction even on a later retry after the clock moved back.
 	if err := m.saveLocked(); err != nil {
 		return p, "", err
+	}
+	if i.Acquisition != nil {
+		closer, ok := m.backend.(interface {
+			SettleLockIntent(context.Context, string, LockIntent) error
+		})
+		if !ok {
+			return p, "", errors.New("acquisition recovery unavailable")
+		}
+		if err := closer.SettleLockIntent(ctx, p.Path, i); err != nil {
+			return p, "", err
+		}
 	}
 	if err := m.backend.(intentBackend).CancelLockIntent(ctx, p.Path, i); err != nil {
 		return p, "", err

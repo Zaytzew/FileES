@@ -127,6 +127,7 @@ type LockReleaseProjector interface {
 }
 
 type Worker struct {
+	PassportExecutions   *PassportExecutions
 	PassportPreparations *PassportPreparations
 	Backend              Backend
 	Activator            RepositoryActivator
@@ -161,6 +162,12 @@ func (w *Worker) Handle(ctx context.Context, session Session, ticket control.Tic
 	}
 	if ticket.ClientID != session.ClientID {
 		return control.Result{}, errors.New("ticket client does not match authenticated session")
+	}
+	if ticket.Type == control.TicketArmPassportAcquisition || ticket.Type == control.TicketSettlePassportAcquisition || ticket.Type == control.TicketExpirePassportPath {
+		if w.PassportExecutions == nil {
+			return preparationError(ticket, errcat.KeyPassportUnavailable, w.now())
+		}
+		return w.PassportExecutions.Handle(ctx, session, ticket)
 	}
 	if ticket.Type == control.TicketPreparePassportReplacement || ticket.Type == control.TicketCancelPassportPreparation {
 		if w.PassportPreparations == nil {

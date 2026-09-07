@@ -17,13 +17,14 @@ import (
 // Ticket and Comment are immutable; prepare advances to locking OR canceling,
 // and a successfully completed acquire advances from locking to checking.
 type LockIntent struct {
-	Stage    string          `json:"stage"`
-	RepoID   string          `json:"repo_id"`
-	ClientID string          `json:"client_id"`
-	Path     string          `json:"path"`
-	Mode     string          `json:"mode"`
-	Metadata Metadata        `json:"metadata"`
-	Ticket   *control.Ticket `json:"ticket,omitempty"`
+	Acquisition *control.Ticket `json:"acquisition,omitempty"`
+	Stage       string          `json:"stage"`
+	RepoID      string          `json:"repo_id"`
+	ClientID    string          `json:"client_id"`
+	Path        string          `json:"path"`
+	Mode        string          `json:"mode"`
+	Metadata    Metadata        `json:"metadata"`
+	Ticket      *control.Ticket `json:"ticket,omitempty"`
 }
 
 type intentBackend interface {
@@ -40,6 +41,7 @@ type intentBackend interface {
 // It requires the existing authenticated, pinned controlclient transport.
 // Selected by the desktop starter for activated edit-passport repositories.
 type ControlSVNBackend struct {
+	FenceAcquisitions bool // production requires server pre-lock execution journal
 	SVNBackend
 	RepoID, ClientID string
 	Transport        controlclient.Exchanger
@@ -63,7 +65,18 @@ func (b ControlSVNBackend) NewLockIntent(path string, meta Metadata, mode string
 	if err != nil {
 		return LockIntent{}, err
 	}
+	if b.FenceAcquisitions {
+		meta.AcquisitionID = uuid.NewString()
+	}
 	i := LockIntent{Stage: "prepare", RepoID: b.RepoID, ClientID: b.ClientID, Path: rel, Mode: mode, Metadata: meta}
+	if b.FenceAcquisitions {
+		ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketArmPassportAcquisition, b.ClientID,
+			control.PassportExecutionPayload{RepoID: b.RepoID, Path: rel, Comment: FormatComment(meta)}, now)
+		if err != nil {
+			return LockIntent{}, err
+		}
+		i.Acquisition = &ticket
+	}
 	if mode != "acquire" {
 		ticket, err := control.NewTicket(uuid.NewString(), uuid.NewString(), control.TicketPreparePassportReplacement, b.ClientID,
 			control.PreparePassportReplacementPayload{RepoID: b.RepoID, Path: rel, ObservedLockID: meta.PreviousToken, PassportID: meta.PassportID, InstanceUID: meta.InstanceUID, Mode: mode}, now)
@@ -80,13 +93,33 @@ func (b ControlSVNBackend) ValidateLockIntent(path string, i LockIntent) error {
 	if err != nil {
 		return err
 	}
-	if b.Client == nil || i.RepoID != b.RepoID || i.ClientID != b.ClientID || i.Path != rel || (i.Stage != "prepare" && i.Stage != "locking" && i.Stage != "checking" && i.Stage != "canceling") {
+	if b.Client == nil || i.RepoID != b.RepoID || i.ClientID != b.ClientID || i.Path != rel || (i.Stage != "prepare" && i.Stage != "locking" && i.Stage != "checking" && i.Stage != "canceling" && i.Stage != "settling") {
 		return errors.New("passport intent binding mismatch")
 	}
 	if _, ok := b.Client.(client.LockReceiptReader); !ok {
 		return errors.New("SVN client cannot confirm local lock possession")
 	}
 	meta := i.Metadata
+	if i.Acquisition != nil {
+		if !b.FenceAcquisitions || i.Acquisition.Type != control.TicketArmPassportAcquisition || i.Acquisition.ClientID != i.ClientID {
+			return errors.New("acquisition backend or actor mismatch")
+		}
+		if err := i.Acquisition.Validate(); err != nil {
+			return err
+		}
+		if _, err := uuid.Parse(meta.AcquisitionID); err != nil {
+			return err
+		}
+		var p control.PassportExecutionPayload
+		if err := control.DecodePayload(i.Acquisition.Payload, &p); err != nil {
+			return err
+		}
+		if p.RepoID != i.RepoID || p.Path != i.Path || p.Comment != FormatComment(meta) {
+			return errors.New("acquisition binding mismatch")
+		}
+	} else if meta.AcquisitionID != "" || i.Stage == "settling" {
+		return errors.New("acquisition ticket missing")
+	}
 	for _, id := range []string{i.ClientID, i.RepoID, meta.PassportID, meta.InstanceUID} {
 		if _, err := uuid.Parse(id); err != nil {
 			return err
@@ -130,10 +163,15 @@ func (b ControlSVNBackend) PrepareLockIntent(ctx context.Context, path string, i
 	if i.Stage != "prepare" {
 		return errors.New("passport intent is not preparing")
 	}
-	if i.Ticket == nil {
-		return ctx.Err()
+	if i.Ticket != nil {
+		if err := controlclient.PreparePassportReplacement(ctx, b.Transport, *i.Ticket); err != nil {
+			return err
+		}
 	}
-	return controlclient.PreparePassportReplacement(ctx, b.Transport, *i.Ticket)
+	if i.Acquisition != nil {
+		return controlclient.PassportExecution(ctx, b.Transport, *i.Acquisition)
+	}
+	return ctx.Err()
 }
 
 func (b ControlSVNBackend) CancelLockIntent(ctx context.Context, path string, i LockIntent) error {

@@ -12,6 +12,20 @@ operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
 also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,
 resolve) through the helper.
 
+`log` answers one question with different fields, replacing three CLI
+invocations: the shout inbox reads revision and message, the commit-receipt
+lookup reads a named revprop (`--revprop`), and move-result recovery reads
+changed paths with copyfrom (`--changed-paths`). The target is either `--url`
+or `--wc WC -- REL`, exactly one of them, and `--revision A[:B]` is required —
+a log with no bound is a way to ask for the whole repository by accident.
+Entries are collected before anything is printed, because this protocol
+promises one JSON document per invocation and a truncated one is worse than a
+late one; bound the size with `--limit`.
+
+Only the three standard revprops plus those named with `--revprop` are
+requested. Passing NULL would fetch every revprop the repository holds, which
+is somebody else's data.
+
 `cat` is the first remote verb, and the first with no working copy at all. It
 writes one repository file to an absolute `--out`, optionally at `--revision`,
 and reports the byte count. Two decisions are worth knowing:

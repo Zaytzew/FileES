@@ -43,6 +43,8 @@ svn_error_t *filees_wc_delete(const char *wc, svn_boolean_t live,
 svn_error_t *filees_wc_status(const char *wc, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
                               apr_pool_t *pool);
+svn_error_t *filees_wc_info(const char *wc, svn_boolean_t live,
+                            const char **rels, int n, apr_pool_t *pool);
 svn_error_t *filees_wc_propset(const char *wc, svn_boolean_t live,
                                const char *name, const char *value,
                                const char **rels, int n, apr_pool_t *pool);

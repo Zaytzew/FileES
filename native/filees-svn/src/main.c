@@ -14,8 +14,8 @@
 #endif
 
 static const char *const k_verbs[] = {
-    "record-move", "status", "add", "delete", "propget", "propset", "propdel",
-    "cleanup", "revert", "resolve", NULL
+    "record-move", "status", "info", "add", "delete", "propget", "propset",
+    "propdel", "cleanup", "revert", "resolve", NULL
 };
 
 static void print_ok_version(void)
@@ -134,6 +134,9 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         if (!depth_set) depth = (n == 0) ? svn_depth_infinity : svn_depth_empty;
         SVN_ERR(filees_wc_status(wc, live, paths, n, depth, pool));
         return SVN_NO_ERROR;
+    } else if (!strcmp(verb, "info")) {
+        SVN_ERR(filees_wc_info(wc, live, paths, n, pool));
+        return SVN_NO_ERROR;
     } else if (!strcmp(verb, "propset")) {
         SVN_ERR(filees_wc_propset(wc, live, propname, propval, paths, n, pool));
     } else if (!strcmp(verb, "propdel")) {
@@ -163,10 +166,14 @@ static int run(int argc, const char **argv)
 {
     apr_pool_t *pool;
     svn_error_t *err = NULL;
-    int result = EXIT_SUCCESS, i;
+    int result = EXIT_SUCCESS;
     if (svn_cmdline_init("filees-svn", stderr) != EXIT_SUCCESS) return EXIT_FAILURE;
     pool = svn_pool_create(NULL);
 #ifndef _WIN32
+    /* Declared inside the guard: on Windows wmain already hands us UTF-8, so
+     * an unconditional declaration was unused there and warned on every /W4
+     * build. Warning noise is where real warnings go to hide. */
+    int i;
     for (i = 1; i < argc && !err; ++i) {
         const char *utf8;
         err = svn_cmdline_cstring_to_utf8(&utf8, argv[i], pool);

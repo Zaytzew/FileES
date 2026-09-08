@@ -242,3 +242,126 @@ svn_error_t *filees_wc_resolve(const char *wc_arg, svn_boolean_t live,
     }
     return SVN_NO_ERROR;
 }
+
+struct info_row {
+    const char *path;
+    const char *url;
+    const char *repos_root;
+    const char *repos_uuid;
+    const char *kind;
+    svn_revnum_t rev;
+    svn_revnum_t last_changed_rev;
+};
+
+struct info_baton {
+    const char *wc;
+    apr_array_header_t *rows;
+    apr_pool_t *pool;
+};
+
+static const char *info_kind(svn_node_kind_t kind)
+{
+    switch (kind) {
+    case svn_node_file: return "file";
+    case svn_node_dir: return "dir";
+    case svn_node_none: return "none";
+    default: return "unknown";
+    }
+}
+
+static svn_error_t *collect_info(void *baton, const char *abspath_or_url,
+                                 const svn_client_info2_t *info, apr_pool_t *pool)
+{
+    struct info_baton *b = baton;
+    struct info_row *row;
+    const char *rel;
+    (void)pool;
+    SVN_ERR(filees_relpath(&rel, b->wc, abspath_or_url, b->pool));
+    row = apr_array_push(b->rows);
+    row->path = apr_pstrdup(b->pool, rel);
+    row->url = info->URL ? apr_pstrdup(b->pool, info->URL) : NULL;
+    row->repos_root = info->repos_root_URL ? apr_pstrdup(b->pool, info->repos_root_URL) : NULL;
+    row->repos_uuid = info->repos_UUID ? apr_pstrdup(b->pool, info->repos_UUID) : NULL;
+    row->kind = info_kind(info->kind);
+    row->rev = info->rev;
+    row->last_changed_rev = info->last_changed_rev;
+    return SVN_NO_ERROR;
+}
+
+static void info_json_revision(const char *name, svn_revnum_t rev)
+{
+    /* An invalid revision is reported as null rather than -1. A caller that
+     * parses -1 as a number gets a plausible-looking answer to a question the
+     * working copy could not answer, which is the shape of bug this codebase
+     * keeps paying for elsewhere. */
+    printf(",\"%s\":", name);
+    if (SVN_IS_VALID_REVNUM(rev)) printf("%ld", (long)rev);
+    else printf("null");
+}
+
+static void info_json_field(const char *name, const char *value)
+{
+    printf(",\"%s\":", name);
+    if (value) filees_json_string(value);
+    else printf("null");
+}
+
+/* info is the last WC-local verb from the desktop inventory. It answers only
+ * about the working copy: an URL target would be an RA operation and belongs
+ * with checkout/update, not here.
+ *
+ * The emitted fields are the ones the daemon actually consumes -
+ * VerifyCommittedMove reads url, repository root and the last-changed revision
+ * (pkg/client/native_move.go:133), and Revision() reads one number
+ * (client.go:666) - plus uuid and kind, which cost nothing and answer "is this
+ * the repository I think it is". */
+svn_error_t *filees_wc_info(const char *wc_arg, svn_boolean_t live,
+                            const char **rels, int n, apr_pool_t *pool)
+{
+    const char *wc;
+    svn_client_ctx_t *ctx;
+    apr_array_header_t *paths;
+    struct info_baton b;
+    int i, first = 1;
+
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    b.wc = wc;
+    b.pool = pool;
+    b.rows = apr_array_make(pool, 4, sizeof(struct info_row));
+    if (n == 0) {
+        paths = apr_array_make(pool, 1, sizeof(const char *));
+        APR_ARRAY_PUSH(paths, const char *) = wc;
+    } else {
+        SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    }
+    for (i = 0; i < paths->nelts; ++i) {
+        const char *path = APR_ARRAY_IDX(paths, i, const char *);
+        /* Both revisions NULL is not a shortcut for a default - it is the
+         * only input that keeps svn_client_info4 inside the working copy.
+         * libsvn_client/info.c:353 takes the local branch solely when peg and
+         * revision are NULL or unspecified; anything else, WORKING and BASE
+         * included, opens an RA session. Measured 2026-09-08: passing WORKING
+         * made the receiver report repository-relative names and the verb
+         * quietly became a network call. */
+        SVN_ERR(svn_client_info4(path, NULL, NULL, svn_depth_empty,
+                                 FALSE, TRUE, FALSE, NULL,
+                                 collect_info, &b, ctx, pool));
+    }
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"entries\":[");
+    for (i = 0; i < b.rows->nelts; ++i) {
+        struct info_row *row = &APR_ARRAY_IDX(b.rows, i, struct info_row);
+        if (!first) putchar(',');
+        first = 0;
+        printf("{\"path\":");
+        filees_json_string(row->path);
+        info_json_field("url", row->url);
+        info_json_field("repos_root_url", row->repos_root);
+        info_json_field("repos_uuid", row->repos_uuid);
+        info_json_field("kind", row->kind);
+        info_json_revision("revision", row->rev);
+        info_json_revision("last_changed_rev", row->last_changed_rev);
+        putchar('}');
+    }
+    puts("]}");
+    return SVN_NO_ERROR;
+}

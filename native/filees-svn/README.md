@@ -10,7 +10,17 @@ Go daemon does not use cgo. `filees-svn --version` lists implemented verbs.
 Linux daemon still uses the helper only for `record-move`; every other
 operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
 also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,
-resolve) through the helper. RA verbs (checkout, update, commit, lock,
+resolve) through the helper.
+
+`info` is implemented in the helper but **not yet routed** by the Go adapter.
+Its two callers need deciding first: `Revision()` accepts a URL as well as a
+working-copy path (client.go:666), and `VerifyCommittedMove` asks for
+`dst@BASE` (native_move.go:133) while verifying a commit receipt - a path
+where a semantic change deserves its own step. The verb answers only about the
+working copy and never contacts the repository: `svn_client_info4` takes its
+local branch solely when peg and revision are both NULL or unspecified
+(libsvn_client/info.c:353), so WORKING and BASE - the obvious translations of
+the CLI's `@BASE` - would silently open an RA session instead. RA verbs (checkout, update, commit, lock,
 log, cat) remain on CLI until implemented here. Windows build recipe:
 [WINDOWS.md](WINDOWS.md). Native acceptance on Windows is still deferred.
 

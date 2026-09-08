@@ -312,7 +312,7 @@ func TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository(t *testing.T
 	if err := publisher.Activate(context.Background(), active.repoID, realmID); err != nil {
 		t.Fatal(err)
 	}
-	runRepoPruneCommand(t, config.Activation.SVNBinary, "mkdir", svnurl.File(filepath.ToSlash)(filepath.Join(repositoriesRoot, committed.repoID))+"/real-data", "-m", "real initial content")
+	runRepoPruneCommand(t, config.Activation.SVNBinary, "mkdir", svnurl.File(filepath.Join(repositoriesRoot, committed.repoID))+"/real-data", "-m", "real initial content")
 	for _, item := range []repositoryCase{normalDeleted, pruneRetry} {
 		if err := publisher.Delete(context.Background(), item.repoID, realmID); err != nil {
 			t.Fatalf("delete fixture %s: %v", item.name, err)

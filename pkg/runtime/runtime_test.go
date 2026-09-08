@@ -77,6 +77,14 @@ func TestRepoMutexDoesNotReclaimLiveOwner(t *testing.T) {
 }
 
 func TestV2OwnerLockRejectsPIDReuseFalsePositive(t *testing.T) {
+	// The v2 owner file proves liveness with an advisory lock, which this
+	// platform does not have - the package says so itself rather than the test
+	// guessing from GOOS. Without the lock a reused PID cannot be told from a
+	// live owner, so there is nothing here to assert; failing instead of
+	// skipping only hides the failures that mean something.
+	if !ownerFileLocksSupported() {
+		t.Skip("owner file locks are unsupported on this platform")
+	}
 	dir := filepath.Join(t.TempDir(), "lock")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)

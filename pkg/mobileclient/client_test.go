@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/url"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,8 +88,11 @@ func run(t *testing.T, name string, args ...string) {
 }
 
 func fileURL(abs string) string {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}
-	return u.String()
+	// url.URL with a Windows path yields file://C:/... , which Subversion reads
+	// as a host named "c" - E170013 against a repository that is right there on
+	// disk. The third slash is the whole difference; svnurl.File is the one
+	// place that knows it.
+	return svnurl.File(abs)
 }
 
 func newSeededRepo(t *testing.T) string {

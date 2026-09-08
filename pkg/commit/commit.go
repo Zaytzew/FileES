@@ -470,6 +470,9 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 func (s *Service) acceptEvent(ev watcher.Event) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
+	if s.refuseUnportable(ev) {
+		return
+	}
 	s.recordActivity(ev.Rel, ev.Op, activity.Detected, 0, "")
 	s.addEventLocked(ev)
 	s.saveCache()

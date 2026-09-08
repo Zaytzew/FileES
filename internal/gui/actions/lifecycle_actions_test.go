@@ -2,6 +2,8 @@ package actions_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -70,6 +72,18 @@ func (fake *fakeStackLifecycle) ShutdownFileES(context.Context) error {
 	return nil
 }
 
+// lifecycleLocalPath is absolute on the platform running the test.
+//
+// It was "/home/user/Dokumenty", which is absolute on POSIX and not on
+// Windows, where filepath.IsAbs wants a volume. collectPublicShareDeclaration
+// asks IsAbs before it does anything, so every public-share flow refused here
+// with "Najpierw polacz repozytorium" instead of reaching the folder picker -
+// a test that could not fail for the reason it was written to check.
+//
+// Fourth instance of this class in one day, after pkg/clientprofile (r954) and
+// pkg/client (r965). No file is created: only IsAbs is asked.
+var lifecycleLocalPath = filepath.Join(os.TempDir(), "filees-lifecycle", "Dokumenty")
+
 func lifecycleView(capabilities ...string) app.ViewModel {
 	caps := make(map[string]bool, len(capabilities))
 	for _, capability := range capabilities {
@@ -78,7 +92,7 @@ func lifecycleView(capabilities ...string) app.ViewModel {
 	repo := app.RepoViewModel{
 		ID: "repo-1", ServerID: "office", DisplayName: "Dokumenty",
 		Attached: true, AttachmentPolicy: "optional", OwnerRealmID: "realm-1",
-		LocalPath: "/home/user/Dokumenty", Access: contract.AccessReadWrite, State: contract.StateActive,
+		LocalPath: lifecycleLocalPath, Access: contract.AccessReadWrite, State: contract.StateActive,
 	}
 	return app.ViewModel{
 		Connected: true, Capabilities: caps, Repos: []app.RepoViewModel{repo},

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -42,8 +43,13 @@ func (c *updateOnlyClient) Update(context.Context, string) (string, error) {
 }
 
 func TestConfigCheckValidatesWithoutStartingDaemon(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	valid := `{"transport":{"identity_file":"/tmp/id","known_hosts":"/tmp/known"},"repositories":[]}` + "\n"
+	root := t.TempDir()
+	path := filepath.Join(root, "config.json")
+	// Absolute on the platform running the test. "/tmp/id" is absolute on
+	// POSIX and not on Windows, so validation rejected a config this test
+	// calls valid - the same class as r954, r965 and r989.
+	valid := fmt.Sprintf(`{"transport":{"identity_file":%q,"known_hosts":%q},"repositories":[]}`+"\n",
+		filepath.ToSlash(filepath.Join(root, "id")), filepath.ToSlash(filepath.Join(root, "known")))
 	if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
 		t.Fatal(err)
 	}

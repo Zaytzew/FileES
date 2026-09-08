@@ -63,10 +63,13 @@ func TestServiceStatusPlanApplyAndPersistAntiRollback(t *testing.T) {
 		t.Fatalf("state = %+v, %v", state, err)
 	}
 	status, err = service.Status(context.Background())
-	if err != nil || status.State != "current" {
+	if err != nil || status.State != "restart_required" || !status.RestartRequired {
 		t.Fatalf("post-apply status = %+v, %v", status, err)
 	}
 	service.Resolver = resolverStub{resolved: resolvedRelease(1, "r1", "0.9")}
+	// A new process verifies channels again; the old process only reports its
+	// already verified pending restart, without another installation.
+	service.appliedRestart = false
 	if _, err := service.Status(context.Background()); err == nil {
 		t.Fatal("service accepted signed rollback")
 	}
@@ -165,7 +168,38 @@ func TestOldMSIRepairsItselfWithoutLoweringHighWater(t *testing.T) {
 		t.Fatalf("repair lowered or corrupted high-water: %+v, %v", state, err)
 	}
 	status, err = service.Status(context.Background())
-	if err != nil || status.State != "current" {
+	if err != nil || status.State != "restart_required" || !status.RestartRequired {
 		t.Fatalf("post-repair status = %+v, %v", status, err)
+	}
+}
+
+func TestRestartLatchSurvivesOfflineReadsAndRepeatedApplyUntilNewProcess(t *testing.T) {
+	ctx := context.Background()
+	installer := &installerStub{}
+	store := StateStore{Path: filepath.Join(t.TempDir(), "state.json")}
+	resolver := resolverStub{resolved: resolvedRelease(970, "r970", "0.1.15.970")}
+	service := &Service{Resolver: resolver, Installer: installer, State: store, CurrentVersion: "0.1.15+r967"}
+	if _, err := service.Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	service.Resolver = resolverStub{err: errors.New("offline")}
+	for range 3 {
+		status, err := service.Status(ctx)
+		if err != nil || status.State != "restart_required" || !status.RestartRequired || status.CurrentVersion != "0.1.15.967" || status.AvailableVersion != "0.1.15.970" {
+			t.Fatalf("status=%+v, %v", status, err)
+		}
+		plan, err := service.Plan(ctx)
+		if err != nil || !plan.RestartRequired || len(plan.Changes) != 0 {
+			t.Fatalf("plan=%+v, %v", plan, err)
+		}
+		result, err := service.Apply(ctx)
+		if err != nil || !result.RestartRequired || installer.applyCalls != 1 {
+			t.Fatalf("apply=%+v, calls=%d, %v", result, installer.applyCalls, err)
+		}
+	}
+	restarted := &Service{Resolver: resolver, Installer: installer, State: store, CurrentVersion: "0.1.15+r970"}
+	status, err := restarted.Status(ctx)
+	if err != nil || status.RestartRequired || status.State != "current" {
+		t.Fatalf("restarted=%+v, %v", status, err)
 	}
 }

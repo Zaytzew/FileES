@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"filees/pkg/activity"
 	"filees/pkg/client"
 	"filees/pkg/talk"
 	"filees/pkg/watcher"
@@ -79,8 +80,8 @@ func TestCleanPendingRequiresPositiveUnchangedFileEvidence(t *testing.T) {
 				t.Fatalf("pending=%v want %v", got, tc.keep)
 			}
 			if !tc.keep {
-				if len(recorder.entries) != 0 {
-					t.Fatal("stale pending journal")
+				if len(recorder.entries) == 0 || recorder.entries[len(recorder.entries)-1].Stage != activity.Reconciled {
+					t.Fatal("clean path must be reconciled, never published or left pending")
 				}
 				b, err := os.ReadFile(s.cachePath)
 				if err != nil || strings.TrimSpace(string(b)) != "[]" {

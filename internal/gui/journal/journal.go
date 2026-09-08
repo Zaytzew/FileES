@@ -266,8 +266,8 @@ func repoName(names map[string]string, repoID string) string {
 }
 
 func activityKey(record app.ActivityViewModel) string {
-	if record.Stage == "published" && record.Revision > 0 {
-		return fmt.Sprintf("%s\x00published\x00%d", record.RepoID, record.Revision)
+	if (record.Stage == "published" || record.Stage == "received") && record.Revision > 0 {
+		return fmt.Sprintf("%s\x00%s\x00%d", record.RepoID, record.Stage, record.Revision)
 	}
 	if record.Stage == "failed" && record.ErrorID != "" {
 		return record.RepoID + "\x00failed\x00" + record.ErrorID
@@ -286,6 +286,10 @@ func activityEntry(id string, group *activityGroup) Entry {
 		switch group.stage {
 		case "published":
 			summary = fmt.Sprintf("%s — publikacja: %d %s · r%d", group.repo, count, plural(count, "element", "elementy", "elementów"), group.revision)
+		case "received":
+			summary = fmt.Sprintf("%s — pobrano zmiany: %d %s · r%d", group.repo, count, plural(count, "element", "elementy", "elementów"), group.revision)
+		case "reconciled":
+			summary = fmt.Sprintf("%s — uzgodniono stan: %d %s (bez wysyłania)", group.repo, count, plural(count, "element", "elementy", "elementów"))
 		case "detected":
 			summary = fmt.Sprintf("%s — wykryte zmiany: %d", group.repo, count)
 		case "pending":
@@ -386,6 +390,10 @@ func singleActivityLabel(record app.ActivityViewModel) string {
 		return "publikowanie"
 	case "published":
 		return fmt.Sprintf("%s · r%d", kindPastTense(record.Kind), record.Revision)
+	case "received":
+		return fmt.Sprintf("pobrano zmianę: %s · r%d", kindPastTense(record.Kind), record.Revision)
+	case "reconciled":
+		return "uzgodniono stan (bez wysyłania)"
 	case "failed":
 		return "⚠ BŁĄD · nie udało się opublikować"
 	default:

@@ -890,7 +890,7 @@ type ActivityRecord struct {
 	RepoID     string `json:"repo_id"`
 	Path       string `json:"path"`
 	Kind       string `json:"kind"`
-	Stage      string `json:"stage"`
+	Stage      string `json:"stage"` // detected/pending/publishing/published/received/reconciled/failed; only published claims local publication
 	DetectedAt string `json:"detected_at"`
 	UpdatedAt  string `json:"updated_at"`
 	Revision   int64  `json:"revision,omitempty"`

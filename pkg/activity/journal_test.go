@@ -33,6 +33,29 @@ func TestJournalSurvivesRestartAndCollapsesPipelineStages(t *testing.T) {
 	}
 }
 
+func TestIncomingAndReconciledPersistWithoutInventedPublication(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "activity.json")
+	j, err := Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []Entry{{RepoID: "repo", Path: "incoming", Kind: Added, Stage: Received, Revision: 117}, {RepoID: "repo", Path: "clean", Kind: Modified, Stage: Reconciled}} {
+		if err := j.Record(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reopened, err := Open(path, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened.List()) != 2 {
+		t.Fatal("lost receipt")
+	}
+	if err := j.Record(Entry{RepoID: "repo", Path: "false", Kind: Added, Stage: Reconciled, Revision: 117}); err == nil {
+		t.Fatal("reconciliation claimed a commit")
+	}
+}
+
 func TestJournalIsGloballyBoundedAndNewestFirst(t *testing.T) {
 	j, err := Open(filepath.Join(t.TempDir(), "activity.json"), 2)
 	if err != nil {

@@ -935,12 +935,15 @@ function renderVersionDialog(snapshot) {
   $("#version-release").textContent = currentRelease || "nieustalone";
   if (!update) {
     $("#version-status").textContent = "Demon nie udostępnił jeszcze informacji o kanale aktualizacji.";
+  } else if (update.state === "restart_required") {
+    $("#version-status").textContent = update.summary || "Aktualizacja jest zainstalowana — wymagane ponowne uruchomienie FileES.";
   } else if (available) {
     $("#version-status").textContent = update.summary || `Dostępne jest wydanie ${availableRelease}. Zainstalowane wydanie: ${currentRelease || "nieustalone"}.`;
   } else {
     $("#version-status").textContent = update.summary || "Masz aktualne wydanie z wybranego kanału aktualizacji.";
   }
-  $("#version-update-actions").hidden = !available;
+  $("#version-update-actions").hidden = !available || update?.state === "restart_required";
+  $("#version-restart-actions").hidden = update?.state !== "restart_required";
 }
 
 function openVersionDialog() {
@@ -957,9 +960,13 @@ function closeVersionDialog() {
 function renderUpdate(snapshot) {
 	const card = $("#update-card");
 	const update = snapshot.update;
+	const restart = update?.state === "restart_required" && update.restart_required;
 	const available = Boolean(update?.available_version) && update.state !== "current";
-	card.hidden = !available;
-	if (!available) return;
+	card.hidden = !available && !restart;
+	if (card.hidden) return;
+	$("#update-title").textContent = restart ? "Wymagany restart" : "Dostępna aktualizacja";
+	$("#update-actions").hidden = restart;
+	$("#update-restart-actions").hidden = !restart;
 	$("#update-version").textContent = update.available_version;
 	$("#update-summary").textContent = update.summary || `Zainstalowana wersja: ${update.current_version || "nieznana"}.`;
 }

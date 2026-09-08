@@ -376,6 +376,40 @@ function repoAction(action, label, icon, extraClass = "") {
   return `<button class="repo-icon-action hint-button ${extraClass}" type="button" data-action="${escapeHTML(action)}" data-hint="${escapeHTML(label)}" aria-label="${escapeHTML(label)}">${icon}</button>`;
 }
 
+// Sentences are composed here, not carried across the contract. The daemon
+// sends a stable token and a detail; the wording belongs to the interface, the
+// same rule errcat keys follow.
+//
+// None of these mention letter case on purpose. A person told "these differ
+// only in case" has been told about Windows; they need to be told about their
+// own two documents and what to do next.
+const unportableReasons = {
+  case_collision: (d) => `istnieje już plik „${d}”, którego nazwa spowoduje nierozwiązywalny konflikt w kopiach roboczych Windows`,
+  reserved_device: () => "nazwa jest zarezerwowana przez system dla urządzenia",
+  reserved_rune: (d) => `znak „${d}” jest niedozwolony w nazwie`,
+  control_rune: () => "nazwa zawiera znak sterujący",
+  separator: (d) => `znak „${d}” rozdziela ścieżkę i nie może być częścią nazwy`,
+  trailing_dot_or_space: (d) => `nazwa kończy się znakiem „${d}”, który zostaje po cichu usunięty`,
+  empty: () => "nazwa jest pusta",
+};
+
+// The condition is a state of the folder, not a message: it stays until the
+// cause is gone and there is nothing to acknowledge. Dismissing it would leave
+// the object outside FileES for good, in silence — the failure this whole gate
+// exists to remove.
+function renderUnportable(repo) {
+  const names = repo.unportable_names || [];
+  if (!names.length) return "";
+  const items = names
+    .map((entry) => {
+      const reason = (unportableReasons[entry.kind] || (() => "nazwa jest nieprzedstawialna"))(entry.detail || "");
+      return `<li><code>${escapeHTML(entry.path)}</code><span>${escapeHTML(reason)}</span></li>`;
+    })
+    .join("");
+  const count = names.length === 1 ? "Jeden obiekt pozostaje" : `${names.length} obiekty pozostają`;
+  return `<div class="repo-unportable"><strong>${count} poza kontrolą FileES. Zmień nazwę, aby je objąć:</strong><ul>${items}</ul></div>`;
+}
+
 function renderRepo(repo) {
   const state = repo.display_state || "unknown";
   const deleted = Boolean(repo.server_deleted);
@@ -421,6 +455,7 @@ function renderRepo(repo) {
     <div class="repo-meta repo-queue"><small>${deleted ? "Stan lokalny" : "Kolejka"}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
     <div class="repo-tools">${settings}${actions}</div>
     <div class="repo-meta repo-size"><small>Rozmiar</small><span>${escapeHTML(size)}</span></div>
+    ${renderUnportable(repo)}
   </article>`;
 }
 

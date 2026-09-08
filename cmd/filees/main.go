@@ -429,6 +429,13 @@ func wireRepoStatus(svc *commit.Service, rs *ipcserver.RepoState) {
 	svc.OnHeadRevision = rs.SetHeadRev
 	svc.OnLastSync = rs.SetLastSyncAt
 	svc.OnConflicts = rs.SetConflicts
+	svc.OnUnportableNames = func(names []commit.UnportableName) {
+		out := make([]contract.UnportableName, 0, len(names))
+		for _, name := range names {
+			out = append(out, contract.UnportableName{Path: name.Rel, Kind: name.Kind, Detail: name.Detail})
+		}
+		rs.SetUnportableNames(out)
+	}
 	svc.OnCurrentOperation = rs.SetCurrentOp
 	svc.OnCycle = rs.SetCycle
 	rs.SetRecoveryStatsFunc(func() contract.RecoveryStats {

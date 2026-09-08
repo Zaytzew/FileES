@@ -109,7 +109,10 @@ func TestUnportableNamesAreDerivedFromDisk(t *testing.T) {
 	if got[0].Rel != "tekst.txt" || got[1].Rel != "CON.txt" {
 		t.Fatalf("unexpected entries: %+v", got)
 	}
-	if got[0].Reason == "" || got[1].Reason == "" {
-		t.Fatal("every refusal must carry a reason a person can act on")
+	if got[0].Kind != portablepath.CaseCollision.Token() || got[0].Detail != "Tekst.txt" {
+		t.Fatalf("first entry = %+v, want a named case collision", got[0])
+	}
+	if got[1].Kind != portablepath.ReservedDevice.Token() {
+		t.Fatalf("second entry = %+v, want a reserved device", got[1])
 	}
 }

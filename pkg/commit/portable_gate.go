@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"filees/pkg/filepolicy"
 	"filees/pkg/portablepath"
@@ -15,8 +16,13 @@ import (
 // its name cannot exist, unchanged, on every platform this repository is used
 // from.
 type UnportableName struct {
-	Rel    string
-	Reason string
+	Rel string
+	// Kind is portablepath.Kind.Token(), and Detail is whatever that kind
+	// names - the colliding sibling, or the offending character. The sentence
+	// is composed where it is shown: the contract carries no translated text,
+	// the same rule PassportIssue follows.
+	Kind   string
+	Detail string
 }
 
 // gateProblem reports why rel cannot be taken under control, or nil when it
@@ -72,6 +78,7 @@ func (s *Service) refuseUnportable(ev watcher.Event) bool {
 		return false
 	}
 	s.Logger.Warnf("nie obejmuję kontrolą %s: %s", ev.Rel, problem)
+	s.wakeUnportableSweep()
 	return true
 }
 
@@ -98,8 +105,61 @@ func (s *Service) UnportableNames(ctx context.Context, wc string) ([]UnportableN
 			continue
 		}
 		if problem := gateProblem(wc, rel); problem != nil {
-			out = append(out, UnportableName{Rel: rel, Reason: problem.String()})
+			out = append(out, UnportableName{Rel: rel, Kind: problem.Kind.Token(), Detail: problem.Detail})
 		}
 	}
 	return out, nil
+}
+
+// UnportableSweepInterval is how often the derived list is recomputed when
+// nothing has woken it. A refusal wakes it immediately, so this only bounds how
+// long a stale entry can outlive the rename that fixed it.
+const UnportableSweepInterval = 5 * time.Minute
+
+// wakeUnportableSweep asks for a recomputation without blocking. The channel
+// holds one slot: several refusals in a row need one sweep, not several.
+func (s *Service) wakeUnportableSweep() {
+	if s.unportableWake == nil {
+		return
+	}
+	select {
+	case s.unportableWake <- struct{}{}:
+	default:
+	}
+}
+
+// runUnportableSweep keeps the projection of refused names equal to the working
+// copy. It runs beside the commit loop rather than inside it so a slow svn
+// status on a large working copy cannot delay a publication.
+func (s *Service) runUnportableSweep(ctx context.Context, wc string) {
+	if s.OnUnportableNames == nil {
+		return
+	}
+	sweep := func() {
+		s.wcOpMu.Lock()
+		names, err := s.UnportableNames(ctx, wc)
+		s.wcOpMu.Unlock()
+		if err != nil {
+			// Not being able to look is not evidence that the problems are
+			// gone. The previous list stands until a sweep succeeds; publishing
+			// an empty one here would announce that everything is fine because
+			// we failed to check.
+			s.Logger.Debugf("bramka nazw: svn status: %v", err)
+			return
+		}
+		s.OnUnportableNames(names)
+	}
+	sweep()
+	ticker := time.NewTicker(UnportableSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.unportableWake:
+			sweep()
+		case <-ticker.C:
+			sweep()
+		}
+	}
 }

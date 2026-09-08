@@ -76,6 +76,29 @@ func (p Problem) String() string {
 	return "nazwa jest nieprzedstawialna"
 }
 
+// Token is the stable machine name of a Kind. It crosses the client/server
+// contract; the sentence a person reads is composed where it is shown, the way
+// PassportIssue carries an errcat key rather than a translated sentence.
+func (k Kind) Token() string {
+	switch k {
+	case ReservedDevice:
+		return "reserved_device"
+	case ReservedRune:
+		return "reserved_rune"
+	case ControlRune:
+		return "control_rune"
+	case Separator:
+		return "separator"
+	case TrailingDotOrSpace:
+		return "trailing_dot_or_space"
+	case Empty:
+		return "empty"
+	case CaseCollision:
+		return "case_collision"
+	}
+	return "unknown"
+}
+
 // reservedRunes is the Win32 set. The separators are handled separately,
 // because a separator inside a name is a different mistake from a forbidden
 // character, and clientprofile rejects those earlier for its own reasons.

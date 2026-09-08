@@ -392,3 +392,10 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+
+.repo-unportable { grid-column:1/-1; margin-top:11px; padding:10px 12px; border:1px solid rgba(244,199,109,.28); border-radius:10px; background:rgba(244,199,109,.06); }
+.repo-unportable strong { display:block; margin-bottom:6px; color:var(--amber); font-size:11px; font-weight:800; letter-spacing:.04em; }
+.repo-unportable ul { margin:0; padding:0; list-style:none; display:grid; gap:5px; }
+.repo-unportable li { display:grid; grid-template-columns:minmax(0,auto) minmax(0,1fr); gap:9px; align-items:baseline; font-size:12px; }
+.repo-unportable code { color:#f0e2c2; font-size:11px; word-break:break-all; }
+.repo-unportable span { color:var(--soft-text); }

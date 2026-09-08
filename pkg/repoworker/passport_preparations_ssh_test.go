@@ -45,6 +45,10 @@ func preparationSigner(t *testing.T) (ssh.Signer, string) {
 }
 
 func passportSSHFixture(t *testing.T, dispatcher Dispatcher, clientID string, dropReply func(int32) bool) (*controlclient.Client, controlclient.Config, *atomic.Int32) {
+	return controlSSHFixture(t, dispatcher, clientID, dropReply, func(int32) bool { return false })
+}
+
+func controlSSHFixture(t *testing.T, dispatcher Dispatcher, clientID string, dropReply, dropExit func(int32) bool, onRequest ...func(io.Closer)) (*controlclient.Client, controlclient.Config, *atomic.Int32) {
 	t.Helper()
 	host, _ := preparationSigner(t)
 	identity, identityPath := preparationSigner(t)
@@ -100,6 +104,9 @@ func passportSSHFixture(t *testing.T, dispatcher Dispatcher, clientID string, dr
 							continue
 						}
 						_ = req.Reply(true, nil)
+						for _, hook := range onRequest {
+							hook(server)
+						}
 						var out bytes.Buffer
 						err := dispatcher.Serve(t.Context(), server.Permissions.Extensions["client_id"], channel, &out)
 						n := handled.Add(1)
@@ -114,6 +121,10 @@ func passportSSHFixture(t *testing.T, dispatcher Dispatcher, clientID string, dr
 							_, _ = io.WriteString(channel.Stderr(), err.Error())
 						} else {
 							_, _ = channel.Write(out.Bytes())
+						}
+						if dropExit(n) {
+							_ = channel.Close()
+							return
 						}
 						_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{code}))
 						_ = channel.Close()

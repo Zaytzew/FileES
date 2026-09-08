@@ -122,7 +122,7 @@ func (c *Client) Exchange(ctx context.Context, ticket control.Ticket) (control.R
 	}
 	response, readErr := io.ReadAll(io.LimitReader(stdout, MaxResponseBytes+1))
 	waitErr := session.Wait()
-	if waitErr != nil {
+	if waitErr != nil && !interruptedControlTransport(waitErr) {
 		return control.Result{}, fmt.Errorf("repository control failed: %w: %s", waitErr, stderr.String())
 	}
 	if readErr != nil {
@@ -133,11 +133,17 @@ func (c *Client) Exchange(ctx context.Context, ticket control.Ticket) (control.R
 	}
 	result, err := control.ParseResult(bytes.TrimSpace(response))
 	if err != nil {
+		if waitErr != nil {
+			return control.Result{}, fmt.Errorf("repository control result interrupted: %w", waitErr)
+		}
 		return control.Result{}, fmt.Errorf("parse repository control result: %w", err)
 	}
 	if result.OperationID != ticket.OperationID || result.RequestID != ticket.RequestID || result.Type != ticket.Type {
 		return control.Result{}, errors.New("repository control result does not match ticket")
 	}
+	// The authenticated, fully validated receipt is the durable result. An
+	// SSH disconnect after its last byte cannot turn that result into failure
+	// merely because the wrapper's exit-status packet did not arrive.
 	return result, nil
 }
 

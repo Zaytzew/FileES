@@ -6,8 +6,20 @@ commit, lock/unlock, bounded log and CatTo when the existing Windows opt-in
 is enabled. `svnfetch` uses CatTo for Windows distribution downloads.
 Native errors never trigger a retry using CLI. Commit callback `null`
 does not publish a foreign HEAD or consume a shout; lock outcomes are checked
-per path, even at exit 0. Atomic commits above 512 explicit paths refuse
-before mutation; they are not silently split.
+per path, even at exit 0. The subsequent 2026-09-09 target-list checkpoint
+removes the 512-target commit barrier without splitting transactions.
+
+`commit --targets-stdin` reads UTF-8 paths terminated by NUL (including the
+last path). It is mutually exclusive with argv targets. The entire stream
+is validated before opening the WC or contacting the repository: at most
+65536 paths and 16 MiB, no duplicates, invalid UTF-8, control characters,
+empty records, traversal or metadata paths. EOF mid-record refuses. Stdin
+is binary on Windows and does not depend on Windows command-line length.
+The Go adapter always uses this mode after checking feature
+`commit_targets_stdin_v1`; an older helper refuses before the commit.
+No temporary response files or split transactions. The separate local/argv
+path batches remain 512; this does not remove every possible argv limit.
+Native Windows and OpenBSD acceptance: reports/NATIVE_SVN_TARGETS_2026-09-09.md.
 
 Update/checkout advertise and require `features: ["update_changes"]`.
 Their receipt carries `changes: [{path, action}]` (plain A/U/D) alongside

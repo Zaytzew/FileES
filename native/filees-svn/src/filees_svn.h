@@ -36,6 +36,10 @@ svn_error_t *filees_record_move(const char *wc_arg, const char *old_rel,
                                 const char *new_rel, svn_boolean_t live,
                                 const char **state, apr_pool_t *pool);
 
+/* Remote verbs. No working copy, no .filees marker; see ra.c for the guard. */
+svn_error_t *filees_ra_cat(const char *url, const char *out_path,
+                           svn_revnum_t revision, apr_pool_t *pool);
+
 svn_error_t *filees_wc_add(const char *wc, svn_boolean_t live,
                            const char **rels, int n, apr_pool_t *pool);
 svn_error_t *filees_wc_delete(const char *wc, svn_boolean_t live,

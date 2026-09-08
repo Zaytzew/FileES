@@ -12,6 +12,29 @@ operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
 also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,
 resolve) through the helper.
 
+`cat` is the first remote verb, and the first with no working copy at all. It
+writes one repository file to an absolute `--out`, optionally at `--revision`,
+and reports the byte count. Two decisions are worth knowing:
+
+- **Keywords are not expanded**, unlike the CLI default. Expansion substitutes
+  the URL and revision into the bytes, so the same committed file would differ
+  depending on where it was fetched from; this verb carries release material
+  verified by signature, and a signature over context-dependent bytes verifies
+  nothing. Verified 2026-09-08 against the production server: the output is
+  byte-for-byte identical to `svn cat` for real material.
+- **It never overwrites, and never leaves a partial.** The download lands on a
+  `.part` sibling opened exclusively and is renamed only after the stream
+  closes, so an interrupted self-update leaves nothing that looks finished. A
+  failed fetch removes the partial, or the next attempt would fail on the
+  exclusive open instead of on the real reason.
+
+Since it has no `.filees` marker to stand on, its guard is different in kind:
+the target must be a URL and nothing else, and `--out` must be absolute with no
+symlink anywhere in its parent chain.
+
+Not routed by the Go adapter yet; `internal/serverinstall/svnfetch` still calls
+the CLI and buffers the whole file in memory.
+
 `info` is implemented in the helper but **not yet routed** by the Go adapter.
 Its two callers need deciding first: `Revision()` accepts a URL as well as a
 working-copy path (client.go:666), and `VerifyCommittedMove` asks for

@@ -242,7 +242,11 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 		if notifier != nil {
 			for _, notification := range alerts.Observe(snapshot) {
 				notification := notification
-				go func() { _ = notifier.Notify(host.Context(), notification) }()
+				go func() {
+					if err := notifier.Notify(host.Context(), notification); err != nil {
+						log.Printf("announcement notification failed: %v", err)
+					}
+				}()
 			}
 		}
 	})

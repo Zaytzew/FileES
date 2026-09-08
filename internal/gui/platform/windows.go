@@ -927,12 +927,15 @@ func (b *WindowsBackend) releaseNotification(key string) {
 // toast. The Tag field enables notification replacement for repeated events in the same group.
 func buildToastScript(n Notification, tag, aumid string) string {
 	var sb strings.Builder
+	sb.WriteString("$ErrorActionPreference='Stop';")
 	sb.WriteString("[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]|Out-Null;")
+	sb.WriteString("[Windows.Data.Xml.Dom.XmlDocument,Windows.Data.Xml.Dom.XmlDocument,ContentType=WindowsRuntime]|Out-Null;")
 	sb.WriteString("$x=New-Object Windows.Data.Xml.Dom.XmlDocument;")
 	sb.WriteString("$x.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text></text><text></text></binding></visual></toast>');")
-	sb.WriteString("$t=$x.GetElementsByTagName('text');")
-	sb.WriteString("$t[0].InnerText=" + psString(n.Title) + ";")
-	sb.WriteString("$t[1].InnerText=" + psString(n.Body) + ";")
+	sb.WriteString("$titleNode=$x.SelectSingleNode('/toast/visual/binding/text[1]');")
+	sb.WriteString("$bodyNode=$x.SelectSingleNode('/toast/visual/binding/text[2]');")
+	sb.WriteString("[void]$titleNode.AppendChild($x.CreateTextNode(" + psString(n.Title) + "));")
+	sb.WriteString("[void]$bodyNode.AppendChild($x.CreateTextNode(" + psString(n.Body) + "));")
 	sb.WriteString("$toast=New-Object Windows.UI.Notifications.ToastNotification($x);")
 	if tag != "" {
 		sb.WriteString("$toast.Tag=" + psString(tag) + ";")

@@ -140,10 +140,22 @@ type RecoveryStats struct {
 
 // PendingStats summarises changes waiting to be committed.
 type PendingStats struct {
-	Added      int   `json:"added"`
-	Modified   int   `json:"modified"`
-	Deleted    int   `json:"deleted"`
-	TotalBytes int64 `json:"total_bytes"`
+	Added    int `json:"added"`
+	Modified int `json:"modified"`
+	Deleted  int `json:"deleted"`
+	// Renamed and RenameUncertain were missing while their bytes were counted,
+	// so a stalled working copy projected "nothing pending" over a non-zero
+	// size (NATIVE-PENDING-PROJECTION, measured 2026-09-08 on a live daemon:
+	// added/modified/deleted all 0, total_bytes 41, publication held).
+	//
+	// They are separate fields rather than one because they mean different
+	// things to the person reading them. A rename is queued work. A rename
+	// whose ancestry could not be confirmed is work that is NOT going to
+	// publish until something changes - counting it as ordinary queue depth
+	// would say "soon" about something that is stuck.
+	Renamed         int   `json:"renamed"`
+	RenameUncertain int   `json:"rename_uncertain"`
+	TotalBytes      int64 `json:"total_bytes"`
 }
 
 // Decision represents a pending user interaction created by the daemon (§10).

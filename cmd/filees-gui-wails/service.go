@@ -967,7 +967,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			State: repo.State, DisplayState: string(repo.DisplayState()), Connectivity: repo.Connectivity,
 			LocalRevision: repo.LocalRev, HeadRevision: repo.HeadRev,
 			WorkingCopyBytes: repo.WorkingCopyBytes, WorkingCopySizeKnown: repo.WorkingCopySizeKnown,
-			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted,
+			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted + repo.Pending.Renamed + repo.Pending.RenameUncertain,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			UnportableNames:  unportableNames(repo.UnportableNames),
 			CurrentOperation: operation, ReservationCount: repo.ReservationCount,

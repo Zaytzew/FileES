@@ -655,7 +655,13 @@ type cacheEntry struct {
 	Op    string `json:"op"`
 }
 
-// readPendingStats counts added/modified/deleted entries in cache.json.
+// readPendingStats counts every operation the cache holds.
+//
+// It counted three of the five and summed bytes for four, so a working copy
+// held on an unconfirmed rename reported an empty queue over a non-zero size.
+// Whatever is added to opName must be added here too: an operation the cache
+// can hold and this cannot count is a projection that disagrees with the
+// daemon about whether there is work.
 func readPendingStats(path string) contract.PendingStats {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -674,6 +680,10 @@ func readPendingStats(path string) contract.PendingStats {
 			ps.Modified++
 		case "deleted":
 			ps.Deleted++
+		case "renamed":
+			ps.Renamed++
+		case "rename_uncertain":
+			ps.RenameUncertain++
 		}
 		if e.Op != "deleted" && !e.IsDir && filepath.IsAbs(e.Abs) {
 			if info, err := os.Stat(e.Abs); err == nil && info.Mode().IsRegular() {

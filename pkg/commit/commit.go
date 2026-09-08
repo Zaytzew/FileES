@@ -150,16 +150,17 @@ type Service struct {
 	Emit func(evType string, payload any)
 
 	// internal
-	repoID         string // set from Run(); used by emit()
-	wc             string // set from Run(); local shout inbox / last_seen
-	mu             sync.Mutex
-	unportableWake chan struct{}
-	wcOpMu         sync.Mutex            // serialize publication, poll/update and event merging
-	cacheSaveMu    sync.Mutex            // serialize cache snapshots and their durable replacement
-	staging        map[string]*stageItem // rel path -> info
-	cachePath      string                // .filees/commit_cache/cache.json
-	lastShout      time.Time
-	lastCommit     time.Time // last successful commit (for size-adaptive interval)
+	repoID          string // set from Run(); used by emit()
+	wc              string // set from Run(); local shout inbox / last_seen
+	mu              sync.Mutex
+	unportableWake  chan struct{}
+	wcOpMu          sync.Mutex            // serialize publication, poll/update and event merging
+	cacheSaveMu     sync.Mutex            // serialize cache snapshots and their durable replacement
+	staging         map[string]*stageItem // rel path -> info
+	cachePath       string                // .filees/commit_cache/cache.json
+	receivedDeletes map[string]bool       // successful update removals, guarded by wcOpMu
+	lastShout       time.Time
+	lastCommit      time.Time // last successful commit (for size-adaptive interval)
 	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
 	// that actually publishes; last_seen then jumps to that revision so this
 	// installation does not badge its own shout.
@@ -436,7 +437,20 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 				lg.Infof("commit service stop: working copy moved")
 				return
 			}
-			s.acceptEvent(ev)
+			batch := []watcher.Event{ev}
+		drainEvents:
+			for len(batch) < 64 {
+				select {
+				case next, open := <-events:
+					if !open {
+						break drainEvents
+					}
+					batch = append(batch, next)
+				default:
+					break drainEvents
+				}
+			}
+			s.acceptEvents(ctx, batch)
 			stagedBytes, watermarkEligible := s.watermarkState(time.Now())
 			if stagedBytes >= s.Rules.BacklogFlushBytes && watermarkEligible && !s.isOfflineBackoff() {
 				// A high watermark may accelerate stable modifications, but it must
@@ -472,15 +486,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 }
 
 func (s *Service) acceptEvent(ev watcher.Event) {
-	s.wcOpMu.Lock()
-	defer s.wcOpMu.Unlock()
-	if s.refuseUnportable(ev) {
-		return
-	}
-	s.recordActivity(ev.Rel, ev.Op, activity.Detected, 0, "")
-	s.addEventLocked(ev)
-	s.saveCache()
-	s.recordActivity(ev.Rel, ev.Op, activity.Pending, 0, "")
+	s.acceptEvents(context.Background(), []watcher.Event{ev})
 }
 
 // recordCommitFailure writes the classified fault to errors.jsonl and the
@@ -644,6 +650,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	s.ReconcileOwnedAccess(ctx, wc)
 
 	s.Logger.Infof("poll: updated to r%d", headRev)
+	s.RecordUpdate(ctx, s.repoID, wc, out)
 	s.reconcileShouts(ctx, wc)
 	_ = s.writeStateString(headRevPath, fmt.Sprintf("%d\n", headRev))
 	if s.OnHeadRevision != nil {
@@ -988,6 +995,13 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		// Preserve the whole batch for retry instead of manufacturing a no-op.
 		return err
 	}
+	var normalPaths []string
+	for _, rel := range all {
+		if st[rel] == "normal" {
+			normalPaths = append(normalPaths, rel)
+		}
+	}
+	clean := s.cleanObservedPaths(ctx, wc, normalPaths)
 
 	// Rename detection is content-based and may refer to a source retained only
 	// in an old manifest. If that source is no longer versioned, degrade safely
@@ -1047,11 +1061,11 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	// immediately before staging to close the debounce/status race window.
 	toSvnAdd := make([]string, 0, len(addPaths))
 	alreadyAdded := make([]string, 0, len(addPaths))
-	type publishedElsewhere struct {
+	type reconciledPath struct {
 		rel string
 		op  watcher.OpType
 	}
-	var alreadyPublished []publishedElsewhere
+	var reconciled []reconciledPath
 	for _, p := range addPaths {
 		if _, err := os.Stat(filepath.Join(wc, filepath.FromSlash(p))); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -1069,16 +1083,26 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		} else if item == "added" {
 			alreadyAdded = append(alreadyAdded, p)
 			s.Logger.Debugf("skip svn add %s (already staged)", p)
-		} else if item == "normal" {
-			// Already published — by an earlier run of this process, by the
-			// initial-import path, or by a restart that raced this one. The
-			// activity journal must be told explicitly: nothing else ever
-			// advances an entry past Pending except an in-process commit
-			// success below, so without this call it would hang there forever.
+		} else if item == "modified" {
+			// The watcher can report Added for a downloaded file that the
+			// user edited before event processing. SVN already owns the path;
+			// publish the local modification rather than trying to add it.
+			modifiedPaths = append(modifiedPaths, p)
+			s.mu.Lock()
+			for _, pe := range pending {
+				if pe.item.Rel == p {
+					pe.item.Op = watcher.Modified
+				}
+			}
+			s.mu.Unlock()
+		} else if item == "normal" && clean[p] {
+			// Normal proves no outgoing work, not who published or at which
+			// revision. A download and a recovered local commit look the same
+			// here: reconcile without manufacturing publication history.
 			s.Logger.Debugf("skip add %s (status=%s)", p, item)
 			s.alreadyAccepted.Add(1)
 			s.removePendingIfUnchanged(p, pending)
-			alreadyPublished = append(alreadyPublished, publishedElsewhere{rel: p, op: watcher.Added})
+			reconciled = append(reconciled, reconciledPath{rel: p, op: watcher.Added})
 		} else {
 			// Empty and unknown statuses are inconclusive. In particular this can
 			// happen when a never-published file is renamed while its surrounding
@@ -1090,34 +1114,22 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	toSvnAdd = dedup(toSvnAdd)
 	addPaths = dedup(append(toSvnAdd, alreadyAdded...))
 
-	// MODIFY: unlike add/delete, a modified path was never given a status
-	// check before this fix, so a file already committed by another process
-	// or an earlier daemon instance (the same restart/race that "already
-	// normal" handles for add) was resubmitted to svn commit every cycle.
-	// That commit silently no-ops (nothing to commit, no revision in the
-	// output), which the success path below cannot tell apart from a real
-	// failure to parse — so it kept re-recording Pending forever instead of
-	// ever reaching Published.
+	// MODIFY: a clean local path needs reconciliation, not another commit.
+	// Neither a no-op nor remote HEAD proves a local publication receipt.
 	toCommitModified := make([]string, 0, len(modifiedPaths))
 	for _, p := range modifiedPaths {
-		if st[p] == "normal" {
+		if st[p] == "normal" && clean[p] {
 			s.Logger.Debugf("skip modify %s (status=%s)", p, st[p])
 			s.removePendingIfUnchanged(p, pending)
-			alreadyPublished = append(alreadyPublished, publishedElsewhere{rel: p, op: watcher.Modified})
+			reconciled = append(reconciled, reconciledPath{rel: p, op: watcher.Modified})
 			continue
 		}
 		toCommitModified = append(toCommitModified, p)
 	}
 	modifiedPaths = toCommitModified
 
-	if len(alreadyPublished) > 0 && s.Activity != nil {
-		if rev, err := s.Cli.Revision(ctx, s.RepoURL); err != nil {
-			s.Logger.Warnf("already-published activity: read repository revision: %v", err)
-		} else if rev > 0 {
-			for _, p := range alreadyPublished {
-				s.recordActivity(p.rel, p.op, activity.Published, rev, "")
-			}
-		}
+	for _, p := range reconciled {
+		s.recordReconciled(p.rel, p.op)
 	}
 
 	// DELETE: rozróżnij systemowe usunięcia (missing) od już zestejdżowanych (deleted)

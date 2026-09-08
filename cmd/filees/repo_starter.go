@@ -244,7 +244,7 @@ func (s *passportSession) stop() {
 	s.err = s.manager.ReleaseAll(ctx)
 }
 
-func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, sink *errmap.Sink, logger talk.Logger) bool {
+func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, sink *errmap.Sink, logger talk.Logger, received ...func(string)) bool {
 	if _, err := os.Stat(filepath.Join(wc, ".svn")); err != nil {
 		return false
 	}
@@ -268,6 +268,9 @@ func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc stri
 			logger.Warnf("svn update output: %s", out)
 		}
 		return false
+	}
+	for _, record := range received {
+		record(out)
 	}
 	return true
 }
@@ -416,7 +419,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 			logger.Warnf("checkpoint watcher manifest: %v", err)
 		}
 	}
-	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger)
+	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger, func(out string) { service.RecordUpdate(ctx, repo.ID, wc, out) })
 	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	if recovered {
 		// Migration may have made files read-only again. Reconcile only after

@@ -34,12 +34,23 @@ type Service struct {
 	mu sync.Mutex
 	// appliedVersion bridges the short interval after an update replaces the
 	// files but before the supervisor restarts this still-running process.
-	appliedVersion string
+	appliedVersion   string
+	appliedReleaseID string
+	appliedRestart   bool
 }
 
 func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	if service.appliedRestart {
+		return contract.UpdateStatus{
+			State: "restart_required", Channel: service.Channel,
+			CurrentVersion:   canonicalClientVersion(service.CurrentVersion),
+			AvailableVersion: service.appliedVersion, ReleaseID: service.appliedReleaseID,
+			Summary:         "Aktualizacja jest zainstalowana. Uruchom FileES ponownie, aby używać nowej wersji.",
+			RestartRequired: true,
+		}, nil
+	}
 	resolved, state, err := service.resolve(ctx)
 	if err != nil {
 		return contract.UpdateStatus{}, err
@@ -60,6 +71,13 @@ func (service *Service) Status(ctx context.Context) (contract.UpdateStatus, erro
 func (service *Service) Plan(ctx context.Context) (contract.UpdatePlanResult, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	if service.appliedRestart {
+		return contract.UpdatePlanResult{
+			CurrentVersion:   canonicalClientVersion(service.CurrentVersion),
+			AvailableVersion: service.appliedVersion, ReleaseID: service.appliedReleaseID,
+			RestartRequired: true,
+		}, nil
+	}
 	resolved, state, err := service.resolve(ctx)
 	if err != nil {
 		return contract.UpdatePlanResult{}, err
@@ -84,6 +102,9 @@ func (service *Service) Plan(ctx context.Context) (contract.UpdatePlanResult, er
 func (service *Service) Apply(ctx context.Context) (contract.UpdateApplyResult, error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	if service.appliedRestart {
+		return contract.UpdateApplyResult{InstalledVersion: service.appliedVersion, RestartRequired: true}, nil
+	}
 	resolved, state, err := service.resolve(ctx)
 	if err != nil {
 		return contract.UpdateApplyResult{}, err
@@ -99,6 +120,12 @@ func (service *Service) Apply(ctx context.Context) (contract.UpdateApplyResult, 
 	if err := service.Installer.Apply(ctx, resolved); err != nil {
 		return contract.UpdateApplyResult{}, err
 	}
+	// The files have changed even if persisting the anti-rollback checkpoint
+	// subsequently fails. Keep the restart latch for this process lifetime;
+	// GUI reconnects and an unavailable release server must not erase it.
+	service.appliedVersion = resolved.Manifest.Version
+	service.appliedReleaseID = resolved.Envelope.ReleaseID
+	service.appliedRestart = restart
 	next, err := state.Advance(resolved.Envelope, resolved.Manifest.Version)
 	if err != nil {
 		return contract.UpdateApplyResult{}, err
@@ -106,7 +133,6 @@ func (service *Service) Apply(ctx context.Context) (contract.UpdateApplyResult, 
 	if err := service.State.Save(next); err != nil {
 		return contract.UpdateApplyResult{}, fmt.Errorf("persist update high-water mark: %w", err)
 	}
-	service.appliedVersion = resolved.Manifest.Version
 	return contract.UpdateApplyResult{InstalledVersion: resolved.Manifest.Version, RestartRequired: restart}, nil
 }
 

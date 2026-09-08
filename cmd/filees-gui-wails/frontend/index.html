@@ -110,11 +110,14 @@
         </section>
         <section id="update-card" class="side-card" hidden>
           <div class="section-heading compact">
-            <div><p class="eyebrow">Wydanie</p><h2>Dostępna aktualizacja</h2></div>
+            <div><p class="eyebrow">Wydanie</p><h2 id="update-title">Dostępna aktualizacja</h2></div>
             <div class="side-card-controls"><span id="update-version" class="count-badge">—</span><button class="side-card-toggle" type="button" data-toggle-card="update-body" aria-expanded="true" aria-controls="update-body" title="Zwiń aktualizację" aria-label="Zwiń aktualizację"><span aria-hidden="true">⌄</span></button></div>
           </div>
           <div id="update-body" class="side-card-body">
             <p id="update-summary" class="update-summary"></p>
+            <div id="update-restart-actions" class="update-actions" hidden>
+              <button class="primary" type="button" data-action="restart_filees">Uruchom ponownie</button>
+            </div>
             <div id="update-actions" class="update-actions" data-global-action="update">
               <button type="button" data-action="update_plan">Pokaż plan</button>
               <button class="primary" type="button" data-action="update_apply">Zaktualizuj</button>
@@ -201,6 +204,9 @@
       </section>
       <footer>
         <button id="dismiss-version" type="button">Zamknij</button>
+        <div id="version-restart-actions" class="update-actions" hidden>
+          <button class="primary" type="button" data-action="restart_filees">Uruchom ponownie</button>
+        </div>
         <div id="version-update-actions" class="update-actions" data-global-action="update" hidden>
           <button type="button" data-action="update_plan">Pokaż plan</button>
           <button class="primary" type="button" data-action="update_apply">Zaktualizuj</button>

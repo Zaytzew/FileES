@@ -30,6 +30,31 @@ func TestBuildMergesErrorsAndAggregatesPublishedRevisionNewestFirst(t *testing.T
 	}
 }
 
+func TestJournalSeparatesReceivedFromPublishedAtSameRevision(t *testing.T) {
+	vm := app.ViewModel{Activity: []app.ActivityViewModel{
+		{RepoID: "repo", Path: "incoming-a", Stage: "received", Revision: 117},
+		{RepoID: "repo", Path: "incoming-b", Stage: "received", Revision: 117},
+		{RepoID: "repo", Path: "outgoing", Stage: "published", Revision: 117},
+		{RepoID: "repo", Path: "clean", Stage: "reconciled"},
+	}}
+	entries := Build(vm)
+	if len(entries) != 3 {
+		t.Fatalf("merged directions: %+v", entries)
+	}
+	want := map[string]bool{"repo — pobrano zmiany: 2 elementy · r117": false, "repo / outgoing — opublikowano · r117": false, "repo / clean — uzgodniono stan (bez wysyłania)": false}
+	for _, entry := range entries {
+		if _, ok := want[entry.Summary]; !ok {
+			t.Fatalf("unexpected: %+v", entry)
+		}
+		want[entry.Summary] = true
+	}
+	for text, seen := range want {
+		if !seen {
+			t.Fatalf("missing %s", text)
+		}
+	}
+}
+
 func TestBuildCollapsesConnectivityNoiseWithoutTouchingOtherErrors(t *testing.T) {
 	now := time.Date(2026, 8, 23, 14, 0, 0, 0, time.Local)
 	vm := app.ViewModel{

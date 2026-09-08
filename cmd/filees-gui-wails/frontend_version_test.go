@@ -80,3 +80,20 @@ func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
 		t.Fatal("hidden version update actions are overridden by their flex layout")
 	}
 }
+
+func TestRestartRequiredProjectsToPersistentCardAndVersionDialog(t *testing.T) {
+	snapshot := projectViewModel(guiapp.ViewModel{Update: &guiapp.UpdateViewModel{State: "restart_required", CurrentVersion: "967", AvailableVersion: "970", RestartRequired: true}})
+	if snapshot.Update == nil || snapshot.Update.State != "restart_required" || !snapshot.Update.RestartRequired {
+		t.Fatalf("update=%+v", snapshot.Update)
+	}
+	markup := embeddedFrontendFile(t, "frontend/index.html")
+	script := embeddedFrontendFile(t, "frontend/app.js")
+	for _, id := range []string{"update-restart-actions", "version-restart-actions", "update-title"} {
+		if !strings.Contains(markup, `id="`+id+`"`) || !strings.Contains(script, `#`+id) {
+			t.Fatalf("missing restart projection %s", id)
+		}
+	}
+	if !strings.Contains(markup, `data-action="restart_filees"`) || !strings.Contains(script, `update?.state === "restart_required" && update.restart_required`) {
+		t.Fatal("restart must follow daemon state and use existing lifecycle action")
+	}
+}

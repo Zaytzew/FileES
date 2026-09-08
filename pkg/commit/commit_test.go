@@ -61,7 +61,7 @@ func (c *stagingClient) Status(_ context.Context, _ string, paths []string) ([]c
 	var out []client.StatusEntry
 	for _, path := range paths {
 		if item, ok := c.statuses[path]; ok {
-			out = append(out, client.StatusEntry{Path: path, Item: item})
+			out = append(out, client.StatusEntry{Path: path, Item: item, Props: "none"})
 		}
 	}
 	return out, nil
@@ -208,7 +208,7 @@ func TestActivityMarksPermanentCommitFailureAsFailedWithCorrelatedErrorID(t *tes
 	}
 }
 
-func TestActivityAdvancesAlreadyPublishedPathToPublished(t *testing.T) {
+func TestActivityReconcilesCleanPathWithoutClaimingPublication(t *testing.T) {
 	wc := t.TempDir()
 	abs := filepath.Join(wc, "already-normal.txt")
 	if err := os.WriteFile(abs, []byte("done"), 0o600); err != nil {
@@ -223,34 +223,28 @@ func TestActivityAdvancesAlreadyPublishedPathToPublished(t *testing.T) {
 			"already-normal.txt": {Rel: "already-normal.txt", Abs: abs, Op: watcher.Added, FirstSeen: time.Now().Add(-time.Second)},
 		},
 	}
-	// This is exactly the lost-reply / initial-import / prior-instance scenario:
-	// the path was published through some route other than this commit, and
-	// svn status is the only proof. Without the fix, the entry recorded by a
-	// hypothetical earlier acceptEvent would stay Pending forever.
+	// Normal also describes a downloaded path. It proves no outgoing work,
+	// but cannot attribute publication to this client.
 	if err := service.tryCommitMode(context.Background(), wc, true); err != nil {
 		t.Fatalf("reconciliation: %v", err)
 	}
 	if len(recorder.entries) != 1 {
-		t.Fatalf("activity=%+v, want exactly one Published entry", recorder.entries)
+		t.Fatalf("activity=%+v, want exactly one Reconciled entry", recorder.entries)
 	}
-	if entry := recorder.entries[0]; entry.Stage != activity.Published || entry.Revision != 7 {
-		t.Fatalf("activity=%+v, want Published at revision 7", entry)
+	if entry := recorder.entries[0]; entry.Stage != activity.Reconciled || entry.Revision != 0 {
+		t.Fatalf("activity=%+v, want Reconciled without a claimed revision", entry)
 	}
 }
 
-func TestActivityAdvancesAlreadyPublishedModifiedPathToPublishedInsteadOfLoopingPending(t *testing.T) {
+func TestActivityReconcilesCleanModifiedPathWithoutPublishing(t *testing.T) {
 	wc := t.TempDir()
 	abs := filepath.Join(wc, "style.md")
 	if err := os.WriteFile(abs, []byte("edited"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	recorder := &activityRecorder{}
-	// A modified path whose SVN status is already "normal": another daemon
-	// instance (or an earlier commit cycle before a restart raced this one)
-	// already published this exact change. Before the fix, a Modified path
-	// never got a status check at all, so it was resubmitted to svn commit
-	// every cycle; the resulting no-op commit (nothing to commit, no
-	// revision in the output) rolled the entry back to Pending forever.
+	// A normal path must not be re-committed or attributed to a local
+	// publication: it may equally have arrived through update.
 	cli := &stagingClient{statuses: map[string]string{"style.md": "normal"}, revision: 9}
 	service := &Service{
 		Cli: cli, Rules: Rules{NewLatency: time.Millisecond, MaxBatchFiles: 10, MaxBatchBytes: 1024},
@@ -266,10 +260,10 @@ func TestActivityAdvancesAlreadyPublishedModifiedPathToPublishedInsteadOfLooping
 		t.Fatalf("commits=%d, want 0 (already-normal path must not be resubmitted)", cli.commits)
 	}
 	if len(recorder.entries) != 1 {
-		t.Fatalf("activity=%+v, want exactly one Published entry", recorder.entries)
+		t.Fatalf("activity=%+v, want exactly one Reconciled entry", recorder.entries)
 	}
-	if entry := recorder.entries[0]; entry.Stage != activity.Published || entry.Revision != 9 || entry.Kind != activity.Modified {
-		t.Fatalf("activity=%+v, want Modified Published at revision 9", entry)
+	if entry := recorder.entries[0]; entry.Stage != activity.Reconciled || entry.Revision != 0 || entry.Kind != activity.Modified {
+		t.Fatalf("activity=%+v, want Modified Reconciled without a claimed revision", entry)
 	}
 }
 
@@ -485,8 +479,8 @@ func TestRunDoesNotFlushImmatureAddedFileAtBacklogWatermark(t *testing.T) {
 	if got := s.stagingLen(); got != 1 {
 		t.Fatalf("staging=%d, want 1 immature add", got)
 	}
-	if cli.statusCalls != 0 {
-		t.Fatalf("immature watermark caused %d svn status calls", cli.statusCalls)
+	if cli.statusCalls > 1 {
+		t.Fatalf("immature watermark caused %d status calls, beyond local intake classification", cli.statusCalls)
 	}
 
 	// Shutdown drain is deliberately forceful and must still publish the file.

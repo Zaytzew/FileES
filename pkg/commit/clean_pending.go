@@ -60,7 +60,7 @@ func (s *Service) reconcileCleanPending(ctx context.Context, wc string) {
 		}
 		s.mu.Unlock()
 		if current == c.item && current.ver == c.version {
-			s.forgetActivity(rel)
+			s.recordReconciled(rel, c.item.Op)
 		}
 	}
 	if changed {

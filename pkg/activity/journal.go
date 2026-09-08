@@ -30,6 +30,8 @@ const (
 	Pending    Stage = "pending"
 	Publishing Stage = "publishing"
 	Published  Stage = "published"
+	Received   Stage = "received"
+	Reconciled Stage = "reconciled"
 	Failed     Stage = "failed"
 )
 
@@ -211,9 +213,13 @@ func validate(entry Entry) error {
 		if entry.Revision != 0 || entry.ErrorID != "" {
 			return errors.New("unfinished activity cannot have a result")
 		}
-	case Published:
+	case Published, Received:
 		if entry.Revision <= 0 || entry.ErrorID != "" {
 			return errors.New("published activity requires a revision")
+		}
+	case Reconciled:
+		if entry.Revision != 0 || entry.ErrorID != "" {
+			return errors.New("reconciled activity cannot claim a commit")
 		}
 	case Failed:
 		if strings.TrimSpace(entry.ErrorID) == "" || entry.Revision != 0 {

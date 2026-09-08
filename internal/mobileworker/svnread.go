@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
+	"filees/internal/svnurl"
 	"fmt"
 	"io"
 	"net/url"
@@ -195,7 +196,23 @@ func (c *countWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// runStream never lets a child ask a human anything.
+//
+// Measured 2026-09-09: a malformed file:// URL made svn treat a Windows drive
+// letter as a remote host, and svn - invoked without --non-interactive - then
+// prompted for credentials and waited on stdin. The context here is often
+// Background(), so nothing ever cancelled it: the worker hung until the test
+// harness gave up at ten minutes. On the server the same shape would hang the
+// mobile worker outright, and no URL has to be malformed for it - an
+// unreachable or misconfigured remote is enough.
+//
+// The flag is added here rather than at the seventeen call sites so a new one
+// inherits it. svnlook takes no such flag and needs none: it never
+// authenticates.
 func runStream(ctx context.Context, stdout io.Writer, name string, args ...string) error {
+	if base := strings.ToLower(filepath.Base(name)); base == "svn" || base == "svn.exe" {
+		args = append([]string{"--non-interactive"}, args...)
+	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = stdout
 	cmd.Env = svnProcessEnvironment()
@@ -277,8 +294,11 @@ func (r SVNReader) Log(ctx context.Context, repoPath string, from, to int64) ([]
 }
 
 func fileURL(absPath string) string {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(absPath)}
-	return u.String()
+	// url.URL with a Windows path yields file://C:/... , where the drive letter
+	// is read as a host. Harmless where this runs today - a POSIX path already
+	// starts with the slash it needs - but it is the same defect found in five
+	// other places, so it uses the one rule rather than a sixth copy.
+	return svnurl.File(absPath)
 }
 
 // fileURLAt joins a repository filesystem path with a logical relative path,

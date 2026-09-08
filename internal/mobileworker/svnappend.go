@@ -69,7 +69,7 @@ func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filen
 	if err := runStream(ctx, io.Discard, s.svn(), "add", "-q", fileInWC); err != nil {
 		return 0, err
 	}
-	if err := runStream(ctx, io.Discard, s.svn(), "propset", "-q", "svn:needs-lock", "*", fileInWC); err != nil {
+	if err := s.propset(ctx, "svn:needs-lock", "*", fileInWC); err != nil {
 		return 0, err
 	}
 	// The mobile channel is append-only, so its svn:needs-lock states a
@@ -78,7 +78,7 @@ func (s SVNAppender) AppendFile(ctx context.Context, repoPath, parentPath, filen
 	// edit passports. Marking that intent explicitly is what lets the policy's
 	// rollback (passport.ClearNeedsLock) leave them alone instead of reading
 	// the bare property as something it had set itself.
-	if err := runStream(ctx, io.Discard, s.svn(), "propset", "-q", passport.AppendOnlyProperty, "*", fileInWC); err != nil {
+	if err := s.propset(ctx, passport.AppendOnlyProperty, "*", fileInWC); err != nil {
 		return 0, err
 	}
 	if err := runStream(ctx, io.Discard, s.svn(), "commit", wc, "-m", "mobile append", "--with-revprop", "filees:request-id="+requestID); err != nil {
@@ -149,10 +149,10 @@ func (s SVNAppender) CommitTree(ctx context.Context, repoPath, parentPath string
 			if err := runStream(ctx, io.Discard, s.svn(), "add", "-q", fileInWC); err != nil {
 				return 0, err
 			}
-			if err := runStream(ctx, io.Discard, s.svn(), "propset", "-q", "svn:needs-lock", "*", fileInWC); err != nil {
+			if err := s.propset(ctx, "svn:needs-lock", "*", fileInWC); err != nil {
 				return 0, err
 			}
-			if err := runStream(ctx, io.Discard, s.svn(), "propset", "-q", passport.AppendOnlyProperty, "*", fileInWC); err != nil {
+			if err := s.propset(ctx, passport.AppendOnlyProperty, "*", fileInWC); err != nil {
 				return 0, err
 			}
 		}
@@ -228,6 +228,20 @@ func copyFile(src, dst string) error {
 	}
 	defer in.Close()
 	out, err := os.Create(dst)
+	if err != nil && os.IsPermission(err) {
+		// svn:needs-lock leaves the working-copy file read-only whenever no
+		// lock is held, and this worker overwrites exactly such files when a
+		// tree upload replaces one. It is the authority over this working
+		// copy, so it clears the bit rather than failing; os.Chmod is the
+		// portable spelling - on Windows it toggles the read-only attribute,
+		// on POSIX the mode. Measured 2026-09-09 on Windows, where the second
+		// upload of the same name failed with \"Access is denied\".
+		if info, statErr := os.Stat(dst); statErr == nil && info.Mode().IsRegular() {
+			if chmodErr := os.Chmod(dst, 0o600); chmodErr == nil {
+				out, err = os.Create(dst)
+			}
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -240,4 +254,34 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// propset sets a property without letting its value pass through argv.
+//
+// A bare "*" does not survive argv on Windows: svn.exe is linked with CRT
+// wildcard expansion, so the value is expanded into the current directory's
+// listing and every argument after it shifts one place. Measured 2026-09-09:
+// running this package's tests set filees:append-only and svn:needs-lock on
+// eighteen of this repository's own source files, because `go test` runs with
+// the package directory as the working directory and the wildcard found it.
+// The property value recorded was "append.go" - the first entry of the
+// listing - which is what a shifted argument looks like from the outside.
+//
+// The server is OpenBSD, where argv is not expanded, so production was never
+// affected. That is a reason to fix it rather than to leave it: the shape only
+// looks harmless because of where it happens to run.
+func (s SVNAppender) propset(ctx context.Context, name, value, target string) error {
+	f, err := os.CreateTemp("", "filees-propvalue")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(value); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return runStream(ctx, io.Discard, s.svn(), "propset", "-q", name, "--file", f.Name(), target)
 }

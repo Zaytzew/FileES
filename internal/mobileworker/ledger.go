@@ -3,6 +3,7 @@ package mobileworker
 import (
 	"encoding/json"
 	"errors"
+	"filees/internal/fsdurable"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,10 +87,5 @@ func (l Ledger) Put(rec Record) error {
 	if err := os.Rename(tmpPath, l.path(rec.RequestID)); err != nil {
 		return err
 	}
-	dir, err := os.Open(l.Dir)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return fsdurable.SyncDir(l.Dir)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"filees/internal/svnurl"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,7 +60,7 @@ func TestCompletedAcquireObservationRecoveryRealSVN(t *testing.T) {
 				}
 				if scenario != "absent" {
 					other := filepath.Join(t.TempDir(), "wc")
-					replacementCommand(t, "svn", "co", "file://"+filepath.Join(f.authority.Locks.RepositoriesRoot, f.req.RepoID), other)
+					replacementCommand(t, "svn", "co", svnurl.File(filepath.Join(f.authority.Locks.RepositoriesRoot, f.req.RepoID)), other)
 					owner, comment := uuid.NewString(), "competitor"
 					if scenario == "copied-comment" {
 						owner, comment = f.session.ClientID, lock.Comment
@@ -329,7 +330,7 @@ func TestPassportManagerControlRecoveryRealSVN(t *testing.T) {
 			// New worker object and new Manager recover their independently durable state.
 			svc = &PassportPreparations{Root: root, Authority: f.authority}
 			otherWC := filepath.Join(t.TempDir(), "other-wc")
-			replacementCommand(t, "svn", "checkout", "file://"+filepath.Join(f.authority.Locks.RepositoriesRoot, f.req.RepoID), otherWC)
+			replacementCommand(t, "svn", "checkout", svnurl.File(filepath.Join(f.authority.Locks.RepositoriesRoot, f.req.RepoID)), otherWC)
 			otherDoc := filepath.Join(otherWC, filepath.FromSlash(f.req.Path))
 			if scenario != "own-receipt" {
 				comment := "competing lock"

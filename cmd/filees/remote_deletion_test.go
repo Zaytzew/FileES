@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"filees/internal/svnurl"
 	"filees/pkg/clientprofile"
 	"filees/pkg/clientview"
 	"filees/pkg/ipcserver"
@@ -33,7 +34,7 @@ func TestRemoteDeletionInspectsTwoRealSVNCopiesWithoutChangingFiles(t *testing.T
 	repo := filepath.Join(root, "repo")
 	a, b := filepath.Join(root, "A"), filepath.Join(root, "B")
 	run("svnadmin", "create", repo)
-	repoURL := "file://" + filepath.ToSlash(repo)
+	repoURL := svnurl.File(repo)
 	if runtime.GOOS == "windows" {
 		repoURL = "file:///" + filepath.ToSlash(repo)
 	}

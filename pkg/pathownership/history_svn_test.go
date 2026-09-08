@@ -1,6 +1,7 @@
 package pathownership
 
 import (
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +26,7 @@ func TestCommittedSVNObjectHistory(t *testing.T) {
 		return out
 	}
 	run("svnadmin", "create", repo)
-	run("svn", "checkout", "file://"+filepath.ToSlash(repo), wc)
+	run("svn", "checkout", svnurl.File(repo), wc)
 	write := func(rel string) {
 		t.Helper()
 		p := filepath.Join(wc, rel)
@@ -43,7 +44,7 @@ func TestCommittedSVNObjectHistory(t *testing.T) {
 	}
 	snapshot := func(head int64) Snapshot {
 		t.Helper()
-		raw := run("svn", "log", "--xml", "--verbose", "--quiet", "file://"+filepath.ToSlash(repo))
+		raw := run("svn", "log", "--xml", "--verbose", "--quiet", svnurl.File(repo))
 		log, err := ParseLog(raw)
 		if err != nil {
 			t.Fatal(err)

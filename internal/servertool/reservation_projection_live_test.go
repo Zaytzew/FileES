@@ -2,6 +2,7 @@ package servertool
 
 import (
 	"context"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,7 @@ func TestQueryLiveLocksAgainstARealRepository(t *testing.T) {
 
 	root := t.TempDir()
 	// A space in the path exercises url.URL-based file:// construction —
-	// a naive "file://"+path string concatenation breaks svn's own URL
+	// a naive svnurl.File(path) string concatenation breaks svn's own URL
 	// parsing here.
 	repoPath := filepath.Join(root, "my repo")
 	if out, err := exec.Command(svnadmin, "create", repoPath).CombinedOutput(); err != nil {
@@ -37,7 +38,7 @@ func TestQueryLiveLocksAgainstARealRepository(t *testing.T) {
 			t.Fatalf("svn %v: %v: %s", args, err, out)
 		}
 	}
-	run("checkout", "file://"+repoPath, wc, "-q")
+	run("checkout", svnurl.File(repoPath), wc, "-q")
 	if err := os.WriteFile(filepath.Join(wc, "a.txt"), []byte("hello\n"), 0644); err != nil {
 		t.Fatalf("write a.txt: %v", err)
 	}

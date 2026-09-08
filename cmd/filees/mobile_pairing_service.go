@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	control "filees/pkg/control/v1"
 	contract "filees/pkg/contract/v1"
+	control "filees/pkg/control/v1"
 	"filees/pkg/controlclient"
 
 	"github.com/google/uuid"

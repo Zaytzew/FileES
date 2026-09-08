@@ -12,6 +12,7 @@ package servertool
 import (
 	"bytes"
 	"encoding/json"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,7 +37,7 @@ func TestPassportProductionHookRealSVN(t *testing.T) {
 	repoID, realmID, clientID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	repo, wc, service := filepath.Join(root, repoID), filepath.Join(root, "wc"), filepath.Join(root, "service")
 	runSupervisorCommand(t, admin, "create", repo)
-	runSupervisorCommand(t, svn, "co", "file://"+repo, wc)
+	runSupervisorCommand(t, svn, "co", svnurl.File(repo), wc)
 	doc := filepath.Join(wc, "doc")
 	if err := os.WriteFile(doc, []byte("unchanged bytes"), 0600); err != nil {
 		t.Fatal(err)

@@ -1,6 +1,7 @@
 package commit
 
 import (
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +31,7 @@ func TestAutolockPollRestoresRWAfterQuietGraceWithoutNewRevisionRealSVN(t *testi
 	}
 	root := t.TempDir()
 	repository, wc := filepath.Join(root, "repository"), filepath.Join(root, "wc")
-	url := "file://" + repository
+	url := svnurl.File(repository)
 	run("svnadmin", "create", repository)
 	run("svn", "checkout", url, wc)
 	for _, name := range []string{"doc.txt", "append-only.txt", "private.txt"} {

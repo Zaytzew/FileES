@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -611,13 +612,18 @@ func newActivationTestManager(t *testing.T) (*Manager, Config) {
 	root := t.TempDir()
 	repository, wc := filepath.Join(root, "repository"), filepath.Join(root, "wc")
 	runActivationCommand(t, svnadmin, "create", repository)
-	runActivationCommand(t, svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "init proof", "file://"+repository+"/proof")
-	runActivationCommand(t, svn, "checkout", "--non-interactive", "--no-auth-cache", "file://"+repository, wc)
+	runActivationCommand(t, svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "init proof", svnurl.File(repository)+"/proof")
+	runActivationCommand(t, svn, "checkout", "--non-interactive", "--no-auth-cache", svnurl.File(repository), wc)
 	config := Config{
 		ServerDisplayName: "Serwer testowy",
 		Root:              filepath.Join(root, "activation"), AuthorizedKeysFile: filepath.Join(root, "authorized_keys"),
 		AuthzFile: filepath.Join(root, "authz"), DataAuthzFile: filepath.Join(root, "data.authz"), ServiceWorkingCopy: wc, ServiceRepository: repository,
-		RepositoryName: "filees-service", ClientEntryPath: "/usr/local/libexec/filees/filees-client-entry",
+		// The entry path is absolute on the platform running the test. It was
+		// "/usr/local/libexec/...", which is where it really lives on the
+		// OpenBSD server but is not absolute on Windows, so New() rejected a
+		// config the test calls valid. Its content does not matter here: it is
+		// only pasted into authorized_keys as the forced command.
+		RepositoryName: "filees-service", ClientEntryPath: filepath.Join(root, "libexec", "filees-client-entry"),
 		SVNBinary: svn, SVNServeBinary: svnserve,
 	}
 	manager, err := New(config, nil)

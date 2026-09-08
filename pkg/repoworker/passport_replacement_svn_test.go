@@ -2,6 +2,7 @@ package repoworker
 
 import (
 	"context"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,7 +43,7 @@ func realReplacementFixture(t *testing.T) (*replacementFixture, string, string) 
 	repo := filepath.Join(f.authority.Locks.RepositoriesRoot, f.req.RepoID)
 	replacementCommand(t, admin, "create", repo)
 	wc := filepath.Join(t.TempDir(), "wc")
-	replacementCommand(t, "svn", "checkout", "file://"+repo, wc)
+	replacementCommand(t, "svn", "checkout", svnurl.File(repo), wc)
 	doc := filepath.Join(wc, filepath.FromSlash(f.req.Path))
 	if err := os.MkdirAll(filepath.Dir(doc), 0755); err != nil {
 		t.Fatal(err)
@@ -86,7 +87,7 @@ func TestPassportReplacementConditionalUnlockRealSVN(t *testing.T) {
 				if scenario == "replacement-in-pre-unlock" {
 					svn, _ := exec.LookPath("svn")
 					quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
-					hook = "#!/bin/sh\nexec " + quote(svn) + " lock --force --username " + quote(newcomer) + " -m newer " + quote("file://"+repo+"/"+f.req.Path) + "\n"
+					hook = "#!/bin/sh\nexec " + quote(svn) + " lock --force --username " + quote(newcomer) + " -m newer " + quote(svnurl.File(repo)+"/"+f.req.Path) + "\n"
 				}
 				if err := os.WriteFile(filepath.Join(repo, "hooks", "pre-unlock"), []byte(hook), 0755); err != nil {
 					t.Fatal(err)

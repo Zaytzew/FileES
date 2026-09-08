@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"filees/internal/svnurl"
 	"fmt"
 	"os"
 	"os/exec"
@@ -41,7 +42,7 @@ func buildCarrierRepo(t *testing.T, root, serviceWC, repoID, ownerRealm string, 
 		t.Fatalf("svnadmin create: %v: %s", err, out)
 	}
 	wc := filepath.Join(root, "wc-"+repoID)
-	if out, err := exec.Command("svn", "checkout", "-q", "file://"+repoPath, wc).CombinedOutput(); err != nil {
+	if out, err := exec.Command("svn", "checkout", "-q", svnurl.File(repoPath), wc).CombinedOutput(); err != nil {
 		t.Fatalf("svn checkout: %v: %s", err, out)
 	}
 	if err := os.WriteFile(filepath.Join(wc, carrierName), carrierBytes, 0o644); err != nil {
@@ -79,7 +80,7 @@ func realDumpBytes(t *testing.T, root string, files map[string]string) []byte {
 		t.Fatalf("svnadmin create dumpsrc: %v: %s", err, out)
 	}
 	wc := src + "-wc"
-	if out, err := exec.Command("svn", "checkout", "-q", "file://"+src, wc).CombinedOutput(); err != nil {
+	if out, err := exec.Command("svn", "checkout", "-q", svnurl.File(src), wc).CombinedOutput(); err != nil {
 		t.Fatalf("svn checkout dumpsrc: %v: %s", err, out)
 	}
 	for name, content := range files {
@@ -196,7 +197,7 @@ func TestDumpLoadServiceKeepLastRevisions(t *testing.T) {
 		t.Fatalf("svnadmin create: %v: %s", err, out)
 	}
 	wc := src + "-wc"
-	if out, err := exec.Command("svn", "checkout", "-q", "file://"+src, wc).CombinedOutput(); err != nil {
+	if out, err := exec.Command("svn", "checkout", "-q", svnurl.File(src), wc).CombinedOutput(); err != nil {
 		t.Fatalf("checkout: %v: %s", err, out)
 	}
 	for i := 1; i <= 5; i++ {
@@ -268,7 +269,7 @@ func TestDumpLoadServiceRejectsRepoWithMoreThanCarrier(t *testing.T) {
 
 	// A second commit on the "fresh" repo — no longer just a carrier.
 	wc := filepath.Join(root, "extra-wc")
-	if out, err := exec.Command("svn", "checkout", "-q", "file://"+filepath.Join(reposRoot, repoID), wc).CombinedOutput(); err != nil {
+	if out, err := exec.Command("svn", "checkout", "-q", svnurl.File(filepath.Join(reposRoot, repoID)), wc).CombinedOutput(); err != nil {
 		t.Fatalf("checkout: %v: %s", err, out)
 	}
 	if err := os.WriteFile(filepath.Join(wc, "extra.txt"), []byte("real content\n"), 0o644); err != nil {
@@ -307,7 +308,7 @@ func TestDumpLoadServiceRejectsMultiFileCarrier(t *testing.T) {
 	repoPath := filepath.Join(reposRoot, repoID)
 	exec.Command("svnadmin", "create", repoPath).Run()
 	wc := filepath.Join(root, "wc")
-	exec.Command("svn", "checkout", "-q", "file://"+repoPath, wc).Run()
+	exec.Command("svn", "checkout", "-q", svnurl.File(repoPath), wc).Run()
 	os.WriteFile(filepath.Join(wc, "carrier.dump"), realDumpBytes(t, root, map[string]string{"x.txt": "x\n"}), 0o644)
 	os.WriteFile(filepath.Join(wc, "sibling.txt"), []byte("not the carrier\n"), 0o644)
 	exec.Command("svn", "add", "-q", filepath.Join(wc, "carrier.dump")).Run()

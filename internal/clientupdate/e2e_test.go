@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"filees/internal/svnurl"
 	"fmt"
 	"os"
 	"os/exec"
@@ -84,11 +85,11 @@ func TestSignedSVNReleaseEndToEnd(t *testing.T) {
 	corruptBundle := append([]byte(nil), bundleData...)
 	corruptBundle[len(corruptBundle)/2] ^= 1
 	writeRelease("corrupt-artifact", "release-3", "3.0.0", 3, corruptBundle, false)
-	if output, err := exec.Command("svn", "import", "--non-interactive", publish, "file://"+repository, "-m", "E2E signed releases").CombinedOutput(); err != nil {
+	if output, err := exec.Command("svn", "import", "--non-interactive", publish, svnurl.File(repository), "-m", "E2E signed releases").CombinedOutput(); err != nil {
 		t.Fatalf("svn import: %v: %s", err, output)
 	}
 
-	fetcher := svnfetch.SVN{RepoURL: "file://" + repository, Timeout: 10 * time.Second}
+	fetcher := svnfetch.SVN{RepoURL: svnurl.File(repository), Timeout: 10 * time.Second}
 	resolver := &releaseenvelope.Resolver{
 		Fetcher: fetcher, Verifier: releaseenvelope.Ed25519Verifier{Keys: map[string][]byte{"e2e-key": publicFile}},
 		TrustedKeys: []string{"e2e-key"},

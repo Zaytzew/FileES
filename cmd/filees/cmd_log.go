@@ -49,11 +49,15 @@ func cmdLog(args []string) int {
 
 func printErrRecord(e contract.ErrorRecord) {
 	ts := e.TS
-	if len(ts) > 19 { ts = ts[:19] }
+	if len(ts) > 19 {
+		ts = ts[:19]
+	}
 	details := ""
 	if e.Details != "" {
 		d := e.Details
-		if len(d) > 80 { d = d[:77] + "..." }
+		if len(d) > 80 {
+			d = d[:77] + "..."
+		}
 		details = "  | " + d
 	}
 	fmt.Printf("[%s] %-5s %-12s %s%s\n", ts, e.Severity, e.Code, e.Msg, details)

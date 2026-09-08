@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"filees/internal/svnurl"
 	"os"
 	"path/filepath"
 	"testing"
@@ -101,7 +102,7 @@ func TestExecutionGenerationSwapPreservesNewLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	replacementCommand(t, "svnadmin", "setuuid", f.repo, uuid.NewString())
-	replacementCommand(t, "svn", "lock", "--username", uuid.NewString(), "-m", "new generation", "file://"+f.repo+"/"+f.req.Path)
+	replacementCommand(t, "svn", "lock", "--username", uuid.NewString(), "-m", "new generation", svnurl.File(f.repo)+"/"+f.req.Path)
 	before, _ := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
 	f.handle(t, control.TicketSettlePassportAcquisition, control.ResultOK)
 	after, _ := f.authority.Locks.inspectSVNLock(t.Context(), f.req.RepoID, f.req.Path)
@@ -167,7 +168,7 @@ func TestExecutionTwoWorkingCopiesServerExpiryTakeover(t *testing.T) {
 	second.ClientID = uuid.NewString()
 	f.client(t, second.ClientID, second.RealmID, "active")
 	wc2 := filepath.Join(t.TempDir(), "wc")
-	replacementCommand(t, "svn", "checkout", "file://"+f.repo, wc2)
+	replacementCommand(t, "svn", "checkout", svnurl.File(f.repo), wc2)
 	doc2 := filepath.Join(wc2, filepath.FromSlash(f.req.Path))
 	serverNow := time.Now().UTC()
 	f.svc.Authority.Now = func() time.Time { return serverNow }

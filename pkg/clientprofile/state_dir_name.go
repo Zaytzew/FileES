@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"filees/pkg/portablepath"
 )
 
 // stateDirName turns a server ID into a directory name that every supported
@@ -44,9 +46,9 @@ func StateDirName(id string) (string, error) {
 		// Reserved by Windows. The forward and back slash are rejected by
 		// validate() before this, since a separator in an ID is a different
 		// kind of mistake.
-		case strings.ContainsRune(`:*?"<>|`, r):
+		case portablepath.IsReservedRune(r):
 			b.WriteString(escape(r))
-		case r < 0x20 || r == 0x7f:
+		case portablepath.IsControlRune(r):
 			b.WriteString(escape(r))
 		default:
 			b.WriteRune(r)
@@ -63,7 +65,7 @@ func StateDirName(id string) (string, error) {
 	// Device names are reserved with or without an extension and regardless of
 	// case, so CON, con and con.txt all fail. Encoding the first character is
 	// enough to stop the match and keeps the rest readable.
-	if isReservedDeviceName(name) {
+	if portablepath.IsReservedDeviceName(name) {
 		name = escape(rune(name[0])) + name[1:]
 	}
 	return name, nil
@@ -83,23 +85,6 @@ func StateDirName(id string) (string, error) {
 const escapeRune = '+'
 
 func escape(r rune) string { return fmt.Sprintf("%c%02X", escapeRune, r) }
-
-var reservedDeviceNames = map[string]struct{}{
-	"CON": {}, "PRN": {}, "AUX": {}, "NUL": {},
-	"COM1": {}, "COM2": {}, "COM3": {}, "COM4": {}, "COM5": {},
-	"COM6": {}, "COM7": {}, "COM8": {}, "COM9": {},
-	"LPT1": {}, "LPT2": {}, "LPT3": {}, "LPT4": {}, "LPT5": {},
-	"LPT6": {}, "LPT7": {}, "LPT8": {}, "LPT9": {},
-}
-
-func isReservedDeviceName(name string) bool {
-	stem := name
-	if dot := strings.IndexByte(stem, '.'); dot >= 0 {
-		stem = stem[:dot]
-	}
-	_, reserved := reservedDeviceNames[strings.ToUpper(stem)]
-	return reserved
-}
 
 // ServerDir is the directory holding one server's client state.
 //

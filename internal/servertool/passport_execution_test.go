@@ -1,3 +1,12 @@
+//go:build !windows
+
+// The runtime t.Skip("server is Unix") inside is not enough on its own: this
+// file uses runSupervisorCommand from session_supervisor_unix_test.go, which
+// is //go:build !windows, so without the same tag the whole package fails to
+// COMPILE on Windows - and a package that does not build does not skip, it
+// disappears. Every test in internal/servertool was therefore absent from
+// Windows runs, counted as one more line in the "~190 environmental" bucket.
+
 package servertool
 
 import (

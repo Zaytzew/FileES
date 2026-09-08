@@ -79,7 +79,7 @@ func TestEmptySegment(t *testing.T) {
 // Every Kind must say something specific. A gate that refuses a name while
 // explaining nothing is the failure this whole class exists to remove.
 func TestEveryKindExplainsItself(t *testing.T) {
-	for _, k := range []Kind{ReservedDevice, ReservedRune, ControlRune, Separator, TrailingDotOrSpace, Empty} {
+	for _, k := range []Kind{ReservedDevice, ReservedRune, ControlRune, Separator, TrailingDotOrSpace, Empty, CaseCollision} {
 		if got := (Problem{Kind: k, Detail: "x"}).String(); got == "" || got == "nazwa jest nieprzedstawialna" {
 			t.Errorf("Kind %d has no specific explanation: %q", k, got)
 		}

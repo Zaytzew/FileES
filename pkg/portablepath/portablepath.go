@@ -40,6 +40,9 @@ const (
 	TrailingDotOrSpace
 	// Empty - no name at all.
 	Empty
+	// CaseCollision - the name is fine alone, but a sibling already present
+	// would become the same file. Detail names that sibling.
+	CaseCollision
 )
 
 // Problem describes one reason a segment is unrepresentable. Detail carries the
@@ -63,6 +66,12 @@ func (p Problem) String() string {
 		return fmt.Sprintf("nazwa kończy się znakiem %q, który zostaje po cichu usunięty", p.Detail)
 	case Empty:
 		return "nazwa jest pusta"
+	case CaseCollision:
+		// Deliberately silent about letter case. The owner ruled that the
+		// message covers the whole class and names the consequence, because a
+		// user told "these differ only in case" has been told about Windows
+		// rather than about their own two documents.
+		return fmt.Sprintf("istnieje już plik %q, którego nazwa spowoduje nierozwiązywalny konflikt w kopiach roboczych Windows", p.Detail)
 	}
 	return "nazwa jest nieprzedstawialna"
 }

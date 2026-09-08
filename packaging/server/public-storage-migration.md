@@ -86,7 +86,7 @@ receive generic 503/Retry-After for storage failure, without private paths;
 authority denial is still the enumeration-resistant 404. No forced cache
 eviction, automatic backup edits or automatic rcctl restart is introduced.
 
-## Retention boundary — open M48
+## Retention boundary — deployed r922 (historical M48 finding)
 
 In r922, `filees-links` sweeps expired metadata-backed cache entries before
 Put and removes the requested expired/corrupt entry on Open. No periodic
@@ -100,4 +100,54 @@ M47 fixes root lifecycle and capacity checks, not autonomous GC or erasure
 completion. Do not use TTL as evidence that physical bytes are gone. Keep
 roots out of system cleanup; do not delete active transfers by file age.
 Safe orphan detection, periodic cleanup and observable removal failures are
-an open, separately scoped task (M48), not installed cron in this release.
+an open task in r922, not installed cron in that release.
+
+## M48 service-owned maintenance — implementation, not rollout
+
+The new code (base r924) runs cleanup inside each resident service at startup
+and periodically, without cron. Configure `cache.cleanup_interval` in
+public-links.json and `public_shares.cleanup_interval` in server.json:
+optional duration, default `5m`, accepted range `1s`–`1h`. Roots remain
+independently configurable; no relocation or installer migration is needed.
+Do not add these new JSON fields before upgrading the binaries that parse them.
+
+Each service holds `.maintenance.lock` for its full lifetime, including
+active requests. Never unlink that file or its root. **The first upgrade
+must stop the old r922 processes before starting M48:** legacy processes do
+not participate in this lock protocol. A new instance must fail before
+replacing its listener when another upgraded instance owns the same root.
+
+Readers and all prepared ZIP leaves stay pinned until transfer completion
+or error cleanup; staging is tracked from creation through final Close.
+TTL rejects new cache hits, not an already admitted transfer. A fresh,
+authorized fetch can renew metadata; hits alone do not renew TTL.
+Cleanup collects only recognized expired/corrupt cache entries and orphan
+files. Unknown files, symlinks and directories remain; removal failures are
+reported, not counted as success. There is no secure-erasure guarantee or
+strict removal deadline: deletion waits for the next successful pass after
+active use, and service downtime delays cleanup until restart. A disabled
+cache has no maintenance; old contents need explicit operator handling.
+
+Each root contains private `.maintenance-status.json` (0600), schema
+`filees.public-storage-maintenance/v1`: running/checked/failed/stopped,
+last success, removed entries/files/logical bytes, active skips and error.
+Commands below run **as the respective service account** and only read;
+they do not start a listener, mailer, cleanup pass or second owner:
+
+```sh
+/usr/local/libexec/filees/filees-links -config /etc/filees/public-links.json -check-maintenance
+/usr/local/libexec/filees/filees-public-authority -config /etc/filees/server.json -check-maintenance
+```
+
+A successful check emits JSON and exits 0. Missing/failed/running/stopped,
+invalid, future-dated or older-than-two-intervals status exits nonzero.
+A pass still running is not reported as success; monitoring should allow
+for a transient check failure. Check failure during a busy Put is retried
+by the next timer pass. Stderr may be discarded by rc.d, so inspect durable
+status. Status is not an access audit or proof that every byte is gone.
+
+Future rollout gate: stop old services, install approved signed release,
+start authority then links, check both maintenance statuses, and repeat
+file/Range/ZIP acceptance on that host. This portion did not build, sign,
+promote or install a bundle, enable cron or alter production configuration.
+Evidence: [M48 acceptance](../../reports/PUBLIC_SHARES_MAINTENANCE_2026-09-08.md).

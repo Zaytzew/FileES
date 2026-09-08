@@ -416,9 +416,9 @@ func (h Handler) fillCache(ctx context.Context, request authority.ObjectRequest,
 }
 
 type bundleLeaf struct {
-	cacheKey string
-	name     string
-	size     int64
+	lease *cache.Lease
+	name  string
+	size  int64
 }
 
 func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, channelSlug string) {
@@ -486,11 +486,12 @@ func (h Handler) bundle(w http.ResponseWriter, request *http.Request, alias, cha
 		}
 	}
 	w.Header().Set("Content-Type", "application/zip")
+	defer closeBundle(leaves)
 	w.Header().Set("Content-Disposition", contentDisposition(archiveName+".zip"))
 	w.Header().Set("Cache-Control", "private, no-store")
 	archive := zip.NewWriter(w)
 	for _, leaf := range leaves {
-		file, _, openErr := h.Cache.Open(leaf.cacheKey, h.now())
+		file, openErr := leaf.lease.Open()
 		if openErr != nil {
 			_ = archive.Close()
 			return
@@ -547,6 +548,12 @@ func selectBundleObjects(projection channel.Projection, form url.Values) ([]chan
 
 func (h Handler) prepareBundle(ctx context.Context, claims visit, objects []channel.PublicObject) ([]bundleLeaf, error) {
 	leaves := make([]bundleLeaf, 0, len(objects))
+	success := false
+	defer func() {
+		if !success {
+			closeBundle(leaves)
+		}
+	}()
 	var total int64
 	usedNames := make(map[string]int)
 	for _, object := range objects {
@@ -555,25 +562,32 @@ func (h Handler) prepareBundle(ctx context.Context, claims visit, objects []chan
 		if err != nil {
 			return nil, err
 		}
-		file, size, err := h.Cache.Open(permit.CacheKey, h.now())
+		lease, size, err := h.Cache.Pin(permit.CacheKey, h.now())
 		if err != nil {
 			if err = h.fillCache(ctx, objectRequest, permit.CacheKey); err != nil {
 				return nil, err
 			}
-			file, size, err = h.Cache.Open(permit.CacheKey, h.now())
+			lease, size, err = h.Cache.Pin(permit.CacheKey, h.now())
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: cache: %v", storage.ErrUnavailable, err)
 		}
-		_ = file.Close()
 		if size < 0 || total > h.MaxBundleSize-size {
+			lease.Close()
 			return nil, errors.New("public share bundle exceeds size limit")
 		}
 		total += size
 		name := uniqueArchiveName(safeArchivePath(object.DisplayName), usedNames)
-		leaves = append(leaves, bundleLeaf{cacheKey: permit.CacheKey, name: name, size: size})
+		leaves = append(leaves, bundleLeaf{lease: lease, name: name, size: size})
 	}
+	success = true
 	return leaves, nil
+}
+
+func closeBundle(leaves []bundleLeaf) {
+	for _, leaf := range leaves {
+		_ = leaf.lease.Close()
+	}
 }
 
 func objectDisplayPath(object channel.PublicObject) string {

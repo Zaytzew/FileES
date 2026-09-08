@@ -47,6 +47,20 @@ func TestPublicShareServerBoundaryRequiresHTTPSAndLoopbackOrUnix(t *testing.T) {
 	if err := validatePublicShares(valid, root); err != nil {
 		t.Fatal(err)
 	}
+	for _, interval := range []string{"", "1s", "5m", "1h"} {
+		candidate := valid
+		candidate.CleanupInterval = interval
+		if err := validatePublicShares(candidate, root); err != nil {
+			t.Fatalf("cleanup interval %q: %v", interval, err)
+		}
+	}
+	for _, interval := range []string{"0", "-1s", "999ms", "2h", "invalid"} {
+		candidate := valid
+		candidate.CleanupInterval = interval
+		if err := validatePublicShares(candidate, root); err == nil {
+			t.Fatalf("invalid cleanup interval %q accepted", interval)
+		}
+	}
 	public := valid
 	public.BackchannelAddress = "0.0.0.0:9010"
 	if err := validatePublicShares(public, root); err == nil {

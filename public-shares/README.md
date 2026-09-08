@@ -84,14 +84,23 @@ szczegółów. Odmowa nadal jest 404. ZIP strumieniuje wyjście, ale wcześniej
 materializuje liście w cache; limity logiczne nie zastępują kontroli dysku.
 Migracja i bramka wdrożenia: `packaging/server/public-storage-migration.md`.
 
-M48 pozostaje otwarte: Store.Put sprząta wygasłe wpisy z metadanymi,
-Store.Open usuwa żądany wpis wygasły/uszkodzony; brak cyklicznego Flush.
-TTL (na cloud 12 h) biegnie od zapisu, nie gwarantuje fizycznego usunięcia
-bez ruchu. Sweep pomija dane/tmp bez metadanych; błędy Remove cache nie są
-raportowane. Staging authority usuwa Close/cleanup, ale crash może zostawić
-plik. Nie usuwać korzeni ani obejmować ich systemowym daily. To opis
-aktualnego kodu, nie wdrożonego autonomicznego GC lub zmierzonych zaległości.
-Dowód: `reports/PUBLIC_SHARES_STORAGE_RECOVERY_2026-09-07.md`, sekcja M48.
+M48 na bazie r924: zaimplementowany GC wewnątrz obu usług, bez crona.
+Start + timer domyślnie 5m; `cache.cleanup_interval` w public-links.json
+oraz `public_shares.cleanup_interval` w server.json (1s–1h).
+TTL od zapisu odmawia nowych trafień; Reader i cały przygotowany ZIP
+pozostają przypięte do zakończenia/Close. Ponowny autoryzowany fetch może
+odnowić TTL; samo trafienie nie. Staging jest chroniony od utworzenia.
+Wyłączność katalogu i wspólny tracker pozwalają zbierać rozpoznane orphany
+po crashu. GC nie usuwa korzeni, blokady, obcych plików ani symlinków.
+Błędy usuwania i liczniki trafiają do prywatnego `.maintenance-status.json`;
+obie binarki mają odczytowy `-check-maintenance` (JSON + kod wyjścia).
+Fizyczne usunięcie następuje w najbliższym udanym przebiegu po końcu użycia;
+postój i błędy odraczają GC. To nie ścisły deadline ani dowód erasure.
+Linux -race/vet i izolowane OpenBSD PASS. Cloud nadal r922, bez M48.
+Pierwszy upgrade musi zatrzymać stare procesy przed nowymi; stare r922
+nie respektuje blokady. Wyłączony cache nie jest sprzątany automatycznie.
+Dowód: [odbiór M48](../reports/PUBLIC_SHARES_MAINTENANCE_2026-09-08.md).
+Instrukcja operatora: [storage](../packaging/server/public-storage-migration.md).
 
 Kanał dystrybucji jest zaimplementowany pionowo: owner tworzy, aktualizuje,
 odwołuje i usuwa kanał przez control-plane; tożsamość ownera pochodzi z sesji,

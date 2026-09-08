@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"filees/public-shares/backchannel"
 	"filees/public-shares/channel"
 	"filees/public-shares/recipientotp"
+	"filees/public-shares/storage"
 )
 
 const authoritySandboxPromises = "stdio rpath wpath cpath fattr flock proc exec prot_exec unix inet"
@@ -30,16 +32,25 @@ const publicMailerPath = "/usr/local/libexec/filees/filees-mail"
 
 func main() {
 	configPath := flag.String("config", "/etc/filees/server.json", "FileES server configuration")
+	check := flag.Bool("check-maintenance", false, "check private staging maintenance status without starting the service")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *configPath); err != nil {
+	var err error
+	if *check {
+		err = checkMaintenance(*configPath)
+	} else {
+		err = run(ctx, *configPath)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "filees-public-authority:", err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, configPath string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretPublicShares)
 	if err != nil {
 		return err
@@ -47,11 +58,6 @@ func run(ctx context.Context, configPath string) error {
 	if !config.PublicShares.Enabled {
 		return errors.New("public shares are disabled")
 	}
-	listener, cleanup, err := listen(config.PublicShares)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
 	r := config.Repositories
 	stateRoot := config.PublicShares.EffectiveStateRoot(r.ResultsRoot)
 	stagingRoot := config.PublicShares.EffectiveAuthorityStagingRoot()
@@ -61,6 +67,18 @@ func run(ctx context.Context, configPath string) error {
 	if err := os.MkdirAll(stagingRoot, 0700); err != nil {
 		return err
 	}
+	owner, err := storage.Own(stagingRoot)
+	if err != nil {
+		return err
+	}
+	defer owner.Close()
+	var active storage.Activity
+	defer active.StopAndWait()
+	listener, cleanup, err := listen(config.PublicShares)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	mailer, mailerDone, err := startPublicMailer(configPath)
 	if err != nil {
 		return err
@@ -100,8 +118,21 @@ func run(ctx context.Context, configPath string) error {
 		Root: filepath.Join(stateRoot, "recipient-otp"), Key: config.PublicShareFrostKey, Channels: channels,
 		Outbox: repoworker.PublicShareOutbox{Root: filepath.Join(stateRoot, "outbox")},
 	}
-	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: r.Root}, Trees: authority.NewTreeCache(256), FrostKey: config.PublicShareFrostKey, StagingRoot: stagingRoot, MaxLeafSize: config.PublicShares.EffectiveMaxLeafSize(), RecipientOTP: otp}
-	server := &http.Server{Handler: backchannel.Server{Authority: resolver, FetchSlots: make(chan struct{}, 2)}, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 0, IdleTimeout: 30 * time.Second}
+	staging := &storage.Staging{Root: stagingRoot}
+	interval, _ := storage.CleanupInterval(config.PublicShares.CleanupInterval)
+	maintenance := &storage.Maintenance{Root: stagingRoot, Interval: interval, Sweep: staging.Sweep, Report: func(err error) { fmt.Fprintln(os.Stderr, "filees-public-authority maintenance:", err) }}
+	stopMaintenance := maintenance.Start(ctx)
+	defer stopMaintenance()
+	resolver := authority.Resolver{Channels: channels, Source: authority.SVNLookSource{SVNLook: svnlook, RepositoriesRoot: r.Root}, Trees: authority.NewTreeCache(256), FrostKey: config.PublicShareFrostKey, StagingRoot: stagingRoot, Staging: staging, MaxLeafSize: config.PublicShares.EffectiveMaxLeafSize(), RecipientOTP: otp}
+	handler := backchannel.Server{Authority: resolver, FetchSlots: make(chan struct{}, 2)}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !active.Enter() {
+			http.Error(w, "service stopping", http.StatusServiceUnavailable)
+			return
+		}
+		defer active.Leave()
+		handler.ServeHTTP(w, r)
+	}), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 0, IdleTimeout: 30 * time.Second}
 	serveDone := make(chan error, 1)
 	go func() { serveDone <- server.Serve(listener) }()
 	select {
@@ -112,11 +143,13 @@ func run(ctx context.Context, configPath string) error {
 		mailerWaited = true
 		return nil
 	case err := <-serveDone:
+		cancel()
 		_ = mailer.Process.Kill()
 		<-mailerDone
 		mailerWaited = true
 		return err
 	case err := <-mailerDone:
+		cancel()
 		mailerWaited = true
 		_ = server.Close()
 		if err == nil {
@@ -124,6 +157,28 @@ func run(ctx context.Context, configPath string) error {
 		}
 		return fmt.Errorf("public share mailer: %w", err)
 	}
+}
+
+func checkMaintenance(configPath string) error {
+	config, err := serverconfig.LoadFor(configPath, serverconfig.SecretPublicShares)
+	if err != nil {
+		return err
+	}
+	if !config.PublicShares.Enabled {
+		return errors.New("public shares are disabled")
+	}
+	interval, err := storage.CleanupInterval(config.PublicShares.CleanupInterval)
+	if err != nil {
+		return err
+	}
+	if err := obsandbox.Apply(obsandbox.Profile{Name: "filees-authority-maintenance-check", Promises: "stdio rpath", Paths: []obsandbox.Path{{Label: "maintenance-status", Name: config.PublicShares.EffectiveAuthorityStagingRoot(), Perms: "r"}}}); err != nil {
+		return err
+	}
+	status, err := storage.CheckMaintenance(config.PublicShares.EffectiveAuthorityStagingRoot(), interval, time.Now())
+	if encodeErr := json.NewEncoder(os.Stdout).Encode(status); encodeErr != nil {
+		return encodeErr
+	}
+	return err
 }
 
 func startPublicMailer(configPath string) (*exec.Cmd, <-chan error, error) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -1117,6 +1118,10 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	for _, p := range delPaths {
 		switch st[p] {
 		case "missing", "normal", "modified":
+			if reason := s.absenceExplainedByPlatform(ctx, wc, p, st[p]); reason != "" {
+				s.Logger.Warnf("nie publikuję usunięcia %s: %s", p, reason)
+				continue
+			}
 			toSvnDelete = append(toSvnDelete, p)
 		case "deleted":
 			alreadyStaged = append(alreadyStaged, p)
@@ -2022,6 +2027,75 @@ func dedup(in []string) []string {
 }
 
 // statusMap pobiera mapę rel-path -> svn status item ("unversioned","normal","modified","missing",...).
+// absenceExplainedByPlatform reports why a versioned path is absent from disk
+// for a reason that is not a deletion, and returns "" when nothing explains it.
+//
+// The measured case, on Windows 2026-09-08: a repository may legitimately hold
+// Plik.txt and plik.txt. svn checkout reports success, writes one of them, and
+// the other is missing from the first second. Treated as a deletion, this
+// client then publishes the removal of a file it never saw - a Windows user
+// deletes another platform's work without doing anything at all.
+//
+// Only the unambiguous shape is refused: a sibling differing solely in case,
+// present on disk, and itself versioned. Then the repository holds both paths
+// and the absence is certainly a limit of this filesystem rather than an act.
+// An unversioned sibling is deliberately not enough, because on a
+// case-insensitive filesystem that is indistinguishable from the user renaming
+// Plik.txt to plik.txt, which is a real edit and must publish.
+//
+// EqualFold is not Windows' case-folding table, and for a gate that refuses to
+// create a path that difference would matter. Here it does not: this guard only
+// ever declines to delete, so matching too eagerly withholds a publication and
+// matching too rarely lets the old behaviour through. The error that costs
+// somebody their file is the second one.
+//
+// Wider unrepresentable names - reserved devices, a trailing dot or space -
+// belong to the same class and are left to concepts/PORTABLE_PATH_GATE_CONCEPT.md
+// rather than guessed at here.
+func (s *Service) absenceExplainedByPlatform(ctx context.Context, wc, rel, status string) string {
+	if status != "missing" {
+		return ""
+	}
+	// Subversion says the path is gone; if the operating system still resolves
+	// it, the filesystem folded its name onto another entry. Those two facts
+	// together are the whole test, and they measure this directory instead of
+	// guessing from the OS: macOS folds by default, Windows can be told not to
+	// per directory, and Linux mounts either way. Where the filesystem does
+	// tell the two apart, a deletion beside a differing-only-in-case sibling is
+	// an ordinary deletion and must publish - withholding it forever, with only
+	// a warning in the log, is the same asymmetric caution this guard exists to
+	// avoid.
+	if _, err := os.Stat(filepath.Join(wc, filepath.FromSlash(rel))); err != nil {
+		return ""
+	}
+	dir, base := path.Split(rel)
+	entries, err := os.ReadDir(filepath.Join(wc, filepath.FromSlash(dir)))
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == base || !strings.EqualFold(name, base) {
+			continue
+		}
+		sibling := path.Join(strings.TrimSuffix(dir, "/"), name)
+		if dir == "" {
+			sibling = name
+		}
+		siblingStatus, err := s.statusMap(ctx, wc, []string{sibling})
+		if err != nil {
+			return ""
+		}
+		switch siblingStatus[sibling] {
+		case "", "unversioned":
+			continue
+		}
+		return fmt.Sprintf("ścieżka jest nieobecna, bo %q zajmuje jej miejsce i różni się wyłącznie wielkością liter; "+
+			"repozytorium zawiera obie, a ten system plików ich nie rozróżnia", sibling)
+	}
+	return ""
+}
+
 func (s *Service) statusMap(ctx context.Context, wc string, paths []string) (map[string]string, error) {
 	out := make(map[string]string, len(paths))
 	if len(paths) == 0 {

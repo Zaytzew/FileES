@@ -3,6 +3,7 @@ package clientprofile
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,8 +11,15 @@ import (
 )
 
 func TestLoadMissingSessionTimeoutUsesDefault(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "profile.json")
-	raw := `{"schema":"filees.client-profile/v1","server_id":"office","display_name":"filees.example.net","address":"filees.example.net","client_id":"00000000-0000-0000-0000-000000000001","identity_file":"/id","known_hosts":"/known","ssh_port":22,"service_url":"svn+ssh://_filees-client@filees.example.net/","service_working_copy":"/wc","relative_view_path":"view.json","cache_path":"/cache/view.json","poll_interval":"1m"}` + "\n"
+	root := t.TempDir()
+	path := filepath.Join(root, "profile.json")
+	// The absolute paths come from the temporary directory instead of being
+	// written as "/id" and "/wc". Those are absolute on POSIX and not on
+	// Windows, so the absoluteness check added in r770 rejected the profile
+	// and this test failed on Windows only - a permanent red saying nothing
+	// about the product. Forward slashes stay: Windows accepts them in an
+	// absolute path and they need no escaping inside JSON.
+	raw := strings.ReplaceAll(`{"schema":"filees.client-profile/v1","server_id":"office","display_name":"filees.example.net","address":"filees.example.net","client_id":"00000000-0000-0000-0000-000000000001","identity_file":"ROOT/id","known_hosts":"ROOT/known","ssh_port":22,"service_url":"svn+ssh://_filees-client@filees.example.net/","service_working_copy":"ROOT/wc","relative_view_path":"view.json","cache_path":"ROOT/cache/view.json","poll_interval":"1m"}`, "ROOT", filepath.ToSlash(root)) + "\n"
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}

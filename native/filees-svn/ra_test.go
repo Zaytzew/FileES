@@ -5,6 +5,7 @@ package nativesvnprobe
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -349,4 +350,108 @@ func TestRACheckoutAndUpdateRefuseBadArguments(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) { f.jsonCall(t, false, tc.args...) })
 	}
+}
+
+func TestRACommitPublishesAndReportsItsRevision(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	other := f.second(t, "publisher")
+	write(t, filepath.Join(other, "occupied.txt"), "published natively\n")
+
+	got := f.jsonCall(t, true, "commit", "--disposable-wc", other, "-m", "ogloszenie", "--", "occupied.txt")
+	revision, ok := got["revision"].(float64)
+	if !ok || revision != 2 {
+		t.Fatalf("revision = %#v", got["revision"])
+	}
+
+	// The message must actually reach svn:log. It does not travel in the
+	// revprop table - svn_client_commit6 refuses standard properties there
+	// (E195011) - but through log_msg_func3. Measured 2026-09-08: the first
+	// version committed happily with an empty message, which would have
+	// silently emptied the Shouting Commit lane, since announcements ride in
+	// exactly that property.
+	log := f.jsonCall(t, true, "log", "--url", f.repoURL, "--revision", "2")
+	entries, _ := log["entries"].([]any)
+	if len(entries) != 1 || entries[0].(map[string]any)["message"] != "ogloszenie" {
+		t.Fatalf("message did not reach svn:log: %#v", log["entries"])
+	}
+}
+
+// The commit receipt marker the daemon uses to recognise its own revision after
+// a lost acknowledgement.
+func TestRACommitCarriesAReceiptRevprop(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	other := f.second(t, "receipted")
+	write(t, filepath.Join(other, "occupied.txt"), "with a receipt\n")
+
+	f.jsonCall(t, true, "commit", "--disposable-wc", other, "-m", "z pokwitowaniem",
+		"--revprop", "filees:commit-id=RECEIPT-7", "--", "occupied.txt")
+
+	log := f.jsonCall(t, true, "log", "--url", f.repoURL, "--revision", "2", "--revprop", "filees:commit-id")
+	entries, _ := log["entries"].([]any)
+	props, _ := entries[0].(map[string]any)["revprops"].(map[string]any)
+	if props["filees:commit-id"] != "RECEIPT-7" {
+		t.Fatalf("revprops = %#v", props)
+	}
+}
+
+func TestRACommitRefusesIncompleteRequests(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	other := f.second(t, "refuser")
+	write(t, filepath.Join(other, "occupied.txt"), "something\n")
+
+	// No paths: a commit that decides its own scope would publish work the
+	// caller never listed.
+	f.jsonCall(t, false, "commit", "--disposable-wc", other, "-m", "bez sciezek")
+	// No message.
+	f.jsonCall(t, false, "commit", "--disposable-wc", other, "--", "occupied.txt")
+	// One source for the message, so --revprop must not quietly override -m.
+	f.jsonCall(t, false, "commit", "--disposable-wc", other, "-m", "a",
+		"--revprop", "svn:log=b", "--", "occupied.txt")
+}
+
+// Per-path receipts are the point. Subversion does not fail the whole call when
+// one path is refused - it notifies and carries on - so a verb that reported
+// only its exit status would turn "somebody else holds this file" into silence,
+// which is the one thing a reservation must never be.
+func TestRALockReportsEachPathSeparately(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	holder := f.second(t, "holder")
+	rival := f.second(t, "rival")
+
+	got := f.jsonCall(t, true, "lock", "--disposable-wc", holder, "-m", "rezerwacja", "--", "occupied.txt")
+	locked, _ := got["locked"].([]any)
+	if len(locked) != 1 || locked[0].(map[string]any)["ok"] != true {
+		t.Fatalf("lock = %#v", got["locked"])
+	}
+
+	// The contested attempt: the process succeeds, the path does not.
+	contested := f.jsonCall(t, true, "lock", "--disposable-wc", rival, "--", "occupied.txt")
+	entries, _ := contested["locked"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("contested lock = %#v", contested["locked"])
+	}
+	row := entries[0].(map[string]any)
+	if row["ok"] != false {
+		t.Fatalf("a held path must not report success: %#v", row)
+	}
+	if reason, _ := row["error"].(string); !strings.Contains(reason, "locked") {
+		t.Fatalf("refusal must say why: %#v", row["error"])
+	}
+
+	released := f.jsonCall(t, true, "unlock", "--disposable-wc", holder, "--", "occupied.txt")
+	unlocked, _ := released["unlocked"].([]any)
+	if len(unlocked) != 1 || unlocked[0].(map[string]any)["ok"] != true {
+		t.Fatalf("unlock = %#v", released["unlocked"])
+	}
+}
+
+// Subversion can steal and break locks; this helper cannot, and that is a
+// product decision rather than an omission. Taking a reservation away from
+// whoever holds it is not an accepted mechanism here, and a capability the
+// product has not accepted has no business being one keystroke away.
+func TestRALockCannotStealOrBreak(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	wc := f.second(t, "thief")
+	f.jsonCall(t, false, "lock", "--disposable-wc", wc, "--steal", "--", "occupied.txt")
+	f.jsonCall(t, false, "unlock", "--disposable-wc", wc, "--break", "--", "occupied.txt")
 }

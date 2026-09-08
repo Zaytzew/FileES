@@ -193,6 +193,13 @@ type LockLister interface {
 // ---- High-level helpers ----
 
 func (c *execClient) GetInfo(ctx context.Context, repoURL string) (string, error) {
+	if wc, rel, ok := nativeInfoTarget(repoURL); nativeWCOps(c) && ok {
+		v, err := c.nativeInfo(ctx, wc, rel)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("URL: %s\nRepository Root: %s\nRepository UUID: %s\nRevision: %d\nLast Changed Rev: %d\n", v.URL, v.ReposRootURL, v.ReposUUID, v.Revision, v.LastChangedRev), nil
+	}
 	return c.run(ctx, "", []string{"info", repoURL})
 }
 
@@ -210,6 +217,9 @@ func (c *execClient) Checkout(ctx context.Context, repoURL, localPath string) (s
 	// --force preserves unversioned content already present in a directory.
 	// This is required when a newly provisioned repository adopts an existing
 	// local tree; Subversion still refuses conflicting versioned obstructions.
+	if nativeWCOps(c) {
+		return c.nativeCheckout(ctx, repoURL, localPath)
+	}
 	return c.run(ctx, "", []string{"checkout", "--force", repoURL, localPath})
 }
 
@@ -221,6 +231,9 @@ func (c *execClient) Cleanup(ctx context.Context, localPath string) (string, err
 }
 
 func (c *execClient) Update(ctx context.Context, localPath string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeUpdate(ctx, localPath, nil, false)
+	}
 	return c.run(ctx, localPath, []string{"update", "."})
 }
 
@@ -235,6 +248,9 @@ func (c *execClient) Revert(ctx context.Context, rootDirectory string, paths []s
 }
 
 func (c *execClient) UpdateDepthEmpty(ctx context.Context, rootDirectory string, paths []string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeUpdate(ctx, rootDirectory, paths, true)
+	}
 	args := append([]string{"update", "--depth", "empty"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
@@ -315,6 +331,10 @@ func (c *execClient) Delete(ctx context.Context, rootDirectory string, paths []s
 }
 
 func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []string, message string) (string, error) {
+	if nativeWCOps(c) {
+		out, _, err := c.nativeCommit(ctx, rootDirectory, paths, message, "", false)
+		return out, err
+	}
 	if len(paths) == 0 {
 		return "", errors.New("svn commit refused: empty path list")
 	}
@@ -323,6 +343,10 @@ func (c *execClient) Commit(ctx context.Context, rootDirectory string, paths []s
 }
 
 func (c *execClient) CommitKeepLocks(ctx context.Context, rootDirectory string, paths []string, message string) (string, error) {
+	if nativeWCOps(c) {
+		out, _, err := c.nativeCommit(ctx, rootDirectory, paths, message, "", true)
+		return out, err
+	}
 	if len(paths) == 0 {
 		return "", errors.New("svn commit refused: empty path list")
 	}
@@ -346,6 +370,9 @@ func (c *execClient) CommitWithRevision(ctx context.Context, rootDirectory, repo
 	}
 	if strings.TrimSpace(repoURL) == "" {
 		return "", 0, errors.New("svn commit receipt requires repository URL")
+	}
+	if nativeWCOps(c) {
+		return c.nativeCommit(ctx, rootDirectory, paths, message, uuid.NewString(), keepLocks)
 	}
 	headBefore, err := c.Revision(ctx, repoURL)
 	if err != nil {
@@ -372,6 +399,18 @@ func (c *execClient) CommitWithRevision(ctx context.Context, rootDirectory, repo
 func (c *execClient) commitRevisionByMarker(ctx context.Context, repoURL string, firstRevision int64, marker string) (int64, error) {
 	if firstRevision < 1 {
 		firstRevision = 1
+	}
+	if nativeWCOps(c) {
+		entries, err := c.nativeLog(ctx, repoURL, fmt.Sprintf("HEAD:%d", firstRevision), "--revprop", "filees:commit-id")
+		if err != nil {
+			return 0, err
+		}
+		for _, entry := range entries {
+			if entry.Revprops["filees:commit-id"] == marker {
+				return entry.Revision, nil
+			}
+		}
+		return 0, errors.New("commit receipt marker is absent from repository log")
 	}
 	out, err := c.run(ctx, "", []string{
 		"log", "--xml", "--with-revprop", "filees:commit-id",
@@ -408,17 +447,29 @@ func (c *execClient) commitRevisionByMarker(ctx context.Context, repoURL string,
 }
 
 func (c *execClient) Lock(ctx context.Context, rootDirectory string, paths []string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeLock(ctx, rootDirectory, paths, "lock", "")
+	}
 	args := append([]string{"lock"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
 
 func (c *execClient) LockWithComment(ctx context.Context, rootDirectory string, paths []string, comment string, force bool) (string, error) {
+	if nativeWCOps(c) && force {
+		return "", errors.New("native SVN refuses force-lock")
+	}
 	args := []string{"lock", "--message", comment}
 	if force {
 		args = append(args, "--force")
 	}
 	args = append(args, c.pathArgs(rootDirectory, paths)...)
-	out, err := c.run(ctx, rootDirectory, args)
+	var out string
+	var err error
+	if nativeWCOps(c) {
+		out, err = c.nativeLock(ctx, rootDirectory, paths, "lock", comment)
+	} else {
+		out, err = c.run(ctx, rootDirectory, args)
+	}
 	if err != nil && c.MetadataMovesEnabled() && len(paths) == 1 && ctx.Err() == nil {
 		// SVN stores the lock token before chmod'ing svn:needs-lock. A renamed
 		// source is absent, so chmod can fail AFTER the lock succeeded. Prove
@@ -440,6 +491,9 @@ func (c *execClient) LockWithComment(ctx context.Context, rootDirectory string, 
 }
 
 func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []string) (string, error) {
+	if nativeWCOps(c) {
+		return c.nativeLock(ctx, rootDirectory, paths, "unlock", "")
+	}
 	args := append([]string{"unlock"}, c.pathArgs(rootDirectory, paths)...)
 	return c.run(ctx, rootDirectory, args)
 }
@@ -663,6 +717,10 @@ func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, acc
 }
 
 func (c *execClient) Revision(ctx context.Context, target string) (int64, error) {
+	if wc, rel, ok := nativeInfoTarget(target); nativeWCOps(c) && ok {
+		v, err := c.nativeInfo(ctx, wc, rel)
+		return v.Revision, err
+	}
 	out, err := c.run(ctx, "", []string{"info", "--show-item", "revision", target})
 	if err != nil {
 		return 0, err
@@ -685,6 +743,17 @@ type LogMessage struct {
 func (c *execClient) LogMessages(ctx context.Context, target string, fromRev, toRev int64) ([]LogMessage, error) {
 	if fromRev < 1 || toRev < fromRev {
 		return nil, nil
+	}
+	if nativeWCOps(c) {
+		entries, err := c.nativeLog(ctx, target, fmt.Sprintf("%d:%d", fromRev, toRev))
+		if err != nil {
+			return nil, err
+		}
+		out := make([]LogMessage, 0, len(entries))
+		for _, entry := range entries {
+			out = append(out, LogMessage{Revision: entry.Revision, Message: entry.Message})
+		}
+		return out, nil
 	}
 	out, err := c.run(ctx, "", []string{"log", "--xml", "-r", fmt.Sprintf("%d:%d", fromRev, toRev), target})
 	if err != nil {

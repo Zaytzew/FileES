@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"filees/pkg/activity"
+	"filees/pkg/client"
 	contract "filees/pkg/contract/v1"
 	"filees/pkg/watcher"
 )
@@ -141,6 +142,19 @@ func (s *Service) RecordUpdate(ctx context.Context, repoID, wc, output string) {
 // control lines, absolute paths and traversal are not receipts.
 func updateActivityPaths(output string) map[string]watcher.OpType {
 	paths := make(map[string]watcher.OpType)
+	if changes, ok := client.UpdateChanges(output); ok {
+		for path, action := range changes {
+			op := watcher.Modified
+			if action == "A" {
+				op = watcher.Added
+			}
+			if action == "D" {
+				op = watcher.Deleted
+			}
+			paths[path] = op
+		}
+		return paths
+	}
 	for _, line := range strings.Split(output, "\n") {
 		if len(line) < 6 || line[1:5] != "    " {
 			continue

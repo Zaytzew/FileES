@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"filees/pkg/client"
 )
 
 type Fetcher interface {
@@ -15,8 +19,10 @@ type Fetcher interface {
 
 type SVN struct {
 	Program string
-	RepoURL string
-	Timeout time.Duration
+	// NativeProgram is an explicit Windows opt-in; errors never retry on CLI.
+	NativeProgram string
+	RepoURL       string
+	Timeout       time.Duration
 }
 
 func (s SVN) Cat(ctx context.Context, path string) ([]byte, error) {
@@ -32,6 +38,22 @@ func (s SVN) Cat(ctx context.Context, path string) ([]byte, error) {
 	defer cancel()
 
 	url := joinURL(s.RepoURL, path)
+	if s.NativeProgram != "" {
+		dir, err := os.MkdirTemp("", "filees-native-cat-")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(dir)
+		out := filepath.Join(dir, "payload")
+		cli := client.New(client.Options{NativeSVNPath: s.NativeProgram, Timeout: timeout})
+		err = cli.(interface {
+			CatTo(context.Context, string, string) error
+		}).CatTo(ctx, url, out)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(out)
+	}
 	cmd := exec.CommandContext(ctx, program, "cat",
 		"--non-interactive", "--no-auth-cache", url)
 	var stdout, stderr bytes.Buffer

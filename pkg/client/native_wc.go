@@ -15,13 +15,21 @@ func (c *execClient) nativeRun(ctx context.Context, wc string, args ...string) (
 	if !filepath.IsAbs(c.nativeSVNPath) || !filepath.IsAbs(wc) {
 		return nil, errors.New("native SVN: explicit absolute executable and WC required")
 	}
+	return c.nativeCommand(ctx, wc, min(c.timeout, 30*time.Second), args...)
+}
+
+// nativeCommand shares serialization and bounded receipts with WC-local calls.
+// Remote operations retain the configured transfer timeout, not the 30s WC cap.
+func (c *execClient) nativeCommand(ctx context.Context, dir string, timeout time.Duration, args ...string) (map[string]any, error) {
+	if !filepath.IsAbs(c.nativeSVNPath) || (dir != "" && !filepath.IsAbs(dir)) || len(args) == 0 {
+		return nil, errors.New("native SVN: invalid executable, directory or command")
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	deadline := min(c.timeout, 30*time.Second)
-	ctx, cancel := context.WithTimeout(ctx, deadline)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.nativeSVNPath, args...)
-	cmd.Dir = wc
+	cmd.Dir = dir
 	cmd.Env = svnProcessEnvironment(os.Environ(), c.sshCommand)
 	stdout := nativeOutput{max: nativeListingLimit}
 	stderr := nativeOutput{max: nativeReceiptLimit}

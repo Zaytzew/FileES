@@ -1393,8 +1393,10 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	var (
 		out               string
 		confirmedRevision int64
+		exactReceipt      bool
 	)
 	if committer, ok := s.Cli.(revisionCommitter); ok {
+		exactReceipt = true
 		out, confirmedRevision, err = committer.CommitWithRevision(ctx, wc, s.RepoURL, commitPaths, msg, s.Rules.NeedsLock)
 	} else if s.Rules.NeedsLock {
 		out, err = s.Cli.CommitKeepLocks(ctx, wc, commitPaths, msg)
@@ -1422,6 +1424,15 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 			}
 		}
 		return fmt.Errorf("svn commit: %w\n%s", err, out)
+	}
+	if exactReceipt && confirmedRevision == 0 {
+		// Null proves no publication. Never attribute somebody else's HEAD
+		// to this attempt; only clean-path reconciliation can retire edits.
+		for _, item := range activityItems {
+			s.recordActivity(item.Rel, item.Op, activity.Pending, 0, "")
+		}
+		s.reconcileCleanPending(ctx, wc)
+		return nil
 	}
 	s.goOnline()
 	s.lastCommit = time.Now()

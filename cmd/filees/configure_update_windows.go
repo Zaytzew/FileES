@@ -56,7 +56,7 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, e
 	if err != nil {
 		return err
 	}
-	fetcher := svnfetch.SVN{Program: update.SVNProgram, RepoURL: update.RepoURL, Timeout: 2 * time.Minute}
+	fetcher := svnfetch.SVN{Program: update.SVNProgram, NativeProgram: nativeSVNPath(), RepoURL: update.RepoURL, Timeout: 2 * time.Minute}
 	verifier := releaseenvelope.Ed25519Verifier{Keys: keys}
 	trustedKeys := make([]string, 0, len(keys))
 	for keyID := range keys {

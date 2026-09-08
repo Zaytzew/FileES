@@ -107,3 +107,42 @@ func TestRawOutputIsKept(t *testing.T) {
 		t.Fatalf("stderr dropped: %q", failure.Output)
 	}
 }
+
+// The CLI half of the same rule. Subversion prints the wrapper above the real
+// reason, so a needle matching "unable to connect" calls a revoked key a
+// network blip - the defect M9 describes. Reading the chain fixes it here too,
+// with the helper not involved at all.
+func TestCLIChainPrefersTheDeeperCode(t *testing.T) {
+	diagnostic := "svn: E170013: Unable to connect to a repository at URL 'svn+ssh://host/repo'\n" +
+		"svn: E170001: Authorization failed"
+	err := cliFault(errors.New("komenda 'info' zakonczyla sie bledem: exit status 1\n"+diagnostic), diagnostic)
+
+	var fault errcat.Fault
+	if !errors.As(err, &fault) {
+		t.Fatalf("expected a typed fault, got %T", err)
+	}
+	if fault.Key != errcat.KeyAuthFailed {
+		t.Fatalf("key = %q, want %q", fault.Key, errcat.KeyAuthFailed)
+	}
+	if entry := errmap.Classify(err); entry.Key != errcat.KeyAuthFailed {
+		t.Fatalf("errmap key = %q, want %q", entry.Key, errcat.KeyAuthFailed)
+	}
+}
+
+// Nothing recognised must leave the error exactly as it was, so the text
+// heuristics still get their turn instead of being pre-empted by a guess.
+func TestCLIWithoutKnownCodesIsUntouched(t *testing.T) {
+	cause := errors.New("komenda 'info' zakonczyla sie bledem: exit status 1")
+	for _, diagnostic := range []string{"", "svn: E999999: something new", "no codes at all"} {
+		if got := cliFault(cause, diagnostic); got != cause {
+			t.Fatalf("diagnostic %q wrapped the error: %v", diagnostic, got)
+		}
+	}
+}
+
+func TestCLICodesAreParsedInOrder(t *testing.T) {
+	got := parseCLICodes("svn: E155004: Working copy locked\nsvn: E155004: Run 'svn cleanup' to remove locks")
+	if len(got) != 2 || got[0].Code != 155004 || got[1].Message != "Run 'svn cleanup' to remove locks" {
+		t.Fatalf("parseCLICodes = %+v", got)
+	}
+}

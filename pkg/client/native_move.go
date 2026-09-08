@@ -51,9 +51,9 @@ func missingPathLockConfirmed(raw, comment string) bool {
 }
 
 const (
-	nativeReceiptLimit  = 64 * 1024
-	nativeListingLimit  = 8 << 20
-	nativePathBatch     = 512 // lockstep with FILEES_SVN_MAX_PATHS; daemon batches are 1000
+	nativeReceiptLimit = 64 * 1024
+	nativeListingLimit = 8 << 20
+	nativePathBatch    = 512 // lockstep with FILEES_SVN_MAX_PATHS; daemon batches are 1000
 )
 
 type nativeOutput struct {
@@ -108,7 +108,9 @@ func (c *execClient) RecordMove(ctx context.Context, wc, old, dst string) (strin
 	started := time.Now()
 	err := cmd.Run()
 	if err != nil || stdout.truncated || stderr.truncated {
-		return "", fmt.Errorf("native SVN move %q -> %q failed (no delete/add fallback): %v; context=%v; output-truncated=%v\n%s\n%s", old, dst, err, ctx.Err(), stdout.truncated || stderr.truncated, stdout.buffer.String(), stderr.buffer.String())
+		return "", fmt.Errorf("native SVN move %q -> %q (no delete/add fallback): %w", old, dst,
+			nativeFault("record-move", errors.Join(err, ctx.Err()),
+				stdout.truncated || stderr.truncated, stdout.buffer.String(), stderr.buffer.String()))
 	}
 	var result struct {
 		Schema string
@@ -116,7 +118,8 @@ func (c *execClient) RecordMove(ctx context.Context, wc, old, dst string) (strin
 		State  string
 	}
 	if err := json.Unmarshal(stdout.buffer.Bytes(), &result); err != nil || result.Schema != "filees.native-svn/v1" || !result.OK || (result.State != "scheduled" && result.State != "already_scheduled") {
-		return "", fmt.Errorf("native SVN move returned invalid receipt (no delete/add fallback): %v\n%s\n%s", err, stdout.buffer.String(), stderr.buffer.String())
+		return "", fmt.Errorf("native SVN move returned invalid receipt (no delete/add fallback): %w",
+			nativeFault("record-move", err, false, stdout.buffer.String(), stderr.buffer.String()))
 	}
 	c.lg.Infof("native-move %s: %s -> %s (%s)", result.State, old, dst, time.Since(started).Round(time.Millisecond))
 	return result.State, nil

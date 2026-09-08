@@ -28,15 +28,19 @@ func (c *execClient) nativeRun(ctx context.Context, wc string, args ...string) (
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	if err != nil || stdout.truncated || stderr.truncated {
-		return nil, fmt.Errorf("native SVN %q failed: %v; context=%v; truncated=%v\n%s\n%s",
-			args[0], err, ctx.Err(), stdout.truncated || stderr.truncated, stdout.buffer.String(), stderr.buffer.String())
+		// errors.Join keeps the deadline reachable by errors.Is: a killed
+		// process reports only "signal: killed", and losing the difference
+		// between a timeout and a refusal is how a retryable fault gets shown
+		// as a permanent one.
+		return nil, nativeFault(args[0], errors.Join(err, ctx.Err()),
+			stdout.truncated || stderr.truncated, stdout.buffer.String(), stderr.buffer.String())
 	}
 	var result map[string]any
 	if err := json.Unmarshal(stdout.buffer.Bytes(), &result); err != nil {
 		return nil, fmt.Errorf("native SVN %q returned invalid JSON: %v\n%s", args[0], err, stdout.buffer.String())
 	}
-	if result["schema"] != "filees.native-svn/v1" || result["ok"] != true {
-		return nil, fmt.Errorf("native SVN %q refused: %s", args[0], stdout.buffer.String())
+	if result["schema"] != nativeSchema || result["ok"] != true {
+		return nil, nativeFault(args[0], nil, false, stdout.buffer.String(), stderr.buffer.String())
 	}
 	return result, nil
 }

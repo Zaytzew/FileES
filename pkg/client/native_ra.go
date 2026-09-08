@@ -40,6 +40,10 @@ func nativeRevisionValue(raw map[string]any, field string, nullable bool) (int64
 func nativeJSON(raw map[string]any) string { b, _ := json.Marshal(raw); return string(b) }
 
 func (c *execClient) nativeRemote(ctx context.Context, wc string, args ...string) (map[string]any, error) {
+	return c.nativeRemoteInput(ctx, wc, nil, args...)
+}
+
+func (c *execClient) nativeRemoteInput(ctx context.Context, wc string, input []byte, args ...string) (map[string]any, error) {
 	// A native WC query is offline. Require the same explicit SSH pins as CLI,
 	// including for WC-relative requests where no URL appears in argv.
 	for _, arg := range args {
@@ -56,7 +60,7 @@ func (c *execClient) nativeRemote(ctx context.Context, wc string, args ...string
 			return nil, errors.New("svn+ssh transport requires an installation identity and pinned known_hosts")
 		}
 	}
-	return c.nativeCommand(ctx, wc, c.timeout, args...)
+	return c.nativeCommandInput(ctx, wc, c.timeout, input, args...)
 }
 
 type nativeInfoEntry struct {
@@ -202,17 +206,21 @@ func UpdateChanges(out string) (map[string]string, bool) {
 	return result, true
 }
 func (c *execClient) nativeRequireUpdateChanges(ctx context.Context) error {
+	return c.nativeRequireFeature(ctx, "update_changes")
+}
+
+func (c *execClient) nativeRequireFeature(ctx context.Context, feature string) error {
 	r, e := c.nativeCommand(ctx, "", c.timeout, "--version")
 	if e != nil {
 		return e
 	}
 	features, _ := r["features"].([]any)
 	for _, v := range features {
-		if v == "update_changes" {
+		if v == feature {
 			return nil
 		}
 	}
-	return errors.New("native SVN helper lacks update_changes; upgrade helper before checkout/update")
+	return fmt.Errorf("native SVN helper lacks %s; upgrade helper before mutation", feature)
 }
 
 func (c *execClient) nativeCommit(ctx context.Context, wc string, paths []string, message, marker string, keep bool) (string, int64, error) {
@@ -220,9 +228,15 @@ func (c *execClient) nativeCommit(ctx context.Context, wc string, paths []string
 	if e != nil {
 		return "", 0, e
 	}
-	// Never split a caller's atomic transaction to fit the helper limit.
-	if len(rels) == 0 || len(rels) > nativePathBatch {
-		return "", 0, fmt.Errorf("native commit requires 1..%d explicit paths (no split)", nativePathBatch)
+	if len(rels) != len(paths) {
+		return "", 0, errors.New("native commit refuses WC root targets")
+	}
+	input, e := nativeCommitTargets(rels)
+	if e != nil {
+		return "", 0, e
+	}
+	if e := c.nativeRequireFeature(ctx, "commit_targets_stdin_v1"); e != nil {
+		return "", 0, e
 	}
 	args := []string{"commit", "--wc", wc, "-m", message}
 	if keep {
@@ -231,9 +245,8 @@ func (c *execClient) nativeCommit(ctx context.Context, wc string, paths []string
 	if marker != "" {
 		args = append(args, "--revprop", "filees:commit-id="+marker)
 	}
-	args = append(args, "--")
-	args = append(args, rels...)
-	r, e := c.nativeRemote(ctx, wc, args...)
+	args = append(args, "--targets-stdin")
+	r, e := c.nativeRemoteInput(ctx, wc, input, args...)
 	if e != nil {
 		return "", 0, e
 	}

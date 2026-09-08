@@ -6,12 +6,15 @@
 #include <string.h>
 
 #include <apr_general.h>
+#include <apr_hash.h>
 #include <svn_cmdline.h>
 #include <svn_dirent_uri.h>
 #include <svn_pools.h>
 #include <svn_version.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <fcntl.h>
+#include <io.h>
 #endif
 
 static const char *const k_verbs[] = {
@@ -31,7 +34,59 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\"]}");
+}
+
+/* Stdin is UTF-8 on every platform, independent of the process locale. */
+static int target_utf8(const unsigned char *p)
+{
+    while (*p) {
+        unsigned int code, low;
+        int left;
+        if (*p < 128) { if (*p < 32 || *p == 127) return 0; ++p; continue; }
+        if (*p >= 0xc2 && *p <= 0xdf) { code = *p & 31; left = 1; low = 0x80; }
+        else if (*p >= 0xe0 && *p <= 0xef) { code = *p & 15; left = 2; low = 0x800; }
+        else if (*p >= 0xf0 && *p <= 0xf4) { code = *p & 7; left = 3; low = 0x10000; }
+        else return 0;
+        ++p;
+        while (left--) {
+            if ((*p & 0xc0) != 0x80) return 0;
+            code = (code << 6) | (*p++ & 63);
+        }
+        if (code < low || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return 0;
+    }
+    return 1;
+}
+
+/* Complete validation before opening the WC or contacting the repository.
+ * Every target ends in NUL, including the last; EOF mid-target is an error.
+ * No response file races, temporary paths, quoting, or command-line limit. */
+static svn_error_t *stdin_targets(const char ***paths, int *n, apr_pool_t *pool)
+{
+    char *buf = apr_palloc(pool, FILEES_SVN_TARGET_BYTES + 1);
+    size_t bytes, off = 0;
+    apr_array_header_t *list = apr_array_make(pool, 1024, sizeof(const char *));
+    apr_hash_t *seen = apr_hash_make(pool);
+#ifdef _WIN32
+    if (_setmode(_fileno(stdin), _O_BINARY) == -1) return filees_refuse("cannot read binary targets");
+#endif
+    bytes = fread(buf, 1, FILEES_SVN_TARGET_BYTES + 1, stdin);
+    if (ferror(stdin)) return filees_refuse("cannot read targets");
+    if (!bytes || bytes > FILEES_SVN_TARGET_BYTES || buf[bytes - 1] != '\0')
+        return filees_refuse("empty, oversized or truncated targets");
+    while (off < bytes) {
+        const char *path = buf + off;
+        if (list->nelts >= FILEES_SVN_MAX_TARGETS) return filees_refuse("too many targets");
+        if (!target_utf8((const unsigned char *)path) || !filees_safe_relative(path))
+            return filees_refuse("invalid UTF-8 relative target");
+        if (apr_hash_get(seen, path, APR_HASH_KEY_STRING)) return filees_refuse("duplicate target");
+        apr_hash_set(seen, path, APR_HASH_KEY_STRING, path);
+        APR_ARRAY_PUSH(list, const char *) = path;
+        off += strlen(path) + 1;
+    }
+    *paths = (const char **)list->elts;
+    *n = list->nelts;
+    return SVN_NO_ERROR;
 }
 
 static svn_error_t *parse_wc_flag(int *i, int argc, const char **argv,
@@ -228,10 +283,10 @@ static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
 static svn_error_t *run_commit(int argc, const char **argv, apr_pool_t *pool)
 {
     const char *wc = NULL, *message = NULL;
-    const char *paths[FILEES_SVN_MAX_PATHS];
+    const char *argv_paths[FILEES_SVN_MAX_PATHS], **paths = argv_paths;
     const char *revprops[FILEES_LOG_MAX_REVPROPS];
     int n = 0, nrevprops = 0, i;
-    svn_boolean_t live = TRUE, keep_locks = FALSE;
+    svn_boolean_t live = TRUE, keep_locks = FALSE, from_stdin = FALSE;
 
     for (i = 2; i < argc; ++i) {
         if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
@@ -240,12 +295,18 @@ static svn_error_t *run_commit(int argc, const char **argv, apr_pool_t *pool)
         }
         if (!strcmp(argv[i], "-m") && i + 1 < argc) { message = argv[++i]; continue; }
         if (!strcmp(argv[i], "--keep-locks")) { keep_locks = TRUE; continue; }
+        if (!strcmp(argv[i], "--targets-stdin")) {
+            if (from_stdin) return filees_refuse("duplicate --targets-stdin");
+            from_stdin = TRUE;
+            continue;
+        }
         if (!strcmp(argv[i], "--revprop") && i + 1 < argc) {
             if (nrevprops >= FILEES_LOG_MAX_REVPROPS) return filees_refuse("too many --revprop");
             revprops[nrevprops++] = argv[++i];
             continue;
         }
         if (!strcmp(argv[i], "--")) {
+            if (from_stdin) return filees_refuse("stdin and argv targets are mutually exclusive");
             SVN_ERR(collect_paths(i, argc, argv, paths, &n));
             break;
         }
@@ -253,6 +314,7 @@ static svn_error_t *run_commit(int argc, const char **argv, apr_pool_t *pool)
                              "[--revprop NAME=VALUE] -- REL...");
     }
     if (!wc) return filees_refuse("commit requires --wc|--disposable-wc");
+    if (from_stdin) SVN_ERR(stdin_targets(&paths, &n, pool));
     return filees_ra_commit(wc, live, paths, n, message, keep_locks, revprops, nrevprops, pool);
 }
 

@@ -12,8 +12,10 @@
 
 #define FILEES_SVN_MARKER ".filees-native-probe"
 #define FILEES_SVN_SCHEMA "filees.native-svn/v1"
-/* Per invocation. The Go adapter splits daemon batches (default 1000). */
+/* argv/local batches stay bounded. Atomic commits use bounded stdin instead. */
 #define FILEES_SVN_MAX_PATHS 512
+#define FILEES_SVN_MAX_TARGETS 65536
+#define FILEES_SVN_TARGET_BYTES (16 * 1024 * 1024)
 
 svn_error_t *filees_refuse(const char *message);
 void filees_json_string(const char *s);

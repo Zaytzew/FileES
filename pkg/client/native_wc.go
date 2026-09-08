@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,10 @@ func (c *execClient) nativeRun(ctx context.Context, wc string, args ...string) (
 // nativeCommand shares serialization and bounded receipts with WC-local calls.
 // Remote operations retain the configured transfer timeout, not the 30s WC cap.
 func (c *execClient) nativeCommand(ctx context.Context, dir string, timeout time.Duration, args ...string) (map[string]any, error) {
+	return c.nativeCommandInput(ctx, dir, timeout, nil, args...)
+}
+
+func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout time.Duration, input []byte, args ...string) (map[string]any, error) {
 	if !filepath.IsAbs(c.nativeSVNPath) || (dir != "" && !filepath.IsAbs(dir)) || len(args) == 0 {
 		return nil, errors.New("native SVN: invalid executable, directory or command")
 	}
@@ -29,6 +34,9 @@ func (c *execClient) nativeCommand(ctx context.Context, dir string, timeout time
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.nativeSVNPath, args...)
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
 	cmd.Dir = dir
 	cmd.Env = svnProcessEnvironment(os.Environ(), c.sshCommand)
 	stdout := nativeOutput{max: nativeListingLimit}

@@ -158,7 +158,7 @@ svn_error_t *filees_abs_paths(apr_array_header_t **out, const char *wc,
 {
     int i;
     if (nrels < 1) return filees_refuse("expected one or more relative paths");
-    if (nrels > FILEES_SVN_MAX_PATHS) return filees_refuse("too many paths");
+    if (nrels > FILEES_SVN_MAX_TARGETS) return filees_refuse("too many paths");
     *out = apr_array_make(pool, nrels, sizeof(const char *));
     for (i = 0; i < nrels; ++i) {
         const char *abs;

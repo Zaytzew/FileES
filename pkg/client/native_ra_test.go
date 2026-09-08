@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,7 +20,7 @@ func fakeNativeRA() {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return
 		}
-		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes"]}`)
+		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1"]}`)
 		return
 	}
 	if p := os.Getenv("FILEES_TEST_RA_TRACE"); p != "" {
@@ -28,7 +29,13 @@ func fakeNativeRA() {
 			panic(e)
 		}
 		json.NewEncoder(f).Encode(os.Args[1:])
+		if len(os.Args) > 1 && os.Args[1] == "commit" {
+			b, _ := io.ReadAll(os.Stdin)
+			json.NewEncoder(f).Encode(strings.Split(string(b), "\x00"))
+		}
 		f.Close()
+	} else if len(os.Args) > 1 && os.Args[1] == "commit" {
+		_, _ = io.Copy(io.Discard, os.Stdin)
 	}
 	if len(os.Args) > 1 && os.Args[1] == "info" {
 		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"entries":[{"path":".","url":"file:///lab","repos_root_url":"file:///lab","repos_uuid":"test-uuid","revision":1,"last_changed_rev":1}]}`)
@@ -97,7 +104,7 @@ func TestNativeRAInvalidReceiptsFailClosed(t *testing.T) {
 func TestNativeRACommitDoesNotSplitOrPublishRoot(t *testing.T) {
 	c := raFake(t, `{"schema":"filees.native-svn/v1","ok":true,"revision":1}`)
 	wc := t.TempDir()
-	for _, paths := range [][]string{nil, {"."}, make([]string, nativePathBatch+1), {"../escape"}} {
+	for _, paths := range [][]string{nil, {"."}, {".", "a"}, make([]string, nativeCommitTargetLimit+1), {"../escape"}} {
 		for i := range paths {
 			if paths[i] == "" {
 				paths[i] = fmt.Sprint(i)

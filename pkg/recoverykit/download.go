@@ -56,26 +56,17 @@ func Download(ctx context.Context, kit Kit, outputRoot string, now time.Time) ([
 	if err != nil {
 		return nil, err
 	}
-	connection, err := (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, "tcp", address)
-	if err != nil {
-		return nil, fmt.Errorf("connect recovery server: %w", err)
-	}
-	defer connection.Close()
-	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
-	defer stop()
 	sshConfig := &ssh.ClientConfig{
 		User: recoveryUser, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519}, HostKeyCallback: hostCallback,
 		Timeout: 30 * time.Second,
 	}
-	clientConnection, channels, requests, err := ssh.NewClientConn(connection, address, sshConfig)
-	if err != nil {
-		return nil, fmt.Errorf("recovery SSH handshake: %w", err)
-	}
-	client := ssh.NewClient(clientConnection, channels, requests)
-	defer client.Close()
-
-	serverManifest, err := fetchRecoveryManifest(client, kit.OperationID)
+	var serverManifest repoworker.RecoveryManifest
+	err = withRecoveryClient(ctx, address, sshConfig, func(client *ssh.Client) error {
+		var err error
+		serverManifest, err = fetchRecoveryManifest(client, kit.OperationID)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +75,51 @@ func Download(ctx context.Context, kit Kit, outputRoot string, now time.Time) ([
 	}
 	var paths []string
 	for _, archive := range kit.Manifest.Archives {
-		path, err := downloadRecoveryArchive(client, outputRoot, kit.OperationID, archive)
+		var path string
+		err := withRecoveryClient(ctx, address, sshConfig, func(client *ssh.Client) error {
+			var err error
+			path, err = downloadRecoveryArchive(client, outputRoot, kit.OperationID, archive)
+			return err
+		})
 		if err != nil {
 			return paths, err
 		}
 		paths = append(paths, path)
 	}
 	return paths, nil
+}
+
+// One request per authenticated connection. OpenSSH MaxSessions 1 can still
+// count a finished session while its child is being reaped, even after Wait
+// and Close return to this client. A fresh connection avoids that race without
+// sleeps, retries of refused requests, or weakening the server's session limit.
+// Every connection repeats the same host pin and recovery-key authentication.
+func withRecoveryClient(ctx context.Context, address string, config *ssh.ClientConfig, run func(*ssh.Client) error) error {
+	connection, err := (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, "tcp", address)
+	if err != nil {
+		return fmt.Errorf("connect recovery server: %w", err)
+	}
+	defer connection.Close()
+	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stop()
+	// NewClientConn does not consume ClientConfig.Timeout. Bound the handshake
+	// separately; the transfer itself retains the caller's overall context.
+	if err := connection.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return err
+	}
+	clientConnection, channels, requests, err := ssh.NewClientConn(connection, address, config)
+	if err != nil {
+		return fmt.Errorf("recovery SSH handshake: %w", err)
+	}
+	client := ssh.NewClient(clientConnection, channels, requests)
+	defer client.Close()
+	if err := connection.SetDeadline(time.Time{}); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return run(client)
 }
 
 func fetchRecoveryManifest(client *ssh.Client, operationID string) (repoworker.RecoveryManifest, error) {

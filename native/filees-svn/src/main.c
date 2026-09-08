@@ -14,8 +14,8 @@
 #endif
 
 static const char *const k_verbs[] = {
-    "record-move", "status", "info", "add", "delete", "propget", "propset",
-    "propdel", "cleanup", "revert", "resolve", NULL
+    "record-move", "cat", "status", "info", "add", "delete", "propget",
+    "propset", "propdel", "cleanup", "revert", "resolve", NULL
 };
 
 static void print_ok_version(void)
@@ -79,6 +79,27 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         else return filees_refuse("usage: filees-svn record-move --wc|--disposable-wc WC OLD_REL NEW_REL");
         SVN_ERR(filees_record_move(argv[3], argv[4], argv[5], live, &state, pool));
         printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"state\":\"%s\"}\n", state);
+        return SVN_NO_ERROR;
+    }
+
+    if (!strcmp(verb, "cat")) {
+        /* Handled before the shared flag loop: cat is the first verb with no
+         * working copy, so the --wc requirement below does not apply to it. */
+        const char *url = NULL, *out = NULL;
+        svn_revnum_t revision = SVN_INVALID_REVNUM;
+        for (i = 2; i < argc; ++i) {
+            if (!strcmp(argv[i], "--url") && i + 1 < argc) { url = argv[++i]; continue; }
+            if (!strcmp(argv[i], "--out") && i + 1 < argc) { out = argv[++i]; continue; }
+            if (!strcmp(argv[i], "--revision") && i + 1 < argc) {
+                char *end;
+                long value = strtol(argv[++i], &end, 10);
+                if (*end || value < 0) return filees_refuse("--revision must be a non-negative number");
+                revision = (svn_revnum_t)value;
+                continue;
+            }
+            return filees_refuse("usage: filees-svn cat --url URL --out PATH [--revision N]");
+        }
+        SVN_ERR(filees_ra_cat(url, out, revision, pool));
         return SVN_NO_ERROR;
     }
 

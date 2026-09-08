@@ -678,7 +678,7 @@ func (p *daemonProvisioner) deleteServerRepository(ctx context.Context, record l
 	if err != nil {
 		return control.DeleteRepositoryResult{}, err
 	}
-	result, err := transport.Exchange(ctx, ticket)
+	result, err := controlclient.ResumeRepositoryDeletion(ctx, transport, ticket)
 	if err != nil {
 		return control.DeleteRepositoryResult{}, err
 	}
@@ -731,7 +731,7 @@ func (p *daemonProvisioner) prepareRepositoryRecovery(ctx context.Context, recor
 	if err != nil {
 		return "", err
 	}
-	response, err := transport.Exchange(ctx, ticket)
+	response, err := controlclient.ResumeRepositoryDeletion(ctx, transport, ticket)
 	if err != nil {
 		return "", err
 	}

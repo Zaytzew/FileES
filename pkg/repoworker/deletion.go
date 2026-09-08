@@ -276,6 +276,13 @@ func (e ServerEffects) RestoreDelete(_ context.Context, repoID, operationID stri
 }
 
 func (e ServerEffects) ArchiveAndDeleteFSFS(ctx context.Context, repoID, operationID string) (time.Time, error) {
+	return e.archiveAndDeleteFSFS(ctx, repoID, operationID, checkDeletionSpace)
+}
+
+func (e ServerEffects) archiveAndDeleteFSFS(ctx context.Context, repoID, operationID string, check deletionSpaceCheck) (time.Time, error) {
+	if err := ctx.Err(); err != nil {
+		return time.Time{}, err
+	}
 	repo, err := e.deleteRepoPath(repoID, operationID)
 	if err != nil {
 		return time.Time{}, err
@@ -299,9 +306,12 @@ func (e ServerEffects) ArchiveAndDeleteFSFS(ctx context.Context, repoID, operati
 	base := repoID + "-" + operationID
 	dumpPath := filepath.Join(e.DeletionArchiveRoot, base+".svndump")
 	metaPath := filepath.Join(e.DeletionArchiveRoot, base+".json")
-	if meta, ok, err := loadDeletionArchive(metaPath, dumpPath, repoID, operationID); err != nil {
+	if meta, ok, err := loadDeletionArchiveContext(ctx, metaPath, dumpPath, repoID, operationID); err != nil {
 		return time.Time{}, err
 	} else if ok {
+		if err := ctx.Err(); err != nil {
+			return time.Time{}, err
+		}
 		if err := removeRepositoryTree(repo); err != nil {
 			return time.Time{}, err
 		}
@@ -309,17 +319,25 @@ func (e ServerEffects) ArchiveAndDeleteFSFS(ctx context.Context, repoID, operati
 	}
 
 	if _, err := os.Stat(dumpPath); errors.Is(err, os.ErrNotExist) {
-		if err := e.createDump(ctx, repo, dumpPath, operationID); err != nil {
+		// Both destinations need headroom. There is deliberately no claim
+		// that the compressed FSFS size bounds the eventual dump/load size.
+		if err := check(ctx, e.RepositoriesRoot, 0); err != nil {
+			return time.Time{}, err
+		}
+		if err := e.createDump(ctx, repo, dumpPath, operationID, check); err != nil {
 			return time.Time{}, err
 		}
 	} else if err != nil {
 		return time.Time{}, err
 	}
-	if err := e.verifyDump(ctx, dumpPath, operationID); err != nil {
+	if err := e.verifyDump(ctx, dumpPath, operationID, check); err != nil {
 		return time.Time{}, err
 	}
-	digest, err := fileDigest(dumpPath)
+	digest, err := fileDigestContext(ctx, dumpPath)
 	if err != nil {
+		return time.Time{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return time.Time{}, err
 	}
 	deleteAfter := now.Add(time.Duration(e.DeletionRetentionDays) * 24 * time.Hour)
@@ -336,12 +354,14 @@ func (e ServerEffects) ArchiveAndDeleteFSFS(ctx context.Context, repoID, operati
 	return deleteAfter, nil
 }
 
-func (e ServerEffects) createDump(ctx context.Context, repo, finalPath, operationID string) error {
+func (e ServerEffects) createDump(ctx context.Context, repo, finalPath, operationID string, check deletionSpaceCheck) error {
 	if !validRepo(repo) {
 		return errors.New("repository selected for dump is invalid")
 	}
 	tempPath := finalPath + ".tmp-" + operationID
-	_ = os.Remove(tempPath)
+	if err := os.Remove(tempPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	file, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err
@@ -351,12 +371,15 @@ func (e ServerEffects) createDump(ctx context.Context, repo, finalPath, operatio
 	// rejects transactions that arrive while verification is running; freeze
 	// additionally waits for a transaction already in flight and holds the
 	// repository write lock for the complete dump.
-	command := exec.CommandContext(ctx, e.SVNAdmin,
+	args := []string{
 		"freeze", repo, "--",
 		e.SVNAdmin, "dump", repo, "--quiet",
-	)
-	command.Stdout, command.Stderr = file, &stderr
-	runErr := command.Run()
+	}
+	runErr := runDeletionCommand(ctx, filepath.Dir(finalPath), check, e.SVNAdmin, args,
+		func(command *exec.Cmd, ctx context.Context, cancel context.CancelCauseFunc) {
+			command.Stdout = deletionDumpWriter{ctx: ctx, cancel: cancel, root: filepath.Dir(finalPath), check: check, out: file}
+			command.Stderr = &stderr
+		})
 	if runErr == nil {
 		runErr = file.Sync()
 	}
@@ -364,33 +387,48 @@ func (e ServerEffects) createDump(ctx context.Context, repo, finalPath, operatio
 		runErr = closeErr
 	}
 	if runErr != nil {
-		_ = os.Remove(tempPath)
-		return fmt.Errorf("svnadmin dump: %w: %s", runErr, stderr.String())
+		return errors.Join(fmt.Errorf("svnadmin dump: %w: %s", runErr, stderr.String()), os.Remove(tempPath))
 	}
 	if err := os.Rename(tempPath, finalPath); err != nil {
-		_ = os.Remove(tempPath)
-		return err
+		return errors.Join(err, os.Remove(tempPath))
 	}
 	return syncDirectory(filepath.Dir(finalPath))
 }
 
-func (e ServerEffects) verifyDump(ctx context.Context, dumpPath, operationID string) error {
+func (e ServerEffects) verifyDump(ctx context.Context, dumpPath, operationID string, check deletionSpaceCheck) (resultErr error) {
 	verifyRoot := filepath.Join(e.RepositoriesRoot, ".verify-delete-"+operationID)
 	if err := os.RemoveAll(verifyRoot); err != nil {
 		return err
 	}
-	defer os.RemoveAll(verifyRoot)
-	if output, err := exec.CommandContext(ctx, e.SVNAdmin, "create", verifyRoot).CombinedOutput(); err != nil {
-		return fmt.Errorf("create dump verifier: %w: %s", err, output)
+	defer func() { resultErr = errors.Join(resultErr, os.RemoveAll(verifyRoot)) }()
+	info, err := os.Stat(dumpPath)
+	if err != nil {
+		return err
+	}
+	// A conservative admission estimate, not an upper bound: FSFS indexes
+	// and representation choices can exceed the dump. The live monitor is
+	// still required throughout create/load/verify.
+	if err := check(ctx, e.RepositoriesRoot, info.Size()); err != nil {
+		return err
+	}
+	var stderr bytes.Buffer
+	run := func(args []string, stdin io.Reader) error {
+		stderr.Reset()
+		return runDeletionCommand(ctx, e.RepositoriesRoot, check, e.SVNAdmin, args,
+			func(command *exec.Cmd, _ context.Context, _ context.CancelCauseFunc) {
+				command.Stdin, command.Stdout, command.Stderr = stdin, io.Discard, &stderr
+			})
+	}
+	if err := run([]string{"create", verifyRoot}, nil); err != nil {
+		return fmt.Errorf("create dump verifier: %w: %s", err, stderr.String())
 	}
 	dump, err := os.Open(dumpPath)
 	if err != nil {
 		return err
 	}
-	var stderr bytes.Buffer
-	load := exec.CommandContext(ctx, e.SVNAdmin, "load", verifyRoot, "--quiet")
-	load.Stdin, load.Stdout, load.Stderr = dump, io.Discard, &stderr
-	loadErr := load.Run()
+	// A reader wrapper forces a pipe: worker death cannot leave the child
+	// reading an inherited dump descriptor for hours.
+	loadErr := run([]string{"load", verifyRoot, "--quiet"}, struct{ io.Reader }{dump})
 	closeErr := dump.Close()
 	if loadErr != nil {
 		return fmt.Errorf("verify dump load: %w: %s", loadErr, stderr.String())
@@ -398,8 +436,8 @@ func (e ServerEffects) verifyDump(ctx context.Context, dumpPath, operationID str
 	if closeErr != nil {
 		return closeErr
 	}
-	if output, err := exec.CommandContext(ctx, e.SVNAdmin, "verify", verifyRoot, "--quiet").CombinedOutput(); err != nil {
-		return fmt.Errorf("verify loaded dump: %w: %s", err, output)
+	if err := run([]string{"verify", verifyRoot, "--quiet"}, nil); err != nil {
+		return fmt.Errorf("verify loaded dump: %w: %s", err, stderr.String())
 	}
 	return nil
 }
@@ -440,6 +478,10 @@ func removeRepositoryTree(repo string) error {
 }
 
 func loadDeletionArchive(metaPath, dumpPath, repoID, operationID string) (deletionArchiveMeta, bool, error) {
+	return loadDeletionArchiveContext(context.Background(), metaPath, dumpPath, repoID, operationID)
+}
+
+func loadDeletionArchiveContext(ctx context.Context, metaPath, dumpPath, repoID, operationID string) (deletionArchiveMeta, bool, error) {
 	raw, err := os.ReadFile(metaPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return deletionArchiveMeta{}, false, nil
@@ -455,7 +497,7 @@ func loadDeletionArchive(metaPath, dumpPath, repoID, operationID string) (deleti
 		meta.DumpFile != filepath.Base(dumpPath) {
 		return deletionArchiveMeta{}, false, errors.New("repository deletion archive metadata is invalid")
 	}
-	digest, err := fileDigest(dumpPath)
+	digest, err := fileDigestContext(ctx, dumpPath)
 	if err != nil {
 		return deletionArchiveMeta{}, false, err
 	}
@@ -542,13 +584,17 @@ func validateDeletionArchiveMeta(meta deletionArchiveMeta) error {
 }
 
 func fileDigest(path string) (string, error) {
+	return fileDigestContext(context.Background(), path)
+}
+
+func fileDigestContext(ctx context.Context, path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if _, err := io.Copy(hash, deletionContextReader{ctx: ctx, in: file}); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil

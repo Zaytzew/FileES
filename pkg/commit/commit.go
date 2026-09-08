@@ -148,14 +148,15 @@ type Service struct {
 	Emit func(evType string, payload any)
 
 	// internal
-	repoID     string // set from Run(); used by emit()
-	wc         string // set from Run(); local shout inbox / last_seen
-	mu         sync.Mutex
-	wcOpMu     sync.Mutex            // serialize publication, poll/update and event merging
-	staging    map[string]*stageItem // rel path -> info
-	cachePath  string                // .filees/commit_cache/cache.json
-	lastShout  time.Time
-	lastCommit time.Time // last successful commit (for size-adaptive interval)
+	repoID      string // set from Run(); used by emit()
+	wc          string // set from Run(); local shout inbox / last_seen
+	mu          sync.Mutex
+	wcOpMu      sync.Mutex            // serialize publication, poll/update and event merging
+	cacheSaveMu sync.Mutex            // serialize cache snapshots and their durable replacement
+	staging     map[string]*stageItem // rel path -> info
+	cachePath   string                // .filees/commit_cache/cache.json
+	lastShout   time.Time
+	lastCommit  time.Time // last successful commit (for size-adaptive interval)
 	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
 	// that actually publishes; last_seen then jumps to that revision so this
 	// installation does not badge its own shout.
@@ -466,8 +467,10 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 }
 
 func (s *Service) acceptEvent(ev watcher.Event) {
+	s.wcOpMu.Lock()
+	defer s.wcOpMu.Unlock()
 	s.recordActivity(ev.Rel, ev.Op, activity.Detected, 0, "")
-	s.addEvent(ev)
+	s.addEventLocked(ev)
 	s.saveCache()
 	s.recordActivity(ev.Rel, ev.Op, activity.Pending, 0, "")
 }
@@ -570,6 +573,9 @@ func (s *Service) runPoller(ctx context.Context, wc string) {
 func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
+	// A watcher also observes files materialized by update. Reconcile locally
+	// even at unchanged HEAD/offline, without waiting for the publish debounce.
+	s.reconcileCleanPending(ctx, wc)
 	headRev, err := s.Cli.Revision(ctx, s.RepoURL)
 	if err != nil {
 		if client.IsNetworkError(err) {
@@ -644,6 +650,10 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 func (s *Service) addEvent(ev watcher.Event) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
+	s.addEventLocked(ev)
+}
+
+func (s *Service) addEventLocked(ev watcher.Event) {
 	if s.OnPathActivity != nil {
 		s.OnPathActivity(ev.Path)
 	}
@@ -1849,6 +1859,8 @@ func (s *Service) saveCache() {
 }
 
 func (s *Service) saveCacheChecked() error {
+	s.cacheSaveMu.Lock()
+	defer s.cacheSaveMu.Unlock()
 	if s.cachePath == "" || !s.workingCopyAvailable(s.wc) {
 		return errors.New("commit cache is unavailable")
 	}

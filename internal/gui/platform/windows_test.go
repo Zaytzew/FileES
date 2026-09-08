@@ -402,6 +402,23 @@ func TestWindowsNotificationWithoutGroupOmitsTag(t *testing.T) {
 	}
 }
 
+// Execute the actual production prefix in a fresh Windows PowerShell process.
+// No Show call: this checks WinRT activation without sending a user notification.
+func TestWindowsToastObjectsConstructInFreshPowerShell(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	script := buildToastScript(Notification{Title: "Windows E2E O'Brien", Body: "Zażółć <&>"}, "test-tag", "ATMProjekt.FileES")
+	end := strings.LastIndex(script, "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier")
+	if end < 0 {
+		t.Fatal("missing Show boundary")
+	}
+	script = script[:end] + "if($toast.Tag -ne 'test-tag'){throw 'invalid tag'};Write-Output 'constructed'"
+	out, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "constructed") {
+		t.Fatalf("toast construction: %v: %s", err, out)
+	}
+}
+
 func TestWindowsNotificationRequiresConfiguredAUMID(t *testing.T) {
 	runner := &fakeWindowsRunner{
 		paths: map[string]string{"powershell.exe": `C:\Windows\powershell.exe`},

@@ -175,3 +175,15 @@ svn_error_t *filees_plain_node(const char *path, apr_filetype_e wanted,
 {
     return plain_node(path, wanted, missing, pool);
 }
+
+/* Shared by info and log: one spelling of a node kind, so two verbs cannot
+ * disagree about what a directory is called. */
+const char *filees_node_kind(svn_node_kind_t kind)
+{
+    switch (kind) {
+    case svn_node_file: return "file";
+    case svn_node_dir: return "dir";
+    case svn_node_none: return "none";
+    default: return "unknown";
+    }
+}

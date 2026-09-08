@@ -259,16 +259,6 @@ struct info_baton {
     apr_pool_t *pool;
 };
 
-static const char *info_kind(svn_node_kind_t kind)
-{
-    switch (kind) {
-    case svn_node_file: return "file";
-    case svn_node_dir: return "dir";
-    case svn_node_none: return "none";
-    default: return "unknown";
-    }
-}
-
 static svn_error_t *collect_info(void *baton, const char *abspath_or_url,
                                  const svn_client_info2_t *info, apr_pool_t *pool)
 {
@@ -282,7 +272,7 @@ static svn_error_t *collect_info(void *baton, const char *abspath_or_url,
     row->url = info->URL ? apr_pstrdup(b->pool, info->URL) : NULL;
     row->repos_root = info->repos_root_URL ? apr_pstrdup(b->pool, info->repos_root_URL) : NULL;
     row->repos_uuid = info->repos_UUID ? apr_pstrdup(b->pool, info->repos_UUID) : NULL;
-    row->kind = info_kind(info->kind);
+    row->kind = filees_node_kind(info->kind);
     row->rev = info->rev;
     row->last_changed_rev = info->last_changed_rev;
     return SVN_NO_ERROR;

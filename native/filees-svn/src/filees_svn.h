@@ -20,6 +20,7 @@ void filees_json_string(const char *s);
 int filees_failure(svn_error_t *err);
 int filees_safe_relative(const char *path);
 const char *filees_status_kind(enum svn_wc_status_kind kind);
+const char *filees_node_kind(svn_node_kind_t kind);
 
 /* Exact WC root. live requires .filees; disposable requires the probe marker. */
 svn_error_t *filees_require_wc(const char **wc_abspath, svn_client_ctx_t **ctx,
@@ -37,8 +38,18 @@ svn_error_t *filees_record_move(const char *wc_arg, const char *old_rel,
                                 const char **state, apr_pool_t *pool);
 
 /* Remote verbs. No working copy, no .filees marker; see ra.c for the guard. */
+svn_error_t *filees_ra_ctx(svn_client_ctx_t **ctx, apr_pool_t *pool);
+svn_error_t *filees_ra_ctx_auth(svn_client_ctx_t *ctx, apr_pool_t *pool);
+svn_error_t *filees_ra_target(const char **canonical, const char *url,
+                              apr_pool_t *pool);
 svn_error_t *filees_ra_cat(const char *url, const char *out_path,
                            svn_revnum_t revision, apr_pool_t *pool);
+svn_error_t *filees_log(svn_client_ctx_t *ctx, const char *target,
+                        const svn_opt_revision_t *peg,
+                        const svn_opt_revision_t *start,
+                        const svn_opt_revision_t *end, int limit,
+                        svn_boolean_t changed_paths, const char **revprops,
+                        int nrevprops, apr_pool_t *pool);
 
 svn_error_t *filees_wc_add(const char *wc, svn_boolean_t live,
                            const char **rels, int n, apr_pool_t *pool);

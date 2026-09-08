@@ -88,3 +88,102 @@ func TestRACatLeavesNoPartialAfterFailure(t *testing.T) {
 	// And the retry reports the repository, not the leftover.
 	f.jsonCall(t, false, "cat", "--url", f.repoURL+"/no-such-file.txt", "--out", out)
 }
+
+// log replaces three CLI invocations that were one question asked with
+// different fields: the shout inbox wants revision and message, the commit
+// receipt lookup wants a named revprop, and move-result recovery wants changed
+// paths with copyfrom.
+func TestRALogReadsRevisionsAndMessages(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	write(t, filepath.Join(f.wc, "occupied.txt"), "second\n")
+	f.svnRun(t, "commit", "--username", "editor", "-m", "second commit")
+
+	got := f.jsonCall(t, true, "log", "--url", f.repoURL, "--revision", "HEAD:1")
+	entries, _ := got["entries"].([]any)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %#v", got["entries"])
+	}
+	newest := entries[0].(map[string]any)
+	if newest["revision"].(float64) != 2 || newest["message"] != "second commit" {
+		t.Fatalf("newest entry = %#v", newest)
+	}
+	if newest["author"] != "editor" {
+		t.Fatalf("author = %#v", newest["author"])
+	}
+	// Both entries must carry their own strings. The receiver's scratch pool is
+	// cleared between entries, so a kept pointer reads freed memory - measured
+	// 2026-09-08, when the newest entry came back with the tail of another
+	// entry's date as its author.
+	oldest := entries[1].(map[string]any)
+	if oldest["message"] != "birth" || oldest["author"] != "creator" {
+		t.Fatalf("oldest entry was corrupted by the newer one: %#v", oldest)
+	}
+}
+
+func TestRALogReportsChangedPathsWithCopyfrom(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	f.svnRun(t, "copy", "--", "occupied.txt", "copied.txt")
+	f.svnRun(t, "commit", "--username", "copier", "-m", "copy with history")
+
+	got := f.jsonCall(t, true, "log", "--url", f.repoURL, "--revision", "2", "--changed-paths")
+	entries, _ := got["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v", got["entries"])
+	}
+	paths, _ := entries[0].(map[string]any)["paths"].([]any)
+	var found bool
+	for _, raw := range paths {
+		p := raw.(map[string]any)
+		if p["path"] == "/copied.txt" {
+			found = true
+			if p["action"] != "A" || p["copyfrom_path"] != "/occupied.txt" || p["copyfrom_rev"].(float64) != 1 {
+				t.Fatalf("copy not described: %#v", p)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("copied path missing: %#v", paths)
+	}
+}
+
+func TestRALogReturnsNamedRevprops(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	write(t, filepath.Join(f.wc, "occupied.txt"), "receipted\n")
+	f.svnRun(t, "commit", "--username", "editor", "--with-revprop", "filees:commit-id=RECEIPT-1", "-m", "with receipt")
+
+	got := f.jsonCall(t, true, "log", "--url", f.repoURL, "--revision", "2", "--revprop", "filees:commit-id")
+	entries, _ := got["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v", got["entries"])
+	}
+	props, _ := entries[0].(map[string]any)["revprops"].(map[string]any)
+	if props["filees:commit-id"] != "RECEIPT-1" {
+		t.Fatalf("revprops = %#v", props)
+	}
+}
+
+func TestRALogAcceptsAWorkingCopyTarget(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	got := f.jsonCall(t, true, "log", "--disposable-wc", f.wc, "--revision", "1", "--", "occupied.txt")
+	entries, _ := got["entries"].([]any)
+	if len(entries) != 1 || entries[0].(map[string]any)["revision"].(float64) != 1 {
+		t.Fatalf("entries = %#v", got["entries"])
+	}
+}
+
+func TestRALogRefusesAmbiguousOrUnboundedRequests(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"both sources", []string{"log", "--url", f.repoURL, "--disposable-wc", f.wc, "--revision", "1"}},
+		{"no source", []string{"log", "--revision", "1"}},
+		{"no revision", []string{"log", "--url", f.repoURL}},
+		{"working copy without a target", []string{"log", "--disposable-wc", f.wc, "--revision", "1"}},
+		{"url with a separate target", []string{"log", "--url", f.repoURL, "--revision", "1", "--", "occupied.txt"}},
+		{"nonsense revision", []string{"log", "--url", f.repoURL, "--revision", "yesterday"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) { f.jsonCall(t, false, tc.args...) })
+	}
+}

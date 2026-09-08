@@ -7,6 +7,7 @@
 
 #include <apr_general.h>
 #include <svn_cmdline.h>
+#include <svn_dirent_uri.h>
 #include <svn_pools.h>
 #include <svn_version.h>
 #ifdef _WIN32
@@ -14,8 +15,8 @@
 #endif
 
 static const char *const k_verbs[] = {
-    "record-move", "cat", "status", "info", "add", "delete", "propget",
-    "propset", "propdel", "cleanup", "revert", "resolve", NULL
+    "record-move", "cat", "log", "status", "info", "add", "delete",
+    "propget", "propset", "propdel", "cleanup", "revert", "resolve", NULL
 };
 
 static void print_ok_version(void)
@@ -55,6 +56,106 @@ static svn_error_t *collect_paths(int i, int argc, const char **argv,
     return SVN_NO_ERROR;
 }
 
+static svn_error_t *parse_one_revision(const char *text, svn_opt_revision_t *rev)
+{
+    char *end;
+    long value;
+    if (!strcmp(text, "HEAD")) {
+        rev->kind = svn_opt_revision_head;
+        return SVN_NO_ERROR;
+    }
+    value = strtol(text, &end, 10);
+    if (*end || value < 0) return filees_refuse("revision must be HEAD or a non-negative number");
+    rev->kind = svn_opt_revision_number;
+    rev->value.number = (svn_revnum_t)value;
+    return SVN_NO_ERROR;
+}
+
+/* "N" means that revision alone, "A:B" a range. A bare number is the common
+ * case and must not silently become "everything up to N". */
+static svn_error_t *parse_revision_range(const char *text, apr_pool_t *pool,
+                                         svn_opt_revision_t *start,
+                                         svn_opt_revision_t *end)
+{
+    const char *colon = strchr(text, ':');
+    if (!colon) {
+        SVN_ERR(parse_one_revision(text, start));
+        *end = *start;
+        return SVN_NO_ERROR;
+    }
+    SVN_ERR(parse_one_revision(apr_pstrndup(pool, text, (apr_size_t)(colon - text)), start));
+    return parse_one_revision(colon + 1, end);
+}
+
+#define FILEES_LOG_MAX_REVPROPS 8
+
+static svn_error_t *run_log(int argc, const char **argv, apr_pool_t *pool)
+{
+    const char *url = NULL, *wc = NULL, *target = NULL;
+    const char *revprops[FILEES_LOG_MAX_REVPROPS];
+    int nrevprops = 0, limit = 0, i;
+    svn_boolean_t live = TRUE, changed = FALSE, have_range = FALSE, peg_base = FALSE;
+    svn_opt_revision_t peg, start, end;
+    svn_client_ctx_t *ctx;
+
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--url") && i + 1 < argc) { url = argv[++i]; continue; }
+        if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
+            SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live));
+            continue;
+        }
+        if (!strcmp(argv[i], "--revision") && i + 1 < argc) {
+            SVN_ERR(parse_revision_range(argv[++i], pool, &start, &end));
+            have_range = TRUE;
+            continue;
+        }
+        if (!strcmp(argv[i], "--limit") && i + 1 < argc) {
+            char *stop;
+            long value = strtol(argv[++i], &stop, 10);
+            if (*stop || value < 1 || value > 100000) return filees_refuse("--limit must be 1..100000");
+            limit = (int)value;
+            continue;
+        }
+        if (!strcmp(argv[i], "--changed-paths")) { changed = TRUE; continue; }
+        if (!strcmp(argv[i], "--peg-base")) { peg_base = TRUE; continue; }
+        if (!strcmp(argv[i], "--revprop") && i + 1 < argc) {
+            if (nrevprops >= FILEES_LOG_MAX_REVPROPS) return filees_refuse("too many --revprop");
+            revprops[nrevprops++] = argv[++i];
+            continue;
+        }
+        if (!strcmp(argv[i], "--")) {
+            if (i + 2 < argc) return filees_refuse("log takes one target");
+            if (i + 1 < argc) target = argv[++i];
+            continue;
+        }
+        return filees_refuse("usage: filees-svn log (--url URL | --wc WC -- REL) --revision A[:B] "
+                             "[--limit N] [--changed-paths] [--peg-base] [--revprop NAME]");
+    }
+
+    if ((url == NULL) == (wc == NULL))
+        return filees_refuse("log needs exactly one of --url and --wc");
+    if (!have_range) return filees_refuse("log requires --revision");
+
+    peg.kind = peg_base ? svn_opt_revision_base : svn_opt_revision_unspecified;
+    if (url) {
+        if (target) return filees_refuse("--url takes no separate target");
+        SVN_ERR(filees_ra_target(&target, url, pool));
+        SVN_ERR(filees_ra_ctx(&ctx, pool));
+    } else {
+        const char *root;
+        if (!target) return filees_refuse("--wc requires one relative target after --");
+        if (!filees_safe_relative(target)) return filees_refuse("target must be relative and inside the working copy");
+        SVN_ERR(filees_require_wc(&root, &ctx, wc, live, pool));
+        /* The working copy verbs run offline; log does not, and cannot. It is
+         * a repository question asked about a local path, so the context needs
+         * credentials even though the target is on disk. */
+        SVN_ERR(filees_ra_ctx_auth(ctx, pool));
+        target = svn_dirent_join(root, target, pool);
+    }
+    return filees_log(ctx, target, &peg, &start, &end, limit, changed,
+                      revprops, nrevprops, pool);
+}
+
 static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
 {
     const char *verb, *wc = NULL;
@@ -81,6 +182,8 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"state\":\"%s\"}\n", state);
         return SVN_NO_ERROR;
     }
+
+    if (!strcmp(verb, "log")) return run_log(argc, argv, pool);
 
     if (!strcmp(verb, "cat")) {
         /* Handled before the shared flag loop: cat is the first verb with no

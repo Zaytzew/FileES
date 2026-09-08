@@ -6,8 +6,8 @@ import (
 	"crypto/ed25519"
 	crand "crypto/rand"
 	"encoding/json"
+	"filees/internal/svnurl"
 	"net"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,8 +62,9 @@ func run(t *testing.T, name string, args ...string) {
 }
 
 func fileURL(abs string) string {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}
-	return u.String()
+	// Fifth copy of the same defect: url.URL with a Windows path yields
+	// file://C:/... and Subversion reads the drive letter as a host.
+	return svnurl.File(abs)
 }
 
 func newSeededRepo(t *testing.T) string {

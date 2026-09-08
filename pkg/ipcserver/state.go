@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,15 +48,16 @@ type RepoState struct {
 	canRetryLifecycle    bool
 	canAbandonLifecycle  bool
 
-	state          string // contract.State*
-	connectivity   string // contract.Conn*
-	headRev        int64  // last HEAD seen by poller; 0 = unknown
-	conflicts      int
-	unportable     []contract.UnportableName
-	lastSyncAt     time.Time
-	currentOp      *string
-	cycle          contract.CycleStatus
-	passportIssues []contract.PassportIssue
+	state              string // contract.State*
+	connectivity       string // contract.Conn*
+	headRev            int64  // last HEAD seen by poller; 0 = unknown
+	conflicts          int
+	unportable         []contract.UnportableName
+	renameUnportableFn func(rel, newName string) error
+	lastSyncAt         time.Time
+	currentOp          *string
+	cycle              contract.CycleStatus
+	passportIssues     []contract.PassportIssue
 
 	// SVN operation funcs wired by main.go; nil until SetLockFuncs is called.
 	lockFn               func(ctx context.Context, paths []string) (string, error)
@@ -275,6 +277,44 @@ func (rs *RepoState) SetPublishFunc(fn func(ctx context.Context, comment string)
 	rs.mu.Lock()
 	rs.publishFn = fn
 	rs.mu.Unlock()
+}
+
+// Failures the rename boundary knows how to report. They live here, not in
+// pkg/commit, so this package does not have to depend on the implementation
+// that produces them - the composition root translates. internal/gui reached
+// for pkg/errmap the other way round and carried the dependency for twenty
+// revisions before anybody noticed.
+var (
+	ErrRenameNameUnportable = errors.New("rename: the proposed name is not representable")
+	ErrRenameTargetExists   = errors.New("rename: something already occupies the new name")
+	ErrRenameBlockedInUse   = errors.New("rename: the system refused, the object is held open")
+)
+
+// SetRenameUnportableFunc wires the rename that clears a portable-name refusal.
+//
+// Read-write access is deliberately not required. The object is unversioned -
+// the gate refused it before anything reached Subversion - so renaming it
+// publishes nothing and asks the server for nothing. Demanding write access
+// would leave a read-only member unable to tidy their own local folder.
+func (rs *RepoState) SetRenameUnportableFunc(fn func(rel, newName string) error) {
+	rs.mu.Lock()
+	rs.renameUnportableFn = fn
+	rs.mu.Unlock()
+}
+
+// RenameUnportable renames one refused object in this working copy.
+func (rs *RepoState) RenameUnportable(rel, newName string) error {
+	rs.mu.RLock()
+	fn := rs.renameUnportableFn
+	attached := rs.attached
+	rs.mu.RUnlock()
+	if !attached {
+		return fmt.Errorf("rename not available for detached repo %s", rs.id)
+	}
+	if fn == nil {
+		return fmt.Errorf("rename not available for repo %s", rs.id)
+	}
+	return fn(rel, newName)
 }
 
 // SetNoticeFuncs wires the local shout inbox for this working copy.

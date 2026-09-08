@@ -396,6 +396,9 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 .repo-unportable { grid-column:1/-1; margin-top:11px; padding:10px 12px; border:1px solid rgba(244,199,109,.28); border-radius:10px; background:rgba(244,199,109,.06); }
 .repo-unportable strong { display:block; margin-bottom:6px; color:var(--amber); font-size:11px; font-weight:800; letter-spacing:.04em; }
 .repo-unportable ul { margin:0; padding:0; list-style:none; display:grid; gap:5px; }
-.repo-unportable li { display:grid; grid-template-columns:minmax(0,auto) minmax(0,1fr); gap:9px; align-items:baseline; font-size:12px; }
+.repo-unportable li { display:grid; grid-template-columns:minmax(0,auto) minmax(0,1fr) auto; gap:9px; align-items:baseline; font-size:12px; }
 .repo-unportable code { color:#f0e2c2; font-size:11px; word-break:break-all; }
 .repo-unportable span { color:var(--soft-text); }
+.repo-unportable .unportable-rename { padding:4px 10px; border:1px solid rgba(244,199,109,.36); border-radius:8px; color:#f0e2c2; background:rgba(244,199,109,.08); font-size:11px; font-weight:700; cursor:pointer; transition:.16s ease; }
+.repo-unportable .unportable-rename:hover { border-color:rgba(244,199,109,.6); background:rgba(244,199,109,.16); }
+.repo-unportable .unportable-rename:disabled { opacity:.4; cursor:wait; }

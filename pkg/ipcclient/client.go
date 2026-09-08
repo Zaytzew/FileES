@@ -693,6 +693,12 @@ func (c *Client) RepoReservationRelease(ctx context.Context, payload contract.Re
 	return contract.DecodeResult(resp.Result, &result)
 }
 
+// RepoRenameUnportable clears one portable-name refusal by renaming the object.
+func (c *Client) RepoRenameUnportable(ctx context.Context, payload contract.RepoRenameUnportablePayload) error {
+	_, err := c.do(ctx, contract.CmdRepoRenameUnportable, payload.RepoID, payload)
+	return err
+}
+
 func (c *Client) LockReleaseRequest(ctx context.Context, payload contract.LockReleaseRequestPayload) (*contract.LockReleaseRequest, error) {
 	return c.lockRelease(ctx, contract.CmdLockReleaseRequest, payload.RepoID, payload)
 }

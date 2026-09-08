@@ -228,6 +228,7 @@ type ActionRequest struct {
 	NoticeID             string   `json:"notice_id,omitempty"`
 	ChannelID            string   `json:"channel_id,omitempty"`
 	ChannelIDs           []string `json:"channel_ids,omitempty"`
+	Path                 string   `json:"path,omitempty"`
 }
 
 type ActionAcceptance struct {
@@ -418,6 +419,7 @@ func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	request.NoticeID = strings.TrimSpace(request.NoticeID)
 	request.ChannelID = strings.TrimSpace(request.ChannelID)
 	request.ChannelIDs = cleanUniqueStrings(request.ChannelIDs)
+	request.Path = strings.TrimSpace(request.Path)
 
 	service.mu.RLock()
 	vm := service.view
@@ -723,6 +725,18 @@ func translateAction(vm guiapp.ViewModel, request ActionRequest) (tray.Intent, b
 		return tray.Intent{Kind: tray.IntentDownloadRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed
 	case string(tray.IntentDetachRepository):
 		return tray.Intent{Kind: tray.IntentDetachRepository, RepoID: repo.ID, ServerID: repo.ServerID}, vm.CanDetachDeletedCopy(repo)
+	case string(tray.IntentRenameUnportable):
+		// Only a path this repository is actually refusing may be renamed. The
+		// list is the daemon's, recomputed from disk, so an interface that has
+		// gone stale cannot ask for a rename of something already fixed.
+		refused := false
+		for _, name := range repo.UnportableNames {
+			if name.Path == request.Path {
+				refused = true
+				break
+			}
+		}
+		return tray.Intent{Kind: tray.IntentRenameUnportable, RepoID: repo.ID, ServerID: repo.ServerID, Path: request.Path}, refused && repo.Attached
 	case string(tray.IntentDismissRecovery):
 		allowed := vm.CanDismissRecovery() && repo.ServerDeleted && repo.RecoveryAvailable && repo.RecoveryOperationID != ""
 		return tray.Intent{Kind: tray.IntentDismissRecovery, RepoID: repo.ID, ServerID: repo.ServerID, RecoveryOperationID: repo.RecoveryOperationID}, allowed

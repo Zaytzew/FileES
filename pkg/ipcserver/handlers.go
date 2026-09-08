@@ -82,6 +82,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleRepoRelocate(req)
 	case contract.CmdRepoLocate:
 		return s.handleRepoLocate(req)
+	case contract.CmdRepoRenameUnportable:
+		return s.handleRepoRenameUnportable(req)
 	case contract.CmdRepoLoadDump:
 		return s.handleRepoLoadDump(req)
 	case contract.CmdRepoGrantAccess:
@@ -1179,6 +1181,36 @@ func (s *Server) handleRepoRelocate(req contract.Request) contract.Response {
 		return contract.ErrResponse(req.RequestID, "REPO-2007", "ERROR", "REQUIRE_ACTION", "repo.relocation_failed", nil)
 	}
 	return contract.OKResponse(req.RequestID, result)
+}
+
+// handleRepoRenameUnportable clears one portable-name refusal by renaming the
+// object. Each failure gets its own code, because the interface has to tell a
+// name that is still impossible - the person's to fix now - from a file the
+// system will not release, which is a wait rather than a mistake.
+func (s *Server) handleRepoRenameUnportable(req contract.Request) contract.Response {
+	var payload contract.RepoRenameUnportablePayload
+	if err := contract.DecodePayload(req.Payload, &payload); err != nil {
+		return protoErr(req.RequestID, "proto.invalid_payload", nil)
+	}
+	rs := s.repoByID(payload.RepoID)
+	if rs == nil || rs.ServerID() != payload.ServerID {
+		return contract.ErrResponse(req.RequestID, "PROTO-0005", "ERROR", "NONE", "proto.repo_not_found", nil)
+	}
+	if !rs.Snapshot().Attached {
+		return contract.ErrResponse(req.RequestID, "REPO-2006", "ERROR", "NONE", "repo.not_attached", nil)
+	}
+	switch err := rs.RenameUnportable(payload.Path, payload.NewName); {
+	case err == nil:
+		return contract.OKResponse(req.RequestID, nil)
+	case errors.Is(err, ErrRenameNameUnportable):
+		return contract.ErrResponse(req.RequestID, "REPO-2019", "ERROR", "REQUIRE_ACTION", "repo.rename_name_unportable", nil)
+	case errors.Is(err, ErrRenameTargetExists):
+		return contract.ErrResponse(req.RequestID, "REPO-2020", "ERROR", "REQUIRE_ACTION", "repo.rename_target_exists", nil)
+	case errors.Is(err, ErrRenameBlockedInUse):
+		return contract.ErrResponse(req.RequestID, "REPO-2021", "ERROR", "RETRY", "repo.rename_blocked_in_use", nil)
+	default:
+		return contract.ErrResponse(req.RequestID, "REPO-2019", "ERROR", "REQUIRE_ACTION", "repo.rename_name_unportable", map[string]string{"detail": err.Error()})
+	}
 }
 
 func (s *Server) handleRepoLocate(req contract.Request) contract.Response {

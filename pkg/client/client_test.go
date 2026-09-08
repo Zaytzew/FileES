@@ -49,31 +49,24 @@ func TestSVNXMLOutputDetection(t *testing.T) {
 }
 
 func TestSVNSSHTransportIsInjectedIntoSVNProcess(t *testing.T) {
-	dir := t.TempDir()
-	fakeSVN := filepath.Join(dir, "svn")
-	if err := os.WriteFile(fakeSVN, []byte("#!/bin/sh\nprintf '%s' \"$SVN_SSH\"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	svnPath := fakeSVN(t, "ssh-env")
+	knownHosts := testAbs(t, "known_hosts")
 	cli := New(Options{
-		SvnPath: fakeSVN, SSHIdentityFile: "/run/filees/id_ed25519",
-		SSHKnownHosts: "/run/filees/known_hosts",
+		SvnPath: svnPath, SSHIdentityFile: testAbs(t, "id_ed25519"),
+		SSHKnownHosts: knownHosts,
 	})
 	out, err := cli.GetInfo(context.Background(), "svn+ssh://_filees-client@example/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "IdentityAgent=none") || !strings.Contains(out, "UserKnownHostsFile=/run/filees/known_hosts") {
+	if !strings.Contains(out, "IdentityAgent=none") || !strings.Contains(out, "UserKnownHostsFile="+filepath.ToSlash(knownHosts)) {
 		t.Fatalf("SVN_SSH=%q", out)
 	}
 }
 
 func TestSVNSSHUserinfoGetsExplicitEmptyPegRevision(t *testing.T) {
-	dir := t.TempDir()
-	fakeSVN := filepath.Join(dir, "svn")
-	if err := os.WriteFile(fakeSVN, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	cli := New(Options{SvnPath: fakeSVN, SSHIdentityFile: "/run/filees/id_ed25519", SSHKnownHosts: "/run/filees/known_hosts"})
+	svnPath := fakeSVN(t, "args")
+	cli := New(Options{SvnPath: svnPath, SSHIdentityFile: testAbs(t, "id_ed25519"), SSHKnownHosts: testAbs(t, "known_hosts")})
 	out, err := cli.GetInfo(context.Background(), "svn+ssh://_filees-client@example/repo")
 	if err != nil {
 		t.Fatal(err)
@@ -90,14 +83,26 @@ func TestSVNSSHTransportWithoutIdentityFailsBeforeExec(t *testing.T) {
 	}
 }
 
+// sshPins is the pair every buildSSHCommand test needs: an identity file and a
+// known_hosts, both absolute on the platform running the test. buildSSHCommand
+// returns "" for anything that is not absolute, so POSIX literals made these
+// tests assert about an empty string on Windows - and one of them, the invalid
+// port case, passed for exactly that wrong reason.
+func sshPins(t *testing.T) (identity, knownHosts string) {
+	t.Helper()
+	dir := t.TempDir()
+	return filepath.Join(dir, "id_ed25519"), filepath.Join(dir, "known_hosts")
+}
+
 func TestBuildSSHCommandIsPinnedAndNonInteractive(t *testing.T) {
-	got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 0)
+	identity, knownHosts := sshPins(t)
+	got := buildSSHCommand(identity, knownHosts, 0)
 	for _, required := range []string{
 		"-F /dev/null", "BatchMode=yes", "IdentitiesOnly=yes",
 		"IdentityAgent=none", "PasswordAuthentication=no",
 		"KbdInteractiveAuthentication=no", "StrictHostKeyChecking=yes",
-		"UserKnownHostsFile=/run/filees/known_hosts",
-		"HostKeyAlgorithms=ssh-ed25519", "-i /run/filees/id_ed25519",
+		"UserKnownHostsFile=" + filepath.ToSlash(knownHosts),
+		"HostKeyAlgorithms=ssh-ed25519", "-i " + filepath.ToSlash(identity),
 	} {
 		if !strings.Contains(got, required) {
 			t.Fatalf("SSH command %q does not contain %q", got, required)
@@ -106,25 +111,33 @@ func TestBuildSSHCommandIsPinnedAndNonInteractive(t *testing.T) {
 }
 
 func TestBuildSSHCommandUsesExplicitPort(t *testing.T) {
-	got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 2223)
+	identity, knownHosts := sshPins(t)
+	got := buildSSHCommand(identity, knownHosts, 2223)
 	if !strings.Contains(got, "-p 2223") {
 		t.Fatalf("SSH command %q does not contain explicit port", got)
 	}
 }
 
 func TestBuildSSHCommandUsesPinnedConnectionHost(t *testing.T) {
-	got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 2222, "127.0.0.1:2222")
+	identity, knownHosts := sshPins(t)
+	got := buildSSHCommand(identity, knownHosts, 2222, "127.0.0.1:2222")
 	if !strings.Contains(got, "HostName=127.0.0.1") || !strings.Contains(got, "HostKeyAlias=[127.0.0.1]:2222") || !strings.Contains(got, "-p 2222") {
 		t.Fatalf("SSH command %q does not pin connection endpoint", got)
 	}
-	if got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 22, "bad host"); got != "" {
+	if got := buildSSHCommand(identity, knownHosts, 22, "bad host"); got != "" {
 		t.Fatalf("accepted unsafe connection host: %q", got)
 	}
 }
 
 func TestBuildSSHCommandRejectsInvalidPort(t *testing.T) {
-	if got := buildSSHCommand("/run/filees/id_ed25519", "/run/filees/known_hosts", 65536); got != "" {
+	identity, knownHosts := sshPins(t)
+	// With absolute paths the only thing left to reject is the port, which is
+	// what this test is named after.
+	if got := buildSSHCommand(identity, knownHosts, 65536); got != "" {
 		t.Fatalf("accepted invalid port: %q", got)
+	}
+	if got := buildSSHCommand(identity, knownHosts, 22); got == "" {
+		t.Fatal("a valid port and absolute pins must produce a command")
 	}
 }
 
@@ -218,7 +231,7 @@ func TestCommitWithRevisionReturnsExactReceiptForMixedRevisionAndDeletion(t *tes
 	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
 		t.Fatalf("svnadmin create: %v\n%s", err, out)
 	}
-	repoURL := "file://" + filepath.ToSlash(repository)
+	repoURL := fileURL(repository)
 	if out, err := exec.Command(svn, "mkdir", "-q", "-m", "init", repoURL+"/trunk").CombinedOutput(); err != nil {
 		t.Fatalf("svn mkdir: %v\n%s", err, out)
 	}
@@ -274,15 +287,12 @@ func TestCommitWithRevisionReturnsExactReceiptForMixedRevisionAndDeletion(t *tes
 
 func TestCheckoutPreservesExistingDirectoryWithForce(t *testing.T) {
 	dir := t.TempDir()
-	fakeSVN := filepath.Join(dir, "svn")
-	if err := os.WriteFile(fakeSVN, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	svnPath := fakeSVN(t, "args")
 	target := filepath.Join(dir, "existing")
 	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cli := New(Options{SvnPath: fakeSVN})
+	cli := New(Options{SvnPath: svnPath})
 	out, err := cli.Checkout(context.Background(), "file:///repository", target)
 	if err != nil {
 		t.Fatal(err)
@@ -305,8 +315,14 @@ func TestParseStatusXMLReadsNormalItemFromVerboseStatus(t *testing.T) {
 }
 
 func TestParsePropGetXMLReturnsRelativePropertyPaths(t *testing.T) {
-	root := filepath.Join(string(filepath.Separator), "tmp", "wc")
-	input := `<properties><target path="/tmp/wc/a.bin"><property name="svn:needs-lock">*</property></target><target path="/tmp/wc/dir/b.bin"><property name="svn:needs-lock">*</property></target></properties>`
+	// Absolute on the platform running the test: parsePropGetXML relativizes
+	// only what filepath.IsAbs accepts, and a POSIX literal is not absolute on
+	// Windows, so the fixture used to assert nothing there.
+	root := filepath.Join(t.TempDir(), "wc")
+	input := `<properties><target path="` + filepath.Join(root, "a.bin") +
+		`"><property name="svn:needs-lock">*</property></target><target path="` +
+		filepath.Join(root, "dir", "b.bin") +
+		`"><property name="svn:needs-lock">*</property></target></properties>`
 	got, err := parsePropGetXML(input, root)
 	if err != nil {
 		t.Fatal(err)
@@ -327,9 +343,10 @@ func TestHasMissingPaths(t *testing.T) {
 
 func TestRelativizeDoesNotAcceptPrefixSibling(t *testing.T) {
 	c := &execClient{}
-	root := filepath.Join(string(filepath.Separator), "data", "repo")
+	base := t.TempDir()
+	root := filepath.Join(base, "repo")
 	inside := filepath.Join(root, "dir", "file.bin")
-	sibling := filepath.Join(string(filepath.Separator), "data", "repo-other", "file.bin")
+	sibling := filepath.Join(base, "repo-other", "file.bin")
 	got := c.relativize(root, []string{inside, sibling})
 	if got[0] != filepath.Join("dir", "file.bin") {
 		t.Fatalf("inside path = %q", got[0])
@@ -361,7 +378,7 @@ func TestLeadingDashPathsAreTreatedAsPathsNotOptions(t *testing.T) {
 	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
 		t.Fatalf("svnadmin create: %v\n%s", err, out)
 	}
-	repoURL := "file://" + filepath.ToSlash(repository)
+	repoURL := fileURL(repository)
 	wc := filepath.Join(root, "wc")
 	cli := New(Options{SvnPath: svn})
 	ctx := context.Background()
@@ -460,14 +477,18 @@ func TestLeadingDashPathsAreTreatedAsPathsNotOptions(t *testing.T) {
 // below pins the premise that makes it necessary.
 func TestPathArgsEmitsEndOfOptionsMarker(t *testing.T) {
 	c := &execClient{}
-	got := c.pathArgs("/wc", []string{"/wc/--no-ignore", "/wc/plain.txt"})
+	// The working copy must be absolute on this platform, or relativize gives
+	// up and the paths arrive whole - which looks like a missing "--" bug
+	// rather than a fixture that cannot express itself here.
+	wc := t.TempDir()
+	got := c.pathArgs(wc, []string{filepath.Join(wc, "--no-ignore"), filepath.Join(wc, "plain.txt")})
 	want := []string{"--", "--no-ignore", "plain.txt"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("pathArgs() = %q, want %q", got, want)
 	}
 	// An empty path list must stay empty: commands like Status rely on "no
 	// paths" meaning "the whole working copy", and a bare "--" would not.
-	if got := c.pathArgs("/wc", nil); len(got) != 0 {
+	if got := c.pathArgs(wc, nil); len(got) != 0 {
 		t.Fatalf("pathArgs() with no paths = %q, want empty", got)
 	}
 }
@@ -494,7 +515,7 @@ func TestSVNRequiresEndOfOptionsMarker(t *testing.T) {
 	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
 		t.Fatalf("svnadmin create: %v\n%s", err, out)
 	}
-	repoURL := "file://" + filepath.ToSlash(repository)
+	repoURL := fileURL(repository)
 	wc := filepath.Join(root, "wc")
 	if out, err := exec.Command(svn, "checkout", "-q", repoURL, wc).CombinedOutput(); err != nil {
 		t.Fatalf("svn checkout: %v\n%s", err, out)
@@ -589,4 +610,17 @@ func TestSvnProcessEnvironmentKeepsEnglishMessagesAndUTF8Paths(t *testing.T) {
 	if locales != 1 || leftoverC != 0 || ssh != 1 {
 		t.Fatalf("env=%q locale=%s count=%d leftoverC=%d ssh=%d", got, want, locales, leftoverC, ssh)
 	}
+}
+
+// fileURL builds a file:// URL for a local repository path.
+//
+// "file://" + a Windows path yields file://C:/... , where C: is read as the
+// host and the repository is never found. The third slash is what makes it a
+// local path, and on POSIX the path already begins with one.
+func fileURL(path string) string {
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return "file://" + p
 }

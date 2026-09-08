@@ -3,11 +3,21 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"filees/pkg/errcat"
 )
+
+// Subversion error codes, turned into the product vocabulary.
+//
+// One table serves both callers on purpose: the native helper reports codes
+// numerically in its JSON receipt, and the CLI prints them as "svn: E170013:"
+// on stderr. Before this, the helper's codes were flattened into a sentence and
+// the CLI was never parsed at all, so both ended in errmap's English text
+// heuristics - matching words against text that already carried the answer in
+// machine-readable form (M46).
 
 // nativeSchema is the receipt schema the helper stamps on every answer.
 const nativeSchema = "filees.native-svn/v1"
@@ -156,4 +166,44 @@ func nativeFault(verb string, exitErr error, truncated bool, stdout, stderr stri
 		"detail":      failure.Error(),
 		"native_code": "E" + strconv.Itoa(code),
 	}, failure)
+}
+
+// cliCodePattern matches the codes Subversion prints on stderr. It reports the
+// chain outermost first, exactly as the helper does in errors[], so the same
+// deepest-wins rule applies to both.
+var cliCodePattern = regexp.MustCompile(`svn:\s+E(\d+):\s*(.*)`)
+
+func parseCLICodes(diagnostic string) []NativeErrorEntry {
+	matches := cliCodePattern.FindAllStringSubmatch(diagnostic, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]NativeErrorEntry, 0, len(matches))
+	for _, m := range matches {
+		code, err := strconv.Atoi(m[1])
+		if err != nil {
+			continue
+		}
+		out = append(out, NativeErrorEntry{Code: code, Message: strings.TrimSpace(m[2])})
+	}
+	return out
+}
+
+// cliFault classifies a CLI failure from its printed codes, returning cause
+// unchanged when nothing is recognised so the text heuristics keep their turn.
+//
+// The gain is the same one the helper brought: svn prints E170013 "Unable to
+// connect" above the real reason, and a needle matching "unable to connect"
+// calls a revoked key a network blip. Reading the chain instead of the prose
+// makes the deeper code decide - the defect M9 describes.
+func cliFault(cause error, diagnostic string) error {
+	entries := parseCLICodes(diagnostic)
+	key, code, ok := classifyNativeCodes(entries)
+	if !ok {
+		return cause
+	}
+	return errcat.New(key, map[string]string{
+		"detail":      cause.Error(),
+		"native_code": "E" + strconv.Itoa(code),
+	}, cause)
 }

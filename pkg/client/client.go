@@ -763,7 +763,7 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 		if ctx.Err() != nil {
 			return out, fmt.Errorf("komenda '%s' anulowana/przekroczono czas: %v%s", name, ctx.Err(), diagnostic)
 		}
-		return out, fmt.Errorf("komenda '%s' zakończyła się błędem: %v%s", name, err, diagnostic)
+		return out, cliFault(fmt.Errorf("komenda '%s' zakończyła się błędem: %v%s", name, err, diagnostic), diagnostic)
 	}
 	if svnXMLOutput(args) {
 		out, err := processoutput.UTF8(stdout.Bytes())

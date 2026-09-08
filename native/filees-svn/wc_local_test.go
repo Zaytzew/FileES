@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -119,4 +120,69 @@ func countJSONObjects(s string) int {
 		}
 	}
 	return n
+}
+
+// info is the last WC-local verb from the desktop inventory. The fields
+// asserted here are the ones the daemon actually reads: VerifyCommittedMove
+// needs url, repository root and the last-changed revision, and Revision()
+// needs one number.
+func TestWCLocalInfoAnswersAboutTheWorkingCopy(t *testing.T) {
+	f := newFixture(t, "old.txt")
+
+	root := f.jsonCall(t, true, "info", "--disposable-wc", f.wc)
+	entries, _ := root["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("root info entries: %#v", root["entries"])
+	}
+	row := entries[0].(map[string]any)
+	if row["kind"] != "dir" {
+		t.Fatalf("root kind: %#v", row)
+	}
+	if row["url"] == nil || row["repos_root_url"] == nil || row["repos_uuid"] == nil {
+		t.Fatalf("root info must identify the repository: %#v", row)
+	}
+	if _, ok := row["revision"].(float64); !ok {
+		t.Fatalf("root revision must be a number: %#v", row["revision"])
+	}
+
+	one := f.jsonCall(t, true, "info", "--disposable-wc", f.wc, "--", "occupied.txt")
+	entries, _ = one["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("file info entries: %#v", one["entries"])
+	}
+	row = entries[0].(map[string]any)
+	if row["path"] != "occupied.txt" || row["kind"] != "file" {
+		t.Fatalf("file info: %#v", row)
+	}
+	url, _ := row["url"].(string)
+	if !strings.HasSuffix(url, "/occupied.txt") {
+		t.Fatalf("file url: %#v", row["url"])
+	}
+	changed, ok := row["last_changed_rev"].(float64)
+	if !ok || changed < 1 {
+		t.Fatalf("last_changed_rev must be the commit that made it: %#v", row["last_changed_rev"])
+	}
+}
+
+// info must not touch the repository. Proven by taking the repository away:
+// a verb that answers with it renamed is a verb that never asked.
+//
+// Worth the test because the mistake is easy and silent. Passing WORKING or
+// BASE as the peg revision - the obvious translation of the CLI's dst@BASE -
+// sends svn_client_info4 down its RA branch (libsvn_client/info.c:353); the
+// verb keeps working against a reachable server and only fails offline, which
+// is the worst moment to discover it.
+func TestWCLocalInfoDoesNotTouchTheRepository(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	hidden := f.root + string(filepath.Separator) + "repo-moved-away"
+	if err := os.Rename(filepath.Join(f.root, "repo"), hidden); err != nil {
+		t.Fatalf("hide repository: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Rename(hidden, filepath.Join(f.root, "repo")) })
+
+	got := f.jsonCall(t, true, "info", "--disposable-wc", f.wc, "--", "occupied.txt")
+	entries, _ := got["entries"].([]any)
+	if len(entries) != 1 || entries[0].(map[string]any)["path"] != "occupied.txt" {
+		t.Fatalf("info without a repository: %#v", got["entries"])
+	}
 }

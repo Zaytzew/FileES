@@ -143,9 +143,13 @@ svn_error_t *filees_relpath(const char **rel, const char *wc,
                             const char *abspath, apr_pool_t *pool)
 {
     const char *skip = svn_dirent_skip_ancestor(wc, abspath);
-    if (!skip) return filees_refuse("path is outside the working copy");
+    if (!skip)
+        /* Naming both sides: "path is outside the working copy" without them
+         * is true and useless, and this codebase has paid for that shape of
+         * message more than once. */
+        return filees_refuse(apr_psprintf(pool, "path %s is outside the working copy %s",
+                                          abspath, wc));
     *rel = *skip ? skip : ".";
-    (void)pool;
     return SVN_NO_ERROR;
 }
 

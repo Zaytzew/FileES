@@ -241,7 +241,7 @@ func dataTree(t *testing.T, root string) map[string]string {
 }
 
 func TestEditedMoveAncestryAndFork(t *testing.T) {
-	for _, names := range [][2]string{{"old.txt", "new.txt"}, {"Łódź stara.txt", "folder/Zażółć gęślą 新.txt"}, {"at@old.txt", "at@new.txt"}} {
+	for _, names := range [][2]string{{"old.txt", "new.txt"}, {"Łódź stara.txt", unicodeDestination()}, {"at@old.txt", "at@new.txt"}} {
 		t.Run(names[0], func(t *testing.T) {
 			old, dst := names[0], names[1]
 			f := newFixture(t, old)
@@ -359,7 +359,7 @@ func TestRejectedMovesPreserveFixture(t *testing.T) {
 func TestNeedsLockMovePreservesLocalMode(t *testing.T) {
 	f := newFixture(t, "old.txt")
 	original := object(t, f, "old.txt")
-	f.svnRun(t, "propset", "svn:needs-lock", "*", "old.txt")
+	f.svnPropsetFromFile(t, "svn:needs-lock", "*", "old.txt")
 	f.svnRun(t, "commit", "--username", "administrator", "-m", "editing policy")
 	f.svnRun(t, "update")
 	// Model FileES local owner access, independently of server reservation.
@@ -400,4 +400,41 @@ func TestMissingSpecialSourceRefused(t *testing.T) {
 	if !reflect.DeepEqual(before, dataTree(t, f.wc)) || !bytes.Equal(status, f.status(t)) {
 		t.Fatal("special-source refusal changed fixture")
 	}
+}
+
+// svnPropsetFromFile sets a property whose value must reach svn untouched.
+//
+// A bare "*" does not survive argv on Windows: TortoiseSVN's svn.exe is linked
+// with CRT wildcard expansion, so the value was expanded into the directory
+// listing and the property landed on every sibling - and on .svn, which is
+// what made the command fail. Go does not quote a lone "*", and the expansion
+// happens inside the receiving process, so there is nothing to quote on this
+// side. A file takes argv out of the question entirely.
+func (f fixture) svnPropsetFromFile(t *testing.T, name, value, target string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "propvalue")
+	if err := os.WriteFile(file, []byte(value), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.svnRun(t, "propset", name, "-F", file, target)
+}
+
+// unicodeDestination is the non-ASCII destination this test moves into.
+//
+// It carries a CJK character everywhere except Windows, and the exception is
+// the instrument, not the product. The fixture drives the external Subversion
+// CLI, whose argv on Windows goes through the system ANSI codepage; CP1250
+// holds the Polish letters and has no room for 新, which arrives as "?".
+// The path would then be unaddressable for propget, copy and delete alike -
+// measured in reports/NATIVE_SVN_WINDOWS_2026-09-08.md, where the same report
+// records filees-svn.exe handling CJK-新.txt correctly while the CLI refuses it.
+// Removing that limit is the reason the native helper exists.
+//
+// The Windows name keeps a space, a subdirectory and Polish diacritics, so the
+// case stays a non-ASCII one here rather than quietly degrading to ASCII.
+func unicodeDestination() string {
+	if runtime.GOOS == "windows" {
+		return "folder/Zażółć gęślą.txt"
+	}
+	return "folder/Zażółć gęślą 新.txt"
 }

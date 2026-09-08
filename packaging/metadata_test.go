@@ -42,16 +42,36 @@ func TestOpenBSDServerBinaryPolicyMatchesPrivilegeBoundaries(t *testing.T) {
 			t.Errorf("policy %s = %+v, want mode=%s owner=%s group=%s", target, got, expected.Mode, expected.Owner, expected.Group)
 		}
 	}
-	if len(spec.Configs) != 1 {
-		t.Fatalf("server config contracts = %d, want 1", len(spec.Configs))
+	if len(spec.Configs) != 2 {
+		t.Fatalf("server config contracts = %d, want 2", len(spec.Configs))
 	}
-	contract := spec.Configs[0]
+	contracts := make(map[string]int, len(spec.Configs))
+	for index, contract := range spec.Configs {
+		if _, exists := contracts[contract.Name]; exists {
+			t.Fatalf("duplicate config contract %s", contract.Name)
+		}
+		contracts[contract.Name] = index
+	}
+	serverIndex, serverOK := contracts["server"]
+	storageIndex, storageOK := contracts["public-download-storage"]
+	if !serverOK || !storageOK {
+		t.Fatalf("missing server/storage config contract: %+v", spec.Configs)
+	}
+	contract := spec.Configs[serverIndex]
 	if contract.Name != "server" || contract.Path != "/etc/filees/server.json" || len(contract.DefaultChanged) != 1 {
 		t.Fatalf("server config contract = %+v", contract)
 	}
 	change := contract.DefaultChanged[0]
 	if change.Key != "schema" || change.Old != "filees.server-toolchain/v1" || change.New != "filees.server-toolchain/v2" {
 		t.Fatalf("server schema change = %+v", change)
+	}
+	storage := spec.Configs[storageIndex]
+	if storage.Path != "/etc/filees/server.json" || len(storage.DefaultChanged) != 1 {
+		t.Fatalf("public storage contract = %+v", storage)
+	}
+	change = storage.DefaultChanged[0]
+	if change.Key != "layout" || change.Old != "temporary-storage" || change.New != "filees.public-download-storage/v1" {
+		t.Fatalf("public storage layout change = %+v", change)
 	}
 }
 

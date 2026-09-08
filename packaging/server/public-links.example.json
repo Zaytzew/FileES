@@ -14,6 +14,7 @@
     "enabled": true,
     "root": "/var/filees-downloads/cache",
     "ttl": "12h",
+    "cleanup_interval": "5m",
     "max_size": 10737418240
   },
   "bundle": {

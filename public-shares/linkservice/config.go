@@ -21,6 +21,7 @@ import (
 	"filees/public-shares/backchannel"
 	"filees/public-shares/cache"
 	"filees/public-shares/intake"
+	"filees/public-shares/storage"
 	"filees/public-shares/web"
 )
 
@@ -37,10 +38,11 @@ type FastCGIEndpoint struct {
 }
 
 type CacheConfig struct {
-	Enabled bool   `json:"enabled"`
-	Root    string `json:"root,omitempty"`
-	TTL     string `json:"ttl,omitempty"`
-	MaxSize int64  `json:"max_size,omitempty"`
+	CleanupInterval string `json:"cleanup_interval,omitempty"`
+	Enabled         bool   `json:"enabled"`
+	Root            string `json:"root,omitempty"`
+	TTL             string `json:"ttl,omitempty"`
+	MaxSize         int64  `json:"max_size,omitempty"`
 }
 
 type BundleConfig struct {
@@ -60,15 +62,24 @@ type Config struct {
 }
 
 type Runtime struct {
-	Config         Config
-	VisitKey       []byte
-	CacheTTL       time.Duration
-	BundleMaxFiles int
-	BundleMaxSize  int64
-	Intake         *intake.Store
+	Store           *cache.Store
+	CleanupInterval time.Duration
+	Config          Config
+	VisitKey        []byte
+	CacheTTL        time.Duration
+	BundleMaxFiles  int
+	BundleMaxSize   int64
+	Intake          *intake.Store
 }
 
 func Load(path string) (Runtime, error) {
+	return load(path, true)
+}
+
+// LoadForCheck performs no directory preparation or listener mutation.
+func LoadForCheck(path string) (Runtime, error) { return load(path, false) }
+
+func load(path string, prepare bool) (Runtime, error) {
 	if !filepath.IsAbs(path) {
 		return Runtime{}, errors.New("public links config path must be absolute")
 	}
@@ -126,6 +137,10 @@ func Load(path string) (Runtime, error) {
 		return Runtime{}, fmt.Errorf("visit key: %w", err)
 	}
 	ttl := 12 * time.Hour
+	cleanupInterval, err := storage.CleanupInterval(config.Cache.CleanupInterval)
+	if err != nil {
+		return Runtime{}, err
+	}
 	if config.Cache.Enabled {
 		if !filepath.IsAbs(config.Cache.Root) || config.Cache.MaxSize <= 0 {
 			return Runtime{}, errors.New("enabled cache requires absolute root and positive max_size")
@@ -136,7 +151,7 @@ func Load(path string) (Runtime, error) {
 				return Runtime{}, errors.New("cache ttl must be positive and at most 24h")
 			}
 		}
-		if err := os.MkdirAll(config.Cache.Root, 0700); err != nil {
+		if err := prepareDirectory(config.Cache.Root, prepare); err != nil {
 			return Runtime{}, fmt.Errorf("cache root: %w", err)
 		}
 	}
@@ -173,14 +188,25 @@ func Load(path string) (Runtime, error) {
 		if maxUpload < 1 || maxUpload > 1<<40 {
 			return Runtime{}, errors.New("max_upload_size is out of range")
 		}
-		if err := os.MkdirAll(config.IntakeRoot, 0700); err != nil {
+		if err := prepareDirectory(config.IntakeRoot, prepare); err != nil {
 			return Runtime{}, fmt.Errorf("intake root: %w", err)
 		}
 		quarantine = &intake.Store{Root: filepath.Clean(config.IntakeRoot), MaxBytes: maxUpload}
 	} else if config.MaxUploadSize != 0 {
 		return Runtime{}, errors.New("max_upload_size requires intake_root")
 	}
-	return Runtime{Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize, Intake: quarantine}, nil
+	var store *cache.Store
+	if config.Cache.Enabled {
+		store = &cache.Store{Config: cache.Config{Root: config.Cache.Root, TTL: ttl, MaxSize: config.Cache.MaxSize}}
+	}
+	return Runtime{Config: config, VisitKey: key, CacheTTL: ttl, BundleMaxFiles: bundleFiles, BundleMaxSize: bundleSize, Intake: quarantine, Store: store, CleanupInterval: cleanupInterval}, nil
+}
+
+func prepareDirectory(path string, prepare bool) error {
+	if prepare {
+		return os.MkdirAll(path, 0700)
+	}
+	return nil
 }
 
 func (r Runtime) Handler() http.Handler {
@@ -190,9 +216,11 @@ func (r Runtime) Handler() http.Handler {
 		return (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 15 * time.Second}).DialContext(ctx, endpoint.Network, endpoint.Address)
 	}
 	client := backchannel.Client{BaseURL: "http://filees-authority", HTTP: &http.Client{Transport: transport, Timeout: 30 * time.Minute}}
-	var store *cache.Store
+	store := r.Store
 	if r.Config.Cache.Enabled {
-		store = &cache.Store{Config: cache.Config{Root: r.Config.Cache.Root, TTL: r.CacheTTL, MaxSize: r.Config.Cache.MaxSize}}
+		if store == nil {
+			store = &cache.Store{Config: cache.Config{Root: r.Config.Cache.Root, TTL: r.CacheTTL, MaxSize: r.Config.Cache.MaxSize}}
+		}
 	}
 	maxUpload := int64(0)
 	if r.Intake != nil {

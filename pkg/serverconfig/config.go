@@ -22,6 +22,7 @@ import (
 	"filees/pkg/realmbranding"
 	"filees/pkg/repositoryurl"
 	"filees/pkg/smtpsubmit"
+	"filees/public-shares/storage"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -66,6 +67,7 @@ type UploadFile struct {
 }
 
 type PublicSharesFile struct {
+	CleanupInterval        string `json:"cleanup_interval,omitempty"`
 	Enabled                bool   `json:"enabled,omitempty"`
 	BaseURL                string `json:"base_url,omitempty"`
 	StateRoot              string `json:"state_root,omitempty"`
@@ -605,6 +607,9 @@ func validateUpload(u UploadFile, resultsRoot string) error {
 func validatePublicShares(p PublicSharesFile, resultsRoot string) error {
 	if !p.Enabled {
 		return nil
+	}
+	if _, err := storage.CleanupInterval(p.CleanupInterval); err != nil {
+		return fmt.Errorf("public_shares: %w", err)
 	}
 	base, err := url.Parse(p.BaseURL)
 	if err != nil || base.Scheme != "https" || base.Host == "" || (base.Path != "" && base.Path != "/") || base.RawQuery != "" || base.Fragment != "" {

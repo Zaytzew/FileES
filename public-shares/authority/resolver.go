@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"filees/public-shares/channel"
@@ -59,6 +60,7 @@ type TreeObject struct {
 }
 
 type Resolver struct {
+	Staging      *storage.Staging
 	Channels     *channel.Store
 	Source       Source
 	Trees        *TreeCache
@@ -252,12 +254,21 @@ func (r Resolver) Fetch(ctx context.Context, request ObjectRequest) (FetchedLeaf
 			return FetchedLeaf{}, err
 		}
 	}
-	file, err := os.CreateTemp(r.StagingRoot, ".public-share-leaf-*.tmp")
+	var file *os.File
+	release := func() {}
+	if r.Staging != nil {
+		if filepath.Clean(r.Staging.Root) != filepath.Clean(r.StagingRoot) {
+			return FetchedLeaf{}, fmt.Errorf("%w: staging root mismatch", storage.ErrUnavailable)
+		}
+		file, release, err = r.Staging.Create()
+	} else {
+		file, err = os.CreateTemp(r.StagingRoot, ".public-share-leaf-*.tmp")
+	}
 	if err != nil {
 		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	path := file.Name()
-	cleanup := func() { file.Close(); os.Remove(path) }
+	cleanup := func() { file.Close(); os.Remove(path); release() }
 	if err := file.Chmod(0600); err != nil {
 		cleanup()
 		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
@@ -282,15 +293,17 @@ func (r Resolver) Fetch(ctx context.Context, request ObjectRequest) (FetchedLeaf
 	}
 	if err := file.Close(); err != nil {
 		os.Remove(path)
+		release()
 		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	body, err := os.Open(path)
 	if err != nil {
 		os.Remove(path)
+		release()
 		return FetchedLeaf{}, fmt.Errorf("%w: staging: %v", storage.ErrUnavailable, err)
 	}
 	permit.DisplayName = object.DisplayName
-	return FetchedLeaf{ObjectPermit: permit, Size: info.Size(), MD5: hex.EncodeToString(hash.Sum(nil)), Body: &removeOnClose{File: body, path: path}}, nil
+	return FetchedLeaf{ObjectPermit: permit, Size: info.Size(), MD5: hex.EncodeToString(hash.Sum(nil)), Body: &removeOnClose{File: body, path: path, release: release}}, nil
 }
 
 func (r Resolver) resolveObject(ctx context.Context, request ObjectRequest) (channel.Record, manifest.Object, ObjectPermit, error) {
@@ -447,10 +460,21 @@ func (w *boundedLeafWriter) Write(p []byte) (int, error) {
 
 type removeOnClose struct {
 	*os.File
-	path string
+	path    string
+	release func()
+	once    sync.Once
+	err     error
 }
 
 func (f *removeOnClose) Close() error {
+	f.once.Do(func() { f.err = f.close() })
+	return f.err
+}
+
+func (f *removeOnClose) close() error {
+	if f.release != nil {
+		defer f.release()
+	}
 	err := f.File.Close()
 	removeErr := os.Remove(f.path)
 	if err != nil {

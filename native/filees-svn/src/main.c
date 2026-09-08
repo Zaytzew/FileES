@@ -15,9 +15,9 @@
 #endif
 
 static const char *const k_verbs[] = {
-    "record-move", "checkout", "update", "cat", "log", "status", "info",
-    "add", "delete", "propget", "propset", "propdel", "cleanup", "revert",
-    "resolve", NULL
+    "record-move", "checkout", "update", "commit", "lock", "unlock", "cat",
+    "log", "status", "info", "add", "delete", "propget", "propset",
+    "propdel", "cleanup", "revert", "resolve", NULL
 };
 
 static void print_ok_version(void)
@@ -225,6 +225,65 @@ static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
     return filees_ra_update(wc, live, paths, n, depth, revision, pool);
 }
 
+static svn_error_t *run_commit(int argc, const char **argv, apr_pool_t *pool)
+{
+    const char *wc = NULL, *message = NULL;
+    const char *paths[FILEES_SVN_MAX_PATHS];
+    const char *revprops[FILEES_LOG_MAX_REVPROPS];
+    int n = 0, nrevprops = 0, i;
+    svn_boolean_t live = TRUE, keep_locks = FALSE;
+
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
+            SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live));
+            continue;
+        }
+        if (!strcmp(argv[i], "-m") && i + 1 < argc) { message = argv[++i]; continue; }
+        if (!strcmp(argv[i], "--keep-locks")) { keep_locks = TRUE; continue; }
+        if (!strcmp(argv[i], "--revprop") && i + 1 < argc) {
+            if (nrevprops >= FILEES_LOG_MAX_REVPROPS) return filees_refuse("too many --revprop");
+            revprops[nrevprops++] = argv[++i];
+            continue;
+        }
+        if (!strcmp(argv[i], "--")) {
+            SVN_ERR(collect_paths(i, argc, argv, paths, &n));
+            break;
+        }
+        return filees_refuse("usage: filees-svn commit --wc WC -m MESSAGE [--keep-locks] "
+                             "[--revprop NAME=VALUE] -- REL...");
+    }
+    if (!wc) return filees_refuse("commit requires --wc|--disposable-wc");
+    return filees_ra_commit(wc, live, paths, n, message, keep_locks, revprops, nrevprops, pool);
+}
+
+static svn_error_t *run_lock(int argc, const char **argv, svn_boolean_t locking,
+                             apr_pool_t *pool)
+{
+    const char *wc = NULL, *comment = NULL;
+    const char *paths[FILEES_SVN_MAX_PATHS];
+    int n = 0, i;
+    svn_boolean_t live = TRUE;
+
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
+            SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live));
+            continue;
+        }
+        if (locking && !strcmp(argv[i], "-m") && i + 1 < argc) { comment = argv[++i]; continue; }
+        if (!strcmp(argv[i], "--")) {
+            SVN_ERR(collect_paths(i, argc, argv, paths, &n));
+            break;
+        }
+        /* --steal and --break are absent on purpose; see filees_ra_lock. */
+        return filees_refuse(locking
+                                 ? "usage: filees-svn lock --wc WC [-m COMMENT] -- REL..."
+                                 : "usage: filees-svn unlock --wc WC -- REL...");
+    }
+    if (!wc) return filees_refuse("requires --wc|--disposable-wc");
+    if (locking) return filees_ra_lock(wc, live, paths, n, comment, pool);
+    return filees_ra_unlock(wc, live, paths, n, pool);
+}
+
 static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
 {
     const char *verb, *wc = NULL;
@@ -252,6 +311,9 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         return SVN_NO_ERROR;
     }
 
+    if (!strcmp(verb, "commit")) return run_commit(argc, argv, pool);
+    if (!strcmp(verb, "lock")) return run_lock(argc, argv, TRUE, pool);
+    if (!strcmp(verb, "unlock")) return run_lock(argc, argv, FALSE, pool);
     if (!strcmp(verb, "checkout")) return run_checkout(argc, argv, pool);
     if (!strcmp(verb, "update")) return run_update(argc, argv, pool);
     if (!strcmp(verb, "log")) return run_log(argc, argv, pool);

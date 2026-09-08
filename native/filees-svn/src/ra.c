@@ -15,6 +15,7 @@
 #include <svn_hash.h>
 #include <svn_path.h>
 #include <svn_props.h>
+#include <svn_string.h>
 
 /* filees_ra_ctx builds a context able to reach a server.
  *
@@ -498,5 +499,240 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
             result = one;
     }
     print_update_receipt(result, notify.conflicts);
+    return SVN_NO_ERROR;
+}
+
+struct lock_result {
+    const char *path;
+    const char *failure; /* NULL when it worked */
+};
+
+struct lock_baton {
+    const char *wc;
+    apr_array_header_t *results; /* struct lock_result */
+    apr_pool_t *pool;
+};
+
+/* Lock and unlock do not fail as a whole when one path is refused: Subversion
+ * reports the refusal through a notification and carries on. Reporting only the
+ * overall exit status would therefore turn "somebody else holds this file" into
+ * silence, which is the one thing a reservation must never be. */
+static void collect_lock(void *baton, const svn_wc_notify_t *notify,
+                         apr_pool_t *pool)
+{
+    struct lock_baton *b = baton;
+    struct lock_result *row;
+    const char *path;
+    svn_boolean_t failed;
+    (void)pool;
+
+    switch (notify->action) {
+    case svn_wc_notify_locked:
+    case svn_wc_notify_unlocked:
+        failed = FALSE;
+        break;
+    case svn_wc_notify_failed_lock:
+    case svn_wc_notify_failed_unlock:
+        failed = TRUE;
+        break;
+    default:
+        return;
+    }
+    if (!notify->path) return;
+    path = notify->path;
+    if (b->wc && svn_dirent_is_absolute(path)) {
+        const char *rel = svn_dirent_skip_ancestor(b->wc, path);
+        if (rel && *rel) path = rel;
+    }
+    row = apr_array_push(b->results);
+    row->path = apr_pstrdup(b->pool, path);
+    row->failure = NULL;
+    if (failed) {
+        char buf[512];
+        row->failure = notify->err
+                           ? apr_pstrdup(b->pool, svn_err_best_message(notify->err, buf, sizeof(buf)))
+                           : apr_pstrdup(b->pool, "refused");
+    }
+}
+
+static void print_lock_receipt(const char *field, apr_array_header_t *results)
+{
+    int i;
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"%s\":[", field);
+    for (i = 0; i < results->nelts; ++i) {
+        struct lock_result *row = &APR_ARRAY_IDX(results, i, struct lock_result);
+        if (i) putchar(',');
+        printf("{\"path\":");
+        filees_json_string(row->path);
+        printf(",\"ok\":%s,\"error\":", row->failure ? "false" : "true");
+        if (row->failure) filees_json_string(row->failure);
+        else printf("null");
+        putchar('}');
+    }
+    puts("]}");
+}
+
+static svn_error_t *supply_log_message(const char **log_msg, const char **tmp_file,
+                                      const apr_array_header_t *commit_items,
+                                      void *baton, apr_pool_t *pool)
+{
+    (void)commit_items;
+    (void)pool;
+    *log_msg = baton;
+    *tmp_file = NULL;
+    return SVN_NO_ERROR;
+}
+
+struct commit_baton {
+    svn_revnum_t revision;
+    const char *date;
+    const char *author;
+    apr_pool_t *pool;
+};
+
+static svn_error_t *collect_commit(const svn_commit_info_t *info, void *baton,
+                                   apr_pool_t *pool)
+{
+    struct commit_baton *b = baton;
+    (void)pool;
+    b->revision = info->revision;
+    b->date = info->date ? apr_pstrdup(b->pool, info->date) : NULL;
+    b->author = info->author ? apr_pstrdup(b->pool, info->author) : NULL;
+    return SVN_NO_ERROR;
+}
+
+/* filees_ra_commit publishes a named set of paths.
+ *
+ * depth is empty and commit_as_operations is TRUE, which together mean "these
+ * paths and nothing else". A commit that quietly widened its own scope would
+ * publish work the caller never listed - and FileES builds its batches
+ * deliberately, filtering ignored files and withheld deletions on the way.
+ *
+ * The revision comes from the commit callback rather than from a second
+ * question to the server. pkg/client currently reads HEAD before and after and
+ * matches a filees:commit-id marker to be sure which revision was its own; the
+ * marker still works here (--revprop), but the callback answers directly.
+ *
+ * An empty commit is not an error: Subversion produces no revision and the
+ * receipt says null. The caller decides whether that was expected. */
+svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
+                              const char **rels, int n, const char *message,
+                              svn_boolean_t keep_locks, const char **revprops,
+                              int nrevprops, apr_pool_t *pool)
+{
+    const char *wc;
+    svn_client_ctx_t *ctx;
+    apr_array_header_t *paths;
+    apr_hash_t *revprop_table = NULL;
+    struct commit_baton commit;
+    int i;
+
+    if (n < 1) return filees_refuse("commit requires at least one path");
+    if (!message) return filees_refuse("commit requires -m");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_ra_ctx_auth(ctx, pool));
+    SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+
+    if (nrevprops) {
+        revprop_table = apr_hash_make(pool);
+        for (i = 0; i < nrevprops; ++i) {
+            const char *eq = strchr(revprops[i], '=');
+            if (!eq || eq == revprops[i]) return filees_refuse("--revprop expects NAME=VALUE");
+            /* One source for the message. Letting --revprop set svn:log too
+             * would let it quietly override -m, and the caller would have no
+             * way to see which one the repository got. */
+            if (!strncmp(revprops[i], SVN_PROP_REVISION_LOG "=", strlen(SVN_PROP_REVISION_LOG) + 1))
+                return filees_refuse("the message is -m; --revprop must not set svn:log");
+            apr_hash_set(revprop_table,
+                         apr_pstrndup(pool, revprops[i], (apr_size_t)(eq - revprops[i])),
+                         APR_HASH_KEY_STRING,
+                         svn_string_create(eq + 1, pool));
+        }
+    }
+
+    /* The message travels through log_msg_func3, not the revprop table.
+     * svn_client_commit6 has no message parameter, and setting svn:log
+     * directly is refused outright (E195011, "Standard properties can't be set
+     * explicitly as revision properties"). Measured 2026-09-08 - first without
+     * any message at all, when every commit succeeded with an empty svn:log,
+     * which would have silently emptied the Shouting Commit lane because
+     * announcements ride in exactly that property. */
+    ctx->log_msg_func3 = supply_log_message;
+    ctx->log_msg_baton3 = (void *)message;
+
+    commit.revision = SVN_INVALID_REVNUM;
+    commit.date = NULL;
+    commit.author = NULL;
+    commit.pool = pool;
+    SVN_ERR(svn_client_commit6(paths, svn_depth_empty, keep_locks,
+                               FALSE /* keep_changelists */,
+                               TRUE /* commit_as_operations */,
+                               FALSE /* include_file_externals */,
+                               FALSE /* include_dir_externals */,
+                               NULL /* changelists */, revprop_table,
+                               collect_commit, &commit, ctx, pool));
+
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"revision\":");
+    if (SVN_IS_VALID_REVNUM(commit.revision)) printf("%ld", (long)commit.revision);
+    else printf("null");
+    printf(",\"date\":");
+    if (commit.date) filees_json_string(commit.date);
+    else printf("null");
+    printf(",\"author\":");
+    if (commit.author) filees_json_string(commit.author);
+    else printf("null");
+    puts("}");
+    return SVN_NO_ERROR;
+}
+
+/* filees_ra_lock and filees_ra_unlock reserve and release.
+ *
+ * Neither steals nor breaks. Subversion offers both, and the inventory in
+ * concepts/DESKTOP_SVN_CLIENT_SCOPE.md deliberately does not: taking a
+ * reservation away from whoever holds it is not an accepted migration
+ * mechanism here, and a capability the product has not accepted has no business
+ * existing in the binary that would make it one keystroke away. */
+svn_error_t *filees_ra_lock(const char *wc_arg, svn_boolean_t live,
+                            const char **rels, int n, const char *comment,
+                            apr_pool_t *pool)
+{
+    const char *wc;
+    svn_client_ctx_t *ctx;
+    apr_array_header_t *paths;
+    struct lock_baton b;
+
+    if (n < 1) return filees_refuse("lock requires at least one path");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_ra_ctx_auth(ctx, pool));
+    SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    b.wc = wc;
+    b.results = apr_array_make(pool, n, sizeof(struct lock_result));
+    b.pool = pool;
+    ctx->notify_func2 = collect_lock;
+    ctx->notify_baton2 = &b;
+    SVN_ERR(svn_client_lock(paths, comment, FALSE /* steal_lock */, ctx, pool));
+    print_lock_receipt("locked", b.results);
+    return SVN_NO_ERROR;
+}
+
+svn_error_t *filees_ra_unlock(const char *wc_arg, svn_boolean_t live,
+                              const char **rels, int n, apr_pool_t *pool)
+{
+    const char *wc;
+    svn_client_ctx_t *ctx;
+    apr_array_header_t *paths;
+    struct lock_baton b;
+
+    if (n < 1) return filees_refuse("unlock requires at least one path");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_ra_ctx_auth(ctx, pool));
+    SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    b.wc = wc;
+    b.results = apr_array_make(pool, n, sizeof(struct lock_result));
+    b.pool = pool;
+    ctx->notify_func2 = collect_lock;
+    ctx->notify_baton2 = &b;
+    SVN_ERR(svn_client_unlock(paths, FALSE /* break_lock */, ctx, pool));
+    print_lock_receipt("unlocked", b.results);
     return SVN_NO_ERROR;
 }

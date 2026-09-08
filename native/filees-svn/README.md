@@ -12,6 +12,43 @@ operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
 also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,
 resolve) through the helper.
 
+`commit`, `lock` and `unlock` change server state, and three things about them
+are deliberate.
+
+**The message travels through `log_msg_func3`, not the revprop table.**
+`svn_client_commit6` has no message parameter, and setting `svn:log` in
+`revprop_table` is refused outright (`E195011`, "Standard properties can't be
+set explicitly as revision properties"). Measured 2026-09-08: the first version
+passed no message at all and every commit succeeded with an empty `svn:log` —
+which would have silently emptied the Shouting Commit lane, because
+announcements ride in exactly that property. `--revprop svn:log=…` is refused
+so the message keeps one source.
+
+**Lock and unlock report each path separately.** Subversion does not fail the
+whole call when one path is refused: it notifies and carries on. A verb
+reporting only its exit status would turn "somebody else holds this file" into
+silence, which is the one thing a reservation must never be. The receipt is a
+list of `{path, ok, error}`, and a contested lock comes back as a successful
+process containing a failed path.
+
+**Neither steals nor breaks.** Subversion offers both; the inventory in
+`concepts/DESKTOP_SVN_CLIENT_SCOPE.md` deliberately does not, and the register
+records that force-lock did not become an accepted reservation-migration
+mechanism by being inventoried. A capability the product has not accepted has
+no business being one keystroke away in the binary that would make it one, so
+`--steal` and `--break` are not implemented and are refused as unknown flags.
+
+`commit` uses `svn_depth_empty` with `commit_as_operations`, meaning "these
+paths and nothing else". A commit that quietly widened its own scope would
+publish work the caller never listed — and FileES builds its batches
+deliberately, filtering ignored files and withheld deletions on the way. The
+revision comes from the commit callback rather than from a second question to
+the server; the `filees:commit-id` marker still works for recognising a
+revision after a lost acknowledgement.
+
+An empty commit is not an error: Subversion produces no revision and the
+receipt says `null`. The caller decides whether that was expected.
+
 `checkout` and `update` are remote and write to a working copy. Two things
 about them are load-bearing.
 

@@ -20,3 +20,20 @@ endif()
 if(MINGW)
   target_link_options(filees-svn PRIVATE -municode)
 endif()
+
+# Disposable RA probe. OFF by default so it cannot reach a release by accident;
+# it exists to measure whether an svn+ssh tunnel is reachable from a non-CLI
+# process, which decides whether the RA verbs are a plan or a wish.
+option(FILEES_SVN_BUILD_RA_PROBE "Build the disposable svn+ssh RA probe" OFF)
+if(FILEES_SVN_BUILD_RA_PROBE)
+  find_library(SVN_RA_LIBRARY NAMES svn_ra-1 libsvn_ra-1 REQUIRED)
+  add_executable(filees-svn-raprobe src/ra_probe.c)
+  set_target_properties(filees-svn-raprobe PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)
+  target_include_directories(filees-svn-raprobe PRIVATE "${SVN_INCLUDE_DIR}" "${APR_INCLUDE_DIR}")
+  target_link_libraries(filees-svn-raprobe PRIVATE "${SVN_CLIENT_LIBRARY}" "${SVN_RA_LIBRARY}" "${SVN_SUBR_LIBRARY}" "${APR_LIBRARY}")
+  if(MSVC)
+    target_compile_options(filees-svn-raprobe PRIVATE /W4 /utf-8)
+  else()
+    target_compile_options(filees-svn-raprobe PRIVATE -Wall -Wextra -Werror)
+  endif()
+endif()

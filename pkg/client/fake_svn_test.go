@@ -20,6 +20,9 @@ const fakeSVNMode = "FILEES_TEST_FAKE_SVN"
 
 func TestMain(m *testing.M) {
 	switch os.Getenv(fakeSVNMode) {
+	case "native-ra":
+		fakeNativeRA()
+		os.Exit(0)
 	case "ssh-env":
 		// What the daemon injected as SVN_SSH, verbatim.
 		fmt.Print(os.Getenv("SVN_SSH"))

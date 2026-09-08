@@ -31,7 +31,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("]}");
+    puts("],\"features\":[\"update_changes\"]}");
 }
 
 static svn_error_t *parse_wc_flag(int *i, int argc, const char **argv,

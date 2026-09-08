@@ -339,9 +339,11 @@ svn_error_t *filees_log(svn_client_ctx_t *ctx, const char *target,
     return SVN_NO_ERROR;
 }
 
+struct incoming_change { const char *path; char action; };
 struct notify_baton {
     const char *wc;
     apr_array_header_t *conflicts; /* const char * */
+    apr_array_header_t *changes; /* struct incoming_change */
     apr_pool_t *pool;
 };
 
@@ -366,18 +368,38 @@ static void collect_notify(void *baton, const svn_wc_notify_t *notify,
     conflicted = notify->content_state == svn_wc_notify_state_conflicted
                  || notify->prop_state == svn_wc_notify_state_conflicted
                  || notify->action == svn_wc_notify_tree_conflict;
-    if (!conflicted || !notify->path) return;
+    if (!notify->path) return;
 
     path = notify->path;
     if (b->wc && svn_dirent_is_absolute(path)) {
         const char *rel = svn_dirent_skip_ancestor(b->wc, path);
         if (rel && *rel) path = rel;
     }
-    APR_ARRAY_PUSH(b->conflicts, const char *) = apr_pstrdup(b->pool, path);
+    if (conflicted) {
+        /* Never hide a root/unsupported conflict. Go refuses an unrepresentable
+         * conflict receipt instead of treating that update as clean. */
+        APR_ARRAY_PUSH(b->conflicts, const char *) = apr_pstrdup(b->pool, path);
+    } else {
+        char action = 0;
+        if (!filees_safe_relative(path)) return; /* only data gets an incoming receipt */
+        if (notify->content_state == svn_wc_notify_state_merged ||
+            notify->prop_state == svn_wc_notify_state_merged) return;
+        if (notify->action == svn_wc_notify_update_add) action = 'A';
+        else if (notify->action == svn_wc_notify_update_delete) action = 'D';
+        else if (notify->action == svn_wc_notify_update_update &&
+                 notify->content_state == svn_wc_notify_state_changed &&
+                 notify->prop_state != svn_wc_notify_state_changed) action = 'U';
+        if (action) {
+            struct incoming_change *row = &APR_ARRAY_PUSH(b->changes, struct incoming_change);
+            row->path = apr_pstrdup(b->pool, path);
+            row->action = action;
+        }
+    }
 }
 
 static void print_update_receipt(svn_revnum_t revision,
-                                 apr_array_header_t *conflicts)
+                                 apr_array_header_t *conflicts,
+                                 apr_array_header_t *changes)
 {
     int i;
     printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"revision\":");
@@ -387,6 +409,13 @@ static void print_update_receipt(svn_revnum_t revision,
     for (i = 0; i < conflicts->nelts; ++i) {
         if (i) putchar(',');
         filees_json_string(APR_ARRAY_IDX(conflicts, i, const char *));
+    }
+    printf("],\"changes\":[");
+    for (i = 0; i < changes->nelts; ++i) {
+        const struct incoming_change *row = &APR_ARRAY_IDX(changes, i, struct incoming_change);
+        if (i) putchar(',');
+        printf("{\"path\":"); filees_json_string(row->path);
+        printf(",\"action\":\"%c\"}", row->action);
     }
     puts("]}");
 }
@@ -433,13 +462,14 @@ svn_error_t *filees_ra_checkout(const char *url_arg, const char *wc_arg,
     SVN_ERR(filees_ra_ctx(&ctx, pool));
     notify.wc = wc;
     notify.conflicts = apr_array_make(pool, 4, sizeof(const char *));
+    notify.changes = apr_array_make(pool, 16, sizeof(struct incoming_change));
     notify.pool = pool;
     ctx->notify_func2 = collect_notify;
     ctx->notify_baton2 = &notify;
 
     SVN_ERR(svn_client_checkout3(&result, url, wc, &peg, &rev, svn_depth_infinity,
                                  TRUE /* ignore_externals */, force, ctx, pool));
-    print_update_receipt(result, notify.conflicts);
+    print_update_receipt(result, notify.conflicts, notify.changes);
     return SVN_NO_ERROR;
 }
 
@@ -482,6 +512,7 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
 
     notify.wc = wc;
     notify.conflicts = apr_array_make(pool, 4, sizeof(const char *));
+    notify.changes = apr_array_make(pool, 16, sizeof(struct incoming_change));
     notify.pool = pool;
     ctx->notify_func2 = collect_notify;
     ctx->notify_baton2 = &notify;
@@ -498,7 +529,7 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
         if (SVN_IS_VALID_REVNUM(one) && (!SVN_IS_VALID_REVNUM(result) || one > result))
             result = one;
     }
-    print_update_receipt(result, notify.conflicts);
+    print_update_receipt(result, notify.conflicts, notify.changes);
     return SVN_NO_ERROR;
 }
 

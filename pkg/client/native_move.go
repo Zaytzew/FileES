@@ -133,6 +133,9 @@ func (c *execClient) VerifyCommittedMove(ctx context.Context, wc, old, dst strin
 	if !validMovePath(old) || !validMovePath(dst) || old == dst {
 		return false, errors.New("invalid move receipt paths")
 	}
+	if nativeWCOps(c) {
+		return c.nativeVerifyCommittedMove(ctx, wc, old, dst)
+	}
 	info, err := c.run(ctx, wc, []string{"info", "--xml", "--", dst + "@BASE"})
 	if err != nil {
 		return false, err

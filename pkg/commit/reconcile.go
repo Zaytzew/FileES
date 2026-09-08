@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"filees/pkg/client"
 	"filees/pkg/errmap"
 )
 
@@ -31,6 +32,9 @@ type conflictMeta struct {
 //	"C    path"   – text/binary conflict
 //	"   C path"   – tree conflict
 func parseConflicts(out string) []string {
+	if paths, ok := client.UpdateConflicts(out); ok {
+		return paths
+	}
 	seen := make(map[string]struct{})
 	var conflicts []string
 	for _, line := range strings.Split(out, "\n") {

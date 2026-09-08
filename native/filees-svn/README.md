@@ -1,4 +1,27 @@
-# FileES native SVN client — Linux alpha integration
+# FileES native SVN client — explicit platform integration
+
+Windows adapter checkpoint 2026-09-08, base r995 plus working delta:
+`pkg/client/native_ra.go` routes managed-local info, checkout/update,
+commit, lock/unlock, bounded log and CatTo when the existing Windows opt-in
+is enabled. `svnfetch` uses CatTo for Windows distribution downloads.
+Native errors never trigger a retry using CLI. Commit callback `null`
+does not publish a foreign HEAD or consume a shout; lock outcomes are checked
+per path, even at exit 0. Atomic commits above 512 explicit paths refuse
+before mutation; they are not silently split.
+
+Update/checkout advertise and require `features: ["update_changes"]`.
+Their receipt carries `changes: [{path, action}]` (plain A/U/D) alongside
+`conflicts`; merged/conflicted work is not reported as a clean incoming edit.
+Go passes these notifications to the existing received journal and conflict
+reconciliation, without manufacturing CLI text. Older helpers are refused
+before these mutations.
+
+This is not complete CLI removal. URL info/HEAD, remote lock observations
+(`status -u`) and unmanaged pre-adoption identity checks remain CLI.
+Provisioning/attachment and service-WC factories have not enabled the native
+client: fresh/adopted `.filees` identity lifecycle needs separate acceptance.
+Native checkout itself does not create that marker. Linux routing is unchanged.
+Evidence and remaining release gates: reports/NATIVE_SVN_RA_ADAPTER_2026-09-08.md.
 
 Documentation reconciliation: 2026-09-07, source r917. Native WC-local
 verbs landed in r911; r913 fixed listing limits, batching and property/status
@@ -10,7 +33,7 @@ Go daemon does not use cgo. `filees-svn --version` lists implemented verbs.
 Linux daemon still uses the helper only for `record-move`; every other
 operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
 also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,
-resolve) through the helper.
+resolve) and the supported RA variants described above through the helper.
 
 `commit`, `lock` and `unlock` change server state, and three things about them
 are deliberate.
@@ -53,10 +76,9 @@ receipt says `null`. The caller decides whether that was expected.
 about them are load-bearing.
 
 **Conflicts are reported structurally**, taken from Subversion's notifications
-rather than from its printed lines. `pkg/commit/reconcile.go` currently scans
-the CLI's output for them (`parseConflicts`); a structured list removes that
-parser instead of moving it, so a reworded or translated Subversion stops being
-able to make every conflict disappear silently.
+rather than from its printed lines. `pkg/commit/reconcile.go` consumes the
+structured native receipt; its text parser remains only for the CLI backend.
+Native conflict handling does not depend on Subversion's wording or locale.
 
 **`--force` on checkout is not a convenience.** Measured 2026-09-08 against an
 unversioned file colliding with a repository path — the shape FileES meets

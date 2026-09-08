@@ -15,8 +15,9 @@
 #endif
 
 static const char *const k_verbs[] = {
-    "record-move", "cat", "log", "status", "info", "add", "delete",
-    "propget", "propset", "propdel", "cleanup", "revert", "resolve", NULL
+    "record-move", "checkout", "update", "cat", "log", "status", "info",
+    "add", "delete", "propget", "propset", "propdel", "cleanup", "revert",
+    "resolve", NULL
 };
 
 static void print_ok_version(void)
@@ -156,6 +157,74 @@ static svn_error_t *run_log(int argc, const char **argv, apr_pool_t *pool)
                       revprops, nrevprops, pool);
 }
 
+static svn_error_t *parse_revision_flag(int *i, int argc, const char **argv,
+                                        svn_revnum_t *revision)
+{
+    char *end;
+    long value;
+    if (*i + 1 >= argc) return filees_refuse("missing --revision value");
+    value = strtol(argv[++*i], &end, 10);
+    if (*end || value < 0) return filees_refuse("--revision must be a non-negative number");
+    *revision = (svn_revnum_t)value;
+    return SVN_NO_ERROR;
+}
+
+static svn_error_t *run_checkout(int argc, const char **argv, apr_pool_t *pool)
+{
+    const char *url = NULL, *wc = NULL;
+    svn_revnum_t revision = SVN_INVALID_REVNUM;
+    svn_boolean_t force = FALSE;
+    int i;
+
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--url") && i + 1 < argc) { url = argv[++i]; continue; }
+        if (!strcmp(argv[i], "--wc") && i + 1 < argc) { wc = argv[++i]; continue; }
+        if (!strcmp(argv[i], "--force")) { force = TRUE; continue; }
+        if (!strcmp(argv[i], "--revision")) {
+            SVN_ERR(parse_revision_flag(&i, argc, argv, &revision));
+            continue;
+        }
+        return filees_refuse("usage: filees-svn checkout --url URL --wc PATH [--revision N] [--force]");
+    }
+    if (!url || !wc) return filees_refuse("checkout requires --url and --wc");
+    return filees_ra_checkout(url, wc, revision, force, pool);
+}
+
+static svn_error_t *run_update(int argc, const char **argv, apr_pool_t *pool)
+{
+    const char *wc = NULL;
+    const char *paths[FILEES_SVN_MAX_PATHS];
+    svn_revnum_t revision = SVN_INVALID_REVNUM;
+    svn_depth_t depth = svn_depth_unknown;
+    svn_boolean_t live = TRUE;
+    int n = 0, i;
+
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
+            SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live));
+            continue;
+        }
+        if (!strcmp(argv[i], "--revision")) {
+            SVN_ERR(parse_revision_flag(&i, argc, argv, &revision));
+            continue;
+        }
+        if (!strcmp(argv[i], "--depth") && i + 1 < argc) {
+            ++i;
+            if (!strcmp(argv[i], "empty")) depth = svn_depth_empty;
+            else if (!strcmp(argv[i], "infinity")) depth = svn_depth_infinity;
+            else return filees_refuse("--depth must be empty or infinity");
+            continue;
+        }
+        if (!strcmp(argv[i], "--")) {
+            SVN_ERR(collect_paths(i, argc, argv, paths, &n));
+            break;
+        }
+        return filees_refuse("usage: filees-svn update --wc WC [--depth empty] [--revision N] [-- REL...]");
+    }
+    if (!wc) return filees_refuse("update requires --wc|--disposable-wc");
+    return filees_ra_update(wc, live, paths, n, depth, revision, pool);
+}
+
 static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
 {
     const char *verb, *wc = NULL;
@@ -183,6 +252,8 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         return SVN_NO_ERROR;
     }
 
+    if (!strcmp(verb, "checkout")) return run_checkout(argc, argv, pool);
+    if (!strcmp(verb, "update")) return run_update(argc, argv, pool);
     if (!strcmp(verb, "log")) return run_log(argc, argv, pool);
 
     if (!strcmp(verb, "cat")) {

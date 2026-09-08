@@ -337,3 +337,166 @@ svn_error_t *filees_log(svn_client_ctx_t *ctx, const char *target,
     puts("]}");
     return SVN_NO_ERROR;
 }
+
+struct notify_baton {
+    const char *wc;
+    apr_array_header_t *conflicts; /* const char * */
+    apr_pool_t *pool;
+};
+
+/* Conflicts are taken from notifications, not from parsed output.
+ *
+ * The daemon reads them today by scanning the CLI's printed lines
+ * (pkg/commit/reconcile.go, parseConflicts). Handing back a structured list
+ * removes that parser rather than moving it: a translated or reworded
+ * Subversion is then a non-event instead of a silent loss of every conflict.
+ *
+ * The path is copied. svn_wc_notify_t lives in a pool the caller clears
+ * between notifications - the same trap that gave log an author built from the
+ * tail of another entry's date. */
+static void collect_notify(void *baton, const svn_wc_notify_t *notify,
+                           apr_pool_t *pool)
+{
+    struct notify_baton *b = baton;
+    const char *path;
+    svn_boolean_t conflicted;
+    (void)pool;
+
+    conflicted = notify->content_state == svn_wc_notify_state_conflicted
+                 || notify->prop_state == svn_wc_notify_state_conflicted
+                 || notify->action == svn_wc_notify_tree_conflict;
+    if (!conflicted || !notify->path) return;
+
+    path = notify->path;
+    if (b->wc && svn_dirent_is_absolute(path)) {
+        const char *rel = svn_dirent_skip_ancestor(b->wc, path);
+        if (rel && *rel) path = rel;
+    }
+    APR_ARRAY_PUSH(b->conflicts, const char *) = apr_pstrdup(b->pool, path);
+}
+
+static void print_update_receipt(svn_revnum_t revision,
+                                 apr_array_header_t *conflicts)
+{
+    int i;
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"revision\":");
+    if (SVN_IS_VALID_REVNUM(revision)) printf("%ld", (long)revision);
+    else printf("null");
+    printf(",\"conflicts\":[");
+    for (i = 0; i < conflicts->nelts; ++i) {
+        if (i) putchar(',');
+        filees_json_string(APR_ARRAY_IDX(conflicts, i, const char *));
+    }
+    puts("]}");
+}
+
+/* filees_ra_checkout creates a working copy.
+ *
+ * The marker guard the other working-copy verbs stand on cannot apply: there is
+ * no working copy yet, and .filees is written afterwards. What is checked
+ * instead is that the destination is an absolute path with no symlink in its
+ * parent chain, and that it is not already a working copy - a checkout over an
+ * existing one is a different operation with a different failure mode, and the
+ * caller decides between them rather than discovering which it got.
+ *
+ * force allows unversioned obstructions, which is how an existing folder is
+ * adopted on first import. Subversion still refuses versioned ones. */
+svn_error_t *filees_ra_checkout(const char *url_arg, const char *wc_arg,
+                                svn_revnum_t revision, svn_boolean_t force,
+                                apr_pool_t *pool)
+{
+    const char *url, *wc;
+    svn_client_ctx_t *ctx;
+    svn_opt_revision_t peg, rev;
+    struct notify_baton notify;
+    svn_revnum_t result = SVN_INVALID_REVNUM;
+    apr_finfo_t info;
+
+    SVN_ERR(filees_ra_target(&url, url_arg, pool));
+    if (!wc_arg || !*wc_arg) return filees_refuse("--wc must be an absolute path");
+    wc = svn_dirent_internal_style(wc_arg, pool);
+    if (!svn_dirent_is_absolute(wc)) return filees_refuse("--wc must be an absolute path");
+    if (apr_stat(&info, svn_dirent_join(wc, ".svn", pool), APR_FINFO_TYPE, pool) == APR_SUCCESS)
+        return filees_refuse("destination is already a working copy");
+    if (apr_stat(&info, wc, APR_FINFO_TYPE, pool) == APR_SUCCESS)
+        SVN_ERR(filees_plain_node(wc, APR_DIR, FALSE, pool));
+
+    peg.kind = svn_opt_revision_unspecified;
+    if (SVN_IS_VALID_REVNUM(revision)) {
+        rev.kind = svn_opt_revision_number;
+        rev.value.number = revision;
+    } else {
+        rev.kind = svn_opt_revision_head;
+    }
+
+    SVN_ERR(filees_ra_ctx(&ctx, pool));
+    notify.wc = wc;
+    notify.conflicts = apr_array_make(pool, 4, sizeof(const char *));
+    notify.pool = pool;
+    ctx->notify_func2 = collect_notify;
+    ctx->notify_baton2 = &notify;
+
+    SVN_ERR(svn_client_checkout3(&result, url, wc, &peg, &rev, svn_depth_infinity,
+                                 TRUE /* ignore_externals */, force, ctx, pool));
+    print_update_receipt(result, notify.conflicts);
+    return SVN_NO_ERROR;
+}
+
+/* filees_ra_update brings a working copy forward.
+ *
+ * Depth is svn_depth_unknown for a whole-tree update, which means "respect what
+ * each directory already records" - not "infinity". Passing infinity would
+ * quietly deepen a sparse checkout, turning an update into a download nobody
+ * asked for. --depth empty targets named paths without doing that either, and
+ * depth is never sticky here: this verb reports history, it does not redefine
+ * what the working copy is. */
+svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
+                              const char **rels, int n, svn_depth_t depth,
+                              svn_revnum_t revision, apr_pool_t *pool)
+{
+    const char *wc;
+    svn_client_ctx_t *ctx;
+    svn_opt_revision_t rev;
+    apr_array_header_t *paths, *result_revs;
+    struct notify_baton notify;
+    svn_revnum_t result = SVN_INVALID_REVNUM;
+    int i;
+
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_ra_ctx_auth(ctx, pool));
+
+    if (n == 0) {
+        paths = apr_array_make(pool, 1, sizeof(const char *));
+        APR_ARRAY_PUSH(paths, const char *) = wc;
+    } else {
+        SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    }
+
+    if (SVN_IS_VALID_REVNUM(revision)) {
+        rev.kind = svn_opt_revision_number;
+        rev.value.number = revision;
+    } else {
+        rev.kind = svn_opt_revision_head;
+    }
+
+    notify.wc = wc;
+    notify.conflicts = apr_array_make(pool, 4, sizeof(const char *));
+    notify.pool = pool;
+    ctx->notify_func2 = collect_notify;
+    ctx->notify_baton2 = &notify;
+
+    SVN_ERR(svn_client_update4(&result_revs, paths, &rev, depth,
+                               FALSE /* depth_is_sticky */,
+                               TRUE /* ignore_externals */,
+                               FALSE /* allow_unver_obstructions */,
+                               TRUE /* adds_as_modification */,
+                               FALSE /* make_parents */,
+                               ctx, pool));
+    for (i = 0; result_revs && i < result_revs->nelts; ++i) {
+        svn_revnum_t one = APR_ARRAY_IDX(result_revs, i, svn_revnum_t);
+        if (SVN_IS_VALID_REVNUM(one) && (!SVN_IS_VALID_REVNUM(result) || one > result))
+            result = one;
+    }
+    print_update_receipt(result, notify.conflicts);
+    return SVN_NO_ERROR;
+}

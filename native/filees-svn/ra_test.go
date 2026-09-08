@@ -187,3 +187,166 @@ func TestRALogRefusesAmbiguousOrUnboundedRequests(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) { f.jsonCall(t, false, tc.args...) })
 	}
 }
+
+// second returns a second working copy of the fixture repository, checked out
+// by the helper itself and marked disposable so the other verbs accept it.
+func (f fixture) second(t *testing.T, name string, args ...string) string {
+	t.Helper()
+	wc := filepath.Join(f.root, name)
+	f.jsonCall(t, true, append([]string{"checkout", "--url", f.repoURL, "--wc", wc}, args...)...)
+	write(t, filepath.Join(wc, ".filees-native-probe"), "Disposable fixture; never add to a real WC.\n")
+	return wc
+}
+
+func TestRACheckoutCreatesAWorkingCopy(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	wc := filepath.Join(f.root, "fresh")
+
+	got := f.jsonCall(t, true, "checkout", "--url", f.repoURL, "--wc", wc)
+	if got["revision"].(float64) != 1 {
+		t.Fatalf("revision = %v", got["revision"])
+	}
+	if _, err := os.Stat(filepath.Join(wc, "occupied.txt")); err != nil {
+		t.Fatalf("checkout produced no content: %v", err)
+	}
+}
+
+// A checkout over an existing working copy is a different operation with a
+// different failure mode. The caller chooses between them rather than
+// discovering which one it got.
+func TestRACheckoutRefusesAnExistingWorkingCopy(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	f.jsonCall(t, false, "checkout", "--url", f.repoURL, "--wc", f.wc)
+}
+
+// --force is not a convenience. Measured 2026-09-08 against an unversioned
+// file colliding with a repository path - the shape FileES meets whenever the
+// owner points it at a folder that already holds work:
+//
+//	without --force : checkout succeeds, the path becomes a TREE CONFLICT
+//	                  (svn status "D     C"), i.e. a working copy broken from
+//	                  its first second
+//	with --force    : checkout succeeds, the path is a plain local
+//	                  modification (svn status "M"), i.e. adopted
+//
+// Both keep the owner's bytes, so a test that only compares content cannot
+// tell them apart - which is why this one asks the helper for the status. It
+// also explains why pkg/client always passes --force, and why removing it
+// would look harmless right up to the first import.
+func TestRACheckoutForceAdoptsInsteadOfConflicting(t *testing.T) {
+	f := newFixture(t, "old.txt")
+
+	adopt := func(t *testing.T, name string, force bool) (string, []any) {
+		t.Helper()
+		wc := filepath.Join(f.root, name)
+		if err := os.Mkdir(wc, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(wc, "occupied.txt"), "local work\n")
+		write(t, filepath.Join(wc, "tylko-lokalny.txt"), "never in the repository\n")
+		args := []string{"checkout", "--url", f.repoURL, "--wc", wc}
+		if force {
+			args = append(args, "--force")
+		}
+		got := f.jsonCall(t, true, args...)
+		write(t, filepath.Join(wc, ".filees-native-probe"), "Disposable fixture; never add to a real WC.\n")
+		conflicts, _ := got["conflicts"].([]any)
+		return wc, conflicts
+	}
+
+	plain, conflicts := adopt(t, "obstructed", false)
+	if len(conflicts) != 1 || conflicts[0] != "occupied.txt" {
+		t.Fatalf("without --force the obstruction must be reported: %#v", conflicts)
+	}
+
+	forced, conflicts := adopt(t, "adopted", true)
+	if len(conflicts) != 0 {
+		t.Fatalf("with --force there is nothing to conflict about: %#v", conflicts)
+	}
+
+	// The adopted copy is usable: the owner's bytes are there and waiting to be
+	// published, not stuck in a conflict.
+	status := f.jsonCall(t, true, "status", "--disposable-wc", forced, "--", "occupied.txt")
+	entries, _ := status["entries"].([]any)
+	if len(entries) != 1 || entries[0].(map[string]any)["item"] != "modified" {
+		t.Fatalf("adopted file is not a plain local modification: %#v", status["entries"])
+	}
+	content, err := os.ReadFile(filepath.Join(forced, "occupied.txt"))
+	if err != nil || string(content) != "local work\n" {
+		t.Fatalf("adoption overwrote local work: %q %v", content, err)
+	}
+	for _, wc := range []string{plain, forced} {
+		if _, err := os.Stat(filepath.Join(wc, "tylko-lokalny.txt")); err != nil {
+			t.Fatalf("%s: unrelated local file was removed: %v", wc, err)
+		}
+	}
+}
+
+func TestRAUpdateBringsChangesForward(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	other := f.second(t, "reader")
+
+	write(t, filepath.Join(f.wc, "occupied.txt"), "moved on\n")
+	f.svnRun(t, "commit", "--username", "editor", "-m", "second")
+
+	got := f.jsonCall(t, true, "update", "--disposable-wc", other)
+	if got["revision"].(float64) != 2 {
+		t.Fatalf("revision = %v", got["revision"])
+	}
+	content, err := os.ReadFile(filepath.Join(other, "occupied.txt"))
+	if err != nil || string(content) != "moved on\n" {
+		t.Fatalf("content = %q err=%v", content, err)
+	}
+}
+
+// Conflicts come from notifications, not from parsed output. The daemon reads
+// them today by scanning the CLI's printed lines; a structured list removes
+// that parser instead of moving it, so a reworded Subversion stops being able
+// to make every conflict disappear silently.
+func TestRAUpdateReportsConflictsStructurally(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	other := f.second(t, "conflicting")
+
+	write(t, filepath.Join(f.wc, "occupied.txt"), "server version\n")
+	f.svnRun(t, "commit", "--username", "editor", "-m", "server change")
+	write(t, filepath.Join(other, "occupied.txt"), "local version\n")
+
+	got := f.jsonCall(t, true, "update", "--disposable-wc", other)
+	conflicts, _ := got["conflicts"].([]any)
+	if len(conflicts) != 1 || conflicts[0] != "occupied.txt" {
+		t.Fatalf("conflicts = %#v", got["conflicts"])
+	}
+}
+
+// --depth empty updates the named paths without deepening anything, which is
+// what the daemon uses to refresh one file it cares about.
+func TestRAUpdateDepthEmptyTargetsNamedPaths(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	other := f.second(t, "targeted")
+
+	write(t, filepath.Join(f.wc, "occupied.txt"), "only this one\n")
+	f.svnRun(t, "commit", "--username", "editor", "-m", "one file")
+
+	f.jsonCall(t, true, "update", "--disposable-wc", other, "--depth", "empty", "--", "occupied.txt")
+	content, err := os.ReadFile(filepath.Join(other, "occupied.txt"))
+	if err != nil || string(content) != "only this one\n" {
+		t.Fatalf("targeted update did not arrive: %q %v", content, err)
+	}
+}
+
+func TestRACheckoutAndUpdateRefuseBadArguments(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"checkout without url", []string{"checkout", "--wc", filepath.Join(f.root, "x")}},
+		{"checkout without wc", []string{"checkout", "--url", f.repoURL}},
+		{"checkout to a relative path", []string{"checkout", "--url", f.repoURL, "--wc", "relative"}},
+		{"checkout from a local path", []string{"checkout", "--url", f.wc, "--wc", filepath.Join(f.root, "y")}},
+		{"update without a working copy", []string{"update"}},
+		{"update with a nonsense depth", []string{"update", "--disposable-wc", f.wc, "--depth", "sometimes"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) { f.jsonCall(t, false, tc.args...) })
+	}
+}

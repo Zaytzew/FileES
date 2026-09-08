@@ -12,6 +12,41 @@ operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
 also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,
 resolve) through the helper.
 
+`checkout` and `update` are remote and write to a working copy. Two things
+about them are load-bearing.
+
+**Conflicts are reported structurally**, taken from Subversion's notifications
+rather than from its printed lines. `pkg/commit/reconcile.go` currently scans
+the CLI's output for them (`parseConflicts`); a structured list removes that
+parser instead of moving it, so a reworded or translated Subversion stops being
+able to make every conflict disappear silently.
+
+**`--force` on checkout is not a convenience.** Measured 2026-09-08 against an
+unversioned file colliding with a repository path — the shape FileES meets
+whenever the owner points it at a folder that already holds work:
+
+| | without `--force` | with `--force` |
+|---|---|---|
+| result | `ok`, path becomes a **tree conflict** (`svn status` `D     C`) | `ok`, no conflict |
+| the file | broken from the first second | plain local modification (`M`) |
+| owner's bytes | kept | kept |
+
+Both keep the bytes, so a check that only compares content cannot tell them
+apart. That is why `pkg/client` always passes `--force`, and why removing it
+would look harmless right up to the first import.
+
+`update` uses `svn_depth_unknown` for a whole-tree update — "respect what each
+directory already records", not "infinity". Passing infinity would quietly
+deepen a sparse checkout, turning an update into a download nobody asked for.
+Depth is never sticky here: this verb reports history, it does not redefine
+what the working copy is.
+
+`checkout` cannot stand on the `.filees` marker, since there is no working copy
+yet. It requires an absolute destination with no symlink in its parent chain,
+and refuses a destination that is already a working copy — that is a different
+operation with a different failure mode, and the caller chooses between them
+rather than discovering which one it got.
+
 `log` answers one question with different fields, replacing three CLI
 invocations: the shout inbox reads revision and message, the commit-receipt
 lookup reads a named revprop (`--revprop`), and move-result recovery reads

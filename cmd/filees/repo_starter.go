@@ -388,6 +388,22 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		sink = nil
 	}
 	service := buildCommitService(repo, svn, rules, deps.gate, deps.mutex, clientUUID, sink, deps.ipc, runtimeRepo.state, manager, deps.activity)
+	// Wired for every attached working copy, read-only ones included: the
+	// object being renamed is unversioned, so nothing is published and the
+	// server is not asked for anything. The translation lives here because
+	// pkg/ipcserver must not depend on pkg/commit to name its own failures.
+	runtimeRepo.state.SetRenameUnportableFunc(func(rel, newName string) error {
+		err := service.RenameUnportable(wc, rel, newName)
+		switch {
+		case errors.Is(err, commit.ErrRenameNameUnportable):
+			return ipcserver.ErrRenameNameUnportable
+		case errors.Is(err, commit.ErrRenameTargetExists):
+			return ipcserver.ErrRenameTargetExists
+		case errors.Is(err, commit.ErrRenameBlockedInUse):
+			return ipcserver.ErrRenameBlockedInUse
+		}
+		return err
+	})
 	// Checkpoint the watcher's manifest whenever a batch reaches the server.
 	//
 	// It was otherwise written only when the scan loop shut down cleanly, so
@@ -428,6 +444,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	defer func() {
 		if sizeFuncWired {
 			runtimeRepo.state.SetWorkingCopySizeFunc(nil)
+			runtimeRepo.state.SetRenameUnportableFunc(nil)
 		}
 		if lockFuncsWired {
 			runtimeRepo.state.SetLockFuncs(nil, nil)
@@ -445,6 +462,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 	}, func(cleanupCtx context.Context) error {
 		var first error
 		runtimeRepo.state.SetWorkingCopySizeFunc(nil)
+		runtimeRepo.state.SetRenameUnportableFunc(nil)
 		runtimeRepo.state.SetLockFuncs(nil, nil)
 		runtimeRepo.state.SetReservationReleaseFunc(nil)
 		if deps.reservations != nil {

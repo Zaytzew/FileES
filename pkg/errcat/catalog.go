@@ -208,6 +208,9 @@ var specs = []Spec{
 	{"REPO-2016", "repo.lifecycle_repair_failed", SevError, HintRequireAction, []string{"detail"}, "Repository lifecycle repair failed", "Nie udało się naprawić niedokończonej operacji na folderze"},
 	{"REPO-2017", "repo.recovery_dismiss_unavailable", SevError, HintNone, nil, "Recovery archive cannot be dismissed in its current state", "Tego archiwum nie można teraz usunąć z klienta"},
 	{"REPO-2018", "repo.recovery_dismiss_failed", SevError, HintRequireAction, nil, "Recovery archive dismissal failed", "Nie udało się usunąć archiwum z tego klienta"},
+	{"REPO-2019", "repo.rename_name_unportable", SevError, HintRequireAction, nil, "The proposed name cannot be represented either", "Tej nazwy też nie da się zapisać na każdej platformie — wybierz inną"},
+	{"REPO-2020", "repo.rename_target_exists", SevError, HintRequireAction, nil, "Something already occupies the new name", "Obiekt o tej nazwie już istnieje w tym folderze"},
+	{"REPO-2021", "repo.rename_blocked_in_use", SevError, HintRetry, nil, "The system refused: the file is held open", "System nie pozwala teraz zmienić tej nazwy — zamknij plik w programie, który go otworzył, i spróbuj ponownie"},
 	{"REPO-3001", "repo.activity_unavailable", SevError, HintNone, nil, "Activity journal is not available", "Dziennik aktywności jest teraz niedostępny"},
 
 	{"MOBILE-0001", "mobile_pairing.unavailable", SevError, HintRetry, nil, "Mobile pairing is not available", "Parowanie urządzenia mobilnego jest teraz niedostępne"},

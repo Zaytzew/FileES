@@ -52,6 +52,7 @@ const (
 	CmdRepoAttachApprove       = "repo.attach_approve"          // approve the persisted intent and start checkout
 	CmdRepoRelocate            = "repo.relocate"                // approve relocation of an attached working copy
 	CmdRepoLocate              = "repo.locate"                  // rebind an attachment to an existing moved working copy
+	CmdRepoRenameUnportable    = "repo.rename_unportable"       // rename an object the portable-name gate is refusing
 	CmdRepoLoadDump            = "repo.load_dump"               // load a user-supplied dump into a fresh, single-carrier-commit repo
 	CmdRepoGrantAccess         = "repo.grant_access"            // grant r/rw access to a visible foreign realm
 	CmdRepoRevokeAccess        = "repo.revoke_access"           // revoke a realm grant without deleting local data
@@ -596,6 +597,17 @@ type RepoRelocatePayload struct {
 	ServerID     string `json:"server_id"`
 	RepoID       string `json:"repo_id"`
 	NewLocalPath string `json:"new_local_path"`
+}
+
+// RepoRenameUnportablePayload renames one object the portable-name gate is
+// declining to take under control. NewName is a bare name, not a path: this
+// moves nothing between directories, it only makes an existing object
+// representable where it already sits.
+type RepoRenameUnportablePayload struct {
+	ServerID string `json:"server_id"`
+	RepoID   string `json:"repo_id"`
+	Path     string `json:"path"`
+	NewName  string `json:"new_name"`
 }
 
 type RepoLocatePayload struct {

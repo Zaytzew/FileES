@@ -24,6 +24,7 @@ const (
 	IntentReservations       IntentKind = "reservations"
 	IntentCreateRepository   IntentKind = "create_repository"
 	IntentAttachRepository   IntentKind = "attach_repository"
+	IntentRenameUnportable   IntentKind = "rename_unportable"
 	IntentPairMobileDevice   IntentKind = "pair_mobile_device"
 	IntentUpdatePlan         IntentKind = "update_plan"
 	IntentUpdateApply        IntentKind = "update_apply"
@@ -53,4 +54,8 @@ type Intent struct {
 	RecoveryOperationID  string
 	ChannelID            string
 	ChannelIDs           []string
+	// Path is the object a portable-name refusal is about. The new name is
+	// not carried here: it is asked for at the moment of acting, so nothing
+	// stale can be submitted on the person's behalf.
+	Path string
 }

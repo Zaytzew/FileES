@@ -403,7 +403,7 @@ function renderUnportable(repo) {
   const items = names
     .map((entry) => {
       const reason = (unportableReasons[entry.kind] || (() => "nazwa jest nieprzedstawialna"))(entry.detail || "");
-      return `<li><code>${escapeHTML(entry.path)}</code><span>${escapeHTML(reason)}</span></li>`;
+      return `<li><code>${escapeHTML(entry.path)}</code><span>${escapeHTML(reason)}</span><button class="unportable-rename" type="button" data-action="rename_unportable" data-path="${escapeHTML(entry.path)}">Zmień nazwę</button></li>`;
     })
     .join("");
   const count = names.length === 1 ? "Jeden obiekt pozostaje" : `${names.length} obiekty pozostają`;
@@ -1056,6 +1056,7 @@ async function triggerAction(button) {
 		lock_release_request_id: lockReleaseRow?.dataset.lockReleaseRequestId || "",
       notice_id: noticeRow?.dataset.noticeId || "",
 		channel_id: publicShareRow?.dataset.channelId || "",
+      path: button.dataset.path || "",
     });
     if (!result.accepted) {
       showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });

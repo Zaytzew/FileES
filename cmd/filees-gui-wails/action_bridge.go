@@ -28,7 +28,7 @@ type actionRunner interface {
 // configureActions deliberately wires only the actions exposed by the first
 // Wails UX slice.  The controller remains the authority on eligibility; the
 // WebView projection merely avoids offering an obviously unavailable button.
-func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, lockReleases actions.LockReleaseManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryRepairer actions.RepositoryLifecycleRepairer, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, recoveryDismisser actions.RecoveryDismisser, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
+func configureActions(service *GUIService, locker actions.LockUnlocker, reservations actions.ReservationManager, lockReleases actions.LockReleaseManager, stack actions.StackLifecycle, updater actions.Updater, activator actions.Activator, pinStore *localpin.Store, mobilePairer actions.MobilePairingLauncher, shouts actions.ShoutPublisher, notices actions.NoticeAcker, realmAliases actions.RealmAliasManager, realmGrants actions.RealmGrantManager, realmGrantBrowser platform.RealmGrantBrowser, realmBranding actions.RealmBrandingManager, settings platform.SettingsBrowser, sessionTimeouts actions.SessionTimeoutManager, publicShareBrowser platform.PublicShareBrowser, publicShares actions.PublicShareManager, uploadChannelBrowser platform.UploadChannelBrowser, uploadChannels actions.UploadChannelManager, quarantineBrowser platform.QuarantineBrowser, quarantine actions.QuarantineManager, repositoryCreator actions.RepositoryCreator, repositoryAttacher actions.RepositoryAttacher, repositoryLocator actions.RepositoryLocator, repositoryDetacher actions.RepositoryDetacher, repositoryRepairer actions.RepositoryLifecycleRepairer, repositoryDumpLoader actions.RepositoryDumpLoader, serverDetacher actions.ServerDetacher, realmRemover actions.RealmRemover, recoveryDownloader actions.RecoveryDownloader, recoveryDismisser actions.RecoveryDismisser, unportableRenamer actions.UnportableRenamer, consentPrompter platform.ConsentPrompter, backend platform.Backend, filePicker platform.FilePicker, folderPicker platform.FolderPicker, prompter platform.Prompter, restart, shutdown func()) actionRunner {
 	if backend == nil {
 		return nil
 	}
@@ -57,6 +57,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 		LockReleases:         lockReleases,
 		Shouts:               shouts,
 		Notices:              notices,
+		UnportableRenamer:    unportableRenamer,
 		RealmAliases:         realmAliases,
 		RealmGrants:          realmGrants,
 		RealmGrantBrowser:    realmGrantBrowser,
@@ -1106,4 +1107,18 @@ func (notifier actionNotifier) Notify(_ context.Context, notification platform.N
 		Message: notification.Body,
 	})
 	return nil
+}
+
+// unportableRenameClient is the one daemon call the rename needs.
+type unportableRenameClient interface {
+	RepoRenameUnportable(ctx context.Context, payload contract.RepoRenameUnportablePayload) error
+}
+
+type unportableRenameAdapter struct{ client unportableRenameClient }
+
+func (adapter unportableRenameAdapter) RenameUnportable(ctx context.Context, serverID, repoID, path, newName string) error {
+	if adapter.client == nil {
+		return errors.New("rename client is unavailable")
+	}
+	return adapter.client.RepoRenameUnportable(ctx, contract.RepoRenameUnportablePayload{ServerID: serverID, RepoID: repoID, Path: path, NewName: newName})
 }

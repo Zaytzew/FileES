@@ -340,6 +340,7 @@ type Config struct {
 	Quarantine           QuarantineManager
 	Shouts               ShoutPublisher
 	Notices              NoticeAcker
+	UnportableRenamer    UnportableRenamer
 	ReservationBrowser   platform.ReservationBrowser
 	SettingsBrowser      platform.SettingsBrowser
 	JournalBrowser       platform.JournalBrowser
@@ -492,6 +493,8 @@ func (c *Controller) dispatch(ctx context.Context, intent tray.Intent) {
 		c.startLocateRepository(ctx, intent.ServerID, intent.RepoID)
 	case tray.IntentReviewQuarantine:
 		c.startReviewQuarantine(ctx, intent.ServerID, intent.RepoID, true)
+	case tray.IntentRenameUnportable:
+		c.startRenameUnportable(ctx, intent.ServerID, intent.RepoID, intent.Path)
 	}
 }
 
@@ -4202,4 +4205,61 @@ func (c *Controller) startSetEditingPolicy(ctx context.Context, serverID, repoID
 		}
 		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Zasady edycji zostały zmienione", Body: body, Urgency: platform.UrgencyNormal})
 	}()
+}
+
+// UnportableRenamer clears one portable-name refusal. Plain strings, no
+// contract types: this package stays free of the IPC vocabulary and the
+// composition root adapts, the same way every other daemon surface here does.
+type UnportableRenamer interface {
+	RenameUnportable(ctx context.Context, serverID, repoID, path, newName string) error
+}
+
+func (c *Controller) startRenameUnportable(ctx context.Context, serverID, repoID, rel string) {
+	c.tasks.Add(1)
+	go func() {
+		defer c.tasks.Done()
+		c.handleRenameUnportable(ctx, serverID, repoID, rel)
+	}()
+}
+
+// handleRenameUnportable asks for a name and applies it.
+//
+// There is no "understood" button and there will not be one. Acknowledging
+// would clear the message while leaving the object outside FileES for good, in
+// silence - the failure this gate exists to remove. Cancelling defers: the
+// window closes, the condition stays, and it will be offered again.
+//
+// A cancellation is reported to nobody on purpose. The person just chose it;
+// telling them it happened is noise. A refusal by the system is the opposite -
+// they did nothing wrong and need to know it is a wait, not a mistake - so it
+// arrives as an error with its own text.
+func (c *Controller) handleRenameUnportable(ctx context.Context, serverID, repoID, rel string) {
+	if c.cfg.UnportableRenamer == nil || c.cfg.Prompter == nil || rel == "" {
+		return
+	}
+	current := rel
+	if cut := strings.LastIndexByte(rel, '/'); cut >= 0 {
+		current = rel[cut+1:]
+	}
+	result, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+		Title: "Zmień nazwę, aby objąć obiekt kontrolą",
+		Text: fmt.Sprintf("Nie mogę objąć kontrolą FileES obiektu %q, ponieważ tej nazwy nie da się zapisać "+
+			"na każdej platformie, z której korzysta ten folder. Podaj nazwę, pod którą mam go przyjąć.", rel),
+		Label:   "Nowa nazwa",
+		Default: current,
+	})
+	if err != nil || result.Cancelled {
+		return
+	}
+	newName := strings.TrimSpace(result.Value)
+	if newName == "" || newName == current {
+		return
+	}
+	if err := c.cfg.UnportableRenamer.RenameUnportable(ctx, serverID, repoID, rel, newName); err != nil {
+		c.reportActionError(ctx, "rename", "Nie udało się zmienić nazwy", err.Error())
+		return
+	}
+	if c.cfg.Refresh != nil {
+		c.cfg.Refresh()
+	}
 }

@@ -102,7 +102,13 @@ roots out of system cleanup; do not delete active transfers by file age.
 Safe orphan detection, periodic cleanup and observable removal failures are
 an open task in r922, not installed cron in that release.
 
-## M48 service-owned maintenance — implementation, not rollout
+## M48 service-owned maintenance — cloud rollout accepted
+
+Cloud checkpoint 2026-09-08: signed r927 / alpha (FILEES-BIN r61) installed
+after stopping both legacy residents. Post-start dry-run: 18 UNCHANGED;
+both maintenance checks, startup/timer GC and file/Range/two-file ZIP PASS.
+No configuration relocation or cron changes. Other hosts still need their
+own rollout gate below. This source update does not change signed payloads.
 
 The new code (base r924) runs cleanup inside each resident service at startup
 and periodically, without cron. Configure `cache.cleanup_interval` in
@@ -146,8 +152,8 @@ for a transient check failure. Check failure during a busy Put is retried
 by the next timer pass. Stderr may be discarded by rc.d, so inspect durable
 status. Status is not an access audit or proof that every byte is gone.
 
-Future rollout gate: stop old services, install approved signed release,
+Rollout gate for another host: stop old services, install approved signed release,
 start authority then links, check both maintenance statuses, and repeat
-file/Range/ZIP acceptance on that host. This portion did not build, sign,
-promote or install a bundle, enable cron or alter production configuration.
+file/Range/ZIP acceptance on that host. Cloud completed this gate; no cron
+was enabled and no production configuration was changed during M48.
 Evidence: [M48 acceptance](../../reports/PUBLIC_SHARES_MAINTENANCE_2026-09-08.md).

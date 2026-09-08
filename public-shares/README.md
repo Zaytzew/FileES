@@ -96,7 +96,9 @@ Błędy usuwania i liczniki trafiają do prywatnego `.maintenance-status.json`;
 obie binarki mają odczytowy `-check-maintenance` (JSON + kod wyjścia).
 Fizyczne usunięcie następuje w najbliższym udanym przebiegu po końcu użycia;
 postój i błędy odraczają GC. To nie ścisły deadline ani dowód erasure.
-Linux -race/vet i izolowane OpenBSD PASS. Cloud nadal r922, bez M48.
+Linux -race/vet i izolowane OpenBSD PASS. Cloud: podpisane r927/alpha
+(FILEES-BIN r61) wdrożone 2026-09-08; GC start/timer, oba health oraz
+file/Range/ZIP PASS. Pierwszy upgrade cloud wykonano po stop obu legacy.
 Pierwszy upgrade musi zatrzymać stare procesy przed nowymi; stare r922
 nie respektuje blokady. Wyłączony cache nie jest sprzątany automatycznie.
 Dowód: [odbiór M48](../reports/PUBLIC_SHARES_MAINTENANCE_2026-09-08.md).

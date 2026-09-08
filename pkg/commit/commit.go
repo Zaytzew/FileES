@@ -107,6 +107,7 @@ type Service struct {
 	OnHeadRevision     func(int64)
 	OnLastSync         func(time.Time)
 	OnConflicts        func(int)
+	OnUnportableNames  func([]UnportableName)
 	OnCurrentOperation func(*string)
 	OnCycle            func(contract.CycleStatus)
 	// BeginPublish verifies edit-passport fencing and freezes lock mutation until
@@ -149,15 +150,16 @@ type Service struct {
 	Emit func(evType string, payload any)
 
 	// internal
-	repoID      string // set from Run(); used by emit()
-	wc          string // set from Run(); local shout inbox / last_seen
-	mu          sync.Mutex
-	wcOpMu      sync.Mutex            // serialize publication, poll/update and event merging
-	cacheSaveMu sync.Mutex            // serialize cache snapshots and their durable replacement
-	staging     map[string]*stageItem // rel path -> info
-	cachePath   string                // .filees/commit_cache/cache.json
-	lastShout   time.Time
-	lastCommit  time.Time // last successful commit (for size-adaptive interval)
+	repoID         string // set from Run(); used by emit()
+	wc             string // set from Run(); local shout inbox / last_seen
+	mu             sync.Mutex
+	unportableWake chan struct{}
+	wcOpMu         sync.Mutex            // serialize publication, poll/update and event merging
+	cacheSaveMu    sync.Mutex            // serialize cache snapshots and their durable replacement
+	staging        map[string]*stageItem // rel path -> info
+	cachePath      string                // .filees/commit_cache/cache.json
+	lastShout      time.Time
+	lastCommit     time.Time // last successful commit (for size-adaptive interval)
 	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
 	// that actually publishes; last_seen then jumps to that revision so this
 	// installation does not badge its own shout.
@@ -402,6 +404,8 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	if s.Rules.PollInterval > 0 {
 		go s.runPoller(ctx, wc)
 	}
+	s.unportableWake = make(chan struct{}, 1)
+	go s.runUnportableSweep(ctx, wc)
 
 	for {
 		select {

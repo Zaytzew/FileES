@@ -275,6 +275,7 @@ func (s appState) viewModel() ViewModel {
 			WorkingCopySizeKnown: snap.WorkingCopySizeKnown,
 			Pending:              snap.Pending,
 			Conflicts:            snap.Conflicts,
+			UnportableNames:      snap.UnportableNames,
 			LastSyncAt:           snap.LastSyncAt,
 			CurrentOp:            snap.CurrentOperation,
 			ReservationCount:     s.repoReservations[reservationKey(sum.ServerID, sum.ID)],

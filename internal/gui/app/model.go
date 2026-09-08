@@ -62,6 +62,7 @@ type RepoViewModel struct {
 	WorkingCopySizeKnown bool
 	Pending              contract.PendingStats
 	Conflicts            int
+	UnportableNames      []contract.UnportableName
 	LastSyncAt           string
 	CurrentOp            *string
 	ReservationCount     int

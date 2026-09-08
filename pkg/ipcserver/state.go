@@ -51,6 +51,7 @@ type RepoState struct {
 	connectivity   string // contract.Conn*
 	headRev        int64  // last HEAD seen by poller; 0 = unknown
 	conflicts      int
+	unportable     []contract.UnportableName
 	lastSyncAt     time.Time
 	currentOp      *string
 	cycle          contract.CycleStatus
@@ -224,6 +225,15 @@ func (rs *RepoState) SetHeadRev(rev int64) {
 func (rs *RepoState) SetConflicts(n int) {
 	rs.mu.Lock()
 	rs.conflicts = n
+	rs.mu.Unlock()
+}
+
+// SetUnportableNames records the objects FileES is declining to take under
+// control. The daemon recomputes this from the working copy, so a shorter list
+// means the cause is gone, not that anybody dismissed anything.
+func (rs *RepoState) SetUnportableNames(names []contract.UnportableName) {
+	rs.mu.Lock()
+	rs.unportable = append(rs.unportable[:0:0], names...)
 	rs.mu.Unlock()
 }
 
@@ -495,6 +505,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	purpose := rs.purpose
 	headRev := rs.headRev
 	conflicts := rs.conflicts
+	unportable := append([]contract.UnportableName(nil), rs.unportable...)
 	lastSync := rs.lastSyncAt
 	cycle := rs.cycle
 	var currentOp *string
@@ -544,6 +555,7 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 		WorkingCopySizeKnown: workingCopySizeKnown,
 		Pending:              pending,
 		Conflicts:            conflicts,
+		UnportableNames:      unportable,
 		CurrentOperation:     currentOp,
 		Cycle:                cycle,
 		Recovery:             recovery,

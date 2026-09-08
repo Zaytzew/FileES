@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -15,6 +16,23 @@ import (
 	"filees/pkg/localrepo"
 	"filees/pkg/reposupervisor"
 )
+
+// shortDaemonSocket keeps a unix socket inside the length the kernel accepts.
+//
+// t.TempDir() embeds the full test name, so a descriptive one pushes the path
+// past the sockaddr_un limit and the test fails with "bind: invalid argument"
+// for its own name rather than for the product. Measured 2026-09-08 on
+// TestSyncProjectionKnowledgeDoesNotOrphanLocallyAttachedRepoMissingFromView;
+// the other four sockets here were one rename away from the same thing.
+func shortDaemonSocket(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "fs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return filepath.Join(dir, "daemon.sock")
+}
 
 func TestProjectLockReleaseRequestsPreservesPrivateRoleAndFencingToken(t *testing.T) {
 	now := time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC)
@@ -59,7 +77,7 @@ func TestSyncProjectionKnowledgeKeepsDeletedRepositoryThroughRetention(t *testin
 	if _, err := lifecycle.RecordDetachError(record.OperationID, errors.New("wc.db is used by another process")); err != nil {
 		t.Fatal(err)
 	}
-	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	server := ipcserver.New(shortDaemonSocket(t))
 	state := server.RegisterProjectedRepo(repoID, "stale", "", serverID, "", "active", false)
 	view := clientview.View{RealmID: "00000000-0000-0000-0000-000000000001"}
 	syncProjectionKnowledge(server, serverID, view, nil, lifecycle)
@@ -104,7 +122,7 @@ func TestSyncProjectionKnowledgeDoesNotResurrectDismissedRecovery(t *testing.T) 
 	if _, err := lifecycle.DismissRecovery(serverID, repoID, deleting.DetachOperationID); err != nil {
 		t.Fatal(err)
 	}
-	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	server := ipcserver.New(shortDaemonSocket(t))
 	server.RegisterProjectedRepo(repoID, "stale", "", serverID, "", "deleted", false)
 	syncProjectionKnowledge(server, serverID, clientview.View{RealmID: "realm"}, nil, lifecycle)
 	if got := server.RepoState(serverID, repoID); got != nil {
@@ -165,7 +183,7 @@ func TestAttachedProjectionIncludesLocallyAttachedRepoMissingFromView(t *testing
 func TestSyncProjectionKnowledgeDoesNotOrphanLocallyAttachedRepoMissingFromView(t *testing.T) {
 	serverID := "office"
 	key := reposupervisor.Key{ServerID: serverID, RepoID: "00000000-0000-0000-0000-000000000009"}
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := shortDaemonSocket(t)
 	server := ipcserver.New(sock)
 	state := server.RegisterRepoAccess(key.RepoID, "svn+ssh://_filees-data@example/repo", t.TempDir(), serverID, contract.AccessReadWrite)
 	state.SetState(contract.StateActive)
@@ -210,7 +228,7 @@ func TestSyncProjectionKnowledgeKeepsPendingCreationLocalPath(t *testing.T) {
 	if _, err := lifecycle.MarkRepositoryCreated(record.OperationID, repoID, "svn+ssh://_filees-data@example/"+repoID); err != nil {
 		t.Fatal(err)
 	}
-	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	server := ipcserver.New(shortDaemonSocket(t))
 	state := server.RegisterProjectedRepo(repoID, "Biblia Audio KIDS", "svn+ssh://_filees-data@example/"+repoID, serverID, contract.AccessReadWrite, contract.StateInitializing, false)
 	view := clientview.View{Repositories: []clientview.Repository{{
 		RepoID: repoID, DisplayName: "Biblia Audio KIDS", URL: "svn+ssh://_filees-data@example/" + repoID,
@@ -242,7 +260,7 @@ func TestSyncProjectionKnowledgePublishesAndClearsLifecycleRepair(t *testing.T) 
 	if _, err := lifecycle.MarkError(record.OperationID, errors.New("initial import failed")); err != nil {
 		t.Fatal(err)
 	}
-	server := ipcserver.New(filepath.Join(t.TempDir(), "daemon.sock"))
+	server := ipcserver.New(shortDaemonSocket(t))
 	state := server.RegisterProjectedRepo(repoID, "Archiwum", "svn+ssh://_filees-data@example/"+repoID, serverID, contract.AccessReadWrite, contract.StateInitializing, false)
 	view := clientview.View{Repositories: []clientview.Repository{{RepoID: repoID, DisplayName: "Archiwum", URL: "svn+ssh://_filees-data@example/" + repoID, Access: contract.AccessReadWrite, State: contract.StateInitializing}}}
 	syncProjectionKnowledge(server, serverID, view, nil, lifecycle)

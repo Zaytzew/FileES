@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"filees/internal/svnurl"
 	"io"
 	"os"
 	"os/exec"
@@ -29,7 +30,7 @@ func TestSVNPathOwnersRenameForkRevokeAndRegrant(t *testing.T) {
 	repo := filepath.Join(source.RepositoriesRoot, f.req.RepoID)
 	wc := filepath.Join(t.TempDir(), "wc")
 	replacementCommand(t, "svnadmin", "create", repo)
-	replacementCommand(t, svn, "co", "file://"+filepath.ToSlash(repo), wc)
+	replacementCommand(t, svn, "co", svnurl.File(repo), wc)
 	creator := uuid.NewString()
 	f.client(t, creator, f.guest, "active")
 	f.put(t, filepath.Join("admin", "repositories", f.req.RepoID+".json"), repositoryRecord{Schema: RepositorySchema, RepoID: f.req.RepoID, OwnerRealmID: f.owner, State: "active", DisplayName: "Ownership fixture", URL: "svn+ssh://_filees-data@example/" + f.req.RepoID, CreatedAt: time.Now()})

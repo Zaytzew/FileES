@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"filees/internal/svnurl"
 	"io"
 	"os"
 	"os/exec"
@@ -281,8 +282,8 @@ func newSupervisorTestSession(t *testing.T) (*activation.Manager, serverconfig.C
 	root := t.TempDir()
 	repository, wc := filepath.Join(root, "repository"), filepath.Join(root, "wc")
 	runSupervisorCommand(t, svnadmin, "create", repository)
-	runSupervisorCommand(t, svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "init proof", "file://"+repository+"/proof")
-	runSupervisorCommand(t, svn, "checkout", "--non-interactive", "--no-auth-cache", "file://"+repository, wc)
+	runSupervisorCommand(t, svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "init proof", svnurl.File(repository)+"/proof")
+	runSupervisorCommand(t, svn, "checkout", "--non-interactive", "--no-auth-cache", svnurl.File(repository), wc)
 	activationConfig := activation.Config{
 		ServerDisplayName: "Serwer testowy",
 		Root:              filepath.Join(root, "activation"), SessionRoot: filepath.Join(root, "sessions"),

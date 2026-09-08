@@ -2,6 +2,7 @@ package servertool
 
 import (
 	"encoding/json"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestAutolockBrokerRealHistoryAndCanonicalRevocation(t *testing.T) {
 		}
 	}
 	run(svnadmin, "create", repo)
-	run(svn, "co", "file://"+filepath.ToSlash(repo), wc)
+	run(svn, "co", svnurl.File(repo), wc)
 	file := filepath.Join(wc, "guest.txt")
 	if err := os.WriteFile(file, []byte("guest data"), 0644); err != nil {
 		t.Fatal(err)

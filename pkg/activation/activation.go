@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"filees/internal/fsdurable"
 	"fmt"
 	"io"
 	"os"
@@ -1067,12 +1068,7 @@ func atomicWrite(path string, raw []byte, mode os.FileMode) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return fsdurable.SyncDir(filepath.Dir(path))
 }
 
 func sanitizeOutput(raw []byte) string {

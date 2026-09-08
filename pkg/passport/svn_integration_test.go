@@ -3,6 +3,7 @@ package passport
 import (
 	"context"
 	"errors"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,7 +37,7 @@ func newSVNRepo(t *testing.T) string {
 	}
 
 	run("svnadmin", "create", repoPath)
-	repoURL := "file://" + repoPath
+	repoURL := svnurl.File(repoPath)
 	run("svn", "checkout", "--non-interactive", "--no-auth-cache", repoURL, wcPath)
 
 	for _, name := range []string{"doc_a.txt", "doc_b.txt", "doc_c.txt"} {

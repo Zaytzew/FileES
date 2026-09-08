@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +68,7 @@ func TestAutolockStartupRealSVN(t *testing.T) {
 			root := t.TempDir()
 			repository := filepath.Join(root, "repository")
 			wc := filepath.Join(root, "wc")
-			url := "file://" + repository
+			url := svnurl.File(repository)
 			run("svnadmin", "create", repository)
 			run("svn", "checkout", url, wc)
 			doc := filepath.Join(wc, "doc.txt")

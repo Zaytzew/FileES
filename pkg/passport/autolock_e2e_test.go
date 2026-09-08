@@ -2,6 +2,7 @@ package passport
 
 import (
 	"context"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +38,7 @@ func newAutolockE2ERepo(t *testing.T) string {
 	repoPath := filepath.Join(base, "repo")
 	wc := filepath.Join(base, "wc-origin")
 	runAutolockCmd(t, "svnadmin", "create", repoPath)
-	repoURL := "file://" + repoPath
+	repoURL := svnurl.File(repoPath)
 	runAutolockCmd(t, "svn", "checkout", "--non-interactive", "--no-auth-cache", repoURL, wc)
 	doc := filepath.Join(wc, "doc.txt")
 	if err := os.WriteFile(doc, []byte("v1"), 0o644); err != nil {

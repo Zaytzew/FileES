@@ -2,6 +2,7 @@ package authority
 
 import (
 	"context"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,7 +50,7 @@ func TestSVNLookTreeEnumeratesExactSourceRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if out, err := exec.Command(svn, "import", input, "file://"+repository, "-m", "fixture").CombinedOutput(); err != nil {
+	if out, err := exec.Command(svn, "import", input, svnurl.File(repository), "-m", "fixture").CombinedOutput(); err != nil {
 		t.Fatalf("svn import: %v: %s", err, out)
 	}
 	source := SVNLookSource{SVNLook: svnlook, RepositoriesRoot: root}

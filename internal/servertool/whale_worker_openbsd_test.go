@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"filees/internal/svnurl"
 	"io"
 	"os"
 	"os/exec"
@@ -130,7 +131,7 @@ func TestWhaleWorkerNativeSandboxPublishesAcrossSessions(t *testing.T) {
 	}
 	// Discovery is relative to a logical snapshot, not necessarily to the
 	// repository revision which published the Whale itself.
-	runWhaleNativeCommand(t, svnmucc, "--non-interactive", "-m", "unrelated r2", "mkdir", "file://"+repository+"/ordinary")
+	runWhaleNativeCommand(t, svnmucc, "--non-interactive", "-m", "unrelated r2", "mkdir", svnurl.File(repository)+"/ordinary")
 
 	// A quote is metadata-only: it proves the immutable revision tuple but
 	// does not create seekable cache state.

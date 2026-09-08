@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -231,7 +232,7 @@ func TestCommitWithRevisionReturnsExactReceiptForMixedRevisionAndDeletion(t *tes
 	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
 		t.Fatalf("svnadmin create: %v\n%s", err, out)
 	}
-	repoURL := fileURL(repository)
+	repoURL := svnurl.File(repository)
 	if out, err := exec.Command(svn, "mkdir", "-q", "-m", "init", repoURL+"/trunk").CombinedOutput(); err != nil {
 		t.Fatalf("svn mkdir: %v\n%s", err, out)
 	}
@@ -378,7 +379,7 @@ func TestLeadingDashPathsAreTreatedAsPathsNotOptions(t *testing.T) {
 	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
 		t.Fatalf("svnadmin create: %v\n%s", err, out)
 	}
-	repoURL := fileURL(repository)
+	repoURL := svnurl.File(repository)
 	wc := filepath.Join(root, "wc")
 	cli := New(Options{SvnPath: svn})
 	ctx := context.Background()
@@ -515,7 +516,7 @@ func TestSVNRequiresEndOfOptionsMarker(t *testing.T) {
 	if out, err := exec.Command(svnadmin, "create", repository).CombinedOutput(); err != nil {
 		t.Fatalf("svnadmin create: %v\n%s", err, out)
 	}
-	repoURL := fileURL(repository)
+	repoURL := svnurl.File(repository)
 	wc := filepath.Join(root, "wc")
 	if out, err := exec.Command(svn, "checkout", "-q", repoURL, wc).CombinedOutput(); err != nil {
 		t.Fatalf("svn checkout: %v\n%s", err, out)
@@ -610,17 +611,4 @@ func TestSvnProcessEnvironmentKeepsEnglishMessagesAndUTF8Paths(t *testing.T) {
 	if locales != 1 || leftoverC != 0 || ssh != 1 {
 		t.Fatalf("env=%q locale=%s count=%d leftoverC=%d ssh=%d", got, want, locales, leftoverC, ssh)
 	}
-}
-
-// fileURL builds a file:// URL for a local repository path.
-//
-// "file://" + a Windows path yields file://C:/... , where C: is read as the
-// host and the repository is never found. The third slash is what makes it a
-// local path, and on POSIX the path already begins with one.
-func fileURL(path string) string {
-	p := filepath.ToSlash(path)
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	return "file://" + p
 }

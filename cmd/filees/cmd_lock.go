@@ -18,7 +18,9 @@ func cmdUnlock(args []string) int { return doLockUnlock(false, args) }
 func doLockUnlock(lock bool, args []string) int {
 	_, rest := parseConfigFlag(args)
 	op := "lock"
-	if !lock { op = "unlock" }
+	if !lock {
+		op = "unlock"
+	}
 
 	if len(rest) == 0 {
 		fmt.Fprintf(os.Stderr, "usage: filees %s [--config path] <file>...\n", op)
@@ -57,7 +59,9 @@ func doLockUnlock(lock bool, args []string) int {
 	}
 	if len(unknown) > 0 {
 		fmt.Fprintf(os.Stderr, "not under any configured repo:\n")
-		for _, p := range unknown { fmt.Fprintf(os.Stderr, "  %s\n", p) }
+		for _, p := range unknown {
+			fmt.Fprintf(os.Stderr, "  %s\n", p)
+		}
 		return 1
 	}
 

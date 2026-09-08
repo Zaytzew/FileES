@@ -3,6 +3,7 @@ package servertool
 import (
 	"bytes"
 	"encoding/json"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,7 +43,7 @@ func TestPassportMaintenanceProductionSandboxRealSVN(t *testing.T) {
 	repo, wc := filepath.Join(repos, id), filepath.Join(t.TempDir(), "wc")
 	svn, admin := config.Activation.SVNBinary, config.Repositories.SVNAdminBinary
 	runRepoPruneCommand(t, admin, "create", repo)
-	runRepoPruneCommand(t, svn, "co", "file://"+repo, wc)
+	runRepoPruneCommand(t, svn, "co", svnurl.File(repo), wc)
 	doc := filepath.Join(wc, "file")
 	if err := os.WriteFile(doc, []byte("keep these bytes"), 0600); err != nil {
 		t.Fatal(err)

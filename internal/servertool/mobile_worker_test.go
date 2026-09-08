@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,8 +50,8 @@ func newMobileWorkerFixture(t *testing.T) mobileWorkerFixture {
 	serviceRepository := filepath.Join(base, "service-repo")
 	serviceWC := filepath.Join(base, "service-wc")
 	runWorkerTestCommand(t, svnadminBinary, "create", serviceRepository)
-	runWorkerTestCommand(t, svnBinary, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "filees: initialize proof", "file://"+serviceRepository+"/proof")
-	runWorkerTestCommand(t, svnBinary, "checkout", "--non-interactive", "--no-auth-cache", "file://"+serviceRepository, serviceWC)
+	runWorkerTestCommand(t, svnBinary, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "filees: initialize proof", svnurl.File(serviceRepository)+"/proof")
+	runWorkerTestCommand(t, svnBinary, "checkout", "--non-interactive", "--no-auth-cache", svnurl.File(serviceRepository), serviceWC)
 
 	activationRoot := filepath.Join(base, "activation")
 	if err := os.MkdirAll(activationRoot, 0o700); err != nil {

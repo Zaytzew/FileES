@@ -3,6 +3,7 @@ package repoworker
 import (
 	"context"
 	"errors"
+	"filees/internal/svnurl"
 	"github.com/google/uuid"
 	"os"
 	"os/exec"
@@ -96,7 +97,7 @@ func TestServerEffectsAbandonedPruneRefusesRepositoryWhichAdvancedToR1(t *testin
 		t.Fatal(err)
 	}
 	repo := filepath.Join(effects.RepositoriesRoot, repoID)
-	if output, err := exec.Command(svn, "mkdir", "file://"+filepath.ToSlash(repo)+"/late", "-m", "late initial import").CombinedOutput(); err != nil {
+	if output, err := exec.Command(svn, "mkdir", svnurl.File(repo)+"/late", "-m", "late initial import").CombinedOutput(); err != nil {
 		t.Fatalf("create r1 fixture: %v: %s", err, output)
 	}
 	err = effects.PruneAbandonedCreate(context.Background(), repoID, realmID, operationID)

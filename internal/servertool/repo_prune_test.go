@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,7 +53,7 @@ func writeRepoPruneFixtureConfig(t *testing.T) (configPath, resultsRoot, reposit
 	serviceRepository := filepath.Join(base, "service-repository")
 	serviceWC := filepath.Join(base, "service-wc")
 	runRepoPruneCommand(t, svnadmin, "create", serviceRepository)
-	runRepoPruneCommand(t, svn, "checkout", "file://"+filepath.ToSlash(serviceRepository), serviceWC)
+	runRepoPruneCommand(t, svn, "checkout", svnurl.File(serviceRepository), serviceWC)
 	activationRoot := filepath.Join(base, "activation")
 	if err := os.MkdirAll(activationRoot, 0o700); err != nil {
 		t.Fatal(err)
@@ -311,7 +312,7 @@ func TestRepoPruneWithdrawsOnlyEmptyInitializingPublishedRepository(t *testing.T
 	if err := publisher.Activate(context.Background(), active.repoID, realmID); err != nil {
 		t.Fatal(err)
 	}
-	runRepoPruneCommand(t, config.Activation.SVNBinary, "mkdir", "file://"+filepath.ToSlash(filepath.Join(repositoriesRoot, committed.repoID))+"/real-data", "-m", "real initial content")
+	runRepoPruneCommand(t, config.Activation.SVNBinary, "mkdir", svnurl.File(filepath.ToSlash)(filepath.Join(repositoriesRoot, committed.repoID))+"/real-data", "-m", "real initial content")
 	for _, item := range []repositoryCase{normalDeleted, pruneRetry} {
 		if err := publisher.Delete(context.Background(), item.repoID, realmID); err != nil {
 			t.Fatalf("delete fixture %s: %v", item.name, err)

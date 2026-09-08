@@ -2,6 +2,7 @@ package servertool
 
 import (
 	"context"
+	"filees/internal/svnurl"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -48,7 +49,7 @@ func TestPublicSharesDestructiveE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	repoPath := filepath.Join(f.repositoriesRoot, repository.RepoID)
-	realmRemovalE2ERun(t, f.svn, "import", "--non-interactive", "--no-auth-cache", "-m", "public share leaf", source, "file://"+repoPath+"/data/project.pdf")
+	realmRemovalE2ERun(t, f.svn, "import", "--non-interactive", "--no-auth-cache", "-m", "public share leaf", source, svnurl.File(repoPath)+"/data/project.pdf")
 	svnlook := requireSVN(t, "svnlook")[0]
 	svnlook, _ = filepath.Abs(svnlook)
 	headBefore := youngestRevision(t, svnlook, repoPath)

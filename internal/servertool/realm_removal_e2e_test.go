@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,8 +103,8 @@ func newRealmRemovalE2EFixture(t *testing.T, retentionDays int) realmRemovalE2EF
 	serviceRepository := filepath.Join(f.root, "service-repository")
 	serviceWC := filepath.Join(f.root, "service-wc")
 	realmRemovalE2ERun(t, f.svnadmin, "create", serviceRepository)
-	realmRemovalE2ERun(t, f.svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "initialize proof", "file://"+serviceRepository+"/proof")
-	realmRemovalE2ERun(t, f.svn, "checkout", "--non-interactive", "--no-auth-cache", "file://"+serviceRepository, serviceWC)
+	realmRemovalE2ERun(t, f.svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "initialize proof", svnurl.File(serviceRepository)+"/proof")
+	realmRemovalE2ERun(t, f.svn, "checkout", "--non-interactive", "--no-auth-cache", svnurl.File(serviceRepository), serviceWC)
 
 	f.repositoriesRoot = filepath.Join(f.root, "repositories")
 	f.resultsRoot = filepath.Join(f.root, "results")
@@ -186,7 +187,7 @@ func (f *realmRemovalE2EFixture) createRepository(t *testing.T, realmID, name st
 	if err := f.publisher.Activate(context.Background(), repository.RepoID, realmID); err != nil {
 		t.Fatal(err)
 	}
-	realmRemovalE2ERun(t, f.svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "seed "+name, "file://"+filepath.Join(f.repositoriesRoot, repository.RepoID)+"/data")
+	realmRemovalE2ERun(t, f.svn, "mkdir", "--non-interactive", "--no-auth-cache", "-m", "seed "+name, svnurl.File(filepath.Join(f.repositoriesRoot, repository.RepoID))+"/data")
 	return repository
 }
 

@@ -4,6 +4,7 @@ package servertool
 
 import (
 	"encoding/json"
+	"filees/internal/svnurl"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +52,7 @@ func TestLockGuardsUnderSVNChildPromises(t *testing.T) {
 	root := t.TempDir()
 	repo, wc := filepath.Join(root, "repo"), filepath.Join(root, "wc")
 	runSupervisorCommand(t, admin, "create", repo)
-	runSupervisorCommand(t, svn, "co", "file://"+repo, wc)
+	runSupervisorCommand(t, svn, "co", svnurl.File(repo), wc)
 	doc := filepath.Join(wc, "file")
 	if err := os.WriteFile(doc, []byte("data"), 0600); err != nil {
 		t.Fatal(err)
@@ -109,7 +110,7 @@ func TestLockGuardsThroughNativeSVNServe(t *testing.T) {
 	root := t.TempDir()
 	repo, wc := filepath.Join(root, "repo"), filepath.Join(root, "wc")
 	runSupervisorCommand(t, admin, "create", repo)
-	runSupervisorCommand(t, svn, "co", "file://"+repo, wc)
+	runSupervisorCommand(t, svn, "co", svnurl.File(repo), wc)
 	doc := filepath.Join(wc, "file")
 	if err := os.WriteFile(doc, []byte("data"), 0600); err != nil {
 		t.Fatal(err)

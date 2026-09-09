@@ -1,4 +1,4 @@
-.Dd August 31, 2026
+.Dd September 9, 2026
 .Dt FILEES-ADMIN 8
 .Os
 .Sh NAME
@@ -43,6 +43,31 @@
 .Op Fl -realm-id Ar uuid
 .Op Fl -older-than Ar duration
 .Op Fl -apply
+.Nm
+.Op Fl config Ar path
+.Cm repo activate Fl -repo-id Ar uuid Fl -realm-id Ar uuid
+.Nm
+.Op Fl config Ar path
+.Cm repo rotate Fl -repo-id Ar uuid
+.Op Fl -size Ar size
+.Op Fl -age-days Ar days
+.Op Fl -force
+.Op Fl -dry-run
+.Nm
+.Op Fl config Ar path
+.Cm repo lock-guards Fl -repo-id Ar uuid Fl -owner-realm-id Ar uuid
+.Op Fl -apply
+.Nm
+.Op Fl config Ar path
+.Cm repo reap-passports Fl -repo-id Ar uuid Fl -owner-realm-id Ar uuid
+.Op Fl -path Ar relative
+.Nm
+.Op Fl config Ar path
+.Cm share list
+.Op Fl -json
+.Nm
+.Op Fl config Ar path
+.Cm share delete Fl -channel-id Ar uuid
 .Nm
 .Op Fl config Ar path
 .Cm erasure complete Fl -operation-id Ar uuid
@@ -143,6 +168,68 @@ Before removal the command durably records
 blocks commits and checks the youngest revision again.
 An active repository, an initializing repository at r1 or later, and an
 ordinary deletion tombstone are never removed by this path.
+.It Cm repo activate
+Repair a repository whose
+.Cm CREATE_REPOSITORY
+succeeded and whose initial import reached the backend, but whose
+.Cm INITIAL_COMMIT
+control ticket never landed, so the canonical record stayed
+.Ic initializing .
+Clients keep projecting such a repository as not yet ready and refuse to
+attach, while the FSFS repository is usable and may already carry commits.
+Requires
+.Fl -repo-id
+and
+.Fl -realm-id .
+Resuming from the client is possible only while its local provisioning
+operation survives; once that file is gone this command is the only way out.
+.It Cm repo rotate
+Perform an FSFS generation change on one repository, with the same per-command
+sandbox profile every other administrative operation gets, and with paths taken
+from the server configuration rather than from
+.Ar argv .
+Requires
+.Fl -repo-id .
+Rotation happens when the packed repository reaches
+.Fl -size
+.Pq default 25GiB
+or its oldest revision is older than
+.Fl -age-days
+.Pq default 365 ;
+.Fl -force
+rotates regardless of both triggers and
+.Fl -dry-run
+evaluates them and prints the decision without rotating.
+The standalone
+.Xr filees-rotate 8
+takes its paths from the command line and applies no sandbox; prefer this
+command.
+.It Cm repo lock-guards
+Report, and with
+.Fl -apply
+install, the repository hooks that guard locking.
+Existing hooks are never overwritten.
+Requires
+.Fl -repo-id
+and
+.Fl -owner-realm-id .
+.It Cm repo reap-passports
+Remove expired passports from one repository.
+Requires
+.Fl -repo-id
+and
+.Fl -owner-realm-id ;
+.Fl -path
+addresses a single legacy expired passport by its relative path.
+.It Cm share list
+List Public Shares channels.
+.Fl -json
+emits the listing as JSON instead of a table.
+.It Cm share delete
+Delete one Public Shares channel, addressed by
+.Fl -channel-id
+as printed by
+.Cm share list .
 .It Cm erasure complete
 Close a data-erasure request after the operator has verified backup
 retention.
@@ -191,7 +278,8 @@ $ doas -u _filees-state filees-admin repo prune --realm-id UUID \e
     --older-than 1h --apply
 .Ed
 .Sh SEE ALSO
-.Xr filees 7 ,
 .Xr filees.conf 5 ,
+.Xr filees 7 ,
+.Xr filees-mail 8 ,
 .Xr filees-operation 8 ,
-.Xr filees-mail 8
+.Xr filees-rotate 8

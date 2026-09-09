@@ -104,6 +104,12 @@ filees-admin version</code></pre>
 <tr><td><code>repo transfer-owner</code></td><td>Change owner_realm_id and regenerate data-authz. Existing grants issued by the previous owner are not touched.</td></tr>
 <tr><td><code>repo check-state</code></td><td>Correlate durable creation records with canonical state, FSFS/staging and youngest revision. Normal active repositories are omitted and nothing is removed. Optional <code>--realm-id</code> limits the JSON report to one realm.</td></tr>
 <tr><td><code>repo prune</code></td><td>Dry-run unless <code>--apply</code> is present. The default <code>--older-than 1h</code> protects fresh attempts. Apply removes only published, still-initializing r0 records marked <code>prunable</code>; it persists <code>prune_pending</code>, blocks commits and verifies HEAD again before changing authority or storage.</td></tr>
+<tr><td><code>repo activate</code></td><td>Repair a repository whose <code>CREATE_REPOSITORY</code> succeeded and whose import reached the backend, but whose <code>INITIAL_COMMIT</code> ticket never landed, leaving the canonical record <code>initializing</code> forever. Requires <code>--repo-id</code> and <code>--realm-id</code>.</td></tr>
+<tr><td><code>repo rotate</code></td><td>FSFS generation change on one repository, under the same per-command sandbox as every other administrative operation and with paths from the server configuration. Triggers are <code>--size</code> (25GiB) and <code>--age-days</code> (365); <code>--force</code> ignores both and <code>--dry-run</code> only prints the decision. Prefer this over the standalone <code>filees-rotate</code>, which takes paths from argv and applies no sandbox.</td></tr>
+<tr><td><code>repo lock-guards</code></td><td>Report, and with <code>--apply</code> install, the repository hooks that guard locking. Existing hooks are never overwritten.</td></tr>
+<tr><td><code>repo reap-passports</code></td><td>Remove expired passports from one repository. <code>--path</code> addresses a single legacy expired passport.</td></tr>
+<tr><td><code>share list</code></td><td>List Public Shares channels; <code>--json</code> emits JSON instead of a table.</td></tr>
+<tr><td><code>share delete</code></td><td>Delete one Public Shares channel by <code>--channel-id</code>, as printed by <code>share list</code>.</td></tr>
 <tr><td><code>erasure complete</code></td><td>Close a data-erasure request after the operator has verified backup retention. --partially-retained records that policy still requires some copies.</td></tr>
 </table></div>
 <h3>Examples</h3>
@@ -301,15 +307,15 @@ filees-service-wc-corrector</code></pre>
 <tr><td><code>--apply</code></td><td>Download, verify, stage, journal and install the channel head or release .</td></tr>
 <tr><td><code>--adopt</code></td><td>Verify and adopt without modification.</td></tr>
 <tr><td><code>--rollback</code></td><td>Restore the previous locally installed release from the journalled pre-image.</td></tr>
-<tr><td><code>--revert-to release</code></td><td>Install a named release such as r543 .</td></tr>
+<tr><td><code>--revert-to release</code></td><td>Install a named release such as r1042 .</td></tr>
 <tr><td><code>--purge</code></td><td>Remove files this installer manages. Keeps /var/filees and /etc/filees unless --wipe-state is also given.</td></tr>
 <tr><td><code>--allow-rollback</code></td><td>Permit installing a release older than the local high-water mark.</td></tr>
 <tr><td><code>--yes</code></td><td>Answer yes to interactive prompts.</td></tr>
 <tr><td><code>--talkative</code></td><td>Print Sq [SECURITY] unveil and pledge diagnostics.</td></tr>
 </table></div>
 <h3>Examples</h3>
-<p>Adopt a host that already matches signed r543:</p>
-<pre><code>$ doas filees-install --adopt r543</code></pre>
+<p>Adopt a host that already matches signed r1042:</p>
+<pre><code>$ doas filees-install --adopt r1042</code></pre>
 <p>Plan and apply the configured channel:</p>
 <pre><code>$ doas filees-install --dry-run
 $ doas filees-install --apply</code></pre>
@@ -382,7 +388,7 @@ filees-links --config /etc/filees/public-links.json</code></pre>
 <p class="cli-nd">FileES mobile protocol entry</p>
 <h3>Role</h3>
 <p>filees-mobile-v1 is the set-id entry for _filees-mobile . The installed image is _filees-state : _filees-access mode 4550, the same class as filees-client-entry(8) .</p>
-<p>The mobile client is paired from an already activated desktop. It inherits that desktop's repository list once. The phone may read a granted share and write only under mobile-uploads/ . A new path is unique-append. The same path under mobile-uploads/ with different content becomes a new Subversion revision. UPLOAD_TREE ingests a marked zip as one commit; an unmarked zip is rejected as a whole. The mobile projection does not receive editing_policy .</p>
+<p>The mobile client is paired from an already activated desktop. It inherits that desktop's repository list once. The phone may read a granted share and write only under mobile-uploads/ . A new path is unique-append. The two write verbs then differ, deliberately: UPLOAD_OBJECT never overwrites and never renames — identical content is dropped as a duplicate (NAME_TAKEN_SAME) and different content is parked for the user (NAME_TAKEN_DIFF) — while UPLOAD_TREE ingests a marked zip as one commit, skips entries whose content already matches and overwrites the rest as a new revision; an unmarked zip is rejected as a whole. So re-uploading one changed file does not replace it, while the same file inside an ingested folder does. Missing parent directories are created only under mobile-uploads/. The mobile projection does not receive editing_policy .</p>
 <p>sshd(8) uses the shared authorized_keys file. The per-key command= line selects this image. There is no ForceCommand on the _filees-mobile match block.</p>
 <h3>Invocation</h3>
 <pre><code>filees-mobile-v1</code></pre>
@@ -416,5 +422,5 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 
 <nav class="page-nav"><a href="security.html">← Security</a><span></span></nav>
 </div></div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · extract from docs/man · 2026-08-15 · source r523</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · extract from docs/man · 2026-09-09 · source r1042</span></footer>
 </main></body></html>

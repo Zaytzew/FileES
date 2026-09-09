@@ -104,6 +104,12 @@ filees-admin version</code></pre>
 <tr><td><code>repo transfer-owner</code></td><td>Zmienia owner_realm_id i ponownie generuje data-authz. Istniejące uprawnienia nadane przez poprzedniego właściciela pozostają bez zmian.</td></tr>
 <tr><td><code>repo check-state</code></td><td>Porównuje trwałe rekordy tworzenia z kanonicznym stanem, FSFS/stagingiem i najmłodszą rewizją. Pomija zwykłe aktywne repozytoria i niczego nie usuwa. Opcjonalne <code>--realm-id</code> ogranicza raport JSON do jednej strefy.</td></tr>
 <tr><td><code>repo prune</code></td><td>Bez <code>--apply</code> wykonuje dry-run. Domyślne <code>--older-than 1h</code> chroni świeżą próbę. Z <code>--apply</code> usuwa wyłącznie opublikowane, nadal inicjalizowane r0 oznaczone <code>prunable</code>; przed skutkiem zapisuje <code>prune_pending</code>, blokuje commity i ponownie sprawdza HEAD.</td></tr>
+<tr><td><code>repo activate</code></td><td>Naprawia repozytorium, dla którego <code>CREATE_REPOSITORY</code> się powiodło i import dotarł do backendu, ale ticket <code>INITIAL_COMMIT</code> nigdy nie wylądował, przez co rekord kanoniczny zostaje na zawsze <code>initializing</code>. Wymaga <code>--repo-id</code> i <code>--realm-id</code>.</td></tr>
+<tr><td><code>repo rotate</code></td><td>Zmiana generacji FSFS jednego repozytorium, pod tym samym profilem sandboxa co każda inna operacja administracyjna i ze ścieżkami z konfiguracji serwera. Wyzwalacze to <code>--size</code> (25GiB) i <code>--age-days</code> (365); <code>--force</code> pomija oba, a <code>--dry-run</code> tylko wypisuje decyzję. Preferowane wobec samodzielnego <code>filees-rotate</code>, który bierze ścieżki z argv i nie zakłada sandboxa.</td></tr>
+<tr><td><code>repo lock-guards</code></td><td>Raportuje, a z <code>--apply</code> instaluje haki repozytorium pilnujące blokad. Istniejące haki nigdy nie są nadpisywane.</td></tr>
+<tr><td><code>repo reap-passports</code></td><td>Usuwa wygasłe paszporty z jednego repozytorium. <code>--path</code> wskazuje pojedynczy wygasły paszport w starym układzie.</td></tr>
+<tr><td><code>share list</code></td><td>Wypisuje kanały Public Shares; <code>--json</code> zwraca JSON zamiast tabeli.</td></tr>
+<tr><td><code>share delete</code></td><td>Usuwa jeden kanał Public Shares wskazany przez <code>--channel-id</code>, tak jak wypisuje go <code>share list</code>.</td></tr>
 <tr><td><code>erasure complete</code></td><td>Zamyka żądanie wymazania danych po sprawdzeniu przez operatora zasad retencji kopii zapasowych. Flaga --partially-retained zapisuje, że polityka nadal wymaga zachowania części kopii.</td></tr>
 </table></div>
 <h3>Przykłady</h3>
@@ -309,7 +315,7 @@ filees-service-wc-corrector</code></pre>
 </table></div>
 <h3>Przykłady</h3>
 <p>Obejmij istniejącą, zgodną instalację zarządzaniem:</p>
-<pre><code>$ doas filees-install --adopt r543</code></pre>
+<pre><code>$ doas filees-install --adopt r1042</code></pre>
 <p>Sprawdź plan, a następnie zastosuj skonfigurowany kanał wydań:</p>
 <pre><code>$ doas filees-install --dry-run
 $ doas filees-install --apply</code></pre>
@@ -382,7 +388,7 @@ filees-links --config /etc/filees/public-links.json</code></pre>
 <p class="cli-nd">wejście protokołu mobilnego (odczyt udziału, zapis pod mobile-uploads/)</p>
 <h3>Rola</h3>
 <p>filees-mobile-v1 to set-id'owe wejście dla _filees-mobile. Instalowany obraz ma właściciela _filees-state: _filees-access, tryb 4550 — tę samą klasę co filees-client-entry(8).</p>
-<p>Klient mobilny jest parowany z już aktywowanego pulpitu. Dziedziczy raz listę repozytoriów tego pulpitu. Telefon może odczytać przyznany udział i pisać wyłącznie pod mobile-uploads/. Nowa ścieżka to unikalny dopisek. Ta sama ścieżka pod mobile-uploads/ z inną treścią staje się nową rewizją Subversion. UPLOAD_TREE wchłania oznaczony zip jako jedno zatwierdzenie; nieoznaczony zip jest odrzucany w całości. Projekcja mobilna nie dostaje editing_policy.</p>
+<p>Klient mobilny jest parowany z już aktywowanego pulpitu. Dziedziczy raz listę repozytoriów tego pulpitu. Telefon może odczytać przyznany udział i pisać wyłącznie pod mobile-uploads/. Nowa ścieżka to unikalny dopisek. Dwa czasowniki zapisu różnią się dalej, i to celowo: UPLOAD_OBJECT nigdy nie nadpisuje i nigdy nie zmienia nazwy — identyczna treść znika jako duplikat (NAME_TAKEN_SAME), a inna treść trafia do decyzji użytkownika (NAME_TAKEN_DIFF) — natomiast UPLOAD_TREE wchłania oznaczony zip jako jedno zatwierdzenie, pomija wpisy o zgodnej treści, a resztę nadpisuje nową rewizją; nieoznaczony zip jest odrzucany w całości. Ponowne wysłanie jednego zmienionego pliku go więc nie zastąpi, a ten sam plik wewnątrz wchłanianego folderu owszem. Brakujące katalogi nadrzędne powstają wyłącznie pod mobile-uploads/. Projekcja mobilna nie dostaje editing_policy.</p>
 <p>sshd(8) używa współdzielonego pliku authorized_keys. Linia command= przypisana do klucza wybiera ten obraz. Blok match dla _filees-mobile nie ma ForceCommand.</p>
 <h3>Wywołanie</h3>
 <pre><code>filees-mobile-v1</code></pre>

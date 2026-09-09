@@ -87,7 +87,7 @@
 <li>Lista odbiorców robi kanał zamknięty. Pusta lista — otwarty, opcjonalnie z hasłem. Hasło nie jest przechowywane jawnym tekstem.</li>
 <li>Pusta rewizja śledzi najnowszą. Dodatnia zamraża ten zrzut.</li>
 </ul>
-<p>Po otwarciu udziału odwiedzający widzi domyślnie zwinięte drzewo w stylu „Szczegóły”: nazwa, ikona typu, rozmiar, pobranie. Może wziąć jeden plik, jeden folder albo cały udział jako ograniczony ZIP. W tej wersji nie ma miniaturek.</p>
+<p>Po otwarciu udziału odwiedzający widzi domyślnie zwinięte drzewo w stylu „Szczegóły”: nazwa, ikona typu, rozmiar, pobranie. Może wziąć jeden plik, jeden folder albo cały udział jako ZIP. Paczka ma własny limit, niezależny od limitu udziału: domyślnie 512 plików, konfigurowalnie do 4096. Udział może więc legalnie zawierać więcej obiektów, niż zmieści jedna paczka, a żądanie ponad limit jest odrzucane, nie obcinane. W tej wersji nie ma miniaturek.</p>
 <h2 id="ps-ops">5.6 Włączenie</h2>
 <p>Udziały publiczne są domyślnie wyłączone. Po skonfigurowaniu server.json i public-links.json uruchom filees-public-authority przed filees-links, a następnie przeładuj httpd. Dokładne polecenia uruchomieniowe i sposób sprawdzania działania opisuje część „Eksploatacja”.</p>
 </div>

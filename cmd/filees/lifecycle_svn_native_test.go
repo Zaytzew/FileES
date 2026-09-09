@@ -25,7 +25,11 @@ func TestNativeLifecycleWithoutCLI(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
-	if out, err := exec.Command("svnadmin", "create", repo).CombinedOutput(); err != nil {
+	svnadmin := os.Getenv("FILEES_PROBE_SVNADMIN")
+	if svnadmin == "" {
+		svnadmin = "svnadmin"
+	}
+	if out, err := exec.Command(svnadmin, "create", repo).CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %v %s", err, out)
 	}
 	url := svnurl.File(repo)

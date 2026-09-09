@@ -68,8 +68,19 @@ func main() {
 		}
 		return
 	}
+	// Version/help and IPC-only commands remain available for diagnosing a
+	// damaged runtime. Any daemon startup prepares native code before clients.
+	if len(os.Args) == 1 || os.Args[1] == "daemon" || os.Args[1] == "native-runtime" {
+		if err := prepareNativeSVN(); err != nil {
+			fmt.Fprintln(os.Stderr, "filees native runtime:", err)
+			os.Exit(1)
+		}
+	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "native-runtime":
+			fmt.Fprintln(os.Stdout, nativeSVNPath())
+			return
 		case "version", "--version":
 			fmt.Fprintln(os.Stdout, version)
 			return
@@ -476,6 +487,7 @@ commands:
   activate-begin   create/resume a server-scoped onboarding passport
   activate-finish  read one OTP from stdin and run activation
   activate-resume  resume an OTP-authorized activation with reconnect key
+  native-runtime  prepare and print the selected helper path (no daemon start)
   recovery download --kit FILE.fkr --output DIR
             download verified repository archives without an active profile
 

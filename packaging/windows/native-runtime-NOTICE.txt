@@ -1,0 +1,18 @@
+FileES native SVN runtime
+
+FileES code is distributed under the BSD 2-Clause license reproduced in
+FileES-LICENSE.txt. This does not relicense the third-party components.
+
+This runtime contains Apache Subversion and APR/APR-util, Expat, OpenSSL,
+serf (including statically linked code), SQLite and zlib. Their upstream
+licenses and notices accompany this file. DEPENDENCIES.json records the
+shipped PE images and their SHA-256 digests, plus Windows OS imports.
+
+Microsoft Visual C++ runtime components retain Microsoft's license terms.
+They are sourced from the MSVC x64 redistributable directory, not copied
+from System32. MSVC-Redist.txt identifies the installed toolset's official
+redistribution reference. Windows UCRT/API contracts are provided by the OS.
+
+The full set is embedded in the FileES daemon and extracted into the user's
+FileES/native-svn cache under an archive hash. Different sets are retained
+separately so an older daemon cannot load newly replaced libraries.

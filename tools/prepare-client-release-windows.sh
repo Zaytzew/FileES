@@ -61,7 +61,7 @@ cd "$root"
 base_version=$(sed -n '1p' "$root/VERSION")
 client_version="$base_version.$source_revision"
 
-staging="${DIST:-$root/dist}/client-$PLATFORM"
+staging="${DIST:-$root/dist}/client-$PLATFORM-$RELEASE_ID"
 
 # One producer for the bundle layout, shared with a local MSI build.
 #

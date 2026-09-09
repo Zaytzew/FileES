@@ -79,7 +79,7 @@ func TestNativeCommitLostReplyCharacterization(t *testing.T) {
 			repo, wc, arm := filepath.Join(root, "repo"), filepath.Join(root, "wc"), filepath.Join(root, "fault")
 			run := func(tool string, args ...string) string {
 				t.Helper()
-				cmd := exec.CommandContext(t.Context(), tool, args...)
+				cmd := exec.CommandContext(t.Context(), nativeFixtureTool(t, tool), args...)
 				cmd.Env = svnProcessEnvironment(os.Environ(), "")
 				out, err := cmd.CombinedOutput()
 				if err != nil {

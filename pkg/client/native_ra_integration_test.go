@@ -20,7 +20,7 @@ func TestNativeRAAdapterWithoutCLI(t *testing.T) {
 	}
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
-	if out, e := exec.Command("svnadmin", "create", repo).CombinedOutput(); e != nil {
+	if out, e := exec.Command(nativeFixtureTool(t, "svnadmin"), "create", repo).CombinedOutput(); e != nil {
 		t.Fatalf("%v %s", e, out)
 	}
 	url := svnurl.File(repo)
@@ -190,7 +190,7 @@ func TestNativeRARootConflictCannotDisappear(t *testing.T) {
 	repo, a, b := filepath.Join(root, "repo"), filepath.Join(root, "a"), filepath.Join(root, "b")
 	run := func(tool string, args ...string) {
 		t.Helper()
-		if out, err := exec.Command(tool, args...).CombinedOutput(); err != nil {
+		if out, err := exec.Command(nativeFixtureTool(t, tool), args...).CombinedOutput(); err != nil {
 			t.Fatalf("%v %s", err, out)
 		}
 	}

@@ -66,9 +66,15 @@ samego siebie.
 
 ## Dla budującego
 
+Najpierw zbuduj staging natywnego helpera zgodnie z
+`native/filees-svn/WINDOWS.md`. Bundle Windows wymaga `FILEES_NATIVE_RUNTIME`;
+nie wyda już po cichu wariantu zależnego od obcego svn.exe. Staging sprzed
+zmiany źródeł C jest odrzucany. Wskaż nowy katalog wyjściowy bundle.
+
 ```sh
 # przygotuj wydanie (buduje parę, bundel i MSI, stage'uje je w FILEES-BIN)
 RELEASE_ID=rNNN SEQUENCE=NNN KEY_ID=<klucz> \
+  FILEES_NATIVE_RUNTIME=/ścieżka/do/native-runtime \
   FILEES_BIN_WC=/ścieżka/do/FILEES-BIN \
   tools/prepare-client-release-windows.sh
 ```
@@ -86,3 +92,9 @@ musi mieścić się w zakresie pola build MSI (`0..65535`).
 
 Wymaga **WiX Toolset v4** (`dotnet tool install --global wix`), a to wymaga
 .NET SDK. Sam runtime nie wystarczy.
+
+Helper i jego biblioteki/notices są osadzone w demonie. Pierwszy start
+rozpakowuje prywatny zestaw do `%LOCALAPPDATA%/FileES/native-svn/<hash>/`.
+Odinstalowanie MSI nie usuwa tego cache; różne wersje są zachowywane, aby
+nie usunąć bibliotek starszemu, nadal działającemu demonowi. GC pozostaje
+otwarte. `filees.exe native-runtime` pokazuje wybrany zestaw bez startu usługi.

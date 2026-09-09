@@ -1,3 +1,5 @@
+//go:build !windows
+
 package svnrotate
 
 import (
@@ -41,13 +43,13 @@ func TestConfigValidateRejects(t *testing.T) {
 		MaxAge:        time.Hour,
 	}
 	cases := map[string]func(*Config){
-		"relative repo":     func(c *Config) { c.RepoPath = "repo" },
-		"relative archive":  func(c *Config) { c.ArchiveDir = "archive" },
-		"repo == archive":   func(c *Config) { c.ArchiveDir = c.RepoPath },
-		"zero size":         func(c *Config) { c.SizeThreshold = 0 },
-		"negative size":     func(c *Config) { c.SizeThreshold = -1 },
-		"zero age":          func(c *Config) { c.MaxAge = 0 },
-		"repo not a repo":   func(c *Config) {}, // /srv/svn/repo/format does not exist here
+		"relative repo":    func(c *Config) { c.RepoPath = "repo" },
+		"relative archive": func(c *Config) { c.ArchiveDir = "archive" },
+		"repo == archive":  func(c *Config) { c.ArchiveDir = c.RepoPath },
+		"zero size":        func(c *Config) { c.SizeThreshold = 0 },
+		"negative size":    func(c *Config) { c.SizeThreshold = -1 },
+		"zero age":         func(c *Config) { c.MaxAge = 0 },
+		"repo not a repo":  func(c *Config) {}, // /srv/svn/repo/format does not exist here
 	}
 	for name, mutate := range cases {
 		cfg := base

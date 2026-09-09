@@ -1,4 +1,4 @@
-.Dd August 16, 2026
+.Dd September 9, 2026
 .Dt FILEES-INSTALL 8
 .Os
 .Sh NAME
@@ -75,9 +75,9 @@ The release includes examples/public-storage-migration.md with this bridge.
 .Sh OPTIONS
 .Bl -tag -width Ds
 .It Fl c Ar file
-Read
-.Xr filees-install 8
-configuration from
+Read the configuration described under
+.Sx CONFIGURATION
+from
 .Ar file .
 The default is
 .Pa /etc/filees/install.conf .
@@ -97,7 +97,7 @@ Restore the previous locally installed release from the journalled
 pre-image.
 .It Fl -revert-to Ar release
 Install a named release such as
-.Cm r543 .
+.Cm r1042 .
 .It Fl -purge
 Remove files this installer manages.
 Keeps
@@ -116,6 +116,117 @@ Print
 .Sq Li [SECURITY]
 unveil and pledge diagnostics.
 .El
+.Sh CONFIGURATION
+.Pa /etc/filees/install.conf
+is a plain
+.Ic section.key = value
+file.
+Blank lines and lines beginning with
+.Ql #
+are ignored.
+An unknown key is a hard error naming the line, so an obsolete setting stops
+the tool rather than being silently ignored.
+Booleans accept
+.Cm 1 , yes , true , on
+and their negatives.
+Every path must be absolute.
+.Bl -tag -width Ds
+.It Ic repo.url
+Base URL of the FILEES-BIN release repository.
+A trailing slash is trimmed.
+Schemes accepted:
+.Cm svn , svn+ssh , https .
+.It Ic repo.channel
+Release channel, default
+.Cm stable .
+.It Ic repo.platform
+Target triple, default the host's own
+.Ic GOOS-GOARCH .
+.It Ic repo.svn
+.Xr svn 1
+binary, default
+.Cm svn
+from
+.Ev PATH .
+.It Ic local.state_dir
+Recorded release, high-water mark and journal.
+Default
+.Pa /var/filees/install-state .
+.It Ic local.stage_dir
+Staging for fetched artifacts, default
+.Pa /var/filees/install-stage .
+.It Ic local.backup_dir
+Pre-image copies used by rollback, default
+.Pa /var/filees/install-backup .
+.It Ic local.lock_path
+Exclusive apply lock, default
+.Pa /var/run/filees-install.lock .
+.It Ic install.sbin_dir , install.libexec_dir
+Operator commands and short-lived workers.
+Defaults
+.Pa /usr/local/sbin
+and
+.Pa /usr/local/libexec .
+.It Ic install.sysconf_dir
+Configuration root, default
+.Pa /etc/filees .
+.It Ic install.sshd_conf_dir , install.ssh_keys_dir , install.login_conf_dir
+Host integration directories.
+Defaults
+.Pa /etc/ssh/sshd_config.d ,
+.Pa /etc/ssh
+and
+.Pa /etc/login.conf.d .
+.It Ic install.data_dir
+Server state root, default
+.Pa /var/filees .
+.It Ic install.public_downloads_dir
+Public Shares storage root, default
+.Pa /var/filees-downloads .
+Its parent must be root-owned and not group- or other-writable; the tool
+refuses otherwise, because this directory holds files served to the public.
+.It Ic policy.default_action
+Action taken when the command line names none:
+.Cm check
+.Pq default ,
+.Cm dry-run
+or
+.Cm apply .
+.It Ic policy.config_drift
+What a locally modified managed configuration file does:
+.Cm block
+.Pq default ,
+.Cm warn
+or
+.Cm ignore .
+.It Ic policy.orphan_files
+What an installed file absent from the new manifest does:
+.Cm keep
+.Pq default ,
+.Cm warn
+or
+.Cm remove .
+.It Ic policy.interactive
+Ask before applying.
+Default on;
+.Fl -yes
+overrides it for one run.
+.It Ic policy.require_hash
+Refuse an artifact whose SHA-256 does not match the manifest.
+Default on.
+Turning it off is not an ordinary operation.
+.It Ic policy.verify_signature
+Verify the release envelope against the key compiled into this binary.
+Default on.
+.It Ic policy.talkative
+Print sandbox diagnostics.
+Default off.
+.It Ic security.signify
+Accepted and ignored.
+Signature verification moved in process on 2026-09-09, so no external program
+is named any more.
+The key is still accepted so that a deployed configuration keeps loading.
+.El
 .Sh FILES
 .Bl -tag -width Ds
 .It Pa /etc/filees/install.conf
@@ -128,9 +239,9 @@ Exclusive apply lock.
 .Sh EXIT STATUS
 .Ex -std
 .Sh EXAMPLES
-Adopt a host that already matches signed r543:
+Adopt a host that already matches signed r1042:
 .Bd -literal -offset indent
-$ doas filees-install --adopt r543
+$ doas filees-install --adopt r1042
 .Ed
 .Pp
 Plan and apply the configured channel:

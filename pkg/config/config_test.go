@@ -239,20 +239,44 @@ func TestLoadRejectsNestedRootsInBothOrders(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsSameRootThroughSymlink is the one test in this file whose
+// paths must exist on disk, and that makes it the exception to the rewriting
+// fixtureAbs does for every other fixture here.
+//
+// The comment above fixtureAbs says "no file is created at the result; only
+// IsAbs is asked". That was written on 2026-09-09 (r1006) and is true of every
+// fixture except this one, which creates directories and a symlink and then
+// asks the loader to resolve them. On Windows the mistake was invisible:
+// t.TempDir() returns C:\..., the /tmp pattern does not match, the real paths
+// survive and the test passed. On Linux those same paths look like POSIX
+// literals, got rewritten under the fixture root where nothing exists,
+// EvalSymlinks failed with ErrNotExist, canonicalPath fell back to the
+// unresolved path, and the two roots stayed distinct - so the loader accepted
+// a configuration it exists to reject. Measured 2026-09-09 on Debian.
+//
+// The fix is to stop fighting the rewriting and use it: build the real
+// directories where the rewriting points. The JSON keeps its readable POSIX
+// spelling like every other fixture, and on both platforms the loader now
+// canonicalises paths that are really there.
 func TestLoadRejectsSameRootThroughSymlink(t *testing.T) {
-	root := t.TempDir()
-	realRoot := filepath.Join(root, "real")
-	if err := os.Mkdir(realRoot, 0o755); err != nil {
+	const posixRoot = "/tmp/filees-symlink-overlap"
+	root := fixtureAbs(posixRoot)
+	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
+	realRoot := filepath.Join(root, "real")
+	if err := os.MkdirAll(realRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	alias := filepath.Join(root, "alias")
 	if err := os.Symlink(realRoot, alias); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlinks unsupported here: %v", err)
 	}
 	data := fmt.Sprintf(`[
 		{"id":"a","repo_url":"svn://example/a","local_path":%q,"commit_interval":"1m"},
 		{"id":"b","repo_url":"svn://example/b","local_path":%q,"commit_interval":"1m"}
-	]`, realRoot, alias)
+	]`, posixRoot+"/real", posixRoot+"/alias")
 	if _, err := Load(writeConfig(t, data)); err == nil || !strings.Contains(err.Error(), "nakładające się korzenie") {
 		t.Fatalf("Load error = %v, want symlink overlap", err)
 	}

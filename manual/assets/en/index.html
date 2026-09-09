@@ -129,6 +129,7 @@
 <tr><td>Public Shares</td><td><span class="status status-verified">Verified</span> live HTTPS endpoint, OTP, branding, ZIP; object map is a snapshot</td></tr>
 <tr><td>FILEES-BIN / <code>filees-install</code></td><td><span class="status status-verified">Verified</span> signed r1042 (alpha) on production OpenBSD</td></tr>
 <tr><td>Windows MSI / service packaging</td><td><span class="status status-implemented">Implemented</span> GUI MSI only; daemon is a separate binary</td></tr>
+<tr><td>Linux server</td><td><span class="status status-implemented">Implemented</span> the server code builds and its test suite runs on Linux — first measured natively on Debian 13, 2026-09-09, after which the only failures left were defects that had nothing to do with the platform. Installation, service supervision, privilege drop and packaging are <em>not implemented yet</em>: there is no Linux installer, and <code>pledge</code>/<code>unveil</code> confinement does not exist outside OpenBSD, so on Linux that is the administrator&rsquo;s job</td></tr>
 <tr><td>Upload Channel</td><td><span class="status status-implemented">Implemented</span> the upload shelf has been live in production since r601 (create, upload, list, revoke); uploader OTP and AV quarantine (48h) are complete in source, awaiting the next signed <code>FILEES-BIN</code> release; <code>slots</code>/DROPPER remain deliberately off</td></tr>
 </table></div>
 <p>On the server host the Tech pages pair with:</p>
@@ -136,7 +137,7 @@
 man filees.conf
 man filees-admin
 man filees-install</code></pre>
-<p>Filesystem first, no resident FileES daemon, system <code>sshd</code> as the only privileged endpoint.</p>
+<p>On the server: filesystem first, no resident FileES daemon, system <code>sshd</code> as the only privileged endpoint. The desktop client is the opposite shape — a resident per-user daemon with a thin tray GUI — and the two should not be confused.</p>
 <nav class="page-nav">
 <span></span>
 <a href="user-guide.html">User: Desktop howto →</a>

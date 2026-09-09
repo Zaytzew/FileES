@@ -806,10 +806,14 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogLocateFolder), Label: "Wskaż przeniesiony folder", Description: "Powiąż repozytorium z istniejącą kopią roboczą w nowym miejscu.", Tone: "warning"})
 	}
 	if folder.CanRetryLifecycle {
+		// Lifecycle repair is separate from interpreting an unscheduled rename.
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogRetryLifecycle), Label: "Ponów niedokończone działanie", Description: "Wznów tę samą zapisaną operację bez tworzenia nowego repozytorium.", Tone: "primary"})
 	}
 	if folder.CanAbandonLifecycle {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogAbandonLifecycle), Label: "Zakończ starą próbę lokalną", Description: "Zachowaj dane i repozytorium serwerowe, ale zwolnij zacięte lokalne powiązanie.", Tone: "warning"})
+	}
+	if folder.CanResolveIntents {
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogResolveIntents), Label: "Rozstrzygnij niejednoznaczne zmiany", Description: "Obejrzyj listę usunięć i nowych plików przed wznowieniem wysyłki.", Tone: "warning"})
 	}
 	if folder.CanDetach {
 		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogDetachFolder), Label: "Odłącz folder", Description: "Zatrzymaj synchronizację, pozostawiając pliki na dysku.", Tone: "warning"})

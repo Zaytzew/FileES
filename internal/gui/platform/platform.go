@@ -308,6 +308,7 @@ type SettingsFolder struct {
 	CanDelete               bool // delete_repository
 	CanLoadDump             bool // load_dump
 	CanRetryLifecycle       bool // retry the same durable local operation
+	CanResolveIntents       bool // inspect daemon-owned uncertainty plan
 	CanAbandonLifecycle     bool // end only the failed local attempt
 }
 type SettingsRecovery struct {
@@ -326,6 +327,7 @@ const (
 	SettingsDialogDeleteRepo       SettingsDialogAction = "delete_repository"
 	SettingsDialogLoadDump         SettingsDialogAction = "load_dump"
 	SettingsDialogRetryLifecycle   SettingsDialogAction = "retry_lifecycle"
+	SettingsDialogResolveIntents   SettingsDialogAction = "resolve_intents"
 	SettingsDialogAbandonLifecycle SettingsDialogAction = "abandon_lifecycle"
 	SettingsDialogManageGrants     SettingsDialogAction = "manage_grants"
 	SettingsDialogEditingPolicy    SettingsDialogAction = "editing_policy"

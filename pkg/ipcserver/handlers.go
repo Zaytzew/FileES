@@ -148,6 +148,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleLockReleaseDecision(req, true)
 	case contract.CmdRepoPublish:
 		return s.handleRepoPublish(req)
+	case contract.CmdRepoIntentPlan, contract.CmdRepoIntentApply:
+		return s.handleRepoIntent(req)
 	case contract.CmdNoticeList:
 		return s.handleNoticeList(req)
 	case contract.CmdNoticeAck:

@@ -9,7 +9,7 @@ import (
 	"filees/pkg/errmap"
 )
 
-// Marks errors already journaled here so the publish caller does not log the
+// Marks errors already journaled by recovery or intent HOLD so the publish caller does not log the
 // same HOLD again. Wrapping preserves the native SVN/APR chain for inspection.
 type recoveryFailure struct {
 	cause  error

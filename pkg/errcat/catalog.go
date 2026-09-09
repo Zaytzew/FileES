@@ -185,6 +185,8 @@ var specs = []Spec{
 	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid", "Komentarz wydania nie może być pusty, dłuższy niż 500 znaków ani zawierać znaków sterujących"},
 	{"SHOUT-1002", "shout.read_only", SevError, HintNone, nil, "Repository is read-only", "To repozytorium jest tylko do odczytu"},
 	{"SHOUT-1003", "shout.publish_failed", SevError, HintRequireAction, []string{"detail"}, "Shouting commit failed", "Nie udało się zapisać wydania na serwerze"},
+	{"INTENT-1001", "intent.resolution_refused", SevError, HintRequireAction, []string{"detail"}, "Intent resolution refused; inspect a fresh plan", "Nie można przyjąć tej decyzji. Otwórz ponownie plan zmian; pliki, kolejka lub dostęp mogły się zmienić"},
+	{"INTENT-1002", "intent.ambiguous", SevWarn, HintRequireAction, []string{"detail"}, "Ambiguous file changes require an explicit decision", "Wysyłka wstrzymana: rozstrzygnij niejednoznaczne zmiany w ustawieniach folderu"},
 	{"SHOUT-1004", "shout.list_failed", SevError, HintRetryLocal, nil, "Notice list failed", "Nie udało się odczytać listy wydań"},
 	{"SHOUT-1005", "shout.ack_failed", SevError, HintRetryLocal, nil, "Notice acknowledgement failed", "Nie udało się potwierdzić wydania"},
 

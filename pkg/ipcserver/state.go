@@ -67,6 +67,8 @@ type RepoState struct {
 	recoveryStatsFn      func() contract.RecoveryStats
 	workingCopySizeFn    func() (int64, bool)
 	publishFn            func(ctx context.Context, comment string) (int64, error)
+	intentPlanFn         func(context.Context) (*contract.IntentPlan, error)
+	intentApplyFn        func(context.Context, string, string) (*contract.IntentApplyResult, error)
 	noticeListFn         func() ([]contract.Notice, error)
 	noticeAckFn          func(id string) error
 }
@@ -669,7 +671,14 @@ func readPendingStats(path string) contract.PendingStats {
 	}
 	var entries []cacheEntry
 	if json.Unmarshal(data, &entries) != nil {
-		return contract.PendingStats{}
+		var envelope struct {
+			Schema  string       `json:"schema"`
+			Entries []cacheEntry `json:"entries"`
+		}
+		if json.Unmarshal(data, &envelope) != nil || envelope.Schema != "filees.commit-cache/v2" {
+			return contract.PendingStats{}
+		}
+		entries = envelope.Entries
 	}
 	var ps contract.PendingStats
 	for _, e := range entries {

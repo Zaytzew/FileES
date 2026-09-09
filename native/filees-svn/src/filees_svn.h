@@ -3,6 +3,7 @@
 #define FILEES_SVN_H
 
 #include <apr_file_info.h>
+#include <apr_file_io.h>
 #include <apr_pools.h>
 #include <apr_tables.h>
 #include <svn_client.h>
@@ -23,6 +24,10 @@ int filees_failure(svn_error_t *err);
 int filees_safe_relative(const char *path);
 const char *filees_status_kind(enum svn_wc_status_kind kind);
 const char *filees_node_kind(svn_node_kind_t kind);
+svn_error_t *filees_writer_open(apr_file_t **file, const char **pending,
+                                 const char *wc, apr_pool_t *pool);
+svn_error_t *filees_writer_set(apr_file_t *file, const char *marker, apr_pool_t *pool);
+svn_error_t *filees_writer_guard(const char *wc, apr_pool_t *pool);
 
 /* Exact WC root. live requires .filees; disposable requires the probe marker. */
 /* Read-only pre-adoption inspection must not create/require a FileES marker. */

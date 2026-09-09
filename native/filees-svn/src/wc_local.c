@@ -19,6 +19,7 @@ svn_error_t *filees_wc_add(const char *wc_arg, svn_boolean_t live,
     int i;
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     for (i = 0; i < paths->nelts; ++i) {
         const char *path = APR_ARRAY_IDX(paths, i, const char *);
         /* FileES: --parents --depth empty, never recursive add of a tree. */
@@ -35,6 +36,7 @@ svn_error_t *filees_wc_delete(const char *wc_arg, svn_boolean_t live,
     apr_array_header_t *paths;
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     return svn_client_delete4(paths, FALSE, FALSE, NULL, NULL, NULL, ctx, pool);
 }
 
@@ -224,6 +226,7 @@ svn_error_t *filees_wc_propset(const char *wc_arg, svn_boolean_t live,
         return filees_refuse("property name must be a valid SVN property");
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
     val = svn_string_create(value ? value : "", pool);
+    SVN_ERR(filees_writer_guard(wc, pool));
     return svn_client_propset_local(name, val, paths, svn_depth_empty, FALSE, NULL, ctx, pool);
 }
 
@@ -237,6 +240,7 @@ svn_error_t *filees_wc_propdel(const char *wc_arg, svn_boolean_t live,
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     if (!name || !*name) return filees_refuse("property name required");
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     return svn_client_propset_local(name, NULL, paths, svn_depth_empty, FALSE, NULL, ctx, pool);
 }
 
@@ -309,6 +313,7 @@ svn_error_t *filees_wc_cleanup(const char *wc_arg, svn_boolean_t live,
     const char *wc;
     svn_client_ctx_t *ctx;
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     return svn_client_cleanup2(wc, TRUE, TRUE, TRUE, FALSE, FALSE, ctx, pool);
 }
 
@@ -320,6 +325,7 @@ svn_error_t *filees_wc_revert(const char *wc_arg, svn_boolean_t live,
     apr_array_header_t *paths;
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     return svn_client_revert4(paths, svn_depth_empty, NULL, FALSE, FALSE, TRUE, ctx, pool);
 }
 
@@ -333,6 +339,7 @@ svn_error_t *filees_wc_resolve(const char *wc_arg, svn_boolean_t live,
     int i;
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     for (i = 0; i < paths->nelts; ++i) {
         const char *path = APR_ARRAY_IDX(paths, i, const char *);
         SVN_ERR(svn_client_resolve(path, svn_depth_empty, choice, ctx, pool));

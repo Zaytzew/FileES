@@ -225,6 +225,9 @@ func (c *execClient) nativeCommit(ctx context.Context, wc string, paths []string
 	if e := c.nativeRequireFeature(ctx, "commit_targets_stdin_v1"); e != nil {
 		return "", 0, e
 	}
+	if e := c.nativeRequireFeature(ctx, "writer_lease_v1"); e != nil {
+		return "", 0, e
+	}
 	args := []string{"commit", "--wc", wc, "-m", message}
 	if keep {
 		args = append(args, "--keep-locks")

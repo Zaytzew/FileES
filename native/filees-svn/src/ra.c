@@ -533,6 +533,163 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
     return SVN_NO_ERROR;
 }
 
+struct repair_observation { const char *path; svn_client_status_t *status; apr_pool_t *pool; };
+static svn_error_t *repair_status(void *baton, const char *path,
+                                   const svn_client_status_t *status, apr_pool_t *pool)
+{
+    struct repair_observation *b = baton;
+    (void)path; (void)pool;
+    if (!strcmp(status->local_abspath, b->path)) b->status = svn_client_status_dup(status, b->pool);
+    return SVN_NO_ERROR;
+}
+static svn_error_t *repair_observe(svn_client_status_t **status, const char *path,
+                                   svn_client_ctx_t *ctx, apr_pool_t *pool)
+{
+    struct repair_observation b = {path, NULL, pool};
+    svn_opt_revision_t working;
+    working.kind = svn_opt_revision_working;
+    SVN_ERR(svn_client_status6(NULL, ctx, path, &working, svn_depth_empty,
+                               TRUE, FALSE, TRUE, TRUE, TRUE, FALSE,
+                               NULL, repair_status, &b, pool));
+    if (!b.status) return filees_refuse("recovery requires an exact WC observation");
+    *status = b.status;
+    return SVN_NO_ERROR;
+}
+struct repair_conflicts { apr_hash_t *paths; svn_revnum_t revision; };
+static svn_error_t *repair_no_props(void *baton, const char *path,
+                                    apr_hash_t *props, apr_array_header_t *inherited,
+                                    apr_pool_t *pool)
+{
+    (void)baton; (void)path; (void)inherited; (void)pool;
+    if (apr_hash_count(props)) return filees_refuse("recovery refuses committed properties");
+    return SVN_NO_ERROR;
+}
+static svn_error_t *repair_keep_text(svn_wc_conflict_result_t **result,
+                                     const svn_wc_conflict_description2_t *d,
+                                     void *baton, apr_pool_t *result_pool,
+                                     apr_pool_t *scratch_pool)
+{
+    struct repair_conflicts *b = baton;
+    (void)scratch_pool;
+    if (d->kind != svn_wc_conflict_kind_text || d->node_kind != svn_node_file ||
+        !apr_hash_get(b->paths, d->local_abspath, APR_HASH_KEY_STRING) ||
+        !d->src_right_version || d->src_right_version->peg_rev != b->revision)
+        return filees_refuse("recovery refuses an unexpected conflict");
+    *result = svn_wc_create_conflict_result(svn_wc_conflict_choose_mine_full, NULL, result_pool);
+    return SVN_NO_ERROR;
+}
+
+/* A deliberately narrow receipt repair, NOT a general update/resolve mode.
+ * Only plain, nonempty, no-property additions are admitted, and only if the
+ * exact revision/UUID proves their creation without copy history. Other
+ * structural/translation cases retain HOLD instead of guessing. The conflict
+ * choice applies during update, not by resolving pre-existing user conflicts.
+ * Replay skips targets already at or beyond the receipt, never downgrades. */
+svn_error_t *filees_recover_commit(const char *wc_arg, svn_boolean_t live,
+                                   const char *url_arg, const char *marker,
+                                   svn_revnum_t revision, const char **rels,
+                                   int n, apr_pool_t *pool)
+{
+    const char *wc, *url, *root_url;
+    svn_client_ctx_t *ctx;
+    svn_client_status_t *root;
+    apr_array_header_t *paths, *targets, *ranges, *props, *selected, *revisions;
+    apr_hash_t *checksums;
+    svn_opt_revision_range_t range;
+    svn_opt_revision_t rev;
+    struct log_baton log;
+    struct log_entry *entry;
+    struct repair_conflicts conflicts;
+    int i, j, matches = 0;
+    if (revision < 1 || !marker || !*marker || n < 1) return filees_refuse("invalid recovery identity");
+    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_ra_ctx_auth(ctx, pool));
+    SVN_ERR(filees_ra_target(&url, url_arg, pool));
+    SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    SVN_ERR(repair_observe(&root, wc, ctx, pool));
+    if (!root->repos_root_url || !root->repos_relpath || root->switched || root->conflicted)
+        return filees_refuse("recovery WC identity unavailable");
+    root_url = svn_path_url_add_component2(root->repos_root_url, root->repos_relpath, pool);
+    if (strcmp(url, root_url)) return filees_refuse("recovery URL differs from WC identity");
+    rev.kind = svn_opt_revision_number; rev.value.number = revision;
+    range.start = range.end = rev;
+    targets = apr_array_make(pool, 1, sizeof(const char *));
+    APR_ARRAY_PUSH(targets, const char *) = url;
+    ranges = apr_array_make(pool, 1, sizeof(svn_opt_revision_range_t *));
+    APR_ARRAY_PUSH(ranges, svn_opt_revision_range_t *) = &range;
+    props = apr_array_make(pool, 1, sizeof(const char *));
+    APR_ARRAY_PUSH(props, const char *) = "filees:commit-id";
+    log.pool = pool; log.entries = apr_array_make(pool, 1, sizeof(struct log_entry));
+    SVN_ERR(svn_client_log5(targets, &rev, ranges, 1, TRUE, TRUE, FALSE,
+                            props, collect_log, &log, ctx, pool));
+    if (log.entries->nelts != 1) return filees_refuse("recovery revision unavailable");
+    entry = &APR_ARRAY_IDX(log.entries, 0, struct log_entry);
+    for (j = 0; j < entry->extra->nelts; ++j) {
+        struct log_revprop *p = &APR_ARRAY_IDX(entry->extra, j, struct log_revprop);
+        if (!strcmp(p->name, "filees:commit-id") && p->value && !strcmp(p->value, marker)) ++matches;
+    }
+    if (entry->revision != revision || matches != 1) return filees_refuse("recovery receipt mismatch");
+    selected = apr_array_make(pool, n, sizeof(const char *));
+    checksums = apr_hash_make(pool);
+    conflicts.paths = apr_hash_make(pool); conflicts.revision = revision;
+    /* Complete read-only admission before the first update. */
+    for (i = 0; i < paths->nelts; ++i) {
+        const char *path = APR_ARRAY_IDX(paths, i, const char *);
+        const char *key = apr_pstrcat(pool, "/", root->repos_relpath,
+                                      *root->repos_relpath ? "/" : "", rels[i], NULL);
+        svn_client_status_t *s;
+        struct log_path *change = NULL;
+        apr_hash_t *local_props;
+        svn_checksum_t *checksum;
+        apr_finfo_t info;
+        SVN_ERR(repair_observe(&s, path, ctx, pool));
+        if (!s->versioned || s->conflicted || s->switched || s->file_external || s->wc_is_locked || s->node_status == svn_wc_status_missing)
+            return filees_refuse("recovery target conflicted, switched or busy");
+        if (SVN_IS_VALID_REVNUM(s->revision) && s->revision >= revision) continue;
+        for (j = 0; j < entry->paths->nelts; ++j) {
+            struct log_path *p = &APR_ARRAY_IDX(entry->paths, j, struct log_path);
+            if (!strcmp(p->path, key)) change = p;
+        }
+        if (!change) continue; /* Selected by original commit, but unchanged. */
+        if (change->action != 'A' || change->copyfrom_path || strcmp(change->kind, "file") ||
+            !s->versioned || s->kind != svn_node_file || s->node_status != svn_wc_status_added || s->copied)
+            return filees_refuse("recovery currently requires a plain committed addition");
+        SVN_ERR(filees_plain_node(path, APR_REG, FALSE, pool));
+        if (apr_stat(&info, path, APR_FINFO_SIZE, pool) != APR_SUCCESS || info.size <= 0)
+            return filees_refuse("recovery refuses missing or empty working text");
+        SVN_ERR(svn_wc_prop_list2(&local_props, ctx->wc_ctx, path, pool, pool));
+        if (apr_hash_count(local_props)) return filees_refuse("recovery refuses property-bearing additions");
+        SVN_ERR(svn_client_proplist4(svn_path_url_add_component2(url, rels[i], pool),
+                                     &rev, &rev, svn_depth_empty, NULL, FALSE,
+                                     repair_no_props, NULL, ctx, pool));
+        SVN_ERR(svn_io_file_checksum2(&checksum, path, svn_checksum_sha1, pool));
+        apr_hash_set(checksums, path, APR_HASH_KEY_STRING, checksum);
+        APR_ARRAY_PUSH(selected, const char *) = path;
+        apr_hash_set(conflicts.paths, path, APR_HASH_KEY_STRING, path);
+    }
+    ctx->conflict_func2 = repair_keep_text; ctx->conflict_baton2 = &conflicts;
+    if (selected->nelts)
+        SVN_ERR(svn_client_update4(&revisions, selected, &rev, svn_depth_empty,
+                                   FALSE, TRUE, FALSE, TRUE, FALSE, ctx, pool));
+    /* Exit zero is not proof of reconciliation: postponed conflicts must not
+     * become a daemon ACK. A concurrent writer also retains the intent. */
+    for (i = 0; i < selected->nelts; ++i) {
+        const char *path = APR_ARRAY_IDX(selected, i, const char *);
+        svn_client_status_t *s;
+        svn_checksum_t *after;
+        SVN_ERR(repair_observe(&s, path, ctx, pool));
+        if (s->conflicted || s->revision != revision ||
+            (s->node_status != svn_wc_status_normal && s->node_status != svn_wc_status_modified))
+            return filees_refuse("recovery metadata remains unresolved");
+        SVN_ERR(svn_io_file_checksum2(&after, path, svn_checksum_sha1, pool));
+        if (!svn_checksum_match(after, apr_hash_get(checksums, path, APR_HASH_KEY_STRING)))
+            return filees_refuse("working text changed during recovery; intent must be retained");
+    }
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"revision\":%ld,\"reconciled\":%d}\n",
+           (long)revision, selected->nelts);
+    return SVN_NO_ERROR;
+}
+
 struct lock_result {
     const char *path;
     const char *failure; /* NULL when it worked */

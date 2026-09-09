@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,6 +16,50 @@ type TransactionCommitter interface {
 	CommitHead(context.Context, string) (int64, error)
 	CommitWithID(context.Context, string, string, []string, string, bool, string, int64) (string, int64, error)
 	FindCommit(context.Context, string, string, int64) (int64, error)
+}
+
+// CommitReconciler repairs only local metadata for an already confirmed
+// receipt. It must never publish again or acknowledge a watcher generation.
+// Unsupported/ambiguous native states return an error and retain the intent.
+type CommitReconciler interface {
+	ReconcileCommit(context.Context, string, string, []string, string, int64) error
+}
+
+func (c *execClient) ReconcileCommit(ctx context.Context, wc, repoURL string, paths []string, marker string, revision int64) error {
+	if _, err := uuid.Parse(marker); err != nil || revision < 1 || strings.TrimSpace(repoURL) == "" {
+		return errors.New("invalid confirmed commit identity")
+	}
+	if !nativeWCOps(c) {
+		// This increment does not change the Unix CLI recovery policy.
+		return nil
+	}
+	rels, err := nativeRelatives(wc, paths)
+	if err != nil {
+		return err
+	}
+	if len(rels) != len(paths) {
+		return errors.New("native recovery refuses WC root targets")
+	}
+	input, err := nativeCommitTargets(rels)
+	if err != nil {
+		return err
+	}
+	if err := c.nativeRequireFeature(ctx, "recover_plain_add_v1"); err != nil {
+		return err
+	}
+	r, err := c.nativeRemoteInput(ctx, wc, input, "recover-commit", "--wc", wc, "--url", repoURL,
+		"--commit-id", marker, "--revision", strconv.FormatInt(revision, 10), "--targets-stdin")
+	if err != nil {
+		return err
+	}
+	got, err := nativeRevisionValue(r, "revision", false)
+	if err != nil {
+		return err
+	}
+	if got != revision {
+		return errors.New("native recovery receipt revision mismatch")
+	}
+	return nil
 }
 
 func (c *execClient) CommitHead(ctx context.Context, repoURL string) (int64, error) {

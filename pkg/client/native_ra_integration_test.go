@@ -13,6 +13,58 @@ import (
 	"filees/internal/svnurl"
 )
 
+func TestNativeRecoveryAdapterWithoutCLI(t *testing.T) {
+	helper := os.Getenv("FILEES_SVN_PROBE")
+	if helper == "" {
+		t.Fatal("FILEES_SVN_PROBE required")
+	}
+	root := t.TempDir()
+	repo, wc, interrupted := filepath.Join(root, "repo"), filepath.Join(root, "wc"), filepath.Join(root, "interrupted")
+	if out, err := exec.Command(nativeFixtureTool(t, "svnadmin"), "create", repo).CombinedOutput(); err != nil {
+		t.Fatal(err, string(out))
+	}
+	url := svnurl.File(repo)
+	c := New(Options{NativeSVNPath: helper, SvnPath: filepath.Join(root, "absent-cli.exe")}).(*execClient)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := c.Checkout(t.Context(), url, wc)
+	must(err)
+	must(os.Mkdir(filepath.Join(wc, ".filees"), 0700))
+	must(os.WriteFile(filepath.Join(wc, "new.txt"), []byte("published\n"), 0600))
+	_, err = c.Add(t.Context(), wc, []string{"new.txt"})
+	must(err)
+	must(os.CopyFS(interrupted, os.DirFS(wc)))
+	marker := "882e3df8-6093-4600-8d26-6e9d09352706"
+	_, rev, err := c.CommitWithID(t.Context(), wc, url, []string{"new.txt"}, "receipt", false, marker, 1)
+	must(err)
+	if rev != 1 {
+		t.Fatal(rev)
+	}
+	must(os.WriteFile(filepath.Join(interrupted, "new.txt"), []byte("later unsent edit\n"), 0600))
+	for range 2 {
+		must(c.ReconcileCommit(t.Context(), interrupted, url, []string{"new.txt"}, marker, rev))
+	}
+	entries, err := c.Status(t.Context(), interrupted, []string{"new.txt"})
+	must(err)
+	if len(entries) != 1 || entries[0].Item != "modified" {
+		t.Fatal(entries)
+	}
+	got, err := os.ReadFile(filepath.Join(interrupted, "new.txt"))
+	must(err)
+	if string(got) != "later unsent edit\n" {
+		t.Fatal("later text lost", string(got))
+	}
+	head, err := c.CommitHead(t.Context(), url)
+	must(err)
+	if head != rev {
+		t.Fatal("recovery created a new revision", head)
+	}
+}
+
 func TestNativeRAAdapterWithoutCLI(t *testing.T) {
 	helper := os.Getenv("FILEES_SVN_PROBE")
 	if helper == "" {

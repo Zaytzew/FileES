@@ -20,7 +20,7 @@
 static const char *const k_verbs[] = {
     "record-move", "checkout", "update", "commit", "lock", "unlock", "cat",
     "log", "status", "info", "add", "delete", "propget", "propset",
-    "propdel", "cleanup", "revert", "resolve", NULL
+    "propdel", "cleanup", "revert", "resolve", "recover-commit", NULL
 };
 
 static void print_ok_version(void)
@@ -34,7 +34,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\",\"recover_plain_add_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -318,6 +318,29 @@ static svn_error_t *run_commit(int argc, const char **argv, apr_pool_t *pool)
     return filees_ra_commit(wc, live, paths, n, message, keep_locks, revprops, nrevprops, pool);
 }
 
+static svn_error_t *run_recover_commit(int argc, const char **argv, apr_pool_t *pool)
+{
+    const char *wc = NULL, *url = NULL, *marker = NULL;
+    const char **paths = NULL;
+    svn_revnum_t revision = SVN_INVALID_REVNUM;
+    svn_boolean_t live = TRUE, input = FALSE;
+    int i, n = 0;
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
+            SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live)); continue;
+        }
+        if (!strcmp(argv[i], "--url") && i + 1 < argc) { url = argv[++i]; continue; }
+        if (!strcmp(argv[i], "--commit-id") && i + 1 < argc) { marker = argv[++i]; continue; }
+        if (!strcmp(argv[i], "--revision")) { SVN_ERR(parse_revision_flag(&i, argc, argv, &revision)); continue; }
+        if (!strcmp(argv[i], "--targets-stdin") && !input) { input = TRUE; continue; }
+        return filees_refuse("invalid recover-commit arguments");
+    }
+    if (!wc || !url || !marker || !*marker || revision < 1 || !input)
+        return filees_refuse("recover-commit requires WC, URL, commit-id, revision and targets-stdin");
+    SVN_ERR(stdin_targets(&paths, &n, pool));
+    return filees_recover_commit(wc, live, url, marker, revision, paths, n, pool);
+}
+
 static svn_error_t *run_lock(int argc, const char **argv, svn_boolean_t locking,
                              apr_pool_t *pool)
 {
@@ -398,6 +421,7 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     if (!strcmp(verb, "unlock")) return run_lock(argc, argv, FALSE, pool);
     if (!strcmp(verb, "checkout")) return run_checkout(argc, argv, pool);
     if (!strcmp(verb, "update")) return run_update(argc, argv, pool);
+    if (!strcmp(verb, "recover-commit")) return run_recover_commit(argc, argv, pool);
     if (!strcmp(verb, "log")) return run_log(argc, argv, pool);
     if (!strcmp(verb, "info")) return run_info(argc, argv, pool);
 

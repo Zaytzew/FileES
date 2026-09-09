@@ -105,6 +105,21 @@
 <li><a href="security.html">Dodatek bezpieczeństwa</a> — niezmienniki, transport, granica GUI.</li>
 <li>Polecenia systemowe — rola, składnia, flagi i przykłady każdego polecenia serwera.</li>
 </ul>
+<h2>Stan na 2026-09-10</h2>
+<div class="table-wrap"><table>
+<tr><th>Obszar</th><th>Stan</th></tr>
+<tr><td>Demon pulpitu i tacka</td><td><span class="status status-verified">Zweryfikowane</span> Linux i Windows; GUI jest cienkim klientem IPC</td></tr>
+<tr><td>Klient Android</td><td><span class="status status-verified">Zweryfikowane live</span> 2026-09-09 na <code>spot</code>: QR, przegląd, pobranie, 198 plików w jednym zatwierdzeniu</td></tr>
+<tr><td>Aktywacja i dołączenie do strefy</td><td><span class="status status-verified">Zweryfikowane</span> łącznie z OTP przez nazwany potok na Windows i wznowieniem przyjętej próby</td></tr>
+<tr><td>Wybiórcze podłączenie, odnalezienie, odłączenie, wczytanie zrzutu</td><td><span class="status status-verified">Zweryfikowane</span></td></tr>
+<tr><td>Uprawnienia strefy i widoczność</td><td><span class="status status-verified">Zweryfikowane</span> wyłącznie właściciel; bez przekazywania dalej</td></tr>
+<tr><td>Polityka edycji repozytorium</td><td><span class="status status-verified">Zweryfikowane</span> odbiór na żywo 6/6 na dwóch klientach Windows</td></tr>
+<tr><td>Udziały publiczne</td><td><span class="status status-verified">Zweryfikowane</span> punkt HTTPS na żywo, OTP, oznaczenia, ZIP; mapa obiektów jest migawką</td></tr>
+<tr><td><code>FILEES-BIN</code> / <code>filees-install</code></td><td><span class="status status-verified">Zweryfikowane</span> podpisane r1042 (alpha) na produkcyjnym OpenBSD</td></tr>
+<tr><td>MSI dla Windows i pakowanie usługi</td><td><span class="status status-implemented">Zaimplementowane</span> wyłącznie MSI z GUI; demon jest osobną binarką</td></tr>
+<tr><td>Serwer linuksowy</td><td><span class="status status-implemented">Zaimplementowane</span> kod serwera buduje się i przechodzi swój zestaw testów na Linuksie — zmierzone po raz pierwszy natywnie na Debianie 13 dnia 2026-09-09, po czym jedyne pozostałe porażki okazały się wadami niezwiązanymi z platformą. Instalacja, nadzór usługi, zrzucanie uprawnień i pakowanie są <em>jeszcze nie wdrożone</em>: nie ma linuksowego instalatora, a <code>pledge</code>/<code>unveil</code> nie istnieje poza OpenBSD, więc na Linuksie zamknięcie procesu jest obowiązkiem administratora</td></tr>
+<tr><td>Kanał wrzutek</td><td><span class="status status-implemented">Zaimplementowane</span> półka wrzutek działa na produkcji od r601 (utworzenie, wysyłka, lista, cofnięcie); OTP nadawcy i kwarantanna antywirusowa (48 h) są gotowe w źródłach i czekają na następne podpisane wydanie <code>FILEES-BIN</code>; <code>slots</code>/DROPPER pozostają celowo wyłączone</td></tr>
+</table></div>
 </div>
 </div>
 <footer class="manual-footer">FileES</footer>

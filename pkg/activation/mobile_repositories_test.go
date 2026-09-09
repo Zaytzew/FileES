@@ -17,10 +17,15 @@ import (
 )
 
 // writeCanonicalRepositoryRecord seeds admin/repositories/<repoID>.json
-// exactly as pkg/repoworker.ServicePublisher.Publish would - this test
-// writes it directly (no svn add/commit) since mobileRepositoryEntries only
-// ever reads the local filesystem, never SVN state.
-func writeCanonicalRepositoryRecord(t *testing.T, wc, repoID, realmID, state string) {
+// exactly as pkg/repoworker.ServicePublisher.Publish would — including the
+// commit, which is what makes it server state rather than a local scribble.
+//
+// The previous version wrote the file and stopped there, reasoning that
+// mobileRepositoryEntries only ever reads the local filesystem and never SVN.
+// That was true of mobileRepositoryEntries and beside the point: Manager.Publish
+// reconciles the working copy first and cleanup --remove-unversioned deletes an
+// unversioned record before anything reads it. See commitServiceFixture.
+func writeCanonicalRepositoryRecord(t *testing.T, svn, wc, repoID, realmID, state string) {
 	t.Helper()
 	path := filepath.Join(wc, "admin", "repositories", repoID+".json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -38,6 +43,7 @@ func writeCanonicalRepositoryRecord(t *testing.T, wc, repoID, realmID, state str
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	commitServiceFixture(t, svn, "fixture: canonical repository record "+state, path)
 }
 
 func testMobileActivationGrant(t *testing.T, expires time.Time, repos []onboarding.MobileRepositoryGrant) onboarding.ActivationGrant {
@@ -65,7 +71,7 @@ func TestPublishSeedsMobileViewWithInheritedRepositories(t *testing.T) {
 	grant := testMobileActivationGrant(t, time.Now().Add(time.Hour), []onboarding.MobileRepositoryGrant{
 		{RepoID: repoID, Access: "r", AttachmentPolicy: "required"},
 	})
-	writeCanonicalRepositoryRecord(t, config.ServiceWorkingCopy, repoID, grant.RealmID, "active")
+	writeCanonicalRepositoryRecord(t, config.SVNBinary, config.ServiceWorkingCopy, repoID, grant.RealmID, "active")
 
 	if err := manager.Stage(grant); err != nil {
 		t.Fatal(err)
@@ -107,7 +113,7 @@ func TestPublishReadsMobileRepositoryStateFreshNotFromMintTimeSnapshot(t *testin
 		{RepoID: repoID, Access: "rw", AttachmentPolicy: "optional"},
 	})
 	// State at "mint time" is still initializing...
-	writeCanonicalRepositoryRecord(t, config.ServiceWorkingCopy, repoID, grant.RealmID, "initializing")
+	writeCanonicalRepositoryRecord(t, config.SVNBinary, config.ServiceWorkingCopy, repoID, grant.RealmID, "initializing")
 	if err := manager.Stage(grant); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +122,7 @@ func TestPublishReadsMobileRepositoryStateFreshNotFromMintTimeSnapshot(t *testin
 	}
 	// ...but flips to active before the phone finishes, same as a real
 	// concurrent INITIAL_COMMIT completing during the pairing window.
-	writeCanonicalRepositoryRecord(t, config.ServiceWorkingCopy, repoID, grant.RealmID, "active")
+	writeCanonicalRepositoryRecord(t, config.SVNBinary, config.ServiceWorkingCopy, repoID, grant.RealmID, "active")
 
 	if _, err := manager.Publish(context.Background(), grant); err != nil {
 		t.Fatal(err)

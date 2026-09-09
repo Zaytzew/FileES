@@ -8,6 +8,42 @@ import (
 	contract "filees/pkg/contract/v1"
 )
 
+func TestIntentNativeNotificationEpisodes(t *testing.T) {
+	var policy intentAlertPolicy
+	s := Snapshot{Connected: true, Repositories: []RepoProjection{{ID: "repo", ServerID: "server", DisplayName: "Test", IntentResolutionRequired: true}}}
+	if got := policy.Observe(s); len(got) != 1 || !strings.Contains(got[0].Body, "Test") {
+		t.Fatalf("first fresh: %+v", got)
+	}
+	for i := 0; i < 10; i++ {
+		if len(policy.Observe(s)) != 0 {
+			t.Fatal("repeated tick")
+		}
+	}
+	s.Stale = true
+	s.Repositories = nil
+	policy.Observe(s)
+	s.Stale = false
+	s.Repositories = []RepoProjection{{ID: "repo", ServerID: "server", IntentResolutionRequired: true}}
+	if len(policy.Observe(s)) != 0 {
+		t.Fatal("reconnect repeated unresolved episode")
+	}
+	s.Repositories[0].IntentResolutionRequired = false
+	policy.Observe(s)
+	s.Repositories[0].IntentResolutionRequired = true
+	if len(policy.Observe(s)) != 1 {
+		t.Fatal("new episode was suppressed")
+	}
+	var startup intentAlertPolicy
+	s.Connected = false
+	if len(startup.Observe(s)) != 0 {
+		t.Fatal("offline notification")
+	}
+	s.Connected = true
+	if len(startup.Observe(s)) != 1 {
+		t.Fatal("offline baseline swallowed alert")
+	}
+}
+
 func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 	projection := projectWailsTray(Snapshot{
 		Connected: true, IconState: string(guiapp.IconActive),

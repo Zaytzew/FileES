@@ -53,7 +53,16 @@ outside
 .It Ic ACCESS_REVOKED
 the installation no longer holds
 .Sy rw
+.It Ic REPO_INACTIVE
+reserved, not implemented yet: repository state does not reach the append
+worker, so an inactive repository is indistinguishable from an active one
+.It Ic POLICY_REJECTED
+reserved, not implemented yet: the mobile policy check named by the protocol
+has no implementation in the worker
 .El
+.Pp
+The two reserved outcomes are part of the wire contract and a client may
+receive them from a future server; no current code path produces either.
 .Pp
 Missing parent directories are created only under
 .Pa mobile-uploads/ ,

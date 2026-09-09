@@ -61,6 +61,7 @@ func TestActivationStagesProofAndPublishesOneServiceRevision(t *testing.T) {
 	if err := atomicWriteJSON(realmPath, realm, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	commitServiceFixture(t, config.SVNBinary, "fixture: realm alias claimed", realmPath)
 	second := testActivationGrant(t, time.Now().Add(time.Hour))
 	second.RealmID = grant.RealmID
 	if err := manager.Stage(second); err != nil {
@@ -650,6 +651,65 @@ func testActivationGrant(t *testing.T, expires time.Time) onboarding.ActivationG
 		InstallationPublicKey:   strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))) + " filees:test",
 		InstallationFingerprint: ssh.FingerprintSHA256(key), ExpiresAt: expires,
 	}
+}
+
+// commitServiceFixture makes prepared data part of the repository, which is
+// the only form the product recognises.
+//
+// Manager.Publish reconciles the service working copy before it does anything
+// else — svn cleanup, revert -R, cleanup --remove-unversioned, update — so a
+// file merely written into that working copy is discarded before any code can
+// read it. That reconciliation is a production guarantee, not an obstacle: a
+// service commit must carry repository state and nothing else. It is not to be
+// weakened so that a fixture survives.
+//
+// In the product these records arrive through product operations that commit
+// them: realm.alias_claim → ticket CLAIM_REALM_ALIAS → RealmAliases.Claim for
+// an alias, and ServicePublisher.Publish for a canonical repository record.
+// A fixture stands in for that by committing the prepared paths itself, and
+// only those paths.
+//
+// Measured 2026-09-09 on Debian 13: without this, the realm file still carried
+// alias="acme" after Stage and after RecordProof, and had lost it after
+// Publish. On Windows the same fixtures survived, so three assertions here
+// were being satisfied by accident and the behaviour they name — a joining
+// client inheriting the realm alias, a mobile view inheriting repositories —
+// had no working coverage at all.
+func commitServiceFixture(t *testing.T, svn, message string, paths ...string) {
+	t.Helper()
+	targets := make([]string, 0, len(paths))
+	for _, path := range paths {
+		// A record being created must be added; one being changed is already
+		// versioned and adding it again is an error, not a no-op.
+		// Work out what to commit BEFORE adding anything. svn add makes a
+		// directory locally known, so afterwards svn info answers for a path
+		// that still does not exist in the repository, and the walk below
+		// would stop one level too low.
+		//
+		// Commit the topmost path that had to be created, not the leaf: svn
+		// refuses a commit whose parent directory is itself newly added and
+		// absent from the change set. admin/repositories is exactly that case
+		// the first time a canonical record appears.
+		target := path
+		for {
+			parent := filepath.Dir(target)
+			if parent == target {
+				break
+			}
+			if err := exec.Command(svn, "info", "--non-interactive", parent).Run(); err == nil {
+				break
+			}
+			target = parent
+		}
+		// A record being created must be added; one being changed is already
+		// versioned and adding it again is an error, not a no-op.
+		if err := exec.Command(svn, "info", "--non-interactive", path).Run(); err != nil {
+			runActivationCommand(t, svn, "add", "--parents", "--non-interactive", path)
+		}
+		targets = append(targets, target)
+	}
+	args := append([]string{"commit", "--non-interactive", "--no-auth-cache", "-m", message}, targets...)
+	runActivationCommand(t, svn, args...)
 }
 
 func runActivationCommand(t *testing.T, command string, args ...string) {

@@ -56,6 +56,21 @@ results. This describes source capabilities, not a new runtime acceptance.
 Private client on the public Apache SVN 1.14 C API. Separate process: the
 Go daemon does not use cgo. `filees-svn --version` lists implemented verbs.
 
+`recover-commit --wc WC --url URL --commit-id UUID --revision R --targets-stdin`
+advertises `recover_plain_add_v1`. It is a narrow local repair of a confirmed
+plain nonempty file addition, not a retry of commit. Before update it verifies
+WC URL, exact revision marker, changed-path A without copy history and absence
+of both local and committed properties. All targets are admitted before any
+update. Only a matching incoming text conflict may keep the working text;
+existing/tree/property conflicts refuse. Update is depth-empty and pinned to
+R; newer BASE is never downgraded. Final status/revision/checksum are checked.
+The Windows Go adapter invokes this before the daemon acknowledges its original
+publication snapshot. It does not change Unix routing or add a CLI fallback.
+No cleanup or lock breaking is performed. Orphaned WC locks, other metadata
+shapes, concurrent writers and a crash during repair remain acceptance gaps;
+do not interpret the plain-add tests as general crash recovery acceptance.
+Evidence: `reports/NATIVE_PLAIN_ADD_RECOVERY_2026-09-09.md`.
+
 Linux daemon still uses the helper only for `record-move`; every other
 operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
 also routes WC-local verbs (status, add, delete, prop*, cleanup, revert,

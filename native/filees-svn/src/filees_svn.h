@@ -62,6 +62,10 @@ svn_error_t *filees_ra_commit(const char *wc, svn_boolean_t live,
 svn_error_t *filees_ra_lock(const char *wc, svn_boolean_t live,
                             const char **rels, int n, const char *comment,
                             apr_pool_t *pool);
+svn_error_t *filees_recover_commit(const char *wc, svn_boolean_t live,
+                                   const char *url, const char *marker,
+                                   svn_revnum_t revision, const char **rels,
+                                   int n, apr_pool_t *pool);
 svn_error_t *filees_ra_unlock(const char *wc, svn_boolean_t live,
                               const char **rels, int n, apr_pool_t *pool);
 svn_error_t *filees_log(svn_client_ctx_t *ctx, const char *target,

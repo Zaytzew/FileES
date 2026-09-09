@@ -188,6 +188,13 @@ func (s *Service) recoverCommit(ctx context.Context, wc string) (bool, error) {
 			return true, err
 		}
 	}
+	if in.Phase == "confirmed" {
+		if c, ok := s.Cli.(client.CommitReconciler); ok {
+			if err := c.ReconcileCommit(ctx, wc, in.RepoURL, in.Paths, in.ID, in.Revision); err != nil {
+				return true, fmt.Errorf("commit confirmed; local reconciliation pending: %w", err)
+			}
+		}
+	}
 	return true, s.finishIntent(ctx, wc, in)
 }
 

@@ -191,7 +191,14 @@ func (s DumpLoadService) extractCarrier(ctx context.Context, repoPath string) ([
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(strings.TrimRight(string(tree), "\n"), "\n")
+	// Normalise line endings before splitting. svnlook emits CRLF on Windows,
+	// and splitting on a bare newline leaves a carriage return on every entry -
+	// so lines[0] was "/\r", the check failed, and the message blamed the
+	// repository tree for what the parser had done to it. The server runs on
+	// OpenBSD where this never showed, which is exactly why it is worth removing:
+	// the parser should not depend on who spelled the newline.
+	text := strings.ReplaceAll(string(tree), "\r\n", "\n")
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	if len(lines) != 2 || lines[0] != "/" || lines[1] == "" || strings.HasSuffix(lines[1], "/") || strings.Contains(lines[1], "/") {
 		return nil, fmt.Errorf("LOAD_REPOSITORY_DUMP precondition failed: repository tree at r1 is not exactly one file at the repo root: %q", string(tree))
 	}

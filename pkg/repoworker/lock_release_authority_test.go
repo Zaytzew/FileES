@@ -11,6 +11,13 @@ import (
 )
 
 func TestSVNAdminLockAuthorityInspectsExactPathAndPassportRealm(t *testing.T) {
+	// The worker serialises on kernel file locks. Windows keeps a marker file
+	// instead and is deliberately fail-closed, so every one of these reports
+	// "repository worker is already active" - a true statement about a lock that
+	// does not exist here. The package says so itself via FileLocksSupported.
+	if !FileLocksSupported() {
+		t.Skip("repository worker needs kernel file locks; verified where they exist")
+	}
 	repoID := uuid.NewString()
 	holderID := uuid.NewString()
 	realmID := uuid.NewString()
@@ -38,6 +45,13 @@ func TestSVNAdminLockAuthorityInspectsExactPathAndPassportRealm(t *testing.T) {
 }
 
 func TestSVNAdminLockAuthorityReturnsNilForAbsentLock(t *testing.T) {
+	// The worker serialises on kernel file locks. Windows keeps a marker file
+	// instead and is deliberately fail-closed, so every one of these reports
+	// "repository worker is already active" - a true statement about a lock that
+	// does not exist here. The package says so itself via FileLocksSupported.
+	if !FileLocksSupported() {
+		t.Skip("repository worker needs kernel file locks; verified where they exist")
+	}
 	authority := SVNAdminLockAuthority{
 		SVNAdmin: "/usr/bin/svnadmin", RepositoriesRoot: t.TempDir(),
 		Run: func(context.Context, string, ...string) ([]byte, error) { return nil, nil },

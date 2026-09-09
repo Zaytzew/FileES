@@ -19,6 +19,13 @@ import (
 )
 
 func TestSVNPathOwnersRenameForkRevokeAndRegrant(t *testing.T) {
+	// The worker serialises on kernel file locks. Windows keeps a marker file
+	// instead and is deliberately fail-closed, so every one of these reports
+	// "repository worker is already active" - a true statement about a lock that
+	// does not exist here. The package says so itself via FileLocksSupported.
+	if !FileLocksSupported() {
+		t.Skip("repository worker needs kernel file locks; verified where they exist")
+	}
 	for _, binary := range []string{"svn", "svnadmin"} {
 		if _, err := exec.LookPath(binary); err != nil {
 			t.Skip(binary + " unavailable")

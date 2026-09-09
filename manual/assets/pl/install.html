@@ -63,7 +63,7 @@
 <div class="manual-content">
 <h1 id="ch3">Rozdział 3: Instalacja i wdrożenie serwera</h1><div class="chapter-content">
 <p>Ten rozdział opisuje wymagania, instalację serwera, integrację z <code>sshd</code>, konfigurację <code>server.json</code>, generowanie kluczy oraz aktualizacje przez <code>filees-install</code>. Szczegółowe kontrakty eksploatacyjne znajdują się w rozdziale „Eksploatacja”.</p>
-<h2 id="ch3-prereq">3.1 Wymagania wstępne</h2>
+<h2 id="ch3-prereq">3.1 Wymagania wstępne</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Produkcyjny host OpenBSD 7.9 <code>spot.example.net</code> stoi na podpisanym wydaniu r1042 (kanał alpha).</span></div>
 <p>Serwer FileES jest przeznaczony przede wszystkim dla OpenBSD 7.9/amd64, które stanowi platformę referencyjną także pod względem zabezpieczeń. Pakiet dla Linux/amd64 można zbudować, ale zabezpieczenia zależne od dystrybucji pozostają obowiązkiem administratora, ponieważ Linux nie zapewnia odpowiednika kontraktu <code>pledge</code>/<code>unveil</code>. FileES nie otwiera własnego portu sieciowego: za ruch sterujący i dane odpowiada systemowy <code>sshd</code>. Udziały publiczne, jeżeli są włączone, obsługuje istniejący <code>httpd</code> przez FastCGI; FileES sam nie obsługuje TLS.</p>
 <p>Zależności zewnętrzne:</p>
 <ul>
@@ -85,7 +85,7 @@
 <tr><td><code>_filees-access</code></td><td>Grupa dla plików wykonywalnych set-id klienta, mobile i programu naprawczego</td></tr>
 <tr><td><code>_filees-public</code></td><td>Grupa gniazda procesu autoryzującego współdzielonego z filees-links</td></tr>
 </table></div>
-<h2 id="ch3-install">3.2 Uruchamianie <code>install-server.sh</code></h2>
+<h2 id="ch3-install">3.2 Uruchamianie <code>install-server.sh</code></h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD</span><span>Ścieżka generyczna i integracja openbsd obejmują kompletny pion aktywacji.</span></div>
 <p>Ogólny skrypt instalatora to <code>packaging/server/install-server.sh</code> (jest też w pakiecie w <code>dist/filees-server-openbsd-amd64/</code>).</p>
 <pre><code># As root or with doas:
 ./install-server.sh</code></pre>
@@ -116,13 +116,13 @@
 <li>Instaluje wyłączone skrypty <code>rc.d</code> dla <code>filees_public_authority</code> i <code>filees_links</code>.</li>
 <li>Weryfikuje konfigurację przez <code>sshd -t</code> i przeładowuje istniejący sshd.</li>
 </ul>
-<h2 id="ch3-sshd">3.3 Konfiguracja sshd na OpenBSD</h2>
+<h2 id="ch3-sshd">3.3 Konfiguracja sshd na OpenBSD</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD</span></div>
 <p>Bloki <code>Match User</code>, wymuszone polecenia i stały port tunelu zwrotnego są częścią kontraktu wdrożenia. Pełna konfiguracja i zasady działania są opisane w rozdziale „Eksploatacja”.</p>
-<h2 id="ch3-serverjson">3.4 Referencja <code>server.json</code></h2>
+<h2 id="ch3-serverjson">3.4 Referencja <code>server.json</code></h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <p>Po instalatorze edytuj <code>/etc/filees/server.json</code> i sprawdź nieszkodliwym <code>filees-admin ticket list</code>. Tabela pól jest w <a href="operations.html#ops-serverjson">Eksploatacji</a>.</p>
-<h2 id="ch3-keys">3.5 Generowanie kluczy</h2>
+<h2 id="ch3-keys">3.5 Generowanie kluczy</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <p>Instalator zapisuje pieprz OTP i parę kluczy procesu wykonawczego. Regeneracja któregokolwiek unieważnia aktywacja klienta w locie. Polecenia są w <a href="operations.html#ops-keys">Eksploatacji</a>.</p>
-<h2 id="ch3-managed">3.6 Zarządzana instalacja i aktualizacja: <code>filees-install</code></h2>
+<h2 id="ch3-managed">3.6 Zarządzana instalacja i aktualizacja: <code>filees-install</code></h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na produkcji</span><span>Podpisany kanał <code>FILEES-BIN</code> alpha wskazuje wydanie r1042; <code>spot.example.net</code> przyjął je 2026-09-09 (ingest UPLOAD_TREE).</span></div>
 <p><code>filees-install</code> aktualizuje serwer na podstawie podpisanego manifestu. Manifest określa także właściciela, grupę i tryb plików, w tym bity <code>set-id</code>. Instalator prowadzi trwały dziennik zmian, potrafi odtworzyć stan sprzed aktualizacji i blokuje równoległe uruchomienia. Repozytorium dystrybucyjne jest wskazane w konfiguracji instalatora; zaufany klucz publiczny jest wbudowany w program. Prywatny klucz podpisujący musi pozostawać poza repozytorium źródeł, serwerem kompilacji i repozytorium dystrybucyjnym. Po pełnej instalacji opcja <code>--adopt</code> może objąć istniejącą instalację zarządzaniem, ale tylko wtedy, gdy zawartość, właściciel, grupa i tryb wszystkich zarządzanych plików dokładnie zgadzają się z podpisanym manifestem.</p>
 <p>Aktualizację wykonuj dwuetapowo: najpierw <code>filees-install --dry-run</code>, a następnie <code>--apply</code>. Próby awaryjnego przerywania aktualizatora wykonuj wyłącznie w środowisku testowym. Aktualizator zarządza plikami wykonywalnymi określonymi przez podpisaną politykę instalacji; dokumentacja instalowana przez ogólny skrypt serwera nie jest częścią pakietu aktualizacji FILEES-BIN.</p>
 <pre><code># Plan against the configured channel (no changes):

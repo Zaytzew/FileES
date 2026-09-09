@@ -65,7 +65,7 @@
 <h1 id="ch-and">Klient Android</h1>
 <div class="chapter-content">
 <p>Telefon służy do podglądu i zbierania plików, nie do pracy edycyjnej. Udział pokazuje jako zwykłą listę folderów i plików. Zapisuje wyłącznie do <code>mobile-uploads/</code>; pozostała część drzewa jest tylko do odczytu. Szczegóły protokołu opisuje <a href="man-pages.html#filees-mobile-v1"><code>filees-mobile-v1</code></a>.</p>
-<h2 id="and-what">Co to jest</h2>
+<h2 id="and-what">Co to jest</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane live</span><span>2026-09-09 na <code>spot</code>: parowanie QR, przegląd udziału, pobranie, folder 198 plików w jednym zatwierdzeniu, drzewo widoczne na pulpicie.</span></div>
 <p>Aplikacja nie zakłada repozytoriów i nie pyta o UUID. Po sparowaniu pokazuje te same udziały, które ma pulpit w projekcji strefy. Wejście w udział to lista folderów i plików z rozmiarami po ludzku. Ikona startowa to znak <code>f:s</code>; w liście folderów — kwadratowy symbol filees:space.</p>
 <h2 id="and-pair">Sparowanie</h2>
 <p>Na aktywnym komputerze wybierz w zasobniku: serwer → Sparuj urządzenie mobilne… Otworzy się lokalna strona zabezpieczona kodem PIN z kodem QR ważnym przez pięć minut. Zeskanuj go telefonem. Po udanym sparowaniu przycisk skanowania znika z ekranu głównego; ponowne parowanie jest dostępne w Ustawieniach.</p>
@@ -77,7 +77,7 @@
 <h2 id="and-pack">Duży folder</h2>
 <p>Od ośmiu plików telefon najpierw oblicza ich liczbę i łączny rozmiar, a następnie pakuje folder do jednego pliku ZIP. Archiwum jest wyłącznie opakowaniem transportowym i nie pojawia się w udziale. Serwer sprawdza sumę SHA-256, rozpakowuje zawartość i zapisuje całość jako jedno zatwierdzenie w SVN. Jeżeli wysyłanym dokumentem jest zwykły plik <code>.zip</code>, pozostaje zwykłym plikiem i nie jest rozpakowywany ponownie.</p>
 <p>Ten mechanizm ogranicza koszt wysyłania dużej liczby małych plików naraz; nie zmienia sposobu obsługi pojedynczych bardzo dużych plików. Limit czasu długiej sesji to osobna sprawa pulpitu.</p>
-<h2 id="and-track">Śledzone foldery</h2>
+<h2 id="and-track">Śledzone foldery</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane live</span><span>2026-08-29: naprawiony realny błąd — wysyłka w tle po cichu nic nie robiła, jeśli akurat nie było otwartego repozytorium w przeglądarce udziałów.</span></div>
 <p>W Ustawieniach wybierasz folder na telefonie oraz cel wysyłki (repozytorium/udział). Aplikacja sprawdza folder co około pięć minut i wysyła nowe pliki automatycznie — cel wysyłki jest teraz niezależny od tego, które repozytorium akurat przeglądasz. Gdy włączasz śledzenie folderu, który już ma zawartość, aplikacja pyta, czy wysłać ją całą, czy tylko pliki dodane od teraz. Każda udana wysyłka w tle kończy się powiadomieniem systemowym.</p>
 <h2 id="and-not">Czego telefon nie robi</h2>
 <ul>

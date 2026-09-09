@@ -67,7 +67,7 @@
 <div class="manual-content">
 <h1 id="ch2">Rozdział 2: Przewodnik użytkownika</h1>
 <div class="chapter-content">
-<h2 id="ch2-install">2.1 Instalacja klienta</h2>
+<h2 id="ch2-install">2.1 Instalacja klienta</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Klient Wails działa na żywo na Linuksie; kompletne pakowanie MSI dla Windows pozostaje zadaniem wydaniowym.</span></div>
 <h4>Linux (bieżący klient alfa Wails)</h4>
 <pre><code># Rozpakuj bundle filees-client-linux-amd64
 chmod +x install-user.sh
@@ -85,17 +85,17 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <tr><td>GUI Linux</td><td>GTK4 i WebKitGTK 6.0; pulpit zgodny z SNI (GNOME wymaga rozszerzenia AppIndicator); <code>xdg-open</code>; <code>notify-send</code> (opcjonalnie)</td></tr>
 <tr><td>GUI Windows</td><td>Windows 11 z WebView2 Runtime; docelowo kompletne MSI klienta dla autostartu, aktualizacji i rejestracji AUMID</td></tr>
 </table></div>
-<h2 id="ch2-config">2.2 Konfiguracja</h2>
+<h2 id="ch2-config">2.2 Konfiguracja</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Walidacja i nienakładające się korzenie kopii roboczych są wymuszane przed utworzeniem stanu.</span></div>
 <p>Codzienny kształt instalacji zmieniasz w Ustawieniach (§2.6), nie przez edycję pliku. Demon nadal czyta <code>config.json</code> z katalogu roboczego (albo <code>--config</code>). Istniejący plik nie jest nadpisywany przy aktualizacji. Ścieżki kopii muszą być bezwzględne i nie mogą się zagnieżdżać. Tabela pól jest w <a href="operations.html#ops-config">Eksploatacji</a>.</p>
 <p>Aby sprawdzić konfigurację bez uruchamiania demona:</p>
 <pre><code>filees config-check --config /path/to/config.json</code></pre>
-<h2 id="ch2-firstrun">2.3 Pierwsze uruchomienie i wdrożenie</h2>
+<h2 id="ch2-firstrun">2.3 Pierwsze uruchomienie i wdrożenie</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD i Windows</span><span>Aktywacja nowej strefy oraz autoryzowane przez administratora dołączenie kolejnej instalacji należą do demona i GUI.</span></div>
 <p>Administrator serwera wysyła zaproszenie pocztą elektroniczną. Na swoim komputerze wybierz <strong>Aktywuj klienta na nowym serwerze…</strong>, wklej zaproszenie z pierwszej wiadomości, a następnie kod OTP z drugiej. Nie wpisujesz ręcznie adresu serwera, portu ani identyfikatora klienta. GUI prowadzi przez kolejne kroki, ale za połączenia sieciowe i zapis plików odpowiada demon.</p>
 <p>Zwykłe zaproszenie otwiera nową strefę. Aplikacja pyta wtedy jednorazowo o jej niezmienny alias. Zaproszenie związane z istniejącą strefą dziedziczy ten alias i jej foldery; nie jesteś pytany o zmianę nazwy. Opcjonalne foldery zostają niepodłączone, aż połączysz je w Ustawieniach.</p>
 <p>Jeżeli serwer przyjął aktywację, ale proces zatrzymał się przed zakończeniem, wybierz <strong>Wznów</strong>. Inne zaproszenie może zastąpić wyłącznie niedokończony stan. Istniejący <code>client-profile.json</code> stanowi twardą granicę i nie jest nadpisywany.</p>
 <h4>Dodawanie lokalnego katalogu</h4>
 <p>W Ustawieniach wybierz serwer, potem <strong>Połącz z lokalnym folderem</strong> (albo dodaj nowy folder, którego jesteś właścicielem). FileES sprawdza, czy na serwerze jest miejsce, tworzy udział i publikuje pierwszy zrzut. Gdy miejsca brakuje, widzisz wymagany i dostępny rozmiar. Błąd jest pokazany w oknie; operacja nie kończy się bez informacji o niepowodzeniu. Techniczne szczegóły tej operacji są opisane w <a href="operations.html#ops-provision">Eksploatacji</a>.</p>
-<h2 id="ch2-sync">2.4 Codzienna synchronizacja</h2>
+<h2 id="ch2-sync">2.4 Codzienna synchronizacja</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Praca normalna, gromadzenie przy braku łączności, ograniczone zamknięcie i uzgodnienie po restarcie są przetestowane.</span></div>
 <p>Po aktywacji demon działa bez interwencji użytkownika:</p>
 <ul>
 <li>Lokalne zmiany plików są wykrywane w ciągu jednego tyknięcia <code>watch_interval</code>. Nowe pliki czekają 5 minut przed pierwszym zatwierdzeniem.</li>
@@ -107,7 +107,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <h4>Wzorce ignorowania plików</h4>
 <p>Wbudowane ignorowania (nie można ich nadpisać): <code>~\$*</code> (MS Office), <code>.~lock.*#</code> (LibreOffice/OpenOffice), <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code> oraz to, dla czego FileES powstał — pliki przejściowe CAD i Office: <code>*.dwl</code>, <code>*.dwl2</code>, <code>*.sv$</code>, <code>*.ac$</code> (blokady, autozapis i rysunki tymczasowe AutoCAD-a), <code>*.wbk</code>, <code>*.asd</code>, <code>*.xlk</code>, <code>*.laccdb</code> (kopie i blokady Worda, Excela i Accessa). Plik blokady AutoCAD-a nosi nazwisko osoby, która otworzyła rysunek, i znika przy zamknięciu; wersjonowanie go byłoby prymitywniejszą odpowiedzią na pytanie, na które rezerwacje odpowiadają lepiej.</p>
 <p>Ignorowania użytkownika: umieść wzorce w <code>.filees/user_ignore.cfg</code> (przeładowywane na gorąco przy każdym skanie). Linie zaczynające się od <code>!</code> to twarde ignorowania, które pomijają całe poddrzewa. Składnia glob obsługuje <code>**</code> na dowolną głębokość.</p>
-<h2 id="ch2-passports">2.5 Paszporty edycji</h2>
+<h2 id="ch2-passports">2.5 Paszporty edycji</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane międzyklienckie</span><span>Polityka na poziomie repozytorium, sterowanie wyłącznie przez właściciela, projekcja i przekazanie blokady między dwoma klientami przeszły odbiór na żywo na Windows.</span></div>
 <p>Paszporty edycji są opcjonalnym mechanizmem rezerwowania plików w całym repozytorium. Właściciel włącza je w <strong>Zasady edycji</strong> w Ustawieniach FileES. Kolumna <strong>Edycja</strong> pokazuje wtedy „wymaga wypożyczenia”. Użytkownik korzystający z udostępnionego repozytorium nie może zmieniać tej polityki. Domyślnie obowiązuje zwykła swobodna edycja. Szczegóły czasów i działania mechanizmu opisuje rozdział „Eksploatacja”.</p>
 <p>Zachowanie w trybie paszportów:</p>
 <ul>
@@ -119,7 +119,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <li>Inny użytkownik pracujący w tym samym momencie widzi, kto trzyma plik i kiedy ta rezerwacja się kończy. Nieaktualny wiersz w oknie nie zwolni innej rezerwacji.</li>
 </ul>
 <p>Zmiana polityki to migracja, nie lokalna preferencja. Pliki trzymane przez kogoś innego zostają i są ponawiane później. Gość z odczytem i zapisem nadal używa <strong>Wypożycz do edycji</strong>; autolock jest tylko dla strefy właściciela. Własność dla pojedynczej ścieżki i <strong>Poproś o zwolnienie</strong> nie są w tej wersji.</p>
-<h2 id="ch2-gui">2.6 Panel desktopowy Wails</h2>
+<h2 id="ch2-gui">2.6 Panel desktopowy Wails</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Wails jest bieżącym GUI pulpitu; odbiór na żywo na Linuksie objął panel, tackę, projekcje stanu i akcje domenowe.</span></div>
 <p><code>filees-gui-wails</code> jest osobnym procesem i komunikuje się wyłącznie z demonem. Pełne okno pokazuje serwery, repozytoria, kolejkę, blokady, udostępnienia, ogłoszenia, kwarantannę i dziennik. Zamknięcie okna chowa je do traya; dopiero jawne <strong>Zakończ FileES</strong> zatrzymuje demona i GUI.</p>
 <div class="note"><strong>Stan obowiązujący:</strong> Wails jest bieżącym i jedynym rozwijanym GUI. Stary renderer Fyne + <code>zenity</code>/<code>yad</code>/WinForms jest deprecated/abandoned i pozostaje wyłącznie historią wdrożenia do osobnego usunięcia.</div>
 <h4>Stany ikony (kolejność priorytetu)</h4>
@@ -183,7 +183,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 <p>Lokalny PIN jest przechowywany zaszyfrowany w pliku. Główny klucz opakowujący jest związany z losowym <code>device_id</code> zapisanym obok <code>pin.json</code>, a nie z sieciowym adresem MAC. Błędny PIN można poprawić bez zamykania przepływu; po poprawnej weryfikacji kod QR jest renderowany natywnie w oknie Wails. Na Windows pliki stanu są chronione dla bieżącego użytkownika DACL.</p>
 <h4>Autostart</h4>
 <p>Autostart jest własnością instalatora bieżącego klienta, nie trybem polecenia Wails. Na Linuksie podnosi parę demon+GUI w sesji użytkownika. Docelowy kompletny MSI Windows ma instalować i usuwać wpis autostartu razem z klientem. Polecenia <code>filees-gui --autostart ...</code> należały do porzuconego renderera.</p>
-<h2 id="ch2-update">2.7 Podpisane aktualizacje pulpitu</h2>
+<h2 id="ch2-update">2.7 Podpisane aktualizacje pulpitu</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane end-to-end</span><span>Podpisane wydanie SVN, przebieg próbny, istniejący instalator linuksowy, blokada cofnięcia wersji i kontrolowany restart GUI są pokryte odtwarzalnym testem integracyjnym.</span></div>
 <p>Aktualizacje programu na komputerze są opcjonalne. Program ma wbudowany jeden zaufany klucz publiczny; ustawienia nie pozwalają go zastąpić ani pominąć weryfikacji podpisu. Format pakietu aktualizacji i zasady ochrony przed instalacją starszego wydania opisuje rozdział „Eksploatacja”.</p>
 <h4>Przepływ użytkownika</h4>
 <ol>
@@ -195,7 +195,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # instalacja + włączenie autostartu</cod
 </ol>
 <div class="warn"><strong>Nie omijaj aktualizatora.</strong> Lokalnie przywrócony starszy plik wykonywalny nie obniża znacznika najwyższej zainstalowanej wersji. Awaryjne odzyskanie pliku wykonywalnego i upoważnienie zdalnego cofnięcia wersji to osobne operacje; opublikowanie starszej sekwencji w zwykłym kanale jest odrzucane.</div>
 <p>Prywatne klucze podpisujące wydania muszą pozostawać poza repozytorium źródeł, serwerem kompilacji, pakietem klienta i maszynami testowymi. Podpisywanie wydań wykonuje się w odizolowanym środowisku.</p>
-<h2 id="ch2-cli">2.8 Polecenia CLI</h2>
+<h2 id="ch2-cli">2.8 Polecenia CLI</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Polecenia korzystają z IPC demona i nie omijają silnika bezpośrednią modyfikacją SVN.</span></div>
 <p>Wszystkie podpolecenia CLI komunikują się z działającym demonem przez gniazdo uniksowe i nigdy nie wywołują <code>svn</code> bezpośrednio:</p>
 <pre><code>filees status               # stan wszystkich repozytoriów
 filees lock   &lt;file&gt;...    # nabierz blokadę SVN
@@ -211,7 +211,7 @@ filees help</code></pre>
 <pre><code>FILEES_LOG=debug ./filees
 FILEES_LOG=trace ./filees   # obejmuje wywołania svn
 # Dostępne: silent error warn info (domyślnie) debug trace</code></pre>
-<h2 id="ch2-trouble">2.9 Rozwiązywanie problemów</h2>
+<h2 id="ch2-trouble">2.9 Rozwiązywanie problemów</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Wskazówki eksploatacyjne dla bieżącego zachowania klienta i GUI.</span></div>
 <div class="table-wrap"><table>
 <tr><th>Objaw</th><th>Działanie</th></tr>
 <tr><td>Ikona GUI się nie pojawia (GNOME)</td><td>Zainstaluj rozszerzenie <strong>AppIndicator and KStatusNotifierItem Support</strong> z extensions.gnome.org; wyloguj się i zaloguj ponownie</td></tr>
@@ -223,7 +223,7 @@ FILEES_LOG=trace ./filees   # obejmuje wywołania svn
 <tr><td><strong>Widoczność…</strong> jest niedostępna albo Ustawienia pokazują <strong>brak aliasu</strong></td><td>Kanoniczny alias istniejącej strefy nie dotarł do tej projekcji klienta. Nie twórz nowego aliasu. Odśwież/połącz ponownie; jeśli stan wraca po restarcie, proces wykonawczy serwera musi zrekoncyliować i opublikować <code>view.json</code> tego klienta. GUI celowo blokuje widoczność i blokady zależne od aliasu, dopóki tożsamość nie jest autorytatywna.</td></tr>
 <tr><td>Repozytorium zgłasza <code>working_copy_missing</code></td><td>Sprawdź, czy dysk jest zamontowany albo czy korzeń kopii roboczej został przeniesiony. Użyj <strong>Wskaż kopię</strong>, aby wskazać istniejący korzeń <code>.svn</code>. Nie twórz pustego katalogu zastępczego i nie używaj pierwszego pobrania kopii roboczej <strong>Połącz</strong> do odzyskania przeniesionej kopii roboczej.</td></tr>
 </table></div>
-<h2 id="ch2-glossary">2.10 Terminologia GUI (słownik)</h2>
+<h2 id="ch2-glossary">2.10 Terminologia GUI (słownik)</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Odnotowuje każdy przypadek, w którym polskie słownictwo GUI celowo rozchodzi się z terminologią architektury wywiedzioną z SVN.</span></div>
 <p>GUI pulpitu jest wyłącznie polskie i adresowane do nietechnicznych użytkowników końcowych. Tam gdzie architektonicznie poprawny termin — używany w całym tym podręczniku, w kodzie i w protokole — byłby żargon SVN albo protokołu bez intuicyjnego znaczenia dla użytkownika, GUI podstawia zamiast tego język potoczny. Wewnętrzne identyfikatory, nazwy pól IPC i komunikaty protokołu zostawiają termin architektury bez zmian; zmienia się tylko to, co czyta użytkownik. Mapowanie jest 1:1 i stabilne: dany termin GUI zawsze odpowiada dokładnie jednemu terminowi architektury.</p>
 <div class="table-wrap"><table>
 <tr><th>Termin GUI (polski)</th><th>Termin architektury</th><th>Znaczenie</th></tr>

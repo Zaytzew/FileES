@@ -68,7 +68,7 @@
 </nav>
 <div class="manual-content">
 <h1 id="ch1">Rozdział 1: Mechanika i architektura</h1><div class="chapter-content">
-<h2 id="ch1-overview">1.1 Przegląd protokołu</h2><div class="note"><strong>Reguła podręcznika:</strong> istotne wybory architektoniczne są zapisane wraz z odrzuconymi alternatywami i kosztem. To część specyfikacji, nie komentarz historyczny.</div>
+<h2 id="ch1-overview">1.1 Przegląd protokołu</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Obowiązujący kontrakt architektoniczny oraz przetestowane fundamenty klienta i serwera.</span></div><div class="note"><strong>Reguła podręcznika:</strong> istotne wybory architektoniczne są zapisane wraz z odrzuconymi alternatywami i kosztem. To część specyfikacji, nie komentarz historyczny.</div>
 <p>FileES jest demonem synchronizacji plików, który utrzymuje lokalne katalogi robocze w zgodności ze zdalnym repozytorium SVN. SVN pełni rolę warstwy transportu i trwałego magazynu; użytkownik nie musi korzystać z pojęć kontroli wersji. Z jego perspektywy FileES ma po prostu utrzymywać pliki w synchronizacji.</p>
 <p>System jest zaprojektowany wokół następujących zasad:</p>
 <ul>
@@ -329,7 +329,7 @@
 </div>
 </figure>
 <div class="design-boundary"><strong>Reguła odczytu:</strong> węzeł diagramu opisuje właścicielstwo albo kontrakt, niekoniecznie proces, który pozostaje rezydentny. Na serwerze większość węzłów to krótkotrwałe polecenia nad plikami i systemowym <code>sshd</code>.</div>
-<h2 id="ch1-client-arch">1.2 Architektura klienta</h2>
+<h2 id="ch1-client-arch">1.2 Architektura klienta</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Mechanika klienta, odzyskiwanie i granice IPC są pokryte testami integracyjnymi i chaosowymi.</span></div>
 <h3>Mapa modułów</h3>
 <div class="table-wrap"><table class="field-table">
 <tr><th>Obszar</th><th>Moduły</th><th>Odpowiedzialność</th></tr>
@@ -401,7 +401,7 @@
 </div>
 <h4>Bramki środowisko uruchomieniowe (<code>pkg/runtime</code>)</h4>
 <p><strong>HostGate</strong> ogranicza liczbę równoczesnych zatwierdzeń we wszystkich instancjach demona na komputerze (blokady oparte na katalogach). <strong>RepoMutex</strong> wymusza najwyżej jedno zatwierdzenie naraz na repozytorium. Oba używają atomowych operacji katalogowych z PID, znacznikiem czasu utworzenia i unikalnym tokenem właściciela. Na Linux/POSIX plik właściciela niesie zarządzany przez OS <code>flock</code>, żeby recykling PID nie dawał fałszywego wyniku „blokada nadal trzymana”.</p>
-<h2 id="ch1-states">1.3 Stany operacji</h2>
+<h2 id="ch1-states">1.3 Stany operacji</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Przejścia aktywacji przez ścieżki aktywną, wygaśnięcia i cofnięcia są wdrożone i przetestowane.</span></div>
 <p>Operacje aktywacji klienta (z <code>pkg/onboarding/types.go</code>) przechodzą przez następujące stany:</p>
 <div class="table-wrap"><table>
 <tr><th>Stała stanu</th><th>Wartość łańcuchowa</th><th>Znaczenie</th></tr>
@@ -430,7 +430,7 @@
   -&gt; active</code></pre>
 <p>Terminus <code>storage_preflight_failed</code> (np. odmowa procesu wykonawczego <code>STORAGE_INSUFFICIENT</code>, gdy fizyczny system plików nie ma miejsca) jest trwały, ale sam z siebie nie samonaprawia się: GUI odpytuje <code>repo.lifecycle_status</code> po <code>operation_id</code> i pokazuje wynik jako drugie powiadomienie, ponieważ repozytorium, które nigdy nie dochodzi do <code>active</code>, nigdy nie dostaje zarejestrowanego <code>repo_id</code> i jest więc niewidoczne dla <code>repo.list</code>/<code>error.list</code>.</p>
 <p>Między <code>repository_ready</code> a <code>active</code> projekcja serwera może już zawierać repozytorium, podczas gdy jego potencjalnie duży <code>INITIAL_COMMIT</code> nadal trwa. Demon nakłada trwałe lokalne zgłoszenie cyklu życia na tę projekcję: Ustawienia pokazują wybraną ścieżkę i <strong>trwa import początkowy</strong>, a nie fałszywe <strong>nie podłączone lokalnie</strong>. Wiersz pozostaje niemodyfikowalny i żadne środowisko uruchomieniowe kopii roboczej nie startuje, zanim początkowe zatwierdzenie się powiedzie.</p>
-<h2 id="ch1-bundle">1.4 Układ pakietu i protokół systemu plików</h2>
+<h2 id="ch1-bundle">1.4 Układ pakietu i protokół systemu plików</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Atomowe przejęcie i zatwierdzenie oraz ścieżki odzyskiwania przetestowane natywnie na OpenBSD.</span></div>
 <p>Strona serwera używa protokołu opartego na systemie plików, bez ukrytej bazy danych i bez demona w tle. Pojedynczy zatwierdzony plik JSON <code>filees.onboarding-bundle/v4</code> jest atomowym rekordem operacji aktywacji klienta. Zawiera trzy podobiekty: <code>Operation</code>, <code>Outbox</code> (stan dostawy zachowany, OTP i adres zredagowane po terminalnej dostawie) oraz <code>Audit</code> (historia tylko-dopisująca). Jedno <code>rename(2)</code> publikuje wszystkie trzy atomowo.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / protokół systemu plików zamiast ukrytej usługi transakcyjnej</div>
 <div class="decision-grid">
@@ -470,10 +470,10 @@
     ├── logs/
     │   └── errors.jsonl               (structured error log, JSON Lines)
     └── locks/                         (HostGate and RepoMutex dirs)</code></pre>
-<h2 id="ch1-otp">1.5 Mechanizm OTP</h2>
+<h2 id="ch1-otp">1.5 Mechanizm OTP</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Przechowywanie OTP, limity prób, redakcja i przekazanie przez BSD Auth są wdrożone.</span></div>
 <p>Hasło jednorazowe do autoryzacji tunelu ma 120 bitów entropii zakodowane jako Base32 w formacie <code>LLLLLLLL-SSSSSSSSSSSSSSSS</code>. 40-bitowy prefiks to <em>lokator</em>, który identyfikuje pakiet operacji bez ujawniania ID operacji. Pełna wartość jest weryfikowana jako HMAC-SHA-256 względem prywatnego peppera po stronie serwera (minimum 256 bitów) przechowywanego pod ścieżką daną przez <code>otp_pepper_file</code> w <code>server.json</code>.</p>
 <p>Każda błędna próba atomowo zmniejsza licznik zapisany w pakiecie. Przy wygaśnięciu, wyczerpaniu OTP albo udanym użyciu hash i lokator są usuwane z pakietu. OTP w postaci jawnej istnieje tylko w oczekującym wpisie kolejki poczty wychodzącej aż do przyjęcia listu przez smarthost (<code>250</code> po DATA), po czym adres dostawy i OTP są atomowo redagowane.</p>
-<h2 id="ch1-ssh">1.6 Transport SSH: entry → proces wykonawczy → program pomocniczy</h2>
+<h2 id="ch1-ssh">1.6 Transport SSH: entry → proces wykonawczy → program pomocniczy</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane do stanu aktywnego</span><span>Pełna ścieżka cofnięcia i ponownej aktywacji, systemowy sshd, forced commands i svnserve w trybie tunelu przeszły natywnie na OpenBSD.</span></div>
 <p>FileES używa systemowego <code>sshd</code> jako jedynego punktu końcowego sieci. Na serwerze tworzone są trzy osobne konta protokołu:</p>
 <div class="table-wrap"><table>
 <tr><th>Konto</th><th>Metoda uwierzytelnienia</th><th>wymuszone polecenie</th><th>Przekierowanie</th></tr>
@@ -521,7 +521,7 @@
 <tr><td><code>REALM_REMOVE_REQUEST</code> / <code>REALM_REMOVE_CONFIRM</code></td><td>Usunięcie całego udziału FileES strefy, bramkowane OTP wysłanym pocztą</td><td>Dowolny aktywny klient strefy plus dowód OTP</td></tr>
 </table></div>
 <p>każde zlecenie jest idempotentny względem <code>operation_id</code>: powtórzenie żądania odtwarza zapisany trwały wynik zamiast ponownie wykonywać efekt. Związanie tego samego <code>operation_id</code> z innym <code>request_id</code> jest odrzucane.</p>
-<h2 id="ch1-sandbox">1.7 Model piaskownicy pledge / unveil</h2>
+<h2 id="ch1-sandbox">1.7 Model piaskownicy pledge / unveil</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD</span><span>Profile pledge/unveil per polecenie oraz granica exec między dyspozytorem a procesem wykonawczym przetestowane natywnie.</span></div>
 <p>Na OpenBSD każde narzędzie po stronie serwera wywołuje <code>pledge(2)</code> i <code>unveil(2)</code> z minimalnymi profilami dla każdego polecenia. Przepływ procesu to:</p>
 <pre><code>parse argv / verb
   -&gt; pledge("stdio rpath wpath unveil")   # bootstrap
@@ -570,7 +570,7 @@
 </table></div>
 <p>Zmieszanie obu — exec narzędzia z własną piaskownicą z dyspozytora, który już zablokował tablicę — kończy się na pierwszym wywołaniu <code>unveil</code> dziecka błędem <code>EPERM</code>, i to wyłącznie na OpenBSD, bo gdzie indziej piaskownica jest operacją pustą. Każdy nowy proces-dziecko po stronie serwera musi być sklasyfikowany względem tej tabeli zanim zostanie podłączony.</p>
 <p>plik wykonywalny <code>filees-entry</code> jest setuid na <code>_filees-state</code>. <code>filees-worker</code> ma tryb <code>0555</code> i dziedziczy efektywny UID przez <code>exec</code>. Ten podział jest wymagany, ponieważ OpenBSD odmawia wykonania obrazu setuid/setgid, gdy ustawione są <code>execpromises</code>.</p>
-<h2 id="ch1-service-repo">1.8 Repozytorium usługowe</h2>
+<h2 id="ch1-service-repo">1.8 Repozytorium usługowe</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Projekcja aktywacji klienta, ACL tylko do odczytu i kanoniczny magazyn uprawnień strefy są wdrożone i pokryte testami E2E na Linuksie i OpenBSD.</span></div>
 <p>Repozytorium usługowe (nazywane też repozytorium technicznym) jest prywatnym repozytorium SVN, które działa jako wersjonowana płaszczyzna sterowania. <em>Nie</em> przechowuje synchronizowanych plików użytkownika. Każdy monitorowany katalog ma własne, osobne repozytorium danych.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / repozytorium usługowe SVN jako wersjonowana płaszczyzna sterowania</div>
 <div class="decision-grid">

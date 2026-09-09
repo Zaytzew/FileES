@@ -64,7 +64,7 @@
 <h1 id="ch-ps">Udziały publiczne</h1>
 <div class="chapter-content">
 <p>Udział publiczny pozwala udostępnić pliki osobie, która nie ma zainstalowanego FileES. Jest wyłącznie kanałem odczytu i nie daje dodatkowej drogi zapisu do repozytorium. Szczegóły modelu zaufania, mapy obiektów i OTP opisuje część „Eksploatacja”.</p>
-<h2 id="ps-model">5.1 Co to jest</h2>
+<h2 id="ps-model">5.1 Co to jest</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane live</span></div>
 <p>Udział publiczny jest stroną tylko do odczytu, dostępną przez publiczny adres HTTPS serwera FileES. Odbiorca nigdy nie otrzymuje danych uwierzytelniających pozwalających na zapis. Kanał przyjmowania plików jest osobną funkcją: służy do odbierania danych od osób z zewnątrz i nie współdzieli z udziałami publicznymi mechanizmu autoryzacji ani sekretów.</p>
 <p>Strona nie używa JavaScriptu, plików cookie ani zasobów zewnętrznych. Wygląd udziału korzysta z identyfikacji filees:space oraz logo i koloru właściciela zapisanych na serwerze.</p>
 <p>Podział odpowiedzialności między proces publiczny a Subversion opisuje część „Eksploatacja”.</p>
@@ -72,7 +72,7 @@
 <p>Publiczny adres jest zawsze:</p>
 <pre><code>https://&lt;domena-serwera&gt;/&lt;alias-strefy&gt;/&lt;slug&gt;</code></pre>
 <p>Nieznane, cofnięte i usunięte adresy zwracają ten sam komunikat HTTP 404, bez ujawniania żądanej ścieżki ani przyczyny.</p>
-<h2 id="ps-map">5.3 To nie jest żywe lustro</h2>
+<h2 id="ps-map">5.3 To nie jest żywe lustro</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Wdrożony kontrakt, nie usterka.</span></div>
 <p>Kanał bez zamrożonej rewizji podąża za HEAD, ale nie na żywo: każda <em>nowa</em> wizyta pod kanonicznym adresem przelicza listę plików z aktualnego drzewa SVN, więc dodany plik się pojawia, usunięty znika, a zmiana nazwy jest widoczna pod nową nazwą. To, co „nie jest żywe”, to już wydana wizyta — link z tokenem <code>?v=…</code> zamraża się na rewizji, jaką HEAD miał w chwili tamtej wizyty, i nie dogania późniejszych zmian nawet gdy ten sam plik się zmieni. Kanał z jawnie ustawioną, dodatnią rewizją zamraża każdą wizytę na tym jednym zrzucie na stałe, niezależnie od HEAD.</p>
 <p>Pusty folder może pozostać w mapie udziału. Udział nie jest więc bezpośrednim, ciągle aktualizowanym lustrem folderu: konkretna wizyta korzysta z określonego obrazu danych. Zależność między object_map a rewizją opisuje część „Eksploatacja”.</p>
 <h2 id="ps-access">5.4 Otwarty albo zamknięty</h2>

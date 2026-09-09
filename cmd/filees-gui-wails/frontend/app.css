@@ -413,6 +413,9 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 .repo-view-fields { display:flex; flex-wrap:wrap; align-items:end; gap:16px; padding:12px 0; }
 .repo-view-fields label { display:grid; gap:8px; font-size:14px; }
 .repo-view-fields input { width:110px; padding:9px; border:1px solid var(--line); border-radius:10px; color:inherit; background:transparent; font:inherit; }
+.repo-view-fields input, .repo-view-fields .primary-button { box-sizing:border-box; height:40px; }
+.repo-view-fields .primary-button { font-family:inherit; font-size:14px; padding:9px 16px; }
+.repo-view-fields input:focus-visible, .repo-view-fields .primary-button:focus-visible { outline:2px solid var(--theme-focus); outline-offset:3px; }
 .repo-view-preferences p { font-size:14px; line-height:1.6; }
 .idle-group { margin:8px 0; padding:0 12px; border:1px solid var(--line); border-radius:14px; background:rgba(128,144,166,.04); }
 .idle-group summary:focus-visible, .repo-view-preferences summary:focus-visible { outline:2px solid currentColor; outline-offset:2px; border-radius:8px; }

@@ -1,4 +1,4 @@
-.Dd September 4, 2026
+.Dd September 9, 2026
 .Dt FILEES.CONF 5
 .Os
 .Sh NAME
@@ -68,6 +68,11 @@ Explicit
 deletes FSFS immediately and writes no dump.
 .It Ic repositories.recovery_admin_contact
 Mailbox used for data-erasure notices.
+.It Ic repositories.data_erasure_max_days
+Days an operator has to confirm backup-retention closure of a data-erasure
+request before it is treated as overdue.
+Omitted defaults to 90.
+A value outside 1-3650 is rejected.
 .It Ic repositories.whale_root
 Absolute root for Whale transport operational payloads (spool, journal),
 kept separate from the small repository-control journal under
@@ -93,6 +98,27 @@ a new OpenBSD unveil profile.
 .It Ic public_shares.max_size
 Maximum leaf size in bytes, default 1 GiB. At most two authority fetches run
 concurrently; reserve staging capacity accordingly.
+.It Ic public_shares.max_channels_per_realm
+Upper bound on live channels one realm may hold.
+Omitted defaults to 128.
+.It Ic public_shares.password_required
+Refuse to publish a channel that carries no recipient password.
+Off by default.
+.It Ic public_shares.frost_key_file
+Private key from which
+.Ic public_id
+is derived.
+It is read as a secret: absolute path, regular file, not group- or
+other-writable.
+Replacing it changes every future public address; existing ones keep working.
+.It Ic operator_branding
+Optional presentation of this server in public HTML.
+.Ic leading_color
+is the accent colour and
+.Ic logo_file
+an absolute path to the operator logo.
+Both are cosmetic: nothing in authorisation, addressing or transport reads
+them.
 .It Ic upload
 Optional closed upload-shelf intake.
 .Ic intake_root

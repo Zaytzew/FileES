@@ -47,6 +47,9 @@ func (c *execClient) ReconcileCommit(ctx context.Context, wc, repoURL string, pa
 	if err := c.nativeRequireFeature(ctx, "recover_plain_add_v1"); err != nil {
 		return err
 	}
+	if err := c.nativeRequireFeature(ctx, "writer_lease_v1"); err != nil {
+		return err
+	}
 	r, err := c.nativeRemoteInput(ctx, wc, input, "recover-commit", "--wc", wc, "--url", repoURL,
 		"--commit-id", marker, "--revision", strconv.FormatInt(revision, 10), "--targets-stdin")
 	if err != nil {
@@ -65,6 +68,9 @@ func (c *execClient) ReconcileCommit(ctx context.Context, wc, repoURL string, pa
 func (c *execClient) CommitHead(ctx context.Context, repoURL string) (int64, error) {
 	if nativeWCOps(c) {
 		if err := c.nativeRequireFeature(ctx, "commit_targets_stdin_v1"); err != nil {
+			return 0, err
+		}
+		if err := c.nativeRequireFeature(ctx, "writer_lease_v1"); err != nil {
 			return 0, err
 		}
 		entries, err := c.nativeLog(ctx, repoURL, "HEAD")

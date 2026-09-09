@@ -20,7 +20,7 @@ func fakeNativeRA() {
 			fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":[]}`)
 			return
 		}
-		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1"]}`)
+		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"features":["update_changes","commit_targets_stdin_v1","writer_lease_v1"]}`)
 		return
 	}
 	if p := os.Getenv("FILEES_TEST_RA_TRACE"); p != "" {

@@ -59,17 +59,36 @@ Go daemon does not use cgo. `filees-svn --version` lists implemented verbs.
 `recover-commit --wc WC --url URL --commit-id UUID --revision R --targets-stdin`
 advertises `recover_plain_add_v1`. It is a narrow local repair of a confirmed
 plain nonempty file addition, not a retry of commit. Before update it verifies
-WC URL, exact revision marker, changed-path A without copy history and absence
+WC URL and repository UUID, exact revision marker, changed-path A without copy history and absence
 of both local and committed properties. All targets are admitted before any
 update. Only a matching incoming text conflict may keep the working text;
 existing/tree/property conflicts refuse. Update is depth-empty and pinned to
 R; newer BASE is never downgraded. Final status/revision/checksum are checked.
 The Windows Go adapter invokes this before the daemon acknowledges its original
 publication snapshot. It does not change Unix routing or add a CLI fallback.
-No cleanup or lock breaking is performed. Orphaned WC locks, other metadata
-shapes, concurrent writers and a crash during repair remain acceptance gaps;
-do not interpret the plain-add tests as general crash recovery acceptance.
-Evidence: `reports/NATIVE_PLAIN_ADD_RECOVERY_2026-09-09.md`.
+`writer_lease_v1` fences every native mutation of an existing WC with an OS
+exclusive nonblocking lock on the stable `.svn/filees-native-writer-v1` file.
+Marked commits persist their commit-id there before SVN mutation, and clear it
+only on successful completion. The file is never replaced or unlinked; process
+death releases the OS lock, not the durable provenance. No PID/age heuristic.
+The Windows adapter requires this feature before creating a commit intent.
+
+Recovery holds that same lock. Only a matching durable owner plus the exact
+remote receipt and all target/identity admission checks permit cleanup of an
+orphaned SVN lock/work queue, before pinned repair. Cleanup does not vacuum,
+touch timestamps, remove DAV cache or include externals. A live native writer,
+foreign/torn owner, or an unowned SVN lock refuses; ordinary mutators cannot
+clear a pending owner. Read-only operations remain available. No blind retry.
+
+Real Windows daemon+C crash -> automatic recovery without manual cleanup is
+accepted for this plain-add shape, including preservation and later ordinary
+publication of an edited generation. C tests also run natively on OpenBSD.
+Other metadata shapes, simultaneous external edits and a crash during repair
+remain gaps. The lease coordinates cooperating helpers, not arbitrary SVN
+tools that bypass it or adversarial filesystem substitution. No power-loss
+durability claim follows from process-kill tests. Evidence:
+`reports/NATIVE_WRITER_LEASE_RECOVERY_2026-09-09.md`; the preceding conditional
+manual-cleanup result remains in `reports/NATIVE_PLAIN_ADD_RECOVERY_2026-09-09.md`.
 
 Linux daemon still uses the helper only for `record-move`; every other
 operation stays on distro `svn`. Windows, when `FILEES_NATIVE_SVN` is set,
@@ -255,9 +274,10 @@ the helper binary contains them.
   confirms no source object. A stale Added cache entry cannot erase ancestry.
 
 No error or ambiguity falls back to delete/add in the enabled path.
-There is no automatic revert, cleanup, rollback or force takeover.
+There is no automatic revert, rollback or force takeover. The only automatic
+cleanup is the receipt/provenance-gated recovery described above.
 Concurrent external WC writers and adversarial filesystem substitution are
-not protected by the in-process mutex; this is not a security boundary.
+not protected by the native lease; this is not a security boundary.
 Whole-directory identity is not implemented: contained files may move
 individually, but directory-object continuity is not claimed.
 

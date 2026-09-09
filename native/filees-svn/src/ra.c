@@ -494,6 +494,7 @@ svn_error_t *filees_ra_update(const char *wc_arg, svn_boolean_t live,
     int i;
 
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     SVN_ERR(filees_ra_ctx_auth(ctx, pool));
 
     if (n == 0) {
@@ -590,7 +591,7 @@ svn_error_t *filees_recover_commit(const char *wc_arg, svn_boolean_t live,
                                    svn_revnum_t revision, const char **rels,
                                    int n, apr_pool_t *pool)
 {
-    const char *wc, *url, *root_url;
+    const char *wc, *url, *root_url, *remote_uuid;
     svn_client_ctx_t *ctx;
     svn_client_status_t *root;
     apr_array_header_t *paths, *targets, *ranges, *props, *selected, *revisions;
@@ -600,9 +601,16 @@ svn_error_t *filees_recover_commit(const char *wc_arg, svn_boolean_t live,
     struct log_baton log;
     struct log_entry *entry;
     struct repair_conflicts conflicts;
+    apr_file_t *writer;
+    const char *pending;
+    svn_boolean_t locked;
     int i, j, matches = 0;
     if (revision < 1 || !marker || !*marker || n < 1) return filees_refuse("invalid recovery identity");
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_writer_open(&writer, &pending, wc, pool));
+    if (pending && strcmp(pending, marker)) return filees_refuse("recovery does not own the native writer record");
+    SVN_ERR(svn_wc_locked2(NULL, &locked, ctx->wc_ctx, wc, pool));
+    if (locked && !pending) return filees_refuse("unowned SVN write lock requires explicit inspection");
     SVN_ERR(filees_ra_ctx_auth(ctx, pool));
     SVN_ERR(filees_ra_target(&url, url_arg, pool));
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
@@ -611,6 +619,9 @@ svn_error_t *filees_recover_commit(const char *wc_arg, svn_boolean_t live,
         return filees_refuse("recovery WC identity unavailable");
     root_url = svn_path_url_add_component2(root->repos_root_url, root->repos_relpath, pool);
     if (strcmp(url, root_url)) return filees_refuse("recovery URL differs from WC identity");
+    SVN_ERR(svn_client_get_repos_root(NULL, &remote_uuid, url, ctx, pool, pool));
+    if (!root->repos_uuid || !remote_uuid || strcmp(root->repos_uuid, remote_uuid))
+        return filees_refuse("recovery repository UUID differs from WC identity");
     rev.kind = svn_opt_revision_number; rev.value.number = revision;
     range.start = range.end = rev;
     targets = apr_array_make(pool, 1, sizeof(const char *));
@@ -643,7 +654,7 @@ svn_error_t *filees_recover_commit(const char *wc_arg, svn_boolean_t live,
         svn_checksum_t *checksum;
         apr_finfo_t info;
         SVN_ERR(repair_observe(&s, path, ctx, pool));
-        if (!s->versioned || s->conflicted || s->switched || s->file_external || s->wc_is_locked || s->node_status == svn_wc_status_missing)
+        if (!s->versioned || s->conflicted || s->switched || s->file_external || (s->wc_is_locked && !pending) || s->node_status == svn_wc_status_missing)
             return filees_refuse("recovery target conflicted, switched or busy");
         if (SVN_IS_VALID_REVNUM(s->revision) && s->revision >= revision) continue;
         for (j = 0; j < entry->paths->nelts; ++j) {
@@ -667,6 +678,11 @@ svn_error_t *filees_recover_commit(const char *wc_arg, svn_boolean_t live,
         APR_ARRAY_PUSH(selected, const char *) = path;
         apr_hash_set(conflicts.paths, path, APR_HASH_KEY_STRING, path);
     }
+    /* The OS lease excludes live native writers; the durable marker and exact
+     * remote receipt bind a leftover SVN lock/work queue to this commit.
+     * No timestamps, PID guesses, HEAD update or unowned lock breaking. */
+    if (pending)
+        SVN_ERR(svn_client_cleanup2(wc, TRUE, FALSE, FALSE, FALSE, FALSE, ctx, pool));
     ctx->conflict_func2 = repair_keep_text; ctx->conflict_baton2 = &conflicts;
     if (selected->nelts)
         SVN_ERR(svn_client_update4(&revisions, selected, &rev, svn_depth_empty,
@@ -685,6 +701,7 @@ svn_error_t *filees_recover_commit(const char *wc_arg, svn_boolean_t live,
         if (!svn_checksum_match(after, apr_hash_get(checksums, path, APR_HASH_KEY_STRING)))
             return filees_refuse("working text changed during recovery; intent must be retained");
     }
+    if (pending) SVN_ERR(filees_writer_set(writer, NULL, pool));
     printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"revision\":%ld,\"reconciled\":%d}\n",
            (long)revision, selected->nelts);
     return SVN_NO_ERROR;
@@ -813,6 +830,9 @@ svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
     apr_array_header_t *paths;
     apr_hash_t *revprop_table = NULL;
     struct commit_baton commit;
+    apr_file_t *writer;
+    const char *pending;
+    const svn_string_t *marker = NULL;
     int i;
 
     if (n < 1) return filees_refuse("commit requires at least one path");
@@ -838,6 +858,11 @@ svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
         }
     }
 
+    SVN_ERR(filees_writer_open(&writer, &pending, wc, pool));
+    if (pending) return filees_refuse("unfinished native commit requires receipt recovery before commit");
+    if (revprop_table) marker = apr_hash_get(revprop_table, "filees:commit-id", APR_HASH_KEY_STRING);
+    if (marker) SVN_ERR(filees_writer_set(writer, marker->data, pool));
+
     /* The message travels through log_msg_func3, not the revprop table.
      * svn_client_commit6 has no message parameter, and setting svn:log
      * directly is refused outright (E195011, "Standard properties can't be set
@@ -859,6 +884,7 @@ svn_error_t *filees_ra_commit(const char *wc_arg, svn_boolean_t live,
                                FALSE /* include_dir_externals */,
                                NULL /* changelists */, revprop_table,
                                collect_commit, &commit, ctx, pool));
+    if (marker) SVN_ERR(filees_writer_set(writer, NULL, pool));
 
     printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"revision\":");
     if (SVN_IS_VALID_REVNUM(commit.revision)) printf("%ld", (long)commit.revision);
@@ -893,6 +919,7 @@ svn_error_t *filees_ra_lock(const char *wc_arg, svn_boolean_t live,
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     SVN_ERR(filees_ra_ctx_auth(ctx, pool));
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     b.wc = wc;
     b.results = apr_array_make(pool, n, sizeof(struct lock_result));
     b.pool = pool;
@@ -915,6 +942,7 @@ svn_error_t *filees_ra_unlock(const char *wc_arg, svn_boolean_t live,
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     SVN_ERR(filees_ra_ctx_auth(ctx, pool));
     SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     b.wc = wc;
     b.results = apr_array_make(pool, n, sizeof(struct lock_result));
     b.pool = pool;

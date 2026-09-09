@@ -49,6 +49,7 @@ svn_error_t *filees_record_move(const char *wc_arg, const char *old_rel,
     if (!filees_safe_relative(old_rel) || !filees_safe_relative(new_rel) || !strcmp(old_rel, new_rel))
         return filees_refuse("expected two distinct canonical relative data paths");
     SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    SVN_ERR(filees_writer_guard(wc, pool));
     src = svn_dirent_join(wc, old_rel, pool);
     dst = svn_dirent_join(wc, new_rel, pool);
     parent = svn_dirent_dirname(dst, pool);

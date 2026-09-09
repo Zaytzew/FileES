@@ -92,6 +92,35 @@ func TestWorkingCopySizeComesFromBufferedManifest(t *testing.T) {
 	}
 }
 
+// renameLiveDir moves a directory that a running scanner is walking.
+//
+// POSIX renames a directory regardless of who holds it open, so this was a
+// bare os.Rename and passed everywhere. Windows refuses with "Access is
+// denied" while any handle inside the tree is open, and the scanner here runs
+// on a 5 ms period - so in a loaded parallel run the walk is often in flight
+// exactly then, and the test failed on its own setup rather than on what it
+// asserts. It measures whether the scanner RECREATES an abandoned root after
+// the move; the move itself is only how it gets there.
+//
+// The refusal is transient - the walk holds the handle for a fraction of each
+// period - so retrying finds a gap, which is also what a person moving the
+// folder in Explorer does. Skipping the test on Windows would drop coverage of
+// a case that matters most on the platform where users drag folders around.
+func renameLiveDir(t *testing.T, from, to string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := os.Rename(from, to)
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("rename %s: still refused after 5s: %v", from, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestScannerDoesNotRecreateMovedWorkingCopy(t *testing.T) {
 	parent := t.TempDir()
 	wc := filepath.Join(parent, "documents")
@@ -120,9 +149,7 @@ func TestScannerDoesNotRecreateMovedWorkingCopy(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	moved := filepath.Join(parent, "documents-moved")
-	if err := os.Rename(wc, moved); err != nil {
-		t.Fatal(err)
-	}
+	renameLiveDir(t, wc, moved)
 	cancel()
 	for range events {
 	}

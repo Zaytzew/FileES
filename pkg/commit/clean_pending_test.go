@@ -64,8 +64,14 @@ func TestCleanPendingRequiresPositiveUnchangedFileEvidence(t *testing.T) {
 				cli.statusErr = errors.New("status unavailable")
 			}
 			if tc.mutate {
+				writes := 0
 				cli.during = func() {
-					if err := os.WriteFile(path, []byte("a new local edit"), 0600); err != nil {
+					// Both intake and reconciliation call Status. Mutate on
+					// EACH call: rewriting identical bytes the second time can
+					// preserve mtime on OpenBSD, while the stub still says normal.
+					// Changing size makes the intended race deterministic.
+					writes++
+					if err := os.WriteFile(path, []byte(strings.Repeat("a new local edit", writes)), 0600); err != nil {
 						t.Fatal(err)
 					}
 				}

@@ -17,6 +17,10 @@ import (
 )
 
 func TestIncomingUpdateNeverEntersOutgoingQueueRealSVN(t *testing.T) {
+	testIncomingUpdateNeverEntersOutgoingQueue(t, client.New(client.Options{Timeout: 10 * time.Second}))
+}
+
+func testIncomingUpdateNeverEntersOutgoingQueue(t *testing.T, cli client.Client) {
 	for _, bin := range []string{"svn", "svnadmin"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			t.Skipf("%s unavailable", bin)
@@ -42,6 +46,11 @@ func TestIncomingUpdateNeverEntersOutgoingQueueRealSVN(t *testing.T) {
 	run("svnadmin", "create", repo)
 	run("svn", "checkout", repoURL, a)
 	run("svn", "checkout", repoURL, b)
+	for _, wc := range []string{a, b} {
+		if err := os.Mkdir(filepath.Join(wc, ".filees"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	write := func(wc, rel, body string) {
 		t.Helper()
 		path := filepath.Join(wc, filepath.FromSlash(rel))
@@ -61,7 +70,6 @@ func TestIncomingUpdateNeverEntersOutgoingQueueRealSVN(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cli := client.New(client.Options{Timeout: 10 * time.Second})
 	s := &Service{Cli: cli, RepoURL: repoURL, wc: b, repoID: "repo", Activity: journal, staging: make(map[string]*stageItem), cachePath: filepath.Join(b, ".filees", "commit_cache", "cache.json")}
 	var sawPending bool
 	s.Emit = func(kind string, _ any) {
@@ -165,6 +173,38 @@ func TestIncomingUpdateNeverEntersOutgoingQueueRealSVN(t *testing.T) {
 	}
 	if rev, err := cli.Revision(t.Context(), repoURL); err != nil || rev != 4 {
 		t.Fatalf("local edit revision=%d err=%v, want 4", rev, err)
+	}
+	// A remote deletion is still received when its watcher event arrives after
+	// debounce and after the receiver has restarted. Drive that delivery
+	// explicitly here; the live acceptance also waits the real five minutes.
+	run("svn", "delete", filepath.Join(a, "01_WYDANIE/WYCENA/moved.txt"))
+	run("svn", "commit", "-m", "remote deletion", a)
+	out, err = cli.Update(t.Context(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.RecordUpdate(t.Context(), "repo", b, out)
+	for restart := 0; restart < 2; restart++ {
+		reopened, err := activity.Open(filepath.Join(root, "activity.json"), 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s = &Service{Cli: cli, RepoURL: repoURL, wc: b, repoID: "repo", Activity: reopened, staging: make(map[string]*stageItem)}
+		for replay := 0; replay < 2; replay++ {
+			s.acceptEvents(t.Context(), []watcher.Event{{Rel: "01_WYDANIE/WYCENA/moved.txt", Path: filepath.Join(b, "01_WYDANIE/WYCENA/moved.txt"), Op: watcher.Deleted, Type: watcher.EntryFile}})
+		}
+		if s.stagingLen() != 0 {
+			t.Fatal("received deletion requeued after restart")
+		}
+		found := false
+		for _, e := range reopened.List() {
+			if e.Path == "01_WYDANIE/WYCENA/moved.txt" {
+				found = e.Stage == activity.Received && e.Kind == activity.Deleted && e.Revision == 5
+			}
+		}
+		if !found {
+			t.Fatal("lost incoming deletion receipt")
+		}
 	}
 }
 

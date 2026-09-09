@@ -184,7 +184,26 @@ func updateActivityPaths(output string) map[string]watcher.OpType {
 }
 
 func (s *Service) receivedRemoval(ctx context.Context, rel string) bool {
-	if !s.receivedDeletes[rel] {
+	proven := s.receivedDeletes[rel]
+	// Watcher debounce/replay may outlive the service. The durable incoming
+	// receipt is evidence of origin, not an inference from an absent SVN row.
+	if !proven {
+		if source, ok := s.Activity.(interface{ List() []activity.Entry }); ok {
+			for _, entry := range source.List() {
+				if entry.RepoID == s.repoID && entry.Path == rel && entry.Stage == activity.Received && entry.Kind == activity.Deleted {
+					proven = true
+					break
+				}
+			}
+		}
+	}
+	if !proven || s.Cli == nil {
+		return false
+	}
+	s.mu.Lock()
+	pending := s.staging[rel] != nil
+	s.mu.Unlock()
+	if pending {
 		return false
 	}
 	_, err := os.Lstat(filepath.Join(s.wc, filepath.FromSlash(rel)))
@@ -198,11 +217,14 @@ func (s *Service) receivedRemoval(ctx context.Context, rel string) bool {
 		return false
 	}
 	for _, entry := range entries {
-		if entry.Item != "unversioned" {
+		// C explicitly emits none/none for an absent, no-longer-versioned
+		// path; CLI may emit no rows. missing/deleted are LOCAL SVN changes.
+		if filepath.ToSlash(entry.Path) != rel || (entry.Item != "unversioned" && entry.Item != "none") || (entry.Props != "none" && entry.Props != "normal") {
 			return false
 		}
 	}
-	return true
+	_, err = os.Lstat(filepath.Join(s.wc, filepath.FromSlash(rel)))
+	return os.IsNotExist(err)
 }
 
 // acceptEvents classifies before touching the outgoing queue or publishing a
@@ -241,11 +263,9 @@ func (s *Service) acceptEvents(ctx context.Context, events []watcher.Event) {
 			continue
 		}
 		if ev.Op == watcher.Deleted && s.receivedRemoval(ctx, ev.Rel) {
-			delete(s.receivedDeletes, ev.Rel)
 			continue
 		}
 		if ev.Op == watcher.Renamed && clean[ev.Rel] && s.receivedRemoval(ctx, ev.OldRel) {
-			delete(s.receivedDeletes, ev.OldRel)
 			continue
 		}
 		delete(s.receivedDeletes, ev.Rel)

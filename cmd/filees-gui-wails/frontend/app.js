@@ -1234,8 +1234,17 @@ function refreshRepoViewPreferences() {
 }
 $("#save-repo-view").addEventListener("click",()=>{
   const inactive=Number($("#inactive-days").value), archive=Number($("#archive-days").value);
-  if(![inactive,archive].every(n=>Number.isInteger(n)&&n>=0&&n<=36500)) return;
-  try { saveRepoView({...readRepoView(),inactive,archive}); }
+  if(![inactive,archive].every(n=>Number.isInteger(n)&&n>=0&&n<=36500)) {
+    showToast({title:"Sprawdź liczbę dni",message:"Podaj całkowitą liczbę od 0 do 36500.",level:"critical"});
+    return;
+  }
+  try {
+    saveRepoView({...readRepoView(),inactive,archive});
+    $(".repo-view-preferences").open=false;
+    $(".repo-view-preferences summary").focus();
+    showToast({title:"Zapisano ustawienia widoku",message:"Nowe progi zostały zastosowane do listy folderów."});
+    scheduleWindowFit();
+  }
   catch { showToast({title:"Nie zapisano ustawień widoku",level:"critical"}); }
 });
 window.addEventListener("storage",event=>{ if(event.key === "filees.repo-view.v1") refreshRepoViewPreferences(); });

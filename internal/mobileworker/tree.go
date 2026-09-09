@@ -29,6 +29,22 @@ var errNotTreePack = errors.New("not a filees tree pack")
 // not the zip the client hashed. Nothing from it may be committed.
 var errTreePayloadCorrupt = errors.New("tree payload corrupt: sha256 or size mismatch")
 
+// mobileUploadsRoot is the only directory the phone is allowed to bring into
+// existence.
+//
+// Section 0 of the Android concept: the mobile client never modifies or
+// deletes objects outside mobile-uploads/. Appending a new file to a directory
+// that already exists is neither, so that stays allowed anywhere - but a
+// directory that is not there is only ever conjured under this root.
+const mobileUploadsRoot = "mobile-uploads"
+
+// underMobileUploads reports whether p is the uploads root or sits inside it.
+// Both mobile write verbs ask it, so the rule has one place to be wrong.
+func underMobileUploads(p string) bool {
+	p = strings.Trim(p, "/")
+	return p == mobileUploadsRoot || strings.HasPrefix(p, mobileUploadsRoot+"/")
+}
+
 // UploadTree unpacks a zip-on-wire folder and commits its files under
 // parent_path (must be mobile-uploads/…) in one revision. Same-hash
 // existing files are skipped; different hash overwrites HEAD.
@@ -41,7 +57,7 @@ func (a Appender) UploadTree(ctx context.Context, clientID, requestID string, p 
 		return v1.UploadTreeResult{}, ErrAccessDenied
 	}
 	parent := strings.Trim(p.ParentPath, "/")
-	if parent != "mobile-uploads" && !strings.HasPrefix(parent, "mobile-uploads/") {
+	if !underMobileUploads(parent) {
 		return v1.UploadTreeResult{}, errors.New("parent_path must be under mobile-uploads/")
 	}
 

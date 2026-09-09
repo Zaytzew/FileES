@@ -455,6 +455,9 @@ func (s *Scanner) scanCycleCollect(ctx context.Context, out func(Event)) {
 		s.mu.Unlock()
 		// persist backlog best-effort
 		_ = s.saveBacklog()
+		if err := s.checkpointIdentities(mp); err != nil {
+			s.lg.Warnf("identity checkpoint failed: %v", err)
+		}
 	}
 
 	if (aCnt + mCnt + dCnt) > 0 {

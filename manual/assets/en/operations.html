@@ -96,7 +96,7 @@
 <div class="chapter-content">
 <p>This page holds the technical detail that used to sit beside the User howto. Invitation commands, Settings and the recipient view stay on the User pages. What follows is schemas, state machines, rejected alternatives and the deploy contracts.</p>
 <div class="note"><strong>Old URLs stay.</strong> <code>administration.html#ch4-admin</code> and the other chapter anchors still open the howto. The same identifiers are repeated here so a Tech reader can land on the contract.</div>
-<h2 id="ops-admin">filees-admin — exit codes and ticket files</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-planned">Broader commands planned</span><span>Ticket, operation inspection and fail-closed client revoke exist.</span></div>
+<h2 id="ops-admin">filees-admin — exit codes and ticket files</h2><div class="section-meta"><span class="status status-implemented">Implemented</span><span class="status status-planned">Planned</span> broader commands<span>Ticket, operation inspection and fail-closed client revoke exist.</span></div>
 <p><code>filees-admin</code> is the administrative command-line tool. It must be run as <code>_filees-state</code> (e.g. via <code>doas -u _filees-state</code>) to satisfy its <code>pledge</code>/<code>unveil</code> profile. It writes structured JSON to stdout and diagnostics to stderr. Exit codes follow the <code>sysexits</code> range:</p>
 <div class="table-wrap"><table>
 <tr><th>Exit code</th><th>Constant</th><th>Meaning</th></tr>

@@ -67,7 +67,7 @@
 <p>The phone is a capture and preview device, not an editing station. It reads a share like a public listing. It writes only under <code>mobile-uploads/</code>. The rest of the tree stays read-only. Protocol detail lives in Tech <a href="man-pages.html#filees-mobile-v1"><code>filees-mobile-v1</code></a> and in <code>concepts/TREE_INGEST_CONCEPT.md</code>.</p>
 
 <h2 id="and-what">What it is</h2>
-<div class="section-meta"><span class="status status-verified">Live-tested</span><span>2026-09-09 on <code>spot</code>: QR pairing, share listing, download, a 198-file folder in one commit, tree visible on the desktop.</span></div>
+<div class="section-meta"><span class="status status-verified">Verified live</span><span>2026-09-09 on <code>spot</code>: QR pairing, share listing, download, a 198-file folder in one commit, tree visible on the desktop.</span></div>
 <p>The app never creates repositories and never asks for a UUID. After pairing it shows the same shares the desktop has in the realm projection. Opening a share is a folder-and-file list with human sizes. The launcher mark is <code>f:s</code>; folder rows use the square filees:space symbol.</p>
 
 <h2 id="and-pair">Pairing</h2>
@@ -85,7 +85,7 @@
 <p>This reduces the overhead of sending many small files at once; it does not change how a single very large file is handled. Long-session time limits are a separate desktop concern.</p>
 
 <h2 id="and-track">Tracked folders</h2>
-<div class="section-meta"><span class="status status-verified">Live-verified</span><span>2026-08-29: fixed a real bug where background sending silently did nothing unless a repository happened to be open in the share browser.</span></div>
+<div class="section-meta"><span class="status status-verified">Verified live</span><span>2026-08-29: fixed a real bug where background sending silently did nothing unless a repository happened to be open in the share browser.</span></div>
 <p>In Settings you pick a folder on the phone and a send destination (repository/share). The app checks the folder roughly every five minutes and sends new files automatically — the send destination is now independent of whichever repository you happen to be browsing. When you turn on tracking for a folder that already has content, the app asks whether to send all of it or only files added from now on. Every successful background send ends with a system notification.</p>
 
 <h2 id="and-not">What the phone does not do</h2>

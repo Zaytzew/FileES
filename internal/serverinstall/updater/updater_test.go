@@ -56,6 +56,18 @@ func testRunner(t *testing.T) (*Runner, string) {
 	t.Cleanup(func() { sandboxEnabled = originalSandboxEnabled })
 
 	root := t.TempDir()
+	// State the permissions of the test root instead of inheriting them.
+	//
+	// t.TempDir creates its directory with 0777 masked by the ambient umask.
+	// A Debian with the standard user-private-group default (umask 002) yields
+	// 0775, and prepareStorageDirectories then refuses the parent as
+	// group-writable - correctly, because on a server that parent holds public
+	// downloads. The refusal was right and the test's premise was accidental:
+	// it passed only where umask happened to be 022, which is every machine
+	// this suite had ever run on until a real Debian 13 VM ran it 2026-09-09.
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	cfg := &config.Config{
 		Platform:     "openbsd-amd64",
 		StateDir:     filepath.Join(root, "state"),

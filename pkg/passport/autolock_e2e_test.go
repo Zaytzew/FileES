@@ -45,7 +45,17 @@ func newAutolockE2ERepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	runAutolockCmd(t, "svn", "add", "--non-interactive", "--no-auth-cache", doc)
-	runAutolockCmd(t, "svn", "propset", "svn:needs-lock", "*", doc)
+	// The value goes in a file, never in argv. svn.exe on Windows is linked
+	// with CRT wildcard expansion, so a bare "*" is replaced by the listing of
+	// the current directory - which under go test is the package directory.
+	// Measured 2026-09-09: this line set svn:needs-lock on this package's own
+	// source files and left nineteen of them read-only, which then blocked
+	// editing them. Third sighting of the same defect today.
+	needsLock := filepath.Join(t.TempDir(), "needs-lock-value")
+	if err := os.WriteFile(needsLock, []byte("*"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runAutolockCmd(t, "svn", "propset", "svn:needs-lock", "--file", needsLock, doc)
 	runAutolockCmd(t, "svn", "commit", "--non-interactive", "--no-auth-cache", "-m", "init", wc)
 	return wc
 }

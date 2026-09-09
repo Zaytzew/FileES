@@ -162,7 +162,8 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
   "at":           "2026-07-16T09:15:02Z"
 }</code></pre>
 <p>The operation bundle itself contains an inline audit array (<code>Audit []AuditEvent</code>) recording the complete history of that operation. SVN history of the service repository provides an additional independent evidence layer for service-repository audit events.</p>
-<p>Recorded onboarding audit event types include: <code>ticket_created</code>, <code>ticket_revoked</code>, <code>operation_claimed</code>, <code>otp_attempt_failed</code>, <code>otp_verified</code>, <code>otp_exhausted</code>, <code>tunnel_session_started</code>, <code>helper_announced</code>, <code>helper_verified</code>, <code>identity_generated</code>, <code>access_staged</code>, <code>possession_verified</code>, and <code>client_activated</code>. The service repository independently records <code>client_activated</code> and <code>client_revoked</code> events.</p>
+<p>Recorded onboarding audit event types are: <code>ticket_created</code>, <code>ticket_invited</code>, <code>ticket_invitation_resent</code>, <code>ticket_revoked</code>, <code>ticket_expired</code>, <code>invitation_accepted</code>, <code>invitation_mail_attempt_started</code>, <code>invitation_mail_queued</code>, <code>onboarding_started</code>, <code>onboarding_expired</code>, <code>otp_expired</code>, <code>otp_exhausted</code>, <code>tunnel_session_started</code>, <code>tunnel_authorized</code>, <code>tunnel_reconnect_authorized</code>, <code>helper_announced</code>, <code>helper_verified</code>, <code>identity_generated</code>, <code>access_staged</code>, <code>possession_verified</code>, <code>realm_created</code>, <code>realm_bound</code>, <code>client_activated</code>, <code>mobile_pairing_created</code>, <code>mobile_key_pushed</code>, <code>mail_attempt_started</code>, <code>mail_attempt_recovered</code>, <code>mail_queued</code>, <code>mail_expired</code>. The service repository independently records <code>client_activated</code> and <code>client_revoked</code>.</p>
+<p>The list is exhaustive as of 2026-09-09 and was read from the emitting call sites, not from an older summary. Three names that earlier editions of this page listed — <code>operation_claimed</code>, <code>otp_attempt_failed</code> and <code>otp_verified</code> — are <em>not</em> emitted by any code path and never were in this schema. Monitoring built on them would stay silent for ever; successful OTP authentication appears as <code>tunnel_authorized</code>, and an exhausted or expired one as <code>otp_exhausted</code> or <code>otp_expired</code>. Per-attempt OTP failures are not audited at all — that is <em>not implemented yet</em>.</p>
 <p>The client-side error log is stored in <code>&lt;wc&gt;/.filees/logs/errors.jsonl</code> as JSON Lines:</p>
 <pre><code>{"ts":"2026-07-16T10:00:00Z","scope":"commit:projectA","code":"NET-4007",
  "severity":"WARN","hint":"RETRY_BACKOFF","msg":"Network unreachable — retrying"}</code></pre>
@@ -644,7 +645,7 @@ doas -u _filees-state filees-mail send</code></pre>
 <nav class="page-nav"><a href="install.html">← Install</a><a href="security.html">Security →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r523</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09 · source r1042</span></footer>
 </main>
 </body>
 </html>

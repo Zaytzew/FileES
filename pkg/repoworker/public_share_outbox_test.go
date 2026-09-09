@@ -13,6 +13,13 @@ import (
 )
 
 func TestPublicShareOutboxLeaseRenderAndRemoval(t *testing.T) {
+	// The worker serialises on kernel file locks. Windows keeps a marker file
+	// instead and is deliberately fail-closed, so every one of these reports
+	// "repository worker is already active" - a true statement about a lock that
+	// does not exist here. The package says so itself via FileLocksSupported.
+	if !FileLocksSupported() {
+		t.Skip("repository worker needs kernel file locks; verified where they exist")
+	}
 	now := time.Unix(1700000000, 0).UTC()
 	root := t.TempDir()
 	outbox := PublicShareOutbox{Root: root, Now: func() time.Time { return now }}

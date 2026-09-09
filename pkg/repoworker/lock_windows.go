@@ -21,3 +21,9 @@ func WithFileLock(path string, fn func() error) error {
 func TryWithFileLock(string, func() error) error {
 	return errors.New("scheduled passport maintenance requires Unix file locks")
 }
+
+// FileLocksSupported reports whether this platform provides the kernel file
+// locks the worker relies on. Windows keeps a marker file instead and is
+// deliberately fail-closed (see WithFileLock above), so a caller's tests can
+// ask this rather than naming platforms themselves.
+func FileLocksSupported() bool { return false }

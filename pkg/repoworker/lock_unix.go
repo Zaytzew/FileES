@@ -37,3 +37,7 @@ func WithFileLock(path string, fn func() error) error {
 	defer unix.Flock(int(f.Fd()), unix.LOCK_UN)
 	return fn()
 }
+
+// FileLocksSupported reports whether this platform provides the kernel file
+// locks the worker relies on. See lock_windows.go.
+func FileLocksSupported() bool { return true }

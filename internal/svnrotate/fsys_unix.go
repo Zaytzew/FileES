@@ -44,3 +44,8 @@ func sameFilesystem(a, b string) (bool, error) {
 // rotationSupported reports whether this platform provides the advisory lock
 // and filesystem check filees-rotate needs. See fsys_other.go.
 func rotationSupported() bool { return true }
+
+// Supported reports whether this platform provides the advisory lock and
+// same-filesystem check filees-rotate needs. Exported so callers' tests can
+// ask the package what it can do instead of listing platforms themselves.
+func Supported() bool { return true }

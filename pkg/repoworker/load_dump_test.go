@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"filees/internal/svnrotate"
 	"filees/internal/svnurl"
 	"fmt"
 	"os"
@@ -118,6 +119,11 @@ func testDumpLoadService(root, serviceWC, reposRoot string) DumpLoadService {
 }
 
 func TestDumpLoadServiceFullCycle(t *testing.T) {
+	// Loading a dump goes through filees-rotate, which the package reports as
+	// Unix-only rather than the test naming platforms.
+	if !svnrotate.Supported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireLoadDumpTools(t)
 	root := t.TempDir()
 	serviceWC := filepath.Join(root, "service")
@@ -159,6 +165,11 @@ func TestDumpLoadServiceFullCycle(t *testing.T) {
 }
 
 func TestDumpLoadServiceAppliesIgnorePolicy(t *testing.T) {
+	// Loading a dump goes through filees-rotate, which the package reports as
+	// Unix-only rather than the test naming platforms.
+	if !svnrotate.Supported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireLoadDumpTools(t)
 	root := t.TempDir()
 	serviceWC := filepath.Join(root, "service")
@@ -184,6 +195,11 @@ func TestDumpLoadServiceAppliesIgnorePolicy(t *testing.T) {
 }
 
 func TestDumpLoadServiceKeepLastRevisions(t *testing.T) {
+	// Loading a dump goes through filees-rotate, which the package reports as
+	// Unix-only rather than the test naming platforms.
+	if !svnrotate.Supported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireLoadDumpTools(t)
 	root := t.TempDir()
 	serviceWC := filepath.Join(root, "service")

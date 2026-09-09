@@ -193,8 +193,8 @@ type LockLister interface {
 // ---- High-level helpers ----
 
 func (c *execClient) GetInfo(ctx context.Context, repoURL string) (string, error) {
-	if wc, rel, ok := nativeInfoTarget(repoURL); nativeWCOps(c) && ok {
-		v, err := c.nativeInfo(ctx, wc, rel)
+	if nativeWCOps(c) {
+		v, err := c.nativeTargetInfo(ctx, repoURL)
 		if err != nil {
 			return "", err
 		}
@@ -205,6 +205,15 @@ func (c *execClient) GetInfo(ctx context.Context, repoURL string) (string, error
 
 func (c *execClient) Checkout(ctx context.Context, repoURL, localPath string) (string, error) {
 	if _, err := os.Stat(filepath.Join(localPath, ".svn")); err == nil {
+		if nativeWCOps(c) {
+			info, err := c.nativeInfo(ctx, localPath, "")
+			if err != nil {
+				return "", err
+			}
+			if strings.TrimRight(info.URL, "/") != strings.TrimRight(repoURL, "/") {
+				return "", errors.New("native checkout resume URL does not match working copy")
+			}
+		}
 		c.lg.Debugf("WC exists at %s → cleanup+update", localPath)
 		if out, err := c.Cleanup(ctx, localPath); err != nil {
 			return out, err
@@ -513,6 +522,9 @@ func (c *execClient) Unlock(ctx context.Context, rootDirectory string, paths []s
 // below rootDirectory.  svn status --show-updates is used rather than svn info:
 // the latter only knows locks previously seen by this very working copy.
 func (c *execClient) ListLocks(ctx context.Context, rootDirectory string) ([]LockEntry, error) {
+	if nativeWCOps(c) {
+		return c.nativeLockObservations(ctx, rootDirectory, "")
+	}
 	out, err := c.run(ctx, rootDirectory, []string{"status", "--show-updates", "--xml", "--verbose", "--ignore-externals", "--depth", "infinity", "--", "."})
 	if err != nil {
 		return nil, fmt.Errorf("svn reservation list: %w", err)
@@ -534,6 +546,20 @@ func (c *execClient) ListLocks(ctx context.Context, rootDirectory string) ([]Loc
 // instances, never stealing a different realm's lock) to work at all
 // between two different machines, not just two calls from the same one.
 func (c *execClient) LockInfo(ctx context.Context, rootDirectory, path string) (*LockInfo, error) {
+	if nativeWCOps(c) {
+		targets, err := nativeRelatives(rootDirectory, []string{path})
+		if err != nil || len(targets) != 1 {
+			return nil, errors.New("native lock observation requires one data path")
+		}
+		rows, err := c.nativeLockObservations(ctx, rootDirectory, targets[0])
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			return nil, nil
+		}
+		return &rows[0].LockInfo, nil
+	}
 	targets := c.relativize(rootDirectory, []string{path})
 	if len(targets) != 1 {
 		return nil, errors.New("svn info lock requires exactly one path")
@@ -728,8 +754,8 @@ func (c *execClient) Resolve(ctx context.Context, wc string, paths []string, acc
 }
 
 func (c *execClient) Revision(ctx context.Context, target string) (int64, error) {
-	if wc, rel, ok := nativeInfoTarget(target); nativeWCOps(c) && ok {
-		v, err := c.nativeInfo(ctx, wc, rel)
+	if nativeWCOps(c) {
+		v, err := c.nativeTargetInfo(ctx, target)
 		return v.Revision, err
 	}
 	out, err := c.run(ctx, "", []string{"info", "--show-item", "revision", target})
@@ -793,6 +819,10 @@ func parseLogXML(output string) ([]LogMessage, error) {
 // ---- Core exec runner ----
 
 func (c *execClient) run(parentCtx context.Context, workingDir string, args []string) (string, error) {
+	// A missed routing branch must be visible, never launch a foreign client.
+	if nativeWCOps(c) {
+		return "", errors.New("native SVN routing gap: CLI execution is disabled for this client")
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for i, arg := range args {
@@ -861,7 +891,8 @@ func (c *execClient) run(parentCtx context.Context, workingDir string, args []st
 func svnProcessEnvironment(environ []string, sshCommand string) []string {
 	result := make([]string, 0, len(environ)+2)
 	for _, entry := range environ {
-		if strings.HasPrefix(entry, "LC_ALL=") {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(key, "LC_ALL") || (sshCommand != "" && strings.EqualFold(key, "SVN_SSH")) {
 			continue
 		}
 		result = append(result, entry)

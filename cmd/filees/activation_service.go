@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -152,14 +151,9 @@ func prepareActivatedClientProfile(ctx context.Context, payload contract.Activat
 	if err := clientprofile.Store(filepath.Join(root, "client-profile.json"), profile); err != nil {
 		return clientprofile.Profile{}, err
 	}
-	svn := client.New(client.Options{SvnPath: "svn", Timeout: profile.SVNTimeout(), LogScope: "svn:service:" + payload.ServerID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: port})
-	if _, err := svn.Update(ctx, serviceWC); err == nil {
-		return profile, nil
-	}
-	if err := os.MkdirAll(serviceWC, 0o700); err != nil {
-		return clientprofile.Profile{}, err
-	}
-	_, err = svn.Checkout(ctx, serviceURL, serviceWC)
+	svn := client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: profile.SVNTimeout(), LogScope: "svn:service:" + payload.ServerID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: port, SSHHostName: host})
+	updater := serviceProjectionUpdater{client: svn, url: serviceURL, prepare: serviceWCPreparation(svn, profile.ServerID, profile.ClientID, serviceURL)}
+	_, err = updater.Update(ctx, serviceWC)
 	if err != nil {
 		return profile, err
 	}

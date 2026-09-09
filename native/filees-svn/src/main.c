@@ -34,7 +34,7 @@ static void print_ok_version(void)
         if (i) putchar(',');
         filees_json_string(k_verbs[i]);
     }
-    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\"]}");
+    puts("],\"features\":[\"update_changes\",\"commit_targets_stdin_v1\",\"info_inspect_remote_v1\",\"status_remote_locks_v1\"]}");
 }
 
 /* Stdin is UTF-8 on every platform, independent of the process locale. */
@@ -346,10 +346,30 @@ static svn_error_t *run_lock(int argc, const char **argv, svn_boolean_t locking,
     return filees_ra_unlock(wc, live, paths, n, pool);
 }
 
+static svn_error_t *run_info(int argc, const char **argv, apr_pool_t *pool)
+{
+    const char *wc = NULL, *url = NULL;
+    const char *paths[FILEES_SVN_MAX_PATHS];
+    int i, n = 0;
+    svn_boolean_t live = TRUE, inspect = FALSE;
+    for (i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--")) { SVN_ERR(collect_paths(i, argc, argv, paths, &n)); break; }
+        if (!strcmp(argv[i], "--url") && i + 1 < argc && !wc && !url) { url = argv[++i]; continue; }
+        if (!strcmp(argv[i], "--inspect-wc") && i + 1 < argc && !wc && !url) {
+            wc = argv[++i]; inspect = TRUE; continue;
+        }
+        if ((!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) && !wc && !url) {
+            SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live)); continue;
+        }
+        return filees_refuse("info requires one --url, --inspect-wc, --wc or --disposable-wc target");
+    }
+    return filees_info(url, wc, live, inspect, paths, n, pool);
+}
+
 static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
 {
     const char *verb, *wc = NULL;
-    svn_boolean_t live = TRUE, recursive = FALSE, depth_set = FALSE;
+    svn_boolean_t live = TRUE, recursive = FALSE, depth_set = FALSE, remote = FALSE, inspect = FALSE;
     svn_depth_t depth = svn_depth_empty;
     const char *accept = NULL, *propname = NULL, *propval = NULL;
     const char *paths[FILEES_SVN_MAX_PATHS];
@@ -379,6 +399,7 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     if (!strcmp(verb, "checkout")) return run_checkout(argc, argv, pool);
     if (!strcmp(verb, "update")) return run_update(argc, argv, pool);
     if (!strcmp(verb, "log")) return run_log(argc, argv, pool);
+    if (!strcmp(verb, "info")) return run_info(argc, argv, pool);
 
     if (!strcmp(verb, "cat")) {
         /* Handled before the shared flag loop: cat is the first verb with no
@@ -402,12 +423,17 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
     }
 
     for (i = 2; i < argc; ++i) {
+        if (!strcmp(verb, "status") && !strcmp(argv[i], "--show-updates")) { remote = TRUE; continue; }
+        if (!strcmp(verb, "status") && !strcmp(argv[i], "--inspect-wc") && !wc && i + 1 < argc) {
+            wc = argv[++i]; inspect = TRUE; continue;
+        }
         if (!strcmp(argv[i], "--")) {
             SVN_ERR(collect_paths(i, argc, argv, paths, &n));
             i = argc;
             break;
         }
         if (!strcmp(argv[i], "--wc") || !strcmp(argv[i], "--disposable-wc")) {
+            if (wc) return filees_refuse("duplicate working-copy target");
             SVN_ERR(parse_wc_flag(&i, argc, argv, &wc, &live));
             continue;
         }
@@ -451,10 +477,7 @@ static svn_error_t *run_verb(int argc, const char **argv, apr_pool_t *pool)
         SVN_ERR(filees_wc_delete(wc, live, paths, n, pool));
     } else if (!strcmp(verb, "status")) {
         if (!depth_set) depth = (n == 0) ? svn_depth_infinity : svn_depth_empty;
-        SVN_ERR(filees_wc_status(wc, live, paths, n, depth, pool));
-        return SVN_NO_ERROR;
-    } else if (!strcmp(verb, "info")) {
-        SVN_ERR(filees_wc_info(wc, live, paths, n, pool));
+        SVN_ERR(filees_wc_status(wc, live, paths, n, depth, remote, inspect, pool));
         return SVN_NO_ERROR;
     } else if (!strcmp(verb, "propset")) {
         SVN_ERR(filees_wc_propset(wc, live, propname, propval, paths, n, pool));

@@ -28,11 +28,25 @@ Go passes these notifications to the existing received journal and conflict
 reconciliation, without manufacturing CLI text. Older helpers are refused
 before these mutations.
 
-This is not complete CLI removal. URL info/HEAD, remote lock observations
-(`status -u`) and unmanaged pre-adoption identity checks remain CLI.
-Provisioning/attachment and service-WC factories have not enabled the native
-client: fresh/adopted `.filees` identity lifecycle needs separate acceptance.
-Native checkout itself does not create that marker. Linux routing is unchanged.
+Integration checkpoint 2026-09-09 (r1019 base + working delta): URL info/HEAD,
+remote lock observations and unmanaged pre-adoption checks now route through C
+on Windows opt-in, as do provisioning/attachment/service-WC factories.
+`info --inspect-wc` and offline `status --inspect-wc` never stamp ownership;
+mutations still require the managed marker. Lifecycle validates URL and its
+durable authority before creating that marker (also before resume cleanup).
+Native checkout itself does not create it. Linux routing is unchanged.
+Remote status returns separate local_lock/repos_lock and against_revision;
+ConfirmLock requires matching local and remote tokens/owner/comment. Missing
+evidence is an error, never a fabricated empty lock list.
+
+The local status correction for an existing nested unversioned file verifies
+its plain node and unversioned/ignored ancestor before returning its status.
+Missing paths, unsafe targets and other WC errors still refuse.
+Local argv batches now respect both 512 paths and a conservative 12000 UTF-16
+unit budget; Windows refuses a complete command over 30000 units before launch.
+Distribution downloads accept a separate explicit pinned SSH profile.
+This is not complete CLI removal acceptance: DLL/MSI packaging and the
+consolidated daemon/VM fault/lifecycle round remain release gates.
 Evidence and remaining release gates: reports/NATIVE_SVN_RA_ADAPTER_2026-09-08.md.
 
 Documentation reconciliation: 2026-09-07, source r917. Native WC-local

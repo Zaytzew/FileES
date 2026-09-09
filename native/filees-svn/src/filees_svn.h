@@ -25,6 +25,9 @@ const char *filees_status_kind(enum svn_wc_status_kind kind);
 const char *filees_node_kind(svn_node_kind_t kind);
 
 /* Exact WC root. live requires .filees; disposable requires the probe marker. */
+/* Read-only pre-adoption inspection must not create/require a FileES marker. */
+svn_error_t *filees_inspect_wc(const char **wc_abspath, svn_client_ctx_t **ctx,
+                               const char *wc_arg, apr_pool_t *pool);
 svn_error_t *filees_require_wc(const char **wc_abspath, svn_client_ctx_t **ctx,
                                const char *wc_arg, svn_boolean_t live,
                                apr_pool_t *pool);
@@ -74,8 +77,9 @@ svn_error_t *filees_wc_delete(const char *wc, svn_boolean_t live,
                               const char **rels, int n, apr_pool_t *pool);
 svn_error_t *filees_wc_status(const char *wc, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
-                              apr_pool_t *pool);
-svn_error_t *filees_wc_info(const char *wc, svn_boolean_t live,
+                              svn_boolean_t remote, svn_boolean_t inspect, apr_pool_t *pool);
+svn_error_t *filees_info(const char *url, const char *wc, svn_boolean_t live,
+                            svn_boolean_t inspect,
                             const char **rels, int n, apr_pool_t *pool);
 svn_error_t *filees_wc_propset(const char *wc, svn_boolean_t live,
                                const char *name, const char *value,

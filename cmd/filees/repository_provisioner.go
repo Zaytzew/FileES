@@ -82,7 +82,7 @@ type provisionedAttachment struct {
 func newDaemonProvisioner(local *localrepo.Store, store *provisioning.Store, profiles []clientprofile.Profile) *daemonProvisioner {
 	p := &daemonProvisioner{local: local, provisioning: store, profiles: make(map[string]clientprofile.Profile), queue: make(chan string, 32)}
 	p.newAttachmentSVN = func(profile clientprofile.Profile, operationID string) attachmentSVN {
-		return client.New(client.Options{SvnPath: "svn", Timeout: profile.SVNTimeout(), LogScope: "svn:attachment:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
+		return client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: profile.SVNTimeout(), LogScope: "svn:attachment:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
 	}
 	for _, profile := range profiles {
 		p.profiles[profile.ServerID] = profile
@@ -301,7 +301,20 @@ func (p *daemonProvisioner) runOne(ctx context.Context, operationID string) {
 		_, _ = p.local.MarkError(operationID, err)
 		return
 	}
-	svn := client.New(client.Options{SvnPath: "svn", Timeout: profile.SVNTimeout(), LogScope: "svn:provisioning:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address})
+	svn := lifecycleSVN{
+		Client: client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: profile.SVNTimeout(), LogScope: "svn:provisioning:" + operationID, SSHIdentityFile: profile.IdentityFile, SSHKnownHosts: profile.KnownHosts, SSHPort: profile.SSHPort, SSHHostName: profile.Address}),
+		expected: func(repoURL, root string) (workingCopyIdentity, error) {
+			op, err := p.provisioning.Get(operationID)
+			if err != nil {
+				return workingCopyIdentity{}, err
+			}
+			record, ok := p.local.Get(operationID)
+			if !ok || record.ServerID != profile.ServerID || record.RepoID != op.RepoID || record.RepoURL != repoURL || op.RepoURL != repoURL || filepath.Clean(op.LocalPath) != filepath.Clean(root) || op.RepoID == "" {
+				return workingCopyIdentity{}, errors.New("initial import does not match durable provisioning authority")
+			}
+			return expectedWorkingCopyIdentity(record.ServerID, op.RepoID, op.RepoURL), nil
+		},
+	}
 	orchestrator := provisioning.Orchestrator{
 		Store: p.provisioning, Control: controlTransport, SVN: svn,
 		Limits: provisioning.ImportLimits{MaxBatchFiles: 100, MaxBatchBytes: 512 << 20},
@@ -1058,6 +1071,12 @@ func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Reco
 		return
 	}
 	svn := p.newAttachmentSVN(profile, record.OperationID)
+	if hadSVN {
+		if err := prepareLifecycleWC(ctx, svn, check.CanonicalPath, expectedWorkingCopyIdentity(record.ServerID, record.RepoID, record.RepoURL)); err != nil {
+			p.failAttach(record.OperationID, err)
+			return
+		}
+	}
 	if _, err := svn.Checkout(ctx, record.RepoURL, check.CanonicalPath); err != nil {
 		// A failed first checkout of an existing realm share leaves an
 		// incomplete .svn admin area in an otherwise empty folder. Resume,
@@ -1086,6 +1105,10 @@ func (p *daemonProvisioner) runAttach(ctx context.Context, record localrepo.Reco
 			p.failAttach(record.OperationID, fmt.Errorf("checkout is incomplete or modified at %s (%s)", entry.Path, entry.Item))
 			return
 		}
+	}
+	if err := ensureWorkingCopyIdentity(check.CanonicalPath, expectedWorkingCopyIdentity(record.ServerID, record.RepoID, record.RepoURL)); err != nil {
+		p.failAttach(record.OperationID, err)
+		return
 	}
 	if _, err := p.local.MarkAttached(record.OperationID, record.RepoID); err != nil {
 		p.failAttach(record.OperationID, err)
@@ -1121,7 +1144,7 @@ func (p *daemonProvisioner) otherRoots(operationID string) []string {
 
 func infoHasURL(info, want string) bool {
 	for _, line := range strings.Split(strings.ReplaceAll(info, "\r\n", "\n"), "\n") {
-		if strings.TrimSpace(strings.TrimPrefix(line, "URL:")) == want && strings.HasPrefix(strings.TrimSpace(line), "URL:") {
+		if strings.TrimRight(strings.TrimSpace(strings.TrimPrefix(line, "URL:")), "/") == strings.TrimRight(want, "/") && strings.HasPrefix(strings.TrimSpace(line), "URL:") {
 			return true
 		}
 	}

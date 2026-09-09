@@ -8,6 +8,7 @@
 #include <svn_dirent_uri.h>
 #include <svn_props.h>
 #include <svn_string.h>
+#include <svn_time.h>
 
 svn_error_t *filees_wc_add(const char *wc_arg, svn_boolean_t live,
                            const char **rels, int n, apr_pool_t *pool)
@@ -47,6 +48,8 @@ struct status_row {
     const char *path;
     const char *item;
     const char *props;
+    svn_lock_t *local_lock;
+    svn_lock_t *repos_lock;
 };
 
 static svn_error_t *collect_status(void *baton, const char *path,
@@ -66,38 +69,122 @@ static svn_error_t *collect_status(void *baton, const char *path,
                                        ? status->text_status
                                        : status->node_status);
     row->props = filees_status_kind(status->prop_status);
+    row->local_lock = status->lock ? svn_lock_dup(status->lock, b->pool) : NULL;
+    row->repos_lock = status->repos_lock ? svn_lock_dup(status->repos_lock, b->pool) : NULL;
     return SVN_NO_ERROR;
+}
+
+/* status6 cannot open a WC database at an unversioned parent. Only convert
+ * that specific failure after proving an existing plain target and an SVN
+ * observation of its unversioned ancestor. Missing/obstructed/foreign paths
+ * and arbitrary metadata failures remain errors; this never schedules add. */
+static svn_error_t *nested_unversioned_status(svn_error_t *original,
+                                              const char *path,
+                                              svn_client_ctx_t *ctx,
+                                              struct status_baton *b,
+                                              apr_pool_t *pool)
+{
+    apr_finfo_t info;
+    const char *parent;
+    svn_error_t *err;
+    svn_opt_revision_t rev;
+    if (!svn_error_find_cause(original, SVN_ERR_WC_PATH_NOT_FOUND)) return original;
+    if (apr_stat(&info, path, APR_FINFO_TYPE | APR_FINFO_LINK, pool) ||
+        (info.filetype != APR_REG && info.filetype != APR_DIR)) return original;
+    err = filees_plain_node(path, info.filetype, FALSE, pool);
+    if (err) { svn_error_clear(err); return original; }
+    rev.kind = svn_opt_revision_working;
+    for (parent = svn_dirent_dirname(path, pool); strcmp(parent, b->wc);
+         parent = svn_dirent_dirname(parent, pool)) {
+        struct status_baton probe;
+        if (!svn_dirent_skip_ancestor(b->wc, parent)) return original;
+        probe.wc = b->wc;
+        probe.pool = pool;
+        probe.rows = apr_array_make(pool, 1, sizeof(struct status_row));
+        err = svn_client_status6(NULL, ctx, parent, &rev, svn_depth_empty,
+                                 TRUE, FALSE, FALSE, TRUE, TRUE, TRUE,
+                                 NULL, collect_status, &probe, pool);
+        if (err) {
+            svn_boolean_t absent = svn_error_find_cause(err, SVN_ERR_WC_PATH_NOT_FOUND) != NULL;
+            svn_error_clear(err);
+            if (absent) continue;
+            return original;
+        }
+        if (probe.rows->nelts == 1) {
+            const struct status_row *ancestor = &APR_ARRAY_IDX(probe.rows, 0, struct status_row);
+            if (!strcmp(ancestor->item, "unversioned") || !strcmp(ancestor->item, "ignored")) {
+                const char *rel;
+                struct status_row *row;
+                err = filees_relpath(&rel, b->wc, path, pool);
+                if (err) return svn_error_compose_create(original, err);
+                row = apr_array_push(b->rows);
+                row->path = rel;
+                row->item = ancestor->item;
+                row->props = "none";
+                row->local_lock = row->repos_lock = NULL;
+                svn_error_clear(original);
+                return SVN_NO_ERROR;
+            }
+        }
+        return original;
+    }
+    return original;
+}
+
+static void status_lock(const char *name, const svn_lock_t *lock, apr_pool_t *pool)
+{
+    printf(",\"%s\":", name);
+    if (!lock) { printf("null"); return; }
+    printf("{\"token\":"); filees_json_string(lock->token);
+    printf(",\"owner\":"); filees_json_string(lock->owner);
+    printf(",\"comment\":"); filees_json_string(lock->comment ? lock->comment : "");
+    printf(",\"created\":"); filees_json_string(svn_time_to_cstring(lock->creation_date, pool));
+    putchar('}');
 }
 
 svn_error_t *filees_wc_status(const char *wc_arg, svn_boolean_t live,
                               const char **rels, int n, svn_depth_t depth,
-                              apr_pool_t *pool)
+                              svn_boolean_t remote, svn_boolean_t inspect, apr_pool_t *pool)
 {
     const char *wc;
     svn_client_ctx_t *ctx;
     svn_opt_revision_t rev;
     struct status_baton b;
+    svn_revnum_t against = SVN_INVALID_REVNUM;
     int i, first = 1;
-    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    if (remote && n > 1) return filees_refuse("remote status requires at most one target");
+    if (inspect) {
+        if (remote) return filees_refuse("inspection status is offline only");
+        SVN_ERR(filees_inspect_wc(&wc, &ctx, wc_arg, pool));
+    } else {
+        SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    }
+    if (remote) SVN_ERR(filees_ra_ctx_auth(ctx, pool));
     rev.kind = svn_opt_revision_working;
     b.wc = wc;
     b.pool = pool;
     b.rows = apr_array_make(pool, 16, sizeof(struct status_row));
     if (n == 0) {
-        SVN_ERR(svn_client_status6(NULL, ctx, wc, &rev, depth,
-                                  TRUE, FALSE, FALSE, TRUE, TRUE, TRUE,
+        SVN_ERR(svn_client_status6(&against, ctx, wc, &rev, depth,
+                                  TRUE, remote, TRUE, TRUE, TRUE, FALSE,
                                   NULL, collect_status, &b, pool));
     } else {
         apr_array_header_t *paths;
         SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
         for (i = 0; i < paths->nelts; ++i) {
             const char *path = APR_ARRAY_IDX(paths, i, const char *);
-            SVN_ERR(svn_client_status6(NULL, ctx, path, &rev, depth,
-                                      TRUE, FALSE, FALSE, TRUE, TRUE, TRUE,
-                                      NULL, collect_status, &b, pool));
+            int before = b.rows->nelts;
+            svn_error_t *err = svn_client_status6(&against, ctx, path, &rev, depth,
+                                                  TRUE, remote, TRUE, TRUE, TRUE, FALSE,
+                                                  NULL, collect_status, &b, pool);
+            if (err) {
+                b.rows->nelts = before;
+                if (remote) return err; /* no invented repository lock observation */
+                SVN_ERR(nested_unversioned_status(err, path, ctx, &b, pool));
+            }
         }
     }
-    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"entries\":[");
+    printf("{\"schema\":\"" FILEES_SVN_SCHEMA "\",\"ok\":true,\"remote\":%s,\"entries\":[", remote ? "true" : "false");
     for (i = 0; i < b.rows->nelts; ++i) {
         struct status_row *row = &APR_ARRAY_IDX(b.rows, i, struct status_row);
         if (!first) putchar(',');
@@ -108,9 +195,19 @@ svn_error_t *filees_wc_status(const char *wc_arg, svn_boolean_t live,
         filees_json_string(row->item);
         printf(",\"props\":");
         filees_json_string(row->props);
+        if (remote) {
+            status_lock("local_lock", row->local_lock, pool);
+            status_lock("repos_lock", row->repos_lock, pool);
+        }
         putchar('}');
     }
-    puts("]}");
+    printf("]");
+    if (remote) {
+        printf(",\"against_revision\":");
+        if (SVN_IS_VALID_REVNUM(against)) printf("%ld", (long)against);
+        else printf("null");
+    }
+    puts("}");
     return SVN_NO_ERROR;
 }
 
@@ -266,7 +363,8 @@ static svn_error_t *collect_info(void *baton, const char *abspath_or_url,
     struct info_row *row;
     const char *rel;
     (void)pool;
-    SVN_ERR(filees_relpath(&rel, b->wc, abspath_or_url, b->pool));
+    if (b->wc) SVN_ERR(filees_relpath(&rel, b->wc, abspath_or_url, b->pool));
+    else rel = abspath_or_url;
     row = apr_array_push(b->rows);
     row->path = apr_pstrdup(b->pool, rel);
     row->url = info->URL ? apr_pstrdup(b->pool, info->URL) : NULL;
@@ -296,36 +394,39 @@ static void info_json_field(const char *name, const char *value)
     else printf("null");
 }
 
-/* info is the last WC-local verb from the desktop inventory. It answers only
- * about the working copy: an URL target would be an RA operation and belongs
- * with checkout/update, not here.
- *
- * The emitted fields are the ones the daemon actually consumes -
- * VerifyCommittedMove reads url, repository root and the last-changed revision
- * (pkg/client/native_move.go:133), and Revision() reads one number
- * (client.go:666) - plus uuid and kind, which cost nothing and answer "is this
- * the repository I think it is". */
-svn_error_t *filees_wc_info(const char *wc_arg, svn_boolean_t live,
+/* One info receipt for offline WC inspection and explicit URL HEAD. The latter
+ * uses the same noninteractive RA context as checkout/update. Unmanaged WC
+ * inspection proves identity before adoption, without creating .filees; it
+ * does not authorize mutation. Unknown revisions remain null in the receipt. */
+svn_error_t *filees_info(const char *url_arg, const char *wc_arg, svn_boolean_t live,
+                            svn_boolean_t inspect,
                             const char **rels, int n, apr_pool_t *pool)
 {
-    const char *wc;
+    const char *wc = NULL, *url = NULL;
     svn_client_ctx_t *ctx;
     apr_array_header_t *paths;
     struct info_baton b;
     int i, first = 1;
 
-    SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
+    if (url_arg) {
+        if (wc_arg || n || inspect) return filees_refuse("info URL cannot have WC options");
+        SVN_ERR(filees_ra_target(&url, url_arg, pool));
+        SVN_ERR(filees_ra_ctx(&ctx, pool));
+    } else if (inspect) SVN_ERR(filees_inspect_wc(&wc, &ctx, wc_arg, pool));
+    else SVN_ERR(filees_require_wc(&wc, &ctx, wc_arg, live, pool));
     b.wc = wc;
     b.pool = pool;
     b.rows = apr_array_make(pool, 4, sizeof(struct info_row));
     if (n == 0) {
         paths = apr_array_make(pool, 1, sizeof(const char *));
-        APR_ARRAY_PUSH(paths, const char *) = wc;
+        APR_ARRAY_PUSH(paths, const char *) = url ? url : wc;
     } else {
         SVN_ERR(filees_abs_paths(&paths, wc, rels, n, pool));
     }
     for (i = 0; i < paths->nelts; ++i) {
         const char *path = APR_ARRAY_IDX(paths, i, const char *);
+        svn_opt_revision_t head;
+        head.kind = svn_opt_revision_head;
         /* Both revisions NULL is not a shortcut for a default - it is the
          * only input that keeps svn_client_info4 inside the working copy.
          * libsvn_client/info.c:353 takes the local branch solely when peg and
@@ -333,7 +434,7 @@ svn_error_t *filees_wc_info(const char *wc_arg, svn_boolean_t live,
          * included, opens an RA session. Measured 2026-09-08: passing WORKING
          * made the receiver report repository-relative names and the verb
          * quietly became a network call. */
-        SVN_ERR(svn_client_info4(path, NULL, NULL, svn_depth_empty,
+        SVN_ERR(svn_client_info4(path, url ? &head : NULL, url ? &head : NULL, svn_depth_empty,
                                  FALSE, TRUE, FALSE, NULL,
                                  collect_info, &b, ctx, pool));
     }

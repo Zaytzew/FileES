@@ -13,6 +13,17 @@ type LockReceiptReader interface {
 }
 
 func (c *execClient) ConfirmLock(ctx context.Context, wc, path, comment string) (*LockInfo, error) {
+	if nativeWCOps(c) {
+		observation, err := c.nativeReadLockObservation(ctx, wc, path)
+		if err != nil {
+			return nil, err
+		}
+		local, remote := observation.Local, observation.Remote
+		if comment == "" || local == nil || remote == nil || local.Token != remote.Token || local.Owner != remote.Owner || local.Comment != comment || remote.Comment != comment {
+			return nil, nil
+		}
+		return remote, nil
+	}
 	args := append([]string{"status", "--xml", "--verbose", "--show-updates", "--depth", "empty"}, c.pathArgs(wc, []string{path})...)
 	out, err := c.run(ctx, wc, args)
 	if err != nil {

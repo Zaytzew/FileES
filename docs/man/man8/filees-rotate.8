@@ -1,4 +1,4 @@
-.Dd August 14, 2026
+.Dd September 9, 2026
 .Dt FILEES-ROTATE 8
 .Os
 .Sh NAME
@@ -38,6 +38,26 @@ Running
 is an operational decision.
 The same staging and swap machinery is reused by
 .Cm LOAD_REPOSITORY_DUMP .
+.Pp
+.Sy Prefer
+.Xr filees-admin 8
+.Cm repo rotate .
+It performs the same rotation under the per-command
+.Xr pledge 2
+and
+.Xr unveil 2
+profile that every other administrative operation gets, and takes its paths
+from the server configuration instead of the command line, so it cannot
+address a repository outside the configured tree.
+.Nm
+applies no sandbox at all: it is the one server executable that runs as root
+with no profile and takes absolute paths from
+.Ar argv ,
+which is also why it can break live locks.
+Sandboxing
+.Nm
+itself is not implemented yet; until then it is the manual escape hatch for a
+repository the configured path cannot reach, not the ordinary way to rotate.
 .Sh OPTIONS
 .Bl -tag -width Ds
 .It Fl repo Ar path
@@ -76,5 +96,6 @@ $ filees-rotate -repo /STORAGE01/filees-repos/UUID \e
     -archive /STORAGE01/filees-archive -dry-run
 .Ed
 .Sh SEE ALSO
+.Xr svnadmin 1 ,
 .Xr filees 7 ,
-.Xr svnadmin 1
+.Xr filees-admin 8

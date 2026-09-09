@@ -21,3 +21,7 @@ func (s *Files) withLock(action func() error) error {
 	defer unix.Flock(int(file.Fd()), unix.LOCK_UN)
 	return action()
 }
+
+// fileLocksSupported reports whether this platform has the advisory locking
+// withLock needs. See lock_other.go for why it exists.
+func fileLocksSupported() bool { return true }

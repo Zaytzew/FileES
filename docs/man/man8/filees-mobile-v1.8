@@ -1,4 +1,4 @@
-.Dd August 16, 2026
+.Dd September 9, 2026
 .Dt FILEES-MOBILE-V1 8
 .Os
 .Sh NAME
@@ -20,12 +20,46 @@ It inherits that desktop's repository list once.
 The phone may read a granted share and write only under
 .Pa mobile-uploads/ .
 A new path is unique-append.
-The same path under
-.Pa mobile-uploads/
-with different content becomes a new Subversion revision.
+.Pp
+The two write verbs differ on what happens when a path is already taken,
+and the difference is deliberate.
+.Ic UPLOAD_OBJECT
+never overwrites and never renames: identical content is dropped as a
+duplicate
+.Pq Ic NAME_TAKEN_SAME ,
+and different content is parked for the user to decide
+.Pq Ic NAME_TAKEN_DIFF .
 .Ic UPLOAD_TREE
-ingests a marked zip as one commit; an unmarked zip is rejected as a
-whole.
+ingests a marked zip as one commit, skips entries whose content already
+matches and overwrites the rest as a new revision; an unmarked zip is
+rejected as a whole.
+So a re-upload of one changed file does not replace it, while the same file
+inside an ingested folder does.
+.Pp
+An
+.Ic UPLOAD_OBJECT
+answers with exactly one outcome:
+.Bl -tag -width "NAME_TAKEN_SAME" -compact
+.It Ic COMMITTED
+the object was published
+.It Ic NAME_TAKEN_SAME
+the path exists with identical content; dropped as a duplicate
+.It Ic NAME_TAKEN_DIFF
+the path exists with different content; parked for the user
+.It Ic DESTINATION_GONE
+a file sits where the parent directory should be, or the parent is absent
+outside
+.Pa mobile-uploads/
+.It Ic ACCESS_REVOKED
+the installation no longer holds
+.Sy rw
+.El
+.Pp
+Missing parent directories are created only under
+.Pa mobile-uploads/ ,
+which is the phone's own album tree.
+Everywhere else the destination directory must already exist.
+.Pp
 The mobile projection does not receive
 .Ic editing_policy .
 .Pp
@@ -48,6 +82,6 @@ Append ledger, owner
 .Sy _filees-state .
 .El
 .Sh SEE ALSO
+.Xr filees 7 ,
 .Xr filees-client-entry 8 ,
-.Xr filees-worker 8 ,
-.Xr filees 7
+.Xr filees-worker 8

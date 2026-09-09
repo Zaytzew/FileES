@@ -95,7 +95,7 @@
 <h1 id="ops">Eksploatacja i kontrakty</h1>
 <div class="chapter-content">
 <p>Ta część zawiera szczegóły techniczne potrzebne przy instalacji, eksploatacji, odtwarzaniu i diagnostyce FileES. Czynności wykonywane z programu na komputerze opisano w przewodniku użytkownika i w rozdziale administracyjnym.</p>
-<h2 id="ops-admin">filees-admin — kody wyjścia i pliki zleceń</h2>
+<h2 id="ops-admin">filees-admin — kody wyjścia i pliki zleceń</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Zlecenia, wgląd w operację i fail-closed cofnięcie klienta istnieją.</span></div>
 <p><code>filees-admin</code> jest administracyjnym narzędziem wiersza poleceń. Musi być uruchamiane jako <code>_filees-state</code> (np. przez <code>doas -u _filees-state</code>), żeby spełnić swój profil <code>pledge</code>/<code>unveil</code>. Zapisuje strukturalny JSON na stdout, a diagnostykę na stderr. Kody wyjścia są z zakresu <code>sysexits</code>:</p>
 <div class="table-wrap"><table>
 <tr><th>Kod wyjścia</th><th>Stała</th><th>Znaczenie</th></tr>
@@ -139,7 +139,7 @@ filees-admin invitation create|revoke|inspect
 filees-admin operation inspect|abort|retry
 filees-admin audit list|verify
 filees-admin projection rebuild|verify</code></pre>
-<h2 id="ops-operation">filees-operation — pliki przejęcia</h2>
+<h2 id="ops-operation">filees-operation — pliki przejęcia</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odzyskiwanie przejęć, wygaszanie niedokończonych operacji i sprzątanie aktywacji są idempotentne.</span></div>
 <pre><code>filees-operation recover
 filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <p><code>filees-operation recover</code> skanuje katalog operacji w poszukiwaniu plików przejęcia (<code>.claim-*.json</code>) i je dokańcza. Przejęcie może mieć dwie formy:</p>
@@ -148,7 +148,7 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <li><strong>przejęcie pakietu</strong> — pakiet został zapisany w pliku przejęcia, ale końcową zmianę nazwy na <code>&lt;req_id&gt;.json</code> nie doszło do skutku. Odtwarzanie wykonuje wyłącznie zmianę nazwy.</li>
 </ul>
 <p>Odtwarzanie wygasza też niedokończone operacje, których TTL upłynął, redaguje ich OTP i adres dostawy, usuwa wygasłe przygotowane klucze z wygenerowanego dostępu SSH/SVN oraz wznawia potwierdzone dzienniki usunięcia strefy po odwołaniu wszystkich poświadczeń klientów. Aktywni klienci nie są wygaszani przez TTL aktywacji klienta. Odtwarzanie jest idempotentne i bezpieczne po nieoczekiwanej awarii systemu. Na OpenBSD musi działać jako prywatny właściciel stanu: <code>doas -u _filees-state filees-operation recover</code>.</p>
-<h2 id="ops-audit">Schemat dziennika zdarzeń</h2>
+<h2 id="ops-audit">Schemat dziennika zdarzeń</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Dziennik aktywacji oraz strukturalne dzienniki błędów klienta istnieją.</span></div>
 <p>Serwerowy dziennik zdarzeń jest przechowywany jako osobne pliki JSON w podkatalogu <code>audit/</code> korzenia stanu (<code>/var/filees/onboarding/audit/</code>). Każdy plik zdarzenia ma nazwę <code>&lt;timestamp&gt;-&lt;object_type&gt;-&lt;event_type&gt;.json</code> i jest zgodny ze schematem <code>filees.onboarding-audit/v1</code>:</p>
 <pre><code>{
   "schema":       "filees.onboarding-audit/v1",
@@ -167,7 +167,7 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
  "severity":"WARN","hint":"RETRY_BACKOFF","msg":"Network unreachable — retrying"}</code></pre>
 <p>Najnowsze wpisy można obejrzeć poleceniem:</p>
 <pre><code>filees log 50</code></pre>
-<h2 id="ops-mail">Maszyna stanów kolejki poczty wychodzącej</h2>
+<h2 id="ops-mail">Maszyna stanów kolejki poczty wychodzącej</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Jednorazowa skrzynka nadawcza SMTP, skład publicznego bootstrapu, redakcja i semantyka ponowień.</span></div>
 <p>Publicznym wymuszonym poleceniem SSH jest <code>filees-bootstrap-entry</code>. Atomowo tworzy albo wznawia operację aktywacji klienta, a następnie wykonuje dokładnie jedną próbę <code>filees-mail send</code>. Uwierzytelnione procesy wykonawcze warstwy sterującej używają tego samego mechanizmu do wysyłania poczty związanej z aktywacją klienta, usunięciem strefy i wymazaniem danych. Udziały publiczne wymagają dodatkowo wysyłki wyzwalanej żądaniem z przeglądarki, dlatego <code>filees-public-authority</code> nadzoruje osobny proces <code>filees-mail public-loop</code>. Proces potomny odczytuje wyłącznie trwałą kolejkę poczty udziałów publicznych i sam wczytuje sekret SMTP; proces autoryzujący nie otrzymuje tego sekretu. Przy zatrzymaniu usługi proces autoryzujący kończy obsługę HTTP, zatrzymuje proces pocztowy i czeka na jego zakończenie, dzięki czemu restart przez <code>rc.d</code> nie pozostawia osieroconego procesu.</p>
 <p>Maszyna stanów dostawy kolejki poczty wychodzącej:</p>
 <pre><code>pending  -&gt;  sending  -&gt;  queued    (250 after DATA; OTP and address redacted)
@@ -177,7 +177,7 @@ filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <p>Ponowienie po tymczasowej awarii:</p>
 <pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
 <p>Kod wyjścia 75 (<code>ExitTempFail</code>) oznacza, że przekaźnik SMTP zwrócił 4xx; OTP jest zachowany i polecenie można ponowić. Kod wyjścia 0 oznacza przyjęcie wiadomości (stan <code>queued</code>). Trwała awaria (5xx) ustawia stan na <code>failed</code> i redaguje OTP; potrzebna jest interwencja ręczna.</p>
-<h2 id="ops-recovery">Protokół odtwarzania</h2>
+<h2 id="ops-recovery">Protokół odtwarzania</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odzyskiwanie przejęć po stronie serwera i uzgadnianie po restarcie klienta są pokryte wstrzykiwaniem awarii.</span></div>
 <h4>Przerwany przejęcie aktywacji klienta</h4>
 <pre><code>doas -u _filees-state filees-operation recover</code></pre>
 <p>Polecenie dokańcza każdy plik <code>.claim-*</code>, wygasza niedokończone operacje po TTL, redaguje ich materiał OTP i usuwa wygasłe przygotowanie aktywacji. Aktywni klienci pozostają aktywni. Bezpieczne do wielokrotnego uruchamiania.</p>
@@ -241,7 +241,7 @@ done</code></pre>
 <p>Poddrzewo <code>clients/</code> repozytorium usługowego to dane pochodne. Nie ma jeszcze ogólnego polecenia administratora do pełnej deterministycznej odbudowy:</p>
 <pre><code>filees-admin projection rebuild   # jeszcze niezaimplementowane</code></pre>
 <p>Kanoniczny model uprawnień działa niezależnie od szerokiej konsoli administracyjnej. Aktywacja zapisuje pierwszy widok klienta w tej samej rewizji SVN co jego kanoniczny rekord; dołączenie do istniejącej strefy dziedziczy jej alias. Odbudowa mechanizmu uprawnień ponownie generuje projekcje repozytoriów i uzupełnia alias w aktywnych widokach klientów. Operacja <code>realm.alias_claim</code> może również naprawić starszy widok pozbawiony <code>realm_alias</code>. Nie edytuj ręcznie lokalnego <code>view.json</code>: jest to projekcja należąca do serwera i zostanie zastąpiona przy następnej aktualizacji.</p>
-<h2 id="ops-monitoring">Źródła monitoringu</h2>
+<h2 id="ops-monitoring">Źródła monitoringu</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Bieżąca diagnostyka i liczniki odzyskiwania; szersze metryki pozostają poza kontraktem.</span></div>
 <p>FileES nie udostępnia jeszcze punktu dostępu metryk. Do monitorowania służą następujące źródła:</p>
 <div class="table-wrap"><table>
 <tr><th>Źródło</th><th>Zawartość</th></tr>
@@ -256,7 +256,7 @@ done</code></pre>
 <tr><td><code>commit.Service.RecoveryStats()</code></td><td>Udostępniane przez IPC jako pole <code>recovery</code> w <code>repo.status</code>: liczba wznowionych wpisów, wpisów pominiętych jako już przyjęte oraz wykonanych partii.</td></tr>
 </table></div>
 
-<h2 id="ops-rotate">Wnętrze filees-rotate</h2>
+<h2 id="ops-rotate">Wnętrze filees-rotate</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Jawna zmiana generacji, przetestowana end-to-end na prawdziwym repozytorium FSFS; celowo bez harmonogramu — jej uruchomienie jest decyzją operacyjną.</span></div>
 <p><code>filees-rotate</code> jawnie zmienia generację aktywnego repozytorium. Nowa generacja otrzymuje nowy UUID i zaczyna od rewizji 1 zawierającej pełny zrzut poprzedniego <code>HEAD</code>, wraz z właściwościami wersjonowanymi, takimi jak <code>svn:needs-lock</code>. Konfiguracja i skrypty przechwytujące są kopiowane jawnie, a nowe repozytorium jest sprawdzane przez <code>svnadmin verify</code> i porównanie drzew przed atomową zamianą. Stara generacja staje się zamrożonym archiwum FSFS, w którym zapis zatwierdzeń jest zablokowany. Zmiana UUID wymaga utworzenia nowych kopii roboczych klientów.</p>
 <pre><code># Oceń wyłącznie wyzwalacze (rozmiar po pack albo wiek svn:date r1):
 filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
@@ -267,7 +267,7 @@ filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
 filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
 <p>Zasady bezpieczeństwa: <code>flock</code> wyklucza równoległe uruchomienia; aktywne repozytorium i archiwum muszą znajdować się na tym samym systemie plików, aby podmiana mogła użyć atomowej zmiany nazwy; na czas operacji zatwierdzenia blokuje tymczasowy skrypt <code>pre-commit</code>. Rotacja odmawia działania przy aktywnych blokadach, chyba że administrator jawnie poda <code>-break-locks</code>. Każda awaria przed podmianą pozostawia dotychczasowe repozytorium aktywne.</p>
 <div class="warn">Rotacja ma sens jako narzędzie retencji i warstwowania danych. W profilu FileES, w którym historia jest głównie dopisywana, sama liczba rewizji nie jest powodem do rotacji: FSFS korzysta z delt binarnych i współdzielenia reprezentacji, więc wzrost zajętości zależy przede wszystkim od ilości nowych danych.</div>
-<h2 id="ops-realm-removal">Protokół usunięcia strefy</h2>
+<h2 id="ops-realm-removal">Protokół usunięcia strefy</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Dziennik, OTP, wykonawca, manifest odzyskiwania, rejestr kluczy, transport SSH odzyskiwania, przepływ GUI z generowaniem zestawu i żądanie wymazania danych są wdrożone i przećwiczone end-to-end na maszynie odniesienia.</span></div>
 <p>Usunięcie udziału FileES dotyczy całej strefy i nieodwracalnie odbiera bieżący dostęp. Nie jest tym samym co dezaktywacja jednej instalacji; różnicę pokazuje tabela w §2.6.</p>
 <h4>Wyprowadzenie zakresu</h4>
 <p>Proces wykonawczy ustala docelową strefę wyłącznie na podstawie uwierzytelnionej sesji. Żądanie klienta nie wskazuje strefy, repozytorium ani innej instalacji. Na podstawie kanonicznej kopii roboczej repozytorium usługowego serwer ustala wszystkie aktywne instalacje tej strefy, repozytoria będące jej własnością oraz uprawnienia do repozytoriów należących do innych stref. Repozytoria własne są usuwane, a uprawnienia do cudzych repozytoriów cofane bez naruszania danych właściciela. Jeżeli projekcji klienta nie da się poprawnie odczytać, operacja jest odrzucana zamiast wykonywać się na niepełnym zakresie.</p>
@@ -285,7 +285,7 @@ filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
 get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 <p>Wejście działa tylko do odczytu (<code>stdio rpath</code>) i nigdy nie widzi klucza prywatnego. Klucz odtwarzania nie daje dostępu SVN, powłoki, ponownej aktywacji klienta ani dostępu do żadnej innej operacji albo repozytorium.</p>
 <div class="note"><strong>Nie mylić z <a href="#ch4-recovery">§4.5 Odtwarzanie</a></strong>, które dotyczy odtwarzania uszkodzonego repozytorium SVN na działającym serwerze. Ta sekcja dotyczy pobierania danych po tym, jak strefa świadomie usunęła swój udział.</div>
-<h2 id="ops-ps-model">Model zaufania udziałów publicznych</h2>
+<h2 id="ops-ps-model">Model zaufania udziałów publicznych</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane live</span><span>Kanoniczny punkt HTTPS, FastCGI links, uniksowy kanał zwrotny i izolacja authority odebrane na OpenBSD.</span></div>
 <p>Udziały publiczne służą wyłącznie do dystrybucji danych i nie tworzą drugiej ścieżki zapisu. Kanał przyjmowania plików jest odrębnym mechanizmem i nie współdzieli z udziałami publicznymi procesu ani poświadczeń.</p>
 <p>Trzy procesy, trzej właściciele:</p>
 <div class="table-wrap"><table>
@@ -308,7 +308,7 @@ get  &lt;operation_id&gt; &lt;archive_id&gt;</code></pre>
 <p>Publiczny adres jest zawsze:</p>
 <pre><code>https://&lt;domena-serwera&gt;/&lt;alias-strefy&gt;/&lt;slug&gt;</code></pre>
 <p>Nieznane, cofnięte i usunięte adresy zwracają tę samą stronę HTTP 404 z identyfikacją wizualną, bez ujawniania żądanej ścieżki, aliasu, nazwy udziału ani przyczyny. <code>robots.txt</code> zawiera <code>Disallow: /</code>.</p>
-<h2 id="ops-ps-map">object_map a rewizja</h2>
+<h2 id="ops-ps-map">object_map a rewizja</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Model z 2026-08-14 był przejściowy; od r601 skład jest wyprowadzany (patrz uzupełnienie niżej).</span></div>
 <p>Dla kanału śledzącego bieżący stan repozytorium obowiązują dwa niezależne elementy: rewizja wybrana dla danej wizyty oraz skład plików odczytany z tej samej rewizji.</p>
 <ul>
 <li><strong>Rewizja</strong> jest wybierana przy każdej wizycie: proces autoryzujący odczytuje HEAD i zamraża tę rewizję na tę jedną wizytę (token <code>?v=…</code>).</li>
@@ -329,7 +329,7 @@ doas rcctl start filees_links
 doas rcctl check filees_public_authority filees_links
 doas httpd -n &amp;&amp; doas rcctl reload httpd</code></pre>
 <p>Uruchom <code>filees-public-authority</code> przed <code>filees-links</code>. Jeżeli proces pocztowy nadzorowany przez <code>filees-public-authority</code> zakończy działanie, cały proces autoryzujący jest uznawany za niesprawny. Przy zatrzymaniu usługi kończy obsługę HTTP, zatrzymuje proces pocztowy i czeka na jego zakończenie, dzięki czemu <code>rcctl restart</code> nie pozostawia osieroconego procesu. Szczegóły poleceń: <code>filees-public-authority(8)</code> i <code>filees-links(8)</code>.</p>
-<h2 id="ops-sshd">Reguły Match User w sshd na OpenBSD</h2>
+<h2 id="ops-sshd">Reguły Match User w sshd na OpenBSD</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane na OpenBSD</span><span>Trzy konta protokołu, forced commands i polityka przekierowań sprawdzone natywnie.</span></div>
 <p>Efektywne bloki <code>Match User</code> nakładane przez <code>install-ssh.sh</code> to:</p>
 <pre><code>Match User _filees-onboard
     AuthenticationMethods publickey
@@ -386,7 +386,7 @@ Match User _filees-client
 Match all</code></pre>
 <p>Wartownik <code>Match all</code> jest wymagany przed każdą dyrektywą <code>Include</code> w głównym <code>sshd_config</code>, żeby bloki match nie wyciekały do dołączanych plików. Instalator obsługuje to automatycznie.</p>
 <div class="note"><strong>Stały port:</strong> port tunelu zwrotnego to jedna statyczna wartość (<code>127.0.0.1:42000</code> domyślnie; konfigurowalne jako <code>reverse_port_first</code>/<code>reverse_port_last</code> w <code>server.json</code>). To szereguje rzadkie wdrożenia. Bazowy <code>sshd_config</code> nie potrafi uzależnić <code>PermitListen</code> od wyniku BSD Auth, więc dynamiczny port przypisany do jednej operacji wymagałby własnego proces nasłuchującya, którego FileES świadomie unika.</div>
-<h2 id="ops-serverjson">Referencja server.json</h2>
+<h2 id="ops-serverjson">Referencja server.json</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Kontrakt konfiguracji używany przez bieżące narzędzia serwera.</span></div>
 <p>Po uruchomieniu instalatora edytuj <code>/etc/filees/server.json</code>:</p>
 <pre><code>{
   "schema": "filees.server-toolchain/v2",
@@ -470,7 +470,7 @@ Match all</code></pre>
 </table></div>
 <p>Dla pliku konfiguracyjnego zalecany jest tryb 0600; program wczytujący wymaga zwykłego pliku niezapisywalnego przez grupę ani innych. Wszystkie wartości ścieżek muszą być bezwzględne. Po edycji zweryfikuj niesekretną ścieżkę polecenia:</p>
 <pre><code>doas -u _filees-state filees-admin -config /etc/filees/server.json ticket list</code></pre>
-<h2 id="ops-keys">Generowanie kluczy</h2>
+<h2 id="ops-keys">Generowanie kluczy</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Generowanie klucza procesu wykonawczego i rejestracja klucza instalacji są wdrożone; dystrybucja przypięcia produkcyjnego pozostaje sprawą wdrożenia.</span></div>
 <p>Instalator generuje wszystkie wymagane klucze automatycznie. Jeśli trzeba je wygenerować ponownie:</p>
 <pre><code># Regenerate OTP pepper (invalidates all pending OTPs)
 umask 077

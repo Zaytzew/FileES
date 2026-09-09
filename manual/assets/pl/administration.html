@@ -67,7 +67,7 @@
 <div class="chapter-content">
 <p>Ten rozdział opisuje typowe zadania administratora: zapraszanie nowych użytkowników, odwoływanie instalacji, dokańczanie operacji przerwanych awarią, odtwarzanie oraz zmianę generacji repozytorium. Szczegółowe formaty danych, kody wyjścia i maszyny stanów opisuje <a href="operations.html">Eksploatacja</a>. Czynności dostępne z programu na komputerze opisuje <a href="user-guide.html#ch2-gui">przewodnik użytkownika</a>.</p>
 <p>Na OpenBSD polecenia administracyjne uruchamiaj jako użytkownik _filees-state, na przykład przez doas -u _filees-state. Zlecenie utworzone przez użytkownika root pozostawi plik należący do użytkownika root, którego program aktywacyjny działający z set-id celowo nie odczyta.</p>
-<h2 id="ch4-admin">4.1 Zaproszenie i odwołanie</h2>
+<h2 id="ch4-admin">4.1 Zaproszenie i odwołanie</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Zlecenia, wgląd w operację i fail-closed cofnięcie klienta istnieją.</span></div>
 <pre><code>filees-admin ticket create &lt;mailbox&gt; [--join-realm-alias &lt;alias&gt;] [--ttl 24h]
 filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;
 filees-admin ticket revoke --ticket-id &lt;ticket_uuid&gt;
@@ -106,20 +106,20 @@ doas -u _filees-state filees-admin repo prune \
 doas -u _filees-state filees-admin repo prune \
   --realm-id &lt;realm_uuid&gt; --older-than 1h --apply</code></pre>
 <p>Kandydat musi mieć <code>prunable:true</code>, kanoniczny stan <code>initializing</code>, brak stagingu oraz nieobecny FSFS albo dokładnie r0. Aktywne repozytorium, repozytorium od r1 wzwyż i zwykły tombstone usunięcia nie zostaną automatycznie usunięte. Przed skutkiem narzędzie wstrzymuje publikację zmian i ponownie sprawdza HEAD. Po <code>--apply</code> powtórz <code>repo check-state</code> i sprawdź projekcję klienta.</p>
-<h2 id="ch4-operation">4.2 Po awarii</h2>
+<h2 id="ch4-operation">4.2 Po awarii</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span><span>Odzyskiwanie jest idempotentne i bezpieczne przy powtórzeniu.</span></div>
 <pre><code>doas -u _filees-state filees-operation recover
 doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>
 <p>Po nieoczekiwanym zatrzymaniu uruchom filees-operation recover. Polecenie domyka przerwane zaproszenia, wygasza niedokończone aktywacje po upływie czasu ważności i wznawia potwierdzone usuwanie strefy, którego klient nie może już dokończyć. Aktywne instalacje nie są wygaszane. Operację można bezpiecznie powtarzać. Format plików przejęcia opisuje część „Eksploatacja”.</p>
-<h2 id="ch4-audit">4.3 Gdzie patrzeć</h2>
+<h2 id="ch4-audit">4.3 Gdzie patrzeć</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <p>Na komputerze użytkownika: <strong>Dziennik</strong> w zasobniku albo <code>filees log 50</code>. To strukturalna lista błędów tej instalacji.</p>
 <p>Na serwerze dziennik aktywacji klienta to jeden plik JSON na zdarzenie w <code>/var/filees/onboarding/audit/</code>. Schemat i nazwy zdarzeń są w <a href="operations.html#ops-audit">Eksploatacji</a>.</p>
-<h2 id="ch4-mail">4.4 Gdy poczta nie dochodzi</h2>
+<h2 id="ch4-mail">4.4 Gdy poczta nie dochodzi</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
 <p>Zaproszenia, kody OTP i wiadomości związane z usuwaniem strefy przechodzą przez trwałą kolejkę poczty wychodzącej serwera. Jeżeli pierwsza wiadomość nie dotarła:</p>
 <pre><code>doas -u _filees-state filees-admin ticket resend --ticket-id &lt;ticket_uuid&gt;</code></pre>
 <p>Jeśli późniejsza pojedyncza próba wysyłki zakończyła się tymczasowym błędem:</p>
 <pre><code>doas -u _filees-state filees-mail -config /etc/filees/server.json send</code></pre>
 <p>Kod wyjścia 75 oznacza błąd tymczasowy; kod zawarty w wiadomości pozostaje ważny. Kod 0 oznacza, że przekaźnik SMTP przyjął wiadomość. Przy błędzie trwałym utwórz nowe zlecenie albo sprawdź konfigurację przekaźnika pocztowego. Stany kolejki opisuje część „Eksploatacja”.</p>
-<h2 id="ch4-recovery">4.5 Odtwarzanie i przeniesienie składowania</h2>
+<h2 id="ch4-recovery">4.5 Odtwarzanie i przeniesienie składowania</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
 <h4>Przerwane zaproszenie albo usunięcie strefy</h4>
 <p>To samo polecenie co w §4.2: <code>filees-operation recover</code>. Jeśli serwer został nieoczekiwanie zatrzymany po wysłaniu OTP usunięcia strefy, gdy wszystkie klucze klientów były już odwołane, tylko to polecenie dokończy operację.</p>
 <h4>Zamknięcie żądania wymazania danych</h4>
@@ -160,7 +160,7 @@ done</code></pre>
 <div class="warn"><strong>Nigdy nie scalaj dwóch żywych korzeni i nie przenoś systemu plików, gdy klienci są podłączeni.</strong> Najpierw kopiuj i weryfikuj, potem jedno przełączenie konfiguracji.</div>
 <h4>Na komputerze użytkownika po twardym zatrzymaniu</h4>
 <p>Po ponownym uruchomieniu demon sam uzgadnia stan. Jeżeli folder został przeniesiony, użyj polecenia Wskaż kopię, zamiast pobierać nową kopię roboczą. Pliki w !kolizje/ są zachowanymi lokalnymi wersjami z konfliktów, w których przyjęto wersję serwera; trzeba je przejrzeć ręcznie. Format plików przejęcia i sposób odbudowy projekcji opisuje część „Eksploatacja”.</p>
-<h2 id="ch4-monitoring">4.6 Codzienne sprawdzenia</h2>
+<h2 id="ch4-monitoring">4.6 Codzienne sprawdzenia</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span></div>
 <div class="table-wrap"><table>
 <tr><th>Zajrzyj tu</th><th>Czego się dowiesz</th></tr>
 <tr><td><code>filees status</code></td><td>Każdy folder, czy jest sieć, czekająca praca, rewizja lokalna i HEAD</td></tr>
@@ -168,13 +168,13 @@ done</code></pre>
 <tr><td>GUI <strong>Dziennik</strong></td><td>Ten sam zrzut, od najnowszego, w zasobniku albo w pełnym oknie</td></tr>
 </table></div>
 <p>Ścieżki serwera i <code>make verify</code> są w <a href="operations.html#ops-monitoring">Eksploatacji</a>.</p>
-<h2 id="ch4-rotate">4.7 Kiedy rotować repozytorium</h2>
+<h2 id="ch4-rotate">4.7 Kiedy rotować repozytorium</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Jawna zmiana generacji; bez harmonogramu.</span></div>
 <p>Głębokość wyłącznie dołączającego repozytorium FileES sama z siebie go nie spowalnia. Rotuj, gdy potrzebujesz retencji albo warstwowania — Subversion nie ma <code>obliterate</code>. Uruchomienie jest decyzją, nie zegarem. Istniejące kopie robocze nie przeżywają zmiany generacji; każda instalacja pulpitu musi podłączyć się od nowa.</p>
 <pre><code>filees-rotate -repo /srv/svn/repo -archive /srv/svn/archive -dry-run
 filees-rotate -repo ... -archive ... -size 25GiB -age-days 365
 filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
 <p>Najpierw próba bez zmian. Zamiana, odmowa przy blokadach i wycofanie są w <a href="operations.html#ops-rotate">Eksploatacji</a> i <a href="man-pages.html">filees-rotate(8)</a>.</p>
-<h2 id="ch4-realm-removal">4.8 Usunięcie udziału FileES</h2>
+<h2 id="ch4-realm-removal">4.8 Usunięcie udziału FileES</h2><div class="section-meta"><span class="status status-verified">Zweryfikowane</span></div>
 <p>Usunięcie udziału FileES nie jest dezaktywacją jednego komputera. Operacja odbiera wszystkie uprawnienia strefy, usuwa jej własne repozytoria i odwołuje wszystkie instalacje. Program kolejno wymaga potwierdzenia ostrzeżenia, adresu do powiadomień, katalogu na pakiet .fkr oraz kodu OTP. Pakiet .fkr jest zapisywany przed krokiem nieodwracalnym; trzeba go zachować, ponieważ bez niego nie można pobrać archiwów odzyskiwania.</p>
 <p>Na maszynie, na której nie ma już FileES:</p>
 <pre><code>filees recovery download --kit FILE.fkr --output DIR</code></pre>

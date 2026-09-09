@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"filees/internal/svnurl"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +31,13 @@ func mobileRequireSVN(t *testing.T) {
 
 func mobileRun(t *testing.T, name string, args ...string) {
 	t.Helper()
+	// Never let the child ask a human anything. A malformed file:// URL makes
+	// svn treat a drive letter as a remote host and, without this flag, it
+	// prompts for credentials and waits on stdin - which is how this package
+	// spent forty seconds hanging instead of failing.
+	if base := strings.ToLower(filepath.Base(name)); base == "svn" || base == "svn.exe" {
+		args = append([]string{"--non-interactive"}, args...)
+	}
 	cmd := exec.Command(name, args...)
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
@@ -38,8 +47,9 @@ func mobileRun(t *testing.T, name string, args ...string) {
 }
 
 func mobileFileURL(abs string) string {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}
-	return u.String()
+	// Sixth copy of the same defect; url.URL hides it from a text search for
+	// "file://", which is why the bulk pass in r994 missed this one.
+	return svnurl.File(abs)
 }
 
 // newMobileSeededRepoAt creates a real SVN repository at the exact path a

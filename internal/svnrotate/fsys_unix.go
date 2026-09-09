@@ -40,3 +40,7 @@ func sameFilesystem(a, b string) (bool, error) {
 	}
 	return uint64(sa.Dev) == uint64(sb.Dev), nil
 }
+
+// rotationSupported reports whether this platform provides the advisory lock
+// and filesystem check filees-rotate needs. See fsys_other.go.
+func rotationSupported() bool { return true }

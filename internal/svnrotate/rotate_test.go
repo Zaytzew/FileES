@@ -117,6 +117,13 @@ func testConfig(repo, archive string) Config {
 }
 
 func TestRotateFullCycle(t *testing.T) {
+	// filees-rotate needs an advisory lock and a same-filesystem check that
+	// this platform does not provide; the package says so itself rather than the
+	// test naming platforms. Six of this package's tests do not touch that path
+	// and still run here, which is why the skip is per test and not per package.
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	root := t.TempDir()
 	repo := buildTestRepo(t, root)
@@ -262,6 +269,13 @@ func TestRotateRefusesActiveLocks(t *testing.T) {
 }
 
 func TestRotateBoundedDump(t *testing.T) {
+	// filees-rotate needs an advisory lock and a same-filesystem check that
+	// this platform does not provide; the package says so itself rather than the
+	// test naming platforms. Six of this package's tests do not touch that path
+	// and still run here, which is why the skip is per test and not per package.
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	root := t.TempDir()
 	// Three revisions: r1 "v1", r2 "v2", r3 "v3".
@@ -319,6 +333,13 @@ func TestRotateBoundedDump(t *testing.T) {
 }
 
 func TestRotateDumpDepthClampsToR1(t *testing.T) {
+	// filees-rotate needs an advisory lock and a same-filesystem check that
+	// this platform does not provide; the package says so itself rather than the
+	// test naming platforms. Six of this package's tests do not touch that path
+	// and still run here, which is why the skip is per test and not per package.
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	root := t.TempDir()
 	repo := buildTestRepo(t, root) // single revision
@@ -334,6 +355,13 @@ func TestRotateDumpDepthClampsToR1(t *testing.T) {
 }
 
 func TestRotateEmptyRepoIsNoop(t *testing.T) {
+	// filees-rotate needs an advisory lock and a same-filesystem check that
+	// this platform does not provide; the package says so itself rather than the
+	// test naming platforms. Six of this package's tests do not touch that path
+	// and still run here, which is why the skip is per test and not per package.
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
@@ -384,6 +412,13 @@ func TestShouldRotateTriggers(t *testing.T) {
 }
 
 func TestRotateLockExcludesConcurrent(t *testing.T) {
+	// filees-rotate needs an advisory lock and a same-filesystem check that
+	// this platform does not provide; the package says so itself rather than the
+	// test naming platforms. Six of this package's tests do not touch that path
+	// and still run here, which is why the skip is per test and not per package.
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	root := t.TempDir()
 	archive := filepath.Join(root, "archive")

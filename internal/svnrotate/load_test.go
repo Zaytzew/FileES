@@ -19,6 +19,13 @@ func testLoadConfig(repo, archive string) LoadConfig {
 // the content of an externally supplied dump, never by a dump of its own
 // HEAD.
 func TestLoadGenerationFullCycle(t *testing.T) {
+	// filees-rotate needs an advisory lock and a same-filesystem check that
+	// this platform does not provide; the package says so itself rather than the
+	// test naming platforms. Six of this package's tests do not touch that path
+	// and still run here, which is why the skip is per test and not per package.
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	root := t.TempDir()
 	carrier := buildTestRepo(t, root, "carrier payload\n") // stands in for the r1-only repo created by CREATE_REPOSITORY + the client's carrier commit
@@ -126,6 +133,13 @@ func TestLoadGenerationRejectsCorruptDumpWithoutTouchingRepo(t *testing.T) {
 }
 
 func TestLoadGenerationRejectsActiveLocksUnlessBroken(t *testing.T) {
+	// filees-rotate needs an advisory lock and a same-filesystem check that
+	// this platform does not provide; the package says so itself rather than the
+	// test naming platforms. Six of this package's tests do not touch that path
+	// and still run here, which is why the skip is per test and not per package.
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	root := t.TempDir()
 	carrier := buildTestRepo(t, root, "carrier payload\n")

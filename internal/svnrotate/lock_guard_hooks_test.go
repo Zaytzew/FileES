@@ -9,6 +9,13 @@ import (
 )
 
 func TestLockGuardEntrypointsSurviveGenerationReplacement(t *testing.T) {
+	// filees-rotate needs an advisory lock and a same-filesystem check that
+	// this platform does not provide; the package says so itself rather than the
+	// test naming platforms. Six of this package's tests do not touch that path
+	// and still run here, which is why the skip is per test and not per package.
+	if !rotationSupported() {
+		t.Skip("filees-rotate is only supported on unix systems")
+	}
 	requireSVNTools(t)
 	for _, action := range []string{"rotate", "load"} {
 		t.Run(action, func(t *testing.T) {

@@ -45,6 +45,10 @@ func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.nativeSVNPath, args...)
+	// A helper/descendant must not hold receipt pipes indefinitely after exit
+	// or cancellation. Windows C owns its SSH tree; this is a final drain bound,
+	// not a transfer timeout or evidence that a remote mutation was rolled back.
+	cmd.WaitDelay = 2 * time.Second
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
 	}

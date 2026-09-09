@@ -511,6 +511,27 @@ static int run(int argc, const char **argv)
     int result = EXIT_SUCCESS;
     if (svn_cmdline_init("filees-svn", stderr) != EXIT_SUCCESS) return EXIT_FAILURE;
     pool = svn_pool_create(NULL);
+#ifdef _WIN32
+    /* Own the tunnel before any verb can spawn it. The unnamed handle is
+     * non-inheritable and deliberately lives until process teardown (including
+     * TerminateProcess from Go's context cancellation). Its last close kills
+     * SSH and descendants, releasing inherited receipt pipes. Never close it
+     * explicitly while this process still has JSON/stdio to flush. */
+    {
+        HANDLE job = CreateJobObjectW(NULL, NULL);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {0};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!job || !SetInformationJobObject(job, JobObjectExtendedLimitInformation,
+                                            &limits, sizeof(limits)) ||
+            !AssignProcessToJobObject(job, GetCurrentProcess())) {
+            DWORD code = GetLastError();
+            if (job) CloseHandle(job);
+            err = svn_error_createf(APR_FROM_OS_ERROR(code), NULL,
+                                    "cannot own native SVN process tree (Windows %lu)",
+                                    (unsigned long)code);
+        }
+    }
+#endif
 #ifndef _WIN32
     /* Declared inside the guard: on Windows wmain already hands us UTF-8, so
      * an unconditional declaration was unused there and warned on every /W4

@@ -40,7 +40,6 @@ type Config struct {
 	Interactive     bool
 	RequireHash     bool
 	VerifySignature bool
-	SignifyProgram  string
 	Talkative       bool
 
 	// SignifyPubkey is the embedded release signing public key loaded from the
@@ -133,7 +132,6 @@ func defaults(abs string) *Config {
 		Interactive:        true,
 		RequireHash:        true,
 		VerifySignature:    true,
-		SignifyProgram:     "signify",
 	}
 }
 
@@ -202,7 +200,13 @@ func set(cfg *Config, key, val string, lineNo int) error {
 		}
 		cfg.Talkative = b
 	case "security.signify":
-		cfg.SignifyProgram = val
+		// Accepted and ignored since 2026-09-09, deliberately.
+		//
+		// Signature verification moved in process, so there is no external
+		// program left to name. Rejecting the key instead of ignoring it
+		// would turn an obsolete line in a deployed config file into a
+		// refusal to start, which is a worse answer than doing nothing.
+		_ = val
 	default:
 		return fmt.Errorf("unknown config key on line %d: %s", lineNo, key)
 	}
@@ -214,10 +218,6 @@ func (cfg *Config) finalize() error {
 	cfg.Channel = strings.TrimSpace(cfg.Channel)
 	cfg.Platform = strings.TrimSpace(cfg.Platform)
 	cfg.SVNPath = strings.TrimSpace(cfg.SVNPath)
-	cfg.SignifyProgram = strings.TrimSpace(cfg.SignifyProgram)
-	if cfg.SignifyProgram == "" {
-		cfg.SignifyProgram = "signify"
-	}
 	cfg.DefaultAction = strings.ToLower(strings.TrimSpace(cfg.DefaultAction))
 	cfg.ConfigDrift = strings.ToLower(strings.TrimSpace(cfg.ConfigDrift))
 	cfg.OrphanFiles = strings.ToLower(strings.TrimSpace(cfg.OrphanFiles))

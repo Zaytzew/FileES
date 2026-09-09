@@ -56,9 +56,27 @@ func (verifier Ed25519Verifier) Verify(ctx context.Context, keyID string, messag
 	if !ok || len(encodedKey) == 0 {
 		return fmt.Errorf("release key %q is not trusted", keyID)
 	}
-	key, err := parseSignifyFile(encodedKey, 2+signifyKeyIDBytes+ed25519.PublicKeySize)
+	if err := VerifySignifySignature(encodedKey, message, signature); err != nil {
+		return fmt.Errorf("release key %q: %w", keyID, err)
+	}
+	return nil
+}
+
+// VerifySignifySignature verifies a detached signify signature over message
+// against an encoded signify public key.
+//
+// It is exported for callers that already hold the key as bytes, and the
+// server updater is one: its release key is compiled into the binary. Until
+// 2026-09-09 that updater wrote the key, the message and the signature into a
+// temporary directory for the sole purpose of handing them to signify(1) —
+// a process spawn, a filesystem round trip for signing material, and a
+// dependency on a program name that Debian gives to an unrelated tool. The
+// parsing and the Ed25519 check below were already here the whole time; only
+// nothing called them from that side.
+func VerifySignifySignature(publicKey, message, signature []byte) error {
+	key, err := parseSignifyFile(publicKey, 2+signifyKeyIDBytes+ed25519.PublicKeySize)
 	if err != nil {
-		return fmt.Errorf("parse trusted release key %q: %w", keyID, err)
+		return fmt.Errorf("parse release key: %w", err)
 	}
 	sig, err := parseSignifyFile(signature, 2+signifyKeyIDBytes+ed25519.SignatureSize)
 	if err != nil {

@@ -444,6 +444,20 @@ Match all</code></pre>
 <tr><td><code>repositories.url_prefix</code></td><td>Kanoniczny publiczny prefiks URL repozytorium. Musi używać ograniczonej formy <code>svn+ssh://_filees-data@host/</code>, bez jawnego portu.</td></tr>
 <tr><td><code>repositories.deletion_archive_root</code></td><td>Opcjonalna bezwzględna lokalizacja archiwum zweryfikowanych zrzutów usunięcia. Jeśli pominięta, jest pod <code>results_root</code>.</td></tr>
 <tr><td><code>repositories.whale_root</code></td><td>Opcjonalny bezwzględny korzeń operacyjnych danych roboczych transportu Whale (kolejka robocza i dziennik), oddzielony od <code>results_root</code>. Jeśli pominięty, domyślnie <code>results_root/whale</code>.</td></tr>
+<tr><td><code>repositories.recovery_admin_contact</code></td><td>Skrzynka, na którą trafiają zawiadomienia o wymazaniu danych.</td></tr>
+<tr><td><code>repositories.data_erasure_max_days</code></td><td>Ile dni operator ma na zamknięcie żądania wymazania, zanim uzna się je za zaległe. Domyślnie 90; wartość spoza 1&ndash;3650 jest odrzucana. To jest okno pokazywane w kliencie.</td></tr>
+<tr><td><code>public_shares.enabled</code></td><td>Wyłącznik główny kanału dystrybucji. Domyślnie wyłączony; przy wyłączonym reszta tej grupy nic nie robi.</td></tr>
+<tr><td><code>public_shares.base_url</code></td><td>Kanoniczne publiczne źródło HTTPS, pod którym publikowane są adresy udziałów.</td></tr>
+<tr><td><code>public_shares.state_root</code></td><td>Bezwzględny katalog stanu authority.</td></tr>
+<tr><td><code>public_shares.authority_staging_root</code></td><td>Bezwzględny prywatny katalog roboczy, niezależny od pamięci podręcznej frontendu. Domyślnie <code>/var/filees-downloads/authority</code>, tryb 0700, właściciel <code>_filees-state</code>. Zmiana wymaga restartu <code>filees_public_authority</code>, żeby powstał nowy profil unveil.</td></tr>
+<tr><td><code>public_shares.frost_key_file</code></td><td>Klucz prywatny, z którego wyprowadzany jest <code>public_id</code>; czytany jak sekret (ścieżka bezwzględna, zwykły plik, bez prawa zapisu dla grupy i others). Podmiana zmienia każdy przyszły adres publiczny, istniejące działają dalej.</td></tr>
+<tr><td><code>public_shares.max_size</code></td><td>Maksymalny rozmiar liścia w bajtach, domyślnie 1&nbsp;GiB. Równolegle biegną najwyżej dwa pobrania authority.</td></tr>
+<tr><td><code>public_shares.max_channels_per_realm</code></td><td>Górny limit żywych kanałów jednej strefy, domyślnie 128.</td></tr>
+<tr><td><code>public_shares.password_required</code></td><td>Odmawia opublikowania kanału bez hasła dla odbiorcy. Domyślnie wyłączone.</td></tr>
+<tr><td><code>public_shares.backchannel_network</code>, <code>public_shares.backchannel_address</code>, <code>public_shares.backchannel_socket_group</code></td><td>Nasłuch, przez który frontend links sięga do authority, oraz grupa uprawniona do jego otwarcia.</td></tr>
+<tr><td><code>public_shares.cleanup_interval</code></td><td>Jak często sprzątany jest wygasły katalog roboczy.</td></tr>
+<tr><td><code>upload.intake_root</code>, <code>upload.trash_root</code>, <code>upload.av_command</code></td><td>Zamknięta półka wrzutek: bezwzględny katalog przyjęć dzielony z <a href="man-pages.html">filees-public-links</a>, katalog odrzutów oraz opcjonalne polecenie antywirusa uruchamiane na przyjętym pliku.</td></tr>
+<tr><td><code>operator_branding.leading_color</code>, <code>operator_branding.logo_file</code></td><td>Prezentacja tego serwera w publicznym HTML. Wyłącznie kosmetyka: nic w autoryzacji, adresowaniu ani transporcie tego nie czyta.</td></tr>
 <tr><td><code>operation_ttl</code></td><td>Czas życia każdej operacji aktywacji klienta, np. <code>30m</code></td></tr>
 <tr><td><code>otp_attempts</code></td><td>Maksymalna liczba błędnych prób OTP przed wyczerpaniem</td></tr>
 <tr><td><code>reverse_port_first</code></td><td>Pierwszy (albo jedyny) dozwolony port tunelu zwrotnego</td></tr>

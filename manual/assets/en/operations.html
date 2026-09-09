@@ -461,6 +461,20 @@ Match all</code></pre>
 <tr><td><code>repositories.url_prefix</code></td><td>Canonical public repository URL prefix. It must use the restricted <code>svn+ssh://_filees-data@host/</code> form, with no explicit port.</td></tr>
 <tr><td><code>repositories.deletion_archive_root</code></td><td>Optional absolute archive location for verified deletion dumps. If omitted, it is under <code>results_root</code>.</td></tr>
 <tr><td><code>repositories.whale_root</code></td><td>Optional absolute root for Whale transport operational payloads (spool, journal), separate from <code>results_root</code>. If omitted, defaults to <code>results_root/whale</code>.</td></tr>
+<tr><td><code>repositories.recovery_admin_contact</code></td><td>Mailbox that receives data-erasure notices.</td></tr>
+<tr><td><code>repositories.data_erasure_max_days</code></td><td>Days an operator has to close a data-erasure request before it counts as overdue. Default 90; a value outside 1&ndash;3650 is rejected. This is the window the client shows.</td></tr>
+<tr><td><code>public_shares.enabled</code></td><td>Master switch for the distribution channel. Off by default; the rest of this group is inert while it is off.</td></tr>
+<tr><td><code>public_shares.base_url</code></td><td>Canonical public HTTPS origin under which share addresses are published.</td></tr>
+<tr><td><code>public_shares.state_root</code></td><td>Absolute root for authority state.</td></tr>
+<tr><td><code>public_shares.authority_staging_root</code></td><td>Absolute private staging directory, independent of the frontend cache. Default <code>/var/filees-downloads/authority</code>, mode 0700, owned by <code>_filees-state</code>. Changing it requires restarting <code>filees_public_authority</code> to establish a new unveil profile.</td></tr>
+<tr><td><code>public_shares.frost_key_file</code></td><td>Private key from which <code>public_id</code> is derived; read as a secret (absolute, regular, not group/other-writable). Replacing it changes every future public address; existing ones keep working.</td></tr>
+<tr><td><code>public_shares.max_size</code></td><td>Maximum leaf size in bytes, default 1&nbsp;GiB. At most two authority fetches run concurrently.</td></tr>
+<tr><td><code>public_shares.max_channels_per_realm</code></td><td>Upper bound on live channels one realm may hold, default 128.</td></tr>
+<tr><td><code>public_shares.password_required</code></td><td>Refuse to publish a channel without a recipient password. Off by default.</td></tr>
+<tr><td><code>public_shares.backchannel_network</code>, <code>public_shares.backchannel_address</code>, <code>public_shares.backchannel_socket_group</code></td><td>Listener the links frontend uses to reach the authority, and the group that may open it.</td></tr>
+<tr><td><code>public_shares.cleanup_interval</code></td><td>How often expired staging is swept.</td></tr>
+<tr><td><code>upload.intake_root</code>, <code>upload.trash_root</code>, <code>upload.av_command</code></td><td>Closed upload-shelf intake: absolute intake root shared with <a href="man-pages.html">filees-public-links</a>, discard directory and the optional antivirus command run over an accepted file.</td></tr>
+<tr><td><code>operator_branding.leading_color</code>, <code>operator_branding.logo_file</code></td><td>Presentation of this server in public HTML. Cosmetic only: nothing in authorisation, addressing or transport reads them.</td></tr>
 <tr><td><code>operation_ttl</code></td><td>Lifetime of each onboarding operation, e.g. <code>30m</code></td></tr>
 <tr><td><code>otp_attempts</code></td><td>Maximum wrong OTP attempts before exhaustion</td></tr>
 <tr><td><code>reverse_port_first</code></td><td>First (or only) permitted reverse tunnel port</td></tr>

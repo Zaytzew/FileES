@@ -78,7 +78,13 @@ filees-admin client revoke --client-id &lt;client_uuid&gt; --reason "one-line re
 filees-admin client revoke-realm --realm-id &lt;realm_uuid&gt; --reason "one-line reason"
 filees-admin repo transfer-owner --repo-id &lt;repo_uuid&gt; --realm-id &lt;new_owner_realm_uuid&gt;
 filees-admin repo check-state [--realm-id &lt;realm_uuid&gt;]
-filees-admin repo prune [--realm-id &lt;realm_uuid&gt;] [--older-than 1h] [--apply]</code></pre>
+filees-admin repo prune [--realm-id &lt;realm_uuid&gt;] [--older-than 1h] [--apply]
+filees-admin repo activate --repo-id &lt;repo_uuid&gt; --realm-id &lt;realm_uuid&gt;
+filees-admin repo rotate --repo-id &lt;repo_uuid&gt; [--size 25GiB] [--age-days 365] [--force] [--dry-run]
+filees-admin repo lock-guards --repo-id &lt;repo_uuid&gt; --owner-realm-id &lt;realm_uuid&gt; [--apply]
+filees-admin repo reap-passports --repo-id &lt;repo_uuid&gt; --owner-realm-id &lt;realm_uuid&gt; [--path &lt;relative&gt;]
+filees-admin share list [--json]
+filees-admin share delete --channel-id &lt;channel_uuid&gt;</code></pre>
 <ul>
 <li>Without <code>--join-realm-alias</code> the invitation opens a <strong>new</strong> realm. The new desktop is asked once for an immutable alias.</li>
 <li>With the flag the invitation joins an <strong>existing</strong> realm. The person joining cannot pick or rename that realm.</li>
@@ -88,7 +94,7 @@ filees-admin repo prune [--realm-id &lt;realm_uuid&gt;] [--older-than 1h] [--app
 <li><code>client revoke-realm</code> takes every installation of that realm off in one call.</li>
 <li><code>repo transfer-owner</code> changes who owns a repository. Existing grants issued by the previous owner are left as they are.</li>
 </ul>
-<p>Creating a folder, grants, public shares, load-dump and removing the FileES share are owner actions on the desktop, not extra <code>filees-admin</code> verbs. Exit codes, ticket file names and the fail-closed revoke sequence are in <a href="operations.html#ops-admin">Operations</a>. Flags and examples: <a href="man-pages.html">filees-admin(8)</a>.</p>
+<p>Creating a folder, granting access, publishing a share, load-dump and removing the FileES share are owner actions on the desktop. Administration has its own, narrower verbs for two of those: <code>share list</code> and <code>share delete</code> inspect and withdraw a published channel from the server side, which the owner&rsquo;s desktop cannot do for someone else&rsquo;s realm. Exit codes, ticket file names and the fail-closed revoke sequence are in <a href="operations.html#ops-admin">Operations</a>. Flags and examples: <a href="man-pages.html">filees-admin(8)</a>.</p>
 <h3>Abandoned repository creation</h3>
 <p>If an interrupted initial import leaves an extra remote folder in client projections, inspect it before changing anything. Run the commands as <code>_filees-state</code>:</p>
 <pre><code>doas -u _filees-state filees-admin repo check-state --realm-id &lt;realm_uuid&gt;
@@ -196,7 +202,7 @@ filees-rotate -repo ... -archive ... -force -dump-depth 50</code></pre>
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r523</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09 · source r1042</span></footer>
 </main>
 </body>
 </html>

@@ -98,7 +98,7 @@ doas -u _filees-state filees-admin repo prune \
 # zastosuj dopiero po sprawdzeniu would_remove i needs_attention:
 doas -u _filees-state filees-admin repo prune \
   --realm-id &lt;realm_uuid&gt; --older-than 1h --apply</code></pre>
-<p>Kandydat musi mieć <code>prunable:true</code>, kanoniczny stan <code>initializing</code>, brak stagingu oraz nieobecny FSFS albo dokładnie r0. Aktywne repozytorium, repozytorium od r1 wzwyż i zwykły tombstone usunięcia nie zostaną automatycznie usunięte. Przed skutkiem narzędzie blokuje commity i ponownie sprawdza HEAD. Po <code>--apply</code> powtórz <code>repo check-state</code> i sprawdź projekcję klienta.</p>
+<p>Kandydat musi mieć <code>prunable:true</code>, kanoniczny stan <code>initializing</code>, brak stagingu oraz nieobecny FSFS albo dokładnie r0. Aktywne repozytorium, repozytorium od r1 wzwyż i zwykły tombstone usunięcia nie zostaną automatycznie usunięte. Przed skutkiem narzędzie wstrzymuje publikację zmian i ponownie sprawdza HEAD. Po <code>--apply</code> powtórz <code>repo check-state</code> i sprawdź projekcję klienta.</p>
 <h2 id="ch4-operation">4.2 Po awarii</h2>
 <pre><code>doas -u _filees-state filees-operation recover
 doas -u _filees-state filees-operation inspect --operation-id &lt;operation_uuid&gt;</code></pre>

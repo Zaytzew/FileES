@@ -573,7 +573,7 @@
 <p>Repozytorium usługowe (nazywane też repozytorium technicznym) jest prywatnym repozytorium SVN, które działa jako wersjonowana płaszczyzna sterowania. <em>Nie</em> przechowuje synchronizowanych plików użytkownika. Każdy monitorowany katalog ma własne, osobne repozytorium danych.</p><div class="decision">
 <div class="decision-head">Uzasadnienie projektu / repozytorium usługowe SVN jako wersjonowana płaszczyzna sterowania</div>
 <div class="decision-grid">
-<div class="decision-label">Decyzja</div><div class="decision-value">Kanoniczne rekordy nie-sekretne i wszystkie dotknięte projekcje klientów są commitowane w jednej rewizji SVN.</div>
+<div class="decision-label">Decyzja</div><div class="decision-value">Kanoniczne rekordy nie-sekretne i wszystkie dotknięte projekcje klientów są publikowane w jednej rewizji SVN.</div>
 <div class="decision-label">Dlaczego</div><div class="decision-value">System zyskuje atomową publikację, historię, pliki możliwe do inspekcji i deterministyczne przebudowy projekcji bez osobnej usługi bazy danych.</div>
 <div class="decision-label">Odrzucono</div><div class="decision-value">SQL/Redis jako prawda domenowa; skrzynki zapisywalne przez klienta; przechowywanie pełnego stanu płaszczyzny sterowania wyłącznie w wygenerowanych plikach authz.</div>
 <div class="decision-label">Koszt</div><div class="decision-value">Efekty poza SVN tworzą trwałe sagi i potrzebują reconcilera; klienci otrzymują projekcje, a nie dowolne zapytania.</div>

@@ -139,8 +139,28 @@ func TestSignedSVNReleaseEndToEnd(t *testing.T) {
 		{"corrupt-artifact", "SHA-256"},
 	} {
 		t.Run(test.channel, func(t *testing.T) {
-			service.ChannelPath = "channels/" + test.channel + ".v2.json"
-			_, err := service.Plan(ctx)
+			// Each rejection needs its own Service, and that is the whole
+			// point of this block rather than an accident of style.
+			//
+			// Retargeting the instance that already applied an update -
+			// which is what this test used to do - cannot reach the channel
+			// at all: Plan returns early on appliedRestart, because after a
+			// staged update there is nothing left to plan until the process
+			// restarts. That is correct behaviour and it silently made all
+			// three assertions unreachable, so rollback, forged signature
+			// and corrupt artifact went unverified on every platform this
+			// file builds on. Measured 2026-09-09: each case returned the
+			// stable channel plan (release-2, 2.0.0) in 0.00s.
+			//
+			// The state store is shared on purpose: the rollback case only
+			// means something against a recorded HighestSequence of 2.
+			fresh := &Service{
+				Resolver: resolver, Installer: installer,
+				State:       StateStore{Path: filepath.Join(home, ".local", "state", "filees", "update.json")},
+				ChannelPath: "channels/" + test.channel + ".v2.json",
+				Component:   "desktop", Platform: "linux-amd64", CurrentVersion: "0.9.0",
+			}
+			_, err := fresh.Plan(ctx)
 			if err == nil || !strings.Contains(err.Error(), test.contains) {
 				t.Fatalf("error = %v, want substring %q", err, test.contains)
 			}

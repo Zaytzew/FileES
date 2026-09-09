@@ -314,6 +314,7 @@ type Config struct {
 	RepositoryLocator    RepositoryLocator
 	RepositoryDetacher   RepositoryDetacher
 	RepositoryRepairer   RepositoryLifecycleRepairer
+	IntentResolver       IntentResolver
 	RepositoryDumpLoader RepositoryDumpLoader
 	ServerDetacher       ServerDetacher
 	RealmRemover         RealmRemover
@@ -571,6 +572,8 @@ func (c *Controller) showSettings(ctx context.Context, operationKey string, requ
 			return
 		}
 		switch result.Action {
+		case platform.SettingsDialogResolveIntents:
+			c.startResolveIntents(ctx, result.ServerID, result.RepoID)
 		case platform.SettingsDialogAddFolder:
 			c.startCreateRepository(ctx, result.ServerID)
 		case platform.SettingsDialogConnectRepos:
@@ -909,6 +912,7 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanDelete:               !locallyProvisioning && !attachmentRequired && vm.CanDeleteRepository() && ownedAndCreatable,
 			CanLoadDump:             !locallyProvisioning && repo.Attached && ownedAndCreatable,
 			CanRetryLifecycle:       vm.CanRepairRepositoryLifecycle() && repo.CanRetryLifecycle && repo.LifecycleOperationID != "",
+			CanResolveIntents:       vm.Connected && !vm.Stale && vm.CanResolveIntents() && repo.Attached && repo.Access == "rw" && repo.Pending.RenameUncertain > 0,
 			CanAbandonLifecycle:     vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
 		})
 	}

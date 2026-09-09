@@ -140,17 +140,21 @@ type Service struct {
 	Emit func(evType string, payload any)
 
 	// internal
-	repoID          string // set from Run(); used by emit()
-	wc              string // set from Run(); local shout inbox / last_seen
-	mu              sync.Mutex
-	unportableWake  chan struct{}
-	wcOpMu          sync.Mutex            // serialize publication, poll/update and event merging
-	cacheSaveMu     sync.Mutex            // serialize cache snapshots and their durable replacement
-	staging         map[string]*stageItem // rel path -> info
-	cachePath       string                // .filees/commit_cache/cache.json
-	receivedDeletes map[string]bool       // successful update removals, guarded by wcOpMu
-	lastShout       time.Time
-	lastCommit      time.Time // last successful commit (for size-adaptive interval)
+	repoID              string // set from Run(); used by emit()
+	wc                  string // set from Run(); local shout inbox / last_seen
+	mu                  sync.Mutex
+	unportableWake      chan struct{}
+	wcOpMu              sync.Mutex            // serialize publication, poll/update and event merging
+	cacheSaveMu         sync.Mutex            // serialize cache snapshots and their durable replacement
+	staging             map[string]*stageItem // rel path -> info
+	cachePath           string                // .filees/commit_cache/cache.json
+	intentPlan          *intentPlanState      // guarded by wcOpMu; unaccepted plans die on restart
+	intentReceipts      []intentReceipt       // guarded by mu; atomically stored with staging
+	intentDiagnosticKey string                // guarded by wcOpMu; diagnostics only
+	intentDiagnosticAt  time.Time
+	receivedDeletes     map[string]bool // successful update removals, guarded by wcOpMu
+	lastShout           time.Time
+	lastCommit          time.Time // last successful commit (for size-adaptive interval)
 	// One-shot shouting commit. Comment is consumed by the next tryCommitMode
 	// that actually publishes; last_seen then jumps to that revision so this
 	// installation does not badge its own shout.
@@ -190,6 +194,7 @@ func (s *Service) RecoveryStats() RecoveryStats {
 }
 
 type stageItem struct {
+	ResolutionID   string // accepted interpretation of this still-pending item
 	Rel            string
 	Abs            string
 	OldRel         string // source path for Renamed; empty otherwise
@@ -489,7 +494,7 @@ func (s *Service) acceptEvent(ev watcher.Event) {
 func (s *Service) recordCommitFailure(what string, err error) {
 	var held *recoveryFailure
 	if errors.As(err, &held) {
-		return // Already journaled by recoverCommit, including startup/poll.
+		return // Already journaled by recovery or explicit-intent HOLD reporting.
 	}
 	entry := errmap.Classify(err)
 	// Network faults are journaled once by the sustained-offline timer. The
@@ -697,6 +702,10 @@ func (s *Service) addEventLocked(ev watcher.Event) {
 		}
 	}
 	it, ok := s.staging[key]
+	if ok && ev.Op == watcher.RenameUncertain && s.acceptedIntentReplay(it, ev) {
+		// The scanner may rediscover the same ambiguity after a restart.
+		ev.Op = watcher.Added
+	}
 	if !ok {
 		now := time.Now()
 		it = &stageItem{Rel: ev.Rel, Abs: ev.Path, OldRel: ev.OldRel, RenameVerified: ev.IdentityVerified, IsDir: ev.Type == watcher.EntryDir, Op: ev.Op, FirstSeen: now, LastSeen: now}
@@ -713,8 +722,10 @@ func (s *Service) addEventLocked(ev watcher.Event) {
 	switch ev.Op {
 	case watcher.RenameUncertain:
 		it.Op = watcher.RenameUncertain
+		it.ResolutionID = ""
 	case watcher.Deleted:
 		it.Op = watcher.Deleted
+		it.ResolutionID = ""
 		it.OldRel = ""
 	case watcher.Added:
 		it.Op = watcher.Added
@@ -725,6 +736,7 @@ func (s *Service) addEventLocked(ev watcher.Event) {
 		}
 	case watcher.Renamed:
 		it.Op = watcher.Renamed
+		it.ResolutionID = ""
 		it.OldRel = ev.OldRel
 		it.RenameVerified = ev.IdentityVerified
 	}
@@ -865,9 +877,10 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		}
 		if it.Op == watcher.RenameUncertain {
 			s.mu.Unlock()
-			return fmt.Errorf("native rename %q is ambiguous or changed after scheduling; publication held without delete/add fallback", it.Rel)
+			return s.reportIntentHold(time.Now())
 		}
 	}
+	s.intentDiagnosticKey, s.intentDiagnosticAt = "", time.Time{}
 	// snapshot and filter by latency & max batch
 	now := time.Now()
 	// A large backlog overrides the Modified debounce below, same as it
@@ -1808,6 +1821,7 @@ func (s *Service) makeNotice(wc, title, body string) error {
 
 // cacheEntry is the JSON-serializable form of stageItem.
 type cacheEntry struct {
+	ResolutionID   string    `json:"resolution_id,omitempty"`
 	Rel            string    `json:"rel"`
 	Abs            string    `json:"abs"`
 	OldRel         string    `json:"old_rel,omitempty"`
@@ -1858,12 +1872,14 @@ func (s *Service) loadCache() {
 	} // no cache yet = normal on first run
 
 	var entries []cacheEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
+	var receipts []intentReceipt
+	if err := decodeIntentCache(data, &entries, &receipts); err != nil {
 		s.Logger.Warnf("commit cache: parse error: %v — starting fresh", err)
 		return
 	}
 
 	s.mu.Lock()
+	s.intentReceipts = receipts
 	for _, e := range entries {
 		lastSeen := e.LastSeen
 		if lastSeen.IsZero() {
@@ -1873,6 +1889,7 @@ func (s *Service) loadCache() {
 			lastSeen = e.FirstSeen
 		}
 		s.staging[e.Rel] = &stageItem{
+			ResolutionID:   e.ResolutionID,
 			Rel:            e.Rel,
 			Abs:            e.Abs,
 			OldRel:         e.OldRel,
@@ -1912,6 +1929,7 @@ func (s *Service) saveCacheChecked() error {
 	entries := make([]cacheEntry, 0, len(s.staging))
 	for _, it := range s.staging {
 		entries = append(entries, cacheEntry{
+			ResolutionID:   it.ResolutionID,
 			Rel:            it.Rel,
 			Abs:            it.Abs,
 			OldRel:         it.OldRel,
@@ -1923,13 +1941,14 @@ func (s *Service) saveCacheChecked() error {
 			LastSeen:       it.LastSeen,
 		})
 	}
+	value := intentCacheValue(entries, s.intentReceipts)
 	s.mu.Unlock()
 
 	var err error
 	if s.RequireSVNMetadata {
-		err = atomicWriteJSONSliceInExistingDir(s.cachePath, entries)
+		err = atomicWriteJSONSliceInExistingDir(s.cachePath, value)
 	} else {
-		err = atomicWriteJSONSlice(s.cachePath, entries)
+		err = atomicWriteJSONSlice(s.cachePath, value)
 	}
 	return err
 }

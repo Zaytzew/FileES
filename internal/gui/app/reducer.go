@@ -639,6 +639,15 @@ func (s appState) confirmPendingActions(ids []string) (appState, []string) {
 			}
 			continue
 		}
+		if action.ExpectedIntentsResolved {
+			status, exists := s.snapshots[action.RepoID]
+			if exists && status.ServerID == action.ServerID && status.Pending.RenameUncertain == 0 {
+				confirmed = append(confirmed, id)
+			} else {
+				waiting = append(waiting, id)
+			}
+			continue
+		}
 		if action.ReservationDelta == 0 {
 			confirmed = append(confirmed, id)
 			continue

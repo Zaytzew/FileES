@@ -16,6 +16,7 @@ type settingsActionSpec struct {
 // Order is the user-facing list. Local and realm actions come first.
 // Destructive server actions stay last so they are not the default row.
 var settingsActionCatalog = []settingsActionSpec{
+	{SettingsDialogResolveIntents, "resolve_intents", "resolve_intents", "Rozstrzygnij niejednoznaczne zmiany", true, false},
 	{SettingsDialogSessionTimeout, "session_timeout", "session_timeout", "Limit czasu wysyłki i pobierania…", false, false},
 	{SettingsDialogRealmVisibility, "realm_visibility", "realm_visibility", "Widoczność mojej strefy", false, false},
 	{SettingsDialogRealmBranding, "realm_branding", "realm_branding", "Wygląd udziałów publicznych", false, false},
@@ -126,6 +127,8 @@ func serverAllowsSettingsAction(server SettingsServer, spec settingsActionSpec) 
 
 func folderAllowsSettingsAction(folder SettingsFolder, action SettingsDialogAction) bool {
 	switch action {
+	case SettingsDialogResolveIntents:
+		return folder.CanResolveIntents
 	case SettingsDialogConnectRepos:
 		return folder.CanConnect
 	case SettingsDialogLocateFolder:
@@ -157,6 +160,8 @@ func folderAllowsSettingsAction(folder SettingsFolder, action SettingsDialogActi
 
 func settingsActionFromID(id string) SettingsDialogAction {
 	switch id {
+	case "resolve_intents":
+		return SettingsDialogResolveIntents
 	case "add_folder", "add", "Dodaj folder":
 		return SettingsDialogAddFolder
 	case "connect_repositories", "connect", "Połącz":

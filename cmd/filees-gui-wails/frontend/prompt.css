@@ -12,4 +12,9 @@ button,input,select { font:inherit; } button:focus-visible,input:focus-visible,s
 .input-wrap { display:grid; gap:7px; margin-top:20px; }.input-wrap[hidden] { display:none; }.input-wrap span { color:var(--muted); font-size:11px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }.input-wrap input,.input-wrap select { width:100%; min-height:45px; padding:10px 13px; border:1px solid var(--line); border-radius:11px; color:var(--text); background:rgba(2,8,15,.38); font-size:15px; }.input-wrap input { font-family:"Cascadia Mono",Consolas,monospace; }.input-wrap select { cursor:pointer; }
 .actions { display:flex; justify-content:flex-end; gap:9px; margin-top:24px; }.actions button { min-height:39px; padding:9px 17px; border-radius:10px; font-size:12px; font-weight:780; cursor:pointer; }.actions button:disabled { opacity:.42; cursor:wait; }.quiet { border:1px solid var(--line); color:var(--muted); background:rgba(255,255,255,.025); }.quiet:hover { color:var(--text); background:rgba(255,255,255,.06); }.primary { border:1px solid rgba(255,106,0,.4); color:#fff; background:var(--orange); }.primary:hover { background:#d95800; }
 @media (prefers-color-scheme:light) { :root:not([data-system-theme="dark"]) .ambient { opacity:.09; }:root:not([data-system-theme="dark"]) .input-wrap input,:root:not([data-system-theme="dark"]) .input-wrap select,:root:not([data-system-theme="dark"]) .quiet,:root:not([data-system-theme="dark"]) .titlebar button { background:rgba(11,29,58,.025); } }
+/* Long daemon plans scroll without moving confirmation/cancel off-screen. */
+.prompt-card { height:calc(100vh - 84px); min-height:0; }
+.prompt-card > :not(.prompt-text) { flex-shrink:0; }
+.prompt-text { min-height:0; overflow:auto; overflow-wrap:anywhere; padding-right:8px; }
+.actions { flex-wrap:wrap; }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition-duration:.01ms!important; } }

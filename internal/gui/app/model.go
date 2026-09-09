@@ -94,6 +94,7 @@ type PendingAction struct {
 	ExpectedRepoAttached             bool
 	ExpectedRepoDetached             bool
 	ExpectedRepoDeleted              bool
+	ExpectedIntentsResolved          bool
 	ExpectedRecoveryDismissed        bool
 	ExpectedLocalProjectionDismissed bool
 	// ExpectedLifecycleOperationID fences a repair against daemon projection:
@@ -313,12 +314,13 @@ func (vm ViewModel) HasCap(cap string) bool { return vm.Capabilities[cap] }
 // leaking capability names into tray adapters. CanMutateLock and
 // CanMutateUnlock additionally apply the live-state gate shared by presenters
 // and action controllers.
-func (vm ViewModel) CanLock() bool         { return vm.HasCap(contract.CapRepoLock) }
-func (vm ViewModel) CanUnlock() bool       { return vm.HasCap(contract.CapRepoUnlock) }
-func (vm ViewModel) CanListErrors() bool   { return vm.HasCap(contract.CapErrorList) }
-func (vm ViewModel) CanListActivity() bool { return vm.HasCap(contract.CapRepoActivity) }
-func (vm ViewModel) CanPublish() bool      { return vm.HasCap(contract.CapRepoPublish) }
-func (vm ViewModel) CanAckNotices() bool   { return vm.HasCap(contract.CapNoticeAck) }
+func (vm ViewModel) CanLock() bool           { return vm.HasCap(contract.CapRepoLock) }
+func (vm ViewModel) CanUnlock() bool         { return vm.HasCap(contract.CapRepoUnlock) }
+func (vm ViewModel) CanListErrors() bool     { return vm.HasCap(contract.CapErrorList) }
+func (vm ViewModel) CanListActivity() bool   { return vm.HasCap(contract.CapRepoActivity) }
+func (vm ViewModel) CanPublish() bool        { return vm.HasCap(contract.CapRepoPublish) }
+func (vm ViewModel) CanResolveIntents() bool { return vm.HasCap(contract.CapRepoIntentResolution) }
+func (vm ViewModel) CanAckNotices() bool     { return vm.HasCap(contract.CapNoticeAck) }
 func (vm ViewModel) SupportsReservationListing() bool {
 	return vm.HasCap(contract.CapRepoReservationList)
 }

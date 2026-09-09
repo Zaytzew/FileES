@@ -227,6 +227,7 @@ var AllCapabilities = []string{
 	CapRepoLifecycleStatus,
 	CapRepoLifecycleRepair,
 	CapRepoPublish,
+	CapRepoIntentResolution,
 	CapNoticeList,
 	CapNoticeAck,
 }

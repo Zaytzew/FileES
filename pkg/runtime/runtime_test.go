@@ -217,6 +217,22 @@ func TestConcurrentAcquirersRaceToReclaimStaleSlot(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	// Measured 2026-09-09 on Windows: the normal path costs two ticker
+	// periods, ~300 ms each - one to lose the reclaim race, one to take the
+	// freed slot - and it does NOT degrade under load (six runs with the full
+	// suite hammering the machine came in at 600.4 +/- 1 ms). The 3 s budget
+	// therefore has five times the headroom it needs, and a deadline expiring
+	// here does not mean "the machine was busy".
+	//
+	// It expired once in roughly sixteen full parallel runs and was not
+	// reproduced in eight instrumented attempts, so the cause is still
+	// unknown. What is known is that it takes about eight extra ticker
+	// periods to get there, which is a retry loop failing repeatedly rather
+	// than scheduler jitter. These timings are carried into the failure
+	// message so the next occurrence says where they went instead of only
+	// "context deadline exceeded".
+	started := time.Now()
+
 	type result struct {
 		release func()
 		err     error
@@ -231,15 +247,18 @@ func TestConcurrentAcquirersRaceToReclaimStaleSlot(t *testing.T) {
 
 	// First result: whichever goroutine wins the reclaim race.
 	r1 := <-ch
+	firstTook := time.Since(started)
 	if r1.err != nil {
-		t.Fatalf("first acquirer: %v", r1.err)
+		t.Fatalf("first acquirer after %v (expected ~300ms): %v", firstTook, r1.err)
 	}
 	// Release the slot so the second goroutine can proceed.
 	r1.release()
+	released := time.Now()
 
 	r2 := <-ch
 	if r2.err != nil {
-		t.Fatalf("second acquirer after first released: %v", r2.err)
+		t.Fatalf("second acquirer failed %v after release (first took %v, both expected ~300ms): %v",
+			time.Since(released), firstTook, r2.err)
 	}
 	r2.release()
 }

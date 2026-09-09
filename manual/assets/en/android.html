@@ -66,7 +66,7 @@
 <p>The phone is a capture and preview device, not an editing station. It reads a share like a public listing. It writes only under <code>mobile-uploads/</code>. The rest of the tree stays read-only. Protocol detail lives in Tech <a href="man-pages.html#filees-mobile-v1"><code>filees-mobile-v1</code></a> and in <code>concepts/TREE_INGEST_CONCEPT.md</code>.</p>
 
 <h2 id="and-what">What it is</h2>
-<div class="section-meta"><span class="status status-verified">Live-tested</span><span>2026-08-16 on <code>spot</code>: QR pairing, share listing, download, a 198-file folder in one commit, tree visible on the desktop.</span></div>
+<div class="section-meta"><span class="status status-verified">Live-tested</span><span>2026-09-09 on <code>spot</code>: QR pairing, share listing, download, a 198-file folder in one commit, tree visible on the desktop.</span></div>
 <p>The app never creates repositories and never asks for a UUID. After pairing it shows the same shares the desktop has in the realm projection. Opening a share is a folder-and-file list with human sizes. The launcher mark is <code>f:s</code>; folder rows use the square filees:space symbol.</p>
 
 <h2 id="and-pair">Pairing</h2>
@@ -77,7 +77,7 @@
 <p>The back arrow walks up the tree (the bar sits below the status bar, not under it). A file has <strong>Download</strong> and lands in the system Downloads collection. A file downloaded and edited on the phone does not write back to the original path — if you send it, it goes to <code>mobile-uploads/</code> as a new object.</p>
 
 <h2 id="and-send">Send</h2>
-<p><strong>Add</strong> offers files or a whole folder. The destination is always <code>mobile-uploads/…</code> in the chosen share. A small set goes one by one, with a <code>3 / 7</code> spinner. An existing path under <code>mobile-uploads/</code> with the same content is skipped; different content is a new revision, with no conflict prompt.</p>
+<p><strong>Add</strong> offers files or a whole folder. The destination is always <code>mobile-uploads/…</code> in the chosen share. A small set goes one by one, with a <code>3 / 7</code> spinner. An existing path under <code>mobile-uploads/</code> with the same content is skipped as a duplicate. Different content is <em>not</em> overwritten: that file is parked and appears in the pending list with the reason and two buttons, retry or discard. Sending a folder is the other case — inside an ingested folder a changed file does overwrite, as one commit.</p>
 
 <h2 id="and-pack">Large folder</h2>
 <p>From eight files up, the phone first totals their count and size (<code>198 files, 14 MB</code>), packs the folder into one zip (transport packaging only, not a file in the share) and sends it in one connection. The server worker checks the header sha256, unpacks the contents, and makes <em>one</em> commit. If the file you send is itself a <code>.zip</code> archive that is your document, it is stored as a regular file — the server does not unpack it a second time.</p>
@@ -93,7 +93,7 @@
 <li>it does not create shares and does not take a typed UUID;</li>
 <li>it does not show an upload queue — a spinner, then success or an error.</li>
 </ul>
-<p>The server must support <code>UPLOAD_TREE</code> (the signed release with this feature; on <code>spot</code> from r543). An older <code>filees-mobile-v1</code> exits status 70. In that case the phone reports that the server does not support the operation or is not yet accepting bulk uploads — the app does not report a false success.</p>
+<p>The server must support <code>UPLOAD_TREE</code> (the signed release with this feature; on <code>spot</code> from r1042). An older <code>filees-mobile-v1</code> exits status 70. In that case the phone reports that the server does not support the operation or is not yet accepting bulk uploads — the app does not report a false success.</p>
 </div>
 <nav class="page-nav">
 <a href="user-guide.html">← Desktop</a>
@@ -101,7 +101,7 @@
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-16 · source r543</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09 · source r1042</span></footer>
 </main>
 </body>
 </html>

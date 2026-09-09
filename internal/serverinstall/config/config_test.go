@@ -84,9 +84,14 @@ func TestLoadFullOverride(t *testing.T) {
 	if cfg.Interactive || !cfg.RequireHash || !cfg.VerifySignature || !cfg.Talkative {
 		t.Fatalf("policy bools: %v %v %v %v", cfg.Interactive, cfg.RequireHash, cfg.VerifySignature, cfg.Talkative)
 	}
-	if cfg.SignifyProgram != "/usr/bin/signify" {
-		t.Fatalf("signify: %q", cfg.SignifyProgram)
-	}
+	// There is deliberately nothing to assert about security.signify any
+	// more: signature verification moved in process on 2026-09-09, so no
+	// external program is named and the setting is accepted and ignored.
+	//
+	// The fixture above still carries the line, and that IS the assertion.
+	// Unknown keys are a hard parse error, so if the key were dropped rather
+	// than ignored, this Load would fail and take the whole test with it -
+	// which is exactly what would happen to a deployed config file.
 }
 
 func TestLoadRejects(t *testing.T) {

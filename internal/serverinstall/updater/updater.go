@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"filees/internal/durable"
+	"filees/internal/releaseenvelope"
 	"filees/internal/serverinstall/config"
 	"filees/internal/serverinstall/manifest"
 	"filees/internal/serverinstall/platform"
-	"filees/internal/serverinstall/signify"
 	"filees/internal/serverinstall/state"
 	"filees/internal/serverinstall/svnfetch"
 )
@@ -26,7 +26,6 @@ import (
 type Runner struct {
 	Config    *config.Config
 	Fetcher   svnfetch.Fetcher
-	Verifier  signify.Verifier
 	Platform  platform.Backend
 	Ownership platform.OwnershipManager
 	Out       io.Writer
@@ -106,7 +105,6 @@ func NewRunner(cfg *config.Config, fetcher svnfetch.Fetcher, plat platform.Backe
 	return &Runner{
 		Config:    cfg,
 		Fetcher:   fetcher,
-		Verifier:  signify.CLI{Program: cfg.SignifyProgram},
 		Platform:  plat,
 		Ownership: platform.SystemOwnership{},
 		Out:       out,
@@ -210,25 +208,14 @@ func (r *Runner) verifyDetached(ctx context.Context, data []byte, path string) e
 		return fmt.Errorf("%s: fetch signature: %w", path, err)
 	}
 
-	verifyDir := filepath.Join(r.Config.StageDir, "verify")
-	if err := os.MkdirAll(verifyDir, 0o755); err != nil {
-		return fmt.Errorf("%s: prepare verify dir: %w", path, err)
-	}
-	tmp, err := os.MkdirTemp(verifyDir, "sig-*")
-	if err != nil {
-		return fmt.Errorf("%s: prepare verify dir: %w", path, err)
-	}
-	defer os.RemoveAll(tmp)
-
-	pubkeyPath := filepath.Join(tmp, "release.pub")
-	msgPath := filepath.Join(tmp, "message")
-	sigPath := filepath.Join(tmp, "message.sig")
-	for path, data := range map[string][]byte{pubkeyPath: r.Config.SignifyPubkey, msgPath: data, sigPath: sig} {
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			return fmt.Errorf("write verify temp: %w", err)
-		}
-	}
-	if err := r.Verifier.Verify(ctx, pubkeyPath, msgPath, sigPath); err != nil {
+	// Verified in process. The key is already in memory, compiled into this
+	// binary, so the previous route — write key, message and signature into a
+	// temporary directory, spawn signify(1), delete them — put signing
+	// material on disk for no reason and made the whole check depend on an
+	// external program name. On Debian that name resolves to an unrelated
+	// tool, so a Linux install would have failed closed on a machine where
+	// the real verifier was sitting in the same binary all along.
+	if err := releaseenvelope.VerifySignifySignature(r.Config.SignifyPubkey, data, sig); err != nil {
 		return fmt.Errorf("%s: signature verification failed: %w", path, err)
 	}
 	fmt.Fprintf(r.Out, "SIGNATURE OK %s\n", path)

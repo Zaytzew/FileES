@@ -73,7 +73,7 @@
 <h2 id="ps-url">5.2 The share address</h2>
 <p>The public address is always:</p>
 <pre><code>https://&lt;server-domain&gt;/&lt;realm-alias&gt;/&lt;slug&gt;</code></pre>
-<p>Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the path or the reason. The allowlist that also serves this manual is in <a href="operations.html#ops-ps-url">Operations</a> and in <a href="operations.html#ops-htdocs">Operations</a>.</p>
+<p>Unknown, revoked and deleted addresses share one branded HTTP 404 that does not echo the path or the reason. The allowlist that also serves this manual is in <a href="operations.html#ops-ps-url">Operations, canonical share address</a> and <a href="operations.html#ops-htdocs">Operations, htdocs tree</a>.</p>
 
 <h2 id="ps-map">5.3 Not a live mirror</h2>
 <div class="section-meta"><span class="status status-verified">Verified</span><span>Implemented contract, not a defect.</span></div>
@@ -94,7 +94,7 @@
 <li>A recipient list makes a closed channel. An empty list makes an open channel, optionally with a password. The password is never stored in the clear.</li>
 <li>Empty revision follows the latest. A positive revision freezes that snapshot.</li>
 </ul>
-<p>After opening the share, the visitor sees a collapsed-by-default details tree: name, type icon, size, download. They may take one file, one folder or the whole share as a bounded ZIP. This version has no thumbnails.</p>
+<p>After opening the share, the visitor sees a collapsed-by-default details tree: name, type icon, size, download. They may take one file, one folder or the whole share as a ZIP. That bundle has its own limit, separate from the share: 512 files by default, configurable up to 4096. A share may legally hold more objects than one bundle may carry, and a request over the limit is refused rather than truncated. This version has no thumbnails.</p>
 
 <h2 id="ps-ops">5.6 Turning it on</h2>
 <p>Public shares are installed disabled. After you have edited <code>server.json</code> and <code>public-links.json</code>, start authority before links, then reload <code>httpd</code>. The exact commands, health rule and man pages are in <a href="operations.html#ops-ps-ops">Operations</a>.</p>
@@ -105,7 +105,7 @@
 </nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r523</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09 · source r1042</span></footer>
 </main>
 </body>
 </html>

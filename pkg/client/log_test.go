@@ -21,4 +21,7 @@ func TestParseLogXML(t *testing.T) {
 	if len(got) != 2 || got[0].Revision != 18 || got[0].Message != "[!shout@#!] Ważna paka" || got[1].Revision != 19 {
 		t.Fatalf("%#v", got)
 	}
+	if got[0].Date != "2026-08-17T10:00:00.000000Z" || got[1].Date != "" {
+		t.Fatalf("lost SVN date: %+v", got)
+	}
 }

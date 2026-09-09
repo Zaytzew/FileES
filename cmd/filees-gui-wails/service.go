@@ -138,6 +138,8 @@ type RepoProjection struct {
 	PendingFiles             int                        `json:"pending_files"`
 	PendingBytes             int64                      `json:"pending_bytes"`
 	IntentResolutionRequired bool                       `json:"intent_resolution_required"`
+	LastCommitAt             string                     `json:"last_commit_at,omitempty"`
+	CanFoldInactive          bool                       `json:"can_fold_inactive"`
 	Conflicts                int                        `json:"conflicts"`
 	UnportableNames          []UnportableNameProjection `json:"unportable_names,omitempty"`
 	CurrentOperation         string                     `json:"current_operation,omitempty"`
@@ -971,6 +973,8 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted + repo.Pending.Renamed + repo.Pending.RenameUncertain,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
 			IntentResolutionRequired: repo.Attached && !repo.ServerDeleted && repo.Pending.RenameUncertain > 0,
+			LastCommitAt:             repo.LastCommitAt,
+			CanFoldInactive:          vm.CanFoldInactive(repo),
 			UnportableNames:          unportableNames(repo.UnportableNames),
 			CurrentOperation:         operation, ReservationCount: repo.ReservationCount,
 			CanAttach: canAttach, CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,

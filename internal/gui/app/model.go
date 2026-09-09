@@ -64,6 +64,7 @@ type RepoViewModel struct {
 	Conflicts            int
 	UnportableNames      []contract.UnportableName
 	LastSyncAt           string
+	LastCommitAt         string
 	CurrentOp            *string
 	ReservationCount     int
 	Cycle                contract.CycleStatus
@@ -309,6 +310,29 @@ func (vm ViewModel) CanApplyUpdate() bool {
 
 // HasCap reports whether the daemon advertised the given capability.
 func (vm ViewModel) HasCap(cap string) bool { return vm.Capabilities[cap] }
+
+// CanFoldInactive protects current work and attention from presentation-only folding.
+func (vm ViewModel) CanFoldInactive(repo RepoViewModel) bool {
+	if !vm.Connected || vm.Stale || !repo.Attached || repo.ServerDeleted || repo.DisplayState() != RepoDisplayActive || repo.Pending.Added+repo.Pending.Modified+repo.Pending.Deleted+repo.Pending.Renamed+repo.Pending.RenameUncertain != 0 || repo.CurrentOp != nil || repo.Conflicts != 0 || len(repo.UnportableNames) != 0 || repo.ReservationCount != 0 {
+		return false
+	}
+	for _, action := range vm.PendingActions {
+		if action.ServerID == repo.ServerID && (action.RepoID == "" || action.RepoID == repo.ID) {
+			return false
+		}
+	}
+	for _, server := range vm.Servers {
+		if server.ID == repo.ServerID && (server.ViewSyncedAt == "" || server.ViewSyncFailures > 0 || server.ViewSyncError != "" || server.Detached) {
+			return false
+		}
+	}
+	for _, notice := range vm.Notices {
+		if notice.RepoID == repo.ID && !notice.Acked {
+			return false
+		}
+	}
+	return true
+}
 
 // CanLock, CanUnlock and CanListErrors expose advertised permissions without
 // leaking capability names into tray adapters. CanMutateLock and

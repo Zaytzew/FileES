@@ -89,16 +89,18 @@ type RepositorySnapshot struct {
 }
 
 type RepositoryContextProjection struct {
-	ServerID   string `json:"server_id"`
-	ServerName string `json:"server_name"`
-	Address    string `json:"address"`
-	Realm      string `json:"realm"`
-	RepoID     string `json:"repo_id"`
-	Name       string `json:"name"`
-	LocalPath  string `json:"local_path"`
-	State      string `json:"state"`
-	Access     string `json:"access"`
-	Editing    string `json:"editing"`
+	LastCommitAt    string `json:"last_commit_at,omitempty"`
+	CanFoldInactive bool   `json:"can_fold_inactive"`
+	ServerID        string `json:"server_id"`
+	ServerName      string `json:"server_name"`
+	Address         string `json:"address"`
+	Realm           string `json:"realm"`
+	RepoID          string `json:"repo_id"`
+	Name            string `json:"name"`
+	LocalPath       string `json:"local_path"`
+	State           string `json:"state"`
+	Access          string `json:"access"`
+	Editing         string `json:"editing"`
 }
 
 type RepositoryActionProjection struct {
@@ -775,7 +777,7 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 	}
 	snapshot := RepositorySnapshot{
 		Mode: "actions", Title: request.Title, Text: request.Text,
-		Context: RepositoryContextProjection{ServerID: server.ID, ServerName: server.Name, Address: server.Address, Realm: server.Realm, RepoID: folder.ID, Name: folder.Name, LocalPath: folder.LocalPath, State: folder.State, Access: folder.Access, Editing: folder.Editing},
+		Context: RepositoryContextProjection{LastCommitAt: folder.LastCommitAt, CanFoldInactive: folder.CanFoldInactive, ServerID: server.ID, ServerName: server.Name, Address: server.Address, Realm: server.Realm, RepoID: folder.ID, Name: folder.Name, LocalPath: folder.LocalPath, State: folder.State, Access: folder.Access, Editing: folder.Editing},
 		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{},
 	}
 	if folder.CanManageGrants {

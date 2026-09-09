@@ -606,6 +606,17 @@ func (rs *RepoState) Snapshot() contract.RepoStatus {
 	if !lastSync.IsZero() {
 		snap.LastSyncAt = lastSync.UTC().Format(time.RFC3339)
 	}
+	if attached && wc != "" {
+		var metadata struct {
+			Revision int64  `json:"revision"`
+			Date     string `json:"date"`
+		}
+		if raw, err := os.ReadFile(filepath.Join(wc, ".filees", "state", "last_commit.json")); err == nil && json.Unmarshal(raw, &metadata) == nil && metadata.Revision == localRev {
+			if date, err := time.Parse(time.RFC3339Nano, metadata.Date); err == nil && !date.IsZero() {
+				snap.LastCommitAt = date.UTC().Format(time.RFC3339Nano)
+			}
+		}
+	}
 	return snap
 }
 

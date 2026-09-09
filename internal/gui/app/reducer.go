@@ -277,6 +277,7 @@ func (s appState) viewModel() ViewModel {
 			Conflicts:            snap.Conflicts,
 			UnportableNames:      snap.UnportableNames,
 			LastSyncAt:           snap.LastSyncAt,
+			LastCommitAt:         snap.LastCommitAt,
 			CurrentOp:            snap.CurrentOperation,
 			ReservationCount:     s.repoReservations[reservationKey(sum.ServerID, sum.ID)],
 			Cycle:                snap.Cycle,

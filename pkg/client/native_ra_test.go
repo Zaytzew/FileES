@@ -61,6 +61,20 @@ func TestNativeRAOldHelperRefusedBeforeUpdate(t *testing.T) {
 		t.Fatal("mutation attempted before capability check", e)
 	}
 }
+
+func TestNativeLogPreservesCommitDate(t *testing.T) {
+	c := raFake(t, `{"schema":"filees.native-svn/v1","ok":true,"entries":[{"revision":7,"date":"2026-07-01T10:00:00.123456Z","message":"remote commit"}]}`)
+	entries, err := c.nativeLog(t.Context(), "file:///lab", "7:7")
+	if err != nil || len(entries) != 1 || entries[0].Date != "2026-07-01T10:00:00.123456Z" {
+		t.Fatalf("date lost: %+v %v", entries, err)
+	}
+	if nativeWCOps(c) {
+		mapped, err := c.LogMessages(t.Context(), "file:///lab", 7, 7)
+		if err != nil || len(mapped) != 1 || mapped[0].Date != entries[0].Date {
+			t.Fatalf("adapter date lost: %+v %v", mapped, err)
+		}
+	}
+}
 func raFake(t *testing.T, reply string) *execClient {
 	t.Helper()
 	p := fakeSVN(t, "native-ra")

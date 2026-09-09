@@ -96,9 +96,22 @@ func (a Appender) Upload(ctx context.Context, clientID, requestID string, p v1.U
 		if err != nil {
 			return v1.UploadObjectResult{}, err
 		}
-		// Missing parents are created in the same append commit. A file
-		// sitting where the parent should be is DESTINATION_GONE.
-		if exists && kind != v1.KindDirectory {
+		// Concept section 6.4 step 3 is an existence check on the destination
+		// directory, and section 10.2 names its failure: DESTINATION_GONE,
+		// "the destination directory vanished". A file sitting where the
+		// directory should be is the same answer.
+		//
+		// Absent parents are created only under mobile-uploads/. r540 added
+		// that creation for the phone album tree ("Uploads land under
+		// mobile-uploads/") but never scoped it, so an absent parent anywhere
+		// was silently conjured and DESTINATION_GONE became unreachable: a
+		// directory deleted on the server was recreated under the phone's feet
+		// instead of being reported. UPLOAD_TREE has carried the scope since it
+		// was written; UPLOAD_OBJECT now asks the same question.
+		switch {
+		case exists && kind != v1.KindDirectory:
+			return v1.UploadObjectResult{Outcome: v1.OutcomeDestGone}, nil
+		case !exists && !underMobileUploads(p.ParentPath):
 			return v1.UploadObjectResult{Outcome: v1.OutcomeDestGone}, nil
 		}
 	}

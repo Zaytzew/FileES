@@ -159,6 +159,42 @@ func TestAppendDestinationGoneWhenParentIsAFile(t *testing.T) {
 	}
 }
 
+// TestAppendDestinationGoneWhenParentIsAbsent pins the half of the existence
+// check that the worker used to discard.
+//
+// "photos" exists in the seed and "photos/gone" does not, which is what a
+// directory deleted on the server looks like to a phone still holding it in a
+// stale manifest. That is the case DESTINATION_GONE was named for. Until the
+// scope was added, the worker recreated it and reported COMMITTED - so the
+// enum member was unreachable and the user was never told their album had
+// been removed. Recorded as unresolved since r906 and reproduced natively on
+// OpenBSD, so this is not a platform quirk.
+func TestAppendDestinationGoneWhenParentIsAbsent(t *testing.T) {
+	requireSVN(t)
+	repo := newSeededRepo(t)
+	a := newAppender(t, repo, "rw")
+
+	res := a.mustUpload(t, "photos/gone", "x.bin", []byte("data"))
+	if res.Outcome != v1.OutcomeDestGone {
+		t.Fatalf("expected DESTINATION_GONE for an absent parent, got %+v", res)
+	}
+}
+
+// TestAppendIntoExistingDirectoryOutsideUploads guards the other edge of the
+// same rule. Appending a new file is neither a modification nor a deletion, so
+// section 0 still permits it anywhere the directory already exists; scoping
+// creation must not have quietly scoped appending too.
+func TestAppendIntoExistingDirectoryOutsideUploads(t *testing.T) {
+	requireSVN(t)
+	repo := newSeededRepo(t)
+	a := newAppender(t, repo, "rw")
+
+	res := a.mustUpload(t, "docs", "nowy.bin", []byte("data"))
+	if res.Outcome != v1.OutcomeCommitted || res.FinalPath != "docs/nowy.bin" {
+		t.Fatalf("append into an existing directory: %+v", res)
+	}
+}
+
 func TestAppendRejectsHashMismatch(t *testing.T) {
 	requireSVN(t)
 	repo := newSeededRepo(t)

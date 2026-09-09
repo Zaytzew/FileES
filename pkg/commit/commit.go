@@ -833,6 +833,7 @@ func (s *Service) reconcileShouts(ctx context.Context, wc string) {
 		return
 	}
 	var fetch shout.FetchLogs
+	s.recordLastCommit(ctx, wc, local)
 	if logger, ok := s.Cli.(revisionLogger); ok {
 		fetch = func(from, to int64) ([]shout.LogEntry, error) {
 			entries, err := logger.LogMessages(ctx, wc, from, to)
@@ -1483,6 +1484,7 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		}
 		head := filepath.Join(wc, ".filees", "state", "head.rev")
 		_ = s.writeStateString(head, strconv.FormatInt(confirmedRevision, 10)+"\n")
+		s.recordLastCommit(ctx, wc, confirmedRevision)
 		if s.OnHeadRevision != nil {
 			s.OnHeadRevision(confirmedRevision)
 		}

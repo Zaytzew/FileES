@@ -1,6 +1,7 @@
 import { Events, Window } from "/wails/runtime.js";
 import { RepositoryService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
+import { readRepoView, saveRepoView, repoViewKey, canArchive } from "./repo-view.js";
 
 initializeTheme();
 
@@ -123,6 +124,11 @@ function render(snapshot) {
     $("#repository-actions").innerHTML = actions.length
       ? actions.map(actionButton).join("")
       : '<p class="empty">W aktualnym stanie nie ma działań administracyjnych dla tego folderu.</p>';
+    const prefs = readRepoView();
+    const archived = prefs.archived[repoViewKey(context)] === context.last_commit_at && Boolean(context.last_commit_at);
+    if (!detailMode && (archived || canArchive(context, prefs))) {
+      $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-archive-view><span><strong>${archived ? "Przywróć na zwykłą listę" : "Przenieś do archiwalnych"}</strong><small>Tylko widok na tym urządzeniu. Nie odłącza folderu i nie zatrzymuje synchronizacji.</small></span><i aria-hidden="true">›</i></button>`;
+    }
   } else {
     const shares = snapshot.shares || [];
     $("#public-shares").innerHTML = shares.length
@@ -246,9 +252,21 @@ async function closeRepository() {
 
 Events.On("filees:repository-snapshot", (event) => render(event?.data ?? event));
 $("#repository-actions").addEventListener("click", (event) => {
+  if (event.target.closest("[data-archive-view]")) {
+    const context = currentSnapshot?.context;
+    if (!context) return;
+    const prefs = readRepoView(), key = repoViewKey(context);
+    if (prefs.archived[key] === context.last_commit_at) delete prefs.archived[key];
+    else if (canArchive(context, prefs)) prefs.archived[key] = context.last_commit_at;
+    else return;
+    try { saveRepoView(prefs); render(currentSnapshot); showToast("Zmieniono widok folderu"); }
+    catch { showToast("Nie udało się zapisać widoku"); }
+    return;
+  }
   const button = event.target.closest("[data-repository-action]");
   if (button) chooseAction(button.dataset.repositoryAction, button);
 });
+window.addEventListener("storage", event => { if (event.key === "filees.repo-view.v1" && currentSnapshot) render(currentSnapshot); });
 $("#public-shares").addEventListener("click", (event) => {
   const button = event.target.closest("[data-share-action]");
   if (button) chooseShare(button.dataset.shareAction, button.dataset.channelId || "", button);

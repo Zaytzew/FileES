@@ -773,6 +773,7 @@ func (c *execClient) Revision(ctx context.Context, target string) (int64, error)
 type LogMessage struct {
 	Revision int64
 	Message  string
+	Date     string
 }
 
 // LogMessages returns svn:log for the inclusive revision range. It is used by
@@ -788,7 +789,7 @@ func (c *execClient) LogMessages(ctx context.Context, target string, fromRev, to
 		}
 		out := make([]LogMessage, 0, len(entries))
 		for _, entry := range entries {
-			out = append(out, LogMessage{Revision: entry.Revision, Message: entry.Message})
+			out = append(out, LogMessage{Revision: entry.Revision, Message: entry.Message, Date: entry.Date})
 		}
 		return out, nil
 	}
@@ -804,6 +805,7 @@ func parseLogXML(output string) ([]LogMessage, error) {
 		Entries []struct {
 			Revision int64  `xml:"revision,attr"`
 			Msg      string `xml:"msg"`
+			Date     string `xml:"date"`
 		} `xml:"logentry"`
 	}
 	if err := xml.Unmarshal([]byte(output), &doc); err != nil {
@@ -811,7 +813,7 @@ func parseLogXML(output string) ([]LogMessage, error) {
 	}
 	out := make([]LogMessage, 0, len(doc.Entries))
 	for _, entry := range doc.Entries {
-		out = append(out, LogMessage{Revision: entry.Revision, Message: entry.Msg})
+		out = append(out, LogMessage{Revision: entry.Revision, Message: entry.Msg, Date: entry.Date})
 	}
 	return out, nil
 }

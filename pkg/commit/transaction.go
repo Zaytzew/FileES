@@ -384,6 +384,8 @@ func (s *Service) finishIntent(ctx context.Context, wc string, in *commitIntent)
 	if err := releaseIntentBusy(wc, in); err != nil {
 		return err
 	}
+	// Optional presentation metadata must not turn a completed transaction into HOLD.
+	s.recordLastCommit(ctx, wc, in.Revision)
 	s.goOnline()
 	s.lastCommit = time.Now()
 	s.commitBatches.Add(1)

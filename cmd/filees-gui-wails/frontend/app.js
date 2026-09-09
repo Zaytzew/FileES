@@ -1,6 +1,7 @@
 import { Events, Window } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme, setThemePreference } from "./theme-preference.js";
+import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.js";
 
 initializeTheme();
 
@@ -460,8 +461,26 @@ function renderRepo(repo) {
   </article>`;
 }
 
-function renderRepoGroup(label, repos, className = "") {
+const expandedIdleGroups = new Set();
+function renderRepoGroup(label, repos, className = "", nested = false) {
   if (!repos.length) return "";
+  repos = [...repos].sort(repoOrder);
+  if (!nested && ["owned", "guest", "unclassified"].includes(className)) {
+    const prefs = readRepoView();
+    const groups = {active:[],inactive:[],archived:[]};
+    for (const repo of repos) {
+      const needsAttention = (currentSnapshot?.notices || []).some(n => n.repo_id === repo.id && !n.acked);
+      groups[needsAttention ? "active" : repoSection(repo,prefs)].push(repo);
+    }
+    const fold = (kind, title) => {
+      const items = groups[kind]; if (!items.length) return "";
+      const key = JSON.stringify([repos[0].server_id,className,kind]);
+      return `<details class="idle-group" data-idle-key="${escapeHTML(key)}" ${expandedIdleGroups.has(key)?"open":""}><summary>${escapeHTML(title)} (${items.length})</summary>${renderRepoGroup(label,items,className,true)}</details>`;
+    };
+    return renderRepoGroup(label,groups.active,className,true)
+      + fold("inactive",`Nieaktywne od więcej niż ${prefs.inactive} dni`)
+      + fold("archived","Archiwalne");
+  }
   return `<section class="realm-group ${escapeHTML(className)}">
     <div class="realm-divider"><span>${escapeHTML(label)}</span><b>${repos.length}</b></div>
     <div class="repo-list">${repos.map(renderRepo).join("")}</div>
@@ -1203,6 +1222,25 @@ $("#intent-alerts").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (button) triggerAction(button);
 });
+$("#repositories").addEventListener("toggle", event => {
+  const key = event.target.dataset?.idleKey; if (!key) return;
+  if(event.target.open) expandedIdleGroups.add(key); else expandedIdleGroups.delete(key);
+}, true);
+function refreshRepoViewPreferences() {
+  const prefs=readRepoView();
+  $("#inactive-days").value=prefs.inactive;
+  $("#archive-days").value=prefs.archive;
+  if(currentSnapshot) { renderRepositories(currentSnapshot); scheduleWindowFit(); }
+}
+$("#save-repo-view").addEventListener("click",()=>{
+  const inactive=Number($("#inactive-days").value), archive=Number($("#archive-days").value);
+  if(![inactive,archive].every(n=>Number.isInteger(n)&&n>=0&&n<=36500)) return;
+  try { saveRepoView({...readRepoView(),inactive,archive}); }
+  catch { showToast({title:"Nie zapisano ustawień widoku",level:"critical"}); }
+});
+window.addEventListener("storage",event=>{ if(event.key === "filees.repo-view.v1") refreshRepoViewPreferences(); });
+window.addEventListener("filees:repo-view",refreshRepoViewPreferences);
+refreshRepoViewPreferences();
 $("#close-deleted-copy").addEventListener("click", () => $("#deleted-copy-dialog").close());
 $("#dismiss-deleted-copy").addEventListener("click", () => $("#deleted-copy-dialog").close());
 $("#detach-deleted-copy").addEventListener("click", detachDeletedCopy);

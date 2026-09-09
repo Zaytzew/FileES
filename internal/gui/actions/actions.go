@@ -913,6 +913,8 @@ func settingsServerRow(vm app.ViewModel, server app.ServerViewModel, pending map
 			CanLoadDump:             !locallyProvisioning && repo.Attached && ownedAndCreatable,
 			CanRetryLifecycle:       vm.CanRepairRepositoryLifecycle() && repo.CanRetryLifecycle && repo.LifecycleOperationID != "",
 			CanResolveIntents:       vm.Connected && !vm.Stale && vm.CanResolveIntents() && repo.Attached && repo.Access == "rw" && repo.Pending.RenameUncertain > 0,
+			LastCommitAt:            repo.LastCommitAt,
+			CanFoldInactive:         vm.CanFoldInactive(repo),
 			CanAbandonLifecycle:     vm.CanRepairRepositoryLifecycle() && repo.CanAbandonLifecycle && repo.LifecycleOperationID != "",
 		})
 	}

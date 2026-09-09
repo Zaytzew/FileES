@@ -353,6 +353,7 @@ func (c *execClient) nativeLock(ctx context.Context, wc string, paths []string, 
 
 type nativeLogEntry struct {
 	Revision int64
+	Date     string
 	Message  string
 	Revprops map[string]string
 	Paths    []struct {

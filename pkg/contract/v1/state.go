@@ -78,8 +78,9 @@ type RepoStatus struct {
 	// repository is used from. It is derived from the working copy on each
 	// sweep, never remembered, so it cannot drift from what is on disk.
 	UnportableNames  []UnportableName `json:"unportable_names,omitempty"`
-	LastSyncAt       string           `json:"last_sync_at,omitempty"` // RFC3339; empty if never synced
-	CurrentOperation *string          `json:"current_operation"`      // null or short description
+	LastSyncAt       string           `json:"last_sync_at,omitempty"`   // RFC3339; empty if never synced
+	LastCommitAt     string           `json:"last_commit_at,omitempty"` // SVN date of local_revision; unknown is empty, never receipt time.
+	CurrentOperation *string          `json:"current_operation"`        // null or short description
 	Cycle            CycleStatus      `json:"cycle"`
 	Recovery         RecoveryStats    `json:"recovery"`
 	// Purpose is empty for a normal share. upload_shelf is the Upload Channel

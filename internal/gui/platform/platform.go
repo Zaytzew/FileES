@@ -291,6 +291,8 @@ type SettingsServer struct {
 // with repositoryOwnedByCurrentRealm/CanDetachRepository/CanDeleteRepository
 // rather than reintroducing an unconditional button.
 type SettingsFolder struct {
+	LastCommitAt                       string
+	CanFoldInactive                    bool
 	ID, Name, LocalPath, State, Access string
 	// Editing is a human-readable rendering of the repository editing policy,
 	// shown to every client rather than only the owner: a read-only file with

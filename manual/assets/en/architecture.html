@@ -340,7 +340,7 @@
 <tr><td>Error vocabulary and releases</td><td><code>pkg/errcat</code>, <code>pkg/errmap</code>, <code>pkg/shout</code></td><td>Shared code/message catalogue, diagnostic classification, and a release marker in <code>svn:log</code> with a local inbox.</td></tr>
 <tr><td>Server authority</td><td><code>pkg/control/v1</code>, <code>pkg/repoworker</code>, <code>internal/servertool</code></td><td>Authenticated tickets, canonical repository/grant/policy records and forced-command workers. There is no resident FileES server daemon.</td></tr>
 <tr><td>Activation and service view</td><td><code>pkg/onboarding</code>, <code>pkg/activation</code></td><td>Installation identity, authorised realm join and client-specific service-repository projection.</td></tr>
-<tr><td>Other trust boundaries</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Mobile access: read the share, write only under <code>mobile-uploads/</code> (different content at the same path is a new revision), public read distribution separated from desktop write credentials, and the tiny setuid helper that repairs service-WC ownership only.</td></tr>
+<tr><td>Other trust boundaries</td><td><code>internal/mobileworker</code>, <code>cmd/filees-public-authority</code>, <code>cmd/filees-links</code>, <code>cmd/filees-service-wc-corrector</code></td><td>Mobile access: read the share, write only under <code>mobile-uploads/</code> (a single upload with different content at the same path is parked as a conflict, while an ingested folder overwrites), public read distribution separated from desktop write credentials, and the tiny setuid helper that repairs service-WC ownership only.</td></tr>
 <tr><td>Release/install</td><td><code>internal/clientupdate</code>, <code>internal/serverinstall</code>, <code>internal/release*</code></td><td>Signed desktop updates, manifest-driven server installation and release envelopes.</td></tr>
 </table></div>
 <p>For each configured repository the daemon runs an independent pipeline:</p>
@@ -606,7 +606,7 @@
 <nav class="page-nav"><a href="administration.html">← User: Administration</a><a href="install.html">Install →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r523</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09 · source r1042</span></footer>
 </main>
 </body>
 </html>

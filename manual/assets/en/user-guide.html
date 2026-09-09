@@ -103,7 +103,7 @@ ENABLE_AUTOSTART=1 ./install-user.sh  # install + enable autostart</code></pre>
 <li>On controlled shutdown (<code>SIGINT</code>/<code>SIGTERM</code>) the daemon sends pending changes in bounded batches within <code>shutdown_commit_timeout</code>. Any remaining changes are written to <code>cache.json</code> and resumed on next start.</li>
 </ul>
 <h4>File ignore patterns</h4>
-<p>Built-in ignores (cannot be overridden): <code>~\$*</code> (MS Office), <code>.~lock.*#</code> (LibreOffice/OpenOffice), <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code>.</p>
+<p>Built-in ignores (cannot be overridden): <code>~\$*</code> (MS Office), <code>.~lock.*#</code> (LibreOffice/OpenOffice), <code>*.tmp</code>, <code>*.bak</code>, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, <code>.vscode/</code>, <code>.idea/</code>, <code>*.swp</code>, <code>*.swo</code>, <code>node_modules/</code>, <code>__pycache__/</code>, <code>*.o</code>, <code>*.pyc</code>, <code>.git/</code>, and the CAD and Office churn that FileES exists for: <code>*.dwl</code>, <code>*.dwl2</code>, <code>*.sv$</code>, <code>*.ac$</code> (AutoCAD lock, autosave and temporary drawings), <code>*.wbk</code>, <code>*.asd</code>, <code>*.xlk</code>, <code>*.laccdb</code> (Word, Excel and Access backups and lock files). An AutoCAD lock file names whoever opened the drawing and vanishes on close; versioning it would be a cruder answer to the question reservations already answer.</p>
 <p>User-defined ignores: place patterns in <code>.filees/user_ignore.cfg</code> (hot-reloaded on every scan). Lines starting with <code>!</code> are hard ignores that skip entire subtrees. Glob syntax supports <code>**</code> for any depth.</p>
 <h2 id="ch2-passports">2.5 Edit Passports</h2><div class="section-meta"><span class="status status-verified">Verified cross-client</span><span>Repository-wide policy, owner-only control, projection and two-client lock transfer passed live acceptance on Windows.</span></div>
 <p>Edit passports are an optional, repository-wide lock. The owner turns them on once under <strong>Zasady edycji</strong> in FileES Settings. The column <strong>Edycja</strong> then shows <strong>wymaga wypożyczenia</strong>. Guests cannot change the policy. The default is ordinary free editing. Why it is opt-in, and the timing numbers, are in <a href="operations.html#ops-passports">Operations</a>.</p>
@@ -232,7 +232,7 @@ FILEES_LOG=trace ./filees   # includes svn invocations
 <nav class="page-nav"><a href="index.html">← Overview</a><a href="public-shares.html">Shares →</a></nav>
 </div>
 </div>
-<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-08-15 · source r523</span></footer>
+<footer class="manual-footer"><span>filees:space visual system · navy / orange / paper</span><span>English edition · 2026-09-09 · source r1042</span></footer>
 </main>
 </body>
 </html>

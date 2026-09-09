@@ -24,6 +24,7 @@ const (
 	KeyLockOperation          Key = "lock.operation_failed"
 	KeyLockInvalidPath        Key = "lock.invalid_path"
 	KeyCommitFailed           Key = "commit.failed"
+	KeyCommitRecoveryHeld     Key = "commit.recovery_held"
 	KeyCommitOutdated         Key = "commit.outdated"
 	KeyCommitNoVCS            Key = "commit.not_versioned"
 	KeyReconConflict          Key = "recon.conflict"
@@ -114,6 +115,7 @@ var specs = []Spec{
 	{CodeCommitStale, KeyCommitOutdated, SevWarn, HintRetryLocal, nil, "Working copy out of date — update required before next commit", "Kopia robocza jest nieaktualna — najpierw pobierz zmiany"},
 	{CodeCommitNoVCS, KeyCommitNoVCS, SevWarn, HintRetryLocal, nil, "Path not under version control", "Ścieżka nie jest pod kontrolą wersji"},
 	{CodeCommitFail, KeyCommitFailed, SevError, HintRetryLocal, []string{"detail"}, "Commit failed", "Zapis na serwer nie powiódł się"},
+	{CodeCommitFail, KeyCommitRecoveryHeld, SevWarn, HintRequireAction, []string{"detail"}, "Publication recovery paused — inspect diagnostics; do not remove pending state", "Odtwarzanie publikacji wstrzymane — sprawdź diagnostykę; nie usuwaj stanu oczekujących zmian"},
 	{CodeRecon, KeyReconConflict, SevError, HintRequireAction, nil, "Conflict detected during update", "Wykryto konflikt podczas aktualizacji"},
 	{CodePolicyWait, KeyPolicyDeferred, SevWarn, HintRetryLocal, nil, "Editing-policy migration waiting on a clean working copy", "Zmiana polityki blokad czeka na czystą kopię roboczą"},
 	{CodeWCBusy, KeyWorkingCopyBusy, SevWarn, HintRetryLocal, nil, "Working copy is busy in another local process", "Kopia robocza jest chwilowo zajęta przez inny lokalny proces"},

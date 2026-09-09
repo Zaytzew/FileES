@@ -405,10 +405,17 @@ func (c *execClient) commitRevisionByMarker(ctx context.Context, repoURL string,
 		if err != nil {
 			return 0, err
 		}
+		var found int64
 		for _, entry := range entries {
 			if entry.Revprops["filees:commit-id"] == marker {
-				return entry.Revision, nil
+				if found != 0 || entry.Revision < firstRevision {
+					return 0, errors.New("ambiguous commit receipt marker")
+				}
+				found = entry.Revision
 			}
+		}
+		if found > 0 {
+			return found, nil
 		}
 		return 0, errors.New("commit receipt marker is absent from repository log")
 	}
@@ -433,15 +440,19 @@ func (c *execClient) commitRevisionByMarker(ctx context.Context, repoURL string,
 	if err := xml.Unmarshal([]byte(out), &logXML); err != nil {
 		return 0, fmt.Errorf("parse commit receipt log: %w", err)
 	}
+	var found int64
 	for _, entry := range logXML.Entries {
 		for _, property := range entry.RevProps.Properties {
 			if property.Name == "filees:commit-id" && strings.TrimSpace(property.Value) == marker {
-				if entry.Revision <= 0 {
+				if entry.Revision < firstRevision || found != 0 {
 					return 0, errors.New("commit receipt contains invalid revision")
 				}
-				return entry.Revision, nil
+				found = entry.Revision
 			}
 		}
+	}
+	if found > 0 {
+		return found, nil
 	}
 	return 0, errors.New("commit receipt marker is absent from repository log")
 }

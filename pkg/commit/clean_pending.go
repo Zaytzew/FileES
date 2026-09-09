@@ -14,6 +14,9 @@ import (
 // Missing, deletions, moves, directories and unknown status stay pending: this
 // is not a portable-name gate or a licence to discard unrepresentable paths.
 func (s *Service) reconcileCleanPending(ctx context.Context, wc string) {
+	if s.intentPending(wc) {
+		return
+	}
 	type candidate struct {
 		item    *stageItem
 		version uint64

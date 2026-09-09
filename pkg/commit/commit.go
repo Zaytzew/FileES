@@ -337,7 +337,6 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 		s.Logger.Warnf("working copy metadata disappeared at %s", wc)
 		return
 	}
-	s.reconcileShouts(ctx, wc)
 	lg := s.Logger
 	if s.Rules.NewLatency <= 0 {
 		s.Rules.NewLatency = 5 * time.Minute
@@ -377,6 +376,10 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 	} else {
 		s.loadCache()
 	}
+	if _, err := s.recoverCommit(ctx, wc); err != nil {
+		lg.Warnf("startup commit recovery: %v", err)
+	}
+	s.reconcileShouts(ctx, wc)
 
 	window := s.Rules.Window
 	if window <= 0 {
@@ -587,6 +590,10 @@ func (s *Service) runPoller(ctx context.Context, wc string) {
 func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
+	if _, err := s.recoverCommit(ctx, wc); err != nil {
+		s.Logger.Warnf("commit recovery: %v", err)
+		return
+	}
 	// A watcher also observes files materialized by update. Reconcile locally
 	// even at unchanged HEAD/offline, without waiting for the publish debounce.
 	s.reconcileCleanPending(ctx, wc)
@@ -810,7 +817,7 @@ type revisionLogger interface {
 }
 
 func (s *Service) reconcileShouts(ctx context.Context, wc string) {
-	if wc == "" || s.Cli == nil {
+	if wc == "" || s.Cli == nil || s.intentPending(wc) {
 		return
 	}
 	local, err := s.Cli.Revision(ctx, wc)
@@ -850,6 +857,9 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 	defer s.wcOpMu.Unlock()
 	if !s.workingCopyAvailable(wc) {
 		return errors.New("working copy metadata is missing")
+	}
+	if found, err := s.recoverCommit(ctx, wc); found || err != nil {
+		return err
 	}
 	s.mu.Lock()
 	for _, it := range s.staging {
@@ -1395,7 +1405,9 @@ func (s *Service) tryCommitMode(ctx context.Context, wc string, force bool) erro
 		confirmedRevision int64
 		exactReceipt      bool
 	)
-	if committer, ok := s.Cli.(revisionCommitter); ok {
+	if committer, ok := s.Cli.(client.TransactionCommitter); ok {
+		return s.commitDurable(ctx, wc, committer, commitPaths, msg, shoutComment, pending)
+	} else if committer, ok := s.Cli.(revisionCommitter); ok {
 		exactReceipt = true
 		out, confirmedRevision, err = committer.CommitWithRevision(ctx, wc, s.RepoURL, commitPaths, msg, s.Rules.NeedsLock)
 	} else if s.Rules.NeedsLock {

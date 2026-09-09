@@ -58,6 +58,23 @@ func TestReadOnlyStarterUsesDaemonLifecycleNotReconcileContext(t *testing.T) {
 	}
 }
 
+func TestStartupUpdateWaitsForCommitReceipt(t *testing.T) {
+	wc := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wc, ".filees", "commit_cache"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(wc, ".svn"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wc, ".filees", "commit_cache", "transaction.json"), []byte(`{"schema":"filees.commit-intent/v1","phase":"attempting"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// nil SVN would panic if cleanup/status/update were reached.
+	if recoverReadWriteWorkingCopy(context.Background(), nil, wc, &commit.Service{}, nil, talk.Logger{}) {
+		t.Fatal("startup update crossed receipt barrier")
+	}
+}
+
 type fakeEventSource struct {
 	started chan struct{}
 	events  chan watcher.Event

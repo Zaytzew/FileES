@@ -245,6 +245,10 @@ func (s *passportSession) stop() {
 }
 
 func recoverReadWriteWorkingCopy(ctx context.Context, svn client.Client, wc string, service *commit.Service, sink *errmap.Sink, logger talk.Logger, received ...func(string)) bool {
+	if commit.HasUnresolvedCommit(wc) {
+		logger.Infof("startup update deferred: durable commit receipt recovery pending")
+		return false
+	}
 	if _, err := os.Stat(filepath.Join(wc, ".svn")); err != nil {
 		return false
 	}

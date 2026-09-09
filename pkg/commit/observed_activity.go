@@ -217,6 +217,9 @@ func (s *Service) acceptEvents(ctx context.Context, events []watcher.Event) {
 		}
 	}
 	clean := s.cleanObservedPaths(ctx, s.wc, paths)
+	if s.intentPending(s.wc) {
+		clean = nil
+	}
 	for _, ev := range events {
 		if s.refuseUnportable(ev) {
 			continue

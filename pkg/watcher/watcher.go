@@ -20,6 +20,7 @@ import (
 
 	"filees/pkg/filepolicy"
 	"filees/pkg/talk"
+	"github.com/google/uuid"
 )
 
 // --- Public API ---
@@ -44,6 +45,8 @@ const (
 // Event sent to commit.Service
 // Path = ABS path (for stat/IO), Rel = POSIX path relative to WC (for SVN)
 type Event struct {
+	Session          string // scanner instance; publication acknowledgements fence queued events
+	Sequence         uint64
 	Path             string    // absolute path (new location for Renamed)
 	Rel              string    // posix relative path (new location for Renamed)
 	OldRel           string    // source path for Renamed; empty otherwise
@@ -55,15 +58,16 @@ type Event struct {
 // Options control scanner behaviour
 // Times/intervals default to sane values if zero.
 type Options struct {
-	WC              string         // ABS root of working copy (must exist)
-	StatePath       string         // .filees/state/manifest.json
-	ScanPeriod      time.Duration  // typical: commit window / 2 (default 15s)
-	BusyPath        string         // .filees/state/commit.busy
-	BusyTTL         time.Duration  // default 10m (stale busy ignore)
-	TicketsPoll     time.Duration  // poll tickets-only while busy (default 12s)
-	DeletedDebounce time.Duration  // emit FileDeleted after this absence (default 10m)
-	IgnoreRegex     *regexp.Regexp // optional global regex (extra filter)
-	LogScope        string
+	PublicationPending func() bool    // inhibit scans while a durable mutation is unresolved
+	WC                 string         // ABS root of working copy (must exist)
+	StatePath          string         // .filees/state/manifest.json
+	ScanPeriod         time.Duration  // typical: commit window / 2 (default 15s)
+	BusyPath           string         // .filees/state/commit.busy
+	BusyTTL            time.Duration  // default 10m (stale busy ignore)
+	TicketsPoll        time.Duration  // poll tickets-only while busy (default 12s)
+	DeletedDebounce    time.Duration  // emit FileDeleted after this absence (default 10m)
+	IgnoreRegex        *regexp.Regexp // optional global regex (extra filter)
+	LogScope           string
 
 	// MD5 / hashing heuristics
 	UseMD5           bool    // default true (tri-state semantics)
@@ -82,6 +86,11 @@ type Options struct {
 // Scanner performs shell-first periodic scans
 // BASELINING => PROMOTE => ACTIVE (per baseline.ok flag)
 type Scanner struct {
+	scanMu             sync.Mutex // scan/snapshot/ack; never held while delivering events
+	session            string
+	sequence           uint64
+	acknowledged       map[string]uint64
+	publicationPending func() bool
 	// static
 	wc         string
 	statePath  string
@@ -154,6 +163,7 @@ type meta struct {
 // on-disk manifest: list of entries
 // {path, mtime, [size], [md5]}
 type diskEntry struct {
+	IsDir    bool   `json:"is_dir,omitempty"`
 	Path     string `json:"path"`
 	Mtime    int64  `json:"mtime"`
 	Size     int64  `json:"size,omitempty"`
@@ -219,6 +229,9 @@ func NewScanner(opts Options) (*Scanner, error) {
 		requireRenameIdentity: opts.RequireRenameIdentity,
 		wc:                    wc,
 		statePath:             opts.StatePath,
+		session:               uuid.NewString(),
+		acknowledged:          make(map[string]uint64),
+		publicationPending:    opts.PublicationPending,
 		period:                opts.ScanPeriod,
 		busyPath:              coalesce(opts.BusyPath, filepath.Join(stateDir, "commit.busy")),
 		busyTTL:               opts.BusyTTL,
@@ -294,7 +307,7 @@ func (s *Scanner) LoadState(path string) error {
 	}
 	m := make(index, len(list))
 	for _, e := range list {
-		isDir := strings.HasSuffix(e.Path, "/")
+		isDir := e.IsDir || strings.HasSuffix(e.Path, "/")
 		m[e.Path] = meta{MtimeSec: e.Mtime, Size: e.Size, MD5: e.MD5, IsDir: isDir, Identity: e.Identity}
 	}
 	s.cur = m
@@ -321,7 +334,7 @@ func (s *Scanner) SaveState(path string) error {
 	defer s.mu.Unlock()
 	list := make([]diskEntry, 0, len(s.cur))
 	for rel, m := range s.cur {
-		de := diskEntry{Path: rel, Mtime: m.MtimeSec, Identity: m.Identity}
+		de := diskEntry{Path: rel, Mtime: m.MtimeSec, Identity: m.Identity, IsDir: m.IsDir}
 		if !m.IsDir {
 			de.Size = m.Size
 			if m.MD5 != "" {
@@ -364,6 +377,26 @@ func (s *Scanner) loop(ctx context.Context, out chan<- Event) {
 }
 
 func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
+	s.scanMu.Lock()
+	s.sequence++
+	seq := s.sequence
+	var events []Event
+	s.scanCycleCollect(ctx, func(ev Event) { events = append(events, ev) })
+	s.scanMu.Unlock()
+	// Publish only after the observed manifest has been swapped. A committer
+	// taking a snapshot must not deadlock against a full event channel.
+	for _, ev := range events {
+		ev.Session, ev.Sequence = s.session, seq
+		out <- ev
+	}
+}
+
+func (s *Scanner) scanCycleCollect(ctx context.Context, out func(Event)) {
+	// Recovery owns the baseline until its durable acknowledgement succeeds.
+	// In particular, do not silently baseline a WC whose manifest is missing.
+	if s.publicationPending != nil && s.publicationPending() {
+		return
+	}
 	if !s.workingCopyAvailable() {
 		return
 	}
@@ -377,7 +410,7 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 		_ = s.reloadIgnores()
 		stateDir := filepath.Dir(s.statePath)
 		tmpPath := filepath.Join(stateDir, "manifest.tmp")
-		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped /*emit=*/, false, out, busy)
+		mp := s.scanTreeEmit(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, false, out, busy)
 
 		// write tmp
 		_ = s.writeJSON(tmpPath, toDiskList(mp))
@@ -394,7 +427,7 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 	} else { // ACTIVE
 		if busy {
 			// tickets-only light scan
-			s.scanTicketsOnly(out)
+			s.scanTicketsEmit(out)
 			// sleep/poll respecting ctx
 			select {
 			case <-ctx.Done():
@@ -404,7 +437,7 @@ func (s *Scanner) scanCycle(ctx context.Context, out chan<- Event) {
 			}
 		}
 		_ = s.reloadIgnores()
-		mp := s.scanTree(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped /*emit=*/, true, out, false)
+		mp := s.scanTreeEmit(ctx, &aCnt, &mCnt, &dCnt, &igCnt, &md5Done, &md5Skipped, true, out, false)
 		// Swap in-memory state; apply worker MD5s that arrived during the scan walk.
 		// backlogLen is snapped here so the log read doesn't race with the worker.
 		s.mu.Lock()
@@ -447,6 +480,10 @@ func indexBytes(entries index) int64 {
 
 // scanTree walks the WC and returns a fresh index. If emit==true, it emits events based on diff vs current state.
 func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done, md5Skipped *int, emit bool, out chan<- Event, ticketsOnly bool) index {
+	return s.scanTreeEmit(ctx, aCnt, mCnt, dCnt, igCnt, md5Done, md5Skipped, emit, func(ev Event) { out <- ev }, ticketsOnly)
+}
+
+func (s *Scanner) scanTreeEmit(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done, md5Skipped *int, emit bool, out func(Event), ticketsOnly bool) index {
 	curr := make(index)
 	deleted := make(map[string]meta)
 
@@ -565,7 +602,7 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 						m.MD5 = old.MD5
 					}
 					curr[rel] = m
-					out <- Event{Path: pathAbs(path), Rel: rel, Type: pickType(isDir), Op: Added}
+					out(Event{Path: pathAbs(path), Rel: rel, Type: pickType(isDir), Op: Added})
 					*aCnt++
 					delete(deleted, rel)
 					delete(s.missingSince, rel)
@@ -603,7 +640,7 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 					curr[rel] = m // update curr with any newly computed or preserved MD5
 				}
 				if changed {
-					out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Modified}
+					out(Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Modified})
 					*mCnt++
 				}
 				delete(deleted, rel)
@@ -658,7 +695,7 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 				}
 				if len(candidates) == 1 && count == 1 {
 					oldRel := candidates[0]
-					out <- Event{Path: nf.absPath, Rel: nf.rel, OldRel: oldRel, Type: EntryFile, Op: Renamed, IdentityVerified: s.requireRenameIdentity}
+					out(Event{Path: nf.absPath, Rel: nf.rel, OldRel: oldRel, Type: EntryFile, Op: Renamed, IdentityVerified: s.requireRenameIdentity})
 					delete(deleted, oldRel)
 					delete(s.missingSince, oldRel)
 					*aCnt++
@@ -677,13 +714,13 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 						}
 					}
 					if uncertain {
-						out <- Event{Path: nf.absPath, Rel: nf.rel, Type: EntryFile, Op: RenameUncertain}
+						out(Event{Path: nf.absPath, Rel: nf.rel, Type: EntryFile, Op: RenameUncertain})
 						*aCnt++
 						continue
 					}
 				}
 			}
-			out <- Event{Path: nf.absPath, Rel: nf.rel, Type: pickType(nf.isDir), Op: Added}
+			out(Event{Path: nf.absPath, Rel: nf.rel, Type: pickType(nf.isDir), Op: Added})
 			*aCnt++
 		}
 	} else if !emit {
@@ -701,7 +738,7 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 				continue
 			}
 			if now.Sub(first) >= s.debounceD {
-				out <- Event{Path: filepath.Join(s.wc, fromPOSIX(rel)), Rel: rel, Type: pickType(old.IsDir), Op: Deleted}
+				out(Event{Path: filepath.Join(s.wc, fromPOSIX(rel)), Rel: rel, Type: pickType(old.IsDir), Op: Deleted})
 				*dCnt++
 				delete(s.missingSince, rel)
 				// don't add to curr — file is confirmed gone
@@ -719,6 +756,10 @@ func (s *Scanner) scanTree(ctx context.Context, aCnt, mCnt, dCnt, igCnt, md5Done
 
 // tickets-only quick scan while busy; emits Added only for ticket files not yet in manifest
 func (s *Scanner) scanTicketsOnly(out chan<- Event) {
+	s.scanTicketsEmit(func(ev Event) { out <- ev })
+}
+
+func (s *Scanner) scanTicketsEmit(out func(Event)) {
 	root := filepath.Join(s.wc, ".filees", "tickets")
 	s.mu.Lock()
 	cur := s.cur
@@ -735,7 +776,7 @@ func (s *Scanner) scanTicketsOnly(out chan<- Event) {
 			return nil
 		}
 		if _, seen := cur[rel]; !seen {
-			out <- Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Added}
+			out(Event{Path: pathAbs(path), Rel: rel, Type: EntryFile, Op: Added})
 		}
 		return nil
 	})
@@ -1085,6 +1126,9 @@ func isDebug() bool {
 }
 
 func (s *Scanner) isBusy() bool {
+	if s.publicationPending != nil && s.publicationPending() {
+		return true
+	}
 	fi, err := os.Stat(s.busyPath)
 	if err != nil {
 		return false
@@ -1127,7 +1171,7 @@ func normalizeForOpen(p string) string {
 func toDiskList(m index) []diskEntry {
 	list := make([]diskEntry, 0, len(m))
 	for rel, mm := range m {
-		de := diskEntry{Path: rel, Mtime: mm.MtimeSec, Identity: mm.Identity}
+		de := diskEntry{Path: rel, Mtime: mm.MtimeSec, Identity: mm.Identity, IsDir: mm.IsDir}
 		if !mm.IsDir {
 			de.Size = mm.Size
 			if mm.MD5 != "" {

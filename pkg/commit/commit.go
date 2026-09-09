@@ -127,24 +127,14 @@ type Service struct {
 	// OnPathsRemoved forgets passports whose repository paths were deleted by a
 	// confirmed commit (including rename sources).
 	OnPathsRemoved func([]string)
-	// OnBatchPublished fires once after a confirmed central commit, whatever it
-	// contained. The daemon uses it to checkpoint the watcher's manifest.
-	//
-	// The manifest is otherwise written only when the scan loop's context is
-	// cancelled - a clean shutdown - so a kill, a crash or a power cut loses
-	// everything since the last one. Measured 2026-09-03 on the owner's
-	// machine: a manifest seven hours old across many restarts, so every start
-	// compared his working copy against a stale picture and showed him a queue
-	// of work that did not exist.
-	//
-	// It hangs here rather than on a timer in the watcher because a timer means
-	// a handle open inside the working copy at an arbitrary moment, and on
-	// Windows that makes the owner's attempt to move his own project folder
-	// fail with "access is denied" - proven by
-	// TestScannerDoesNotRecreateMovedWorkingCopy when it was tried. After a
-	// commit, svn has just been writing in that tree anyway, so this adds no
-	// window that was not already open.
-	OnBatchPublished func()
+	// OnBatchPublished is a notification after confirmed publication; recovery
+	// may replay it. It is not a durable watcher checkpoint. Production wiring
+	// uses the checked Capture/Acknowledge callbacks below: only observations
+	// selected before mutation are persisted, never unrelated or later edits.
+	OnBatchPublished       func()
+	CapturePublication     func([]string) (*watcher.PublicationSnapshot, error)
+	AcknowledgePublication func(*watcher.PublicationSnapshot) error
+	EventAcknowledged      func(watcher.Event) bool
 	// Emit, if non-nil, is called to publish IPC events (commit.completed, sync.completed, etc.).
 	// The closure supplied by main.go wraps ipcserver.Server.Emit with the repo ID.
 	Emit func(evType string, payload any)

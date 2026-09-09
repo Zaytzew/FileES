@@ -21,6 +21,56 @@ type transactionFake struct {
 	before               func()
 }
 
+func TestIntentBusyOwnership(t *testing.T) {
+	s, _, _, wc := transactionFixture(t)
+	in := &commitIntent{BusyMarker: "transaction=old\npid=1\n"}
+	p := filepath.Join(wc, ".filees", "state", "commit.busy")
+	if err := os.WriteFile(p, []byte(in.BusyMarker), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := releaseIntentBusy(wc, in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatal("completed owner still busy", err)
+	}
+	if err := os.WriteFile(p, []byte("transaction=new\npid=1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := releaseIntentBusy(wc, in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Fatal("new owner marker removed", err)
+	}
+	_ = s
+}
+
+func TestDurableWatcherAckFailureRetainsReceipt(t *testing.T) {
+	s, c, _, wc := transactionFixture(t)
+	failed := true
+	s.AcknowledgePublication = func(*watcher.PublicationSnapshot) error {
+		if failed {
+			return errors.New("manifest write failed")
+		}
+		return nil
+	}
+	if _, err := s.RequestPublish(t.Context(), wc, "once"); err == nil {
+		t.Fatal("checkpoint error hidden")
+	}
+	in, err := s.readIntent(wc)
+	if err != nil || in.Phase != "confirmed" {
+		t.Fatal(in, err)
+	}
+	failed = false
+	if _, err = s.recoverCommit(t.Context(), wc); err != nil {
+		t.Fatal(err)
+	}
+	if c.mutations != 1 || HasUnresolvedCommit(wc) {
+		t.Fatal("ack retry reissued mutation")
+	}
+}
+
 func (c *transactionFake) CommitHead(context.Context, string) (int64, error) { return 4, nil }
 func (c *transactionFake) CommitWithID(_ context.Context, _, _ string, _ []string, _ string, _ bool, _ string, _ int64) (string, int64, error) {
 	c.mutations++

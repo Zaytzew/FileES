@@ -24,20 +24,17 @@ func TestTheWatcherManifestIsCheckpointedAfterAPublishedBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(raw)
-	if !strings.Contains(source, "service.OnBatchPublished = func()") {
-		t.Fatal("nothing checkpoints the watcher manifest after a commit; a hard stop loses everything published since the last clean shutdown")
-	}
-	checkpoint := source[strings.Index(source, "service.OnBatchPublished = func()"):]
-	if end := strings.Index(checkpoint, "\n\t}"); end > 0 {
-		checkpoint = checkpoint[:end]
-	}
-	if !strings.Contains(checkpoint, "scanner.SaveState") {
-		t.Errorf("the checkpoint does not save the scanner state:\n%s", checkpoint)
-	}
-	// A failure here must not take the commit down: the batch is already on the
-	// server, and refusing to acknowledge that because a cache could not be
-	// written would turn a cosmetic fault into a lost publication.
-	if !strings.Contains(checkpoint, "logger.Warnf") {
-		t.Errorf("a failed checkpoint is not reported as a warning:\n%s", checkpoint)
+	// r1009 live proved that SaveState of a stale startup manifest was not
+	// acknowledgement. Persist selected observations before the mutation,
+	// replay them before done, and fence queued events from that generation.
+	for _, wiring := range []string{
+		"service.CapturePublication = scanner.CapturePublication",
+		"service.AcknowledgePublication = scanner.AcknowledgePublication",
+		"service.EventAcknowledged = scanner.EventAcknowledged",
+		"wopts.PublicationPending = func() bool { return commit.HasUnresolvedCommit(wc) }",
+	} {
+		if !strings.Contains(source, wiring) {
+			t.Errorf("missing publication wiring: %s", wiring)
+		}
 	}
 }

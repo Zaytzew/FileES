@@ -210,6 +210,13 @@ func (s *Service) receivedRemoval(ctx context.Context, rel string) bool {
 func (s *Service) acceptEvents(ctx context.Context, events []watcher.Event) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
+	filtered := events[:0]
+	for _, ev := range events {
+		if s.EventAcknowledged == nil || !s.EventAcknowledged(ev) {
+			filtered = append(filtered, ev)
+		}
+	}
+	events = filtered
 	var paths []string
 	for _, ev := range events {
 		if ev.Op == watcher.Added || ev.Op == watcher.Modified || ev.Op == watcher.Renamed {

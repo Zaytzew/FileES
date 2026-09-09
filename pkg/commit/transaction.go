@@ -24,17 +24,19 @@ const transactionSchema = "filees.commit-intent/v1"
 // merely because its marker is currently absent: a remote transaction may
 // still be completing. Confirmed effects are projected by idempotent upserts.
 type commitIntent struct {
-	Schema        string       `json:"schema"`
-	ID            string       `json:"id"`
-	RepoURL       string       `json:"repo_url"`
-	RepoID        string       `json:"repo_id"`
-	WC            string       `json:"wc"`
-	Phase         string       `json:"phase"` // attempting, confirmed, empty, done
-	FirstRevision int64        `json:"first_revision"`
-	Revision      int64        `json:"revision"`
-	Comment       string       `json:"comment,omitempty"`
-	Paths         []string     `json:"paths"`
-	Items         []intentItem `json:"items"`
+	Schema        string                       `json:"schema"`
+	ID            string                       `json:"id"`
+	RepoURL       string                       `json:"repo_url"`
+	RepoID        string                       `json:"repo_id"`
+	WC            string                       `json:"wc"`
+	Phase         string                       `json:"phase"` // attempting, confirmed, empty, done
+	FirstRevision int64                        `json:"first_revision"`
+	Revision      int64                        `json:"revision"`
+	Comment       string                       `json:"comment,omitempty"`
+	Paths         []string                     `json:"paths"`
+	Items         []intentItem                 `json:"items"`
+	Observation   *watcher.PublicationSnapshot `json:"observation,omitempty"`
+	BusyMarker    string                       `json:"busy_marker,omitempty"`
 }
 
 type intentItem struct {
@@ -124,6 +126,18 @@ func (s *Service) readIntent(wc string) (*commitIntent, error) {
 			return nil, errors.New("invalid commit intent item")
 		}
 	}
+	if in.Observation != nil {
+		if len(in.Observation.Entries) != len(paths) {
+			return nil, errors.New("publication observation targets mismatch")
+		}
+		seen := make(map[string]bool)
+		for _, e := range in.Observation.Entries {
+			if !paths[e.Path] || seen[e.Path] {
+				return nil, errors.New("publication observation targets mismatch")
+			}
+			seen[e.Path] = true
+		}
+	}
 	return &in, nil
 }
 
@@ -150,6 +164,9 @@ func (s *Service) recoverCommit(ctx context.Context, wc string) (bool, error) {
 		return true, err
 	}
 	if in == nil || in.Phase == "done" {
+		if in != nil {
+			return false, releaseIntentBusy(wc, in)
+		}
 		return false, nil
 	}
 	done := s.setOperation("commit") // Existing daemon operation vocabulary; no renderer policy.
@@ -203,6 +220,17 @@ func (s *Service) commitDurable(ctx context.Context, wc string, c client.Transac
 	}
 	// Do not start a remote mutation if either the queued batch or its durable
 	// transaction identity could be lost on process death.
+	if s.CapturePublication != nil {
+		var err error
+		in.Observation, err = s.CapturePublication(paths)
+		if err != nil {
+			return err
+		}
+	}
+	in.BusyMarker = fmt.Sprintf("transaction=%s\npid=%d\n", in.ID, os.Getpid())
+	if err := s.writeStateString(filepath.Join(wc, ".filees", "state", "commit.busy"), in.BusyMarker); err != nil {
+		return err
+	}
 	if err := s.saveCacheChecked(); err != nil {
 		return err
 	}
@@ -240,7 +268,7 @@ func (s *Service) finishIntent(ctx context.Context, wc string, in *commitIntent)
 			return err
 		}
 		s.reconcileCleanPending(ctx, wc)
-		return nil
+		return releaseIntentBusy(wc, in)
 	}
 	// Server success is already certain. A failed projection write leaves this
 	// receipt in confirmed state for replay. Journal.Record upserts by repo/path.
@@ -277,6 +305,11 @@ func (s *Service) finishIntent(ctx context.Context, wc string, in *commitIntent)
 		}
 	}
 	clean := s.cleanObservedPaths(ctx, wc, in.Paths)
+	if s.AcknowledgePublication != nil {
+		if err := s.AcknowledgePublication(in.Observation); err != nil {
+			return err
+		}
+	}
 	s.mu.Lock()
 	for _, it := range in.Items {
 		cur := s.staging[it.Rel]
@@ -337,6 +370,9 @@ func (s *Service) finishIntent(ctx context.Context, wc string, in *commitIntent)
 	if err := s.writeIntent(wc, in); err != nil {
 		return err
 	}
+	if err := releaseIntentBusy(wc, in); err != nil {
+		return err
+	}
 	s.goOnline()
 	s.lastCommit = time.Now()
 	s.commitBatches.Add(1)
@@ -354,4 +390,24 @@ func (s *Service) finishIntent(ctx context.Context, wc string, in *commitIntent)
 	s.emit(contract.EvCommitCompleted, contract.CommitCompletedPayload{Revision: in.Revision, Paths: len(in.Paths)})
 	s.emit(contract.EvActivityChanged, nil)
 	return nil
+}
+
+// Ownership is the durable transaction UUID, not the age or a reused PID.
+// A completed old receipt cannot clear a newer operation's busy marker.
+func releaseIntentBusy(wc string, in *commitIntent) error {
+	if in.BusyMarker == "" {
+		return nil
+	}
+	p := filepath.Join(wc, ".filees", "state", "commit.busy")
+	b, err := os.ReadFile(p)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if string(b) != in.BusyMarker {
+		return nil
+	}
+	return os.Remove(p)
 }

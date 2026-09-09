@@ -382,6 +382,7 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		_ = os.Remove(baselineOK)
 	}
 	wopts, latency := buildWatcherOptions(repo, manifest, busyPath)
+	wopts.PublicationPending = func() bool { return commit.HasUnresolvedCommit(wc) }
 	scanner, err := watcher.NewScanner(wopts)
 	if err != nil {
 		return nil, err
@@ -411,18 +412,12 @@ func startReadWrite(ctx context.Context, runtimeRepo repoRuntime, svn client.Cli
 		}
 		return err
 	})
-	// Checkpoint the watcher's manifest whenever a batch reaches the server.
-	//
-	// It was otherwise written only when the scan loop shut down cleanly, so
-	// every hard stop - and on Windows every stop is hard, there being no
-	// SIGTERM to deliver - threw away the record of everything published since
-	// the last one. The next start then compared the working copy against a
-	// stale picture and reported the difference as new work.
-	service.OnBatchPublished = func() {
-		if err := scanner.SaveState(manifest); err != nil {
-			logger.Warnf("checkpoint watcher manifest: %v", err)
-		}
-	}
+	// Persist the selected observed generation before mutation and acknowledge
+	// it only after confirmed publication. Recovery must not checkpoint later
+	// edits or unrelated files, nor replay queued events already acknowledged.
+	service.CapturePublication = scanner.CapturePublication
+	service.AcknowledgePublication = scanner.AcknowledgePublication
+	service.EventAcknowledged = scanner.EventAcknowledged
 	recovered := recoverReadWriteWorkingCopy(ctx, svn, wc, service, sink, logger, func(out string) { service.RecordUpdate(ctx, repo.ID, wc, out) })
 	applyEditingPolicyMigration(ctx, repo, svn, wc, stateDir, clientUUID, manager != nil, sink, logger)
 	if recovered {

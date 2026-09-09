@@ -95,7 +95,7 @@
 <h1 id="ops">Eksploatacja i kontrakty</h1>
 <div class="chapter-content">
 <p>Ta część zawiera szczegóły techniczne potrzebne przy instalacji, eksploatacji, odtwarzaniu i diagnostyce FileES. Czynności wykonywane z programu na komputerze opisano w przewodniku użytkownika i w rozdziale administracyjnym.</p>
-<h2 id="ops-admin">filees-admin — kody wyjścia i pliki zleceń</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span>Zlecenia, wgląd w operację i fail-closed cofnięcie klienta istnieją.</span></div>
+<h2 id="ops-admin">filees-admin — kody wyjścia i pliki zleceń</h2><div class="section-meta"><span class="status status-implemented">Zaimplementowane</span><span class="status status-planned">Planowane</span> szersze polecenia<span>Zlecenia, wgląd w operację i fail-closed cofnięcie klienta istnieją.</span></div>
 <p><code>filees-admin</code> jest administracyjnym narzędziem wiersza poleceń. Musi być uruchamiane jako <code>_filees-state</code> (np. przez <code>doas -u _filees-state</code>), żeby spełnić swój profil <code>pledge</code>/<code>unveil</code>. Zapisuje strukturalny JSON na stdout, a diagnostykę na stderr. Kody wyjścia są z zakresu <code>sysexits</code>:</p>
 <div class="table-wrap"><table>
 <tr><th>Kod wyjścia</th><th>Stała</th><th>Znaczenie</th></tr>

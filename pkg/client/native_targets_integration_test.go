@@ -24,7 +24,7 @@ func TestNativeCommitThousandTargetsAtomic(t *testing.T) {
 	repo, wc := filepath.Join(root, "repo"), filepath.Join(root, "wc")
 	run := func(tool string, args ...string) string {
 		t.Helper()
-		out, err := exec.Command(tool, args...).CombinedOutput()
+		out, err := exec.Command(nativeFixtureTool(t, tool), args...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("%v %s", err, out)
 		}

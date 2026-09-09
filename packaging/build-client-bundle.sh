@@ -67,14 +67,23 @@ if [ -n "${FILEES_RELEASE_PUBKEY:-}" ] || [ -n "${FILEES_RELEASE_KEY_ID:-}" ] ||
 	release_ldflags="-X main.injectedClientReleasePublicKeyB64=$release_pubkey_b64 -X main.injectedClientReleaseKeyID=$FILEES_RELEASE_KEY_ID -X main.injectedClientReleaseRepoURL=$FILEES_RELEASE_REPO_URL -X main.injectedClientReleaseChannel=$FILEES_RELEASE_CHANNEL"
 fi
 
-rm -rf "$out"
+[ -n "${FILEES_NATIVE_RUNTIME:-}" ] || die "FILEES_NATIVE_RUNTIME must name the runtime produced by packaging/windows/stage-native-runtime.ps1"
+[ -d "$FILEES_NATIVE_RUNTIME" ] || die "native runtime directory not found: $FILEES_NATIVE_RUNTIME"
+# Do not recursively erase an arbitrary caller-supplied output path.
+[ ! -e "$out" ] || die "output already exists; choose a fresh bundle directory: $out"
 mkdir -p "$out/bin" "$out/autostart"
 
 cd "$root"
+# Embed through an overlay, never overwrite generated assets in the source WC.
+# The old four-file updater and MSI therefore receive the complete runtime in
+# the same daemon image. Runtime extraction uses a content-addressed cache.
+native_build=$(mktemp -d "${TMPDIR:-/tmp}/filees-native-build.XXXXXX")
+trap 'rm -rf "$native_build"' EXIT HUP INT TERM
+go run ./cmd/filees-native-package "$root" "$FILEES_NATIVE_RUNTIME" "$native_build/packed" >/dev/null
 # Only the interface gets -tags production and -H=windowsgui: the tag is a Wails
 # convention that drops the dev server and devtools, and the daemon is a console
 # program that must keep its console for `filees status` and friends.
-GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=false \
+GOOS=$goos GOARCH=$goarch go build -tags native_svn_bundle -overlay "$native_build/packed/overlay.json" -trimpath -buildvcs=false \
 	-ldflags "-X main.version=$stamp $release_ldflags" \
 	-o "$out/bin/$daemon" ./cmd/filees
 GOOS=$goos GOARCH=$goarch go build -tags production -trimpath -buildvcs=false \

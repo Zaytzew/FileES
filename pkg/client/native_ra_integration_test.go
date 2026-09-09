@@ -37,6 +37,15 @@ func TestNativeRAAdapterWithoutCLI(t *testing.T) {
 	write := func(p, s string) { t.Helper(); must(os.WriteFile(p, []byte(s), 0600)) }
 	_, e := c.Checkout(ctx, url, wc)
 	must(e)
+	// No .filees yet: inspection must not invoke the deliberately absent CLI.
+	_, e = c.GetInfo(ctx, wc)
+	must(e)
+	if _, e = os.Stat(filepath.Join(wc, ".filees")); !os.IsNotExist(e) {
+		t.Fatal("inspection stamped WC", e)
+	}
+	if head, e := c.Revision(ctx, url); e != nil || head != 0 {
+		t.Fatal(head, e)
+	}
 	must(os.Mkdir(filepath.Join(wc, ".filees"), 0700))
 	write(filepath.Join(wc, "old-新.txt"), "first\n")
 	_, e = c.Add(ctx, wc, []string{"old-新.txt"})
@@ -49,6 +58,40 @@ func TestNativeRAAdapterWithoutCLI(t *testing.T) {
 	_, e = c.Checkout(ctx, url, b)
 	must(e)
 	must(os.Mkdir(filepath.Join(b, ".filees"), 0700))
+	_, e = c.LockWithComment(ctx, wc, []string{"old-新.txt"}, "observed", false)
+	must(e)
+	observation, e := c.ReadLockObservation(ctx, b, "old-新.txt")
+	must(e)
+	if observation.Local != nil || observation.Remote == nil {
+		t.Fatal(observation)
+	}
+	lockConfirmed, e := c.ConfirmLock(ctx, wc, "old-新.txt", "observed")
+	must(e)
+	if lockConfirmed == nil {
+		t.Fatal("owner receipt missing")
+	}
+	lockConfirmed, e = c.ConfirmLock(ctx, b, "old-新.txt", "observed")
+	must(e)
+	if lockConfirmed != nil {
+		t.Fatal("reader claimed owner receipt")
+	}
+	locks, e := c.ListLocks(ctx, b)
+	must(e)
+	if len(locks) != 1 || locks[0].Comment != "observed" {
+		t.Fatal(locks)
+	}
+	lock, e := c.LockInfo(ctx, b, "old-新.txt")
+	must(e)
+	if lock == nil || lock.Token != locks[0].Token {
+		t.Fatal(lock)
+	}
+	_, e = c.Unlock(ctx, wc, []string{"old-新.txt"})
+	must(e)
+	lock, e = c.LockInfo(ctx, b, "old-新.txt")
+	must(e)
+	if lock != nil {
+		t.Fatal("released lock still reported", lock)
+	}
 	info, e := c.GetInfo(ctx, b)
 	must(e)
 	if !strings.Contains(info, "Repository UUID:") {
@@ -127,6 +170,14 @@ func TestNativeRAAdapterWithoutCLI(t *testing.T) {
 	must(e)
 	if string(got) != "remote competing text\n" {
 		t.Fatal(string(got))
+	}
+}
+
+func TestNativeClientCannotEnterCLIRunner(t *testing.T) {
+	root := t.TempDir()
+	c := New(Options{NativeSVNPath: filepath.Join(root, "absent-helper.exe"), SvnPath: filepath.Join(root, "absent-cli.exe")}).(*execClient)
+	if _, err := c.run(t.Context(), root, []string{"unrouted"}); err == nil || !strings.Contains(err.Error(), "routing gap") {
+		t.Fatal("CLI runner was not fenced", err)
 	}
 }
 

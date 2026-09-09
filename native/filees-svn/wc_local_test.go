@@ -74,6 +74,26 @@ func TestWCLocalAddStatusPropRevertDelete(t *testing.T) {
 	f.jsonCall(t, false, "merge", "--disposable-wc", f.wc)
 }
 
+func TestStatusNestedUnversionedTargets(t *testing.T) {
+	f := newFixture(t, "old.txt")
+	child := "new-folder/deeper/child.txt"
+	if err := os.MkdirAll(filepath.Join(f.wc, "new-folder", "deeper"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(f.wc, filepath.FromSlash(child)), "new child\n")
+	before := f.status(t)
+	st := f.jsonCall(t, true, "status", "--disposable-wc", f.wc, "--depth", "empty", "--", "old.txt", child)
+	entries := st["entries"].([]any)
+	if len(entries) != 2 || entries[1].(map[string]any)["path"] != child || entries[1].(map[string]any)["item"] != "unversioned" {
+		t.Fatalf("nested status: %#v", entries)
+	}
+	if string(before) != string(f.status(t)) {
+		t.Fatal("status mutated WC")
+	}
+	f.jsonCall(t, false, "status", "--disposable-wc", f.wc, "--", "new-folder/deeper/absent.txt")
+	f.jsonCall(t, false, "status", "--disposable-wc", f.wc, "--", "new-folder/../../outside")
+}
+
 func TestWCLocalPropgetErrorIsSingleJSONDocument(t *testing.T) {
 	f := newFixture(t, "old.txt")
 	write(t, filepath.Join(f.wc, "ghost.txt"), "unversioned\n")

@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
+	"unicode/utf16"
 )
 
 func (c *execClient) nativeRun(ctx context.Context, wc string, args ...string) (map[string]any, error) {
@@ -28,6 +30,15 @@ func (c *execClient) nativeCommand(ctx context.Context, dir string, timeout time
 func (c *execClient) nativeCommandInput(ctx context.Context, dir string, timeout time.Duration, input []byte, args ...string) (map[string]any, error) {
 	if !filepath.IsAbs(c.nativeSVNPath) || (dir != "" && !filepath.IsAbs(dir)) || len(args) == 0 {
 		return nil, errors.New("native SVN: invalid executable, directory or command")
+	}
+	if runtime.GOOS == "windows" {
+		units := nativeArgumentUnits(c.nativeSVNPath)
+		for _, arg := range args {
+			units += nativeArgumentUnits(arg)
+		}
+		if units > 30000 {
+			return nil, errors.New("native SVN: command exceeds Windows argument budget before execution")
+		}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -89,15 +100,25 @@ func nativeBatches(paths []string) [][]string {
 		return nil
 	}
 	out := make([][]string, 0, (len(paths)+nativePathBatch-1)/nativePathBatch)
-	for start := 0; start < len(paths); start += nativePathBatch {
-		end := start + nativePathBatch
-		if end > len(paths) {
-			end = len(paths)
+	for start := 0; start < len(paths); {
+		end, units := start, 0
+		for end < len(paths) && end-start < nativePathBatch {
+			next := nativeArgumentUnits(paths[end])
+			if end > start && units+next > 12000 {
+				break
+			}
+			units += next
+			end++
 		}
 		out = append(out, paths[start:end])
+		start = end
 	}
 	return out
 }
+
+// Conservative upper bound after Windows quoting (including separators).
+// Counting paths alone lets 512 long Unicode names overflow CreateProcess.
+func nativeArgumentUnits(value string) int { return 2*len(utf16.Encode([]rune(value))) + 3 }
 
 func (c *execClient) nativeAdd(ctx context.Context, wc string, paths []string) (string, error) {
 	rels, err := nativeRelatives(wc, paths)
@@ -150,7 +171,7 @@ func (c *execClient) nativeStatus(ctx context.Context, wc string, paths []string
 		return nil, err
 	}
 	if len(rels) == 0 {
-		raw, err := c.nativeRun(ctx, wc, "status", "--wc", wc, "--depth", "infinity")
+		raw, err := c.nativeRun(ctx, wc, "status", "--inspect-wc", wc, "--depth", "infinity")
 		if err != nil {
 			return nil, err
 		}
@@ -158,7 +179,7 @@ func (c *execClient) nativeStatus(ctx context.Context, wc string, paths []string
 	}
 	var out []StatusEntry
 	for _, batch := range nativeBatches(rels) {
-		args := append([]string{"status", "--wc", wc, "--depth", "empty", "--"}, batch...)
+		args := append([]string{"status", "--inspect-wc", wc, "--depth", "empty", "--"}, batch...)
 		raw, err := c.nativeRun(ctx, wc, args...)
 		if err != nil {
 			return nil, err

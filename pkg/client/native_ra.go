@@ -74,7 +74,7 @@ type nativeInfoEntry struct {
 }
 
 func (c *execClient) nativeInfo(ctx context.Context, wc, rel string) (nativeInfoEntry, error) {
-	args := []string{"info", "--wc", wc}
+	args := []string{"info", "--inspect-wc", wc}
 	if rel != "" {
 		args = append(args, "--", rel)
 	}
@@ -82,20 +82,11 @@ func (c *execClient) nativeInfo(ctx context.Context, wc, rel string) (nativeInfo
 	if err != nil {
 		return nativeInfoEntry{}, err
 	}
-	var doc struct{ Entries []nativeInfoEntry }
-	err = json.Unmarshal([]byte(nativeJSON(raw)), &doc)
-	if err != nil || len(doc.Entries) != 1 {
-		return nativeInfoEntry{}, errors.New("native SVN: expected one info entry")
-	}
-	v := doc.Entries[0]
-	if v.URL == "" || v.ReposRootURL == "" || v.ReposUUID == "" || v.Revision < 0 || v.LastChangedRev < 0 {
-		return v, errors.New("native SVN: incomplete info entry")
-	}
-	return v, nil
+	return parseNativeInfo(raw)
 }
 
-// Native info only understands managed WC-local targets. Remote info and
-// pre-adoption identity probes remain explicit CLI capabilities, not retries.
+// Locate the enclosing WC for read-only inspection. The native guard validates
+// its exact root and parent chain; FileES ownership is not claimed by reading.
 func nativeInfoTarget(target string) (string, string, bool) {
 	if !filepath.IsAbs(target) {
 		return "", "", false
@@ -103,10 +94,6 @@ func nativeInfoTarget(target string) (string, string, bool) {
 	p := filepath.Clean(target)
 	for {
 		if st, e := os.Lstat(filepath.Join(p, ".svn")); e == nil && st.IsDir() {
-			m, e := os.Lstat(filepath.Join(p, ".filees"))
-			if e != nil || !m.IsDir() || m.Mode()&os.ModeSymlink != 0 {
-				return "", "", false
-			}
 			rel, e := filepath.Rel(p, target)
 			if e != nil {
 				return "", "", false

@@ -13,7 +13,7 @@ import (
 )
 
 func inspectPreservedCopies(ctx context.Context, store *localrepo.Store, key reposupervisor.Key) error {
-	svn := client.New(client.Options{SvnPath: "svn", Timeout: 30 * time.Second})
+	svn := client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: 30 * time.Second})
 	for _, record := range store.List() {
 		if record.ServerID != key.ServerID || record.RepoID != key.RepoID || !record.RemoteDeletionObserved || record.RemoteCleanupStarted {
 			continue

@@ -16,6 +16,9 @@ type LockObservationReader interface {
 }
 
 func (c *execClient) ReadLockObservation(ctx context.Context, wc, path string) (LockObservation, error) {
+	if nativeWCOps(c) {
+		return c.nativeReadLockObservation(ctx, wc, path)
+	}
 	args := append([]string{"status", "--xml", "--verbose", "--show-updates", "--depth", "empty"}, c.pathArgs(wc, []string{path})...)
 	out, err := c.run(ctx, wc, args)
 	if err != nil {

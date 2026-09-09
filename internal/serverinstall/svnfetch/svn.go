@@ -20,9 +20,11 @@ type Fetcher interface {
 type SVN struct {
 	Program string
 	// NativeProgram is an explicit Windows opt-in; errors never retry on CLI.
-	NativeProgram string
-	RepoURL       string
-	Timeout       time.Duration
+	NativeProgram                               string
+	RepoURL                                     string
+	Timeout                                     time.Duration
+	SSHIdentityFile, SSHKnownHosts, SSHHostName string
+	SSHPort                                     int
 }
 
 func (s SVN) Cat(ctx context.Context, path string) ([]byte, error) {
@@ -38,6 +40,14 @@ func (s SVN) Cat(ctx context.Context, path string) ([]byte, error) {
 	defer cancel()
 
 	url := joinURL(s.RepoURL, path)
+	var sshEnv []string
+	if strings.HasPrefix(url, "svn+ssh://") || s.SSHIdentityFile != "" || s.SSHKnownHosts != "" || s.SSHHostName != "" || s.SSHPort != 0 {
+		var err error
+		sshEnv, err = client.PinnedSSHEnvironment(os.Environ(), s.SSHIdentityFile, s.SSHKnownHosts, s.SSHPort, s.SSHHostName)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if s.NativeProgram != "" {
 		dir, err := os.MkdirTemp("", "filees-native-cat-")
 		if err != nil {
@@ -45,7 +55,7 @@ func (s SVN) Cat(ctx context.Context, path string) ([]byte, error) {
 		}
 		defer os.RemoveAll(dir)
 		out := filepath.Join(dir, "payload")
-		cli := client.New(client.Options{NativeSVNPath: s.NativeProgram, Timeout: timeout})
+		cli := client.New(client.Options{NativeSVNPath: s.NativeProgram, Timeout: timeout, SSHIdentityFile: s.SSHIdentityFile, SSHKnownHosts: s.SSHKnownHosts, SSHPort: s.SSHPort, SSHHostName: s.SSHHostName})
 		err = cli.(interface {
 			CatTo(context.Context, string, string) error
 		}).CatTo(ctx, url, out)
@@ -56,6 +66,9 @@ func (s SVN) Cat(ctx context.Context, path string) ([]byte, error) {
 	}
 	cmd := exec.CommandContext(ctx, program, "cat",
 		"--non-interactive", "--no-auth-cache", url)
+	if sshEnv != nil {
+		cmd.Env = sshEnv
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -31,6 +31,34 @@ func TestNativeCommitTargetsBounds(t *testing.T) {
 	}
 }
 
+func TestNativeBatchesBoundUnicodeArgumentsWithoutDroppingPaths(t *testing.T) {
+	paths := make([]string, 1200)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("%04d/%s", i, strings.Repeat("新😀", 100))
+	}
+	batches := nativeBatches(paths)
+	cursor := 0
+	for _, batch := range batches {
+		units := 0
+		if len(batch) > nativePathBatch {
+			t.Fatal("count overflow")
+		}
+		for _, path := range batch {
+			units += nativeArgumentUnits(path)
+			if path != paths[cursor] {
+				t.Fatal("reordered/lost path")
+			}
+			cursor++
+		}
+		if units > 12000 {
+			t.Fatal("argument overflow", units)
+		}
+	}
+	if cursor != len(paths) {
+		t.Fatal("lost targets", cursor)
+	}
+}
+
 func TestNativeCommitLargeTargetsSingleInvocation(t *testing.T) {
 	c := raFake(t, `{"schema":"filees.native-svn/v1","ok":true,"revision":7}`)
 	trace := filepath.Join(t.TempDir(), "trace")

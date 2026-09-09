@@ -27,6 +27,9 @@ func workingCopyIdentityPath(root string) string {
 }
 
 func validateWorkingCopyIdentity(root string, expected workingCopyIdentity) error {
+	if err := validateIdentityPath(root); err != nil {
+		return err
+	}
 	raw, err := os.ReadFile(workingCopyIdentityPath(root))
 	if errors.Is(err, os.ErrNotExist) {
 		// Pre-marker working copies are migrated only after SVN URL validation.
@@ -43,6 +46,30 @@ func validateWorkingCopyIdentity(root string, expected workingCopyIdentity) erro
 		return errors.New("working-copy identity belongs to another FileES attachment")
 	}
 	return nil
+}
+
+// Do not follow a transplanted marker or an alias/junction while granting the
+// native mutation guard. Existing metadata must be plain files/directories.
+func validateIdentityPath(root string) error {
+	path, err := filepath.Abs(workingCopyIdentityPath(root))
+	if err != nil {
+		return err
+	}
+	leaf := path
+	for {
+		st, err := os.Lstat(path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err == nil && (st.Mode()&os.ModeSymlink != 0 || (path == leaf && !st.Mode().IsRegular()) || (path != leaf && !st.IsDir())) {
+			return fmt.Errorf("working-copy identity requires a plain path: %s", path)
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return nil
+		}
+		path = parent
+	}
 }
 
 func ensureWorkingCopyIdentity(root string, expected workingCopyIdentity) error {

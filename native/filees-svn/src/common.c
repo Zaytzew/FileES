@@ -121,22 +121,28 @@ static svn_error_t *plain_node(const char *path, apr_filetype_e wanted,
     return SVN_NO_ERROR;
 }
 
-svn_error_t *filees_require_wc(const char **wc_abspath, svn_client_ctx_t **ctx,
-                               const char *wc_arg, svn_boolean_t live,
-                               apr_pool_t *pool)
+svn_error_t *filees_inspect_wc(const char **wc_abspath, svn_client_ctx_t **ctx,
+                               const char *wc_arg, apr_pool_t *pool)
 {
     const char *wc, *root;
     if (!wc_arg || !*wc_arg || strstr(wc_arg, "://"))
         return filees_refuse("repository URLs are not accepted");
     SVN_ERR(svn_dirent_get_absolute(&wc, svn_dirent_internal_style(wc_arg, pool), pool));
     SVN_ERR(plain_node(wc, APR_DIR, FALSE, pool));
-    SVN_ERR(plain_node(svn_dirent_join(wc, live ? ".filees" : FILEES_SVN_MARKER, pool),
-                       live ? APR_DIR : APR_REG, FALSE, pool));
     SVN_ERR(svn_client_create_context2(ctx, NULL, pool));
     SVN_ERR(svn_client_get_wc_root(&root, wc, *ctx, pool, pool));
     if (strcmp(root, wc)) return filees_refuse("working copy argument must name the exact WC root");
     *wc_abspath = wc;
     return SVN_NO_ERROR;
+}
+
+svn_error_t *filees_require_wc(const char **wc_abspath, svn_client_ctx_t **ctx,
+                               const char *wc_arg, svn_boolean_t live,
+                               apr_pool_t *pool)
+{
+    SVN_ERR(filees_inspect_wc(wc_abspath, ctx, wc_arg, pool));
+    return plain_node(svn_dirent_join(*wc_abspath, live ? ".filees" : FILEES_SVN_MARKER, pool),
+                      live ? APR_DIR : APR_REG, FALSE, pool);
 }
 
 svn_error_t *filees_relpath(const char **rel, const char *wc,

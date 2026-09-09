@@ -38,7 +38,7 @@ func fakeNativeRA() {
 		_, _ = io.Copy(io.Discard, os.Stdin)
 	}
 	if len(os.Args) > 1 && os.Args[1] == "info" {
-		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"entries":[{"path":".","url":"file:///lab","repos_root_url":"file:///lab","repos_uuid":"test-uuid","revision":1,"last_changed_rev":1}]}`)
+		fmt.Print(`{"schema":"filees.native-svn/v1","ok":true,"entries":[{"path":".","url":"file:///lab","repos_root_url":"file:///lab","repos_uuid":"test-uuid","kind":"dir","revision":1,"last_changed_rev":1}]}`)
 		return
 	}
 	if os.Getenv("FILEES_TEST_RA_SLEEP") == "1" {

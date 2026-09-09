@@ -169,18 +169,28 @@ func refreshPublicShares(ctx context.Context, lister publicShareLister, cache pu
 }
 
 type serviceProjectionUpdater struct {
-	client client.Client
-	url    string
+	client  client.Client
+	url     string
+	prepare func(context.Context, string) error
 }
 
 func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy string) (string, error) {
 	if _, err := os.Stat(filepath.Join(workingCopy, ".svn")); err == nil {
+		if updater.prepare != nil {
+			if err := updater.prepare(ctx, workingCopy); err != nil {
+				return "", err
+			}
+		}
 		return updater.client.Update(ctx, workingCopy)
 	}
 	if err := os.MkdirAll(filepath.Dir(workingCopy), 0o700); err != nil {
 		return "", err
 	}
-	return updater.client.Checkout(ctx, updater.url, workingCopy)
+	out, err := updater.client.Checkout(ctx, updater.url, workingCopy)
+	if err == nil && updater.prepare != nil {
+		err = updater.prepare(ctx, workingCopy)
+	}
+	return out, err
 }
 
 // Cleanup satisfies clientview.Cleaner so a service working copy left locked by
@@ -193,6 +203,11 @@ func (updater serviceProjectionUpdater) Update(ctx context.Context, workingCopy 
 // optional for implementations that genuinely cannot satisfy it; this one wraps
 // a client that has always had Cleanup.
 func (updater serviceProjectionUpdater) Cleanup(ctx context.Context, workingCopy string) (string, error) {
+	if updater.prepare != nil {
+		if err := updater.prepare(ctx, workingCopy); err != nil {
+			return "", err
+		}
+	}
 	return updater.client.Cleanup(ctx, workingCopy)
 }
 
@@ -422,10 +437,10 @@ func runDynamicSupervisedRepositories(ctx context.Context, repos []config.Repo, 
 			realmAlias = projectRealmAlias(serverID, realmID, realmAlias)
 		}
 		ipc.RegisterActivation(freshness.Apply(contract.ActivationStatus{ServerID: serverID, DisplayName: displayNameNow(), ClientRole: clientRole, RealmID: realmID, RealmAlias: realmAlias, Address: address, ClientID: clientID, SSHPort: sshPort, CanCreateRepositories: canCreate, RepositoriesReady: ready, PendingRequiredRepos: pendingRequired, SessionTimeoutMin: int(timeout / time.Minute)}))
-		svn := client.New(client.Options{SvnPath: "svn", Timeout: timeout, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort})
+		svn := client.New(client.Options{SvnPath: "svn", NativeSVNPath: nativeSVNPath(), Timeout: timeout, LogScope: "svn:projection:" + serverID, SSHIdentityFile: identityFile, SSHKnownHosts: knownHosts, SSHPort: sshPort, SSHHostName: address})
 		var updater clientview.Updater = svn
 		if serviceURL != "" {
-			updater = serviceProjectionUpdater{client: svn, url: serviceURL}
+			updater = serviceProjectionUpdater{client: svn, url: serviceURL, prepare: serviceWCPreparation(svn, serverID, clientID, serviceURL)}
 		}
 		// Recording a sync outcome is useless unless it reaches the snapshot,
 		// and only this closure does that. Both handlers below must call it:

@@ -110,14 +110,15 @@ type jsonConfig struct {
 		Interval         string `json:"interval,omitempty"`
 	} `json:"projection,omitempty"`
 	Update *struct {
-		Enabled    bool   `json:"enabled"`
-		RepoURL    string `json:"repo_url"`
-		Channel    string `json:"channel,omitempty"`
-		Component  string `json:"component,omitempty"`
-		Platform   string `json:"platform,omitempty"`
-		StatePath  string `json:"state_path"`
-		StageRoot  string `json:"stage_root"`
-		SVNProgram string `json:"svn_program,omitempty"`
+		Enabled    bool             `json:"enabled"`
+		RepoURL    string           `json:"repo_url"`
+		Channel    string           `json:"channel,omitempty"`
+		Component  string           `json:"component,omitempty"`
+		Platform   string           `json:"platform,omitempty"`
+		StatePath  string           `json:"state_path"`
+		StageRoot  string           `json:"stage_root"`
+		SVNProgram string           `json:"svn_program,omitempty"`
+		SSH        *UpdateSSHConfig `json:"ssh,omitempty"`
 	} `json:"update,omitempty"`
 	Repositories []jsonRepo `json:"repositories"`
 }
@@ -140,6 +141,7 @@ type UpdateConfig struct {
 	RepoURL, Channel, Component, Platform string
 	StatePath, StageRoot                  string
 	SVNProgram                            string
+	SSH                                   *UpdateSSHConfig
 }
 
 // DesktopUpdateComponent is the release-envelope component selected by the
@@ -200,6 +202,10 @@ func normalizeClientView(file jsonConfig) (ClientView, error) {
 	if file.Update != nil && file.Update.Enabled {
 		update, err := normalizeUpdate(file.Update.RepoURL, file.Update.Channel, file.Update.Component, file.Update.Platform, file.Update.StatePath, file.Update.StageRoot, file.Update.SVNProgram)
 		if err != nil {
+			return ClientView{}, err
+		}
+		update.SSH = file.Update.SSH
+		if err := update.ValidateTransport(); err != nil {
 			return ClientView{}, err
 		}
 		view.Update = &update

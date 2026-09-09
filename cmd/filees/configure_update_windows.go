@@ -41,6 +41,9 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, e
 	if update == nil {
 		return nil
 	}
+	if err := update.ValidateTransport(); err != nil {
+		return err
+	}
 	wantedPlatform := runtime.GOOS + "-" + runtime.GOARCH
 	if update.Platform != wantedPlatform {
 		return fmt.Errorf("update platform %q does not match running client %q", update.Platform, wantedPlatform)
@@ -57,6 +60,10 @@ func configureClientUpdate(ipc *ipcserver.Server, update *config.UpdateConfig, e
 		return err
 	}
 	fetcher := svnfetch.SVN{Program: update.SVNProgram, NativeProgram: nativeSVNPath(), RepoURL: update.RepoURL, Timeout: 2 * time.Minute}
+	if update.SSH != nil {
+		fetcher.SSHIdentityFile, fetcher.SSHKnownHosts = update.SSH.IdentityFile, update.SSH.KnownHosts
+		fetcher.SSHPort, fetcher.SSHHostName = update.SSH.Port, update.SSH.HostName
+	}
 	verifier := releaseenvelope.Ed25519Verifier{Keys: keys}
 	trustedKeys := make([]string, 0, len(keys))
 	for keyID := range keys {

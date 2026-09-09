@@ -167,9 +167,11 @@ type Service struct {
 	offlineJournalGeneration uint64
 	connectivityJournalDelay time.Duration // tests may shorten; <=0 uses the default
 
-	cacheResumed    atomic.Int64
-	alreadyAccepted atomic.Int64
-	commitBatches   atomic.Int64
+	cacheResumed          atomic.Int64
+	alreadyAccepted       atomic.Int64
+	commitBatches         atomic.Int64
+	recoveryDiagnosticKey string // guarded by wcOpMu; not a recovery decision
+	recoveryDiagnosticAt  time.Time
 }
 
 // RecoveryStats is a point-in-time diagnostic snapshot; it is not an IPC type.
@@ -367,7 +369,7 @@ func (s *Service) Run(ctx context.Context, repoID, wc string, events <-chan watc
 		s.loadCache()
 	}
 	if _, err := s.recoverCommit(ctx, wc); err != nil {
-		lg.Warnf("startup commit recovery: %v", err)
+		// recoverCommit journals the retained receipt and classified cause.
 	}
 	s.reconcileShouts(ctx, wc)
 
@@ -485,6 +487,10 @@ func (s *Service) acceptEvent(ev watcher.Event) {
 // recordCommitFailure writes the classified fault to errors.jsonl and the
 // talk log. tryCommit used to Warnf only, which never reached `filees log`.
 func (s *Service) recordCommitFailure(what string, err error) {
+	var held *recoveryFailure
+	if errors.As(err, &held) {
+		return // Already journaled by recoverCommit, including startup/poll.
+	}
 	entry := errmap.Classify(err)
 	// Network faults are journaled once by the sustained-offline timer. The
 	// immediate failure path still logs technically and updates connectivity,
@@ -581,7 +587,7 @@ func (s *Service) pollOnce(ctx context.Context, wc, headRevPath string) {
 	s.wcOpMu.Lock()
 	defer s.wcOpMu.Unlock()
 	if _, err := s.recoverCommit(ctx, wc); err != nil {
-		s.Logger.Warnf("commit recovery: %v", err)
+		// recoverCommit journals HOLD once per cause, with periodic reminders.
 		return
 	}
 	// A watcher also observes files materialized by update. Reconcile locally

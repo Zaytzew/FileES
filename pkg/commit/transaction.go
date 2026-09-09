@@ -158,8 +158,11 @@ func (s *Service) intentPending(wc string) bool {
 	return err != nil || (in != nil && in.Phase != "done")
 }
 
-func (s *Service) recoverCommit(ctx context.Context, wc string) (bool, error) {
+func (s *Service) recoverCommit(ctx context.Context, wc string) (found bool, resultErr error) {
 	in, err := s.readIntent(wc)
+	defer func() {
+		resultErr = s.reportRecovery(in, resultErr, time.Now())
+	}()
 	if err != nil {
 		return true, err
 	}
@@ -246,6 +249,7 @@ func (s *Service) commitDurable(ctx context.Context, wc string, c client.Transac
 	}
 	_, rev, commitErr := c.CommitWithID(ctx, wc, s.RepoURL, paths, message, s.Rules.NeedsLock, in.ID, in.FirstRevision)
 	if commitErr != nil {
+		s.Logger.Warnf("commit reply failed: transaction=%s first_revision=%d; resolving receipt before any retry: %v", in.ID, in.FirstRevision, commitErr)
 		// Same-context lookup may fail on cancellation. The next poll/startup
 		// still has the identifier; never turn uncertainty into a new attempt.
 		_, recoveryErr := s.recoverCommit(ctx, wc)

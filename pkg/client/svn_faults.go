@@ -49,6 +49,7 @@ type NativeFailure struct {
 	// stays because alpha diagnostics need the whole thing, not the part we
 	// knew how to name.
 	Output string
+	Stderr string // Bounded process diagnostics, separate from the JSON receipt.
 }
 
 func (f *NativeFailure) Error() string {
@@ -58,6 +59,12 @@ func (f *NativeFailure) Error() string {
 	}
 	if f.Truncated {
 		parts = append(parts, "output truncated")
+	}
+	if len(f.Entries) > 0 && f.Exit != nil {
+		parts = append(parts, fmt.Sprintf("process: %v", f.Exit))
+	}
+	if len(f.Entries) > 0 && f.Stderr != "" {
+		parts = append(parts, fmt.Sprintf("stderr: %q", f.Stderr))
 	}
 	if len(parts) == 0 {
 		if f.Exit != nil {
@@ -157,6 +164,7 @@ func nativeFault(verb string, exitErr error, truncated bool, stdout, stderr stri
 		Exit:      exitErr,
 		Truncated: truncated,
 		Output:    strings.TrimRight(stdout+"\n"+stderr, "\n"),
+		Stderr:    strings.TrimSpace(stderr),
 	}
 	key, code, ok := classifyNativeCodes(failure.Entries)
 	if !ok {

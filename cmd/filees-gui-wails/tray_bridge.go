@@ -113,6 +113,43 @@ func repositoryNoun(count int) string {
 	return "repozytoriów"
 }
 
+// intentAlertPolicy keeps a notification per unresolved episode. Stale and
+// disconnected snapshots never clear an episode. Unlike historical shouts,
+// unresolved work deserves a reminder on the first fresh snapshot after start.
+type intentAlertPolicy struct {
+	active map[string]bool
+}
+
+func (policy *intentAlertPolicy) Observe(snapshot Snapshot) []platform.Notification {
+	if !snapshot.Connected || snapshot.Stale {
+		return nil
+	}
+	next := make(map[string]bool)
+	var result []platform.Notification
+	for _, repo := range snapshot.Repositories {
+		if !repo.IntentResolutionRequired {
+			continue
+		}
+		key := repo.ServerID + ":" + repo.ID
+		next[key] = true
+		if policy.active[key] {
+			continue
+		}
+		name := repo.DisplayName
+		if name == "" {
+			name = repo.ID
+		}
+		result = append(result, platform.Notification{
+			ID: "intent." + key, Group: "intent." + key,
+			Title:   "FileES — potrzebna Twoja decyzja",
+			Body:    name + ": wysyłka wstrzymana. Otwórz panel FileES i wybierz „Rozstrzygnij zmiany”.",
+			Urgency: platform.UrgencyCritical,
+		})
+	}
+	policy.active = next
+	return result
+}
+
 type announcementAlertPolicy struct {
 	initialized bool
 	seen        map[string]struct{}
@@ -207,6 +244,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	systemTray.OnClick(showWindow)
 
 	var alerts announcementAlertPolicy
+	var intentAlerts intentAlertPolicy
 	var trayMu sync.Mutex
 	var lastRevision uint64
 	lastTooltip := ""
@@ -240,11 +278,11 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 			systemTray.SetIcon(icon)
 		}
 		if notifier != nil {
-			for _, notification := range alerts.Observe(snapshot) {
+			for _, notification := range append(alerts.Observe(snapshot), intentAlerts.Observe(snapshot)...) {
 				notification := notification
 				go func() {
 					if err := notifier.Notify(host.Context(), notification); err != nil {
-						log.Printf("announcement notification failed: %v", err)
+						log.Printf("desktop notification failed: %v", err)
 					}
 				}()
 			}

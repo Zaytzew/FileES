@@ -1,5 +1,3 @@
-//go:build !windows
-
 package svnrotate
 
 import (

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -78,8 +79,15 @@ func TestStoreFullLifecycleSurvivesRestart(t *testing.T) {
 	if err != nil || loaded.State != StateActive || loaded.Revision != 75 || loaded.Paths != 12 {
 		t.Fatalf("reloaded = %#v, %v", loaded, err)
 	}
-	if info, err := os.Stat(filepath.Join(root, opID+".json")); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("state mode = %v, err=%v", info.Mode(), err)
+	// The mode check is POSIX-only. Windows has no permission bits: Go reports
+	// 0666 for anything it can write, and privacy there is an ACL question,
+	// which pkg/privatefile answers separately. Asserting 0600 here would be
+	// asserting about a concept this platform does not have - so the rest of the
+	// test still runs and only this one check stands down.
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(filepath.Join(root, opID+".json")); err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("state mode = %v, err=%v", info.Mode(), err)
+		}
 	}
 }
 

@@ -4,10 +4,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
+
+// fixtureAbs makes a POSIX fixture path absolute on the platform running the
+// test. "/tmp/id" is absolute on POSIX and not on Windows, where
+// filepath.IsAbs wants a volume - so config validation rejected configs these
+// tests call valid. No file is created at the result; only IsAbs is asked.
+//
+// The fixtures keep their readable POSIX spelling and writeRawConfig rewrites
+// them in one place, so the assertions below use this same function and stay
+// true on both platforms.
+func fixtureAbs(posix string) string {
+	// Native separators, because the loader normalises what it reads and the
+	// assertions compare against what it returns.
+	return filepath.Join(os.TempDir(), "filees-config-fixture", filepath.FromSlash(strings.TrimPrefix(posix, "/")))
+}
+
+var fixturePathPattern = regexp.MustCompile(`"(/tmp/[^"]*)"`)
 
 func writeConfig(t *testing.T, data string) string {
 	t.Helper()
@@ -18,6 +35,10 @@ func writeConfig(t *testing.T, data string) string {
 
 func writeRawConfig(t *testing.T, data string) string {
 	t.Helper()
+	data = fixturePathPattern.ReplaceAllStringFunc(data, func(m string) string {
+		// JSON needs the backslashes of a Windows path escaped.
+		return `"` + strings.ReplaceAll(fixtureAbs(m[2:len(m)-1]), `\`, `\\`) + `"`
+	})
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
@@ -72,10 +93,10 @@ func TestLoadClientViewProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Projection == nil || view.Projection.WorkingCopy != "/tmp/service-wc" || view.Projection.RelativeViewPath != "clients/client/view.json" || view.Projection.CachePath != "/tmp/cache/view.json" || view.Projection.Interval != 15*time.Second {
+	if view.Projection == nil || view.Projection.WorkingCopy != fixtureAbs("/tmp/service-wc") || view.Projection.RelativeViewPath != filepath.FromSlash("clients/client/view.json") || view.Projection.CachePath != fixtureAbs("/tmp/cache/view.json") || view.Projection.Interval != 15*time.Second {
 		t.Fatalf("projection=%+v", view.Projection)
 	}
-	if view.IdentityFile != "/tmp/id" || view.KnownHosts != "/tmp/known" {
+	if view.IdentityFile != fixtureAbs("/tmp/id") || view.KnownHosts != fixtureAbs("/tmp/known") {
 		t.Fatalf("transport=%+v", view)
 	}
 	if !view.Configured {

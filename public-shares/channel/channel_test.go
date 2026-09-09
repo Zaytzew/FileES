@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -85,7 +86,12 @@ func TestCreateSeparatesRecordFromProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0600 {
+	// The mode check is POSIX-only. Windows has no permission bits: Go reports
+	// 0666 for anything it can write, and privacy there is an ACL question,
+	// which pkg/privatefile answers separately. Asserting 0600 here would be
+	// asserting about a concept this platform does not have - so the rest of the
+	// test still runs and only this one check stands down.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatalf("record mode = %o", info.Mode().Perm())
 	}
 }

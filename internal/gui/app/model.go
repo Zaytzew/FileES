@@ -513,6 +513,9 @@ func aggregateIcon(connected bool, repos []RepoViewModel, notices int) IconState
 }
 
 func repoIconState(r RepoViewModel) IconState {
+	if r.Attached && !r.ServerDeleted && r.Pending.RenameUncertain > 0 {
+		return IconError
+	}
 	if r.LocalCopyPreserved {
 		if r.LocalCleanupPending || r.LocalCopyStatus != "clean" {
 			return IconError

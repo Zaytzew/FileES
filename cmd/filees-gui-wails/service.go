@@ -117,48 +117,49 @@ type ServerProjection struct {
 }
 
 type RepoProjection struct {
-	CanDetachLocalCopy   bool                       `json:"can_detach_local_copy"`
-	ID                   string                     `json:"id"`
-	ServerID             string                     `json:"server_id"`
-	DisplayName          string                     `json:"display_name"`
-	LocalPath            string                     `json:"local_path,omitempty"`
-	URL                  string                     `json:"url,omitempty"`
-	Attached             bool                       `json:"attached"`
-	LocalProvisioning    bool                       `json:"local_provisioning,omitempty"`
-	Access               string                     `json:"access"`
-	Ownership            string                     `json:"ownership"`
-	AttachmentPolicy     string                     `json:"attachment_policy"`
-	State                string                     `json:"state"`
-	DisplayState         string                     `json:"display_state"`
-	Connectivity         string                     `json:"connectivity"`
-	LocalRevision        int64                      `json:"local_revision"`
-	HeadRevision         int64                      `json:"head_revision"`
-	WorkingCopyBytes     int64                      `json:"working_copy_bytes,omitempty"`
-	WorkingCopySizeKnown bool                       `json:"working_copy_size_known,omitempty"`
-	PendingFiles         int                        `json:"pending_files"`
-	PendingBytes         int64                      `json:"pending_bytes"`
-	Conflicts            int                        `json:"conflicts"`
-	UnportableNames      []UnportableNameProjection `json:"unportable_names,omitempty"`
-	CurrentOperation     string                     `json:"current_operation,omitempty"`
-	ReservationCount     int                        `json:"reservation_count"`
-	CanAttach            bool                       `json:"can_attach"`
-	CanOpen              bool                       `json:"can_open"`
-	CanLock              bool                       `json:"can_lock"`
-	CanUnlock            bool                       `json:"can_unlock"`
-	CanPublish           bool                       `json:"can_publish"`
-	CanReviewQuarantine  bool                       `json:"can_review_quarantine"`
-	Cycle                CycleProjection            `json:"cycle"`
-	ServerDeleted        bool                       `json:"server_deleted,omitempty"`
-	LocalCopyPreserved   bool                       `json:"local_copy_preserved,omitempty"`
-	LocalCopyStatus      string                     `json:"local_copy_status,omitempty"`
-	LocalCleanupPending  bool                       `json:"local_cleanup_pending,omitempty"`
-	RetainUntil          string                     `json:"retain_until,omitempty"`
-	RecoveryOperationID  string                     `json:"recovery_operation_id,omitempty"`
-	RecoveryAvailable    bool                       `json:"recovery_available,omitempty"`
-	CanDismissRecovery   bool                       `json:"can_dismiss_recovery,omitempty"`
-	RecoveryPending      bool                       `json:"recovery_pending,omitempty"`
-	CleanupError         string                     `json:"cleanup_error,omitempty"`
-	Purpose              string                     `json:"purpose,omitempty"`
+	CanDetachLocalCopy       bool                       `json:"can_detach_local_copy"`
+	ID                       string                     `json:"id"`
+	ServerID                 string                     `json:"server_id"`
+	DisplayName              string                     `json:"display_name"`
+	LocalPath                string                     `json:"local_path,omitempty"`
+	URL                      string                     `json:"url,omitempty"`
+	Attached                 bool                       `json:"attached"`
+	LocalProvisioning        bool                       `json:"local_provisioning,omitempty"`
+	Access                   string                     `json:"access"`
+	Ownership                string                     `json:"ownership"`
+	AttachmentPolicy         string                     `json:"attachment_policy"`
+	State                    string                     `json:"state"`
+	DisplayState             string                     `json:"display_state"`
+	Connectivity             string                     `json:"connectivity"`
+	LocalRevision            int64                      `json:"local_revision"`
+	HeadRevision             int64                      `json:"head_revision"`
+	WorkingCopyBytes         int64                      `json:"working_copy_bytes,omitempty"`
+	WorkingCopySizeKnown     bool                       `json:"working_copy_size_known,omitempty"`
+	PendingFiles             int                        `json:"pending_files"`
+	PendingBytes             int64                      `json:"pending_bytes"`
+	IntentResolutionRequired bool                       `json:"intent_resolution_required"`
+	Conflicts                int                        `json:"conflicts"`
+	UnportableNames          []UnportableNameProjection `json:"unportable_names,omitempty"`
+	CurrentOperation         string                     `json:"current_operation,omitempty"`
+	ReservationCount         int                        `json:"reservation_count"`
+	CanAttach                bool                       `json:"can_attach"`
+	CanOpen                  bool                       `json:"can_open"`
+	CanLock                  bool                       `json:"can_lock"`
+	CanUnlock                bool                       `json:"can_unlock"`
+	CanPublish               bool                       `json:"can_publish"`
+	CanReviewQuarantine      bool                       `json:"can_review_quarantine"`
+	Cycle                    CycleProjection            `json:"cycle"`
+	ServerDeleted            bool                       `json:"server_deleted,omitempty"`
+	LocalCopyPreserved       bool                       `json:"local_copy_preserved,omitempty"`
+	LocalCopyStatus          string                     `json:"local_copy_status,omitempty"`
+	LocalCleanupPending      bool                       `json:"local_cleanup_pending,omitempty"`
+	RetainUntil              string                     `json:"retain_until,omitempty"`
+	RecoveryOperationID      string                     `json:"recovery_operation_id,omitempty"`
+	RecoveryAvailable        bool                       `json:"recovery_available,omitempty"`
+	CanDismissRecovery       bool                       `json:"can_dismiss_recovery,omitempty"`
+	RecoveryPending          bool                       `json:"recovery_pending,omitempty"`
+	CleanupError             string                     `json:"cleanup_error,omitempty"`
+	Purpose                  string                     `json:"purpose,omitempty"`
 }
 
 // UnportableNameProjection is one object FileES declines to take under
@@ -969,8 +970,9 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			WorkingCopyBytes: repo.WorkingCopyBytes, WorkingCopySizeKnown: repo.WorkingCopySizeKnown,
 			PendingFiles: repo.Pending.Added + repo.Pending.Modified + repo.Pending.Deleted + repo.Pending.Renamed + repo.Pending.RenameUncertain,
 			PendingBytes: repo.Pending.TotalBytes, Conflicts: repo.Conflicts,
-			UnportableNames:  unportableNames(repo.UnportableNames),
-			CurrentOperation: operation, ReservationCount: repo.ReservationCount,
+			IntentResolutionRequired: repo.Attached && !repo.ServerDeleted && repo.Pending.RenameUncertain > 0,
+			UnportableNames:          unportableNames(repo.UnportableNames),
+			CurrentOperation:         operation, ReservationCount: repo.ReservationCount,
 			CanAttach: canAttach, CanOpen: canOpen, CanLock: canLock, CanUnlock: canUnlock, CanPublish: canPublish, CanReviewQuarantine: canReviewQuarantine,
 			Cycle:         CycleProjection{ID: repo.Cycle.ID, Phase: repo.Cycle.Phase, LastTickAt: repo.Cycle.LastTickAt, NextTickAt: repo.Cycle.NextTickAt},
 			ServerDeleted: repo.ServerDeleted, LocalCleanupPending: repo.LocalCleanupPending,

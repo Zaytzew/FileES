@@ -84,6 +84,21 @@ assert.equal(($("#shouts").html.match(/data-notice-id=/g)||[]).length,9);
 openNewestUnreadAnnouncement(); openNextUnreadAnnouncement();
 assert.equal(selectedAnnouncementID,"unread1");
 assert.equal(calls.length,3); // navigation never acknowledges
+currentSnapshot.repositories=[{id:"r",server_id:"s",display_name:"<Test>",intent_resolution_required:true}];
+renderAnnouncementBanner(currentSnapshot);
+assert.equal($("#intent-alerts").hidden,false);
+assert.match($("#intent-alerts").html,/&lt;Test>/);
+assert.match($("#intent-alerts").html,/data-action="settings"/);
+assert.match($("#hero-title").html,/na Twoją decyzję/);
+const alertHTML=$("#intent-alerts").html;
+for(let tick=0;tick<10;tick++) renderAnnouncementBanner(currentSnapshot);
+assert.equal($("#intent-alerts").html,alertHTML);
+assert.equal(calls.length,3); // ticks do not acknowledge, publish or reopen anything
+assert.equal($("#announcement-banner").hidden,false); // shouts coexist
+currentSnapshot.repositories[0].intent_resolution_required=false;
+renderAnnouncementBanner(currentSnapshot);
+assert.equal($("#intent-alerts").hidden,true);
+assert.equal($("#announcement-banner").hidden,false);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 `
 	cmd := exec.CommandContext(t.Context(), node)

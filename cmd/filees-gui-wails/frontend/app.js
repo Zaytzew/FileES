@@ -447,7 +447,7 @@ function renderRepo(repo) {
   const size = repo.attached && repo.working_copy_size_known && Number.isFinite(Number(repo.working_copy_bytes ?? 0))
     ? bytes(repo.working_copy_bytes ?? 0)
     : "—";
-  return `<article class="repo-row" data-repo-id="${escapeHTML(repo.id)}">
+  return `<article class="repo-row ${repo.intent_resolution_required ? "requires-decision" : ""}" data-repo-id="${escapeHTML(repo.id)}">
     <div class="repo-title">
       ${open}
       <div class="repo-name"><strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small></div>
@@ -456,6 +456,7 @@ function renderRepo(repo) {
     <div class="repo-tools">${settings}${actions}</div>
     <div class="repo-meta repo-size"><small>Rozmiar</small><span>${escapeHTML(size)}</span></div>
     ${renderUnportable(repo)}
+    ${repo.intent_resolution_required ? '<div class="intent-folder-warning"><strong>Wysyłka wstrzymana — potrzebna Twoja decyzja.</strong><button type="button" data-action="settings">Rozstrzygnij zmiany…</button></div>' : ""}
   </article>`;
 }
 
@@ -693,10 +694,17 @@ function unreadAnnouncements(snapshot) {
 
 function renderAnnouncementBanner(snapshot) {
   const unread = unreadAnnouncements(snapshot);
+  const unresolved = (snapshot.repositories || []).filter(repo => repo.intent_resolution_required);
+  const alerts = $("#intent-alerts");
+  alerts.hidden = unresolved.length === 0;
+  // This is persistent state from IPC, not an event toast or notice ACK.
+  // Stable markup avoids re-announcing the same decision on every tick.
+  replaceHTMLIfChanged(alerts, unresolved.map(repo => `<div class="announcement-banner" data-repo-id="${escapeHTML(repo.id)}" data-server-id="${escapeHTML(repo.server_id)}"><div><strong>Wysyłka wstrzymana — ${escapeHTML(repo.display_name || repo.id)}</strong><p>Potrzebna Twoja decyzja o usunięciach i nowych plikach. Samo zamknięcie okna nie wznawia wysyłki.</p></div><button type="button" data-action="settings">Rozstrzygnij zmiany…</button></div>`).join(""));
   const banner = $("#announcement-banner");
   banner.hidden = unread.length === 0;
-  $("#top").classList.toggle("has-announcements", unread.length > 0);
-  replaceHTMLIfChanged($("#hero-title"), unread.length
+  $("#top").classList.toggle("has-announcements", unread.length > 0 || unresolved.length > 0);
+  replaceHTMLIfChanged($("#hero-title"), unresolved.length
+    ? 'Twoje pliki czekają<br><span>na Twoją decyzję.</span>' : unread.length
     ? 'Ważne ogłoszenia<br><span>czekają na Twój odczyt.</span>'
     : 'Twoje pliki pracują<br><span>we właściwym rytmie.</span>');
   $("#announcement-banner-count").textContent = unread.length
@@ -1190,6 +1198,10 @@ $("#repositories").addEventListener("keydown", (event) => {
   if (expandedServers.has(serverID)) expandedServers.delete(serverID);
   else expandedServers.add(serverID);
   if (renderRepositories(currentSnapshot)) scheduleWindowFit();
+});
+$("#intent-alerts").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action]");
+  if (button) triggerAction(button);
 });
 $("#close-deleted-copy").addEventListener("click", () => $("#deleted-copy-dialog").close());
 $("#dismiss-deleted-copy").addEventListener("click", () => $("#deleted-copy-dialog").close());

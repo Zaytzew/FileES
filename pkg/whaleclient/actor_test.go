@@ -104,6 +104,35 @@ func (e *actorExchange) Do(_ context.Context, request whale.Request, upload io.R
 	return whale.Response{Schema: whale.Schema, RequestID: request.RequestID, Operation: request.Operation, Status: "ok", Result: result}, nil
 }
 
+// waitSpoolRemoved waits for the spool to disappear instead of demanding that
+// it already has.
+//
+// Publication records the state first and removes the spool second, and that
+// order is the right one: removing first and then failing to save would lose
+// the payload while the operation still claimed to be in progress. So a waiter
+// that synchronises on StatePublished is, by construction, allowed to look
+// before the cleanup has run. The old assertion checked once, immediately
+// after that wait, and lost the race - measured 2026-09-09 on Debian at 5 of
+// 30 runs in isolation and 3 of 10 under load. Windows lost it more rarely,
+// which is the only reason this looked like a Linux problem.
+//
+// What the contract actually promises is that the spool is removed after
+// publication is recorded, not simultaneously with it. This waits for that.
+func waitSpoolRemoved(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("published spool survived 5s: %s (stat err %v)", path, err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 func TestPutActorRecoversUnknownAckByStatusAndPersistsCompletion(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "whales")
 	exchange := &actorExchange{disconnectOnce: true}
@@ -128,9 +157,7 @@ func TestPutActorRecoversUnknownAckByStatusAndPersistsCompletion(t *testing.T) {
 	if done.BytesHave != 8 || done.PublishedRevision != 19 || exchange.putOffset != 8 {
 		t.Fatalf("done=%+v server_offset=%d", done, exchange.putOffset)
 	}
-	if _, err := os.Stat(manager.spoolPath(op)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("published spool survived: %v", err)
-	}
+	waitSpoolRemoved(t, manager.spoolPath(op))
 	restarted := actorManager(t, root, exchange)
 	loaded, err := restarted.Get(op.OperationID)
 	if err != nil || loaded.State != StatePublished || loaded.BytesHave != 8 {

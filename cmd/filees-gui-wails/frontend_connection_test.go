@@ -16,15 +16,15 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 		}
 	}
 	for _, wanted := range []string{
-		`freshness.textContent = "Stan danych: aktualny"`,
-		`freshness.textContent = "Aktualizowanie danych"`,
-		`freshness.textContent = "Demon niedostępny — dane niepotwierdzone"`,
+		`freshness.textContent = t("fresh.current")`,
+		`freshness.textContent = t("fresh.refreshing")`,
+		`freshness.textContent = t("fresh.offline")`,
 		`const projection = snapshot.projection || { state: "daemon_offline" };`,
 		`projection.state === "server_unverified"`,
 		`projection.state === "server_unavailable"`,
-		`jeszcze niesprawdzone`,
-		`Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}`,
-		`Nie ma jeszcze zapisanej pełnej projekcji`,
+		`t("fresh.unverified"`,
+		`t("fresh.cached", { date: shortDateTime(snapshot.last_refresh) })`,
+		`t("fresh.noCache")`,
 		`t("hero.noCache")`,
 		`Projekcja jest niezweryfikowana.`,
 		`t("summary.lastKnown")`,

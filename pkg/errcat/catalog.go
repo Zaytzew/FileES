@@ -223,6 +223,15 @@ var specs = []Spec{
 	{"REPO-2013", "repo.load_dump_forbidden", SevError, HintNone, nil, "Load-dump is forbidden", "Odtwarzanie z archiwum jest niedozwolone dla tego repozytorium"},
 	{"REPO-2014", "repo.load_dump_failed", SevError, HintRequireAction, nil, "Load-dump failed", "Odtwarzanie z archiwum nie powiodło się"},
 	{"REPO-2015", "repo.lifecycle_repair_forbidden", SevError, HintNone, nil, "Repository lifecycle repair is forbidden for the current durable state", "Tej niedokończonej operacji nie można naprawić w wybrany sposób"},
+	// Variants of a locate failure. The daemon still reports most of them as
+	// free text in Details; the GUI classifies that text into these keys
+	// instead of choosing a sentence from it, so both languages have the
+	// wording and the daemon can start emitting the keys directly without any
+	// presentation change. See UNFINISHED_WORK for the emission side.
+	{"REPO-2010", "repo.locate_not_working_copy", SevError, HintRequireAction, nil, "Chosen folder is not a Subversion working copy", "Wskazany folder nie jest kopią roboczą Subversion"},
+	{"REPO-2010", "repo.locate_other_repository", SevError, HintRequireAction, nil, "Chosen folder belongs to a different repository", "Wskazany folder należy do innego repozytorium"},
+	{"REPO-2010", "repo.locate_no_identity", SevError, HintRequireAction, nil, "Chosen folder carries no FileES identity for this share", "Wskazany folder nie ma tożsamości tego udziału FileES"},
+	{"REPO-2010", "repo.locate_overlaps", SevError, HintRequireAction, nil, "Chosen folder overlaps a working copy FileES already tracks", "Wskazany folder nachodzi na już zapisaną kopię FileES"},
 	{"REPO-2016", "repo.lifecycle_repair_failed", SevError, HintRequireAction, detailOnly(), "Repository lifecycle repair failed", "Nie udało się naprawić niedokończonej operacji na folderze"},
 	{"REPO-2017", "repo.recovery_dismiss_unavailable", SevError, HintNone, nil, "Recovery archive cannot be dismissed in its current state", "Tego archiwum nie można teraz usunąć z klienta"},
 	{"REPO-2018", "repo.recovery_dismiss_failed", SevError, HintRequireAction, nil, "Recovery archive dismissal failed", "Nie udało się usunąć archiwum z tego klienta"},

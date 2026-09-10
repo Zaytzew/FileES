@@ -29,15 +29,15 @@ func TestLocalizedErrorTitlesNeverRewriteDiagnosticBody(t *testing.T) {
 		}
 		return key
 	}
-	title, body, _ := operationErrorPresentation("lock", errors.New("surowa diagnostyka <path>"), localize)
+	c := polishController(t, Config{Text: localize})
+	title, body, _ := c.operationErrorPresentation("lock", errors.New("surowa diagnostyka <path>"), localize)
 	if title != "Failed (lock)" || body != "surowa diagnostyka <path>" {
 		t.Fatal(title, body)
 	}
-	title, body, _ = publishPresentation(errors.New("literal {body}"), localize)
+	title, body, _ = c.publishPresentation(errors.New("literal {body}"), localize)
 	if title != "error.publish" || body != "literal {body}" {
 		t.Fatal(title, body)
 	}
-	c := &Controller{cfg: Config{Text: localize}}
 	if c.uiText("test", "fallback") != "test" {
 		t.Fatal("callback ignored")
 	}

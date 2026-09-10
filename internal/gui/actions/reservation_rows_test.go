@@ -40,7 +40,8 @@ func mustParseReservationTime(t *testing.T, value string) string {
 // daemon knew who held the file and until when, sent both over IPC, and the
 // GUI printed "the daemon did not perform the operation".
 func TestHeldByOtherSentenceNamesTheHolderAndTheTime(t *testing.T) {
-	sentence := detailedMessageLabel("lock.held_by_other", map[string]string{
+	c := polishController(t, Config{})
+	sentence := c.messageLabel("LOCK-2001", "lock.held_by_other", map[string]string{
 		"path":   "rysunek.dwg",
 		"holder": "anna",
 		"until":  "2026-08-11T13:41:16Z",
@@ -65,7 +66,8 @@ func TestHeldByOtherSentenceNamesTheHolderAndTheTime(t *testing.T) {
 // as the same account, so there is genuinely nobody to name. Saying "somebody
 // else" is honest; inventing an owner would not be.
 func TestHeldByOtherSentenceAdmitsWhenTheHolderIsUnknown(t *testing.T) {
-	sentence := detailedMessageLabel("lock.held_by_other", map[string]string{"path": "rysunek.dwg"})
+	c := polishController(t, Config{})
+	sentence := c.messageLabel("LOCK-2001", "lock.held_by_other", map[string]string{"path": "rysunek.dwg"})
 	if !strings.Contains(sentence, "kogoś innego") {
 		t.Fatalf("sentence %q does not admit the holder is unknown", sentence)
 	}
@@ -74,10 +76,19 @@ func TestHeldByOtherSentenceAdmitsWhenTheHolderIsUnknown(t *testing.T) {
 	}
 }
 
-// Other keys must not be dressed up by this path; they keep their plain
-// label, so an unrelated failure cannot accidentally render as a lock notice.
-func TestDetailedMessageLabelIgnoresUnrelatedKeys(t *testing.T) {
-	if got := detailedMessageLabel("lock.operation_failed", map[string]string{"detail": "svn: E160039"}); got != "" {
-		t.Fatalf("unrelated key produced a sentence: %q", got)
+// Other keys must not be dressed up by this path: an unrelated failure keeps
+// its own sentence and cannot accidentally render as a lock notice. The raw
+// diagnostic also stays out of the wording — it is shown as diagnostics by the
+// caller, never built into a translated sentence.
+func TestUnrelatedKeysAreNotDressedUpAsLockNotices(t *testing.T) {
+	c := polishController(t, Config{})
+	got := c.messageLabel("LOCK-2001", "lock.operation_failed", map[string]string{"detail": "svn: E160039"})
+	if got == "" {
+		t.Fatal("an unrelated key rendered nothing")
+	}
+	for _, unwanted := range []string{"Rezerwuj", "kogoś innego", "svn: E160039"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("sentence %q must not contain %q", got, unwanted)
+		}
 	}
 }

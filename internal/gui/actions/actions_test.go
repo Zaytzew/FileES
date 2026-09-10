@@ -343,6 +343,9 @@ func assertNotReceived[T any](t *testing.T, ch <-chan T, msg string) {
 func setup(cfg actions.Config) (chan<- tray.Intent, context.CancelFunc) {
 	intents := make(chan tray.Intent, 4)
 	cfg.Intents = intents
+	// A live controller is handed the daemon's catalogue by the Wails
+	// composition; without it every daemon message would render as its code.
+	cfg = withDomainCatalogue(cfg)
 	ctx, cancel := context.WithCancel(context.Background())
 	go actions.New(cfg).Run(ctx)
 	return intents, cancel

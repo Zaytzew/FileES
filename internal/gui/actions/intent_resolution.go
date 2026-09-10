@@ -43,7 +43,7 @@ func (c *Controller) startResolveIntents(ctx context.Context, serverID, repoID s
 		plan, err := c.cfg.IntentResolver.PlanIntents(readCtx, repoID)
 		cancel()
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("intent.planFailed", "Nie można przygotować planu zmian"), actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("intent.planFailed", "Nie można przygotować planu zmian"), c.actionErrorBody(err))
 			return
 		}
 		if plan == nil || plan.ID == "" || plan.RepoID != repoID || plan.Choice != "delete_add" || len(plan.Paths) == 0 {
@@ -74,7 +74,7 @@ func (c *Controller) startResolveIntents(ctx context.Context, serverID, repoID s
 		err = c.cfg.IntentResolver.ApplyIntents(applyCtx, repoID, plan.ID, plan.Choice)
 		cancel()
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("intent.rejected", "Decyzja nie została przyjęta"), actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("intent.rejected", "Decyzja nie została przyjęta"), c.actionErrorBody(err))
 			return
 		}
 		actionID := c.startProjectedAction(app.PendingAction{Kind: "resolve_intents", ServerID: serverID, RepoID: repoID, Label: c.uiText("intent.refreshing", "Odświeżanie rozstrzygniętych zmian"), ExpectedIntentsResolved: true})

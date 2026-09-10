@@ -42,6 +42,8 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 	service.attachActions(intents)
 	return actions.New(actions.Config{
 		Text:                 service.localizeText,
+		DomainText:           service.domainMessage,
+		DomainHint:           service.domainHint,
 		Intents:              intents,
 		ViewModel:            service.viewModel,
 		Opener:               backend,

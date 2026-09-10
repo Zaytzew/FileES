@@ -123,6 +123,10 @@ func main() {
 		pinStore = nil
 	}
 	gui := newGUIServiceWithProjection(daemon, mirror, offlineActivations)
+	// Domain sentences are the daemon's, read per locale over IPC. The reader
+	// is attached before any window exists so the first error already renders
+	// from the catalogue rather than from a second copy compiled in here.
+	gui.setDomainCatalogues(newDomainCatalogues(daemon))
 	settings := newSettingsService()
 	repository := newRepositoryService()
 	prompts := newPromptService()

@@ -229,6 +229,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 
 	menu := host.NewMenu()
 	service.setPresentationLanguage(language)
+	service.useDomainLocale(language.locale)
 	for _, update := range windowTitles {
 		update(language)
 	}
@@ -290,6 +291,10 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 		defer trayMu.Unlock()
 		if language.selectLocale(locale) {
 			service.setPresentationLanguage(language)
+			// Domain sentences belong to the daemon, so the catalogue is
+			// fetched for the new language rather than translated here. The
+			// call returns at once; the menu below does not wait for IPC.
+			service.useDomainLocale(locale)
 			for _, update := range windowTitles {
 				update(language)
 			}

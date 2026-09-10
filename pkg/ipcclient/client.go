@@ -240,6 +240,21 @@ func (c *Client) RepoList(ctx context.Context) (*contract.RepoListResult, error)
 	return &r, contract.DecodeResult(resp.Result, &r)
 }
 
+// MessagesCatalog reads the daemon's domain message catalogue for one locale.
+//
+// The locale is a parameter of the read, not a setting: asking changes nothing
+// on the daemon side, and two clients may hold two languages at once. The
+// answer carries the requested templates and the base-locale ones from the
+// same read, so a caller never assembles a screen out of two catalogues.
+func (c *Client) MessagesCatalog(ctx context.Context, locale string) (*contract.MessagesCatalogResult, error) {
+	resp, err := c.do(ctx, contract.CmdMessagesCatalog, "", contract.MessagesCatalogPayload{Locale: locale})
+	if err != nil {
+		return nil, err
+	}
+	var r contract.MessagesCatalogResult
+	return &r, contract.DecodeResult(resp.Result, &r)
+}
+
 func (c *Client) RepoActivity(ctx context.Context, limit int) (*contract.RepoActivityResult, error) {
 	resp, err := c.do(ctx, contract.CmdRepoActivity, "", contract.RepoActivityPayload{Limit: limit})
 	if err != nil {

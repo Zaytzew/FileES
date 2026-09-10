@@ -304,7 +304,17 @@ type presentationError interface {
 // Notifier and Reconnect may be nil; all other fields are required.
 type Config struct {
 	// GUI-only catalogue lookup. Never use for daemon messages or identifiers.
-	Text                 func(key, fallback string) string
+	Text func(key, fallback string) string
+	// DomainText renders a daemon message from its key and structured
+	// arguments. The daemon owns these sentences and serves them per locale,
+	// so the composition supplies this hook rather than the controller
+	// carrying a catalogue of its own. It never returns an empty string: a
+	// key the catalogue does not carry still shows its code, because a gap
+	// has to look like a gap.
+	DomainText func(code, key string, details map[string]string) string
+	// DomainHint renders a hint enum, or "" when the hint carries no
+	// sentence. HintNone is silence by design.
+	DomainHint           func(hint string) string
 	Intents              <-chan tray.Intent
 	ViewModel            func() app.ViewModel
 	Opener               platform.FolderOpener
@@ -651,7 +661,7 @@ func (c *Controller) startRecoveryDownload(ctx context.Context, operationID stri
 		}
 		folder, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: c.uiText("picker.archives", "Wybierz katalog dla archiwów repozytoriów")})
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("feedback.n114", "Nie udało się wybrać katalogu archiwów"), actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.n114", "Nie udało się wybrać katalogu archiwów"), c.actionErrorBody(err))
 			return
 		}
 		if folder.Cancelled {
@@ -663,7 +673,7 @@ func (c *Controller) startRecoveryDownload(ctx context.Context, operationID stri
 		}
 		paths, err := c.cfg.RecoveryDownloader.DownloadRecovery(ctx, operationID, filepath.Clean(folder.Path))
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("feedback.n115", "Nie udało się pobrać archiwów"), actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.n115", "Nie udało się pobrać archiwów"), c.actionErrorBody(err))
 			return
 		}
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.archivesDownloaded", PresentationArgs: map[string]string{"body": strings.Join(paths, "\n")}, Title: "Archiwa repozytoriów pobrane", Text: strings.Join(paths, "\n")})
@@ -716,7 +726,7 @@ func (c *Controller) startRecoveryDismiss(ctx context.Context, serverID, repoID,
 		})
 		if err := c.cfg.RecoveryDismisser.DismissRecovery(ctx, serverID, repoID, operationID); err != nil {
 			c.finishProjectedAction(actionID)
-			c.reportActionError(ctx, key, c.uiText("feedback.n116", "Nie udało się usunąć archiwum z listy"), actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.n116", "Nie udało się usunąć archiwum z listy"), c.actionErrorBody(err))
 			return
 		}
 		c.awaitProjectedAction(actionID)
@@ -761,7 +771,7 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			RecoveryDirectory: filepath.Clean(directory.Path), ErasureRequested: consent.Optional,
 		})
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("feedback.n117", "Nie udało się rozpocząć usuwania udziału"), actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.n117", "Nie udało się rozpocząć usuwania udziału"), c.actionErrorBody(err))
 			return
 		}
 		otpText := fmt.Sprintf("Kod wysłano e-mailem. Potwierdzenie usunie %d repozytoriów, cofnie %d grantów i unieważni %d aktywacji klientów. Przygotowanie dumpów może potrwać — nie zamykaj FileES. Jeśli to nie Ty rozpocząłeś operację, zignoruj wiadomość i skontaktuj się z administratorem serwera.", begin.OwnedRepositoryCount, begin.ForeignGrantCount, begin.ActiveClientCount)
@@ -775,7 +785,7 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			secret[i] = 0
 		}
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("feedback.n118", "Nie udało się dokończyć usuwania udziału"), actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.n118", "Nie udało się dokończyć usuwania udziału"), c.actionErrorBody(err))
 			return
 		}
 		info := "Udział FileES został usunięty."
@@ -980,7 +990,7 @@ func (c *Controller) startRepairRepositoryLifecycle(ctx context.Context, serverI
 		}
 		state, err := c.cfg.RepositoryRepairer.RepairRepositoryLifecycle(ctx, repo.LifecycleOperationID, serverID, repoID, strategy)
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("feedback.n119", "Nie udało się naprawić lokalnego stanu folderu"), actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.n119", "Nie udało się naprawić lokalnego stanu folderu"), c.actionErrorBody(err))
 			return
 		}
 		// The daemon has now durably accepted the repair and replaced the old
@@ -1028,7 +1038,7 @@ func (c *Controller) startLocateRepository(ctx context.Context, serverID, repoID
 		}
 		picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: fmt.Sprintf(c.uiText("picker.moved", "Wskaż przeniesioną kopię roboczą repozytorium „%s”"), name)})
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("feedback.n120", "Nie można wskazać kopii roboczej"), name+" — "+actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.n120", "Nie można wskazać kopii roboczej"), name+" — "+c.actionErrorBody(err))
 			return
 		}
 		if picked.Cancelled {
@@ -1040,7 +1050,7 @@ func (c *Controller) startLocateRepository(ctx context.Context, serverID, repoID
 		}
 		operationID, err := c.cfg.RepositoryLocator.LocateRepository(ctx, serverID, repoID, filepath.Clean(picked.Path))
 		if err != nil {
-			c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+c.actionErrorBody(err))
 			return
 		}
 		c.awaitLocateOutcome(ctx, key, name, operationID)
@@ -1116,11 +1126,11 @@ func (c *Controller) awaitLocateOutcome(ctx context.Context, key, name, operatio
 		delay = interval
 		switch state {
 		case "error":
-			c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+locateFailurePolish(lastError))
+			c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+c.messageLabel("REPO-2010", locateFailureKey(lastError), nil))
 			return
 		case "attached":
 			if strings.TrimSpace(lastError) != "" {
-				c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+locateFailurePolish(lastError))
+				c.reportActionError(ctx, key, c.uiText("feedback.n121", "Nie można połączyć przeniesionej kopii"), name+" — "+c.messageLabel("REPO-2010", locateFailureKey(lastError), nil))
 				return
 			}
 			title := c.uiText("feedback.locatedTitle", "Kopia robocza została wskazana")
@@ -1195,7 +1205,7 @@ func (c *Controller) startConnectRepositories(ctx context.Context, serverID stri
 			operationID, err := c.cfg.RepositoryAttacher.AttachRepository(ctx, serverID, repoID, filepath.Clean(picked.Path))
 			if err != nil {
 				c.finishProjectedAction(actionID)
-				_, body, _ := operationErrorPresentation("połączenie repozytorium", err)
+				_, body, _ := c.operationErrorPresentation("połączenie repozytorium", err)
 				c.reportActionError(ctx, key, c.uiText("feedback.n123", "Nie można połączyć repozytorium"), name+" — "+body)
 				continue
 			}
@@ -1492,7 +1502,7 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 		if err := c.cfg.RepositoryDetacher.DetachRepository(ctx, serverID, repoID, deleteRepository); err != nil {
 			c.finishProjectedAction(actionID)
 			if ctx.Err() == nil {
-				c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: c.uiText("feedback.n008", "Działanie wymaga dokończenia"), Body: actionErrorBody(err), Urgency: platform.UrgencyCritical})
+				c.notify(ctx, platform.Notification{ID: "repository-detach." + repoID, Group: "repository-detach." + repoID, Title: c.uiText("feedback.n008", "Działanie wymaga dokończenia"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 			}
 			return
 		}
@@ -2551,7 +2561,7 @@ func (c *Controller) startSetSessionTimeout(ctx context.Context, serverID string
 		saved, setErr := c.cfg.SessionTimeouts.SetSessionTimeout(ctx, serverID, minutes)
 		if setErr != nil {
 			c.finishProjectedAction(actionID)
-			title, body, urgency := operationErrorPresentation(c.uiText("error.timeoutOperation", "limit czasu wysyłki"), setErr, c.uiText)
+			title, body, urgency := c.operationErrorPresentation(c.uiText("error.timeoutOperation", "limit czasu wysyłki"), setErr, c.uiText)
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: urgency})
 			return
 		}
@@ -3371,9 +3381,9 @@ func (c *Controller) activationFailure(ctx context.Context, err error) {
 	if err == nil || ctx.Err() != nil {
 		return
 	}
-	c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: c.uiText("feedback.n095", "Aktywacja FileES nie powiodła się"), Body: actionErrorBody(err), Urgency: platform.UrgencyCritical})
+	c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: c.uiText("feedback.n095", "Aktywacja FileES nie powiodła się"), Body: c.actionErrorBody(err), Urgency: platform.UrgencyCritical})
 	if c.cfg.Prompter != nil {
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.activationFailed", PresentationArgs: map[string]string{"body": actionErrorBody(err)}, Title: "Aktywacja FileES nie powiodła się", Text: actionErrorBody(err)})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.activationFailed", PresentationArgs: map[string]string{"body": c.actionErrorBody(err)}, Title: "Aktywacja FileES nie powiodła się", Text: c.actionErrorBody(err)})
 	}
 }
 
@@ -3404,7 +3414,7 @@ func (c *Controller) handlePublish(ctx context.Context, repoID string) {
 	}
 	rev, err := c.cfg.Shouts.Publish(ctx, repoID, result.Value)
 	if err != nil {
-		title, body, infoOnly := publishPresentation(err, c.uiText)
+		title, body, infoOnly := c.publishPresentation(err, c.uiText)
 		if infoOnly {
 			c.notify(ctx, platform.Notification{ID: "shout", Group: "shout", Title: title, Body: body, Urgency: platform.UrgencyNormal})
 			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: title, Text: body})
@@ -3799,7 +3809,7 @@ func (c *Controller) handleLockUnlock(ctx context.Context, repoID string, lock b
 		return false
 	}
 	if opErr != nil {
-		title, body, urgency := operationErrorPresentation(opName, opErr, c.uiText)
+		title, body, urgency := c.operationErrorPresentation(opName, opErr, c.uiText)
 		c.notify(ctx, platform.Notification{
 			ID:      opName + "." + repoID,
 			Group:   opName + "." + repoID,
@@ -4094,7 +4104,7 @@ func canMutate(vm app.ViewModel, lock bool) bool {
 
 func fallbackText(_ string, fallback string) string { return fallback }
 
-func operationErrorPresentation(opName string, err error, texts ...func(string, string) string) (string, string, platform.Urgency) {
+func (c *Controller) operationErrorPresentation(opName string, err error, texts ...func(string, string) string) (string, string, platform.Urgency) {
 	text := fallbackText
 	if len(texts) > 0 && texts[0] != nil {
 		text = texts[0]
@@ -4110,11 +4120,19 @@ func operationErrorPresentation(opName string, err error, texts ...func(string, 
 	if code != "" {
 		title = fmt.Sprintf(text("error.operationCode", "Błąd operacji (%s) — %s"), opName, code)
 	}
-	body = messageLabel(message)
-	if detailed := detailedMessageLabel(message, structured.PresentationDetails()); detailed != "" {
-		body = detailed
+	details := structured.PresentationDetails()
+	// The arguments travel with the key: the catalogue decides from them
+	// whether the reader is told that somebody holds the file, or who holds
+	// it and until when.
+	body = c.messageLabel(code, message, details)
+	// An unrecognised failure must keep its diagnostics. Dropping them here
+	// is what turned an unknown key into a generic sentence naming no cause,
+	// which is the opposite of the alpha rule: a gap in the dictionary has to
+	// be visible and reportable, not smoothed over.
+	if detail := strings.TrimSpace(details["detail"]); detail != "" {
+		body += "\n\n" + detail
 	}
-	if label := hintLabel(hint); label != "" {
+	if label := c.hintLabel(hint); label != "" {
 		body += " — " + label
 	}
 	if severity == "FATAL" || severity == "ERROR" {
@@ -4123,23 +4141,30 @@ func operationErrorPresentation(opName string, err error, texts ...func(string, 
 	return title, body, urgency
 }
 
-// detailedMessageLabel builds the sentence a user can act on for keys that
-// define structured fields. It returns "" when the key has none, or when the
-// fields are missing, so the caller keeps the plain label rather than
-// rendering a sentence with holes in it.
-//
-// This exists because "the file is busy" is not actionable while "Anna has it
-// until 13:41" is: the whole point of naming the holder is that the reader
-// knows who to go and ask.
-func detailedMessageLabel(messageKey string, details map[string]string) string {
-	return errcat.PolishDetailed(messageKey, details)
+func (c *Controller) messageLabel(code, messageKey string, details map[string]string) string {
+	if c.cfg.DomainText != nil {
+		return c.cfg.DomainText(code, messageKey, details)
+	}
+	// No catalogue was wired: show the identity rather than nothing. Every
+	// live composition supplies one; this keeps a bare controller in a test
+	// from rendering blanks.
+	return diagnosticLabel(code, messageKey)
 }
 
-func messageLabel(messageKey string) string {
-	return errcat.Polish(messageKey)
+func diagnosticLabel(code, messageKey string) string {
+	switch {
+	case code != "" && messageKey != "":
+		return "[" + code + " " + messageKey + "]"
+	case messageKey != "":
+		return "[" + messageKey + "]"
+	case code != "":
+		return "[" + code + "]"
+	default:
+		return ""
+	}
 }
 
-func actionErrorBody(err error) string {
+func (c *Controller) actionErrorBody(err error) string {
 	if err == nil {
 		return ""
 	}
@@ -4147,36 +4172,36 @@ func actionErrorBody(err error) string {
 	if !errors.As(err, &structured) {
 		return err.Error()
 	}
-	_, _, _, key := structured.PresentationError()
+	code, _, _, key := structured.PresentationError()
 	details := structured.PresentationDetails()
 	if key == "repo.locate_failed" {
-		if reason := strings.TrimSpace(details["detail"]); reason != "" {
-			return locateFailurePolish(reason)
-		}
+		// The daemon reports the reason as prose here; classify it into a key
+		// so the reader gets the specific sentence in their own language.
+		key = locateFailureKey(strings.TrimSpace(details["detail"]))
 	}
-	if detailed := detailedMessageLabel(key, details); detailed != "" {
-		return detailed
-	}
-	// The catalog sentence names the class of failure, not the instance. The
-	// daemon already carries the instance in Details, and dropping it here is
-	// what made several failures unreadable: "Pobranie archiwum nie powiodlo
-	// sie" said the same thing whether the dispatcher could not be executed,
-	// the output file already existed, or the archive was gone. Only keys
-	// without their own template reach this point, so appending the detail
-	// cannot override a purpose-written sentence.
+	sentence := c.messageLabel(code, key, details)
+	// The catalogue sentence names the class of failure, not the instance.
+	// The daemon already carries the instance in Details, and dropping it
+	// here is what made several failures unreadable: "Pobranie archiwum nie
+	// powiodlo sie" said the same thing whether the dispatcher could not be
+	// executed, the output file already existed, or the archive was gone.
+	//
+	// The detail is appended rather than placed inside the sentence: it is
+	// raw diagnostic text, frequently English and of unbounded length, so it
+	// is shown as diagnostics and never built into translated wording.
 	if detail := strings.TrimSpace(details["detail"]); detail != "" {
-		return messageLabel(key) + "\n\n" + detail
+		return sentence + "\n\n" + detail
 	}
-	return messageLabel(key)
+	return sentence
 }
 
-func publishPresentation(err error, texts ...func(string, string) string) (title, body string, infoOnly bool) {
+func (c *Controller) publishPresentation(err error, texts ...func(string, string) string) (title, body string, infoOnly bool) {
 	text := fallbackText
 	if len(texts) > 0 && texts[0] != nil {
 		text = texts[0]
 	}
 	title = text("error.publish", "Nie udało się opublikować wydania")
-	body = actionErrorBody(err)
+	body = c.actionErrorBody(err)
 	var structured presentationError
 	if !errors.As(err, &structured) {
 		return title, body, false
@@ -4194,28 +4219,41 @@ func publishPresentation(err error, texts ...func(string, string) string) (title
 	}
 }
 
-func locateFailurePolish(raw string) string {
+// locateFailureKey classifies why a folder could not be bound to a share.
+//
+// The daemon still reports most of these as free text in Details, so this
+// matches on that text — but it yields a message KEY, never a sentence. The
+// difference matters: a key has wording in every language and one place to fix
+// it, while choosing a Polish sentence from an English fragment left English
+// readers with nothing and made the daemon's prose part of the interface.
+//
+// Emitting these keys from the daemon is the remaining half; when it lands,
+// these needles become dead code and go, with no change to what is rendered.
+func locateFailureKey(raw string) string {
 	switch {
 	case strings.TrimSpace(raw) == "":
-		return "Wskazany folder nie jest kopią roboczą tego udziału."
+		return "repo.locate_failed"
 	case strings.Contains(raw, "not a Subversion working copy"):
-		return "Wskazany folder nie jest kopią roboczą Subversion."
+		return "repo.locate_not_working_copy"
 	case strings.Contains(raw, "does not match projected"):
-		return "Wskazany folder należy do innego repozytorium."
+		return "repo.locate_other_repository"
 	case strings.Contains(raw, "working-copy identity"):
-		return "Wskazany folder nie ma tożsamości tego udziału FileES."
+		return "repo.locate_no_identity"
 	case strings.Contains(raw, "overlaps"), strings.Contains(raw, "disjoint"):
-		return "Wskazany folder nachodzi na już zapisaną kopię FileES."
+		return "repo.locate_overlaps"
+	case errcat.KnownKey(raw):
+		// The daemon already sent a key instead of prose.
+		return raw
 	default:
-		if errcat.KnownKey(raw) {
-			return errcat.Polish(raw)
-		}
-		return "Wskazany folder nie jest kopią roboczą tego udziału."
+		return "repo.locate_failed"
 	}
 }
 
-func hintLabel(hint string) string {
-	return errcat.PolishHint(hint)
+func (c *Controller) hintLabel(hint string) string {
+	if c.cfg.DomainHint == nil {
+		return ""
+	}
+	return c.cfg.DomainHint(hint)
 }
 
 func (c *Controller) notify(ctx context.Context, n platform.Notification) {

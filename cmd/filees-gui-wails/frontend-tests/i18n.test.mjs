@@ -264,7 +264,7 @@ test("public share renderer translates chrome but preserves names and permission
 
 test("marked text forms have reviewed fixed text and never translate defaults", () => {
   const source = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
-  const forms = [...source.matchAll(/platform\.PromptTextRequest\{\s*PresentationKey:\s*"([^"]+)"([\s\S]*?)\}/g)];
+  const forms = [...source.matchAll(/platform\.PromptTextRequest\{\s*PresentationKey:\s*"(input\.[^"]+)"([\s\S]*?)\}/g)];
   assert.equal(forms.length, 14);
   for (const [, prefix, body] of forms) {
     for (const [field, part] of [["Title", "title"], ["Text", "text"]]) {
@@ -275,6 +275,22 @@ test("marked text forms have reviewed fixed text and never translate defaults", 
     for (const locale of ["pl", "en"]) for (const part of ["label", "confirm", "cancel"]) assert.equal(typeof catalogues[locale][`${prefix}.${part}`], "string");
     assert.ok(!Object.hasOwn(catalogues.en, `${prefix}.default`));
   }
+});
+
+test("all action text prompts are marked and mixed form data remain literal", () => {
+  const source = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /platform\.PromptTextRequest\{\s*(?!PresentationKey:)\w+:/);
+  for (const key of ["form.removeRealmOTP", "form.publish", "form.renameUnportable"]) {
+    for (const locale of ["pl", "en"]) {
+      for (const part of ["title", "text", "label", "confirm", "cancel"]) assert.equal(typeof catalogues[locale][`${key}.${part}`], "string");
+    }
+    assert.ok(!Object.hasOwn(catalogues.en, `${key}.default`));
+  }
+  const path = '"Folder {repos} <DWG>"';
+  assert.ok(translate(catalogues, "en", "form.renameUnportable.text", {path}).includes(path));
+  const otp = translate(catalogues, "en", "form.removeRealmOTP.text", {repos: 2, grants: 3, clients: 4});
+  assert.match(otp, /delete 2 repositories, revoke 3 grants and invalidate 4/);
+  assert.match(otp, /do not close FileES/);
 });
 
 test("marked input language refresh preserves secret value and pending controls", () => {
@@ -366,10 +382,31 @@ test("only explicitly marked GUI dialog templates are translated", () => {
   }
 });
 
+test("operation confirmations keep literal arguments and explicit risk variants", () => {
+  const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
+  const keys = [...new Set([...controller.matchAll(/"(confirm\.[^"]+)"/g)].map(match => match[1]))];
+  assert.equal(keys.length, 28);
+  for (const key of keys) {
+    for (const locale of ["pl", "en"]) {
+      for (const part of ["title", "text", "confirm", "cancel"]) assert.equal(typeof catalogues[locale][`${key}.${part}`], "string", key);
+      const args = Object.fromEntries(parameters(catalogues[locale][`${key}.text`]).map(name => [name, `<${name}> {opaque} Żółć`]));
+      const result = translate(catalogues, locale, `${key}.text`, args);
+      for (const value of Object.values(args)) assert.ok(result.includes(value), key);
+    }
+  }
+  assert.match(catalogues.en["confirm.deleteFinal.text"], /0-day retention/);
+  assert.match(catalogues.en["confirm.deleteFinal.text"], /no recoverable copy/);
+  assert.match(catalogues.en["confirm.releaseRisk.text"], /unsaved data/);
+  assert.match(catalogues.en["confirm.releaseAllRisk.text"], /unsaved data/);
+  assert.match(catalogues.en["confirm.restoreArchive.text"], /only after confirmed success/);
+  assert.equal((controller.match(/presentationKey = "confirm.releaseRisk"/g) || []).length, 2);
+  assert.match(controller, /if risky > 0 \{\s*presentationKey = "confirm.releaseAllRisk"/);
+});
+
 test("marked fixed confirmations keep their Polish fallback and button semantics", () => {
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const parameterized = new Set(["dialog.replaceFile", "dialog.createRepository"]);
-  const marked = [...controller.matchAll(/platform\.ConfirmRequest\{\s*PresentationKey:\s*"([^"]+)"([\s\S]*?)\}/g)].filter(match => !parameterized.has(match[1]));
+  const marked = [...controller.matchAll(/platform\.ConfirmRequest\{\s*PresentationKey:\s*"(dialog\.[^"]+)"([\s\S]*?)\}/g)].filter(match => !parameterized.has(match[1]));
   assert.equal(marked.length, 11);
   for (const [, prefix, body] of marked) {
     for (const [field, part] of [["Title", "title"], ["Text", "text"], ["ConfirmText", "confirm"], ["CancelText", "cancel"]]) {

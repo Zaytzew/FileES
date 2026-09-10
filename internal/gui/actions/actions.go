@@ -688,12 +688,15 @@ func (c *Controller) startRecoveryDismiss(ctx context.Context, serverID, repoID,
 			deadline = parsed.Local().Format("02.01.2006 15:04")
 		}
 		text := "Archiwum „" + name + "” zniknie z tego klienta i nie będzie już dostępne do samodzielnego pobrania tutaj."
+		presentationKey := "confirm.dismissArchive"
 		if deadline != "" {
+			presentationKey = "confirm.dismissArchiveDeadline"
 			text += "\n\nSerwer nie usunie teraz danych: zachowa je zgodnie ze swoją polityką retencji, obecnie do " + deadline + "."
 		} else {
 			text += "\n\nSerwer nie usunie teraz danych: zachowa je zgodnie ze swoją polityką retencji."
 		}
 		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			PresentationKey: presentationKey, PresentationArgs: map[string]string{"name": name, "deadline": deadline},
 			Title: "Usuń archiwum z tego klienta", Text: text,
 			ConfirmText: "Usuń z listy", CancelText: "Anuluj",
 		})
@@ -729,7 +732,7 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 		defer c.tasks.Done()
 		defer c.endOperation(key)
 		warning := "Ta operacja usunie z serwera repozytoria należące do Twojej strefy, cofnie granty i unieważni aktywacje wszystkich Twoich klientów — nie tylko tej instalacji. Lokalne pliki pozostaną na dysku."
-		ok, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Usuń mój udział FileES", Text: warning, ConfirmText: "Rozumiem, kontynuuj", CancelText: "Anuluj"})
+		ok, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.removeRealm", Title: "Usuń mój udział FileES", Text: warning, ConfirmText: "Rozumiem, kontynuuj", CancelText: "Anuluj"})
 		if err != nil || !ok {
 			return
 		}
@@ -759,7 +762,7 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			return
 		}
 		otpText := fmt.Sprintf("Kod wysłano e-mailem. Potwierdzenie usunie %d repozytoriów, cofnie %d grantów i unieważni %d aktywacji klientów. Przygotowanie dumpów może potrwać — nie zamykaj FileES. Jeśli to nie Ty rozpocząłeś operację, zignoruj wiadomość i skontaktuj się z administratorem serwera.", begin.OwnedRepositoryCount, begin.ForeignGrantCount, begin.ActiveClientCount)
-		otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Potwierdź usunięcie udziału kodem OTP", Text: otpText, Placeholder: "Kod OTP", Secret: true})
+		otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "form.removeRealmOTP", PresentationArgs: map[string]string{"repos": strconv.Itoa(begin.OwnedRepositoryCount), "grants": strconv.Itoa(begin.ForeignGrantCount), "clients": strconv.Itoa(begin.ActiveClientCount)}, Title: "Potwierdź usunięcie udziału kodem OTP", Text: otpText, Placeholder: "Kod OTP", Secret: true})
 		if err != nil || otp.Cancelled || strings.TrimSpace(otp.Value) == "" {
 			return
 		}
@@ -944,7 +947,7 @@ func (c *Controller) startRepairRepositoryLifecycle(ctx context.Context, serverI
 				return
 			}
 			name := firstNonBlank(repo.DisplayName, repo.ID)
-			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.abandonLocal", PresentationArgs: map[string]string{"name": name, "path": repo.LocalPath},
 				Title:       "Zakończ starą próbę lokalną",
 				Text:        name + "\n" + repo.LocalPath + "\n\nFileES zachowa wszystkie pliki i nie zmieni repozytorium na serwerze. Jeśli pozostawiona kopia robocza daje się jednoznacznie potwierdzić, zostanie ponownie przyjęta; w przeciwnym razie repozytorium wróci do stanu gotowego do wskazania lokalizacji.",
 				ConfirmText: "Zakończ próbę", CancelText: "Anuluj",
@@ -1403,12 +1406,15 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 				return
 			}
 			title := "Odłącz folder od FileES"
+			presentationKey := "confirm.detachFolder"
 			text := fmt.Sprintf("%s\n%s\n\nSynchronizacja tego folderu zostanie zatrzymana. Pliki użytkownika pozostaną na dysku. Niewysłane dane pozostaną wyłącznie lokalnie. Metadane .svn i .filees oraz ikona FileES zostaną usunięte.", name, repo.LocalPath)
 			if orphan {
+				presentationKey = "confirm.detachOrphan"
 				title = "Odłącz lokalną projekcję"
 				text = fmt.Sprintf("%s\n%s\n\nRepozytorium zostało już usunięte na serwerze. Sprzątanie .svn i .filees zostało zakończone. Wpis i jego ostrzeżenie znikną z tego klienta. Folder oraz wszystkie zachowane pliki pozostaną na dysku, również niewysłana zawartość. Nie zostanie wykonana żadna operacja na serwerze.", name, repo.LocalPath)
 			}
 			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+				PresentationKey: presentationKey, PresentationArgs: map[string]string{"name": name, "path": repo.LocalPath},
 				Title:       title,
 				Text:        text,
 				ConfirmText: "Odłącz folder", CancelText: "Anuluj",
@@ -1421,10 +1427,13 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 				return
 			}
 			location := "Repozytorium zostanie usunięte z serwera. Nie ma przypiętego lokalnego folderu. Historia serwerowa przestanie być dostępna."
+			presentationKey := "confirm.deleteRemote"
 			if repo.Attached {
+				presentationKey = "confirm.deleteAttached"
 				location = fmt.Sprintf("Repozytorium zostanie usunięte z serwera, a folder lokalny odłączony. Dane lokalne w %s pozostaną, ale synchronizacja i historia serwerowa przestaną być dostępne.", repo.LocalPath)
 			}
 			first, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+				PresentationKey: presentationKey, PresentationArgs: map[string]string{"name": name, "path": repo.LocalPath},
 				Title:       "Usuń repozytorium",
 				Text:        name + "\n\n" + location,
 				ConfirmText: "Przejdź dalej", CancelText: "Anuluj",
@@ -1432,7 +1441,7 @@ func (c *Controller) startDetachRepository(ctx context.Context, serverID, repoID
 			if err != nil || !first {
 				return
 			}
-			second, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			second, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.deleteFinal", PresentationArgs: map[string]string{"name": name},
 				Title:       "Ostateczne potwierdzenie",
 				Text:        "To jest operacja destrukcyjna. Serwer zastosuje skonfigurowaną retencję; w trybie panic (retencja 0 dni) nie pozostanie żadna kopia do odzyskania.\n\nCzy na pewno trwale usunąć repozytorium „" + name + "”?",
 				ConfirmText: "Usuń repozytorium", CancelText: "Nie usuwaj",
@@ -1506,7 +1515,7 @@ func (c *Controller) startLoadDump(ctx context.Context, serverID, repoID string)
 		if strings.TrimSpace(name) == "" {
 			name = repo.ID
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.restoreArchive", PresentationArgs: map[string]string{"name": name, "path": repo.LocalPath},
 			Title:       "Odtwórz z archiwum",
 			Text:        fmt.Sprintf("%s\n%s\n\nZawartość tego folderu zostanie zastąpiona danymi z wcześniej skopiowanego tam archiwum. Bieżąca zawartość jest odkładana na bok na czas operacji i usuwana dopiero po potwierdzonym sukcesie.", name, repo.LocalPath),
 			ConfirmText: "Odtwórz z archiwum", CancelText: "Anuluj",
@@ -1597,12 +1606,15 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 			label = recipient.RealmID
 		}
 		actionText := "nadać dostęp tylko do odczytu"
+		presentationKey := "confirm.grantRead"
 		if choice.Action == platform.RealmGrantDialogWrite {
 			actionText = "nadać dostęp do odczytu i zapisu"
+			presentationKey = "confirm.grantWrite"
 		} else if choice.Action == platform.RealmGrantDialogRevoke {
 			actionText = "cofnąć dostęp"
+			presentationKey = "confirm.grantRevoke"
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Potwierdź zmianę dostępu", Text: "Czy " + actionText + " strefie „" + label + "” do repozytorium „" + repo.DisplayName + "”?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: presentationKey, PresentationArgs: map[string]string{"realm": label, "name": repo.DisplayName}, Title: "Potwierdź zmianę dostępu", Text: "Czy " + actionText + " strefie „" + label + "” do repozytorium „" + repo.DisplayName + "”?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
 		if err != nil || !confirmed {
 			return
 		}
@@ -1799,7 +1811,7 @@ func (c *Controller) startRevokePublicShares(ctx context.Context, serverID strin
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation(key)
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.revokeMany", PresentationArgs: map[string]string{"count": strconv.Itoa(len(channelIDs))},
 			Title:       "Cofnij udostępnienia",
 			Text:        fmt.Sprintf("Wybrane adresy (%d) przestaną wydawać pliki. Każdy pozostanie zarezerwowany i widoczny w historii.", len(channelIDs)),
 			ConfirmText: "Cofnij zaznaczone", CancelText: "Anuluj",
@@ -2127,7 +2139,7 @@ func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo a
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.contributorRequired", Title: "Potrzeba wnoszącego", Text: "Półka przyjęcia wymaga co najmniej jednego adresu. Anonimowe wniesienie nie istnieje."})
 		return UploadChannelDeclaration{}, false
 	}
-	otp, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+	otp, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.uploadOTP",
 		Title: "Kod z poczty", Text: "Czy wnoszący ma podać jednorazowy kod z poczty przed wysłaniem pliku?",
 		ConfirmText: "Tak", CancelText: "Nie",
 	})
@@ -2436,10 +2448,12 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 		}
 		visibility := string(choice.Action)
 		description := "ukryć strefę w katalogu odbiorców"
+		presentationKey := "confirm.realmPrivate"
 		if choice.Action == platform.RealmVisibilityDialogListed {
 			description = "pokazać strefę w prywatnym katalogu odbiorców"
+			presentationKey = "confirm.realmListed"
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Potwierdź widoczność strefy", Text: "Czy " + description + "?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: presentationKey, Title: "Potwierdź widoczność strefy", Text: "Czy " + description + "?", ConfirmText: "Zastosuj", CancelText: "Anuluj"})
 		if err != nil || !confirmed {
 			return
 		}
@@ -3144,7 +3158,7 @@ func (c *Controller) startActivation(ctx context.Context) {
 			return
 		}
 		for _, target := range pending {
-			resume, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			resume, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.resumeActivation", PresentationArgs: map[string]string{"address": target.Address},
 				Title:       "Niedokończona aktywacja FileES",
 				Text:        "Znaleziono niedokończoną aktywację serwera " + target.Address + ". Wznów ją bez ponownego wklejania zaproszenia?",
 				ConfirmText: "Wznów", CancelText: "Inne zaproszenie",
@@ -3247,7 +3261,7 @@ func (c *Controller) claimRealmAlias(ctx context.Context, serverID string) bool 
 		if err != nil || alias.Cancelled || strings.TrimSpace(alias.Value) == "" {
 			return false
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.claimAlias", PresentationArgs: map[string]string{"alias": alias.Value},
 			Title: "Potwierdź stały alias", Text: "Alias „" + alias.Value + "” zostanie przypisany do tej strefy na stałe. Nie można go później zmienić.", ConfirmText: "Ustaw alias", CancelText: "Anuluj",
 		})
 		if err != nil || !confirmed {
@@ -3259,7 +3273,7 @@ func (c *Controller) claimRealmAlias(ctx context.Context, serverID string) bool 
 			}
 			return true
 		}
-		retry, retryErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		retry, retryErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.retryAlias",
 			Title: "Alias nie został potwierdzony", Text: "Serwer nie potwierdził ustawienia aliasu. Wprowadź alias ponownie; ten sam alias można bezpiecznie ponowić po przerwanym połączeniu.", ConfirmText: "Wprowadź ponownie", CancelText: "Później",
 		})
 		if retryErr != nil || !retry {
@@ -3321,9 +3335,10 @@ func (c *Controller) handlePublish(ctx context.Context, repoID string) {
 		return
 	}
 	result, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
-		Title:       "Opublikuj wydanie",
-		Text:        "Komentarz wydania (widoczny dla zespołu po aktualizacji):",
-		Placeholder: "np. materiały na jutrzejsze spotkanie",
+		PresentationKey: "form.publish",
+		Title:           "Opublikuj wydanie",
+		Text:            "Komentarz wydania (widoczny dla zespołu po aktualizacji):",
+		Placeholder:     "np. materiały na jutrzejsze spotkanie",
 	})
 	if err != nil || result.Cancelled {
 		return
@@ -3437,11 +3452,15 @@ func (c *Controller) handleReservationRelease(ctx context.Context, reservationID
 		return false
 	}
 	risk := reservation.LocalChanges || reservation.ActivePassport
+	presentationKey := "confirm.release"
+	if risk {
+		presentationKey = "confirm.releaseRisk"
+	}
 	text := fmt.Sprintf("%s\nKopia robocza: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), reservationWorkingCopyAlias(server, reservation))
 	if risk {
 		text += "\n\nTen folder ma lokalne zmiany lub aktywny paszport edycji. Otwarte programy mogą mieć niezapisane dane; FileES nie bada uchwytów otwartych przez edytory. Kontynuować świadomie?"
 	}
-	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Zwolnij rezerwację", Text: text, ConfirmText: "Zwolnij", CancelText: "Anuluj"})
+	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: presentationKey, PresentationArgs: map[string]string{"path": reservationDisplayPath(reservation.WorkingCopy, reservation.Path), "copy": reservationWorkingCopyAlias(server, reservation)}, Title: "Zwolnij rezerwację", Text: text, ConfirmText: "Zwolnij", CancelText: "Anuluj"})
 	if err != nil || !confirmed || ctx.Err() != nil {
 		return false
 	}
@@ -3496,7 +3515,7 @@ func (c *Controller) startLockReleaseRequest(ctx context.Context, reservationID 
 		if owner == "" {
 			owner = "posiadacz blokady"
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.requestRelease", PresentationArgs: map[string]string{"owner": owner, "path": reservation.Path},
 			Title:       "Poproś o zwolnienie blokady",
 			Text:        fmt.Sprintf("%s używa pliku %s. Wysłać prośbę o zwolnienie tej blokady?", owner, reservation.Path),
 			ConfirmText: "Wyślij prośbę", CancelText: "Anuluj",
@@ -3545,7 +3564,7 @@ func (c *Controller) startLockReleaseDecision(ctx context.Context, requestID str
 			if requester == "" {
 				requester = "Druga osoba"
 			}
-			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
+			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "confirm.acceptRelease", PresentationArgs: map[string]string{"requester": requester, "path": request.Path},
 				Title:       "Zwolnij blokadę",
 				Text:        fmt.Sprintf("%s prosi o plik %s. Zwolnić tę blokadę?", requester, request.Path),
 				ConfirmText: "Zwolnij", CancelText: "Anuluj",
@@ -3818,11 +3837,15 @@ func (c *Controller) handleReservations(ctx context.Context) {
 				continue
 			}
 			risk := reservation.LocalChanges || reservation.ActivePassport
+			presentationKey := "confirm.release"
+			if risk {
+				presentationKey = "confirm.releaseRisk"
+			}
 			text := fmt.Sprintf("%s\nKopia robocza: %s\n\nZwolnienie odbierze blokadę SVN innym osobom.", reservationDisplayPath(reservation.WorkingCopy, reservation.Path), entry.workingCopyAlias)
 			if risk {
 				text += "\n\nTen folder ma lokalne zmiany lub aktywny paszport edycji. Otwarte programy mogą mieć niezapisane dane; FileES nie bada uchwytów otwartych przez edytory. Kontynuować świadomie?"
 			}
-			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Zwolnij rezerwację", Text: text, ConfirmText: "Zwolnij", CancelText: "Anuluj"})
+			confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: presentationKey, PresentationArgs: map[string]string{"path": reservationDisplayPath(reservation.WorkingCopy, reservation.Path), "copy": entry.workingCopyAlias}, Title: "Zwolnij rezerwację", Text: text, ConfirmText: "Zwolnij", CancelText: "Anuluj"})
 			if err != nil || !confirmed || ctx.Err() != nil {
 				continue
 			}
@@ -3889,11 +3912,15 @@ func (c *Controller) releaseAllReservations(ctx context.Context, entries []reser
 		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.noReservations", Title: "Brak rezerwacji do zwolnienia", Text: "Nie ma tutaj rezerwacji należących do tego klienta. Dla cudzych blokad przygotowujemy opcję „Poproś o zwolnienie”."})
 		return
 	}
+	presentationKey := "confirm.releaseAll"
+	if risky > 0 {
+		presentationKey = "confirm.releaseAllRisk"
+	}
 	text := fmt.Sprintf("Zwolnić wszystkie moje rezerwacje (%d)?\n\nCudze blokady nie zostaną zmienione.", len(eligible))
 	if risky > 0 {
 		text += fmt.Sprintf("\n\n%d rezerwacji jest powiązanych z lokalnymi zmianami lub aktywnym paszportem edycji. Otwarte programy mogą mieć niezapisane dane.", risky)
 	}
-	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Zwolnij wszystkie moje rezerwacje", Text: text, ConfirmText: "Zwolnij wszystko", CancelText: "Anuluj"})
+	confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: presentationKey, PresentationArgs: map[string]string{"count": strconv.Itoa(len(eligible)), "risky": strconv.Itoa(risky)}, Title: "Zwolnij wszystkie moje rezerwacje", Text: text, ConfirmText: "Zwolnij wszystko", CancelText: "Anuluj"})
 	if err != nil || !confirmed || ctx.Err() != nil {
 		return
 	}
@@ -4186,19 +4213,21 @@ func (c *Controller) startSetEditingPolicy(ctx context.Context, serverID, repoID
 		}
 
 		title := "Włączyć wypożyczanie plików?"
+		presentationKey := "confirm.requireLocks"
 		text := "Repozytorium „" + name + "” przejdzie na pracę z wypożyczeniami.\n\n" +
 			"Każdy plik zostanie oznaczony jako wymagający wypożyczenia i ta zmiana zostanie opublikowana — zobaczą ją wszystkie komputery podłączone do tego repozytorium. " +
 			"Od tej pory pliki będą tylko do odczytu, dopóki ktoś ich nie wypożyczy, a dwie osoby nie zmienią naraz tego samego pliku.\n\n" +
 			"Jeżeli masz teraz niezapisane zmiany, zmiana poczeka, aż zostaną opublikowane."
 		lockRequired := true
 		if repo.RequiresLock() {
+			presentationKey = "confirm.freeEditing"
 			title = "Wyłączyć wypożyczanie plików?"
 			text = "Repozytorium „" + name + "” wróci do pracy bez wypożyczeń.\n\n" +
 				"Oznaczenia wymagające wypożyczenia zostaną zdjęte z plików i ta zmiana zostanie opublikowana. " +
 				"Pliki znów będą edytowalne od razu, ale dwie osoby będą mogły zmienić ten sam plik równocześnie."
 			lockRequired = false
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: title, Text: text, ConfirmText: "Zastosuj", CancelText: "Anuluj"})
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: presentationKey, PresentationArgs: map[string]string{"name": name}, Title: title, Text: text, ConfirmText: "Zastosuj", CancelText: "Anuluj"})
 		if err != nil || !confirmed {
 			return
 		}
@@ -4250,6 +4279,7 @@ func (c *Controller) handleRenameUnportable(ctx context.Context, serverID, repoI
 		current = rel[cut+1:]
 	}
 	result, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+		PresentationKey: "form.renameUnportable", PresentationArgs: map[string]string{"path": strconv.Quote(rel)},
 		Title: "Zmień nazwę, aby objąć obiekt kontrolą",
 		Text: fmt.Sprintf("Nie mogę objąć kontrolą FileES obiektu %q, ponieważ tej nazwy nie da się zapisać "+
 			"na każdej platformie, z której korzysta ten folder. Podaj nazwę, pod którą mam go przyjąć.", rel),

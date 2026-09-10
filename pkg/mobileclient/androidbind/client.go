@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"filees/pkg/errcat"
-	"filees/pkg/errmap"
 	"filees/pkg/mobileclient"
 	"filees/pkg/mobileclient/sshtransport"
 
@@ -59,20 +57,6 @@ func NewClient(storeDir, address, user, hostPublicKey string) (*Client, error) {
 		inner: mobileclient.Client{Transport: transport, Store: mobileclient.Store{Root: storeDir}},
 		ident: ident,
 	}, nil
-}
-
-// Explain maps a transport/worker error to the catalog Polish sentence.
-// Unknown text returns "" so the UI keeps its local fallback.
-func Explain(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	entry := errmap.Classify(errors.New(raw))
-	if entry.IsNoop() || entry.Key == errcat.KeyUnknown {
-		return ""
-	}
-	return errcat.Polish(string(entry.Key))
 }
 
 // PublicKey returns this device's own SSH public key in authorized_keys

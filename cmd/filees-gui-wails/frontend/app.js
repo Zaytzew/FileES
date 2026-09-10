@@ -25,9 +25,9 @@ const escapeHTML = (value) => String(value ?? "")
 const localizedStates = new Set(["active", "busy", "initializing", "baselining", "paused", "stopping", "offline", "attention", "unattached", "disabled", "revoked", "unknown", "deleted"]);
 
 const actionErrors = {
-  actions_unavailable: "Akcje systemowe są niedostępne w tym buildzie.",
-  action_unavailable: "Ta akcja nie jest już dostępna. Stan repozytorium mógł się zmienić.",
-  action_queue_busy: "Kolejka intencji GUI jest zajęta. Spróbuj ponownie.",
+  get actions_unavailable() { return t("error.actionsUnavailable"); },
+  get action_unavailable() { return t("error.actionUnavailable"); },
+  get action_queue_busy() { return t("error.queueBusy"); },
 };
 
 let currentSnapshot = null;
@@ -231,12 +231,12 @@ function ageInWords(value) {
   const at = Date.parse(value || "");
   if (!Number.isFinite(at)) return "";
   const minutes = Math.floor((Date.now() - at) / 60000);
-  if (minutes < 2) return "sprzed chwili";
-  if (minutes < 90) return `sprzed ${minutes} min`;
+  if (minutes < 2) return t("time.justNow");
+  if (minutes < 90) return new Intl.RelativeTimeFormat(getLocale()).format(-minutes, "minute");
   const hours = Math.floor(minutes / 60);
-  if (hours < 36) return `sprzed ${hours} ${plural(hours, "godziny", "godzin", "godzin")}`;
+  if (hours < 36) return new Intl.RelativeTimeFormat(getLocale()).format(-hours, "hour");
   const days = Math.floor(hours / 24);
-  return `sprzed ${days} ${plural(days, "dnia", "dni", "dni")}`;
+  return new Intl.RelativeTimeFormat(getLocale()).format(-days, "day");
 }
 
 function renderConnection(snapshot) {
@@ -325,15 +325,15 @@ function renderMetrics(snapshot) {
   $("#metric-attention").textContent = attention;
   $("#pulse-value").textContent = repos.length;
   $("#pulse-label").textContent = tn("count.repos", repos.length);
-  const connectionLabel = $("#pulse-card").dataset.connectionLabel || "Stan połączenia nieznany";
+  const connectionLabel = $("#pulse-card").dataset.connectionLabel || t("pulse.unknown");
   if (!snapshot.connected) {
-    $("#pulse-card").title = `${connectionLabel}. Projekcja jest niezweryfikowana.`;
+    $("#pulse-card").title = t("pulse.unverified", { connection: connectionLabel });
   } else if (snapshot.stale) {
-    $("#pulse-card").title = `${connectionLabel}. Dane nie są jeszcze bieżące.`;
+    $("#pulse-card").title = t("pulse.stale", { connection: connectionLabel });
   } else {
     $("#pulse-card").title = attention > 0
-      ? `${connectionLabel}. ${attention} ${plural(attention, "uwaga", "uwagi", "uwag")} do sprawdzenia.`
-      : `${connectionLabel}. Repozytoria nie wymagają uwagi.`;
+      ? t("pulse.attention", { connection: connectionLabel, count: attention })
+      : t("pulse.current", { connection: connectionLabel });
   }
   $("#hero-copy").textContent = snapshot.connected
     ? t("hero.live")
@@ -354,12 +354,12 @@ function retentionCountdown(value) {
   const deadline = Date.parse(value || "");
   if (!Number.isFinite(deadline)) return "termin nieznany";
   let seconds = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
-  if (seconds <= 0) return "wygasło";
+  if (seconds <= 0) return t("time.expired");
   const days = Math.floor(seconds / 86400); seconds %= 86400;
   const hours = Math.floor(seconds / 3600); seconds %= 3600;
   const minutes = Math.floor(seconds / 60); seconds %= 60;
   const clock = [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
-  return days ? `${days} ${plural(days, "dzień", "dni", "dni")} ${clock}` : clock;
+  return days ? t("time.daysClock", { days, clock }) : clock;
 }
 
 function updateRetentionCountdowns() {
@@ -392,13 +392,13 @@ function repoAction(action, label, icon, extraClass = "") {
 // only in case" has been told about Windows; they need to be told about their
 // own two documents and what to do next.
 const unportableReasons = {
-  case_collision: (d) => `istnieje już plik „${d}”, którego nazwa spowoduje nierozwiązywalny konflikt w kopiach roboczych Windows`,
-  reserved_device: () => "nazwa jest zarezerwowana przez system dla urządzenia",
-  reserved_rune: (d) => `znak „${d}” jest niedozwolony w nazwie`,
-  control_rune: () => "nazwa zawiera znak sterujący",
-  separator: (d) => `znak „${d}” rozdziela ścieżkę i nie może być częścią nazwy`,
-  trailing_dot_or_space: (d) => `nazwa kończy się znakiem „${d}”, który zostaje po cichu usunięty`,
-  empty: () => "nazwa jest pusta",
+  case_collision: (detail) => t("name.caseCollision", { detail }),
+  reserved_device: () => t("name.device"),
+  reserved_rune: (detail) => t("name.rune", { detail }),
+  control_rune: () => t("name.control"),
+  separator: (detail) => t("name.separator", { detail }),
+  trailing_dot_or_space: (detail) => t("name.trailing", { detail }),
+  empty: () => t("name.empty"),
 };
 
 // The condition is a state of the folder, not a message: it stays until the
@@ -410,12 +410,11 @@ function renderUnportable(repo) {
   if (!names.length) return "";
   const items = names
     .map((entry) => {
-      const reason = (unportableReasons[entry.kind] || (() => "nazwa jest nieprzedstawialna"))(entry.detail || "");
-      return `<li><code>${escapeHTML(entry.path)}</code><span>${escapeHTML(reason)}</span><button class="unportable-rename" type="button" data-action="rename_unportable" data-path="${escapeHTML(entry.path)}">Zmień nazwę</button></li>`;
+      const reason = (unportableReasons[entry.kind] || (() => t("name.unknown")))(entry.detail || "");
+      return `<li><code>${escapeHTML(entry.path)}</code><span>${escapeHTML(reason)}</span><button class="unportable-rename" type="button" data-action="rename_unportable" data-path="${escapeHTML(entry.path)}">${escapeHTML(t("name.rename"))}</button></li>`;
     })
     .join("");
-  const count = names.length === 1 ? "Jeden obiekt pozostaje" : `${names.length} obiekty pozostają`;
-  return `<div class="repo-unportable"><strong>${count} poza kontrolą FileES. Zmień nazwę, aby je objąć:</strong><ul>${items}</ul></div>`;
+  return `<div class="repo-unportable"><strong>${escapeHTML(t("name.excluded", { count: names.length }))}</strong><ul>${items}</ul></div>`;
 }
 
 function renderRepo(repo) {
@@ -429,7 +428,7 @@ function renderRepo(repo) {
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : t("queue.empty"));
   const source = repo.local_path || t(repo.attached ? "repo.folder" : "repo.remote");
   const actions = [
-    deleted && repo.local_copy_preserved ? '<button class="repo-icon-action hint-button" type="button" data-copy-info data-hint="Pełna informacja o zachowanym folderze" aria-label="Pełna informacja o zachowanym folderze" aria-haspopup="dialog" aria-controls="deleted-copy-dialog">' + repoIcons.info + '</button>' : "",
+    deleted && repo.local_copy_preserved ? `<button class="repo-icon-action hint-button" type="button" data-copy-info data-hint="${escapeHTML(t("copy.info"))}" aria-label="${escapeHTML(t("copy.info"))}" aria-haspopup="dialog" aria-controls="deleted-copy-dialog">` + repoIcons.info + `</button>` : "",
     repo.can_attach ? repoAction("attach_repository", t("repo.attach"), repoIcons.pin, "attach") : "",
     repo.recovery_available ? repoAction("download_recovery", t("repo.recovery"), repoIcons.recovery, "recovery") : "",
     repo.can_dismiss_recovery ? repoAction("dismiss_recovery", t("repo.dismissRecovery"), repoIcons.remove, "recovery-dismiss") : "",
@@ -464,7 +463,7 @@ function renderRepo(repo) {
     <div class="repo-tools">${settings}${actions}</div>
     <div class="repo-meta repo-size"><small>${escapeHTML(t("repo.size"))}</small><span>${escapeHTML(size)}</span></div>
     ${renderUnportable(repo)}
-    ${repo.intent_resolution_required ? '<div class="intent-folder-warning"><strong>Wysyłka wstrzymana — potrzebna Twoja decyzja.</strong><button type="button" data-action="settings">Rozstrzygnij zmiany…</button></div>' : ""}
+    ${repo.intent_resolution_required ? `<div class="intent-folder-warning"><strong>${escapeHTML(t("intent.required"))}</strong><button type="button" data-action="settings">${escapeHTML(t("intent.resolve"))}</button></div>` : ""}
   </article>`;
 }
 
@@ -509,7 +508,7 @@ function renderRepositories(snapshot) {
   const repos = snapshot.repositories || [];
   const servers = [...(snapshot.servers || [])];
   if (!servers.length && !repos.length) {
-    return replaceHTMLIfChanged(root, '<div class="empty-state"><span>◌</span><p>Nie ma jeszcze folderów do pokazania.</p></div>');
+    return replaceHTMLIfChanged(root, `<div class="empty-state"><span>◌</span><p>${escapeHTML(t("repo.empty"))}</p></div>`);
   }
   const known = new Set(servers.map((server) => server.id));
   repos.forEach((repo) => {
@@ -655,10 +654,10 @@ function renderReservations(snapshot) {
 }
 
 function publicShareState(state) {
-  if (state === "active") return "Aktywne";
-  if (state === "revoked") return "Cofnięte";
-  if (state === "deleted") return "Usunięte";
-  return state || "Nieznane";
+  if (state === "active") return t("share.active");
+  if (state === "revoked") return t("share.revoked");
+  if (state === "deleted") return t("share.deleted");
+  return state || t("share.unknown");
 }
 
 function renderPublicShares(snapshot) {
@@ -685,30 +684,30 @@ function renderPublicShares(snapshot) {
     activeByServer.get(share.server_id).push(share.channel_id);
   }
   const bulk = selectedPublicShares.size
-    ? `<div class="dashboard-share-bulk"><span>${selectedPublicShares.size} ${plural(selectedPublicShares.size, "wybrane", "wybrane", "wybranych")}</span><button type="button" data-share-bulk>Cofnij zaznaczone</button></div>`
+    ? `<div class="dashboard-share-bulk"><span>${escapeHTML(t("share.selected", { count: selectedPublicShares.size }))}</span><button type="button" data-share-bulk>${escapeHTML(t("share.bulk"))}</button></div>`
     : "";
   let previousServer = "";
   const rows = shares.map((share) => {
     const serverChannels = activeByServer.get(share.server_id) || [];
     const serverHeader = share.server_id !== previousServer
-      ? `<div class="dashboard-share-group" data-server-id="${escapeHTML(share.server_id)}"><span>${escapeHTML(servers.get(share.server_id) || share.server_id || "Serwer FileES")}</span>${serverChannels.length ? `<button type="button" data-share-revoke-all data-channel-ids="${escapeHTML(serverChannels.join(","))}">Cofnij aktywne</button>` : ""}</div>`
+      ? `<div class="dashboard-share-group" data-server-id="${escapeHTML(share.server_id)}"><span>${escapeHTML(servers.get(share.server_id) || share.server_id || t("share.server"))}</span>${serverChannels.length ? `<button type="button" data-share-revoke-all data-channel-ids="${escapeHTML(serverChannels.join(","))}">${escapeHTML(t("share.all"))}</button>` : ""}</div>`
       : "";
     previousServer = share.server_id;
     const activeShare = share.state === "active";
-    const scope = share.follow_head ? "śledzi HEAD" : "zamrożone";
+    const scope = share.follow_head ? t("share.follow") : t("share.frozen");
     const audience = share.recipient_count
-      ? `${share.recipient_count} ${plural(share.recipient_count, "odbiorca", "odbiorców", "odbiorców")}`
-      : "kanał otwarty";
-    const objects = `${share.object_count} ${plural(share.object_count, "plik", "pliki", "plików")}`;
+      ? t("share.recipients", { count: share.recipient_count })
+      : t("share.open");
+    const objects = t("share.files", { count: share.object_count });
     const manage = share.can_open
-      ? `<button class="dashboard-share-open" type="button" data-action="manage_public_shares" aria-label="Otwórz udostępnienie ${escapeHTML(share.address)}">
+      ? `<button class="dashboard-share-open" type="button" data-action="manage_public_shares" aria-label="${escapeHTML(t("share.openName", { name: share.address }))}">
           <span class="dashboard-share-dot ${activeShare ? "active" : ""}" aria-hidden="true"></span>
-          <span class="dashboard-share-copy"><strong>${escapeHTML(share.address || "Udostępnienie")}</strong><small>${escapeHTML(share.repository)} · ${escapeHTML(objects)} · ${escapeHTML(scope)}</small><time>${escapeHTML(shortDateTime(share.updated_at))}</time></span>
+          <span class="dashboard-share-copy"><strong>${escapeHTML(share.address || t("share.default"))}</strong><small>${escapeHTML(share.repository)} · ${escapeHTML(objects)} · ${escapeHTML(scope)}</small><time>${escapeHTML(shortDateTime(share.updated_at))}</time></span>
         </button>`
-      : `<div class="dashboard-share-open is-disabled"><span class="dashboard-share-dot ${activeShare ? "active" : ""}" aria-hidden="true"></span><span class="dashboard-share-copy"><strong>${escapeHTML(share.address || "Udostępnienie")}</strong><small>${escapeHTML(share.repository)} · ${escapeHTML(objects)} · ${escapeHTML(scope)}</small><time>${escapeHTML(shortDateTime(share.updated_at))}</time></span></div>`;
-    const revoke = share.can_revoke ? '<button class="dashboard-share-revoke" type="button" data-action="revoke_public_share">Cofnij</button>' : "";
+      : `<div class="dashboard-share-open is-disabled"><span class="dashboard-share-dot ${activeShare ? "active" : ""}" aria-hidden="true"></span><span class="dashboard-share-copy"><strong>${escapeHTML(share.address || t("share.default"))}</strong><small>${escapeHTML(share.repository)} · ${escapeHTML(objects)} · ${escapeHTML(scope)}</small><time>${escapeHTML(shortDateTime(share.updated_at))}</time></span></div>`;
+    const revoke = share.can_revoke ? `<button class="dashboard-share-revoke" type="button" data-action="revoke_public_share">${escapeHTML(t("share.revoke"))}</button>` : "";
     return `${serverHeader}<article class="dashboard-share-row ${activeShare ? "is-active" : "is-inactive"}" data-server-id="${escapeHTML(share.server_id)}" data-repo-id="${escapeHTML(share.repo_id)}" data-channel-id="${escapeHTML(share.channel_id)}">
-      <label class="dashboard-share-select" title="Dodaj do operacji zbiorczej">${share.can_revoke ? `<input type="checkbox" data-share-select ${selectedPublicShares.has(share.channel_id) ? "checked" : ""}><span aria-hidden="true"></span>` : ""}</label>${manage}<div class="dashboard-share-policy"><span>${escapeHTML(publicShareState(share.state))} · ${escapeHTML(audience)}</span><small>bezterminowo · wizyta 12 h</small></div>${revoke}
+      <label class="dashboard-share-select" title="${escapeHTML(t("share.select"))}">${share.can_revoke ? `<input type="checkbox" data-share-select ${selectedPublicShares.has(share.channel_id) ? "checked" : ""}><span aria-hidden="true"></span>` : ""}</label>${manage}<div class="dashboard-share-policy"><span>${escapeHTML(publicShareState(share.state))} · ${escapeHTML(audience)}</span><small>${escapeHTML(t("share.lifetime"))}</small></div>${revoke}
     </article>`;
   }).join("");
   replaceHTMLIfChanged(root, bulk + rows);
@@ -725,7 +724,7 @@ function renderAnnouncementBanner(snapshot) {
   alerts.hidden = unresolved.length === 0;
   // This is persistent state from IPC, not an event toast or notice ACK.
   // Stable markup avoids re-announcing the same decision on every tick.
-  replaceHTMLIfChanged(alerts, unresolved.map(repo => `<div class="announcement-banner" data-repo-id="${escapeHTML(repo.id)}" data-server-id="${escapeHTML(repo.server_id)}"><div><strong>Wysyłka wstrzymana — ${escapeHTML(repo.display_name || repo.id)}</strong><p>Potrzebna Twoja decyzja o usunięciach i nowych plikach. Samo zamknięcie okna nie wznawia wysyłki.</p></div><button type="button" data-action="settings">Rozstrzygnij zmiany…</button></div>`).join(""));
+  replaceHTMLIfChanged(alerts, unresolved.map(repo => `<div class="announcement-banner" data-repo-id="${escapeHTML(repo.id)}" data-server-id="${escapeHTML(repo.server_id)}"><div><strong>${escapeHTML(t("intent.paused", { name: repo.display_name || repo.id }))}</strong><p>${escapeHTML(t("intent.help"))}</p></div><button type="button" data-action="settings">${escapeHTML(t("intent.resolve"))}</button></div>`).join(""));
   const banner = $("#announcement-banner");
   banner.hidden = unread.length === 0;
   $("#top").classList.toggle("has-announcements", unread.length > 0 || unresolved.length > 0);
@@ -745,8 +744,8 @@ function renderShouts(snapshot) {
   card.hidden = notices.length === 0;
   card.classList.toggle("has-unread", unread > 0);
   $("#shouts-count").textContent = unread
-    ? `${unread} ${plural(unread, "ogłoszenie", "ogłoszenia", "ogłoszeń")} do przejrzenia`
-    : "przeczytane";
+    ? tn("count.unread", unread)
+    : t("shout.read");
   if (!notices.length) {
     replaceHTMLIfChanged(root, "");
     renderAnnouncementDialog(snapshot);
@@ -758,11 +757,11 @@ function renderShouts(snapshot) {
   const html = visible.map((notice) => {
     const repository = repositories.get(notice.repo_id) || notice.repo_id || "FileES";
     const revision = Number(notice.revision || 0) > 0 ? ` · r${Number(notice.revision)}` : "";
-    const state = notice.acked ? "Przeczytane" : "Do przejrzenia";
-    return `<button class="shout-row ${notice.acked ? "is-read" : "is-unread"}" type="button" data-notice-id="${escapeHTML(notice.id)}" aria-label="Otwórz ogłoszenie: ${escapeHTML(notice.title)}">
+    const state = notice.acked ? t("shout.read") : t("shout.review");
+    return `<button class="shout-row ${notice.acked ? "is-read" : "is-unread"}" type="button" data-notice-id="${escapeHTML(notice.id)}" aria-label="${escapeHTML(t("shout.open", { title: notice.title }))}">
       <span class="shout-symbol" aria-hidden="true">${repoIcons.publish}</span>
-      <span class="shout-main"><strong>${escapeHTML(notice.title || "Ogłoszenie")}</strong>
-      <span>${escapeHTML(repository + revision)}</span><time>odebrano ${escapeHTML(shortDateTime(notice.created_at))}</time></span>
+      <span class="shout-main"><strong>${escapeHTML(notice.title || t("shout.default"))}</strong>
+      <span>${escapeHTML(repository + revision)}</span><time>${escapeHTML(t("shout.received", { date: shortDateTime(notice.created_at) }))}</time></span>
       <span class="shout-state">${state}</span>
     </button>`;
   }).join("");
@@ -829,20 +828,20 @@ function renderAnnouncementDialog(snapshot) {
     closeAnnouncement();
     return;
   }
-  $("#announcement-copy").textContent = notice.title || "Ogłoszenie";
+  $("#announcement-copy").textContent = notice.title || t("shout.default");
   $("#announcement-repository").textContent = announcementScope(snapshot, notice);
   const revision = $("#announcement-revision");
   revision.hidden = !(Number(notice.revision || 0) > 0);
-  revision.textContent = revision.hidden ? "" : `rewizja r${Number(notice.revision)}`;
-  $("#announcement-time").textContent = `odebrano ${shortDateTime(notice.created_at)}`;
+  revision.textContent = revision.hidden ? "" : t("shout.revision", { revision: Number(notice.revision) });
+  $("#announcement-time").textContent = t("shout.received", { date: shortDateTime(notice.created_at) });
   const unread = unreadAnnouncements(snapshot);
-  $("#announcement-status").textContent = notice.acked ? "Odczyt potwierdzony" : `Nieprzeczytane: ${unread.length}. Zamknięcie okna nie potwierdza odczytu.`;
+  $("#announcement-status").textContent = notice.acked ? t("shout.acked") : t("shout.unreadHelp", { count: unread.length });
   $("#next-announcement").hidden = unread.length < 2;
-  $(".announcement-dialog .eyebrow").textContent = notice.acked ? "Przeczytane" : "Wymaga uwagi";
+  $(".announcement-dialog .eyebrow").textContent = notice.acked ? t("shout.read") : t("shout.attention");
   const ack = $("#ack-announcement");
   ack.hidden = !notice.can_ack;
   ack.disabled = announcementAckPending === notice.id;
-  ack.textContent = ack.disabled ? "Potwierdzanie…" : "OK · Potwierdź odczyt";
+  ack.textContent = ack.disabled ? t("shout.acking") : t("shout.ack");
 }
 
 async function acknowledgeAnnouncement() {
@@ -855,7 +854,7 @@ async function acknowledgeAnnouncement() {
     if (!result.accepted) {
       announcementAckPending = "";
       renderAnnouncementDialog(currentSnapshot);
-      showToast({ level: "normal", title: "Nie można potwierdzić odczytu", message: actionErrors[result.code] || result.code });
+      showToast({ level: "normal", title: t("shout.cannotAck"), message: actionErrors[result.code] || result.code });
       return;
     }
     window.setTimeout(() => {
@@ -866,7 +865,7 @@ async function acknowledgeAnnouncement() {
   } catch (error) {
     announcementAckPending = "";
     renderAnnouncementDialog(currentSnapshot);
-    showToast({ level: "critical", title: "Nie udało się potwierdzić odczytu", message: error?.message || String(error) });
+    showToast({ level: "critical", title: t("shout.ackFailed"), message: error?.message || String(error) });
   }
 }
 
@@ -897,7 +896,7 @@ function renderDetached(snapshot) {
       ? `<ul class="detached-paths">${paths.map((path) => `<li title="${escapeHTML(path)}">${escapeHTML(path)}</li>`).join("")}</ul>`
       : "";
     const note = item.needs_reactivation
-      ? '<p class="detached-note">Wymagana ponowna aktywacja klienta.</p>'
+      ? `<p class="detached-note">${escapeHTML(t("detached.reactivate"))}</p>`
       : "";
     return `<article class="detached-row">
       <div class="detached-head"><strong>${escapeHTML(item.summary)}</strong>
@@ -924,7 +923,7 @@ function renderJournal(snapshot) {
     <time>${escapeHTML(item.exact_time)}</time>
     <span class="journal-repo">${escapeHTML(item.repository || "FileES")}</span>
     <div class="journal-copy"><strong>${escapeHTML(item.summary)}</strong>${item.details ? `<p>${escapeHTML(item.details)}</p>` : ""}</div>
-  </article>`).join("") : '<p class="muted">Brak wpisów.</p>');
+  </article>`).join("") : `<p class="muted">${escapeHTML(t("journal.noEntries"))}</p>`);
 }
 
 function render(snapshot) {
@@ -1032,24 +1031,24 @@ function renderDeletedCopyDialog() {
     return;
   }
   $("#deleted-copy-name").textContent = repo.display_name || repo.id;
-  $("#deleted-copy-path").textContent = repo.local_path || "Brak zapisanej ścieżki";
-  $("#deleted-copy-description").textContent = "Serwer potwierdził usunięcie tego repozytorium. FileES zatrzymał jego lokalną obsługę. Folder i zawartość plików zostały zachowane; nie są już synchronizowane.";
+  $("#deleted-copy-path").textContent = repo.local_path || t("copy.noPath");
+  $("#deleted-copy-description").textContent = t("copy.description");
   $("#deleted-copy-status").textContent = repo.local_copy_status === "clean"
-    ? "Przed sprzątaniem metadanych nie wykryto lokalnych zmian."
+    ? t("copy.clean")
     : repo.local_copy_status === "changed"
-      ? "Przed sprzątaniem wykryto lokalne zmiany lub dodatkowe pliki. Zachowano zawartość plików, także niewysłaną. Usunięcie .svn usuwa bazę i lokalne właściwości SVN; sprawdź zachowany folder przed jego dalszym porządkowaniem."
-      : "Nie udało się w pełni potwierdzić stanu lokalnej kopii przed sprzątaniem. Sprawdź zachowany folder; nie należy zakładać, że wszystkie dane trafiły wcześniej na serwer.";
+      ? t("copy.changed")
+      : t("copy.unverified");
   $("#deleted-copy-cleanup").textContent = repo.local_cleanup_pending
-    ? "Sprzątanie .svn i .filees oraz własnej ikony FileES nie jest zakończone. Wpis pozostanie widoczny. FileES ponowi sprzątanie automatycznie; nie ponowi usunięcia na serwerze."
-    : "Sprzątanie zakończone: usunięto .svn i .filees oraz własną dekorację folderu FileES, jeśli była obecna. Pozostał zwykły folder z plikami.";
+    ? t("copy.cleanupPending")
+    : t("copy.cleanupDone");
   $("#deleted-copy-diagnostics").hidden = !repo.cleanup_error;
   $("#deleted-copy-error").textContent = repo.cleanup_error || "";
   $("#detach-deleted-copy").disabled = !repo.can_detach_local_copy;
   $("#deleted-copy-action-help").textContent = repo.can_detach_local_copy
-    ? "Odłączenie lokalnej projekcji usunie ten wpis i jego ostrzeżenie z klienta. Folder i pliki pozostaną na dysku. Przed wykonaniem zobaczysz potwierdzenie."
+    ? t("copy.detachHelp")
     : repo.local_cleanup_pending
-      ? "Odłączenie wpisu będzie dostępne po zakończeniu sprzątania metadanych."
-      : "Odłączenie wymaga połączenia z aktualnym lokalnym daemonem FileES i jego gotowej projekcji.";
+      ? t("copy.waitCleanup")
+      : t("copy.waitDaemon");
 }
 
 function openDeletedCopyInfo(button) {
@@ -1071,9 +1070,9 @@ async function detachDeletedCopy() {
   $("#deleted-copy-dialog").close();
   try {
     const result = await GUIService.Trigger({ kind: "detach_repository", repo_id: repo.id, server_id: repo.server_id });
-    if (!result.accepted) showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
+    if (!result.accepted) showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.code] || result.code });
   } catch (error) {
-    showToast({ level: "critical", title: "Nie udało się przekazać intencji", message: error?.message || String(error) });
+    showToast({ level: "critical", title: t("ui.intentFailed"), message: error?.message || String(error) });
   }
 }
 
@@ -1099,10 +1098,10 @@ async function triggerAction(button) {
       path: button.dataset.path || "",
     });
     if (!result.accepted) {
-      showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
+      showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.code] || result.code });
     }
   } catch (error) {
-    showToast({ level: "critical", title: "Nie udało się przekazać intencji", message: error?.message || String(error) });
+    showToast({ level: "critical", title: t("ui.intentFailed"), message: error?.message || String(error) });
   } finally {
     window.setTimeout(() => { button.disabled = false; }, 450);
   }
@@ -1115,14 +1114,14 @@ async function triggerBulkPublicShares(button, serverID, channelIDs) {
   try {
     const result = await GUIService.Trigger({ kind: "revoke_public_shares", server_id: serverID, channel_ids: cleanIDs });
     if (!result.accepted) {
-      showToast({ level: "normal", title: "Akcja niedostępna", message: actionErrors[result.code] || result.code });
+      showToast({ level: "normal", title: t("ui.actionUnavailable"), message: actionErrors[result.code] || result.code });
       return;
     }
     selectedPublicShares.clear();
     selectedPublicShareServer = "";
     renderPublicShares(currentSnapshot);
   } catch (error) {
-    showToast({ level: "critical", title: "Nie udało się przekazać intencji", message: error?.message || String(error) });
+    showToast({ level: "critical", title: t("ui.intentFailed"), message: error?.message || String(error) });
   } finally {
     window.setTimeout(() => { button.disabled = false; }, 450);
   }
@@ -1140,6 +1139,8 @@ async function invoke(button, action) {
 Events.On("filees:snapshot", (event) => render(event?.data ?? event));
 window.addEventListener("filees:language-changed", () => {
   if (currentSnapshot) render(currentSnapshot);
+  if (selectedDeletedCopy) renderDeletedCopyDialog();
+  document.querySelectorAll("[data-toggle-card]").forEach(updateCardToggleLabel);
   scheduleWindowFit();
 });
 Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
@@ -1168,11 +1169,19 @@ $(".side-column").addEventListener("click", (event) => {
   const expanded = toggle.getAttribute("aria-expanded") === "true";
   body.hidden = expanded;
   toggle.setAttribute("aria-expanded", String(!expanded));
-  const action = expanded ? "Rozwiń" : "Zwiń";
-  const subject = toggle.getAttribute("aria-label")?.replace(/^(Zwiń|Rozwiń)\s+/u, "") || "panel";
-  toggle.title = `${action} ${subject}`;
-  toggle.setAttribute("aria-label", `${action} ${subject}`);
+  updateCardToggleLabel(toggle);
 });
+function updateCardToggleLabel(toggle) {
+  const subjects = {"public-shares-body":"shares", "update-body":"update", "reservations-body":"locks", "shouts-body":"shouts", "detached-body":"detached", "activity-body":"activity"};
+  const subject = subjects[toggle.dataset.toggleCard];
+  if (!subject) return;
+  const key = `${toggle.getAttribute("aria-expanded") === "true" ? "collapse" : "expand"}.${subject}`;
+  toggle.setAttribute("data-i18n-title", key);
+  toggle.setAttribute("data-i18n-aria-label", key);
+  toggle.title = t(key);
+  toggle.setAttribute("aria-label", t(key));
+}
+document.querySelectorAll("[data-toggle-card]").forEach(updateCardToggleLabel);
 $("#open-journal").addEventListener("click", () => {
   $("#journal-overlay").hidden = false;
   $("#close-journal").focus();
@@ -1245,17 +1254,17 @@ function refreshRepoViewPreferences() {
 $("#save-repo-view").addEventListener("click",()=>{
   const inactive=Number($("#inactive-days").value), archive=Number($("#archive-days").value);
   if(![inactive,archive].every(n=>Number.isInteger(n)&&n>=0&&n<=36500)) {
-    showToast({title:"Sprawdź liczbę dni",message:"Podaj całkowitą liczbę od 0 do 36500.",level:"critical"});
+    showToast({title:t("view.daysTitle"),message:t("view.daysInvalid"),level:"critical"});
     return;
   }
   try {
     saveRepoView({...readRepoView(),inactive,archive});
     $(".repo-view-preferences").open=false;
     $(".repo-view-preferences summary").focus();
-    showToast({title:"Zapisano ustawienia widoku",message:"Nowe progi zostały zastosowane do listy folderów."});
+    showToast({title:t("view.saved"),message:t("view.applied")});
     scheduleWindowFit();
   }
-  catch { showToast({title:"Nie zapisano ustawień widoku",level:"critical"}); }
+  catch { showToast({title:t("view.saveFailed"),level:"critical"}); }
 });
 window.addEventListener("storage",event=>{ if(event.key === "filees.repo-view.v1") refreshRepoViewPreferences(); });
 window.addEventListener("filees:repo-view",refreshRepoViewPreferences);

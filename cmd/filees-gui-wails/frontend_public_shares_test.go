@@ -17,7 +17,7 @@ func TestPublicSharesFrontendContainsAggregatePresenterAndDirectActions(t *testi
 			t.Fatalf("frontend index does not contain %q", required)
 		}
 	}
-	for _, required := range []string{`renderPublicShares(snapshot)`, `snapshot.public_shares_known`, `data-action="manage_public_shares"`, `data-action="revoke_public_share"`, `channel_id: publicShareRow?.dataset.channelId`, `kind: "revoke_public_shares"`, `data-share-revoke-all`, `data-share-select`, `bezterminowo · wizyta 12 h`} {
+	for _, required := range []string{`renderPublicShares(snapshot)`, `snapshot.public_shares_known`, `data-action="manage_public_shares"`, `data-action="revoke_public_share"`, `channel_id: publicShareRow?.dataset.channelId`, `kind: "revoke_public_shares"`, `data-share-revoke-all`, `data-share-select`, `t("share.lifetime")`} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("frontend script does not contain %q", required)
 		}

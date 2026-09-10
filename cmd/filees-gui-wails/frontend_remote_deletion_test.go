@@ -27,7 +27,13 @@ func TestDeletedCopyDialogIsCompleteAndUsesGuardedDetach(t *testing.T) {
 	if start < 0 || end < start {
 		t.Fatal("missing dialog functions")
 	}
-	program := `
+	locale := embeddedFrontendFile(t, "frontend/locales/pl.js")
+	_, locale, found := strings.Cut(locale, "export default ")
+	if !found {
+		t.Fatal("missing catalogue export")
+	}
+	locale = strings.TrimSuffix(strings.TrimSpace(locale), ";")
+	program := "const messages = " + locale + "; const t = key => messages[key];\n" + `
 const assert = require("node:assert/strict");
 const nodes = new Map();
 const $ = key => { if (!nodes.has(key)) nodes.set(key, {textContent:"", hidden:false, disabled:false, close(){this.closed=true;}}); return nodes.get(key); };

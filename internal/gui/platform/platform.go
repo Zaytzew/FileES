@@ -434,8 +434,11 @@ type ConfirmRequest struct {
 }
 
 type PromptTextRequest struct {
-	Title string
-	Text  string
+	// PresentationKey marks a GUI-owned template; defaults remain literal input.
+	PresentationKey  string
+	PresentationArgs map[string]string
+	Title            string
+	Text             string
 	// Label names the value above native/browser form controls. Empty keeps the
 	// generic presenter default for callers that do not need a domain label.
 	Label string

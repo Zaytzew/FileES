@@ -25,7 +25,8 @@ function refreshPromptLabels() {
   $("#prompt-mode").textContent = submissionError
     ? t("prompt.submitFailed", { reason: submissionError })
     : t(next.mode === "text" ? "prompt.input" : next.mode === "select" ? "prompt.select" : next.mode === "info" ? "prompt.info" : "prompt.confirm");
-  $("#prompt-label").textContent = next.label || t("field.value");
+  $("#prompt-label").textContent = next.mode === "text" ? promptText(next, "label", next.label || t("field.value")) : next.label || t("field.value");
+  if (next.mode === "text") $("#prompt-value").placeholder = next.placeholder ? promptText(next, "placeholder", next.placeholder) : "";
   $("#prompt-select-label").textContent = next.label || t("field.server");
   $("#prompt-cancel").textContent = promptText(next, "cancel", next.cancel_text || t("action.cancel"));
   $("#prompt-confirm").textContent = promptText(next, "confirm", next.confirm_text || t("action.continue"));

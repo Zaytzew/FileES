@@ -136,7 +136,7 @@ func (service *PromptService) Cancel() {
 }
 
 func (service *PromptService) PromptText(ctx context.Context, request platform.PromptTextRequest) (platform.PromptTextResult, error) {
-	choice, err := service.present(ctx, PromptSnapshot{Mode: "text", Title: request.Title, Text: request.Text, Label: request.Label, Default: request.Default, Placeholder: request.Placeholder, Secret: request.Secret, ConfirmText: "Zatwierdź", CancelText: "Anuluj"})
+	choice, err := service.present(ctx, PromptSnapshot{Mode: "text", PresentationKey: request.PresentationKey, PresentationArgs: maps.Clone(request.PresentationArgs), Title: request.Title, Text: request.Text, Label: request.Label, Default: request.Default, Placeholder: request.Placeholder, Secret: request.Secret, ConfirmText: "Zatwierdź", CancelText: "Anuluj"})
 	return platform.PromptTextResult{Value: choice.Value, Cancelled: !choice.Confirmed}, err
 }
 

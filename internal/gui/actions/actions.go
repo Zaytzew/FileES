@@ -742,7 +742,7 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 		if err != nil || consent.Cancelled || !consent.Required {
 			return
 		}
-		email, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Adres do powiadomień", Text: "Kod OTP i powiadomienia o usunięciu danych zostaną wysłane na ten adres.", Placeholder: "email@example.com"})
+		email, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.notificationEmail", Title: "Adres do powiadomień", Text: "Kod OTP i powiadomienia o usunięciu danych zostaną wysłane na ten adres.", Placeholder: "email@example.com"})
 		if err != nil || email.Cancelled || strings.TrimSpace(email.Value) == "" {
 			return
 		}
@@ -2106,7 +2106,7 @@ func remainingHoursPhrase(n int) string {
 func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo app.RepoViewModel, current *UploadChannelSummary) (UploadChannelDeclaration, bool) {
 	declaration := UploadChannelDeclaration{AuthorityRepoID: repo.ID}
 	if current == nil {
-		slug, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Adres półki", Text: "Wpisz końcówkę publicznego adresu: 3–64 małe litery, cyfry lub pojedyncze myślniki."})
+		slug, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.uploadSlug", Title: "Adres półki", Text: "Wpisz końcówkę publicznego adresu: 3–64 małe litery, cyfry lub pojedyncze myślniki."})
 		if promptErr != nil || slug.Cancelled || strings.TrimSpace(slug.Value) == "" {
 			return UploadChannelDeclaration{}, false
 		}
@@ -2118,7 +2118,7 @@ func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo a
 	if current != nil {
 		recipientDefault = strings.Join(current.Recipients, ", ")
 	}
-	recipients, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Wnoszący", Text: "Adresy e-mail oddziel przecinkiem lub średnikiem. Półka nie bywa anonimowa — lista nie może być pusta.", Default: recipientDefault})
+	recipients, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.contributors", Title: "Wnoszący", Text: "Adresy e-mail oddziel przecinkiem lub średnikiem. Półka nie bywa anonimowa — lista nie może być pusta.", Default: recipientDefault})
 	if promptErr != nil || recipients.Cancelled {
 		return UploadChannelDeclaration{}, false
 	}
@@ -2254,7 +2254,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 	}
 	declaration := PublicShareDeclaration{RepoID: repo.ID, SourceRoot: sourceRoot, Objects: objects}
 	if current == nil {
-		slug, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Adres udostępnienia", Text: "Wpisz końcówkę publicznego adresu: 3–64 małe litery, cyfry lub pojedyncze myślniki."})
+		slug, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.shareSlug", Title: "Adres udostępnienia", Text: "Wpisz końcówkę publicznego adresu: 3–64 małe litery, cyfry lub pojedyncze myślniki."})
 		if promptErr != nil || slug.Cancelled || strings.TrimSpace(slug.Value) == "" {
 			return PublicShareDeclaration{}, false
 		}
@@ -2266,7 +2266,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 	if current != nil {
 		recipientDefault = strings.Join(current.Recipients, ", ")
 	}
-	recipients, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Odbiorcy", Text: "Opcjonalne adresy e-mail oddziel przecinkiem lub średnikiem. Puste pole tworzy kanał otwarty.", Default: recipientDefault})
+	recipients, promptErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.recipients", Title: "Odbiorcy", Text: "Opcjonalne adresy e-mail oddziel przecinkiem lub średnikiem. Puste pole tworzy kanał otwarty.", Default: recipientDefault})
 	if promptErr != nil || recipients.Cancelled {
 		return PublicShareDeclaration{}, false
 	}
@@ -2280,7 +2280,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 			declaration.KeepPassword = keep
 		}
 		if !declaration.KeepPassword {
-			password, passwordErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Hasło udostępnienia", Text: "Opcjonalne wspólne hasło kanału otwartego. Pozostaw puste, aby nie wymagać hasła.", Secret: true})
+			password, passwordErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.password", Title: "Hasło udostępnienia", Text: "Opcjonalne wspólne hasło kanału otwartego. Pozostaw puste, aby nie wymagać hasła.", Secret: true})
 			if passwordErr != nil || password.Cancelled {
 				return PublicShareDeclaration{}, false
 			}
@@ -2291,7 +2291,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 	if current != nil && current.DoNotFollow != nil {
 		revisionDefault = strconv.FormatInt(*current.DoNotFollow, 10)
 	}
-	revision, revisionErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Wersja plików", Text: "Puste pole śledzi HEAD. Wpisz numer rewizji, aby zamrozić udostępnienie.", Default: revisionDefault})
+	revision, revisionErr := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.revision", Title: "Wersja plików", Text: "Puste pole śledzi HEAD. Wpisz numer rewizji, aby zamrozić udostępnienie.", Default: revisionDefault})
 	if revisionErr != nil || revision.Cancelled {
 		zeroBytes(declaration.Password)
 		return PublicShareDeclaration{}, false
@@ -2475,7 +2475,7 @@ func (c *Controller) startSetSessionTimeout(ctx context.Context, serverID string
 				break
 			}
 		}
-		prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+		prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.timeout",
 			Title:   "Limit czasu wysyłki i pobierania",
 			Text:    "Ile minut FileES ma czekać, aż jedno wysłanie lub pobranie na tym serwerze się skończy? Zwykle 30. Przy wolnym łączu duże pliki mogą potrzebować więcej. Od 1 do 1440.",
 			Default: strconv.Itoa(current),
@@ -2525,7 +2525,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 			c.reportActionError(ctx, key, "Nie udało się pobrać wyglądu udziałów", err.Error())
 			return
 		}
-		color, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Kolor udziałów publicznych", Text: "Podaj kolor wiodący w zapisie #RRGGBB.", Default: current.LeadingColor, Placeholder: realmbranding.DefaultLeadingColor})
+		color, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.color", Title: "Kolor udziałów publicznych", Text: "Podaj kolor wiodący w zapisie #RRGGBB.", Default: current.LeadingColor, Placeholder: realmbranding.DefaultLeadingColor})
 		if err != nil || color.Cancelled {
 			return
 		}
@@ -2694,7 +2694,7 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 			return
 		}
 		name := filepath.Base(filepath.Clean(picked.Path))
-		prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Nowe repozytorium FileES", Text: "Nazwa repozytorium:", Default: name})
+		prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.repositoryName", Title: "Nowe repozytorium FileES", Text: "Nazwa repozytorium:", Default: name})
 		if err != nil {
 			c.repositoryCreationFailure(ctx, err)
 			return
@@ -3167,7 +3167,7 @@ func (c *Controller) startActivation(ctx context.Context) {
 			c.activationComplete(ctx, target)
 			return
 		}
-		invitation, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wklej zaproszenie FileES otrzymane e-mailem:", Placeholder: "filees-invite:v1:…", Secret: true})
+		invitation, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.invitation", Title: "Aktywacja FileES", Text: "Wklej zaproszenie FileES otrzymane e-mailem:", Placeholder: "filees-invite:v1:…", Secret: true})
 		if err != nil || invitation.Cancelled || invitation.Value == "" {
 			c.activationFailure(ctx, err)
 			return
@@ -3185,7 +3185,7 @@ func (c *Controller) startActivation(ctx context.Context) {
 }
 
 func (c *Controller) finishActivationWithOTP(ctx context.Context, target ActivationTarget) bool {
-	otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Wprowadź kod OTP otrzymany e-mailem:", Secret: true})
+	otp, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.activationOTP", Title: "Aktywacja FileES", Text: "Wprowadź kod OTP otrzymany e-mailem:", Secret: true})
 	if err != nil || otp.Cancelled || otp.Value == "" {
 		c.activationFailure(ctx, err)
 		return false
@@ -3241,7 +3241,7 @@ func (c *Controller) claimRealmAlias(ctx context.Context, serverID string) bool 
 		return false
 	}
 	for {
-		alias, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{
+		alias, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.alias",
 			Title: "Alias FileES", Text: "Wybierz stały alias widoczny przy blokadach i przyszłych operacjach między użytkownikami.", Placeholder: "np. jan-k",
 		})
 		if err != nil || alias.Cancelled || strings.TrimSpace(alias.Value) == "" {
@@ -3281,7 +3281,7 @@ func (c *Controller) offerLocalPinSetup(ctx context.Context) {
 	if configured, err := c.cfg.PinStore.IsConfigured(); err != nil || configured {
 		return
 	}
-	prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{Title: "Aktywacja FileES", Text: "Ustaw PIN do generowania kodu parowania telefonu (opcjonalnie):", Secret: true})
+	prompted, err := c.cfg.Prompter.PromptText(ctx, platform.PromptTextRequest{PresentationKey: "input.pin", Title: "Aktywacja FileES", Text: "Ustaw PIN do generowania kodu parowania telefonu (opcjonalnie):", Secret: true})
 	if err != nil || prompted.Cancelled || prompted.Value == "" {
 		return
 	}

@@ -9,6 +9,21 @@ initializeLanguage();
 const $ = (selector) => document.querySelector(selector);
 let snapshot = null;
 let resolving = false;
+let submissionError = "";
+
+// A locale change must never call render(): it restores defaults, enables
+// buttons and selects input. Update labels only, retaining the pending RPC.
+function refreshPromptLabels() {
+  if (!snapshot) return;
+  const next = snapshot;
+  $("#prompt-mode").textContent = submissionError
+    ? t("prompt.submitFailed", { reason: submissionError })
+    : t(next.mode === "text" ? "prompt.input" : next.mode === "select" ? "prompt.select" : next.mode === "info" ? "prompt.info" : "prompt.confirm");
+  $("#prompt-label").textContent = next.label || t("field.value");
+  $("#prompt-select-label").textContent = next.label || t("field.server");
+  $("#prompt-cancel").textContent = next.cancel_text || t("action.cancel");
+  $("#prompt-confirm").textContent = next.confirm_text || t("action.continue");
+}
 
 const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
@@ -23,6 +38,7 @@ function render(next) {
   if (!next?.revision) return;
   snapshot = next;
   resolving = false;
+  submissionError = "";
   const inputMode = next.mode === "text";
   const selectMode = next.mode === "select";
   const infoMode = next.mode === "info";
@@ -91,12 +107,14 @@ async function resolve(confirmed) {
   } catch (error) {
     console.error("Nie udało się zamknąć dialogu FileES", error);
     const reason = error?.message || String(error);
-    $("#prompt-mode").textContent = `Nie udało się przekazać decyzji · ${reason}`;
+    submissionError = reason;
+    refreshPromptLabels();
     setBusy(false);
   }
 }
 
 Events.On("filees:prompt-snapshot", (event) => render(event?.data ?? event));
+window.addEventListener("filees:language-changed", refreshPromptLabels);
 $("#prompt-form").addEventListener("submit", (event) => { event.preventDefault(); resolve(true); });
 $("#prompt-cancel").addEventListener("click", () => resolve(false));
 $("#prompt-close").addEventListener("click", () => resolve(false));

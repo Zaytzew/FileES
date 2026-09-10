@@ -25,31 +25,32 @@ type wailsTrayProjection struct {
 	Unread      int
 }
 
-func projectWailsTray(snapshot Snapshot) wailsTrayProjection {
+func projectWailsTray(snapshot Snapshot, locales ...nativeLanguage) wailsTrayProjection {
+	language := nativePresentationLanguage(locales)
 	icon := guiapp.IconState(snapshot.IconState)
 	if icon == "" {
 		icon = guiapp.IconDisconnected
 	}
-	state := "Rozłączono"
+	state := language.text("tray.status.disconnected")
 	if snapshot.Connected && snapshot.Stale {
-		state = "Odświeżanie"
+		state = language.text("tray.status.refreshing")
 	} else if snapshot.Connected {
-		state = "Połączono"
+		state = language.text("tray.status.connected")
 	}
 	locks := len(snapshot.Reservations)
-	lockStatus := fmt.Sprintf("%d %s", locks, lockNoun(locks))
+	lockStatus := language.format("tray.status.locks", map[string]string{"count": fmt.Sprint(locks)})
 	reservationStatus := snapshot.ReservationStatus
 	if reservationStatus.State == "partial" {
-		lockStatus = fmt.Sprintf("%d+? blokad (%d bez emisji)", locks, len(reservationStatus.Unavailable))
+		lockStatus = language.format("tray.status.partial", map[string]string{"count": fmt.Sprint(locks), "servers": fmt.Sprint(len(reservationStatus.Unavailable))})
 	} else if len(reservationStatus.Offline) > 0 {
-		lockStatus = fmt.Sprintf("%d %s (%d z lustra)", locks, lockNoun(locks), len(reservationStatus.Offline))
+		lockStatus = language.format("tray.status.mirror", map[string]string{"locks": lockStatus, "servers": fmt.Sprint(len(reservationStatus.Offline))})
 	} else if len(reservationStatus.Stale) > 0 {
-		lockStatus = fmt.Sprintf("%d %s (%d wcześniejsza emisja)", locks, lockNoun(locks), len(reservationStatus.Stale))
+		lockStatus = language.format("tray.status.stale", map[string]string{"locks": lockStatus, "servers": fmt.Sprint(len(reservationStatus.Stale))})
 	} else if reservationStatus.State == "daemon_offline" || !snapshot.Connected {
-		lockStatus += " (stan niezweryfikowany)"
+		lockStatus = language.format("tray.status.unverified", map[string]string{"locks": lockStatus})
 	}
 	repositories := len(snapshot.Repositories)
-	status := fmt.Sprintf("%s · %d %s · %s", state, repositories, repositoryNoun(repositories), lockStatus)
+	status := language.format("tray.status.summary", map[string]string{"state": state, "count": fmt.Sprint(repositories), "locks": lockStatus})
 	unread := 0
 	for _, notice := range snapshot.Notices {
 		if !notice.Acked {
@@ -57,10 +58,10 @@ func projectWailsTray(snapshot Snapshot) wailsTrayProjection {
 		}
 	}
 	if unread > 0 {
-		status = fmt.Sprintf("%d %s do przejrzenia · %s", unread, announcementNoun(unread), status)
+		status = language.format("tray.status.unread", map[string]string{"count": fmt.Sprint(unread), "status": status})
 	}
 	return wailsTrayProjection{
-		Icon: icon, Status: status, Tooltip: trayTooltip(snapshot, status),
+		Icon: icon, Status: status, Tooltip: trayTooltip(snapshot, status, language),
 		CanRestart:  snapshot.Connected && !snapshot.Stale && hasCapability(snapshot, contract.CapSystemRestart),
 		CanShutdown: snapshot.Connected && !snapshot.Stale && hasCapability(snapshot, contract.CapSystemShutdown),
 		Unread:      unread,
@@ -121,7 +122,8 @@ type intentAlertPolicy struct {
 	active map[string]bool
 }
 
-func (policy *intentAlertPolicy) Observe(snapshot Snapshot) []platform.Notification {
+func (policy *intentAlertPolicy) Observe(snapshot Snapshot, locales ...nativeLanguage) []platform.Notification {
+	language := nativePresentationLanguage(locales)
 	if !snapshot.Connected || snapshot.Stale {
 		return nil
 	}
@@ -142,8 +144,8 @@ func (policy *intentAlertPolicy) Observe(snapshot Snapshot) []platform.Notificat
 		}
 		result = append(result, platform.Notification{
 			ID: "intent." + key, Group: "intent." + key,
-			Title:   "FileES — potrzebna Twoja decyzja",
-			Body:    name + ": wysyłka wstrzymana. Otwórz panel FileES i wybierz „Rozstrzygnij zmiany”.",
+			Title:   language.text("notification.intent.title"),
+			Body:    language.format("notification.intent.body", map[string]string{"name": name}),
 			Urgency: platform.UrgencyCritical,
 		})
 	}
@@ -156,7 +158,8 @@ type announcementAlertPolicy struct {
 	seen        map[string]struct{}
 }
 
-func (policy *announcementAlertPolicy) Observe(snapshot Snapshot) []platform.Notification {
+func (policy *announcementAlertPolicy) Observe(snapshot Snapshot, locales ...nativeLanguage) []platform.Notification {
+	language := nativePresentationLanguage(locales)
 	if !snapshot.Connected || snapshot.Stale {
 		return nil
 	}
@@ -193,7 +196,7 @@ func (policy *announcementAlertPolicy) Observe(snapshot Snapshot) []platform.Not
 		}
 		result = append(result, platform.Notification{
 			ID: "announcement." + notice.ID, Group: "announcement." + notice.ID,
-			Title: "Nowe ogłoszenie", Body: body, Urgency: platform.UrgencyCritical,
+			Title: language.text("notification.announcement.title"), Body: body, Urgency: platform.UrgencyCritical,
 		})
 	}
 	return result
@@ -252,6 +255,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	var intentAlerts intentAlertPolicy
 	var trayMu sync.Mutex
 	var lastRevision uint64
+	var lastSnapshot Snapshot
 	unread := 0
 	refreshMenuLabels := func() {
 		showItem.SetLabel(language.text("tray.show"))
@@ -282,6 +286,14 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 		defer trayMu.Unlock()
 		if language.selectLocale(locale) {
 			refreshMenuLabels()
+			if lastRevision > 0 {
+				projection := projectWailsTray(lastSnapshot, language)
+				statusItem.SetLabel(projection.Status)
+				systemTray.SetTooltip(projection.Tooltip)
+				if err := publishNativeTrayTooltip(projection.Tooltip); err != nil {
+					log.Printf("localized tray tooltip pending registration: %v", err)
+				}
+			}
 		}
 	})
 	lastTooltip := ""
@@ -293,7 +305,8 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 			return
 		}
 		lastRevision = snapshot.Revision
-		projection := projectWailsTray(snapshot)
+		lastSnapshot = snapshot
+		projection := projectWailsTray(snapshot, language)
 		statusItem.SetLabel(projection.Status)
 		announcementItem.SetHidden(projection.Unread == 0)
 		unread = projection.Unread
@@ -314,7 +327,7 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 			systemTray.SetIcon(icon)
 		}
 		if notifier != nil {
-			for _, notification := range append(alerts.Observe(snapshot), intentAlerts.Observe(snapshot)...) {
+			for _, notification := range append(alerts.Observe(snapshot, language), intentAlerts.Observe(snapshot, language)...) {
 				notification := notification
 				go func() {
 					if err := notifier.Notify(host.Context(), notification); err != nil {

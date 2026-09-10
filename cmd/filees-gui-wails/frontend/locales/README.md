@@ -10,7 +10,9 @@ the `export default ` marker. Keep the body a strict JSON object followed by
 a semicolon: no expressions, imports or JavaScript inside the object. Native
 menu lookup currently supports scalar strings only. Main WebView sends its
 resolved locale to the host; this event never changes daemon state or replays
-notifications. Status/tooltips and notification copy still await migration.
+notifications. Status/tooltips and fixed notification copy also use this
+catalogue. Native named parameters are substituted once as plain text;
+native counters use labelled scalar templates, not plural objects.
 
 To add a language:
 

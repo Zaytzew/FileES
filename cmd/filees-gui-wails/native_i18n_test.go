@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 func TestNativeLanguageUsesEmbeddedGUICatalogues(t *testing.T) {
@@ -43,6 +44,49 @@ func TestNativeLanguageUsesEmbeddedGUICatalogues(t *testing.T) {
 	language.selectLocale("pl")
 	if got := language.text("tray.show"); got != "Show panel" {
 		t.Fatal(got)
+	}
+}
+
+func TestLocalizedTrayStatusAndNotificationEpisodes(t *testing.T) {
+	language, err := loadNativeLanguage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := Snapshot{Connected: true, Repositories: []RepoProjection{{ID: "docs", DisplayName: "Żółć {name}", IntentResolutionRequired: true}}}
+	projection := projectWailsTray(snapshot, language)
+	if !strings.Contains(projection.Status, "Connected · Repositories: 1 · Locks: 0") {
+		t.Fatal(projection.Status)
+	}
+	if got := trayCauseText("interaction_required", language); got != "your decision is required" {
+		t.Fatal(got)
+	}
+	var intents intentAlertPolicy
+	got := intents.Observe(snapshot, language)
+	if len(got) != 1 || got[0].Title != "FileES — your decision is needed" || !strings.HasPrefix(got[0].Body, "Żółć {name}:") {
+		t.Fatalf("%+v", got)
+	}
+	language.selectLocale("pl")
+	if got := intents.Observe(snapshot, language); len(got) != 0 {
+		t.Fatal("language replayed intent alert")
+	}
+	var announcements announcementAlertPolicy
+	announcements.Observe(snapshot, language)
+	snapshot.Notices = []NoticeProjection{{ID: "new", RepoID: "docs", Title: "Treść autora"}}
+	language.selectLocale("en")
+	got = announcements.Observe(snapshot, language)
+	if len(got) != 1 || got[0].Title != "New announcement" || got[0].Body != "Żółć {name} — Treść autora" {
+		t.Fatalf("%+v", got)
+	}
+	language.selectLocale("pl")
+	if got := announcements.Observe(snapshot, language); len(got) != 0 {
+		t.Fatal("language replayed announcement")
+	}
+	language.selectLocale("en")
+	for _, limit := range []int{4, 32, 127} {
+		text := limitTrayHint(strings.Repeat("😀", 140), limit, language)
+		if len(utf16.Encode([]rune(text))) > limit {
+			t.Fatalf("tooltip exceeds %d", limit)
+		}
 	}
 }
 

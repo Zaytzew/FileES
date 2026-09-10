@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -11,6 +12,28 @@ import (
 type nativeLanguage struct {
 	catalogues map[string]map[string]json.RawMessage
 	locale     string
+}
+
+// The optional default preserves Polish for callers outside the live host.
+// Live presentation always passes its explicitly resolved language.
+func nativePresentationLanguage(locales []nativeLanguage) nativeLanguage {
+	if len(locales) > 0 {
+		return locales[0]
+	}
+	language, _ := loadNativeLanguage()
+	language.selectLocale("pl")
+	return language
+}
+
+var nativeTextArgument = regexp.MustCompile(`\{([a-zA-Z][\w]*)\}`)
+
+func (language nativeLanguage) format(key string, args map[string]string) string {
+	return nativeTextArgument.ReplaceAllStringFunc(language.text(key), func(token string) string {
+		if value, ok := args[token[1:len(token)-1]]; ok {
+			return value
+		}
+		return token
+	})
 }
 
 func loadNativeLanguage() (nativeLanguage, error) {

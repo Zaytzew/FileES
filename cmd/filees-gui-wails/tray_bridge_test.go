@@ -52,7 +52,7 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 		Repositories:      []RepoProjection{{ID: "one"}, {ID: "two"}},
 		Reservations:      []ReservationProjection{{ID: "lock"}},
 	})
-	if projection.Icon != guiapp.IconActive || projection.Status != "Połączono · 2 repozytoria · 1 blokada" || projection.Tooltip == "" {
+	if projection.Icon != guiapp.IconActive || projection.Status != "Połączono · Repozytoria: 2 · Blokady: 1" || projection.Tooltip == "" {
 		t.Fatalf("projection = %+v", projection)
 	}
 	if !projection.CanRestart || !projection.CanShutdown {
@@ -60,12 +60,12 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 	}
 
 	disconnected := projectWailsTray(Snapshot{})
-	if disconnected.Icon != guiapp.IconDisconnected || disconnected.Status != "Rozłączono · 0 repozytoriów · 0 blokad (stan niezweryfikowany)" {
+	if disconnected.Icon != guiapp.IconDisconnected || disconnected.Status != "Rozłączono · Repozytoria: 0 · Blokady: 0 (stan niezweryfikowany)" {
 		t.Fatalf("disconnected = %+v", disconnected)
 	}
 
 	unknown := projectWailsTray(Snapshot{Connected: true, ReservationStatus: ReservationAvailabilityProjection{State: "partial", Unavailable: []ServerReferenceProjection{{ID: "server"}}}})
-	if unknown.Status != "Połączono · 0 repozytoriów · 0+? blokad (1 bez emisji)" {
+	if unknown.Status != "Połączono · Repozytoria: 0 · Blokady: 0+? (1 bez emisji)" {
 		t.Fatalf("unknown reservations = %+v", unknown)
 	}
 
@@ -74,7 +74,7 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 		ReservationStatus: ReservationAvailabilityProjection{State: "partial", Unavailable: []ServerReferenceProjection{{ID: "cloud"}}},
 		Reservations:      []ReservationProjection{{ID: "lock"}},
 	})
-	if partial.Status != "Połączono · 0 repozytoriów · 1+? blokad (1 bez emisji)" {
+	if partial.Status != "Połączono · Repozytoria: 0 · Blokady: 1+? (1 bez emisji)" {
 		t.Fatalf("partial reservations = %+v", partial)
 	}
 
@@ -83,7 +83,7 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 		ReservationStatus: ReservationAvailabilityProjection{State: "complete", Offline: []ServerReferenceProjection{{ID: "spot"}}},
 		Reservations:      []ReservationProjection{{ID: "lock"}},
 	})
-	if offlineProjection.Status != "Połączono · 0 repozytoriów · 1 blokada (1 z lustra)" {
+	if offlineProjection.Status != "Połączono · Repozytoria: 0 · Blokady: 1 (1 z lustra)" {
 		t.Fatalf("offline reservations = %+v", offlineProjection)
 	}
 
@@ -91,7 +91,7 @@ func TestProjectWailsTrayTracksConnectionRepositoriesAndLocks(t *testing.T) {
 		Connected:         true,
 		ReservationStatus: ReservationAvailabilityProjection{State: "complete", Stale: []ServerReferenceProjection{{ID: "spot"}}},
 	})
-	if staleProjection.Status != "Połączono · 0 repozytoriów · 0 blokad (1 wcześniejsza emisja)" {
+	if staleProjection.Status != "Połączono · Repozytoria: 0 · Blokady: 0 (1 wcześniejsza emisja)" {
 		t.Fatalf("stale reservations = %+v", staleProjection)
 	}
 
@@ -119,7 +119,7 @@ func TestProjectWailsTrayMakesUnreadAnnouncementsDominant(t *testing.T) {
 		ReservationStatus: ReservationAvailabilityProjection{State: "complete"},
 		Notices:           []NoticeProjection{{ID: "one"}, {ID: "two"}, {ID: "old", Acked: true}},
 	})
-	if projection.Icon != guiapp.IconShout || projection.Unread != 2 || !strings.HasPrefix(projection.Status, "2 ogłoszenia do przejrzenia · ") {
+	if projection.Icon != guiapp.IconShout || projection.Unread != 2 || !strings.HasPrefix(projection.Status, "Ogłoszenia do przejrzenia: 2 · ") {
 		t.Fatalf("projection=%+v", projection)
 	}
 }

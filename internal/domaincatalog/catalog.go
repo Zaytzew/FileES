@@ -16,49 +16,76 @@ var packFS embed.FS
 
 const packDir = "catalogs"
 
-// Message is one catalogue entry: a plain template, or the plural variants
-// of one. The renderer selects the category; the daemon does not decide what
-// "few" means in a language it was not written for.
+// Message is one catalogue entry in one of three shapes: a plain template,
+// the plural variants of one, or a ladder of increasingly specific templates.
+//
+// The plural categories are selected by the renderer; the daemon does not
+// decide what "few" means in a language it was not written for.
+//
+// The ladder exists because "the file is busy" is not actionable while
+// "Anna has it until 13:41" is. Which sentence fits depends on which values
+// arrived, so the renderer takes the first variant whose every parameter is
+// present and the pack decides the wording — a translator can reorder the
+// clause or drop a possessive that does not exist in their language, which
+// is exactly what a chain of conditionals in Go could never let them do.
 type Message struct {
-	Text   string
-	Plural map[string]string
+	Text     string
+	Plural   map[string]string
+	Variants []string
 }
 
 // IsPlural reports whether this entry carries plural variants.
 func (m Message) IsPlural() bool { return m.Plural != nil }
 
+// IsLadder reports whether this entry carries specificity variants.
+func (m Message) IsLadder() bool { return m.Variants != nil }
+
 // Templates returns every template in the entry, so a caller checking
-// placeholders does not have to know which shape it got.
+// placeholders does not have to know which shape it got. For a ladder the
+// order is the pack's own: most specific first.
 func (m Message) Templates() []string {
-	if !m.IsPlural() {
+	switch {
+	case m.IsLadder():
+		return append([]string(nil), m.Variants...)
+	case m.IsPlural():
+		categories := make([]string, 0, len(m.Plural))
+		for category := range m.Plural {
+			categories = append(categories, category)
+		}
+		sort.Strings(categories)
+		out := make([]string, 0, len(categories))
+		for _, category := range categories {
+			out = append(out, m.Plural[category])
+		}
+		return out
+	default:
 		return []string{m.Text}
 	}
-	categories := make([]string, 0, len(m.Plural))
-	for category := range m.Plural {
-		categories = append(categories, category)
-	}
-	sort.Strings(categories)
-	out := make([]string, 0, len(categories))
-	for _, category := range categories {
-		out = append(out, m.Plural[category])
-	}
-	return out
 }
 
-// UnmarshalJSON accepts a string or an object of plural variants, and
-// nothing else. A number or an array here is a malformed pack, not a value
-// to coerce.
+// UnmarshalJSON accepts a string, an object of plural variants or an array of
+// ladder variants, and nothing else. A number here is a malformed pack, not a
+// value to coerce.
+//
+// A ladder of plural objects is deliberately not a shape: two selection rules
+// in one entry would make it impossible to say, from the pack alone, which
+// sentence a reader will get.
 func (m *Message) UnmarshalJSON(raw []byte) error {
 	var text string
 	if err := json.Unmarshal(raw, &text); err == nil {
-		m.Text, m.Plural = text, nil
+		m.Text, m.Plural, m.Variants = text, nil, nil
+		return nil
+	}
+	var variants []string
+	if err := json.Unmarshal(raw, &variants); err == nil {
+		m.Text, m.Plural, m.Variants = "", nil, variants
 		return nil
 	}
 	var plural map[string]string
 	if err := json.Unmarshal(raw, &plural); err != nil {
-		return fmt.Errorf("message must be a string or plural object: %w", err)
+		return fmt.Errorf("message must be a string, a plural object or an array of variants: %w", err)
 	}
-	m.Text, m.Plural = "", plural
+	m.Text, m.Plural, m.Variants = "", plural, nil
 	return nil
 }
 

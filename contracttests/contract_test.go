@@ -219,6 +219,9 @@ func TestAdvertisedCapabilitiesMatchImplementedV1Subset(t *testing.T) {
 		contract.CapRepoIntentResolution:   true,
 		contract.CapNoticeList:             true,
 		contract.CapNoticeAck:              true,
+		// Always on: the language packs are compiled into the daemon and
+		// validated by the build, so there is nothing to wire at runtime.
+		contract.CapMessagesCatalog: true,
 	}
 	if len(contract.AllCapabilities) != len(want) {
 		t.Fatalf("AllCapabilities = %#v", contract.AllCapabilities)

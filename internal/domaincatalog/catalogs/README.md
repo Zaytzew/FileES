@@ -30,14 +30,35 @@ renderer is allowed to do with the value:
 Every language uses the same parameter names for the same key. Word order is
 the pack's business; the set of values is not.
 
+## The three shapes of an entry
+
+A message is a string, a plural object, or an array of variants.
+
+An array is a **ladder**, most specific first. The renderer takes the first
+variant whose every parameter is present, so the same key can say "Anna has
+rysunek.dwg until 13:41" when the values arrived and still say something
+complete when they did not. The last rung must therefore use no parameters
+at all, and no rung may ask for everything an earlier rung asks for — it
+could never be reached.
+
+A ladder must have the same sequence of parameter sets in every language.
+A language shipping three rungs where another ships one is not a wording
+difference: one reader is told who is holding the file and the other is told
+that somebody is.
+
+A plural entry uses CLDR categories, always including `other`, and is only
+valid for a key that declares a `number` parameter. A ladder of plural
+objects is not a shape: two selection rules in one entry make it impossible
+to tell from the pack which sentence a reader will get.
+
 ## Adding a language
 
 1. Copy `en.json` to `<tag>.json`, where `<tag>` is the BCP-47 language tag.
    The file name and the `locale` field must agree.
 2. Translate the values, not the keys. Keep the named placeholders identical.
 3. Keep `schema` and bump `dictionary_version` when you revise wording.
-4. For a plural entry use CLDR categories, always including `other`. A plural
-   entry is only valid for a key that declares a `number` parameter.
+4. Keep the shape of each entry: a ladder stays a ladder with the same
+   sequence of parameter sets, and a plural entry keeps its categories.
 5. Run `go test ./internal/domaincatalog` from the repository root. The
    production build runs the same validator, so an incomplete pack fails the
    build instead of shipping behind a fallback.

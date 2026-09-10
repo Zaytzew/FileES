@@ -19,6 +19,12 @@ const (
 	CmdUpdatePlan     = "update.plan"     // verified dry-run change plan
 	CmdUpdateApply    = "update.apply"    // apply and request GUI restart
 
+	// CmdMessagesCatalog reads the daemon's domain message catalogue for one
+	// locale. The locale is a parameter of the read, not a setting: two
+	// renderers may hold different languages at the same time, and asking
+	// never changes anything on the daemon side.
+	CmdMessagesCatalog = "messages.catalog"
+
 	// Client activation (executed by daemon; GUI only supplies user intent).
 	CmdActivationBegin         = "activation.begin"
 	CmdActivationFinish        = "activation.finish"
@@ -183,6 +189,11 @@ const (
 	CapWhaleRetry            = "whale.retry"
 	CapWhaleCancel           = "whale.cancel"
 
+	// CapMessagesCatalog is advertised only when the daemon carries validated
+	// language packs, so a client can tell a daemon that speaks in keys from
+	// one that does not.
+	CapMessagesCatalog = "messages.catalog"
+
 	// Update capabilities are advertised only after the daemon wires a signed
 	// release checker and transactional platform installer.
 	CapUpdateStatus = "update.status"
@@ -230,6 +241,7 @@ var AllCapabilities = []string{
 	CapRepoIntentResolution,
 	CapNoticeList,
 	CapNoticeAck,
+	CapMessagesCatalog,
 }
 
 // --- result and payload types ---
@@ -1219,4 +1231,75 @@ type WhaleGetBeginPayload struct {
 	SHA256          string `json:"sha256,omitempty"`
 	Revision        int64  `json:"revision"`
 	DestinationPath string `json:"destination_path"`
+}
+
+// --- domain message catalogue ---
+
+// MessagesCatalogPayload asks for one locale's templates.
+//
+// Locale is a parameter of the read. The daemon holds no "current language":
+// a second renderer asking for a different one gets a different answer, and
+// neither changes what the first is showing.
+type MessagesCatalogPayload struct {
+	// Locale is a BCP-47 tag. An unsupported or empty value is answered with
+	// the fallback rather than refused, and Result.Locale says what arrived.
+	Locale string `json:"locale"`
+}
+
+// CatalogMessage is one template in one of three shapes. Exactly one field is
+// set, so a client branches on presence instead of guessing from a value.
+type CatalogMessage struct {
+	// Text is a plain template.
+	Text string `json:"text,omitempty"`
+	// Plural maps CLDR categories to templates. "other" is always present;
+	// the client selects the category for its own locale.
+	Plural map[string]string `json:"plural,omitempty"`
+	// Variants is a ladder, most specific first. The client uses the first
+	// variant whose every parameter it has a value for; the last needs none.
+	Variants []string `json:"variants,omitempty"`
+}
+
+// CatalogParam declares one parameter of one message.
+//
+// The kind is what the client may do with the value: "text", "path" and
+// "identifier" are literal, "number", "bytes" and "timestamp" are formatted
+// by the client for its reader, and "diagnostic" may be shown as diagnostics
+// but never placed inside a sentence. A Details key that is not declared here
+// is diagnostic context, not a parameter.
+type CatalogParam struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+// CatalogLanguage is one language the daemon can serve.
+type CatalogLanguage struct {
+	Code string `json:"code"`
+	// Name is the language's own name, for a picker that a reader who does
+	// not yet understand the current language can still use.
+	Name string `json:"name"`
+}
+
+// MessagesCatalogResult is one atomic snapshot of the catalogue.
+//
+// Messages and FallbackMessages come from the same read of the same packs.
+// A client must not assemble them from two responses: half-way through a
+// language change that would show a projection made of two generations.
+type MessagesCatalogResult struct {
+	Schema string `json:"schema"`
+	// CatalogID identifies the content. A client that reconnects compares it
+	// before reusing what it cached, instead of mixing two catalogues.
+	CatalogID string `json:"catalog_id"`
+	// Locale is what was actually served, which is the fallback when the
+	// requested tag is not among Languages.
+	Locale         string            `json:"locale"`
+	FallbackLocale string            `json:"fallback_locale"`
+	Languages      []CatalogLanguage `json:"languages"`
+	// DictionaryVersion is the served pack's own version, for a human
+	// reading a bug report; CatalogID is what code compares.
+	DictionaryVersion string                    `json:"dictionary_version"`
+	Messages          map[string]CatalogMessage `json:"messages"`
+	FallbackMessages  map[string]CatalogMessage `json:"fallback_messages"`
+	// Params is locale-independent: the same message carries the same values
+	// in every language, and only the wording moves.
+	Params map[string][]CatalogParam `json:"params,omitempty"`
 }

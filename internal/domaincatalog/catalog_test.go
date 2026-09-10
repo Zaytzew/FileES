@@ -132,6 +132,44 @@ func TestUnknownMessageNamesCodeAndKey(t *testing.T) {
 	}
 }
 
+// The reserved-file message is the one key that already had a hand-written
+// sentence matrix in Go. It is the reason ladders exist, so its shape is
+// asserted rather than left to the generic completeness gate.
+func TestReservedFileLadderKeepsItsSpecificity(t *testing.T) {
+	registry, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shape []string
+	for _, language := range registry.Locales() {
+		message, ok := registry.Message(language.Code, "lock.held_by_other")
+		if !ok || !message.IsLadder() {
+			t.Fatalf("%s does not carry a ladder for lock.held_by_other", language.Code)
+		}
+		templates := message.Templates()
+		// path, holder and until, every combination of them, and a sentence
+		// for the case where nothing arrived: the same eight outcomes the Go
+		// version produced from its defaults.
+		if len(templates) != 8 {
+			t.Errorf("%s ladder has %d rungs, want 8", language.Code, len(templates))
+		}
+		if got := templatePlaceholders(templates[0]); len(got) != 3 {
+			t.Errorf("%s starts at %v, want the most specific rung", language.Code, got)
+		}
+		if got := templatePlaceholders(templates[len(templates)-1]); len(got) != 0 {
+			t.Errorf("%s ends needing %v; the last rung must stand alone", language.Code, got)
+		}
+		current := parameterShape(message)
+		if shape == nil {
+			shape = current
+			continue
+		}
+		if !equalStrings(shape, current) {
+			t.Errorf("%s offers a different ladder shape: %v vs %v", language.Code, current, shape)
+		}
+	}
+}
+
 func base(messages map[string]Message) map[string]Pack {
 	return map[string]Pack{
 		"en": {Schema: Schema, Locale: "en", Name: "English", DictionaryVersion: "1", Messages: messages},
@@ -231,6 +269,35 @@ func TestValidateRejects(t *testing.T) {
 			name:  "markup",
 			packs: map[string]Pack{"en": full("en", "English", map[string]Message{"sync.unknown": {Text: "<b>no</b>"}})},
 			want:  "contains markup",
+		},
+		{
+			name:  "ladder with one rung",
+			packs: map[string]Pack{"en": full("en", "English", map[string]Message{"sync.unknown": {Variants: []string{"only"}}})},
+			want:  "fewer than two variants",
+		},
+		{
+			name: "ladder that never stands alone",
+			packs: map[string]Pack{"en": full("en", "English", map[string]Message{
+				"lock.held_by_other": {Variants: []string{"held by {holder} until {until}", "held by {holder}"}},
+			})},
+			want: "ends on a variant that still needs parameters",
+		},
+		{
+			name: "unreachable rung",
+			packs: map[string]Pack{"en": full("en", "English", map[string]Message{
+				"lock.held_by_other": {Variants: []string{"held by {holder}", "held by {holder} until {until}", "held"}},
+			})},
+			want: "unreachable behind variant",
+		},
+		{
+			name: "ladder in one language only",
+			packs: map[string]Pack{
+				"en": full("en", "English", map[string]Message{
+					"lock.held_by_other": {Variants: []string{"held by {holder}", "held"}},
+				}),
+				"pl": full("pl", "Polski", map[string]Message{"lock.held_by_other": {Text: "zajęty"}}),
+			},
+			want: "parameters differ",
 		},
 		{
 			name: "wrong schema",

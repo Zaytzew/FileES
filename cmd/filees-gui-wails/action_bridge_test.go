@@ -343,6 +343,19 @@ func TestConsentPromptAdapterKeepsRequiredAndOptionalDecisionsSeparate(t *testin
 	if err != nil || result.Cancelled || !result.Required || result.Optional || len(prompter.calls) != 2 {
 		t.Fatalf("ConfirmConsent() result=%+v calls=%+v err=%v", result, prompter.calls, err)
 	}
+	if prompter.calls[0].PresentationKey != "" || prompter.calls[0].Text != "Polityka\n\nRozumiem" || prompter.calls[1].Text != "Usuń wszystko" {
+		t.Fatal("unmarked consent text was changed")
+	}
+	for _, optional := range []bool{false, true} {
+		marked := &consentPrompterStub{answers: []bool{true, optional}}
+		got, err := (consentPromptAdapter{prompter: marked}).ConfirmConsent(t.Context(), platform.ConsentRequest{PresentationKey: "consent.realmRemoval"})
+		if err != nil || got.Cancelled || !got.Required || got.Optional != optional || len(marked.calls) != 2 {
+			t.Fatalf("marked consent decisions changed: %+v, %v", got, err)
+		}
+		if marked.calls[0].PresentationKey != "consent.realmRemoval.required" || marked.calls[1].PresentationKey != "consent.realmRemoval.optional" {
+			t.Fatalf("consent templates not separated: %+v", marked.calls)
+		}
+	}
 	cancelled := &consentPrompterStub{answers: []bool{false}}
 	result, err = (consentPromptAdapter{prompter: cancelled}).ConfirmConsent(t.Context(), platform.ConsentRequest{})
 	if err != nil || !result.Cancelled || len(cancelled.calls) != 1 {

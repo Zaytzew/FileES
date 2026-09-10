@@ -53,6 +53,26 @@ test("info templates preserve fixed Polish copy and literal diagnostic arguments
   }
 });
 
+test("realm removal results retain dates and separate retention from optional erasure", () => {
+  const args = {path: '<kit> {days}', count: 3, downloadUntil: '2026-10-01T12:00:00Z', adminUntil: '2026-11-01T12:00:00Z', days: 90};
+  for (const locale of ["pl", "en"]) {
+    for (const archives of [false, true]) for (const erasure of [false, true]) {
+      const key = `result.realmRemoved${archives ? "Archives" : "Empty"}${erasure ? "Erasure" : ""}`;
+      const body = translate(catalogues, locale, `${key}.text`, args);
+      assert.equal(body.includes(args.path), archives);
+      assert.equal(body.includes(args.downloadUntil), archives);
+      assert.equal(body.includes(args.adminUntil), archives);
+      assert.equal(body.includes("90"), erasure);
+      for (const part of ["title", "text", "confirm", "cancel"]) assert.equal(typeof catalogues[locale][`${key}.${part}`], "string");
+    }
+  }
+  assert.match(catalogues.en["consent.realmRemoval.required.text"], /does not immediately remove/);
+  assert.match(catalogues.en["consent.realmRemoval.optional.cancel"], /Without additional request/);
+  const source = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
+  assert.match(source, /if result.ArchiveCount > 0 \{\s*presentationKey = "result.realmRemovedArchives"/);
+  assert.match(source, /if result.ErasureRequested \{\s*presentationKey \+= "Erasure"/);
+});
+
 test("update UI localizes only its fallback, preserving daemon summaries and actions", () => {
   const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
   const extract = name => {

@@ -10,7 +10,7 @@ func TestRecoveryArchiveRowOffersLocalDismissal(t *testing.T) {
 	styles := embeddedFrontendFile(t, "frontend/app.css")
 	models := embeddedFrontendFile(t, "frontend/bindings/filees/cmd/filees-gui-wails/models.js")
 
-	for _, required := range []string{`repo.can_dismiss_recovery`, `repoAction("dismiss_recovery", "Usuń archiwum z tego klienta"`, `remove: '<svg`} {
+	for _, required := range []string{`repo.can_dismiss_recovery`, `repoAction("dismiss_recovery", t("repo.dismissRecovery")`, `remove: '<svg`} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("recovery dismissal row action does not contain %q", required)
 		}

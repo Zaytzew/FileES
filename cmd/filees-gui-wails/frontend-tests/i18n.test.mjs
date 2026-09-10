@@ -65,6 +65,32 @@ test("update UI localizes only its fallback, preserving daemon summaries and act
   assert.equal(node("#update-summary").textContent, "Installed version: unknown.");
 });
 
+test("main repository row retains capabilities, identity and raw diagnostics across locales", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const extract = name => {
+    const start = source.indexOf(`function ${name}(`);
+    return source.slice(start, source.indexOf("\n}", start) + 2);
+  };
+  let locale = "en";
+  const escapeHTML = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+  const render = runInNewContext(`${extract("repoAction")}\n${extract("renderRepo")}\n${extract("serverHealthPresentation")}\n({renderRepo,serverHealthPresentation})`, {
+    t: (key, args) => translate(catalogues, locale, key, args), escapeHTML,
+    repoIcons: {}, localizedStates: new Set(["active"]), bytes: String, renderUnportable: () => "",
+  });
+  const repo = { id: 'id"<raw>', display_name: "Projekt <DWG>", local_path: "E:/Żółć", display_state: "active", can_lock: true };
+  for (locale of ["pl", "en"]) {
+    const html = render.renderRepo(repo);
+    assert.ok(html.includes('data-action="lock"'));
+    assert.ok(!html.includes('data-action="unlock"'));
+    assert.ok(html.includes('data-repo-id="id&quot;&lt;raw>"'));
+    assert.ok(html.includes("Projekt &lt;DWG>"));
+    assert.ok(html.includes(catalogues[locale]["repo.lock"]));
+    assert.ok(render.renderRepo({...repo, server_deleted: true, cleanup_error: "Błąd <raw>"}).includes("Błąd &lt;raw>"));
+    assert.equal(render.serverHealthPresentation("current").className, "health-current");
+    assert.equal(render.serverHealthPresentation("current").label, catalogues[locale]["server.health.current"]);
+  }
+});
+
 test("system locale and English fallback do not depend on catalogue order", () => {
   assert.equal(resolveLocale("system", ["pl-PL"]), "pl");
   assert.equal(resolveLocale("system", ["en-GB"]), "en");

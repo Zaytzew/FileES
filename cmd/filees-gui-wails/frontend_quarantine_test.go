@@ -9,7 +9,7 @@ func TestQuarantineFrontendOpensExistingPopupFromRepositoryRow(t *testing.T) {
 	script := embeddedFrontendFile(t, "frontend/app.js")
 	models := embeddedFrontendFile(t, "frontend/bindings/filees/cmd/filees-gui-wails/models.js")
 
-	for _, required := range []string{`repo.can_review_quarantine`, `repoAction("review_quarantine", "Przejrzyj kwarantannę"`, `quarantine: '<svg`} {
+	for _, required := range []string{`repo.can_review_quarantine`, `repoAction("review_quarantine", t("repo.quarantine")`, `quarantine: '<svg`} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("quarantine row action does not contain %q", required)
 		}

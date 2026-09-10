@@ -427,16 +427,16 @@ function renderRepo(repo) {
     : localProvisioning
       ? (state === "attention" ? "import wymaga uwagi" : state === "offline" ? "import wstrzymany — offline" : "pierwsze wysyłanie — trwa")
     : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");
-  const source = repo.local_path || (repo.attached ? "Folder FileES" : "Folder zdalny");
+  const source = repo.local_path || t(repo.attached ? "repo.folder" : "repo.remote");
   const actions = [
     deleted && repo.local_copy_preserved ? '<button class="repo-icon-action hint-button" type="button" data-copy-info data-hint="Pełna informacja o zachowanym folderze" aria-label="Pełna informacja o zachowanym folderze" aria-haspopup="dialog" aria-controls="deleted-copy-dialog">' + repoIcons.info + '</button>' : "",
-    repo.can_attach ? repoAction("attach_repository", "Połącz z lokalnym folderem", repoIcons.pin, "attach") : "",
-    repo.recovery_available ? repoAction("download_recovery", "Pobierz archiwum", repoIcons.recovery, "recovery") : "",
-    repo.can_dismiss_recovery ? repoAction("dismiss_recovery", "Usuń archiwum z tego klienta", repoIcons.remove, "recovery-dismiss") : "",
-    repo.can_review_quarantine ? repoAction("review_quarantine", "Przejrzyj kwarantannę", repoIcons.quarantine, "quarantine") : "",
-    repo.can_lock ? repoAction("lock", "Zablokuj pliki", repoIcons.lock, "mutate") : "",
-    repo.can_unlock ? repoAction("unlock", "Zwolnij blokady", repoIcons.unlock, "mutate") : "",
-    repo.can_publish ? repoAction("publish", "Opublikuj zmiany", repoIcons.publish, "publish") : "",
+    repo.can_attach ? repoAction("attach_repository", t("repo.attach"), repoIcons.pin, "attach") : "",
+    repo.recovery_available ? repoAction("download_recovery", t("repo.recovery"), repoIcons.recovery, "recovery") : "",
+    repo.can_dismiss_recovery ? repoAction("dismiss_recovery", t("repo.dismissRecovery"), repoIcons.remove, "recovery-dismiss") : "",
+    repo.can_review_quarantine ? repoAction("review_quarantine", t("repo.quarantine"), repoIcons.quarantine, "quarantine") : "",
+    repo.can_lock ? repoAction("lock", t("repo.lock"), repoIcons.lock, "mutate") : "",
+    repo.can_unlock ? repoAction("unlock", t("repo.unlock"), repoIcons.unlock, "mutate") : "",
+    repo.can_publish ? repoAction("publish", t("repo.publish"), repoIcons.publish, "publish") : "",
   ].join("");
   const stateLabel = localizedStates.has(state) ? t(`state.${state}`) : state;
   const disconnected = repo.connectivity !== "online" || ["offline", "unattached", "disabled", "revoked", "unknown"].includes(state);
@@ -449,9 +449,9 @@ function renderRepo(repo) {
         : "";
   const iconContents = `<span class="repo-icon" aria-hidden="true">${stateOverlay}</span>`;
   const open = repo.can_open
-    ? `<button class="repo-open hint-button state-${escapeHTML(state)}" type="button" data-action="open_folder" data-hint="Otwórz folder · ${escapeHTML(stateLabel)}" aria-label="Otwórz folder · ${escapeHTML(stateLabel)}">${iconContents}</button>`
+    ? `<button class="repo-open hint-button state-${escapeHTML(state)}" type="button" data-action="open_folder" data-hint="${escapeHTML(t("repo.open", { state: stateLabel }))}" aria-label="${escapeHTML(t("repo.open", { state: stateLabel }))}">${iconContents}</button>`
     : `<span class="repo-open is-disabled state-${escapeHTML(state)}" title="${escapeHTML(stateLabel)}" aria-label="${escapeHTML(stateLabel)}">${iconContents}</span>`;
-  const settings = deleted ? "" : repoAction("settings", "Ustawienia folderu", repoIcons.settings, "repo-settings");
+  const settings = deleted ? "" : repoAction("settings", t("repo.settings"), repoIcons.settings, "repo-settings");
   const size = repo.attached && repo.working_copy_size_known && Number.isFinite(Number(repo.working_copy_bytes ?? 0))
     ? bytes(repo.working_copy_bytes ?? 0)
     : "—";
@@ -460,9 +460,9 @@ function renderRepo(repo) {
       ${open}
       <div class="repo-name"><strong title="${escapeHTML(repo.display_name)}">${escapeHTML(repo.display_name || repo.id)}</strong><small title="${escapeHTML(source)}">${escapeHTML(source)}</small></div>
     </div>
-    <div class="repo-meta repo-queue"><small>${deleted ? "Stan lokalny" : "Kolejka"}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
+    <div class="repo-meta repo-queue"><small>${escapeHTML(t(deleted ? "repo.localState" : "repo.queue"))}</small><span title="${escapeHTML(deleted ? repo.cleanup_error : "")}">${escapeHTML(pending)}</span></div>
     <div class="repo-tools">${settings}${actions}</div>
-    <div class="repo-meta repo-size"><small>Rozmiar</small><span>${escapeHTML(size)}</span></div>
+    <div class="repo-meta repo-size"><small>${escapeHTML(t("repo.size"))}</small><span>${escapeHTML(size)}</span></div>
     ${renderUnportable(repo)}
     ${repo.intent_resolution_required ? '<div class="intent-folder-warning"><strong>Wysyłka wstrzymana — potrzebna Twoja decyzja.</strong><button type="button" data-action="settings">Rozstrzygnij zmiany…</button></div>' : ""}
   </article>`;
@@ -496,11 +496,11 @@ function renderRepoGroup(label, repos, className = "", nested = false) {
 
 function serverHealthPresentation(value) {
   switch (value) {
-    case "current": return { className: "health-current", label: "Połączenie z serwerem działa" };
-    case "refreshing": return { className: "health-refreshing", label: "Sprawdzanie stanu serwera" };
-    case "server_unavailable": return { className: "health-unavailable", label: "Serwer nie odpowiada" };
-    case "daemon_offline": return { className: "health-unavailable", label: "Demon FileES jest rozłączony" };
-    default: return { className: "health-unverified", label: "Stan serwera jeszcze niepotwierdzony" };
+    case "current": return { className: "health-current", label: t("server.health.current") };
+    case "refreshing": return { className: "health-refreshing", label: t("server.health.refreshing") };
+    case "server_unavailable": return { className: "health-unavailable", label: t("server.health.unavailable") };
+    case "daemon_offline": return { className: "health-unavailable", label: t("server.health.offline") };
+    default: return { className: "health-unverified", label: t("server.health.unverified") };
   }
 }
 
@@ -552,7 +552,7 @@ function renderRepositories(snapshot) {
         <div class="server-identity"><span class="server-mark ${health.className}" role="img" aria-label="${escapeHTML(health.label)}" title="${escapeHTML(health.label)}"></span><div>
           <div class="server-title-line">
             <h3>${escapeHTML(server.display_name || server.id)}</h3>
-            <button class="server-settings" type="button" data-action="settings" title="Ustawienia serwera" aria-label="Ustawienia serwera ${escapeHTML(server.display_name || server.id)}">
+            <button class="server-settings" type="button" data-action="settings" title="${escapeHTML(t("server.settings"))}" aria-label="${escapeHTML(t("server.settingsName", { name: server.display_name || server.id }))}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.03 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path></svg>
             </button>
           </div>
@@ -561,14 +561,14 @@ function renderRepositories(snapshot) {
         <div class="server-summary"><span class="server-total">${escapeHTML(tn("count.folders", serverRepos.length))}</span><span class="server-chevron" aria-hidden="true">⌄</span></div>
       </header>
       <div id="server-folders-${escapeHTML(server.id)}" class="server-folders" ${expanded ? "" : "hidden"}>
-        ${serverRepos.length ? `<div class="repo-columns" aria-hidden="true"><span>Folder</span><span class="column-queue">Kolejka</span><span>Akcje</span><span>Rozmiar</span></div>
-          ${renderRepoGroup("Własne", owned, "owned")}
-          ${renderRepoGroup("Gościnne · udostępnione przez inne zespoły", guest, "guest")}
-          ${renderRepoGroup("Półki przyjęcia", shelves, "upload-shelf")}
-          ${renderRepoGroup("Kwarantanna", trash, "upload-trash")}
-          ${renderRepoGroup("Pozostałe", unclassified, "unclassified")}
-          ${renderRepoGroup("Usunięte · archiwa", deleted, "deleted")}
-          ${renderRepoGroup("Zdalne", remote, "remote")}` : '<p class="server-empty">Ten serwer nie udostępnia jeszcze żadnego folderu.</p>'}
+        ${serverRepos.length ? `<div class="repo-columns" aria-hidden="true"><span>${escapeHTML(t("repo.columnFolder"))}</span><span class="column-queue">${escapeHTML(t("repo.queue"))}</span><span>${escapeHTML(t("repo.actions"))}</span><span>${escapeHTML(t("repo.size"))}</span></div>
+          ${renderRepoGroup(t("repo.groupOwned"), owned, "owned")}
+          ${renderRepoGroup(t("repo.groupGuest"), guest, "guest")}
+          ${renderRepoGroup(t("repo.groupShelves"), shelves, "upload-shelf")}
+          ${renderRepoGroup(t("repo.groupQuarantine"), trash, "upload-trash")}
+          ${renderRepoGroup(t("repo.groupOther"), unclassified, "unclassified")}
+          ${renderRepoGroup(t("repo.groupDeleted"), deleted, "deleted")}
+          ${renderRepoGroup(t("repo.groupRemote"), remote, "remote")}` : `<p class="server-empty">${escapeHTML(t("server.empty"))}</p>`}
       </div>
     </article>`;
   }).join("");

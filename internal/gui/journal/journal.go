@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"filees/internal/gui/app"
+	"filees/pkg/messagerender"
 )
 
 const TrayLimit = 12
@@ -358,26 +359,13 @@ func activityDetails(items []app.ActivityViewModel) string {
 		if path != "" && !seen[path] {
 			seen[path] = true
 			if item.Size != nil {
-				path += " · " + formatBytes(*item.Size)
+				path += " · " + messagerender.FormatBytes(*item.Size)
 			}
 			paths = append(paths, path)
 		}
 	}
 	sort.Strings(paths)
 	return strings.Join(paths, "\n")
-}
-
-func formatBytes(value int64) string {
-	const unit = 1024
-	if value < unit {
-		return fmt.Sprintf("%d B", value)
-	}
-	divisor, exponent := int64(unit), 0
-	for scaled := value / unit; scaled >= unit; scaled /= unit {
-		divisor *= unit
-		exponent++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(value)/float64(divisor), "KMGTPE"[exponent])
 }
 
 func singleActivityLabel(record app.ActivityViewModel) string {

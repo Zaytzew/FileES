@@ -141,6 +141,10 @@ var specs = []Spec{
 	{"PROTO-0001", "proto.missing_repo_id", SevError, HintNone, nil, "Repository id is required", "Brak identyfikatora repozytorium"},
 	{"PROTO-0001", "proto.repo_not_found", SevError, HintNone, nil, "Repository is not known to this daemon", "Daemon nie zna tego repozytorium"},
 
+	// The domain language packs are compiled in and validated by the build,
+	// so this is a can't-happen that must still not be a panic in a handler.
+	{"MSG-0001", "messages.catalog_unavailable", SevError, HintAdminOnly, nil, "Domain message catalogue could not be loaded", "Katalog komunikatów jest niedostępny"},
+
 	{"RECOVERY-0001", "recovery.unavailable", SevError, HintNone, nil, "Recovery service is not available", "Odzyskiwanie jest teraz niedostępne"},
 	{"RECOVERY-1001", "recovery.download_failed", SevError, HintRequireAction, nil, "Recovery download failed", "Pobranie archiwum nie powiodło się"},
 

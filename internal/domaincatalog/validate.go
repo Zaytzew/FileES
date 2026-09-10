@@ -58,6 +58,11 @@ func Validate(packs map[string]Pack) error {
 	// Placeholders must be the same in every language: the daemon sends one
 	// set of arguments, and a sentence that names an argument its siblings do
 	// not is a sentence one reader sees complete and another sees with a hole.
+	//
+	// For a ladder the whole sequence has to match, not just the union. A
+	// language that ships three rungs while another ships one does not have a
+	// wording difference; it has one reader who is told who is holding the
+	// file and another who is told that somebody is.
 	used := map[string]map[string][]string{}
 
 	for _, locale := range locales {
@@ -86,7 +91,7 @@ func Validate(packs map[string]Pack) error {
 			if used[key] == nil {
 				used[key] = map[string][]string{}
 			}
-			used[key][locale] = placeholders(message)
+			used[key][locale] = parameterShape(message)
 		}
 
 		// Completeness is checked per pack, including the base one: the
@@ -125,7 +130,9 @@ func Validate(packs map[string]Pack) error {
 }
 
 func validateMessage(locale, key string, schema KeySchema, message Message, report func(string, ...any)) {
-	if message.IsPlural() {
+	if message.IsLadder() {
+		validateLadder(locale, key, message.Variants, report)
+	} else if message.IsPlural() {
 		if len(message.Plural) == 0 {
 			report("%s: %q has no plural variants", locale, key)
 			return
@@ -172,6 +179,61 @@ func validateMessage(locale, key string, schema KeySchema, message Message, repo
 	}
 }
 
+// validateLadder checks the rungs of a specificity ladder.
+func validateLadder(locale, key string, variants []string, report func(string, ...any)) {
+	if len(variants) < 2 {
+		// One rung is a plain template wearing an array. Saying so keeps the
+		// shape of an entry a reliable signal of how it will be selected.
+		report("%s: %q is a ladder with fewer than two variants", locale, key)
+		return
+	}
+	sets := make([][]string, len(variants))
+	for i, variant := range variants {
+		if strings.TrimSpace(variant) == "" {
+			report("%s: %q has an empty variant at position %d", locale, key, i+1)
+		}
+		sets[i] = templatePlaceholders(variant)
+	}
+	// The last rung is what a reader gets when nothing arrived, so it has to
+	// be a complete sentence on its own. This is the rule Spec.Polish carried
+	// in prose — an empty Details map must still produce a whole sentence.
+	if len(sets[len(sets)-1]) != 0 {
+		report("%s: %q ends on a variant that still needs parameters %v", locale, key, sets[len(sets)-1])
+	}
+	// A rung that asks for everything an earlier rung asks for can never be
+	// reached: whenever its parameters are present, the earlier one already
+	// matched. Silently unreachable wording is wasted translation.
+	for i := range sets {
+		for j := 0; j < i; j++ {
+			if containsAll(sets[i], sets[j]) {
+				report("%s: %q variant %d is unreachable behind variant %d", locale, key, i+1, j+1)
+			}
+		}
+	}
+}
+
+// parameterShape describes what a renderer can select from, in a form two
+// languages can be compared by: the kind of entry, and the parameter sets in
+// the order selection will consider them.
+func parameterShape(message Message) []string {
+	switch {
+	case message.IsLadder():
+		out := make([]string, 0, len(message.Variants)+1)
+		out = append(out, "ladder")
+		for _, variant := range message.Variants {
+			out = append(out, strings.Join(templatePlaceholders(variant), ","))
+		}
+		return out
+	case message.IsPlural():
+		// Categories may legitimately differ in whether they name the count
+		// — English "one repository" spells no number — so plural entries are
+		// compared by the union.
+		return []string{"plural", strings.Join(placeholders(message), ",")}
+	default:
+		return []string{"text", strings.Join(placeholders(message), ",")}
+	}
+}
+
 // placeholders returns the distinct parameter names a message uses.
 func placeholders(message Message) []string {
 	seen := map[string]bool{}
@@ -186,6 +248,37 @@ func placeholders(message Message) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// templatePlaceholders returns the distinct parameter names of one template.
+func templatePlaceholders(template string) []string {
+	seen := map[string]bool{}
+	names := []string{}
+	for _, match := range placeholderPattern.FindAllStringSubmatch(template, -1) {
+		if !seen[match[1]] {
+			seen[match[1]] = true
+			names = append(names, match[1])
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// containsAll reports whether every name in want is present in have.
+func containsAll(have, want []string) bool {
+	for _, name := range want {
+		found := false
+		for _, candidate := range have {
+			if candidate == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func hasKind(schema KeySchema, kind errcat.ParamKind) bool {

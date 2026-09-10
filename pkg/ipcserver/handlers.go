@@ -36,6 +36,8 @@ func (s *Server) dispatch(req contract.Request) contract.Response {
 		return s.handleUpdatePlan(req)
 	case contract.CmdUpdateApply:
 		return s.handleUpdateApply(req)
+	case contract.CmdMessagesCatalog:
+		return s.handleMessagesCatalog(req)
 	case contract.CmdActivationBegin:
 		return s.handleActivationBegin(req)
 	case contract.CmdActivationFinish:

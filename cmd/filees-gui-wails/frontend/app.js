@@ -239,6 +239,19 @@ function ageInWords(value) {
   return new Intl.RelativeTimeFormat(getLocale()).format(-days, "day");
 }
 
+// Presentation only: chronology and grouping remain the host's projection.
+function journalTime(item, now = new Date()) {
+  const date = new Date(item.timestamp || "");
+  if (!Number.isFinite(date.getTime())) return item.relative_time || "";
+  const delta = now - date;
+  if (delta < 60000) return t("time.justNow");
+  if (delta < 600000) return new Intl.RelativeTimeFormat(getLocale()).format(-Math.floor(delta / 60000), "minute");
+  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString(getLocale(), {hour: "2-digit", minute: "2-digit"});
+  const calendarDay = d => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((calendarDay(now) - calendarDay(date)) / 86400000);
+  return new Intl.RelativeTimeFormat(getLocale(), {numeric: "auto"}).format(-days, "day");
+}
+
 function renderConnection(snapshot) {
   const core = $("#pulse-core");
   const freshness = $("#projection-freshness");
@@ -899,8 +912,8 @@ function renderDetached(snapshot) {
       ? `<p class="detached-note">${escapeHTML(t("detached.reactivate"))}</p>`
       : "";
     return `<article class="detached-row">
-      <div class="detached-head"><strong>${escapeHTML(item.summary)}</strong>
-      <time datetime="${escapeHTML(item.exact_time)}">${escapeHTML(item.relative_time)}</time></div>
+      <div class="detached-head"><strong>${escapeHTML(t(item.needs_reactivation ? "detached.remote" : "detached.self", {name: item.name || item.server_id}))}</strong>
+      <time datetime="${escapeHTML(item.timestamp || item.exact_time)}">${escapeHTML(journalTime(item))}</time></div>
       ${note}${folders}
     </article>`;
   }).join(""));
@@ -914,7 +927,7 @@ function renderJournal(snapshot) {
   } else {
     replaceHTMLIfChanged(root, entries.slice(0, 6).map((item) => `<article class="activity-row ${item.emphasized ? "is-error" : ""}">
       <span class="activity-dot"></span><div><strong title="${escapeHTML(item.summary)}">${escapeHTML(item.summary)}</strong>
-      <p>${escapeHTML(item.repository || "FileES")}</p><time datetime="${escapeHTML(item.exact_time)}">${escapeHTML(item.relative_time)}</time></div>
+      <p>${escapeHTML(item.repository || "FileES")}</p><time datetime="${escapeHTML(item.timestamp || item.exact_time)}">${escapeHTML(journalTime(item))}</time></div>
     </article>`).join(""));
   }
 

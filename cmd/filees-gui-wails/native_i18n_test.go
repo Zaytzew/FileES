@@ -7,6 +7,29 @@ import (
 	"unicode/utf16"
 )
 
+func TestActionLanguageSnapshotDoesNotFollowMutableTrayLocale(t *testing.T) {
+	var service GUIService
+	if service.localizeText("pending.lock", "fallback") != "fallback" {
+		t.Fatal("unconfigured callback")
+	}
+	language, err := loadNativeLanguage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.setPresentationLanguage(language)
+	language.selectLocale("pl")
+	if service.localizeText("pending.lock", "") != "Locking files" {
+		t.Fatal("mutable locale leaked into action snapshot")
+	}
+	service.setPresentationLanguage(language)
+	if service.localizeText("pending.lock", "") != "Zakładanie blokady" {
+		t.Fatal("locale not updated")
+	}
+	if err := (mobilePairingAdapter{text: service.localizeText}).Launch(t.Context(), ""); err == nil || err.Error() != "natywne parowanie mobilne nie jest dostępne" {
+		t.Fatal(err)
+	}
+}
+
 func TestNativeLanguageUsesEmbeddedGUICatalogues(t *testing.T) {
 	language, err := loadNativeLanguage()
 	if err != nil {

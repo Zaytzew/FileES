@@ -2,6 +2,7 @@ import { Events, Window } from "/wails/runtime.js";
 import { PromptService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t } from "./i18n.js";
+import { promptDetailText } from "./prompt-details.js";
 
 initializeTheme();
 initializeLanguage();
@@ -14,6 +15,7 @@ let submissionError = "";
 // Only explicitly marked, GUI-authored templates are localized. Unmarked
 // daemon messages and diagnostics are displayed verbatim, not matched by text.
 function promptText(next, part, original) {
+  if (part === "text" && next.presentation_key?.startsWith("details.")) return promptDetailText(next.presentation_key, next.presentation_args || {});
   return next.presentation_key ? t(`${next.presentation_key}.${part}`, next.presentation_args || {}) : original;
 }
 

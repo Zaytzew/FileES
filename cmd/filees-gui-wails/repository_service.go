@@ -74,6 +74,8 @@ type settingsBrowserRouter struct {
 }
 
 type RepositorySnapshot struct {
+	TextKey        string                       `json:"text_key,omitempty"`
+	TextPrefix     string                       `json:"text_prefix,omitempty"`
 	Revision       uint64                       `json:"revision"`
 	Mode           string                       `json:"mode"`
 	Title          string                       `json:"title"`
@@ -89,6 +91,9 @@ type RepositorySnapshot struct {
 }
 
 type RepositoryContextProjection struct {
+	StateKey        string `json:"state_key,omitempty"`
+	AccessKey       string `json:"access_key,omitempty"`
+	EditingKey      string `json:"editing_key,omitempty"`
 	LastCommitAt    string `json:"last_commit_at,omitempty"`
 	CanFoldInactive bool   `json:"can_fold_inactive"`
 	ServerID        string `json:"server_id"`
@@ -111,6 +116,7 @@ type RepositoryActionProjection struct {
 }
 
 type PublicShareProjection struct {
+	StateKey   string `json:"state_key,omitempty"`
 	ChannelID  string `json:"channel_id"`
 	Address    string `json:"address"`
 	State      string `json:"state"`
@@ -134,6 +140,7 @@ type RealmGrantProjection struct {
 }
 
 type UploadChannelProjection struct {
+	StateKey   string `json:"state_key,omitempty"`
 	ChannelID  string `json:"channel_id"`
 	Address    string `json:"address"`
 	State      string `json:"state"`
@@ -776,8 +783,8 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 		return RepositorySnapshot{}, false
 	}
 	snapshot := RepositorySnapshot{
-		Mode: "actions", Title: request.Title, Text: request.Text,
-		Context: RepositoryContextProjection{LastCommitAt: folder.LastCommitAt, CanFoldInactive: folder.CanFoldInactive, ServerID: server.ID, ServerName: server.Name, Address: server.Address, Realm: server.Realm, RepoID: folder.ID, Name: folder.Name, LocalPath: folder.LocalPath, State: folder.State, Access: folder.Access, Editing: folder.Editing},
+		Mode: "actions", Title: request.Title, Text: request.Text, TextKey: request.TextKey,
+		Context: RepositoryContextProjection{LastCommitAt: folder.LastCommitAt, CanFoldInactive: folder.CanFoldInactive, ServerID: server.ID, ServerName: server.Name, Address: server.Address, Realm: server.Realm, RepoID: folder.ID, Name: folder.Name, LocalPath: folder.LocalPath, State: folder.State, Access: folder.Access, Editing: folder.Editing, StateKey: folder.StateKey, AccessKey: folder.AccessKey, EditingKey: folder.EditingKey},
 		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{},
 	}
 	if folder.CanManageGrants {
@@ -834,7 +841,7 @@ func projectPublicShares(request platform.PublicShareDialogRequest) (RepositoryS
 		return RepositorySnapshot{}, false
 	}
 	snapshot := RepositorySnapshot{
-		Mode: "shares", Title: request.Title, Text: request.Text,
+		Mode: "shares", Title: request.Title, Text: request.Text, TextKey: request.TextKey,
 		FocusChannelID: request.FocusChannelID,
 		Context:        RepositoryContextProjection{ServerID: request.ServerID, RepoID: request.RepoID, Name: request.RepositoryName},
 		Actions:        []RepositoryActionProjection{}, Shares: make([]PublicShareProjection, 0, len(request.Shares)), Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{},
@@ -842,7 +849,7 @@ func projectPublicShares(request platform.PublicShareDialogRequest) (RepositoryS
 	for _, share := range request.Shares {
 		active := strings.EqualFold(strings.TrimSpace(share.State), "aktywne") || strings.EqualFold(strings.TrimSpace(share.State), "active")
 		snapshot.Shares = append(snapshot.Shares, PublicShareProjection{
-			ChannelID: share.ChannelID, Address: share.Address, State: share.State, SourceRoot: share.SourceRoot,
+			ChannelID: share.ChannelID, Address: share.Address, State: share.State, StateKey: share.StateKey, SourceRoot: share.SourceRoot,
 			Recipients: share.Recipients, Password: share.Password, Revision: share.Revision,
 			CanEdit: active, CanRevoke: active, CanDelete: strings.TrimSpace(share.ChannelID) != "",
 		})
@@ -855,7 +862,7 @@ func projectRealmGrants(request platform.RealmGrantDialogRequest, contextProject
 		return RepositorySnapshot{}, false
 	}
 	snapshot := RepositorySnapshot{
-		Mode: "grants", Title: request.Title, Text: request.Text, Context: contextProjection,
+		Mode: "grants", Title: request.Title, Text: request.Text, TextKey: request.TextKey, Context: contextProjection,
 		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: make([]RealmGrantProjection, 0, len(request.Recipients)), Uploads: []UploadChannelProjection{},
 	}
 	for _, recipient := range request.Recipients {
@@ -878,7 +885,7 @@ func projectUploadChannels(request platform.UploadChannelDialogRequest, contextP
 		return RepositorySnapshot{}, false
 	}
 	snapshot := RepositorySnapshot{
-		Mode: "uploads", Title: request.Title, Text: request.Text, Context: contextProjection,
+		Mode: "uploads", Title: request.Title, Text: request.Text, TextKey: request.TextKey, Context: contextProjection,
 		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: make([]UploadChannelProjection, 0, len(request.Channels)), Quarantine: []QuarantineItemProjection{},
 	}
 	for _, channel := range request.Channels {
@@ -888,7 +895,7 @@ func projectUploadChannels(request platform.UploadChannelDialogRequest, contextP
 		}
 		active := strings.EqualFold(strings.TrimSpace(channel.State), "aktywne") || strings.EqualFold(strings.TrimSpace(channel.State), "active")
 		snapshot.Uploads = append(snapshot.Uploads, UploadChannelProjection{
-			ChannelID: channelID, Address: channel.Address, State: channel.State, Recipients: channel.Recipients,
+			ChannelID: channelID, Address: channel.Address, State: channel.State, StateKey: channel.StateKey, Recipients: channel.Recipients,
 			RequireOTP: channel.RequireOTP, CanEdit: active, CanRevoke: active, CanDelete: true,
 		})
 	}
@@ -900,7 +907,7 @@ func projectQuarantine(request platform.QuarantineDialogRequest, contextProjecti
 		return RepositorySnapshot{}, false
 	}
 	snapshot := RepositorySnapshot{
-		Mode: "quarantine", Title: request.Title, Text: request.Text, Context: contextProjection,
+		Mode: "quarantine", Title: request.Title, Text: request.Text, TextKey: request.TextKey, TextPrefix: request.TextPrefix, Context: contextProjection,
 		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{},
 		Quarantine: make([]QuarantineItemProjection, 0, len(request.Items)),
 	}

@@ -31,19 +31,20 @@ type snapshotEmitter interface {
 // internal/gui/app reconstructs the authoritative presentation from IPC and
 // this service only publishes an immutable browser-friendly projection.
 type GUIService struct {
-	mu                  sync.RWMutex
-	snapshot            Snapshot
-	view                guiapp.ViewModel
-	runner              *guiapp.App
-	emitter             snapshotEmitter
-	actions             chan<- tray.Intent
-	actionSeq           atomic.Uint64
-	observer            func(Snapshot)
-	branding            realmBrandingClient
-	brandingByRealm     map[string]string
-	brandingRequested   map[string]bool
-	brandingKeyByServer map[string]string
-	ctx                 context.Context
+	presentationLanguage atomic.Pointer[nativeLanguage]
+	mu                   sync.RWMutex
+	snapshot             Snapshot
+	view                 guiapp.ViewModel
+	runner               *guiapp.App
+	emitter              snapshotEmitter
+	actions              chan<- tray.Intent
+	actionSeq            atomic.Uint64
+	observer             func(Snapshot)
+	branding             realmBrandingClient
+	brandingByRealm      map[string]string
+	brandingRequested    map[string]bool
+	brandingKeyByServer  map[string]string
+	ctx                  context.Context
 }
 
 type Snapshot struct {
@@ -267,6 +268,7 @@ type ActivityProjection struct {
 }
 
 type JournalProjection struct {
+	Timestamp    string `json:"timestamp"`
 	ID           string `json:"id"`
 	RelativeTime string `json:"relative_time"`
 	ExactTime    string `json:"exact_time"`
@@ -279,12 +281,11 @@ type JournalProjection struct {
 
 // DetachmentProjection is one ended relationship, ready to render.
 //
-// Everything the panel needs is decided here, in Go: the relative time, the
-// sentence, whether re-activation is what is left to do. The panel is a
-// presenter and a collector of intentions - it holds no knowledge of its own
-// and computes nothing, so a lifetime measured in the frontend, or a wording
-// chosen there, would be the panel deciding something it cannot check.
+// Go decides whether this is a current ending and whether reactivation is
+// required. The renderer localizes that established fact and its timestamp;
+// localization never changes relationship lifetime or action eligibility.
 type DetachmentProjection struct {
+	Timestamp    string `json:"timestamp"`
 	ServerID     string `json:"server_id"`
 	Name         string `json:"name"`
 	Address      string `json:"address,omitempty"`
@@ -435,7 +436,7 @@ func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	if !allowed {
 		return ActionAcceptance{Code: "action_unavailable"}
 	}
-	tracked := pendingActionFor(vm, request, service.actionSeq.Add(1))
+	tracked := pendingActionFor(vm, request, service.actionSeq.Add(1), service.localizeText)
 	if tracked.ID != "" && service.runner != nil {
 		if !service.runner.StartAction(tracked) {
 			return ActionAcceptance{Code: "action_queue_busy"}
@@ -453,19 +454,23 @@ func (service *GUIService) Trigger(request ActionRequest) ActionAcceptance {
 	}
 }
 
-func pendingActionFor(vm guiapp.ViewModel, request ActionRequest, sequence uint64) guiapp.PendingAction {
+func pendingActionFor(vm guiapp.ViewModel, request ActionRequest, sequence uint64, texts ...func(string, string) string) guiapp.PendingAction {
+	text := func(_ string, fallback string) string { return fallback }
+	if len(texts) > 0 && texts[0] != nil {
+		text = texts[0]
+	}
 	action := guiapp.PendingAction{Kind: request.Kind, StartedAt: time.Now()}
 	switch request.Kind {
 	case string(tray.IntentLock):
-		action.Label = "Zakładanie blokady"
+		action.Label = text("pending.lock", "Zakładanie blokady")
 		action.RepoID = request.RepoID
 		action.ReservationDelta = 1
 	case string(tray.IntentUnlock):
-		action.Label = "Zwalnianie blokady"
+		action.Label = text("pending.unlock", "Zwalnianie blokady")
 		action.RepoID = request.RepoID
 		action.ReservationDelta = -1
 	case string(tray.IntentReleaseReservation):
-		action.Label = "Zwalnianie blokady"
+		action.Label = text("pending.unlock", "Zwalnianie blokady")
 		action.ReservationDelta = -1
 		if reservation, ok := projectedReservation(vm, request.ReservationID); ok {
 			action.RepoID = reservation.RepoID
@@ -1037,7 +1042,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 	}
 	for _, entry := range journal.BuildAt(vm, now) {
 		result.Journal = append(result.Journal, JournalProjection{
-			ID: entry.ID, RelativeTime: entry.RelativeTime, ExactTime: entry.ExactTime,
+			ID: entry.ID, Timestamp: entry.Timestamp, RelativeTime: entry.RelativeTime, ExactTime: entry.ExactTime,
 			Repository: entry.Repo, Summary: entry.Summary, Details: entry.Details,
 			Severity: entry.Severity, Emphasized: entry.Emphasized,
 		})
@@ -1061,7 +1066,7 @@ func projectViewModelAt(vm guiapp.ViewModel, now time.Time) Snapshot {
 			summary = fmt.Sprintf("„%s” odłączył tego klienta", item.Name())
 		}
 		result.Detachments = append(result.Detachments, DetachmentProjection{
-			ServerID: item.ServerID, Name: item.Name(), Address: item.Address, Cause: item.Cause,
+			ServerID: item.ServerID, Name: item.Name(), Address: item.Address, Cause: item.Cause, Timestamp: item.At,
 			RelativeTime: journal.RelativeTimestamp(item.At, now), ExactTime: journal.ExactTimestamp(item.At),
 			Summary: summary, NeedsReactivation: !item.SelfDetached(), WorkingCopies: item.WorkingCopies,
 		})

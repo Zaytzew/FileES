@@ -313,6 +313,8 @@ export class JournalProjection {
      * @param {Partial<JournalProjection>} [$$source = {}] - The source object to create the JournalProjection.
      */
     constructor($$source = {}) {
+        /** @type {string | undefined} */
+        this["timestamp"] = undefined;
         if (!("id" in $$source)) {
             /**
              * @member
@@ -925,6 +927,8 @@ export class PublicShareProjection {
      * @param {Partial<PublicShareProjection>} [$$source = {}] - The source object to create the PublicShareProjection.
      */
     constructor($$source = {}) {
+        /** @type {string | undefined} */
+        this["state_key"] = undefined;
         if (!("channel_id" in $$source)) {
             /**
              * @member
@@ -1629,6 +1633,12 @@ export class RepositoryContextProjection {
      * @param {Partial<RepositoryContextProjection>} [$$source = {}] - The source object to create the RepositoryContextProjection.
      */
     constructor($$source = {}) {
+        /** @type {string | undefined} */
+        this["state_key"] = undefined;
+        /** @type {string | undefined} */
+        this["access_key"] = undefined;
+        /** @type {string | undefined} */
+        this["editing_key"] = undefined;
         if (!("server_id" in $$source)) {
             /**
              * @member
@@ -1720,6 +1730,10 @@ export class RepositorySnapshot {
      * @param {Partial<RepositorySnapshot>} [$$source = {}] - The source object to create the RepositorySnapshot.
      */
     constructor($$source = {}) {
+        /** @type {string | undefined} */
+        this["text_key"] = undefined;
+        /** @type {string | undefined} */
+        this["text_prefix"] = undefined;
         if (!("revision" in $$source)) {
             /**
              * @member
@@ -2278,6 +2292,8 @@ export class SettingsSnapshot {
      * @param {Partial<SettingsSnapshot>} [$$source = {}] - The source object to create the SettingsSnapshot.
      */
     constructor($$source = {}) {
+        /** @type {string | undefined} */
+        this["text_key"] = undefined;
         if (!("revision" in $$source)) {
             /**
              * @member
@@ -2633,6 +2649,8 @@ export class UploadChannelProjection {
      * @param {Partial<UploadChannelProjection>} [$$source = {}] - The source object to create the UploadChannelProjection.
      */
     constructor($$source = {}) {
+        /** @type {string | undefined} */
+        this["state_key"] = undefined;
         if (!("channel_id" in $$source)) {
             /**
              * @member

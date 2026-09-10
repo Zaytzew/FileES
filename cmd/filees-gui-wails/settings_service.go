@@ -31,6 +31,7 @@ type settingsSession struct {
 type settingsBrowserAdapter struct{ service *SettingsService }
 
 type SettingsSnapshot struct {
+	TextKey  string                   `json:"text_key,omitempty"`
 	Revision uint64                   `json:"revision"`
 	Title    string                   `json:"title"`
 	Text     string                   `json:"text"`
@@ -223,7 +224,7 @@ func projectSettingsRequest(request platform.SettingsDialogRequest) (SettingsSna
 	wizardServer := wizard.Servers[0]
 	projection := SettingsSnapshot{
 		Title: request.Title,
-		Text:  request.Text,
+		Text:  request.Text, TextKey: request.TextKey,
 		Server: SettingsServerProjection{
 			ID: server.ID, Name: server.Name, Address: server.Address, Realm: server.Realm, ClientID: server.ClientID,
 			SessionTimeoutMin: server.SessionTimeoutMin, CanSetSessionTimeout: server.CanSetSessionTimeout,

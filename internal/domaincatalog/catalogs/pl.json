@@ -23,12 +23,12 @@
     "intent.ambiguous": "Wysyłka wstrzymana: rozstrzygnij niejednoznaczne zmiany w ustawieniach folderu",
     "intent.resolution_refused": "Nie można przyjąć tej decyzji. Otwórz ponownie plan zmian; pliki, kolejka lub dostęp mogły się zmienić",
     "lock.held_by_other": [
-      "Plik „{path}” jest w tej chwili wypożyczony przez {holder} do {until}",
-      "Plik „{path}” jest w tej chwili wypożyczony przez {holder}",
+      "Plik „{path}” jest w tej chwili wypożyczony do {until}. Osoba rezerwująca: {holder}",
+      "Plik „{path}” jest w tej chwili wypożyczony. Osoba rezerwująca: {holder}",
       "Plik „{path}” jest w tej chwili wypożyczony przez kogoś innego do {until}",
-      "Plik jest w tej chwili wypożyczony przez {holder} do {until}",
+      "Plik jest w tej chwili wypożyczony do {until}. Osoba rezerwująca: {holder}",
       "Plik „{path}” jest w tej chwili wypożyczony przez kogoś innego",
-      "Plik jest w tej chwili wypożyczony przez {holder}",
+      "Plik jest w tej chwili wypożyczony. Osoba rezerwująca: {holder}",
       "Plik jest w tej chwili wypożyczony przez kogoś innego do {until}",
       "Plik jest w tej chwili wypożyczony przez kogoś innego"
     ],

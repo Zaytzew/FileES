@@ -49,6 +49,10 @@ export function translate(catalogues, language, key, args = {}) {
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 export function t(key, args) { return translate(catalogues, locale, key, args); }
 export function tn(key, count, args = {}) { return t(key, { ...args, count }); }
+export function labelHTML(key) {
+  const escape = value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  return `<span data-i18n="${escape(key)}">${escape(t(key))}</span>`;
+}
 export function formatNumber(value, options) { return new Intl.NumberFormat(locale, options).format(value); }
 export function formatDate(value, options) { return new Intl.DateTimeFormat(locale, options).format(new Date(value)); }
 

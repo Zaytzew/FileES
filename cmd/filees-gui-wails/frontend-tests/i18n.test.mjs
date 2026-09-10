@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import { languages, resolveLocale, normalizePreference, translate, initializeLanguage, setLanguagePreference, getLocale, t } from "../frontend/i18n.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
@@ -106,4 +107,62 @@ test("preference changes synchronize, survive denied storage and do not touch in
   assert.equal(getLocale(), "en");
   assert.deepEqual(input, { value: "unsaved DWG name", selectionStart: 3, disabled: true });
   assert.equal(document.activeElement, input);
+});
+
+test("prompt locale change preserves unsaved input and pending submission", async () => {
+  const nodes = new Map(), listeners = new Map();
+  const node = id => {
+    if (!nodes.has(id)) nodes.set(id, { value: "", disabled: false, addEventListener() {}, replaceChildren() {}, focus() {}, select() {} });
+    return nodes.get(id);
+  };
+  let rejectChoice, sent, locale = "pl";
+  const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8")
+    .replace(/^import .*;\r?\n/gm, "")
+    .replace(/try \{ render\(await PromptService\.Snapshot\(\)\); \} catch[^\n]*/, "");
+  const api = runInNewContext(`${source}\n({ render, resolve, refreshPromptLabels })`, {
+    initializeTheme() {}, initializeLanguage() {},
+    t: (key, args) => translate(catalogues, locale, key, args),
+    document: { querySelector: node, addEventListener() {}, createElement: () => ({}) },
+    window: { addEventListener: (name, fn) => listeners.set(name, fn), setTimeout() {} },
+    Events: { On() {} }, Window: {}, console: { error() {} },
+    PromptService: { Resolve: choice => { sent = choice; return new Promise((_, reject) => { rejectChoice = reject; }); } },
+  });
+  api.render({ revision: 17, mode: "text", default: "old" });
+  const input = node("#prompt-value");
+  input.value = "nowa nazwa <DWG>"; input.selectionStart = 4;
+  const pending = api.resolve(true);
+  locale = "en"; listeners.get("filees:language-changed")();
+  assert.equal(input.value, "nowa nazwa <DWG>");
+  assert.equal(input.selectionStart, 4);
+  assert.equal(node("#prompt-confirm").disabled, true);
+  assert.equal(node("#prompt-cancel").disabled, true);
+  assert.equal(node("#prompt-confirm").textContent, "Continue");
+  assert.equal(sent.revision, 17); assert.equal(sent.confirmed, true);
+  assert.equal(sent.value, input.value);
+  rejectChoice(new Error("synthetic_failure")); await pending;
+  assert.match(node("#prompt-mode").textContent, /synthetic_failure/);
+  assert.equal(node("#prompt-confirm").disabled, false);
+  locale = "pl"; listeners.get("filees:language-changed")();
+  assert.match(node("#prompt-mode").textContent, /synthetic_failure/);
+  assert.equal(input.value, "nowa nazwa <DWG>");
+});
+
+test("repository translated controls retain opaque action IDs and escape user data", () => {
+  const source = readFileSync(new URL("../frontend/repository.js", import.meta.url), "utf8");
+  const start = source.indexOf("function shareCard(");
+  const end = source.indexOf("function grantAccess(", start);
+  const escape = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  const i18nSource = readFileSync(new URL("../frontend/i18n.js", import.meta.url), "utf8");
+  const labelStart = i18nSource.indexOf("export function labelHTML(");
+  const labelEnd = i18nSource.indexOf("\n}", labelStart) + 2;
+  const card = runInNewContext(`${i18nSource.slice(labelStart, labelEnd).replace("export ", "")}\n${source.slice(start, end)}\nshareCard`, {
+    escapeHTML: escape, currentSnapshot: null,
+    t: (key, args) => translate(catalogues, "en", key, args),
+  });
+  const html = card({ channel_id: 'opaque"<id>', address: "Nazwa użytkownika <DWG>", can_edit: true, can_revoke: true });
+  assert.match(html, /data-share-action="edit"/);
+  assert.match(html, /data-channel-id="opaque&quot;&lt;id&gt;"/);
+  assert.match(html, /data-i18n="action.edit">Edit<\/span>/);
+  assert.match(html, /Nazwa użytkownika &lt;DWG&gt;/);
+  assert.doesNotMatch(html, /data-share-action="delete"/);
 });

@@ -1,7 +1,7 @@
 import { Events, Window } from "/wails/runtime.js";
 import { RepositoryService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
-import { initializeLanguage } from "./i18n.js";
+import { initializeLanguage, t, labelHTML } from "./i18n.js";
 import { readRepoView, saveRepoView, repoViewKey, canArchive } from "./repo-view.js";
 
 initializeTheme();
@@ -16,6 +16,19 @@ const escapeHTML = (value) => String(value ?? "")
   .replaceAll("'", "&#039;");
 
 let currentSnapshot = null;
+
+// Only labels change here: preserve focus, pending actions and their buttons.
+function refreshRepositoryLabels() {
+  if (!currentSnapshot) return;
+  const mode = currentSnapshot.mode;
+  const scope = { shares: "sharesScope", grants: "grantsScope", uploads: "uploadScope", quarantine: "quarantineScope" };
+  const back = { shares: "repository.back", grants: "repository.closeGrants", uploads: "repository.closeUploads", quarantine: "repository.closeQuarantine" };
+  $("#scope-label").textContent = t(`repository.${scope[mode] || "defaultScope"}`);
+  $("#repository-copy").textContent = currentSnapshot.text || t("repository.copy");
+  $("#back-to-actions").textContent = t(back[mode] || "action.close");
+}
+
+window.addEventListener("filees:language-changed", refreshRepositoryLabels);
 
 function showToast(title, message = "") {
   const toast = document.createElement("article");
@@ -33,62 +46,62 @@ function actionButton(action) {
 
 function shareCard(share) {
   const controls = [
-    share.can_edit ? `<button type="button" data-share-action="edit" data-channel-id="${escapeHTML(share.channel_id)}">Edytuj</button>` : "",
-    share.can_revoke ? `<button type="button" data-share-action="revoke" data-channel-id="${escapeHTML(share.channel_id)}">Cofnij</button>` : "",
-    share.can_delete ? `<button class="danger" type="button" data-share-action="delete" data-channel-id="${escapeHTML(share.channel_id)}">Usuń</button>` : "",
+    share.can_edit ? `<button type="button" data-share-action="edit" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.edit")}</button>` : "",
+    share.can_revoke ? `<button type="button" data-share-action="revoke" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.revoke")}</button>` : "",
+    share.can_delete ? `<button class="danger" type="button" data-share-action="delete" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.delete")}</button>` : "",
   ].join("");
   return `<article class="share-row ${share.channel_id === currentSnapshot?.focus_channel_id ? "is-focused" : ""}" data-share-channel-id="${escapeHTML(share.channel_id)}">
-    <div class="share-main"><span class="share-dot ${share.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(share.address || share.channel_id)}</strong><small>${escapeHTML(share.source_root || "całe repozytorium")}</small></div></div>
-    <div class="share-fact"><small>Stan</small><span>${escapeHTML(share.state || "nieznany")}</span></div>
-    <div class="share-fact"><small>Odbiorcy</small><span title="${escapeHTML(share.recipients)}">${escapeHTML(share.recipients || "kanał otwarty")}</span></div>
-    <div class="share-fact"><small>Rewizja</small><span>${escapeHTML(share.revision || "HEAD")}</span></div>
+    <div class="share-main"><span class="share-dot ${share.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(share.address || share.channel_id)}</strong><small>${escapeHTML(share.source_root || t("repository.whole"))}</small></div></div>
+    <div class="share-fact"><small>${labelHTML("field.state")}</small><span>${escapeHTML(share.state || t("field.unknown"))}</span></div>
+    <div class="share-fact"><small>${labelHTML("field.recipients")}</small><span title="${escapeHTML(share.recipients)}">${escapeHTML(share.recipients || t("share.open"))}</span></div>
+    <div class="share-fact"><small>${labelHTML("field.revision")}</small><span>${escapeHTML(share.revision || "HEAD")}</span></div>
     <div class="share-controls">${controls}</div>
   </article>`;
 }
 
 function grantAccess(grant) {
-  if (!String(grant.state || "").toLowerCase().startsWith("active") && !String(grant.state || "").toLowerCase().startsWith("aktyw")) return "brak dostępu";
-  if (grant.access === "rw") return "odczyt i zapis";
-  if (grant.access === "r") return "tylko odczyt";
-  return grant.access || "brak dostępu";
+  if (!String(grant.state || "").toLowerCase().startsWith("active") && !String(grant.state || "").toLowerCase().startsWith("aktyw")) return t("access.none");
+  if (grant.access === "rw") return t("access.rw");
+  if (grant.access === "r") return t("access.r");
+  return grant.access || t("access.none");
 }
 
 function grantCard(grant) {
   const controls = [
-    grant.can_read ? `<button type="button" data-grant-action="grant_read" data-realm-id="${escapeHTML(grant.realm_id)}">Tylko odczyt</button>` : "",
-    grant.can_write ? `<button type="button" data-grant-action="grant_write" data-realm-id="${escapeHTML(grant.realm_id)}">Odczyt i zapis</button>` : "",
-    grant.can_revoke ? `<button class="danger" type="button" data-grant-action="revoke" data-realm-id="${escapeHTML(grant.realm_id)}">Cofnij</button>` : "",
+    grant.can_read ? `<button type="button" data-grant-action="grant_read" data-realm-id="${escapeHTML(grant.realm_id)}">${labelHTML("access.readButton")}</button>` : "",
+    grant.can_write ? `<button type="button" data-grant-action="grant_write" data-realm-id="${escapeHTML(grant.realm_id)}">${labelHTML("access.writeButton")}</button>` : "",
+    grant.can_revoke ? `<button class="danger" type="button" data-grant-action="revoke" data-realm-id="${escapeHTML(grant.realm_id)}">${labelHTML("action.revoke")}</button>` : "",
   ].join("");
   return `<article class="grant-row">
-    <div class="grant-main"><span class="share-dot ${grant.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(grant.alias || "Strefa FileES")}</strong><small>Odbiorca widoczny w katalogu stref</small></div></div>
-    <div class="share-fact"><small>Aktualne uprawnienie</small><span>${escapeHTML(grantAccess(grant))}</span></div>
+    <div class="grant-main"><span class="share-dot ${grant.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(grant.alias || t("realm.default"))}</strong><small>${labelHTML("realm.visibleRecipient")}</small></div></div>
+    <div class="share-fact"><small>${labelHTML("realm.permission")}</small><span>${escapeHTML(grantAccess(grant))}</span></div>
     <div class="grant-controls">${controls}</div>
   </article>`;
 }
 
 function uploadCard(channel) {
 	const controls = [
-		channel.can_edit ? `<button type="button" data-upload-action="edit" data-channel-id="${escapeHTML(channel.channel_id)}">Edytuj</button>` : "",
-		channel.can_revoke ? `<button type="button" data-upload-action="revoke" data-channel-id="${escapeHTML(channel.channel_id)}">Cofnij</button>` : "",
-		channel.can_delete ? `<button class="danger" type="button" data-upload-action="delete" data-channel-id="${escapeHTML(channel.channel_id)}">Usuń</button>` : "",
+		channel.can_edit ? `<button type="button" data-upload-action="edit" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.edit")}</button>` : "",
+		channel.can_revoke ? `<button type="button" data-upload-action="revoke" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.revoke")}</button>` : "",
+		channel.can_delete ? `<button class="danger" type="button" data-upload-action="delete" data-channel-id="${escapeHTML(channel.channel_id)}">${labelHTML("action.delete")}</button>` : "",
 	].join("");
 	return `<article class="share-row upload-row">
-		<div class="share-main"><span class="share-dot ${channel.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(channel.address || channel.channel_id)}</strong><small>${channel.require_otp ? "zamknięta półka · kod z poczty" : "zamknięta półka przyjęcia"}</small></div></div>
-		<div class="share-fact"><small>Stan</small><span>${escapeHTML(channel.state || "nieznany")}</span></div>
-		<div class="share-fact"><small>Wnoszący</small><span title="${escapeHTML(channel.recipients)}">${escapeHTML(channel.recipients || "brak")}</span></div>
+		<div class="share-main"><span class="share-dot ${channel.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(channel.address || channel.channel_id)}</strong><small>${labelHTML(channel.require_otp ? "upload.otp" : "upload.closed")}</small></div></div>
+		<div class="share-fact"><small>${labelHTML("field.state")}</small><span>${escapeHTML(channel.state || t("field.unknown"))}</span></div>
+		<div class="share-fact"><small>${labelHTML("upload.contributors")}</small><span title="${escapeHTML(channel.recipients)}">${escapeHTML(channel.recipients || t("field.none"))}</span></div>
 		<div class="share-controls">${controls}</div>
 	</article>`;
 }
 
 function quarantineCard(item) {
-	const verdict = item.av_verdict || "odrzut antywirusa";
+	const verdict = item.av_verdict || t("quarantine.verdict");
 	return `<article class="share-row">
 		<div class="share-main"><span class="share-dot" aria-hidden="true"></span><div><strong>${escapeHTML(item.original_name || item.upload_id)}</strong><small>${escapeHTML(verdict)}</small></div></div>
-		<div class="share-fact"><small>Rozmiar</small><span>${escapeHTML(item.size_label || ((item.size || 0) + " B"))}</span></div>
+		<div class="share-fact"><small>${labelHTML("field.size")}</small><span>${escapeHTML(item.size_label || ((item.size || 0) + " B"))}</span></div>
 		<div class="share-fact"><small>TTL</small><span>jeszcze ${escapeHTML(String(item.remaining_hours ?? 0))} godz.</span></div>
 		<div class="share-controls">
-			<button type="button" data-quarantine-action="fetch" data-upload-id="${escapeHTML(item.upload_id)}">Pobierz</button>
-			<button class="danger" type="button" data-quarantine-action="hide" data-upload-id="${escapeHTML(item.upload_id)}">Odrzuć</button>
+			<button type="button" data-quarantine-action="fetch" data-upload-id="${escapeHTML(item.upload_id)}">${labelHTML("action.fetch")}</button>
+			<button class="danger" type="button" data-quarantine-action="hide" data-upload-id="${escapeHTML(item.upload_id)}">${labelHTML("action.reject")}</button>
 		</div>
 	</article>`;
 }
@@ -105,9 +118,9 @@ function render(snapshot) {
 	const detailMode = sharesMode || grantsMode || uploadsMode || quarantineMode;
 
   $("#window-context").textContent = context.name || context.repo_id;
-	$("#scope-label").textContent = sharesMode ? "Folder · udostępnienia" : grantsMode ? "Folder · uprawnienia gości" : uploadsMode ? "Folder · półki przyjęcia" : quarantineMode ? "Folder · kwarantanna" : "Folder FileES";
+	$("#scope-label").textContent = sharesMode ? t("repository.sharesScope") : grantsMode ? t("repository.grantsScope") : uploadsMode ? t("repository.uploadScope") : quarantineMode ? t("repository.quarantineScope") : t("repository.defaultScope");
   $("#repository-name").textContent = context.name || context.repo_id;
-  $("#repository-copy").textContent = snapshot.text || "Działania dla tego folderu.";
+  $("#repository-copy").textContent = snapshot.text || t("repository.copy");
   $("#repository-server").textContent = context.server_name || context.server_id;
   $("#repository-state").textContent = context.state || "—";
   $("#repository-access").textContent = context.access || "—";
@@ -119,43 +132,43 @@ function render(snapshot) {
 	$("#uploads-view").hidden = !uploadsMode;
 	$("#quarantine-view").hidden = !quarantineMode;
 	$("#back-to-actions").hidden = !detailMode;
-	$("#back-to-actions").textContent = sharesMode ? "Zamknij udostępnienia" : grantsMode ? "Zamknij uprawnienia" : uploadsMode ? "Zamknij półki" : quarantineMode ? "Zamknij kwarantannę" : "Zamknij";
+	$("#back-to-actions").textContent = sharesMode ? t("repository.back") : grantsMode ? t("repository.closeGrants") : uploadsMode ? t("repository.closeUploads") : quarantineMode ? t("repository.closeQuarantine") : t("action.close");
 
   if (!sharesMode) {
     const actions = snapshot.actions || [];
     $("#repository-actions").innerHTML = actions.length
       ? actions.map(actionButton).join("")
-      : '<p class="empty">W aktualnym stanie nie ma działań administracyjnych dla tego folderu.</p>';
+      : `<p class="empty">${labelHTML("repository.noActions")}</p>`;
     const prefs = readRepoView();
     const archived = prefs.archived[repoViewKey(context)] === context.last_commit_at && Boolean(context.last_commit_at);
     if (!detailMode && (archived || canArchive(context, prefs))) {
-      $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-archive-view><span><strong>${archived ? "Przywróć na zwykłą listę" : "Przenieś do archiwalnych"}</strong><small>Tylko widok na tym urządzeniu. Nie odłącza folderu i nie zatrzymuje synchronizacji.</small></span><i aria-hidden="true">›</i></button>`;
+      $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-archive-view><span><strong>${labelHTML(archived ? "repository.restoreView" : "repository.archiveView")}</strong><small>${labelHTML("repository.archiveHelp")}</small></span><i aria-hidden="true">›</i></button>`;
     }
   } else {
     const shares = snapshot.shares || [];
     $("#public-shares").innerHTML = shares.length
       ? shares.map(shareCard).join("")
-      : '<p class="empty">Ten folder nie ma jeszcze publicznych udostępnień.</p>';
+      : `<p class="empty">${labelHTML("repository.noShares")}</p>`;
     $("#create-share").disabled = Boolean(snapshot.busy);
   }
 	if (grantsMode) {
 		const grants = snapshot.grants || [];
 		$("#realm-grants").innerHTML = grants.length
 			? grants.map(grantCard).join("")
-			: '<p class="empty">Brak widocznych stref, którym można nadać dostęp.</p>';
+			: `<p class="empty">${labelHTML("repository.noRealms")}</p>`;
 	}
 	if (uploadsMode) {
 		const channels = snapshot.uploads || [];
 		$("#upload-channels").innerHTML = channels.length
 			? channels.map(uploadCard).join("")
-			: '<p class="empty">Ten folder nie ma jeszcze półek przyjęcia.</p>';
+			: `<p class="empty">${labelHTML("repository.noUploads")}</p>`;
 		$("#create-upload").disabled = Boolean(snapshot.busy);
 	}
 	if (quarantineMode) {
 		const items = snapshot.quarantine || [];
 		$("#quarantine-items").innerHTML = items.length
 			? items.map(quarantineCard).join("")
-			: '<p class="empty">Poczekalnia jest pusta. Odrzuty znikają same po 48 godzinach.</p>';
+			: `<p class="empty">${labelHTML("repository.noQuarantine")}</p>`;
 	}
   if (contextChanged) window.requestAnimationFrame(() => window.scrollTo(0, 0));
   if (contextChanged && sharesMode && snapshot.focus_channel_id) window.requestAnimationFrame(() => {
@@ -172,9 +185,9 @@ async function chooseGrant(action, realmID, button) {
 		const choice = contextChoice(action);
 		choice.realm_id = realmID;
 		const result = await RepositoryService.ChooseGrant(choice);
-		if (!result.accepted) showToast("Działanie niedostępne", result.code || "Katalog odbiorców mógł się zmienić.");
+		if (!result.accepted) showToast(t("ui.unavailable"), result.code || t("repository.recipientsChanged"));
 	} catch (error) {
-		showToast("Nie udało się przekazać intencji", error?.message || String(error));
+		showToast(t("ui.sendFailed"), error?.message || String(error));
 	} finally {
 		window.setTimeout(() => { button.disabled = false; }, 450);
 	}
@@ -185,9 +198,9 @@ async function chooseUpload(action, channelID, button) {
 	button.disabled = true;
 	try {
 		const result = await RepositoryService.ChooseUpload(contextChoice(action, channelID));
-		if (!result.accepted) showToast("Działanie niedostępne", result.code || "Lista półek mogła się zmienić.");
+		if (!result.accepted) showToast(t("ui.unavailable"), result.code || t("repository.uploadsChanged"));
 	} catch (error) {
-		showToast("Nie udało się przekazać intencji", error?.message || String(error));
+		showToast(t("ui.sendFailed"), error?.message || String(error));
 	} finally {
 		window.setTimeout(() => { button.disabled = false; }, 450);
 	}
@@ -200,9 +213,9 @@ async function chooseQuarantine(action, uploadID, button) {
 		const choice = contextChoice(action);
 		choice.upload_id = uploadID;
 		const result = await RepositoryService.ChooseQuarantine(choice);
-		if (!result.accepted) showToast("Działanie niedostępne", result.code || "Lista kwarantanny mogła się zmienić.");
+		if (!result.accepted) showToast(t("ui.unavailable"), result.code || t("repository.quarantineChanged"));
 	} catch (error) {
-		showToast("Nie udało się przekazać intencji", error?.message || String(error));
+		showToast(t("ui.sendFailed"), error?.message || String(error));
 	} finally {
 		window.setTimeout(() => { button.disabled = false; }, 450);
 	}
@@ -222,9 +235,9 @@ async function chooseAction(action, button) {
   button.disabled = true;
   try {
     const result = await RepositoryService.ChooseAction(contextChoice(action));
-    if (!result.accepted) showToast("Działanie niedostępne", result.code || "Stan folderu mógł się zmienić.");
+    if (!result.accepted) showToast(t("ui.unavailable"), result.code || t("repository.changed"));
   } catch (error) {
-    showToast("Nie udało się przekazać intencji", error?.message || String(error));
+    showToast(t("ui.sendFailed"), error?.message || String(error));
   } finally {
     window.setTimeout(() => { button.disabled = false; }, 450);
   }
@@ -235,9 +248,9 @@ async function chooseShare(action, channelID, button) {
   button.disabled = true;
   try {
     const result = await RepositoryService.ChooseShare(contextChoice(action, channelID));
-    if (!result.accepted) showToast("Działanie niedostępne", result.code || "Lista udostępnień mogła się zmienić.");
+    if (!result.accepted) showToast(t("ui.unavailable"), result.code || t("repository.sharesChanged"));
   } catch (error) {
-    showToast("Nie udało się przekazać intencji", error?.message || String(error));
+    showToast(t("ui.sendFailed"), error?.message || String(error));
   } finally {
     window.setTimeout(() => { button.disabled = false; }, 450);
   }
@@ -261,8 +274,8 @@ $("#repository-actions").addEventListener("click", (event) => {
     if (prefs.archived[key] === context.last_commit_at) delete prefs.archived[key];
     else if (canArchive(context, prefs)) prefs.archived[key] = context.last_commit_at;
     else return;
-    try { saveRepoView(prefs); render(currentSnapshot); showToast("Zmieniono widok folderu"); }
-    catch { showToast("Nie udało się zapisać widoku"); }
+    try { saveRepoView(prefs); render(currentSnapshot); showToast(t("view.changed")); }
+    catch { showToast(t("view.failed")); }
     return;
   }
   const button = event.target.closest("[data-repository-action]");

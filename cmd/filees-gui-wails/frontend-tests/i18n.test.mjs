@@ -50,9 +50,26 @@ test("only explicitly marked GUI dialog templates are translated", () => {
   assert.equal(format({}, "text", raw), raw);
   assert.equal(format({}, "text", "svn_error: Nie można {name} <DWG>"), "svn_error: Nie można {name} <DWG>");
   assert.equal(format({ presentation_key: "dialog.restart" }, "text", raw), catalogues.en["dialog.restart.text"]);
-  for (const prefix of ["dialog.restart", "dialog.shutdown"]) {
+  const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
+  const prefixes = [...controller.matchAll(/PresentationKey:\s*"([^"]+)"/g)].map(match => match[1]);
+  assert.equal(prefixes.length, 11); // 10 templates, revoke has two entry points.
+  assert.equal(new Set(prefixes).size, 10);
+  for (const prefix of prefixes) {
     for (const part of ["title", "text", "confirm", "cancel"]) {
       for (const { messages } of languages) assert.equal(typeof messages[`${prefix}.${part}`], "string");
+    }
+  }
+});
+
+test("marked fixed confirmations keep their Polish fallback and button semantics", () => {
+  const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
+  const marked = [...controller.matchAll(/platform\.ConfirmRequest\{\s*PresentationKey:\s*"([^"]+)"([\s\S]*?)\}/g)];
+  assert.equal(marked.length, 11);
+  for (const [, prefix, body] of marked) {
+    for (const [field, part] of [["Title", "title"], ["Text", "text"], ["ConfirmText", "confirm"], ["CancelText", "cancel"]]) {
+      const literal = body.match(new RegExp(`${field}:\\s*("(?:\\\\.|[^"\\\\])*")\\s*(?:,|$)`));
+      assert.ok(literal, `${prefix}.${part} must be fixed GUI text, not a mixed expression`);
+      assert.equal(JSON.parse(literal[1]), catalogues.pl[`${prefix}.${part}`]);
     }
   }
 });

@@ -1362,7 +1362,7 @@ func (c *Controller) startDetachServer(ctx context.Context, serverID string) {
 		if !vm.CanDetachServer() {
 			return
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Odłącz serwer od FileES", Text: "Wszystkie lokalne foldery tego serwera zostaną odłączone; pliki pozostaną na dysku. Serwer unieważni klucz tej instalacji, a lokalny profil z credentialami zostanie usunięty.", ConfirmText: "Odłącz serwer", CancelText: "Anuluj"})
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.detachServer", Title: "Odłącz serwer od FileES", Text: "Wszystkie lokalne foldery tego serwera zostaną odłączone; pliki pozostaną na dysku. Serwer unieważni klucz tej instalacji, a lokalny profil z credentialami zostanie usunięty.", ConfirmText: "Odłącz serwer", CancelText: "Anuluj"})
 		if err != nil || !confirmed {
 			return
 		}
@@ -1713,13 +1713,13 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 				if current.State != "active" {
 					continue
 				}
-				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Cofnij udostępnienie", Text: "Adres przestanie wydawać pliki, ale pozostanie zarezerwowany i widoczny w historii.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.revokeShare", Title: "Cofnij udostępnienie", Text: "Adres przestanie wydawać pliki, ale pozostanie zarezerwowany i widoczny w historii.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
 				if confirmErr != nil || !confirmed {
 					continue
 				}
 				err = c.cfg.PublicShares.RevokePublicShare(ctx, serverID, repoID, current.ChannelID)
 			case platform.PublicShareDialogDelete:
-				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Usuń udostępnienie", Text: "Polityka kanału zostanie usunięta, a jego adres pozostanie trwale zarezerwowany jako tombstone.", ConfirmText: "Usuń", CancelText: "Anuluj"})
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.deleteShare", Title: "Usuń udostępnienie", Text: "Polityka kanału zostanie usunięta, a jego adres pozostanie trwale zarezerwowany jako tombstone.", ConfirmText: "Usuń", CancelText: "Anuluj"})
 				if confirmErr != nil || !confirmed {
 					continue
 				}
@@ -1757,7 +1757,7 @@ func (c *Controller) startRevokePublicShare(ctx context.Context, serverID, repoI
 	go func() {
 		defer c.tasks.Done()
 		defer c.endOperation(key)
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Cofnij udostępnienie", Text: "Adres przestanie wydawać pliki, ale pozostanie zarezerwowany i widoczny w historii.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.revokeShare", Title: "Cofnij udostępnienie", Text: "Adres przestanie wydawać pliki, ale pozostanie zarezerwowany i widoczny w historii.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
 		if err != nil || !confirmed {
 			return
 		}
@@ -1905,13 +1905,13 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 				if current.State != "active" {
 					continue
 				}
-				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Cofnij półkę", Text: "Adres przestanie przyjmować pliki, ale pozostanie zarezerwowany. Przyjęte przesyłki zostają u Ciebie.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.revokeShelf", Title: "Cofnij półkę", Text: "Adres przestanie przyjmować pliki, ale pozostanie zarezerwowany. Przyjęte przesyłki zostają u Ciebie.", ConfirmText: "Cofnij", CancelText: "Anuluj"})
 				if confirmErr != nil || !confirmed {
 					continue
 				}
 				err = c.cfg.UploadChannels.RevokeUploadChannel(ctx, serverID, repoID, current.ChannelID)
 			case platform.UploadChannelDialogDelete:
-				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Usuń półkę", Text: "Polityka półki zostanie usunięta, a jej adres pozostanie trwale zarezerwowany. Folder z przyjętymi plikami nie jest kasowany.", ConfirmText: "Usuń", CancelText: "Anuluj"})
+				confirmed, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.deleteShelf", Title: "Usuń półkę", Text: "Polityka półki zostanie usunięta, a jej adres pozostanie trwale zarezerwowany. Folder z przyjętymi plikami nie jest kasowany.", ConfirmText: "Usuń", CancelText: "Anuluj"})
 				if confirmErr != nil || !confirmed {
 					continue
 				}
@@ -2273,7 +2273,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 	declaration.Recipients = splitRecipients(recipients.Value)
 	if len(declaration.Recipients) == 0 {
 		if current != nil && current.PasswordProtected {
-			keep, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Hasło udostępnienia", Text: "Czy zachować obecne hasło? Wybierz Nie, aby je zmienić albo usunąć.", ConfirmText: "Zachowaj", CancelText: "Zmień lub usuń"})
+			keep, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.keepSharePassword", Title: "Hasło udostępnienia", Text: "Czy zachować obecne hasło? Wybierz Nie, aby je zmienić albo usunąć.", ConfirmText: "Zachowaj", CancelText: "Zmień lub usuń"})
 			if confirmErr != nil {
 				return PublicShareDeclaration{}, false
 			}
@@ -2531,7 +2531,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 		}
 		requested := current
 		requested.LeadingColor = strings.ToUpper(strings.TrimSpace(color.Value))
-		choose, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Logo udziałów publicznych", Text: "Czy wybrać nowe logo PNG lub JPEG? Logo zostanie proporcjonalnie dopasowane do pola po prawej stronie nagłówka.", ConfirmText: "Wybierz logo", CancelText: "Bez nowego logo"})
+		choose, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.chooseLogo", Title: "Logo udziałów publicznych", Text: "Czy wybrać nowe logo PNG lub JPEG? Logo zostanie proporcjonalnie dopasowane do pola po prawej stronie nagłówka.", ConfirmText: "Wybierz logo", CancelText: "Bez nowego logo"})
 		if err != nil {
 			return
 		}
@@ -2572,7 +2572,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 				return
 			}
 		} else if current.LogoBase64 != "" {
-			remove, removeErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Obecne logo", Text: "Czy usunąć obecne logo? Wybierz Nie, aby je zachować.", ConfirmText: "Usuń logo", CancelText: "Zachowaj"})
+			remove, removeErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.removeLogo", Title: "Obecne logo", Text: "Czy usunąć obecne logo? Wybierz Nie, aby je zachować.", ConfirmText: "Usuń logo", CancelText: "Zachowaj"})
 			if removeErr != nil {
 				return
 			}

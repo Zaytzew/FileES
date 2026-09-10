@@ -152,6 +152,37 @@ test("freshness and partial locks preserve state and literal server details", ()
     assert.ok(node("#reservations").html.includes("Żółć &lt;raw>"));
     render.renderReservations({reservation_status: {state: "current", unavailable: [], offline: [], stale: []}});
     assert.equal(node("#reservations-card").hidden, true);
+    const status = {state: "current", unavailable: [], offline: [], stale: []};
+    for (const [fields, action, label] of [
+      [{can_release: true, can_request_release: true}, "release_reservation", "release"],
+      [{can_request_release: true}, "request_lock_release", "requestRelease"],
+      [{lock_release_state: "pending"}, null, "requestSent"],
+      [{lock_release_state: "dismissed"}, null, "kept"],
+      [{lock_release_state: "accepted"}, null, "releasing"],
+      [{}, null, "otherOwner"],
+    ]) {
+      render.renderReservations({reservation_status: status, reservations: [{id: "opaque-id", path: "Żółć <DWG>", owner_label: "Osoba {raw}", active_passport: true, local_changes: true, ...fields}]});
+      const html = node("#reservations").html;
+      assert.ok(html.includes('data-reservation-id="opaque-id"'));
+      assert.ok(html.includes("Żółć &lt;DWG>"));
+      assert.ok(html.includes("Osoba {raw}"));
+      assert.ok(html.includes(catalogues[locale][`locks.${label}`]));
+      assert.ok(html.includes(catalogues[locale]["locks.localChanges"]));
+      assert.ok(html.includes(catalogues[locale]["locks.passport"]));
+      if (action) assert.ok(html.includes(`data-action="${action}"`));
+      else assert.ok(!html.includes("data-action="));
+      if (fields.can_release) assert.ok(!html.includes('data-action="request_lock_release"'));
+    }
+    render.renderReservations({reservation_status: status, lock_release_requests: [
+      {id: "holder-id", role: "holder", state: "pending", path: "Żółć {path} <DWG>", can_accept: true},
+      {id: "ignored-id", role: "requester", state: "pending", can_accept: true},
+    ]});
+    const html = node("#reservations").html;
+    assert.ok(html.includes('data-lock-release-request-id="holder-id"'));
+    assert.ok(html.includes("Żółć {path} &lt;DWG>"));
+    assert.ok(html.includes('data-action="accept_lock_release"'));
+    assert.ok(!html.includes('data-action="dismiss_lock_release"'));
+    assert.ok(!html.includes("ignored-id"));
   }
 });
 

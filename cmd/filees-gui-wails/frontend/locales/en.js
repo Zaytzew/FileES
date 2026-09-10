@@ -480,5 +480,18 @@ export default {
   "locks.cached": "Daemon is offline — showing the last known state.",
   "locks.unverified": "Daemon is offline — lock status is unverified.",
   "locks.offline": "Local mirror — state channel offline: {servers}.",
-  "locks.stale": "Server returned older data: {servers}."
+  "locks.stale": "Server returned older data: {servers}.",
+  "locks.requestPath": "Request for {path}",
+  "locks.file": "file",
+  "locks.otherPerson": "Another person",
+  "locks.releaseRequest": "release request",
+  "locks.release": "Release",
+  "locks.passport": "passport",
+  "locks.localChanges": "local changes",
+  "locks.otherOwner": "held by someone else",
+  "locks.requestRelease": "Request release",
+  "locks.requestSent": "request sent",
+  "locks.kept": "kept",
+  "locks.releasing": "releasing…",
+  "locks.unknownOwner": "owner not set"
 };

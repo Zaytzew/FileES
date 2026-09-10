@@ -490,5 +490,18 @@ export default {
   "locks.cached": "Demon jest offline — pokazano ostatni znany stan.",
   "locks.unverified": "Demon jest offline — projekcja blokad jest niezweryfikowana.",
   "locks.offline": "Lokalne lustro — tor stanowy offline: {servers}.",
-  "locks.stale": "Serwer zwrócił wcześniejszą emisję: {servers}."
+  "locks.stale": "Serwer zwrócił wcześniejszą emisję: {servers}.",
+  "locks.requestPath": "Prośba o {path}",
+  "locks.file": "plik",
+  "locks.otherPerson": "Inna osoba",
+  "locks.releaseRequest": "prośba o zwolnienie",
+  "locks.release": "Zwolnij",
+  "locks.passport": "paszport",
+  "locks.localChanges": "zmiany lokalne",
+  "locks.otherOwner": "cudza",
+  "locks.requestRelease": "Poproś o zwolnienie",
+  "locks.requestSent": "prośba wysłana",
+  "locks.kept": "pozostawiono",
+  "locks.releasing": "zwalnianie…",
+  "locks.unknownOwner": "właściciel nieustawiony"
 };

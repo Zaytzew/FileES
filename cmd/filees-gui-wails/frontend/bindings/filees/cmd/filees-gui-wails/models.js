@@ -813,6 +813,13 @@ export class PromptSnapshot {
              */
             this["presentation_key"] = undefined;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {{ [_ in string]?: string } | undefined}
+             */
+            this["presentation_args"] = undefined;
+        }
         if (!("revision" in $$source)) {
             /**
              * @member
@@ -902,6 +909,9 @@ export class PromptSnapshot {
     static createFrom($$source = {}) {
         const $$createField5_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("presentation_args" in $$parsedSource) {
+            $$parsedSource["presentation_args"] = $Create.Map($Create.Any, $Create.Any)($$parsedSource["presentation_args"]);
+        }
         if ("options" in $$parsedSource) {
             $$parsedSource["options"] = $$createField5_0($$parsedSource["options"]);
         }

@@ -403,5 +403,13 @@ export default {
   "dialog.removeLogo.title": "Obecne logo",
   "dialog.removeLogo.text": "Czy usunąć obecne logo? Wybierz Nie, aby je zachować.",
   "dialog.removeLogo.confirm": "Usuń logo",
-  "dialog.removeLogo.cancel": "Zachowaj"
+  "dialog.removeLogo.cancel": "Zachowaj",
+  "dialog.replaceFile.title": "Plik już istnieje",
+  "dialog.replaceFile.text": "Czy zastąpić „{name}” w wybranym folderze?",
+  "dialog.replaceFile.confirm": "Zastąp",
+  "dialog.replaceFile.cancel": "Anuluj",
+  "dialog.createRepository.title": "Utwórz repozytorium FileES",
+  "dialog.createRepository.text": "Serwer: {server}\nNazwa: {name}\nFolder: {path}\nDostęp: odczyt i zapis\n\nUtworzyć repozytorium i rozpocząć synchronizację?",
+  "dialog.createRepository.confirm": "Utwórz",
+  "dialog.createRepository.cancel": "Anuluj"
 };

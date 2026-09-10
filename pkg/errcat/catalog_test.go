@@ -11,7 +11,13 @@ import (
 	"testing"
 )
 
-func TestEveryKeyHasPolishAndDiagnostic(t *testing.T) {
+// Gate: every registered identity has a diagnostic.
+//
+// The user-facing sentences moved to the domain language packs, which own
+// their own completeness gate. What stays here is the log sentence, because
+// the log is written by this process in English regardless of who is reading
+// the interface.
+func TestEveryIdentityHasADiagnostic(t *testing.T) {
 	for _, spec := range All() {
 		if spec.Code == "" || spec.Key == "" {
 			t.Fatalf("empty identity: %+v", spec)
@@ -19,11 +25,44 @@ func TestEveryKeyHasPolishAndDiagnostic(t *testing.T) {
 		if spec.Diagnostic == "" {
 			t.Errorf("%s/%s missing diagnostic English", spec.Code, spec.Key)
 		}
+	}
+}
+
+// Transitional gate. Spec.Polish is migration material: it was exported once
+// into the PL pack and stays only for the call sites that have not been
+// switched to the catalogue yet. It is not a second source of translations
+// and not a fallback mechanism.
+//
+// This test dies together with the field, when the last consumer of
+// Polish/PolishHint/PolishDetailed is gone. Until then it keeps a key added
+// in the meantime from silently rendering "Błąd zgłoszony przez daemon".
+func TestLegacyPolishStillCoversEveryKey(t *testing.T) {
+	for _, spec := range All() {
 		if spec.Polish == "" {
-			t.Errorf("%s/%s missing Polish", spec.Code, spec.Key)
+			t.Errorf("%s/%s missing Polish; while the field exists it must stay complete", spec.Code, spec.Key)
 		}
-		if spec.Polish == spec.Diagnostic {
-			t.Errorf("%s/%s uses the same sentence for log and UI", spec.Code, spec.Key)
+	}
+}
+
+// Parameter kinds are the message schema, so a declaration that names a
+// field without saying what it is would let a language pack place a value
+// the renderer does not know how to format.
+func TestEveryDeclaredFieldHasAKind(t *testing.T) {
+	known := map[ParamKind]bool{
+		ParamText: true, ParamPath: true, ParamIdentifier: true,
+		ParamNumber: true, ParamBytes: true, ParamTimestamp: true,
+		ParamDiagnostic: true,
+	}
+	for _, spec := range All() {
+		seen := map[string]bool{}
+		for _, field := range spec.Fields {
+			if field.Name == "" || !known[field.Kind] {
+				t.Errorf("%s/%s has an ill-formed field %+v", spec.Code, spec.Key, field)
+			}
+			if seen[field.Name] {
+				t.Errorf("%s/%s declares %q twice", spec.Code, spec.Key, field.Name)
+			}
+			seen[field.Name] = true
 		}
 	}
 }

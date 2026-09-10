@@ -77,14 +77,24 @@ func ByPair(code Code, key Key) (Spec, bool) {
 	return spec, ok
 }
 
+// detailField is the raw diagnostic string most failures carry. It is
+// declared so a renderer knows it may show it, and typed so a language pack
+// cannot put it inside a translated sentence.
+var detailField = Field{"detail", ParamDiagnostic}
+
+// detailOnly returns a fresh slice per entry. The specs table is read by
+// value all over the project, and a shared backing array would let one
+// caller's append reach into every other entry that borrowed it.
+func detailOnly() []Field { return []Field{detailField} }
+
 var specs = []Spec{
 	// Existing lock-release IPC pairs, now covered by the shared dictionary.
 	{"LOCK-2201", "lock_release.unavailable", SevError, HintRetry, nil, "Lock release service is unavailable", "Usługa próśb o zwolnienie rezerwacji jest niedostępna"},
 	{"LOCK-2202", "lock_release.inspection_failed", SevError, HintRetry, nil, "Could not inspect the current reservation", "Nie udało się odczytać aktualnej rezerwacji"},
 	{"LOCK-2203", "lock_release.stale", SevError, HintRequireAction, nil, "The reservation changed before the request completed", "Rezerwacja uległa zmianie — odśwież jej stan"},
-	{"LOCK-2204", "lock_release.request_failed", SevError, HintRetry, []string{"detail"}, "Could not submit the lock release request", "Nie udało się wysłać prośby o zwolnienie rezerwacji"},
+	{"LOCK-2204", "lock_release.request_failed", SevError, HintRetry, detailOnly(), "Could not submit the lock release request", "Nie udało się wysłać prośby o zwolnienie rezerwacji"},
 	{"LOCK-2205", "lock_release.not_pending", SevError, HintRequireAction, nil, "The lock release request is no longer pending", "Ta prośba o zwolnienie rezerwacji nie oczekuje już na odpowiedź"},
-	{"LOCK-2206", "lock_release.decision_failed", SevError, HintRequireAction, []string{"detail"}, "Could not complete the lock release decision", "Nie udało się wykonać decyzji dotyczącej zwolnienia rezerwacji"},
+	{"LOCK-2206", "lock_release.decision_failed", SevError, HintRequireAction, detailOnly(), "Could not complete the lock release decision", "Nie udało się wykonać decyzji dotyczącej zwolnienia rezerwacji"},
 	{CodePassportDenied, KeyPassportDenied, SevWarn, HintRequireAction, nil, "Passport replacement is not authorized", "Nie masz uprawnienia do zastąpienia tej rezerwacji"},
 	{CodePassportStale, KeyPassportStale, SevWarn, HintRetryLocal, nil, "Observed reservation is no longer current", "Rezerwacja uległa zmianie — odśwież jej stan"},
 	{CodePassportUncertain, KeyPassportUncertain, SevError, HintRequireAction, nil, "Passport replacement outcome is uncertain; reconcile before continuing", "Wynik zmiany rezerwacji jest niepewny — uzgodnij jej stan przed dalszą pracą"},
@@ -109,13 +119,13 @@ var specs = []Spec{
 	// one fail-closed result, and this key must not claim more certainty
 	// than the server itself has.
 	{CodeSessionEnd, KeySessionEnded, SevWarn, HintRetryLocal, nil, "Server ended this session (authorization check failed or lease revoked)", "Serwer zakończył tę sesję — spróbuj ponownie za chwilę"},
-	{CodeLockHeld, KeyLockHeldByOther, SevError, HintRequireAction, []string{"path", "holder", "until"}, "File locked by another user", "Plik jest w tej chwili wypożyczony przez kogoś innego"},
-	{CodeLockHeld, KeyLockOperation, SevError, HintRequireAction, []string{"detail"}, "Lock operation failed", "Daemon nie wykonał operacji na plikach"},
+	{CodeLockHeld, KeyLockHeldByOther, SevError, HintRequireAction, []Field{{"path", ParamPath}, {"holder", ParamText}, {"until", ParamTimestamp}}, "File locked by another user", "Plik jest w tej chwili wypożyczony przez kogoś innego"},
+	{CodeLockHeld, KeyLockOperation, SevError, HintRequireAction, detailOnly(), "Lock operation failed", "Daemon nie wykonał operacji na plikach"},
 	{CodeLockPath, KeyLockInvalidPath, SevError, HintRequireAction, nil, "Path is outside the working copy", "Wybrana ścieżka nie należy do repozytorium"},
 	{CodeCommitStale, KeyCommitOutdated, SevWarn, HintRetryLocal, nil, "Working copy out of date — update required before next commit", "Kopia robocza jest nieaktualna — najpierw pobierz zmiany"},
 	{CodeCommitNoVCS, KeyCommitNoVCS, SevWarn, HintRetryLocal, nil, "Path not under version control", "Ścieżka nie jest pod kontrolą wersji"},
-	{CodeCommitFail, KeyCommitFailed, SevError, HintRetryLocal, []string{"detail"}, "Commit failed", "Zapis na serwer nie powiódł się"},
-	{CodeCommitFail, KeyCommitRecoveryHeld, SevWarn, HintRequireAction, []string{"detail"}, "Publication recovery paused — inspect diagnostics; do not remove pending state", "Odtwarzanie publikacji wstrzymane — sprawdź diagnostykę; nie usuwaj stanu oczekujących zmian"},
+	{CodeCommitFail, KeyCommitFailed, SevError, HintRetryLocal, detailOnly(), "Commit failed", "Zapis na serwer nie powiódł się"},
+	{CodeCommitFail, KeyCommitRecoveryHeld, SevWarn, HintRequireAction, detailOnly(), "Publication recovery paused — inspect diagnostics; do not remove pending state", "Odtwarzanie publikacji wstrzymane — sprawdź diagnostykę; nie usuwaj stanu oczekujących zmian"},
 	{CodeRecon, KeyReconConflict, SevError, HintRequireAction, nil, "Conflict detected during update", "Wykryto konflikt podczas aktualizacji"},
 	{CodePolicyWait, KeyPolicyDeferred, SevWarn, HintRetryLocal, nil, "Editing-policy migration waiting on a clean working copy", "Zmiana polityki blokad czeka na czystą kopię roboczą"},
 	{CodeWCBusy, KeyWorkingCopyBusy, SevWarn, HintRetryLocal, nil, "Working copy is busy in another local process", "Kopia robocza jest chwilowo zajęta przez inny lokalny proces"},
@@ -149,12 +159,12 @@ var specs = []Spec{
 	{"SERVER-0002", "server.not_activated", SevError, HintNone, nil, "Server is not activated", "Ten serwer nie jest aktywowany"},
 	{"SERVER-1001", "server.detach_failed", SevError, HintRequireAction, nil, "Server detach failed", "Odłączenie serwera nie powiodło się"},
 
-	{"LOCK-2101", "reservation.list_failed", SevError, HintRetry, []string{"repo_id", "detail"}, "Reservation list failed", "Nie udało się pobrać listy rezerwacji"},
+	{"LOCK-2101", "reservation.list_failed", SevError, HintRetry, []Field{{"repo_id", ParamIdentifier}, detailField}, "Reservation list failed", "Nie udało się pobrać listy rezerwacji"},
 	{"LOCK-2102", "reservation.invalid_path", SevError, HintNone, nil, "Reservation path is invalid", "Ścieżka rezerwacji jest nieprawidłowa"},
-	{"LOCK-2103", "reservation.release_failed", SevError, HintRequireAction, []string{"detail"}, "Reservation release failed", "Nie udało się zwolnić rezerwacji"},
-	{"LOCK-2104", "reservation.projection_stale", SevWarn, HintRetryBackoff, []string{"server_id", "repo_id", "detail"}, "Reservation refresh failed; serving last known projection", "Odświeżenie rezerwacji nie powiodło się — pokazuję ostatnią znaną projekcję"},
-	{"LOCK-2105", "reservation.projection_corrupt", SevError, HintNone, []string{"server_id", "detail"}, "Reservation projection artifact is corrupt or unreadable", "Zapisana projekcja rezerwacji jest uszkodzona lub nieczytelna"},
-	{"LOCK-2106", "reservation.projection_write_failed", SevWarn, HintNone, []string{"server_id", "detail"}, "Reservation projection could not be persisted", "Nie udało się zapisać projekcji rezerwacji na dysku"},
+	{"LOCK-2103", "reservation.release_failed", SevError, HintRequireAction, detailOnly(), "Reservation release failed", "Nie udało się zwolnić rezerwacji"},
+	{"LOCK-2104", "reservation.projection_stale", SevWarn, HintRetryBackoff, []Field{{"server_id", ParamIdentifier}, {"repo_id", ParamIdentifier}, detailField}, "Reservation refresh failed; serving last known projection", "Odświeżenie rezerwacji nie powiodło się — pokazuję ostatnią znaną projekcję"},
+	{"LOCK-2105", "reservation.projection_corrupt", SevError, HintNone, []Field{{"server_id", ParamIdentifier}, detailField}, "Reservation projection artifact is corrupt or unreadable", "Zapisana projekcja rezerwacji jest uszkodzona lub nieczytelna"},
+	{"LOCK-2106", "reservation.projection_write_failed", SevWarn, HintNone, []Field{{"server_id", ParamIdentifier}, detailField}, "Reservation projection could not be persisted", "Nie udało się zapisać projekcji rezerwacji na dysku"},
 
 	{"GRANT-0001", "realm.grants_unavailable", SevError, HintRetry, nil, "Grant service is not available", "Usługa uprawnień strefy jest niedostępna"},
 	{"GRANT-1001", "realm.grant_recipients_unavailable", SevError, HintRetry, nil, "Grant recipient list failed", "Nie udało się pobrać listy odbiorców"},
@@ -184,9 +194,9 @@ var specs = []Spec{
 	{"SHOUT-1001", "shout.nothing_to_publish", SevInfo, HintNone, nil, "No pending changes to publish", "Nie ma nic do wysłania — folder jest już zgodny z serwerem"},
 	{"SHOUT-1001", "shout.invalid_comment", SevError, HintRequireAction, nil, "Shout comment is invalid", "Komentarz wydania nie może być pusty, dłuższy niż 500 znaków ani zawierać znaków sterujących"},
 	{"SHOUT-1002", "shout.read_only", SevError, HintNone, nil, "Repository is read-only", "To repozytorium jest tylko do odczytu"},
-	{"SHOUT-1003", "shout.publish_failed", SevError, HintRequireAction, []string{"detail"}, "Shouting commit failed", "Nie udało się zapisać wydania na serwerze"},
-	{"INTENT-1001", "intent.resolution_refused", SevError, HintRequireAction, []string{"detail"}, "Intent resolution refused; inspect a fresh plan", "Nie można przyjąć tej decyzji. Otwórz ponownie plan zmian; pliki, kolejka lub dostęp mogły się zmienić"},
-	{"INTENT-1002", "intent.ambiguous", SevWarn, HintRequireAction, []string{"detail"}, "Ambiguous file changes require an explicit decision", "Wysyłka wstrzymana: rozstrzygnij niejednoznaczne zmiany w ustawieniach folderu"},
+	{"SHOUT-1003", "shout.publish_failed", SevError, HintRequireAction, detailOnly(), "Shouting commit failed", "Nie udało się zapisać wydania na serwerze"},
+	{"INTENT-1001", "intent.resolution_refused", SevError, HintRequireAction, detailOnly(), "Intent resolution refused; inspect a fresh plan", "Nie można przyjąć tej decyzji. Otwórz ponownie plan zmian; pliki, kolejka lub dostęp mogły się zmienić"},
+	{"INTENT-1002", "intent.ambiguous", SevWarn, HintRequireAction, detailOnly(), "Ambiguous file changes require an explicit decision", "Wysyłka wstrzymana: rozstrzygnij niejednoznaczne zmiany w ustawieniach folderu"},
 	{"SHOUT-1004", "shout.list_failed", SevError, HintRetryLocal, nil, "Notice list failed", "Nie udało się odczytać listy wydań"},
 	{"SHOUT-1005", "shout.ack_failed", SevError, HintRetryLocal, nil, "Notice acknowledgement failed", "Nie udało się potwierdzić wydania"},
 
@@ -202,14 +212,14 @@ var specs = []Spec{
 	{"REPO-2007", "repo.relocation_failed", SevError, HintRequireAction, nil, "Working-copy relocation failed", "Przeniesienie kopii roboczej nie powiodło się"},
 	{"REPO-2008", "repo.lifecycle_operation_not_found", SevError, HintNone, nil, "Lifecycle operation was not found", "Nie znaleziono tej operacji na repozytorium"},
 	{"REPO-2010", "repo.detach_required_forbidden", SevError, HintNone, nil, "Required repository cannot be detached", "Wymaganego repozytorium nie można odłączyć"},
-	{"REPO-2010", "repo.locate_failed", SevError, HintRequireAction, []string{"detail"}, "Moved working copy could not be rebound", "Nie udało się wskazać przeniesionej kopii roboczej"},
+	{"REPO-2010", "repo.locate_failed", SevError, HintRequireAction, detailOnly(), "Moved working copy could not be rebound", "Nie udało się wskazać przeniesionej kopii roboczej"},
 	{"REPO-2011", "repo.delete_forbidden", SevError, HintNone, nil, "Repository delete is forbidden", "Nie można trwale usunąć tego repozytorium"},
 	{"REPO-2012", "repo.detach_failed", SevError, HintRequireAction, nil, "Detach failed", "Odłączenie repozytorium nie powiodło się"},
 	{"REPO-2013", "repo.local_cleanup_pending", SevError, HintRetry, nil, "Repository was deleted on the server; local working-copy cleanup is pending", "Repozytorium usunięto z serwera; czyszczenie lokalnych metadanych kopii roboczej oczekuje na ponowienie"},
 	{"REPO-2013", "repo.load_dump_forbidden", SevError, HintNone, nil, "Load-dump is forbidden", "Odtwarzanie z archiwum jest niedozwolone dla tego repozytorium"},
 	{"REPO-2014", "repo.load_dump_failed", SevError, HintRequireAction, nil, "Load-dump failed", "Odtwarzanie z archiwum nie powiodło się"},
 	{"REPO-2015", "repo.lifecycle_repair_forbidden", SevError, HintNone, nil, "Repository lifecycle repair is forbidden for the current durable state", "Tej niedokończonej operacji nie można naprawić w wybrany sposób"},
-	{"REPO-2016", "repo.lifecycle_repair_failed", SevError, HintRequireAction, []string{"detail"}, "Repository lifecycle repair failed", "Nie udało się naprawić niedokończonej operacji na folderze"},
+	{"REPO-2016", "repo.lifecycle_repair_failed", SevError, HintRequireAction, detailOnly(), "Repository lifecycle repair failed", "Nie udało się naprawić niedokończonej operacji na folderze"},
 	{"REPO-2017", "repo.recovery_dismiss_unavailable", SevError, HintNone, nil, "Recovery archive cannot be dismissed in its current state", "Tego archiwum nie można teraz usunąć z klienta"},
 	{"REPO-2018", "repo.recovery_dismiss_failed", SevError, HintRequireAction, nil, "Recovery archive dismissal failed", "Nie udało się usunąć archiwum z tego klienta"},
 	{"REPO-2019", "repo.rename_name_unportable", SevError, HintRequireAction, nil, "The proposed name cannot be represented either", "Tej nazwy też nie da się zapisać na każdej platformie — wybierz inną"},
@@ -225,12 +235,12 @@ var specs = []Spec{
 	{"MOBILE-2003", KeyMobileTreeNotAPack, SevError, HintNone, nil, "UPLOAD_TREE payload is a repository zip, not a FileES tree pack", "To zwykły plik ZIP, nie paczka FileES. Taki artefakt idzie jako jeden obiekt, nie jako drzewo."},
 	{"MOBILE-2004", KeyMobileTreeCorrupt, SevError, HintRetry, nil, "UPLOAD_TREE zip sha256 or size does not match the header", "Paczka uszkodziła się w transporcie (sha256 nie zgadza się z nagłówkiem). Nic nie zapisano — wyślij folder jeszcze raz."},
 
-	{"WHALE-1001", KeyWhaleFailed, SevError, HintRetryBackoff, []string{"detail"}, "Whale operation failed", "Operacja dużego pliku nie powiodła się"},
-	{"WHALE-2001", KeyWhalePathBusy, SevWarn, HintRetryBackoff, []string{"queue_position"}, "Another Whale generation owns this path", "Inna publikacja tego dużego pliku jest w toku"},
+	{"WHALE-1001", KeyWhaleFailed, SevError, HintRetryBackoff, detailOnly(), "Whale operation failed", "Operacja dużego pliku nie powiodła się"},
+	{"WHALE-2001", KeyWhalePathBusy, SevWarn, HintRetryBackoff, []Field{{"queue_position", ParamNumber}}, "Another Whale generation owns this path", "Inna publikacja tego dużego pliku jest w toku"},
 	{"WHALE-2002", KeyWhaleAccessDenied, SevError, HintNone, nil, "Whale repository access denied", "Brak uprawnień do tej operacji na dużym pliku"},
-	{"WHALE-2003", KeyWhaleOffsetConflict, SevWarn, HintRetryLocal, []string{"offset"}, "Whale resume offset conflicts with durable state", "Wznawianie dużego pliku wymaga aktualnego offsetu serwera"},
+	{"WHALE-2003", KeyWhaleOffsetConflict, SevWarn, HintRetryLocal, []Field{{"offset", ParamNumber}}, "Whale resume offset conflicts with durable state", "Wznawianie dużego pliku wymaga aktualnego offsetu serwera"},
 	{"WHALE-2004", KeyWhaleDigestMismatch, SevError, HintRequireAction, nil, "Whale payload size or sha256 mismatch", "Duży plik nie zgadza się z przygotowaną generacją"},
-	{"WHALE-2005", KeyWhaleInsufficientSpace, SevError, HintRequireAction, []string{"available_bytes", "required_bytes"}, "Whale storage reservation does not fit", "Serwer nie ma dość miejsca na operację dużego pliku"},
+	{"WHALE-2005", KeyWhaleInsufficientSpace, SevError, HintRequireAction, []Field{{"available_bytes", ParamBytes}, {"required_bytes", ParamBytes}}, "Whale storage reservation does not fit", "Serwer nie ma dość miejsca na operację dużego pliku"},
 
 	{"ACTIVATION-0001", "activation.unavailable", SevError, HintRetry, nil, "Activation service is not available", "Aktywacja jest teraz niedostępna"},
 	{"ACTIVATION-1001", "activation.begin_failed", SevError, HintRetry, nil, "Activation could not start", "Nie udało się rozpocząć aktywacji"},

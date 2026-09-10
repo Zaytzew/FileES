@@ -26,7 +26,7 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 		`t("fresh.cached", { date: shortDateTime(snapshot.last_refresh) })`,
 		`t("fresh.noCache")`,
 		`t("hero.noCache")`,
-		`Projekcja jest niezweryfikowana.`,
+		`t("pulse.unverified"`,
 		`t("summary.lastKnown")`,
 	} {
 		if !strings.Contains(script, wanted) {

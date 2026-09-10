@@ -186,6 +186,58 @@ test("freshness and partial locks preserve state and literal server details", ()
   }
 });
 
+test("name warnings and card toggles use keys without interpreting user text", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const start = source.indexOf("const unportableReasons ="), end = source.indexOf("function renderRepo(", start);
+  const toggleStart = source.indexOf("function updateCardToggleLabel("), toggleEnd = source.indexOf("\n}", toggleStart) + 2;
+  let locale = "en";
+  const render = runInNewContext(`${source.slice(start, end)}\n${source.slice(toggleStart, toggleEnd)}\n({renderUnportable,updateCardToggleLabel})`, {
+    t: (key, args) => translate(catalogues, locale, key, args),
+    escapeHTML: value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;"),
+  });
+  for (locale of ["pl", "en"]) {
+    const html = render.renderUnportable({unportable_names: [{kind: "case_collision", path: 'Żółć"<DWG>', detail: "{count} <raw>"}, {kind: "future_kind", path: "other"}]});
+    assert.ok(html.includes('data-action="rename_unportable"'));
+    assert.ok(html.includes('data-path="Żółć&quot;&lt;DWG>"'));
+    assert.ok(html.includes("{count} &lt;raw>"));
+    assert.ok(html.includes(catalogues[locale]["name.unknown"]));
+    assert.ok(html.includes(catalogues[locale]["name.rename"]));
+    for (const expanded of ["true", "false"]) {
+      const attrs = {"aria-expanded": expanded, "aria-label": "arbitrary old text"};
+      const toggle = {dataset: {toggleCard: "shouts-body"}, getAttribute: key => attrs[key], setAttribute: (key, value) => attrs[key] = value};
+      render.updateCardToggleLabel(toggle);
+      const key = `${expanded === "true" ? "collapse" : "expand"}.shouts`;
+      assert.equal(attrs["aria-label"], catalogues[locale][key]);
+      assert.equal(attrs["data-i18n-aria-label"], key);
+      assert.equal(attrs["aria-expanded"], expanded);
+    }
+  }
+});
+
+test("public share renderer translates chrome but preserves names and permission gates", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const start = source.indexOf("function publicShareState("), end = source.indexOf("function unreadAnnouncements(", start);
+  const nodes = new Map();
+  const node = key => {if (!nodes.has(key)) nodes.set(key, {}); return nodes.get(key);};
+  let locale = "en";
+  const render = runInNewContext(`${source.slice(start, end)}\nrenderPublicShares`, {
+    $: node, t: (key, args) => translate(catalogues, locale, key, args), shortDateTime: String,
+    selectedPublicShares: new Set(), selectedPublicShareServer: "", replaceHTMLIfChanged: (root, html) => root.html = html,
+    escapeHTML: value => String(value ?? "").replaceAll("<", "&lt;").replaceAll('"', "&quot;"),
+  });
+  for (locale of ["pl", "en"]) {
+    for (const allowed of [true, false]) {
+      render({public_shares_known: true, public_shares: [{channel_id: "opaque", server_id: "server", address: "Żółć <DWG>", state: "active", object_count: 2, recipient_count: 3, can_open: allowed, can_revoke: allowed}]});
+      const html = node("#public-shares").html;
+      assert.ok(html.includes('data-channel-id="opaque"'));
+      assert.ok(html.includes("Żółć &lt;DWG>"));
+      assert.equal(html.includes('data-action="revoke_public_share"'), allowed);
+      assert.equal(html.includes('data-action="manage_public_shares"'), allowed);
+      assert.ok(html.includes(catalogues[locale]["share.lifetime"]));
+    }
+  }
+});
+
 test("system locale and English fallback do not depend on catalogue order", () => {
   assert.equal(resolveLocale("system", ["pl-PL"]), "pl");
   assert.equal(resolveLocale("system", ["en-GB"]), "en");

@@ -2476,7 +2476,7 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n059", "Nie można zmienić widoczności"), Body: c.uiText("feedback.n060", "Serwer nie przekazał tożsamości istniejącej strefy; wymagane jest odświeżenie projekcji."), Urgency: platform.UrgencyCritical})
 			return
 		}
-		choice, err := c.cfg.RealmGrantBrowser.ShowRealmVisibility(ctx, platform.RealmVisibilityDialogRequest{Title: fmt.Sprintf(c.uiText("visibility.title", "Widoczność strefy „%s”"), server.RealmAlias), Text: c.uiText("visibility.body", "Widoczna strefa może zostać wybrana jako odbiorca grantu. Nie ujawnia to repozytoriów ani istniejących dostępów. Tak — widoczna; Nie — ukryta; Anuluj — bez zmian.")})
+		choice, err := c.cfg.RealmGrantBrowser.ShowRealmVisibility(ctx, platform.RealmVisibilityDialogRequest{RealmName: server.RealmAlias, Title: fmt.Sprintf(c.uiText("visibility.title", "Widoczność strefy „%s”"), server.RealmAlias), Text: c.uiText("visibility.body", "Widoczna strefa może zostać wybrana jako odbiorca grantu. Nie ujawnia to repozytoriów ani istniejących dostępów. Tak — widoczna; Nie — ukryta; Anuluj — bez zmian.")})
 		if err != nil || choice.Action == platform.RealmVisibilityDialogClose {
 			if err != nil && ctx.Err() == nil {
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("feedback.n061", "Nie udało się otworzyć widoczności strefy"), Body: err.Error(), Urgency: platform.UrgencyCritical})

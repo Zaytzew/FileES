@@ -8,6 +8,37 @@ import (
 	"filees/internal/gui/platform"
 )
 
+type visibilitySelectorStub struct {
+	choice  PromptSelectResult
+	request PromptSelectRequest
+}
+
+func (stub *visibilitySelectorStub) SelectOne(_ context.Context, request PromptSelectRequest) (PromptSelectResult, error) {
+	stub.request = request
+	return stub.choice, nil
+}
+func TestRealmVisibilityUsesWailsPromptAndClosedChoices(t *testing.T) {
+	for _, sample := range []struct {
+		value  string
+		cancel bool
+		want   platform.RealmVisibilityDialogAction
+	}{
+		{"listed", false, platform.RealmVisibilityDialogListed},
+		{"hidden", false, platform.RealmVisibilityDialogPrivate},
+		{"listed", true, platform.RealmVisibilityDialogClose},
+		{"unexpected", false, platform.RealmVisibilityDialogClose},
+	} {
+		stub := &visibilitySelectorStub{choice: PromptSelectResult{Value: sample.value, Cancelled: sample.cancel}}
+		result, err := (repositoryRealmGrantBrowserAdapter{prompter: stub}).ShowRealmVisibility(t.Context(), platform.RealmVisibilityDialogRequest{RealmName: "<realm>{name}"})
+		if err != nil || result.Action != sample.want {
+			t.Fatal(result, err)
+		}
+		if stub.request.PresentationKey != "select.visibility" || stub.request.PresentationArgs["name"] != "<realm>{name}" || len(stub.request.Options) != 2 {
+			t.Fatal(stub.request)
+		}
+	}
+}
+
 func TestRepositoryPresentationMetadataPreservesLiteralData(t *testing.T) {
 	request := platform.SettingsDialogRequest{Text: "fallback", TextKey: "view.folder", FocusRepoID: "repo", Servers: []platform.SettingsServer{{
 		ID: "server", Folders: []platform.SettingsFolder{{ID: "repo", Name: "<Żółć>", State: "fallback state", StateKey: "repoState.active", AccessKey: "access.rw", EditingKey: "repoState.freeEditing"}},

@@ -1182,5 +1182,13 @@ export default {
   "window.repository": "FileES folder actions",
   "window.pairing": "Pair a mobile device — FileES",
   "detached.self": "Disconnected from “{name}”",
-  "detached.remote": "“{name}” disconnected this client"
+  "detached.remote": "“{name}” disconnected this client",
+  "header.actions": "Actions",
+  "select.visibility.title": "Visibility of realm “{name}”",
+  "select.visibility.text": "A visible realm can receive access grants. This does not reveal repositories or existing access.",
+  "select.visibility.label": "Visibility",
+  "select.visibility.confirm": "Continue",
+  "select.visibility.cancel": "Cancel",
+  "select.visibility.listed": "Visible",
+  "select.visibility.hidden": "Hidden"
 };

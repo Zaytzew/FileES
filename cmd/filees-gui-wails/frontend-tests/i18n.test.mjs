@@ -6,6 +6,50 @@ import { promptDetailText } from "../frontend/prompt-details.js";
 import { languages, resolveLocale, normalizePreference, translate, initializeLanguage, setLanguagePreference, getLocale, t } from "../frontend/i18n.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
+
+test("language popup supports selection, dismissal and focus without IPC", () => {
+  const handlers = new Map();
+  const element = () => ({
+    children: [], dataset: {}, hidden: true, attrs: {}, listeners: {},
+    append(...items) { this.children.push(...items); },
+    addEventListener(name, fn) { this.listeners[name] = fn; },
+    setAttribute(k,v) { this.attrs[k] = v; },
+    focus() { this.focused = true; },
+    contains(node) { return node === this || this.children.some(child => child.contains?.(node)); },
+    matches() { return this.type === "radio"; },
+  });
+  const toggle = element(), popup = element();
+  const radios = () => popup.children.map(label => label.children[0]);
+  popup.querySelectorAll = () => radios();
+  popup.querySelector = () => radios().find(radio => radio.checked);
+  const root = {dataset: {languagePreference: "system"}};
+  let selected = null, refresh;
+  const source = readFileSync(new URL("../frontend/language-menu.js", import.meta.url), "utf8")
+    .replace(/^import .*;\r?\n/, "").replace("export function", "function");
+  runInNewContext(source + "\ninitializeLanguageMenu();", {
+    languages, t: key => translate(catalogues, "en", key),
+    setLanguagePreference(value) { selected = value; root.dataset.languagePreference = value; refresh(); },
+    document: {documentElement: root, createElement: element,
+      querySelector: key => key === "#language-toggle" ? toggle : popup,
+      addEventListener: (key, fn) => handlers.set(key,fn)},
+    window: {addEventListener: (_,fn) => { refresh = fn; }},
+  });
+  assert.equal(radios().length, languages.length + 1);
+  toggle.listeners.click();
+  assert.equal(popup.hidden, false); assert.equal(toggle.attrs["aria-expanded"], "true");
+  assert.equal(radios()[0].focused, true);
+  const english = radios().find(r => r.value === "en");
+  popup.listeners.change({target: english});
+  assert.equal(selected, "en"); assert.equal(english.checked, true);
+  popup.listeners.click({target: english, detail: 0});
+  assert.equal(popup.hidden, false); // keyboard arrows retain the group
+  handlers.get("keydown")({key:"Escape",preventDefault(){},stopPropagation(){}});
+  assert.equal(popup.hidden, true); assert.equal(toggle.focused, true);
+  toggle.listeners.keydown({key:"ArrowDown",preventDefault(){}});
+  assert.equal(popup.hidden, false);
+  handlers.get("pointerdown")({target: element()});
+  assert.equal(popup.hidden, true);
+});
 const parameters = value => [...new Set([...value.matchAll(/\{([a-zA-Z][\w]*)\}/g)].map(match => match[1]))].sort();
 
 test("GUI native text keys preserve Polish fallback and printf argument contracts", () => {

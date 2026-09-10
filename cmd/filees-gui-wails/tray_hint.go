@@ -6,9 +6,11 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 )
 
-func trayTooltip(snapshot Snapshot, status string) string {
+func trayTooltip(snapshot Snapshot, status string, locales ...nativeLanguage) string {
+	language := nativePresentationLanguage(locales)
 	var reasons []string
 	for _, cause := range snapshot.trayCauses {
 		name := ""
@@ -21,11 +23,11 @@ func trayTooltip(snapshot Snapshot, status string) string {
 		if name != "" {
 			name = trayHintLabel(name) + ": "
 		}
-		reasons = append(reasons, name+trayCauseText(cause.Reason))
+		reasons = append(reasons, name+trayCauseText(cause.Reason, language))
 	}
 	sort.Strings(reasons)
 	if len(reasons) > 3 {
-		reasons = append(reasons[:3], fmt.Sprintf("i %d kolejnych — szczegóły w panelu", len(reasons)-3))
+		reasons = append(reasons[:3], language.format("tray.moreReasons", map[string]string{"count": fmt.Sprint(len(reasons) - 3)}))
 	}
 	text := "FileES — " + status
 	if len(reasons) > 0 {
@@ -36,7 +38,7 @@ func trayTooltip(snapshot Snapshot, status string) string {
 	if runtime.GOOS == "windows" {
 		limit = 127 // native NOTIFYICONDATA.szTip: UTF-16 code units, excluding NUL
 	}
-	return limitTrayHint(text, limit)
+	return limitTrayHint(text, limit, language)
 }
 
 func trayHintLabel(name string) string {
@@ -53,7 +55,7 @@ func trayHintLabel(name string) string {
 	return string(runes)
 }
 
-func limitTrayHint(text string, limit int) string {
+func limitTrayHint(text string, limit int, locales ...nativeLanguage) string {
 	units := 0
 	for _, r := range text {
 		units++
@@ -64,8 +66,12 @@ func limitTrayHint(text string, limit int) string {
 	if units <= limit {
 		return text
 	}
-	const suffix = "… (więcej w panelu)"
-	budget := limit - len([]rune(suffix))
+	suffix := nativePresentationLanguage(locales).text("tray.more")
+	budget := limit - len(utf16.Encode([]rune(suffix)))
+	if budget < 0 {
+		suffix = ""
+		budget = max(0, limit)
+	}
 	units = 0
 	var out []rune
 	for _, r := range text {
@@ -83,43 +89,44 @@ func limitTrayHint(text string, limit int) string {
 }
 
 // State labels are translated here, not guessed from raw diagnostic text.
-func trayCauseText(reason string) string {
+func trayCauseText(reason string, locales ...nativeLanguage) string {
+	language := nativePresentationLanguage(locales)
 	switch reason {
 	case "daemon_offline":
-		return "brak połączenia z lokalnym klientem"
+		return language.text("tray.cause.daemon_offline")
 	case "refreshing":
-		return "odświeżanie stanu klienta"
+		return language.text("tray.cause.refreshing")
 	case "announcements":
-		return "nieprzeczytane ogłoszenia"
+		return language.text("tray.cause.announcements")
 	case "metadata_cleanup_pending":
-		return "sprzątanie metadanych czeka"
+		return language.text("tray.cause.metadata_cleanup_pending")
 	case "preserved_copy_changed":
-		return "repo usunięte; zachowana kopia ze zmianami"
+		return language.text("tray.cause.preserved_copy_changed")
 	case "preserved_copy_unknown":
-		return "repo usunięte; sprawdź zachowany folder"
+		return language.text("tray.cause.preserved_copy_unknown")
 	case "conflicts":
-		return "konflikty do rozwiązania"
+		return language.text("tray.cause.conflicts")
 	case "working_copy_missing":
-		return "nie znaleziono lokalnego folderu"
+		return language.text("tray.cause.working_copy_missing")
 	case "interaction_required":
-		return "wymagana decyzja użytkownika"
+		return language.text("tray.cause.interaction_required")
 	case "degraded":
-		return "synchronizacja wymaga naprawy"
+		return language.text("tray.cause.degraded")
 	case "repository_offline":
-		return "repozytorium niedostępne"
+		return language.text("tray.cause.repository_offline")
 	case "access_revoked":
-		return "dostęp do repozytorium cofnięty"
+		return language.text("tray.cause.access_revoked")
 	case "initializing":
-		return "trwa inicjalizacja"
+		return language.text("tray.cause.initializing")
 	case "baselining":
-		return "trwa ustalanie stanu początkowego"
+		return language.text("tray.cause.baselining")
 	case "paused":
-		return "praca wstrzymana"
+		return language.text("tray.cause.paused")
 	case "stopping":
-		return "trwa zatrzymywanie"
+		return language.text("tray.cause.stopping")
 	case "working":
-		return "trwa praca nad repozytorium"
+		return language.text("tray.cause.working")
 	default:
-		return "stan wymaga sprawdzenia w panelu"
+		return language.text("tray.cause.unknown")
 	}
 }

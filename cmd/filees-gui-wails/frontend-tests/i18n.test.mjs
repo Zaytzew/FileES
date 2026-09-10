@@ -300,6 +300,40 @@ test("marked input language refresh preserves secret value and pending controls"
   }
 });
 
+test("pairing language refresh preserves server selection, PIN and pending state", () => {
+  const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
+  const extract = name => { const start = source.indexOf(`function ${name}(`); return source.slice(start, source.indexOf("\n}", start) + 2); };
+  const nodes = new Map();
+  const node = key => {if (!nodes.has(key)) nodes.set(key, {}); return nodes.get(key);};
+  let locale = "pl";
+  const snapshot = {mode: "select", presentation_key: "select.pairingServer"};
+  const refresh = runInNewContext(`${extract("promptText")}\n${extract("refreshPromptLabels")}\nrefreshPromptLabels`, {
+    $: node, document: {}, submissionError: "", snapshot,
+    t: (key, args) => translate(catalogues, locale, key, args),
+  });
+  const options = [{value: "opaque-ID", textContent: "Archiwum <server>"}];
+  node("#prompt-select").options = options;
+  node("#prompt-select").value = "opaque-ID";
+  node("#prompt-value").value = "123456";
+  node("#prompt-value").type = "password";
+  node("#prompt-confirm").disabled = true;
+  for (const key of ["select.pairingServer", "input.pairingPINSetup", "input.pairingPIN", "input.pairingPINRetry"]) {
+    snapshot.presentation_key = key;
+    snapshot.mode = key.startsWith("select") ? "select" : "text";
+    for (locale of ["pl", "en"]) {
+      refresh();
+      assert.equal(node("#prompt-title").textContent, catalogues[locale][`${key}.title`]);
+      assert.equal(node("#prompt-text").textContent, catalogues[locale][`${key}.text`]);
+      assert.equal(node(snapshot.mode === "select" ? "#prompt-select-label" : "#prompt-label").textContent, catalogues[locale][`${key}.label`]);
+      assert.equal(node("#prompt-select").options, options);
+      assert.equal(node("#prompt-select").value, "opaque-ID");
+      assert.equal(node("#prompt-value").value, "123456");
+      assert.equal(node("#prompt-value").type, "password");
+      assert.equal(node("#prompt-confirm").disabled, true);
+    }
+  }
+});
+
 test("system locale and English fallback do not depend on catalogue order", () => {
   assert.equal(resolveLocale("system", ["pl-PL"]), "pl");
   assert.equal(resolveLocale("system", ["en-GB"]), "en");

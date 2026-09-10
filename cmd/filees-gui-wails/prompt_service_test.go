@@ -164,7 +164,8 @@ func TestPromptServiceReturnsValidatedSelectChoice(t *testing.T) {
 	result := make(chan PromptSelectResult, 1)
 	go func() {
 		got, _ := service.SelectOne(context.Background(), PromptSelectRequest{
-			Title: "Sparuj urządzenie mobilne", Label: "Serwer", Default: "spot",
+			PresentationKey: "select.pairingServer",
+			Title:           "Sparuj urządzenie mobilne", Label: "Serwer", Default: "spot",
 			Options: []PromptOption{{Value: "spot", Label: "Spot"}, {Value: "archive", Label: "Archiwum"}},
 		})
 		result <- got
@@ -175,7 +176,7 @@ func TestPromptServiceReturnsValidatedSelectChoice(t *testing.T) {
 		t.Fatal("select prompt window was not shown")
 	}
 	snapshot := service.Snapshot()
-	if snapshot.Mode != "select" || snapshot.Label != "Serwer" || snapshot.Default != "spot" || len(snapshot.Options) != 2 {
+	if snapshot.PresentationKey != "select.pairingServer" || snapshot.Mode != "select" || snapshot.Label != "Serwer" || snapshot.Default != "spot" || len(snapshot.Options) != 2 || snapshot.Options[1].Label != "Archiwum" {
 		t.Fatalf("unexpected select projection: %+v", snapshot)
 	}
 	if accepted := service.Resolve(PromptChoice{Revision: snapshot.Revision, Confirmed: true, Value: "missing"}); accepted.Accepted || accepted.Code != "prompt_invalid_choice" {

@@ -29,6 +29,42 @@ test("all registered catalogues have matching keys, arguments and plural forms",
   }
 });
 
+test("update UI localizes only its fallback, preserving daemon summaries and actions", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const extract = name => {
+    const start = source.indexOf(`function ${name}(`);
+    return source.slice(start, source.indexOf("\n}", start) + 2);
+  };
+  const nodes = new Map();
+  const node = selector => {
+    if (!nodes.has(selector)) nodes.set(selector, {});
+    return nodes.get(selector);
+  };
+  let locale = "en";
+  const render = runInNewContext(`${extract("renderVersionDialog")}\n${extract("renderUpdate")}\n({renderVersionDialog, renderUpdate})`, {
+    $: node, t: (key, args) => translate(catalogues, locale, key, args),
+  });
+  render.renderVersionDialog({});
+  assert.equal(node("#version-channel").textContent, "not set");
+  assert.equal(node("#version-status").textContent, catalogues.en["version.noUpdateInfo"]);
+  const literal = 'Demon: {current} <DWG> — nie można wykonać';
+  for (const state of ["current", "available", "restart_required"]) {
+    const snapshot = { update: { state, summary: literal, current_version: "r1", available_version: "r2", restart_required: state === "restart_required" } };
+    for (locale of ["pl", "en"]) {
+      render.renderVersionDialog(snapshot);
+      render.renderUpdate(snapshot);
+      assert.equal(node("#version-status").textContent, literal);
+      assert.equal(node("#version-restart-actions").hidden, state !== "restart_required");
+      if (state !== "current") assert.equal(node("#update-summary").textContent, literal);
+    }
+  }
+  render.renderVersionDialog({update: {state: "available", available_version: "r2 {current}"}});
+  assert.equal(node("#version-status").textContent, "Release r2 {current} is available. Installed release: not set.");
+  render.renderUpdate({update: {state: "restart_required", restart_required: true}});
+  assert.equal(node("#update-title").textContent, "Restart required");
+  assert.equal(node("#update-summary").textContent, "Installed version: unknown.");
+});
+
 test("system locale and English fallback do not depend on catalogue order", () => {
   assert.equal(resolveLocale("system", ["pl-PL"]), "pl");
   assert.equal(resolveLocale("system", ["en-GB"]), "en");

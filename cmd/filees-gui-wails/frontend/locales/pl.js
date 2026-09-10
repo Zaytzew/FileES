@@ -411,5 +411,18 @@ export default {
   "dialog.createRepository.title": "Utwórz repozytorium FileES",
   "dialog.createRepository.text": "Serwer: {server}\nNazwa: {name}\nFolder: {path}\nDostęp: odczyt i zapis\n\nUtworzyć repozytorium i rozpocząć synchronizację?",
   "dialog.createRepository.confirm": "Utwórz",
-  "dialog.createRepository.cancel": "Anuluj"
+  "dialog.createRepository.cancel": "Anuluj",
+  "folders.inactiveAfter": "Nieaktywne od więcej niż {days} dni",
+  "folders.archived": "Archiwalne",
+  "journal.empty": "Brak nowych sygnałów.",
+  "version.unknownClient": "nieznana",
+  "version.unknownChannel": "nieustalony",
+  "version.unknownRelease": "nieustalone",
+  "version.noUpdateInfo": "Demon nie udostępnił jeszcze informacji o kanale aktualizacji.",
+  "version.restartSummary": "Aktualizacja jest zainstalowana — wymagane ponowne uruchomienie FileES.",
+  "version.availableSummary": "Dostępne jest wydanie {available}. Zainstalowane wydanie: {current}.",
+  "version.currentSummary": "Masz aktualne wydanie z wybranego kanału aktualizacji.",
+  "version.restartTitle": "Wymagany restart",
+  "version.availableTitle": "Dostępna aktualizacja",
+  "version.installedSummary": "Zainstalowana wersja: {current}."
 };

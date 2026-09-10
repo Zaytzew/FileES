@@ -63,7 +63,7 @@ func TestClientVersionIsProjectedAndRenderedInHeader(t *testing.T) {
 			t.Fatalf("version popup legal/provider styling does not contain %q", required)
 		}
 	}
-	for _, required := range []string{`update?.channel`, `$("#version-channel").textContent`, `channel || "nieustalony"`} {
+	for _, required := range []string{`update?.channel`, `$("#version-channel").textContent`, `channel || t("version.unknownChannel")`} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("version popup does not render update channel via %s", required)
 		}

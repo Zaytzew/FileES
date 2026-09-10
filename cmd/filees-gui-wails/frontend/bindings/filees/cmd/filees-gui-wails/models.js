@@ -1507,19 +1507,19 @@ export class RepositoryActionProjection {
              */
             this["id"] = "";
         }
-        if (!("label" in $$source)) {
+        if (!("label_key" in $$source)) {
             /**
              * @member
              * @type {string}
              */
-            this["label"] = "";
+            this["label_key"] = "";
         }
-        if (!("description" in $$source)) {
+        if (!("description_key" in $$source)) {
             /**
              * @member
              * @type {string}
              */
-            this["description"] = "";
+            this["description_key"] = "";
         }
         if (!("tone" in $$source)) {
             /**
@@ -2103,19 +2103,19 @@ export class SettingsActionProjection {
              */
             this["id"] = "";
         }
-        if (!("label" in $$source)) {
+        if (!("label_key" in $$source)) {
             /**
              * @member
              * @type {string}
              */
-            this["label"] = "";
+            this["label_key"] = "";
         }
-        if (!("description" in $$source)) {
+        if (!("description_key" in $$source)) {
             /**
              * @member
              * @type {string}
              */
-            this["description"] = "";
+            this["description_key"] = "";
         }
         if (!("tone" in $$source)) {
             /**

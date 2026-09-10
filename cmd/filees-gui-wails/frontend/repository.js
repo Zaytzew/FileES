@@ -40,7 +40,7 @@ function showToast(title, message = "") {
 
 function actionButton(action) {
   return `<button class="action-row ${escapeHTML(action.tone)}" type="button" data-repository-action="${escapeHTML(action.id)}">
-    <span><strong>${escapeHTML(action.label)}</strong><small>${escapeHTML(action.description)}</small></span><i aria-hidden="true">›</i>
+    <span><strong>${labelHTML(action.label_key)}</strong><small>${labelHTML(action.description_key)}</small></span><i aria-hidden="true">›</i>
   </button>`;
 }
 

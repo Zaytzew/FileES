@@ -49,10 +49,10 @@ type SettingsServerProjection struct {
 }
 
 type SettingsActionProjection struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Description string `json:"description"`
-	Tone        string `json:"tone"`
+	ID             string `json:"id"`
+	LabelKey       string `json:"label_key"`
+	DescriptionKey string `json:"description_key"`
+	Tone           string `json:"tone"`
 }
 
 type SettingsChoice struct {
@@ -240,7 +240,7 @@ func projectSettingsRequest(request platform.SettingsDialogRequest) (SettingsSna
 }
 
 func projectSettingsAction(action platform.SettingsWizardAction) SettingsActionProjection {
-	projection := SettingsActionProjection{ID: action.ID, Label: action.Label, Description: settingsActionDescription(action.Action), Tone: "primary"}
+	projection := SettingsActionProjection{ID: action.ID, LabelKey: "settingsAction." + string(action.Action) + ".label", DescriptionKey: settingsActionDescription(action.Action), Tone: "primary"}
 	switch action.Action {
 	case platform.SettingsDialogDetachFolder, platform.SettingsDialogDetachServer:
 		projection.Tone = "warning"
@@ -253,38 +253,38 @@ func projectSettingsAction(action platform.SettingsWizardAction) SettingsActionP
 func settingsActionDescription(action platform.SettingsDialogAction) string {
 	switch action {
 	case platform.SettingsDialogRealmVisibility:
-		return "Zdecyduj, czy inne strefy mogą wskazać tę strefę jako odbiorcę grantu."
+		return "settingsAction.RealmVisibility.description"
 	case platform.SettingsDialogRealmBranding:
-		return "Ustaw nazwę, kolory i znak prezentowany odbiorcom linków."
+		return "settingsAction.RealmBranding.description"
 	case platform.SettingsDialogRealmAlias:
-		return "Nadaj strefie niezmienny pseudonim używany przy blokadach i współdzieleniu."
+		return "settingsAction.RealmAlias.description"
 	case platform.SettingsDialogPairMobile:
-		return "Wygeneruj bezpieczny kod QR dla aplikacji FileES na telefonie."
+		return "settingsAction.PairMobile.description"
 	case platform.SettingsDialogAddFolder:
-		return "Utwórz repozytorium z wybranego lokalnego folderu."
+		return "settingsAction.AddFolder.description"
 	case platform.SettingsDialogConnectRepos:
-		return "Połącz tę instalację z istniejącym repozytorium strefy."
+		return "settingsAction.ConnectRepos.description"
 	case platform.SettingsDialogLocateFolder:
-		return "Wskaż przeniesioną kopię roboczą zawierającą pasujące .svn."
+		return "settingsAction.LocateFolder.description"
 	case platform.SettingsDialogManageGrants:
-		return "Nadaj lub cofnij dostęp innych stref do tego repozytorium."
+		return "settingsAction.ManageGrants.description"
 	case platform.SettingsDialogEditingPolicy:
-		return "Wybierz edycję swobodną albo wymagającą wypożyczenia pliku."
+		return "settingsAction.EditingPolicy.description"
 	case platform.SettingsDialogPublicShares:
-		return "Twórz i zarządzaj publicznymi adresami do pobierania."
+		return "settingsAction.PublicShares.description"
 	case platform.SettingsDialogUploadChannels:
-		return "Zarządzaj półkami, na które odbiorcy mogą przesyłać pliki."
+		return "settingsAction.UploadChannels.description"
 	case platform.SettingsDialogDetachFolder:
-		return "Usuń lokalne powiązanie bez kasowania repozytorium na serwerze."
+		return "settingsAction.DetachFolder.description"
 	case platform.SettingsDialogDeleteRepo:
-		return "Odłącz i usuń repozytorium zgodnie z polityką retencji."
+		return "settingsAction.DeleteRepo.description"
 	case platform.SettingsDialogLoadDump:
-		return "Odtwórz zawartość repozytorium z archiwum SVN."
+		return "settingsAction.LoadDump.description"
 	case platform.SettingsDialogDetachServer:
-		return "Odłącz wyłącznie tę instalację; dane strefy pozostaną aktywne."
+		return "settingsAction.DetachServer.description"
 	case platform.SettingsDialogRemoveRealm:
-		return "Usuń repozytoria strefy, cofnij granty i przygotuj odzyskiwanie."
+		return "settingsAction.RemoveRealm.description"
 	default:
-		return "Wykonaj działanie w aktualnym kontekście FileES."
+		return "settingsAction.default.description"
 	}
 }

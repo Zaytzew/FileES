@@ -39,6 +39,29 @@ test("system locale and English fallback do not depend on catalogue order", () =
   assert.equal(resolveLocale("system", ["PL_pl"]), "pl");
 });
 
+test("Go action descriptors resolve in every catalogue without translating operation IDs", () => {
+  for (const file of ["repository_service.go", "settings_service.go"]) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    const keys = [...source.matchAll(/"((?:repoAction|settingsAction)\.[\w.]+)"/g)].map(match => match[1]);
+    assert.ok(keys.length > 10, file);
+    for (const key of keys) for (const { messages } of languages) assert.equal(typeof messages[key], "string", key);
+  }
+  const specs = readFileSync(new URL("../../../internal/gui/platform/settings_flow.go", import.meta.url), "utf8");
+  for (const [, id] of specs.matchAll(/\{SettingsDialog\w+, "([^"]+)"/g)) {
+    for (const { messages } of languages) assert.equal(typeof messages[`settingsAction.${id}.label`], "string", id);
+  }
+  const source = readFileSync(new URL("../frontend/repository.js", import.meta.url), "utf8");
+  const start = source.indexOf("function actionButton("), end = source.indexOf("function shareCard(", start);
+  const button = runInNewContext(`${source.slice(start, end)}\nactionButton`, {
+    escapeHTML: value => String(value),
+    labelHTML: key => translate(catalogues, "en", key),
+  });
+  const html = button({ id: "editing_policy", tone: "warning", label_key: "repoAction.disable_editing_lock.label", description_key: "repoAction.disable_editing_lock.description" });
+  assert.match(html, /data-repository-action="editing_policy"/);
+  assert.match(html, /Disable required reservations/);
+  assert.doesNotMatch(html, /undefined/);
+});
+
 test("plural, named arguments and missing keys stay plain text", () => {
   assert.equal(translate(catalogues, "pl", "count.folders", { count: 1 }), "1 folder");
   assert.equal(translate(catalogues, "pl", "count.folders", { count: 2 }), "2 foldery");

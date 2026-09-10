@@ -1,7 +1,7 @@
 import { Events, Window } from "/wails/runtime.js";
 import { SettingsService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
-import { initializeLanguage, t } from "./i18n.js";
+import { initializeLanguage, t, labelHTML } from "./i18n.js";
 
 initializeTheme();
 initializeLanguage();
@@ -55,7 +55,7 @@ function render(snapshot) {
   $("#change-timeout").title = server.can_set_session_timeout ? t("settings.changeTimeout") : t("settings.unsupportedTimeout");
 	const actions = server.actions || [];
 	$("#server-actions-card").hidden = actions.length === 0;
-	$("#server-actions").innerHTML = actions.map((action) => `<button class="server-action ${escapeHTML(action.tone)}" type="button" data-server-action="${escapeHTML(action.id)}"><span><strong>${escapeHTML(action.label)}</strong><small>${escapeHTML(action.description)}</small></span><i aria-hidden="true">›</i></button>`).join("");
+	$("#server-actions").innerHTML = actions.map((action) => `<button class="server-action ${escapeHTML(action.tone)}" type="button" data-server-action="${escapeHTML(action.id)}"><span><strong>${labelHTML(action.label_key)}</strong><small>${labelHTML(action.description_key)}</small></span><i aria-hidden="true">›</i></button>`).join("");
   if (contextChanged) window.requestAnimationFrame(() => window.scrollTo(0, 0));
 }
 

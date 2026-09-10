@@ -393,5 +393,13 @@ export default {
   "dialog.removeLogo.title": "Current logo",
   "dialog.removeLogo.text": "Remove the current logo? Choose “Keep” to retain it.",
   "dialog.removeLogo.confirm": "Remove logo",
-  "dialog.removeLogo.cancel": "Keep"
+  "dialog.removeLogo.cancel": "Keep",
+  "dialog.replaceFile.title": "File already exists",
+  "dialog.replaceFile.text": "Replace “{name}” in the selected folder?",
+  "dialog.replaceFile.confirm": "Replace",
+  "dialog.replaceFile.cancel": "Cancel",
+  "dialog.createRepository.title": "Create FileES repository",
+  "dialog.createRepository.text": "Server: {server}\nName: {name}\nFolder: {path}\nAccess: read and write\n\nCreate the repository and start synchronization?",
+  "dialog.createRepository.confirm": "Create",
+  "dialog.createRepository.cancel": "Cancel"
 };

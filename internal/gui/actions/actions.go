@@ -2061,7 +2061,7 @@ func (c *Controller) saveQuarantinePayload(ctx context.Context, key, serverID st
 		return errors.New("nazwa pliku jest nieprawidłowa")
 	}
 	if _, statErr := os.Stat(dest); statErr == nil {
-		ok, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Plik już istnieje", Text: "Czy zastąpić „" + name + "” w wybranym folderze?", ConfirmText: "Zastąp", CancelText: "Anuluj"})
+		ok, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.replaceFile", PresentationArgs: map[string]string{"name": name}, Title: "Plik już istnieje", Text: "Czy zastąpić „" + name + "” w wybranym folderze?", ConfirmText: "Zastąp", CancelText: "Anuluj"})
 		if confirmErr != nil || !ok {
 			return nil
 		}
@@ -2706,7 +2706,7 @@ func (c *Controller) startCreateRepository(ctx context.Context, serverID string)
 		if displayName == "" {
 			displayName = name
 		}
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Utwórz repozytorium FileES", Text: fmt.Sprintf("Serwer: %s\nNazwa: %s\nFolder: %s\nDostęp: odczyt i zapis\n\nUtworzyć repozytorium i rozpocząć synchronizację?", server.ID, displayName, picked.Path), ConfirmText: "Utwórz", CancelText: "Anuluj"})
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "dialog.createRepository", PresentationArgs: map[string]string{"server": server.ID, "name": displayName, "path": picked.Path}, Title: "Utwórz repozytorium FileES", Text: fmt.Sprintf("Serwer: %s\nNazwa: %s\nFolder: %s\nDostęp: odczyt i zapis\n\nUtworzyć repozytorium i rozpocząć synchronizację?", server.ID, displayName, picked.Path), ConfirmText: "Utwórz", CancelText: "Anuluj"})
 		if err != nil {
 			c.repositoryCreationFailure(ctx, err)
 			return

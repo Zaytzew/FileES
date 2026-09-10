@@ -43,7 +43,7 @@ test("only explicitly marked GUI dialog templates are translated", () => {
   const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
   const start = source.indexOf("function promptText("), end = source.indexOf("\n}", start) + 2;
   const format = runInNewContext(`${source.slice(start, end)}\npromptText`, {
-    t: key => translate(catalogues, "en", key),
+    t: (key, args) => translate(catalogues, "en", key, args),
   });
   // Even an identical Polish sentence from a daemon must stay untouched.
   const raw = catalogues.pl["dialog.restart.text"];
@@ -52,8 +52,8 @@ test("only explicitly marked GUI dialog templates are translated", () => {
   assert.equal(format({ presentation_key: "dialog.restart" }, "text", raw), catalogues.en["dialog.restart.text"]);
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
   const prefixes = [...controller.matchAll(/PresentationKey:\s*"([^"]+)"/g)].map(match => match[1]);
-  assert.equal(prefixes.length, 11); // 10 templates, revoke has two entry points.
-  assert.equal(new Set(prefixes).size, 10);
+  assert.equal(prefixes.length, 13); // Revoke has two entry points.
+  assert.equal(new Set(prefixes).size, 12);
   for (const prefix of prefixes) {
     for (const part of ["title", "text", "confirm", "cancel"]) {
       for (const { messages } of languages) assert.equal(typeof messages[`${prefix}.${part}`], "string");
@@ -63,7 +63,8 @@ test("only explicitly marked GUI dialog templates are translated", () => {
 
 test("marked fixed confirmations keep their Polish fallback and button semantics", () => {
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
-  const marked = [...controller.matchAll(/platform\.ConfirmRequest\{\s*PresentationKey:\s*"([^"]+)"([\s\S]*?)\}/g)];
+  const parameterized = new Set(["dialog.replaceFile", "dialog.createRepository"]);
+  const marked = [...controller.matchAll(/platform\.ConfirmRequest\{\s*PresentationKey:\s*"([^"]+)"([\s\S]*?)\}/g)].filter(match => !parameterized.has(match[1]));
   assert.equal(marked.length, 11);
   for (const [, prefix, body] of marked) {
     for (const [field, part] of [["Title", "title"], ["Text", "text"], ["ConfirmText", "confirm"], ["CancelText", "cancel"]]) {
@@ -72,6 +73,27 @@ test("marked fixed confirmations keep their Polish fallback and button semantics
       assert.equal(JSON.parse(literal[1]), catalogues.pl[`${prefix}.${part}`]);
     }
   }
+});
+
+test("dialog parameters stay literal and are never submitted as translated choices", () => {
+  const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
+  const start = source.indexOf("function promptText("), end = source.indexOf("\n}", start) + 2;
+  let locale = "en";
+  const format = runInNewContext(`${source.slice(start, end)}\npromptText`, {
+    t: (key, args) => translate(catalogues, locale, key, args),
+  });
+  const name = 'Żółć {path} <img src=x onerror=alert(1)> & "';
+  const args = { name, path: 'E:\\Żółć\\{name}', server: 'serwer <test>' };
+  const snapshot = { presentation_key: "dialog.createRepository", presentation_args: args };
+  const english = format(snapshot, "text", "ignored");
+  assert.ok(english.includes(`Name: ${name}`));
+  assert.ok(english.includes(`Folder: ${args.path}`));
+  locale = "pl";
+  assert.ok(format(snapshot, "text", "ignored").includes(`Nazwa: ${name}`));
+  assert.equal(args.name, name);
+  assert.match(source, /\$\("#prompt-text"\)\.textContent = promptText/);
+  const resolve = source.slice(source.indexOf("async function resolve("), source.indexOf('Events.On("filees:prompt-snapshot"'));
+  assert.doesNotMatch(resolve, /presentation_args|presentation_key/);
 });
 
 test("Go action descriptors resolve in every catalogue without translating operation IDs", () => {

@@ -41,12 +41,13 @@ func TestPromptNamedBindingsMatchFrontend(t *testing.T) {
 
 func TestPromptPreservesExplicitTemplateAndRawFallback(t *testing.T) {
 	service := newPromptService()
+	args := map[string]string{"name": "Żółć {path}"}
 	shown := make(chan struct{}, 1)
 	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
 	result := make(chan bool, 1)
 	go func() {
 		confirmed, _ := service.Confirm(context.Background(), platform.ConfirmRequest{
-			PresentationKey: "dialog.restart", Title: "raw title", Text: "raw diagnostic {name}", ConfirmText: "OK",
+			PresentationKey: "dialog.replaceFile", PresentationArgs: args, Title: "raw title", Text: "raw diagnostic {name}", ConfirmText: "OK",
 		})
 		result <- confirmed
 	}()
@@ -56,8 +57,13 @@ func TestPromptPreservesExplicitTemplateAndRawFallback(t *testing.T) {
 		t.Fatal("prompt not shown")
 	}
 	snapshot := service.Snapshot()
-	if snapshot.PresentationKey != "dialog.restart" || snapshot.Text != "raw diagnostic {name}" {
+	if snapshot.PresentationKey != "dialog.replaceFile" || snapshot.Text != "raw diagnostic {name}" || snapshot.PresentationArgs["name"] != "Żółć {path}" {
 		t.Fatalf("%+v", snapshot)
+	}
+	args["name"] = "caller mutation"
+	snapshot.PresentationArgs["name"] = "snapshot mutation"
+	if got := service.Snapshot().PresentationArgs["name"]; got != "Żółć {path}" {
+		t.Fatal(got)
 	}
 	if accepted := service.Resolve(PromptChoice{Revision: snapshot.Revision, Confirmed: false}); !accepted.Accepted {
 		t.Fatal(accepted)

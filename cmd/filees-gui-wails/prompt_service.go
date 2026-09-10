@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -29,18 +30,19 @@ type promptSession struct {
 }
 
 type PromptSnapshot struct {
-	PresentationKey string         `json:"presentation_key,omitempty"`
-	Revision        uint64         `json:"revision"`
-	Mode            string         `json:"mode"`
-	Title           string         `json:"title"`
-	Text            string         `json:"text"`
-	Label           string         `json:"label,omitempty"`
-	Options         []PromptOption `json:"options,omitempty"`
-	Default         string         `json:"default,omitempty"`
-	Placeholder     string         `json:"placeholder,omitempty"`
-	Secret          bool           `json:"secret,omitempty"`
-	ConfirmText     string         `json:"confirm_text"`
-	CancelText      string         `json:"cancel_text,omitempty"`
+	PresentationKey  string            `json:"presentation_key,omitempty"`
+	PresentationArgs map[string]string `json:"presentation_args,omitempty"`
+	Revision         uint64            `json:"revision"`
+	Mode             string            `json:"mode"`
+	Title            string            `json:"title"`
+	Text             string            `json:"text"`
+	Label            string            `json:"label,omitempty"`
+	Options          []PromptOption    `json:"options,omitempty"`
+	Default          string            `json:"default,omitempty"`
+	Placeholder      string            `json:"placeholder,omitempty"`
+	Secret           bool              `json:"secret,omitempty"`
+	ConfirmText      string            `json:"confirm_text"`
+	CancelText       string            `json:"cancel_text,omitempty"`
 }
 
 type PromptOption struct {
@@ -100,7 +102,9 @@ func (service *PromptService) attachPresentation(show, hide func()) {
 func (service *PromptService) Snapshot() PromptSnapshot {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
-	return service.snapshot
+	snapshot := service.snapshot
+	snapshot.PresentationArgs = maps.Clone(snapshot.PresentationArgs)
+	return snapshot
 }
 
 func (service *PromptService) Resolve(choice PromptChoice) PromptAcceptance {
@@ -153,7 +157,7 @@ func (service *PromptService) SelectOne(ctx context.Context, request PromptSelec
 }
 
 func (service *PromptService) Confirm(ctx context.Context, request platform.ConfirmRequest) (bool, error) {
-	choice, err := service.present(ctx, PromptSnapshot{Mode: "confirm", PresentationKey: request.PresentationKey, Title: request.Title, Text: request.Text, ConfirmText: request.ConfirmText, CancelText: request.CancelText})
+	choice, err := service.present(ctx, PromptSnapshot{Mode: "confirm", PresentationKey: request.PresentationKey, PresentationArgs: maps.Clone(request.PresentationArgs), Title: request.Title, Text: request.Text, ConfirmText: request.ConfirmText, CancelText: request.CancelText})
 	return choice.Confirmed, err
 }
 

@@ -14,7 +14,7 @@ let submissionError = "";
 // Only explicitly marked, GUI-authored templates are localized. Unmarked
 // daemon messages and diagnostics are displayed verbatim, not matched by text.
 function promptText(next, part, original) {
-  return next.presentation_key ? t(`${next.presentation_key}.${part}`) : original;
+  return next.presentation_key ? t(`${next.presentation_key}.${part}`, next.presentation_args || {}) : original;
 }
 
 // A locale change must never call render(): it restores defaults, enables

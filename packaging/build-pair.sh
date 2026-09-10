@@ -61,6 +61,13 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
 		;;
 esac
 
+# The domain language packs are data compiled into the daemon, so a pack that
+# is incomplete, contradicts the dictionary or misuses a parameter has to stop
+# the build rather than reach a user behind an English fallback. This is the
+# validator the i18n contract asks the production build to run; it is not a
+# hand-run "go generate" somebody can forget.
+go test -count=1 ./internal/domaincatalog
+
 # -buildvcs=false matches every other build path here: the repository is SVN,
 # so Go's own stamping has nothing to read and only slows the build down.
 go build -trimpath -buildvcs=false -ldflags "-X main.version=$version" -o "$dist/$daemon" ./cmd/filees

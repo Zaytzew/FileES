@@ -323,5 +323,12 @@ export default {
   "settingsAction.LoadDump.description": "Odtwórz zawartość repozytorium z archiwum SVN.",
   "settingsAction.DetachServer.description": "Odłącz wyłącznie tę instalację; dane strefy pozostaną aktywne.",
   "settingsAction.RemoveRealm.description": "Usuń repozytoria strefy, cofnij granty i przygotuj odzyskiwanie.",
-  "settingsAction.default.description": "Wykonaj działanie w aktualnym kontekście FileES."
+  "settingsAction.default.description": "Wykonaj działanie w aktualnym kontekście FileES.",
+  "tray.starting": "FileES · uruchamianie",
+  "tray.show": "Pokaż panel",
+  "tray.announcements": "Otwórz ogłoszenia",
+  "tray.refresh": "Odśwież stan",
+  "tray.activate": "Aktywuj klienta na nowym serwerze…",
+  "tray.restart": "Uruchom FileES ponownie…",
+  "tray.quit": "Zakończ…"
 };

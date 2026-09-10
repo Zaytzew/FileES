@@ -313,5 +313,12 @@ export default {
   "settingsAction.LoadDump.description": "Restore repository contents from an SVN archive.",
   "settingsAction.DetachServer.description": "Disconnect only this installation; realm data remains active.",
   "settingsAction.RemoveRealm.description": "Delete realm repositories, revoke grants and prepare recovery.",
-  "settingsAction.default.description": "Perform the action in the current FileES context."
+  "settingsAction.default.description": "Perform the action in the current FileES context.",
+  "tray.starting": "FileES · starting",
+  "tray.show": "Show panel",
+  "tray.announcements": "Open announcements",
+  "tray.refresh": "Refresh status",
+  "tray.activate": "Activate client on a new server…",
+  "tray.restart": "Restart FileES…",
+  "tray.quit": "Quit…"
 };

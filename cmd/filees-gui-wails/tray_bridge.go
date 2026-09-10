@@ -14,6 +14,7 @@ import (
 )
 
 const openAnnouncementEvent = "filees:open-announcement"
+const nativeLanguageEvent = "filees:native-language"
 
 type wailsTrayProjection struct {
 	Icon        guiapp.IconState
@@ -199,6 +200,10 @@ func (policy *announcementAlertPolicy) Observe(snapshot Snapshot) []platform.Not
 }
 
 func configureWailsTray(host *application.App, window *application.WebviewWindow, service *GUIService, notifier platform.Notifier) {
+	language, err := loadNativeLanguage()
+	if err != nil {
+		log.Printf("native GUI catalogue unavailable: %v", err)
+	}
 	systemTray := host.SystemTray.New()
 	icons := guitray.WailsPlatformIcons()
 	// Do not let the Wails fallback flash or persist while the first daemon
@@ -220,24 +225,24 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	})
 
 	menu := host.NewMenu()
-	statusItem := menu.Add("FileES · uruchamianie").SetEnabled(false)
+	statusItem := menu.Add(language.text("tray.starting")).SetEnabled(false)
 	menu.AddSeparator()
-	menu.Add("Pokaż panel").OnClick(func(_ *application.Context) { showWindow() })
-	announcementItem := menu.Add("Otwórz ogłoszenia").OnClick(func(_ *application.Context) {
+	showItem := menu.Add(language.text("tray.show")).OnClick(func(_ *application.Context) { showWindow() })
+	announcementItem := menu.Add(language.text("tray.announcements")).OnClick(func(_ *application.Context) {
 		showWindow()
 		host.Event.Emit(openAnnouncementEvent)
 	})
 	announcementItem.SetHidden(true)
-	menu.Add("Odśwież stan").OnClick(func(_ *application.Context) { service.Refresh() })
-	menu.Add("Aktywuj klienta na nowym serwerze…").OnClick(func(_ *application.Context) {
+	refreshItem := menu.Add(language.text("tray.refresh")).OnClick(func(_ *application.Context) { service.Refresh() })
+	activateItem := menu.Add(language.text("tray.activate")).OnClick(func(_ *application.Context) {
 		service.Trigger(ActionRequest{Kind: string(guitray.IntentActivate)})
 	})
 	menu.AddSeparator()
 	fileESMenu := menu.AddSubmenu("FileES")
-	restartItem := fileESMenu.Add("Uruchom FileES ponownie…").OnClick(func(_ *application.Context) {
+	restartItem := fileESMenu.Add(language.text("tray.restart")).OnClick(func(_ *application.Context) {
 		service.Trigger(ActionRequest{Kind: string(guitray.IntentRestartFileES)})
 	})
-	shutdownItem := fileESMenu.Add("Zakończ…").OnClick(func(_ *application.Context) {
+	shutdownItem := fileESMenu.Add(language.text("tray.quit")).OnClick(func(_ *application.Context) {
 		service.Trigger(ActionRequest{Kind: string(guitray.IntentShutdownFileES)})
 	})
 	systemTray.SetMenu(menu)
@@ -247,6 +252,38 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	var intentAlerts intentAlertPolicy
 	var trayMu sync.Mutex
 	var lastRevision uint64
+	unread := 0
+	refreshMenuLabels := func() {
+		showItem.SetLabel(language.text("tray.show"))
+		refreshItem.SetLabel(language.text("tray.refresh"))
+		activateItem.SetLabel(language.text("tray.activate"))
+		restartItem.SetLabel(language.text("tray.restart"))
+		shutdownItem.SetLabel(language.text("tray.quit"))
+		label := language.text("tray.announcements")
+		if unread > 0 {
+			label = fmt.Sprintf("%s (%d)", label, unread)
+		}
+		announcementItem.SetLabel(label)
+		if lastRevision == 0 {
+			statusItem.SetLabel(language.text("tray.starting"))
+		}
+	}
+	// Presentation-only path: never Observe(), Notify(), Refresh() or Trigger().
+	// Only the main window resolves the preference for the native menu.
+	host.Event.On(nativeLanguageEvent, func(event *application.CustomEvent) {
+		if event.Sender != "filees-main" {
+			return
+		}
+		locale, ok := event.Data.(string)
+		if !ok {
+			return
+		}
+		trayMu.Lock()
+		defer trayMu.Unlock()
+		if language.selectLocale(locale) {
+			refreshMenuLabels()
+		}
+	})
 	lastTooltip := ""
 	tooltipFailureLogged := false
 	service.attachSnapshotObserver(func(snapshot Snapshot) {
@@ -259,9 +296,8 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 		projection := projectWailsTray(snapshot)
 		statusItem.SetLabel(projection.Status)
 		announcementItem.SetHidden(projection.Unread == 0)
-		if projection.Unread > 0 {
-			announcementItem.SetLabel(fmt.Sprintf("Otwórz ogłoszenia (%d)", projection.Unread))
-		}
+		unread = projection.Unread
+		refreshMenuLabels()
 		restartItem.SetHidden(!projection.CanRestart)
 		shutdownItem.SetHidden(!projection.CanShutdown)
 		systemTray.SetTooltip(projection.Tooltip)

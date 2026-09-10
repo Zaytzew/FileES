@@ -2,7 +2,7 @@ import { Events, Window } from "/wails/runtime.js";
 import { RepositoryService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
 import { initializeLanguage, t, labelHTML } from "./i18n.js";
-import { readRepoView, saveRepoView, repoViewKey, canArchive } from "./repo-view.js";
+import { readRepoView, saveRepoView, repoSection, canArchive, setArchived } from "./repo-view.js";
 
 initializeTheme();
 initializeLanguage();
@@ -147,9 +147,10 @@ function render(snapshot) {
       ? actions.map(actionButton).join("")
       : `<p class="empty">${labelHTML("repository.noActions")}</p>`;
     const prefs = readRepoView();
-    const archived = prefs.archived[repoViewKey(context)] === context.last_commit_at && Boolean(context.last_commit_at);
-    if (!detailMode && (archived || canArchive(context, prefs))) {
-      $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-archive-view><span><strong>${labelHTML(archived ? "repository.restoreView" : "repository.archiveView")}</strong><small>${labelHTML("repository.archiveHelp")}</small></span><i aria-hidden="true">›</i></button>`;
+    const archived = repoSection(context, prefs) === "archived";
+    if (!detailMode) {
+      const blocked = !archived && !canArchive(context);
+      $("#repository-actions").innerHTML += `<button class="action-row" type="button" data-archive-view ${blocked ? "disabled" : ""}><span><strong>${labelHTML(archived ? "repository.restoreView" : "repository.archiveView")}</strong><small>${labelHTML(blocked ? "repository.archiveBlocked" : "repository.archiveHelp")}</small></span><i aria-hidden="true">›</i></button>`;
     }
   } else {
     const shares = snapshot.shares || [];
@@ -277,10 +278,8 @@ $("#repository-actions").addEventListener("click", (event) => {
   if (event.target.closest("[data-archive-view]")) {
     const context = currentSnapshot?.context;
     if (!context) return;
-    const prefs = readRepoView(), key = repoViewKey(context);
-    if (prefs.archived[key] === context.last_commit_at) delete prefs.archived[key];
-    else if (canArchive(context, prefs)) prefs.archived[key] = context.last_commit_at;
-    else return;
+    const prefs = readRepoView();
+    if (!setArchived(context, prefs, repoSection(context, prefs) !== "archived")) return;
     try { saveRepoView(prefs); render(currentSnapshot); showToast(t("view.changed")); }
     catch { showToast(t("view.failed")); }
     return;

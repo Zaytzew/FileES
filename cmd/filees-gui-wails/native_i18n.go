@@ -27,6 +27,19 @@ func nativePresentationLanguage(locales []nativeLanguage) nativeLanguage {
 
 var nativeTextArgument = regexp.MustCompile(`\{([a-zA-Z][\w]*)\}`)
 
+// Store an immutable language snapshot; action goroutines never share the
+// tray's mutable locale or hold its UI mutex while opening a dialog.
+func (service *GUIService) setPresentationLanguage(language nativeLanguage) {
+	service.presentationLanguage.Store(&language)
+}
+
+func (service *GUIService) localizeText(key, fallback string) string {
+	if language := service.presentationLanguage.Load(); language != nil {
+		return language.text(key)
+	}
+	return fallback
+}
+
 func (language nativeLanguage) format(key string, args map[string]string) string {
 	return nativeTextArgument.ReplaceAllStringFunc(language.text(key), func(token string) string {
 		if value, ok := args[token[1:len(token)-1]]; ok {

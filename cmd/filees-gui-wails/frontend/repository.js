@@ -24,8 +24,11 @@ function refreshRepositoryLabels() {
   const scope = { shares: "sharesScope", grants: "grantsScope", uploads: "uploadScope", quarantine: "quarantineScope" };
   const back = { shares: "repository.back", grants: "repository.closeGrants", uploads: "repository.closeUploads", quarantine: "repository.closeQuarantine" };
   $("#scope-label").textContent = t(`repository.${scope[mode] || "defaultScope"}`);
-  $("#repository-copy").textContent = currentSnapshot.text || t("repository.copy");
+  $("#repository-copy").textContent = currentSnapshot.text_key ? (currentSnapshot.text_prefix ? currentSnapshot.text_prefix + " " : "") + t(currentSnapshot.text_key) : currentSnapshot.text || t("repository.copy");
   $("#back-to-actions").textContent = t(back[mode] || "action.close");
+  document.querySelectorAll("[data-quarantine-hours]").forEach(node => {
+    node.textContent = t("quarantine.hoursLeft", {hours: node.dataset.quarantineHours});
+  });
 }
 
 window.addEventListener("filees:language-changed", refreshRepositoryLabels);
@@ -51,19 +54,24 @@ function shareCard(share) {
     share.can_delete ? `<button class="danger" type="button" data-share-action="delete" data-channel-id="${escapeHTML(share.channel_id)}">${labelHTML("action.delete")}</button>` : "",
   ].join("");
   return `<article class="share-row ${share.channel_id === currentSnapshot?.focus_channel_id ? "is-focused" : ""}" data-share-channel-id="${escapeHTML(share.channel_id)}">
-    <div class="share-main"><span class="share-dot ${share.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(share.address || share.channel_id)}</strong><small>${escapeHTML(share.source_root || t("repository.whole"))}</small></div></div>
-    <div class="share-fact"><small>${labelHTML("field.state")}</small><span>${escapeHTML(share.state || t("field.unknown"))}</span></div>
-    <div class="share-fact"><small>${labelHTML("field.recipients")}</small><span title="${escapeHTML(share.recipients)}">${escapeHTML(share.recipients || t("share.open"))}</span></div>
+    <div class="share-main"><span class="share-dot ${share.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(share.address || share.channel_id)}</strong><small>${share.source_root ? escapeHTML(share.source_root) : labelHTML("repository.whole")}</small></div></div>
+    <div class="share-fact"><small>${labelHTML("field.state")}</small><span>${share.state_key ? labelHTML(share.state_key) : share.state ? escapeHTML(share.state) : labelHTML("field.unknown")}</span></div>
+    <div class="share-fact"><small>${labelHTML("field.recipients")}</small><span title="${escapeHTML(share.recipients)}">${share.recipients ? escapeHTML(share.recipients) : labelHTML("share.open")}</span></div>
     <div class="share-fact"><small>${labelHTML("field.revision")}</small><span>${escapeHTML(share.revision || "HEAD")}</span></div>
     <div class="share-controls">${controls}</div>
   </article>`;
 }
 
+function grantAccessKey(grant) {
+  if (!String(grant.state || "").toLowerCase().startsWith("active") && !String(grant.state || "").toLowerCase().startsWith("aktyw")) return "access.none";
+  if (grant.access === "rw") return "access.rw";
+  if (grant.access === "r") return "access.r";
+  return grant.access ? "" : "access.none";
+}
+
 function grantAccess(grant) {
-  if (!String(grant.state || "").toLowerCase().startsWith("active") && !String(grant.state || "").toLowerCase().startsWith("aktyw")) return t("access.none");
-  if (grant.access === "rw") return t("access.rw");
-  if (grant.access === "r") return t("access.r");
-  return grant.access || t("access.none");
+  const key = grantAccessKey(grant);
+  return key ? t(key) : grant.access;
 }
 
 function grantCard(grant) {
@@ -73,8 +81,8 @@ function grantCard(grant) {
     grant.can_revoke ? `<button class="danger" type="button" data-grant-action="revoke" data-realm-id="${escapeHTML(grant.realm_id)}">${labelHTML("action.revoke")}</button>` : "",
   ].join("");
   return `<article class="grant-row">
-    <div class="grant-main"><span class="share-dot ${grant.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(grant.alias || t("realm.default"))}</strong><small>${labelHTML("realm.visibleRecipient")}</small></div></div>
-    <div class="share-fact"><small>${labelHTML("realm.permission")}</small><span>${escapeHTML(grantAccess(grant))}</span></div>
+    <div class="grant-main"><span class="share-dot ${grant.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${grant.alias ? escapeHTML(grant.alias) : labelHTML("realm.default")}</strong><small>${labelHTML("realm.visibleRecipient")}</small></div></div>
+    <div class="share-fact"><small>${labelHTML("realm.permission")}</small><span>${grantAccessKey(grant) ? labelHTML(grantAccessKey(grant)) : escapeHTML(grantAccess(grant))}</span></div>
     <div class="grant-controls">${controls}</div>
   </article>`;
 }
@@ -87,18 +95,17 @@ function uploadCard(channel) {
 	].join("");
 	return `<article class="share-row upload-row">
 		<div class="share-main"><span class="share-dot ${channel.can_revoke ? "active" : ""}" aria-hidden="true"></span><div><strong>${escapeHTML(channel.address || channel.channel_id)}</strong><small>${labelHTML(channel.require_otp ? "upload.otp" : "upload.closed")}</small></div></div>
-		<div class="share-fact"><small>${labelHTML("field.state")}</small><span>${escapeHTML(channel.state || t("field.unknown"))}</span></div>
-		<div class="share-fact"><small>${labelHTML("upload.contributors")}</small><span title="${escapeHTML(channel.recipients)}">${escapeHTML(channel.recipients || t("field.none"))}</span></div>
+		<div class="share-fact"><small>${labelHTML("field.state")}</small><span>${channel.state_key ? labelHTML(channel.state_key) : channel.state ? escapeHTML(channel.state) : labelHTML("field.unknown")}</span></div>
+		<div class="share-fact"><small>${labelHTML("upload.contributors")}</small><span title="${escapeHTML(channel.recipients)}">${channel.recipients ? escapeHTML(channel.recipients) : labelHTML("field.none")}</span></div>
 		<div class="share-controls">${controls}</div>
 	</article>`;
 }
 
 function quarantineCard(item) {
-	const verdict = item.av_verdict || t("quarantine.verdict");
 	return `<article class="share-row">
-		<div class="share-main"><span class="share-dot" aria-hidden="true"></span><div><strong>${escapeHTML(item.original_name || item.upload_id)}</strong><small>${escapeHTML(verdict)}</small></div></div>
+		<div class="share-main"><span class="share-dot" aria-hidden="true"></span><div><strong>${escapeHTML(item.original_name || item.upload_id)}</strong><small>${item.av_verdict ? escapeHTML(item.av_verdict) : labelHTML("quarantine.verdict")}</small></div></div>
 		<div class="share-fact"><small>${labelHTML("field.size")}</small><span>${escapeHTML(item.size_label || ((item.size || 0) + " B"))}</span></div>
-		<div class="share-fact"><small>TTL</small><span>jeszcze ${escapeHTML(String(item.remaining_hours ?? 0))} godz.</span></div>
+		<div class="share-fact"><small>TTL</small><span data-quarantine-hours="${escapeHTML(String(item.remaining_hours ?? 0))}">${escapeHTML(t("quarantine.hoursLeft", {hours: item.remaining_hours ?? 0}))}</span></div>
 		<div class="share-controls">
 			<button type="button" data-quarantine-action="fetch" data-upload-id="${escapeHTML(item.upload_id)}">${labelHTML("action.fetch")}</button>
 			<button class="danger" type="button" data-quarantine-action="hide" data-upload-id="${escapeHTML(item.upload_id)}">${labelHTML("action.reject")}</button>
@@ -120,11 +127,11 @@ function render(snapshot) {
   $("#window-context").textContent = context.name || context.repo_id;
 	$("#scope-label").textContent = sharesMode ? t("repository.sharesScope") : grantsMode ? t("repository.grantsScope") : uploadsMode ? t("repository.uploadScope") : quarantineMode ? t("repository.quarantineScope") : t("repository.defaultScope");
   $("#repository-name").textContent = context.name || context.repo_id;
-  $("#repository-copy").textContent = snapshot.text || t("repository.copy");
+  $("#repository-copy").textContent = snapshot.text_key ? (snapshot.text_prefix ? snapshot.text_prefix + " " : "") + t(snapshot.text_key) : snapshot.text || t("repository.copy");
   $("#repository-server").textContent = context.server_name || context.server_id;
-  $("#repository-state").textContent = context.state || "—";
-  $("#repository-access").textContent = context.access || "—";
-  $("#repository-editing").textContent = context.editing || "—";
+  $("#repository-state").innerHTML = context.state_key ? labelHTML(context.state_key) : escapeHTML(context.state || "—");
+  $("#repository-access").innerHTML = context.access_key ? labelHTML(context.access_key) : escapeHTML(context.access || "—");
+  $("#repository-editing").innerHTML = context.editing_key ? labelHTML(context.editing_key) : escapeHTML(context.editing || "—");
 	$("#repository-facts").hidden = detailMode;
 	$("#actions-view").hidden = detailMode;
   $("#shares-view").hidden = !sharesMode;

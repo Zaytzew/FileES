@@ -2,10 +2,104 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
+import { promptDetailText } from "../frontend/prompt-details.js";
 import { languages, resolveLocale, normalizePreference, translate, initializeLanguage, setLanguagePreference, getLocale, t } from "../frontend/i18n.js";
 
 const catalogues = Object.fromEntries(languages.map(language => [language.code, language.messages]));
 const parameters = value => [...new Set([...value.matchAll(/\{([a-zA-Z][\w]*)\}/g)].map(match => match[1]))].sort();
+
+test("GUI native text keys preserve Polish fallback and printf argument contracts", () => {
+  const files = ["../../../internal/gui/actions/actions.go", "../../../internal/gui/actions/intent_resolution.go", "../action_bridge.go", "../service.go"];
+  let count = 0;
+  for (const file of files) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    for (const match of source.matchAll(/(?:uiText|text)\("([^"]+)", ("(?:[^"\\]|\\.)*")\)/g)) {
+      const [, key, quoted] = match, fallback = JSON.parse(quoted);
+      assert.equal(catalogues.pl[key], fallback, key);
+      const formats = text => [...text.matchAll(/%[sdwqvf]/g)].map(item => item[0]);
+      for (const locale of ["pl", "en"]) {
+        assert.equal(typeof catalogues[locale][key], "string", key);
+        assert.deepEqual(formats(catalogues[locale][key]), formats(fallback), key);
+      }
+      count++;
+    }
+  }
+  assert.ok(count > 180, count);
+});
+
+test("repository language refresh preserves controls and raw quarantine prefix", () => {
+  const source = readFileSync(new URL("../frontend/repository.js", import.meta.url), "utf8");
+  const begin = source.indexOf("function refreshRepositoryLabels("), end = source.indexOf('\nwindow.addEventListener', begin);
+  const nodes = new Map(), node = key => {
+    if (!nodes.has(key)) nodes.set(key, {textContent: "", disabled: true});
+    return nodes.get(key);
+  };
+  const hours = {dataset: {quarantineHours: "12"}, textContent: ""};
+  let locale = "pl";
+  const snapshot = {mode: "quarantine", text_key: "view.quarantine", text_prefix: "Literal <serwer> {hours}"};
+  const refresh = runInNewContext(source.slice(begin, end) + "\nrefreshRepositoryLabels", {
+    currentSnapshot: snapshot, $: node,
+    document: {querySelectorAll: () => [hours]},
+    t: (key, args) => translate(catalogues, locale, key, args),
+  });
+  refresh(); const control = node("#back-to-actions");
+  assert.ok(node("#repository-copy").textContent.startsWith(snapshot.text_prefix));
+  locale = "en"; refresh();
+  assert.equal(node("#back-to-actions"), control);
+  assert.equal(control.disabled, true);
+  assert.ok(node("#repository-copy").textContent.startsWith(snapshot.text_prefix));
+  assert.match(node("#repository-copy").textContent, /Antivirus rejections/);
+  assert.equal(hours.textContent, "12 h remaining");
+});
+
+test("journal timestamps localize without parsing old presentation strings", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const begin = source.indexOf("function journalTime("), end = source.indexOf("\n}\n", begin) + 2;
+  for (const locale of ["pl", "en"]) {
+    const format = runInNewContext(source.slice(begin, end) + "\njournalTime", {
+      Date, Intl, getLocale: () => locale, t: key => translate(catalogues, locale, key),
+    });
+    const now = new Date("2026-09-10T12:00:00");
+    assert.equal(format({timestamp: "2026-09-10T11:59:40"}, now), catalogues[locale]["time.justNow"]);
+    assert.equal(format({timestamp: "2026-09-10T11:57:00"}, now), new Intl.RelativeTimeFormat(locale).format(-3, "minute"));
+    assert.equal(format({timestamp: "2026-09-09T11:00:00"}, now), new Intl.RelativeTimeFormat(locale, {numeric: "auto"}).format(-1, "day"));
+    assert.equal(format({relative_time: "opaque fallback"}, now), "opaque fallback");
+  }
+});
+
+test("composed GUI details preserve literal server data and every update variant", () => {
+  for (const locale of ["pl", "en"]) {
+    const text = (key, args) => translate(catalogues, locale, key, args);
+    for (const role of ["ro", "rw"]) for (const creation of ["true", "false"]) {
+      const args = {name: "Żółć {name}", address: "<server>", client: "client{port}", port: "2223", role, creation};
+      const before = JSON.stringify(args);
+      const result = promptDetailText("details.server", args, text);
+      for (const value of [args.address, args.client, args.port]) assert.ok(result.includes(value), result);
+      assert.ok(result.includes(text(role === "ro" ? "details.readOnly" : "details.full")));
+      assert.ok(result.includes(text(creation === "true" ? "details.allowed" : "details.denied")));
+      assert.equal(JSON.stringify(args), before);
+    }
+    assert.ok(promptDetailText("details.server", {}, text).includes(text("details.unknown")));
+    for (const key of ["details.update", "details.updateApply"]) {
+      assert.ok(promptDetailText(key, {missing: "true"}, text).includes(text("details.update.missing")));
+      for (const restart of ["true", "false"]) for (const changes of ["", "PUT <plik> {release}\nraw diagnostyka"]) {
+        const args = {current: "r1", available: "r2", release: "alpha{current}", restart, changes};
+        const body = promptDetailText(key, args, text);
+        assert.ok(body.includes(args.release));
+        assert.equal(body.includes(text("details.update.restart")), restart === "true");
+        assert.equal(body.includes(text("details.update.question")), key === "details.updateApply");
+        assert.ok(body.includes(changes || text("details.update.noChanges")));
+      }
+    }
+    const paths = [{Operation: "add", Path: "<nowy> {size}.dwg", Size: 42}, {Operation: "delete", Path: "stary.dwg", Size: 7}];
+    const body = promptDetailText("details.intent", {name: "{path}", paths: JSON.stringify(paths)}, text);
+    assert.ok(body.startsWith("{path}\n"));
+    assert.ok(body.includes(paths[0].Path));
+    assert.ok(body.includes("42"));
+    assert.ok(body.includes(paths[1].Path));
+    for (const part of ["title", "confirm", "cancel"]) assert.equal(typeof catalogues[locale]["details.intent." + part], "string");
+  }
+});
 
 test("all registered catalogues have matching keys, arguments and plural forms", () => {
   assert.equal(new Set(languages.map(item => item.code)).size, languages.length);

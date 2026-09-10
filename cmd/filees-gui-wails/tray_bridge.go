@@ -202,7 +202,7 @@ func (policy *announcementAlertPolicy) Observe(snapshot Snapshot, locales ...nat
 	return result
 }
 
-func configureWailsTray(host *application.App, window *application.WebviewWindow, service *GUIService, notifier platform.Notifier) {
+func configureWailsTray(host *application.App, window *application.WebviewWindow, service *GUIService, notifier platform.Notifier, windowTitles ...func(nativeLanguage)) {
 	language, err := loadNativeLanguage()
 	if err != nil {
 		log.Printf("native GUI catalogue unavailable: %v", err)
@@ -228,6 +228,10 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 	})
 
 	menu := host.NewMenu()
+	service.setPresentationLanguage(language)
+	for _, update := range windowTitles {
+		update(language)
+	}
 	statusItem := menu.Add(language.text("tray.starting")).SetEnabled(false)
 	menu.AddSeparator()
 	showItem := menu.Add(language.text("tray.show")).OnClick(func(_ *application.Context) { showWindow() })
@@ -285,6 +289,10 @@ func configureWailsTray(host *application.App, window *application.WebviewWindow
 		trayMu.Lock()
 		defer trayMu.Unlock()
 		if language.selectLocale(locale) {
+			service.setPresentationLanguage(language)
+			for _, update := range windowTitles {
+				update(language)
+			}
 			refreshMenuLabels()
 			if lastRevision > 0 {
 				projection := projectWailsTray(lastSnapshot, language)

@@ -115,6 +115,7 @@ type PublicShareBrowser interface {
 }
 
 type PublicShareDialogRequest struct {
+	TextKey        string // GUI-authored description; empty preserves Text verbatim.
 	Title          string
 	Text           string
 	ServerID       string
@@ -126,6 +127,7 @@ type PublicShareDialogRequest struct {
 }
 
 type PublicShareSummary struct {
+	StateKey                                                              string
 	ChannelID, Address, State, SourceRoot, Recipients, Password, Revision string
 }
 
@@ -152,12 +154,14 @@ type UploadChannelBrowser interface {
 }
 
 type UploadChannelDialogRequest struct {
+	TextKey  string // GUI-authored description; empty preserves Text verbatim.
 	Title    string
 	Text     string
 	Channels []UploadChannelSummary
 }
 
 type UploadChannelSummary struct {
+	StateKey                              string
 	ChannelID, Address, State, Recipients string
 	RequireOTP                            bool
 }
@@ -185,6 +189,8 @@ type QuarantineBrowser interface {
 }
 
 type QuarantineDialogRequest struct {
+	TextKey                       string // GUI-authored description; empty preserves Text verbatim.
+	TextPrefix                    string // Literal server message preceding GUI copy.
 	Title, Text, ServerID, RepoID string
 	RepositoryName                string
 	Items                         []QuarantineItem
@@ -211,6 +217,7 @@ type QuarantineDialogResult struct {
 }
 
 type RealmGrantDialogRequest struct {
+	TextKey    string // GUI-authored description; empty preserves Text verbatim.
 	Title      string
 	Text       string
 	Recipients []RealmGrantRecipient
@@ -255,8 +262,9 @@ type RealmVisibilityDialogResult struct {
 }
 
 type SettingsDialogRequest struct {
-	Title string
-	Text  string
+	TextKey string // GUI-authored description; empty preserves Text verbatim.
+	Title   string
+	Text    string
 	// FocusRepoID asks contextual renderers to present actions for one
 	// already-validated folder. Other renderers may use the filtered list.
 	FocusRepoID string
@@ -293,6 +301,7 @@ type SettingsServer struct {
 // with repositoryOwnedByCurrentRealm/CanDetachRepository/CanDeleteRepository
 // rather than reintroducing an unconditional button.
 type SettingsFolder struct {
+	StateKey, AccessKey, EditingKey    string
 	LastCommitAt                       string
 	CanFoldInactive                    bool
 	ID, Name, LocalPath, State, Access string

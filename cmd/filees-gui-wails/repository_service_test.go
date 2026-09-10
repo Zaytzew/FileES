@@ -8,6 +8,24 @@ import (
 	"filees/internal/gui/platform"
 )
 
+func TestRepositoryPresentationMetadataPreservesLiteralData(t *testing.T) {
+	request := platform.SettingsDialogRequest{Text: "fallback", TextKey: "view.folder", FocusRepoID: "repo", Servers: []platform.SettingsServer{{
+		ID: "server", Folders: []platform.SettingsFolder{{ID: "repo", Name: "<Żółć>", State: "fallback state", StateKey: "repoState.active", AccessKey: "access.rw", EditingKey: "repoState.freeEditing"}},
+	}}}
+	snapshot, ok := projectRepositorySettings(request)
+	if !ok || snapshot.TextKey != request.TextKey || snapshot.Context.StateKey != "repoState.active" || snapshot.Context.Name != "<Żółć>" || snapshot.Context.State != "fallback state" {
+		t.Fatal(snapshot)
+	}
+	quarantine, ok := projectQuarantine(platform.QuarantineDialogRequest{Text: "raw fallback", TextKey: "view.quarantine", TextPrefix: "serwer {hours} <diagnostyka>"}, snapshot.Context)
+	if !ok || quarantine.TextPrefix != "serwer {hours} <diagnostyka>" || quarantine.TextKey != "view.quarantine" {
+		t.Fatal(quarantine)
+	}
+	settings, ok := projectSettingsRequest(request)
+	if !ok || settings.TextKey != "view.folder" || settings.Text != "fallback" {
+		t.Fatal(settings)
+	}
+}
+
 func TestRepositoryServiceProjectsOnlyFocusedFolderActions(t *testing.T) {
 	service := newRepositoryService()
 	shown := make(chan struct{}, 1)

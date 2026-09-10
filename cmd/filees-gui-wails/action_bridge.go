@@ -41,6 +41,7 @@ func configureActions(service *GUIService, locker actions.LockUnlocker, reservat
 	intents := make(chan tray.Intent, 32)
 	service.attachActions(intents)
 	return actions.New(actions.Config{
+		Text:                 service.localizeText,
 		Intents:              intents,
 		ViewModel:            service.viewModel,
 		Opener:               backend,
@@ -136,6 +137,7 @@ type mobilePairingClient interface {
 const mobilePairingQRSize = 240
 
 type mobilePairingAdapter struct {
+	text      func(string, string) string
 	client    mobilePairingClient
 	pinStore  *localpin.Store
 	prompter  platform.Prompter
@@ -143,9 +145,16 @@ type mobilePairingAdapter struct {
 	servers   func() []PromptOption
 }
 
+func (adapter mobilePairingAdapter) uiText(key, fallback string) string {
+	if adapter.text != nil {
+		return adapter.text(key, fallback)
+	}
+	return fallback
+}
+
 func (adapter mobilePairingAdapter) Launch(ctx context.Context, serverID string) error {
 	if adapter.client == nil || adapter.pinStore == nil || adapter.prompter == nil || adapter.presenter == nil {
-		return errors.New("natywne parowanie mobilne nie jest dostępne")
+		return errors.New(adapter.uiText("pairingError.unavailable", "natywne parowanie mobilne nie jest dostępne"))
 	}
 	authorized, err := adapter.authorize(ctx)
 	if err != nil || !authorized {
@@ -164,7 +173,7 @@ func (adapter mobilePairingAdapter) Launch(ctx context.Context, serverID string)
 	}
 	expiresAt, err := time.Parse(time.RFC3339Nano, result.ExpiresAt)
 	if err != nil {
-		return fmt.Errorf("nieprawidłowy termin ważności kodu parowania: %w", err)
+		return fmt.Errorf(adapter.uiText("pairingError.expires", "nieprawidłowy termin ważności kodu parowania: %w"), err)
 	}
 	payload, err := mobilePairingPayloadJSON(result)
 	if err != nil {
@@ -173,7 +182,7 @@ func (adapter mobilePairingAdapter) Launch(ctx context.Context, serverID string)
 	defer clear(payload)
 	png, err := qrcode.Encode(string(payload), qrcode.Medium, mobilePairingQRSize)
 	if err != nil {
-		return fmt.Errorf("wygeneruj kod QR parowania: %w", err)
+		return fmt.Errorf(adapter.uiText("pairingError.qr", "wygeneruj kod QR parowania: %w"), err)
 	}
 	defer clear(png)
 	return adapter.presenter.Present(ctx, pairingPresentation{
@@ -189,7 +198,7 @@ type pairingServerSelector interface {
 func (adapter mobilePairingAdapter) selectServer(ctx context.Context, defaultServerID string) (string, bool, error) {
 	selector, ok := adapter.prompter.(pairingServerSelector)
 	if !ok {
-		return "", false, errors.New("wybór serwera parowania nie jest dostępny")
+		return "", false, errors.New(adapter.uiText("pairingError.selector", "wybór serwera parowania nie jest dostępny"))
 	}
 	var options []PromptOption
 	if adapter.servers != nil {
@@ -209,7 +218,7 @@ func (adapter mobilePairingAdapter) selectServer(ctx context.Context, defaultSer
 	}
 	serverID := strings.TrimSpace(choice.Value)
 	if !promptOptionExists(cleanPromptOptions(options), serverID) {
-		return "", false, errors.New("wybrany serwer parowania nie jest już dostępny")
+		return "", false, errors.New(adapter.uiText("pairingError.serverGone", "wybrany serwer parowania nie jest już dostępny"))
 	}
 	return serverID, true, nil
 }
@@ -236,7 +245,7 @@ func pairingServerOptions(snapshot Snapshot) []PromptOption {
 func (adapter mobilePairingAdapter) authorize(ctx context.Context) (bool, error) {
 	configured, err := adapter.pinStore.IsConfigured()
 	if err != nil {
-		return false, fmt.Errorf("odczytaj lokalny PIN: %w", err)
+		return false, fmt.Errorf(adapter.uiText("pairingError.readPIN", "odczytaj lokalny PIN: %w"), err)
 	}
 	if !configured {
 		prompted, promptErr := adapter.prompter.PromptText(ctx, platform.PromptTextRequest{
@@ -249,10 +258,10 @@ func (adapter mobilePairingAdapter) authorize(ctx context.Context) (bool, error)
 		pin := []byte(prompted.Value)
 		defer clear(pin)
 		if len(pin) == 0 {
-			return false, errors.New("PIN nie może być pusty")
+			return false, errors.New(adapter.uiText("pairingError.emptyPIN", "PIN nie może być pusty"))
 		}
 		if err := adapter.pinStore.Setup(pin); err != nil {
-			return false, fmt.Errorf("zapisz lokalny PIN: %w", err)
+			return false, fmt.Errorf(adapter.uiText("pairingError.savePIN", "zapisz lokalny PIN: %w"), err)
 		}
 		return true, nil
 	}
@@ -271,10 +280,10 @@ func (adapter mobilePairingAdapter) authorize(ctx context.Context) (bool, error)
 		ok, locked, verifyErr := adapter.pinStore.Verify(pin)
 		clear(pin)
 		if verifyErr != nil {
-			return false, fmt.Errorf("zweryfikuj lokalny PIN: %w", verifyErr)
+			return false, fmt.Errorf(adapter.uiText("pairingError.verifyPIN", "zweryfikuj lokalny PIN: %w"), verifyErr)
 		}
 		if locked {
-			return false, errors.New("PIN został zablokowany po zbyt wielu błędnych próbach")
+			return false, errors.New(adapter.uiText("pairingError.lockedPIN", "PIN został zablokowany po zbyt wielu błędnych próbach"))
 		}
 		if ok {
 			return true, nil

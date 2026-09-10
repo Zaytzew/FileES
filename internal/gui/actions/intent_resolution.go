@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"encoding/json"
 	"filees/internal/gui/app"
 	"filees/internal/gui/platform"
 	"fmt"
@@ -42,7 +43,7 @@ func (c *Controller) startResolveIntents(ctx context.Context, serverID, repoID s
 		plan, err := c.cfg.IntentResolver.PlanIntents(readCtx, repoID)
 		cancel()
 		if err != nil {
-			c.reportActionError(ctx, key, "Nie można przygotować planu zmian", actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("intent.planFailed", "Nie można przygotować planu zmian"), actionErrorBody(err))
 			return
 		}
 		if plan == nil || plan.ID == "" || plan.RepoID != repoID || plan.Choice != "delete_add" || len(plan.Paths) == 0 {
@@ -61,7 +62,11 @@ func (c *Controller) startResolveIntents(ctx context.Context, serverID, repoID s
 			}
 		}
 		text.WriteString("\n\nPo potwierdzeniu FileES ponownie sprawdzi plan i wznowi zwykłą kolejkę wysyłki. Anulowanie niczego nie zmienia.")
-		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{Title: "Rozstrzygnij zmiany plików", Text: text.String(), ConfirmText: "Potwierdź usunięcia i dodania", CancelText: "Anuluj"})
+		paths, err := json.Marshal(plan.Paths)
+		if err != nil {
+			return
+		}
+		confirmed, err := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{PresentationKey: "details.intent", PresentationArgs: map[string]string{"name": firstNonBlank(repo.DisplayName, repo.ID), "paths": string(paths)}, Title: "Rozstrzygnij zmiany plików", Text: text.String(), ConfirmText: "Potwierdź usunięcia i dodania", CancelText: "Anuluj"})
 		if err != nil || !confirmed {
 			return
 		}
@@ -69,14 +74,14 @@ func (c *Controller) startResolveIntents(ctx context.Context, serverID, repoID s
 		err = c.cfg.IntentResolver.ApplyIntents(applyCtx, repoID, plan.ID, plan.Choice)
 		cancel()
 		if err != nil {
-			c.reportActionError(ctx, key, "Decyzja nie została przyjęta", actionErrorBody(err))
+			c.reportActionError(ctx, key, c.uiText("intent.rejected", "Decyzja nie została przyjęta"), actionErrorBody(err))
 			return
 		}
-		actionID := c.startProjectedAction(app.PendingAction{Kind: "resolve_intents", ServerID: serverID, RepoID: repoID, Label: "Odświeżanie rozstrzygniętych zmian", ExpectedIntentsResolved: true})
+		actionID := c.startProjectedAction(app.PendingAction{Kind: "resolve_intents", ServerID: serverID, RepoID: repoID, Label: c.uiText("intent.refreshing", "Odświeżanie rozstrzygniętych zmian"), ExpectedIntentsResolved: true})
 		c.awaitProjectedAction(actionID)
 		if actionID == "" && c.cfg.Refresh != nil {
 			c.cfg.Refresh()
 		}
-		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Interpretacja zmian zapisana", Body: "Pliki wróciły do zwykłej kolejki wysyłki. To nie jest jeszcze potwierdzenie publikacji.", Urgency: platform.UrgencyNormal})
+		c.notify(ctx, platform.Notification{ID: key, Group: key, Title: c.uiText("intent.saved", "Interpretacja zmian zapisana"), Body: c.uiText("intent.queued", "Pliki wróciły do zwykłej kolejki wysyłki. To nie jest jeszcze potwierdzenie publikacji."), Urgency: platform.UrgencyNormal})
 	}()
 }

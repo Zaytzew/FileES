@@ -20,7 +20,7 @@ let currentSnapshot = null;
 function refreshSettingsLabels() {
   if (!currentSnapshot) return;
   const server = currentSnapshot.server;
-  $("#settings-copy").textContent = currentSnapshot.text || t("settings.copy");
+  $("#settings-copy").textContent = currentSnapshot.text_key ? t(currentSnapshot.text_key) : currentSnapshot.text || t("settings.copy");
   $("#realm-badge").textContent = server.realm || t("settings.noRealm");
   $("#server-address").textContent = server.address || t("settings.noData");
   $("#server-realm").textContent = server.realm || t("settings.noAlias");
@@ -45,7 +45,7 @@ function render(snapshot) {
   const server = snapshot.server;
   $("#window-context").textContent = server.name || server.id;
   $("#server-name").textContent = server.name || server.id;
-  $("#settings-copy").textContent = snapshot.text || t("settings.copy");
+  $("#settings-copy").textContent = snapshot.text_key ? t(snapshot.text_key) : snapshot.text || t("settings.copy");
   $("#realm-badge").textContent = server.realm || t("settings.noRealm");
   $("#server-address").textContent = server.address || t("settings.noData");
   $("#server-realm").textContent = server.realm || t("settings.noAlias");

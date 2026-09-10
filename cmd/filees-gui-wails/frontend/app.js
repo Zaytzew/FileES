@@ -244,12 +244,12 @@ function renderConnection(snapshot) {
   const freshness = $("#projection-freshness");
   core.className = "pulse-core";
   freshness.className = "projection-freshness";
-  let connectionLabel = "Demon jest rozłączony";
+  let connectionLabel = t("fresh.offlineLabel");
   const projection = snapshot.projection || { state: "daemon_offline" };
   if (projection.state === "daemon_offline") {
     core.classList.add("is-offline");
     freshness.classList.add("is-unverified");
-    freshness.textContent = "Demon niedostępny — dane niepotwierdzone";
+    freshness.textContent = t("fresh.offline");
   } else if (projection.state === "server_unverified" || projection.state === "server_unavailable") {
     core.classList.add("is-stale");
     freshness.classList.add("is-unverified");
@@ -257,30 +257,30 @@ function renderConnection(snapshot) {
     const rest = projection.additional_servers > 0 ? ` (+${projection.additional_servers})` : "";
     if (projection.state === "server_unverified") {
       freshness.textContent = age
-        ? `Dane z „${projection.server_name}" ${age} — jeszcze niesprawdzone${rest}`
-        : `Dane z „${projection.server_name}" jeszcze niesprawdzone${rest}`;
-      connectionLabel = "Pierwsze sprawdzenie w toku";
+        ? t("fresh.unverifiedAge", { name: projection.server_name, age, rest })
+        : t("fresh.unverified", { name: projection.server_name, rest });
+      connectionLabel = t("fresh.firstCheck");
     } else {
       freshness.textContent = age
-        ? `Dane z „${projection.server_name}" ${age} — serwer nie odpowiada${rest}`
-        : `Dane z „${projection.server_name}" niepotwierdzone — serwer nie odpowiada${rest}`;
-      connectionLabel = projection.reason ? `${projection.server_name}: ${projection.reason}` : "Serwer nie odpowiada";
+        ? t("fresh.unavailableAge", { name: projection.server_name, age, rest })
+        : t("fresh.unavailable", { name: projection.server_name, rest });
+      connectionLabel = projection.reason ? `${projection.server_name}: ${projection.reason}` : t("server.health.unavailable");
     }
   } else if (projection.state === "refreshing") {
     core.classList.add("is-stale");
     freshness.classList.add("is-refreshing");
-    freshness.textContent = "Aktualizowanie danych";
-    connectionLabel = "Demon odświeża projekcję";
+    freshness.textContent = t("fresh.refreshing");
+    connectionLabel = t("fresh.refreshingLabel");
   } else {
     core.classList.add("is-online");
     freshness.classList.add("is-current");
-    freshness.textContent = "Stan danych: aktualny";
-    connectionLabel = "Połączenie z demonem jest aktywne";
+    freshness.textContent = t("fresh.current");
+    connectionLabel = t("fresh.currentLabel");
   }
   $("#offline").hidden = Boolean(snapshot.connected);
   $("#offline-copy").textContent = snapshot.last_refresh
-    ? `Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}. Jej bieżącego stanu nie można zweryfikować; po odzyskaniu połączenia panel odświeży się automatycznie.`
-    : "Nie ma jeszcze zapisanej pełnej projekcji. Po odzyskaniu połączenia panel odświeży się automatycznie.";
+    ? t("fresh.cached", { date: shortDateTime(snapshot.last_refresh) })
+    : t("fresh.noCache");
   $("#pulse-card").dataset.connection = !snapshot.connected || projection.state === "daemon_offline"
     ? "offline"
     : projection.state === "current" ? "online" : "stale";
@@ -606,15 +606,15 @@ function renderReservations(snapshot) {
 	card.hidden = reservations.length === 0 && holderRequests.length === 0 && !reservationsPartial && !reservationsOffline && reservationState.offline.length === 0 && reservationState.stale.length === 0;
   $("#reservations-count").textContent = reservationsPartial ? `${reservations.length}+?` : reservations.length;
 	const availabilityHTML = reservationsPartial
-		? `<p class="muted">Częściowa lista — brak aktualnej emisji: ${reservationState.unavailable.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`
+		? `<p class="muted">${escapeHTML(t("locks.partial", { servers: reservationState.unavailable.map((server) => server.display_name || server.id || t("locks.server")).join(", ") }))}</p>`
 		: reservationsOffline && (reservations.length || holderRequests.length)
-		? '<p class="muted">Demon jest offline — pokazano ostatni znany stan.</p>'
+		? `<p class="muted">${escapeHTML(t("locks.cached"))}</p>`
 		: reservationsOffline
-		? '<p class="muted">Demon jest offline — projekcja blokad jest niezweryfikowana.</p>'
+		? `<p class="muted">${escapeHTML(t("locks.unverified"))}</p>`
 		: reservationState.offline.length
-		? `<p class="muted">Lokalne lustro — tor stanowy offline: ${reservationState.offline.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`
+		? `<p class="muted">${escapeHTML(t("locks.offline", { servers: reservationState.offline.map((server) => server.display_name || server.id || t("locks.server")).join(", ") }))}</p>`
 		: reservationState.stale.length
-		? `<p class="muted">Serwer zwrócił wcześniejszą emisję: ${reservationState.stale.map((server) => escapeHTML(server.display_name || server.id || "serwer")).join(", ")}.</p>`
+		? `<p class="muted">${escapeHTML(t("locks.stale", { servers: reservationState.stale.map((server) => server.display_name || server.id || t("locks.server")).join(", ") }))}</p>`
 		: "";
 	if (!reservations.length && !holderRequests.length) {
     replaceHTMLIfChanged(root, availabilityHTML);

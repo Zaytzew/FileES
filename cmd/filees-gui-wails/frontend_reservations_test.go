@@ -10,8 +10,8 @@ func TestFrontendKeepsHealthyReservationRowsWhenAnotherServerIsUnavailable(t *te
 	for _, wanted := range []string{
 		`snapshot.reservation_status || { state: "daemon_offline", unavailable: [], offline: [], stale: [] }`,
 		`reservationState.state === "partial"`,
-		"Częściowa lista — brak aktualnej emisji:",
-		"Lokalne lustro — tor stanowy offline:",
+		`t("locks.partial"`,
+		`t("locks.offline"`,
 		"availabilityHTML + requestsHTML + reservationsHTML",
 		`t("summary.lastKnown")`,
 	} {

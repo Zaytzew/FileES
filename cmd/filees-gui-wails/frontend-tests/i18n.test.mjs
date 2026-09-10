@@ -129,6 +129,32 @@ test("action progress translates phase without rewriting supplied labels", () =>
   }
 });
 
+test("freshness and partial locks preserve state and literal server details", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const extract = name => { const start = source.indexOf(`function ${name}(`); return source.slice(start, source.indexOf("\n}", start) + 2); };
+  const nodes = new Map();
+  const node = key => { if (!nodes.has(key)) nodes.set(key, {dataset: {}, classList: {add() {}}}); return nodes.get(key); };
+  let locale = "en";
+  const render = runInNewContext(`${extract("renderConnection")}\n${extract("renderReservations")}\n({renderConnection,renderReservations})`, {
+    $: node, t: (key, args) => translate(catalogues, locale, key, args),
+    shortDateTime: String, ageInWords: () => "", escapeHTML: value => String(value ?? "").replaceAll("<", "&lt;"),
+    replaceHTMLIfChanged: (root, html) => root.html = html,
+  });
+  for (locale of ["pl", "en"]) {
+    for (const [state, expected] of [["current", "online"], ["refreshing", "stale"], ["server_unavailable", "stale"], ["daemon_offline", "offline"]]) {
+      render.renderConnection({connected: true, projection: {state, server_name: "Żółć <raw>", reason: "Błąd {raw}"}});
+      assert.equal(node("#pulse-card").dataset.connection, expected);
+      if (state === "server_unavailable") assert.equal(node("#pulse-card").dataset.connectionLabel, "Żółć <raw>: Błąd {raw}");
+    }
+    render.renderReservations({reservation_status: {state: "partial", unavailable: [{display_name: "Żółć <raw>"}], offline: [], stale: []}});
+    assert.equal(node("#reservations-card").hidden, false);
+    assert.equal(node("#reservations-count").textContent, "0+?");
+    assert.ok(node("#reservations").html.includes("Żółć &lt;raw>"));
+    render.renderReservations({reservation_status: {state: "current", unavailable: [], offline: [], stale: []}});
+    assert.equal(node("#reservations-card").hidden, true);
+  }
+});
+
 test("system locale and English fallback do not depend on catalogue order", () => {
   assert.equal(resolveLocale("system", ["pl-PL"]), "pl");
   assert.equal(resolveLocale("system", ["en-GB"]), "en");

@@ -401,5 +401,18 @@ export default {
   "dialog.createRepository.title": "Create FileES repository",
   "dialog.createRepository.text": "Server: {server}\nName: {name}\nFolder: {path}\nAccess: read and write\n\nCreate the repository and start synchronization?",
   "dialog.createRepository.confirm": "Create",
-  "dialog.createRepository.cancel": "Cancel"
+  "dialog.createRepository.cancel": "Cancel",
+  "folders.inactiveAfter": "Inactive for more than {days} days",
+  "folders.archived": "Archived",
+  "journal.empty": "No recent activity.",
+  "version.unknownClient": "unknown",
+  "version.unknownChannel": "not set",
+  "version.unknownRelease": "not set",
+  "version.noUpdateInfo": "The daemon has not provided update channel information yet.",
+  "version.restartSummary": "The update is installed — restart FileES to finish.",
+  "version.availableSummary": "Release {available} is available. Installed release: {current}.",
+  "version.currentSummary": "You have the latest release from the selected update channel.",
+  "version.restartTitle": "Restart required",
+  "version.availableTitle": "Update available",
+  "version.installedSummary": "Installed version: {current}."
 };

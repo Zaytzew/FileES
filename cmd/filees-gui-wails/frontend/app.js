@@ -485,8 +485,8 @@ function renderRepoGroup(label, repos, className = "", nested = false) {
       return `<details class="idle-group" data-idle-key="${escapeHTML(key)}" ${expandedIdleGroups.has(key)?"open":""}><summary>${escapeHTML(title)} (${items.length})</summary>${renderRepoGroup(label,items,className,true)}</details>`;
     };
     return renderRepoGroup(label,groups.active,className,true)
-      + fold("inactive",`Nieaktywne od więcej niż ${prefs.inactive} dni`)
-      + fold("archived","Archiwalne");
+      + fold("inactive",t("folders.inactiveAfter", { days: prefs.inactive }))
+      + fold("archived",t("folders.archived"));
   }
   return `<section class="realm-group ${escapeHTML(className)}">
     <div class="realm-divider"><span>${escapeHTML(label)}</span><b>${repos.length}</b></div>
@@ -911,7 +911,7 @@ function renderJournal(snapshot) {
   const entries = snapshot.journal || [];
   const root = $("#activity");
   if (!entries.length) {
-    replaceHTMLIfChanged(root, '<p class="muted">Brak nowych sygnałów.</p>');
+    replaceHTMLIfChanged(root, `<p class="muted">${escapeHTML(t("journal.empty"))}</p>`);
   } else {
     replaceHTMLIfChanged(root, entries.slice(0, 6).map((item) => `<article class="activity-row ${item.emphasized ? "is-error" : ""}">
       <span class="activity-dot"></span><div><strong title="${escapeHTML(item.summary)}">${escapeHTML(item.summary)}</strong>
@@ -963,17 +963,17 @@ function renderVersionDialog(snapshot) {
   const currentRelease = String(update?.current_version || "").trim();
   const availableRelease = String(update?.available_version || "").trim();
   const available = Boolean(availableRelease) && update?.state !== "current";
-  $("#version-client").textContent = clientVersion || "nieznana";
-  $("#version-channel").textContent = channel || "nieustalony";
-  $("#version-release").textContent = currentRelease || "nieustalone";
+  $("#version-client").textContent = clientVersion || t("version.unknownClient");
+  $("#version-channel").textContent = channel || t("version.unknownChannel");
+  $("#version-release").textContent = currentRelease || t("version.unknownRelease");
   if (!update) {
-    $("#version-status").textContent = "Demon nie udostępnił jeszcze informacji o kanale aktualizacji.";
+    $("#version-status").textContent = t("version.noUpdateInfo");
   } else if (update.state === "restart_required") {
-    $("#version-status").textContent = update.summary || "Aktualizacja jest zainstalowana — wymagane ponowne uruchomienie FileES.";
+    $("#version-status").textContent = update.summary || t("version.restartSummary");
   } else if (available) {
-    $("#version-status").textContent = update.summary || `Dostępne jest wydanie ${availableRelease}. Zainstalowane wydanie: ${currentRelease || "nieustalone"}.`;
+    $("#version-status").textContent = update.summary || t("version.availableSummary", { available: availableRelease, current: currentRelease || t("version.unknownRelease") });
   } else {
-    $("#version-status").textContent = update.summary || "Masz aktualne wydanie z wybranego kanału aktualizacji.";
+    $("#version-status").textContent = update.summary || t("version.currentSummary");
   }
   $("#version-update-actions").hidden = !available || update?.state === "restart_required";
   $("#version-restart-actions").hidden = update?.state !== "restart_required";
@@ -997,11 +997,11 @@ function renderUpdate(snapshot) {
 	const available = Boolean(update?.available_version) && update.state !== "current";
 	card.hidden = !available && !restart;
 	if (card.hidden) return;
-	$("#update-title").textContent = restart ? "Wymagany restart" : "Dostępna aktualizacja";
+	$("#update-title").textContent = t(restart ? "version.restartTitle" : "version.availableTitle");
 	$("#update-actions").hidden = restart;
 	$("#update-restart-actions").hidden = !restart;
 	$("#update-version").textContent = update.available_version;
-	$("#update-summary").textContent = update.summary || `Zainstalowana wersja: ${update.current_version || "nieznana"}.`;
+	$("#update-summary").textContent = update.summary || t("version.installedSummary", { current: update.current_version || t("version.unknownClient") });
 }
 
 window.setInterval(updateRetentionCountdowns, 1000);

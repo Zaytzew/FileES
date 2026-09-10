@@ -18,6 +18,13 @@ var forbiddenPkgs = []string{
 	"filees/pkg/client",
 	"filees/pkg/ipcserver",
 	"filees/pkg/errmap",
+	// The domain language packs belong to the daemon and reach the GUI as a
+	// versioned snapshot over IPC. Importing them here would compile a second
+	// copy of the catalogue into the renderer — exactly what stage 2 of the
+	// i18n contract moved out of it — and the two copies would then disagree
+	// the first time a daemon and a GUI of different builds ran together.
+	// Rendering a snapshot is pkg/messagerender's job and stays allowed.
+	"filees/internal/domaincatalog",
 }
 
 func TestGUIDoesNotImportEnginePackages(t *testing.T) {

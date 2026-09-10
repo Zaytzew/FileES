@@ -1,8 +1,10 @@
 import { Events, Window } from "/wails/runtime.js";
 import { PromptService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
+import { initializeLanguage, t } from "./i18n.js";
 
 initializeTheme();
+initializeLanguage();
 
 const $ = (selector) => document.querySelector(selector);
 let snapshot = null;
@@ -24,16 +26,16 @@ function render(next) {
   const inputMode = next.mode === "text";
   const selectMode = next.mode === "select";
   const infoMode = next.mode === "info";
-  $("#prompt-mode").textContent = inputMode ? "Wprowadź dane" : selectMode ? "Wybierz serwer" : infoMode ? "Informacja FileES" : "Potwierdź działanie";
+  $("#prompt-mode").textContent = t(inputMode ? "prompt.input" : selectMode ? "prompt.select" : infoMode ? "prompt.info" : "prompt.confirm");
   $("#prompt-title").textContent = next.title || "FileES";
   $("#prompt-text").textContent = next.text || "";
-  $("#prompt-label").textContent = next.label || "Wartość";
+  $("#prompt-label").textContent = next.label || t("field.value");
   $("#input-wrap").hidden = !inputMode;
-  $("#prompt-select-label").textContent = next.label || "Serwer";
+  $("#prompt-select-label").textContent = next.label || t("field.server");
   $("#select-wrap").hidden = !selectMode;
   $("#prompt-cancel").hidden = infoMode;
-  $("#prompt-cancel").textContent = next.cancel_text || "Anuluj";
-  $("#prompt-confirm").textContent = next.confirm_text || "Dalej";
+  $("#prompt-cancel").textContent = next.cancel_text || t("action.cancel");
+  $("#prompt-confirm").textContent = next.confirm_text || t("action.continue");
   $("#prompt-confirm").disabled = false;
   $("#prompt-cancel").disabled = false;
   const input = $("#prompt-value");

@@ -25,9 +25,9 @@ func TestFrontendMakesDaemonProjectionFreshnessExplicit(t *testing.T) {
 		`jeszcze niesprawdzone`,
 		`Pokazujemy ostatnią pełną projekcję z ${shortDateTime(snapshot.last_refresh)}`,
 		`Nie ma jeszcze zapisanej pełnej projekcji`,
-		`Brak zapisanej projekcji; panel odświeży się automatycznie.`,
+		`t("hero.noCache")`,
 		`Projekcja jest niezweryfikowana.`,
-		`ostatni znany stan · demon offline`,
+		`t("summary.lastKnown")`,
 	} {
 		if !strings.Contains(script, wanted) {
 			t.Fatalf("frontend connection renderer is missing %q", wanted)

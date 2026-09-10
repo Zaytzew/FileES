@@ -419,3 +419,22 @@ footer { display:flex; justify-content:space-between; padding:21px 4px 0; color:
 .repo-view-preferences p { font-size:14px; line-height:1.6; }
 .idle-group { margin:8px 0; padding:0 12px; border:1px solid var(--line); border-radius:14px; background:rgba(128,144,166,.04); }
 .idle-group summary:focus-visible, .repo-view-preferences summary:focus-visible { outline:2px solid currentColor; outline-offset:2px; border-radius:8px; }
+:root .language-preference {
+  flex: 0 1 auto;
+  max-width: 190px;
+  min-width: 100px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--theme-line);
+  border-radius: 10px;
+  color: var(--theme-text);
+  background: var(--theme-panel-solid);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  --wails-draggable: no-drag;
+}
+.language-preference:focus-visible {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 2px;
+}

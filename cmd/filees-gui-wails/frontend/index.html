@@ -18,48 +18,51 @@
         <img class="brand-mark" src="./assets/filees-space-horizontal.svg" alt="filees:space">
       </a>
       <div class="topbar-actions">
-        <button id="client-version" class="version-pill" type="button" title="Wersja i aktualizacje" aria-label="Wersja i aktualizacje FileES" aria-haspopup="dialog" aria-controls="version-overlay">—</button>
-        <button id="activate" class="icon-button hint-button topbar-primary" type="button" data-global-action="activation" data-action="activate" data-hint="Dodaj serwer" aria-label="Dodaj serwer">
+        <select id="language-preference" class="language-preference" aria-label="Język interfejsu" data-i18n-aria-label="language.label" title="Język interfejsu" data-i18n-title="language.label">
+          <option value="system">System</option>
+        </select>
+        <button id="client-version" class="version-pill" type="button" title="Wersja i aktualizacje" aria-label="Wersja i aktualizacje FileES" aria-haspopup="dialog" aria-controls="version-overlay" data-i18n-title="version.hint" data-i18n-aria-label="version.accessible">—</button>
+        <button id="activate" class="icon-button hint-button topbar-primary" type="button" data-global-action="activation" data-action="activate" data-hint="Dodaj serwer" aria-label="Dodaj serwer" data-i18n-data-hint="action.addServer" data-i18n-aria-label="action.addServer">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         </button>
-        <button id="pair-mobile" class="icon-button hint-button pair-button" type="button" data-global-action="pairing" data-action="pair_mobile_device" data-hint="Sparuj urządzenie" aria-label="Sparuj urządzenie mobilne">
+        <button id="pair-mobile" class="icon-button hint-button pair-button" type="button" data-global-action="pairing" data-action="pair_mobile_device" data-hint="Sparuj urządzenie" aria-label="Sparuj urządzenie mobilne" data-i18n-data-hint="action.pairDevice" data-i18n-aria-label="action.pairMobile">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M10 5.5h4M11 18.5h2"/></svg>
-          <span>Paruj</span>
+          <span data-i18n="action.pair">Paruj</span>
         </button>
-        <div id="theme-switch" class="theme-switch" role="group" aria-label="Motyw interfejsu">
-          <button class="theme-option hint-button" type="button" data-theme-preference="dark" data-hint="Noc" aria-label="Motyw ciemny" aria-pressed="false">
+        <div id="theme-switch" class="theme-switch" role="group" aria-label="Motyw interfejsu" data-i18n-aria-label="theme.label">
+          <button class="theme-option hint-button" type="button" data-theme-preference="dark" data-hint="Noc" aria-label="Motyw ciemny" aria-pressed="false" data-i18n-data-hint="theme.night" data-i18n-aria-label="theme.dark">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.6 8.6 0 1 0 20.5 14.2Z"/></svg>
           </button>
-          <button class="theme-option hint-button" type="button" data-theme-preference="light" data-hint="Dzień" aria-label="Motyw jasny" aria-pressed="false">
+          <button class="theme-option hint-button" type="button" data-theme-preference="light" data-hint="Dzień" aria-label="Motyw jasny" aria-pressed="false" data-i18n-data-hint="theme.day" data-i18n-aria-label="theme.light">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></svg>
           </button>
-          <button class="theme-option hint-button" type="button" data-theme-preference="system" data-hint="Auto" aria-label="Motyw zgodny z systemem" aria-pressed="true">
+          <button class="theme-option hint-button" type="button" data-theme-preference="system" data-hint="Auto" aria-label="Motyw zgodny z systemem" aria-pressed="true" data-i18n-data-hint="theme.auto" data-i18n-aria-label="theme.system">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
           </button>
         </div>
-        <button id="refresh" class="icon-button hint-button" title="Odśwież projekcję" data-hint="Odśwież" aria-label="Odśwież projekcję">
+        <button id="refresh" class="icon-button hint-button" title="Odśwież projekcję" data-hint="Odśwież" aria-label="Odśwież projekcję" data-i18n-title="projection.refresh" data-i18n-data-hint="action.refresh" data-i18n-aria-label="projection.refresh">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
         </button>
-        <div class="window-controls" aria-label="Sterowanie oknem">
-          <button id="window-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj"><span>—</span></button>
-          <button id="window-maximise" class="window-button" title="Maksymalizuj lub przywróć" aria-label="Maksymalizuj lub przywróć"><span>□</span></button>
-          <button id="window-close" class="window-button close" title="Ukryj panel" aria-label="Ukryj panel"><span>×</span></button>
+        <div class="window-controls" aria-label="Sterowanie oknem" data-i18n-aria-label="window.controls">
+          <button id="window-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj" data-i18n-title="window.minimize" data-i18n-aria-label="window.minimize"><span>—</span></button>
+          <button id="window-maximise" class="window-button" title="Maksymalizuj lub przywróć" aria-label="Maksymalizuj lub przywróć" data-i18n-title="window.maximize" data-i18n-aria-label="window.maximize"><span>□</span></button>
+          <button id="window-close" class="window-button close" title="Ukryj panel" aria-label="Ukryj panel" data-i18n-title="window.hide" data-i18n-aria-label="window.hide"><span>×</span></button>
         </div>
       </div>
     </header>
 
     <section id="top" class="hero">
       <div>
-        <p class="eyebrow">FileES · Twoje pliki</p>
-        <h1 id="hero-title">Twoje pliki pracują<br><span>we właściwym rytmie.</span></h1>
+        <p class="eyebrow" data-i18n="hero.eyebrow">FileES · Twoje pliki</p>
+        <h1 id="hero-title">Twoje pliki pracują<br><span data-i18n="hero.accent">we właściwym rytmie.</span></h1>
         <p id="hero-copy" class="hero-copy">Czekam na pierwszy spójny obraz stanu FileES.</p>
         <div id="announcement-banner" class="announcement-banner" hidden>
-          <div role="status" aria-live="polite" aria-atomic="true"><strong id="announcement-banner-count"></strong><p>Ogłoszenia pozostają nieprzeczytane do Twojego potwierdzenia.</p></div>
-          <button id="open-announcements" type="button" aria-haspopup="dialog" aria-controls="announcement-overlay">Przeczytaj i potwierdź</button>
+          <div role="status" aria-live="polite" aria-atomic="true"><strong id="announcement-banner-count"></strong><p data-i18n="announcement.note">Ogłoszenia pozostają nieprzeczytane do Twojego potwierdzenia.</p></div>
+          <button id="open-announcements" type="button" aria-haspopup="dialog" aria-controls="announcement-overlay" data-i18n="announcement.read">Przeczytaj i potwierdź</button>
         </div>
         <div id="intent-alerts" class="intent-alerts" aria-live="assertive" aria-atomic="true" hidden></div>
       </div>
-      <div id="pulse-card" class="pulse-card" role="status" aria-live="polite" title="Stan FileES">
+      <div id="pulse-card" class="pulse-card" role="status" aria-live="polite" title="Stan FileES" data-i18n-title="projection.state">
         <div class="pulse-orbit orbit-a"></div>
         <div class="pulse-orbit orbit-b"></div>
         <div id="pulse-inner-ring" class="pulse-orbit orbit-c"></div>
@@ -74,22 +77,22 @@
         <h2>Demon jest poza zasięgiem</h2>
         <p id="offline-copy">Nie można teraz zweryfikować projekcji. Po odzyskaniu połączenia panel odświeży się automatycznie.</p>
       </div>
-      <button id="reconnect" class="primary-button">Połącz ponownie</button>
+      <button id="reconnect" class="primary-button" data-i18n="action.reconnect">Połącz ponownie</button>
     </section>
 
-    <section class="metrics" aria-label="Podsumowanie">
-      <article><small>Serwery</small><strong id="metric-servers">—</strong><span id="metric-servers-note">aktywacje</span></article>
-      <article><small>Repozytoria</small><strong id="metric-repos">—</strong><span id="metric-repos-note">w projekcji</span></article>
-      <article><small>Do wysłania</small><strong id="metric-pending">—</strong><span id="metric-pending-note">zmienionych plików</span></article>
-      <article><small>Wypożyczenia</small><strong id="metric-reservations">—</strong><span id="metric-reservations-note">aktywne blokady</span></article>
-      <article><small>Udostępnienia</small><strong id="metric-public-shares">—</strong><span id="metric-public-shares-note">aktywne linki</span></article>
-      <article><small>Uwagi</small><strong id="metric-attention">—</strong><span id="metric-attention-note">konflikty i komunikaty</span></article>
+    <section class="metrics" aria-label="Podsumowanie" data-i18n-aria-label="summary.title">
+      <article><small data-i18n="summary.servers">Serwery</small><strong id="metric-servers">—</strong><span id="metric-servers-note">aktywacje</span></article>
+      <article><small data-i18n="summary.repositories">Repozytoria</small><strong id="metric-repos">—</strong><span id="metric-repos-note">w projekcji</span></article>
+      <article><small data-i18n="summary.pending">Do wysłania</small><strong id="metric-pending">—</strong><span id="metric-pending-note">zmienionych plików</span></article>
+      <article><small data-i18n="summary.locks">Wypożyczenia</small><strong id="metric-reservations">—</strong><span id="metric-reservations-note">aktywne blokady</span></article>
+      <article><small data-i18n="summary.shares">Udostępnienia</small><strong id="metric-public-shares">—</strong><span id="metric-public-shares-note">aktywne linki</span></article>
+      <article><small data-i18n="summary.attention">Uwagi</small><strong id="metric-attention">—</strong><span id="metric-attention-note">konflikty i komunikaty</span></article>
     </section>
 
     <section class="content-grid">
       <div class="main-column">
         <div class="section-heading">
-          <div><p class="eyebrow">Twoje pliki</p><h2>Serwery</h2></div>
+          <div><p class="eyebrow" data-i18n="section.files">Twoje pliki</p><h2 data-i18n="summary.servers">Serwery</h2></div>
           <div class="projection-timing">
             <strong id="projection-freshness" class="projection-freshness is-unverified">Projekcja lokalna niezweryfikowana</strong>
             <span id="last-refresh" class="timestamp">Jeszcze nie odświeżono</span>
@@ -97,13 +100,13 @@
         </div>
         <div id="action-status" class="action-status" hidden></div>
         <details class="repo-view-preferences">
-          <summary>Widok listy folderów</summary>
+          <summary data-i18n="view.title">Widok listy folderów</summary>
           <div class="repo-view-fields">
-            <label>Nieaktywne po (dni)<input id="inactive-days" type="number" min="0" max="36500" step="1" value="14"></label>
-            <label>Przenoszenie do archiwalnych po (dni)<input id="archive-days" type="number" min="0" max="36500" step="1" value="30"></label>
-            <button id="save-repo-view" class="primary-button" type="button">Zapisz widok</button>
+            <label><span data-i18n="view.inactive">Nieaktywne po (dni)</span><input id="inactive-days" type="number" min="0" max="36500" step="1" value="14"></label>
+            <label><span data-i18n="view.archive">Przenoszenie do archiwalnych po (dni)</span><input id="archive-days" type="number" min="0" max="36500" step="1" value="30"></label>
+            <button id="save-repo-view" class="primary-button" type="button" data-i18n="view.save">Zapisz widok</button>
           </div>
-          <p>0 wyłącza dany próg. Archiwalne wybierasz ręcznie w ustawieniach folderu. Synchronizacja pozostaje włączona.</p>
+          <p data-i18n="view.help">0 wyłącza dany próg. Archiwalne wybierasz ręcznie w ustawieniach folderu. Synchronizacja pozostaje włączona.</p>
         </details>
         <div id="repositories" class="server-panels">
           <div class="empty-state"><span>◌</span><p>Czekam na listę folderów.</p></div>
@@ -113,8 +116,8 @@
       <aside class="side-column">
         <section id="public-shares-card" class="side-card" hidden>
           <div class="section-heading compact">
-            <div><p class="eyebrow">Dostęp z zewnątrz</p><h2>Udostępnienia publiczne</h2></div>
-            <div class="side-card-controls"><span id="public-shares-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="public-shares-body" aria-expanded="true" aria-controls="public-shares-body" title="Zwiń udostępnienia" aria-label="Zwiń udostępnienia"><span aria-hidden="true">⌄</span></button></div>
+            <div><p class="eyebrow" data-i18n="section.external">Dostęp z zewnątrz</p><h2 data-i18n="section.shares">Udostępnienia publiczne</h2></div>
+            <div class="side-card-controls"><span id="public-shares-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="public-shares-body" aria-expanded="true" aria-controls="public-shares-body" title="Zwiń udostępnienia" aria-label="Zwiń udostępnienia" data-i18n-title="collapse.shares" data-i18n-aria-label="collapse.shares"><span aria-hidden="true">⌄</span></button></div>
           </div>
           <div id="public-shares-body" class="side-card-body"><div id="public-shares" class="dashboard-share-list"></div></div>
         </section>
@@ -126,25 +129,25 @@
           <div id="update-body" class="side-card-body">
             <p id="update-summary" class="update-summary"></p>
             <div id="update-restart-actions" class="update-actions" hidden>
-              <button class="primary" type="button" data-action="restart_filees">Uruchom ponownie</button>
+              <button class="primary" type="button" data-action="restart_filees" data-i18n="action.restart">Uruchom ponownie</button>
             </div>
             <div id="update-actions" class="update-actions" data-global-action="update">
-              <button type="button" data-action="update_plan">Pokaż plan</button>
-              <button class="primary" type="button" data-action="update_apply">Zaktualizuj</button>
+              <button type="button" data-action="update_plan" data-i18n="action.updatePlan">Pokaż plan</button>
+              <button class="primary" type="button" data-action="update_apply" data-i18n="action.update">Zaktualizuj</button>
             </div>
           </div>
         </section>
         <section id="reservations-card" class="side-card" hidden>
           <div class="section-heading compact">
-            <div><p class="eyebrow">Edycja</p><h2>Aktywne blokady</h2></div>
-            <div class="side-card-controls"><span id="reservations-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="reservations-body" aria-expanded="true" aria-controls="reservations-body" title="Zwiń blokady" aria-label="Zwiń blokady"><span aria-hidden="true">⌄</span></button></div>
+            <div><p class="eyebrow" data-i18n="section.editing">Edycja</p><h2 data-i18n="section.locks">Aktywne blokady</h2></div>
+            <div class="side-card-controls"><span id="reservations-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="reservations-body" aria-expanded="true" aria-controls="reservations-body" title="Zwiń blokady" aria-label="Zwiń blokady" data-i18n-title="collapse.locks" data-i18n-aria-label="collapse.locks"><span aria-hidden="true">⌄</span></button></div>
           </div>
           <div id="reservations-body" class="side-card-body"><div id="reservations" class="reservation-list"></div></div>
         </section>
         <section id="shouts-card" class="side-card" aria-live="assertive" hidden>
           <div class="section-heading compact">
-            <div><p class="eyebrow">Ważne</p><h2>Ostatnie ogłoszenia</h2></div>
-            <div class="side-card-controls"><span id="shouts-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="shouts-body" aria-expanded="true" aria-controls="shouts-body" title="Zwiń ogłoszenia" aria-label="Zwiń ogłoszenia"><span aria-hidden="true">⌄</span></button></div>
+            <div><p class="eyebrow" data-i18n="section.important">Ważne</p><h2 data-i18n="section.shouts">Ostatnie ogłoszenia</h2></div>
+            <div class="side-card-controls"><span id="shouts-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="shouts-body" aria-expanded="true" aria-controls="shouts-body" title="Zwiń ogłoszenia" aria-label="Zwiń ogłoszenia" data-i18n-title="collapse.shouts" data-i18n-aria-label="collapse.shouts"><span aria-hidden="true">⌄</span></button></div>
           </div>
           <div id="shouts-body" class="side-card-body"><div id="shouts" class="shout-list"></div></div>
         </section>
@@ -155,52 +158,52 @@
              number expose nothing; the names wait for a deliberate click. -->
         <section id="detached-card" class="side-card" hidden>
           <div class="section-heading compact">
-            <div><p class="eyebrow">Zakończone</p><h2>Ostatnio odłączone</h2></div>
-            <div class="side-card-controls"><span id="detached-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="detached-body" aria-expanded="false" aria-controls="detached-body" title="Rozwiń odłączone" aria-label="Rozwiń odłączone"><span aria-hidden="true">⌄</span></button></div>
+            <div><p class="eyebrow" data-i18n="section.ended">Zakończone</p><h2 data-i18n="section.detached">Ostatnio odłączone</h2></div>
+            <div class="side-card-controls"><span id="detached-count" class="count-badge">0</span><button class="side-card-toggle" type="button" data-toggle-card="detached-body" aria-expanded="false" aria-controls="detached-body" title="Rozwiń odłączone" aria-label="Rozwiń odłączone" data-i18n-title="expand.detached" data-i18n-aria-label="expand.detached"><span aria-hidden="true">⌄</span></button></div>
           </div>
           <div id="detached-body" class="side-card-body" hidden><div id="detached" class="detached-list"></div></div>
         </section>
         <section id="activity-card" class="side-card">
           <div class="section-heading compact">
-            <div><p class="eyebrow">Sygnały</p><h2>Ostatnia aktywność</h2></div>
-            <div class="side-card-controls"><button id="open-journal" class="text-button" type="button">Dziennik</button><button class="side-card-toggle" type="button" data-toggle-card="activity-body" aria-expanded="true" aria-controls="activity-body" title="Zwiń aktywność" aria-label="Zwiń aktywność"><span aria-hidden="true">⌄</span></button></div>
+            <div><p class="eyebrow" data-i18n="section.signals">Sygnały</p><h2 data-i18n="section.activity">Ostatnia aktywność</h2></div>
+            <div class="side-card-controls"><button id="open-journal" class="text-button" type="button" data-i18n="journal.title">Dziennik</button><button class="side-card-toggle" type="button" data-toggle-card="activity-body" aria-expanded="true" aria-controls="activity-body" title="Zwiń aktywność" aria-label="Zwiń aktywność" data-i18n-title="collapse.activity" data-i18n-aria-label="collapse.activity"><span aria-hidden="true">⌄</span></button></div>
           </div>
-          <div id="activity-body" class="side-card-body"><div id="activity" class="activity-list"><p class="muted">Brak aktywności.</p></div></div>
+          <div id="activity-body" class="side-card-body"><div id="activity" class="activity-list"><p class="muted" data-i18n="activity.empty">Brak aktywności.</p></div></div>
         </section>
       </aside>
     </section>
 
     <footer>
-      <span>FileES pilnuje zmian w Twoich folderach.</span>
+      <span data-i18n="hero.footer">FileES pilnuje zmian w Twoich folderach.</span>
       <span id="revision">stan #0</span>
     </footer>
   </main>
   <div id="version-overlay" class="version-overlay" hidden>
     <section class="version-dialog" role="dialog" aria-modal="true" aria-labelledby="version-title" aria-describedby="version-status">
       <header>
-        <div><p class="eyebrow">FileES desktop</p><h2 id="version-title">Informacje o wersji</h2></div>
-        <button id="close-version" class="journal-close" type="button" title="Zamknij informacje o wersji" aria-label="Zamknij informacje o wersji">×</button>
+        <div><p class="eyebrow">FileES desktop</p><h2 id="version-title" data-i18n="version.title">Informacje o wersji</h2></div>
+        <button id="close-version" class="journal-close" type="button" title="Zamknij informacje o wersji" aria-label="Zamknij informacje o wersji" data-i18n-title="version.close" data-i18n-aria-label="version.close">×</button>
       </header>
       <div class="version-details">
-        <article><small>Wersja klienta</small><strong id="version-client">—</strong></article>
-        <article><small>Kanał aktualizacji</small><strong id="version-channel">—</strong></article>
-        <article><small>Wydanie dystrybucyjne</small><strong id="version-release">—</strong></article>
+        <article><small data-i18n="version.client">Wersja klienta</small><strong id="version-client">—</strong></article>
+        <article><small data-i18n="version.channel">Kanał aktualizacji</small><strong id="version-channel">—</strong></article>
+        <article><small data-i18n="version.release">Wydanie dystrybucyjne</small><strong id="version-release">—</strong></article>
       </div>
       <p id="version-status" class="version-status">Sprawdzam stan aktualizacji.</p>
       <section class="product-provider" aria-labelledby="provider-title">
         <img src="./assets/atm-projekt.png" alt="ATM Projekt" class="provider-logo">
         <div>
-          <h3 id="provider-title">Odpowiedzialny dostawca</h3>
-          <p>FileES jest marką handlową oprogramowania rozwijanego i dostarczanego przez ATM Projekt.</p>
+          <h3 id="provider-title" data-i18n="provider.title">Odpowiedzialny dostawca</h3>
+          <p data-i18n="provider.copy">FileES jest marką handlową oprogramowania rozwijanego i dostarczanego przez ATM Projekt.</p>
           <address>ATM Projekt · ul. Drewnowskiego 5a/2 · 01-131 Zegrze<br><a href="mailto:kontakt@atmprojekt.pl">kontakt@atmprojekt.pl</a></address>
         </div>
       </section>
       <section class="product-legal" aria-labelledby="license-title">
-        <h3 id="license-title">Licencja i odpowiedzialność</h3>
+        <h3 id="license-title" data-i18n="license.title">Licencja i odpowiedzialność</h3>
         <p>Copyright © 2026 ATM Projekt.</p>
-        <p>FileES jest udostępniany na licencji BSD 2-Clause. Oprogramowanie jest dostarczane „tak jak jest”, bez gwarancji wyraźnych ani dorozumianych; odpowiedzialność jest wyłączona w zakresie dopuszczonym przez prawo.</p>
+        <p data-i18n="license.summary">FileES jest udostępniany na licencji BSD 2-Clause. Oprogramowanie jest dostarczane „tak jak jest”, bez gwarancji wyraźnych ani dorozumianych; odpowiedzialność jest wyłączona w zakresie dopuszczonym przez prawo.</p>
         <details>
-          <summary>Pełna treść licencji BSD 2-Clause</summary>
+          <summary data-i18n="license.full">Pełna treść licencji BSD 2-Clause</summary>
           <div class="license-copy">
             <p>Copyright (c) 2026, ATM Projekt</p>
             <p>Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:</p>
@@ -213,27 +216,27 @@
         </details>
       </section>
       <footer>
-        <button id="dismiss-version" type="button">Zamknij</button>
+        <button id="dismiss-version" type="button" data-i18n="action.close">Zamknij</button>
         <div id="version-restart-actions" class="update-actions" hidden>
-          <button class="primary" type="button" data-action="restart_filees">Uruchom ponownie</button>
+          <button class="primary" type="button" data-action="restart_filees" data-i18n="action.restart">Uruchom ponownie</button>
         </div>
         <div id="version-update-actions" class="update-actions" data-global-action="update" hidden>
-          <button type="button" data-action="update_plan">Pokaż plan</button>
-          <button class="primary" type="button" data-action="update_apply">Zaktualizuj</button>
+          <button type="button" data-action="update_plan" data-i18n="action.updatePlan">Pokaż plan</button>
+          <button class="primary" type="button" data-action="update_apply" data-i18n="action.update">Zaktualizuj</button>
         </div>
       </footer>
     </section>
   </div>
   <dialog id="deleted-copy-dialog" aria-labelledby="deleted-copy-title" aria-describedby="deleted-copy-description">
-    <header><h2 id="deleted-copy-title">Zachowany folder lokalny</h2><button id="close-deleted-copy" type="button" aria-label="Zamknij informację">×</button></header>
+    <header><h2 id="deleted-copy-title" data-i18n="deleted.title">Zachowany folder lokalny</h2><button id="close-deleted-copy" type="button" aria-label="Zamknij informację" data-i18n-aria-label="deleted.close">×</button></header>
     <p id="deleted-copy-name"></p>
     <p id="deleted-copy-path"></p>
     <p id="deleted-copy-description"></p>
     <p id="deleted-copy-status"></p>
     <p id="deleted-copy-cleanup"></p>
-    <details id="deleted-copy-diagnostics" hidden><summary>Diagnostyka sprzątania (alpha)</summary><pre id="deleted-copy-error"></pre></details>
+    <details id="deleted-copy-diagnostics" hidden><summary data-i18n="deleted.diagnostics">Diagnostyka sprzątania (alpha)</summary><pre id="deleted-copy-error"></pre></details>
     <p id="deleted-copy-action-help"></p>
-    <footer><button id="dismiss-deleted-copy" type="button">Zamknij</button><button id="detach-deleted-copy" type="button">Odłącz lokalną projekcję</button></footer>
+    <footer><button id="dismiss-deleted-copy" type="button" data-i18n="action.close">Zamknij</button><button id="detach-deleted-copy" type="button" data-i18n="deleted.detach">Odłącz lokalną projekcję</button></footer>
   </dialog>
 
   <div id="announcement-overlay" class="announcement-overlay" hidden>
@@ -242,8 +245,8 @@
         <span class="announcement-dialog-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="M3 11v2a2 2 0 0 0 2 2h2l4 4V5L7 9H5a2 2 0 0 0-2 2Z"/><path d="M15 8a5 5 0 0 1 0 8M18 5a9 9 0 0 1 0 14"/></svg>
         </span>
-        <div><p class="eyebrow">Wymaga uwagi</p><h2 id="announcement-title">Ogłoszenie</h2></div>
-        <button id="close-announcement" class="journal-close" type="button" title="Zamknij ogłoszenie" aria-label="Zamknij ogłoszenie">×</button>
+        <div><p class="eyebrow" data-i18n="announcement.attention">Wymaga uwagi</p><h2 id="announcement-title" data-i18n="announcement.title">Ogłoszenie</h2></div>
+        <button id="close-announcement" class="journal-close" type="button" title="Zamknij ogłoszenie" aria-label="Zamknij ogłoszenie" data-i18n-title="announcement.close" data-i18n-aria-label="announcement.close">×</button>
       </header>
       <p id="announcement-copy" class="announcement-copy"></p>
       <div class="announcement-meta">
@@ -254,9 +257,9 @@
       <footer>
         <span id="announcement-status" class="announcement-status"></span>
         <div class="announcement-buttons">
-          <button id="dismiss-announcement" type="button">Zamknij</button>
-          <button id="next-announcement" type="button" hidden>Następne nieprzeczytane</button>
-          <button id="ack-announcement" class="primary" type="button">OK · Potwierdź odczyt</button>
+          <button id="dismiss-announcement" type="button" data-i18n="action.close">Zamknij</button>
+          <button id="next-announcement" type="button" hidden data-i18n="announcement.next">Następne nieprzeczytane</button>
+          <button id="ack-announcement" class="primary" type="button" data-i18n="announcement.ack">OK · Potwierdź odczyt</button>
         </div>
       </footer>
     </section>
@@ -264,12 +267,12 @@
   <div id="journal-overlay" class="journal-overlay" hidden>
     <section class="journal-dialog" role="dialog" aria-modal="true" aria-labelledby="journal-title">
       <header>
-        <div><p class="eyebrow">Historia FileES</p><h2 id="journal-title">Dziennik</h2></div>
-        <button id="close-journal" class="journal-close" type="button" title="Zamknij dziennik" aria-label="Zamknij dziennik">×</button>
+        <div><p class="eyebrow" data-i18n="journal.history">Historia FileES</p><h2 id="journal-title" data-i18n="journal.title">Dziennik</h2></div>
+        <button id="close-journal" class="journal-close" type="button" title="Zamknij dziennik" aria-label="Zamknij dziennik" data-i18n-title="journal.close" data-i18n-aria-label="journal.close">×</button>
       </header>
-      <p class="journal-intro">Aktywność i istotne błędy. Krótkie, samonaprawiające się przerwy łączności pozostają tylko w ikonie statusu.</p>
-      <div class="journal-columns" aria-hidden="true"><span>Czas</span><span>Zakres</span><span>Wpis</span></div>
-      <div id="journal" class="journal-list"><p class="muted">Brak wpisów.</p></div>
+      <p class="journal-intro" data-i18n="journal.intro">Aktywność i istotne błędy. Krótkie, samonaprawiające się przerwy łączności pozostają tylko w ikonie statusu.</p>
+      <div class="journal-columns" aria-hidden="true"><span data-i18n="journal.time">Czas</span><span data-i18n="journal.scope">Zakres</span><span data-i18n="journal.entry">Wpis</span></div>
+      <div id="journal" class="journal-list"><p class="muted" data-i18n="journal.empty">Brak wpisów.</p></div>
     </section>
   </div>
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="false"></div>

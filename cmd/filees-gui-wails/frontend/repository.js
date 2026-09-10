@@ -1,9 +1,11 @@
 import { Events, Window } from "/wails/runtime.js";
 import { RepositoryService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme } from "./theme-preference.js";
+import { initializeLanguage } from "./i18n.js";
 import { readRepoView, saveRepoView, repoViewKey, canArchive } from "./repo-view.js";
 
 initializeTheme();
+initializeLanguage();
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value) => String(value ?? "")

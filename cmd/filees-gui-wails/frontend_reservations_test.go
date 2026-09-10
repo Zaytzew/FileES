@@ -13,7 +13,7 @@ func TestFrontendKeepsHealthyReservationRowsWhenAnotherServerIsUnavailable(t *te
 		"Częściowa lista — brak aktualnej emisji:",
 		"Lokalne lustro — tor stanowy offline:",
 		"availabilityHTML + requestsHTML + reservationsHTML",
-		"ostatni znany stan · demon offline",
+		`t("summary.lastKnown")`,
 	} {
 		if !strings.Contains(script, wanted) {
 			t.Fatalf("frontend reservation projection missing %q", wanted)

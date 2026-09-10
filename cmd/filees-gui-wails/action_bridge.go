@@ -192,9 +192,10 @@ func (adapter mobilePairingAdapter) selectServer(ctx context.Context, defaultSer
 		options = []PromptOption{{Value: defaultServerID, Label: defaultServerID}}
 	}
 	choice, err := selector.SelectOne(ctx, PromptSelectRequest{
-		Title: "Sparuj urządzenie mobilne",
-		Text:  "Wybierz serwer, dla którego ma zostać utworzony tymczasowy kod QR:",
-		Label: "Serwer", Default: defaultServerID, Options: options,
+		PresentationKey: "select.pairingServer",
+		Title:           "Sparuj urządzenie mobilne",
+		Text:            "Wybierz serwer, dla którego ma zostać utworzony tymczasowy kod QR:",
+		Label:           "Serwer", Default: defaultServerID, Options: options,
 	})
 	if err != nil || choice.Cancelled {
 		return "", false, err
@@ -232,7 +233,8 @@ func (adapter mobilePairingAdapter) authorize(ctx context.Context) (bool, error)
 	}
 	if !configured {
 		prompted, promptErr := adapter.prompter.PromptText(ctx, platform.PromptTextRequest{
-			Title: "Zabezpiecz parowanie", Text: "Ustaw lokalny PIN chroniący wyświetlanie kodów parowania:", Label: "PIN", Secret: true,
+			PresentationKey: "input.pairingPINSetup",
+			Title:           "Zabezpiecz parowanie", Text: "Ustaw lokalny PIN chroniący wyświetlanie kodów parowania:", Label: "PIN", Secret: true,
 		})
 		if promptErr != nil || prompted.Cancelled {
 			return false, promptErr
@@ -249,9 +251,11 @@ func (adapter mobilePairingAdapter) authorize(ctx context.Context) (bool, error)
 	}
 
 	text := "Podaj lokalny PIN, aby wyświetlić kod parowania:"
+	presentationKey := "input.pairingPIN"
 	for {
 		prompted, promptErr := adapter.prompter.PromptText(ctx, platform.PromptTextRequest{
-			Title: "Sparuj urządzenie mobilne", Text: text, Label: "PIN", Secret: true,
+			PresentationKey: presentationKey,
+			Title:           "Sparuj urządzenie mobilne", Text: text, Label: "PIN", Secret: true,
 		})
 		if promptErr != nil || prompted.Cancelled {
 			return false, promptErr
@@ -269,6 +273,7 @@ func (adapter mobilePairingAdapter) authorize(ctx context.Context) (bool, error)
 			return true, nil
 		}
 		text = "Nieprawidłowy PIN. Spróbuj ponownie:"
+		presentationKey = "input.pairingPINRetry"
 	}
 }
 

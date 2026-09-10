@@ -52,6 +52,9 @@ type PromptOption struct {
 }
 
 type PromptSelectRequest struct {
+	// Only GUI-authored chrome is localized; option labels and IDs are data.
+	PresentationKey             string
+	PresentationArgs            map[string]string
 	Title, Text, Label, Default string
 	Options                     []PromptOption
 }
@@ -150,7 +153,9 @@ func (service *PromptService) SelectOne(ctx context.Context, request PromptSelec
 		defaultValue = options[0].Value
 	}
 	choice, err := service.present(ctx, PromptSnapshot{
-		Mode: "select", Title: request.Title, Text: request.Text, Label: request.Label,
+		Mode: "select", PresentationKey: request.PresentationKey,
+		PresentationArgs: maps.Clone(request.PresentationArgs),
+		Title:            request.Title, Text: request.Text, Label: request.Label,
 		Options: options, Default: defaultValue, ConfirmText: "Dalej", CancelText: "Anuluj",
 	})
 	return PromptSelectResult{Value: choice.Value, Cancelled: !choice.Confirmed}, err

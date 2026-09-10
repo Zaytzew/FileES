@@ -11,6 +11,12 @@ let snapshot = null;
 let resolving = false;
 let submissionError = "";
 
+// Only explicitly marked, GUI-authored templates are localized. Unmarked
+// daemon messages and diagnostics are displayed verbatim, not matched by text.
+function promptText(next, part, original) {
+  return next.presentation_key ? t(`${next.presentation_key}.${part}`) : original;
+}
+
 // A locale change must never call render(): it restores defaults, enables
 // buttons and selects input. Update labels only, retaining the pending RPC.
 function refreshPromptLabels() {
@@ -21,8 +27,11 @@ function refreshPromptLabels() {
     : t(next.mode === "text" ? "prompt.input" : next.mode === "select" ? "prompt.select" : next.mode === "info" ? "prompt.info" : "prompt.confirm");
   $("#prompt-label").textContent = next.label || t("field.value");
   $("#prompt-select-label").textContent = next.label || t("field.server");
-  $("#prompt-cancel").textContent = next.cancel_text || t("action.cancel");
-  $("#prompt-confirm").textContent = next.confirm_text || t("action.continue");
+  $("#prompt-cancel").textContent = promptText(next, "cancel", next.cancel_text || t("action.cancel"));
+  $("#prompt-confirm").textContent = promptText(next, "confirm", next.confirm_text || t("action.continue"));
+  $("#prompt-title").textContent = promptText(next, "title", next.title || "FileES");
+  $("#prompt-text").textContent = promptText(next, "text", next.text || "");
+  document.title = `${$("#prompt-title").textContent} — FileES`;
 }
 
 const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -67,6 +76,7 @@ function render(next) {
   }));
   if (selectMode && next.default) select.value = next.default;
   document.title = next.title ? `${next.title} — FileES` : "FileES";
+  refreshPromptLabels();
   if (inputMode) window.setTimeout(() => { input.focus(); input.select(); }, 80);
   else if (selectMode) window.setTimeout(() => select.focus(), 80);
   else window.setTimeout(() => $("#prompt-confirm").focus(), 80);

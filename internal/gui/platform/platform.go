@@ -422,10 +422,13 @@ type InfoRequest struct {
 }
 
 type ConfirmRequest struct {
-	Title       string
-	Text        string
-	ConfirmText string
-	CancelText  string
+	// PresentationKey identifies a GUI-authored template, never a daemon
+	// message or action. Empty means display the supplied text unchanged.
+	PresentationKey string
+	Title           string
+	Text            string
+	ConfirmText     string
+	CancelText      string
 }
 
 type PromptTextRequest struct {

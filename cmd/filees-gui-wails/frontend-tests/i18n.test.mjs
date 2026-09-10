@@ -39,6 +39,24 @@ test("system locale and English fallback do not depend on catalogue order", () =
   assert.equal(resolveLocale("system", ["PL_pl"]), "pl");
 });
 
+test("only explicitly marked GUI dialog templates are translated", () => {
+  const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
+  const start = source.indexOf("function promptText("), end = source.indexOf("\n}", start) + 2;
+  const format = runInNewContext(`${source.slice(start, end)}\npromptText`, {
+    t: key => translate(catalogues, "en", key),
+  });
+  // Even an identical Polish sentence from a daemon must stay untouched.
+  const raw = catalogues.pl["dialog.restart.text"];
+  assert.equal(format({}, "text", raw), raw);
+  assert.equal(format({}, "text", "svn_error: Nie można {name} <DWG>"), "svn_error: Nie można {name} <DWG>");
+  assert.equal(format({ presentation_key: "dialog.restart" }, "text", raw), catalogues.en["dialog.restart.text"]);
+  for (const prefix of ["dialog.restart", "dialog.shutdown"]) {
+    for (const part of ["title", "text", "confirm", "cancel"]) {
+      for (const { messages } of languages) assert.equal(typeof messages[`${prefix}.${part}`], "string");
+    }
+  }
+});
+
 test("Go action descriptors resolve in every catalogue without translating operation IDs", () => {
   for (const file of ["repository_service.go", "settings_service.go"]) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");

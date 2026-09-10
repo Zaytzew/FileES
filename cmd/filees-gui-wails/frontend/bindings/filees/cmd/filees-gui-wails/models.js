@@ -806,6 +806,13 @@ export class PromptSnapshot {
      * @param {Partial<PromptSnapshot>} [$$source = {}] - The source object to create the PromptSnapshot.
      */
     constructor($$source = {}) {
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["presentation_key"] = undefined;
+        }
         if (!("revision" in $$source)) {
             /**
              * @member

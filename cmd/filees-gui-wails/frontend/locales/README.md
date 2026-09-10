@@ -5,6 +5,13 @@ intent, permission or repository ID may be inferred from translated text.
 Catalogue values are plain text. Use `textContent`, or escape `t(...)` when
 inserting into an HTML template. Never translate user data or raw diagnostics.
 
+Native Wails menu labels read these same embedded files as JSON data after
+the `export default ` marker. Keep the body a strict JSON object followed by
+a semicolon: no expressions, imports or JavaScript inside the object. Native
+menu lookup currently supports scalar strings only. Main WebView sends its
+resolved locale to the host; this event never changes daemon state or replays
+notifications. Status/tooltips and notification copy still await migration.
+
 To add a language:
 
 1. Copy `en.js` to a BCP-47 language file and translate all values, not keys.

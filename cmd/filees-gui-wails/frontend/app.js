@@ -7,6 +7,13 @@ import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.
 initializeTheme();
 initializeLanguage();
 
+// Local Wails presentation event, not daemon IPC. Only the main window sends
+// the resolved language; secondary windows follow the existing preference.
+const syncNativeLanguage = () => Events.Emit("filees:native-language", getLocale())
+  .catch(error => console.debug("Native language synchronization failed", error));
+window.addEventListener("filees:language-changed", syncNativeLanguage);
+syncNativeLanguage();
+
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value) => String(value ?? "")
   .replaceAll("&", "&amp;")

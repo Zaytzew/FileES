@@ -29,6 +29,30 @@ test("all registered catalogues have matching keys, arguments and plural forms",
   }
 });
 
+test("info templates preserve fixed Polish copy and literal diagnostic arguments", () => {
+  const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
+  const matches = [...controller.matchAll(/platform\.InfoRequest\{PresentationKey: "(info\.[^"]+)"[^\n]+/g)];
+  assert.equal(matches.length, 17);
+  for (const [source, key] of matches) {
+    const title = JSON.parse(source.match(/Title: ("[^"\n]*")/)[1]);
+    assert.equal(catalogues.pl[`${key}.title`], title);
+    if (source.includes("PresentationArgs:")) {
+      const body = 'SVN: {body} <file> — błąd\nopaque detail';
+      for (const locale of ["pl", "en"]) {
+        assert.equal(translate(catalogues, locale, `${key}.text`, {body}), body);
+      }
+    } else {
+      const body = JSON.parse(source.match(/Text: ("[^"\n]*")/)[1]);
+      assert.equal(catalogues.pl[`${key}.text`], body);
+    }
+    for (const locale of ["pl", "en"]) {
+      for (const part of ["title", "text", "confirm", "cancel"]) {
+        assert.equal(typeof catalogues[locale][`${key}.${part}`], "string");
+      }
+    }
+  }
+});
+
 test("update UI localizes only its fallback, preserving daemon summaries and actions", () => {
   const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
   const extract = name => {

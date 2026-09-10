@@ -256,6 +256,46 @@ func TestPromptServiceDoesNotHideFollowingPrompt(t *testing.T) {
 	}
 }
 
+func TestInfoPromptPreservesLiteralDiagnostic(t *testing.T) {
+	service := newPromptService()
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	body := "SVN: {body} <file> — błąd\nopaque detail"
+	args := map[string]string{"body": body}
+	done := make(chan error, 1)
+	go func() {
+		done <- service.ShowInfo(context.Background(), platform.InfoRequest{
+			PresentationKey: "info.activationFailed", PresentationArgs: args,
+			Title: "Aktywacja FileES nie powiodła się", Text: body,
+		})
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("info was not shown")
+	}
+	args["body"] = "changed"
+	snapshot := service.Snapshot()
+	if snapshot.Mode != "info" || snapshot.PresentationKey != "info.activationFailed" || snapshot.Text != body || snapshot.PresentationArgs["body"] != body {
+		t.Fatalf("literal diagnostic lost: %+v", snapshot)
+	}
+	snapshot.PresentationArgs["body"] = "changed again"
+	if service.Snapshot().PresentationArgs["body"] != body {
+		t.Fatal("snapshot aliases presentation arguments")
+	}
+	if !service.Resolve(PromptChoice{Revision: snapshot.Revision, Confirmed: true}).Accepted {
+		t.Fatal("info acknowledgement rejected")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("info did not finish")
+	}
+}
+
 func TestPromptFrontendLeavesVisibilityToPromptService(t *testing.T) {
 	source, err := frontend.ReadFile("frontend/prompt.js")
 	if err != nil {

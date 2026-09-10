@@ -162,7 +162,11 @@ func (service *PromptService) Confirm(ctx context.Context, request platform.Conf
 }
 
 func (service *PromptService) ShowInfo(ctx context.Context, request platform.InfoRequest) error {
-	_, err := service.present(ctx, PromptSnapshot{Mode: "info", Title: request.Title, Text: request.Text, ConfirmText: "Rozumiem"})
+	_, err := service.present(ctx, PromptSnapshot{
+		Mode: "info", PresentationKey: request.PresentationKey,
+		PresentationArgs: maps.Clone(request.PresentationArgs),
+		Title:            request.Title, Text: request.Text, ConfirmText: "Rozumiem",
+	})
 	return err
 }
 

@@ -455,5 +455,21 @@ export default {
   "repo.groupQuarantine": "Kwarantanna",
   "repo.groupOther": "Pozostałe",
   "repo.groupDeleted": "Usunięte · archiwa",
-  "repo.groupRemote": "Zdalne"
+  "repo.groupRemote": "Zdalne",
+  "queue.deletedCleanup": "usunięte na serwerze · sprzątanie metadanych czeka",
+  "queue.deletedClean": "usunięte na serwerze · lokalne pliki zachowane",
+  "queue.deletedChanged": "usunięte na serwerze · zachowana kopia ze zmianami",
+  "queue.deletedCheck": "usunięte na serwerze · sprawdź zachowany folder",
+  "queue.archiveCleanup": "archiwum i czyszczenie czekają",
+  "queue.archive": "wydanie archiwum czeka",
+  "queue.cleanup": "czyszczenie lokalne czeka",
+  "queue.detached": "folder odłączony",
+  "queue.importAttention": "import wymaga uwagi",
+  "queue.importOffline": "import wstrzymany — offline",
+  "queue.importRunning": "pierwsze wysyłanie — trwa",
+  "queue.empty": "brak zmian",
+  "progress.connection": "Oczekiwanie na połączenie",
+  "progress.projection": "Potwierdzanie aktualnego stanu",
+  "progress.running": "Wykonywanie działania",
+  "progress.action": "Działanie FileES"
 };

@@ -423,10 +423,10 @@ function renderRepo(repo) {
   const deleted = Boolean(repo.server_deleted);
   const localProvisioning = Boolean(repo.local_provisioning);
   const pending = deleted
-    ? (repo.local_copy_preserved ? (repo.local_cleanup_pending ? "usunięte na serwerze · sprzątanie metadanych czeka" : repo.local_copy_status === "clean" ? "usunięte na serwerze · lokalne pliki zachowane" : repo.local_copy_status === "changed" ? "usunięte na serwerze · zachowana kopia ze zmianami" : "usunięte na serwerze · sprawdź zachowany folder") : repo.recovery_pending && repo.local_cleanup_pending ? "archiwum i czyszczenie czekają" : repo.recovery_pending ? "wydanie archiwum czeka" : repo.local_cleanup_pending ? "czyszczenie lokalne czeka" : "folder odłączony")
+    ? (repo.local_copy_preserved ? (repo.local_cleanup_pending ? t("queue.deletedCleanup") : repo.local_copy_status === "clean" ? t("queue.deletedClean") : repo.local_copy_status === "changed" ? t("queue.deletedChanged") : t("queue.deletedCheck")) : repo.recovery_pending && repo.local_cleanup_pending ? t("queue.archiveCleanup") : repo.recovery_pending ? t("queue.archive") : repo.local_cleanup_pending ? t("queue.cleanup") : t("queue.detached"))
     : localProvisioning
-      ? (state === "attention" ? "import wymaga uwagi" : state === "offline" ? "import wstrzymany — offline" : "pierwsze wysyłanie — trwa")
-    : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : "brak zmian");
+      ? (state === "attention" ? t("queue.importAttention") : state === "offline" ? t("queue.importOffline") : t("queue.importRunning"))
+    : (repo.pending_files ? `${repo.pending_files} · ${bytes(repo.pending_bytes)}` : t("queue.empty"));
   const source = repo.local_path || t(repo.attached ? "repo.folder" : "repo.remote");
   const actions = [
     deleted && repo.local_copy_preserved ? '<button class="repo-icon-action hint-button" type="button" data-copy-info data-hint="Pełna informacja o zachowanym folderze" aria-label="Pełna informacja o zachowanym folderze" aria-haspopup="dialog" aria-controls="deleted-copy-dialog">' + repoIcons.info + '</button>' : "",
@@ -583,13 +583,13 @@ function renderActions(snapshot) {
     const repo = (snapshot.repositories || []).find((item) => item.id === action.repo_id);
     const scope = repo?.display_name || action.repo_id || "FileES";
     const detail = !snapshot.connected
-      ? "Oczekiwanie na połączenie"
+      ? t("progress.connection")
       : action.phase === "awaiting_projection"
-      ? "Potwierdzanie aktualnego stanu"
-      : "Wykonywanie działania";
+      ? t("progress.projection")
+      : t("progress.running");
     return `<article class="action-badge">
       <span class="action-spinner" aria-hidden="true"></span>
-      <div><strong>${escapeHTML(action.label || "Działanie FileES")}</strong><small>${escapeHTML(scope)} · ${escapeHTML(detail)}</small></div>
+      <div><strong>${escapeHTML(action.label || t("progress.action"))}</strong><small>${escapeHTML(scope)} · ${escapeHTML(detail)}</small></div>
     </article>`;
   }).join("");
   replaceHTMLIfChanged(root, html);

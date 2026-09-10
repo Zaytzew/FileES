@@ -445,5 +445,21 @@ export default {
   "repo.groupQuarantine": "Quarantine",
   "repo.groupOther": "Other",
   "repo.groupDeleted": "Deleted · archives",
-  "repo.groupRemote": "Remote"
+  "repo.groupRemote": "Remote",
+  "queue.deletedCleanup": "deleted on server · metadata cleanup pending",
+  "queue.deletedClean": "deleted on server · local files preserved",
+  "queue.deletedChanged": "deleted on server · modified local copy preserved",
+  "queue.deletedCheck": "deleted on server · check the preserved folder",
+  "queue.archiveCleanup": "archive and cleanup pending",
+  "queue.archive": "archive retrieval pending",
+  "queue.cleanup": "local cleanup pending",
+  "queue.detached": "folder detached",
+  "queue.importAttention": "import needs attention",
+  "queue.importOffline": "import paused — offline",
+  "queue.importRunning": "initial upload in progress",
+  "queue.empty": "no changes",
+  "progress.connection": "Waiting for connection",
+  "progress.projection": "Confirming current state",
+  "progress.running": "Performing action",
+  "progress.action": "FileES action"
 };

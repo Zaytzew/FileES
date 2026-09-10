@@ -63,7 +63,7 @@ type repositorySettingsBrowserAdapter struct{ service *RepositoryService }
 type repositoryPublicShareBrowserAdapter struct{ service *RepositoryService }
 type repositoryRealmGrantBrowserAdapter struct {
 	service  *RepositoryService
-	fallback platform.RealmGrantBrowser
+	prompter pairingServerSelector
 }
 type repositoryUploadChannelBrowserAdapter struct{ service *RepositoryService }
 type repositoryQuarantineBrowserAdapter struct{ service *RepositoryService }
@@ -467,10 +467,25 @@ func (adapter repositoryRealmGrantBrowserAdapter) ShowRealmGrants(ctx context.Co
 }
 
 func (adapter repositoryRealmGrantBrowserAdapter) ShowRealmVisibility(ctx context.Context, request platform.RealmVisibilityDialogRequest) (platform.RealmVisibilityDialogResult, error) {
-	if adapter.fallback == nil {
+	if adapter.prompter == nil {
 		return platform.RealmVisibilityDialogResult{Action: platform.RealmVisibilityDialogClose}, nil
 	}
-	return adapter.fallback.ShowRealmVisibility(ctx, request)
+	choice, err := adapter.prompter.SelectOne(ctx, PromptSelectRequest{
+		PresentationKey: "select.visibility", PresentationArgs: map[string]string{"name": request.RealmName},
+		Title: request.Title, Text: request.Text,
+		Options: []PromptOption{{Value: "listed", Label: "Visible"}, {Value: "hidden", Label: "Hidden"}},
+	})
+	result := platform.RealmVisibilityDialogResult{Action: platform.RealmVisibilityDialogClose}
+	if err != nil || choice.Cancelled {
+		return result, err
+	}
+	switch choice.Value {
+	case "listed":
+		result.Action = platform.RealmVisibilityDialogListed
+	case "hidden":
+		result.Action = platform.RealmVisibilityDialogPrivate
+	}
+	return result, nil
 }
 
 func (adapter repositoryUploadChannelBrowserAdapter) ShowUploadChannels(ctx context.Context, request platform.UploadChannelDialogRequest) (platform.UploadChannelDialogResult, error) {

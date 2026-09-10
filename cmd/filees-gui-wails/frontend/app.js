@@ -3,9 +3,11 @@ import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme, setThemePreference } from "./theme-preference.js";
 import { initializeLanguage, t, tn, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.js";
+import { initializeLanguageMenu } from "./language-menu.js";
 
 initializeTheme();
 initializeLanguage();
+initializeLanguageMenu();
 
 // Local Wails presentation event, not daemon IPC. Only the main window sends
 // the resolved language; secondary windows follow the existing preference.

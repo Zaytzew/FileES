@@ -245,8 +245,9 @@ type RealmGrantDialogResult struct {
 }
 
 type RealmVisibilityDialogRequest struct {
-	Title string
-	Text  string
+	RealmName string
+	Title     string
+	Text      string
 }
 
 type RealmVisibilityDialogAction string

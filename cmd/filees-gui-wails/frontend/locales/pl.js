@@ -1192,5 +1192,13 @@ export default {
   "window.repository": "Działania folderu FileES",
   "window.pairing": "Sparuj urządzenie mobilne — FileES",
   "detached.self": "Odłączono od „{name}”",
-  "detached.remote": "„{name}” odłączył tego klienta"
+  "detached.remote": "„{name}” odłączył tego klienta",
+  "header.actions": "Akcje",
+  "select.visibility.title": "Widoczność strefy „{name}”",
+  "select.visibility.text": "Widoczna strefa może otrzymywać granty dostępu. Nie ujawnia to repozytoriów ani istniejących dostępów.",
+  "select.visibility.label": "Widoczność",
+  "select.visibility.confirm": "Dalej",
+  "select.visibility.cancel": "Anuluj",
+  "select.visibility.listed": "Widoczna",
+  "select.visibility.hidden": "Ukryta"
 };

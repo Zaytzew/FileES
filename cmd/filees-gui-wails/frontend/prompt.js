@@ -75,6 +75,10 @@ function render(next) {
     const node = document.createElement("option");
     node.value = option.value;
     node.textContent = option.detail && option.detail !== option.label ? `${option.label} — ${option.detail}` : option.label;
+    if (next.presentation_key === "select.visibility") {
+      node.dataset.i18n = "select.visibility." + option.value;
+      node.textContent = t(node.dataset.i18n);
+    }
     return node;
   }));
   if (selectMode && next.default) select.value = next.default;

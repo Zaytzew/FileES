@@ -195,3 +195,39 @@ func TestMessagesCatalogRejectsAMalformedPayload(t *testing.T) {
 		t.Fatalf("response = %#v", resp)
 	}
 }
+
+// The typed client is what the GUI composition will use, so it is exercised
+// against a real server rather than trusted to match the raw round trip.
+func TestMessagesCatalogThroughTheTypedClient(t *testing.T) {
+	sock := testSocketPath(t)
+	server := ipcserver.New(sock)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cli := ipcclient.New(sock, "catalog-client-test")
+
+	polish, err := cli.MessagesCatalog(context.Background(), "pl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if polish.Locale != "pl" || polish.FallbackLocale != "en" || polish.CatalogID == "" {
+		t.Fatalf("result = %#v", polish)
+	}
+	if len(polish.Messages) == 0 || len(polish.FallbackMessages) == 0 || len(polish.Params) == 0 {
+		t.Fatalf("empty snapshot: %d messages, %d fallback, %d params",
+			len(polish.Messages), len(polish.FallbackMessages), len(polish.Params))
+	}
+
+	english, err := cli.MessagesCatalog(context.Background(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if english.CatalogID != polish.CatalogID {
+		t.Error("the catalogue identity changed between two reads of one build")
+	}
+	if polish.Messages["lock.invalid_path"].Text == english.Messages["lock.invalid_path"].Text {
+		t.Error("both locales returned the same sentence")
+	}
+}

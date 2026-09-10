@@ -32,6 +32,7 @@ type snapshotEmitter interface {
 // this service only publishes an immutable browser-friendly projection.
 type GUIService struct {
 	presentationLanguage atomic.Pointer[nativeLanguage]
+	domainCatalogue      atomic.Pointer[domainCatalogues]
 	mu                   sync.RWMutex
 	snapshot             Snapshot
 	view                 guiapp.ViewModel

@@ -21,7 +21,8 @@ func (e structuredErr) PresentationDetails() map[string]string { return e.detail
 // already existed, the archive was gone - all rendered as the same sentence,
 // which is what made them undiagnosable from the user's side.
 func TestActionErrorBodyKeepsTheDaemonSuppliedDetail(t *testing.T) {
-	body := actionErrorBody(structuredErr{
+	c := polishController(t, Config{})
+	body := c.actionErrorBody(structuredErr{
 		key:     "recovery.download_failed",
 		details: map[string]string{"detail": "recovery output already exists"},
 	})
@@ -35,7 +36,8 @@ func TestActionErrorBodyKeepsTheDaemonSuppliedDetail(t *testing.T) {
 
 // A key with no detail must read exactly as before.
 func TestActionErrorBodyUnchangedWithoutDetail(t *testing.T) {
-	if body := actionErrorBody(structuredErr{key: "recovery.download_failed"}); strings.Contains(body, "\n") {
+	c := polishController(t, Config{})
+	if body := c.actionErrorBody(structuredErr{key: "recovery.download_failed"}); strings.Contains(body, "\n") {
 		t.Fatalf("body = %q; nothing should be appended when there is no detail", body)
 	}
 }

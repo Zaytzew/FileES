@@ -622,30 +622,30 @@ function renderReservations(snapshot) {
   }
 	const requestsHTML = holderRequests.map((request) => `<article class="reservation-row lock-release-request" data-lock-release-request-id="${escapeHTML(request.id)}">
 		<div class="reservation-main">
-			<strong title="${escapeHTML(request.path)}">Prośba o ${escapeHTML(request.path || "plik")}</strong>
-			<p>${escapeHTML(request.counterparty_realm_alias || "Inna osoba")} · ${escapeHTML(request.repository || request.repo_id)}</p>
-			<div class="lock-flags"><span class="lock-flag request">prośba o zwolnienie</span><span>${escapeHTML(shortDateTime(request.created_at))}</span></div>
+			<strong title="${escapeHTML(request.path)}">${escapeHTML(t("locks.requestPath", { path: request.path || t("locks.file") }))}</strong>
+			<p>${escapeHTML(request.counterparty_realm_alias || t("locks.otherPerson"))} · ${escapeHTML(request.repository || request.repo_id)}</p>
+			<div class="lock-flags"><span class="lock-flag request">${escapeHTML(t("locks.releaseRequest"))}</span><span>${escapeHTML(shortDateTime(request.created_at))}</span></div>
 		</div>
 		<div class="reservation-request-actions">
 			${request.can_dismiss ? '<button class="reservation-action secondary" data-action="dismiss_lock_release">OK</button>' : ""}
-			${request.can_accept ? '<button class="reservation-action" data-action="accept_lock_release">Zwolnij</button>' : ""}
+			${request.can_accept ? `<button class="reservation-action" data-action="accept_lock_release">${escapeHTML(t("locks.release"))}</button>` : ""}
 		</div>
 	</article>`).join("");
 	const reservationsHTML = reservations.map((reservation) => {
     const flags = [
-      reservation.active_passport ? '<span class="lock-flag passport">paszport</span>' : "",
-      reservation.local_changes ? '<span class="lock-flag risk">zmiany lokalne</span>' : "",
+      reservation.active_passport ? `<span class="lock-flag passport">${escapeHTML(t("locks.passport"))}</span>` : "",
+      reservation.local_changes ? `<span class="lock-flag risk">${escapeHTML(t("locks.localChanges"))}</span>` : "",
     ].join("");
-		let action = '<span class="lock-owner">cudza</span>';
-		if (reservation.can_release) action = '<button class="reservation-action" data-action="release_reservation">Zwolnij</button>';
-		else if (reservation.can_request_release) action = '<button class="reservation-action" data-action="request_lock_release">Poproś o zwolnienie</button>';
-		else if (reservation.lock_release_state === "pending") action = '<span class="lock-owner waiting">prośba wysłana</span>';
-		else if (reservation.lock_release_state === "dismissed") action = '<span class="lock-owner">pozostawiono</span>';
-		else if (reservation.lock_release_state === "accepted") action = '<span class="lock-owner waiting">zwalnianie…</span>';
+		let action = `<span class="lock-owner">${escapeHTML(t("locks.otherOwner"))}</span>`;
+		if (reservation.can_release) action = `<button class="reservation-action" data-action="release_reservation">${escapeHTML(t("locks.release"))}</button>`;
+		else if (reservation.can_request_release) action = `<button class="reservation-action" data-action="request_lock_release">${escapeHTML(t("locks.requestRelease"))}</button>`;
+		else if (reservation.lock_release_state === "pending") action = `<span class="lock-owner waiting">${escapeHTML(t("locks.requestSent"))}</span>`;
+		else if (reservation.lock_release_state === "dismissed") action = `<span class="lock-owner">${escapeHTML(t("locks.kept"))}</span>`;
+		else if (reservation.lock_release_state === "accepted") action = `<span class="lock-owner waiting">${escapeHTML(t("locks.releasing"))}</span>`;
     return `<article class="reservation-row" data-reservation-id="${escapeHTML(reservation.id)}">
       <div class="reservation-main">
-        <strong title="${escapeHTML(reservation.path)}">${escapeHTML(reservation.path || "plik")}</strong>
-        <p>${escapeHTML(reservation.repository || reservation.repo_id)} · ${escapeHTML(reservation.owner_label || "właściciel nieustawiony")}</p>
+        <strong title="${escapeHTML(reservation.path)}">${escapeHTML(reservation.path || t("locks.file"))}</strong>
+        <p>${escapeHTML(reservation.repository || reservation.repo_id)} · ${escapeHTML(reservation.owner_label || t("locks.unknownOwner"))}</p>
         <div class="lock-flags">${flags}<span>${escapeHTML(shortDateTime(reservation.created_at))}</span></div>
       </div>
       ${action}

@@ -12,7 +12,7 @@ func TestLockReleaseFrontendContainsRequestAndHolderActions(t *testing.T) {
 		`snapshot.lock_release_requests`, `data-lock-release-request-id`,
 		`data-action="request_lock_release"`, `data-action="dismiss_lock_release"`,
 		`data-action="accept_lock_release"`, `lock_release_request_id:`,
-		"Poproś o zwolnienie", "prośba wysłana",
+		`t("locks.requestRelease")`, `t("locks.requestSent")`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("frontend script does not contain %q", required)

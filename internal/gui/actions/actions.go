@@ -737,10 +737,11 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			return
 		}
 		consent, err := c.cfg.ConsentPrompter.ConfirmConsent(ctx, platform.ConsentRequest{
-			Title:        "Retencja i usunięcie danych",
-			Text:         "Usunięcie udziału nie oznacza natychmiastowego usunięcia danych z kopii zapasowych i logów bezpieczeństwa.",
-			RequiredText: "Rozumiem, że dane mogą pozostać w backupach zgodnie z polityką retencji serwera.",
-			OptionalText: "Dodatkowo składam żądanie usunięcia wszystkich moich danych.",
+			PresentationKey: "consent.realmRemoval",
+			Title:           "Retencja i usunięcie danych",
+			Text:            "Usunięcie udziału nie oznacza natychmiastowego usunięcia danych z kopii zapasowych i logów bezpieczeństwa.",
+			RequiredText:    "Rozumiem, że dane mogą pozostać w backupach zgodnie z polityką retencji serwera.",
+			OptionalText:    "Dodatkowo składam żądanie usunięcia wszystkich moich danych.",
 		})
 		if err != nil || consent.Cancelled || !consent.Required {
 			return
@@ -776,15 +777,18 @@ func (c *Controller) startRealmRemoval(ctx context.Context, serverID string) {
 			return
 		}
 		info := "Udział FileES został usunięty."
+		presentationKey := "result.realmRemovedEmpty"
 		if result.ArchiveCount > 0 {
+			presentationKey = "result.realmRemovedArchives"
 			info += fmt.Sprintf("\n\nPakiet odzyskiwania zapisano w:\n%s\n\nArchiwa: %d. Pobieranie jest dostępne do %s; potem do %s pozostaje kontakt z administratorem.\n\nNastępne okno pozwoli pobrać dumpy. Później ta sama lista jest w menu FileES → Odzyskiwanie repozytoriów…", result.RecoveryKitPath, result.ArchiveCount, result.DownloadUntil, result.AdminGraceUntil)
 		} else {
 			info += "\n\nSerwer nie zachował archiwów repozytoriów (retencja wynosi 0 albo udział nie zawierał własnych repozytoriów). Nie utworzono akcji odzyskiwania."
 		}
 		if result.ErasureRequested {
+			presentationKey += "Erasure"
 			info += fmt.Sprintf("\n\nŻądanie usunięcia wszystkich danych zostało przyjęte. Proces może potrwać do %d dni; o zakończeniu zostaniesz poinformowany e-mailem.", result.ErasureMaxDays)
 		}
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Usuwanie udziału przyjęte", Text: info})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: presentationKey, PresentationArgs: map[string]string{"path": result.RecoveryKitPath, "count": strconv.Itoa(result.ArchiveCount), "downloadUntil": result.DownloadUntil, "adminUntil": result.AdminGraceUntil, "days": strconv.Itoa(result.ErasureMaxDays)}, Title: "Usuwanie udziału przyjęte", Text: info})
 		if c.cfg.Refresh != nil {
 			c.cfg.Refresh()
 		}
@@ -1118,7 +1122,7 @@ func (c *Controller) awaitLocateOutcome(ctx context.Context, key, name, operatio
 			body := name + " — FileES używa teraz wybranego folderu."
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: title, Body: body, Urgency: platform.UrgencyNormal})
 			if c.cfg.Prompter != nil {
-				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: title, Text: body})
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "result.located", PresentationArgs: map[string]string{"name": name}, Title: title, Text: body})
 			}
 			if c.cfg.Refresh != nil {
 				c.cfg.Refresh()
@@ -1580,7 +1584,7 @@ func (c *Controller) startManageRealmGrants(ctx context.Context, serverID, repoI
 			return
 		}
 		if len(recipients) == 0 {
-			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Brak widocznych stref. Odbiorca musi najpierw włączyć widoczność w prywatnym katalogu stref."})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "result.noRealms", PresentationArgs: map[string]string{"name": repo.DisplayName}, Title: "Dostęp do „" + repo.DisplayName + "”", Text: "Brak widocznych stref. Odbiorca musi najpierw włączyć widoczność w prywatnym katalogu stref."})
 			return
 		}
 		request := platform.RealmGrantDialogRequest{Title: "Uprawnienia gości — „" + repo.DisplayName + "”", Text: "Wybierz gościa i docelowy poziom dostępu. Aktualne uprawnienie jest widoczne w tabeli."}
@@ -3221,7 +3225,7 @@ func (c *Controller) activationComplete(ctx context.Context, target ActivationTa
 		// must never make a successfully activated client appear to vanish.
 		c.notify(ctx, platform.Notification{ID: "realm_alias." + target.ServerID, Group: "realm_alias." + target.ServerID, Title: "Klient aktywowany — alias wymaga ustawienia", Body: "Ustaw stały alias z menu serwera, zanim użyjesz blokad lub współdzielonych operacji.", Urgency: platform.UrgencyNormal})
 		if c.cfg.Prompter != nil {
-			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Klient FileES aktywowany", Text: "Połączenie z serwerem " + target.Address + " jest aktywne. Alias nie został jeszcze potwierdzony — ustaw go ponownie z menu serwera przed użyciem blokad lub operacji współdzielonych."})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "result.activated", PresentationArgs: map[string]string{"address": target.Address}, Title: "Klient FileES aktywowany", Text: "Połączenie z serwerem " + target.Address + " jest aktywne. Alias nie został jeszcze potwierdzony — ustaw go ponownie z menu serwera przed użyciem blokad lub operacji współdzielonych."})
 		}
 	}
 	c.offerLocalPinSetup(ctx)
@@ -3357,7 +3361,7 @@ func (c *Controller) handlePublish(ctx context.Context, repoID string) {
 	title := "Wydanie opublikowane"
 	body := fmt.Sprintf("Zmiany zapisano jako rewizję r%d. Zespół zobaczy komentarz po aktualizacji.", rev)
 	c.notify(ctx, platform.Notification{ID: "shout", Group: "shout", Title: title, Body: body, Urgency: platform.UrgencyNormal})
-	_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: title, Text: body})
+	_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "result.published", PresentationArgs: map[string]string{"revision": fmt.Sprint(rev)}, Title: title, Text: body})
 	if c.cfg.Refresh != nil {
 		c.cfg.Refresh()
 	}

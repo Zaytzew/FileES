@@ -37,6 +37,8 @@ type ConsentPrompter interface {
 }
 
 type ConsentRequest struct {
+	// Marks GUI-authored required/optional templates; empty preserves raw copy.
+	PresentationKey                         string
 	Title, Text, RequiredText, OptionalText string
 }
 

@@ -100,15 +100,22 @@ func (adapter consentPromptAdapter) ConfirmConsent(ctx context.Context, request 
 	if adapter.prompter == nil {
 		return platform.ConsentResult{Cancelled: true}, nil
 	}
+	requiredKey, optionalKey := "", ""
+	if request.PresentationKey != "" {
+		requiredKey = request.PresentationKey + ".required"
+		optionalKey = request.PresentationKey + ".optional"
+	}
 	required, err := adapter.prompter.Confirm(ctx, platform.ConfirmRequest{
-		Title: request.Title, Text: request.Text + "\n\n" + request.RequiredText,
+		PresentationKey: requiredKey,
+		Title:           request.Title, Text: request.Text + "\n\n" + request.RequiredText,
 		ConfirmText: "Rozumiem retencję", CancelText: "Anuluj",
 	})
 	if err != nil || !required {
 		return platform.ConsentResult{Cancelled: true}, err
 	}
 	optional, err := adapter.prompter.Confirm(ctx, platform.ConfirmRequest{
-		Title: "Dodatkowe żądanie usunięcia", Text: request.OptionalText,
+		PresentationKey: optionalKey,
+		Title:           "Dodatkowe żądanie usunięcia", Text: request.OptionalText,
 		ConfirmText: "Składam żądanie", CancelText: "Bez dodatkowego żądania",
 	})
 	if err != nil {

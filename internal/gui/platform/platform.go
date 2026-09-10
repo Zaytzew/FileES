@@ -417,8 +417,12 @@ type ReservationDialogResult struct {
 }
 
 type InfoRequest struct {
-	Title string
-	Text  string
+	// PresentationKey identifies GUI copy; arguments remain literal data.
+	// Empty means preserve the supplied title and body unchanged.
+	PresentationKey  string
+	PresentationArgs map[string]string
+	Title            string
+	Text             string
 }
 
 type ConfirmRequest struct {

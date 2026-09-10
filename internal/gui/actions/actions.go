@@ -664,7 +664,7 @@ func (c *Controller) startRecoveryDownload(ctx context.Context, operationID stri
 			c.reportActionError(ctx, key, "Nie udało się pobrać archiwów", actionErrorBody(err))
 			return
 		}
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Archiwa repozytoriów pobrane", Text: strings.Join(paths, "\n")})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.archivesDownloaded", PresentationArgs: map[string]string{"body": strings.Join(paths, "\n")}, Title: "Archiwa repozytoriów pobrane", Text: strings.Join(paths, "\n")})
 	}()
 }
 
@@ -1696,7 +1696,7 @@ func (c *Controller) startManagePublicShares(ctx context.Context, serverID, repo
 			switch choice.Action {
 			case platform.PublicShareDialogCreate, platform.PublicShareDialogEdit:
 				if current != nil && current.State != "active" {
-					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Kanał nie jest aktywny", Text: "Cofniętego kanału nie można edytować. Utwórz nowe udostępnienie pod nowym adresem."})
+					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.inactiveShare", Title: "Kanał nie jest aktywny", Text: "Cofniętego kanału nie można edytować. Utwórz nowe udostępnienie pod nowym adresem."})
 					continue
 				}
 				declaration, accepted := c.collectPublicShareDeclaration(ctx, repo, current)
@@ -1886,7 +1886,7 @@ func (c *Controller) startManageUploadChannels(ctx context.Context, serverID, re
 			switch choice.Action {
 			case platform.UploadChannelDialogCreate, platform.UploadChannelDialogEdit:
 				if current != nil && current.State != "active" {
-					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Półka nie jest aktywna", Text: "Cofniętej półki nie można edytować. Wystaw nową pod nowym adresem."})
+					_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.inactiveShelf", Title: "Półka nie jest aktywna", Text: "Cofniętej półki nie można edytować. Wystaw nową pod nowym adresem."})
 					continue
 				}
 				declaration, accepted := c.collectUploadChannelDeclaration(ctx, repo, current)
@@ -2124,7 +2124,7 @@ func (c *Controller) collectUploadChannelDeclaration(ctx context.Context, repo a
 	}
 	declaration.Recipients = splitRecipients(recipients.Value)
 	if len(declaration.Recipients) == 0 {
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Potrzeba wnoszącego", Text: "Półka przyjęcia wymaga co najmniej jednego adresu. Anonimowe wniesienie nie istnieje."})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.contributorRequired", Title: "Potrzeba wnoszącego", Text: "Półka przyjęcia wymaga co najmniej jednego adresu. Anonimowe wniesienie nie istnieje."})
 		return UploadChannelDeclaration{}, false
 	}
 	otp, confirmErr := c.cfg.Prompter.Confirm(ctx, platform.ConfirmRequest{
@@ -2232,7 +2232,7 @@ func publicShareStateLabel(state string) string {
 
 func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app.RepoViewModel, current *PublicShareSummary) (PublicShareDeclaration, bool) {
 	if !repo.Attached || !filepath.IsAbs(repo.LocalPath) {
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Najpierw połącz repozytorium", Text: "Utworzenie lub edycja udostępnienia wymaga lokalnej kopii roboczej, z której można wybrać folder źródłowy."})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.localCopyRequired", Title: "Najpierw połącz repozytorium", Text: "Utworzenie lub edycja udostępnienia wymaga lokalnej kopii roboczej, z której można wybrać folder źródłowy."})
 		return PublicShareDeclaration{}, false
 	}
 	initialDir := repo.LocalPath
@@ -2241,7 +2241,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 	}
 	picked, err := c.cfg.FolderPicker.PickFolder(ctx, platform.PickFolderRequest{Title: "Wybierz folder udostępnienia", InitialDir: initialDir})
 	if err != nil {
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie udało się otworzyć wyboru folderu", Text: err.Error()})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.folderPickerFailed", PresentationArgs: map[string]string{"body": err.Error()}, Title: "Nie udało się otworzyć wyboru folderu", Text: err.Error()})
 		return PublicShareDeclaration{}, false
 	}
 	if picked.Cancelled {
@@ -2249,7 +2249,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 	}
 	objects, sourceRoot, err := publicShareObjects(repo.LocalPath, picked.Path, current)
 	if err != nil {
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie można udostępnić folderu", Text: err.Error()})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.folderShareFailed", PresentationArgs: map[string]string{"body": err.Error()}, Title: "Nie można udostępnić folderu", Text: err.Error()})
 		return PublicShareDeclaration{}, false
 	}
 	declaration := PublicShareDeclaration{RepoID: repo.ID, SourceRoot: sourceRoot, Objects: objects}
@@ -2300,7 +2300,7 @@ func (c *Controller) collectPublicShareDeclaration(ctx context.Context, repo app
 		parsed, parseErr := strconv.ParseInt(value, 10, 64)
 		if parseErr != nil || parsed < 1 {
 			zeroBytes(declaration.Password)
-			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nieprawidłowa rewizja", Text: "Podaj dodatni numer rewizji albo pozostaw pole puste."})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.invalidRevision", Title: "Nieprawidłowa rewizja", Text: "Podaj dodatni numer rewizji albo pozostaw pole puste."})
 			return PublicShareDeclaration{}, false
 		}
 		declaration.DoNotFollow = &parsed
@@ -2420,7 +2420,7 @@ func (c *Controller) startSetRealmVisibility(ctx context.Context, serverID strin
 			}
 		}
 		if !found || strings.TrimSpace(server.RealmID) == "" || strings.TrimSpace(server.RealmAlias) == "" {
-			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Tożsamość strefy nie jest jeszcze dostępna", Text: "FileES nie otrzymał aliasu istniejącej strefy z serwera. Odświeżenie projekcji jest wymagane przed zmianą widoczności; nie ustawiaj nowego aliasu dla tej strefy."})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.realmUnavailable", Title: "Tożsamość strefy nie jest jeszcze dostępna", Text: "FileES nie otrzymał aliasu istniejącej strefy z serwera. Odświeżenie projekcji jest wymagane przed zmianą widoczności; nie ustawiaj nowego aliasu dla tej strefy."})
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie można zmienić widoczności", Body: "Serwer nie przekazał tożsamości istniejącej strefy; wymagane jest odświeżenie projekcji.", Urgency: platform.UrgencyCritical})
 			return
 		}
@@ -2485,7 +2485,7 @@ func (c *Controller) startSetSessionTimeout(ctx context.Context, serverID string
 		}
 		minutes, convErr := strconv.Atoi(strings.TrimSpace(prompted.Value))
 		if convErr != nil {
-			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nieprawidłowy limit", Text: "Podaj liczbę minut od 1 do 1440."})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.invalidTimeout", Title: "Nieprawidłowy limit", Text: "Podaj liczbę minut od 1 do 1440."})
 			return
 		}
 		actionID := c.startProjectedAction(app.PendingAction{
@@ -2543,7 +2543,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 			}
 			picked, pickErr := c.cfg.Picker.PickFiles(ctx, platform.PickFilesRequest{Title: "Wybierz logo PNG lub JPEG", InitialDir: home, AllowOutsideRoot: true})
 			if pickErr != nil {
-				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie udało się wybrać logo", Text: pickErr.Error()})
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.logoPickerFailed", PresentationArgs: map[string]string{"body": pickErr.Error()}, Title: "Nie udało się wybrać logo", Text: pickErr.Error()})
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się wybrać logo", Body: pickErr.Error(), Urgency: platform.UrgencyCritical})
 				return
 			}
@@ -2556,7 +2556,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 				if statErr != nil {
 					message = statErr.Error()
 				}
-				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Logo jest nieprawidłowe", Text: message})
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.invalidLogo", PresentationArgs: map[string]string{"body": message}, Title: "Logo jest nieprawidłowe", Text: message})
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Logo jest nieprawidłowe", Body: message, Urgency: platform.UrgencyCritical})
 				return
 			}
@@ -2567,7 +2567,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 			}
 			requested, err = realmbranding.PrepareLogo(requested.LeadingColor, http.DetectContentType(raw), raw)
 			if err != nil {
-				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Logo jest nieprawidłowe", Text: err.Error()})
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.invalidLogo", PresentationArgs: map[string]string{"body": err.Error()}, Title: "Logo jest nieprawidłowe", Text: err.Error()})
 				c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Logo jest nieprawidłowe", Body: err.Error(), Urgency: platform.UrgencyCritical})
 				return
 			}
@@ -2586,7 +2586,7 @@ func (c *Controller) startSetRealmBranding(ctx context.Context, serverID string)
 			return
 		}
 		if _, err := c.cfg.RealmBranding.SetPublicBranding(ctx, serverID, requested); err != nil {
-			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Nie udało się zapisać wyglądu udziałów", Text: err.Error()})
+			_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.brandingFailed", PresentationArgs: map[string]string{"body": err.Error()}, Title: "Nie udało się zapisać wyglądu udziałów", Text: err.Error()})
 			c.notify(ctx, platform.Notification{ID: key, Group: key, Title: "Nie udało się zapisać wyglądu udziałów", Body: err.Error(), Urgency: platform.UrgencyCritical})
 			return
 		}
@@ -3300,7 +3300,7 @@ func (c *Controller) activationFailure(ctx context.Context, err error) {
 	}
 	c.notify(ctx, platform.Notification{ID: "activation", Group: "activation", Title: "Aktywacja FileES nie powiodła się", Body: actionErrorBody(err), Urgency: platform.UrgencyCritical})
 	if c.cfg.Prompter != nil {
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Aktywacja FileES nie powiodła się", Text: actionErrorBody(err)})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.activationFailed", PresentationArgs: map[string]string{"body": actionErrorBody(err)}, Title: "Aktywacja FileES nie powiodła się", Text: actionErrorBody(err)})
 	}
 }
 
@@ -3814,7 +3814,7 @@ func (c *Controller) handleReservations(ctx context.Context) {
 			}
 			reservation := entry.reservation
 			if !reservation.CanRelease {
-				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Poproś o zwolnienie", Text: "Ta blokada należy do innego użytkownika lub jest aktywna na innym urządzeniu. Wysłanie prośby o zwolnienie będzie dostępne w kolejnej wersji."})
+				_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.requestRelease", Title: "Poproś o zwolnienie", Text: "Ta blokada należy do innego użytkownika lub jest aktywna na innym urządzeniu. Wysłanie prośby o zwolnienie będzie dostępne w kolejnej wersji."})
 				continue
 			}
 			risk := reservation.LocalChanges || reservation.ActivePassport
@@ -3886,7 +3886,7 @@ func (c *Controller) releaseAllReservations(ctx context.Context, entries []reser
 		}
 	}
 	if len(eligible) == 0 {
-		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{Title: "Brak rezerwacji do zwolnienia", Text: "Nie ma tutaj rezerwacji należących do tego klienta. Dla cudzych blokad przygotowujemy opcję „Poproś o zwolnienie”."})
+		_ = c.cfg.Prompter.ShowInfo(ctx, platform.InfoRequest{PresentationKey: "info.noReservations", Title: "Brak rezerwacji do zwolnienia", Text: "Nie ma tutaj rezerwacji należących do tego klienta. Dla cudzych blokad przygotowujemy opcję „Poproś o zwolnienie”."})
 		return
 	}
 	text := fmt.Sprintf("Zwolnić wszystkie moje rezerwacje (%d)?\n\nCudze blokady nie zostaną zmienione.", len(eligible))

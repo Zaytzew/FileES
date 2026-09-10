@@ -29,17 +29,18 @@ type promptSession struct {
 }
 
 type PromptSnapshot struct {
-	Revision    uint64         `json:"revision"`
-	Mode        string         `json:"mode"`
-	Title       string         `json:"title"`
-	Text        string         `json:"text"`
-	Label       string         `json:"label,omitempty"`
-	Options     []PromptOption `json:"options,omitempty"`
-	Default     string         `json:"default,omitempty"`
-	Placeholder string         `json:"placeholder,omitempty"`
-	Secret      bool           `json:"secret,omitempty"`
-	ConfirmText string         `json:"confirm_text"`
-	CancelText  string         `json:"cancel_text,omitempty"`
+	PresentationKey string         `json:"presentation_key,omitempty"`
+	Revision        uint64         `json:"revision"`
+	Mode            string         `json:"mode"`
+	Title           string         `json:"title"`
+	Text            string         `json:"text"`
+	Label           string         `json:"label,omitempty"`
+	Options         []PromptOption `json:"options,omitempty"`
+	Default         string         `json:"default,omitempty"`
+	Placeholder     string         `json:"placeholder,omitempty"`
+	Secret          bool           `json:"secret,omitempty"`
+	ConfirmText     string         `json:"confirm_text"`
+	CancelText      string         `json:"cancel_text,omitempty"`
 }
 
 type PromptOption struct {
@@ -152,7 +153,7 @@ func (service *PromptService) SelectOne(ctx context.Context, request PromptSelec
 }
 
 func (service *PromptService) Confirm(ctx context.Context, request platform.ConfirmRequest) (bool, error) {
-	choice, err := service.present(ctx, PromptSnapshot{Mode: "confirm", Title: request.Title, Text: request.Text, ConfirmText: request.ConfirmText, CancelText: request.CancelText})
+	choice, err := service.present(ctx, PromptSnapshot{Mode: "confirm", PresentationKey: request.PresentationKey, Title: request.Title, Text: request.Text, ConfirmText: request.ConfirmText, CancelText: request.CancelText})
 	return choice.Confirmed, err
 }
 

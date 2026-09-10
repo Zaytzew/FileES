@@ -464,8 +464,12 @@ func TestControllerPermanentDeleteStopsWhenSecondConfirmationIsRejected(t *testi
 
 func TestControllerRestartsAndShutsDownWholeStack(t *testing.T) {
 	stack := &fakeStackLifecycle{restarts: make(chan struct{}, 1), shutdowns: make(chan struct{}, 1)}
+	keys := make(chan string, 2)
 	platformFake := &platformtest.Fake{
-		ConfirmFunc: func(context.Context, platform.ConfirmRequest) (bool, error) { return true, nil },
+		ConfirmFunc: func(_ context.Context, request platform.ConfirmRequest) (bool, error) {
+			keys <- request.PresentationKey
+			return true, nil
+		},
 	}
 	view := lifecycleView(contract.CapSystemRestart, contract.CapSystemShutdown)
 	restarted, shutdown := make(chan struct{}, 1), make(chan struct{}, 1)
@@ -482,6 +486,9 @@ func TestControllerRestartsAndShutsDownWholeStack(t *testing.T) {
 	send(t, intents, tray.Intent{Kind: tray.IntentShutdownFileES})
 	awaitCh(t, stack.shutdowns, "daemon shutdown")
 	awaitCh(t, shutdown, "GUI shutdown")
+	if first, second := <-keys, <-keys; first != "dialog.restart" || second != "dialog.shutdown" {
+		t.Fatalf("presentation keys: %q, %q", first, second)
+	}
 }
 
 func viewCopy(view app.ViewModel) func() app.ViewModel {

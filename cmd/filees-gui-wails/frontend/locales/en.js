@@ -353,5 +353,13 @@ export default {
   "tray.status.stale": "{locks} ({servers} from earlier data)",
   "tray.status.unverified": "{locks} (unverified)",
   "tray.status.summary": "{state} · Repositories: {count} · {locks}",
-  "tray.status.unread": "Announcements to review: {count} · {status}"
+  "tray.status.unread": "Announcements to review: {count} · {status}",
+  "dialog.restart.title": "Restart FileES",
+  "dialog.restart.text": "The daemon will finish current operations and drain the change queue, then the daemon and interface will restart.",
+  "dialog.restart.confirm": "Restart",
+  "dialog.restart.cancel": "Cancel",
+  "dialog.shutdown.title": "Quit FileES",
+  "dialog.shutdown.text": "Synchronization will stop and both the daemon and interface will close. Later changes will be detected the next time FileES starts.",
+  "dialog.shutdown.confirm": "Quit FileES",
+  "dialog.shutdown.cancel": "Cancel"
 };

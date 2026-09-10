@@ -39,6 +39,39 @@ func TestPromptNamedBindingsMatchFrontend(t *testing.T) {
 	}
 }
 
+func TestPromptPreservesExplicitTemplateAndRawFallback(t *testing.T) {
+	service := newPromptService()
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	result := make(chan bool, 1)
+	go func() {
+		confirmed, _ := service.Confirm(context.Background(), platform.ConfirmRequest{
+			PresentationKey: "dialog.restart", Title: "raw title", Text: "raw diagnostic {name}", ConfirmText: "OK",
+		})
+		result <- confirmed
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("prompt not shown")
+	}
+	snapshot := service.Snapshot()
+	if snapshot.PresentationKey != "dialog.restart" || snapshot.Text != "raw diagnostic {name}" {
+		t.Fatalf("%+v", snapshot)
+	}
+	if accepted := service.Resolve(PromptChoice{Revision: snapshot.Revision, Confirmed: false}); !accepted.Accepted {
+		t.Fatal(accepted)
+	}
+	select {
+	case confirmed := <-result:
+		if confirmed {
+			t.Fatal("cancel became confirmation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("prompt not resolved")
+	}
+}
+
 func TestPromptFrontendIncludesServiceBinding(t *testing.T) {
 	index, err := frontend.ReadFile("frontend/bindings/filees/cmd/filees-gui-wails/index.js")
 	if err != nil || !strings.Contains(string(index), "PromptService") {

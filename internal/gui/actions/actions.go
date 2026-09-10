@@ -2617,15 +2617,17 @@ func (c *Controller) startStackLifecycle(ctx context.Context, restart bool) {
 			return
 		}
 		request := platform.ConfirmRequest{
-			Title:       "Uruchom FileES ponownie",
-			Text:        "Daemon kontrolowanie zakończy bieżące operacje i opróżni kolejkę zmian, po czym daemon i GUI uruchomią się ponownie.",
-			ConfirmText: "Uruchom ponownie", CancelText: "Anuluj",
+			PresentationKey: "dialog.restart",
+			Title:           "Uruchom FileES ponownie",
+			Text:            "Daemon kontrolowanie zakończy bieżące operacje i opróżni kolejkę zmian, po czym daemon i GUI uruchomią się ponownie.",
+			ConfirmText:     "Uruchom ponownie", CancelText: "Anuluj",
 		}
 		if !restart {
 			request = platform.ConfirmRequest{
-				Title:       "Zamknij FileES",
-				Text:        "Synchronizacja zostanie zatrzymana, a daemon i GUI zamknięte. Zmiany wykonane później zostaną wykryte przy następnym uruchomieniu FileES.",
-				ConfirmText: "Zamknij FileES", CancelText: "Anuluj",
+				PresentationKey: "dialog.shutdown",
+				Title:           "Zamknij FileES",
+				Text:            "Synchronizacja zostanie zatrzymana, a daemon i GUI zamknięte. Zmiany wykonane później zostaną wykryte przy następnym uruchomieniu FileES.",
+				ConfirmText:     "Zamknij FileES", CancelText: "Anuluj",
 			}
 		}
 		confirmed, err := c.cfg.Prompter.Confirm(ctx, request)

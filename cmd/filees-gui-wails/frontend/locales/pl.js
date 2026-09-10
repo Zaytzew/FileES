@@ -363,5 +363,13 @@ export default {
   "tray.status.stale": "{locks} ({servers} wcześniejsza emisja)",
   "tray.status.unverified": "{locks} (stan niezweryfikowany)",
   "tray.status.summary": "{state} · Repozytoria: {count} · {locks}",
-  "tray.status.unread": "Ogłoszenia do przejrzenia: {count} · {status}"
+  "tray.status.unread": "Ogłoszenia do przejrzenia: {count} · {status}",
+  "dialog.restart.title": "Uruchom FileES ponownie",
+  "dialog.restart.text": "Daemon kontrolowanie zakończy bieżące operacje i opróżni kolejkę zmian, po czym daemon i GUI uruchomią się ponownie.",
+  "dialog.restart.confirm": "Uruchom ponownie",
+  "dialog.restart.cancel": "Anuluj",
+  "dialog.shutdown.title": "Zamknij FileES",
+  "dialog.shutdown.text": "Synchronizacja zostanie zatrzymana, a daemon i GUI zamknięte. Zmiany wykonane później zostaną wykryte przy następnym uruchomieniu FileES.",
+  "dialog.shutdown.confirm": "Zamknij FileES",
+  "dialog.shutdown.cancel": "Anuluj"
 };

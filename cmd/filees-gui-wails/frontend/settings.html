@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#edf2f6" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#07101d" media="(prefers-color-scheme: dark)">
-  <title>Ustawienia FileES</title>
+  <title data-i18n="settings.title">Ustawienia FileES</title>
   <link rel="stylesheet" href="./settings.css">
 </head>
 <body>
@@ -14,35 +14,35 @@
   <div class="ambient ambient-b"></div>
   <main class="settings-shell">
     <header id="settings-titlebar" class="settings-titlebar">
-      <div class="brand"><img class="brand-mark" src="./assets/filees-space-symbol-square.svg" alt=""><div><strong>Ustawienia FileES</strong><small id="window-context">serwer</small></div></div>
+      <div class="brand"><img class="brand-mark" src="./assets/filees-space-symbol-square.svg" alt=""><div><strong data-i18n="settings.title">Ustawienia FileES</strong><small id="window-context">serwer</small></div></div>
       <div class="window-controls">
-        <button id="settings-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj">—</button>
-        <button id="settings-close" class="window-button close" title="Zamknij ustawienia" aria-label="Zamknij ustawienia">×</button>
+        <button id="settings-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj" data-i18n-title="window.minimize" data-i18n-aria-label="window.minimize">—</button>
+        <button id="settings-close" class="window-button close" title="Zamknij ustawienia" aria-label="Zamknij ustawienia" data-i18n-title="settings.close" data-i18n-aria-label="settings.close">×</button>
       </div>
     </header>
 
     <section class="settings-hero">
-      <div><p class="eyebrow">Serwer FileES</p><h1 id="server-name">Wybierz serwer</h1><p id="settings-copy">Czekam na spójny model ustawień.</p></div>
+      <div><p class="eyebrow" data-i18n="settings.server">Serwer FileES</p><h1 id="server-name">Wybierz serwer</h1><p id="settings-copy">Czekam na spójny model ustawień.</p></div>
       <span id="realm-badge" class="realm-badge">—</span>
     </section>
 
-    <section class="server-facts" aria-label="Informacje o serwerze">
-      <article><small>Adres</small><strong id="server-address">—</strong></article>
-      <article><small>Strefa</small><strong id="server-realm">—</strong></article>
-      <article><small>ID klienta</small><strong id="server-client">—</strong></article>
+    <section class="server-facts" aria-label="Informacje o serwerze" data-i18n-aria-label="settings.facts">
+      <article><small data-i18n="settings.address">Adres</small><strong id="server-address">—</strong></article>
+      <article><small data-i18n="settings.realm">Strefa</small><strong id="server-realm">—</strong></article>
+      <article><small data-i18n="settings.client">ID klienta</small><strong id="server-client">—</strong></article>
     </section>
 
     <section class="setting-card">
-      <div class="setting-copy"><p class="eyebrow">Transfer</p><h2>Limit czasu wysyłki i pobierania</h2><p>Jak długo FileES może czekać na zakończenie pojedynczego transferu. Dla dużych plików i wolnych łączy wartość może być większa.</p></div>
-      <div class="setting-value"><strong id="timeout-value">—</strong><span>min</span><button id="change-timeout" type="button">Zmień</button></div>
+      <div class="setting-copy"><p class="eyebrow" data-i18n="settings.transfer">Transfer</p><h2 data-i18n="settings.timeout">Limit czasu wysyłki i pobierania</h2><p data-i18n="settings.timeoutHelp">Jak długo FileES może czekać na zakończenie pojedynczego transferu. Dla dużych plików i wolnych łączy wartość może być większa.</p></div>
+      <div class="setting-value"><strong id="timeout-value">—</strong><span>min</span><button id="change-timeout" type="button" data-i18n="action.change">Zmień</button></div>
     </section>
 
     <section id="server-actions-card" class="server-actions-card" hidden>
-      <header><div><p class="eyebrow">Ta strefa</p><h2>Dostępne działania</h2></div></header>
+      <header><div><p class="eyebrow" data-i18n="settings.thisRealm">Ta strefa</p><h2 data-i18n="settings.actions">Dostępne działania</h2></div></header>
       <div id="server-actions" class="server-action-list"></div>
     </section>
 
-    <footer><span>Stan i dostępne działania pochodzą z demona FileES.</span><button id="settings-done" type="button">Gotowe</button></footer>
+    <footer><span data-i18n="settings.footer">Stan i dostępne działania pochodzą z demona FileES.</span><button id="settings-done" type="button" data-i18n="action.done">Gotowe</button></footer>
   </main>
   <div id="settings-toasts" class="toast-stack" aria-live="polite"></div>
   <script type="module" src="./settings.js"></script>

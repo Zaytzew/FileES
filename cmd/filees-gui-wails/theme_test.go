@@ -108,12 +108,12 @@ func TestServerProjectionBindingCarriesRealmAccent(t *testing.T) {
 	}
 }
 
-func TestRadarRepositoryLabelUsesPolishPlural(t *testing.T) {
+func TestRadarRepositoryLabelUsesLocalizedPlural(t *testing.T) {
 	data, err := frontend.ReadFile("frontend/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `plural(repos.length, "repozytorium", "repozytoria", "repozytoriów")`) {
+	if !strings.Contains(string(data), `tn("count.repos", repos.length)`) {
 		t.Fatal("radar repository label is not pluralised")
 	}
 }
@@ -143,10 +143,10 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 			t.Fatalf("main panel is missing %q", wanted)
 		}
 	}
-	if !strings.Contains(string(index), `class="icon-button hint-button pair-button"`) || !strings.Contains(string(index), `<span>Paruj</span>`) {
+	if !strings.Contains(string(index), `class="icon-button hint-button pair-button"`) || !strings.Contains(string(index), `<span data-i18n="action.pair">Paruj</span>`) {
 		t.Fatal("mobile pairing is missing its wide labelled topbar control")
 	}
-	if !strings.Contains(string(index), `<h2>Serwery</h2>`) {
+	if !strings.Contains(string(index), `<h2 data-i18n="summary.servers">Serwery</h2>`) {
 		t.Fatal("repository projection is not labelled as a server list")
 	}
 	if strings.Contains(string(index), `id="connection"`) {

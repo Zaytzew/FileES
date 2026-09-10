@@ -1,9 +1,11 @@
 import { Events, Window } from "/wails/runtime.js";
 import { GUIService } from "./bindings/filees/cmd/filees-gui-wails/index.js";
 import { initializeTheme, setThemePreference } from "./theme-preference.js";
+import { initializeLanguage, t, tn, getLocale } from "./i18n.js";
 import { readRepoView, saveRepoView, repoSection, repoOrder } from "./repo-view.js";
 
 initializeTheme();
+initializeLanguage();
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHTML = (value) => String(value ?? "")
@@ -13,12 +15,7 @@ const escapeHTML = (value) => String(value ?? "")
   .replaceAll('"', "&quot;")
   .replaceAll("'", "&#039;");
 
-const stateLabels = {
-  active: "Aktywne", busy: "Praca", initializing: "Start", baselining: "Baza",
-  paused: "Pauza", stopping: "Stop", offline: "Offline", attention: "Uwaga",
-  unattached: "Bez kopii", disabled: "Wyłączone", revoked: "Cofnięte", unknown: "Nieznane",
-  deleted: "Archiwum",
-};
+const localizedStates = new Set(["active", "busy", "initializing", "baselining", "paused", "stopping", "offline", "attention", "unattached", "disabled", "revoked", "unknown", "deleted"]);
 
 const actionErrors = {
   actions_unavailable: "Akcje systemowe są niedostępne w tym buildzie.",
@@ -178,21 +175,21 @@ function bytes(value) {
     scaled /= 1024;
     unit = units[i];
   }
-  return `${scaled.toLocaleString("pl-PL", { maximumFractionDigits: scaled < 10 ? 1 : 0 })} ${unit}`;
+  return `${scaled.toLocaleString(getLocale(), { maximumFractionDigits: scaled < 10 ? 1 : 0 })} ${unit}`;
 }
 
 function dateTime(value) {
-  if (!value) return "Jeszcze nie odświeżono";
+  if (!value) return t("time.notRefreshed");
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return `Stan z ${date.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+  return t("time.stateAt", { time: date.toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
 }
 
 function shortDateTime(value) {
   if (!value) return "czas nieznany";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString(getLocale(), { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 // dataAge answers the question the header used to answer with the wrong
@@ -300,24 +297,27 @@ function renderMetrics(snapshot) {
   $("#metric-servers").textContent = snapshot.servers?.length ?? 0;
   $("#metric-repos").textContent = repos.length;
   $("#metric-pending").textContent = pending;
-  $("#metric-pending-note").textContent = pending ? `${bytes(pendingBytes)} oczekuje` : "kolejka jest pusta";
+  $("#metric-servers-note").textContent = t("summary.activations");
+  $("#metric-repos-note").textContent = t("summary.inView");
+  $("#metric-attention-note").textContent = t("summary.notes");
+  $("#metric-pending-note").textContent = pending ? t("summary.pendingBytes", { size: bytes(pendingBytes) }) : t("summary.emptyQueue");
   $("#metric-reservations").textContent = reservationsOffline
     ? reservations.length
     : reservationsPartial ? `${reservations.length}+?` : reservations.length;
   $("#metric-reservations-note").textContent = reservationsOffline
-    ? "ostatni znany stan · demon offline"
+    ? t("summary.lastKnown")
     : reservationsPartial
-    ? `co najmniej ${reservations.length} ${plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad")} · ${reservationState.unavailable.length} bez emisji`
-    : plural(reservations.length, "aktywna blokada", "aktywne blokady", "aktywnych blokad");
+    ? t("summary.partialLocks", { count: reservations.length, locks: tn("count.locks", reservations.length), missing: reservationState.unavailable.length })
+    : tn("count.locks", reservations.length);
   $("#metric-public-shares").textContent = snapshot.public_shares_known ? activePublicShares : "?";
   $("#metric-public-shares-note").textContent = reservationsOffline && snapshot.public_shares_known
-    ? "ostatni znany stan · demon offline"
+    ? t("summary.lastKnown")
     : snapshot.public_shares_known
-      ? plural(activePublicShares, "aktywny link", "aktywne linki", "aktywnych linków")
-      : "lista niedostępna";
+      ? tn("count.links", activePublicShares)
+      : t("summary.listUnavailable");
   $("#metric-attention").textContent = attention;
   $("#pulse-value").textContent = repos.length;
-  $("#pulse-label").textContent = plural(repos.length, "repozytorium", "repozytoria", "repozytoriów");
+  $("#pulse-label").textContent = tn("count.repos", repos.length);
   const connectionLabel = $("#pulse-card").dataset.connectionLabel || "Stan połączenia nieznany";
   if (!snapshot.connected) {
     $("#pulse-card").title = `${connectionLabel}. Projekcja jest niezweryfikowana.`;
@@ -329,10 +329,10 @@ function renderMetrics(snapshot) {
       : `${connectionLabel}. Repozytoria nie wymagają uwagi.`;
   }
   $("#hero-copy").textContent = snapshot.connected
-    ? "Zmiany i działania pojawiają się tutaj na bieżąco."
+    ? t("hero.live")
     : snapshot.last_refresh
-      ? "Połączenie jest chwilowo niedostępne. Panel zachowuje ostatni znany stan i odświeży się automatycznie."
-      : "Połączenie jest chwilowo niedostępne. Brak zapisanej projekcji; panel odświeży się automatycznie.";
+      ? t("hero.cached")
+      : t("hero.noCache");
 }
 
 function plural(value, one, few, many) {
@@ -431,7 +431,7 @@ function renderRepo(repo) {
     repo.can_unlock ? repoAction("unlock", "Zwolnij blokady", repoIcons.unlock, "mutate") : "",
     repo.can_publish ? repoAction("publish", "Opublikuj zmiany", repoIcons.publish, "publish") : "",
   ].join("");
-  const stateLabel = stateLabels[state] || state;
+  const stateLabel = localizedStates.has(state) ? t(`state.${state}`) : state;
   const disconnected = repo.connectivity !== "online" || ["offline", "unattached", "disabled", "revoked", "unknown"].includes(state);
   const stateOverlay = disconnected
     ? '<span class="repo-state-overlay" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M5.2 10.8 3.8 12.2a2 2 0 0 1-2.8-2.8l2.1-2.1M10.8 5.2l1.4-1.4A2 2 0 0 1 15 6.6l-2.1 2.1"/></svg></span>'
@@ -551,7 +551,7 @@ function renderRepositories(snapshot) {
           </div>
           <p title="${escapeHTML(context)}">${escapeHTML(context)}</p>
         </div></div>
-        <div class="server-summary"><span class="server-total">${serverRepos.length} ${plural(serverRepos.length, "folder", "foldery", "folderów")}</span><span class="server-chevron" aria-hidden="true">⌄</span></div>
+        <div class="server-summary"><span class="server-total">${escapeHTML(tn("count.folders", serverRepos.length))}</span><span class="server-chevron" aria-hidden="true">⌄</span></div>
       </header>
       <div id="server-folders-${escapeHTML(server.id)}" class="server-folders" ${expanded ? "" : "hidden"}>
         ${serverRepos.length ? `<div class="repo-columns" aria-hidden="true"><span>Folder</span><span class="column-queue">Kolejka</span><span>Akcje</span><span>Rozmiar</span></div>
@@ -722,12 +722,11 @@ function renderAnnouncementBanner(snapshot) {
   const banner = $("#announcement-banner");
   banner.hidden = unread.length === 0;
   $("#top").classList.toggle("has-announcements", unread.length > 0 || unresolved.length > 0);
-  replaceHTMLIfChanged($("#hero-title"), unresolved.length
-    ? 'Twoje pliki czekają<br><span>na Twoją decyzję.</span>' : unread.length
-    ? 'Ważne ogłoszenia<br><span>czekają na Twój odczyt.</span>'
-    : 'Twoje pliki pracują<br><span>we właściwym rytmie.</span>');
+  const heroTitle = unresolved.length ? "hero.waitTitle" : unread.length ? "hero.shoutTitle" : "hero.title";
+  const heroAccent = unresolved.length ? "hero.waitAccent" : unread.length ? "hero.shoutAccent" : "hero.accent";
+  replaceHTMLIfChanged($("#hero-title"), `${escapeHTML(t(heroTitle))}<br><span>${escapeHTML(t(heroAccent))}</span>`);
   $("#announcement-banner-count").textContent = unread.length
-    ? `${unread.length} ${plural(unread.length, "nieprzeczytane ogłoszenie", "nieprzeczytane ogłoszenia", "nieprzeczytanych ogłoszeń")}`
+    ? tn("count.unread", unread.length)
     : "";
 }
 
@@ -945,7 +944,7 @@ function render(snapshot) {
   renderDetached(snapshot);
   renderJournal(snapshot);
   $("#last-refresh").textContent = dateTime(snapshot.last_refresh);
-  $("#revision").textContent = `stan #${snapshot.revision || 0}`;
+  $("#revision").textContent = t("projection.revision", { revision: snapshot.revision || 0 });
   if (repositoriesChanged) scheduleWindowFit();
   updateRetentionCountdowns();
 }
@@ -1132,6 +1131,10 @@ async function invoke(button, action) {
 }
 
 Events.On("filees:snapshot", (event) => render(event?.data ?? event));
+window.addEventListener("filees:language-changed", () => {
+  if (currentSnapshot) render(currentSnapshot);
+  scheduleWindowFit();
+});
 Events.On("filees:action-feedback", (event) => showToast(event?.data ?? event));
 Events.On("filees:open-announcement", openNewestUnreadAnnouncement);
 $("#activate").addEventListener("click", (event) => triggerAction(event.currentTarget));

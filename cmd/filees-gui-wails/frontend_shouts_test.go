@@ -17,7 +17,7 @@ func TestAnnouncementBannerAndExplicitAckQueue(t *testing.T) {
 	if start < 0 || end < start {
 		t.Fatal("announcement functions missing")
 	}
-	program := `
+	program := frontendI18NTestPrelude(t) + `
 const assert = require("node:assert/strict");
 const nodes = new Map();
 const $ = id => { if(!nodes.has(id)) nodes.set(id, {hidden:false, disabled:false, textContent:"", html:"", isConnected:true, classList:{toggle(){}}, focus(){}}); return nodes.get(id); };

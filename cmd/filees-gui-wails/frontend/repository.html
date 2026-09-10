@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#edf2f6" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#07101d" media="(prefers-color-scheme: dark)">
-  <title>Działania folderu FileES</title>
+  <title data-i18n="repository.title">Działania folderu FileES</title>
   <link rel="stylesheet" href="./repository.css">
 </head>
 <body>
@@ -16,8 +16,8 @@
     <header id="repository-titlebar" class="repository-titlebar">
       <div class="brand"><img class="brand-mark" src="./assets/filees-space-symbol-square.svg" alt=""><div><strong>FileES</strong><small id="window-context">działania folderu</small></div></div>
       <div class="window-controls">
-        <button id="repository-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj">—</button>
-        <button id="repository-close" class="window-button close" title="Zamknij okno" aria-label="Zamknij okno">×</button>
+        <button id="repository-minimise" class="window-button" title="Minimalizuj" aria-label="Minimalizuj" data-i18n-title="window.minimize" data-i18n-aria-label="window.minimize">—</button>
+        <button id="repository-close" class="window-button close" title="Zamknij okno" aria-label="Zamknij okno" data-i18n-title="window.close" data-i18n-aria-label="window.close">×</button>
       </div>
     </header>
 
@@ -26,39 +26,39 @@
       <button id="back-to-actions" class="quiet-button" type="button" hidden>Zamknij udostępnienia</button>
     </section>
 
-    <section id="repository-facts" class="repository-facts" aria-label="Informacje o folderze">
-      <article><small>Serwer</small><strong id="repository-server">—</strong></article>
-      <article><small>Stan</small><strong id="repository-state">—</strong></article>
-      <article><small>Dostęp</small><strong id="repository-access">—</strong></article>
-      <article><small>Edycja</small><strong id="repository-editing">—</strong></article>
+    <section id="repository-facts" class="repository-facts" aria-label="Informacje o folderze" data-i18n-aria-label="repository.facts">
+      <article><small data-i18n="field.server">Serwer</small><strong id="repository-server">—</strong></article>
+      <article><small data-i18n="field.state">Stan</small><strong id="repository-state">—</strong></article>
+      <article><small data-i18n="field.access">Dostęp</small><strong id="repository-access">—</strong></article>
+      <article><small data-i18n="section.editing">Edycja</small><strong id="repository-editing">—</strong></article>
     </section>
 
     <section id="actions-view" class="content-card">
-      <header><div><p class="eyebrow">Ten folder</p><h2>Dostępne działania</h2></div></header>
+      <header><div><p class="eyebrow" data-i18n="repository.this">Ten folder</p><h2 data-i18n="settings.actions">Dostępne działania</h2></div></header>
       <div id="repository-actions" class="action-list"></div>
     </section>
 
     <section id="shares-view" class="content-card" hidden>
-      <header class="shares-header"><div><p class="eyebrow">Dystrybucja</p><h2>Udostępnienia publiczne</h2></div><button id="create-share" class="primary-button" type="button">Nowe udostępnienie</button></header>
+      <header class="shares-header"><div><p class="eyebrow" data-i18n="repository.distribution">Dystrybucja</p><h2 data-i18n="section.shares">Udostępnienia publiczne</h2></div><button id="create-share" class="primary-button" type="button" data-i18n="repository.newShare">Nowe udostępnienie</button></header>
       <div id="public-shares" class="share-list"></div>
     </section>
 
     <section id="grants-view" class="content-card" hidden>
-      <header><div><p class="eyebrow">Dostęp stref</p><h2>Uprawnienia gości</h2></div></header>
+      <header><div><p class="eyebrow" data-i18n="repository.realmAccess">Dostęp stref</p><h2 data-i18n="repository.guests">Uprawnienia gości</h2></div></header>
       <div id="realm-grants" class="grant-list"></div>
     </section>
 
     <section id="uploads-view" class="content-card" hidden>
-      <header class="shares-header"><div><p class="eyebrow">Przyjęcie plików</p><h2>Półki przyjęcia</h2></div><button id="create-upload" class="primary-button" type="button">Nowa półka</button></header>
+      <header class="shares-header"><div><p class="eyebrow" data-i18n="repository.intake">Przyjęcie plików</p><h2 data-i18n="repository.uploads">Półki przyjęcia</h2></div><button id="create-upload" class="primary-button" type="button" data-i18n="repository.newUpload">Nowa półka</button></header>
       <div id="upload-channels" class="share-list"></div>
     </section>
 
     <section id="quarantine-view" class="content-card" hidden>
-      <header><div><p class="eyebrow">Odrzuty AV</p><h2>Kwarantanna</h2></div></header>
+      <header><div><p class="eyebrow" data-i18n="repository.av">Odrzuty AV</p><h2 data-i18n="repository.quarantine">Kwarantanna</h2></div></header>
       <div id="quarantine-items" class="share-list"></div>
     </section>
 
-    <footer><span>FileES pokazuje tylko działania dozwolone przez aktualny stan demona.</span><button id="repository-done" type="button">Gotowe</button></footer>
+    <footer><span data-i18n="repository.footer">FileES pokazuje tylko działania dozwolone przez aktualny stan demona.</span><button id="repository-done" type="button" data-i18n="action.done">Gotowe</button></footer>
   </main>
   <div id="repository-toasts" class="toast-stack" aria-live="polite"></div>
   <script type="module" src="./repository.js"></script>

@@ -78,6 +78,41 @@ func TestPromptPreservesExplicitTemplateAndRawFallback(t *testing.T) {
 	}
 }
 
+func TestTextPromptKeepsLiteralValueAndClonesPresentation(t *testing.T) {
+	service := newPromptService()
+	shown := make(chan struct{}, 1)
+	service.attachPresentation(func() { shown <- struct{}{} }, func() {})
+	result := make(chan platform.PromptTextResult, 1)
+	args := map[string]string{"name": "raw {name}"}
+	go func() {
+		got, _ := service.PromptText(context.Background(), platform.PromptTextRequest{PresentationKey: "input.alias", PresentationArgs: args, Default: "literal default", Secret: true})
+		result <- got
+	}()
+	select {
+	case <-shown:
+	case <-time.After(time.Second):
+		t.Fatal("prompt not shown")
+	}
+	snapshot := service.Snapshot()
+	args["name"] = "changed"
+	if snapshot.PresentationKey != "input.alias" || snapshot.PresentationArgs["name"] != "raw {name}" || snapshot.Default != "literal default" || !snapshot.Secret {
+		t.Fatalf("unexpected projection: %+v", snapshot)
+	}
+	snapshot.PresentationArgs["name"] = "changed again"
+	if service.Snapshot().PresentationArgs["name"] != "raw {name}" {
+		t.Fatal("snapshot aliases presentation map")
+	}
+	service.Resolve(PromptChoice{Revision: snapshot.Revision, Confirmed: true, Value: "Żółć {name}"})
+	select {
+	case got := <-result:
+		if got.Cancelled || got.Value != "Żółć {name}" {
+			t.Fatalf("changed submitted value: %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("prompt did not finish")
+	}
+}
+
 func TestPromptFrontendIncludesServiceBinding(t *testing.T) {
 	index, err := frontend.ReadFile("frontend/bindings/filees/cmd/filees-gui-wails/index.js")
 	if err != nil || !strings.Contains(string(index), "PromptService") {

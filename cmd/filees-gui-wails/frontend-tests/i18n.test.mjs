@@ -238,6 +238,44 @@ test("public share renderer translates chrome but preserves names and permission
   }
 });
 
+test("marked text forms have reviewed fixed text and never translate defaults", () => {
+  const source = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
+  const forms = [...source.matchAll(/platform\.PromptTextRequest\{\s*PresentationKey:\s*"([^"]+)"([\s\S]*?)\}/g)];
+  assert.equal(forms.length, 14);
+  for (const [, prefix, body] of forms) {
+    for (const [field, part] of [["Title", "title"], ["Text", "text"]]) {
+      const literal = body.match(new RegExp(`${field}:\\s*("(?:\\\\.|[^"\\\\])*")`));
+      assert.ok(literal, `${prefix}.${part}`);
+      assert.equal(JSON.parse(literal[1]), catalogues.pl[`${prefix}.${part}`]);
+    }
+    for (const locale of ["pl", "en"]) for (const part of ["label", "confirm", "cancel"]) assert.equal(typeof catalogues[locale][`${prefix}.${part}`], "string");
+    assert.ok(!Object.hasOwn(catalogues.en, `${prefix}.default`));
+  }
+});
+
+test("marked input language refresh preserves secret value and pending controls", () => {
+  const source = readFileSync(new URL("../frontend/prompt.js", import.meta.url), "utf8");
+  const extract = name => { const start = source.indexOf(`function ${name}(`); return source.slice(start, source.indexOf("\n}", start) + 2); };
+  const nodes = new Map();
+  const node = key => {if (!nodes.has(key)) nodes.set(key, {}); return nodes.get(key);};
+  let locale = "pl";
+  const refresh = runInNewContext(`${extract("promptText")}\n${extract("refreshPromptLabels")}\nrefreshPromptLabels`, {
+    $: node, document: {}, submissionError: "", snapshot: {mode: "text", presentation_key: "input.alias", placeholder: "np. jan-k"},
+    t: (key, args) => translate(catalogues, locale, key, args),
+  });
+  node("#prompt-value").value = "Żółć {secret}";
+  node("#prompt-value").type = "password";
+  node("#prompt-confirm").disabled = true;
+  for (locale of ["pl", "en"]) {
+    refresh();
+    assert.equal(node("#prompt-value").value, "Żółć {secret}");
+    assert.equal(node("#prompt-value").type, "password");
+    assert.equal(node("#prompt-confirm").disabled, true);
+    assert.equal(node("#prompt-value").placeholder, catalogues[locale]["input.alias.placeholder"]);
+    assert.equal(node("#prompt-title").textContent, catalogues[locale]["input.alias.title"]);
+  }
+});
+
 test("system locale and English fallback do not depend on catalogue order", () => {
   assert.equal(resolveLocale("system", ["pl-PL"]), "pl");
   assert.equal(resolveLocale("system", ["en-GB"]), "en");
@@ -260,7 +298,7 @@ test("only explicitly marked GUI dialog templates are translated", () => {
   assert.equal(format({}, "text", "svn_error: Nie można {name} <DWG>"), "svn_error: Nie można {name} <DWG>");
   assert.equal(format({ presentation_key: "dialog.restart" }, "text", raw), catalogues.en["dialog.restart.text"]);
   const controller = readFileSync(new URL("../../../internal/gui/actions/actions.go", import.meta.url), "utf8");
-  const prefixes = [...controller.matchAll(/PresentationKey:\s*"([^"]+)"/g)].map(match => match[1]);
+  const prefixes = [...controller.matchAll(/PresentationKey:\s*"(dialog\.[^"]+)"/g)].map(match => match[1]);
   assert.equal(prefixes.length, 13); // Revoke has two entry points.
   assert.equal(new Set(prefixes).size, 12);
   for (const prefix of prefixes) {

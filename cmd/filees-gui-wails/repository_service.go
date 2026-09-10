@@ -104,10 +104,10 @@ type RepositoryContextProjection struct {
 }
 
 type RepositoryActionProjection struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Description string `json:"description"`
-	Tone        string `json:"tone"`
+	ID             string `json:"id"`
+	LabelKey       string `json:"label_key"`
+	DescriptionKey string `json:"description_key"`
+	Tone           string `json:"tone"`
 }
 
 type PublicShareProjection struct {
@@ -781,50 +781,50 @@ func projectRepositorySettings(request platform.SettingsDialogRequest) (Reposito
 		Actions: []RepositoryActionProjection{}, Shares: []PublicShareProjection{}, Grants: []RealmGrantProjection{}, Uploads: []UploadChannelProjection{},
 	}
 	if folder.CanManageGrants {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogManageGrants), Label: "Uprawnienia gości", Description: "Nadaj albo cofnij dostęp widocznym strefom FileES.", Tone: "primary"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogManageGrants), LabelKey: "repoAction.manage_grants.label", DescriptionKey: "repoAction.manage_grants.description", Tone: "primary"})
 	}
 	if folder.CanManagePublicShares {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogPublicShares), Label: "Udostępnienia publiczne", Description: "Publikuj wybrane pliki i zarządzaj aktywnymi adresami.", Tone: "primary"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogPublicShares), LabelKey: "repoAction.public_shares.label", DescriptionKey: "repoAction.public_shares.description", Tone: "primary"})
 	}
 	if folder.CanManageUploadChannels {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogUploadChannels), Label: "Półki przyjęcia", Description: "Przyjmuj pliki do repozytorium przez zamknięty kanał przeglądarkowy.", Tone: "primary"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogUploadChannels), LabelKey: "repoAction.upload_channels.label", DescriptionKey: "repoAction.upload_channels.description", Tone: "primary"})
 	}
 	if folder.CanReviewQuarantine {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogQuarantine), Label: "Przegląd kwarantanny", Description: "Lista odrzutów AV w projekcji FileES, bez przeglądarki WWW.", Tone: "primary"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogQuarantine), LabelKey: "repoAction.quarantine.label", DescriptionKey: "repoAction.quarantine.description", Tone: "primary"})
 	}
 	if folder.CanSetEditingPolicy {
-		label := "Włącz wypożyczanie plików"
-		description := "Wymagaj blokady przed edycją każdego pliku w repozytorium."
+		label := "repoAction.enable_editing_lock.label"
+		description := "repoAction.enable_editing_lock.description"
 		if folder.LockRequired {
-			label = "Wyłącz wypożyczanie plików"
-			description = "Przywróć swobodną edycję bez obowiązkowej blokady."
+			label = "repoAction.disable_editing_lock.label"
+			description = "repoAction.disable_editing_lock.description"
 		}
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogEditingPolicy), Label: label, Description: description, Tone: "warning"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogEditingPolicy), LabelKey: label, DescriptionKey: description, Tone: "warning"})
 	}
 	if folder.CanConnect {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogConnectRepos), Label: "Połącz folder", Description: "Wybierz lokalne miejsce i rozpocznij pierwszy checkout.", Tone: "primary"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogConnectRepos), LabelKey: "repoAction.connect_repositories.label", DescriptionKey: "repoAction.connect_repositories.description", Tone: "primary"})
 	}
 	if folder.CanLocate {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogLocateFolder), Label: "Wskaż przeniesiony folder", Description: "Powiąż repozytorium z istniejącą kopią roboczą w nowym miejscu.", Tone: "warning"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogLocateFolder), LabelKey: "repoAction.locate_folder.label", DescriptionKey: "repoAction.locate_folder.description", Tone: "warning"})
 	}
 	if folder.CanRetryLifecycle {
 		// Lifecycle repair is separate from interpreting an unscheduled rename.
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogRetryLifecycle), Label: "Ponów niedokończone działanie", Description: "Wznów tę samą zapisaną operację bez tworzenia nowego repozytorium.", Tone: "primary"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogRetryLifecycle), LabelKey: "repoAction.retry_lifecycle.label", DescriptionKey: "repoAction.retry_lifecycle.description", Tone: "primary"})
 	}
 	if folder.CanAbandonLifecycle {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogAbandonLifecycle), Label: "Zakończ starą próbę lokalną", Description: "Zachowaj dane i repozytorium serwerowe, ale zwolnij zacięte lokalne powiązanie.", Tone: "warning"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogAbandonLifecycle), LabelKey: "repoAction.abandon_lifecycle.label", DescriptionKey: "repoAction.abandon_lifecycle.description", Tone: "warning"})
 	}
 	if folder.CanResolveIntents {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogResolveIntents), Label: "Rozstrzygnij niejednoznaczne zmiany", Description: "Obejrzyj listę usunięć i nowych plików przed wznowieniem wysyłki.", Tone: "warning"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogResolveIntents), LabelKey: "repoAction.resolve_intents.label", DescriptionKey: "repoAction.resolve_intents.description", Tone: "warning"})
 	}
 	if folder.CanDetach {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogDetachFolder), Label: "Odłącz folder", Description: "Zatrzymaj synchronizację, pozostawiając pliki na dysku.", Tone: "warning"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogDetachFolder), LabelKey: "repoAction.detach_folder.label", DescriptionKey: "repoAction.detach_folder.description", Tone: "warning"})
 	}
 	if folder.CanDelete {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogDeleteRepo), Label: "Usuń repozytorium", Description: "Usuń historię serwerową i odłącz lokalny folder.", Tone: "danger"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogDeleteRepo), LabelKey: "repoAction.delete_repository.label", DescriptionKey: "repoAction.delete_repository.description", Tone: "danger"})
 	}
 	if folder.CanLoadDump {
-		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogLoadDump), Label: "Odtwórz z archiwum", Description: "Zaimportuj historię z archiwum umieszczonego w folderze roboczym.", Tone: "warning"})
+		snapshot.Actions = append(snapshot.Actions, RepositoryActionProjection{ID: string(platform.SettingsDialogLoadDump), LabelKey: "repoAction.load_dump.label", DescriptionKey: "repoAction.load_dump.description", Tone: "warning"})
 	}
 	return snapshot, strings.TrimSpace(snapshot.Context.RepoID) != ""
 }

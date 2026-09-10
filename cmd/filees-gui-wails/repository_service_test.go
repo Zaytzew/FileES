@@ -57,8 +57,8 @@ func TestRepositoryServiceProjectsCurrentEditingPolicyAction(t *testing.T) {
 		lockRequired bool
 		wantLabel    string
 	}{
-		{lockRequired: false, wantLabel: "Włącz wypożyczanie plików"},
-		{lockRequired: true, wantLabel: "Wyłącz wypożyczanie plików"},
+		{lockRequired: false, wantLabel: "repoAction.enable_editing_lock.label"},
+		{lockRequired: true, wantLabel: "repoAction.disable_editing_lock.label"},
 	} {
 		service := newRepositoryService()
 		shown := make(chan struct{}, 1)
@@ -77,7 +77,7 @@ func TestRepositoryServiceProjectsCurrentEditingPolicyAction(t *testing.T) {
 			t.Fatal("repository window was not shown")
 		}
 		snapshot := service.Snapshot()
-		if len(snapshot.Actions) != 1 || snapshot.Actions[0].ID != "editing_policy" || snapshot.Actions[0].Label != test.wantLabel {
+		if len(snapshot.Actions) != 1 || snapshot.Actions[0].ID != "editing_policy" || snapshot.Actions[0].LabelKey != test.wantLabel {
 			t.Fatalf("editing policy projection = %+v", snapshot.Actions)
 		}
 		if accepted := service.ChooseAction(RepositoryChoice{Action: "editing_policy", ServerID: "spot", RepoID: "docs"}); !accepted.Accepted {

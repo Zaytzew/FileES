@@ -152,7 +152,7 @@ func TestCleanupLayoutKeepsServerStateAndActionsInMainPanel(t *testing.T) {
 	if strings.Contains(string(index), `id="connection"`) {
 		t.Fatal("separate connection pill survived radar consolidation")
 	}
-	for _, wanted := range []string{"expandedServers", "data-toggle-server", "working_copy_size_known", "local_provisioning", "pierwsze wysyłanie — trwa", "repo-icon-action", `t("repo.size")`, "repo-state-overlay", `t("repo.attach")`, `t("repo.actions")`, `renderRepoGroup(t("repo.groupRemote"), remote, "remote")`, `M3 11v2a2 2 0 0 0 2 2h2l4 4V5`} {
+	for _, wanted := range []string{"expandedServers", "data-toggle-server", "working_copy_size_known", "local_provisioning", `t("queue.importRunning")`, "repo-icon-action", `t("repo.size")`, "repo-state-overlay", `t("repo.attach")`, `t("repo.actions")`, `renderRepoGroup(t("repo.groupRemote"), remote, "remote")`, `M3 11v2a2 2 0 0 0 2 2h2l4 4V5`} {
 		if !strings.Contains(string(script), wanted) {
 			t.Fatalf("cleanup renderer is missing %q", wanted)
 		}

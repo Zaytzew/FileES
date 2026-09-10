@@ -88,6 +88,44 @@ test("main repository row retains capabilities, identity and raw diagnostics acr
     assert.ok(render.renderRepo({...repo, server_deleted: true, cleanup_error: "Błąd <raw>"}).includes("Błąd &lt;raw>"));
     assert.equal(render.serverHealthPresentation("current").className, "health-current");
     assert.equal(render.serverHealthPresentation("current").label, catalogues[locale]["server.health.current"]);
+    const cases = [
+      [{}, "empty"],
+      [{local_provisioning: true}, "importRunning"],
+      [{local_provisioning: true, display_state: "offline"}, "importOffline"],
+      [{local_provisioning: true, display_state: "attention"}, "importAttention"],
+      [{server_deleted: true}, "detached"],
+      [{server_deleted: true, local_cleanup_pending: true}, "cleanup"],
+      [{server_deleted: true, recovery_pending: true}, "archive"],
+      [{server_deleted: true, recovery_pending: true, local_cleanup_pending: true}, "archiveCleanup"],
+      [{server_deleted: true, local_copy_preserved: true}, "deletedCheck"],
+      [{server_deleted: true, local_copy_preserved: true, local_copy_status: "clean"}, "deletedClean"],
+      [{server_deleted: true, local_copy_preserved: true, local_copy_status: "changed"}, "deletedChanged"],
+      [{server_deleted: true, local_copy_preserved: true, local_copy_status: "clean", local_cleanup_pending: true}, "deletedCleanup"],
+    ];
+    for (const [fields, key] of cases) assert.ok(render.renderRepo({...repo, ...fields}).includes(catalogues[locale][`queue.${key}`]), `${locale}:${key}`);
+    assert.ok(render.renderRepo({...repo, pending_files: 2, pending_bytes: 123}).includes("2 · 123"));
+  }
+});
+
+test("action progress translates phase without rewriting supplied labels", () => {
+  const source = readFileSync(new URL("../frontend/app.js", import.meta.url), "utf8");
+  const start = source.indexOf("function renderActions("), end = source.indexOf("\n}", start) + 2;
+  const root = {};
+  let locale = "en";
+  const render = runInNewContext(`${source.slice(start, end)}\nrenderActions`, {
+    $: () => root, replaceHTMLIfChanged: (_, html) => root.html = html,
+    escapeHTML: value => String(value ?? "").replaceAll("<", "&lt;"),
+    t: key => translate(catalogues, locale, key),
+  });
+  for (locale of ["pl", "en"]) {
+    for (const [connected, phase, key] of [[false, "awaiting_projection", "connection"], [true, "awaiting_projection", "projection"], [true, "running", "running"]]) {
+      render({connected, pending_actions: [{phase, label: "Etykieta <raw>", repo_id: "Projekt"}]});
+      assert.ok(root.html.includes("Etykieta &lt;raw>"));
+      assert.ok(root.html.includes(catalogues[locale][`progress.${key}`]));
+      assert.equal(root.hidden, false);
+    }
+    render({pending_actions: []});
+    assert.equal(root.hidden, true);
   }
 });
 

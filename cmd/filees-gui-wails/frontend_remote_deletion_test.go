@@ -75,7 +75,7 @@ assert.equal($("#deleted-copy-dialog").closed, true);
 func TestRemoteDeletionFrontendPreservesLocalWorkDistinction(t *testing.T) {
 	script := embeddedFrontendFile(t, "frontend/app.js")
 	models := embeddedFrontendFile(t, "frontend/bindings/filees/cmd/filees-gui-wails/models.js")
-	for _, text := range []string{"repo.local_copy_preserved", "lokalne pliki zachowane", "zachowana kopia ze zmianami", "sprawdź zachowany folder", "sprzątanie metadanych czeka"} {
+	for _, text := range []string{"repo.local_copy_preserved", `t("queue.deletedClean")`, `t("queue.deletedChanged")`, `t("queue.deletedCheck")`, `t("queue.deletedCleanup")`} {
 		if !strings.Contains(script, text) {
 			t.Fatalf("missing terminal presentation %q", text)
 		}

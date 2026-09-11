@@ -834,8 +834,19 @@ test("counted journal entries take their plural form from the catalogue", () => 
 // The fallback gate above proves a keyed sentence matches the catalogue. It is
 // blind to a sentence that was never keyed, which is how Polish queue summaries
 // survived stage 1 and then reached French, German and Spanish readers intact
-// the day those languages shipped. Every Polish literal here must be a
-// catalogue value — anything else is a sentence nobody can translate.
+// the day those languages shipped.
+//
+// What this is: a tripwire on one file. It is a heuristic, not proof that the
+// journal is localized, and three limits are deliberate rather than oversights.
+// It reads only journal.go — the neighbouring files that also compose visible
+// text are not covered. "A space and a word" is a guess at what prose looks
+// like: a one-word sentence has no space, and a sentence assembled from
+// concatenated fragments has no single literal to catch. And it is a source
+// scan, so it says nothing about runtime — a key that resolves to nothing or
+// an argument never substituted passes it.
+//
+// Proving the reader actually gets their language is the job of live
+// acceptance, not of a wider scan. Do not grow this into one.
 test("journal builds no Polish sentence outside the interface catalogue", () => {
   const source = readFileSync(new URL("../../../internal/gui/journal/journal.go", import.meta.url), "utf8")
     .split("\n").filter(line => !line.trimStart().startsWith("//")).join("\n");

@@ -44,7 +44,7 @@
             <ImageView
                 android:id="@+id/brandLockup"
                 android:layout_width="wrap_content"
-                android:layout_height="24dp"
+                android:layout_height="@dimen/filees_wordmark_height"
                 android:layout_gravity="start|center_vertical"
                 android:adjustViewBounds="true"
                 android:contentDescription="@string/app_name"
@@ -55,13 +55,13 @@
             android:id="@+id/barServerAddress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/filees_navy_container"
+            android:background="@color/filees_panel"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp"
+            android:paddingStart="@dimen/filees_gutter"
+            android:paddingEnd="@dimen/filees_gutter"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
             android:clickable="true"
             android:focusable="true"
             android:visibility="gone"
@@ -84,21 +84,28 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:textColor="@color/filees_white"
-                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.Filees.Meta"
+                android:textColor="@color/filees_text"
                 tools:text="Serwer: 192.168.1.5:2222" />
         </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/filees_hairline"
+            android:background="@color/filees_line" />
 
         <LinearLayout
             android:id="@+id/panelDecisions"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/filees_navy_container"
+            android:background="@color/filees_panel"
             android:orientation="vertical"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp"
+            android:paddingStart="@dimen/filees_gutter"
+            android:paddingEnd="@dimen/filees_gutter"
+            android:paddingTop="@dimen/filees_space"
+            android:paddingBottom="@dimen/filees_space"
             android:visibility="gone">
 
             <TextView
@@ -106,8 +113,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/section_uploads"
-                android:textAppearance="?attr/textAppearanceLabelMedium"
-                android:textColor="@color/filees_white" />
+                android:textAllCaps="true"
+                android:textAppearance="@style/TextAppearance.Filees.Meta" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recyclerPending"
@@ -121,10 +128,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="@dimen/filees_gutter">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/buttonScanQr"
+                style="@style/Widget.Filees.Button.Filled"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/action_scan_qr" />
@@ -136,8 +144,8 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipToPadding="false"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
+            android:paddingStart="@dimen/filees_gutter"
+            android:paddingEnd="@dimen/filees_gutter"
             android:paddingBottom="88dp"
             android:visibility="gone" />
     </LinearLayout>
@@ -156,7 +164,7 @@
         android:id="@+id/overlayBusy"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#CCFFFFFF"
+        android:background="@color/filees_scrim"
         android:gravity="center"
         android:orientation="vertical"
         android:visibility="gone">
@@ -174,6 +182,7 @@
             android:paddingEnd="24dp"
             android:gravity="center"
             android:textAlignment="center"
-            android:text="@string/status_sending" />
+            android:text="@string/status_sending"
+            android:textAppearance="@style/TextAppearance.Filees.Body" />
     </LinearLayout>
 </FrameLayout>

@@ -2,33 +2,49 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp"
-    android:gravity="center_vertical">
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/filees_row_min"
+    android:orientation="vertical"
+    android:paddingTop="@dimen/filees_space"
+    android:paddingBottom="@dimen/filees_space">
 
-    <TextView
-        android:id="@+id/textUploadSummary"
-        android:layout_width="0dp"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:textColor="@color/filees_white"
-        android:textIsSelectable="false" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/buttonRetryUpload"
-        style="@style/Widget.Filees.Button.TextButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/action_retry_upload"
-        android:visibility="gone" />
+        <TextView
+            android:id="@+id/textUploadSummary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="4"
+            android:textAppearance="@style/TextAppearance.Filees.Name"
+            android:textIsSelectable="false" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/buttonDiscardUpload"
-        style="@style/Widget.Filees.Button.TextButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/action_discard"
-        android:visibility="gone" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonRetryUpload"
+            style="@style/Widget.Filees.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/filees_touch_min"
+            android:text="@string/action_retry_upload"
+            android:visibility="gone" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/buttonDiscardUpload"
+            style="@style/Widget.Filees.Button.TextButton.Destructive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/filees_touch_min"
+            android:text="@string/action_discard"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/filees_hairline"
+        android:background="@color/filees_line" />
 </LinearLayout>

@@ -3,9 +3,11 @@ package net.filees.mobile
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.TextUtils
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -122,17 +124,16 @@ class SettingsActivity : AppCompatActivity() {
         val all = FileesSession.servers(prefs)
         val currentId = FileesSession.current(prefs)?.id
         if (all.isEmpty()) {
-            val empty = TextView(this)
-            empty.text = getString(R.string.status_idle)
-            binding.listServers.addView(empty)
+            binding.listServers.addView(fileesMetaText(getString(R.string.status_idle)))
             return
         }
-        val accent = ContextCompat.getColor(this, R.color.filees_orange)
         for (server in all) {
-            val row = LinearLayout(this)
-            row.orientation = LinearLayout.HORIZONTAL
+            val row = fileesSettingsRow()
             val label = TextView(this)
             label.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            label.setTextAppearance(R.style.TextAppearance_Filees_Name)
+            label.maxLines = 2
+            label.ellipsize = TextUtils.TruncateAt.END
             label.text = if (server.id == currentId) {
                 "${server.label()} (${getString(R.string.server_current)})"
             } else {
@@ -144,9 +145,7 @@ class SettingsActivity : AppCompatActivity() {
             }
             val remove = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
             remove.text = getString(R.string.action_unpair)
-            remove.setTextColor(accent)
-            remove.strokeColor = android.content.res.ColorStateList.valueOf(accent)
-            remove.rippleColor = android.content.res.ColorStateList.valueOf(accent)
+            styleFileesOutline(remove, R.color.filees_destructive)
             remove.setOnClickListener {
                 val wasCurrent = server.id == currentId
                 FileesSession.unpairId(prefs, server.id)
@@ -333,27 +332,20 @@ class SettingsActivity : AppCompatActivity() {
         binding.listWatched.removeAllViews()
         val uris = watched.uris()
         if (uris.isEmpty()) {
-            val empty = TextView(this)
-            empty.text = getString(R.string.watched_empty)
-            binding.listWatched.addView(empty)
+            binding.listWatched.addView(fileesMetaText(getString(R.string.watched_empty)))
             return
         }
         for (uri in uris) {
-            val row = LinearLayout(this)
-            row.orientation = LinearLayout.HORIZONTAL
+            val row = fileesSettingsRow()
             val label = TextView(this)
             label.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            label.setTextAppearance(R.style.TextAppearance_Filees_Name)
+            label.maxLines = 2
+            label.ellipsize = TextUtils.TruncateAt.END
             label.text = uri.lastPathSegment ?: uri.toString()
             val remove = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
             remove.text = getString(R.string.action_remove_watched)
-            // Default outlined-button style uses ?attr/colorPrimary (brand
-            // navy) for text/stroke - invisible against this app's dark
-            // navy background. See Widget.Filees.Button.OutlinedButton in
-            // themes.xml for the XML-side fix; this one is built in code.
-            val accent = ContextCompat.getColor(this, R.color.filees_orange)
-            remove.setTextColor(accent)
-            remove.strokeColor = android.content.res.ColorStateList.valueOf(accent)
-            remove.rippleColor = android.content.res.ColorStateList.valueOf(accent)
+            styleFileesOutline(remove, R.color.filees_destructive)
             remove.setOnClickListener {
                 watched.remove(uri)
                 renderWatched()
@@ -362,6 +354,28 @@ class SettingsActivity : AppCompatActivity() {
             row.addView(remove)
             binding.listWatched.addView(row)
         }
+    }
+
+    private fun fileesSettingsRow(): LinearLayout {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = android.view.Gravity.CENTER_VERTICAL
+        row.minimumHeight = resources.getDimensionPixelSize(R.dimen.filees_row_min)
+        return row
+    }
+
+    private fun fileesMetaText(value: String): TextView {
+        val view = TextView(this)
+        view.setTextAppearance(R.style.TextAppearance_Filees_Meta)
+        view.text = value
+        return view
+    }
+
+    private fun styleFileesOutline(button: MaterialButton, colorRes: Int) {
+        val color = ContextCompat.getColor(this, colorRes)
+        button.setTextColor(color)
+        button.strokeColor = ColorStateList.valueOf(color)
+        button.rippleColor = ColorStateList.valueOf(color)
     }
 
     private fun launchScanner() {
